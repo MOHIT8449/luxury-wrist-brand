@@ -1,0 +1,823 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<title>Order Entry | Luxury Wrist Brand</title>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:Arial,Helvetica,sans-serif;background:#f5f6f8;color:#181818}
+
+.header{
+  background:#111;color:#fff;padding:18px 30px;
+  display:flex;justify-content:space-between;align-items:center;gap:20px
+}
+.brand h1{font-size:21px;letter-spacing:2px}
+.brand p{font-size:11px;color:#d1b45b;letter-spacing:2px;margin-top:5px}
+.header-right{display:flex;align-items:center;gap:10px}
+.user-info{text-align:right;font-size:12px;color:#ddd}
+
+button{border:0;cursor:pointer;font-family:inherit}
+.btn{padding:10px 15px;border-radius:7px;font-weight:700;font-size:13px}
+.btn-light{background:#fff;color:#111}
+.btn-blue{background:#1769e0;color:#fff}
+.btn-green{background:#138a45;color:#fff}
+.btn-red{background:#d93025;color:#fff}
+.btn-grey{background:#e8e8e8;color:#222}
+
+.container{max-width:1450px;margin:auto;padding:25px}
+
+.page-title{
+  display:flex;justify-content:space-between;
+  align-items:center;margin-bottom:20px;gap:15px
+}
+.page-title h2{font-size:24px}
+.page-title p{font-size:13px;color:#666;margin-top:5px}
+
+.card{
+  background:#fff;border:1px solid #e1e1e1;
+  border-radius:10px;padding:20px;margin-bottom:18px
+}
+.card-title{font-size:16px;font-weight:800;margin-bottom:15px}
+
+.form-grid{
+  display:grid;grid-template-columns:repeat(3,1fr);
+  gap:15px
+}
+.form-group label{
+  display:block;font-size:11px;text-transform:uppercase;
+  color:#666;margin-bottom:6px;font-weight:700
+}
+.form-control{
+  width:100%;padding:11px 12px;border:1px solid #ccc;
+  border-radius:7px;font-size:13px;background:#fff
+}
+.form-control:focus{outline:none;border-color:#1769e0}
+.readonly{background:#f1f1f1}
+
+.table-wrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse;min-width:1100px}
+th{
+  background:#f2f3f5;padding:12px;text-align:left;
+  font-size:11px;text-transform:uppercase;white-space:nowrap
+}
+td{padding:9px;border-bottom:1px solid #eee;font-size:13px}
+td input{
+  width:100%;padding:8px;border:1px solid #ccc;
+  border-radius:5px;font-size:13px
+}
+.number{text-align:right}
+
+.summary{
+  margin-top:18px;display:flex;justify-content:flex-end
+}
+.summary-box{
+  width:360px;border:1px solid #ddd;border-radius:8px;overflow:hidden
+}
+.summary-row{
+  display:flex;justify-content:space-between;
+  padding:11px 14px;border-bottom:1px solid #eee
+}
+.summary-row:last-child{border-bottom:0}
+.summary-row strong{font-size:15px}
+
+.actions{
+  display:flex;justify-content:space-between;
+  align-items:center;gap:10px;margin-top:20px;flex-wrap:wrap
+}
+
+.message{
+  display:none;padding:13px 15px;border-radius:7px;margin-bottom:15px
+}
+.message.success{display:block;background:#dff4e5;color:#12632f}
+.message.error{display:block;background:#fde2e2;color:#9f1d1d}
+
+.remove-btn{
+  background:#fde2e2;color:#b3261e;padding:8px 10px;
+  border-radius:6px;font-weight:700
+}
+
+@media(max-width:850px){
+  .form-grid{grid-template-columns:1fr 1fr}
+  .container{padding:15px}
+  .header{padding:15px}
+}
+@media(max-width:550px){
+  .form-grid{grid-template-columns:1fr}
+  .user-info{display:none}
+  .page-title{flex-direction:column;align-items:flex-start}
+}
+</style>
+</head>
+
+<body>
+
+<header class="header">
+  <div class="brand">
+    <h1>LUXURY WRIST BRAND</h1>
+    <p>SALES TEAM • ORDER ENTRY</p>
+  </div>
+
+  <div class="header-right">
+    <div class="user-info">
+      <div id="userName">Checking user...</div>
+      <div id="userRole"></div>
+    </div>
+
+    <button class="btn btn-light" onclick="goDashboard()">Dashboard</button>
+    <button class="btn btn-light" onclick="logout()">Logout</button>
+  </div>
+</header>
+
+<main class="container">
+
+  <div class="page-title">
+    <div>
+      <h2>New Sales Order</h2>
+      <p>Create order and submit it to Warehouse Manager for approval.</p>
+    </div>
+
+    <button class="btn btn-grey" onclick="resetOrder()">New Order</button>
+  </div>
+
+  <div id="message" class="message"></div>
+
+  <section class="card">
+    <div class="card-title">Order Details</div>
+
+    <div class="form-grid">
+
+      <div class="form-group">
+        <label>Order No</label>
+        <input id="orderNo" class="form-control readonly"
+               value="Assigned on save" readonly>
+      </div>
+
+      <div class="form-group">
+        <label>Date & Time</label>
+        <input id="orderDate" type="datetime-local" class="form-control">
+      </div>
+
+      <div class="form-group">
+        <label>Company</label>
+        <input id="company" class="form-control"
+               value="COCA COLA">
+      </div>
+
+      <div class="form-group">
+        <label>Sales Person *</label>
+        <input id="salesPerson" class="form-control"
+               placeholder="Sales person name">
+      </div>
+
+      <div class="form-group">
+        <label>Customer Name *</label>
+        <input id="customerName" class="form-control"
+               placeholder="Customer / Party name">
+      </div>
+
+      <div class="form-group">
+        <label>Transportation</label>
+        <input id="transportation" class="form-control"
+               placeholder="Transport / Self / Vehicle">
+      </div>
+
+    </div>
+  </section>
+
+  <section class="card">
+
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:15px">
+      <div class="card-title" style="margin:0">Order Items</div>
+
+      <button class="btn btn-blue" onclick="addItem()">
+        + Add SKU
+      </button>
+    </div>
+
+    <div class="table-wrap">
+
+      <table>
+        <thead>
+          <tr>
+            <th>#</th>
+            <th style="min-width:250px">SKU / Product</th>
+            <th>Qty</th>
+            <th>Rate ₹</th>
+            <th>Amount ₹</th>
+            <th>Unit Weight KG</th>
+            <th>Total Weight KG</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+
+        <tbody id="itemsBody"></tbody>
+      </table>
+
+    </div>
+
+    <div class="summary">
+      <div class="summary-box">
+
+        <div class="summary-row">
+          <span>Total SKU</span>
+          <strong id="totalSku">0</strong>
+        </div>
+
+        <div class="summary-row">
+          <span>Total Quantity</span>
+          <strong id="totalQty">0</strong>
+        </div>
+
+        <div class="summary-row">
+          <span>Total Amount</span>
+          <strong id="totalAmount">₹0.00</strong>
+        </div>
+
+        <div class="summary-row">
+          <span>Final Weight</span>
+          <strong id="totalWeight">0 KG</strong>
+        </div>
+
+      </div>
+    </div>
+
+    <div class="actions">
+
+      <button class="btn btn-grey" onclick="addItem()">
+        + Add Another SKU
+      </button>
+
+      <button id="saveBtn" class="btn btn-green" onclick="saveOrder()">
+        Submit to Warehouse Manager
+      </button>
+
+    </div>
+
+  </section>
+
+</main>
+
+<script>
+
+const SUPABASE_URL =
+  "https://txkbhadzdbxpieunfvox.supabase.co";
+
+const SUPABASE_PUBLISHABLE_KEY =
+  "sb_publishable_W4I3Q5ODf0g17sq5uDml2Q_sLolXYEk";
+
+const db = supabase.createClient(
+  SUPABASE_URL,
+  SUPABASE_PUBLISHABLE_KEY
+);
+
+let currentUser = null;
+let currentProfile = null;
+let itemCounter = 0;
+
+
+/* START */
+
+document.addEventListener("DOMContentLoaded", async () => {
+
+  setCurrentDate();
+
+  try {
+
+    const {data:{session}} =
+      await db.auth.getSession();
+
+    if(!session){
+      window.location.href="login.html";
+      return;
+    }
+
+    currentUser=session.user;
+
+    const {data:profile,error} =
+      await db
+      .from("user_profiles")
+      .select("full_name,role,active")
+      .eq("id",currentUser.id)
+      .maybeSingle();
+
+    if(error) throw error;
+
+    if(!profile){
+      alert("User profile not found.");
+      window.location.href="dashboard.html";
+      return;
+    }
+
+    if(profile.active===false){
+      await db.auth.signOut();
+      window.location.href="login.html";
+      return;
+    }
+
+    currentProfile=profile;
+
+    document.getElementById("userName").textContent =
+      profile.full_name || currentUser.email;
+
+    document.getElementById("userRole").textContent =
+      String(profile.role || "").toUpperCase();
+
+    document.getElementById("salesPerson").value =
+      profile.full_name || "";
+
+    addItem();
+
+  }catch(error){
+
+    console.error(error);
+    showMessage(error.message || "Unable to start order page.","error");
+
+  }
+
+});
+
+
+/* ITEM ROW */
+
+function addItem(){
+
+  itemCounter++;
+
+  const tbody=document.getElementById("itemsBody");
+
+  const tr=document.createElement("tr");
+
+  tr.innerHTML=`
+    <td class="row-number"></td>
+
+    <td>
+      <input class="sku-name"
+             placeholder="Enter SKU / Product name">
+    </td>
+
+    <td>
+      <input class="qty number"
+             type="number"
+             min="0"
+             step="1"
+             value=""
+             oninput="calculateRow(this)">
+    </td>
+
+    <td>
+      <input class="rate number"
+             type="number"
+             min="0"
+             step="0.01"
+             value=""
+             oninput="calculateRow(this)">
+    </td>
+
+    <td>
+      <input class="amount number readonly"
+             value="0.00"
+             readonly>
+    </td>
+
+    <td>
+      <input class="unit-weight number"
+             type="number"
+             min="0"
+             step="0.001"
+             value=""
+             oninput="calculateRow(this)">
+    </td>
+
+    <td>
+      <input class="row-weight number readonly"
+             value="0.00"
+             readonly>
+    </td>
+
+    <td>
+      <button class="remove-btn"
+              onclick="removeItem(this)">
+        Remove
+      </button>
+    </td>
+  `;
+
+  tbody.appendChild(tr);
+
+  updateRowNumbers();
+  calculateTotals();
+
+}
+
+
+function removeItem(button){
+
+  const rows =
+    document.querySelectorAll("#itemsBody tr");
+
+  if(rows.length<=1){
+    alert("At least one SKU row is required.");
+    return;
+  }
+
+  button.closest("tr").remove();
+
+  updateRowNumbers();
+  calculateTotals();
+
+}
+
+
+function updateRowNumbers(){
+
+  document
+    .querySelectorAll("#itemsBody tr")
+    .forEach((row,index)=>{
+      row.querySelector(".row-number").textContent=index+1;
+    });
+
+}
+
+
+function calculateRow(input){
+
+  const row=input.closest("tr");
+
+  const qty=number(row.querySelector(".qty").value);
+  const rate=number(row.querySelector(".rate").value);
+  const unitWeight=number(row.querySelector(".unit-weight").value);
+
+  row.querySelector(".amount").value =
+    (qty*rate).toFixed(2);
+
+  row.querySelector(".row-weight").value =
+    (qty*unitWeight).toFixed(2);
+
+  calculateTotals();
+
+}
+
+
+/* TOTALS */
+
+function calculateTotals(){
+
+  let totalQty=0;
+  let totalAmount=0;
+  let totalWeight=0;
+  let skuCount=0;
+
+  document
+    .querySelectorAll("#itemsBody tr")
+    .forEach(row=>{
+
+      const sku=row.querySelector(".sku-name").value.trim();
+      const qty=number(row.querySelector(".qty").value);
+      const rate=number(row.querySelector(".rate").value);
+      const unitWeight=number(row.querySelector(".unit-weight").value);
+
+      if(sku || qty>0) skuCount++;
+
+      totalQty+=qty;
+      totalAmount+=(qty*rate);
+      totalWeight+=(qty*unitWeight);
+
+    });
+
+  document.getElementById("totalSku").textContent=skuCount;
+  document.getElementById("totalQty").textContent=formatNumber(totalQty);
+  document.getElementById("totalAmount").textContent=formatMoney(totalAmount);
+  document.getElementById("totalWeight").textContent=
+    formatNumber(totalWeight)+" KG";
+
+  return{
+    skuCount,
+    totalQty,
+    totalAmount,
+    totalWeight
+  };
+
+}
+
+
+/* CREATE ORDER NUMBER */
+
+async function generateOrderNo(){
+
+  const {data,error} =
+    await db
+      .from("orders")
+      .select("order_no")
+      .like("order_no","LXY-%")
+      .order("created_at",{ascending:false})
+      .limit(100);
+
+  if(error) throw error;
+
+  let highest=0;
+
+  (data || []).forEach(row=>{
+
+    const match =
+      String(row.order_no || "")
+        .match(/^LXY-(\d+)$/i);
+
+    if(match){
+      highest=Math.max(
+        highest,
+        Number(match[1])
+      );
+    }
+
+  });
+
+  return "LXY-" +
+    String(highest+1).padStart(5,"0");
+
+}
+
+
+/* SAVE ORDER */
+
+async function saveOrder(){
+
+  const customer =
+    document.getElementById("customerName").value.trim();
+
+  const salesPerson =
+    document.getElementById("salesPerson").value.trim();
+
+  const transportation =
+    document.getElementById("transportation").value.trim();
+
+  const dateValue =
+    document.getElementById("orderDate").value;
+
+  if(!customer){
+    alert("Customer Name is required.");
+    return;
+  }
+
+  if(!salesPerson){
+    alert("Sales Person is required.");
+    return;
+  }
+
+  const items=[];
+
+  document
+    .querySelectorAll("#itemsBody tr")
+    .forEach(row=>{
+
+      const sku =
+        row.querySelector(".sku-name").value.trim();
+
+      const qty =
+        number(row.querySelector(".qty").value);
+
+      const rate =
+        number(row.querySelector(".rate").value);
+
+      const unitWeight =
+        number(row.querySelector(".unit-weight").value);
+
+      if(sku && qty>0){
+
+        items.push({
+          sku_name:sku,
+          ordered_qty:qty,
+          approved_qty:null,
+          loaded_qty:0,
+          rate:rate,
+          unit_weight:unitWeight,
+          amount:qty*rate,
+          total_weight:qty*unitWeight
+        });
+
+      }
+
+    });
+
+  if(!items.length){
+    alert("Please enter at least one valid SKU with quantity.");
+    return;
+  }
+
+  const totals=calculateTotals();
+
+  const saveBtn=document.getElementById("saveBtn");
+
+  saveBtn.disabled=true;
+  saveBtn.textContent="Saving Order...";
+
+  let createdOrder=null;
+
+  try{
+
+    const orderNo=await generateOrderNo();
+
+    const orderDate =
+      dateValue
+        ? new Date(dateValue).toISOString()
+        : new Date().toISOString();
+
+    const {data:order,error:orderError} =
+      await db
+        .from("orders")
+        .insert({
+          order_no:orderNo,
+          order_date:orderDate,
+          customer_name:customer,
+          transportation:transportation || null,
+          sales_person:salesPerson,
+          status:"pending_manager",
+          total_qty:totals.totalQty,
+          total_amount:totals.totalAmount,
+          total_weight:totals.totalWeight,
+          created_by:currentUser.id
+        })
+        .select()
+        .single();
+
+    if(orderError) throw orderError;
+
+    createdOrder=order;
+
+    const itemRows =
+      items.map(item=>({
+        order_id:order.id,
+        ...item
+      }));
+
+    const {error:itemError} =
+      await db
+        .from("order_items")
+        .insert(itemRows);
+
+    if(itemError){
+
+      /*
+        Front-end Supabase calls are not one database transaction.
+        If item insert fails, remove newly-created empty order.
+      */
+
+      await db
+        .from("orders")
+        .delete()
+        .eq("id",order.id);
+
+      throw itemError;
+    }
+
+    document.getElementById("orderNo").value=orderNo;
+
+    showMessage(
+      "Order saved successfully! Order No: "+
+      orderNo+
+      " | Total Qty: "+
+      formatNumber(totals.totalQty)+
+      " | Total Amount: "+
+      formatMoney(totals.totalAmount)+
+      " | Final Weight: "+
+      formatNumber(totals.totalWeight)+
+      " KG",
+      "success"
+    );
+
+    alert(
+      "Order submitted successfully.\n\n"+
+      "Order No: "+orderNo+
+      "\nTotal Qty: "+formatNumber(totals.totalQty)+
+      "\nTotal Amount: "+formatMoney(totals.totalAmount)+
+      "\nFinal Weight: "+formatNumber(totals.totalWeight)+" KG"+
+      "\n\nSent to Warehouse Manager for approval."
+    );
+
+    saveBtn.textContent="Order Submitted";
+
+  }catch(error){
+
+    console.error(error);
+
+    alert(
+      "Order could not be saved:\n"+
+      (error.message || "Unknown error")
+    );
+
+    saveBtn.disabled=false;
+    saveBtn.textContent="Submit to Warehouse Manager";
+
+  }
+
+}
+
+
+/* RESET */
+
+function resetOrder(){
+
+  if(!confirm("Create a new blank order?")) return;
+
+  document.getElementById("orderNo").value="Assigned on save";
+  document.getElementById("customerName").value="";
+  document.getElementById("transportation").value="";
+
+  document.getElementById("itemsBody").innerHTML="";
+  itemCounter=0;
+
+  setCurrentDate();
+  addItem();
+
+  const btn=document.getElementById("saveBtn");
+  btn.disabled=false;
+  btn.textContent="Submit to Warehouse Manager";
+
+  document.getElementById("message").className="message";
+
+}
+
+
+/* HELPERS */
+
+function setCurrentDate(){
+
+  const now=new Date();
+
+  const local =
+    new Date(
+      now.getTime() -
+      now.getTimezoneOffset()*60000
+    )
+    .toISOString()
+    .slice(0,16);
+
+  document.getElementById("orderDate").value=local;
+
+}
+
+
+function number(value){
+  const n=Number(value);
+  return Number.isFinite(n)?n:0;
+}
+
+
+function formatNumber(value){
+
+  return new Intl.NumberFormat(
+    "en-IN",
+    {maximumFractionDigits:2}
+  ).format(number(value));
+
+}
+
+
+function formatMoney(value){
+
+  return new Intl.NumberFormat(
+    "en-IN",
+    {
+      style:"currency",
+      currency:"INR",
+      minimumFractionDigits:2,
+      maximumFractionDigits:2
+    }
+  ).format(number(value));
+
+}
+
+
+function showMessage(text,type){
+
+  const el=document.getElementById("message");
+
+  el.textContent=text;
+  el.className="message "+type;
+
+  window.scrollTo({
+    top:0,
+    behavior:"smooth"
+  });
+
+}
+
+
+function goDashboard(){
+  window.location.href="dashboard.html";
+}
+
+
+async function logout(){
+  await db.auth.signOut();
+  window.location.href="login.html";
+}
+
+</script>
+
+</body>
+</html>
