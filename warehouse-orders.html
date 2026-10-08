@@ -604,7 +604,7 @@
 
         </div>
 
-        <h4 class="section-title">SKU Verification</h4>
+        <h4 class="section-title">SKU Verification & Modification</h4>
 
         <div class="table-wrap">
           <table>
@@ -618,6 +618,7 @@
                 <th style="text-align:right">Amount</th>
                 <th style="text-align:right">Unit Weight</th>
                 <th style="text-align:right">Total Weight</th>
+                <th>Action</th>
               </tr>
             </thead>
 
@@ -625,6 +626,7 @@
           </table>
         </div>
 
+        <div style="margin-top:12px"><button id="addSkuBtn" class="btn btn-blue" onclick="addSku()">+ Add New SKU</button></div>
         <div class="summary">
           <div class="summary-box">
 
@@ -701,6 +703,8 @@ let currentProfile = null;
 let orders = [];
 let selectedOrder = null;
 let selectedItems = [];
+let originalItemIds = [];
+let reviewReady = false;
 
 
 /* -----------------------------
@@ -1095,9 +1099,11 @@ async function reviewOrder(orderId) {
   document.getElementById("managerNote").value =
     selectedOrder.manager_note || "";
 
+  reviewReady = false;
+  document.getElementById("approveOrderBtn").disabled = true;
   document.getElementById("itemsBody").innerHTML = `
     <tr>
-      <td colspan="8" style="text-align:center">
+      <td colspan="9" style="text-align:center">
         Loading SKU details...
       </td>
     </tr>
@@ -1119,8 +1125,10 @@ async function reviewOrder(orderId) {
       throw error;
     }
 
-    selectedItems = data || [];
-
+    selectedItems = (data || []).map(x => ({...x, approved_qty: x.approved_qty == null ? x.ordered_qty : x.approved_qty}));
+    originalItemIds = selectedItems.map(x => x.id);
+    reviewReady = true;
+    document.getElementById("approveOrderBtn").disabled = false;
     renderItems();
 
   } catch (error) {
@@ -1129,7 +1137,7 @@ async function reviewOrder(orderId) {
 
     document.getElementById("itemsBody").innerHTML = `
       <tr>
-        <td colspan="8" style="text-align:center;color:#b00020">
+        <td colspan="9" style="text-align:center;color:#b00020">
           ${escapeHtml(error.message || "Unable to load order items")}
         </td>
       </tr>
@@ -1145,436 +1153,120 @@ async function reviewOrder(orderId) {
 ----------------------------- */
 
 function renderItems() {
-
-  const body =
-    document.getElementById("itemsBody");
-
-  if (!selectedItems.length) {
-
-    body.innerHTML = `
-      <tr>
-        <td colspan="8" style="text-align:center">
-          No SKU items found.
-        </td>
-      </tr>
-    `;
-
-    calculateApprovalTotals();
-    return;
-
-  }
-
-  const editable =
-    selectedOrder &&
-    isPending(selectedOrder);
-
-
-  body.innerHTML =
-    selectedItems.map((item, index) => {
-
-      const orderedQty =
-        number(item.ordered_qty);
-
-      const approvedQty =
-        item.approved_qty === null ||
-        item.approved_qty === undefined
-          ? orderedQty
-          : number(item.approved_qty);
-
-      const rate =
-        number(item.rate);
-
-      const unitWeight =
-        number(item.unit_weight);
-
-      const amount =
-        approvedQty * rate;
-
-      const totalWeight =
-        approvedQty * unitWeight;
-
-
-      return `
-
-        <tr>
-
-          <td>
-            ${index + 1}
-          </td>
-
-          <td>
-            <strong>
-              ${escapeHtml(item.sku_name || "-")}
-            </strong>
-          </td>
-
-          <td style="text-align:right">
-            ${formatNumber(orderedQty)}
-          </td>
-
-          <td style="text-align:right">
-
-            <input
-              class="qty-input approved-qty"
-              type="number"
-              min="0"
-              max="${orderedQty}"
-              step="0.01"
-              data-index="${index}"
-              value="${approvedQty}"
-              ${editable ? "" : "disabled"}
-              oninput="approvedQtyChanged(this)"
-            >
-
-          </td>
-
-          <td style="text-align:right">
-            ${formatMoney(rate)}
-          </td>
-
-          <td
-            id="itemAmount${index}"
-            style="text-align:right;font-weight:700"
-          >
-            ${formatMoney(amount)}
-          </td>
-
-          <td style="text-align:right">
-            ${formatNumber(unitWeight)}
-          </td>
-
-          <td
-            id="itemWeight${index}"
-            style="text-align:right"
-          >
-            ${formatNumber(totalWeight)} KG
-          </td>
-
-        </tr>
-
-      `;
-
-    }).join("");
-
-
-  document.getElementById("approveOrderBtn").style.display =
-    editable ? "inline-block" : "none";
-
-  document.getElementById("cancelOrderBtn").style.display =
-    editable ? "inline-block" : "none";
-
-  document.getElementById("managerNote").disabled =
-    !editable;
-
+  const editable = selectedOrder && isPending(selectedOrder);
+  const body = document.getElementById("itemsBody");
+  body.innerHTML = selectedItems.map((item, i) => {
+    const qty = Number(item.approved_qty) || 0;
+    const rate = Number(item.rate) || 0;
+    const unit = Number(item.unit_weight) || 0;
+    const input = (field, value, type="text") => `<input ${editable ? "" : "disabled"} type="${type}" style="width:${field==='sku_name'?'190':'95'}px;max-width:100%;padding:7px;border:1px solid #bbb;border-radius:5px" data-index="${i}" data-field="${field}" value="${escapeHtml(value)}" oninput="itemChanged(this)" ${type==='number'?'min="0" step="any"':''}>`;
+    return `<tr>
+      <td>${i+1}</td>
+      <td>${input('sku_name', item.sku_name || '')}</td>
+      <td style="text-align:right">${formatNumber(item.ordered_qty)}</td>
+      <td>${input('approved_qty', qty, 'number')}</td>
+      <td>${input('rate', rate, 'number')}</td>
+      <td id="itemAmount${i}" style="text-align:right">${formatMoney(qty*rate)}</td>
+      <td>${input('unit_weight', unit, 'number')}</td>
+      <td id="itemWeight${i}" style="text-align:right">${formatNumber(qty*unit)} KG</td>
+      <td>${editable?`<button class="btn btn-red" onclick="removeSku(${i})">Remove</button>`:'-'}</td>
+    </tr>`;
+  }).join('') || '<tr><td colspan="9">No SKU items. Add a SKU before approving.</td></tr>';
+  document.getElementById("approveOrderBtn").style.display = editable ? "inline-block" : "none";
+  document.getElementById("cancelOrderBtn").style.display = editable ? "inline-block" : "none";
+  document.getElementById("addSkuBtn").style.display = editable ? "inline-block" : "none";
+  document.getElementById("managerNote").disabled = !editable;
   calculateApprovalTotals();
-
 }
 
-
-/* -----------------------------
-   QTY CHANGE
------------------------------ */
-
-function approvedQtyChanged(input) {
-
-  const index =
-    Number(input.dataset.index);
-
-  const item =
-    selectedItems[index];
-
-  if (!item) {
-    return;
-  }
-
-  const orderedQty =
-    number(item.ordered_qty);
-
-  let qty =
-    number(input.value);
-
-  if (qty < 0) {
-    qty = 0;
-  }
-
-  if (qty > orderedQty) {
-    qty = orderedQty;
-  }
-
-  input.value = qty;
-
-  const amount =
-    qty * number(item.rate);
-
-  const weight =
-    qty * number(item.unit_weight);
-
-  document.getElementById(
-    "itemAmount" + index
-  ).textContent =
-    formatMoney(amount);
-
-  document.getElementById(
-    "itemWeight" + index
-  ).textContent =
-    formatNumber(weight) + " KG";
-
+function itemChanged(input) {
+  const item = selectedItems[Number(input.dataset.index)];
+  if (!item) return;
+  const field = input.dataset.field;
+  item[field] = field === 'sku_name' ? input.value : (input.value === '' ? NaN : Number(input.value));
+  const i = Number(input.dataset.index);
+  document.getElementById('itemAmount'+i).textContent = formatMoney(Number(item.approved_qty)*Number(item.rate));
+  document.getElementById('itemWeight'+i).textContent = formatNumber(Number(item.approved_qty)*Number(item.unit_weight))+' KG';
   calculateApprovalTotals();
-
 }
 
+function addSku() {
+  selectedItems.push({id:null, order_id:selectedOrder.id, sku_name:'', ordered_qty:0, approved_qty:0, loaded_qty:0, rate:0, unit_weight:0});
+  renderItems();
+  const inputs = document.querySelectorAll('[data-field="sku_name"]');
+  inputs[inputs.length-1]?.focus();
+}
 
-/* -----------------------------
-   TOTALS
------------------------------ */
+function removeSku(index) {
+  if (!confirm('Remove this SKU from the order? Changes are saved only when you approve.')) return;
+  selectedItems.splice(index, 1);
+  renderItems();
+}
 
 function calculateApprovalTotals() {
-
-  let qty = 0;
-  let amount = 0;
-  let weight = 0;
-
-  document
-    .querySelectorAll(".approved-qty")
-    .forEach(input => {
-
-      const index =
-        Number(input.dataset.index);
-
-      const item =
-        selectedItems[index];
-
-      if (!item) {
-        return;
-      }
-
-      const approvedQty =
-        number(input.value);
-
-      qty += approvedQty;
-
-      amount +=
-        approvedQty *
-        number(item.rate);
-
-      weight +=
-        approvedQty *
-        number(item.unit_weight);
-
-    });
-
-
-  document.getElementById(
-    "summaryQty"
-  ).textContent =
-    formatNumber(qty);
-
-  document.getElementById(
-    "summaryAmount"
-  ).textContent =
-    formatMoney(amount);
-
-  document.getElementById(
-    "summaryWeight"
-  ).textContent =
-    formatNumber(weight) + " KG";
-
-
-  return {
-    qty,
-    amount,
-    weight
-  };
-
+  const totals = selectedItems.reduce((t,item) => {
+    const q = Number(item.approved_qty)||0, r=Number(item.rate)||0, w=Number(item.unit_weight)||0;
+    t.qty += q; t.amount += q*r; t.weight += q*w;
+    return t;
+  }, {qty:0,amount:0,weight:0});
+  document.getElementById('summaryQty').textContent = formatNumber(totals.qty);
+  document.getElementById('summaryAmount').textContent = formatMoney(totals.amount);
+  document.getElementById('summaryWeight').textContent = formatNumber(totals.weight)+' KG';
+  return totals;
 }
-
-
-/* -----------------------------
-   APPROVE ORDER
------------------------------ */
 
 async function approveOrder() {
-
-  if (!selectedOrder) {
-    return;
+  if (!selectedOrder || !isPending(selectedOrder) || !reviewReady) return;
+  if (!selectedItems.length) { alert('Add at least one SKU.'); return; }
+  for (const item of selectedItems) {
+    if (!String(item.sku_name||'').trim()) { alert('SKU name is required.'); return; }
+    if (![item.approved_qty,item.rate,item.unit_weight].every(v=>Number.isFinite(Number(v)) && Number(v)>=0)) {
+      alert('Quantity, rate and weight must be valid non-negative numbers.'); return;
+    }
   }
-
-  if (!isPending(selectedOrder)) {
-    alert("This order is already processed.");
-    return;
-  }
-
-  if (!selectedItems.length) {
-    alert("Order has no SKU items.");
-    return;
-  }
-
-
-  const confirmed =
-    confirm(
-      "Approve order " +
-      selectedOrder.order_no +
-      "?"
-    );
-
-  if (!confirmed) {
-    return;
-  }
-
-
-  const approveBtn =
-    document.getElementById(
-      "approveOrderBtn"
-    );
-
-  approveBtn.disabled = true;
-  approveBtn.textContent =
-    "Approving...";
-
-
+  if (!confirm('Approve '+selectedOrder.order_no+' with '+selectedItems.length+' SKU(s)?')) return;
+  const btn=document.getElementById('approveOrderBtn');
+  btn.disabled=true; btn.textContent='Approving...';
   try {
-
-    const qtyInputs =
-      document.querySelectorAll(
-        ".approved-qty"
-      );
-
-
-    for (const input of qtyInputs) {
-
-      const index =
-        Number(input.dataset.index);
-
-      const item =
-        selectedItems[index];
-
-      let approvedQty =
-        number(input.value);
-
-      const orderedQty =
-        number(item.ordered_qty);
-
-      if (
-        approvedQty < 0 ||
-        approvedQty > orderedQty
-      ) {
-
-        throw new Error(
-          "Approved quantity for " +
-          item.sku_name +
-          " must be between 0 and " +
-          orderedQty
-        );
-
+    // Check latest status before applying changes. For production, use one database RPC transaction.
+    const {data:latest,error:latestError}=await db.from('orders').select('status').eq('id',selectedOrder.id).single();
+    if(latestError) throw latestError;
+    if(!isPending(latest)) throw new Error('Order was already processed. Refresh the page.');
+    // Save new and modified items first. Existing items are deleted only after successful upserts.
+    for(const item of selectedItems) {
+      const q=Number(item.approved_qty), r=Number(item.rate), w=Number(item.unit_weight);
+      const payload={order_id:selectedOrder.id,sku_name:item.sku_name.trim(),ordered_qty:Number(item.ordered_qty)||0,approved_qty:q,rate:r,unit_weight:w,amount:q*r,total_weight:q*w};
+      if(item.id) {
+        const {error}=await db.from('order_items').update(payload).eq('id',item.id);
+        if(error) throw error;
+      } else {
+        const {error}=await db.from('order_items').insert(payload);
+        if(error) throw error;
       }
-
-
-      const newAmount =
-        approvedQty *
-        number(item.rate);
-
-      const newWeight =
-        approvedQty *
-        number(item.unit_weight);
-
-
-      const { error } = await db
-        .from("order_items")
-        .update({
-          approved_qty: approvedQty,
-          amount: newAmount,
-          total_weight: newWeight
-        })
-        .eq("id", item.id);
-
-
-      if (error) {
-        throw error;
+    }
+    const remaining=new Set(selectedItems.filter(x=>x.id).map(x=>x.id));
+    for(const id of originalItemIds) {
+      if(!remaining.has(id)) {
+        const {error}=await db.from('order_items').delete().eq('id',id).eq('order_id',selectedOrder.id);
+        if(error) throw error;
       }
-
     }
-
-
-    const totals =
-      calculateApprovalTotals();
-
-
-    const managerNote =
-      document
-        .getElementById("managerNote")
-        .value
-        .trim();
-
-
-    const { error: orderError } =
-      await db
-        .from("orders")
-        .update({
-
-          status: "approved",
-
-          approved_by:
-            currentUser.id,
-
-          approved_at:
-            new Date().toISOString(),
-
-          manager_note:
-            managerNote || null,
-
-          total_qty:
-            totals.qty,
-
-          total_amount:
-            totals.amount,
-
-          total_weight:
-            totals.weight
-
-        })
-        .eq("id", selectedOrder.id);
-
-
-    if (orderError) {
-      throw orderError;
-    }
-
-
-    closeModal();
-
-    showMessage(
-      "Order " +
-      selectedOrder.order_no +
-      " approved successfully.",
-      "success"
-    );
-
+    const totals=calculateApprovalTotals();
+    const {data:updated,error:orderError}=await db.from('orders').update({
+      status:'approved',approved_by:currentUser.id,approved_at:new Date().toISOString(),
+      manager_note:document.getElementById('managerNote').value.trim()||null,
+      total_qty:totals.qty,total_amount:totals.amount,total_weight:totals.weight
+    }).eq('id',selectedOrder.id).eq('status',latest.status).select('id');
+    if(orderError) throw orderError;
+    if(!updated?.length) throw new Error('Order status changed during approval. Refresh.');
+    const orderNo=selectedOrder.order_no;
+    closeModal(); showMessage('Order '+orderNo+' approved with SKU changes.','success');
     await loadOrders();
-
-
-  } catch (error) {
-
+  } catch(error) {
     console.error(error);
-
-    alert(
-      "Approval failed: " +
-      (error.message || "Unknown error")
-    );
-
-  } finally {
-
-    approveBtn.disabled = false;
-    approveBtn.textContent =
-      "Approve Order";
-
-  }
-
+    alert('Approval not completed: '+(error.message||'Unknown error')+'\nSome SKU edits may already be saved. Refresh and review before retrying.');
+  } finally {btn.disabled=false;btn.textContent='Approve Order';}
 }
-
-
-/* -----------------------------
-   CANCEL ORDER
------------------------------ */
 
 async function cancelOrder() {
 
@@ -1713,6 +1405,8 @@ function closeModal() {
 
   selectedOrder = null;
   selectedItems = [];
+  originalItemIds = [];
+  reviewReady = false;
 
 }
 
