@@ -1,0 +1,459 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Accounts & Invoices | Luxury Wrist Brand</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#f3f5f9;color:#14243a;font:15px Arial,sans-serif}
+header{background:#111;color:white;padding:20px 5%;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+header h2{margin:0}
+header small{letter-spacing:2px}
+main{max-width:1400px;margin:35px auto;padding:0 20px}
+h1{margin-bottom:8px}
+p{color:#61728b}
+button,.btn{background:#1769e8;color:white;border:0;border-radius:7px;padding:12px 17px;font-weight:bold;cursor:pointer;text-decoration:none}
+button:disabled{opacity:.5;cursor:not-allowed}
+.secondary{background:#e8edf5;color:#14243a}
+.green{background:#078653}
+.panel,.stat{background:white;border:1px solid #dfe5ed;border-radius:12px;padding:20px}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin:24px 0}
+.stat strong{display:block;font-size:30px;margin-top:12px}
+.toolbar{display:flex;gap:12px;margin-bottom:16px}
+input,select,textarea{border:1px solid #cbd5e1;border-radius:7px;padding:11px;font:inherit;width:100%}
+.tablewrap{overflow:auto}
+table{width:100%;border-collapse:collapse;min-width:750px}
+th{background:#edf1f6;text-align:left;font-size:12px}
+th,td{padding:13px;border-bottom:1px solid #e4e9ef}
+.badge{background:#d9f5e5;color:#067442;padding:7px 10px;border-radius:20px;font-weight:bold}
+.message{padding:14px;border-radius:8px;margin:15px 0;background:#dcfce7;color:#065f46;display:none}
+.message.error{background:#fee2e2;color:#991b1b}
+.overlay{position:fixed;inset:0;background:#0009;display:none;overflow:auto;padding:25px 10px;z-index:10}
+.modal{max-width:1050px;margin:auto;background:white;border-radius:12px;padding:25px}
+.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+label{display:block;font-weight:bold;font-size:13px;margin-bottom:5px}
+.field{margin:10px 0}
+.summary{background:#f1f5f9;padding:16px;border-radius:8px;margin:18px 0}
+.actions{display:flex;justify-content:flex-end;gap:10px;margin-top:20px;flex-wrap:wrap}
+@media(max-width:700px){.grid,.stats{grid-template-columns:1fr}.toolbar{flex-direction:column}}
+</style>
+</head>
+<body>
+
+<header>
+<div>
+<h2>LUXURY WRIST BRAND</h2>
+<small>ACCOUNTS & INVOICE MANAGEMENT</small>
+</div>
+<div>
+<a href="dashboard.html" class="btn secondary">Dashboard</a>
+<button class="secondary" id="logout">Logout</button>
+</div>
+</header>
+
+<main>
+<div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
+<div>
+<h1>Accounts & Tax Invoice Preparation</h1>
+<p>Review loaded orders and prepare invoice records.</p>
+</div>
+<button id="refresh">Refresh Orders</button>
+</div>
+
+<div id="message" class="message"></div>
+
+<div class="stats">
+<div class="stat">Loaded Orders<strong id="loadedCount">0</strong></div>
+<div class="stat">Invoice Records<strong id="invoiceCount">0</strong></div>
+<div class="stat">Pending Preparation<strong id="pendingCount">0</strong></div>
+</div>
+
+<div class="panel">
+<div class="toolbar">
+<input id="search" placeholder="Search order number or customer">
+<select id="filter">
+<option value="pending">Pending Invoice</option>
+<option value="all">All Loaded Orders</option>
+<option value="done">Invoice Recorded</option>
+</select>
+</div>
+<div class="tablewrap">
+<table>
+<thead>
+<tr>
+<th>ORDER NO</th>
+<th>CUSTOMER</th>
+<th>DATE</th>
+<th>LOADED QTY</th>
+<th>STATUS</th>
+<th>INVOICE</th>
+<th>ACTION</th>
+</tr>
+</thead>
+<tbody id="rows">
+<tr><td colspan="7">Loading...</td></tr>
+</tbody>
+</table>
+</div>
+</div>
+</main>
+
+<div class="overlay" id="overlay">
+<div class="modal">
+<div style="display:flex;justify-content:space-between;align-items:center">
+<h2 id="modalTitle">Invoice Preparation</h2>
+<button class="secondary" id="close">Close</button>
+</div>
+
+<div class="grid">
+<div class="field">
+<label>Invoice Number *</label>
+<input id="invoiceNo" placeholder="Enter unique invoice number">
+</div>
+<div class="field">
+<label>Invoice Date *</label>
+<input type="date" id="invoiceDate">
+</div>
+<div class="field">
+<label>Payment Terms</label>
+<select id="paymentTerms">
+<option value="CREDIT">CREDIT</option>
+<option value="CASH">CASH</option>
+<option value="ADVANCE">ADVANCE</option>
+</select>
+</div>
+</div>
+
+<div class="summary" id="orderInfo"></div>
+
+<h3>Actual Loaded Items</h3>
+<div class="tablewrap">
+<table>
+<thead>
+<tr>
+<th>SKU</th>
+<th>APPROVED</th>
+<th>LOADED</th>
+<th>RATE</th>
+<th>AMOUNT</th>
+</tr>
+</thead>
+<tbody id="itemRows"></tbody>
+</table>
+</div>
+
+<h3>Tax Calculation</h3>
+<p>Enter the applicable tax rates only after checking the product HSN, place of supply and tax treatment.</p>
+
+<div class="grid">
+<div class="field">
+<label>Discount Amount (₹)</label>
+<input type="number" id="discount" value="0" min="0" step="0.01">
+</div>
+<div class="field">
+<label>CGST Rate (%)</label>
+<input type="number" id="cgst" value="0" min="0" max="100" step="0.01">
+</div>
+<div class="field">
+<label>SGST Rate (%)</label>
+<input type="number" id="sgst" value="0" min="0" max="100" step="0.01">
+</div>
+<div class="field">
+<label>IGST Rate (%)</label>
+<input type="number" id="igst" value="0" min="0" max="100" step="0.01">
+</div>
+<div class="field">
+<label>Cess Rate (%)</label>
+<input type="number" id="cess" value="0" min="0" max="100" step="0.01">
+</div>
+<div class="field">
+<label>E-Way Bill Number</label>
+<input id="ewayNo" placeholder="Optional">
+</div>
+<div class="field">
+<label>E-Way Bill Date</label>
+<input type="date" id="ewayDate">
+</div>
+</div>
+
+<div class="summary" id="totals"></div>
+
+<p><strong>Important:</strong> This page saves an internal invoice record. It does not generate a legally complete GST tax invoice or file anything with the GST portal. Verify customer GSTIN, HSN, place of supply, tax rates and statutory invoice details in your accounting system before issuing an invoice.</p>
+
+<div class="actions">
+<button class="secondary" id="cancel">Cancel</button>
+<button class="green" id="save">Save Invoice Record</button>
+</div>
+</div>
+</div>
+
+<script>
+"use strict";
+
+const SUPABASE_URL =
+"https://txkbhadzdbxpieunfvox.supabase.co";
+
+// Copy the existing publishable key from login.html
+const SUPABASE_PUBLISHABLE_KEY =
+"PASTE_YOUR_EXISTING_PUBLISHABLE_KEY_HERE";
+
+const $ = id => document.getElementById(id);
+const money = n => "₹" + Number(n || 0).toLocaleString("en-IN",{
+ minimumFractionDigits:2,maximumFractionDigits:2
+});
+const esc = value => String(value ?? "").replace(/[&<>"']/g,c=>({
+ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"
+}[c]));
+const num = value => Number(value || 0);
+const round2 = n => Math.round((n+Number.EPSILON)*100)/100;
+
+let db,user,orders=[],invoices=[],selected=null,items=[];
+let baseAmount=0,saving=false;
+
+function message(text,error=false){
+ const el=$("message");
+ el.textContent=text;
+ el.className="message"+(error?" error":"");
+ el.style.display="block";
+}
+
+async function init(){
+ if(SUPABASE_PUBLISHABLE_KEY.includes("PASTE_YOUR")){
+  message("Please insert your existing Supabase publishable key.",true);
+  return;
+ }
+ db=supabase.createClient(SUPABASE_URL,SUPABASE_PUBLISHABLE_KEY);
+ const {data:{user:current},error}=await db.auth.getUser();
+ if(error||!current){
+  location.href="login.html";
+  return;
+ }
+ user=current;
+ const {data:profile,error:profileError}=await db
+  .from("user_profiles").select("role,active")
+  .eq("id",user.id).single();
+ if(profileError||!profile||!profile.active||
+    !["admin","accounts"].includes(String(profile.role).toLowerCase())){
+  message("Access denied. Admin or Accounts role required.",true);
+  return;
+ }
+ await load();
+}
+
+async function load(){
+ try{
+  const [orderResult,invoiceResult]=await Promise.all([
+   db.from("orders").select("*")
+    .in("status",["loaded","invoiced"])
+    .order("order_date",{ascending:false}),
+   db.from("tax_invoices").select("*")
+  ]);
+  if(orderResult.error)throw orderResult.error;
+  if(invoiceResult.error)throw invoiceResult.error;
+  orders=orderResult.data||[];
+  invoices=invoiceResult.data||[];
+  render();
+ }catch(e){message(e.message,true)}
+}
+
+function render(){
+ const recorded=new Set(invoices.map(x=>x.order_id));
+ $("loadedCount").textContent=orders.length;
+ $("invoiceCount").textContent=invoices.length;
+ $("pendingCount").textContent=orders.filter(o=>!recorded.has(o.id)).length;
+
+ const search=$("search").value.toLowerCase();
+ const filter=$("filter").value;
+ const list=orders.filter(o=>{
+  const done=recorded.has(o.id);
+  return (filter==="all"||
+   (filter==="pending"&&!done)||
+   (filter==="done"&&done))&&
+   (String(o.order_no||"")+" "+String(o.customer_name||""))
+    .toLowerCase().includes(search);
+ });
+
+ $("rows").innerHTML=list.map(o=>{
+  const inv=invoices.find(x=>x.order_id===o.id);
+  return `<tr>
+   <td><strong>${esc(o.order_no)}</strong></td>
+   <td>${esc(o.customer_name)}</td>
+   <td>${esc(new Date(o.order_date).toLocaleDateString("en-IN"))}</td>
+   <td>${esc(o.total_qty)}</td>
+   <td><span class="badge">${esc(o.status)}</span></td>
+   <td>${inv?esc(inv.invoice_no):"Pending"}</td>
+   <td><button data-id="${esc(o.id)}">${inv?"View Record":"Prepare"}</button></td>
+  </tr>`;
+ }).join("")||'<tr><td colspan="7">No matching orders found.</td></tr>';
+
+ $("rows").querySelectorAll("button[data-id]").forEach(btn=>{
+  btn.onclick=()=>openOrder(btn.dataset.id);
+ });
+}
+
+async function openOrder(id){
+ selected=orders.find(o=>o.id===id);
+ if(!selected)return;
+ const {data,error}=await db.from("order_items")
+  .select("*").eq("order_id",id);
+ if(error){message(error.message,true);return}
+ items=data||[];
+ const existing=invoices.find(x=>x.order_id===id);
+
+ $("modalTitle").textContent="Invoice - "+selected.order_no;
+ $("invoiceNo").value=existing?.invoice_no||"";
+ $("invoiceDate").value=existing?.invoice_date||
+  new Date().toLocaleDateString("en-CA");
+ $("paymentTerms").value=existing?.payment_terms||"CREDIT";
+ $("discount").value=existing?.discount_amount||0;
+ $("ewayNo").value=existing?.eway_bill_no||"";
+ $("ewayDate").value=existing?.eway_bill_date||"";
+ ["cgst","sgst","igst","cess"].forEach(k=>$(k).value=0);
+
+ $("orderInfo").innerHTML=
+  `<strong>Order:</strong> ${esc(selected.order_no)}
+   &nbsp; <strong>Customer:</strong> ${esc(selected.customer_name)}
+   &nbsp; <strong>Transport:</strong> ${esc(selected.transportation)}`;
+
+ baseAmount=0;
+ $("itemRows").innerHTML=items.map(item=>{
+  const qty=num(item.loaded_qty);
+  const amount=round2(qty*num(item.rate));
+  baseAmount+=amount;
+  return `<tr>
+   <td>${esc(item.sku_name)}</td>
+   <td>${esc(item.approved_qty)}</td>
+   <td>${esc(qty)}</td>
+   <td>${money(item.rate)}</td>
+   <td>${money(amount)}</td>
+  </tr>`;
+ }).join("");
+
+ $("save").style.display=existing?"none":"inline-block";
+ $("invoiceNo").readOnly=!!existing;
+ $("invoiceDate").disabled=!!existing;
+ $("paymentTerms").disabled=!!existing;
+ ["discount","cgst","sgst","igst","cess","ewayNo","ewayDate"]
+  .forEach(k=>$(k).disabled=!!existing);
+
+ if(existing){
+  $("totals").innerHTML=
+   `<strong>Saved Taxable Amount:</strong> ${money(existing.taxable_amount)}
+   <p>CGST: ${money(existing.cgst_amount)} |
+   SGST: ${money(existing.sgst_amount)} |
+   IGST: ${money(existing.igst_amount)} |
+   Cess: ${money(existing.cess_amount)}</p>
+   <h2>Grand Total: ${money(existing.grand_total)}</h2>`;
+ }else calculate();
+
+ $("overlay").style.display="block";
+}
+
+function calculate(){
+ const discount=num($("discount").value);
+ const taxable=round2(baseAmount-discount);
+ const cgst=round2(taxable*num($("cgst").value)/100);
+ const sgst=round2(taxable*num($("sgst").value)/100);
+ const igst=round2(taxable*num($("igst").value)/100);
+ const cess=round2(taxable*num($("cess").value)/100);
+ const beforeRound=round2(taxable+cgst+sgst+igst+cess);
+ const grand=Math.round(beforeRound);
+ const roundOff=round2(grand-beforeRound);
+
+ $("totals").innerHTML=`
+ <strong>Loaded Goods Value:</strong> ${money(baseAmount)}
+ <p>Discount: ${money(discount)}</p>
+ <p>Taxable Amount: ${money(taxable)}</p>
+ <p>CGST: ${money(cgst)} | SGST: ${money(sgst)}
+ | IGST: ${money(igst)} | Cess: ${money(cess)}</p>
+ <p>Round Off: ${money(roundOff)}</p>
+ <h2>Grand Total: ${money(grand)}</h2>`;
+
+ return {discount,taxable,cgst,sgst,igst,cess,roundOff,grand};
+}
+
+async function saveInvoice(){
+ if(saving||!selected)return;
+ const invoiceNo=$("invoiceNo").value.trim();
+ const invoiceDate=$("invoiceDate").value;
+ if(!invoiceNo||!invoiceDate){
+  alert("Invoice number and date are required.");return;
+ }
+ if(!items.length||items.every(x=>num(x.loaded_qty)<=0)){
+  alert("No loaded quantity found.");return;
+ }
+ const tax=calculate();
+ const rates=["cgst","sgst","igst","cess"].map(k=>num($(k).value));
+ if(![tax.discount,...rates].every(Number.isFinite)||
+  tax.discount<0||tax.discount>baseAmount||
+  rates.some(r=>r<0||r>100)){
+  alert("Check discount and tax rates.");return;
+ }
+ if((rates[0]>0||rates[1]>0)&&rates[2]>0){
+  alert("CGST/SGST and IGST should not be combined.");return;
+ }
+ if(!confirm("Save this invoice record? Confirm GST details first."))return;
+
+ saving=true;
+ $("save").disabled=true;
+ try{
+  const {data:duplicate,error:checkError}=await db
+   .from("tax_invoices").select("id")
+   .eq("order_id",selected.id).limit(1);
+  if(checkError)throw checkError;
+  if(duplicate?.length)throw new Error("Invoice already exists for this order.");
+
+  const payload={
+   order_id:selected.id,
+   invoice_no:invoiceNo,
+   invoice_date:invoiceDate,
+   taxable_amount:tax.taxable,
+   cgst_amount:tax.cgst,
+   sgst_amount:tax.sgst,
+   igst_amount:tax.igst,
+   cess_amount:tax.cess,
+   discount_amount:tax.discount,
+   round_off:tax.roundOff,
+   grand_total:tax.grand,
+   eway_bill_no:$("ewayNo").value.trim()||null,
+   eway_bill_date:$("ewayDate").value||null,
+   payment_terms:$("paymentTerms").value
+  };
+  const {error}=await db.from("tax_invoices").insert(payload);
+  if(error)throw error;
+
+  $("overlay").style.display="none";
+  message("Invoice record saved for "+selected.order_no+
+   ". Verify and issue the statutory invoice separately.");
+  await load();
+ }catch(e){
+  alert("Save failed: "+e.message);
+ }finally{
+  saving=false;
+  $("save").disabled=false;
+ }
+}
+
+$("save").onclick=saveInvoice;
+$("close").onclick=$("cancel").onclick=()=>{
+ $("overlay").style.display="none";
+};
+$("refresh").onclick=load;
+$("search").oninput=render;
+$("filter").onchange=render;
+["discount","cgst","sgst","igst","cess"].forEach(k=>{
+ $(k).oninput=()=>{
+  if(selected&&!invoices.some(x=>x.order_id===selected.id))calculate();
+ };
+});
+$("logout").onclick=async()=>{
+ if(db)await db.auth.signOut();
+ location.href="login.html";
+};
+init();
+</script>
+</body>
+</html>
