@@ -1,0 +1,374 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Loading & Dispatch | Luxury Wrist Brand</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#f3f5f9;color:#14243a;font:15px Arial,sans-serif}
+header{background:#111;color:white;padding:20px 5%;display:flex;justify-content:space-between;align-items:center;gap:15px}
+header h2{margin:0;font-size:22px}
+header small{letter-spacing:2px}
+main{max-width:1400px;margin:35px auto;padding:0 20px}
+h1{margin-bottom:8px}
+p{color:#66758a}
+.panel{background:white;border:1px solid #dfe5ed;border-radius:12px;padding:20px;margin-top:20px}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:15px}
+.stat{background:white;border:1px solid #dfe5ed;border-radius:12px;padding:20px}
+.stat strong{display:block;font-size:30px;margin-top:12px}
+button,.btn{background:#1769e8;color:white;border:0;border-radius:7px;padding:12px 17px;cursor:pointer;font-weight:bold;text-decoration:none}
+button:disabled{opacity:.5;cursor:not-allowed}
+.secondary{background:#e9edf4;color:#17263b}
+.green{background:#07884e}
+input,textarea,select{width:100%;padding:12px;border:1px solid #ccd5e0;border-radius:7px;font:inherit}
+textarea{min-height:70px}
+label{display:block;font-weight:bold;margin-bottom:6px}
+.toolbar{display:flex;gap:10px;margin-bottom:16px}
+.tablewrap{overflow:auto}
+table{width:100%;border-collapse:collapse;white-space:nowrap}
+th{text-align:left;background:#edf1f6;font-size:12px}
+td,th{padding:14px;border-bottom:1px solid #e5eaf0}
+.badge{background:#dff5e8;color:#087344;padding:7px 10px;border-radius:20px;font-weight:bold}
+.message{padding:14px;border-radius:8px;margin:15px 0;display:none}
+.error{background:#ffe6e6;color:#a00000}
+.success{background:#def7e8;color:#056b37}
+.overlay{display:none;position:fixed;inset:0;background:#0009;z-index:10;overflow:auto;padding:20px}
+.modal{background:white;max-width:1050px;margin:auto;border-radius:12px;overflow:hidden}
+.modalhead{background:#111;color:white;padding:18px 24px;display:flex;justify-content:space-between;align-items:center}
+.modalbody{padding:24px}
+.details{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+.detail{background:#f7f9fc;border:1px solid #e0e5ec;padding:12px;border-radius:8px}
+.detail small{display:block;color:#64748b;margin-bottom:7px}
+.detail strong{overflow-wrap:anywhere}
+.actions{display:flex;gap:10px;justify-content:flex-end;margin-top:20px;flex-wrap:wrap}
+.qty{max-width:120px}
+.note{font-size:13px;color:#64748b}
+@media(max-width:700px){.stats,.details{grid-template-columns:1fr}header{flex-wrap:wrap}.toolbar{flex-wrap:wrap}.modalbody{padding:12px}}
+@media print{
+body{background:white}
+header,main,.overlay{display:none!important}
+#printArea{display:block!important}
+}
+#printArea{display:none}
+</style>
+</head>
+<body>
+<header>
+<div><h2>LUXURY WRIST BRAND</h2><small>LOADING & DISPATCH</small></div>
+<div><span id="username"></span> &nbsp;
+<a class="btn secondary" href="dashboard.html">Dashboard</a>
+<button class="secondary" id="logout">Logout</button></div>
+</header>
+
+<main>
+<div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
+<div><h1>Warehouse Loading & Dispatch</h1>
+<p>Verify actual loaded quantities and complete dispatch.</p></div>
+<button id="refresh">Refresh Orders</button>
+</div>
+<div id="message" class="message"></div>
+<div class="stats">
+<div class="stat">Awaiting Loading<strong id="pendingCount">0</strong></div>
+<div class="stat">Loading in Progress<strong id="loadingCount">0</strong></div>
+<div class="stat">Loaded Orders<strong id="loadedCount">0</strong></div>
+</div>
+<div class="panel">
+<div class="toolbar">
+<input id="search" placeholder="Search order no, customer, driver...">
+<select id="filter" style="max-width:220px">
+<option value="active">Pending / Loading</option>
+<option value="all">All Orders</option>
+<option value="loaded">Loaded Only</option>
+</select>
+</div>
+<div class="tablewrap">
+<table>
+<thead><tr><th>ORDER NO</th><th>DATE</th><th>CUSTOMER</th><th>DRIVER</th><th>VEHICLE</th><th>QTY</th><th>STATUS</th><th>ACTION</th></tr></thead>
+<tbody id="rows"><tr><td colspan="8">Loading...</td></tr></tbody>
+</table>
+</div>
+</div>
+</main>
+
+<div class="overlay" id="overlay">
+<div class="modal">
+<div class="modalhead">
+<h2 id="modalTitle">Loading Details</h2>
+<button class="secondary" id="closeModal">Close</button>
+</div>
+<div class="modalbody">
+<div id="details" class="details"></div>
+<h3>SKU-wise Loading Verification</h3>
+<div class="tablewrap">
+<table>
+<thead><tr><th>SKU NAME</th><th>ORDERED</th><th>APPROVED</th><th>LOADED QTY</th><th>RATE</th><th>WEIGHT / UNIT</th></tr></thead>
+<tbody id="itemRows"></tbody>
+</table>
+</div>
+<p class="note">Loaded quantity must not exceed approved quantity. Enter 0 for an item not loaded.</p>
+<div class="panel">
+<label for="loadingRemarks">Loading Remarks</label>
+<textarea id="loadingRemarks" placeholder="Shortage, damage, or other loading remarks"></textarea>
+</div>
+<div class="actions">
+<button class="secondary" id="printBtn">Print Delivery Challan</button>
+<button id="startBtn">Start Loading</button>
+<button class="green" id="completeBtn">Confirm Loading Completed</button>
+</div>
+</div>
+</div>
+</div>
+
+<div id="printArea"></div>
+
+<script>
+'use strict';
+
+const SUPABASE_URL='https://txkbhadzdbxpieunfvox.supabase.co';
+const SUPABASE_PUBLISHABLE_KEY='PASTE_YOUR_EXISTING_PUBLISHABLE_KEY_HERE';
+const db=supabase.createClient(SUPABASE_URL,SUPABASE_PUBLISHABLE_KEY);
+
+let user=null,orders=[],assignments=[],selected=null,items=[],saving=false;
+
+const $=id=>document.getElementById(id);
+const safe=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const number=value=>Number(value)||0;
+const fmt=value=>new Intl.NumberFormat('en-IN',{maximumFractionDigits:2}).format(number(value));
+const money=value=>'₹'+new Intl.NumberFormat('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2}).format(number(value));
+const date=value=>value?new Date(value).toLocaleString('en-IN'):'-';
+
+function message(text,error=false){
+const el=$('message');
+el.textContent=text;
+el.className='message '+(error?'error':'success');
+el.style.display='block';
+}
+
+async function init(){
+try{
+if(SUPABASE_PUBLISHABLE_KEY.includes('PASTE_YOUR')){
+message('Please paste your existing Supabase publishable key into the HTML code.',true);
+return;
+}
+const {data,error}=await db.auth.getUser();
+if(error||!data.user){location.href='login.html';return;}
+user=data.user;
+const profile=await db.from('user_profiles').select('full_name,role,active').eq('id',user.id).single();
+if(profile.error)throw profile.error;
+if(!profile.data.active||!['admin','manager','warehouse'].includes(profile.data.role)){
+message('Access denied: warehouse or admin role required.',true);
+return;
+}
+$('username').textContent=profile.data.full_name||user.email;
+await load();
+}catch(e){message(e.message,true);}
+}
+
+async function load(){
+try{
+const [o,a]=await Promise.all([
+db.from('orders').select('*').in('status',['transport_allocated','loading','loaded']).order('order_date',{ascending:false}),
+db.from('dispatch_assignments').select('*')
+]);
+if(o.error)throw o.error;
+if(a.error)throw a.error;
+orders=o.data||[];
+assignments=a.data||[];
+render();
+}catch(e){message('Loading failed: '+e.message,true);}
+}
+
+function assignment(id){return assignments.find(a=>a.order_id===id)||{};}
+
+function render(){
+$('pendingCount').textContent=orders.filter(o=>o.status==='transport_allocated').length;
+$('loadingCount').textContent=orders.filter(o=>o.status==='loading').length;
+$('loadedCount').textContent=orders.filter(o=>o.status==='loaded').length;
+const q=$('search').value.toLowerCase().trim();
+const filter=$('filter').value;
+const visible=orders.filter(o=>{
+if(filter==='active'&&o.status==='loaded')return false;
+if(filter==='loaded'&&o.status!=='loaded')return false;
+const a=assignment(o.id);
+return [o.order_no,o.customer_name,a.driver_name,a.vehicle_no].some(v=>String(v||'').toLowerCase().includes(q));
+});
+$('rows').innerHTML=visible.length?visible.map(o=>{
+const a=assignment(o.id);
+return `<tr>
+<td><strong>${safe(o.order_no)}</strong></td>
+<td>${safe(date(o.order_date))}</td>
+<td>${safe(o.customer_name)}</td>
+<td>${safe(a.driver_name||'-')}</td>
+<td>${safe(a.vehicle_no||'-')}</td>
+<td>${fmt(o.total_qty)}</td>
+<td><span class="badge">${safe(o.status.replaceAll('_',' ').toUpperCase())}</span></td>
+<td><button data-id="${safe(o.id)}">${o.status==='loaded'?'View / Print':'Verify Loading'}</button></td>
+</tr>`;
+}).join(''):'<tr><td colspan="8">No orders found.</td></tr>';
+}
+
+async function openOrder(id){
+try{
+selected=orders.find(o=>o.id===id);
+if(!selected)return;
+const {data,error}=await db.from('order_items').select('*').eq('order_id',id).order('created_at');
+if(error)throw error;
+items=data||[];
+const a=assignment(id);
+$('modalTitle').textContent='Loading - '+selected.order_no;
+const details=[
+['ORDER NO',selected.order_no],
+['CUSTOMER',selected.customer_name],
+['DATE',date(selected.order_date)],
+['SALES PERSON',selected.sales_person],
+['DRIVER',a.driver_name],
+['VEHICLE',a.vehicle_no],
+['LOADING PERSON',a.loading_person],
+['TRANSPORTER',a.transporter_name]
+];
+$('details').innerHTML=details.map(([k,v])=>`<div class="detail"><small>${safe(k)}</small><strong>${safe(v||'-')}</strong></div>`).join('');
+$('itemRows').innerHTML=items.map((item,i)=>{
+const approved=number(item.approved_qty??item.ordered_qty);
+const loaded=item.loaded_qty==null?approved:number(item.loaded_qty);
+return `<tr>
+<td>${safe(item.sku_name)}</td>
+<td>${fmt(item.ordered_qty)}</td>
+<td>${fmt(approved)}</td>
+<td><input class="qty" type="number" min="0" max="${approved}" step="any" data-index="${i}" value="${loaded}" ${selected.status==='loaded'?'disabled':''}></td>
+<td>${money(item.rate)}</td>
+<td>${fmt(item.unit_weight)} KG</td>
+</tr>`;
+}).join('');
+$('loadingRemarks').value=a.remarks||'';
+$('loadingRemarks').disabled=selected.status==='loaded';
+$('startBtn').style.display=selected.status==='transport_allocated'?'':'none';
+$('completeBtn').style.display=selected.status==='loaded'?'none':'';
+$('overlay').style.display='block';
+}catch(e){message(e.message,true);}
+}
+
+function quantities(){
+const inputs=[...document.querySelectorAll('#itemRows .qty')];
+return inputs.map(input=>{
+const item=items[Number(input.dataset.index)];
+const qty=Number(input.value);
+const max=number(item.approved_qty??item.ordered_qty);
+if(input.value.trim()===''||!Number.isFinite(qty)||qty<0||qty>max)
+throw Error('Invalid loaded quantity for '+item.sku_name+'. Maximum: '+max);
+return {item,qty};
+});
+}
+
+async function startLoading(){
+if(!selected||saving)return;
+saving=true;
+try{
+const now=new Date().toISOString();
+const a=assignment(selected.id);
+if(!a.id)throw Error('Transport assignment not found.');
+const {error:e1}=await db.from('dispatch_assignments').update({loading_started_at:now}).eq('id',a.id);
+if(e1)throw e1;
+const {data,error:e2}=await db.from('orders').update({status:'loading'}).eq('id',selected.id).eq('status','transport_allocated').select('id');
+if(e2)throw e2;
+if(!data?.length)throw Error('Order status changed. Refresh orders.');
+$('overlay').style.display='none';
+message('Loading started for '+selected.order_no);
+await load();
+}catch(e){message(e.message,true);}
+finally{saving=false;}
+}
+
+async function completeLoading(){
+if(!selected||saving)return;
+let quantitiesToSave;
+try{
+quantitiesToSave=quantities();
+if(!items.length)throw Error('No order items found.');
+if(!quantitiesToSave.some(x=>x.qty>0))throw Error('At least one item must have loaded quantity.');
+}catch(e){alert(e.message);return;}
+if(!confirm('Confirm actual loading completed for '+selected.order_no+'?'))return;
+saving=true;
+try{
+const a=assignment(selected.id);
+if(!a.id)throw Error('Transport assignment not found.');
+if(!['transport_allocated','loading'].includes(selected.status))throw Error('Order cannot be completed in this status.');
+for(const {item,qty} of quantitiesToSave){
+const {error}=await db.from('order_items').update({loaded_qty:qty}).eq('id',item.id).eq('order_id',selected.id);
+if(error)throw error;
+}
+const {error:assignmentError}=await db.from('dispatch_assignments').update({
+loading_completed_at:new Date().toISOString(),
+remarks:$('loadingRemarks').value.trim()
+}).eq('id',a.id);
+if(assignmentError)throw assignmentError;
+const {data,error:orderError}=await db.from('orders')
+.update({status:'loaded'})
+.eq('id',selected.id)
+.in('status',['transport_allocated','loading'])
+.select('id');
+if(orderError)throw orderError;
+if(!data?.length)throw Error('Order status changed. Refresh orders.');
+$('overlay').style.display='none';
+message('Loading completed for '+selected.order_no+'. Ready for accounts.');
+await load();
+}catch(e){
+message('Loading completion failed: '+e.message+'. Some item updates may already be saved; check before retrying.',true);
+}finally{saving=false;}
+}
+
+function printChallan(){
+if(!selected)return;
+const a=assignment(selected.id);
+const inputs=[...document.querySelectorAll('#itemRows .qty')];
+const printItems=items.map((item,i)=>({
+...item,displayQty:selected.status==='loaded'?number(item.loaded_qty):number(inputs[i]?.value)
+}));
+const totalQty=printItems.reduce((s,x)=>s+x.displayQty,0);
+const totalWeight=printItems.reduce((s,x)=>s+x.displayQty*number(x.unit_weight),0);
+$('printArea').innerHTML=`
+<div style="font:13px Arial;padding:20px;color:#111">
+<h2 style="text-align:center;margin:0">LUXURY WRIST BRAND</h2>
+<h3 style="text-align:center;margin:8px">DELIVERY CHALLAN</h3>
+<p style="text-align:center">NOT A TAX INVOICE</p>
+<hr>
+<p><b>Order:</b> ${safe(selected.order_no)} &nbsp; <b>Date:</b> ${safe(date(selected.order_date))}</p>
+<p><b>Customer:</b> ${safe(selected.customer_name)}</p>
+<p><b>Driver:</b> ${safe(a.driver_name)} &nbsp; <b>Vehicle:</b> ${safe(a.vehicle_no)}</p>
+<p><b>Loading Person:</b> ${safe(a.loading_person)} &nbsp; <b>Transporter:</b> ${safe(a.transporter_name)}</p>
+<table style="width:100%;border-collapse:collapse">
+<thead><tr><th>NO.</th><th>SKU</th><th>APPROVED</th><th>LOADED</th><th>WEIGHT (KG)</th></tr></thead>
+<tbody>${printItems.map((x,i)=>`<tr>
+<td>${i+1}</td><td>${safe(x.sku_name)}</td>
+<td>${fmt(x.approved_qty??x.ordered_qty)}</td>
+<td>${fmt(x.displayQty)}</td>
+<td>${fmt(x.displayQty*number(x.unit_weight))}</td>
+</tr>`).join('')}</tbody></table>
+<h3>Total Loaded: ${fmt(totalQty)} | Weight: ${fmt(totalWeight)} KG</h3>
+<p>Remarks: ${safe($('loadingRemarks').value)}</p>
+<div style="display:flex;justify-content:space-between;margin-top:70px">
+<span>Prepared By __________</span><span>Driver Signature __________</span><span>Receiver Signature __________</span>
+</div>
+</div>`;
+window.print();
+}
+
+$('rows').addEventListener('click',e=>{
+const btn=e.target.closest('button[data-id]');
+if(btn)openOrder(btn.dataset.id);
+});
+$('refresh').onclick=load;
+$('search').oninput=render;
+$('filter').onchange=render;
+$('closeModal').onclick=()=>$('overlay').style.display='none';
+$('startBtn').onclick=startLoading;
+$('completeBtn').onclick=completeLoading;
+$('printBtn').onclick=printChallan;
+$('logout').onclick=async()=>{await db.auth.signOut();location.href='login.html';};
+
+init();
+</script>
+</body>
+</html>
