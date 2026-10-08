@@ -1,0 +1,617 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Sales Return | Luxury Wrist Brand</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#f3f6fb;color:#17243b;font-family:Arial,sans-serif}
+header{background:#14233d;color:#fff;padding:22px}
+header h1{margin:0;font-size:23px}
+main{max-width:1250px;margin:25px auto;padding:0 15px}
+section{background:#fff;border:1px solid #dfe6ef;border-radius:12px;padding:22px;margin-bottom:20px}
+h2{font-size:19px;margin-top:0}
+.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:15px}
+label{display:block;font-size:13px;font-weight:bold;margin-bottom:6px}
+input,select,textarea{width:100%;padding:10px;border:1px solid #cbd5e1;border-radius:7px;font:inherit}
+button{background:#1455ac;color:#fff;border:0;border-radius:7px;padding:11px 16px;cursor:pointer;font-weight:bold}
+button:disabled{opacity:.5}
+.secondary{background:#475569}
+.danger{background:#b42332}
+.table-wrap{overflow-x:auto;margin-top:15px}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th,td{border-bottom:1px solid #e2e8f0;padding:10px;text-align:left}
+th{background:#f7f9fc}
+td input,td select{min-width:90px}
+.note{color:#64748b;font-size:13px}
+#message{padding:12px;background:#e5f0ff;border-radius:8px;margin-bottom:15px;display:none}
+.actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:15px}
+@media(max-width:750px){.grid{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+
+<header>
+<h1>LUXURY WRIST BRAND</h1>
+<p>Sales Return Management</p>
+<div id="userInfo">Checking login...</div>
+</header>
+
+<main>
+<div id="message"></div>
+
+<section>
+<h2>1. Search Original Invoice</h2>
+<div class="grid">
+<div>
+<label>Invoice Number</label>
+<input id="invoiceNo" placeholder="Enter invoice number">
+</div>
+<div style="align-self:end">
+<button onclick="searchInvoice()">Search Invoice</button>
+</div>
+</div>
+<p id="invoiceInfo" class="note"></p>
+</section>
+
+<section id="returnSection" hidden>
+<h2>2. New Sales Return</h2>
+
+<div class="grid">
+<div>
+<label>Return Number</label>
+<input id="returnNo" placeholder="SR-2026-001">
+</div>
+<div>
+<label>Return Date</label>
+<input id="returnDate" type="date">
+</div>
+<div>
+<label>Return Reason</label>
+<select id="reason">
+<option value="">Select reason</option>
+<option>Damage</option>
+<option>Expiry</option>
+<option>Leakage / Low Fill</option>
+<option>Wrong Item</option>
+<option>Quality Issue</option>
+<option>Other</option>
+</select>
+</div>
+<div>
+<label>Return Challan Number</label>
+<input id="challanNo">
+</div>
+<div>
+<label>Challan Date</label>
+<input id="challanDate" type="date">
+</div>
+<div>
+<label>Remarks</label>
+<input id="notes">
+</div>
+</div>
+
+<h2 style="margin-top:25px">3. SKU-wise Return</h2>
+
+<div class="table-wrap">
+<table>
+<thead>
+<tr>
+<th>SKU</th>
+<th>Loaded Qty</th>
+<th>Return Qty</th>
+<th>Rate</th>
+<th>Batch No.</th>
+<th>Reason</th>
+<th>Bottle Condition</th>
+<th>Amount</th>
+</tr>
+</thead>
+<tbody id="itemRows"></tbody>
+</table>
+</div>
+
+<p class="note">
+Return quantity cannot exceed the original loaded quantity.
+</p>
+
+<h3 id="totalAmount">Total: ₹0.00</h3>
+<div class="actions">
+<button id="saveButton" onclick="saveReturn()">
+Submit for Approval
+</button>
+</div>
+</section>
+
+<section>
+<h2>4. Sales Return Approval Queue</h2>
+<button class="secondary" onclick="loadReturns()">Refresh</button>
+<div class="table-wrap">
+<table>
+<thead>
+<tr>
+<th>Return No.</th>
+<th>Date</th>
+<th>Invoice</th>
+<th>Amount</th>
+<th>Status</th>
+<th>Approval Required</th>
+<th>Credit Note</th>
+<th>Action</th>
+</tr>
+</thead>
+<tbody id="returnRows"></tbody>
+</table>
+</div>
+</section>
+</main>
+
+<script>
+const SUPABASE_URL =
+"https://txkbhadzdbxpieunfvox.supabase.co";
+
+const SUPABASE_PUBLISHABLE_KEY =
+"sb_publishable_W4I3Q5ODf0g17sq5uDml2Q_sLolXYEk";
+
+let db;
+let currentUser;
+let userRole = "";
+let selectedInvoice = null;
+let invoiceItems = [];
+
+const el = id => document.getElementById(id);
+
+function showMessage(text) {
+  el("message").textContent = text;
+  el("message").style.display = "block";
+}
+
+function escapeHTML(value) {
+  return String(value ?? "").replace(
+    /[&<>"']/g,
+    c => ({
+      "&":"&amp;",
+      "<":"&lt;",
+      ">":"&gt;",
+      '"':"&quot;",
+      "'":"&#39;"
+    })[c]
+  );
+}
+
+function localDate() {
+  const d = new Date();
+  return [
+    d.getFullYear(),
+    String(d.getMonth()+1).padStart(2,"0"),
+    String(d.getDate()).padStart(2,"0")
+  ].join("-");
+}
+
+function afterSevenDays(returnDate, invoiceDate) {
+  const d = new Date(invoiceDate + "T00:00:00Z");
+  d.setUTCDate(d.getUTCDate() + 7);
+  return returnDate > d.toISOString().slice(0,10);
+}
+
+async function initialize() {
+  try {
+    if (SUPABASE_PUBLISHABLE_KEY.includes("PASTE_YOUR")) {
+      showMessage("Please insert your Supabase publishable key.");
+      return;
+    }
+
+    db = window.supabase.createClient(
+      SUPABASE_URL,
+      SUPABASE_PUBLISHABLE_KEY
+    );
+
+    const {data:{user},error} = await db.auth.getUser();
+
+    if (error || !user) {
+      location.href = "login.html";
+      return;
+    }
+
+    currentUser = user;
+
+    const profile = await db.from("user_profiles")
+      .select("role,active")
+      .eq("id",user.id)
+      .single();
+
+    if (profile.error) throw profile.error;
+
+    if (!profile.data.active) {
+      throw new Error("Your account is inactive.");
+    }
+
+    userRole = String(profile.data.role).toLowerCase();
+
+    el("userInfo").textContent =
+      user.email + " | " + userRole.toUpperCase();
+
+    el("returnDate").value = localDate();
+
+    await loadReturns();
+
+  } catch(err) {
+    showMessage(err.message);
+  }
+}
+
+async function searchInvoice() {
+  try {
+    const number = el("invoiceNo").value.trim();
+
+    if (!number) throw new Error("Enter invoice number.");
+
+    const result = await db.from("tax_invoices")
+      .select("id,order_id,invoice_no,invoice_date")
+      .eq("invoice_no",number)
+      .maybeSingle();
+
+    if (result.error) throw result.error;
+
+    if (!result.data) {
+      throw new Error("Invoice not found.");
+    }
+
+    selectedInvoice = result.data;
+
+    if (!selectedInvoice.invoice_date) {
+      throw new Error("Original invoice date is missing.");
+    }
+
+    const items = await db.from("order_items")
+      .select("id,sku_name,loaded_qty,rate")
+      .eq("order_id",selectedInvoice.order_id);
+
+    if (items.error) throw items.error;
+
+    invoiceItems = items.data || [];
+
+    if (!invoiceItems.length) {
+      throw new Error("No invoice items found.");
+    }
+
+    el("returnSection").hidden = false;
+
+    el("invoiceInfo").textContent =
+      "Invoice: " + selectedInvoice.invoice_no +
+      " | Date: " + selectedInvoice.invoice_date;
+
+    renderItems();
+    showMessage("Invoice found successfully.");
+
+  } catch(err) {
+    showMessage(err.message);
+  }
+}
+
+function renderItems() {
+  const tbody = el("itemRows");
+  tbody.innerHTML = "";
+
+  invoiceItems.forEach(item => {
+    const tr = document.createElement("tr");
+
+    tr.dataset.itemId = item.id;
+    tr.dataset.rate = Number(item.rate || 0);
+    tr.dataset.max = Number(item.loaded_qty || 0);
+
+    tr.innerHTML = `
+      <td>${escapeHTML(item.sku_name)}</td>
+      <td>${Number(item.loaded_qty || 0)}</td>
+      <td>
+        <input class="returnQty" type="number"
+          min="0" step="1"
+          max="${Number(item.loaded_qty || 0)}"
+          value="0">
+      </td>
+      <td>₹${Number(item.rate || 0).toFixed(2)}</td>
+      <td><input class="batchNo" placeholder="Batch"></td>
+      <td>
+        <select class="itemReason">
+          <option value="">Same as header</option>
+          <option>Damage</option>
+          <option>Expiry</option>
+          <option>Leakage / Low Fill</option>
+          <option>Wrong Item</option>
+          <option>Quality Issue</option>
+          <option>Other</option>
+        </select>
+      </td>
+      <td>
+        <select class="condition">
+          <option value="">Select</option>
+          <option>Sealed</option>
+          <option>Damaged</option>
+          <option>Leaking</option>
+          <option>Expired</option>
+        </select>
+      </td>
+      <td class="amount">0.00</td>
+    `;
+
+    tbody.appendChild(tr);
+
+    tr.querySelector(".returnQty")
+      .addEventListener("input",calculateTotal);
+  });
+
+  calculateTotal();
+}
+
+function calculateTotal() {
+  let total = 0;
+
+  document.querySelectorAll("#itemRows tr").forEach(tr => {
+    const qty = Number(
+      tr.querySelector(".returnQty").value || 0
+    );
+
+    const rate = Number(tr.dataset.rate);
+
+    const amount = qty * rate;
+    total += amount;
+
+    tr.querySelector(".amount").textContent =
+      amount.toFixed(2);
+  });
+
+  el("totalAmount").textContent =
+    "Total: ₹" + total.toFixed(2);
+
+  return total;
+}
+
+async function saveReturn() {
+  const button = el("saveButton");
+
+  try {
+    if (!["sales","warehouse","admin"].includes(userRole)) {
+      throw new Error("Only Sales or Warehouse can enter returns.");
+    }
+
+    if (!selectedInvoice) {
+      throw new Error("Search original invoice first.");
+    }
+
+    const returnNo = el("returnNo").value.trim();
+    const returnDate = el("returnDate").value;
+    const reason = el("reason").value;
+
+    if (!returnNo || !returnDate || !reason) {
+      throw new Error("Return number, date and reason required.");
+    }
+
+    if (returnDate < selectedInvoice.invoice_date) {
+      throw new Error("Return date cannot precede invoice date.");
+    }
+
+    if (returnDate > localDate()) {
+      throw new Error("Future return date is not allowed.");
+    }
+
+    const lines = [];
+
+    document.querySelectorAll("#itemRows tr").forEach(tr => {
+      const qty = Number(
+        tr.querySelector(".returnQty").value
+      );
+
+      if (!qty) return;
+
+      if (!Number.isInteger(qty) ||
+          qty < 0 ||
+          qty > Number(tr.dataset.max)) {
+        throw new Error("Invalid return quantity.");
+      }
+
+      const item = invoiceItems.find(
+        i => i.id === tr.dataset.itemId
+      );
+
+      lines.push({
+        original_order_item_id: item.id,
+        sku_name: item.sku_name,
+        qty: qty,
+        rate: Number(item.rate || 0),
+        amount: qty * Number(item.rate || 0),
+        batch_no:
+          tr.querySelector(".batchNo").value.trim() || null,
+        return_reason:
+          tr.querySelector(".itemReason").value || reason,
+        bottle_condition:
+          tr.querySelector(".condition").value || null
+      });
+    });
+
+    if (!lines.length) {
+      throw new Error("Enter at least one return quantity.");
+    }
+
+    button.disabled = true;
+
+    const needsAdmin = afterSevenDays(
+      returnDate,
+      selectedInvoice.invoice_date
+    );
+
+    const header = {
+      return_no: returnNo,
+      return_date: returnDate,
+      order_id: selectedInvoice.order_id,
+      original_order_id: selectedInvoice.order_id,
+      original_invoice_no: selectedInvoice.invoice_no,
+      reason: reason,
+      total_amount: calculateTotal(),
+      status: "pending",
+      approval_status: "pending",
+      requires_admin_approval: needsAdmin,
+      challan_no: el("challanNo").value.trim() || null,
+      challan_date: el("challanDate").value || null,
+      notes: el("notes").value.trim() || null
+    };
+
+    const saved = await db.from("sales_returns")
+      .insert(header)
+      .select("id")
+      .single();
+
+    if (saved.error) throw saved.error;
+
+    const itemResult = await db.from("sales_return_items")
+      .insert(lines.map(line => ({
+        ...line,
+        sales_return_id: saved.data.id
+      })));
+
+    if (itemResult.error) {
+      throw new Error(
+        "Return header saved (ID: " + saved.data.id +
+        "), but items failed: " + itemResult.error.message
+      );
+    }
+
+    showMessage(
+      "Sales Return submitted. Approval required: " +
+      (needsAdmin ? "Admin" : "Accounts / Admin")
+    );
+
+    el("returnSection").hidden = true;
+    selectedInvoice = null;
+    await loadReturns();
+
+  } catch(err) {
+    showMessage(err.message);
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function loadReturns() {
+  try {
+    if (!db) return;
+
+    const result = await db.from("sales_returns")
+      .select(
+        "id,return_no,return_date,original_invoice_no," +
+        "total_amount,status,approval_status," +
+        "requires_admin_approval,credit_note_no"
+      )
+      .order("return_date",{ascending:false})
+      .limit(100);
+
+    if (result.error) throw result.error;
+
+    const tbody = el("returnRows");
+    tbody.innerHTML = "";
+
+    for (const r of result.data || []) {
+      const tr = document.createElement("tr");
+
+      const needsAdmin = r.requires_admin_approval;
+      const pending = !["approved","rejected"].includes(
+        String(r.approval_status || "").toLowerCase()
+      );
+
+      const canApprove =
+        userRole === "admin" ||
+        (userRole === "accounts" && !needsAdmin);
+
+      tr.innerHTML = `
+        <td>${escapeHTML(r.return_no)}</td>
+        <td>${escapeHTML(r.return_date)}</td>
+        <td>${escapeHTML(r.original_invoice_no)}</td>
+        <td>₹${Number(r.total_amount || 0).toFixed(2)}</td>
+        <td>${escapeHTML(r.status || "pending")}</td>
+        <td>${needsAdmin ? "Admin" : "Accounts / Admin"}</td>
+        <td>${escapeHTML(r.credit_note_no || "Pending")}</td>
+        <td></td>
+      `;
+
+      if (pending && canApprove) {
+        const approve = document.createElement("button");
+        approve.textContent = "Approve";
+        approve.onclick = () => decide(r,"approved");
+
+        const reject = document.createElement("button");
+        reject.textContent = "Reject";
+        reject.className = "danger";
+        reject.style.marginLeft = "5px";
+        reject.onclick = () => decide(r,"rejected");
+
+        tr.lastElementChild.append(approve,reject);
+      }
+
+      tbody.appendChild(tr);
+    }
+
+    if (!tbody.children.length) {
+      tbody.innerHTML =
+        '<tr><td colspan="8">No returns found.</td></tr>';
+    }
+
+  } catch(err) {
+    showMessage(err.message);
+  }
+}
+
+async function decide(r,decision) {
+  try {
+    const canApprove =
+      userRole === "admin" ||
+      (userRole === "accounts" &&
+       !r.requires_admin_approval);
+
+    if (!canApprove) {
+      throw new Error("Approval not permitted.");
+    }
+
+    const update = {
+      approval_status: decision,
+      status: decision
+    };
+
+    if (decision === "rejected") {
+      const reason = prompt("Rejection reason:");
+      if (!reason || !reason.trim()) return;
+      update.rejection_reason = reason.trim();
+    } else {
+      if (!confirm("Approve return " + r.return_no + "?")) {
+        return;
+      }
+    }
+
+    const result = await db.from("sales_returns")
+      .update(update)
+      .eq("id",r.id)
+      .eq("approval_status","pending")
+      .select("id");
+
+    if (result.error) throw result.error;
+
+    if (!result.data?.length) {
+      throw new Error(
+        "Return was not updated. Check approval status."
+      );
+    }
+
+    showMessage("Return " + decision + " successfully.");
+    await loadReturns();
+
+  } catch(err) {
+    showMessage(err.message);
+  }
+}
+
+initialize();
+</script>
+</body>
+</html>
