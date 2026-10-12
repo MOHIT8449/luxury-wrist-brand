@@ -1,22 +1,45 @@
-INSERT INTO public.sku_master
-(sku_name, hsn_code, pack_size)
-VALUES
-('250ML THUMS UP 1X28', '22021010', 28),
-('740ML THUMS UP 1X24', '22021010', 24),
-('1.25L THUMS UP 1X12', '22021010', 12),
-('2.25L COKE 1X9', '22021010', 9),
-('150ML MAAZA TETRA', '22029920', NULL),
-('250ML MAAZA MANGO 1X30', '22029920', 30),
-('600ML MAZA MANGO 1X24', '22029920', 24),
-('850ML MAZA 1X15', '22029920', 15),
-('250ML PULPY ORG 1X30', '22029920', 30),
-('500ML KINLEY 1X24', '22011010', 24),
-('250ML SODA 1X28', '22011020', 28),
-('300ML SCHW TONIC-KO 1X24', '22021010', 24),
-('300ML COKE 1X24', '22021010', 24),
-('350ML MONSTER 1X24 CAN', '22029990', 24)
-ON CONFLICT DO NOTHING;
-
-SELECT sku_name, hsn_code, pack_size
-FROM public.sku_master
-ORDER BY sku_name;
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SKU Master | Luxury Wrist Brand</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+:root{font-family:Arial,sans-serif;color:#192638;background:#f3f6fb}*{box-sizing:border-box}body{margin:0}header{background:#13233b;color:white;padding:20px 5%;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}header h1{font-size:23px;margin:0}header small{color:#c3d1e3}a{color:inherit}main{max-width:1200px;margin:28px auto;padding:0 18px}.panel{background:white;border-radius:14px;padding:22px;box-shadow:0 4px 20px #102b5010;margin-bottom:20px}h2{margin:0 0 18px;font-size:20px}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:14px}label{display:block;font-weight:600;font-size:13px;margin-bottom:6px}input,select{width:100%;padding:11px;border:1px solid #cad5e3;border-radius:8px;font:inherit}input:focus,select:focus{outline:2px solid #90b9ed}button{border:0;border-radius:8px;padding:11px 17px;cursor:pointer;font-weight:bold;background:#1661b4;color:white}button.secondary{background:#e9eff7;color:#1e3855}button:disabled{opacity:.55;cursor:not-allowed}.actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:18px}.toolbar{display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap}.toolbar input{max-width:360px}.tablewrap{overflow:auto}table{border-collapse:collapse;width:100%;min-width:850px}th,td{padding:12px;border-bottom:1px solid #e4eaf1;text-align:left;font-size:14px}th{background:#f2f6fb}td button{padding:7px 12px}.pill{padding:5px 9px;border-radius:12px;background:#e0f4e7;color:#136a35;font-size:12px}.off{background:#fce7e7;color:#a12121}.msg{margin:12px 0;padding:12px;border-radius:8px;background:#edf4ff;display:none}.msg.error{background:#ffecec;color:#a02222}.muted{color:#65758a;font-size:13px}.count{font-weight:bold;color:#1661b4}
+</style>
+</head>
+<body>
+<header><div><h1>LUXURY WRIST BRAND</h1><small>ERP / SKU Master Management</small></div><a href="dashboard.html">← Dashboard</a></header>
+<main>
+<div id="message" class="msg" role="status"></div>
+<section class="panel"><h2 id="formTitle">Add New SKU</h2>
+<form id="skuForm"><div class="grid">
+<div><label for="sku_name">SKU Name *</label><input id="sku_name" maxlength="160" required placeholder="e.g. 300ML THUMS UP 1X24"></div>
+<div><label for="hsn_code">HSN Code</label><input id="hsn_code" inputmode="numeric" pattern="[0-9]*" maxlength="12" placeholder="e.g. 22021010"></div>
+<div><label for="pcs_per_case">PCS per Case *</label><input id="pcs_per_case" type="number" min="1" step="1" required placeholder="24"></div>
+<div><label for="gst_rate">GST Rate (%)</label><input id="gst_rate" type="number" min="0" max="100" step="0.01" placeholder="Enter applicable rate"></div>
+<div><label for="cess_rate">Cess Rate (%)</label><input id="cess_rate" type="number" min="0" max="100" step="0.01" placeholder="Enter applicable rate"></div>
+<div><label for="is_active">Status</label><select id="is_active"><option value="true">Active</option><option value="false">Inactive</option></select></div>
+</div><div class="actions"><button id="saveBtn" type="submit">Save SKU</button><button type="button" id="clearBtn" class="secondary">Clear / New SKU</button></div></form>
+<p class="muted">GST and Cess rates are optional here. Verify the applicable tax treatment before invoicing.</p></section>
+<section class="panel"><div class="toolbar"><h2>SKU List <span id="count" class="count"></span></h2><input id="search" type="search" placeholder="Search SKU name or HSN..."></div><div class="tablewrap"><table><thead><tr><th>SKU Name</th><th>HSN</th><th>PCS/Case</th><th>GST %</th><th>Cess %</th><th>Status</th><th>Action</th></tr></thead><tbody id="rows"><tr><td colspan="7">Loading...</td></tr></tbody></table></div></section>
+</main>
+<script>
+'use strict';
+const SUPABASE_URL='https://txkbhadzdbxpieunfvox.supabase.co';
+// Paste the same browser-safe publishable key used in login.html. Never use a service_role key.
+const SUPABASE_PUBLISHABLE_KEY='sb_publishable_W4I3Q5ODf0g17sq5uDml2Q_sLolXYEk';
+const $=id=>document.getElementById(id);
+let db=null,skus=[],editingId=null;
+function notice(message,error=false){const el=$('message');el.textContent=message;el.className='msg'+(error?' error':'');el.style.display='block';}
+function cleanNumber(id){const v=$(id).value.trim();return v===''?null:Number(v);}
+function resetForm(){$('skuForm').reset();editingId=null;$('formTitle').textContent='Add New SKU';$('saveBtn').textContent='Save SKU';}
+function cell(row,text){const td=document.createElement('td');td.textContent=text??'—';row.appendChild(td);return td;}
+function render(){const q=$('search').value.toLowerCase().trim();const found=skus.filter(x=>String(x.sku_name||'').toLowerCase().includes(q)||String(x.hsn_code||'').includes(q));$('count').textContent='('+found.length+')';const body=$('rows');body.replaceChildren();if(!found.length){const tr=document.createElement('tr');cell(tr,'No SKUs found').colSpan=7;body.appendChild(tr);return;}for(const sku of found){const tr=document.createElement('tr');cell(tr,sku.sku_name);cell(tr,sku.hsn_code);cell(tr,sku.pcs_per_case??sku.pack_size);cell(tr,sku.gst_rate);cell(tr,sku.cess_rate);const td=document.createElement('td'),tag=document.createElement('span');tag.className='pill'+(sku.is_active===false?' off':'');tag.textContent=sku.is_active===false?'Inactive':'Active';td.appendChild(tag);tr.appendChild(td);const action=document.createElement('td'),btn=document.createElement('button');btn.textContent='Edit';btn.className='secondary';btn.onclick=()=>editSku(sku.id);action.appendChild(btn);tr.appendChild(action);body.appendChild(tr);}}
+function editSku(id){const s=skus.find(x=>x.id===id);if(!s)return;editingId=id;$('sku_name').value=s.sku_name||'';$('hsn_code').value=s.hsn_code||'';$('pcs_per_case').value=s.pcs_per_case??s.pack_size??'';$('gst_rate').value=s.gst_rate??'';$('cess_rate').value=s.cess_rate??'';$('is_active').value=String(s.is_active!==false);$('formTitle').textContent='Edit SKU';$('saveBtn').textContent='Update SKU';window.scrollTo({top:0,behavior:'smooth'});}
+async function loadSkus(){const {data,error}=await db.from('sku_master').select('*').order('sku_name');if(error){notice('Unable to load SKU list: '+error.message,true);return;}skus=data||[];render();}
+async function init(){if(SUPABASE_PUBLISHABLE_KEY.includes('PASTE_YOUR')){notice('Setup needed: insert your Supabase publishable key in this HTML file.',true);$('rows').innerHTML='<tr><td colspan="7">Supabase key not configured.</td></tr>';return;}if(!window.supabase){notice('Supabase library could not load. Check internet connection.',true);return;}db=window.supabase.createClient(SUPABASE_URL,SUPABASE_PUBLISHABLE_KEY);const {data:{user},error}=await db.auth.getUser();if(error||!user){notice('Please sign in to the ERP first.',true);return;}await loadSkus();}
+$('skuForm').addEventListener('submit',async e=>{e.preventDefault();if(!db){notice('Supabase is not connected.',true);return;}const name=$('sku_name').value.trim(),pcs=cleanNumber('pcs_per_case');if(!name||!Number.isInteger(pcs)||pcs<1){notice('Enter a SKU name and valid PCS/Case.',true);return;}const payload={sku_name:name,hsn_code:$('hsn_code').value.trim()||null,pcs_per_case:pcs,pack_size:pcs,gst_rate:cleanNumber('gst_rate'),cess_rate:cleanNumber('cess_rate'),is_active:$('is_active').value==='true'};const button=$('saveBtn');button.disabled=true;try{const query=editingId?db.from('sku_master').update(payload).eq('id',editingId):db.from('sku_master').insert(payload);const {error}=await query;if(error)throw error;notice(editingId?'SKU updated successfully.':'SKU added successfully.');resetForm();await loadSkus();}catch(err){notice('Could not save SKU: '+err.message,true);}finally{button.disabled=false;}});
+$('clearBtn').addEventListener('click',resetForm);$('search').addEventListener('input',render);init();
+</script>
+</body></html>
