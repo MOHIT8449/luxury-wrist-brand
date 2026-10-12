@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Credit Note | Luxury Wrist Brand</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#f3f5f9;font:15px Arial;color:#14243a}
+header{background:#14243a;color:white;padding:24px}
+main{max-width:1200px;margin:30px auto;padding:15px}
+.panel{background:white;padding:24px;border-radius:12px;margin-bottom:20px}
+h2{margin-top:0}
+button{background:#1769e8;color:white;border:0;padding:12px 18px;border-radius:7px;cursor:pointer}
+input,select{padding:12px;border:1px solid #ccd5e1;border-radius:7px;width:100%;margin:8px 0}
+table{width:100%;border-collapse:collapse}
+th,td{padding:12px;border-bottom:1px solid #ddd;text-align:left}
+th{background:#f1f4f8}
+.note{color:#61728b}
+.error{color:#c62828}
+@media print{
+  header,.no-print{display:none}
+  body{background:white}
+  .panel{box-shadow:none}
+}
+</style>
+</head>
+<body>
+
+<header>
+<h1>LUXURY WRIST BRAND</h1>
+<p>Credit Note Management</p>
+</header>
+
+<main>
+<div id="message" class="panel note">Loading...</div>
+
+<section class="panel no-print">
+<h2>1. Approved Sales Returns</h2>
+<button onclick="loadReturns()">Refresh Returns</button>
+<table>
+<thead>
+<tr>
+<th>Return No.</th>
+<th>Original Invoice</th>
+<th>Amount</th>
+<th>Status</th>
+<th>Action</th>
+</tr>
+</thead>
+<tbody id="returnsList"></tbody>
+</table>
+</section>
+
+<section class="panel" id="preview" style="display:none">
+<h2>2. Credit Note Preview</h2>
+<p><strong>Return Number:</strong> <span id="returnNo"></span></p>
+<p><strong>Original Invoice:</strong> <span id="invoiceNo"></span></p>
+<p><strong>Return Amount:</strong> ₹<span id="amount"></span></p>
+<p><strong>Reason:</strong> <span id="reason"></span></p>
+<p class="note">Tax breakup और final Credit Note Number अभी verify करना बाकी है।</p>
+<button class="no-print" onclick="window.print()">Print Preview</button>
+</section>
+</main>
+
+<script>
+const SUPABASE_URL =
+"https://txkbhadzdbxpieunfvox.supabase.co";
+
+const SUPABASE_PUBLISHABLE_KEY =
+"sb_publishable_W4I3Q5ODf0g17sq5uDml2Q_sLolXYEk";
+
+let db;
+let returns = [];
+
+function showMessage(text, error=false){
+ const el=document.getElementById("message");
+ el.textContent=text;
+ el.className="panel "+(error?"error":"note");
+}
+
+function safe(value){
+ return String(value??"");
+}
+
+async function init(){
+ try{
+  if(SUPABASE_PUBLISHABLE_KEY.includes("PASTE_YOUR")){
+   showMessage("Insert your Supabase publishable key first.",true);
+   return;
+  }
+
+  db=supabase.createClient(
+   SUPABASE_URL,
+   SUPABASE_PUBLISHABLE_KEY
+  );
+
+  const {data:{user},error}=await db.auth.getUser();
+  if(error || !user){
+   showMessage("Please log in first.",true);
+   return;
+  }
+
+  const {data:profile,error:profileError}=await db
+   .from("user_profiles")
+   .select("role,active")
+   .eq("id",user.id)
+   .single();
+
+  if(profileError || !profile?.active ||
+    !["admin","accounts"].includes(profile.role)){
+   showMessage("Access restricted to Admin / Accounts.",true);
+   return;
+  }
+
+  await loadReturns();
+
+ }catch(err){
+  showMessage(err.message,true);
+ }
+}
+
+async function loadReturns(){
+ if(!db)return;
+
+ const {data,error}=await db
+  .from("sales_returns")
+  .select("*")
+  .eq("status","approved")
+  .order("created_at",{ascending:false});
+
+ if(error){
+  showMessage(error.message,true);
+  return;
+ }
+
+ returns=data||[];
+ const tbody=document.getElementById("returnsList");
+ tbody.replaceChildren();
+
+ if(!returns.length){
+  const tr=document.createElement("tr");
+  const td=document.createElement("td");
+  td.colSpan=5;
+  td.textContent="No approved returns found.";
+  tr.appendChild(td);
+  tbody.appendChild(tr);
+ }else{
+  returns.forEach((r,i)=>{
+   const tr=document.createElement("tr");
+
+   [
+    r.return_no,
+    r.original_invoice_no,
+    "₹"+Number(r.total_amount||0).toFixed(2),
+    r.status
+   ].forEach(value=>{
+    const td=document.createElement("td");
+    td.textContent=safe(value);
+    tr.appendChild(td);
+   });
+
+   const td=document.createElement("td");
+   const btn=document.createElement("button");
+   btn.textContent="Preview";
+   btn.onclick=()=>previewReturn(i);
+   td.appendChild(btn);
+   tr.appendChild(td);
+   tbody.appendChild(tr);
+  });
+ }
+
+ showMessage(returns.length+" approved return(s) loaded.");
+}
+
+function previewReturn(index){
+ const r=returns[index];
+ if(!r)return;
+
+ document.getElementById("returnNo").textContent=safe(r.return_no);
+ document.getElementById("invoiceNo").textContent=safe(r.original_invoice_no);
+ document.getElementById("amount").textContent=
+  Number(r.total_amount||0).toFixed(2);
+ document.getElementById("reason").textContent=safe(r.reason);
+
+ document.getElementById("preview").style.display="block";
+ showMessage("Preview ready. No credit note has been generated yet.");
+}
+
+init();
+</script>
+</body>
+</html>
