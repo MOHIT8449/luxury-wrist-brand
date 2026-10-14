@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Opening Stock | Luxury Wrist Brand</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    :root{font-family:Arial,Helvetica,sans-serif;color:#16243b;background:#f3f6fa}
+    *{box-sizing:border-box}body{margin:0}header{background:#142640;color:white;padding:18px max(22px,5vw);display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap}header h1{font-size:23px;margin:0 0 5px}header small{opacity:.85}a{color:inherit}header a{border:1px solid #a7b2c0;padding:10px 14px;border-radius:7px;text-decoration:none}
+    main{max-width:1200px;margin:28px auto;padding:0 18px}.panel{background:#fff;border:1px solid #e5e9ef;border-radius:15px;padding:24px;margin-bottom:20px;box-shadow:0 6px 20px #1426400a}h2{font-size:20px;margin:0 0 8px}.sub{color:#5d6b7d;font-size:14px;margin:0 0 20px}.grid{display:grid;grid-template-columns:2fr 1fr 1fr;gap:15px}.line{display:grid;grid-template-columns:repeat(3,1fr);gap:15px;margin-top:16px}.field label{display:block;font-size:13px;font-weight:700;margin-bottom:7px}.field input,.field select{width:100%;min-height:44px;border:1px solid #cbd5e1;border-radius:8px;padding:10px;font:inherit;background:white;color:#16243b}.field input:focus,.field select:focus{outline:2px solid #84b5f6;outline-offset:1px}.results{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:20px 0}.metric{border:1px solid #e4eaf2;border-radius:10px;padding:13px;background:#f8fafc}.metric span{display:block;color:#607189;font-size:13px;margin-bottom:7px}.metric strong{font-size:21px}button{border:0;background:#1464c7;color:#fff;border-radius:8px;padding:12px 18px;font-weight:700;cursor:pointer}button:disabled{background:#a2b2c6;cursor:not-allowed}.muted{color:#687589;font-size:13px}.notice{padding:12px 15px;border-radius:9px;margin-bottom:16px;display:none;white-space:pre-wrap}.notice.error{display:block;background:#ffebeb;color:#a01515}.notice.success{display:block;background:#e7f8ed;color:#116835}.notice.info{display:block;background:#e9f3ff;color:#154c87}.flex{display:flex;gap:12px;align-items:center;flex-wrap:wrap}.tag{display:inline-block;background:#e3ecfb;color:#214a81;padding:6px 10px;border-radius:7px;font-size:12px;font-weight:bold}table{width:100%;border-collapse:collapse;text-align:left;font-size:14px}th{background:#f0f4f9}th,td{padding:12px 11px;border-bottom:1px solid #e5e9ef}td.num,th.num{text-align:right}.table-scroll{overflow:auto}.keyrow{padding:12px;background:#f6f8fb;border-radius:10px;margin:0 0 16px;display:none}.keyrow .field{flex:1;min-width:260px}.right{text-align:right}.small{font-size:12px;color:#6a7587;margin-top:9px}
+    @media(max-width:750px){.grid,.line,.results{grid-template-columns:1fr}.panel{padding:18px}header h1{font-size:20px}table{min-width:680px}}
+  </style>
+</head>
+<body>
+  <header><div><h1>LUXURY WRIST BRAND</h1><small>ERP / MAIN GODOWN / OPENING STOCK</small></div><a href="dashboard.html">← Dashboard</a></header>
+  <main>
+    <div id="notice" class="notice" role="alert"></div>
+    <section id="keyRow" class="keyrow">
+      <div class="flex"><div class="field"><label for="keyInput">Supabase publishable key (sb_publishable_...)</label><input id="keyInput" placeholder="Paste publishable key (not secret/service_role)" autocomplete="off"></div><button id="connectBtn" type="button">Connect</button></div>
+      <div class="small">We normally read the browser-safe publishable key from your existing sku-master.html. If it isn't available, paste it here from Supabase → API Keys. Never paste a secret or service_role key.</div>
+    </section>
+    <section class="panel">
+      <div class="flex" style="justify-content:space-between"><div><h2>Opening Stock Entry</h2><p class="sub">UOM1 = Cases (CS) · UOM0 = Loose Pieces (PCS) · Single Main Godown</p></div><span class="tag" id="access">Connecting...</span></div>
+      <div class="grid">
+        <div class="field"><label for="sku">SKU / Product *</label><select id="sku"><option value="">Loading SKU Master...</option></select></div>
+        <div class="field"><label for="cases">UOM1 — Cases *</label><input id="cases" type="number" inputmode="numeric" min="0" step="1" value="0"></div>
+        <div class="field"><label for="loose">UOM0 — Loose PCS *</label><input id="loose" type="number" inputmode="numeric" min="0" step="1" value="0"></div>
+      </div>
+      <div class="line">
+        <div class="field"><label for="ref">Opening Reference / Stock Sheet No.</label><input id="ref" maxlength="100" placeholder="e.g. OPENING-2026-10-14"></div>
+        <div class="field"><label>Godown</label><input value="MAIN — Luxury Wrist Brand" readonly></div>
+        <div class="field"><label>Entry Type</label><input value="Opening Stock (Saleable)" readonly></div>
+      </div>
+      <div class="results">
+        <div class="metric"><span>PCS per Case (SKU Master)</span><strong id="pack">—</strong></div>
+        <div class="metric"><span>Total Opening Pieces</span><strong id="total">0 PCS</strong></div>
+        <div class="metric"><span>Current Saleable Stock</span><strong id="current">—</strong></div>
+      </div>
+      <div class="flex"><button id="save" type="button" disabled>Save Opening Stock</button><span class="muted" id="hint">Only an active admin can save. Opening can be entered once per SKU.</span></div>
+    </section>
+    <section class="panel">
+      <div class="flex" style="justify-content:space-between"><div><h2>Live SKU Stock — Main Godown</h2><p class="sub">Case + PCS balances read from your existing lwb_live_stock view.</p></div><button id="refresh" type="button">Refresh Stock</button></div>
+      <div class="table-scroll"><table><thead><tr><th>SKU</th><th class="num">PCS/Case</th><th class="num">Saleable CS</th><th class="num">Loose PCS</th><th class="num">Damaged PCS</th><th>Opening Entry</th></tr></thead><tbody id="rows"><tr><td colspan="6">Connecting...</td></tr></tbody></table></div>
+      <p class="small">This page creates Opening Stock only. Purchase Inward, Reservations, Dispatch Deduction and Sales Returns will be connected separately. Stock shown here is not yet reduced by reservations.</p>
+    </section>
+  </main>
+<script>
+'use strict';
+const SUPABASE_URL = 'https://txkbhadzdbxpieunfvox.supabase.co';
+const $ = id => document.getElementById(id);
+let db = null, profile = null, skus = [], balances = [], openingSkuIds = new Set(), busy = false;
+function show(message, type='error') { const n=$('notice');n.className='notice '+type;n.textContent=message;n.scrollIntoView({block:'nearest',behavior:'smooth'}); }
+function qty(v) { return Number(v).toLocaleString('en-IN'); }
+function normalizeCounts(cases,loose,pack) {
+  if(!Number.isSafeInteger(cases)||!Number.isSafeInteger(loose)||cases<0||loose<0||!Number.isSafeInteger(pack)||pack<1||loose>=pack) return null;
+  const total=cases*pack+loose;return Number.isSafeInteger(total)&&total>0&&total<=2147483647?total:null;
+}
+function selectedSku() { return skus.find(s=>s.id===$('sku').value); }
+function balanceFor(id){return balances.find(b=>b.sku_id===id);}
+function updatePreview(){
+  const sku=selectedSku(),pack=Number(sku?.pcs_per_case)||0,c=Number($('cases').value),p=Number($('loose').value);
+  $('pack').textContent=pack?qty(pack)+' PCS':'—';
+  const total=normalizeCounts(c,p,pack);
+  $('total').textContent=total===null?'Invalid Quantity':qty(total)+' PCS';
+  const stock=balanceFor(sku?.id),openingDone=openingSkuIds.has(sku?.id);
+  const stockPcs=Number(stock?.saleable_pcs)||0;
+  $('current').textContent=sku?`${qty(Math.floor(stockPcs/pack))} CS + ${qty(stockPcs%pack)} PCS`:'—';
+  $('save').disabled=!profile||profile.role!=='admin'||profile.active!==true||!sku||openingDone||total===null||busy;
+  $('hint').textContent=openingDone?'Opening stock already recorded for this SKU.':!sku?'Select a SKU to begin.':profile?.role!=='admin'?'Only an active admin can save opening stock.':p>=pack?'Loose PCS must be less than PCS/Case.':total===null?'Enter a valid positive stock quantity.':'Ready to save once. This action adds physical stock.';
+}
+async function findPublishableKey(){
+  try{
+    const r=await fetch('sku-master.html',{cache:'no-store'});
+    if(!r.ok) return null;
+    const html=await r.text();
+    const m=html.match(/const\s+SUPABASE_PUBLISHABLE_KEY\s*=\s*["'](sb_publishable_[^"']+)["']/);
+    return m?.[1]||null;
+  }catch{return null;}
+}
+async function start(key){
+  if(!/^sb_publishable_[A-Za-z0-9_-]+$/.test(key)){show('Only paste a valid sb_publishable_ key. Never use a secret or service_role key.');return;}
+  try{
+    if(!window.supabase?.createClient) throw new Error('Supabase library could not load. Check internet or CDN.');
+    db=window.supabase.createClient(SUPABASE_URL,key);
+    const {data:{user},error:authError}=await db.auth.getUser();
+    if(authError) throw authError;
+    if(!user){show('Please log in to Luxury Wrist Brand ERP first.','info');setTimeout(()=>{window.location.href='login.html';},1700);return;}
+    const {data:prof,error:profileError}=await db.from('user_profiles').select('role,active,full_name').eq('id',user.id).maybeSingle();
+    if(profileError) throw profileError;
+    if(!prof||prof.active!==true) throw new Error('An active ERP user profile is required.');
+    profile=prof;$('access').textContent=prof.role==='admin'?'ADMIN — OPENING STOCK':'VIEW ONLY';
+    $('keyRow').style.display='none';
+    await loadAll();
+  }catch(e){show('Connection failed: '+(e.message||String(e)));$('access').textContent='Not connected';$('keyRow').style.display='block';}
+}
+async function loadAll(){
+  if(!db)return;
+  $('refresh').disabled=true;
+  try{
+    const [skuRes,stockRes,openRes] = await Promise.all([
+      db.from('sku_master').select('id,sku_name,pcs_per_case,is_active').eq('is_active',true).order('sku_name'),
+      db.from('lwb_live_stock').select('sku_id,sku_name,pcs_per_case,saleable_pcs,damaged_pcs').order('sku_name'),
+      db.from('lwb_inventory_movements').select('sku_id').eq('movement_type','OPENING').eq('stock_bucket','SALEABLE')
+    ]);
+    for(const result of [skuRes,stockRes,openRes]) if(result.error) throw result.error;
+    const old=$('sku').value;
+    skus=(skuRes.data||[]).filter(s=>Number(s.pcs_per_case)>0);
+    balances=stockRes.data||[];
+    openingSkuIds=new Set((openRes.data||[]).map(o=>o.sku_id));
+    $('sku').replaceChildren(new Option('Select SKU from Master...', ''), ...skus.map(s=>new Option(s.sku_name,s.id)));
+    if(skus.some(s=>s.id===old)) $('sku').value=old;
+    renderRows();updatePreview();
+  }catch(e){show('Could not load inventory: '+(e.message||String(e))+'\nConfirm that authenticated read policies are configured for lwb_inventory_movements, lwb_warehouses, and lwb_live_stock.');}
+  finally{$('refresh').disabled=false;}
+}
+function renderRows(){
+  $('rows').replaceChildren();
+  for(const sku of skus){
+    const pack=Number(sku.pcs_per_case),b=balanceFor(sku.id),sale=Number(b?.saleable_pcs)||0,damaged=Number(b?.damaged_pcs)||0;
+    const tr=document.createElement('tr');
+    for(const value of [sku.sku_name,qty(pack),qty(Math.floor(sale/pack)),qty(sale%pack),qty(damaged),openingSkuIds.has(sku.id)?'Entered':'Not entered']){
+      const td=document.createElement('td');td.textContent=value;tr.appendChild(td);
+    }$('rows').appendChild(tr);
+  }
+  if(!skus.length){const row=document.createElement('tr'),c=document.createElement('td');c.colSpan=6;c.textContent='No active SKUs found.';row.appendChild(c);$('rows').appendChild(row);}
+}
+async function saveOpening(){
+  const sku=selectedSku();if(!db||!sku||!profile||profile.role!=='admin'||busy)return;
+  const cases=Number($('cases').value), loose=Number($('loose').value),pack=Number(sku.pcs_per_case),total=normalizeCounts(cases,loose,pack);
+  if(total===null){show('Enter whole Cases and Loose PCS (less than PCS per Case) with a positive total.');return;}
+  if(openingSkuIds.has(sku.id)){show('Opening stock already entered for this SKU.');return;}
+  const confirmed=confirm(`Add opening stock to MAIN godown?\n\nSKU: ${sku.sku_name}\nCases: ${cases}\nLoose PCS: ${loose}\nTotal Pieces: ${total}\n\nThis can be added only once for this SKU.`);
+  if(!confirmed)return;
+  busy=true;updatePreview();
+  try{
+    const {error}=await db.rpc('lwb_add_opening_stock',{p_sku_id:sku.id,p_cases:cases,p_loose_pcs:loose,p_reference_no:$('ref').value.trim()||null});
+    if(error)throw error;
+    show(`Opening stock saved successfully: ${sku.sku_name} — ${cases} CS + ${loose} PCS (${total} pieces).`,'success');
+    $('cases').value='0';$('loose').value='0';$('ref').value='';
+    await loadAll();
+  }catch(e){show('Could not save opening stock: '+(e.message||String(e)));}
+  finally{busy=false;updatePreview();}
+}
+$('sku').addEventListener('change',updatePreview);
+$('cases').addEventListener('input',updatePreview);
+$('loose').addEventListener('input',updatePreview);
+$('save').addEventListener('click',saveOpening);
+$('refresh').addEventListener('click',loadAll);
+$('connectBtn').addEventListener('click',()=>start($('keyInput').value.trim()));
+(async()=>{const key=await findPublishableKey();if(key)await start(key);else{$('keyRow').style.display='block';show('Paste your existing Supabase publishable key to connect.','info');}})();
+</script>
+</body>
+</html>
