@@ -29,6 +29,8 @@ button{border:0;border-radius:8px;background:#1569cc;color:white;padding:11px 17
       <div class="field"><label for="transport">Transport Name</label><input id="transport" maxlength="150" placeholder="Transporter"></div>
       <div class="field"><label for="vehicle">Vehicle Number</label><input id="vehicle" maxlength="40" placeholder="GJ05..."></div>
       <div class="field"><label for="lr">LR Number</label><input id="lr" maxlength="100" placeholder="LR / Consignment No."></div>
+      <div class="field"><label for="driverName">Driver Name *</label><input id="driverName" maxlength="100" required placeholder="Driver full name" autocomplete="off"></div>
+      <div class="field"><label for="driverMobile">Driver Mobile Number *</label><input id="driverMobile" type="tel" inputmode="tel" maxlength="20" required placeholder="10-digit mobile or +91" autocomplete="off"><div class="hint">Indian mobile: 10 digits, or +91 followed by 10 digits</div></div>
       <div class="field"><label for="godown">Godown</label><input id="godown" value="MAIN — Luxury Wrist Brand" readonly></div>
       <div class="field"><label for="remarks">Remarks</label><input id="remarks" maxlength="500" placeholder="Optional inward notes"></div>
     </div>
@@ -48,8 +50,8 @@ button{border:0;border-radius:8px;background:#1569cc;color:white;padding:11px 17
   </section>
 
   <section class="panel">
-    <div class="sectionhead"><div><h2>Recent Goods Inward</h2><p class="sub" style="margin:5px 0 0">Supplier, Invoice, SKU count and pieces</p></div><button id="refresh" type="button" class="secondary">Refresh</button></div>
-    <div class="tablewrap"><table class="history"><thead><tr><th>Received</th><th>Invoice No.</th><th>Supplier</th><th>Invoice Date</th><th>SKU Lines</th><th>Total PCS</th></tr></thead><tbody id="historyBody"><tr><td colspan="6">Loading...</td></tr></tbody></table></div>
+    <div class="sectionhead"><div><h2>Recent Goods Inward</h2><p class="sub" style="margin:5px 0 0">Supplier, Invoice, Driver and SKU details</p></div><button id="refresh" type="button" class="secondary">Refresh</button></div>
+    <div class="tablewrap"><table class="history"><thead><tr><th>Received</th><th>Invoice No.</th><th>Supplier</th><th>Invoice Date</th><th>Driver Name</th><th>Driver Mobile</th><th>SKU Lines</th><th>Total PCS</th></tr></thead><tbody id="historyBody"><tr><td colspan="8">Loading...</td></tr></tbody></table></div>
   </section>
 
   <section class="panel">
@@ -65,6 +67,8 @@ const $ = id => document.getElementById(id);
 let db=null,profile=null,skus=[],stock=[],inwardHeaders=[],inwardLines=[],busy=false,lineId=0;
 const format=n=>Number(n).toLocaleString('en-IN');
 const rupees=n=>'₹'+Number(n).toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2});
+const driverMobileClean=raw=>String(raw||'').replace(/[\s()-]/g,'');
+const validDriverMobile=raw=>/^(?:\+?91)?[6-9][0-9]{9}$/.test(driverMobileClean(raw));
 function show(message,type='error'){const el=$('notice');el.textContent=message;el.className='notice '+type;el.scrollIntoView({block:'nearest',behavior:'smooth'});}
 function clearNotice(){$('notice').className='notice';$('notice').textContent='';}
 function normalize(cases,pcs,pack){
@@ -131,10 +135,12 @@ function recalc(){
   $('totalValue').textContent=rupees(amount);
   const rolesOkay=profile?.active===true&&['admin','manager'].includes(profile.role);
   const detailsValid=!!$('supplier').value.trim()&&!!$('invoice').value.trim()&&!!$('invoiceDate').value&&!!$('receivedDate').value;
+  const driverNameOkay=$('driverName').value.trim().length>0&&$('driverName').value.trim().length<=100;
+  const driverMobileOkay=validDriverMobile($('driverMobile').value);
   const everyValid=rows.length>0&&rows.every(r=>r.sku&&r.normalized!==null&&r.rateOkay);
   const unique=new Set(rows.map(r=>r.sku?.id)).size===rows.length;
-  $('save').disabled=busy||!rolesOkay||!detailsValid||!everyValid||!unique;
-  $('hint').textContent=busy?'Saving all SKU lines together...':!rolesOkay?'Only active admin or manager can save.':!unique?'Duplicate SKU: combine quantities in one line.':!detailsValid?'Fill Supplier, Invoice No. and both dates.':!everyValid?'Choose SKU and enter a positive quantity on every line.':'Ready to save. Double-check physical received quantities.';
+  $('save').disabled=busy||!rolesOkay||!detailsValid||!driverNameOkay||!driverMobileOkay||!everyValid||!unique;
+  $('hint').textContent=busy?'Saving all SKU lines together...':!rolesOkay?'Only active admin or manager can save.':!unique?'Duplicate SKU: combine quantities in one line.':!detailsValid?'Fill Supplier, Invoice No. and both dates.':!driverNameOkay?'Enter Driver Name.':!driverMobileOkay?'Enter a valid 10-digit Indian Driver Mobile Number (optional +91).':!everyValid?'Choose SKU and enter a positive quantity on every line.':'Ready to save. Double-check physical received quantities.';
   let i=0;for(const tr of $('itemsBody').children)tr.firstChild.textContent=String(++i);
 }
 async function discoverPublishableKey(){
@@ -163,7 +169,7 @@ async function loadData(){
     const [skuRes,stockRes,headRes]=await Promise.all([
       db.from('sku_master').select('id,sku_name,pcs_per_case,is_active').eq('is_active',true).order('sku_name'),
       db.from('lwb_live_stock').select('sku_id,sku_name,pcs_per_case,saleable_pcs,damaged_pcs').order('sku_name'),
-      db.from('lwb_goods_inward').select('id,supplier_name,invoice_no,invoice_date,received_date,created_at').order('created_at',{ascending:false}).limit(20)
+      db.from('lwb_goods_inward').select('id,supplier_name,invoice_no,invoice_date,received_date,driver_name,driver_mobile,created_at').order('created_at',{ascending:false}).limit(20)
     ]);
     for(const r of [skuRes,stockRes,headRes])if(r.error)throw r.error;
     skus=(skuRes.data||[]).filter(s=>Number(s.pcs_per_case)>0);stock=stockRes.data||[];inwardHeaders=headRes.data||[];
@@ -176,9 +182,9 @@ async function loadData(){
 }
 function renderHistory(){
   const body=$('historyBody');body.replaceChildren();
-  if(!inwardHeaders.length){const r=body.insertRow(),c=r.insertCell();c.colSpan=6;c.className='empty';c.textContent='No Goods Inward invoices saved yet.';return;}
+  if(!inwardHeaders.length){const r=body.insertRow(),c=r.insertCell();c.colSpan=8;c.className='empty';c.textContent='No Goods Inward invoices saved yet.';return;}
   for(const h of inwardHeaders){const lines=inwardLines.filter(i=>i.inward_id===h.id);const tr=body.insertRow();
-    for(const value of [h.received_date,h.invoice_no,h.supplier_name,h.invoice_date,format(lines.length),format(lines.reduce((a,i)=>a+Number(i.quantity_pcs||0),0))])tr.insertCell().textContent=value??'—';
+    for(const value of [h.received_date,h.invoice_no,h.supplier_name,h.invoice_date,h.driver_name||'—',h.driver_mobile||'—',format(lines.length),format(lines.reduce((a,i)=>a+Number(i.quantity_pcs||0),0))])tr.insertCell().textContent=value??'—';
   }
 }
 function renderStock(){
@@ -191,15 +197,17 @@ function renderStock(){
 async function save(){
   const rows=readRows();recalc();if($('save').disabled||!db)return;
   const supplier=$('supplier').value.trim(),invoice=$('invoice').value.trim();
+  const driverName=$('driverName').value.trim(),driverMobile=driverMobileClean($('driverMobile').value);
   const items=rows.map(r=>({sku_id:r.sku.id,cases:r.cases,pcs:r.pcs,rate_per_case:r.rate===null?null:r.rate.toFixed(2)}));
   const preview=rows.map(r=>`${r.sku.sku_name}: ${r.normalized.cases} CS + ${r.normalized.pcs} PCS (${r.normalized.total} PCS)`).join('\n');
-  if(!confirm(`POST GOODS INWARD TO MAIN GODOWN?\n\nSupplier: ${supplier}\nInvoice: ${invoice}\nSKU Lines: ${rows.length}\n\n${preview}\n\nAll quantities will increase live stock immediately. Continue only for physically received goods.`))return;
+  if(!confirm(`POST GOODS INWARD TO MAIN GODOWN?\n\nSupplier: ${supplier}\nInvoice: ${invoice}\nDriver: ${driverName} (${driverMobile})\nSKU Lines: ${rows.length}\n\n${preview}\n\nAll quantities will increase live stock immediately. Continue only for physically received goods.`))return;
   busy=true;recalc();
   try{
     const {data,error}=await db.rpc('lwb_post_goods_inward',{
       p_supplier_name:supplier,p_invoice_no:invoice,p_invoice_date:$('invoiceDate').value,
       p_received_date:$('receivedDate').value,p_transport_name:$('transport').value.trim(),
-      p_vehicle_no:$('vehicle').value.trim(),p_lr_no:$('lr').value.trim(),p_remarks:$('remarks').value.trim(),p_items:items
+      p_vehicle_no:$('vehicle').value.trim(),p_lr_no:$('lr').value.trim(),p_remarks:$('remarks').value.trim(),p_items:items,
+      p_driver_name:driverName,p_driver_mobile:driverMobile
     });
     if(error)throw error;
     resetForm();
@@ -208,11 +216,11 @@ async function save(){
   }catch(e){let msg=e.message||String(e);if(e.code==='23505')msg='Duplicate Invoice or duplicate SKU. This supplier invoice was already posted (or SKU repeated). No stock was added.';show('Inward NOT saved: '+msg);}
   finally{busy=false;recalc();}
 }
-function resetForm(){for(const id of ['supplier','invoice','transport','vehicle','lr','remarks'])$(id).value='';
+function resetForm(){for(const id of ['supplier','invoice','transport','vehicle','lr','driverName','driverMobile','remarks'])$(id).value='';
   $('invoiceDate').value=new Date().toLocaleDateString('en-CA');$('receivedDate').value=$('invoiceDate').value;
   $('itemsBody').replaceChildren();itemRow();recalc();
 }
-for(const id of ['supplier','invoice','invoiceDate','receivedDate','transport','vehicle','lr','remarks'])$(id).addEventListener('input',recalc);
+for(const id of ['supplier','invoice','invoiceDate','receivedDate','transport','vehicle','lr','driverName','driverMobile','remarks'])$(id).addEventListener('input',recalc);
 $('add').addEventListener('click',itemRow);
 $('save').addEventListener('click',save);
 $('reset').addEventListener('click',()=>{if(confirm('Clear the unsaved Goods Inward form?')){resetForm();clearNotice();}});
@@ -224,4 +232,3 @@ resetForm();
 </script>
 </body>
 </html>
-
