@@ -14,7 +14,7 @@ button{border:0;border-radius:8px;background:#1569cc;color:white;padding:11px 17
 </style>
 </head>
 <body>
-<header><div><h1>LUXURY WRIST BRAND</h1><small>ERP / MAIN GODOWN / PURCHASE GOODS INWARD</small></div><nav><a href="opening-stock.html">Opening Stock</a><a href="dashboard.html">← Dashboard</a></nav></header>
+<header><div><h1>LUXURY WRIST BRAND</h1><small>ERP / MAIN GODOWN / PURCHASE GOODS INWARD</small></div><nav><a href="supplier-master.html">Supplier Master</a><a href="opening-stock.html">Opening Stock</a><a href="dashboard.html">← Dashboard</a></nav></header>
 <main>
   <div id="notice" class="notice" role="alert"></div>
   <section class="keybox" id="keybox"><div class="flex"><div class="field" style="flex:1;min-width:220px"><label for="keyInput">Browser-safe Supabase Publishable Key</label><input id="keyInput" placeholder="sb_publishable_..." autocomplete="off"></div><button id="connect" type="button">Connect</button></div><p class="small">Normally loaded from your existing sku-master.html. Only use the publishable key, never secret/service_role.</p></section>
@@ -22,7 +22,7 @@ button{border:0;border-radius:8px;background:#1569cc;color:white;padding:11px 17
   <section class="panel">
     <div class="sectionhead"><div><h2>Purchase / Goods Inward</h2><p class="sub" style="margin:6px 0 0">One Invoice → Multiple SKU → Automatic Main Godown Stock Update</p></div><span id="access" class="tag">Connecting...</span></div>
     <div class="form-grid">
-      <div class="field"><label for="supplier">Supplier / Company *</label><input id="supplier" maxlength="150" required placeholder="e.g. Hindustan Coca-Cola Beverages"></div>
+      <div class="field"><label for="supplier">Supplier / Company * (Master)</label><select id="supplier" required><option value="">Loading Supplier Master...</option></select><div class="hint" id="supplierHint">Select a Supplier from Master. <a href="supplier-master.html">Add / Edit Supplier</a></div></div>
       <div class="field"><label for="invoice">Purchase Invoice No. *</label><input id="invoice" maxlength="100" required placeholder="Invoice Number"></div>
       <div class="field"><label for="invoiceDate">Invoice Date *</label><input id="invoiceDate" type="date" required></div>
       <div class="field"><label for="receivedDate">Goods Received Date *</label><input id="receivedDate" type="date" required></div>
@@ -64,7 +64,7 @@ button{border:0;border-radius:8px;background:#1569cc;color:white;padding:11px 17
 'use strict';
 const SUPABASE_URL='https://txkbhadzdbxpieunfvox.supabase.co';
 const $ = id => document.getElementById(id);
-let db=null,profile=null,skus=[],stock=[],inwardHeaders=[],inwardLines=[],busy=false,lineId=0;
+let db=null,profile=null,skus=[],suppliers=[],stock=[],inwardHeaders=[],inwardLines=[],busy=false,lineId=0;
 const format=n=>Number(n).toLocaleString('en-IN');
 const rupees=n=>'₹'+Number(n).toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2});
 const driverMobileClean=raw=>String(raw||'').replace(/[\s()-]/g,'');
@@ -134,13 +134,14 @@ function recalc(){
   $('totalCases').textContent=format(sumCases)+' CS + '+format(sumRemaining)+' PCS';
   $('totalValue').textContent=rupees(amount);
   const rolesOkay=profile?.active===true&&['admin','manager'].includes(profile.role);
-  const detailsValid=!!$('supplier').value.trim()&&!!$('invoice').value.trim()&&!!$('invoiceDate').value&&!!$('receivedDate').value;
+  const supplierSelected=suppliers.find(s=>s.id===$('supplier').value);
+  const detailsValid=!!supplierSelected&&!!$('invoice').value.trim()&&!!$('invoiceDate').value&&!!$('receivedDate').value;
   const driverNameOkay=$('driverName').value.trim().length>0&&$('driverName').value.trim().length<=100;
   const driverMobileOkay=validDriverMobile($('driverMobile').value);
   const everyValid=rows.length>0&&rows.every(r=>r.sku&&r.normalized!==null&&r.rateOkay);
   const unique=new Set(rows.map(r=>r.sku?.id)).size===rows.length;
   $('save').disabled=busy||!rolesOkay||!detailsValid||!driverNameOkay||!driverMobileOkay||!everyValid||!unique;
-  $('hint').textContent=busy?'Saving all SKU lines together...':!rolesOkay?'Only active admin or manager can save.':!unique?'Duplicate SKU: combine quantities in one line.':!detailsValid?'Fill Supplier, Invoice No. and both dates.':!driverNameOkay?'Enter Driver Name.':!driverMobileOkay?'Enter a valid 10-digit Indian Driver Mobile Number (optional +91).':!everyValid?'Choose SKU and enter a positive quantity on every line.':'Ready to save. Double-check physical received quantities.';
+  $('hint').textContent=busy?'Saving all SKU lines together...':!rolesOkay?'Only active admin or manager can save.':!unique?'Duplicate SKU: combine quantities in one line.':!detailsValid?'Choose Supplier from Master, and fill Invoice No. and both dates.':!driverNameOkay?'Enter Driver Name.':!driverMobileOkay?'Enter a valid 10-digit Indian Driver Mobile Number (optional +91).':!everyValid?'Choose SKU and enter a positive quantity on every line.':'Ready to save. Double-check physical received quantities.';
   let i=0;for(const tr of $('itemsBody').children)tr.firstChild.textContent=String(++i);
 }
 async function discoverPublishableKey(){
@@ -166,19 +167,35 @@ async function loadData(){
   if(!db)return;
   $('refresh').disabled=true;$('refreshStock').disabled=true;
   try{
-    const [skuRes,stockRes,headRes]=await Promise.all([
+    const [skuRes,supplierRes,stockRes,headRes]=await Promise.all([
       db.from('sku_master').select('id,sku_name,pcs_per_case,is_active').eq('is_active',true).order('sku_name'),
+      db.from('lwb_supplier_master').select('id,supplier_code,supplier_name,gstin,city,is_active').eq('is_active',true).order('supplier_name'),
       db.from('lwb_live_stock').select('sku_id,sku_name,pcs_per_case,saleable_pcs,damaged_pcs').order('sku_name'),
       db.from('lwb_goods_inward').select('id,supplier_name,invoice_no,invoice_date,received_date,driver_name,driver_mobile,created_at').order('created_at',{ascending:false}).limit(20)
     ]);
-    for(const r of [skuRes,stockRes,headRes])if(r.error)throw r.error;
-    skus=(skuRes.data||[]).filter(s=>Number(s.pcs_per_case)>0);stock=stockRes.data||[];inwardHeaders=headRes.data||[];
+    for(const r of [skuRes,supplierRes,stockRes,headRes])if(r.error)throw r.error;
+    skus=(skuRes.data||[]).filter(s=>Number(s.pcs_per_case)>0);suppliers=supplierRes.data||[];stock=stockRes.data||[];inwardHeaders=headRes.data||[];
+    refreshSupplierOptions();
     const ids=inwardHeaders.map(h=>h.id);
     if(ids.length){const r=await db.from('lwb_goods_inward_items').select('inward_id,quantity_pcs').in('inward_id',ids);if(r.error)throw r.error;inwardLines=r.data||[];}
     else inwardLines=[];
     setAllOptions();renderHistory();renderStock();
-  }catch(e){show('Could not load Goods Inward: '+(e.message||String(e))+'\nFirst run goods-inward-setup.sql in Supabase SQL Editor.');}
+  }catch(e){show('Could not load Goods Inward: '+(e.message||String(e))+'\nConfirm goods-inward-setup.sql and supplier-master-setup.sql are applied in Supabase.');}
   finally{$('refresh').disabled=false;$('refreshStock').disabled=false;}
+}
+function refreshSupplierOptions(){
+  const sel=$('supplier'),previous=sel.value;
+  sel.replaceChildren(new Option('Select Supplier / Company from Master...',''),...suppliers.map(s=>new Option(`${s.supplier_name} (${s.supplier_code})`,s.id)));
+  if(suppliers.some(s=>s.id===previous))sel.value=previous;
+  updateSupplierHint();
+}
+function updateSupplierHint(){
+  const s=suppliers.find(x=>x.id===$('supplier').value);
+  const hint=$('supplierHint');hint.replaceChildren();
+  if(s){hint.appendChild(document.createTextNode([s.supplier_code,s.gstin?'GSTIN: '+s.gstin:'',s.city||''].filter(Boolean).join(' · ')+' · '));}
+  else if(!suppliers.length){hint.appendChild(document.createTextNode('No active Supplier found. '));}
+  else hint.appendChild(document.createTextNode('Select registered Supplier. '));
+  const a=document.createElement('a');a.href='supplier-master.html';a.textContent='Open Supplier Master';hint.appendChild(a);
 }
 function renderHistory(){
   const body=$('historyBody');body.replaceChildren();
@@ -196,7 +213,8 @@ function renderStock(){
 }
 async function save(){
   const rows=readRows();recalc();if($('save').disabled||!db)return;
-  const supplier=$('supplier').value.trim(),invoice=$('invoice').value.trim();
+  const selectedSupplier=suppliers.find(s=>s.id===$('supplier').value);if(!selectedSupplier){show('Select a Supplier from Supplier Master.');return;}
+  const supplier=selectedSupplier.supplier_name,invoice=$('invoice').value.trim();
   const driverName=$('driverName').value.trim(),driverMobile=driverMobileClean($('driverMobile').value);
   const items=rows.map(r=>({sku_id:r.sku.id,cases:r.cases,pcs:r.pcs,rate_per_case:r.rate===null?null:r.rate.toFixed(2)}));
   const preview=rows.map(r=>`${r.sku.sku_name}: ${r.normalized.cases} CS + ${r.normalized.pcs} PCS (${r.normalized.total} PCS)`).join('\n');
@@ -207,7 +225,7 @@ async function save(){
       p_supplier_name:supplier,p_invoice_no:invoice,p_invoice_date:$('invoiceDate').value,
       p_received_date:$('receivedDate').value,p_transport_name:$('transport').value.trim(),
       p_vehicle_no:$('vehicle').value.trim(),p_lr_no:$('lr').value.trim(),p_remarks:$('remarks').value.trim(),p_items:items,
-      p_driver_name:driverName,p_driver_mobile:driverMobile
+      p_driver_name:driverName,p_driver_mobile:driverMobile,p_supplier_id:selectedSupplier.id
     });
     if(error)throw error;
     resetForm();
@@ -218,9 +236,10 @@ async function save(){
 }
 function resetForm(){for(const id of ['supplier','invoice','transport','vehicle','lr','driverName','driverMobile','remarks'])$(id).value='';
   $('invoiceDate').value=new Date().toLocaleDateString('en-CA');$('receivedDate').value=$('invoiceDate').value;
-  $('itemsBody').replaceChildren();itemRow();recalc();
+  $('itemsBody').replaceChildren();itemRow();updateSupplierHint();recalc();
 }
-for(const id of ['supplier','invoice','invoiceDate','receivedDate','transport','vehicle','lr','driverName','driverMobile','remarks'])$(id).addEventListener('input',recalc);
+for(const id of ['invoice','invoiceDate','receivedDate','transport','vehicle','lr','driverName','driverMobile','remarks'])$(id).addEventListener('input',recalc);
+$('supplier').addEventListener('change',()=>{updateSupplierHint();recalc();});
 $('add').addEventListener('click',itemRow);
 $('save').addEventListener('click',save);
 $('reset').addEventListener('click',()=>{if(confirm('Clear the unsaved Goods Inward form?')){resetForm();clearNotice();}});
