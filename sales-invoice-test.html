@@ -68,6 +68,22 @@
 .party-suggestions p{padding:12px;margin:0;color:#667c96;font-size:12px}
 .party-metadata{border-radius:8px;background:#eef7ff;padding:10px 13px;margin:6px 0 0;font-size:12px;color:#34577e;grid-column:1/-1}
 @media(max-width:690px){.party-metadata{grid-column:auto}}
+
+/* COMPACT 5-FIELD SALES ENTRY: SKU, CS, PCS, RATE, TOTAL only. */
+.invoice-sku-row{display:grid;grid-template-columns:minmax(220px,3fr) minmax(75px,.65fr) minmax(75px,.65fr) minmax(120px,1fr) minmax(138px,1.08fr) 38px;gap:10px;align-items:start}
+.sku-card.compact{padding:12px 13px;margin-bottom:9px}
+.sku-card.compact .field label{font-size:12px;margin-bottom:5px}
+.sku-card.compact .field input{min-height:41px;padding:9px}
+.sku-card.compact .remove{width:36px;height:41px;padding:0;background:#fff0ef;color:#af2828;border:1px solid #f3c8c6;border-radius:8px;margin-top:19px;font-size:19px}
+.sku-card.compact .remove:hover{background:#ffe0dc}
+.invoice-amount{background:#f1f8f4;border:1px solid #b6dcc8;border-radius:8px;padding:10px 12px;min-height:41px;color:#08633f;font-weight:800;font-size:16px;white-space:nowrap;font-variant-numeric:tabular-nums}
+.sku-card.compact .skuHint{margin-top:4px;line-height:1.3;min-height:14px}
+.invoice-topline{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap}
+.invoice-summary{display:flex;align-items:center;justify-content:flex-end;gap:18px;padding:12px 16px;margin:10px 0 15px;background:#eaf5ef;border:1px solid #bedcc9;border-radius:10px}
+.invoice-summary span{font-size:13px;color:#466c59}.invoice-summary strong{font-size:26px;color:#086942;font-variant-numeric:tabular-nums}
+.invoice-helper{font-size:12px;color:#5d7188}
+@media(max-width:920px){.invoice-sku-row{grid-template-columns:minmax(190px,2fr) repeat(2,minmax(72px,1fr)) minmax(100px,1.1fr);gap:9px}.invoice-sku-row .amount-col{grid-column:3/span 2}.invoice-sku-row .rate-col{grid-column:2}.invoice-sku-row .sku-search{grid-column:1/span 2}.invoice-sku-row .qty-cs{grid-column:3;grid-row:1}.invoice-sku-row .qty-pcs{grid-column:4;grid-row:1}.invoice-sku-row .rate-col{grid-column:1;grid-row:2}.invoice-sku-row .amount-col{grid-column:2/span 2;grid-row:2}.invoice-sku-row .remove{grid-column:4;grid-row:2;margin-top:19px}}
+@media(max-width:620px){.invoice-sku-row{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.invoice-sku-row .sku-search{grid-column:1/-1;grid-row:1}.invoice-sku-row .qty-cs{grid-column:1;grid-row:2}.invoice-sku-row .qty-pcs{grid-column:2;grid-row:2}.invoice-sku-row .rate-col{grid-column:1;grid-row:3}.invoice-sku-row .amount-col{grid-column:2;grid-row:3}.invoice-sku-row .remove{grid-column:2;grid-row:4;margin:0 0 0 auto;height:32px}.invoice-summary{justify-content:space-between}.invoice-summary strong{font-size:21px}}
 </style>
 </head>
 <body>
@@ -88,23 +104,17 @@
 <div class="party-metadata" id="partyMeta">Select a buyer from the Customer Master. GSTIN, Billing Address, State and Credit Days will fill automatically.</div>
 <div class="field"><label for="shipToName">Ship To Name (A5 Print, Optional)</label><input id="shipToName" maxlength="200" placeholder="Same as Buyer if empty"></div>
 <div class="field wide"><label for="shipToAddress">Ship To Address (A5 Print, Optional)</label><textarea id="shipToAddress" placeholder="Same as Buyer if empty"></textarea><p class="hint">Ship To fields affect only the print preview; they are not stored in TEST drafts yet.</p></div>
-<div class="field"><label for="supplyType">GST Supply Type *</label><select id="supplyType"><option value="intrastate">Within State — CGST + SGST</option><option value="interstate">Other State — IGST</option></select></div>
-<div class="field"><label for="rateBasis">Rate Per Case *</label><select id="rateBasis"><option value="exclusive">Excluding GST (GST added)</option><option value="inclusive">Including GST (GST extracted)</option></select></div>
+<select id="supplyType" hidden aria-label="Auto GST supply type"><option value="intrastate">CGST + SGST</option><option value="interstate">IGST</option></select>
+<input id="rateBasis" type="hidden" value="inclusive">
 <div class="field"><label for="creditDays">Credit Days (Preview Only)</label><input id="creditDays" type="number" min="0" max="365" value="0"></div>
 <div class="field"><label for="customerRef">Sales Order / Challan Reference</label><input id="customerRef" maxlength="120" placeholder="Optional reference"></div>
 <div class="field wide"><label for="remarks">Remarks</label><input id="remarks" maxlength="300" placeholder="Optional test notes"></div>
 </div></section>
-<section class="panel"><div class="sectionhead"><div><h2>Material / SKU Details</h2><p class="hint">Search by name, e.g. type <b>250ML TH</b>. UOM1 = Cases; UOM0 = Loose PCS. Rate is per Case.</p></div><button type="button" id="addSku">+ Add Another SKU</button></div>
+<section class="panel"><div class="sectionhead"><div><h2>Material / SKU Details</h2><p class="hint">SKU search karein, jaise <b>250ML TH</b>. Sirf SKU, CS, PCS aur Rate daalein. <b>Total Amount automatic</b> niklega (GST inclusive rate).</p></div><button type="button" id="addSku">+ Add Another SKU</button></div>
 <div id="skuList"><p class="hint">Loading SKU Master...</p></div>
-<div class="stats">
-<div class="stat"><small>SKU Lines</small><strong id="count">0</strong></div>
-<div class="stat"><small>Total Pieces</small><strong id="pieces">0 PCS</strong></div>
-<div class="stat money"><small>Taxable Value</small><strong id="taxable">₹0.00</strong></div>
-<div class="stat"><small>Total GST</small><strong id="gstTotal">₹0.00</strong></div>
-<div class="stat money"><small>Test Invoice Total</small><strong id="grandTotal">₹0.00</strong></div>
-</div>
+<div class="invoice-summary"><span>Invoice Total (Auto)</span><strong id="grandTotal">₹0.00</strong></div>
 <div class="toolbar"><button type="button" id="printBtn">Print A5 / Save PDF — TEST ONLY</button><button type="button" id="saveBtn" class="secondary" disabled>Save TEST Draft (Supabase)</button><button type="button" id="clearBtn" class="secondary">Clear Form</button></div>
-<p class="footnote" id="help">GST is based on SKU Master and chosen supply/rate type. This is NOT an original bill. If Cess is nonzero on a SKU, preview/save will be blocked until tax treatment is reviewed. Discounts are line-wise percentages on the case-rate value.</p>
+<p class="footnote" id="help">GST is based on SKU Master and chosen supply/rate type. This is NOT an original bill. If Cess is nonzero on a SKU, preview/save will be blocked until tax treatment is reviewed. SKU GST/HSN automatic (from master). No discount field on entry.</p>
 </section>
 <section class="panel"><div class="sectionhead"><div><h2>Saved TEST Drafts</h2><p class="hint">Separate from Tally and all live sales/stock/receivable tables</p></div><button type="button" class="secondary" id="refreshBtn">Refresh</button></div><div class="scroller"><table class="history"><thead><tr><th>Test Ref</th><th>Date</th><th>Party</th><th>Taxable</th><th>GST</th><th>Amount</th><th>Saved At</th></tr></thead><tbody id="historyBody"><tr><td colspan="7">Connect to Supabase to view drafts.</td></tr></tbody></table></div></section>
 </main>
@@ -147,6 +157,7 @@ function selectParty(c){
   $('partyGstin').value=c.gstin||'';
   $('partyAddress').value=[c.billing_address,c.city,c.state,c.pincode].filter(Boolean).join(', ');
   $('partyState').value=c.state||'';
+  $('supplyType').value=normalizedText(c.state)==='gujarat'||String(c.state||'').trim()==='24'?'intrastate':'interstate';
   $('creditDays').value=String(c.credit_days??0);
   $('partyMeta').textContent='Selected: '+c.customer_code+' · '+(c.gstin||'Unregistered')+' · '+(c.state||'No state')+' · Credit '+(c.credit_days||0)+' days';
   $('partyOptions').classList.remove('show');
@@ -208,28 +219,21 @@ async function loadHistory(){if(!db||!userProfile)return;const {data,error}=awai
 function inputBlock(label,cls,options={}){return `<div class="field"><label>${label}</label><input class="${cls}" ${options.attrs||''} placeholder="${options.placeholder||''}"></div>`;}
 function addSkuLine(){const row={key:++lineCounter,skuId:'',caseCount:0,loosePcs:0,rate:'',discount:0,search:''};rows.push(row);renderRow(row);recalc();}
 function renderAllRows(){$('skuList').replaceChildren();rows.forEach(renderRow);recalc();}
-function renderRow(row){const card=document.createElement('div');card.className='sku-card';card.dataset.key=row.key;
- card.innerHTML=`<div class="sku-head"><strong>SKU Line #${rows.indexOf(row)+1}</strong><button type="button" class="danger remove">Remove</button></div>
- <div class="sku-grid">
- <div class="field sku-search"><label>SKU / Product *</label><input class="skuName" type="search" autocomplete="off" placeholder="Search e.g. 250ML TH"><div class="suggestions" role="listbox"></div><p class="hint skuHint">Select an SKU from the list.</p></div>
- ${inputBlock('UOM1 — Cases','qtyCases',{attrs:'type="number" min="0" step="1" value="0"'})}
- ${inputBlock('UOM0 — Loose PCS','qtyPcs',{attrs:'type="number" min="0" step="1" value="0"'})}
- ${inputBlock('Rate Per Case (₹) *','rate',{attrs:'type="number" min="0" step="0.01"',placeholder:'e.g. 590'})}
- </div><div class="sku-grid two">
- ${inputBlock('Discount (%)','discount',{attrs:'type="number" min="0" max="100" step="0.01" value="0"'})}
- <div class="readout"><small>Converted Quantity</small><b class="converted">0 CS + 0 PCS</b></div>
- <div class="readout"><small>GST % (SKU Master)</small><b class="taxRate">—</b></div>
- <div class="readout"><small>HSN</small><b class="hsn">—</b></div>
- <div class="readout"><small>Total PCS</small><b class="totalPcs">0</b></div>
- <div class="readout"><small>Taxable Value</small><b class="taxableLine">₹0.00</b></div>
- <div class="readout"><small>GST</small><b class="taxLine">₹0.00</b></div>
- <div class="readout"><small>Line Total</small><b class="totalLine">₹0.00</b></div></div>`;
+function renderRow(row){const card=document.createElement('div');card.className='sku-card compact';card.dataset.key=row.key;
+ card.innerHTML=`<div class="invoice-sku-row">
+ <div class="field sku-search"><label>SKU Name *</label><input class="skuName" type="search" autocomplete="off" placeholder="250ML TH search..." aria-label="Search SKU"><div class="suggestions" role="listbox"></div><p class="hint skuHint">Select an SKU from list.</p></div>
+ <div class="field qty-cs"><label>CS *</label><input class="qtyCases" type="number" min="0" step="1" value="0" inputmode="numeric"></div>
+ <div class="field qty-pcs"><label>PCS *</label><input class="qtyPcs" type="number" min="0" step="1" value="0" inputmode="numeric"></div>
+ <div class="field rate-col"><label>Rate / CS (₹) *</label><input class="rate" type="number" min="0.01" step="0.01" placeholder="Incl. GST" inputmode="decimal"></div>
+ <div class="field amount-col"><label>Total Amount (Auto)</label><div class="invoice-amount totalLine" aria-live="polite">₹0.00</div></div>
+ <button type="button" class="remove" aria-label="Remove this SKU" title="Remove this SKU">×</button>
+ </div>`;
  const name=card.querySelector('.skuName'),list=card.querySelector('.suggestions');
  const selected=skus.find(s=>s.id===row.skuId);name.value=selected?.sku_name||row.search||'';
  const drawOptions=()=>{const q=normalizedText(name.value),tokens=q.split(' ').filter(Boolean),opts=skus.filter(s=>tokens.every(t=>normalizedText(s.sku_name).includes(t))).slice(0,30);
- list.replaceChildren();if(!opts.length){const p=document.createElement('p');p.textContent='No matching SKUs';list.append(p);} else for(const s of opts){const btn=document.createElement('button');btn.type='button';btn.textContent=s.sku_name+' | '+s.pcs_per_case+' PCS/CS';btn.addEventListener('click',()=>{row.skuId=s.id;row.search='';name.value=s.sku_name;list.classList.remove('show');recalc();});list.append(btn);}list.classList.add('show');};
+ list.replaceChildren();if(!opts.length){const p=document.createElement('p');p.textContent='No matching SKU';list.append(p);}else for(const sku of opts){const btn=document.createElement('button');btn.type='button';btn.textContent=sku.sku_name;btn.addEventListener('pointerdown',ev=>ev.preventDefault());btn.addEventListener('click',()=>{row.skuId=sku.id;row.search='';name.value=sku.sku_name;list.classList.remove('show');recalc();});list.append(btn);}list.classList.add('show');};
  name.addEventListener('focus',drawOptions);name.addEventListener('input',()=>{row.search=name.value;row.skuId='';drawOptions();recalc();});name.addEventListener('blur',()=>setTimeout(()=>list.classList.remove('show'),160));
- const bindings=[['qtyCases','caseCount'],['qtyPcs','loosePcs'],['rate','rate'],['discount','discount']];for(const [cls,prop] of bindings){const e=card.querySelector('.'+cls);e.value=String(row[prop]??'');e.addEventListener('input',()=>{row[prop]=e.value;recalc();});}
+ const bindings=[['qtyCases','caseCount'],['qtyPcs','loosePcs'],['rate','rate']];for(const [cls,prop] of bindings){const e=card.querySelector('.'+cls);e.value=String(row[prop]??'');e.addEventListener('input',()=>{row[prop]=e.value;recalc();});}
  card.querySelector('.remove').addEventListener('click',()=>{rows=rows.filter(x=>x.key!==row.key);renderAllRows();});$('skuList').append(card);
 }
 function calculateLine(row){const s=skus.find(x=>x.id===row.skuId),pack=Number(s?.pcs_per_case||0),cases=safeInt(row.caseCount),loose=safeInt(row.loosePcs),rate=Number(row.rate),disc=Number(row.discount);
@@ -253,14 +257,15 @@ function values(){const lines=rows.map(calculateLine),validLines=lines.length>0&
  const totals=lines.reduce((acc,l)=>{if(!l.errors.length){acc.pieces+=l.pieces;acc.taxableP+=l.taxableP;acc.cgstP+=l.cgstP;acc.sgstP+=l.sgstP;acc.igstP+=l.igstP;acc.totalP+=l.totalP;}return acc;},{pieces:0,taxableP:0,cgstP:0,sgstP:0,igstP:0,totalP:0});
  const seller=$('sellerName').value.trim(),party=$('partyName').value.trim(),date=$('invoiceDate').value;const metadata=!!seller&&!!party&&!!date&&!!selectedCustomerId&&partyMasterReady;
  const valid=metadata&&validLines&&unique;return {lines,valid,validLines,unique,metadata,totals};}
-function recalc(){const out=values();rows.forEach((row,i)=>{const l=out.lines[i],c=document.querySelector(`.sku-card[data-key="${row.key}"]`);if(!c)return;const set=(cls,value)=>c.querySelector('.'+cls).textContent=value;
- set('converted',l.cs+' CS + '+l.pcs+' PCS');set('totalPcs',fmt(l.pieces));set('taxRate',l.sku?.gst_rate==null?'—':l.sku.gst_rate+'%');set('hsn',l.sku?.hsn_code||'—');set('taxableLine',inr(l.taxableP/100));set('taxLine',inr((l.cgstP+l.sgstP+l.igstP)/100));set('totalLine',inr(l.totalP/100));set('skuHint',l.errors.length?'⚠ '+l.errors.join(' · '):`${l.sku.sku_name} | ${l.pack} PCS/Case`);
+function recalc(){const out=values();rows.forEach((row,i)=>{const l=out.lines[i],c=document.querySelector(`.sku-card[data-key="${row.key}"]`);if(!c)return;
+ c.querySelector('.totalLine').textContent=inr(l.totalP/100);
+ c.querySelector('.skuHint').textContent=l.errors.length?'⚠ '+l.errors.join(' · '):'';
  });
- $('count').textContent=rows.length;$('pieces').textContent=fmt(out.totals.pieces)+' PCS';$('taxable').textContent=inr(out.totals.taxableP/100);$('gstTotal').textContent=inr((out.totals.cgstP+out.totals.sgstP+out.totals.igstP)/100);$('grandTotal').textContent=inr(out.totals.totalP/100);
+ $('grandTotal').textContent=inr(out.totals.totalP/100);
  $('printBtn').disabled=!out.valid;
  $('saveBtn').disabled=!out.valid||!db||!userProfile||saving;
- let status='Ready for TEST preview. No live stock or ledger will change.';if(!out.metadata)status='Select a saved Buyer / Party from the Customer Master and confirm Test Date.';else if(!out.unique)status='Duplicate SKU lines: combine into one line.';else if(!out.validLines)status='Complete all SKU lines: product, quantity, rate, GST rate and cess check.';
- $('help').textContent=status+' GST follows the selected supply/rate mode. TEST preview only; compliance and invoice rounding must be checked before production.';
+ let status='Ready for TEST preview. Original invoice Tally mein hi banega.';if(!out.metadata)status='Customer Master se Party choose karein, phir invoice date confirm karein.';else if(!out.unique)status='Duplicate SKU: ek SKU ek hi line mein daalein.';else if(!out.validLines)status='SKU, CS / PCS aur GST-inclusive Rate poora bharein. GST master se automatic hoga.';
+ $('help').textContent=status+' Tally rate GST-inclusive hai. A5 TEST Print mein tax breakup automatic aayega; live stock aur outstanding change nahi honge.';
 }
 function serialized(out){return out.lines.map((l,i)=>({sku_id:l.sku.id,sku_name:l.sku.sku_name,hsn_code:l.sku.hsn_code,pcs_per_case:l.pack,cases: l.cases,loose_pcs:l.loose,total_pcs:l.pieces,rate_per_case:rows[i].rate,discount_percent:l.disc,gst_rate:Number(l.sku.gst_rate),cess_rate:Number(l.sku.cess_rate||0),taxable_amount:moneyToNumber(l.taxableP),cgst_amount:moneyToNumber(l.cgstP),sgst_amount:moneyToNumber(l.sgstP),igst_amount:moneyToNumber(l.igstP),total_amount:moneyToNumber(l.totalP)}));}
 async function saveDraft(){if(!db||!userProfile)return;const chosen=customers.find(x=>x.id===selectedCustomerId);if(!chosen||chosen.customer_name!==$('partyName').value.trim()){notify('Choose an active Party from Customer Master.','error');return;}const out=values();if(!out.valid){notify('Test draft is incomplete. '+$('help').textContent,'error');return;}if(saving)return;saving=true;recalc();
@@ -304,7 +309,7 @@ function printDraft(){
  </div>`;
  window.print();
 }
-function clearForm(){if(!confirm('Clear current TEST preview form? Saved drafts will remain.'))return;for(const id of ['partyName','partyGstin','partyAddress','partyState','shipToName','shipToAddress','customerRef','remarks'])$(id).value='';selectedCustomerId=null;$('invoiceDate').value=isoDate();$('testRef').value='TEST-PREVIEW';$('creditDays').value='0';$('rateBasis').value='exclusive';$('supplyType').value='intrastate';rows=[];$('partyMeta').textContent='Select a buyer from the Customer Master.';addSkuLine();recalc();notify('Form cleared.','info');}
+function clearForm(){if(!confirm('Clear current TEST preview form? Saved drafts will remain.'))return;for(const id of ['partyName','partyGstin','partyAddress','partyState','shipToName','shipToAddress','customerRef','remarks'])$(id).value='';selectedCustomerId=null;$('invoiceDate').value=isoDate();$('testRef').value='TEST-PREVIEW';$('creditDays').value='0';$('rateBasis').value='inclusive';$('supplyType').value='intrastate';rows=[];$('partyMeta').textContent='Select a buyer from the Customer Master.';addSkuLine();recalc();notify('Form cleared.','info');}
 function initialize(){showSellerProfile(SELLER_FALLBACK);$('invoiceDate').value=isoDate();$('addSku').addEventListener('click',addSkuLine);$('saveBtn').addEventListener('click',saveDraft);$('printBtn').addEventListener('click',printDraft);$('refreshBtn').addEventListener('click',loadHistory);$('clearBtn').addEventListener('click',clearForm);$('connectBtn').addEventListener('click',()=>connect($('keyInput').value.trim()));for(const id of ['invoiceDate','rateBasis','supplyType','creditDays'])$(id).addEventListener('input',recalc);$('partyName').addEventListener('focus',drawPartyOptions);$('partyName').addEventListener('input',()=>{resetPartySelection(false);drawPartyOptions();});$('partyName').addEventListener('blur',()=>setTimeout(()=>$('partyOptions').classList.remove('show'),190));$('refreshParty').addEventListener('click',async e=>{e.preventDefault();await loadCustomers();drawPartyOptions();});$('keyPanel').style.display='none';rows=[];addSkuLine();discoverKey().then(k=>{if(k)return connect(k);showKeyPanel();$('loginState').textContent='KEY REQUIRED';notify('Publishable key not found automatically. Use browser-safe sb_publishable_... key (no secret/service_role).','info');});}
 initialize();
 </script>
