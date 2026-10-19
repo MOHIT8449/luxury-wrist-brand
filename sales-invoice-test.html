@@ -69,6 +69,12 @@
 .party-metadata{border-radius:8px;background:#eef7ff;padding:10px 13px;margin:6px 0 0;font-size:12px;color:#34577e;grid-column:1/-1}
 @media(max-width:690px){.party-metadata{grid-column:auto}}
 
+/* Bill To = Ship To by default; show two optional override fields only when needed. */
+.same-ship-toggle{display:flex!important;align-items:center;gap:10px;font-weight:normal!important;background:#eff7ff;border:1px solid #cde0f6;border-radius:8px;padding:11px 12px;cursor:pointer;line-height:1.45}
+.same-ship-toggle input[type="checkbox"]{width:18px;height:18px;min-height:0;flex:none;margin:0;accent-color:#1267bc}
+.ship-different-fields{grid-column:1/-1;display:grid;grid-template-columns:1fr 2fr;align-items:start;gap:14px;padding:12px;border:1px solid #dce5f1;border-radius:9px}
+.ship-different-fields .hint{grid-column:1/-1}
+@media(max-width:690px){.ship-different-fields{grid-template-columns:1fr}}
 /* COMPACT 5-FIELD SALES ENTRY: SKU, CS, PCS, RATE, TOTAL only. */
 .invoice-sku-row{display:grid;grid-template-columns:minmax(220px,3fr) minmax(75px,.65fr) minmax(75px,.65fr) minmax(120px,1fr) minmax(138px,1.08fr) 38px;gap:10px;align-items:start}
 .sku-card.compact{padding:12px 13px;margin-bottom:9px}
@@ -102,8 +108,8 @@
 <div class="field"><label for="partyState">Buyer State — Auto</label><input id="partyState" readonly placeholder="From Customer Master"></div>
 <div class="field wide"><label for="partyAddress">Buyer Billing Address — Auto</label><textarea id="partyAddress" readonly placeholder="From Customer Master"></textarea></div>
 <div class="party-metadata" id="partyMeta">Select a buyer from the Customer Master. GSTIN, Billing Address, State and Credit Days will fill automatically.</div>
-<div class="field"><label for="shipToName">Ship To Name (A5 Print, Optional)</label><input id="shipToName" maxlength="200" placeholder="Same as Buyer if empty"></div>
-<div class="field wide"><label for="shipToAddress">Ship To Address (A5 Print, Optional)</label><textarea id="shipToAddress" placeholder="Same as Buyer if empty"></textarea><p class="hint">Ship To fields affect only the print preview; they are not stored in TEST drafts yet.</p></div>
+<div class="field wide"><label class="same-ship-toggle" for="shipSame"><input type="checkbox" id="shipSame" checked> <span><strong>Ship To = Bill To (Default)</strong> — Buyer Name और Billing Address A5 Print में अपने आप आएँगे।</span></label><p class="hint">Delivery Party / Address अलग हो तो ऊपर का Tick हटाएँ।</p></div>
+<div id="shipDifferentFields" class="ship-different-fields" style="display:none"><div class="field"><label for="shipToName">Ship To Name (Only if different)</label><input id="shipToName" maxlength="200" placeholder="Delivery party name"></div><div class="field"><label for="shipToAddress">Ship To Address (Only if different)</label><textarea id="shipToAddress" placeholder="Delivery address"></textarea></div><p class="hint">ये अलग Delivery Details केवल A5 Test Print में दिखेंगी; अभी Test Draft Database में Save नहीं होतीं।</p></div>
 <select id="supplyType" hidden aria-label="Auto GST supply type"><option value="intrastate">CGST + SGST</option><option value="interstate">IGST</option></select>
 <input id="rateBasis" type="hidden" value="inclusive">
 <div class="field"><label for="creditDays">Credit Days (Preview Only)</label><input id="creditDays" type="number" min="0" max="365" value="0"></div>
@@ -285,8 +291,8 @@ function printDraft(){
  const out=values();
  if(!out.valid){notify('Complete all invoice fields first.','error');return;}
  const details=serialized(out),safe=escapeHTML,amount=p=>inr(p/100);
- const shippingName=$('shipToName').value.trim()||$('partyName').value.trim();
- const shippingAddress=$('shipToAddress').value.trim()||$('partyAddress').value.trim();
+ const shippingName=$('shipSame').checked?$('partyName').value.trim():($('shipToName').value.trim()||$('partyName').value.trim());
+ const shippingAddress=$('shipSame').checked?$('partyAddress').value.trim():($('shipToAddress').value.trim()||$('partyAddress').value.trim());
  const ship=shippingAddress||'Address not provided';
  const invoiceDate=$('invoiceDate').value, gstType=$('supplyType').value==='intrastate'?'CGST + SGST':'IGST';
  const currency=n=>Number(n||0).toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2});
@@ -309,8 +315,8 @@ function printDraft(){
  </div>`;
  window.print();
 }
-function clearForm(){if(!confirm('Clear current TEST preview form? Saved drafts will remain.'))return;for(const id of ['partyName','partyGstin','partyAddress','partyState','shipToName','shipToAddress','customerRef','remarks'])$(id).value='';selectedCustomerId=null;$('invoiceDate').value=isoDate();$('testRef').value='TEST-PREVIEW';$('creditDays').value='0';$('rateBasis').value='inclusive';$('supplyType').value='intrastate';rows=[];$('partyMeta').textContent='Select a buyer from the Customer Master.';addSkuLine();recalc();notify('Form cleared.','info');}
-function initialize(){showSellerProfile(SELLER_FALLBACK);$('invoiceDate').value=isoDate();$('addSku').addEventListener('click',addSkuLine);$('saveBtn').addEventListener('click',saveDraft);$('printBtn').addEventListener('click',printDraft);$('refreshBtn').addEventListener('click',loadHistory);$('clearBtn').addEventListener('click',clearForm);$('connectBtn').addEventListener('click',()=>connect($('keyInput').value.trim()));for(const id of ['invoiceDate','rateBasis','supplyType','creditDays'])$(id).addEventListener('input',recalc);$('partyName').addEventListener('focus',drawPartyOptions);$('partyName').addEventListener('input',()=>{resetPartySelection(false);drawPartyOptions();});$('partyName').addEventListener('blur',()=>setTimeout(()=>$('partyOptions').classList.remove('show'),190));$('refreshParty').addEventListener('click',async e=>{e.preventDefault();await loadCustomers();drawPartyOptions();});$('keyPanel').style.display='none';rows=[];addSkuLine();discoverKey().then(k=>{if(k)return connect(k);showKeyPanel();$('loginState').textContent='KEY REQUIRED';notify('Publishable key not found automatically. Use browser-safe sb_publishable_... key (no secret/service_role).','info');});}
+function clearForm(){if(!confirm('Clear current TEST preview form? Saved drafts will remain.'))return;$('shipSame').checked=true;$('shipDifferentFields').style.display='none';for(const id of ['partyName','partyGstin','partyAddress','partyState','shipToName','shipToAddress','customerRef','remarks'])$(id).value='';selectedCustomerId=null;$('invoiceDate').value=isoDate();$('testRef').value='TEST-PREVIEW';$('creditDays').value='0';$('rateBasis').value='inclusive';$('supplyType').value='intrastate';rows=[];$('partyMeta').textContent='Select a buyer from the Customer Master.';addSkuLine();recalc();notify('Form cleared.','info');}
+function initialize(){$('shipSame').addEventListener('change',()=>{$('shipDifferentFields').style.display=$('shipSame').checked?'none':'grid';});showSellerProfile(SELLER_FALLBACK);$('invoiceDate').value=isoDate();$('addSku').addEventListener('click',addSkuLine);$('saveBtn').addEventListener('click',saveDraft);$('printBtn').addEventListener('click',printDraft);$('refreshBtn').addEventListener('click',loadHistory);$('clearBtn').addEventListener('click',clearForm);$('connectBtn').addEventListener('click',()=>connect($('keyInput').value.trim()));for(const id of ['invoiceDate','rateBasis','supplyType','creditDays'])$(id).addEventListener('input',recalc);$('partyName').addEventListener('focus',drawPartyOptions);$('partyName').addEventListener('input',()=>{resetPartySelection(false);drawPartyOptions();});$('partyName').addEventListener('blur',()=>setTimeout(()=>$('partyOptions').classList.remove('show'),190));$('refreshParty').addEventListener('click',async e=>{e.preventDefault();await loadCustomers();drawPartyOptions();});$('keyPanel').style.display='none';rows=[];addSkuLine();discoverKey().then(k=>{if(k)return connect(k);showKeyPanel();$('loginState').textContent='KEY REQUIRED';notify('Publishable key not found automatically. Use browser-safe sb_publishable_... key (no secret/service_role).','info');});}
 initialize();
 </script>
 </body></html>
