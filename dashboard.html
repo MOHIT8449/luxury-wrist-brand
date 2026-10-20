@@ -197,6 +197,18 @@
     .module-section .card { min-height: 136px; padding: 19px; }
     .module-section .card-icon { margin-bottom: 10px; }
     .module-section .grid { align-items: stretch; }
+    .roles-toolbar {display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:14px}
+    .roles-card {padding:22px;background:white;border:1px solid #e5e5e5;border-radius:12px}
+    .roles-table-scroll {overflow-x:auto}
+    .roles-table {width:100%;border-collapse:collapse;min-width:850px}
+    .roles-table th {background:#edf2fa;text-align:left;font-size:12px;padding:11px}
+    .roles-table td {border-bottom:1px solid #e8edf5;padding:10px;font-size:12px}
+    .roles-table input,.roles-table select {width:100%;padding:9px;border:1px solid #c3cfdf;border-radius:6px;font:13px Arial}
+    .roles-table button,.roles-toolbar button {padding:9px 14px;background:#1769d2;border:none;border-radius:6px;color:#fff;font-weight:bold;cursor:pointer}
+    .roles-table button:disabled {opacity:.5;cursor:not-allowed}
+    #roleManagerMessage {color:#315a83;margin-bottom:12px;font-size:13px}
+    .roles-small {font-size:12px;color:#667;line-height:1.5}
+
   </style>
 </head>
 
@@ -265,6 +277,27 @@
 <a class="card" href="sku-master.html"><div class="card-icon">🏷️</div><h3>SKU Master</h3><p>SKU, packing and tax rates</p></a></div></section>
 <section class="module-section"><h2>Other Existing Modules</h2><div class="grid"><a class="card" href="group-party-loading.html"><div class="card-icon">📚</div><h3>Group Party &amp; Combined Loading — OPTIONAL</h3><p>Previously built; use only when needed</p></a></div></section>
 
+      <section class="module-section admin-only" id="roleManager">
+        <h2>🔐 User Permissions — Admin Only</h2>
+        <div class="roles-card">
+          <div class="roles-toolbar">
+            <div>
+              <strong>Assign ERP Role to Existing User</strong>
+              <p class="roles-small">First create staff in Supabase Authentication. Then assign Admin / Accounts / Manager here. Accounts = View Only.</p>
+            </div>
+            <button type="button" onclick="loadRoleManager()">Refresh Users</button>
+          </div>
+          <p id="roleManagerMessage">Loading users...</p>
+          <div class="roles-table-scroll">
+            <table class="roles-table">
+              <thead><tr><th>Auth User (Email)</th><th>Full Name</th><th>ERP Role</th><th>Status</th><th>Action</th></tr></thead>
+              <tbody id="roleManagerRows"><tr><td colspan="5">Loading...</td></tr></tbody>
+            </table>
+          </div>
+          <p class="roles-small" style="margin-top:10px">Only the current active Admin can save roles. Users may need to sign out and sign in again to refresh permissions. This does not change Tally.</p>
+        </div>
+      </section>
+
     </main>
 
     <footer class="footer">
@@ -285,6 +318,89 @@
       SUPABASE_URL,
       SUPABASE_PUBLISHABLE_KEY
     );
+
+    let roleAdminUserId = null;
+    let roleAdminReady = false;
+    function roleMessage(value, isError=false) {
+      const el=document.getElementById("roleManagerMessage");
+      if(el){el.textContent=value;el.style.color=isError?"#b12b2b":"#315a83";}
+    }
+    function addRoleCell(tr,value) {
+      const td=document.createElement("td");
+      td.textContent=value==null?"":String(value);
+      tr.appendChild(td);
+      return td;
+    }
+    function roleSelect(options,initial) {
+      const select=document.createElement("select");
+      for(const pair of options) {
+        const o=new Option(pair[1],pair[0]);
+        select.add(o);
+      }
+      select.value=initial;
+      return select;
+    }
+    async function loadRoleManager(){
+      if(!roleAdminReady)return;
+      roleMessage("Loading Authentication Users...");
+      const body=document.getElementById("roleManagerRows");
+      body.replaceChildren();
+      try {
+        const {data,error}=await client.rpc("lwb_admin_list_users");
+        if(error)throw error;
+        const users=Array.isArray(data)?data:[];
+        if(!users.length){addRoleCell(body.insertRow(),"No Auth users found.").colSpan=5;return;}
+        for(const user of users){
+          const row=body.insertRow();
+          addRoleCell(row,user.email||user.user_id);
+          const nameCell=row.insertCell();
+          const name=document.createElement("input");
+          name.value=user.full_name||String(user.email||"").split("@")[0]||"";
+          name.maxLength=150;
+          nameCell.appendChild(name);
+          const roleCell=row.insertCell();
+          const role=roleSelect([
+            ["","Select Role"],["admin","ADMIN"],["accounts","ACCOUNTS — View Only"],
+            ["manager","MANAGER"],["sales","SALES"],["warehouse","WAREHOUSE"],
+            ["transport","TRANSPORT"]
+          ],String(user.erp_role||"").toLowerCase());
+          roleCell.appendChild(role);
+          const activeCell=row.insertCell();
+          const active=roleSelect([["true","ACTIVE"],["false","INACTIVE"]],
+            user.is_active===false?"false":"true");
+          activeCell.appendChild(active);
+          const actionCell=row.insertCell();
+          const save=document.createElement("button");
+          save.type="button";
+          save.textContent=user.has_profile?"Save Role":"Assign Role";
+          if(user.user_id===roleAdminUserId){role.value="admin";role.disabled=true;active.value="true";active.disabled=true;}
+          save.onclick=()=>saveRoleAssignment(user,name,role,active,save);
+          actionCell.appendChild(save);
+        }
+        roleMessage(users.length+" Auth users loaded. Choose Role and press Save.");
+      }catch(err){
+        addRoleCell(body.insertRow(),"Run lwb_user_permissions_setup.sql in Supabase before using this screen.").colSpan=5;
+        roleMessage("Role Manager setup pending: "+err.message,true);
+      }
+    }
+    async function saveRoleAssignment(user,name,role,active,saveButton){
+      if(!roleAdminReady)return;
+      const selectedRole=role.value;
+      const fullName=name.value.trim();
+      if(!selectedRole||!fullName){roleMessage("Select a Role and enter Full Name.",true);return;}
+      if(!confirm("Assign "+selectedRole.toUpperCase()+" to "+(user.email||user.user_id)+"?"))return;
+      saveButton.disabled=true;
+      try{
+        const {error}=await client.rpc("lwb_admin_set_user_role",{
+          p_user_id:user.user_id,p_role:selectedRole,p_full_name:fullName,
+          p_active:active.value==="true"
+        });
+        if(error)throw error;
+        await loadRoleManager();
+        roleMessage("ERP Role saved for "+(user.email||user.user_id)+". Ask the user to login again.");
+      }catch(err){roleMessage("Cannot assign Role: "+err.message,true);}
+      finally{saveButton.disabled=false;}
+    }
 
     async function initializeDashboard() {
 
@@ -382,13 +498,14 @@
         }
 
         if (role === "admin") {
-
+          roleAdminUserId=user.id;
+          roleAdminReady=true;
           document
             .querySelectorAll(".admin-only")
             .forEach(function(element) {
               element.style.display = "block";
             });
-
+          loadRoleManager();
         }
 
         document.getElementById("loading").style.display =
