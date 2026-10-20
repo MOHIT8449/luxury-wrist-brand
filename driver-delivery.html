@@ -194,6 +194,7 @@ function addressOf(record){
  return [record.party_address,record.party_city,record.party_state,record.party_pincode].filter(Boolean).join(", ");
 }
 async function openOrder(id){
+ if(busy)return;
  const r=records.find(x=>x.order_id===id);if(!r)return;
  selected=r;
  $("modalTitle").textContent="Delivery — "+(r.order_no||"—");
@@ -224,6 +225,7 @@ async function openOrder(id){
  $("viewPod").hidden=!r.report?.pod_path;
  $("photoPreview").style.display="none";$("podFile").value="";
  $("deliveryForm").reset();$("amount").value="0";
+ $("receivedBy").required=false;$("podFile").required=false;$("deliveryNote").required=false;
  $("savedTitle").textContent=r.report?"Delivery Submitted — "+r.report.delivery_status:"";
  if(r.report){
   const info=[
@@ -239,7 +241,7 @@ async function openOrder(id){
  existingPodUrl=null;
  $("overlay").classList.add("open");
 }
-function close(){selected=null;$("overlay").classList.remove("open");if(existingPodUrl){window.URL.revokeObjectURL(existingPodUrl);existingPodUrl=null;}}
+function close(){if(busy)return;selected=null;$("overlay").classList.remove("open");if(existingPodUrl){window.URL.revokeObjectURL(existingPodUrl);existingPodUrl=null;}}
 $("close").onclick=close;$("cancel").onclick=close;
 $("overlay").onclick=e=>{if(e.target===$("overlay"))close()};
 document.addEventListener("keydown",e=>{if(e.key==="Escape")close()});
@@ -312,6 +314,7 @@ $("deliveryForm").onsubmit=async e=>{
    p_collection_amount:amount,p_payment_mode:method||null,p_payment_reference:reference||null
   });
   if(error)throw error;
+  busy=false;
   close();
   await refresh();
   message("Delivery Report SAVED for "+r.order_no+". Payment "+money(data?.payment_reported)+" is PENDING OFFICE VERIFICATION.");
