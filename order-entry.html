@@ -203,9 +203,20 @@ td input{
       </div>
 
       <div class="form-group">
-        <label>Transportation</label>
-        <input id="transportation" class="form-control"
-               placeholder="Transport / Self / Vehicle">
+        <label for="transportation">Transportation *</label>
+        <select id="transportation" class="form-control" required onchange="toggleVehicleField()">
+          <option value="">Select Transportation</option>
+          <option value="SELF PICKUP">SELF PICKUP</option>
+          <option value="DELIVERY">DELIVERY</option>
+          <option value="DIRECT VEHICLE">DIRECT VEHICLE</option>
+        </select>
+      </div>
+
+      <div class="form-group" id="vehicleField" hidden>
+        <label for="vehicleNumber" id="vehicleLabel">Vehicle Number</label>
+        <input id="vehicleNumber" class="form-control"
+               placeholder="e.g. GJ05AB1234" autocomplete="off"
+               maxlength="25" oninput="this.value=this.value.toUpperCase()">
       </div>
 
     </div>
@@ -727,6 +738,22 @@ async function generateOrderNo(){
 }
 
 
+/* TRANSPORTATION / VEHICLE VALIDATION */
+function toggleVehicleField(){
+  const mode = document.getElementById("transportation").value;
+  const group = document.getElementById("vehicleField");
+  const input = document.getElementById("vehicleNumber");
+  const required = mode === "DIRECT VEHICLE";
+
+  // Vehicle details are irrelevant for self pickup. Delivery vehicle is optional.
+  group.hidden = !mode || mode === "SELF PICKUP";
+  input.required = required;
+  input.disabled = group.hidden;
+  document.getElementById("vehicleLabel").textContent =
+    required ? "Vehicle Number *" : "Vehicle Number (Optional)";
+  if(group.hidden) input.value = "";
+}
+
 /* SAVE ORDER */
 
 async function saveOrder(){
@@ -737,8 +764,16 @@ async function saveOrder(){
   const salesPerson =
     document.getElementById("salesPerson").value.trim();
 
+  const transportationType =
+    document.getElementById("transportation").value;
+
+  const vehicleNumber =
+    document.getElementById("vehicleNumber").value.trim().toUpperCase();
+
   const transportation =
-    document.getElementById("transportation").value.trim();
+    vehicleNumber && transportationType !== "SELF PICKUP"
+      ? transportationType + " | VEHICLE: " + vehicleNumber
+      : transportationType;
 
   const dateValue =
     document.getElementById("orderDate").value;
@@ -756,6 +791,24 @@ async function saveOrder(){
 
   if(!salesPerson){
     alert("Sales Person is required.");
+    return;
+  }
+
+  if(!["SELF PICKUP","DELIVERY","DIRECT VEHICLE"].includes(transportationType)){
+    alert("Please select Transportation: SELF PICKUP, DELIVERY, or DIRECT VEHICLE.");
+    document.getElementById("transportation").focus();
+    return;
+  }
+
+  if(transportationType === "DIRECT VEHICLE" && !vehicleNumber){
+    alert("Vehicle Number is mandatory for DIRECT VEHICLE.");
+    document.getElementById("vehicleNumber").focus();
+    return;
+  }
+
+  if(vehicleNumber && !/^[A-Z0-9 -]{5,25}$/.test(vehicleNumber)){
+    alert("Please enter a valid Vehicle Number (5-25 letters/numbers).");
+    document.getElementById("vehicleNumber").focus();
     return;
   }
 
@@ -923,6 +976,8 @@ function resetOrder(){
   setPartyMenu(false);
   partyInfo("Click to open Party List. Select a saved customer.");
   document.getElementById("transportation").value="";
+  document.getElementById("vehicleNumber").value="";
+  toggleVehicleField();
 
   document.getElementById("itemsBody").innerHTML="";
   itemCounter=0;
