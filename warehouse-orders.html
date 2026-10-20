@@ -419,6 +419,10 @@
     .po-autofill-empty {padding:11px;font-size:12px;color:#63748b}
     .po-directory-hint {font-size:12px;color:#426a50;line-height:1.6;margin-top:12px}
     .po-directory-hint.error {color:#a63333}
+    .manager-note-actions {display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-top:10px}
+    .manager-note-actions span {font-size:12px;color:#477054;line-height:1.6}
+    .manager-note-actions span.error {color:#bc2a2a}
+    #saveManagerNoteBtn[hidden] {display:none!important}
     .po-actions {display:flex;gap:10px;margin-top:15px;flex-wrap:wrap}
     #poAllocationStatus {font-size:12px;color:#1a613a;margin-top:12px;line-height:1.6}
     #poAllocationStatus.error {color:#bb2929}
@@ -442,6 +446,9 @@
       #poPrintArea .po-total-value {display:block;font-size:18px;font-weight:900;line-height:1.35;margin-top:5px;white-space:nowrap}
       #poPrintArea .po-total-weight {text-align:right;margin-top:7px;font-weight:700;font-size:10px}
       #poPrintArea .po-print-totals + .po-total-weight {color:#111}
+      #poPrintArea .po-print-note {border:1px solid #444;padding:9px;margin-top:13px;break-inside:avoid;overflow-wrap:anywhere}
+      #poPrintArea .po-print-note strong {font-size:11px;display:block;margin-bottom:4px}
+      #poPrintArea .po-print-note .print-note-text {font-size:11px;font-weight:600;white-space:pre-wrap;overflow-wrap:anywhere}
       #poPrintArea .po-print-footer {margin-top:18px;border-top:1px solid #999;padding-top:7px;font-size:9px}
     }
     .message {
@@ -725,12 +732,19 @@
           <div id="poAllocationStatus" role="status"></div>
         </section>
 
-        <h4 class="section-title">Manager Note</h4>
+        <h4 class="section-title">Manager Note / Print Message</h4>
 
         <textarea
           id="managerNote"
-          placeholder="Optional manager note..."
+          maxlength="1200"
+          oninput="managerNoteChanged()"
+          placeholder="Party delivery instructions / special message for PO print..."
         ></textarea>
+        <div class="manager-note-actions">
+          <button type="button" class="btn btn-green" id="saveManagerNoteBtn"
+            onclick="saveManagerNote()" hidden>Save Note</button>
+          <span id="managerNoteStatus" role="status" aria-live="polite"></span>
+        </div>
 
       </div>
 
@@ -792,6 +806,8 @@ let warehouseSkuMatches=[];
 let warehouseSkuActive=-1;
 let approvedTransport=null;
 let transportSaving=false;
+let managerNoteSaving=false;
+let managerNoteOriginal="";
 let poRawAssignments=[];
 let poSavedDrivers=[];
 let poSavedVehicles=[];
@@ -1325,8 +1341,9 @@ async function reviewOrder(orderId) {
   document.getElementById("dTotalAmount").textContent =
     formatMoney(selectedOrder.total_amount);
 
-  document.getElementById("managerNote").value =
-    selectedOrder.manager_note || "";
+  managerNoteOriginal=String(selectedOrder.manager_note||"");
+  document.getElementById("managerNote").value=managerNoteOriginal;
+  document.getElementById("managerNoteStatus").classList.remove("error");
 
   reviewReady = false;
   document.getElementById("postApprovalPanel").hidden=true;
@@ -1685,19 +1702,28 @@ async function printApprovedPO(){
     alert("Approve the PO before printing.");
     return;
   }
+  if(managerNoteSaving||document.getElementById("managerNote").value.trim()!==managerNoteOriginal.trim()){
+    alert("Manager Note has unsaved changes. Please click Save Note before printing.");
+    return;
+  }
   const order=selectedOrder;
   const printButton=document.getElementById("poPrintBtn");
   printButton.disabled=true;
   try {
     // Use the saved assignment of this exact PO, not another vehicle or
     // uncommitted form inputs. This is the same source as Accounts print.
-    const result=await db.from("dispatch_assignments")
-      .select("driver_name,driver_mobile,vehicle_no,loading_person,transporter_name")
-      .eq("order_id",order.id).maybeSingle();
+    const [result,noteResult]=await Promise.all([
+      db.from("dispatch_assignments")
+        .select("driver_name,driver_mobile,vehicle_no,loading_person,transporter_name")
+        .eq("order_id",order.id).maybeSingle(),
+      db.from("orders").select("manager_note").eq("id",order.id).single()
+    ]);
     if(result.error)throw result.error;
+    if(noteResult.error)throw noteResult.error;
     if(!selectedOrder||selectedOrder.id!==order.id)return;
 
     const a=result.data||{};
+    const printNote=String(noteResult.data?.manager_note||"").trim();
     approvedTransport=result.data?{...approvedTransport,...result.data}:null;
     const safe=value=>escapeHtml(value==null?"":String(value));
     const assigned=value=>safe(value||"Not Assigned");
@@ -1744,6 +1770,10 @@ async function printApprovedPO(){
           "<strong class='po-total-value'>"+showRate(total.amount)+"</strong></div>"+
       "</div>"+
       "<p class='po-total-weight'>Total Weight: "+showQty(total.weight)+" KG</p>"+
+      (printNote
+        ? "<div class='po-print-note'><strong>MANAGER NOTE / DELIVERY INSTRUCTIONS</strong>"+
+          "<div class='print-note-text'>"+safe(printNote)+"</div></div>"
+        : "")+
       "<p class='po-print-footer'>For internal PO / loading reference only. Actual Loaded Quantity must be checked by Dispatch. Internal ERP Bill uses Actual Loaded Quantity; Tally GST Billing remains separate.</p>";
     window.print();
   }catch(e){
@@ -1789,7 +1819,7 @@ function renderItems() {
   document.getElementById("approveOrderBtn").style.display = editable ? "inline-block" : "none";
   document.getElementById("cancelOrderBtn").style.display = editable ? "inline-block" : "none";
   document.getElementById("addSkuBtn").style.display = editable ? "inline-block" : "none";
-  document.getElementById("managerNote").disabled = !editable;
+  renderManagerNoteControls();
   document.getElementById("postApprovalPanel").hidden=!eligibleForPoPrint(selectedOrder);
   calculateApprovalTotals();
 }
@@ -1828,6 +1858,80 @@ function calculateApprovalTotals() {
   document.getElementById('summaryAmount').textContent = formatMoney(totals.amount);
   document.getElementById('summaryWeight').textContent = formatNumber(totals.weight)+' KG';
   return totals;
+}
+
+
+/* Manager Note is independently editable after PO approval/loading.
+   Only manager_note is changed, without altering SKU, Qty, Rate, Approval,
+   Vehicle, Stock or Invoice status. Pending notes still save on approval. */
+function managerNoteChanged(){renderManagerNoteControls();}
+function renderManagerNoteControls(){
+  const note=document.getElementById("managerNote");
+  const btn=document.getElementById("saveManagerNoteBtn");
+  const msg=document.getElementById("managerNoteStatus");
+  const pending=Boolean(selectedOrder&&isPending(selectedOrder));
+  const approved=Boolean(selectedOrder&&eligibleForPoPrint(selectedOrder));
+  const canEdit=pending||approved;
+  note.disabled=!canEdit||managerNoteSaving;
+  btn.hidden=!approved;
+  btn.disabled=managerNoteSaving||!reviewReady||
+    note.value.trim()===managerNoteOriginal.trim();
+  if(managerNoteSaving) {
+    msg.textContent="Saving Manager Note...";
+  } else if(!canEdit) {
+    msg.textContent="Note cannot be changed for this order status.";
+  } else if(pending) {
+    msg.textContent="Pending PO: Note will save when you press Approve Order.";
+  } else if(note.value.trim()!==managerNoteOriginal.trim()){
+    msg.textContent="Unsaved changes — press Save Note before printing.";
+  } else if(note.value.trim()){
+    msg.textContent="Note saved. This message will appear on Approved PO Print.";
+  } else {
+    msg.textContent="Enter special instructions, then Save Note to show them on print.";
+  }
+}
+async function saveManagerNote(){
+  if(managerNoteSaving||!selectedOrder||!eligibleForPoPrint(selectedOrder)||!reviewReady)return;
+  if(!["admin","manager"].includes(String(currentProfile?.role||"").trim().toLowerCase()))return;
+  const order=selectedOrder;
+  const note=document.getElementById("managerNote").value.trim();
+  if(note.length>1200) {alert("Manager Note maximum 1200 characters.");return;}
+  if(note===managerNoteOriginal.trim()){renderManagerNoteControls();return;}
+  managerNoteSaving=true;
+  const status=document.getElementById("managerNoteStatus");
+  status.classList.remove("error");
+  renderManagerNoteControls();
+  try{
+    const {data,error}=await db.from("orders")
+      .update({manager_note:note||null})
+      .eq("id",order.id)
+      .eq("status",order.status)
+      .select("id,manager_note,status")
+      .maybeSingle();
+    if(error)throw error;
+    if(!data)throw Error("PO status or permission changed. Refresh and try again.");
+    if(!selectedOrder||selectedOrder.id!==order.id)return;
+    selectedOrder.manager_note=data.manager_note||"";
+    selectedOrder.status=data.status;
+    managerNoteOriginal=String(data.manager_note||"");
+    const listOrder=orders.find(x=>x.id===order.id);
+    if(listOrder)listOrder.manager_note=managerNoteOriginal;
+    status.classList.remove("error");
+  }catch(error){
+    if(selectedOrder?.id===order.id){
+      status.textContent="Note Save Failed: "+(error.message||"Unknown error");
+      status.classList.add("error");
+      return;
+    }
+  }finally{
+    managerNoteSaving=false;
+    if(selectedOrder?.id===order.id&&!status.classList.contains("error")){
+      renderManagerNoteControls();
+    }else if(selectedOrder?.id===order.id){
+      document.getElementById("managerNote").disabled=false;
+      document.getElementById("saveManagerNoteBtn").disabled=false;
+    }
+  }
 }
 
 async function approveOrder() {
@@ -1882,7 +1986,9 @@ async function approveOrder() {
     if(!updated?.length) throw new Error('Order status changed during approval. Refresh.');
     selectedOrder={...selectedOrder,status:"approved",approved_by:currentUser.id,
       approved_at:new Date().toISOString(),total_qty:totals.qty,
-      total_amount:totals.amount,total_weight:totals.weight};
+      total_amount:totals.amount,total_weight:totals.weight,
+      manager_note:document.getElementById("managerNote").value.trim()||null};
+    managerNoteOriginal=String(selectedOrder.manager_note||"");
     document.getElementById("dStatus").textContent="approved";
     renderItems();
     await revealApprovalActions();
