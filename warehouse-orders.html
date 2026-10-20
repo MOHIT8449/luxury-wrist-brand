@@ -406,7 +406,19 @@
     .po-help {font-size:12px;color:#586c7a;line-height:1.6;margin:0 0 15px}
     .po-grid {display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:13px}
     .po-field label {display:block;font-weight:bold;font-size:12px;margin-bottom:6px}
+    .po-field {position:relative;min-width:0}
     .po-field input {width:100%;padding:10px;border:1px solid #b6c7d5;border-radius:7px;font:14px Arial}
+    .po-autofill-menu {position:absolute;left:0;right:0;top:100%;margin-top:3px;background:#fff;
+      border:1px solid #b9c8d8;border-radius:8px;box-shadow:0 8px 24px #162f4b27;z-index:40;
+      max-height:230px;overflow:auto;padding:4px}
+    .po-autofill-menu[hidden] {display:none!important}
+    .po-autofill-option {display:block;width:100%;background:#fff;border:0;border-radius:5px;
+      text-align:left;padding:10px;cursor:pointer;font:13px Arial;color:#142b42}
+    .po-autofill-option small {display:block;color:#5b718a;font-size:11px;margin-top:3px}
+    .po-autofill-option:hover,.po-autofill-option.selected {background:#eaf2ff}
+    .po-autofill-empty {padding:11px;font-size:12px;color:#63748b}
+    .po-directory-hint {font-size:12px;color:#426a50;line-height:1.6;margin-top:12px}
+    .po-directory-hint.error {color:#a63333}
     .po-actions {display:flex;gap:10px;margin-top:15px;flex-wrap:wrap}
     #poAllocationStatus {font-size:12px;color:#1a613a;margin-top:12px;line-height:1.6}
     #poAllocationStatus.error {color:#bb2929}
@@ -690,12 +702,13 @@
           <h4>✓ PO Approved — Driver / Vehicle &amp; Print</h4>
           <p class="po-help">ये Options केवल PO Approve होने के बाद दिखाई देंगे। Driver, Vehicle और Loading Person Save करने पर Order Dispatch Team को मिलेगा।</p>
           <div class="po-grid">
-            <div class="po-field"><label for="poDriverName">Driver Name *</label><input id="poDriverName" maxlength="150" placeholder="Driver name"></div>
-            <div class="po-field"><label for="poVehicleNo">Vehicle Number *</label><input id="poVehicleNo" maxlength="40" placeholder="GJ05AB1234"></div>
+            <div class="po-field"><label for="poDriverName">Driver Name *</label><input id="poDriverName" maxlength="150" placeholder="Type / select saved driver" autocomplete="off" aria-autocomplete="list"></div>
+            <div class="po-field"><label for="poVehicleNo">Vehicle Number *</label><input id="poVehicleNo" maxlength="40" placeholder="Type / select saved vehicle" autocomplete="off" aria-autocomplete="list"></div>
             <div class="po-field"><label for="poLoadingPerson">Loading Person *</label><input id="poLoadingPerson" maxlength="150" placeholder="Godown staff"></div>
-            <div class="po-field"><label for="poDriverMobile">Driver Mobile (Optional)</label><input id="poDriverMobile" maxlength="20" inputmode="tel"></div>
+            <div class="po-field"><label for="poDriverMobile">Driver Mobile (Optional)</label><input id="poDriverMobile" maxlength="20" inputmode="tel" placeholder="Type / select saved mobile" autocomplete="off" aria-autocomplete="list"></div>
             <div class="po-field"><label for="poTransportName">Transport Name (Optional)</label><input id="poTransportName" maxlength="150"></div>
           </div>
+          <p id="poSavedDirectoryHint" class="po-directory-hint">Saved Drivers / Vehicles are loading... First-time details can be typed manually.</p>
           <div class="po-actions">
             <button id="poSaveBtn" type="button" class="btn btn-green" onclick="saveApprovedTransport()">Save Driver &amp; Vehicle</button>
             <button id="poPrintBtn" type="button" class="btn btn-blue" onclick="printApprovedPO()">Print Approved PO</button>
@@ -770,6 +783,14 @@ let warehouseSkuMatches=[];
 let warehouseSkuActive=-1;
 let approvedTransport=null;
 let transportSaving=false;
+let poRawAssignments=[];
+let poSavedDrivers=[];
+let poSavedVehicles=[];
+let poPickerOpen=null;
+let poPickerOptions=[];
+let poPickerIndex=-1;
+let poDirectoryError="";
+
 
 
 
@@ -966,7 +987,8 @@ document.addEventListener("DOMContentLoaded", async () => {
     document.getElementById("userRole").textContent =
       role.toUpperCase();
 
-    await Promise.all([loadOrders(), loadWarehouseSkuMaster()]);
+    setupPoAutofill();
+    await Promise.all([loadOrders(), loadWarehouseSkuMaster(), loadPoSavedDirectory()]);
 
   } catch (error) {
 
@@ -1355,6 +1377,206 @@ async function reviewOrder(orderId) {
 ----------------------------- */
 
 
+
+/* SAVED DRIVER + MOBILE + VEHICLE AUTOFILL
+   Uses REAL saved dispatch_assignments (no new table, local-only fake masters,
+   or manual repeat entry needed after saving the first assignment).
+   Driver name OR mobile search selects the same saved driver; vehicle
+   dropdown recalls the saved transporter, if available.
+*/
+function poNormalPhone(value){
+  const digits=String(value||"").replace(/\D/g,"");
+  return digits.length===12&&digits.startsWith("91")?digits.slice(2):digits;
+}
+function poNormalPlate(value){
+  return String(value||"").trim().toUpperCase().replace(/[\s-]/g,"");
+}
+function rebuildPoDirectory(){
+  const driverSeen=new Set(),vehicleSeen=new Set();
+  poSavedDrivers=[];poSavedVehicles=[];
+  for(const a of poRawAssignments){
+    const name=String(a.driver_name||"").trim();
+    const mobile=String(a.driver_mobile||"").trim();
+    const phone=poNormalPhone(mobile);
+    const vehicle=String(a.vehicle_no||"").trim().toUpperCase();
+    if(name){
+      const key=name.toLowerCase()+"|"+phone;
+      if(!driverSeen.has(key)){
+        driverSeen.add(key);
+        poSavedDrivers.push({name,mobile,phone});
+      }
+    }
+    if(vehicle){
+      const key=poNormalPlate(vehicle);
+      if(!vehicleSeen.has(key)){
+        vehicleSeen.add(key);
+        poSavedVehicles.push({vehicle,transporter:String(a.transporter_name||"").trim()});
+      }
+    }
+  }
+  const hint=document.getElementById("poSavedDirectoryHint");
+  if(hint){
+    hint.classList.toggle("error",Boolean(poDirectoryError));
+    hint.textContent=poDirectoryError
+      ? "Saved driver/vehicle list could not load: "+poDirectoryError+". You may still enter manually."
+      : poSavedDrivers.length+" saved driver(s) · "+poSavedVehicles.length+
+        " saved vehicle(s). Name या Mobile में से कोई एक Search करें → दूसरा अपने आप भरेगा। Vehicle भी Select करें।";
+  }
+}
+async function loadPoSavedDirectory(){
+  try{
+    const result=await db.from("dispatch_assignments")
+      .select("driver_name,driver_mobile,vehicle_no,transporter_name,assigned_at")
+      .order("assigned_at",{ascending:false}).limit(2000);
+    if(result.error)throw result.error;
+    poRawAssignments=result.data||[];
+    poDirectoryError="";
+  }catch(e){
+    poDirectoryError=e.message||"Unable to read dispatch assignments";
+  }
+  rebuildPoDirectory();
+}
+function poAddSavedAssignment(a){
+  poRawAssignments.unshift({...a,assigned_at:new Date().toISOString()});
+  poDirectoryError="";
+  rebuildPoDirectory();
+}
+function poDirectoryMatches(kind,term){
+  const q=String(term||"").trim().toLowerCase();
+  if(kind==="vehicle"){
+    const words=q.split(/\s+/).filter(Boolean);
+    return poSavedVehicles.filter(x=>words.every(w=>
+      (x.vehicle+" "+x.transporter).toLowerCase().includes(w)
+    )).slice(0,30);
+  }
+  const words=q.split(/\s+/).filter(Boolean);
+  const digitTerm=poNormalPhone(q);
+  return poSavedDrivers.filter(x=>
+    words.every(w=>x.name.toLowerCase().includes(w)||x.mobile.toLowerCase().includes(w)
+      ||(digitTerm.length>=2&&x.phone.includes(digitTerm)))
+  ).slice(0,30);
+}
+function closePoPicker(){
+  document.querySelectorAll(".po-autofill-menu").forEach(menu=>menu.hidden=true);
+  poPickerOpen=null;poPickerOptions=[];poPickerIndex=-1;
+}
+function poChooseSaved(kind,item){
+  if(!item)return;
+  if(kind==="vehicle"){
+    document.getElementById("poVehicleNo").value=item.vehicle;
+    if(item.transporter)document.getElementById("poTransportName").value=item.transporter;
+  }else{
+    document.getElementById("poDriverName").value=item.name;
+    document.getElementById("poDriverMobile").value=item.mobile;
+  }
+  closePoPicker();
+}
+function showPoPicker(input,kind){
+  if(input.disabled||document.getElementById("postApprovalPanel").hidden)return;
+  closePoPicker();
+  const menu=input.parentElement.querySelector(".po-autofill-menu");
+  if(!menu)return;
+  poPickerOpen={input,kind,menu};
+  poPickerOptions=poDirectoryMatches(kind,input.value);
+  poPickerIndex=poPickerOptions.length?0:-1;
+  menu.replaceChildren();
+  if(!poPickerOptions.length){
+    const empty=document.createElement("div");empty.className="po-autofill-empty";
+    empty.textContent=input.value.trim()?"No matching saved records. Enter manually, then Save.":"No saved records yet. Enter details manually.";
+    menu.appendChild(empty);
+  }
+  poPickerOptions.forEach((record,i)=>{
+    const option=document.createElement("button");
+    option.type="button";
+    option.className="po-autofill-option"+(i===0?" selected":"");
+    option.setAttribute("role","option");
+    option.dataset.index=String(i);
+    const title=document.createElement("span");
+    title.textContent=kind==="vehicle"?record.vehicle:record.name;
+    option.appendChild(title);
+    const detail=document.createElement("small");
+    detail.textContent=kind==="vehicle"
+      ?(record.transporter||"Saved vehicle")
+      :(record.mobile||"No saved mobile")+(kind==="mobile"&&record.mobile?" · select to autofill name":"");
+    option.appendChild(detail);
+    menu.appendChild(option);
+  });
+  menu.hidden=false;
+}
+function poExactAutofill(kind,value){
+  const term=String(value||"").trim();
+  if(!term)return;
+  if(kind==="vehicle"){
+    const matched=poSavedVehicles.filter(x=>poNormalPlate(x.vehicle)===poNormalPlate(term));
+    if(matched.length===1)poChooseSaved(kind,matched[0]);
+    return;
+  }
+  const matched=poSavedDrivers.filter(x=>kind==="mobile"
+    ? Boolean(x.phone)&&x.phone===poNormalPhone(term)
+    : x.name.toLowerCase()===term.toLowerCase());
+  if(matched.length===1)poChooseSaved(kind,matched[0]);
+}
+function setupPoAutofill(){
+  for(const [id,kind] of [
+    ["poDriverName","name"],["poDriverMobile","mobile"],["poVehicleNo","vehicle"]
+  ]){
+    const input=document.getElementById(id);
+    if(!input||input.dataset.poAutofillReady)return;
+    input.dataset.poAutofillReady="true";
+    const menu=document.createElement("div");
+    menu.className="po-autofill-menu";
+    menu.setAttribute("role","listbox");
+    menu.hidden=true;
+    menu.addEventListener("mousedown",event=>event.preventDefault());
+    menu.addEventListener("click",event=>{
+      const target=event.target.closest("[data-index]");
+      if(!target)return;
+      poChooseSaved(kind,poPickerOptions[Number(target.dataset.index)]);
+    });
+    input.parentElement.appendChild(menu);
+    input.setAttribute("aria-autocomplete","list");
+    input.addEventListener("focus",()=>showPoPicker(input,kind));
+    input.addEventListener("input",()=>{
+      // Exact historical match auto-fills. Partial typing only filters results.
+      const term=input.value;
+      const exact=kind==="vehicle"
+        ?poSavedVehicles.filter(x=>poNormalPlate(x.vehicle)===poNormalPlate(term))
+        :poSavedDrivers.filter(x=>kind==="mobile"
+          ? Boolean(x.phone)&&x.phone===poNormalPhone(term)
+          :x.name.toLowerCase()===term.trim().toLowerCase());
+      if(term.trim()&&exact.length===1){
+        poChooseSaved(kind,exact[0]);
+        return;
+      }
+      showPoPicker(input,kind);
+    });
+    input.addEventListener("keydown",event=>{
+      if(event.key==="Escape"){closePoPicker();return;}
+      if(!poPickerOpen||poPickerOpen.input!==input||poPickerOpen.menu.hidden)return;
+      if(event.key==="ArrowDown"||event.key==="ArrowUp"){
+        if(!poPickerOptions.length)return;
+        event.preventDefault();
+        const size=poPickerOptions.length;
+        poPickerIndex=(poPickerIndex+(event.key==="ArrowDown"?1:-1)+size)%size;
+        menu.querySelectorAll("[data-index]").forEach((node,i)=>{
+          node.classList.toggle("selected",i===poPickerIndex);
+          if(i===poPickerIndex)node.scrollIntoView({block:"nearest"});
+        });
+      }else if(event.key==="Enter"&&poPickerOptions.length){
+        event.preventDefault();
+        poChooseSaved(kind,poPickerOptions[Math.max(0,poPickerIndex)]);
+      }
+    });
+    input.addEventListener("change",()=>poExactAutofill(kind,input.value));
+  }
+  document.addEventListener("pointerdown",event=>{
+    if(!poPickerOpen)return;
+    const el=poPickerOpen.input.parentElement;
+    if(!el.contains(event.target))closePoPicker();
+  });
+  document.getElementById("postApprovalPanel").addEventListener("scroll",closePoPicker);
+}
+
 /* PO APPROVED → DRIVER / VEHICLE ALLOCATION / PRINT.
    Uses the SAME dispatch_assignments table as transport-allocation.html. */
 const eligibleForPoPrint=o=>o&&[
@@ -1433,6 +1655,8 @@ async function saveApprovedTransport(){
       : await db.from("dispatch_assignments").insert(payload).select("id").single();
     if(result.error)throw result.error;
     approvedTransport={...payload,id:result.data.id};
+    // The first manual assignment is now stored in Supabase; reuse it immediately.
+    poAddSavedAssignment(payload);
     const canTransition=["approved","approved_next","manager_approved","warehouse_approved","transport_allocated","allocated"];
     if(canTransition.includes(normalizedStatus(latest.data))){
       const update=await db.from("orders").update({status:"transport_allocated"})
@@ -1756,6 +1980,7 @@ async function cancelOrder() {
 
 function closeModal() {
   closeWarehouseSkuPicker();
+  closePoPicker();
   document.getElementById("postApprovalPanel").hidden=true;
   approvedTransport=null;
 
