@@ -58,7 +58,7 @@ label{display:block;font-weight:bold;font-size:13px;margin-bottom:5px}
 <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
 <div>
 <h1>Accounts & Tax Invoice Preparation</h1>
-<p>Review loaded orders and prepare invoice records.</p>
+<p>View ERP invoice records. Admin may prepare internal ERP records. Accounts is view-only; Tally is separate.</p>
 </div>
 <button id="refresh">Refresh Orders</button>
 </div>
@@ -181,7 +181,7 @@ label{display:block;font-weight:bold;font-size:13px;margin-bottom:5px}
 
 <div class="summary" id="totals"></div>
 
-<p><strong>Important:</strong> This page saves an internal invoice record. It does not generate a legally complete GST tax invoice or file anything with the GST portal. Verify customer GSTIN, HSN, place of supply, tax rates and statutory invoice details in your accounting system before issuing an invoice.</p>
+<p><strong>Important:</strong> This page holds ERP-only internal invoice records. Tally operates separately; no Tally data is imported or pasted here. ERP records do not generate a legal GST invoice or GST portal filing. Accounts login has view-only access.</p>
 
 <div class="actions">
 <button class="secondary" id="cancel">Cancel</button>
@@ -211,6 +211,7 @@ const num = value => Number(value || 0);
 const round2 = n => Math.round((n+Number.EPSILON)*100)/100;
 
 let db,user,orders=[],invoices=[],selected=null,items=[];
+let currentRole='';
 let baseAmount=0,saving=false;
 
 function message(text,error=false){
@@ -237,9 +238,11 @@ async function init(){
   .eq("id",user.id).single();
  if(profileError||!profile||!profile.active||
     !["admin","accounts"].includes(String(profile.role).toLowerCase())){
-  message("Access denied. Admin or Accounts role required.",true);
+  message("Access denied. Active Admin or Accounts role required.",true);
   return;
  }
+ currentRole=String(profile.role).toLowerCase();
+ if(currentRole==="accounts")message("VIEW ONLY: Accounts cannot create or edit ERP invoice records. Tally remains a separate system.");
  await load();
 }
 
@@ -285,7 +288,7 @@ function render(){
    <td>${esc(o.total_qty)}</td>
    <td><span class="badge">${esc(o.status)}</span></td>
    <td>${inv?esc(inv.invoice_no):"Pending"}</td>
-   <td><button data-id="${esc(o.id)}">${inv?"View Record":"Prepare"}</button></td>
+   <td><button data-id="${esc(o.id)}">${inv||currentRole==="accounts"?"View Record":"Prepare"}</button></td>
   </tr>`;
  }).join("")||'<tr><td colspan="7">No matching orders found.</td></tr>';
 
@@ -332,12 +335,13 @@ async function openOrder(id){
   </tr>`;
  }).join("");
 
- $("save").style.display=existing?"none":"inline-block";
- $("invoiceNo").readOnly=!!existing;
- $("invoiceDate").disabled=!!existing;
- $("paymentTerms").disabled=!!existing;
+ const readOnly=Boolean(existing)||currentRole!=="admin";
+ $("save").style.display=readOnly?"none":"inline-block";
+ $("invoiceNo").readOnly=readOnly;
+ $("invoiceDate").disabled=readOnly;
+ $("paymentTerms").disabled=readOnly;
  ["discount","cgst","sgst","igst","cess","ewayNo","ewayDate"]
-  .forEach(k=>$(k).disabled=!!existing);
+  .forEach(k=>$(k).disabled=readOnly);
 
  if(existing){
   $("totals").innerHTML=
@@ -376,6 +380,7 @@ function calculate(){
 }
 
 async function saveInvoice(){
+ if(currentRole!=='admin'){alert('View-only access: only Admin may save an ERP invoice record.');return;}
  if(saving||!selected)return;
  const invoiceNo=$("invoiceNo").value.trim();
  const invoiceDate=$("invoiceDate").value;
