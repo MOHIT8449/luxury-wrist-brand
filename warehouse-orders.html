@@ -1278,10 +1278,11 @@ async function reviewOrder(orderId) {
       throw error;
     }
 
-    selectedItems = (data || []).map(x => ({...x, approved_qty: x.approved_qty == null ? x.ordered_qty : x.approved_qty}));
+    selectedItems = (data || []).map(x => ({...x, approved_qty: x.approved_qty == null ? x.ordered_qty : x.approved_qty, _original_sku_name:x.sku_name}));
     originalItemIds = selectedItems.map(x => x.id);
     reviewReady = true;
     document.getElementById("approveOrderBtn").disabled = false;
+    updateWarehouseSkuHint();
     renderItems();
 
   } catch (error) {
@@ -1305,6 +1306,19 @@ async function reviewOrder(orderId) {
    RENDER ITEMS
 ----------------------------- */
 
+function warehouseSkuInputMarkup(item, index, editable) {
+  return '<input type="text" class="warehouse-sku-input" '
+    + (editable ? '' : 'disabled ')
+    + 'data-index="' + index + '" data-field="sku_name" '
+    + 'value="' + escapeHtml(item.sku_name || '') + '" '
+    + 'placeholder="Type to search SKU..." autocomplete="off" '
+    + 'role="combobox" aria-autocomplete="list" aria-expanded="false" '
+    + 'aria-controls="warehouseSkuOptions" '
+    + 'onfocus="openWarehouseSkuPicker(this)" '
+    + 'oninput="warehouseSkuTyped(this)" '
+    + 'onkeydown="warehouseSkuKeydown(event,this)">';
+}
+
 function renderItems() {
   const editable = selectedOrder && isPending(selectedOrder);
   const body = document.getElementById("itemsBody");
@@ -1312,10 +1326,10 @@ function renderItems() {
     const qty = Number(item.approved_qty) || 0;
     const rate = Number(item.rate) || 0;
     const unit = Number(item.unit_weight) || 0;
-    const input = (field, value, type="text") => `<input ${editable ? "" : "disabled"} type="${type}" style="width:${field==='sku_name'?'190':'95'}px;max-width:100%;padding:7px;border:1px solid #bbb;border-radius:5px" data-index="${i}" data-field="${field}" value="${escapeHtml(value)}" oninput="itemChanged(this)" ${type==='number'?'min="0" step="any"':''}>`;
+    const input = (field, value, type="text") => `<input ${editable ? "" : "disabled"} type="${type}" class="${field==='unit_weight'&&editable?'manager-weight-input':''}" style="width:${field==='sku_name'?'190':'95'}px;max-width:100%;padding:7px;border:1px solid #bbb;border-radius:5px" data-index="${i}" data-field="${field}" value="${escapeHtml(value)}" oninput="itemChanged(this)" ${type==='number'?'min="0" step="any"':''}>`;
     return `<tr>
       <td>${i+1}</td>
-      <td>${input('sku_name', item.sku_name || '')}</td>
+      <td>${warehouseSkuInputMarkup(item, i, editable)}</td>
       <td style="text-align:right">${formatNumber(item.ordered_qty)}</td>
       <td>${input('approved_qty', qty, 'number')}</td>
       <td>${input('rate', rate, 'number')}</td>
@@ -1344,9 +1358,9 @@ function itemChanged(input) {
 }
 
 function addSku() {
-  selectedItems.push({id:null, order_id:selectedOrder.id, sku_name:'', ordered_qty:0, approved_qty:0, loaded_qty:0, rate:0, unit_weight:0});
+  selectedItems.push({id:null, order_id:selectedOrder.id, sku_name:'', ordered_qty:0, approved_qty:0, loaded_qty:0, rate:0, unit_weight:0, _selected_from_master:false});
   renderItems();
-  const inputs = document.querySelectorAll('[data-field="sku_name"]');
+  const inputs = document.querySelectorAll('.warehouse-sku-input');
   inputs[inputs.length-1]?.focus();
 }
 
@@ -1373,6 +1387,12 @@ async function approveOrder() {
   if (!selectedItems.length) { alert('Add at least one SKU.'); return; }
   for (const item of selectedItems) {
     if (!String(item.sku_name||'').trim()) { alert('SKU name is required.'); return; }
+    const originalUnchanged = Boolean(item.id) && String(item.sku_name).trim() === String(item._original_sku_name || '').trim();
+    const inSkuMaster = warehouseSkuMaster.some(x => String(x.sku_name).trim().toUpperCase() === String(item.sku_name).trim().toUpperCase());
+    if(!originalUnchanged && !inSkuMaster) {
+      alert('Please select a valid SKU from Master dropdown: '+item.sku_name);
+      return;
+    }
     if (![item.approved_qty,item.rate,item.unit_weight].every(v=>Number.isFinite(Number(v)) && Number(v)>=0)) {
       alert('Quantity, rate and weight must be valid non-negative numbers.'); return;
     }
@@ -1551,6 +1571,7 @@ async function cancelOrder() {
 ----------------------------- */
 
 function closeModal() {
+  closeWarehouseSkuPicker();
 
   document
     .getElementById("reviewModal")
