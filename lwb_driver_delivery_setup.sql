@@ -140,8 +140,8 @@ CREATE TABLE IF NOT EXISTS public.lwb_delivery_reports(
   cash_reported numeric(14,2) NOT NULL DEFAULT 0 CHECK(cash_reported>=0),
   payment_mode text CHECK(payment_mode IN ('CASH','UPI','BANK','CHEQUE')),
   payment_reference text,
-  collection_review_status text NOT NULL DEFAULT 'PENDING_OFFICE'
-    CHECK(collection_review_status='PENDING_OFFICE'),
+  collection_review_status text NOT NULL DEFAULT 'NO_COLLECTION'
+    CHECK(collection_review_status IN ('NO_COLLECTION','PENDING_OFFICE')),
   reported_at timestamptz NOT NULL DEFAULT now(),
   CONSTRAINT lwb_delivery_collection_mode_valid CHECK (
     (cash_reported=0 AND payment_mode IS NULL AND payment_reference IS NULL)
@@ -358,8 +358,12 @@ BEGIN
  THEN RAISE EXCEPTION 'This order is not assigned to your Driver Login Mobile'; END IF;
  IF EXISTS(SELECT 1 FROM public.lwb_delivery_reports d WHERE d.order_id=p_order_id)
  THEN RAISE EXCEPTION 'Delivery report already submitted; Admin must review corrections'; END IF;
- IF length(coalesce(v_note,''))>1000 OR length(coalesce(v_recipient,''))>150 THEN
+ IF length(coalesce(v_note,''))>1000 OR length(coalesce(v_recipient,''))>150
+    OR length(coalesce(v_ref,''))>150 OR length(coalesce(v_proof,''))>350 THEN
   RAISE EXCEPTION 'Receiver / Note too long'; END IF;
+ IF v_status='PARTIAL' AND v_note IS NULL THEN
+  RAISE EXCEPTION 'PARTIAL delivery requires a shortage / discrepancy note';
+ END IF;
  IF v_status IN ('DELIVERED','PARTIAL') THEN
   IF v_recipient IS NULL OR v_proof IS NULL THEN
    RAISE EXCEPTION 'Receiver Name and POD Photo are required for delivered / partial';
@@ -397,11 +401,12 @@ BEGIN
  INSERT INTO public.lwb_delivery_reports(
   order_id,assignment_id,driver_user_id,
   delivery_status,received_by,pod_path,delivery_note,
-  cash_reported,payment_mode,payment_reference
+  cash_reported,payment_mode,payment_reference,collection_review_status
  ) VALUES(
   p_order_id,v_a.id,auth.uid(),
   v_status,v_recipient,v_proof,v_note,
-  v_amount,v_mode,v_ref
+  v_amount,v_mode,v_ref,
+  CASE WHEN v_amount>0 THEN 'PENDING_OFFICE' ELSE 'NO_COLLECTION' END
  ) RETURNING * INTO v_saved;
  RETURN jsonb_build_object(
   'report_id',v_saved.id,'order_id',v_saved.order_id,
