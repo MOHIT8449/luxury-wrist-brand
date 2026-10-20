@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Party Outstanding & Ledger | Luxury Wrist Brand ERP</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+:root{--navy:#132843;--blue:#1569dc;--line:#dde5f0;--bg:#f1f5fb}
+*{box-sizing:border-box}body{margin:0;font:14px Arial,sans-serif;background:var(--bg);color:#142841}
+header{background:var(--navy);color:white;padding:16px max(20px,calc((100vw - 1430px)/2));display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap}
+header h1{font-size:20px;letter-spacing:1px;margin:0}header small{display:block;color:#c0d3e9;margin-top:7px}
+nav{display:flex;gap:10px;flex-wrap:wrap}nav a{border:1px solid #8599b3;color:white;border-radius:8px;padding:9px 12px;text-decoration:none}
+main{max-width:1430px;margin:auto;padding:22px}
+.panel{background:#fff;border:1px solid var(--line);border-radius:12px;padding:19px;margin-bottom:16px}
+.notice{background:#fff7e3;border:1px solid #f1d390;border-radius:10px;padding:14px;margin-bottom:15px;line-height:1.6}
+#message{margin-bottom:16px;padding:12px;border-radius:8px;background:#e3edfb}
+#message.error{background:#fde4e4;color:#9c2020}
+.filters{display:flex;gap:12px;align-items:end;flex-wrap:wrap}
+.filters .field{flex:1;min-width:220px}
+.field label{display:block;font-size:12px;font-weight:bold;margin-bottom:7px}
+.field input,.field select{width:100%;padding:11px;border:1px solid #bbcbdd;border-radius:8px;font:14px Arial}
+button{background:#1569dc;color:white;border:0;border-radius:8px;padding:12px 17px;font-weight:bold;cursor:pointer}
+button:disabled{opacity:.5;cursor:not-allowed}
+.metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin:16px 0}
+.metric{background:white;border:1px solid var(--line);padding:18px;border-radius:12px}
+.metric small{display:block;color:#58708b}.metric strong{display:block;font-size:24px;margin-top:8px}
+h2{font-size:19px;margin:0 0 12px}
+.wrap{overflow:auto}table{width:100%;border-collapse:collapse;min-width:850px}th{background:#eaf0f8;text-align:left;padding:12px;font-size:11px}td{padding:12px;border-bottom:1px solid #edf0f4}
+.tot{font-weight:bold;color:#006b3a}.over{font-weight:bold;color:#ae3434}.muted{color:#60758b;font-size:12px;line-height:1.5}
+@media(max-width:760px){.metrics{grid-template-columns:repeat(2,minmax(0,1fr))}}
+</style>
+</head>
+<body>
+<header><div><h1>LUXURY WRIST BRAND</h1><small>ACCOUNTING / PARTY OUTSTANDING & LEDGER</small></div>
+<nav><a href="dashboard.html">Dashboard</a><a href="payment-collection.html">Payment Collection</a><a href="accounts-invoice.html">Invoices</a></nav></header>
+<main>
+<div class="notice"><b>Original Billing: Tally.</b> This ledger displays existing ERP Invoice Records and <b>Accounts-POSTED</b> payment collections. Pending collections are excluded. Sales Returns, Credit Notes and next-bill credit allocations will be added in Phase 2; until then this is an <b>Invoice minus Posted Payments</b> report, not the final Tally ledger.</div>
+<div id="message">Connecting to ERP...</div>
+<section class="panel"><h2>Party Search & Ledger Filters</h2>
+<div class="filters">
+<div class="field"><label for="party">Party / Customer</label><select id="party"><option value="">All Parties</option></select></div>
+<div class="field"><label for="search">Invoice / Order Search</label><input id="search" placeholder="Invoice No, Order No or Party Name"></div>
+<button id="download" type="button">Export Ledger CSV</button>
+<button id="refresh" type="button">Refresh</button>
+</div></section>
+<section class="metrics">
+<div class="metric"><small>Invoices</small><strong id="invoiceCount">—</strong></div>
+<div class="metric"><small>Invoice Amount</small><strong id="billed">—</strong></div>
+<div class="metric"><small>Collected — POSTED</small><strong id="paid">—</strong></div>
+<div class="metric"><small>Outstanding before Returns</small><strong id="due">—</strong></div>
+</section>
+<section class="panel"><h2>Invoice-wise Outstanding</h2>
+<div class="wrap"><table><thead><tr><th>Invoice Date</th><th>Invoice No.</th><th>Order No.</th><th>Party</th><th>Invoice ₹</th><th>Paid ₹</th><th>Outstanding ₹</th></tr></thead><tbody id="invoices"><tr><td colspan="7">Loading...</td></tr></tbody></table></div>
+<p class="muted">Outstanding = Original recorded invoice amount minus Accounts-posted collections. The Return Credit / Credit Note impact is deliberately excluded until the verified adjustment module is connected.</p></section>
+<section class="panel"><h2>Party Payment Ledger — Posted Receipts</h2>
+<div class="wrap"><table><thead><tr><th>Collection Date</th><th>Party</th><th>Invoice No.</th><th>Mode</th><th>Receipt Reference</th><th>Amount ₹</th><th>Accounts Posted On</th></tr></thead><tbody id="payments"><tr><td colspan="7">Loading...</td></tr></tbody></table></div></section>
+</main>
+<script>
+const SUPABASE_URL="https://txkbhadzdbxpieunfvox.supabase.co";
+const SUPABASE_PUBLISHABLE_KEY="sb_publishable_W4I3Q5ODf0g17sq5uDml2Q_sLolXYEk";
+const db=window.supabase.createClient(SUPABASE_URL,SUPABASE_PUBLISHABLE_KEY);
+const el=id=>document.getElementById(id);
+const fmt=n=>"₹"+Number(n||0).toLocaleString("en-IN",{minimumFractionDigits:2,maximumFractionDigits:2});
+let allInvoices=[],allPayments=[],currentInvoices=[];
+function put(row,val){const td=row.insertCell();td.textContent=String(val==null?"":val);return td}
+function message(value,error){el("message").textContent=value;el("message").className=error?"error":""}
+async function init(){
+ try{
+  const {data,error}=await db.auth.getUser();
+  if(error||!data.user){location.href="login.html";return}
+  const result=await db.from("user_profiles").select("role,active").eq("id",data.user.id).single();
+  if(result.error)throw result.error;
+  if(result.data.active!==true||!["admin","accounts","manager","sales","salesman","collector"].includes(String(result.data.role).toLowerCase().trim()))throw Error("Only authorized ERP team can view party ledgers.");
+  await reload();
+ }catch(e){message("Could not start Party Ledger: "+e.message,true)}
+}
+async function reload(){
+ try{
+  message("Loading ledger...");
+  const [a,b]=await Promise.all([
+   db.from("lwb_invoice_outstanding").select("*").order("invoice_date",{ascending:false}).limit(3000),
+   db.from("lwb_payment_collections").select("*").eq("status","POSTED").order("collection_date",{ascending:false}).limit(3000)
+  ]);
+  if(a.error)throw a.error;if(b.error)throw b.error;
+  allInvoices=a.data||[];allPayments=b.data||[];
+  const prev=el("party").value;
+  const parties=[...new Set(allInvoices.map(x=>String(x.customer_name||"").trim()).filter(Boolean))].sort();
+  el("party").replaceChildren(new Option("All Parties",""));
+  parties.forEach(name=>el("party").appendChild(new Option(name,name)));
+  if(parties.includes(prev))el("party").value=prev;
+  render();
+  message("Ledger loaded. Posted collections only. Return credits not yet included.");
+ }catch(e){message("Unable to load Ledger: "+e.message+". Run lwb_payment_ledger_setup.sql in Supabase.",true)}
+}
+function filtered(){
+ const party=el("party").value;
+ const terms=el("search").value.toLowerCase().trim().split(/\s+/).filter(Boolean);
+ return allInvoices.filter(x=>(!party||x.customer_name===party) &&
+   terms.every(t=>[x.invoice_no,x.order_no,x.customer_name].join(" ").toLowerCase().includes(t)));
+}
+function render(){
+ currentInvoices=filtered();
+ const billed=currentInvoices.reduce((a,x)=>a+Number(x.invoice_amount||0),0);
+ const paid=currentInvoices.reduce((a,x)=>a+Number(x.paid_amount||0),0);
+ const due=currentInvoices.reduce((a,x)=>a+Number(x.outstanding_amount||0),0);
+ el("invoiceCount").textContent=currentInvoices.length;
+ el("billed").textContent=fmt(billed);el("paid").textContent=fmt(paid);el("due").textContent=fmt(due);
+ const table=el("invoices");table.replaceChildren();
+ if(!currentInvoices.length)put(table.insertRow(),"No matching invoices").colSpan=7;
+ currentInvoices.forEach(x=>{
+  const row=table.insertRow();
+  put(row,x.invoice_date);put(row,x.invoice_no);put(row,x.order_no);put(row,x.customer_name);
+  put(row,fmt(x.invoice_amount));put(row,fmt(x.paid_amount)).className="tot";
+  put(row,fmt(x.outstanding_amount)).className=Number(x.outstanding_amount)>0?"over":"tot";
+ });
+ const ids=new Set(currentInvoices.map(x=>x.invoice_id));
+ const byId=new Map(allInvoices.map(x=>[x.invoice_id,x]));
+ const table2=el("payments");table2.replaceChildren();
+ const shown=allPayments.filter(x=>ids.has(x.invoice_id));
+ if(!shown.length)put(table2.insertRow(),"No posted payments for selected party/invoices.").colSpan=7;
+ shown.forEach(p=>{
+  const inv=byId.get(p.invoice_id)||{};
+  const row=table2.insertRow();
+  put(row,p.collection_date);put(row,inv.customer_name||"—");put(row,inv.invoice_no||"—");
+  put(row,p.payment_mode);put(row,p.reference_no||"—");put(row,fmt(p.amount));
+  put(row,p.reviewed_at?new Date(p.reviewed_at).toLocaleString("en-IN"):"—");
+ });
+}
+function csvEscape(s){const text=String(s==null?"":s);return '"'+text.replace(/"/g,'""')+'"'}
+function exportCsv(){
+ const lines=[["Invoice Date","Invoice No","Order No","Party","Invoice Amount","Posted Payments","Outstanding"]];
+ currentInvoices.forEach(x=>lines.push([x.invoice_date,x.invoice_no,x.order_no,x.customer_name,x.invoice_amount,x.paid_amount,x.outstanding_amount]));
+ const csv="\uFEFF"+lines.map(row=>row.map(csvEscape).join(",")).join("\r\n");
+ const blob=new Blob([csv],{type:"text/csv;charset=utf-8"});
+ const url=URL.createObjectURL(blob);
+ const a=document.createElement("a");a.href=url;a.download="LWB_Party_Outstanding_"+new Date().toISOString().slice(0,10)+".csv";
+ document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);
+}
+el("party").addEventListener("change",render);
+el("search").addEventListener("input",render);
+el("refresh").onclick=reload;
+el("download").onclick=exportCsv;
+init();
+</script>
+</body>
+</html>
