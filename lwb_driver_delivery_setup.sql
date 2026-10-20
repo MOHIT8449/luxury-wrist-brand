@@ -235,7 +235,7 @@ BEGIN
 END
 $guard$;
 
--- Driver & Admin/Manager read-only order list, with SKU/Loaded CS,
+-- Driver & Admin/Manager/Accounts read-only order list, with SKU/Loaded CS,
 -- private POD metadata and optional customer-master billing address.
 -- Important: NO direct database SELECT on orders required for Driver.
 CREATE OR REPLACE FUNCTION public.lwb_driver_list_delivery_orders()
@@ -247,8 +247,8 @@ BEGIN
  SELECT lower(btrim(p.role)),p.mobile INTO v_role,v_mobile
  FROM public.user_profiles p
  WHERE p.id=auth.uid() AND p.active=true;
- IF v_role NOT IN ('driver','admin','manager') OR v_role IS NULL THEN
-  RAISE EXCEPTION 'Active Driver / Sales Head login required';
+ IF v_role NOT IN ('driver','admin','manager','accounts') OR v_role IS NULL THEN
+  RAISE EXCEPTION 'Active Driver / Manager / Accounts login required';
  END IF;
  IF v_role='driver' AND coalesce(v_mobile,'')='' THEN
   RAISE EXCEPTION 'Driver profile Mobile missing; Admin must map your Login Mobile';
@@ -299,7 +299,7 @@ BEGIN
  ) cm ON true
  WHERE (o.status IN ('loaded','invoiced') OR d.id IS NOT NULL)
   AND (
-   v_role IN ('admin','manager')
+   v_role IN ('admin','manager','accounts')
    OR public.lwb_driver_phone_matches(v_mobile,a.driver_mobile)
   )
  ORDER BY coalesce(d.reported_at,o.order_date) DESC
