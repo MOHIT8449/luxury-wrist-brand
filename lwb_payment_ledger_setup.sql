@@ -1,6 +1,8 @@
 -- LUXURY WRIST BRAND - Payment collection and invoice outstanding (Phase 1).
 -- RUN ONCE in Supabase SQL Editor. Safe for existing orders and invoices.
--- Tally is the original billing system. NO invoice, order or inventory rows are modified.
+-- This is an INDEPENDENT ERP ledger. Tally is an entirely separate system.
+-- No Tally import, copy/paste, invoice-number matching or sync is required.
+-- NO invoice, order or inventory rows are modified.
 -- Original returns and credit-note adjustments will be linked in the next phase.
 BEGIN;
 
@@ -55,15 +57,16 @@ CREATE POLICY lwb_collections_submit
     AND EXISTS (
       SELECT 1 FROM public.user_profiles p
       WHERE p.id=auth.uid() AND p.active=true
-      AND lower(btrim(p.role)) IN ('admin','accounts','manager','sales','salesman','collector')
+      AND lower(btrim(p.role)) IN ('admin','manager','sales','salesman','collector')
     )
   );
 
--- Do NOT grant UPDATE or DELETE: only Accounts verification RPC may post/reject.
+-- Accounts is read-only; no direct UPDATE or DELETE grants.
+-- Do NOT grant UPDATE or DELETE: only Admin verification RPC may post/reject.
 REVOKE ALL ON TABLE public.lwb_payment_collections FROM PUBLIC,anon,authenticated;
 GRANT SELECT,INSERT ON TABLE public.lwb_payment_collections TO authenticated;
 
--- Outstanding reflects only Accounts-POSTED receipts. Pending collections have no effect.
+-- Outstanding reflects only ADMIN-VERIFIED / POSTED receipts. Pending collections have no effect.
 -- Approved return credits are NOT included until Phase 2.
 CREATE OR REPLACE VIEW public.lwb_invoice_outstanding
 WITH (security_invoker = true) AS
@@ -112,9 +115,9 @@ BEGIN
   IF auth.uid() IS NULL OR NOT EXISTS (
     SELECT 1 FROM public.user_profiles
     WHERE id=auth.uid() AND active=true
-    AND lower(btrim(role)) IN ('admin','accounts')
+    AND lower(btrim(role)) IN ('admin')
   ) THEN
-    RAISE EXCEPTION 'Only active Accounts/Admin can verify a collection';
+    RAISE EXCEPTION 'Only an active Admin can verify a collection. Accounts is view-only.';
   END IF;
   IF v_action NOT IN ('POST','REJECT') THEN
     RAISE EXCEPTION 'Review action must be POST or REJECT';
@@ -142,7 +145,7 @@ BEGIN
   SELECT grand_total INTO v_invoice_amount
   FROM public.tax_invoices WHERE id=v_receipt.invoice_id FOR UPDATE;
   IF NOT FOUND OR v_invoice_amount IS NULL OR v_invoice_amount<=0 THEN
-    RAISE EXCEPTION 'Original Tally-linked invoice has no valid grand total';
+    RAISE EXCEPTION 'ERP invoice record has no valid grand total';
   END IF;
   SELECT COALESCE(sum(amount),0) INTO v_paid
   FROM public.lwb_payment_collections
