@@ -727,6 +727,139 @@ let warehouseSkuMatches=[];
 let warehouseSkuActive=-1;
 
 
+
+/* WAREHOUSE SKU SEARCH — Master backed, no free-text additions */
+async function loadWarehouseSkuMaster(){
+  try{
+    const {data,error}=await db.from("sku_master").select("*")
+      .eq("is_active",true).order("sku_name").limit(1000);
+    if(error)throw error;
+    warehouseSkuMaster=(data||[]).filter(x=>String(x.sku_name||"").trim());
+    warehouseSkuLoadError="";
+  }catch(e){
+    warehouseSkuMaster=[];
+    warehouseSkuLoadError=e.message||"Unable to load SKU Master";
+  }
+  updateWarehouseSkuHint();
+}
+
+function updateWarehouseSkuHint(){
+  const label=document.getElementById("warehouseSkuHint");
+  if(!label)return;
+  label.classList.toggle("error",Boolean(warehouseSkuLoadError));
+  label.textContent=warehouseSkuLoadError
+    ? "SKU Master unavailable: "+warehouseSkuLoadError+". Refresh before adding SKUs."
+    : warehouseSkuMaster.length+" active SKUs. Type to search and select. Manager can edit Unit Weight (KG/Case).";
+}
+
+function closeWarehouseSkuPicker(){
+  const picker=document.getElementById("warehouseSkuOptions");
+  picker.classList.remove("show");
+  if(warehouseSkuInput)warehouseSkuInput.setAttribute("aria-expanded","false");
+  warehouseSkuInput=null; warehouseSkuMatches=[]; warehouseSkuActive=-1;
+}
+
+function positionWarehouseSkuPicker(){
+  if(!warehouseSkuInput)return;
+  const picker=document.getElementById("warehouseSkuOptions");
+  const rect=warehouseSkuInput.getBoundingClientRect();
+  const width=Math.min(Math.max(270,rect.width),window.innerWidth-20);
+  picker.style.left=Math.max(10,Math.min(rect.left,window.innerWidth-width-10))+"px";
+  picker.style.width=width+"px";
+  const below=window.innerHeight-rect.bottom;
+  picker.style.top=(below>180?rect.bottom+3:Math.max(8,rect.top-250))+"px";
+}
+
+function openWarehouseSkuPicker(input){
+  if(!input||input.disabled)return;
+  warehouseSkuInput=input;
+  const words=input.value.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  warehouseSkuMatches=warehouseSkuMaster.filter(sku=>{
+    const name=String(sku.sku_name||"").toLowerCase();
+    return words.every(word=>name.includes(word));
+  }).slice(0,40);
+  warehouseSkuActive=warehouseSkuMatches.length?0:-1;
+  const picker=document.getElementById("warehouseSkuOptions");
+  picker.replaceChildren();
+  if(!warehouseSkuMatches.length){
+    const el=document.createElement("div");el.className="warehouse-sku-empty";
+    el.textContent=warehouseSkuLoadError?"SKU Master unavailable: "+warehouseSkuLoadError:"No matching active SKU found.";
+    picker.appendChild(el);
+  }
+  warehouseSkuMatches.forEach((sku,index)=>{
+    const option=document.createElement("button");
+    option.type="button";
+    option.className="warehouse-sku-choice"+(index===warehouseSkuActive?" selected":"");
+    option.setAttribute("role","option");
+    option.setAttribute("aria-selected",String(index===warehouseSkuActive));
+    option.textContent=String(sku.sku_name);
+    const extra=document.createElement("small");
+    extra.textContent=sku.unit_weight_kg==null?"Weight: Manager enter manually":"Master Weight: "+sku.unit_weight_kg+" KG/CS";
+    option.appendChild(extra);
+    option.addEventListener("mousedown",event=>{event.preventDefault();chooseWarehouseSku(sku,input);});
+    option.addEventListener("click",event=>{event.preventDefault();chooseWarehouseSku(sku,input);});
+    picker.appendChild(option);
+  });
+  picker.classList.add("show");
+  input.setAttribute("aria-expanded","true");
+  positionWarehouseSkuPicker();
+}
+
+function chooseWarehouseSku(sku,input){
+  const index=Number(input.dataset.index);
+  const item=selectedItems[index];
+  if(!item)return;
+  item.sku_name=String(sku.sku_name||"");
+  const w=Number(sku.unit_weight_kg);
+  item.unit_weight=sku.unit_weight_kg!=null&&Number.isFinite(w)&&w>=0?w:0;
+  item._selected_from_master=true;
+  input.value=item.sku_name;
+  const weightField=document.querySelector('[data-field="unit_weight"][data-index="'+index+'"]');
+  if(weightField)weightField.value=item.unit_weight;
+  const qty=Number(item.approved_qty)||0,rate=Number(item.rate)||0;
+  document.getElementById("itemAmount"+index).textContent=formatMoney(qty*rate);
+  document.getElementById("itemWeight"+index).textContent=formatNumber(qty*item.unit_weight)+" KG";
+  calculateApprovalTotals();
+  closeWarehouseSkuPicker();
+  input.focus();
+}
+
+function warehouseSkuTyped(input){
+  const item=selectedItems[Number(input.dataset.index)];
+  if(item){item.sku_name=input.value;item._selected_from_master=false;}
+  openWarehouseSkuPicker(input);
+}
+
+function warehouseSkuKeydown(event,input){
+  const picker=document.getElementById("warehouseSkuOptions");
+  if(event.key==="Escape"){closeWarehouseSkuPicker();return;}
+  if(!picker.classList.contains("show"))return;
+  if(event.key==="ArrowDown"||event.key==="ArrowUp"){
+    event.preventDefault();
+    if(!warehouseSkuMatches.length)return;
+    warehouseSkuActive=(warehouseSkuActive+(event.key==="ArrowDown"?1:-1)+warehouseSkuMatches.length)%warehouseSkuMatches.length;
+    picker.querySelectorAll(".warehouse-sku-choice").forEach((option,i)=>{
+      option.classList.toggle("selected",i===warehouseSkuActive);
+      option.setAttribute("aria-selected",String(i===warehouseSkuActive));
+      if(i===warehouseSkuActive)option.scrollIntoView({block:"nearest"});
+    });
+  }else if(event.key==="Enter"&&warehouseSkuActive>=0){
+    event.preventDefault();
+    chooseWarehouseSku(warehouseSkuMatches[warehouseSkuActive],input);
+  }
+}
+
+document.addEventListener("pointerdown",event=>{
+  const picker=document.getElementById("warehouseSkuOptions");
+  if(picker.contains(event.target))return;
+  if(event.target.closest(".warehouse-sku-input"))return;
+  closeWarehouseSkuPicker();
+});
+document.addEventListener("scroll",event=>{
+  if(event.target.closest&&event.target.closest("#reviewModal"))closeWarehouseSkuPicker();
+},true);
+window.addEventListener("resize",closeWarehouseSkuPicker);
+
 /* -----------------------------
    START
 ----------------------------- */
