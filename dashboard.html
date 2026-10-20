@@ -250,9 +250,9 @@
 <a class="card" href="warehouse-orders.html"><div class="card-icon">✅</div><h3>Order Verification / Approval</h3><p>Review and approve orders using the existing workflow</p></a>
 <a class="card" href="sales.html"><div class="card-icon">📊</div><h3>Sales</h3><p>Existing sales management page</p></a>
 <a class="card" href="sales-invoice-test.html"><div class="card-icon">🧾</div><h3>GST Sales Invoice — TEST ONLY</h3><p>Preview and A5 test print; Tally remains original billing</p></a></div></section>
-<section class="module-section"><h2>Accounts &amp; Returns</h2><div class="grid"><a class="card" href="accounts-invoice.html"><div class="card-icon">📑</div><h3>Accounts / Tally Invoice Records</h3><p>Manage existing invoice records</p></a>
-<a class="card" href="payment-collection.html"><div class="card-icon">💵</div><h3>Payment Collection</h3><p>Submit receipts for Accounts verification before posting</p></a>
-<a class="card" href="party-ledger.html"><div class="card-icon">📒</div><h3>Party Ledger / Outstanding</h3><p>Invoice-wise dues and Accounts-posted payment history</p></a>
+<section class="module-section"><h2>Accounts &amp; Returns</h2><div class="grid"><a class="card" href="accounts-invoice.html"><div class="card-icon">📑</div><h3>ERP Invoice Records</h3><p>Internal ERP invoice records, independent from Tally (Accounts view-only)</p></a>
+<a class="card" href="payment-collection.html"><div class="card-icon">💵</div><h3>Payment Collection</h3><p>Office/Sales submit receipts; Admin verifies; Accounts view-only</p></a>
+<a class="card" href="party-ledger.html"><div class="card-icon">📒</div><h3>Party Ledger / Outstanding</h3><p>ERP invoice-wise dues and verified payment history</p></a>
 <a class="card" href="sales-return.html"><div class="card-icon">↩️</div><h3>Sales Return</h3><p>Existing sales return page</p></a>
 <a class="card" href="credit-note.html"><div class="card-icon">🗒️</div><h3>Credit Note</h3><p>Existing credit note page</p></a></div></section>
 <section class="module-section"><h2>Warehouse &amp; Dispatch</h2><div class="grid"><a class="card" href="goods-inward.html"><div class="card-icon">📥</div><h3>Goods Inward</h3><p>Purchase receipts and stock inward</p></a>
@@ -335,7 +335,7 @@
 
         const role = String(profile.role || "").toLowerCase();
 
-        if (!["admin", "manager"].includes(role)) {
+        if (!["admin", "manager", "accounts"].includes(role)) {
 
           await client.auth.signOut();
 
@@ -357,6 +357,29 @@
 
         document.getElementById("roleBadge").textContent =
           role.toUpperCase();
+
+        if (role === "accounts") {
+          // Accounts can only view ERP financial records from this dashboard.
+          // Other ERP write modules are hidden. Database RLS must enforce
+          // per-user permissions independently of this navigation filtering.
+          const allowedReadOnly = new Set([
+            "accounts-invoice.html",
+            "payment-collection.html",
+            "party-ledger.html",
+            "credit-note.html"
+          ]);
+          document.querySelectorAll(".module-section").forEach(section => {
+            section.querySelectorAll("a.card").forEach(card => {
+              const path = card.getAttribute("href") || "";
+              if (!allowedReadOnly.has(path)) card.style.display = "none";
+            });
+            if (![...section.querySelectorAll("a.card")].some(card => card.style.display !== "none")) {
+              section.style.display = "none";
+            }
+          });
+          document.querySelector(".welcome p").textContent =
+            "ERP Accounts access: VIEW ONLY. All new entries and verification require authorized office permissions. Tally remains separate.";
+        }
 
         if (role === "admin") {
 
