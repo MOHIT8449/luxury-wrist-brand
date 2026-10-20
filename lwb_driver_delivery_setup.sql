@@ -123,7 +123,10 @@ GRANT EXECUTE ON FUNCTION public.lwb_driver_phone_matches(text,text) TO authenti
 INSERT INTO storage.buckets(id,name,public,file_size_limit,allowed_mime_types)
 VALUES('lwb-delivery-pod','lwb-delivery-pod',false,5242880,
  ARRAY['image/jpeg','image/png','image/webp'])
-ON CONFLICT(id) DO NOTHING;
+ON CONFLICT(id) DO UPDATE SET
+  public=false,
+  file_size_limit=excluded.file_size_limit,
+  allowed_mime_types=excluded.allowed_mime_types;
 
 CREATE TABLE IF NOT EXISTS public.lwb_delivery_reports(
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
