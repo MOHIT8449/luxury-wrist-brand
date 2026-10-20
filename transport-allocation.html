@@ -73,6 +73,11 @@ async function saveAllocation(e){
   }
   busy=true;$('save').disabled=true;$('save').textContent='Saving...';
   try{
+    const latest=await db.from('orders').select('status').eq('id',current.id).single();
+    if(latest.error)throw latest.error;
+    const latestStatus=status(latest.data.status);
+    if(!['approved','approved_next','manager_approved','warehouse_approved','transport_allocated','allocated'].includes(latestStatus))
+      throw Error('This PO is no longer available for transport assignment. Loading or billing may have started.');
     let result;
     if(existing){
       result=await db.from('dispatch_assignments').update(payload).eq('id',existing.id).select('id').single();
@@ -80,9 +85,13 @@ async function saveAllocation(e){
       result=await db.from('dispatch_assignments').insert(payload).select('id').single();
     }
     if(result.error)throw result.error;
-    const {error:orderError}=await db.from('orders')
-      .update({status:'transport_allocated'}).eq('id',current.id);
-    if(orderError)throw new Error('Assignment saved, but status update failed: '+orderError.message);
+    if(latestStatus!=='transport_allocated'){
+      const {data:updated,error:orderError}=await db.from('orders')
+        .update({status:'transport_allocated'}).eq('id',current.id)
+        .eq('status',latest.data.status).select('id');
+      if(orderError)throw new Error('Assignment saved, but status update failed: '+orderError.message);
+      if(!updated?.length)throw Error('Assignment saved, but PO status changed. Refresh before retry.');
+    }
     $('overlay').classList.remove('show');
     selected=null;
     notice('Vehicle/Driver SAVED for '+current.order_no+'.'+(optedIn?' Sending WhatsApp notification...':' WhatsApp skipped (Driver opt-in not confirmed).'));
