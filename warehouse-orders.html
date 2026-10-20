@@ -419,6 +419,12 @@
     .po-autofill-empty {padding:11px;font-size:12px;color:#63748b}
     .po-directory-hint {font-size:12px;color:#426a50;line-height:1.6;margin-top:12px}
     .po-directory-hint.error {color:#a63333}
+    .po-wa-consent {display:flex;align-items:flex-start;gap:9px;margin:12px 0;
+      padding:11px 13px;border:1px solid #c4dbe2;background:#f5fafc;border-radius:8px;
+      font-size:12px;line-height:1.6;color:#20475c}
+    .po-wa-consent input {width:17px;height:17px;flex:none;margin-top:2px}
+    .po-wa-message {font-size:12px;line-height:1.6;margin:10px 0 0;color:#1b663f;white-space:pre-wrap}
+    .po-wa-message.error {color:#b02727}
     .manager-note-actions {display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-top:10px}
     .manager-note-actions span {font-size:12px;color:#477054;line-height:1.6}
     .manager-note-actions span.error {color:#bc2a2a}
@@ -725,11 +731,17 @@
             <div class="po-field"><label for="poTransportName">Transport Name (Optional)</label><input id="poTransportName" maxlength="150"></div>
           </div>
           <p id="poSavedDirectoryHint" class="po-directory-hint">Saved Drivers / Vehicles are loading... First-time details can be typed manually.</p>
+          <label class="po-wa-consent"><input type="checkbox" id="poWaConsent">
+            <span>Driver ने WhatsApp पर Loading Assignment Notifications पाने की अनुमति दी है।
+            Confirm करने पर <b>Save Driver &amp; Vehicle</b> के तुरंत बाद उसके Mobile पर Approved PO की सभी SKU / CS Notification जाएगी।</span>
+          </label>
           <div class="po-actions">
             <button id="poSaveBtn" type="button" class="btn btn-green" onclick="saveApprovedTransport()">Save Driver &amp; Vehicle</button>
             <button id="poPrintBtn" type="button" class="btn btn-blue" onclick="printApprovedPO()">Print Approved PO</button>
+            <button id="poWaRetryBtn" type="button" class="btn btn-blue" onclick="sendSavedDriverWhatsApp()" disabled>Send / Retry WhatsApp</button>
           </div>
           <div id="poAllocationStatus" role="status"></div>
+          <p class="po-wa-message" id="poWaMessage" role="status" aria-live="polite"></p>
         </section>
 
         <h4 class="section-title">Manager Note / Print Message</h4>
@@ -777,6 +789,7 @@
 <div id="warehouseSkuOptions" class="warehouse-sku-options" role="listbox" aria-label="SKU Master results"></div>
 <div id="poPrintArea" aria-hidden="true"></div>
 
+<script src="driver-whatsapp.js"></script>
 <script>
 
 const SUPABASE_URL =
@@ -1622,6 +1635,10 @@ async function revealApprovalActions(){
   if(panel.hidden)return;
   const id=order.id;
   approvedTransport=null;
+  document.getElementById("poWaConsent").checked=false;
+  document.getElementById("poWaMessage").textContent="";
+  document.getElementById("poWaMessage").classList.remove("error");
+  document.getElementById("poWaRetryBtn").disabled=true;
   const locked=poAllocationLocked(order);
   document.getElementById("poSaveBtn").hidden=locked;
   document.getElementById("poSaveBtn").disabled=true;
@@ -1648,7 +1665,51 @@ async function revealApprovalActions(){
       :"Order Approved. Assign Driver, Vehicle and Loading Person; then Print.");
   }catch(e){allocationStatus("Could not load transport assignment: "+e.message,true);}
   finally{
-    if(selectedOrder&&selectedOrder.id===id)document.getElementById("poSaveBtn").disabled=locked;
+    if(selectedOrder&&selectedOrder.id===id){
+      document.getElementById("poSaveBtn").disabled=locked;
+      document.getElementById("poWaRetryBtn").disabled=!approvedTransport?.id;
+    }
+  }
+}
+let waSending=false;
+async function sendSavedDriverWhatsApp(){
+  if(waSending||!selectedOrder||!eligibleForPoPrint(selectedOrder))return;
+  const orderId=selectedOrder.id;
+  const status=document.getElementById("poWaMessage");
+  const consent=document.getElementById("poWaConsent").checked;
+  status.classList.remove("error");
+  if(!approvedTransport?.id){
+    status.textContent="First SAVE Driver and Vehicle before sending WhatsApp.";
+    status.classList.add("error");
+    return;
+  }
+  if(!consent){
+    status.textContent="WhatsApp not sent. Confirm driver opt-in checkbox first.";
+    status.classList.add("error");
+    return;
+  }
+  const button=document.getElementById("poWaRetryBtn");
+  const phone=String(approvedTransport.driver_mobile||"").replace(/\D/g,"");
+  if(!(/^[6-9]\d{9}$/.test(phone)||/^91[6-9]\d{9}$/.test(phone))){
+    status.textContent="Saved assignment needs a valid Indian Driver WhatsApp Mobile (10 digits or +91).";
+    status.classList.add("error");
+    return;
+  }
+  waSending=true;button.disabled=true;
+  status.textContent="Contacting secure WhatsApp gateway...";
+  try{
+    const outcome=window.LWBDriverWhatsApp
+      ?await window.LWBDriverWhatsApp.send({db,orderId,optInConfirmed:true})
+      :{status:"error",message:"driver-whatsapp.js is not deployed yet."};
+    if(selectedOrder?.id!==orderId)return;
+    status.textContent=outcome.message;
+    status.classList.toggle("error",!["accepted","in_progress"].includes(outcome.status));
+  }catch(e){
+    status.textContent="Driver assignment saved, but WhatsApp failed: "+e.message;
+    status.classList.add("error");
+  }finally{
+    waSending=false;
+    if(selectedOrder?.id===orderId)button.disabled=false;
   }
 }
 async function saveApprovedTransport(){
@@ -1681,6 +1742,7 @@ async function saveApprovedTransport(){
       : await db.from("dispatch_assignments").insert(payload).select("id").single();
     if(result.error)throw result.error;
     approvedTransport={...payload,id:result.data.id};
+    document.getElementById("poWaRetryBtn").disabled=false;
     // The first manual assignment is now stored in Supabase; reuse it immediately.
     poAddSavedAssignment(payload);
     const canTransition=["approved","approved_next","manager_approved","warehouse_approved","transport_allocated","allocated"];
@@ -1694,6 +1756,15 @@ async function saveApprovedTransport(){
     }
     allocationStatus("Saved! Driver: "+payload.driver_name+", Vehicle: "+payload.vehicle_no+". Order ready for Dispatch Team.");
     await loadOrders();
+    if(selectedOrder?.id===id){
+      if(document.getElementById("poWaConsent").checked){
+        await sendSavedDriverWhatsApp();
+      }else{
+        const waMsg=document.getElementById("poWaMessage");
+        waMsg.textContent="WhatsApp NOT sent: Driver opt-in not confirmed. Assignment is still saved.";
+        waMsg.classList.add("error");
+      }
+    }
   }catch(e){allocationStatus("Assignment failed: "+e.message,true);}
   finally{transportSaving=false;if(selectedOrder&&selectedOrder.id===id)btn.disabled=poAllocationLocked(selectedOrder);}
 }
