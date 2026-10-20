@@ -399,6 +399,30 @@
       background: white;
     }
 
+
+    #postApprovalPanel {margin-top:23px;padding:18px;border:1px solid #b4dcc1;border-radius:10px;background:#f2fbf5}
+    #postApprovalPanel[hidden] {display:none!important}
+    #postApprovalPanel h4 {font-size:17px;margin:0 0 8px;color:#115b35}
+    .po-help {font-size:12px;color:#586c7a;line-height:1.6;margin:0 0 15px}
+    .po-grid {display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:13px}
+    .po-field label {display:block;font-weight:bold;font-size:12px;margin-bottom:6px}
+    .po-field input {width:100%;padding:10px;border:1px solid #b6c7d5;border-radius:7px;font:14px Arial}
+    .po-actions {display:flex;gap:10px;margin-top:15px;flex-wrap:wrap}
+    #poAllocationStatus {font-size:12px;color:#1a613a;margin-top:12px;line-height:1.6}
+    #poAllocationStatus.error {color:#bb2929}
+    #poPrintArea {display:none}
+    @media(max-width:760px){.po-grid{grid-template-columns:1fr 1fr}}
+    @media(max-width:480px){.po-grid{grid-template-columns:1fr}}
+    @media print {
+      @page {size:A4 portrait;margin:14mm}
+      body > :not(#poPrintArea) {display:none!important}
+      #poPrintArea {display:block!important;color:#000;font:12px Arial}
+      #poPrintArea h1 {font-size:21px;margin:0 0 5px}
+      #poPrintArea .po-print-details {display:grid;grid-template-columns:1fr 1fr;gap:8px 20px;margin:16px 0}
+      #poPrintArea table {border-collapse:collapse;width:100%;margin-top:18px}
+      #poPrintArea td,#poPrintArea th {border:1px solid #777;padding:9px;text-align:left}
+      #poPrintArea .po-signatures {margin-top:45px;display:flex;justify-content:space-between}
+    }
     .message {
       padding: 12px 15px;
       border-radius: 7px;
@@ -497,9 +521,9 @@
 
     <div class="page-title">
       <div>
-        <h2>Warehouse Order Approval</h2>
+        <h2>Sales Head — PO Approval</h2>
         <p>
-          Review sales orders, verify SKU quantities and approve or cancel orders.
+          Approve PO → Assign Driver / Vehicle → Print Approved PO.
         </p>
       </div>
 
@@ -661,6 +685,24 @@
           </div>
         </div>
 
+
+        <section id="postApprovalPanel" hidden>
+          <h4>✓ PO Approved — Driver / Vehicle &amp; Print</h4>
+          <p class="po-help">ये Options केवल PO Approve होने के बाद दिखाई देंगे। Driver, Vehicle और Loading Person Save करने पर Order Dispatch Team को मिलेगा।</p>
+          <div class="po-grid">
+            <div class="po-field"><label for="poDriverName">Driver Name *</label><input id="poDriverName" maxlength="150" placeholder="Driver name"></div>
+            <div class="po-field"><label for="poVehicleNo">Vehicle Number *</label><input id="poVehicleNo" maxlength="40" placeholder="GJ05AB1234"></div>
+            <div class="po-field"><label for="poLoadingPerson">Loading Person *</label><input id="poLoadingPerson" maxlength="150" placeholder="Godown staff"></div>
+            <div class="po-field"><label for="poDriverMobile">Driver Mobile (Optional)</label><input id="poDriverMobile" maxlength="20" inputmode="tel"></div>
+            <div class="po-field"><label for="poTransportName">Transport Name (Optional)</label><input id="poTransportName" maxlength="150"></div>
+          </div>
+          <div class="po-actions">
+            <button id="poSaveBtn" type="button" class="btn btn-green" onclick="saveApprovedTransport()">Save Driver &amp; Vehicle</button>
+            <button id="poPrintBtn" type="button" class="btn btn-blue" onclick="printApprovedPO()">Print Approved PO</button>
+          </div>
+          <div id="poAllocationStatus" role="status"></div>
+        </section>
+
         <h4 class="section-title">Manager Note</h4>
 
         <textarea
@@ -697,6 +739,7 @@
 
 
 <div id="warehouseSkuOptions" class="warehouse-sku-options" role="listbox" aria-label="SKU Master results"></div>
+<div id="poPrintArea" aria-hidden="true"></div>
 
 <script>
 
@@ -725,6 +768,8 @@ let warehouseSkuLoadError='';
 let warehouseSkuInput=null;
 let warehouseSkuMatches=[];
 let warehouseSkuActive=-1;
+let approvedTransport=null;
+let transportSaving=false;
 
 
 
@@ -1253,6 +1298,8 @@ async function reviewOrder(orderId) {
     selectedOrder.manager_note || "";
 
   reviewReady = false;
+  document.getElementById("postApprovalPanel").hidden=true;
+  approvedTransport=null;
   document.getElementById("approveOrderBtn").disabled = true;
   document.getElementById("itemsBody").innerHTML = `
     <tr>
@@ -1284,6 +1331,7 @@ async function reviewOrder(orderId) {
     document.getElementById("approveOrderBtn").disabled = false;
     updateWarehouseSkuHint();
     renderItems();
+    await revealApprovalActions();
 
   } catch (error) {
 
@@ -1305,6 +1353,136 @@ async function reviewOrder(orderId) {
 /* -----------------------------
    RENDER ITEMS
 ----------------------------- */
+
+
+/* PO APPROVED → DRIVER / VEHICLE ALLOCATION / PRINT.
+   Uses the SAME dispatch_assignments table as transport-allocation.html. */
+const eligibleForPoPrint=o=>o&&[
+  "approved","manager_approved","warehouse_approved","approved_next",
+  "transport_allocated","allocated","loading","loaded","invoiced"
+].includes(normalizedStatus(o));
+const poAllocationLocked=o=>o&&["loading","loaded","invoiced"].includes(normalizedStatus(o));
+const poValue=id=>document.getElementById(id).value.trim();
+function allocationStatus(message,error=false){
+  const el=document.getElementById("poAllocationStatus");
+  el.textContent=message;el.classList.toggle("error",error);
+}
+async function revealApprovalActions(){
+  const order=selectedOrder;
+  const panel=document.getElementById("postApprovalPanel");
+  panel.hidden=!eligibleForPoPrint(order);
+  if(panel.hidden)return;
+  const id=order.id;
+  approvedTransport=null;
+  const locked=poAllocationLocked(order);
+  document.getElementById("poSaveBtn").hidden=locked;
+  document.getElementById("poSaveBtn").disabled=true;
+  ["poDriverName","poVehicleNo","poLoadingPerson","poDriverMobile","poTransportName"].forEach(field=>{
+    document.getElementById(field).value="";
+    document.getElementById(field).disabled=locked;
+  });
+  allocationStatus("Loading assigned transport...");
+  try{
+    const result=await db.from("dispatch_assignments")
+      .select("id,driver_name,vehicle_no,loading_person,driver_mobile,transporter_name")
+      .eq("order_id",id).maybeSingle();
+    if(result.error)throw result.error;
+    if(!selectedOrder||selectedOrder.id!==id)return;
+    approvedTransport=result.data||null;
+    const a=approvedTransport||{};
+    for(const pair of [
+      ["poDriverName",a.driver_name],["poVehicleNo",a.vehicle_no],
+      ["poLoadingPerson",a.loading_person],["poDriverMobile",a.driver_mobile],
+      ["poTransportName",a.transporter_name]
+    ])document.getElementById(pair[0]).value=pair[1]||"";
+    allocationStatus(locked?"Loading has started. Allocation is locked.":a.id
+      ?"Driver & Vehicle already assigned. Edit and Save before Loading if required."
+      :"Order Approved. Assign Driver, Vehicle and Loading Person; then Print.");
+  }catch(e){allocationStatus("Could not load transport assignment: "+e.message,true);}
+  finally{
+    if(selectedOrder&&selectedOrder.id===id)document.getElementById("poSaveBtn").disabled=locked;
+  }
+}
+async function saveApprovedTransport(){
+  if(transportSaving||!eligibleForPoPrint(selectedOrder)||poAllocationLocked(selectedOrder))return;
+  const id=selectedOrder.id;
+  const payload={
+    order_id:id,
+    driver_name:poValue("poDriverName"),
+    vehicle_no:poValue("poVehicleNo").toUpperCase(),
+    loading_person:poValue("poLoadingPerson"),
+    driver_mobile:poValue("poDriverMobile")||null,
+    transporter_name:poValue("poTransportName")||null,
+    assigned_by:currentUser.id
+  };
+  if(!payload.driver_name||!payload.vehicle_no||!payload.loading_person){
+    allocationStatus("Driver Name, Vehicle Number and Loading Person are required.",true);return;
+  }
+  if(!confirm("Assign Driver / Vehicle to Approved PO "+selectedOrder.order_no+"?"))return;
+  const btn=document.getElementById("poSaveBtn");
+  transportSaving=true;btn.disabled=true;
+  try{
+    const latest=await db.from("orders").select("status").eq("id",id).single();
+    if(latest.error)throw latest.error;
+    if(!eligibleForPoPrint(latest.data)||poAllocationLocked(latest.data))
+      throw Error("Order is no longer available for Driver/Vehicle allocation.");
+    const found=await db.from("dispatch_assignments").select("id").eq("order_id",id).maybeSingle();
+    if(found.error)throw found.error;
+    const result=found.data
+      ? await db.from("dispatch_assignments").update(payload).eq("id",found.data.id).select("id").single()
+      : await db.from("dispatch_assignments").insert(payload).select("id").single();
+    if(result.error)throw result.error;
+    approvedTransport={...payload,id:result.data.id};
+    const canTransition=["approved","approved_next","manager_approved","warehouse_approved","transport_allocated","allocated"];
+    if(canTransition.includes(normalizedStatus(latest.data))){
+      const update=await db.from("orders").update({status:"transport_allocated"})
+        .eq("id",id).in("status",canTransition).select("id");
+      if(update.error)throw new Error("Assignment saved, but status update failed: "+update.error.message);
+      if(!update.data?.length)throw new Error("Assignment saved, but order status changed. Refresh.");
+      selectedOrder.status="transport_allocated";
+      document.getElementById("dStatus").textContent=selectedOrder.status;
+    }
+    allocationStatus("Saved! Driver: "+payload.driver_name+", Vehicle: "+payload.vehicle_no+". Order ready for Dispatch Team.");
+    await loadOrders();
+  }catch(e){allocationStatus("Assignment failed: "+e.message,true);}
+  finally{transportSaving=false;if(selectedOrder&&selectedOrder.id===id)btn.disabled=poAllocationLocked(selectedOrder);}
+}
+function printApprovedPO(){
+  if(!eligibleForPoPrint(selectedOrder)||!reviewReady){alert("Approve the PO before printing.");return;}
+  const order=selectedOrder,a=approvedTransport||{},safe=escapeHtml;
+  const lines=selectedItems.map((x,i)=>{
+    const qty=number(x.approved_qty==null?x.ordered_qty:x.approved_qty);
+    const rate=number(x.rate),weight=number(x.unit_weight);
+    return "<tr><td>"+(i+1)+"</td><td>"+safe(x.sku_name)+"</td><td>"+safe(formatNumber(qty))+
+      "</td><td>"+safe(formatMoney(rate))+"</td><td>"+safe(formatMoney(qty*rate))+
+      "</td><td>"+safe(formatNumber(qty*weight))+" KG</td></tr>";
+  }).join("");
+  const totals=selectedItems.reduce((t,x)=>{
+    const q=number(x.approved_qty==null?x.ordered_qty:x.approved_qty);
+    t.q+=q;t.money+=q*number(x.rate);t.kg+=q*number(x.unit_weight);return t;
+  },{q:0,money:0,kg:0});
+  document.getElementById("poPrintArea").innerHTML=
+    "<h1>LUXURY WRIST BRAND</h1>"+
+    "<p><strong>APPROVED PO / LOADING INSTRUCTION</strong></p>"+
+    "<p><strong>NOT A GST INVOICE — NOT PROOF OF DISPATCH</strong></p>"+
+    "<div class='po-print-details'>"+
+    "<p><b>PO No:</b> "+safe(order.order_no)+"</p>"+
+    "<p><b>PO Date:</b> "+safe(formatDate(order.order_date||order.created_at))+"</p>"+
+    "<p><b>Customer:</b> "+safe(order.customer_name)+"</p>"+
+    "<p><b>Salesman:</b> "+safe(order.sales_person)+"</p>"+
+    "<p><b>Driver:</b> "+safe(a.driver_name||"Not Assigned")+"</p>"+
+    "<p><b>Vehicle:</b> "+safe(a.vehicle_no||"Not Assigned")+"</p>"+
+    "<p><b>Loading Person:</b> "+safe(a.loading_person||"Not Assigned")+"</p>"+
+    "<p><b>Driver Mobile:</b> "+safe(a.driver_mobile||"—")+"</p></div>"+
+    "<table><thead><tr><th>#</th><th>SKU / Product</th><th>Approved CS</th><th>Rate</th><th>Amount</th><th>Weight</th></tr></thead><tbody>"+
+    lines+"</tbody></table>"+
+    "<p><b>Total Approved Qty:</b> "+safe(formatNumber(totals.q))+
+    " CS &nbsp; <b>Amount:</b> "+safe(formatMoney(totals.money))+
+    " &nbsp; <b>Weight:</b> "+safe(formatNumber(totals.kg))+" KG</p>"+
+    "<div class='po-signatures'><span>Sales Head __________</span><span>Godown __________</span><span>Driver __________</span></div>"+
+    "<p style='margin-top:30px'>Actual Loaded Quantity to be verified at Dispatch. Tally Original Billing is separate.</p>";
+  window.print();
+}
 
 function warehouseSkuInputMarkup(item, index, editable) {
   return '<input type="text" class="warehouse-sku-input" '
@@ -1343,6 +1521,7 @@ function renderItems() {
   document.getElementById("cancelOrderBtn").style.display = editable ? "inline-block" : "none";
   document.getElementById("addSkuBtn").style.display = editable ? "inline-block" : "none";
   document.getElementById("managerNote").disabled = !editable;
+  document.getElementById("postApprovalPanel").hidden=!eligibleForPoPrint(selectedOrder);
   calculateApprovalTotals();
 }
 
@@ -1432,9 +1611,14 @@ async function approveOrder() {
     }).eq('id',selectedOrder.id).eq('status',latest.status).select('id');
     if(orderError) throw orderError;
     if(!updated?.length) throw new Error('Order status changed during approval. Refresh.');
-    const orderNo=selectedOrder.order_no;
-    closeModal(); showMessage('Order '+orderNo+' approved with SKU changes.','success');
+    selectedOrder={...selectedOrder,status:"approved",approved_by:currentUser.id,
+      approved_at:new Date().toISOString(),total_qty:totals.qty,
+      total_amount:totals.amount,total_weight:totals.weight};
+    document.getElementById("dStatus").textContent="approved";
+    renderItems();
+    await revealApprovalActions();
     await loadOrders();
+    document.getElementById("postApprovalPanel").scrollIntoView({behavior:"smooth",block:"nearest"});
   } catch(error) {
     console.error(error);
     alert('Approval not completed: '+(error.message||'Unknown error')+'\nSome SKU edits may already be saved. Refresh and review before retrying.');
@@ -1572,6 +1756,8 @@ async function cancelOrder() {
 
 function closeModal() {
   closeWarehouseSkuPicker();
+  document.getElementById("postApprovalPanel").hidden=true;
+  approvedTransport=null;
 
   document
     .getElementById("reviewModal")
