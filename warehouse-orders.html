@@ -727,10 +727,10 @@
             <div class="po-field"><label for="poDriverName">Driver Name *</label><input id="poDriverName" maxlength="150" placeholder="Type / select saved driver" autocomplete="off" aria-autocomplete="list"></div>
             <div class="po-field"><label for="poVehicleNo">Vehicle Number *</label><input id="poVehicleNo" maxlength="40" placeholder="Type / select saved vehicle" autocomplete="off" aria-autocomplete="list"></div>
             <div class="po-field"><label for="poLoadingPerson">Loading Person *</label><input id="poLoadingPerson" maxlength="150" placeholder="Godown staff"></div>
-            <div class="po-field"><label for="poDriverMobile">Driver Mobile (Optional)</label><input id="poDriverMobile" maxlength="20" inputmode="tel" placeholder="Type / select saved mobile" autocomplete="off" aria-autocomplete="list"></div>
+            <div class="po-field"><label for="poDriverMobile">Driver Mobile (Required for Driver Portal)</label><input id="poDriverMobile" maxlength="20" inputmode="tel" placeholder="Type / select saved mobile" autocomplete="off" aria-autocomplete="list"></div>
             <div class="po-field"><label for="poTransportName">Transport Name (Optional)</label><input id="poTransportName" maxlength="150"></div>
           </div>
-          <p id="poSavedDirectoryHint" class="po-directory-hint">Saved Drivers / Vehicles are loading... First-time details can be typed manually.</p>
+          <p id="poSavedDirectoryHint" class="po-directory-hint">Loading Active ERP Drivers and Saved Dispatch Vehicles... Select the Driver created in User Permissions to autofill Mobile.</p>
           <label class="po-wa-consent"><input type="checkbox" id="poWaConsent">
             <span>Driver ने WhatsApp पर Loading Assignment Notifications पाने की अनुमति दी है।
             Confirm करने पर <b>Save Driver &amp; Vehicle</b> के तुरंत बाद उसके Mobile पर Approved PO की सभी SKU / CS Notification जाएगी।</span>
@@ -822,6 +822,8 @@ let transportSaving=false;
 let managerNoteSaving=false;
 let managerNoteOriginal="";
 let poRawAssignments=[];
+let poActiveErpDrivers=[];
+let poErpDirectoryError="";
 let poSavedDrivers=[];
 let poSavedVehicles=[];
 let poPickerOpen=null;
@@ -1417,11 +1419,11 @@ async function reviewOrder(orderId) {
 
 
 
-/* SAVED DRIVER + MOBILE + VEHICLE AUTOFILL
-   Uses REAL saved dispatch_assignments (no new table, local-only fake masters,
-   or manual repeat entry needed after saving the first assignment).
-   Driver name OR mobile search selects the same saved driver; vehicle
-   dropdown recalls the saved transporter, if available.
+/* DRIVER + MOBILE + VEHICLE AUTOFILL
+   Active ERP DRIVER profiles (secure manager RPC) are merged with historic
+   dispatch assignments so new Driver Users appear even before first PO.
+   The active ERP profile takes precedence over stale historical names for
+   the same phone; saved vehicles remain available.
 */
 function poNormalPhone(value){
   const digits=String(value||"").replace(/\D/g,"");
@@ -1431,18 +1433,33 @@ function poNormalPlate(value){
   return String(value||"").trim().toUpperCase().replace(/[\s-]/g,"");
 }
 function rebuildPoDirectory(){
-  const driverSeen=new Set(),vehicleSeen=new Set();
+  const driverSeen=new Set(),erpDriverPhones=new Set(),vehicleSeen=new Set();
   poSavedDrivers=[];poSavedVehicles=[];
+  // Active ERP driver logins FIRST. They need no previous dispatch history.
+  for(const p of poActiveErpDrivers){
+    const name=String(p.driver_name||"").trim();
+    const mobile=String(p.driver_mobile||"").trim();
+    const phone=poNormalPhone(mobile);
+    if(!name||!(/^[6-9]\d{9}$/.test(phone)))continue;
+    const key=name.toLowerCase()+"|"+phone;
+    if(!driverSeen.has(key)){
+      driverSeen.add(key);
+      erpDriverPhones.add(phone);
+      poSavedDrivers.push({name,mobile:phone,phone,source:"ERP Driver User"});
+    }
+  }
+  // Keep historic drivers and vehicles. Skip obsolete names when their
+  // number is now owned by an active, registered ERP DRIVER user.
   for(const a of poRawAssignments){
     const name=String(a.driver_name||"").trim();
     const mobile=String(a.driver_mobile||"").trim();
     const phone=poNormalPhone(mobile);
     const vehicle=String(a.vehicle_no||"").trim().toUpperCase();
-    if(name){
+    if(name && !(phone && erpDriverPhones.has(phone))){
       const key=name.toLowerCase()+"|"+phone;
       if(!driverSeen.has(key)){
         driverSeen.add(key);
-        poSavedDrivers.push({name,mobile,phone});
+        poSavedDrivers.push({name,mobile,phone,source:"Previous Dispatch"});
       }
     }
     if(vehicle){
@@ -1455,23 +1472,38 @@ function rebuildPoDirectory(){
   }
   const hint=document.getElementById("poSavedDirectoryHint");
   if(hint){
-    hint.classList.toggle("error",Boolean(poDirectoryError));
-    hint.textContent=poDirectoryError
-      ? "Saved driver/vehicle list could not load: "+poDirectoryError+". You may still enter manually."
-      : poSavedDrivers.length+" saved driver(s) · "+poSavedVehicles.length+
-        " saved vehicle(s). Name या Mobile में से कोई एक Search करें → दूसरा अपने आप भरेगा। Vehicle भी Select करें।";
+    const issues=[poErpDirectoryError,poDirectoryError].filter(Boolean);
+    hint.classList.toggle("error",issues.length>0);
+    hint.textContent=poActiveErpDrivers.length+" active ERP driver login(s) · "+
+      poSavedDrivers.length+" selectable driver(s) · "+poSavedVehicles.length+
+      " saved vehicle(s). Select registered Driver Name → Mobile auto-fills. "+
+      "If you just created a new DRIVER user, refresh this page."+
+      (issues.length?" Directory warning: "+issues.join(" | "):"");
   }
 }
 async function loadPoSavedDirectory(){
-  try{
-    const result=await db.from("dispatch_assignments")
+  // Protected RPC allows only active ERP Admin/Manager to read active Driver
+  // names/phones. Historical dispatch list remains independently available.
+  const [historyResult,erpResult]=await Promise.all([
+    db.from("dispatch_assignments")
       .select("driver_name,driver_mobile,vehicle_no,transporter_name,assigned_at")
-      .order("assigned_at",{ascending:false}).limit(2000);
-    if(result.error)throw result.error;
-    poRawAssignments=result.data||[];
+      .order("assigned_at",{ascending:false}).limit(2000),
+    db.rpc("lwb_sales_head_active_drivers")
+  ]);
+  if(historyResult.error){
+    poRawAssignments=[];
+    poDirectoryError=historyResult.error.message||"Unable to read previous assignments";
+  }else{
+    poRawAssignments=historyResult.data||[];
     poDirectoryError="";
-  }catch(e){
-    poDirectoryError=e.message||"Unable to read dispatch assignments";
+  }
+  if(erpResult.error){
+    poActiveErpDrivers=[];
+    poErpDirectoryError="Active Driver list not connected. Run lwb_sales_head_driver_directory.sql in Supabase: "+
+      (erpResult.error.message||"RPC unavailable");
+  }else{
+    poActiveErpDrivers=Array.isArray(erpResult.data)?erpResult.data:[];
+    poErpDirectoryError="";
   }
   rebuildPoDirectory();
 }
@@ -1536,7 +1568,8 @@ function showPoPicker(input,kind){
     const detail=document.createElement("small");
     detail.textContent=kind==="vehicle"
       ?(record.transporter||"Saved vehicle")
-      :(record.mobile||"No saved mobile")+(kind==="mobile"&&record.mobile?" · select to autofill name":"");
+      :(record.mobile||"No saved mobile")+" · "+(record.source||"Previous Dispatch")+
+        (kind==="mobile"&&record.mobile?" · select to autofill name":"");
     option.appendChild(detail);
     menu.appendChild(option);
   });
