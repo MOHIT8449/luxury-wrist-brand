@@ -19,11 +19,13 @@
 <div><label for="pcs">PCS per Case *</label><input id="pcs" type="number" min="1" step="1" required placeholder="24"></div>
 <div><label for="gst">GST Rate (%)</label><input id="gst" type="number" min="0" max="100" step="0.01" placeholder="Optional"></div>
 <div><label for="cess">Cess Rate (%)</label><input id="cess" type="number" min="0" max="100" step="0.01" placeholder="Optional"></div>
+<div><label for="weight">Unit Weight per Case (KG)</label><input id="weight" type="number" min="0" step="0.001" placeholder="e.g. 12.500" disabled></div>
 <div><label for="active">Status</label><select id="active"><option value="true">Active</option><option value="false">Inactive</option></select></div>
 </div><div class="actions"><button id="saveBtn" type="submit">Save SKU</button><button class="secondary" id="clearBtn" type="button">Clear / New SKU</button></div></form>
-<small class="hint">GST/Cess rates optional हैं। Invoicing से पहले applicable tax rate verify करें।</small></section>
+<small class="hint">GST/Cess rates optional हैं। Invoicing से पहले applicable tax rate verify करें।</small>
+<small class="hint" id="weightHint">SKU weight auto-fill setup: add optional unit_weight_kg column in Supabase first, then enter verified KG per CASE for each SKU.</small></section>
 <section class="panel"><div class="toolbar"><div><h2 style="margin-bottom:5px">SKU List</h2><span id="status">Loading...</span></div><input id="search" placeholder="Search SKU name or HSN..."></div>
-<div class="table-wrap"><table><thead><tr><th>SKU Name</th><th>HSN</th><th>PCS/Case</th><th>GST %</th><th>Cess %</th><th>Status</th><th>Action</th></tr></thead><tbody id="rows"><tr><td colspan="7">Loading...</td></tr></tbody></table></div></section>
+<div class="table-wrap"><table><thead><tr><th>SKU Name</th><th>HSN</th><th>PCS/Case</th><th>Unit Wt/Case KG</th><th>GST %</th><th>Cess %</th><th>Status</th><th>Action</th></tr></thead><tbody id="rows"><tr><td colspan="8">Loading...</td></tr></tbody></table></div></section>
 </main>
 <script>
 'use strict';
@@ -32,19 +34,31 @@ const SUPABASE_URL='https://txkbhadzdbxpieunfvox.supabase.co';
 // Never use a service_role or secret key in browser HTML.
 const SUPABASE_PUBLISHABLE_KEY='sb_publishable_W4I3Q5ODf0g17sq5uDml2Q_sLolXYEk';
 const $=id=>document.getElementById(id);
-let db=null,skus=[],editingId=null;
+let db=null,skus=[],editingId=null,weightColumnAvailable=false;
 function notice(message,error=false){const el=$('message');el.textContent=message;el.className='message '+(error?'error':'success');}
-function resetForm(){$('skuForm').reset();editingId=null;$('formTitle').textContent='Add New SKU';$('saveBtn').textContent='Save SKU';$('pcs').value='24';}
+function resetForm(){$('skuForm').reset();editingId=null;$('formTitle').textContent='Add New SKU';$('saveBtn').textContent='Save SKU';$('pcs').value='24';$('weight').value='';}
 function showValue(v){return v===null||v===undefined||v===''?'—':String(v);}
 function addCell(row,value){const cell=document.createElement('td');cell.textContent=showValue(value);row.appendChild(cell);return cell;}
 function render(){const q=$('search').value.toLowerCase().trim();const matches=skus.filter(x=>String(x.sku_name||'').toLowerCase().includes(q)||String(x.hsn_code||'').toLowerCase().includes(q));const body=$('rows');body.replaceChildren();$('status').textContent=`${matches.length} shown / ${skus.length} total`;
-if(!matches.length){const tr=document.createElement('tr');const td=addCell(tr,skus.length?'No matching SKUs.':'No SKUs found.');td.colSpan=7;body.appendChild(tr);return;}
-for(const item of matches){const tr=document.createElement('tr');addCell(tr,item.sku_name);addCell(tr,item.hsn_code);addCell(tr,item.pcs_per_case);addCell(tr,item.gst_rate);addCell(tr,item.cess_rate);addCell(tr,item.is_active===false?'Inactive':'Active');const td=document.createElement('td');const btn=document.createElement('button');btn.type='button';btn.textContent='Edit';btn.addEventListener('click',()=>editSku(item.id));td.appendChild(btn);tr.appendChild(td);body.appendChild(tr);}}
-function editSku(id){const x=skus.find(item=>item.id===id);if(!x)return;editingId=id;$('skuName').value=x.sku_name||'';$('hsn').value=x.hsn_code||'';$('pcs').value=x.pcs_per_case??'';$('gst').value=x.gst_rate??'';$('cess').value=x.cess_rate??'';$('active').value=String(x.is_active!==false);$('formTitle').textContent='Edit SKU';$('saveBtn').textContent='Update SKU';window.scrollTo({top:0,behavior:'smooth'});}
-async function loadSkus(){const {data,error}=await db.from('sku_master').select('id,sku_name,hsn_code,pcs_per_case,gst_rate,cess_rate,is_active').order('sku_name');if(error){notice('SKU list load failed: '+error.message,true);$('status').textContent='Load failed';return;}skus=data||[];render();}
+if(!matches.length){const tr=document.createElement('tr');const td=addCell(tr,skus.length?'No matching SKUs.':'No SKUs found.');td.colSpan=8;body.appendChild(tr);return;}
+for(const item of matches){const tr=document.createElement('tr');addCell(tr,item.sku_name);addCell(tr,item.hsn_code);addCell(tr,item.pcs_per_case);addCell(tr,item.unit_weight_kg);addCell(tr,item.gst_rate);addCell(tr,item.cess_rate);addCell(tr,item.is_active===false?'Inactive':'Active');const td=document.createElement('td');const btn=document.createElement('button');btn.type='button';btn.textContent='Edit';btn.addEventListener('click',()=>editSku(item.id));td.appendChild(btn);tr.appendChild(td);body.appendChild(tr);}}
+function editSku(id){const x=skus.find(item=>item.id===id);if(!x)return;editingId=id;$('skuName').value=x.sku_name||'';$('hsn').value=x.hsn_code||'';$('pcs').value=x.pcs_per_case??'';$('weight').value=x.unit_weight_kg??'';$('gst').value=x.gst_rate??'';$('cess').value=x.cess_rate??'';$('active').value=String(x.is_active!==false);$('formTitle').textContent='Edit SKU';$('saveBtn').textContent='Update SKU';window.scrollTo({top:0,behavior:'smooth'});}
+async function loadSkus(){const {data,error}=await db.from('sku_master').select('*').order('sku_name');if(error){notice('SKU list load failed: '+error.message,true);$('status').textContent='Load failed';return;}skus=data||[];
+weightColumnAvailable=skus.some(x=>Object.prototype.hasOwnProperty.call(x,'unit_weight_kg'));
+$('weight').disabled=!weightColumnAvailable;
+$('weightHint').textContent=weightColumnAvailable
+? 'Fill verified weight for each SKU in KG per CASE. PO Entry will auto-fill this weight on SKU selection; no guessed weights are used.'
+: 'Weight column is not yet in SKU Master. Run the safe lwb_sku_weight_optional.sql setup first; existing SKUs remain unchanged.';
+render();}
 async function saveSku(event){event.preventDefault();if(!db){notice('Supabase is not connected.',true);return;}const name=$('skuName').value.trim();const pcs=Number($('pcs').value);if(!name||!Number.isInteger(pcs)||pcs<1){notice('Valid SKU Name and PCS per Case required.',true);return;}
 const numberOrNull=id=>$(id).value.trim()===''?null:Number($(id).value);
 const payload={sku_name:name,hsn_code:$('hsn').value.trim()||null,pcs_per_case:pcs,gst_rate:numberOrNull('gst'),cess_rate:numberOrNull('cess'),is_active:$('active').value==='true'};
+const weightText=$('weight').value.trim();
+if(weightColumnAvailable){
+  const weight=weightText===''?null:Number(weightText);
+  if(weight!==null&&(!Number.isFinite(weight)||weight<0||weight>999999999)){notice('Enter valid, non-negative KG per Case.',true);return;}
+  payload.unit_weight_kg=weight;
+}
 $('saveBtn').disabled=true;try{let query=editingId?db.from('sku_master').update(payload).eq('id',editingId):db.from('sku_master').insert(payload);const {error}=await query;if(error)throw error;resetForm();await loadSkus();notice('SKU saved successfully.');}catch(e){notice('Save failed: '+e.message,true);}finally{$('saveBtn').disabled=false;}}
 async function init(){resetForm();$('skuForm').addEventListener('submit',saveSku);$('clearBtn').addEventListener('click',resetForm);$('search').addEventListener('input',render);
 if(SUPABASE_PUBLISHABLE_KEY.includes('PASTE_YOUR')){notice('Setup needed: add your Supabase publishable key in this HTML file.',true);$('rows').replaceChildren();$('status').textContent='Supabase key not configured';return;}
