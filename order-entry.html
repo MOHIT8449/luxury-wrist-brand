@@ -59,6 +59,19 @@ button{border:0;cursor:pointer;font-family:inherit}
 .form-control:focus{outline:none;border-color:#1769e0}
 .readonly{background:#f1f1f1}
 
+/* Searchable customer selection from the existing Customer Master */
+.party-picker{position:relative}
+.party-options{position:absolute;top:calc(100% + 4px);left:0;right:0;max-height:250px;overflow-y:auto;background:#fff;border:1px solid #b8c8dc;border-radius:8px;box-shadow:0 8px 24px #18284126;z-index:50}
+.party-options[hidden]{display:none}
+.party-choice{display:block;width:100%;text-align:left;padding:10px 12px;color:#1c2836;background:#fff;border:0;border-bottom:1px solid #edf0f4;font-size:13px;cursor:pointer}
+.party-choice:hover,.party-choice.active{background:#e9f2ff}
+.party-choice small{display:block;color:#657a91;font-size:11px;margin-top:4px}
+.party-empty{padding:12px;color:#586c82;font-size:12px;line-height:1.5}
+.party-hint{font-size:11px;color:#607388;margin-top:5px;line-height:1.4}
+.party-master-link{display:inline-block;font-size:11px;margin-top:5px;color:#1769e0;text-decoration:none}
+.party-master-link:hover{text-decoration:underline}
+
+
 .table-wrap{overflow-x:auto}
 table{width:100%;border-collapse:collapse;min-width:1100px}
 th{
@@ -175,9 +188,18 @@ td input{
       </div>
 
       <div class="form-group">
-        <label>Customer Name *</label>
-        <input id="customerName" class="form-control"
-               placeholder="Customer / Party name">
+        <label for="customerName">Customer / Party Name * (Select from Master)</label>
+        <div class="party-picker" id="partyPicker">
+          <input id="customerName" class="form-control"
+                 placeholder="Click or type to search saved Party..."
+                 autocomplete="off" role="combobox"
+                 aria-autocomplete="list" aria-expanded="false"
+                 aria-controls="partyOptions">
+          <div id="partyOptions" class="party-options" role="listbox"
+               aria-label="Saved parties" hidden></div>
+        </div>
+        <div id="partyHint" class="party-hint">Click to open Party List. Select a saved customer.</div>
+        <a class="party-master-link" href="customer-master.html" target="_blank" rel="noopener">+ Open Customer / Party Master</a>
       </div>
 
       <div class="form-group">
@@ -279,6 +301,14 @@ let currentUser = null;
 let currentProfile = null;
 let itemCounter = 0;
 
+/* Customer Master (existing table; order schema stays unchanged) */
+let selectedParty = null;
+let partyResults = [];
+let activePartyIndex = -1;
+let partySearchTimer = null;
+let partyRequestId = 0;
+
+
 
 /* START */
 
@@ -332,6 +362,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     addItem();
     await loadSkuMaster();
+    initializePartySearch();
 
   }catch(error){
 
@@ -342,6 +373,134 @@ document.addEventListener("DOMContentLoaded", async () => {
 
 });
 
+
+
+/* CUSTOMER / PARTY MASTER SEARCH */
+function setPartyMenu(open) {
+  document.getElementById("partyOptions").hidden = !open;
+  document.getElementById("customerName").setAttribute("aria-expanded", String(open));
+}
+
+function partyInfo(message) {
+  document.getElementById("partyHint").textContent = message;
+}
+
+function pickParty(party) {
+  selectedParty = party;
+  document.getElementById("customerName").value = party.customer_name;
+  partyInfo("Selected from Party Master: " + (party.customer_code || party.customer_name));
+  setPartyMenu(false);
+}
+
+function renderPartyResults() {
+  const menu = document.getElementById("partyOptions");
+  menu.replaceChildren();
+  activePartyIndex = partyResults.length ? 0 : -1;
+  if (!partyResults.length) {
+    const div = document.createElement("div");
+    div.className = "party-empty";
+    div.textContent = "No matching active Party found. Add the Party in Customer Master first.";
+    menu.appendChild(div);
+  }
+  partyResults.forEach((party, index) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "party-choice" + (index === activePartyIndex ? " active" : "");
+    button.setAttribute("role", "option");
+    button.setAttribute("aria-selected", String(index === activePartyIndex));
+    const name = document.createElement("span");
+    name.textContent = party.customer_name;
+    const code = document.createElement("small");
+    code.textContent = party.customer_code || "Saved Customer";
+    button.append(name, code);
+    button.addEventListener("click", () => pickParty(party));
+    menu.appendChild(button);
+  });
+  setPartyMenu(true);
+}
+
+async function searchSavedParties(queryText) {
+  const requestId = ++partyRequestId;
+  const menu = document.getElementById("partyOptions");
+  menu.replaceChildren();
+  const loading = document.createElement("div");
+  loading.className = "party-empty";
+  loading.textContent = "Loading saved parties...";
+  menu.appendChild(loading);
+  setPartyMenu(true);
+
+  try {
+    let query = db.from("lwb_customer_master")
+      .select("id,customer_code,customer_name")
+      .eq("is_active", true)
+      .order("customer_name")
+      .limit(40);
+    const term = queryText.trim().replace(/[%_\\]/g, "").replace(/\s+/g, "%");
+    if (term) query = query.ilike("customer_name", "%" + term + "%");
+
+    const {data,error} = await query;
+    if (requestId !== partyRequestId) return;
+    if (error) throw error;
+    partyResults = data || [];
+    renderPartyResults();
+    partyInfo(partyResults.length === 40
+      ? "Showing first 40 matches. Type more letters to narrow the Party List."
+      : partyResults.length + " matching active Parties. Click a Party to select.");
+  } catch (error) {
+    if (requestId !== partyRequestId) return;
+    partyResults = [];
+    menu.replaceChildren();
+    const note = document.createElement("div");
+    note.className = "party-empty";
+    note.textContent = "Could not load Party List: " + (error.message || "Access error") + ". Check Customer Master read access for this login.";
+    menu.appendChild(note);
+    setPartyMenu(true);
+    partyInfo("Party List unavailable. Ask Admin to check Customer Master permissions.");
+  }
+}
+
+function initializePartySearch() {
+  const field = document.getElementById("customerName");
+  field.addEventListener("focus", () => schedulePartySearch(field.value));
+  field.addEventListener("input", () => {
+    selectedParty = null;
+    schedulePartySearch(field.value);
+  });
+  field.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") {
+      setPartyMenu(false);
+      return;
+    }
+    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      if (document.getElementById("partyOptions").hidden || !partyResults.length) return;
+      event.preventDefault();
+      const delta = event.key === "ArrowDown" ? 1 : -1;
+      activePartyIndex = (activePartyIndex + delta + partyResults.length) % partyResults.length;
+      document.querySelectorAll(".party-choice").forEach((button,index) => {
+        button.classList.toggle("active",index===activePartyIndex);
+        button.setAttribute("aria-selected",String(index===activePartyIndex));
+        if(index===activePartyIndex) button.scrollIntoView({block:"nearest"});
+      });
+    } else if (event.key === "Enter" && !document.getElementById("partyOptions").hidden && activePartyIndex >= 0) {
+      event.preventDefault();
+      pickParty(partyResults[activePartyIndex]);
+    }
+  });
+  field.addEventListener("blur", () => setTimeout(() => setPartyMenu(false),180));
+  document.addEventListener("click", (event) => {
+    if (!document.getElementById("partyPicker").contains(event.target)) setPartyMenu(false);
+  });
+}
+
+function schedulePartySearch(text) {
+  clearTimeout(partySearchTimer);
+  partyResults = [];
+  activePartyIndex = -1;
+  const requestId = ++partyRequestId;
+  partySearchTimer = setTimeout(() => {
+    if (requestId === partyRequestId) searchSavedParties(text);
+  },180);
+}
 
 /* ITEM ROW */
 async function loadSkuMaster() {
@@ -589,6 +748,12 @@ async function saveOrder(){
     return;
   }
 
+  if (!selectedParty || selectedParty.customer_name !== customer) {
+    alert("Please SELECT the Customer / Party from the saved Party List before submitting the order.");
+    document.getElementById("customerName").focus();
+    return;
+  }
+
   if(!salesPerson){
     alert("Sales Person is required.");
     return;
@@ -751,6 +916,12 @@ function resetOrder(){
 
   document.getElementById("orderNo").value="Assigned on save";
   document.getElementById("customerName").value="";
+  selectedParty = null;
+  partyResults = [];
+  clearTimeout(partySearchTimer);
+  ++partyRequestId;
+  setPartyMenu(false);
+  partyInfo("Click to open Party List. Select a saved customer.");
   document.getElementById("transportation").value="";
 
   document.getElementById("itemsBody").innerHTML="";
