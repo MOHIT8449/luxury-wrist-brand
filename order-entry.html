@@ -203,8 +203,8 @@ td input{
       </div>
 
       <div class="form-group">
-        <label for="transportation">Transportation *</label>
-        <select id="transportation" class="form-control" required onchange="toggleVehicleField()">
+        <label for="transportation">Transportation (Optional)</label>
+        <select id="transportation" class="form-control" onchange="toggleVehicleField()">
           <option value="">Select Transportation</option>
           <option value="SELF PICKUP">SELF PICKUP</option>
           <option value="DELIVERY">DELIVERY</option>
@@ -213,7 +213,7 @@ td input{
       </div>
 
       <div class="form-group" id="vehicleField" hidden>
-        <label for="vehicleNumber" id="vehicleLabel">Vehicle Number</label>
+        <label for="vehicleNumber" id="vehicleLabel">Vehicle Number (Optional)</label>
         <input id="vehicleNumber" class="form-control"
                placeholder="e.g. GJ05AB1234" autocomplete="off"
                maxlength="25" oninput="this.value=this.value.toUpperCase()">
@@ -318,6 +318,7 @@ let partyResults = [];
 let activePartyIndex = -1;
 let partySearchTimer = null;
 let partyRequestId = 0;
+let skuMasterByName = new Map();
 
 
 
@@ -532,9 +533,13 @@ if (!list) {
 
   list.innerHTML = "";
 
+  skuMasterByName = new Map();
   (data || []).forEach(sku => {
+    const name = String(sku.sku_name || "").trim();
+    if (!name) return;
+    skuMasterByName.set(name.toUpperCase(), sku);
     const option = document.createElement("option");
-    option.value = sku.sku_name;
+    option.value = name;
     list.appendChild(option);
   });
 }
@@ -553,9 +558,10 @@ function addItem(){
        <input class="sku-name"
              list="skuMasterList"
              autocomplete="off"
-           placeholder="Search SKU from Master">
+             oninput="applySkuDefaultWeight(this)"
+             onchange="applySkuDefaultWeight(this)"
+             placeholder="Search SKU from Master">
     </td>
-      <datalist id="skuMasterList"></datalist>
     <td>
       <input class="qty number"
              type="number"
@@ -586,6 +592,8 @@ function addItem(){
              min="0"
              step="0.001"
              value=""
+             title="KG per case. Defaults from SKU Master; manual override allowed."
+             placeholder="SKU default"
              oninput="calculateRow(this)">
     </td>
 
@@ -639,6 +647,31 @@ function updateRowNumbers(){
 
 }
 
+
+/* Fill verified weight KG per case from SKU Master on exact SKU match. */
+function applySkuDefaultWeight(input){
+  const row = input.closest("tr");
+  if(!row) return;
+  const name = input.value.trim().toUpperCase();
+  const sku = skuMasterByName.get(name);
+  const weightField = row.querySelector(".unit-weight");
+  if(!weightField) return;
+  if(!sku){
+    weightField.value = "";
+    weightField.placeholder = "Select SKU";
+    weightField.title = "Choose an existing SKU to load its default weight.";
+  }else if(sku.unit_weight_kg !== null && sku.unit_weight_kg !== undefined && sku.unit_weight_kg !== "" &&
+            Number.isFinite(Number(sku.unit_weight_kg)) && Number(sku.unit_weight_kg) >= 0){
+    weightField.value = String(Number(sku.unit_weight_kg));
+    weightField.placeholder = "SKU default";
+    weightField.title = "Weight per case loaded from SKU Master. You may correct it for this PO.";
+  }else{
+    weightField.value = "";
+    weightField.placeholder = "Set in SKU Master";
+    weightField.title = "No default KG per case saved for this SKU. Add its verified weight to SKU Master.";
+  }
+  calculateRow(input);
+}
 
 function calculateRow(input){
 
@@ -743,14 +776,11 @@ function toggleVehicleField(){
   const mode = document.getElementById("transportation").value;
   const group = document.getElementById("vehicleField");
   const input = document.getElementById("vehicleNumber");
-  const required = mode === "DIRECT VEHICLE";
-
-  // Vehicle details are irrelevant for self pickup. Delivery vehicle is optional.
+  // Both transportation and vehicle are optional during PO entry.
   group.hidden = !mode || mode === "SELF PICKUP";
-  input.required = required;
+  input.required = false;
   input.disabled = group.hidden;
-  document.getElementById("vehicleLabel").textContent =
-    required ? "Vehicle Number *" : "Vehicle Number (Optional)";
+  document.getElementById("vehicleLabel").textContent = "Vehicle Number (Optional)";
   if(group.hidden) input.value = "";
 }
 
@@ -794,15 +824,9 @@ async function saveOrder(){
     return;
   }
 
-  if(!["SELF PICKUP","DELIVERY","DIRECT VEHICLE"].includes(transportationType)){
-    alert("Please select Transportation: SELF PICKUP, DELIVERY, or DIRECT VEHICLE.");
+  if(transportationType && !["SELF PICKUP","DELIVERY","DIRECT VEHICLE"].includes(transportationType)){
+    alert("Please select a valid Transportation option.");
     document.getElementById("transportation").focus();
-    return;
-  }
-
-  if(transportationType === "DIRECT VEHICLE" && !vehicleNumber){
-    alert("Vehicle Number is mandatory for DIRECT VEHICLE.");
-    document.getElementById("vehicleNumber").focus();
     return;
   }
 
