@@ -294,10 +294,10 @@
 <section class="module-section channel-section" id="channel-dispatch"><div class="stage-heading"><span class="stage-no">03</span><div><h2>Dispatch Team — Vehicle Loading</h2><p>Approved PO के actual loaded SKU और Quantity Verify करें।</p></div></div><div class="grid"><a class="card" data-roles="admin manager warehouse" href="loading-dispatch.html"><div class="card-icon">📦</div><h3>Loading & Dispatch</h3><p>Existing loading/dispatch page</p></a>
 <a class="card" data-roles="admin manager transport" href="transport-allocation.html"><div class="card-icon">🚛</div><h3>Transport Assignment</h3><p>Assigned driver and vehicle details</p></a></div></section>
 <section class="module-section channel-section" id="channel-billing"><div class="stage-heading"><span class="stage-no">04</span><div><h2>Accounts — ERP Bill Create (Tally Separate)</h2><p>Accounts Loaded PO देखेगी और Internal ERP Bill Create करेगी। Original Tally GST Bill अलग Manually बनेगा।</p></div></div><div class="grid"><a class="card" data-roles="admin accounts" href="accounts-invoice.html"><div class="card-icon">📑</div><h3>View Loaded PO / Create ERP Bill</h3><p>Accounts: PO View + one-click Internal ERP Bill Create. No Tally import or GST invoice.</p></a></div></section>
-<section class="module-section channel-section" id="channel-driver"><div class="stage-heading"><span class="stage-no">05</span><div><h2>Driver — Party Delivery Details</h2><p>Party Location, Loaded SKUs और Payment Collection Instructions।</p></div></div><div class="grid"><div class="card upcoming" data-roles="admin manager warehouse transport"><div class="card-icon">📍</div><h3>Driver Delivery Sheet</h3><p>Separate driver portal and POD not built yet</p><span class="coming-label">PLANNED — NOT YET LIVE</span></div></div></section>
+<section class="module-section channel-section" id="channel-driver"><div class="stage-heading"><span class="stage-no">05</span><div><h2>Driver — Delivery Status, POD &amp; Collection Report</h2><p>Assigned Loaded PO, Actual CS, Party Address, Delivery Photo और Pending Office Collection Report।</p></div></div><div class="grid"><a class="card" data-roles="admin manager driver accounts" href="driver-delivery.html"><div class="card-icon">📍</div><h3>Driver Delivery / POD</h3><p>Driver: Own Assigned PO and Submit Delivery. Sales Head/Accounts: Read Only.</p></a></div></section>
 <section class="module-section channel-section" id="channel-collection"><div class="stage-heading"><span class="stage-no">06</span><div><h2>Office — Payment Collection / Outstanding</h2><p>Driver Collection Report Office में Enter होगी। Admin Verify करेगा; Accounts केवल देखेगी।</p></div></div><div class="grid"><a class="card" data-roles="admin manager sales accounts" href="payment-collection.html"><div class="card-icon">💵</div><h3>Payment Collection</h3><p>Office entry; Admin posting; Accounts view-only. SQL setup required</p></a>
 <a class="card" data-roles="admin manager sales accounts" href="party-ledger.html"><div class="card-icon">📒</div><h3>Party Ledger / Outstanding</h3><p>Existing ERP invoice-minus-posted-receipts report</p></a></div></section>
-<section class="module-section channel-section" id="channel-close"><div class="stage-heading"><span class="stage-no">07</span><div><h2>Sales Head — Delivery Confirmation</h2><p>Delivered, Payment Pending / Done और Return Issues का Sales Head Update।</p></div></div><div class="grid"><div class="card upcoming" data-roles="admin manager"><div class="card-icon">🔔</div><h3>Delivery Notification</h3><p>Automatic delivery / collection notifications not connected</p><span class="coming-label">PLANNED — NOT YET LIVE</span></div>
+<section class="module-section channel-section" id="channel-close"><div class="stage-heading"><span class="stage-no">07</span><div><h2>Sales Head — Delivery Confirmation</h2><p>Delivered, Payment Pending / Done और Return Issues का Sales Head Update।</p></div></div><div class="grid"><a class="card" data-roles="admin manager" href="driver-delivery.html"><div class="card-icon">🔔</div><h3>Delivery Report Monitor</h3><p>Driver-submitted delivery and pending office verification. Live alerts pending.</p></a>
 <a class="card" data-roles="admin manager" href="party-ledger.html"><div class="card-icon">📊</div><h3>Outstanding Review</h3><p>ERP financial status report (delivery reconciliation pending)</p></a></div></section>
 <section class="module-section" id="channel-returns"><h2>Returns & Credit Notes</h2><div class="grid"><a class="card" data-roles="admin sales warehouse" href="sales-return.html"><div class="card-icon">↩️</div><h3>Sales Return</h3><p>Existing return entry and approval workflow</p></a>
 <a class="card" data-roles="admin accounts" href="credit-note.html"><div class="card-icon">🗒️</div><h3>Credit Note Preview</h3><p>Preview only; no final credit posting yet</p></a></div></section>
@@ -314,15 +314,15 @@
           <div class="roles-toolbar">
             <div>
               <strong>Assign ERP Role to Existing User</strong>
-              <p class="roles-small">First create staff in Supabase Authentication. Then assign Admin / Accounts / Manager here. Accounts = View Only.</p>
+              <p class="roles-small">First create staff in Supabase Authentication. For Drivers, assign DRIVER role and enter the same Mobile Number saved in Driver & Vehicle Assignment. Accounts = View Only.</p>
             </div>
             <button type="button" onclick="loadRoleManager()">Refresh Users</button>
           </div>
           <p id="roleManagerMessage">Loading users...</p>
           <div class="roles-table-scroll">
             <table class="roles-table">
-              <thead><tr><th>Auth User (Email)</th><th>Full Name</th><th>ERP Role</th><th>Status</th><th>Action</th></tr></thead>
-              <tbody id="roleManagerRows"><tr><td colspan="5">Loading...</td></tr></tbody>
+              <thead><tr><th>Auth User (Email)</th><th>Full Name</th><th>ERP Role</th><th>Driver Mobile</th><th>Status</th><th>Action</th></tr></thead>
+              <tbody id="roleManagerRows"><tr><td colspan="6">Loading...</td></tr></tbody>
             </table>
           </div>
           <p class="roles-small" style="margin-top:10px">Only the current active Admin can save roles. Users may need to sign out and sign in again to refresh permissions. This does not change Tally.</p>
@@ -377,10 +377,14 @@
       const body=document.getElementById("roleManagerRows");
       body.replaceChildren();
       try {
-        const {data,error}=await client.rpc("lwb_admin_list_users");
-        if(error)throw error;
-        const users=Array.isArray(data)?data:[];
-        if(!users.length){addRoleCell(body.insertRow(),"No Auth users found.").colSpan=5;return;}
+        const [listResult,mobileResult]=await Promise.all([
+          client.rpc("lwb_admin_list_users"),
+          client.rpc("lwb_admin_driver_mobiles")
+        ]);
+        if(listResult.error)throw listResult.error;
+        const users=Array.isArray(listResult.data)?listResult.data:[];
+        const mobileMap=new Map((mobileResult.data||[]).map(d=>[d.user_id,d.mobile||""]));
+        if(!users.length){addRoleCell(body.insertRow(),"No Auth users found.").colSpan=6;return;}
         for(const user of users){
           const row=body.insertRow();
           addRoleCell(row,user.email||user.user_id);
@@ -393,9 +397,17 @@
           const role=roleSelect([
             ["","Select Role"],["admin","ADMIN"],["accounts","ACCOUNTS — View Only"],
             ["manager","MANAGER"],["sales","SALES"],["warehouse","WAREHOUSE"],
-            ["transport","TRANSPORT"]
+            ["transport","TRANSPORT"],["driver","DRIVER — Assigned Delivery"]
           ],String(user.erp_role||"").toLowerCase());
           roleCell.appendChild(role);
+          const mobileCell=row.insertCell();
+          const mobile=document.createElement("input");
+          mobile.type="tel";mobile.inputMode="numeric";mobile.maxLength=14;
+          mobile.placeholder="Driver WhatsApp Mobile";
+          mobile.value=mobileMap.get(user.user_id)||"";
+          const updateMobileState=()=>{mobile.disabled=role.value!=="driver"};
+          role.addEventListener("change",updateMobileState);updateMobileState();
+          mobileCell.appendChild(mobile);
           const activeCell=row.insertCell();
           const active=roleSelect([["true","ACTIVE"],["false","INACTIVE"]],
             user.is_active===false?"false":"true");
@@ -405,20 +417,25 @@
           save.type="button";
           save.textContent=user.has_profile?"Save Role":"Assign Role";
           if(user.user_id===roleAdminUserId){role.value="admin";role.disabled=true;active.value="true";active.disabled=true;}
-          save.onclick=()=>saveRoleAssignment(user,name,role,active,save);
+          save.onclick=()=>saveRoleAssignment(user,name,role,mobile,active,save);
           actionCell.appendChild(save);
         }
-        roleMessage(users.length+" Auth users loaded. Choose Role and press Save.");
+        roleMessage(users.length+" Auth users loaded. Choose Role and press Save."+
+          (mobileResult.error?" Driver Mobile Setup pending: run lwb_driver_delivery_setup.sql.":""));
       }catch(err){
-        addRoleCell(body.insertRow(),"Run lwb_user_permissions_setup.sql in Supabase before using this screen.").colSpan=5;
+        addRoleCell(body.insertRow(),"Run lwb_user_permissions_setup.sql in Supabase before using this screen.").colSpan=6;
         roleMessage("Role Manager setup pending: "+err.message,true);
       }
     }
-    async function saveRoleAssignment(user,name,role,active,saveButton){
+    async function saveRoleAssignment(user,name,role,mobile,active,saveButton){
       if(!roleAdminReady)return;
       const selectedRole=role.value;
       const fullName=name.value.trim();
       if(!selectedRole||!fullName){roleMessage("Select a Role and enter Full Name.",true);return;}
+      const driverPhone=mobile.value.replace(/\D/g,"");
+      if(selectedRole==="driver"&&!(/^[6-9]\d{9}$/.test(driverPhone)||/^91[6-9]\d{9}$/.test(driverPhone))){
+        roleMessage("For DRIVER Role enter the exact 10-digit Mobile saved by Sales Head in the Driver Assignment.",true);return;
+      }
       if(!confirm("Assign "+selectedRole.toUpperCase()+" to "+(user.email||user.user_id)+"?"))return;
       saveButton.disabled=true;
       try{
@@ -427,8 +444,16 @@
           p_active:active.value==="true"
         });
         if(error)throw error;
+        if(selectedRole==="driver"){
+          const mapped=await client.rpc("lwb_admin_set_driver_mobile",{
+            p_user_id:user.user_id,p_mobile:driverPhone
+          });
+          if(mapped.error)throw Error("Role saved but Driver Mobile mapping failed: "+mapped.error.message);
+        }
         await loadRoleManager();
-        roleMessage("ERP Role saved for "+(user.email||user.user_id)+". Ask the user to login again.");
+        roleMessage("ERP Role saved for "+(user.email||user.user_id)+
+          (selectedRole==="driver"?" with Driver Mobile mapping.":"")+
+          " Ask the user to login again.");
       }catch(err){roleMessage("Cannot assign Role: "+err.message,true);}
       finally{saveButton.disabled=false;}
     }
@@ -482,7 +507,7 @@
 
         const role = String(profile.role || "").toLowerCase();
 
-        if (!["admin", "manager", "accounts", "sales", "warehouse", "transport"].includes(role)) {
+        if (!["admin", "manager", "accounts", "sales", "warehouse", "transport", "driver"].includes(role)) {
 
           await client.auth.signOut();
 
@@ -526,7 +551,8 @@
           sales:"Salesman — PO Entry and assigned sales/collection pages.",
           warehouse:"Warehouse / Dispatch — Loading and stock operations.",
           transport:"Transport — Driver and Vehicle Allocation.",
-          accounts:"Accounts — Loaded PO View + Internal ERP Bill Create. Tally GST billing remains separate."
+          accounts:"Accounts — Loaded PO View, ERP Bill Create and Delivery Report View Only. Tally remains separate.",
+          driver:"Driver — Own Assigned Loaded PO, Delivery Status, POD Photo and Collection Report."
         };
         document.querySelector(".welcome p").textContent=messages[role]||"";
         if (role === "admin") {
