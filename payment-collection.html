@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Payment Collection | Luxury Wrist Brand ERP</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+:root{--navy:#132843;--blue:#1569dc;--bg:#f1f5fb;--line:#dfe6f0;--muted:#5b7089}
+*{box-sizing:border-box}body{margin:0;font:14px Arial,sans-serif;background:var(--bg);color:#182b44}
+header{background:var(--navy);color:white;padding:16px max(20px,calc((100vw - 1430px)/2));display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap}
+header h1{font-size:20px;letter-spacing:1px;margin:0}header small{display:block;margin-top:6px;color:#bbd0ea}
+nav{display:flex;gap:10px;flex-wrap:wrap}nav a{color:white;text-decoration:none;border:1px solid #90a2b9;padding:9px 12px;border-radius:8px}
+main{max-width:1430px;margin:auto;padding:22px}
+.notice{border:1px solid #eed292;background:#fff7e3;padding:13px 16px;border-radius:10px;line-height:1.6}
+#message{margin:14px 0;border-radius:9px;padding:12px 16px;background:#e4eefb;color:#1a5086}
+#message.error{color:#a02525;background:#fde5e5}
+#message.success{color:#11643c;background:#e1f6e8}
+.metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:13px;margin:16px 0}
+.metric{background:white;border:1px solid var(--line);border-radius:12px;padding:17px}
+.metric small{color:var(--muted);display:block}.metric strong{font-size:23px;display:block;margin-top:8px}
+.panel{background:white;border:1px solid var(--line);border-radius:12px;padding:20px;margin-bottom:18px}
+h2{font-size:19px;margin:0 0 15px}
+.grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}
+label{font-size:12px;font-weight:700;display:block;margin-bottom:6px}
+.field input,.field select,.field textarea{width:100%;padding:12px;border:1px solid #bfcbdb;border-radius:8px;font:14px Arial;background:#fff}
+.field textarea{min-height:58px;resize:vertical}
+.field.wide{grid-column:span 2}
+.field.full{grid-column:1/-1}
+button{border:0;border-radius:8px;padding:11px 17px;background:var(--blue);color:white;font-weight:700;cursor:pointer}
+button.secondary{background:#ecf0f7;color:#183450}
+button.accept{background:#138342}button.reject{background:#b62e2e}
+button:disabled{cursor:not-allowed;opacity:.55}
+.actions{margin-top:17px;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+small.help{display:block;color:var(--muted);margin-top:6px;line-height:1.5}
+.table-wrap{overflow:auto}table{border-collapse:collapse;width:100%;min-width:1050px}
+th{text-align:left;background:#eaf0f8;font-size:11px;padding:12px;white-space:nowrap}td{border-bottom:1px solid #eef0f4;padding:11px;vertical-align:top}
+td:last-child{white-space:nowrap}
+.pill{border-radius:14px;padding:5px 9px;font-weight:700;font-size:11px;background:#e8edf4}
+.pill.POSTED{background:#daf2e2;color:#125b30}.pill.REJECTED{background:#fce1e1;color:#992525}.pill.PENDING{background:#fff0cb;color:#705000}
+.cash-note{background:#f3f7fc;border-left:3px solid #4880bf;padding:12px;line-height:1.6}
+@media(max-width:800px){.metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.grid{grid-template-columns:1fr}.field.wide{grid-column:auto}.field.full{grid-column:auto}}
+</style>
+</head>
+<body>
+<header><div><h1>LUXURY WRIST BRAND</h1><small>ACCOUNTS / PAYMENT COLLECTION & VERIFICATION</small></div>
+<nav><a href="dashboard.html">Dashboard</a><a href="party-ledger.html">Party Ledger</a><a href="accounts-invoice.html">Invoices</a></nav></header>
+<main>
+<div class="notice"><b>Original GST Billing remains in Tally.</b> Collection entered here stays <b>PENDING</b> until Accounts verifies it. Only <b>POSTED</b> collections reduce Outstanding. Return/Credit Note adjustments will be connected separately; do not enter a return as a cash payment.</div>
+<div id="message" role="status">Connecting to ERP...</div>
+<section class="metrics">
+<div class="metric"><small>Invoice Records</small><strong id="invoiceCount">—</strong></div>
+<div class="metric"><small>Outstanding (Before Return Credits)</small><strong id="outstandingTotal">—</strong></div>
+<div class="metric"><small>Pending Collections</small><strong id="pendingCount">—</strong></div>
+<div class="metric"><small>Posted Collections</small><strong id="postedTotal">—</strong></div>
+</section>
+<section class="panel">
+<h2>1. New Payment Collection — Submit to Accounts</h2>
+<form id="collectionForm">
+<div class="grid">
+<div class="field"><label for="invoiceSearch">Search Tally Invoice / Party</label><input id="invoiceSearch" placeholder="e.g. 00003 or SHREE..." autocomplete="off"></div>
+<div class="field wide"><label for="invoice">Original Tally Invoice *</label><select id="invoice" required><option value="">Loading invoices...</option></select><small class="help" id="selectedInfo">Select the correct invoice. Check its number and amount against Tally.</small></div>
+<div class="field"><label for="collectionDate">Collection Date *</label><input type="date" id="collectionDate" required></div>
+<div class="field"><label for="amount">Payment Received (₹) *</label><input id="amount" type="number" step="0.01" min="0.01" required placeholder="Enter actual received amount"></div>
+<div class="field"><label for="mode">Payment Mode *</label><select id="mode" required><option value="CASH">CASH</option><option value="BANK">BANK / NEFT / RTGS</option><option value="UPI">UPI</option><option value="CHEQUE">CHEQUE</option><option value="OTHER">OTHER</option></select></div>
+<div class="field"><label for="ref">UTR / Cheque / Receipt Reference</label><input id="ref" maxlength="150" placeholder="Required for non-cash"></div>
+<div class="field full"><label for="remarks">Collection Note (Optional)</label><textarea id="remarks" placeholder="Collector, delivery reference or payment details"></textarea></div>
+</div>
+<div class="actions"><div class="cash-note">Collection Team submits → Accounts checks actual CASH/Bank receipt → Accounts POST → Party Outstanding reduces.</div>
+<button type="submit" id="submit">Submit Collection — Pending</button></div>
+</form>
+</section>
+<section class="panel">
+<div class="actions" style="margin-top:0;margin-bottom:12px"><h2 style="margin:0">2. Collection Register / Accounts Verification</h2><button type="button" class="secondary" id="refresh">Refresh</button></div>
+<div class="table-wrap"><table>
+<thead><tr><th>Date</th><th>Invoice</th><th>Party</th><th>Mode</th><th>Reference</th><th>Received ₹</th><th>Status</th><th>Review</th></tr></thead>
+<tbody id="rows"><tr><td colspan="8">Loading collections...</td></tr></tbody>
+</table></div>
+<small class="help">Only active Accounts or Admin can POST or REJECT a pending collection. The same transaction cannot be posted twice.</small>
+</section>
+</main>
+<script>
+const SUPABASE_URL="https://txkbhadzdbxpieunfvox.supabase.co";
+const SUPABASE_PUBLISHABLE_KEY="sb_publishable_W4I3Q5ODf0g17sq5uDml2Q_sLolXYEk";
+const db=window.supabase.createClient(SUPABASE_URL,SUPABASE_PUBLISHABLE_KEY);
+const el=id=>document.getElementById(id);
+const fmt=n=>"₹"+Number(n||0).toLocaleString("en-IN",{minimumFractionDigits:2,maximumFractionDigits:2});
+const clean=v=>String(v==null?"":v);
+let role="",invoices=[],collections=[],busy=false;
+const canReview=()=>role==="accounts"||role==="admin";
+const canSubmit=()=>["admin","accounts","manager","sales","salesman","collector"].includes(role);
+function msg(value,type){el("message").textContent=value;el("message").className=type||""}
+function td(row,text){const cell=row.insertCell();cell.textContent=clean(text);return cell}
+function today(){const date=new Date();return [date.getFullYear(),String(date.getMonth()+1).padStart(2,"0"),String(date.getDate()).padStart(2,"0")].join("-")}
+
+async function init(){
+  el("collectionDate").value=today();
+  try{
+    const {data:auth,error:authError}=await db.auth.getUser();
+    if(authError||!auth.user){location.href="login.html";return}
+    const {data:profile,error:profileError}=await db.from("user_profiles")
+      .select("role,active").eq("id",auth.user.id).single();
+    if(profileError)throw profileError;
+    role=String(profile.role||"").trim().toLowerCase();
+    if(profile.active!==true||!canSubmit())throw Error("Access denied. Collection Team, Accounts or Admin login required.");
+    await loadData();
+  }catch(e){msg("Connection / Setup error: "+e.message,"error")}
+}
+async function loadData(){
+  try{
+    msg("Loading invoice and collection records...");
+    const [i,p]=await Promise.all([
+      db.from("lwb_invoice_outstanding").select("*").order("invoice_date",{ascending:false}).limit(1000),
+      db.from("lwb_payment_collections").select("*").order("submitted_at",{ascending:false}).limit(300)
+    ]);
+    if(i.error)throw i.error;if(p.error)throw p.error;
+    invoices=i.data||[];collections=p.data||[];
+    el("invoiceCount").textContent=invoices.length;
+    el("outstandingTotal").textContent=fmt(invoices.reduce((sum,x)=>sum+Number(x.outstanding_amount||0),0));
+    el("pendingCount").textContent=collections.filter(x=>x.status==="PENDING").length;
+    el("postedTotal").textContent=fmt(collections.filter(x=>x.status==="POSTED").reduce((sum,x)=>sum+Number(x.amount||0),0));
+    renderInvoiceSelect();renderCollections();
+    msg("Connected. "+invoices.length+" invoices loaded. Only posted collections affect the ledger.","success");
+  }catch(e){msg("Setup/Read failed: "+e.message+" — Run lwb_payment_ledger_setup.sql in Supabase SQL Editor.","error")}
+}
+function renderInvoiceSelect(){
+  const selected=el("invoice").value;
+  const query=el("invoiceSearch").value.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  const list=invoices.filter(x=>([x.invoice_no,x.customer_name,x.order_no].join(" ").toLowerCase().split(/\s+/).concat([String(x.invoice_no||"").toLowerCase()])).join(" ").includes(query.join(" ")) || query.every(w=>[x.invoice_no,x.customer_name,x.order_no].join(" ").toLowerCase().includes(w))).slice(0,150);
+  el("invoice").replaceChildren(new Option("Select Invoice / Party", ""));
+  for(const invoice of list){
+    const label=invoice.invoice_no+" | "+invoice.customer_name+" | Due "+fmt(invoice.outstanding_amount);
+    el("invoice").appendChild(new Option(label,invoice.invoice_id));
+  }
+  if(list.some(x=>x.invoice_id===selected))el("invoice").value=selected;
+  updateSelectedInfo();
+}
+function updateSelectedInfo(){
+  const current=invoices.find(x=>x.invoice_id===el("invoice").value);
+  el("selectedInfo").textContent=current
+    ? current.customer_name+" · Invoice "+current.invoice_no+" · Original "+fmt(current.invoice_amount)+" · Posted "+fmt(current.paid_amount)+" · Unpaid "+fmt(current.outstanding_amount)+" (return credit not yet linked)"
+    : "Select Original Tally Invoice. Check its number, party and amount against Tally.";
+}
+function renderCollections(){
+  const body=el("rows");body.replaceChildren();
+  if(!collections.length){const r=body.insertRow();td(r,"No payment collections submitted yet.").colSpan=8;return}
+  const invoiceById=new Map(invoices.map(x=>[x.invoice_id,x]));
+  for(const p of collections){
+    const inv=invoiceById.get(p.invoice_id)||{};
+    const row=body.insertRow();
+    td(row,p.collection_date);td(row,inv.invoice_no||p.invoice_id);td(row,inv.customer_name||"—");
+    td(row,p.payment_mode);td(row,p.reference_no||"—");td(row,fmt(p.amount));
+    const badge=td(row,p.status);badge.className="pill "+p.status;
+    const action=row.insertCell();
+    if(p.status==="PENDING"&&canReview()){
+      const post=document.createElement("button");post.type="button";post.className="accept";post.textContent="POST";post.onclick=()=>review(p,"POST");
+      const reject=document.createElement("button");reject.type="button";reject.className="reject";reject.textContent="Reject";reject.style.marginLeft="6px";reject.onclick=()=>review(p,"REJECT");
+      action.append(post,reject);
+    }else tdText(action,p.review_note|| (p.status==="PENDING"?"Awaiting Accounts":"—"));
+  }
+}
+function tdText(node,value){node.textContent=clean(value)}
+async function submitCollection(event){
+  event.preventDefault();if(busy)return;
+  const invoice=invoices.find(x=>x.invoice_id===el("invoice").value);
+  const amount=Number(el("amount").value);
+  const mode=el("mode").value,ref=el("ref").value.trim();
+  const date=el("collectionDate").value;
+  if(!invoice){msg("Select a valid saved invoice.","error");return}
+  if(!Number.isFinite(amount)||amount<=0||Math.round(amount*100)!==amount*100&&Math.abs(Math.round(amount*100)-amount*100)>0.00001){
+    msg("Enter a valid positive amount with maximum two decimal places.","error");return
+  }
+  if(amount>Number(invoice.outstanding_amount)+0.001){msg("Collection exceeds current Outstanding for this Invoice.","error");return}
+  if(!date||date>today()){msg("Select a valid Collection Date (not in future).","error");return}
+  if(mode!=="CASH"&&!ref){msg("Enter UTR / Cheque / Bank reference for non-cash payment.","error");return}
+  if(!confirm("Submit "+fmt(amount)+" for Tally Invoice "+invoice.invoice_no+"? It will stay PENDING until Accounts verifies."))return;
+  busy=true;el("submit").disabled=true;
+  try{
+    const {error}=await db.from("lwb_payment_collections").insert({
+      invoice_id:invoice.invoice_id,amount:Number(amount.toFixed(2)),collection_date:date,
+      payment_mode:mode,reference_no:ref||null,remarks:el("remarks").value.trim()||null
+    });
+    if(error)throw error;
+    el("collectionForm").reset();el("collectionDate").value=today();el("invoiceSearch").value="";
+    await loadData();msg("Collection submitted. Status PENDING — Accounts verification required.","success")
+  }catch(e){msg("Save failed: "+e.message,"error")}
+  finally{busy=false;el("submit").disabled=false}
+}
+async function review(p,action){
+  if(!canReview()||busy)return;
+  let note="";
+  if(action==="POST"){
+    if(!confirm("Accounts Verification: Confirm that actual payment was received, the original Tally Invoice matches, and "+fmt(p.amount)+" should POST. This affects Outstanding."))return;
+  }else{
+    const reason=prompt("Reason to REJECT collection:");
+    if(reason===null)return;
+    note=reason.trim();
+    if(note.length<3){msg("Rejection reason required.","error");return}
+  }
+  busy=true;
+  try{
+    const {error}=await db.rpc("lwb_review_collection",{
+      p_collection_id:p.id,p_action:action,p_note:note||null
+    });
+    if(error)throw error;
+    await loadData();
+    msg(action==="POST"?"Collection POSTED. Outstanding updated.":"Collection REJECTED. Outstanding unchanged.","success");
+  }catch(e){msg("Review failed: "+e.message,"error")}
+  finally{busy=false}
+}
+el("collectionForm").addEventListener("submit",submitCollection);
+el("invoiceSearch").addEventListener("input",renderInvoiceSelect);
+el("invoice").addEventListener("change",updateSelectedInfo);
+el("refresh").onclick=loadData;
+init();
+</script>
+</body>
+</html>
