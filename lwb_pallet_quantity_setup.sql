@@ -3,6 +3,8 @@
 -- Existing quantities and statuses remain unchanged.
 BEGIN;
 ALTER TABLE public.sku_master
+  ADD COLUMN IF NOT EXISTS unit_weight_kg numeric(12,3);
+ALTER TABLE public.sku_master
   ADD COLUMN IF NOT EXISTS cases_per_pallet integer;
 ALTER TABLE public.order_items
   ADD COLUMN IF NOT EXISTS entry_uom text NOT NULL DEFAULT 'CS';
