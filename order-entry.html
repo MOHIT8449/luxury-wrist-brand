@@ -71,6 +71,16 @@ button{border:0;cursor:pointer;font-family:inherit}
 .party-master-link{display:inline-block;font-size:11px;margin-top:5px;color:#1769e0;text-decoration:none}
 .party-master-link:hover{text-decoration:underline}
 
+.qty-mode-field{grid-column:1/-1}
+.qty-mode-toolbar{display:inline-flex;align-items:center;border:1px solid #c9d6e9;border-radius:9px;padding:4px;gap:4px;background:#f0f5fc}
+.qty-mode-btn{padding:10px 24px;border-radius:7px;background:transparent;color:#34445f;font-size:13px;font-weight:800;cursor:pointer}
+.qty-mode-btn.selected{background:#1769e0;color:#fff;box-shadow:0 1px 5px #143a6b2b}
+.qty-mode-hint{display:inline-block;font-size:12px;color:#51647d;margin:0 12px}
+.case-conversion{display:block;font-size:11px;color:#245983;min-height:16px;margin-top:4px}
+.case-conversion.warning{color:#a72c26;font-weight:700}
+.unit-weight[readonly]{background:#edf1f6;color:#32445f;cursor:not-allowed}
+[hidden]{display:none!important}
+
 
 .table-wrap{overflow-x:auto}
 table{width:100%;border-collapse:collapse;min-width:1100px}
@@ -219,6 +229,17 @@ td input{
                maxlength="25" oninput="this.value=this.value.toUpperCase()">
       </div>
 
+      <div class="form-group qty-mode-field" id="qtyModeField" hidden>
+        <label>Direct Vehicle — Quantity Entry Mode</label>
+        <div class="qty-mode-toolbar" role="group" aria-label="Case or Pallet Quantity Entry">
+          <button id="qtyModeCs" type="button" class="qty-mode-btn selected"
+                  aria-pressed="true" onclick="setQuantityMode('CS')">CS</button>
+          <button id="qtyModePallet" type="button" class="qty-mode-btn"
+                  aria-pressed="false" onclick="setQuantityMode('PALLET')">PALLET</button>
+        </div>
+        <span id="qtyModeHint" class="qty-mode-hint">CS: enter cases. PALLET: enter pallets only; CS auto-calculates from SKU Master.</span>
+      </div>
+
     </div>
   </section>
 
@@ -239,7 +260,7 @@ td input{
           <tr>
             <th>#</th>
             <th style="min-width:250px">SKU / Product</th>
-            <th>Qty</th>
+            <th id="quantityHeader">QTY (CS)</th>
             <th>Rate ₹</th>
             <th>Amount ₹</th>
             <th>Unit Weight KG</th>
@@ -319,6 +340,7 @@ let activePartyIndex = -1;
 let partySearchTimer = null;
 let partyRequestId = 0;
 let skuMasterByName = new Map();
+let quantityMode = "CS";
 
 
 
@@ -567,8 +589,11 @@ function addItem(){
              type="number"
              min="0"
              step="1"
+             inputmode="numeric"
+             placeholder="Cases"
              value=""
              oninput="calculateRow(this)">
+      <small class="case-conversion" hidden></small>
     </td>
 
     <td>
@@ -587,14 +612,12 @@ function addItem(){
     </td>
 
     <td>
-      <input class="unit-weight number"
-             type="number"
-             min="0"
-             step="0.001"
+      <input class="unit-weight number readonly"
+             type="text"
              value=""
-             title="KG per case. Defaults from SKU Master; manual override allowed."
-             placeholder="SKU default"
-             oninput="calculateRow(this)">
+             readonly tabindex="-1"
+             title="Read-only: KG per case comes from SKU Master."
+             placeholder="SKU Master">
     </td>
 
     <td>
@@ -614,6 +637,7 @@ function addItem(){
   tbody.appendChild(tr);
 
   updateRowNumbers();
+  updateQuantityModeUI();
   calculateTotals();
 
 }
@@ -664,7 +688,7 @@ function applySkuDefaultWeight(input){
             Number.isFinite(Number(sku.unit_weight_kg)) && Number(sku.unit_weight_kg) >= 0){
     weightField.value = String(Number(sku.unit_weight_kg));
     weightField.placeholder = "SKU default";
-    weightField.title = "Weight per case loaded from SKU Master. You may correct it for this PO.";
+    weightField.title = "Read-only: KG per case loaded from SKU Master.";
   }else{
     weightField.value = "";
     weightField.placeholder = "Set in SKU Master";
@@ -673,20 +697,61 @@ function applySkuDefaultWeight(input){
   calculateRow(input);
 }
 
+function getRowCaseQty(row) {
+  const raw = row.querySelector(".qty").value.trim();
+  const entered = raw === "" ? 0 : Number(raw);
+  if (!Number.isSafeInteger(entered) || entered < 0) return NaN;
+  if (quantityMode === "CS") return entered;
+
+  const name = row.querySelector(".sku-name").value.trim().toUpperCase();
+  const sku = skuMasterByName.get(name);
+  const casesPerPallet = Number(sku?.cases_per_pallet);
+  if (!sku || !Number.isSafeInteger(casesPerPallet) || casesPerPallet < 1) return NaN;
+
+  const cases = entered * casesPerPallet;
+  return Number.isSafeInteger(cases) ? cases : NaN;
+}
+
+function updateRowConversion(row) {
+  const label = row.querySelector(".case-conversion");
+  if (!label) return;
+  label.hidden = quantityMode !== "PALLET";
+  if (label.hidden) return;
+  const sku = skuMasterByName.get(row.querySelector(".sku-name").value.trim().toUpperCase());
+  const perPallet = Number(sku?.cases_per_pallet);
+  const qty = row.querySelector(".qty").value.trim();
+  const cases = getRowCaseQty(row);
+  if (!sku) {
+    label.textContent = "Select SKU from Master";
+    label.className = "case-conversion warning";
+  } else if (!Number.isSafeInteger(perPallet) || perPallet < 1) {
+    label.textContent = "Set CS/Pallet in SKU Master";
+    label.className = "case-conversion warning";
+  } else if (!Number.isFinite(cases)) {
+    label.textContent = "Enter whole-number pallets";
+    label.className = "case-conversion warning";
+  } else {
+    label.textContent = qty === ""
+      ? "1 PALLET = " + formatNumber(perPallet) + " CS"
+      : formatNumber(Number(qty)) + " PALLET × " + formatNumber(perPallet) + " = " + formatNumber(cases) + " CS";
+    label.className = "case-conversion";
+  }
+}
+
 function calculateRow(input){
 
   const row=input.closest("tr");
-
-  const qty=number(row.querySelector(".qty").value);
+  const cases=getRowCaseQty(row);
   const rate=number(row.querySelector(".rate").value);
   const unitWeight=number(row.querySelector(".unit-weight").value);
 
   row.querySelector(".amount").value =
-    (qty*rate).toFixed(2);
+    Number.isFinite(cases) ? (cases*rate).toFixed(2) : "—";
 
   row.querySelector(".row-weight").value =
-    (qty*unitWeight).toFixed(2);
+    Number.isFinite(cases) ? (cases*unitWeight).toFixed(2) : "—";
 
+  updateRowConversion(row);
   calculateTotals();
 
 }
@@ -706,15 +771,17 @@ function calculateTotals(){
     .forEach(row=>{
 
       const sku=row.querySelector(".sku-name").value.trim();
-      const qty=number(row.querySelector(".qty").value);
+      const qty=getRowCaseQty(row);
       const rate=number(row.querySelector(".rate").value);
       const unitWeight=number(row.querySelector(".unit-weight").value);
 
-      if(sku || qty>0) skuCount++;
+      if(sku || Number(row.querySelector(".qty").value)>0) skuCount++;
 
-      totalQty+=qty;
-      totalAmount+=(qty*rate);
-      totalWeight+=(qty*unitWeight);
+      if(Number.isFinite(qty)){
+        totalQty+=qty;
+        totalAmount+=(qty*rate);
+        totalWeight+=(qty*unitWeight);
+      }
 
     });
 
@@ -771,17 +838,56 @@ async function generateOrderNo(){
 }
 
 
-/* TRANSPORTATION / VEHICLE VALIDATION */
+/* PALLET / CS ENTRY: direct vehicle only; downstream always receives CASE quantities. */
+function updateQuantityModeUI() {
+  const pallet = quantityMode === "PALLET";
+  document.getElementById("qtyModeCs").classList.toggle("selected", !pallet);
+  document.getElementById("qtyModePallet").classList.toggle("selected", pallet);
+  document.getElementById("qtyModeCs").setAttribute("aria-pressed", String(!pallet));
+  document.getElementById("qtyModePallet").setAttribute("aria-pressed", String(pallet));
+  document.getElementById("quantityHeader").textContent = pallet ? "QTY (PALLET)" : "QTY (CS)";
+  document.querySelectorAll("#itemsBody tr").forEach(row => {
+    row.querySelector(".qty").placeholder = pallet ? "Pallets" : "Cases";
+    updateRowConversion(row);
+  });
+}
+
+function setQuantityMode(mode, force=false) {
+  if (!["CS","PALLET"].includes(mode)) return false;
+  if (mode === "PALLET" && document.getElementById("transportation").value !== "DIRECT VEHICLE") return false;
+  if (quantityMode !== mode) {
+    const rows = [...document.querySelectorAll("#itemsBody tr")];
+    const filled = rows.some(row => Number(row.querySelector(".qty").value) > 0);
+    if (filled && !force && !confirm("Changing CS / PALLET mode will clear entered quantities. Continue?")) {
+      updateQuantityModeUI();
+      return false;
+    }
+    if (filled) rows.forEach(row => {row.querySelector(".qty").value = "";});
+    quantityMode = mode;
+    updateQuantityModeUI();
+    rows.forEach(row => calculateRow(row.querySelector(".qty")));
+  } else updateQuantityModeUI();
+  return true;
+}
+
+/* TRANSPORTATION / VEHICLE */
 function toggleVehicleField(){
-  const mode = document.getElementById("transportation").value;
-  const group = document.getElementById("vehicleField");
+  const select = document.getElementById("transportation");
+  const mode = select.value;
+  if(mode !== "DIRECT VEHICLE" && quantityMode === "PALLET" && !setQuantityMode("CS")){
+    select.value = "DIRECT VEHICLE";
+    return;
+  }
+  const vehicle = document.getElementById("vehicleField");
   const input = document.getElementById("vehicleNumber");
-  // Both transportation and vehicle are optional during PO entry.
-  group.hidden = !mode || mode === "SELF PICKUP";
+  // Transportation and vehicle are optional during PO entry.
+  vehicle.hidden = !mode || mode === "SELF PICKUP";
   input.required = false;
-  input.disabled = group.hidden;
+  input.disabled = vehicle.hidden;
   document.getElementById("vehicleLabel").textContent = "Vehicle Number (Optional)";
-  if(group.hidden) input.value = "";
+  if(vehicle.hidden) input.value = "";
+  document.getElementById("qtyModeField").hidden = mode !== "DIRECT VEHICLE";
+  updateQuantityModeUI();
 }
 
 /* SAVE ORDER */
@@ -800,10 +906,11 @@ async function saveOrder(){
   const vehicleNumber =
     document.getElementById("vehicleNumber").value.trim().toUpperCase();
 
-  const transportation =
+  let transportation =
     vehicleNumber && transportationType !== "SELF PICKUP"
       ? transportationType + " | VEHICLE: " + vehicleNumber
       : transportationType;
+  if(quantityMode === "PALLET") transportation += " | QTY: PALLET";
 
   const dateValue =
     document.getElementById("orderDate").value;
@@ -837,40 +944,42 @@ async function saveOrder(){
   }
 
   const items=[];
+  let itemError = "";
 
-  document
-    .querySelectorAll("#itemsBody tr")
-    .forEach(row=>{
+  document.querySelectorAll("#itemsBody tr").forEach((row,index)=>{
+    if(itemError) return;
+    const sku = row.querySelector(".sku-name").value.trim();
+    const rawQty = row.querySelector(".qty").value.trim();
+    if(!sku && rawQty === "") return;
+    const enteredQty = Number(rawQty);
+    const cases = getRowCaseQty(row);
+    const rate = number(row.querySelector(".rate").value);
+    const unitWeight = number(row.querySelector(".unit-weight").value);
+    const master = skuMasterByName.get(sku.toUpperCase());
 
-      const sku =
-        row.querySelector(".sku-name").value.trim();
-
-      const qty =
-        number(row.querySelector(".qty").value);
-
-      const rate =
-        number(row.querySelector(".rate").value);
-
-      const unitWeight =
-        number(row.querySelector(".unit-weight").value);
-
-      if(sku && qty>0){
-
-        items.push({
-          sku_name:sku,
-          ordered_qty:qty,
-          approved_qty:null,
-          loaded_qty:0,
-          rate:rate,
-          unit_weight:unitWeight,
-          amount:qty*rate,
-          total_weight:qty*unitWeight
-        });
-
+    if(!sku || !Number.isSafeInteger(enteredQty) || enteredQty < 1 || !Number.isSafeInteger(cases) || cases < 1){
+      itemError = quantityMode === "PALLET"
+        ? "SKU line " + (index+1) + ": select an SKU with CS/Pallet configured, then enter whole-number pallets."
+        : "SKU line " + (index+1) + ": enter SKU and positive whole-number cases.";
+      return;
+    }
+    const item = {
+      sku_name:sku, ordered_qty:cases, approved_qty:null, loaded_qty:0,
+      rate:rate, unit_weight:unitWeight, amount:cases*rate, total_weight:cases*unitWeight
+    };
+    if(quantityMode === "PALLET"){
+      if(!master || !Number.isSafeInteger(Number(master.cases_per_pallet)) || Number(master.cases_per_pallet)<1){
+        itemError = "SKU line " + (index+1) + ": set the real Cases per Pallet in SKU Master first.";
+        return;
       }
+      item.entry_uom = "PALLET";
+      item.ordered_pallet_qty = enteredQty;
+      item.cases_per_pallet_snapshot = Number(master.cases_per_pallet);
+    }
+    items.push(item);
+  });
 
-    });
-
+  if(itemError){alert(itemError);return;}
   if(!items.length){
     alert("Please enter at least one valid SKU with quantity.");
     return;
@@ -886,6 +995,14 @@ async function saveOrder(){
   let createdOrder=null;
 
   try{
+
+    if(quantityMode === "PALLET"){
+      // Fail before creating an order if the safe pallet migration was not run.
+      const {error:columnError} = await db.from("order_items")
+        .select("entry_uom,ordered_pallet_qty,cases_per_pallet_snapshot")
+        .limit(1);
+      if(columnError) throw new Error("PALLET setup pending. Run lwb_pallet_quantity_setup.sql in Supabase before submitting a PALLET order. " + columnError.message);
+    }
 
     const orderNo=await generateOrderNo();
 
@@ -1001,6 +1118,7 @@ function resetOrder(){
   partyInfo("Click to open Party List. Select a saved customer.");
   document.getElementById("transportation").value="";
   document.getElementById("vehicleNumber").value="";
+  quantityMode = "CS";
   toggleVehicleField();
 
   document.getElementById("itemsBody").innerHTML="";
