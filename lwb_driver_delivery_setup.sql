@@ -159,7 +159,11 @@ DROP POLICY IF EXISTS lwb_delivery_report_read ON public.lwb_delivery_reports;
 CREATE POLICY lwb_delivery_report_read
  ON public.lwb_delivery_reports FOR SELECT TO authenticated
  USING(
-  driver_user_id=auth.uid()
+  (driver_user_id=auth.uid() AND EXISTS(
+    SELECT 1 FROM public.user_profiles ap
+    WHERE ap.id=auth.uid() AND ap.active=true
+      AND lower(btrim(ap.role))='driver'
+  ))
   OR EXISTS(
     SELECT 1 FROM public.user_profiles p
     WHERE p.id=auth.uid() AND p.active=true
@@ -195,7 +199,12 @@ CREATE POLICY lwb_delivery_pod_read
  USING(
   bucket_id='lwb-delivery-pod'
   AND (
-    (storage.foldername(name))[1]=auth.uid()::text
+    ((storage.foldername(name))[1]=auth.uid()::text
+      AND EXISTS(
+        SELECT 1 FROM public.user_profiles ap
+        WHERE ap.id=auth.uid() AND ap.active=true
+          AND lower(btrim(ap.role))='driver'
+      ))
     OR EXISTS(
       SELECT 1 FROM public.user_profiles p
       WHERE p.id=auth.uid() AND p.active=true
