@@ -45,7 +45,7 @@ td:last-child{white-space:nowrap}
 <header><div><h1>LUXURY WRIST BRAND</h1><small>ACCOUNTS / PAYMENT COLLECTION & VERIFICATION</small></div>
 <nav><a href="dashboard.html">Dashboard</a><a href="party-ledger.html">Party Ledger</a><a href="accounts-invoice.html">Invoices</a></nav></header>
 <main>
-<div class="notice"><b>Original GST Billing remains in Tally.</b> Collection entered here stays <b>PENDING</b> until Accounts verifies it. Only <b>POSTED</b> collections reduce Outstanding. Return/Credit Note adjustments will be connected separately; do not enter a return as a cash payment.</div>
+<div class="notice"><b>ERP and Tally are independent systems.</b> This page uses only ERP Invoice Records—no Tally data entry, import or sync. Authorized Office/Sales staff submit collections as <b>PENDING</b>; Admin POST/REJECT reduces ERP Outstanding. <b>Accounts login is VIEW ONLY.</b> Return/Credit Note adjustments will be connected separately; do not enter a return as a cash payment.</div>
 <div id="message" role="status">Connecting to ERP...</div>
 <section class="metrics">
 <div class="metric"><small>Invoice Records</small><strong id="invoiceCount">—</strong></div>
@@ -53,29 +53,29 @@ td:last-child{white-space:nowrap}
 <div class="metric"><small>Pending Collections</small><strong id="pendingCount">—</strong></div>
 <div class="metric"><small>Posted Collections</small><strong id="postedTotal">—</strong></div>
 </section>
-<section class="panel">
-<h2>1. New Payment Collection — Submit to Accounts</h2>
+<section class="panel" id="entryPanel">
+<h2>1. New ERP Payment Collection — Submit for Admin Verification</h2>
 <form id="collectionForm">
 <div class="grid">
-<div class="field"><label for="invoiceSearch">Search Tally Invoice / Party</label><input id="invoiceSearch" placeholder="e.g. 00003 or SHREE..." autocomplete="off"></div>
-<div class="field wide"><label for="invoice">Original Tally Invoice *</label><select id="invoice" required><option value="">Loading invoices...</option></select><small class="help" id="selectedInfo">Select the correct invoice. Check its number and amount against Tally.</small></div>
+<div class="field"><label for="invoiceSearch">Search ERP Invoice / Party</label><input id="invoiceSearch" placeholder="e.g. 00003 or SHREE..." autocomplete="off"></div>
+<div class="field wide"><label for="invoice">ERP Invoice Record *</label><select id="invoice" required><option value="">Loading invoices...</option></select><small class="help" id="selectedInfo">Select the correct ERP invoice and check the amount.</small></div>
 <div class="field"><label for="collectionDate">Collection Date *</label><input type="date" id="collectionDate" required></div>
 <div class="field"><label for="amount">Payment Received (₹) *</label><input id="amount" type="number" step="0.01" min="0.01" required placeholder="Enter actual received amount"></div>
 <div class="field"><label for="mode">Payment Mode *</label><select id="mode" required><option value="CASH">CASH</option><option value="BANK">BANK / NEFT / RTGS</option><option value="UPI">UPI</option><option value="CHEQUE">CHEQUE</option><option value="OTHER">OTHER</option></select></div>
 <div class="field"><label for="ref">UTR / Cheque / Receipt Reference</label><input id="ref" maxlength="150" placeholder="Required for non-cash"></div>
 <div class="field full"><label for="remarks">Collection Note (Optional)</label><textarea id="remarks" placeholder="Collector, delivery reference or payment details"></textarea></div>
 </div>
-<div class="actions"><div class="cash-note">Collection Team submits → Accounts checks actual CASH/Bank receipt → Accounts POST → Party Outstanding reduces.</div>
+<div class="actions"><div class="cash-note">Authorized Office/Sales submits → Admin checks actual CASH/Bank receipt → Admin POST → ERP Party Outstanding reduces.</div>
 <button type="submit" id="submit">Submit Collection — Pending</button></div>
 </form>
 </section>
 <section class="panel">
-<div class="actions" style="margin-top:0;margin-bottom:12px"><h2 style="margin:0">2. Collection Register / Accounts Verification</h2><button type="button" class="secondary" id="refresh">Refresh</button></div>
+<div class="actions" style="margin-top:0;margin-bottom:12px"><h2 style="margin:0">2. Collection Register / Admin Verification</h2><button type="button" class="secondary" id="refresh">Refresh</button></div>
 <div class="table-wrap"><table>
 <thead><tr><th>Date</th><th>Invoice</th><th>Party</th><th>Mode</th><th>Reference</th><th>Received ₹</th><th>Status</th><th>Review</th></tr></thead>
 <tbody id="rows"><tr><td colspan="8">Loading collections...</td></tr></tbody>
 </table></div>
-<small class="help">Only active Accounts or Admin can POST or REJECT a pending collection. The same transaction cannot be posted twice.</small>
+<small class="help">Only active Admin can POST or REJECT a pending collection. Accounts may VIEW the register only. Each collection can be reviewed once.</small>
 </section>
 </main>
 <script>
@@ -86,8 +86,9 @@ const el=id=>document.getElementById(id);
 const fmt=n=>"₹"+Number(n||0).toLocaleString("en-IN",{minimumFractionDigits:2,maximumFractionDigits:2});
 const clean=v=>String(v==null?"":v);
 let role="",invoices=[],collections=[],busy=false;
-const canReview=()=>role==="accounts"||role==="admin";
-const canSubmit=()=>["admin","accounts","manager","sales","salesman","collector"].includes(role);
+const canReview=()=>role==="admin";
+const canSubmit=()=>["admin","manager","sales","salesman","collector"].includes(role);
+const canView=()=>canSubmit()||role==="accounts";
 function msg(value,type){el("message").textContent=value;el("message").className=type||""}
 function td(row,text){const cell=row.insertCell();cell.textContent=clean(text);return cell}
 function today(){const date=new Date();return [date.getFullYear(),String(date.getMonth()+1).padStart(2,"0"),String(date.getDate()).padStart(2,"0")].join("-")}
@@ -101,7 +102,10 @@ async function init(){
       .select("role,active").eq("id",auth.user.id).single();
     if(profileError)throw profileError;
     role=String(profile.role||"").trim().toLowerCase();
-    if(profile.active!==true||!canSubmit())throw Error("Access denied. Collection Team, Accounts or Admin login required.");
+    if(profile.active!==true||!canView())throw Error("Access denied. Authorized ERP staff login required.");
+    const readonly=!canSubmit();
+    el("entryPanel").hidden=readonly;
+    if(readonly)msg("Accounts access: VIEW ONLY. No payment entry or posting allowed.");
     await loadData();
   }catch(e){msg("Connection / Setup error: "+e.message,"error")}
 }
@@ -137,8 +141,8 @@ function renderInvoiceSelect(){
 function updateSelectedInfo(){
   const current=invoices.find(x=>x.invoice_id===el("invoice").value);
   el("selectedInfo").textContent=current
-    ? current.customer_name+" · Invoice "+current.invoice_no+" · Original "+fmt(current.invoice_amount)+" · Posted "+fmt(current.paid_amount)+" · Unpaid "+fmt(current.outstanding_amount)+" (return credit not yet linked)"
-    : "Select Original Tally Invoice. Check its number, party and amount against Tally.";
+    ? current.customer_name+" · ERP Invoice "+current.invoice_no+" · Invoice "+fmt(current.invoice_amount)+" · Posted "+fmt(current.paid_amount)+" · Unpaid "+fmt(current.outstanding_amount)+" (return credit not yet linked)"
+    : "Select an ERP Invoice Record and verify the amount.";
 }
 function renderCollections(){
   const body=el("rows");body.replaceChildren();
@@ -160,7 +164,7 @@ function renderCollections(){
 }
 function tdText(node,value){node.textContent=clean(value)}
 async function submitCollection(event){
-  event.preventDefault();if(busy)return;
+  event.preventDefault();if(busy||!canSubmit()){msg("This login has view-only permissions.","error");return;}
   const invoice=invoices.find(x=>x.invoice_id===el("invoice").value);
   const amount=Number(el("amount").value);
   const mode=el("mode").value,ref=el("ref").value.trim();
@@ -172,7 +176,7 @@ async function submitCollection(event){
   if(amount>Number(invoice.outstanding_amount)+0.001){msg("Collection exceeds current Outstanding for this Invoice.","error");return}
   if(!date||date>today()){msg("Select a valid Collection Date (not in future).","error");return}
   if(mode!=="CASH"&&!ref){msg("Enter UTR / Cheque / Bank reference for non-cash payment.","error");return}
-  if(!confirm("Submit "+fmt(amount)+" for Tally Invoice "+invoice.invoice_no+"? It will stay PENDING until Accounts verifies."))return;
+  if(!confirm("Submit "+fmt(amount)+" for ERP Invoice "+invoice.invoice_no+"? It will stay PENDING until Admin verifies."))return;
   busy=true;el("submit").disabled=true;
   try{
     const {error}=await db.from("lwb_payment_collections").insert({
@@ -181,7 +185,7 @@ async function submitCollection(event){
     });
     if(error)throw error;
     el("collectionForm").reset();el("collectionDate").value=today();el("invoiceSearch").value="";
-    await loadData();msg("Collection submitted. Status PENDING — Accounts verification required.","success")
+    await loadData();msg("Collection submitted. Status PENDING — Admin verification required.","success")
   }catch(e){msg("Save failed: "+e.message,"error")}
   finally{busy=false;el("submit").disabled=false}
 }
@@ -189,7 +193,7 @@ async function review(p,action){
   if(!canReview()||busy)return;
   let note="";
   if(action==="POST"){
-    if(!confirm("Accounts Verification: Confirm that actual payment was received, the original Tally Invoice matches, and "+fmt(p.amount)+" should POST. This affects Outstanding."))return;
+    if(!confirm("Admin Verification: Confirm actual payment was received against this ERP invoice, and "+fmt(p.amount)+" should POST. This affects ERP Outstanding only."))return;
   }else{
     const reason=prompt("Reason to REJECT collection:");
     if(reason===null)return;
