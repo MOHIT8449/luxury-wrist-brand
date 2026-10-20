@@ -79,6 +79,7 @@ button{border:0;cursor:pointer;font-family:inherit}
 .case-conversion{display:block;font-size:11px;color:#245983;min-height:16px;margin-top:4px}
 .case-conversion.warning{color:#a72c26;font-weight:700}
 .unit-weight[readonly]{background:#edf1f6;color:#32445f;cursor:not-allowed}
+.fast-entry-hint{display:block;color:#54677e;font-size:11px;margin-top:5px;line-height:1.45}
 [hidden]{display:none!important}
 
 
@@ -246,7 +247,10 @@ td input{
   <section class="card">
 
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:15px">
-      <div class="card-title" style="margin:0">Order Items</div>
+      <div>
+        <div class="card-title" style="margin:0">Order Items</div>
+        <small class="fast-entry-hint">Fast Tab Entry: SKU → Quantity → Rate → next SKU automatically</small>
+      </div>
 
       <button class="btn btn-blue" onclick="addItem()">
         + Add SKU
@@ -602,13 +606,14 @@ function addItem(){
              min="0"
              step="0.01"
              value=""
-             oninput="calculateRow(this)">
+             oninput="calculateRow(this)"
+             onkeydown="handleRateTab(event,this)">
     </td>
 
     <td>
       <input class="amount number readonly"
              value="0.00"
-             readonly>
+             readonly tabindex="-1">
     </td>
 
     <td>
@@ -623,7 +628,7 @@ function addItem(){
     <td>
       <input class="row-weight number readonly"
              value="0.00"
-             readonly>
+             readonly tabindex="-1">
     </td>
 
     <td>
@@ -642,6 +647,44 @@ function addItem(){
 
 }
 
+
+/* Excel-style continuous PO entry: the Rate field is the end of a SKU row.
+   Tab creates a new row only when the last row has a SKU, a positive quantity,
+   a valid CS/PALLET conversion and a valid entered rate. Existing next rows
+   are reused rather than producing duplicates. Shift+Tab is left unchanged. */
+function handleRateTab(event, input) {
+  if(event.key !== "Tab" || event.shiftKey || event.ctrlKey || event.altKey || event.metaKey) return;
+
+  const row = input.closest("tr");
+  if(!row || !row.parentElement || row.parentElement.id !== "itemsBody") return;
+  const next = row.nextElementSibling;
+
+  // When a next SKU row already exists, jump straight there without adding one.
+  if(next) {
+    event.preventDefault();
+    next.querySelector(".sku-name")?.focus();
+    return;
+  }
+
+  const skuName = row.querySelector(".sku-name").value.trim();
+  const rawQty = row.querySelector(".qty").value.trim();
+  const rawRate = input.value.trim();
+  const cases = getRowCaseQty(row);
+  if(!skuName || rawQty === "" || !Number.isSafeInteger(Number(rawQty)) ||
+     Number(rawQty) <= 0 || !Number.isSafeInteger(cases) || cases <= 0 ||
+     rawRate === "" || !Number.isFinite(Number(rawRate)) || Number(rawRate) < 0) {
+    // Do not create empty or invalid SKU rows when the user tabs past Rate.
+    return;
+  }
+
+  event.preventDefault();
+  addItem();
+  const newSku = document.querySelector("#itemsBody tr:last-child .sku-name");
+  if(newSku) {
+    newSku.focus({preventScroll:true});
+    newSku.scrollIntoView({block:"nearest",inline:"nearest"});
+  }
+}
 
 function removeItem(button){
 
