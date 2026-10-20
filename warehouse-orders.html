@@ -426,14 +426,19 @@
     @media(max-width:760px){.po-grid{grid-template-columns:1fr 1fr}}
     @media(max-width:480px){.po-grid{grid-template-columns:1fr}}
     @media print {
-      @page {size:A4 portrait;margin:14mm}
+      @page {size:A5 portrait;margin:10mm}
       body > :not(#poPrintArea) {display:none!important}
-      #poPrintArea {display:block!important;color:#000;font:12px Arial}
-      #poPrintArea h1 {font-size:21px;margin:0 0 5px}
-      #poPrintArea .po-print-details {display:grid;grid-template-columns:1fr 1fr;gap:8px 20px;margin:16px 0}
-      #poPrintArea table {border-collapse:collapse;width:100%;margin-top:18px}
-      #poPrintArea td,#poPrintArea th {border:1px solid #777;padding:9px;text-align:left}
-      #poPrintArea .po-signatures {margin-top:45px;display:flex;justify-content:space-between}
+      #poPrintArea {display:block!important;background:white;color:black;font:10px/1.5 Arial,sans-serif}
+      #poPrintArea h1 {font-size:18px;margin:0 0 6px}
+      #poPrintArea p {margin:5px 0;color:black}
+      #poPrintArea table {border-collapse:collapse;width:100%;min-width:0;font-size:9px;margin-top:10px}
+      #poPrintArea td,#poPrintArea th {border:1px solid #777;padding:6px 4px;text-align:left;overflow-wrap:anywhere}
+      #poPrintArea .po-print-transport {border:1px solid #777;padding:7px;margin:10px 0;break-inside:avoid}
+      #poPrintArea .po-print-transport p {margin:4px 0}
+      #poPrintArea .po-print-transport b {display:inline-block;min-width:90px}
+      #poPrintArea .po-print-total {text-align:right;margin-top:15px}
+      #poPrintArea .po-signatures {display:flex;justify-content:space-between;gap:7px;margin-top:25px;font-size:9px}
+      #poPrintArea .po-print-footer {margin-top:18px;border-top:1px solid #999;padding-top:7px;font-size:9px}
     }
     .message {
       padding: 12px 15px;
@@ -1671,41 +1676,75 @@ async function saveApprovedTransport(){
   }catch(e){allocationStatus("Assignment failed: "+e.message,true);}
   finally{transportSaving=false;if(selectedOrder&&selectedOrder.id===id)btn.disabled=poAllocationLocked(selectedOrder);}
 }
-function printApprovedPO(){
-  if(!eligibleForPoPrint(selectedOrder)||!reviewReady){alert("Approve the PO before printing.");return;}
-  const order=selectedOrder,a=approvedTransport||{},safe=escapeHtml;
-  const lines=selectedItems.map((x,i)=>{
-    const qty=number(x.approved_qty==null?x.ordered_qty:x.approved_qty);
-    const rate=number(x.rate),weight=number(x.unit_weight);
-    return "<tr><td>"+(i+1)+"</td><td>"+safe(x.sku_name)+"</td><td>"+safe(formatNumber(qty))+
-      "</td><td>"+safe(formatMoney(rate))+"</td><td>"+safe(formatMoney(qty*rate))+
-      "</td><td>"+safe(formatNumber(qty*weight))+" KG</td></tr>";
-  }).join("");
-  const totals=selectedItems.reduce((t,x)=>{
-    const q=number(x.approved_qty==null?x.ordered_qty:x.approved_qty);
-    t.q+=q;t.money+=q*number(x.rate);t.kg+=q*number(x.unit_weight);return t;
-  },{q:0,money:0,kg:0});
-  document.getElementById("poPrintArea").innerHTML=
-    "<h1>LUXURY WRIST BRAND</h1>"+
-    "<p><strong>APPROVED PO / LOADING INSTRUCTION</strong></p>"+
-    "<p><strong>NOT A GST INVOICE — NOT PROOF OF DISPATCH</strong></p>"+
-    "<div class='po-print-details'>"+
-    "<p><b>PO No:</b> "+safe(order.order_no)+"</p>"+
-    "<p><b>PO Date:</b> "+safe(formatDate(order.order_date||order.created_at))+"</p>"+
-    "<p><b>Customer:</b> "+safe(order.customer_name)+"</p>"+
-    "<p><b>Salesman:</b> "+safe(order.sales_person)+"</p>"+
-    "<p><b>Driver:</b> "+safe(a.driver_name||"Not Assigned")+"</p>"+
-    "<p><b>Vehicle:</b> "+safe(a.vehicle_no||"Not Assigned")+"</p>"+
-    "<p><b>Loading Person:</b> "+safe(a.loading_person||"Not Assigned")+"</p>"+
-    "<p><b>Driver Mobile:</b> "+safe(a.driver_mobile||"—")+"</p></div>"+
-    "<table><thead><tr><th>#</th><th>SKU / Product</th><th>Approved CS</th><th>Rate</th><th>Amount</th><th>Weight</th></tr></thead><tbody>"+
-    lines+"</tbody></table>"+
-    "<p><b>Total Approved Qty:</b> "+safe(formatNumber(totals.q))+
-    " CS &nbsp; <b>Amount:</b> "+safe(formatMoney(totals.money))+
-    " &nbsp; <b>Weight:</b> "+safe(formatNumber(totals.kg))+" KG</p>"+
-    "<div class='po-signatures'><span>Sales Head __________</span><span>Godown __________</span><span>Driver __________</span></div>"+
-    "<p style='margin-top:30px'>Actual Loaded Quantity to be verified at Dispatch. Tally Original Billing is separate.</p>";
-  window.print();
+async function printApprovedPO(){
+  if(!eligibleForPoPrint(selectedOrder)||!reviewReady){
+    alert("Approve the PO before printing.");
+    return;
+  }
+  const order=selectedOrder;
+  const printButton=document.getElementById("poPrintBtn");
+  printButton.disabled=true;
+  try {
+    // Use the saved assignment of this exact PO, not another vehicle or
+    // uncommitted form inputs. This is the same source as Accounts print.
+    const result=await db.from("dispatch_assignments")
+      .select("driver_name,driver_mobile,vehicle_no,loading_person,transporter_name")
+      .eq("order_id",order.id).maybeSingle();
+    if(result.error)throw result.error;
+    if(!selectedOrder||selectedOrder.id!==order.id)return;
+
+    const a=result.data||{};
+    approvedTransport=result.data?{...approvedTransport,...result.data}:null;
+    const safe=value=>escapeHtml(value==null?"":String(value));
+    const assigned=value=>safe(value||"Not Assigned");
+    const showQty=value=>safe(formatNumber(value));
+    const showRate=value=>safe(formatMoney(value));
+    const approvedLines=selectedItems
+      .map(item=>({
+        sku:item.sku_name,
+        qty:number(item.approved_qty==null?item.ordered_qty:item.approved_qty),
+        rate:number(item.rate),
+        weight:number(item.unit_weight)
+      }))
+      .filter(item=>item.qty>0);
+    const rows=approvedLines.map((item,i)=>
+      "<tr><td>"+(i+1)+"</td><td>"+safe(item.sku)+"</td><td>"+showQty(item.qty)+
+      "</td><td>"+showRate(item.rate)+"</td><td>"+showRate(item.qty*item.rate)+"</td></tr>"
+    ).join("");
+    const total=approvedLines.reduce((t,item)=>{
+      t.qty+=item.qty;
+      t.amount+=item.qty*item.rate;
+      t.weight+=item.qty*item.weight;
+      return t;
+    },{qty:0,amount:0,weight:0});
+    document.getElementById("poPrintArea").innerHTML=
+      "<h1>LUXURY WRIST BRAND</h1>"+
+      "<p><b>APPROVED PO / LOADING INSTRUCTION</b></p>"+
+      "<p><b>NOT A GST INVOICE — NOT A TALLY BILL</b></p>"+
+      "<p><b>PO No:</b> "+safe(order.order_no)+"</p>"+
+      "<p><b>PO Date:</b> "+safe(formatDate(order.order_date||order.created_at))+"</p>"+
+      "<p><b>Party:</b> "+safe(order.customer_name)+"</p>"+
+      "<p><b>Salesman:</b> "+safe(order.sales_person)+"</p>"+
+      "<p><b>Transport:</b> "+safe(order.transportation)+"</p>"+
+      "<div class='po-print-transport'>"+
+        "<p><b>Driver Name:</b> "+assigned(a.driver_name)+"</p>"+
+        "<p><b>Driver Mobile:</b> "+assigned(a.driver_mobile)+"</p>"+
+        "<p><b>Vehicle Number:</b> "+assigned(a.vehicle_no)+"</p>"+
+        "<p><b>Loading Person:</b> "+assigned(a.loading_person)+"</p>"+
+      "</div>"+
+      "<table><thead><tr><th>#</th><th>SKU</th><th>Approved CS</th><th>Rate/CS</th><th>Value</th></tr></thead><tbody>"+
+      rows+"</tbody></table>"+
+      "<p class='po-print-total'><b>Total Approved:</b> "+showQty(total.qty)+
+      " CS &nbsp; <b>Goods Value:</b> "+showRate(total.amount)+
+      " &nbsp; <b>Weight:</b> "+showQty(total.weight)+" KG</p>"+
+      "<div class='po-signatures'><span>Sales Head __________</span><span>Godown __________</span><span>Driver __________</span></div>"+
+      "<p class='po-print-footer'>For internal PO / loading reference only. Actual Loaded Quantity must be checked by Dispatch. Internal ERP Bill uses Actual Loaded Quantity; Tally GST Billing remains separate.</p>";
+    window.print();
+  }catch(e){
+    alert("Could not load assigned Driver / Vehicle for Print: "+e.message+". Please retry.");
+  }finally{
+    printButton.disabled=false;
+  }
 }
 
 function warehouseSkuInputMarkup(item, index, editable) {
