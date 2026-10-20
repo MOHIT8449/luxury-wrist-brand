@@ -11,7 +11,7 @@
  * Optional:
  *   WA_GRAPH_VERSION=v26.0
  *   WA_TEMPLATE_NAME=lwb_driver_loading_assignment
- *   WA_TEMPLATE_LANG=en
+ *   WA_TEMPLATE_LANG=en_US
  * Supabase server credentials are injected into Edge Functions automatically.
  * Never put the WhatsApp access token or DB secret in browser HTML or GitHub.
  *
@@ -107,8 +107,12 @@ Deno.serve(async (req) => {
     const token = (req.headers.get("authorization") || "").match(/^Bearer\s+(.+)$/i)?.[1];
     if (!token) return reply(401, { error: "Login required" });
     const serverUrl = Deno.env.get("SUPABASE_URL");
+    let projectSecret = "";
+    try {
+      projectSecret = JSON.parse(Deno.env.get("SUPABASE_SECRET_KEYS") || "{}").default || "";
+    } catch { /* older hosted projects may use only the legacy service key */ }
     const serverSecret = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ||
-      Deno.env.get("LWB_DB_SECRET_KEY");
+      Deno.env.get("LWB_DB_SECRET_KEY") || projectSecret;
     if (!serverUrl || !serverSecret)
       return reply(503, { error: "Backend Supabase credentials are not configured" });
 
@@ -130,7 +134,7 @@ Deno.serve(async (req) => {
     try { request = await req.json(); }
     catch { return reply(400, { error: "Expected JSON body" }); }
     const orderId = clean(request?.order_id);
-    if (!/^[0-9a-f]{8}-[0-9a-f-]{27,}$/i.test(orderId))
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(orderId))
       return reply(400, { error: "Valid order_id is required" });
 
     // Operators must record confirmation of the driver's WhatsApp opt-in
@@ -177,7 +181,7 @@ Deno.serve(async (req) => {
     const phoneId = Deno.env.get("WA_PHONE_NUMBER_ID");
     const graphVersion = Deno.env.get("WA_GRAPH_VERSION") || "v26.0";
     const templateName = Deno.env.get("WA_TEMPLATE_NAME") || "lwb_driver_loading_assignment";
-    const language = Deno.env.get("WA_TEMPLATE_LANG") || "en";
+    const language = Deno.env.get("WA_TEMPLATE_LANG") || "en_US";
     if (!waToken || !phoneId)
       return reply(503, { error: "Meta WhatsApp API not configured. Set WA_ACCESS_TOKEN and WA_PHONE_NUMBER_ID in Supabase Edge Function Secrets." });
     if (!/^v\d+\.\d+$/.test(graphVersion) || !/^[0-9]{10,25}$/.test(phoneId) ||
