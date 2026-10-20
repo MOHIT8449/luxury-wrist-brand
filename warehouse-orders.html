@@ -418,6 +418,18 @@
       color: #9f1d1d;
     }
 
+    .warehouse-sku-options{position:fixed;display:none;z-index:3000;max-height:260px;overflow:auto;background:white;border:1px solid #9eb6d9;border-radius:8px;box-shadow:0 9px 25px #13223e38}
+    .warehouse-sku-options.show{display:block}
+    .warehouse-sku-choice{display:block;width:100%;text-align:left;padding:10px 12px;background:white;border:0;border-bottom:1px solid #e9edf4;font-size:12px;color:#14253a;cursor:pointer}
+    .warehouse-sku-choice:hover,.warehouse-sku-choice.selected{background:#e7f2ff}
+    .warehouse-sku-choice small{display:block;margin-top:4px;color:#60758e}
+    .warehouse-sku-empty{padding:12px;font-size:12px;color:#697b90}
+    .warehouse-sku-input{width:205px;max-width:100%;padding:8px;border:1px solid #aebbd0;border-radius:5px;font-size:12px}
+    .warehouse-sku-input:focus{outline:2px solid #8fbbee}
+    .manager-weight-input{background:#fff8e9;border:1px solid #dba64e!important;font-weight:700}
+    .manager-weight-input:focus{outline:2px solid #e8b55d}
+    .warehouse-sku-hint{display:block;font-size:11px;color:#586d89;margin:-2px 0 9px}
+    .warehouse-sku-hint.error{color:#af2525}
     @media (max-width: 900px) {
       .stats {
         grid-template-columns: repeat(2, 1fr);
@@ -605,6 +617,7 @@
         </div>
 
         <h4 class="section-title">SKU Verification & Modification</h4>
+        <small class="warehouse-sku-hint" id="warehouseSkuHint">Search SKU from Master; Manager can edit Unit Weight KG per Case.</small>
 
         <div class="table-wrap">
           <table>
@@ -616,7 +629,7 @@
                 <th style="text-align:right">Approved Qty</th>
                 <th style="text-align:right">Rate</th>
                 <th style="text-align:right">Amount</th>
-                <th style="text-align:right">Unit Weight</th>
+                <th style="text-align:right">Unit Weight KG (Editable)</th>
                 <th style="text-align:right">Total Weight</th>
                 <th>Action</th>
               </tr>
@@ -683,6 +696,8 @@
   </div>
 
 
+<div id="warehouseSkuOptions" class="warehouse-sku-options" role="listbox" aria-label="SKU Master results"></div>
+
 <script>
 
 const SUPABASE_URL =
@@ -705,6 +720,11 @@ let selectedOrder = null;
 let selectedItems = [];
 let originalItemIds = [];
 let reviewReady = false;
+let warehouseSkuMaster=[];
+let warehouseSkuLoadError='';
+let warehouseSkuInput=null;
+let warehouseSkuMatches=[];
+let warehouseSkuActive=-1;
 
 
 /* -----------------------------
@@ -768,7 +788,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     document.getElementById("userRole").textContent =
       role.toUpperCase();
 
-    await loadOrders();
+    await Promise.all([loadOrders(), loadWarehouseSkuMaster()]);
 
   } catch (error) {
 
