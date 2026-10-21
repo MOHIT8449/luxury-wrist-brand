@@ -19,7 +19,7 @@ h1{margin:0 0 5px;font-size:25px}h2{margin:0;font-size:19px}h3{margin:0 0 10px;f
 .top{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
 button{cursor:pointer;font-weight:700;border:0;border-radius:7px;background:var(--blue);color:white;padding:10px 14px;font-size:13px}
 button.secondary{background:#e7edf5;color:#23415f}button:disabled{opacity:.5;cursor:not-allowed}
-.stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:11px;margin:16px 0}
+.stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:11px;margin:16px 0}
 .stat,.panel{background:white;border:1px solid var(--border);border-radius:11px;padding:16px}
 .stat small{color:var(--muted);display:block}.stat strong{font-size:25px;display:block;margin-top:5px}
 .controls{display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap}
@@ -73,13 +73,14 @@ Reported Payment अभी <b>Office Verification Pending</b> रहेगा; P
 </div>
 <div class="message" id="message" role="status"></div>
 <div class="stats">
- <div class="stat"><small>Assigned Loaded Orders</small><strong id="totalOrders">0</strong></div>
+ <div class="stat"><small>Total Assigned Orders</small><strong id="totalOrders">0</strong></div>
+ <div class="stat"><small>Loading Pending</small><strong id="loadingPendingOrders">0</strong></div>
  <div class="stat"><small>Delivery Pending</small><strong id="pendingOrders">0</strong></div>
  <div class="stat"><small>Reported Deliveries</small><strong id="doneOrders">0</strong></div>
 </div>
 <div class="panel"><div class="controls">
  <input id="search" type="search" placeholder="Search PO / Party / Vehicle" aria-label="Search delivery orders">
- <select id="filter" aria-label="Delivery filter"><option value="all">All Assigned Loaded PO</option><option value="pending">Pending Delivery</option><option value="done">Delivery Report Submitted</option></select>
+ <select id="filter" aria-label="Delivery filter"><option value="all">All Assigned Orders</option><option value="loading">Loading Pending</option><option value="pending">Pending / Waiting Delivery</option><option value="done">Delivery Report Submitted</option></select>
 </div>
 <div class="orders" id="orders"><div class="empty">Connecting to ERP...</div></div></div>
 </main>
@@ -88,9 +89,10 @@ Reported Payment अभी <b>Office Verification Pending</b> रहेगा; P
 <div class="modalhead"><h2 id="modalTitle">Delivery Details</h2><button type="button" id="close" class="secondary">Close</button></div>
 <div class="modalbody">
 <div class="details" id="details"></div>
-<h3>Actual Loaded SKU / Cases</h3>
-<div class="tablewrap"><table><thead><tr><th>SKU</th><th>LOADED CS</th></tr></thead><tbody id="items"></tbody></table></div>
-<div class="total"><div>Total Loaded <b id="totalCases">0 CS</b></div><div>ERP Goods Value <b id="goodsValue">₹0</b></div></div>
+<div class="banner" id="loadingInfo" hidden>Loading Pending — Order is assigned to you. Delivery Report will be available after Warehouse completes loading.</div>
+<h3 id="itemsTitle">Actual Loaded SKU / Cases</h3>
+<div class="tablewrap"><table><thead><tr><th>SKU</th><th id="casesColumn">LOADED CS</th></tr></thead><tbody id="items"></tbody></table></div>
+<div class="total"><div><span id="casesLabel">Total Loaded</span> <b id="totalCases">0 CS</b></div><div id="goodsValueRow">ERP Goods Value <b id="goodsValue">₹0</b></div></div>
 <p class="mini">Goods Value केवल Internal ERP Order/Loaded Record है, Tally Tax Invoice या Final Amount Due नहीं है।</p>
 <div class="podcard" id="savedPanel" hidden>
  <strong id="savedTitle">Delivery Report Saved</strong>
@@ -164,12 +166,20 @@ async function refresh(){
  if(busy||!user)return;
  $("refresh").disabled=true;
  try{
-  const {data,error}=await db.rpc("lwb_driver_list_delivery_orders");
-  if(error)throw error;
-  records=Array.isArray(data)?data:[];
+  const [loaded,assigned]=await Promise.all([
+   db.rpc("lwb_driver_list_delivery_orders"),
+   role==="driver"?db.rpc("lwb_driver_list_assigned_orders"):Promise.resolve({data:[],error:null})
+  ]);
+  if(loaded.error)throw loaded.error;
+  const loadedRows=Array.isArray(loaded.data)?loaded.data:[];
+  const assignedRows=!assigned.error&&Array.isArray(assigned.data)?assigned.data:[];
+  const loadedIds=new Set(loadedRows.map(x=>x.order_id));
+  records=[...assignedRows.filter(x=>!loadedIds.has(x.order_id)),...loadedRows];
   render();
   loadNotifications();
-  $("message").style.display="none";
+  if(assigned.error){
+   message("Loading Pending Orders unavailable until Supabase RPC is installed: "+assigned.error.message,true);
+  }else{$("message").style.display="none";}
  }catch(error){message("Delivery Setup is pending or access denied: "+error.message,true)}
  finally{$("refresh").disabled=false}
 }
@@ -214,24 +224,31 @@ $("notifBell").onclick=()=>{
  if(!panel.hidden)loadNotifications();
 };
 $("notifReload").onclick=loadNotifications;
+const isWaitingForLoading=r=>r.loading_pending===true||["transport_allocated","loading"].includes(String(r.order_status||"").toLowerCase());
 function render(){
  const query=$("search").value.trim().toLowerCase(),f=$("filter").value;
  $("totalOrders").textContent=num(records.length);
- $("pendingOrders").textContent=num(records.filter(r=>!r.report).length);
+ $("loadingPendingOrders").textContent=num(records.filter(isWaitingForLoading).length);
+ $("pendingOrders").textContent=num(records.filter(r=>!r.report&&!isWaitingForLoading(r)).length);
  $("doneOrders").textContent=num(records.filter(r=>r.report).length);
- const list=records.filter(r=>(f==="all"||(f==="pending"&&!r.report)||(f==="done"&&r.report))&&
+ const list=records.filter(r=>(f==="all"||(f==="loading"&&isWaitingForLoading(r))||
+  (f==="pending"&&!r.report)||(f==="done"&&r.report))&&
   [r.order_no,r.party_name,r.vehicle_no,r.driver_name].some(v=>String(v||"").toLowerCase().includes(query)));
  const wrap=$("orders");wrap.replaceChildren();
- if(!list.length){wrap.append(elt("div","No loaded delivery orders found.","empty"));return}
+ if(!list.length){wrap.append(elt("div","No assigned orders found in this filter.","empty"));return}
  for(const r of list){
+  const waiting=isWaitingForLoading(r);
   const card=elt("article",undefined,"order"),head=elt("div",undefined,"orderhead");
+  const stage=waiting?(r.order_status==="loading"?"LOADING IN PROGRESS":"LOADING PENDING"):
+    (r.report?(r.report.delivery_status||"REPORTED"):"PENDING DELIVERY");
   head.append(elt("strong",(r.order_no||"—")+" • "+(r.party_name||"—")),
-   elt("span",r.report?(r.report.delivery_status||"REPORTED"):"PENDING DELIVERY",r.report?"tag":"tag pending"));
+    elt("span",stage,waiting||!r.report?"tag pending":"tag"));
   card.append(head);
   card.append(elt("p","Vehicle: "+(r.vehicle_no||"Not Assigned")+"  |  Driver: "+(r.driver_name||"—"),"info"));
-  card.append(elt("p","Loaded "+num(r.loaded_cases)+" CS • "+(r.loading_person||"Dispatch Team Not Set"),"info"));
+  card.append(elt("p",(waiting?"Planned ":"Loaded ")+num(waiting?r.planned_cases:r.loaded_cases)+" CS • "+(r.loading_person||"Dispatch Team Not Set"),"info"));
   if(r.report)card.append(elt("p","Driver Collection: "+money(r.report.cash_reported)+" • "+(r.report.collection_review_status==="PENDING_OFFICE"?"OFFICE VERIFICATION PENDING":"PAYMENT NOT COLLECTED"),"info"));
-  const actions=elt("div",undefined,"actions"),btn=elt("button",r.report?"View Delivery Report":"Open Delivery");
+  if(waiting)card.append(elt("p","Delivery submission unlocks after loading is completed.","info"));
+  const actions=elt("div",undefined,"actions"),btn=elt("button",waiting?"View Assigned Order":r.report?"View Delivery Report":"Open Delivery");
   btn.type="button";btn.onclick=()=>openOrder(r.order_id);
   actions.append(btn);card.append(actions);wrap.append(card);
  }
@@ -243,7 +260,13 @@ async function openOrder(id){
  if(busy)return;
  const r=records.find(x=>x.order_id===id);if(!r)return;
  selected=r;
- $("modalTitle").textContent="Delivery — "+(r.order_no||"—");
+ const waiting=isWaitingForLoading(r);
+ $("modalTitle").textContent=(waiting?"Assigned Order — ":"Delivery — ")+(r.order_no||"—");
+ $("loadingInfo").hidden=!waiting;
+ $("itemsTitle").textContent=waiting?"Planned SKU / Cases":"Actual Loaded SKU / Cases";
+ $("casesColumn").textContent=waiting?"PLANNED CS":"LOADED CS";
+ $("casesLabel").textContent=waiting?"Total Planned":"Total Loaded";
+ $("goodsValueRow").hidden=waiting;
  $("details").replaceChildren(
   detail("PO",r.order_no),detail("Party",r.party_name),
   detail("Vehicle",r.vehicle_no),detail("Driver",r.driver_name),
@@ -263,11 +286,11 @@ async function openOrder(id){
  for(const sku of items){
   const tr=elt("tr");tr.append(elt("td",sku.sku),elt("td",num(sku.cases)+" CS"));table.append(tr);
  }
- if(!items.length){const tr=elt("tr"),td=elt("td","No Actual Loaded SKU recorded");td.colSpan=2;tr.append(td);table.append(tr);}
- $("totalCases").textContent=num(r.loaded_cases)+" CS";
+ if(!items.length){const tr=elt("tr"),td=elt("td",waiting?"No planned SKU recorded":"No Actual Loaded SKU recorded");td.colSpan=2;tr.append(td);table.append(tr);}
+ $("totalCases").textContent=num(waiting?r.planned_cases:r.loaded_cases)+" CS";
  $("goodsValue").textContent=money(r.loaded_goods_value);
  $("savedPanel").hidden=!r.report;
- $("deliveryForm").hidden=Boolean(r.report)||role!=="driver";
+ $("deliveryForm").hidden=waiting||Boolean(r.report)||role!=="driver";
  $("viewPod").hidden=!r.report?.pod_path;
  $("photoPreview").style.display="none";$("podFile").value="";
  $("deliveryForm").reset();$("amount").value="0";
@@ -318,7 +341,7 @@ $("viewPod").onclick=async()=>{
 };
 $("deliveryForm").onsubmit=async e=>{
  e.preventDefault();
- if(busy||!selected||role!=="driver"||selected.report)return;
+ if(busy||!selected||role!=="driver"||selected.report||isWaitingForLoading(selected))return;
  const r=selected,status=$("deliveryStatus").value,note=$("deliveryNote").value.trim();
  const receiver=$("receivedBy").value.trim();
  const amount=Number($("amount").value||0);
