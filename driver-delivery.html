@@ -59,11 +59,12 @@ th{font-size:11px;text-align:left;background:#e9f0f9}th,td{padding:11px 10px;bor
 .podcard strong{color:#0f653a}
 .errorhint{background:#fff1e4;border-radius:7px;padding:12px;margin-top:10px;color:#8f5817;font-size:12px}
 @media(max-width:740px){.orders,.fieldrow,.details,.stats{grid-template-columns:1fr}.field.wide{grid-column:1}h1{font-size:22px}.modalbody{padding:13px}}
+.notif-wrap{position:relative}.notif-bell{position:relative}.notif-count{display:none;position:absolute;top:-7px;right:-5px;min-width:19px;padding:1px 5px;border-radius:12px;background:#d63b35;color:white;font-size:11px;text-align:center}.notif-panel{position:absolute;right:0;top:calc(100% + 9px);width:min(370px,calc(100vw - 28px));max-height:380px;overflow:auto;background:white;color:#172c45;border:1px solid #cbd7e5;box-shadow:0 12px 35px #10243b40;border-radius:10px;z-index:45;padding:12px}.notif-panel[hidden]{display:none}.notif-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}.notif-item{border-top:1px solid #e3eaf3;padding:11px 2px}.notif-item.unread{background:#eef5ff}.notif-item p{font-size:12px;overflow-wrap:anywhere}.notif-actions{display:flex;gap:7px;margin-top:7px}.notif-actions button{font-size:11px;padding:6px 9px}.notif-error{color:#a52626;font-size:12px}
 </style>
 </head>
 <body>
 <header><div><strong>LUXURY WRIST BRAND</strong><small>DRIVER DELIVERY • POD • PAYMENT REPORT</small></div>
-<nav><a href="dashboard.html">Dashboard</a><button type="button" id="logout">Logout</button></nav></header>
+<nav><div class="notif-wrap"><button type="button" class="notif-bell" id="notifBell" aria-label="Show notifications" aria-expanded="false">🔔 <span id="notifCount" class="notif-count">0</span></button><section id="notifPanel" class="notif-panel" aria-label="Notifications" hidden><div class="notif-head"><strong>Notifications</strong><button type="button" id="notifReload" class="secondary">Refresh</button></div><div id="notifList">Loading...</div></section></div><a href="dashboard.html">Dashboard</a><button type="button" id="logout">Logout</button></nav></header>
 <main>
 <div class="top"><div><h1 id="pageTitle">Driver & Delivery</h1><p id="welcome">Loading assigned delivery orders...</p></div><button id="refresh" type="button">Refresh</button></div>
 <div class="banner">
@@ -130,6 +131,7 @@ const money=n=>new Intl.NumberFormat("en-IN",{style:"currency",currency:"INR"}).
 const num=n=>new Intl.NumberFormat("en-IN",{maximumFractionDigits:3}).format(Number(n)||0);
 const date=x=>{const d=new Date(x);return x&&!Number.isNaN(d.getTime())?d.toLocaleString("en-IN"):"—"};
 let user=null,role="",records=[],selected=null,busy=false,existingPodUrl=null;
+let notificationRows=[];
 function message(t,error=false){
  const e=$("message");e.style.display="block";e.textContent=t;e.className="message"+(error?" error":"");
 }
@@ -154,6 +156,8 @@ async function init(){
   $("welcome").textContent=(p.data.full_name||user.email)+" • "+role.toUpperCase()+
     (role==="driver"?" • Login Mobile: "+(p.data.mobile||"NOT MAPPED"):" • Read Only");
   await refresh();
+  await loadNotifications();
+  setInterval(()=>{if(user&&!document.hidden)loadNotifications()},30000);
  }catch(error){message("ERP connection failed: "+error.message,true)}
 }
 async function refresh(){
@@ -164,10 +168,52 @@ async function refresh(){
   if(error)throw error;
   records=Array.isArray(data)?data:[];
   render();
+  loadNotifications();
   $("message").style.display="none";
  }catch(error){message("Delivery Setup is pending or access denied: "+error.message,true)}
  finally{$("refresh").disabled=false}
 }
+async function loadNotifications(){
+ if(!user)return;
+ const {data,error}=await db.from("erp_notifications")
+   .select("id,title,message,notification_type,order_id,is_read,created_at")
+   .eq("user_id",user.id).order("created_at",{ascending:false}).limit(40);
+ if(error){$("notifList").textContent="Notifications unavailable: "+error.message;$("notifList").className="notif-error";return}
+ $("notifList").className="";
+ notificationRows=data||[];
+ const unread=notificationRows.filter(n=>!n.is_read).length;
+ $("notifCount").textContent=unread>99?"99+":unread;
+ $("notifCount").style.display=unread?"inline-block":"none";
+ renderNotifications();
+}
+function renderNotifications(){
+ const box=$("notifList");box.replaceChildren();
+ if(!notificationRows.length){box.append(elt("p","No notifications yet."));return}
+ for(const n of notificationRows){
+  const item=elt("div",undefined,"notif-item"+(n.is_read?"":" unread"));
+  item.append(elt("strong",n.title),elt("p",n.message),elt("small",date(n.created_at)));
+  const actions=elt("div",undefined,"notif-actions");
+  if(!n.is_read){
+   const mark=elt("button","Mark as read","secondary");
+   mark.onclick=async()=>{mark.disabled=true;const {error}=await db.from("erp_notifications").update({is_read:true}).eq("id",n.id).eq("user_id",user.id);
+     if(error){$("notifList").textContent="Unable to mark read: "+error.message;return}await loadNotifications()};
+   actions.append(mark);
+  }
+  if(n.order_id){
+   const open=elt("button","Open order","secondary");
+   open.onclick=()=>{const match=records.find(x=>x.order_id===n.order_id);if(match){$("notifPanel").hidden=true;$("notifBell").setAttribute("aria-expanded","false");openOrder(match.order_id)}
+     else{box.prepend(elt("p","This order is not in your loaded delivery list.","notif-error"))}};
+   actions.append(open);
+  }
+  item.append(actions);box.append(item);
+ }
+}
+$("notifBell").onclick=()=>{
+ const panel=$("notifPanel");panel.hidden=!panel.hidden;
+ $("notifBell").setAttribute("aria-expanded",String(!panel.hidden));
+ if(!panel.hidden)loadNotifications();
+};
+$("notifReload").onclick=loadNotifications;
 function render(){
  const query=$("search").value.trim().toLowerCase(),f=$("filter").value;
  $("totalOrders").textContent=num(records.length);
