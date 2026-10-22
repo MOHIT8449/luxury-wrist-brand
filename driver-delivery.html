@@ -60,7 +60,7 @@ th{font-size:11px;text-align:left;background:#e9f0f9}th,td{padding:11px 10px;bor
 .errorhint{background:#fff1e4;border-radius:7px;padding:12px;margin-top:10px;color:#8f5817;font-size:12px}
 @media(max-width:740px){.orders,.fieldrow,.details,.stats{grid-template-columns:1fr}.field.wide{grid-column:1}h1{font-size:22px}.modalbody{padding:13px}}
 .notif-wrap{position:relative}.notif-bell{position:relative}.notif-count{display:none;position:absolute;top:-7px;right:-5px;min-width:19px;padding:1px 5px;border-radius:12px;background:#d63b35;color:white;font-size:11px;text-align:center}.notif-panel{position:absolute;right:0;top:calc(100% + 9px);width:min(370px,calc(100vw - 28px));max-height:380px;overflow:auto;background:white;color:#172c45;border:1px solid #cbd7e5;box-shadow:0 12px 35px #10243b40;border-radius:10px;z-index:45;padding:12px}.notif-panel[hidden]{display:none}.notif-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}.notif-item{border-top:1px solid #e3eaf3;padding:11px 2px}.notif-item.unread{background:#eef5ff}.notif-item p{font-size:12px;overflow-wrap:anywhere}.notif-actions{display:flex;gap:7px;margin-top:7px}.notif-actions button{font-size:11px;padding:6px 9px}.notif-error{color:#a52626;font-size:12px}
-.return-feature{border:1px solid #bfd3e8;border-radius:10px;padding:14px;margin:15px 0;background:#f8fbff}.return-summary{margin:12px 0;display:flex;gap:10px;flex-wrap:wrap}.return-summary span{background:white;border:1px solid #d9e5f0;border-radius:6px;padding:8px 10px}.return-summary b{display:block;font-size:17px}.return-row{display:grid;grid-template-columns:minmax(180px,2fr) 90px 90px 135px 100px auto;align-items:end;gap:7px;padding:10px 0;border-top:1px solid #dce5ef}.return-row label{font-size:11px;font-weight:700}.return-row label input,.return-row label select{margin-top:3px;padding:8px 5px}.return-row .line-total{font-weight:700;padding-bottom:9px;white-space:nowrap}.return-row button{padding:8px;background:#a44242}.return-note{font-size:12px;color:#526c84}.return-error{color:#a52626;white-space:pre-wrap}.return-ok{color:#16663b;white-space:pre-wrap}@media(max-width:850px){.return-row{grid-template-columns:repeat(2,minmax(0,1fr))}.return-row label:first-child{grid-column:span 2}}
+.return-feature{border:1px solid #bfd3e8;border-radius:10px;padding:14px;margin:15px 0;background:#f8fbff}.return-summary{margin:12px 0;display:flex;gap:10px;flex-wrap:wrap}.return-summary span{background:white;border:1px solid #d9e5f0;border-radius:6px;padding:8px 10px}.return-summary b{display:block;font-size:17px}.return-row{display:grid;grid-template-columns:minmax(180px,2fr) 75px 75px 100px 115px 100px auto;align-items:end;gap:7px;padding:10px 0;border-top:1px solid #dce5ef}.return-row label{font-size:11px;font-weight:700}.return-row label input,.return-row label select{margin-top:3px;padding:8px 5px}.return-row .line-total{font-weight:700;padding-bottom:9px;white-space:nowrap}.return-row button{padding:8px;background:#a44242}.return-note{font-size:12px;color:#526c84}.return-error{color:#a52626;white-space:pre-wrap}.return-ok{color:#16663b;white-space:pre-wrap}@media(max-width:850px){.return-row{grid-template-columns:repeat(2,minmax(0,1fr))}.return-row label:first-child{grid-column:span 2}}
 </style>
 </head>
 <body>
@@ -105,7 +105,7 @@ Reported Payment अभी <b>Office Verification Pending</b> रहेगा; P
   <span>Return Deduction <b id="returnDeduction">₹0</b></span>
   <span>Provisional Net <b id="returnNet">₹0</b></span>
  </div>
- <p class="return-note">Only loaded SKU and ERP per-case rate. PCS amount = (PCS ÷ PCS per Case) × case rate. Provisional net only; no Tally bill, GST, stock, party ledger or payment adjustment until Accounts verification.</p>
+ <p class="return-note">Enter CS + PCS together as in your Bill. Return Amount = CS × Case Rate + (PCS ÷ PCS per Case) × Case Rate. Provisional net only; no Tally bill, GST, stock, party ledger or payment adjustment until Accounts verification.</p>
  <div id="returnPanel" hidden>
   <div id="returnRows"></div>
   <div class="footactions" style="justify-content:flex-start">
@@ -437,7 +437,8 @@ async function loadReturnOptions(id){
 }
 function addReturnLine(){
  if(!returnOptions){$("returnStatus").textContent="Return details loading or database setup pending.";return}
- returnLines.push({order_item_id:"",uom:"CS",qty:"1",reason:"LEAKAGE"});
+ if(returnLines.length>=15){$("returnStatus").textContent="Maximum 15 SKU rows per return.";return}
+ returnLines.push({order_item_id:"",qty:"0",pcsQty:"0",reason:"LEAKAGE"});
  renderReturnRows();
 }
 function returnSku(row){return (returnOptions?.items||[]).find(x=>x.order_item_id===row.order_item_id)}
@@ -464,60 +465,81 @@ function renderReturnRows(){
    const old=returnSku(r);if(old)choices.push([r.order_item_id,old.sku+" • none remaining"]);
   }
   const sku=makeSelect(choices,r.order_item_id,v=>{
-    r.order_item_id=v;r.uom="CS";renderReturnRows();
+    r.order_item_id=v;r.qty="0";r.pcsQty="0";renderReturnRows();
   });
   const item=returnSku(r);
-  const uom=makeSelect([["CS","Case"],["PCS","PCS"+(item?.pcs_per_case?" (1 CS="+item.pcs_per_case+")":" — no pack")]],r.uom,v=>{
-    r.uom=v;calculateReturn();
-  });
-  if(!item?.pcs_per_case)uom.querySelector('option[value="PCS"]').disabled=true;
-  const qty=document.createElement("input");qty.type="number";qty.min="1";qty.step="1";qty.value=r.qty;
+  const pack=Number(item?.pcs_per_case);
+  const validPack=Number.isInteger(pack)&&pack>0;
+  const qty=document.createElement("input");qty.type="number";qty.inputMode="numeric";qty.min="0";qty.step="1";qty.value=r.qty;
   qty.oninput=()=>{r.qty=qty.value;calculateReturn()};
+  const pcs=document.createElement("input");pcs.type="number";pcs.inputMode="numeric";pcs.min="0";pcs.step="1";pcs.value=r.pcsQty;
+  pcs.disabled=!validPack;
+  pcs.oninput=()=>{r.pcsQty=pcs.value;calculateReturn()};
+  const rate=elt("span",item?money(item.rate_per_case):"—","line-total");
   const reason=makeSelect([["LEAKAGE","Leakage"],["BREAKAGE","Breakage"],["DAMAGE","Damage"],["GASLESS","Gasless"],["LOW_FILL","Low fill"]],r.reason,v=>{r.reason=v;calculateReturn()});
   const amount=elt("span","₹0","line-total");
   amount.dataset.index=String(i);
   const remove=elt("button","Remove");remove.type="button";remove.onclick=()=>{returnLines.splice(i,1);renderReturnRows()};
-  div.append(lineField("SKU (Loaded Order)",sku),lineField("UOM",uom),lineField("Qty",qty),lineField("Reason",reason),amount,remove);
+  div.append(lineField("SKU (Loaded Order)",sku),lineField("CS",qty),lineField(validPack?"PCS (1 CS = "+pack+")":"PCS (packing missing)",pcs),lineField("Rate / CS",rate),lineField("Reason",reason),amount,remove);
   wrap.append(div);
  });
  calculateReturn();
 }
+function evaluateReturnDraft(){
+ const payload=[],totals=new Map();
+ let cents=0,warning="";
+ if(!returnLines.length)warning="Add at least one return SKU.";
+ for(let i=0;i<returnLines.length;i++){
+  const r=returnLines[i],sku=returnSku(r),cs=Number(r.qty),pcs=Number(r.pcsQty);
+  if(!sku){warning="Row "+(i+1)+": Select a loaded SKU.";break}
+  if(!Number.isSafeInteger(cs)||cs<0||!Number.isSafeInteger(pcs)||pcs<0||cs>1000000||pcs>1000000){
+   warning="Row "+(i+1)+": Enter nonnegative whole CS / PCS quantities.";break;
+  }
+  if(!cs&&!pcs){warning="Row "+(i+1)+": Enter CS or PCS.";break}
+  const pack=Number(sku.pcs_per_case),rate=Number(sku.rate_per_case);
+  if(pcs&&(!Number.isSafeInteger(pack)||pack<1)){warning="PCS needs PCS per Case in SKU Master.";break}
+  if(!Number.isFinite(rate)||rate<0){warning="Invalid case rate for SKU.";break}
+  const cases=cs+(pcs?pcs/pack:0);
+  const total=(totals.get(r.order_item_id)||0)+cases;
+  totals.set(r.order_item_id,total);
+  if(total>Number(sku.available_cases)+0.00000001){
+   warning="Return quantity exceeds available loaded cases.";break;
+  }
+  cents+=Math.round(cs*rate*100)+(pcs?Math.round(pcs/pack*rate*100):0);
+  if(cs)payload.push({order_item_id:r.order_item_id,uom:"CS",qty:cs,reason:r.reason});
+  if(pcs)payload.push({order_item_id:r.order_item_id,uom:"PCS",qty:pcs,reason:r.reason});
+ }
+ if(payload.length>30)warning="Maximum 30 case/PCS lines per return.";
+ return {payload,amount:cents/100,warning};
+}
 function calculateReturn(){
  if(!returnOptions)return;
  let sum=0;
- const totals=new Map();let warning="";
  for(let i=0;i<returnLines.length;i++){
-  const line=returnLines[i],sku=returnSku(line);
-  const qty=Number(line.qty);
+  const r=returnLines[i],sku=returnSku(r);
+  const cs=Number(r.qty),pcs=Number(r.pcsQty),pack=Number(sku?.pcs_per_case),rate=Number(sku?.rate_per_case);
   let amount=0;
-  if(sku&&Number.isInteger(qty)&&qty>0){
-    const pack=Number(sku.pcs_per_case);
-    const cases=line.uom==="PCS"?qty/pack:qty;
-    if(!Number.isFinite(cases)||cases<=0){warning="PCS conversion requires PCS per Case in SKU Master."}
-    else{
-      amount=Math.round(cases*Number(sku.rate_per_case)*100)/100;
-      totals.set(sku.order_item_id,(totals.get(sku.order_item_id)||0)+cases);
-    }
+  if(sku&&Number.isSafeInteger(cs)&&cs>=0&&Number.isSafeInteger(pcs)&&pcs>=0&&Number.isFinite(rate)&&rate>=0&&(!pcs||(Number.isSafeInteger(pack)&&pack>0))){
+   amount=(Math.round(cs*rate*100)+(pcs?Math.round(pcs/pack*rate*100):0))/100;
   }
   const cell=$("returnRows").querySelector('[data-index="'+i+'"]');
   if(cell)cell.textContent=money(amount);
   sum+=amount;
  }
- for(const [id,cases] of totals){
-  const sku=(returnOptions.items||[]).find(x=>x.order_item_id===id);
-  if(cases>Number(sku.available_cases)+0.0000001)warning="Return quantity exceeds available loaded SKU quantity.";
- }
- const draftNet=Math.max(0,Number(returnOptions.provisional_net_amount)-sum);
+ const draft=evaluateReturnDraft();
+ const draftNet=Number(returnOptions.provisional_net_amount)-draft.amount;
  $("returnGross").textContent=money(returnOptions.gross_amount);
  $("returnDeduction").textContent=money(returnOptions.return_deduction);
  $("returnNet").textContent=money(returnOptions.provisional_net_amount);
  $("returnDraftTotal").textContent=money(sum);
  $("returnDraftNet").textContent=money(draftNet);
- $("returnSubmit").disabled=returnBusy||returnLines.length===0||Boolean(warning);
- if(warning){$("returnStatus").className="return-error";$("returnStatus").textContent=warning}
- else if(!$("returnStatus").textContent.startsWith("Return saved")){
+ $("returnSubmit").disabled=returnBusy||Boolean(draft.warning)||draft.payload.length===0||draftNet<0;
+ if(draft.warning||draftNet<0){
+  $("returnStatus").className="return-error";
+  $("returnStatus").textContent=draft.warning||"Return amount exceeds available ERP goods amount.";
+ }else if(!$("returnStatus").textContent.startsWith("Return saved")&&!$("returnStatus").textContent.startsWith("Return NOT saved")){
   $("returnStatus").className="return-note";
-  $("returnStatus").textContent="Amount is provisional until Accounts verifies original Tally bill and authorizes Credit Note.";
+  $("returnStatus").textContent="Case and PCS return amounts combine automatically. Office verification required.";
  }
 }
 $("returnButton").onclick=()=>{
@@ -529,11 +551,13 @@ $("returnAddLine").onclick=addReturnLine;
 $("returnSubmit").onclick=async()=>{
  if(!selected||returnBusy||!returnOptions||isWaitingForLoading(selected)||role!=="driver")return;
  if(!returnLines.length){$("returnStatus").textContent="Select returned SKU.";return}
- const lines=[];
- for(const r of returnLines){
-  if(!returnSku(r)||!Number.isInteger(Number(r.qty))||Number(r.qty)<=0){$("returnStatus").textContent="Select SKU and positive whole quantity.";return}
-  lines.push({order_item_id:r.order_item_id,uom:r.uom,qty:Number(r.qty),reason:r.reason});
+ const draft=evaluateReturnDraft();
+ if(draft.warning||!draft.payload.length||Number(returnOptions.provisional_net_amount)<draft.amount){
+  $("returnStatus").className="return-error";
+  $("returnStatus").textContent=draft.warning||"Return amount exceeds available ERP goods amount.";
+  return;
  }
+ const lines=draft.payload;
  if(!window.confirm("Record physically collected damaged/leakage goods for "+selected.order_no+"? The estimated deduction stays PENDING OFFICE; official invoice and ledger will NOT change."))return;
  returnBusy=true;$("returnSubmit").disabled=true;
  $("returnStatus").className="return-note";$("returnStatus").textContent="Saving return...";
