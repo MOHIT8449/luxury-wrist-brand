@@ -48,6 +48,14 @@ table{border-collapse:collapse;width:100%;min-width:440px}
 th{font-size:11px;text-align:left;background:#e9f0f9}th,td{padding:11px 10px;border-bottom:1px solid #e8edf4}
 .total{display:flex;gap:13px;flex-wrap:wrap;justify-content:flex-end;background:#e6f5eb;padding:13px;border-radius:9px}
 .total b{color:#0e7240;font-size:17px}
+.delivery-settlement{display:flex;gap:14px;flex-wrap:wrap;justify-content:flex-end;align-items:center}
+.delivery-settlement>div{display:flex;flex-direction:column;gap:3px;font-size:12px;color:#375e4a}
+.delivery-settlement .settlement-net{border-left:2px solid #95c6a7;padding-left:14px;font-size:13px;font-weight:700}
+.delivery-settlement .settlement-net b{font-size:21px}
+.delivery-settlement .deduction b{color:#a23838}
+.payment-net-tip{background:#eef6ff;border:1px solid #d2e6fa;padding:11px 12px;border-radius:7px;margin:10px 0;font-size:13px;color:#254d77}
+.payment-net-tip strong{display:inline-block;margin-left:4px;color:#155b30;font-size:16px}
+@media(max-width:640px){.delivery-settlement{justify-content:flex-start}.delivery-settlement .settlement-net{border-left:none;padding-left:0;border-top:1px solid #95c6a7;padding-top:5px;width:100%}}
 .fieldrow{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin:13px 0}
 .field{display:flex;flex-direction:column;gap:5px;min-width:0}
 .field label{font-size:12px;font-weight:700;color:#36516e}
@@ -93,8 +101,12 @@ Reported Payment अभी <b>Office Verification Pending</b> रहेगा; P
 <div class="banner" id="loadingInfo" hidden>Loading Pending — Order is assigned to you. Delivery Report will be available after Warehouse completes loading.</div>
 <h3 id="itemsTitle">Actual Loaded SKU / Cases</h3>
 <div class="tablewrap"><table><thead><tr><th>SKU</th><th id="casesColumn">LOADED CS</th></tr></thead><tbody id="items"></tbody></table></div>
-<div class="total"><div><span id="casesLabel">Total Loaded</span> <b id="totalCases">0 CS</b></div><div id="goodsValueRow">ERP Goods Value <b id="goodsValue">₹0</b></div></div>
-<p class="mini">Goods Value केवल Internal ERP Order/Loaded Record है, Tally Tax Invoice या Final Amount Due नहीं है।</p>
+<div class="total"><div><span id="casesLabel">Total Loaded</span> <b id="totalCases">0 CS</b></div><div id="goodsValueRow" class="delivery-settlement">
+ <div>ERP Gross Value<b id="goodsGross">₹0</b></div>
+ <div class="deduction">Less: Driver Return<b id="goodsReturnDeduction">−₹0</b></div>
+ <div class="settlement-net"><span id="goodsNetLabel">Total After Return (Provisional)</span><b id="goodsValue">₹0</b></div>
+</div></div>
+<p class="mini">यह Total ERP Loaded Order Rate के अनुसार Return घटाकर निकाला गया है। Actual Tally Invoice और Final Credit Note Office Verification के बाद ही बदलेगा।</p>
 <section id="returnFeature" class="return-feature" hidden>
  <div class="row" style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">
   <strong>↩ Delivery-Time Return (Leakage / Breakage / Damage)</strong>
@@ -135,6 +147,10 @@ Reported Payment अभी <b>Office Verification Pending</b> रहेगा; P
   <div class="field wide"><label for="deliveryNote">Delivery Note / Shortage / Refusal Reason</label><textarea id="deliveryNote" maxlength="1000" placeholder="If partial or failed, state reason and item/CS discrepancy."></textarea></div>
  </div>
  <h3>Payment Collected by Driver — Report Only</h3>
+ <div id="paymentNetTip" class="payment-net-tip" hidden>
+  Return घटाकर ERP Net Value: <strong id="paymentNetValue">₹0</strong>.
+  Driver वास्तविक Received Payment ही नीचे भरें; Return Deduction को Cash Collected मत समझें।
+ </div>
  <p class="mini">Driver ने वास्तव में जितना Cash / UPI / Bank / Cheque लिया है उतना ही लिखें। ₹0 = Payment Pending / None Collected. यह amount Ledger में Automatically Post नहीं होगा।</p>
  <div class="fieldrow">
   <div class="field"><label for="amount">Reported Collection (₹)</label><input id="amount" type="number" min="0" max="99999999" step="0.01" value="0"></div>
@@ -299,6 +315,10 @@ async function openOrder(id){
  $("returnStatus").textContent="";
  $("returnRows").replaceChildren();returnLines=[];returnOptions=null;
  $("returnGross").textContent="…";$("returnDeduction").textContent="…";$("returnNet").textContent="…";
+ $("goodsGross").textContent=money(r.loaded_goods_value);
+ $("goodsReturnDeduction").textContent=waiting?"—":"Calculating…";
+ $("goodsNetLabel").textContent="Total After Return (Provisional)";
+ $("paymentNetTip").hidden=true;
  if(!waiting&&role==="driver")loadReturnOptions(r.order_id);
  $("itemsTitle").textContent=waiting?"Planned SKU / Cases":"Actual Loaded SKU / Cases";
  $("casesColumn").textContent=waiting?"PLANNED CS":"LOADED CS";
@@ -325,7 +345,7 @@ async function openOrder(id){
  }
  if(!items.length){const tr=elt("tr"),td=elt("td",waiting?"No planned SKU recorded":"No Actual Loaded SKU recorded");td.colSpan=2;tr.append(td);table.append(tr);}
  $("totalCases").textContent=num(waiting?r.planned_cases:r.loaded_cases)+" CS";
- $("goodsValue").textContent=money(r.loaded_goods_value);
+ $("goodsValue").textContent=waiting?"—":role==="driver"?"Calculating…":money(r.loaded_goods_value);
  $("savedPanel").hidden=!r.report;
  $("deliveryForm").hidden=waiting||Boolean(r.report)||role!=="driver";
  $("viewPod").hidden=!r.report?.pod_path;
@@ -426,11 +446,32 @@ $("deliveryForm").onsubmit=async e=>{
   busy=false;$("submitDelivery").disabled=false;$("submitDelivery").textContent="Submit Delivery & Collection Report";
  }
 };
+function updateDeliveryTotals(draftAmount=0){
+ if(!returnOptions)return;
+ const gross=Number(returnOptions.gross_amount)||0;
+ const deduction=Number(returnOptions.return_deduction)||0;
+ const net=Number(returnOptions.provisional_net_amount)-draftAmount;
+ const draftPreview=draftAmount>0&&!$("returnPanel").hidden;
+ $("goodsGross").textContent=money(gross);
+ $("goodsReturnDeduction").textContent="−"+money(deduction+(draftPreview?draftAmount:0));
+ $("goodsValue").textContent=money(net);
+ $("goodsNetLabel").textContent=draftPreview?"Total After Return (Preview)":"Total After Return (Provisional)";
+ $("paymentNetTip").hidden=Boolean(selected?.report)||isWaitingForLoading(selected||{});
+ $("paymentNetValue").textContent=money(returnOptions.provisional_net_amount);
+}
 async function loadReturnOptions(id){
  const {data,error}=await db.rpc("lwb_driver_return_options",{p_order_id:id});
  if(!selected||selected.order_id!==id)return;
- if(error){$("returnStatus").className="return-error";$("returnStatus").textContent="Return Setup Pending: "+error.message;return}
+ if(error){
+  $("returnStatus").className="return-error";
+  $("returnStatus").textContent="Return Setup Pending: "+error.message;
+  $("goodsReturnDeduction").textContent="Unavailable";
+  $("goodsValue").textContent="Unavailable";
+  $("goodsNetLabel").textContent="Net after Return (not verified)";
+  return;
+ }
  returnOptions=data;
+ updateDeliveryTotals(0);
  $("returnStatus").className="return-note";
  $("returnStatus").textContent="Delivery return is recorded as PENDING OFFICE verification.";
  renderReturnRows();
@@ -533,6 +574,7 @@ function calculateReturn(){
  $("returnNet").textContent=money(returnOptions.provisional_net_amount);
  $("returnDraftTotal").textContent=money(sum);
  $("returnDraftNet").textContent=money(draftNet);
+ updateDeliveryTotals(!draft.warning&&draftNet>=0&&!$("returnPanel").hidden?draft.amount:0);
  $("returnSubmit").disabled=returnBusy||Boolean(draft.warning)||draft.payload.length===0||draftNet<0;
  if(draft.warning||draftNet<0){
   $("returnStatus").className="return-error";
@@ -546,6 +588,7 @@ $("returnButton").onclick=()=>{
  if(!returnOptions){$("returnStatus").textContent="Return Setup Pending — refresh after installing SQL.";return}
  $("returnPanel").hidden=!$("returnPanel").hidden;
  if(!$("returnPanel").hidden&&!returnLines.length)addReturnLine();
+ calculateReturn();
 };
 $("returnAddLine").onclick=addReturnLine;
 $("returnSubmit").onclick=async()=>{
