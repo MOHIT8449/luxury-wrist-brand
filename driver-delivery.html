@@ -60,6 +60,7 @@ th{font-size:11px;text-align:left;background:#e9f0f9}th,td{padding:11px 10px;bor
 .errorhint{background:#fff1e4;border-radius:7px;padding:12px;margin-top:10px;color:#8f5817;font-size:12px}
 @media(max-width:740px){.orders,.fieldrow,.details,.stats{grid-template-columns:1fr}.field.wide{grid-column:1}h1{font-size:22px}.modalbody{padding:13px}}
 .notif-wrap{position:relative}.notif-bell{position:relative}.notif-count{display:none;position:absolute;top:-7px;right:-5px;min-width:19px;padding:1px 5px;border-radius:12px;background:#d63b35;color:white;font-size:11px;text-align:center}.notif-panel{position:absolute;right:0;top:calc(100% + 9px);width:min(370px,calc(100vw - 28px));max-height:380px;overflow:auto;background:white;color:#172c45;border:1px solid #cbd7e5;box-shadow:0 12px 35px #10243b40;border-radius:10px;z-index:45;padding:12px}.notif-panel[hidden]{display:none}.notif-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}.notif-item{border-top:1px solid #e3eaf3;padding:11px 2px}.notif-item.unread{background:#eef5ff}.notif-item p{font-size:12px;overflow-wrap:anywhere}.notif-actions{display:flex;gap:7px;margin-top:7px}.notif-actions button{font-size:11px;padding:6px 9px}.notif-error{color:#a52626;font-size:12px}
+.return-feature{border:1px solid #bfd3e8;border-radius:10px;padding:14px;margin:15px 0;background:#f8fbff}.return-summary{margin:12px 0;display:flex;gap:10px;flex-wrap:wrap}.return-summary span{background:white;border:1px solid #d9e5f0;border-radius:6px;padding:8px 10px}.return-summary b{display:block;font-size:17px}.return-row{display:grid;grid-template-columns:minmax(180px,2fr) 90px 90px 135px 100px auto;align-items:end;gap:7px;padding:10px 0;border-top:1px solid #dce5ef}.return-row label{font-size:11px;font-weight:700}.return-row label input,.return-row label select{margin-top:3px;padding:8px 5px}.return-row .line-total{font-weight:700;padding-bottom:9px;white-space:nowrap}.return-row button{padding:8px;background:#a44242}.return-note{font-size:12px;color:#526c84}.return-error{color:#a52626;white-space:pre-wrap}.return-ok{color:#16663b;white-space:pre-wrap}@media(max-width:850px){.return-row{grid-template-columns:repeat(2,minmax(0,1fr))}.return-row label:first-child{grid-column:span 2}}
 </style>
 </head>
 <body>
@@ -94,6 +95,28 @@ Reported Payment अभी <b>Office Verification Pending</b> रहेगा; P
 <div class="tablewrap"><table><thead><tr><th>SKU</th><th id="casesColumn">LOADED CS</th></tr></thead><tbody id="items"></tbody></table></div>
 <div class="total"><div><span id="casesLabel">Total Loaded</span> <b id="totalCases">0 CS</b></div><div id="goodsValueRow">ERP Goods Value <b id="goodsValue">₹0</b></div></div>
 <p class="mini">Goods Value केवल Internal ERP Order/Loaded Record है, Tally Tax Invoice या Final Amount Due नहीं है।</p>
+<section id="returnFeature" class="return-feature" hidden>
+ <div class="row" style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">
+  <strong>↩ Delivery-Time Return (Leakage / Breakage / Damage)</strong>
+  <button type="button" id="returnButton" class="secondary">+ Add Return</button>
+ </div>
+ <div class="return-summary">
+  <span>ERP Gross <b id="returnGross">₹0</b></span>
+  <span>Return Deduction <b id="returnDeduction">₹0</b></span>
+  <span>Provisional Net <b id="returnNet">₹0</b></span>
+ </div>
+ <p class="return-note">Only loaded SKU and ERP per-case rate. PCS amount = (PCS ÷ PCS per Case) × case rate. Provisional net only; no Tally bill, GST, stock, party ledger or payment adjustment until Accounts verification.</p>
+ <div id="returnPanel" hidden>
+  <div id="returnRows"></div>
+  <div class="footactions" style="justify-content:flex-start">
+   <button type="button" id="returnAddLine" class="secondary">+ Add SKU</button>
+  </div>
+  <div class="field wide"><label for="returnNote">Return Remarks (Optional)</label><textarea id="returnNote" maxlength="1000" placeholder="Leakage / damage details"></textarea></div>
+  <div class="return-summary"><span>New Return <b id="returnDraftTotal">₹0</b></span><span>After Return <b id="returnDraftNet">₹0</b></span></div>
+  <button type="button" id="returnSubmit">Submit Return — Office Verification</button>
+ </div>
+ <p id="returnStatus" role="status" class="return-note"></p>
+</section>
 <div class="podcard" id="savedPanel" hidden>
  <strong id="savedTitle">Delivery Report Saved</strong>
  <p id="savedInfo"></p>
@@ -134,6 +157,7 @@ const num=n=>new Intl.NumberFormat("en-IN",{maximumFractionDigits:3}).format(Num
 const date=x=>{const d=new Date(x);return x&&!Number.isNaN(d.getTime())?d.toLocaleString("en-IN"):"—"};
 let user=null,role="",records=[],selected=null,busy=false,existingPodUrl=null;
 let notificationRows=[];
+let returnOptions=null,returnLines=[],returnBusy=false;
 function message(t,error=false){
  const e=$("message");e.style.display="block";e.textContent=t;e.className="message"+(error?" error":"");
 }
@@ -250,7 +274,14 @@ function render(){
   if(waiting)card.append(elt("p","Delivery submission unlocks after loading is completed.","info"));
   const actions=elt("div",undefined,"actions"),btn=elt("button",waiting?"View Assigned Order":r.report?"View Delivery Report":"Open Delivery");
   btn.type="button";btn.onclick=()=>openOrder(r.order_id);
-  actions.append(btn);card.append(actions);wrap.append(card);
+  actions.append(btn);
+  if(!waiting&&role==="driver"){
+    const ret=elt("button","↩ Return","secondary");
+    ret.type="button";
+    ret.onclick=async()=>{await openOrder(r.order_id);if(selected?.order_id===r.order_id){$("returnPanel").hidden=false;if(!returnLines.length)addReturnLine()}};
+    actions.append(ret);
+  }
+  card.append(actions);wrap.append(card);
  }
 }
 function addressOf(record){
@@ -263,6 +294,12 @@ async function openOrder(id){
  const waiting=isWaitingForLoading(r);
  $("modalTitle").textContent=(waiting?"Assigned Order — ":"Delivery — ")+(r.order_no||"—");
  $("loadingInfo").hidden=!waiting;
+ $("returnFeature").hidden=waiting||role!=="driver";
+ $("returnPanel").hidden=true;
+ $("returnStatus").textContent="";
+ $("returnRows").replaceChildren();returnLines=[];returnOptions=null;
+ $("returnGross").textContent="…";$("returnDeduction").textContent="…";$("returnNet").textContent="…";
+ if(!waiting&&role==="driver")loadReturnOptions(r.order_id);
  $("itemsTitle").textContent=waiting?"Planned SKU / Cases":"Actual Loaded SKU / Cases";
  $("casesColumn").textContent=waiting?"PLANNED CS":"LOADED CS";
  $("casesLabel").textContent=waiting?"Total Planned":"Total Loaded";
@@ -310,7 +347,7 @@ async function openOrder(id){
  existingPodUrl=null;
  $("overlay").classList.add("open");
 }
-function close(){if(busy)return;selected=null;$("overlay").classList.remove("open");if(existingPodUrl){window.URL.revokeObjectURL(existingPodUrl);existingPodUrl=null;}}
+function close(){if(busy||returnBusy)return;selected=null;$("overlay").classList.remove("open");if(existingPodUrl){window.URL.revokeObjectURL(existingPodUrl);existingPodUrl=null;}}
 $("close").onclick=close;$("cancel").onclick=close;
 $("overlay").onclick=e=>{if(e.target===$("overlay"))close()};
 document.addEventListener("keydown",e=>{if(e.key==="Escape")close()});
@@ -341,7 +378,7 @@ $("viewPod").onclick=async()=>{
 };
 $("deliveryForm").onsubmit=async e=>{
  e.preventDefault();
- if(busy||!selected||role!=="driver"||selected.report||isWaitingForLoading(selected))return;
+ if(busy||returnBusy||!selected||role!=="driver"||selected.report||isWaitingForLoading(selected))return;
  const r=selected,status=$("deliveryStatus").value,note=$("deliveryNote").value.trim();
  const receiver=$("receivedBy").value.trim();
  const amount=Number($("amount").value||0);
@@ -388,6 +425,131 @@ $("deliveryForm").onsubmit=async e=>{
  }finally{
   busy=false;$("submitDelivery").disabled=false;$("submitDelivery").textContent="Submit Delivery & Collection Report";
  }
+};
+async function loadReturnOptions(id){
+ const {data,error}=await db.rpc("lwb_driver_return_options",{p_order_id:id});
+ if(!selected||selected.order_id!==id)return;
+ if(error){$("returnStatus").className="return-error";$("returnStatus").textContent="Return Setup Pending: "+error.message;return}
+ returnOptions=data;
+ $("returnStatus").className="return-note";
+ $("returnStatus").textContent="Delivery return is recorded as PENDING OFFICE verification.";
+ renderReturnRows();
+}
+function addReturnLine(){
+ if(!returnOptions){$("returnStatus").textContent="Return details loading or database setup pending.";return}
+ returnLines.push({order_item_id:"",uom:"CS",qty:"1",reason:"LEAKAGE"});
+ renderReturnRows();
+}
+function returnSku(row){return (returnOptions?.items||[]).find(x=>x.order_item_id===row.order_item_id)}
+function lineField(title,control){
+ const label=elt("label",title);label.append(control);return label;
+}
+function makeSelect(values,selected,callback){
+ const element=document.createElement("select");
+ for(const [value,label] of values){
+  const opt=document.createElement("option");opt.value=value;opt.textContent=label;
+  element.append(opt);
+ }
+ element.value=selected;
+ element.onchange=()=>callback(element.value);
+ return element;
+}
+function renderReturnRows(){
+ const wrap=$("returnRows");wrap.replaceChildren();
+ if(!returnLines.length){wrap.append(elt("p","Add one or more returned SKU lines.","return-note"))}
+ returnLines.forEach((r,i)=>{
+  const div=elt("div",undefined,"return-row");
+  const choices=[["","Select billed/loaded SKU"],...(returnOptions?.items||[]).filter(x=>Number(x.available_cases)>0).map(x=>[x.order_item_id,x.sku+" • "+x.available_cases+" CS available"])];
+  if(r.order_item_id&&!choices.some(x=>x[0]===r.order_item_id)){
+   const old=returnSku(r);if(old)choices.push([r.order_item_id,old.sku+" • none remaining"]);
+  }
+  const sku=makeSelect(choices,r.order_item_id,v=>{
+    r.order_item_id=v;r.uom="CS";renderReturnRows();
+  });
+  const item=returnSku(r);
+  const uom=makeSelect([["CS","Case"],["PCS","PCS"+(item?.pcs_per_case?" (1 CS="+item.pcs_per_case+")":" — no pack")]],r.uom,v=>{
+    r.uom=v;calculateReturn();
+  });
+  if(!item?.pcs_per_case)uom.querySelector('option[value="PCS"]').disabled=true;
+  const qty=document.createElement("input");qty.type="number";qty.min="1";qty.step="1";qty.value=r.qty;
+  qty.oninput=()=>{r.qty=qty.value;calculateReturn()};
+  const reason=makeSelect([["LEAKAGE","Leakage"],["BREAKAGE","Breakage"],["DAMAGE","Damage"],["GASLESS","Gasless"],["LOW_FILL","Low fill"]],r.reason,v=>{r.reason=v;calculateReturn()});
+  const amount=elt("span","₹0","line-total");
+  amount.dataset.index=String(i);
+  const remove=elt("button","Remove");remove.type="button";remove.onclick=()=>{returnLines.splice(i,1);renderReturnRows()};
+  div.append(lineField("SKU (Loaded Order)",sku),lineField("UOM",uom),lineField("Qty",qty),lineField("Reason",reason),amount,remove);
+  wrap.append(div);
+ });
+ calculateReturn();
+}
+function calculateReturn(){
+ if(!returnOptions)return;
+ let sum=0;
+ const totals=new Map();let warning="";
+ for(let i=0;i<returnLines.length;i++){
+  const line=returnLines[i],sku=returnSku(line);
+  const qty=Number(line.qty);
+  let amount=0;
+  if(sku&&Number.isInteger(qty)&&qty>0){
+    const pack=Number(sku.pcs_per_case);
+    const cases=line.uom==="PCS"?qty/pack:qty;
+    if(!Number.isFinite(cases)||cases<=0){warning="PCS conversion requires PCS per Case in SKU Master."}
+    else{
+      amount=Math.round(cases*Number(sku.rate_per_case)*100)/100;
+      totals.set(sku.order_item_id,(totals.get(sku.order_item_id)||0)+cases);
+    }
+  }
+  const cell=$("returnRows").querySelector('[data-index="'+i+'"]');
+  if(cell)cell.textContent=money(amount);
+  sum+=amount;
+ }
+ for(const [id,cases] of totals){
+  const sku=(returnOptions.items||[]).find(x=>x.order_item_id===id);
+  if(cases>Number(sku.available_cases)+0.0000001)warning="Return quantity exceeds available loaded SKU quantity.";
+ }
+ const draftNet=Math.max(0,Number(returnOptions.provisional_net_amount)-sum);
+ $("returnGross").textContent=money(returnOptions.gross_amount);
+ $("returnDeduction").textContent=money(returnOptions.return_deduction);
+ $("returnNet").textContent=money(returnOptions.provisional_net_amount);
+ $("returnDraftTotal").textContent=money(sum);
+ $("returnDraftNet").textContent=money(draftNet);
+ $("returnSubmit").disabled=returnBusy||returnLines.length===0||Boolean(warning);
+ if(warning){$("returnStatus").className="return-error";$("returnStatus").textContent=warning}
+ else if(!$("returnStatus").textContent.startsWith("Return saved")){
+  $("returnStatus").className="return-note";
+  $("returnStatus").textContent="Amount is provisional until Accounts verifies original Tally bill and authorizes Credit Note.";
+ }
+}
+$("returnButton").onclick=()=>{
+ if(!returnOptions){$("returnStatus").textContent="Return Setup Pending — refresh after installing SQL.";return}
+ $("returnPanel").hidden=!$("returnPanel").hidden;
+ if(!$("returnPanel").hidden&&!returnLines.length)addReturnLine();
+};
+$("returnAddLine").onclick=addReturnLine;
+$("returnSubmit").onclick=async()=>{
+ if(!selected||returnBusy||!returnOptions||isWaitingForLoading(selected)||role!=="driver")return;
+ if(!returnLines.length){$("returnStatus").textContent="Select returned SKU.";return}
+ const lines=[];
+ for(const r of returnLines){
+  if(!returnSku(r)||!Number.isInteger(Number(r.qty))||Number(r.qty)<=0){$("returnStatus").textContent="Select SKU and positive whole quantity.";return}
+  lines.push({order_item_id:r.order_item_id,uom:r.uom,qty:Number(r.qty),reason:r.reason});
+ }
+ if(!window.confirm("Record physically collected damaged/leakage goods for "+selected.order_no+"? The estimated deduction stays PENDING OFFICE; official invoice and ledger will NOT change."))return;
+ returnBusy=true;$("returnSubmit").disabled=true;
+ $("returnStatus").className="return-note";$("returnStatus").textContent="Saving return...";
+ try{
+  const {data,error}=await db.rpc("lwb_driver_submit_delivery_return",{
+   p_order_id:selected.order_id,p_lines:lines,p_note:$("returnNote").value.trim()||null
+  });
+  if(error)throw error;
+  const id=selected.order_id;
+  returnLines=[];$("returnRows").replaceChildren();$("returnNote").value="";$("returnPanel").hidden=true;
+  await loadReturnOptions(id);
+  $("returnStatus").className="return-ok";
+  $("returnStatus").textContent="Return saved: "+money(data.return_amount)+" deduction (pending Accounts verification). ERP Provisional Net updated.";
+ }catch(error){
+  $("returnStatus").className="return-error";$("returnStatus").textContent="Return NOT saved: "+error.message;
+ }finally{returnBusy=false;calculateReturn()}
 };
 $("refresh").onclick=refresh;
 $("search").oninput=render;
