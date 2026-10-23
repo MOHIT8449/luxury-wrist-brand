@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Driver Returns Approval | Luxury Wrist Brand ERP</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+:root{--navy:#132843;--blue:#1569dc;--line:#dde5f0;--bg:#f1f5fb}
+*{box-sizing:border-box}body{margin:0;font:14px Arial,sans-serif;background:var(--bg);color:#142841}
+header{background:var(--navy);color:white;padding:16px max(20px,calc((100vw - 1100px)/2));display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap}
+header h1{font-size:20px;letter-spacing:1px;margin:0}header small{display:block;color:#c0d3e9;margin-top:7px}
+nav{display:flex;gap:10px;flex-wrap:wrap}nav a{border:1px solid #8599b3;color:white;border-radius:8px;padding:9px 12px;text-decoration:none}
+main{max-width:1100px;margin:auto;padding:22px}
+#message{margin-bottom:14px;padding:12px;border-radius:8px;background:#e3edfb}
+#message.error{background:#fde4e4;color:#9c2020}#message.success{background:#e1f6e8;color:#11643c}
+.tabs{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:16px}
+.tab{background:white;border:2px solid var(--line);border-radius:12px;padding:12px;text-align:left;cursor:pointer;color:#142841;font:inherit}
+.tab small{display:block;color:#58708b;font-size:12px}.tab strong{display:block;font-size:22px;margin-top:4px}
+.tab.active{border-color:var(--blue);background:#eef4fe}
+.tools{display:flex;gap:10px;margin-bottom:14px}
+.tools input{flex:1;padding:11px;border:1px solid #bbcbdd;border-radius:8px;font:14px Arial}
+button{background:var(--blue);color:white;border:0;border-radius:8px;padding:11px 16px;font-weight:bold;cursor:pointer;font-size:14px}
+button.secondary{background:#e8edf4;color:#183450}button.approve{background:#138342}button.reject{background:#b62e2e}
+button:disabled{opacity:.5;cursor:not-allowed}
+.card{background:white;border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:12px}
+.top{display:flex;justify-content:space-between;gap:12px;align-items:flex-start}
+.party{font-size:16px;font-weight:bold}.meta{color:#58708b;font-size:12px;margin-top:5px;line-height:1.5}
+.amount{font-size:20px;font-weight:bold;color:#ae3434;white-space:nowrap;text-align:right}
+.amount small{display:block;font-size:11px;color:#58708b;font-weight:normal}
+.lines{width:100%;border-collapse:collapse;margin:12px 0 8px}
+.lines th{background:#eaf0f8;text-align:left;font-size:11px;padding:8px}.lines td{padding:8px;border-bottom:1px solid #edf0f4}
+.num{text-align:right;white-space:nowrap}
+.tag{display:inline-block;font-size:11px;font-weight:bold;border-radius:12px;padding:3px 8px;background:#fde9d6;color:#7a3a00}
+.note{background:#f6f8fb;border-radius:8px;padding:9px;margin-top:8px;font-size:13px}
+.actions{display:flex;gap:10px;margin-top:12px}.actions button{flex:1}
+.empty{background:white;border:1px dashed #bbcbdd;border-radius:12px;padding:30px;text-align:center;color:#58708b}
+.muted{color:#60758b;font-size:12px;line-height:1.5}
+@media(max-width:640px){main{padding:12px}.tab{padding:9px}.tab strong{font-size:18px}.lines th,.lines td{padding:6px 4px;font-size:12px}.amount{font-size:17px}}
+</style>
+</head>
+<body>
+<header><div><h1>LUXURY WRIST BRAND</h1><small>OFFICE / DRIVER RETURN APPROVAL</small></div>
+<nav><a href="dashboard.html">Dashboard</a><a href="party-ledger.html">Party Ledger</a></nav></header>
+<main>
+<div id="message">Connecting to ERP...</div>
+<div class="tabs">
+<button class="tab active" type="button" data-status="PENDING_OFFICE"><small>Pending</small><strong id="countPENDING_OFFICE">—</strong></button>
+<button class="tab" type="button" data-status="APPROVED"><small>Approved</small><strong id="countAPPROVED">—</strong></button>
+<button class="tab" type="button" data-status="REJECTED"><small>Rejected</small><strong id="countREJECTED">—</strong></button>
+</div>
+<div class="tools"><input id="search" placeholder="Party, PO No, Driver or Vehicle"><button id="refresh" class="secondary" type="button">Refresh</button></div>
+<div id="list"></div>
+<p class="muted">Approve only after checking the damaged goods. Approved amount reduces the party's ERP outstanding. Rejected return frees the quantity so the driver can record it again. Stock, GST and Tally are not changed here.</p>
+</main>
+<script>
+const SUPABASE_URL="https://txkbhadzdbxpieunfvox.supabase.co";
+const SUPABASE_PUBLISHABLE_KEY="sb_publishable_W4I3Q5ODf0g17sq5uDml2Q_sLolXYEk";
+const db=window.supabase.createClient(SUPABASE_URL,SUPABASE_PUBLISHABLE_KEY);
+const el=id=>document.getElementById(id);
+const fmt=n=>"₹"+Number(n||0).toLocaleString("en-IN",{minimumFractionDigits:2,maximumFractionDigits:2});
+const REASON={LEAKAGE:"Leakage",BREAKAGE:"Breakage",DAMAGE:"Damage",GASLESS:"Gasless",LOW_FILL:"Low Fill"};
+const STATUSES=["PENDING_OFFICE","APPROVED","REJECTED"];
+let role="",status="PENDING_OFFICE",lists={},busy=false;
+const canReview=()=>role==="admin"||role==="accounts";
+function message(text,type){el("message").textContent=text;el("message").className=type||"";el("message").hidden=!text}
+function node(tag,text,cls){const n=document.createElement(tag);if(text!=null)n.textContent=String(text);if(cls)n.className=cls;return n}
+function when(v){return v?new Date(v).toLocaleString("en-IN",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"}):"—"}
+async function init(){
+ try{
+  const {data,error}=await db.auth.getUser();
+  if(error||!data.user){location.href="login.html";return}
+  const p=await db.from("user_profiles").select("role,active").eq("id",data.user.id).single();
+  if(p.error)throw p.error;
+  role=String(p.data.role||"").toLowerCase().trim();
+  if(p.data.active!==true||!["admin","accounts","manager","warehouse"].includes(role))throw Error("Only office staff can open Driver Return Approval.");
+  await load();
+ }catch(e){message("Could not start: "+e.message,"error")}
+}
+async function load(){
+ try{
+  message("Loading driver returns...");
+  const results=await Promise.all(STATUSES.map(s=>db.rpc("lwb_office_list_driver_returns",{p_status:s})));
+  results.forEach((r,i)=>{if(r.error)throw r.error;lists[STATUSES[i]]=Array.isArray(r.data)?r.data:[]});
+  STATUSES.forEach(s=>el("count"+s).textContent=lists[s].length);
+  render();
+  message(canReview()?"":"View only. Admin or Accounts can approve / reject.");
+ }catch(e){message("Unable to load returns: "+e.message+". Run lwb_driver_return_review_setup.sql in Supabase.","error")}
+}
+function render(){
+ document.querySelectorAll(".tab").forEach(t=>t.classList.toggle("active",t.dataset.status===status));
+ const q=el("search").value.toLowerCase().trim().split(/\s+/).filter(Boolean);
+ const rows=(lists[status]||[]).filter(r=>q.every(w=>[r.party_name,r.order_no,r.driver_name,r.vehicle_no].join(" ").toLowerCase().includes(w)));
+ const list=el("list");list.replaceChildren();
+ if(!rows.length){list.append(node("div",status==="PENDING_OFFICE"?"No pending driver returns.":"No returns here.","empty"));return}
+ for(const r of rows){
+  const card=node("div",null,"card");
+  const top=node("div",null,"top");
+  const left=node("div");left.append(node("div",r.party_name||"—","party"),
+   node("div",(r.order_no||"")+" · Driver: "+(r.driver_name||"—")+(r.vehicle_no?" · "+r.vehicle_no:"")+" · "+when(r.created_at),"meta"));
+  const amt=node("div",fmt(r.total_return_amount),"amount");amt.append(node("small","Return value"));
+  top.append(left,amt);card.append(top);
+  const t=node("table",null,"lines");
+  t.innerHTML='<thead><tr><th>SKU</th><th>Reason</th><th class="num">Qty</th><th class="num">₹</th></tr></thead>';
+  const body=t.createTBody();
+  for(const i of r.items||[]){
+   const tr=body.insertRow();
+   tr.insertCell().textContent=i.sku;
+   const c=tr.insertCell();c.append(node("span",REASON[i.reason]||i.reason,"tag"));
+   const q=tr.insertCell();q.className="num";q.textContent=i.qty+" "+i.uom+(i.uom==="PCS"?" ("+Number(i.qty_cases).toFixed(2)+" CS)":"");
+   const a=tr.insertCell();a.className="num";a.textContent=fmt(i.return_amount);
+  }
+  card.append(t);
+  if(r.note)card.append(node("div","Driver note: "+r.note,"note"));
+  if(status!=="PENDING_OFFICE")card.append(node("div",(status==="APPROVED"?"Approved":"Rejected")+" by "+(r.reviewed_by_name||"—")+" · "+when(r.reviewed_at)+(r.review_note?" · "+r.review_note:""),"meta"));
+  if(status==="PENDING_OFFICE"&&canReview()){
+   const act=node("div",null,"actions");
+   const ok=node("button","Approve","approve");ok.type="button";ok.onclick=()=>review(r,"APPROVE");
+   const no=node("button","Reject","reject");no.type="button";no.onclick=()=>review(r,"REJECT");
+   act.append(ok,no);card.append(act);
+  }
+  list.append(card);
+ }
+}
+async function review(r,action){
+ if(!canReview()||busy)return;
+ let note="";
+ if(action==="APPROVE"){
+  if(!confirm("Approve return of "+fmt(r.total_return_amount)+" for "+r.party_name+" ("+r.order_no+")?\nThis amount will reduce the party's ERP outstanding."))return;
+ }else{
+  const reason=prompt("Reason to REJECT this return:");
+  if(reason===null)return;
+  note=reason.trim();
+  if(note.length<3){message("Rejection reason is required.","error");return}
+ }
+ busy=true;document.querySelectorAll(".actions button").forEach(b=>b.disabled=true);
+ try{
+  const {error}=await db.rpc("lwb_review_driver_return",{p_return_id:r.id,p_action:action,p_note:note||null});
+  if(error)throw error;
+  await load();
+  message(action==="APPROVE"?"Return APPROVED. Party outstanding reduced by "+fmt(r.total_return_amount)+".":"Return REJECTED. Driver can record it again.","success");
+ }catch(e){message("Review failed: "+e.message,"error");render()}
+ finally{busy=false}
+}
+document.querySelectorAll(".tab").forEach(t=>t.onclick=()=>{status=t.dataset.status;render()});
+el("search").addEventListener("input",render);
+el("refresh").onclick=load;
+init();
+</script>
+</body>
+</html>
