@@ -1,9 +1,9 @@
 // Luxury Wrist Brand public website behaviour (index.html, brands.html).
 
 // Business WhatsApp number in international format without "+" or spaces,
-// e.g. "919876543210". Leave empty until the official number is confirmed;
-// WhatsApp then lets the visitor pick the recipient.
-const WHATSAPP_NUMBER = "";
+// e.g. "919876543210". If left empty, WhatsApp lets the visitor pick the
+// recipient.
+const WHATSAPP_NUMBER = "919512297456";
 
 document.documentElement.classList.remove("no-js");
 
