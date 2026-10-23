@@ -160,6 +160,7 @@ Reported Payment अभी <b>Office Verification Pending</b> रहेगा; P
   <div class="field wide"><label for="reference">UTR / Bank / Cheque Reference (if non-cash)</label><input id="reference" maxlength="150" placeholder="Actual payment reference, not invoice number"></div>
  </div>
  <div class="errorhint" id="warning">Delivery Submit करने के बाद यह Driver Report Lock हो जाएगी। Submit से पहले Party, POD Photo और Collection Check करें।</div>
+ <div class="message" id="formMessage" role="alert"></div>
  <div class="footactions"><button class="secondary" type="button" id="cancel">Cancel</button><button id="submitDelivery" type="submit">Submit Delivery & Collection Report</button></div>
 </form>
 </div>
@@ -178,10 +179,21 @@ let notificationRows=[];
 let returnOptions=null,returnLines=[],returnBusy=false;
 function message(t,error=false){
  const e=$("message");e.style.display="block";e.textContent=t;e.className="message"+(error?" error":"");
+ // The page message sits behind the open order popup, so repeat it inside the form.
+ const f=$("formMessage");
+ if(f&&$("overlay").classList.contains("open")){f.style.display="block";f.textContent=t;f.className="message"+(error?" error":"");}
 }
 function elt(tag,value,cl){
  const el=document.createElement(tag);if(value!==undefined)el.textContent=String(value);
  if(cl)el.className=cl;return el;
+}
+function showOrdersNotice(text){$("orders").replaceChildren(elt("div",text,"empty"));}
+function podFileId(){
+ if(window.crypto?.randomUUID)return crypto.randomUUID();
+ // Older phone browsers lack randomUUID; build a v4-style id from getRandomValues.
+ const b=crypto.getRandomValues(new Uint8Array(16));b[6]=b[6]&15|64;b[8]=b[8]&63|128;
+ const h=[...b].map(x=>x.toString(16).padStart(2,"0")).join("");
+ return h.slice(0,8)+"-"+h.slice(8,12)+"-"+h.slice(12,16)+"-"+h.slice(16,20)+"-"+h.slice(20);
 }
 function detail(label,value){const box=elt("div",undefined,"detail");box.append(elt("small",label),elt("b",value||"—"));return box;}
 async function init(){
@@ -194,6 +206,7 @@ async function init(){
   role=String(p.data?.role||"").trim().toLowerCase();
   if(p.data?.active!==true||!["driver","admin","manager","accounts"].includes(role)){
    message("Access Denied. Only active Driver, Admin, Sales Head or Accounts can view this page.",true);
+   showOrdersNotice("No access to delivery orders for this login.");
    $("refresh").disabled=true;return;
   }
   $("pageTitle").textContent=role==="driver"?"My Deliveries":"Delivery Monitoring — Office (View Only)";
@@ -202,7 +215,7 @@ async function init(){
   await refresh();
   await loadNotifications();
   setInterval(()=>{if(user&&!document.hidden)loadNotifications()},30000);
- }catch(error){message("ERP connection failed: "+error.message,true)}
+ }catch(error){message("ERP connection failed: "+error.message,true);showOrdersNotice("Could not connect to ERP. See the message above.")}
 }
 async function refresh(){
  if(busy||!user)return;
@@ -222,7 +235,10 @@ async function refresh(){
   if(assigned.error){
    message("Loading Pending Orders unavailable until Supabase RPC is installed: "+assigned.error.message,true);
   }else{$("message").style.display="none";}
- }catch(error){message("Delivery Setup is pending or access denied: "+error.message,true)}
+ }catch(error){
+  message("Delivery Setup is pending or access denied: "+error.message,true);
+  if(!records.length)showOrdersNotice("Orders could not be loaded. See the message above.");
+ }
  finally{$("refresh").disabled=false}
 }
 async function loadNotifications(){
@@ -368,6 +384,7 @@ async function openOrder(id){
   $("savedInfo").style.whiteSpace="pre-line";
  }
  existingPodUrl=null;
+ $("formMessage").style.display="none";
  $("overlay").classList.add("open");
 }
 function close(){if(busy||returnBusy)return;selected=null;$("overlay").classList.remove("open");if(existingPodUrl){window.URL.revokeObjectURL(existingPodUrl);existingPodUrl=null;}}
@@ -413,6 +430,11 @@ $("deliveryForm").onsubmit=async e=>{
  if(amount===0){method="";reference="";}
  if(method==="CASH"&&amount>=200000){message("Cash amount ₹2,00,000 or above cannot be reported here. Contact Office for compliance review.",true);return;}
  const file=$("podFile").files?.[0];
+ // Same rules as lwb_driver_submit_delivery, checked before any photo upload.
+ if(status!=="NOT_DELIVERED"&&(!receiver||!file)){message("Receiver Name and POD Photo are required for Delivered / Partial.",true);return;}
+ if(status==="PARTIAL"&&!note){message("Partial delivery needs a shortage / discrepancy note.",true);return;}
+ if(status==="NOT_DELIVERED"&&!note){message("Write the reason for Not Delivered in the note.",true);return;}
+ if(amount>0&&method!=="CASH"&&!reference){message("Enter UTR / Bank / Cheque reference for non-cash collection.",true);return;}
  if(file&&(!["image/jpeg","image/png","image/webp"].includes(file.type)||file.size>5*1024*1024)){
   message("POD Photo must be JPEG/PNG/WebP under 5MB.",true);return;
  }
@@ -428,7 +450,7 @@ $("deliveryForm").onsubmit=async e=>{
   let proofPath=null;
   if(file){
    const ext=file.type==="image/png"?"png":file.type==="image/webp"?"webp":"jpg";
-   proofPath=user.id+"/"+r.order_id+"/"+crypto.randomUUID()+"."+ext;
+   proofPath=user.id+"/"+r.order_id+"/"+podFileId()+"."+ext;
    const uploaded=await db.storage.from("lwb-delivery-pod")
      .upload(proofPath,file,{contentType:file.type,upsert:false,cacheControl:"3600"});
    if(uploaded.error)throw Error("POD photo upload failed: "+uploaded.error.message);
