@@ -20,6 +20,27 @@
     .quick .ic svg{width:18px;height:18px}
     .quick small{display:block;color:var(--erp-muted);font-size:11px}
     .orders td:first-child{font-weight:600;color:var(--erp-blue);white-space:nowrap}
+    .hero{margin:calc(-1 * 18px) -22px 0;padding:26px 22px 70px;background:linear-gradient(180deg,#fdeef1 0%,#f8f1f3 100%);text-align:center;border-bottom:1px solid #f1dfe3}
+    .hero h2{margin:0 0 14px;font-size:21px;font-weight:600;color:var(--erp-ink)}
+    .hero-search{position:relative;max-width:640px;margin:0 auto;text-align:left}
+    .hero-search input{width:100%;height:46px;border:1px solid #e6d5da;border-radius:8px;padding:0 14px 0 42px;font:15px inherit;font-family:inherit;background:#fff;outline:none;box-shadow:0 2px 6px rgba(16,24,40,.05)}
+    .hero-search input:focus{border-color:var(--erp-red)}
+    .hero-search>svg{position:absolute;left:14px;top:14px;width:18px;height:18px;color:var(--erp-red)}
+    .hero-results{position:absolute;top:50px;left:0;right:0;background:#fff;border:1px solid var(--erp-line);border-radius:8px;box-shadow:0 12px 30px rgba(16,24,40,.14);max-height:360px;overflow:auto;z-index:20;display:none}
+    .hero-results.open{display:block}
+    .hero-results a{display:flex;justify-content:space-between;gap:10px;padding:10px 14px;text-decoration:none;border-bottom:1px solid #f0f2f4;color:var(--erp-ink)}
+    .hero-results a small{color:var(--erp-muted);font-size:11.5px;white-space:nowrap}
+    .hero-results a:hover,.hero-results a.active{background:var(--erp-red-soft)}
+    .kpis{display:flex;justify-content:center;flex-wrap:wrap;gap:12px;margin:-50px 0 20px;position:relative;z-index:2}
+    .kpi-group{display:flex;background:#fff;border:1px solid var(--erp-line);border-radius:10px;box-shadow:0 4px 14px rgba(16,24,40,.06);padding:12px 6px}
+    .kpi{display:block;min-width:118px;padding:2px 12px;text-decoration:none;color:var(--erp-ink)}
+    .kpi+.kpi{border-left:1px solid #eef0f2}
+    .kpis:empty{display:none}.hero:has(+.kpis:empty){padding-bottom:26px;margin-bottom:18px}
+    .kpi small{display:block;color:var(--erp-muted);font-size:12px}
+    .kpi b{display:block;font-size:22px;font-weight:600;margin:4px 0 8px}
+    .kpi span{display:block;border-top:1px solid #eef0f2;padding-top:7px;font-size:11.5px;color:#4b5763}
+    .kpi:hover b{color:var(--erp-red)}
+    .kpi .due{color:var(--erp-red);font-weight:600}
     #roleManager{margin-top:16px}
     .roles-small{font-size:12px;color:var(--erp-muted);line-height:1.5;margin:4px 0 0}
     .roles-table{min-width:850px}
@@ -31,14 +52,26 @@
     .admin-only{display:none}
     [hidden]{display:none!important}
     @media(max-width:1100px){.dash-grid{grid-template-columns:1fr}}
+    @media(max-width:980px){.hero{margin:-14px -12px 0;padding:18px 12px 60px}.hero h2{font-size:18px}
+      .kpis{gap:10px;margin-top:-44px}.kpi-group{width:100%;padding:10px 0}.kpi{min-width:0;flex:1;padding:2px 10px}.kpi b{font-size:19px}}
   </style>
 </head>
 <body>
   <div id="loading" class="status">Checking account access...</div>
 
   <main id="dashboard" class="erp-main" style="display:none">
+    <div class="hero">
+      <h2>Search Anything</h2>
+      <div class="hero-search">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+        <input id="heroSearch" type="search" placeholder="Search Party, PO No. or Module" autocomplete="off" aria-label="Search Anything">
+        <div class="hero-results" id="heroResults"></div>
+      </div>
+    </div>
+    <div class="kpis" id="kpis"></div>
+
     <div class="erp-pagehead">
-      <h1>Dashboard</h1><span class="time" id="clock"></span>
+      <h1>Order Status</h1><span class="time" id="clock"></span>
       <button class="erp-iconbtn ghost" type="button" id="refreshBtn" title="Refresh"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/></svg></button>
       <span class="grow"></span>
       <span class="erp-badge" id="todayText"></span>
@@ -135,6 +168,50 @@
       const n=document.createElement("span");n.className="n";n.textContent=count==null?"—":count;a.appendChild(n);
       return a;
     }
+    let searchOrders=[];
+    function dayKey(v){const d=new Date(v);return d.getFullYear()+"-"+d.getMonth()+"-"+d.getDate()}
+    function kpi(label,value,foot,href){
+      const a=document.createElement(href?"a":"div");a.className="kpi";if(href)a.href=href;
+      const l=document.createElement("small");l.textContent=label;
+      const b=document.createElement("b");b.textContent=value;
+      const f=document.createElement("span");
+      if(foot&&typeof foot==="object"){f.append(document.createTextNode(foot.text+" "));const d=document.createElement("span");d.className="due";d.style.cssText="display:inline;border:0;padding:0";d.textContent=foot.due;f.appendChild(d)}
+      else f.textContent=foot||"";
+      a.append(l,b,f);return a;
+    }
+    function kpiGroup(items){const g=document.createElement("div");g.className="kpi-group";g.append(...items);return g}
+    function heroSearch(){
+      const input=document.getElementById("heroSearch"),box=document.getElementById("heroResults");
+      let hits=[],pos=0;
+      const modules=()=>ERPShell.menuFor(currentRole).flatMap(g=>g.items.map(i=>({t:i.t,s:g.group||"Module",h:i.h})));
+      function show(){
+        const q=input.value.toLowerCase().trim();box.replaceChildren();hits=[];pos=0;
+        if(!q){box.classList.remove("open");return}
+        const words=q.split(/\s+/);
+        const match=t=>words.every(w=>t.toLowerCase().includes(w));
+        hits=modules().filter(m=>match(m.t+" "+m.s)).slice(0,5);
+        const seen=new Set();
+        searchOrders.forEach(o=>{
+          const party=String(o.customer_name||"").trim();
+          if(party&&match(party)&&!seen.has(party.toUpperCase())&&seen.size<5&&["admin","manager","sales","accounts"].includes(currentRole)){
+            seen.add(party.toUpperCase());hits.push({t:party,s:"Party Ledger",h:"party-ledger.html?party="+encodeURIComponent(party)})}
+        });
+        searchOrders.filter(o=>match(String(o.order_no||"")+" "+String(o.customer_name||""))).slice(0,6)
+          .forEach(o=>hits.push({t:(o.order_no||"—")+" · "+(o.customer_name||""),s:(STATUS[String(o.status||"").toLowerCase()]||[o.status||""])[0],h:(STATUS[String(o.status||"").toLowerCase()]||[,,"warehouse-orders.html"])[2]}));
+        hits.forEach((h,n)=>{const a=document.createElement("a");a.href=h.h;if(!n)a.className="active";
+          const t=document.createElement("span");t.textContent=h.t;const s=document.createElement("small");s.textContent=h.s;a.append(t,s);box.appendChild(a)});
+        if(!hits.length){const a=document.createElement("a");a.textContent="No result found";box.appendChild(a)}
+        box.classList.add("open");
+      }
+      input.addEventListener("input",show);
+      input.addEventListener("keydown",e=>{
+        if(e.key==="Enter"&&hits[pos])location.href=hits[pos].h;
+        if(e.key==="Escape"){input.value="";show()}
+        if((e.key==="ArrowDown"||e.key==="ArrowUp")&&hits.length){e.preventDefault();pos=(pos+(e.key==="ArrowDown"?1:hits.length-1))%hits.length;
+          [...box.children].forEach((a,n)=>a.classList.toggle("active",n===pos))}
+      });
+      document.addEventListener("click",e=>{if(!e.target.closest(".hero-search"))box.classList.remove("open")});
+    }
     async function loadSummary(){
       const role=currentRole,pills=document.getElementById("pills");
       const jobs=[];
@@ -144,8 +221,32 @@
       else jobs.push(Promise.resolve(null));
       jobs.push(["admin","manager","sales","accounts"].includes(role)?client.from("lwb_payment_collections").select("id").eq("status","PENDING").limit(1000):Promise.resolve(null));
       jobs.push(["admin","accounts","manager","warehouse"].includes(role)?client.rpc("lwb_office_list_driver_returns",{p_status:"PENDING_OFFICE"}):Promise.resolve(null));
-      const [orders,pays,returns]=await Promise.all(jobs.map(j=>Promise.resolve(j).catch(()=>null)));
+      jobs.push(["admin","manager","sales","accounts"].includes(role)?client.rpc("lwb_party_bills"):Promise.resolve(null));
+      const [orders,pays,returns,bills]=await Promise.all(jobs.map(j=>Promise.resolve(j).catch(()=>null)));
       pills.replaceChildren();
+      const kpis=document.getElementById("kpis");kpis.replaceChildren();
+      if(orders&&!orders.error){
+        const rows=orders.data||[];searchOrders=rows;
+        const now=new Date(),today=dayKey(now),yest=dayKey(new Date(now.getFullYear(),now.getMonth(),now.getDate()-1));
+        const on=k=>rows.filter(o=>o.status!=="cancelled"&&dayKey(o.order_date||o.created_at)===k);
+        const t=on(today),y=on(yest),sum=a=>a.reduce((n,o)=>n+Number(o.total_amount||0),0),qty=a=>a.reduce((n,o)=>n+Number(o.total_qty||0),0);
+        const link=["admin","manager"].includes(role)?"warehouse-orders.html":"";
+        kpis.appendChild(kpiGroup([
+          kpi("Today's Orders",t.length,"Yesterday: "+y.length,link),
+          kpi("Today's Cases",qty(t).toLocaleString("en-IN"),"Yesterday: "+qty(y).toLocaleString("en-IN"),link),
+          kpi("Today's Sales","₹"+fmtINR(sum(t)),"Yesterday's total: ₹"+fmtINR(sum(y)),link)]));
+        const st=k=>rows.filter(o=>String(o.status||"").toLowerCase()===k).length;
+        kpis.appendChild(kpiGroup([
+          kpi("Pending Approval",st("pending_approval"),"Approved: "+st("approved"),link),
+          kpi("To Dispatch",st("transport_allocated")+st("loading"),"Loaded, to bill: "+st("loaded"),["admin","manager","warehouse"].includes(role)?"loading-dispatch.html":"")]));
+      }
+      const office=[];
+      if(returns&&!returns.error){const r=Array.isArray(returns.data)?returns.data:[];
+        office.push(kpi("Driver Returns",r.length,"Value: ₹"+fmtINR(r.reduce((n,x)=>n+Number(x.total_return_amount||0),0)),"driver-returns.html"))}
+      if(pays&&!pays.error)office.push(kpi("Payments to Verify",(pays.data||[]).length,{text:"Check",due:"Today"},"payment-collection.html"));
+      if(bills&&!bills.error){const b=(bills.data||[]).filter(x=>Number(x.outstanding_amount||0)>0.005);
+        office.push(kpi("Total Outstanding","₹"+fmtINR(b.reduce((n,x)=>n+Number(x.outstanding_amount||0),0)),b.length+" bills pending","party-ledger.html"))}
+      if(office.length)kpis.appendChild(kpiGroup(office));
       if(orders&&!orders.error){
         const rows=orders.data||[],count={};
         rows.forEach(o=>{const k=String(o.status||"").toLowerCase();count[k]=(count[k]||0)+1});
@@ -164,8 +265,6 @@
         document.getElementById("ordersCard").hidden=false;
         document.getElementById("allOrdersLink").hidden=!["admin","manager"].includes(role);
       }
-      if(pays&&!pays.error)pills.appendChild(pill("Payments to Verify",(pays.data||[]).length,"payment-collection.html"));
-      if(returns&&!returns.error)pills.appendChild(pill("Driver Returns",(Array.isArray(returns.data)?returns.data:[]).length,"driver-returns.html"));
       if(role==="driver")pills.appendChild(pill("My Deliveries","→","driver-delivery.html"));
     }
     document.getElementById("refreshBtn").onclick=()=>loadSummary();
@@ -355,6 +454,7 @@
         document.getElementById("welcomeText").append(hello,messages[role]||"");
         currentRole=role;
         renderQuick(role);
+        heroSearch();
         loadSummary();
         if (role === "admin") {
           roleAdminUserId=user.id;
