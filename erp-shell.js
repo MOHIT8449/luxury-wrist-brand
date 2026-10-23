@@ -71,11 +71,11 @@
     const group=opts.group!=null?opts.group:currentGroup;
 
     document.body.classList.add("erp");
-    const top=document.createElement("header");
+    const top=document.createElement("div");
     top.className="erp-top";
     top.innerHTML=
       '<button class="erp-burger" type="button" aria-label="Menu"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button>'+
-      '<nav class="erp-crumb" aria-label="Breadcrumb">'+(group?'<a class="mid" href="dashboard.html" style="text-decoration:none">'+esc(group)+'</a><span>/</span>':'')+'<b>'+esc(title)+'</b></nav>'+
+      '<div class="erp-crumb" aria-label="Breadcrumb">'+(group?'<a class="mid" href="dashboard.html" style="text-decoration:none">'+esc(group)+'</a><span>/</span>':'')+'<b>'+esc(title)+'</b></div>'+
       '<div class="erp-search"><input type="search" placeholder="Module Search" aria-label="Module Search">'+
       '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg><div class="erp-results"></div></div>'+
       '<div class="erp-user"><div class="who"><b>'+esc(opts.name||"User")+'</b><small>'+esc(role.toUpperCase())+'</small></div>'+
@@ -130,5 +130,31 @@
     return {menu:groups};
   }
 
+  // Older pages: <script src="erp-shell.js" data-auto defer>. Hides the page's
+  // own header, wraps the page in the shell and reads the logged-in profile.
+  const URL_="https://txkbhadzdbxpieunfvox.supabase.co",KEY_="sb_publishable_W4I3Q5ODf0g17sq5uDml2Q_sLolXYEk";
+  async function auto(){
+    const old=document.querySelector("body > header, body > .header");
+    if(old)old.classList.add("erp-old-header");
+    const wrap=document.createElement("div");wrap.className="erp-main";
+    [...document.body.childNodes].forEach(n=>{if(!(n.nodeType===1&&n.tagName==="SCRIPT"))wrap.appendChild(n)});
+    document.body.prepend(wrap);
+    let role="",name="",client=null;
+    try{
+      client=window.supabase.createClient(URL_,KEY_);
+      const {data}=await client.auth.getSession();
+      const user=data&&data.session&&data.session.user;
+      if(user){
+        const p=await client.from("user_profiles").select("role,full_name").eq("id",user.id).single();
+        role=String((p.data&&p.data.role)||"").toLowerCase().trim();
+        name=(p.data&&p.data.full_name)||user.email||"";
+      }
+    }catch(e){}
+    mount({role,name,onLogout:async()=>{try{await client.auth.signOut()}catch(e){}location.replace("login.html")}});
+  }
   window.ERPShell={mount,menuFor,icon:svg};
+  const me=document.currentScript;
+  if(me&&me.hasAttribute("data-auto")){
+    if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",auto);else auto();
+  }
 })();
