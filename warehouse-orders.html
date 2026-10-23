@@ -1712,6 +1712,14 @@ async function saveApprovedTransport(){
   if(!payload.driver_name||!payload.vehicle_no||!payload.loading_person){
     allocationStatus("Driver Name, Vehicle Number and Loading Person are required.",true);return;
   }
+  if(payload.driver_mobile){
+    // Driver Portal matches orders by this exact mobile, so reject typos.
+    const phone=poNormalPhone(payload.driver_mobile);
+    if(!/^[6-9]\d{9}$/.test(phone)){
+      allocationStatus("Driver Mobile must be a valid 10-digit Indian mobile (or +91). Driver Portal matches orders by this number.",true);return;
+    }
+    payload.driver_mobile=phone;
+  }
   if(!confirm("Assign Driver / Vehicle to Approved PO "+selectedOrder.order_no+"?"))return;
   const btn=document.getElementById("poSaveBtn");
   transportSaving=true;btn.disabled=true;
@@ -1994,6 +2002,12 @@ async function approveOrder() {
     if (![item.approved_qty,item.rate,item.unit_weight].every(v=>Number.isFinite(Number(v)) && Number(v)>=0)) {
       alert('Quantity, rate and weight must be valid non-negative numbers.'); return;
     }
+    if (!Number.isSafeInteger(Number(item.approved_qty))) {
+      alert('Approved Qty must be whole cases: '+item.sku_name); return;
+    }
+  }
+  if (!selectedItems.some(item=>Number(item.approved_qty)>0)) {
+    alert('At least one SKU needs Approved Qty above 0. To reject the full PO, use Cancel Order.'); return;
   }
   if (!confirm('Approve '+selectedOrder.order_no+' with '+selectedItems.length+' SKU(s)?')) return;
   const btn=document.getElementById('approveOrderBtn');
@@ -2112,7 +2126,9 @@ async function cancelOrder() {
         .trim();
 
 
-    const { error } = await db
+    const order = selectedOrder;
+
+    const { data: cancelled, error } = await db
       .from("orders")
       .update({
 
@@ -2131,11 +2147,17 @@ async function cancelOrder() {
           managerNote || null
 
       })
-      .eq("id", selectedOrder.id);
+      .eq("id", order.id)
+      .eq("status", order.status)
+      .select("id");
 
 
     if (error) {
       throw error;
+    }
+
+    if (!cancelled?.length) {
+      throw new Error("Order status changed. Refresh the page.");
     }
 
 
@@ -2143,7 +2165,7 @@ async function cancelOrder() {
 
     showMessage(
       "Order " +
-      selectedOrder.order_no +
+      order.order_no +
       " cancelled.",
       "success"
     );

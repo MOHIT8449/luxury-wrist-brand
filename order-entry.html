@@ -387,6 +387,13 @@ document.addEventListener("DOMContentLoaded", async () => {
       return;
     }
 
+    // PO entry is for Sales / Sales Head / Admin (same as the Dashboard card).
+    if(!["admin","manager","sales"].includes(String(profile.role||"").trim().toLowerCase())){
+      alert("PO Entry is only for Sales, Sales Head or Admin.");
+      window.location.href="dashboard.html";
+      return;
+    }
+
     currentProfile=profile;
 
     document.getElementById("userName").textContent =
@@ -996,7 +1003,8 @@ async function saveOrder(){
     if(!sku && rawQty === "") return;
     const enteredQty = Number(rawQty);
     const cases = getRowCaseQty(row);
-    const rate = number(row.querySelector(".rate").value);
+    const rawRate = row.querySelector(".rate").value.trim();
+    const rate = number(rawRate);
     const unitWeight = number(row.querySelector(".unit-weight").value);
     const master = skuMasterByName.get(sku.toUpperCase());
 
@@ -1004,6 +1012,14 @@ async function saveOrder(){
       itemError = quantityMode === "PALLET"
         ? "SKU line " + (index+1) + ": select an SKU with CS/Pallet configured, then enter whole-number pallets."
         : "SKU line " + (index+1) + ": enter SKU and positive whole-number cases.";
+      return;
+    }
+    if(!master){
+      itemError = "SKU line " + (index+1) + ": select the SKU from the SKU Master list.";
+      return;
+    }
+    if(rawRate === "" || !Number.isFinite(Number(rawRate)) || Number(rawRate) < 0){
+      itemError = "SKU line " + (index+1) + ": enter Rate per case.";
       return;
     }
     const item = {
@@ -1047,30 +1063,34 @@ async function saveOrder(){
       if(columnError) throw new Error("PALLET setup pending. Run lwb_pallet_quantity_setup.sql in Supabase before submitting a PALLET order. " + columnError.message);
     }
 
-    const orderNo=await generateOrderNo();
-
     const orderDate =
       dateValue
         ? new Date(dateValue).toISOString()
         : new Date().toISOString();
 
-    const {data:order,error:orderError} =
-      await db
-        .from("orders")
-        .insert({
-          order_no:orderNo,
-          order_date:orderDate,
-          customer_name:customer,
-          transportation:transportation || null,
-          sales_person:salesPerson,
-          status:"pending_approval",
-          total_qty:totals.totalQty,
-          total_amount:totals.totalAmount,
-          total_weight:totals.totalWeight,
-          created_by:currentUser.id
-        })
-        .select()
-        .single();
+    // Two salesmen saving together can pick the same next number; retry on a duplicate.
+    let orderNo, order, orderError;
+    for(let attempt=0; attempt<3; attempt++){
+      orderNo=await generateOrderNo();
+      ({data:order,error:orderError} =
+        await db
+          .from("orders")
+          .insert({
+            order_no:orderNo,
+            order_date:orderDate,
+            customer_name:customer,
+            transportation:transportation || null,
+            sales_person:salesPerson,
+            status:"pending_approval",
+            total_qty:totals.totalQty,
+            total_amount:totals.totalAmount,
+            total_weight:totals.totalWeight,
+            created_by:currentUser.id
+          })
+          .select()
+          .single());
+      if(orderError?.code !== "23505") break;
+    }
 
     if(orderError) throw orderError;
 

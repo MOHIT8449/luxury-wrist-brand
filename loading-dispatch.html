@@ -159,7 +159,7 @@ if(error||!data.user){location.href='login.html';return;}
 user=data.user;
 const profile=await db.from('user_profiles').select('full_name,role,active').eq('id',user.id).single();
 if(profile.error)throw profile.error;
-if(!profile.data.active||!['admin','manager','warehouse'].includes(profile.data.role)){
+if(!profile.data.active||!['admin','manager','warehouse'].includes(String(profile.data.role||'').trim().toLowerCase())){
 message('Access denied: warehouse or admin role required.',true);
 return;
 }
@@ -171,14 +171,17 @@ await load();
 
 async function load(){
 try{
-const [o,a]=await Promise.all([
-db.from('orders').select('*').in('status',['transport_allocated','loading','loaded']).order('order_date',{ascending:false}),
-db.from('dispatch_assignments').select('*')
-]);
+const o=await db.from('orders').select('*').in('status',['transport_allocated','loading','loaded']).order('order_date',{ascending:false});
 if(o.error)throw o.error;
-if(a.error)throw a.error;
 orders=o.data||[];
-assignments=a.data||[];
+// Read assignments only for the listed orders, so old rows beyond any row limit are never missed.
+const found=[],ids=orders.map(x=>x.id);
+for(let i=0;i<ids.length;i+=100){
+const a=await db.from('dispatch_assignments').select('*').in('order_id',ids.slice(i,i+100));
+if(a.error)throw a.error;
+found.push(...(a.data||[]));
+}
+assignments=found;
 render();
 }catch(e){message('Loading failed: '+e.message,true);}
 }
@@ -239,7 +242,7 @@ return `<tr>
 <td>${safe(item.sku_name)}</td>
 <td>${fmt(item.ordered_qty)}</td>
 <td>${fmt(approved)}</td>
-<td><input class="qty" type="number" min="0" max="${approved}" step="any" data-index="${i}" value="${loaded}" ${selected.status==='loaded'?'disabled':''}></td>
+<td><input class="qty" type="number" min="0" max="${approved}" step="1" data-index="${i}" value="${loaded}" ${selected.status==='loaded'?'disabled':''}></td>
 <td>${money(item.rate)}</td>
 <td>${fmt(item.unit_weight)} KG</td>
 </tr>`;
@@ -258,8 +261,8 @@ return inputs.map(input=>{
 const item=items[Number(input.dataset.index)];
 const qty=Number(input.value);
 const max=number(item.approved_qty??item.ordered_qty);
-if(input.value.trim()===''||!Number.isFinite(qty)||qty<0||qty>max)
-throw Error('Invalid loaded quantity for '+item.sku_name+'. Maximum: '+max);
+if(input.value.trim()===''||!Number.isSafeInteger(qty)||qty<0||qty>max)
+throw Error('Invalid loaded quantity for '+item.sku_name+'. Enter whole cases, maximum: '+max);
 return {item,qty};
 });
 }

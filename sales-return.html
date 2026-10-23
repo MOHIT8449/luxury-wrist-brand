@@ -38,6 +38,7 @@ td input,td select{min-width:90px}
 <h1>LUXURY WRIST BRAND</h1>
 <p>Sales Return Management</p>
 <div id="userInfo">Checking login...</div>
+<a href="dashboard.html" style="color:#fff;display:inline-block;margin-top:8px">← Dashboard</a>
 </header>
 
 <main>
@@ -192,8 +193,13 @@ function localDate() {
   ].join("-");
 }
 
+// Invoice date may arrive as a date or a full timestamp; compare by day only.
+function dayOnly(value) {
+  return String(value || "").slice(0, 10);
+}
+
 function afterSevenDays(returnDate, invoiceDate) {
-  const d = new Date(invoiceDate + "T00:00:00Z");
+  const d = new Date(dayOnly(invoiceDate) + "T00:00:00Z");
   d.setUTCDate(d.getUTCDate() + 7);
   return returnDate > d.toISOString().slice(0,10);
 }
@@ -279,11 +285,38 @@ async function searchInvoice() {
       throw new Error("No invoice items found.");
     }
 
+    // Quantity already returned on earlier, not-rejected returns of this invoice.
+    const earlier = await db.from("sales_return_items")
+      .select("sales_return_id,original_order_item_id,qty")
+      .in("original_order_item_id", invoiceItems.map(i => i.id));
+    if (earlier.error) throw earlier.error;
+    const returnIds = [...new Set((earlier.data || []).map(x => x.sales_return_id))];
+    let rejected = new Set();
+    if (returnIds.length) {
+      const heads = await db.from("sales_returns")
+        .select("id,approval_status")
+        .in("id", returnIds);
+      if (heads.error) throw heads.error;
+      rejected = new Set((heads.data || [])
+        .filter(h => String(h.approval_status || "").toLowerCase() === "rejected")
+        .map(h => h.id));
+    }
+    const returned = new Map();
+    for (const x of earlier.data || []) {
+      if (rejected.has(x.sales_return_id)) continue;
+      const key = String(x.original_order_item_id);
+      returned.set(key, (returned.get(key) || 0) + Number(x.qty || 0));
+    }
+    invoiceItems.forEach(item => {
+      item.already_returned = returned.get(String(item.id)) || 0;
+      item.returnable = Math.max(0, Number(item.loaded_qty || 0) - item.already_returned);
+    });
+
     el("returnSection").hidden = false;
 
     el("invoiceInfo").textContent =
       "Invoice: " + selectedInvoice.invoice_no +
-      " | Date: " + selectedInvoice.invoice_date;
+      " | Date: " + dayOnly(selectedInvoice.invoice_date);
 
     renderItems();
     showMessage("Invoice found successfully.");
@@ -302,15 +335,15 @@ function renderItems() {
 
     tr.dataset.itemId = item.id;
     tr.dataset.rate = Number(item.rate || 0);
-    tr.dataset.max = Number(item.loaded_qty || 0);
+    tr.dataset.max = Number(item.returnable || 0);
 
     tr.innerHTML = `
       <td>${escapeHTML(item.sku_name)}</td>
-      <td>${Number(item.loaded_qty || 0)}</td>
+      <td>${Number(item.loaded_qty || 0)}${item.already_returned ? " (" + item.already_returned + " already returned)" : ""}</td>
       <td>
         <input class="returnQty" type="number"
           min="0" step="1"
-          max="${Number(item.loaded_qty || 0)}"
+          max="${Number(item.returnable || 0)}"
           value="0">
       </td>
       <td>₹${Number(item.rate || 0).toFixed(2)}</td>
@@ -390,7 +423,7 @@ async function saveReturn() {
       throw new Error("Return number, date and reason required.");
     }
 
-    if (returnDate < selectedInvoice.invoice_date) {
+    if (returnDate < dayOnly(selectedInvoice.invoice_date)) {
       throw new Error("Return date cannot precede invoice date.");
     }
 
@@ -410,11 +443,11 @@ async function saveReturn() {
       if (!Number.isInteger(qty) ||
           qty < 0 ||
           qty > Number(tr.dataset.max)) {
-        throw new Error("Invalid return quantity.");
+        throw new Error("Invalid return quantity. Maximum returnable: " + tr.dataset.max);
       }
 
       const item = invoiceItems.find(
-        i => i.id === tr.dataset.itemId
+        i => String(i.id) === tr.dataset.itemId
       );
 
       lines.push({
@@ -440,7 +473,7 @@ async function saveReturn() {
 
     const needsAdmin = afterSevenDays(
       returnDate,
-      selectedInvoice.invoice_date
+      dayOnly(selectedInvoice.invoice_date)
     );
 
     const header = {
@@ -473,6 +506,12 @@ async function saveReturn() {
       })));
 
     if (itemResult.error) {
+      // Remove the header so a half-saved return is not left behind.
+      const undo = await db.from("sales_returns")
+        .delete().eq("id", saved.data.id);
+      if (!undo.error) {
+        throw new Error("Return not saved: " + itemResult.error.message);
+      }
       throw new Error(
         "Return header saved (ID: " + saved.data.id +
         "), but items failed: " + itemResult.error.message

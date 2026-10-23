@@ -52,6 +52,9 @@
 6. Protected SQL function `lwb_sales_head_active_drivers()` was created in `lwb_sales_head_driver_directory.sql` and successfully executed in Supabase; screenshot confirmed one function row.
 7. **Current GitHub `warehouse-orders.html` has now been verified to call `db.rpc("lwb_sales_head_active_drivers")` and merge active ERP DRIVER profiles with historic dispatch driver/vehicle selections.** For matching phone numbers, active ERP profile names take priority over old historical driver names. Browser dropdown behavior after deployment is **NOT YET CONFIRMED by screenshot**.
 
+8. `lwb_driver_assigned_orders_setup.sql` (new, read-only RPC `lwb_driver_list_assigned_orders`) must be run once in Supabase. `driver-delivery.html` already called it, so without it the Driver Portal showed "Loading Pending Orders unavailable" in red.
+9. Sales Head and Transport screens now only accept a valid 10-digit Indian Driver Mobile and save it as 10 digits, because the Driver Portal matches orders by this number.
+
 ### Immediate NEXT STEP (high priority)
 
 - With Admin/Sales Head login, open https://luxury-wrist-brand.pages.dev/warehouse-orders.html, perform a HARD REFRESH, open an **approved, not-yet-loading** PO, and click Driver Name dropdown.

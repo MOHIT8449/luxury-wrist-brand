@@ -34,14 +34,18 @@ const money=n=>new Intl.NumberFormat('en-IN',{style:'currency',currency:'INR'}).
 const number=n=>new Intl.NumberFormat('en-IN',{maximumFractionDigits:2}).format(Number(n)||0);
 const date=s=>s?new Date(s).toLocaleString('en-IN'):'—';
 const status=s=>String(s||'').toLowerCase().trim();
-const approvedStatuses=new Set(['approved','approved_next']);
+const approvedStatuses=new Set(['approved','approved_next','manager_approved','warehouse_approved']);
 const allocatedStatuses=new Set(['transport_allocated','allocated','loading','loaded','invoiced']);
 function notice(msg,error=false){$('message').textContent=msg;$('message').className='message show '+(error?'error':'ok');}
 function detail(label,value){return `<div class="detail"><small>${safe(label)}</small><b>${safe(value)}</b></div>`;}
 async function init(){try{const {data:{user:u},error:e}=await db.auth.getUser();if(e||!u){location.href='login.html';return;}user=u;const {data:profile,error:pe}=await db.from('user_profiles').select('full_name,role,active').eq('id',u.id).maybeSingle();if(pe)throw pe;if(!profile||profile.active===false||!['admin','manager','transport'].includes(String(profile.role).toLowerCase())){notice('Access denied. Admin, Manager or Transport role required.',true);return;}$('username').textContent=profile.full_name||u.email;await load();}catch(e){notice('Unable to initialize: '+e.message,true);}}
-async function load(){try{const [o,a]=await Promise.all([db.from('orders').select('id,order_no,order_date,customer_name,sales_person,transportation,status,total_qty,total_amount,total_weight').order('order_date',{ascending:false}).limit(500),db.from('dispatch_assignments').select('id,order_id,loading_person,driver_name,driver_mobile,vehicle_no,transporter_name,remarks,assigned_at').limit(500)]);if(o.error)throw o.error;if(a.error)throw a.error;orders=o.data||[];assignments=a.data||[];render();}catch(e){notice('Could not load orders: '+e.message,true);}}
+async function load(){try{const o=await db.from('orders').select('id,order_no,order_date,customer_name,sales_person,transportation,status,total_qty,total_amount,total_weight').order('order_date',{ascending:false}).limit(500);if(o.error)throw o.error;orders=o.data||[];
+// Read assignments only for the listed orders, so old rows beyond any row limit are never missed.
+assignments=[];const ids=orders.map(x=>x.id);
+for(let i=0;i<ids.length;i+=100){const a=await db.from('dispatch_assignments').select('id,order_id,loading_person,driver_name,driver_mobile,vehicle_no,transporter_name,remarks,assigned_at').in('order_id',ids.slice(i,i+100));if(a.error)throw a.error;assignments.push(...(a.data||[]));}
+render();}catch(e){notice('Could not load orders: '+e.message,true);}}
 function assignmentFor(id){return assignments.find(a=>a.order_id===id);}
-function stage(o){return assignmentFor(o.id)||allocatedStatuses.has(status(o.status))?'allocated':approvedStatuses.has(status(o.status))?'ready':'other';}
+function stage(o){const st=status(o.status);if(allocatedStatuses.has(st))return 'allocated';if(approvedStatuses.has(st))return assignmentFor(o.id)?'allocated':'ready';return 'other';}
 function render(){const available=orders.filter(o=>stage(o)==='ready'||stage(o)==='allocated');$('approvedCount').textContent=available.filter(o=>stage(o)==='ready').length;$('allocatedCount').textContent=available.filter(o=>stage(o)==='allocated').length;$('totalCount').textContent=available.length;const q=$('search').value.trim().toLowerCase(),f=$('filter').value;const list=available.filter(o=>(f==='all'||stage(o)===f)&&[o.order_no,o.customer_name,o.sales_person].some(v=>String(v||'').toLowerCase().includes(q)));$('rows').innerHTML=list.length?list.map(o=>`<tr><td><b>${safe(o.order_no)}</b></td><td>${safe(date(o.order_date))}</td><td>${safe(o.customer_name)}</td><td>${safe(o.sales_person)}</td><td>${number(o.total_qty)}</td><td>${money(o.total_amount)}</td><td>${number(o.total_weight)} KG</td><td><span class="pill ${stage(o)==='allocated'?'allocated':''}">${stage(o)==='allocated'?'ALLOCATED':'APPROVED'}</span></td><td><button class="primary" data-order="${safe(o.id)}">${stage(o)==='allocated'?'View / Edit':'Allocate'}</button></td></tr>`).join(''):'<tr><td colspan="9" class="empty">No orders found for this filter.</td></tr>';}
 function openOrder(id){const o=orders.find(x=>x.id===id);if(!o)return;selected=o;const a=assignmentFor(id)||{};$('modalTitle').textContent='Transport Allocation - '+(o.order_no||'');$('details').innerHTML=detail('ORDER NO',o.order_no)+detail('CUSTOMER',o.customer_name)+detail('DATE',date(o.order_date))+detail('SALES PERSON',o.sales_person)+detail('QUANTITY',number(o.total_qty))+detail('AMOUNT',money(o.total_amount))+detail('WEIGHT',number(o.total_weight)+' KG')+detail('TRANSPORTATION',o.transportation);$('loadingPerson').value=a.loading_person||'';$('driverName').value=a.driver_name||'';$('driverMobile').value=a.driver_mobile||'';$('vehicleNo').value=a.vehicle_no||'';$('transporterName').value=a.transporter_name||o.transportation||'';$('remarks').value=a.remarks||'';$('waConsent').checked=false;$('overlay').classList.add('show');}
 function closeModal(){if(!busy){$('overlay').classList.remove('show');selected=null;}}
@@ -64,12 +68,14 @@ async function saveAllocation(e){
   if(!payload.loading_person||!payload.driver_name||!payload.vehicle_no){
     notice('Loading Person, Driver and Vehicle Number are required.',true);return;
   }
-  if(optedIn){
+  if(payload.driver_mobile||optedIn){
+    // Driver Portal and WhatsApp both match this exact mobile, so reject typos.
     const digits=String(payload.driver_mobile||'').replace(/\D/g,'');
     if(!(/^[6-9]\d{9}$/.test(digits)||/^91[6-9]\d{9}$/.test(digits))){
-      notice('To send WhatsApp, enter a valid Driver Mobile (10 digits or +91).',true);
+      notice('Enter a valid Driver Mobile (10 digits or +91). Driver Portal and WhatsApp use this number.',true);
       return;
     }
+    payload.driver_mobile=digits.slice(-10);
   }
   busy=true;$('save').disabled=true;$('save').textContent='Saving...';
   try{
