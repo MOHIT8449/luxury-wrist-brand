@@ -378,7 +378,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     if(error) throw error;
 
     if(!profile){
-      alert("User profile not found.");
+      await alert("User profile not found.");
       window.location.href="dashboard.html";
       return;
     }
@@ -391,7 +391,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     // PO entry is for Sales / Sales Head / Admin (same as the Dashboard card).
     if(!["admin","manager","sales"].includes(String(profile.role||"").trim().toLowerCase())){
-      alert("PO Entry is only for Sales, Sales Head or Admin.");
+      await alert("PO Entry is only for Sales, Sales Head or Admin.");
       window.location.href="dashboard.html";
       return;
     }
@@ -904,14 +904,17 @@ function updateQuantityModeUI() {
   });
 }
 
-function setQuantityMode(mode, force=false) {
+function setQuantityMode(mode, force=false, after=null) {
   if (!["CS","PALLET"].includes(mode)) return false;
   if (mode === "PALLET" && document.getElementById("transportation").value !== "DIRECT VEHICLE") return false;
   if (quantityMode !== mode) {
     const rows = [...document.querySelectorAll("#itemsBody tr")];
     const filled = rows.some(row => Number(row.querySelector(".qty").value) > 0);
-    if (filled && !force && !confirm("Changing CS / PALLET mode will clear entered quantities. Continue?")) {
+    if (filled && !force) {
       updateQuantityModeUI();
+      confirm("Changing CS / PALLET mode will clear entered quantities. Continue?").then(ok => {
+        if (ok && setQuantityMode(mode, true) && after) after();
+      });
       return false;
     }
     if (filled) rows.forEach(row => {row.querySelector(".qty").value = "";});
@@ -926,7 +929,7 @@ function setQuantityMode(mode, force=false) {
 function toggleVehicleField(){
   const select = document.getElementById("transportation");
   const mode = select.value;
-  if(mode !== "DIRECT VEHICLE" && quantityMode === "PALLET" && !setQuantityMode("CS")){
+  if(mode !== "DIRECT VEHICLE" && quantityMode === "PALLET" && !setQuantityMode("CS", false, () => {select.value = mode; toggleVehicleField();})){
     select.value = "DIRECT VEHICLE";
     return;
   }
@@ -1169,9 +1172,9 @@ async function saveOrder(){
 
 /* RESET */
 
-function resetOrder(){
+async function resetOrder(){
 
-  if(!confirm("Create a new blank order?")) return;
+  if(!await confirm("Create a new blank order?")) return;
 
   document.getElementById("orderNo").value="Assigned on save";
   document.getElementById("customerName").value="";
