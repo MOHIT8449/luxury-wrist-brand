@@ -1,79 +1,63 @@
 -- LUXURY WRIST BRAND ERP — DRIVER: ASSIGNED ORDERS WAITING FOR LOADING
--- Supabase SQL Editor: run ONCE after lwb_driver_delivery_setup.sql.
 --
--- driver-delivery.html already calls lwb_driver_list_assigned_orders(), but the
--- function was never added to the repo, so the Driver Portal showed
--- "Loading Pending Orders unavailable until Supabase RPC is installed".
+-- RECORD ONLY: this function ALREADY EXISTS in Supabase (checked 23 Oct 2026
+-- with pg_get_functiondef). It was created directly in Supabase and was never
+-- saved to GitHub, so this file keeps a copy of the live definition.
+-- No need to run it. Running it again is harmless (same definition).
 --
--- READ ONLY: no table, order, stock, invoice or ledger row is changed.
--- Same phone matching as lwb_driver_list_delivery_orders(): the order's
--- dispatch_assignments.driver_mobile must equal the Driver Login Mobile.
--- Shows ONLY orders still waiting for / in loading, with PLANNED (approved) cases.
--- Delivery submission stays locked until Dispatch marks the order LOADED.
-BEGIN;
-
+-- Used by driver-delivery.html → db.rpc("lwb_driver_list_assigned_orders").
+-- READ ONLY. Returns one jsonb array of the logged-in active DRIVER's orders in
+-- transport_allocated / loading status, matched by Driver Login Mobile.
 CREATE OR REPLACE FUNCTION public.lwb_driver_list_assigned_orders()
-RETURNS SETOF jsonb
-LANGUAGE plpgsql SECURITY DEFINER SET search_path=''
-AS $fn$
-DECLARE v_role text; v_mobile text;
-BEGIN
- SELECT lower(btrim(p.role)),p.mobile INTO v_role,v_mobile
- FROM public.user_profiles p
- WHERE p.id=auth.uid() AND p.active=true;
- IF coalesce(v_role,'')<>'driver' THEN
-  RAISE EXCEPTION 'Active Driver login required';
- END IF;
- IF coalesce(v_mobile,'')='' THEN
-  RAISE EXCEPTION 'Driver profile Mobile missing; Admin must map your Login Mobile';
- END IF;
- RETURN QUERY
- SELECT jsonb_build_object(
-   'order_id',o.id,'order_no',o.order_no,
-   'order_date',o.order_date,'party_name',o.customer_name,
-   'party_address',cm.billing_address,
-   'party_city',cm.city,'party_state',cm.state,'party_pincode',cm.pincode,
-   'order_status',o.status,
-   'loading_pending',true,
-   'vehicle_no',a.vehicle_no,
-   'driver_name',a.driver_name,'driver_mobile',a.driver_mobile,
-   'loading_person',a.loading_person,
-   'transport_name',a.transporter_name,
-   'loaded_skus',COALESCE((
-      SELECT jsonb_agg(
-       jsonb_build_object('sku',i.sku_name,'cases',coalesce(i.approved_qty,i.ordered_qty))
-       ORDER BY i.sku_name)
+ RETURNS jsonb
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO ''
+AS $function$
+ SELECT COALESCE(
+  jsonb_agg(
+   jsonb_build_object(
+    'order_id', o.id,
+    'order_no', o.order_no,
+    'party_name', o.customer_name,
+    'order_status', o.status,
+    'driver_name', a.driver_name,
+    'driver_mobile', a.driver_mobile,
+    'vehicle_no', a.vehicle_no,
+    'loading_person', a.loading_person,
+    'loading_pending', true,
+    'planned_cases', (
+      SELECT COALESCE(
+        SUM(COALESCE(i.approved_qty, i.ordered_qty, 0)), 0
+      )
       FROM public.order_items i
-      WHERE i.order_id=o.id AND coalesce(i.approved_qty,i.ordered_qty,0)>0
-   ),'[]'::jsonb),
-   'planned_cases',coalesce((
-      SELECT sum(coalesce(i.approved_qty,i.ordered_qty)) FROM public.order_items i
-      WHERE i.order_id=o.id AND coalesce(i.approved_qty,i.ordered_qty,0)>0
-   ),0),
-   'report',NULL
+      WHERE i.order_id = o.id
+    ),
+    'loaded_skus', (
+      SELECT COALESCE(
+        jsonb_agg(
+          jsonb_build_object(
+            'sku', i.sku_name,
+            'cases', COALESCE(i.approved_qty, i.ordered_qty, 0)
+          )
+          ORDER BY i.created_at
+        ), '[]'::jsonb
+      )
+      FROM public.order_items i
+      WHERE i.order_id = o.id
+    ),
+    'report', NULL
+   )
+   ORDER BY a.assigned_at DESC
+  ), '[]'::jsonb
  )
  FROM public.dispatch_assignments a
- JOIN public.orders o ON o.id=a.order_id
- LEFT JOIN LATERAL (
-  SELECT c.billing_address,c.city,c.state,c.pincode
-  FROM public.lwb_customer_master c
-  WHERE lower(btrim(c.customer_name))=lower(btrim(o.customer_name))
-  ORDER BY c.customer_code LIMIT 1
- ) cm ON true
- WHERE lower(btrim(o.status)) IN ('transport_allocated','allocated','loading')
-  AND public.lwb_driver_phone_matches(v_mobile,a.driver_mobile)
- ORDER BY o.order_date DESC
- LIMIT 100;
-END;
-$fn$;
-
-REVOKE ALL ON FUNCTION public.lwb_driver_list_assigned_orders() FROM PUBLIC,anon,authenticated;
-GRANT EXECUTE ON FUNCTION public.lwb_driver_list_assigned_orders() TO authenticated;
-
-COMMIT;
-NOTIFY pgrst,'reload schema';
-
--- Read-only verification. Expect one row: lwb_driver_list_assigned_orders
-SELECT p.proname AS function_name
-FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
-WHERE n.nspname='public' AND p.proname='lwb_driver_list_assigned_orders';
+ JOIN public.orders o ON o.id = a.order_id
+ JOIN public.user_profiles p ON p.id = auth.uid()
+ WHERE p.active = true
+ AND lower(btrim(p.role)) = 'driver'
+ AND public.lwb_driver_phone_matches(
+   p.mobile, a.driver_mobile
+ )
+ AND o.status IN ('transport_allocated', 'loading');
+$function$;
