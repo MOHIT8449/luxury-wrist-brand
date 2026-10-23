@@ -57,6 +57,106 @@
       {t:"Manage Users",h:"users.html",i:"lock",r:"admin"}]}
   ];
 
+
+  // ERP popups. window.alert / confirm / prompt are replaced by styled popups
+  // that return Promises, so callers use: await alert(..), if(!await confirm(..)).
+  const nativeAlert=window.alert.bind(window),nativeConfirm=window.confirm.bind(window),nativePrompt=window.prompt.bind(window);
+  let queue=Promise.resolve();
+  function kindOf(text){
+    const t=String(text||"").toLowerCase();
+    if(/(fail|error|could not|cannot|can't|not saved|not completed|invalid|required|only for|access only|not found|inactive|must |exceeds|unable|maximum|please select|please enter|enter a valid|\benter |at least one)/.test(t))return "error";
+    if(/(success|saved|submitted|approved|posted|created|updated|completed|done|cleared|assigned)/.test(t))return "success";
+    return "info";
+  }
+  const TITLE={success:"Done",error:"Please check",info:"Message",confirm:"Please confirm",danger:"Please confirm",prompt:"Enter details"};
+  const MARK={success:'<path d="M5 12.5l4.5 4.5L19 7.5"/>',error:'<path d="M12 7v6"/><path d="M12 17h.01"/>',info:'<path d="M12 11v6"/><path d="M12 7h.01"/>',
+    confirm:'<path d="M9.5 9a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .9-1 1.6v.6"/><path d="M12 17h.01"/>',prompt:'<path d="M4 20h4L19 9l-4-4L4 16z"/>'};
+  MARK.danger=MARK.error;
+  function open(kind,text,opts){
+    opts=opts||{};
+    return new Promise(done=>{
+      const back=document.createElement("div");back.className="erp-dlg-back";
+      const box=document.createElement("div");box.className="erp-dlg "+kind;box.setAttribute("role",kind==="confirm"||kind==="danger"||kind==="prompt"?"alertdialog":"dialog");box.setAttribute("aria-modal","true");
+      const ic=document.createElement("div");ic.className="erp-dlg-ic";ic.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">'+MARK[kind]+'</svg>';
+      const h=document.createElement("h3");h.textContent=opts.title||TITLE[kind];
+      const lines=String(text==null?"":text).split("\n");
+      const first=document.createElement("p");first.className="erp-dlg-lead";
+      const rest=document.createElement("p");rest.className="erp-dlg-text";
+      // First paragraph is the headline; details below in a softer box.
+      const cut=lines.findIndex(l=>!l.trim());
+      first.textContent=(cut>0?lines.slice(0,cut):lines).join("\n");
+      const detail=cut>0?lines.slice(cut).join("\n").trim():"";
+      rest.textContent=detail;
+      box.append(ic,h,first);if(detail)box.append(rest);
+      let input=null;
+      if(kind==="prompt"){input=document.createElement("textarea");input.rows=2;input.className="erp-dlg-input";input.placeholder=opts.placeholder||"Type here";input.value=opts.value||"";box.append(input)}
+      const row=document.createElement("div");row.className="erp-dlg-actions";
+      const ok=document.createElement("button");ok.type="button";ok.className="erp-dlg-ok";
+      ok.textContent=opts.ok||(kind==="danger"?"Yes, continue":kind==="confirm"?"Yes, continue":kind==="prompt"?"Submit":"OK");
+      const asks=kind==="confirm"||kind==="danger"||kind==="prompt";
+      let no=null;
+      if(asks){no=document.createElement("button");no.type="button";no.className="erp-dlg-no";no.textContent=opts.cancel||"Cancel";row.append(no)}
+      row.append(ok);box.append(row);back.append(box);
+      const last=document.activeElement;
+      document.body.append(back);
+      requestAnimationFrame(()=>back.classList.add("show"));
+      (input||ok).focus();
+      function close(v){
+        back.classList.remove("show");document.removeEventListener("keydown",key,true);
+        setTimeout(()=>back.remove(),160);
+        try{last&&last.focus&&last.focus()}catch(e){}
+        done(v);
+      }
+      function key(e){
+        if(e.key==="Escape"){e.preventDefault();close(kind==="prompt"?null:asks?false:undefined)}
+        else if(e.key==="Enter"&&!(input&&e.shiftKey)){e.preventDefault();ok.click()}
+        else if(e.key==="Tab"){const f=[input,no,ok].filter(Boolean),i=f.indexOf(document.activeElement);e.preventDefault();f[(i+(e.shiftKey?f.length-1:1))%f.length].focus()}
+      }
+      document.addEventListener("keydown",key,true);
+      ok.onclick=()=>close(kind==="prompt"?input.value:asks?true:undefined);
+      if(no)no.onclick=()=>close(kind==="prompt"?null:false);
+      if(!asks)back.addEventListener("click",e=>{if(e.target===back)close()});
+    });
+  }
+  function show(kind,text,opts){
+    if(!document.body)return Promise.resolve(kind==="prompt"?nativePrompt(text):kind==="confirm"||kind==="danger"?nativeConfirm(text):nativeAlert(text));
+    const run=queue.then(()=>open(kind,text,opts));
+    queue=run.then(()=>{},()=>{});
+    return run;
+  }
+  const DANGER=/(cancel|reject|remove|delete|clear)/i;
+  function erpAlert(text,opts){return show((opts&&opts.kind)||kindOf(text),text,opts)}
+  function erpConfirm(text,opts){return show((opts&&opts.danger)||(!opts&&DANGER.test(String(text).split("\n")[0]))?"danger":"confirm",text,opts)}
+  function erpPrompt(text,value,opts){return show("prompt",text,Object.assign({value:typeof value==="string"?value:""},opts||{}))}
+  window.alert=erpAlert;window.confirm=erpConfirm;window.prompt=erpPrompt;
+
+  // Small green toast when a page shows a success message after a click.
+  let lastAct=0;
+  ["click","keydown","submit"].forEach(t=>document.addEventListener(t,()=>{lastAct=Date.now()},true));
+  function toast(text,kind){
+    let wrap=document.querySelector(".erp-toasts");
+    if(!wrap){wrap=document.createElement("div");wrap.className="erp-toasts";wrap.setAttribute("aria-live","polite");document.body.append(wrap)}
+    const t=document.createElement("div");t.className="erp-toast "+(kind||"success");
+    t.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round">'+MARK[kind||"success"]+'</svg>';
+    const span=document.createElement("span");span.textContent=text;t.append(span);
+    wrap.append(t);requestAnimationFrame(()=>t.classList.add("show"));
+    setTimeout(()=>{t.classList.remove("show");setTimeout(()=>t.remove(),250)},4200);
+  }
+  const seen=new WeakMap();
+  function watchSuccess(){
+    const root=document.querySelector(".erp-main");if(!root||!window.MutationObserver)return;
+    const check=n=>{
+      if(!(n instanceof Element)||!/(^|\s)success(\s|$)/.test(n.className)||n.closest(".erp-dlg-back,.erp-toasts"))return;
+      const text=(n.textContent||"").trim();
+      if(!text||seen.get(n)===text||Date.now()-lastAct>15000||n.hidden||getComputedStyle(n).display==="none")return;
+      seen.set(n,text);toast(text.length>160?text.slice(0,157)+"...":text,"success");
+    };
+    new MutationObserver(list=>list.forEach(m=>{
+      const t=m.target.nodeType===1?m.target:m.target.parentElement;
+      if(t){check(t);const p=t.closest&&t.closest(".success");if(p)check(p)}
+    })).observe(root,{subtree:true,childList:true,characterData:true,attributes:true,attributeFilter:["class","hidden","style"]});
+  }
+
   function allowed(item,role){return item.r==="*"||item.r.split(" ").includes(role)}
   function menuFor(role){
     return MENU.map(g=>({group:g.group,items:g.items.filter(i=>allowed(i,role))})).filter(g=>g.items.length);
@@ -129,6 +229,7 @@
       }
     });
     document.addEventListener("click",e=>{if(!e.target.closest(".erp-search"))box.classList.remove("open")});
+    watchSuccess();
     return {menu:groups};
   }
 
@@ -154,7 +255,7 @@
     }catch(e){}
     mount({role,name,onLogout:async()=>{try{await client.auth.signOut()}catch(e){}location.replace("login.html")}});
   }
-  window.ERPShell={mount,menuFor,icon:svg};
+  window.ERPShell={mount,menuFor,icon:svg,alert:erpAlert,confirm:erpConfirm,prompt:erpPrompt,toast};
   const me=document.currentScript;
   if(me&&me.hasAttribute("data-auto")){
     if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",auto);else auto();
