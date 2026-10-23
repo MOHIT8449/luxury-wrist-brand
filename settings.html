@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Settings | Luxury Wrist Brand ERP</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <link rel="stylesheet" href="erp-shell.css">
+  <script src="erp-shell.js"></script>
+  <style>
+    .status{text-align:center;padding:80px 20px;font-size:15px;color:#555}
+    .set-head h1{font-size:21px;font-weight:600;margin:0 0 4px}
+    .set-head p{margin:0 0 16px;color:var(--erp-muted);font-size:13px}
+    .set-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}
+    .set-card{display:flex;gap:16px;background:#fff;border:1px solid var(--erp-line);border-radius:10px;padding:22px 22px 18px;text-decoration:none;color:var(--erp-ink);transition:box-shadow .15s,border-color .15s}
+    .set-card:hover{border-color:#e5c3ca;box-shadow:0 6px 18px rgba(16,24,40,.08)}
+    .set-ic{width:46px;height:46px;border-radius:10px;background:#f3f4f6;display:grid;place-items:center;flex:none;color:#3b4652}
+    .set-card:hover .set-ic{background:var(--erp-red-soft);color:var(--erp-red)}
+    .set-ic svg{width:22px;height:22px}
+    .set-card b{display:block;font-size:15.5px;font-weight:600}
+    .set-card small{display:block;color:var(--erp-muted);font-size:13px;margin-top:5px;line-height:1.4}
+    .set-card .view{display:inline-flex;align-items:center;gap:4px;margin-top:16px;color:var(--erp-red);font-weight:600;font-size:13.5px}
+    @media(max-width:1200px){.set-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+    @media(max-width:700px){.set-grid{grid-template-columns:1fr;gap:10px}.set-card{padding:16px}}
+    [hidden]{display:none!important}
+  </style>
+</head>
+<body>
+  <div id="loading" class="status">Checking account access...</div>
+  <main id="page" class="erp-main" hidden>
+    <div class="set-head"><h1>Settings</h1><p>Users, masters and stock setup for the ERP.</p></div>
+    <div class="set-grid" id="grid"></div>
+  </main>
+  <script>
+    const client=supabase.createClient("https://txkbhadzdbxpieunfvox.supabase.co","sb_publishable_W4I3Q5ODf0g17sq5uDml2Q_sLolXYEk");
+    async function logout(){await client.auth.signOut();location.replace("login.html")}
+    async function start(allowed){
+      const {data:{session}}=await client.auth.getSession();
+      if(!session){location.replace("login.html");return null}
+      const {data:p}=await client.from("user_profiles").select("full_name,role,active").eq("id",session.user.id).single();
+      const role=String((p&&p.role)||"").toLowerCase().trim();
+      if(!p||p.active!==true||!allowed.includes(role)){location.replace("dashboard.html");return null}
+      return {user:session.user,role,name:p.full_name||session.user.email};
+    }
+
+    const CARDS=[
+      {t:"Manage Users",d:"Add users, assign ERP roles, driver mobile and active status",h:"users.html",i:"users",r:"admin"},
+      {t:"Customer / Party Master",d:"Party names, billing and contact details",h:"customer-master.html",i:"book",r:"admin manager"},
+      {t:"SKU Master",d:"Products, packing, case rate and weight",h:"sku-master.html",i:"tag",r:"admin manager"},
+      {t:"Supplier Master",d:"Supplier records for goods inward",h:"supplier-master.html",i:"factory",r:"admin manager"},
+      {t:"Goods Inward",d:"Purchase and stock received at warehouse",h:"goods-inward.html",i:"inbox",r:"admin manager"},
+      {t:"Opening Stock",d:"Starting stock quantity for each SKU",h:"opening-stock.html",i:"box",r:"admin"},
+      {t:"Opening Balance",d:"Party opening balance in Party Ledger",h:"party-ledger.html#openingPanel",i:"cash",r:"admin"},
+      {t:"Group Loading",d:"Group party loading setup (optional)",h:"group-party-loading.html",i:"layers",r:"admin"},
+      {t:"Supabase Logins",d:"Create a new login email and password",h:"https://supabase.com/dashboard/project/txkbhadzdbxpieunfvox/auth/users",i:"lock",r:"admin",ext:true}
+    ];
+    (async()=>{
+      const me=await start(["admin","manager"]);if(!me)return;
+      ERPShell.mount({role:me.role,name:me.name,onLogout:logout,group:"",title:"Settings"});
+      const grid=document.getElementById("grid");
+      CARDS.filter(c=>c.r.split(" ").includes(me.role)).forEach(c=>{
+        const a=document.createElement("a");a.className="set-card";a.href=c.h;
+        if(c.ext){a.target="_blank";a.rel="noopener noreferrer"}
+        const ic=document.createElement("span");ic.className="set-ic";ic.innerHTML=ERPShell.icon(c.i);
+        const box=document.createElement("span");
+        const b=document.createElement("b");b.textContent=c.t;
+        const s=document.createElement("small");s.textContent=c.d;
+        const v=document.createElement("span");v.className="view";v.textContent=(c.ext?"Open ↗":"View ›");
+        box.append(b,s,v);a.append(ic,box);grid.appendChild(a);
+      });
+      document.getElementById("loading").hidden=true;document.getElementById("page").hidden=false;
+    })();
+  </script>
+</body>
+</html>

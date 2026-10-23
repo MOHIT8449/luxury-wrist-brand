@@ -21,6 +21,7 @@
     inbox:'<path d="M3 13l3-9h12l3 9v7H3z"/><path d="M3 13h5l1 3h6l1-3h5"/>',
     factory:'<path d="M3 21V10l6 4V10l6 4V5h6v16z"/>',
     layers:'<path d="M12 3l9 5-9 5-9-5z"/><path d="M3 13l9 5 9-5"/>',
+    gear:'<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>',
     lock:'<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>'
   };
   const svg=(name)=>'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">'+(ICON[name]||ICON.box)+'</svg>';
@@ -51,8 +52,9 @@
       {t:"Goods Inward",h:"goods-inward.html",i:"inbox",r:"admin manager"},
       {t:"Opening Stock",h:"opening-stock.html",i:"box",r:"admin"},
       {t:"Group Loading",h:"group-party-loading.html",i:"layers",r:"admin"}]},
-    {group:"Admin",items:[
-      {t:"User Permissions",h:"dashboard.html#roleManager",i:"lock",r:"admin"}]}
+    {group:"Settings",items:[
+      {t:"Settings",h:"settings.html",i:"gear",r:"admin manager"},
+      {t:"Manage Users",h:"users.html",i:"lock",r:"admin"}]}
   ];
 
   function allowed(item,role){return item.r==="*"||item.r.split(" ").includes(role)}

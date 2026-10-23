@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>User Permissions | Luxury Wrist Brand ERP</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <link rel="stylesheet" href="erp-shell.css">
+  <script src="erp-shell.js"></script>
+  <style>
+    .status{text-align:center;padding:80px 20px;font-size:15px;color:#555}
+    .roles-small{font-size:12px;color:var(--erp-muted);line-height:1.5;margin:4px 0 0}
+    .roles-table{min-width:850px}
+    .roles-table input,.roles-table select{width:100%;padding:8px;border:1px solid #cfd6de;border-radius:6px;font:inherit;font-size:13px}
+    .roles-table button{padding:8px 12px;background:var(--erp-red);border:0;border-radius:6px;color:#fff;font-weight:600;cursor:pointer}
+    .roles-table button:disabled{opacity:.5;cursor:not-allowed}
+    .role-actions{display:flex;gap:8px;flex:none}
+    .roles-table button{white-space:nowrap}
+    #roleManagerMessage{color:#315a83;margin:0 0 10px;font-size:13px}
+    [hidden]{display:none!important}
+  </style>
+</head>
+<body>
+  <div id="loading" class="status">Checking account access...</div>
+  <main id="page" class="erp-main" hidden>
+    <section class="erp-card" id="roleManager">
+      <div class="erp-card-head">
+        <div><h2>User Permissions</h2>
+          <p class="roles-small">Step 1: <b>+ Add New User</b> creates the login in Supabase. Step 2: <b>Refresh Users</b>. Step 3: choose ERP Role (and Driver Mobile for drivers), then Save. Accounts = View Only.</p></div>
+        <div class="role-actions">
+          <a class="erp-btn ghost" href="https://supabase.com/dashboard/project/txkbhadzdbxpieunfvox/auth/users" target="_blank" rel="noopener noreferrer">+ Add New User ↗</a>
+          <button class="erp-btn" type="button" onclick="loadRoleManager()">Refresh Users</button>
+        </div>
+      </div>
+      <div class="erp-card-body">
+        <p id="roleManagerMessage">Loading users...</p>
+        <div class="erp-scroll">
+          <table class="erp-table roles-table">
+            <thead><tr><th>Auth User (Email)</th><th>Full Name</th><th>ERP Role</th><th>Driver Mobile</th><th>Status</th><th>Action</th></tr></thead>
+            <tbody id="roleManagerRows"><tr><td colspan="6">Loading...</td></tr></tbody>
+          </table>
+        </div>
+        <p class="roles-small" style="margin-top:10px">Only an active Admin can save roles. Users may need to log in again to refresh permissions. Tally is not changed.</p>
+      </div>
+    </section>
+  </main>
+  <script>
+    const client=supabase.createClient("https://txkbhadzdbxpieunfvox.supabase.co","sb_publishable_W4I3Q5ODf0g17sq5uDml2Q_sLolXYEk");
+    async function logout(){await client.auth.signOut();location.replace("login.html")}
+    async function start(allowed){
+      const {data:{session}}=await client.auth.getSession();
+      if(!session){location.replace("login.html");return null}
+      const {data:p}=await client.from("user_profiles").select("full_name,role,active").eq("id",session.user.id).single();
+      const role=String((p&&p.role)||"").toLowerCase().trim();
+      if(!p||p.active!==true||!allowed.includes(role)){location.replace("dashboard.html");return null}
+      return {user:session.user,role,name:p.full_name||session.user.email};
+    }
+    let roleAdminUserId = null;
+    let roleAdminReady = false;
+    function roleMessage(value, isError=false) {
+      const el=document.getElementById("roleManagerMessage");
+      if(el){el.textContent=value;el.style.color=isError?"#b12b2b":"#315a83";}
+    }
+    function addRoleCell(tr,value) {
+      const td=document.createElement("td");
+      td.textContent=value==null?"":String(value);
+      tr.appendChild(td);
+      return td;
+    }
+    function roleSelect(options,initial) {
+      const select=document.createElement("select");
+      for(const pair of options) {
+        const o=new Option(pair[1],pair[0]);
+        select.add(o);
+      }
+      select.value=initial;
+      return select;
+    }
+    async function loadRoleManager(){
+      if(!roleAdminReady)return;
+      roleMessage("Loading Authentication Users...");
+      const body=document.getElementById("roleManagerRows");
+      body.replaceChildren();
+      try {
+        const [listResult,mobileResult]=await Promise.all([
+          client.rpc("lwb_admin_list_users"),
+          client.rpc("lwb_admin_driver_mobiles")
+        ]);
+        if(listResult.error)throw listResult.error;
+        const users=Array.isArray(listResult.data)?listResult.data:[];
+        const mobileMap=new Map((mobileResult.data||[]).map(d=>[d.user_id,d.mobile||""]));
+        if(!users.length){addRoleCell(body.insertRow(),"No Auth users found.").colSpan=6;return;}
+        for(const user of users){
+          const row=body.insertRow();
+          addRoleCell(row,user.email||user.user_id);
+          const nameCell=row.insertCell();
+          const name=document.createElement("input");
+          name.value=user.full_name||String(user.email||"").split("@")[0]||"";
+          name.maxLength=150;
+          nameCell.appendChild(name);
+          const roleCell=row.insertCell();
+          const role=roleSelect([
+            ["","Select Role"],["admin","ADMIN"],["accounts","ACCOUNTS — View Only"],
+            ["manager","MANAGER"],["sales","SALES"],["warehouse","WAREHOUSE"],
+            ["transport","TRANSPORT"],["driver","DRIVER — Assigned Delivery"]
+          ],String(user.erp_role||"").toLowerCase());
+          roleCell.appendChild(role);
+          const mobileCell=row.insertCell();
+          const mobile=document.createElement("input");
+          mobile.type="tel";mobile.inputMode="numeric";mobile.maxLength=14;
+          mobile.placeholder="Driver WhatsApp Mobile";
+          mobile.value=mobileMap.get(user.user_id)||"";
+          const updateMobileState=()=>{mobile.disabled=role.value!=="driver"};
+          role.addEventListener("change",updateMobileState);updateMobileState();
+          mobileCell.appendChild(mobile);
+          const activeCell=row.insertCell();
+          const active=roleSelect([["true","ACTIVE"],["false","INACTIVE"]],
+            user.is_active===false?"false":"true");
+          activeCell.appendChild(active);
+          const actionCell=row.insertCell();
+          const save=document.createElement("button");
+          save.type="button";
+          save.textContent=user.has_profile?"Save Role":"Assign Role";
+          if(user.user_id===roleAdminUserId){role.value="admin";role.disabled=true;active.value="true";active.disabled=true;}
+          save.onclick=()=>saveRoleAssignment(user,name,role,mobile,active,save);
+          actionCell.appendChild(save);
+        }
+        roleMessage(users.length+" Auth users loaded. Choose Role and press Save."+
+          (mobileResult.error?" Driver Mobile Setup pending: run lwb_driver_delivery_setup.sql.":""));
+      }catch(err){
+        addRoleCell(body.insertRow(),"Run lwb_user_permissions_setup.sql in Supabase before using this screen.").colSpan=6;
+        roleMessage("Role Manager setup pending: "+err.message,true);
+      }
+    }
+    async function saveRoleAssignment(user,name,role,mobile,active,saveButton){
+      if(!roleAdminReady)return;
+      const selectedRole=role.value;
+      const fullName=name.value.trim();
+      if(!selectedRole||!fullName){roleMessage("Select a Role and enter Full Name.",true);return;}
+      const driverPhone=mobile.value.replace(/\D/g,"");
+      if(selectedRole==="driver"&&!(/^[6-9]\d{9}$/.test(driverPhone)||/^91[6-9]\d{9}$/.test(driverPhone))){
+        roleMessage("For DRIVER Role enter the exact 10-digit Mobile saved by Sales Head in the Driver Assignment.",true);return;
+      }
+      if(!confirm("Assign "+selectedRole.toUpperCase()+" to "+(user.email||user.user_id)+"?"))return;
+      saveButton.disabled=true;
+      try{
+        const {error}=await client.rpc("lwb_admin_set_user_role",{
+          p_user_id:user.user_id,p_role:selectedRole,p_full_name:fullName,
+          p_active:active.value==="true"
+        });
+        if(error)throw error;
+        if(selectedRole==="driver"){
+          const mapped=await client.rpc("lwb_admin_set_driver_mobile",{
+            p_user_id:user.user_id,p_mobile:driverPhone
+          });
+          if(mapped.error)throw Error("Role saved but Driver Mobile mapping failed: "+mapped.error.message);
+        }
+        await loadRoleManager();
+        roleMessage("ERP Role saved for "+(user.email||user.user_id)+
+          (selectedRole==="driver"?" with Driver Mobile mapping.":"")+
+          " Ask the user to login again.");
+      }catch(err){roleMessage("Cannot assign Role: "+err.message,true);}
+      finally{saveButton.disabled=false;}
+    }
+
+    (async()=>{
+      const me=await start(["admin"]);if(!me)return;
+      ERPShell.mount({role:me.role,name:me.name,onLogout:logout,group:"Settings",title:"Manage Users"});
+      roleAdminUserId=me.user.id;roleAdminReady=true;
+      document.getElementById("loading").hidden=true;document.getElementById("page").hidden=false;
+      loadRoleManager();
+    })();
+  </script>
+</body>
+</html>
