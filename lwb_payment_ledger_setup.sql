@@ -1,3 +1,5 @@
+-- SUPERSEDED: run lwb_party_ledger_setup.sql instead. It contains this Phase 1
+-- setup and adds ERP Internal Bills, returns and opening balance.
 -- LUXURY WRIST BRAND - Payment collection and invoice outstanding (Phase 1).
 -- RUN ONCE in Supabase SQL Editor. Safe for existing orders and invoices.
 -- This is an INDEPENDENT ERP ledger. Tally is an entirely separate system.
