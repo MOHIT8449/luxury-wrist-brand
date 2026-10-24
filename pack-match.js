@@ -29,5 +29,17 @@
     const cc=[...new Set(packs.filter(x=>x.active!==false&&+x.case_config>0).filter(x=>{const b=shape(x.pack_name);return b.size===a.size&&b.can===a.can}).map(x=>+x.case_config))];
     return cc.length===1?cc[0]:null;
   }
-  window.LWBPackMatch={shape,match,caseFor};
+  // SKU-level brand, so "1.25L FX MRP.70" finds the existing "1.25L FANTA 1X12 MRP 70".
+  const BRANDS=[["TH",/\bTH\b|THUMS/],["SP",/\bSP\b|SPRITE/],["FX",/\bFX\b|FANTA/],["LI",/\bLI\b|LIMCA/],
+    ["CO",/\bCO\b|COKE|COCA/],["CH",/\bCH\b|CHARGED/]];
+  function skuShape(v){const t=String(v||"").toUpperCase(),s=shape(v);
+    s.brand=BRANDS.filter(([,re])=>re.test(t)).map(([k])=>k).join(",");return s}
+  // Existing SKU rows [{sku_name}] that are the same product as name — one row or null.
+  function sameSku(name,rows){
+    const a=skuShape(name);if(a.size==null)return null;
+    const hits=rows.filter(r=>{const b=skuShape(r.sku_name);
+      return b.size===a.size&&b.can===a.can&&b.tags===a.tags&&b.brand===a.brand&&(a.mrp==null||b.mrp==null||a.mrp===b.mrp)});
+    return hits.length===1?hits[0]:hits.length>1?hits:null;
+  }
+  window.LWBPackMatch={shape,match,caseFor,skuShape,sameSku};
 })();

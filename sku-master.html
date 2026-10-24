@@ -114,20 +114,27 @@ $('saveBtn').disabled=true;try{let query=editingId?db.from('sku_master').update(
 const normSku=v=>String(v||'').replace(/\s+/g,' ').trim().toUpperCase();
 let bulkPlan=null;
 function planBulk(){
-  const have=new Map(skus.map(x=>[normSku(x.sku_name),x])),seen=new Set(),add=[],update=[],noCase=[];let cat='',same=0;
+  const have=new Map(skus.map(x=>[normSku(x.sku_name),x])),seen=new Set(),add=[],update=[],noCase=[],multi=[],mapped=[];let cat='',same=0;
   for(const line of $('bulkText').value.split(/\r?\n/)){
     const c=line.split('\t').map(x=>x.trim());if(!c.join(''))continue;
     let sku,pcs;if(c.length>=2){if(c[0])cat=normSku(c[0]);sku=normSku(c[1]);pcs=Number(c[2])}else sku=normSku(c[0]);
     if(!sku||/^(SKU|CTG\.?|CATEGORY)$/.test(sku)||seen.has(sku))continue;seen.add(sku);
-    const old=have.get(sku);
-    if(old){if(categoryColumnAvailable&&cat&&old.category!==cat)update.push({id:old.id,sku,cat});else same++;continue}
+    let old=have.get(sku);
+    if(!old&&window.LWBPackMatch&&LWBPackMatch.sameSku){const m=LWBPackMatch.sameSku(sku,skus);
+      if(Array.isArray(m)){multi.push(sku+' ('+m.map(x=>x.sku_name).join(' / ')+')');continue}
+      if(m){old=m;mapped.push(sku+' = '+m.sku_name)}}
+    if(old){if(categoryColumnAvailable&&cat&&old.category!==cat)update.push({id:old.id,sku:old.sku_name,cat,pack:(window.LWBPackMatch&&LWBPackMatch.match(sku,packs)||{}).id});else same++;continue}
     const caseN=Number.isInteger(pcs)&&pcs>0?pcs:(window.LWBPackMatch?LWBPackMatch.caseFor(sku,packs):null);
     if(!caseN){noCase.push(sku);continue}
     const pack=window.LWBPackMatch?LWBPackMatch.match(sku,packs):null;
     add.push({sku,cat,pcs:caseN,pack:pack&&pack.id});
   }
-  bulkPlan={add,update,noCase};
-  $('bulkInfo').textContent=add.length+' naye SKU · '+update.length+' ki category update · '+same+' pehle se same'+(noCase.length?' · '+noCase.length+' ka PCS/Case nahi mila: '+noCase.join(', '):'');
+  bulkPlan={add,update,noCase,multi,mapped};
+  $('bulkInfo').textContent=add.length+' naye SKU · '+update.length+' purane SKU ki category update · '+same+' pehle se same'
+    +(mapped.length?' · Purane SKU se mile ('+mapped.length+'): '+mapped.join('; '):'')
+    +(multi.length?' · Ek se zyada purane SKU mile, chhoda ('+multi.length+'): '+multi.join('; '):'')
+    +(noCase.length?' · '+noCase.length+' ka PCS/Case nahi mila: '+noCase.join(', '):'')
+    +(add.length?' · Naye: '+add.map(r=>r.sku).join(', '):'');
   $('bulkSave').disabled=!canEdit||!(add.length+update.length);
   return bulkPlan;
 }
@@ -141,7 +148,7 @@ async function saveBulk(){
     if(error)failed.push(r.sku+' — '+error.message);else{done++;if(r.pack&&!links.has(r.sku))linksToSave.push({sku_name:r.sku,pack_id:r.pack})}
     $('bulkInfo').textContent=done+' / '+(add.length+update.length)+' save...';
   }
-  for(const r of update){const {error}=await db.from('sku_master').update({category:r.cat}).eq('id',r.id);if(error)failed.push(r.sku+' — '+error.message);else done++}
+  for(const r of update){const {error}=await db.from('sku_master').update({category:r.cat}).eq('id',r.id);if(error)failed.push(r.sku+' — '+error.message);else{done++;if(r.pack&&!links.has(r.sku))linksToSave.push({sku_name:r.sku,pack_id:r.pack})}}
   let linkMsg='';
   if(linksToSave.length&&ratesOn){const {error}=await db.rpc('lwb_link_rate_skus',{p_links:linksToSave});linkMsg=error?' Rate link nahi hua: '+error.message:' '+linksToSave.length+' SKU Rate & Scheme pack se jud gaye.'}
   await loadRateGroups();await loadSkus();$('bulkCheck').disabled=false;
