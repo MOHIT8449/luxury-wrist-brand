@@ -34,7 +34,7 @@
 <small class="hint">Excel se 2 column copy karke paste karo: CATEGORY · SKU (teesra column PCS/Case optional). Category khaali ho to upar wali category lagegi. PCS/Case na ho to Rate &amp; Scheme ke pack se liya jaayega. Jo SKU pehle se hai uski sirf category update hogi.</small>
 <textarea id="bulkText" rows="8" style="width:100%;margin-top:8px;font:13px monospace" placeholder="250ML CSD&#9;300ML TH MRP.20&#10;&#9;250ML SP MRP.20"></textarea>
 <div class="actions"><button type="button" class="secondary" id="bulkCheck">Check List</button><button type="button" id="bulkSave" disabled>Add / Update SKUs</button><span id="bulkInfo" class="hint"></span></div></section>
-<section class="panel"><div class="toolbar"><div><h2 style="margin-bottom:5px">SKU List</h2><span id="status">Loading...</span></div><input id="search" placeholder="Search SKU name or HSN..."></div>
+<section class="panel"><div class="toolbar"><div><h2 style="margin-bottom:5px">SKU List</h2><span id="status">Loading...</span></div><div class="actions"><label class="hint"><input type="checkbox" id="showInactive"> Inactive bhi dikhao</label><button type="button" class="secondary" id="deactAll" disabled>Sab SKU Inactive karo</button><input id="search" placeholder="Search SKU name or HSN..."></div></div>
 <div class="table-wrap"><table><thead><tr><th>Category</th><th>SKU Name</th><th>HSN</th><th>PCS/Case</th><th>Unit Wt/Case KG</th><th>CS/Pallet</th><th>GST %</th><th>Cess %</th><th class="rg-col" hidden>Rate Group</th><th>Status</th><th>Action</th></tr></thead><tbody id="rows"><tr><td colspan="9">Loading...</td></tr></tbody></table></div></section>
 </main>
 <script>
@@ -51,7 +51,7 @@ function notice(message,error=false){const el=$('message');el.textContent=messag
 function resetForm(){$('skuForm').reset();editingId=null;$('formTitle').textContent='Add New SKU';$('saveBtn').textContent='Save SKU';$('pcs').value='24';$('weight').value='';$('palletCases').value='';}
 function showValue(v){return v===null||v===undefined||v===''?'—':String(v);}
 function addCell(row,value){const cell=document.createElement('td');cell.textContent=showValue(value);row.appendChild(cell);return cell;}
-function render(){const q=$('search').value.toLowerCase().trim();const matches=skus.filter(x=>String(x.sku_name||'').toLowerCase().includes(q)||String(x.hsn_code||'').toLowerCase().includes(q)||String(x.category||'').toLowerCase().includes(q));const body=$('rows');body.replaceChildren();$('status').textContent=`${matches.length} shown / ${skus.length} total`;
+function render(){const q=$('search').value.toLowerCase().trim();const inact=$('showInactive').checked;const matches=skus.filter(x=>inact||x.is_active!==false).filter(x=>String(x.sku_name||'').toLowerCase().includes(q)||String(x.hsn_code||'').toLowerCase().includes(q)||String(x.category||'').toLowerCase().includes(q));const body=$('rows');body.replaceChildren();$('status').textContent=`${matches.length} shown / ${skus.filter(x=>x.is_active!==false).length} active / ${skus.length} total`;
 if(!matches.length){const tr=document.createElement('tr');const td=addCell(tr,skus.length?'No matching SKUs.':'No SKUs found.');td.colSpan=ratesOn?11:10;body.appendChild(tr);return;}
 for(const item of matches){const tr=document.createElement('tr');addCell(tr,item.category);addCell(tr,item.sku_name);addCell(tr,item.hsn_code);addCell(tr,item.pcs_per_case);addCell(tr,item.unit_weight_kg);addCell(tr,item.cases_per_pallet);addCell(tr,item.gst_rate);addCell(tr,item.cess_rate);if(ratesOn){const p=packs.find(x=>x.id===links.get(skuKey(item.sku_name)));addCell(tr,p?p.pack_name+' (₹'+p.slab3_rate+')':'');}addCell(tr,item.is_active===false?'Inactive':'Active');const td=document.createElement('td');const btn=document.createElement('button');btn.type='button';btn.textContent='Edit';btn.disabled=!canEdit;btn.addEventListener('click',()=>editSku(item.id));td.appendChild(btn);tr.appendChild(td);body.appendChild(tr);}}
 function editSku(id){const x=skus.find(item=>item.id===id);if(!x)return;editingId=id;$('skuName').value=x.sku_name||'';$('category').value=x.category||'';$('hsn').value=x.hsn_code||'';$('pcs').value=x.pcs_per_case??'';$('weight').value=x.unit_weight_kg??'';$('palletCases').value=x.cases_per_pallet??'';$('gst').value=x.gst_rate??'';$('cess').value=x.cess_rate??'';$('active').value=String(x.is_active!==false);$('rateGroup').value=links.get(skuKey(x.sku_name))||'';$('formTitle').textContent='Edit SKU';$('saveBtn').textContent='Update SKU';window.scrollTo({top:0,behavior:'smooth'});}
@@ -120,23 +120,29 @@ function planBulk(){
     let sku,pcs;if(c.length>=2){if(c[0])cat=normSku(c[0]);sku=normSku(c[1]);pcs=Number(c[2])}else sku=normSku(c[0]);
     if(!sku||/^(SKU|CTG\.?|CATEGORY)$/.test(sku)||seen.has(sku))continue;seen.add(sku);
     let old=have.get(sku);
-    if(!old&&window.LWBPackMatch&&LWBPackMatch.sameSku){const m=LWBPackMatch.sameSku(sku,skus);
+    if(!old&&window.LWBPackMatch&&LWBPackMatch.sameSku){const m=LWBPackMatch.sameSku(sku,skus.filter(x=>x.is_active!==false));
       if(Array.isArray(m)){multi.push(sku+' ('+m.map(x=>x.sku_name).join(' / ')+')');continue}
       if(m){old=m;mapped.push(sku+' = '+m.sku_name)}}
-    if(old){if(categoryColumnAvailable&&cat&&old.category!==cat)update.push({id:old.id,sku:old.sku_name,cat,pack:(window.LWBPackMatch&&LWBPackMatch.match(sku,packs)||{}).id});else same++;continue}
+    if(old){const wake=old.is_active===false;if(wake||categoryColumnAvailable&&cat&&old.category!==cat)update.push({id:old.id,sku:old.sku_name,cat:categoryColumnAvailable?cat:'',wake,pack:(window.LWBPackMatch&&LWBPackMatch.match(sku,packs)||{}).id});else same++;continue}
     const caseN=Number.isInteger(pcs)&&pcs>0?pcs:(window.LWBPackMatch?LWBPackMatch.caseFor(sku,packs):null);
     if(!caseN){noCase.push(sku);continue}
     const pack=window.LWBPackMatch?LWBPackMatch.match(sku,packs):null;
     add.push({sku,cat,pcs:caseN,pack:pack&&pack.id});
   }
   bulkPlan={add,update,noCase,multi,mapped};
-  $('bulkInfo').textContent=add.length+' naye SKU · '+update.length+' purane SKU ki category update · '+same+' pehle se same'
+  $('bulkInfo').textContent=add.length+' naye SKU · '+update.length+' purane SKU update (category / phir se Active) · '+same+' pehle se same'
     +(mapped.length?' · Purane SKU se mile ('+mapped.length+'): '+mapped.join('; '):'')
     +(multi.length?' · Ek se zyada purane SKU mile, chhoda ('+multi.length+'): '+multi.join('; '):'')
     +(noCase.length?' · '+noCase.length+' ka PCS/Case nahi mila: '+noCase.join(', '):'')
     +(add.length?' · Naye: '+add.map(r=>r.sku).join(', '):'');
   $('bulkSave').disabled=!canEdit||!(add.length+update.length);
   return bulkPlan;
+}
+async function deactivateAll(){
+  const ids=skus.filter(x=>x.is_active!==false).map(x=>x.id);if(!ids.length)return;
+  if(!confirm(ids.length+' SKU Inactive ho jayenge. Ye delete nahi hai: purane order, stock aur bill waise hi rahenge, aur Edit se kabhi bhi Active kar sakte ho. Aage badhein?'))return;
+  $('deactAll').disabled=true;const {error}=await db.from('sku_master').update({is_active:false}).in('id',ids);
+  await loadSkus();notice(error?'Inactive nahi hue: '+error.message:ids.length+' SKU Inactive ho gaye. Ab nayi list Bulk Add me paste karo.',!!error);$('deactAll').disabled=!canEdit;
 }
 async function saveBulk(){
   const {add,update}=planBulk();if(!add.length&&!update.length)return;
@@ -148,7 +154,7 @@ async function saveBulk(){
     if(error)failed.push(r.sku+' — '+error.message);else{done++;if(r.pack&&!links.has(r.sku))linksToSave.push({sku_name:r.sku,pack_id:r.pack})}
     $('bulkInfo').textContent=done+' / '+(add.length+update.length)+' save...';
   }
-  for(const r of update){const {error}=await db.from('sku_master').update({category:r.cat}).eq('id',r.id);if(error)failed.push(r.sku+' — '+error.message);else{done++;if(r.pack&&!links.has(r.sku))linksToSave.push({sku_name:r.sku,pack_id:r.pack})}}
+  for(const r of update){const {error}=await db.from('sku_master').update(Object.assign(r.cat?{category:r.cat}:{},r.wake?{is_active:true}:{})).eq('id',r.id);if(error)failed.push(r.sku+' — '+error.message);else{done++;if(r.pack&&!links.has(r.sku))linksToSave.push({sku_name:r.sku,pack_id:r.pack})}}
   let linkMsg='';
   if(linksToSave.length&&ratesOn){const {error}=await db.rpc('lwb_link_rate_skus',{p_links:linksToSave});linkMsg=error?' Rate link nahi hua: '+error.message:' '+linksToSave.length+' SKU Rate & Scheme pack se jud gaye.'}
   await loadRateGroups();await loadSkus();$('bulkCheck').disabled=false;
@@ -156,10 +162,10 @@ async function saveBulk(){
   notice(done+' SKU save hue.'+linkMsg+(failed.length?' Save nahi hue ('+failed.length+'): '+failed.slice(0,5).join('; '):''),!!failed.length);
   planBulk();
 }
-async function init(){resetForm();$('bulkCheck').addEventListener('click',planBulk);$('bulkSave').addEventListener('click',saveBulk);$('bulkText').addEventListener('input',()=>{$('bulkSave').disabled=true;$('bulkInfo').textContent='Check List dabao';});$('skuForm').addEventListener('submit',saveSku);$('clearBtn').addEventListener('click',resetForm);$('search').addEventListener('input',render);
+async function init(){resetForm();$('bulkCheck').addEventListener('click',planBulk);$('deactAll').addEventListener('click',deactivateAll);$('showInactive').addEventListener('change',render);$('bulkSave').addEventListener('click',saveBulk);$('bulkText').addEventListener('input',()=>{$('bulkSave').disabled=true;$('bulkInfo').textContent='Check List dabao';});$('skuForm').addEventListener('submit',saveSku);$('clearBtn').addEventListener('click',resetForm);$('search').addEventListener('input',render);
 if(SUPABASE_PUBLISHABLE_KEY.includes('PASTE_YOUR')){notice('Setup needed: add your Supabase publishable key in this HTML file.',true);$('rows').replaceChildren();$('status').textContent='Supabase key not configured';return;}
 if(!window.supabase){notice('Supabase library did not load. Check internet connection.',true);return;}
-try{db=window.supabase.createClient(SUPABASE_URL,SUPABASE_PUBLISHABLE_KEY);const {data:{user},error}=await db.auth.getUser();if(error||!user){notice('Please log in to ERP first, then open SKU Master.',true);$('status').textContent='Login required';return;}const {data:profile,error:pe}=await db.from('user_profiles').select('role,active').eq('id',user.id).maybeSingle();if(pe)throw pe;if(!profile||profile.active!==true){notice('Your ERP login is not active.',true);$('status').textContent='Access denied';return;}canEdit=['admin','manager'].includes(String(profile.role||'').trim().toLowerCase());// Only Admin / Manager can add or edit SKUs; other roles get a read-only list.
+try{db=window.supabase.createClient(SUPABASE_URL,SUPABASE_PUBLISHABLE_KEY);const {data:{user},error}=await db.auth.getUser();if(error||!user){notice('Please log in to ERP first, then open SKU Master.',true);$('status').textContent='Login required';return;}const {data:profile,error:pe}=await db.from('user_profiles').select('role,active').eq('id',user.id).maybeSingle();if(pe)throw pe;if(!profile||profile.active!==true){notice('Your ERP login is not active.',true);$('status').textContent='Access denied';return;}canEdit=['admin','manager'].includes(String(profile.role||'').trim().toLowerCase());$('deactAll').disabled=!canEdit;// Only Admin / Manager can add or edit SKUs; other roles get a read-only list.
 for(const control of $('skuForm').elements)control.disabled=!canEdit;if(!canEdit)notice('View only: Admin / Manager can change SKU Master.');await loadRateGroups();await loadSkus();}catch(e){notice('Connection failed: '+e.message,true);}}
 init();
 </script>
