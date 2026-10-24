@@ -38,9 +38,7 @@
       {t:"Loading & Dispatch",h:"loading-dispatch.html",i:"box",r:"admin manager warehouse"},
       {t:"Transport Assignment",h:"transport-allocation.html",i:"truck",r:"admin manager transport"}]},
     {group:"Accounts",items:[
-      {t:"ERP Bill Create",h:"accounts-invoice.html",i:"bill",r:"admin accounts"},
-      {t:"Payment Collection",h:"payment-collection.html",i:"cash",r:"admin manager sales accounts"},
-      {t:"Party Ledger / Outstanding",h:"party-ledger.html",i:"book",r:"admin manager sales accounts"}]},
+      {t:"ERP Bill Create",h:"accounts-invoice.html",i:"bill",r:"admin accounts"}]},
     {group:"Delivery",items:[
       {t:"Driver Delivery / POD",h:"driver-delivery.html",i:"pin",r:"admin manager driver accounts"}]},
     {group:"Returns",items:[
