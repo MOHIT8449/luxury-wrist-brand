@@ -32,7 +32,8 @@
     {group:"",items:[{t:"Dashboard",h:"dashboard.html",i:"home",r:"*"}]},
     {group:"Sales",items:[
       {t:"PO / Sales Order Entry",h:"order-entry.html",i:"cart",r:"admin manager sales"},
-      {t:"PO Approval & Driver",h:"warehouse-orders.html",i:"check",r:"admin manager"}]},
+      {t:"PO Approval & Driver",h:"warehouse-orders.html",i:"check",r:"admin manager"},
+      {t:"CC PO Maker",h:"po-maker.html",i:"bill",r:"admin manager"}]},
     {group:"Dispatch",items:[
       {t:"Loading & Dispatch",h:"loading-dispatch.html",i:"box",r:"admin manager warehouse"},
       {t:"Transport Assignment",h:"transport-allocation.html",i:"truck",r:"admin manager transport"}]},
