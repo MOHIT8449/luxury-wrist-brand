@@ -22,6 +22,7 @@
     factory:'<path d="M3 21V10l6 4V10l6 4V5h6v16z"/>',
     layers:'<path d="M12 3l9 5-9 5-9-5z"/><path d="M3 13l9 5 9-5"/>',
     gear:'<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>',
+    stock:'<path d="M3 21V9l9-5 9 5v12"/><path d="M7 21v-8h10v8"/><path d="M7 17h10"/>',
     lock:'<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>'
   };
   const svg=(name)=>'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">'+(ICON[name]||ICON.box)+'</svg>';
@@ -45,12 +46,14 @@
       {t:"Driver Returns Approval",h:"driver-returns.html",i:"undo",r:"admin accounts manager warehouse"},
       {t:"Sales Return",h:"sales-return.html",i:"undo",r:"admin sales warehouse"},
       {t:"Credit Note Preview",h:"credit-note.html",i:"note",r:"admin accounts"}]},
-    {group:"Masters & Stock",items:[
+    {group:"Inventory",items:[
+      {t:"Inventory / Stock Report",h:"inventory.html",i:"stock",r:"admin manager warehouse accounts"},
+      {t:"Goods Inward (Purchase)",h:"goods-inward.html",i:"inbox",r:"admin manager"},
+      {t:"Opening Stock",h:"opening-stock.html",i:"box",r:"admin"}]},
+    {group:"Masters",items:[
       {t:"Customer / Party Master",h:"customer-master.html",i:"users",r:"admin manager"},
       {t:"SKU Master",h:"sku-master.html",i:"tag",r:"admin manager"},
       {t:"Supplier Master",h:"supplier-master.html",i:"factory",r:"admin manager"},
-      {t:"Goods Inward",h:"goods-inward.html",i:"inbox",r:"admin manager"},
-      {t:"Opening Stock",h:"opening-stock.html",i:"box",r:"admin"},
       {t:"Group Loading",h:"group-party-loading.html",i:"layers",r:"admin"}]},
     {group:"Settings",items:[
       {t:"Settings",h:"settings.html",i:"gear",r:"admin manager"},

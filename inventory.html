@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Inventory | Luxury Wrist Brand ERP</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <link rel="stylesheet" href="erp-shell.css">
+  <script src="erp-shell.js"></script>
+  <style>
+    .status{text-align:center;padding:80px 20px;font-size:15px;color:#555}
+    .inv-sub{margin:-8px 0 14px;color:var(--erp-muted);font-size:13px}
+    .inv-filters{display:flex;gap:10px;align-items:end;flex-wrap:wrap;margin-bottom:14px}
+    .inv-filters label{display:block;font-size:12px;font-weight:600;color:#4b5763;margin-bottom:4px}
+    .inv-filters input{height:38px;border:1.5px solid var(--erp-line);border-radius:6px;padding:0 10px;font:inherit;background:#fff;color:var(--erp-ink)}
+    .inv-filters input:focus{outline:none;border-color:var(--erp-red)}
+    .inv-filters .grow{flex:1;min-width:200px}.inv-filters .grow input{width:100%}
+    .inv-filters button{height:38px;border-radius:6px;padding:0 16px;font-weight:600;cursor:pointer;border:1px solid var(--erp-red);background:var(--erp-red);color:#fff}
+    .inv-filters button.ghost{background:#fff;color:var(--erp-ink);border-color:var(--erp-line)}
+    .inv-kpis{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px;margin-bottom:14px}
+    .inv-kpi{background:#fff;border:1px solid var(--erp-line);border-radius:8px;padding:14px 16px;cursor:pointer;text-align:left;font:inherit;color:inherit}
+    .inv-kpi:hover{border-color:var(--erp-red)}
+    .inv-kpi span{display:block;font-size:12.5px;color:var(--erp-muted)}
+    .inv-kpi b{display:block;font-size:22px;font-weight:600;margin-top:4px}
+    .inv-kpi small{display:block;font-size:12px;color:var(--erp-muted);margin-top:2px}
+    .inv-kpi.green b{color:var(--erp-green)}.inv-kpi.red b{color:var(--erp-red)}.inv-kpi.blue b{color:var(--erp-blue)}
+    .inv-scroll{overflow:auto}
+    .inv-scroll .erp-table{min-width:760px}
+    .erp-table tfoot td{font-weight:700;border-top:2px solid var(--erp-line);background:#fafbfc}
+    .inv-note{font-size:12.5px;color:var(--erp-muted);margin:10px 2px 0}
+    .inv-msg{padding:16px;color:var(--erp-red);font-weight:600;white-space:pre-wrap}
+    @media(max-width:1100px){.inv-kpis{grid-template-columns:repeat(3,minmax(0,1fr))}}
+    @media(max-width:640px){.inv-filters button{flex:1 1 40%}.inv-kpis{grid-template-columns:1fr 1fr}.inv-kpi b{font-size:19px}.inv-filters>div:not(.grow){flex:1 1 40%}.inv-filters input{width:100%}}
+    [hidden]{display:none!important}
+  </style>
+</head>
+<body>
+  <div id="loading" class="status">Checking account access...</div>
+  <main id="page" class="erp-main" hidden>
+    <div class="erp-pagehead"><h1>Inventory</h1><span class="grow"></span><span class="erp-badge blue">Read only</span></div>
+    <p class="inv-sub">Main Godown stock: saleable balance, stock in (purchase / opening) and stock out (dispatch) in one place.</p>
+
+    <div class="inv-filters">
+      <div><label for="from">From</label><input id="from" type="date"></div>
+      <div><label for="to">To</label><input id="to" type="date"></div>
+      <div class="grow"><label for="q">Search SKU / Invoice / Party</label><input id="q" type="search" placeholder="Type to filter the table..." autocomplete="off"></div>
+      <button id="refresh" type="button">Refresh</button>
+      <button id="excel" type="button" class="ghost">Excel</button>
+    </div>
+
+    <div class="inv-kpis" id="kpis"></div>
+    <div class="erp-pills" id="tabs"></div>
+
+    <section class="erp-card">
+      <div class="erp-card-head"><h2 id="tabTitle">Saleable Stock</h2><small id="tabCount" style="color:var(--erp-muted)"></small></div>
+      <div class="inv-scroll" id="tableBox"></div>
+    </section>
+    <p class="inv-note" id="tabNote"></p>
+  </main>
+  <script>
+    const client=supabase.createClient("https://txkbhadzdbxpieunfvox.supabase.co","sb_publishable_W4I3Q5ODf0g17sq5uDml2Q_sLolXYEk");
+    const el=id=>document.getElementById(id);
+    async function logout(){await client.auth.signOut();location.replace("login.html")}
+    async function start(allowed){
+      const {data:{session}}=await client.auth.getSession();
+      if(!session){location.replace("login.html");return null}
+      const {data:p}=await client.from("user_profiles").select("full_name,role,active").eq("id",session.user.id).single();
+      const role=String((p&&p.role)||"").toLowerCase().trim();
+      if(!p||p.active!==true||!allowed.includes(role)){location.replace("dashboard.html");return null}
+      return {user:session.user,role,name:p.full_name||session.user.email};
+    }
+
+    const fmt=n=>Number(n||0).toLocaleString("en-IN");
+    const rupees=n=>"₹"+Number(n||0).toLocaleString("en-IN",{minimumFractionDigits:2,maximumFractionDigits:2});
+    const num=v=>{const n=Number(v);return Number.isFinite(n)?n:0};
+    const isoDay=d=>d.toLocaleDateString("en-CA",{timeZone:"Asia/Kolkata"});
+    const shortDate=v=>{if(!v)return "—";const d=new Date(String(v).length===10?v+"T00:00:00+05:30":v);return isNaN(d)?String(v):d.toLocaleDateString("en-IN",{day:"2-digit",month:"short",year:"numeric",timeZone:"Asia/Kolkata"})};
+    const nameKey=v=>String(v||"").toUpperCase().replace(/\s+/g," ").trim();
+    const pick=(row,keys)=>{for(const k of keys)if(row&&row[k]!=null&&row[k]!=="")return row[k];return null};
+    const caseText=(pcs,pack)=>{pack=Math.max(1,num(pack));const neg=pcs<0;pcs=Math.abs(Math.round(pcs));const c=Math.floor(pcs/pack),l=pcs%pack;return (neg?"−":"")+fmt(c)+" CS"+(l?" + "+fmt(l)+" PCS":"")};
+
+    const LOW_CASES=5;
+    let skus=new Map(),skuByName=new Map(),live=[],inLines=[],outLines=[],moves=[];
+    let errors={},tab="stock";
+
+    function skuInfo(id,name){
+      const s=(id!=null&&skus.get(String(id)))||skuByName.get(nameKey(name));
+      return s||{id:id!=null?String(id):"name:"+nameKey(name),name:name||"Unknown SKU",pack:1};
+    }
+
+    async function loadAll(){
+      const from=el("from").value,to=el("to").value;
+      if(!from||!to||from>to){await ERPShell.alert("Select a valid From and To date.");return}
+      const start=from+"T00:00:00+05:30",end=to+"T23:59:59.999+05:30";
+      el("refresh").disabled=true;el("tableBox").innerHTML='<div class="erp-empty">Loading inventory...</div>';
+      errors={};
+      try{
+        const [skuRes,liveRes]=await Promise.all([
+          client.from("sku_master").select("id,sku_name,pcs_per_case").order("sku_name"),
+          client.from("lwb_live_stock").select("sku_id,sku_name,pcs_per_case,saleable_pcs,damaged_pcs").order("sku_name")
+        ]);
+        skus=new Map();skuByName=new Map();
+        for(const s of (skuRes.data||[])){const x={id:String(s.id),name:s.sku_name,pack:Math.max(1,num(s.pcs_per_case))};skus.set(x.id,x);skuByName.set(nameKey(s.sku_name),x)}
+        for(const s of (liveRes.data||[]))if(!skus.has(String(s.sku_id))){const x={id:String(s.sku_id),name:s.sku_name,pack:Math.max(1,num(s.pcs_per_case))};skus.set(x.id,x);skuByName.set(nameKey(s.sku_name),x)}
+        if(liveRes.error)errors.stock=liveRes.error.message;
+        live=liveRes.data||[];
+      }catch(e){errors.stock=e.message||String(e)}
+
+      await Promise.all([loadIn(start,end),loadOut(start,end),loadMoves(start,end)]);
+      el("refresh").disabled=false;
+      render();
+    }
+
+    async function loadIn(start,end){
+      inLines=[];
+      try{
+        const h=await client.from("lwb_goods_inward").select("id,supplier_name,invoice_no,invoice_date,received_date")
+          .gte("received_date",start.slice(0,10)).lte("received_date",end.slice(0,10)).order("received_date",{ascending:false}).limit(1000);
+        if(h.error)throw h.error;
+        const heads=new Map((h.data||[]).map(x=>[x.id,x]));
+        const ids=[...heads.keys()];
+        for(let i=0;i<ids.length;i+=100){
+          const r=await client.from("lwb_goods_inward_items").select("*").in("inward_id",ids.slice(i,i+100));
+          if(r.error)throw r.error;
+          for(const it of r.data||[]){
+            const head=heads.get(it.inward_id)||{},s=skuInfo(pick(it,["sku_id"]),pick(it,["sku_name"]));
+            inLines.push({date:head.received_date,ref:head.invoice_no,party:head.supplier_name,sku:s,pcs:num(pick(it,["quantity_pcs","total_pcs","qty_pcs"])),taxable:num(it.taxable_amount)});
+          }
+        }
+        inLines.sort((a,b)=>String(b.date).localeCompare(String(a.date)));
+      }catch(e){errors.in=e.message||String(e)}
+    }
+
+    async function loadOut(start,end){
+      outLines=[];
+      try{
+        const a=await client.from("dispatch_assignments").select("order_id,loading_completed_at")
+          .gte("loading_completed_at",start).lte("loading_completed_at",end).limit(2000);
+        if(a.error)throw a.error;
+        const when=new Map();for(const x of a.data||[])if(x.order_id)when.set(x.order_id,x.loading_completed_at);
+        const ids=[...when.keys()];
+        for(let i=0;i<ids.length;i+=100){
+          const part=ids.slice(i,i+100);
+          const [o,it]=await Promise.all([
+            client.from("orders").select("id,order_no,customer_name,status").in("id",part),
+            client.from("order_items").select("*").in("order_id",part)
+          ]);
+          if(o.error)throw o.error;if(it.error)throw it.error;
+          const orders=new Map((o.data||[]).filter(x=>["loaded","invoiced","delivered"].includes(String(x.status||"").toLowerCase().trim())).map(x=>[x.id,x]));
+          for(const line of it.data||[]){
+            const ord=orders.get(line.order_id);if(!ord)continue;
+            const cases=num(line.loaded_qty);if(!cases)continue;
+            const s=skuInfo(pick(line,["sku_id"]),line.sku_name);
+            outLines.push({date:when.get(line.order_id),ref:ord.order_no,party:ord.customer_name,status:ord.status,sku:s,cases,pcs:cases*s.pack});
+          }
+        }
+        outLines.sort((a,b)=>String(b.date).localeCompare(String(a.date)));
+      }catch(e){errors.out=e.message||String(e)}
+    }
+
+    async function loadMoves(start,end){
+      moves=[];
+      try{
+        let r=await client.from("lwb_inventory_movements").select("*").gte("created_at",start).lte("created_at",end).order("created_at",{ascending:false}).limit(1000);
+        if(r.error){
+          // Fall back if the table uses another date column name.
+          r=await client.from("lwb_inventory_movements").select("*").limit(1000);
+          if(r.error)throw r.error;
+        }
+        moves=(r.data||[]).map(m=>{
+          const s=skuInfo(pick(m,["sku_id"]),pick(m,["sku_name"]));
+          return {date:pick(m,["created_at","movement_date","movement_at"]),sku:s,type:String(pick(m,["movement_type"])||"—"),bucket:String(pick(m,["stock_bucket"])||"—"),
+            pcs:num(pick(m,["quantity_pcs","qty_pcs","pcs_qty","pcs","quantity","qty"])),ref:pick(m,["reference_no","reference","ref_no","reference_type","note","remarks"])||""};
+        });
+      }catch(e){errors.moves=e.message||String(e)}
+    }
+
+    function sums(){
+      const inBy=new Map(),outBy=new Map();
+      for(const x of inLines)inBy.set(x.sku.id,(inBy.get(x.sku.id)||0)+x.pcs);
+      for(const x of outLines)outBy.set(x.sku.id,(outBy.get(x.sku.id)||0)+x.pcs);
+      return {inBy,outBy};
+    }
+
+    // Each tab returns {head, rows (export values), cells (display), num (right-aligned columns), foot}
+    function view(){
+      const {inBy,outBy}=sums();
+      if(tab==="stock"){
+        const rows=live.map(b=>{
+          const s=skuInfo(b.sku_id,b.sku_name),pack=Math.max(1,num(b.pcs_per_case)||s.pack),sale=num(b.saleable_pcs),cases=Math.floor(Math.max(0,sale)/pack);
+          const state=sale<=0?["Out of stock","red"]:cases<LOW_CASES?["Low","amber"]:["In stock","green"];
+          return {key:b.sku_name,data:[b.sku_name,pack,cases,Math.max(0,sale)%pack,sale,num(b.damaged_pcs),inBy.get(s.id)||0,outBy.get(s.id)||0,state[0]],
+            show:[b.sku_name,fmt(pack),fmt(cases),fmt(Math.max(0,sale)%pack),fmt(sale),fmt(b.damaged_pcs),inBy.get(s.id)?caseText(inBy.get(s.id),pack):"—",outBy.get(s.id)?caseText(outBy.get(s.id),pack):"—",'<span class="erp-badge '+state[1]+'">'+state[0]+'</span>'],html:8};
+        });
+        return {title:"Saleable Stock",head:["SKU","PCS / Case","Saleable Cases","Loose PCS","Saleable PCS","Damaged PCS","Stock In (period)","Stock Out (period)","Status"],num:[1,2,3,4,5,6,7],rows,
+          sum:[2,4,5],err:errors.stock,note:"Saleable balance comes from the live stock view. Stock In and Stock Out columns are for the selected dates. Low = less than "+LOW_CASES+" cases."};
+      }
+      if(tab==="in"){
+        const rows=inLines.map(x=>({key:x.ref+" "+x.party+" "+x.sku.name,data:[shortDate(x.date),x.ref,x.party,x.sku.name,Math.floor(x.pcs/x.sku.pack),x.pcs%x.sku.pack,x.pcs,x.taxable],
+          show:[shortDate(x.date),x.ref||"—",x.party||"—",x.sku.name,fmt(Math.floor(x.pcs/x.sku.pack)),fmt(x.pcs%x.sku.pack),fmt(x.pcs),rupees(x.taxable)]}));
+        return {title:"Stock In — Purchase",head:["Received","Invoice No.","Supplier","SKU","Cases","Loose PCS","Total PCS","Taxable ₹"],num:[4,5,6,7],rows,sum:[4,6,7],money:[7],err:errors.in,
+          note:"Every SKU line received through Goods Inward in the selected dates. Invoice-wise list: Goods Inward page, Purchase Report."};
+      }
+      if(tab==="out"){
+        const rows=outLines.map(x=>({key:x.ref+" "+x.party+" "+x.sku.name,data:[shortDate(x.date),x.ref,x.party,x.status,x.sku.name,x.cases,x.pcs],
+          show:[shortDate(x.date),x.ref||"—",x.party||"—",x.status||"—",x.sku.name,fmt(x.cases),fmt(x.pcs)]}));
+        return {title:"Stock Out — Dispatch",head:["Loaded On","PO No.","Party","Status","SKU","Cases Loaded","PCS"],num:[5,6],rows,sum:[5,6],err:errors.out,
+          note:"Cases actually loaded on vehicles (Loading & Dispatch) in the selected dates. This report does not change stock."};
+      }
+      const rows=moves.map(m=>({key:m.sku.name+" "+m.type+" "+m.bucket+" "+m.ref,data:[shortDate(m.date),m.sku.name,m.type,m.bucket,m.pcs,m.ref],
+        show:[shortDate(m.date),m.sku.name,m.type,m.bucket,fmt(m.pcs),m.ref||"—"]}));
+      return {title:"Stock Movements",head:["Date","SKU","Type","Bucket","Qty PCS","Reference"],num:[4],rows,err:errors.moves,
+        note:"Audit trail of every stock entry (opening, inward and others) saved in the system, newest first."};
+    }
+
+    const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+    let current=null;
+    function render(){
+      renderKpis();renderTabs();
+      const v=view(),q=nameKey(el("q").value);
+      const rows=q?v.rows.filter(r=>nameKey(r.key).includes(q)):v.rows;
+      current={...v,rows};
+      el("tabTitle").textContent=v.title;
+      el("tabCount").textContent=v.err?"":rows.length+" rows";
+      el("tabNote").textContent=v.note;
+      const box=el("tableBox");
+      if(v.err){box.innerHTML='<div class="inv-msg">Could not load this report: '+esc(v.err)+"</div>";return}
+      if(!rows.length){box.innerHTML='<div class="erp-empty">'+(q?"No rows match your search.":"No entries for the selected dates.")+"</div>";return}
+      const numCls=i=>v.num.includes(i)?' class="num"':"";
+      let h="<table class=\"erp-table\"><thead><tr>"+v.head.map((x,i)=>"<th"+numCls(i)+">"+esc(x)+"</th>").join("")+"</tr></thead><tbody>";
+      for(const r of rows)h+="<tr>"+r.show.map((c,i)=>"<td"+numCls(i)+">"+(r.html===i?c:esc(c))+"</td>").join("")+"</tr>";
+      h+="</tbody>";
+      if(v.sum){
+        h+="<tfoot><tr>"+v.head.map((x,i)=>{
+          if(i===0)return "<td>Total</td>";
+          if(!v.sum.includes(i))return "<td></td>";
+          const t=rows.reduce((a,r)=>a+num(r.data[i]),0);
+          return '<td class="num">'+((v.money||[]).includes(i)?rupees(t):fmt(t))+"</td>";
+        }).join("")+"</tr></tfoot>";
+      }
+      box.innerHTML=h+"</table>";
+    }
+
+    function renderKpis(){
+      let saleCases=0,damaged=0,low=0;
+      for(const b of live){const pack=Math.max(1,num(b.pcs_per_case)),c=Math.floor(Math.max(0,num(b.saleable_pcs))/pack);saleCases+=c;damaged+=num(b.damaged_pcs);if(c<LOW_CASES)low++}
+      const inPcs=inLines.reduce((a,x)=>a+x.pcs,0),outCases=outLines.reduce((a,x)=>a+x.cases,0);
+      const invoices=new Set(inLines.map(x=>x.ref+"|"+x.party)).size,pos=new Set(outLines.map(x=>x.ref)).size;
+      const k=[
+        ["stock","","SKUs in Stock",fmt(live.filter(b=>num(b.saleable_pcs)>0).length),fmt(live.length)+" SKUs total"],
+        ["stock","green","Saleable Cases",fmt(saleCases),"Full cases in Main Godown"],
+        ["stock","red","Low / Out of Stock",fmt(low),"Under "+LOW_CASES+" cases"],
+        ["in","blue","Stock In (period)",fmt(inPcs)+" PCS",fmt(invoices)+" purchase invoices"],
+        ["out","","Stock Out (period)",fmt(outCases)+" CS",fmt(pos)+" POs loaded"]
+      ];
+      if(damaged)k[2][4]+=" · "+fmt(damaged)+" damaged PCS";
+      el("kpis").innerHTML=k.map(x=>'<button type="button" class="inv-kpi '+x[1]+'" data-tab="'+x[0]+'"><span>'+esc(x[2])+"</span><b>"+esc(x[3])+"</b><small>"+esc(x[4])+"</small></button>").join("");
+    }
+
+    const TABS=[["stock","Saleable Stock",()=>live.length],["in","Stock In (Purchase)",()=>inLines.length],["out","Stock Out (Dispatch)",()=>outLines.length],["moves","Stock Movements",()=>moves.length]];
+    function renderTabs(){
+      el("tabs").innerHTML=TABS.map(([id,label,n])=>'<button type="button" class="erp-pill'+(id===tab?" active":"")+'" data-tab="'+id+'">'+esc(label)+'<span class="n">'+fmt(n())+"</span></button>").join("");
+    }
+    function setTab(id){tab=id;try{localStorage.setItem("lwb_inventory_tab",id)}catch(e){}render()}
+
+    function loadScript(src){return new Promise((ok,fail)=>{const t=document.createElement("script");t.src=src;t.onload=ok;t.onerror=()=>fail(Error("Could not load Excel tool. Check internet."));document.head.appendChild(t)})}
+    async function exportExcel(){
+      try{
+        if(!current||current.err||!current.rows.length){await ERPShell.alert("Nothing to export for this report.");return}
+        if(!window.XLSX)await loadScript("https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js");
+        const range=shortDate(el("from").value)+" to "+shortDate(el("to").value);
+        const sheet=XLSX.utils.aoa_to_sheet([["LUXURY WRIST BRAND — "+current.title],[range],[],current.head,...current.rows.map(r=>r.data)]);
+        sheet["!cols"]=current.head.map(h=>({wch:/SKU|Supplier|Party|Reference/.test(h)?30:15}));
+        const book=XLSX.utils.book_new();XLSX.utils.book_append_sheet(book,sheet,"Inventory");
+        XLSX.writeFile(book,"Inventory-"+tab+"-"+el("to").value+".xlsx");
+      }catch(e){await ERPShell.alert("Excel export failed: "+e.message)}
+    }
+
+    (async()=>{
+      const me=await start(["admin","manager","warehouse","accounts"]);if(!me)return;
+      ERPShell.mount({role:me.role,name:me.name,onLogout:logout,group:"Inventory",title:"Inventory"});
+      const now=new Date(),past=new Date(now.getTime()-29*864e5);
+      el("to").value=isoDay(now);el("from").value=isoDay(past);
+      try{const t=localStorage.getItem("lwb_inventory_tab");if(TABS.some(x=>x[0]===t))tab=t}catch(e){}
+      const p=new URLSearchParams(location.search).get("tab");if(TABS.some(x=>x[0]===p))tab=p;
+      document.addEventListener("click",e=>{const b=e.target.closest("[data-tab]");if(b)setTab(b.dataset.tab)});
+      el("q").addEventListener("input",render);
+      el("refresh").onclick=loadAll;
+      el("excel").onclick=exportExcel;
+      el("from").addEventListener("change",loadAll);el("to").addEventListener("change",loadAll);
+      el("loading").hidden=true;el("page").hidden=false;
+      await loadAll();
+    })();
+  </script>
+</body>
+</html>
