@@ -17,7 +17,7 @@
     const H1=46,H2=46,H3=48,RH=46,TH=H1+H2+H3+RH*o.rows.length,S=2;
     const cv=document.createElement("canvas");cv.width=(TW+1)*S;cv.height=(TH+1)*S;
     const g=cv.getContext("2d");g.scale(S,S);
-    g.fillStyle="#fff";g.fillRect(0,0,TW,TH);
+    g.fillStyle="#fff";g.fillRect(0,0,TW+1,TH+1);
     const xs=[0];W.forEach(w=>xs.push(xs[xs.length-1]+w));
     const text=(t,x,y,w,h,size,color,weight)=>{g.fillStyle=color||"#000";g.font=(weight||"bold")+" "+size+"px "+FONT;g.textAlign="center";g.textBaseline="middle";
       let s=size;while(g.measureText(t).width>w-10&&s>12){s--;g.font=(weight||"bold")+" "+s+"px "+FONT}g.fillText(t,x+w/2,y+h/2+1)};
