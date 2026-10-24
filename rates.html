@@ -36,6 +36,8 @@
     .rt-note{font-size:12.5px;color:var(--erp-muted);margin:10px 2px 0}
     .rt-add{margin:10px 0 0;border:1px dashed var(--erp-line);background:#fff;color:var(--erp-ink);border-radius:6px;padding:7px 14px;cursor:pointer;font-weight:600}
     .rt-hist-head{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+    .rt-table select{height:28px;border:1px solid var(--erp-line);border-radius:5px;font:inherit;min-width:220px;background:#fff}
+    .rt-add:disabled{opacity:.45;cursor:not-allowed}
     .rt-hist-head select{height:34px;border:1.5px solid var(--erp-line);border-radius:6px;padding:0 8px;font:inherit}
     @media(max-width:640px){.rt-bar>div:not(.grow){flex:1 1 40%}.rt-bar input[type=number]{width:100%}.rt-bar button,.rt-file{flex:1 1 40%;justify-content:center}}
     [hidden]{display:none!important}
@@ -70,6 +72,7 @@
     const SLAB_CH=["SELF PICKUP","DIRECT VEHICLE","12 PALLET","HIGH VOLUME PARTY","MARKET RATE"];
     const SNAP_KEYS=["gr","mepd","fb","oms","qps","roi","land","s1","s2","s3","s4"];
 
+    let skus=[],links=new Map(),linksSaved="",linkErr="",backupLinks=null;
     let me=null,settings={mepd_pct:1.25,roi_main:0,roi_landing:5},packs=[],history=[],saved="",tab="landing",busy=false,importedLedger=null;
 
     const n=v=>(v===""||v==null||isNaN(+v))?0:+v;
@@ -123,7 +126,7 @@
       if(d){s.textContent="Badlav save nahi hue";s.className="rt-state dirty"}
       else{const h=history[0];s.textContent=h?"Last save: "+dtTxt(h.created_at):"";s.className="rt-state ok"}
     }
-    window.addEventListener("beforeunload",e=>{if(isDirty()){e.preventDefault();e.returnValue=""}});
+    window.addEventListener("beforeunload",e=>{if(isDirty()||linksDirty()){e.preventDefault();e.returnValue=""}});
 
     async function load(){
       const [s,p,h]=await Promise.all([
@@ -139,16 +142,68 @@
         slab_landing:numOrBlank(x.slab_landing),slab_margins:[0,1,2,3,4].map(i=>numOrBlank((x.slab_margins||[])[i])),active:x.active!==false})).sort((a,b)=>a.sort_no-b.sort_no||a.pack_name.localeCompare(b.pack_name));
       history=h.data||[];
       saved=stateNow();
+      await loadLinks();
       el("mepd").value=settings.mepd_pct;el("roi").value=settings.roi_main;el("roi5").value=settings.roi_landing;
       render();
     }
 
+    /* ---------- SKU link: which pack each ERP SKU uses on the PO page ---------- */
+    const skuKey=v=>String(v||"").trim().toUpperCase();
+    const loose=v=>skuKey(v).replace(/[^A-Z0-9]/g,"");
+    async function loadLinks(){
+      linkErr="";
+      const [m,l]=await Promise.all([
+        client.from("sku_master").select("sku_name,is_active").eq("is_active",true),
+        client.from("lwb_rate_pack_skus").select("sku_key,pack_id")
+      ]);
+      skus=[...new Set((m.data||[]).map(x=>String(x.sku_name||"").trim()).filter(Boolean))].sort((a,b)=>a.localeCompare(b));
+      if(l.error){linkErr=l.error.message;links=new Map()}
+      else links=new Map((l.data||[]).map(x=>[x.sku_key,x.pack_id]));
+      linksSaved=linkSig();
+    }
+    const linkSig=()=>JSON.stringify([...links].sort());
+    const linksDirty=()=>linkSig()!==linksSaved;
+    function suggestPack(name){
+      const k=loose(name);if(!k)return null;
+      if(backupLinks&&backupLinks.has(skuKey(name))){const p=packs.find(x=>x.id&&skuKey(x.pack_name)===backupLinks.get(skuKey(name)));if(p)return p}
+      return packs.find(x=>x.id&&loose(x.pack_name)===k)||null;
+    }
+    function renderLinks(){
+      el("tabTitle").textContent="SKU Link";
+      const done=skus.filter(x=>links.has(skuKey(x))).length;
+      el("tabInfo").textContent=done+" / "+skus.length+" SKU linked";
+      el("tabNote").textContent="PO / Sales Order Entry par SKU chunte hi isi pack ka slab rate aata hai. Jo SKU link nahi hai, uska rate salesman khud bharega. Naya pack pehle Landing / Rate tab mein Save karo, phir yahan link karo.";
+      if(linkErr){el("box").innerHTML='<div class="erp-empty">SKU link table abhi bani nahi hai: '+esc(linkErr)+'<br>Supabase mein lwb_order_rates_setup.sql chalao.</div>';return}
+      const opts=packs.filter(p=>p.id&&p.active!==false);
+      let h='<div class="erp-card-body rt-hist-head"><button type="button" class="rt-add" style="margin:0" id="linkAuto">Naam se milao (khaali wale)</button>'+
+        '<button type="button" class="rt-add" style="margin:0;border-style:solid;background:var(--erp-red);color:#fff;border-color:var(--erp-red)" id="linkSave"'+(linksDirty()?"":" disabled")+'>Link save karo</button>'+
+        '<span class="rt-state '+(linksDirty()?"dirty":"ok")+'">'+(linksDirty()?"Link badle, save nahi hue":"")+"</span></div>";
+      h+='<table class="rt-table"><thead><tr><th>#</th><th class="l">ERP SKU (SKU Master)</th><th class="l">RATE PACK</th><th>SLAB 3 RATE</th></tr></thead><tbody>';
+      skus.forEach((x,i)=>{
+        const id=links.get(skuKey(x))||"",p=packs.find(q=>q.id===id);
+        h+="<tr"+(id?"":' class="off"')+"><td>"+(i+1)+'</td><td class="l">'+esc(x)+'</td><td class="l"><select data-link="'+esc(x)+'"><option value="">— link nahi —</option>'+
+          opts.map(q=>'<option value="'+q.id+'"'+(q.id===id?" selected":"")+">"+esc(q.pack_name)+"</option>").join("")+"</select></td><td>"+(p?fmt(p.slab3_rate):"")+"</td></tr>";
+      });
+      if(!skus.length)h+='<tr><td colspan="4" class="l">SKU Master mein koi active SKU nahi.</td></tr>';
+      el("box").innerHTML=h+"</tbody></table>";
+    }
+    async function saveLinks(){
+      const before=new Map(JSON.parse(linksSaved||"[]"));
+      const keys=new Set([...before.keys(),...links.keys()]);
+      const payload=[...keys].filter(k=>before.get(k)!==links.get(k)).map(k=>({sku_name:k,pack_id:links.get(k)||null}));
+      if(!payload.length)return;
+      const {error}=await client.rpc("lwb_link_rate_skus",{p_links:payload});
+      if(error){await ERPShell.alert("Link save nahi hue: "+error.message);return}
+      await loadLinks();renderLinks();
+      ERPShell.toast(payload.length+" SKU link save ho gaye.","success");
+    }
+
     /* ---------- tabs ---------- */
-    const TABS=[["landing","Landing / Rate"],["slab","Slab"],["ledger","Rate Ledger"]];
+    const TABS=[["landing","Landing / Rate"],["slab","Slab"],["links","SKU Link"],["ledger","Rate Ledger"]];
     function renderTabs(){el("tabs").innerHTML=TABS.map(([id,l])=>'<button type="button" class="erp-pill'+(id===tab?" active":"")+'" data-tab="'+id+'">'+esc(l)+"</button>").join("")}
     function render(){
       renderTabs();
-      if(tab==="landing")renderLanding();else if(tab==="slab")renderSlab();else renderLedger();
+      if(tab==="landing")renderLanding();else if(tab==="slab")renderSlab();else if(tab==="links")renderLinks();else renderLedger();
       showState();
     }
 
@@ -228,10 +283,14 @@
       const t=e.target;
       if(t.type==="checkbox"&&t.dataset.f==="active"){packs[+t.dataset.i].active=t.checked;render();return}
       if(t.id==="ledSku"){ledSku=+t.value;renderLedger();return}
+      if(t.dataset.link!=null){const k=skuKey(t.dataset.link);if(t.value)links.set(k,t.value);else links.delete(k);renderLinks();return}
       if(t.id==="importFile"){importBackup(t.files[0]);t.value=""}
     });
     document.addEventListener("click",e=>{
       const b=e.target.closest("[data-tab]");if(b){tab=b.dataset.tab;render();return}
+      if(e.target.id==="linkSave"){saveLinks();return}
+      if(e.target.id==="linkAuto"){let c=0;for(const x of skus){if(links.has(skuKey(x)))continue;const p=suggestPack(x);if(p){links.set(skuKey(x),p.id);c++}}
+        renderLinks();ERPShell.toast(c?c+" SKU mil gaye. Check karke \"Link save karo\" dabao.":"Naam se koi naya SKU nahi mila.",c?"success":"info");return}
       if(e.target.id==="addPack"){packs.push({pack_name:"",sort_no:packs.length,case_config:0,gr:0,mepd_pct:"",free_bottle:0,oms:"",qps:0,slab3_rate:0,unit_weight:"",bottle:"",slab_landing:"",slab_margins:["","","","",""],active:true});render();
         const ins=document.querySelectorAll('input[data-f="pack_name"]');if(ins.length)ins[ins.length-1].focus()}
     });
@@ -292,6 +351,8 @@
           qps:n(r.qps),slab3_rate:n(r.s3),unit_weight:numOrBlank(sl.wt),bottle:numOrBlank(sl.bt),slab_landing:numOrBlank(sl.land),slab_margins:[0,1,2,3,4].map(j=>numOrBlank((sl.m||[])[j]))});
       });
       packs.sort((a,b)=>n(a.sort_no)-n(b.sort_no));
+      // PO Maker's Party PO SKU list says which landing pack each SKU uses.
+      if(Array.isArray(S.poDef))backupLinks=new Map(S.poDef.filter(d=>d&&d.name&&S.landing[d.li]).map(d=>[skuKey(d.name),skuKey(S.landing[d.li].name)]));
       importedLedger=!history.length&&Array.isArray(S.ledger)&&S.ledger.length?S.ledger.map(L=>({dt:L.dt,note:L.note,rows:L.rows||[],settings:{}})):null;
       el("mepd").value=settings.mepd_pct;el("roi").value=settings.roi_main;el("roi5").value=settings.roi_landing;
       if(!el("note").value)el("note").value="PO Maker se import";
