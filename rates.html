@@ -166,7 +166,24 @@
     function suggestPack(name){
       const k=loose(name);if(!k)return null;
       if(backupLinks&&backupLinks.has(skuKey(name))){const p=packs.find(x=>x.id&&skuKey(x.pack_name)===backupLinks.get(skuKey(name)));if(p)return p}
-      return packs.find(x=>x.id&&loose(x.pack_name)===k)||null;
+      return packs.find(x=>x.id&&loose(x.pack_name)===k)||packByShape(name);
+    }
+    // "250ML COKE 1X28 MRP 20" -> pack "250ML CSD MRP.20": same size, MRP, can / not can and
+    // product tag (MZ, KS, KW, MONSTER ...); plain cola SKUs go to the untagged (CSD) pack.
+    // Only a single clear match is used; anything else stays for the person to pick.
+    const TAGS=[["MZ",/\bMZ\b|MAAZA/],["MMPO",/MMPO|PULPY|MINUTE ?MAID/],["KS",/\bKS\b|SODA/],["KW",/\bKW\b|WATER/],["MONSTER",/MONSTER/],["UL",/\bUL\b|ULTRA/],
+      ["PREDATOR",/PRE?D[AE]{1,2}TOR|PEADETOR/],["TONIC",/TONIC/],["DIET",/DIET/],["ZERO",/ZERO/],["RIMZIM",/RIMZ?J?H?IM/]];
+    function shape(v){
+      const t=skuKey(v).replace(/MRP[.\s]*(\d+)/,(m,x)=>" MRP"+x+" ");
+      const sz=t.match(/(\d+(?:\.\d+)?)\s*(ML|LTR|L)?\b/),mrp=(t.match(/MRP(\d+)/)||[])[1];
+      return {size:sz?(+sz[1])*(/^L/.test(sz[2]||"")?1000:1):null,mrp:mrp?+mrp:null,can:/\bCAN\b|CAN\./.test(t)||/^CAN/.test(t),
+        tags:TAGS.filter(([,re])=>re.test(t)).map(([k])=>k).join(",")};
+    }
+    function packByShape(name){
+      const a=shape(name);if(a.size==null)return null;
+      const hits=packs.filter(p=>{if(!p.id||p.active===false)return false;const b=shape(p.pack_name);
+        return b.size===a.size&&b.can===a.can&&b.tags===a.tags&&(a.mrp==null||b.mrp==null||a.mrp===b.mrp)});
+      return hits.length===1?hits[0]:null;
     }
     function renderLinks(){
       el("tabTitle").textContent="SKU Link";
@@ -230,7 +247,9 @@
           '<td><input type="checkbox" data-i="'+i+'" data-f="active"'+(r.active!==false?" checked":"")+(me.edit?"":" disabled")+"></td></tr>";
       });
       h+="</tbody></table>";
-      if(me.edit)h+='<button type="button" class="rt-add" id="addPack">+ Naya pack</button> <button type="button" class="rt-add" id="packsFromSku">SKU Master se packs banao</button>';
+      if(me.edit)h+='<button type="button" class="rt-add" id="addPack">+ Naya pack</button> <button type="button" class="rt-add" id="pasteOpen">Excel se paste</button> <button type="button" class="rt-add" id="packsFromSku">SKU Master se packs banao</button>';
+      if(me.edit&&pasteOpen)h+='<div class="erp-card-body"><div style="font-size:12px;color:#555;margin-bottom:6px">Rate sheet ki rows copy karke yahan paste karo (heading ke saath bhi chalega). Columns: # · PACK · CASE CONFIG · GR · MEPD · FREE BOTTLE · OMS · QPS · ROI · LANDING · Slab 1-4 margin / MGR rate. Slab 3 MGR rate liya jaayega. Same naam ka pack update hoga, naya naam naya pack.</div>'+
+        '<textarea id="pasteBox" rows="8" style="width:100%;font:12px monospace"></textarea><div style="margin-top:6px"><button type="button" class="rt-add" style="margin:0;border-style:solid;background:var(--erp-red);color:#fff;border-color:var(--erp-red)" id="pasteApply">Packs bharo</button> <button type="button" class="rt-add" style="margin:0" id="pasteClose">Band karo</button></div></div>';
       el("box").innerHTML=h;
       if(!packs.length)el("box").insertAdjacentHTML("afterbegin",'<div class="erp-empty">Abhi koi pack nahi. Upar "PO Maker backup import" se purana data laao, ya "+ Naya pack" dabao.</div>');
     }
@@ -297,6 +316,9 @@
       if(e.target.id==="linkAuto"){let c=0;for(const x of skus){if(links.has(skuKey(x)))continue;const p=suggestPack(x);if(p){links.set(skuKey(x),p.id);c++}}
         renderLinks();ERPShell.toast(c?c+" SKU mil gaye. Check karke \"Link save karo\" dabao.":"Naam se koi naya SKU nahi mila.",c?"success":"info");return}
       if(e.target.id==="packsFromSku"){packsFromSku();return}
+      if(e.target.id==="pasteOpen"){pasteOpen=true;render();const t=el("pasteBox");if(t)t.focus();return}
+      if(e.target.id==="pasteClose"){pasteOpen=false;render();return}
+      if(e.target.id==="pasteApply"){applyPaste(el("pasteBox").value);return}
       if(e.target.id==="addPack"){packs.push({pack_name:"",sort_no:packs.length,case_config:0,gr:0,mepd_pct:"",free_bottle:0,oms:"",qps:0,slab3_rate:0,unit_weight:"",bottle:"",slab_landing:"",slab_margins:["","","","",""],active:true});render();
         const ins=document.querySelectorAll('input[data-f="pack_name"]');if(ins.length)ins[ins.length-1].focus()}
     });
@@ -332,6 +354,36 @@
       autoLinkAfterSave=true;tab="landing";render();
       const linked=[...groups.values()].reduce((a,l)=>a+l.length,0);
       ERPShell.toast(added+" naye pack bane, "+linked+" SKU unse judenge. GR / Slab 3 rate bharo aur Save dabao.","success");
+    }
+    /* ---------- paste the rate sheet from Excel ---------- */
+    let pasteOpen=false;
+    const num=v=>{v=String(v??"").replace(/[,₹\s]/g,"");return v===""||isNaN(+v)?null:+v};
+    async function applyPaste(text){
+      const rows=[];
+      for(const line of String(text||"").split(/\r?\n/)){
+        const c=line.split("\t").map(x=>x.trim());
+        // "1 <tab> 300ML CSD MRP.20 <tab> 28 ..." or "300ML CSD MRP.20 <tab> 28 ..."
+        const o=(/^\d+$/.test(c[0]||"")&&c[1]&&num(c[1])==null)?1:0;
+        const name=c[o]||"",cc=num(c[o+1]),gr=num(c[o+2]);
+        if(!name||num(name)!=null||cc==null||gr==null)continue;
+        rows.push({name:name.replace(/\s+/g," "),cc,gr,mepd:num(c[o+3]),fb:num(c[o+4])||0,oms:num(c[o+5]),qps:num(c[o+6])||0,land:num(c[o+8]),s3:num(c[o+14])});
+      }
+      if(!rows.length){await ERPShell.alert("Koi pack row nahi mili. Excel se PACK wali rows (CASE CONFIG, GR ke saath) copy karke paste karo.");return}
+      packs=packs.filter(p=>p.id||String(p.pack_name||"").trim());
+      let added=0,updated=0;const off=[];
+      for(const r of rows){
+        let p=packs.find(q=>loose(q.pack_name)===loose(r.name));
+        if(!p){p={pack_name:r.name,sort_no:packs.length,case_config:0,gr:0,mepd_pct:"",free_bottle:0,oms:"",qps:0,slab3_rate:0,unit_weight:"",bottle:"",slab_landing:"",slab_margins:["","","","",""],active:true};packs.push(p);added++}else updated++;
+        p.case_config=r.cc;p.gr=r.gr;p.free_bottle=r.fb;p.qps=r.qps;
+        const pct=r.gr&&r.mepd!=null?r.mepd/r.gr*100:null;
+        p.mepd_pct=pct==null||Math.abs(pct-n(settings.mepd_pct))<0.02?"":r2(pct*100)/100;
+        p.oms=r.fb>0?"":(r.oms==null?"":r.oms);
+        if(r.s3!=null)p.slab3_rate=r.s3;
+        if(r.land!=null&&Math.abs(calcLanding(p).J-r.land)>1)off.push(r.name);
+      }
+      pasteOpen=false;autoLinkAfterSave=true;render();
+      ERPShell.toast(added+" naye pack, "+updated+" update hue. Check karke Save dabao; Save ke baad SKU apne aap link honge.","success");
+      if(off.length)await ERPShell.alert("In packs ki landing Excel se 1 rupaye se zyada alag aa rahi hai, check karo:\n"+off.join("\n"));
     }
     async function linkPendingSkus(){
       autoLinkAfterSave=false;let c=0;
