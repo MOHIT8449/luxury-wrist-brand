@@ -8,6 +8,7 @@
   <link rel="stylesheet" href="erp-shell.css">
   <script src="erp-shell.js"></script>
   <script src="pack-match.js"></script>
+  <script src="mepd-scheme.js"></script>
   <style>
     .status{text-align:center;padding:80px 20px;font-size:15px;color:#555}
     .rt-sub{margin:-8px 0 14px;color:var(--erp-muted);font-size:13px}
@@ -51,7 +52,7 @@
     <p class="rt-sub">Company GR, MEPD, OMS, QPS, ROI aur slab rate. Har save par badlav date ke saath Rate Ledger mein jaata hai. Sirf Admin aur Manager dekh sakte hain.</p>
 
     <div class="rt-bar">
-      <div><label for="mepd">MEPD %</label><input id="mepd" type="number" step="0.01"></div>
+      <div><label for="mepd">MEPD % (scheme na ho to)</label><input id="mepd" type="number" step="0.01"></div>
       <div><label for="roi">ROI (per case, main)</label><input id="roi" type="number" step="0.01"></div>
       <div><label for="roi5">ROI wala landing</label><input id="roi5" type="number" step="0.01"></div>
       <div class="grow"><label for="note">Note (jaise "Company budget 24 Oct")</label><input id="note" maxlength="200" placeholder="Kya badla, kisne bataya"></div>
@@ -73,6 +74,7 @@
     const SLAB_CH=["SELF PICKUP","DIRECT VEHICLE","12 PALLET","HIGH VOLUME PARTY","MARKET RATE"];
     const SNAP_KEYS=["gr","mepd","fb","oms","qps","roi","land","s1","s2","s3","s4"];
 
+    let schemes=[],schemeErr="",skuCat=new Map(),cats=[],schemeForm={cats:[],pct:"",from:"",to:"",note:""};
     let skus=[],links=new Map(),linksSaved="",linkErr="",backupLinks=null;
     let me=null,settings={mepd_pct:1.25,roi_main:0,roi_landing:5},packs=[],history=[],saved="",tab="landing",busy=false,importedLedger=null;
 
@@ -97,7 +99,8 @@
     /* Same formulas as the CC PO Maker LANDING sheet */
     function calcLanding(r,roi){
       const C=n(r.case_config),D=n(r.gr),F=n(r.free_bottle),H=n(r.qps),I=n(roi!=null?roi:settings.roi_main);
-      const E=D*(blank(r.mepd_pct)?n(settings.mepd_pct):n(r.mepd_pct))/100;
+      const sc=packScheme(r);
+      const E=D*(sc?n(sc.mepd_pct):blank(r.mepd_pct)?n(settings.mepd_pct):n(r.mepd_pct))/100;
       const base=D-E-H-I-((C?D/C:0)-1)*F;
       const P=n(r.slab3_rate),L=P+5,N=P-5,R=P-5;
       let G,J,mg;
@@ -110,6 +113,12 @@
         G=n(r.oms);J=D-E-G-H-I;mg=rate=>r2(rate-J);
       }
       return {E,G,J,K:mg(L),L,M:mg(N),N,O:mg(P),P,Q:R-J,R};
+    }
+    // Today's MEPD scheme for the categories of the SKUs linked to this pack.
+    function packScheme(r){
+      if(!r.id||!schemes.length)return null;let best=null;
+      for(const [k,id] of links)if(id===r.id){const s=LWBMepd.find(schemes,skuCat.get(k));if(s&&(!best||String(s.created_at)>String(best.created_at)))best=s}
+      return best;
     }
     function snapRows(){
       return packs.filter(p=>p.active!==false).map(r=>{const c=calcLanding(r);
@@ -143,9 +152,66 @@
         slab_landing:numOrBlank(x.slab_landing),slab_margins:[0,1,2,3,4].map(i=>numOrBlank((x.slab_margins||[])[i])),active:x.active!==false})).sort((a,b)=>a.sort_no-b.sort_no||a.pack_name.localeCompare(b.pack_name));
       history=h.data||[];
       saved=stateNow();
-      await loadLinks();
+      await loadLinks();await loadSchemes();
       el("mepd").value=settings.mepd_pct;el("roi").value=settings.roi_main;el("roi5").value=settings.roi_landing;
       render();
+    }
+
+    /* ---------- MEPD scheme: % for chosen categories for a period ---------- */
+    async function loadSchemes(){
+      const [sc,cm]=await Promise.all([
+        client.from("lwb_mepd_schemes").select("*").order("valid_from",{ascending:false}),
+        client.from("sku_master").select("sku_name,category").eq("is_active",true)
+      ]);
+      schemeErr=sc.error?sc.error.message:"";schemes=sc.data||[];
+      skuCat=new Map((cm.data||[]).filter(x=>x.category).map(x=>[skuKey(x.sku_name),LWBMepd.up(x.category)]));
+      cats=[...new Set(skuCat.values())].sort();
+    }
+    const ymd=d=>d.toLocaleDateString("en-CA",{timeZone:"Asia/Kolkata"});
+    function quickRange(kind){
+      const t=new Date(LWBMepd.day()+"T00:00:00");let a=new Date(t),b=new Date(t);
+      if(kind==="week"){const dow=(t.getDay()+6)%7;a.setDate(t.getDate()-dow);b=new Date(a);b.setDate(a.getDate()+6)}
+      if(kind==="month"){a=new Date(t.getFullYear(),t.getMonth(),1);b=new Date(t.getFullYear(),t.getMonth()+1,0)}
+      const f=d=>d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
+      schemeForm.from=f(a);schemeForm.to=f(b);
+    }
+    function renderSchemes(){
+      el("tabTitle").textContent="MEPD Scheme";
+      const today=LWBMepd.day(),live=schemes.filter(s=>s.valid_from<=today&&today<=s.valid_to);
+      el("tabInfo").textContent=live.length+" scheme aaj chalu";
+      el("tabNote").textContent="Company jis category par jitne din ke liye MEPD % de, woh yahan daalo. Us category ke SKU ka landing (yahan aur PO Entry par) usi % se banega. Scheme na ho to pack ka MEPD % ya upar wala MEPD % lagega. Ek category par do scheme ho to baad wali lagegi.";
+      if(schemeErr){el("box").innerHTML='<div class="erp-empty">MEPD scheme table abhi bani nahi hai: '+esc(schemeErr)+'<br>Supabase mein lwb_mepd_scheme_setup.sql chalao.</div>';return}
+      const F=schemeForm;
+      let h='<div class="erp-card-body"><div style="font-weight:600;margin-bottom:6px">Category chuno</div>';
+      h+=cats.length?'<div style="display:flex;flex-wrap:wrap;gap:6px 14px">'+cats.map(c=>'<label style="display:flex;gap:5px;align-items:center;font-size:13px"><input type="checkbox" data-scat="'+esc(c)+'"'+(F.cats.includes(c)?" checked":"")+">"+esc(c)+"</label>").join("")+
+        '</div><div style="margin:6px 0"><button type="button" class="rt-add" style="margin:0" id="scAll">Sab chuno</button> <button type="button" class="rt-add" style="margin:0" id="scNone">Koi nahi</button></div>'
+        :'<div class="erp-empty">SKU Master mein kisi SKU ki category nahi bhari. Pehle SKU Master mein category bharo.</div>';
+      h+='<div class="rt-bar" style="margin-top:8px"><div><label for="scPct">MEPD %</label><input id="scPct" type="number" step="0.01" min="0" max="100" value="'+esc(F.pct)+'"></div>'+
+        '<div><label for="scFrom">Kab se</label><input id="scFrom" type="date" value="'+esc(F.from)+'"></div><div><label for="scTo">Kab tak</label><input id="scTo" type="date" value="'+esc(F.to)+'"></div>'+
+        '<div style="align-self:flex-end"><button type="button" class="rt-add" style="margin:0" data-range="day">Aaj</button> <button type="button" class="rt-add" style="margin:0" data-range="week">Is hafte</button> <button type="button" class="rt-add" style="margin:0" data-range="month">Is mahine</button></div>'+
+        '<div class="grow"><label for="scNote">Note</label><input id="scNote" maxlength="200" value="'+esc(F.note)+'" placeholder="Company ka message / circular"></div>'+
+        '<button type="button" id="scAdd">Scheme add karo</button></div></div>';
+      h+='<table class="rt-table"><thead><tr><th class="l">CATEGORY</th><th>MEPD %</th><th>KAB SE</th><th>KAB TAK</th><th class="l">NOTE</th><th>STATUS</th><th></th></tr></thead><tbody>';
+      for(const s of schemes){const st=s.valid_to<today?"Khatam":s.valid_from>today?"Aane wala":"Chalu";
+        h+='<tr class="'+(st==="Khatam"?"off":"")+'"><td class="l">'+esc((s.categories||[]).join(", "))+"</td><td>"+fmt(s.mepd_pct,2)+"</td><td>"+esc(s.valid_from)+"</td><td>"+esc(s.valid_to)+'</td><td class="l">'+esc(s.note||"")+"</td><td"+(st==="Chalu"?' class="strong"':"")+">"+st+'</td><td><button type="button" class="rt-add" style="margin:0" data-scdel="'+esc(s.id)+'">Hatao</button></td></tr>'}
+      if(!schemes.length)h+='<tr><td colspan="7" class="l">Abhi koi MEPD scheme nahi.</td></tr>';
+      el("box").innerHTML=h+"</tbody></table>";
+    }
+    async function addScheme(){
+      const F=schemeForm,pct=+F.pct;
+      if(!F.cats.length){await ERPShell.alert("Kam se kam ek category chuno.");return}
+      if(F.pct===""||!(pct>=0&&pct<=100)){await ERPShell.alert("MEPD % 0 se 100 ke beech bharo.");return}
+      if(!F.from||!F.to||F.to<F.from){await ERPShell.alert("Kab se / Kab tak sahi bharo.");return}
+      const {error}=await client.from("lwb_mepd_schemes").insert({categories:F.cats,mepd_pct:pct,valid_from:F.from,valid_to:F.to,note:F.note.trim()||null});
+      if(error){await ERPShell.alert("Scheme save nahi hui: "+error.message);return}
+      schemeForm={cats:[],pct:"",from:"",to:"",note:""};await loadSchemes();render();ERPShell.toast("MEPD scheme save ho gayi.","success");
+    }
+    async function delScheme(id){
+      const s=schemes.find(x=>x.id===id);if(!s)return;
+      if(!await ERPShell.confirm("Ye scheme hatani hai? "+(s.categories||[]).join(", ")+" · "+s.mepd_pct+"% · "+s.valid_from+" se "+s.valid_to))return;
+      const {error}=await client.from("lwb_mepd_schemes").delete().eq("id",id);
+      if(error){await ERPShell.alert("Scheme hati nahi: "+error.message);return}
+      await loadSchemes();render();
     }
 
     /* ---------- SKU link: which pack each ERP SKU uses on the PO page ---------- */
@@ -201,11 +267,11 @@
     }
 
     /* ---------- tabs ---------- */
-    const TABS=[["landing","Landing / Rate"],["slab","Slab"],["links","SKU Link"],["ledger","Rate Ledger"]];
+    const TABS=[["landing","Landing / Rate"],["mepd","MEPD Scheme"],["slab","Slab"],["links","SKU Link"],["ledger","Rate Ledger"]];
     function renderTabs(){el("tabs").innerHTML=TABS.map(([id,l])=>'<button type="button" class="erp-pill'+(id===tab?" active":"")+'" data-tab="'+id+'">'+esc(l)+"</button>").join("")}
     function render(){
       renderTabs();
-      if(tab==="landing")renderLanding();else if(tab==="slab")renderSlab();else if(tab==="links")renderLinks();else renderLedger();
+      if(tab==="landing")renderLanding();else if(tab==="mepd")renderSchemes();else if(tab==="slab")renderSlab();else if(tab==="links")renderLinks();else renderLedger();
       showState();
     }
 
@@ -218,14 +284,14 @@
     function renderLanding(){
       el("tabTitle").textContent="Landing / Rate";
       el("tabInfo").textContent=packs.filter(p=>p.active!==false).length+" pack";
-      el("tabNote").textContent="Slab 3 MGR rate bharo; Slab 1 = +5, Slab 2 aur 4 = −5. MEPD % khaali = upar wala MEPD. OMS khaali = free bottle formula se. Active hatao to pack band ho jaayega (delete nahi hota).";
+      el("tabNote").textContent="Slab 3 MGR rate bharo; Slab 1 = +5, Slab 2 aur 4 = −5. MEPD % khaali = upar wala MEPD; lal Scheme % dikhe to aaj MEPD Scheme wala % lag raha hai. OMS khaali = free bottle formula se. Active hatao to pack band ho jaayega (delete nahi hota).";
       let h='<table class="rt-table"><thead><tr><th>#</th><th class="l">PACK</th><th>CASE CONFIG</th><th>GR</th><th>MEPD %</th><th>MEPD</th><th>FREE BOTTLE</th><th>OMS</th><th>QPS</th><th>ROI</th><th>LANDING<small>bina ROI</small></th><th>LANDING<small>ROI '+esc(settings.roi_landing)+"</small></th>"+
         SLAB_NAMES.map((s,i)=>"<th>SLAB "+(i+1)+" MARGIN<small>"+esc(s)+"</small></th><th>MGR RATE</th>").join("")+"<th>Active</th></tr></thead><tbody>";
       packs.forEach((r,i)=>{
         const c=calcLanding(r),c5=calcLanding(r,settings.roi_landing),fb=n(r.free_bottle)>0;
         h+='<tr class="'+(r.active===false?"off":"")+'"><td>'+(i+1)+'</td><td class="l">'+cellInput(i,"pack_name",r.pack_name,"name")+packSkus(r)+"</td>"+
           "<td>"+cellInput(i,"case_config",r.case_config)+"</td><td>"+cellInput(i,"gr",r.gr)+"</td>"+
-          "<td>"+cellInput(i,"mepd_pct",r.mepd_pct).replace("<input",'<input placeholder="'+esc(settings.mepd_pct)+'"')+"</td><td>"+fmt(c.E,2)+"</td>"+
+          "<td>"+cellInput(i,"mepd_pct",r.mepd_pct).replace("<input",'<input placeholder="'+esc(settings.mepd_pct)+'"')+((sc=>sc?'<div style="font-size:11px;color:#b42318;white-space:nowrap" title="MEPD Scheme '+esc(sc.valid_from+' se '+sc.valid_to)+'">Scheme '+esc(sc.mepd_pct)+'%</div>':"")(packScheme(r)))+"</td><td>"+fmt(c.E,2)+"</td>"+
           "<td>"+cellInput(i,"free_bottle",r.free_bottle)+"</td><td>"+(fb?fmt(c.G,2):cellInput(i,"oms",r.oms))+"</td>"+
           "<td>"+cellInput(i,"qps",r.qps)+"</td><td>"+fmt(settings.roi_main,2)+'</td><td class="strong">'+fmt(c.J,2)+'</td><td class="red">'+fmt(c5.J,2)+"</td>"+
           "<td>"+fmt(c.K,2)+"</td><td>"+fmt(c.L)+"</td><td>"+fmt(c.M,2)+"</td><td>"+fmt(c.N)+"</td><td>"+fmt(c.O,2)+"</td><td>"+cellInput(i,"slab3_rate",r.slab3_rate)+"</td><td>"+fmt(c.Q,2)+"</td><td>"+fmt(c.R)+"</td>"+
@@ -279,6 +345,7 @@
         settings[{mepd:"mepd_pct",roi:"roi_main",roi5:"roi_landing"}[t.id]]=n(t.value);
         clearTimeout(render._t);render._t=setTimeout(()=>keepFocus(render),250);return;
       }
+      const sf={scPct:"pct",scFrom:"from",scTo:"to",scNote:"note"}[t.id];if(sf){schemeForm[sf]=t.value;return}
       if(t.dataset.i==null||t.type==="checkbox")return;
       const r=packs[+t.dataset.i],f=t.dataset.f,v=t.value.trim();
       if(f==="pack_name")r.pack_name=t.value;
@@ -291,6 +358,7 @@
     document.addEventListener("change",e=>{
       const t=e.target;
       if(t.type==="checkbox"&&t.dataset.f==="active"){packs[+t.dataset.i].active=t.checked;render();return}
+      if(t.dataset.scat!=null){const c=t.dataset.scat;schemeForm.cats=t.checked?[...new Set([...schemeForm.cats,c])]:schemeForm.cats.filter(x=>x!==c);return}
       if(t.id==="ledSku"){ledSku=+t.value;renderLedger();return}
       if(t.dataset.link!=null){const k=skuKey(t.dataset.link);if(t.value)links.set(k,t.value);else links.delete(k);renderLinks();return}
       if(t.id==="importFile"){importBackup(t.files[0]);t.value=""}
@@ -298,6 +366,10 @@
     document.addEventListener("click",e=>{
       const b=e.target.closest("[data-tab]");if(b){tab=b.dataset.tab;render();return}
       if(e.target.id==="linkSave"){saveLinks();return}
+      if(e.target.id==="scAdd"){addScheme();return}
+      if(e.target.id==="scAll"||e.target.id==="scNone"){schemeForm.cats=e.target.id==="scAll"?cats.slice():[];renderSchemes();return}
+      if(e.target.dataset.range){quickRange(e.target.dataset.range);renderSchemes();return}
+      if(e.target.dataset.scdel){delScheme(e.target.dataset.scdel);return}
       if(e.target.id==="linkAuto"){let c=0;for(const x of skus){if(links.has(skuKey(x)))continue;const p=suggestPack(x);if(p){links.set(skuKey(x),p.id);c++}}
         renderLinks();ERPShell.toast(c?c+" SKU mil gaye. Check karke \"Link save karo\" dabao.":"Naam se koi naya SKU nahi mila.",c?"success":"info");return}
       if(e.target.id==="packsFromSku"){packsFromSku();return}
