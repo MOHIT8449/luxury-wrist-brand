@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Team Work Report | Luxury Wrist Brand ERP</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <link rel="stylesheet" href="erp-shell.css">
+  <script src="erp-shell.js"></script>
+  <style>
+    .status{text-align:center;padding:80px 20px;font-size:15px;color:#555}
+    .tr-sub{margin:-8px 0 14px;color:var(--erp-muted);font-size:13px}
+    .tr-filters{display:flex;gap:10px;align-items:end;flex-wrap:wrap;margin-bottom:14px}
+    .tr-filters label{display:block;font-size:12px;font-weight:600;color:#4b5763;margin-bottom:4px}
+    .tr-filters input,.tr-filters select{height:38px;border:1.5px solid var(--erp-line);border-radius:6px;padding:0 10px;font:inherit;background:#fff;color:var(--erp-ink)}
+    .tr-filters input:focus,.tr-filters select:focus{outline:none;border-color:var(--erp-red)}
+    .tr-filters .grow{flex:1;min-width:200px}.tr-filters .grow input{width:100%}
+    .tr-filters button{height:38px;border-radius:6px;padding:0 16px;font-weight:600;cursor:pointer;border:1px solid var(--erp-red);background:var(--erp-red);color:#fff}
+    .tr-filters button.ghost{background:#fff;color:var(--erp-ink);border-color:var(--erp-line)}
+    .tr-kpis{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px;margin-bottom:14px}
+    .tr-kpi{background:#fff;border:1px solid var(--erp-line);border-radius:8px;padding:14px 16px;cursor:pointer;text-align:left;font:inherit;color:inherit}
+    .tr-kpi:hover{border-color:var(--erp-red)}
+    .tr-kpi span{display:block;font-size:12.5px;color:var(--erp-muted)}
+    .tr-kpi b{display:block;font-size:22px;font-weight:600;margin-top:4px}
+    .tr-kpi small{display:block;font-size:12px;color:var(--erp-muted);margin-top:2px}
+    .tr-kpi.green b{color:var(--erp-green)}.tr-kpi.blue b{color:var(--erp-blue)}
+    .tr-scroll{overflow:auto}
+    .tr-scroll .erp-table{min-width:760px}
+    .erp-table tfoot td{font-weight:700;border-top:2px solid var(--erp-line);background:#fafbfc}
+    .erp-table tbody tr.click{cursor:pointer}.erp-table tbody tr.click:hover td{background:#fff6f5}
+    .tr-note{font-size:12.5px;color:var(--erp-muted);margin:10px 2px 0}
+    .tr-msg{padding:16px;color:var(--erp-red);font-weight:600;white-space:pre-wrap}
+    @media(max-width:1100px){.tr-kpis{grid-template-columns:repeat(3,minmax(0,1fr))}}
+    @media(max-width:640px){.tr-filters button{flex:1 1 40%}.tr-kpis{grid-template-columns:1fr 1fr}.tr-kpi b{font-size:19px}.tr-filters>div:not(.grow){flex:1 1 40%}.tr-filters input,.tr-filters select{width:100%}}
+    [hidden]{display:none!important}
+  </style>
+</head>
+<body>
+  <div id="loading" class="status">Checking account access...</div>
+  <main id="page" class="erp-main" hidden>
+    <div class="erp-pagehead"><h1>Team Work Report</h1><span class="grow"></span><span class="erp-badge blue">Read only</span></div>
+    <p class="tr-sub">Who did how much work: drivers, vehicles, salesmen and godown loading team. Day-wise and month-wise.</p>
+
+    <div class="tr-filters">
+      <div><label for="month">Month</label><input id="month" type="month"></div>
+      <div><label for="from">From</label><input id="from" type="date"></div>
+      <div><label for="to">To</label><input id="to" type="date"></div>
+      <div class="grow"><label for="q">Search name / mobile / vehicle / PO / party</label><input id="q" type="search" placeholder="Type to filter the table..." autocomplete="off"></div>
+      <button id="refresh" type="button">Refresh</button>
+      <button id="excel" type="button" class="ghost">Excel (all tabs)</button>
+    </div>
+
+    <div class="tr-kpis" id="kpis"></div>
+    <div class="erp-pills" id="tabs"></div>
+
+    <section class="erp-card">
+      <div class="erp-card-head"><h2 id="tabTitle">Drivers</h2><small id="tabCount" style="color:var(--erp-muted)"></small></div>
+      <div class="tr-scroll" id="tableBox"></div>
+    </section>
+    <p class="tr-note" id="tabNote"></p>
+  </main>
+  <script>
+    const client=supabase.createClient("https://txkbhadzdbxpieunfvox.supabase.co","sb_publishable_W4I3Q5ODf0g17sq5uDml2Q_sLolXYEk");
+    const el=id=>document.getElementById(id);
+    async function logout(){await client.auth.signOut();location.replace("login.html")}
+    async function start(allowed){
+      const {data:{session}}=await client.auth.getSession();
+      if(!session){location.replace("login.html");return null}
+      const {data:p}=await client.from("user_profiles").select("full_name,role,active").eq("id",session.user.id).single();
+      const role=String((p&&p.role)||"").toLowerCase().trim();
+      if(!p||p.active!==true||!allowed.includes(role)){location.replace("dashboard.html");return null}
+      return {user:session.user,role,name:p.full_name||session.user.email};
+    }
+
+    const fmt=n=>Number(n||0).toLocaleString("en-IN");
+    const tons=kg=>(Number(kg||0)/1000).toLocaleString("en-IN",{minimumFractionDigits:2,maximumFractionDigits:2});
+    const rupees=n=>"₹"+Number(n||0).toLocaleString("en-IN",{minimumFractionDigits:2,maximumFractionDigits:2});
+    const num=v=>{const n=Number(v);return Number.isFinite(n)?n:0};
+    const isoDay=d=>d.toLocaleDateString("en-CA",{timeZone:"Asia/Kolkata"});
+    const istDay=v=>{if(!v)return "";const d=new Date(v);return isNaN(d)?String(v).slice(0,10):isoDay(d)};
+    const shortDate=v=>{if(!v)return "—";const d=new Date(String(v).length===10?v+"T00:00:00+05:30":v);return isNaN(d)?String(v):d.toLocaleDateString("en-IN",{day:"2-digit",month:"short",year:"numeric",timeZone:"Asia/Kolkata"})};
+    const nameKey=v=>String(v||"").toUpperCase().replace(/\s+/g," ").trim();
+    const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+    // Drivers are matched by Indian mobile number; the name is only a label.
+    const mobile10=v=>{let d=String(v||"").replace(/\D/g,"");if(d.length===12&&d.startsWith("91"))d=d.slice(2);if(d.length===11&&d.startsWith("0"))d=d.slice(1);return /^[6-9]\d{9}$/.test(d)?d:""};
+    // "Ramesh, Suresh & Mahesh" → each person gets credit for the PO.
+    const people=v=>String(v||"").split(/\s*(?:,|&|\/|\+|\band\b)\s*/i).map(s=>s.trim()).filter(Boolean);
+
+    const DONE=["loaded","invoiced","delivered"];
+    const SKIP_SALES=["cancelled","canceled","rejected"];
+    let pos=[],lines=[],salesOrders=[],skuWeight=new Map(),errors={},tab="drivers";
+
+    async function inChunks(table,col,ids,sel){
+      const out=[];
+      for(let i=0;i<ids.length;i+=100){
+        const r=await client.from(table).select(sel||"*").in(col,ids.slice(i,i+100));
+        if(r.error)throw r.error;out.push(...(r.data||[]));
+      }
+      return out;
+    }
+
+    async function loadAll(){
+      const from=el("from").value,to=el("to").value;
+      if(!from||!to||from>to){await ERPShell.alert("Select a valid From and To date.");return}
+      const start=from+"T00:00:00+05:30",end=to+"T23:59:59.999+05:30";
+      el("refresh").disabled=true;el("tableBox").innerHTML='<div class="erp-empty">Loading report...</div>';
+      errors={};
+      try{
+        const s=await client.from("sku_master").select("*");
+        skuWeight=new Map();
+        for(const x of s.data||[]){const w=num(x.unit_weight_kg);skuWeight.set(String(x.id),w);skuWeight.set(nameKey(x.sku_name),w)}
+      }catch(e){}
+      await Promise.all([loadDispatch(start,end),loadSales(from,to)]);
+      el("refresh").disabled=false;
+      render();
+    }
+
+    async function loadDispatch(start,end){
+      pos=[];lines=[];
+      try{
+        const a=await client.from("dispatch_assignments").select("*")
+          .gte("loading_completed_at",start).lte("loading_completed_at",end).limit(3000);
+        if(a.error)throw a.error;
+        const asg=new Map();for(const x of a.data||[])if(x.order_id)asg.set(x.order_id,x);
+        const ids=[...asg.keys()];
+        const [orders,items]=await Promise.all([inChunks("orders","id",ids),inChunks("order_items","order_id",ids)]);
+        let reports=new Map();
+        try{for(const r of await inChunks("lwb_delivery_reports","order_id",ids,"order_id,delivery_status"))reports.set(r.order_id,r.delivery_status)}catch(e){}
+        const byOrder=new Map();
+        for(const o of orders){
+          if(!DONE.includes(String(o.status||"").toLowerCase().trim()))continue;
+          const x=asg.get(o.id),mob=mobile10(x.driver_mobile);
+          const po={id:o.id,no:o.order_no,party:o.customer_name,salesman:o.sales_person,status:o.status,
+            day:istDay(x.loading_completed_at),driver:String(x.driver_name||"").trim()||"—",mobile:mob,
+            driverKey:mob||"name:"+nameKey(x.driver_name),vehicle:String(x.vehicle_no||"").toUpperCase().replace(/\s+/g,"")||"—",
+            transporter:String(x.transporter_name||"").trim(),loaders:people(x.loading_person),
+            delivery:reports.get(o.id)||"",cases:0,kg:0,amount:0};
+          byOrder.set(o.id,po);pos.push(po);
+        }
+        for(const it of items){
+          const po=byOrder.get(it.order_id);if(!po)continue;
+          const cases=num(it.loaded_qty);if(!cases)continue;
+          const w=num(it.unit_weight)||skuWeight.get(String(it.sku_id))||skuWeight.get(nameKey(it.sku_name))||0;
+          const line={po,sku:it.sku_name||"Unknown SKU",cases,kg:cases*w,amount:cases*num(it.rate)};
+          po.cases+=line.cases;po.kg+=line.kg;po.amount+=line.amount;lines.push(line);
+        }
+        pos.sort((a,b)=>b.day.localeCompare(a.day)||String(b.no).localeCompare(String(a.no)));
+        // Show each driver by the latest name typed for that mobile.
+        const latest=new Map();for(const p of pos)if(!latest.has(p.driverKey))latest.set(p.driverKey,p.driver);
+        for(const p of pos)p.driverLabel=latest.get(p.driverKey);
+      }catch(e){errors.dispatch=e.message||String(e)}
+    }
+
+    async function loadSales(from,to){
+      salesOrders=[];
+      try{
+        const next=isoDay(new Date(Date.parse(to+"T12:00:00+05:30")+864e5));
+        const r=await client.from("orders").select("*").gte("order_date",from).lt("order_date",next).limit(5000);
+        if(r.error)throw r.error;
+        salesOrders=(r.data||[]).filter(o=>!SKIP_SALES.includes(String(o.status||"").toLowerCase().trim()));
+      }catch(e){errors.sales=e.message||String(e)}
+    }
+
+    function group(list,keyOf,init,add){
+      const m=new Map();
+      for(const x of list){for(const k of [].concat(keyOf(x))){if(!m.has(k))m.set(k,init(x,k));add(m.get(k),x)}}
+      return [...m.values()];
+    }
+    const work=()=>({pos:new Set(),days:new Set(),trips:new Set(),cases:0,kg:0,amount:0});
+    function addPo(g,p){g.pos.add(p.id);g.days.add(p.day);g.trips.add(p.day+"|"+p.vehicle+"|"+p.driverKey);g.cases+=p.cases;g.kg+=p.kg;g.amount+=p.amount}
+    const byBig=(a,b)=>b.kg-a.kg||b.cases-a.cases;
+
+    // Each tab: {title, head, num (right-aligned), rows:[{key, data (export), show (display)}], sum, money, note, err}
+    function view(t){
+      if(t==="drivers"){
+        const g=group(pos,p=>p.driverKey,p=>({...work(),name:p.driverLabel,mobile:p.mobile,vehicles:new Set(),transporters:new Set(),del:0,part:0,not:0}),(g,p)=>{
+          addPo(g,p);g.vehicles.add(p.vehicle);if(p.transporter)g.transporters.add(p.transporter);
+          if(p.delivery==="DELIVERED")g.del++;else if(p.delivery==="PARTIAL")g.part++;else if(p.delivery==="NOT_DELIVERED")g.not++;
+        }).sort(byBig);
+        const rows=g.map(x=>{const v=[...x.vehicles].join(", "),tr=[...x.transporters].join(", ");
+          return {key:x.name+" "+x.mobile+" "+v+" "+tr,go:x.mobile||x.name,data:[x.name,x.mobile||"No mobile",v,tr,x.days.size,x.trips.size,x.pos.size,x.cases,+(x.kg/1000).toFixed(3),x.amount,x.del,x.part,x.not],
+            show:[x.name,x.mobile||"No mobile",v,tr||"—",fmt(x.days.size),fmt(x.trips.size),fmt(x.pos.size),fmt(x.cases),tons(x.kg),rupees(x.amount),fmt(x.del),fmt(x.part),fmt(x.not)]}});
+        return {title:"Drivers",head:["Driver","Mobile","Vehicle","Transporter","Days","Trips","POs","Cases","Tons","Goods Value ₹","Delivered","Partial","Not Delivered"],num:[4,5,6,7,8,9,10,11,12],rows,sum:[4,5,6,7,8,9,10,11,12],money:[9],ton:[8],err:errors.dispatch,
+          note:"Counted from loading completed date. Driver is matched by mobile number. Trip = one vehicle on one day. Click a driver to see the day-wise list. Delivered / Partial / Not Delivered come from the driver's POD."};
+      }
+      if(t==="daily"){
+        const g=group(pos,p=>p.day+"|"+p.driverKey+"|"+p.vehicle,p=>({...work(),day:p.day,name:p.driverLabel,mobile:p.mobile,vehicle:p.vehicle,parties:new Set()}),(g,p)=>{addPo(g,p);if(p.party)g.parties.add(p.party)})
+          .sort((a,b)=>b.day.localeCompare(a.day)||byBig(a,b));
+        const rows=g.map(x=>({key:x.day+" "+x.name+" "+x.mobile+" "+x.vehicle+" "+[...x.parties].join(" "),data:[shortDate(x.day),x.name,x.mobile||"No mobile",x.vehicle,x.pos.size,x.parties.size,x.cases,+(x.kg/1000).toFixed(3),x.amount,[...x.parties].join(", ")],
+          show:[shortDate(x.day),x.name,x.mobile||"No mobile",x.vehicle,fmt(x.pos.size),fmt(x.parties.size),fmt(x.cases),tons(x.kg),rupees(x.amount),[...x.parties].join(", ")]}));
+        return {title:"Day-wise Dispatch",head:["Date","Driver","Mobile","Vehicle","POs","Parties","Cases","Tons","Goods Value ₹","Parties List"],num:[4,5,6,7,8],rows,sum:[4,6,7,8],money:[8],ton:[7],err:errors.dispatch,
+          note:"One row per driver, per vehicle, per day."};
+      }
+      if(t==="items"){
+        const g=group(lines,l=>l.po.driverKey+"|"+nameKey(l.sku),l=>({name:l.po.driverLabel,mobile:l.po.mobile,sku:l.sku,pos:new Set(),cases:0,kg:0}),(g,l)=>{g.pos.add(l.po.id);g.cases+=l.cases;g.kg+=l.kg})
+          .sort((a,b)=>a.name.localeCompare(b.name)||b.cases-a.cases);
+        const rows=g.map(x=>({key:x.name+" "+x.mobile+" "+x.sku,data:[x.name,x.mobile||"No mobile",x.sku,x.pos.size,x.cases,+(x.kg/1000).toFixed(3)],
+          show:[x.name,x.mobile||"No mobile",x.sku,fmt(x.pos.size),fmt(x.cases),tons(x.kg)]}));
+        return {title:"Driver Item-wise",head:["Driver","Mobile","SKU","POs","Cases Loaded","Tons"],num:[3,4,5],rows,sum:[4,5],ton:[5],err:errors.dispatch,
+          note:"Which items each driver carried in the selected dates. Search a driver name to see only that driver."};
+      }
+      if(t==="vehicles"){
+        const g=group(pos,p=>p.vehicle,p=>({...work(),vehicle:p.vehicle,drivers:new Set(),transporters:new Set()}),(g,p)=>{addPo(g,p);g.drivers.add(p.driver);if(p.transporter)g.transporters.add(p.transporter)}).sort(byBig);
+        const rows=g.map(x=>{const d=[...x.drivers].join(", "),tr=[...x.transporters].join(", ");
+          return {key:x.vehicle+" "+d+" "+tr,data:[x.vehicle,tr,d,x.days.size,x.trips.size,x.pos.size,x.cases,+(x.kg/1000).toFixed(3),x.amount],
+            show:[x.vehicle,tr||"—",d,fmt(x.days.size),fmt(x.trips.size),fmt(x.pos.size),fmt(x.cases),tons(x.kg),rupees(x.amount)]}});
+        return {title:"Vehicles / Transport",head:["Vehicle","Transporter","Drivers","Days","Trips","POs","Cases","Tons","Goods Value ₹"],num:[3,4,5,6,7,8],rows,sum:[3,4,5,6,7,8],money:[8],ton:[7],err:errors.dispatch,
+          note:"Use Days and Trips to check rent / per-trip transport bills."};
+      }
+      if(t==="loaders"){
+        const g=group(pos.filter(p=>p.loaders.length),p=>p.loaders.map(nameKey),(p,k)=>({...work(),name:p.loaders.find(n=>nameKey(n)===k)}),addPo).sort(byBig);
+        const rows=g.map(x=>({key:x.name,data:[x.name,x.days.size,x.trips.size,x.pos.size,x.cases,+(x.kg/1000).toFixed(3)],
+          show:[x.name,fmt(x.days.size),fmt(x.trips.size),fmt(x.pos.size),fmt(x.cases),tons(x.kg)]}));
+        const none=pos.filter(p=>!p.loaders.length).length;
+        return {title:"Godown Loading Team",head:["Loading Person","Days","Vehicles Loaded","POs","Cases","Tons"],num:[1,2,3,4,5],rows,sum:[],err:errors.dispatch,
+          note:"From the Loading Person field of Transport Assignment. When 2 or more names are written (Ramesh, Suresh), each person gets credit for the full PO, so the total is not added up."+(none?" "+none+" PO(s) have no loading person.":"")};
+      }
+      if(t==="sales"){
+        const g=group(salesOrders,o=>nameKey(o.sales_person)||"—",o=>({name:String(o.sales_person||"").trim()||"Not set",pos:0,parties:new Set(),cases:0,kg:0,amount:0,doneN:0,doneAmt:0}),(g,o)=>{
+          g.pos++;if(o.customer_name)g.parties.add(nameKey(o.customer_name));g.cases+=num(o.total_qty);g.kg+=num(o.total_weight);g.amount+=num(o.total_amount);
+          if(DONE.includes(String(o.status||"").toLowerCase().trim())){g.doneN++;g.doneAmt+=num(o.total_amount)}
+        }).sort((a,b)=>b.amount-a.amount);
+        const rows=g.map(x=>({key:x.name,data:[x.name,x.pos,x.parties.size,x.cases,+(x.kg/1000).toFixed(3),x.amount,x.doneN,x.doneAmt,x.pos-x.doneN],
+          show:[x.name,fmt(x.pos),fmt(x.parties.size),fmt(x.cases),tons(x.kg),rupees(x.amount),fmt(x.doneN),rupees(x.doneAmt),fmt(x.pos-x.doneN)]}));
+        return {title:"Salesmen / Sales Head",head:["Salesman","POs Taken","Parties","Cases Ordered","Tons","PO Value ₹","POs Loaded","Loaded PO Value ₹","Still Pending"],num:[1,2,3,4,5,6,7,8],rows,sum:[1,3,4,5,6,7,8],money:[5,7],ton:[4],err:errors.sales,
+          note:"Counted from PO date. Cancelled / rejected POs are left out. PO Value is the amount at order time."};
+      }
+      const rows=pos.map(p=>({key:p.no+" "+p.party+" "+p.driver+" "+p.mobile+" "+p.vehicle+" "+p.loaders.join(" ")+" "+p.salesman,
+        data:[shortDate(p.day),p.no,p.party,p.salesman,p.driver,p.mobile||"No mobile",p.vehicle,p.loaders.join(", "),p.cases,+(p.kg/1000).toFixed(3),p.amount,p.status,p.delivery],
+        show:[shortDate(p.day),p.no||"—",p.party||"—",p.salesman||"—",p.driver,p.mobile||"No mobile",p.vehicle,p.loaders.join(", ")||"—",fmt(p.cases),tons(p.kg),rupees(p.amount),p.status||"—",p.delivery||"—"]}));
+      return {title:"PO-wise Dispatch",head:["Loaded On","PO No.","Party","Salesman","Driver","Mobile","Vehicle","Loading Person","Cases","Tons","Goods Value ₹","Status","POD"],num:[8,9,10],rows,sum:[8,9,10],money:[10],ton:[9],err:errors.dispatch,
+        note:"Every loaded PO in the selected dates. Goods Value = loaded cases × PO rate."};
+    }
+
+    let current=null;
+    function render(){
+      renderKpis();renderTabs();
+      const v=view(tab),q=nameKey(el("q").value);
+      const rows=q?v.rows.filter(r=>nameKey(r.key).includes(q)):v.rows;
+      current={...v,rows};
+      el("tabTitle").textContent=v.title;
+      el("tabCount").textContent=v.err?"":rows.length+" rows";
+      el("tabNote").textContent=v.note;
+      const box=el("tableBox");
+      if(v.err){box.innerHTML='<div class="tr-msg">Could not load this report: '+esc(v.err)+"</div>";return}
+      if(!rows.length){box.innerHTML='<div class="erp-empty">'+(q?"No rows match your search.":"No work found for the selected dates.")+"</div>";return}
+      const numCls=i=>v.num.includes(i)?' class="num"':"";
+      let h="<table class=\"erp-table\"><thead><tr>"+v.head.map((x,i)=>"<th"+numCls(i)+">"+esc(x)+"</th>").join("")+"</tr></thead><tbody>";
+      for(const r of rows)h+="<tr"+(r.go?' class="click" data-go="'+esc(r.go)+'"':"")+">"+r.show.map((c,i)=>"<td"+numCls(i)+">"+esc(c)+"</td>").join("")+"</tr>";
+      h+="</tbody>";
+      if(v.sum&&v.sum.length){
+        h+="<tfoot><tr>"+v.head.map((x,i)=>{
+          if(i===0)return "<td>Total</td>";
+          if(!v.sum.includes(i))return "<td></td>";
+          const t=rows.reduce((a,r)=>a+num(r.data[i]),0);
+          return '<td class="num">'+((v.money||[]).includes(i)?rupees(t):(v.ton||[]).includes(i)?tons(t*1000):fmt(t))+"</td>";
+        }).join("")+"</tr></tfoot>";
+      }
+      box.innerHTML=h+"</table>";
+    }
+
+    function renderKpis(){
+      const kg=pos.reduce((a,p)=>a+p.kg,0),cases=pos.reduce((a,p)=>a+p.cases,0);
+      const drivers=new Set(pos.map(p=>p.driverKey)).size,vehicles=new Set(pos.map(p=>p.vehicle)).size,trips=new Set(pos.map(p=>p.day+"|"+p.vehicle+"|"+p.driverKey)).size;
+      const soAmt=salesOrders.reduce((a,o)=>a+num(o.total_amount),0);
+      const k=[
+        ["po","","POs Loaded",fmt(pos.length),fmt(cases)+" cases"],
+        ["daily","green","Tons Dispatched",tons(kg),rupees(pos.reduce((a,p)=>a+p.amount,0))+" goods value"],
+        ["drivers","blue","Drivers Worked",fmt(drivers),fmt(trips)+" trips"],
+        ["vehicles","","Vehicles Used",fmt(vehicles),"In selected dates"],
+        ["sales","","POs Taken",fmt(salesOrders.length),rupees(soAmt)]
+      ];
+      el("kpis").innerHTML=k.map(x=>'<button type="button" class="tr-kpi '+x[1]+'" data-tab="'+x[0]+'"><span>'+esc(x[2])+"</span><b>"+esc(x[3])+"</b><small>"+esc(x[4])+"</small></button>").join("");
+    }
+
+    const TABS=[["drivers","Drivers"],["daily","Day-wise"],["items","Driver Items"],["vehicles","Vehicles"],["loaders","Godown Team"],["sales","Salesmen"],["po","PO-wise"]];
+    function renderTabs(){
+      el("tabs").innerHTML=TABS.map(([id,label])=>'<button type="button" class="erp-pill'+(id===tab?" active":"")+'" data-tab="'+id+'">'+esc(label)+'<span class="n">'+fmt(view(id).rows.length)+"</span></button>").join("");
+    }
+    function setTab(id){tab=id;try{localStorage.setItem("lwb_team_report_tab",id)}catch(e){}render()}
+
+    function setMonth(){
+      const m=el("month").value;if(!m)return;
+      const [y,mo]=m.split("-").map(Number),last=new Date(Date.UTC(y,mo,0)).getUTCDate();
+      el("from").value=m+"-01";
+      const end=m+"-"+String(last).padStart(2,"0"),today=isoDay(new Date());
+      el("to").value=end>today?today:end;
+      loadAll();
+    }
+
+    function loadScript(src){return new Promise((ok,fail)=>{const t=document.createElement("script");t.src=src;t.onload=ok;t.onerror=()=>fail(Error("Could not load Excel tool. Check internet."));document.head.appendChild(t)})}
+    async function exportExcel(){
+      try{
+        if(errors.dispatch&&errors.sales){await ERPShell.alert("Nothing to export.");return}
+        if(!window.XLSX)await loadScript("https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js");
+        const range=shortDate(el("from").value)+" to "+shortDate(el("to").value);
+        const book=XLSX.utils.book_new();
+        for(const [id,label] of TABS){
+          const v=view(id);if(v.err)continue;
+          const sheet=XLSX.utils.aoa_to_sheet([["LUXURY WRIST BRAND — "+v.title],[range],[],v.head,...v.rows.map(r=>r.data)]);
+          sheet["!cols"]=v.head.map(h=>({wch:/Party|Parties|SKU|Driver|Salesman|Transporter|Loading/.test(h)?28:14}));
+          XLSX.utils.book_append_sheet(book,sheet,label.slice(0,31));
+        }
+        XLSX.writeFile(book,"Team-Work-Report-"+el("from").value+"-to-"+el("to").value+".xlsx");
+      }catch(e){await ERPShell.alert("Excel export failed: "+e.message)}
+    }
+
+    (async()=>{
+      const me=await start(["admin","manager"]);if(!me)return;
+      ERPShell.mount({role:me.role,name:me.name,onLogout:logout,group:"Reports",title:"Team Work Report"});
+      const today=isoDay(new Date());
+      el("month").value=today.slice(0,7);el("from").value=today.slice(0,8)+"01";el("to").value=today;
+      try{const t=localStorage.getItem("lwb_team_report_tab");if(TABS.some(x=>x[0]===t))tab=t}catch(e){}
+      const p=new URLSearchParams(location.search).get("tab");if(TABS.some(x=>x[0]===p))tab=p;
+      document.addEventListener("click",e=>{
+        const r=e.target.closest("tr[data-go]");if(r){el("q").value=r.dataset.go;setTab("daily");return}
+        const b=e.target.closest("[data-tab]");if(b)setTab(b.dataset.tab);
+      });
+      el("q").addEventListener("input",render);
+      el("refresh").onclick=loadAll;
+      el("excel").onclick=exportExcel;
+      el("month").addEventListener("change",setMonth);
+      el("from").addEventListener("change",loadAll);el("to").addEventListener("change",loadAll);
+      el("loading").hidden=true;el("page").hidden=false;
+      await loadAll();
+    })();
+  </script>
+</body>
+</html>

@@ -41,6 +41,8 @@
       {t:"Party Ledger / Outstanding",h:"party-ledger.html",i:"book",r:"admin manager sales accounts"}]},
     {group:"Delivery",items:[
       {t:"Driver Delivery / POD",h:"driver-delivery.html",i:"pin",r:"admin manager driver accounts"}]},
+    {group:"Reports",items:[
+      {t:"Team Work Report",h:"team-report.html",i:"users",r:"admin manager"}]},
     {group:"Returns",items:[
       {t:"Driver Returns Approval",h:"driver-returns.html",i:"undo",r:"admin accounts manager warehouse"},
       {t:"Sales Return",h:"sales-return.html",i:"undo",r:"admin sales warehouse"},
