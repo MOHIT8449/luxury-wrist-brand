@@ -7,6 +7,7 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <link rel="stylesheet" href="erp-shell.css">
   <script src="erp-shell.js"></script>
+  <script src="pack-match.js"></script>
   <style>
     .status{text-align:center;padding:80px 20px;font-size:15px;color:#555}
     .rt-sub{margin:-8px 0 14px;color:var(--erp-muted);font-size:13px}
@@ -168,23 +169,7 @@
       if(backupLinks&&backupLinks.has(skuKey(name))){const p=packs.find(x=>x.id&&skuKey(x.pack_name)===backupLinks.get(skuKey(name)));if(p)return p}
       return packs.find(x=>x.id&&loose(x.pack_name)===k)||packByShape(name);
     }
-    // "250ML COKE 1X28 MRP 20" -> pack "250ML CSD MRP.20": same size, MRP, can / not can and
-    // product tag (MZ, KS, KW, MONSTER ...); plain cola SKUs go to the untagged (CSD) pack.
-    // Only a single clear match is used; anything else stays for the person to pick.
-    const TAGS=[["MZ",/\bMZ\b|MAAZA/],["MMPO",/MMPO|PULPY|MINUTE ?MAID/],["KS",/\bKS\b|SODA/],["KW",/\bKW\b|WATER/],["MONSTER",/MONSTER/],["UL",/\bUL\b|ULTRA/],
-      ["PREDATOR",/PRE?D[AE]{1,2}TOR|PEADETOR/],["TONIC",/TONIC/],["DIET",/DIET/],["ZERO",/ZERO/],["RIMZIM",/RIMZ?J?H?IM/]];
-    function shape(v){
-      const t=skuKey(v).replace(/MRP[.\s]*(\d+)/,(m,x)=>" MRP"+x+" ");
-      const sz=t.match(/(\d+(?:\.\d+)?)\s*(ML|LTR|L)?\b/),mrp=(t.match(/MRP(\d+)/)||[])[1];
-      return {size:sz?(+sz[1])*(/^L/.test(sz[2]||"")?1000:1):null,mrp:mrp?+mrp:null,can:/\bCAN\b|CAN\./.test(t)||/^CAN/.test(t),
-        tags:TAGS.filter(([,re])=>re.test(t)).map(([k])=>k).join(",")};
-    }
-    function packByShape(name){
-      const a=shape(name);if(a.size==null)return null;
-      const hits=packs.filter(p=>{if(!p.id||p.active===false)return false;const b=shape(p.pack_name);
-        return b.size===a.size&&b.can===a.can&&b.tags===a.tags&&(a.mrp==null||b.mrp==null||a.mrp===b.mrp)});
-      return hits.length===1?hits[0]:null;
-    }
+    const packByShape=name=>LWBPackMatch.match(name,packs.filter(p=>p.id));
     function renderLinks(){
       el("tabTitle").textContent="SKU Link";
       const done=skus.filter(x=>links.has(skuKey(x))).length;
