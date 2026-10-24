@@ -125,6 +125,38 @@ td input{
   border-radius:6px;font-weight:700
 }
 
+/* Party PO rates: slab / last bill rate, pallet, landing (Admin / Sales head only) */
+.rate-hint{display:block;margin-top:4px;font-size:11.5px;color:#6b7686;white-space:normal}
+.rate-hint.last{color:#12632f;font-weight:600}
+.rate-hint.warn{color:#b3261e;font-weight:600}
+td input.pallet{min-width:72px}
+td input.qty{min-width:84px}
+td input.amount{min-width:112px}
+td input.row-weight{min-width:92px}
+body.show-landing table{min-width:1420px}
+.rate-box{display:flex;align-items:center;gap:4px}
+.rate-box input{min-width:78px}
+.step{flex:0 0 26px;height:26px;border-radius:50%;border:1px solid #b3261e;background:#fff;color:#b3261e;font-weight:800;line-height:1;cursor:pointer}
+.step:hover{background:#fde2e2}
+.out-cell{text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
+.pos{color:#12632f;font-weight:700}.neg{color:#b3261e;font-weight:700}
+tr.below-landing td{background:#fff1f0}
+.mgr-col{display:none}
+body.show-landing .mgr-col{display:table-cell}
+body.show-landing .summary-row.mgr-col{display:flex}
+table.pallet-mode .pal-col{display:none}
+.slab-why{display:block;margin-top:5px;font-size:12px;color:#12632f;font-weight:600}
+.rates-off{display:block;margin-top:5px;font-size:12px;color:#9a6700}
+.share-row{display:flex;flex-wrap:wrap;gap:10px;justify-content:flex-end;margin-top:14px}
+.share-row .btn{border:1px solid #c9ced6;background:#fff;color:#1c2836}
+.share-row .btn.img{background:#1f6feb;border-color:#1f6feb;color:#fff}
+@media print{
+  .header,.erp-topbar,.erp-side,.page-title .btn,.actions,.share-row,.remove-btn,.step,.mgr-col,.party-master-link,.party-hint,.rate-hint,.slab-why,.rates-off,#qtyModeField,.fast-entry-hint,.btn-blue{display:none!important}
+  body{background:#fff}.card{box-shadow:none;border:1px solid #ddd}
+  td input,select{border:0!important;background:none!important;padding:2px!important}
+  table{min-width:0}
+}
+
 @media(max-width:850px){
   .form-grid{grid-template-columns:1fr 1fr}
   .container{padding:15px}
@@ -217,12 +249,26 @@ td input{
 
       <div class="form-group">
         <label for="transportation">Transportation (Optional)</label>
-        <select id="transportation" class="form-control" onchange="toggleVehicleField()">
+        <select id="transportation" class="form-control" onchange="toggleVehicleField();calculateTotals()">
           <option value="">Select Transportation</option>
           <option value="SELF PICKUP">SELF PICKUP</option>
           <option value="DELIVERY">DELIVERY</option>
           <option value="DIRECT VEHICLE">DIRECT VEHICLE</option>
         </select>
+      </div>
+
+      <div class="form-group">
+        <label for="rateSlab">Rate kis slab se bhare</label>
+        <select id="rateSlab" class="form-control" onchange="calculateTotals()">
+          <option value="auto">Auto (weight / transport / party se)</option>
+          <option value="">Khud bharunga</option>
+          <option value="0">Slab 1 (Below 3 tone)</option>
+          <option value="1">Slab 2 (Self pickup)</option>
+          <option value="2">Slab 3 (3 &amp; 4 tone)</option>
+          <option value="3">Slab 4 (Shree Jagdish)</option>
+        </select>
+        <span id="slabWhy" class="slab-why"></span>
+        <span id="ratesOff" class="rates-off" hidden></span>
       </div>
 
       <div class="form-group" id="vehicleField" hidden>
@@ -251,7 +297,7 @@ td input{
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:15px">
       <div>
         <div class="card-title" style="margin:0">Order Items</div>
-        <small class="fast-entry-hint">Fast Tab Entry: SKU → Quantity → Rate → next SKU automatically</small>
+        <small class="fast-entry-hint">Fast Tab Entry: SKU → Pallet → Quantity → Rate → next SKU automatically. Rate party ke last bill se, warna slab se apne aap aata hai.</small>
       </div>
 
       <button class="btn btn-blue" onclick="addItem()">
@@ -261,16 +307,21 @@ td input{
 
     <div class="table-wrap">
 
-      <table>
+      <table id="itemsTable">
         <thead>
           <tr>
             <th>#</th>
             <th style="min-width:250px">SKU / Product</th>
+            <th class="pal-col">Pallet</th>
             <th id="quantityHeader">QTY (CS)</th>
             <th>Rate ₹</th>
             <th>Amount ₹</th>
             <th>Unit Weight KG</th>
             <th>Total Weight KG</th>
+            <th class="mgr-col">Landing<br><small>bina ROI</small></th>
+            <th class="mgr-col">Diff</th>
+            <th class="mgr-col">Landing<br><small id="roiHead">ROI</small></th>
+            <th class="mgr-col">Diff<br><small>ROI</small></th>
             <th>Action</th>
           </tr>
         </thead>
@@ -289,6 +340,11 @@ td input{
         </div>
 
         <div class="summary-row">
+          <span>Total Pallet</span>
+          <strong id="totalPallet">0</strong>
+        </div>
+
+        <div class="summary-row">
           <span>Total Quantity</span>
           <strong id="totalQty">0</strong>
         </div>
@@ -303,6 +359,11 @@ td input{
           <strong id="totalWeight">0 KG</strong>
         </div>
 
+        <div class="summary-row mgr-col"><span>Total GR</span><strong id="totalGr">₹0.00</strong></div>
+        <div class="summary-row mgr-col"><span>Diff total bina ROI</span><strong id="totalDiff">₹0.00</strong></div>
+        <div class="summary-row mgr-col"><span id="totalDiff5Label">Diff total ROI</span><strong id="totalDiff5">₹0.00</strong></div>
+        <div class="summary-row mgr-col"><span>MEPD</span><strong id="mepdPct">—</strong></div>
+
       </div>
     </div>
 
@@ -316,6 +377,14 @@ td input{
         Submit to Warehouse Manager
       </button>
 
+    </div>
+
+    <div class="share-row">
+      <button type="button" class="btn img" onclick="copyOrderImage()">Order image copy</button>
+      <button type="button" class="btn" onclick="copyOrderMessage()">Message copy</button>
+      <button type="button" class="btn" onclick="window.print()">Print / PDF</button>
+      <button type="button" class="btn" onclick="downloadOrderCsv()">Download Excel (CSV)</button>
+      <button type="button" class="btn" onclick="resetOrder()">Naya order</button>
     </div>
 
   </section>
@@ -410,6 +479,8 @@ document.addEventListener("DOMContentLoaded", async () => {
     addItem();
     await loadSkuMaster();
     initializePartySearch();
+    await loadRates();
+    calculateTotals();
 
   }catch(error){
 
@@ -437,6 +508,7 @@ function pickParty(party) {
   document.getElementById("customerName").value = party.customer_name;
   partyInfo("Selected from Party Master: " + (party.customer_code || party.customer_name));
   setPartyMenu(false);
+  loadPartyRates(party.customer_name);
 }
 
 function renderPartyResults() {
@@ -511,6 +583,7 @@ function initializePartySearch() {
   field.addEventListener("focus", () => schedulePartySearch(field.value));
   field.addEventListener("input", () => {
     selectedParty = null;
+    if (partyRates.size) { partyRates = new Map(); partyRatesFor = ""; calculateTotals(); }
     schedulePartySearch(field.value);
   });
   field.addEventListener("keydown", (event) => {
@@ -596,6 +669,16 @@ function addItem(){
              oninput="applySkuDefaultWeight(this)"
              onchange="applySkuDefaultWeight(this)"
              placeholder="Search SKU from Master">
+      <small class="rate-hint"></small>
+    </td>
+    <td class="pal-col">
+      <input class="pallet number"
+             type="number"
+             min="0"
+             step="0.01"
+             inputmode="decimal"
+             placeholder="Pallet"
+             oninput="palletInput(this)">
     </td>
     <td>
       <input class="qty number"
@@ -605,18 +688,22 @@ function addItem(){
              inputmode="numeric"
              placeholder="Cases"
              value=""
-             oninput="calculateRow(this)">
+             oninput="qtyInput(this)">
       <small class="case-conversion" hidden></small>
     </td>
 
     <td>
+      <div class="rate-box">
+      <button type="button" class="step" tabindex="-1" title="Rate −1" onclick="rateStep(this,-1)">−</button>
       <input class="rate number"
              type="number"
              min="0"
              step="0.01"
              value=""
-             oninput="calculateRow(this)"
+             oninput="rateTyped(this)"
              onkeydown="handleRateTab(event,this)">
+      <button type="button" class="step" tabindex="-1" title="Rate +1" onclick="rateStep(this,1)">+</button>
+      </div>
     </td>
 
     <td>
@@ -640,6 +727,11 @@ function addItem(){
              readonly tabindex="-1">
     </td>
 
+    <td class="mgr-col out-cell land"></td>
+    <td class="mgr-col out-cell diff"></td>
+    <td class="mgr-col out-cell land5"></td>
+    <td class="mgr-col out-cell diff5"></td>
+
     <td>
       <button class="remove-btn"
               onclick="removeItem(this)">
@@ -655,6 +747,7 @@ function addItem(){
   calculateTotals();
 
 }
+
 
 
 /* Excel-style continuous PO entry: the Rate field is the end of a SKU row.
@@ -746,6 +839,7 @@ function applySkuDefaultWeight(input){
     weightField.placeholder = "Set in SKU Master";
     weightField.title = "No default KG per case saved for this SKU. Add its verified weight to SKU Master.";
   }
+  syncPallet(row);
   calculateRow(input);
 }
 
@@ -813,10 +907,16 @@ function calculateRow(input){
 
 function calculateTotals(){
 
+  if(!pricingBusy){
+    pricingBusy = true;
+    try { applyRates(); } finally { pricingBusy = false; }
+  }
+
   let totalQty=0;
   let totalAmount=0;
   let totalWeight=0;
   let skuCount=0;
+  let totalPallet=0;
 
   document
     .querySelectorAll("#itemsBody tr")
@@ -830,6 +930,8 @@ function calculateTotals(){
       if(sku || Number(row.querySelector(".qty").value)>0) skuCount++;
 
       if(Number.isFinite(qty)){
+        const cpp=casesPerPallet(row);
+        if(cpp) totalPallet+=qty/cpp;
         totalQty+=qty;
         totalAmount+=(qty*rate);
         totalWeight+=(qty*unitWeight);
@@ -838,10 +940,13 @@ function calculateTotals(){
     });
 
   document.getElementById("totalSku").textContent=skuCount;
+  document.getElementById("totalPallet").textContent=formatNumber(r2(totalPallet));
   document.getElementById("totalQty").textContent=formatNumber(totalQty);
   document.getElementById("totalAmount").textContent=formatMoney(totalAmount);
   document.getElementById("totalWeight").textContent=
     formatNumber(totalWeight)+" KG";
+
+  updateLandingCells();
 
   return{
     skuCount,
@@ -898,6 +1003,7 @@ function updateQuantityModeUI() {
   document.getElementById("qtyModeCs").setAttribute("aria-pressed", String(!pallet));
   document.getElementById("qtyModePallet").setAttribute("aria-pressed", String(pallet));
   document.getElementById("quantityHeader").textContent = pallet ? "QTY (PALLET)" : "QTY (CS)";
+  document.getElementById("itemsTable").classList.toggle("pallet-mode", pallet);
   document.querySelectorAll("#itemsBody tr").forEach(row => {
     row.querySelector(".qty").placeholder = pallet ? "Pallets" : "Cases";
     updateRowConversion(row);
@@ -1186,6 +1292,9 @@ async function resetOrder(){
   partyInfo("Click to open Party List. Select a saved customer.");
   document.getElementById("transportation").value="";
   document.getElementById("vehicleNumber").value="";
+  document.getElementById("rateSlab").value="auto";
+  partyRates = new Map();
+  partyRatesFor = "";
   quantityMode = "CS";
   toggleVehicleField();
 
@@ -1201,6 +1310,365 @@ async function resetOrder(){
 
   document.getElementById("message").className="message";
 
+}
+
+
+/* PARTY PO RATES
+   Rate order: party's last PO rate for that SKU, else the slab rate from
+   Rate & Scheme (Slab 1 = Slab 3 + 5, Slab 2 and 4 = Slab 3 - 5, same as
+   CC PO Maker). A rate typed by hand or changed with -/+ stays as it is.
+   Landing, GR and Diff are read only by Admin / Sales head (RLS), so a
+   salesman never sees them. */
+const AUTO_TON_KG = 3000;
+let pricingBusy = false;
+let slab3BySku = new Map();      // SKU key -> Slab 3 rate
+let partyRates = new Map();      // SKU key -> {rate, order_no, order_date}
+let partyRatesFor = "";
+let landingBySku = new Map();    // SKU key -> rate pack (Admin / Sales head only)
+let rateSettings = null;
+
+const skuKey = value => String(value || "").trim().toUpperCase();
+const r2 = v => Math.round(+(v*100).toFixed(6))/100;
+const blankValue = v => v === "" || v == null;
+
+async function loadRates(){
+  const note = document.getElementById("ratesOff");
+  try{
+    const {data,error} = await db.rpc("lwb_order_rates");
+    if(error) throw error;
+    slab3BySku = new Map((data || []).map(x => [skuKey(x.sku), number(x.slab3_rate)]));
+    note.hidden = slab3BySku.size > 0;
+    note.textContent = "Rate & Scheme mein SKU link nahi hai, rate khud bharo.";
+  }catch(error){
+    slab3BySku = new Map();
+    note.hidden = false;
+    note.textContent = "Slab rate abhi set nahi hai (Rate & Scheme). Rate khud bharo.";
+  }
+  const role = String(currentProfile?.role || "").trim().toLowerCase();
+  if(!["admin","manager"].includes(role)) return;
+  try{
+    const [st,pk,ln] = await Promise.all([
+      db.from("lwb_rate_settings").select("mepd_pct,roi_main,roi_landing").eq("id",1).maybeSingle(),
+      db.from("lwb_rate_packs").select("*"),
+      db.from("lwb_rate_pack_skus").select("sku_key,pack_id")
+    ]);
+    if(st.error || pk.error || ln.error || !st.data) return;
+    rateSettings = {mepd_pct:number(st.data.mepd_pct), roi_main:number(st.data.roi_main), roi_landing:number(st.data.roi_landing)};
+    const packs = new Map((pk.data || []).map(x => [x.id, x]));
+    landingBySku = new Map();
+    (ln.data || []).forEach(x => { const p = packs.get(x.pack_id); if(p && p.active !== false) landingBySku.set(skuKey(x.sku_key), p); });
+    document.body.classList.add("show-landing");
+    document.getElementById("roiHead").textContent = "ROI " + rateSettings.roi_landing;
+    document.getElementById("totalDiff5Label").textContent = "Diff total ROI " + rateSettings.roi_landing;
+    document.getElementById("mepdPct").textContent = rateSettings.mepd_pct + "%";
+  }catch(error){
+    console.warn("Landing not loaded", error);
+  }
+}
+
+async function loadPartyRates(name){
+  const key = skuKey(name);
+  partyRatesFor = key;
+  partyRates = new Map();
+  if(key){
+    try{
+      const {data,error} = await db.rpc("lwb_party_last_rates",{p_customer:name});
+      if(error) throw error;
+      if(partyRatesFor !== key) return;
+      partyRates = new Map((data || []).map(x => [skuKey(x.sku), x]));
+    }catch(error){
+      console.warn("Party last rates not loaded", error);
+    }
+  }
+  calculateTotals();
+}
+
+/* Same formulas as Rate & Scheme / CC PO Maker LANDING sheet. */
+function calcLanding(r, roi){
+  const S = rateSettings;
+  const C=number(r.case_config), D=number(r.gr), F=number(r.free_bottle), H=number(r.qps), I=number(roi!=null?roi:S.roi_main);
+  const E = D*(blankValue(r.mepd_pct)?S.mepd_pct:number(r.mepd_pct))/100;
+  const base = D-E-H-I-((C?D/C:0)-1)*F;
+  const P = number(r.slab3_rate);
+  if(F>0 && C){
+    const O = r2((P-base)/(1+F/C));
+    const G = (((D/C)-1)*F)-((O/C)*F);
+    return D-E-G-H-I;
+  }
+  return D-E-number(r.oms)-H-I;
+}
+
+function orderWeightKg(){
+  let kg = 0;
+  document.querySelectorAll("#itemsBody tr").forEach(row => {
+    const cases = getRowCaseQty(row);
+    if(Number.isFinite(cases)) kg += cases*number(row.querySelector(".unit-weight").value);
+  });
+  return kg;
+}
+
+function currentSlab(){
+  const pick = document.getElementById("rateSlab").value;
+  if(pick === "") return {slab:null, why:"Rate khud bharna hai"};
+  if(pick !== "auto") return {slab:Number(pick), why:""};
+  const party = document.getElementById("customerName").value;
+  if(/JAGDISH/i.test(party)) return {slab:3, why:"Slab 4 (Shree Jagdish party)"};
+  if(document.getElementById("transportation").value === "SELF PICKUP") return {slab:1, why:"Slab 2 (Self pickup)"};
+  const kg = orderWeightKg();
+  return kg < AUTO_TON_KG
+    ? {slab:0, why:"Slab 1 (weight " + formatNumber(kg) + " KG, 3 ton se kam)"}
+    : {slab:2, why:"Slab 3 (weight " + formatNumber(kg) + " KG, 3 ton ya zyada)"};
+}
+
+function slabRateFor(key, slab){
+  if(slab == null || !slab3BySku.has(key)) return null;
+  const s3 = slab3BySku.get(key);
+  return [s3+5, s3-5, s3, s3-5][slab];
+}
+
+function shortDay(value){
+  const d = new Date(value);
+  return isNaN(d) ? "" : d.toLocaleDateString("en-IN",{day:"2-digit",month:"short",timeZone:"Asia/Kolkata"});
+}
+
+function applyRates(){
+  const {slab, why} = currentSlab();
+  let usedLast = false;
+  document.querySelectorAll("#itemsBody tr").forEach(row => {
+    const name = row.querySelector(".sku-name").value;
+    const key = skuKey(name);
+    const hint = row.querySelector(".rate-hint");
+    const rateInput = row.querySelector(".rate");
+    if(!key || !skuMasterByName.has(key)){ hint.textContent = ""; hint.className = "rate-hint"; return; }
+    const last = partyRates.get(key);
+    const slabRate = slabRateFor(key, slab);
+    const auto = last ? number(last.rate) : slabRate;
+    if(row.dataset.hand !== "1" && auto != null && document.activeElement !== rateInput && rateInput.value !== String(auto)){
+      rateInput.value = String(auto);
+      refreshRowAmounts(row);
+    }
+    if(last) usedLast = true;
+    const rate = number(rateInput.value);
+    if(row.dataset.hand === "1" && slabRate != null && rateInput.value !== "" && rate < slabRate){
+      hint.textContent = "Slab rate ₹" + formatNumber(slabRate) + " se kam";
+      hint.className = "rate-hint warn";
+    }else if(last){
+      hint.textContent = "Last bill rate ₹" + formatNumber(last.rate) + " (" + (last.order_no || "") + (last.order_date ? ", " + shortDay(last.order_date) : "") + ")";
+      hint.className = "rate-hint last";
+    }else if(slabRate != null){
+      hint.textContent = selectedParty ? "Is party ko pehle nahi diya (slab rate)" : "Slab rate";
+      hint.className = "rate-hint";
+    }else if(!slab3BySku.has(key)){
+      hint.textContent = slab3BySku.size ? "Rate list mein link nahi, rate khud bharo" : "";
+      hint.className = "rate-hint";
+    }else{
+      hint.textContent = "";
+      hint.className = "rate-hint";
+    }
+  });
+  document.getElementById("slabWhy").textContent = !slab3BySku.size && !usedLast ? "" :
+    (document.getElementById("rateSlab").value === "auto" ? "→ " : "") + why +
+    (usedLast ? " · jis SKU ka pichhla bill hai uska last rate laga hai" : "");
+}
+
+function refreshRowAmounts(row){
+  const cases = getRowCaseQty(row);
+  const rate = number(row.querySelector(".rate").value);
+  const unitWeight = number(row.querySelector(".unit-weight").value);
+  row.querySelector(".amount").value = Number.isFinite(cases) ? (cases*rate).toFixed(2) : "—";
+  row.querySelector(".row-weight").value = Number.isFinite(cases) ? (cases*unitWeight).toFixed(2) : "—";
+}
+
+function setDiffCell(cell, value){
+  cell.textContent = value == null ? "" : formatNumber(r2(value));
+  cell.className = cell.className.replace(/\s*(pos|neg)\b/g,"") + (value > 0 ? " pos" : value < 0 ? " neg" : "");
+}
+
+function updateLandingCells(){
+  if(!rateSettings) return;
+  let gr = 0, diff = 0, diff5 = 0;
+  document.querySelectorAll("#itemsBody tr").forEach(row => {
+    const pack = landingBySku.get(skuKey(row.querySelector(".sku-name").value));
+    const cells = ["land","diff","land5","diff5"].map(c => row.querySelector("." + c));
+    row.classList.remove("below-landing");
+    if(!pack){ cells.forEach(c => setDiffCell(c, null)); return; }
+    const cases = getRowCaseQty(row);
+    const rateRaw = row.querySelector(".rate").value;
+    const rate = number(rateRaw);
+    const J = calcLanding(pack), J5 = calcLanding(pack, rateSettings.roi_landing);
+    cells[0].textContent = formatNumber(r2(J));
+    cells[2].textContent = formatNumber(r2(J5));
+    setDiffCell(cells[1], rateRaw === "" ? null : rate - J);
+    setDiffCell(cells[3], rateRaw === "" ? null : rate - J5);
+    if(Number.isFinite(cases) && cases > 0){
+      gr += cases*number(pack.gr);
+      if(rateRaw !== ""){ diff += (rate-J)*cases; diff5 += (rate-J5)*cases; }
+      if(rateRaw !== "" && rate < r2(J)) row.classList.add("below-landing");
+    }
+  });
+  document.getElementById("totalGr").textContent = formatMoney(gr);
+  const d = document.getElementById("totalDiff"), d5 = document.getElementById("totalDiff5");
+  d.textContent = formatMoney(diff); d.className = diff < 0 ? "neg" : diff > 0 ? "pos" : "";
+  d5.textContent = formatMoney(diff5); d5.className = diff5 < 0 ? "neg" : diff5 > 0 ? "pos" : "";
+}
+
+function casesPerPallet(row){
+  const sku = skuMasterByName.get(skuKey(row.querySelector(".sku-name").value));
+  const cpp = Number(sku?.cases_per_pallet);
+  return Number.isFinite(cpp) && cpp > 0 ? cpp : 0;
+}
+
+function syncPallet(row){
+  if(quantityMode !== "CS") return;
+  const cpp = casesPerPallet(row), qty = row.querySelector(".qty").value.trim();
+  const pallet = row.querySelector(".pallet");
+  if(document.activeElement === pallet) return;
+  pallet.value = (!cpp || qty === "") ? "" : String(r2(Number(qty)/cpp));
+  pallet.placeholder = cpp ? "Pallet" : "—";
+  pallet.title = cpp ? "1 Pallet = " + cpp + " CS" : "Set CS/Pallet in SKU Master";
+}
+
+function palletInput(input){
+  const row = input.closest("tr");
+  const cpp = casesPerPallet(row), v = input.value.trim();
+  if(cpp) row.querySelector(".qty").value = v === "" ? "" : String(Math.round(Number(v)*cpp));
+  calculateRow(row.querySelector(".qty"));
+}
+
+function qtyInput(input){
+  syncPallet(input.closest("tr"));
+  calculateRow(input);
+}
+
+function rateTyped(input){
+  input.closest("tr").dataset.hand = input.value.trim() === "" ? "" : "1";
+  calculateRow(input);
+}
+
+function rateStep(button, delta){
+  const row = button.closest("tr");
+  const input = row.querySelector(".rate");
+  if(!row.querySelector(".sku-name").value.trim()) return;
+  input.value = String(Math.max(0, r2(number(input.value) + delta)));
+  row.dataset.hand = "1";
+  calculateRow(input);
+}
+
+/* Share: same order card / message as CC PO Maker */
+function orderLines(){
+  const lines = [];
+  document.querySelectorAll("#itemsBody tr").forEach(row => {
+    const sku = row.querySelector(".sku-name").value.trim();
+    const cases = getRowCaseQty(row);
+    if(!sku || !Number.isFinite(cases) || cases <= 0) return;
+    const cpp = casesPerPallet(row), rate = row.querySelector(".rate").value.trim();
+    lines.push({sku, cases, pallet: cpp ? r2(cases/cpp) : null, rate: rate === "" ? null : number(rate),
+      amount: cases*number(rate), weight: cases*number(row.querySelector(".unit-weight").value)});
+  });
+  return lines;
+}
+
+function orderHead(){
+  const no = document.getElementById("orderNo").value;
+  const dt = document.getElementById("orderDate").value;
+  const d = dt ? new Date(dt) : new Date();
+  return {
+    no: /^LXY-/i.test(no) ? no : "-",
+    date: d.toLocaleString("en-IN",{day:"2-digit",month:"short",year:"numeric",hour:"2-digit",minute:"2-digit"}),
+    party: document.getElementById("customerName").value.trim() || "-",
+    trans: document.getElementById("transportation").value || "-",
+    sales: document.getElementById("salesPerson").value.trim()
+  };
+}
+
+function orderSums(lines){
+  return lines.reduce((a,l) => ({cases:a.cases+l.cases, pallet:a.pallet+(l.pallet||0), amount:a.amount+l.amount, weight:a.weight+l.weight}),
+    {cases:0,pallet:0,amount:0,weight:0});
+}
+
+function shareToast(text){
+  if(window.ERPShell && ERPShell.toast) ERPShell.toast(text,"success"); else showMessage(text,"success");
+}
+
+function copyOrderMessage(){
+  const lines = orderLines();
+  if(!lines.length){ alert("Pehle SKU aur quantity bharo."); return; }
+  const h = orderHead(), t = orderSums(lines);
+  let text = "*ORDER" + (h.no !== "-" ? " " + h.no : "") + "*\n*Customer:* " + h.party + "\n*Date:* " + h.date + "\n*Transport:* " + h.trans + "\n";
+  if(h.sales) text += "*Sales person:* " + h.sales + "\n";
+  text += "\n";
+  lines.forEach(l => {
+    text += "• " + l.sku + " – " + formatNumber(l.cases) + " cs" + (l.pallet != null ? " (" + formatNumber(l.pallet) + " plt)" : "") +
+      (l.rate != null ? " @ ₹" + formatNumber(l.rate) + " = ₹" + formatNumber(l.amount) : "") + "\n";
+  });
+  text += "\n*Total Qty:* " + formatNumber(t.cases) + " case (" + formatNumber(t.pallet) + " pallet)\n*Total Amount:* ₹" + formatNumber(t.amount) + "\n*Weight:* " + formatNumber(t.weight) + " KG";
+  const done = () => shareToast("Message copy ho gaya. WhatsApp mein paste karo.");
+  if(navigator.clipboard) navigator.clipboard.writeText(text).then(done, () => prompt("Copy karo:", text));
+  else prompt("Copy karo:", text);
+}
+
+function orderCanvas(){
+  const lines = orderLines();
+  if(!lines.length) return null;
+  const h = orderHead(), T = orderSums(lines);
+  const C=[300,90,90,130], W=C.reduce((a,b)=>a+b,0), X=[0]; C.forEach((w,i)=>X.push(X[i]+w));
+  const rowH=40, sc=3, info=[["DATE",h.date],["ORDER NO.",h.no],["CUSTOMER",h.party],["TRANSPORT",h.trans]];
+  const nrows=1+info.length+1+lines.length+3;
+  const cv=document.createElement("canvas"); cv.width=W*sc; cv.height=(nrows*rowH+2)*sc;
+  const x=cv.getContext("2d"); x.scale(sc,sc);
+  const DARK="#4f6228", LIGHT="#d8e4bc", LIGHT2="#ebf1de", LINE="#7f8f5a";
+  const font=(b,sz)=>(b?"bold ":"")+sz+'px "Bahnschrift","Segoe UI","Arial Narrow",Arial,sans-serif';
+  x.fillStyle="#fff"; x.fillRect(0,0,W,nrows*rowH+2);
+  const cell=(c1,c2,cy,bg,txt,color,bold,align)=>{
+    const cx=X[c1], w=X[c2+1]-X[c1];
+    x.fillStyle=bg; x.fillRect(cx,cy,w,rowH); x.strokeStyle=LINE; x.lineWidth=1; x.strokeRect(cx+.5,cy+.5,w-1,rowH-1);
+    let sz=17; x.font=font(bold,sz); while(x.measureText(String(txt)).width>w-14 && sz>9){ sz--; x.font=font(bold,sz); }
+    x.fillStyle=color; x.textBaseline="middle";
+    const tx= align==="l"? cx+10 : align==="r"? cx+w-10 : cx+w/2; x.textAlign= align==="l"?"left":align==="r"?"right":"center";
+    x.fillText(String(txt),tx,cy+rowH/2+1);
+  };
+  let y=1;
+  cell(0,3,y,DARK,"LUXURY WRIST BRAND","#ffffff",true,"c"); y+=rowH;
+  info.forEach(([a,b])=>{ cell(0,0,y,LIGHT,a,"#1f2d0a",true,"c"); cell(1,3,y,LIGHT2,b,"#1f2d0a",true,"c"); y+=rowH; });
+  ["PRODUCT NAME","QTY","RATE","AMOUNT"].forEach((t,i)=>cell(i,i,y,DARK,t,"#ffffff",true,"c")); y+=rowH;
+  lines.forEach(l=>{ cell(0,0,y,"#fff",l.sku,"#262626",false,"l"); cell(1,1,y,"#fff",formatNumber(l.cases),"#262626",false,"c");
+    cell(2,2,y,"#fff",l.rate==null?"":formatNumber(l.rate),"#262626",false,"c"); cell(3,3,y,"#fff",formatNumber(l.amount),"#262626",false,"r"); y+=rowH; });
+  [["TOTAL QTY",formatNumber(T.cases)+" case ("+formatNumber(T.pallet)+" pallet)"],["TOTAL AMOUNT","₹ "+formatNumber(T.amount)],["WEIGHT",formatNumber(T.weight)+" KG"]].forEach(([a,b])=>{
+    cell(0,0,y,LIGHT,a,"#1f2d0a",true,"c"); cell(1,3,y,LIGHT2,b,"#1f2d0a",true,"c"); y+=rowH; });
+  return cv;
+}
+
+async function copyOrderImage(){
+  const cv = orderCanvas();
+  if(!cv){ alert("Pehle SKU aur quantity bharo."); return; }
+  try{
+    if(!navigator.clipboard || !window.ClipboardItem) throw new Error("no clipboard");
+    await navigator.clipboard.write([new ClipboardItem({"image/png": new Promise(r => cv.toBlob(r,"image/png"))})]);
+    shareToast("Image copy ho gayi. WhatsApp mein paste karo (Ctrl+V).");
+  }catch(error){
+    const a = document.createElement("a");
+    a.href = cv.toDataURL("image/png");
+    a.download = "Order " + orderHead().party + ".png";
+    a.click();
+    shareToast("Copy nahi hua, image download ho gayi.");
+  }
+}
+
+function downloadOrderCsv(){
+  const lines = orderLines();
+  if(!lines.length){ alert("Pehle SKU aur quantity bharo."); return; }
+  const h = orderHead(), t = orderSums(lines);
+  const q = v => '"' + String(v ?? "").replace(/"/g,'""') + '"';
+  const rows = [["Order No",h.no],["Date",h.date],["Customer",h.party],["Transport",h.trans],["Sales person",h.sales],[],
+    ["SKU","Pallet","Quantity (case)","Rate","Amount","Weight KG"],
+    ...lines.map(l => [l.sku, l.pallet ?? "", l.cases, l.rate ?? "", l.amount.toFixed(2), l.weight.toFixed(2)]),
+    ["TOTAL", r2(t.pallet), t.cases, "", t.amount.toFixed(2), t.weight.toFixed(2)]];
+  const blob = new Blob(["\ufeff" + rows.map(r => r.map(q).join(",")).join("\r\n")], {type:"text/csv;charset=utf-8"});
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "Order " + (h.no !== "-" ? h.no + " " : "") + h.party + ".csv";
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 }
 
 
