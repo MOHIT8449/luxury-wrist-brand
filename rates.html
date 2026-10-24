@@ -194,7 +194,7 @@
       if(!payload.length)return;
       const {error}=await client.rpc("lwb_link_rate_skus",{p_links:payload});
       if(error){await ERPShell.alert("Link save nahi hue: "+error.message);return}
-      await loadLinks();renderLinks();
+      await loadLinks();render();
       ERPShell.toast(payload.length+" SKU link save ho gaye.","success");
     }
 
@@ -208,6 +208,11 @@
     }
 
     function cellInput(i,f,v,cls){return '<input data-i="'+i+'" data-f="'+f+'" value="'+esc(v)+'"'+(cls?' class="'+cls+'"':"")+(me.edit?"":" disabled")+">"}
+    // SKUs of this pack: saved links, or the ones "SKU Master se packs banao" will link on Save.
+    function packSkus(r){
+      const list=skus.filter(x=>(r.id&&links.get(skuKey(x))===r.id)||(!links.has(skuKey(x))&&backupLinks&&backupLinks.get(skuKey(x))===skuKey(r.pack_name)));
+      return list.length?'<div style="font-size:11px;color:#667;max-width:260px;white-space:normal" title="'+esc(list.join("\n"))+'">'+list.length+" SKU: "+esc(list.slice(0,3).join(", "))+(list.length>3?" …":"")+"</div>":"";
+    }
     function renderLanding(){
       el("tabTitle").textContent="Landing / Rate";
       el("tabInfo").textContent=packs.filter(p=>p.active!==false).length+" pack";
@@ -216,7 +221,7 @@
         SLAB_NAMES.map((s,i)=>"<th>SLAB "+(i+1)+" MARGIN<small>"+esc(s)+"</small></th><th>MGR RATE</th>").join("")+"<th>Active</th></tr></thead><tbody>";
       packs.forEach((r,i)=>{
         const c=calcLanding(r),c5=calcLanding(r,settings.roi_landing),fb=n(r.free_bottle)>0;
-        h+='<tr class="'+(r.active===false?"off":"")+'"><td>'+(i+1)+'</td><td class="l">'+cellInput(i,"pack_name",r.pack_name,"name")+"</td>"+
+        h+='<tr class="'+(r.active===false?"off":"")+'"><td>'+(i+1)+'</td><td class="l">'+cellInput(i,"pack_name",r.pack_name,"name")+packSkus(r)+"</td>"+
           "<td>"+cellInput(i,"case_config",r.case_config)+"</td><td>"+cellInput(i,"gr",r.gr)+"</td>"+
           "<td>"+cellInput(i,"mepd_pct",r.mepd_pct).replace("<input",'<input placeholder="'+esc(settings.mepd_pct)+'"')+"</td><td>"+fmt(c.E,2)+"</td>"+
           "<td>"+cellInput(i,"free_bottle",r.free_bottle)+"</td><td>"+(fb?fmt(c.G,2):cellInput(i,"oms",r.oms))+"</td>"+
@@ -225,7 +230,7 @@
           '<td><input type="checkbox" data-i="'+i+'" data-f="active"'+(r.active!==false?" checked":"")+(me.edit?"":" disabled")+"></td></tr>";
       });
       h+="</tbody></table>";
-      if(me.edit)h+='<button type="button" class="rt-add" id="addPack">+ Naya pack</button>';
+      if(me.edit)h+='<button type="button" class="rt-add" id="addPack">+ Naya pack</button> <button type="button" class="rt-add" id="packsFromSku">SKU Master se packs banao</button>';
       el("box").innerHTML=h;
       if(!packs.length)el("box").insertAdjacentHTML("afterbegin",'<div class="erp-empty">Abhi koi pack nahi. Upar "PO Maker backup import" se purana data laao, ya "+ Naya pack" dabao.</div>');
     }
@@ -291,6 +296,7 @@
       if(e.target.id==="linkSave"){saveLinks();return}
       if(e.target.id==="linkAuto"){let c=0;for(const x of skus){if(links.has(skuKey(x)))continue;const p=suggestPack(x);if(p){links.set(skuKey(x),p.id);c++}}
         renderLinks();ERPShell.toast(c?c+" SKU mil gaye. Check karke \"Link save karo\" dabao.":"Naam se koi naya SKU nahi mila.",c?"success":"info");return}
+      if(e.target.id==="packsFromSku"){packsFromSku();return}
       if(e.target.id==="addPack"){packs.push({pack_name:"",sort_no:packs.length,case_config:0,gr:0,mepd_pct:"",free_bottle:0,oms:"",qps:0,slab3_rate:0,unit_weight:"",bottle:"",slab_landing:"",slab_margins:["","","","",""],active:true});render();
         const ins=document.querySelectorAll('input[data-f="pack_name"]');if(ins.length)ins[ins.length-1].focus()}
     });
@@ -303,6 +309,34 @@
       const [i,f]=String(key).split("|");
       const t=f!=null?document.querySelector('[data-i="'+i+'"][data-f="'+f+'"]'):el(i);
       if(t){t.focus({preventScroll:true});if(sel&&t.setSelectionRange)try{t.setSelectionRange(sel[0],sel[1])}catch(e){}}
+    }
+
+    /* ---------- packs from SKU Master: one pack per size / case / MRP ----------
+       "250ML COKE 1X28 MRP 20" and "250ML THUMS UP 1X28 MRP 20" share the pack
+       "250ML 1X28 MRP 20" (brand words dropped). After Save the SKUs are linked. */
+    const PACK_WORDS=new Set(["MRP","PET","CAN","RGB","GLASS","TETRA","ASEPTIC","SLEEK","NRGB","RTD","POUCH","BIB"]);
+    const packKey=name=>skuKey(name).split(/\s+/).filter(t=>/\d/.test(t)||PACK_WORDS.has(t)).join(" ");
+    let autoLinkAfterSave=false;
+    async function packsFromSku(){
+      const groups=new Map();
+      for(const x of skus){if(links.has(skuKey(x)))continue;const k=packKey(x);if(!k)continue;if(!groups.has(k))groups.set(k,[]);groups.get(k).push(x)}
+      if(!groups.size){await ERPShell.alert("Koi naya SKU nahi mila: sab SKU pehle se link hain, ya naam mein size (jaise 250ML) nahi hai.");return}
+      backupLinks=backupLinks||new Map();let added=0;
+      for(const [k,list] of groups){
+        let p=packs.find(q=>loose(q.pack_name)===loose(k));
+        if(!p){const cc=(k.match(/\b\d+\s*X\s*(\d+)\b/)||[])[1];
+          p={pack_name:k,sort_no:packs.length,case_config:cc?+cc:0,gr:0,mepd_pct:"",free_bottle:0,oms:"",qps:0,slab3_rate:0,unit_weight:"",bottle:"",slab_landing:"",slab_margins:["","","","",""],active:true};
+          packs.push(p);added++}
+        list.forEach(x=>backupLinks.set(skuKey(x),skuKey(p.pack_name)));
+      }
+      autoLinkAfterSave=true;tab="landing";render();
+      const linked=[...groups.values()].reduce((a,l)=>a+l.length,0);
+      ERPShell.toast(added+" naye pack bane, "+linked+" SKU unse judenge. GR / Slab 3 rate bharo aur Save dabao.","success");
+    }
+    async function linkPendingSkus(){
+      autoLinkAfterSave=false;let c=0;
+      for(const x of skus){if(links.has(skuKey(x)))continue;const p=suggestPack(x);if(p){links.set(skuKey(x),p.id);c++}}
+      if(c)await saveLinks();
     }
 
     /* ---------- save ---------- */
@@ -329,6 +363,7 @@
         importedLedger=null;el("note").value="";
         await load();
         ERPShell.toast("Rate save ho gaye"+(changed?", ledger entry bani.":"."),"success");
+        if(autoLinkAfterSave)await linkPendingSkus();
       }catch(e){await ERPShell.alert("Save nahi hua: "+(e.message||e))}
       finally{busy=false;showState()}
     }
