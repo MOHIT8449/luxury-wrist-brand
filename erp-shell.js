@@ -247,6 +247,8 @@
       client=window.supabase.createClient(URL_,KEY_);
       const {data}=await client.auth.getSession();
       const user=data&&data.session&&data.session.user;
+      // Not logged in on this site (e.g. a new preview link): go to Login instead of showing page errors.
+      if(!user){location.replace("login.html");return}
       if(user){
         const p=await client.from("user_profiles").select("role,full_name").eq("id",user.id).single();
         role=String((p.data&&p.data.role)||"").toLowerCase().trim();
