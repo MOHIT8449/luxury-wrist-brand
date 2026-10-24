@@ -4,6 +4,7 @@
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Party Outstanding & Ledger | Luxury Wrist Brand ERP</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="party-list.js" defer></script>
 <style>
 :root{--navy:#132843;--blue:#1569dc;--line:#dde5f0;--bg:#f1f5fb}
 *{box-sizing:border-box}body{margin:0;font:14px Arial,sans-serif;background:var(--bg);color:#142841}
@@ -107,6 +108,10 @@ async function init(){
   await reload();
  }catch(e){message("Could not start Party Ledger: "+e.message,true)}
 }
+async function masterParties(){
+ if(!window.LWBParties&&document.readyState==="loading")await new Promise(r=>document.addEventListener("DOMContentLoaded",r,{once:true}));
+ return window.LWBParties?LWBParties.load():[];
+}
 async function reload(){
  try{
   message("Loading ledger...");
@@ -126,14 +131,18 @@ async function reload(){
   const sorted=[...parties.entries()].sort((x,y)=>x[1].name.localeCompare(y[1].name));
   el("party").replaceChildren(new Option("All Parties",""));
   el("obParty").replaceChildren(new Option("Select Party",""));
-  sorted.forEach(([k,p])=>{el("party").appendChild(new Option(p.name,k));el("obParty").appendChild(new Option(p.name,p.name))});
-  if(parties.has(prev))el("party").value=prev;
-  else{const asked=key(new URLSearchParams(location.search).get("party")||"");if(asked&&parties.has(asked))el("party").value=asked}
+  const master=await masterParties();
+  const names=new Map(sorted.map(([k,p])=>[k,p.name]));
+  for(const m of master){const n=String(m.customer_name).trim(),k=key(n);if(k&&!names.has(k))names.set(k,n)}
+  [...names.entries()].sort((x,y)=>x[1].localeCompare(y[1])).forEach(([k,n])=>{el("party").appendChild(new Option(n,k));el("obParty").appendChild(new Option(n,n))});
+  if(names.has(prev))el("party").value=prev;
+  else{const asked=key(new URLSearchParams(location.search).get("party")||"");if(asked&&names.has(asked))el("party").value=asked}
   render();
   message("");
  }catch(e){message("Unable to load Ledger: "+e.message+". Run lwb_party_ledger_setup.sql in Supabase.",true)}
 }
 function matches(x,terms,fields){const text=fields.map(f=>x[f]).join(" ").toLowerCase();return terms.every(t=>text.includes(t))}
+function partyName(k){const p=parties.get(k);if(p)return p.name;const o=[...el("party").options].find(x=>x.value===k);return o?o.textContent:k}
 function render(){
  const party=el("party").value;
  const terms=el("search").value.toLowerCase().trim().split(/\s+/).filter(Boolean);
@@ -160,7 +169,7 @@ function render(){
  const led=el("ledger");led.replaceChildren();
  csvRows=[];
  if(party){
-  el("partyTitle").textContent="Party Ledger — "+parties.get(party).name+" ";
+  el("partyTitle").textContent="Party Ledger — "+partyName(party)+" ";
   let bal=0;
   for(const x of ent){
    bal+=x.debit-x.credit;
@@ -193,8 +202,8 @@ function render(){
 function exportData(){
  const party=el("party").value;
  const head=party?["Date","Type","Bill / Reference","Order No","Debit","Credit","Balance","Note"]:["Party","Debit","Credit","Balance","Pending Verification","Last Entry"];
- const title=party?"Party Ledger — "+parties.get(party).name:"Party-wise Outstanding";
- const file=(party?"LWB_Ledger_"+parties.get(party).name.replace(/[^A-Za-z0-9]+/g,"_"):"LWB_Party_Outstanding")+"_"+today();
+ const title=party?"Party Ledger — "+partyName(party):"Party-wise Outstanding";
+ const file=(party?"LWB_Ledger_"+partyName(party).replace(/[^A-Za-z0-9]+/g,"_"):"LWB_Party_Outstanding")+"_"+today();
  return {head,rows:csvRows,title,file};
 }
 function loadScript(src){return new Promise((ok,fail)=>{const t=document.createElement("script");t.src=src;t.onload=ok;t.onerror=()=>fail(Error("Could not load Excel tool. Check internet."));document.head.appendChild(t)})}
