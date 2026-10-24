@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>SKU Master | Luxury Wrist Brand ERP</title>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script><script src="pack-match.js"></script>
 <style>
 :root{font-family:Arial,Helvetica,sans-serif;color:#16243b;background:#f2f5fa}*{box-sizing:border-box}body{margin:0}header{background:#142640;color:#fff;padding:19px max(22px,5%);display:flex;align-items:center;justify-content:space-between;gap:15px}header h1{font-size:23px;margin:0}header small{color:#c4d3e7}header a{color:white}main{max-width:1300px;margin:28px auto;padding:0 20px}.panel{background:white;border-radius:16px;padding:24px;margin-bottom:22px;box-shadow:0 4px 20px #1d32510b}h2{font-size:20px;margin:0 0 18px}.fields{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:15px}label{display:block;font-weight:600;font-size:13px;margin-bottom:7px}input,select{width:100%;border:1px solid #ced8e7;border-radius:8px;padding:12px;font-size:14px;background:#fff;color:#142640}input:focus,select:focus{outline:2px solid #85b5ed}.actions{display:flex;gap:10px;margin-top:18px;flex-wrap:wrap}button{cursor:pointer;border:0;border-radius:8px;padding:12px 18px;font-weight:700;background:#1261b5;color:#fff}button.secondary{background:#e9eef5;color:#183451}button:disabled{opacity:.6;cursor:not-allowed}.message{padding:13px;border-radius:8px;margin-bottom:15px;display:none}.message.error{display:block;background:#fff0ee;color:#9c211b}.message.success{display:block;background:#eaf8ee;color:#196c39}.toolbar{display:flex;justify-content:space-between;gap:12px;align-items:center;margin-bottom:14px}.toolbar input{max-width:360px}.table-wrap{overflow-x:auto}table{border-collapse:collapse;width:100%;font-size:14px}th{background:#eef3f9;text-align:left}td,th{padding:13px 12px;border-bottom:1px solid #e8edf3}td button{padding:8px 12px}small.hint{display:block;color:#68778d;margin-top:12px}#status{font-size:13px;color:#60738e}@media(max-width:950px){.fields{grid-template-columns:repeat(2,1fr)}}@media(max-width:520px){.fields{grid-template-columns:1fr}.toolbar{flex-direction:column;align-items:stretch}.toolbar input{max-width:none}header h1{font-size:19px}}
 </style>
@@ -17,6 +17,7 @@
 <section class="panel"><h2 id="formTitle">Add New SKU</h2>
 <form id="skuForm"><div class="fields">
 <div><label for="skuName">SKU Name *</label><input id="skuName" required maxlength="200" placeholder="e.g. 300ML THUMS UP 1X24"></div>
+<div><label for="category">Category</label><input id="category" list="categoryList" maxlength="60" placeholder="e.g. 250ML CSD" disabled><datalist id="categoryList"></datalist></div>
 <div><label for="hsn">HSN Code</label><input id="hsn" inputmode="numeric" maxlength="20" placeholder="e.g. 22021010"></div>
 <div><label for="pcs">PCS per Case *</label><input id="pcs" type="number" min="1" step="1" required placeholder="24"></div>
 <div><label for="gst">GST Rate (%)</label><input id="gst" type="number" min="0" max="100" step="0.01" placeholder="Optional"></div>
@@ -29,8 +30,12 @@
 <small class="hint">GST/Cess rates optional हैं। Invoicing से पहले applicable tax rate verify करें।</small>
 <small class="hint" id="weightHint">SKU weight auto-fill setup: add optional unit_weight_kg column in Supabase first, then enter verified KG per CASE for each SKU.</small>
 <small class="hint" id="palletHint">Cases/Pallet comes from this Master. Run lwb_pallet_quantity_setup.sql in Supabase to enable it; do not guess pallet counts.</small></section>
+<section class="panel" id="bulkPanel" hidden><h2>Bulk Add SKUs</h2>
+<small class="hint">Excel se 2 column copy karke paste karo: CATEGORY · SKU (teesra column PCS/Case optional). Category khaali ho to upar wali category lagegi. PCS/Case na ho to Rate &amp; Scheme ke pack se liya jaayega. Jo SKU pehle se hai uski sirf category update hogi.</small>
+<textarea id="bulkText" rows="8" style="width:100%;margin-top:8px;font:13px monospace" placeholder="250ML CSD&#9;300ML TH MRP.20&#10;&#9;250ML SP MRP.20"></textarea>
+<div class="actions"><button type="button" class="secondary" id="bulkCheck">Check List</button><button type="button" id="bulkSave" disabled>Add / Update SKUs</button><span id="bulkInfo" class="hint"></span></div></section>
 <section class="panel"><div class="toolbar"><div><h2 style="margin-bottom:5px">SKU List</h2><span id="status">Loading...</span></div><input id="search" placeholder="Search SKU name or HSN..."></div>
-<div class="table-wrap"><table><thead><tr><th>SKU Name</th><th>HSN</th><th>PCS/Case</th><th>Unit Wt/Case KG</th><th>CS/Pallet</th><th>GST %</th><th>Cess %</th><th class="rg-col" hidden>Rate Group</th><th>Status</th><th>Action</th></tr></thead><tbody id="rows"><tr><td colspan="9">Loading...</td></tr></tbody></table></div></section>
+<div class="table-wrap"><table><thead><tr><th>Category</th><th>SKU Name</th><th>HSN</th><th>PCS/Case</th><th>Unit Wt/Case KG</th><th>CS/Pallet</th><th>GST %</th><th>Cess %</th><th class="rg-col" hidden>Rate Group</th><th>Status</th><th>Action</th></tr></thead><tbody id="rows"><tr><td colspan="9">Loading...</td></tr></tbody></table></div></section>
 </main>
 <script>
 'use strict';
@@ -41,19 +46,19 @@ const SUPABASE_PUBLISHABLE_KEY='sb_publishable_W4I3Q5ODf0g17sq5uDml2Q_sLolXYEk';
 const $=id=>document.getElementById(id);
 let packs=[],links=new Map(),ratesOn=false;
 const skuKey=v=>String(v||'').trim().toUpperCase();
-let db=null,skus=[],editingId=null,weightColumnAvailable=false,palletColumnAvailable=false,canEdit=false;
+let db=null,skus=[],editingId=null,weightColumnAvailable=false,palletColumnAvailable=false,categoryColumnAvailable=false,canEdit=false;
 function notice(message,error=false){const el=$('message');el.textContent=message;el.className='message '+(error?'error':'success');}
 function resetForm(){$('skuForm').reset();editingId=null;$('formTitle').textContent='Add New SKU';$('saveBtn').textContent='Save SKU';$('pcs').value='24';$('weight').value='';$('palletCases').value='';}
 function showValue(v){return v===null||v===undefined||v===''?'—':String(v);}
 function addCell(row,value){const cell=document.createElement('td');cell.textContent=showValue(value);row.appendChild(cell);return cell;}
-function render(){const q=$('search').value.toLowerCase().trim();const matches=skus.filter(x=>String(x.sku_name||'').toLowerCase().includes(q)||String(x.hsn_code||'').toLowerCase().includes(q));const body=$('rows');body.replaceChildren();$('status').textContent=`${matches.length} shown / ${skus.length} total`;
-if(!matches.length){const tr=document.createElement('tr');const td=addCell(tr,skus.length?'No matching SKUs.':'No SKUs found.');td.colSpan=ratesOn?10:9;body.appendChild(tr);return;}
-for(const item of matches){const tr=document.createElement('tr');addCell(tr,item.sku_name);addCell(tr,item.hsn_code);addCell(tr,item.pcs_per_case);addCell(tr,item.unit_weight_kg);addCell(tr,item.cases_per_pallet);addCell(tr,item.gst_rate);addCell(tr,item.cess_rate);if(ratesOn){const p=packs.find(x=>x.id===links.get(skuKey(item.sku_name)));addCell(tr,p?p.pack_name+' (₹'+p.slab3_rate+')':'');}addCell(tr,item.is_active===false?'Inactive':'Active');const td=document.createElement('td');const btn=document.createElement('button');btn.type='button';btn.textContent='Edit';btn.disabled=!canEdit;btn.addEventListener('click',()=>editSku(item.id));td.appendChild(btn);tr.appendChild(td);body.appendChild(tr);}}
-function editSku(id){const x=skus.find(item=>item.id===id);if(!x)return;editingId=id;$('skuName').value=x.sku_name||'';$('hsn').value=x.hsn_code||'';$('pcs').value=x.pcs_per_case??'';$('weight').value=x.unit_weight_kg??'';$('palletCases').value=x.cases_per_pallet??'';$('gst').value=x.gst_rate??'';$('cess').value=x.cess_rate??'';$('active').value=String(x.is_active!==false);$('rateGroup').value=links.get(skuKey(x.sku_name))||'';$('formTitle').textContent='Edit SKU';$('saveBtn').textContent='Update SKU';window.scrollTo({top:0,behavior:'smooth'});}
+function render(){const q=$('search').value.toLowerCase().trim();const matches=skus.filter(x=>String(x.sku_name||'').toLowerCase().includes(q)||String(x.hsn_code||'').toLowerCase().includes(q)||String(x.category||'').toLowerCase().includes(q));const body=$('rows');body.replaceChildren();$('status').textContent=`${matches.length} shown / ${skus.length} total`;
+if(!matches.length){const tr=document.createElement('tr');const td=addCell(tr,skus.length?'No matching SKUs.':'No SKUs found.');td.colSpan=ratesOn?11:10;body.appendChild(tr);return;}
+for(const item of matches){const tr=document.createElement('tr');addCell(tr,item.category);addCell(tr,item.sku_name);addCell(tr,item.hsn_code);addCell(tr,item.pcs_per_case);addCell(tr,item.unit_weight_kg);addCell(tr,item.cases_per_pallet);addCell(tr,item.gst_rate);addCell(tr,item.cess_rate);if(ratesOn){const p=packs.find(x=>x.id===links.get(skuKey(item.sku_name)));addCell(tr,p?p.pack_name+' (₹'+p.slab3_rate+')':'');}addCell(tr,item.is_active===false?'Inactive':'Active');const td=document.createElement('td');const btn=document.createElement('button');btn.type='button';btn.textContent='Edit';btn.disabled=!canEdit;btn.addEventListener('click',()=>editSku(item.id));td.appendChild(btn);tr.appendChild(td);body.appendChild(tr);}}
+function editSku(id){const x=skus.find(item=>item.id===id);if(!x)return;editingId=id;$('skuName').value=x.sku_name||'';$('category').value=x.category||'';$('hsn').value=x.hsn_code||'';$('pcs').value=x.pcs_per_case??'';$('weight').value=x.unit_weight_kg??'';$('palletCases').value=x.cases_per_pallet??'';$('gst').value=x.gst_rate??'';$('cess').value=x.cess_rate??'';$('active').value=String(x.is_active!==false);$('rateGroup').value=links.get(skuKey(x.sku_name))||'';$('formTitle').textContent='Edit SKU';$('saveBtn').textContent='Update SKU';window.scrollTo({top:0,behavior:'smooth'});}
 // SKU -> Rate & Scheme rate group, so slab rate on PO Entry comes from this one SKU Master.
 async function loadRateGroups(){
   if(!canEdit)return;
-  const [p,l]=await Promise.all([db.from('lwb_rate_packs').select('id,pack_name,slab3_rate,active').order('sort_no'),db.from('lwb_rate_pack_skus').select('sku_key,pack_id')]);
+  const [p,l]=await Promise.all([db.from('lwb_rate_packs').select('id,pack_name,slab3_rate,case_config,active').order('sort_no'),db.from('lwb_rate_pack_skus').select('sku_key,pack_id')]);
   if(p.error||l.error)return;
   packs=(p.data||[]).filter(x=>x.active!==false);links=new Map((l.data||[]).map(x=>[x.sku_key,x.pack_id]));ratesOn=true;
   $('rateGroupField').hidden=false;document.querySelectorAll('.rg-col').forEach(x=>x.hidden=false);
@@ -71,6 +76,10 @@ async function saveRateGroup(oldName,newName){
 async function loadSkus(){const {data,error}=await db.from('sku_master').select('*').order('sku_name');if(error){notice('SKU list load failed: '+error.message,true);$('status').textContent='Load failed';return;}skus=data||[];
 weightColumnAvailable=skus.some(x=>Object.prototype.hasOwnProperty.call(x,'unit_weight_kg'));
 palletColumnAvailable=skus.some(x=>Object.prototype.hasOwnProperty.call(x,'cases_per_pallet'));
+categoryColumnAvailable=skus.some(x=>Object.prototype.hasOwnProperty.call(x,'category'));
+$('category').disabled=!categoryColumnAvailable||!canEdit;$('category').placeholder=categoryColumnAvailable?'e.g. 250ML CSD':'Run lwb_sku_category_setup.sql';
+$('categoryList').replaceChildren(...[...new Set(skus.map(x=>x.category).filter(Boolean))].sort().map(c=>new Option(c)));
+$('bulkPanel').hidden=!canEdit;
 $('weight').disabled=!weightColumnAvailable||!canEdit;
 $('palletCases').disabled=!palletColumnAvailable||!canEdit;
 $('palletHint').textContent=palletColumnAvailable
@@ -83,6 +92,7 @@ render();}
 async function saveSku(event){event.preventDefault();if(!db){notice('Supabase is not connected.',true);return;}if(!canEdit){notice('Only Admin / Manager can change SKU Master.',true);return;}const name=$('skuName').value.trim();const pcs=Number($('pcs').value);if(!name||!Number.isInteger(pcs)||pcs<1){notice('Valid SKU Name and PCS per Case required.',true);return;}
 const numberOrNull=id=>$(id).value.trim()===''?null:Number($(id).value);
 const payload={sku_name:name,hsn_code:$('hsn').value.trim()||null,pcs_per_case:pcs,gst_rate:numberOrNull('gst'),cess_rate:numberOrNull('cess'),is_active:$('active').value==='true'};
+if(categoryColumnAvailable)payload.category=$('category').value.trim().toUpperCase()||null;
 const weightText=$('weight').value.trim();
 if(weightColumnAvailable){
   const weight=weightText===''?null:Number(weightText);
@@ -100,7 +110,46 @@ if(palletColumnAvailable){
 }
 const oldName=editingId?(skus.find(x=>x.id===editingId)||{}).sku_name:'';
 $('saveBtn').disabled=true;try{let query=editingId?db.from('sku_master').update(payload).eq('id',editingId):db.from('sku_master').insert(payload);const {error}=await query;if(error)throw error;const rgErr=await saveRateGroup(oldName,name);resetForm();await loadRateGroups();await loadSkus();notice('SKU saved successfully.'+rgErr,!!rgErr);}catch(e){notice('Save failed: '+e.message,true);}finally{$('saveBtn').disabled=!canEdit;}}
-async function init(){resetForm();$('skuForm').addEventListener('submit',saveSku);$('clearBtn').addEventListener('click',resetForm);$('search').addEventListener('input',render);
+/* Bulk Add: "CATEGORY <tab> SKU [<tab> PCS/Case]" lines pasted from Excel. */
+const normSku=v=>String(v||'').replace(/\s+/g,' ').trim().toUpperCase();
+let bulkPlan=null;
+function planBulk(){
+  const have=new Map(skus.map(x=>[normSku(x.sku_name),x])),seen=new Set(),add=[],update=[],noCase=[];let cat='',same=0;
+  for(const line of $('bulkText').value.split(/\r?\n/)){
+    const c=line.split('\t').map(x=>x.trim());if(!c.join(''))continue;
+    let sku,pcs;if(c.length>=2){if(c[0])cat=normSku(c[0]);sku=normSku(c[1]);pcs=Number(c[2])}else sku=normSku(c[0]);
+    if(!sku||/^(SKU|CTG\.?|CATEGORY)$/.test(sku)||seen.has(sku))continue;seen.add(sku);
+    const old=have.get(sku);
+    if(old){if(categoryColumnAvailable&&cat&&old.category!==cat)update.push({id:old.id,sku,cat});else same++;continue}
+    const caseN=Number.isInteger(pcs)&&pcs>0?pcs:(window.LWBPackMatch?LWBPackMatch.caseFor(sku,packs):null);
+    if(!caseN){noCase.push(sku);continue}
+    const pack=window.LWBPackMatch?LWBPackMatch.match(sku,packs):null;
+    add.push({sku,cat,pcs:caseN,pack:pack&&pack.id});
+  }
+  bulkPlan={add,update,noCase};
+  $('bulkInfo').textContent=add.length+' naye SKU · '+update.length+' ki category update · '+same+' pehle se same'+(noCase.length?' · '+noCase.length+' ka PCS/Case nahi mila: '+noCase.join(', '):'');
+  $('bulkSave').disabled=!canEdit||!(add.length+update.length);
+  return bulkPlan;
+}
+async function saveBulk(){
+  const {add,update}=planBulk();if(!add.length&&!update.length)return;
+  if(!confirm(add.length+' naye SKU add aur '+update.length+' ki category update karein?'))return;
+  $('bulkSave').disabled=true;$('bulkCheck').disabled=true;const failed=[],linksToSave=[];let done=0;
+  for(const r of add){
+    const row={sku_name:r.sku,pcs_per_case:r.pcs,is_active:true};if(categoryColumnAvailable&&r.cat)row.category=r.cat;
+    const {error}=await db.from('sku_master').insert(row);
+    if(error)failed.push(r.sku+' — '+error.message);else{done++;if(r.pack&&!links.has(r.sku))linksToSave.push({sku_name:r.sku,pack_id:r.pack})}
+    $('bulkInfo').textContent=done+' / '+(add.length+update.length)+' save...';
+  }
+  for(const r of update){const {error}=await db.from('sku_master').update({category:r.cat}).eq('id',r.id);if(error)failed.push(r.sku+' — '+error.message);else done++}
+  let linkMsg='';
+  if(linksToSave.length&&ratesOn){const {error}=await db.rpc('lwb_link_rate_skus',{p_links:linksToSave});linkMsg=error?' Rate link nahi hua: '+error.message:' '+linksToSave.length+' SKU Rate & Scheme pack se jud gaye.'}
+  await loadRateGroups();await loadSkus();$('bulkCheck').disabled=false;
+  if(!failed.length)$('bulkText').value='';
+  notice(done+' SKU save hue.'+linkMsg+(failed.length?' Save nahi hue ('+failed.length+'): '+failed.slice(0,5).join('; '):''),!!failed.length);
+  planBulk();
+}
+async function init(){resetForm();$('bulkCheck').addEventListener('click',planBulk);$('bulkSave').addEventListener('click',saveBulk);$('bulkText').addEventListener('input',()=>{$('bulkSave').disabled=true;$('bulkInfo').textContent='Check List dabao';});$('skuForm').addEventListener('submit',saveSku);$('clearBtn').addEventListener('click',resetForm);$('search').addEventListener('input',render);
 if(SUPABASE_PUBLISHABLE_KEY.includes('PASTE_YOUR')){notice('Setup needed: add your Supabase publishable key in this HTML file.',true);$('rows').replaceChildren();$('status').textContent='Supabase key not configured';return;}
 if(!window.supabase){notice('Supabase library did not load. Check internet connection.',true);return;}
 try{db=window.supabase.createClient(SUPABASE_URL,SUPABASE_PUBLISHABLE_KEY);const {data:{user},error}=await db.auth.getUser();if(error||!user){notice('Please log in to ERP first, then open SKU Master.',true);$('status').textContent='Login required';return;}const {data:profile,error:pe}=await db.from('user_profiles').select('role,active').eq('id',user.id).maybeSingle();if(pe)throw pe;if(!profile||profile.active!==true){notice('Your ERP login is not active.',true);$('status').textContent='Access denied';return;}canEdit=['admin','manager'].includes(String(profile.role||'').trim().toLowerCase());// Only Admin / Manager can add or edit SKUs; other roles get a read-only list.
