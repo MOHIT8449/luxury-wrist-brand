@@ -55,7 +55,7 @@
         if(plan.add.length+plan.update.length)lines.push("Sab theek lage to 'Import karo' dabao.");
         say(lines.join("\n"),!!plan.errors.length);q("go").disabled=!(o.canImport?o.canImport():true)||!(plan.add.length+plan.update.length);
       }catch(err){say(err.message,true)}};
-    q("go").onclick=async()=>{if(!plan||!confirm(plan.add.length+" naye add aur "+plan.update.length+" update karein?"))return;
+    q("go").onclick=async()=>{if(!plan||!await confirm(plan.add.length+" naye add aur "+plan.update.length+" update karein?"))return;
       q("go").disabled=true;try{say(await o.apply(plan,t=>say(t)))}catch(err){say(err.message,true)}plan=null};
     return box;
   }

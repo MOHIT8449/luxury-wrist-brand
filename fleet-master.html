@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Vehicle &amp; Driver Master | Luxury Wrist Brand ERP</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <link rel="stylesheet" href="erp-shell.css">
+  <script src="erp-shell.js"></script>
+  <script src="excel-io.js"></script>
+  <style>
+    .status{text-align:center;padding:80px 20px;font-size:15px;color:#555}
+    .fm-sub{margin:-8px 0 14px;color:var(--erp-muted);font-size:15px}
+    .fm-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px}
+    .fm-grid label{display:block;font-size:14px;font-weight:600;color:#4b5763;margin-bottom:5px}
+    .fm-grid input,.fm-grid select,.fm-grid textarea{width:100%;height:42px;border:1.5px solid var(--erp-line);border-radius:6px;padding:0 10px;font:inherit;font-size:15px;background:#fff;color:var(--erp-ink)}
+    .fm-grid textarea{height:42px;padding:9px 10px;resize:vertical}
+    .fm-grid .wide{grid-column:span 2}
+    .fm-grid input:disabled,.fm-grid select:disabled,.fm-grid textarea:disabled{background:#f6f7f9}
+    .fm-actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:16px}
+    .fm-btn{height:42px;border-radius:6px;padding:0 18px;font-weight:600;font-size:15px;cursor:pointer;border:1px solid var(--erp-red);background:var(--erp-red);color:#fff}
+    .fm-btn.light{background:#fff;color:var(--erp-ink);border-color:var(--erp-line)}
+    .fm-btn:disabled{opacity:.45;cursor:not-allowed}
+    .fm-hint{font-size:14px;color:var(--erp-muted)}
+    .fm-tools{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+    .fm-tools input,.fm-tools select{height:40px;border:1.5px solid var(--erp-line);border-radius:6px;padding:0 10px;font:inherit;font-size:15px}
+    .fm-tools input{min-width:260px}
+    .fm-table{border-collapse:collapse;width:100%;font-size:15px}
+    .fm-table th,.fm-table td{border-bottom:1px solid var(--erp-line);padding:10px 12px;text-align:left;white-space:nowrap;vertical-align:top}
+    .fm-table th{background:#f6f7f9;font-size:14px;font-weight:700;color:#2b3440;position:sticky;top:0}
+    .fm-table td small{display:block;color:var(--erp-muted);font-size:13px}
+    .fm-table tr.off td{opacity:.5}
+    .fm-table button{height:32px;padding:0 12px;border-radius:5px;border:1px solid var(--erp-line);background:#fff;color:var(--erp-ink);font:inherit;font-size:14px;font-weight:600;cursor:pointer;margin-right:4px}
+    .fm-table button.del{color:var(--erp-red);border-color:#f3c2ca}
+    .tagx{display:inline-block;padding:3px 9px;border-radius:5px;font-size:13px;font-weight:700;margin:0 4px 3px 0}
+    .tagx.ok{background:#e4f6e9;color:#0d6b36}.tagx.bad{background:#fee8e8;color:#9e2525}.tagx.warn{background:#fff3d6;color:#8a5a00}.tagx.info{background:#e8f1ff;color:#194c85}
+    .lwb-xl button,.lwb-xl label{font-size:15px}
+    .lwb-xl button{height:40px;border-radius:6px;padding:0 14px;font-weight:600;cursor:pointer;border:1px solid var(--erp-line);background:#fff;color:var(--erp-ink)}
+    .lwb-xl button[data-a=go]{background:var(--erp-red);color:#fff;border-color:var(--erp-red)}
+    .lwb-xl button:disabled{opacity:.45;cursor:not-allowed}
+    .lwb-xl .hint{font-size:14px;color:var(--erp-muted)}
+    #tabs .erp-pill{font-size:15px;padding:9px 18px}
+    @media(max-width:900px){.fm-grid{grid-template-columns:1fr 1fr}}
+    @media(max-width:540px){.fm-grid{grid-template-columns:1fr}.fm-grid .wide{grid-column:span 1}.fm-tools input{min-width:0;width:100%}}
+    [hidden]{display:none!important}
+  </style>
+</head>
+<body>
+  <div id="loading" class="status">Checking account access...</div>
+  <main id="page" class="erp-main" hidden>
+    <div class="erp-pagehead"><h1 id="pageTitle">Vehicle Master</h1></div>
+    <p class="fm-sub" id="pageSub"></p>
+    <div class="erp-pills" id="tabs">
+      <a class="erp-pill" data-tab="vehicles" href="#vehicles">Vehicle Master</a>
+      <a class="erp-pill" data-tab="drivers" href="#drivers">Driver Master</a>
+    </div>
+    <div id="setupMsg" class="erp-card" style="padding:16px;margin-bottom:14px;color:#9b2020;background:#ffebeb" hidden></div>
+
+    <section class="erp-card" id="formCard">
+      <div class="erp-card-head"><h2 id="formTitle"></h2><small id="formInfo" style="color:var(--erp-muted)"></small></div>
+      <div class="erp-card-body" style="padding:16px">
+        <div class="fm-grid" id="form"></div>
+        <div class="fm-actions"><button type="button" class="fm-btn" id="save">Save karo</button><button type="button" class="fm-btn light" id="clear">Naya / Clear</button><span class="fm-hint" id="formHint"></span></div>
+      </div>
+    </section>
+
+    <section class="erp-card" style="margin-top:14px">
+      <div class="erp-card-head"><h2>Excel Import / Export</h2><small style="color:var(--erp-muted)">Template download karo, bharo, wapas Import karo</small></div>
+      <div class="erp-card-body" style="padding:16px" id="xlPanel"></div>
+    </section>
+
+    <section class="erp-card" style="margin-top:14px">
+      <div class="erp-card-head"><h2 id="listTitle"></h2>
+        <div class="fm-tools"><input id="search" type="search" placeholder="Search"><select id="filter"><option value="active">Active</option><option value="inactive">Inactive</option><option value="all">Sab</option></select></div></div>
+      <div class="erp-scroll" style="overflow:auto"><table class="fm-table"><thead id="head"></thead><tbody id="list"></tbody></table></div>
+    </section>
+  </main>
+  <script>
+    'use strict';
+    const client=supabase.createClient("https://txkbhadzdbxpieunfvox.supabase.co","sb_publishable_W4I3Q5ODf0g17sq5uDml2Q_sLolXYEk");
+    const el=id=>document.getElementById(id);
+    const esc=v=>String(v==null?"":v).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+    const plate=v=>String(v||"").toUpperCase().replace(/[^A-Z0-9]/g,"");
+    const phone=v=>{const d=String(v||"").replace(/\D/g,"");return d.length===12&&d.startsWith("91")?d.slice(2):d.length===11&&d.startsWith("0")?d.slice(1):d};
+    const okPhone=v=>/^[6-9]\d{9}$/.test(v);
+    const blank=v=>v==null||String(v).trim()==="";
+    const today=()=>new Date().toLocaleDateString("en-CA",{timeZone:"Asia/Kolkata"});
+    const showDate=d=>d?d.slice(8,10)+"-"+d.slice(5,7)+"-"+d.slice(0,4):"";
+    const daysTo=d=>Math.round((new Date(d+"T00:00:00")-new Date(today()+"T00:00:00"))/864e5);
+    // Excel gives dates as a serial number, dd-mm-yyyy, dd/mm/yyyy or yyyy-mm-dd
+    function toDate(v){
+      if(blank(v))return null;
+      if(typeof v==="number"){const d=new Date(Math.round((v-25569)*864e5));return isNaN(d)?undefined:d.toISOString().slice(0,10)}
+      const s=String(v).trim();let m=s.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})$/);
+      if(m)return m[1]+"-"+m[2].padStart(2,"0")+"-"+m[3].padStart(2,"0");
+      m=s.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{2,4})$/);
+      if(m){const y=m[3].length===2?"20"+m[3]:m[3];return y+"-"+m[2].padStart(2,"0")+"-"+m[1].padStart(2,"0")}
+      return undefined;
+    }
+    const status=v=>{if(blank(v))return null;const s=String(v).trim().toLowerCase();return /^(active|yes|haan|y|1|true)$/.test(s)?true:/^(inactive|no|nahi|n|0|false)$/.test(s)?false:undefined};
+
+    const VTYPES=["Tempo","Pickup","Chhota Hathi","407","Eicher","Truck","Container","Other"];
+    const DOCS=[["insurance_expiry","Insurance"],["puc_expiry","PUC"],["fitness_expiry","Fitness"],["permit_expiry","Permit"]];
+    const KIND={
+      vehicles:{table:"lwb_vehicles",title:"Vehicle Master",one:"Vehicle",
+        sub:"Apni aur transporter ki gaadi. PO Approval aur Transport Assignment me yahin se vehicle chuna jayega. Insurance / PUC / Fitness / Permit ki date bharo to khatam hone se pehle yahan dikhega.",
+        fields:[
+          {k:"vehicle_no",l:"Vehicle Number *",ph:"GJ05FW9821"},
+          {k:"vehicle_type",l:"Vehicle Type",list:VTYPES},
+          {k:"capacity_kg",l:"Capacity (KG)",type:"number"},
+          {k:"ownership",l:"Gaadi kiski",opts:[["OWN","Apni (OWN)"],["TRANSPORTER","Transporter ki"]]},
+          {k:"transporter_name",l:"Transporter / Owner Name"},
+          {k:"owner_mobile",l:"Owner Mobile",type:"tel",ph:"10 digit"},
+          ...DOCS.map(([k,l])=>({k,l:l+" Expiry",type:"date"})),
+          {k:"is_active",l:"Status",opts:[["true","Active"],["false","Inactive"]]},
+          {k:"note",l:"Note",wide:1}]},
+      drivers:{table:"lwb_drivers",title:"Driver Master",one:"Driver",
+        sub:"Driver ki pehchaan mobile number se hoti hai, naam se nahi. Ek mobile = ek driver. Driver Portal login usi mobile se match hota hai.",
+        fields:[
+          {k:"driver_name",l:"Driver Name *"},
+          {k:"mobile",l:"Mobile *",type:"tel",ph:"10 digit, 6-9 se shuru"},
+          {k:"alt_mobile",l:"Doosra Mobile",type:"tel"},
+          {k:"license_no",l:"License Number"},
+          {k:"license_expiry",l:"License Expiry",type:"date"},
+          {k:"default_vehicle_id",l:"Default Vehicle",vehicle:1},
+          {k:"transporter_name",l:"Transporter Name"},
+          {k:"is_active",l:"Status",opts:[["true","Active"],["false","Inactive"]]},
+          {k:"address",l:"Address",wide:1},
+          {k:"note",l:"Note",wide:1}]}
+    };
+
+    let me=null,tab="vehicles",data={vehicles:[],drivers:[]},editing=null,busy=false,loginPhones=new Set(),missing=false;
+    const can=()=>me&&["admin","manager"].includes(me.role);
+    const vehicleById=id=>data.vehicles.find(v=>v.id===id);
+
+    async function start(){
+      const {data:{session}}=await client.auth.getSession();
+      if(!session){location.replace("login.html");return null}
+      const {data:p}=await client.from("user_profiles").select("full_name,role,active").eq("id",session.user.id).single();
+      const role=String((p&&p.role)||"").toLowerCase().trim();
+      if(!p||p.active!==true||!["admin","manager","transport","warehouse"].includes(role)){location.replace("dashboard.html");return null}
+      return {role,name:p.full_name||session.user.email};
+    }
+    async function load(){
+      const [v,d,l]=await Promise.all([
+        client.from("lwb_vehicles").select("*").order("vehicle_no"),
+        client.from("lwb_drivers").select("*").order("driver_name"),
+        can()?client.rpc("lwb_sales_head_active_drivers"):Promise.resolve({data:[]})]);
+      missing=!!(v.error||d.error);
+      el("setupMsg").hidden=!missing;
+      if(missing)el("setupMsg").textContent="Vehicle / Driver table abhi Supabase me nahi bani. Supabase SQL Editor me lwb_fleet_master_setup.sql ek baar chalao, phir page refresh karo. ("+((v.error||d.error).message||"")+")";
+      data.vehicles=v.data||[];data.drivers=d.data||[];
+      loginPhones=new Set((l.data||[]).map(x=>phone(x.driver_mobile)).filter(Boolean));
+    }
+
+    function input(f){
+      const id="f_"+f.k,cls=f.wide?' class="wide"':"";
+      let h;
+      if(f.opts)h='<select id="'+id+'">'+f.opts.map(([v,t])=>'<option value="'+v+'">'+esc(t)+"</option>").join("")+"</select>";
+      else if(f.vehicle)h='<select id="'+id+'"><option value="">— koi nahi —</option>'+data.vehicles.filter(v=>v.is_active||(editing&&editing.default_vehicle_id===v.id)).map(v=>'<option value="'+v.id+'">'+esc(v.vehicle_no)+(v.vehicle_type?" · "+esc(v.vehicle_type):"")+"</option>").join("")+"</select>";
+      else if(f.k==="note"||f.k==="address")h='<textarea id="'+id+'" maxlength="500"></textarea>';
+      else h='<input id="'+id+'" type="'+(f.type||"text")+'"'+(f.ph?' placeholder="'+esc(f.ph)+'"':"")+(f.list?' list="'+id+'_l"':"")+(f.type==="number"?' step="any" min="0"':"")+' maxlength="150">'+(f.list?'<datalist id="'+id+'_l">'+f.list.map(x=>'<option value="'+esc(x)+'">').join("")+"</datalist>":"");
+      return "<div"+cls+'><label for="'+id+'">'+esc(f.l)+"</label>"+h+"</div>";
+    }
+    function fillForm(){
+      const K=KIND[tab];
+      el("form").innerHTML=K.fields.map(input).join("");
+      for(const f of K.fields){const x=el("f_"+f.k);const v=editing?editing[f.k]:(f.k==="is_active"?true:f.k==="ownership"?"OWN":"");x.value=v==null?"":String(v);x.disabled=!can()||busy}
+      el("formTitle").textContent=(editing?"Edit ":"Naya ")+K.one+(editing?": "+(editing.vehicle_no||editing.driver_name):"");
+      el("save").disabled=el("clear").disabled=!can()||busy||missing;
+      el("formHint").textContent=!can()?"Sirf Admin / Manager badal sakte hain. Aap list dekh sakte ho.":editing?"Badlav karke Save karo.":"";
+    }
+    function readForm(){
+      const o={};
+      for(const f of KIND[tab].fields){let v=el("f_"+f.k).value.trim();
+        if(f.k==="is_active")o[f.k]=v==="true";
+        else if(f.type==="number")o[f.k]=v===""?null:Number(v);
+        else o[f.k]=v===""?null:v}
+      if(tab==="vehicles"){o.vehicle_no=plate(o.vehicle_no);if(o.owner_mobile)o.owner_mobile=phone(o.owner_mobile);if(o.vehicle_type)o.vehicle_type=o.vehicle_type.slice(0,60)}
+      else{o.mobile=phone(o.mobile);if(o.alt_mobile)o.alt_mobile=phone(o.alt_mobile);if(o.license_no)o.license_no=o.license_no.toUpperCase()}
+      return o;
+    }
+    // Returns an error message, or "" when the row is fine. Used by the form and by Excel import.
+    function check(o,id){
+      if(tab==="vehicles"){
+        if(!/^[A-Z0-9]{4,15}$/.test(o.vehicle_no||""))return "Vehicle number sahi bharo (jaise GJ05FW9821).";
+        if(o.owner_mobile&&!okPhone(o.owner_mobile))return "Owner mobile 10 digit ka hona chahiye (6-9 se shuru).";
+        if(o.capacity_kg!=null&&!(o.capacity_kg>=0))return "Capacity sahi number bharo.";
+        const d=data.vehicles.find(v=>v.vehicle_no===o.vehicle_no&&v.id!==id);if(d)return "Ye vehicle pehle se hai: "+d.vehicle_no;
+      }else{
+        if(!o.driver_name)return "Driver ka naam bharo.";
+        if(!okPhone(o.mobile||""))return "Driver mobile 10 digit ka hona chahiye (6-9 se shuru).";
+        if(o.alt_mobile&&!okPhone(o.alt_mobile))return "Doosra mobile 10 digit ka hona chahiye.";
+        const d=data.drivers.find(v=>v.mobile===o.mobile&&v.id!==id);if(d)return "Is mobile ka driver pehle se hai: "+d.driver_name+". Usi ko Edit karo.";
+      }
+      return "";
+    }
+    async function save(){
+      if(!can()||busy)return;const o=readForm(),bad=check(o,editing&&editing.id);
+      if(bad){ERPShell.toast(bad,"error");return}
+      const K=KIND[tab];
+      if(!await confirm((editing?"UPDATE ":"ADD ")+K.one+"?\n\n"+(o.vehicle_no||o.driver_name+" · "+o.mobile)))return;
+      busy=true;fillForm();
+      try{
+        const r=editing?await client.from(K.table).update(o).eq("id",editing.id):await client.from(K.table).insert(o);
+        if(r.error)throw r.error;
+        ERPShell.toast(K.one+" save ho gaya.","success");editing=null;await load();
+      }catch(e){ERPShell.toast("Save nahi hua: "+(e.message||e),"error")}
+      busy=false;render();
+    }
+    async function remove(id){
+      const K=KIND[tab],r=data[tab].find(x=>x.id===id);if(!r||!can())return;
+      if(!await confirm("DELETE "+K.one+"?\n\n"+(r.vehicle_no||r.driver_name+" · "+r.mobile)+"\n\nPurane order / dispatch me naam waise hi rahega. Sirf is list se hatega. Behtar hai Inactive karo."))return;
+      const res=await client.from(K.table).delete().eq("id",id);
+      if(res.error){ERPShell.toast("Delete nahi hua: "+res.error.message,"error");return}
+      if(editing&&editing.id===id)editing=null;
+      ERPShell.toast(K.one+" hata diya.","success");await load();render();
+    }
+    function expiryTags(list){
+      return list.filter(([d])=>d).map(([d,l])=>{const n=daysTo(d);
+        return n<0?'<span class="tagx bad">'+esc(l)+" khatam "+showDate(d)+"</span>":n<=30?'<span class="tagx warn">'+esc(l)+" "+n+" din me khatam</span>":""}).join("")||'<span class="tagx ok">OK</span>';
+    }
+    function renderList(){
+      const q=el("search").value.trim().toLowerCase().split(/\s+/).filter(Boolean),f=el("filter").value;
+      const rows=data[tab].filter(r=>(f==="all"||(f==="active")===!!r.is_active)&&q.every(w=>JSON.stringify(r).toLowerCase().includes(w)));
+      const act=r=>can()?'<button type="button" data-edit="'+r.id+'">Edit</button><button type="button" class="del" data-del="'+r.id+'">Delete</button>':"";
+      if(tab==="vehicles"){
+        el("head").innerHTML="<tr><th>#</th><th>Vehicle No</th><th>Type / Capacity</th><th>Kiski</th><th>Documents</th><th>Driver</th><th>Status</th><th></th></tr>";
+        el("list").innerHTML=rows.map((r,i)=>{const drv=data.drivers.filter(d=>d.default_vehicle_id===r.id&&d.is_active).map(d=>esc(d.driver_name)).join(", ");
+          return '<tr class="'+(r.is_active?"":"off")+'"><td>'+(i+1)+"</td><td><b>"+esc(r.vehicle_no)+"</b>"+(r.note?"<small>"+esc(r.note)+"</small>":"")+"</td><td>"+esc(r.vehicle_type||"-")+(r.capacity_kg!=null?"<small>"+esc(r.capacity_kg)+" KG</small>":"")+"</td><td>"+(r.ownership==="TRANSPORTER"?"Transporter":"Apni")+(r.transporter_name?"<small>"+esc(r.transporter_name)+(r.owner_mobile?" · "+esc(r.owner_mobile):"")+"</small>":"")+"</td><td style='white-space:normal;min-width:180px'>"+expiryTags(DOCS.map(([k,l])=>[r[k],l]))+"</td><td>"+(drv||"-")+"</td><td>"+(r.is_active?'<span class="tagx ok">Active</span>':'<span class="tagx bad">Inactive</span>')+"</td><td>"+act(r)+"</td></tr>"}).join("")||'<tr><td colspan="8" class="erp-empty">Koi vehicle nahi. Upar form se ya Excel se add karo.</td></tr>';
+      }else{
+        el("head").innerHTML="<tr><th>#</th><th>Driver</th><th>Mobile</th><th>License</th><th>Default Vehicle</th><th>Transporter</th><th>ERP Login</th><th>Status</th><th></th></tr>";
+        el("list").innerHTML=rows.map((r,i)=>{const v=vehicleById(r.default_vehicle_id);
+          return '<tr class="'+(r.is_active?"":"off")+'"><td>'+(i+1)+"</td><td><b>"+esc(r.driver_name)+"</b>"+(r.note?"<small>"+esc(r.note)+"</small>":"")+"</td><td>"+esc(r.mobile)+(r.alt_mobile?"<small>"+esc(r.alt_mobile)+"</small>":"")+"</td><td>"+esc(r.license_no||"-")+"<div>"+(r.license_expiry?expiryTags([[r.license_expiry,"License"]]):"")+"</div></td><td>"+(v?esc(v.vehicle_no):"-")+"</td><td>"+esc(r.transporter_name||"-")+"</td><td>"+(can()?(loginPhones.has(r.mobile)?'<span class="tagx info">Login hai</span>':'<span class="fm-hint">Nahi</span>'):"")+"</td><td>"+(r.is_active?'<span class="tagx ok">Active</span>':'<span class="tagx bad">Inactive</span>')+"</td><td>"+act(r)+"</td></tr>"}).join("")||'<tr><td colspan="9" class="erp-empty">Koi driver nahi. Upar form se ya Excel se add karo.</td></tr>';
+      }
+      el("listTitle").textContent=KIND[tab].one+" List ("+rows.length+" / "+data[tab].length+")";
+    }
+    function render(){
+      const K=KIND[tab];
+      el("pageTitle").textContent=K.title;el("pageSub").textContent=K.sub;document.title=K.title+" | Luxury Wrist Brand ERP";
+      document.querySelectorAll("#tabs .erp-pill").forEach(a=>a.classList.toggle("active",a.dataset.tab===tab));
+      const crumb=document.querySelector(".erp-crumb b");if(crumb)crumb.textContent=K.title;
+      document.querySelectorAll(".erp-link").forEach(a=>a.classList.toggle("active",a.getAttribute("href")==="fleet-master.html#"+tab));
+      fillForm();renderList();
+    }
+
+    /* Excel: one column list per master. Blank cell on an existing row keeps the old value. */
+    const XL={
+      vehicles:[{h:"Vehicle No",k:"vehicle_no",req:1,sample:"GJ05FW9821",note:"Gaadi number. Space / dash chalega.",alias:["Vehicle Number","Vehicle"]},
+        {h:"Vehicle Type",k:"vehicle_type",sample:"Tempo",note:VTYPES.join(", ")},
+        {h:"Capacity KG",k:"capacity_kg",sample:"3000",note:"Kitna KG load"},
+        {h:"Ownership",k:"ownership",sample:"OWN",note:"OWN (apni) ya TRANSPORTER"},
+        {h:"Transporter Name",k:"transporter_name",sample:"",note:"Transporter ki gaadi ho to naam",alias:["Transporter","Owner Name"]},
+        {h:"Owner Mobile",k:"owner_mobile",sample:"",note:"10 digit"},
+        ...DOCS.map(([k,l])=>({h:l+" Expiry",k,sample:"",note:"Date: dd-mm-yyyy"})),
+        {h:"Status",k:"status",sample:"Active",note:"Active / Inactive"},
+        {h:"Note",k:"note",sample:""}],
+      drivers:[{h:"Driver Name",k:"driver_name",req:1,sample:"Ramesh Patel",alias:["Name","Driver"]},
+        {h:"Mobile",k:"mobile",req:1,sample:"9876543210",note:"10 digit. Isi se driver pehchana jata hai.",alias:["Driver Mobile","Mobile No"]},
+        {h:"Alt Mobile",k:"alt_mobile",sample:""},
+        {h:"License No",k:"license_no",sample:""},
+        {h:"License Expiry",k:"license_expiry",sample:"",note:"Date: dd-mm-yyyy"},
+        {h:"Default Vehicle",k:"default_vehicle",sample:"GJ05FW9821",note:"Vehicle Master me jo number hai wahi"},
+        {h:"Transporter Name",k:"transporter_name",sample:"",alias:["Transporter"]},
+        {h:"Address",k:"address",sample:""},
+        {h:"Status",k:"status",sample:"Active",note:"Active / Inactive"},
+        {h:"Note",k:"note",sample:""}]
+    };
+    function xlExport(){
+      return data[tab].map(r=>{const o={...r,status:r.is_active?"Active":"Inactive"};
+        for(const [k] of DOCS)o[k]=showDate(r[k]);o.license_expiry=showDate(r.license_expiry);
+        if(tab==="drivers"){const v=vehicleById(r.default_vehicle_id);o.default_vehicle=v?v.vehicle_no:""}return o});
+    }
+    function xlPlan(rows){
+      const p={add:[],update:[],errors:[],same:0},seen=new Set(),dateKeys=tab==="vehicles"?DOCS.map(d=>d[0]):["license_expiry"];
+      for(const r of rows){
+        const o={},err=m=>p.errors.push("Row "+r._row+": "+m);let bad=false;
+        for(const c of XL[tab]){if(c.k==="status"||c.k==="default_vehicle")continue;const v=r[c.k];if(!blank(v))o[c.k]=typeof v==="string"?v.trim():v}
+        for(const k of dateKeys)if(k in o){const d=toDate(o[k]);if(d===undefined){err(k.replace("_"," ")+" date samajh nahi aayi: "+o[k]);bad=true}else o[k]=d}
+        const st=status(r.status);if(st===undefined){err("Status Active ya Inactive likho");bad=true}else if(st!=null)o.is_active=st;
+        if(tab==="vehicles"){
+          o.vehicle_no=plate(r.vehicle_no);
+          if("owner_mobile" in o)o.owner_mobile=phone(o.owner_mobile);
+          if("capacity_kg" in o){o.capacity_kg=LWBExcel.num(o.capacity_kg);if(!(o.capacity_kg>=0)){err("Capacity number nahi hai");bad=true}}
+          if("ownership" in o){o.ownership=String(o.ownership).toUpperCase().startsWith("T")?"TRANSPORTER":"OWN"}
+          if("vehicle_type" in o)o.vehicle_type=String(o.vehicle_type).slice(0,60);
+        }else{
+          o.mobile=phone(r.mobile);if("alt_mobile" in o)o.alt_mobile=phone(o.alt_mobile);
+          if("driver_name" in o)o.driver_name=String(o.driver_name);
+          if("license_no" in o)o.license_no=String(o.license_no).toUpperCase();
+          if(!blank(r.default_vehicle)){const v=data.vehicles.find(x=>x.vehicle_no===plate(r.default_vehicle));if(!v){err("Default vehicle "+r.default_vehicle+" Vehicle Master me nahi hai");bad=true}else o.default_vehicle_id=v.id}
+        }
+        const key=tab==="vehicles"?o.vehicle_no:o.mobile;
+        if(seen.has(key)){err("Ye "+(tab==="vehicles"?"vehicle":"mobile")+" file me do baar hai: "+key);continue}
+        seen.add(key);
+        const old=data[tab].find(x=>(tab==="vehicles"?x.vehicle_no:x.mobile)===key);
+        const full=old?{...old,...o}:{is_active:true,ownership:"OWN",...o};
+        const msg=check(full,old&&old.id);if(msg){err(msg);continue}
+        if(bad)continue;
+        if(!old){p.add.push(full);continue}
+        const ch={};for(const k in o)if(String(o[k]??"")!==String(old[k]??""))ch[k]=o[k];
+        if(Object.keys(ch).length)p.update.push({id:old.id,ch});else p.same++;
+      }
+      return p;
+    }
+    async function xlApply(p,progress){
+      const T=KIND[tab].table,cols=KIND[tab].fields.map(f=>f.k);
+      if(p.add.length){progress("Naye "+p.add.length+" save ho rahe hain...");
+        const rows=p.add.map(r=>Object.fromEntries(cols.filter(k=>r[k]!==undefined).map(k=>[k,r[k]])));
+        const r=await client.from(T).insert(rows);if(r.error)throw Error("Add nahi hue: "+r.error.message)}
+      let n=0;for(const u of p.update){progress("Update "+(++n)+" / "+p.update.length);const r=await client.from(T).update(u.ch).eq("id",u.id);if(r.error)throw Error("Update ruk gaya ("+n+"): "+r.error.message)}
+      await load();render();
+      return p.add.length+" naye add, "+p.update.length+" update ho gaye.";
+    }
+    let xlBox=null;
+    function mountXl(){
+      if(xlBox)xlBox.remove();
+      xlBox=LWBExcel.panel({mount:el("xlPanel"),file:KIND[tab].title.replace(" ","-"),columns:XL[tab],exportRows:xlExport,plan:xlPlan,apply:xlApply,canImport:()=>can()&&!missing});
+    }
+
+    function setTab(){const t=location.hash.replace("#","");tab=KIND[t]?t:"vehicles";editing=null;mountXl();render()}
+    document.addEventListener("click",e=>{
+      const t=e.target;
+      if(t.dataset.edit){editing=data[tab].find(x=>x.id===t.dataset.edit)||null;render();el("formCard").scrollIntoView({behavior:"smooth"});return}
+      if(t.dataset.del){remove(t.dataset.del);return}
+    });
+    el("save").onclick=save;
+    el("clear").onclick=()=>{editing=null;render()};
+    el("search").oninput=renderList;el("filter").onchange=renderList;
+    window.addEventListener("hashchange",setTab);
+
+    (async()=>{
+      me=await start();if(!me)return;
+      ERPShell.mount({role:me.role,name:me.name,onLogout:async()=>{await client.auth.signOut();location.replace("login.html")},group:"Masters"});
+      await load();
+      el("loading").hidden=true;el("page").hidden=false;
+      setTab();
+    })();
+  </script>
+</body>
+</html>

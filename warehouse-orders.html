@@ -823,6 +823,7 @@ let managerNoteSaving=false;
 let managerNoteOriginal="";
 let poRawAssignments=[];
 let poActiveErpDrivers=[];
+let poMasterDrivers=[],poMasterVehicles=[];
 let poErpDirectoryError="";
 let poSavedDrivers=[];
 let poSavedVehicles=[];
@@ -1437,12 +1438,29 @@ function poNormalPlate(value){
 function rebuildPoDirectory(){
   const driverSeen=new Set(),erpDriverPhones=new Set(),vehicleSeen=new Set();
   poSavedDrivers=[];poSavedVehicles=[];
+  // Driver Master / Vehicle Master come first; one driver per mobile number.
+  const masterPlate=new Map(poMasterVehicles.map(v=>[v.id,v.vehicle_no]));
+  for(const d of poMasterDrivers){
+    const phone=poNormalPhone(d.mobile);
+    if(!d.driver_name||!(/^[6-9]\d{9}$/.test(phone))||erpDriverPhones.has(phone))continue;
+    driverSeen.add(String(d.driver_name).trim().toLowerCase()+"|"+phone);
+    erpDriverPhones.add(phone);
+    poSavedDrivers.push({name:String(d.driver_name).trim(),mobile:phone,phone,source:"Driver Master",
+      vehicle:masterPlate.get(d.default_vehicle_id)||"",transporter:String(d.transporter_name||"").trim()});
+  }
+  for(const v of poMasterVehicles){
+    const key=poNormalPlate(v.vehicle_no);
+    if(!key||vehicleSeen.has(key))continue;
+    vehicleSeen.add(key);
+    poSavedVehicles.push({vehicle:v.vehicle_no,transporter:String(v.transporter_name||"").trim(),
+      detail:[v.vehicle_type,v.capacity_kg!=null?v.capacity_kg+" KG":"","Vehicle Master"].filter(Boolean).join(" · ")});
+  }
   // Active ERP driver logins FIRST. They need no previous dispatch history.
   for(const p of poActiveErpDrivers){
     const name=String(p.driver_name||"").trim();
     const mobile=String(p.driver_mobile||"").trim();
     const phone=poNormalPhone(mobile);
-    if(!name||!(/^[6-9]\d{9}$/.test(phone)))continue;
+    if(!name||!(/^[6-9]\d{9}$/.test(phone))||erpDriverPhones.has(phone))continue;
     const key=name.toLowerCase()+"|"+phone;
     if(!driverSeen.has(key)){
       driverSeen.add(key);
@@ -1486,12 +1504,17 @@ function rebuildPoDirectory(){
 async function loadPoSavedDirectory(){
   // Protected RPC allows only active ERP Admin/Manager to read active Driver
   // names/phones. Historical dispatch list remains independently available.
-  const [historyResult,erpResult]=await Promise.all([
+  const [historyResult,erpResult,driverMaster,vehicleMaster]=await Promise.all([
     db.from("dispatch_assignments")
       .select("driver_name,driver_mobile,vehicle_no,transporter_name,assigned_at")
       .order("assigned_at",{ascending:false}).limit(2000),
-    db.rpc("lwb_sales_head_active_drivers")
+    db.rpc("lwb_sales_head_active_drivers"),
+    db.from("lwb_drivers").select("driver_name,mobile,default_vehicle_id,transporter_name").eq("is_active",true).order("driver_name"),
+    db.from("lwb_vehicles").select("id,vehicle_no,vehicle_type,capacity_kg,transporter_name").eq("is_active",true).order("vehicle_no")
   ]);
+  // Before lwb_fleet_master_setup.sql is run these tables are missing; the old lists still work.
+  poMasterDrivers=driverMaster.error?[]:(driverMaster.data||[]);
+  poMasterVehicles=vehicleMaster.error?[]:(vehicleMaster.data||[]);
   if(historyResult.error){
     poRawAssignments=[];
     poDirectoryError=historyResult.error.message||"Unable to read previous assignments";
@@ -1541,6 +1564,8 @@ function poChooseSaved(kind,item){
   }else{
     document.getElementById("poDriverName").value=item.name;
     document.getElementById("poDriverMobile").value=item.mobile;
+    const veh=document.getElementById("poVehicleNo");
+    if(item.vehicle&&!veh.value.trim()){veh.value=item.vehicle;if(item.transporter)document.getElementById("poTransportName").value=item.transporter;}
   }
   closePoPicker();
 }
@@ -1569,7 +1594,7 @@ function showPoPicker(input,kind){
     option.appendChild(title);
     const detail=document.createElement("small");
     detail.textContent=kind==="vehicle"
-      ?(record.transporter||"Saved vehicle")
+      ?(record.detail||record.transporter||"Saved vehicle")
       :(record.mobile||"No saved mobile")+" · "+(record.source||"Previous Dispatch")+
         (kind==="mobile"&&record.mobile?" · select to autofill name":"");
     option.appendChild(detail);
