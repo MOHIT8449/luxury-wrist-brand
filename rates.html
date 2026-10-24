@@ -313,7 +313,27 @@
         h+='<tr class="'+(r.active===false?"off":"")+'"><td class="l">'+esc(r.pack_name)+"</td><td>"+cellInput(i,"unit_weight",r.unit_weight)+"</td><td>"+cellInput(i,"bottle",r.bottle)+"</td><td>"+cellInput(i,"slab_landing",r.slab_landing)+"</td>"+
           r.slab_margins.map((m,j)=>"<td>"+cellInput(i,"m"+j,m)+"</td><td>"+((blank(m)&&j>0)?"":fmt(n(r.slab_landing)+n(m),2))+"</td>").join("")+"</tr>";
       });
-      el("box").innerHTML=h+"</tbody></table>";
+      h+="</tbody></table>";
+      if(me.edit)h+='<button type="button" class="rt-add" id="slabPasteOpen">Excel se paste</button>';
+      if(me.edit&&slabPasteOpen)h+='<div class="erp-card-body"><div style="font-size:12px;color:#555;margin-bottom:6px">SLAB sheet ki rows copy karke paste karo (heading ke saath bhi chalega). Columns: SKU · WEIGHT · BOTTEL · LANDING · phir 5 baar MARGIN · RATE (Self pickup, Direct vehicle, 12 pallet, High volume, Market rate). SKU naam Landing / Rate ke pack naam se milaya jaata hai.</div>'+
+        '<textarea id="slabPasteBox" rows="8" style="width:100%;font:12px monospace"></textarea><div style="margin-top:6px"><button type="button" class="rt-add" style="margin:0;border-style:solid;background:var(--erp-red);color:#fff;border-color:var(--erp-red)" id="slabPasteApply">Slab bharo</button> <button type="button" class="rt-add" style="margin:0" id="slabPasteClose">Band karo</button></div></div>';
+      el("box").innerHTML=h;
+    }
+    let slabPasteOpen=false;
+    async function applySlabPaste(text){
+      let done=0;const miss=[];
+      for(const line of String(text||"").split(/\r?\n/)){
+        const c=line.split("\t").map(x=>x.trim()),name=c[0]||"";
+        if(!name||num(name)!=null||num(c[1])==null)continue;
+        const p=packs.find(q=>loose(q.pack_name)===loose(name));
+        if(!p){miss.push(name);continue}
+        p.unit_weight=num(c[1]);p.bottle=num(c[2])??"";p.slab_landing=num(c[3])==null?"":r2(num(c[3]));
+        p.slab_margins=[0,1,2,3,4].map(j=>num(c[4+j*2])??"");done++;
+      }
+      if(!done&&!miss.length){await ERPShell.alert("Koi slab row nahi mili. SLAB sheet se SKU, WEIGHT wali rows copy karke paste karo.");return}
+      slabPasteOpen=false;render();
+      ERPShell.toast(done+" pack ka slab bhar gaya. Check karke Save dabao.","success");
+      if(miss.length)await ERPShell.alert("Ye naam Landing / Rate mein pack nahi mile (pehle Landing paste karo):\n"+miss.join("\n"));
     }
     let ledSku=0;
     function renderLedger(){
@@ -373,6 +393,9 @@
       if(e.target.id==="linkAuto"){let c=0;for(const x of skus){if(links.has(skuKey(x)))continue;const p=suggestPack(x);if(p){links.set(skuKey(x),p.id);c++}}
         renderLinks();ERPShell.toast(c?c+" SKU mil gaye. Check karke \"Link save karo\" dabao.":"Naam se koi naya SKU nahi mila.",c?"success":"info");return}
       if(e.target.id==="packsFromSku"){packsFromSku();return}
+      if(e.target.id==="slabPasteOpen"){slabPasteOpen=true;render();const t=el("slabPasteBox");if(t)t.focus();return}
+      if(e.target.id==="slabPasteClose"){slabPasteOpen=false;render();return}
+      if(e.target.id==="slabPasteApply"){applySlabPaste(el("slabPasteBox").value);return}
       if(e.target.id==="pasteOpen"){pasteOpen=true;render();const t=el("pasteBox");if(t)t.focus();return}
       if(e.target.id==="pasteClose"){pasteOpen=false;render();return}
       if(e.target.id==="pasteApply"){applyPaste(el("pasteBox").value);return}
