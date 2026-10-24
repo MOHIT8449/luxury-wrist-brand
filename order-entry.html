@@ -7,6 +7,7 @@
 <title>Order Entry | Luxury Wrist Brand</title>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="mepd-scheme.js"></script>
 
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
@@ -480,6 +481,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     await loadSkuMaster();
     initializePartySearch();
     await loadRates();
+    document.getElementById("orderDate").addEventListener("change", updateLandingCells);
     calculateTotals();
 
   }catch(error){
@@ -1326,6 +1328,7 @@ let partyRates = new Map();      // SKU key -> {rate, order_no, order_date}
 let partyRatesFor = "";
 let landingBySku = new Map();    // SKU key -> rate pack (Admin / Sales head only)
 let rateSettings = null;
+let mepdSchemes = [];            // MEPD % by SKU category and date (Rate & Scheme > MEPD Scheme)
 
 const skuKey = value => String(value || "").trim().toUpperCase();
 const r2 = v => Math.round(+(v*100).toFixed(6))/100;
@@ -1361,6 +1364,8 @@ async function loadRates(){
     document.getElementById("roiHead").textContent = "ROI " + rateSettings.roi_landing;
     document.getElementById("totalDiff5Label").textContent = "Diff total ROI " + rateSettings.roi_landing;
     document.getElementById("mepdPct").textContent = rateSettings.mepd_pct + "%";
+    const sc = await db.from("lwb_mepd_schemes").select("categories,mepd_pct,valid_from,valid_to,created_at");
+    mepdSchemes = sc.error ? [] : (sc.data || []);
   }catch(error){
     console.warn("Landing not loaded", error);
   }
@@ -1384,10 +1389,12 @@ async function loadPartyRates(name){
 }
 
 /* Same formulas as Rate & Scheme / CC PO Maker LANDING sheet. */
-function calcLanding(r, roi){
+function calcLanding(r, roi, sku){
   const S = rateSettings;
+  const sm = sku && skuMasterByName.get(skuKey(sku));
+  const sc = sm && LWBMepd.find(mepdSchemes, sm.category, document.getElementById("orderDate").value);
   const C=number(r.case_config), D=number(r.gr), F=number(r.free_bottle), H=number(r.qps), I=number(roi!=null?roi:S.roi_main);
-  const E = D*(blankValue(r.mepd_pct)?S.mepd_pct:number(r.mepd_pct))/100;
+  const E = D*(sc?number(sc.mepd_pct):blankValue(r.mepd_pct)?S.mepd_pct:number(r.mepd_pct))/100;
   const base = D-E-H-I-((C?D/C:0)-1)*F;
   const P = number(r.slab3_rate);
   if(F>0 && C){
@@ -1506,7 +1513,8 @@ function updateLandingCells(){
     const cases = getRowCaseQty(row);
     const rateRaw = row.querySelector(".rate").value;
     const rate = number(rateRaw);
-    const J = calcLanding(pack), J5 = calcLanding(pack, rateSettings.roi_landing);
+    const sku = row.querySelector(".sku-name").value;
+    const J = calcLanding(pack, null, sku), J5 = calcLanding(pack, rateSettings.roi_landing, sku);
     cells[0].textContent = formatNumber(r2(J));
     cells[2].textContent = formatNumber(r2(J5));
     setDiffCell(cells[1], rateRaw === "" ? null : rate - J);
