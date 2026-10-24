@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Rate &amp; Scheme | Luxury Wrist Brand ERP</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <link rel="stylesheet" href="erp-shell.css">
+  <script src="erp-shell.js"></script>
+  <style>
+    .status{text-align:center;padding:80px 20px;font-size:15px;color:#555}
+    .rt-sub{margin:-8px 0 14px;color:var(--erp-muted);font-size:13px}
+    .rt-bar{display:flex;gap:10px;align-items:end;flex-wrap:wrap;margin-bottom:14px}
+    .rt-bar label{display:block;font-size:12px;font-weight:600;color:#4b5763;margin-bottom:4px}
+    .rt-bar input{height:38px;border:1.5px solid var(--erp-line);border-radius:6px;padding:0 10px;font:inherit;background:#fff;color:var(--erp-ink)}
+    .rt-bar input[type=number]{width:96px}
+    .rt-bar .grow{flex:1;min-width:200px}.rt-bar .grow input{width:100%}
+    .rt-bar button,.rt-file{height:38px;border-radius:6px;padding:0 16px;font-weight:600;cursor:pointer;border:1px solid var(--erp-red);background:var(--erp-red);color:#fff;display:inline-flex;align-items:center;font-size:14px}
+    .rt-bar button:disabled{opacity:.45;cursor:not-allowed}
+    .rt-bar label.rt-file{display:inline-flex;margin:0;background:#fff;color:var(--erp-ink);border-color:var(--erp-line);font-size:14px}
+    .rt-state{font-size:13px;font-weight:600}
+    .rt-state.dirty{color:var(--erp-amber)}.rt-state.ok{color:var(--erp-green)}
+    .rt-scroll{overflow:auto;max-height:calc(100vh - 230px)}
+    .rt-table{border-collapse:collapse;width:100%;font-size:13px}
+    .rt-table th,.rt-table td{border:1px solid var(--erp-line);padding:4px 6px;text-align:right;white-space:nowrap}
+    .rt-table th{background:#f6f7f9;position:sticky;top:0;z-index:1;font-weight:600;text-align:center;font-size:12px}
+    .rt-table th small{display:block;font-weight:400;color:var(--erp-muted)}
+    .rt-table td.l,.rt-table th.l{text-align:left}
+    .rt-table td.strong{font-weight:700}.rt-table td.red{color:var(--erp-red);font-weight:700}
+    .rt-table input{width:74px;height:28px;text-align:right;border:1px solid var(--erp-line);border-radius:5px;padding:0 6px;font:inherit;background:#fffbe6;color:var(--erp-ink)}
+    .rt-table input.name{width:190px;text-align:left}
+    .rt-table input[type=checkbox]{width:auto;height:auto}
+    .rt-table tr.off td{opacity:.45}
+    .rt-table td.chg{background:#fff3c4;font-weight:700}
+    .rt-table td.wrap{white-space:normal;text-align:left;min-width:320px}
+    .rt-note{font-size:12.5px;color:var(--erp-muted);margin:10px 2px 0}
+    .rt-add{margin:10px 0 0;border:1px dashed var(--erp-line);background:#fff;color:var(--erp-ink);border-radius:6px;padding:7px 14px;cursor:pointer;font-weight:600}
+    .rt-hist-head{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+    .rt-hist-head select{height:34px;border:1.5px solid var(--erp-line);border-radius:6px;padding:0 8px;font:inherit}
+    @media(max-width:640px){.rt-bar>div:not(.grow){flex:1 1 40%}.rt-bar input[type=number]{width:100%}.rt-bar button,.rt-file{flex:1 1 40%;justify-content:center}}
+    [hidden]{display:none!important}
+  </style>
+</head>
+<body>
+  <div id="loading" class="status">Checking account access...</div>
+  <main id="page" class="erp-main" hidden>
+    <div class="erp-pagehead"><h1>Rate &amp; Scheme</h1><span class="grow"></span><span id="state" class="rt-state"></span></div>
+    <p class="rt-sub">Company GR, MEPD, OMS, QPS, ROI aur slab rate. Har save par badlav date ke saath Rate Ledger mein jaata hai. Sirf Admin aur Manager dekh sakte hain.</p>
+
+    <div class="rt-bar">
+      <div><label for="mepd">MEPD %</label><input id="mepd" type="number" step="0.01"></div>
+      <div><label for="roi">ROI (per case, main)</label><input id="roi" type="number" step="0.01"></div>
+      <div><label for="roi5">ROI wala landing</label><input id="roi5" type="number" step="0.01"></div>
+      <div class="grow"><label for="note">Note (jaise "Company budget 24 Oct")</label><input id="note" maxlength="200" placeholder="Kya badla, kisne bataya"></div>
+      <button id="save" type="button" disabled>Save</button>
+      <label class="rt-file" id="importWrap" title="Purane CC PO Maker ka backup (.json)">PO Maker backup import<input id="importFile" type="file" accept=".json,application/json" hidden></label>
+    </div>
+
+    <div class="erp-pills" id="tabs"></div>
+    <section class="erp-card">
+      <div class="erp-card-head"><h2 id="tabTitle"></h2><small id="tabInfo" style="color:var(--erp-muted)"></small></div>
+      <div class="rt-scroll" id="box"></div>
+    </section>
+    <p class="rt-note" id="tabNote"></p>
+  </main>
+  <script>
+    const client=supabase.createClient("https://txkbhadzdbxpieunfvox.supabase.co","sb_publishable_W4I3Q5ODf0g17sq5uDml2Q_sLolXYEk");
+    const el=id=>document.getElementById(id);
+    const SLAB_NAMES=["BELOW 3 TONE","SELF PICKUP","3 & 4 TONE","SHREE JAGDISH TRADERS"];
+    const SLAB_CH=["SELF PICKUP","DIRECT VEHICLE","12 PALLET","HIGH VOLUME PARTY","MARKET RATE"];
+    const SNAP_KEYS=["gr","mepd","fb","oms","qps","roi","land","s1","s2","s3","s4"];
+
+    let me=null,settings={mepd_pct:1.25,roi_main:0,roi_landing:5},packs=[],history=[],saved="",tab="landing",busy=false,importedLedger=null;
+
+    const n=v=>(v===""||v==null||isNaN(+v))?0:+v;
+    const blank=v=>v===""||v==null;
+    const r2=v=>Math.round(+(v*100).toFixed(6))/100;
+    const fmt=(v,d=0)=>(v===""||v==null)?"":Number(v).toLocaleString("en-IN",{minimumFractionDigits:d,maximumFractionDigits:d});
+    const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+    const dtTxt=v=>{const d=new Date(v);return isNaN(d)?String(v||""):d.toLocaleString("en-IN",{day:"2-digit",month:"short",year:"numeric",hour:"2-digit",minute:"2-digit",timeZone:"Asia/Kolkata"})};
+    const numOrBlank=v=>v===""||v==null?"":+v;
+
+    async function logout(){await client.auth.signOut();location.replace("login.html")}
+    async function start(allowed){
+      const {data:{session}}=await client.auth.getSession();
+      if(!session){location.replace("login.html");return null}
+      const {data:p}=await client.from("user_profiles").select("full_name,role,active").eq("id",session.user.id).single();
+      const role=String((p&&p.role)||"").toLowerCase().trim();
+      if(!p||p.active!==true||!allowed.includes(role)){location.replace("dashboard.html");return null}
+      return {user:session.user,role,name:p.full_name||session.user.email};
+    }
+
+    /* Same formulas as the CC PO Maker LANDING sheet */
+    function calcLanding(r,roi){
+      const C=n(r.case_config),D=n(r.gr),F=n(r.free_bottle),H=n(r.qps),I=n(roi!=null?roi:settings.roi_main);
+      const E=D*(blank(r.mepd_pct)?n(settings.mepd_pct):n(r.mepd_pct))/100;
+      const base=D-E-H-I-((C?D/C:0)-1)*F;
+      const P=n(r.slab3_rate),L=P+5,N=P-5,R=P-5;
+      let G,J,mg;
+      if(F>0&&C){
+        mg=rate=>r2((rate-base)/(1+F/C));
+        const O=mg(P);
+        G=(((D/C)-1)*F)-((O/C)*F);
+        J=D-E-G-H-I;
+      }else{
+        G=n(r.oms);J=D-E-G-H-I;mg=rate=>r2(rate-J);
+      }
+      return {E,G,J,K:mg(L),L,M:mg(N),N,O:mg(P),P,Q:R-J,R};
+    }
+    function snapRows(){
+      return packs.filter(p=>p.active!==false).map(r=>{const c=calcLanding(r);
+        return {name:r.pack_name,gr:n(r.gr),mepd:r2(c.E),fb:n(r.free_bottle),oms:r2(c.G),qps:n(r.qps),roi:n(settings.roi_main),land:r2(c.J),s1:c.L,s2:c.N,s3:c.P,s4:c.R}});
+    }
+    const snapSig=rows=>rows.map(r=>[r.name].concat(SNAP_KEYS.map(k=>r[k])).join(",")).join("|");
+    function ratesChanged(){const last=history[0];return !last||snapSig(last.rows||[])!==snapSig(snapRows())}
+
+    const stateNow=()=>JSON.stringify({settings,packs});
+    function isDirty(){return stateNow()!==saved}
+    function showState(){
+      const d=isDirty();
+      el("save").disabled=busy||!d;
+      const s=el("state");
+      if(d){s.textContent="Badlav save nahi hue";s.className="rt-state dirty"}
+      else{const h=history[0];s.textContent=h?"Last save: "+dtTxt(h.created_at):"";s.className="rt-state ok"}
+    }
+    window.addEventListener("beforeunload",e=>{if(isDirty()){e.preventDefault();e.returnValue=""}});
+
+    async function load(){
+      const [s,p,h]=await Promise.all([
+        client.from("lwb_rate_settings").select("mepd_pct,roi_main,roi_landing").eq("id",1).maybeSingle(),
+        client.from("lwb_rate_packs").select("*").order("sort_no").order("pack_name"),
+        client.from("lwb_rate_history").select("id,created_at,note,settings,rows").order("created_at",{ascending:false}).limit(500)
+      ]);
+      const err=s.error||p.error||h.error;
+      if(err){el("box").innerHTML='<div class="erp-empty">Rate tables abhi bane nahi hain ya access nahi hai: '+esc(err.message)+'<br>Supabase mein lwb_rate_scheme_setup.sql chalao.</div>';throw err}
+      if(s.data)settings={mepd_pct:+s.data.mepd_pct,roi_main:+s.data.roi_main,roi_landing:+s.data.roi_landing};
+      packs=(p.data||[]).map(x=>({id:x.id,sort_no:x.sort_no,pack_name:x.pack_name,case_config:+x.case_config,gr:+x.gr,mepd_pct:numOrBlank(x.mepd_pct),
+        free_bottle:+x.free_bottle,oms:numOrBlank(x.oms),qps:+x.qps,slab3_rate:+x.slab3_rate,unit_weight:numOrBlank(x.unit_weight),bottle:numOrBlank(x.bottle),
+        slab_landing:numOrBlank(x.slab_landing),slab_margins:[0,1,2,3,4].map(i=>numOrBlank((x.slab_margins||[])[i])),active:x.active!==false})).sort((a,b)=>a.sort_no-b.sort_no||a.pack_name.localeCompare(b.pack_name));
+      history=h.data||[];
+      saved=stateNow();
+      el("mepd").value=settings.mepd_pct;el("roi").value=settings.roi_main;el("roi5").value=settings.roi_landing;
+      render();
+    }
+
+    /* ---------- tabs ---------- */
+    const TABS=[["landing","Landing / Rate"],["slab","Slab"],["ledger","Rate Ledger"]];
+    function renderTabs(){el("tabs").innerHTML=TABS.map(([id,l])=>'<button type="button" class="erp-pill'+(id===tab?" active":"")+'" data-tab="'+id+'">'+esc(l)+"</button>").join("")}
+    function render(){
+      renderTabs();
+      if(tab==="landing")renderLanding();else if(tab==="slab")renderSlab();else renderLedger();
+      showState();
+    }
+
+    function cellInput(i,f,v,cls){return '<input data-i="'+i+'" data-f="'+f+'" value="'+esc(v)+'"'+(cls?' class="'+cls+'"':"")+(me.edit?"":" disabled")+">"}
+    function renderLanding(){
+      el("tabTitle").textContent="Landing / Rate";
+      el("tabInfo").textContent=packs.filter(p=>p.active!==false).length+" pack";
+      el("tabNote").textContent="Slab 3 MGR rate bharo; Slab 1 = +5, Slab 2 aur 4 = −5. MEPD % khaali = upar wala MEPD. OMS khaali = free bottle formula se. Active hatao to pack band ho jaayega (delete nahi hota).";
+      let h='<table class="rt-table"><thead><tr><th>#</th><th class="l">PACK</th><th>CASE CONFIG</th><th>GR</th><th>MEPD %</th><th>MEPD</th><th>FREE BOTTLE</th><th>OMS</th><th>QPS</th><th>ROI</th><th>LANDING<small>bina ROI</small></th><th>LANDING<small>ROI '+esc(settings.roi_landing)+"</small></th>"+
+        SLAB_NAMES.map((s,i)=>"<th>SLAB "+(i+1)+" MARGIN<small>"+esc(s)+"</small></th><th>MGR RATE</th>").join("")+"<th>Active</th></tr></thead><tbody>";
+      packs.forEach((r,i)=>{
+        const c=calcLanding(r),c5=calcLanding(r,settings.roi_landing),fb=n(r.free_bottle)>0;
+        h+='<tr class="'+(r.active===false?"off":"")+'"><td>'+(i+1)+'</td><td class="l">'+cellInput(i,"pack_name",r.pack_name,"name")+"</td>"+
+          "<td>"+cellInput(i,"case_config",r.case_config)+"</td><td>"+cellInput(i,"gr",r.gr)+"</td>"+
+          "<td>"+cellInput(i,"mepd_pct",r.mepd_pct).replace("<input",'<input placeholder="'+esc(settings.mepd_pct)+'"')+"</td><td>"+fmt(c.E,2)+"</td>"+
+          "<td>"+cellInput(i,"free_bottle",r.free_bottle)+"</td><td>"+(fb?fmt(c.G,2):cellInput(i,"oms",r.oms))+"</td>"+
+          "<td>"+cellInput(i,"qps",r.qps)+"</td><td>"+fmt(settings.roi_main,2)+'</td><td class="strong">'+fmt(c.J,2)+'</td><td class="red">'+fmt(c5.J,2)+"</td>"+
+          "<td>"+fmt(c.K,2)+"</td><td>"+fmt(c.L)+"</td><td>"+fmt(c.M,2)+"</td><td>"+fmt(c.N)+"</td><td>"+fmt(c.O,2)+"</td><td>"+cellInput(i,"slab3_rate",r.slab3_rate)+"</td><td>"+fmt(c.Q,2)+"</td><td>"+fmt(c.R)+"</td>"+
+          '<td><input type="checkbox" data-i="'+i+'" data-f="active"'+(r.active!==false?" checked":"")+(me.edit?"":" disabled")+"></td></tr>";
+      });
+      h+="</tbody></table>";
+      if(me.edit)h+='<button type="button" class="rt-add" id="addPack">+ Naya pack</button>';
+      el("box").innerHTML=h;
+      if(!packs.length)el("box").insertAdjacentHTML("afterbegin",'<div class="erp-empty">Abhi koi pack nahi. Upar "PO Maker backup import" se purana data laao, ya "+ Naya pack" dabao.</div>');
+    }
+    function renderSlab(){
+      el("tabTitle").textContent="Slab";
+      el("tabInfo").textContent="Rate = Landing + Margin";
+      el("tabNote").textContent="Weight (KG per case) se order ka slab apne aap chunega (3 ton se kam = Slab 1). Margin bharo, rate apne aap.";
+      let h='<table class="rt-table"><thead><tr><th class="l">SKU</th><th>WEIGHT</th><th>BOTTLE</th><th>LANDING</th>'+SLAB_CH.map(c=>"<th>MARGIN<small>"+esc(c)+"</small></th><th>RATE</th>").join("")+"</tr></thead><tbody>";
+      packs.forEach((r,i)=>{
+        h+='<tr class="'+(r.active===false?"off":"")+'"><td class="l">'+esc(r.pack_name)+"</td><td>"+cellInput(i,"unit_weight",r.unit_weight)+"</td><td>"+cellInput(i,"bottle",r.bottle)+"</td><td>"+cellInput(i,"slab_landing",r.slab_landing)+"</td>"+
+          r.slab_margins.map((m,j)=>"<td>"+cellInput(i,"m"+j,m)+"</td><td>"+((blank(m)&&j>0)?"":fmt(n(r.slab_landing)+n(m),2))+"</td>").join("")+"</tr>";
+      });
+      el("box").innerHTML=h+"</tbody></table>";
+    }
+    let ledSku=0;
+    function renderLedger(){
+      el("tabTitle").textContent="Rate Ledger";
+      el("tabInfo").textContent=history.length+" entry";
+      el("tabNote").textContent=ratesChanged()?"Rate ya scheme badle hain; Save karte hi nayi entry banegi.":"Ledger up to date hai. Purani entry kabhi badalti ya delete nahi hoti.";
+      const names=[...new Set(history.flatMap(e=>(e.rows||[]).map(r=>r.name)).concat(packs.map(p=>p.pack_name)))];
+      if(ledSku>=names.length)ledSku=0;
+      const sku=names[ledSku];
+      let h='<div class="erp-card-body rt-hist-head"><b>SKU history</b><select id="ledSku">'+names.map((x,i)=>'<option value="'+i+'"'+(i===ledSku?" selected":"")+">"+esc(x)+"</option>").join("")+"</select></div>";
+      h+='<table class="rt-table"><thead><tr><th class="l">DATE</th><th class="l">NOTE</th><th>GR</th><th>MEPD</th><th>FREE BTL</th><th>OMS</th><th>QPS</th><th>ROI</th><th>LANDING</th><th>SLAB 1</th><th>SLAB 2</th><th>SLAB 3</th><th>SLAB 4</th></tr></thead><tbody>';
+      const asc=history.slice().reverse();let prev=null;const lines=[];
+      asc.forEach(e=>{const r=(e.rows||[]).find(x=>x.name===sku);if(!r)return;
+        lines.unshift('<tr><td class="l">'+esc(dtTxt(e.created_at))+'</td><td class="l">'+esc(e.note||"")+"</td>"+SNAP_KEYS.map(k=>"<td"+(prev&&prev[k]!==r[k]?' class="chg" title="pehle '+esc(prev[k])+'"':"")+">"+fmt(r[k],["mepd","oms","land"].includes(k)?2:0)+"</td>").join("")+"</tr>");
+        prev=r;});
+      h+=(lines.join("")||'<tr><td class="l" colspan="13">Is SKU ki koi entry nahi.</td></tr>')+"</tbody></table>";
+      h+='<div class="erp-card-body"><b>Ledger entries (date wise)</b></div><table class="rt-table"><thead><tr><th>#</th><th class="l">DATE</th><th class="l">NOTE</th><th class="l">KYA BADLA (pichhli entry se)</th></tr></thead><tbody>';
+      history.forEach((e,idx)=>{const P=history[idx+1];
+        const ch=P?(e.rows||[]).map(r=>{const o=(P.rows||[]).find(x=>x.name===r.name);if(!o)return r.name+": naya";const ks=SNAP_KEYS.filter(k=>o[k]!==r[k]);return ks.length?r.name+": "+ks.map(k=>k.toUpperCase()+" "+fmt(o[k],2)+"→"+fmt(r[k],2)).join(", "):""}).filter(Boolean):["Pehli entry"];
+        h+="<tr><td>"+(history.length-idx)+'</td><td class="l">'+esc(dtTxt(e.created_at))+'</td><td class="l">'+esc(e.note||"")+'</td><td class="wrap">'+esc(ch.slice(0,8).join(" | ")+(ch.length>8?" | +"+(ch.length-8)+" aur":""))+"</td></tr>";});
+      if(!history.length)h+='<tr><td colspan="4" class="l">Abhi koi entry nahi.</td></tr>';
+      el("box").innerHTML=h+"</tbody></table>";
+    }
+
+    /* ---------- edits ---------- */
+    document.addEventListener("input",e=>{
+      const t=e.target;
+      if(["mepd","roi","roi5"].includes(t.id)){
+        settings[{mepd:"mepd_pct",roi:"roi_main",roi5:"roi_landing"}[t.id]]=n(t.value);
+        clearTimeout(render._t);render._t=setTimeout(()=>keepFocus(render),250);return;
+      }
+      if(t.dataset.i==null||t.type==="checkbox")return;
+      const r=packs[+t.dataset.i],f=t.dataset.f,v=t.value.trim();
+      if(f==="pack_name")r.pack_name=t.value;
+      else if(/^m\d$/.test(f))r.slab_margins[+f.slice(1)]=v===""?"":(isNaN(+v)?r.slab_margins[+f.slice(1)]:+v);
+      else if(["mepd_pct","oms","unit_weight","bottle","slab_landing"].includes(f))r[f]=v===""?"":(isNaN(+v)?r[f]:+v);
+      else r[f]=v===""?0:(isNaN(+v)?r[f]:+v);
+      clearTimeout(render._t);render._t=setTimeout(()=>keepFocus(render),350);
+      showState();
+    });
+    document.addEventListener("change",e=>{
+      const t=e.target;
+      if(t.type==="checkbox"&&t.dataset.f==="active"){packs[+t.dataset.i].active=t.checked;render();return}
+      if(t.id==="ledSku"){ledSku=+t.value;renderLedger();return}
+      if(t.id==="importFile"){importBackup(t.files[0]);t.value=""}
+    });
+    document.addEventListener("click",e=>{
+      const b=e.target.closest("[data-tab]");if(b){tab=b.dataset.tab;render();return}
+      if(e.target.id==="addPack"){packs.push({pack_name:"",sort_no:packs.length,case_config:0,gr:0,mepd_pct:"",free_bottle:0,oms:"",qps:0,slab3_rate:0,unit_weight:"",bottle:"",slab_landing:"",slab_margins:["","","","",""],active:true});render();
+        const ins=document.querySelectorAll('input[data-f="pack_name"]');if(ins.length)ins[ins.length-1].focus()}
+    });
+    // Re-rendering replaces inputs; keep the cursor in the same box.
+    function keepFocus(fn){
+      const a=document.activeElement,key=a&&a.dataset&&a.dataset.i!=null?a.dataset.i+"|"+a.dataset.f:(a&&a.id),sel=a&&a.selectionStart!=null&&a.type!=="number"?[a.selectionStart,a.selectionEnd]:null,y=el("box").scrollTop,x=el("box").scrollLeft;
+      fn();
+      el("box").scrollTop=y;el("box").scrollLeft=x;
+      if(!key)return;
+      const [i,f]=String(key).split("|");
+      const t=f!=null?document.querySelector('[data-i="'+i+'"][data-f="'+f+'"]'):el(i);
+      if(t){t.focus({preventScroll:true});if(sel&&t.setSelectionRange)try{t.setSelectionRange(sel[0],sel[1])}catch(e){}}
+    }
+
+    /* ---------- save ---------- */
+    async function save(){
+      if(busy||!isDirty())return;
+      const bad=packs.findIndex(p=>!String(p.pack_name||"").trim());
+      if(bad>=0){await ERPShell.alert("Pack "+(bad+1)+" ka naam bharo.");return}
+      const names=packs.map(p=>p.pack_name.trim().toUpperCase());
+      const dup=names.find((x,i)=>names.indexOf(x)!==i);
+      if(dup){await ERPShell.alert("Pack naam do baar hai: "+dup);return}
+      const changed=ratesChanged(),note=el("note").value.trim();
+      if(!await ERPShell.confirm("Rate save karein?\n\n"+(changed?"Rate / scheme badla hai: Rate Ledger mein nayi entry banegi"+(note?" (\""+note+"\")":"")+".":"Sirf naam / weight / slab sheet badla hai; ledger entry nahi banegi.")))return;
+      busy=true;showState();
+      try{
+        if(importedLedger&&importedLedger.length&&!history.length&&me.role==="admin"){
+          const {error}=await client.rpc("lwb_import_rate_history",{p_entries:importedLedger});
+          if(error)throw error;
+        }
+        const payload=packs.map((p,i)=>({id:p.id||null,sort_no:i,pack_name:p.pack_name.trim(),case_config:n(p.case_config),gr:n(p.gr),mepd_pct:p.mepd_pct===""?null:n(p.mepd_pct),
+          free_bottle:n(p.free_bottle),oms:p.oms===""?null:n(p.oms),qps:n(p.qps),slab3_rate:n(p.slab3_rate),unit_weight:p.unit_weight===""?null:n(p.unit_weight),
+          bottle:p.bottle===""?null:n(p.bottle),slab_landing:p.slab_landing===""?null:n(p.slab_landing),slab_margins:p.slab_margins.map(m=>m===""?null:n(m)),active:p.active!==false}));
+        const {error}=await client.rpc("lwb_save_rates",{p_settings:settings,p_packs:payload,p_note:note||(changed?"Rate update":null),p_snapshot:changed?snapRows():null});
+        if(error)throw error;
+        importedLedger=null;el("note").value="";
+        await load();
+        ERPShell.toast("Rate save ho gaye"+(changed?", ledger entry bani.":"."),"success");
+      }catch(e){await ERPShell.alert("Save nahi hua: "+(e.message||e))}
+      finally{busy=false;showState()}
+    }
+
+    /* ---------- one-time import from the old CC PO Maker backup ---------- */
+    async function importBackup(file){
+      if(!file)return;
+      let S;
+      try{S=JSON.parse(await file.text());if(!Array.isArray(S.landing))throw 0}catch(e){await ERPShell.alert("Ye CC PO Maker ka backup file nahi lagta.");return}
+      if(!await ERPShell.confirm("Backup se "+S.landing.length+" pack aur MEPD / ROI laayein?\n\nSame naam wale pack update honge, naye judenge. Save dabane tak database mein kuch nahi jaayega."))return;
+      if(S.mepd!=null)settings.mepd_pct=n(S.mepd);
+      if(S.roi!=null)settings.roi_main=n(S.roi);
+      if(S.roi5!=null)settings.roi_landing=n(S.roi5);
+      S.landing.forEach((r,i)=>{
+        const sl=(S.slab||[])[i]||{};
+        const key=String(r.name||"").trim().toUpperCase();if(!key)return;
+        let p=packs.find(x=>x.pack_name.trim().toUpperCase()===key);
+        if(!p){p={pack_name:String(r.name).trim(),active:true,slab_margins:["","","","",""]};packs.push(p)}
+        Object.assign(p,{sort_no:i,case_config:n(r.cs),gr:n(r.gr),mepd_pct:(r.mepd===""||r.mepd==null||r.mepd==="g")?"":n(r.mepd),free_bottle:n(r.fb),oms:(r.oms===""||r.oms==null)?"":n(r.oms),
+          qps:n(r.qps),slab3_rate:n(r.s3),unit_weight:numOrBlank(sl.wt),bottle:numOrBlank(sl.bt),slab_landing:numOrBlank(sl.land),slab_margins:[0,1,2,3,4].map(j=>numOrBlank((sl.m||[])[j]))});
+      });
+      packs.sort((a,b)=>n(a.sort_no)-n(b.sort_no));
+      importedLedger=!history.length&&Array.isArray(S.ledger)&&S.ledger.length?S.ledger.map(L=>({dt:L.dt,note:L.note,rows:L.rows||[],settings:{}})):null;
+      el("mepd").value=settings.mepd_pct;el("roi").value=settings.roi_main;el("roi5").value=settings.roi_landing;
+      if(!el("note").value)el("note").value="PO Maker se import";
+      render();
+      ERPShell.toast(importedLedger?"Backup aa gaya ("+importedLedger.length+" purani ledger entry bhi). Ab Save dabao.":"Backup aa gaya. Ab Save dabao.","success");
+    }
+
+    (async()=>{
+      const u=await start(["admin","manager"]);if(!u)return;
+      me={...u,edit:true};
+      ERPShell.mount({role:u.role,name:u.name,onLogout:logout,group:"Settings",title:"Rate & Scheme"});
+      el("loading").hidden=true;el("page").hidden=false;
+      el("save").onclick=save;
+      try{await load()}catch(e){}
+    })();
+  </script>
+</body>
+</html>

@@ -54,7 +54,8 @@
       {t:"Group Loading",h:"group-party-loading.html",i:"layers",r:"admin"}]},
     {group:"Settings",items:[
       {t:"Settings",h:"settings.html",i:"gear",r:"admin manager"},
-      {t:"Manage Users",h:"users.html",i:"lock",r:"admin"}]}
+      {t:"Manage Users",h:"users.html",i:"lock",r:"admin"},
+      {t:"Rate & Scheme",h:"rates.html",i:"tag",r:"admin manager"}]}
   ];
 
 
