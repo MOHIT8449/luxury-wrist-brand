@@ -23,13 +23,14 @@
 <div><label for="cess">Cess Rate (%)</label><input id="cess" type="number" min="0" max="100" step="0.01" placeholder="Optional"></div>
 <div><label for="weight">Unit Weight per Case (KG)</label><input id="weight" type="number" min="0" step="0.001" placeholder="e.g. 12.500" disabled></div>
 <div><label for="palletCases">Cases per Pallet (CS/Pallet)</label><input id="palletCases" type="number" min="1" max="100000" step="1" placeholder="e.g. 117" disabled></div>
+<div id="rateGroupField" hidden><label for="rateGroup">Rate Group (Rate &amp; Scheme)</label><select id="rateGroup"><option value="">— Rate group nahi —</option></select></div>
 <div><label for="active">Status</label><select id="active"><option value="true">Active</option><option value="false">Inactive</option></select></div>
 </div><div class="actions"><button id="saveBtn" type="submit">Save SKU</button><button class="secondary" id="clearBtn" type="button">Clear / New SKU</button></div></form>
 <small class="hint">GST/Cess rates optional हैं। Invoicing से पहले applicable tax rate verify करें।</small>
 <small class="hint" id="weightHint">SKU weight auto-fill setup: add optional unit_weight_kg column in Supabase first, then enter verified KG per CASE for each SKU.</small>
 <small class="hint" id="palletHint">Cases/Pallet comes from this Master. Run lwb_pallet_quantity_setup.sql in Supabase to enable it; do not guess pallet counts.</small></section>
 <section class="panel"><div class="toolbar"><div><h2 style="margin-bottom:5px">SKU List</h2><span id="status">Loading...</span></div><input id="search" placeholder="Search SKU name or HSN..."></div>
-<div class="table-wrap"><table><thead><tr><th>SKU Name</th><th>HSN</th><th>PCS/Case</th><th>Unit Wt/Case KG</th><th>CS/Pallet</th><th>GST %</th><th>Cess %</th><th>Status</th><th>Action</th></tr></thead><tbody id="rows"><tr><td colspan="9">Loading...</td></tr></tbody></table></div></section>
+<div class="table-wrap"><table><thead><tr><th>SKU Name</th><th>HSN</th><th>PCS/Case</th><th>Unit Wt/Case KG</th><th>CS/Pallet</th><th>GST %</th><th>Cess %</th><th class="rg-col" hidden>Rate Group</th><th>Status</th><th>Action</th></tr></thead><tbody id="rows"><tr><td colspan="9">Loading...</td></tr></tbody></table></div></section>
 </main>
 <script>
 'use strict';
@@ -38,15 +39,35 @@ const SUPABASE_URL='https://txkbhadzdbxpieunfvox.supabase.co';
 // Never use a service_role or secret key in browser HTML.
 const SUPABASE_PUBLISHABLE_KEY='sb_publishable_W4I3Q5ODf0g17sq5uDml2Q_sLolXYEk';
 const $=id=>document.getElementById(id);
+let packs=[],links=new Map(),ratesOn=false;
+const skuKey=v=>String(v||'').trim().toUpperCase();
 let db=null,skus=[],editingId=null,weightColumnAvailable=false,palletColumnAvailable=false,canEdit=false;
 function notice(message,error=false){const el=$('message');el.textContent=message;el.className='message '+(error?'error':'success');}
 function resetForm(){$('skuForm').reset();editingId=null;$('formTitle').textContent='Add New SKU';$('saveBtn').textContent='Save SKU';$('pcs').value='24';$('weight').value='';$('palletCases').value='';}
 function showValue(v){return v===null||v===undefined||v===''?'—':String(v);}
 function addCell(row,value){const cell=document.createElement('td');cell.textContent=showValue(value);row.appendChild(cell);return cell;}
 function render(){const q=$('search').value.toLowerCase().trim();const matches=skus.filter(x=>String(x.sku_name||'').toLowerCase().includes(q)||String(x.hsn_code||'').toLowerCase().includes(q));const body=$('rows');body.replaceChildren();$('status').textContent=`${matches.length} shown / ${skus.length} total`;
-if(!matches.length){const tr=document.createElement('tr');const td=addCell(tr,skus.length?'No matching SKUs.':'No SKUs found.');td.colSpan=9;body.appendChild(tr);return;}
-for(const item of matches){const tr=document.createElement('tr');addCell(tr,item.sku_name);addCell(tr,item.hsn_code);addCell(tr,item.pcs_per_case);addCell(tr,item.unit_weight_kg);addCell(tr,item.cases_per_pallet);addCell(tr,item.gst_rate);addCell(tr,item.cess_rate);addCell(tr,item.is_active===false?'Inactive':'Active');const td=document.createElement('td');const btn=document.createElement('button');btn.type='button';btn.textContent='Edit';btn.disabled=!canEdit;btn.addEventListener('click',()=>editSku(item.id));td.appendChild(btn);tr.appendChild(td);body.appendChild(tr);}}
-function editSku(id){const x=skus.find(item=>item.id===id);if(!x)return;editingId=id;$('skuName').value=x.sku_name||'';$('hsn').value=x.hsn_code||'';$('pcs').value=x.pcs_per_case??'';$('weight').value=x.unit_weight_kg??'';$('palletCases').value=x.cases_per_pallet??'';$('gst').value=x.gst_rate??'';$('cess').value=x.cess_rate??'';$('active').value=String(x.is_active!==false);$('formTitle').textContent='Edit SKU';$('saveBtn').textContent='Update SKU';window.scrollTo({top:0,behavior:'smooth'});}
+if(!matches.length){const tr=document.createElement('tr');const td=addCell(tr,skus.length?'No matching SKUs.':'No SKUs found.');td.colSpan=ratesOn?10:9;body.appendChild(tr);return;}
+for(const item of matches){const tr=document.createElement('tr');addCell(tr,item.sku_name);addCell(tr,item.hsn_code);addCell(tr,item.pcs_per_case);addCell(tr,item.unit_weight_kg);addCell(tr,item.cases_per_pallet);addCell(tr,item.gst_rate);addCell(tr,item.cess_rate);if(ratesOn){const p=packs.find(x=>x.id===links.get(skuKey(item.sku_name)));addCell(tr,p?p.pack_name+' (₹'+p.slab3_rate+')':'');}addCell(tr,item.is_active===false?'Inactive':'Active');const td=document.createElement('td');const btn=document.createElement('button');btn.type='button';btn.textContent='Edit';btn.disabled=!canEdit;btn.addEventListener('click',()=>editSku(item.id));td.appendChild(btn);tr.appendChild(td);body.appendChild(tr);}}
+function editSku(id){const x=skus.find(item=>item.id===id);if(!x)return;editingId=id;$('skuName').value=x.sku_name||'';$('hsn').value=x.hsn_code||'';$('pcs').value=x.pcs_per_case??'';$('weight').value=x.unit_weight_kg??'';$('palletCases').value=x.cases_per_pallet??'';$('gst').value=x.gst_rate??'';$('cess').value=x.cess_rate??'';$('active').value=String(x.is_active!==false);$('rateGroup').value=links.get(skuKey(x.sku_name))||'';$('formTitle').textContent='Edit SKU';$('saveBtn').textContent='Update SKU';window.scrollTo({top:0,behavior:'smooth'});}
+// SKU -> Rate & Scheme rate group, so slab rate on PO Entry comes from this one SKU Master.
+async function loadRateGroups(){
+  if(!canEdit)return;
+  const [p,l]=await Promise.all([db.from('lwb_rate_packs').select('id,pack_name,slab3_rate,active').order('sort_no'),db.from('lwb_rate_pack_skus').select('sku_key,pack_id')]);
+  if(p.error||l.error)return;
+  packs=(p.data||[]).filter(x=>x.active!==false);links=new Map((l.data||[]).map(x=>[x.sku_key,x.pack_id]));ratesOn=true;
+  $('rateGroupField').hidden=false;document.querySelectorAll('.rg-col').forEach(x=>x.hidden=false);
+  $('rateGroup').replaceChildren(new Option('— Rate group nahi —',''),...packs.map(x=>new Option(x.pack_name+' (Slab 3 ₹'+x.slab3_rate+')',x.id)));
+}
+async function saveRateGroup(oldName,newName){
+  if(!ratesOn)return'';
+  const want=$('rateGroup').value||null,oldKey=skuKey(oldName),newKey=skuKey(newName),changes=[];
+  if(oldKey&&oldKey!==newKey&&links.has(oldKey))changes.push({sku_name:oldKey,pack_id:null});
+  if((links.get(newKey)||null)!==want||(oldKey&&oldKey!==newKey))changes.push({sku_name:newKey,pack_id:want});
+  if(!changes.length)return'';
+  const {error}=await db.rpc('lwb_link_rate_skus',{p_links:changes});
+  return error?' Rate group save nahi hua: '+error.message:'';
+}
 async function loadSkus(){const {data,error}=await db.from('sku_master').select('*').order('sku_name');if(error){notice('SKU list load failed: '+error.message,true);$('status').textContent='Load failed';return;}skus=data||[];
 weightColumnAvailable=skus.some(x=>Object.prototype.hasOwnProperty.call(x,'unit_weight_kg'));
 palletColumnAvailable=skus.some(x=>Object.prototype.hasOwnProperty.call(x,'cases_per_pallet'));
@@ -77,12 +98,13 @@ if(palletColumnAvailable){
   }
   payload.cases_per_pallet=palletCases;
 }
-$('saveBtn').disabled=true;try{let query=editingId?db.from('sku_master').update(payload).eq('id',editingId):db.from('sku_master').insert(payload);const {error}=await query;if(error)throw error;resetForm();await loadSkus();notice('SKU saved successfully.');}catch(e){notice('Save failed: '+e.message,true);}finally{$('saveBtn').disabled=!canEdit;}}
+const oldName=editingId?(skus.find(x=>x.id===editingId)||{}).sku_name:'';
+$('saveBtn').disabled=true;try{let query=editingId?db.from('sku_master').update(payload).eq('id',editingId):db.from('sku_master').insert(payload);const {error}=await query;if(error)throw error;const rgErr=await saveRateGroup(oldName,name);resetForm();await loadRateGroups();await loadSkus();notice('SKU saved successfully.'+rgErr,!!rgErr);}catch(e){notice('Save failed: '+e.message,true);}finally{$('saveBtn').disabled=!canEdit;}}
 async function init(){resetForm();$('skuForm').addEventListener('submit',saveSku);$('clearBtn').addEventListener('click',resetForm);$('search').addEventListener('input',render);
 if(SUPABASE_PUBLISHABLE_KEY.includes('PASTE_YOUR')){notice('Setup needed: add your Supabase publishable key in this HTML file.',true);$('rows').replaceChildren();$('status').textContent='Supabase key not configured';return;}
 if(!window.supabase){notice('Supabase library did not load. Check internet connection.',true);return;}
 try{db=window.supabase.createClient(SUPABASE_URL,SUPABASE_PUBLISHABLE_KEY);const {data:{user},error}=await db.auth.getUser();if(error||!user){notice('Please log in to ERP first, then open SKU Master.',true);$('status').textContent='Login required';return;}const {data:profile,error:pe}=await db.from('user_profiles').select('role,active').eq('id',user.id).maybeSingle();if(pe)throw pe;if(!profile||profile.active!==true){notice('Your ERP login is not active.',true);$('status').textContent='Access denied';return;}canEdit=['admin','manager'].includes(String(profile.role||'').trim().toLowerCase());// Only Admin / Manager can add or edit SKUs; other roles get a read-only list.
-for(const control of $('skuForm').elements)control.disabled=!canEdit;if(!canEdit)notice('View only: Admin / Manager can change SKU Master.');await loadSkus();}catch(e){notice('Connection failed: '+e.message,true);}}
+for(const control of $('skuForm').elements)control.disabled=!canEdit;if(!canEdit)notice('View only: Admin / Manager can change SKU Master.');await loadRateGroups();await loadSkus();}catch(e){notice('Connection failed: '+e.message,true);}}
 init();
 </script>
 </body>
