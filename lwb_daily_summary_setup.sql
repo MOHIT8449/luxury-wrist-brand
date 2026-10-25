@@ -4,10 +4,10 @@
 --
 -- Read-only report for Reports > Daily Summary. Admin, Manager and Accounts only.
 -- Dates are India time (Asia/Kolkata).
---   * Orders aaye: orders with order_date on the day
---   * Delivery: driver delivery reports on the day, per driver
---   * Driver ne paisa liya: driver-reported collection (report only, office has not verified)
---   * Payment aaya: payment receipts dated that day, Verified (POSTED) and Pending separately
+--   * Orders received: orders with order_date on the day
+--   * Deliveries: driver delivery reports on the day, per driver
+--   * Driver cash: driver-reported collection (report only, office has not verified)
+--   * Payments received: payment receipts dated that day, Verified (POSTED) and Pending separately
 --   * Outstanding: party ledger balance up to that day (bills − returns − verified payments + opening)
 -- Nothing is inserted or changed.
 
@@ -29,7 +29,7 @@ BEGIN
     WHERE p.id = auth.uid() AND p.active = true
       AND lower(btrim(p.role)) IN ('admin','manager','accounts')
   ) THEN
-    RAISE EXCEPTION 'Daily Summary sirf Admin, Manager, Accounts dekh sakte hain';
+    RAISE EXCEPTION 'Daily Summary is available to Admin, Manager and Accounts only';
   END IF;
 
   WITH

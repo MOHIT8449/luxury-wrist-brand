@@ -298,7 +298,7 @@ table.pallet-mode .pal-col{display:none}
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:15px">
       <div>
         <div class="card-title" style="margin:0">Order Items</div>
-        <small class="fast-entry-hint">Fast Tab Entry: SKU → Pallet → Quantity → Rate → next SKU automatically. Rate party ke last bill se, warna slab se apne aap aata hai.</small>
+        <small class="fast-entry-hint">Fast Tab Entry: SKU → Pallet → Quantity → Rate → next SKU automatically. Rate is filled automatically from the party's last bill, otherwise from the slab.</small>
       </div>
 
       <button class="btn btn-blue" onclick="addItem()">
@@ -319,7 +319,7 @@ table.pallet-mode .pal-col{display:none}
             <th>Amount ₹</th>
             <th>Unit Weight KG</th>
             <th>Total Weight KG</th>
-            <th class="mgr-col">Landing<br><small>bina ROI</small></th>
+            <th class="mgr-col">Landing<br><small>excl. ROI</small></th>
             <th class="mgr-col">Diff</th>
             <th class="mgr-col">Landing<br><small id="roiHead">ROI</small></th>
             <th class="mgr-col">Diff<br><small>ROI</small></th>
@@ -361,7 +361,7 @@ table.pallet-mode .pal-col{display:none}
         </div>
 
         <div class="summary-row mgr-col"><span>Total GR</span><strong id="totalGr">₹0.00</strong></div>
-        <div class="summary-row mgr-col"><span>Diff total bina ROI</span><strong id="totalDiff">₹0.00</strong></div>
+        <div class="summary-row mgr-col"><span>Diff total excl. ROI</span><strong id="totalDiff">₹0.00</strong></div>
         <div class="summary-row mgr-col"><span id="totalDiff5Label">Diff total ROI</span><strong id="totalDiff5">₹0.00</strong></div>
         <div class="summary-row mgr-col"><span>MEPD</span><strong id="mepdPct">—</strong></div>
 
@@ -1341,11 +1341,11 @@ async function loadRates(){
     if(error) throw error;
     slab3BySku = new Map((data || []).map(x => [skuKey(x.sku), number(x.slab3_rate)]));
     note.hidden = slab3BySku.size > 0;
-    note.textContent = "Rate & Scheme mein SKU link nahi hai, rate khud bharo.";
+    note.textContent = "SKU is not linked in Rate & Scheme. Enter the rate manually.";
   }catch(error){
     slab3BySku = new Map();
     note.hidden = false;
-    note.textContent = "Slab rate abhi set nahi hai (Rate & Scheme). Rate khud bharo.";
+    note.textContent = "Slab rate is not set yet (Rate & Scheme). Enter the rate manually.";
   }
   const role = String(currentProfile?.role || "").trim().toLowerCase();
   if(!["admin","manager"].includes(role)) return;
@@ -1427,15 +1427,15 @@ function syncSlabToTransport(){
 
 function currentSlab(){
   const pick = document.getElementById("rateSlab").value;
-  if(pick === "") return {slab:null, why:"Rate khud bharna hai"};
+  if(pick === "") return {slab:null, why:"Enter rate manually"};
   if(pick !== "auto") return {slab:Number(pick), why:""};
   const party = document.getElementById("customerName").value;
   if(/JAGDISH/i.test(party)) return {slab:3, why:"Slab 4 (Shree Jagdish party)"};
   if(document.getElementById("transportation").value === "SELF PICKUP") return {slab:1, why:"Slab 2 (Self pickup)"};
   const kg = orderWeightKg();
   return kg < AUTO_TON_KG
-    ? {slab:0, why:"Slab 1 (weight " + formatNumber(kg) + " KG, 3 ton se kam)"}
-    : {slab:2, why:"Slab 3 (weight " + formatNumber(kg) + " KG, 3 ton ya zyada)"};
+    ? {slab:0, why:"Slab 1 (weight " + formatNumber(kg) + " KG, below 3 tons)"}
+    : {slab:2, why:"Slab 3 (weight " + formatNumber(kg) + " KG, 3 tons or more)"};
 }
 
 function slabRateFor(key, slab){
@@ -1468,16 +1468,16 @@ function applyRates(){
     if(last) usedLast = true;
     const rate = number(rateInput.value);
     if(row.dataset.hand === "1" && slabRate != null && rateInput.value !== "" && rate < slabRate){
-      hint.textContent = "Slab rate ₹" + formatNumber(slabRate) + " se kam";
+      hint.textContent = "Below slab rate ₹" + formatNumber(slabRate);
       hint.className = "rate-hint warn";
     }else if(last){
       hint.textContent = "Last bill rate ₹" + formatNumber(last.rate) + " (" + (last.order_no || "") + (last.order_date ? ", " + shortDay(last.order_date) : "") + ")";
       hint.className = "rate-hint last";
     }else if(slabRate != null){
-      hint.textContent = selectedParty ? "Is party ko pehle nahi diya (slab rate)" : "Slab rate";
+      hint.textContent = selectedParty ? "Not billed to this party before (slab rate)" : "Slab rate";
       hint.className = "rate-hint";
     }else if(!slab3BySku.has(key)){
-      hint.textContent = slab3BySku.size ? "Rate list mein link nahi, rate khud bharo" : "";
+      hint.textContent = slab3BySku.size ? "Not linked in rate list. Enter the rate manually" : "";
       hint.className = "rate-hint";
     }else{
       hint.textContent = "";
@@ -1486,7 +1486,7 @@ function applyRates(){
   });
   document.getElementById("slabWhy").textContent =
     (document.getElementById("rateSlab").value === "auto" ? "→ " : "") + why +
-    (usedLast ? " · jis SKU ka pichhla bill hai uska last rate laga hai" : "");
+    (usedLast ? " · SKUs with a previous bill use the last billed rate" : "");
 }
 
 function refreshRowAmounts(row){
@@ -1611,7 +1611,7 @@ function shareToast(text){
 
 function copyOrderMessage(){
   const lines = orderLines();
-  if(!lines.length){ alert("Pehle SKU aur quantity bharo."); return; }
+  if(!lines.length){ alert("Enter SKU and quantity first."); return; }
   const h = orderHead(), t = orderSums(lines);
   let text = "*ORDER" + (h.no !== "-" ? " " + h.no : "") + "*\n*Customer:* " + h.party + "\n*Date:* " + h.date + "\n*Transport:* " + h.trans + "\n";
   if(h.sales) text += "*Sales person:* " + h.sales + "\n";
@@ -1621,9 +1621,9 @@ function copyOrderMessage(){
       (l.rate != null ? " @ ₹" + formatNumber(l.rate) + " = ₹" + formatNumber(l.amount) : "") + "\n";
   });
   text += "\n*Total Qty:* " + formatNumber(t.cases) + " case (" + formatNumber(t.pallet) + " pallet)\n*Total Amount:* ₹" + formatNumber(t.amount) + "\n*Weight:* " + formatNumber(t.weight) + " KG";
-  const done = () => shareToast("Message copy ho gaya. WhatsApp mein paste karo.");
-  if(navigator.clipboard) navigator.clipboard.writeText(text).then(done, () => prompt("Copy karo:", text));
-  else prompt("Copy karo:", text);
+  const done = () => shareToast("Message copied. Paste it in WhatsApp.");
+  if(navigator.clipboard) navigator.clipboard.writeText(text).then(done, () => prompt("Copy this:", text));
+  else prompt("Copy this:", text);
 }
 
 function orderCanvas(){
@@ -1659,23 +1659,23 @@ function orderCanvas(){
 
 async function copyOrderImage(){
   const cv = orderCanvas();
-  if(!cv){ alert("Pehle SKU aur quantity bharo."); return; }
+  if(!cv){ alert("Enter SKU and quantity first."); return; }
   try{
     if(!navigator.clipboard || !window.ClipboardItem) throw new Error("no clipboard");
     await navigator.clipboard.write([new ClipboardItem({"image/png": new Promise(r => cv.toBlob(r,"image/png"))})]);
-    shareToast("Image copy ho gayi. WhatsApp mein paste karo (Ctrl+V).");
+    shareToast("Image copied. Paste it in WhatsApp (Ctrl+V).");
   }catch(error){
     const a = document.createElement("a");
     a.href = cv.toDataURL("image/png");
     a.download = "Order " + orderHead().party + ".png";
     a.click();
-    shareToast("Copy nahi hua, image download ho gayi.");
+    shareToast("Copy failed, so the image was downloaded.");
   }
 }
 
 function downloadOrderCsv(){
   const lines = orderLines();
-  if(!lines.length){ alert("Pehle SKU aur quantity bharo."); return; }
+  if(!lines.length){ alert("Enter SKU and quantity first."); return; }
   const h = orderHead(), t = orderSums(lines);
   const q = v => '"' + String(v ?? "").replace(/"/g,'""') + '"';
   const rows = [["Order No",h.no],["Date",h.date],["Customer",h.party],["Transport",h.trans],["Sales person",h.sales],[],

@@ -17,10 +17,10 @@
   const val=amt?Number(amt.replace(/,/g,"")):0;
   const money=amt?"₹"+val.toLocaleString("en-IN",{minimumFractionDigits:val%1?2:0,maximumFractionDigits:2}):"";
   const join=a=>a.filter(Boolean).join(" · ");
-  if(t.startsWith("DELIVERY_RETURN"))return {icon:"↩",text:join(["Return",order,money,t.endsWith("OPERATIONS")?"Godown check":"Verify karo"])};
+  if(t.startsWith("DELIVERY_RETURN"))return {icon:"↩",text:join(["Return",order,money,t.endsWith("OPERATIONS")?"Warehouse check":"Verify"])};
   if(t.startsWith("LOADING_ASSIGNMENT")){
    const veh=(m.match(/Vehicle ([A-Z0-9]+)/)||[])[1],drv=((m.match(/Driver ([^(·]+)/)||[])[1]||"").trim();
-   return {icon:"🚚",text:join([/badla/i.test(title)?"Loading badla":"Loading",order,veh,drv])};
+   return {icon:"🚚",text:join([/updated|changed|badla/i.test(title)?"Loading updated":"Loading",order,veh,drv])};
   }
   const short=m.length>60?m.slice(0,57)+"…":m;
   return {icon:"•",text:join([title||"ERP",order||short])};
@@ -28,8 +28,8 @@
  function ago(v){
   if(!v)return "";
   const s=(Date.now()-new Date(v))/1000;
-  if(s<60)return "abhi";if(s<3600)return Math.floor(s/60)+" min";if(s<86400)return Math.floor(s/3600)+" ghante";
-  if(s<7*86400)return Math.floor(s/86400)+" din";
+  if(s<60)return "now";if(s<3600)return Math.floor(s/60)+" min";if(s<86400)return Math.floor(s/3600)+" hr";
+  if(s<7*86400)return Math.floor(s/86400)+" d";
   return new Date(v).toLocaleDateString("en-IN",{day:"2-digit",month:"short"});
  }
  function init({db,user,mount}){
@@ -60,7 +60,7 @@
   bell.id="lwbOpsBell";bell.type="button";
   bell.setAttribute("aria-label","ERP Notifications");bell.setAttribute("aria-expanded","false");
   bell.append(count);
-  const panel=el("section","lwb-op-panel"),head=el("div","lwb-op-head"),reload=el("button",null,"Refresh"),allRead=el("button",null,"Sab read");
+  const panel=el("section","lwb-op-panel"),head=el("div","lwb-op-head"),reload=el("button",null,"Refresh"),allRead=el("button",null,"Mark all read");
   panel.hidden=true;panel.setAttribute("aria-label","ERP Notifications");
   reload.type="button";allRead.type="button";allRead.hidden=true;
   const btns=el("span");btns.style.cssText="display:flex;gap:6px";btns.append(allRead,reload);
@@ -78,7 +78,7 @@
    allRead.hidden=!unread;
    for(const n of rows){
     const box=el("div","lwb-op-msg"+(n.is_read?"":" unread")),sum=summary(n);
-    const row=el("div","lwb-op-row");row.title="Click: poori detail";
+    const row=el("div","lwb-op-row");row.title="Click to view details";
     row.append(el("span","lwb-op-ic",sum.icon),el("span","lwb-op-sum",sum.text),el("span","lwb-op-time",ago(n.created_at)));
     const full=el("p",null,(n.title?n.title+": ":"")+(n.message||""));full.hidden=true;
     row.addEventListener("click",e=>{if(e.target.closest("button"))return;full.hidden=!full.hidden});

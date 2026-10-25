@@ -39,12 +39,12 @@
   <div id="loading" class="status">Checking account access...</div>
   <main id="page" class="erp-main" hidden>
     <div class="erp-pagehead"><h1>Daily Summary</h1></div>
-    <p class="ds-sub">Ek din me kitne order aaye, kitni delivery hui, kitna paisa aaya aur kitna baki hai. Date badal kar koi bhi din dekh sakte ho.</p>
+    <p class="ds-sub">Orders received, deliveries completed, payments received and outstanding balance for any selected date.</p>
     <div class="ds-bar">
-      <button type="button" id="prev" title="Pichla din">◀</button>
+      <button type="button" id="prev" title="Previous day">◀</button>
       <input type="date" id="day">
-      <button type="button" id="next" title="Agla din">▶</button>
-      <button type="button" id="today">Aaj</button>
+      <button type="button" id="next" title="Next day">▶</button>
+      <button type="button" id="today">Today</button>
       <button type="button" class="main" id="reload">Refresh</button>
       <button type="button" id="print">Print</button>
     </div>
@@ -79,34 +79,34 @@
       const o=s.orders,d=s.delivery,p=s.payments,u=s.outstanding;
       const done=d.delivered+d.partial;
       let h='<div class="ds-kpis">'+
-        kpi("#1d5fbf","📥 Order aaye",num(o.count),rs(o.amount),num(o.cases)+" case")+
-        kpi("#13824a","🚚 Delivery hui",num(done),rs(d.amount),(d.partial?d.partial+" partial · ":"")+(d.not_delivered?d.not_delivered+" nahi hui · ":"")+num(d.pending_count)+" order delivery baki ("+rs(d.pending_amount)+")")+
-        kpi("#b26b00","💰 Paisa aaya",rs(p.verified+p.pending),"",rs(p.verified)+" verified · "+rs(p.pending)+" verify baki"+(d.driver_cash?" · Driver ne liya "+rs(d.driver_cash):""))+
-        kpi("#c8102e","📌 Outstanding",rs(u.total),"",num(u.parties)+" party ka baki (is din tak)")+
+        kpi("#1d5fbf","📥 Orders Received",num(o.count),rs(o.amount),num(o.cases)+" cases")+
+        kpi("#13824a","🚚 Deliveries Completed",num(done),rs(d.amount),(d.partial?d.partial+" partial · ":"")+(d.not_delivered?d.not_delivered+" not delivered · ":"")+num(d.pending_count)+" orders pending delivery ("+rs(d.pending_amount)+")")+
+        kpi("#b26b00","💰 Payments Received",rs(p.verified+p.pending),"",rs(p.verified)+" verified · "+rs(p.pending)+" pending verification"+(d.driver_cash?" · Collected by drivers "+rs(d.driver_cash):""))+
+        kpi("#c8102e","📌 Outstanding",rs(u.total),"",num(u.parties)+" parties with balance due (as of this date)")+
         "</div>";
       const dr=d.by_driver||[];
-      h+='<section class="erp-card"><div class="erp-card-head"><h2>Driver ke hisab se delivery</h2><small style="color:var(--erp-muted)">'+esc(nice(s.date))+'</small></div>'+
-        table([{t:"Driver"},{t:"Delivered",n:1},{t:"Partial",n:1},{t:"Nahi hui",n:1},{t:"Order amount",n:1},{t:"Driver ne paisa liya",n:1},{t:"Orders"}],
+      h+='<section class="erp-card"><div class="erp-card-head"><h2>Deliveries by Driver</h2><small style="color:var(--erp-muted)">'+esc(nice(s.date))+'</small></div>'+
+        table([{t:"Driver"},{t:"Delivered",n:1},{t:"Partial",n:1},{t:"Not Delivered",n:1},{t:"Order Value",n:1},{t:"Cash Collected",n:1},{t:"Orders"}],
           dr.map(x=>"<tr><td><b>"+esc(x.driver)+"</b><small>"+esc(x.mobile||"")+'</small></td><td class="n">'+x.delivered+'</td><td class="n">'+x.partial+'</td><td class="n">'+x.not_delivered+'</td><td class="n">'+rs(x.amount)+'</td><td class="n">'+rs(x.cash)+"</td><td style='white-space:normal'>"+esc(x.orders)+"</td></tr>"),
           '<tr><td>Total</td><td class="n">'+d.delivered+'</td><td class="n">'+d.partial+'</td><td class="n">'+d.not_delivered+'</td><td class="n">'+rs(d.amount)+'</td><td class="n">'+rs(d.driver_cash)+"</td><td></td></tr>",
-          "Is din koi delivery report nahi aayi.")+"</section>";
-      h+='<div class="ds-grid"><section class="erp-card"><div class="erp-card-head"><h2>Paisa aaya (mode)</h2></div>'+
-        table([{t:"Mode"},{t:"Entry",n:1},{t:"Amount",n:1}],(p.by_mode||[]).map(x=>"<tr><td>"+esc(x.mode)+'</td><td class="n">'+x.count+'</td><td class="n">'+rs(x.amount)+"</td></tr>"),
-          '<tr><td>Total</td><td class="n">'+p.count+'</td><td class="n">'+rs(p.verified+p.pending)+"</td></tr>","Is din koi payment entry nahi.")+"</section>"+
-        '<section class="erp-card"><div class="erp-card-head"><h2>Order aaye (sales person)</h2></div>'+
-        table([{t:"Sales person"},{t:"Order",n:1},{t:"Amount",n:1}],(o.by_sales||[]).map(x=>"<tr><td>"+esc(x.name)+'</td><td class="n">'+x.count+'</td><td class="n">'+rs(x.amount)+"</td></tr>"),
-          '<tr><td>Total</td><td class="n">'+o.count+'</td><td class="n">'+rs(o.amount)+"</td></tr>","Is din koi order nahi aaya.")+"</section></div>";
-      h+='<section class="erp-card" style="margin-top:14px"><div class="erp-card-head"><h2>Sabse zyada baki (Top 10 party)</h2><small style="color:var(--erp-muted)"><a href="party-ledger.html">Party Ledger kholo</a></small></div>'+
-        table([{t:"#"},{t:"Party"},{t:"Baki",n:1}],(u.top||[]).map((x,i)=>"<tr><td>"+(i+1)+"</td><td>"+esc(x.party)+'</td><td class="n"><b>'+rs(x.amount)+"</b></td></tr>"),"","Koi outstanding nahi.")+"</section>";
-      h+='<p class="ds-note">Driver ne jo paisa liya wo sirf report hai; office verify karega tab ledger me aayega. "Paisa aaya" me Payment Collection ki entries hain (verified + verify baki). Outstanding = bill − return − verified payment + opening balance, chuni date tak.</p>';
+          "No delivery reports for this date.")+"</section>";
+      h+='<div class="ds-grid"><section class="erp-card"><div class="erp-card-head"><h2>Payments by Mode</h2></div>'+
+        table([{t:"Mode"},{t:"Entries",n:1},{t:"Amount",n:1}],(p.by_mode||[]).map(x=>"<tr><td>"+esc(x.mode)+'</td><td class="n">'+x.count+'</td><td class="n">'+rs(x.amount)+"</td></tr>"),
+          '<tr><td>Total</td><td class="n">'+p.count+'</td><td class="n">'+rs(p.verified+p.pending)+"</td></tr>","No payments recorded for this date.")+"</section>"+
+        '<section class="erp-card"><div class="erp-card-head"><h2>Orders by Salesperson</h2></div>'+
+        table([{t:"Salesperson"},{t:"Orders",n:1},{t:"Amount",n:1}],(o.by_sales||[]).map(x=>"<tr><td>"+esc(x.name)+'</td><td class="n">'+x.count+'</td><td class="n">'+rs(x.amount)+"</td></tr>"),
+          '<tr><td>Total</td><td class="n">'+o.count+'</td><td class="n">'+rs(o.amount)+"</td></tr>","No orders received on this date.")+"</section></div>";
+      h+='<section class="erp-card" style="margin-top:14px"><div class="erp-card-head"><h2>Top 10 Outstanding Parties</h2><small style="color:var(--erp-muted)"><a href="party-ledger.html">Open Party Ledger</a></small></div>'+
+        table([{t:"#"},{t:"Party"},{t:"Balance Due",n:1}],(u.top||[]).map((x,i)=>"<tr><td>"+(i+1)+"</td><td>"+esc(x.party)+'</td><td class="n"><b>'+rs(x.amount)+"</b></td></tr>"),"","No outstanding balances.")+"</section>";
+      h+='<p class="ds-note">Cash collected by drivers is reported only and reaches the ledger after office verification. "Payments Received" lists Payment Collection entries (verified and pending verification). Outstanding = bills − returns − verified payments + opening balance, as of the selected date.</p>';
       el("out").innerHTML=h;
     }
     async function load(){
       const d=el("day").value||today();
-      el("err").hidden=true;el("out").innerHTML='<p class="status" style="padding:30px">Load ho raha hai...</p>';
+      el("err").hidden=true;el("out").innerHTML='<p class="status" style="padding:30px">Loading...</p>';
       const {data,error}=await client.rpc("lwb_daily_summary",{p_date:d});
       if(error){el("out").innerHTML="";el("err").hidden=false;
-        el("err").textContent=/lwb_daily_summary|function|schema cache/i.test(error.message)?"Daily Summary abhi Supabase me setup nahi hai. Supabase SQL Editor me lwb_daily_summary_setup.sql ek baar chalao, phir Refresh dabao.\n("+error.message+")":error.message;return}
+        el("err").textContent=/lwb_daily_summary|function|schema cache/i.test(error.message)?"Daily Summary is not set up in Supabase yet. Run lwb_daily_summary_setup.sql once in the Supabase SQL Editor, then click Refresh.\n("+error.message+")":error.message;return}
       render(data);
     }
     const go=n=>{el("day").value=shift(el("day").value||today(),n);load()};

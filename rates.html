@@ -53,15 +53,15 @@
   <div id="loading" class="status">Checking account access...</div>
   <main id="page" class="erp-main" hidden>
     <div class="erp-pagehead"><h1>Rate &amp; Scheme</h1><span class="grow"></span><span id="state" class="rt-state"></span></div>
-    <p class="rt-sub">Company GR, MEPD, OMS, QPS, ROI aur slab rate. Har save par badlav date ke saath Rate Ledger mein jaata hai. Sirf Admin aur Manager dekh sakte hain.</p>
+    <p class="rt-sub">Company GR, MEPD, OMS, QPS, ROI and slab rates. Every save records the changes with the date in the Rate Ledger. Visible to Admin and Manager only.</p>
 
     <div class="rt-bar">
-      <div><label for="mepd">MEPD % (scheme na ho to)</label><input id="mepd" type="number" step="0.01"></div>
+      <div><label for="mepd">MEPD % (when no scheme)</label><input id="mepd" type="number" step="0.01"></div>
       <div><label for="roi">ROI (per case, main)</label><input id="roi" type="number" step="0.01"></div>
-      <div><label for="roi5">ROI wala landing</label><input id="roi5" type="number" step="0.01"></div>
-      <div class="grow"><label for="note">Note (jaise "Company budget 24 Oct")</label><input id="note" maxlength="200" placeholder="Kya badla, kisne bataya"></div>
+      <div><label for="roi5">Landing with ROI</label><input id="roi5" type="number" step="0.01"></div>
+      <div class="grow"><label for="note">Note (e.g. "Company budget 24 Oct")</label><input id="note" maxlength="200" placeholder="What changed and who informed"></div>
       <button id="save" type="button" disabled>Save</button>
-      <label class="rt-file" id="importWrap" title="Purane CC PO Maker ka backup (.json)">PO Maker backup import<input id="importFile" type="file" accept=".json,application/json" hidden></label>
+      <label class="rt-file" id="importWrap" title="Backup from the old CC PO Maker (.json)">PO Maker backup import<input id="importFile" type="file" accept=".json,application/json" hidden></label>
     </div>
 
     <div class="erp-pills" id="tabs"></div>
@@ -138,7 +138,7 @@
       el("save").disabled=busy||!d;
       const sb=el("saveBelow");if(sb)sb.disabled=busy||!d;
       const s=el("state");
-      if(d){s.textContent="Badlav save nahi hue";s.className="rt-state dirty"}
+      if(d){s.textContent="Unsaved changes";s.className="rt-state dirty"}
       else{const h=history[0];s.textContent=h?"Last save: "+dtTxt(h.created_at):"";s.className="rt-state ok"}
     }
     window.addEventListener("beforeunload",e=>{if(isDirty()||linksDirty()){e.preventDefault();e.returnValue=""}});
@@ -150,7 +150,7 @@
         client.from("lwb_rate_history").select("id,created_at,note,settings,rows").order("created_at",{ascending:false}).limit(500)
       ]);
       const err=s.error||p.error||h.error;
-      if(err){el("box").innerHTML='<div class="erp-empty">Rate tables abhi bane nahi hain ya access nahi hai: '+esc(err.message)+'<br>Supabase mein lwb_rate_scheme_setup.sql chalao.</div>';throw err}
+      if(err){el("box").innerHTML='<div class="erp-empty">Rate tables are not set up yet, or you do not have access: '+esc(err.message)+'<br>Run lwb_rate_scheme_setup.sql in Supabase.</div>';throw err}
       if(s.data)settings={mepd_pct:+s.data.mepd_pct,roi_main:+s.data.roi_main,roi_landing:+s.data.roi_landing};
       packs=(p.data||[]).map(x=>({id:x.id,sort_no:x.sort_no,pack_name:x.pack_name,case_config:+x.case_config,gr:+x.gr,mepd_pct:numOrBlank(x.mepd_pct),
         free_bottle:+x.free_bottle,oms:numOrBlank(x.oms),qps:+x.qps,slab3_rate:+x.slab3_rate,unit_weight:numOrBlank(x.unit_weight),bottle:numOrBlank(x.bottle),
@@ -183,39 +183,39 @@
     function renderSchemes(){
       el("tabTitle").textContent="MEPD Scheme";
       const today=LWBMepd.day(),live=schemes.filter(s=>s.valid_from<=today&&today<=s.valid_to);
-      el("tabInfo").textContent=live.length+" scheme aaj chalu";
-      el("tabNote").textContent="Company jis category par jitne din ke liye MEPD % de, woh yahan daalo. Us category ke SKU ka landing (yahan aur PO Entry par) usi % se banega. Scheme na ho to pack ka MEPD % ya upar wala MEPD % lagega. Ek category par do scheme ho to baad wali lagegi.";
-      if(schemeErr){el("box").innerHTML='<div class="erp-empty">MEPD scheme table abhi bani nahi hai: '+esc(schemeErr)+'<br>Supabase mein lwb_mepd_scheme_setup.sql chalao.</div>';return}
+      el("tabInfo").textContent=live.length+" schemes active today";
+      el("tabNote").textContent="Enter the MEPD % the company gives for a category and period. Landing for SKUs in that category (here and on PO Entry) uses this %. Without a scheme, the pack MEPD % or the default MEPD % above applies. If a category has two schemes, the most recent one applies.";
+      if(schemeErr){el("box").innerHTML='<div class="erp-empty">The MEPD scheme table is not set up yet: '+esc(schemeErr)+'<br>Run lwb_mepd_scheme_setup.sql in Supabase.</div>';return}
       const F=schemeForm;
-      let h='<div class="erp-card-body"><div style="font-weight:600;margin-bottom:6px">Category chuno</div>';
+      let h='<div class="erp-card-body"><div style="font-weight:600;margin-bottom:6px">Select categories</div>';
       h+=cats.length?'<div style="display:flex;flex-wrap:wrap;gap:6px 14px">'+cats.map(c=>'<label style="display:flex;gap:5px;align-items:center;font-size:13px"><input type="checkbox" data-scat="'+esc(c)+'"'+(F.cats.includes(c)?" checked":"")+">"+esc(c)+"</label>").join("")+
-        '</div><div style="margin:6px 0"><button type="button" class="rt-add" style="margin:0" id="scAll">Sab chuno</button> <button type="button" class="rt-add" style="margin:0" id="scNone">Koi nahi</button></div>'
-        :'<div class="erp-empty">SKU Master mein kisi SKU ki category nahi bhari. Pehle SKU Master mein category bharo.</div>';
+        '</div><div style="margin:6px 0"><button type="button" class="rt-add" style="margin:0" id="scAll">Select all</button> <button type="button" class="rt-add" style="margin:0" id="scNone">Clear</button></div>'
+        :'<div class="erp-empty">No SKU in SKU Master has a category. Add categories in SKU Master first.</div>';
       h+='<div class="rt-bar" style="margin-top:8px"><div><label for="scPct">MEPD %</label><input id="scPct" type="number" step="0.01" min="0" max="100" value="'+esc(F.pct)+'"></div>'+
-        '<div><label for="scFrom">Kab se</label><input id="scFrom" type="date" value="'+esc(F.from)+'"></div><div><label for="scTo">Kab tak</label><input id="scTo" type="date" value="'+esc(F.to)+'"></div>'+
-        '<div style="align-self:flex-end"><button type="button" class="rt-add" style="margin:0" data-range="day">Aaj</button> <button type="button" class="rt-add" style="margin:0" data-range="week">Is hafte</button> <button type="button" class="rt-add" style="margin:0" data-range="month">Is mahine</button></div>'+
-        '<div class="grow"><label for="scNote">Note</label><input id="scNote" maxlength="200" value="'+esc(F.note)+'" placeholder="Company ka message / circular"></div>'+
-        '<button type="button" id="scAdd">Scheme add karo</button></div></div>';
-      h+='<table class="rt-table"><thead><tr><th class="l">CATEGORY</th><th>MEPD %</th><th>KAB SE</th><th>KAB TAK</th><th class="l">NOTE</th><th>STATUS</th><th></th></tr></thead><tbody>';
-      for(const s of schemes){const st=s.valid_to<today?"Khatam":s.valid_from>today?"Aane wala":"Chalu";
-        h+='<tr class="'+(st==="Khatam"?"off":"")+'"><td class="l">'+esc((s.categories||[]).join(", "))+"</td><td>"+fmt(s.mepd_pct,2)+"</td><td>"+esc(s.valid_from)+"</td><td>"+esc(s.valid_to)+'</td><td class="l">'+esc(s.note||"")+"</td><td"+(st==="Chalu"?' class="strong"':"")+">"+st+'</td><td><button type="button" class="rt-add" style="margin:0" data-scdel="'+esc(s.id)+'">Hatao</button></td></tr>'}
-      if(!schemes.length)h+='<tr><td colspan="7" class="l">Abhi koi MEPD scheme nahi.</td></tr>';
+        '<div><label for="scFrom">Valid from</label><input id="scFrom" type="date" value="'+esc(F.from)+'"></div><div><label for="scTo">Valid to</label><input id="scTo" type="date" value="'+esc(F.to)+'"></div>'+
+        '<div style="align-self:flex-end"><button type="button" class="rt-add" style="margin:0" data-range="day">Today</button> <button type="button" class="rt-add" style="margin:0" data-range="week">This week</button> <button type="button" class="rt-add" style="margin:0" data-range="month">This month</button></div>'+
+        '<div class="grow"><label for="scNote">Note</label><input id="scNote" maxlength="200" value="'+esc(F.note)+'" placeholder="Company message / circular"></div>'+
+        '<button type="button" id="scAdd">Add scheme</button></div></div>';
+      h+='<table class="rt-table"><thead><tr><th class="l">CATEGORY</th><th>MEPD %</th><th>FROM</th><th>TO</th><th class="l">NOTE</th><th>STATUS</th><th></th></tr></thead><tbody>';
+      for(const s of schemes){const st=s.valid_to<today?"Expired":s.valid_from>today?"Upcoming":"Active";
+        h+='<tr class="'+(st==="Expired"?"off":"")+'"><td class="l">'+esc((s.categories||[]).join(", "))+"</td><td>"+fmt(s.mepd_pct,2)+"</td><td>"+esc(s.valid_from)+"</td><td>"+esc(s.valid_to)+'</td><td class="l">'+esc(s.note||"")+"</td><td"+(st==="Active"?' class="strong"':"")+">"+st+'</td><td><button type="button" class="rt-add" style="margin:0" data-scdel="'+esc(s.id)+'">Remove</button></td></tr>'}
+      if(!schemes.length)h+='<tr><td colspan="7" class="l">No MEPD schemes yet.</td></tr>';
       el("box").innerHTML=h+"</tbody></table>";
     }
     async function addScheme(){
       const F=schemeForm,pct=+F.pct;
-      if(!F.cats.length){await ERPShell.alert("Kam se kam ek category chuno.");return}
-      if(F.pct===""||!(pct>=0&&pct<=100)){await ERPShell.alert("MEPD % 0 se 100 ke beech bharo.");return}
-      if(!F.from||!F.to||F.to<F.from){await ERPShell.alert("Kab se / Kab tak sahi bharo.");return}
+      if(!F.cats.length){await ERPShell.alert("Select at least one category.");return}
+      if(F.pct===""||!(pct>=0&&pct<=100)){await ERPShell.alert("Enter an MEPD % between 0 and 100.");return}
+      if(!F.from||!F.to||F.to<F.from){await ERPShell.alert("Enter valid From / To dates.");return}
       const {error}=await client.from("lwb_mepd_schemes").insert({categories:F.cats,mepd_pct:pct,valid_from:F.from,valid_to:F.to,note:F.note.trim()||null});
-      if(error){await ERPShell.alert("Scheme save nahi hui: "+error.message);return}
-      schemeForm={cats:[],pct:"",from:"",to:"",note:""};await loadSchemes();render();ERPShell.toast("MEPD scheme save ho gayi.","success");
+      if(error){await ERPShell.alert("Scheme not saved: "+error.message);return}
+      schemeForm={cats:[],pct:"",from:"",to:"",note:""};await loadSchemes();render();ERPShell.toast("MEPD scheme saved.","success");
     }
     async function delScheme(id){
       const s=schemes.find(x=>x.id===id);if(!s)return;
-      if(!await ERPShell.confirm("Ye scheme hatani hai? "+(s.categories||[]).join(", ")+" · "+s.mepd_pct+"% · "+s.valid_from+" se "+s.valid_to))return;
+      if(!await ERPShell.confirm("Remove this scheme? "+(s.categories||[]).join(", ")+" · "+s.mepd_pct+"% · "+s.valid_from+" to "+s.valid_to))return;
       const {error}=await client.from("lwb_mepd_schemes").delete().eq("id",id);
-      if(error){await ERPShell.alert("Scheme hati nahi: "+error.message);return}
+      if(error){await ERPShell.alert("Scheme not removed: "+error.message);return}
       await loadSchemes();render();
     }
 
@@ -245,19 +245,19 @@
       el("tabTitle").textContent="SKU Link";
       const done=skus.filter(x=>links.has(skuKey(x))).length;
       el("tabInfo").textContent=done+" / "+skus.length+" SKU linked";
-      el("tabNote").textContent="PO / Sales Order Entry par SKU chunte hi isi pack ka slab rate aata hai. Jo SKU link nahi hai, uska rate salesman khud bharega. Naya pack pehle Landing tab mein Save karo, phir yahan link karo.";
-      if(linkErr){el("box").innerHTML='<div class="erp-empty">SKU link table abhi bani nahi hai: '+esc(linkErr)+'<br>Supabase mein lwb_order_rates_setup.sql chalao.</div>';return}
+      el("tabNote").textContent="When an SKU is selected on PO / Sales Order Entry, the slab rate of its linked pack is filled in. For unlinked SKUs the salesperson enters the rate manually. Save a new pack in the Landing tab first, then link it here.";
+      if(linkErr){el("box").innerHTML='<div class="erp-empty">The SKU link table is not set up yet: '+esc(linkErr)+'<br>Run lwb_order_rates_setup.sql in Supabase.</div>';return}
       const opts=packs.filter(p=>p.id&&p.active!==false);
-      let h='<div class="erp-card-body rt-hist-head"><button type="button" class="rt-add" style="margin:0" id="linkAuto">Naam se milao (khaali wale)</button>'+
-        '<button type="button" class="rt-add" style="margin:0;border-style:solid;background:var(--erp-red);color:#fff;border-color:var(--erp-red)" id="linkSave"'+(linksDirty()?"":" disabled")+'>Link save karo</button>'+
-        '<span class="rt-state '+(linksDirty()?"dirty":"ok")+'">'+(linksDirty()?"Link badle, save nahi hue":"")+"</span></div>";
+      let h='<div class="erp-card-body rt-hist-head"><button type="button" class="rt-add" style="margin:0" id="linkAuto">Auto-match by name (unlinked only)</button>'+
+        '<button type="button" class="rt-add" style="margin:0;border-style:solid;background:var(--erp-red);color:#fff;border-color:var(--erp-red)" id="linkSave"'+(linksDirty()?"":" disabled")+'>Save links</button>'+
+        '<span class="rt-state '+(linksDirty()?"dirty":"ok")+'">'+(linksDirty()?"Links changed, not saved":"")+"</span></div>";
       h+='<table class="rt-table"><thead><tr><th>#</th><th class="l">ERP SKU (SKU Master)</th><th class="l">RATE PACK</th><th>SLAB 3 RATE</th></tr></thead><tbody>';
       skus.forEach((x,i)=>{
         const id=links.get(skuKey(x))||"",p=packs.find(q=>q.id===id);
-        h+="<tr"+(id?"":' class="off"')+"><td>"+(i+1)+'</td><td class="l">'+esc(x)+'</td><td class="l"><select data-link="'+esc(x)+'"><option value="">— link nahi —</option>'+
+        h+="<tr"+(id?"":' class="off"')+"><td>"+(i+1)+'</td><td class="l">'+esc(x)+'</td><td class="l"><select data-link="'+esc(x)+'"><option value="">— Not linked —</option>'+
           opts.map(q=>'<option value="'+q.id+'"'+(q.id===id?" selected":"")+">"+esc(q.pack_name)+"</option>").join("")+"</select></td><td>"+(p?fmt(p.slab3_rate):"")+"</td></tr>";
       });
-      if(!skus.length)h+='<tr><td colspan="4" class="l">SKU Master mein koi active SKU nahi.</td></tr>';
+      if(!skus.length)h+='<tr><td colspan="4" class="l">No active SKUs in SKU Master.</td></tr>';
       el("box").innerHTML=h+"</tbody></table>";
     }
     async function saveLinks(){
@@ -266,9 +266,9 @@
       const payload=[...keys].filter(k=>before.get(k)!==links.get(k)).map(k=>({sku_name:k,pack_id:links.get(k)||null}));
       if(!payload.length)return;
       const {error}=await client.rpc("lwb_link_rate_skus",{p_links:payload});
-      if(error){await ERPShell.alert("Link save nahi hue: "+error.message);return}
+      if(error){await ERPShell.alert("Links not saved: "+error.message);return}
       await loadLinks();render();
-      ERPShell.toast(payload.length+" SKU link save ho gaye.","success");
+      ERPShell.toast(payload.length+" SKU links saved.","success");
     }
 
     /* ---------- tabs ---------- */
@@ -281,48 +281,48 @@
     }
 
     function cellInput(i,f,v,cls){return '<input data-i="'+i+'" data-f="'+f+'" value="'+esc(v)+'"'+(cls?' class="'+cls+'"':"")+(me.edit?"":" disabled")+">"}
-    // SKUs of this pack: saved links, or the ones "SKU Master se packs banao" will link on Save.
+    // SKUs of this pack: saved links, or the ones "Create packs from SKU Master" will link on Save.
     function packSkus(r){
       const list=skus.filter(x=>(r.id&&links.get(skuKey(x))===r.id)||(!links.has(skuKey(x))&&backupLinks&&backupLinks.get(skuKey(x))===skuKey(r.pack_name)));
       return list.length?'<div style="font-size:13px;color:#556;max-width:300px;margin-top:3px;white-space:normal" title="'+esc(list.join("\n"))+'">'+list.length+" SKU: "+esc(list.slice(0,3).join(", "))+(list.length>3?" …":"")+"</div>":"";
     }
     function renderLanding(){
       el("tabTitle").textContent="Landing";
-      el("tabInfo").textContent=packs.filter(p=>p.active!==false).length+" pack";
-      el("tabNote").textContent="Sirf landing. Slab 1–4 margin / MGR rate \"Slab Rate\" tab mein. Free bottle wale pack ki OMS Slab 3 rate se banti hai. MEPD % khaali = upar wala MEPD; lal Scheme % dikhe to aaj MEPD Scheme wala % lag raha hai. OMS khaali = free bottle formula se. Active hatao to pack band ho jaayega (delete nahi hota).";
-      let h='<table class="rt-table"><thead><tr><th>#</th><th class="l">PACK</th><th>CASE CONFIG</th><th>GR</th><th>MEPD %</th><th>MEPD</th><th>FREE BOTTLE</th><th>OMS</th><th>QPS</th><th>ROI</th><th>LANDING<small>bina ROI</small></th><th>LANDING<small>ROI '+esc(settings.roi_landing)+"</small></th>"+
+      el("tabInfo").textContent=packs.filter(p=>p.active!==false).length+" packs";
+      el("tabNote").textContent="Landing only. Slab 1–4 margins / MGR rates are in the \"Slab Rate\" tab. For packs with free bottles, OMS is calculated from the Slab 3 rate. Blank MEPD % = default MEPD above; a red Scheme % means today's MEPD Scheme % is applied. Blank OMS = calculated by the free bottle formula. Unticking Active disables the pack (it is not deleted).";
+      let h='<table class="rt-table"><thead><tr><th>#</th><th class="l">PACK</th><th>CASE CONFIG</th><th>GR</th><th>MEPD %</th><th>MEPD</th><th>FREE BOTTLE</th><th>OMS</th><th>QPS</th><th>ROI</th><th>LANDING<small>excl. ROI</small></th><th>LANDING<small>ROI '+esc(settings.roi_landing)+"</small></th>"+
         "<th>Active</th></tr></thead><tbody>";
       packs.forEach((r,i)=>{
         const c=calcLanding(r),c5=calcLanding(r,settings.roi_landing),fb=n(r.free_bottle)>0;
         h+='<tr class="'+(r.active===false?"off":"")+'"><td>'+(i+1)+'</td><td class="l">'+cellInput(i,"pack_name",r.pack_name,"name")+packSkus(r)+"</td>"+
           "<td>"+cellInput(i,"case_config",r.case_config)+"</td><td>"+cellInput(i,"gr",r.gr)+"</td>"+
-          "<td>"+cellInput(i,"mepd_pct",r.mepd_pct).replace("<input",'<input placeholder="'+esc(settings.mepd_pct)+'"')+((sc=>sc?'<div style="font-size:13px;font-weight:700;color:#b42318;white-space:nowrap;margin-top:3px" title="MEPD Scheme '+esc(sc.valid_from+' se '+sc.valid_to)+'">Scheme '+esc(sc.mepd_pct)+'%</div>':"")(packScheme(r)))+"</td><td>"+fmt(c.E,2)+"</td>"+
+          "<td>"+cellInput(i,"mepd_pct",r.mepd_pct).replace("<input",'<input placeholder="'+esc(settings.mepd_pct)+'"')+((sc=>sc?'<div style="font-size:13px;font-weight:700;color:#b42318;white-space:nowrap;margin-top:3px" title="MEPD Scheme '+esc(sc.valid_from+' to '+sc.valid_to)+'">Scheme '+esc(sc.mepd_pct)+'%</div>':"")(packScheme(r)))+"</td><td>"+fmt(c.E,2)+"</td>"+
           "<td>"+cellInput(i,"free_bottle",r.free_bottle)+"</td><td>"+(fb?fmt(c.G,2):cellInput(i,"oms",r.oms))+"</td>"+
           "<td>"+cellInput(i,"qps",r.qps)+"</td><td>"+fmt(settings.roi_main,2)+'</td><td class="strong">'+fmt(c.J,2)+'</td><td class="red">'+fmt(c5.J,2)+"</td>"+
           '<td><input type="checkbox" data-i="'+i+'" data-f="active"'+(r.active!==false?" checked":"")+(me.edit?"":" disabled")+"></td></tr>";
       });
       h+="</tbody></table>";
-      if(me.edit)h+='<button type="button" class="rt-add" id="addPack">+ Naya pack</button> <button type="button" class="rt-add" id="pasteOpen">Excel se paste</button> <button type="button" class="rt-add" id="packsFromSku">SKU Master se packs banao</button> <button type="button" class="rt-add" id="saveBelow" style="border-style:solid;background:var(--erp-red);color:#fff;border-color:var(--erp-red)"'+(isDirty()?"":" disabled")+'>Save karo</button>';
-      if(me.edit&&pasteOpen)h+='<div class="erp-card-body"><div style="font-size:12px;color:#555;margin-bottom:6px">Rate sheet ki rows copy karke yahan paste karo (heading ke saath bhi chalega). Columns: # · PACK · CASE CONFIG · GR · MEPD · FREE BOTTLE · OMS · QPS · ROI · LANDING · Slab 1-4 margin / MGR rate. Slab 3 MGR rate liya jaayega. Same naam ka pack update hoga, naya naam naya pack.</div>'+
-        '<textarea id="pasteBox" rows="8" style="width:100%;font:12px monospace"></textarea><div style="margin-top:6px"><button type="button" class="rt-add" style="margin:0;border-style:solid;background:var(--erp-red);color:#fff;border-color:var(--erp-red)" id="pasteApply">Packs bharo</button> <button type="button" class="rt-add" style="margin:0" id="pasteClose">Band karo</button></div></div>';
+      if(me.edit)h+='<button type="button" class="rt-add" id="addPack">+ New pack</button> <button type="button" class="rt-add" id="pasteOpen">Paste from Excel</button> <button type="button" class="rt-add" id="packsFromSku">Create packs from SKU Master</button> <button type="button" class="rt-add" id="saveBelow" style="border-style:solid;background:var(--erp-red);color:#fff;border-color:var(--erp-red)"'+(isDirty()?"":" disabled")+'>Save</button>';
+      if(me.edit&&pasteOpen)h+='<div class="erp-card-body"><div style="font-size:12px;color:#555;margin-bottom:6px">Copy rows from the rate sheet and paste them here (the heading row is fine too). Columns: # · PACK · CASE CONFIG · GR · MEPD · FREE BOTTLE · OMS · QPS · ROI · LANDING · Slab 1-4 margin / MGR rate. The Slab 3 MGR rate is used. A pack with the same name is updated; a new name creates a new pack.</div>'+
+        '<textarea id="pasteBox" rows="8" style="width:100%;font:12px monospace"></textarea><div style="margin-top:6px"><button type="button" class="rt-add" style="margin:0;border-style:solid;background:var(--erp-red);color:#fff;border-color:var(--erp-red)" id="pasteApply">Fill packs</button> <button type="button" class="rt-add" style="margin:0" id="pasteClose">Close</button></div></div>';
       el("box").innerHTML=h;
-      if(!packs.length)el("box").insertAdjacentHTML("afterbegin",'<div class="erp-empty">Abhi koi pack nahi. Upar "PO Maker backup import" se purana data laao, ya "+ Naya pack" dabao.</div>');
+      if(!packs.length)el("box").insertAdjacentHTML("afterbegin",'<div class="erp-empty">No packs yet. Use "PO Maker backup import" above to bring in old data, or click "+ New pack".</div>');
     }
     function renderSlabRate(){
       el("tabTitle").textContent="Slab Rate";
-      el("tabInfo").textContent="Slab 3 MGR rate bharo";
-      el("tabNote").textContent="Slab 3 MGR rate bharo; Slab 1 = +5, Slab 2 aur 4 = −5. Margin = MGR rate − landing. PO / Sales Order Entry par isi se rate aata hai.";
-      let h='<div class="rt-bar" style="align-items:center"><div><label>Rate list ki date</label><input type="date" id="imgDate" value="'+esc(imgDate||LWBMepd.day())+'"></div>'+
-        '<button type="button" id="imgCopy" style="margin-top:20px">📋 Image copy karo (WhatsApp)</button><button type="button" id="imgSave" style="margin-top:20px;background:#fff;color:var(--erp-ink);border-color:var(--erp-line)">⬇ Image download</button></div>'+
-        '<table class="rt-table"><thead><tr><th>#</th><th class="l">PACK</th><th>LANDING<small>bina ROI</small></th>'+
+      el("tabInfo").textContent="Enter the Slab 3 MGR rate";
+      el("tabNote").textContent="Enter the Slab 3 MGR rate; Slab 1 = +5, Slab 2 and 4 = −5. Margin = MGR rate − landing. PO / Sales Order Entry uses these rates.";
+      let h='<div class="rt-bar" style="align-items:center"><div><label>Rate list date</label><input type="date" id="imgDate" value="'+esc(imgDate||LWBMepd.day())+'"></div>'+
+        '<button type="button" id="imgCopy" style="margin-top:20px">📋 Copy image (WhatsApp)</button><button type="button" id="imgSave" style="margin-top:20px;background:#fff;color:var(--erp-ink);border-color:var(--erp-line)">⬇ Image download</button></div>'+
+        '<table class="rt-table"><thead><tr><th>#</th><th class="l">PACK</th><th>LANDING<small>excl. ROI</small></th>'+
         SLAB_NAMES.map((s,i)=>"<th>SLAB "+(i+1)+" MARGIN<small>"+esc(s)+"</small></th><th>MGR RATE</th>").join("")+"</tr></thead><tbody>";
       packs.forEach((r,i)=>{const c=calcLanding(r);
         h+='<tr class="'+(r.active===false?"off":"")+'"><td>'+(i+1)+'</td><td class="l">'+esc(r.pack_name)+'</td><td class="strong">'+fmt(c.J,2)+"</td>"+
           "<td>"+fmt(c.K,2)+"</td><td>"+fmt(c.L)+"</td><td>"+fmt(c.M,2)+"</td><td>"+fmt(c.N)+"</td><td>"+fmt(c.O,2)+"</td><td>"+cellInput(i,"slab3_rate",r.slab3_rate)+"</td><td>"+fmt(c.Q,2)+"</td><td>"+fmt(c.R)+"</td></tr>";
       });
-      if(!packs.length)h+='<tr><td colspan="11" class="l">Pehle Landing tab mein pack banao.</td></tr>';
+      if(!packs.length)h+='<tr><td colspan="11" class="l">Create packs in the Landing tab first.</td></tr>';
       h+="</tbody></table>";
-      if(me.edit)h+='<button type="button" class="rt-add" id="saveBelow" style="border-style:solid;background:var(--erp-red);color:#fff;border-color:var(--erp-red)"'+(isDirty()?"":" disabled")+'>Save karo</button>';
+      if(me.edit)h+='<button type="button" class="rt-add" id="saveBelow" style="border-style:solid;background:var(--erp-red);color:#fff;border-color:var(--erp-red)"'+(isDirty()?"":" disabled")+'>Save</button>';
       el("box").innerHTML=h;
     }
     let imgDate="";
@@ -330,23 +330,23 @@
     function slabImage(){
       imgDate=el("imgDate").value||LWBMepd.day();
       const rows=packs.filter(r=>r.active!==false&&String(r.pack_name).trim()&&n(r.slab3_rate)>0).map(r=>{const c=calcLanding(r);return{name:r.pack_name.trim(),rates:[c.L,c.N,n(r.slab3_rate)]}});
-      if(!rows.length)throw Error("Kisi pack ka Slab 3 rate nahi bhara.");
+      if(!rows.length)throw Error("No pack has a Slab 3 rate entered.");
       const d=new Date(imgDate+"T00:00:00");
       return LWBSlabImage.draw({date:d.toLocaleDateString("en-US",{month:"long",day:"numeric",year:"numeric"}),heads:SLAB_NAMES.slice(0,3).map((t,i)=>[t,"SLAB "+(i+1)]),rows});
     }
     function renderSlab(){
       el("tabTitle").textContent="Slab";
       el("tabInfo").textContent="Rate = Landing + Margin";
-      el("tabNote").textContent="Weight (KG per case) se order ka slab apne aap chunega (3 ton se kam = Slab 1). Margin bharo, rate apne aap.";
+      el("tabNote").textContent="The order slab is selected automatically from weight (KG per case) (below 3 tons = Slab 1). Enter the margin and the rate is calculated.";
       let h='<table class="rt-table"><thead><tr><th class="l">SKU</th><th>WEIGHT</th><th>BOTTLE</th><th>LANDING</th>'+SLAB_CH.map(c=>"<th>MARGIN<small>"+esc(c)+"</small></th><th>RATE</th>").join("")+"</tr></thead><tbody>";
       packs.forEach((r,i)=>{
         h+='<tr class="'+(r.active===false?"off":"")+'"><td class="l">'+esc(r.pack_name)+"</td><td>"+cellInput(i,"unit_weight",r.unit_weight)+"</td><td>"+cellInput(i,"bottle",r.bottle)+"</td><td>"+cellInput(i,"slab_landing",r.slab_landing)+"</td>"+
           r.slab_margins.map((m,j)=>"<td>"+cellInput(i,"m"+j,m)+"</td><td>"+((blank(m)&&j>0)?"":fmt(n(r.slab_landing)+n(m),2))+"</td>").join("")+"</tr>";
       });
       h+="</tbody></table>";
-      if(me.edit)h+='<button type="button" class="rt-add" id="slabPasteOpen">Excel se paste</button>';
-      if(me.edit&&slabPasteOpen)h+='<div class="erp-card-body"><div style="font-size:12px;color:#555;margin-bottom:6px">SLAB sheet ki rows copy karke paste karo (heading ke saath bhi chalega). Columns: SKU · WEIGHT · BOTTEL · LANDING · phir 5 baar MARGIN · RATE (Self pickup, Direct vehicle, 12 pallet, High volume, Market rate). SKU naam Landing / Rate ke pack naam se milaya jaata hai.</div>'+
-        '<textarea id="slabPasteBox" rows="8" style="width:100%;font:12px monospace"></textarea><div style="margin-top:6px"><button type="button" class="rt-add" style="margin:0;border-style:solid;background:var(--erp-red);color:#fff;border-color:var(--erp-red)" id="slabPasteApply">Slab bharo</button> <button type="button" class="rt-add" style="margin:0" id="slabPasteClose">Band karo</button></div></div>';
+      if(me.edit)h+='<button type="button" class="rt-add" id="slabPasteOpen">Paste from Excel</button>';
+      if(me.edit&&slabPasteOpen)h+='<div class="erp-card-body"><div style="font-size:12px;color:#555;margin-bottom:6px">Copy rows from the SLAB sheet and paste them here (the heading row is fine too). Columns: SKU · WEIGHT · BOTTLE · LANDING · then MARGIN · RATE five times (Self pickup, Direct vehicle, 12 pallet, High volume, Market rate). SKU names are matched to the Landing / Rate pack names.</div>'+
+        '<textarea id="slabPasteBox" rows="8" style="width:100%;font:12px monospace"></textarea><div style="margin-top:6px"><button type="button" class="rt-add" style="margin:0;border-style:solid;background:var(--erp-red);color:#fff;border-color:var(--erp-red)" id="slabPasteApply">Fill slabs</button> <button type="button" class="rt-add" style="margin:0" id="slabPasteClose">Close</button></div></div>';
       el("box").innerHTML=h;
     }
     let slabPasteOpen=false;
@@ -360,16 +360,16 @@
         p.unit_weight=num(c[1]);p.bottle=num(c[2])??"";p.slab_landing=num(c[3])==null?"":r2(num(c[3]));
         p.slab_margins=[0,1,2,3,4].map(j=>num(c[4+j*2])??"");done++;
       }
-      if(!done&&!miss.length){await ERPShell.alert("Koi slab row nahi mili. SLAB sheet se SKU, WEIGHT wali rows copy karke paste karo.");return}
+      if(!done&&!miss.length){await ERPShell.alert("No slab rows found. Copy the rows with SKU and WEIGHT from the SLAB sheet and paste them.");return}
       slabPasteOpen=false;render();
-      ERPShell.toast(done+" pack ka slab bhar gaya. Check karke Save dabao.","success");
-      if(miss.length)await ERPShell.alert("Ye naam Landing mein pack nahi mile (pehle Landing paste karo):\n"+miss.join("\n"));
+      ERPShell.toast("Slabs filled for "+done+" packs. Review them, then click Save.","success");
+      if(miss.length)await ERPShell.alert("These names were not found as packs in Landing (paste Landing first):\n"+miss.join("\n"));
     }
     let ledSku=0;
     function renderLedger(){
       el("tabTitle").textContent="Rate Ledger";
-      el("tabInfo").textContent=history.length+" entry";
-      el("tabNote").textContent=ratesChanged()?"Rate ya scheme badle hain; Save karte hi nayi entry banegi.":"Ledger up to date hai. Purani entry kabhi badalti ya delete nahi hoti.";
+      el("tabInfo").textContent=history.length+" entries";
+      el("tabNote").textContent=ratesChanged()?"Rates or schemes have changed; saving will create a new entry.":"The ledger is up to date. Past entries are never changed or deleted.";
       const names=[...new Set(history.flatMap(e=>(e.rows||[]).map(r=>r.name)).concat(packs.map(p=>p.pack_name)))];
       if(ledSku>=names.length)ledSku=0;
       const sku=names[ledSku];
@@ -377,14 +377,14 @@
       h+='<table class="rt-table"><thead><tr><th class="l">DATE</th><th class="l">NOTE</th><th>GR</th><th>MEPD</th><th>FREE BTL</th><th>OMS</th><th>QPS</th><th>ROI</th><th>LANDING</th><th>SLAB 1</th><th>SLAB 2</th><th>SLAB 3</th><th>SLAB 4</th></tr></thead><tbody>';
       const asc=history.slice().reverse();let prev=null;const lines=[];
       asc.forEach(e=>{const r=(e.rows||[]).find(x=>x.name===sku);if(!r)return;
-        lines.unshift('<tr><td class="l">'+esc(dtTxt(e.created_at))+'</td><td class="l">'+esc(e.note||"")+"</td>"+SNAP_KEYS.map(k=>"<td"+(prev&&prev[k]!==r[k]?' class="chg" title="pehle '+esc(prev[k])+'"':"")+">"+fmt(r[k],["mepd","oms","land"].includes(k)?2:0)+"</td>").join("")+"</tr>");
+        lines.unshift('<tr><td class="l">'+esc(dtTxt(e.created_at))+'</td><td class="l">'+esc(e.note||"")+"</td>"+SNAP_KEYS.map(k=>"<td"+(prev&&prev[k]!==r[k]?' class="chg" title="previously '+esc(prev[k])+'"':"")+">"+fmt(r[k],["mepd","oms","land"].includes(k)?2:0)+"</td>").join("")+"</tr>");
         prev=r;});
-      h+=(lines.join("")||'<tr><td class="l" colspan="13">Is SKU ki koi entry nahi.</td></tr>')+"</tbody></table>";
-      h+='<div class="erp-card-body"><b>Ledger entries (date wise)</b></div><table class="rt-table"><thead><tr><th>#</th><th class="l">DATE</th><th class="l">NOTE</th><th class="l">KYA BADLA (pichhli entry se)</th></tr></thead><tbody>';
+      h+=(lines.join("")||'<tr><td class="l" colspan="13">No entries for this SKU.</td></tr>')+"</tbody></table>";
+      h+='<div class="erp-card-body"><b>Ledger entries (date wise)</b></div><table class="rt-table"><thead><tr><th>#</th><th class="l">DATE</th><th class="l">NOTE</th><th class="l">CHANGES (vs previous entry)</th></tr></thead><tbody>';
       history.forEach((e,idx)=>{const P=history[idx+1];
-        const ch=P?(e.rows||[]).map(r=>{const o=(P.rows||[]).find(x=>x.name===r.name);if(!o)return r.name+": naya";const ks=SNAP_KEYS.filter(k=>o[k]!==r[k]);return ks.length?r.name+": "+ks.map(k=>k.toUpperCase()+" "+fmt(o[k],2)+"→"+fmt(r[k],2)).join(", "):""}).filter(Boolean):["Pehli entry"];
-        h+="<tr><td>"+(history.length-idx)+'</td><td class="l">'+esc(dtTxt(e.created_at))+'</td><td class="l">'+esc(e.note||"")+'</td><td class="wrap">'+esc(ch.slice(0,8).join(" | ")+(ch.length>8?" | +"+(ch.length-8)+" aur":""))+"</td></tr>";});
-      if(!history.length)h+='<tr><td colspan="4" class="l">Abhi koi entry nahi.</td></tr>';
+        const ch=P?(e.rows||[]).map(r=>{const o=(P.rows||[]).find(x=>x.name===r.name);if(!o)return r.name+": new";const ks=SNAP_KEYS.filter(k=>o[k]!==r[k]);return ks.length?r.name+": "+ks.map(k=>k.toUpperCase()+" "+fmt(o[k],2)+"→"+fmt(r[k],2)).join(", "):""}).filter(Boolean):["First entry"];
+        h+="<tr><td>"+(history.length-idx)+'</td><td class="l">'+esc(dtTxt(e.created_at))+'</td><td class="l">'+esc(e.note||"")+'</td><td class="wrap">'+esc(ch.slice(0,8).join(" | ")+(ch.length>8?" | +"+(ch.length-8)+" more":""))+"</td></tr>";});
+      if(!history.length)h+='<tr><td colspan="4" class="l">No entries yet.</td></tr>';
       el("box").innerHTML=h+"</tbody></table>";
     }
 
@@ -418,16 +418,16 @@
       if(e.target.id==="linkSave"){saveLinks();return}
       if(e.target.id==="saveBelow"){el("save").click();return}
       if(e.target.id==="imgCopy"||e.target.id==="imgSave"){const copy=e.target.id==="imgCopy";
-        (async()=>{try{const cv=slabImage();if(isDirty())ERPShell.toast("Dhyan do: badlav abhi save nahi hue, image me naye rate hain.","info");
-          if(copy){await LWBSlabImage.copy(cv);ERPShell.toast("Image copy ho gayi. WhatsApp chat me Ctrl+V dabao.","success")}
-          else{await LWBSlabImage.download(cv,"Slab-Rate-"+imgDate);ERPShell.toast("Image download ho gayi.","success")}
+        (async()=>{try{const cv=slabImage();if(isDirty())ERPShell.toast("Note: changes are not saved yet; the image shows the new rates.","info");
+          if(copy){await LWBSlabImage.copy(cv);ERPShell.toast("Image copied. Press Ctrl+V in the WhatsApp chat.","success")}
+          else{await LWBSlabImage.download(cv,"Slab-Rate-"+imgDate);ERPShell.toast("Image downloaded.","success")}
         }catch(err){ERPShell.toast(err.message,"error")}})();return}
       if(e.target.id==="scAdd"){addScheme();return}
       if(e.target.id==="scAll"||e.target.id==="scNone"){schemeForm.cats=e.target.id==="scAll"?cats.slice():[];renderSchemes();return}
       if(e.target.dataset.range){quickRange(e.target.dataset.range);renderSchemes();return}
       if(e.target.dataset.scdel){delScheme(e.target.dataset.scdel);return}
       if(e.target.id==="linkAuto"){let c=0;for(const x of skus){if(links.has(skuKey(x)))continue;const p=suggestPack(x);if(p){links.set(skuKey(x),p.id);c++}}
-        renderLinks();ERPShell.toast(c?c+" SKU mil gaye. Check karke \"Link save karo\" dabao.":"Naam se koi naya SKU nahi mila.",c?"success":"info");return}
+        renderLinks();ERPShell.toast(c?c+" SKUs matched. Review them, then click \"Save links\".":"No new SKUs matched by name.",c?"success":"info");return}
       if(e.target.id==="packsFromSku"){packsFromSku();return}
       if(e.target.id==="slabPasteOpen"){slabPasteOpen=true;render();const t=el("slabPasteBox");if(t)t.focus();return}
       if(e.target.id==="slabPasteClose"){slabPasteOpen=false;render();return}
@@ -458,7 +458,7 @@
     async function packsFromSku(){
       const groups=new Map();
       for(const x of skus){if(links.has(skuKey(x)))continue;const k=packKey(x);if(!k)continue;if(!groups.has(k))groups.set(k,[]);groups.get(k).push(x)}
-      if(!groups.size){await ERPShell.alert("Koi naya SKU nahi mila: sab SKU pehle se link hain, ya naam mein size (jaise 250ML) nahi hai.");return}
+      if(!groups.size){await ERPShell.alert("No new SKUs found: all SKUs are already linked, or their names have no size (e.g. 250ML).");return}
       backupLinks=backupLinks||new Map();let added=0;
       for(const [k,list] of groups){
         let p=packs.find(q=>loose(q.pack_name)===loose(k));
@@ -469,7 +469,7 @@
       }
       autoLinkAfterSave=true;tab="landing";render();
       const linked=[...groups.values()].reduce((a,l)=>a+l.length,0);
-      ERPShell.toast(added+" naye pack bane, "+linked+" SKU unse judenge. GR / Slab 3 rate bharo aur Save dabao.","success");
+      ERPShell.toast(added+" new packs created; "+linked+" SKUs will be linked to them. Enter GR / Slab 3 rates, then click Save.","success");
     }
     /* ---------- paste the rate sheet from Excel ---------- */
     let pasteOpen=false;
@@ -484,7 +484,7 @@
         if(!name||num(name)!=null||cc==null||gr==null)continue;
         rows.push({name:name.replace(/\s+/g," "),cc,gr,mepd:num(c[o+3]),fb:num(c[o+4])||0,oms:num(c[o+5]),qps:num(c[o+6])||0,land:num(c[o+8]),s3:num(c[o+14])});
       }
-      if(!rows.length){await ERPShell.alert("Koi pack row nahi mili. Excel se PACK wali rows (CASE CONFIG, GR ke saath) copy karke paste karo.");return}
+      if(!rows.length){await ERPShell.alert("No pack rows found. Copy the PACK rows (with CASE CONFIG and GR) from Excel and paste them.");return}
       packs=packs.filter(p=>p.id||String(p.pack_name||"").trim());
       let added=0,updated=0;const off=[];
       for(const r of rows){
@@ -498,8 +498,8 @@
         if(r.land!=null&&Math.abs(calcLanding(p).J-r.land)>1)off.push(r.name);
       }
       pasteOpen=false;autoLinkAfterSave=true;render();
-      ERPShell.toast(added+" naye pack, "+updated+" update hue. Check karke Save dabao; Save ke baad SKU apne aap link honge.","success");
-      if(off.length)await ERPShell.alert("In packs ki landing Excel se 1 rupaye se zyada alag aa rahi hai, check karo:\n"+off.join("\n"));
+      ERPShell.toast(added+" new packs, "+updated+" updated. Review them, then click Save; SKUs are linked automatically after saving.","success");
+      if(off.length)await ERPShell.alert("Landing for these packs differs from Excel by more than ₹1. Please check:\n"+off.join("\n"));
     }
     async function linkPendingSkus(){
       autoLinkAfterSave=false;let c=0;
@@ -511,12 +511,12 @@
     async function save(){
       if(busy||!isDirty())return;
       const bad=packs.findIndex(p=>!String(p.pack_name||"").trim());
-      if(bad>=0){await ERPShell.alert("Pack "+(bad+1)+" ka naam bharo.");return}
+      if(bad>=0){await ERPShell.alert("Enter a name for pack "+(bad+1)+".");return}
       const names=packs.map(p=>p.pack_name.trim().toUpperCase());
       const dup=names.find((x,i)=>names.indexOf(x)!==i);
-      if(dup){await ERPShell.alert("Pack naam do baar hai: "+dup);return}
+      if(dup){await ERPShell.alert("Duplicate pack name: "+dup);return}
       const changed=ratesChanged(),note=el("note").value.trim();
-      if(!await ERPShell.confirm("Rate save karein?\n\n"+(changed?"Rate / scheme badla hai: Rate Ledger mein nayi entry banegi"+(note?" (\""+note+"\")":"")+".":"Sirf naam / weight / slab sheet badla hai; ledger entry nahi banegi.")))return;
+      if(!await ERPShell.confirm("Save rates?\n\n"+(changed?"Rates / schemes changed: a new Rate Ledger entry will be created"+(note?" (\""+note+"\")":"")+".":"Only names / weights / slab sheet changed; no ledger entry will be created.")))return;
       busy=true;showState();
       try{
         if(importedLedger&&importedLedger.length&&!history.length&&me.role==="admin"){
@@ -530,9 +530,9 @@
         if(error)throw error;
         importedLedger=null;el("note").value="";
         await load();
-        ERPShell.toast("Rate save ho gaye"+(changed?", ledger entry bani.":"."),"success");
+        ERPShell.toast("Rates saved"+(changed?", ledger entry created.":"."),"success");
         if(autoLinkAfterSave)await linkPendingSkus();
-      }catch(e){await ERPShell.alert("Save nahi hua: "+(e.message||e))}
+      }catch(e){await ERPShell.alert("Save failed: "+(e.message||e))}
       finally{busy=false;showState()}
     }
 
@@ -540,8 +540,8 @@
     async function importBackup(file){
       if(!file)return;
       let S;
-      try{S=JSON.parse(await file.text());if(!Array.isArray(S.landing))throw 0}catch(e){await ERPShell.alert("Ye CC PO Maker ka backup file nahi lagta.");return}
-      if(!await ERPShell.confirm("Backup se "+S.landing.length+" pack aur MEPD / ROI laayein?\n\nSame naam wale pack update honge, naye judenge. Save dabane tak database mein kuch nahi jaayega."))return;
+      try{S=JSON.parse(await file.text());if(!Array.isArray(S.landing))throw 0}catch(e){await ERPShell.alert("This does not look like a CC PO Maker backup file.");return}
+      if(!await ERPShell.confirm("Import "+S.landing.length+" packs and MEPD / ROI from the backup?\n\nPacks with the same name are updated and new ones are added. Nothing is written to the database until you click Save."))return;
       if(S.mepd!=null)settings.mepd_pct=n(S.mepd);
       if(S.roi!=null)settings.roi_main=n(S.roi);
       if(S.roi5!=null)settings.roi_landing=n(S.roi5);
@@ -558,9 +558,9 @@
       if(Array.isArray(S.poDef))backupLinks=new Map(S.poDef.filter(d=>d&&d.name&&S.landing[d.li]).map(d=>[skuKey(d.name),skuKey(S.landing[d.li].name)]));
       importedLedger=!history.length&&Array.isArray(S.ledger)&&S.ledger.length?S.ledger.map(L=>({dt:L.dt,note:L.note,rows:L.rows||[],settings:{}})):null;
       el("mepd").value=settings.mepd_pct;el("roi").value=settings.roi_main;el("roi5").value=settings.roi_landing;
-      if(!el("note").value)el("note").value="PO Maker se import";
+      if(!el("note").value)el("note").value="Imported from PO Maker";
       render();
-      ERPShell.toast(importedLedger?"Backup aa gaya ("+importedLedger.length+" purani ledger entry bhi). Ab Save dabao.":"Backup aa gaya. Ab Save dabao.","success");
+      ERPShell.toast(importedLedger?"Backup loaded (including "+importedLedger.length+" past ledger entries). Now click Save.":"Backup loaded. Now click Save.","success");
     }
 
     (async()=>{

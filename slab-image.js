@@ -36,7 +36,7 @@
   }
   const blob=cv=>new Promise(ok=>cv.toBlob(ok,"image/png"));
   async function copy(cv){
-    if(!navigator.clipboard||!window.ClipboardItem)throw Error("Is browser me image copy nahi hoti. Download dabao.");
+    if(!navigator.clipboard||!window.ClipboardItem)throw Error("This browser cannot copy images. Please use Download.");
     await navigator.clipboard.write([new ClipboardItem({"image/png":blob(cv)})]);
   }
   async function download(cv,file){

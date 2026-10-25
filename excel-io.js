@@ -8,7 +8,7 @@
   const LIB="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js";
   function lib(){
     if(window.XLSX)return Promise.resolve();
-    return new Promise((ok,bad)=>{const s=document.createElement("script");s.src=LIB;s.onload=ok;s.onerror=()=>bad(Error("Excel library load nahi hui. Internet check karo."));document.head.appendChild(s)});
+    return new Promise((ok,bad)=>{const s=document.createElement("script");s.src=LIB;s.onload=ok;s.onerror=()=>bad(Error("Could not load the Excel library. Please check your internet connection."));document.head.appendChild(s)});
   }
   const norm=v=>String(v==null?"":v).replace(/\*/g,"").replace(/[^A-Za-z0-9%]+/g," ").trim().toUpperCase();
   async function write(file,sheets){
@@ -21,10 +21,10 @@
     const aoa=XLSX.utils.sheet_to_json(book.Sheets[book.SheetNames[0]],{header:1,defval:"",raw:true});
     const want=new Map();for(const c of cols){want.set(norm(c.h),c);for(const a of c.alias||[])want.set(norm(a),c)}
     const hi=aoa.findIndex(r=>r.some(v=>want.has(norm(v))&&want.get(norm(v)).req));
-    if(hi<0)throw Error("Header row nahi mili. Template download karke usi me data bharo.");
+    if(hi<0)throw Error("Header row not found. Please download the template and enter your data in it.");
     const map=aoa[hi].map(v=>want.get(norm(v))||null);
     const missing=cols.filter(c=>c.req&&!map.includes(c)).map(c=>c.h);
-    if(missing.length)throw Error("Ye column Excel me nahi hai: "+missing.join(", "));
+    if(missing.length)throw Error("Required column missing in the Excel file: "+missing.join(", "));
     const rows=[];
     aoa.slice(hi+1).forEach((r,i)=>{const o={_row:hi+i+2};let any=false;
       map.forEach((c,j)=>{if(!c)return;let v=r[j];if(typeof v==="string")v=v.trim();if(v!==""&&v!=null)any=true;o[c.k]=v===""?null:v});
@@ -38,24 +38,24 @@
       +'<button type="button" class="secondary" data-a="exp">⬇ Export Excel</button>'
       +'<button type="button" class="secondary" data-a="tpl">⬇ Blank Template</button>'
       +'<label class="secondary" style="cursor:pointer;display:inline-flex;align-items:center;gap:6px;padding:8px 12px;border:1px solid #c9d3e0;border-radius:8px;background:#fff"><input type="file" accept=".xlsx,.xls,.csv" data-a="file" style="display:none">⬆ Import Excel</label>'
-      +'<button type="button" data-a="go" disabled>Import karo</button></div>'
+      +'<button type="button" data-a="go" disabled>Import</button></div>'
       +'<div data-a="info" class="hint" style="margin-top:8px;white-space:pre-wrap"></div>';
     o.mount.appendChild(box);
     const q=a=>box.querySelector('[data-a="'+a+'"]'),info=q("info");let plan=null;
     const say=(t,bad)=>{info.textContent=t;info.style.color=bad?"#b42318":""};
     const head=()=>o.columns.map(c=>c.h+(c.req?" *":""));
-    q("exp").onclick=async()=>{try{const rows=o.exportRows();await write(o.file+"-"+new Date().toISOString().slice(0,10),[{name:"Data",rows:[head(),...rows.map(r=>o.columns.map(c=>r[c.k]??""))]}]);say(rows.length+" rows export hue. Isi file me badlav karke wapas Import kar sakte ho.")}catch(e){say(e.message,true)}};
+    q("exp").onclick=async()=>{try{const rows=o.exportRows();await write(o.file+"-"+new Date().toISOString().slice(0,10),[{name:"Data",rows:[head(),...rows.map(r=>o.columns.map(c=>r[c.k]??""))]}]);say(rows.length+" rows exported. You can edit this file and import it back.")}catch(e){say(e.message,true)}};
     q("tpl").onclick=async()=>{try{await write(o.file+"-Template",[{name:"Data",rows:[head(),o.columns.map(c=>c.sample??"")]},
-      {name:"Help",rows:[["Column","Zaroori?","Kya bharna hai"],...o.columns.map(c=>[c.h,c.req?"Haan":"Nahi",c.note||""]),[],["Pehli sheet (Data) me hi data bharo. Header row mat badlo. Sample row hata do."]]}]);
-      say("Template download hua. Data sheet bharo, phir Import Excel se upload karo.")}catch(e){say(e.message,true)}};
+      {name:"Help",rows:[["Column","Required?","What to enter"],...o.columns.map(c=>[c.h,c.req?"Yes":"No",c.note||""]),[],["Enter data in the first sheet (Data) only. Do not change the header row. Delete the sample row."]]}]);
+      say("Template downloaded. Fill in the Data sheet, then upload it with Import Excel.")}catch(e){say(e.message,true)}};
     q("file").onchange=async e=>{const f=e.target.files[0];e.target.value="";plan=null;q("go").disabled=true;if(!f)return;
-      try{say("File padh rahe hain...");const rows=await read(f,o.columns);plan=o.plan(rows);
-        const lines=[f.name+": "+rows.length+" rows",plan.add.length+" naye · "+plan.update.length+" update · "+(plan.same||0)+" pehle se same · "+plan.errors.length+" galat"];
-        if(plan.errors.length)lines.push("Galat rows (ye save nahi hongi):\n"+plan.errors.slice(0,30).join("\n")+(plan.errors.length>30?"\n...":""));
-        if(plan.add.length+plan.update.length)lines.push("Sab theek lage to 'Import karo' dabao.");
+      try{say("Reading file...");const rows=await read(f,o.columns);plan=o.plan(rows);
+        const lines=[f.name+": "+rows.length+" rows",plan.add.length+" new · "+plan.update.length+" to update · "+(plan.same||0)+" unchanged · "+plan.errors.length+" with errors"];
+        if(plan.errors.length)lines.push("Rows with errors (these will not be saved):\n"+plan.errors.slice(0,30).join("\n")+(plan.errors.length>30?"\n...":""));
+        if(plan.add.length+plan.update.length)lines.push("If everything looks correct, click 'Import'.");
         say(lines.join("\n"),!!plan.errors.length);q("go").disabled=!(o.canImport?o.canImport():true)||!(plan.add.length+plan.update.length);
       }catch(err){say(err.message,true)}};
-    q("go").onclick=async()=>{if(!plan||!await confirm(plan.add.length+" naye add aur "+plan.update.length+" update karein?"))return;
+    q("go").onclick=async()=>{if(!plan||!await confirm("Add "+plan.add.length+" new records and update "+plan.update.length+"?"))return;
       q("go").disabled=true;try{say(await o.apply(plan,t=>say(t)))}catch(err){say(err.message,true)}plan=null};
     return box;
   }
