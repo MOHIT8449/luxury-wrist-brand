@@ -35,7 +35,8 @@
       {t:"PO Approval & Driver",h:"warehouse-orders.html",i:"check",r:"admin manager"}]},
     {group:"Dispatch",items:[
       {t:"Loading & Dispatch",h:"loading-dispatch.html",i:"box",r:"admin manager warehouse"},
-      {t:"Transport Assignment",h:"transport-allocation.html",i:"truck",r:"admin manager transport"}]},
+      {t:"Transport Assignment",h:"transport-allocation.html",i:"truck",r:"admin manager transport"},
+      {t:"Sheet & Pallet Ledger",h:"sheet-pallet.html",i:"layers",r:"admin manager accounts warehouse"}]},
     {group:"Delivery",items:[
       {t:"Driver Delivery / POD",h:"driver-delivery.html",i:"pin",r:"admin manager driver accounts"}]},
     {group:"Reports",items:[
