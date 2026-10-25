@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Purchase Register | Luxury Wrist Brand ERP</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <link rel="stylesheet" href="erp-shell.css">
+  <script src="erp-shell.js"></script>
+  <style>
+    .status{text-align:center;padding:80px 20px;font-size:15px;color:#555}
+    .pr-sub{margin:-8px 0 14px;color:var(--erp-muted);font-size:15px}
+    .pr-err{background:#ffebeb;color:#9b2020;padding:14px 16px;border-radius:8px;margin-bottom:14px;white-space:pre-wrap}
+    .pr-tools{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;padding:14px 16px}
+    .pr-tools label{display:block;font-size:13px;font-weight:600;color:#4b5763;margin-bottom:4px}
+    .pr-tools input{height:40px;border:1.5px solid var(--erp-line);border-radius:6px;padding:0 10px;font:inherit;font-size:15px}
+    .pr-tools .grow{flex:1;min-width:220px}.pr-tools .grow input{width:100%}
+    .pr-btn{height:40px;border-radius:6px;padding:0 16px;font-weight:600;font-size:15px;cursor:pointer;border:1px solid var(--erp-line);background:#fff;color:var(--erp-ink)}
+    .pr-kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-bottom:14px}
+    .pr-kpi{background:#fff;border:1px solid var(--erp-line);border-radius:8px;padding:14px}
+    .pr-kpi span{display:block;font-size:14px;color:#4b5763}.pr-kpi b{font-size:22px}
+    .pr-table{border-collapse:collapse;width:100%;font-size:15px}
+    .pr-table th,.pr-table td{border-bottom:1px solid var(--erp-line);padding:9px 12px;text-align:left;white-space:nowrap;vertical-align:top}
+    .pr-table th{background:#f6f7f9;font-size:14px;font-weight:700;color:#2b3440;position:sticky;top:0}
+    .pr-table .n{text-align:right}
+    .pr-table td small{display:block;color:var(--erp-muted);font-size:13px}
+    .pr-table tfoot td{font-weight:800;background:#fafbfc}
+    .pr-table button{height:32px;padding:0 12px;border-radius:5px;border:1px solid var(--erp-line);background:#fff;color:var(--erp-ink);font:inherit;font-size:14px;font-weight:600;cursor:pointer;margin-right:4px}
+    .pr-table button.del{color:var(--erp-red);border-color:#f3c2ca}
+    .pr-table button:disabled{opacity:.45;cursor:not-allowed}
+    .pr-table tr.open td{background:#fff6f7}
+    .pr-items td{background:#fbfbfc;padding:0 12px 12px}
+    .pr-items table{border-collapse:collapse;width:100%;font-size:14px;margin-top:8px}
+    .pr-items th,.pr-items td td{border:1px solid var(--erp-line);padding:6px 9px;background:#fff}
+    @media(max-width:900px){.pr-kpis{grid-template-columns:1fr 1fr}}
+    [hidden]{display:none!important}
+  </style>
+</head>
+<body>
+  <div id="loading" class="status">Checking account access...</div>
+  <main id="page" class="erp-main" hidden>
+    <div class="erp-pagehead"><h1>Purchase Register</h1><a class="pr-btn" href="goods-inward.html" style="display:inline-flex;align-items:center;text-decoration:none">+ New Purchase</a></div>
+    <p class="pr-sub">All purchase bills saved in Goods Inward. Click View to see the items.</p>
+    <div id="err" class="pr-err" hidden></div>
+    <div class="pr-kpis" id="kpis"></div>
+    <section class="erp-card">
+      <div class="pr-tools">
+        <div><label for="from">From (received)</label><input id="from" type="date"></div>
+        <div><label for="to">To</label><input id="to" type="date"></div>
+        <div class="grow"><label for="q">Search</label><input id="q" type="search" placeholder="Invoice no., supplier, vehicle, driver"></div>
+        <button type="button" class="pr-btn" id="refresh">Refresh</button>
+      </div>
+      <div style="overflow:auto" id="box"></div>
+    </section>
+  </main>
+  <script>
+    'use strict';
+    const client=supabase.createClient("https://txkbhadzdbxpieunfvox.supabase.co","sb_publishable_W4I3Q5ODf0g17sq5uDml2Q_sLolXYEk");
+    const el=id=>document.getElementById(id);
+    const esc=v=>String(v==null?"":v).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+    const num=v=>Number(v||0);
+    const fmt=v=>num(v).toLocaleString("en-IN");
+    const rs=v=>"₹"+num(v).toLocaleString("en-IN",{minimumFractionDigits:2,maximumFractionDigits:2});
+    const dmy=d=>d?String(d).slice(8,10)+"-"+String(d).slice(5,7)+"-"+String(d).slice(0,4):"—";
+    const today=()=>new Date().toLocaleDateString("en-CA",{timeZone:"Asia/Kolkata"});
+    const pick=(o,keys)=>{for(const k of keys)if(o&&o[k]!=null&&o[k]!=="")return o[k];return null};
+
+    let me=null,bills=[],items=new Map(),skuName=new Map(),openId="";
+
+    async function start(){
+      const {data:{session}}=await client.auth.getSession();
+      if(!session){location.replace("login.html");return null}
+      const {data:p}=await client.from("user_profiles").select("full_name,role,active").eq("id",session.user.id).single();
+      const role=String((p&&p.role)||"").toLowerCase().trim();
+      if(!p||p.active!==true||role!=="admin"){location.replace("dashboard.html");return null}
+      return {id:session.user.id,role,name:p.full_name||session.user.email};
+    }
+    async function load(){
+      el("refresh").disabled=true;el("err").hidden=true;el("box").innerHTML='<div class="erp-empty">Loading purchase bills...</div>';
+      try{
+        let q=client.from("lwb_goods_inward").select("*").order("received_date",{ascending:false}).order("created_at",{ascending:false}).limit(2000);
+        if(el("from").value)q=q.gte("received_date",el("from").value);
+        if(el("to").value)q=q.lte("received_date",el("to").value);
+        const [h,s]=await Promise.all([q,client.from("sku_master").select("id,sku_name,pcs_per_case")]);
+        if(h.error)throw h.error;
+        bills=h.data||[];skuName=new Map((s.data||[]).map(x=>[String(x.id),x]));items=new Map();
+        const ids=bills.map(b=>b.id);
+        for(let i=0;i<ids.length;i+=100){
+          const r=await client.from("lwb_goods_inward_items").select("*").in("inward_id",ids.slice(i,i+100));
+          if(r.error)throw r.error;
+          for(const it of r.data||[]){if(!items.has(it.inward_id))items.set(it.inward_id,[]);items.get(it.inward_id).push(it)}
+        }
+      }catch(e){el("err").hidden=false;el("err").textContent="Could not load purchase bills: "+(e.message||String(e))}
+      el("refresh").disabled=false;render();
+    }
+    const lines=b=>items.get(b.id)||[];
+    const pcsOf=it=>num(pick(it,["quantity_pcs","total_pcs","qty_pcs"]));
+    const sum=(b,f)=>lines(b).reduce((a,i)=>a+num(i[f]),0);
+    function shown(){
+      const q=el("q").value.trim().toUpperCase();
+      return bills.filter(b=>!q||[b.invoice_no,b.supplier_name,b.vehicle_no,b.driver_name,b.driver_mobile,b.lr_no,b.transport_name].some(v=>String(v||"").toUpperCase().includes(q)));
+    }
+    function render(){
+      const list=shown();
+      const tot={pcs:0,tax:0,gross:0};for(const b of list){tot.pcs+=lines(b).reduce((a,i)=>a+pcsOf(i),0);tot.tax+=sum(b,"taxable_amount");tot.gross+=sum(b,"total_amount")}
+      el("kpis").innerHTML=[["Bills",fmt(list.length)],["Total PCS",fmt(tot.pcs)],["Taxable",rs(tot.tax)],["Invoice Total",rs(tot.gross)]].map(([a,b])=>'<div class="pr-kpi"><span>'+a+"</span><b>"+b+"</b></div>").join("");
+      let h='<table class="pr-table"><thead><tr><th>Received</th><th>Invoice No.</th><th>Supplier</th><th>Invoice Date</th><th>Vehicle / LR</th><th>Driver</th><th class="n">Lines</th><th class="n">Total PCS</th><th class="n">Taxable ₹</th><th class="n">Invoice Total ₹</th><th></th></tr></thead><tbody>';
+      for(const b of list){
+        const ls=lines(b),pcs=ls.reduce((a,i)=>a+pcsOf(i),0);
+        h+='<tr'+(b.id===openId?' class="open"':"")+"><td>"+dmy(b.received_date)+"</td><td><b>"+esc(b.invoice_no)+"</b></td><td style='white-space:normal;min-width:200px'>"+esc(b.supplier_name)+"</td><td>"+dmy(b.invoice_date)+"</td><td>"+esc(b.vehicle_no||"—")+"<small>"+esc(b.lr_no?"LR "+b.lr_no:"")+"</small></td><td>"+esc(b.driver_name||"—")+"<small>"+esc(b.driver_mobile||"")+"</small></td>"+
+          '<td class="n">'+fmt(ls.length)+'</td><td class="n">'+fmt(pcs)+'</td><td class="n">'+rs(sum(b,"taxable_amount"))+'</td><td class="n">'+rs(sum(b,"total_amount"))+"</td>"+
+          '<td><button type="button" data-view="'+b.id+'">'+(b.id===openId?"Hide":"View")+"</button></td></tr>";
+        if(b.id===openId)h+='<tr class="pr-items"><td colspan="11"><table><thead><tr><th>#</th><th>SKU</th><th class="n">Cases</th><th class="n">Loose PCS</th><th class="n">Total PCS</th><th class="n">Taxable ₹</th><th class="n">Total ₹</th></tr></thead><tbody>'+
+          ls.map((it,i)=>{const s=skuName.get(String(it.sku_id))||{};return "<tr><td>"+(i+1)+"</td><td>"+esc(pick(it,["sku_name"])||s.sku_name||it.sku_id)+'</td><td class="n">'+fmt(pick(it,["cases","quantity_cases"]))+'</td><td class="n">'+fmt(pick(it,["pcs","loose_pcs"]))+'</td><td class="n">'+fmt(pcsOf(it))+'</td><td class="n">'+rs(it.taxable_amount)+'</td><td class="n">'+rs(it.total_amount)+"</td></tr>"}).join("")+
+          "</tbody></table>"+(b.remarks?'<p style="margin:8px 0 0">Remarks: '+esc(b.remarks)+"</p>":"")+"</td></tr>";
+      }
+      if(!list.length)h+='<tr><td colspan="11" class="erp-empty">No purchase bills found.</td></tr>';
+      el("box").innerHTML=h+'</tbody><tfoot><tr><td colspan="7">Total ('+fmt(list.length)+' bills)</td><td class="n">'+fmt(tot.pcs)+'</td><td class="n">'+rs(tot.tax)+'</td><td class="n">'+rs(tot.gross)+"</td><td></td></tr></tfoot></table>";
+    }
+    document.addEventListener("click",e=>{
+      const t=e.target;
+      if(t.id==="refresh")return load();
+      if(t.dataset.view){openId=openId===t.dataset.view?"":t.dataset.view;render()}
+    });
+    el("q").addEventListener("input",render);
+    ["from","to"].forEach(id=>el(id).addEventListener("change",load));
+    (async()=>{
+      me=await start();if(!me)return;
+      ERPShell.mount({role:me.role,name:me.name,onLogout:async()=>{await client.auth.signOut();location.replace("login.html")},group:"Inventory"});
+      el("loading").hidden=true;el("page").hidden=false;
+      await load();
+    })();
+  </script>
+</body>
+</html>
