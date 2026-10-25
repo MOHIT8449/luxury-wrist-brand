@@ -114,20 +114,17 @@ html,body{max-width:100%;overflow-x:hidden}main,.panel,.form-grid,.field{min-wid
       <div class="stat"><span>Total Amount (Auto)</span><strong id="totalAmount" class="money">₹0.00</strong></div>
     </div>
     <div class="actions"><button id="save" type="button" disabled>Save Goods Inward & Update Stock</button><button id="reset" type="button" class="secondary">Clear Form</button><span class="small" id="hint">Connect to Supabase and enter invoice details.</span></div>
+    <p class="small">Saved purchase bills (view, edit, delete): <a href="purchase-register.html">Purchase Register</a></p>
     <p class="small">Enter SKU-wise <b>Taxable Amount</b> from the supplier invoice. GST is calculated using <b>GST Rate in SKU Master</b>; the Total Amount is read-only and calculated automatically. For CGST + SGST, each tax component is rounded separately to the nearest paisa, as typically shown on supplier invoices. Small differences of ₹0.01 can occur due to supplier rounding; verify the invoice total before posting. <b>Cess is not included</b> in this calculation: if a SKU has nonzero Cess, save is blocked until the tax treatment is configured. This is a warehouse inward record, not a Tax Invoice. Goods Inward and Stock Update save in one atomic transaction.</p>
   </section>
 
-  <section class="panel">
-    <div class="sectionhead"><div><h2>Purchase Report</h2><p class="sub" style="margin:5px 0 0">Last 20 purchase invoices received. Full stock in / out and live stock: <a href="inventory.html">Inventory</a></p></div><button id="refresh" type="button" class="secondary">Refresh</button></div>
-    <div class="tablewrap"><table class="history"><thead><tr><th>Received</th><th>Invoice No.</th><th>Supplier</th><th>Invoice Date</th><th>Driver Name</th><th>Driver Mobile</th><th>SKU Lines</th><th>Total PCS</th><th>Taxable ₹</th><th>Invoice Total ₹</th></tr></thead><tbody id="historyBody"><tr><td colspan="10">Loading...</td></tr></tbody></table></div>
-  </section>
 
 </main>
 <script>
 'use strict';
 const SUPABASE_URL='https://txkbhadzdbxpieunfvox.supabase.co';
 const $ = id => document.getElementById(id);
-let db=null,profile=null,skus=[],suppliers=[],transports=[],stock=[],inwardHeaders=[],inwardLines=[],busy=false,lineId=0;
+let db=null,profile=null,skus=[],suppliers=[],transports=[],stock=[],busy=false,lineId=0;
 let transportSelectedId='',transportMasterReady=false,addingTransport=false;
 const skuSearchControls=new WeakMap();
 const format=n=>Number(n).toLocaleString('en-IN');
@@ -313,29 +310,23 @@ async function start(key){
 }
 async function loadData(){
   if(!db)return;
-  $('refresh').disabled=true;
   try{
-    const [skuRes,supplierRes,stockRes,headRes,transportRes]=await Promise.all([
+    const [skuRes,supplierRes,stockRes,transportRes]=await Promise.all([
       db.from('sku_master').select('id,sku_name,pcs_per_case,gst_rate,cess_rate,is_active').eq('is_active',true).order('sku_name'),
       db.from('lwb_supplier_master').select('id,supplier_code,supplier_name,gstin,city,is_active').eq('is_active',true).order('supplier_name'),
       db.from('lwb_live_stock').select('sku_id,sku_name,pcs_per_case,saleable_pcs,damaged_pcs').order('sku_name'),
-      db.from('lwb_goods_inward').select('id,supplier_name,invoice_no,invoice_date,received_date,driver_name,driver_mobile,created_at').order('created_at',{ascending:false}).limit(20),
       db.from('lwb_transport_master').select('id,transport_name,is_active').eq('is_active',true).order('transport_name')
     ]);
-    for(const r of [skuRes,supplierRes,stockRes,headRes])if(r.error)throw r.error;
-    skus=(skuRes.data||[]).filter(s=>Number(s.pcs_per_case)>0);suppliers=supplierRes.data||[];stock=stockRes.data||[];inwardHeaders=headRes.data||[];
+    for(const r of [skuRes,supplierRes,stockRes])if(r.error)throw r.error;
+    skus=(skuRes.data||[]).filter(s=>Number(s.pcs_per_case)>0);suppliers=supplierRes.data||[];stock=stockRes.data||[];
     transportMasterReady=!transportRes.error;
     transports=transportMasterReady?(transportRes.data||[]):[];
     $('addTransport').disabled=!transportMasterReady||!['admin','manager'].includes(profile?.role||'');
     if(transportRes.error){$('transportHint').textContent='Transport Master not configured: run transport-master-setup.sql. Other Goods Inward features remain available.';}
     else updateTransportHint();
     refreshSupplierOptions();
-    const ids=inwardHeaders.map(h=>h.id);
-    if(ids.length){const r=await db.from('lwb_goods_inward_items').select('inward_id,quantity_pcs,taxable_amount,total_amount').in('inward_id',ids);if(r.error)throw r.error;inwardLines=r.data||[];}
-    else inwardLines=[];
-    setAllOptions();renderHistory();
+    setAllOptions();
   }catch(e){show('Could not load Goods Inward: '+(e.message||String(e))+'\nConfirm goods-inward-setup.sql and supplier-master-setup.sql are applied in Supabase.');}
-  finally{$('refresh').disabled=false;}
 }
 // Shared searchable dropdown behavior: filter BEFORE showing, never show irrelevant items.
 makeSearch($('supplierSearch'),$('supplierResults'),
@@ -410,15 +401,6 @@ function updateSupplierHint(){
   else hint.appendChild(document.createTextNode('Select registered Supplier. '));
   const a=document.createElement('a');a.href='supplier-master.html';a.textContent='Open Supplier Master';hint.appendChild(a);
 }
-function renderHistory(){
-  const body=$('historyBody');body.replaceChildren();
-  if(!inwardHeaders.length){const r=body.insertRow(),c=r.insertCell();c.colSpan=10;c.className='empty';c.textContent='No Goods Inward invoices saved yet.';return;}
-  for(const h of inwardHeaders){const lines=inwardLines.filter(i=>i.inward_id===h.id);const tr=body.insertRow();
-    const taxable=lines.reduce((a,i)=>a+Number(i.taxable_amount||0),0);
-    const total=lines.reduce((a,i)=>a+Number(i.total_amount||0),0);
-    for(const value of [h.received_date,h.invoice_no,h.supplier_name,h.invoice_date,h.driver_name||'—',h.driver_mobile||'—',format(lines.length),format(lines.reduce((a,i)=>a+Number(i.quantity_pcs||0),0)),rupees(taxable),rupees(total)])tr.insertCell().textContent=value??'—';
-  }
-}
 async function save(){
   const rows=readRows();recalc();if($('save').disabled||!db)return;
   const selectedSupplier=suppliers.find(s=>s.id===$('supplier').value);if(!selectedSupplier){show('Select a Supplier from Supplier Master.');return;}
@@ -465,7 +447,7 @@ $('add').addEventListener('click',itemRow);
 $('addTransport').addEventListener('click',saveNewTransport);
 $('save').addEventListener('click',save);
 $('reset').addEventListener('click',async()=>{if(await confirm('Clear the unsaved Goods Inward form?')){resetForm();clearNotice();}});
-$('refresh').addEventListener('click',loadData);
+
 $('connect').addEventListener('click',()=>start($('keyInput').value.trim()));
 resetForm();
 (async()=>{const key=await discoverPublishableKey();if(key)await start(key);else{$('keybox').style.display='block';show('Publishable key not found in sku-master.html. Paste only the sb_publishable_ key to connect.','info');}})();
