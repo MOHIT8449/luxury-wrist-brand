@@ -239,7 +239,6 @@
       if(![o.pallets,o.sheets].every(n=>Number.isInteger(n)&&n>=0))return ERPShell.toast("Pallets and sheets must be whole numbers (0 or more).","error");
       if(o.pallets+o.sheets<=0)return ERPShell.toast("Enter pallets or sheets.","error");
       if(isParty(t)&&!o.party_name)return ERPShell.toast("Select the party.","error");
-      if(t==="COMPANY_OUT"&&!settings.to_address)return ERPShell.toast("Fill the Letter Settings on the Return Letter tab first (company address).","error");
       const others=rows.filter(x=>x.id!==editId);
       let warn="";const tt=totals(others);
       if(t==="PARTY_IN"){const p=partyTotals(others).find(x=>key(x.name)===key(o.party_name))||{p:[0,0]};if(o.pallets>p.p[0]||o.sheets>p.p[1])warn="\n\nThis is more than the party's pending balance ("+pS(p.p[0],p.p[1])+").";}
@@ -253,7 +252,7 @@
       ERPShell.toast(editId?"Entry updated.":"Entry saved.","success");
       editId="";el("fType").value=t;
       await load();render();
-      if(t==="COMPANY_OUT"){letterId=r.data.id;printDoc(letterHtml(r.data))}
+      if(t==="COMPANY_OUT")printReturn(r.data);
     }
     async function remove(id){
       const r=rows.find(x=>x.id===id);if(!r||!canEdit())return;
@@ -353,7 +352,6 @@
       if(!/^\d{4}-\d{2}-\d{2}$/.test(o.entry_date))return ERPShell.toast("Select a date.","error");
       if(![o.pallets,o.sheets].every(n=>Number.isInteger(n)&&n>=0))return ERPShell.toast("Pallets and sheets must be whole numbers (0 or more).","error");
       if(o.pallets+o.sheets<=0)return ERPShell.toast("Enter pallets or sheets.","error");
-      if(!settings.to_address)return ERPShell.toast("Fill the Letter Settings below first (company address).","error");
       const tt=totals(rows),warn=o.pallets>tt.due[0]||o.sheets>tt.due[1]?"\n\nThis is more than the balance due to the company ("+pS(tt.due[0],tt.due[1])+").":"";
       if(!await confirm("SUBMIT RETURN TO COMPANY AND PRINT LETTER?\n\n"+dmy(o.entry_date)+" · "+pS(o.pallets,o.sheets)+(o.vehicle_no?" · "+o.vehicle_no:"")+(o.ref_no?" · LR "+o.ref_no:"")+warn))return;
       busy=true;el("rSubmit").disabled=true;
@@ -361,7 +359,15 @@
       busy=false;
       if(res.error){el("rSubmit").disabled=false;return ERPShell.toast("Save failed: "+res.error.message,"error")}
       ERPShell.toast("Return saved in the company ledger.","success");
-      letterId=res.data.id;await load();render();printDoc(letterHtml(res.data));
+      await load();render();printReturn(res.data);
+    }
+    // Prints the return letter; if the letter details are not filled yet, opens Letter Settings instead.
+    function printReturn(r){
+      letterId=r.id;
+      if(settings.to_address)return printDoc(letterHtml(r));
+      ERPShell.toast("Return saved. Fill the Letter Settings (company address and footer) and press Save Settings, then press Print.","error");
+      if(tab!=="letter")location.hash="#letter";
+      setTimeout(()=>{const x=el("sTo");if(x){x.scrollIntoView({behavior:"smooth",block:"center"});x.focus()}},300);
     }
     async function verify(id){
       const r=rows.find(x=>x.id===id);if(!r||!canEdit())return;
@@ -377,6 +383,8 @@
       const r=await client.from("lwb_sp_settings").update(o).eq("id",1).select().single();
       if(r.error)return ERPShell.toast("Save failed: "+r.error.message,"error");
       settings=r.data;ERPShell.toast("Letter settings saved.","success");render();
+      const lr=rows.find(x=>x.id===letterId);
+      if(lr&&settings.to_address&&await confirm("Print the return letter dated "+dmy(lr.entry_date)+" now?"))printDoc(letterHtml(lr));
     }
 
     /* ---------- A4 statements ---------- */
