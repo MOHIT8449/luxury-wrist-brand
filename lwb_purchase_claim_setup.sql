@@ -5,8 +5,12 @@
 -- After a purchase vehicle is unloaded, the bill is verified:
 --   * "No damage", or
 --   * damage / leakage / shortage quantities per SKU (cases + loose PCS).
--- Bills with quantities become claims to send to the company, tracked as
--- PENDING -> SENT -> PASSED (or REJECTED).
+-- Bills with quantities become claims to the company:
+--   PENDING  (mail not sent yet)
+--   SENT     (mail sent, waiting for company approval)
+--   APPROVED (company approved; if it asks for the goods back, record the return
+--             vehicle / LR; the claim amount is then due from the company)
+--   RECEIVED (claim amount received)      or REJECTED
 -- Quantities only: this does NOT change live stock, purchase bills, payments or Tally.
 -- Admin / Manager can view and edit. Deleting a claim is Admin only.
 
@@ -40,7 +44,7 @@ CREATE TABLE IF NOT EXISTS public.lwb_purchase_checks (
   inward_id uuid NOT NULL UNIQUE REFERENCES public.lwb_goods_inward(id) ON DELETE CASCADE,
   verified_on date NOT NULL,
   has_damage boolean NOT NULL DEFAULT false,
-  claim_status text NOT NULL DEFAULT 'NONE' CHECK (claim_status IN ('NONE','PENDING','SENT','PASSED','REJECTED')),
+  claim_status text NOT NULL DEFAULT 'NONE',
   claim_no text,
   sent_on date,
   settled_on date,
@@ -51,6 +55,18 @@ CREATE TABLE IF NOT EXISTS public.lwb_purchase_checks (
   updated_by uuid DEFAULT auth.uid(),
   CHECK (has_damage OR claim_status = 'NONE')
 );
+-- Claim chain fields (added after the first version; safe to re-run).
+ALTER TABLE public.lwb_purchase_checks ADD COLUMN IF NOT EXISTS approved_on date;
+ALTER TABLE public.lwb_purchase_checks ADD COLUMN IF NOT EXISTS return_required boolean NOT NULL DEFAULT false;
+ALTER TABLE public.lwb_purchase_checks ADD COLUMN IF NOT EXISTS returned_on date;
+ALTER TABLE public.lwb_purchase_checks ADD COLUMN IF NOT EXISTS return_vehicle_no text;
+ALTER TABLE public.lwb_purchase_checks ADD COLUMN IF NOT EXISTS return_lr_no text;
+ALTER TABLE public.lwb_purchase_checks ADD COLUMN IF NOT EXISTS claim_amount numeric(14,2) CHECK (claim_amount IS NULL OR claim_amount >= 0);
+ALTER TABLE public.lwb_purchase_checks ADD COLUMN IF NOT EXISTS received_amount numeric(14,2) CHECK (received_amount IS NULL OR received_amount >= 0);
+ALTER TABLE public.lwb_purchase_checks DROP CONSTRAINT IF EXISTS lwb_purchase_checks_claim_status_check;
+UPDATE public.lwb_purchase_checks SET claim_status = 'APPROVED', approved_on = coalesce(approved_on, settled_on) WHERE claim_status = 'PASSED';
+ALTER TABLE public.lwb_purchase_checks ADD CONSTRAINT lwb_purchase_checks_claim_status_check
+  CHECK (claim_status IN ('NONE','PENDING','SENT','APPROVED','RECEIVED','REJECTED'));
 CREATE INDEX IF NOT EXISTS lwb_purchase_checks_status_idx ON public.lwb_purchase_checks (claim_status, verified_on);
 
 -- Damage / leakage / shortage lines for a verification.
@@ -119,7 +135,9 @@ CREATE POLICY lwb_purchase_check_items_write ON public.lwb_purchase_check_items 
 REVOKE ALL ON TABLE public.lwb_purchase_checks FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON TABLE public.lwb_purchase_check_items FROM PUBLIC, anon, authenticated;
 GRANT SELECT, INSERT, DELETE ON TABLE public.lwb_purchase_checks TO authenticated;
-GRANT UPDATE (verified_on, has_damage, claim_status, claim_no, sent_on, settled_on, note, updated_at, updated_by) ON TABLE public.lwb_purchase_checks TO authenticated;
+GRANT UPDATE (verified_on, has_damage, claim_status, claim_no, sent_on, settled_on, note, updated_at, updated_by,
+  approved_on, return_required, returned_on, return_vehicle_no, return_lr_no, claim_amount, received_amount)
+  ON TABLE public.lwb_purchase_checks TO authenticated;
 GRANT SELECT, INSERT, DELETE ON TABLE public.lwb_purchase_check_items TO authenticated;
 
 COMMIT;
