@@ -50,6 +50,7 @@
       {t:"Inventory / Stock Report",h:"inventory.html",i:"stock",r:"admin manager warehouse accounts"},
       {t:"Goods Inward (Purchase)",h:"goods-inward.html",i:"inbox",r:"admin manager"},
       {t:"Purchase Register",h:"purchase-register.html",i:"inbox",r:"admin"},
+      {t:"Purchase Claims",h:"purchase-claims.html",i:"inbox",r:"admin manager"},
       {t:"Opening Stock",h:"opening-stock.html",i:"box",r:"admin"}]},
     {group:"Masters",items:[
       {t:"Customer / Party Master",h:"customer-master.html",i:"users",r:"admin manager"},
