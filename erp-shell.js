@@ -32,13 +32,10 @@
     {group:"",items:[{t:"Dashboard",h:"dashboard.html",i:"home",r:"*"}]},
     {group:"Sales",items:[
       {t:"PO / Sales Order Entry",h:"order-entry.html",i:"cart",r:"admin manager sales"},
-      {t:"PO Approval & Driver",h:"warehouse-orders.html",i:"check",r:"admin manager"},
-      {t:"CC PO Maker",h:"po-maker.html",i:"bill",r:"admin manager"}]},
+      {t:"PO Approval & Driver",h:"warehouse-orders.html",i:"check",r:"admin manager"}]},
     {group:"Dispatch",items:[
       {t:"Loading & Dispatch",h:"loading-dispatch.html",i:"box",r:"admin manager warehouse"},
       {t:"Transport Assignment",h:"transport-allocation.html",i:"truck",r:"admin manager transport"}]},
-    {group:"Accounts",items:[
-      {t:"ERP Bill Create",h:"accounts-invoice.html",i:"bill",r:"admin accounts"}]},
     {group:"Delivery",items:[
       {t:"Driver Delivery / POD",h:"driver-delivery.html",i:"pin",r:"admin manager driver accounts"}]},
     {group:"Reports",items:[
