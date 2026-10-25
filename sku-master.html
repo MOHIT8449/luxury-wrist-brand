@@ -24,17 +24,17 @@
 <div><label for="cess">Cess Rate (%)</label><input id="cess" type="number" min="0" max="100" step="0.01" placeholder="Optional"></div>
 <div><label for="weight">Unit Weight per Case (KG)</label><input id="weight" type="number" min="0" step="0.001" placeholder="e.g. 12.500" disabled></div>
 <div><label for="palletCases">Cases per Pallet (CS/Pallet)</label><input id="palletCases" type="number" min="1" max="100000" step="1" placeholder="e.g. 117" disabled></div>
-<div id="rateGroupField" hidden><label for="rateGroup">Rate Group (Rate &amp; Scheme)</label><select id="rateGroup"><option value="">— Rate group nahi —</option></select></div>
+<div id="rateGroupField" hidden><label for="rateGroup">Rate Group (Rate &amp; Scheme)</label><select id="rateGroup"><option value="">— No rate group —</option></select></div>
 <div><label for="active">Status</label><select id="active"><option value="true">Active</option><option value="false">Inactive</option></select></div>
 </div><div class="actions"><button id="saveBtn" type="submit">Save SKU</button><button class="secondary" id="clearBtn" type="button">Clear / New SKU</button></div></form>
-<small class="hint">GST/Cess rates optional हैं। Invoicing से पहले applicable tax rate verify करें।</small>
+<small class="hint">GST / Cess rates are optional. Verify the applicable tax rate before invoicing.</small>
 <small class="hint" id="weightHint">SKU weight auto-fill setup: add optional unit_weight_kg column in Supabase first, then enter verified KG per CASE for each SKU.</small>
 <small class="hint" id="palletHint">Cases/Pallet comes from this Master. Run lwb_pallet_quantity_setup.sql in Supabase to enable it; do not guess pallet counts.</small></section>
 <section class="panel"><h2>Excel Import / Export</h2>
-<small class="hint">Export se poori list Excel me milegi. Usme badlav karke ya Template me naye SKU bhar ke Import karo. SKU Name se milaya jaata hai: naya naam = naya SKU, purana naam = update. Khaali cell = purani value waise hi rahegi.</small>
+<small class="hint">Export downloads the full SKU list to Excel. Edit it, or fill new SKUs in the Template, then Import. Rows are matched by SKU Name: a new name creates an SKU, an existing name updates it. Blank cells keep the saved value.</small>
 <div id="xlPanel" style="margin-top:10px"></div></section>
 <section class="panel" id="bulkPanel" hidden><h2>Bulk Add SKUs</h2>
-<small class="hint">Excel se 2 column copy karke paste karo: CATEGORY · SKU (teesra column PCS/Case optional). Category khaali ho to upar wali category lagegi. PCS/Case na ho to Rate &amp; Scheme ke pack se liya jaayega. Jo SKU pehle se hai uski sirf category update hogi.</small>
+<small class="hint">Copy two columns from Excel and paste here: CATEGORY · SKU (a third column, PCS/Case, is optional). A blank category uses the category from the row above. If PCS/Case is missing, it is taken from the Rate &amp; Scheme pack. For SKUs that already exist, only the category is updated.</small>
 <textarea id="bulkText" rows="8" style="width:100%;margin-top:8px;font:13px monospace" placeholder="250ML CSD&#9;300ML TH MRP.20&#10;&#9;250ML SP MRP.20"></textarea>
 <div class="actions"><button type="button" class="secondary" id="bulkCheck">Check List</button><button type="button" id="bulkSave" disabled>Add / Update SKUs</button><span id="bulkInfo" class="hint"></span></div></section>
 <section class="panel"><div class="toolbar"><div><h2 style="margin-bottom:5px">SKU List</h2><span id="status">Loading...</span></div><input id="search" placeholder="Search SKU name or HSN..."></div>
@@ -65,7 +65,7 @@ async function loadRateGroups(){
   if(p.error||l.error)return;
   packs=(p.data||[]).filter(x=>x.active!==false);links=new Map((l.data||[]).map(x=>[x.sku_key,x.pack_id]));ratesOn=true;
   $('rateGroupField').hidden=false;document.querySelectorAll('.rg-col').forEach(x=>x.hidden=false);
-  $('rateGroup').replaceChildren(new Option('— Rate group nahi —',''),...packs.map(x=>new Option(x.pack_name+' (Slab 3 ₹'+x.slab3_rate+')',x.id)));
+  $('rateGroup').replaceChildren(new Option('— No rate group —',''),...packs.map(x=>new Option(x.pack_name+' (Slab 3 ₹'+x.slab3_rate+')',x.id)));
 }
 async function saveRateGroup(oldName,newName){
   if(!ratesOn)return'';
@@ -74,7 +74,7 @@ async function saveRateGroup(oldName,newName){
   if((links.get(newKey)||null)!==want||(oldKey&&oldKey!==newKey))changes.push({sku_name:newKey,pack_id:want});
   if(!changes.length)return'';
   const {error}=await db.rpc('lwb_link_rate_skus',{p_links:changes});
-  return error?' Rate group save nahi hua: '+error.message:'';
+  return error?' Rate group not saved: '+error.message:'';
 }
 async function loadSkus(){const {data,error}=await db.from('sku_master').select('*').order('sku_name');if(error){notice('SKU list load failed: '+error.message,true);$('status').textContent='Load failed';return;}skus=data||[];
 const hasCol=async c=>skus.length?skus.some(x=>Object.prototype.hasOwnProperty.call(x,c)):!(await db.from('sku_master').select(c).limit(1)).error;
@@ -134,66 +134,66 @@ function planBulk(){
     add.push({sku,cat,pcs:caseN,pack:pack&&pack.id});
   }
   bulkPlan={add,update,noCase,multi,mapped};
-  $('bulkInfo').textContent=add.length+' naye SKU · '+update.length+' purane SKU ki category update · '+same+' pehle se same'
-    +(mapped.length?' · Purane SKU se mile ('+mapped.length+'): '+mapped.join('; '):'')
-    +(multi.length?' · Ek se zyada purane SKU mile, chhoda ('+multi.length+'): '+multi.join('; '):'')
-    +(noCase.length?' · '+noCase.length+' ka PCS/Case nahi mila: '+noCase.join(', '):'')
-    +(add.length?' · Naye: '+add.map(r=>r.sku).join(', '):'');
+  $('bulkInfo').textContent=add.length+' new SKUs · '+update.length+' existing SKUs to update category · '+same+' unchanged'
+    +(mapped.length?' · Matched to existing SKUs ('+mapped.length+'): '+mapped.join('; '):'')
+    +(multi.length?' · Skipped, more than one existing SKU matched ('+multi.length+'): '+multi.join('; '):'')
+    +(noCase.length?' · '+noCase.length+' without PCS/Case: '+noCase.join(', '):'')
+    +(add.length?' · New: '+add.map(r=>r.sku).join(', '):'');
   $('bulkSave').disabled=!canEdit||!(add.length+update.length);
   return bulkPlan;
 }
 async function saveBulk(){
   const {add,update}=planBulk();if(!add.length&&!update.length)return;
-  if(!confirm(add.length+' naye SKU add aur '+update.length+' ki category update karein?'))return;
+  if(!(await confirm('Add '+add.length+' new SKUs and update the category of '+update.length+'?')))return;
   $('bulkSave').disabled=true;$('bulkCheck').disabled=true;const failed=[],linksToSave=[];let done=0;
   for(const r of add){
     const row={sku_name:r.sku,pcs_per_case:r.pcs,is_active:true};if(categoryColumnAvailable&&r.cat)row.category=r.cat;
     const {error}=await db.from('sku_master').insert(row);
     if(error)failed.push(r.sku+' — '+error.message);else{done++;if(r.pack&&!links.has(r.sku))linksToSave.push({sku_name:r.sku,pack_id:r.pack})}
-    $('bulkInfo').textContent=done+' / '+(add.length+update.length)+' save...';
+    $('bulkInfo').textContent=done+' / '+(add.length+update.length)+' saving...';
   }
   for(const r of update){const {error}=await db.from('sku_master').update({category:r.cat}).eq('id',r.id);if(error)failed.push(r.sku+' — '+error.message);else{done++;if(r.pack&&!links.has(r.sku))linksToSave.push({sku_name:r.sku,pack_id:r.pack})}}
   let linkMsg='';
-  if(linksToSave.length&&ratesOn){const {error}=await db.rpc('lwb_link_rate_skus',{p_links:linksToSave});linkMsg=error?' Rate link nahi hua: '+error.message:' '+linksToSave.length+' SKU Rate & Scheme pack se jud gaye.'}
+  if(linksToSave.length&&ratesOn){const {error}=await db.rpc('lwb_link_rate_skus',{p_links:linksToSave});linkMsg=error?' Rate link failed: '+error.message:' '+linksToSave.length+' SKUs linked to Rate & Scheme packs.'}
   await loadRateGroups();await loadSkus();$('bulkCheck').disabled=false;
   if(!failed.length)$('bulkText').value='';
-  notice(done+' SKU save hue.'+linkMsg+(failed.length?' Save nahi hue ('+failed.length+'): '+failed.slice(0,5).join('; '):''),!!failed.length);
+  notice(done+' SKUs saved.'+linkMsg+(failed.length?' Not saved ('+failed.length+'): '+failed.slice(0,5).join('; '):''),!!failed.length);
   planBulk();
 }
 /* Excel Import / Export (excel-io.js). Matched by SKU Name; blank cells keep the saved value. */
 const XL_COLS=[
-  {h:'Category',k:'category',sample:'250ML CSD',note:'Group, jaise 250ML CSD, JUICE, WATER'},
-  {h:'SKU Name',k:'sku_name',req:true,sample:'300ML THUMS UP 1X24 MRP 20',alias:['SKU'],note:'Poora naam. Isi se purana SKU pehchana jaata hai'},
+  {h:'Category',k:'category',sample:'250ML CSD',note:'Group, e.g. 250ML CSD, JUICE, WATER'},
+  {h:'SKU Name',k:'sku_name',req:true,sample:'300ML THUMS UP 1X24 MRP 20',alias:['SKU'],note:'Full name. Existing SKUs are matched by this name'},
   {h:'HSN Code',k:'hsn_code',sample:'22021010',alias:['HSN']},
-  {h:'PCS per Case',k:'pcs_per_case',sample:24,alias:['PCS/Case','PCS'],note:'Naye SKU ke liye zaroori (khaali ho to Rate pack se liya jaayega)'},
+  {h:'PCS per Case',k:'pcs_per_case',sample:24,alias:['PCS/Case','PCS'],note:'Required for new SKUs (taken from the Rate pack if blank)'},
   {h:'GST %',k:'gst_rate',sample:40,alias:['GST','GST Rate']},
   {h:'Cess %',k:'cess_rate',sample:0,alias:['Cess','Cess Rate']},
   {h:'Unit Wt per Case KG',k:'unit_weight_kg',sample:7.6,alias:['Unit Wt/Case KG','Weight']},
   {h:'CS per Pallet',k:'cases_per_pallet',sample:130,alias:['CS/Pallet','Cases per Pallet']},
-  {h:'Rate Group',k:'rate_group',note:'Rate & Scheme ka pack naam (khaali chhod sakte ho)'},
-  {h:'Status',k:'status',sample:'Active',note:'Active ya Inactive'}];
+  {h:'Rate Group',k:'rate_group',note:'Rate & Scheme pack name (optional)'},
+  {h:'Status',k:'status',sample:'Active',note:'Active or Inactive'}];
 function xlExport(){return skus.map(x=>({...x,rate_group:(packs.find(p=>p.id===links.get(skuKey(x.sku_name)))||{}).pack_name||'',status:x.is_active===false?'Inactive':'Active'}))}
 function xlPlan(rows){
   const N=LWBExcel.num,have=new Map(skus.map(x=>[normSku(x.sku_name),x])),seen=new Set(),add=[],update=[],errors=[];let same=0;
   const packBy=new Map(packs.map(p=>[normSku(p.pack_name),p]));
   for(const r of rows){
     const name=normSku(r.sku_name),bad=m=>errors.push('Row '+r._row+' ('+(name||'-')+'): '+m);
-    if(!name){bad('SKU Name khaali hai');continue}
-    if(seen.has(name)){bad('file me do baar hai');continue}seen.add(name);
+    if(!name){bad('SKU Name is blank');continue}
+    if(seen.has(name)){bad('appears twice in the file');continue}seen.add(name);
     const f={};
     if(r.category!=null&&categoryColumnAvailable)f.category=normSku(r.category);
     if(r.hsn_code!=null)f.hsn_code=String(r.hsn_code).trim();
     const nums=[['pcs_per_case',1,100000,true],['gst_rate',0,100],['cess_rate',0,100],['unit_weight_kg',0,999999,false,weightColumnAvailable],['cases_per_pallet',1,100000,true,palletColumnAvailable]];
-    let err='';for(const [k,lo,hi,int,on=true] of nums){if(r[k]==null||!on)continue;const v=N(r[k]);if(!Number.isFinite(v)||v<lo||v>hi||int&&!Number.isInteger(v)){err=XL_COLS.find(c=>c.k===k).h+' galat: '+r[k];break}f[k]=v}
+    let err='';for(const [k,lo,hi,int,on=true] of nums){if(r[k]==null||!on)continue;const v=N(r[k]);if(!Number.isFinite(v)||v<lo||v>hi||int&&!Number.isInteger(v)){err=XL_COLS.find(c=>c.k===k).h+' is invalid: '+r[k];break}f[k]=v}
     if(err){bad(err);continue}
-    if(r.status!=null){const t=normSku(r.status);if(!/^(ACTIVE|INACTIVE)$/.test(t)){bad('Status Active ya Inactive likho');continue}f.is_active=t==='ACTIVE'}
-    let pack=null;if(r.rate_group!=null){pack=packBy.get(normSku(r.rate_group));if(!pack){bad('Rate Group "'+r.rate_group+'" Rate & Scheme me nahi mila');continue}}
+    if(r.status!=null){const t=normSku(r.status);if(!/^(ACTIVE|INACTIVE)$/.test(t)){bad('Status must be Active or Inactive');continue}f.is_active=t==='ACTIVE'}
+    let pack=null;if(r.rate_group!=null){pack=packBy.get(normSku(r.rate_group));if(!pack){bad('Rate Group "'+r.rate_group+'" not found in Rate & Scheme');continue}}
     const old=have.get(name);
     if(old){const ch={};for(const [k,v] of Object.entries(f))if(String(old[k]??'')!==String(v))ch[k]=v;
       const link=pack&&links.get(skuKey(old.sku_name))!==pack.id?pack.id:null;
       if(Object.keys(ch).length||link)update.push({id:old.id,sku:old.sku_name,ch,pack:link});else same++;continue}
     if(f.pcs_per_case==null)f.pcs_per_case=window.LWBPackMatch?LWBPackMatch.caseFor(name,packs):null;
-    if(!f.pcs_per_case){bad('PCS per Case bharo');continue}
+    if(!f.pcs_per_case){bad('Enter PCS per Case');continue}
     if(f.is_active==null)f.is_active=true;
     add.push({row:{sku_name:name,...f},pack:pack?pack.id:(window.LWBPackMatch&&LWBPackMatch.match(name,packs)||{}).id});
   }
@@ -201,13 +201,13 @@ function xlPlan(rows){
 }
 async function xlApply(plan,progress){
   const failed=[],linksToSave=[];let done=0;const total=plan.add.length+plan.update.length;
-  for(const r of plan.add){const {error}=await db.from('sku_master').insert(r.row);if(error)failed.push(r.row.sku_name+' — '+error.message);else{done++;if(r.pack)linksToSave.push({sku_name:r.row.sku_name,pack_id:r.pack})}progress(done+' / '+total+' save...')}
-  for(const r of plan.update){let error=null;if(Object.keys(r.ch).length)({error}=await db.from('sku_master').update(r.ch).eq('id',r.id));if(error)failed.push(r.sku+' — '+error.message);else{done++;if(r.pack)linksToSave.push({sku_name:r.sku,pack_id:r.pack})}progress(done+' / '+total+' save...')}
-  let linkMsg='';if(linksToSave.length&&ratesOn){const {error}=await db.rpc('lwb_link_rate_skus',{p_links:linksToSave});linkMsg=error?' Rate link nahi hua: '+error.message:' '+linksToSave.length+' SKU Rate pack se jude.'}
+  for(const r of plan.add){const {error}=await db.from('sku_master').insert(r.row);if(error)failed.push(r.row.sku_name+' — '+error.message);else{done++;if(r.pack)linksToSave.push({sku_name:r.row.sku_name,pack_id:r.pack})}progress(done+' / '+total+' saving...')}
+  for(const r of plan.update){let error=null;if(Object.keys(r.ch).length)({error}=await db.from('sku_master').update(r.ch).eq('id',r.id));if(error)failed.push(r.sku+' — '+error.message);else{done++;if(r.pack)linksToSave.push({sku_name:r.sku,pack_id:r.pack})}progress(done+' / '+total+' saving...')}
+  let linkMsg='';if(linksToSave.length&&ratesOn){const {error}=await db.rpc('lwb_link_rate_skus',{p_links:linksToSave});linkMsg=error?' Rate link failed: '+error.message:' '+linksToSave.length+' SKUs linked to Rate packs.'}
   await loadRateGroups();await loadSkus();
-  return done+' SKU save hue.'+linkMsg+(failed.length?'\nSave nahi hue ('+failed.length+'):\n'+failed.join('\n'):'');
+  return done+' SKUs saved.'+linkMsg+(failed.length?'\nNot saved ('+failed.length+'):\n'+failed.join('\n'):'');
 }
-async function init(){resetForm();LWBExcel.panel({mount:$('xlPanel'),file:'SKU-Master',columns:XL_COLS,exportRows:xlExport,plan:xlPlan,apply:xlApply,canImport:()=>canEdit});$('bulkCheck').addEventListener('click',planBulk);$('bulkSave').addEventListener('click',saveBulk);$('bulkText').addEventListener('input',()=>{$('bulkSave').disabled=true;$('bulkInfo').textContent='Check List dabao';});$('skuForm').addEventListener('submit',saveSku);$('clearBtn').addEventListener('click',resetForm);$('search').addEventListener('input',render);
+async function init(){resetForm();LWBExcel.panel({mount:$('xlPanel'),file:'SKU-Master',columns:XL_COLS,exportRows:xlExport,plan:xlPlan,apply:xlApply,canImport:()=>canEdit});$('bulkCheck').addEventListener('click',planBulk);$('bulkSave').addEventListener('click',saveBulk);$('bulkText').addEventListener('input',()=>{$('bulkSave').disabled=true;$('bulkInfo').textContent='Click Check List';});$('skuForm').addEventListener('submit',saveSku);$('clearBtn').addEventListener('click',resetForm);$('search').addEventListener('input',render);
 if(SUPABASE_PUBLISHABLE_KEY.includes('PASTE_YOUR')){notice('Setup needed: add your Supabase publishable key in this HTML file.',true);$('rows').replaceChildren();$('status').textContent='Supabase key not configured';return;}
 if(!window.supabase){notice('Supabase library did not load. Check internet connection.',true);return;}
 try{db=window.supabase.createClient(SUPABASE_URL,SUPABASE_PUBLISHABLE_KEY);const {data:{user},error}=await db.auth.getUser();if(error||!user){notice('Please log in to ERP first, then open SKU Master.',true);$('status').textContent='Login required';return;}const {data:profile,error:pe}=await db.from('user_profiles').select('role,active').eq('id',user.id).maybeSingle();if(pe)throw pe;if(!profile||profile.active!==true){notice('Your ERP login is not active.',true);$('status').textContent='Access denied';return;}canEdit=['admin','manager'].includes(String(profile.role||'').trim().toLowerCase());// Only Admin / Manager can add or edit SKUs; other roles get a read-only list.

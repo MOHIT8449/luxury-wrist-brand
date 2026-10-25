@@ -45,8 +45,8 @@ BEGIN
   -- Driver: matched by mobile number only, never by name
   INSERT INTO public.erp_notifications (user_id, title, message, notification_type, order_id)
   SELECT p.id,
-    CASE WHEN TG_OP = 'INSERT' THEN 'Naya Loading Assignment' ELSE 'Loading Assignment badla' END,
-    v_info || '. Driver app me order dekho.',
+    CASE WHEN TG_OP = 'INSERT' THEN 'New Loading Assignment' ELSE 'Loading Assignment Updated' END,
+    v_info || '. Open the Driver app to view the order.',
     'LOADING_ASSIGNMENT_DRIVER',
     NEW.order_id
   FROM public.user_profiles p
@@ -58,7 +58,7 @@ BEGIN
   -- Dispatch team
   INSERT INTO public.erp_notifications (user_id, title, message, notification_type, order_id)
   SELECT p.id,
-    CASE WHEN TG_OP = 'INSERT' THEN 'Loading ke liye gaadi assign hui' ELSE 'Loading gaadi / driver badla' END,
+    CASE WHEN TG_OP = 'INSERT' THEN 'Vehicle Assigned for Loading' ELSE 'Loading Vehicle / Driver Changed' END,
     v_info || '.',
     'LOADING_ASSIGNMENT_DISPATCH',
     NEW.order_id

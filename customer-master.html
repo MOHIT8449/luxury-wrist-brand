@@ -27,7 +27,7 @@
 <section class="panel" id="bulk-panel"><h2>Bulk Add Parties</h2><p class="hint">Paste one party per line (Excel column copy works). Parties already in the list are skipped. Saved as Active, PAN-only / Unregistered, State below, Credit Days 0. GSTIN, mobile and address can be filled later with Edit.</p>
 <div class="field wide"><textarea id="bulkNames" rows="8" placeholder="AKASH TRADERS (LIMBAYAT)&#10;ALI TOBACCO (LIMBAYAT)"></textarea></div>
 <div class="tools"><input id="bulkState" value="Gujarat" style="max-width:160px" aria-label="State"><button id="bulkCheck" class="secondary">Check List</button><button id="bulkSave" disabled>Add New Parties</button><span id="bulkInfo" class="hint"></span></div></section>
-<section class="panel" id="xl-panel"><h2>Excel Import / Export</h2><p class="hint">Export se poori party list Excel me milegi. Usme badlav karke ya Template me nayi party bhar ke Import karo. Party Name se milaya jaata hai: naya naam = nayi party, purana naam = update. Khaali cell = purani value waise hi rahegi. Import sirf Admin.</p><div id="xlPanel"></div></section>
+<section class="panel" id="xl-panel"><h2>Excel Import / Export</h2><p class="hint">Export downloads the full party list to Excel. Edit it, or fill new parties in the Template, then Import. Rows are matched by Party Name: a new name creates a party, an existing name updates it. Blank cells keep the saved value. Import is Admin only.</p><div id="xlPanel"></div></section>
 <section class="panel" id="party-list"><div style="display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap"><h2>Customer / Party List</h2><div class="tools"><input id="search" type="search" placeholder="Search customer name, code, GSTIN"><label class="hint" style="display:flex;gap:6px;align-items:center"><input id="dupOnly" type="checkbox" style="width:auto">Duplicates only</label><button id="refresh" class="secondary">Refresh</button></div></div><div class="scroll"><table><thead><tr><th>Code</th><th>Party Name</th><th>GSTIN / PAN</th><th>Registration</th><th>City / State</th><th>Credit Days</th><th>Status</th><th>Action</th></tr></thead><tbody id="list"><tr><td colspan="7">Connecting...</td></tr></tbody></table></div><p id="count" class="hint"></p></section>
 </main>
 <script>
@@ -61,34 +61,34 @@ const {data,error}=await db.rpc('lwb_delete_customer',{p_id:c.id});if(error){m('
 if(editing===c.id)reset();await refresh();m('Party deleted: '+(data||c.customer_name),'success');}
 /* Excel Import / Export (excel-io.js). Matched by Party Name; blank cells keep the saved value. */
 const XL_COLS=[
-  {h:'Party Name',k:'customer_name',req:true,sample:'AKASH TRADERS (LIMBAYAT)',alias:['Customer Name','Party'],note:'Isi naam se purani party pehchani jaati hai'},
-  {h:'Customer Code',k:'customer_code',note:'Sirf dekhne ke liye. Import me badla nahi jaata'},
-  {h:'GST Type',k:'gst_registration_status',sample:'UNREGISTERED',note:'REGISTERED ya UNREGISTERED. GSTIN ho to REGISTERED'},
+  {h:'Party Name',k:'customer_name',req:true,sample:'AKASH TRADERS (LIMBAYAT)',alias:['Customer Name','Party'],note:'Existing parties are matched by this name'},
+  {h:'Customer Code',k:'customer_code',note:'For reference only. Not changed by Import'},
+  {h:'GST Type',k:'gst_registration_status',sample:'UNREGISTERED',note:'REGISTERED or UNREGISTERED. Use REGISTERED when GSTIN is given'},
   {h:'GSTIN',k:'gstin',sample:''},{h:'PAN',k:'pan',sample:''},
   {h:'Mobile',k:'mobile',sample:'9876543210'},{h:'Billing Address',k:'billing_address',alias:['Address']},
-  {h:'City',k:'city',sample:'Surat'},{h:'State',k:'state',sample:'Gujarat',note:'Nayi party ke liye zaroori (khaali ho to Gujarat)'},
+  {h:'City',k:'city',sample:'Surat'},{h:'State',k:'state',sample:'Gujarat',note:'Required for new parties (defaults to Gujarat if blank)'},
   {h:'Pincode',k:'pincode',sample:'395010'},{h:'Contact Person',k:'contact_person',alias:['Contact']},
-  {h:'Credit Days',k:'credit_days',sample:0},{h:'Status',k:'status',sample:'Active',note:'Active ya Inactive'}];
+  {h:'Credit Days',k:'credit_days',sample:0},{h:'Status',k:'status',sample:'Active',note:'Active or Inactive'}];
 function xlPlan(rows){
   const have=new Map(all.map(x=>[normName(x.customer_name),x])),seen=new Set(),add=[],update=[],errors=[];let same=0;
   for(const r of rows){
     const name=normName(r.customer_name),bad=t=>errors.push('Row '+r._row+' ('+(name||'-')+'): '+t);
-    if(name.length<2){bad('Party Name khaali / chhota hai');continue}
-    if(seen.has(name)){bad('file me do baar hai');continue}seen.add(name);
+    if(name.length<2){bad('Party Name is blank or too short');continue}
+    if(seen.has(name)){bad('appears twice in the file');continue}seen.add(name);
     const f={},txt=k=>r[k]==null?undefined:String(r[k]).trim();
     for(const k of ['billing_address','city','state','pincode','contact_person','mobile']){const v=txt(k);if(v!==undefined)f[k]=v}
     if(txt('gstin')!==undefined)f.gstin=txt('gstin').toUpperCase();
     if(txt('pan')!==undefined)f.pan=txt('pan').toUpperCase();
     if(txt('gst_registration_status')!==undefined)f.gst_registration_status=/^REG/i.test(txt('gst_registration_status'))?'REGISTERED':'UNREGISTERED';
-    if(r.credit_days!=null){const d=LWBExcel.num(r.credit_days);if(!Number.isInteger(d)||d<0||d>365){bad('Credit Days 0–365 hone chahiye');continue}f.credit_days=d}
-    if(r.status!=null){const t=String(r.status).trim().toUpperCase();if(!/^(ACTIVE|INACTIVE)$/.test(t)){bad('Status Active ya Inactive likho');continue}f.is_active=t==='ACTIVE'}
-    if(f.pan&&!/^[A-Z]{5}[0-9]{4}[A-Z]$/.test(f.pan)){bad('PAN format galat');continue}
-    if(f.gstin&&!/^[0-9]{2}[A-Z0-9]{13}$/.test(f.gstin)){bad('GSTIN 15 characters ka hona chahiye');continue}
+    if(r.credit_days!=null){const d=LWBExcel.num(r.credit_days);if(!Number.isInteger(d)||d<0||d>365){bad('Credit Days must be between 0 and 365');continue}f.credit_days=d}
+    if(r.status!=null){const t=String(r.status).trim().toUpperCase();if(!/^(ACTIVE|INACTIVE)$/.test(t)){bad('Status must be Active or Inactive');continue}f.is_active=t==='ACTIVE'}
+    if(f.pan&&!/^[A-Z]{5}[0-9]{4}[A-Z]$/.test(f.pan)){bad('Invalid PAN format');continue}
+    if(f.gstin&&!/^[0-9]{2}[A-Z0-9]{13}$/.test(f.gstin)){bad('GSTIN must be 15 characters');continue}
     const old=have.get(name),gstin=f.gstin!==undefined?f.gstin:old&&old.gstin;
     if(gstin&&f.gst_registration_status===undefined&&!(old&&old.gst_registration_status==='REGISTERED'))f.gst_registration_status='REGISTERED';
     const reg=f.gst_registration_status||old&&old.gst_registration_status||'UNREGISTERED';
-    if(reg==='REGISTERED'&&!gstin){bad('GST Registered party ke liye GSTIN chahiye');continue}
-    if(reg==='UNREGISTERED'&&gstin){bad('GSTIN hai to GST Type REGISTERED likho');continue}
+    if(reg==='REGISTERED'&&!gstin){bad('GSTIN is required for a GST registered party');continue}
+    if(reg==='UNREGISTERED'&&gstin){bad('GSTIN is given, so GST Type must be REGISTERED');continue}
     if(old){const ch={};for(const [k,v] of Object.entries(f))if(String(old[k]??'')!==String(v??''))ch[k]=v===''?null:v;
       if(Object.keys(ch).length)update.push({id:old.id,name:old.customer_name,ch});else same++;continue}
     add.push({customer_name:name,gst_registration_status:reg,state:f.state||'Gujarat',credit_days:f.credit_days??0,is_active:f.is_active??true,
@@ -99,10 +99,10 @@ function xlPlan(rows){
 async function xlApply(plan,progress){
   const failed=[];let done=0;const total=plan.add.length+plan.update.length;
   // One party per insert so each gets its own Customer Code from the database.
-  for(const row of plan.add){const {error}=await db.from('lwb_customer_master').insert(row);if(error)failed.push(row.customer_name+' — '+error.message);else done++;progress(done+' / '+total+' save...')}
-  for(const u of plan.update){const {error}=await db.from('lwb_customer_master').update(u.ch).eq('id',u.id);if(error)failed.push(u.name+' — '+error.message);else done++;progress(done+' / '+total+' save...')}
+  for(const row of plan.add){const {error}=await db.from('lwb_customer_master').insert(row);if(error)failed.push(row.customer_name+' — '+error.message);else done++;progress(done+' / '+total+' saving...')}
+  for(const u of plan.update){const {error}=await db.from('lwb_customer_master').update(u.ch).eq('id',u.id);if(error)failed.push(u.name+' — '+error.message);else done++;progress(done+' / '+total+' saving...')}
   await refresh();
-  return done+' parties save hui.'+(failed.length?'\nSave nahi hui ('+failed.length+'):\n'+failed.join('\n'):'');
+  return done+' parties saved.'+(failed.length?'\nNot saved ('+failed.length+'):\n'+failed.join('\n'):'');
 }
 LWBExcel.panel({mount:$('xlPanel'),file:'Party-Master',columns:XL_COLS,exportRows:()=>all.map(x=>({...x,status:x.is_active?'Active':'Inactive'})),plan:xlPlan,apply:xlApply,canImport:()=>!!db&&role==='admin'});
 $('dupOnly').onchange=render;

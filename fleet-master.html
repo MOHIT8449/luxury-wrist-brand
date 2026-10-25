@@ -60,18 +60,18 @@
       <div class="erp-card-head"><h2 id="formTitle"></h2><small id="formInfo" style="color:var(--erp-muted)"></small></div>
       <div class="erp-card-body" style="padding:16px">
         <div class="fm-grid" id="form"></div>
-        <div class="fm-actions"><button type="button" class="fm-btn" id="save">Save karo</button><button type="button" class="fm-btn light" id="clear">Naya / Clear</button><span class="fm-hint" id="formHint"></span></div>
+        <div class="fm-actions"><button type="button" class="fm-btn" id="save">Save</button><button type="button" class="fm-btn light" id="clear">New / Clear</button><span class="fm-hint" id="formHint"></span></div>
       </div>
     </section>
 
     <section class="erp-card" style="margin-top:14px">
-      <div class="erp-card-head"><h2>Excel Import / Export</h2><small style="color:var(--erp-muted)">Template download karo, bharo, wapas Import karo</small></div>
+      <div class="erp-card-head"><h2>Excel Import / Export</h2><small style="color:var(--erp-muted)">Download the Template, fill it in, then Import it</small></div>
       <div class="erp-card-body" style="padding:16px" id="xlPanel"></div>
     </section>
 
     <section class="erp-card" style="margin-top:14px">
       <div class="erp-card-head"><h2 id="listTitle"></h2>
-        <div class="fm-tools"><input id="search" type="search" placeholder="Search"><select id="filter"><option value="active">Active</option><option value="inactive">Inactive</option><option value="all">Sab</option></select></div></div>
+        <div class="fm-tools"><input id="search" type="search" placeholder="Search"><select id="filter"><option value="active">Active</option><option value="inactive">Inactive</option><option value="all">All</option></select></div></div>
       <div class="erp-scroll" style="overflow:auto"><table class="fm-table"><thead id="head"></thead><tbody id="list"></tbody></table></div>
     </section>
   </main>
@@ -103,23 +103,23 @@
     const DOCS=[["insurance_expiry","Insurance"],["puc_expiry","PUC"],["fitness_expiry","Fitness"],["permit_expiry","Permit"]];
     const KIND={
       vehicles:{table:"lwb_vehicles",title:"Vehicle Master",one:"Vehicle",
-        sub:"Apni aur transporter ki gaadi. PO Approval aur Transport Assignment me yahin se vehicle chuna jayega. Insurance / PUC / Fitness / Permit ki date bharo to khatam hone se pehle yahan dikhega.",
+        sub:"Own and transporter vehicles. PO Approval and Transport Assignment pick vehicles from this list. Enter Insurance / PUC / Fitness / Permit dates to see expiry alerts here.",
         fields:[
           {k:"vehicle_no",l:"Vehicle Number *",ph:"GJ05FW9821"},
           {k:"vehicle_type",l:"Vehicle Type",list:VTYPES},
           {k:"capacity_kg",l:"Capacity (KG)",type:"number"},
-          {k:"ownership",l:"Gaadi kiski",opts:[["OWN","Apni (OWN)"],["TRANSPORTER","Transporter ki"]]},
+          {k:"ownership",l:"Ownership",opts:[["OWN","Own"],["TRANSPORTER","Transporter"]]},
           {k:"transporter_name",l:"Transporter / Owner Name"},
           {k:"owner_mobile",l:"Owner Mobile",type:"tel",ph:"10 digit"},
           ...DOCS.map(([k,l])=>({k,l:l+" Expiry",type:"date"})),
           {k:"is_active",l:"Status",opts:[["true","Active"],["false","Inactive"]]},
           {k:"note",l:"Note",wide:1}]},
       drivers:{table:"lwb_drivers",title:"Driver Master",one:"Driver",
-        sub:"Driver ki pehchaan mobile number se hoti hai, naam se nahi. Ek mobile = ek driver. Driver Portal login usi mobile se match hota hai.",
+        sub:"Drivers are identified by mobile number, not by name. One mobile number = one driver. The Driver Portal login is matched by the same mobile number.",
         fields:[
           {k:"driver_name",l:"Driver Name *"},
-          {k:"mobile",l:"Mobile *",type:"tel",ph:"10 digit, 6-9 se shuru"},
-          {k:"alt_mobile",l:"Doosra Mobile",type:"tel"},
+          {k:"mobile",l:"Mobile *",type:"tel",ph:"10 digits, starting with 6-9"},
+          {k:"alt_mobile",l:"Alternate Mobile",type:"tel"},
           {k:"license_no",l:"License Number"},
           {k:"license_expiry",l:"License Expiry",type:"date"},
           {k:"default_vehicle_id",l:"Default Vehicle",vehicle:1},
@@ -148,7 +148,7 @@
         can()?client.rpc("lwb_sales_head_active_drivers"):Promise.resolve({data:[]})]);
       missing=!!(v.error||d.error);
       el("setupMsg").hidden=!missing;
-      if(missing)el("setupMsg").textContent="Vehicle / Driver table abhi Supabase me nahi bani. Supabase SQL Editor me lwb_fleet_master_setup.sql ek baar chalao, phir page refresh karo. ("+((v.error||d.error).message||"")+")";
+      if(missing)el("setupMsg").textContent="The Vehicle / Driver tables are not set up in Supabase yet. Run lwb_fleet_master_setup.sql once in the Supabase SQL Editor, then refresh this page. ("+((v.error||d.error).message||"")+")";
       data.vehicles=v.data||[];data.drivers=d.data||[];
       loginPhones=new Set((l.data||[]).map(x=>phone(x.driver_mobile)).filter(Boolean));
     }
@@ -157,7 +157,7 @@
       const id="f_"+f.k,cls=f.wide?' class="wide"':"";
       let h;
       if(f.opts)h='<select id="'+id+'">'+f.opts.map(([v,t])=>'<option value="'+v+'">'+esc(t)+"</option>").join("")+"</select>";
-      else if(f.vehicle)h='<select id="'+id+'"><option value="">— koi nahi —</option>'+data.vehicles.filter(v=>v.is_active||(editing&&editing.default_vehicle_id===v.id)).map(v=>'<option value="'+v.id+'">'+esc(v.vehicle_no)+(v.vehicle_type?" · "+esc(v.vehicle_type):"")+"</option>").join("")+"</select>";
+      else if(f.vehicle)h='<select id="'+id+'"><option value="">— None —</option>'+data.vehicles.filter(v=>v.is_active||(editing&&editing.default_vehicle_id===v.id)).map(v=>'<option value="'+v.id+'">'+esc(v.vehicle_no)+(v.vehicle_type?" · "+esc(v.vehicle_type):"")+"</option>").join("")+"</select>";
       else if(f.k==="note"||f.k==="address")h='<textarea id="'+id+'" maxlength="500"></textarea>';
       else h='<input id="'+id+'" type="'+(f.type||"text")+'"'+(f.ph?' placeholder="'+esc(f.ph)+'"':"")+(f.list?' list="'+id+'_l"':"")+(f.type==="number"?' step="any" min="0"':"")+' maxlength="150">'+(f.list?'<datalist id="'+id+'_l">'+f.list.map(x=>'<option value="'+esc(x)+'">').join("")+"</datalist>":"");
       return "<div"+cls+'><label for="'+id+'">'+esc(f.l)+"</label>"+h+"</div>";
@@ -166,9 +166,9 @@
       const K=KIND[tab];
       el("form").innerHTML=K.fields.map(input).join("");
       for(const f of K.fields){const x=el("f_"+f.k);const v=editing?editing[f.k]:(f.k==="is_active"?true:f.k==="ownership"?"OWN":"");x.value=v==null?"":String(v);x.disabled=!can()||busy}
-      el("formTitle").textContent=(editing?"Edit ":"Naya ")+K.one+(editing?": "+(editing.vehicle_no||editing.driver_name):"");
+      el("formTitle").textContent=(editing?"Edit ":"New ")+K.one+(editing?": "+(editing.vehicle_no||editing.driver_name):"");
       el("save").disabled=el("clear").disabled=!can()||busy||missing;
-      el("formHint").textContent=!can()?"Sirf Admin / Manager badal sakte hain. Aap list dekh sakte ho.":editing?"Badlav karke Save karo.":"";
+      el("formHint").textContent=!can()?"Only Admin / Manager can make changes. You can view the list.":editing?"Make your changes, then click Save.":"";
     }
     function readForm(){
       const o={};
@@ -183,15 +183,15 @@
     // Returns an error message, or "" when the row is fine. Used by the form and by Excel import.
     function check(o,id){
       if(tab==="vehicles"){
-        if(!/^[A-Z0-9]{4,15}$/.test(o.vehicle_no||""))return "Vehicle number sahi bharo (jaise GJ05FW9821).";
-        if(o.owner_mobile&&!okPhone(o.owner_mobile))return "Owner mobile 10 digit ka hona chahiye (6-9 se shuru).";
-        if(o.capacity_kg!=null&&!(o.capacity_kg>=0))return "Capacity sahi number bharo.";
-        const d=data.vehicles.find(v=>v.vehicle_no===o.vehicle_no&&v.id!==id);if(d)return "Ye vehicle pehle se hai: "+d.vehicle_no;
+        if(!/^[A-Z0-9]{4,15}$/.test(o.vehicle_no||""))return "Enter a valid vehicle number (e.g. GJ05FW9821).";
+        if(o.owner_mobile&&!okPhone(o.owner_mobile))return "Owner mobile must be 10 digits, starting with 6-9.";
+        if(o.capacity_kg!=null&&!(o.capacity_kg>=0))return "Enter a valid capacity.";
+        const d=data.vehicles.find(v=>v.vehicle_no===o.vehicle_no&&v.id!==id);if(d)return "This vehicle already exists: "+d.vehicle_no;
       }else{
-        if(!o.driver_name)return "Driver ka naam bharo.";
-        if(!okPhone(o.mobile||""))return "Driver mobile 10 digit ka hona chahiye (6-9 se shuru).";
-        if(o.alt_mobile&&!okPhone(o.alt_mobile))return "Doosra mobile 10 digit ka hona chahiye.";
-        const d=data.drivers.find(v=>v.mobile===o.mobile&&v.id!==id);if(d)return "Is mobile ka driver pehle se hai: "+d.driver_name+". Usi ko Edit karo.";
+        if(!o.driver_name)return "Enter the driver name.";
+        if(!okPhone(o.mobile||""))return "Driver mobile must be 10 digits, starting with 6-9.";
+        if(o.alt_mobile&&!okPhone(o.alt_mobile))return "Alternate mobile must be 10 digits.";
+        const d=data.drivers.find(v=>v.mobile===o.mobile&&v.id!==id);if(d)return "A driver with this mobile already exists: "+d.driver_name+". Edit that driver instead.";
       }
       return "";
     }
@@ -204,34 +204,34 @@
       try{
         const r=editing?await client.from(K.table).update(o).eq("id",editing.id):await client.from(K.table).insert(o);
         if(r.error)throw r.error;
-        ERPShell.toast(K.one+" save ho gaya.","success");editing=null;await load();
-      }catch(e){ERPShell.toast("Save nahi hua: "+(e.message||e),"error")}
+        ERPShell.toast(K.one+" saved.","success");editing=null;await load();
+      }catch(e){ERPShell.toast("Save failed: "+(e.message||e),"error")}
       busy=false;render();
     }
     async function remove(id){
       const K=KIND[tab],r=data[tab].find(x=>x.id===id);if(!r||!can())return;
-      if(!await confirm("DELETE "+K.one+"?\n\n"+(r.vehicle_no||r.driver_name+" · "+r.mobile)+"\n\nPurane order / dispatch me naam waise hi rahega. Sirf is list se hatega. Behtar hai Inactive karo."))return;
+      if(!await confirm("DELETE "+K.one+"?\n\n"+(r.vehicle_no||r.driver_name+" · "+r.mobile)+"\n\nPast orders and dispatches keep the name; it is only removed from this list. Marking it Inactive is recommended."))return;
       const res=await client.from(K.table).delete().eq("id",id);
-      if(res.error){ERPShell.toast("Delete nahi hua: "+res.error.message,"error");return}
+      if(res.error){ERPShell.toast("Delete failed: "+res.error.message,"error");return}
       if(editing&&editing.id===id)editing=null;
-      ERPShell.toast(K.one+" hata diya.","success");await load();render();
+      ERPShell.toast(K.one+" deleted.","success");await load();render();
     }
     function expiryTags(list){
       return list.filter(([d])=>d).map(([d,l])=>{const n=daysTo(d);
-        return n<0?'<span class="tagx bad">'+esc(l)+" khatam "+showDate(d)+"</span>":n<=30?'<span class="tagx warn">'+esc(l)+" "+n+" din me khatam</span>":""}).join("")||'<span class="tagx ok">OK</span>';
+        return n<0?'<span class="tagx bad">'+esc(l)+" expired "+showDate(d)+"</span>":n<=30?'<span class="tagx warn">'+esc(l)+" expires in "+n+" days</span>":""}).join("")||'<span class="tagx ok">OK</span>';
     }
     function renderList(){
       const q=el("search").value.trim().toLowerCase().split(/\s+/).filter(Boolean),f=el("filter").value;
       const rows=data[tab].filter(r=>(f==="all"||(f==="active")===!!r.is_active)&&q.every(w=>JSON.stringify(r).toLowerCase().includes(w)));
       const act=r=>can()?'<button type="button" data-edit="'+r.id+'">Edit</button><button type="button" class="del" data-del="'+r.id+'">Delete</button>':"";
       if(tab==="vehicles"){
-        el("head").innerHTML="<tr><th>#</th><th>Vehicle No</th><th>Type / Capacity</th><th>Kiski</th><th>Documents</th><th>Driver</th><th>Status</th><th></th></tr>";
+        el("head").innerHTML="<tr><th>#</th><th>Vehicle No</th><th>Type / Capacity</th><th>Ownership</th><th>Documents</th><th>Driver</th><th>Status</th><th></th></tr>";
         el("list").innerHTML=rows.map((r,i)=>{const drv=data.drivers.filter(d=>d.default_vehicle_id===r.id&&d.is_active).map(d=>esc(d.driver_name)).join(", ");
-          return '<tr class="'+(r.is_active?"":"off")+'"><td>'+(i+1)+"</td><td><b>"+esc(r.vehicle_no)+"</b>"+(r.note?"<small>"+esc(r.note)+"</small>":"")+"</td><td>"+esc(r.vehicle_type||"-")+(r.capacity_kg!=null?"<small>"+esc(r.capacity_kg)+" KG</small>":"")+"</td><td>"+(r.ownership==="TRANSPORTER"?"Transporter":"Apni")+(r.transporter_name?"<small>"+esc(r.transporter_name)+(r.owner_mobile?" · "+esc(r.owner_mobile):"")+"</small>":"")+"</td><td style='white-space:normal;min-width:180px'>"+expiryTags(DOCS.map(([k,l])=>[r[k],l]))+"</td><td>"+(drv||"-")+"</td><td>"+(r.is_active?'<span class="tagx ok">Active</span>':'<span class="tagx bad">Inactive</span>')+"</td><td>"+act(r)+"</td></tr>"}).join("")||'<tr><td colspan="8" class="erp-empty">Koi vehicle nahi. Upar form se ya Excel se add karo.</td></tr>';
+          return '<tr class="'+(r.is_active?"":"off")+'"><td>'+(i+1)+"</td><td><b>"+esc(r.vehicle_no)+"</b>"+(r.note?"<small>"+esc(r.note)+"</small>":"")+"</td><td>"+esc(r.vehicle_type||"-")+(r.capacity_kg!=null?"<small>"+esc(r.capacity_kg)+" KG</small>":"")+"</td><td>"+(r.ownership==="TRANSPORTER"?"Transporter":"Own")+(r.transporter_name?"<small>"+esc(r.transporter_name)+(r.owner_mobile?" · "+esc(r.owner_mobile):"")+"</small>":"")+"</td><td style='white-space:normal;min-width:180px'>"+expiryTags(DOCS.map(([k,l])=>[r[k],l]))+"</td><td>"+(drv||"-")+"</td><td>"+(r.is_active?'<span class="tagx ok">Active</span>':'<span class="tagx bad">Inactive</span>')+"</td><td>"+act(r)+"</td></tr>"}).join("")||'<tr><td colspan="8" class="erp-empty">No vehicles yet. Add one using the form above or Excel.</td></tr>';
       }else{
         el("head").innerHTML="<tr><th>#</th><th>Driver</th><th>Mobile</th><th>License</th><th>Default Vehicle</th><th>Transporter</th><th>ERP Login</th><th>Status</th><th></th></tr>";
         el("list").innerHTML=rows.map((r,i)=>{const v=vehicleById(r.default_vehicle_id);
-          return '<tr class="'+(r.is_active?"":"off")+'"><td>'+(i+1)+"</td><td><b>"+esc(r.driver_name)+"</b>"+(r.note?"<small>"+esc(r.note)+"</small>":"")+"</td><td>"+esc(r.mobile)+(r.alt_mobile?"<small>"+esc(r.alt_mobile)+"</small>":"")+"</td><td>"+esc(r.license_no||"-")+"<div>"+(r.license_expiry?expiryTags([[r.license_expiry,"License"]]):"")+"</div></td><td>"+(v?esc(v.vehicle_no):"-")+"</td><td>"+esc(r.transporter_name||"-")+"</td><td>"+(can()?(loginPhones.has(r.mobile)?'<span class="tagx info">Login hai</span>':'<span class="fm-hint">Nahi</span>'):"")+"</td><td>"+(r.is_active?'<span class="tagx ok">Active</span>':'<span class="tagx bad">Inactive</span>')+"</td><td>"+act(r)+"</td></tr>"}).join("")||'<tr><td colspan="9" class="erp-empty">Koi driver nahi. Upar form se ya Excel se add karo.</td></tr>';
+          return '<tr class="'+(r.is_active?"":"off")+'"><td>'+(i+1)+"</td><td><b>"+esc(r.driver_name)+"</b>"+(r.note?"<small>"+esc(r.note)+"</small>":"")+"</td><td>"+esc(r.mobile)+(r.alt_mobile?"<small>"+esc(r.alt_mobile)+"</small>":"")+"</td><td>"+esc(r.license_no||"-")+"<div>"+(r.license_expiry?expiryTags([[r.license_expiry,"License"]]):"")+"</div></td><td>"+(v?esc(v.vehicle_no):"-")+"</td><td>"+esc(r.transporter_name||"-")+"</td><td>"+(can()?(loginPhones.has(r.mobile)?'<span class="tagx info">Has login</span>':'<span class="fm-hint">No</span>'):"")+"</td><td>"+(r.is_active?'<span class="tagx ok">Active</span>':'<span class="tagx bad">Inactive</span>')+"</td><td>"+act(r)+"</td></tr>"}).join("")||'<tr><td colspan="9" class="erp-empty">No drivers yet. Add one using the form above or Excel.</td></tr>';
       }
       el("listTitle").textContent=KIND[tab].one+" List ("+rows.length+" / "+data[tab].length+")";
     }
@@ -246,21 +246,21 @@
 
     /* Excel: one column list per master. Blank cell on an existing row keeps the old value. */
     const XL={
-      vehicles:[{h:"Vehicle No",k:"vehicle_no",req:1,sample:"GJ05FW9821",note:"Gaadi number. Space / dash chalega.",alias:["Vehicle Number","Vehicle"]},
+      vehicles:[{h:"Vehicle No",k:"vehicle_no",req:1,sample:"GJ05FW9821",note:"Vehicle number. Spaces / dashes are allowed.",alias:["Vehicle Number","Vehicle"]},
         {h:"Vehicle Type",k:"vehicle_type",sample:"Tempo",note:VTYPES.join(", ")},
-        {h:"Capacity KG",k:"capacity_kg",sample:"3000",note:"Kitna KG load"},
-        {h:"Ownership",k:"ownership",sample:"OWN",note:"OWN (apni) ya TRANSPORTER"},
-        {h:"Transporter Name",k:"transporter_name",sample:"",note:"Transporter ki gaadi ho to naam",alias:["Transporter","Owner Name"]},
+        {h:"Capacity KG",k:"capacity_kg",sample:"3000",note:"Load capacity in KG"},
+        {h:"Ownership",k:"ownership",sample:"OWN",note:"OWN or TRANSPORTER"},
+        {h:"Transporter Name",k:"transporter_name",sample:"",note:"Transporter name, if a transporter vehicle",alias:["Transporter","Owner Name"]},
         {h:"Owner Mobile",k:"owner_mobile",sample:"",note:"10 digit"},
         ...DOCS.map(([k,l])=>({h:l+" Expiry",k,sample:"",note:"Date: dd-mm-yyyy"})),
         {h:"Status",k:"status",sample:"Active",note:"Active / Inactive"},
         {h:"Note",k:"note",sample:""}],
       drivers:[{h:"Driver Name",k:"driver_name",req:1,sample:"Ramesh Patel",alias:["Name","Driver"]},
-        {h:"Mobile",k:"mobile",req:1,sample:"9876543210",note:"10 digit. Isi se driver pehchana jata hai.",alias:["Driver Mobile","Mobile No"]},
+        {h:"Mobile",k:"mobile",req:1,sample:"9876543210",note:"10 digits. Drivers are matched by this number.",alias:["Driver Mobile","Mobile No"]},
         {h:"Alt Mobile",k:"alt_mobile",sample:""},
         {h:"License No",k:"license_no",sample:""},
         {h:"License Expiry",k:"license_expiry",sample:"",note:"Date: dd-mm-yyyy"},
-        {h:"Default Vehicle",k:"default_vehicle",sample:"GJ05FW9821",note:"Vehicle Master me jo number hai wahi"},
+        {h:"Default Vehicle",k:"default_vehicle",sample:"GJ05FW9821",note:"Vehicle number exactly as in Vehicle Master"},
         {h:"Transporter Name",k:"transporter_name",sample:"",alias:["Transporter"]},
         {h:"Address",k:"address",sample:""},
         {h:"Status",k:"status",sample:"Active",note:"Active / Inactive"},
@@ -276,22 +276,22 @@
       for(const r of rows){
         const o={},err=m=>p.errors.push("Row "+r._row+": "+m);let bad=false;
         for(const c of XL[tab]){if(c.k==="status"||c.k==="default_vehicle")continue;const v=r[c.k];if(!blank(v))o[c.k]=typeof v==="string"?v.trim():v}
-        for(const k of dateKeys)if(k in o){const d=toDate(o[k]);if(d===undefined){err(k.replace("_"," ")+" date samajh nahi aayi: "+o[k]);bad=true}else o[k]=d}
-        const st=status(r.status);if(st===undefined){err("Status Active ya Inactive likho");bad=true}else if(st!=null)o.is_active=st;
+        for(const k of dateKeys)if(k in o){const d=toDate(o[k]);if(d===undefined){err(k.replace("_"," ")+" date is not valid: "+o[k]);bad=true}else o[k]=d}
+        const st=status(r.status);if(st===undefined){err("Status must be Active or Inactive");bad=true}else if(st!=null)o.is_active=st;
         if(tab==="vehicles"){
           o.vehicle_no=plate(r.vehicle_no);
           if("owner_mobile" in o)o.owner_mobile=phone(o.owner_mobile);
-          if("capacity_kg" in o){o.capacity_kg=LWBExcel.num(o.capacity_kg);if(!(o.capacity_kg>=0)){err("Capacity number nahi hai");bad=true}}
+          if("capacity_kg" in o){o.capacity_kg=LWBExcel.num(o.capacity_kg);if(!(o.capacity_kg>=0)){err("Capacity is not a number");bad=true}}
           if("ownership" in o){o.ownership=String(o.ownership).toUpperCase().startsWith("T")?"TRANSPORTER":"OWN"}
           if("vehicle_type" in o)o.vehicle_type=String(o.vehicle_type).slice(0,60);
         }else{
           o.mobile=phone(r.mobile);if("alt_mobile" in o)o.alt_mobile=phone(o.alt_mobile);
           if("driver_name" in o)o.driver_name=String(o.driver_name);
           if("license_no" in o)o.license_no=String(o.license_no).toUpperCase();
-          if(!blank(r.default_vehicle)){const v=data.vehicles.find(x=>x.vehicle_no===plate(r.default_vehicle));if(!v){err("Default vehicle "+r.default_vehicle+" Vehicle Master me nahi hai");bad=true}else o.default_vehicle_id=v.id}
+          if(!blank(r.default_vehicle)){const v=data.vehicles.find(x=>x.vehicle_no===plate(r.default_vehicle));if(!v){err("Default vehicle "+r.default_vehicle+" is not in Vehicle Master");bad=true}else o.default_vehicle_id=v.id}
         }
         const key=tab==="vehicles"?o.vehicle_no:o.mobile;
-        if(seen.has(key)){err("Ye "+(tab==="vehicles"?"vehicle":"mobile")+" file me do baar hai: "+key);continue}
+        if(seen.has(key)){err("This "+(tab==="vehicles"?"vehicle":"mobile")+" appears twice in the file: "+key);continue}
         seen.add(key);
         const old=data[tab].find(x=>(tab==="vehicles"?x.vehicle_no:x.mobile)===key);
         const full=old?{...old,...o}:{is_active:true,ownership:"OWN",...o};
@@ -305,12 +305,12 @@
     }
     async function xlApply(p,progress){
       const T=KIND[tab].table,cols=KIND[tab].fields.map(f=>f.k);
-      if(p.add.length){progress("Naye "+p.add.length+" save ho rahe hain...");
+      if(p.add.length){progress("Saving "+p.add.length+" new records...");
         const rows=p.add.map(r=>Object.fromEntries(cols.filter(k=>r[k]!==undefined).map(k=>[k,r[k]])));
-        const r=await client.from(T).insert(rows);if(r.error)throw Error("Add nahi hue: "+r.error.message)}
-      let n=0;for(const u of p.update){progress("Update "+(++n)+" / "+p.update.length);const r=await client.from(T).update(u.ch).eq("id",u.id);if(r.error)throw Error("Update ruk gaya ("+n+"): "+r.error.message)}
+        const r=await client.from(T).insert(rows);if(r.error)throw Error("Add failed: "+r.error.message)}
+      let n=0;for(const u of p.update){progress("Update "+(++n)+" / "+p.update.length);const r=await client.from(T).update(u.ch).eq("id",u.id);if(r.error)throw Error("Update stopped ("+n+"): "+r.error.message)}
       await load();render();
-      return p.add.length+" naye add, "+p.update.length+" update ho gaye.";
+      return p.add.length+" added, "+p.update.length+" updated.";
     }
     let xlBox=null;
     function mountXl(){
