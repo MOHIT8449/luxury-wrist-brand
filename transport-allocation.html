@@ -20,10 +20,7 @@
 <div class="panel"><div class="toolbar"><input id="search" data-party-list placeholder="Search order no, customer, sales person..."><select id="filter"><option value="ready">Ready for Allocation</option><option value="allocated">Allocated</option><option value="all">All Orders</option></select></div><div class="tablewrap"><table><thead><tr><th>ORDER NO</th><th>DATE</th><th>CUSTOMER</th><th>SALES PERSON</th><th>QTY</th><th>AMOUNT</th><th>WEIGHT</th><th>STATUS</th><th>ACTION</th></tr></thead><tbody id="rows"><tr><td colspan="9" class="empty">Loading orders...</td></tr></tbody></table></div></div>
 </main>
 <div id="overlay" class="overlay"><section class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle"><div class="modalhead"><h2 id="modalTitle">Transport Allocation</h2><button class="secondary" id="closeTop">✕</button></div><div class="modalbody"><div class="details" id="details"></div><form id="allocationForm"><div class="fields"><div class="field"><label for="loadingPerson">Loading Person *</label><input id="loadingPerson" required maxlength="150"></div><div class="field"><label for="driverName">Driver Name *</label><input id="driverName" required maxlength="150"></div><div class="field"><label for="driverMobile">Driver Mobile</label><input id="driverMobile" inputmode="tel" maxlength="20" placeholder="Optional"></div><div class="field"><label for="vehicleNo">Vehicle Number *</label><input id="vehicleNo" required maxlength="40" placeholder="GJ05AB1234"></div><div class="field full"><label for="transporterName">Transporter Name</label><input id="transporterName" maxlength="150"></div><div class="field full"><label for="remarks">Remarks</label><textarea id="remarks" maxlength="1500"></textarea></div>
-<div class="field full"><label class="wa-optin" for="waConsent">
-<input type="checkbox" id="waConsent"><span>Driver ने WhatsApp पर Loading Assignment लेने की अनुमति दी है।
-Check करने पर Driver/Vehicle Save होते ही Driver के Mobile पर PO, Dispatch Team और सभी SKU / CS Notification जाएगी।</span></label></div></div><div class="actions"><button type="button" class="secondary" id="closeBottom">Close</button><button type="submit" class="green" id="save">Save Allocation</button></div></form></div></section></div>
-<script src="driver-whatsapp.js"></script>
+<div class="field full"><p class="wa-optin" style="margin:0">🔔 Save करते ही <b>Driver app</b> (Driver Mobile से match) और <b>Dispatch team</b> (Warehouse / Manager) को ERP में notification जाएगा। WhatsApp नहीं भेजा जाता।</p></div></div><div class="actions"><button type="button" class="secondary" id="closeBottom">Close</button><button type="submit" class="green" id="save">Save Allocation</button></div></form></div></section></div>
 <script>
 'use strict';
 const SUPABASE_URL='https://txkbhadzdbxpieunfvox.supabase.co';
@@ -50,14 +47,13 @@ render();}catch(e){notice('Could not load orders: '+e.message,true);}}
 function assignmentFor(id){return assignments.find(a=>a.order_id===id);}
 function stage(o){const st=status(o.status);if(allocatedStatuses.has(st))return 'allocated';if(approvedStatuses.has(st))return assignmentFor(o.id)?'allocated':'ready';return 'other';}
 function render(){const available=orders.filter(o=>stage(o)==='ready'||stage(o)==='allocated');$('approvedCount').textContent=available.filter(o=>stage(o)==='ready').length;$('allocatedCount').textContent=available.filter(o=>stage(o)==='allocated').length;$('totalCount').textContent=available.length;const q=$('search').value.trim().toLowerCase(),f=$('filter').value;const list=available.filter(o=>(f==='all'||stage(o)===f)&&[o.order_no,o.customer_name,o.sales_person].some(v=>String(v||'').toLowerCase().includes(q)));$('rows').innerHTML=list.length?list.map(o=>`<tr><td><b>${safe(o.order_no)}</b></td><td>${safe(date(o.order_date))}</td><td>${safe(o.customer_name)}</td><td>${safe(o.sales_person)}</td><td>${number(o.total_qty)}</td><td>${money(o.total_amount)}</td><td>${number(o.total_weight)} KG</td><td><span class="pill ${stage(o)==='allocated'?'allocated':''}">${stage(o)==='allocated'?'ALLOCATED':'APPROVED'}</span></td><td><button class="primary" data-order="${safe(o.id)}">${stage(o)==='allocated'?'View / Edit':'Allocate'}</button></td></tr>`).join(''):'<tr><td colspan="9" class="empty">No orders found for this filter.</td></tr>';}
-function openOrder(id){const o=orders.find(x=>x.id===id);if(!o)return;selected=o;const a=assignmentFor(id)||{};$('modalTitle').textContent='Transport Allocation - '+(o.order_no||'');$('details').innerHTML=detail('ORDER NO',o.order_no)+detail('CUSTOMER',o.customer_name)+detail('DATE',date(o.order_date))+detail('SALES PERSON',o.sales_person)+detail('QUANTITY',number(o.total_qty))+detail('AMOUNT',money(o.total_amount))+detail('WEIGHT',number(o.total_weight)+' KG')+detail('TRANSPORTATION',o.transportation);$('loadingPerson').value=a.loading_person||'';$('driverName').value=a.driver_name||'';$('driverMobile').value=a.driver_mobile||'';$('vehicleNo').value=a.vehicle_no||'';$('transporterName').value=a.transporter_name||o.transportation||'';$('remarks').value=a.remarks||'';$('waConsent').checked=false;$('overlay').classList.add('show');}
+function openOrder(id){const o=orders.find(x=>x.id===id);if(!o)return;selected=o;const a=assignmentFor(id)||{};$('modalTitle').textContent='Transport Allocation - '+(o.order_no||'');$('details').innerHTML=detail('ORDER NO',o.order_no)+detail('CUSTOMER',o.customer_name)+detail('DATE',date(o.order_date))+detail('SALES PERSON',o.sales_person)+detail('QUANTITY',number(o.total_qty))+detail('AMOUNT',money(o.total_amount))+detail('WEIGHT',number(o.total_weight)+' KG')+detail('TRANSPORTATION',o.transportation);$('loadingPerson').value=a.loading_person||'';$('driverName').value=a.driver_name||'';$('driverMobile').value=a.driver_mobile||'';$('vehicleNo').value=a.vehicle_no||'';$('transporterName').value=a.transporter_name||o.transportation||'';$('remarks').value=a.remarks||'';$('overlay').classList.add('show');}
 function closeModal(){if(!busy){$('overlay').classList.remove('show');selected=null;}}
 async function saveAllocation(e){
   e.preventDefault();
   if(!selected||busy)return;
   const current=selected;
   const existing=assignmentFor(current.id);
-  const optedIn=$('waConsent').checked;
   const payload={
     order_id:current.id,
     loading_person:$('loadingPerson').value.trim(),
@@ -71,11 +67,11 @@ async function saveAllocation(e){
   if(!payload.loading_person||!payload.driver_name||!payload.vehicle_no){
     notice('Loading Person, Driver and Vehicle Number are required.',true);return;
   }
-  if(payload.driver_mobile||optedIn){
-    // Driver Portal and WhatsApp both match this exact mobile, so reject typos.
+  if(payload.driver_mobile){
+    // Driver Portal and its notification match this exact mobile, so reject typos.
     const digits=String(payload.driver_mobile||'').replace(/\D/g,'');
     if(!(/^[6-9]\d{9}$/.test(digits)||/^91[6-9]\d{9}$/.test(digits))){
-      notice('Enter a valid Driver Mobile (10 digits or +91). Driver Portal and WhatsApp use this number.',true);
+      notice('Enter a valid Driver Mobile (10 digits or +91). Driver app and its notification use this number.',true);
       return;
     }
     payload.driver_mobile=digits.slice(-10);
@@ -103,17 +99,8 @@ async function saveAllocation(e){
     }
     $('overlay').classList.remove('show');
     selected=null;
-    notice('Vehicle/Driver SAVED for '+current.order_no+'.'+(optedIn?' Sending WhatsApp notification...':' WhatsApp skipped (Driver opt-in not confirmed).'));
+    notice('Vehicle/Driver SAVED for '+current.order_no+'. '+(payload.driver_mobile?'Driver app aur Dispatch team ko ERP notification gaya.':'Dispatch team ko ERP notification gaya. Driver Mobile nahi bhara, isliye Driver ko notification nahi gaya.'));
     await load();
-    if(optedIn){
-      const outcome=window.LWBDriverWhatsApp
-        ?await window.LWBDriverWhatsApp.send({
-           db,orderId:current.id,optInConfirmed:true
-         })
-        :{status:'error',message:'driver-whatsapp.js has not been deployed.'};
-      notice('Assignment SAVED for '+current.order_no+'. '+outcome.message,
-        !['accepted','in_progress'].includes(outcome.status));
-    }
   }catch(err){
     notice('Save failed: '+err.message,true);
   }finally{
