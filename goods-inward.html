@@ -94,6 +94,8 @@ html,body{max-width:100%;overflow-x:hidden}main,.panel,.form-grid,.field{min-wid
       <div class="field"><label for="driverName">Driver Name *</label><input id="driverName" maxlength="100" required placeholder="Driver full name" autocomplete="off"></div>
       <div class="field"><label for="driverMobile">Driver Mobile Number *</label><input id="driverMobile" type="tel" inputmode="tel" maxlength="20" required placeholder="10-digit mobile or +91" autocomplete="off"><div class="hint">Indian mobile: 10 digits, or +91 followed by 10 digits</div></div>
       <div class="field"><label for="remarks">Remarks</label><input id="remarks" maxlength="500" placeholder="Optional inward notes"></div>
+      <div class="field"><label for="spPallets">Pallets Received (returnable)</label><input id="spPallets" type="number" min="0" step="1" inputmode="numeric" placeholder="0"><div class="hint">Added to the Sheet &amp; Pallet company ledger when the bill is saved.</div></div>
+      <div class="field"><label for="spSheets">Sheets Received (returnable)</label><input id="spSheets" type="number" min="0" step="1" inputmode="numeric" placeholder="0"></div>
     </div>
   </section>
 
@@ -422,12 +424,14 @@ async function save(){
   const selectedSupplier=suppliers.find(s=>s.id===$('supplier').value);if(!selectedSupplier){show('Select a Supplier from Supplier Master.');return;}
   const supplier=selectedSupplier.supplier_name,invoice=$('invoice').value.trim();
   const driverName=$('driverName').value.trim(),driverMobile=driverMobileClean($('driverMobile').value);
+  const spInt=id=>$(id).value.trim()===''?0:Number($(id).value),spP=spInt('spPallets'),spS=spInt('spSheets');
+  if(![spP,spS].every(n=>Number.isInteger(n)&&n>=0)){show('Pallets and sheets must be whole numbers (0 or more).');return;}
   const items=rows.map(r=>({sku_id:r.sku.id,cases:r.cases,pcs:r.pcs,rate_per_case:null,taxable_amount:paiseText(r.taxable),total_amount:paiseText(r.gross)}));
   const invoiceTaxable=rows.reduce((a,r)=>a+r.taxable,0);
   const invoiceGst=rows.reduce((a,r)=>a+r.gst,0);
   const invoiceGross=rows.reduce((a,r)=>a+r.gross,0);
   const preview=rows.map(r=>`${r.sku.sku_name}: ${r.normalized.cases} CS + ${r.normalized.pcs} PCS | Taxable ${rupees(r.taxable/100)} + GST ${r.sku.gst_rate}% (${rupees(r.gst/100)}) = Total ${rupees(r.gross/100)}`).join('\n');
-  if(!await confirm(`POST GOODS INWARD TO MAIN GODOWN?\n\nSupplier: ${supplier}\nInvoice: ${invoice}\nDriver: ${driverName} (${driverMobile})\nSKU Lines: ${rows.length}\nInvoice Taxable: ${rupees(invoiceTaxable/100)}\nGST (${ $('taxMode').value==='intrastate'?'CGST+SGST':'IGST' }): ${rupees(invoiceGst/100)}\nInvoice Total: ${rupees(invoiceGross/100)}\n\n${preview}\n\nAll quantities will increase live stock immediately. Continue only for physically received goods.`))return;
+  if(!await confirm(`POST GOODS INWARD TO MAIN GODOWN?\n\nSupplier: ${supplier}\nInvoice: ${invoice}\nDriver: ${driverName} (${driverMobile})\nSKU Lines: ${rows.length}\nInvoice Taxable: ${rupees(invoiceTaxable/100)}\nGST (${ $('taxMode').value==='intrastate'?'CGST+SGST':'IGST' }): ${rupees(invoiceGst/100)}\nInvoice Total: ${rupees(invoiceGross/100)}\nPallets / Sheets: ${format(spP)} / ${format(spS)}\n\n${preview}\n\nAll quantities will increase live stock immediately. Continue only for physically received goods.`))return;
   busy=true;recalc();
   try{
     const {data,error}=await db.rpc('lwb_post_goods_inward',{
@@ -437,13 +441,21 @@ async function save(){
       p_driver_name:driverName,p_driver_mobile:driverMobile,p_supplier_id:selectedSupplier.id
     });
     if(error)throw error;
+    let spMsg='';
+    if(spP+spS>0){
+      const vehicle=$('vehicle').value.toUpperCase().replace(/[^A-Z0-9]/g,'')||null;
+      const sp=await db.from('lwb_sp_entries').insert({entry_date:$('receivedDate').value,entry_type:'COMPANY_IN',party_name:null,pallets:spP,sheets:spS,
+        ref_no:invoice,vehicle_no:vehicle,transporter_name:$('transport').value.trim()||null,driver_mobile:driverMobile||null,note:'Purchase bill · '+supplier});
+      spMsg=sp.error?`\n\nWARNING: Pallets / sheets were NOT added to the Sheet & Pallet ledger (${sp.error.message}). Add them on the Sheet & Pallet page as "Received from Company".`
+        :`\nSheet & Pallet ledger: ${format(spP)} pallets, ${format(spS)} sheets received from company.`;
+    }
     resetForm();
     await loadData();
-    show(`Goods Inward SAVED successfully.\nInvoice: ${data?.invoice_no||invoice}\nSKU Lines: ${data?.sku_count||rows.length}\nTotal Pieces Added: ${format(data?.total_pcs||0)} PCS\nTaxable Amount: ${rupees(invoiceTaxable/100)}\nGST Amount: ${rupees(invoiceGst/100)}\nInvoice Total: ${rupees(invoiceGross/100)}\nLive Main Godown stock updated.`,'success');
+    show(`Goods Inward SAVED successfully.\nInvoice: ${data?.invoice_no||invoice}\nSKU Lines: ${data?.sku_count||rows.length}\nTotal Pieces Added: ${format(data?.total_pcs||0)} PCS\nTaxable Amount: ${rupees(invoiceTaxable/100)}\nGST Amount: ${rupees(invoiceGst/100)}\nInvoice Total: ${rupees(invoiceGross/100)}\nLive Main Godown stock updated.${spMsg}`,spMsg.includes('WARNING')?'error':'success');
   }catch(e){let msg=e.message||String(e);if(e.code==='23505')msg='Duplicate Invoice or duplicate SKU. This supplier invoice was already posted (or SKU repeated). No stock was added.';show('Inward NOT saved: '+msg);}
   finally{busy=false;recalc();}
 }
-function resetForm(){transportSelectedId='';$('supplierSearch').value='';for(const id of ['supplier','invoice','transport','vehicle','lr','driverName','driverMobile','remarks'])$(id).value='';
+function resetForm(){transportSelectedId='';$('supplierSearch').value='';for(const id of ['supplier','invoice','transport','vehicle','lr','driverName','driverMobile','remarks','spPallets','spSheets'])$(id).value='';
   $('invoiceDate').value=new Date().toLocaleDateString('en-CA');$('receivedDate').value=$('invoiceDate').value;
   $('itemsBody').replaceChildren();itemRow();updateSupplierHint();updateTransportHint();recalc();
 }

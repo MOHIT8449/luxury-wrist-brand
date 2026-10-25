@@ -36,6 +36,7 @@
     .sp-table tfoot td{font-weight:800;background:#fafbfc}
     .sp-table tr.pick{cursor:pointer}.sp-table tr.pick:hover td{background:#fff6f7}
     .sp-table button{height:32px;padding:0 12px;border-radius:5px;border:1px solid var(--erp-line);background:#fff;color:var(--erp-ink);font:inherit;font-size:14px;font-weight:600;cursor:pointer;margin-right:4px}
+    .op-table input{width:100%;height:38px;border:1.5px solid var(--erp-line);border-radius:6px;padding:0 10px;font:inherit;font-size:15px}
     .sp-table button.del{color:var(--erp-red);border-color:#f3c2ca}
     .tagx{display:inline-block;padding:3px 9px;border-radius:5px;font-size:13px;font-weight:700}
     .tagx.in{background:#e4f6e9;color:#0d6b36}.tagx.out{background:#fee8e8;color:#9e2525}.tagx.p-out{background:#fff3d6;color:#8a5a00}.tagx.p-in{background:#e8f1ff;color:#194c85}
@@ -89,6 +90,8 @@
       <a class="erp-pill" data-tab="parties" href="#parties">Party Ledger</a>
       <a class="erp-pill" data-tab="letter" href="#letter">Return Letter</a>
       <a class="erp-pill" data-tab="summary" href="#summary">Summary Print</a>
+      <a class="erp-pill" data-tab="opening" href="#opening">Opening Balance</a>
+      <a class="erp-pill" data-tab="history" href="#history">History</a>
     </div>
     <div id="view"></div>
   </main>
@@ -109,10 +112,11 @@
       PARTY_OUT:{l:"Given to Party (Direct Vehicle)",short:"Given to Party",cls:"p-out",ref:"Bill / Order No."},
       PARTY_IN:{l:"Returned by Party",short:"Returned by Party",cls:"p-in",ref:"Ref No."}
     };
+    const OPENING="OPENING BALANCE";
     const isParty=t=>t==="PARTY_OUT"||t==="PARTY_IN";
     const pS=(p,s)=>num(p)+" pallets · "+num(s)+" sheets";
 
-    let me=null,tab="entry",rows=[],settings={},customers=[],dvOrders=[],vehicles=[],missing=false,busy=false,partyPick="",letterId="",editId="";
+    let me=null,tab="entry",rows=[],settings={},customers=[],dvOrders=[],vehicles=[],history=[],historyMissing=false,missing=false,busy=false,partyPick="",letterId="",editId="";
     const canEdit=()=>me&&["admin","manager"].includes(me.role);
 
     async function start(){
@@ -124,16 +128,18 @@
       return {id:session.user.id,role,name:p.full_name||session.user.email};
     }
     async function load(){
-      const [e,s,c,o,v]=await Promise.all([
+      const [e,s,c,o,v,hi]=await Promise.all([
         client.from("lwb_sp_entries").select("*").order("entry_date").order("created_at"),
         client.from("lwb_sp_settings").select("*").eq("id",1).maybeSingle(),
         client.from("lwb_customer_master").select("customer_name").eq("is_active",true).order("customer_name"),
         client.from("orders").select("id,order_no,order_date,customer_name,status").eq("transportation","DIRECT VEHICLE").order("order_date",{ascending:false}).limit(200),
-        client.from("lwb_vehicles").select("vehicle_no,transporter_name").eq("is_active",true).order("vehicle_no")]);
+        client.from("lwb_vehicles").select("vehicle_no,transporter_name").eq("is_active",true).order("vehicle_no"),
+        client.from("lwb_sp_history").select("*").order("changed_at",{ascending:false}).limit(300)]);
+      history=hi.data||[];historyMissing=!!hi.error;
       missing=!!(e.error||s.error);
       el("err").hidden=!missing;
       if(missing)el("err").textContent="Sheet & Pallet tables are not set up in Supabase yet. Run lwb_sheet_pallet_setup.sql once in the Supabase SQL Editor, then refresh this page.\n("+((e.error||s.error).message||"")+")";
-      rows=e.data||[];settings=s.data||{};customers=(c.data||[]).map(x=>x.customer_name);vehicles=v.data||[];
+      rows=(e.data||[]).sort((x,y)=>x.entry_date.localeCompare(y.entry_date)||(y.ref_no===OPENING)-(x.ref_no===OPENING));settings=s.data||{};customers=(c.data||[]).map(x=>x.customer_name);vehicles=v.data||[];
       dvOrders=o.data||[];
       if(dvOrders.length){
         const a=await client.from("dispatch_assignments").select("order_id,vehicle_no,driver_mobile,transporter_name").in("order_id",dvOrders.map(x=>x.id));
@@ -239,7 +245,6 @@
       if(![o.pallets,o.sheets].every(n=>Number.isInteger(n)&&n>=0))return ERPShell.toast("Pallets and sheets must be whole numbers (0 or more).","error");
       if(o.pallets+o.sheets<=0)return ERPShell.toast("Enter pallets or sheets.","error");
       if(isParty(t)&&!o.party_name)return ERPShell.toast("Select the party.","error");
-      if(t==="COMPANY_OUT"&&!settings.to_address)return ERPShell.toast("Fill the Letter Settings on the Return Letter tab first (company address).","error");
       const others=rows.filter(x=>x.id!==editId);
       let warn="";const tt=totals(others);
       if(t==="PARTY_IN"){const p=partyTotals(others).find(x=>key(x.name)===key(o.party_name))||{p:[0,0]};if(o.pallets>p.p[0]||o.sheets>p.p[1])warn="\n\nThis is more than the party's pending balance ("+pS(p.p[0],p.p[1])+").";}
@@ -253,11 +258,11 @@
       ERPShell.toast(editId?"Entry updated.":"Entry saved.","success");
       editId="";el("fType").value=t;
       await load();render();
-      if(t==="COMPANY_OUT"){letterId=r.data.id;printDoc(letterHtml(r.data))}
+      if(t==="COMPANY_OUT")printReturn(r.data);
     }
     async function remove(id){
       const r=rows.find(x=>x.id===id);if(!r||!canEdit())return;
-      if(!await confirm("DELETE this entry?\n\n"+TYPES[r.entry_type].l+" · "+(r.party_name||"Company")+" · "+dmy(r.entry_date)+" · "+pS(r.pallets,r.sheets)))return;
+      if(!await confirm("DELETE this entry? (A copy is kept on the History tab.)\n\n"+TYPES[r.entry_type].l+" · "+(r.party_name||"Company")+" · "+dmy(r.entry_date)+" · "+pS(r.pallets,r.sheets)))return;
       const res=await client.from("lwb_sp_entries").delete().eq("id",id);
       if(res.error)return ERPShell.toast("Delete failed: "+res.error.message,"error");
       if(editId===id)editId="";
@@ -268,7 +273,7 @@
     function runningTable(list,inType,inLabel,outLabel,balLabel){
       let bp=0,bs=0;
       const body=list.map(r=>{const s=r.entry_type===inType?1:-1;bp+=s*r.pallets;bs+=s*r.sheets;
-        return "<tr><td>"+dmy(r.entry_date)+"</td><td>"+esc(r.ref_no||"-")+(r.entry_type==="COMPANY_OUT"?(r.verified_at?' <span class="sp-ok">✓ Verified</span>':' <span class="sp-wait">Pending verification</span>'):"")+"<small>"+esc([r.vehicle_no,r.note].filter(Boolean).join(" · "))+'</small></td>'+
+        return "<tr><td>"+dmy(r.entry_date)+"</td><td>"+(r.ref_no===OPENING?"<b>Opening balance</b>":esc(r.ref_no||"-"))+(r.entry_type==="COMPANY_OUT"?(r.verified_at?' <span class="sp-ok">✓ Verified</span>':' <span class="sp-wait">Pending verification</span>'):"")+"<small>"+esc([r.vehicle_no,r.note].filter(Boolean).join(" · "))+'</small></td>'+
           '<td class="n">'+(s>0?num(r.pallets):"")+'</td><td class="n">'+(s>0?num(r.sheets):"")+'</td><td class="n">'+(s<0?num(r.pallets):"")+'</td><td class="n">'+(s<0?num(r.sheets):"")+'</td><td class="n"><b>'+num(bp)+'</b></td><td class="n"><b>'+num(bs)+"</b></td></tr>"}).join("");
       return '<table class="sp-table grid"><thead><tr><th rowspan="2">Date</th><th rowspan="2">Ref / Vehicle</th><th colspan="2" class="n">'+inLabel+'</th><th colspan="2" class="n">'+outLabel+'</th><th colspan="2" class="n">'+balLabel+'</th></tr>'+
         '<tr><th class="n">Pallets</th><th class="n">Sheets</th><th class="n">Pallets</th><th class="n">Sheets</th><th class="n">Pallets</th><th class="n">Sheets</th></tr></thead><tbody>'+
@@ -353,7 +358,6 @@
       if(!/^\d{4}-\d{2}-\d{2}$/.test(o.entry_date))return ERPShell.toast("Select a date.","error");
       if(![o.pallets,o.sheets].every(n=>Number.isInteger(n)&&n>=0))return ERPShell.toast("Pallets and sheets must be whole numbers (0 or more).","error");
       if(o.pallets+o.sheets<=0)return ERPShell.toast("Enter pallets or sheets.","error");
-      if(!settings.to_address)return ERPShell.toast("Fill the Letter Settings below first (company address).","error");
       const tt=totals(rows),warn=o.pallets>tt.due[0]||o.sheets>tt.due[1]?"\n\nThis is more than the balance due to the company ("+pS(tt.due[0],tt.due[1])+").":"";
       if(!await confirm("SUBMIT RETURN TO COMPANY AND PRINT LETTER?\n\n"+dmy(o.entry_date)+" · "+pS(o.pallets,o.sheets)+(o.vehicle_no?" · "+o.vehicle_no:"")+(o.ref_no?" · LR "+o.ref_no:"")+warn))return;
       busy=true;el("rSubmit").disabled=true;
@@ -361,7 +365,15 @@
       busy=false;
       if(res.error){el("rSubmit").disabled=false;return ERPShell.toast("Save failed: "+res.error.message,"error")}
       ERPShell.toast("Return saved in the company ledger.","success");
-      letterId=res.data.id;await load();render();printDoc(letterHtml(res.data));
+      await load();render();printReturn(res.data);
+    }
+    // Prints the return letter; if the letter details are not filled yet, opens Letter Settings instead.
+    function printReturn(r){
+      letterId=r.id;
+      if(settings.to_address)return printDoc(letterHtml(r));
+      ERPShell.toast("Return saved. Fill the Letter Settings (company address and footer) and press Save Settings, then press Print.","error");
+      if(tab!=="letter")location.hash="#letter";
+      setTimeout(()=>{const x=el("sTo");if(x){x.scrollIntoView({behavior:"smooth",block:"center"});x.focus()}},300);
     }
     async function verify(id){
       const r=rows.find(x=>x.id===id);if(!r||!canEdit())return;
@@ -377,6 +389,68 @@
       const r=await client.from("lwb_sp_settings").update(o).eq("id",1).select().single();
       if(r.error)return ERPShell.toast("Save failed: "+r.error.message,"error");
       settings=r.data;ERPShell.toast("Letter settings saved.","success");render();
+      const lr=rows.find(x=>x.id===letterId);
+      if(lr&&settings.to_address&&await confirm("Print the return letter dated "+dmy(lr.entry_date)+" now?"))printDoc(letterHtml(lr));
+    }
+
+    /* ---------- opening balance ---------- */
+    function openRow(){
+      return '<tr class="op-row"><td><input class="op-party" list="opParties" placeholder="Type party name"></td><td><input class="op-p" type="number" min="0" step="1" inputmode="numeric" placeholder="0"></td><td><input class="op-s" type="number" min="0" step="1" inputmode="numeric" placeholder="0"></td><td><button type="button" class="del" data-oprm="1">Remove</button></td></tr>';
+    }
+    function renderOpening(){
+      const opened=rows.filter(r=>r.ref_no===OPENING);
+      let h='<section class="erp-card"><div class="erp-card-head"><h2>Opening Balance</h2><small class="sp-hint">Enter once, when you start using this ledger: what you owe the company today, and what each party is holding today.</small></div><div class="erp-card-body" style="padding:16px">';
+      if(!canEdit())h+='<p class="sp-hint">Only Admin / Manager can enter opening balances.</p>';
+      h+='<div class="sp-grid"><div><label for="opDate">Opening Date *</label><input id="opDate" type="date" value="'+(rows.length?rows[0].entry_date:today())+'"><small class="sp-hint">Use a date on or before your first entry.</small></div>'+
+        '<div><label for="opCP">Due to Company: Pallets</label><input id="opCP" type="number" min="0" step="1" inputmode="numeric" placeholder="0"></div>'+
+        '<div><label for="opCS">Due to Company: Sheets</label><input id="opCS" type="number" min="0" step="1" inputmode="numeric" placeholder="0"></div></div>'+
+        '<h3 style="margin:18px 0 8px;font-size:16px">Pending with parties</h3><div style="overflow:auto"><table class="sp-table op-table"><thead><tr><th style="min-width:260px">Party</th><th>Pallets</th><th>Sheets</th><th></th></tr></thead><tbody id="opBody">'+openRow()+openRow()+openRow()+'</tbody></table></div>'+
+        '<datalist id="opParties">'+[...new Set(customers.concat(partyTotals().map(x=>x.name)))].map(n=>'<option value="'+esc(n)+'">').join("")+'</datalist>'+
+        '<div class="sp-actions"><button type="button" class="sp-btn light" id="opAdd">+ Add Party Row</button><button type="button" class="sp-btn" id="opSave">Save Opening Balance</button></div></div></section>';
+      h+='<section class="erp-card" style="margin-top:14px"><div class="erp-card-head"><h2>Opening Balances Entered</h2><small class="sp-hint">To correct one, use Edit or Delete in Recent Entries (New Entry tab).</small></div><div style="overflow:auto">'+entryTable(opened.slice().reverse(),false)+"</div></section>";
+      el("view").innerHTML=h;
+      ["opSave","opAdd"].forEach(id=>el(id).disabled=!canEdit()||missing);
+    }
+    async function saveOpening(){
+      if(busy||missing||!canEdit())return;
+      const d=el("opDate").value,int=v=>String(v).trim()===""?0:Number(v),list=[];
+      if(!/^\d{4}-\d{2}-\d{2}$/.test(d))return ERPShell.toast("Select the opening date.","error");
+      const cp=int(el("opCP").value),cs=int(el("opCS").value);
+      if(cp+cs>0)list.push({entry_date:d,entry_type:"COMPANY_IN",party_name:null,pallets:cp,sheets:cs,ref_no:OPENING,note:null});
+      for(const tr of document.querySelectorAll("#opBody .op-row")){
+        const name=key(tr.querySelector(".op-party").value),pp=int(tr.querySelector(".op-p").value),ps=int(tr.querySelector(".op-s").value);
+        if(!name&&pp+ps===0)continue;
+        if(!name)return ERPShell.toast("Enter the party name for every row that has pallets or sheets.","error");
+        if(pp+ps<=0)return ERPShell.toast("Enter pallets or sheets for "+name+".","error");
+        list.push({entry_date:d,entry_type:"PARTY_OUT",party_name:name,pallets:pp,sheets:ps,ref_no:OPENING,note:null});
+      }
+      if(list.some(o=>![o.pallets,o.sheets].every(n=>Number.isInteger(n)&&n>=0)))return ERPShell.toast("Pallets and sheets must be whole numbers (0 or more).","error");
+      if(!list.length)return ERPShell.toast("Nothing to save. Enter the company balance or at least one party.","error");
+      const names=list.map(o=>o.party_name),dupe=names.find((n,i)=>n&&names.indexOf(n)!==i);
+      if(dupe)return ERPShell.toast(dupe+" is entered twice.","error");
+      const already=list.filter(o=>rows.some(r=>r.ref_no===OPENING&&r.entry_type===o.entry_type&&key(r.party_name)===key(o.party_name))).map(o=>o.party_name||"Company");
+      if(!await confirm("SAVE OPENING BALANCE?\n\n"+dmy(d)+"\n"+list.map(o=>(o.party_name||"COMPANY (due)")+": "+pS(o.pallets,o.sheets)).join("\n")+
+        (already.length?"\n\nAlready has an opening balance: "+already.join(", ")+". This will add to it.":"")))return;
+      busy=true;el("opSave").disabled=true;
+      const r=await client.from("lwb_sp_entries").insert(list);
+      busy=false;
+      if(r.error){el("opSave").disabled=false;return ERPShell.toast("Save failed: "+r.error.message,"error")}
+      ERPShell.toast("Opening balance saved ("+list.length+" "+(list.length===1?"entry":"entries")+").","success");await load();render();
+    }
+
+    /* ---------- history ---------- */
+    const FIELDS={entry_date:"Date",entry_type:"Type",party_name:"Party",pallets:"Pallets",sheets:"Sheets",ref_no:"Ref No.",vehicle_no:"Vehicle",transporter_name:"Transporter",driver_mobile:"Driver Mobile",note:"Note"};
+    const fv=(k,v)=>v==null||v===""?"—":k==="entry_date"?dmy(v):k==="entry_type"?(TYPES[v]||{l:v}).l:String(v);
+    function renderHistory(){
+      let h='<section class="erp-card"><div class="erp-card-head"><h2>History: Edits and Deletes</h2><small class="sp-hint">Every changed or deleted entry is kept here. Latest 300.</small></div><div style="overflow:auto">';
+      if(historyMissing)h+='<p class="sp-hint" style="padding:16px">History is not set up yet. Run the latest lwb_sheet_pallet_setup.sql in Supabase.</p>';
+      else h+='<table class="sp-table"><thead><tr><th>When</th><th>Action</th><th>By</th><th>Entry</th><th>Changes</th></tr></thead><tbody>'+
+        (history.map(x=>{const o=x.old_row||{},n=x.new_row||{};
+          const changes=x.action==="EDIT"?Object.keys(FIELDS).filter(k=>String(o[k]??"")!==String(n[k]??"")).map(k=>FIELDS[k]+": "+esc(fv(k,o[k]))+" → <b>"+esc(fv(k,n[k]))+"</b>").join("<br>"):"Entry deleted";
+          return "<tr><td>"+esc(dtTxt(x.changed_at))+'</td><td><span class="tagx '+(x.action==="DELETE"?"out":"p-out")+'">'+(x.action==="DELETE"?"Deleted":"Edited")+"</span></td><td>"+esc(x.changed_by_name||"-")+"</td><td>"+
+            esc((TYPES[o.entry_type]||{short:o.entry_type}).short)+" · "+esc(o.party_name||"Company")+"<small>"+dmy(o.entry_date)+" · "+pS(o.pallets,o.sheets)+(o.ref_no?" · "+esc(o.ref_no):"")+"</small></td><td style='white-space:normal;min-width:220px'>"+changes+"</td></tr>"}).join("")||
+         '<tr><td colspan="5" class="erp-empty">No edits or deletes yet.</td></tr>')+"</tbody></table>";
+      el("view").innerHTML=h+"</div></section>";
     }
 
     /* ---------- A4 statements ---------- */
@@ -404,10 +478,10 @@
     function render(){
       document.querySelectorAll("#tabs .erp-pill").forEach(a=>a.classList.toggle("active",a.dataset.tab===tab));
       renderKpis();
-      ({entry:renderEntry,company:renderCompany,parties:renderParties,letter:renderLetter,summary:renderSummary})[tab]();
+      ({entry:renderEntry,company:renderCompany,parties:renderParties,letter:renderLetter,summary:renderSummary,opening:renderOpening,history:renderHistory})[tab]();
       if(tab==="entry")el("fSave").disabled=missing;
     }
-    function setTab(){const t=location.hash.replace("#","");tab=["entry","company","parties","letter","summary"].includes(t)?t:"entry";render()}
+    function setTab(){const t=location.hash.replace("#","");tab=["entry","company","parties","letter","summary","opening","history"].includes(t)?t:"entry";render()}
     document.addEventListener("change",e=>{
       const id=e.target.id;
       if(id==="fType")syncForm();else if(id==="fOrder")pickOrder();else if(id==="fParty")partyInfo();
@@ -418,6 +492,9 @@
       const t=e.target,id=t.id;
       if(id==="fSave")return saveEntry();
       if(id==="sSave")return saveSettings();
+      if(id==="opSave")return saveOpening();
+      if(id==="opAdd"){el("opBody").insertAdjacentHTML("beforeend",openRow());return}
+      if(t.dataset.oprm){t.closest("tr").remove();return}
       if(id==="fCancel"){editId="";return renderEntry()}
       if(t.dataset.del)return remove(t.dataset.del);
       if(t.dataset.edit)return startEdit(t.dataset.edit);
