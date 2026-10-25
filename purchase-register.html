@@ -29,6 +29,19 @@
     .pr-table button.del{color:var(--erp-red);border-color:#f3c2ca}
     .pr-table button:disabled{opacity:.45;cursor:not-allowed}
     .pr-table tr.open td{background:#fff6f7}
+    .chk{display:inline-block;padding:3px 8px;border-radius:5px;font-size:13px;font-weight:700}
+    .chk.none{background:#f1f3f5;color:#5b6573}.chk.ok{background:#e4f6e9;color:#0d6b36}.chk.claim{background:#fee8e8;color:#9e2525}
+    .vf{background:#fbfbfc;padding:12px 14px 16px}
+    .vf table{border-collapse:collapse;width:100%;font-size:14px;margin:8px 0}
+    .vf th,.vf td{border:1px solid var(--erp-line);padding:5px 7px;background:#fff;white-space:nowrap}
+    .vf th{background:#f6f7f9;font-size:13px}
+    .vf td input{width:64px;height:32px;border:1.5px solid var(--erp-line);border-radius:5px;padding:0 6px;font:inherit;text-align:right}
+    .vf .grp{text-align:center}
+    .vf .row{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap}
+    .vf .row label{display:block;font-size:13px;font-weight:600;color:#4b5763;margin-bottom:3px}
+    .vf .row input{height:36px;border:1.5px solid var(--erp-line);border-radius:6px;padding:0 9px;font:inherit}
+    .vf .btn{height:36px;border-radius:6px;padding:0 14px;font-weight:600;font-size:14px;cursor:pointer;border:1px solid var(--erp-line);background:#fff;color:var(--erp-ink)}
+    .vf .btn.ok{background:#13824a;border-color:#13824a;color:#fff}.vf .btn.red{background:var(--erp-red);border-color:var(--erp-red);color:#fff}
     .pr-items td{background:#fbfbfc;padding:0 12px 12px}
     .pr-items table{border-collapse:collapse;width:100%;font-size:14px;margin-top:8px}
     .pr-items th,.pr-items td td{border:1px solid var(--erp-line);padding:6px 9px;background:#fff}
@@ -40,9 +53,10 @@
   <div id="loading" class="status">Checking account access...</div>
   <main id="page" class="erp-main" hidden>
     <div class="erp-pagehead"><h1>Purchase Register</h1><a class="pr-btn" href="goods-inward.html" style="display:inline-flex;align-items:center;text-decoration:none">+ New Purchase</a></div>
-    <p class="pr-sub">All purchase bills saved in Goods Inward. Click View to see the items.</p>
+    <p class="pr-sub">All purchase bills saved in Goods Inward. View shows the items. After the vehicle is unloaded, press Verify to record damage, leakage or shortage (or No Damage). Claims: <a href="purchase-claims.html">Purchase Claims</a></p>
     <div id="err" class="pr-err" hidden></div>
     <div class="pr-kpis" id="kpis"></div>
+    <div id="vbox"></div>
     <section class="erp-card">
       <div class="pr-tools">
         <div><label for="from">From (received)</label><input id="from" type="date"></div>
@@ -65,7 +79,8 @@
     const today=()=>new Date().toLocaleDateString("en-CA",{timeZone:"Asia/Kolkata"});
     const pick=(o,keys)=>{for(const k of keys)if(o&&o[k]!=null&&o[k]!=="")return o[k];return null};
 
-    let me=null,bills=[],items=new Map(),skuName=new Map(),openId="";
+    let me=null,bills=[],items=new Map(),skuName=new Map(),openId="",checks=new Map(),checksMissing=false,verifyId="",busy=false;
+    const ISSUES=[["DAMAGE","Damage"],["LEAKAGE","Leakage"],["SHORTAGE","Shortage"]];
 
     async function start(){
       const {data:{session}}=await client.auth.getSession();
@@ -90,6 +105,8 @@
           if(r.error)throw r.error;
           for(const it of r.data||[]){if(!items.has(it.inward_id))items.set(it.inward_id,[]);items.get(it.inward_id).push(it)}
         }
+        const c=await client.from("lwb_purchase_checks").select("*,lwb_purchase_check_items(*)");
+        checksMissing=!!c.error;checks=new Map((c.data||[]).map(x=>[x.inward_id,x]));
       }catch(e){el("err").hidden=false;el("err").textContent="Could not load purchase bills: "+(e.message||String(e))}
       el("refresh").disabled=false;render();
     }
@@ -104,22 +121,76 @@
       const list=shown();
       const tot={pcs:0,tax:0,gross:0};for(const b of list){tot.pcs+=lines(b).reduce((a,i)=>a+pcsOf(i),0);tot.tax+=sum(b,"taxable_amount");tot.gross+=sum(b,"total_amount")}
       el("kpis").innerHTML=[["Bills",fmt(list.length)],["Total PCS",fmt(tot.pcs)],["Taxable",rs(tot.tax)],["Invoice Total",rs(tot.gross)]].map(([a,b])=>'<div class="pr-kpi"><span>'+a+"</span><b>"+b+"</b></div>").join("");
-      let h='<table class="pr-table"><thead><tr><th>Received</th><th>Invoice No.</th><th>Supplier</th><th>Invoice Date</th><th>Vehicle / LR</th><th>Driver</th><th class="n">Lines</th><th class="n">Total PCS</th><th class="n">Taxable ₹</th><th class="n">Invoice Total ₹</th><th></th></tr></thead><tbody>';
+      let h='<table class="pr-table"><thead><tr><th>Received</th><th>Invoice No.</th><th>Supplier</th><th>Invoice Date</th><th>Vehicle / LR</th><th>Driver</th><th class="n">Lines</th><th class="n">Total PCS</th><th class="n">Taxable ₹</th><th class="n">Invoice Total ₹</th><th>Vehicle Check</th><th></th></tr></thead><tbody>';
       for(const b of list){
         const ls=lines(b),pcs=ls.reduce((a,i)=>a+pcsOf(i),0);
         h+='<tr'+(b.id===openId?' class="open"':"")+"><td>"+dmy(b.received_date)+"</td><td><b>"+esc(b.invoice_no)+"</b></td><td style='white-space:normal;min-width:200px'>"+esc(b.supplier_name)+"</td><td>"+dmy(b.invoice_date)+"</td><td>"+esc(b.vehicle_no||"—")+"<small>"+esc(b.lr_no?"LR "+b.lr_no:"")+"</small></td><td>"+esc(b.driver_name||"—")+"<small>"+esc(b.driver_mobile||"")+"</small></td>"+
           '<td class="n">'+fmt(ls.length)+'</td><td class="n">'+fmt(pcs)+'</td><td class="n">'+rs(sum(b,"taxable_amount"))+'</td><td class="n">'+rs(sum(b,"total_amount"))+"</td>"+
-          '<td><button type="button" data-view="'+b.id+'">'+(b.id===openId?"Hide":"View")+"</button></td></tr>";
-        if(b.id===openId)h+='<tr class="pr-items"><td colspan="11"><table><thead><tr><th>#</th><th>SKU</th><th class="n">Cases</th><th class="n">Loose PCS</th><th class="n">Total PCS</th><th class="n">Taxable ₹</th><th class="n">Total ₹</th></tr></thead><tbody>'+
+          '<td>'+checkTag(b)+'</td><td><button type="button" data-view="'+b.id+'">'+(b.id===openId?"Hide":"View")+'</button><button type="button" data-verify="'+b.id+'">'+(checks.has(b.id)?"Edit Check":"Verify")+"</button></td></tr>";
+        if(b.id===openId)h+='<tr class="pr-items"><td colspan="12"><table><thead><tr><th>#</th><th>SKU</th><th class="n">Cases</th><th class="n">Loose PCS</th><th class="n">Total PCS</th><th class="n">Taxable ₹</th><th class="n">Total ₹</th></tr></thead><tbody>'+
           ls.map((it,i)=>{const s=skuName.get(String(it.sku_id))||{};return "<tr><td>"+(i+1)+"</td><td>"+esc(pick(it,["sku_name"])||s.sku_name||it.sku_id)+'</td><td class="n">'+fmt(pick(it,["cases","quantity_cases"]))+'</td><td class="n">'+fmt(pick(it,["pcs","loose_pcs"]))+'</td><td class="n">'+fmt(pcsOf(it))+'</td><td class="n">'+rs(it.taxable_amount)+'</td><td class="n">'+rs(it.total_amount)+"</td></tr>"}).join("")+
           "</tbody></table>"+(b.remarks?'<p style="margin:8px 0 0">Remarks: '+esc(b.remarks)+"</p>":"")+"</td></tr>";
       }
-      if(!list.length)h+='<tr><td colspan="11" class="erp-empty">No purchase bills found.</td></tr>';
-      el("box").innerHTML=h+'</tbody><tfoot><tr><td colspan="7">Total ('+fmt(list.length)+' bills)</td><td class="n">'+fmt(tot.pcs)+'</td><td class="n">'+rs(tot.tax)+'</td><td class="n">'+rs(tot.gross)+"</td><td></td></tr></tfoot></table>";
+      if(!list.length)h+='<tr><td colspan="12" class="erp-empty">No purchase bills found.</td></tr>';
+      const vb=bills.find(x=>x.id===verifyId);
+      el("vbox").innerHTML=vb?'<section class="erp-card" style="margin-bottom:14px"><div class="erp-card-head"><h2>Vehicle Check · Invoice '+esc(vb.invoice_no)+" · "+esc(vb.supplier_name)+'</h2><small style="color:var(--erp-muted)">'+esc([vb.vehicle_no,dmy(vb.received_date)].filter(Boolean).join(" · "))+'</small></div><div class="vf">'+verifyForm(vb)+"</div></section>":"";
+      el("box").innerHTML=h+'</tbody><tfoot><tr><td colspan="7">Total ('+fmt(list.length)+' bills)</td><td class="n">'+fmt(tot.pcs)+'</td><td class="n">'+rs(tot.tax)+'</td><td class="n">'+rs(tot.gross)+"</td><td colspan=\"2\"></td></tr></tfoot></table>";
     }
+    /* ---------- vehicle check (damage / leakage / shortage) ---------- */
+    const qtyTxt=(c,p)=>(c?fmt(c)+" cs":"")+(c&&p?" + ":"")+(p?fmt(p)+" pcs":"")||"0";
+    function claimCases(ch){return (ch.lwb_purchase_check_items||[]).reduce((a,i)=>a+i.cases+i.pcs/Math.max(1,i.pcs_per_case),0)}
+    function checkTag(b){
+      const ch=checks.get(b.id);
+      if(!ch)return '<span class="chk none">Not verified</span>';
+      if(!ch.has_damage)return '<span class="chk ok">✓ No damage</span><small>'+dmy(ch.verified_on)+"</small>";
+      return '<span class="chk claim">Claim · '+fmt(Math.round(claimCases(ch)*10)/10)+" cs</span><small>"+({PENDING:"Pending",SENT:"Sent to company",PASSED:"Passed",REJECTED:"Rejected"}[ch.claim_status]||ch.claim_status)+"</small>";
+    }
+    function verifyForm(b){
+      if(checksMissing)return '<b>Vehicle check is not set up yet.</b> Run lwb_purchase_claim_setup.sql once in the Supabase SQL Editor, then press Refresh.';
+      const ch=checks.get(b.id)||{},old=ch.lwb_purchase_check_items||[];
+      const val=(sku,issue,f)=>{const x=old.find(i=>String(i.sku_id||i.sku_name)===sku&&i.issue===issue);return x&&x[f]?x[f]:""};
+      const ls=lines(b);
+      let h='<div class="row"><div><label for="vfDate">Checked on *</label><input id="vfDate" type="date" value="'+(ch.verified_on||today())+'"></div><div style="flex:1;min-width:220px"><label for="vfNote">Note</label><input id="vfNote" style="width:100%" maxlength="300" value="'+esc(ch.note||"")+'" placeholder="e.g. 2 cases leaked near door"></div></div>'+
+        '<table><thead><tr><th rowspan="2">SKU</th><th rowspan="2" class="n">Billed</th>'+ISSUES.map(([,l])=>'<th colspan="2" class="grp">'+l+"</th>").join("")+"</tr><tr>"+ISSUES.map(()=>"<th>Cases</th><th>PCS</th>").join("")+"</tr></thead><tbody>";
+      for(const it of ls){
+        const s=skuName.get(String(it.sku_id))||{},key=String(it.sku_id||pick(it,["sku_name"])),pack=Math.max(1,num(s.pcs_per_case||pick(it,["pcs_per_case"]))||1);
+        h+='<tr class="vf-line" data-sku="'+esc(it.sku_id||"")+'" data-name="'+esc(pick(it,["sku_name"])||s.sku_name||"")+'" data-pack="'+pack+'"><td>'+esc(pick(it,["sku_name"])||s.sku_name||it.sku_id)+'</td><td class="n">'+qtyTxt(num(pick(it,["cases"])),num(pick(it,["pcs"])))+"</td>"+
+          ISSUES.map(([k])=>'<td><input type="number" min="0" step="1" inputmode="numeric" data-issue="'+k+'" data-f="cases" value="'+val(key,k,"cases")+'" placeholder="0"></td><td><input type="number" min="0" step="1" inputmode="numeric" data-issue="'+k+'" data-f="pcs" value="'+val(key,k,"pcs")+'" placeholder="0"></td>').join("")+"</tr>";
+      }
+      return h+'</tbody></table><div class="row"><button type="button" class="btn ok" data-vfok="'+b.id+'">✓ No Damage (Verified OK)</button><button type="button" class="btn red" data-vfsave="'+b.id+'">Save Damage / Claim</button><button type="button" class="btn" data-vfclose="1">Cancel</button>'+
+        '<span style="color:var(--erp-muted);font-size:13px">Quantities only; live stock is not changed. Claims appear in Purchase Claims.</span></div>';
+    }
+    async function saveCheck(id,noDamage){
+      if(busy)return;
+      const b=bills.find(x=>x.id===id);if(!b)return;
+      const d=el("vfDate").value,list=[];
+      if(!/^\d{4}-\d{2}-\d{2}$/.test(d))return ERPShell.toast("Select the check date.","error");
+      if(!noDamage){
+        for(const tr of document.querySelectorAll(".vf-line"))for(const [k] of ISSUES){
+          const g=f=>{const v=tr.querySelector('[data-issue="'+k+'"][data-f="'+f+'"]').value.trim();return v===""?0:Number(v)};
+          const c=g("cases"),p=g("pcs");
+          if(![c,p].every(n=>Number.isInteger(n)&&n>=0))return ERPShell.toast("Cases and PCS must be whole numbers.","error");
+          if(c+p>0)list.push({sku_id:tr.dataset.sku||null,sku_name:tr.dataset.name||"SKU",pcs_per_case:Number(tr.dataset.pack)||1,issue:k,cases:c,pcs:p});
+        }
+        if(!list.length)return ERPShell.toast("Enter damage, leakage or shortage quantities, or press No Damage.","error");
+      }
+      const txt=noDamage?"Vehicle checked: NO damage, leakage or shortage.":list.map(x=>x.sku_name+" · "+x.issue+": "+qtyTxt(x.cases,x.pcs)).join("\n");
+      if(!await confirm((noDamage?"MARK BILL AS VERIFIED OK?":"SAVE DAMAGE / CLAIM?")+"\n\nInvoice "+b.invoice_no+" · "+b.supplier_name+"\n"+txt))return;
+      busy=true;
+      const r=await client.rpc("lwb_save_purchase_check",{p_inward_id:id,p_verified_on:d,p_note:el("vfNote").value.trim(),p_items:list});
+      busy=false;
+      if(r.error)return ERPShell.toast("Save failed: "+r.error.message,"error");
+      ERPShell.toast(noDamage?"Bill verified: no damage.":"Damage saved. Claim is pending in Purchase Claims.","success");
+      verifyId="";await load();
+    }
+
     document.addEventListener("click",e=>{
       const t=e.target;
       if(t.id==="refresh")return load();
+      if(t.dataset.verify){verifyId=verifyId===t.dataset.verify?"":t.dataset.verify;render();if(verifyId)el("vbox").scrollIntoView({behavior:"smooth",block:"start"});return}
+      if(t.dataset.vfclose){verifyId="";return render()}
+      if(t.dataset.vfok)return saveCheck(t.dataset.vfok,true);
+      if(t.dataset.vfsave)return saveCheck(t.dataset.vfsave,false);
       if(t.dataset.view){openId=openId===t.dataset.view?"":t.dataset.view;render()}
     });
     el("q").addEventListener("input",render);

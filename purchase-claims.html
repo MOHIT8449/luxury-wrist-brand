@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Purchase Claims | Luxury Wrist Brand ERP</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Anton&display=swap">
+  <link rel="stylesheet" href="erp-shell.css">
+  <script src="erp-shell.js"></script>
+  <style>
+    .status{text-align:center;padding:80px 20px;font-size:15px;color:#555}
+    .pc-sub{margin:-8px 0 14px;color:var(--erp-muted);font-size:15px}
+    .pc-err{background:#ffebeb;color:#9b2020;padding:14px 16px;border-radius:8px;margin-bottom:14px;white-space:pre-wrap}
+    .pc-kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-bottom:14px}
+    .pc-kpi{background:#fff;border:1px solid var(--erp-line);border-radius:8px;padding:14px;border-top:4px solid var(--c,#c8102e)}
+    .pc-kpi span{display:block;font-size:14px;color:#4b5763}.pc-kpi b{font-size:22px}.pc-kpi small{display:block;color:var(--erp-muted);font-size:13px}
+    .pc-table{border-collapse:collapse;width:100%;font-size:15px}
+    .pc-table th,.pc-table td{border-bottom:1px solid var(--erp-line);padding:9px 12px;text-align:left;white-space:nowrap;vertical-align:top}
+    .pc-table th{background:#f6f7f9;font-size:14px;font-weight:700;color:#2b3440}
+    .pc-table .n{text-align:right}
+    .pc-table td small{display:block;color:var(--erp-muted);font-size:13px}
+    .pc-table button{height:32px;padding:0 11px;border-radius:5px;border:1px solid var(--erp-line);background:#fff;color:var(--erp-ink);font:inherit;font-size:14px;font-weight:600;cursor:pointer;margin:0 4px 4px 0}
+    .pc-table button.pri{background:var(--erp-red);border-color:var(--erp-red);color:#fff}
+    .st{display:inline-block;padding:3px 9px;border-radius:5px;font-size:13px;font-weight:700}
+    .st.PENDING{background:#fff3d6;color:#8a5a00}.st.SENT{background:#e8f1ff;color:#194c85}.st.PASSED{background:#e4f6e9;color:#0d6b36}.st.REJECTED{background:#fee8e8;color:#9e2525}
+    .norm{font-size:12.5px;font-weight:700}.norm.lo{color:#0d6b36}.norm.hi{color:#9e2525}
+    #tabs .erp-pill{font-size:15px;padding:9px 16px}
+    #printArea{display:none}
+    .doc{box-sizing:border-box;width:210mm;min-height:295mm;padding:12mm 18mm 10mm;font-family:Arial,Helvetica,sans-serif;color:#111;font-size:11.5pt;line-height:1.35;display:flex;flex-direction:column}
+    .doc h1.lh{font-family:Anton,Impact,"Arial Narrow Bold","Arial Narrow",Arial,sans-serif;font-size:44pt;letter-spacing:.5px;text-align:center;margin:4mm 0 3mm;font-weight:400;color:#222}
+    .doc .rule{border-top:2.5px solid #555;margin:0 0 5mm}
+    .doc .row{display:flex;justify-content:space-between;gap:10mm}
+    .doc .subj{text-align:center;font-weight:700;text-decoration:underline;margin:4mm 0 2mm}
+    .doc table.kv{border-collapse:collapse;margin:2mm 0 3mm 6mm}
+    .doc table.kv td{padding:.6mm 3mm .6mm 0;vertical-align:top}
+    .doc table.kv td:first-child{width:40mm}
+    .doc table.grid{border-collapse:collapse;width:100%;font-size:10.5pt;margin:2mm 0 3mm}
+    .doc table.grid th,.doc table.grid td{border:1px solid #999;padding:1.4mm 2.2mm;text-align:left}
+    .doc table.grid th{background:#f0f0f0}.doc table.grid .n{text-align:right}.doc table.grid tfoot td{font-weight:700}
+    .doc .sign{display:flex;justify-content:space-between;align-items:flex-end;margin-top:14mm}
+    .doc .foot{margin-top:auto;border-top:1.5px solid #777;padding-top:2mm;text-align:center;font-size:9pt;line-height:1.6}
+    @media(max-width:900px){.pc-kpis{grid-template-columns:1fr 1fr}}
+    @page{size:A4;margin:0}
+    @media print{body>*:not(#printArea){display:none!important}#printArea{display:block!important}body{background:#fff!important;margin:0}}
+    [hidden]{display:none!important}
+  </style>
+</head>
+<body>
+  <div id="loading" class="status">Checking account access...</div>
+  <main id="page" class="erp-main" hidden>
+    <div class="erp-pagehead"><h1>Purchase Claims</h1></div>
+    <p class="pc-sub">Damage, leakage and shortage found when a purchase vehicle is checked. Record it from <a href="purchase-register.html">Purchase Register</a> → Verify. Quantities only; live stock is not changed.</p>
+    <div id="err" class="pc-err" hidden></div>
+    <div class="pc-kpis" id="kpis"></div>
+    <div class="erp-pills" id="tabs">
+      <a class="erp-pill" data-f="open" href="#open">Open (Pending + Sent)</a>
+      <a class="erp-pill" data-f="PENDING" href="#PENDING">Pending</a>
+      <a class="erp-pill" data-f="SENT" href="#SENT">Sent</a>
+      <a class="erp-pill" data-f="PASSED" href="#PASSED">Passed</a>
+      <a class="erp-pill" data-f="REJECTED" href="#REJECTED">Rejected</a>
+      <a class="erp-pill" data-f="all" href="#all">All</a>
+    </div>
+    <section class="erp-card"><div style="overflow:auto" id="box"></div></section>
+  </main>
+  <div id="printArea"></div>
+  <script>
+    'use strict';
+    const client=supabase.createClient("https://txkbhadzdbxpieunfvox.supabase.co","sb_publishable_W4I3Q5ODf0g17sq5uDml2Q_sLolXYEk");
+    const el=id=>document.getElementById(id);
+    const esc=v=>String(v==null?"":v).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+    const num=v=>Number(v||0);
+    const fmt=v=>num(v).toLocaleString("en-IN",{maximumFractionDigits:1});
+    const dmy=(d,sep="-")=>d?String(d).slice(8,10)+sep+String(d).slice(5,7)+sep+String(d).slice(0,4):"—";
+    const today=()=>new Date().toLocaleDateString("en-CA",{timeZone:"Asia/Kolkata"});
+    const ISSUE={DAMAGE:"Damage / Breakage",LEAKAGE:"Leakage",SHORTAGE:"Shortage"};
+    const STATUS={PENDING:"Pending",SENT:"Sent to company",PASSED:"Passed",REJECTED:"Rejected"};
+    // Company norm: claims below this many cases are passed without returning the goods.
+    const NORM_CASES=20;
+    const qtyTxt=(c,p)=>(c?fmt(c)+" cs":"")+(c&&p?" + ":"")+(p?fmt(p)+" pcs":"")||"0";
+    const lines=t=>String(t||"").split(/\r?\n/).map(l=>l.trim()).filter(Boolean).map(l=>l[0]==="*"?"<b>"+esc(l.slice(1).trim())+"</b>":esc(l)).join("<br>");
+
+    let me=null,claims=[],bills=new Map(),settings={},filter="open",busy=false;
+
+    async function start(){
+      const {data:{session}}=await client.auth.getSession();
+      if(!session){location.replace("login.html");return null}
+      const {data:p}=await client.from("user_profiles").select("full_name,role,active").eq("id",session.user.id).single();
+      const role=String((p&&p.role)||"").toLowerCase().trim();
+      if(!p||p.active!==true||!["admin","manager"].includes(role)){location.replace("dashboard.html");return null}
+      return {id:session.user.id,role,name:p.full_name||session.user.email};
+    }
+    async function load(){
+      el("err").hidden=true;
+      const [c,s]=await Promise.all([
+        client.from("lwb_purchase_checks").select("*,lwb_purchase_check_items(*)").eq("has_damage",true).order("verified_on",{ascending:false}),
+        client.from("lwb_sp_settings").select("*").eq("id",1).maybeSingle()]);
+      if(c.error){el("err").hidden=false;el("err").textContent="Purchase claims are not set up yet. Run lwb_purchase_claim_setup.sql once in the Supabase SQL Editor, then refresh.\n("+c.error.message+")";claims=[]}
+      else claims=c.data||[];
+      settings=s.data||{};
+      const ids=claims.map(x=>x.inward_id);bills=new Map();
+      for(let i=0;i<ids.length;i+=100){
+        const r=await client.from("lwb_goods_inward").select("*").in("id",ids.slice(i,i+100));
+        for(const b of r.data||[])bills.set(b.id,b);
+      }
+    }
+    function tot(ch){
+      const t={DAMAGE:[0,0],LEAKAGE:[0,0],SHORTAGE:[0,0],cases:0};
+      for(const i of ch.lwb_purchase_check_items||[]){t[i.issue][0]+=i.cases;t[i.issue][1]+=i.pcs;t.cases+=i.cases+i.pcs/Math.max(1,i.pcs_per_case)}
+      return t;
+    }
+    function render(){
+      document.querySelectorAll("#tabs .erp-pill").forEach(a=>a.classList.toggle("active",a.dataset.f===filter));
+      const k=st=>claims.filter(x=>x.claim_status===st),sumC=l=>l.reduce((a,x)=>a+tot(x).cases,0);
+      el("kpis").innerHTML=[["PENDING","#b26b00","Pending (not sent)"],["SENT","#194c85","Sent, awaiting company"],["PASSED","#13824a","Passed"],["REJECTED","#c8102e","Rejected"]]
+        .map(([s,c,l])=>'<div class="pc-kpi" style="--c:'+c+'"><span>'+l+"</span><b>"+k(s).length+"</b><small>"+fmt(sumC(k(s)))+" cases</small></div>").join("");
+      const list=claims.filter(x=>filter==="all"||(filter==="open"?["PENDING","SENT"].includes(x.claim_status):x.claim_status===filter));
+      let h='<table class="pc-table"><thead><tr><th>Checked</th><th>Invoice</th><th>Supplier</th><th>Vehicle</th><th>Damage</th><th>Leakage</th><th>Shortage</th><th class="n">Total (cases)</th><th>Status</th><th></th></tr></thead><tbody>';
+      for(const ch of list){
+        const b=bills.get(ch.inward_id)||{},t=tot(ch),lo=t.cases<NORM_CASES;
+        h+="<tr><td>"+dmy(ch.verified_on)+"</td><td><b>"+esc(b.invoice_no||"—")+"</b><small>"+dmy(b.invoice_date)+"</small></td><td style='white-space:normal;min-width:180px'>"+esc(b.supplier_name||"")+"</td><td>"+esc(b.vehicle_no||"—")+"<small>"+esc(b.lr_no?"LR "+b.lr_no:"")+"</small></td>"+
+          ["DAMAGE","LEAKAGE","SHORTAGE"].map(x=>"<td>"+qtyTxt(t[x][0],t[x][1])+"</td>").join("")+
+          '<td class="n"><b>'+fmt(t.cases)+'</b><small class="norm '+(lo?"lo":"hi")+'">'+(lo?"Below "+NORM_CASES+": no return":NORM_CASES+"+ cases: return may be asked")+"</small></td>"+
+          '<td><span class="st '+ch.claim_status+'">'+esc(STATUS[ch.claim_status]||ch.claim_status)+"</span><small>"+esc([ch.claim_no?"Claim "+ch.claim_no:"",ch.sent_on?"Sent "+dmy(ch.sent_on):"",ch.settled_on?(ch.claim_status==="PASSED"?"Passed ":"Closed ")+dmy(ch.settled_on):""].filter(Boolean).join(" · "))+"</small>"+(ch.note?"<small>"+esc(ch.note)+"</small>":"")+"</td>"+
+          '<td><button type="button" class="pri" data-print="'+ch.id+'">Print Letter</button><button type="button" data-mail="'+ch.id+'">Email</button><br>'+
+          (ch.claim_status==="PENDING"?'<button type="button" data-st="SENT" data-id="'+ch.id+'">Mark Sent</button>':"")+
+          (["PENDING","SENT"].includes(ch.claim_status)?'<button type="button" data-st="PASSED" data-id="'+ch.id+'">Mark Passed</button><button type="button" data-st="REJECTED" data-id="'+ch.id+'">Rejected</button>':'<button type="button" data-st="PENDING" data-id="'+ch.id+'">Reopen</button>')+"</td></tr>";
+      }
+      if(!list.length)h+='<tr><td colspan="10" class="erp-empty">No claims here.</td></tr>';
+      el("box").innerHTML=h+"</tbody></table>";
+    }
+
+    /* ---------- claim letter / email ---------- */
+    function itemRows(ch){return (ch.lwb_purchase_check_items||[]).slice().sort((a,b)=>a.sku_name.localeCompare(b.sku_name)||a.issue.localeCompare(b.issue))}
+    function letterHtml(ch){
+      const S=settings,b=bills.get(ch.inward_id)||{},t=tot(ch);
+      return '<div class="doc"><h1 class="lh">'+esc(S.distributor_name||"LUXURY WRIST BRAND")+'</h1><div class="rule"></div>'+
+        '<div class="row"><div><b>To,</b><br>'+(lines(S.to_address)||"[Company address: fill Letter Settings on the Sheet &amp; Pallet page]")+'</div><div style="white-space:nowrap"><b>Date :</b> '+dmy(today(),"/")+"</div></div>"+
+        '<div class="subj">Subject : Claim for Damage / Leakage / Shortage in Purchase Invoice No. '+esc(b.invoice_no||"")+"</div>"+
+        '<table class="kv"><tr><td>Distributor Code</td><td>: <b>'+esc(S.distributor_code||"")+'</b></td></tr><tr><td>Distributor Name</td><td>: <b>'+esc(S.distributor_name||"")+'</b></td></tr>'+
+        "<tr><td>Invoice No. / Date</td><td>: <b>"+esc(b.invoice_no||"")+"</b> dated <b>"+dmy(b.invoice_date,"/")+"</b></td></tr><tr><td>Received On</td><td>: <b>"+dmy(b.received_date,"/")+"</b></td></tr>"+
+        "<tr><td>Vehicle No.</td><td>: <b>"+esc(b.vehicle_no||"")+"</b>"+(b.lr_no?" &nbsp; LR No. : <b>"+esc(b.lr_no)+"</b>":"")+"</td></tr>"+(ch.claim_no?"<tr><td>Claim Ref.</td><td>: <b>"+esc(ch.claim_no)+"</b></td></tr>":"")+"</table>"+
+        '<p style="margin:2mm 0">Dear Sir/Madam,</p><p style="margin:0 0 2mm;text-indent:12mm">We have received the goods against the above invoice. On unloading and checking the vehicle on '+dmy(ch.verified_on,"/")+", the following damage / leakage / shortage was found:</p>"+
+        '<table class="grid"><thead><tr><th>#</th><th>SKU</th><th>Type</th><th class="n">Cases</th><th class="n">PCS</th></tr></thead><tbody>'+
+        itemRows(ch).map((i,n)=>"<tr><td>"+(n+1)+"</td><td>"+esc(i.sku_name)+"</td><td>"+ISSUE[i.issue]+'</td><td class="n">'+num(i.cases)+'</td><td class="n">'+num(i.pcs)+"</td></tr>").join("")+
+        '</tbody><tfoot><tr><td></td><td colspan="2">Total (in cases)</td><td class="n" colspan="2">'+fmt(t.cases)+"</td></tr></tfoot></table>"+
+        (ch.note?'<p style="margin:0 0 2mm"><b>Remarks :</b> '+esc(ch.note)+"</p>":"")+
+        '<p style="margin:2mm 0">We request you to kindly pass the claim for the above quantity. A copy of the invoice is attached for your reference.</p><p style="margin:2mm 0">Thank you for your cooperation.</p>'+
+        '<div style="margin-top:6mm"><b>Best Regards,</b><br>For '+esc(S.distributor_name||"")+"</div>"+
+        '<div class="sign"><div>Authorised Signatory</div><div></div></div>'+
+        '<div class="foot">'+lines(S.letter_footer)+"</div></div>";
+    }
+    function mailText(ch){
+      const S=settings,b=bills.get(ch.inward_id)||{},t=tot(ch);
+      const subject="Claim for Damage / Leakage / Shortage - Invoice "+(b.invoice_no||"")+" dated "+dmy(b.invoice_date,"/");
+      const body="Dear Sir/Madam,\n\nWe have received the goods against Invoice No. "+(b.invoice_no||"")+" dated "+dmy(b.invoice_date,"/")+" (Vehicle "+(b.vehicle_no||"-")+(b.lr_no?", LR "+b.lr_no:"")+").\nOn checking the vehicle on "+dmy(ch.verified_on,"/")+", the following was found:\n\n"+
+        itemRows(ch).map((i,n)=>(n+1)+". "+i.sku_name+" - "+ISSUE[i.issue]+": "+qtyTxt(i.cases,i.pcs)).join("\n")+
+        "\n\nTotal: "+fmt(t.cases)+" cases.\n"+(ch.note?"Remarks: "+ch.note+"\n":"")+"\nKindly pass our claim. The invoice copy is attached.\n\nDistributor Code: "+(S.distributor_code||"")+"\nRegards,\n"+(S.distributor_name||"");
+      return {subject,body};
+    }
+    function printDoc(html){el("printArea").innerHTML=html;setTimeout(()=>window.print(),50)}
+    async function setStatus(id,st){
+      if(busy)return;const ch=claims.find(x=>x.id===id);if(!ch)return;
+      const b=bills.get(ch.inward_id)||{},o={claim_status:st,updated_at:new Date().toISOString(),updated_by:me.id};
+      if(st==="SENT"){
+        const no=await prompt("Claim / reference number from the company (optional):",ch.claim_no||"");if(no===null)return;
+        o.claim_no=String(no).trim()||null;o.sent_on=today();
+      }else if(st==="PASSED"||st==="REJECTED"){
+        if(!await confirm("MARK CLAIM AS "+st+"?\n\nInvoice "+(b.invoice_no||"")+" · "+fmt(tot(ch).cases)+" cases"))return;
+        o.settled_on=today();
+      }else{
+        if(!await confirm("REOPEN THIS CLAIM AS PENDING?"))return;
+        o.settled_on=null;
+      }
+      busy=true;const r=await client.from("lwb_purchase_checks").update(o).eq("id",id);busy=false;
+      if(r.error)return ERPShell.toast("Update failed: "+r.error.message,"error");
+      ERPShell.toast("Claim marked "+(STATUS[st]||st)+".","success");await load();render();
+    }
+    document.addEventListener("click",async e=>{
+      const t=e.target;
+      if(t.dataset.print){const ch=claims.find(x=>x.id===t.dataset.print);if(ch)printDoc(letterHtml(ch));return}
+      if(t.dataset.mail){
+        const ch=claims.find(x=>x.id===t.dataset.mail);if(!ch)return;const m=mailText(ch);
+        try{await navigator.clipboard.writeText(m.subject+"\n\n"+m.body);ERPShell.toast("Email text copied. Your mail app is opening; attach the invoice PDF.","success")}catch(_){}
+        location.href="mailto:?subject="+encodeURIComponent(m.subject)+"&body="+encodeURIComponent(m.body);return;
+      }
+      if(t.dataset.st)return setStatus(t.dataset.id,t.dataset.st);
+    });
+    function setTab(){const f=location.hash.replace("#","");filter=["open","PENDING","SENT","PASSED","REJECTED","all"].includes(f)?f:"open";render()}
+    window.addEventListener("hashchange",setTab);
+    window.addEventListener("afterprint",()=>{el("printArea").innerHTML=""});
+    (async()=>{
+      me=await start();if(!me)return;
+      ERPShell.mount({role:me.role,name:me.name,onLogout:async()=>{await client.auth.signOut();location.replace("login.html")},group:"Inventory"});
+      el("loading").hidden=true;el("page").hidden=false;
+      await load();setTab();
+    })();
+  </script>
+</body>
+</html>
