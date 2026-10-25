@@ -112,7 +112,7 @@
     const isParty=t=>t==="PARTY_OUT"||t==="PARTY_IN";
     const pS=(p,s)=>num(p)+" pallets · "+num(s)+" sheets";
 
-    let me=null,tab="entry",rows=[],settings={},customers=[],dvOrders=[],vehicles=[],missing=false,busy=false,partyPick="",letterId="";
+    let me=null,tab="entry",rows=[],settings={},customers=[],dvOrders=[],vehicles=[],missing=false,busy=false,partyPick="",letterId="",editId="";
     const canEdit=()=>me&&["admin","manager"].includes(me.role);
 
     async function start(){
@@ -148,9 +148,9 @@
       t.due=[t.ci[0]-t.co[0],t.ci[1]-t.co[1]];t.market=[t.po[0]-t.pi[0],t.po[1]-t.pi[1]];
       t.hand=[t.due[0]-t.market[0],t.due[1]-t.market[1]];return t;
     }
-    function partyTotals(){
+    function partyTotals(list=rows){
       const m=new Map();
-      for(const r of rows){if(!isParty(r.entry_type))continue;const k=key(r.party_name);
+      for(const r of list){if(!isParty(r.entry_type))continue;const k=key(r.party_name);
         if(!m.has(k))m.set(k,{name:r.party_name.trim(),g:[0,0],r:[0,0],last:""});const x=m.get(k);
         const t=r.entry_type==="PARTY_OUT"?x.g:x.r;t[0]+=r.pallets;t[1]+=r.sheets;if(r.entry_date>x.last)x.last=r.entry_date}
       return [...m.values()].map(x=>({...x,p:[x.g[0]-x.r[0],x.g[1]-x.r[1]]})).sort((a,b)=>(b.p[0]+b.p[1])-(a.p[0]+a.p[1])||a.name.localeCompare(b.name));
@@ -167,7 +167,7 @@
     /* ---------- new entry ---------- */
     function renderEntry(){
       const t=el("fType")?el("fType").value:"PARTY_OUT";
-      el("view").innerHTML='<section class="erp-card"><div class="erp-card-head"><h2>New Entry</h2><small class="sp-hint">Quantities only. To enter an opening balance, use the same type with note "Opening balance".</small></div>'+
+      el("view").innerHTML='<section class="erp-card" id="entryCard"><div class="erp-card-head"><h2 id="fTitle">New Entry</h2><small class="sp-hint">Quantities only. To enter an opening balance, use the same type with note "Opening balance".</small></div>'+
         '<div class="erp-card-body" style="padding:16px"><div class="sp-grid">'+
         '<div class="wide"><label for="fType">Entry Type *</label><select id="fType">'+Object.entries(TYPES).map(([k,v])=>'<option value="'+k+'"'+(k===t?" selected":"")+">"+esc(v.l)+"</option>").join("")+"</select></div>"+
         '<div><label for="fDate">Date *</label><input id="fDate" type="date" value="'+today()+'"></div>'+
@@ -182,22 +182,40 @@
         '<div><label for="fTransporter">Transporter Name</label><input id="fTransporter" maxlength="120"></div>'+
         '<div><label for="fDriver">Driver Mobile No.</label><input id="fDriver" type="tel" maxlength="15"></div>'+
         '<div class="wide"><label for="fNote">Note</label><input id="fNote" maxlength="300"></div>'+
-        '</div><div class="sp-actions"><button type="button" class="sp-btn" id="fSave">Save Entry</button><span class="sp-hint" id="fHint"></span></div></div></section>'+
+        '</div><div class="sp-actions"><button type="button" class="sp-btn" id="fSave">Save Entry</button><button type="button" class="sp-btn light" id="fCancel" hidden>Cancel Edit</button><span class="sp-hint" id="fHint"></span></div></div></section>'+
         '<section class="erp-card" style="margin-top:14px"><div class="erp-card-head"><h2>Recent Entries</h2><small class="sp-hint">Latest 40</small></div>'+
         '<div style="overflow:auto">'+entryTable(rows.slice().reverse().slice(0,40),true)+"</div></section>";
       syncForm();
+      if(editId)fillForm(rows.find(x=>x.id===editId));
     }
     function entryTable(list,actions){
       return '<table class="sp-table"><thead><tr><th>Date</th><th>Type</th><th>Party</th><th class="n">Pallets</th><th class="n">Sheets</th><th>Ref / Vehicle</th><th>Note</th>'+(actions?"<th></th>":"")+"</tr></thead><tbody>"+
         (list.map(r=>"<tr><td>"+dmy(r.entry_date)+'</td><td><span class="tagx '+TYPES[r.entry_type].cls+'">'+esc(TYPES[r.entry_type].short)+"</span></td><td>"+esc(r.party_name||"Company")+'</td><td class="n">'+num(r.pallets)+'</td><td class="n">'+num(r.sheets)+"</td><td>"+esc(r.ref_no||"-")+"<small>"+esc([r.vehicle_no,r.transporter_name].filter(Boolean).join(" · "))+"</small></td><td style='white-space:normal;min-width:140px'>"+esc(r.note||"")+"</td>"+
-          (actions?"<td>"+(r.entry_type==="COMPANY_OUT"?'<button type="button" data-letter="'+r.id+'">Letter</button>':"")+(canEdit()?'<button type="button" class="del" data-del="'+r.id+'">Delete</button>':"")+"</td>":"")+"</tr>").join("")||
+          (actions?"<td>"+(r.entry_type==="COMPANY_OUT"?'<button type="button" data-print="'+r.id+'">Print</button>':"")+(canEdit()?'<button type="button" data-edit="'+r.id+'">Edit</button><button type="button" class="del" data-del="'+r.id+'">Delete</button>':"")+"</td>":"")+"</tr>").join("")||
          '<tr><td colspan="8" class="erp-empty">No entries yet.</td></tr>')+"</tbody></table>";
     }
     function syncForm(){
       const t=el("fType").value;
       el("partyBox").hidden=!isParty(t);el("orderBox").hidden=t!=="PARTY_OUT";
       el("fRefLabel").textContent=TYPES[t].ref;
+      el("fTitle").textContent=editId?"Edit Entry":"New Entry";el("fCancel").hidden=!editId;
+      el("fSave").textContent=t==="COMPANY_OUT"?(editId?"Update & Print Letter":"Submit & Print Letter"):(editId?"Update Entry":"Save Entry");
+      el("fHint").textContent=t==="COMPANY_OUT"?"Saves the return in the company ledger, then prints the A4 letter.":"";
       partyInfo();
+    }
+    function fillForm(r){
+      if(!r){editId="";return syncForm()}
+      const set=(id,v)=>{el(id).value=v==null?"":v};
+      set("fType",r.entry_type);set("fDate",r.entry_date);set("fParty",r.party_name);set("fPallets",r.pallets);set("fSheets",r.sheets);
+      set("fRef",r.ref_no);set("fVehicle",r.vehicle_no);set("fTransporter",r.transporter_name);set("fDriver",r.driver_mobile);set("fNote",r.note);
+      el("fOrder").value=r.order_id&&dvOrders.some(x=>x.id===r.order_id)?r.order_id:"";
+      syncForm();
+    }
+    function startEdit(id){
+      const r=rows.find(x=>x.id===id);if(!r||!canEdit())return;
+      if(r.verified_at)return ERPShell.toast("This return is verified by the company. Undo verify on the Return Letter tab before editing.","error");
+      editId=id;if(tab!=="entry"){location.hash="#entry";return}
+      renderEntry();el("entryCard").scrollIntoView({behavior:"smooth",block:"start"});
     }
     function partyInfo(){
       const i=el("partyInfo");if(!i)return;const p=partyTotals().find(x=>key(x.name)===key(el("fParty").value));
@@ -215,29 +233,34 @@
       if(busy||missing)return;
       const t=el("fType").value,val=id=>el(id).value.trim(),int=id=>val(id)===""?0:Number(val(id));
       const o={entry_date:val("fDate"),entry_type:t,party_name:isParty(t)?key(val("fParty")):null,pallets:int("fPallets"),sheets:int("fSheets"),
-        order_id:t==="PARTY_OUT"&&val("fOrder")||null,ref_no:val("fRef")||null,vehicle_no:val("fVehicle").toUpperCase().replace(/[^A-Z0-9]/g,"")||null,
+        order_id:t==="PARTY_OUT"&&(val("fOrder")||(editId&&(rows.find(x=>x.id===editId)||{}).order_id))||null,ref_no:val("fRef")||null,vehicle_no:val("fVehicle").toUpperCase().replace(/[^A-Z0-9]/g,"")||null,
         transporter_name:val("fTransporter")||null,driver_mobile:val("fDriver")||null,note:val("fNote")||null};
       if(!/^\d{4}-\d{2}-\d{2}$/.test(o.entry_date))return ERPShell.toast("Select a date.","error");
       if(![o.pallets,o.sheets].every(n=>Number.isInteger(n)&&n>=0))return ERPShell.toast("Pallets and sheets must be whole numbers (0 or more).","error");
       if(o.pallets+o.sheets<=0)return ERPShell.toast("Enter pallets or sheets.","error");
       if(isParty(t)&&!o.party_name)return ERPShell.toast("Select the party.","error");
-      let warn="";const tt=totals(rows);
-      if(t==="PARTY_IN"){const p=partyTotals().find(x=>key(x.name)===key(o.party_name))||{p:[0,0]};if(o.pallets>p.p[0]||o.sheets>p.p[1])warn="\n\nThis is more than the party's pending balance ("+pS(p.p[0],p.p[1])+").";}
+      if(t==="COMPANY_OUT"&&!settings.to_address)return ERPShell.toast("Fill the Letter Settings on the Return Letter tab first (company address).","error");
+      const others=rows.filter(x=>x.id!==editId);
+      let warn="";const tt=totals(others);
+      if(t==="PARTY_IN"){const p=partyTotals(others).find(x=>key(x.name)===key(o.party_name))||{p:[0,0]};if(o.pallets>p.p[0]||o.sheets>p.p[1])warn="\n\nThis is more than the party's pending balance ("+pS(p.p[0],p.p[1])+").";}
       if(t==="COMPANY_OUT"&&(o.pallets>tt.due[0]||o.sheets>tt.due[1]))warn="\n\nThis is more than the balance due to the company ("+pS(tt.due[0],tt.due[1])+").";
-      if(!await confirm("SAVE "+TYPES[t].l.toUpperCase()+"?\n\n"+(o.party_name?o.party_name+"\n":"")+dmy(o.entry_date)+" · "+pS(o.pallets,o.sheets)+warn))return;
+      const verb=(editId?"UPDATE ":t==="COMPANY_OUT"?"SUBMIT ":"SAVE ")+TYPES[t].l.toUpperCase()+(t==="COMPANY_OUT"?" AND PRINT LETTER":"");
+      if(!await confirm(verb+"?\n\n"+(o.party_name?o.party_name+"\n":"")+dmy(o.entry_date)+" · "+pS(o.pallets,o.sheets)+(o.vehicle_no?" · "+o.vehicle_no:"")+(o.ref_no?" · "+TYPES[t].ref+" "+o.ref_no:"")+warn))return;
       busy=true;el("fSave").disabled=true;
-      const r=await client.from("lwb_sp_entries").insert(o).select().single();
+      const q=client.from("lwb_sp_entries"),r=await (editId?q.update(o).eq("id",editId):q.insert(o)).select().single();
       busy=false;
-      if(r.error){el("fSave").disabled=false;return ERPShell.toast("Save failed: "+r.error.message,"error")}
-      ERPShell.toast("Entry saved.","success");
+      if(r.error){el("fSave").disabled=false;return ERPShell.toast((editId&&/permission|policy/i.test(r.error.message)?"Run the updated lwb_sheet_pallet_setup.sql in Supabase first. ":"")+"Save failed: "+r.error.message,"error")}
+      ERPShell.toast(editId?"Entry updated.":"Entry saved.","success");
+      editId="";el("fType").value=t;
       await load();render();
-      if(t==="COMPANY_OUT"&&await confirm("Print the return letter for this entry now?")){letterId=r.data.id;printDoc(letterHtml(r.data))}
+      if(t==="COMPANY_OUT"){letterId=r.data.id;printDoc(letterHtml(r.data))}
     }
     async function remove(id){
       const r=rows.find(x=>x.id===id);if(!r||!canEdit())return;
       if(!await confirm("DELETE this entry?\n\n"+TYPES[r.entry_type].l+" · "+(r.party_name||"Company")+" · "+dmy(r.entry_date)+" · "+pS(r.pallets,r.sheets)))return;
       const res=await client.from("lwb_sp_entries").delete().eq("id",id);
       if(res.error)return ERPShell.toast("Delete failed: "+res.error.message,"error");
+      if(editId===id)editId="";
       ERPShell.toast("Entry deleted.","success");await load();render();
     }
 
@@ -305,6 +328,7 @@
         (outs.map(x=>'<tr'+(x.id===letterId?' style="background:#fff6f7"':"")+"><td>"+dmy(x.entry_date)+'</td><td class="n">'+num(x.pallets)+'</td><td class="n">'+num(x.sheets)+"</td><td>"+esc(x.ref_no||"-")+"</td><td>"+esc(x.vehicle_no||"-")+"<small>"+esc(x.transporter_name||"")+"</small></td><td>"+
           (x.verified_at?'<span class="sp-ok">✓ Verified</span><small>'+esc(dtTxt(x.verified_at))+"</small>":'<span class="sp-wait">Pending</span>')+"</td><td>"+
           '<button type="button" data-view="'+x.id+'">View</button><button type="button" data-print="'+x.id+'">Print</button>'+
+          (canEdit()&&!x.verified_at?'<button type="button" data-edit="'+x.id+'">Edit</button>':"")+
           (canEdit()?'<button type="button" data-verify="'+x.id+'">'+(x.verified_at?"Undo verify":"Mark verified")+"</button>":"")+"</td></tr>").join("")||
          '<tr><td colspan="7" class="erp-empty">No returns to the company yet.</td></tr>')+"</tbody></table></div></section>";
       if(r)h+='<section class="erp-card" style="margin-top:14px"><div class="erp-card-head"><h2>Letter Preview · '+dmy(r.entry_date)+'</h2><button type="button" class="sp-btn" data-print="'+r.id+'">Print Letter</button></div><div class="sp-letter-wrap"><div class="sp-paper">'+letterHtml(r)+"</div></div></section>";
@@ -394,8 +418,9 @@
       const t=e.target,id=t.id;
       if(id==="fSave")return saveEntry();
       if(id==="sSave")return saveSettings();
+      if(id==="fCancel"){editId="";return renderEntry()}
       if(t.dataset.del)return remove(t.dataset.del);
-      if(t.dataset.letter){letterId=t.dataset.letter;location.hash="#letter";return}
+      if(t.dataset.edit)return startEdit(t.dataset.edit);
       const pr=t.closest("tr[data-party]");if(pr){partyPick=pr.dataset.party;renderParties();return}
       if(id==="rSubmit")return submitReturn();
       if(t.dataset.verify)return verify(t.dataset.verify);

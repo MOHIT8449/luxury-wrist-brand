@@ -9,8 +9,8 @@
 --   PARTY_IN    : returned by a market party
 -- Balance due to company = COMPANY_IN − COMPANY_OUT
 -- Pending with a party   = PARTY_OUT − PARTY_IN
--- Admin / Manager / Accounts / Warehouse can view and add. Only Admin / Manager can delete
--- and mark a company return as verified (after the company confirms receipt).
+-- Admin / Manager / Accounts / Warehouse can view and add. Only Admin / Manager can edit,
+-- delete and mark a company return as verified (after the company confirms receipt).
 -- Return letter details (company address, distributor code, letterhead footer) are kept in
 -- lwb_sp_settings, so nothing private is stored in the website files.
 -- No order, stock, bill, payment or Tally data is changed.
@@ -85,7 +85,8 @@ CREATE POLICY lwb_sp_entries_read ON public.lwb_sp_entries FOR SELECT TO authent
 DROP POLICY IF EXISTS lwb_sp_entries_insert ON public.lwb_sp_entries;
 CREATE POLICY lwb_sp_entries_insert ON public.lwb_sp_entries FOR INSERT TO authenticated WITH CHECK (public.lwb_sp_user());
 DROP POLICY IF EXISTS lwb_sp_entries_verify ON public.lwb_sp_entries;
-CREATE POLICY lwb_sp_entries_verify ON public.lwb_sp_entries FOR UPDATE TO authenticated USING (public.lwb_sp_editor()) WITH CHECK (public.lwb_sp_editor());
+DROP POLICY IF EXISTS lwb_sp_entries_update ON public.lwb_sp_entries;
+CREATE POLICY lwb_sp_entries_update ON public.lwb_sp_entries FOR UPDATE TO authenticated USING (public.lwb_sp_editor()) WITH CHECK (public.lwb_sp_editor());
 DROP POLICY IF EXISTS lwb_sp_entries_delete ON public.lwb_sp_entries;
 CREATE POLICY lwb_sp_entries_delete ON public.lwb_sp_entries FOR DELETE TO authenticated USING (public.lwb_sp_editor());
 
@@ -97,7 +98,8 @@ CREATE POLICY lwb_sp_settings_update ON public.lwb_sp_settings FOR UPDATE TO aut
 REVOKE ALL ON TABLE public.lwb_sp_entries FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON TABLE public.lwb_sp_settings FROM PUBLIC, anon, authenticated;
 GRANT SELECT, INSERT, DELETE ON TABLE public.lwb_sp_entries TO authenticated;
-GRANT UPDATE (verified_at, verified_by) ON TABLE public.lwb_sp_entries TO authenticated;
+GRANT UPDATE (entry_date, entry_type, party_name, pallets, sheets, order_id, ref_no, vehicle_no, transporter_name, driver_mobile, note, verified_at, verified_by)
+  ON TABLE public.lwb_sp_entries TO authenticated;
 GRANT SELECT, UPDATE ON TABLE public.lwb_sp_settings TO authenticated;
 
 COMMIT;
