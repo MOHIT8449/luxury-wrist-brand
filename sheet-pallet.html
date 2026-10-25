@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Sheet &amp; Pallet Ledger | Luxury Wrist Brand ERP</title>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Anton&display=swap">
   <link rel="stylesheet" href="erp-shell.css">
   <script src="erp-shell.js"></script>
   <style>
@@ -44,17 +45,18 @@
     .sp-paper{background:#fff;width:210mm;min-height:297mm;margin:0 auto;box-shadow:0 2px 10px rgba(0,0,0,.12)}
     #printArea{display:none}
     /* A4 documents (return letter, statements) */
-    .doc{box-sizing:border-box;width:210mm;min-height:295mm;padding:12mm 18mm 10mm;font-family:Arial,Helvetica,sans-serif;color:#111;font-size:12pt;line-height:1.38;display:flex;flex-direction:column}
-    .doc h1.lh{font-family:Impact,"Arial Narrow Bold","Arial Narrow",Arial,sans-serif;font-size:38pt;letter-spacing:1px;text-align:center;margin:4mm 0 3mm;font-weight:900}
-    .doc .rule{border-top:2px solid #444;margin:0 0 6mm}
+    .doc{box-sizing:border-box;width:210mm;min-height:295mm;padding:12mm 18mm 10mm;font-family:Arial,Helvetica,sans-serif;color:#111;font-size:11.5pt;line-height:1.35;display:flex;flex-direction:column}
+    .doc h1.lh{font-family:Anton,Impact,"Arial Narrow Bold","Arial Narrow",Arial,sans-serif;font-size:44pt;letter-spacing:.5px;text-align:center;margin:4mm 0 3mm;font-weight:400;color:#222}
+    .doc .rule{border-top:2.5px solid #555;margin:0 0 5mm}
     .doc .row{display:flex;justify-content:space-between;gap:10mm}
     .doc .to{white-space:pre-line}
-    .doc .subj{text-align:center;font-weight:700;text-decoration:underline;margin:5mm 0 3mm}
+    .doc .subj{text-align:center;font-weight:700;text-decoration:underline;margin:4mm 0 2mm}
     .doc table.kv{border-collapse:collapse;margin:3mm 0 4mm 6mm}
-    .doc table.kv td{padding:1.2mm 3mm 1.2mm 0;vertical-align:top}
-    .doc table.kv td:first-child{font-weight:700;min-width:44mm}
-    .doc .sign{display:flex;justify-content:space-between;align-items:flex-end;margin-top:14mm}
-    .doc .foot{margin-top:auto;border-top:1px solid #777;padding-top:2mm;text-align:center;font-size:9pt;white-space:pre-line}
+    .doc table.kv td{padding:.7mm 3mm .7mm 0;vertical-align:top}
+    .doc table.kv td:first-child{font-weight:700;width:40mm}
+    .doc .sign{display:flex;justify-content:space-between;align-items:flex-end;margin-top:16mm}
+    .doc .foot{margin-top:auto;border-top:1.5px solid #777;padding-top:2mm;text-align:center;font-size:9pt;line-height:1.6}
+    .sp-ok{color:#0d6b36;font-weight:700}.sp-wait{color:#8a5a00;font-weight:700}
     .doc h2{font-size:15pt;margin:0 0 2mm}
     .doc h3{font-size:12.5pt;margin:6mm 0 2mm}
     .doc table.grid{border-collapse:collapse;width:100%;font-size:10.5pt}
@@ -99,6 +101,7 @@
     const num=v=>Number(v||0).toLocaleString("en-IN");
     const today=()=>new Date().toLocaleDateString("en-CA",{timeZone:"Asia/Kolkata"});
     const dmy=(d,sep="-")=>d?d.slice(8,10)+sep+d.slice(5,7)+sep+d.slice(0,4):"";
+    const dtTxt=v=>new Date(v).toLocaleString("en-IN",{day:"2-digit",month:"short",year:"numeric",hour:"2-digit",minute:"2-digit",timeZone:"Asia/Kolkata"});
     const key=v=>String(v||"").trim().toUpperCase().replace(/\s+/g," ");
     const TYPES={
       COMPANY_IN:{l:"Received from Company",short:"From Company",cls:"in",ref:"Purchase Bill No."},
@@ -118,7 +121,7 @@
       const {data:p}=await client.from("user_profiles").select("full_name,role,active").eq("id",session.user.id).single();
       const role=String((p&&p.role)||"").toLowerCase().trim();
       if(!p||p.active!==true||!["admin","manager","accounts","warehouse"].includes(role)){location.replace("dashboard.html");return null}
-      return {role,name:p.full_name||session.user.email};
+      return {id:session.user.id,role,name:p.full_name||session.user.email};
     }
     async function load(){
       const [e,s,c,o,v]=await Promise.all([
@@ -228,7 +231,7 @@
       if(r.error){el("fSave").disabled=false;return ERPShell.toast("Save failed: "+r.error.message,"error")}
       ERPShell.toast("Entry saved.","success");
       await load();render();
-      if(t==="COMPANY_OUT"&&await confirm("Print the return letter for this entry now?")){letterId=r.data.id;location.hash="#letter"}
+      if(t==="COMPANY_OUT"&&await confirm("Print the return letter for this entry now?")){letterId=r.data.id;printDoc(letterHtml(r.data))}
     }
     async function remove(id){
       const r=rows.find(x=>x.id===id);if(!r||!canEdit())return;
@@ -242,7 +245,7 @@
     function runningTable(list,inType,inLabel,outLabel,balLabel){
       let bp=0,bs=0;
       const body=list.map(r=>{const s=r.entry_type===inType?1:-1;bp+=s*r.pallets;bs+=s*r.sheets;
-        return "<tr><td>"+dmy(r.entry_date)+"</td><td>"+esc(r.ref_no||"-")+"<small>"+esc([r.vehicle_no,r.note].filter(Boolean).join(" · "))+'</small></td>'+
+        return "<tr><td>"+dmy(r.entry_date)+"</td><td>"+esc(r.ref_no||"-")+(r.entry_type==="COMPANY_OUT"?(r.verified_at?' <span class="sp-ok">✓ Verified</span>':' <span class="sp-wait">Pending verification</span>'):"")+"<small>"+esc([r.vehicle_no,r.note].filter(Boolean).join(" · "))+'</small></td>'+
           '<td class="n">'+(s>0?num(r.pallets):"")+'</td><td class="n">'+(s>0?num(r.sheets):"")+'</td><td class="n">'+(s<0?num(r.pallets):"")+'</td><td class="n">'+(s<0?num(r.sheets):"")+'</td><td class="n"><b>'+num(bp)+'</b></td><td class="n"><b>'+num(bs)+"</b></td></tr>"}).join("");
       return '<table class="sp-table grid"><thead><tr><th rowspan="2">Date</th><th rowspan="2">Ref / Vehicle</th><th colspan="2" class="n">'+inLabel+'</th><th colspan="2" class="n">'+outLabel+'</th><th colspan="2" class="n">'+balLabel+'</th></tr>'+
         '<tr><th class="n">Pallets</th><th class="n">Sheets</th><th class="n">Pallets</th><th class="n">Sheets</th><th class="n">Pallets</th><th class="n">Sheets</th></tr></thead><tbody>'+
@@ -268,29 +271,44 @@
     }
 
     /* ---------- return letter ---------- */
+    // Address / footer text: one line per row; a line starting with * is printed bold.
+    const lines=t=>String(t||"").split(/\r?\n/).map(l=>l.trim()).filter(Boolean).map(l=>l[0]==="*"?"<b>"+esc(l.slice(1).trim())+"</b>":esc(l)).join("<br>");
     function letterHtml(r){
       const S=settings,parts=[r.pallets?r.pallets+" Pallets":"",r.sheets?r.sheets+" Sheets":""].filter(Boolean).join(" and ");
       return '<div class="doc"><h1 class="lh">'+esc(S.distributor_name||"LUXURY WRIST BRAND")+'</h1><div class="rule"></div>'+
-        '<div class="row"><div class="to"><b>To,</b>\n'+esc(S.to_address||"[Company address — fill in Letter Settings below]")+'</div><div style="white-space:nowrap"><b>Date :</b> '+dmy(r.entry_date,"/")+"</div></div>"+
+        '<div class="row"><div><b>To,</b><br>'+(lines(S.to_address)||"[Company address — fill in Letter Settings below]")+'</div><div style="white-space:nowrap"><b>Date :</b> '+dmy(r.entry_date,"/")+"</div></div>"+
         '<div class="subj">Subject : Return of '+esc(parts)+"</div>"+
         '<table class="kv"><tr><td style="font-weight:400">Distributor Code</td><td>: <b>'+esc(S.distributor_code||"")+'</b></td></tr><tr><td style="font-weight:400">Distributor Name</td><td>: <b>'+esc(S.distributor_name||"")+"</b></td></tr></table>"+
         "<p style=\"margin:2mm 0\">Dear Sir/Madam,</p><p style=\"margin:0 0 2mm;text-indent:12mm\">We would like to inform you that the pallets and sheets mentioned below are being returned to "+esc(S.plant_text||"your plant")+". They are being transported as per the details given below, for your records.</p>"+
         '<table class="kv"><tr><td>No. of Pallets</td><td>: <b>'+num(r.pallets)+'</b></td></tr><tr><td>No. of Sheets</td><td>: <b>'+num(r.sheets)+'</b></td></tr><tr><td>Transporter Name</td><td>: <b>'+esc(r.transporter_name||"")+'</b></td></tr>'+
         '<tr><td>Vehicle No.</td><td>: <b>'+esc(r.vehicle_no||"")+'</b></td></tr><tr><td>Driver Mobile No.</td><td>: <b>'+esc(r.driver_mobile||"")+'</b></td></tr><tr><td>LR No.</td><td>: <b>'+esc(r.ref_no||"")+"</b></td></tr></table>"+
         "<p style=\"margin:2mm 0\">Please acknowledge the receipt of the returned pallets and sheets upon delivery. If any further clarification is required, feel free to contact us.</p><p style=\"margin:2mm 0\">Thank you for your cooperation.</p>"+
-        '<div style="margin-top:8mm"><b>Best Regards,</b><br>For '+esc(S.distributor_name||"")+"</div>"+
+        '<div style="margin-top:6mm"><b>Best Regards,</b><br>For '+esc(S.distributor_name||"")+"</div>"+
         '<div class="sign"><div>Authorised Signatory</div><div>Driver Sign : ______________________</div></div>'+
-        '<div class="foot">'+esc(S.letter_footer||"")+"</div></div>";
+        '<div class="foot">'+lines(S.letter_footer)+"</div></div>";
     }
     function renderLetter(){
-      const outs=rows.filter(r=>r.entry_type==="COMPANY_OUT").slice().reverse();
-      if(!letterId&&outs.length)letterId=outs[0].id;
+      const outs=rows.filter(r=>r.entry_type==="COMPANY_OUT").slice().reverse(),tt=totals(rows);
+      if(!outs.some(x=>x.id===letterId))letterId=outs.length?outs[0].id:"";
       const r=outs.find(x=>x.id===letterId);
-      let h='<section class="erp-card"><div class="erp-card-head"><h2>Return Letter (A4)</h2><div class="sp-tools"><select id="letterPick">'+
-        (outs.map(x=>'<option value="'+x.id+'"'+(x.id===letterId?" selected":"")+">"+dmy(x.entry_date)+" · "+pS(x.pallets,x.sheets)+(x.ref_no?" · LR "+esc(x.ref_no):"")+"</option>").join("")||'<option value="">No "Returned to Company" entries yet</option>')+
-        '</select><button type="button" class="sp-btn" id="printLetter"'+(r?"":" disabled")+'>Print Letter</button></div></div>'+
-        '<div class="sp-letter-wrap">'+(r?'<div class="sp-paper">'+letterHtml(r)+"</div>":'<p class="sp-hint">Save a "Returned to Company" entry first; its letter appears here.</p>')+"</div></section>";
-      h+='<section class="erp-card" style="margin-top:14px"><div class="erp-card-head"><h2>Letter Settings</h2><small class="sp-hint">'+(canEdit()?"Saved once and used on every letter.":"Only Admin / Manager can change these.")+'</small></div><div class="erp-card-body" style="padding:16px"><div class="sp-grid">'+
+      let h='<section class="erp-card"><div class="erp-card-head"><h2>Return to Company</h2><small class="sp-hint">Balance due to company: '+pS(tt.due[0],tt.due[1])+'</small></div>'+
+        '<div class="erp-card-body" style="padding:16px"><div class="sp-grid">'+
+        '<div><label for="rDate">Date *</label><input id="rDate" type="date" value="'+today()+'"></div>'+
+        '<div><label for="rPallets">No. of Pallets</label><input id="rPallets" type="number" min="0" step="1" inputmode="numeric" placeholder="0"></div>'+
+        '<div><label for="rSheets">No. of Sheets</label><input id="rSheets" type="number" min="0" step="1" inputmode="numeric" placeholder="0"></div>'+
+        '<div><label for="rLr">LR No.</label><input id="rLr" maxlength="60"></div>'+
+        '<div class="wide"><label for="rTransporter">Transporter Name</label><input id="rTransporter" maxlength="120"></div>'+
+        '<div><label for="rVehicle">Vehicle No.</label><input id="rVehicle" list="rVehList" maxlength="15"><datalist id="rVehList">'+vehicles.map(v=>'<option value="'+esc(v.vehicle_no)+'">').join("")+"</datalist></div>"+
+        '<div><label for="rDriver">Driver Mobile No.</label><input id="rDriver" type="tel" maxlength="15"></div>'+
+        '</div><div class="sp-actions"><button type="button" class="sp-btn" id="rSubmit">Submit &amp; Print Letter</button><span class="sp-hint">Saves the return in the company ledger, then prints the A4 letter.</span></div></div></section>';
+      h+='<section class="erp-card" style="margin-top:14px"><div class="erp-card-head"><h2>Return Letters</h2><small class="sp-hint">Mark a return as verified once the company confirms it.</small></div><div style="overflow:auto"><table class="sp-table"><thead><tr><th>Date</th><th class="n">Pallets</th><th class="n">Sheets</th><th>LR No.</th><th>Vehicle / Transporter</th><th>Company Verification</th><th></th></tr></thead><tbody>'+
+        (outs.map(x=>'<tr'+(x.id===letterId?' style="background:#fff6f7"':"")+"><td>"+dmy(x.entry_date)+'</td><td class="n">'+num(x.pallets)+'</td><td class="n">'+num(x.sheets)+"</td><td>"+esc(x.ref_no||"-")+"</td><td>"+esc(x.vehicle_no||"-")+"<small>"+esc(x.transporter_name||"")+"</small></td><td>"+
+          (x.verified_at?'<span class="sp-ok">✓ Verified</span><small>'+esc(dtTxt(x.verified_at))+"</small>":'<span class="sp-wait">Pending</span>')+"</td><td>"+
+          '<button type="button" data-view="'+x.id+'">View</button><button type="button" data-print="'+x.id+'">Print</button>'+
+          (canEdit()?'<button type="button" data-verify="'+x.id+'">'+(x.verified_at?"Undo verify":"Mark verified")+"</button>":"")+"</td></tr>").join("")||
+         '<tr><td colspan="7" class="erp-empty">No returns to the company yet.</td></tr>')+"</tbody></table></div></section>";
+      if(r)h+='<section class="erp-card" style="margin-top:14px"><div class="erp-card-head"><h2>Letter Preview · '+dmy(r.entry_date)+'</h2><button type="button" class="sp-btn" data-print="'+r.id+'">Print Letter</button></div><div class="sp-letter-wrap"><div class="sp-paper">'+letterHtml(r)+"</div></div></section>";
+      h+='<section class="erp-card" style="margin-top:14px"><div class="erp-card-head"><h2>Letter Settings</h2><small class="sp-hint">'+(canEdit()?"Saved once and used on every letter. Start a line with * to print it in bold.":"Only Admin / Manager can change these.")+'</small></div><div class="erp-card-body" style="padding:16px"><div class="sp-grid">'+
         '<div class="wide"><label for="sTo">To (company address, one line per row)</label><textarea id="sTo" rows="5"></textarea></div>'+
         '<div class="wide"><label for="sFoot">Letterhead footer (office address, phone, GSTIN)</label><textarea id="sFoot" rows="5"></textarea></div>'+
         '<div class="wide"><label for="sPlant">Returned to (used in the letter text)</label><input id="sPlant" maxlength="200" placeholder="e.g. Company name at your plant"></div>'+
@@ -301,6 +319,33 @@
       el("sTo").value=settings.to_address||"";el("sFoot").value=settings.letter_footer||"";el("sPlant").value=settings.plant_text||"";
       el("sCode").value=settings.distributor_code||"";el("sName").value=settings.distributor_name||"";
       ["sTo","sFoot","sPlant","sCode","sName","sSave"].forEach(id=>el(id).disabled=!canEdit()||missing);
+      el("rSubmit").disabled=missing;
+    }
+    async function submitReturn(){
+      if(busy||missing)return;
+      const val=id=>el(id).value.trim(),int=id=>val(id)===""?0:Number(val(id));
+      const o={entry_date:val("rDate"),entry_type:"COMPANY_OUT",party_name:null,pallets:int("rPallets"),sheets:int("rSheets"),ref_no:val("rLr")||null,
+        vehicle_no:val("rVehicle").toUpperCase().replace(/[^A-Z0-9]/g,"")||null,transporter_name:val("rTransporter")||null,driver_mobile:val("rDriver")||null,note:null};
+      if(!/^\d{4}-\d{2}-\d{2}$/.test(o.entry_date))return ERPShell.toast("Select a date.","error");
+      if(![o.pallets,o.sheets].every(n=>Number.isInteger(n)&&n>=0))return ERPShell.toast("Pallets and sheets must be whole numbers (0 or more).","error");
+      if(o.pallets+o.sheets<=0)return ERPShell.toast("Enter pallets or sheets.","error");
+      if(!settings.to_address)return ERPShell.toast("Fill the Letter Settings below first (company address).","error");
+      const tt=totals(rows),warn=o.pallets>tt.due[0]||o.sheets>tt.due[1]?"\n\nThis is more than the balance due to the company ("+pS(tt.due[0],tt.due[1])+").":"";
+      if(!await confirm("SUBMIT RETURN TO COMPANY AND PRINT LETTER?\n\n"+dmy(o.entry_date)+" · "+pS(o.pallets,o.sheets)+(o.vehicle_no?" · "+o.vehicle_no:"")+(o.ref_no?" · LR "+o.ref_no:"")+warn))return;
+      busy=true;el("rSubmit").disabled=true;
+      const res=await client.from("lwb_sp_entries").insert(o).select().single();
+      busy=false;
+      if(res.error){el("rSubmit").disabled=false;return ERPShell.toast("Save failed: "+res.error.message,"error")}
+      ERPShell.toast("Return saved in the company ledger.","success");
+      letterId=res.data.id;await load();render();printDoc(letterHtml(res.data));
+    }
+    async function verify(id){
+      const r=rows.find(x=>x.id===id);if(!r||!canEdit())return;
+      const on=!r.verified_at;
+      if(!await confirm((on?"MARK AS VERIFIED BY COMPANY?":"UNDO VERIFICATION?")+"\n\n"+dmy(r.entry_date)+" · "+pS(r.pallets,r.sheets)+(r.ref_no?" · LR "+r.ref_no:"")))return;
+      const res=await client.from("lwb_sp_entries").update(on?{verified_at:new Date().toISOString(),verified_by:me.id}:{verified_at:null,verified_by:null}).eq("id",id);
+      if(res.error)return ERPShell.toast((/verified/.test(res.error.message)?"Run the updated lwb_sheet_pallet_setup.sql in Supabase first. ":"")+"Update failed: "+res.error.message,"error");
+      ERPShell.toast(on?"Marked as verified.":"Verification removed.","success");await load();render();
     }
     async function saveSettings(){
       const o={to_address:el("sTo").value.trim()||null,letter_footer:el("sFoot").value.trim()||null,plant_text:el("sPlant").value.trim()||null,
@@ -314,7 +359,7 @@
     function docHead(title){
       return '<div class="doc"><h1 class="lh" style="font-size:28pt;margin:0 0 2mm">'+esc(settings.distributor_name||"LUXURY WRIST BRAND")+'</h1><div class="rule"></div><h2>'+esc(title)+'</h2><div style="font-size:10pt;color:#444;margin-bottom:3mm">As of '+dmy(today(),"/")+"</div>";
     }
-    const docFoot=()=>'<div class="foot">'+esc(settings.letter_footer||"")+"</div></div>";
+    const docFoot=()=>'<div class="foot">'+lines(settings.letter_footer)+"</div></div>";
     const ptable=html=>html.replace('class="sp-table grid"','class="grid"');
     function summaryHtml(){
       const t=totals(rows),list=partyTotals().filter(x=>x.p[0]||x.p[1]);
@@ -342,7 +387,7 @@
     document.addEventListener("change",e=>{
       const id=e.target.id;
       if(id==="fType")syncForm();else if(id==="fOrder")pickOrder();else if(id==="fParty")partyInfo();
-      else if(id==="pFilter")renderParties();else if(id==="letterPick"){letterId=e.target.value;renderLetter()}
+      else if(id==="pFilter")renderParties();
     });
     document.addEventListener("input",e=>{if(e.target.id==="fParty")partyInfo()});
     document.addEventListener("click",e=>{
@@ -352,7 +397,10 @@
       if(t.dataset.del)return remove(t.dataset.del);
       if(t.dataset.letter){letterId=t.dataset.letter;location.hash="#letter";return}
       const pr=t.closest("tr[data-party]");if(pr){partyPick=pr.dataset.party;renderParties();return}
-      if(id==="printLetter"){const r=rows.find(x=>x.id===letterId);if(r)printDoc(letterHtml(r));return}
+      if(id==="rSubmit")return submitReturn();
+      if(t.dataset.verify)return verify(t.dataset.verify);
+      if(t.dataset.view){letterId=t.dataset.view;renderLetter();return}
+      if(t.dataset.print){const r=rows.find(x=>x.id===t.dataset.print);if(r)printDoc(letterHtml(r));return}
       if(id==="printSummary")return printDoc(summaryHtml());
       if(id==="printCompany")return printDoc(docHead("Company Sheet & Pallet Ledger")+ptable(runningTable(companyRows(),"COMPANY_IN","Received","Returned","Balance Due"))+docFoot());
       if(id==="printParty")return printDoc(docHead("Sheet & Pallet Ledger: "+partyPick)+ptable(runningTable(rows.filter(r=>isParty(r.entry_type)&&key(r.party_name)===key(partyPick)),"PARTY_OUT","Given","Returned","Pending"))+docFoot());
