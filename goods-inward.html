@@ -76,6 +76,14 @@ html,body{max-width:100%;overflow-x:hidden}main,.panel,.form-grid,.field{min-wid
 <script src="erp-shell.js" data-auto defer></script>
 <style>
 /* Compact layout: whole header form fits without scrolling. */
+.dmg-box{border:1px solid #e3e7ec;border-radius:8px;padding:10px 12px;margin-top:4px;background:#fbfbfc}
+.dmg-head{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.dmg-head label{font-weight:700;font-size:13px}
+.dmg-head select{height:36px;min-width:300px;max-width:100%;border:1px solid #cbd5e1;border-radius:6px;padding:0 8px;font:inherit;font-size:14px}
+.dmg-table{width:100%;border-collapse:collapse;margin:10px 0 8px;font-size:13px}
+.dmg-table th,.dmg-table td{border:1px solid #e3e7ec;padding:5px 7px;text-align:left;background:#fff}.dmg-table th{background:#f3f5f8;text-align:center}
+.dmg-table td input{width:70px;height:32px;border:1px solid #cbd5e1;border-radius:5px;padding:0 6px;text-align:right;font:inherit}
+#dmgNote{width:100%;height:36px;border:1px solid #cbd5e1;border-radius:6px;padding:0 9px;font:inherit;font-size:14px}
+@media(max-width:700px){.dmg-wrap-scroll{overflow:auto}.dmg-head select{min-width:0;width:100%}}
 main{margin:14px auto}.panel{padding:14px 16px;margin-bottom:12px}
 .panel h2{font-size:18px}.sectionhead{margin-bottom:10px}.sectionhead .sub{margin:2px 0 0!important;font-size:13px}
 .form-grid{grid-template-columns:repeat(6,minmax(0,1fr));gap:8px 12px}
@@ -129,6 +137,12 @@ main{margin:14px auto}.panel{padding:14px 16px;margin-bottom:12px}
       <div class="stat"><span>Taxable Amount</span><strong id="totalTaxable" class="money">₹0.00</strong></div>
       <div class="stat"><span>GST Amount (Auto)</span><strong id="totalGst" class="money">₹0.00</strong></div>
       <div class="stat"><span>Total Amount (Auto)</span><strong id="totalAmount" class="money">₹0.00</strong></div>
+    </div>
+    <div class="dmg-box">
+      <div class="dmg-head"><label for="dmgMode">Damage / Leakage / Shortage in this vehicle?</label>
+        <select id="dmgMode"><option value="later">Check later (after unloading: Purchase Register → Verify)</option><option value="no">No: everything received OK</option><option value="yes">Yes: enter damage / leakage / shortage</option></select></div>
+      <div id="dmgWrap" hidden><table class="dmg-table"><thead><tr><th rowspan="2">SKU</th><th colspan="2">Damage</th><th colspan="2">Leakage</th><th colspan="2">Shortage</th></tr><tr><th>Cases</th><th>PCS</th><th>Cases</th><th>PCS</th><th>Cases</th><th>PCS</th></tr></thead><tbody id="dmgBody"></tbody></table>
+        <input id="dmgNote" maxlength="300" placeholder="Note (optional), e.g. 2 cases leaked near door"><div class="hint">Saved with the bill as a claim in Purchase Claims. Quantities only: stock is not reduced.</div></div>
     </div>
     <div class="actions"><button id="save" type="button" disabled>Save Goods Inward & Update Stock</button><button id="reset" type="button" class="secondary">Clear Form</button><span class="small" id="hint">Connect to Supabase and enter invoice details.</span></div>
     <p class="small">Saved purchase bills (view, edit, delete): <a href="purchase-register.html">Purchase Register</a></p>
@@ -305,6 +319,37 @@ function recalc(){
   $('save').disabled=busy||!rolesOkay||!detailsValid||!driverNameOkay||!driverMobileOkay||!transportOkay||!everyValid||!unique;
   $('hint').textContent=busy?'Saving all SKU lines together...':!rolesOkay?'Only active admin or manager can save.':!unique?'Duplicate SKU: combine quantities in one line.':!detailsValid?'Choose Supplier from Master, and fill Invoice No. and both dates.':!driverNameOkay?'Enter Driver Name.':!driverMobileOkay?'Enter a valid 10-digit Indian Driver Mobile Number (optional +91).':!transportOkay?'Transport not selected from Master: choose result or click + Save New.':rows.some(r=>r.sku&&!r.rateValid)?'GST Rate missing in SKU Master. Edit that SKU and enter GST % before saving.':rows.some(r=>r.sku&&!r.cessOkay)?'Nonzero Cess found in SKU Master. This version calculates GST only; cannot save until tax treatment is configured.':!everyValid?'Select SKU, enter positive quantity and Taxable Amount on EVERY line. GST and Total auto-calculate.':'Ready to save. Verify calculated Invoice Total against the supplier invoice and physical quantities.';
   let i=0;for(const card of $('itemsBody').children)card.querySelector('.line-number').textContent=String(++i);
+  syncDamage(rows);
+}
+// Damage / leakage / shortage entered with the bill (saved as a vehicle check after the bill posts).
+const DMG_ISSUES=['DAMAGE','LEAKAGE','SHORTAGE'];
+let dmgKey='';
+function syncDamage(rows){
+  const yes=$('dmgMode').value==='yes';$('dmgWrap').hidden=!yes;if(!yes)return;
+  const list=(rows||readRows()).filter(r=>r.sku),key=list.map(r=>r.sku.id).join('|');
+  if(key===dmgKey&&$('dmgBody').children.length)return;
+  const old={};for(const inp of $('dmgBody').querySelectorAll('input'))old[inp.dataset.k]=inp.value;
+  dmgKey=key;$('dmgBody').replaceChildren();
+  if(!list.length){const tr=$('dmgBody').insertRow(),td=tr.insertCell();td.colSpan=7;td.textContent='Add SKU lines above first.';return;}
+  for(const r of list){
+    const tr=$('dmgBody').insertRow();tr.dataset.sku=r.sku.id;tr.dataset.name=r.sku.sku_name;tr.dataset.pack=r.sku.pcs_per_case||1;
+    tr.insertCell().textContent=r.sku.sku_name;
+    for(const issue of DMG_ISSUES)for(const f of ['cases','pcs']){
+      const inp=document.createElement('input');inp.type='number';inp.min='0';inp.step='1';inp.inputMode='numeric';inp.placeholder='0';
+      inp.dataset.issue=issue;inp.dataset.f=f;inp.dataset.k=r.sku.id+'|'+issue+'|'+f;inp.value=old[inp.dataset.k]||'';tr.insertCell().appendChild(inp);
+    }
+  }
+}
+function readDamage(){
+  const items=[];
+  for(const tr of $('dmgBody').rows){if(!tr.dataset.sku)continue;
+    for(const issue of DMG_ISSUES){
+      const g=f=>{const v=tr.querySelector(`[data-issue="${issue}"][data-f="${f}"]`).value.trim();return v===''?0:Number(v)};
+      const c=g('cases'),p=g('pcs');
+      if(![c,p].every(n=>Number.isInteger(n)&&n>=0))return null;
+      if(c+p>0)items.push({sku_id:tr.dataset.sku,sku_name:tr.dataset.name,pcs_per_case:Number(tr.dataset.pack)||1,issue,cases:c,pcs:p});
+    }}
+  return items;
 }
 async function discoverPublishableKey(){
   try{const response=await fetch('sku-master.html',{cache:'no-store'});if(!response.ok)return null;
@@ -425,12 +470,16 @@ async function save(){
   const driverName=$('driverName').value.trim(),driverMobile=driverMobileClean($('driverMobile').value);
   const spInt=id=>$(id).value.trim()===''?0:Number($(id).value),spP=spInt('spPallets'),spS=spInt('spSheets');
   if(![spP,spS].every(n=>Number.isInteger(n)&&n>=0)){show('Pallets and sheets must be whole numbers (0 or more).');return;}
+  const dmgMode=$('dmgMode').value,dmgItems=dmgMode==='yes'?readDamage():[];
+  if(dmgItems===null){show('Damage / leakage / shortage: cases and PCS must be whole numbers.');return;}
+  if(dmgMode==='yes'&&!dmgItems.length){show('You chose "Yes" for damage / leakage / shortage. Enter the quantities, or change it to "No" or "Check later".');return;}
+  const dmgNote=$('dmgNote').value.trim();
   const items=rows.map(r=>({sku_id:r.sku.id,cases:r.cases,pcs:r.pcs,rate_per_case:null,taxable_amount:paiseText(r.taxable),total_amount:paiseText(r.gross)}));
   const invoiceTaxable=rows.reduce((a,r)=>a+r.taxable,0);
   const invoiceGst=rows.reduce((a,r)=>a+r.gst,0);
   const invoiceGross=rows.reduce((a,r)=>a+r.gross,0);
   const preview=rows.map(r=>`${r.sku.sku_name}: ${r.normalized.cases} CS + ${r.normalized.pcs} PCS | Taxable ${rupees(r.taxable/100)} + GST ${r.sku.gst_rate}% (${rupees(r.gst/100)}) = Total ${rupees(r.gross/100)}`).join('\n');
-  if(!await confirm(`POST GOODS INWARD TO MAIN GODOWN?\n\nSupplier: ${supplier}\nInvoice: ${invoice}\nDriver: ${driverName} (${driverMobile})\nSKU Lines: ${rows.length}\nInvoice Taxable: ${rupees(invoiceTaxable/100)}\nGST (${ $('taxMode').value==='intrastate'?'CGST+SGST':'IGST' }): ${rupees(invoiceGst/100)}\nInvoice Total: ${rupees(invoiceGross/100)}\nPallets / Sheets: ${format(spP)} / ${format(spS)}\n\n${preview}\n\nAll quantities will increase live stock immediately. Continue only for physically received goods.`))return;
+  if(!await confirm(`POST GOODS INWARD TO MAIN GODOWN?\n\nSupplier: ${supplier}\nInvoice: ${invoice}\nDriver: ${driverName} (${driverMobile})\nSKU Lines: ${rows.length}\nInvoice Taxable: ${rupees(invoiceTaxable/100)}\nGST (${ $('taxMode').value==='intrastate'?'CGST+SGST':'IGST' }): ${rupees(invoiceGst/100)}\nInvoice Total: ${rupees(invoiceGross/100)}\nPallets / Sheets: ${format(spP)} / ${format(spS)}\nVehicle check: ${dmgMode==='later'?'Check later':dmgMode==='no'?'No damage':dmgItems.map(d=>d.sku_name+' '+d.issue+' '+d.cases+' CS + '+d.pcs+' PCS').join('; ')}\n\n${preview}\n\nAll quantities will increase live stock immediately. Continue only for physically received goods.`))return;
   busy=true;recalc();
   try{
     const {data,error}=await db.rpc('lwb_post_goods_inward',{
@@ -448,17 +497,28 @@ async function save(){
       spMsg=sp.error?`\n\nWARNING: Pallets / sheets were NOT added to the Sheet & Pallet ledger (${sp.error.message}). Add them on the Sheet & Pallet page as "Received from Company".`
         :`\nSheet & Pallet ledger: ${format(spP)} pallets, ${format(spS)} sheets received from company.`;
     }
+    let ckMsg='';
+    if(dmgMode!=='later'){
+      let inwardId=data?.id||data?.inward_id||null;
+      if(!inwardId){const f=await db.from('lwb_goods_inward').select('id').eq('invoice_no',invoice).eq('supplier_name',supplier).order('created_at',{ascending:false}).limit(1);inwardId=f.data?.[0]?.id||null;}
+      const ck=inwardId?await db.rpc('lwb_save_purchase_check',{p_inward_id:inwardId,p_verified_on:$('receivedDate').value,p_note:dmgNote,p_items:dmgItems}):{error:{message:'saved bill not found'}};
+      ckMsg=ck.error?`\n\nWARNING: Vehicle check was NOT saved (${ck.error.message}). Use Purchase Register → Verify for this bill.`
+        :dmgItems.length?`\nDamage / leakage / shortage saved: claim is pending in Purchase Claims.`:`\nVehicle check: no damage.`;
+      if(ck.error)spMsg+=ckMsg.replace(/^\n\nWARNING/,'\n\nWARNING');
+    }
     resetForm();
     await loadData();
-    show(`Goods Inward SAVED successfully.\nInvoice: ${data?.invoice_no||invoice}\nSKU Lines: ${data?.sku_count||rows.length}\nTotal Pieces Added: ${format(data?.total_pcs||0)} PCS\nTaxable Amount: ${rupees(invoiceTaxable/100)}\nGST Amount: ${rupees(invoiceGst/100)}\nInvoice Total: ${rupees(invoiceGross/100)}\nLive Main Godown stock updated.${spMsg}`,spMsg.includes('WARNING')?'error':'success');
+    show(`Goods Inward SAVED successfully.\nInvoice: ${data?.invoice_no||invoice}\nSKU Lines: ${data?.sku_count||rows.length}\nTotal Pieces Added: ${format(data?.total_pcs||0)} PCS\nTaxable Amount: ${rupees(invoiceTaxable/100)}\nGST Amount: ${rupees(invoiceGst/100)}\nInvoice Total: ${rupees(invoiceGross/100)}\nLive Main Godown stock updated.${spMsg}${ckMsg.includes('WARNING')?'':ckMsg}`,spMsg.includes('WARNING')?'error':'success');
   }catch(e){let msg=e.message||String(e);if(e.code==='23505')msg='Duplicate Invoice or duplicate SKU. This supplier invoice was already posted (or SKU repeated). No stock was added.';show('Inward NOT saved: '+msg);}
   finally{busy=false;recalc();}
 }
-function resetForm(){transportSelectedId='';$('supplierSearch').value='';for(const id of ['supplier','invoice','transport','vehicle','lr','driverName','driverMobile','remarks','spPallets','spSheets'])$(id).value='';
+function resetForm(){transportSelectedId='';$('supplierSearch').value='';for(const id of ['supplier','invoice','transport','vehicle','lr','driverName','driverMobile','remarks','spPallets','spSheets','dmgNote'])$(id).value='';
+  $('dmgMode').value='later';dmgKey='';$('dmgBody').replaceChildren();
   $('invoiceDate').value=new Date().toLocaleDateString('en-CA');$('receivedDate').value=$('invoiceDate').value;
   $('itemsBody').replaceChildren();itemRow();updateSupplierHint();updateTransportHint();recalc();
 }
 for(const id of ['invoice','invoiceDate','receivedDate','transport','vehicle','lr','driverName','driverMobile','remarks'])$(id).addEventListener('input',recalc);
+$('dmgMode').addEventListener('change',()=>{dmgKey='';syncDamage()});
 $('supplier').addEventListener('change',()=>{updateSupplierHint();recalc();});
 $('add').addEventListener('click',itemRow);
 $('addTransport').addEventListener('click',saveNewTransport);
