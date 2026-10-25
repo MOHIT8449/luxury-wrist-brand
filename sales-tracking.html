@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sales Tracking | Luxury Wrist Brand ERP</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <link rel="stylesheet" href="erp-shell.css">
+  <link rel="stylesheet" href="sales.css">
+  <script src="erp-shell.js"></script>
+  <script src="mepd-scheme.js"></script>
+  <script src="sales-common.js"></script>
+</head>
+<body>
+  <div id="loading" class="status">Checking account access...</div>
+  <main id="page" class="erp-main" hidden>
+    <div class="erp-pagehead"><h1>Sales Tracking</h1><span class="grow"></span><span class="erp-badge blue">Admin &amp; Sales Head</span></div>
+    <p class="sl-sub">Target vs achievement, each salesman's daily work, SKU-wise sales and margin, and parties with no recent order.</p>
+
+    <div class="sl-filters">
+      <div><label for="month">Month</label><input id="month" type="month"></div>
+      <div><label for="from">From</label><input id="from" type="date"></div>
+      <div><label for="to">To</label><input id="to" type="date"></div>
+      <div><label for="basis">Count sales as</label><select id="basis"><option value="booked">Booked PO (approved qty)</option><option value="loaded">Loaded only</option></select></div>
+      <div><label for="credit">Credit sale to</label><select id="credit"><option value="party">Party's salesman</option><option value="taker">Who took the order</option></select></div>
+      <div class="grow"><label for="q">Search salesman / party / SKU</label><input id="q" type="search" autocomplete="off" placeholder="Type to filter..."></div>
+      <button id="refresh" type="button" class="sl-btn">Refresh</button>
+      <button id="excel" type="button" class="sl-btn ghost">Excel</button>
+    </div>
+
+    <div class="sl-kpis" id="kpis"></div>
+    <div class="erp-pills" id="tabs"></div>
+    <section class="erp-card">
+      <div class="erp-card-head"><h2 id="tabTitle"></h2><div id="tabTools" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"></div></div>
+      <div class="sl-scroll" id="box"></div>
+    </section>
+    <p class="sl-note" id="note"></p>
+  </main>
+  <script>
+    const S=LWBSales,{client,el,esc,fmt,short,num,key,pct}=S;
+    const OFFICE="Office / Sales Head";
+    let team=[],parties=[],targets=[],orders=[],lines=[],skuCat=new Map(),cost=null,err="",tab="target",day=S.isoDay(new Date()),ageBucket="all",ageSm="";
+    const TABS=[["target","Target & Achievement"],["daily","Daily Work"],["sku","SKU Sales & Margin"],["smsku","Salesman SKUs"],["party","Top Parties"],["noorder","No-Order Parties"]];
+
+    async function loadAll(){
+      const from=el("from").value,to=el("to").value;
+      if(!from||!to||from>to){await alert("Select a valid From and To date.");return}
+      el("refresh").disabled=true;el("box").innerHTML='<div class="erp-empty">Loading...</div>';err="";
+      try{
+        const tm=await client.rpc("lwb_sales_team");
+        if(tm.error)throw Error(/lwb_sales_team/.test(tm.error.message)?"Run lwb_sales_team_setup.sql in Supabase first.":tm.error.message);
+        team=tm.data||[];
+        const [pa,ta,sk]=await Promise.all([client.rpc("lwb_party_activity"),client.from("lwb_sales_targets").select("*"),client.from("sku_master").select("sku_name,category")]);
+        if(pa.error)throw pa.error;
+        parties=pa.data||[];targets=ta.data||[];
+        skuCat=new Map((sk.data||[]).map(s=>[key(s.sku_name),s.category]));
+        orders=await S.orders(from,to);
+        const items=await S.inChunks("order_items","order_id",orders.map(o=>o.id),"order_id,sku_name,ordered_qty,approved_qty,loaded_qty,rate");
+        if(!cost)cost=await S.loadLanding();
+        build(items);
+      }catch(e){err=e.message||String(e)}
+      el("refresh").disabled=false;render();
+    }
+
+    // Each order gets: day, credited salesman, value and its lines (by the chosen basis).
+    function build(items){
+      const basis=el("basis").value,credit=el("credit").value;
+      const partyBy=new Map(parties.map(p=>[key(p.customer_name),p]));
+      const teamBy=new Map(team.map(t=>[t.user_id,t]));
+      const byOrder=new Map();lines=[];
+      for(const o of orders){
+        const p=partyBy.get(key(o.customer_name)),taker=teamBy.get(o.created_by);
+        o.day=S.istDay(o.order_date||o.created_at);
+        o.takerName=taker?taker.full_name:(String(o.sales_person||"").trim()||OFFICE);
+        o.sm=credit==="party"?(p&&p.salesman_id?p.salesman_name:taker&&taker.kind==="FIELD"?taker.full_name:OFFICE):o.takerName;
+        o.smId=credit==="party"?(p&&p.salesman_id)||(taker&&taker.kind==="FIELD"?taker.user_id:""):(taker?taker.user_id:"");
+        o.city=p?p.city:"";o.cases=0;o.value=0;o.cost=0;o.hasItems=false;
+        byOrder.set(o.id,o);
+      }
+      for(const it of items){
+        const o=byOrder.get(it.order_id);if(!o)continue;
+        o.hasItems=true;
+        const q=S.lineQty(it,o,basis);if(!q)continue;
+        const amt=q*num(it.rate),c=cost?cost.cost(it.sku_name,skuCat.get(key(it.sku_name)),o.day):null;
+        const l={o,sku:String(it.sku_name||"Unknown SKU").trim(),q,amt,cost:c==null?null:q*c};
+        o.cases+=q;o.value+=amt;lines.push(l);
+      }
+      // A booked PO with no item rows keeps its PO total.
+      if(basis==="booked")for(const o of orders)if(!o.hasItems){o.value=num(o.total_amount);o.cases=num(o.total_qty)}
+      orders=orders.filter(o=>o.value>0||o.cases>0);
+    }
+
+    function group(list,keyOf,init,add){const m=new Map();for(const x of list){const k=keyOf(x);if(!m.has(k))m.set(k,init(x));add(m.get(k),x)}return [...m.values()]}
+    const monthKey=()=>el("from").value.slice(0,7)+"-01";
+    const targetOf=id=>targets.find(t=>t.month===monthKey()&&(t.salesman_id||null)===(id||null));
+    const sameMonth=()=>el("from").value.slice(0,7)===el("to").value.slice(0,7);
+    const match=s=>{const q=key(el("q").value);return !q||key(s).includes(q)};
+    const salesmenRows=()=>{
+      const g=new Map();
+      for(const t of team.filter(t=>t.kind))g.set(t.full_name,{name:t.full_name,id:t.user_id,kind:t.kind,orders:0,cases:0,value:0,parties:new Set(),days:new Set(),assigned:parties.filter(p=>p.salesman_id===t.user_id).length});
+      for(const o of orders){
+        if(!g.has(o.sm))g.set(o.sm,{name:o.sm,id:"",kind:"",orders:0,cases:0,value:0,parties:new Set(),days:new Set(),assigned:0});
+        const x=g.get(o.sm);x.orders++;x.cases+=o.cases;x.value+=o.value;x.parties.add(key(o.customer_name));x.days.add(o.day);
+      }
+      return [...g.values()].sort((a,b)=>b.value-a.value);
+    };
+
+    function view(){
+      const today=S.isoDay(new Date()),mr=S.monthRange(el("from").value.slice(0,7));
+      const left=Math.max(0,S.daysBetween(today,mr.end)+(today<=mr.end?1:0));
+      if(tab==="target"){
+        const rows=salesmenRows().filter(x=>match(x.name)).map(x=>{
+          const t=targetOf(x.id),tgt=t?num(t.target_amount):0,p=pct(x.value,tgt),bal=Math.max(0,tgt-x.value);
+          return {data:[x.name,x.kind||"—",tgt,x.value,p==null?"":p,bal,left&&bal?Math.round(bal/left):0,x.orders,x.cases,x.parties.size,x.assigned],
+            show:[esc(x.name),x.kind==="FIELD"?"Field":x.kind==="OFFICE"?"Office":"—",tgt?short(tgt):"Not set",short(x.value),(p==null?"—":p+"%")+S.bar(p),tgt?short(bal):"—",left&&bal?short(bal/left):"—",fmt(x.orders),fmt(x.cases),fmt(x.parties.size),x.assigned?fmt(x.assigned)+" ("+Math.round(x.parties.size/x.assigned*100)+"%)":"—"]};
+        });
+        return {title:"Target & Achievement",head:["Salesman","Type","Target","Achieved","Achieved %","Balance","Needed / Day","Orders","Cases","Parties Ordered","Assigned Parties (covered)"],num:[2,3,5,6,7,8,9],rows,
+          note:sameMonth()?"Target is for "+el("month").value+". Needed / Day = balance ÷ "+left+" days left this month. Covered = assigned parties that ordered in the selected dates.":"Pick dates inside one month to compare with that month's target."};
+      }
+      if(tab==="daily"){
+        const list=orders.filter(o=>o.day===day);
+        const g=group(list,o=>o.sm,o=>({name:o.sm,orders:0,cases:0,value:0,parties:new Set(),sku:new Map()}),(x,o)=>{x.orders++;x.cases+=o.cases;x.value+=o.value;x.parties.add(o.customer_name)});
+        for(const l of lines.filter(l=>l.o.day===day)){const x=g.find(y=>y.name===l.o.sm);if(x)x.sku.set(l.sku,(x.sku.get(l.sku)||0)+l.q)}
+        const rows=g.filter(x=>match(x.name+" "+[...x.parties].join(" ")+" "+[...x.sku.keys()].join(" "))).sort((a,b)=>b.value-a.value).map(x=>{
+          const top=[...x.sku.entries()].sort((a,b)=>b[1]-a[1]).slice(0,4).map(([s,q])=>s+" ("+fmt(q)+")").join(", ");
+          return {data:[x.name,x.orders,x.cases,x.value,x.parties.size,[...x.parties].join(", "),top],show:[esc(x.name),fmt(x.orders),fmt(x.cases),short(x.value),fmt(x.parties.size),esc([...x.parties].join(", ")),esc(top)]};
+        });
+        const all=group(orders,o=>o.day,o=>({day:o.day,orders:0,cases:0,value:0}),(x,o)=>{x.orders++;x.cases+=o.cases;x.value+=o.value}).sort((a,b)=>b.day.localeCompare(a.day));
+        return {title:"Daily Work · "+S.shortDate(day),tools:'<label for="day" style="font-size:12px;font-weight:600">Day</label><input id="day" class="sl-in" type="date" value="'+day+'">',
+          head:["Salesman","Orders","Cases","Amount","Parties","Parties List","Top SKUs (cases)"],num:[1,2,3,4],rows,sum:[1,2,3],
+          extra:all.length?'<div class="erp-card-head"><h2>Day-wise total</h2></div>'+S.table(["Date","Orders","Cases","Amount"],all.map(x=>({attr:' data-day="'+x.day+'" style="cursor:pointer"',cells:[S.shortDate(x.day),fmt(x.orders),fmt(x.cases),short(x.value)]})),[1,2,3]):"",
+          note:"Click a date in the day-wise total to see that day per salesman."};
+      }
+      if(tab==="sku"){
+        const total=lines.reduce((a,l)=>a+l.amt,0);
+        const g=group(lines,l=>key(l.sku),l=>({sku:l.sku,q:0,amt:0,costQ:0,costAmt:0,cost:0,parties:new Set()}),(x,l)=>{x.q+=l.q;x.amt+=l.amt;x.parties.add(key(l.o.customer_name));if(l.cost!=null){x.costQ+=l.q;x.costAmt+=l.amt;x.cost+=l.cost}});
+        const rows=g.filter(x=>match(x.sku)).sort((a,b)=>b.amt-a.amt).map(x=>{
+          const m=x.costQ?x.costAmt-x.cost:null,mp=m!=null&&x.costAmt?Math.round(m/x.costAmt*1000)/10:null;
+          return {data:[x.sku,x.q,x.amt,x.q?Math.round(x.amt/x.q*100)/100:0,x.costQ?Math.round(x.cost/x.costQ*100)/100:"",m==null?"":Math.round(x.costQ?m/x.costQ*100:0)/100,m==null?"":Math.round(m),mp==null?"":mp,x.parties.size,total?Math.round(x.amt/total*1000)/10:0],
+            show:[esc(x.sku),fmt(x.q),short(x.amt),"₹"+(x.q?(x.amt/x.q).toFixed(2):"0"),x.costQ?"₹"+(x.cost/x.costQ).toFixed(2):"Not linked",m==null?"—":'<b style="color:'+(m<0?"var(--erp-red)":"var(--erp-green)")+'">₹'+(m/x.costQ).toFixed(2)+"</b>",m==null?"—":short(m),mp==null?"—":mp+"%",fmt(x.parties.size),(total?(x.amt/total*100).toFixed(1):"0")+"%"]};
+        });
+        return {title:"SKU Sales & Margin",head:["SKU","Cases","Amount","Avg Rate / Case","Landing / Case","Margin / Case","Total Margin","Margin %","Parties","Share of Sales"],num:[1,2,3,4,5,6,7,8,9],rows,sum:[1,2,6],
+          note:cost?"Margin = sale rate − landing (excl. ROI) from Rate & Scheme, with the MEPD scheme of the order date. Landing uses today's Rate & Scheme values. SKUs not linked in Rate & Scheme show no margin.":"Landing could not be read, so margin is not shown."};
+      }
+      if(tab==="smsku"){
+        const g=group(lines,l=>l.o.sm+"|"+key(l.sku),l=>({name:l.o.sm,sku:l.sku,q:0,amt:0,parties:new Set(),orders:new Set()}),(x,l)=>{x.q+=l.q;x.amt+=l.amt;x.parties.add(key(l.o.customer_name));x.orders.add(l.o.id)});
+        const rows=g.filter(x=>match(x.name+" "+x.sku)).sort((a,b)=>a.name.localeCompare(b.name)||b.amt-a.amt).map(x=>({data:[x.name,x.sku,x.orders.size,x.q,x.amt,x.parties.size],show:[esc(x.name),esc(x.sku),fmt(x.orders.size),fmt(x.q),short(x.amt),fmt(x.parties.size)]}));
+        return {title:"Which SKUs each salesman sells",head:["Salesman","SKU","Orders","Cases","Amount","Parties"],num:[2,3,4,5],rows,sum:[3,4],note:"Search a salesman's name to see only his SKUs."};
+      }
+      if(tab==="party"){
+        const g=group(orders,o=>key(o.customer_name),o=>({name:o.customer_name,city:o.city,sm:o.sm,orders:0,cases:0,value:0,last:""}),(x,o)=>{x.orders++;x.cases+=o.cases;x.value+=o.value;if(o.day>x.last)x.last=o.day});
+        const rows=g.filter(x=>match(x.name+" "+x.sm+" "+(x.city||""))).sort((a,b)=>b.value-a.value).map(x=>({data:[x.name,x.city||"",x.sm,x.orders,x.cases,x.value,x.last],show:[esc(x.name),esc(x.city||"—"),esc(x.sm),fmt(x.orders),fmt(x.cases),short(x.value),S.shortDate(x.last)]}));
+        return {title:"Party-wise Sales",head:["Party","City","Salesman","Orders","Cases","Amount","Last Order"],num:[3,4,5],rows,sum:[3,4,5]};
+      }
+      const BK=[["all","All"],["2","2 days"],["3","3–4 days"],["5","5–9 days"],["10","10+ days"],["never","Never ordered"]];
+      const bucket=d=>d==null?"never":d>=10?"10":d>=5?"5":d>=3?"3":d>=2?"2":"ok";
+      const list=parties.map(p=>({...p,days:p.last_order_date?S.daysBetween(p.last_order_date,today):null})).map(p=>({...p,b:bucket(p.days)})).filter(p=>p.b!=="ok");
+      const counts=Object.fromEntries(BK.map(([k])=>[k,k==="all"?list.length:list.filter(p=>p.b===k).length]));
+      const rows=list.filter(p=>(ageBucket==="all"||p.b===ageBucket)&&(!ageSm||(ageSm==="none"?!p.salesman_id:p.salesman_id===ageSm))&&match(p.customer_name+" "+(p.salesman_name||"")+" "+(p.city||"")))
+        .sort((a,b)=>(b.days==null?1e9:b.days)-(a.days==null?1e9:a.days)).map(p=>({data:[p.customer_name,p.city||"",p.salesman_name||"Office",p.last_order_date||"",p.days==null?"":p.days,p.last_order_no||"",num(p.orders_30d),num(p.amount_30d)],
+          show:[esc(p.customer_name),esc(p.city||"—"),esc(p.salesman_name||"Office"),S.shortDate(p.last_order_date),p.days==null?'<span class="sl-age never">Never</span>':'<span class="sl-age '+(p.days>=10?"a10":p.days>=5?"a5":"a2")+'">'+p.days+" days</span>",esc(p.last_order_no||"—"),fmt(p.orders_30d),short(p.amount_30d)]}));
+      return {title:"Parties with no order",tools:BK.map(([k,l])=>'<button type="button" class="erp-pill'+(ageBucket===k?" active":"")+'" data-age="'+k+'" style="padding:4px 6px 4px 10px;font-size:13px">'+l+'<span class="n">'+fmt(counts[k])+"</span></button>").join("")+
+          '<select id="ageSm" class="sl-in" style="width:auto"><option value="">All salesmen</option><option value="none"'+(ageSm==="none"?" selected":"")+'>Office</option>'+team.filter(t=>t.kind).map(t=>'<option value="'+t.user_id+'"'+(ageSm===t.user_id?" selected":"")+">"+esc(t.full_name)+"</option>").join("")+"</select>",
+        head:["Party","City","Salesman","Last Order","No Order For","Last PO","Orders (30 days)","Amount (30 days)"],num:[4,6,7],rows,
+        note:"Counted from today, from every non-cancelled PO (not only the selected dates). Active parties only."};
+    }
+
+    let current=null;
+    function render(){
+      el("tabs").innerHTML=TABS.map(([id,l])=>'<button type="button" class="erp-pill'+(id===tab?" active":"")+'" data-tab="'+id+'">'+esc(l)+"</button>").join("");
+      renderKpis();
+      if(err){el("box").innerHTML='<div class="sl-msg">Could not load: '+esc(err)+"</div>";el("tabTitle").textContent="";el("tabTools").innerHTML="";return}
+      const v=view();current=v;
+      el("tabTitle").textContent=v.title;el("tabTools").innerHTML=v.tools||"";el("note").textContent=v.note||"";
+      let foot=null;
+      if(v.sum&&v.rows.length)foot=v.head.map((h,i)=>i===0?"Total":v.sum.includes(i)?(/Amount|Margin/.test(h)?short(v.rows.reduce((a,r)=>a+num(r.data[i]),0)):fmt(v.rows.reduce((a,r)=>a+num(r.data[i]),0))):"");
+      el("box").innerHTML=(v.rows.length?S.table(v.head,v.rows.map(r=>r.show),v.num,foot):'<div class="erp-empty">No data for the selected dates.</div>')+(v.extra||"");
+    }
+    function renderKpis(){
+      if(err){el("kpis").innerHTML="";return}
+      const co=targetOf(null),tgt=co?num(co.target_amount):0,val=orders.reduce((a,o)=>a+o.value,0),cases=orders.reduce((a,o)=>a+o.cases,0);
+      const mr=S.monthRange(el("from").value.slice(0,7)),today=S.isoDay(new Date());
+      const done=Math.max(1,Math.min(mr.days,S.daysBetween(mr.from,today<mr.end?today:mr.end)+1)),proj=sameMonth()?val/done*mr.days:0;
+      const margin=lines.filter(l=>l.cost!=null).reduce((a,l)=>a+l.amt-l.cost,0),costed=lines.filter(l=>l.cost!=null).reduce((a,l)=>a+l.amt,0);
+      const today$=orders.filter(o=>o.day===today);
+      const p=pct(val,tgt);
+      const k=[
+        ["blue","Company Target",tgt?short(tgt):"Not set",tgt?"Achieved "+(p)+"%"+S.bar(p):'<a href="sales-team.html">Set in Sales Team Setup</a>'],
+        [p>=100?"green":"","Achieved",short(val),fmt(orders.length)+" orders · "+fmt(cases)+" cases"],
+        [tgt&&proj<tgt?"red":"green","Month-end Projection",sameMonth()?short(proj):"—",tgt&&sameMonth()?(proj>=tgt?"On track":"Short by "+short(tgt-proj)):"At today's speed"],
+        ["","Margin",costed?short(margin):"—",costed?(Math.round(margin/costed*1000)/10)+"% on linked SKUs":"Link SKUs in Rate & Scheme"],
+        ["","Today",short(today$.reduce((a,o)=>a+o.value,0)),fmt(today$.length)+" orders · "+fmt(today$.reduce((a,o)=>a+o.cases,0))+" cases"]
+      ];
+      el("kpis").innerHTML=k.map(x=>'<div class="sl-kpi '+x[0]+'"><span>'+esc(x[1])+"</span><b>"+x[2]+"</b><small>"+x[3]+"</small></div>").join("");
+    }
+    async function exportExcel(){
+      try{
+        if(err)return;
+        const keep=tab,sheets=[];
+        for(const [id,l] of TABS){tab=id;const v=view();sheets.push({name:l,title:"LUXURY WRIST BRAND — "+v.title+" — "+el("from").value+" to "+el("to").value,head:v.head,rows:v.rows.map(r=>r.data)})}
+        tab=keep;
+        await S.excel("Sales-Tracking-"+el("from").value+"-to-"+el("to").value,sheets);
+      }catch(e){await alert("Excel export failed: "+e.message)}
+    }
+    function setMonth(){
+      const m=el("month").value;if(!m)return;const r=S.monthRange(m);
+      el("from").value=r.from;el("to").value=r.to;if(day<r.from||day>r.to)day=r.to;loadAll();
+    }
+
+    (async()=>{
+      const me=await S.start(["admin","manager"]);if(!me)return;
+      const today=S.isoDay(new Date());
+      el("month").value=today.slice(0,7);el("from").value=today.slice(0,8)+"01";el("to").value=today;
+      el("kpis").style.gridTemplateColumns="repeat(auto-fit,minmax(170px,1fr))";
+      try{const t=localStorage.getItem("lwb_sales_tracking_tab");if(TABS.some(x=>x[0]===t))tab=t}catch(e){}
+      const p=new URLSearchParams(location.search).get("tab");if(TABS.some(x=>x[0]===p))tab=p;
+      document.addEventListener("click",e=>{
+        const b=e.target.closest("[data-tab]");if(b){tab=b.dataset.tab;try{localStorage.setItem("lwb_sales_tracking_tab",tab)}catch(x){}render();return}
+        const a=e.target.closest("[data-age]");if(a){ageBucket=a.dataset.age;render();return}
+        const d=e.target.closest("tr[data-day]");if(d){day=d.dataset.day;render()}
+      });
+      document.addEventListener("change",e=>{
+        if(e.target.id==="day"&&e.target.value){day=e.target.value;if(day<el("from").value||day>el("to").value){el("from").value=day.slice(0,8)+"01";el("to").value=day;el("month").value=day.slice(0,7);loadAll()}else render()}
+        if(e.target.id==="ageSm"){ageSm=e.target.value;render()}
+      });
+      el("q").addEventListener("input",render);
+      el("refresh").onclick=loadAll;el("excel").onclick=exportExcel;
+      el("month").addEventListener("change",setMonth);
+      el("from").addEventListener("change",loadAll);el("to").addEventListener("change",loadAll);
+      el("basis").addEventListener("change",loadAll);el("credit").addEventListener("change",loadAll);
+      el("loading").hidden=true;el("page").hidden=false;
+      await loadAll();
+    })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>My Sales | Luxury Wrist Brand ERP</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <link rel="stylesheet" href="erp-shell.css">
+  <link rel="stylesheet" href="sales.css">
+  <script src="erp-shell.js"></script>
+  <script src="sales-common.js"></script>
+</head>
+<body>
+  <div id="loading" class="status">Checking account access...</div>
+  <main id="page" class="erp-main" hidden>
+    <div class="erp-pagehead"><h1>My Sales</h1><span class="grow"></span><a class="sl-btn" href="order-entry.html" style="display:inline-flex;align-items:center;text-decoration:none">+ New PO</a></div>
+    <p class="sl-sub" id="sub">Today's plan, your target and your parties.</p>
+    <div class="sl-kpis" id="kpis" style="grid-template-columns:repeat(auto-fit,minmax(160px,1fr))"></div>
+    <section class="erp-card" style="margin-bottom:14px">
+      <div class="erp-card-head"><h2>Today's Plan</h2><small id="planInfo" style="color:var(--erp-muted)"></small></div>
+      <div class="erp-card-body" id="plan">Loading...</div>
+    </section>
+    <div class="erp-pills" id="tabs"></div>
+    <section class="erp-card">
+      <div class="erp-card-head"><h2 id="tabTitle"></h2><input id="q" class="sl-in" type="search" placeholder="Search..." autocomplete="off" style="width:220px"></div>
+      <div class="sl-scroll" id="box"></div>
+    </section>
+    <p class="sl-note" id="note"></p>
+  </main>
+  <script>
+    const S=LWBSales,{client,el,esc,fmt,short,num,key,pct}=S;
+    let me=null,plan=null,parties=[],orders=[],lines=[],target=null,tab="parties",err="";
+    const TABS=[["parties","My Parties"],["orders","My Orders"],["skus","My SKUs"]];
+
+    async function load(){
+      const today=S.isoDay(new Date()),m=S.monthRange(today.slice(0,7));
+      const pl=await client.rpc("lwb_my_sales_plan");
+      if(pl.error){err=/lwb_my_sales_plan/.test(pl.error.message)?"Sales Team setup is not installed yet. Ask Admin.":pl.error.message;render();return}
+      plan=pl.data||{};
+      const [pa,ta]=await Promise.all([client.rpc("lwb_party_activity"),client.from("lwb_sales_targets").select("*").eq("month",m.from).eq("salesman_id",me.user.id).maybeSingle()]);
+      parties=pa.data||[];target=ta.data||null;
+      try{
+        let list=await S.orders(m.from,today);
+        // Office salesman sees every order; his own work is the orders he took.
+        if(plan.kind!=="FIELD")list=list.filter(o=>o.created_by===me.user.id);
+        orders=list.map(o=>({...o,day:S.istDay(o.order_date||o.created_at)}));
+        const items=await S.inChunks("order_items","order_id",orders.map(o=>o.id),"order_id,sku_name,ordered_qty,approved_qty,loaded_qty,rate");
+        const by=new Map(orders.map(o=>[o.id,o]));
+        lines=items.map(it=>{const o=by.get(it.order_id),q=S.lineQty(it,o,"booked");return {o,sku:String(it.sku_name||"").trim(),q,amt:q*num(it.rate)}}).filter(l=>l.q);
+      }catch(e){err=e.message}
+      render();
+    }
+
+    function render(){
+      if(err&&!plan){el("plan").innerHTML='<div class="sl-msg">'+esc(err)+"</div>";return}
+      const today=S.isoDay(new Date()),m=S.monthRange(today.slice(0,7));
+      if(plan&&plan.setup===false)el("sub").textContent="Admin or Sales Head has not set you up as a Field or Office salesman yet.";
+      const val=orders.reduce((a,o)=>a+num(o.total_amount),0),cases=orders.reduce((a,o)=>a+num(o.total_qty),0);
+      const tgt=target?num(target.target_amount):0,p=pct(val,tgt),left=S.daysBetween(today,m.end)+1,bal=Math.max(0,tgt-val);
+      const t=orders.filter(o=>o.day===today);
+      el("kpis").innerHTML=[
+        ["blue","My Target ("+today.slice(0,7)+")",tgt?short(tgt):"Not set",tgt?(p+"% achieved")+S.bar(p):"Ask Sales Head"],
+        [p>=100?"green":"","Achieved This Month",short(val),fmt(orders.length)+" orders · "+fmt(cases)+" cases"],
+        [bal?"red":"green","Balance",tgt?short(bal):"—",tgt&&bal?short(bal/left)+" needed per day":tgt?"Target done":""],
+        ["","Today",short(t.reduce((a,o)=>a+num(o.total_amount),0)),fmt(t.length)+" orders · "+fmt(t.reduce((a,o)=>a+num(o.total_qty),0))+" cases"]
+      ].map(x=>'<div class="sl-kpi '+x[0]+'"><span>'+esc(x[1])+"</span><b>"+x[2]+"</b><small>"+x[3]+"</small></div>").join("");
+      const pp=(plan&&plan.parties)||[],notes=(plan&&plan.notes)||[];
+      el("planInfo").textContent=plan&&plan.setup!==false?pp.length+(pp.length===1?" party":" parties")+" due (no order for "+(plan.due_after_days||3)+"+ days)":"";
+      el("plan").innerHTML=(notes.length?'<p style="margin:0 0 10px"><b>Sales Head:</b> '+notes.map(esc).join(" · ")+"</p>":"")+
+        (pp.length?'<ol class="sl-plan" style="margin:0;padding-left:20px">'+pp.map(x=>"<li><b>"+esc(x.name)+"</b>"+(x.city?" · "+esc(x.city):"")+" — "+(x.days==null?"no order yet":x.days+" days since last order")+' <a href="order-entry.html?party='+encodeURIComponent(x.name)+'">Take order</a></li>').join("")+"</ol>":
+          '<p style="margin:0;color:var(--erp-muted)">'+(plan&&plan.setup===false?"No plan until you are set up.":"Every party has ordered recently. Good work!")+"</p>");
+      el("tabs").innerHTML=TABS.map(([id,l])=>'<button type="button" class="erp-pill'+(id===tab?" active":"")+'" data-tab="'+id+'">'+esc(l)+"</button>").join("");
+      const q=key(el("q").value),hit=s=>!q||key(s).includes(q);
+      let head,rows,numCols,note="";
+      if(tab==="parties"){
+        const list=parties.map(x=>({...x,days:x.last_order_date?S.daysBetween(x.last_order_date,today):null})).filter(x=>hit(x.customer_name+" "+(x.city||"")))
+          .sort((a,b)=>(b.days==null?1e9:b.days)-(a.days==null?1e9:a.days));
+        head=["Party","City","Last Order","No Order For","Orders (30 days)",""];numCols=[4];
+        rows=list.slice(0,300).map(x=>[esc(x.customer_name),esc(x.city||"—"),S.shortDate(x.last_order_date),x.days==null?'<span class="sl-age never">Never</span>':'<span class="sl-age '+(x.days>=10?"a10":x.days>=5?"a5":x.days>=2?"a2":"")+'">'+(x.days===0?"Today":x.days+" days")+"</span>",fmt(x.orders_30d),'<a href="order-entry.html?party='+encodeURIComponent(x.customer_name)+'">Take order</a>']);
+        note=plan&&plan.kind==="FIELD"?"Only your assigned parties are shown. Ask the Sales Head to add a party to your list.":"";
+      }else if(tab==="orders"){
+        head=["Date","PO No.","Party","Status","Cases","Amount"];numCols=[4,5];
+        rows=orders.filter(o=>hit(o.order_no+" "+o.customer_name)).sort((a,b)=>b.day.localeCompare(a.day)).map(o=>[S.shortDate(o.day),esc(o.order_no),esc(o.customer_name),esc(String(o.status||"").replace(/_/g," ")),fmt(o.total_qty),short(o.total_amount)]);
+        note="This month's orders"+(plan&&plan.kind==="FIELD"?" for your parties.":" you took.");
+      }else{
+        const g=new Map();for(const l of lines){const k=key(l.sku);if(!g.has(k))g.set(k,{sku:l.sku,q:0,amt:0,p:new Set()});const x=g.get(k);x.q+=l.q;x.amt+=l.amt;x.p.add(key(l.o.customer_name))}
+        head=["SKU","Cases","Amount","Parties"];numCols=[1,2,3];
+        rows=[...g.values()].filter(x=>hit(x.sku)).sort((a,b)=>b.amt-a.amt).map(x=>[esc(x.sku),fmt(x.q),short(x.amt),fmt(x.p.size)]);
+        note="SKUs you sold this month.";
+      }
+      el("tabTitle").textContent=TABS.find(x=>x[0]===tab)[1];
+      el("box").innerHTML=rows.length?S.table(head,rows,numCols):'<div class="erp-empty">Nothing to show.</div>';
+      el("note").textContent=(err?"Some data could not load: "+err+". ":"")+note;
+    }
+
+    (async()=>{
+      me=await S.start(["sales"]);if(!me)return;
+      document.addEventListener("click",e=>{const b=e.target.closest("[data-tab]");if(b){tab=b.dataset.tab;render()}});
+      el("q").addEventListener("input",render);
+      el("loading").hidden=true;el("page").hidden=false;
+      await load();
+    })();
+  </script>
+</body>
+</html>

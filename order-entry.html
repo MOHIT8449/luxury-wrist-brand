@@ -481,6 +481,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     await loadSkuMaster();
     initializePartySearch();
     await loadRates();
+    await prefillParty(new URLSearchParams(location.search).get("party"));
     document.getElementById("orderDate").addEventListener("change", updateLandingCells);
     calculateTotals();
 
@@ -520,7 +521,9 @@ function renderPartyResults() {
   if (!partyResults.length) {
     const div = document.createElement("div");
     div.className = "party-empty";
-    div.textContent = "No matching active Party found. Add the Party in Customer Master first.";
+    div.textContent = String(currentProfile?.role || "").toLowerCase() === "sales"
+      ? "No matching Party in your list. Only parties assigned to you are shown; ask the Sales Head to add one."
+      : "No matching active Party found. Add the Party in Customer Master first.";
     menu.appendChild(div);
   }
   partyResults.forEach((party, index) => {
@@ -612,6 +615,17 @@ function initializePartySearch() {
   document.addEventListener("click", (event) => {
     if (!document.getElementById("partyPicker").contains(event.target)) setPartyMenu(false);
   });
+}
+
+// "Take order" from My Sales opens PO Entry with ?party=NAME.
+async function prefillParty(name) {
+  if (!name) return;
+  const {data} = await db.from("lwb_customer_master")
+    .select("id,customer_code,customer_name")
+    .eq("is_active", true)
+    .ilike("customer_name", name.trim().replace(/[%_\\]/g, ""))
+    .limit(1);
+  if (data && data[0]) pickParty(data[0]);
 }
 
 function schedulePartySearch(text) {
@@ -963,6 +977,10 @@ function calculateTotals(){
 /* CREATE ORDER NUMBER */
 
 async function generateOrderNo(){
+
+  // Field salesmen cannot read every order, so the database gives the next number.
+  const next = await db.rpc("lwb_next_order_no");
+  if(!next.error && /^LXY-\d+$/.test(String(next.data || ""))) return next.data;
 
   const {data,error} =
     await db

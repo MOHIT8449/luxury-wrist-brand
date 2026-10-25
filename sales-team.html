@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sales Team Setup | Luxury Wrist Brand ERP</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <link rel="stylesheet" href="erp-shell.css">
+  <link rel="stylesheet" href="sales.css">
+  <script src="erp-shell.js"></script>
+  <script src="sales-common.js"></script>
+</head>
+<body>
+  <div id="loading" class="status">Checking account access...</div>
+  <main id="page" class="erp-main" hidden>
+    <div class="erp-pagehead"><h1>Sales Team Setup</h1><span class="grow"></span><a class="sl-btn ghost" href="sales-tracking.html" style="display:inline-flex;align-items:center;text-decoration:none">Sales Tracking →</a></div>
+    <p class="sl-sub">Salesmen, their parties, which SKUs each salesman can see, monthly targets and the morning plan.</p>
+    <div class="erp-pills" id="tabs"></div>
+    <section class="erp-card" id="card"></section>
+    <p class="sl-note" id="note"></p>
+  </main>
+  <script>
+    const S=LWBSales,{client,el,esc,fmt,short,num,key}=S;
+    let me=null,tab="team",team=[],parties=[],skus=[],rules=[],targets=[],notes=[],settings={due_after_days:3},setupError="";
+    let pf={q:"",sm:"",city:""},picked=new Set(),tMonth=S.isoDay(new Date()).slice(0,7);
+    const salesmen=()=>team.filter(t=>t.kind);
+    const nameOf=id=>(team.find(t=>t.user_id===id)||{}).full_name||"—";
+    const TABS=[["team","Salesmen"],["parties","Party Assignment"],["skus","SKU Visibility"],["targets","Monthly Targets"],["plan","Morning Plan"]];
+
+    async function loadAll(){
+      setupError="";
+      const r=await client.rpc("lwb_sales_team");
+      if(r.error){setupError=/lwb_sales_team/.test(r.error.message)?"Run lwb_sales_team_setup.sql in Supabase first.":r.error.message;render();return}
+      team=r.data||[];
+      const [pa,sk,ru,ta,no,st]=await Promise.all([
+        client.rpc("lwb_party_activity"),
+        client.from("sku_master").select("sku_name,category,is_active").order("sku_name"),
+        client.from("lwb_sku_salesman_rules").select("sku_key,salesman_id,rule"),
+        client.from("lwb_sales_targets").select("month,salesman_id,target_amount,target_cases"),
+        client.from("lwb_sales_plan_notes").select("id,plan_date,salesman_id,note,created_at").eq("plan_date",S.isoDay(new Date())).order("created_at"),
+        client.from("lwb_sales_settings").select("due_after_days").eq("id",1).maybeSingle()
+      ]);
+      parties=pa.data||[];skus=(sk.data||[]).filter(x=>x.is_active!==false);rules=ru.data||[];targets=ta.data||[];notes=no.data||[];
+      if(st.data)settings=st.data;
+      const err=[pa,sk,ru,ta,no].find(x=>x.error);if(err)setupError=err.error.message;
+      render();
+    }
+
+    function render(){
+      el("tabs").innerHTML=TABS.map(([id,l])=>'<button type="button" class="erp-pill'+(id===tab?" active":"")+'" data-tab="'+id+'">'+esc(l)+"</button>").join("");
+      const card=el("card");
+      if(setupError){card.innerHTML='<div class="sl-msg">'+esc(setupError)+"</div>";el("note").textContent="";return}
+      ({team:renderTeam,parties:renderParties,skus:renderSkus,targets:renderTargets,plan:renderPlan})[tab](card);
+    }
+
+    // ---- Salesmen
+    function renderTeam(card){
+      const rows=team.map(t=>({attr:' data-id="'+t.user_id+'"'+(t.active?"":' class="off"'),cells:[
+        esc(t.full_name||"—")+(t.active?"":' <span class="erp-badge">Inactive</span>'),esc(t.mobile||"—"),
+        '<select class="sl-in" data-f="kind"><option value="">Not set up</option><option value="FIELD"'+(t.kind==="FIELD"?" selected":"")+'>Field (own parties only)</option><option value="OFFICE"'+(t.kind==="OFFICE"?" selected":"")+'>Office (all parties)</option></select>',
+        '<input class="sl-in" data-f="area" maxlength="120" placeholder="e.g. Surat city, Bardoli" value="'+esc(t.area||"")+'">',
+        fmt(t.parties),'<button type="button" class="sl-btn small" data-save-sm>Save</button>']}));
+      card.innerHTML='<div class="erp-card-head"><h2>Salesmen</h2><small style="color:var(--erp-muted)">'+team.length+' SALES logins</small></div>'+
+        (rows.length?'<div class="sl-scroll">'+S.table(["Salesman","Mobile","Type","Area / Route","Parties",""],rows,[4])+"</div>":'<div class="erp-empty">No SALES logins yet. Give the SALES role in Manage Users first.</div>');
+      el("note").textContent="Field salesman: sees and takes orders only for his own parties, no outstanding or ledger. Office salesman: takes orders for every party. Sales Head = MANAGER role in Manage Users; Admin and Sales Head see everything.";
+    }
+    async function saveSalesman(tr){
+      const kind=tr.querySelector('[data-f="kind"]').value,area=tr.querySelector('[data-f="area"]').value;
+      if(!kind){await alert("Select Field or Office.");return}
+      const {error}=await client.rpc("lwb_save_salesman",{p_user_id:tr.dataset.id,p_kind:kind,p_area:area});
+      if(error){await alert("Could not save: "+error.message);return}
+      ERPShell.toast("Salesman saved.");await loadAll();
+    }
+
+    // ---- Parties
+    function ageCell(d){
+      if(!d)return '<span class="sl-age never">No order yet</span>';
+      const n=S.daysBetween(d,S.isoDay(new Date()));
+      return '<span class="sl-age '+(n>=10?"a10":n>=5?"a5":n>=2?"a2":"")+'">'+(n===0?"Today":n+" days")+"</span>";
+    }
+    function partyList(){
+      const q=key(pf.q);
+      return parties.filter(p=>(!q||key(p.customer_name+" "+(p.city||"")).includes(q))&&(!pf.city||key(p.city)===pf.city)&&
+        (!pf.sm||(pf.sm==="none"?!p.salesman_id:p.salesman_id===pf.sm)));
+    }
+    function smOptions(sel,withNone){
+      return (withNone?'<option value="">Office (no salesman)</option>':"")+salesmen().map(t=>'<option value="'+t.user_id+'"'+(t.user_id===sel?" selected":"")+">"+esc(t.full_name)+" · "+(t.kind==="FIELD"?"Field":"Office")+"</option>").join("");
+    }
+    function renderParties(card){
+      const list=partyList(),cities=[...new Set(parties.map(p=>key(p.city)).filter(Boolean))].sort();
+      const unassigned=parties.filter(p=>!p.salesman_id).length;
+      const rows=list.slice(0,500).map(p=>({attr:' data-id="'+p.customer_id+'"',cells:[
+        '<input type="checkbox" data-pick'+(picked.has(p.customer_id)?" checked":"")+' aria-label="Select party">',esc(p.customer_name),esc(p.city||"—"),
+        '<select class="sl-in" data-assign>'+smOptions(p.salesman_id,true)+"</select>",ageCell(p.last_order_date),fmt(p.orders_30d)]}));
+      card.innerHTML='<div class="erp-card-head"><h2>Party Assignment</h2><small style="color:var(--erp-muted)">'+fmt(parties.length)+" parties · "+fmt(unassigned)+" with office</small></div>"+
+        '<div class="sl-bulk"><div class="sl-filters" style="margin:0;flex:1">'+
+        '<div class="grow"><label for="pq">Search party / city</label><input id="pq" type="search" value="'+esc(pf.q)+'" autocomplete="off"></div>'+
+        '<div><label for="psm">Salesman</label><select id="psm"><option value="">All</option><option value="none"'+(pf.sm==="none"?" selected":"")+'>Office (unassigned)</option>'+salesmen().map(t=>'<option value="'+t.user_id+'"'+(pf.sm===t.user_id?" selected":"")+">"+esc(t.full_name)+"</option>").join("")+"</select></div>"+
+        '<div><label for="pcity">City</label><select id="pcity"><option value="">All</option>'+cities.map(c=>'<option'+(pf.city===c?" selected":"")+">"+esc(c)+"</option>").join("")+"</select></div></div></div>"+
+        '<div class="sl-bulk"><b id="pickN">'+picked.size+' selected</b><button type="button" class="sl-btn ghost small" data-pick-all>Select all shown</button><button type="button" class="sl-btn ghost small" data-pick-none>Clear</button>'+
+        '<span>Assign to</span><select class="sl-in" id="bulkSm" style="width:auto">'+smOptions("",true)+'</select><button type="button" class="sl-btn small" data-bulk>Assign selected</button></div>'+
+        (salesmen().length?"":'<div class="erp-empty">Set up salesmen in the Salesmen tab first.</div>')+
+        (rows.length?'<div class="sl-scroll">'+S.table(["","Party","City","Salesman","Last Order","Orders (30 days)"],rows,[5])+"</div>":'<div class="erp-empty">No party matches.</div>');
+      el("note").textContent=(list.length>500?"Showing first 500 of "+fmt(list.length)+". Use the filters. ":"")+"Changing the Salesman dropdown saves at once. A party with Office (no salesman) is visible only to Office salesmen, the Sales Head and Admin.";
+    }
+    async function assign(ids,sm){
+      const {data,error}=await client.rpc("lwb_assign_parties",{p_customer_ids:ids,p_salesman_id:sm||null});
+      if(error){await alert("Could not assign: "+error.message);return false}
+      for(const p of parties)if(ids.includes(p.customer_id)){p.salesman_id=sm||null;p.salesman_name=sm?nameOf(sm):null}
+      team.forEach(t=>t.parties=parties.filter(p=>p.salesman_id===t.user_id).length);
+      ERPShell.toast(fmt(ids.length)+" "+(ids.length===1?"party":"parties")+" assigned to "+(sm?nameOf(sm):"Office")+".");
+      return true;
+    }
+
+    // ---- SKU visibility
+    function skuRule(name){
+      const r=rules.filter(x=>x.sku_key===key(name));
+      return {mode:r.length?r[0].rule:"ALL",ids:new Set(r.map(x=>x.salesman_id))};
+    }
+    function renderSkus(card){
+      const q=key(pf.sq||""),list=skus.filter(s=>!q||key(s.sku_name+" "+(s.category||"")).includes(q));
+      const limited=skus.filter(s=>skuRule(s.sku_name).mode!=="ALL").length;
+      const rows=list.map(s=>{const r=skuRule(s.sku_name);return {attr:' data-sku="'+esc(s.sku_name)+'"',cells:[esc(s.sku_name),esc(s.category||"—"),
+        '<select class="sl-in" data-mode><option value="ALL">All salesmen</option><option value="ONLY"'+(r.mode==="ONLY"?" selected":"")+'>Only selected salesmen</option><option value="HIDE"'+(r.mode==="HIDE"?" selected":"")+'>Hidden for selected</option></select>',
+        '<div class="sl-chips"'+(r.mode==="ALL"?" hidden":"")+">"+salesmen().map(t=>'<label class="sl-chip'+(r.ids.has(t.user_id)?" on":"")+'"><input type="checkbox" value="'+t.user_id+'"'+(r.ids.has(t.user_id)?" checked":"")+">"+esc(t.full_name)+"</label>").join("")+"</div>",
+        '<button type="button" class="sl-btn small" data-save-sku>Save</button>']}});
+      card.innerHTML='<div class="erp-card-head"><h2>SKU Visibility per Salesman</h2><small style="color:var(--erp-muted)">'+limited+" SKUs limited</small></div>"+
+        '<div class="sl-bulk"><div class="sl-filters" style="margin:0;flex:1"><div class="grow"><label for="sq">Search SKU / category</label><input id="sq" type="search" value="'+esc(pf.sq||"")+'" autocomplete="off"></div></div></div>'+
+        (rows.length?'<div class="sl-scroll">'+S.table(["SKU","Category","Who can see it","Salesmen",""],rows)+"</div>":'<div class="erp-empty">No SKU matches.</div>');
+      el("note").textContent="Use this when stock is kept for some parties: the SKU disappears from that salesman's PO Entry and SKU list. It applies to SALES logins only; Admin and Sales Head always see every SKU. Live stock is shown only to Admin, Sales Head, Warehouse and Accounts.";
+    }
+    async function saveSku(tr){
+      const mode=tr.querySelector("[data-mode]").value,ids=[...tr.querySelectorAll(".sl-chips input:checked")].map(x=>x.value);
+      if(mode!=="ALL"&&!ids.length){await alert("Select at least one salesman.");return}
+      const {error}=await client.rpc("lwb_set_sku_visibility",{p_sku_name:tr.dataset.sku,p_mode:mode,p_salesmen:ids});
+      if(error){await alert("Could not save: "+error.message);return}
+      const k=key(tr.dataset.sku);rules=rules.filter(x=>x.sku_key!==k).concat(mode==="ALL"?[]:ids.map(id=>({sku_key:k,salesman_id:id,rule:mode})));
+      ERPShell.toast("SKU visibility saved.");render();
+    }
+
+    // ---- Targets
+    function targetOf(id){const m=tMonth+"-01";return targets.find(t=>t.month===m&&(t.salesman_id||null)===(id||null))||{target_amount:0,target_cases:0}}
+    function renderTargets(card){
+      const co=targetOf(null),sm=salesmen();
+      const sum=sm.reduce((a,t)=>a+num(targetOf(t.user_id).target_amount),0);
+      const row=(id,label,t)=>({attr:' data-id="'+(id||"")+'"',cells:[label,
+        '<input class="sl-in" type="number" min="0" step="1000" data-f="amt" value="'+(num(t.target_amount)||"")+'" placeholder="₹ amount"><div class="sl-help">'+(num(t.target_amount)?short(t.target_amount):"&nbsp;")+"</div>",
+        '<input class="sl-in" type="number" min="0" step="1" data-f="cases" value="'+(num(t.target_cases)||"")+'" placeholder="Cases (optional)">']});
+      card.innerHTML='<div class="erp-card-head"><h2>Monthly Targets</h2><div class="sl-filters" style="margin:0"><div><label for="tm">Month</label><input id="tm" type="month" value="'+tMonth+'"></div><div><label>&nbsp;</label><button type="button" class="sl-btn" data-save-targets>Save Targets</button></div></div></div>'+
+        '<div class="sl-scroll">'+S.table(["Target for","Target Amount ₹","Target Cases"],[row(null,"<b>Company target (distributor)</b>",co),...sm.map(t=>row(t.user_id,esc(t.full_name)+' <span class="erp-badge">'+(t.kind==="FIELD"?"Field":"Office")+"</span>",targetOf(t.user_id)))],[],
+          ["Salesmen total",short(sum)+(num(co.target_amount)?" of "+short(co.target_amount):""),""])+"</div>";
+      el("note").textContent="Enter rupees in full (2 crore = 20000000). Achievement is shown on Sales Tracking and on each salesman's My Sales page.";
+    }
+    async function saveTargets(){
+      const rows=[...el("card").querySelectorAll("tbody tr")].map(tr=>({salesman_id:tr.dataset.id||null,target_amount:num(tr.querySelector('[data-f="amt"]').value),target_cases:num(tr.querySelector('[data-f="cases"]').value)}));
+      const {error}=await client.rpc("lwb_save_sales_targets",{p_month:tMonth+"-01",p_rows:rows});
+      if(error){await alert("Could not save targets: "+error.message);return}
+      ERPShell.toast("Targets saved for "+tMonth+".");await loadAll();
+    }
+
+    // ---- Morning plan
+    function renderPlan(card){
+      const today=S.isoDay(new Date()),due=num(settings.due_after_days)||3;
+      const rows=salesmen().map(t=>{
+        const mine=parties.filter(p=>p.salesman_id===t.user_id);
+        const d=mine.filter(p=>!p.last_order_date||S.daysBetween(p.last_order_date,today)>=due);
+        return [esc(t.full_name),t.kind==="FIELD"?"Field":"Office",fmt(mine.length),fmt(d.length),esc(d.slice(0,6).map(p=>p.customer_name).join(", "))+(d.length>6?" …":"")];
+      });
+      card.innerHTML='<div class="erp-card-head"><h2>Morning Plan Notification</h2><div style="display:flex;gap:8px;flex-wrap:wrap"><button type="button" class="sl-btn" data-send="0">Send today\'s plan</button><button type="button" class="sl-btn ghost" data-send="1">Send again with latest notes</button></div></div>'+
+        '<div class="erp-card-body"><div class="sl-filters"><div><label for="due">Party is due after (days with no order)</label><input id="due" type="number" min="1" max="60" value="'+due+'" style="width:120px"></div><div><label>&nbsp;</label><button type="button" class="sl-btn ghost" data-save-due>Save</button></div></div>'+
+        '<div class="sl-filters"><div><label for="nsm">Note for</label><select id="nsm"><option value="">All salesmen</option>'+smOptions("",false)+'</select></div><div class="grow"><label for="ntext">Today\'s note from Sales Head</label><input id="ntext" maxlength="500" placeholder="e.g. Push 2L PET today; collect pending payment from big parties"></div><div><label>&nbsp;</label><button type="button" class="sl-btn" data-add-note>Add note</button></div></div>'+
+        (notes.length?'<ul class="sl-plan">'+notes.map(n=>"<li><b>"+esc(n.salesman_id?nameOf(n.salesman_id):"All")+":</b> "+esc(n.note)+' <button type="button" class="sl-btn ghost small" data-del-note="'+n.id+'">Remove</button></li>').join("")+"</ul>":'<p class="sl-help">No note for today.</p>')+
+        "</div>"+(rows.length?'<div class="sl-scroll">'+S.table(["Salesman","Type","Parties","Due today","Due parties"],rows,[2,3])+"</div>":"");
+      el("note").textContent="Each salesman gets one 🔔 notification a day with his due parties and today's notes. It is sent automatically at 8:30 AM if pg_cron is on in Supabase, otherwise when he first opens the ERP, or when you click Send.";
+    }
+
+    (async()=>{
+      me=await S.start(["admin","manager"]);if(!me)return;
+      try{const t=localStorage.getItem("lwb_sales_team_tab");if(TABS.some(x=>x[0]===t))tab=t}catch(e){}
+      document.addEventListener("click",async e=>{
+        const t=e.target;
+        const tb=t.closest("[data-tab]");if(tb){tab=tb.dataset.tab;try{localStorage.setItem("lwb_sales_team_tab",tab)}catch(x){}render();return}
+        if(t.closest("[data-save-sm]"))return saveSalesman(t.closest("tr"));
+        if(t.closest("[data-save-sku]"))return saveSku(t.closest("tr"));
+        if(t.closest("[data-save-targets]"))return saveTargets();
+        if(t.matches("[data-pick]")){const id=t.closest("tr").dataset.id;t.checked?picked.add(id):picked.delete(id);el("pickN").textContent=picked.size+" selected";return}
+        if(t.closest("[data-pick-all]")){partyList().slice(0,500).forEach(p=>picked.add(p.customer_id));render();return}
+        if(t.closest("[data-pick-none]")){picked.clear();render();return}
+        if(t.closest("[data-bulk]")){
+          if(!picked.size){await alert("Select at least one party.");return}
+          const sm=el("bulkSm").value;
+          if(!await confirm("Assign "+picked.size+" parties to "+(sm?nameOf(sm):"Office (no salesman)")+"?"))return;
+          if(await assign([...picked],sm)){picked.clear();render()}return;
+        }
+        if(t.closest("[data-send]")){
+          const {data,error}=await client.rpc("lwb_send_sales_plans",{p_force:t.closest("[data-send]").dataset.send==="1"});
+          if(error){await alert("Could not send: "+error.message);return}
+          await alert(data?"Plan sent to "+data+" salesmen.":"Nothing new to send. Every salesman already has today's plan (use Send again after adding a note).");return;
+        }
+        if(t.closest("[data-save-due]")){
+          const {error}=await client.rpc("lwb_save_sales_settings",{p_due_after_days:Math.round(num(el("due").value))});
+          if(error){await alert("Could not save: "+error.message);return}
+          settings.due_after_days=Math.round(num(el("due").value));ERPShell.toast("Saved.");render();return;
+        }
+        if(t.closest("[data-add-note]")){
+          const note=el("ntext").value.trim();if(!note){await alert("Enter the note.");return}
+          const {error}=await client.rpc("lwb_add_sales_plan_note",{p_date:S.isoDay(new Date()),p_salesman_id:el("nsm").value||null,p_note:note});
+          if(error){await alert("Could not add note: "+error.message);return}
+          await loadAll();return;
+        }
+        const dn=t.closest("[data-del-note]");
+        if(dn){const {error}=await client.rpc("lwb_delete_sales_plan_note",{p_id:Number(dn.dataset.delNote)});if(error){await alert(error.message);return}await loadAll()}
+      });
+      document.addEventListener("change",async e=>{
+        const t=e.target;
+        if(t.matches("[data-assign]")){if(!await assign([t.closest("tr").dataset.id],t.value))await loadAll();return}
+        if(t.matches("[data-mode]")){const c=t.closest("tr").querySelector(".sl-chips");c.hidden=t.value==="ALL";return}
+        if(t.matches(".sl-chips input")){t.closest(".sl-chip").classList.toggle("on",t.checked);return}
+        if(t.id==="psm"){pf.sm=t.value;render()}else if(t.id==="pcity"){pf.city=t.value;render()}
+        else if(t.id==="tm"&&t.value){tMonth=t.value;render()}
+      });
+      let timer;
+      document.addEventListener("input",e=>{
+        const t=e.target;if(t.id!=="pq"&&t.id!=="sq")return;
+        clearTimeout(timer);timer=setTimeout(()=>{if(t.id==="pq")pf.q=t.value;else pf.sq=t.value;render();const f=el(t.id);if(f){f.focus();f.setSelectionRange(f.value.length,f.value.length)}},250);
+      });
+      el("loading").hidden=true;el("page").hidden=false;
+      await loadAll();
+    })();
+  </script>
+</body>
+</html>
