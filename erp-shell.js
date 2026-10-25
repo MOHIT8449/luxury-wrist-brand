@@ -42,6 +42,7 @@
     {group:"Delivery",items:[
       {t:"Driver Delivery / POD",h:"driver-delivery.html",i:"pin",r:"admin manager driver accounts"}]},
     {group:"Reports",items:[
+      {t:"Daily Summary",h:"daily-report.html",i:"stock",r:"admin manager accounts"},
       {t:"Team Work Report",h:"team-report.html",i:"users",r:"admin manager"}]},
     {group:"Returns",items:[
       {t:"Driver Returns Approval",h:"driver-returns.html",i:"undo",r:"admin accounts manager warehouse"},
