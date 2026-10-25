@@ -1,0 +1,370 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sheet &amp; Pallet Ledger | Luxury Wrist Brand ERP</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <link rel="stylesheet" href="erp-shell.css">
+  <script src="erp-shell.js"></script>
+  <style>
+    .status{text-align:center;padding:80px 20px;font-size:15px;color:#555}
+    .sp-sub{margin:-8px 0 14px;color:var(--erp-muted);font-size:15px}
+    .sp-kpis{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;margin-bottom:16px}
+    .sp-kpi{background:#fff;border:1px solid var(--erp-line);border-radius:8px;padding:16px;border-top:4px solid var(--c,#c8102e)}
+    .sp-kpi h3{margin:0 0 8px;font-size:15px;color:#4b5763;font-weight:600}
+    .sp-kpi .big{font-size:24px;font-weight:800;color:var(--erp-ink);line-height:1.25}
+    .sp-kpi small{display:block;color:var(--erp-muted);font-size:14px;margin-top:6px}
+    .sp-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px}
+    .sp-grid label{display:block;font-size:14px;font-weight:600;color:#4b5763;margin-bottom:5px}
+    .sp-grid input,.sp-grid select,.sp-grid textarea{width:100%;height:42px;border:1.5px solid var(--erp-line);border-radius:6px;padding:0 10px;font:inherit;font-size:15px;background:#fff;color:var(--erp-ink)}
+    .sp-grid textarea{height:auto;min-height:90px;padding:9px 10px;resize:vertical}
+    .sp-grid .wide{grid-column:span 2}.sp-grid .full{grid-column:1/-1}
+    .sp-actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:16px}
+    .sp-btn{height:42px;border-radius:6px;padding:0 18px;font-weight:600;font-size:15px;cursor:pointer;border:1px solid var(--erp-red);background:var(--erp-red);color:#fff}
+    .sp-btn.light{background:#fff;color:var(--erp-ink);border-color:var(--erp-line)}
+    .sp-btn:disabled{opacity:.45;cursor:not-allowed}
+    .sp-hint{font-size:14px;color:var(--erp-muted)}
+    .sp-tools{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+    .sp-tools input,.sp-tools select{height:40px;border:1.5px solid var(--erp-line);border-radius:6px;padding:0 10px;font:inherit;font-size:15px}
+    .sp-table{border-collapse:collapse;width:100%;font-size:15px}
+    .sp-table th,.sp-table td{border-bottom:1px solid var(--erp-line);padding:9px 12px;text-align:left;white-space:nowrap;vertical-align:top}
+    .sp-table th{background:#f6f7f9;font-size:14px;font-weight:700;color:#2b3440}
+    .sp-table .n{text-align:right}
+    .sp-table td small{display:block;color:var(--erp-muted);font-size:13px}
+    .sp-table tfoot td{font-weight:800;background:#fafbfc}
+    .sp-table tr.pick{cursor:pointer}.sp-table tr.pick:hover td{background:#fff6f7}
+    .sp-table button{height:32px;padding:0 12px;border-radius:5px;border:1px solid var(--erp-line);background:#fff;color:var(--erp-ink);font:inherit;font-size:14px;font-weight:600;cursor:pointer;margin-right:4px}
+    .sp-table button.del{color:var(--erp-red);border-color:#f3c2ca}
+    .tagx{display:inline-block;padding:3px 9px;border-radius:5px;font-size:13px;font-weight:700}
+    .tagx.in{background:#e4f6e9;color:#0d6b36}.tagx.out{background:#fee8e8;color:#9e2525}.tagx.p-out{background:#fff3d6;color:#8a5a00}.tagx.p-in{background:#e8f1ff;color:#194c85}
+    .sp-err{background:#ffebeb;color:#9b2020;padding:14px 16px;border-radius:8px;margin-bottom:14px;white-space:pre-wrap}
+    #tabs .erp-pill{font-size:15px;padding:9px 18px}
+    .sp-letter-wrap{background:#eef0f3;padding:18px;overflow:auto}
+    .sp-paper{background:#fff;width:210mm;min-height:297mm;margin:0 auto;box-shadow:0 2px 10px rgba(0,0,0,.12)}
+    #printArea{display:none}
+    /* A4 documents (return letter, statements) */
+    .doc{box-sizing:border-box;width:210mm;min-height:295mm;padding:12mm 18mm 10mm;font-family:Arial,Helvetica,sans-serif;color:#111;font-size:12pt;line-height:1.38;display:flex;flex-direction:column}
+    .doc h1.lh{font-family:Impact,"Arial Narrow Bold","Arial Narrow",Arial,sans-serif;font-size:38pt;letter-spacing:1px;text-align:center;margin:4mm 0 3mm;font-weight:900}
+    .doc .rule{border-top:2px solid #444;margin:0 0 6mm}
+    .doc .row{display:flex;justify-content:space-between;gap:10mm}
+    .doc .to{white-space:pre-line}
+    .doc .subj{text-align:center;font-weight:700;text-decoration:underline;margin:5mm 0 3mm}
+    .doc table.kv{border-collapse:collapse;margin:3mm 0 4mm 6mm}
+    .doc table.kv td{padding:1.2mm 3mm 1.2mm 0;vertical-align:top}
+    .doc table.kv td:first-child{font-weight:700;min-width:44mm}
+    .doc .sign{display:flex;justify-content:space-between;align-items:flex-end;margin-top:14mm}
+    .doc .foot{margin-top:auto;border-top:1px solid #777;padding-top:2mm;text-align:center;font-size:9pt;white-space:pre-line}
+    .doc h2{font-size:15pt;margin:0 0 2mm}
+    .doc h3{font-size:12.5pt;margin:6mm 0 2mm}
+    .doc table.grid{border-collapse:collapse;width:100%;font-size:10.5pt}
+    .doc table.grid th,.doc table.grid td{border:1px solid #999;padding:1.6mm 2.2mm;text-align:left}
+    .doc table.grid th{background:#f0f0f0}
+    .doc table.grid .n{text-align:right}
+    .doc table.grid tfoot td{font-weight:700}
+    @media(max-width:1000px){.sp-grid{grid-template-columns:1fr 1fr}.sp-kpis{grid-template-columns:1fr}}
+    @media(max-width:540px){.sp-grid{grid-template-columns:1fr}.sp-grid .wide{grid-column:span 1}}
+    @page{size:A4;margin:0}
+    @media print{
+      body>*:not(#printArea){display:none!important}
+      #printArea{display:block!important}
+      body{background:#fff!important;margin:0}
+      .doc{page-break-after:always}
+    }
+    [hidden]{display:none!important}
+  </style>
+</head>
+<body>
+  <div id="loading" class="status">Checking account access...</div>
+  <main id="page" class="erp-main" hidden>
+    <div class="erp-pagehead"><h1>Sheet &amp; Pallet Ledger</h1></div>
+    <p class="sp-sub">Returnable sheets and pallets (quantity only, no money value): received from and returned to the company, given to and returned by market parties on direct vehicle bills.</p>
+    <div id="err" class="sp-err" hidden></div>
+    <div class="sp-kpis" id="kpis"></div>
+    <div class="erp-pills" id="tabs">
+      <a class="erp-pill" data-tab="entry" href="#entry">New Entry</a>
+      <a class="erp-pill" data-tab="company" href="#company">Company Ledger</a>
+      <a class="erp-pill" data-tab="parties" href="#parties">Party Ledger</a>
+      <a class="erp-pill" data-tab="letter" href="#letter">Return Letter</a>
+      <a class="erp-pill" data-tab="summary" href="#summary">Summary Print</a>
+    </div>
+    <div id="view"></div>
+  </main>
+  <div id="printArea"></div>
+  <script>
+    'use strict';
+    const client=supabase.createClient("https://txkbhadzdbxpieunfvox.supabase.co","sb_publishable_W4I3Q5ODf0g17sq5uDml2Q_sLolXYEk");
+    const el=id=>document.getElementById(id);
+    const esc=v=>String(v==null?"":v).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+    const num=v=>Number(v||0).toLocaleString("en-IN");
+    const today=()=>new Date().toLocaleDateString("en-CA",{timeZone:"Asia/Kolkata"});
+    const dmy=(d,sep="-")=>d?d.slice(8,10)+sep+d.slice(5,7)+sep+d.slice(0,4):"";
+    const key=v=>String(v||"").trim().toUpperCase().replace(/\s+/g," ");
+    const TYPES={
+      COMPANY_IN:{l:"Received from Company",short:"From Company",cls:"in",ref:"Purchase Bill No."},
+      COMPANY_OUT:{l:"Returned to Company",short:"To Company",cls:"out",ref:"LR No."},
+      PARTY_OUT:{l:"Given to Party (Direct Vehicle)",short:"Given to Party",cls:"p-out",ref:"Bill / Order No."},
+      PARTY_IN:{l:"Returned by Party",short:"Returned by Party",cls:"p-in",ref:"Ref No."}
+    };
+    const isParty=t=>t==="PARTY_OUT"||t==="PARTY_IN";
+    const pS=(p,s)=>num(p)+" pallets · "+num(s)+" sheets";
+
+    let me=null,tab="entry",rows=[],settings={},customers=[],dvOrders=[],vehicles=[],missing=false,busy=false,partyPick="",letterId="";
+    const canEdit=()=>me&&["admin","manager"].includes(me.role);
+
+    async function start(){
+      const {data:{session}}=await client.auth.getSession();
+      if(!session){location.replace("login.html");return null}
+      const {data:p}=await client.from("user_profiles").select("full_name,role,active").eq("id",session.user.id).single();
+      const role=String((p&&p.role)||"").toLowerCase().trim();
+      if(!p||p.active!==true||!["admin","manager","accounts","warehouse"].includes(role)){location.replace("dashboard.html");return null}
+      return {role,name:p.full_name||session.user.email};
+    }
+    async function load(){
+      const [e,s,c,o,v]=await Promise.all([
+        client.from("lwb_sp_entries").select("*").order("entry_date").order("created_at"),
+        client.from("lwb_sp_settings").select("*").eq("id",1).maybeSingle(),
+        client.from("lwb_customer_master").select("customer_name").eq("is_active",true).order("customer_name"),
+        client.from("orders").select("id,order_no,order_date,customer_name,status").eq("transportation","DIRECT VEHICLE").order("order_date",{ascending:false}).limit(200),
+        client.from("lwb_vehicles").select("vehicle_no,transporter_name").eq("is_active",true).order("vehicle_no")]);
+      missing=!!(e.error||s.error);
+      el("err").hidden=!missing;
+      if(missing)el("err").textContent="Sheet & Pallet tables are not set up in Supabase yet. Run lwb_sheet_pallet_setup.sql once in the Supabase SQL Editor, then refresh this page.\n("+((e.error||s.error).message||"")+")";
+      rows=e.data||[];settings=s.data||{};customers=(c.data||[]).map(x=>x.customer_name);vehicles=v.data||[];
+      dvOrders=o.data||[];
+      if(dvOrders.length){
+        const a=await client.from("dispatch_assignments").select("order_id,vehicle_no,driver_mobile,transporter_name").in("order_id",dvOrders.map(x=>x.id));
+        const by=new Map((a.data||[]).map(x=>[x.order_id,x]));dvOrders.forEach(x=>x.da=by.get(x.id)||{});
+      }
+    }
+
+    /* ---------- balances ---------- */
+    function totals(list){
+      const t={ci:[0,0],co:[0,0],po:[0,0],pi:[0,0]};
+      for(const r of list){const k={COMPANY_IN:"ci",COMPANY_OUT:"co",PARTY_OUT:"po",PARTY_IN:"pi"}[r.entry_type];t[k][0]+=r.pallets;t[k][1]+=r.sheets}
+      t.due=[t.ci[0]-t.co[0],t.ci[1]-t.co[1]];t.market=[t.po[0]-t.pi[0],t.po[1]-t.pi[1]];
+      t.hand=[t.due[0]-t.market[0],t.due[1]-t.market[1]];return t;
+    }
+    function partyTotals(){
+      const m=new Map();
+      for(const r of rows){if(!isParty(r.entry_type))continue;const k=key(r.party_name);
+        if(!m.has(k))m.set(k,{name:r.party_name.trim(),g:[0,0],r:[0,0],last:""});const x=m.get(k);
+        const t=r.entry_type==="PARTY_OUT"?x.g:x.r;t[0]+=r.pallets;t[1]+=r.sheets;if(r.entry_date>x.last)x.last=r.entry_date}
+      return [...m.values()].map(x=>({...x,p:[x.g[0]-x.r[0],x.g[1]-x.r[1]]})).sort((a,b)=>(b.p[0]+b.p[1])-(a.p[0]+a.p[1])||a.name.localeCompare(b.name));
+    }
+    function renderKpis(){
+      const t=totals(rows),pt=partyTotals().filter(x=>x.p[0]||x.p[1]).length;
+      const k=(c,h,v,s)=>'<div class="sp-kpi" style="--c:'+c+'"><h3>'+h+'</h3><div class="big">'+v+"</div><small>"+s+"</small></div>";
+      el("kpis").innerHTML=
+        k("#c8102e","🏭 Balance Due to Company",pS(t.due[0],t.due[1]),"Received "+pS(t.ci[0],t.ci[1])+" · Returned "+pS(t.co[0],t.co[1]))+
+        k("#b26b00","🚚 Pending in Market",pS(t.market[0],t.market[1]),pt+" parties · Given "+pS(t.po[0],t.po[1])+" · Returned "+pS(t.pi[0],t.pi[1]))+
+        k("#13824a","📦 In Warehouse (calculated)",pS(t.hand[0],t.hand[1]),"Balance due to company − pending in market");
+    }
+
+    /* ---------- new entry ---------- */
+    function renderEntry(){
+      const t=el("fType")?el("fType").value:"PARTY_OUT";
+      el("view").innerHTML='<section class="erp-card"><div class="erp-card-head"><h2>New Entry</h2><small class="sp-hint">Quantities only. To enter an opening balance, use the same type with note "Opening balance".</small></div>'+
+        '<div class="erp-card-body" style="padding:16px"><div class="sp-grid">'+
+        '<div class="wide"><label for="fType">Entry Type *</label><select id="fType">'+Object.entries(TYPES).map(([k,v])=>'<option value="'+k+'"'+(k===t?" selected":"")+">"+esc(v.l)+"</option>").join("")+"</select></div>"+
+        '<div><label for="fDate">Date *</label><input id="fDate" type="date" value="'+today()+'"></div>'+
+        '<div id="orderBox"><label for="fOrder">Direct Vehicle Order</label><select id="fOrder"><option value="">— Select order (optional) —</option>'+
+          dvOrders.map(o=>'<option value="'+o.id+'">'+esc(o.order_no+" · "+o.customer_name+" · "+dmy(String(o.order_date).slice(0,10)))+"</option>").join("")+"</select></div>"+
+        '<div class="wide" id="partyBox"><label for="fParty">Party *</label><input id="fParty" list="partyList" placeholder="Type to search parties"><datalist id="partyList">'+
+          [...new Set(customers.concat(partyTotals().map(x=>x.name)))].map(n=>'<option value="'+esc(n)+'">').join("")+'</datalist><small class="sp-hint" id="partyInfo"></small></div>'+
+        '<div><label for="fPallets">Pallets</label><input id="fPallets" type="number" min="0" step="1" inputmode="numeric" placeholder="0"></div>'+
+        '<div><label for="fSheets">Sheets</label><input id="fSheets" type="number" min="0" step="1" inputmode="numeric" placeholder="0"></div>'+
+        '<div><label for="fRef" id="fRefLabel">Ref No.</label><input id="fRef" maxlength="60"></div>'+
+        '<div><label for="fVehicle">Vehicle No.</label><input id="fVehicle" list="vehList" maxlength="15"><datalist id="vehList">'+vehicles.map(v=>'<option value="'+esc(v.vehicle_no)+'">').join("")+"</datalist></div>"+
+        '<div><label for="fTransporter">Transporter Name</label><input id="fTransporter" maxlength="120"></div>'+
+        '<div><label for="fDriver">Driver Mobile No.</label><input id="fDriver" type="tel" maxlength="15"></div>'+
+        '<div class="wide"><label for="fNote">Note</label><input id="fNote" maxlength="300"></div>'+
+        '</div><div class="sp-actions"><button type="button" class="sp-btn" id="fSave">Save Entry</button><span class="sp-hint" id="fHint"></span></div></div></section>'+
+        '<section class="erp-card" style="margin-top:14px"><div class="erp-card-head"><h2>Recent Entries</h2><small class="sp-hint">Latest 40</small></div>'+
+        '<div style="overflow:auto">'+entryTable(rows.slice().reverse().slice(0,40),true)+"</div></section>";
+      syncForm();
+    }
+    function entryTable(list,actions){
+      return '<table class="sp-table"><thead><tr><th>Date</th><th>Type</th><th>Party</th><th class="n">Pallets</th><th class="n">Sheets</th><th>Ref / Vehicle</th><th>Note</th>'+(actions?"<th></th>":"")+"</tr></thead><tbody>"+
+        (list.map(r=>"<tr><td>"+dmy(r.entry_date)+'</td><td><span class="tagx '+TYPES[r.entry_type].cls+'">'+esc(TYPES[r.entry_type].short)+"</span></td><td>"+esc(r.party_name||"Company")+'</td><td class="n">'+num(r.pallets)+'</td><td class="n">'+num(r.sheets)+"</td><td>"+esc(r.ref_no||"-")+"<small>"+esc([r.vehicle_no,r.transporter_name].filter(Boolean).join(" · "))+"</small></td><td style='white-space:normal;min-width:140px'>"+esc(r.note||"")+"</td>"+
+          (actions?"<td>"+(r.entry_type==="COMPANY_OUT"?'<button type="button" data-letter="'+r.id+'">Letter</button>':"")+(canEdit()?'<button type="button" class="del" data-del="'+r.id+'">Delete</button>':"")+"</td>":"")+"</tr>").join("")||
+         '<tr><td colspan="8" class="erp-empty">No entries yet.</td></tr>')+"</tbody></table>";
+    }
+    function syncForm(){
+      const t=el("fType").value;
+      el("partyBox").hidden=!isParty(t);el("orderBox").hidden=t!=="PARTY_OUT";
+      el("fRefLabel").textContent=TYPES[t].ref;
+      partyInfo();
+    }
+    function partyInfo(){
+      const i=el("partyInfo");if(!i)return;const p=partyTotals().find(x=>key(x.name)===key(el("fParty").value));
+      i.textContent=p?"Pending with this party: "+pS(p.p[0],p.p[1]):"";
+    }
+    function pickOrder(){
+      const o=dvOrders.find(x=>x.id===el("fOrder").value);if(!o)return;
+      el("fParty").value=o.customer_name||"";el("fRef").value=o.order_no||"";
+      if(o.da.vehicle_no)el("fVehicle").value=o.da.vehicle_no;
+      if(o.da.driver_mobile)el("fDriver").value=o.da.driver_mobile;
+      if(o.da.transporter_name)el("fTransporter").value=o.da.transporter_name;
+      partyInfo();
+    }
+    async function saveEntry(){
+      if(busy||missing)return;
+      const t=el("fType").value,val=id=>el(id).value.trim(),int=id=>val(id)===""?0:Number(val(id));
+      const o={entry_date:val("fDate"),entry_type:t,party_name:isParty(t)?key(val("fParty")):null,pallets:int("fPallets"),sheets:int("fSheets"),
+        order_id:t==="PARTY_OUT"&&val("fOrder")||null,ref_no:val("fRef")||null,vehicle_no:val("fVehicle").toUpperCase().replace(/[^A-Z0-9]/g,"")||null,
+        transporter_name:val("fTransporter")||null,driver_mobile:val("fDriver")||null,note:val("fNote")||null};
+      if(!/^\d{4}-\d{2}-\d{2}$/.test(o.entry_date))return ERPShell.toast("Select a date.","error");
+      if(![o.pallets,o.sheets].every(n=>Number.isInteger(n)&&n>=0))return ERPShell.toast("Pallets and sheets must be whole numbers (0 or more).","error");
+      if(o.pallets+o.sheets<=0)return ERPShell.toast("Enter pallets or sheets.","error");
+      if(isParty(t)&&!o.party_name)return ERPShell.toast("Select the party.","error");
+      let warn="";const tt=totals(rows);
+      if(t==="PARTY_IN"){const p=partyTotals().find(x=>key(x.name)===key(o.party_name))||{p:[0,0]};if(o.pallets>p.p[0]||o.sheets>p.p[1])warn="\n\nThis is more than the party's pending balance ("+pS(p.p[0],p.p[1])+").";}
+      if(t==="COMPANY_OUT"&&(o.pallets>tt.due[0]||o.sheets>tt.due[1]))warn="\n\nThis is more than the balance due to the company ("+pS(tt.due[0],tt.due[1])+").";
+      if(!await confirm("SAVE "+TYPES[t].l.toUpperCase()+"?\n\n"+(o.party_name?o.party_name+"\n":"")+dmy(o.entry_date)+" · "+pS(o.pallets,o.sheets)+warn))return;
+      busy=true;el("fSave").disabled=true;
+      const r=await client.from("lwb_sp_entries").insert(o).select().single();
+      busy=false;
+      if(r.error){el("fSave").disabled=false;return ERPShell.toast("Save failed: "+r.error.message,"error")}
+      ERPShell.toast("Entry saved.","success");
+      await load();render();
+      if(t==="COMPANY_OUT"&&await confirm("Print the return letter for this entry now?")){letterId=r.data.id;location.hash="#letter"}
+    }
+    async function remove(id){
+      const r=rows.find(x=>x.id===id);if(!r||!canEdit())return;
+      if(!await confirm("DELETE this entry?\n\n"+TYPES[r.entry_type].l+" · "+(r.party_name||"Company")+" · "+dmy(r.entry_date)+" · "+pS(r.pallets,r.sheets)))return;
+      const res=await client.from("lwb_sp_entries").delete().eq("id",id);
+      if(res.error)return ERPShell.toast("Delete failed: "+res.error.message,"error");
+      ERPShell.toast("Entry deleted.","success");await load();render();
+    }
+
+    /* ---------- ledgers ---------- */
+    function runningTable(list,inType,inLabel,outLabel,balLabel){
+      let bp=0,bs=0;
+      const body=list.map(r=>{const s=r.entry_type===inType?1:-1;bp+=s*r.pallets;bs+=s*r.sheets;
+        return "<tr><td>"+dmy(r.entry_date)+"</td><td>"+esc(r.ref_no||"-")+"<small>"+esc([r.vehicle_no,r.note].filter(Boolean).join(" · "))+'</small></td>'+
+          '<td class="n">'+(s>0?num(r.pallets):"")+'</td><td class="n">'+(s>0?num(r.sheets):"")+'</td><td class="n">'+(s<0?num(r.pallets):"")+'</td><td class="n">'+(s<0?num(r.sheets):"")+'</td><td class="n"><b>'+num(bp)+'</b></td><td class="n"><b>'+num(bs)+"</b></td></tr>"}).join("");
+      return '<table class="sp-table grid"><thead><tr><th rowspan="2">Date</th><th rowspan="2">Ref / Vehicle</th><th colspan="2" class="n">'+inLabel+'</th><th colspan="2" class="n">'+outLabel+'</th><th colspan="2" class="n">'+balLabel+'</th></tr>'+
+        '<tr><th class="n">Pallets</th><th class="n">Sheets</th><th class="n">Pallets</th><th class="n">Sheets</th><th class="n">Pallets</th><th class="n">Sheets</th></tr></thead><tbody>'+
+        (body||'<tr><td colspan="8">No entries yet.</td></tr>')+"</tbody></table>";
+    }
+    const companyRows=()=>rows.filter(r=>!isParty(r.entry_type));
+    function renderCompany(){
+      el("view").innerHTML='<section class="erp-card"><div class="erp-card-head"><h2>Company Ledger</h2><button type="button" class="sp-btn light" id="printCompany">Print (A4)</button></div>'+
+        '<div style="overflow:auto">'+runningTable(companyRows(),"COMPANY_IN","Received","Returned","Balance Due")+"</div></section>";
+    }
+    function renderParties(){
+      const list=partyTotals();
+      let h='<section class="erp-card"><div class="erp-card-head"><h2>Party-wise Pending</h2><div class="sp-tools"><select id="pFilter"><option value="pending">With pending balance</option><option value="all">All parties</option></select></div></div>'+
+        '<div style="overflow:auto"><table class="sp-table"><thead><tr><th>Party</th><th class="n">Given P</th><th class="n">Given S</th><th class="n">Returned P</th><th class="n">Returned S</th><th class="n">Pending Pallets</th><th class="n">Pending Sheets</th><th>Last Entry</th></tr></thead><tbody>';
+      const all=el("pFilter")&&el("pFilter").value==="all";
+      const show=list.filter(x=>all||x.p[0]||x.p[1]);
+      h+=show.map(x=>'<tr class="pick" data-party="'+esc(x.name)+'"><td><b>'+esc(x.name)+'</b></td><td class="n">'+num(x.g[0])+'</td><td class="n">'+num(x.g[1])+'</td><td class="n">'+num(x.r[0])+'</td><td class="n">'+num(x.r[1])+'</td><td class="n"><b>'+num(x.p[0])+'</b></td><td class="n"><b>'+num(x.p[1])+"</b></td><td>"+dmy(x.last)+"</td></tr>").join("")||'<tr><td colspan="8" class="erp-empty">No party has a pending balance.</td></tr>';
+      h+="</tbody></table></div></section>";
+      if(partyPick){const pr=rows.filter(r=>isParty(r.entry_type)&&key(r.party_name)===key(partyPick));
+        h+='<section class="erp-card" style="margin-top:14px"><div class="erp-card-head"><h2>'+esc(partyPick)+'</h2><button type="button" class="sp-btn light" id="printParty">Print (A4)</button></div><div style="overflow:auto">'+runningTable(pr,"PARTY_OUT","Given","Returned","Pending")+"</div></section>"}
+      else h+='<p class="sp-hint" style="margin-top:10px">Click a party to see its full ledger.</p>';
+      el("view").innerHTML=h;if(all)el("pFilter").value="all";
+    }
+
+    /* ---------- return letter ---------- */
+    function letterHtml(r){
+      const S=settings,parts=[r.pallets?r.pallets+" Pallets":"",r.sheets?r.sheets+" Sheets":""].filter(Boolean).join(" and ");
+      return '<div class="doc"><h1 class="lh">'+esc(S.distributor_name||"LUXURY WRIST BRAND")+'</h1><div class="rule"></div>'+
+        '<div class="row"><div class="to"><b>To,</b>\n'+esc(S.to_address||"[Company address — fill in Letter Settings below]")+'</div><div style="white-space:nowrap"><b>Date :</b> '+dmy(r.entry_date,"/")+"</div></div>"+
+        '<div class="subj">Subject : Return of '+esc(parts)+"</div>"+
+        '<table class="kv"><tr><td style="font-weight:400">Distributor Code</td><td>: <b>'+esc(S.distributor_code||"")+'</b></td></tr><tr><td style="font-weight:400">Distributor Name</td><td>: <b>'+esc(S.distributor_name||"")+"</b></td></tr></table>"+
+        "<p style=\"margin:2mm 0\">Dear Sir/Madam,</p><p style=\"margin:0 0 2mm;text-indent:12mm\">We would like to inform you that the pallets and sheets mentioned below are being returned to "+esc(S.plant_text||"your plant")+". They are being transported as per the details given below, for your records.</p>"+
+        '<table class="kv"><tr><td>No. of Pallets</td><td>: <b>'+num(r.pallets)+'</b></td></tr><tr><td>No. of Sheets</td><td>: <b>'+num(r.sheets)+'</b></td></tr><tr><td>Transporter Name</td><td>: <b>'+esc(r.transporter_name||"")+'</b></td></tr>'+
+        '<tr><td>Vehicle No.</td><td>: <b>'+esc(r.vehicle_no||"")+'</b></td></tr><tr><td>Driver Mobile No.</td><td>: <b>'+esc(r.driver_mobile||"")+'</b></td></tr><tr><td>LR No.</td><td>: <b>'+esc(r.ref_no||"")+"</b></td></tr></table>"+
+        "<p style=\"margin:2mm 0\">Please acknowledge the receipt of the returned pallets and sheets upon delivery. If any further clarification is required, feel free to contact us.</p><p style=\"margin:2mm 0\">Thank you for your cooperation.</p>"+
+        '<div style="margin-top:8mm"><b>Best Regards,</b><br>For '+esc(S.distributor_name||"")+"</div>"+
+        '<div class="sign"><div>Authorised Signatory</div><div>Driver Sign : ______________________</div></div>'+
+        '<div class="foot">'+esc(S.letter_footer||"")+"</div></div>";
+    }
+    function renderLetter(){
+      const outs=rows.filter(r=>r.entry_type==="COMPANY_OUT").slice().reverse();
+      if(!letterId&&outs.length)letterId=outs[0].id;
+      const r=outs.find(x=>x.id===letterId);
+      let h='<section class="erp-card"><div class="erp-card-head"><h2>Return Letter (A4)</h2><div class="sp-tools"><select id="letterPick">'+
+        (outs.map(x=>'<option value="'+x.id+'"'+(x.id===letterId?" selected":"")+">"+dmy(x.entry_date)+" · "+pS(x.pallets,x.sheets)+(x.ref_no?" · LR "+esc(x.ref_no):"")+"</option>").join("")||'<option value="">No "Returned to Company" entries yet</option>')+
+        '</select><button type="button" class="sp-btn" id="printLetter"'+(r?"":" disabled")+'>Print Letter</button></div></div>'+
+        '<div class="sp-letter-wrap">'+(r?'<div class="sp-paper">'+letterHtml(r)+"</div>":'<p class="sp-hint">Save a "Returned to Company" entry first; its letter appears here.</p>')+"</div></section>";
+      h+='<section class="erp-card" style="margin-top:14px"><div class="erp-card-head"><h2>Letter Settings</h2><small class="sp-hint">'+(canEdit()?"Saved once and used on every letter.":"Only Admin / Manager can change these.")+'</small></div><div class="erp-card-body" style="padding:16px"><div class="sp-grid">'+
+        '<div class="wide"><label for="sTo">To (company address, one line per row)</label><textarea id="sTo" rows="5"></textarea></div>'+
+        '<div class="wide"><label for="sFoot">Letterhead footer (office address, phone, GSTIN)</label><textarea id="sFoot" rows="5"></textarea></div>'+
+        '<div class="wide"><label for="sPlant">Returned to (used in the letter text)</label><input id="sPlant" maxlength="200" placeholder="e.g. Company name at your plant"></div>'+
+        '<div><label for="sCode">Distributor Code</label><input id="sCode" maxlength="40"></div>'+
+        '<div><label for="sName">Distributor Name</label><input id="sName" maxlength="120"></div>'+
+        '</div><div class="sp-actions"><button type="button" class="sp-btn" id="sSave">Save Settings</button></div></div></section>';
+      el("view").innerHTML=h;
+      el("sTo").value=settings.to_address||"";el("sFoot").value=settings.letter_footer||"";el("sPlant").value=settings.plant_text||"";
+      el("sCode").value=settings.distributor_code||"";el("sName").value=settings.distributor_name||"";
+      ["sTo","sFoot","sPlant","sCode","sName","sSave"].forEach(id=>el(id).disabled=!canEdit()||missing);
+    }
+    async function saveSettings(){
+      const o={to_address:el("sTo").value.trim()||null,letter_footer:el("sFoot").value.trim()||null,plant_text:el("sPlant").value.trim()||null,
+        distributor_code:el("sCode").value.trim()||null,distributor_name:el("sName").value.trim()||null,updated_at:new Date().toISOString()};
+      const r=await client.from("lwb_sp_settings").update(o).eq("id",1).select().single();
+      if(r.error)return ERPShell.toast("Save failed: "+r.error.message,"error");
+      settings=r.data;ERPShell.toast("Letter settings saved.","success");render();
+    }
+
+    /* ---------- A4 statements ---------- */
+    function docHead(title){
+      return '<div class="doc"><h1 class="lh" style="font-size:28pt;margin:0 0 2mm">'+esc(settings.distributor_name||"LUXURY WRIST BRAND")+'</h1><div class="rule"></div><h2>'+esc(title)+'</h2><div style="font-size:10pt;color:#444;margin-bottom:3mm">As of '+dmy(today(),"/")+"</div>";
+    }
+    const docFoot=()=>'<div class="foot">'+esc(settings.letter_footer||"")+"</div></div>";
+    const ptable=html=>html.replace('class="sp-table grid"','class="grid"');
+    function summaryHtml(){
+      const t=totals(rows),list=partyTotals().filter(x=>x.p[0]||x.p[1]);
+      const line=(l,a)=>"<tr><td>"+l+'</td><td class="n">'+num(a[0])+'</td><td class="n">'+num(a[1])+"</td></tr>";
+      return docHead("Sheet & Pallet Statement")+
+        '<h3>Company</h3><table class="grid"><thead><tr><th></th><th class="n">Pallets</th><th class="n">Sheets</th></tr></thead><tbody>'+line("Received from company",t.ci)+line("Returned to company",t.co)+'</tbody><tfoot>'+line("Balance due to company",t.due)+"</tfoot></table>"+
+        '<h3>Market (direct vehicle parties)</h3><table class="grid"><thead><tr><th></th><th class="n">Pallets</th><th class="n">Sheets</th></tr></thead><tbody>'+line("Given to parties",t.po)+line("Returned by parties",t.pi)+'</tbody><tfoot>'+line("Pending in market",t.market)+"</tfoot></table>"+
+        '<h3>In warehouse (calculated)</h3><table class="grid"><tbody>'+line("Balance due to company − pending in market",t.hand)+"</tbody></table>"+
+        '<h3>Party-wise pending</h3><table class="grid"><thead><tr><th>#</th><th>Party</th><th class="n">Given P / S</th><th class="n">Returned P / S</th><th class="n">Pending Pallets</th><th class="n">Pending Sheets</th></tr></thead><tbody>'+
+        (list.map((x,i)=>"<tr><td>"+(i+1)+"</td><td>"+esc(x.name)+'</td><td class="n">'+num(x.g[0])+" / "+num(x.g[1])+'</td><td class="n">'+num(x.r[0])+" / "+num(x.r[1])+'</td><td class="n"><b>'+num(x.p[0])+'</b></td><td class="n"><b>'+num(x.p[1])+"</b></td></tr>").join("")||'<tr><td colspan="6">No party has a pending balance.</td></tr>')+
+        '</tbody><tfoot><tr><td></td><td>Total</td><td></td><td></td><td class="n">'+num(t.market[0])+'</td><td class="n">'+num(t.market[1])+"</td></tr></tfoot></table>"+docFoot();
+    }
+    function renderSummary(){
+      el("view").innerHTML='<section class="erp-card"><div class="erp-card-head"><h2>Summary Print (A4)</h2><button type="button" class="sp-btn" id="printSummary">Print Summary</button></div><div class="sp-letter-wrap"><div class="sp-paper">'+summaryHtml()+"</div></div></section>";
+    }
+    function printDoc(html){el("printArea").innerHTML=html;setTimeout(()=>window.print(),50)}
+
+    function render(){
+      document.querySelectorAll("#tabs .erp-pill").forEach(a=>a.classList.toggle("active",a.dataset.tab===tab));
+      renderKpis();
+      ({entry:renderEntry,company:renderCompany,parties:renderParties,letter:renderLetter,summary:renderSummary})[tab]();
+      if(tab==="entry")el("fSave").disabled=missing;
+    }
+    function setTab(){const t=location.hash.replace("#","");tab=["entry","company","parties","letter","summary"].includes(t)?t:"entry";render()}
+    document.addEventListener("change",e=>{
+      const id=e.target.id;
+      if(id==="fType")syncForm();else if(id==="fOrder")pickOrder();else if(id==="fParty")partyInfo();
+      else if(id==="pFilter")renderParties();else if(id==="letterPick"){letterId=e.target.value;renderLetter()}
+    });
+    document.addEventListener("input",e=>{if(e.target.id==="fParty")partyInfo()});
+    document.addEventListener("click",e=>{
+      const t=e.target,id=t.id;
+      if(id==="fSave")return saveEntry();
+      if(id==="sSave")return saveSettings();
+      if(t.dataset.del)return remove(t.dataset.del);
+      if(t.dataset.letter){letterId=t.dataset.letter;location.hash="#letter";return}
+      const pr=t.closest("tr[data-party]");if(pr){partyPick=pr.dataset.party;renderParties();return}
+      if(id==="printLetter"){const r=rows.find(x=>x.id===letterId);if(r)printDoc(letterHtml(r));return}
+      if(id==="printSummary")return printDoc(summaryHtml());
+      if(id==="printCompany")return printDoc(docHead("Company Sheet & Pallet Ledger")+ptable(runningTable(companyRows(),"COMPANY_IN","Received","Returned","Balance Due"))+docFoot());
+      if(id==="printParty")return printDoc(docHead("Sheet & Pallet Ledger: "+partyPick)+ptable(runningTable(rows.filter(r=>isParty(r.entry_type)&&key(r.party_name)===key(partyPick)),"PARTY_OUT","Given","Returned","Pending"))+docFoot());
+    });
+    window.addEventListener("hashchange",setTab);
+    window.addEventListener("afterprint",()=>{el("printArea").innerHTML=""});
+    (async()=>{
+      me=await start();if(!me)return;
+      ERPShell.mount({role:me.role,name:me.name,onLogout:async()=>{await client.auth.signOut();location.replace("login.html")},group:"Dispatch"});
+      el("loading").hidden=true;el("page").hidden=false;
+      await load();setTab();
+    })();
+  </script>
+</body>
+</html>
