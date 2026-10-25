@@ -237,7 +237,19 @@
     });
     document.addEventListener("click",e=>{if(!e.target.closest(".erp-search"))box.classList.remove("open")});
     watchSuccess();
+    bell(top);
     return {menu:groups};
+  }
+
+  // 🔔 ERP notifications on every page, for every logged-in role (Driver too).
+  async function bell(top){
+    try{
+      if(!window.supabase)return;
+      const c=window.__lwbBellClient||(window.__lwbBellClient=window.supabase.createClient(URL_,KEY_));
+      const {data}=await c.auth.getSession();const user=data&&data.session&&data.session.user;if(!user)return;
+      if(!window.LWBOperationsNotifications)await new Promise((ok,bad)=>{const s=document.createElement("script");s.src="erp-operations-notifications.js";s.onload=ok;s.onerror=bad;document.head.appendChild(s)});
+      window.LWBOperationsNotifications.init({db:c,user,mount:top.querySelector(".erp-user")});
+    }catch(e){}
   }
 
   // Older pages: <script src="erp-shell.js" data-auto defer>. Hides the page's
