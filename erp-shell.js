@@ -175,7 +175,18 @@
   }
   function esc(v){return String(v==null?"":v).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]))}
 
+  // Phone: "Add to Home screen" opens the ERP like an app.
+  function appMeta(){
+    if(document.querySelector('link[rel="manifest"]'))return;
+    const add=(tag,attrs)=>{const n=document.createElement(tag);for(const k in attrs)n.setAttribute(k,attrs[k]);document.head.appendChild(n)};
+    add("link",{rel:"manifest",href:"manifest.webmanifest"});
+    add("meta",{name:"theme-color",content:"#c8102e"});
+    add("link",{rel:"apple-touch-icon",href:"app-icon-192.png"});
+    add("meta",{name:"apple-mobile-web-app-capable",content:"yes"});
+  }
+
   function mount(opts){
+    appMeta();
     const role=String(opts.role||"").toLowerCase();
     const page=(location.pathname.split("/").pop()||"dashboard.html").replace(/^$/,"dashboard.html");
     const groups=menuFor(role);
