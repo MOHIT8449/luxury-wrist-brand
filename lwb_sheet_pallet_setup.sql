@@ -9,7 +9,8 @@
 --   PARTY_IN    : returned by a market party
 -- Balance due to company = COMPANY_IN − COMPANY_OUT
 -- Pending with a party   = PARTY_OUT − PARTY_IN
--- Admin / Manager / Accounts / Warehouse can view and add. Only Admin / Manager can delete.
+-- Admin / Manager / Accounts / Warehouse can view and add. Only Admin / Manager can delete
+-- and mark a company return as verified (after the company confirms receipt).
 -- Return letter details (company address, distributor code, letterhead footer) are kept in
 -- lwb_sp_settings, so nothing private is stored in the website files.
 -- No order, stock, bill, payment or Tally data is changed.
@@ -59,6 +60,8 @@ CREATE TABLE IF NOT EXISTS public.lwb_sp_entries (
   CHECK (pallets + sheets > 0),
   CHECK (entry_type LIKE 'COMPANY%' OR length(btrim(coalesce(party_name,''))) > 0)
 );
+ALTER TABLE public.lwb_sp_entries ADD COLUMN IF NOT EXISTS verified_at timestamptz;
+ALTER TABLE public.lwb_sp_entries ADD COLUMN IF NOT EXISTS verified_by uuid;
 CREATE INDEX IF NOT EXISTS lwb_sp_entries_date_idx ON public.lwb_sp_entries (entry_date, created_at);
 CREATE INDEX IF NOT EXISTS lwb_sp_entries_party_idx ON public.lwb_sp_entries (party_name);
 
@@ -81,6 +84,8 @@ DROP POLICY IF EXISTS lwb_sp_entries_read ON public.lwb_sp_entries;
 CREATE POLICY lwb_sp_entries_read ON public.lwb_sp_entries FOR SELECT TO authenticated USING (public.lwb_sp_user());
 DROP POLICY IF EXISTS lwb_sp_entries_insert ON public.lwb_sp_entries;
 CREATE POLICY lwb_sp_entries_insert ON public.lwb_sp_entries FOR INSERT TO authenticated WITH CHECK (public.lwb_sp_user());
+DROP POLICY IF EXISTS lwb_sp_entries_verify ON public.lwb_sp_entries;
+CREATE POLICY lwb_sp_entries_verify ON public.lwb_sp_entries FOR UPDATE TO authenticated USING (public.lwb_sp_editor()) WITH CHECK (public.lwb_sp_editor());
 DROP POLICY IF EXISTS lwb_sp_entries_delete ON public.lwb_sp_entries;
 CREATE POLICY lwb_sp_entries_delete ON public.lwb_sp_entries FOR DELETE TO authenticated USING (public.lwb_sp_editor());
 
@@ -92,6 +97,7 @@ CREATE POLICY lwb_sp_settings_update ON public.lwb_sp_settings FOR UPDATE TO aut
 REVOKE ALL ON TABLE public.lwb_sp_entries FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON TABLE public.lwb_sp_settings FROM PUBLIC, anon, authenticated;
 GRANT SELECT, INSERT, DELETE ON TABLE public.lwb_sp_entries TO authenticated;
+GRANT UPDATE (verified_at, verified_by) ON TABLE public.lwb_sp_entries TO authenticated;
 GRANT SELECT, UPDATE ON TABLE public.lwb_sp_settings TO authenticated;
 
 COMMIT;
