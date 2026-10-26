@@ -303,6 +303,8 @@
     });
     document.addEventListener("click",e=>{if(!e.target.closest(".erp-search"))box.classList.remove("open")});
     if(role==="sales")bottomNav(page);
+    // Driver page has its own bottom bar and Submit bar; it needs the same keyboard handling.
+    if(role==="driver")watchKeyboard();
     watchSuccess();
     bell(top);
     refreshAccess().then(changed=>{
@@ -325,7 +327,11 @@
     nav.innerHTML=items.map(([t,h,i])=>'<a href="'+h+'" class="'+(h==="order-entry.html"?"new":"")+(h===here?" active":"")+'">'+svg(i)+"<span>"+esc(t)+"</span></a>").join("");
     document.body.appendChild(nav);document.body.classList.add("has-bnav");
     window.addEventListener("hashchange",()=>{const now=page+(location.hash==="#orders"?"#orders":"");nav.querySelectorAll("a").forEach(a=>a.classList.toggle("active",a.getAttribute("href")===now))});
-    // While typing, the phone keyboard pushes fixed bars up over the page; hide them until typing ends.
+    watchKeyboard();
+  }
+
+  // While typing, the phone keyboard pushes fixed bars up over the page; hide them until typing ends.
+  function watchKeyboard(){
     const typing=el=>el&&(el.tagName==="TEXTAREA"||el.tagName==="SELECT"||el.isContentEditable||(el.tagName==="INPUT"&&!/^(button|submit|reset|checkbox|radio|file|range|color|image|hidden)$/i.test(el.type)));
     // Keyboard open = a text box has focus AND the visible screen is clearly shorter than
     // the full screen. A box that keeps focus after the keyboard is closed (iPhone Chrome)
