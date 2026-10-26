@@ -48,6 +48,9 @@
     {group:"Reports",items:[
       {t:"Daily Summary",h:"daily-report.html",i:"stock",r:"admin manager accounts"},
       {t:"Team Work Report",h:"team-report.html",i:"users",r:"admin manager"}]},
+    {group:"Accounts",items:[
+      {t:"Tally Bill Check",h:"tally-check.html",i:"bill",r:"admin accounts"},
+      {t:"Cashbook",h:"cashbook.html",i:"cash",r:"admin"}]},
     {group:"Returns",items:[
       {t:"Driver Returns Approval",h:"driver-returns.html",i:"undo",r:"admin accounts manager warehouse"},
       {t:"Sales Return",h:"sales-return.html",i:"undo",r:"admin sales warehouse"},
