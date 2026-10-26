@@ -1162,6 +1162,7 @@ JAY MAMA DEV TREDARS (NILGIRI LIMBAYAT)
         <div class="spacer"></div>
         <div class="actions">
           <button class="btn" id="openReports" type="button">Reports</button>
+          ${isAdmin() ? `<button class="btn" id="openHistory" type="button">History</button>` : ""}${isAdmin() && CB.erpAdmin ? `<button class="btn" id="openLink" type="button">${lockIcon.replace(/20/g, "16")} Secret link</button>` : ""}
           ${isFull() ? `<button class="btn" id="openParties" type="button">Party / Category / Mode</button>${isAdmin() ? `<button class="btn" id="openPw" type="button">${lockIcon.replace(/20/g, "16")} Passwords</button>` : ""}${isAdmin() ? `<button class="btn" id="openTally" type="button">Tally import${(n => n ? ` <span class="chip vchip wait">${n} to verify</span>` : "")(((state.tally || {}).pending || []).length)}</button>` : ""}<button class="btn" id="openBackup" type="button">Backup</button>` : ""}
           <button class="btn primary" id="newBook" type="button">+ Add New Book</button>
         </div>
@@ -1190,6 +1191,8 @@ JAY MAMA DEV TREDARS (NILGIRI LIMBAYAT)
     const opw = $("#openPw"); if (opw) opw.onclick = appPasswordModal;
     const ob = $("#openBackup"); if (ob) ob.onclick = backupModal;
     const otl = $("#openTally"); if (otl) otl.onclick = () => { ui.view = "tally"; render(); window.scrollTo(0, 0); };
+    const ohi = $("#openHistory"); if (ohi) ohi.onclick = () => { ui.view = "history"; ui.hparty = ""; render(); window.scrollTo(0, 0); };
+    const oli = $("#openLink"); if (oli) oli.onclick = linkModal;
     bindVerify(); bindListVerify(); bindDiff(); bindReq();
     document.querySelectorAll("[data-vtab]").forEach(b => b.onclick = () => { ui.vtab = b.dataset.vtab; render(); });
     document.querySelectorAll("[data-open]").forEach(el => {
@@ -1771,7 +1774,7 @@ JAY MAMA DEV TREDARS (NILGIRI LIMBAYAT)
       const dr = r2(shown.reduce((a, l) => a + l.d, 0)), cr = r2(shown.reduce((a, l) => a + l.c, 0));
       const filtered = shown.length !== lines.length;
       body = `<div class="count-line led-top"><label style="font-weight:600">Party</label> ${pickBtn}
-        ${lines.length ? `<span>· Showing ${shown.length} of ${lines.length} lines</span>` : ""}<span class="spacer"></span>${shown.length ? pdfBtn : ""}</div>` +
+        ${lines.length ? `<span>· Showing ${shown.length} of ${lines.length} lines</span>` : ""}<span class="spacer"></span>${curP && isAdmin() ? `<button type="button" class="btn sm" id="rHist">Change history</button>` : ""}${shown.length ? pdfBtn : ""}</div>` +
         (shown.length ? `<div class="rscroll" id="ledPrint"><table>
         <thead><tr><th>Date</th><th>Details</th><th class="r" style="color:var(--out)">Debit (bill)</th><th class="r" style="color:var(--in)">Credit (received)</th><th class="r">Balance</th></tr></thead>
         <tbody>${shown.map(l => `<tr><td class="when">${fmtDate(l.date)}${l.time ? `<small>${fmtTime(l.time)}</small>` : ""}</td><td>${l.html}</td><td class="r num amt-out">${l.d ? inr.format(l.d) : ""}</td><td class="r num amt-in">${l.c ? inr.format(l.c) : ""}</td><td class="r num ${l.run > 0 ? "amt-out" : l.run < 0 ? "amt-in" : ""}">${bal(l.run)}</td></tr>`).join("")}
@@ -1862,6 +1865,7 @@ JAY MAMA DEV TREDARS (NILGIRI LIMBAYAT)
     if (rp) rp.onclick = () => pickerModal("", ui.rparty, false, v => { ui.rparty = v; render(); }, { title: "Choose party", parties: (ui.rpartyList || []).map(partyById).filter(Boolean), extras: [{ v: "__all", t: "All parties (summary)" }] });
     document.querySelectorAll("[data-ledp]").forEach(tr => tr.onclick = () => { ui.rparty = tr.dataset.ledp; render(); window.scrollTo(0, 0); });
     const rpdf = $("#rPdf"); if (rpdf) rpdf.onclick = printLedger;
+    const rhi = $("#rHist"); if (rhi) rhi.onclick = () => { ui.view = "history"; ui.hparty = ui.rparty; render(); window.scrollTo(0, 0); };
     const rs = $("#rSide"); if (rs) rs.onchange = () => { ui.rside = rs.value; render(); };
     const rm = $("#rMonth"); if (rm) rm.onchange = () => { ui.rmonth = rm.value; render(); };
     bindVerify();
@@ -2405,11 +2409,12 @@ JAY MAMA DEV TREDARS (NILGIRI LIMBAYAT)
           ${entry && isAdmin() ? `<div id="eDelZone"><button class="btn danger sm" type="button" id="eDel">Delete entry</button></div>` : entry && !entry.req ? `<div id="eDelZone"><button class="btn danger sm" type="button" id="eReqDel">Request delete</button></div>` : ""}
         </div>
         <div class="modal-foot">
-          ${entry ? "" : `<button class="btn" type="button" id="eSaveNew">Save &amp; add new</button>`}
+          ${entry ? (isAdmin() ? `<button class="btn" type="button" id="eHist">History</button>` : "") : `<button class="btn" type="button" id="eSaveNew">Save &amp; add new</button>`}
           <div class="spacer"></div>
           <button class="btn primary" type="submit">${entry && !isAdmin() ? "Request change" : "Save"}</button>
         </div>
       </form>`);
+    const ehi = $("#eHist"); if (ehi) ehi.onclick = () => historyPop(entry);
     if (!entry && e.date !== today()) $("#ef .modal-body").insertAdjacentHTML("afterbegin", `<div class="lock-note">Handover is done till ${fmtDate(closedTill(book))}, so this entry goes to ${fmtDate(e.date)}.</div>`);
     // bank deposit: the party box becomes a dropdown of banks
     const bankList = () => state.parties.filter(p => p.bank || /\bbank\b/i.test(p.name)).sort((a, b) => a.name.localeCompare(b.name));
@@ -3032,6 +3037,117 @@ JAY MAMA DEV TREDARS (NILGIRI LIMBAYAT)
     } else if (bl) listLog("Tally update rejected", "party", "in", "Inv " + bl.vno, "");
     t.pending = t.pending.filter(w => w.id !== u.id);
   }
+  /* ---------- History (kept by the ERP database on every save) ---------- */
+  const H_FIELD = { amount: "Amount", date: "Date", time: "Time", party: "Party", remark: "Remark", category: "Category", mode: "Mode", type: "Type", invoice: "Invoice no.", invDate: "Invoice date", invAmt: "Invoice amount", damage: "Deduction", dmgType: "Deduction type", kasar: "Kasar", advance: "Advance", advUsed: "Advance adjust", verified: "Verified", verifiedAt: "Verified at", flag: "Report", req: "Request", reqDone: "Request done", notes: "Note count", bank: "Bank", via: "Deposited through", erpRef: "ERP driver payment", follow: "Part payment of bill", created: "Created" };
+  const H_ACT = { added: "Added", deleted: "Deleted", verified: "Verified", reported: "Reported", "change requested": "Change requested", "request rejected": "Request rejected", changed: "Changed", "book added": "Book added", "book deleted": "Book deleted" };
+  const hVal = (k, v) => {
+    if (v === undefined || v === null || v === "") return "—";
+    if (k === "party") return (partyById(v) || {}).name || "(removed party)";
+    if (k === "date" || k === "invDate") return fmtDate(v);
+    if (k === "time") return fmtTime(v);
+    if (k === "type") return v === "in" ? "Cash In" : "Cash Out";
+    if (k === "verifiedAt" || k === "created") return typeof v === "number" ? fmtTs(v) : String(v);
+    if (typeof v === "boolean") return v ? "Yes" : "No";
+    if (typeof v === "number") return ["amount", "invAmt", "damage", "kasar", "advUsed"].includes(k) ? money(v) : String(v);
+    if (k === "flag") return v.resolved ? "Closed" : (FLAG_NAME[v.type] || "Report") + (v.note ? ": " + v.note : "") + (v.by ? " · " + v.by : "");
+    if (k === "req") return (v.type === "delete" ? "Delete" : "Change") + (v.by ? " · " + v.by : "");
+    if (k === "reqDone") return v.ok ? "Approved" : "Rejected";
+    if (typeof v === "object") return "changed";
+    return String(v);
+  };
+  const hWhat = r => {
+    const b = r.before || {}, a = r.after || {};
+    if (r.action === "added") return `${hVal("type", a.type)} ${money(Number(a.amount) || 0)}${a.remark ? " · " + esc(a.remark) : ""}`;
+    if (r.action === "deleted") return `${hVal("type", b.type)} ${money(Number(b.amount) || 0)} · ${fmtDate(b.date)}${b.remark ? " · " + esc(b.remark) : ""}`;
+    if (!r.before && !r.after) return esc((r.changed || []).join(", "));
+    return (r.changed || []).filter(k => k !== "verifiedAt").map(k => `<div class="req-ch"><span>${esc(H_FIELD[k] || k)}:</span> ${esc(hVal(k, b[k]))} → <b>${esc(hVal(k, a[k]))}</b></div>`).join("");
+  };
+  const hWhen = v => fmtTs(new Date(v).getTime());
+  const hRows = list => list.map(r => `<tr><td class="when">${hWhen(r.at)}</td><td>${esc(r.by_name)}</td><td><span class="chip${r.action === "deleted" || r.action === "book deleted" ? " vchip wait" : r.action === "verified" ? " vchip ok" : ""}">${esc(H_ACT[r.action] || r.action)}</span></td>
+    <td>${esc(r.book_name || "")}</td><td class="party-cell">${esc(r.party || "")}${r.entry_date ? `<small style="display:block;font-weight:400;color:var(--muted)">Entry ${fmtDate(r.entry_date)}</small>` : ""}</td><td>${hWhat(r)}</td></tr>`).join("");
+  const hTable = list => `<div class="rscroll"><table><thead><tr><th>When</th><th>By</th><th>What</th><th>Book</th><th>Party</th><th>Details</th></tr></thead><tbody>${hRows(list)}</tbody></table></div>`;
+
+  function renderHistory() {
+    if (!isAdmin()) { ui.view = null; return renderView(); }
+    $("#crumb").innerHTML = `<span>/</span><b>History</b>`;
+    $("#bottomBar").hidden = true;
+    const p = ui.hparty ? partyById(ui.hparty) : null;
+    const want = p ? p.name : "";
+    const h = ui.hist && ui.hist.party === want ? ui.hist : null;
+    const q = (ui.hq || "").trim().toLowerCase();
+    const list = h && h.rows ? h.rows.filter(r => !q || [r.by_name, r.action, r.book_name, r.party, JSON.stringify(r.before || ""), JSON.stringify(r.after || "")].join(" ").toLowerCase().includes(q)) : [];
+    const used = state.parties.slice().sort((a, b) => a.name.localeCompare(b.name));
+    $("#app").innerHTML = `
+      <div class="head-row">
+        <div><h1>History${p ? " · " + esc(p.name) : ""}</h1><p class="sub">Every entry added, changed, verified or deleted, with who did it and when. Kept by the ERP database; nobody can change or delete it.</p></div>
+        <div class="spacer"></div>
+        <div class="actions"><button class="btn" id="hBack" type="button">Back</button></div>
+      </div>
+      <div class="count-line"><label for="hParty" style="font-weight:600">Party</label>
+        <select id="hParty" style="max-width:320px"><option value="">All parties</option>${used.map(x => `<option value="${x.id}"${x.id === ui.hparty ? " selected" : ""}>${esc(x.name)}</option>`).join("")}</select>
+        <input type="search" id="hQ" placeholder="Search name, book, amount…" value="${esc(ui.hq || "")}" style="max-width:260px">
+        ${h && h.rows ? `<span>· ${list.length} changes${h.rows.length >= 1000 ? " (newest 1000)" : ""}</span>` : ""}</div>
+      ${!h ? `<p class="hint">Loading…</p>` : h.err ? `<p class="err">Could not load the history: ${esc(h.err)}</p>` : list.length ? hTable(list) : `<div class="book-list empty"><b>No changes yet</b>Changes are kept from the day this was set up.</div>`}`;
+    $("#hBack").onclick = () => { ui.view = null; render(); };
+    $("#hParty").onchange = ev => { ui.hparty = ev.target.value; render(); };
+    $("#hQ").oninput = ev => { ui.hq = ev.target.value; clearTimeout(renderHistory._t); renderHistory._t = setTimeout(() => { render(); const i = $("#hQ"); if (i) { i.focus(); i.setSelectionRange(i.value.length, i.value.length); } }, 300); };
+    if (!h) {
+      ui.hist = { party: want };
+      const mine = ui.hist;
+      CB.history(want, null).then(rows => { mine.rows = rows; }, e => { mine.err = e.message; }).then(() => { if (ui.view === "history" && ui.hist === mine) render(); });
+    }
+  }
+
+  // one entry's history, above the entry window
+  function historyPop(entry) {
+    let r = $("#histRoot");
+    if (!r) { r = document.createElement("div"); r.id = "histRoot"; document.body.appendChild(r); }
+    const close = () => { r.innerHTML = ""; document.removeEventListener("keydown", key, true); };
+    const key = ev => { if (ev.key === "Escape") { ev.preventDefault(); ev.stopPropagation(); close(); } };
+    r.innerHTML = `<div class="overlay cf-ov"><div class="modal" role="dialog" aria-modal="true" aria-labelledby="hpT" style="max-width:860px">
+      <div class="modal-head"><h2 id="hpT">History of this entry</h2><button class="icon-btn" id="hpX" type="button" aria-label="Close"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
+      <div class="modal-body" id="hpBody"><p class="hint">Loading…</p></div></div></div>`;
+    document.addEventListener("keydown", key, true);
+    $("#hpX").onclick = close;
+    r.querySelector(".cf-ov").onclick = ev => { if (ev.target.classList.contains("cf-ov")) close(); };
+    CB.history(null, entry.id).then(rows => {
+      const b = $("#hpBody"); if (!b) return;
+      b.innerHTML = rows.length ? hTable(rows) : `<p class="hint" style="margin:0">No changes kept for this entry yet. History is kept from the day it was set up; entries made before that show from their first change.</p>`;
+    }, e => { const b = $("#hpBody"); if (b) b.innerHTML = `<p class="err">Could not load: ${esc(e.message)}</p>`; });
+  }
+
+  // Admin: the private link; without it the Cashbook shows nothing to anyone
+  function linkModal() {
+    showModal(`
+      <div class="modal-head"><h2>Secret link</h2>${closeX}</div>
+      <div class="modal-body">
+        <p style="margin:0">${CB.hasLink ? "The Cashbook opens only from its secret link now. Make a new link if the old one may have been seen by someone; the old link stops working at once." : "Right now the Cashbook opens from the ERP menu for the logins Admin allows. Make a secret link and it opens only from that link, even for Admin."}</p>
+        <p class="hint" style="margin:0">Keep the link as a bookmark on your own phone and computer. Do not send it in a group. If the link is lost, Admin can make a new one only from inside the Cashbook, so keep a copy safe.</p>
+        <div id="lkOut"></div>
+      </div>
+      <div class="modal-foot"><div class="spacer"></div><button class="btn" type="button" data-close>Close</button><button class="btn primary" type="button" id="lkNew">${CB.hasLink ? "Make a new link" : "Make secret link"}</button></div>`);
+    $("#lkNew").onclick = () => confirmPop({ title: CB.hasLink ? "Make a new secret link?" : "Make the secret link?", msg: CB.hasLink ? "The old link stops working for everyone. Only the new link opens the Cashbook." : "After this, the Cashbook opens only from the link. Opening it from the ERP menu shows nothing.", yes: "Yes, make link" }, async () => {
+      const out = $("#lkOut");
+      try {
+        const url = await CB.newLink();
+        out.innerHTML = `<div class="field"><label for="lkUrl">Your secret link (copy and bookmark it now)</label><div style="display:flex;gap:8px"><input type="text" id="lkUrl" readonly style="flex:1"><button class="btn sm" type="button" id="lkCopy">Copy</button></div></div>`;
+        $("#lkUrl").value = url;
+        $("#lkCopy").onclick = () => { $("#lkUrl").select(); (navigator.clipboard ? navigator.clipboard.writeText(url) : Promise.reject()).then(() => toast("Link copied"), () => { document.execCommand("copy"); toast("Link copied"); }); };
+        $("#lkNew").hidden = true;
+      } catch (e) { out.innerHTML = `<p class="err">${esc(e.message)}</p>`; }
+    });
+  }
+
+  // locks itself after 5 minutes without a touch or key; the password is needed again
+  let lastUse = Date.now();
+  ["pointerdown", "keydown", "touchstart", "wheel"].forEach(t => document.addEventListener(t, () => { lastUse = Date.now(); }, { passive: true, capture: true }));
+  setInterval(() => {
+    if (session.mode && Date.now() - lastUse > 5 * 60000 && !$("#cbSaveBar")) {
+      const n = $("#cfNo"), x = $("#hpX"); if (n) n.click(); if (x) x.click();
+      $("#logout").click(); toast("Locked after 5 minutes without use");
+    }
+  }, 15000);
+
   function renderTally() {
     if (!isAdmin()) { ui.view = null; return renderView(); }
     const t = tallyState(), tab = ui.ttab || "sales";
@@ -3228,6 +3344,7 @@ JAY MAMA DEV TREDARS (NILGIRI LIMBAYAT)
     if (ui.view === "parties" && isFull()) return renderParties();
     if (ui.view === "reports") return renderReports();
     if (ui.view === "tally") return renderTally();
+    if (ui.view === "history") return renderHistory();
     ui.bookId ? renderBook() : renderBooks();
   }
   render();

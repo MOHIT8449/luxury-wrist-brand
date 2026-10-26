@@ -50,7 +50,7 @@
       {t:"Team Work Report",h:"team-report.html",i:"users",r:"admin manager"}]},
     {group:"Accounts",items:[
       {t:"Tally Bill Check",h:"tally-check.html",i:"bill",r:"admin accounts"},
-      {t:"Cashbook",h:"cashbook.html",i:"cash",r:"admin"}]},
+      {t:"Cashbook",h:"cashbook.html",i:"cash",r:"admin",hide:1}]},
     {group:"Returns",items:[
       {t:"Driver Returns Approval",h:"driver-returns.html",i:"undo",r:"admin accounts manager warehouse"},
       {t:"Sales Return",h:"sales-return.html",i:"undo",r:"admin sales warehouse"},
@@ -197,7 +197,9 @@
   }
   function hiddenPages(){const c=access();return c?c.hidden:[]}
   function extraPages(){const c=access();return c&&Array.isArray(c.extra)?c.extra:[]}
-  function menuForMe(role){return menuFor(role,hiddenPages(),extraPages())}
+  // hide:1 pages (Cashbook) are never listed in the menu, search or dashboard; they open only
+  // from their own private link. menuFor still has them, so Manage Users can tick them.
+  function menuForMe(role){return menuFor(role,hiddenPages(),extraPages()).map(g=>({group:g.group,items:g.items.filter(i=>!i.hide)})).filter(g=>g.items.length)}
   const herePage=()=>(location.pathname.split("/").pop()||"dashboard.html").replace(/^$/,"dashboard.html");
   const withHtml=p=>/\.html$/.test(p)?p:p+".html";
   // Role a page should treat this user as. His own role when the page is his;
