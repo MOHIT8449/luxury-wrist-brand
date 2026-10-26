@@ -9,6 +9,7 @@
   <link rel="stylesheet" href="sales.css">
   <script src="erp-shell.js"></script>
   <script src="sales-common.js"></script>
+  <script src="excel-io.js"></script>
 </head>
 <body>
   <div id="loading" class="status">Checking account access...</div>
@@ -100,10 +101,11 @@
         '<div><label for="psm">Salesman</label><select id="psm"><option value="">All</option><option value="none"'+(pf.sm==="none"?" selected":"")+'>Office (unassigned)</option>'+assignable().map(t=>'<option value="'+t.user_id+'"'+(pf.sm===t.user_id?" selected":"")+">"+esc(t.full_name)+"</option>").join("")+"</select></div>"+
         '<div><label for="pcity">City</label><select id="pcity"><option value="">All</option>'+cities.map(c=>'<option'+(pf.city===c?" selected":"")+">"+esc(c)+"</option>").join("")+"</select></div></div></div>"+
         '<div class="sl-bulk"><b id="pickN">'+picked.size+' selected</b><button type="button" class="sl-btn ghost small" data-pick-all>Select all shown</button><button type="button" class="sl-btn ghost small" data-pick-none>Clear</button>'+
-        '<span>Assign to</span><select class="sl-in" id="bulkSm" style="width:auto">'+smOptions("",true)+'</select><button type="button" class="sl-btn small" data-bulk>Assign selected</button></div>'+
+        '<span>Assign to</span><select class="sl-in" id="bulkSm" style="width:auto">'+smOptions("",true)+'</select><button type="button" class="sl-btn small" data-bulk>Assign selected</button>'+
+        '<span style="flex:1"></span><button type="button" class="sl-btn ghost small" data-xl-exp>⬇ Export Excel</button><label class="sl-btn ghost small" style="display:inline-flex;align-items:center">⬆ Import Excel<input type="file" accept=".xlsx,.xls,.csv" data-xl-imp hidden></label></div>'+
         (assignable().length?"":'<div class="erp-empty">No SALES login yet. Create salesmen in Manage Users with the SALES role.</div>')+
         (rows.length?'<div class="sl-scroll">'+S.table(["","Party","City","Salesman","Last Order","Orders (30 days)"],rows,[5])+"</div>":'<div class="erp-empty">No party matches.</div>');
-      el("note").textContent=(list.length>500?"Showing first 500 of "+fmt(list.length)+". Use the filters. ":"")+"Changing the Salesman dropdown saves at once. A party with Office (no salesman) is visible only to Office salesmen, the Sales Head and Admin.";
+      el("note").textContent=(list.length>500?"Showing first 500 of "+fmt(list.length)+". Use the filters. ":"")+"Changing the Salesman dropdown saves at once. For many parties: Export Excel, fill the Salesman column, then Import Excel. A party with Office (no salesman) is visible only to Office salesmen, the Sales Head and Admin.";
     }
     async function assign(ids,sm){
       const {data,error}=await client.rpc("lwb_assign_parties",{p_customer_ids:ids,p_salesman_id:sm||null});
@@ -113,6 +115,52 @@
       const t=team.find(x=>x.user_id===sm);if(t&&!t.kind)t.kind="FIELD";
       ERPShell.toast(fmt(ids.length)+" "+(ids.length===1?"party":"parties")+" assigned to "+(sm?nameOf(sm):"Office")+".");
       return true;
+    }
+
+    // ---- Excel: export Party / City / Salesman, fill the Salesman column, import to assign all at once.
+    const XL_COLS=[{h:"Party Name",k:"party",req:true,alias:["Party","Customer Name"]},{h:"City",k:"city"},{h:"Salesman",k:"salesman",alias:["Salesman Name","Sales Person"]}];
+    async function xlExport(){
+      const rows=[...parties].sort((a,b)=>String(a.customer_name).localeCompare(String(b.customer_name))).map(p=>[p.customer_name,p.city||"",p.salesman_id?nameOf(p.salesman_id):"OFFICE"]);
+      const help=[["How to use"],["Fill the Salesman column with the salesman's name (as in this page) or his login mobile. OFFICE = no salesman."],["A blank Salesman cell keeps the party as it is. Party Name must match the ERP; City is only for your reference."],[],["Salesmen"],...assignable().map(t=>[t.full_name,t.mobile||""])];
+      try{await LWBExcel.write("Party-Assignment-"+S.isoDay(new Date()),[{name:"Parties",rows:[["Party Name *","City","Salesman"],...rows]},{name:"Help",rows:help}]);
+        ERPShell.toast(fmt(rows.length)+" parties exported. Fill the Salesman column and import it back.")}catch(e){await alert(e.message)}
+    }
+    // Salesman cell -> user id ('' = Office), undefined = blank (keep), null = not found.
+    function smFromCell(v){
+      const t=key(v);if(!t)return undefined;
+      if(/^(OFFICE|NONE|NO SALESMAN|OFFICE \(NO SALESMAN\)|-)$/.test(t))return "";
+      const d=t.replace(/\D/g,"").slice(-10);
+      const hit=assignable().filter(x=>key(x.full_name)===t||(d.length===10&&String(x.mobile||"").replace(/\D/g,"").slice(-10)===d));
+      return hit.length===1?hit[0].user_id:null;
+    }
+    async function xlImport(f){
+      let rows;try{rows=await LWBExcel.read(f,XL_COLS)}catch(e){await alert("Could not read the file: "+e.message);return}
+      const byName=new Map(parties.map(p=>[key(p.customer_name),p])),seen=new Set(),errors=[],groups=new Map();let same=0,blank=0;
+      for(const r of rows){
+        const name=key(r.party),bad=t=>errors.push("Row "+r._row+" ("+(name||"-")+"): "+t);
+        if(!name)continue;
+        if(seen.has(name)){bad("appears twice");continue}seen.add(name);
+        const p=byName.get(name);if(!p){bad("party not found in the ERP");continue}
+        const sm=smFromCell(r.salesman);
+        if(sm===undefined){blank++;continue}
+        if(sm===null){bad('salesman "'+r.salesman+'" not found');continue}
+        if((p.salesman_id||"")===sm){same++;continue}
+        if(!groups.has(sm))groups.set(sm,[]);groups.get(sm).push(p.customer_id);
+      }
+      const n=[...groups.values()].reduce((a,x)=>a+x.length,0);
+      const summary=fmt(n)+" parties to change · "+fmt(same)+" already the same · "+fmt(blank)+" blank (kept)"+(errors.length?" · "+fmt(errors.length)+" with errors":"")+
+        "\n\n"+[...groups].map(([sm,ids])=>(sm?nameOf(sm):"Office")+": "+fmt(ids.length)).join("\n")+(errors.length?"\n\nNot changed:\n"+errors.slice(0,15).join("\n")+(errors.length>15?"\n...":""):"");
+      if(!n){await alert("Nothing to change.\n\n"+summary,{kind:errors.length?"error":"info"});return}
+      if(!await confirm("Assign "+fmt(n)+" parties from "+f.name+"?\n\n"+summary,{ok:"Assign"}))return;
+      const failed=[];let done=0;
+      for(const [sm,ids] of groups)for(let i=0;i<ids.length;i+=200){
+        const part=ids.slice(i,i+200);
+        const {error}=await client.rpc("lwb_assign_parties",{p_customer_ids:part,p_salesman_id:sm||null});
+        if(error)failed.push((sm?nameOf(sm):"Office")+" ("+part.length+"): "+error.message);else done+=part.length;
+      }
+      await loadAll();
+      if(failed.length)await alert(fmt(done)+" parties assigned.\n\nNot saved:\n"+failed.join("\n"));
+      else ERPShell.toast(fmt(done)+" parties assigned from Excel.");
     }
 
     // ---- SKU visibility
@@ -192,6 +240,7 @@
         if(t.matches("[data-pick]")){const id=t.closest("tr").dataset.id;t.checked?picked.add(id):picked.delete(id);el("pickN").textContent=picked.size+" selected";return}
         if(t.closest("[data-pick-all]")){partyList().slice(0,500).forEach(p=>picked.add(p.customer_id));render();return}
         if(t.closest("[data-pick-none]")){picked.clear();render();return}
+        if(t.closest("[data-xl-exp]"))return xlExport();
         if(t.closest("[data-bulk]")){
           if(!picked.size){await alert("Select at least one party.");return}
           const sm=el("bulkSm").value;
@@ -232,6 +281,7 @@
       });
       document.addEventListener("change",async e=>{
         const t=e.target;
+        if(t.matches("[data-xl-imp]")){const f=t.files[0];t.value="";if(f)await xlImport(f);return}
         if(t.matches("[data-assign]")){if(!await assign([t.closest("tr").dataset.id],t.value))await loadAll();return}
         if(t.matches("[data-mode]")){const c=t.closest("tr").querySelector(".sl-chips");c.hidden=t.value==="ALL";return}
         if(t.matches(".sl-chips input")){t.closest(".sl-chip").classList.toggle("on",t.checked);return}
