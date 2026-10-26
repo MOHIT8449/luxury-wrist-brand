@@ -151,7 +151,17 @@ table.pallet-mode .pal-col{display:none}
 /* Salesman: no slab choice, no vehicle number, no Party Master link (rate is set automatically). */
 body.sales-entry #slabField,body.sales-entry #vehicleField,body.sales-entry .party-master-link,body.sales-entry .fast-entry-hint{display:none!important}
 /* Weight is still worked out (it picks the slab); the salesman just doesn't need to see it. */
-body.sales-entry #itemsTable th:nth-child(7),body.sales-entry #itemsTable th:nth-child(8),body.sales-entry td:has(> .unit-weight),body.sales-entry td:has(> .row-weight){display:none!important}
+body.sales-entry #itemsTable th:nth-child(7),body.sales-entry td:has(> .unit-weight){display:none!important}
+/* Order weight against the minimum order weight (lwb_min_order_weight_setup.sql). */
+.weight-goal{margin:12px 0 0;padding:10px 12px;border:1px solid #e3e7ec;border-radius:8px;background:#f8fafc;font-size:13px;color:#1c2836}
+.weight-goal b{font-size:15px}
+.weight-goal .wg-bar{height:8px;margin:8px 0 6px;border-radius:99px;background:#e5e9ef;overflow:hidden}
+.weight-goal .wg-bar i{display:block;height:100%;background:#d97706;border-radius:99px}
+.weight-goal.ok .wg-bar i{background:#138a45}
+.weight-goal small{display:block;color:#6b7686;font-size:12px}
+.weight-goal.low small.goal{color:#b45309;font-weight:700}
+.weight-goal.ok small.goal{color:#12632f;font-weight:700}
+.sticky-total .low{color:#b45309;font-weight:700}
 .share-row{display:flex;flex-wrap:wrap;gap:10px;justify-content:flex-end;margin-top:14px}
 .share-row .btn{border:1px solid #c9ced6;background:#fff;color:#1c2836}
 .share-row .btn.img{background:#1f6feb;border-color:#1f6feb;color:#fff}
@@ -238,9 +248,9 @@ body.sales-entry .auto-field{display:none}
   body.sales-entry .share-row{justify-content:flex-start;margin-top:4px}
 }
 @media(max-width:640px){
-  body.sales-entry #itemsBody tr{grid-template-columns:1fr 1fr;grid-template-areas:"num del" "sku sku" "qty rate" "amt amt";gap:6px 10px;padding:10px 12px;margin-bottom:10px}
-  body.sales-entry.direct-vehicle #itemsBody tr{grid-template-areas:"num del" "sku sku" "pal qty" "rate amt"}
-  body.sales-entry.direct-vehicle #itemsTable.pallet-mode #itemsBody tr{grid-template-areas:"num del" "sku sku" "qty rate" "amt amt"}
+  body.sales-entry #itemsBody tr{grid-template-columns:1fr 1fr;grid-template-areas:"num del" "sku sku" "qty rate" "wt amt";gap:6px 10px;padding:10px 12px;margin-bottom:10px}
+  body.sales-entry.direct-vehicle #itemsBody tr{grid-template-areas:"num del" "sku sku" "pal qty" "rate amt" "wt wt"}
+  body.sales-entry.direct-vehicle #itemsTable.pallet-mode #itemsBody tr{grid-template-areas:"num del" "sku sku" "qty rate" "wt amt"}
   body.sales-entry:not(.direct-vehicle) #itemsBody td.pal-col{display:none}
   body.sales-entry #itemsBody td.row-number{grid-area:num;align-self:center;font-size:12px;color:#6b7785}
   body.sales-entry #itemsBody td.row-number::before{font-size:12px}
@@ -249,7 +259,10 @@ body.sales-entry .auto-field{display:none}
   body.sales-entry #itemsBody td:nth-child(4){grid-area:qty}
   body.sales-entry #itemsBody td:nth-child(5){grid-area:rate}
   body.sales-entry #itemsBody td:nth-child(6){grid-area:amt;display:flex;align-items:center;justify-content:flex-end;gap:6px}
-  body.sales-entry #itemsBody td:nth-child(6)::before{display:inline;margin:0;white-space:nowrap}
+  body.sales-entry #itemsBody td:nth-child(6)::before,body.sales-entry #itemsBody td:nth-child(8)::before{display:inline;margin:0;white-space:nowrap}
+  body.sales-entry #itemsBody td:nth-child(8){grid-area:wt;display:flex;align-items:center;gap:6px}
+  body.sales-entry #itemsBody td:nth-child(8)::before{content:"Weight kg"}
+  body.sales-entry #itemsBody td:nth-child(8) input{width:auto;max-width:7em;padding:0;border:0;background:none;font-weight:700;color:#1c2836}
   body.sales-entry #itemsBody td{background:none}
   body.sales-entry #itemsBody td:nth-child(6) input{width:auto;max-width:9em;padding:0;border:0;background:none;text-align:right;font-weight:800;color:#1c2836}
   body.sales-entry #itemsBody td:last-child{grid-area:del;text-align:right}
@@ -435,6 +448,8 @@ body.sales-entry .auto-field{display:none}
 
     <button type="button" class="btn add-line" onclick="addItem(true)">+ Add SKU</button>
 
+    <div id="weightGoal" class="weight-goal" aria-live="polite"></div>
+
     <div class="summary">
       <div class="summary-box">
 
@@ -617,6 +632,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     await loadSkuMaster();
     initializePartySearch();
     await loadRates();
+    loadMinWeights(null).catch(() => {});
     await prefillParty(new URLSearchParams(location.search).get("party"));
     document.getElementById("orderDate").addEventListener("change", updateLandingCells);
     calculateTotals();
@@ -649,6 +665,7 @@ function pickParty(party) {
   setPartyMenu(false);
   loadPartyRates(party.customer_name);
   loadPartyKyc(party);
+  if (party.id) loadMinWeights(party);
 }
 
 function renderPartyResults() {
@@ -689,6 +706,21 @@ function renderPartyResults() {
 /* PARTY DETAILS: a party with no mobile, address or PAN / GSTIN gets only a few
    salesman orders (lwb_party_details_rule_setup.sql); the salesman fills the gaps here. */
 let partyKyc = null;
+
+/* Minimum order weight: the party's own, else the default (0 = none). */
+let defaultMinKg = 0, partyMinKg = null;
+async function loadMinWeights(party) {
+  if (!party) {
+    const {data} = await db.from("lwb_sales_settings").select("*").eq("id", 1).maybeSingle();
+    defaultMinKg = number(data?.min_order_kg);
+  } else {
+    partyMinKg = null;
+    const {data,error} = await db.from("lwb_customer_master").select("min_order_kg").eq("id", party.id).maybeSingle();
+    if (!error && selectedParty === party && data?.min_order_kg != null) partyMinKg = number(data.min_order_kg);
+  }
+  calculateTotals();
+}
+const minOrderKg = () => partyMinKg ?? defaultMinKg;
 
 async function loadPartyKyc(party) {
   partyKyc = null;
@@ -840,6 +872,7 @@ function initializePartySearch() {
   });
   field.addEventListener("input", () => {
     selectedParty = null;
+    partyMinKg = null;
     if (partyKyc) { partyKyc = null; renderPartyKyc(); }
     if (partyRates.size) { partyRates = new Map(); partyRatesFor = ""; calculateTotals(); }
     schedulePartySearch(field.value);
@@ -1235,6 +1268,42 @@ function calculateRow(input){
 }
 
 
+/* WEIGHT: KG under 1 ton, tons above. */
+function weightText(kg){
+  return kg >= 1000 ? formatNumber(r2(kg/1000)) + " t" : formatNumber(Math.round(kg)) + " kg";
+}
+
+function renderWeightGoal(kg, minKg, noWeight){
+  const box = document.getElementById("weightGoal");
+  const head = document.createElement("div");
+  head.append("Order weight: ");
+  const b = document.createElement("b");
+  b.textContent = formatNumber(Math.round(kg)) + " kg" + (kg >= 1000 ? " (" + formatNumber(r2(kg/1000)) + " t)" : "");
+  head.append(b);
+  const parts = [head];
+  box.className = "weight-goal";
+  if (minKg > 0) {
+    const bar = document.createElement("div");
+    bar.className = "wg-bar";
+    const fill = document.createElement("i");
+    fill.style.width = Math.min(100, kg / minKg * 100) + "%";
+    bar.append(fill);
+    const goal = document.createElement("small");
+    goal.className = "goal";
+    goal.textContent = kg >= minKg
+      ? "Minimum " + weightText(minKg) + " reached."
+      : formatNumber(Math.ceil(minKg - kg)) + " kg more to reach the minimum order of " + weightText(minKg) + ".";
+    box.classList.add(kg >= minKg ? "ok" : "low");
+    parts.push(bar, goal);
+  }
+  if (noWeight) {
+    const miss = document.createElement("small");
+    miss.textContent = noWeight + " SKU" + (noWeight === 1 ? " has" : "s have") + " no weight in SKU Master, so the weight is short.";
+    parts.push(miss);
+  }
+  box.replaceChildren(...parts);
+}
+
 /* TOTALS */
 
 function calculateTotals(){
@@ -1249,6 +1318,7 @@ function calculateTotals(){
   let totalWeight=0;
   let skuCount=0;
   let totalPallet=0;
+  let noWeight=0;
 
   document
     .querySelectorAll("#itemsBody tr")
@@ -1260,6 +1330,7 @@ function calculateTotals(){
       const unitWeight=number(row.querySelector(".unit-weight").value);
 
       if(sku || Number(row.querySelector(".qty").value)>0) skuCount++;
+      if(sku && skuMasterByName.has(skuKey(sku)) && !(unitWeight>0)) noWeight++;
 
       if(Number.isFinite(qty)){
         const cpp=casesPerPallet(row);
@@ -1283,8 +1354,14 @@ function calculateTotals(){
 
   const sticky = document.getElementById("stickyTotal");
   const amount = document.createElement("b");
-  amount.textContent = formatMoney(totalAmount);
-  sticky.replaceChildren(amount, skuCount + " SKU · " + formatNumber(totalQty) + " cases");
+  amount.textContent = "₹" + Math.round(totalAmount).toLocaleString("en-IN");
+  const minKg = minOrderKg();
+  const low = minKg > 0 && totalWeight < minKg;
+  const wt = document.createElement("span");
+  wt.textContent = weightText(totalWeight);
+  if (low) wt.className = "low";
+  sticky.replaceChildren(amount, formatNumber(totalQty) + " cases · ", wt);
+  renderWeightGoal(totalWeight, minKg, noWeight);
 
   return{
     skuCount,
@@ -1520,6 +1597,10 @@ async function saveOrder(){
   }
 
   const totals=calculateTotals();
+  const minKg=minOrderKg();
+  if(minKg>0 && totals.totalWeight<minKg &&
+     !await confirm("Order weight is " + formatNumber(Math.round(totals.totalWeight)) + " kg, below the minimum order of " +
+       formatNumber(minKg) + " kg for this party. Submit anyway?", {ok:"Submit anyway", cancel:"Add more"})) return;
 
   const saveBtn=document.getElementById("saveBtn");
 
@@ -1661,6 +1742,7 @@ async function resetOrder(){
   partyRatesFor = "";
   partyKyc = null;
   renderPartyKyc();
+  partyMinKg = null;
   quantityMode = "CS";
   toggleVehicleField();
 
