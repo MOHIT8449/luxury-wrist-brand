@@ -183,6 +183,24 @@ body.sales-entry #itemsTable th:nth-child(7),body.sales-entry #itemsTable th:nth
   #itemsTable.pallet-mode td.pal-col,#itemsBody td.mgr-col{display:none}
   body.show-landing #itemsBody td.mgr-col{display:block}
 }
+/* Party details missing (mobile / address / PAN or GSTIN) and the add / fill party form. */
+.party-kyc{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;margin-top:8px;padding:10px 12px;border-radius:8px;background:#fff6e0;border:1px solid #f1d38a;color:#7a5200;font-size:12.5px;font-weight:600;line-height:1.4}
+.party-kyc[hidden]{display:none}
+.party-kyc.blocked{background:#fde2e2;border-color:#f3b4b4;color:#9f1d1d}
+.party-kyc span{flex:1;min-width:180px}
+.party-kyc button{padding:8px 12px;border-radius:7px;background:#1769e0;color:#fff;font-weight:700;font-size:12.5px}
+.party-choice.party-new{position:sticky;bottom:0;color:#1769e0;font-weight:700;background:#f3f8ff;border-top:1px solid #cfe0f7}
+.party-dlg{border:0;border-radius:12px;padding:0;width:min(460px,calc(100vw - 24px));max-height:calc(100dvh - 24px);box-shadow:0 18px 50px #18284140}
+.party-dlg::backdrop{background:#0f172a66}
+.party-dlg form{display:grid;gap:10px;padding:18px}
+.party-dlg h3{font-size:18px}
+.party-dlg label{display:grid;gap:4px;font-size:11px;font-weight:700;text-transform:uppercase;color:#5b6573}
+.party-dlg input,.party-dlg textarea{width:100%;padding:10px 11px;border:1px solid #ccc;border-radius:7px;font:inherit;font-size:16px;text-transform:none;color:#1c2836}
+.party-dlg input[readonly],.party-dlg textarea[readonly]{background:#f1f3f6;color:#5b6573}
+.party-dlg .pd-two{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.party-dlg .pd-note{font-size:12.5px;color:#5b6573;line-height:1.45}
+.party-dlg .pd-note.error{color:#b3261e;font-weight:700}
+.party-dlg .pd-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:4px}
 /* Salesman: Order No, date, company and own name fill themselves, so they stay hidden. */
 body.sales-entry .auto-field{display:none}
 .tp-chips,.add-line,.sticky-total,.share-more>summary{display:none}
@@ -320,6 +338,7 @@ body.sales-entry .auto-field{display:none}
                aria-label="Saved parties" hidden></div>
         </div>
         <div id="partyHint" class="party-hint">Click to open Party List. Select a saved customer.</div>
+        <div id="partyKyc" class="party-kyc" role="status" hidden></div>
         <a class="party-master-link" href="customer-master.html" target="_blank" rel="noopener">+ Open Customer / Party Master</a>
       </div>
 
@@ -481,6 +500,29 @@ body.sales-entry .auto-field{display:none}
 
 </main>
 
+<dialog id="partyDlg" class="party-dlg" aria-labelledby="pdTitle">
+  <form id="partyForm" novalidate>
+    <h3 id="pdTitle">Add new party</h3>
+    <p id="pdNote" class="pd-note"></p>
+    <label id="pdNameRow">Party name *<input id="pdName" maxlength="200" autocomplete="off"></label>
+    <label>Mobile *<input id="pdMobile" inputmode="tel" maxlength="16" autocomplete="off" placeholder="10-digit mobile"></label>
+    <label>Billing address *<textarea id="pdAddress" rows="2" placeholder="Shop, street, area"></textarea></label>
+    <div class="pd-two">
+      <label>City<input id="pdCity" autocomplete="off"></label>
+      <label>Pincode<input id="pdPin" inputmode="numeric" maxlength="6" autocomplete="off"></label>
+    </div>
+    <div class="pd-two">
+      <label>PAN<input id="pdPan" maxlength="10" autocomplete="off" placeholder="ABCDE1234F" oninput="this.value=this.value.toUpperCase()"></label>
+      <label>GSTIN<input id="pdGstin" maxlength="15" autocomplete="off" placeholder="15 characters" oninput="this.value=this.value.toUpperCase()"></label>
+    </div>
+    <p class="pd-note">PAN or GSTIN is needed (one is enough).</p>
+    <div class="pd-actions">
+      <button type="button" class="btn btn-grey" onclick="document.getElementById('partyDlg').close()">Cancel</button>
+      <button type="submit" id="pdSave" class="btn btn-green">Save</button>
+    </div>
+  </form>
+</dialog>
+
 <script>
 
 const SUPABASE_URL =
@@ -606,6 +648,7 @@ function pickParty(party) {
   partyInfo("Selected from Party Master: " + (party.customer_code || party.customer_name));
   setPartyMenu(false);
   loadPartyRates(party.customer_name);
+  loadPartyKyc(party);
 }
 
 function renderPartyResults() {
@@ -616,8 +659,8 @@ function renderPartyResults() {
     const div = document.createElement("div");
     div.className = "party-empty";
     div.textContent = String(currentProfile?.role || "").toLowerCase() === "sales"
-      ? "No matching Party in your list. Only parties assigned to you are shown; ask the Sales Head to add one."
-      : "No matching active Party found. Add the Party in Customer Master first.";
+      ? "No matching Party in your list. Only parties assigned to you are shown. A new shop can be added below."
+      : "No matching active Party found. A new party can be added below.";
     menu.appendChild(div);
   }
   partyResults.forEach((party, index) => {
@@ -634,8 +677,116 @@ function renderPartyResults() {
     button.addEventListener("click", () => pickParty(party));
     menu.appendChild(button);
   });
+  const add = document.createElement("button");
+  add.type = "button";
+  add.className = "party-choice party-new";
+  add.textContent = "+ Add new party";
+  add.addEventListener("click", () => openPartyDialog("new"));
+  menu.appendChild(add);
   setPartyMenu(true);
 }
+
+/* PARTY DETAILS: a party with no mobile, address or PAN / GSTIN gets only a few
+   salesman orders (lwb_party_details_rule_setup.sql); the salesman fills the gaps here. */
+let partyKyc = null;
+
+async function loadPartyKyc(party) {
+  partyKyc = null;
+  renderPartyKyc();
+  if (!party?.id) return;
+  const {data,error} = await db.rpc("lwb_party_kyc", {p_customer_id: party.id});
+  if (error || selectedParty !== party) return;   // rule not set up yet, or party changed meanwhile
+  partyKyc = data;
+  renderPartyKyc();
+}
+
+function kycBlocked() {
+  return !!(partyKyc && partyKyc.enforced && partyKyc.missing?.length && partyKyc.used >= partyKyc.limit);
+}
+
+function renderPartyKyc() {
+  const box = document.getElementById("partyKyc");
+  const k = partyKyc;
+  if (!k || !k.missing?.length) { box.hidden = true; box.replaceChildren(); return; }
+  const left = Math.max(0, k.limit - k.used);
+  const text = document.createElement("span");
+  text.textContent = "Party details missing: " + k.missing.join(", ") + "." +
+    (!k.enforced ? "" : kycBlocked() ? " Fill them to place this order."
+      : " " + left + " more order" + (left === 1 ? "" : "s") + " allowed without them.");
+  const fill = document.createElement("button");
+  fill.type = "button";
+  fill.textContent = "Fill details";
+  fill.onclick = () => openPartyDialog("fill");
+  box.className = "party-kyc" + (kycBlocked() ? " blocked" : "");
+  box.replaceChildren(text, fill);
+  box.hidden = false;
+}
+
+let partyDialogMode = "new";
+function openPartyDialog(mode) {
+  partyDialogMode = mode;
+  setPartyMenu(false);
+  const k = mode === "fill" ? (partyKyc || {}) : {};
+  const set = (id, value, lock) => {
+    const el = document.getElementById(id);
+    el.value = value || "";
+    el.readOnly = !!lock;
+  };
+  const has = v => String(v || "").trim() !== "";
+  document.getElementById("pdTitle").textContent = mode === "fill" ? "Fill party details" : "Add new party";
+  const note = document.getElementById("pdNote");
+  note.className = "pd-note";
+  note.textContent = mode === "fill"
+    ? (selectedParty?.customer_name || "") + ": fill the empty boxes. Saved details can be changed only in Party Master."
+    : "The new party is added to your list. Admin and Sales Head get a notification.";
+  document.getElementById("pdNameRow").hidden = mode === "fill";
+  set("pdName", mode === "new" ? document.getElementById("customerName").value.trim().toUpperCase() : "", false);
+  set("pdMobile", k.mobile, String(k.mobile || "").replace(/\D/g, "").length >= 10);
+  set("pdAddress", k.address, has(k.address));
+  set("pdCity", k.city, has(k.city));
+  set("pdPin", k.pincode, has(k.pincode));
+  set("pdPan", k.pan, has(k.pan));
+  set("pdGstin", k.gstin, has(k.gstin));
+  document.getElementById("partyDlg").showModal();
+  const first = [...document.querySelectorAll("#partyForm input, #partyForm textarea")]
+    .find(el => !el.readOnly && !el.closest("[hidden]") && !el.value);
+  if (first) first.focus();
+}
+
+document.getElementById("partyForm").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const v = id => document.getElementById(id).value.trim();
+  const note = document.getElementById("pdNote");
+  const fail = text => { note.textContent = text; note.className = "pd-note error"; };
+  const mobile = v("pdMobile").replace(/\D/g, "").slice(-10), pan = v("pdPan"), gstin = v("pdGstin");
+  if (partyDialogMode === "new" && v("pdName").length < 2) return fail("Enter the party name.");
+  if (!/^[6-9][0-9]{9}$/.test(mobile)) return fail("Enter a 10-digit mobile number.");
+  if (!v("pdAddress")) return fail("Enter the billing address.");
+  if (!pan && !gstin) return fail("Enter PAN or GSTIN.");
+  if (pan && !/^[A-Z]{5}[0-9]{4}[A-Z]$/.test(pan)) return fail("PAN format must be 5 letters + 4 numbers + 1 letter.");
+  if (gstin && !/^[0-9]{2}[A-Z0-9]{13}$/.test(gstin)) return fail("GSTIN must be 15 characters.");
+  const btn = document.getElementById("pdSave");
+  btn.disabled = true;
+  try {
+    const args = {p_mobile: mobile, p_address: v("pdAddress"), p_city: v("pdCity"), p_pincode: v("pdPin"), p_pan: pan, p_gstin: gstin};
+    if (partyDialogMode === "fill") {
+      const {data,error} = await db.rpc("lwb_sales_fill_party_details", {p_customer_id: selectedParty.id, ...args});
+      if (error) return fail(error.message);
+      partyKyc = data;
+      renderPartyKyc();
+      document.getElementById("partyDlg").close();
+      ERPShell.toast(data?.missing?.length ? "Saved. Still missing: " + data.missing.join(", ") : "Party details saved.");
+    } else {
+      const {data,error} = await db.rpc("lwb_sales_create_party", {p_name: v("pdName"), ...args});
+      if (error) return fail(/lwb_sales_create_party/.test(error.message) ? "Adding a party from here is not set up yet. Ask Admin." : error.message);
+      document.getElementById("partyDlg").close();
+      pickParty(data);
+      ERPShell.toast(data.customer_name + " added to your parties.");
+    }
+  } finally {
+    btn.disabled = false;
+  }
+});
 
 async function searchSavedParties(queryText) {
   const requestId = ++partyRequestId;
@@ -689,6 +840,7 @@ function initializePartySearch() {
   });
   field.addEventListener("input", () => {
     selectedParty = null;
+    if (partyKyc) { partyKyc = null; renderPartyKyc(); }
     if (partyRates.size) { partyRates = new Map(); partyRatesFor = ""; calculateTotals(); }
     schedulePartySearch(field.value);
   });
@@ -759,10 +911,12 @@ if (!list) {
   list.innerHTML = "";
 
   skuMasterByName = new Map();
+  skuNames = [];
   (data || []).forEach(sku => {
     const name = String(sku.sku_name || "").trim();
     if (!name) return;
     skuMasterByName.set(name.toUpperCase(), sku);
+    skuNames.push(name);
     const option = document.createElement("option");
     option.value = name;
     list.appendChild(option);
@@ -977,10 +1131,28 @@ function updateRowNumbers(){
 }
 
 
+/* One line per SKU: the SKU list leaves out SKUs already on another line. */
+let skuNames = [];
+function refreshSkuOptions(input){
+  const used = new Set([...document.querySelectorAll("#itemsBody .sku-name")].filter(i => i !== input).map(i => skuKey(i.value)));
+  const list = document.getElementById("skuMasterList");
+  list.replaceChildren(...skuNames.filter(n => !used.has(skuKey(n))).map(n => { const o = document.createElement("option"); o.value = n; return o; }));
+}
+document.getElementById("itemsBody").addEventListener("focusin", e => {
+  if (e.target.classList.contains("sku-name")) refreshSkuOptions(e.target);
+});
+
 /* Fill verified weight KG per case from SKU Master on exact SKU match. */
 function applySkuDefaultWeight(input){
   const row = input.closest("tr");
   if(!row) return;
+  const typed = skuKey(input.value);
+  const lines = [...document.querySelectorAll("#itemsBody .sku-name")];
+  const other = lines.findIndex(i => i !== input && skuKey(i.value) === typed);
+  if(typed && skuMasterByName.has(typed) && other >= 0){
+    input.value = "";
+    alert(skuMasterByName.get(typed).sku_name + " is already on SKU line " + (other+1) + ". Change the cases there.");
+  }
   const name = input.value.trim().toUpperCase();
   const sku = skuMasterByName.get(name);
   const weightField = row.querySelector(".unit-weight");
@@ -1266,6 +1438,13 @@ async function saveOrder(){
     return;
   }
 
+  if(kycBlocked()){
+    await alert("Party details are missing (" + partyKyc.missing.join(", ") + "). " + partyKyc.limit +
+      " orders were allowed without them. Fill the details to place this order.");
+    openPartyDialog("fill");
+    return;
+  }
+
   if(!salesPerson){
     alert("Sales Person is required.");
     return;
@@ -1285,6 +1464,7 @@ async function saveOrder(){
 
   const items=[];
   let itemError = "";
+  const lineOf = new Map();
 
   document.querySelectorAll("#itemsBody tr").forEach((row,index)=>{
     if(itemError) return;
@@ -1308,6 +1488,11 @@ async function saveOrder(){
       itemError = "SKU line " + (index+1) + ": select the SKU from the SKU Master list.";
       return;
     }
+    if(lineOf.has(skuKey(sku))){
+      itemError = "SKU line " + (index+1) + ": " + sku + " is already on line " + lineOf.get(skuKey(sku)) + ". Put all its cases on one line.";
+      return;
+    }
+    lineOf.set(skuKey(sku), index+1);
     if(rawRate === "" || !Number.isFinite(Number(rawRate)) || Number(rawRate) < 0){
       itemError = "SKU line " + (index+1) + ": enter Rate per case.";
       return;
@@ -1474,6 +1659,8 @@ async function resetOrder(){
   document.getElementById("rateSlab").value="auto";
   partyRates = new Map();
   partyRatesFor = "";
+  partyKyc = null;
+  renderPartyKyc();
   quantityMode = "CS";
   toggleVehicleField();
 
