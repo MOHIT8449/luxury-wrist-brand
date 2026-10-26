@@ -292,6 +292,9 @@
     input.addEventListener("input",show);
     input.addEventListener("keydown",e=>{
       if(e.key==="Enter"&&hits[pos]){location.href=hits[pos].h}
+      // Cashbook code word (e.g. 401): no module has that name, so it opens the Cashbook with the code;
+      // the database checks the code (lwb_cashbook_ok), a wrong one shows nothing
+      else if(e.key==="Enter"&&/^[A-Za-z0-9_-]{3,64}$/.test(input.value.trim())){location.href="cashbook.html#k="+input.value.trim()}
       if(e.key==="Escape"){input.value="";show()}
       if((e.key==="ArrowDown"||e.key==="ArrowUp")&&hits.length){
         e.preventDefault();pos=(pos+(e.key==="ArrowDown"?1:hits.length-1))%hits.length;
