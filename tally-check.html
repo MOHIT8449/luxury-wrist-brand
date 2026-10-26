@@ -38,7 +38,9 @@
     .tc-scroll{overflow:auto}
     @media(max-width:1100px){.tc-kpis{grid-template-columns:repeat(3,minmax(0,1fr))}}
     @media(max-width:640px){.tc-kpis{grid-template-columns:1fr 1fr}.tc-bar label{flex:1 1 140px}.tc-bar input{width:100%}}
-    @media print{.erp-top,.erp-side,.tc-bar,#linksCard{display:none!important}.erp-main{margin:0!important;padding:0!important}}
+    .tc-q textarea{width:100%;min-width:200px;border:1.5px solid var(--erp-line);border-radius:6px;padding:6px 8px;font:inherit;font-size:14px;resize:vertical}
+    .t-open{background:#fdecef;color:#b3122b}.t-answered{background:#fdf0dc;color:#9a5b00}.t-closed{background:#e3f5ec;color:#13824a}
+    @media print{.erp-top,.erp-side,.tc-bar,#linksCard,#qCard{display:none!important}.erp-main{margin:0!important;padding:0!important}}
     [hidden]{display:none!important}
   </style>
 </head>
@@ -46,7 +48,7 @@
   <div id="loading" class="status">Checking account access...</div>
   <main id="page" class="erp-main" hidden>
     <div class="erp-pagehead"><h1>Tally Bill Check</h1></div>
-    <p class="tc-sub">Choose the Tally Sales Register file(s). Every dispatched PO is checked: is its bill made in Tally, and is the amount the same? The Tally file is only read here, it is not saved in the ERP.</p>
+    <p class="tc-sub">Choose the Tally Sales Register file(s). Every dispatched PO is checked: is its bill made in Tally, and is the amount the same? The Tally file is only read here; only the problems found are kept as open queries until they are cleared.</p>
     <div class="tc-bar">
       <label>Tally Sales Register (Excel / CSV)<input type="file" id="file" accept=".xls,.xlsx,.csv" multiple></label>
       <label>Dispatched from<input type="date" id="from"></label>
@@ -57,6 +59,11 @@
     </div>
     <div id="err" class="tc-err" hidden></div>
     <div id="out"></div>
+    <section class="erp-card" id="qCard" hidden style="margin-top:14px">
+      <div class="erp-card-head"><h2>Open queries</h2><small style="color:var(--erp-muted)" id="qNote"></small>
+        <label style="margin-left:auto;font-size:14px;display:flex;gap:6px;align-items:center"><input type="checkbox" id="qAll"> Show closed</label></div>
+      <div class="tc-scroll"><table class="tc-table tc-q"><thead><tr><th>Query</th><th>Date</th><th>Party</th><th>ERP PO</th><th class="n">ERP amount</th><th>Tally bill</th><th class="n">Tally amount</th><th>Status</th><th>Reason (Accounts)</th><th></th></tr></thead><tbody id="qBody"></tbody></table></div>
+    </section>
     <section class="erp-card" id="linksCard" hidden style="margin-top:14px">
       <div class="erp-card-head"><h2>Tally party → ERP party</h2><small style="color:var(--erp-muted)" id="linksNote"></small></div>
       <div class="tc-scroll"><table class="tc-table tc-links"><thead><tr><th>Tally party name</th><th class="n">Bills</th><th>ERP party</th><th></th></tr></thead><tbody id="links"></tbody></table></div>
@@ -240,6 +247,93 @@
       el("links").querySelectorAll("[data-skip]").forEach(b=>b.onclick=()=>put(rows[b.dataset.skip],""));
     }
 
+    /* ---------- the same bill twice in the upload ---------- */
+    // same bill no., party, date and amount = a copy (removed, counted once). Same bill no. on another
+    // bill, or no bill no. with the same party, date and amount = shown to check (kept).
+    const fy=d=>{const y=+d.slice(0,4);return +d.slice(5,7)>=4?y:y-1};
+    function dedupe(list){
+      const seen=new Map(),copies=[],sameNo=[],maybe=[],out=[];
+      for(const b of list){
+        const full=[b.vno.toUpperCase(),norm(b.party),b.date,b.amt,norm(b.vtype)].join("|");
+        if(seen.has(full)){copies.push(b);continue}
+        seen.set(full,b);out.push(b);
+      }
+      const byNo=new Map(),byPDA=new Map();
+      for(const b of out){
+        const k=b.vno?norm(b.vtype)+"|"+fy(b.date)+"|"+b.vno.toUpperCase():"";
+        if(k){if(byNo.has(k))sameNo.push([byNo.get(k),b]);else byNo.set(k,b)}
+        else{const p=norm(b.party)+"|"+b.date+"|"+b.amt;if(byPDA.has(p))maybe.push([byPDA.get(p),b]);else byPDA.set(p,b)}
+      }
+      return {bills:out,copies,sameNo,maybe};
+    }
+    function dupPopup(d){
+      if(!d.copies.length&&!d.sameNo.length&&!d.maybe.length)return;
+      const b=x=>(x.vno?"Bill "+x.vno+" · ":"")+x.party+" · "+nice(x.date)+" · "+rs(x.amt);
+      const lines=[];
+      if(d.copies.length)lines.push(d.copies.length+" duplicate rows were removed (the same bill twice in the file(s)), each bill is counted once:",...d.copies.slice(0,15).map(x=>"• "+b(x)+(x.file?" ("+x.file+")":"")),d.copies.length>15?"• and "+(d.copies.length-15)+" more":"","");
+      if(d.sameNo.length)lines.push("Same bill number used on two different bills (both kept, please check in Tally):",...d.sameNo.slice(0,15).map(([x,y])=>"• "+b(x)+"  /  "+b(y)),"");
+      if(d.maybe.length)lines.push("Possible duplicate: same party, date and amount, no bill number (both kept):",...d.maybe.slice(0,15).map(([x])=>"• "+b(x)),"");
+      alert("Duplicate bills found in the Tally file\n\n"+lines.filter((l,i,a)=>l||a[i-1]).join("\n").trim(),{title:"Duplicate check",kind:"error"});
+    }
+
+    /* ---------- open queries (kept in the ERP until cleared) ---------- */
+    let isAdmin=false,qAll=false;
+    const QKIND={no_tally:["PO made, no Tally bill","t-miss"],no_po:["Tally bill, no PO","t-extra"],amount:["Amount differs","t-diff"]};
+    const QSTAT={open:"Open",answered:"Reason given",closed:"Closed"};
+    function queryItems(){
+      return result.filter(r=>r.kind!=="ok").map(r=>{
+        const pos=r.os.map(o=>o.order_no).sort().join(", "),tb=r.ts.map(t=>t.vno||"").filter(Boolean).join(", ");
+        const t=r.ts[0];
+        const qkey=r.os.length?"po|"+pos:"bill|"+norm(t.party)+"|"+(t.vno?norm(t.vtype)+"|"+fy(t.date)+"|"+t.vno.toUpperCase():t.date+"|"+t.amt);
+        return {qkey,kind:r.kind==="miss"?"no_tally":r.kind==="extra"?"no_po":"amount",qdate:r.date,party:r.os.length?r.party:(r.tallyName||r.party),
+          order_nos:pos,tally_bills:tb,erp_amount:r.os.length?r.ea:null,tally_amount:r.ts.length?r.ta:null};
+      });
+    }
+    async function syncQueries(){
+      const {data,error}=await client.rpc("lwb_tally_queries_sync",{p_from:el("from").value,p_to:el("to").value,p_items:queryItems()});
+      if(error)return {err:/lwb_tally_queries|function|schema cache/i.test(error.message)?"Queries are not set up yet: run lwb_cashbook_secure_setup.sql once in Supabase.":error.message};
+      return data||{};
+    }
+    function resultPopup(q){
+      const n=k=>result.filter(r=>r.kind===k).length;
+      const miss=n("miss"),extra=n("extra"),diff=n("diff");
+      const lines=[];
+      if(miss)lines.push("• "+miss+" PO"+(miss>1?"s":"")+" made in the ERP but no bill in Tally");
+      if(extra)lines.push("• "+extra+" Tally bill"+(extra>1?"s":"")+" with no ERP PO");
+      if(diff)lines.push("• "+diff+" with a different amount");
+      if(q&&q.err)lines.push("","Queries were not saved: "+q.err);
+      else if(q)lines.push("",(q.new||0)+" new open queries. "+(q.closed?(q.closed+" earlier queries now match and were closed. "):"")+"Accounts writes the reason in Open queries; Admin closes each one after checking.");
+      if(!miss&&!extra&&!diff)return alert("All bills match\n\nEvery dispatched PO in these dates has its Tally bill with the same amount."+(q&&q.closed?"\n"+q.closed+" earlier queries now match and were closed.":""),{title:"Tally check done",kind:"success"});
+      alert("Please check these bills\n\n"+lines.join("\n"),{title:"Tally check done",kind:"error"});
+    }
+    async function loadQueries(){
+      const {data,error}=await client.rpc("lwb_tally_queries_list",{p_all:qAll});
+      if(error){el("qCard").hidden=true;return}
+      const list=data||[],open=list.filter(q=>q.status!=="closed").length;
+      el("qCard").hidden=!list.length&&!qAll;
+      el("qNote").textContent=open?open+" not cleared yet. Accounts: write why. Admin: Close after checking both sides.":"Nothing open.";
+      el("qBody").innerHTML=list.length?list.map(q=>{
+        const k=QKIND[q.kind]||[q.kind,""],closed=q.status==="closed";
+        return "<tr><td><span class='tc-tag "+k[1]+"'>"+k[0]+"</span></td><td style='white-space:nowrap'>"+esc(nice(q.qdate))+"</td><td><b>"+esc(q.party)+"</b></td>"+
+          "<td>"+(esc(q.order_nos)||"—")+"</td><td class='n'>"+(q.erp_amount!=null?rs(q.erp_amount):"—")+"</td>"+
+          "<td>"+(esc(q.tally_bills)||"—")+"</td><td class='n'>"+(q.tally_amount!=null?rs(q.tally_amount):"—")+"</td>"+
+          "<td><span class='tc-tag t-"+q.status+"'>"+(QSTAT[q.status]||q.status)+"</span>"+(closed?"<small>"+esc(q.close_note||"")+(q.closed_by?" · "+esc(q.closed_by):"")+"</small>":"")+"</td>"+
+          "<td>"+(closed?esc(q.reason||"—"):"<textarea rows='2' data-qr='"+q.id+"' placeholder='e.g. bill made on 25th, PO cancelled'>"+esc(q.reason||"")+"</textarea>")+
+          (q.answered_by?"<small>"+esc(q.answered_by)+"</small>":"")+"</td>"+
+          "<td style='white-space:nowrap'>"+(closed?"":"<button type='button' class='tc-btn sm' data-qs='"+q.id+"'>Save</button>"+(isAdmin?" <button type='button' class='tc-btn sm' data-qc='"+q.id+"'>Close</button>":""))+"</td></tr>";
+      }).join(""):'<tr><td colspan="10" class="erp-empty">Nothing here.</td></tr>';
+      const upd=async(id,close)=>{
+        const box=el("qBody").querySelector("[data-qr='"+id+"']"),reason=box?box.value.trim():"";
+        if(!close&&!reason){alert("Please write the reason first.");return}
+        if(close&&!await confirm("Close this query?\n\nClose only after checking the ERP and Tally both. It moves to closed queries.",{ok:"Yes, close"}))return;
+        const {error}=await client.rpc("lwb_tally_query_update",{p_id:Number(id),p_reason:reason,p_close:!!close});
+        if(error){alert("Not saved: "+error.message);return}
+        loadQueries();
+      };
+      el("qBody").querySelectorAll("[data-qs]").forEach(b=>b.onclick=()=>upd(b.dataset.qs,false));
+      el("qBody").querySelectorAll("[data-qc]").forEach(b=>b.onclick=()=>upd(b.dataset.qc,true));
+    }
+
     async function run(){
       el("err").hidden=true;
       const files=[...el("file").files];
@@ -248,6 +342,7 @@
       try{
         bills=[];for(const f of files)bills.push(...await readFile(f));
         if(!bills.length)throw Error("No bills were found in the file.");
+        const dup=dedupe(bills);bills=dup.bills;
         const ds=bills.map(b=>b.date).sort();
         if(!el("from").value||el("from").dataset.auto==="1"){el("from").value=ds[0];el("from").dataset.auto="1"}
         if(!el("to").value||el("to").dataset.auto==="1"){el("to").value=ds[ds.length-1];el("to").dataset.auto="1"}
@@ -262,6 +357,9 @@
         parties.sort();
         maps=new Map((m.data||[]).map(x=>[x.tally_key,x.customer_name]));
         show="all";match();renderLinks();render();
+        dupPopup(dup);
+        const q=await syncQueries();
+        resultPopup(q);loadQueries();
       }catch(e){el("out").innerHTML="";el("err").hidden=false;el("err").textContent=e.message}
       finally{el("run").disabled=false}
     }
@@ -285,6 +383,9 @@
       const me=await start();if(!me)return;
       ERPShell.mount({role:me.realRole||me.role,name:me.name,onLogout:async()=>{await client.auth.signOut();location.replace("login.html")}});
       el("loading").hidden=true;el("page").hidden=false;
+      isAdmin=(me.realRole||me.role)==="admin";
+      el("qAll").onchange=()=>{qAll=el("qAll").checked;loadQueries()};
+      loadQueries();
     })();
   </script>
 </body>
