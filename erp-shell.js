@@ -171,9 +171,25 @@
   }
 
   function allowed(item,role){return item.r==="*"||item.r.split(" ").includes(role)}
-  function menuFor(role){
-    return MENU.map(g=>({group:g.group,items:g.items.filter(i=>allowed(i,role))})).filter(g=>g.items.length);
+  // menuFor(role) = the role's default pages; menuFor(role,hidden) also drops
+  // the pages Admin unticked for one user (Manage Users > Pages).
+  function menuFor(role,hidden){
+    const off=new Set(hidden||[]);
+    return MENU.map(g=>({group:g.group,items:g.items.filter(i=>allowed(i,role)&&!off.has(i.h))})).filter(g=>g.items.length);
   }
+  const allPages=()=>MENU.map(g=>({group:g.group,items:g.items.map(i=>({t:i.t,h:i.h}))}));
+
+  // Pages hidden from the logged-in user. Cached so the menu is right at once,
+  // then re-read from lwb_user_page_access on every page.
+  const ACCESS_KEY="lwbHiddenPages";
+  function sessionUid(){
+    try{const t=JSON.parse(localStorage.getItem("sb-txkbhadzdbxpieunfvox-auth-token")||"null");return(t&&t.user&&t.user.id)||""}catch(e){return""}
+  }
+  function hiddenPages(){
+    try{const c=JSON.parse(localStorage.getItem(ACCESS_KEY)||"null");const sid=sessionUid();if(c&&Array.isArray(c.hidden)&&(!sid||c.uid===sid))return c.hidden}catch(e){}
+    return[];
+  }
+  function menuForMe(role){return menuFor(role,hiddenPages())}
   function esc(v){return String(v==null?"":v).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]))}
 
   // Phone: "Add to Home screen" opens the ERP like an app.
@@ -190,9 +206,10 @@
     appMeta();
     const role=String(opts.role||"").toLowerCase();
     const page=(location.pathname.split("/").pop()||"dashboard.html").replace(/^$/,"dashboard.html");
-    const groups=menuFor(role);
+    if(blocked(role,page,hiddenPages()))return {menu:[]};
+    let groups=menuForMe(role);
     let current=null,currentGroup="";
-    groups.forEach(g=>g.items.forEach(i=>{if(!current&&i.h.split("#")[0]===page){current=i;currentGroup=g.group}}));
+    MENU.forEach(g=>g.items.forEach(i=>{if(!current&&allowed(i,role)&&i.h.split("#")[0]===page){current=i;currentGroup=g.group}}));
     const title=opts.title||(current&&current.t)||document.title.split("|")[0].trim();
     const group=opts.group!=null?opts.group:currentGroup;
 
@@ -210,12 +227,15 @@
 
     const side=document.createElement("aside");
     side.className="erp-side";
-    let html='<div class="erp-brand"><b>LUXURY WRIST BRAND</b><small>BUSINESS ERP</small></div>';
-    groups.forEach(g=>{
-      if(g.group)html+='<div class="erp-group">'+esc(g.group)+'</div>';
-      g.items.forEach(i=>{html+='<a class="erp-link'+(i===current?' active':'')+'" href="'+esc(i.h)+'">'+svg(i.i)+'<span>'+esc(i.t)+'</span></a>'});
-    });
-    side.innerHTML=html;
+    function drawSide(){
+      let html='<div class="erp-brand"><b>LUXURY WRIST BRAND</b><small>BUSINESS ERP</small></div>';
+      groups.forEach(g=>{
+        if(g.group)html+='<div class="erp-group">'+esc(g.group)+'</div>';
+        g.items.forEach(i=>{html+='<a class="erp-link'+(current&&i.h===current.h?' active':'')+'" href="'+esc(i.h)+'">'+svg(i.i)+'<span>'+esc(i.t)+'</span></a>'});
+      });
+      side.innerHTML=html;
+    }
+    drawSide();
     const shade=document.createElement("div");shade.className="erp-shade";
     document.body.prepend(top,side,shade);
 
@@ -234,7 +254,7 @@
 
     // Module search: type, then click or press Enter.
     const input=top.querySelector(".erp-search input"),box=top.querySelector(".erp-results");
-    const flat=groups.flatMap(g=>g.items.map(i=>({...i,g:g.group})));
+    let flat=groups.flatMap(g=>g.items.map(i=>({...i,g:g.group})));
     let hits=[],pos=0;
     function show(){
       const q=input.value.toLowerCase().trim();
@@ -255,7 +275,37 @@
     document.addEventListener("click",e=>{if(!e.target.closest(".erp-search"))box.classList.remove("open")});
     watchSuccess();
     bell(top);
+    refreshAccess().then(changed=>{
+      if(!changed)return;
+      if(blocked(role,page,hiddenPages()))return;
+      groups=menuForMe(role);flat=groups.flatMap(g=>g.items.map(i=>({...i,g:g.group})));drawSide();
+      document.dispatchEvent(new CustomEvent("erp:access"));
+    });
     return {menu:groups};
+  }
+
+  // An ERP page whose menu entries are all unticked for this user: go to the
+  // first page still open to them.
+  function blocked(role,page,hidden){
+    const mine=MENU.flatMap(g=>g.items).filter(i=>allowed(i,role)&&i.h.split("#")[0]===page);
+    if(!mine.length||!mine.every(i=>hidden.includes(i.h)))return false;
+    const first=menuFor(role,hidden).flatMap(g=>g.items)[0];
+    if(first){location.replace(first.h);return true}
+    document.body.innerHTML='<div style="font:16px system-ui;padding:40px 16px;text-align:center"><b>No ERP page is open for your login.</b><br>Please ask Admin to tick your pages in Manage Users.<br><br><a href="login.html">Back to Login</a></div>';
+    return true;
+  }
+
+  async function refreshAccess(){
+    try{
+      if(!window.supabase)return false;
+      const c=window.__lwbBellClient||(window.__lwbBellClient=window.supabase.createClient(URL_,KEY_));
+      const {data}=await c.auth.getSession();const user=data&&data.session&&data.session.user;if(!user)return false;
+      const r=await c.from("lwb_user_page_access").select("hidden").eq("user_id",user.id).maybeSingle();
+      if(r.error)return false; // setup SQL not run yet: role defaults only
+      const before=JSON.stringify(hiddenPages()),hidden=(r.data&&r.data.hidden)||[];
+      try{localStorage.setItem(ACCESS_KEY,JSON.stringify({uid:user.id,hidden}))}catch(e){}
+      return JSON.stringify(hiddenPages())!==before;
+    }catch(e){return false}
   }
 
   // 🔔 ERP notifications on every page, for every logged-in role (Driver too).
@@ -293,7 +343,7 @@
     }catch(e){}
     mount({role,name,onLogout:async()=>{try{await client.auth.signOut()}catch(e){}location.replace("login.html")}});
   }
-  window.ERPShell={mount,menuFor,icon:svg,alert:erpAlert,confirm:erpConfirm,prompt:erpPrompt,toast};
+  window.ERPShell={mount,menuFor,menuForMe,hiddenPages,allPages,icon:svg,alert:erpAlert,confirm:erpConfirm,prompt:erpPrompt,toast};
   const me=document.currentScript;
   if(me&&me.hasAttribute("data-auto")){
     if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",auto);else auto();
