@@ -109,6 +109,13 @@
     return data||[];
   };
 
+  // party names from the ERP Party Master (lwb_cashbook_erp_parties_setup.sql)
+  CB.erpParties=async function(){
+    const {data,error}=await rpc("lwb_cashbook_erp_parties");
+    if(error)throw error;
+    return (data||[]).map(r=>r.customer_name).filter(Boolean);
+  };
+
   // Admin: make a new secret link; the old link stops working
   CB.newLink=async function(){
     const a=new Uint8Array(24);crypto.getRandomValues(a);
