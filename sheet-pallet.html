@@ -123,9 +123,9 @@
       const {data:{session}}=await client.auth.getSession();
       if(!session){location.replace("login.html");return null}
       const {data:p}=await client.from("user_profiles").select("full_name,role,active").eq("id",session.user.id).single();
-      const role=String((p&&p.role)||"").toLowerCase().trim();
+      const realRole=String((p&&p.role)||"").toLowerCase().trim(),role=p?await ERPShell.pageRoleFresh(realRole):realRole;
       if(!p||p.active!==true||!["admin","manager","accounts","warehouse"].includes(role)){location.replace("dashboard.html");return null}
-      return {id:session.user.id,role,name:p.full_name||session.user.email};
+      return {id:session.user.id,role,realRole,name:p.full_name||session.user.email};
     }
     async function load(){
       const [e,s,c,o,v,hi]=await Promise.all([
@@ -511,7 +511,7 @@
     window.addEventListener("afterprint",()=>{el("printArea").innerHTML=""});
     (async()=>{
       me=await start();if(!me)return;
-      ERPShell.mount({role:me.role,name:me.name,onLogout:async()=>{await client.auth.signOut();location.replace("login.html")},group:"Dispatch"});
+      ERPShell.mount({role:me.realRole||me.role,name:me.name,onLogout:async()=>{await client.auth.signOut();location.replace("login.html")},group:"Dispatch"});
       el("loading").hidden=true;el("page").hidden=false;
       await load();setTab();
     })();

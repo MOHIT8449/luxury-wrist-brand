@@ -25,10 +25,12 @@
     const {data:{session}}=await client.auth.getSession();
     if(!session){location.replace("login.html");return null}
     const {data:p}=await client.from("user_profiles").select("full_name,role,active").eq("id",session.user.id).single();
-    const role=String((p&&p.role)||"").toLowerCase().trim();
+    const real=String((p&&p.role)||"").toLowerCase().trim();
+    // A page of another role that Admin ticked for this user opens as that role.
+    const role=!p||allowed.includes(real)?real:await ERPShell.pageRoleFresh(real);
     if(!p||p.active!==true||!allowed.includes(role)){location.replace("dashboard.html");return null}
-    const me={user:session.user,role,name:p.full_name||session.user.email};
-    ERPShell.mount({role,name:me.name,onLogout:async()=>{await client.auth.signOut();location.replace("login.html")}});
+    const me={user:session.user,role,realRole:real,name:p.full_name||session.user.email};
+    ERPShell.mount({role:real,name:me.name,onLogout:async()=>{await client.auth.signOut();location.replace("login.html")}});
     return me;
   }
   async function inChunks(table,col,ids,sel){

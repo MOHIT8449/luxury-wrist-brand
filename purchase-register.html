@@ -86,9 +86,9 @@
       const {data:{session}}=await client.auth.getSession();
       if(!session){location.replace("login.html");return null}
       const {data:p}=await client.from("user_profiles").select("full_name,role,active").eq("id",session.user.id).single();
-      const role=String((p&&p.role)||"").toLowerCase().trim();
+      const realRole=String((p&&p.role)||"").toLowerCase().trim(),role=p?await ERPShell.pageRoleFresh(realRole):realRole;
       if(!p||p.active!==true||role!=="admin"){location.replace("dashboard.html");return null}
-      return {id:session.user.id,role,name:p.full_name||session.user.email};
+      return {id:session.user.id,role,realRole,name:p.full_name||session.user.email};
     }
     async function load(){
       el("refresh").disabled=true;el("err").hidden=true;el("box").innerHTML='<div class="erp-empty">Loading purchase bills...</div>';
@@ -197,7 +197,7 @@
     ["from","to"].forEach(id=>el(id).addEventListener("change",load));
     (async()=>{
       me=await start();if(!me)return;
-      ERPShell.mount({role:me.role,name:me.name,onLogout:async()=>{await client.auth.signOut();location.replace("login.html")},group:"Inventory"});
+      ERPShell.mount({role:me.realRole||me.role,name:me.name,onLogout:async()=>{await client.auth.signOut();location.replace("login.html")},group:"Inventory"});
       el("loading").hidden=true;el("page").hidden=false;
       await load();
     })();
