@@ -298,10 +298,21 @@
     window.addEventListener("hashchange",()=>{const now=page+(location.hash==="#orders"?"#orders":"");nav.querySelectorAll("a").forEach(a=>a.classList.toggle("active",a.getAttribute("href")===now))});
     // While typing, the phone keyboard pushes fixed bars up over the page; hide them until typing ends.
     const typing=el=>el&&(el.tagName==="TEXTAREA"||el.tagName==="SELECT"||el.isContentEditable||(el.tagName==="INPUT"&&!/^(button|submit|reset|checkbox|radio|file|range|color|image|hidden)$/i.test(el.type)));
-    const sync=()=>{const vv=window.visualViewport;document.body.classList.toggle("kb-open",typing(document.activeElement)||(!!vv&&window.innerHeight-vv.height>150))};
-    document.addEventListener("focusin",sync);
+    // Keyboard open = a text box has focus AND the visible screen is clearly shorter than
+    // the full screen. A box that keeps focus after the keyboard is closed (iPhone Chrome)
+    // no longer hides the bars.
+    let fullH=0,fullW=0;
+    const keyboardUp=()=>{
+      const vv=window.visualViewport;if(!vv)return true;
+      if(window.innerWidth!==fullW){fullW=window.innerWidth;fullH=0}
+      fullH=Math.max(fullH,window.innerHeight,vv.height*vv.scale);
+      return vv.height*vv.scale<fullH-150;
+    };
+    const sync=()=>document.body.classList.toggle("kb-open",typing(document.activeElement)&&keyboardUp());
+    document.addEventListener("focusin",()=>{sync();setTimeout(sync,400)});
     document.addEventListener("focusout",()=>setTimeout(sync,60));
-    if(window.visualViewport)window.visualViewport.addEventListener("resize",sync);
+    if(window.visualViewport){window.visualViewport.addEventListener("resize",sync);window.visualViewport.addEventListener("scroll",sync)}
+    window.addEventListener("scroll",sync,{passive:true});
   }
 
   // An ERP page whose menu entries are all unticked for this user: go to the
