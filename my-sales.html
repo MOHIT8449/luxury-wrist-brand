@@ -26,10 +26,7 @@
     .mo-line{display:flex;gap:10px;align-items:center;padding:4px 0;font-size:13px}
     .mo-line span{flex:1;min-width:0;overflow-wrap:anywhere}
     .mo-line .q{width:70px;text-align:right;color:var(--erp-muted)}
-    .mo-line input{width:80px;height:32px;border:1.5px solid var(--erp-line);border-radius:6px;padding:0 8px;font:inherit;text-align:right}
-    .mo-line input:focus{outline:none;border-color:var(--erp-red)}
     .mo-line.gone span{text-decoration:line-through;color:#9aa4ae}
-    .mo-hint{font-size:12px;color:var(--erp-muted);margin-top:6px}
   </style>
 </head>
 <body>
@@ -52,7 +49,7 @@
   <script>
     const S=LWBSales,{client,el,esc,fmt,short,num,key,pct}=S;
     let me=null,plan=null,parties=[],orders=[],lines=[],target=null,tab=location.hash==="#orders"?"orders":"parties",err="";
-    let myOrders=null,moErr="",moFilter="pending",openId=null,editId=null,busy=false;
+    let myOrders=null,moErr="",moFilter="pending",openId=null,busy=false;
     const TABS=[["parties","My Parties"],["orders","My Orders"],["skus","My SKUs"]];
 
     async function load(){
@@ -155,18 +152,16 @@
       if(!list.length)return h+'<div class="erp-empty">'+(moFilter==="pending"?"No pending orders. Everything is delivered.":"Nothing to show.")+"</div>";
       h+='<div class="mo-list">';
       for(const o of list.slice(0,200)){
-        const [c,label,extra]=stage(o),open=openId===o.id,edit=editId===o.id;
+        const [c,label,extra]=stage(o),open=openId===o.id;
         h+='<div class="mo-card" data-id="'+esc(o.id)+'"><div class="mo-top"><div class="who"><b>'+esc(o.order_no||"—")+"</b> · "+esc(o.customer_name||"")+
           "<small>"+S.shortDate(o.order_date)+(o.mine?"":" · taken by office")+'</small></div><div class="mo-amt"><b>'+short(o.total_amount)+"</b>"+fmt(o.total_qty)+" cases</div></div>"+
           '<div class="mo-stage"><span class="erp-badge '+c+'">'+label+"</span>"+(extra?"<span>"+extra+"</span>":"")+"</div>";
-        h+='<div class="mo-acts">'+(o.can_edit&&!edit?'<button type="button" class="sl-btn small" data-act="edit">Change Cases</button><button type="button" class="sl-btn small ghost" data-act="cancel">Cancel Order</button>':"")+
-          (!edit?'<button type="button" class="sl-btn small ghost" data-act="view">'+(open?"Hide SKUs":"View SKUs")+"</button>":"")+"</div>";
-        if(open||edit){
+        h+='<div class="mo-acts">'+(o.can_edit?'<button type="button" class="sl-btn small" data-act="edit">Modify Order</button><button type="button" class="sl-btn small ghost" data-act="cancel">Cancel Order</button>':"")+
+          '<button type="button" class="sl-btn small ghost" data-act="view">'+(open?"Hide SKUs":"View SKUs")+"</button></div>";
+        if(open){
           h+='<div class="mo-items">'+(o.items||[]).map(i=>{const q=i.approved_qty!=null?i.approved_qty:i.ordered_qty;
             return '<div class="mo-line"><span>'+esc(i.sku_name)+(i.entry_uom==="PALLET"&&i.ordered_pallet_qty?" ("+fmt(i.ordered_pallet_qty)+" pallet)":"")+"</span>"+
-              (edit?'<input type="number" min="0" step="1" inputmode="numeric" data-item="'+esc(i.id)+'" data-was="'+num(i.ordered_qty)+'" value="'+num(i.ordered_qty)+'" aria-label="Cases for '+esc(i.sku_name)+'">':
-                '<b class="q">'+fmt(q)+" cs</b>")+"</div>"}).join("");
-          if(edit)h+='<div class="mo-hint">Type the new cases. 0 removes the SKU. To add a new SKU, take a new order.</div><div class="mo-acts"><button type="button" class="sl-btn small" data-act="save">Save Changes</button><button type="button" class="sl-btn small ghost" data-act="close">Close</button></div>';
+              '<b class="q">'+fmt(q)+" cs</b></div>"}).join("");
           h+="</div>";
         }
         h+="</div>";
@@ -176,20 +171,8 @@
     async function orderAction(card,act){
       const o=(myOrders||[]).find(x=>String(x.id)===card.dataset.id);if(!o||busy)return;
       if(act==="view"){openId=openId===o.id?null:o.id;render();return}
-      if(act==="edit"){editId=o.id;openId=null;render();return}
-      if(act==="close"){editId=null;render();return}
-      if(act==="save"){
-        const inputs=[...card.querySelectorAll("input[data-item]")],items=[];
-        for(const i of inputs){const v=i.value.trim();if(!/^\d+$/.test(v)){await alert("Enter whole cases (0 or more) for every SKU.");i.focus();return}
-          if(Number(v)!==Number(i.dataset.was))items.push({id:Number(i.dataset.item),cases:Number(v)})}
-        if(!items.length){editId=null;render();return}
-        if(inputs.every(i=>Number(i.value)===0)){await alert("An order needs at least one SKU. To drop the whole order, use Cancel Order.");return}
-        busy=true;
-        const r=await client.rpc("lwb_sales_edit_order",{p_order_id:o.id,p_items:items});
-        busy=false;
-        if(r.error){await alert("Could not save: "+r.error.message);await loadMyOrders();render();return}
-        editId=null;await loadMyOrders();render();ERPShell.toast&&ERPShell.toast("Order "+(o.order_no||"")+" updated. Sales Head is informed.","success");return;
-      }
+      // The whole order opens in PO Entry: add / remove SKUs, change cases, save to the same order.
+      if(act==="edit"){location.href="order-entry.html?edit="+encodeURIComponent(o.id);return}
       if(act==="cancel"){
         const reason=await prompt("Why are you cancelling "+(o.order_no||"this order")+" ("+(o.customer_name||"")+")?\nThe reason goes to the Sales Head.","",{ok:"Next",cancel:"Back",placeholder:"Reason for cancelling"});
         if(reason===null)return;
