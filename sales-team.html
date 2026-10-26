@@ -117,6 +117,7 @@
       return true;
     }
 
+    const STOCK_ROLES=[["admin","Admin"],["manager","Sales Head"],["warehouse","Godown team"],["sales","Salesmen"],["accounts","Accounts"]];
     // ---- Excel: export Party / City / Salesman, fill the Salesman column, import to assign all at once.
     const XL_COLS=[{h:"Party Name",k:"party",req:true,alias:["Party","Customer Name"]},{h:"City",k:"city"},{h:"Salesman",k:"salesman",alias:["Salesman Name","Sales Person"]}];
     async function xlExport(){
@@ -222,6 +223,7 @@
           (settings.min_order_kg!=null?'<div><label for="minKg">Minimum order weight (KG, 0 = none)</label><input id="minKg" type="number" min="0" max="100000" step="100" value="'+num(settings.min_order_kg)+'" style="width:140px"></div>':'')+
           (settings.kyc_free_orders!=null?'<div><label for="kycFree">Orders allowed while party details are missing</label><input id="kycFree" type="number" min="0" max="50" value="'+num(settings.kyc_free_orders)+'" style="width:120px"></div>':'')+
           '<div><label>&nbsp;</label><button type="button" class="sl-btn ghost" data-save-due>Save</button></div></div>'+
+          (settings.stock_view_roles?'<div class="sl-filters" style="align-items:center"><b style="font-size:13px">Live stock on PO Entry visible to:</b>'+STOCK_ROLES.map(([r,t])=>'<label style="display:inline-flex;gap:5px;align-items:center;font-size:13px;margin:0"><input type="checkbox" data-stock-role="'+r+'"'+(r==="admin"?" checked disabled":settings.stock_view_roles.includes(r)?" checked":"")+">"+t+"</label>").join("")+'<button type="button" class="sl-btn ghost small" data-save-stock>Save</button></div>':"")+
         '<div class="sl-filters"><div><label for="nsm">Note for</label><select id="nsm"><option value="">All salesmen</option>'+smOptions("",false)+'</select></div><div class="grow"><label for="ntext">Today\'s note from Sales Head</label><input id="ntext" maxlength="500" placeholder="e.g. Push 2L PET today; collect pending payment from big parties"></div><div><label>&nbsp;</label><button type="button" class="sl-btn" data-add-note>Add note</button></div></div>'+
         (notes.length?'<ul class="sl-plan">'+notes.map(n=>"<li><b>"+esc(n.salesman_id?nameOf(n.salesman_id):"All")+":</b> "+esc(n.note)+' <button type="button" class="sl-btn ghost small" data-del-note="'+n.id+'">Remove</button></li>').join("")+"</ul>":'<p class="sl-help">No note for today.</p>')+
         "</div>"+(rows.length?'<div class="sl-scroll">'+S.table(["Salesman","Type","Parties","Due today","Due parties"],rows,[2,3])+"</div>":"");
@@ -251,6 +253,12 @@
           const {data,error}=await client.rpc("lwb_send_sales_plans",{p_force:t.closest("[data-send]").dataset.send==="1"});
           if(error){await alert("Could not send: "+error.message);return}
           await alert(data?"Plan sent to "+data+" salesmen.":"Nothing new to send. Every salesman already has today's plan (use Send again after adding a note).");return;
+        }
+        if(t.closest("[data-save-stock]")){
+          const roles=[...document.querySelectorAll("[data-stock-role]:checked")].map(x=>x.dataset.stockRole);
+          const {data,error}=await client.rpc("lwb_save_stock_view_roles",{p_roles:roles});
+          if(error){await alert("Could not save: "+error.message);return}
+          settings.stock_view_roles=data||roles;ERPShell.toast("Saved. Stock shows on PO Entry for the ticked roles.");return;
         }
         if(t.closest("[data-save-due]")){
           const {error}=await client.rpc("lwb_save_sales_settings",{p_due_after_days:Math.round(num(el("due").value))});

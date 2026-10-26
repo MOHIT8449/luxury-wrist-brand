@@ -54,6 +54,7 @@
       {t:"Credit Note Preview",h:"credit-note.html",i:"note",r:"admin accounts"}]},
     {group:"Inventory",items:[
       {t:"Inventory / Stock Report",h:"inventory.html",i:"stock",r:"admin manager warehouse accounts"},
+      {t:"Goods in Transit",h:"stock-transit.html",i:"truck",r:"admin manager warehouse"},
       {t:"Goods Inward (Purchase)",h:"goods-inward.html",i:"inbox",r:"admin manager"},
       {t:"Purchase Register",h:"purchase-register.html",i:"inbox",r:"admin"},
       {t:"Purchase Claims",h:"purchase-claims.html",i:"inbox",r:"admin manager"},

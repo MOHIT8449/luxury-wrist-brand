@@ -128,6 +128,9 @@ td input{
 
 /* Party PO rates: slab / last bill rate, pallet, landing (Admin / Sales head only) */
 .rate-hint{display:block;margin-top:4px;font-size:11.5px;color:#6b7686;white-space:normal}
+.stock-hint{display:block;margin-top:2px;font-size:11px;color:#9aa3ad;white-space:normal}
+.stock-hint b{font-weight:600;color:#7d8792}
+.stock-hint.low b.tot{color:#c0392b}
 .rate-hint.last{color:#12632f;font-weight:600}
 .rate-hint.warn{color:#b3261e;font-weight:600}
 td input.pallet{min-width:72px}
@@ -633,6 +636,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     initializePartySearch();
     await loadRates();
     loadMinWeights(null).catch(() => {});
+    loadStock();setInterval(loadStock, 5 * 60 * 1000);
     await prefillParty(new URLSearchParams(location.search).get("party"));
     const editId = new URLSearchParams(location.search).get("edit");
     if(editId) await loadOrderForEdit(editId);
@@ -1034,6 +1038,7 @@ function addItem(focus){
              onchange="applySkuDefaultWeight(this)"
              placeholder="Search SKU from Master">
       <small class="rate-hint"></small>
+      <small class="stock-hint" hidden></small>
     </td>
     <td class="pal-col">
       <input class="pallet number"
@@ -1224,12 +1229,35 @@ function updateRowNumbers(){
 }
 
 
+/* Live stock (lwb_live_stock_po_setup.sql): godown + goods in transit per SKU, light text under
+   the SKU and in the empty Cases box. Empty for roles not allowed in Sales Team Setup. */
+let stockByKey = new Map();
+const stockText = st => "Stock " + formatNumber(st.g + st.t) + " CS";
+async function loadStock(){
+  const {data, error} = await db.rpc("lwb_po_stock");
+  if(error || !Array.isArray(data)) return;
+  stockByKey = new Map(data.map(r => [skuKey(r.sku_name), {g: Math.max(0, Math.floor(Number(r.godown_cases) || 0)), t: Number(r.transit_cases) || 0}]));
+  document.querySelectorAll("#itemsBody tr").forEach(showStock);
+}
+function showStock(row){
+  const hint = row.querySelector(".stock-hint"), qty = row.querySelector(".qty");
+  if(!hint || !qty) return;
+  const st = stockByKey.get(skuKey(row.querySelector(".sku-name").value));
+  hint.hidden = !st;
+  const cs = quantityMode !== "PALLET";
+  if(!st){ qty.placeholder = cs ? "Cases" : "Pallets"; return; }
+  const total = st.g + st.t, want = getRowCaseQty(row);
+  hint.className = "stock-hint" + (Number.isSafeInteger(want) && want > total ? " low" : "");
+  hint.innerHTML = "Godown <b>" + formatNumber(st.g) + "</b> · On the way <b>" + formatNumber(st.t) + "</b> · Total <b class=\"tot\">" + formatNumber(total) + " CS</b>";
+  qty.placeholder = cs ? stockText(st) : "Pallets";
+}
+
 /* One line per SKU: the SKU list leaves out SKUs already on another line. */
 let skuNames = [];
 function refreshSkuOptions(input){
   const used = new Set([...document.querySelectorAll("#itemsBody .sku-name")].filter(i => i !== input).map(i => skuKey(i.value)));
   const list = document.getElementById("skuMasterList");
-  list.replaceChildren(...skuNames.filter(n => !used.has(skuKey(n))).map(n => { const o = document.createElement("option"); o.value = n; return o; }));
+  list.replaceChildren(...skuNames.filter(n => !used.has(skuKey(n))).map(n => { const o = document.createElement("option"); o.value = n; const st = stockByKey.get(skuKey(n)); if(st) o.label = stockText(st); return o; }));
 }
 document.getElementById("itemsBody").addEventListener("focusin", e => {
   if (e.target.classList.contains("sku-name")) refreshSkuOptions(e.target);
@@ -1266,6 +1294,7 @@ function applySkuDefaultWeight(input){
   }
   syncPallet(row);
   calculateRow(input);
+  showStock(row);
 }
 
 function getRowCaseQty(row) {
@@ -1486,6 +1515,7 @@ function updateQuantityModeUI() {
   document.querySelectorAll("#itemsBody tr").forEach(row => {
     row.querySelector(".qty").placeholder = pallet ? "Pallets" : "Cases";
     updateRowConversion(row);
+    if(typeof showStock === "function") showStock(row);
   });
 }
 
@@ -2093,6 +2123,7 @@ function palletInput(input){
 function qtyInput(input){
   syncPallet(input.closest("tr"));
   calculateRow(input);
+  showStock(input.closest("tr"));
 }
 
 function rateTyped(input){

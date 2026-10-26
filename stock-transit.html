@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Goods in Transit | Luxury Wrist Brand ERP</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <link rel="stylesheet" href="erp-shell.css">
+  <link rel="stylesheet" href="sales.css">
+  <script src="erp-shell.js"></script>
+  <script src="sales-common.js"></script>
+  <style>
+    .tr-form{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+    .tr-form label{display:block;font-size:12px;font-weight:600;color:#4b5763;margin-bottom:3px}
+    .tr-form input{width:100%;box-sizing:border-box;height:38px;border:1.5px solid var(--erp-line);border-radius:6px;padding:0 10px;font:inherit;background:#fff}
+    .tr-form input:focus{outline:none;border-color:var(--erp-red)}
+    .tr-lines{grid-column:1/-1;display:grid;gap:8px}
+    .tr-line{display:grid;grid-template-columns:minmax(0,1fr) 120px 36px;gap:8px}
+    .tr-line button{height:38px;border:1px solid var(--erp-line);border-radius:6px;background:#fff;color:var(--erp-muted);cursor:pointer;font-size:14px}
+    .tr-end{grid-column:1/-1;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+    .tr-end small{flex:1;color:var(--erp-muted);font-size:12px}
+    .tr-list{display:grid;gap:10px;margin-bottom:16px}
+    .tr-item{background:#fff;border:1px solid var(--erp-line);border-left:4px solid #e0a100;border-radius:8px;padding:10px 14px;display:grid;gap:6px}
+    .tr-top{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+    .tr-top b{font-size:14.5px}.tr-top .grow{flex:1}
+    .tr-meta{font-size:12.5px;color:var(--erp-muted)}
+    .tr-skus{display:flex;gap:6px;flex-wrap:wrap}
+    .tr-skus span{background:#f3f4f6;border-radius:5px;padding:2px 8px;font-size:12.5px}
+    .tr-btns{display:flex;gap:8px;flex-wrap:wrap}
+    h2.sec{font-size:15px;margin:18px 0 8px}
+    #stock .sl-scroll .erp-table{min-width:0;width:100%}
+    #stock .erp-table td,#stock .erp-table th{padding-left:8px;padding-right:8px}
+    @media(max-width:460px){#stock .erp-table{font-size:13px}#stock .erp-table td:first-child{white-space:normal}}
+    @media(max-width:760px){.tr-form{grid-template-columns:1fr 1fr}}
+  </style>
+</head>
+<body>
+  <div id="loading" class="status">Checking account access...</div>
+  <main id="page" class="erp-main" hidden>
+    <div class="erp-pagehead"><h1>Goods in Transit</h1></div>
+    <p class="sl-sub">Company stock that is ordered or dispatched but not yet in the godown. It shows as "On the way" next to each SKU in PO Entry. Mark it Received when the truck is unloaded (enter the stock in Goods Inward as usual).</p>
+
+    <section class="erp-card" style="margin-bottom:14px">
+      <div class="erp-card-head"><h2>Add stock on the way</h2></div>
+      <form class="erp-card-body tr-form" id="form" autocomplete="off">
+        <div><label for="f_ref">Truck / Invoice No.</label><input id="f_ref" maxlength="60" placeholder="e.g. GJ05AB1234" style="text-transform:uppercase"></div>
+        <div><label for="f_date">Expected On</label><input id="f_date" type="date"></div>
+        <div class="tr-lines" id="lines"></div>
+        <div class="tr-end"><button type="button" class="sl-btn ghost small" id="addLine">+ Add SKU</button><small>One line per SKU, whole cases.</small><button type="submit" class="sl-btn" id="save">Save</button></div>
+      </form>
+    </section>
+
+    <h2 class="sec">On the way now</h2>
+    <div class="tr-list" id="open"></div>
+
+    <h2 class="sec">Stock by SKU</h2>
+    <div class="sl-filters">
+      <div class="grow"><label for="q">Search SKU</label><input id="q" type="search" placeholder="SKU name"></div>
+      <div><label for="all">Show</label><select id="all"><option value="">SKUs with stock</option><option value="1">All SKUs</option></select></div>
+      <button type="button" class="sl-btn ghost" id="refresh">Refresh</button>
+    </div>
+    <div id="stock"></div>
+  </main>
+  <datalist id="skuList"></datalist>
+  <script>
+    const S=LWBSales,{client,el,esc,fmt}=S;
+    let me=null,stock=[],skus=[],open=[];
+    const setupMsg="Run lwb_live_stock_po_setup.sql in Supabase first.";
+    const k=v=>String(v||"").trim().toUpperCase();
+    function addLine(){
+      const d=document.createElement("div");d.className="tr-line";
+      d.innerHTML='<input class="l-sku" list="skuList" placeholder="SKU" aria-label="SKU"><input class="l-cases" type="number" min="1" step="1" inputmode="numeric" placeholder="Cases" aria-label="Cases"><button type="button" class="l-del" title="Remove line" aria-label="Remove line">✕</button>';
+      el("lines").appendChild(d);return d;
+    }
+    async function save(e){
+      e.preventDefault();
+      const lines=[...document.querySelectorAll(".tr-line")].map(d=>({sku_name:d.querySelector(".l-sku").value.trim(),cases:d.querySelector(".l-cases").value.trim()})).filter(x=>x.sku_name||x.cases);
+      if(!lines.length){await alert("Enter at least one SKU and its cases.");return}
+      const seen=new Set();
+      for(const x of lines){
+        if(!skus.some(s=>k(s)===k(x.sku_name))){await alert("Please select "+(x.sku_name||"the SKU")+" from SKU Master.");return}
+        if(!/^\d+$/.test(x.cases)||Number(x.cases)<1){await alert("Enter whole cases for "+x.sku_name+".");return}
+        if(seen.has(k(x.sku_name))){await alert(x.sku_name+" is on two lines. Put all its cases on one line.");return}seen.add(k(x.sku_name));
+      }
+      const btn=el("save");btn.disabled=true;
+      const {error}=await client.rpc("lwb_add_stock_transit",{p_ref:el("f_ref").value.trim(),p_expected:el("f_date").value||null,p_lines:lines});
+      btn.disabled=false;
+      if(error){await alert("Could not save: "+(/lwb_add_stock_transit/.test(error.message)?setupMsg:error.message));return}
+      ERPShell.toast(lines.length+" SKU"+(lines.length>1?"s":"")+" added as on the way.");
+      el("form").reset();el("lines").replaceChildren();addLine();await load();
+    }
+    async function load(){
+      const [t,s]=await Promise.all([client.from("lwb_stock_transit").select("*").eq("status","OPEN").order("created_at",{ascending:false}),client.rpc("lwb_po_stock")]);
+      if(t.error||s.error){const m=(t.error||s.error).message;el("open").innerHTML='<div class="sl-msg">'+esc(/lwb_stock_transit|lwb_po_stock/.test(m)?setupMsg:m)+"</div>";el("stock").innerHTML="";return}
+      open=t.data||[];stock=s.data||[];
+      renderOpen();renderStock();
+    }
+    function renderOpen(){
+      const groups=new Map();
+      for(const x of open){const g=x.created_at+"|"+(x.ref_no||"");if(!groups.has(g))groups.set(g,[]);groups.get(g).push(x)}
+      if(!groups.size){el("open").innerHTML='<div class="erp-empty">Nothing on the way.</div>';return}
+      el("open").innerHTML=[...groups.values()].map(g=>{
+        const x=g[0],ids=g.map(y=>y.id).join(","),late=x.expected_date&&x.expected_date<S.isoDay(new Date());
+        return '<div class="tr-item"><div class="tr-top"><span>🚚</span><b>'+esc(x.ref_no||"No truck / invoice no.")+'</b><span class="grow"></span>'+
+          (x.expected_date?'<span class="erp-badge '+(late?"red":"amber")+'">'+(late?"Was due ":"Expected ")+S.shortDate(x.expected_date)+"</span>":"")+"</div>"+
+          '<div class="tr-skus">'+g.map(y=>"<span>"+esc(y.sku_name)+" · "+fmt(y.cases)+" CS</span>").join("")+"</div>"+
+          '<div class="tr-meta">Added '+S.shortDate(x.created_at)+" · "+fmt(g.reduce((a,y)=>a+Number(y.cases||0),0))+" cases</div>"+
+          '<div class="tr-btns"><button type="button" class="sl-btn small" data-close="RECEIVED" data-ids="'+ids+'">Received in godown</button><button type="button" class="sl-btn ghost small" data-close="CANCELLED" data-ids="'+ids+'">Cancel</button></div></div>';
+      }).join("");
+    }
+    function renderStock(){
+      const q=k(el("q").value),all=el("all").value==="1";
+      const by=new Map(stock.map(r=>[k(r.sku_name),r]));
+      const names=all?[...new Set([...skus,...stock.map(r=>r.sku_name)].map(n=>n))]:stock.map(r=>r.sku_name);
+      const list=[...new Map(names.map(n=>[k(n),n])).values()].filter(n=>!q||k(n).includes(q)).map(n=>{const r=by.get(k(n))||{};const g=Math.max(0,Math.floor(Number(r.godown_cases)||0)),t=Number(r.transit_cases)||0;return {n,g,t}})
+        .filter(x=>all||x.g||x.t).sort((a,b)=>a.n.localeCompare(b.n));
+      if(!list.length){el("stock").innerHTML='<div class="erp-empty">'+(stock.length||all?"No SKU matches.":"No stock to show. If your role is not ticked in Sales Team Setup > Morning Plan, stock is hidden.")+"</div>";return}
+      el("stock").innerHTML='<div class="sl-scroll">'+S.table(["SKU","Godown","On way","Total CS"],list.map(x=>[esc(x.n),fmt(x.g),fmt(x.t),"<b>"+fmt(x.g+x.t)+"</b>"]),[1,2,3])+"</div>";
+    }
+
+    (async()=>{
+      me=await S.start(["admin","manager","warehouse"]);if(!me)return;
+      const sk=await client.from("sku_master").select("sku_name").eq("is_active",true).order("sku_name");
+      skus=(sk.data||[]).map(s=>s.sku_name);
+      el("skuList").innerHTML=skus.map(n=>'<option value="'+esc(n)+'">').join("");
+      addLine();
+      el("addLine").onclick=()=>addLine().querySelector(".l-sku").focus();
+      el("lines").addEventListener("click",e=>{const b=e.target.closest(".l-del");if(!b)return;b.closest(".tr-line").remove();if(!el("lines").children.length)addLine()});
+      el("form").addEventListener("submit",save);
+      el("open").addEventListener("click",async e=>{
+        const b=e.target.closest("[data-close]");if(!b)return;
+        const rec=b.dataset.close==="RECEIVED";
+        if(!await confirm(rec?"Mark this stock as received in the godown? It leaves On the way. Enter it in Goods Inward if not done yet.":"Cancel this entry? It leaves On the way.",rec?{ok:"Received"}:{danger:true,ok:"Cancel entry",cancel:"Keep"}))return;
+        const {error}=await client.rpc("lwb_close_stock_transit",{p_ids:b.dataset.ids.split(",").map(Number),p_status:b.dataset.close});
+        if(error){await alert(error.message);return}await load();
+      });
+      el("q").addEventListener("input",renderStock);el("all").addEventListener("change",renderStock);el("refresh").onclick=load;
+      el("loading").hidden=true;el("page").hidden=false;
+      await load();
+    })();
+  </script>
+</body>
+</html>
