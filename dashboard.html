@@ -187,7 +187,8 @@
     async function loadSummary(){
       const role=currentRole,pills=document.getElementById("pills");
       const jobs=[];
-      if(ORDER_ROLES.includes(role))jobs.push(client.from("orders")
+      // Salesman: totals only, from his own orders below (no party-wise order list).
+      if(ORDER_ROLES.includes(role)&&role!=="sales")jobs.push(client.from("orders")
         .select("id,order_no,order_date,created_at,customer_name,status,total_qty,total_amount")
         .order("created_at",{ascending:false}).limit(1000));
       else jobs.push(Promise.resolve(null));
@@ -221,6 +222,12 @@
       if(mine&&!mine.error&&Array.isArray(mine.data)){
         const r=mine.data,off=o=>["cancelled","canceled","rejected"].includes(String(o.status||"").toLowerCase()),done=o=>o.delivery_status==="DELIVERED"||o.delivery_status==="PARTIAL";
         const pend=r.filter(o=>!off(o)&&!done(o)),week=Date.now()-7*864e5;
+        const live=r.filter(o=>!off(o)),monthKey=v=>{const d=new Date(v);return d.getFullYear()+"-"+d.getMonth()};
+        const t=live.filter(o=>dayKey(o.order_date)===dayKey(new Date())),m=live.filter(o=>monthKey(o.order_date)===monthKey(new Date()));
+        const sum=a=>a.reduce((n,o)=>n+Number(o.total_amount||0),0),n=a=>a.length+(a.length===1?" order":" orders");
+        kpis.appendChild(kpiGroup([
+          kpi("Today's Sales","₹"+fmtINR(sum(t)),n(t)+" today","my-sales.html#orders"),
+          kpi("This Month's Sales","₹"+fmtINR(sum(m)),n(m)+" in "+new Date().toLocaleDateString("en-IN",{month:"long"}),"my-sales.html#orders")]));
         kpis.appendChild(kpiGroup([
           kpi("My Orders Not Delivered",pend.length,"Waiting for approval: "+pend.filter(o=>["","pending","submitted","pending_manager","pending_approval","pending_review","new"].includes(String(o.status||"").toLowerCase().trim())).length,"my-sales.html#orders"),
           kpi("Delivered (7 days)",r.filter(o=>done(o)&&Date.parse(o.delivered_at)>=week).length,"Cancelled: "+r.filter(off).length,"my-sales.html#orders")]));
