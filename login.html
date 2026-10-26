@@ -115,12 +115,7 @@
       min-height: 18px;
     }
 
-    .login-methods{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:0 0 22px}
-    .login-methods button{padding:12px 8px;background:#f2f3f6;border:1px solid #d6d9df;color:#353535}
-    .login-methods button[aria-selected="true"]{background:#111;color:white;border-color:#111}
-    .login-methods button:hover{background:#c99b35;color:#111}
     .form-note{font-size:12px;color:#777;line-height:1.6;margin:-4px 0 18px}
-    .method-panel[hidden],.otp-controls[hidden]{display:none!important}
     .login-box .secondary{background:#eef0f3;color:#222;margin:9px 0 0}
     .login-box .secondary:hover{background:#ead39e}
     #message{white-space:pre-wrap;line-height:1.5}
@@ -134,6 +129,10 @@
       color: #999;
     }
   </style>
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#c8102e">
+<link rel="apple-touch-icon" href="app-icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
 </head>
 
 <body>
@@ -149,47 +148,18 @@
   <p class="subtitle">Sign in to access your business dashboard.</p>
 
 
-  <div class="login-methods" role="tablist" aria-label="Login Method">
-    <button type="button" id="emailTab" role="tab" aria-controls="emailPanel"
-      aria-selected="true">Email ID</button>
-    <button type="button" id="mobileTab" role="tab" aria-controls="mobilePanel"
-      aria-selected="false">Mobile Number</button>
-  </div>
-
-  <div id="emailPanel" class="method-panel" role="tabpanel" aria-labelledby="emailTab">
-    <form id="loginForm">
-      <label for="email">Email Address</label>
-      <input type="email" id="email" placeholder="Enter your registered email"
-        autocomplete="username" required>
-      <label for="password">Password</label>
-      <input type="password" id="password" placeholder="Enter your password"
-        autocomplete="current-password" required>
-      <button type="submit" id="loginButton">Sign In with Email</button>
-    </form>
-  </div>
-
-  <div id="mobilePanel" class="method-panel" role="tabpanel" aria-labelledby="mobileTab" hidden>
-    <form id="mobileRequestForm">
-      <label for="mobile">Registered Mobile Number (+91 India)</label>
-      <input type="tel" id="mobile" placeholder="10-digit mobile number"
-        autocomplete="tel" inputmode="tel" maxlength="16" required>
-      <p class="form-note">Only existing ERP accounts with this Phone registered in
-      Supabase Authentication can receive OTP. Mobile OTP requires an enabled
-      Supabase SMS provider and may incur SMS charges.</p>
-      <button type="submit" id="sendOtpButton">Send SMS OTP</button>
-    </form>
-    <form id="mobileOtpForm" class="otp-controls" hidden>
-      <label for="mobileOtp">6-Digit SMS OTP</label>
-      <input type="text" id="mobileOtp" placeholder="Enter received OTP"
-        inputmode="numeric" autocomplete="one-time-code"
-        pattern="[0-9]{6}" minlength="6" maxlength="6" required>
-      <button type="submit" id="verifyOtpButton">Verify OTP &amp; Sign In</button>
-      <button type="button" id="changeNumberButton" class="secondary">Change Mobile Number</button>
-    </form>
-  </div>
+  <form id="loginForm">
+    <label for="login">Mobile Number or Email</label>
+    <input type="text" id="login" placeholder="10-digit mobile or email"
+      autocomplete="username" autocapitalize="none" spellcheck="false" required>
+    <label for="password">Password</label>
+    <input type="password" id="password" placeholder="Enter your password"
+      autocomplete="current-password" required>
+    <button type="submit" id="loginButton">Sign In</button>
+  </form>
   <div id="message" role="status" aria-live="polite"></div>
-  <p class="security-note">Only Active Users approved by LWB Admin may enter the ERP.
-  Mobile OTP is an SMS Authentication method, separate from WhatsApp API Notifications.</p>
+  <p class="security-note">Only active users created by LWB Admin may enter the ERP.
+  Forgot your password? Ask Admin to set a new one.</p>
 
   <div class="footer">
     © Luxury Wrist Brand • Authorized Access Only
@@ -206,36 +176,21 @@ const client=supabase.createClient(SUPABASE_URL,SUPABASE_PUBLISHABLE_KEY);
 
 const el=id=>document.getElementById(id);
 let busy=false;
-let mobileForVerification=null;
 
 function showMessage(text,error=false){
   el("message").textContent=text;
   el("message").style.color=error?"#c62828":"#198754";
 }
-function setBusy(working,label){
+function setBusy(working){
   busy=working;
   el("loginButton").disabled=working;
-  el("sendOtpButton").disabled=working;
-  el("verifyOtpButton").disabled=working;
-  el("changeNumberButton").disabled=working;
-  el("loginButton").textContent=working&&label==="email"?"Signing In...":"Sign In with Email";
-  el("sendOtpButton").textContent=working&&label==="send"?"Requesting OTP...":"Send SMS OTP";
-  el("verifyOtpButton").textContent=working&&label==="verify"?"Verifying...":"Verify OTP & Sign In";
-}
-function selectMethod(mode){
-  if(busy)return;
-  const email=mode==="email";
-  el("emailPanel").hidden=!email;
-  el("mobilePanel").hidden=email;
-  el("emailTab").setAttribute("aria-selected",String(email));
-  el("mobileTab").setAttribute("aria-selected",String(!email));
-  showMessage("");
+  el("loginButton").textContent=working?"Signing In...":"Sign In";
 }
 function validIndianMobile(raw){
-  const value=String(raw||"").trim();
-  const digit=value.replace(/\D/g,"");
-  if(!/^(?:91)?[6-9]\d{9}$/.test(digit))return null;
-  return "+91"+digit.slice(-10);
+  let d=String(raw||"").replace(/\D/g,"");
+  if(d.length===12&&d.startsWith("91"))d=d.slice(2);
+  if(d.length===11&&d.startsWith("0"))d=d.slice(1);
+  return /^[6-9]\d{9}$/.test(d)?d:null;
 }
 async function finishAuthorizedLogin(user){
   if(!user?.id)throw Error("Login session could not be verified.");
@@ -262,71 +217,31 @@ async function checkExistingLogin(){
   try{await finishAuthorizedLogin(result.data.user);}
   catch(e){showMessage(e.message,true);}
 }
-el("emailTab").addEventListener("click",()=>selectMethod("email"));
-el("mobileTab").addEventListener("click",()=>selectMethod("mobile"));
-
+// Email signs in directly. A mobile number is turned into its login email by
+// the database, which answers only when the password is correct.
 el("loginForm").addEventListener("submit",async event=>{
   event.preventDefault();
   if(busy)return;
-  const email=el("email").value.trim();
+  const login=el("login").value.trim();
   const password=el("password").value;
-  if(!email||!password){showMessage("Enter Email and Password.",true);return;}
-  setBusy(true,"email");showMessage("");
+  if(!login||!password){showMessage("Enter Mobile Number or Email, and Password.",true);return;}
+  const isEmail=login.includes("@");
+  const mobile=isEmail?null:validIndianMobile(login);
+  if(!isEmail&&!mobile){showMessage("Enter a valid 10-digit mobile number or an email.",true);return;}
+  setBusy(true);showMessage("");
   try{
+    let email=login;
+    if(mobile){
+      const {data,error}=await client.rpc("lwb_login_email",{p_login:mobile,p_password:password});
+      if(error)throw Error(/Too many/.test(error.message)?error.message:"Mobile login is not set up yet. Use your email, or ask Admin.");
+      if(!data)throw Error("Invalid Mobile Number or Password.");
+      email=data;
+    }
     const {data,error}=await client.auth.signInWithPassword({email,password});
-    if(error)throw Error("Invalid Email Address or Password.");
+    if(error)throw Error(isEmail?"Invalid Email or Password.":"Invalid Mobile Number or Password.");
     await finishAuthorizedLogin(data.user);
   }catch(e){showMessage(e.message,true);}
   finally{setBusy(false);}
-});
-el("mobileRequestForm").addEventListener("submit",async event=>{
-  event.preventDefault();
-  if(busy)return;
-  const phone=validIndianMobile(el("mobile").value);
-  if(!phone){showMessage("Enter a valid Indian Mobile Number (10 digits or +91).",true);return;}
-  setBusy(true,"send");showMessage("");
-  try{
-    // IMPORTANT: Never auto-register unknown users by requesting OTP.
-    // Admin must provision this mobile in Supabase AUTH (not just user_profiles).
-    const {error}=await client.auth.signInWithOtp({
-      phone,
-      options:{channel:"sms",shouldCreateUser:false}
-    });
-    if(error)throw error;
-    mobileForVerification=phone;
-    el("mobileRequestForm").hidden=true;
-    el("mobileOtpForm").hidden=false;
-    el("mobileOtp").value="";
-    showMessage("If this number is registered and SMS is enabled, an OTP will arrive. Enter it below.");
-    el("mobileOtp").focus();
-  }catch(e){
-    const detail=String(e?.message||"Could not send SMS OTP").slice(0,180);
-    showMessage("SMS OTP could not be requested. "+detail+
-      "\nAdmin: check Supabase Phone Provider, SMS Service and registered Auth Phone.",true);
-  }finally{setBusy(false);}
-});
-el("mobileOtpForm").addEventListener("submit",async event=>{
-  event.preventDefault();
-  if(busy||!mobileForVerification)return;
-  const token=el("mobileOtp").value.trim();
-  if(!/^\d{6}$/.test(token)){showMessage("Enter the 6-digit OTP.",true);return;}
-  setBusy(true,"verify");showMessage("");
-  try{
-    const {data,error}=await client.auth.verifyOtp({
-      phone:mobileForVerification,token,type:"sms"
-    });
-    if(error)throw Error("OTP incorrect or expired. Check your SMS and try again.");
-    await finishAuthorizedLogin(data.user);
-  }catch(e){showMessage(e.message,true);}
-  finally{setBusy(false);}
-});
-el("changeNumberButton").addEventListener("click",()=>{
-  if(busy)return;
-  mobileForVerification=null;
-  el("mobileOtpForm").hidden=true;
-  el("mobileRequestForm").hidden=false;
-  el("mobileOtp").value="";
-  showMessage("");
 });
 checkExistingLogin();
 
