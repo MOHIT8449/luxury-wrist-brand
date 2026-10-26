@@ -35,6 +35,7 @@
       {t:"PO / Sales Order Entry",h:"order-entry.html",i:"cart",r:"admin manager sales"},
       {t:"PO Approval & Driver",h:"warehouse-orders.html",i:"check",r:"admin manager"},
       {t:"My Sales",h:"my-sales.html",i:"chart",r:"sales"},
+      {t:"Outside Market Stock",h:"market-report.html",i:"pin",r:"admin manager sales"},
       {t:"Sales Tracking",h:"sales-tracking.html",i:"chart",r:"admin manager"},
       {t:"Sales Team Setup",h:"sales-team.html",i:"users",r:"admin manager"}]},
     {group:"Dispatch",items:[
