@@ -41,6 +41,20 @@
     .kpi span{display:block;border-top:1px solid #eef0f2;padding-top:7px;font-size:11.5px;color:#4b5763}
     .kpi:hover b{color:var(--erp-red)}
     .kpi .due{color:var(--erp-red);font-weight:600}
+    .focus{margin:0 0 16px;display:grid;gap:8px}
+    .focus:empty{display:none}
+    .focus-item{display:flex;align-items:flex-start;gap:10px;background:#fff8e1;border:1px solid #f3d27a;border-left:4px solid #e0a100;border-radius:8px;padding:10px 12px}
+    .focus-item .ic{font-size:20px;line-height:1.2;flex:none}
+    .focus-item .tx{flex:1;min-width:0}
+    .focus-item b{display:block;font-size:15px;font-weight:600;color:#3d2c00;overflow-wrap:anywhere}
+    .focus-item small{display:block;color:#7a6326;font-size:12px;margin-top:2px}
+    .focus-item .x{border:0;background:transparent!important;color:#8a6d1f!important;font-size:13px;cursor:pointer;padding:2px 4px;flex:none}
+    .focus-post{display:flex;justify-content:flex-end}
+    .focus-post button,.focus-form button{height:34px;padding:0 12px;border-radius:6px;border:1px solid var(--erp-line);background:#fff;color:var(--erp-ink);font:inherit;font-size:13px;font-weight:600;cursor:pointer}
+    .focus-form{display:grid;grid-template-columns:minmax(0,1fr) 180px 140px auto auto;gap:8px;background:#fff;border:1px solid var(--erp-line);border-radius:8px;padding:10px}
+    .focus-form input,.focus-form select{height:34px;border:1.5px solid var(--erp-line);border-radius:6px;padding:0 9px;font:inherit;font-size:13.5px;min-width:0;background:#fff}
+    .focus-form .send{background:var(--erp-red);border-color:var(--erp-red);color:#fff;font-weight:600}
+    @media(max-width:760px){.focus-form{grid-template-columns:1fr 1fr}.focus-form .msg{grid-column:1/-1}}
     [hidden]{display:none!important}
     @media(max-width:1100px){.dash-grid{grid-template-columns:1fr}}
     @media(max-width:980px){.hero{margin:-14px -12px 0;padding:18px 12px 60px}.hero h2{font-size:18px}
@@ -60,6 +74,16 @@
       </div>
     </div>
     <div class="kpis" id="kpis"></div>
+    <div class="focus" id="focus"></div>
+    <div class="focus-post" id="focusPost" hidden><button type="button" id="focusOpen">📢 Post focus message</button></div>
+    <form class="focus-form" id="focusForm" hidden autocomplete="off">
+      <input class="msg" id="focusMsg" maxlength="300" placeholder="e.g. 300ml Thums Up stock arrived today, push it" aria-label="Message" required>
+      <input id="focusSku" list="focusSkus" placeholder="SKU (optional)" aria-label="SKU">
+      <select id="focusTill" aria-label="Show till"><option value="0">Today only</option><option value="2" selected>3 days</option><option value="6">1 week</option><option value="">Until removed</option></select>
+      <button type="button" id="focusCancel">Close</button>
+      <button type="submit" class="send" id="focusSend">Post to all</button>
+      <datalist id="focusSkus"></datalist>
+    </form>
 
     <div class="erp-pagehead">
       <h1>Order Status</h1><span class="time" id="clock"></span>
@@ -115,7 +139,7 @@
       "sales-return.html":"Return entry and approval","credit-note.html":"Preview only","customer-master.html":"Parties and billing details","sku-master.html":"SKU, packing, weight",
       "daily-report.html":"Today's orders, deliveries, payments, outstanding","supplier-master.html":"Supplier records","fleet-master.html#vehicles":"Vehicles and documents","fleet-master.html#drivers":"Drivers by mobile number","goods-inward.html":"Purchase and stock inward","purchase-register.html":"All purchase bills","purchase-claims.html":"Damage, leakage and shortage claims","opening-stock.html":"Opening stock","group-party-loading.html":"Optional",
       "settings.html":"Users, masters and stock setup","users.html":"Assign ERP roles",
-      "my-sales.html":"Today's plan, target and my parties","godown-report.html":"Vehicles, damage, leakage, staff absent","sales-tracking.html":"Targets, salesmen, SKU margin, no-order parties","sales-team.html":"Salesmen, parties, SKU visibility, targets"
+      "my-sales.html":"Today's plan, target and my parties","godown-report.html":"Vehicles, damage, leakage, staff absent","market-report.html":"Outside goods in your market, with photos","sales-tracking.html":"Targets, salesmen, SKU margin, no-order parties","sales-team.html":"Salesmen, parties, SKU visibility, targets"
     };
     function renderQuick(role){
       const list=document.getElementById("quickList");list.replaceChildren();
@@ -252,7 +276,60 @@
       }
       if(role==="driver")pills.appendChild(pill("My Deliveries","→","driver-delivery.html"));
     }
-    document.getElementById("refreshBtn").onclick=()=>loadSummary();
+    // Focus messages from Admin / Sales Head, shown to every role (lwb_announcements_setup).
+    const isHead=()=>["admin","manager"].includes(currentRole);
+    const istDay=d=>new Date(d.getTime()+19800000).toISOString().slice(0,10);
+    const shortDay=v=>new Date(v+(v.length===10?"T00:00:00":"")).toLocaleDateString("en-IN",{day:"2-digit",month:"short"});
+    async function loadFocus(){
+      const box=document.getElementById("focus");
+      const r=await client.from("lwb_announcements").select("id,message,sku_name,valid_until,created_at,active").order("created_at",{ascending:false}).limit(20);
+      box.replaceChildren();
+      if(r.error)return;
+      const today=istDay(new Date());
+      (r.data||[]).filter(a=>a.active&&(!a.valid_until||a.valid_until>=today)).forEach(a=>{
+        const d=document.createElement("div");d.className="focus-item";
+        const ic=document.createElement("span");ic.className="ic";ic.textContent="📢";
+        const tx=document.createElement("div");tx.className="tx";
+        const b=document.createElement("b");b.textContent=a.message;
+        const m=document.createElement("small");
+        m.textContent=[a.sku_name,"Posted "+shortDay(a.created_at),a.valid_until?(a.valid_until===today?"Today only":"Till "+shortDay(a.valid_until)):""].filter(Boolean).join(" · ");
+        tx.append(b,m);d.append(ic,tx);
+        if(isHead()){const x=document.createElement("button");x.type="button";x.className="x";x.textContent="✕ Remove";x.dataset.remove=a.id;d.append(x)}
+        box.appendChild(d);
+      });
+    }
+    function focusSetup(){
+      if(!isHead())return;
+      const form=document.getElementById("focusForm"),post=document.getElementById("focusPost");
+      post.hidden=false;
+      document.getElementById("focusOpen").onclick=async()=>{
+        post.hidden=true;form.hidden=false;document.getElementById("focusMsg").focus();
+        const list=document.getElementById("focusSkus");
+        if(!list.children.length){const sk=await client.from("sku_master").select("sku_name").eq("is_active",true).order("sku_name");
+          (sk.data||[]).forEach(x=>{const o=document.createElement("option");o.value=x.sku_name;list.appendChild(o)})}
+      };
+      document.getElementById("focusCancel").onclick=()=>{form.hidden=true;post.hidden=false};
+      form.onsubmit=async e=>{
+        e.preventDefault();
+        const till=document.getElementById("focusTill").value,btn=document.getElementById("focusSend");
+        btn.disabled=true;
+        const {error}=await client.rpc("lwb_post_announcement",{p_message:document.getElementById("focusMsg").value.trim(),p_sku:document.getElementById("focusSku").value.trim(),
+          p_until:till===""?null:istDay(new Date(Date.now()+Number(till)*864e5))});
+        btn.disabled=false;
+        if(error){await alert("Could not post: "+(/lwb_post_announcement/.test(error.message)?"run lwb_announcements_market_report_setup.sql in Supabase first.":error.message));return}
+        form.reset();form.hidden=true;post.hidden=false;
+        ERPShell.toast("Posted. Everyone sees it on the Dashboard and gets a 🔔.");
+        loadFocus();
+      };
+      document.getElementById("focus").addEventListener("click",async e=>{
+        const x=e.target.closest("[data-remove]");if(!x)return;
+        if(!await confirm("Remove this message from everyone's Dashboard?",{danger:true,ok:"Remove"}))return;
+        const {error}=await client.rpc("lwb_remove_announcement",{p_id:Number(x.dataset.remove)});
+        if(error){await alert(error.message);return}
+        loadFocus();
+      });
+    }
+    document.getElementById("refreshBtn").onclick=()=>{loadSummary();loadFocus()};
 
 
     async function initializeDashboard() {
@@ -337,6 +414,7 @@
         renderQuick(role);document.addEventListener("erp:access",()=>renderQuick(role));
         heroSearch();
         loadSummary();
+        loadFocus();focusSetup();
 
         document.getElementById("loading").style.display =
           "none";

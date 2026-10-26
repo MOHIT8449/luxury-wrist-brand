@@ -25,6 +25,8 @@
   if(t.startsWith("GODOWN_")){const id=(m.match(/GDN-\d+/)||[])[0]||"";return {icon:"🏭",text:join([title.replace(/^Godown: /,"Godown · "),id])}}
   if(t.startsWith("ORDER_")){const ic={ORDER_DELIVERED:"✅",ORDER_PARTIAL:"🟠",ORDER_NOT_DELIVERED:"⚠",ORDER_CANCELLED:"✖",ORDER_EDITED:"✏"}[t]||"•";
    return {icon:ic,text:join([title,order])}}
+  if(t==="ANNOUNCEMENT")return {icon:"📢",text:join([title,m.length>50?m.slice(0,47)+"…":m])};
+  if(t==="MARKET_REPORT"||t==="MARKET_REVIEW"){const id=(m.match(/MKT-\d+/)||[])[0]||"";return {icon:t==="MARKET_REPORT"?"🚩":"✅",text:join([t==="MARKET_REPORT"?"Outside stock":title,id])}}
   if(t==="SALES_PLAN"){const n=(m.match(/from (\d+) part/)||[])[1];return {icon:"📋",text:join(["Today's plan",n?n+" parties due":"Sales Head note"])}}
   const short=m.length>60?m.slice(0,57)+"…":m;
   return {icon:"•",text:join([title||"ERP",order||short])};
@@ -35,6 +37,25 @@
   if(s<60)return "now";if(s<3600)return Math.floor(s/60)+" min";if(s<86400)return Math.floor(s/3600)+" hr";
   if(s<7*86400)return Math.floor(s/86400)+" d";
   return new Date(v).toLocaleDateString("en-IN",{day:"2-digit",month:"short"});
+ }
+ // Focus messages and outside-market reports also pop up once per device.
+ const POPUP={ANNOUNCEMENT:["📢 Focus message","OK",""],MARKET_REPORT:["🚩 Outside market stock","Open report","market-report.html"]};
+ let popping=false;
+ async function popup(rows){
+  if(popping||typeof window.confirm!=="function")return;
+  let seen=[];try{seen=JSON.parse(localStorage.getItem("lwbPopped")||"[]")}catch(e){}
+  const fresh=rows.filter(n=>!n.is_read&&POPUP[String(n.notification_type||"").toUpperCase()]&&!seen.includes(n.id)&&Date.now()-new Date(n.created_at)<2*864e5).slice(0,3);
+  if(!fresh.length)return;
+  popping=true;
+  seen=seen.concat(fresh.map(n=>n.id)).slice(-200);
+  try{localStorage.setItem("lwbPopped",JSON.stringify(seen))}catch(e){}
+  for(const n of fresh.reverse()){
+   const [title,ok,href]=POPUP[String(n.notification_type).toUpperCase()];
+   const text=(n.title&&n.notification_type==="ANNOUNCEMENT"?n.title+"\n\n":"")+(n.message||"");
+   const go=href?await window.confirm(text,{title,ok,cancel:"Later"}):(await window.alert(text,{title,kind:"info"}),false);
+   if(go&&!location.pathname.endsWith(href)){location.href=href;break}
+  }
+  popping=false;
  }
  function init({db,user,mount}){
   if(!db||!user?.id||!mount)return;
@@ -78,6 +99,7 @@
    const rows=data||[],unread=rows.filter(n=>!n.is_read).length;
    count.textContent=unread>99?"99+":String(unread);count.style.display=unread?"inline-block":"none";
    list.replaceChildren();
+   popup(rows);
    if(!rows.length){list.append(el("p",null,"No notifications yet."));return}
    allRead.hidden=!unread;
    for(const n of rows){
