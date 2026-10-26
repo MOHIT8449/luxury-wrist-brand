@@ -10,7 +10,42 @@
   const db=supabase.createClient("https://txkbhadzdbxpieunfvox.supabase.co","sb_publishable_W4I3Q5ODf0g17sq5uDml2Q_sLolXYEk");
   const CHECK_EVERY=20000;
   const CB={data:null,erpAdmin:false,onReplace:null,isBusy:()=>false};
-  let version=0,latest=null,sending=false,again=false;
+  let version=0,latest=null,sending=false,again=false,base=null;
+  const copy=v=>JSON.parse(JSON.stringify(v));
+  const same=(a,b)=>JSON.stringify(a)===JSON.stringify(b);
+  // two screens saved at the same time: keep both. b = data both started from, m = mine, t = saved by the other.
+  // Lists of items with an id (books, entries, parties) are merged item by item; for the same box changed on
+  // both, this screen wins.
+  function merge(b,m,t){
+    if(same(m,b))return t;
+    if(same(t,b))return m;
+    const obj=x=>x&&typeof x==="object"&&!Array.isArray(x);
+    if(Array.isArray(m)&&Array.isArray(t)){
+      const B=Array.isArray(b)?b:[];
+      if([...m,...t,...B].every(x=>obj(x)&&"id" in x)){
+        const bm=new Map(B.map(x=>[x.id,x])),mm=new Map(m.map(x=>[x.id,x])),tm=new Map(t.map(x=>[x.id,x]));
+        const out=[];
+        for(const x of t){
+          if(bm.has(x.id)&&!mm.has(x.id)&&same(x,bm.get(x.id)))continue;
+          out.push(mm.has(x.id)?(bm.has(x.id)?merge(bm.get(x.id),mm.get(x.id),x):mm.get(x.id)):x);
+        }
+        for(const x of m)if(!tm.has(x.id)&&!bm.has(x.id))out.push(x);
+        return out;
+      }
+      if([...m,...t,...B].every(x=>typeof x!=="object")){
+        const out=t.filter(x=>!(B.includes(x)&&!m.includes(x)));
+        m.forEach(x=>{if(!B.includes(x)&&!out.includes(x))out.push(x)});
+        return out;
+      }
+      return m;
+    }
+    if(obj(m)&&obj(t)){
+      const out={},B=obj(b)?b:{};
+      new Set([...Object.keys(t),...Object.keys(m)]).forEach(k=>{const v=merge(B[k],m[k],t[k]);if(v!==undefined)out[k]=v});
+      return out;
+    }
+    return m;
+  }
 
   // key from the secret link: kept for this tab only, removed from the address bar
   let key="";
@@ -55,6 +90,7 @@
   }
   function replaceWith(d,msg){
     version=Number(d.version)||0;
+    base=d.data&&Array.isArray(d.data.books)?copy(d.data):{books:[]};
     if(CB.onReplace)CB.onReplace(d.data&&Array.isArray(d.data.books)?d.data:{books:[]},msg);
   }
 
@@ -72,9 +108,16 @@
     sending=false;
     if(error){
       if(/CONFLICT/.test(error.message)){
-        again=false;
-        try{replaceWith(await load(),"Someone else saved the Cashbook just now. Their data is shown. Please make your last change again.");bar("")}
-        catch(e){bar("Not saved. "+e.message,send)}
+        // saved from another screen first: put both changes together and save again
+        try{
+          const d=await load(),theirs=d.data&&Array.isArray(d.data.books)?d.data:{books:[]};
+          const mine=latest===null?body:JSON.parse(JSON.stringify(latest));
+          const merged=merge(base||{books:[]},mine,theirs);
+          version=Number(d.version)||0;base=copy(theirs);latest=merged;
+          if(CB.onReplace)CB.onReplace(copy(merged),CB.isBusy()?"":"Saved together with changes from another screen");
+          bar("");
+          send();
+        }catch(e){bar("Not saved. "+e.message,send)}
         return;
       }
       if(/NO_ACCESS/.test(error.message)){bar("Not saved: you no longer have access to the Cashbook.");return}
@@ -82,6 +125,7 @@
       return;
     }
     version=Number(data)||version+1;
+    base=body;
     bar("");
     if(again)send();
   }
@@ -162,6 +206,7 @@
         const {data:d,error:e}=await rpc("lwb_cashbook_restore",{p_copy_id:c.id});
         if(e){box.textContent="Restore failed: "+e.message;return}
         version=Number(d.version)||version;
+        base=copy(d.data);
         onRestored(d.data);
       });
       list.append(b);
@@ -182,6 +227,7 @@
       }
       version=Number(d.version)||0;
       CB.data=d.data&&Array.isArray(d.data.books)?d.data:{books:[]};
+      base=copy(CB.data);
       CB.erpAdmin=d.erp_admin===true;
       CB.hasLink=d.has_link===true;
       CB.name=d.name||"User";
