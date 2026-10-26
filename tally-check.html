@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Tally Bill Check | Luxury Wrist Brand ERP</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <link rel="stylesheet" href="erp-shell.css">
+  <script src="erp-shell.js"></script>
+  <script src="excel-io.js"></script>
+  <style>
+    .status{text-align:center;padding:80px 20px;font-size:15px;color:#555}
+    .tc-sub{margin:-8px 0 14px;color:var(--erp-muted);font-size:15px}
+    .tc-bar{display:flex;gap:10px;align-items:end;flex-wrap:wrap;margin-bottom:16px}
+    .tc-bar label{display:grid;gap:4px;font-size:13px;font-weight:600;color:#4b5763}
+    .tc-bar input{height:42px;border:1.5px solid var(--erp-line);border-radius:6px;padding:0 10px;font:inherit;font-size:15px;background:#fff}
+    .tc-bar input[type=file]{padding:8px 10px}
+    .tc-bar button,.tc-btn{height:42px;border-radius:6px;padding:0 16px;font-weight:600;font-size:15px;cursor:pointer;border:1px solid var(--erp-line);background:#fff;color:var(--erp-ink)}
+    .tc-bar button.main{background:var(--erp-red);border-color:var(--erp-red);color:#fff}
+    .tc-btn.sm{height:34px;padding:0 12px;font-size:14px}
+    .tc-kpis{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px;margin-bottom:16px}
+    .tc-kpi{background:#fff;border:1px solid var(--erp-line);border-radius:8px;padding:14px;border-top:4px solid var(--c,#c8102e);text-align:left;cursor:pointer;font:inherit;color:inherit}
+    .tc-kpi[aria-pressed=true]{box-shadow:0 0 0 2px var(--c)}
+    .tc-kpi h3{margin:0 0 4px;font-size:14px;color:#4b5763;font-weight:600}
+    .tc-kpi .big{font-size:28px;font-weight:800;line-height:1.15}
+    .tc-kpi small{display:block;color:var(--erp-muted);font-size:13px;margin-top:4px}
+    .tc-table{border-collapse:collapse;width:100%;font-size:14px}
+    .tc-table th,.tc-table td{border-bottom:1px solid var(--erp-line);padding:9px 10px;text-align:left;vertical-align:top}
+    .tc-table th{background:#f6f7f9;font-size:13px;font-weight:700;color:#2b3440;white-space:nowrap}
+    .tc-table td.n,.tc-table th.n{text-align:right;white-space:nowrap}
+    .tc-table td small{display:block;color:var(--erp-muted);font-size:12px}
+    .tc-tag{display:inline-block;padding:2px 9px;border-radius:99px;font-size:12px;font-weight:700;white-space:nowrap}
+    .t-ok{background:#e3f5ec;color:#13824a}.t-diff{background:#fdf0dc;color:#9a5b00}.t-miss{background:#fdecef;color:#b3122b}.t-extra{background:#e6efff;color:#1d5fbf}
+    .t-guess{background:#fdf0dc;color:#9a5b00}
+    .tc-err{background:#ffebeb;color:#9b2020;padding:14px 16px;border-radius:8px;margin-bottom:14px;white-space:pre-wrap}
+    .tc-note{font-size:14px;color:var(--erp-muted);margin:10px 2px 0}
+    .tc-links input{width:100%;min-width:220px;height:36px;border:1.5px solid var(--erp-line);border-radius:6px;padding:0 8px;font:inherit}
+    .tc-scroll{overflow:auto}
+    @media(max-width:1100px){.tc-kpis{grid-template-columns:repeat(3,minmax(0,1fr))}}
+    @media(max-width:640px){.tc-kpis{grid-template-columns:1fr 1fr}.tc-bar label{flex:1 1 140px}.tc-bar input{width:100%}}
+    @media print{.erp-top,.erp-side,.tc-bar,#linksCard{display:none!important}.erp-main{margin:0!important;padding:0!important}}
+    [hidden]{display:none!important}
+  </style>
+</head>
+<body>
+  <div id="loading" class="status">Checking account access...</div>
+  <main id="page" class="erp-main" hidden>
+    <div class="erp-pagehead"><h1>Tally Bill Check</h1></div>
+    <p class="tc-sub">Choose the Tally Sales Register file(s). Every dispatched PO is checked: is its bill made in Tally, and is the amount the same? The Tally file is only read here, it is not saved in the ERP.</p>
+    <div class="tc-bar">
+      <label>Tally Sales Register (Excel / CSV)<input type="file" id="file" accept=".xls,.xlsx,.csv" multiple></label>
+      <label>Dispatched from<input type="date" id="from"></label>
+      <label>to<input type="date" id="to"></label>
+      <button type="button" class="main" id="run">Check</button>
+      <button type="button" id="excel" disabled>⬇ Excel</button>
+      <button type="button" id="print">Print</button>
+    </div>
+    <div id="err" class="tc-err" hidden></div>
+    <div id="out"></div>
+    <section class="erp-card" id="linksCard" hidden style="margin-top:14px">
+      <div class="erp-card-head"><h2>Tally party → ERP party</h2><small style="color:var(--erp-muted)" id="linksNote"></small></div>
+      <div class="tc-scroll"><table class="tc-table tc-links"><thead><tr><th>Tally party name</th><th class="n">Bills</th><th>ERP party</th><th></th></tr></thead><tbody id="links"></tbody></table></div>
+      <datalist id="erpParties"></datalist>
+    </section>
+  </main>
+  <script>
+    'use strict';
+    const client=supabase.createClient("https://txkbhadzdbxpieunfvox.supabase.co","sb_publishable_W4I3Q5ODf0g17sq5uDml2Q_sLolXYEk");
+    const el=id=>document.getElementById(id);
+    const esc=v=>String(v==null?"":v).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+    const rs=v=>"₹"+Number(v||0).toLocaleString("en-IN",{maximumFractionDigits:2});
+    const pad=n=>String(n).padStart(2,"0");
+    const ymd=d=>d.getFullYear()+"-"+pad(d.getMonth()+1)+"-"+pad(d.getDate());
+    const shift=(d,n)=>{const x=new Date(d+"T12:00:00Z");x.setUTCDate(x.getUTCDate()+n);return x.toISOString().slice(0,10)};
+    const nice=d=>d?d.slice(8,10)+"-"+d.slice(5,7)+"-"+d.slice(0,4):"";
+    const r2=n=>Math.round(n*100)/100;
+    // Tally amount = ERP amount, or ERP amount + GST at one of these rates
+    const GST=[0,5,12,18,28,40];
+    const SAME=(t,e)=>{for(const g of GST){if(Math.abs(t-e*(1+g/100))<=Math.max(1,Math.abs(t)*0.002))return g}return null};
+
+    /* ---------- reading the Tally file ---------- */
+    const MON="jan feb mar apr may jun jul aug sep oct nov dec".split(" ");
+    function tDate(v){
+      if(v instanceof Date&&!isNaN(v))return ymd(v);
+      if(typeof v==="number"&&v>20000&&v<80000){const c=XLSX.SSF.parse_date_code(v);return c?c.y+"-"+pad(c.m)+"-"+pad(c.d):null}
+      const s=String(v??"").trim();let m;
+      const mk=(y,mo,d)=>{const dt=new Date(y,mo-1,d);return dt.getMonth()===mo-1&&dt.getDate()===d?ymd(dt):null};
+      const yr=y=>y.length===2?2000+Number(y):Number(y);
+      if((m=s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/)))return mk(+m[1],+m[2],+m[3]);
+      if((m=s.match(/^(\d{1,2})[-\/. ]([A-Za-z]{3})[A-Za-z]*[-\/. ,]+(\d{2}|\d{4})$/))){const mo=MON.indexOf(m[2].toLowerCase())+1;return mo?mk(yr(m[3]),mo,+m[1]):null}
+      if((m=s.match(/^(\d{1,2})[-\/.](\d{1,2})[-\/.](\d{2}|\d{4})$/)))return mk(yr(m[3]),+m[2],+m[1]);
+      return null;
+    }
+    function tAmt(v){
+      if(typeof v==="number")return v;
+      const s=String(v??"").trim();if(!s)return 0;
+      const n=Number(s.replace(/[₹,\s]|Dr\.?|Cr\.?|[()]/gi,""));
+      if(!isFinite(n))return 0;
+      return /cr\.?$/i.test(s)||/^\(.*\)$/.test(s)?-Math.abs(n):n;
+    }
+    const col=(hdr,res)=>{for(const re of res){const i=hdr.findIndex(h=>re.test(h));if(i>=0)return i}return -1};
+    async function readFile(f){
+      await LWBExcel.lib();
+      const book=XLSX.read(await f.arrayBuffer(),{type:"array",cellDates:true});
+      const rows=XLSX.utils.sheet_to_json(book.Sheets[book.SheetNames[0]],{header:1,raw:true,defval:""});
+      const h=rows.findIndex((r,i)=>i<40&&r.some(c=>/^date$/i.test(String(c).trim()))&&r.some(c=>/particular|party|ledger|customer/i.test(String(c))));
+      if(h<0)throw Error(f.name+": the Date / Particulars heading row was not found. Export the Sales Register from Tally as Excel.");
+      const hdr=rows[h].map(c=>String(c).trim().toLowerCase());
+      const c={date:col(hdr,[/^date$/]),party:col(hdr,[/^particulars?$/,/party|ledger|customer/]),vtype:col(hdr,[/vch\.? ?type|voucher type/]),
+        vno:col(hdr,[/vch\.? ?no|voucher no|bill no|invoice no/]),amt:col(hdr,[/gross total/,/^value$/,/^debit$/,/amount|total/]),cr:col(hdr,[/^credit$/])};
+      if(c.party<0||c.amt<0)throw Error(f.name+": the Particulars or Debit / Amount column was not found.");
+      const out=[];
+      rows.slice(h+1).forEach(r=>{
+        const party=String(r[c.party]??"").trim(),date=tDate(r[c.date]);
+        if(!party||!date||/^(grand )?total\b/i.test(party))return;
+        let amt=tAmt(r[c.amt]);
+        if(!amt&&c.cr>=0)amt=-Math.abs(tAmt(r[c.cr]));
+        const vtype=c.vtype>=0?String(r[c.vtype]??"").trim():"";
+        if(/credit note|return/i.test(vtype))amt=-Math.abs(amt);
+        if(!amt)return;
+        out.push({party,date,vtype,vno:c.vno>=0?String(r[c.vno]??"").trim():"",amt:r2(amt),file:f.name});
+      });
+      return out;
+    }
+
+    /* ---------- Tally party name -> ERP party ---------- */
+    const norm=s=>String(s??"").toUpperCase().replace(/[^A-Z0-9]+/g," ").trim();
+    const base=s=>norm(String(s).replace(/\([^)]*\)/g," "));
+    function lev(a,b){
+      if(Math.abs(a.length-b.length)>2)return 9;
+      let prev=Array.from({length:b.length+1},(_,i)=>i);
+      for(let i=1;i<=a.length;i++){const cur=[i];for(let j=1;j<=b.length;j++)cur[j]=Math.min(prev[j]+1,cur[j-1]+1,prev[j-1]+(a[i-1]===b[j-1]?0:1));prev=cur}
+      return prev[b.length];
+    }
+    let parties=[],maps=new Map();
+    // saved link first, then the same name, then one close name (spelling, area in brackets)
+    function link(name){
+      const k=norm(name);
+      if(maps.has(k))return {party:maps.get(k),how:"saved"};
+      const same=parties.find(p=>norm(p)===k);if(same)return {party:same,how:"same"};
+      // "MAHALAXMI (NARESHBHAI)" -> "MAHALAXMI (NARESHBHAI) (KAMREJ)": the ERP name only adds the area
+      const longer=parties.filter(p=>norm(p).startsWith(k+" ")||k.startsWith(norm(p)+" "));
+      if(longer.length===1)return {party:longer[0],how:"guess"};
+      const kb=base(name);if(kb.length<3)return {party:"",how:""};
+      const fit=pb=>pb===kb||pb.startsWith(kb+" ")||kb.startsWith(pb+" ")||(kb.length>6&&lev(pb,kb)<=2);
+      let hits=parties.filter(p=>fit(base(p)));
+      if(hits.length>1)hits=hits.filter(p=>base(p)===kb);
+      return hits.length===1?{party:hits[0],how:"guess"}:{party:"",how:""};
+    }
+
+    /* ---------- matching ---------- */
+    let bills=[],orders=[],result=[],show="all";
+    function match(){
+      const byParty=new Map();
+      const slot=k=>{if(!byParty.has(k))byParty.set(k,{o:[],t:[]});return byParty.get(k)};
+      orders.forEach(o=>slot(norm(o.party)).o.push({...o,used:false}));
+      bills.forEach(b=>{const l=link(b.party);if(l.party===null)return;slot(l.party?norm(l.party):"?"+norm(b.party)).t.push({...b,erp:l.party,used:false})});
+      const out=[];
+      const row=(kind,os,ts,g)=>{
+        const ea=r2(os.reduce((a,x)=>a+x.amount,0)),ta=r2(ts.reduce((a,x)=>a+x.amt,0));
+        out.push({kind,date:(os[0]||ts[0]).dispatch_date||(ts[0]||{}).date,party:os[0]?os[0].party:(ts[0].erp||ts[0].party),tallyName:[...new Set(ts.map(x=>x.party))].join(", "),
+          os,ts,ea,ta,gst:g,diff:r2(ta-ea)});
+        os.forEach(x=>x.used=true);ts.forEach(x=>x.used=true);
+      };
+      // a Tally bill may be dated the dispatch day or the next day
+      const near=(o,t)=>t.date===o.dispatch_date||t.date===shift(o.dispatch_date,1);
+      for(const [,s] of byParty){
+        // 1. one PO = one bill
+        for(const o of s.o){const t=s.t.find(t=>!t.used&&near(o,t)&&SAME(t.amt,o.amount)!==null);if(t)row("ok",[o],[t],SAME(t.amt,o.amount))}
+        // 2. same party and day: all POs together = all bills together (e.g. one bill per brand)
+        const days=[...new Set(s.o.filter(o=>!o.used).map(o=>o.dispatch_date))];
+        for(const d of days){
+          const os=s.o.filter(o=>!o.used&&o.dispatch_date===d),ts=s.t.filter(t=>!t.used&&near(os[0],t));
+          if(!os.length||!ts.length)continue;
+          const g=SAME(r2(ts.reduce((a,x)=>a+x.amt,0)),r2(os.reduce((a,x)=>a+x.amount,0)));
+          row(g!==null?"ok":"diff",os,ts,g);
+        }
+        s.o.filter(o=>!o.used).forEach(o=>row("miss",[o],[],null));
+        s.t.filter(t=>!t.used).forEach(t=>row("extra",[],[t],null));
+      }
+      const order={miss:0,diff:1,extra:2,ok:3};
+      result=out.sort((a,b)=>order[a.kind]-order[b.kind]||String(a.date).localeCompare(String(b.date))||a.party.localeCompare(b.party));
+    }
+
+    /* ---------- screen ---------- */
+    const KIND={ok:["Matched","t-ok","#13824a"],diff:["Amount differs","t-diff","#b26b00"],miss:["Bill missing in Tally","t-miss","#c8102e"],extra:["Tally bill, no ERP PO","t-extra","#1d5fbf"]};
+    function render(){
+      const n=k=>result.filter(r=>r.kind===k).length;
+      const kpi=(k,title,big,small,c)=>'<button type="button" class="tc-kpi" data-show="'+k+'" aria-pressed="'+(show===k)+'" style="--c:'+c+'"><h3>'+title+'</h3><div class="big">'+big+'</div><small>'+small+"</small></button>";
+      const sum=k=>rs(result.filter(r=>r.kind===k).reduce((a,r)=>a+(k==="extra"?r.ta:r.ea),0));
+      let h='<div class="tc-kpis">'+kpi("all","Dispatched POs",orders.length,bills.length+" Tally bills in file","#1f2a37")+
+        kpi("miss",KIND.miss[0],n("miss"),sum("miss"),KIND.miss[2])+kpi("diff",KIND.diff[0],n("diff"),"ERP "+sum("diff"),KIND.diff[2])+
+        kpi("extra",KIND.extra[0],n("extra"),sum("extra"),KIND.extra[2])+kpi("ok",KIND.ok[0],n("ok"),sum("ok"),KIND.ok[2])+"</div>";
+      const unlinked=new Set(bills.filter(b=>link(b.party).party==="").map(b=>b.party)).size;
+      if(unlinked)h+='<div class="tc-err" style="background:#fdf0dc;color:#7a4700">'+unlinked+' Tally party names are not linked to an ERP party yet, so their bills show as "Tally bill, no ERP PO". Link them in the table at the bottom (only once).</div>';
+      const list=result.filter(r=>show==="all"||r.kind===show);
+      h+='<section class="erp-card"><div class="tc-scroll"><table class="tc-table"><thead><tr><th>Result</th><th>Dispatch / bill date</th><th>Party</th><th>ERP PO</th><th class="n">ERP amount</th><th>Tally bill</th><th class="n">Tally amount</th><th class="n">Difference</th></tr></thead><tbody>'+
+        (list.length?list.map(r=>{
+          const k=KIND[r.kind];
+          const note=r.kind==="ok"&&r.gst?"with GST "+r.gst+"%":r.kind==="diff"?"check amount":"";
+          const notDel=r.os.some(o=>o.delivery==="NOT_DELIVERED")?"<small>Driver: not delivered</small>":"";
+          return "<tr><td><span class='tc-tag "+k[1]+"'>"+k[0]+"</span>"+(note?"<small>"+note+"</small>":"")+notDel+"</td>"+
+            "<td>"+esc(nice(r.date))+"</td><td><b>"+esc(r.party)+"</b>"+(r.tallyName&&norm(r.tallyName)!==norm(r.party)?"<small>Tally: "+esc(r.tallyName)+"</small>":"")+"</td>"+
+            "<td>"+(r.os.map(o=>esc(o.order_no)+"<small>"+esc(o.amount_from)+"</small>").join("")||"—")+"</td>"+
+            "<td class='n'>"+(r.os.length?rs(r.ea):"—")+"</td>"+
+            "<td>"+(r.ts.map(t=>esc(t.vno||"—")+"<small>"+esc(nice(t.date))+(t.vtype?" · "+esc(t.vtype):"")+"</small>").join("")||"—")+"</td>"+
+            "<td class='n'>"+(r.ts.length?rs(r.ta):"—")+"</td>"+
+            "<td class='n'>"+(r.os.length&&r.ts.length&&r.kind==="diff"?"<b>"+rs(r.diff)+"</b>":"")+"</td></tr>";
+        }).join(""):'<tr><td colspan="8" class="erp-empty">Nothing here.</td></tr>')+"</tbody></table></div></section>";
+      h+='<p class="tc-note">Matched = same party, bill dated the dispatch day or the next day, and Tally amount = ERP amount (or ERP amount + GST 5 / 12 / 18 / 28 / 40%). When a party has more than one PO or bill on a day (e.g. one bill per brand), the day totals are compared. ERP amount = internal ERP bill, else loaded qty × PO rate.</p>';
+      el("out").innerHTML=h;
+      el("out").querySelectorAll("[data-show]").forEach(b=>b.onclick=()=>{show=b.dataset.show;render()});
+      el("excel").disabled=!result.length;
+    }
+    function renderLinks(){
+      const names=new Map();
+      bills.forEach(b=>{const x=names.get(b.party)||{name:b.party,count:0};x.count++;names.set(b.party,x)});
+      const rows=[...names.values()].map(x=>({...x,...link(x.name)})).filter(x=>x.how!=="same");
+      el("linksCard").hidden=!rows.length;
+      const need=rows.filter(x=>!x.party&&x.how!=="saved").length;
+      el("linksNote").textContent=need?need+" Tally names need an ERP party. Pick one and Save, it is remembered.":"Only names that differ from the ERP spelling are shown.";
+      el("erpParties").innerHTML=parties.map(p=>'<option value="'+esc(p)+'">').join("");
+      rows.sort((a,b)=>(a.party?1:0)-(b.party?1:0)||a.name.localeCompare(b.name));
+      el("links").innerHTML=rows.map((x,i)=>"<tr><td><b>"+esc(x.name)+"</b>"+(x.how==="guess"?" <span class='tc-tag t-guess'>Guess</span>":x.how==="saved"&&x.party===null?" <span class='tc-tag t-extra'>Skipped</span>":"")+"</td>"+
+        "<td class='n'>"+x.count+"</td><td><input list='erpParties' data-i='"+i+"' value='"+esc(x.party||"")+"' placeholder='Type ERP party name'></td>"+
+        "<td style='white-space:nowrap'><button type='button' class='tc-btn sm' data-save='"+i+"'>Save</button> <button type='button' class='tc-btn sm' data-skip='"+i+"' title='Not a party (e.g. cash sale)'>Skip</button></td></tr>").join("");
+      const put=async(x,v)=>{
+        const {error}=await client.rpc("lwb_tally_set_party_map",{p_tally_name:x.name,p_customer_name:v});
+        if(error){alert("Not saved: "+error.message);return}
+        if(v===null)maps.delete(norm(x.name));else maps.set(norm(x.name),v||null);
+        renderLinks();if(orders.length||bills.length){match();render()}
+      };
+      el("links").querySelectorAll("[data-save]").forEach(b=>b.onclick=()=>{
+        const x=rows[b.dataset.save],v=el("links").querySelector("[data-i='"+b.dataset.save+"']").value.trim();
+        if(!v)return put(x,null);
+        const p=parties.find(p=>norm(p)===norm(v));
+        if(!p){alert("Please pick a party from the ERP list.");return}
+        put(x,p);
+      });
+      el("links").querySelectorAll("[data-skip]").forEach(b=>b.onclick=()=>put(rows[b.dataset.skip],""));
+    }
+
+    async function run(){
+      el("err").hidden=true;
+      const files=[...el("file").files];
+      if(!files.length){el("err").hidden=false;el("err").textContent="Please choose the Tally Sales Register file first.";return}
+      el("run").disabled=true;el("out").innerHTML='<p class="status" style="padding:30px">Checking...</p>';
+      try{
+        bills=[];for(const f of files)bills.push(...await readFile(f));
+        if(!bills.length)throw Error("No bills were found in the file.");
+        const ds=bills.map(b=>b.date).sort();
+        if(!el("from").value||el("from").dataset.auto==="1"){el("from").value=ds[0];el("from").dataset.auto="1"}
+        if(!el("to").value||el("to").dataset.auto==="1"){el("to").value=ds[ds.length-1];el("to").dataset.auto="1"}
+        const [o,p,m]=await Promise.all([
+          client.rpc("lwb_tally_check_orders",{p_from:el("from").value,p_to:el("to").value}),
+          client.rpc("lwb_tally_check_parties"),client.rpc("lwb_tally_party_maps")]);
+        const e=o.error||p.error||m.error;
+        if(e)throw Error(/lwb_tally|function|schema cache/i.test(e.message)?"Tally Bill Check is not set up in Supabase yet. Run lwb_cashbook_tally_check_setup.sql once in the Supabase SQL Editor, then click Check.\n("+e.message+")":e.message);
+        orders=(o.data||[]).map(x=>({...x,amount:Number(x.amount)||0}));
+        parties=(p.data||[]).map(x=>x.customer_name);
+        orders.forEach(x=>{if(!parties.some(p=>norm(p)===norm(x.party)))parties.push(x.party)});
+        parties.sort();
+        maps=new Map((m.data||[]).map(x=>[x.tally_key,x.customer_name]));
+        show="all";match();renderLinks();render();
+      }catch(e){el("out").innerHTML="";el("err").hidden=false;el("err").textContent=e.message}
+      finally{el("run").disabled=false}
+    }
+    function excel(){
+      const rows=[["Result","Date","Party","Tally party","ERP PO","ERP amount","Tally bill no.","Tally voucher type","Tally amount","Difference","GST %"]];
+      result.forEach(r=>rows.push([KIND[r.kind][0],nice(r.date),r.party,r.tallyName,r.os.map(o=>o.order_no).join(", "),r.os.length?r.ea:"",r.ts.map(t=>t.vno).join(", "),r.ts.map(t=>t.vtype).join(", "),r.ts.length?r.ta:"",r.os.length&&r.ts.length?r.diff:"",r.gst||""]));
+      LWBExcel.write("tally-bill-check-"+el("from").value+"-to-"+el("to").value,[{name:"Tally check",rows}]);
+    }
+    async function start(){
+      const {data:{session}}=await client.auth.getSession();
+      if(!session){location.replace("login.html");return null}
+      const {data:p}=await client.from("user_profiles").select("full_name,role,active").eq("id",session.user.id).single();
+      const realRole=String((p&&p.role)||"").toLowerCase().trim(),role=p?await ERPShell.pageRoleFresh(realRole):realRole;
+      if(!p||p.active!==true||!["admin","accounts"].includes(role)){location.replace("dashboard.html");return null}
+      return {role,realRole,name:p.full_name||session.user.email};
+    }
+    el("run").onclick=run;el("excel").onclick=excel;el("print").onclick=()=>window.print();
+    el("file").onchange=()=>{el("from").dataset.auto="1";el("to").dataset.auto="1";el("from").value="";el("to").value="";if(el("file").files.length)run()};
+    ["from","to"].forEach(id=>el(id).onchange=()=>{el(id).dataset.auto="0"});
+    (async()=>{
+      const me=await start();if(!me)return;
+      ERPShell.mount({role:me.realRole||me.role,name:me.name,onLogout:async()=>{await client.auth.signOut();location.replace("login.html")}});
+      el("loading").hidden=true;el("page").hidden=false;
+    })();
+  </script>
+</body>
+</html>
