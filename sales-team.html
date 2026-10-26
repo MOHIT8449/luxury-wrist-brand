@@ -40,7 +40,7 @@
         client.from("lwb_sku_salesman_rules").select("sku_key,salesman_id,rule"),
         client.from("lwb_sales_targets").select("month,salesman_id,target_amount,target_cases"),
         client.from("lwb_sales_plan_notes").select("id,plan_date,salesman_id,note,created_at").eq("plan_date",S.isoDay(new Date())).order("created_at"),
-        client.from("lwb_sales_settings").select("due_after_days").eq("id",1).maybeSingle()
+        client.from("lwb_sales_settings").select("*").eq("id",1).maybeSingle()
       ]);
       parties=pa.data||[];skus=(sk.data||[]).filter(x=>x.is_active!==false);rules=ru.data||[];targets=ta.data||[];notes=no.data||[];
       if(st.data)settings=st.data;
@@ -170,7 +170,9 @@
         return [esc(t.full_name),t.kind==="FIELD"?"Field":"Office",fmt(mine.length),fmt(d.length),esc(d.slice(0,6).map(p=>p.customer_name).join(", "))+(d.length>6?" …":"")];
       });
       card.innerHTML='<div class="erp-card-head"><h2>Morning Plan Notification</h2><div style="display:flex;gap:8px;flex-wrap:wrap"><button type="button" class="sl-btn" data-send="0">Send today\'s plan</button><button type="button" class="sl-btn ghost" data-send="1">Send again with latest notes</button></div></div>'+
-        '<div class="erp-card-body"><div class="sl-filters"><div><label for="due">Party is due after (days with no order)</label><input id="due" type="number" min="1" max="60" value="'+due+'" style="width:120px"></div><div><label>&nbsp;</label><button type="button" class="sl-btn ghost" data-save-due>Save</button></div></div>'+
+        '<div class="erp-card-body"><div class="sl-filters"><div><label for="due">Party is due after (days with no order)</label><input id="due" type="number" min="1" max="60" value="'+due+'" style="width:120px"></div>'+
+          (settings.kyc_free_orders!=null?'<div><label for="kycFree">Orders allowed while party details are missing</label><input id="kycFree" type="number" min="0" max="50" value="'+num(settings.kyc_free_orders)+'" style="width:120px"></div>':'')+
+          '<div><label>&nbsp;</label><button type="button" class="sl-btn ghost" data-save-due>Save</button></div></div>'+
         '<div class="sl-filters"><div><label for="nsm">Note for</label><select id="nsm"><option value="">All salesmen</option>'+smOptions("",false)+'</select></div><div class="grow"><label for="ntext">Today\'s note from Sales Head</label><input id="ntext" maxlength="500" placeholder="e.g. Push 2L PET today; collect pending payment from big parties"></div><div><label>&nbsp;</label><button type="button" class="sl-btn" data-add-note>Add note</button></div></div>'+
         (notes.length?'<ul class="sl-plan">'+notes.map(n=>"<li><b>"+esc(n.salesman_id?nameOf(n.salesman_id):"All")+":</b> "+esc(n.note)+' <button type="button" class="sl-btn ghost small" data-del-note="'+n.id+'">Remove</button></li>').join("")+"</ul>":'<p class="sl-help">No note for today.</p>')+
         "</div>"+(rows.length?'<div class="sl-scroll">'+S.table(["Salesman","Type","Parties","Due today","Due parties"],rows,[2,3])+"</div>":"");
@@ -203,7 +205,14 @@
         if(t.closest("[data-save-due]")){
           const {error}=await client.rpc("lwb_save_sales_settings",{p_due_after_days:Math.round(num(el("due").value))});
           if(error){await alert("Could not save: "+error.message);return}
-          settings.due_after_days=Math.round(num(el("due").value));ERPShell.toast("Saved.");render();return;
+          settings.due_after_days=Math.round(num(el("due").value));
+          if(el("kycFree")){
+            const k=Math.round(num(el("kycFree").value));
+            const {error:e2}=await client.rpc("lwb_save_party_detail_limit",{p_orders:k});
+            if(e2){await alert("Could not save: "+e2.message);return}
+            settings.kyc_free_orders=k;
+          }
+          ERPShell.toast("Saved.");render();return;
         }
         if(t.closest("[data-add-note]")){
           const note=el("ntext").value.trim();if(!note){await alert("Enter the note.");return}
