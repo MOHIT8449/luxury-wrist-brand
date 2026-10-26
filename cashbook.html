@@ -1162,7 +1162,7 @@ JAY MAMA DEV TREDARS (NILGIRI LIMBAYAT)
         <div class="spacer"></div>
         <div class="actions">
           <button class="btn" id="openReports" type="button">Reports</button>
-          ${isAdmin() ? `<button class="btn" id="openHistory" type="button">History</button>` : ""}${isAdmin() && CB.erpAdmin ? `<button class="btn" id="openLink" type="button">${lockIcon.replace(/20/g, "16")} Secret link</button>` : ""}
+          ${isAdmin() ? `<button class="btn" id="openHistory" type="button">History</button>` : ""}${isAdmin() && CB.erpAdmin ? `<button class="btn" id="openLink" type="button">${lockIcon.replace(/20/g, "16")} Code word</button>` : ""}
           ${isFull() ? `<button class="btn" id="openParties" type="button">Party / Category / Mode</button>${isAdmin() ? `<button class="btn" id="openPw" type="button">${lockIcon.replace(/20/g, "16")} Passwords</button>` : ""}${isAdmin() ? `<button class="btn" id="openTally" type="button">Tally import${(n => n ? ` <span class="chip vchip wait">${n} to verify</span>` : "")(((state.tally || {}).pending || []).length)}</button>` : ""}<button class="btn" id="openBackup" type="button">Backup</button>` : ""}
           <button class="btn primary" id="newBook" type="button">+ Add New Book</button>
         </div>
@@ -3116,26 +3116,33 @@ JAY MAMA DEV TREDARS (NILGIRI LIMBAYAT)
     }, e => { const b = $("#hpBody"); if (b) b.innerHTML = `<p class="err">Could not load: ${esc(e.message)}</p>`; });
   }
 
-  // Admin: the private link; without it the Cashbook shows nothing to anyone
+  // Admin: the code word (e.g. 401); without it the Cashbook shows nothing to anyone
   function linkModal() {
     showModal(`
-      <div class="modal-head"><h2>Secret link</h2>${closeX}</div>
-      <div class="modal-body">
-        <p style="margin:0">${CB.hasLink ? "The Cashbook opens only from its secret link now. Make a new link if the old one may have been seen by someone; the old link stops working at once." : "Right now the Cashbook opens from the ERP menu for the logins Admin allows. Make a secret link and it opens only from that link, even for Admin."}</p>
-        <p class="hint" style="margin:0">Keep the link as a bookmark on your own phone and computer. Do not send it in a group. If the link is lost, Admin can make a new one only from inside the Cashbook, so keep a copy safe.</p>
-        <div id="lkOut"></div>
-      </div>
-      <div class="modal-foot"><div class="spacer"></div><button class="btn" type="button" data-close>Close</button><button class="btn primary" type="button" id="lkNew">${CB.hasLink ? "Make a new link" : "Make secret link"}</button></div>`);
-    $("#lkNew").onclick = () => confirmPop({ title: CB.hasLink ? "Make a new secret link?" : "Make the secret link?", msg: CB.hasLink ? "The old link stops working for everyone. Only the new link opens the Cashbook." : "After this, the Cashbook opens only from the link. Opening it from the ERP menu shows nothing.", yes: "Yes, make link" }, async () => {
-      const out = $("#lkOut");
-      try {
-        const url = await CB.newLink();
-        out.innerHTML = `<div class="field"><label for="lkUrl">Your secret link (copy and bookmark it now)</label><div style="display:flex;gap:8px"><input type="text" id="lkUrl" readonly style="flex:1"><button class="btn sm" type="button" id="lkCopy">Copy</button></div></div>`;
-        $("#lkUrl").value = url;
-        $("#lkCopy").onclick = () => { $("#lkUrl").select(); (navigator.clipboard ? navigator.clipboard.writeText(url) : Promise.reject()).then(() => toast("Link copied"), () => { document.execCommand("copy"); toast("Link copied"); }); };
-        $("#lkNew").hidden = true;
-      } catch (e) { out.innerHTML = `<p class="err">${esc(e.message)}</p>`; }
-    });
+      <div class="modal-head"><h2>Code word</h2>${closeX}</div>
+      <form id="lkForm">
+        <div class="modal-body">
+          <p style="margin:0">${CB.hasLink ? "A code word is on. Type a new one to change it; the old one stops working at once." : "Set a code word and the Cashbook opens only after it is typed, even for Admin."} To open: type the code in the ERP <b>Module Search</b> and press Enter, or type it on the Cashbook page. Each browser asks once and then remembers it.</p>
+          <div class="row2">
+            <div class="field"><label for="lk1">New code word</label><input type="password" id="lk1" autocomplete="off" maxlength="64" placeholder="e.g. 4017"></div>
+            <div class="field"><label for="lk2">Code word again</label><input type="password" id="lk2" autocomplete="off" maxlength="64"></div>
+          </div>
+          <p class="hint" style="margin:0">3 to 64 letters or numbers. A longer code is safer. Keep it to yourself.</p>
+          <div class="err" id="lkErr"></div>
+        </div>
+        <div class="modal-foot"><div class="spacer"></div><button class="btn" type="button" data-close>Close</button><button class="btn primary" type="submit">Save code word</button></div>
+      </form>`);
+    $("#lk1").focus();
+    $("#lkForm").onsubmit = ev => {
+      ev.preventDefault();
+      const a = $("#lk1").value.trim(), b = $("#lk2").value.trim();
+      if (!/^[A-Za-z0-9_-]{3,64}$/.test(a)) { $("#lkErr").textContent = "Use 3 to 64 letters or numbers (no spaces)."; return; }
+      if (a !== b) { $("#lkErr").textContent = "The two code words are not the same."; return; }
+      confirmPop({ title: "Save this code word?", msg: CB.hasLink ? "The old code word stops working for everyone." : "After this, the Cashbook opens only with the code word.", yes: "Yes, save" }, async () => {
+        try { await CB.newLink(a); closeModal(); render(); toast("Code word saved"); }
+        catch (e) { $("#lkErr").textContent = /too short|3 to 64|function/.test(e.message) ? "Run lwb_cashbook_code_setup.sql in Supabase first. (" + e.message + ")" : e.message; }
+      });
+    };
   }
 
   // locks itself after 5 minutes without a touch or key; the password is needed again

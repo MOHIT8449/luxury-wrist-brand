@@ -51,25 +51,34 @@
   // key from the secret link: remembered in this browser, removed from the address bar
   let key="";
   try{
-    const m=location.hash.match(/^#k=([A-Za-z0-9_-]{20,})$/);
+    const m=location.hash.match(/^#k=([A-Za-z0-9_-]{3,64})$/);
     if(m){localStorage.setItem("lwbCbKey",m[1]);history.replaceState(null,"",location.pathname+location.search)}
     key=localStorage.getItem("lwbCbKey")||sessionStorage.getItem("cbk")||"";
     if(key)localStorage.setItem("lwbCbKey",key);
   }catch(e){}
   // the link pasted into a tab that is already on this page only changes the #, so open again with it
-  window.addEventListener("hashchange",()=>{if(/^#k=[A-Za-z0-9_-]{20,}$/.test(location.hash))location.reload()});
+  window.addEventListener("hashchange",()=>{if(/^#k=[A-Za-z0-9_-]{3,64}$/.test(location.hash))location.reload()});
   const rpc=(fn,args)=>db.rpc(fn,Object.assign({},args,{p_key:key}));
 
-  function gate(title,text,link){
-    document.addEventListener("DOMContentLoaded",()=>show(title,text,link),{once:true});
-    if(document.readyState!=="loading")show(title,text,link);
+  function gate(title,text,link,askCode){
+    document.addEventListener("DOMContentLoaded",()=>show(title,text,link,askCode),{once:true});
+    if(document.readyState!=="loading")show(title,text,link,askCode);
   }
-  function show(title,text,link){
+  function show(title,text,link,askCode){
     const app=document.getElementById("app");if(!app)return;
     const box=document.createElement("div");box.className="gate";
     const h=document.createElement("h1");h.textContent=title;
     const p=document.createElement("p");p.className="sub";p.textContent=text;
     box.append(h,p);
+    // type the code word here (or in the ERP Module Search) to open
+    if(askCode){
+      const f=document.createElement("form");f.style.cssText="display:flex;gap:8px;margin:4px 0 12px";
+      const i=document.createElement("input");i.type="password";i.placeholder="Code word";i.autocomplete="off";i.setAttribute("aria-label","Code word");i.style.cssText="flex:1;height:44px;border:1px solid var(--line);border-radius:10px;padding:0 12px;font:inherit";
+      const b=document.createElement("button");b.className="btn primary";b.textContent="Open";
+      f.append(i,b);
+      f.onsubmit=ev=>{ev.preventDefault();const v=i.value.trim();if(!/^[A-Za-z0-9_-]{3,64}$/.test(v)){i.focus();return}try{localStorage.setItem("lwbCbKey",v)}catch(_){}location.replace(location.pathname)};
+      box.append(f);setTimeout(()=>i.focus(),0);
+    }
     if(link){const a=document.createElement("a");a.className="btn primary";a.href=link.h;a.textContent=link.t;a.style.justifyContent="center";box.append(a)}
     app.replaceChildren(box);
   }
@@ -164,10 +173,9 @@
     return (data||[]).map(r=>r.customer_name).filter(Boolean);
   };
 
-  // Admin: make a new secret link; the old link stops working
-  CB.newLink=async function(){
-    const a=new Uint8Array(24);crypto.getRandomValues(a);
-    const k=btoa(String.fromCharCode(...a)).replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/,"");
+  // Admin: set the code word (e.g. 401); the old code / link stops working
+  CB.newLink=async function(code){
+    const k=code;
     const {error}=await rpc("lwb_cashbook_set_link",{p_new_key:k});
     if(error)throw error;
     key=k;CB.hasLink=true;
@@ -225,7 +233,7 @@
       let d;
       try{d=await load()}
       catch(e){
-        if(/NO_ACCESS/.test(e.message))return gate("Private page",key?"The secret link saved in this browser is old (a new link was made). Open the Cashbook from the new secret link once, and this browser remembers it.":"Open the Cashbook once from its secret link (your bookmark) in this browser. After that this browser opens it at /cashbook too, also after a refresh.",{t:"Back to ERP",h:"dashboard.html"});
+        if(/NO_ACCESS/.test(e.message))return gate("Private page",key?"Wrong or old code word. Type the Cashbook code word.":"Type the Cashbook code word. This browser remembers it.",{t:"Back to ERP",h:"dashboard.html"},true);
         if(/lwb_cashbook_load|function|schema cache/i.test(e.message))return gate("Setup pending","Run lwb_cashbook_secure_setup.sql once in the Supabase SQL Editor, then open this page again. ("+e.message+")",{t:"Back to ERP",h:"dashboard.html"});
         return gate("Could not open the Cashbook",e.message+" Check the internet and reload the page.",null);
       }
