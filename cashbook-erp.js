@@ -84,6 +84,13 @@
     try{const d=await load();if(Number(d.version)>version&&!sending&&!again&&!CB.isBusy())replaceWith(d,"Updated with the latest entries")}catch(e){}
   }
 
+  // payments drivers reported in the Driver Portal (lwb_cashbook_driver_cash_setup.sql)
+  CB.driverCash=async function(){
+    const {data,error}=await db.rpc("lwb_cashbook_driver_cash",{p_days:15});
+    if(error)throw error;
+    return data||[];
+  };
+
   // Admin: earlier copies kept by the ERP, inside the Backup window
   CB.copiesBox=async function(box,confirmPop,onRestored){
     const {data,error}=await db.rpc("lwb_cashbook_copies_list");
