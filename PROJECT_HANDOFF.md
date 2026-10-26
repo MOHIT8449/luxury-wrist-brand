@@ -157,5 +157,5 @@
 ## Order weight and minimum order weight (26 Oct 2026)
 
 - SQL: `lwb_min_order_weight_setup.sql` (`lwb_sales_settings.min_order_kg`, default 0 = none; `lwb_customer_master.min_order_kg` per party, blank = default; `lwb_save_min_order_kg`).
-- PO Entry: weight per SKU line (salesman too), an "Order weight" box with a progress bar to the minimum, tons in the phone Submit bar, and a "Submit anyway?" confirm below the minimum. Weight comes from SKU Master KG per case; SKUs without it are flagged.
+- PO Entry: weight per SKU line (salesman too), an "Order weight" box with a progress bar to the minimum, tons in the phone Submit bar. Below the minimum it only shows in orange (no confirm, no block: the minimum is a guide). Weight comes from SKU Master KG per case; SKUs without it are flagged.
 - Default minimum: Sales Team Setup > Morning Plan. Per party: Party Master > Edit.
