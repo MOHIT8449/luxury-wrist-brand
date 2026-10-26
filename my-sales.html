@@ -9,6 +9,28 @@
   <link rel="stylesheet" href="sales.css">
   <script src="erp-shell.js"></script>
   <script src="sales-common.js"></script>
+  <style>
+    .mo-filter{display:flex;gap:6px;flex-wrap:wrap;padding:12px 16px 0}
+    .mo-list{padding:8px 16px 16px}
+    .mo-card{border:1px solid var(--erp-line);border-radius:8px;padding:11px 13px;margin-top:8px;background:#fff}
+    .mo-top{display:flex;gap:10px;align-items:flex-start;flex-wrap:wrap}
+    .mo-top .who{flex:1;min-width:180px}
+    .mo-top .who b{font-size:14px}
+    .mo-top .who small{display:block;color:var(--erp-muted);font-size:12px;margin-top:2px}
+    .mo-amt{text-align:right;font-size:13px;white-space:nowrap}
+    .mo-amt b{display:block;font-size:14px}
+    .mo-stage{margin-top:7px;font-size:12.5px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+    .mo-stage .why{color:var(--erp-red)}
+    .mo-acts{display:flex;gap:6px;margin-top:9px;flex-wrap:wrap}
+    .mo-items{margin-top:9px;border-top:1px dashed var(--erp-line);padding-top:8px}
+    .mo-line{display:flex;gap:10px;align-items:center;padding:4px 0;font-size:13px}
+    .mo-line span{flex:1;min-width:0;overflow-wrap:anywhere}
+    .mo-line .q{width:70px;text-align:right;color:var(--erp-muted)}
+    .mo-line input{width:80px;height:32px;border:1.5px solid var(--erp-line);border-radius:6px;padding:0 8px;font:inherit;text-align:right}
+    .mo-line input:focus{outline:none;border-color:var(--erp-red)}
+    .mo-line.gone span{text-decoration:line-through;color:#9aa4ae}
+    .mo-hint{font-size:12px;color:var(--erp-muted);margin-top:6px}
+  </style>
 </head>
 <body>
   <div id="loading" class="status">Checking account access...</div>
@@ -29,7 +51,8 @@
   </main>
   <script>
     const S=LWBSales,{client,el,esc,fmt,short,num,key,pct}=S;
-    let me=null,plan=null,parties=[],orders=[],lines=[],target=null,tab="parties",err="";
+    let me=null,plan=null,parties=[],orders=[],lines=[],target=null,tab=location.hash==="#orders"?"orders":"parties",err="";
+    let myOrders=null,moErr="",moFilter="pending",openId=null,editId=null,busy=false;
     const TABS=[["parties","My Parties"],["orders","My Orders"],["skus","My SKUs"]];
 
     async function load(){
@@ -39,6 +62,7 @@
       plan=pl.data||{};
       const [pa,ta]=await Promise.all([client.rpc("lwb_party_activity"),client.from("lwb_sales_targets").select("*").eq("month",m.from).eq("salesman_id",me.user.id).maybeSingle()]);
       parties=pa.data||[];target=ta.data||null;
+      await loadMyOrders();
       try{
         let list=await S.orders(m.from,today);
         // Office salesman sees every order; his own work is the orders he took.
@@ -62,7 +86,9 @@
         ["blue","My Target ("+today.slice(0,7)+")",tgt?short(tgt):"Not set",tgt?(p+"% achieved")+S.bar(p):"Ask Sales Head"],
         [p>=100?"green":"","Achieved This Month",short(val),fmt(orders.length)+" orders · "+fmt(cases)+" cases"],
         [bal?"red":"green","Balance",tgt?short(bal):"—",tgt&&bal?short(bal/left)+" needed per day":tgt?"Target done":""],
-        ["","Today",short(t.reduce((a,o)=>a+num(o.total_amount),0)),fmt(t.length)+" orders · "+fmt(t.reduce((a,o)=>a+num(o.total_qty),0))+" cases"]
+        ["","Today",short(t.reduce((a,o)=>a+num(o.total_amount),0)),fmt(t.length)+" orders · "+fmt(t.reduce((a,o)=>a+num(o.total_qty),0))+" cases"],
+        ...(myOrders?[(()=>{const pend=myOrders.filter(isPendingDelivery),wait=pend.filter(o=>o.can_edit||isWaiting(o)).length;
+          return [pend.length?"blue":"green","Orders Not Yet Delivered",fmt(pend.length),wait?fmt(wait)+" waiting for approval":"All delivered"]})()]:[])
       ].map(x=>'<div class="sl-kpi '+x[0]+'"><span>'+esc(x[1])+"</span><b>"+x[2]+"</b><small>"+x[3]+"</small></div>").join("");
       const pp=(plan&&plan.parties)||[],notes=(plan&&plan.notes)||[];
       el("planInfo").textContent=plan&&plan.setup!==false?pp.length+(pp.length===1?" party":" parties")+" due (no order for "+(plan.due_after_days||3)+"+ days)":"";
@@ -79,9 +105,10 @@
         rows=list.slice(0,300).map(x=>[esc(x.customer_name),esc(x.city||"—"),S.shortDate(x.last_order_date),x.days==null?'<span class="sl-age never">Never</span>':'<span class="sl-age '+(x.days>=10?"a10":x.days>=5?"a5":x.days>=2?"a2":"")+'">'+(x.days===0?"Today":x.days+" days")+"</span>",fmt(x.orders_30d),'<a href="order-entry.html?party='+encodeURIComponent(x.customer_name)+'">Take order</a>']);
         note=plan&&plan.kind==="FIELD"?"Only your assigned parties are shown. Ask the Sales Head to add a party to your list.":"";
       }else if(tab==="orders"){
-        head=["Date","PO No.","Party","Status","Cases","Amount"];numCols=[4,5];
-        rows=orders.filter(o=>hit(o.order_no+" "+o.customer_name)).sort((a,b)=>b.day.localeCompare(a.day)).map(o=>[S.shortDate(o.day),esc(o.order_no),esc(o.customer_name),esc(String(o.status||"").replace(/_/g," ")),fmt(o.total_qty),short(o.total_amount)]);
-        note="This month's orders"+(plan&&plan.kind==="FIELD"?" for your parties.":" you took.");
+        el("tabTitle").textContent="My Orders";
+        el("box").innerHTML=renderOrders(hit);
+        el("note").textContent=(moErr?"Orders could not load: "+moErr+". ":"")+"Last 45 days"+(plan&&plan.kind==="FIELD"?", your orders and orders of your parties.":", orders you took.")+" You can change or cancel your own order only until the Sales Head approves it.";
+        return;
       }else{
         const g=new Map();for(const l of lines){const k=key(l.sku);if(!g.has(k))g.set(k,{sku:l.sku,q:0,amt:0,p:new Set()});const x=g.get(k);x.q+=l.q;x.amt+=l.amt;x.p.add(key(l.o.customer_name))}
         head=["SKU","Cases","Amount","Parties"];numCols=[1,2,3];
@@ -93,8 +120,93 @@
       el("note").textContent=(err?"Some data could not load: "+err+". ":"")+note;
     }
 
+    // ---- My Orders: stage, delivery, edit / cancel before approval ----
+    async function loadMyOrders(){
+      const r=await client.rpc("lwb_my_orders",{p_days:45});
+      if(r.error){myOrders=null;moErr=/lwb_my_orders/.test(r.error.message)?"Order follow-up setup is not installed yet. Ask Admin to run lwb_sales_order_followup_setup.sql":r.error.message;return}
+      moErr="";myOrders=Array.isArray(r.data)?r.data:[];
+    }
+    const isCancelled=o=>["cancelled","canceled","rejected"].includes(S.status(o));
+    const isWaiting=o=>["","pending","submitted","pending_manager","pending_approval","pending_review","new"].includes(S.status(o));
+    const isDelivered=o=>o.delivery_status==="DELIVERED"||o.delivery_status==="PARTIAL";
+    const isPendingDelivery=o=>!isCancelled(o)&&!isDelivered(o);
+    function stage(o){
+      const when=v=>v?new Date(v).toLocaleString("en-IN",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit",hour12:true}):"";
+      const veh=[o.driver_name,o.vehicle_no].filter(Boolean).map(esc).join(" · ");
+      if(isCancelled(o))return ["red","Cancelled",o.cancel_reason?'<span class="why">Reason: '+esc(o.cancel_reason)+"</span>":""];
+      if(o.delivery_status==="DELIVERED")return ["green","Delivered",esc(when(o.delivered_at))+(o.received_by?" · Received by "+esc(o.received_by):"")];
+      if(o.delivery_status==="PARTIAL")return ["amber","Part delivered",esc(when(o.delivered_at))+(o.delivery_note?" · "+esc(o.delivery_note):"")];
+      if(o.delivery_status==="NOT_DELIVERED")return ["red","Not delivered",esc(o.delivery_note||"Driver could not deliver")];
+      const st=S.status(o);
+      if(isWaiting(o))return ["amber","Waiting for approval",""];
+      if(st==="approved")return ["blue","Approved","Driver not assigned yet"];
+      if(st==="transport_allocated")return ["blue","Driver assigned",veh];
+      if(st==="loading")return ["blue","Loading",veh];
+      if(st==="loaded")return ["blue","Loaded · on the way",veh];
+      if(st==="invoiced")return ["blue","Billed · on the way",veh];
+      return ["",esc(st.replace(/_/g," ")||"—"),""];
+    }
+    function renderOrders(hit){
+      if(!myOrders)return '<div class="sl-msg">'+esc(moErr||"Loading...")+"</div>";
+      const groups={pending:myOrders.filter(isPendingDelivery),delivered:myOrders.filter(o=>!isCancelled(o)&&isDelivered(o)),cancelled:myOrders.filter(isCancelled),all:myOrders};
+      const F=[["pending","Not delivered yet"],["delivered","Delivered"],["cancelled","Cancelled"],["all","All"]];
+      let h='<div class="mo-filter">'+F.map(([k,l])=>'<button type="button" class="erp-pill'+(k===moFilter?" active":"")+'" data-mof="'+k+'">'+esc(l)+' <span class="n">'+groups[k].length+"</span></button>").join("")+"</div>";
+      const list=groups[moFilter].filter(o=>hit(o.order_no+" "+o.customer_name));
+      if(!list.length)return h+'<div class="erp-empty">'+(moFilter==="pending"?"No pending orders. Everything is delivered.":"Nothing to show.")+"</div>";
+      h+='<div class="mo-list">';
+      for(const o of list.slice(0,200)){
+        const [c,label,extra]=stage(o),open=openId===o.id,edit=editId===o.id;
+        h+='<div class="mo-card" data-id="'+esc(o.id)+'"><div class="mo-top"><div class="who"><b>'+esc(o.order_no||"—")+"</b> · "+esc(o.customer_name||"")+
+          "<small>"+S.shortDate(o.order_date)+(o.mine?"":" · taken by office")+'</small></div><div class="mo-amt"><b>'+short(o.total_amount)+"</b>"+fmt(o.total_qty)+" cases</div></div>"+
+          '<div class="mo-stage"><span class="erp-badge '+c+'">'+label+"</span>"+(extra?"<span>"+extra+"</span>":"")+"</div>";
+        h+='<div class="mo-acts">'+(o.can_edit&&!edit?'<button type="button" class="sl-btn small" data-act="edit">Change Cases</button><button type="button" class="sl-btn small ghost" data-act="cancel">Cancel Order</button>':"")+
+          (!edit?'<button type="button" class="sl-btn small ghost" data-act="view">'+(open?"Hide SKUs":"View SKUs")+"</button>":"")+"</div>";
+        if(open||edit){
+          h+='<div class="mo-items">'+(o.items||[]).map(i=>{const q=i.approved_qty!=null?i.approved_qty:i.ordered_qty;
+            return '<div class="mo-line"><span>'+esc(i.sku_name)+(i.entry_uom==="PALLET"&&i.ordered_pallet_qty?" ("+fmt(i.ordered_pallet_qty)+" pallet)":"")+"</span>"+
+              (edit?'<input type="number" min="0" step="1" inputmode="numeric" data-item="'+esc(i.id)+'" data-was="'+num(i.ordered_qty)+'" value="'+num(i.ordered_qty)+'" aria-label="Cases for '+esc(i.sku_name)+'">':
+                '<b class="q">'+fmt(q)+" cs</b>")+"</div>"}).join("");
+          if(edit)h+='<div class="mo-hint">Type the new cases. 0 removes the SKU. To add a new SKU, take a new order.</div><div class="mo-acts"><button type="button" class="sl-btn small" data-act="save">Save Changes</button><button type="button" class="sl-btn small ghost" data-act="close">Close</button></div>';
+          h+="</div>";
+        }
+        h+="</div>";
+      }
+      return h+"</div>";
+    }
+    async function orderAction(card,act){
+      const o=(myOrders||[]).find(x=>String(x.id)===card.dataset.id);if(!o||busy)return;
+      if(act==="view"){openId=openId===o.id?null:o.id;render();return}
+      if(act==="edit"){editId=o.id;openId=null;render();return}
+      if(act==="close"){editId=null;render();return}
+      if(act==="save"){
+        const inputs=[...card.querySelectorAll("input[data-item]")],items=[];
+        for(const i of inputs){const v=i.value.trim();if(!/^\d+$/.test(v)){await alert("Enter whole cases (0 or more) for every SKU.");i.focus();return}
+          if(Number(v)!==Number(i.dataset.was))items.push({id:Number(i.dataset.item),cases:Number(v)})}
+        if(!items.length){editId=null;render();return}
+        if(inputs.every(i=>Number(i.value)===0)){await alert("An order needs at least one SKU. To drop the whole order, use Cancel Order.");return}
+        busy=true;
+        const r=await client.rpc("lwb_sales_edit_order",{p_order_id:o.id,p_items:items});
+        busy=false;
+        if(r.error){await alert("Could not save: "+r.error.message);await loadMyOrders();render();return}
+        editId=null;await loadMyOrders();render();ERPShell.toast&&ERPShell.toast("Order "+(o.order_no||"")+" updated. Sales Head is informed.","success");return;
+      }
+      if(act==="cancel"){
+        const reason=await prompt("Why are you cancelling "+(o.order_no||"this order")+" ("+(o.customer_name||"")+")?\nThe reason goes to the Sales Head.","",{ok:"Next",cancel:"Back",placeholder:"Reason for cancelling"});
+        if(reason===null)return;
+        if(reason.trim().length<3){await alert("Please write the reason for cancelling.");return}
+        if(!await confirm("Cancel order "+(o.order_no||"")+"?\n\nReason: "+reason.trim(),{danger:true,ok:"Yes, cancel order",cancel:"Keep order"}))return;
+        busy=true;
+        const r=await client.rpc("lwb_sales_cancel_order",{p_order_id:o.id,p_reason:reason.trim()});
+        busy=false;
+        if(r.error){await alert("Could not cancel: "+r.error.message);await loadMyOrders();render();return}
+        await loadMyOrders();render();ERPShell.toast&&ERPShell.toast("Order "+(o.order_no||"")+" cancelled.","success");
+      }
+    }
+
     (async()=>{
       me=await S.start(["sales"]);if(!me)return;
+      document.addEventListener("click",e=>{const f=e.target.closest("[data-mof]");if(f){moFilter=f.dataset.mof;render();return}
+        const a=e.target.closest("[data-act]");if(a&&a.closest(".mo-card"))orderAction(a.closest(".mo-card"),a.dataset.act)});
       document.addEventListener("click",e=>{const b=e.target.closest("[data-tab]");if(b){tab=b.dataset.tab;render()}});
       el("q").addEventListener("input",render);
       el("loading").hidden=true;el("page").hidden=false;

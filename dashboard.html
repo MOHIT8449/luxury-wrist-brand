@@ -194,7 +194,8 @@
       jobs.push(["admin","manager","sales","accounts"].includes(role)?client.from("lwb_payment_collections").select("id").eq("status","PENDING").limit(1000):Promise.resolve(null));
       jobs.push(["admin","accounts","manager","warehouse"].includes(role)?client.rpc("lwb_office_list_driver_returns",{p_status:"PENDING_OFFICE"}):Promise.resolve(null));
       jobs.push(["admin","manager","sales","accounts"].includes(role)?client.rpc("lwb_party_bills"):Promise.resolve(null));
-      const [orders,pays,returns,bills]=await Promise.all(jobs.map(j=>Promise.resolve(j).catch(()=>null)));
+      jobs.push(role==="sales"?client.rpc("lwb_my_orders",{p_days:45}):Promise.resolve(null));
+      const [orders,pays,returns,bills,mine]=await Promise.all(jobs.map(j=>Promise.resolve(j).catch(()=>null)));
       pills.replaceChildren();
       const kpis=document.getElementById("kpis");kpis.replaceChildren();
       if(orders&&!orders.error){
@@ -216,6 +217,14 @@
       if(returns&&!returns.error){const r=Array.isArray(returns.data)?returns.data:[];
         office.push(kpi("Driver Returns",r.length,"Value: ₹"+fmtINR(r.reduce((n,x)=>n+Number(x.total_return_amount||0),0)),"driver-returns.html"))}
       if(office.length)kpis.appendChild(kpiGroup(office));
+      // Salesman: own orders not yet delivered / delivered this week (My Sales > My Orders).
+      if(mine&&!mine.error&&Array.isArray(mine.data)){
+        const r=mine.data,off=o=>["cancelled","canceled","rejected"].includes(String(o.status||"").toLowerCase()),done=o=>o.delivery_status==="DELIVERED"||o.delivery_status==="PARTIAL";
+        const pend=r.filter(o=>!off(o)&&!done(o)),week=Date.now()-7*864e5;
+        kpis.appendChild(kpiGroup([
+          kpi("My Orders Not Delivered",pend.length,"Waiting for approval: "+pend.filter(o=>["","pending","submitted","pending_manager","pending_approval","pending_review","new"].includes(String(o.status||"").toLowerCase().trim())).length,"my-sales.html#orders"),
+          kpi("Delivered (7 days)",r.filter(o=>done(o)&&Date.parse(o.delivered_at)>=week).length,"Cancelled: "+r.filter(off).length,"my-sales.html#orders")]));
+      }
       if(orders&&!orders.error){
         const rows=orders.data||[],count={};
         rows.forEach(o=>{const k=String(o.status||"").toLowerCase();count[k]=(count[k]||0)+1});

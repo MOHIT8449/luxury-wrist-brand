@@ -23,6 +23,8 @@
    return {icon:"🚚",text:join([/updated|changed|badla/i.test(title)?"Loading updated":"Loading",order,veh,drv])};
   }
   if(t.startsWith("GODOWN_")){const id=(m.match(/GDN-\d+/)||[])[0]||"";return {icon:"🏭",text:join([title.replace(/^Godown: /,"Godown · "),id])}}
+  if(t.startsWith("ORDER_")){const ic={ORDER_DELIVERED:"✅",ORDER_PARTIAL:"🟠",ORDER_NOT_DELIVERED:"⚠",ORDER_CANCELLED:"✖",ORDER_EDITED:"✏"}[t]||"•";
+   return {icon:ic,text:join([title,order])}}
   if(t==="SALES_PLAN"){const n=(m.match(/from (\d+) part/)||[])[1];return {icon:"📋",text:join(["Today's plan",n?n+" parties due":"Sales Head note"])}}
   const short=m.length>60?m.slice(0,57)+"…":m;
   return {icon:"•",text:join([title||"ERP",order||short])};
