@@ -1,6 +1,7 @@
 -- LUXURY WRIST BRAND ERP — TICK ANY PAGE FOR ANY USER
 --
--- RUN ONCE in Supabase SQL Editor, after lwb_user_page_access_setup.sql. Safe to run again.
+-- RUN ONCE in Supabase SQL Editor. Safe to run again. It also creates the page-access
+-- table if lwb_user_page_access_setup.sql was never run.
 --
 -- Manage Users > Pages: Admin can now tick pages of OTHER roles for one user
 -- (e.g. My Sales for a Sales Head, Purchase Register for Accounts). Those pages
@@ -11,14 +12,31 @@
 -- The access checks below also let a ticked user read / save on that page:
 --   Sales Team Setup, Sales Tracking (Sales Head checks) · PO Entry · Godown Report ·
 --   Outside Market Stock · Goods in Transit · Purchase Claims · Sheet & Pallet Ledger.
--- Run after lwb_live_stock_po_setup.sql and lwb_announcements_market_report_setup.sql.
 --
 -- Only lwb_user_page_access is written. No order, stock, bill, payment, ledger or Tally data is changed.
 
 BEGIN;
 
+-- Page-access table (same as lwb_user_page_access_setup.sql), created here if missing.
+CREATE TABLE IF NOT EXISTS public.lwb_user_page_access (
+  user_id    uuid PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+  hidden     text[] NOT NULL DEFAULT '{}',
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  updated_by uuid
+);
+ALTER TABLE public.lwb_user_page_access ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON TABLE public.lwb_user_page_access FROM PUBLIC, anon, authenticated;
+GRANT SELECT ON TABLE public.lwb_user_page_access TO authenticated;
+DROP POLICY IF EXISTS lwb_page_access_read ON public.lwb_user_page_access;
+CREATE POLICY lwb_page_access_read ON public.lwb_user_page_access
+  FOR SELECT TO authenticated
+  USING (user_id = auth.uid() OR public.lwb_is_admin());
+
 ALTER TABLE public.lwb_user_page_access
   ADD COLUMN IF NOT EXISTS extra text[] NOT NULL DEFAULT '{}';
+-- Used by lwb_can_view_stock below (also added by lwb_live_stock_po_setup.sql).
+ALTER TABLE public.lwb_sales_settings
+  ADD COLUMN IF NOT EXISTS stock_view_roles text[] NOT NULL DEFAULT ARRAY['admin','manager','warehouse'];
 
 CREATE OR REPLACE FUNCTION public.lwb_has_page(p_page text)
 RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER SET search_path = ''
