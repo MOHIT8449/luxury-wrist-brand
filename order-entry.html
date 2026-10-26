@@ -148,6 +148,8 @@ body.show-landing .summary-row.mgr-col{display:flex}
 table.pallet-mode .pal-col{display:none}
 .slab-why{display:block;margin-top:5px;font-size:12px;color:#12632f;font-weight:600}
 .rates-off{display:block;margin-top:5px;font-size:12px;color:#9a6700}
+/* Salesman: no slab choice, no vehicle number, no Party Master link (rate is set automatically). */
+body.sales-entry #slabField,body.sales-entry #vehicleField,body.sales-entry .party-master-link{display:none!important}
 .share-row{display:flex;flex-wrap:wrap;gap:10px;justify-content:flex-end;margin-top:14px}
 .share-row .btn{border:1px solid #c9ced6;background:#fff;color:#1c2836}
 .share-row .btn.img{background:#1f6feb;border-color:#1f6feb;color:#fff}
@@ -274,7 +276,7 @@ table.pallet-mode .pal-col{display:none}
         </select>
       </div>
 
-      <div class="form-group">
+      <div class="form-group" id="slabField">
         <label for="rateSlab">Rate kis slab se bhare</label>
         <select id="rateSlab" class="form-control" onchange="calculateTotals()">
           <option value="auto">Auto (weight / transport / party se)</option>
@@ -314,7 +316,7 @@ table.pallet-mode .pal-col{display:none}
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:15px">
       <div>
         <div class="card-title" style="margin:0">Order Items</div>
-        <small class="fast-entry-hint">Fast Tab Entry: SKU → Pallet → Quantity → Rate → next SKU automatically. Rate is filled automatically from the party's last bill, otherwise from the slab.</small>
+        <small class="fast-entry-hint">Fast Tab Entry: SKU → Pallet → Quantity → Rate → next SKU automatically. Rate is filled automatically from the party's last bill (plus any rate list change since then), otherwise from the slab.</small>
       </div>
 
       <button class="btn btn-blue" onclick="addItem()">
@@ -483,6 +485,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
 
     currentProfile=profile;
+    if(String(profile.role||"").trim().toLowerCase()==="sales") document.body.classList.add("sales-entry");
 
     document.getElementById("userName").textContent =
       profile.full_name || currentUser.email;
@@ -1104,7 +1107,7 @@ async function saveOrder(){
   const transportationType =
     document.getElementById("transportation").value;
 
-  const vehicleNumber =
+  const vehicleNumber = document.body.classList.contains("sales-entry") ? "" :
     document.getElementById("vehicleNumber").value.trim().toUpperCase();
 
   let transportation =
@@ -1354,7 +1357,7 @@ async function resetOrder(){
 
 
 /* PARTY PO RATES
-   Rate order: party's last PO rate for that SKU, else the slab rate from
+   Rate order: party's last PO rate for that SKU (moved by Rate & Scheme changes since then), else the slab rate from
    Rate & Scheme (Slab 1 = Slab 3 + 5, Slab 2 and 4 = Slab 3 - 5, same as
    CC PO Maker). A rate typed by hand or changed with -/+ stays as it is.
    Landing, GR and Diff are read only by Admin / Sales head (RLS), so a
@@ -1482,6 +1485,14 @@ function slabRateFor(key, slab){
   return [s3+5, s3-5, s3, s3-5][slab];
 }
 
+/* Party's last bill rate moved by every Rate & Scheme change since that bill:
+   last rate + (Slab 3 now − Slab 3 on the bill date). The party's own difference stays. */
+function partyRateNow(last, key){
+  const then = last.slab3_then == null ? null : number(last.slab3_then);
+  if(then == null || then <= 0 || !slab3BySku.has(key)) return number(last.rate);
+  return r2(number(last.rate) + slab3BySku.get(key) - then);
+}
+
 function shortDay(value){
   const d = new Date(value);
   return isNaN(d) ? "" : d.toLocaleDateString("en-IN",{day:"2-digit",month:"short",timeZone:"Asia/Kolkata"});
@@ -1498,7 +1509,8 @@ function applyRates(){
     if(!key || !skuMasterByName.has(key)){ hint.textContent = ""; hint.className = "rate-hint"; return; }
     const last = partyRates.get(key);
     const slabRate = slabRateFor(key, slab);
-    const auto = last ? number(last.rate) : slabRate;
+    const lastRate = last ? partyRateNow(last, key) : null;
+    const auto = last ? lastRate : slabRate;
     if(row.dataset.hand !== "1" && auto != null && document.activeElement !== rateInput && rateInput.value !== String(auto)){
       rateInput.value = String(auto);
       refreshRowAmounts(row);
@@ -1509,7 +1521,9 @@ function applyRates(){
       hint.textContent = "Below slab rate ₹" + formatNumber(slabRate);
       hint.className = "rate-hint warn";
     }else if(last){
-      hint.textContent = "Last bill rate ₹" + formatNumber(last.rate) + " (" + (last.order_no || "") + (last.order_date ? ", " + shortDay(last.order_date) : "") + ")";
+      const moved = r2(lastRate - number(last.rate));
+      hint.textContent = "Last bill rate ₹" + formatNumber(last.rate) + " (" + (last.order_no || "") + (last.order_date ? ", " + shortDay(last.order_date) : "") + ")" +
+        (moved ? " " + (moved > 0 ? "+" : "−") + " ₹" + formatNumber(Math.abs(moved)) + " rate list change" : "");
       hint.className = "rate-hint last";
     }else if(slabRate != null){
       hint.textContent = selectedParty ? "Not billed to this party before (slab rate)" : "Slab rate";
