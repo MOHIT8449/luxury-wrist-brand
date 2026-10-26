@@ -296,6 +296,12 @@
     nav.innerHTML=items.map(([t,h,i])=>'<a href="'+h+'" class="'+(h==="order-entry.html"?"new":"")+(h===here?" active":"")+'">'+svg(i)+"<span>"+esc(t)+"</span></a>").join("");
     document.body.appendChild(nav);document.body.classList.add("has-bnav");
     window.addEventListener("hashchange",()=>{const now=page+(location.hash==="#orders"?"#orders":"");nav.querySelectorAll("a").forEach(a=>a.classList.toggle("active",a.getAttribute("href")===now))});
+    // While typing, the phone keyboard pushes fixed bars up over the page; hide them until typing ends.
+    const typing=el=>el&&(el.tagName==="TEXTAREA"||el.tagName==="SELECT"||el.isContentEditable||(el.tagName==="INPUT"&&!/^(button|submit|reset|checkbox|radio|file|range|color|image|hidden)$/i.test(el.type)));
+    const sync=()=>{const vv=window.visualViewport;document.body.classList.toggle("kb-open",typing(document.activeElement)||(!!vv&&window.innerHeight-vv.height>150))};
+    document.addEventListener("focusin",sync);
+    document.addEventListener("focusout",()=>setTimeout(sync,60));
+    if(window.visualViewport)window.visualViewport.addEventListener("resize",sync);
   }
 
   // An ERP page whose menu entries are all unticked for this user: go to the
