@@ -29,6 +29,16 @@
     .erp-card+.erp-card{margin-top:14px}
     @media(max-width:1100px){.nu-grid{grid-template-columns:1fr 1fr}}
     @media(max-width:560px){.nu-grid{grid-template-columns:1fr}.role-actions{flex-wrap:wrap}}
+    .pages-row>td{background:#f7f9fb}
+    .pg-head{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:10px;font-size:13px}
+    .pg-head b{margin-right:auto}
+    .pg-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:4px 16px}
+    .pg-group{grid-column:1/-1;font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--erp-muted);margin-top:8px}
+    .pg-grid label{display:flex;gap:8px;align-items:center;font-size:13px;padding:3px 0;cursor:pointer}
+    .pg-grid label input{width:16px;height:16px;flex:none;accent-color:var(--erp-red)}
+    .pg-grid label.off{color:#a0a8b1;cursor:not-allowed}
+    .pg-grid label small{color:#a0a8b1;font-size:11px}
+    .roles-table button.pg-btn{background:#fff;color:var(--erp-ink);border:1px solid var(--erp-line)}
     [hidden]{display:none!important}
   </style>
 </head>
@@ -56,7 +66,7 @@
     <section class="erp-card" id="roleManager">
       <div class="erp-card-head">
         <div><h2>Users &amp; Roles</h2>
-          <p class="roles-small">Change role, name, status or login mobile, or type a new password, then Save. Leave New Password empty to keep the current one.</p></div>
+          <p class="roles-small">Change role, name, status or login mobile, or type a new password, then Save. Leave New Password empty to keep the current one. <b>Pages</b> ticks or unticks single pages for one user.</p></div>
         <div class="role-actions">
           <button class="erp-btn" type="button" onclick="loadRoleManager()">Refresh Users</button>
         </div>
@@ -96,7 +106,8 @@
       return {user:session.user,role,name:p.full_name||session.user.email};
     }
     const mobile10=v=>{let d=String(v||"").replace(/\D/g,"");if(d.length===12&&d.startsWith("91"))d=d.slice(2);if(d.length===11&&d.startsWith("0"))d=d.slice(1);return /^[6-9]\d{9}$/.test(d)?d:""};
-    const setupHint=e=>/lwb_admin_users|lwb_admin_create_user|lwb_admin_set_login|function/.test(e.message||"")?"Run lwb_user_login_setup.sql in Supabase first.":e.message;
+    const setupHint=e=>/lwb_admin_set_page_access|lwb_user_page_access/.test(e.message||"")?"Run lwb_user_page_access_setup.sql in Supabase first.":/lwb_admin_users|lwb_admin_create_user|lwb_admin_set_login|function/.test(e.message||"")?"Run lwb_user_login_setup.sql in Supabase first.":e.message;
+    let pageAccess={};
     let roleAdminUserId=null,roleAdminReady=false;
     function roleMessage(value,isError=false){const m=el("roleManagerMessage");m.textContent=value;m.style.color=isError?"#b12b2b":"#315a83"}
     function newMessage(value,isError=false){const m=el("newUserMessage");m.hidden=!value;m.textContent=value;m.style.color=isError?"#b12b2b":"#315a83"}
@@ -115,6 +126,8 @@
         if(error)throw error;
         const users=data||[];
         if(!users.length){cell(body.insertRow(),"No users yet.").colSpan=7;return}
+        const pa=await client.from("lwb_user_page_access").select("user_id,hidden");
+        pageAccess={};for(const r of (pa.error?[]:pa.data||[]))pageAccess[r.user_id]=r.hidden||[];
         for(const u of users){
           const row=body.insertRow();
           const login=document.createElement("div");login.className="login-cell";
@@ -130,13 +143,65 @@
           const save=document.createElement("button");save.type="button";save.textContent="Save";
           if(u.user_id===roleAdminUserId){role.disabled=true;active.disabled=true}
           save.onclick=()=>saveUser(u,{name,role,mob,pass,active},save);
-          cell(row,save);
+          const pages=document.createElement("button");pages.type="button";pages.className="pg-btn";
+          const count=()=>{const mine=ERPShell.menuFor(role.value).flatMap(g=>g.items),off=pageAccess[u.user_id]||[];
+            pages.textContent="Pages "+mine.filter(i=>!off.includes(i.h)).length+"/"+mine.length};
+          count();role.addEventListener("change",count);
+          pages.onclick=()=>togglePages(row,u,role,count);
+          const acts=document.createElement("div");acts.className="role-actions";acts.append(save,pages);
+          cell(row,acts);
         }
         roleMessage(users.length+" users. Mobile login works for users with a Login Mobile.");
       }catch(err){
         cell(body.insertRow(),setupHint(err)).colSpan=7;
         roleMessage("Users could not be loaded: "+setupHint(err),true);
       }
+    }
+
+    // Pages panel: the role's default pages, ticked unless Admin unticked them for this user.
+    function togglePages(row,u,roleSel,count){
+      const next=row.nextElementSibling;
+      if(next&&next.classList.contains("pages-row")){next.remove();return}
+      const role=roleSel.value;
+      if(!role){roleMessage("Select a Role first.",true);return}
+      const tr=document.createElement("tr");tr.className="pages-row";
+      const td=tr.insertCell();td.colSpan=7;
+      const head=document.createElement("div");head.className="pg-head";
+      const title=document.createElement("b");
+      title.textContent="Pages for "+(u.full_name||u.mobile||u.email)+" · "+(ROLES.find(r=>r[0]===role)||["",role.toUpperCase()])[1];
+      const all=document.createElement("button");all.type="button";all.className="pg-btn";all.textContent="Role default (tick all)";
+      const save=document.createElement("button");save.type="button";save.textContent="Save Pages";
+      head.append(title,all,save);
+      const grid=document.createElement("div");grid.className="pg-grid";
+      const mine=new Set(ERPShell.menuFor(role).flatMap(g=>g.items.map(i=>i.h))),off=pageAccess[u.user_id]||[],boxes=[];
+      for(const g of ERPShell.allPages()){
+        const gl=document.createElement("div");gl.className="pg-group";gl.textContent=g.group||"Home";grid.appendChild(gl);
+        for(const {h,t} of g.items){
+          const lab=document.createElement("label"),cb=document.createElement("input");cb.type="checkbox";cb.value=h;
+          const lock=role==="admin"&&h==="users.html";
+          if(mine.has(h)){cb.checked=!off.includes(h);cb.disabled=lock;if(!lock)boxes.push(cb)}
+          else{cb.disabled=true;lab.className="off";lab.title="Not part of the "+role.toUpperCase()+" role"}
+          lab.append(cb,document.createTextNode(t));
+          if(!mine.has(h)){const sm=document.createElement("small");sm.textContent="other role";lab.appendChild(sm)}
+          if(lock){const sm=document.createElement("small");sm.textContent="always on for Admin";lab.appendChild(sm)}
+          grid.appendChild(lab);
+        }
+      }
+      all.onclick=()=>boxes.forEach(b=>{b.checked=true});
+      save.onclick=async()=>{
+        const hidden=boxes.filter(b=>!b.checked).map(b=>b.value);
+        if(hidden.length===boxes.length&&!await confirm("All pages are unticked. This user will not be able to open any ERP page. Save anyway?"))return;
+        save.disabled=true;
+        try{
+          const {data,error}=await client.rpc("lwb_admin_set_page_access",{p_user_id:u.user_id,p_hidden:hidden});
+          if(error)throw Error(setupHint(error));
+          pageAccess[u.user_id]=data||[];count();tr.remove();
+          roleMessage("Saved pages for "+(u.full_name||"user")+". The user sees the change on the next page they open.");
+        }catch(err){roleMessage("Could not save pages: "+err.message,true)}
+        finally{save.disabled=false}
+      };
+      td.append(head,grid);
+      row.after(tr);
     }
 
     async function saveUser(u,f,btn){
