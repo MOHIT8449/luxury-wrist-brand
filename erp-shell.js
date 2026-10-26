@@ -273,6 +273,7 @@
       }
     });
     document.addEventListener("click",e=>{if(!e.target.closest(".erp-search"))box.classList.remove("open")});
+    if(role==="sales")bottomNav(page);
     watchSuccess();
     bell(top);
     refreshAccess().then(changed=>{
@@ -282,6 +283,19 @@
       document.dispatchEvent(new CustomEvent("erp:access"));
     });
     return {menu:groups};
+  }
+
+  // Salesman on a phone: the four things he does most, always one tap away.
+  function bottomNav(page){
+    const hidden=hiddenPages(),open=h=>!hidden.includes(h);
+    const items=[["Home","dashboard.html","home"],["New Order","order-entry.html","cart"],["My Orders","my-sales.html#orders","box"],["My Sales","my-sales.html","chart"]]
+      .filter(i=>open(i[1].split("#")[0]));
+    if(items.length<2)return;
+    const here=page+(page==="my-sales.html"&&location.hash==="#orders"?"#orders":"");
+    const nav=document.createElement("nav");nav.className="erp-bnav";nav.setAttribute("aria-label","Quick menu");
+    nav.innerHTML=items.map(([t,h,i])=>'<a href="'+h+'" class="'+(h==="order-entry.html"?"new":"")+(h===here?" active":"")+'">'+svg(i)+"<span>"+esc(t)+"</span></a>").join("");
+    document.body.appendChild(nav);document.body.classList.add("has-bnav");
+    window.addEventListener("hashchange",()=>{const now=page+(location.hash==="#orders"?"#orders":"");nav.querySelectorAll("a").forEach(a=>a.classList.toggle("active",a.getAttribute("href")===now))});
   }
 
   // An ERP page whose menu entries are all unticked for this user: go to the
