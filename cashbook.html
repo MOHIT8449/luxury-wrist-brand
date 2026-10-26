@@ -3348,6 +3348,28 @@ JAY MAMA DEV TREDARS (NILGIRI LIMBAYAT)
     ui.bookId ? renderBook() : renderBooks();
   }
   render();
+
+  // new ERP Party Master parties join the Cash In party list (Mohit, 26 Oct 2026).
+  // state.erpParties remembers the names already handled, so a party deleted here is not added again.
+  CB.erpParties().then(names => {
+    const key = n => String(n).toUpperCase().replace(/[^A-Z0-9]+/g, " ").trim();
+    const seen = new Set(state.erpParties || []), have = new Set(state.parties.map(p => key(p.name)));
+    const codes = new Set(state.parties.map(p => p.code));
+    let added = 0, fresh = 0;
+    for (const n of names) {
+      const k = key(n);
+      if (!k || seen.has(k)) continue;
+      seen.add(k); fresh++;
+      if (have.has(k)) continue;
+      have.add(k);
+      const name = n.replace(/\s+/g, " ").trim(), p = { id: uid(), name, code: shortCode(name, codes), side: "in", erp: true };
+      codes.add(p.code); state.parties.push(p); added++;
+    }
+    if (!fresh) return;
+    state.erpParties = [...seen];
+    save();
+    if (added && session.mode && !CB.isBusy()) { render(); toast(added + " new part" + (added > 1 ? "ies" : "y") + " added from the ERP Party Master"); }
+  }).catch(() => {});
 }
 CashbookERP.start(cashbookApp);
 </script>
