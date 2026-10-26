@@ -101,13 +101,13 @@
       const {data:{session}}=await client.auth.getSession();
       if(!session){location.replace("login.html");return null}
       const {data:p}=await client.from("user_profiles").select("full_name,role,active").eq("id",session.user.id).single();
-      const role=String((p&&p.role)||"").toLowerCase().trim();
+      const realRole=String((p&&p.role)||"").toLowerCase().trim(),role=p?await ERPShell.pageRoleFresh(realRole):realRole;
       if(!p||p.active!==true||!allowed.includes(role)){location.replace("dashboard.html");return null}
-      return {user:session.user,role,name:p.full_name||session.user.email};
+      return {user:session.user,role,realRole,name:p.full_name||session.user.email};
     }
     const mobile10=v=>{let d=String(v||"").replace(/\D/g,"");if(d.length===12&&d.startsWith("91"))d=d.slice(2);if(d.length===11&&d.startsWith("0"))d=d.slice(1);return /^[6-9]\d{9}$/.test(d)?d:""};
     const setupHint=e=>/lwb_admin_set_page_access|lwb_user_page_access/.test(e.message||"")?"Run lwb_user_page_access_setup.sql in Supabase first.":/lwb_admin_users|lwb_admin_create_user|lwb_admin_set_login|function/.test(e.message||"")?"Run lwb_user_login_setup.sql in Supabase first.":e.message;
-    let pageAccess={};
+    let pageAccess={},pageExtra={},extraReady=false;
     let roleAdminUserId=null,roleAdminReady=false;
     function roleMessage(value,isError=false){const m=el("roleManagerMessage");m.textContent=value;m.style.color=isError?"#b12b2b":"#315a83"}
     function newMessage(value,isError=false){const m=el("newUserMessage");m.hidden=!value;m.textContent=value;m.style.color=isError?"#b12b2b":"#315a83"}
@@ -126,8 +126,10 @@
         if(error)throw error;
         const users=data||[];
         if(!users.length){cell(body.insertRow(),"No users yet.").colSpan=7;return}
-        const pa=await client.from("lwb_user_page_access").select("user_id,hidden");
-        pageAccess={};for(const r of (pa.error?[]:pa.data||[]))pageAccess[r.user_id]=r.hidden||[];
+        let pa=await client.from("lwb_user_page_access").select("user_id,hidden,extra");
+        extraReady=!pa.error;
+        if(pa.error)pa=await client.from("lwb_user_page_access").select("user_id,hidden");
+        pageAccess={};pageExtra={};for(const r of (pa.error?[]:pa.data||[])){pageAccess[r.user_id]=r.hidden||[];pageExtra[r.user_id]=r.extra||[]}
         for(const u of users){
           const row=body.insertRow();
           const login=document.createElement("div");login.className="login-cell";
@@ -144,8 +146,8 @@
           if(u.user_id===roleAdminUserId){role.disabled=true;active.disabled=true}
           save.onclick=()=>saveUser(u,{name,role,mob,pass,active},save);
           const pages=document.createElement("button");pages.type="button";pages.className="pg-btn";
-          const count=()=>{const mine=ERPShell.menuFor(role.value).flatMap(g=>g.items),off=pageAccess[u.user_id]||[];
-            pages.textContent="Pages "+mine.filter(i=>!off.includes(i.h)).length+"/"+mine.length};
+          const count=()=>{const mine=ERPShell.menuFor(role.value).flatMap(g=>g.items),off=pageAccess[u.user_id]||[],plus=(pageExtra[u.user_id]||[]).filter(h=>!mine.some(i=>i.h===h));
+            pages.textContent="Pages "+mine.filter(i=>!off.includes(i.h)).length+"/"+mine.length+(plus.length?" +"+plus.length:"")};
           count();role.addEventListener("change",count);
           pages.onclick=()=>togglePages(row,u,role,count);
           const acts=document.createElement("div");acts.className="role-actions";acts.append(save,pages);
@@ -169,33 +171,45 @@
       const head=document.createElement("div");head.className="pg-head";
       const title=document.createElement("b");
       title.textContent="Pages for "+(u.full_name||u.mobile||u.email)+" · "+(ROLES.find(r=>r[0]===role)||["",role.toUpperCase()])[1];
-      const all=document.createElement("button");all.type="button";all.className="pg-btn";all.textContent="Role default (tick all)";
+      const all=document.createElement("button");all.type="button";all.className="pg-btn";all.textContent="Role default";
+      const every=document.createElement("button");every.type="button";every.className="pg-btn";every.textContent="Tick every page";
       const save=document.createElement("button");save.type="button";save.textContent="Save Pages";
-      head.append(title,all,save);
+      head.append(title,all,every,save);
       const grid=document.createElement("div");grid.className="pg-grid";
-      const mine=new Set(ERPShell.menuFor(role).flatMap(g=>g.items.map(i=>i.h))),off=pageAccess[u.user_id]||[],boxes=[];
+      // Own-role pages: untick to hide. Other-role pages: tick to give (Admin already has every page).
+      const mine=new Set(ERPShell.menuFor(role).flatMap(g=>g.items.map(i=>i.h))),off=pageAccess[u.user_id]||[],plus=pageExtra[u.user_id]||[],boxes=[];
       for(const g of ERPShell.allPages()){
         const gl=document.createElement("div");gl.className="pg-group";gl.textContent=g.group||"Home";grid.appendChild(gl);
         for(const {h,t} of g.items){
           const lab=document.createElement("label"),cb=document.createElement("input");cb.type="checkbox";cb.value=h;
-          const lock=role==="admin"&&h==="users.html";
-          if(mine.has(h)){cb.checked=!off.includes(h);cb.disabled=lock;if(!lock)boxes.push(cb)}
-          else{cb.disabled=true;lab.className="off";lab.title="Not part of the "+role.toUpperCase()+" role"}
+          const lock=role==="admin"&&h==="users.html",own=mine.has(h);
+          cb.dataset.own=own?"1":"";
+          if(own){cb.checked=!off.includes(h);cb.disabled=lock;if(!lock)boxes.push(cb)}
+          else{cb.checked=plus.includes(h);cb.disabled=!extraReady;boxes.push(cb);lab.title=extraReady?"Extra page from another role":"Run lwb_user_extra_pages_setup.sql in Supabase to tick pages of other roles"}
           lab.append(cb,document.createTextNode(t));
-          if(!mine.has(h)){const sm=document.createElement("small");sm.textContent="other role";lab.appendChild(sm)}
+          if(!own){const sm=document.createElement("small");sm.textContent="other role";lab.appendChild(sm)}
           if(lock){const sm=document.createElement("small");sm.textContent="always on for Admin";lab.appendChild(sm)}
           grid.appendChild(lab);
         }
       }
-      all.onclick=()=>boxes.forEach(b=>{b.checked=true});
+      all.onclick=()=>boxes.forEach(b=>{b.checked=!!b.dataset.own});
+      every.onclick=()=>boxes.forEach(b=>{if(!b.disabled)b.checked=true});
       save.onclick=async()=>{
-        const hidden=boxes.filter(b=>!b.checked).map(b=>b.value);
-        if(hidden.length===boxes.length&&!await confirm("All pages are unticked. This user will not be able to open any ERP page. Save anyway?"))return;
+        const hidden=boxes.filter(b=>b.dataset.own&&!b.checked).map(b=>b.value),extra=boxes.filter(b=>!b.dataset.own&&b.checked).map(b=>b.value);
+        if(!boxes.some(b=>b.checked)&&!await confirm("All pages are unticked. This user will not be able to open any ERP page. Save anyway?"))return;
         save.disabled=true;
         try{
-          const {data,error}=await client.rpc("lwb_admin_set_page_access",{p_user_id:u.user_id,p_hidden:hidden});
-          if(error)throw Error(setupHint(error));
-          pageAccess[u.user_id]=data||[];count();tr.remove();
+          let saved;
+          if(extraReady){
+            const {data,error}=await client.rpc("lwb_admin_set_pages",{p_user_id:u.user_id,p_hidden:hidden,p_extra:extra});
+            if(error)throw Error(/lwb_admin_set_pages/.test(error.message||"")?"Run lwb_user_extra_pages_setup.sql in Supabase first.":setupHint(error));
+            saved={hidden:(data&&data.hidden)||[],extra:(data&&data.extra)||[]};
+          }else{
+            const {data,error}=await client.rpc("lwb_admin_set_page_access",{p_user_id:u.user_id,p_hidden:hidden});
+            if(error)throw Error(setupHint(error));
+            saved={hidden:data||[],extra:[]};
+          }
+          pageAccess[u.user_id]=saved.hidden;pageExtra[u.user_id]=saved.extra;count();tr.remove();
           roleMessage("Saved pages for "+(u.full_name||"user")+". The user sees the change on the next page they open.");
         }catch(err){roleMessage("Could not save pages: "+err.message,true)}
         finally{save.disabled=false}
@@ -259,7 +273,7 @@
 
     (async()=>{
       const me=await start(["admin"]);if(!me)return;
-      ERPShell.mount({role:me.role,name:me.name,onLogout:logout,group:"Settings",title:"Manage Users"});
+      ERPShell.mount({role:me.realRole||me.role,name:me.name,onLogout:logout,group:"Settings",title:"Manage Users"});
       roleAdminUserId=me.user.id;roleAdminReady=true;
       const rs=el("nuRole");rs.add(new Option("Select Role",""));for(const [v,t] of ROLES)rs.add(new Option(t,v));
       el("nuGen").onclick=()=>{el("nuPass").value=makePassword()};

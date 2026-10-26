@@ -175,9 +175,10 @@
   function allowed(item,role){return item.r==="*"||item.r.split(" ").includes(role)}
   // menuFor(role) = the role's default pages; menuFor(role,hidden) also drops
   // the pages Admin unticked for one user (Manage Users > Pages).
-  function menuFor(role,hidden){
-    const off=new Set(hidden||[]);
-    return MENU.map(g=>({group:g.group,items:g.items.filter(i=>allowed(i,role)&&!off.has(i.h))})).filter(g=>g.items.length);
+  // extra = pages of OTHER roles Admin ticked for this user.
+  function menuFor(role,hidden,extra){
+    const off=new Set(hidden||[]),plus=new Set(extra||[]);
+    return MENU.map(g=>({group:g.group,items:g.items.filter(i=>(allowed(i,role)&&!off.has(i.h))||plus.has(i.h))})).filter(g=>g.items.length);
   }
   const allPages=()=>MENU.map(g=>({group:g.group,items:g.items.map(i=>({t:i.t,h:i.h}))}));
 
@@ -187,11 +188,29 @@
   function sessionUid(){
     try{const t=JSON.parse(localStorage.getItem("sb-txkbhadzdbxpieunfvox-auth-token")||"null");return(t&&t.user&&t.user.id)||""}catch(e){return""}
   }
-  function hiddenPages(){
-    try{const c=JSON.parse(localStorage.getItem(ACCESS_KEY)||"null");const sid=sessionUid();if(c&&Array.isArray(c.hidden)&&(!sid||c.uid===sid))return c.hidden}catch(e){}
-    return[];
+  function access(){
+    try{const c=JSON.parse(localStorage.getItem(ACCESS_KEY)||"null");const sid=sessionUid();if(c&&Array.isArray(c.hidden)&&(!sid||c.uid===sid))return c}catch(e){}
+    return null;
   }
-  function menuForMe(role){return menuFor(role,hiddenPages())}
+  function hiddenPages(){const c=access();return c?c.hidden:[]}
+  function extraPages(){const c=access();return c&&Array.isArray(c.extra)?c.extra:[]}
+  function menuForMe(role){return menuFor(role,hiddenPages(),extraPages())}
+  const herePage=()=>(location.pathname.split("/").pop()||"dashboard.html").replace(/^$/,"dashboard.html");
+  const withHtml=p=>/\.html$/.test(p)?p:p+".html";
+  // Role a page should treat this user as. His own role when the page is his;
+  // when Admin ticked this page of another role for him, that page's role.
+  function pageRole(role,page){
+    page=withHtml(page||herePage());
+    const items=MENU.flatMap(g=>g.items).filter(i=>i.h.split("#")[0]===page);
+    if(!items.length||items.some(i=>allowed(i,role)))return role;
+    if(!extraPages().some(h=>h.split("#")[0]===page))return role;
+    const rs=items[0].r.split(" ");return rs.find(r=>r!=="admin")||rs[0];
+  }
+  // Same, but re-reads the ticks first when the cached ones do not open this page.
+  async function pageRoleFresh(role,page){
+    const r=pageRole(role,page);if(r!==role)return r;
+    await refreshAccess();return pageRole(role,page);
+  }
   function esc(v){return String(v==null?"":v).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]))}
 
   // Phone: "Add to Home screen" opens the ERP like an app.
@@ -322,7 +341,7 @@
   function blocked(role,page,hidden){
     const mine=MENU.flatMap(g=>g.items).filter(i=>allowed(i,role)&&i.h.split("#")[0]===page);
     if(!mine.length||!mine.every(i=>hidden.includes(i.h)))return false;
-    const first=menuFor(role,hidden).flatMap(g=>g.items)[0];
+    const first=menuFor(role,hidden,extraPages()).flatMap(g=>g.items)[0];
     if(first){location.replace(first.h);return true}
     document.body.innerHTML='<div style="font:16px system-ui;padding:40px 16px;text-align:center"><b>No ERP page is open for your login.</b><br>Please ask Admin to tick your pages in Manage Users.<br><br><a href="login.html">Back to Login</a></div>';
     return true;
@@ -333,11 +352,12 @@
       if(!window.supabase)return false;
       const c=window.__lwbBellClient||(window.__lwbBellClient=window.supabase.createClient(URL_,KEY_));
       const {data}=await c.auth.getSession();const user=data&&data.session&&data.session.user;if(!user)return false;
-      const r=await c.from("lwb_user_page_access").select("hidden").eq("user_id",user.id).maybeSingle();
+      let r=await c.from("lwb_user_page_access").select("hidden,extra").eq("user_id",user.id).maybeSingle();
+      if(r.error)r=await c.from("lwb_user_page_access").select("hidden").eq("user_id",user.id).maybeSingle();
       if(r.error)return false; // setup SQL not run yet: role defaults only
-      const before=JSON.stringify(hiddenPages()),hidden=(r.data&&r.data.hidden)||[];
-      try{localStorage.setItem(ACCESS_KEY,JSON.stringify({uid:user.id,hidden}))}catch(e){}
-      return JSON.stringify(hiddenPages())!==before;
+      const before=JSON.stringify([hiddenPages(),extraPages()]),hidden=(r.data&&r.data.hidden)||[],extra=(r.data&&r.data.extra)||[];
+      try{localStorage.setItem(ACCESS_KEY,JSON.stringify({uid:user.id,hidden,extra}))}catch(e){}
+      return JSON.stringify([hiddenPages(),extraPages()])!==before;
     }catch(e){return false}
   }
 
@@ -376,7 +396,7 @@
     }catch(e){}
     mount({role,name,onLogout:async()=>{try{await client.auth.signOut()}catch(e){}location.replace("login.html")}});
   }
-  window.ERPShell={mount,menuFor,menuForMe,hiddenPages,allPages,icon:svg,alert:erpAlert,confirm:erpConfirm,prompt:erpPrompt,toast};
+  window.ERPShell={mount,menuFor,menuForMe,hiddenPages,extraPages,pageRole,pageRoleFresh,allPages,icon:svg,alert:erpAlert,confirm:erpConfirm,prompt:erpPrompt,toast};
   const me=document.currentScript;
   if(me&&me.hasAttribute("data-auto")){
     if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",auto);else auto();
