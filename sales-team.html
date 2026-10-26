@@ -24,6 +24,8 @@
     let me=null,tab="team",team=[],parties=[],skus=[],rules=[],targets=[],notes=[],settings={due_after_days:3},setupError="";
     let pf={q:"",sm:"",city:""},picked=new Set(),tMonth=S.isoDay(new Date()).slice(0,7);
     const salesmen=()=>team.filter(t=>t.kind);
+    // Party Assignment lists every active SALES login; one not set up yet becomes Field on first assignment.
+    const assignable=()=>team.filter(t=>t.kind||(t.active!==false&&["sales","salesman"].includes(t.role)));
     const nameOf=id=>(team.find(t=>t.user_id===id)||{}).full_name||"—";
     const TABS=[["team","Salesmen"],["parties","Party Assignment"],["skus","SKU Visibility"],["targets","Monthly Targets"],["plan","Morning Plan"]];
 
@@ -84,7 +86,7 @@
         (!pf.sm||(pf.sm==="none"?!p.salesman_id:p.salesman_id===pf.sm)));
     }
     function smOptions(sel,withNone){
-      return (withNone?'<option value="">Office (no salesman)</option>':"")+salesmen().map(t=>'<option value="'+t.user_id+'"'+(t.user_id===sel?" selected":"")+">"+esc(t.full_name)+" · "+(t.kind==="FIELD"?"Field":"Office")+"</option>").join("");
+      return (withNone?'<option value="">Office (no salesman)</option>':"")+assignable().map(t=>'<option value="'+t.user_id+'"'+(t.user_id===sel?" selected":"")+">"+esc(t.full_name)+" · "+(t.kind==="FIELD"?"Field":t.kind==="OFFICE"?"Office":"not set up")+"</option>").join("");
     }
     function renderParties(card){
       const list=partyList(),cities=[...new Set(parties.map(p=>key(p.city)).filter(Boolean))].sort();
@@ -95,11 +97,11 @@
       card.innerHTML='<div class="erp-card-head"><h2>Party Assignment</h2><small style="color:var(--erp-muted)">'+fmt(parties.length)+" parties · "+fmt(unassigned)+" with office</small></div>"+
         '<div class="sl-bulk"><div class="sl-filters" style="margin:0;flex:1">'+
         '<div class="grow"><label for="pq">Search party / city</label><input id="pq" type="search" value="'+esc(pf.q)+'" autocomplete="off"></div>'+
-        '<div><label for="psm">Salesman</label><select id="psm"><option value="">All</option><option value="none"'+(pf.sm==="none"?" selected":"")+'>Office (unassigned)</option>'+salesmen().map(t=>'<option value="'+t.user_id+'"'+(pf.sm===t.user_id?" selected":"")+">"+esc(t.full_name)+"</option>").join("")+"</select></div>"+
+        '<div><label for="psm">Salesman</label><select id="psm"><option value="">All</option><option value="none"'+(pf.sm==="none"?" selected":"")+'>Office (unassigned)</option>'+assignable().map(t=>'<option value="'+t.user_id+'"'+(pf.sm===t.user_id?" selected":"")+">"+esc(t.full_name)+"</option>").join("")+"</select></div>"+
         '<div><label for="pcity">City</label><select id="pcity"><option value="">All</option>'+cities.map(c=>'<option'+(pf.city===c?" selected":"")+">"+esc(c)+"</option>").join("")+"</select></div></div></div>"+
         '<div class="sl-bulk"><b id="pickN">'+picked.size+' selected</b><button type="button" class="sl-btn ghost small" data-pick-all>Select all shown</button><button type="button" class="sl-btn ghost small" data-pick-none>Clear</button>'+
         '<span>Assign to</span><select class="sl-in" id="bulkSm" style="width:auto">'+smOptions("",true)+'</select><button type="button" class="sl-btn small" data-bulk>Assign selected</button></div>'+
-        (salesmen().length?"":'<div class="erp-empty">Set up salesmen in the Salesmen tab first.</div>')+
+        (assignable().length?"":'<div class="erp-empty">No SALES login yet. Create salesmen in Manage Users with the SALES role.</div>')+
         (rows.length?'<div class="sl-scroll">'+S.table(["","Party","City","Salesman","Last Order","Orders (30 days)"],rows,[5])+"</div>":'<div class="erp-empty">No party matches.</div>');
       el("note").textContent=(list.length>500?"Showing first 500 of "+fmt(list.length)+". Use the filters. ":"")+"Changing the Salesman dropdown saves at once. A party with Office (no salesman) is visible only to Office salesmen, the Sales Head and Admin.";
     }
@@ -108,6 +110,7 @@
       if(error){await alert("Could not assign: "+error.message);return false}
       for(const p of parties)if(ids.includes(p.customer_id)){p.salesman_id=sm||null;p.salesman_name=sm?nameOf(sm):null}
       team.forEach(t=>t.parties=parties.filter(p=>p.salesman_id===t.user_id).length);
+      const t=team.find(x=>x.user_id===sm);if(t&&!t.kind)t.kind="FIELD";
       ERPShell.toast(fmt(ids.length)+" "+(ids.length===1?"party":"parties")+" assigned to "+(sm?nameOf(sm):"Office")+".");
       return true;
     }
