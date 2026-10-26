@@ -38,6 +38,7 @@
       {t:"Sales Tracking",h:"sales-tracking.html",i:"chart",r:"admin manager"},
       {t:"Sales Team Setup",h:"sales-team.html",i:"users",r:"admin manager"}]},
     {group:"Dispatch",items:[
+      {t:"Godown Report",h:"godown-report.html",i:"note",r:"admin manager warehouse"},
       {t:"Loading & Dispatch",h:"loading-dispatch.html",i:"box",r:"admin manager warehouse"},
       {t:"Transport Assignment",h:"transport-allocation.html",i:"truck",r:"admin manager transport"},
       {t:"Sheet & Pallet Ledger",h:"sheet-pallet.html",i:"layers",r:"admin manager accounts warehouse"}]},
