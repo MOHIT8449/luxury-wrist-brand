@@ -1112,9 +1112,45 @@ JAY MAMA DEV TREDARS (NILGIRI LIMBAYAT)
   }
   const ERP_MODE = { CASH: ["cash", "case"], UPI: ["upi"], BANK: ["bank transfer", "online", "bank"], CHEQUE: ["cheque", "check"] };
   const erpMode = m => { const want = ERP_MODE[m] || [String(m || "").toLowerCase()]; return modeList("in").find(x => want.includes(x.trim().toLowerCase())) || (m === "CASH" ? cashModeName("in") : modeList("in")[0] || ""); };
+  let dueCache = null;
+  async function invoiceDueLoad() {
+    try { dueCache = await CB.invoiceDue(); } catch (_) { dueCache = null; }
+    return dueCache;
+  }
+  const dueByPo = po => (dueCache || []).find(x => x.order_no === po);
+  async function invoiceDueModal(b) {
+    showModal(`<div class="modal-head"><h2>Money due per Tally bill</h2>${closeX}</div><div class="modal-body" id="idBody"><p class="hint" style="margin:0">Loading…</p></div>`);
+    const l = await invoiceDueLoad();
+    const box = $("#idBody"); if (!box) return;
+    if (!l) { box.innerHTML = `<p class="err" style="margin:0">Could not load. Run lwb_tally_bill_flow_setup.sql in Supabase, or check the internet.</p>`; return; }
+    if (!l.length) { box.innerHTML = `<div class="empty"><b>Nothing due</b>Every Tally bill Accounts entered is fully collected.</div>`; return; }
+    const name = r => isFull() ? r.party : (partyById(tallyMatch(r.party)) || {}).code || r.party;
+    const draw = () => {
+      const q = ($("#idQ").value || "").trim().toLowerCase();
+      const rows = l.filter(r => !q || [r.party, name(r), r.invoice_no, r.order_no].join(" ").toLowerCase().includes(q))
+        .sort((a, c) => String(a.invoice_date).localeCompare(String(c.invoice_date)));
+      const tot = r2(rows.reduce((a, r) => a + Number(r.due || 0), 0));
+      $("#idList").innerHTML = `<div class="ho-sum"><div><span>${rows.length} bills to collect</span><b class="num big">₹${inr.format(tot)}</b></div></div>` +
+        rows.map(r => { const i = l.indexOf(r); return `<div style="display:grid;grid-template-columns:1fr auto;gap:4px 10px;padding:10px 12px;border-bottom:1px solid var(--line)">
+        <div style="min-width:0;overflow-wrap:anywhere"><b>${esc(name(r))}</b><div class="hint">Bill ${esc(r.invoice_no)} · ${fmtDate(r.invoice_date)} · PO ${esc(r.order_no)}</div>
+        <div class="hint">Bill ₹${inr.format(Number(r.bill_amount || 0))}${Number(r.credit_notes) ? " · CN −₹" + inr.format(Number(r.credit_notes)) : ""}${Number(r.debit_notes) ? " · DN +₹" + inr.format(Number(r.debit_notes)) : ""} · driver got ₹${inr.format(Number(r.collected || 0))}</div></div>
+        <div style="text-align:right"><b class="num amt-out">₹${inr.format(Number(r.due))}</b><div class="hint">due</div></div>
+        <div class="row-acts" style="grid-column:1/-1"><button class="btn sm in" type="button" data-idadd="${i}">Money came: Cash In</button></div></div>`; }).join("");
+      box.querySelectorAll("[data-idadd]").forEach(btn => btn.onclick = () => {
+        const r = l[btn.dataset.idadd], p = tallyMatch(r.party);
+        closeModal();
+        entryModal(b, "in", null, { amount: Number(r.due), party: partyById(p) ? p : "",
+          remark: `Tally bill ${r.invoice_no} · PO ${r.order_no}${partyById(p) ? "" : " · " + r.party}` });
+      });
+    };
+    box.innerHTML = `<p class="hint" style="margin:0">Tally bills Accounts entered after loading. Due = bill − credit notes + debit notes − what the driver reported. Check the amount before you save a Cash In.</p>
+      <input id="idQ" type="search" placeholder="Search party, bill or PO" autocomplete="off" style="width:100%">
+      <div id="idList" style="max-height:55vh;overflow:auto;border:1px solid var(--line);border-radius:10px"></div>`;
+    $("#idQ").oninput = draw; draw();
+  }
   async function driverCashModal(b) {
     showModal(`<div class="modal-head"><h2>Driver cash (ERP)</h2>${closeX}</div><div class="modal-body" id="dcBody"><p class="hint" style="margin:0">Loading…</p></div>`);
-    const l = await driverCashLoad();
+    const [l] = await Promise.all([driverCashLoad(), invoiceDueLoad()]);
     const box = $("#dcBody"); if (!box) return;
     if (!l) { box.innerHTML = `<p class="err" style="margin:0">Could not load driver cash. Run lwb_cashbook_driver_cash_setup.sql in Supabase, or check the internet.</p>`; return; }
     if (!l.length) { box.innerHTML = `<div class="empty"><b>Nothing pending</b>Every payment drivers reported in the last 15 days is already in the Cashbook.</div>`; return; }
@@ -1122,14 +1158,14 @@ JAY MAMA DEV TREDARS (NILGIRI LIMBAYAT)
     box.innerHTML = `<p class="hint" style="margin:0">Reported by drivers in the Driver Portal, not yet entered here. Add opens Cash In already filled in; check it and Save.</p>
       <div class="ho-sum"><div><span>${l.length} payments</span><b class="num big">₹${inr.format(tot)}</b></div></div>
       <div style="max-height:55vh;overflow:auto;border:1px solid var(--line);border-radius:10px">${l.map((r, i) => `<div style="display:grid;grid-template-columns:1fr auto;gap:4px 10px;padding:10px 12px;border-bottom:1px solid var(--line)">
-        <div style="min-width:0;overflow-wrap:anywhere"><b>${esc(isFull() ? r.party : (partyById(tallyMatch(r.party)) || {}).code || r.party)}</b><div class="hint">${fmtDate(r.report_date)} ${fmtTime(r.report_time)} · ${esc(r.driver)} · PO ${esc(r.order_no)}</div></div>
+        <div style="min-width:0;overflow-wrap:anywhere"><b>${esc(isFull() ? r.party : (partyById(tallyMatch(r.party)) || {}).code || r.party)}</b><div class="hint">${fmtDate(r.report_date)} ${fmtTime(r.report_time)} · ${esc(r.driver)} · PO ${esc(r.order_no)}${dueByPo(r.order_no) ? ` · Tally bill ${esc(dueByPo(r.order_no).invoice_no)} · due ₹${inr.format(Number(dueByPo(r.order_no).due))}` : ""}</div></div>
         <div style="text-align:right"><b class="num amt-in">₹${inr.format(Number(r.amount))}</b><div class="hint">${esc(r.mode)}${r.reference ? " · " + esc(r.reference) : ""}</div></div>
         <div class="row-acts" style="grid-column:1/-1"><button class="btn sm" type="button" data-dcskip="${i}">Skip</button><button class="btn sm in" type="button" data-dcadd="${i}">Add as Cash In</button></div></div>`).join("")}</div>`;
     box.querySelectorAll("[data-dcadd]").forEach(btn => btn.onclick = () => {
       const r = l[btn.dataset.dcadd], p = tallyMatch(r.party);
       closeModal();
       entryModal(b, "in", null, { amount: Number(r.amount), date: r.report_date, time: r.report_time, party: partyById(p) ? p : "", mode: erpMode(r.mode),
-        remark: `Driver ${r.driver} · PO ${r.order_no}${r.reference ? " · Ref " + r.reference : ""}${partyById(p) ? "" : " · " + r.party}`, erpRef: r.report_id });
+        remark: `Driver ${r.driver} · PO ${r.order_no}${dueByPo(r.order_no) ? " · Tally bill " + dueByPo(r.order_no).invoice_no : ""}${r.reference ? " · Ref " + r.reference : ""}${partyById(p) ? "" : " · " + r.party}`, erpRef: r.report_id });
     });
     box.querySelectorAll("[data-dcskip]").forEach(btn => btn.onclick = () => {
       const r = l[btn.dataset.dcskip];
@@ -1444,6 +1480,7 @@ JAY MAMA DEV TREDARS (NILGIRI LIMBAYAT)
         <button class="btn ghost sm" id="back" type="button">← All books</button>
         <div class="spacer"></div>
         <button class="btn sm" id="drvCash" type="button">Driver cash (ERP) <span class="vcount" id="drvCount" hidden></span></button>
+        <button class="btn sm" id="invDue" type="button">Money due (Tally bills) <span class="vcount" id="invCount" hidden></span></button>
         <button class="btn sm" id="handover" type="button">Handover / Cash count</button>
         <button class="btn sm" id="bookReports" type="button">Reports</button>
         ${b.lock ? `<button class="btn sm" id="lockNow" type="button">${lockIcon.replace(/20/g, "16")} Lock now</button>` : ""}
@@ -1497,6 +1534,8 @@ JAY MAMA DEV TREDARS (NILGIRI LIMBAYAT)
     const ln = $("#lockNow"); if (ln) ln.onclick = () => { unlocked.delete(b.id); goHome(); toast("Book locked"); };
     $("#handover").onclick = () => handoverModal(b);
     $("#drvCash").onclick = () => driverCashModal(b);
+    $("#invDue").onclick = () => invoiceDueModal(b);
+    invoiceDueLoad().then(l => { const c = $("#invCount"); if (c && l) { c.textContent = l.length; c.hidden = !l.length; } });
     driverCashLoad().then(l => { const c = $("#drvCount"); if (c && l) { c.textContent = l.length; c.hidden = !l.length; } });
     $("#topIn").onclick = () => entryModal(b, "in");
     $("#topOut").onclick = () => entryModal(b, "out");
