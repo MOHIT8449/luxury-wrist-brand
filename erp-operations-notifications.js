@@ -58,7 +58,7 @@
   [/^DELIVERY_COLLECTION_/,["driver-delivery.html?order={o}&tab=deliver"]],
   [/^DELIVERY_RETURN_/,["driver-delivery.html?order={o}&tab=return"]],
   [/^LOADING_ASSIGNMENT_DRIVER$/,["driver-delivery.html?order={o}","loading-dispatch.html","transport-allocation.html"]],
-  [/^LOADING_ASSIGNMENT_/,["loading-dispatch.html","transport-allocation.html"]],
+  [/^LOADING_ASSIGNMENT_/,["loading-dispatch.html?order={o}","transport-allocation.html"]],
   [/^GODOWN_/,["godown-report.html"]],
   [/^MARKET_/,["market-report.html"]],
   [/^SALES_PLAN$/,["my-sales.html","sales-team.html"]],
@@ -73,7 +73,7 @@
  }
  // Focus messages, outside-market reports and return results also pop up once per device.
  // The driver also gets a popup when the office approves / rejects their return (href null = the notification's own page).
- const POPUP={ANNOUNCEMENT:["📢 Focus message","OK",""],MARKET_REPORT:["🚩 Outside market stock","Open report","market-report.html"],
+ const POPUP={LOADING_ASSIGNMENT_DRIVER:["🚚 New Transport Assignment","Open order",null],ANNOUNCEMENT:["📢 Focus message","OK",""],MARKET_REPORT:["🚩 Outside market stock","Open report","market-report.html"],
   DELIVERY_RETURN_APPROVED:["✅ Return approved","Open order",null],DELIVERY_RETURN_REJECTED:["❌ Return rejected","Open order",null],
   DELIVERY_COLLECTION_VERIFIED:["✅ Payment verified","Open order",null],DELIVERY_COLLECTION_REJECTED:["❌ Payment rejected","Correct it",null],
   DELIVERY_RETURN_DEDUCTED:["↩ Return amount cut","Open",null]};
@@ -86,6 +86,10 @@
   {re:/^TALLY_BILL_PENDING$/,key:"lwbTallySnooze",title:"🧾 Vehicle loaded — make Tally bill",skip:"accounts-invoice.html",ok:"Enter invoice no.",
    one:"A loaded vehicle is",many:" loaded vehicles are",ask:" waiting for the Tally bill:",
    foot:"Make the bill in Tally, then enter its invoice number. This reminder stops once the number is saved."},
+  // Godown Manager: vehicle assigned to him for loading, until he starts / confirms the loading.
+  {re:/^LOADING_ASSIGNMENT_DISPATCH$/,only:n=>/^Load This Vehicle/i.test(n.title||""),key:"lwbLoadSnooze",title:"🚛 Vehicle Loading Assignment",ok:"Open loading",
+   skip:"loading-dispatch.html",one:"A vehicle is",many:" vehicles are",ask:" assigned to you for loading:",
+   foot:"Please load the approved quantities, then tap ✅ Confirm Vehicle Loaded. Accounts and the Sales Head are informed automatically.",full:true},
   {re:/^DELIVERY_RETURN_RECEIVE$/,key:"lwbReceiveSnooze",title:"📦 Receive returned goods",ok:"Open",
    one:"An approved return is",many:" approved returns are",ask:" coming back to the godown:",
    foot:"When the vehicle comes back, check the goods and tap Goods received on Driver Returns.",full:true}
@@ -94,7 +98,7 @@
  async function urgentPopup(rows,pages){
   for(const g of URGENT){
    if(location.pathname.endsWith(g.skip||"driver-returns.html"))continue;
-   const due=rows.filter(n=>!n.is_read&&g.re.test(String(n.notification_type||"").toUpperCase())&&Date.now()-new Date(n.created_at)<3*864e5);
+   const due=rows.filter(n=>!n.is_read&&g.re.test(String(n.notification_type||"").toUpperCase())&&(!g.only||g.only(n))&&Date.now()-new Date(n.created_at)<3*864e5);
    const href=due.length?route(due[0],pages):"";
    if(!href)continue;
    let snoozed=0;try{snoozed=Number(localStorage.getItem(g.key))||0}catch(e){}
