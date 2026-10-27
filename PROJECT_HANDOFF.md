@@ -220,3 +220,7 @@
 - Unread DELIVERY_RETURN_PENDING / _OPERATIONS pop up on every page ("Verify now" / "Later"), again 15 min after Later (localStorage lwbReturnSnooze), not on driver-returns.html.
 - driver-returns.html?order=<id> shows only that order (banner + Show all). driver-delivery.html?order=&tab= opens the order.
 - lwb_return_notification_cleanup.sql: trigger on return status — CANCELLED deletes that return's office notifications (same order, created within 5 s of the return), APPROVED/REJECTED marks them read. Plus one-time clean-up.
+
+## Driver order card shows return status (2026-10-27)
+- driver-delivery.html: after the order list loads, the driver page calls lwb_driver_list_order_returns for each loaded order (loadReturnSummary). Each card then shows "✅ Return ₹X approved", "⏳ Return ₹X waiting for approval" and "❌ Return ₹X rejected: reason", plus Collect ₹(loaded value − approved). The payment line now says "Payment verification pending" so it is not mixed up with return approval.
+- erp-operations-notifications.js: DELIVERY_RETURN_APPROVED / _REJECTED pop up once for the driver, with "Open order" (opens that order's Return tab, marks the notification read). No SQL needed.

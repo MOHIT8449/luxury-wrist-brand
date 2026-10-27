@@ -33,6 +33,7 @@ textarea{min-height:92px;resize:vertical}
 .orderhead strong{font-size:16px}.tag{font-size:11px;background:#e5f2ea;color:#185e3c;font-weight:700;border-radius:16px;padding:5px 9px}
 .tag.pending{background:#fff1dc;color:#915e1a}
 .order p{overflow-wrap:anywhere}.order .info{font-size:12px;margin-top:10px}
+.order .info.retok{background:#e8f6ec;color:#17643a;font-weight:700}.order .info.retwait{background:#fff6dc;color:#7a5600;font-weight:700}.order .info.retno{background:#fdeceb;color:#a12a2a;font-weight:700}
 .order .actions{display:flex;gap:8px;margin-top:13px}
 .empty{padding:26px;text-align:center;background:white;border:1px dashed var(--border);border-radius:11px;color:var(--muted)}
 .overlay{position:fixed;inset:0;background:#101d31a6;z-index:50;display:none;align-items:center;justify-content:center;padding:12px}
@@ -409,6 +410,7 @@ async function refresh(){
   const loadedIds=new Set(loadedRows.map(x=>x.order_id));
   records=[...assignedRows.filter(x=>!loadedIds.has(x.order_id)),...loadedRows];
   render();
+  loadReturnSummary();
   loadNotifications();
   if(assigned.error){
    message("Loading Pending Orders unavailable until Supabase RPC is installed: "+assigned.error.message,true);
@@ -418,6 +420,27 @@ async function refresh(){
   if(!records.length)showOrdersNotice("Orders could not be loaded. See the message above.");
  }
  finally{$("refresh").disabled=false}
+}
+// Return status on each order card (Approved / Waiting / Rejected), from the driver's own returns.
+let returnSummary=new Map();
+async function loadReturnSummary(){
+ if(role!=="driver")return;
+ const ids=records.filter(r=>!isWaitingForLoading(r)).map(r=>r.order_id);
+ const res=await Promise.all(ids.map(id=>db.rpc("lwb_driver_list_order_returns",{p_order_id:id}).then(x=>[id,x],()=>[id,{data:null}])));
+ const next=new Map();
+ for(const [id,x] of res)if(Array.isArray(x.data)&&x.data.length)next.set(id,x.data);
+ if(JSON.stringify([...next])===JSON.stringify([...returnSummary]))return;
+ returnSummary=next;render();
+}
+function returnCardLines(r){
+ const rows=returnSummary.get(r.order_id)||[],sum=st=>rows.filter(x=>x.status===st).reduce((a,x)=>a+(Number(x.total_return_amount)||0),0);
+ const ok=sum("APPROVED"),wait=sum("PENDING_OFFICE"),rej=rows.filter(x=>x.status==="REJECTED"),out=[];
+ const collect=Math.max(0,(Number(r.loaded_goods_value)||0)-ok);
+ if(ok)out.push(["✅ Return "+money(ok)+" approved","retok"]);
+ if(wait)out.push(["⏳ Return "+money(wait)+" waiting for approval","retwait"]);
+ if(out.length)out[out.length-1][0]+=" • Collect "+money(collect);
+ for(const x of rej)out.push(["❌ Return "+money(x.total_return_amount)+" rejected"+(x.review_note?": "+x.review_note:""),"retno"]);
+ return out;
 }
 async function loadNotifications(){
  if(!user)return;
@@ -487,7 +510,8 @@ function render(){
   // Short card: the driver already knows his own name, so office logins alone see it.
   card.append(elt("p","🚚 "+(r.vehicle_no||"No vehicle")+" • "+num(waiting?r.planned_cases:r.loaded_cases)+" CS "+(waiting?"planned":"loaded")+
     (role==="driver"?"":" • "+(r.driver_name||"—")),"info"));
-  if(r.report)card.append(elt("p","💰 "+money(r.report.cash_reported)+" • "+(r.report.collection_review_status==="PENDING_OFFICE"?"Office verification pending":"Payment not collected"),"info"));
+  if(r.report)card.append(elt("p","💰 "+money(r.report.cash_reported)+" • "+(r.report.collection_review_status==="PENDING_OFFICE"?"Payment verification pending":"Payment not collected"),"info"));
+  for(const [t,c] of returnCardLines(r))card.append(elt("p",t,"info "+c));
   if(waiting)card.append(elt("p","Delivery opens after loading is completed.","info"));
   card.onclick=e=>{if(!e.target.closest("button"))openOrder(r.order_id)};
   const actions=elt("div",undefined,"actions"),btn=elt("button",waiting?"View Order":r.report?"View Report":"Open Delivery");
