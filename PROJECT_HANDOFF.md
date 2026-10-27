@@ -275,3 +275,10 @@
   (refused if it is already linked to another party), so money, notes, Cashbook and Tally Bill Check stay under ONE main party.
 - accounts-invoice.html: one line per Tally bill (firm from the party + its linked sub-firms, invoice no., amount), "+ Sub-firm bill" adds a line.
 - tally-check.html: a bill no. matches only a register row of that firm or of a Tally name linked to the PO's party; "same bill no. twice" is checked per file (one file = one Tally company).
+
+## Tally bills from Accounts show in the Cashbook automatically (2026-10-27)
+- SQL: `lwb_cashbook_erp_bills_setup.sql` → `lwb_cashbook_erp_bills(p_key)` (last 365 days, bills with an amount; lines, credit / debit note totals).
+- cashbook.html `erpFeed()` adds each bill line to `tallyFeed()` under the PO's MAIN party (tallyMatch of the ERP party name), so it shows in
+  Outstanding, the party ledger (chip "ERP · PO …"), and the Cash In "Pending bills" list. Credit notes minus debit notes go on the first line as "Credit note".
+  A line whose bill no. + amount is already in the imported Tally register is skipped (no double count).
+- "Money came: Cash In" (Money due list) and Driver cash "Add as Cash In" select the pending bill when exactly one fits, keeping the amount received.
