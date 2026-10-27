@@ -160,6 +160,12 @@
     // Tally bill no. as typed by Accounts vs the Sales Register: compare letters and digits only
     const vkey=v=>norm(v).replace(/ /g,"");
     const invNos=o=>(o.inv?String(o.inv.invoice_no||"").split(","):[]).map(vkey).filter(Boolean);
+    // Bills Accounts entered: [{firm, no}] (sub-firm bills), else the comma list under the PO's party.
+    // Each Tally company numbers its own bills, so a bill no. matches only a register row of that firm
+    // or of a Tally name linked to the PO's party.
+    const invLines=o=>!o.inv?[]:Array.isArray(o.inv.bills)&&o.inv.bills.length?o.inv.bills.map(b=>({firm:b.firm,no:vkey(b.no)}))
+      :invNos(o).map(no=>({firm:o.party,no}));
+    const sameFirm=(o,l,t)=>norm(t.party)===norm(l.firm)||(t.erp&&norm(t.erp)===norm(o.party))||(!t.erp&&base(t.party)===base(l.firm));
     function match(){
       const byParty=new Map();
       const slot=k=>{if(!byParty.has(k))byParty.set(k,{o:[],t:[]});return byParty.get(k)};
@@ -176,8 +182,8 @@
       };
       // 0. Accounts entered the Tally bill no. after loading: find that bill in the register (any party name)
       for(const o of allO){
-        const nos=invNos(o);if(!nos.length)continue;
-        const ts=allT.filter(t=>!t.used&&t.vno&&nos.includes(vkey(t.vno)));if(!ts.length)continue;
+        const ls=invLines(o);if(!ls.length)continue;
+        const ts=allT.filter(t=>!t.used&&t.vno&&ls.some(l=>l.no===vkey(t.vno)&&sameFirm(o,l,t)));if(!ts.length)continue;
         const ta=r2(ts.reduce((a,x)=>a+x.amt,0)),ia=o.inv.amount!=null?Number(o.inv.amount):null;
         const g=SAME(ta,o.amount);
         row((ia!=null?Math.abs(ta-ia)<=1:g!==null)?"ok":"diff",[o],ts,g,true);
@@ -277,7 +283,8 @@
       }
       const byNo=new Map(),byPDA=new Map();
       for(const b of out){
-        const k=b.vno?norm(b.vtype)+"|"+fy(b.date)+"|"+b.vno.toUpperCase():"";
+        // one file = one Tally company; each company (main party's sub-firms too) numbers its own bills
+        const k=b.vno?b.file+"|"+norm(b.vtype)+"|"+fy(b.date)+"|"+b.vno.toUpperCase():"";
         if(k){if(byNo.has(k))sameNo.push([byNo.get(k),b]);else byNo.set(k,b)}
         else{const p=norm(b.party)+"|"+b.date+"|"+b.amt;if(byPDA.has(p))maybe.push([byPDA.get(p),b]);else byPDA.set(p,b)}
       }
@@ -364,7 +371,8 @@
         const ds=bills.map(b=>b.date).sort();
         if(!el("from").value||el("from").dataset.auto==="1"){el("from").value=ds[0];el("from").dataset.auto="1"}
         if(!el("to").value||el("to").dataset.auto==="1"){el("to").value=ds[ds.length-1];el("to").dataset.auto="1"}
-        let inv=await client.from("lwb_tally_invoices").select("order_id,invoice_no,amount");
+        let inv=await client.from("lwb_tally_invoices").select("order_id,invoice_no,amount,bills");
+        if(inv.error)inv=await client.from("lwb_tally_invoices").select("order_id,invoice_no,amount");
         if(inv.error)inv=await client.from("lwb_tally_invoices").select("order_id,invoice_no");
         invoices=new Map((inv.data||[]).map(x=>[x.order_id,x]));
         const [o,p,m]=await Promise.all([

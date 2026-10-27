@@ -264,3 +264,11 @@
 - cashbook.html: "Money due (Tally bills)" button in a book (Cash In pre-filled with the due amount); Driver cash list shows the Tally bill no. and due.
 - tally-check.html: first matches the bill no. Accounts entered against the register (amount must equal the amount entered), then the old party / date / amount match.
   New result "Bill no. entered, not in Sales Register" (query kind no_tally). Rows matched by party / date with a different bill no. are flagged.
+
+## Tally bills in sub-firm names (2026-10-27)
+- SQL: `lwb_tally_subfirm_bills_setup.sql` (after lwb_tally_bill_flow_setup.sql). Adds `lwb_tally_invoices.bills` jsonb [{firm, no, amount}]
+  and `lwb_save_tally_bills(p_order_id, p_invoice_date, p_bills, p_note)`: invoice_no = the numbers joined, amount = total.
+  A bill no. is unique per firm (each Tally company numbers its own bills). A sub-firm used is linked to the PO's party in `lwb_tally_party_map`
+  (refused if it is already linked to another party), so money, notes, Cashbook and Tally Bill Check stay under ONE main party.
+- accounts-invoice.html: one line per Tally bill (firm from the party + its linked sub-firms, invoice no., amount), "+ Sub-firm bill" adds a line.
+- tally-check.html: a bill no. matches only a register row of that firm or of a Tally name linked to the PO's party; "same bill no. twice" is checked per file (one file = one Tally company).
