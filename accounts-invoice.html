@@ -43,7 +43,7 @@ table{border-collapse:collapse;width:100%;min-width:770px}
 th{text-align:left;background:#ebf0f7;font-size:11px;color:#314d6b}
 th,td{padding:12px;border-bottom:1px solid #e6ebf1}
 .tally-section{margin:14px 0;padding:16px;border:1px solid #c9d8ee;background:#f4f8fe;border-radius:9px}
-.tally-grid{display:grid;grid-template-columns:2fr 1fr 1fr 2fr auto;gap:10px;align-items:end}
+.tally-grid{display:grid;grid-template-columns:1fr 2fr auto;gap:10px;align-items:end}
 .tally-grid label{display:block;font-size:11px;color:#657992;text-transform:uppercase;margin-bottom:5px}
 .tally-grid input{width:100%}
 .tag.pending{background:#fff1dc;color:#9a5b0b}
@@ -58,6 +58,12 @@ th,td{padding:12px;border-bottom:1px solid #e6ebf1}
 .inl input{padding:8px;font-size:13px}
 .inl .no{width:130px}.inl .am{width:115px}.inl .dt{width:140px}
 .inl button{padding:8px 12px;font-size:13px}
+.bills{display:grid;gap:6px}
+.bl{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.bl input{padding:8px;font-size:13px}.bl .fm{width:190px}.bl .no{width:110px}.bl .am{width:110px}
+.bl .x{background:#e7edf5;color:#a02c2c;padding:6px 10px}
+.bills .add{background:none;color:var(--blue);padding:2px 0;font-size:12px;justify-self:start}
+.bills .tot{font-size:12px;color:var(--muted)}
 td .sub{display:block;font-size:11px;color:var(--muted);font-weight:normal}
 td.n,th.n{text-align:right;white-space:nowrap}
 .due{color:#a02c2c;font-weight:bold}
@@ -164,10 +170,10 @@ button.sm{padding:6px 10px;font-size:12px}
    <div class="summary"><div>Actual Loaded Qty <b id="totalLoaded">0</b></div><div>Goods Value <b id="totalValue">₹0.00</b></div></div>
    <div class="tally-section" id="tallySection">
     <h3>Tally Invoice Number</h3>
+    <label class="small" style="display:block;margin-bottom:5px">TALLY BILLS · firm (party or its sub-firm) · invoice no. · amount</label>
+    <div id="tallyLines" style="margin-bottom:10px"></div>
     <div class="tally-grid">
-     <div><label for="tallyNo">Invoice No. (more than one bill: separate with comma)</label><input id="tallyNo" maxlength="200" autocomplete="off" placeholder="e.g. CC/1234, RG/567"></div>
      <div><label for="tallyDate">Invoice Date</label><input id="tallyDate" type="date"></div>
-     <div><label for="tallyAmt">Bill Amount ₹</label><input id="tallyAmt" type="number" min="0.01" step="0.01" inputmode="decimal"></div>
      <div><label for="tallyNote">Note (optional)</label><input id="tallyNote" maxlength="300" autocomplete="off"></div>
      <div><button type="button" id="saveTally">Save Invoice No.</button></div>
     </div>
@@ -195,7 +201,7 @@ const qty=n=>new Intl.NumberFormat("en-IN",{maximumFractionDigits:3}).format(Num
 const date=v=>{const d=new Date(v);return v&&!Number.isNaN(d.getTime())?d.toLocaleDateString("en-IN"):"—"};
 const escapeHtml=v=>val(v).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 let db,orders=[],bills=[],selected=null,itemRows=[],loaded=false,loading=false,billSaving=false,setupReady=false,setupError="",legacyOrders=new Set();
-let tallyRows=[],tallyReady=false,tallySaving=false,flow=new Map(),flowReady=false,tab="bill";
+let firmMap=[],modalBills=null,tallyRows=[],tallyReady=false,tallySaving=false,flow=new Map(),flowReady=false,tab="bill";
 let assignedVehicle=null,assignedOrderId=null,assignedError="";
 function notice(message,error=false){
  const el=$("message");el.textContent=message;el.className="notice"+(error?" error":"");el.style.display="block";
@@ -223,15 +229,17 @@ async function reload(){
  if(!loaded||loading)return;
  loading=true;$("refresh").disabled=true;
  try{
-  const [o,b,legacy,tally,fl]=await Promise.all([
+  const [o,b,legacy,tally,fl,fm]=await Promise.all([
    db.from("orders").select("id,order_no,order_date,customer_name,transportation,status")
     .in("status",["loaded","invoiced","dispatched","delivered"]).order("order_date",{ascending:false}).limit(1500),
    db.from("lwb_internal_bills").select("id,order_id,internal_bill_no,bill_date,customer_name,loaded_qty,goods_amount,items,created_at")
     .order("created_at",{ascending:false}).limit(2000),
    db.from("tax_invoices").select("order_id").limit(2000),
    db.from("lwb_tally_invoices").select("*").limit(5000),
-   db.rpc("lwb_tally_bill_status",{p_days:120})
+   db.rpc("lwb_tally_bill_status",{p_days:120}),
+   db.rpc("lwb_tally_party_maps")
   ]);
+  firmMap=fm.error?[]:(fm.data||[]);
   flowReady=!fl.error;flow=new Map((fl.data||[]).map(r=>[r.order_id,r]));
   tallyReady=!tally.error;tallyRows=tally.data||[];
   if(o.error)throw o.error;
@@ -259,6 +267,44 @@ function rowOf(o){
 // Still loaded, or left in the last 30 days (older delivered POs from before this screen are left out here;
 // Tally Bill Check still lists every one of them against the Sales Register).
 const recent=r=>["loaded","invoiced"].includes(val(r.o.status).toLowerCase())||(r.f?.dispatch_date||r.o.order_date||"")>=new Date(Date.now()-30*864e5).toISOString().slice(0,10);
+// Sub-firms: Tally names linked to this ERP party (Tally Bill Check party links)
+const fkey=v=>val(v).toUpperCase().replace(/[^A-Z0-9]+/g," ").trim();
+const firmsOf=party=>[...new Set(firmMap.filter(m=>m.customer_name&&fkey(m.customer_name)===fkey(party)).map(m=>m.tally_name))].sort();
+function billsOf(order){
+ const t=tallyOf(order.id);
+ if(t&&Array.isArray(t.bills)&&t.bills.length)return t.bills.map(b=>({firm:b.firm,no:b.no,amount:b.amount}));
+ if(t)return val(t.invoice_no).split(",").map(x=>x.trim()).filter(Boolean).map((no,i)=>({firm:order.customer_name,no,amount:i===0?t.amount:null}));
+ return [];
+}
+// One line per Tally bill: firm + invoice no. + amount. Money stays under the PO's party.
+function billEditor(order,lines){
+ const box=document.createElement("div");box.className="bills";
+ const listId="fl-"+order.id;
+ const dl=document.createElement("datalist");dl.id=listId;
+ [order.customer_name,...firmsOf(order.customer_name)].forEach(n=>{const o=document.createElement("option");o.value=n;dl.appendChild(o)});
+ box.appendChild(dl);
+ const rows=document.createElement("div");rows.className="bills";box.appendChild(rows);
+ const tot=document.createElement("div");tot.className="tot";
+ const firms=firmsOf(order.customer_name);
+ const total=()=>{const l=[...rows.children];const sum=l.reduce((a,r)=>a+(Number(r.querySelector(".am").value)||0),0);tot.textContent=l.length>1?l.length+" bills · total "+cash(sum):"";};
+ const add=(l={})=>{
+  const r=document.createElement("div");r.className="bl";
+  r.innerHTML='<input class="fm" list="'+listId+'" maxlength="200" placeholder="Bill in firm name" aria-label="Firm name of the Tally bill"><input class="no" maxlength="100" placeholder="Invoice no." aria-label="Tally invoice no."><input class="am" type="number" min="0.01" step="0.01" inputmode="decimal" placeholder="Amount ₹" aria-label="Bill amount"><button type="button" class="x" aria-label="Remove this bill">×</button>';
+  r.querySelector(".fm").value=l.firm||(firms.length===1?firms[0]:order.customer_name);
+  r.querySelector(".no").value=l.no||"";
+  if(l.amount!=null&&l.amount!=="")r.querySelector(".am").value=Number(l.amount).toFixed(2);
+  r.querySelector(".x").onclick=()=>{if(rows.children.length>1){r.remove();total()}else{r.querySelectorAll(".no,.am").forEach(i=>i.value="")}};
+  r.querySelector(".am").addEventListener("input",total);
+  r.querySelectorAll("input").forEach(i=>i.addEventListener("keydown",e=>{if(e.key==="Enter"&&box.onEnter)box.onEnter()}));
+  rows.appendChild(r);total();return r;
+ };
+ (lines.length?lines:[{}]).forEach(add);
+ const more=document.createElement("button");more.type="button";more.className="add";more.textContent="+ Sub-firm bill";
+ more.onclick=()=>add({firm:""}).querySelector(".fm").focus();
+ box.append(more,tot);
+ box.get=()=>[...rows.children].map(r=>({firm:r.querySelector(".fm").value.trim(),no:r.querySelector(".no").value.trim(),amount:r.querySelector(".am").value})).filter(l=>l.no||l.amount);
+ return box;
+}
 // Driver's delivery report (one per PO). The order status stays "loaded" after delivery, so show this instead.
 const DELIVERY={DELIVERED:["ok","✓ Delivered by driver"],PARTIAL:["part","Part delivered (return)"],NOT_DELIVERED:["no","✗ Not delivered"]};
 function delivery(r){
@@ -268,7 +314,7 @@ function delivery(r){
 }
 const inTab=(r,k)=>k==="all"||(k==="bill"&&!r.inv&&recent(r))||(k==="due"&&r.inv&&r.due>1)||(k==="cn"&&r.cn>0.5);
 const HEAD={
- bill:["PO / PARTY / DELIVERY","LOADED","ERP AMOUNT","TALLY INVOICE NO. · DATE · AMOUNT",""],
+ bill:["PO / PARTY / DELIVERY","LOADED","ERP AMOUNT","TALLY BILL: FIRM · INVOICE NO. · AMOUNT · DATE",""],
  due:["PO / PARTY / DELIVERY","TALLY BILL","n:BILL","n:RETURN / NOTES","n:DRIVER GOT","n:DUE",""],
  cn:["PO / PARTY / DELIVERY","TALLY BILL","n:RETURN APPROVED","n:CREDIT NOTE PENDING",""],
  all:["PO / PARTY / DELIVERY","DATE","TALLY BILL","n:BILL","n:DUE","STATUS",""]
@@ -290,7 +336,13 @@ function render(){
   td.textContent=tab==="bill"?"No loaded vehicle is waiting for a Tally bill.":tab==="due"?"No money due on Tally bills.":tab==="cn"?"No approved return is waiting for a credit note.":"No matching loaded orders.";return}
  const td=(tr,html,cls)=>{const c=tr.insertCell();c.innerHTML=html;if(cls)c.className=cls;return c};
  const who=r=>'<b>'+escapeHtml(r.o.order_no)+'</b><span class="sub">'+escapeHtml(r.o.customer_name)+'</span>'+delivery(r);
- const inv=r=>r.inv?'<b>'+escapeHtml(r.inv)+'</b><span class="sub">'+date(r.t?.invoice_date||r.f?.invoice_date)+'</span>':'<span class="tag pending">Pending</span>';
+ const inv=r=>{
+  if(!r.inv)return '<span class="tag pending">Pending</span>';
+  const bl=r.t&&Array.isArray(r.t.bills)?r.t.bills:[];
+  const show=bl.length>1||bl.some(b=>fkey(b.firm)!==fkey(r.o.customer_name));
+  return (show?bl.map(b=>'<b>'+escapeHtml(b.no)+'</b> <span class="small">'+escapeHtml(b.firm)+(bl.length>1?" · "+cash(b.amount):"")+'</span>').join("<br>"):'<b>'+escapeHtml(r.inv)+'</b>')+
+   '<span class="sub">'+date(r.t?.invoice_date||r.f?.invoice_date)+'</span>';
+ };
  const btn=(cell,text,fn,cls)=>{const b=document.createElement("button");b.type="button";b.textContent=text;if(cls)b.className=cls;b.onclick=fn;cell.appendChild(b);return b};
  for(const r of list){
   const tr=body.insertRow();
@@ -298,10 +350,13 @@ function render(){
   if(tab==="bill"){
    td(tr,date(r.f?.dispatch_date||r.o.order_date));
    td(tr,r.erp!=null?cash(r.erp):"—","n money");
-   const c=td(tr,'<div class="inl"><input class="no" maxlength="200" placeholder="Invoice no." aria-label="Tally invoice no. for '+escapeHtml(r.o.order_no)+'"><input class="dt" type="date" aria-label="Invoice date"><input class="am" type="number" min="0.01" step="0.01" inputmode="decimal" placeholder="Amount ₹" aria-label="Tally bill amount"></div>');
-   const box=c.firstChild;box.querySelector(".dt").value=todayIST();
-   const go=btn(box,"Submit",()=>submitBill(r.o,box.querySelector(".no").value,box.querySelector(".dt").value,box.querySelector(".am").value,go));
-   box.querySelectorAll("input").forEach(i=>i.addEventListener("keydown",e=>{if(e.key==="Enter")go.click()}));
+   const c=td(tr,"");
+   const ed=billEditor(r.o,[]);c.appendChild(ed);
+   const box=document.createElement("div");box.className="inl";box.style.marginTop="6px";
+   box.innerHTML='<input class="dt" type="date" aria-label="Invoice date">';c.appendChild(box);
+   box.querySelector(".dt").value=todayIST();
+   const go=btn(box,"Submit",()=>submitBill(r.o,ed.get(),box.querySelector(".dt").value,go));
+   ed.onEnter=()=>go.click();
    btn(td(tr,""),"Details",()=>openOrder(r.o.id),"secondary sm");
   }else if(tab==="due"){
    td(tr,inv(r));
@@ -334,21 +389,33 @@ function noteFor(r,kind,amount,reason){
   info:r.cn>0.5?"Return approved "+cash(r.f?.approved_return)+"; credit note still pending "+cash(r.cn)+".":"",
   onSaved:x=>{notice((x.kind==="CREDIT"?"Credit":"Debit")+" note "+x.no+" saved for "+r.o.order_no+".");reload().then(()=>{if(selected?.id===r.o.id)renderTally(selected)})}});
 }
-async function submitBill(order,no,dt,amt,button){
- no=val(no).trim();const amount=Number(amt);
- if(!no){notice("Enter the Tally invoice number for "+order.order_no+".",true);return false}
+async function submitBill(order,lines,dt,button){
+ if(!lines.length){notice("Enter the Tally invoice no. and amount for "+order.order_no+".",true);return false}
+ for(const l of lines){
+  if(!l.no){notice("Enter the invoice no. of every bill ("+(l.firm||order.customer_name)+").",true);return false}
+  if(!(Number(l.amount)>0)){notice("Enter the amount of bill "+l.no+".",true);return false}
+ }
  if(!dt){notice("Enter the invoice date.",true);return false}
- if(!(amount>0)){notice("Enter the Tally bill amount for "+order.order_no+".",true);return false}
  if(!flowReady){notice("Bill amount is not set up yet: run lwb_tally_bill_flow_setup.sql once in Supabase, then Refresh.",true);return false}
  const old=tallyOf(order.id),erp=flowOf(order.id)?.erp_amount;
- if(!await confirm((old?"Change":"Submit")+" Tally bill for "+order.order_no+" ("+order.customer_name+")?\n\nInvoice no. "+no+" · "+date(dt)+"\nAmount "+cash(amount)+(erp!=null?"  (ERP loaded value "+cash(erp)+")":"")+
+ const total=Math.round(lines.reduce((a,l)=>a+Number(l.amount),0)*100)/100;
+ const sub=lines.filter(l=>l.firm&&fkey(l.firm)!==fkey(order.customer_name));
+ if(!await confirm((old?"Change":"Submit")+" Tally bill for "+order.order_no+" ("+order.customer_name+")?\n\n"+
+  lines.map(l=>(l.firm||order.customer_name)+" · bill "+l.no+" · "+cash(l.amount)).join("\n")+"\nDate "+date(dt)+
+  (lines.length>1?"\nTotal "+cash(total):"")+(erp!=null?"  (ERP loaded value "+cash(erp)+")":"")+
+  (sub.length?"\n\nThe money stays under "+order.customer_name+" (one ledger); "+(f=>f.join(", ")+(f.length>1?" are":" is"))([...new Set(sub.map(l=>l.firm))])+" linked to it.":"")+
   (old?"":"\n\nThis means the bill is made in Tally and the full bill is given to the driver.")))return false;
  if(button)button.disabled=true;
  try{
-  const r=await db.rpc("lwb_save_tally_bill",{p_order_id:order.id,p_invoice_no:no,p_invoice_date:dt,p_amount:amount,p_note:selected?.id===order.id?($("tallyNote").value.trim()||null):(old?.note||null)});
+  const note=selected?.id===order.id?($("tallyNote").value.trim()||null):(old?.note||null);
+  let r=await db.rpc("lwb_save_tally_bills",{p_order_id:order.id,p_invoice_date:dt,p_bills:lines.map(l=>({firm:l.firm,no:l.no,amount:Number(l.amount)})),p_note:note});
+  if(r.error&&/lwb_save_tally_bills|schema cache|function/i.test(r.error.message)){
+   if(lines.length>1||sub.length)throw Error("Sub-firm bills are not set up yet: run lwb_tally_subfirm_bills_setup.sql once in Supabase, then Refresh.");
+   r=await db.rpc("lwb_save_tally_bill",{p_order_id:order.id,p_invoice_no:lines[0].no,p_invoice_date:dt,p_amount:Number(lines[0].amount),p_note:note});
+  }
   if(r.error)throw r.error;
   await reload();
-  notice("Tally bill "+no+" "+(old?"updated":"saved")+" for "+order.order_no+"."+(old?"":" It is now under Money to collect; Sales Head is told the Tally bill is made."));
+  notice("Tally bill "+lines.map(l=>l.no).join(", ")+" "+(old?"updated":"saved")+" for "+order.order_no+"."+(old?"":" It is now under Money to collect; Sales Head is told the Tally bill is made."));
   return true;
  }catch(e){notice("Could not save the Tally bill: "+e.message,true);return false}
  finally{if(button)button.disabled=false}
@@ -472,9 +539,8 @@ function renderTally(order){
  if(!order||selected?.id!==order.id)return;
  const t=tallyOf(order.id),f=flowOf(order.id);
  $("tallySection").hidden=!tallyReady;
- $("tallyNo").value=t?.invoice_no||"";
+ modalBills=billEditor(order,billsOf(order));$("tallyLines").replaceChildren(modalBills);modalBills.onEnter=()=>$("saveTally").click();
  $("tallyDate").value=t?.invoice_date||todayIST();
- $("tallyAmt").value=t?.amount!=null?Number(t.amount).toFixed(2):"";
  $("tallyNote").value=t?.note||"";
  $("saveTally").textContent=t?"Update":"Submit";
  $("saveTally").disabled=tallySaving;
@@ -505,7 +571,7 @@ async function saveTally(){
  if(!selected||tallySaving)return;
  const order=selected;
  tallySaving=true;$("saveTally").disabled=true;
- try{if(await submitBill(order,$("tallyNo").value,$("tallyDate").value,$("tallyAmt").value))renderTally(order)}
+ try{if(await submitBill(order,modalBills?modalBills.get():[],$("tallyDate").value))renderTally(order)}
  finally{tallySaving=false;if(selected?.id===order.id)renderTally(order)}
 }
 async function createBill(){
