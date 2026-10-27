@@ -80,7 +80,8 @@ const el=id=>document.getElementById(id);
 const fmt=n=>"₹"+Number(n||0).toLocaleString("en-IN",{minimumFractionDigits:2,maximumFractionDigits:2});
 const REASON={LEAKAGE:"Leakage",BREAKAGE:"Breakage",DAMAGE:"Damage",GASLESS:"Gasless",LOW_FILL:"Low Fill"};
 const STATUSES=["PENDING_OFFICE","APPROVED","REJECTED"];
-let role="",status="PENDING_OFFICE",lists={},busy=false,photos=new Map(),photoUrls=new Map();
+let role="",status="PENDING_OFFICE",lists={},busy=false,photos=new Map(),photoUrls=new Map(),receipts=new Map();
+const canReceive=()=>role==="warehouse"||role==="manager"||role==="admin";
 // Opened from a notification: driver-returns.html?order=<order id> shows only that order's returns.
 let onlyOrder=new URLSearchParams(location.search).get("order")||"";
 const canReview=()=>role==="admin"||role==="accounts"||role==="manager";
@@ -104,16 +105,38 @@ async function load(){
   const results=await Promise.all(STATUSES.map(s=>db.rpc("lwb_office_list_driver_returns",{p_status:s})));
   results.forEach((r,i)=>{if(r.error)throw r.error;lists[STATUSES[i]]=Array.isArray(r.data)?r.data:[]});
   STATUSES.forEach(s=>el("count"+s).textContent=lists[s].length);
-  await loadPhotos();
+  await Promise.all([loadPhotos(),loadReceipts()]);
   let note=canReview()?"":"View only. Admin, Accounts or Sales Head can approve / reject.";
   if(onlyOrder){
    const s=STATUSES.find(x=>lists[x].some(r=>r.order_id===onlyOrder));
    if(s&&!lists[status].some(r=>r.order_id===onlyOrder))status=s;
+   if(canReceive()&&!canReview()&&lists.APPROVED.some(r=>r.order_id===onlyOrder&&!receipts.get(r.id)))status="APPROVED";
    if(!s){onlyOrder="";note="That return was changed or cancelled by the driver. Showing all returns.";history.replaceState(null,"",location.pathname)}
   }
   render();
   message(note);
  }catch(e){message("Unable to load returns: "+e.message+". Run lwb_driver_return_review_setup.sql in Supabase.","error")}
+}
+// Godown "Goods received" on approved returns (lwb_driver_payment_setup.sql).
+async function loadReceipts(){
+ receipts=new Map();
+ const ids=(lists.APPROVED||[]).map(r=>r.id);
+ if(!ids.length)return;
+ const {data,error}=await db.rpc("lwb_office_return_receipts",{p_return_ids:ids});
+ if(error){receipts=null;return}
+ for(const x of data||[])receipts.set(x.return_id,x);
+}
+async function receive(r){
+ if(busy||!canReceive())return;
+ const note=await prompt("Goods of "+r.order_no+" received at the godown. Note (optional):","");
+ if(note===null)return;
+ busy=true;document.querySelectorAll(".actions button").forEach(b=>b.disabled=true);
+ try{
+  const {error}=await db.rpc("lwb_receive_return_goods",{p_return_id:r.id,p_note:note.trim()||null});
+  if(error)throw error;
+  await load();message("Goods received for "+r.order_no+".","success");
+ }catch(e){message("Failed: "+e.message,"error");render()}
+ finally{busy=false}
 }
 // Photos the driver took with the phone (lwb_driver_return_photos_setup.sql). Older returns have none.
 async function loadPhotos(){
@@ -171,6 +194,12 @@ function render(){
   if(r.note)info.append(node("div","Driver note: "+r.note,"note"));
   info.append(photoStrip(r));
   if(status!=="PENDING_OFFICE")info.append(node("div",(status==="APPROVED"?"Approved":"Rejected")+" by "+(r.reviewed_by_name||"—")+" · "+when(r.reviewed_at)+(r.review_note?" · "+r.review_note:""),"meta"));
+  if(status==="APPROVED"&&receipts){
+   const got=receipts.get(r.id);
+   if(got)info.append(node("div","📦 Goods received by "+(got.received_by_name||"—")+" · "+when(got.received_at)+(got.received_note?" · "+got.received_note:""),"meta"));
+   else if(canReceive()){const act=node("div",null,"actions"),b=node("button","📦 Goods received","approve");b.type="button";b.onclick=()=>receive(r);act.append(b);card.append(act)}
+   else info.append(node("div","📦 Godown has not received the goods yet","meta"));
+  }
   if(status==="PENDING_OFFICE"&&canReview()){
    const act=node("div",null,"actions");
    const ok=node("button","Approve","approve");ok.type="button";ok.onclick=()=>review(r,"APPROVE");

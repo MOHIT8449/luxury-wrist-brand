@@ -17,7 +17,13 @@
   const val=amt?Number(amt.replace(/,/g,"")):0;
   const money=amt?"₹"+val.toLocaleString("en-IN",{minimumFractionDigits:val%1?2:0,maximumFractionDigits:2}):"";
   const join=a=>a.filter(Boolean).join(" · ");
+  if(t==="DELIVERY_RETURN_RECEIVE")return {icon:"📦",text:join(["Receive return goods",order,money])};
+  if(t==="DELIVERY_RETURN_DEDUCTED")return {icon:"↩",text:join(["Return cut",order,money])};
+  if(t==="DELIVERY_RETURN_APPROVED"||t==="DELIVERY_RETURN_REJECTED")return {icon:t.endsWith("APPROVED")?"✅":"❌",text:join([t.endsWith("APPROVED")?"Return approved":"Return rejected",order,money])};
   if(t.startsWith("DELIVERY_RETURN"))return {icon:"↩",text:join(["Return",order,money,t.endsWith("OPERATIONS")?"Warehouse check":"Verify"])};
+  if(t==="DELIVERY_COLLECTION"){const out=(m.match(/Outstanding Rs ([\d.]+)/)||[])[1];
+   return {icon:"💰",text:join(["Collection",order,money,Number(out)>0?"Due ₹"+Number(out).toLocaleString("en-IN"):"","Verify"])}}
+  if(t.startsWith("DELIVERY_COLLECTION_"))return {icon:t.endsWith("VERIFIED")?"✅":"❌",text:join([t.endsWith("VERIFIED")?"Payment verified":"Payment rejected",order,money])};
   if(t.startsWith("LOADING_ASSIGNMENT")){
    const veh=(m.match(/Vehicle ([A-Z0-9]+)/)||[])[1],drv=((m.match(/Driver ([^(·]+)/)||[])[1]||"").trim();
    return {icon:"🚚",text:join([/updated|changed|badla/i.test(title)?"Loading updated":"Loading",order,veh,drv])};
@@ -40,7 +46,9 @@
  }
  // Page each notification opens. {o} = the notification's order id. The first page this login can open wins.
  const ROUTES=[
-  [/^DELIVERY_RETURN_(PENDING|OPERATIONS)$/,["driver-returns.html?order={o}"]],
+  [/^DELIVERY_RETURN_(PENDING|OPERATIONS|RECEIVE|DEDUCTED)$/,["driver-returns.html?order={o}"]],
+  [/^DELIVERY_COLLECTION$/,["driver-collections.html?order={o}"]],
+  [/^DELIVERY_COLLECTION_/,["driver-delivery.html?order={o}&tab=deliver"]],
   [/^DELIVERY_RETURN_/,["driver-delivery.html?order={o}&tab=return"]],
   [/^LOADING_ASSIGNMENT_DRIVER$/,["driver-delivery.html?order={o}"]],
   [/^LOADING_ASSIGNMENT_/,["loading-dispatch.html","transport-allocation.html"]],
@@ -59,26 +67,36 @@
  // Focus messages, outside-market reports and return results also pop up once per device.
  // The driver also gets a popup when the office approves / rejects their return (href null = the notification's own page).
  const POPUP={ANNOUNCEMENT:["📢 Focus message","OK",""],MARKET_REPORT:["🚩 Outside market stock","Open report","market-report.html"],
-  DELIVERY_RETURN_APPROVED:["✅ Return approved","Open order",null],DELIVERY_RETURN_REJECTED:["❌ Return rejected","Open order",null]};
- // Driver returns waiting for office approval are urgent: they pop up on every page
- // (again 15 min after "Later") until approved / rejected or opened from the bell.
- const URGENT=/^DELIVERY_RETURN_(PENDING|OPERATIONS)$/,SNOOZE=15*60e3;
+  DELIVERY_RETURN_APPROVED:["✅ Return approved","Open order",null],DELIVERY_RETURN_REJECTED:["❌ Return rejected","Open order",null],
+  DELIVERY_COLLECTION_VERIFIED:["✅ Payment verified","Open order",null],DELIVERY_COLLECTION_REJECTED:["❌ Payment rejected","Correct it",null],
+  DELIVERY_RETURN_DEDUCTED:["↩ Return amount cut","Open",null]};
+ // Urgent, until done: returns waiting for approval (office) and approved returns to receive (godown).
+ // They pop up on every page, again 15 min after "Later", until handled or opened from the bell.
+ const URGENT=[
+  {re:/^DELIVERY_RETURN_(PENDING|OPERATIONS)$/,key:"lwbReturnSnooze",title:"↩ Driver return waiting",ok:"Verify now",
+   one:"A driver return is",many:" driver returns are",ask:" waiting for your check:",
+   foot:"Only approved returns are cut from the bill. Until then the driver collects the full amount."},
+  {re:/^DELIVERY_RETURN_RECEIVE$/,key:"lwbReceiveSnooze",title:"📦 Receive returned goods",ok:"Open",
+   one:"An approved return is",many:" approved returns are",ask:" coming back to the godown:",
+   foot:"When the vehicle comes back, check the goods and tap Goods received on Driver Returns.",full:true}
+ ],SNOOZE=15*60e3;
  let popping=false;
  async function urgentPopup(rows,pages){
   if(location.pathname.endsWith("driver-returns.html"))return false;
-  const due=rows.filter(n=>!n.is_read&&URGENT.test(String(n.notification_type||"").toUpperCase())&&Date.now()-new Date(n.created_at)<3*864e5);
-  const href=due.length?route(due[0],pages):"";
-  if(!href)return false;
-  let snoozed=0;try{snoozed=Number(localStorage.getItem("lwbReturnSnooze"))||0}catch(e){}
-  if(Date.now()-snoozed<SNOOZE)return false;
-  const lines=due.slice(0,5).map(n=>{const s=summary(n).text.replace(/ · (Verify|Warehouse check)$/,"").replace(/^Return · /,"");return "• "+s});
-  if(due.length>5)lines.push("… and "+(due.length-5)+" more");
-  const orders=new Set(due.map(n=>n.order_id));
-  const text=(due.length===1?"A driver return is":due.length+" driver returns are")+" waiting for your check:\n\n"+lines.join("\n")+
-   "\n\nOnly approved returns are cut from the bill. Until then the driver collects the full amount.";
-  try{localStorage.setItem("lwbReturnSnooze",String(Date.now()))}catch(e){}
-  const go=await window.confirm(text,{title:"↩ Driver return waiting",ok:"Verify now",cancel:"Later"});
-  if(go){location.href=orders.size===1?href:href.split("?")[0];return true}
+  for(const g of URGENT){
+   const due=rows.filter(n=>!n.is_read&&g.re.test(String(n.notification_type||"").toUpperCase())&&Date.now()-new Date(n.created_at)<3*864e5);
+   const href=due.length?route(due[0],pages):"";
+   if(!href)continue;
+   let snoozed=0;try{snoozed=Number(localStorage.getItem(g.key))||0}catch(e){}
+   if(Date.now()-snoozed<SNOOZE)continue;
+   const lines=g.full&&due.length===1?[due[0].message||""]:due.slice(0,5).map(n=>"• "+summary(n).text.replace(/ · (Verify|Warehouse check)$/,"").replace(/^(Return|Receive return goods) · /,""));
+   if(due.length>5)lines.push("… and "+(due.length-5)+" more");
+   const orders=new Set(due.map(n=>n.order_id));
+   const text=(due.length===1?g.one:due.length+g.many)+g.ask+"\n\n"+lines.join("\n")+"\n\n"+g.foot;
+   try{localStorage.setItem(g.key,String(Date.now()))}catch(e){}
+   const go=await window.confirm(text,{title:g.title,ok:g.ok,cancel:"Later"});
+   if(go){location.href=orders.size===1?href:href.split("?")[0];return true}
+  }
   return false;
  }
  async function popup(rows,pages,markRead){
