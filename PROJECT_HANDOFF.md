@@ -210,5 +210,5 @@
 ## Driver phone view and return photos (26 Oct 2026)
 
 - `driver-delivery.html` on a phone: short order cards (tap a card to open), bottom bar To Deliver / Loading / Delivered / All with counts, compact popup, fixed Submit bars that step aside while the keyboard is open (`erp-shell.js` `watchKeyboard()`, now also used for the DRIVER role).
-- Return tab: each SKU line is a card (SKU, CS + PCS + Reason, rate, amount). 1 to 6 photos are required (📷 Take Photo opens the camera, 🖼 Gallery), resized to 1280px JPEG and uploaded to the private bucket `lwb-return-photos`.
+- Return tab: each SKU line is a card (SKU, CS + PCS + Reason, rate, amount). 1 to 10 photos are required (📷 Take Photo opens the camera, 🖼 Gallery), resized to 1280px JPEG and uploaded to the private bucket `lwb-return-photos`.
 - SQL: `lwb_driver_return_photos_setup.sql` (run once): `photo_paths` column, bucket + policies, `lwb_driver_submit_delivery_return_with_photos` (wraps the existing submit; return is saved only with its photos), `lwb_office_driver_return_photos` for `driver-returns.html`, which shows the photos as thumbnails (tap to enlarge).

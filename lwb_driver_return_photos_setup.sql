@@ -3,7 +3,7 @@
 -- RUN ONCE in Supabase SQL Editor, after lwb_driver_delivery_return_setup.sql
 -- and lwb_driver_return_review_setup.sql. Safe to run again.
 --
--- The driver takes 1 to 6 photos of the leakage / breakage / damage goods
+-- The driver takes 1 to 10 photos of the leakage / breakage / damage goods
 -- with the phone camera (Driver Delivery > Return tab). Photos go to the
 -- private bucket lwb-return-photos (resized to about 200 KB each), and the
 -- return is saved only together with its photos.
@@ -82,8 +82,8 @@ BEGIN
   IF cardinality(v_paths) < 1 THEN
     RAISE EXCEPTION 'Take at least one photo of the returned goods';
   END IF;
-  IF cardinality(v_paths) > 6 THEN
-    RAISE EXCEPTION 'Maximum 6 photos per return';
+  IF cardinality(v_paths) > 10 THEN
+    RAISE EXCEPTION 'Maximum 10 photos per return';
   END IF;
 
   FOREACH v_path IN ARRAY v_paths LOOP
