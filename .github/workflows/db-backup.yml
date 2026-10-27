@@ -1,0 +1,55 @@
+# Nightly encrypted backup of the Supabase database (see BACKUP_AND_RETENTION.md).
+# Needs two repository secrets: SUPABASE_DB_URL (Session pooler connection string with the DB password)
+# and BACKUP_PASSWORD (any long password; without it a backup cannot be opened, so keep it safe).
+name: Database backup
+
+on:
+  schedule:
+    - cron: "30 21 * * *" # 03:00 India time
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Dump roles, schema and data
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          BACKUP_PASSWORD: ${{ secrets.BACKUP_PASSWORD }}
+        run: |
+          if [ -z "$SUPABASE_DB_URL" ] || [ -z "$BACKUP_PASSWORD" ]; then
+            echo "Add the SUPABASE_DB_URL and BACKUP_PASSWORD secrets first (Settings > Secrets and variables > Actions)."
+            exit 1
+          fi
+          mkdir backup
+          supabase db dump --db-url "$SUPABASE_DB_URL" -f backup/roles.sql --role-only
+          supabase db dump --db-url "$SUPABASE_DB_URL" -f backup/schema.sql
+          supabase db dump --db-url "$SUPABASE_DB_URL" -f backup/data.sql --use-copy --data-only
+          ls -l backup
+
+      # The repo is public, so the file is encrypted before upload; only BACKUP_PASSWORD opens it.
+      - name: Encrypt
+        env:
+          BACKUP_PASSWORD: ${{ secrets.BACKUP_PASSWORD }}
+        run: |
+          name="lwb-db-$(TZ=Asia/Kolkata date +%Y-%m-%d)"
+          echo "NAME=$name" >> "$GITHUB_ENV"
+          tar czf - -C backup . | openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -salt \
+            -pass env:BACKUP_PASSWORD -out "$name.tar.gz.enc"
+          rm -rf backup
+          ls -l "$name.tar.gz.enc"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.NAME }}
+          path: ${{ env.NAME }}.tar.gz.enc
+          retention-days: 90
+          if-no-files-found: error
