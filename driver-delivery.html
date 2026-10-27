@@ -158,6 +158,9 @@ th{font-size:11px;text-align:left;background:#e9f0f9}th,td{padding:11px 10px;bor
 @media(min-width:741px){.notes{grid-template-columns:repeat(2,minmax(0,1fr));column-gap:16px}}
 .cashnote{display:grid;grid-template-columns:64px minmax(0,1fr) 100px;align-items:center;gap:8px}
 .cashnote b{font-size:14px}.cashnote input{width:100%;min-width:0;padding:9px;font-size:16px;text-align:center}
+.stepper{display:grid;grid-template-columns:40px minmax(0,1fr) 40px;gap:4px}
+.stepper button{padding:0;min-height:40px;font-size:22px;font-weight:800;line-height:1;border-radius:8px;background:#eef3fa;color:#16325c;border:1px solid #c9d6ea}
+.stepper button:active{background:#d8e4f5}
 .cashnote span{text-align:right;font-size:13px;color:var(--muted);white-space:nowrap}
 .cashnote.coins{grid-column:1/-1;grid-template-columns:64px minmax(0,1fr) 100px}
 .paysum{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin:10px 0}
@@ -346,7 +349,7 @@ Reported payments stay <b>Pending Office Verification</b>; the Party Ledger, out
  <div class="paysec">
   <div class="payhead"><b>📱 UPI / Google Pay / Bank</b><span id="onlineTotal">₹0</span></div>
   <div class="fieldrow">
-   <div class="field"><label for="onlineAmount">Amount (₹)</label><input id="onlineAmount" type="number" inputmode="decimal" min="0" max="99999999" step="0.01" placeholder="0"></div>
+   <div class="field"><label for="onlineAmount">Amount (₹)</label><input id="onlineAmount" type="text" inputmode="decimal" autocomplete="off" placeholder="0"></div>
    <div class="field"><label for="onlineMode">Paid by</label><select id="onlineMode"><option value="UPI">UPI / Google Pay / PhonePe</option><option value="BANK">Bank transfer</option><option value="CHEQUE">Cheque</option></select></div>
    <div class="field wide"><label for="onlineRef">UTR / Ref No. (optional)</label><input id="onlineRef" maxlength="150" placeholder="From the payment screen"></div>
   </div>
@@ -757,10 +760,21 @@ let payPhotos=[],payInfo=null,payBusy=false;
 (function buildCashNotes(){
  const box=$("cashNotes");
  for(const d of [...NOTES,"coins"]){
-  const row=elt("label",undefined,"cashnote"+(d==="coins"?" coins":"")),inp=elt("input");
-  inp.type="number";inp.min="0";inp.inputMode=d==="coins"?"decimal":"numeric";inp.step=d==="coins"?"0.01":"1";inp.placeholder="0";inp.id="note"+d;
-  inp.addEventListener("input",updatePay);
-  row.append(elt("b",d==="coins"?"Coins ₹":"₹"+d+" ×"),inp,elt("span","₹0"));
+  // Plain text box (no spinner arrows, mouse wheel does not change it) with − / + buttons.
+  const row=elt("div",undefined,"cashnote"+(d==="coins"?" coins":"")),inp=elt("input");
+  inp.type="text";inp.inputMode=d==="coins"?"decimal":"numeric";inp.autocomplete="off";inp.placeholder="0";inp.id="note"+d;
+  inp.setAttribute("aria-label",d==="coins"?"Coins total":"Count of ₹"+d+" notes");
+  inp.addEventListener("input",()=>{const v=d==="coins"?inp.value.replace(/[^0-9.]/g,""):inp.value.replace(/\D/g,"");if(v!==inp.value)inp.value=v;updatePay()});
+  let field=inp;
+  if(d!=="coins"){
+   field=elt("div",undefined,"stepper");
+   const step=k=>{const n=Math.max(0,(parseInt(inp.value,10)||0)+k);inp.value=n?String(n):"";updatePay()};
+   const minus=elt("button","−"),plus=elt("button","+");
+   minus.type=plus.type="button";minus.setAttribute("aria-label","One less ₹"+d+" note");plus.setAttribute("aria-label","One more ₹"+d+" note");
+   minus.onclick=()=>step(-1);plus.onclick=()=>step(1);
+   field.append(minus,inp,plus);
+  }
+  row.append(elt("b",d==="coins"?"Coins ₹":"₹"+d+" ×"),field,elt("span","₹0"));
   if(d==="coins")inp.placeholder="₹1, ₹2, ₹5 total";
   row.querySelector("span").id="noteSum"+d;box.append(row);
  }
@@ -830,7 +844,7 @@ function renderPayPhotos(){
 }
 $("payCamera").onchange=e=>addPayPhotos(e.target);
 $("payGallery").onchange=e=>addPayPhotos(e.target);
-$("onlineAmount").addEventListener("input",updatePay);
+$("onlineAmount").addEventListener("input",e=>{const i=e.target,v=i.value.replace(/[^0-9.]/g,"");if(v!==i.value)i.value=v;updatePay()});
 // New photos go to the private POD bucket in the driver's own folder; kept photos keep their path.
 async function uploadPayPhotos(orderId){
  const paths=[];
