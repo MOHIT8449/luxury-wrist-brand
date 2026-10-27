@@ -10,13 +10,18 @@
   return x;
  }
  // One short line per notification: icon + order no + the key number. Full text opens on click.
+ // CC_<type> = Sales Head copy of another login's notification: same text and page, never a popup.
+ const baseType=n=>String(n.notification_type||"").toUpperCase().replace(/^CC_/,"");
  function summary(n){
-  const t=String(n.notification_type||"").toUpperCase(),m=String(n.message||""),title=String(n.title||"");
+  const t=baseType(n),m=String(n.message||""),title=String(n.title||"");
   const order=(m.match(/\b[A-Z]{2,6}-\d{3,}\b/)||[])[0]||"";
   const amt=(m.match(/(?:Rs\.?|₹)\s?([\d,]+(?:\.\d+)?)/i)||[])[1];
   const val=amt?Number(amt.replace(/,/g,"")):0;
   const money=amt?"₹"+val.toLocaleString("en-IN",{minimumFractionDigits:val%1?2:0,maximumFractionDigits:2}):"";
   const join=a=>a.filter(Boolean).join(" · ");
+  if(t==="TALLY_BILL_PENDING")return {icon:"🧾",text:join(["Make Tally bill",order])};
+  if(t==="VEHICLE_LOADED")return {icon:"🚛",text:join(["Vehicle loaded",order,(m.match(/Vehicle ([A-Z0-9]+)/)||[])[1]])};
+  if(t==="TALLY_BILL_DONE")return {icon:"🧾",text:join(["Tally bill made",order])};
   if(t==="DELIVERY_RETURN_RECEIVE")return {icon:"📦",text:join(["Receive return goods",order,money])};
   if(t==="DELIVERY_RETURN_DEDUCTED")return {icon:"↩",text:join(["Return cut",order,money])};
   if(t==="DELIVERY_RETURN_APPROVED"||t==="DELIVERY_RETURN_REJECTED")return {icon:t.endsWith("APPROVED")?"✅":"❌",text:join([t.endsWith("APPROVED")?"Return approved":"Return rejected",order,money])};
@@ -46,11 +51,13 @@
  }
  // Page each notification opens. {o} = the notification's order id. The first page this login can open wins.
  const ROUTES=[
+  [/^TALLY_BILL_PENDING$/,["accounts-invoice.html?order={o}"]],
+  [/^(VEHICLE_LOADED|TALLY_BILL_DONE)$/,["loading-dispatch.html","accounts-invoice.html?order={o}","warehouse-orders.html"]],
   [/^DELIVERY_RETURN_(PENDING|OPERATIONS|RECEIVE|DEDUCTED)$/,["driver-returns.html?order={o}"]],
   [/^DELIVERY_COLLECTION$/,["driver-collections.html?order={o}"]],
   [/^DELIVERY_COLLECTION_/,["driver-delivery.html?order={o}&tab=deliver"]],
   [/^DELIVERY_RETURN_/,["driver-delivery.html?order={o}&tab=return"]],
-  [/^LOADING_ASSIGNMENT_DRIVER$/,["driver-delivery.html?order={o}"]],
+  [/^LOADING_ASSIGNMENT_DRIVER$/,["driver-delivery.html?order={o}","loading-dispatch.html","transport-allocation.html"]],
   [/^LOADING_ASSIGNMENT_/,["loading-dispatch.html","transport-allocation.html"]],
   [/^GODOWN_/,["godown-report.html"]],
   [/^MARKET_/,["market-report.html"]],
@@ -58,7 +65,7 @@
   [/^ORDER_/,["my-sales.html#orders","warehouse-orders.html","driver-delivery.html?order={o}","loading-dispatch.html"]]
  ];
  function route(n,pages){
-  const t=String(n.notification_type||"").toUpperCase(),hit=ROUTES.find(r=>r[0].test(t));
+  const t=baseType(n),hit=ROUTES.find(r=>r[0].test(t));
   if(!hit)return "";
   const base=h=>h.split(/[?#]/)[0];
   const href=(pages&&pages.length?hit[1].find(h=>pages.includes(base(h))):hit[1][0])||"";
@@ -76,14 +83,17 @@
   {re:/^DELIVERY_RETURN_(PENDING|OPERATIONS)$/,key:"lwbReturnSnooze",title:"↩ Driver return waiting",ok:"Verify now",
    one:"A driver return is",many:" driver returns are",ask:" waiting for your check:",
    foot:"Only approved returns are cut from the bill. Until then the driver collects the full amount."},
+  {re:/^TALLY_BILL_PENDING$/,key:"lwbTallySnooze",title:"🧾 Vehicle loaded — make Tally bill",skip:"accounts-invoice.html",ok:"Enter invoice no.",
+   one:"A loaded vehicle is",many:" loaded vehicles are",ask:" waiting for the Tally bill:",
+   foot:"Make the bill in Tally, then enter its invoice number. This reminder stops once the number is saved."},
   {re:/^DELIVERY_RETURN_RECEIVE$/,key:"lwbReceiveSnooze",title:"📦 Receive returned goods",ok:"Open",
    one:"An approved return is",many:" approved returns are",ask:" coming back to the godown:",
    foot:"When the vehicle comes back, check the goods and tap Goods received on Driver Returns.",full:true}
  ],SNOOZE=15*60e3;
  let popping=false;
  async function urgentPopup(rows,pages){
-  if(location.pathname.endsWith("driver-returns.html"))return false;
   for(const g of URGENT){
+   if(location.pathname.endsWith(g.skip||"driver-returns.html"))continue;
    const due=rows.filter(n=>!n.is_read&&g.re.test(String(n.notification_type||"").toUpperCase())&&Date.now()-new Date(n.created_at)<3*864e5);
    const href=due.length?route(due[0],pages):"";
    if(!href)continue;
@@ -118,7 +128,7 @@
    }
   }finally{popping=false}
  }
- function init({db,user,mount,pages}){
+ function init({db,user,mount,pages,role}){
   if(!db||!user?.id||!mount)return;
   // One bell per page. If a page put it in its old (now hidden) header, move it to the ERP top bar.
   const old=document.getElementById("lwbOpsBell");
@@ -159,7 +169,8 @@
     .select("id,title,message,order_id,notification_type,is_read,created_at")
     .eq("user_id",user.id).order("created_at",{ascending:false}).limit(70);
    if(error){list.replaceChildren(el("p","lwb-op-error","Notification error: "+error.message));return}
-   const rows=data||[],unread=rows.filter(n=>!n.is_read).length;
+   // Driver sees no history: only the last 12 hours.
+   const rows=(data||[]).filter(n=>String(role||"").toLowerCase()!=="driver"||Date.now()-new Date(n.created_at)<12*36e5),unread=rows.filter(n=>!n.is_read).length;
    count.textContent=unread>99?"99+":String(unread);count.style.display=unread?"inline-block":"none";
    list.replaceChildren();
    popup(rows,pages,id=>db.from("erp_notifications").update({is_read:true}).eq("id",id).eq("user_id",user.id));

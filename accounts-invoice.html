@@ -41,6 +41,12 @@ input,select{padding:11px;border:1px solid #c2cedf;border-radius:7px;font:14px A
 table{border-collapse:collapse;width:100%;min-width:770px}
 th{text-align:left;background:#ebf0f7;font-size:11px;color:#314d6b}
 th,td{padding:12px;border-bottom:1px solid #e6ebf1}
+.tally-section{margin:14px 0;padding:16px;border:1px solid #c9d8ee;background:#f4f8fe;border-radius:9px}
+.tally-grid{display:grid;grid-template-columns:2fr 1fr 2fr auto;gap:10px;align-items:end}
+.tally-grid label{display:block;font-size:11px;color:#657992;text-transform:uppercase;margin-bottom:5px}
+.tally-grid input{width:100%}
+.tag.pending{background:#fff1dc;color:#9a5b0b}
+@media(max-width:760px){.tally-grid{grid-template-columns:1fr}}
 .tag{display:inline-block;background:#e3f2e8;color:#16603b;font-weight:bold;font-size:11px;padding:5px 9px;border-radius:14px}
 .money{font-weight:bold;font-variant-numeric:tabular-nums}
 .small{font-size:12px;color:var(--muted);line-height:1.55}
@@ -91,8 +97,8 @@ th,td{padding:12px;border-bottom:1px solid #e6ebf1}
  <nav><a href="dashboard.html">Dashboard</a><button type="button" id="logout">Logout</button></nav>
 </header>
 <main>
- <div class="heading"><div><h1>Accounts — ERP Bill Create</h1><p>Check the actual loaded SKU quantities of approved POs and create the internal ERP bill.</p></div><button type="button" id="refresh">Refresh Orders</button></div>
- <div class="banner"><b>ERP Bill ≠ Tally GST Invoice.</b> Do not enter Tally invoice numbers or GST details on this page. Only an <b>Internal ERP Bill</b> for the actual loaded quantity is created. The original GST bill is made manually in Tally.</div>
+ <div class="heading"><div><h1>Accounts — Tally Bill &amp; Invoice No.</h1><p>Loaded vehicles: make the Tally bill, enter its invoice number, and create the internal ERP bill.</p></div><button type="button" id="refresh">Refresh Orders</button></div>
+ <div class="banner"><b>Vehicle loaded → make the bill in Tally → enter the Tally invoice number here.</b> The Tally invoice number is seen only by Accounts and Admin; Sales Head is told "Tally bill made". The <b>Internal ERP Bill</b> is a separate loaded-goods record, not a GST invoice.</div>
  <div id="message" class="notice" role="status"></div>
  <div class="stats">
   <div class="stat"><span>Loaded / Existing ERP Orders</span><strong id="orderCount">0</strong></div>
@@ -104,13 +110,15 @@ th,td{padding:12px;border-bottom:1px solid #e6ebf1}
    <input id="search" data-party-list type="search" placeholder="Search PO Number / Party..." autocomplete="off" aria-label="Search PO">
    <select id="filter" aria-label="Filter internal bills">
     <option value="all">All Loaded Orders</option>
+    <option value="tally_pending">Tally Invoice No. Pending</option>
+    <option value="tally_done">Tally Invoice No. Entered</option>
     <option value="pending">ERP Bill Pending</option>
     <option value="created">ERP Bill Created</option>
    </select>
   </div>
   <div class="tablewrap"><table>
-   <thead><tr><th>PO NUMBER</th><th>PARTY</th><th>DATE</th><th>TRANSPORT</th><th>ERP BILL</th><th>STATUS</th><th>ACTION</th></tr></thead>
-   <tbody id="rows"><tr><td colspan="7">Loading...</td></tr></tbody>
+   <thead><tr><th>PO NUMBER</th><th>PARTY</th><th>DATE</th><th>TRANSPORT</th><th>TALLY INVOICE</th><th>ERP BILL</th><th>STATUS</th><th>ACTION</th></tr></thead>
+   <tbody id="rows"><tr><td colspan="8">Loading...</td></tr></tbody>
   </table></div>
  </div>
 </main>
@@ -132,6 +140,16 @@ th,td{padding:12px;border-bottom:1px solid #e6ebf1}
     <tbody id="itemRows"><tr><td colspan="5">Loading...</td></tr></tbody>
    </table></div>
    <div class="summary"><div>Actual Loaded Qty <b id="totalLoaded">0</b></div><div>Goods Value <b id="totalValue">₹0.00</b></div></div>
+   <div class="tally-section" id="tallySection">
+    <h3>Tally Invoice Number</h3>
+    <div class="tally-grid">
+     <div><label for="tallyNo">Invoice No. (more than one bill: separate with comma)</label><input id="tallyNo" maxlength="200" autocomplete="off" placeholder="e.g. CC/1234, RG/567"></div>
+     <div><label for="tallyDate">Invoice Date</label><input id="tallyDate" type="date"></div>
+     <div><label for="tallyNote">Note (optional)</label><input id="tallyNote" maxlength="300" autocomplete="off"></div>
+     <div><button type="button" id="saveTally">Save Invoice No.</button></div>
+    </div>
+    <p class="small" id="tallyHelp"></p>
+   </div>
    <div class="bill-section">
     <div><strong id="billState">Checking ERP Bill...</strong><p class="small" id="billHelp">Please wait...</p></div>
     <div class="bill-buttons"><button type="button" id="createBill" disabled>BILL CREATE</button><button type="button" id="printBill" class="secondary" hidden>Print ERP Bill</button></div>
@@ -152,11 +170,14 @@ const qty=n=>new Intl.NumberFormat("en-IN",{maximumFractionDigits:3}).format(Num
 const date=v=>{const d=new Date(v);return v&&!Number.isNaN(d.getTime())?d.toLocaleDateString("en-IN"):"—"};
 const escapeHtml=v=>val(v).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 let db,orders=[],bills=[],selected=null,itemRows=[],loaded=false,loading=false,billSaving=false,setupReady=false,setupError="",legacyOrders=new Set();
+let tallyRows=[],tallyReady=false,tallySaving=false;
 let assignedVehicle=null,assignedOrderId=null,assignedError="";
 function notice(message,error=false){
  const el=$("message");el.textContent=message;el.className="notice"+(error?" error":"");el.style.display="block";
 }
 function billOf(orderId){return bills.find(b=>b.order_id===orderId)||null}
+function tallyOf(orderId){return tallyRows.find(t=>t.order_id===orderId)||null}
+const todayIST=()=>new Date(Date.now()+330*60e3).toISOString().slice(0,10);
 async function init(){
  try{
   db=window.supabase.createClient(SUPABASE_URL,SUPABASE_PUBLISHABLE_KEY);
@@ -175,13 +196,15 @@ async function reload(){
  if(!loaded||loading)return;
  loading=true;$("refresh").disabled=true;
  try{
-  const [o,b,legacy]=await Promise.all([
+  const [o,b,legacy,tally]=await Promise.all([
    db.from("orders").select("id,order_no,order_date,customer_name,transportation,status")
     .in("status",["loaded","invoiced"]).order("order_date",{ascending:false}).limit(1000),
    db.from("lwb_internal_bills").select("id,order_id,internal_bill_no,bill_date,customer_name,loaded_qty,goods_amount,items,created_at")
     .order("created_at",{ascending:false}).limit(2000),
-   db.from("tax_invoices").select("order_id").limit(2000)
+   db.from("tax_invoices").select("order_id").limit(2000),
+   db.from("lwb_tally_invoices").select("order_id,invoice_no,invoice_date,note,entered_at,updated_at").limit(5000)
   ]);
+  tallyReady=!tally.error;tallyRows=tally.data||[];
   if(o.error)throw o.error;
   orders=o.data||[];
   setupReady=!b.error;
@@ -190,7 +213,11 @@ async function reload(){
   legacyOrders=new Set((legacy.data||[]).map(x=>x.order_id));
   render();
   if(!setupReady)notice("BILL CREATE Setup Pending: Run lwb_internal_bill_setup.sql in Supabase. "+setupError,true);
+  else if(!tallyReady)notice("Tally invoice number setup pending: run lwb_loading_workflow_setup.sql in Supabase.",true);
   else $("message").style.display="none";
+  // Opened from a "Vehicle Loaded" notification
+  const want=new URLSearchParams(location.search).get("order");
+  if(want&&!selected&&orders.some(o=>o.id===want)){history.replaceState(null,"",location.pathname);openOrder(want)}
  }catch(e){notice("Unable to load ERP orders: "+e.message,true)}
  finally{loading=false;$("refresh").disabled=false}
 }
@@ -201,15 +228,20 @@ function render(){
  $("pendingCount").textContent=qty(orders.filter(o=>!billOf(o.id)&&!legacyOrders.has(o.id)).length);
  const list=orders.filter(o=>{
   const created=Boolean(billOf(o.id));
-  return (filter==="all"||(filter==="pending"&&!created)||(filter==="created"&&created))&&
-   [o.order_no,o.customer_name,o.transportation].some(v=>val(v).toLowerCase().includes(q));
+  const tallied=Boolean(tallyOf(o.id));
+  return (filter==="all"||(filter==="pending"&&!created)||(filter==="created"&&created)||
+   (filter==="tally_pending"&&!tallied)||(filter==="tally_done"&&tallied))&&
+   [o.order_no,o.customer_name,o.transportation,tallyOf(o.id)?.invoice_no].some(v=>val(v).toLowerCase().includes(q));
  });
  const body=$("rows");body.replaceChildren();
- if(!list.length){const tr=body.insertRow();const td=tr.insertCell();td.colSpan=7;td.textContent="No matching loaded orders.";return}
+ if(!list.length){const tr=body.insertRow();const td=tr.insertCell();td.colSpan=8;td.textContent="No matching loaded orders.";return}
  for(const order of list){
   const tr=body.insertRow();
   for(const v of [order.order_no,order.customer_name,date(order.order_date),order.transportation])
    tr.insertCell().textContent=v||"—";
+  const t=tallyOf(order.id),tCell=tr.insertCell();
+  if(t){tCell.textContent=t.invoice_no;tCell.className="money"}
+  else{const tg=document.createElement("span");tg.className="tag pending";tg.textContent=tallyReady?"Pending":"—";tCell.appendChild(tg)}
   const bill=billOf(order.id),billCell=tr.insertCell();
   billCell.textContent=bill?bill.internal_bill_no:legacyOrders.has(order.id)?"Existing ERP Record":"Not Created";
   if(bill)billCell.className="money";
@@ -300,6 +332,7 @@ async function openOrder(id){
   $("totalLoaded").textContent=qty(sumQty);
   $("totalValue").textContent=cash(sumAmount);
   renderBillState(order);
+  renderTally(order);
  }catch(e){
   if(selected?.id!==id)return;
   $("itemRows").innerHTML='<tr><td colspan="5">Could not load SKU details.</td></tr>';
@@ -332,6 +365,34 @@ function renderBillState(order){
   $("billHelp").textContent="One click creates a saved Internal ERP Bill only for Actual Loaded SKU."+
    (skipped?" WARNING: "+skipped+" approved SKU(s) have ZERO loaded quantity and are excluded.":"");
  }
+}
+function renderTally(order){
+ if(!order||selected?.id!==order.id)return;
+ const t=tallyOf(order.id);
+ $("tallySection").hidden=!tallyReady;
+ $("tallyNo").value=t?.invoice_no||"";
+ $("tallyDate").value=t?.invoice_date||todayIST();
+ $("tallyNote").value=t?.note||"";
+ $("saveTally").textContent=t?"Update Invoice No.":"Save Invoice No.";
+ $("saveTally").disabled=tallySaving;
+ $("tallyHelp").textContent=t?"Entered "+new Date(t.updated_at||t.entered_at).toLocaleString("en-IN")+". Only Accounts and Admin can see this number."
+  :"Make the bill in Tally, then enter its number here. Only Accounts and Admin can see it; Sales Head gets \"Tally bill made\".";
+}
+async function saveTally(){
+ if(!selected||tallySaving)return;
+ const order=selected,no=$("tallyNo").value.trim(),dt=$("tallyDate").value;
+ if(!no){notice("Enter the Tally invoice number.",true);return}
+ if(!dt){notice("Enter the invoice date.",true);return}
+ const old=tallyOf(order.id);
+ if(!await confirm((old?"Change":"Save")+" Tally invoice no. "+no+" for "+order.order_no+" ("+order.customer_name+")?"))return;
+ tallySaving=true;$("saveTally").disabled=true;
+ try{
+  const r=await db.rpc("lwb_save_tally_invoice",{p_order_id:order.id,p_invoice_no:no,p_invoice_date:dt,p_note:$("tallyNote").value.trim()||null});
+  if(r.error)throw r.error;
+  await reload();
+  notice("Tally invoice no. "+(old?"updated":"saved")+" for "+order.order_no+"."+(old?"":" Sales Head is told the Tally bill is made."));
+ }catch(e){notice("Could not save the invoice number: "+e.message,true)}
+ finally{tallySaving=false;if(selected?.id===order.id)renderTally(order)}
 }
 async function createBill(){
  if(!loaded||!setupReady||!selected||billSaving)return;
@@ -412,6 +473,7 @@ $("overlay").addEventListener("click",event=>{if(event.target===$("overlay"))clo
 document.addEventListener("keydown",event=>{if(event.key==="Escape")closeModal()});
 $("createBill").addEventListener("click",createBill);
 $("printBill").addEventListener("click",printBill);
+$("saveTally").addEventListener("click",saveTally);
 $("refresh").addEventListener("click",reload);
 $("search").addEventListener("input",render);
 $("filter").addEventListener("change",render);

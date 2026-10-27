@@ -50,6 +50,7 @@
       {t:"Daily Summary",h:"daily-report.html",i:"stock",r:"admin manager accounts"},
       {t:"Team Work Report",h:"team-report.html",i:"users",r:"admin manager"}]},
     {group:"Accounts",items:[
+      {t:"Tally Bill & Invoice No.",h:"accounts-invoice.html",i:"bill",r:"admin accounts"},
       {t:"Tally Bill Check",h:"tally-check.html",i:"bill",r:"admin accounts"},
       {t:"Cashbook",h:"cashbook.html",i:"cash",r:"admin",hide:1}]},
     {group:"Returns",items:[
@@ -383,7 +384,7 @@
       const c=window.__lwbBellClient||(window.__lwbBellClient=window.supabase.createClient(URL_,KEY_));
       const {data}=await c.auth.getSession();const user=data&&data.session&&data.session.user;if(!user)return;
       if(!window.LWBOperationsNotifications)await new Promise((ok,bad)=>{const s=document.createElement("script");s.src="erp-operations-notifications.js";s.onload=ok;s.onerror=bad;document.head.appendChild(s)});
-      window.LWBOperationsNotifications.init({db:c,user,mount:top.querySelector(".erp-user"),pages:menuForMe(role).flatMap(g=>g.items.map(i=>i.h.split("#")[0]))});
+      window.LWBOperationsNotifications.init({db:c,user,role,mount:top.querySelector(".erp-user"),pages:menuForMe(role).flatMap(g=>g.items.map(i=>i.h.split("#")[0]))});
     }catch(e){}
   }
 
