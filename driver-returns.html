@@ -36,6 +36,13 @@ button:disabled{opacity:.5;cursor:not-allowed}
 .actions{display:flex;gap:10px;margin-top:12px}.actions button{flex:1}
 .empty{background:white;border:1px dashed #bbcbdd;border-radius:12px;padding:30px;text-align:center;color:#58708b}
 .muted{color:#60758b;font-size:12px;line-height:1.5}
+.photos{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.photos img{width:64px;height:64px;object-fit:cover;border-radius:8px;border:1px solid var(--line);cursor:zoom-in;background:#eef2f7}
+.photos .nophoto{font-size:12px;color:#a05a00}
+.viewer{position:fixed;inset:0;z-index:5000;background:#0b1422e6;display:flex;align-items:center;justify-content:center;padding:12px}
+.viewer[hidden]{display:none}
+.viewer img{max-width:100%;max-height:100%;border-radius:8px}
+.viewer button{position:fixed;top:12px;right:12px}
 @media(min-width:900px){
  .tabs{grid-template-columns:repeat(3,200px)}.tab strong{font-size:20px}
  .card{grid-template-columns:270px 1fr 150px;grid-template-areas:"info lines amt" "info lines act";column-gap:20px;padding:14px 18px}
@@ -60,6 +67,7 @@ button:disabled{opacity:.5;cursor:not-allowed}
 </div>
 <div class="tools"><input id="search" data-party-list placeholder="Party, PO No, Driver or Vehicle"><button id="refresh" class="secondary" type="button">Refresh</button></div>
 <div id="list"></div>
+<div class="viewer" id="viewer" hidden><img id="viewerImg" alt="Return photo"><button type="button" class="secondary" id="viewerClose">✕ Close</button></div>
 <p class="muted">Approve only after checking the damaged goods. Approved amount reduces the party's ERP outstanding. Rejected return frees the quantity so the driver can record it again. Stock, GST and Tally are not changed here.</p>
 </main>
 <script>
@@ -70,7 +78,7 @@ const el=id=>document.getElementById(id);
 const fmt=n=>"₹"+Number(n||0).toLocaleString("en-IN",{minimumFractionDigits:2,maximumFractionDigits:2});
 const REASON={LEAKAGE:"Leakage",BREAKAGE:"Breakage",DAMAGE:"Damage",GASLESS:"Gasless",LOW_FILL:"Low Fill"};
 const STATUSES=["PENDING_OFFICE","APPROVED","REJECTED"];
-let role="",status="PENDING_OFFICE",lists={},busy=false;
+let role="",status="PENDING_OFFICE",lists={},busy=false,photos=new Map(),photoUrls=new Map();
 const canReview=()=>role==="admin"||role==="accounts";
 function message(text,type){el("message").textContent=text;el("message").className=type||"";el("message").hidden=!text}
 function node(tag,text,cls){const n=document.createElement(tag);if(text!=null)n.textContent=String(text);if(cls)n.className=cls;return n}
@@ -92,10 +100,37 @@ async function load(){
   const results=await Promise.all(STATUSES.map(s=>db.rpc("lwb_office_list_driver_returns",{p_status:s})));
   results.forEach((r,i)=>{if(r.error)throw r.error;lists[STATUSES[i]]=Array.isArray(r.data)?r.data:[]});
   STATUSES.forEach(s=>el("count"+s).textContent=lists[s].length);
+  await loadPhotos();
   render();
   message(canReview()?"":"View only. Admin or Accounts can approve / reject.");
  }catch(e){message("Unable to load returns: "+e.message+". Run lwb_driver_return_review_setup.sql in Supabase.","error")}
 }
+// Photos the driver took with the phone (lwb_driver_return_photos_setup.sql). Older returns have none.
+async function loadPhotos(){
+ const ids=STATUSES.flatMap(s=>lists[s].map(r=>r.id));
+ photos=new Map();
+ if(!ids.length)return;
+ const {data,error}=await db.rpc("lwb_office_driver_return_photos",{p_return_ids:ids});
+ if(error)return;
+ for(const r of data||[])photos.set(r.return_id,r.photo_paths||[]);
+ const need=[...photos.values()].flat().filter(p=>!photoUrls.has(p));
+ if(!need.length)return;
+ const signed=await db.storage.from("lwb-return-photos").createSignedUrls(need,3600);
+ for(const x of signed.data||[])if(x.signedUrl)photoUrls.set(x.path,x.signedUrl);
+}
+function photoStrip(r){
+ const paths=photos.get(r.id)||[],box=node("div",null,"photos");
+ if(!paths.length){box.append(node("span","No photo attached","nophoto"));return box}
+ paths.forEach((p,i)=>{
+  const url=photoUrls.get(p);
+  if(!url){box.append(node("span","Photo "+(i+1)+" not available","nophoto"));return}
+  const img=document.createElement("img");img.src=url;img.alt="Return photo "+(i+1);img.loading="lazy";
+  img.onclick=()=>{el("viewerImg").src=url;el("viewer").hidden=false};
+  box.append(img);
+ });
+ return box;
+}
+el("viewer").onclick=e=>{if(e.target!==el("viewerImg"))el("viewer").hidden=true};
 function render(){
  document.querySelectorAll(".tab").forEach(t=>t.classList.toggle("active",t.dataset.status===status));
  const q=el("search").value.toLowerCase().trim().split(/\s+/).filter(Boolean);
@@ -121,6 +156,7 @@ function render(){
   }
   card.append(t);
   if(r.note)info.append(node("div","Driver note: "+r.note,"note"));
+  info.append(photoStrip(r));
   if(status!=="PENDING_OFFICE")info.append(node("div",(status==="APPROVED"?"Approved":"Rejected")+" by "+(r.reviewed_by_name||"—")+" · "+when(r.reviewed_at)+(r.review_note?" · "+r.review_note:""),"meta"));
   if(status==="PENDING_OFFICE"&&canReview()){
    const act=node("div",null,"actions");
