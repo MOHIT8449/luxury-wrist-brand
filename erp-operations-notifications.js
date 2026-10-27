@@ -56,8 +56,10 @@
   const href=(pages&&pages.length?hit[1].find(h=>pages.includes(base(h))):hit[1][0])||"";
   return n.order_id?href.replace("{o}",encodeURIComponent(n.order_id)):href.split("?")[0];
  }
- // Focus messages and outside-market reports also pop up once per device.
- const POPUP={ANNOUNCEMENT:["📢 Focus message","OK",""],MARKET_REPORT:["🚩 Outside market stock","Open report","market-report.html"]};
+ // Focus messages, outside-market reports and return results also pop up once per device.
+ // The driver also gets a popup when the office approves / rejects their return (href null = the notification's own page).
+ const POPUP={ANNOUNCEMENT:["📢 Focus message","OK",""],MARKET_REPORT:["🚩 Outside market stock","Open report","market-report.html"],
+  DELIVERY_RETURN_APPROVED:["✅ Return approved","Open order",null],DELIVERY_RETURN_REJECTED:["❌ Return rejected","Open order",null]};
  // Driver returns waiting for office approval are urgent: they pop up on every page
  // (again 15 min after "Later") until approved / rejected or opened from the bell.
  const URGENT=/^DELIVERY_RETURN_(PENDING|OPERATIONS)$/,SNOOZE=15*60e3;
@@ -79,7 +81,7 @@
   if(go){location.href=orders.size===1?href:href.split("?")[0];return true}
   return false;
  }
- async function popup(rows,pages){
+ async function popup(rows,pages,markRead){
   if(popping||typeof window.confirm!=="function")return;
   popping=true;
   try{
@@ -90,9 +92,10 @@
    seen=seen.concat(fresh.map(n=>n.id)).slice(-200);
    try{localStorage.setItem("lwbPopped",JSON.stringify(seen))}catch(e){}
    for(const n of fresh.reverse()){
-    const [title,ok,href]=POPUP[String(n.notification_type).toUpperCase()];
+    const [title,ok,page]=POPUP[String(n.notification_type).toUpperCase()],href=page===null?route(n,pages):page;
     const text=(n.title&&n.notification_type==="ANNOUNCEMENT"?n.title+"\n\n":"")+(n.message||"");
     const go=href?await window.confirm(text,{title,ok,cancel:"Later"}):(await window.alert(text,{title,kind:"info"}),false);
+    if(go&&page===null){await markRead(n.id);location.href=href;break}
     if(go&&!location.pathname.endsWith(href)){location.href=href;break}
    }
   }finally{popping=false}
@@ -141,7 +144,7 @@
    const rows=data||[],unread=rows.filter(n=>!n.is_read).length;
    count.textContent=unread>99?"99+":String(unread);count.style.display=unread?"inline-block":"none";
    list.replaceChildren();
-   popup(rows,pages);
+   popup(rows,pages,id=>db.from("erp_notifications").update({is_read:true}).eq("id",id).eq("user_id",user.id));
    if(!rows.length){list.append(el("p",null,"No notifications yet."));return}
    allRead.hidden=!unread;
    for(const n of rows){
