@@ -150,6 +150,23 @@ th{font-size:11px;text-align:left;background:#e9f0f9}th,td{padding:11px 10px;bor
 .photobtn.secondary{background:#e7edf5;color:#23415f}
 .photobtns.full .photobtn{opacity:.45;pointer-events:none}
 .addline{width:100%;margin-top:8px}
+.paysec{border:1px solid var(--border);border-radius:10px;padding:10px 12px;margin:10px 0;background:#fff}
+.payhead{display:flex;justify-content:space-between;align-items:center;gap:8px}.payhead span{font-weight:800;color:#155b30;font-size:16px}
+.notes{display:grid;grid-template-columns:minmax(0,1fr);gap:6px;margin-top:8px}
+@media(min-width:741px){.notes{grid-template-columns:repeat(2,minmax(0,1fr));column-gap:16px}}
+.cashnote{display:grid;grid-template-columns:64px minmax(0,1fr) 100px;align-items:center;gap:8px}
+.cashnote b{font-size:14px}.cashnote input{width:100%;min-width:0;padding:9px;font-size:16px;text-align:center}
+.cashnote span{text-align:right;font-size:13px;color:var(--muted);white-space:nowrap}
+.cashnote.coins{grid-column:1/-1;grid-template-columns:64px minmax(0,1fr) 100px}
+.paysum{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin:10px 0}
+.paysum div{background:#f4f7fb;border-radius:9px;padding:8px 10px;display:flex;flex-direction:column;min-width:0}
+.paysum small{font-size:11px;color:var(--muted)}.paysum b{font-size:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.paysum .out b{color:#b42323}
+.payview{border:1px solid var(--border);border-radius:10px;background:#fff;padding:10px 12px;margin:10px 0}
+.payview p{margin:4px 0;font-size:14px}.payview .mini{color:var(--muted);font-size:12px}
+.payview .payst{display:inline-block;font-weight:700;border-radius:12px;padding:3px 9px;font-size:12px;margin-bottom:4px}
+.payst.PENDING{background:#fff6dc;color:#7a5600}.payst.VERIFIED{background:#e8f6ec;color:#17643a}.payst.REJECTED{background:#fdeceb;color:#a12a2a}
+.payview .photogrid img{cursor:zoom-in}.payview button{width:100%;margin-top:8px}
 .returnfoot{justify-content:space-between;margin:12px -14px 0;padding:10px 14px}
 .footsum{display:flex;flex-direction:column;line-height:1.25;min-width:0}
 .footsum small{font-size:11px;color:var(--muted)}.footsum b{font-size:18px;color:#a23838}
@@ -291,7 +308,12 @@ Reported payments stay <b>Pending Office Verification</b>; the Party Ledger, out
  <strong id="savedTitle">Delivery Report Saved</strong>
  <p id="savedInfo"></p>
  <button type="button" id="viewPod" class="secondary">View Private POD Photo</button>
- <p class="mini">After the driver report, corrections and payment posting are done only through the Office / Admin verification workflow.</p>
+ <div id="payView" class="payview" hidden></div>
+ <form id="payForm" hidden>
+  <div class="message" id="payMsg" role="alert"></div>
+  <div class="footactions stickyfoot"><button class="secondary" type="button" id="payCancel">Cancel</button><button id="paySave" type="submit">Save Payment</button></div>
+ </form>
+ <p class="mini">The delivery report is locked. Payment can be changed until the office verifies it.</p>
 </div>
 <form id="deliveryForm">
  <h3>1. Delivery Status</h3>
@@ -309,14 +331,32 @@ Reported payments stay <b>Pending Office Verification</b>; the Party Ledger, out
   <div class="field"><label for="podFile">📷 POD Photo * (Max 5 MB)</label><input id="podFile" type="file" accept="image/jpeg,image/png,image/webp" capture="environment"><img id="photoPreview" class="photo-preview" alt="POD photo preview"></div>
  </div>
  <div class="field wide" id="noteField" hidden><label for="deliveryNote" id="noteLabel">Note</label><textarea id="deliveryNote" rows="2" maxlength="1000" placeholder="Reason / item-wise CS shortage"></textarea></div>
- <h3>2. Payment Received <small class="mini">(Report only — verified by the office)</small></h3>
+ <div id="payBox">
+ <h3>2. Payment Received <small class="mini">(checked by the office)</small></h3>
  <div id="paymentNetTip" class="payment-net-tip" hidden>
-  Net to collect (after approved returns): <strong id="paymentNetValue">₹0</strong> — enter only the amount actually received.<span id="paymentPendingNote"></span>
+  Net to collect (after approved returns): <strong id="paymentNetValue">₹0</strong> — enter only what you actually received.<span id="paymentPendingNote"></span>
  </div>
- <div class="fieldrow">
-  <div class="field"><label for="amount">Amount Received (₹) — enter ₹0 if nothing was received</label><input id="amount" type="number" inputmode="decimal" min="0" max="99999999" step="0.01" value="0"></div>
-  <div class="field" id="modeField" hidden><label for="mode">Mode *</label><select id="mode"><option value="">Select Mode</option><option value="CASH">CASH</option><option value="UPI">UPI</option><option value="BANK">BANK</option><option value="CHEQUE">CHEQUE</option></select></div>
-  <div class="field wide" id="referenceField" hidden><label for="reference">UTR / Bank / Cheque Reference *</label><input id="reference" maxlength="150" placeholder="Actual payment reference, not invoice number"></div>
+ <div class="paysum"><div><small>Net to collect</small><b id="paySumNet">—</b></div><div><small>Received</small><b id="paySumGot">₹0</b></div><div class="out"><small>Outstanding</small><b id="paySumOut">—</b></div></div>
+ <div class="paysec">
+  <div class="payhead"><b>💵 Cash — count the notes</b><span id="cashTotal">₹0</span></div>
+  <div class="notes" id="cashNotes"></div>
+ </div>
+ <div class="paysec">
+  <div class="payhead"><b>📱 UPI / Google Pay / Bank</b><span id="onlineTotal">₹0</span></div>
+  <div class="fieldrow">
+   <div class="field"><label for="onlineAmount">Amount (₹)</label><input id="onlineAmount" type="number" inputmode="decimal" min="0" max="99999999" step="0.01" placeholder="0"></div>
+   <div class="field"><label for="onlineMode">Paid by</label><select id="onlineMode"><option value="UPI">UPI / Google Pay / PhonePe</option><option value="BANK">Bank transfer</option><option value="CHEQUE">Cheque</option></select></div>
+   <div class="field wide"><label for="onlineRef">UTR / Ref No. (optional)</label><input id="onlineRef" maxlength="150" placeholder="From the payment screen"></div>
+  </div>
+  <div class="photobox" id="payPhotoBox" hidden>
+   <div class="photohead"><b>📷 Payment screenshot / photo *</b><small id="payPhotoCount">0 / 3</small></div>
+   <div class="photogrid" id="payPhotoGrid"></div>
+   <div class="photobtns" id="payPhotoButtons">
+    <label class="photobtn">📷 Take Photo<input id="payCamera" type="file" accept="image/*" capture="environment" hidden></label>
+    <label class="photobtn secondary">🖼 Screenshot<input id="payGallery" type="file" accept="image/*" multiple hidden></label>
+   </div>
+  </div>
+ </div>
  </div>
  <p class="errorhint" id="warning">The report is locked after submission.</p>
  <div class="message" id="formMessage" role="alert"></div>
@@ -422,15 +462,20 @@ async function refresh(){
  finally{$("refresh").disabled=false}
 }
 // Return status on each order card (Approved / Waiting / Rejected), from the driver's own returns.
-let returnSummary=new Map();
+let returnSummary=new Map(),paySummary=new Map();
 async function loadReturnSummary(){
  if(role!=="driver")return;
  const ids=records.filter(r=>!isWaitingForLoading(r)).map(r=>r.order_id);
- const res=await Promise.all(ids.map(id=>db.rpc("lwb_driver_list_order_returns",{p_order_id:id}).then(x=>[id,x],()=>[id,{data:null}])));
- const next=new Map();
+ const paid=records.filter(r=>r.report&&r.report.delivery_status!=="NOT_DELIVERED").map(r=>r.order_id);
+ const [res,pays]=await Promise.all([
+  Promise.all(ids.map(id=>db.rpc("lwb_driver_list_order_returns",{p_order_id:id}).then(x=>[id,x],()=>[id,{data:null}]))),
+  Promise.all(paid.map(id=>db.rpc("lwb_driver_order_payment",{p_order_id:id}).then(x=>[id,x],()=>[id,{data:null}])))
+ ]);
+ const next=new Map(),nextPay=new Map();
  for(const [id,x] of res)if(Array.isArray(x.data)&&x.data.length)next.set(id,x.data);
- if(JSON.stringify([...next])===JSON.stringify([...returnSummary]))return;
- returnSummary=next;render();
+ for(const [id,x] of pays)if(x.data&&!x.error)nextPay.set(id,x.data);
+ if(JSON.stringify([...next,...nextPay])===JSON.stringify([...returnSummary,...paySummary]))return;
+ returnSummary=next;paySummary=nextPay;render();
 }
 function returnCardLines(r){
  const rows=returnSummary.get(r.order_id)||[],sum=st=>rows.filter(x=>x.status===st).reduce((a,x)=>a+(Number(x.total_return_amount)||0),0);
@@ -438,7 +483,7 @@ function returnCardLines(r){
  const collect=Math.max(0,(Number(r.loaded_goods_value)||0)-ok);
  if(ok)out.push(["✅ Return "+money(ok)+" approved","retok"]);
  if(wait)out.push(["⏳ Return "+money(wait)+" waiting for approval","retwait"]);
- if(out.length)out[out.length-1][0]+=" • Collect "+money(collect);
+ if(out.length&&!paySummary.has(r.order_id))out[out.length-1][0]+=" • Collect "+money(collect);
  for(const x of rej)out.push(["❌ Return "+money(x.total_return_amount)+" rejected"+(x.review_note?": "+x.review_note:""),"retno"]);
  return out;
 }
@@ -510,7 +555,10 @@ function render(){
   // Short card: the driver already knows his own name, so office logins alone see it.
   card.append(elt("p","🚚 "+(r.vehicle_no||"No vehicle")+" • "+num(waiting?r.planned_cases:r.loaded_cases)+" CS "+(waiting?"planned":"loaded")+
     (role==="driver"?"":" • "+(r.driver_name||"—")),"info"));
-  if(r.report)card.append(elt("p","💰 "+money(r.report.cash_reported)+" • "+(r.report.collection_review_status==="PENDING_OFFICE"?"Payment verification pending":"Payment not collected"),"info"));
+  const pay=paySummary.get(r.order_id);
+  if(pay){const st=pay.payment_status||"PENDING";
+   card.append(elt("p","💰 Received "+money(pay.collected)+" • Outstanding "+money(pay.outstanding)+" • "+(st==="VERIFIED"?"✅ Verified":st==="REJECTED"?"❌ Rejected, correct it":"⏳ Office check"),"info "+(st==="VERIFIED"?"retok":st==="REJECTED"?"retno":"retwait")))}
+  else if(r.report)card.append(elt("p","💰 "+money(r.report.cash_reported)+" • "+(r.report.collection_review_status==="PENDING_OFFICE"?"Payment verification pending":"Payment not collected"),"info"));
   for(const [t,c] of returnCardLines(r))card.append(elt("p",t,"info "+c));
   if(waiting)card.append(elt("p","Delivery opens after loading is completed.","info"));
   card.onclick=e=>{if(!e.target.closest("button"))openOrder(r.order_id)};
@@ -578,7 +626,9 @@ async function openOrder(id){
  $("deliveryForm").hidden=waiting||Boolean(r.report)||role!=="driver";
  $("viewPod").hidden=!r.report?.pod_path;
  $("photoPreview").style.display="none";$("podFile").value="";
- $("deliveryForm").reset();$("amount").value="0";
+ $("deliveryForm").reset();
+ $("deliveryForm").insertBefore($("payBox"),$("warning"));payInfo=null;resetPay(null);
+ $("payView").hidden=true;$("payForm").hidden=true;
  syncDeliveryFields();
  $("receivedBy").required=false;$("podFile").required=false;$("deliveryNote").required=false;
  $("savedTitle").textContent=r.report?"Delivery Submitted — "+r.report.delivery_status:"";
@@ -586,12 +636,11 @@ async function openOrder(id){
   const info=[
    "Receiver: "+(r.report.received_by||"—"),
    "Reported: "+date(r.report.reported_at),
-   "Driver Collection: "+money(r.report.cash_reported)+" "+(r.report.payment_mode||""),
-   "Payment: "+(r.report.collection_review_status==="PENDING_OFFICE"?"OFFICE VERIFICATION PENDING":"PAYMENT NOT COLLECTED"),
    "Note: "+(r.report.delivery_note||"—")
   ];
   $("savedInfo").textContent=info.join("\n");
   $("savedInfo").style.whiteSpace="pre-line";
+  if(role==="driver"&&r.report.delivery_status!=="NOT_DELIVERED")loadPayView(r);
  }
  existingPodUrl=null;
  $("formMessage").style.display="none";
@@ -632,14 +681,10 @@ function syncDeliveryFields(){
  if($("proofFields").hidden&&$("podFile").value){$("podFile").value="";$("podFile").dispatchEvent(new Event("change"));}
  $("noteField").hidden=!value;
  $("noteLabel").textContent=value==="NOT_DELIVERED"?"Reason for Not Delivered *":value==="PARTIAL"?"Shortage / Discrepancy Note *":"Note (Optional)";
- const amount=Number($("amount").value||0);
- $("modeField").hidden=!(amount>0);
- $("referenceField").hidden=!(amount>0&&$("mode").value&&$("mode").value!=="CASH");
+ $("payBox").hidden=value==="NOT_DELIVERED";
 }
 document.querySelectorAll(".statuspick button").forEach(b=>b.addEventListener("click",()=>{$("deliveryStatus").value=b.dataset.status;syncDeliveryFields();}));
 $("deliveryStatus").onchange=syncDeliveryFields;
-$("amount").addEventListener("input",syncDeliveryFields);
-$("mode").addEventListener("change",syncDeliveryFields);
 $("viewPod").onclick=async()=>{
  if(!selected?.report?.pod_path)return;
  const {data,error}=await db.storage.from("lwb-delivery-pod").createSignedUrl(selected.report.pod_path,120);
@@ -651,29 +696,23 @@ $("deliveryForm").onsubmit=async e=>{
  if(busy||returnBusy||!selected||role!=="driver"||selected.report||isWaitingForLoading(selected))return;
  const r=selected,status=$("deliveryStatus").value,note=$("deliveryNote").value.trim();
  const receiver=$("receivedBy").value.trim();
- const amount=Number($("amount").value||0);
- let method=$("mode").value,reference=$("reference").value.trim();
  if(!["DELIVERED","PARTIAL","NOT_DELIVERED"].includes(status)){message("Select Delivery Status.",true);return;}
- if(!Number.isFinite(amount)||amount<0||amount>99999999.99){message("Enter valid actual collected amount.",true);return;}
- if(status==="NOT_DELIVERED"&&amount>0){message("Do not report collection for Not Delivered in this workflow.",true);return;}
- if(amount>0&&!method){message("Select actual collection mode.",true);return;}
- if(amount===0){method="";reference="";}
- if(method==="CASH"&&amount>=200000){message("Cash amount ₹2,00,000 or above cannot be reported here. Contact Office for compliance review.",true);return;}
+ if(status==="NOT_DELIVERED")resetPay(null);
+ const pay=readPay();
+ if(pay.error){message(pay.error,true);return;}
  const file=$("podFile").files?.[0];
  // Same rules as lwb_driver_submit_delivery, checked before any photo upload.
  if(status!=="NOT_DELIVERED"&&(!receiver||!file)){message("Receiver Name and POD Photo are required for Delivered / Partial.",true);return;}
  if(status==="PARTIAL"&&!note){message("Partial delivery needs a shortage / discrepancy note.",true);return;}
  if(status==="NOT_DELIVERED"&&!note){message("Write the reason for Not Delivered in the note.",true);return;}
- if(amount>0&&method!=="CASH"&&!reference){message("Enter UTR / Bank / Cheque reference for non-cash collection.",true);return;}
  if(file&&(!["image/jpeg","image/png","image/webp"].includes(file.type)||file.size>5*1024*1024)){
   message("POD Photo must be JPEG/PNG/WebP under 5MB.",true);return;
  }
  const confirmText="Submit final DRIVER REPORT for "+r.order_no+
   "\nParty: "+r.party_name+
   "\nStatus: "+status+
-  "\nPayment Received: "+money(amount)+
-  "\nMode: "+(method||"NONE")+
-  "\n\nThis cannot be edited by Driver after saving. Payment stays PENDING OFFICE VERIFICATION. Continue?";
+  (status==="NOT_DELIVERED"?"":"\n"+payText(pay))+
+  "\n\nThe delivery report is locked after saving. Payment can be changed until the office verifies it. Continue?";
  if(!await confirm(confirmText))return;
  busy=true;$("submitDelivery").disabled=true;$("submitDelivery").textContent="Uploading / Submitting...";
  try{
@@ -685,21 +724,175 @@ $("deliveryForm").onsubmit=async e=>{
      .upload(proofPath,file,{contentType:file.type,upsert:false,cacheControl:"3600"});
    if(uploaded.error)throw Error("POD photo upload failed: "+uploaded.error.message);
   }
-  const {data,error}=await db.rpc("lwb_driver_submit_delivery",{
+  const photoPaths=await uploadPayPhotos(r.order_id);
+  const {data,error}=await db.rpc("lwb_driver_submit_delivery_with_payment",{
    p_order_id:r.order_id,p_delivery_status:status,p_received_by:receiver||null,
    p_pod_path:proofPath,p_delivery_note:note||null,
-   p_collection_amount:amount,p_payment_mode:method||null,p_payment_reference:reference||null
+   p_cash_notes:pay.notes,p_online_amount:pay.online,p_online_mode:pay.online>0?pay.mode:null,
+   p_online_reference:pay.online>0&&pay.ref?pay.ref:null,p_online_photo_paths:photoPaths
   });
   if(error)throw error;
   busy=false;
   close();
   await refresh();
-  message("Delivery Report SAVED for "+r.order_no+". Driver reported "+money(data?.payment_reported)+". "+(data?.collection_review_status==="PENDING_OFFICE"?"Office verification pending.":"No payment was collected."));
+  message("Delivery Report SAVED for "+r.order_no+". "+(status==="NOT_DELIVERED"?"":"Received "+money(data?.collected)+", outstanding "+money(data?.outstanding)+". The office will check the payment."));
  }catch(error){
   message("Delivery NOT submitted: "+error.message+". If photo was uploaded, it may remain privately stored until cleaned up.",true);
  }finally{
   busy=false;$("submitDelivery").disabled=false;$("submitDelivery").textContent="Submit Delivery & Collection Report";
  }
+};
+// Payment: cash counted by notes, UPI / bank with a photo of the payment screen, rest outstanding.
+const NOTES=["500","200","100","50","20","10"];
+let payPhotos=[],payInfo=null,payBusy=false;
+(function buildCashNotes(){
+ const box=$("cashNotes");
+ for(const d of [...NOTES,"coins"]){
+  const row=elt("label",undefined,"cashnote"+(d==="coins"?" coins":"")),inp=elt("input");
+  inp.type="number";inp.min="0";inp.inputMode=d==="coins"?"decimal":"numeric";inp.step=d==="coins"?"0.01":"1";inp.placeholder="0";inp.id="note"+d;
+  inp.addEventListener("input",updatePay);
+  row.append(elt("b",d==="coins"?"Coins ₹":"₹"+d+" ×"),inp,elt("span","₹0"));
+  if(d==="coins")inp.placeholder="₹1, ₹2, ₹5 total";
+  row.querySelector("span").id="noteSum"+d;box.append(row);
+ }
+})();
+function readCash(){
+ const notes={};let total=0,bad="";
+ for(const d of [...NOTES,"coins"]){
+  const v=$("note"+d).value.trim(),n=v===""?0:Number(v);
+  if(!Number.isFinite(n)||n<0||(d!=="coins"&&!Number.isInteger(n))){bad="Check the count of "+(d==="coins"?"coins":"₹"+d+" notes")+".";continue}
+  const amt=d==="coins"?Math.round(n*100)/100:Number(d)*n;
+  $("noteSum"+d).textContent=money(amt);
+  if(n>0){notes[d]=n;total+=amt}
+ }
+ return {notes,total:Math.round(total*100)/100,bad};
+}
+function payNet(){
+ if(payInfo)return Number(payInfo.net)||0;
+ if(returnOptions)return Number(returnOptions.provisional_net_amount)||0;
+ return Number(selected?.loaded_goods_value)||0;
+}
+function readPay(){
+ const cash=readCash(),online=Math.round((Number($("onlineAmount").value)||0)*100)/100;
+ const pay={notes:cash.notes,cash:cash.total,online,mode:$("onlineMode").value,ref:$("onlineRef").value.trim(),total:Math.round((cash.total+online)*100)/100};
+ pay.outstanding=Math.max(0,Math.round((payNet()-pay.total)*100)/100);
+ if(cash.bad)pay.error=cash.bad;
+ else if(cash.total>=200000)pay.error="Cash of ₹2,00,000 or more cannot be reported here. Contact Office for compliance review.";
+ else if(!Number.isFinite(online)||online<0||online>99999999)pay.error="Check the UPI amount.";
+ else if(online>0&&!payPhotos.length)pay.error="Take a photo / screenshot of the UPI payment screen.";
+ return pay;
+}
+function payText(p){
+ return "Cash "+money(p.cash)+(p.online>0?" + "+p.mode+" "+money(p.online):"")+" = Received "+money(p.total)+"\nOutstanding: "+money(p.outstanding);
+}
+function updatePay(){
+ const p=readPay();
+ $("cashTotal").textContent=money(p.cash);$("onlineTotal").textContent=money(p.online);
+ $("payPhotoBox").hidden=!(p.online>0)&&!payPhotos.length;
+ $("paySumNet").textContent=money(payNet());$("paySumGot").textContent=money(p.total);$("paySumOut").textContent=money(p.outstanding);
+}
+function resetPay(info){
+ payPhotos.forEach(p=>{if(p.blob)URL.revokeObjectURL(p.url)});payPhotos=[];
+ const notes=info?.cash_notes||{};
+ for(const d of [...NOTES,"coins"])$("note"+d).value=notes[d]?String(notes[d]):"";
+ $("onlineAmount").value=Number(info?.online_amount)>0?String(info.online_amount):"";
+ $("onlineMode").value=info?.online_mode||"UPI";$("onlineRef").value=info?.online_reference||"";
+ renderPayPhotos();updatePay();
+}
+async function addPayPhotos(input){
+ const files=[...(input.files||[])];input.value="";
+ for(const f of files){
+  if(payPhotos.length>=3)break;
+  try{const blob=await shrinkPhoto(f);payPhotos.push({blob,url:URL.createObjectURL(blob)})}
+  catch(e){message(e.message+". Take the photo again.",true)}
+ }
+ renderPayPhotos();updatePay();
+}
+function renderPayPhotos(){
+ const grid=$("payPhotoGrid");grid.replaceChildren();
+ payPhotos.forEach((p,i)=>{
+  const fig=elt("figure"),img=elt("img");img.src=p.url;img.alt="Payment photo "+(i+1);
+  const x=elt("button","✕");x.type="button";x.setAttribute("aria-label","Remove photo "+(i+1));
+  x.onclick=()=>{if(p.blob)URL.revokeObjectURL(p.url);payPhotos.splice(i,1);renderPayPhotos();updatePay()};
+  fig.append(img,x);grid.append(fig);
+ });
+ $("payPhotoCount").textContent=payPhotos.length+" / 3";
+ $("payPhotoButtons").classList.toggle("full",payPhotos.length>=3);
+}
+$("payCamera").onchange=e=>addPayPhotos(e.target);
+$("payGallery").onchange=e=>addPayPhotos(e.target);
+$("onlineAmount").addEventListener("input",updatePay);
+// New photos go to the private POD bucket in the driver's own folder; kept photos keep their path.
+async function uploadPayPhotos(orderId){
+ const paths=[];
+ if(!(Number($("onlineAmount").value)>0))return paths;
+ for(const p of payPhotos){
+  if(p.path){paths.push(p.path);continue}
+  const path=user.id+"/"+orderId+"/upi-"+podFileId()+".jpg";
+  const up=await db.storage.from("lwb-delivery-pod").upload(path,p.blob,{contentType:"image/jpeg",upsert:false});
+  if(up.error)throw Error("Payment photo upload failed: "+up.error.message);
+  p.path=path;paths.push(path);
+ }
+ return paths;
+}
+const PAY_STATUS={PENDING:"⏳ Waiting for office check",VERIFIED:"✅ Verified by office",REJECTED:"❌ Rejected by office"};
+function notesText(n){
+ return Object.entries(n||{}).filter(([,v])=>Number(v)>0).sort((a,b)=>(b[0]==="coins"?-1:Number(b[0]))-(a[0]==="coins"?-1:Number(a[0])))
+  .map(([d,v])=>d==="coins"?"coins "+money(v):"₹"+d+" × "+v).join(" · ");
+}
+async function loadPayView(r){
+ const box=$("payView");box.hidden=false;box.replaceChildren(elt("p","Loading payment…","mini"));
+ const {data,error}=await db.rpc("lwb_driver_order_payment",{p_order_id:r.order_id});
+ if(selected?.order_id!==r.order_id)return;
+ if(error){box.replaceChildren(elt("p","Payment: "+money(r.report.cash_reported)+" "+(r.report.payment_mode||""))) ;return}
+ payInfo=data;renderPayView();
+}
+async function renderPayView(){
+ const p=payInfo,box=$("payView");box.replaceChildren();
+ const st=p.payment_status||"PENDING";
+ box.append(elt("span",PAY_STATUS[st]||st,"payst "+st));
+ if(st!=="PENDING"&&(p.reviewed_by_name||p.review_note))box.append(elt("p",(p.reviewed_by_name||"Office")+" · "+date(p.reviewed_at)+(p.review_note?" · "+p.review_note:""),"mini"));
+ box.append(elt("p","💵 Cash "+money(p.cash_amount)+(notesText(p.cash_notes)?" ("+notesText(p.cash_notes)+")":"")));
+ if(Number(p.online_amount)>0)box.append(elt("p","📱 "+(p.online_mode||"UPI")+" "+money(p.online_amount)+(p.online_reference?" · Ref "+p.online_reference:"")));
+ box.append(elt("p","Net "+money(p.net)+" · Received "+money(p.collected)+" · Outstanding "+money(p.outstanding)));
+ const paths=p.online_photo_paths||[];
+ if(paths.length){
+  const grid=elt("div",undefined,"photogrid");box.append(grid);
+  const signed=await db.storage.from("lwb-delivery-pod").createSignedUrls(paths,600);
+  for(const x of signed.data||[]){if(!x.signedUrl)continue;const fig=elt("figure"),img=elt("img");img.src=x.signedUrl;img.alt="Payment photo";img.onclick=()=>window.open(x.signedUrl,"_blank","noopener");fig.append(img);grid.append(fig)}
+ }
+ if(st!=="VERIFIED"){
+  const b=elt("button",st==="REJECTED"?"✏️ Correct payment":"✏️ Change payment");b.type="button";b.onclick=openPayForm;box.append(b);
+ }
+}
+async function openPayForm(){
+ const p=payInfo;if(!p)return;
+ $("payForm").prepend($("payBox"));$("payBox").hidden=false;
+ resetPay(p);
+ const paths=p.online_photo_paths||[];
+ if(paths.length){
+  const signed=await db.storage.from("lwb-delivery-pod").createSignedUrls(paths,600);
+  for(const x of signed.data||[])if(x.signedUrl)payPhotos.push({path:x.path,url:x.signedUrl});
+  renderPayPhotos();updatePay();
+ }
+ $("payView").hidden=true;$("payForm").hidden=false;$("payMsg").style.display="none";
+}
+$("payCancel").onclick=()=>{$("payForm").hidden=true;$("payView").hidden=false};
+$("payForm").onsubmit=async e=>{
+ e.preventDefault();
+ if(payBusy||!selected?.report)return;
+ const r=selected,pay=readPay(),show=t=>{$("payMsg").textContent=t;$("payMsg").style.display="block"};
+ if(pay.error){show(pay.error);return}
+ if(!await window.confirm("Save payment for "+r.order_no+"?\n"+payText(pay)))return;
+ payBusy=true;$("paySave").disabled=true;
+ try{
+  const photoPaths=await uploadPayPhotos(r.order_id);
+  const {error}=await db.rpc("lwb_driver_save_payment",{p_order_id:r.order_id,p_cash_notes:pay.notes,
+   p_online_amount:pay.online,p_online_mode:pay.online>0?pay.mode:null,p_online_reference:pay.online>0&&pay.ref?pay.ref:null,p_online_photo_paths:photoPaths});
+  if(error)throw error;
+  $("payForm").hidden=true;await loadPayView(r);loadReturnSummary();
+ }catch(err){show("Payment NOT saved: "+err.message)}
+ finally{payBusy=false;$("paySave").disabled=false}
 };
 // Only APPROVED returns reduce what the driver collects; pending ones are shown apart.
 function updateDeliveryTotals(){
@@ -716,6 +909,7 @@ function updateDeliveryTotals(){
  $("paymentNetTip").hidden=Boolean(selected?.report)||isWaitingForLoading(selected||{});
  $("paymentNetValue").textContent=money(net);
  $("paymentPendingNote").textContent=pending>0?" Return of "+money(pending)+" is waiting for approval: collect the full amount until it is approved.":"";
+ updatePay();
 }
 async function loadReturnOptions(id){
  const {data,error}=await db.rpc("lwb_driver_return_options",{p_order_id:id});

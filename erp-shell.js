@@ -44,7 +44,8 @@
       {t:"Transport Assignment",h:"transport-allocation.html",i:"truck",r:"admin manager transport"},
       {t:"Sheet & Pallet Ledger",h:"sheet-pallet.html",i:"layers",r:"admin manager accounts warehouse"}]},
     {group:"Delivery",items:[
-      {t:"Driver Delivery / POD",h:"driver-delivery.html",i:"pin",r:"admin manager driver accounts"}]},
+      {t:"Driver Delivery / POD",h:"driver-delivery.html",i:"pin",r:"admin manager driver accounts"},
+      {t:"Driver Collections",h:"driver-collections.html",i:"cash",r:"admin manager accounts"}]},
     {group:"Reports",items:[
       {t:"Daily Summary",h:"daily-report.html",i:"stock",r:"admin manager accounts"},
       {t:"Team Work Report",h:"team-report.html",i:"users",r:"admin manager"}]},
