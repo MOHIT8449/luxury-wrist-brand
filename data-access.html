@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Staff Data Access | Luxury Wrist Brand ERP</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <link rel="stylesheet" href="erp-shell.css">
+  <script src="erp-shell.js"></script>
+  <style>
+    .status{text-align:center;padding:80px 20px;font-size:15px;color:#555}
+    .da-small{font-size:12.5px;color:var(--erp-muted);line-height:1.5;margin:4px 0 0}
+    .erp-card+.erp-card{margin-top:14px}
+    .da-switch{display:flex;gap:16px;align-items:center;flex-wrap:wrap}
+    .da-switch b{font-size:15px}
+    .da-state{display:inline-block;padding:4px 10px;border-radius:999px;font-size:12.5px;font-weight:700}
+    .da-state.on{background:#e3f4ea;color:#14532d}
+    .da-state.off{background:#fdecec;color:#9b1c1c}
+    .da-nums{display:flex;gap:10px;flex-wrap:wrap;margin-top:12px}
+    .da-nums span{background:#f3f4f6;border-radius:8px;padding:8px 12px;font-size:13px}
+    .da-nums b{font-size:16px;margin-right:4px}
+    .da-btn{padding:9px 14px;background:var(--erp-red);border:0;border-radius:6px;color:#fff;font:inherit;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap}
+    .da-btn.ghost{background:#fff;color:var(--erp-ink);border:1px solid var(--erp-line)}
+    .da-btn:disabled{opacity:.5;cursor:not-allowed}
+    .da-grid{display:grid;grid-template-columns:2fr 1fr 1fr 1fr 2fr auto;gap:10px;align-items:end}
+    .da-grid label{display:block;font-size:12px;font-weight:600;color:#4b5763;margin-bottom:4px}
+    .da-grid input,.da-grid select{width:100%;padding:8px;border:1px solid #cfd6de;border-radius:6px;font:inherit;font-size:16px;background:#fff;box-sizing:border-box}
+    .da-table td,.da-table th{font-size:13px;vertical-align:top}
+    .da-table small{display:block;color:var(--erp-muted);font-size:11.5px;margin-top:2px}
+    .da-off{color:#a0a8b1}
+    .da-rules{margin:0;padding-left:18px;font-size:13px;line-height:1.6}
+    @media(max-width:1000px){.da-grid{grid-template-columns:1fr 1fr}}
+    @media(max-width:560px){.da-grid{grid-template-columns:1fr}}
+    [hidden]{display:none!important}
+  </style>
+</head>
+<body>
+  <div id="loading" class="status">Checking account access...</div>
+  <main id="page" class="erp-main" hidden>
+    <section class="erp-card">
+      <div class="erp-card-head"><div><h2>Finished orders: staff see only today's</h2>
+        <p class="da-small">When ON, every login except Admin sees open / pending orders as before. A delivered order whose work is finished
+          stays visible until 12 midnight (India time) of that day, then only Admin sees it. Nothing is deleted.</p></div></div>
+      <div class="erp-card-body">
+        <div class="da-switch">
+          <b>Status:</b><span class="da-state" id="state">…</span>
+          <button class="da-btn ghost" id="toggle" type="button" disabled>…</button>
+        </div>
+        <div class="da-nums">
+          <span><b id="nHidden">0</b>orders hidden from staff</span>
+          <span><b id="nToday">0</b>finished today (hidden after midnight)</span>
+        </div>
+        <p class="da-small" style="margin-top:12px">An order counts as finished when all of these are done:</p>
+        <ul class="da-rules">
+          <li>Driver reported Delivered or Part delivered</li>
+          <li>Driver payment is verified or rejected (not waiting)</li>
+          <li>No driver return waiting for approval, and approved returned goods are received in the godown</li>
+          <li>Accounts entered the Tally invoice no.</li>
+        </ul>
+        <p class="da-small">If new work comes up later (for example a new return), the order shows again until that work is finished.</p>
+      </div>
+    </section>
+
+    <section class="erp-card">
+      <div class="erp-card-head"><div><h2>Show old orders to a login</h2>
+        <p class="da-small">Choose the login and the delivery dates. Access stops by itself after the days you choose, or when you press Stop.</p></div></div>
+      <div class="erp-card-body">
+        <form class="da-grid" id="grantForm" autocomplete="off">
+          <div><label for="gUser">Login *</label><select id="gUser" required></select></div>
+          <div><label for="gFrom">From date</label><input id="gFrom" type="date"></div>
+          <div><label for="gTo">To date</label><input id="gTo" type="date"></div>
+          <div><label for="gDays">For how many days *</label><input id="gDays" type="number" min="1" max="90" value="1" required></div>
+          <div><label for="gNote">Reason</label><input id="gNote" maxlength="300" placeholder="e.g. party ledger check"></div>
+          <div><button class="da-btn" id="gSave" type="submit">Give access</button></div>
+        </form>
+        <p class="da-small">Leave both dates empty to show all old orders.</p>
+      </div>
+    </section>
+
+    <section class="erp-card">
+      <div class="erp-card-head"><div><h2>Access given</h2></div></div>
+      <div class="erp-card-body erp-scroll">
+        <table class="erp-table da-table">
+          <thead><tr><th>Login</th><th>Delivery dates</th><th>Until</th><th>Reason</th><th>Given by</th><th></th></tr></thead>
+          <tbody id="grants"><tr><td colspan="6" class="erp-empty">Loading…</td></tr></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+  <script>
+    const client=supabase.createClient("https://txkbhadzdbxpieunfvox.supabase.co","sb_publishable_W4I3Q5ODf0g17sq5uDml2Q_sLolXYEk");
+    const el=id=>document.getElementById(id);
+    async function logout(){await client.auth.signOut();location.replace("login.html")}
+    async function start(allowed){
+      const {data:{session}}=await client.auth.getSession();
+      if(!session){location.replace("login.html");return null}
+      const {data:p}=await client.from("user_profiles").select("full_name,role,active").eq("id",session.user.id).single();
+      const realRole=String((p&&p.role)||"").toLowerCase().trim();
+      if(!p||p.active!==true||!allowed.includes(realRole)){location.replace("dashboard.html");return null}
+      return {user:session.user,role:realRole,name:p.full_name||session.user.email};
+    }
+    const fmtDate=d=>d?new Date(d+"T00:00:00").toLocaleDateString("en-IN",{day:"2-digit",month:"short",year:"numeric"}):"";
+    const fmtTime=t=>t?new Date(t).toLocaleString("en-IN",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"}):"";
+    const notSetUp=e=>/lwb_admin_visibility|function|schema cache/i.test(e.message||"");
+    let hideOn=true;
+
+    async function load(){
+      const {data,error}=await client.rpc("lwb_admin_visibility");
+      if(error){
+        el("state").textContent="Not set up";el("state").className="da-state off";
+        el("grants").innerHTML="";
+        const td=document.createElement("td");td.colSpan=6;td.className="erp-empty";
+        td.textContent=notSetUp(error)?"Run lwb_staff_visibility_setup.sql once in the Supabase SQL Editor, then refresh this page.":error.message;
+        const tr=document.createElement("tr");tr.appendChild(td);el("grants").appendChild(tr);return;
+      }
+      hideOn=data.hide_closed!==false;
+      el("state").textContent=hideOn?"ON":"OFF (staff see all old orders)";
+      el("state").className="da-state "+(hideOn?"on":"off");
+      el("toggle").textContent=hideOn?"Turn OFF":"Turn ON";el("toggle").disabled=false;
+      el("nHidden").textContent=data.hidden_orders||0;el("nToday").textContent=data.closing_today||0;
+      const tb=el("grants");tb.innerHTML="";
+      const rows=data.grants||[];
+      if(!rows.length){tb.innerHTML='<tr><td colspan="6" class="erp-empty">No access given yet.</td></tr>';return}
+      rows.forEach(g=>{
+        const tr=document.createElement("tr");if(!g.active)tr.className="da-off";
+        const cell=(main,sub)=>{const td=document.createElement("td");td.textContent=main||"";if(sub){const s=document.createElement("small");s.textContent=sub;td.appendChild(s)}tr.appendChild(td);return td};
+        cell(g.user_name,String(g.role||"").toUpperCase());
+        cell(g.from_date||g.to_date?(fmtDate(g.from_date)||"Start")+" to "+(fmtDate(g.to_date)||"today"):"All old orders");
+        cell(g.revoked_at?"Stopped":fmtTime(g.valid_until),g.revoked_at?fmtTime(g.revoked_at):(g.active?"":"Ended"));
+        cell(g.note||"");
+        cell(g.granted_by_name||"",fmtTime(g.granted_at));
+        const td=cell("");
+        if(g.active){
+          const b=document.createElement("button");b.className="da-btn ghost";b.type="button";b.textContent="Stop";
+          b.onclick=async()=>{
+            if(!await ERPShell.confirm("Stop old-order access for "+g.user_name+" now?"))return;
+            b.disabled=true;
+            const {error}=await client.rpc("lwb_admin_revoke_history",{p_grant_id:g.id});
+            if(error){ERPShell.toast(error.message,"error");b.disabled=false;return}
+            ERPShell.toast("Access stopped.","success");load();
+          };
+          td.appendChild(b);
+        }
+      });
+    }
+
+    async function loadUsers(){
+      const {data,error}=await client.from("user_profiles").select("id,full_name,role,mobile,active").eq("active",true).order("full_name");
+      const sel=el("gUser");sel.innerHTML='<option value="">Choose login…</option>';
+      if(error){ERPShell.toast(error.message,"error");return}
+      (data||[]).filter(u=>String(u.role||"").toLowerCase().trim()!=="admin").forEach(u=>{
+        const o=document.createElement("option");o.value=u.id;
+        o.textContent=(u.full_name||u.mobile||"User")+" · "+String(u.role||"").toUpperCase();sel.appendChild(o);
+      });
+    }
+
+    el("toggle").onclick=async()=>{
+      const next=!hideOn;
+      const msg=next?"Turn ON? Staff will again see only open orders and today's finished ones."
+                    :"Turn OFF? Every login will see all old orders again (as before).";
+      if(!await ERPShell.confirm(msg))return;
+      el("toggle").disabled=true;
+      const {error}=await client.rpc("lwb_admin_set_hide_closed",{p_on:next});
+      if(error){ERPShell.toast(error.message,"error");el("toggle").disabled=false;return}
+      ERPShell.toast(next?"Turned ON.":"Turned OFF.","success");load();
+    };
+
+    el("grantForm").onsubmit=async e=>{
+      e.preventDefault();
+      const user=el("gUser").value,from=el("gFrom").value||null,to=el("gTo").value||null,days=parseInt(el("gDays").value,10);
+      if(!user){ERPShell.toast("Choose a login.","error");return}
+      if(!(days>=1&&days<=90)){ERPShell.toast("Days must be 1 to 90.","error");return}
+      if(from&&to&&from>to){ERPShell.toast("From date is after To date.","error");return}
+      el("gSave").disabled=true;
+      const {error}=await client.rpc("lwb_admin_grant_history",{p_user_id:user,p_from:from,p_to:to,p_days:days,p_note:el("gNote").value||null});
+      el("gSave").disabled=false;
+      if(error){ERPShell.toast(error.message,"error");return}
+      ERPShell.toast("Access given for "+days+" day"+(days>1?"s":"")+".","success");
+      el("gNote").value="";load();
+    };
+
+    (async()=>{
+      const me=await start(["admin"]);if(!me)return;
+      ERPShell.mount({role:me.role,name:me.name,onLogout:logout,group:"Settings",title:"Staff Data Access"});
+      el("loading").hidden=true;el("page").hidden=false;
+      await Promise.all([load(),loadUsers()]);
+    })();
+  </script>
+</body>
+</html>
