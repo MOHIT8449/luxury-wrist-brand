@@ -19,6 +19,7 @@ main{max-width:1300px;margin:auto;padding:22px}
 .tab small{display:block;color:#58708b;font-size:12px}.tab strong{display:block;font-size:22px;margin-top:4px}
 .tab.active{border-color:var(--blue);background:#eef4fe}
 .tools{display:flex;gap:10px;margin-bottom:14px}
+.only{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px;padding:10px 12px;border:1px solid #f0c36d;background:#fff8e0;border-radius:8px;font-weight:700}.only[hidden]{display:none}
 .tools input{flex:1;padding:11px;border:1px solid #bbcbdd;border-radius:8px;font:14px Arial}
 button{background:var(--blue);color:white;border:0;border-radius:8px;padding:11px 16px;font-weight:bold;cursor:pointer;font-size:14px}
 button.secondary{background:#e8edf4;color:#183450}button.approve{background:#138342}button.reject{background:#b62e2e}
@@ -65,6 +66,7 @@ button:disabled{opacity:.5;cursor:not-allowed}
 <button class="tab" type="button" data-status="APPROVED"><small>Approved</small><strong id="countAPPROVED">—</strong></button>
 <button class="tab" type="button" data-status="REJECTED"><small>Rejected</small><strong id="countREJECTED">—</strong></button>
 </div>
+<div class="only" id="only" hidden><span id="onlyText"></span><button id="onlyAll" class="secondary" type="button">Show all</button></div>
 <div class="tools"><input id="search" data-party-list placeholder="Party, PO No, Driver or Vehicle"><button id="refresh" class="secondary" type="button">Refresh</button></div>
 <div id="list"></div>
 <div class="viewer" id="viewer" hidden><img id="viewerImg" alt="Return photo"><button type="button" class="secondary" id="viewerClose">✕ Close</button></div>
@@ -79,6 +81,8 @@ const fmt=n=>"₹"+Number(n||0).toLocaleString("en-IN",{minimumFractionDigits:2,
 const REASON={LEAKAGE:"Leakage",BREAKAGE:"Breakage",DAMAGE:"Damage",GASLESS:"Gasless",LOW_FILL:"Low Fill"};
 const STATUSES=["PENDING_OFFICE","APPROVED","REJECTED"];
 let role="",status="PENDING_OFFICE",lists={},busy=false,photos=new Map(),photoUrls=new Map();
+// Opened from a notification: driver-returns.html?order=<order id> shows only that order's returns.
+let onlyOrder=new URLSearchParams(location.search).get("order")||"";
 const canReview=()=>role==="admin"||role==="accounts"||role==="manager";
 function message(text,type){el("message").textContent=text;el("message").className=type||"";el("message").hidden=!text}
 function node(tag,text,cls){const n=document.createElement(tag);if(text!=null)n.textContent=String(text);if(cls)n.className=cls;return n}
@@ -101,8 +105,14 @@ async function load(){
   results.forEach((r,i)=>{if(r.error)throw r.error;lists[STATUSES[i]]=Array.isArray(r.data)?r.data:[]});
   STATUSES.forEach(s=>el("count"+s).textContent=lists[s].length);
   await loadPhotos();
+  let note=canReview()?"":"View only. Admin, Accounts or Sales Head can approve / reject.";
+  if(onlyOrder){
+   const s=STATUSES.find(x=>lists[x].some(r=>r.order_id===onlyOrder));
+   if(s&&!lists[status].some(r=>r.order_id===onlyOrder))status=s;
+   if(!s){onlyOrder="";note="That return was changed or cancelled by the driver. Showing all returns.";history.replaceState(null,"",location.pathname)}
+  }
   render();
-  message(canReview()?"":"View only. Admin, Accounts or Sales Head can approve / reject.");
+  message(note);
  }catch(e){message("Unable to load returns: "+e.message+". Run lwb_driver_return_review_setup.sql in Supabase.","error")}
 }
 // Photos the driver took with the phone (lwb_driver_return_photos_setup.sql). Older returns have none.
@@ -134,7 +144,10 @@ el("viewer").onclick=e=>{if(e.target!==el("viewerImg"))el("viewer").hidden=true}
 function render(){
  document.querySelectorAll(".tab").forEach(t=>t.classList.toggle("active",t.dataset.status===status));
  const q=el("search").value.toLowerCase().trim().split(/\s+/).filter(Boolean);
- const rows=(lists[status]||[]).filter(r=>q.every(w=>[r.party_name,r.order_no,r.driver_name,r.vehicle_no].join(" ").toLowerCase().includes(w)));
+ const all=(lists[status]||[]).filter(r=>!onlyOrder||r.order_id===onlyOrder);
+ el("only").hidden=!onlyOrder;
+ if(onlyOrder){const o=STATUSES.flatMap(x=>lists[x]).find(r=>r.order_id===onlyOrder);el("onlyText").textContent="From notification: "+(o?.order_no||"order")+" · "+(o?.party_name||"")}
+ const rows=all.filter(r=>q.every(w=>[r.party_name,r.order_no,r.driver_name,r.vehicle_no].join(" ").toLowerCase().includes(w)));
  const list=el("list");list.replaceChildren();
  if(!rows.length){list.append(node("div",status==="PENDING_OFFICE"?"No pending driver returns.":"No returns here.","empty"));return}
  for(const r of rows){
@@ -190,6 +203,7 @@ async function review(r,action){
 document.querySelectorAll(".tab").forEach(t=>t.onclick=()=>{status=t.dataset.status;render()});
 el("search").addEventListener("input",render);
 el("refresh").onclick=load;
+el("onlyAll").onclick=()=>{onlyOrder="";history.replaceState(null,"",location.pathname);render()};
 init();
 </script>
 </body>
