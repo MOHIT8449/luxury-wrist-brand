@@ -173,6 +173,13 @@
     return data||[];
   };
 
+  // Tally bills Accounts entered after loading (lwb_cashbook_erp_bills_setup.sql)
+  CB.erpBills=async function(){
+    const {data,error}=await rpc("lwb_cashbook_erp_bills");
+    if(error)throw error;
+    return data||[];
+  };
+
   // party names from the ERP Party Master (lwb_cashbook_erp_parties_setup.sql)
   CB.erpParties=async function(){
     const {data,error}=await rpc("lwb_cashbook_erp_parties");

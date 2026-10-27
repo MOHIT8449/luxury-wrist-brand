@@ -1113,6 +1113,17 @@ JAY MAMA DEV TREDARS (NILGIRI LIMBAYAT)
   const ERP_MODE = { CASH: ["cash", "case"], UPI: ["upi"], BANK: ["bank transfer", "online", "bank"], CHEQUE: ["cheque", "check"] };
   const erpMode = m => { const want = ERP_MODE[m] || [String(m || "").toLowerCase()]; return modeList("in").find(x => want.includes(x.trim().toLowerCase())) || (m === "CASH" ? cashModeName("in") : modeList("in")[0] || ""); };
   let dueCache = null;
+  // after the Cash In form opens: select the pending bill of these invoice nos. (when exactly one fits)
+  function pickBill(partyId, invoiceNos) {
+    const want = String(invoiceNos || "").split(",").map(v => v.trim().toLowerCase()).filter(Boolean);
+    if (!partyId || !want.length) return;
+    const hits = [...document.querySelectorAll("#ePending [data-bill]")].filter(b => { const inv = b.dataset.bill.slice(partyId.length + 1); return want.some(w => inv === w || inv.startsWith(w + " ")); });
+    if (hits.length !== 1) return;
+    const amt = document.getElementById("eAmt"), keep = amt && amt.value;
+    hits[0].click();
+    // keep the amount actually received (selecting a bill fills in its full due)
+    if (amt && keep) { amt.value = keep; amt.dispatchEvent(new Event("input")); }
+  }
   async function invoiceDueLoad() {
     try { dueCache = await CB.invoiceDue(); } catch (_) { dueCache = null; }
     return dueCache;
@@ -1141,6 +1152,7 @@ JAY MAMA DEV TREDARS (NILGIRI LIMBAYAT)
         closeModal();
         entryModal(b, "in", null, { amount: Number(r.due), party: partyById(p) ? p : "",
           remark: `Tally bill ${r.invoice_no} · PO ${r.order_no}${partyById(p) ? "" : " · " + r.party}` });
+        if (partyById(p)) pickBill(p, r.invoice_no);
       });
     };
     box.innerHTML = `<p class="hint" style="margin:0">Tally bills Accounts entered after loading. Due = bill − credit notes + debit notes − what the driver reported. Check the amount before you save a Cash In.</p>
@@ -1166,6 +1178,7 @@ JAY MAMA DEV TREDARS (NILGIRI LIMBAYAT)
       closeModal();
       entryModal(b, "in", null, { amount: Number(r.amount), date: r.report_date, time: r.report_time, party: partyById(p) ? p : "", mode: erpMode(r.mode),
         remark: `Driver ${r.driver} · PO ${r.order_no}${dueByPo(r.order_no) ? " · Tally bill " + dueByPo(r.order_no).invoice_no : ""}${r.reference ? " · Ref " + r.reference : ""}${partyById(p) ? "" : " · " + r.party}`, erpRef: r.report_id });
+      if (partyById(p) && dueByPo(r.order_no)) pickBill(p, dueByPo(r.order_no).invoice_no);
     });
     box.querySelectorAll("[data-dcskip]").forEach(btn => btn.onclick = () => {
       const r = l[btn.dataset.dcskip];
@@ -1772,6 +1785,11 @@ JAY MAMA DEV TREDARS (NILGIRI LIMBAYAT)
       for (const x of [...rows, ...feed].filter(r => r.party === pid).sort((a, b) => (a.date + (a.time || "")).localeCompare(b.date + (b.time || "")) || (a.tally ? -1 : b.tally ? 1 : 0) || a.created - b.created)) {
         const inv = x.invoice ? " · Inv " + esc(x.invoice) : "";
         curTime = x.time || "";
+        if (x.tally && x.erp) {
+          add(x.date, "Bill" + inv + ` <span class="chip">ERP · PO ${esc(x.erp)}</span>`, x.invAmt, 0, "Bill");
+          if (x.damage) add(x.date, esc(x.dmgType) + inv, 0, x.damage, x.dmgType);
+          continue;
+        }
         if (x.tally) {
           const opening = x.invoice === "Opening";
           add(x.date, (opening ? "Opening balance" : (x.invAmt < 0 ? "Credit note" : "Bill") + inv) + ` <span class="chip">Tally</span>`, x.invAmt > 0 ? x.invAmt : 0, x.invAmt < 0 ? -x.invAmt : 0, opening ? "Opening balance" : "Bill");
@@ -2806,17 +2824,42 @@ JAY MAMA DEV TREDARS (NILGIRI LIMBAYAT)
   const tallyState = () => { const t = state.tally = state.tally || {}; t.bills = t.bills || []; t.ob = t.ob || {}; t.map = t.map || {}; t.batches = t.batches || []; return t; };
   const tNorm = s => String(s ?? "").toUpperCase().replace(/[^A-Z0-9]+/g, " ").trim();
   // bills from Tally plus each party's opening balance; Tally bills on or before the balance date are already inside that balance
+  // Tally bills Accounts entered on "Tally Bill & Invoice No." (one line per bill, also sub-firm bills),
+  // shown under the PO's main party. A bill already in the imported Tally register is not added twice.
+  let erpBillRows = [];
+  function erpFeed(ob, seen) {
+    const out = [];
+    for (const r of erpBillRows) {
+      const p = tallyMatch(r.party);
+      if (!p || p === "__skip" || !partyById(p)) continue;
+      const o = ob[p];
+      if (o && o.amt && r.invoice_date <= o.date) continue;
+      const lines = Array.isArray(r.bills) && r.bills.length ? r.bills : [{ no: r.invoice_no, amount: r.amount }];
+      const used = new Set();
+      lines.forEach((l, i) => {
+        const no = String(l.no || "").trim(), amt = Number(l.amount) || 0;
+        if (!no || !amt || seen.has(no.toLowerCase() + "|" + r2(amt))) return;
+        let inv = no;
+        if (used.has(inv.toLowerCase()) && l.firm) inv = no + " " + l.firm;
+        used.add(inv.toLowerCase());
+        const notes = i === 0 ? r2(Number(r.credit_notes || 0) - Number(r.debit_notes || 0)) : 0;
+        out.push({ id: "erp-" + r.order_id + "-" + i, party: p, invoice: inv, invAmt: r2(amt + (notes < 0 ? -notes : 0)), date: r.invoice_date, invDate: r.invoice_date,
+          damage: notes > 0 ? notes : 0, dmgType: notes > 0 ? "Credit note" : "", erp: r.order_no });
+      });
+    }
+    return out;
+  }
   function tallyFeed() {
-    const t = state.tally;
-    if (!t) return [];
+    const t = state.tally || {};
     const ob = t.ob || {}, out = [];
+    const seen = new Set((t.bills || []).map(b => String(b.vno || "").trim().toLowerCase() + "|" + r2(Number(b.amt) || 0)));
     for (const [p, o] of Object.entries(ob)) if (o.amt && partyById(p)) out.push({ id: "tlob-" + p, party: p, invoice: "Opening", invAmt: o.amt, date: o.date, invDate: o.date });
     for (const b of t.bills || []) {
       const o = ob[b.party];
       if (o && o.amt && b.date <= o.date) continue;
       out.push({ id: b.id, party: b.party, invoice: b.vno, invAmt: b.amt, date: b.date, invDate: b.date });
     }
-    return out;
+    return out.concat(erpFeed(ob, seen));
   }
   // Tally cell -> real date: Excel day number, 1-Apr-25, 01-04-2025, 01/04/25 or 2025-04-01
   const TL_MON = "jan feb mar apr may jun jul aug sep oct nov dec".split(" ");
@@ -3394,6 +3437,9 @@ JAY MAMA DEV TREDARS (NILGIRI LIMBAYAT)
     ui.bookId ? renderBook() : renderBooks();
   }
   render();
+
+  // Tally bills from Accounts (invoice no. + amount) become pending bills here
+  CB.erpBills().then(rows => { erpBillRows = rows; if (session.mode && !CB.isBusy()) render(); }).catch(() => {});
 
   // new ERP Party Master parties join the Cash In party list (Mohit, 26 Oct 2026).
   // state.erpParties remembers the names already handled, so a party deleted here is not added again.
