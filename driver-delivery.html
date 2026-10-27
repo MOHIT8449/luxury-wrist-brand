@@ -333,7 +333,7 @@ Reported payments stay <b>Pending Office Verification</b>; the Party Ledger, out
  </select>
  <div class="fieldrow" id="proofFields" hidden>
   <div class="field"><label for="receivedBy">Received By (Party Person) <small>(optional)</small></label><input id="receivedBy" maxlength="150" placeholder="Receiver Name (optional)"></div>
-  <div class="field"><label for="podFile">📷 POD Photo * (Max 5 MB)</label><input id="podFile" type="file" accept="image/jpeg,image/png,image/webp" capture="environment"><img id="photoPreview" class="photo-preview" alt="POD photo preview"></div>
+  <div class="field"><label for="podFile">📷 POD Photo <small>(optional, max 5 MB)</small></label><input id="podFile" type="file" accept="image/jpeg,image/png,image/webp" capture="environment"><img id="photoPreview" class="photo-preview" alt="POD photo preview"></div>
  </div>
  <div class="field wide" id="noteField" hidden><label for="deliveryNote" id="noteLabel">Note</label><textarea id="deliveryNote" rows="2" maxlength="1000" placeholder="Reason / item-wise CS shortage"></textarea></div>
  <div id="payBox">
@@ -725,7 +725,6 @@ $("deliveryForm").onsubmit=async e=>{
  if(pay.error){message(pay.error,true);return;}
  const file=$("podFile").files?.[0];
  // Same rules as lwb_driver_submit_delivery, checked before any photo upload.
- if(status!=="NOT_DELIVERED"&&!file){message("POD Photo is required for Delivered / Partial.",true);return;}
  if(status==="PARTIAL"&&!note){message("Partial delivery needs a shortage / discrepancy note.",true);return;}
  if(status==="NOT_DELIVERED"&&!note){message("Write the reason for Not Delivered in the note.",true);return;}
  if(file&&(!["image/jpeg","image/png","image/webp"].includes(file.type)||file.size>5*1024*1024)){
@@ -745,7 +744,11 @@ $("deliveryForm").onsubmit=async e=>{
    proofPath=user.id+"/"+r.order_id+"/"+podFileId()+"."+ext;
    const uploaded=await db.storage.from("lwb-delivery-pod")
      .upload(proofPath,file,{contentType:file.type,upsert:false,cacheControl:"3600"});
-   if(uploaded.error)throw Error("POD photo upload failed: "+uploaded.error.message);
+   // POD photo is optional: if its upload fails, the driver may still submit without it.
+   if(uploaded.error){
+    if(!await confirm("POD photo could not be uploaded ("+uploaded.error.message+").\nSubmit the delivery without the photo?"))throw Error("POD photo upload failed: "+uploaded.error.message);
+    proofPath=null;
+   }
   }
   const photoPaths=await uploadPayPhotos(r.order_id);
   const {data,error}=await db.rpc("lwb_driver_submit_delivery_with_payment",{
