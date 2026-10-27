@@ -84,6 +84,8 @@ const el=id=>document.getElementById(id);
 const fmt=n=>"₹"+Number(n||0).toLocaleString("en-IN",{minimumFractionDigits:2,maximumFractionDigits:2});
 const STATUSES=["PENDING","OUTSTANDING","VERIFIED","REJECTED"];
 let role="",status="PENDING",lists={},busy=false,photoUrls=new Map();
+// Cash / UPI payments are verified by Accounts (or Admin); Sales Head only views them.
+const canVerify=()=>role==="admin"||role==="accounts";
 // Opened from a notification: driver-collections.html?order=<order id> shows only that order.
 let onlyOrder=new URLSearchParams(location.search).get("order")||"";
 function message(text,type){el("message").textContent=text;el("message").className=type||"";el("message").hidden=!text}
@@ -112,7 +114,7 @@ async function load(){
   STATUSES.forEach(s=>el("count"+s).textContent=lists[s].length);
   const need=[...new Set(STATUSES.flatMap(s=>lists[s]).flatMap(r=>r.online_photo_paths||[]))].filter(p=>!photoUrls.has(p));
   if(need.length){const signed=await db.storage.from("lwb-delivery-pod").createSignedUrls(need,3600);for(const x of signed.data||[])if(x.signedUrl)photoUrls.set(x.path,x.signedUrl)}
-  let note="";
+  let note=canVerify()?"":"View only. Accounts verify driver payments.";
   if(onlyOrder){
    const s=["PENDING","REJECTED","VERIFIED","OUTSTANDING"].find(x=>lists[x].some(r=>r.order_id===onlyOrder));
    if(s&&!lists[status].some(r=>r.order_id===onlyOrder))status=s;
@@ -165,7 +167,7 @@ function render(){
   if(Number(r.online_amount)>0)line("📱 "+(r.online_mode||"UPI")+(r.online_reference?" · Ref "+r.online_reference:""),fmt(r.online_amount));
   line("Outstanding",fmt(r.outstanding),Number(r.outstanding)>0?"out":"");
   card.append(t);
-  if(r.status==="PENDING"){
+  if(r.status==="PENDING"&&canVerify()){
    const act=node("div",null,"actions");
    const ok=node("button","Verify","approve");ok.type="button";ok.onclick=()=>review(r,"VERIFY");
    const no=node("button","Reject","reject");no.type="button";no.onclick=()=>review(r,"REJECT");

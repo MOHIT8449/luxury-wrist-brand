@@ -410,6 +410,8 @@
     .po-field label {display:block;font-weight:bold;font-size:12px;margin-bottom:6px}
     .po-field {position:relative;min-width:0}
     .po-field input {width:100%;padding:10px;border:1px solid #b6c7d5;border-radius:7px;font:14px Arial}
+    .po-field select {width:100%;padding:10px;border:1px solid #b6c7d5;border-radius:7px;font:14px Arial;background:#fff}
+    .po-field [hidden] {display:none}
     .po-autofill-menu {position:absolute;left:0;right:0;top:100%;margin-top:3px;background:#fff;
       border:1px solid #b9c8d8;border-radius:8px;box-shadow:0 8px 24px #162f4b27;z-index:40;
       max-height:230px;overflow:auto;padding:4px}
@@ -731,7 +733,7 @@
           <div class="po-grid">
             <div class="po-field"><label for="poDriverName">Driver Name *</label><input id="poDriverName" maxlength="150" placeholder="Type / select saved driver" autocomplete="off" aria-autocomplete="list"></div>
             <div class="po-field"><label for="poVehicleNo">Vehicle Number *</label><input id="poVehicleNo" maxlength="40" placeholder="Type / select saved vehicle" autocomplete="off" aria-autocomplete="list"></div>
-            <div class="po-field"><label for="poLoadingPerson">Loading Person *</label><input id="poLoadingPerson" maxlength="150" placeholder="Godown staff"></div>
+            <div class="po-field"><label for="poLoadingManager">Godown Manager (Loading) *</label><select id="poLoadingManager" hidden><option value="">Select Godown Manager</option></select><input id="poLoadingPerson" maxlength="150" placeholder="Godown staff"></div>
             <div class="po-field"><label for="poDriverMobile">Driver Mobile (Required for Driver Portal)</label><input id="poDriverMobile" maxlength="20" inputmode="tel" placeholder="Type / select saved mobile" autocomplete="off" aria-autocomplete="list"></div>
             <div class="po-field"><label for="poTransportName">Transport Name (Optional)</label><input id="poTransportName" maxlength="150"></div>
           </div>
@@ -1532,6 +1534,25 @@ async function loadPoSavedDirectory(){
     poErpDirectoryError="";
   }
   rebuildPoDirectory();
+  await loadGodownManagers();
+}
+// Godown Manager (WAREHOUSE login) who loads the vehicle (lwb_loading_workflow_setup.sql).
+// Before that SQL is run the old free-text Loading Person box stays.
+let poGodownManagers=null;
+async function loadGodownManagers(){
+  const r=await db.rpc("lwb_godown_managers");
+  poGodownManagers=r.error?null:(r.data||[]);
+  const sel=document.getElementById("poLoadingManager"),txt=document.getElementById("poLoadingPerson");
+  sel.hidden=!poGodownManagers;txt.hidden=!!poGodownManagers;
+  if(!poGodownManagers)return;
+  sel.replaceChildren(new Option("Select Godown Manager",""),...poGodownManagers.map(m=>new Option(m.full_name+(m.mobile?" · "+m.mobile:""),m.user_id)));
+}
+function setPoGodownManager(a){
+  const sel=document.getElementById("poLoadingManager");
+  if(!poGodownManagers)return;
+  const id=a.loading_manager_id||"";
+  if(id&&![...sel.options].some(o=>o.value===id))sel.append(new Option((a.loading_person||"Godown Manager")+" (inactive)",id));
+  sel.value=id;
 }
 function poAddSavedAssignment(a){
   poRawAssignments.unshift({...a,assigned_at:new Date().toISOString()});
@@ -1699,14 +1720,14 @@ async function revealApprovalActions(){
   const locked=poAllocationLocked(order);
   document.getElementById("poSaveBtn").hidden=locked;
   document.getElementById("poSaveBtn").disabled=true;
-  ["poDriverName","poVehicleNo","poLoadingPerson","poDriverMobile","poTransportName"].forEach(field=>{
+  ["poDriverName","poVehicleNo","poLoadingPerson","poLoadingManager","poDriverMobile","poTransportName"].forEach(field=>{
     document.getElementById(field).value="";
     document.getElementById(field).disabled=locked;
   });
   allocationStatus("Loading assigned transport...");
   try{
     const result=await db.from("dispatch_assignments")
-      .select("id,driver_name,vehicle_no,loading_person,driver_mobile,transporter_name")
+      .select("*")
       .eq("order_id",id).maybeSingle();
     if(result.error)throw result.error;
     if(!selectedOrder||selectedOrder.id!==id)return;
@@ -1717,9 +1738,10 @@ async function revealApprovalActions(){
       ["poLoadingPerson",a.loading_person],["poDriverMobile",a.driver_mobile],
       ["poTransportName",a.transporter_name]
     ])document.getElementById(pair[0]).value=pair[1]||"";
+    setPoGodownManager(a);
     allocationStatus(locked?"Loading has started. Allocation is locked.":a.id
       ?"Driver & Vehicle already assigned. Edit and Save before Loading if required."
-      :"Order Approved. Assign Driver, Vehicle and Loading Person; then Print.");
+      :"Order Approved. Assign Driver, Vehicle and Godown Manager; then Print.");
   }catch(e){allocationStatus("Could not load transport assignment: "+e.message,true);}
   finally{
     if(selectedOrder&&selectedOrder.id===id){
@@ -1739,8 +1761,13 @@ async function saveApprovedTransport(){
     transporter_name:poValue("poTransportName")||null,
     assigned_by:currentUser.id
   };
+  if(poGodownManagers){
+    const sel=document.getElementById("poLoadingManager"),m=poGodownManagers.find(x=>x.user_id===sel.value);
+    payload.loading_manager_id=sel.value||null;
+    payload.loading_person=m?m.full_name:(sel.value?sel.selectedOptions[0].text.replace(/ \(inactive\)$/,""):"");
+  }
   if(!payload.driver_name||!payload.vehicle_no||!payload.loading_person){
-    allocationStatus("Driver Name, Vehicle Number and Loading Person are required.",true);return;
+    allocationStatus("Driver Name, Vehicle Number and "+(poGodownManagers?"Godown Manager":"Loading Person")+" are required.",true);return;
   }
   if(payload.driver_mobile){
     // Driver Portal matches orders by this exact mobile, so reject typos.
@@ -1776,7 +1803,7 @@ async function saveApprovedTransport(){
       selectedOrder.status="transport_allocated";
       document.getElementById("dStatus").textContent=selectedOrder.status;
     }
-    allocationStatus("Saved! Driver: "+payload.driver_name+", Vehicle: "+payload.vehicle_no+". Order ready for Dispatch Team.");
+    allocationStatus("Saved! Driver: "+payload.driver_name+", Vehicle: "+payload.vehicle_no+", Godown Manager: "+payload.loading_person+". Both are notified.");
     await loadOrders();
   }catch(e){allocationStatus("Assignment failed: "+e.message,true);}
   finally{transportSaving=false;if(selectedOrder&&selectedOrder.id===id)btn.disabled=poAllocationLocked(selectedOrder);}

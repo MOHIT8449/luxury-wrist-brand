@@ -441,12 +441,21 @@ async function openFromLink(){
  await openOrder(id);
  if(q.get("tab")&&selected?.order_id===id)showTab(q.get("tab"));
 }
+// Driver: an order stays until 12 hours after its delivery report (lwb_loading_workflow_setup.sql).
+// Old full list only until that SQL is run.
+async function listDeliveryOrders(){
+ const r=await db.rpc("lwb_driver_my_delivery_orders");
+ if(!r.error||!/lwb_driver_my_delivery_orders|function|schema cache/i.test(r.error.message||""))return r;
+ const old=await db.rpc("lwb_driver_list_delivery_orders");
+ if(old.error||role!=="driver")return old;
+ return {...old,data:(old.data||[]).filter(x=>!x.report||Date.now()-new Date(x.report.reported_at)<12*36e5)};
+}
 async function refresh(){
  if(busy||!user)return;
  $("refresh").disabled=true;
  try{
   const [loaded,assigned]=await Promise.all([
-   db.rpc("lwb_driver_list_delivery_orders"),
+   listDeliveryOrders(),
    role==="driver"?db.rpc("lwb_driver_list_assigned_orders"):Promise.resolve({data:[],error:null})
   ]);
   if(loaded.error)throw loaded.error;
@@ -499,7 +508,9 @@ async function loadNotifications(){
    .eq("user_id",user.id).order("created_at",{ascending:false}).limit(40);
  if(error){$("notifList").textContent="Notifications unavailable: "+error.message;$("notifList").className="notif-error";return}
  $("notifList").className="";
- notificationRows=data||[];
+ // Driver sees no history: last 12 hours, or orders still in his list.
+ const live=new Set(records.map(r=>r.order_id));
+ notificationRows=(data||[]).filter(n=>role!=="driver"||Date.now()-new Date(n.created_at)<12*36e5||live.has(n.order_id));
  const unread=notificationRows.filter(n=>!n.is_read).length;
  $("notifCount").textContent=unread>99?"99+":unread;
  $("notifCount").style.display=unread?"inline-block":"none";

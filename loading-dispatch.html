@@ -83,6 +83,7 @@ header,main,.overlay{display:none!important}
 <div class="toolbar">
 <input id="search" data-party-list placeholder="Search order no, customer, driver...">
 <select id="filter" style="max-width:220px">
+<option value="mine" id="mineOption" hidden>My Vehicles to Load</option>
 <option value="active">Pending / Loading</option>
 <option value="all">All Orders</option>
 <option value="loaded">Loaded Only</option>
@@ -90,8 +91,8 @@ header,main,.overlay{display:none!important}
 </div>
 <div class="tablewrap">
 <table>
-<thead><tr><th>ORDER NO</th><th>DATE</th><th>CUSTOMER</th><th>DRIVER</th><th>VEHICLE</th><th>QTY</th><th>STATUS</th><th>ACTION</th></tr></thead>
-<tbody id="rows"><tr><td colspan="8">Loading...</td></tr></tbody>
+<thead><tr><th>ORDER NO</th><th>DATE</th><th>CUSTOMER</th><th>DRIVER</th><th>VEHICLE</th><th>GODOWN MANAGER</th><th>QTY</th><th>STATUS</th><th>ACTION</th></tr></thead>
+<tbody id="rows"><tr><td colspan="9">Loading...</td></tr></tbody>
 </table>
 </div>
 </div>
@@ -113,6 +114,7 @@ header,main,.overlay{display:none!important}
 </table>
 </div>
 <p class="note">Loaded quantity must not exceed approved quantity. Enter 0 for an item not loaded.</p>
+<p class="note" id="assignedNote" hidden></p>
 <div class="panel">
 <label for="loadingRemarks">Loading Remarks</label>
 <textarea id="loadingRemarks" placeholder="Shortage, damage, or other loading remarks"></textarea>
@@ -120,7 +122,7 @@ header,main,.overlay{display:none!important}
 <div class="actions">
 <button class="secondary" id="printBtn">Print Delivery Challan</button>
 <button id="startBtn">Start Loading</button>
-<button class="green" id="completeBtn">Confirm Loading Completed</button>
+<button class="green" id="completeBtn">✅ Confirm Vehicle Loaded</button>
 </div>
 </div>
 </div>
@@ -135,7 +137,7 @@ const SUPABASE_URL='https://txkbhadzdbxpieunfvox.supabase.co';
 const SUPABASE_PUBLISHABLE_KEY='sb_publishable_W4I3Q5ODf0g17sq5uDml2Q_sLolXYEk';
 const db=supabase.createClient(SUPABASE_URL,SUPABASE_PUBLISHABLE_KEY);
 
-let user=null,orders=[],assignments=[],selected=null,items=[],saving=false;
+let user=null,role='',orders=[],assignments=[],selected=null,items=[],saving=false;
 
 const $=id=>document.getElementById(id);
 const safe=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -168,6 +170,9 @@ message('Access denied: warehouse or admin role required.',true);
 return;
 }
 $('username').textContent=profile.data.full_name||user.email;
+role=String(profile.data.role||'').trim().toLowerCase();
+// Godown Manager sees the vehicles assigned to him first.
+if(role==='warehouse'){$('mineOption').hidden=false;$('filter').value='mine';}
 window.LWBOperationsNotifications?.init({db,user,mount:document.querySelector("header > div:last-child")});
 await load();
 }catch(e){message(e.message,true);}
@@ -191,6 +196,8 @@ render();
 }
 
 function assignment(id){return assignments.find(a=>a.order_id===id)||{};}
+// Only the Godown Manager chosen by the Sales Head loads the vehicle (Sales Head / Admin always can).
+function notMine(a){return role==='warehouse'&&a.loading_manager_id&&a.loading_manager_id!==user.id;}
 
 function render(){
 $('pendingCount').textContent=orders.filter(o=>o.status==='transport_allocated').length;
@@ -199,9 +206,10 @@ $('loadedCount').textContent=orders.filter(o=>o.status==='loaded').length;
 const q=$('search').value.toLowerCase().trim();
 const filter=$('filter').value;
 const visible=orders.filter(o=>{
-if(filter==='active'&&o.status==='loaded')return false;
-if(filter==='loaded'&&o.status!=='loaded')return false;
 const a=assignment(o.id);
+if((filter==='active'||filter==='mine')&&o.status==='loaded')return false;
+if(filter==='loaded'&&o.status!=='loaded')return false;
+if(filter==='mine'&&a.loading_manager_id&&a.loading_manager_id!==user.id)return false;
 return [o.order_no,o.customer_name,a.driver_name,a.vehicle_no].some(v=>String(v||'').toLowerCase().includes(q));
 });
 $('rows').innerHTML=visible.length?visible.map(o=>{
@@ -212,11 +220,12 @@ return `<tr>
 <td>${safe(o.customer_name)}</td>
 <td>${safe(a.driver_name||'-')}</td>
 <td>${safe(a.vehicle_no||'-')}</td>
+<td>${safe(a.loading_person||'-')}</td>
 <td>${fmt(o.total_qty)}</td>
-<td><span class="badge">${safe(o.status.replaceAll('_',' ').toUpperCase())}</span></td>
+<td><span class="badge">${safe(o.status==='loaded'?'VEHICLE LOADED':o.status.replaceAll('_',' ').toUpperCase())}</span></td>
 <td><button data-id="${safe(o.id)}">${o.status==='loaded'?'View / Print':'Verify Loading'}</button></td>
 </tr>`;
-}).join(''):'<tr><td colspan="8">No orders found.</td></tr>';
+}).join(''):'<tr><td colspan="9">No orders found.</td></tr>';
 }
 
 async function openOrder(id){
@@ -235,7 +244,7 @@ const details=[
 ['SALES PERSON',selected.sales_person],
 ['DRIVER',a.driver_name],
 ['VEHICLE',a.vehicle_no],
-['LOADING PERSON',a.loading_person],
+['GODOWN MANAGER',a.loading_person],
 ['TRANSPORTER',a.transporter_name]
 ];
 $('details').innerHTML=details.map(([k,v])=>`<div class="detail"><small>${safe(k)}</small><strong>${safe(v||'-')}</strong></div>`).join('');
@@ -253,8 +262,11 @@ return `<tr>
 }).join('');
 $('loadingRemarks').value=a.remarks||'';
 $('loadingRemarks').disabled=selected.status==='loaded';
-$('startBtn').style.display=selected.status==='transport_allocated'?'':'none';
-$('completeBtn').style.display=selected.status==='loaded'?'none':'';
+const blocked=notMine(a);
+$('startBtn').style.display=selected.status==='transport_allocated'&&!blocked?'':'none';
+$('completeBtn').style.display=selected.status==='loaded'||blocked?'none':'';
+$('assignedNote').hidden=!blocked;
+$('assignedNote').textContent=blocked?'This vehicle is assigned to '+(a.loading_person||'another Godown Manager')+' for loading. Only that Godown Manager (or the Sales Head) can confirm it.':'';
 $('overlay').style.display='block';
 }catch(e){message(e.message,true);}
 }
@@ -298,7 +310,8 @@ quantitiesToSave=quantities();
 if(!items.length)throw Error('No order items found.');
 if(!quantitiesToSave.some(x=>x.qty>0))throw Error('At least one item must have loaded quantity.');
 }catch(e){alert(e.message);return;}
-if(!await confirm('Confirm actual loading completed for '+selected.order_no+'?'))return;
+if(notMine(assignment(selected.id))){alert('This vehicle is assigned to another Godown Manager.');return;}
+if(!await confirm('Vehicle Loaded: confirm that the quantities above are loaded in vehicle '+(assignment(selected.id).vehicle_no||'')+' for '+selected.order_no+'?\n\nAccounts and the Sales Head will be notified to make the Tally bill.'))return;
 saving=true;
 try{
 const a=assignment(selected.id);
@@ -321,7 +334,7 @@ const {data,error:orderError}=await db.from('orders')
 if(orderError)throw orderError;
 if(!data?.length)throw Error('Order status changed. Refresh orders.');
 $('overlay').style.display='none';
-message('Loading completed for '+selected.order_no+'. Ready for accounts.');
+message('Vehicle loaded for '+selected.order_no+'. Accounts and Sales Head notified for the Tally bill.');
 await load();
 }catch(e){
 message('Loading completion failed: '+e.message+'. Some item updates may already be saved; check before retrying.',true);
