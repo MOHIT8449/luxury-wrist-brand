@@ -434,6 +434,20 @@
     .manager-note-actions span.error {color:#bc2a2a}
     #saveManagerNoteBtn[hidden] {display:none!important}
     #footSaveTransportBtn[hidden],#poSaveBtn[hidden] {display:none!important}
+    /* 🚚 Transport from the list: a small popup with only the transport fields */
+    #poQuickInfo {display:none}
+    #reviewModal.transport-only .modal-card {width:min(620px,100%)}
+    #reviewModal.transport-only .modal-body > :not(#postApprovalPanel) {display:none!important}
+    #reviewModal.transport-only #postApprovalPanel {margin:0;border:0;padding:0;background:none}
+    #reviewModal.transport-only #postApprovalPanel > h4,
+    #reviewModal.transport-only .po-help,
+    #reviewModal.transport-only .po-actions,
+    #reviewModal.transport-only #approveOrderBtn,
+    #reviewModal.transport-only #cancelOrderBtn {display:none!important}
+    #reviewModal.transport-only #poQuickInfo {display:block;background:#f3f7fb;border:1px solid #dbe5ef;border-radius:8px;padding:10px 12px;margin-bottom:14px;font-size:13px;line-height:1.6}
+    #reviewModal.transport-only .po-grid {grid-template-columns:1fr 1fr}
+    #reviewModal.transport-only .po-directory-hint:not(.error) {display:none}
+    @media(max-width:480px){#reviewModal.transport-only .po-grid {grid-template-columns:1fr}}
     .po-actions {display:flex;gap:10px;margin-top:15px;flex-wrap:wrap}
     #poAllocationStatus {font-size:12px;color:#1a613a;margin-top:12px;line-height:1.6}
     #poAllocationStatus.error {color:#bb2929}
@@ -730,6 +744,7 @@
 
         <section id="postApprovalPanel" hidden>
           <h4>✓ PO Approved — Driver / Vehicle &amp; Print</h4>
+          <div id="poQuickInfo"></div>
           <p class="po-help">These options appear only after the PO is approved. Once the driver, vehicle and loading person are saved, the order goes to the Dispatch team.</p>
           <div class="po-grid">
             <div class="po-field"><label for="poDriverName">Driver Name *</label><input id="poDriverName" maxlength="150" placeholder="Type / select saved driver" autocomplete="off" aria-autocomplete="list"></div>
@@ -1332,7 +1347,8 @@ function renderOrders() {
    REVIEW ORDER
 ----------------------------- */
 
-async function reviewOrder(orderId) {
+async function reviewOrder(orderId, transportOnly=false) {
+  document.getElementById("reviewModal").classList.toggle("transport-only",transportOnly);
 
   selectedOrder =
     orders.find(o => o.id === orderId);
@@ -1821,15 +1837,20 @@ async function saveApprovedTransport(){
       document.getElementById("dStatus").textContent=selectedOrder.status;
     }
     allocationStatus("Saved! Driver: "+payload.driver_name+", Vehicle: "+payload.vehicle_no+", Godown Manager: "+payload.loading_person+". Both are notified.");
+    // Small Transport popup: close by itself once saved.
+    if(document.getElementById("reviewModal").classList.contains("transport-only"))setTimeout(()=>{if(selectedOrder&&selectedOrder.id===id)closeModal()},1500);
     await loadOrders();
   }catch(e){allocationStatus("Assignment failed: "+e.message,true);}
   finally{transportSaving=false;if(selectedOrder&&selectedOrder.id===id)btn.disabled=poAllocationLocked(selectedOrder);}
 }
 // List shortcuts next to Review: open the order straight at Transport Allocation, or print it.
 async function openTransportAllocation(id){
-  await reviewOrder(id);
-  const panel=document.getElementById("postApprovalPanel");
-  if(!panel.hidden){panel.scrollIntoView({behavior:"smooth",block:"start"});document.getElementById("poDriverName").focus({preventScroll:true});}
+  const o=orders.find(x=>x.id===id);
+  document.getElementById("poQuickInfo").innerHTML=o?"<b>"+escapeHtml(o.customer_name||"-")+"</b><br>"+
+    escapeHtml(formatNumber(o.total_qty))+" CS · "+escapeHtml(formatNumber(o.total_weight))+" KG · "+escapeHtml(formatMoney(o.total_amount)):"";
+  await reviewOrder(id,true);
+  document.getElementById("modalOrderNo").textContent="🚚 Transport — "+(o?.order_no||"");
+  if(!document.getElementById("postApprovalPanel").hidden)document.getElementById("poDriverName").focus();
 }
 async function printFromList(id){
   await reviewOrder(id);
