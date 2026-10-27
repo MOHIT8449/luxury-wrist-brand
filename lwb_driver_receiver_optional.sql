@@ -9,11 +9,13 @@
 BEGIN;
 
 -- 1. Table rule: Delivered / Partial need only the POD photo.
+-- NOT VALID: old reports saved before this rule (some without a POD photo) are kept
+-- as they are; the rule applies to new and changed reports only.
 ALTER TABLE public.lwb_delivery_reports DROP CONSTRAINT IF EXISTS lwb_delivery_proof_required;
 ALTER TABLE public.lwb_delivery_reports ADD CONSTRAINT lwb_delivery_proof_required CHECK(
   delivery_status = 'NOT_DELIVERED'
   OR nullif(btrim(coalesce(pod_path,'')),'') IS NOT NULL
-);
+) NOT VALID;
 
 -- 2. Submit function: same function, only the receiver check is removed.
 DO $do$
