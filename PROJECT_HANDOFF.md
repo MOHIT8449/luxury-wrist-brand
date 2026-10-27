@@ -256,7 +256,8 @@
   `lwb_save_tally_bill` (wraps lwb_save_tally_invoice + amount), `lwb_save_tally_note`, `lwb_cancel_tally_note`,
   `lwb_tally_bill_status(p_days)` (Accounts / Admin) and `lwb_cashbook_invoice_due(p_key)` (Cashbook). Both read the internal `lwb_tally_bill_rows`.
 - Due = Tally bill amount − credit notes + debit notes − money drivers reported (rejected payments left out). No Tally bill amount yet: ERP net (loaded × rate − approved returns).
-- accounts-invoice.html: tabs Tally bill pending (inline invoice no. + date + amount + Submit; loaded POs, or dispatched / delivered in the last 30 days) /
+- accounts-invoice.html: every row shows the driver's delivery report (Delivered / Part delivered / Not delivered / On the way); the order status stays "loaded" after delivery.
+  Tabs Tally bill pending (inline invoice no. + date + amount + Submit; loaded POs, or dispatched / delivered in the last 30 days) /
   Money to collect / Credit note pending (approved return not yet covered by credit notes) / All. The PO modal keeps ERP bill create + print and lists the notes.
 - tally-note.js: shared credit / debit note popup. Driver Collections opens it after Verify when a return still needs a credit note (or a delivery with a return is short);
   Driver Returns opens it for Admin after Approve.
