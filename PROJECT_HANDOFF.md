@@ -246,6 +246,6 @@
 - 🚚 Transport button (2026-10-27): opens the review modal in `transport-only` mode (CSS class on #reviewModal): a 620px popup with party / CS / KG / ₹ line, the Driver / Vehicle / Godown Manager / Mobile / Transport fields, and Close + Save in the footer; it closes 1.5 s after a successful save. Review / View still open the full modal.
 
 ## PO Print = Delivery Challan format (2026-10-27)
-- 🖨 Print on PO Approval now prints a "DELIVERY CHALLAN / Order Bill" on A4, matching the format Mohit shared: Order No, Customer, Transportation, Date & Time, Sales Person, Total Items; a line with Loading Person (Godown Manager), Driver (mobile) and Vehicle No; SKU table with Qty, Rate, Amount, Unit Wt, Total Wt; totals with KG; Amount in Words; manager note if any.
+- 🖨 Print on PO Approval now prints a "DELIVERY CHALLAN / Order Bill" on A4, matching the format Mohit shared: Order No, Customer, Transportation, Date & Time, Sales Person, Total Items; a line with Godown Manager, Driver (mobile) and Vehicle No; SKU table with Qty, Rate, Amount, Unit Wt, Total Wt; totals with KG; Amount in Words; manager note if any.
 - Footer still says it is not a GST invoice; the Tally bill is separate.
 - Update: the challan now prints A4 **landscape**. If a PO has no saved Driver / Vehicle / Godown Manager, Print asks first: "🚚 Assign now" opens the Transport popup, "Print without them" prints with "—".
