@@ -61,6 +61,8 @@ th,td{padding:12px;border-bottom:1px solid #e6ebf1}
 td .sub{display:block;font-size:11px;color:var(--muted);font-weight:normal}
 td.n,th.n{text-align:right;white-space:nowrap}
 .due{color:#a02c2c;font-weight:bold}
+.dl{display:inline-block;margin-top:4px;font-size:11px;font-weight:bold;padding:3px 8px;border-radius:12px;white-space:nowrap}
+.dl.ok{background:#e3f2e8;color:#16603b}.dl.part{background:#fff1dc;color:#9a5b0b}.dl.no{background:#fde8e7;color:#a02c2c}.dl.way{background:#e6effc;color:#1d4f9a}
 .notes-list{margin:10px 0 0;padding:0;list-style:none;font-size:13px}
 .notes-list li{padding:6px 0;border-top:1px solid #dfe7f3;display:flex;justify-content:space-between;gap:10px;align-items:center}
 .notes-list li.x{color:#99a5b5;text-decoration:line-through}
@@ -257,12 +259,19 @@ function rowOf(o){
 // Still loaded, or left in the last 30 days (older delivered POs from before this screen are left out here;
 // Tally Bill Check still lists every one of them against the Sales Register).
 const recent=r=>["loaded","invoiced"].includes(val(r.o.status).toLowerCase())||(r.f?.dispatch_date||r.o.order_date||"")>=new Date(Date.now()-30*864e5).toISOString().slice(0,10);
+// Driver's delivery report (one per PO). The order status stays "loaded" after delivery, so show this instead.
+const DELIVERY={DELIVERED:["ok","✓ Delivered by driver"],PARTIAL:["part","Part delivered (return)"],NOT_DELIVERED:["no","✗ Not delivered"]};
+function delivery(r){
+ if(!r.f)return "";
+ const d=DELIVERY[val(r.f.delivery).toUpperCase()]||["way","On the way / not reported"];
+ return '<br><span class="dl '+d[0]+'">'+d[1]+'</span>';
+}
 const inTab=(r,k)=>k==="all"||(k==="bill"&&!r.inv&&recent(r))||(k==="due"&&r.inv&&r.due>1)||(k==="cn"&&r.cn>0.5);
 const HEAD={
- bill:["PO / PARTY","LOADED","ERP AMOUNT","TALLY INVOICE NO. · DATE · AMOUNT",""],
- due:["PO / PARTY","TALLY BILL","n:BILL","n:RETURN / NOTES","n:DRIVER GOT","n:DUE",""],
- cn:["PO / PARTY","TALLY BILL","n:RETURN APPROVED","n:CREDIT NOTE PENDING",""],
- all:["PO / PARTY","DATE","TALLY BILL","n:BILL","n:DUE","STATUS",""]
+ bill:["PO / PARTY / DELIVERY","LOADED","ERP AMOUNT","TALLY INVOICE NO. · DATE · AMOUNT",""],
+ due:["PO / PARTY / DELIVERY","TALLY BILL","n:BILL","n:RETURN / NOTES","n:DRIVER GOT","n:DUE",""],
+ cn:["PO / PARTY / DELIVERY","TALLY BILL","n:RETURN APPROVED","n:CREDIT NOTE PENDING",""],
+ all:["PO / PARTY / DELIVERY","DATE","TALLY BILL","n:BILL","n:DUE","STATUS",""]
 };
 function cellHead(){return HEAD[tab].map(h=>h.startsWith("n:")?'<th class="n">'+h.slice(2)+'</th>':'<th>'+h+'</th>').join("")}
 function render(){
@@ -280,14 +289,14 @@ function render(){
  if(!list.length){const td=body.insertRow().insertCell();td.colSpan=HEAD[tab].length;
   td.textContent=tab==="bill"?"No loaded vehicle is waiting for a Tally bill.":tab==="due"?"No money due on Tally bills.":tab==="cn"?"No approved return is waiting for a credit note.":"No matching loaded orders.";return}
  const td=(tr,html,cls)=>{const c=tr.insertCell();c.innerHTML=html;if(cls)c.className=cls;return c};
- const who=r=>'<b>'+escapeHtml(r.o.order_no)+'</b><span class="sub">'+escapeHtml(r.o.customer_name)+'</span>';
+ const who=r=>'<b>'+escapeHtml(r.o.order_no)+'</b><span class="sub">'+escapeHtml(r.o.customer_name)+'</span>'+delivery(r);
  const inv=r=>r.inv?'<b>'+escapeHtml(r.inv)+'</b><span class="sub">'+date(r.t?.invoice_date||r.f?.invoice_date)+'</span>':'<span class="tag pending">Pending</span>';
  const btn=(cell,text,fn,cls)=>{const b=document.createElement("button");b.type="button";b.textContent=text;if(cls)b.className=cls;b.onclick=fn;cell.appendChild(b);return b};
  for(const r of list){
   const tr=body.insertRow();
   td(tr,who(r));
   if(tab==="bill"){
-   td(tr,date(r.f?.dispatch_date||r.o.order_date)+'<span class="sub">'+escapeHtml(val(r.o.status).toUpperCase())+'</span>');
+   td(tr,date(r.f?.dispatch_date||r.o.order_date));
    td(tr,r.erp!=null?cash(r.erp):"—","n money");
    const c=td(tr,'<div class="inl"><input class="no" maxlength="200" placeholder="Invoice no." aria-label="Tally invoice no. for '+escapeHtml(r.o.order_no)+'"><input class="dt" type="date" aria-label="Invoice date"><input class="am" type="number" min="0.01" step="0.01" inputmode="decimal" placeholder="Amount ₹" aria-label="Tally bill amount"></div>');
    const box=c.firstChild;box.querySelector(".dt").value=todayIST();
@@ -391,7 +400,8 @@ async function openOrder(id){
  $("orderInfo").innerHTML=
   detail("PO Number",order.order_no)+detail("Party",order.customer_name)+
   detail("PO Date",date(order.order_date))+detail("Transport",order.transportation)+
-  detail("Order Status",val(order.status).toUpperCase());
+  detail("Order Status",val(order.status).toUpperCase())+
+  detail("Driver Delivery",flowOf(order.id)?(DELIVERY[val(flowOf(order.id).delivery).toUpperCase()]||["","On the way / not reported"])[1]:"—");
  $("itemRows").innerHTML='<tr><td colspan="5">Loading SKU Details...</td></tr>';
  $("createBill").disabled=true;$("createBill").hidden=false;$("printBill").hidden=true;
  $("billState").textContent="Checking Actual Loaded Qty...";$("billHelp").textContent="Please wait...";
