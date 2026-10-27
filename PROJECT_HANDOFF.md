@@ -264,3 +264,4 @@
 - cashbook.html: "Money due (Tally bills)" button in a book (Cash In pre-filled with the due amount); Driver cash list shows the Tally bill no. and due.
 - tally-check.html: first matches the bill no. Accounts entered against the register (amount must equal the amount entered), then the old party / date / amount match.
   New result "Bill no. entered, not in Sales Register" (query kind no_tally). Rows matched by party / date with a different bill no. are flagged.
+- Receiver name optional (27 Oct 2026, Mohit): `lwb_driver_receiver_optional.sql` relaxes `lwb_delivery_proof_required` to POD photo only and removes the receiver check from `lwb_driver_submit_delivery` (string replace on its current definition). driver-delivery.html shows "(optional)". POD photo is still required for Delivered / Partial.
