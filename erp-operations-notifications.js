@@ -38,26 +38,66 @@
   if(s<7*86400)return Math.floor(s/86400)+" d";
   return new Date(v).toLocaleDateString("en-IN",{day:"2-digit",month:"short"});
  }
+ // Page each notification opens. {o} = the notification's order id. The first page this login can open wins.
+ const ROUTES=[
+  [/^DELIVERY_RETURN_(PENDING|OPERATIONS)$/,["driver-returns.html?order={o}"]],
+  [/^DELIVERY_RETURN_/,["driver-delivery.html?order={o}&tab=return"]],
+  [/^LOADING_ASSIGNMENT_DRIVER$/,["driver-delivery.html?order={o}"]],
+  [/^LOADING_ASSIGNMENT_/,["loading-dispatch.html","transport-allocation.html"]],
+  [/^GODOWN_/,["godown-report.html"]],
+  [/^MARKET_/,["market-report.html"]],
+  [/^SALES_PLAN$/,["my-sales.html","sales-team.html"]],
+  [/^ORDER_/,["my-sales.html#orders","warehouse-orders.html","driver-delivery.html?order={o}","loading-dispatch.html"]]
+ ];
+ function route(n,pages){
+  const t=String(n.notification_type||"").toUpperCase(),hit=ROUTES.find(r=>r[0].test(t));
+  if(!hit)return "";
+  const base=h=>h.split(/[?#]/)[0];
+  const href=(pages&&pages.length?hit[1].find(h=>pages.includes(base(h))):hit[1][0])||"";
+  return n.order_id?href.replace("{o}",encodeURIComponent(n.order_id)):href.split("?")[0];
+ }
  // Focus messages and outside-market reports also pop up once per device.
  const POPUP={ANNOUNCEMENT:["📢 Focus message","OK",""],MARKET_REPORT:["🚩 Outside market stock","Open report","market-report.html"]};
+ // Driver returns waiting for office approval are urgent: they pop up on every page
+ // (again 15 min after "Later") until approved / rejected or opened from the bell.
+ const URGENT=/^DELIVERY_RETURN_(PENDING|OPERATIONS)$/,SNOOZE=15*60e3;
  let popping=false;
- async function popup(rows){
-  if(popping||typeof window.confirm!=="function")return;
-  let seen=[];try{seen=JSON.parse(localStorage.getItem("lwbPopped")||"[]")}catch(e){}
-  const fresh=rows.filter(n=>!n.is_read&&POPUP[String(n.notification_type||"").toUpperCase()]&&!seen.includes(n.id)&&Date.now()-new Date(n.created_at)<2*864e5).slice(0,3);
-  if(!fresh.length)return;
-  popping=true;
-  seen=seen.concat(fresh.map(n=>n.id)).slice(-200);
-  try{localStorage.setItem("lwbPopped",JSON.stringify(seen))}catch(e){}
-  for(const n of fresh.reverse()){
-   const [title,ok,href]=POPUP[String(n.notification_type).toUpperCase()];
-   const text=(n.title&&n.notification_type==="ANNOUNCEMENT"?n.title+"\n\n":"")+(n.message||"");
-   const go=href?await window.confirm(text,{title,ok,cancel:"Later"}):(await window.alert(text,{title,kind:"info"}),false);
-   if(go&&!location.pathname.endsWith(href)){location.href=href;break}
-  }
-  popping=false;
+ async function urgentPopup(rows,pages){
+  if(location.pathname.endsWith("driver-returns.html"))return false;
+  const due=rows.filter(n=>!n.is_read&&URGENT.test(String(n.notification_type||"").toUpperCase())&&Date.now()-new Date(n.created_at)<3*864e5);
+  const href=due.length?route(due[0],pages):"";
+  if(!href)return false;
+  let snoozed=0;try{snoozed=Number(localStorage.getItem("lwbReturnSnooze"))||0}catch(e){}
+  if(Date.now()-snoozed<SNOOZE)return false;
+  const lines=due.slice(0,5).map(n=>{const s=summary(n).text.replace(/ · (Verify|Warehouse check)$/,"").replace(/^Return · /,"");return "• "+s});
+  if(due.length>5)lines.push("… and "+(due.length-5)+" more");
+  const orders=new Set(due.map(n=>n.order_id));
+  const text=(due.length===1?"A driver return is":due.length+" driver returns are")+" waiting for your check:\n\n"+lines.join("\n")+
+   "\n\nOnly approved returns are cut from the bill. Until then the driver collects the full amount.";
+  try{localStorage.setItem("lwbReturnSnooze",String(Date.now()))}catch(e){}
+  const go=await window.confirm(text,{title:"↩ Driver return waiting",ok:"Verify now",cancel:"Later"});
+  if(go){location.href=orders.size===1?href:href.split("?")[0];return true}
+  return false;
  }
- function init({db,user,mount}){
+ async function popup(rows,pages){
+  if(popping||typeof window.confirm!=="function")return;
+  popping=true;
+  try{
+   if(await urgentPopup(rows,pages))return;
+   let seen=[];try{seen=JSON.parse(localStorage.getItem("lwbPopped")||"[]")}catch(e){}
+   const fresh=rows.filter(n=>!n.is_read&&POPUP[String(n.notification_type||"").toUpperCase()]&&!seen.includes(n.id)&&Date.now()-new Date(n.created_at)<2*864e5).slice(0,3);
+   if(!fresh.length)return;
+   seen=seen.concat(fresh.map(n=>n.id)).slice(-200);
+   try{localStorage.setItem("lwbPopped",JSON.stringify(seen))}catch(e){}
+   for(const n of fresh.reverse()){
+    const [title,ok,href]=POPUP[String(n.notification_type).toUpperCase()];
+    const text=(n.title&&n.notification_type==="ANNOUNCEMENT"?n.title+"\n\n":"")+(n.message||"");
+    const go=href?await window.confirm(text,{title,ok,cancel:"Later"}):(await window.alert(text,{title,kind:"info"}),false);
+    if(go&&!location.pathname.endsWith(href)){location.href=href;break}
+   }
+  }finally{popping=false}
+ }
+ function init({db,user,mount,pages}){
   if(!db||!user?.id||!mount)return;
   // One bell per page. If a page put it in its old (now hidden) header, move it to the ERP top bar.
   const old=document.getElementById("lwbOpsBell");
@@ -77,6 +117,8 @@
    ".lwb-op-sum{flex:1;min-width:0;font-weight:700;font-size:13.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}",
    ".lwb-op-msg:not(.unread) .lwb-op-sum{font-weight:400;color:#51657a}",
    ".lwb-op-time{flex:0 0 auto;color:#71849a;font-size:12px}",
+   ".lwb-op-go{flex:0 0 auto;color:#164679;font-size:18px;line-height:1}",
+   ".lwb-op-row.link:hover{background:#eef5fc}",
    ".lwb-op-panel button.lwb-op-tick{padding:3px 7px;font-size:12px}",
    ".lwb-op-error{color:#ac2828!important}"
   ].join("");
@@ -99,15 +141,23 @@
    const rows=data||[],unread=rows.filter(n=>!n.is_read).length;
    count.textContent=unread>99?"99+":String(unread);count.style.display=unread?"inline-block":"none";
    list.replaceChildren();
-   popup(rows);
+   popup(rows,pages);
    if(!rows.length){list.append(el("p",null,"No notifications yet."));return}
    allRead.hidden=!unread;
    for(const n of rows){
     const box=el("div","lwb-op-msg"+(n.is_read?"":" unread")),sum=summary(n);
-    const row=el("div","lwb-op-row");row.title="Click to view details";
+    const href=route(n,pages),row=el("div","lwb-op-row"+(href?" link":""));
+    row.title=href?"Open":"Click to view details";
     row.append(el("span","lwb-op-ic",sum.icon),el("span","lwb-op-sum",sum.text),el("span","lwb-op-time",ago(n.created_at)));
+    if(href)row.append(el("span","lwb-op-go","›"));
     const full=el("p",null,(n.title?n.title+": ":"")+(n.message||""));full.hidden=true;
-    row.addEventListener("click",e=>{if(e.target.closest("button"))return;full.hidden=!full.hidden});
+    // Click opens the page of this notification (and marks it read); others show the full text.
+    row.addEventListener("click",async e=>{
+     if(e.target.closest("button"))return;
+     if(!href){full.hidden=!full.hidden;return}
+     if(!n.is_read)await db.from("erp_notifications").update({is_read:true}).eq("id",n.id).eq("user_id",user.id);
+     location.href=href;
+    });
     if(!n.is_read){
      const read=el("button","lwb-op-tick","✓");read.type="button";read.title="Mark as read";
      read.addEventListener("click",async()=>{

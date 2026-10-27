@@ -306,7 +306,7 @@
     // Driver page has its own bottom bar and Submit bar; it needs the same keyboard handling.
     if(role==="driver")watchKeyboard();
     watchSuccess();
-    bell(top);
+    bell(top,role);
     refreshAccess().then(changed=>{
       if(!changed)return;
       if(blocked(role,page,hiddenPages()))return;
@@ -376,13 +376,13 @@
   }
 
   // 🔔 ERP notifications on every page, for every logged-in role (Driver too).
-  async function bell(top){
+  async function bell(top,role){
     try{
       if(!window.supabase)return;
       const c=window.__lwbBellClient||(window.__lwbBellClient=window.supabase.createClient(URL_,KEY_));
       const {data}=await c.auth.getSession();const user=data&&data.session&&data.session.user;if(!user)return;
       if(!window.LWBOperationsNotifications)await new Promise((ok,bad)=>{const s=document.createElement("script");s.src="erp-operations-notifications.js";s.onload=ok;s.onerror=bad;document.head.appendChild(s)});
-      window.LWBOperationsNotifications.init({db:c,user,mount:top.querySelector(".erp-user")});
+      window.LWBOperationsNotifications.init({db:c,user,mount:top.querySelector(".erp-user"),pages:menuForMe(role).flatMap(g=>g.items.map(i=>i.h.split("#")[0]))});
     }catch(e){}
   }
 
