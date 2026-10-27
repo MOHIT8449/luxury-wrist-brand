@@ -111,6 +111,8 @@ th{font-size:11px;text-align:left;background:#e9f0f9}th,td{padding:11px 10px;bor
 }
 .notif-wrap{position:relative}.notif-bell{position:relative}.notif-count{display:none;position:absolute;top:-7px;right:-5px;min-width:19px;padding:1px 5px;border-radius:12px;background:#d63b35;color:white;font-size:11px;text-align:center}.notif-panel{position:absolute;right:0;top:calc(100% + 9px);width:min(370px,calc(100vw - 28px));max-height:380px;overflow:auto;background:white;color:#172c45;border:1px solid #cbd7e5;box-shadow:0 12px 35px #10243b40;border-radius:10px;z-index:45;padding:12px}.notif-panel[hidden]{display:none}.notif-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}.notif-item{border-top:1px solid #e3eaf3;padding:11px 2px}.notif-item.unread{background:#eef5ff}.notif-item p{font-size:12px;overflow-wrap:anywhere}.notif-actions{display:flex;gap:7px;margin-top:7px}.notif-actions button{font-size:11px;padding:6px 9px}.notif-error{color:#a52626;font-size:12px}
 .return-highlight{background:#ffca45!important;color:#4b3000!important;border:2px solid #b47a12!important;border-radius:8px!important;font-weight:800!important;box-shadow:0 0 0 3px #fff0bf!important;letter-spacing:.2px;white-space:nowrap}
+.pay-highlight{background:#e7f6ec!important;color:#0f5a2c!important;border:2px solid #1f8a4c!important;border-radius:8px!important;font-weight:800!important;white-space:nowrap}
+.pay-highlight:hover,.pay-highlight:focus-visible{background:#cdeed8!important;outline:2px solid #0f5a2c;outline-offset:1px}
 .return-highlight:hover,.return-highlight:focus-visible{background:#ffdf76!important;outline:2px solid #734e00;outline-offset:1px}
 .return-feature{border:1px solid #bfd3e8;border-radius:10px;padding:14px;margin:15px 0;background:#f8fbff}.return-summary{margin:12px 0;display:flex;gap:10px;flex-wrap:wrap}.return-summary span{background:white;border:1px solid #d9e5f0;border-radius:6px;padding:8px 10px}.return-summary b{display:block;font-size:17px}.return-row{display:grid;grid-template-columns:minmax(180px,2fr) 75px 75px 100px 115px 100px auto;align-items:end;gap:7px;padding:10px 0;border-top:1px solid #dce5ef}.return-row label{font-size:11px;font-weight:700}.return-row label input,.return-row label select{margin-top:3px;padding:8px 5px}.return-row .line-total{font-weight:700;padding-bottom:9px;white-space:nowrap}.return-row button{padding:8px;background:#a44242}.return-note{font-size:12px;color:#526c84}.return-error{color:#a52626;white-space:pre-wrap}.return-ok{color:#16663b;white-space:pre-wrap}@media(max-width:850px){.return-row{grid-template-columns:repeat(2,minmax(0,1fr))}.return-row label:first-child{grid-column:span 2}}
 /* Submitted returns on the order */
@@ -571,6 +573,13 @@ function render(){
     ret.type="button";
     ret.onclick=async()=>{await openOrder(r.order_id);if(selected?.order_id===r.order_id)showTab("return")};
     actions.append(ret);
+    if(r.report?.delivery_status!=="NOT_DELIVERED"){
+     const pb=elt("button","💰 Payment","pay-highlight");
+     pb.title="Cash notes • UPI / Google Pay screenshot • Outstanding";
+     pb.type="button";
+     pb.onclick=()=>openPayment(r.order_id);
+     actions.append(pb);
+    }
   }
   card.append(actions);wrap.append(card);
  }
@@ -840,11 +849,24 @@ function notesText(n){
  return Object.entries(n||{}).filter(([,v])=>Number(v)>0).sort((a,b)=>(b[0]==="coins"?-1:Number(b[0]))-(a[0]==="coins"?-1:Number(a[0])))
   .map(([d,v])=>d==="coins"?"coins "+money(v):"₹"+d+" × "+v).join(" · ");
 }
+// Card "💰 Payment" button: opens the order on the Delivery tab, straight at the payment entry.
+let payWanted=null;
+function scrollModalTo(node){
+ const m=document.querySelector(".modal"),tabs=document.querySelector(".tabs");
+ m.scrollTop+=node.getBoundingClientRect().top-(tabs?tabs.getBoundingClientRect().bottom:0)-8;
+}
+async function openPayment(id){
+ payWanted=id;
+ await openOrder(id);
+ if(selected?.order_id!==id){payWanted=null;return}
+ showTab("deliver");
+ if(!selected.report){payWanted=null;scrollModalTo($("payBox"))}
+}
 async function loadPayView(r){
  const box=$("payView");box.hidden=false;box.replaceChildren(elt("p","Loading payment…","mini"));
  const {data,error}=await db.rpc("lwb_driver_order_payment",{p_order_id:r.order_id});
  if(selected?.order_id!==r.order_id)return;
- if(error){box.replaceChildren(elt("p","Payment: "+money(r.report.cash_reported)+" "+(r.report.payment_mode||""))) ;return}
+ if(error){payWanted=null;box.replaceChildren(elt("p","Payment: "+money(r.report.cash_reported)+" "+(r.report.payment_mode||""))) ;return}
  payInfo=data;renderPayView();
 }
 async function renderPayView(){
@@ -863,6 +885,11 @@ async function renderPayView(){
  }
  if(st!=="VERIFIED"){
   const b=elt("button",st==="REJECTED"?"✏️ Correct payment":"✏️ Change payment");b.type="button";b.onclick=openPayForm;box.append(b);
+ }
+ if(payWanted&&payWanted===selected?.order_id){
+  payWanted=null;
+  if(st!=="VERIFIED"){await openPayForm();scrollModalTo($("payForm"))}
+  else scrollModalTo(box);
  }
 }
 async function openPayForm(){
