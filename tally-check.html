@@ -18,7 +18,7 @@
     .tc-bar button,.tc-btn{height:42px;border-radius:6px;padding:0 16px;font-weight:600;font-size:15px;cursor:pointer;border:1px solid var(--erp-line);background:#fff;color:var(--erp-ink)}
     .tc-bar button.main{background:var(--erp-red);border-color:var(--erp-red);color:#fff}
     .tc-btn.sm{height:34px;padding:0 12px;font-size:14px}
-    .tc-kpis{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px;margin-bottom:16px}
+    .tc-kpis{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:12px;margin-bottom:16px}
     .tc-kpi{background:#fff;border:1px solid var(--erp-line);border-radius:8px;padding:14px;border-top:4px solid var(--c,#c8102e);text-align:left;cursor:pointer;font:inherit;color:inherit}
     .tc-kpi[aria-pressed=true]{box-shadow:0 0 0 2px var(--c)}
     .tc-kpi h3{margin:0 0 4px;font-size:14px;color:#4b5763;font-weight:600}
@@ -156,19 +156,32 @@
     }
 
     /* ---------- matching ---------- */
-    let bills=[],orders=[],result=[],show="all";
+    let bills=[],orders=[],result=[],show="all",invoices=new Map();
+    // Tally bill no. as typed by Accounts vs the Sales Register: compare letters and digits only
+    const vkey=v=>norm(v).replace(/ /g,"");
+    const invNos=o=>(o.inv?String(o.inv.invoice_no||"").split(","):[]).map(vkey).filter(Boolean);
     function match(){
       const byParty=new Map();
       const slot=k=>{if(!byParty.has(k))byParty.set(k,{o:[],t:[]});return byParty.get(k)};
-      orders.forEach(o=>slot(norm(o.party)).o.push({...o,used:false}));
-      bills.forEach(b=>{const l=link(b.party);if(l.party===null)return;slot(l.party?norm(l.party):"?"+norm(b.party)).t.push({...b,erp:l.party,used:false})});
+      const allO=orders.map(o=>({...o,inv:invoices.get(o.order_id)||null,used:false})),allT=[];
+      allO.forEach(o=>slot(norm(o.party)).o.push(o));
+      bills.forEach(b=>{const l=link(b.party);if(l.party===null)return;const t={...b,erp:l.party,used:false};allT.push(t);slot(l.party?norm(l.party):"?"+norm(b.party)).t.push(t)});
       const out=[];
-      const row=(kind,os,ts,g)=>{
+      const row=(kind,os,ts,g,byNo)=>{
         const ea=r2(os.reduce((a,x)=>a+x.amount,0)),ta=r2(ts.reduce((a,x)=>a+x.amt,0));
+        const ia=os.length&&os.every(o=>o.inv&&o.inv.amount!=null)?r2(os.reduce((a,o)=>a+Number(o.inv.amount),0)):null;
         out.push({kind,date:(os[0]||ts[0]).dispatch_date||(ts[0]||{}).date,party:os[0]?os[0].party:(ts[0].erp||ts[0].party),tallyName:[...new Set(ts.map(x=>x.party))].join(", "),
-          os,ts,ea,ta,gst:g,diff:r2(ta-ea)});
+          os,ts,ea,ta,ia,gst:g,byNo:!!byNo,diff:r2(ta-(ia!=null?ia:ea))});
         os.forEach(x=>x.used=true);ts.forEach(x=>x.used=true);
       };
+      // 0. Accounts entered the Tally bill no. after loading: find that bill in the register (any party name)
+      for(const o of allO){
+        const nos=invNos(o);if(!nos.length)continue;
+        const ts=allT.filter(t=>!t.used&&t.vno&&nos.includes(vkey(t.vno)));if(!ts.length)continue;
+        const ta=r2(ts.reduce((a,x)=>a+x.amt,0)),ia=o.inv.amount!=null?Number(o.inv.amount):null;
+        const g=SAME(ta,o.amount);
+        row((ia!=null?Math.abs(ta-ia)<=1:g!==null)?"ok":"diff",[o],ts,g,true);
+      }
       // a Tally bill may be dated the dispatch day or the next day
       const near=(o,t)=>t.date===o.dispatch_date||t.date===shift(o.dispatch_date,1);
       for(const [,s] of byParty){
@@ -182,21 +195,22 @@
           const g=SAME(r2(ts.reduce((a,x)=>a+x.amt,0)),r2(os.reduce((a,x)=>a+x.amount,0)));
           row(g!==null?"ok":"diff",os,ts,g);
         }
-        s.o.filter(o=>!o.used).forEach(o=>row("miss",[o],[],null));
+        s.o.filter(o=>!o.used).forEach(o=>row(o.inv?"notreg":"miss",[o],[],null));
         s.t.filter(t=>!t.used).forEach(t=>row("extra",[],[t],null));
       }
-      const order={miss:0,diff:1,extra:2,ok:3};
+      const order={miss:0,notreg:1,diff:2,extra:3,ok:4};
       result=out.sort((a,b)=>order[a.kind]-order[b.kind]||String(a.date).localeCompare(String(b.date))||a.party.localeCompare(b.party));
     }
 
     /* ---------- screen ---------- */
-    const KIND={ok:["Matched","t-ok","#13824a"],diff:["Amount differs","t-diff","#b26b00"],miss:["Bill missing in Tally","t-miss","#c8102e"],extra:["Tally bill, no ERP PO","t-extra","#1d5fbf"]};
+    const KIND={ok:["Matched","t-ok","#13824a"],diff:["Amount differs","t-diff","#b26b00"],miss:["Loaded / delivered, no Tally bill","t-miss","#c8102e"],
+      notreg:["Bill no. entered, not in Sales Register","t-miss","#8a1c7c"],extra:["Tally bill, no ERP PO","t-extra","#1d5fbf"]};
     function render(){
       const n=k=>result.filter(r=>r.kind===k).length;
       const kpi=(k,title,big,small,c)=>'<button type="button" class="tc-kpi" data-show="'+k+'" aria-pressed="'+(show===k)+'" style="--c:'+c+'"><h3>'+title+'</h3><div class="big">'+big+'</div><small>'+small+"</small></button>";
       const sum=k=>rs(result.filter(r=>r.kind===k).reduce((a,r)=>a+(k==="extra"?r.ta:r.ea),0));
       let h='<div class="tc-kpis">'+kpi("all","Dispatched POs",orders.length,bills.length+" Tally bills in file","#1f2a37")+
-        kpi("miss",KIND.miss[0],n("miss"),sum("miss"),KIND.miss[2])+kpi("diff",KIND.diff[0],n("diff"),"ERP "+sum("diff"),KIND.diff[2])+
+        kpi("miss",KIND.miss[0],n("miss"),sum("miss"),KIND.miss[2])+kpi("notreg",KIND.notreg[0],n("notreg"),sum("notreg"),KIND.notreg[2])+kpi("diff",KIND.diff[0],n("diff"),"ERP "+sum("diff"),KIND.diff[2])+
         kpi("extra",KIND.extra[0],n("extra"),sum("extra"),KIND.extra[2])+kpi("ok",KIND.ok[0],n("ok"),sum("ok"),KIND.ok[2])+"</div>";
       const unlinked=new Set(bills.filter(b=>link(b.party).party==="").map(b=>b.party)).size;
       if(unlinked)h+='<div class="tc-err" style="background:#fdf0dc;color:#7a4700">'+unlinked+' Tally party names are not linked to an ERP party yet, so their bills show as "Tally bill, no ERP PO". Link them in the table at the bottom (only once).</div>';
@@ -204,17 +218,20 @@
       h+='<section class="erp-card"><div class="tc-scroll"><table class="tc-table"><thead><tr><th>Result</th><th>Dispatch / bill date</th><th>Party</th><th>ERP PO</th><th class="n">ERP amount</th><th>Tally bill</th><th class="n">Tally amount</th><th class="n">Difference</th></tr></thead><tbody>'+
         (list.length?list.map(r=>{
           const k=KIND[r.kind];
-          const note=r.kind==="ok"&&r.gst?"with GST "+r.gst+"%":r.kind==="diff"?"check amount":"";
+          const note=r.byNo?(r.kind==="ok"?"same bill no."+(r.ia==null&&r.gst?" · GST "+r.gst+"%":""):"same bill no., check amount"):r.kind==="ok"&&r.gst?"with GST "+r.gst+"%":r.kind==="diff"?"check amount":
+            r.kind==="notreg"?"Accounts entered it; not in this file":"";
+          const noDiff=!r.byNo&&r.ts.length&&r.os.some(o=>invNos(o).length)?"<small>Bill no. not the same as Accounts entered</small>":"";
           const notDel=r.os.some(o=>o.delivery==="NOT_DELIVERED")?"<small>Driver: not delivered</small>":"";
-          return "<tr><td><span class='tc-tag "+k[1]+"'>"+k[0]+"</span>"+(note?"<small>"+note+"</small>":"")+notDel+"</td>"+
+          return "<tr><td><span class='tc-tag "+k[1]+"'>"+k[0]+"</span>"+(note?"<small>"+note+"</small>":"")+noDiff+notDel+"</td>"+
             "<td>"+esc(nice(r.date))+"</td><td><b>"+esc(r.party)+"</b>"+(r.tallyName&&norm(r.tallyName)!==norm(r.party)?"<small>Tally: "+esc(r.tallyName)+"</small>":"")+"</td>"+
-            "<td>"+(r.os.map(o=>esc(o.order_no)+"<small>"+esc(o.amount_from)+"</small>").join("")||"—")+"</td>"+
-            "<td class='n'>"+(r.os.length?rs(r.ea):"—")+"</td>"+
+            "<td>"+(r.os.map(o=>esc(o.order_no)+"<small>"+esc(o.amount_from)+(o.inv?" · bill no. "+esc(o.inv.invoice_no):"")+"</small>").join("")||"—")+"</td>"+
+            "<td class='n'>"+(r.os.length?rs(r.ea)+(r.ia!=null&&r.ia!==r.ea?"<small>Accounts: "+rs(r.ia)+"</small>":""):"—")+"</td>"+
             "<td>"+(r.ts.map(t=>esc(t.vno||"—")+"<small>"+esc(nice(t.date))+(t.vtype?" · "+esc(t.vtype):"")+"</small>").join("")||"—")+"</td>"+
             "<td class='n'>"+(r.ts.length?rs(r.ta):"—")+"</td>"+
             "<td class='n'>"+(r.os.length&&r.ts.length&&r.kind==="diff"?"<b>"+rs(r.diff)+"</b>":"")+"</td></tr>";
         }).join(""):'<tr><td colspan="8" class="erp-empty">Nothing here.</td></tr>')+"</tbody></table></div></section>";
-      h+='<p class="tc-note">Matched = same party, bill dated the dispatch day or the next day, and Tally amount = ERP amount (or ERP amount + GST 5 / 12 / 18 / 28 / 40%). When a party has more than one PO or bill on a day (e.g. one bill per brand), the day totals are compared. ERP amount = internal ERP bill, else loaded qty × PO rate.</p>';
+      h+='<p class="tc-note">First the Tally bill no. that Accounts entered after loading is looked up in the register (its amount must equal the amount Accounts entered). '+
+        '"Bill no. entered, not in Sales Register" = Accounts gave a bill no. but it is not in this file. Then, for the rest: Matched = same party, bill dated the dispatch day or the next day, and Tally amount = ERP amount (or ERP amount + GST 5 / 12 / 18 / 28 / 40%). When a party has more than one PO or bill on a day (e.g. one bill per brand), the day totals are compared. ERP amount = internal ERP bill, else loaded qty × PO rate.</p>';
       el("out").innerHTML=h;
       el("out").querySelectorAll("[data-show]").forEach(b=>b.onclick=()=>{show=b.dataset.show;render()});
       el("excel").disabled=!result.length;
@@ -285,7 +302,7 @@
         const pos=r.os.map(o=>o.order_no).sort().join(", "),tb=r.ts.map(t=>t.vno||"").filter(Boolean).join(", ");
         const t=r.ts[0];
         const qkey=r.os.length?"po|"+pos:"bill|"+norm(t.party)+"|"+(t.vno?norm(t.vtype)+"|"+fy(t.date)+"|"+t.vno.toUpperCase():t.date+"|"+t.amt);
-        return {qkey,kind:r.kind==="miss"?"no_tally":r.kind==="extra"?"no_po":"amount",qdate:r.date,party:r.os.length?r.party:(r.tallyName||r.party),
+        return {qkey,kind:r.kind==="miss"||r.kind==="notreg"?"no_tally":r.kind==="extra"?"no_po":"amount",qdate:r.date,party:r.os.length?r.party:(r.tallyName||r.party),
           order_nos:pos,tally_bills:tb,erp_amount:r.os.length?r.ea:null,tally_amount:r.ts.length?r.ta:null};
       });
     }
@@ -298,12 +315,13 @@
       const n=k=>result.filter(r=>r.kind===k).length;
       const miss=n("miss"),extra=n("extra"),diff=n("diff");
       const lines=[];
-      if(miss)lines.push("• "+miss+" PO"+(miss>1?"s":"")+" made in the ERP but no bill in Tally");
+      if(miss)lines.push("• "+miss+" PO"+(miss>1?"s":"")+" loaded / delivered but no bill in Tally");
+      const nr=n("notreg");if(nr)lines.push("• "+nr+" bill no."+(nr>1?"s":"")+" entered by Accounts but not in the Sales Register");
       if(extra)lines.push("• "+extra+" Tally bill"+(extra>1?"s":"")+" with no ERP PO");
       if(diff)lines.push("• "+diff+" with a different amount");
       if(q&&q.err)lines.push("","Queries were not saved: "+q.err);
       else if(q)lines.push("",(q.new||0)+" new open queries. "+(q.closed?(q.closed+" earlier queries now match and were closed. "):"")+"Accounts writes the reason in Open queries; Admin closes each one after checking.");
-      if(!miss&&!extra&&!diff)return alert("All bills match\n\nEvery dispatched PO in these dates has its Tally bill with the same amount."+(q&&q.closed?"\n"+q.closed+" earlier queries now match and were closed.":""),{title:"Tally check done",kind:"success"});
+      if(!miss&&!extra&&!diff&&!n("notreg"))return alert("All bills match\n\nEvery dispatched PO in these dates has its Tally bill with the same amount."+(q&&q.closed?"\n"+q.closed+" earlier queries now match and were closed.":""),{title:"Tally check done",kind:"success"});
       alert("Please check these bills\n\n"+lines.join("\n"),{title:"Tally check done",kind:"error"});
     }
     async function loadQueries(){
@@ -346,6 +364,9 @@
         const ds=bills.map(b=>b.date).sort();
         if(!el("from").value||el("from").dataset.auto==="1"){el("from").value=ds[0];el("from").dataset.auto="1"}
         if(!el("to").value||el("to").dataset.auto==="1"){el("to").value=ds[ds.length-1];el("to").dataset.auto="1"}
+        let inv=await client.from("lwb_tally_invoices").select("order_id,invoice_no,amount");
+        if(inv.error)inv=await client.from("lwb_tally_invoices").select("order_id,invoice_no");
+        invoices=new Map((inv.data||[]).map(x=>[x.order_id,x]));
         const [o,p,m]=await Promise.all([
           client.rpc("lwb_tally_check_orders",{p_from:el("from").value,p_to:el("to").value}),
           client.rpc("lwb_tally_check_parties"),client.rpc("lwb_tally_party_maps")]);
@@ -364,8 +385,8 @@
       finally{el("run").disabled=false}
     }
     function excel(){
-      const rows=[["Result","Date","Party","Tally party","ERP PO","ERP amount","Tally bill no.","Tally voucher type","Tally amount","Difference","GST %"]];
-      result.forEach(r=>rows.push([KIND[r.kind][0],nice(r.date),r.party,r.tallyName,r.os.map(o=>o.order_no).join(", "),r.os.length?r.ea:"",r.ts.map(t=>t.vno).join(", "),r.ts.map(t=>t.vtype).join(", "),r.ts.length?r.ta:"",r.os.length&&r.ts.length?r.diff:"",r.gst||""]));
+      const rows=[["Result","Date","Party","Tally party","ERP PO","ERP bill no. (Accounts)","Amount (Accounts)","ERP amount","Tally bill no.","Tally voucher type","Tally amount","Difference","GST %"]];
+      result.forEach(r=>rows.push([KIND[r.kind][0],nice(r.date),r.party,r.tallyName,r.os.map(o=>o.order_no).join(", "),r.os.map(o=>o.inv?o.inv.invoice_no:"").filter(Boolean).join(", "),r.ia!=null?r.ia:"",r.os.length?r.ea:"",r.ts.map(t=>t.vno).join(", "),r.ts.map(t=>t.vtype).join(", "),r.ts.length?r.ta:"",r.os.length&&r.ts.length?r.diff:"",r.gst||""]));
       LWBExcel.write("tally-bill-check-"+el("from").value+"-to-"+el("to").value,[{name:"Tally check",rows}]);
     }
     async function start(){

@@ -6,6 +6,7 @@
 <title>Accounts — ERP Bill Create | Luxury Wrist Brand</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="party-list.js" defer></script>
+<script src="tally-note.js" defer></script>
 <style>
 :root{--navy:#14253f;--blue:#1769d8;--ink:#182a42;--light:#f3f6fa;--muted:#66788e;--border:#dfe5ee}
 *{box-sizing:border-box}
@@ -42,10 +43,28 @@ table{border-collapse:collapse;width:100%;min-width:770px}
 th{text-align:left;background:#ebf0f7;font-size:11px;color:#314d6b}
 th,td{padding:12px;border-bottom:1px solid #e6ebf1}
 .tally-section{margin:14px 0;padding:16px;border:1px solid #c9d8ee;background:#f4f8fe;border-radius:9px}
-.tally-grid{display:grid;grid-template-columns:2fr 1fr 2fr auto;gap:10px;align-items:end}
+.tally-grid{display:grid;grid-template-columns:2fr 1fr 1fr 2fr auto;gap:10px;align-items:end}
 .tally-grid label{display:block;font-size:11px;color:#657992;text-transform:uppercase;margin-bottom:5px}
 .tally-grid input{width:100%}
 .tag.pending{background:#fff1dc;color:#9a5b0b}
+.tag.red{background:#fde8e7;color:#a02c2c}
+.tag.blue{background:#e6effc;color:#1d4f9a}
+.tabs{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}
+.tabs button{background:#e7edf5;color:#23384f;padding:9px 14px}
+.tabs button[aria-pressed=true]{background:#14253f;color:#fff}
+.tabs b{display:inline-block;min-width:20px;margin-left:6px;padding:0 6px;border-radius:10px;background:#fff3;font-size:12px}
+.tabs button[aria-pressed=false] b{background:#c9d5e5}
+.inl{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.inl input{padding:8px;font-size:13px}
+.inl .no{width:130px}.inl .am{width:115px}.inl .dt{width:140px}
+.inl button{padding:8px 12px;font-size:13px}
+td .sub{display:block;font-size:11px;color:var(--muted);font-weight:normal}
+td.n,th.n{text-align:right;white-space:nowrap}
+.due{color:#a02c2c;font-weight:bold}
+.notes-list{margin:10px 0 0;padding:0;list-style:none;font-size:13px}
+.notes-list li{padding:6px 0;border-top:1px solid #dfe7f3;display:flex;justify-content:space-between;gap:10px;align-items:center}
+.notes-list li.x{color:#99a5b5;text-decoration:line-through}
+button.sm{padding:6px 10px;font-size:12px}
 @media(max-width:760px){.tally-grid{grid-template-columns:1fr}}
 .tag{display:inline-block;background:#e3f2e8;color:#16603b;font-weight:bold;font-size:11px;padding:5px 9px;border-radius:14px}
 .money{font-weight:bold;font-variant-numeric:tabular-nums}
@@ -93,32 +112,33 @@ th,td{padding:12px;border-bottom:1px solid #e6ebf1}
 </head>
 <body>
 <header>
- <div><h2>LUXURY WRIST BRAND</h2><small>ACCOUNTS • PO DETAILS / ONE-CLICK INTERNAL ERP BILL</small></div>
+ <div><h2>LUXURY WRIST BRAND</h2><small>ACCOUNTS • TALLY BILL, RETURNS &amp; MONEY DUE</small></div>
  <nav><a href="dashboard.html">Dashboard</a><button type="button" id="logout">Logout</button></nav>
 </header>
 <main>
- <div class="heading"><div><h1>Accounts — Tally Bill &amp; Invoice No.</h1><p>Loaded vehicles: make the Tally bill, enter its invoice number, and create the internal ERP bill.</p></div><button type="button" id="refresh">Refresh Orders</button></div>
- <div class="banner"><b>Vehicle loaded → make the bill in Tally → enter the Tally invoice number here.</b> The Tally invoice number is seen only by Accounts and Admin; Sales Head is told "Tally bill made". The <b>Internal ERP Bill</b> is a separate loaded-goods record, not a GST invoice.</div>
+ <div class="heading"><div><h1>Accounts — Tally Bill &amp; Invoice No.</h1><p>Vehicle loaded → Tally bill → invoice no. + amount → collection, returns and credit / debit notes.</p></div><button type="button" id="refresh">Refresh Orders</button></div>
+ <div class="banner"><b>1. Tally bill pending:</b> the godown manager marked the vehicle loaded. Make the bill in Tally, type its invoice no. and amount, and Submit (= bill made, full bill given to the driver).<br>
+ <b>2. Money to collect:</b> each Tally bill with what the driver reported, returns and credit / debit notes. A return approved on Driver Returns asks for a credit note.<br>
+ The invoice no. is seen only by Accounts and Admin; Sales Head is told "Tally bill made". The Cashbook shows the money due per invoice, and Tally Bill Check compares these numbers with the nightly Sales Register.</div>
  <div id="message" class="notice" role="status"></div>
  <div class="stats">
-  <div class="stat"><span>Loaded / Existing ERP Orders</span><strong id="orderCount">0</strong></div>
-  <div class="stat"><span>Internal ERP Bills Created</span><strong id="billCount">0</strong></div>
-  <div class="stat"><span>Pending ERP Bills</span><strong id="pendingCount">0</strong></div>
+  <div class="stat"><span>Tally bill pending (vehicle loaded)</span><strong id="orderCount">0</strong></div>
+  <div class="stat"><span>Money to collect</span><strong id="billCount">₹0</strong></div>
+  <div class="stat"><span>Return: credit note pending</span><strong id="pendingCount">0</strong></div>
  </div>
  <div class="panel">
   <div class="toolbar">
    <input id="search" data-party-list type="search" placeholder="Search PO Number / Party..." autocomplete="off" aria-label="Search PO">
-   <select id="filter" aria-label="Filter internal bills">
-    <option value="all">All Loaded Orders</option>
-    <option value="tally_pending">Tally Invoice No. Pending</option>
-    <option value="tally_done">Tally Invoice No. Entered</option>
-    <option value="pending">ERP Bill Pending</option>
-    <option value="created">ERP Bill Created</option>
-   </select>
+  </div>
+  <div class="tabs" id="tabs">
+   <button type="button" data-tab="bill">Tally bill pending<b id="tBill">0</b></button>
+   <button type="button" data-tab="due">Money to collect<b id="tDue">0</b></button>
+   <button type="button" data-tab="cn">Credit note pending<b id="tCn">0</b></button>
+   <button type="button" data-tab="all">All loaded POs<b id="tAll">0</b></button>
   </div>
   <div class="tablewrap"><table>
-   <thead><tr><th>PO NUMBER</th><th>PARTY</th><th>DATE</th><th>TRANSPORT</th><th>TALLY INVOICE</th><th>ERP BILL</th><th>STATUS</th><th>ACTION</th></tr></thead>
-   <tbody id="rows"><tr><td colspan="8">Loading...</td></tr></tbody>
+   <thead id="head"></thead>
+   <tbody id="rows"><tr><td>Loading...</td></tr></tbody>
   </table></div>
  </div>
 </main>
@@ -145,10 +165,13 @@ th,td{padding:12px;border-bottom:1px solid #e6ebf1}
     <div class="tally-grid">
      <div><label for="tallyNo">Invoice No. (more than one bill: separate with comma)</label><input id="tallyNo" maxlength="200" autocomplete="off" placeholder="e.g. CC/1234, RG/567"></div>
      <div><label for="tallyDate">Invoice Date</label><input id="tallyDate" type="date"></div>
+     <div><label for="tallyAmt">Bill Amount ₹</label><input id="tallyAmt" type="number" min="0.01" step="0.01" inputmode="decimal"></div>
      <div><label for="tallyNote">Note (optional)</label><input id="tallyNote" maxlength="300" autocomplete="off"></div>
      <div><button type="button" id="saveTally">Save Invoice No.</button></div>
     </div>
     <p class="small" id="tallyHelp"></p>
+    <div id="noteBox" hidden><div class="heading" style="margin-top:12px"><b>Returns, credit &amp; debit notes</b><button type="button" class="secondary sm" id="addNote">+ Credit / Debit note</button></div>
+    <p class="small" id="moneyLine"></p><ul class="notes-list" id="noteList"></ul></div>
    </div>
    <div class="bill-section">
     <div><strong id="billState">Checking ERP Bill...</strong><p class="small" id="billHelp">Please wait...</p></div>
@@ -170,13 +193,15 @@ const qty=n=>new Intl.NumberFormat("en-IN",{maximumFractionDigits:3}).format(Num
 const date=v=>{const d=new Date(v);return v&&!Number.isNaN(d.getTime())?d.toLocaleDateString("en-IN"):"—"};
 const escapeHtml=v=>val(v).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 let db,orders=[],bills=[],selected=null,itemRows=[],loaded=false,loading=false,billSaving=false,setupReady=false,setupError="",legacyOrders=new Set();
-let tallyRows=[],tallyReady=false,tallySaving=false;
+let tallyRows=[],tallyReady=false,tallySaving=false,flow=new Map(),flowReady=false,tab="bill";
 let assignedVehicle=null,assignedOrderId=null,assignedError="";
 function notice(message,error=false){
  const el=$("message");el.textContent=message;el.className="notice"+(error?" error":"");el.style.display="block";
 }
 function billOf(orderId){return bills.find(b=>b.order_id===orderId)||null}
 function tallyOf(orderId){return tallyRows.find(t=>t.order_id===orderId)||null}
+const flowOf=id=>flow.get(id)||null;
+const num=v=>Number(v)||0;
 const todayIST=()=>new Date(Date.now()+330*60e3).toISOString().slice(0,10);
 async function init(){
  try{
@@ -196,14 +221,16 @@ async function reload(){
  if(!loaded||loading)return;
  loading=true;$("refresh").disabled=true;
  try{
-  const [o,b,legacy,tally]=await Promise.all([
+  const [o,b,legacy,tally,fl]=await Promise.all([
    db.from("orders").select("id,order_no,order_date,customer_name,transportation,status")
-    .in("status",["loaded","invoiced"]).order("order_date",{ascending:false}).limit(1000),
+    .in("status",["loaded","invoiced","dispatched","delivered"]).order("order_date",{ascending:false}).limit(1500),
    db.from("lwb_internal_bills").select("id,order_id,internal_bill_no,bill_date,customer_name,loaded_qty,goods_amount,items,created_at")
     .order("created_at",{ascending:false}).limit(2000),
    db.from("tax_invoices").select("order_id").limit(2000),
-   db.from("lwb_tally_invoices").select("order_id,invoice_no,invoice_date,note,entered_at,updated_at").limit(5000)
+   db.from("lwb_tally_invoices").select("*").limit(5000),
+   db.rpc("lwb_tally_bill_status",{p_days:120})
   ]);
+  flowReady=!fl.error;flow=new Map((fl.data||[]).map(r=>[r.order_id,r]));
   tallyReady=!tally.error;tallyRows=tally.data||[];
   if(o.error)throw o.error;
   orders=o.data||[];
@@ -214,6 +241,7 @@ async function reload(){
   render();
   if(!setupReady)notice("BILL CREATE Setup Pending: Run lwb_internal_bill_setup.sql in Supabase. "+setupError,true);
   else if(!tallyReady)notice("Tally invoice number setup pending: run lwb_loading_workflow_setup.sql in Supabase.",true);
+  else if(!flowReady)notice("Bill amount, credit / debit notes and money due are not set up yet: run lwb_tally_bill_flow_setup.sql once in Supabase, then Refresh.",true);
   else $("message").style.display="none";
   // Opened from a "Vehicle Loaded" notification
   const want=new URLSearchParams(location.search).get("order");
@@ -221,36 +249,100 @@ async function reload(){
  }catch(e){notice("Unable to load ERP orders: "+e.message,true)}
  finally{loading=false;$("refresh").disabled=false}
 }
+function rowOf(o){
+ const f=flowOf(o.id),t=tallyOf(o.id);
+ return {o,f,t,inv:t?.invoice_no||f?.invoice_no||"",amt:t?.amount??f?.bill_amount??null,
+  erp:f?num(f.erp_amount):null,due:f?num(f.due):null,cn:f?num(f.credit_pending):0};
+}
+// Still loaded, or left in the last 30 days (older delivered POs from before this screen are left out here;
+// Tally Bill Check still lists every one of them against the Sales Register).
+const recent=r=>["loaded","invoiced"].includes(val(r.o.status).toLowerCase())||(r.f?.dispatch_date||r.o.order_date||"")>=new Date(Date.now()-30*864e5).toISOString().slice(0,10);
+const inTab=(r,k)=>k==="all"||(k==="bill"&&!r.inv&&recent(r))||(k==="due"&&r.inv&&r.due>1)||(k==="cn"&&r.cn>0.5);
+const HEAD={
+ bill:["PO / PARTY","LOADED","ERP AMOUNT","TALLY INVOICE NO. · DATE · AMOUNT",""],
+ due:["PO / PARTY","TALLY BILL","n:BILL","n:RETURN / NOTES","n:DRIVER GOT","n:DUE",""],
+ cn:["PO / PARTY","TALLY BILL","n:RETURN APPROVED","n:CREDIT NOTE PENDING",""],
+ all:["PO / PARTY","DATE","TALLY BILL","n:BILL","n:DUE","STATUS",""]
+};
+function cellHead(){return HEAD[tab].map(h=>h.startsWith("n:")?'<th class="n">'+h.slice(2)+'</th>':'<th>'+h+'</th>').join("")}
 function render(){
- const q=$("search").value.trim().toLowerCase(),filter=$("filter").value;
- $("orderCount").textContent=qty(orders.length);
- $("billCount").textContent=qty(orders.filter(o=>billOf(o.id)).length);
- $("pendingCount").textContent=qty(orders.filter(o=>!billOf(o.id)&&!legacyOrders.has(o.id)).length);
- const list=orders.filter(o=>{
-  const created=Boolean(billOf(o.id));
-  const tallied=Boolean(tallyOf(o.id));
-  return (filter==="all"||(filter==="pending"&&!created)||(filter==="created"&&created)||
-   (filter==="tally_pending"&&!tallied)||(filter==="tally_done"&&tallied))&&
-   [o.order_no,o.customer_name,o.transportation,tallyOf(o.id)?.invoice_no].some(v=>val(v).toLowerCase().includes(q));
- });
+ const q=$("search").value.trim().toLowerCase();
+ const all=orders.map(rowOf);
+ const count=k=>all.filter(r=>inTab(r,k)).length;
+ $("orderCount").textContent=qty(count("bill"));
+ $("billCount").textContent=cash(all.filter(r=>inTab(r,"due")).reduce((a,r)=>a+r.due,0));
+ $("pendingCount").textContent=qty(count("cn"));
+ $("tBill").textContent=count("bill");$("tDue").textContent=count("due");$("tCn").textContent=count("cn");$("tAll").textContent=all.length;
+ document.querySelectorAll("#tabs [data-tab]").forEach(b=>b.setAttribute("aria-pressed",String(b.dataset.tab===tab)));
+ $("head").innerHTML="<tr>"+cellHead()+"</tr>";
+ const list=all.filter(r=>inTab(r,tab)&&[r.o.order_no,r.o.customer_name,r.o.transportation,r.inv].some(v=>val(v).toLowerCase().includes(q)));
  const body=$("rows");body.replaceChildren();
- if(!list.length){const tr=body.insertRow();const td=tr.insertCell();td.colSpan=8;td.textContent="No matching loaded orders.";return}
- for(const order of list){
+ if(!list.length){const td=body.insertRow().insertCell();td.colSpan=HEAD[tab].length;
+  td.textContent=tab==="bill"?"No loaded vehicle is waiting for a Tally bill.":tab==="due"?"No money due on Tally bills.":tab==="cn"?"No approved return is waiting for a credit note.":"No matching loaded orders.";return}
+ const td=(tr,html,cls)=>{const c=tr.insertCell();c.innerHTML=html;if(cls)c.className=cls;return c};
+ const who=r=>'<b>'+escapeHtml(r.o.order_no)+'</b><span class="sub">'+escapeHtml(r.o.customer_name)+'</span>';
+ const inv=r=>r.inv?'<b>'+escapeHtml(r.inv)+'</b><span class="sub">'+date(r.t?.invoice_date||r.f?.invoice_date)+'</span>':'<span class="tag pending">Pending</span>';
+ const btn=(cell,text,fn,cls)=>{const b=document.createElement("button");b.type="button";b.textContent=text;if(cls)b.className=cls;b.onclick=fn;cell.appendChild(b);return b};
+ for(const r of list){
   const tr=body.insertRow();
-  for(const v of [order.order_no,order.customer_name,date(order.order_date),order.transportation])
-   tr.insertCell().textContent=v||"—";
-  const t=tallyOf(order.id),tCell=tr.insertCell();
-  if(t){tCell.textContent=t.invoice_no;tCell.className="money"}
-  else{const tg=document.createElement("span");tg.className="tag pending";tg.textContent=tallyReady?"Pending":"—";tCell.appendChild(tg)}
-  const bill=billOf(order.id),billCell=tr.insertCell();
-  billCell.textContent=bill?bill.internal_bill_no:legacyOrders.has(order.id)?"Existing ERP Record":"Not Created";
-  if(bill)billCell.className="money";
-  const statusCell=tr.insertCell(),tag=document.createElement("span");
-  tag.className="tag";tag.textContent=val(order.status).toUpperCase();statusCell.appendChild(tag);
-  const action=tr.insertCell(),btn=document.createElement("button");
-  btn.textContent=bill?"View ERP Bill":"View / Bill Create";btn.type="button";
-  btn.addEventListener("click",()=>openOrder(order.id));action.appendChild(btn);
+  td(tr,who(r));
+  if(tab==="bill"){
+   td(tr,date(r.f?.dispatch_date||r.o.order_date)+'<span class="sub">'+escapeHtml(val(r.o.status).toUpperCase())+'</span>');
+   td(tr,r.erp!=null?cash(r.erp):"—","n money");
+   const c=td(tr,'<div class="inl"><input class="no" maxlength="200" placeholder="Invoice no." aria-label="Tally invoice no. for '+escapeHtml(r.o.order_no)+'"><input class="dt" type="date" aria-label="Invoice date"><input class="am" type="number" min="0.01" step="0.01" inputmode="decimal" placeholder="Amount ₹" aria-label="Tally bill amount"></div>');
+   const box=c.firstChild;box.querySelector(".dt").value=todayIST();
+   const go=btn(box,"Submit",()=>submitBill(r.o,box.querySelector(".no").value,box.querySelector(".dt").value,box.querySelector(".am").value,go));
+   box.querySelectorAll("input").forEach(i=>i.addEventListener("keydown",e=>{if(e.key==="Enter")go.click()}));
+   btn(td(tr,""),"Details",()=>openOrder(r.o.id),"secondary sm");
+  }else if(tab==="due"){
+   td(tr,inv(r));
+   td(tr,r.amt!=null?cash(r.amt):cash(r.erp)+'<span class="sub">ERP, no Tally amount</span>',"n money");
+   const ret=num(r.f?.approved_return),cr=num(r.f?.credit_notes),dr=num(r.f?.debit_notes),wait=num(r.f?.pending_return);
+   td(tr,[ret?"<span class=\"sub\" style=\"color:inherit;font-size:13px\">Return "+cash(ret)+"</span>":"",wait?'<span class="sub">Return waiting '+cash(wait)+'</span>':"",cr?'<span class="sub">CN − '+cash(cr)+'</span>':"",dr?'<span class="sub">DN + '+cash(dr)+'</span>':"",r.cn>0.5?'<span class="tag red">CN pending '+cash(r.cn)+'</span>':""].join("")||"—","n");
+   td(tr,cash(r.f?.collected)+(num(r.f?.verified)?'<span class="sub">verified '+cash(r.f.verified)+'</span>':""),"n");
+   td(tr,cash(r.due),"n due");
+   const a=td(tr,"");btn(a,"Credit / Debit note",()=>noteFor(r),"sm");a.append(" ");btn(a,"Details",()=>openOrder(r.o.id),"secondary sm");
+  }else if(tab==="cn"){
+   td(tr,inv(r));
+   td(tr,cash(r.f?.approved_return),"n");
+   td(tr,cash(r.cn),"n due");
+   const a=td(tr,"");
+   if(r.inv)btn(a,"Enter credit note",()=>noteFor(r,"CREDIT",r.cn,"Return approved"),"sm");
+   else a.innerHTML='<span class="small">Enter the Tally bill first</span>';
+  }else{
+   td(tr,date(r.o.order_date));
+   td(tr,inv(r));
+   td(tr,r.amt!=null?cash(r.amt):"—","n money");
+   td(tr,r.due!=null&&r.inv?cash(r.due):"—","n"+(r.due>1&&r.inv?" due":""));
+   td(tr,'<span class="tag">'+escapeHtml(val(r.o.status).toUpperCase())+'</span>'+(billOf(r.o.id)?'<span class="sub">ERP '+escapeHtml(billOf(r.o.id).internal_bill_no)+'</span>':""));
+   btn(td(tr,""),"View",()=>openOrder(r.o.id),"secondary sm");
+  }
  }
+}
+function noteFor(r,kind,amount,reason){
+ if(!flowReady){notice("Run lwb_tally_bill_flow_setup.sql once in Supabase first.",true);return}
+ LWBNote.open({db,order:{id:r.o.id,order_no:r.o.order_no,party:r.o.customer_name,invoice_no:r.inv},kind,amount,reason,
+  info:r.cn>0.5?"Return approved "+cash(r.f?.approved_return)+"; credit note still pending "+cash(r.cn)+".":"",
+  onSaved:x=>{notice((x.kind==="CREDIT"?"Credit":"Debit")+" note "+x.no+" saved for "+r.o.order_no+".");reload().then(()=>{if(selected?.id===r.o.id)renderTally(selected)})}});
+}
+async function submitBill(order,no,dt,amt,button){
+ no=val(no).trim();const amount=Number(amt);
+ if(!no){notice("Enter the Tally invoice number for "+order.order_no+".",true);return false}
+ if(!dt){notice("Enter the invoice date.",true);return false}
+ if(!(amount>0)){notice("Enter the Tally bill amount for "+order.order_no+".",true);return false}
+ if(!flowReady){notice("Bill amount is not set up yet: run lwb_tally_bill_flow_setup.sql once in Supabase, then Refresh.",true);return false}
+ const old=tallyOf(order.id),erp=flowOf(order.id)?.erp_amount;
+ if(!await confirm((old?"Change":"Submit")+" Tally bill for "+order.order_no+" ("+order.customer_name+")?\n\nInvoice no. "+no+" · "+date(dt)+"\nAmount "+cash(amount)+(erp!=null?"  (ERP loaded value "+cash(erp)+")":"")+
+  (old?"":"\n\nThis means the bill is made in Tally and the full bill is given to the driver.")))return false;
+ if(button)button.disabled=true;
+ try{
+  const r=await db.rpc("lwb_save_tally_bill",{p_order_id:order.id,p_invoice_no:no,p_invoice_date:dt,p_amount:amount,p_note:selected?.id===order.id?($("tallyNote").value.trim()||null):(old?.note||null)});
+  if(r.error)throw r.error;
+  await reload();
+  notice("Tally bill "+no+" "+(old?"updated":"saved")+" for "+order.order_no+"."+(old?"":" It is now under Money to collect; Sales Head is told the Tally bill is made."));
+  return true;
+ }catch(e){notice("Could not save the Tally bill: "+e.message,true);return false}
+ finally{if(button)button.disabled=false}
 }
 
 // Driver details come from the existing Sales Head / Dispatch assignment.
@@ -368,30 +460,42 @@ function renderBillState(order){
 }
 function renderTally(order){
  if(!order||selected?.id!==order.id)return;
- const t=tallyOf(order.id);
+ const t=tallyOf(order.id),f=flowOf(order.id);
  $("tallySection").hidden=!tallyReady;
  $("tallyNo").value=t?.invoice_no||"";
  $("tallyDate").value=t?.invoice_date||todayIST();
+ $("tallyAmt").value=t?.amount!=null?Number(t.amount).toFixed(2):"";
  $("tallyNote").value=t?.note||"";
- $("saveTally").textContent=t?"Update Invoice No.":"Save Invoice No.";
+ $("saveTally").textContent=t?"Update":"Submit";
  $("saveTally").disabled=tallySaving;
  $("tallyHelp").textContent=t?"Entered "+new Date(t.updated_at||t.entered_at).toLocaleString("en-IN")+". Only Accounts and Admin can see this number."
-  :"Make the bill in Tally, then enter its number here. Only Accounts and Admin can see it; Sales Head gets \"Tally bill made\".";
+  :"Make the bill in Tally, then enter its number and amount and Submit (= full bill given to the driver). Sales Head gets \"Tally bill made\".";
+ $("noteBox").hidden=!(t&&f);
+ if(t&&f){
+  $("moneyLine").textContent="Bill "+cash(f.bill_amount??f.erp_amount)+(num(f.approved_return)?" · return approved "+cash(f.approved_return):"")+
+   " · credit notes "+cash(f.credit_notes)+" · debit notes "+cash(f.debit_notes)+" · driver got "+cash(f.collected)+" · DUE "+cash(f.due)+
+   (num(f.credit_pending)>0.5?" · credit note pending "+cash(f.credit_pending):"");
+  const ul=$("noteList");ul.replaceChildren();
+  for(const n of f.notes||[]){
+   const li=document.createElement("li");if(n.cancelled)li.className="x";
+   li.innerHTML="<span><b>"+(n.kind==="CREDIT"?"Credit":"Debit")+" note "+escapeHtml(n.note_no)+"</b> · "+date(n.note_date)+" · "+cash(n.amount)+(n.reason?" · "+escapeHtml(n.reason):"")+(n.cancelled?" (cancelled)":"")+"</span>";
+   if(!n.cancelled){const b=document.createElement("button");b.type="button";b.className="secondary sm";b.textContent="Cancel";b.onclick=()=>cancelNote(n);li.appendChild(b)}
+   ul.appendChild(li);
+  }
+ }
+}
+async function cancelNote(n){
+ if(!await confirm("Cancel "+(n.kind==="CREDIT"?"credit":"debit")+" note "+n.note_no+" ("+cash(n.amount)+")?\n\nUse this only when it was entered by mistake. It stays in the list as cancelled."))return;
+ const r=await db.rpc("lwb_cancel_tally_note",{p_id:n.id});
+ if(r.error){notice("Could not cancel: "+r.error.message,true);return}
+ await reload();if(selected)renderTally(selected);
+ notice("Note "+n.note_no+" cancelled.");
 }
 async function saveTally(){
  if(!selected||tallySaving)return;
- const order=selected,no=$("tallyNo").value.trim(),dt=$("tallyDate").value;
- if(!no){notice("Enter the Tally invoice number.",true);return}
- if(!dt){notice("Enter the invoice date.",true);return}
- const old=tallyOf(order.id);
- if(!await confirm((old?"Change":"Save")+" Tally invoice no. "+no+" for "+order.order_no+" ("+order.customer_name+")?"))return;
+ const order=selected;
  tallySaving=true;$("saveTally").disabled=true;
- try{
-  const r=await db.rpc("lwb_save_tally_invoice",{p_order_id:order.id,p_invoice_no:no,p_invoice_date:dt,p_note:$("tallyNote").value.trim()||null});
-  if(r.error)throw r.error;
-  await reload();
-  notice("Tally invoice no. "+(old?"updated":"saved")+" for "+order.order_no+"."+(old?"":" Sales Head is told the Tally bill is made."));
- }catch(e){notice("Could not save the invoice number: "+e.message,true)}
+ try{if(await submitBill(order,$("tallyNo").value,$("tallyDate").value,$("tallyAmt").value))renderTally(order)}
  finally{tallySaving=false;if(selected?.id===order.id)renderTally(order)}
 }
 async function createBill(){
@@ -478,7 +582,8 @@ $("printBill").addEventListener("click",printBill);
 $("saveTally").addEventListener("click",saveTally);
 $("refresh").addEventListener("click",reload);
 $("search").addEventListener("input",render);
-$("filter").addEventListener("change",render);
+document.querySelectorAll("#tabs [data-tab]").forEach(b=>b.addEventListener("click",()=>{tab=b.dataset.tab;render()}));
+$("addNote").addEventListener("click",()=>{if(selected)noteFor(rowOf(selected))});
 $("logout").addEventListener("click",async()=>{if(db)await db.auth.signOut();location.href="login.html"});
 init();
 </script>

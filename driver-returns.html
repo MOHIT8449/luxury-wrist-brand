@@ -5,6 +5,7 @@
 <title>Driver Returns Approval | Luxury Wrist Brand ERP</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script><script src="page-role.js"></script>
 <script src="party-list.js" defer></script>
+<script src="tally-note.js" defer></script>
 <style>
 :root{--navy:#132843;--blue:#1569dc;--line:#dde5f0;--bg:#f1f5fb}
 *{box-sizing:border-box}body{margin:0;font:14px Arial,sans-serif;background:var(--bg);color:#142841}
@@ -227,6 +228,12 @@ async function review(r,action){
   if(error)throw error;
   await load();
   message(action==="APPROVE"?"Return APPROVED. Party outstanding reduced by "+fmt(r.total_return_amount)+".":"Return REJECTED. Driver can record it again.","success");
+  // Admin also keeps the books: ask for the Tally credit note now (Accounts see it under "Credit note pending")
+  if(action==="APPROVE"&&role==="admin"&&window.LWBNote){
+   const ok=(lists.APPROVED||[]).filter(x=>x.order_id===r.order_id).reduce((a,x)=>a+Number(x.total_return_amount||0),0);
+   LWBNote.check({db,order:{id:r.order_id,order_no:r.order_no,party:r.party_name},approvedReturn:ok||r.total_return_amount,reason:"Return approved",
+    say:t=>message(t,"error"),onSaved:x=>message("Credit note "+x.no+" saved for "+r.order_no+".","success")});
+  }
  }catch(e){message("Review failed: "+e.message,"error");render()}
  finally{busy=false}
 }

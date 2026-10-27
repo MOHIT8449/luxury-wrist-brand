@@ -249,3 +249,17 @@
 - 🖨 Print on PO Approval now prints a "DELIVERY CHALLAN / Order Bill" on A4, matching the format Mohit shared: Order No, Customer, Transportation, Date & Time, Sales Person, Total Items; a line with Godown Manager, Driver (mobile) and Vehicle No; SKU table with Qty, Rate, Amount, Unit Wt, Total Wt; totals with KG; Amount in Words; manager note if any.
 - Footer still says it is not a GST invoice; the Tally bill is separate.
 - Update: the challan now prints A4 **landscape**. If a PO has no saved Driver / Vehicle / Godown Manager, Print asks first: "🚚 Assign now" opens the Transport popup, "Print without them" prints with "—".
+
+## Tally bill amount, credit / debit notes, money due per invoice (2026-10-27)
+- SQL: `lwb_tally_bill_flow_setup.sql` (run after lwb_loading_workflow_setup.sql, lwb_driver_payment_setup.sql, lwb_cashbook_secure_setup.sql).
+  Adds `lwb_tally_invoices.amount`, table `lwb_tally_notes` (CREDIT / DEBIT, Tally note no., date, amount, reason; cancelled, never deleted),
+  `lwb_save_tally_bill` (wraps lwb_save_tally_invoice + amount), `lwb_save_tally_note`, `lwb_cancel_tally_note`,
+  `lwb_tally_bill_status(p_days)` (Accounts / Admin) and `lwb_cashbook_invoice_due(p_key)` (Cashbook). Both read the internal `lwb_tally_bill_rows`.
+- Due = Tally bill amount − credit notes + debit notes − money drivers reported (rejected payments left out). No Tally bill amount yet: ERP net (loaded × rate − approved returns).
+- accounts-invoice.html: tabs Tally bill pending (inline invoice no. + date + amount + Submit; loaded POs, or dispatched / delivered in the last 30 days) /
+  Money to collect / Credit note pending (approved return not yet covered by credit notes) / All. The PO modal keeps ERP bill create + print and lists the notes.
+- tally-note.js: shared credit / debit note popup. Driver Collections opens it after Verify when a return still needs a credit note (or a delivery with a return is short);
+  Driver Returns opens it for Admin after Approve.
+- cashbook.html: "Money due (Tally bills)" button in a book (Cash In pre-filled with the due amount); Driver cash list shows the Tally bill no. and due.
+- tally-check.html: first matches the bill no. Accounts entered against the register (amount must equal the amount entered), then the old party / date / amount match.
+  New result "Bill no. entered, not in Sales Register" (query kind no_tally). Rows matched by party / date with a different bill no. are flagged.

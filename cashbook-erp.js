@@ -159,6 +159,13 @@
     return data||[];
   };
 
+  // Tally invoices with money still to collect (lwb_tally_bill_flow_setup.sql)
+  CB.invoiceDue=async function(){
+    const {data,error}=await rpc("lwb_cashbook_invoice_due");
+    if(error)throw error;
+    return data||[];
+  };
+
   // history of every change, newest first; party = party name, entry = entry id (both optional)
   CB.history=async function(party,entry){
     const {data,error}=await rpc("lwb_cashbook_history",{p_party:party||null,p_entry:entry||null,p_limit:1000});
