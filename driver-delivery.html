@@ -256,6 +256,7 @@ Reported payments stay <b>Pending Office Verification</b>; the Party Ledger, out
  <nav class="tabs" role="tablist">
   <button type="button" role="tab" data-tab="order" class="tab">📦 Order</button>
   <button type="button" role="tab" data-tab="deliver" class="tab">✅ Delivery</button>
+  <button type="button" role="tab" data-tab="payment" class="tab">💰 Payment</button>
   <button type="button" role="tab" data-tab="return" class="tab">↩ Return</button>
  </nav>
 </div>
@@ -313,12 +314,7 @@ Reported payments stay <b>Pending Office Verification</b>; the Party Ledger, out
  <strong id="savedTitle">Delivery Report Saved</strong>
  <p id="savedInfo"></p>
  <button type="button" id="viewPod" class="secondary">View Private POD Photo</button>
- <div id="payView" class="payview" hidden></div>
- <form id="payForm" hidden>
-  <div class="message" id="payMsg" role="alert"></div>
-  <div class="footactions stickyfoot"><button class="secondary" type="button" id="payCancel">Cancel</button><button id="paySave" type="submit">Save Payment</button></div>
- </form>
- <p class="mini">The delivery report is locked. Payment can be changed until the office verifies it.</p>
+ <p class="mini">The delivery report is locked. Enter or change the payment in the 💰 Payment tab.</p>
 </div>
 <form id="deliveryForm">
  <h3>1. Delivery Status</h3>
@@ -332,12 +328,25 @@ Reported payments stay <b>Pending Office Verification</b>; the Party Ledger, out
   <option value="PARTIAL">PARTIAL DELIVERY</option><option value="NOT_DELIVERED">NOT DELIVERED</option>
  </select>
  <div class="fieldrow" id="proofFields" hidden>
-  <div class="field"><label for="receivedBy">Received By (Party Person) *</label><input id="receivedBy" maxlength="150" placeholder="Receiver Name"></div>
-  <div class="field"><label for="podFile">📷 POD Photo * (Max 5 MB)</label><input id="podFile" type="file" accept="image/jpeg,image/png,image/webp" capture="environment"><img id="photoPreview" class="photo-preview" alt="POD photo preview"></div>
+  <div class="field"><label for="receivedBy">Received By (Party Person) <small>(optional)</small></label><input id="receivedBy" maxlength="150" placeholder="Receiver Name (optional)"></div>
+  <div class="field"><label for="podFile">📷 POD Photo <small>(optional, max 5 MB)</small></label><input id="podFile" type="file" accept="image/jpeg,image/png,image/webp" capture="environment"><img id="photoPreview" class="photo-preview" alt="POD photo preview"></div>
  </div>
  <div class="field wide" id="noteField" hidden><label for="deliveryNote" id="noteLabel">Note</label><textarea id="deliveryNote" rows="2" maxlength="1000" placeholder="Reason / item-wise CS shortage"></textarea></div>
+ <p class="errorhint" id="warning">The delivery report is locked after submission. Payment is entered next, in the 💰 Payment tab.</p>
+ <div class="message" id="formMessage" role="alert"></div>
+ <div class="footactions stickyfoot"><button class="secondary" type="button" id="cancel">Cancel</button><button id="submitDelivery" type="submit">Submit Delivery</button></div>
+</form>
+</div>
+<div class="tabpane" data-pane="payment">
+<div class="podcard" id="payNeedDelivery" hidden>
+ <strong>Submit the delivery first</strong>
+ <p class="mini">Payment is entered after the delivery is submitted (Delivered / Partial).</p>
+ <button type="button" id="goDeliver">✅ Go to Delivery</button>
+</div>
+<div id="payView" class="payview" hidden></div>
+<form id="payForm" hidden>
  <div id="payBox">
- <h3>2. Payment Received <small class="mini">(checked by the office)</small></h3>
+ <h3>💰 Payment Received <small class="mini">(checked by the office)</small></h3>
  <div id="paymentNetTip" class="payment-net-tip" hidden>
   Net to collect (after approved returns): <strong id="paymentNetValue">₹0</strong> — enter only what you actually received.<span id="paymentPendingNote"></span>
  </div>
@@ -363,9 +372,9 @@ Reported payments stay <b>Pending Office Verification</b>; the Party Ledger, out
   </div>
  </div>
  </div>
- <p class="errorhint" id="warning">The report is locked after submission.</p>
- <div class="message" id="formMessage" role="alert"></div>
- <div class="footactions stickyfoot"><button class="secondary" type="button" id="cancel">Cancel</button><button id="submitDelivery" type="submit">Submit Delivery & Collection Report</button></div>
+ <div class="message" id="payMsg" role="alert"></div>
+ <p class="mini">Payment can be changed until the office verifies it. Whatever is not paid stays outstanding.</p>
+ <div class="footactions stickyfoot"><button class="secondary" type="button" id="payCancel">Cancel</button><button id="paySave" type="submit">Save Payment</button></div>
 </form>
 </div>
 </div>
@@ -572,7 +581,8 @@ function render(){
   card.append(elt("p","🚚 "+(r.vehicle_no||"No vehicle")+" • "+num(waiting?r.planned_cases:r.loaded_cases)+" CS "+(waiting?"planned":"loaded")+
     (role==="driver"?"":" • "+(r.driver_name||"—")),"info"));
   const pay=paySummary.get(r.order_id);
-  if(pay){const st=pay.payment_status||"PENDING";
+  if(pay&&!pay.payment_status&&!(Number(pay.collected)>0))card.append(elt("p","💰 Payment not entered • Outstanding "+money(pay.outstanding),"info retwait"));
+  else if(pay){const st=pay.payment_status||"PENDING";
    card.append(elt("p","💰 Received "+money(pay.collected)+" • Outstanding "+money(pay.outstanding)+" • "+(st==="VERIFIED"?"✅ Verified":st==="REJECTED"?"❌ Rejected, correct it":"⏳ Office check"),"info "+(st==="VERIFIED"?"retok":st==="REJECTED"?"retno":"retwait")))}
   else if(r.report)card.append(elt("p","💰 "+money(r.report.cash_reported)+" • "+(r.report.collection_review_status==="PENDING_OFFICE"?"Payment verification pending":"Payment not collected"),"info"));
   for(const [t,c] of returnCardLines(r))card.append(elt("p",t,"info "+c));
@@ -650,8 +660,9 @@ async function openOrder(id){
  $("viewPod").hidden=!r.report?.pod_path;
  $("photoPreview").style.display="none";$("podFile").value="";
  $("deliveryForm").reset();
- $("deliveryForm").insertBefore($("payBox"),$("warning"));payInfo=null;resetPay(null);
+ payInfo=null;resetPay(null);
  $("payView").hidden=true;$("payForm").hidden=true;
+ $("payNeedDelivery").hidden=Boolean(r.report);
  syncDeliveryFields();
  $("receivedBy").required=false;$("podFile").required=false;$("deliveryNote").required=false;
  $("savedTitle").textContent=r.report?"Delivery Submitted — "+r.report.delivery_status:"";
@@ -676,6 +687,7 @@ async function openOrder(id){
  // Only show tabs that have something to do for this order and login.
  document.querySelector('.tabs [data-tab="return"]').hidden=$("returnFeature").hidden;
  document.querySelector('.tabs [data-tab="deliver"]').hidden=$("deliveryForm").hidden&&$("savedPanel").hidden;
+ document.querySelector('.tabs [data-tab="payment"]').hidden=waiting||role!=="driver"||r.report?.delivery_status==="NOT_DELIVERED";
  showTab(!$("deliveryForm").hidden||r.report?"deliver":"order");
  $("overlay").classList.add("open");
 }
@@ -704,7 +716,6 @@ function syncDeliveryFields(){
  if($("proofFields").hidden&&$("podFile").value){$("podFile").value="";$("podFile").dispatchEvent(new Event("change"));}
  $("noteField").hidden=!value;
  $("noteLabel").textContent=value==="NOT_DELIVERED"?"Reason for Not Delivered *":value==="PARTIAL"?"Shortage / Discrepancy Note *":"Note (Optional)";
- $("payBox").hidden=value==="NOT_DELIVERED";
 }
 document.querySelectorAll(".statuspick button").forEach(b=>b.addEventListener("click",()=>{$("deliveryStatus").value=b.dataset.status;syncDeliveryFields();}));
 $("deliveryStatus").onchange=syncDeliveryFields;
@@ -720,12 +731,8 @@ $("deliveryForm").onsubmit=async e=>{
  const r=selected,status=$("deliveryStatus").value,note=$("deliveryNote").value.trim();
  const receiver=$("receivedBy").value.trim();
  if(!["DELIVERED","PARTIAL","NOT_DELIVERED"].includes(status)){message("Select Delivery Status.",true);return;}
- if(status==="NOT_DELIVERED")resetPay(null);
- const pay=readPay();
- if(pay.error){message(pay.error,true);return;}
  const file=$("podFile").files?.[0];
  // Same rules as lwb_driver_submit_delivery, checked before any photo upload.
- if(status!=="NOT_DELIVERED"&&(!receiver||!file)){message("Receiver Name and POD Photo are required for Delivered / Partial.",true);return;}
  if(status==="PARTIAL"&&!note){message("Partial delivery needs a shortage / discrepancy note.",true);return;}
  if(status==="NOT_DELIVERED"&&!note){message("Write the reason for Not Delivered in the note.",true);return;}
  if(file&&(!["image/jpeg","image/png","image/webp"].includes(file.type)||file.size>5*1024*1024)){
@@ -734,8 +741,7 @@ $("deliveryForm").onsubmit=async e=>{
  const confirmText="Submit final DRIVER REPORT for "+r.order_no+
   "\nParty: "+r.party_name+
   "\nStatus: "+status+
-  (status==="NOT_DELIVERED"?"":"\n"+payText(pay))+
-  "\n\nThe delivery report is locked after saving. Payment can be changed until the office verifies it. Continue?";
+  "\n\nThe delivery report is locked after saving."+(status==="NOT_DELIVERED"?"":" Enter the payment next, in the 💰 Payment tab.")+" Continue?";
  if(!await confirm(confirmText))return;
  busy=true;$("submitDelivery").disabled=true;$("submitDelivery").textContent="Uploading / Submitting...";
  try{
@@ -745,24 +751,28 @@ $("deliveryForm").onsubmit=async e=>{
    proofPath=user.id+"/"+r.order_id+"/"+podFileId()+"."+ext;
    const uploaded=await db.storage.from("lwb-delivery-pod")
      .upload(proofPath,file,{contentType:file.type,upsert:false,cacheControl:"3600"});
-   if(uploaded.error)throw Error("POD photo upload failed: "+uploaded.error.message);
+   // POD photo is optional: if its upload fails, the driver may still submit without it.
+   if(uploaded.error){
+    if(!await confirm("POD photo could not be uploaded ("+uploaded.error.message+").\nSubmit the delivery without the photo?"))throw Error("POD photo upload failed: "+uploaded.error.message);
+    proofPath=null;
+   }
   }
-  const photoPaths=await uploadPayPhotos(r.order_id);
-  const {data,error}=await db.rpc("lwb_driver_submit_delivery_with_payment",{
+  // Delivery only; the payment is saved separately from the 💰 Payment tab.
+  const {error}=await db.rpc("lwb_driver_submit_delivery",{
    p_order_id:r.order_id,p_delivery_status:status,p_received_by:receiver||null,
    p_pod_path:proofPath,p_delivery_note:note||null,
-   p_cash_notes:pay.notes,p_online_amount:pay.online,p_online_mode:pay.online>0?pay.mode:null,
-   p_online_reference:pay.online>0&&pay.ref?pay.ref:null,p_online_photo_paths:photoPaths
+   p_collection_amount:0,p_payment_mode:null,p_payment_reference:null
   });
   if(error)throw error;
   busy=false;
   close();
   await refresh();
-  message("Delivery Report SAVED for "+r.order_no+". "+(status==="NOT_DELIVERED"?"":"Received "+money(data?.collected)+", outstanding "+money(data?.outstanding)+". The office will check the payment."));
+  message("Delivery Report SAVED for "+r.order_no+"."+(status==="NOT_DELIVERED"?"":" Now enter the payment received."));
+  if(status!=="NOT_DELIVERED"&&records.some(x=>x.order_id===r.order_id))await openPayment(r.order_id);
  }catch(error){
   message("Delivery NOT submitted: "+error.message+". If photo was uploaded, it may remain privately stored until cleaned up.",true);
  }finally{
-  busy=false;$("submitDelivery").disabled=false;$("submitDelivery").textContent="Submit Delivery & Collection Report";
+  busy=false;$("submitDelivery").disabled=false;$("submitDelivery").textContent="Submit Delivery";
  }
 };
 // Payment: cash counted by notes, UPI / bank with a photo of the payment screen, rest outstanding.
@@ -869,12 +879,12 @@ async function uploadPayPhotos(orderId){
  }
  return paths;
 }
-const PAY_STATUS={PENDING:"⏳ Waiting for office check",VERIFIED:"✅ Verified by office",REJECTED:"❌ Rejected by office"};
+const PAY_STATUS={NONE:"💰 Payment not entered yet",PENDING:"⏳ Waiting for office check",VERIFIED:"✅ Verified by office",REJECTED:"❌ Rejected by office"};
 function notesText(n){
  return Object.entries(n||{}).filter(([,v])=>Number(v)>0).sort((a,b)=>(b[0]==="coins"?-1:Number(b[0]))-(a[0]==="coins"?-1:Number(a[0])))
   .map(([d,v])=>d==="coins"?"coins "+money(v):"₹"+d+" × "+v).join(" · ");
 }
-// Card "💰 Payment" button: opens the order on the Delivery tab, straight at the payment entry.
+// Card "💰 Payment" button: opens the order on the Payment tab, with the payment form open.
 let payWanted=null;
 function scrollModalTo(node){
  const m=document.querySelector(".modal"),tabs=document.querySelector(".tabs");
@@ -884,8 +894,8 @@ async function openPayment(id){
  payWanted=id;
  await openOrder(id);
  if(selected?.order_id!==id){payWanted=null;return}
- showTab("deliver");
- if(!selected.report){payWanted=null;scrollModalTo($("payBox"))}
+ showTab("payment");
+ if(!selected.report)payWanted=null;
 }
 async function loadPayView(r){
  const box=$("payView");box.hidden=false;box.replaceChildren(elt("p","Loading payment…","mini"));
@@ -896,7 +906,7 @@ async function loadPayView(r){
 }
 async function renderPayView(){
  const p=payInfo,box=$("payView");box.replaceChildren();
- const st=p.payment_status||"PENDING";
+ const st=p.payment_status||(Number(p.collected)>0?"PENDING":"NONE");
  box.append(elt("span",PAY_STATUS[st]||st,"payst "+st));
  if(st!=="PENDING"&&(p.reviewed_by_name||p.review_note))box.append(elt("p",(p.reviewed_by_name||"Office")+" · "+date(p.reviewed_at)+(p.review_note?" · "+p.review_note:""),"mini"));
  box.append(elt("p","💵 Cash "+money(p.cash_amount)+(notesText(p.cash_notes)?" ("+notesText(p.cash_notes)+")":"")));
@@ -909,17 +919,16 @@ async function renderPayView(){
   for(const x of signed.data||[]){if(!x.signedUrl)continue;const fig=elt("figure"),img=elt("img");img.src=x.signedUrl;img.alt="Payment photo";img.onclick=()=>window.open(x.signedUrl,"_blank","noopener");fig.append(img);grid.append(fig)}
  }
  if(st!=="VERIFIED"){
-  const b=elt("button",st==="REJECTED"?"✏️ Correct payment":"✏️ Change payment");b.type="button";b.onclick=openPayForm;box.append(b);
+  const b=elt("button",st==="NONE"?"💰 Enter payment":st==="REJECTED"?"✏️ Correct payment":"✏️ Change payment");b.type="button";b.onclick=openPayForm;box.append(b);
  }
  if(payWanted&&payWanted===selected?.order_id){
   payWanted=null;
-  if(st!=="VERIFIED"){await openPayForm();scrollModalTo($("payForm"))}
-  else scrollModalTo(box);
+  if(st!=="VERIFIED"){await openPayForm();document.querySelector(".modal").scrollTop=0}
+  else document.querySelector(".modal").scrollTop=0;
  }
 }
 async function openPayForm(){
  const p=payInfo;if(!p)return;
- $("payForm").prepend($("payBox"));$("payBox").hidden=false;
  resetPay(p);
  const paths=p.online_photo_paths||[];
  if(paths.length){
@@ -929,6 +938,7 @@ async function openPayForm(){
  }
  $("payView").hidden=true;$("payForm").hidden=false;$("payMsg").style.display="none";
 }
+$("goDeliver").onclick=()=>showTab("deliver");
 $("payCancel").onclick=()=>{$("payForm").hidden=true;$("payView").hidden=false};
 $("payForm").onsubmit=async e=>{
  e.preventDefault();
