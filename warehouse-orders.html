@@ -441,26 +441,26 @@
     @media(max-width:760px){.po-grid{grid-template-columns:1fr 1fr}}
     @media(max-width:480px){.po-grid{grid-template-columns:1fr}}
     @media print {
-      @page {size:A5 portrait;margin:10mm}
+      @page {size:A4 portrait;margin:12mm}
       body > :not(#poPrintArea) {display:none!important}
-      #poPrintArea {display:block!important;background:white;color:black;font:10px/1.5 Arial,sans-serif}
-      #poPrintArea h1 {font-size:18px;margin:0 0 6px}
+      #poPrintArea {display:block!important;background:white;color:black;font:13px/1.5 Arial,sans-serif}
+      #poPrintArea h1 {font-size:22px;margin:0 0 6px}
       #poPrintArea p {margin:5px 0;color:black}
-      #poPrintArea table {border-collapse:collapse;width:100%;min-width:0;font-size:9px;margin-top:10px}
+      #poPrintArea table {border-collapse:collapse;width:100%;min-width:0;font-size:12px;margin-top:10px}
       #poPrintArea td,#poPrintArea th {border:1px solid #777;padding:6px 4px;text-align:left;overflow-wrap:anywhere}
       #poPrintArea .po-print-transport {border:1px solid #777;padding:7px;margin:10px 0;break-inside:avoid}
       #poPrintArea .po-print-transport p {margin:4px 0}
       #poPrintArea .po-print-transport b {display:inline-block;min-width:90px}
       #poPrintArea .po-print-totals {display:flex;gap:8px;margin-top:14px;break-inside:avoid;align-items:stretch}
       #poPrintArea .po-total-box {flex:1;min-width:0;border:2px solid #111;padding:9px 7px;text-align:center;background:#f4f4f4!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}
-      #poPrintArea .po-total-label {display:block;font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.25px;line-height:1.3}
-      #poPrintArea .po-total-value {display:block;font-size:18px;font-weight:900;line-height:1.35;margin-top:5px;white-space:nowrap}
-      #poPrintArea .po-total-weight {text-align:right;margin-top:7px;font-weight:700;font-size:10px}
+      #poPrintArea .po-total-label {display:block;font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.25px;line-height:1.3}
+      #poPrintArea .po-total-value {display:block;font-size:22px;font-weight:900;line-height:1.35;margin-top:5px;white-space:nowrap}
+      #poPrintArea .po-total-weight {text-align:right;margin-top:7px;font-weight:700;font-size:12px}
       #poPrintArea .po-print-totals + .po-total-weight {color:#111}
       #poPrintArea .po-print-note {border:1px solid #444;padding:9px;margin-top:13px;break-inside:avoid;overflow-wrap:anywhere}
-      #poPrintArea .po-print-note strong {font-size:11px;display:block;margin-bottom:4px}
-      #poPrintArea .po-print-note .print-note-text {font-size:11px;font-weight:600;white-space:pre-wrap;overflow-wrap:anywhere}
-      #poPrintArea .po-print-footer {margin-top:18px;border-top:1px solid #999;padding-top:7px;font-size:9px}
+      #poPrintArea .po-print-note strong {font-size:13px;display:block;margin-bottom:4px}
+      #poPrintArea .po-print-note .print-note-text {font-size:13px;font-weight:600;white-space:pre-wrap;overflow-wrap:anywhere}
+      #poPrintArea .po-print-footer {margin-top:18px;border-top:1px solid #999;padding-top:7px;font-size:11px}
     }
     .message {
       padding: 12px 15px;
@@ -1308,6 +1308,11 @@ function renderOrders() {
               >
                 ${isPending(order) ? "Review" : "View"}
               </button>
+              ${eligibleForPoPrint(order) ? `
+              <button class="btn btn-green" title="Driver / Vehicle / Godown Manager"
+                onclick="openTransportAllocation('${order.id}')">🚚 Transport</button>
+              <button class="btn btn-light" title="Print approved PO (A4)"
+                onclick="printFromList('${order.id}')">🖨 Print</button>` : ""}
 
             </td>
 
@@ -1820,6 +1825,16 @@ async function saveApprovedTransport(){
   }catch(e){allocationStatus("Assignment failed: "+e.message,true);}
   finally{transportSaving=false;if(selectedOrder&&selectedOrder.id===id)btn.disabled=poAllocationLocked(selectedOrder);}
 }
+// List shortcuts next to Review: open the order straight at Transport Allocation, or print it.
+async function openTransportAllocation(id){
+  await reviewOrder(id);
+  const panel=document.getElementById("postApprovalPanel");
+  if(!panel.hidden){panel.scrollIntoView({behavior:"smooth",block:"start"});document.getElementById("poDriverName").focus({preventScroll:true});}
+}
+async function printFromList(id){
+  await reviewOrder(id);
+  if(selectedOrder&&selectedOrder.id===id&&reviewReady)await printApprovedPO();
+}
 async function printApprovedPO(){
   if(!eligibleForPoPrint(selectedOrder)||!reviewReady){
     alert("Approve the PO before printing.");
@@ -1871,6 +1886,7 @@ async function printApprovedPO(){
       return t;
     },{qty:0,amount:0,weight:0});
     document.getElementById("poPrintArea").innerHTML=
+      "<h1>LUXURY WRIST BRAND</h1>"+
       "<p><b>APPROVED PO / LOADING INSTRUCTION</b></p>"+
       "<p><b>NOT A GST INVOICE — NOT A TALLY BILL</b></p>"+
       "<p><b>PO No:</b> "+safe(order.order_no)+"</p>"+
@@ -1882,7 +1898,7 @@ async function printApprovedPO(){
         "<p><b>Driver Name:</b> "+assigned(a.driver_name)+"</p>"+
         "<p><b>Driver Mobile:</b> "+assigned(a.driver_mobile)+"</p>"+
         "<p><b>Vehicle Number:</b> "+assigned(a.vehicle_no)+"</p>"+
-        "<p><b>Loading Person:</b> "+assigned(a.loading_person)+"</p>"+
+        "<p><b>Godown Manager:</b> "+assigned(a.loading_person)+"</p>"+
       "</div>"+
       "<table><thead><tr><th>#</th><th>SKU</th><th>Approved CS</th><th>Rate/CS</th><th>Value</th></tr></thead><tbody>"+
       rows+"</tbody></table>"+
@@ -1920,7 +1936,7 @@ function warehouseSkuInputMarkup(item, index, editable) {
 }
 
 function renderItems() {
-  const editable = selectedOrder && isPending(selectedOrder);
+  const editable = canEditItems(selectedOrder);
   const body = document.getElementById("itemsBody");
   body.innerHTML = selectedItems.map((item, i) => {
     const qty = Number(item.approved_qty) || 0;
@@ -1940,7 +1956,8 @@ function renderItems() {
     </tr>`;
   }).join('') || '<tr><td colspan="9">No SKU items. Add a SKU before approving.</td></tr>';
   document.getElementById("approveOrderBtn").style.display = editable ? "inline-block" : "none";
-  document.getElementById("cancelOrderBtn").style.display = editable ? "inline-block" : "none";
+  document.getElementById("approveOrderBtn").textContent = isPending(selectedOrder) ? "Approve Order" : "Save Changes";
+  document.getElementById("cancelOrderBtn").style.display = editable && isPending(selectedOrder) ? "inline-block" : "none";
   document.getElementById("addSkuBtn").style.display = editable ? "inline-block" : "none";
   renderManagerNoteControls();
   document.getElementById("postApprovalPanel").hidden=!eligibleForPoPrint(selectedOrder);
@@ -2057,8 +2074,11 @@ async function saveManagerNote(){
   }
 }
 
+// Sales Head can change an approved PO (SKU, cases, rate, weight) until loading starts.
+const canEditItems=o=>Boolean(o)&&(isPending(o)||(eligibleForPoPrint(o)&&!poAllocationLocked(o)));
 async function approveOrder() {
-  if (!selectedOrder || !isPending(selectedOrder) || !reviewReady) return;
+  if (!selectedOrder || !canEditItems(selectedOrder) || !reviewReady) return;
+  const approving=isPending(selectedOrder);
   if (!selectedItems.length) { alert('Add at least one SKU.'); return; }
   for (const item of selectedItems) {
     if (!String(item.sku_name||'').trim()) { alert('SKU name is required.'); return; }
@@ -2078,14 +2098,17 @@ async function approveOrder() {
   if (!selectedItems.some(item=>Number(item.approved_qty)>0)) {
     alert('At least one SKU needs Approved Qty above 0. To reject the full PO, use Cancel Order.'); return;
   }
-  if (!await confirm('Approve '+selectedOrder.order_no+' with '+selectedItems.length+' SKU(s)?')) return;
+  if (!await confirm(approving
+    ? 'Approve '+selectedOrder.order_no+' with '+selectedItems.length+' SKU(s)?'
+    : 'Save changes to approved PO '+selectedOrder.order_no+' ('+selectedItems.length+' SKU)? Driver / Vehicle assignment stays the same.')) return;
   const btn=document.getElementById('approveOrderBtn');
-  btn.disabled=true; btn.textContent='Approving...';
+  btn.disabled=true; btn.textContent=approving?'Approving...':'Saving...';
   try {
     // Check latest status before applying changes. For production, use one database RPC transaction.
     const {data:latest,error:latestError}=await db.from('orders').select('status').eq('id',selectedOrder.id).single();
     if(latestError) throw latestError;
-    if(!isPending(latest)) throw new Error('Order was already processed. Refresh the page.');
+    if(approving&&!isPending(latest)) throw new Error('Order was already processed. Refresh the page.');
+    if(!approving&&!canEditItems(latest)) throw new Error('Loading has started for this order, so it can no longer be changed.');
     // Save new and modified items first. Existing items are deleted only after successful upserts.
     for(const item of selectedItems) {
       const q=Number(item.approved_qty), r=Number(item.rate), w=Number(item.unit_weight);
@@ -2106,27 +2129,25 @@ async function approveOrder() {
       }
     }
     const totals=calculateApprovalTotals();
-    const {data:updated,error:orderError}=await db.from('orders').update({
-      status:'approved',approved_by:currentUser.id,approved_at:new Date().toISOString(),
+    const change={
       manager_note:document.getElementById('managerNote').value.trim()||null,
       total_qty:totals.qty,total_amount:totals.amount,total_weight:totals.weight
-    }).eq('id',selectedOrder.id).eq('status',latest.status).select('id');
+    };
+    if(approving)Object.assign(change,{status:'approved',approved_by:currentUser.id,approved_at:new Date().toISOString()});
+    const {data:updated,error:orderError}=await db.from('orders').update(change)
+      .eq('id',selectedOrder.id).eq('status',latest.status).select('id');
     if(orderError) throw orderError;
-    if(!updated?.length) throw new Error('Order status changed during approval. Refresh.');
-    selectedOrder={...selectedOrder,status:"approved",approved_by:currentUser.id,
-      approved_at:new Date().toISOString(),total_qty:totals.qty,
-      total_amount:totals.amount,total_weight:totals.weight,
-      manager_note:document.getElementById("managerNote").value.trim()||null};
-    managerNoteOriginal=String(selectedOrder.manager_note||"");
-    document.getElementById("dStatus").textContent="approved";
-    renderItems();
-    await revealApprovalActions();
+    if(!updated?.length) throw new Error('Order status changed while saving. Refresh.');
+    // Reload the order so newly added SKU lines get their ids (a second save must not add them again).
+    const id=selectedOrder.id;
     await loadOrders();
+    await reviewOrder(id);
+    if(!approving)alert('Changes saved for '+(selectedOrder?.order_no||'PO')+'. Print the PO again if it was already printed.');
     document.getElementById("postApprovalPanel").scrollIntoView({behavior:"smooth",block:"nearest"});
   } catch(error) {
     console.error(error);
-    alert('Approval not completed: '+(error.message||'Unknown error')+'\nSome SKU edits may already be saved. Refresh and review before retrying.');
-  } finally {btn.disabled=false;btn.textContent='Approve Order';}
+    alert((approving?'Approval':'Save')+' not completed: '+(error.message||'Unknown error')+'\nSome SKU edits may already be saved. Refresh and review before retrying.');
+  } finally {btn.disabled=false;btn.textContent=selectedOrder&&!isPending(selectedOrder)?'Save Changes':'Approve Order';}
 }
 
 async function cancelOrder() {
