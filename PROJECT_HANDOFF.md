@@ -295,3 +295,10 @@
 
 - Tally Bill Check now shows at the top: PO sales (ERP, dispatched POs in the dates), Tally sales (Sales Register, skipped names left out) and the difference, split into GST on matched bills and "Not explained" (red when over ₹1). "Party wise: PO vs Tally" lists each party's PO total, Tally total and unexplained difference (Excel has a Party wise sheet). The result popup counts parties that differ.
 - New card "Tally stock vs ERP stock": choose the Tally Stock Summary; items matched by name with `lwb_live_stock` (saleable pcs). A Tally quantity in box / case / ctn is compared with ERP cases, else pieces. Shows Quantity differs / In Tally only / In ERP only. Read only, no SQL.
+
+## Money Overview for Accounts (2026-10-28)
+
+- New page `money-overview.html` (Accounts > Money Overview, admin/accounts), data from `lwb_accounts_money(p_days)` (`lwb_accounts_money_setup.sql`, read only): every loaded PO of the last 120 days from `lwb_tally_bill_rows` plus delivery time, collection time, verify time, payment status, driver and vehicle.
+- "Right now": 1 Loaded, Tally bill pending · 2 Bill made, not delivered yet · 3 Money with drivers (collected, payment PENDING) · 4 Outstanding with parties (over 30 days in red) · 5 Received (verified + Cashbook). Period strip (Today / Yesterday / 7 days / month / dates): bills made, delivered, driver collected, verified, Cash In at office.
+- Lists: Outstanding party wise (aging 0–7 / 8–30 / 30+, expand to bills), Money with drivers (driver wise, link to Driver Collections), Not delivered yet, Tally bill pending (link to Tally Bill & Invoice No.), All POs; Excel of each.
+- Cashbook: when this browser has the Cashbook key (`localStorage.lwbCbKey`) and the user can open the Cashbook, `lwb_cashbook_load` is read: Cash In entries with an invoice no. of an ERP bill (not driver cash added from the ERP, `erpRef`) reduce that bill's outstanding; Cash In entries not from drivers are the "Cash In at office" figure. Nothing is written.

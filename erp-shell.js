@@ -50,6 +50,7 @@
       {t:"Daily Summary",h:"daily-report.html",i:"stock",r:"admin manager accounts"},
       {t:"Team Work Report",h:"team-report.html",i:"users",r:"admin manager"}]},
     {group:"Accounts",items:[
+      {t:"Money Overview",h:"money-overview.html",i:"cash",r:"admin accounts"},
       {t:"Tally Bill & Invoice No.",h:"accounts-invoice.html",i:"bill",r:"admin accounts"},
       {t:"Tally Bill Check",h:"tally-check.html",i:"bill",r:"admin accounts"},
       {t:"Tally Party Mapping",h:"party-mapping.html",i:"users",r:"admin accounts"},
