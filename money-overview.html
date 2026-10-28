@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Money Overview | Luxury Wrist Brand ERP</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <link rel="stylesheet" href="erp-shell.css">
+  <script src="erp-shell.js"></script>
+  <script src="excel-io.js"></script>
+  <style>
+    .status{text-align:center;padding:80px 20px;font-size:15px;color:#555}
+    .mo-sub{margin:-8px 0 14px;color:var(--erp-muted);font-size:15px;line-height:1.55}
+    .mo-msg{padding:12px 14px;border-radius:8px;margin-bottom:14px;background:#fdf0dc;color:#7a4700;white-space:pre-wrap;font-size:14px}
+    .mo-msg.bad{background:#ffebeb;color:#9b2020}
+    .mo-h{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:18px 0 10px}
+    .mo-h h2{margin:0;font-size:17px}
+    .mo-h small{color:var(--erp-muted);font-size:13px}
+    .mo-flow{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px}
+    .mo-card{background:#fff;border:1px solid var(--erp-line);border-radius:8px;padding:14px;border-top:4px solid var(--c,#1f2a37);text-align:left;font:inherit;color:inherit;cursor:pointer;position:relative}
+    .mo-card[aria-pressed=true]{box-shadow:0 0 0 2px var(--c)}
+    .mo-card h3{margin:0 0 4px;font-size:14px;color:#4b5763;font-weight:600}
+    .mo-card .big{font-size:24px;font-weight:800;line-height:1.2;overflow-wrap:anywhere}
+    .mo-card small{display:block;color:var(--erp-muted);font-size:13px;margin-top:4px}
+    .mo-step{position:absolute;top:10px;right:12px;font-size:12px;font-weight:700;color:#9aa5b1}
+    .mo-period{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+    .mo-period button,.mo-tabs button{height:34px;border-radius:99px;border:1.5px solid var(--erp-line);background:#fff;color:var(--erp-ink);padding:0 14px;font:inherit;font-size:14px;cursor:pointer}
+    .mo-period button[aria-pressed=true],.mo-tabs button[aria-pressed=true]{border-color:#1769d8;background:#eaf2ff;color:#123f7a;font-weight:600}
+    .mo-period input{height:34px;border:1.5px solid var(--erp-line);border-radius:6px;padding:0 8px;font:inherit;font-size:14px}
+    .mo-today{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px}
+    .mo-today>div{background:#fff;border:1px solid var(--erp-line);border-radius:8px;padding:12px 14px}
+    .mo-today h3{margin:0 0 2px;font-size:13px;color:#4b5763;font-weight:600}
+    .mo-today b{font-size:20px;font-weight:800}
+    .mo-today small{display:block;color:var(--erp-muted);font-size:12px;margin-top:2px}
+    .mo-tabs{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:0 0 10px}
+    .mo-tabs .q{flex:1;min-width:180px;height:36px;border:1.5px solid var(--erp-line);border-radius:6px;padding:0 10px;font:inherit;font-size:14px}
+    .mo-btn{height:36px;border-radius:6px;padding:0 14px;font-weight:600;font-size:14px;cursor:pointer;border:1px solid var(--erp-line);background:#fff;color:var(--erp-ink);text-decoration:none;display:inline-flex;align-items:center}
+    .mo-table{border-collapse:collapse;width:100%;font-size:14px}
+    .mo-table th,.mo-table td{border-bottom:1px solid var(--erp-line);padding:9px 10px;text-align:left;vertical-align:top}
+    .mo-table th{background:#f6f7f9;font-size:13px;font-weight:700;color:#2b3440;white-space:nowrap}
+    .mo-table td.n,.mo-table th.n{text-align:right;white-space:nowrap}
+    .mo-table td small{display:block;color:var(--erp-muted);font-size:12px}
+    .mo-table tr.open td{background:#f7faff}
+    .mo-table tr.sub td{background:#fbfcfe;font-size:13px}
+    .mo-table tfoot td{font-weight:700;background:#f6f7f9}
+    .tag{display:inline-block;padding:2px 9px;border-radius:99px;font-size:12px;font-weight:700;white-space:nowrap}
+    .t-red{background:#fdecef;color:#b3122b}.t-amb{background:#fdf0dc;color:#9a5b00}.t-grn{background:#e3f5ec;color:#13824a}.t-blu{background:#e6efff;color:#1d5fbf}.t-gry{background:#eef0f3;color:#3b4652}
+    .age{display:inline-block;min-width:44px;text-align:center}
+    .tog{border:0;background:none;color:#1769d8;font:inherit;font-weight:600;cursor:pointer;padding:0}
+    .mo-scroll{overflow:auto}
+    .mo-note{font-size:13px;color:var(--erp-muted);margin:10px 2px 0;line-height:1.5}
+    @media(max-width:1100px){.mo-flow,.mo-today{grid-template-columns:repeat(3,minmax(0,1fr))}}
+    @media(max-width:640px){.mo-flow,.mo-today{grid-template-columns:1fr 1fr}.mo-card .big{font-size:20px}}
+    [hidden]{display:none!important}
+  </style>
+</head>
+<body>
+  <div id="loading" class="status">Checking account access...</div>
+  <main id="page" class="erp-main" hidden>
+    <div class="erp-pagehead"><h1>Money Overview</h1></div>
+    <p class="mo-sub">Every loaded PO from Tally bill to money in hand: what went to the market, what was delivered, what the drivers are carrying, what Office received and what parties still owe.</p>
+    <div id="msg" class="mo-msg" hidden></div>
+
+    <div class="mo-h"><h2>Right now</h2><small id="asOf"></small><button type="button" class="mo-btn" id="reload" style="margin-left:auto">↻ Refresh</button></div>
+    <div class="mo-flow" id="flow"></div>
+
+    <div class="mo-h"><h2 id="perTitle">Today</h2>
+      <div class="mo-period" id="period"><button type="button" data-p="today">Today</button><button type="button" data-p="yday">Yesterday</button><button type="button" data-p="7">Last 7 days</button><button type="button" data-p="month">This month</button>
+        <input type="date" id="pFrom" aria-label="From"> <input type="date" id="pTo" aria-label="To"></div></div>
+    <div class="mo-today" id="today"></div>
+
+    <div class="mo-h"><h2 id="listTitle"></h2><small id="listNote"></small></div>
+    <section class="erp-card" style="padding:12px">
+      <div class="mo-tabs" id="tabs"><button type="button" data-t="party">Outstanding party wise</button><button type="button" data-t="driver">Money with drivers</button><button type="button" data-t="road">Not delivered yet</button><button type="button" data-t="bill">Tally bill pending</button><button type="button" data-t="all">All POs</button>
+        <input class="q" id="q" type="search" placeholder="Search party, PO, bill no., driver" autocomplete="off"><button type="button" class="mo-btn" id="xl">⬇ Excel</button></div>
+      <div class="mo-scroll" id="list"></div>
+    </section>
+    <p class="mo-note">Outstanding = Tally bill − credit notes + debit notes − money the driver collected − payments entered in the Cashbook against that bill no. (when this browser has the Cashbook open). Money with drivers = collected by the driver and not yet verified by Office in Driver Collections. POs loaded in the last 120 days.</p>
+  </main>
+  <script>
+    'use strict';
+    const client=supabase.createClient("https://txkbhadzdbxpieunfvox.supabase.co","sb_publishable_W4I3Q5ODf0g17sq5uDml2Q_sLolXYEk");
+    const el=id=>document.getElementById(id);
+    const esc=v=>String(v==null?"":v).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+    const norm=s=>String(s??"").toUpperCase().replace(/[^A-Z0-9]+/g," ").trim();
+    const vkey=v=>norm(v).replace(/ /g,"");
+    const r2=n=>Math.round((Number(n)||0)*100)/100;
+    const rs=v=>"₹"+r2(v).toLocaleString("en-IN",{maximumFractionDigits:2});
+    const pad=n=>String(n).padStart(2,"0");
+    // dates in India time
+    const istDay=t=>t?new Date(new Date(t).getTime()+330*60e3).toISOString().slice(0,10):"";
+    const today=()=>istDay(Date.now());
+    const shift=(d,n)=>{const x=new Date(d+"T12:00:00Z");x.setUTCDate(x.getUTCDate()+n);return x.toISOString().slice(0,10)};
+    const nice=d=>d?d.slice(8,10)+"-"+d.slice(5,7)+"-"+d.slice(0,4):"";
+    const pl=(n,w)=>n+" "+w+(n===1?"":"s");
+    const days=d=>d?Math.max(0,Math.round((new Date(today()+"T12:00:00Z")-new Date(d+"T12:00:00Z"))/864e5)):0;
+    let rows=[],cb=null,tab="party",per="today",open=new Set();
+
+    function say(t,bad){el("msg").hidden=!t;el("msg").textContent=t||"";el("msg").className="mo-msg"+(bad?" bad":"")}
+
+    /* ---------- data ---------- */
+    async function load(){
+      el("reload").disabled=true;
+      try{
+        const {data,error}=await client.rpc("lwb_accounts_money",{p_days:120});
+        if(error)throw Error(/function|schema cache/i.test(error.message)?"Money Overview is not set up yet: run lwb_accounts_money_setup.sql once in Supabase.":error.message);
+        rows=(data||[]).map(prep);
+        await loadCashbook();
+        say(cb&&cb.err?cb.err:"");
+        el("asOf").textContent="as on "+new Date().toLocaleString("en-IN",{dateStyle:"medium",timeStyle:"short"});
+        render();
+      }catch(e){say(e.message,true)}
+      finally{el("reload").disabled=false}
+    }
+    function prep(r){
+      const billed=r.invoice_no?Number(r.bill_amount!=null?r.bill_amount:r.erp_amount)||0:0;
+      const del=String(r.delivery||"").toUpperCase();
+      return {...r,billed,erp:Number(r.erp_amount)||0,collected:Number(r.collected)||0,verified:Number(r.verified)||0,
+        cr:Number(r.credit_notes)||0,dr:Number(r.debit_notes)||0,del,office:0,officeToday:0,
+        nos:String(r.invoice_no||"").split(",").map(vkey).filter(Boolean),
+        delDay:istDay(r.delivered_at),colDay:istDay(r.collected_at),verDay:istDay(r.verified_at)};
+    }
+    // Payments entered in the Cashbook against a Tally bill no. (not the driver cash Office already added from the ERP)
+    async function loadCashbook(){
+      cb=null;
+      let key="";try{key=localStorage.getItem("lwbCbKey")||""}catch(_){}
+      const {data,error}=await client.rpc("lwb_cashbook_load",{p_key:key||null});
+      if(error){cb={err:/NO_ACCESS|private|permission|not allowed/i.test(error.message)?"Payments taken at the office are not included: open the Cashbook once in this browser (with its code), then Refresh.":""};return}
+      const d=(data&&data.data)||{},parties=new Map((d.parties||[]).map(p=>[p.id,p.name]));
+      const byNo=new Map();
+      rows.forEach(r=>r.nos.forEach(n=>{if(!byNo.has(n))byNo.set(n,[]);byNo.get(n).push(r)}));
+      const ins=[];
+      for(const b of d.books||[])for(const x of b.entries||[]){
+        if(x.type!=="in"||!(Number(x.amount)>0))continue;
+        ins.push(x);
+        if(x.erpRef||!x.invoice)continue;
+        let hit=byNo.get(vkey(x.invoice))||[];
+        if(hit.length>1){const pn=norm(parties.get(x.party));const h2=hit.filter(r=>norm(r.party)===pn);if(h2.length)hit=h2}
+        if(hit.length){hit[0].office+=Number(x.amount)||0}
+      }
+      cb={ins};
+    }
+    const out=r=>r.invoice_no?r2(Number(r.due)-r.office):0;
+    const onRoad=r=>r.payment_status==="PENDING"?r2(r.collected-r.verified):0;
+
+    /* ---------- screen ---------- */
+    function render(){renderFlow();renderPeriod();renderList()}
+    function card(k,step,title,big,small,c){return '<button type="button" class="mo-card" data-go="'+k+'" aria-pressed="'+(tab===k)+'" style="--c:'+c+'"><span class="mo-step">'+step+'</span><h3>'+title+'</h3><div class="big">'+big+'</div><small>'+small+'</small></button>'}
+    function renderFlow(){
+      const bill=rows.filter(r=>!r.invoice_no),road=rows.filter(r=>r.invoice_no&&!r.del),notDel=rows.filter(r=>r.del==="NOT_DELIVERED");
+      const drv=rows.filter(r=>onRoad(r)>0),due=rows.filter(r=>out(r)>1),old=due.filter(r=>days(r.invoice_date)>30);
+      const sum=(l,f)=>l.reduce((a,r)=>a+f(r),0);
+      el("flow").innerHTML=
+        card("bill","1","Loaded, Tally bill pending",rs(sum(bill,r=>r.erp)),pl(bill.length,"PO")+" · Accounts to make the bill","#8a1c7c")+
+        card("road","2","Bill made, not delivered yet",rs(sum(road,r=>r.billed)),pl(road.length,"PO")+" in the market"+(notDel.length?" · "+notDel.length+" came back undelivered":""),"#1d5fbf")+
+        card("driver","3","Money with drivers",rs(sum(drv,r=>onRoad(r))),pl(drv.length,"payment")+" to verify in Driver Collections","#b26b00")+
+        card("party","4","Outstanding with parties",rs(sum(due,r=>out(r))),(n=>n+(n===1?" party":" parties"))(new Set(due.map(r=>norm(r.party))).size)+" · "+(old.length?"<b style='color:#c8102e'>"+rs(sum(old,r=>out(r)))+" over 30 days</b>":"none over 30 days"),"#c8102e")+
+        card("all","5","Received (verified + Cashbook)",rs(sum(rows,r=>r.verified+r.office)),"on these POs, last 120 days","#13824a");
+      el("flow").querySelectorAll("[data-go]").forEach(b=>b.onclick=()=>{tab=b.dataset.go;render();el("listTitle").scrollIntoView({behavior:"smooth",block:"start"})});
+    }
+    function range(){
+      const t=today();
+      if(per==="today")return [t,t,"Today"];
+      if(per==="yday")return [shift(t,-1),shift(t,-1),"Yesterday"];
+      if(per==="7")return [shift(t,-6),t,"Last 7 days"];
+      if(per==="month")return [t.slice(0,8)+"01",t,"This month"];
+      const a=el("pFrom").value||t,b=el("pTo").value||a;return a<=b?[a,b,nice(a)+" to "+nice(b)]:[b,a,nice(b)+" to "+nice(a)];
+    }
+    function renderPeriod(){
+      const [a,b,title]=range(),inR=d=>d&&d>=a&&d<=b;
+      el("perTitle").textContent=title;
+      el("period").querySelectorAll("[data-p]").forEach(x=>x.setAttribute("aria-pressed",String(x.dataset.p===per)));
+      if(per!=="custom"){el("pFrom").value=a;el("pTo").value=b}
+      const S=(l,f)=>r2(l.reduce((s,r)=>s+f(r),0));
+      const bills=rows.filter(r=>inR(r.invoice_date)),dels=rows.filter(r=>inR(r.delDay)&&r.del!=="NOT_DELIVERED"),
+        cols=rows.filter(r=>inR(r.colDay)&&r.collected>0),vers=rows.filter(r=>inR(r.verDay)&&r.verified>0);
+      const office=cb&&cb.ins?cb.ins.filter(x=>inR(x.date)&&!x.erpRef):null;
+      const box=(t,v,s)=>"<div><h3>"+t+"</h3><b>"+v+"</b><small>"+s+"</small></div>";
+      el("today").innerHTML=
+        box("Bills made (to market)",rs(S(bills,r=>r.billed)),pl(bills.length,"PO"))+
+        box("Delivered",rs(S(dels,r=>r.billed||r.erp)),pl(dels.length,"PO"))+
+        box("Driver collected",rs(S(cols,r=>r.collected)),pl(cols.length,"payment"))+
+        box("Verified by Office",rs(S(vers,r=>r.verified)),pl(vers.length,"payment"))+
+        box("Cash In at office (Cashbook)",office?rs(office.reduce((s,x)=>s+Number(x.amount||0),0)):"—",office?(office.length===1?"1 entry":office.length+" entries")+", not from drivers":"open the Cashbook once in this browser");
+    }
+
+    const TABS={party:"Outstanding party wise",driver:"Money with drivers",road:"Bill made, not delivered yet",bill:"Loaded, Tally bill pending",all:"All POs"};
+    function match(r,q){return !q||[r.party,r.order_no,r.invoice_no,r.driver,r.vehicle].some(v=>norm(v).includes(q))}
+    function ageTag(d){const n=days(d);return "<span class='tag age "+(n>30?"t-red":n>7?"t-amb":"t-grn")+"'>"+n+" d</span>"}
+    function delTag(r){return r.del==="DELIVERED"?"<span class='tag t-grn'>Delivered</span>":r.del==="PARTIAL"?"<span class='tag t-amb'>Part delivered</span>":r.del==="NOT_DELIVERED"?"<span class='tag t-red'>Not delivered</span>":"<span class='tag t-gry'>On the way</span>"}
+    function table(head,body,foot){return "<table class='mo-table'><thead><tr>"+head.map(h=>"<th"+(h[1]?" class='n'":"")+">"+h[0]+"</th>").join("")+"</tr></thead><tbody>"+(body||"<tr><td colspan='"+head.length+"' class='erp-empty'>Nothing here.</td></tr>")+"</tbody>"+(foot?"<tfoot><tr>"+foot+"</tr></tfoot>":"")+"</table>"}
+    let sheet=[];
+    function renderList(){
+      el("tabs").querySelectorAll("[data-t]").forEach(b=>b.setAttribute("aria-pressed",String(b.dataset.t===tab)));
+      el("listTitle").textContent=TABS[tab];
+      const q=norm(el("q").value);let h="",note="";
+      if(tab==="party"){
+        const m=new Map();
+        for(const r of rows){if(!r.invoice_no||!match(r,q))continue;const k=norm(r.party);const x=m.get(k)||{party:r.party,list:[],billed:0,got:0,road:0,due:0,a:[0,0,0],oldest:""};
+          const o=out(r);x.list.push(r);x.billed+=r.billed-r.cr+r.dr;x.got+=r.verified+r.office;x.road+=onRoad(r);
+          if(o>1){x.due+=o;const n=days(r.invoice_date);x.a[n>30?2:n>7?1:0]+=o;if(!x.oldest||r.invoice_date<x.oldest)x.oldest=r.invoice_date}m.set(k,x)}
+        const ps=[...m.values()].filter(x=>x.due>1).sort((a,b)=>b.due-a.due);
+        const T=k=>r2(ps.reduce((s,x)=>s+(typeof k==="function"?k(x):x[k]),0));
+        note=(ps.length===1?"1 party owes":ps.length+" parties owe")+" money";
+        h=table([["Party"],["Bills",1],["Billed (after notes)",1],["Received",1],["With driver",1],["Outstanding",1],["0–7 days",1],["8–30 days",1],["30+ days",1],["Oldest"]],
+          ps.map(x=>{const k=norm(x.party),isO=open.has(k);
+            let s="<tr class='"+(isO?"open":"")+"'><td><button type='button' class='tog' data-open=\""+esc(k)+"\">"+(isO?"▾ ":"▸ ")+esc(x.party)+"</button></td><td class='n'>"+x.list.filter(r=>out(r)>1).length+"</td><td class='n'>"+rs(x.billed)+"</td><td class='n'>"+rs(x.got)+"</td><td class='n'>"+(x.road?rs(x.road):"")+"</td><td class='n'><b>"+rs(x.due)+"</b></td>"+
+              "<td class='n'>"+(x.a[0]?rs(x.a[0]):"")+"</td><td class='n'>"+(x.a[1]?rs(x.a[1]):"")+"</td><td class='n' style='color:#c8102e'>"+(x.a[2]?"<b>"+rs(x.a[2])+"</b>":"")+"</td><td>"+ageTag(x.oldest)+"</td></tr>";
+            if(isO)s+=x.list.filter(r=>out(r)>1).sort((a,b)=>String(a.invoice_date).localeCompare(String(b.invoice_date))).map(r=>"<tr class='sub'><td>Bill "+esc(r.invoice_no)+" · PO "+esc(r.order_no)+"<small>"+nice(r.invoice_date)+" · "+delTag(r)+(r.driver?" · "+esc(r.driver):"")+"</small></td><td></td>"+
+              "<td class='n'>"+rs(r.billed-r.cr+r.dr)+(r.cr?"<small>CN −"+rs(r.cr)+"</small>":"")+"</td><td class='n'>"+rs(r.verified+r.office)+(r.office?"<small>Cashbook "+rs(r.office)+"</small>":"")+"</td><td class='n'>"+(onRoad(r)?rs(onRoad(r)):"")+"</td><td class='n'><b>"+rs(out(r))+"</b></td><td colspan='3'></td><td>"+ageTag(r.invoice_date)+"</td></tr>").join("");
+            return s}).join(""),
+          "<td>Total</td><td></td><td class='n'>"+rs(T("billed"))+"</td><td class='n'>"+rs(T("got"))+"</td><td class='n'>"+rs(T("road"))+"</td><td class='n'>"+rs(T("due"))+"</td><td class='n'>"+rs(T(x=>x.a[0]))+"</td><td class='n'>"+rs(T(x=>x.a[1]))+"</td><td class='n'>"+rs(T(x=>x.a[2]))+"</td><td></td>");
+        sheet=[["Party","Bills","Billed (after notes)","Received","With driver","Outstanding","0-7 days","8-30 days","30+ days","Oldest bill"],...ps.map(x=>[x.party,x.list.filter(r=>out(r)>1).length,r2(x.billed),r2(x.got),r2(x.road),r2(x.due),r2(x.a[0]),r2(x.a[1]),r2(x.a[2]),nice(x.oldest)])];
+      }else if(tab==="driver"){
+        const m=new Map();
+        for(const r of rows){const v=onRoad(r);if(!(v>0)||!match(r,q))continue;const k=r.driver||"Driver";const x=m.get(k)||{driver:k,vehicle:r.vehicle,list:[],amt:0,oldest:""};x.list.push(r);x.amt+=v;if(!x.oldest||r.colDay<x.oldest)x.oldest=r.colDay;m.set(k,x)}
+        const ds=[...m.values()].sort((a,b)=>b.amt-a.amt);
+        note=ds.length?"Verify each payment in Driver Collections when the money reaches the office.":"Every driver payment is verified.";
+        h=(ds.length?"<p style='margin:0 0 10px'><a class='mo-btn' href='driver-collections.html'>Open Driver Collections to verify →</a></p>":"")+
+          table([["Driver"],["Payments",1],["Amount",1],["Oldest"],["POs"]],ds.map(x=>"<tr><td><b>"+esc(x.driver)+"</b>"+(x.vehicle?"<small>"+esc(x.vehicle)+"</small>":"")+"</td><td class='n'>"+x.list.length+"</td><td class='n'><b>"+rs(x.amt)+"</b></td><td>"+ageTag(x.oldest)+"</td><td>"+
+            x.list.map(r=>esc(r.order_no)+" · "+esc(r.party)+" · "+rs(onRoad(r))).join("<br>")+"</td></tr>").join(""),"<td>Total</td><td class='n'>"+ds.reduce((a,x)=>a+x.list.length,0)+"</td><td class='n'>"+rs(ds.reduce((a,x)=>a+x.amt,0))+"</td><td colspan='2'></td>");
+        sheet=[["Driver","Vehicle","PO","Party","Amount","Collected on"],...ds.flatMap(x=>x.list.map(r=>[x.driver,x.vehicle||"",r.order_no,r.party,r2(onRoad(r)),nice(r.colDay)]))];
+      }else if(tab==="road"){
+        const l=rows.filter(r=>r.invoice_no&&(!r.del||r.del==="NOT_DELIVERED")&&match(r,q)).sort((a,b)=>String(a.dispatch_date).localeCompare(String(b.dispatch_date)));
+        note=pl(l.length,"PO")+": bill made, delivery not reported";
+        h=table([["PO"],["Party"],["Tally bill"],["Bill amount",1],["Driver"],["Status"],["Loaded"]],l.map(r=>"<tr><td>"+esc(r.order_no)+"</td><td><b>"+esc(r.party)+"</b></td><td>"+esc(r.invoice_no)+"<small>"+nice(r.invoice_date)+"</small></td><td class='n'>"+rs(r.billed)+"</td><td>"+esc(r.driver||"")+"<small>"+esc(r.vehicle||"")+"</small></td><td>"+delTag(r)+"</td><td>"+nice(r.dispatch_date)+" "+ageTag(r.dispatch_date)+"</td></tr>").join(""),
+          "<td colspan='3'>Total</td><td class='n'>"+rs(l.reduce((a,r)=>a+r.billed,0))+"</td><td colspan='3'></td>");
+        sheet=[["PO","Party","Tally bill","Bill date","Bill amount","Driver","Vehicle","Status","Loaded"],...l.map(r=>[r.order_no,r.party,r.invoice_no,nice(r.invoice_date),r2(r.billed),r.driver||"",r.vehicle||"",r.del||"On the way",nice(r.dispatch_date)])];
+      }else if(tab==="bill"){
+        const l=rows.filter(r=>!r.invoice_no&&match(r,q)).sort((a,b)=>String(a.dispatch_date).localeCompare(String(b.dispatch_date)));
+        note=pl(l.length,"PO")+" loaded without a Tally bill";
+        h=(l.length?"<p style='margin:0 0 10px'><a class='mo-btn' href='accounts-invoice.html'>Open Tally Bill &amp; Invoice No. →</a></p>":"")+
+          table([["PO"],["Party"],["ERP amount",1],["Delivery"],["Driver"],["Loaded"]],l.map(r=>"<tr><td>"+esc(r.order_no)+"</td><td><b>"+esc(r.party)+"</b></td><td class='n'>"+rs(r.erp)+"</td><td>"+delTag(r)+"</td><td>"+esc(r.driver||"")+"</td><td>"+nice(r.dispatch_date)+" "+ageTag(r.dispatch_date)+"</td></tr>").join(""),
+          "<td colspan='2'>Total</td><td class='n'>"+rs(l.reduce((a,r)=>a+r.erp,0))+"</td><td colspan='3'></td>");
+        sheet=[["PO","Party","ERP amount","Delivery","Driver","Loaded"],...l.map(r=>[r.order_no,r.party,r2(r.erp),r.del||"On the way",r.driver||"",nice(r.dispatch_date)])];
+      }else{
+        const l=rows.filter(r=>match(r,q));
+        note=pl(l.length,"PO");
+        h=table([["PO"],["Party"],["Tally bill"],["Bill",1],["Notes",1],["Delivery"],["Driver got",1],["Verified",1],["Cashbook",1],["Outstanding",1]],
+          l.map(r=>"<tr><td>"+esc(r.order_no)+"<small>"+nice(r.dispatch_date)+"</small></td><td><b>"+esc(r.party)+"</b></td><td>"+(r.invoice_no?esc(r.invoice_no)+"<small>"+nice(r.invoice_date)+"</small>":"<span class='tag t-amb'>Bill pending</span>")+"</td>"+
+            "<td class='n'>"+(r.invoice_no?rs(r.billed):"<small>ERP "+rs(r.erp)+"</small>")+"</td><td class='n'>"+(r.cr||r.dr?(r.cr?"CN −"+rs(r.cr):"")+(r.dr?" DN +"+rs(r.dr):""):"")+"</td><td>"+delTag(r)+(r.driver?"<small>"+esc(r.driver)+"</small>":"")+"</td>"+
+            "<td class='n'>"+(r.collected?rs(r.collected):"")+"</td><td class='n'>"+(r.verified?rs(r.verified):"")+"</td><td class='n'>"+(r.office?rs(r.office):"")+"</td><td class='n'>"+(r.invoice_no?(out(r)>1?"<b>"+rs(out(r))+"</b>":"<span class='tag t-grn'>Paid</span>"):"")+"</td></tr>").join(""));
+        sheet=[["PO","Loaded","Party","Tally bill","Bill date","Bill amount","ERP amount","Credit notes","Debit notes","Delivery","Driver","Driver got","Verified","Cashbook","Outstanding"],
+          ...l.map(r=>[r.order_no,nice(r.dispatch_date),r.party,r.invoice_no||"",nice(r.invoice_date),r.invoice_no?r2(r.billed):"",r2(r.erp),r2(r.cr),r2(r.dr),r.del||"On the way",r.driver||"",r2(r.collected),r2(r.verified),r2(r.office),r.invoice_no?out(r):""])];
+      }
+      el("listNote").textContent=note;el("list").innerHTML=h;
+      el("list").querySelectorAll("[data-open]").forEach(b=>b.onclick=()=>{const k=b.dataset.open;open.has(k)?open.delete(k):open.add(k);renderList()});
+    }
+
+    el("tabs").querySelectorAll("[data-t]").forEach(b=>b.onclick=()=>{tab=b.dataset.t;render()});
+    el("period").querySelectorAll("[data-p]").forEach(b=>b.onclick=()=>{per=b.dataset.p;renderPeriod()});
+    ["pFrom","pTo"].forEach(id=>el(id).onchange=()=>{per="custom";renderPeriod()});
+    el("q").oninput=renderList;
+    el("reload").onclick=load;
+    el("xl").onclick=()=>LWBExcel.write("money-"+tab+"-"+today(),[{name:TABS[tab].slice(0,31),rows:sheet.length?sheet:[["Nothing"]]}]).catch(e=>say(e.message,true));
+
+    (async()=>{
+      const {data:{session}}=await client.auth.getSession();
+      if(!session){location.replace("login.html");return}
+      const {data:p}=await client.from("user_profiles").select("full_name,role,active").eq("id",session.user.id).single();
+      const realRole=String((p&&p.role)||"").toLowerCase().trim(),role=p?await ERPShell.pageRoleFresh(realRole):realRole;
+      if(!p||p.active!==true||!["admin","accounts"].includes(role)){location.replace("dashboard.html");return}
+      ERPShell.mount({role:realRole||role,name:p.full_name||session.user.email,onLogout:async()=>{await client.auth.signOut();location.replace("login.html")}});
+      el("loading").hidden=true;el("page").hidden=false;
+      await load();
+    })();
+  </script>
+</body>
+</html>
