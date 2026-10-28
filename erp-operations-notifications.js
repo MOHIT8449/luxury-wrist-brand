@@ -21,7 +21,13 @@
   const join=a=>a.filter(Boolean).join(" · ");
   if(t==="TALLY_BILL_PENDING")return {icon:"🧾",text:join(["Make Tally bill",order])};
   if(t==="VEHICLE_LOADED")return {icon:"🚛",text:join(["Vehicle loaded",order,(m.match(/Vehicle ([A-Z0-9]+)/)||[])[1]])};
-  if(t==="TALLY_BILL_DONE")return {icon:"🧾",text:join(["Tally bill made",order])};
+  if(t==="TALLY_BILL_DONE")return {icon:"🧾",text:join(["Bill made",order])};
+  if(t==="ORDER_NEW")return {icon:"🛒",text:join(["New order",order,money,"Approve"])};
+  if(t==="DELIVERY_COLLECTION_INFO")return {icon:"💰",text:join(["Driver collected",order,money])};
+  if(t==="DELIVERY_COLLECTION_RECEIVED")return {icon:"✅",text:join(["Payment received",order,money])};
+  if(t==="DELIVERY_RETURN_INFO")return {icon:"↩",text:join(["Driver took a return",order,money])};
+  if(t.startsWith("TALLY_NOTE_"))return {icon:"📝",text:join([t.endsWith("DEBIT")?"Debit note":"Credit note",order,money])};
+  if(t==="SALES_RETURN_NEW")return {icon:"↩",text:join(["Sales return",order,money,"Credit note"])};
   if(t==="DELIVERY_RETURN_RECEIVE")return {icon:"📦",text:join(["Receive return goods",order,money])};
   if(t==="DELIVERY_RETURN_DEDUCTED")return {icon:"↩",text:join(["Return cut",order,money])};
   if(t==="DELIVERY_RETURN_APPROVED"||t==="DELIVERY_RETURN_REJECTED")return {icon:t.endsWith("APPROVED")?"✅":"❌",text:join([t.endsWith("APPROVED")?"Return approved":"Return rejected",order,money])};
@@ -52,7 +58,12 @@
  // Page each notification opens. {o} = the notification's order id. The first page this login can open wins.
  const ROUTES=[
   [/^TALLY_BILL_PENDING$/,["accounts-invoice.html?order={o}"]],
-  [/^(VEHICLE_LOADED|TALLY_BILL_DONE)$/,["loading-dispatch.html","accounts-invoice.html?order={o}","warehouse-orders.html"]],
+  [/^(VEHICLE_LOADED|TALLY_BILL_DONE)$/,["loading-dispatch.html","accounts-invoice.html?order={o}","warehouse-orders.html","driver-delivery.html?order={o}","my-sales.html#orders"]],
+  [/^ORDER_NEW$/,["warehouse-orders.html"]],
+  [/^DELIVERY_COLLECTION_(INFO|RECEIVED)$/,["driver-collections.html?order={o}","my-sales.html#orders","loading-dispatch.html"]],
+  [/^DELIVERY_RETURN_INFO$/,["driver-returns.html?order={o}","my-sales.html#orders"]],
+  [/^TALLY_NOTE_/,["accounts-invoice.html?order={o}"]],
+  [/^SALES_RETURN_NEW$/,["sales-return.html","accounts-invoice.html?order={o}","credit-note.html"]],
   [/^DELIVERY_RETURN_(PENDING|OPERATIONS|RECEIVE|DEDUCTED)$/,["driver-returns.html?order={o}"]],
   [/^DELIVERY_COLLECTION$/,["driver-collections.html?order={o}"]],
   [/^DELIVERY_COLLECTION_/,["driver-delivery.html?order={o}&tab=deliver"]],
@@ -71,8 +82,8 @@
   const href=(pages&&pages.length?hit[1].find(h=>pages.includes(base(h))):hit[1][0])||"";
   return n.order_id?href.replace("{o}",encodeURIComponent(n.order_id)):href.split("?")[0];
  }
- // Focus messages, outside-market reports and return results also pop up once per device.
- // The driver also gets a popup when the office approves / rejects their return (href null = the notification's own page).
+ // Every new notification pops up once per device (Sales Head copies CC_* stay in the bell only).
+ // These have their own title / button; href null = the notification's own page.
  const POPUP={LOADING_ASSIGNMENT_DRIVER:["🚚 New Transport Assignment","Open order",null],ANNOUNCEMENT:["📢 Focus message","OK",""],MARKET_REPORT:["🚩 Outside market stock","Open report","market-report.html"],
   DELIVERY_RETURN_APPROVED:["✅ Return approved","Open order",null],DELIVERY_RETURN_REJECTED:["❌ Return rejected","Open order",null],
   DELIVERY_COLLECTION_VERIFIED:["✅ Payment verified","Open order",null],DELIVERY_COLLECTION_REJECTED:["❌ Payment rejected","Correct it",null],
@@ -119,12 +130,21 @@
   try{
    if(await urgentPopup(rows,pages))return;
    let seen=[];try{seen=JSON.parse(localStorage.getItem("lwbPopped")||"[]")}catch(e){}
-   const fresh=rows.filter(n=>!n.is_read&&POPUP[String(n.notification_type||"").toUpperCase()]&&!seen.includes(n.id)&&Date.now()-new Date(n.created_at)<2*864e5).slice(0,3);
+   const type=n=>String(n.notification_type||"").toUpperCase();
+   const fresh=rows.filter(n=>!n.is_read&&!seen.includes(n.id)&&!/^CC_/.test(type(n))&&!URGENT.some(g=>g.re.test(type(n)))
+    &&Date.now()-new Date(n.created_at)<(POPUP[type(n)]?2*864e5:12*36e5));
    if(!fresh.length)return;
-   seen=seen.concat(fresh.map(n=>n.id)).slice(-200);
+   seen=seen.concat(fresh.map(n=>n.id)).slice(-300);
    try{localStorage.setItem("lwbPopped",JSON.stringify(seen))}catch(e){}
+   // Many at once (e.g. after a break): one list instead of a row of popups.
+   if(fresh.length>3){
+    const lines=fresh.slice(0,8).map(n=>{const s=summary(n);return s.icon+" "+s.text});
+    if(fresh.length>8)lines.push("… and "+(fresh.length-8)+" more");
+    await window.alert(lines.join("\n")+"\n\nOpen the 🔔 bell to see each one.",{title:"🔔 "+fresh.length+" new updates",kind:"info"});
+    return;
+   }
    for(const n of fresh.reverse()){
-    const [title,ok,page]=POPUP[String(n.notification_type).toUpperCase()],href=page===null?route(n,pages):page;
+    const s=summary(n),[title,ok,page]=POPUP[type(n)]||[s.icon+" "+(n.title||s.text),"Open",null],href=page===null?route(n,pages):page;
     const text=(n.title&&n.notification_type==="ANNOUNCEMENT"?n.title+"\n\n":"")+(n.message||"");
     const go=href?await window.confirm(text,{title,ok,cancel:"Later"}):(await window.alert(text,{title,kind:"info"}),false);
     if(go&&page===null){await markRead(n.id);location.href=href;break}
@@ -225,6 +245,14 @@
   });
   reloadData();
   setInterval(()=>{if(!document.hidden)reloadData()},30000);
+  // Instant: a new row for this login reloads the bell (and pops it up) at once.
+  // Needs erp_notifications in Supabase Realtime (lwb_order_flow_popups_setup.sql); the 30 s check stays as backup.
+  let soon=0;
+  try{
+   db.channel("lwb-bell-"+user.id).on("postgres_changes",{event:"INSERT",schema:"public",table:"erp_notifications",filter:"user_id=eq."+user.id},
+    ()=>{clearTimeout(soon);soon=setTimeout(reloadData,400)}).subscribe();
+  }catch(e){}
+  document.addEventListener("visibilitychange",()=>{if(!document.hidden)reloadData()});
  }
  window.LWBOperationsNotifications={init};
 })();

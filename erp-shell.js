@@ -309,6 +309,7 @@
     // Driver page has its own bottom bar and Submit bar; it needs the same keyboard handling.
     if(role==="driver")watchKeyboard();
     watchSuccess();
+    if(role)idleLogout();
     bell(top,role);
     refreshAccess().then(changed=>{
       if(!changed)return;
@@ -376,6 +377,32 @@
       try{localStorage.setItem(ACCESS_KEY,JSON.stringify({uid:user.id,hidden,extra}))}catch(e){}
       return JSON.stringify([hiddenPages(),extraPages()])!==before;
     }catch(e){return false}
+  }
+
+  // Auto logout after 15 minutes with no tap, key or scroll. The time is shared by every ERP tab of
+  // this browser, and is checked again when a phone comes back to the app. login.html sets it on login.
+  const IDLE_MS=15*60e3,IDLE_KEY="lwbLastActive";
+  let idleOn=false;
+  function idleLogout(){
+    if(idleOn)return;idleOn=true;
+    const read=()=>{try{return Number(localStorage.getItem(IDLE_KEY))||0}catch(e){return 0}};
+    let last=0,out=false;
+    const mark=()=>{const now=Date.now();if(out||now-last<10e3)return;last=now;try{localStorage.setItem(IDLE_KEY,String(now))}catch(e){}};
+    async function check(){
+      const t=read();
+      if(out||!t||Date.now()-t<IDLE_MS)return false;
+      out=true;
+      try{const c=window.__lwbBellClient||(window.__lwbBellClient=window.supabase.createClient(URL_,KEY_));await c.auth.signOut({scope:"local"})}catch(e){}
+      try{localStorage.removeItem(IDLE_KEY)}catch(e){}
+      location.replace("login.html?idle=1");
+      return true;
+    }
+    check().then(gone=>{if(!gone)mark()});
+    // Only real input counts: the browser also fires mousemove / scroll when the page itself changes.
+    const real=e=>{if(e.isTrusted&&(e.type!=="mousemove"||e.movementX||e.movementY))mark()};
+    ["pointerdown","keydown","touchstart","mousemove","wheel"].forEach(ev=>document.addEventListener(ev,real,{passive:true,capture:true}));
+    document.addEventListener("visibilitychange",()=>{if(!document.hidden)check().then(gone=>{if(!gone)mark()})});
+    setInterval(check,30e3);
   }
 
   // 🔔 ERP notifications on every page, for every logged-in role (Driver too).

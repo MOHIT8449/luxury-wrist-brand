@@ -19,6 +19,10 @@
     .quick .ic{width:34px;height:34px;border-radius:8px;background:#f3f4f6;display:grid;place-items:center;color:var(--erp-red);flex:none}
     .quick .ic svg{width:18px;height:18px}
     .quick small{display:block;color:var(--erp-muted);font-size:11px}
+    .side-col{display:grid;gap:16px;min-width:0}
+    .verify .cnt{margin-left:auto;background:var(--erp-red);color:#fff;border-radius:12px;padding:2px 9px;font-size:12.5px;font-weight:700;flex:none}
+    .verify .ic{background:var(--erp-red-soft)}
+    .verify .none{padding:12px 14px;color:var(--erp-muted);font-size:13px}
     .orders td:first-child{font-weight:600;color:var(--erp-blue);white-space:nowrap}
     .hero{margin:calc(-1 * 18px) -22px 0;padding:26px 22px 70px;background:linear-gradient(180deg,#fdeef1 0%,#f8f1f3 100%);text-align:center;border-bottom:1px solid #f1dfe3}
     .hero h2{margin:0 0 14px;font-size:21px;font-weight:600;color:var(--erp-ink)}
@@ -56,7 +60,7 @@
     .focus-form .send{background:var(--erp-red);border-color:var(--erp-red);color:#fff;font-weight:600}
     @media(max-width:760px){.focus-form{grid-template-columns:1fr 1fr}.focus-form .msg{grid-column:1/-1}}
     [hidden]{display:none!important}
-    @media(max-width:1100px){.dash-grid{grid-template-columns:1fr}}
+    @media(max-width:1100px){.dash-grid{grid-template-columns:1fr}.side-col{display:contents}#verifyCard{order:-1}}
     @media(max-width:980px){.hero{margin:-14px -12px 0;padding:18px 12px 60px}.hero h2{font-size:18px}
       .kpis{gap:10px;margin-top:-44px}.kpi-group{width:100%;padding:10px 0}.kpi{min-width:0;flex:1;padding:2px 10px}.kpi b{font-size:19px}}
   </style>
@@ -103,10 +107,16 @@
           <tbody id="orderRows"><tr><td colspan="6">Loading...</td></tr></tbody>
         </table></div>
       </section>
-      <section class="erp-card quick">
-        <div class="erp-card-head"><h2>Quick Access</h2></div>
-        <div id="quickList"></div>
-      </section>
+      <div class="side-col">
+        <section class="erp-card quick verify" id="verifyCard" hidden>
+          <div class="erp-card-head"><h2>✅ Verify — Quick Actions</h2></div>
+          <div id="verifyList"></div>
+        </section>
+        <section class="erp-card quick">
+          <div class="erp-card-head"><h2>Quick Access</h2></div>
+          <div id="quickList"></div>
+        </section>
+      </div>
     </div>
 
   </main>
@@ -151,6 +161,27 @@
         const s=document.createElement("small");s.textContent=QUICK_HINT[i.h]||g.group;t.appendChild(s);
         a.append(ic,t);list.appendChild(a);
       }));
+    }
+    // What this login has to verify / do now (lwb_order_flow_popups_setup.sql). Admin sees every queue.
+    const VERIFY_ICON={ORDER_APPROVAL:"check",LOADING:"box",RETURN_APPROVE:"undo",RETURN_RECEIVE:"inbox",TALLY_BILL:"bill",
+      DRIVER_PAYMENT:"cash",OFFICE_PAYMENT:"cash",CREDIT_NOTE:"note",SALES_RETURN:"undo"};
+    async function loadVerify(){
+      const card=document.getElementById("verifyCard"),list=document.getElementById("verifyList");
+      if(!["admin","manager","accounts","warehouse"].includes(currentRole)){card.hidden=true;return}
+      const {data,error}=await client.rpc("lwb_my_verify_queue");
+      if(error){card.hidden=true;return}
+      const hidden=ERPShell.hiddenPages(),due=(data||[]).filter(r=>Number(r.cnt)>0&&!hidden.includes(r.page));
+      list.replaceChildren();
+      due.forEach(r=>{
+        const a=document.createElement("a");a.href=r.page;
+        const ic=document.createElement("span");ic.className="ic";ic.innerHTML=ERPShell.icon(VERIFY_ICON[r.item]||"check");
+        const t=document.createElement("span");t.textContent=r.label;
+        if(Number(r.amount)>0){const s=document.createElement("small");s.textContent="₹"+fmtINR(r.amount);t.appendChild(s)}
+        const c=document.createElement("span");c.className="cnt";c.textContent=r.cnt;
+        a.append(ic,t,c);list.appendChild(a);
+      });
+      if(!due.length){const n=document.createElement("div");n.className="none";n.textContent="✓ Nothing waiting for you to verify.";list.appendChild(n)}
+      card.hidden=false;
     }
     const STATUS={
       pending_approval:["Pending Approval","amber","warehouse-orders.html"],approved:["Approved","blue","warehouse-orders.html"],
@@ -329,7 +360,7 @@
         loadFocus();
       });
     }
-    document.getElementById("refreshBtn").onclick=()=>{loadSummary();loadFocus()};
+    document.getElementById("refreshBtn").onclick=()=>{loadSummary();loadFocus();loadVerify()};
 
 
     async function initializeDashboard() {
@@ -414,6 +445,7 @@
         renderQuick(role);document.addEventListener("erp:access",()=>renderQuick(role));
         heroSearch();
         loadSummary();
+        loadVerify();setInterval(()=>{if(!document.hidden)loadVerify()},60000);
         loadFocus();focusSetup();
 
         document.getElementById("loading").style.display =
