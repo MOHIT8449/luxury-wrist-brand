@@ -282,3 +282,9 @@
   Outstanding, the party ledger (chip "ERP · PO …"), and the Cash In "Pending bills" list. Credit notes minus debit notes go on the first line as "Credit note".
   A line whose bill no. + amount is already in the imported Tally register is skipped (no double count).
 - "Money came: Cash In" (Money due list) and Driver cash "Add as Cash In" select the pending bill when exactly one fits, keeping the amount received.
+
+## Tally Party Mapping: sub-firm -> main party, once (2026-10-28)
+
+- New page `party-mapping.html` (Accounts > Tally Party Mapping, admin/accounts). It edits the same `lwb_tally_party_map` table that Tally Bill Check and the sub-firm bill lines use, through `lwb_tally_party_maps` / `lwb_tally_set_party_map`. No new SQL for the page.
+- Three ways to map: type a main party + its sub-firms; choose the Tally Sales Register file (every name that is not an ERP party and not mapped yet is listed, pick the main party, Save all filled); or Excel export / import ("Tally Party (Sub-firm)", "Main Party (ERP)"). The main party must be in the ERP Party Master. Moving a firm that is already under another party asks first. × removes a link.
+- Cashbook: `lwb_cashbook_party_maps_setup.sql` (`lwb_cashbook_party_maps(p_key)`, read only). `tallyMatch` uses it after the Cashbook's own saved Tally map, so imported register bills and ERP bills of a sub-firm go to the main party (chip "party mapping").

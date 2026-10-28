@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Tally Party Mapping | Luxury Wrist Brand ERP</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <link rel="stylesheet" href="erp-shell.css">
+  <script src="erp-shell.js"></script>
+  <script src="excel-io.js"></script>
+  <style>
+    .status{text-align:center;padding:80px 20px;font-size:15px;color:#555}
+    .pm-sub{margin:-8px 0 14px;color:var(--erp-muted);font-size:15px;line-height:1.55}
+    .pm-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:14px;margin-bottom:14px}
+    .pm-card{background:#fff;border:1px solid var(--erp-line);border-radius:8px;padding:16px}
+    .pm-card h2{margin:0 0 6px;font-size:17px}
+    .pm-card p{margin:0 0 12px;color:var(--erp-muted);font-size:14px}
+    .pm-card label{display:grid;gap:4px;font-size:13px;font-weight:600;color:#4b5763;margin-bottom:10px}
+    .pm-card input,.pm-card textarea,.pm-search{width:100%;box-sizing:border-box;border:1.5px solid var(--erp-line);border-radius:6px;padding:9px 10px;font:inherit;font-size:15px;background:#fff}
+    .pm-card textarea{min-height:92px;resize:vertical}
+    .pm-btn{height:40px;border-radius:6px;padding:0 16px;font-weight:600;font-size:15px;cursor:pointer;border:1px solid var(--erp-line);background:#fff;color:var(--erp-ink)}
+    .pm-btn.main{background:var(--erp-red);border-color:var(--erp-red);color:#fff}
+    .pm-btn.sm{height:32px;padding:0 10px;font-size:13px}
+    .pm-btn:disabled{opacity:.55;cursor:not-allowed}
+    .pm-msg{padding:12px 14px;border-radius:8px;margin-bottom:14px;background:#e3f5ec;color:#13824a;white-space:pre-wrap}
+    .pm-msg.bad{background:#ffebeb;color:#9b2020}
+    .pm-table{border-collapse:collapse;width:100%;font-size:14px}
+    .pm-table th,.pm-table td{border-bottom:1px solid var(--erp-line);padding:9px 10px;text-align:left;vertical-align:top}
+    .pm-table th{background:#f6f7f9;font-size:13px;font-weight:700;color:#2b3440;white-space:nowrap}
+    .pm-table td input{width:100%;min-width:220px;box-sizing:border-box;height:36px;border:1.5px solid var(--erp-line);border-radius:6px;padding:0 8px;font:inherit}
+    .chip{display:inline-flex;align-items:center;gap:6px;margin:2px 6px 2px 0;padding:3px 4px 3px 10px;border-radius:99px;background:#eef3fb;color:#1d4f9a;font-size:13px;font-weight:600}
+    .chip button{border:0;background:#fff;color:#b3122b;border-radius:99px;width:22px;height:22px;cursor:pointer;font-weight:700}
+    .pm-scroll{overflow:auto}
+    .muted{color:var(--erp-muted);font-size:13px}
+    @media(max-width:900px){.pm-grid{grid-template-columns:1fr}}
+    [hidden]{display:none!important}
+  </style>
+</head>
+<body>
+  <div id="loading" class="status">Checking account access...</div>
+  <main id="page" class="erp-main" hidden>
+    <div class="erp-pagehead"><h1>Tally Party Mapping</h1></div>
+    <p class="pm-sub">Map each Tally bill party (sub-firm, e.g. PRIYA TRADERS) to its <b>main ERP party</b> (e.g. SHREE JAGDISH TRADERS) <b>once</b>.
+      After that the Firm list on Tally Bill &amp; Invoice No., Tally Bill Check and the Cashbook all keep the money under the main party, with one ledger.</p>
+    <div id="msg" class="pm-msg" hidden></div>
+    <div class="pm-grid">
+      <section class="pm-card">
+        <h2>Add sub-firms to a main party</h2>
+        <p>Type the main party, then the sub-firm names as in Tally (one per line).</p>
+        <label>Main party (ERP)<input id="main" list="erpParties" autocomplete="off" placeholder="e.g. SHREE JAGDISH TRADERS"></label>
+        <label>Sub-firms (Tally bill names)<textarea id="subs" placeholder="PRIYA TRADERS&#10;AGRAWAL TRADERS&#10;ROHIT TRADERS"></textarea></label>
+        <button type="button" class="pm-btn main" id="add">Save mapping</button>
+      </section>
+      <section class="pm-card">
+        <h2>Map everything from the Tally Sales Register</h2>
+        <p>Choose the Sales Register file. Every party name in it that is not an ERP party and not mapped yet is listed below; pick its main party once.</p>
+        <label>Tally Sales Register (Excel / CSV)<input type="file" id="reg" accept=".xls,.xlsx,.csv" multiple></label>
+        <div id="xl"></div>
+      </section>
+    </div>
+    <section class="erp-card" id="newCard" hidden style="margin-bottom:14px">
+      <div class="erp-card-head"><h2>Not mapped yet (from the register)</h2><small class="muted" id="newNote"></small>
+        <button type="button" class="pm-btn main sm" id="saveNew" style="margin-left:auto">Save all filled</button></div>
+      <div class="pm-scroll"><table class="pm-table"><thead><tr><th>Tally party name</th><th>Bills</th><th>Main party (ERP)</th></tr></thead><tbody id="newBody"></tbody></table></div>
+    </section>
+    <section class="erp-card">
+      <div class="erp-card-head"><h2>Current mapping</h2><small class="muted" id="count"></small></div>
+      <div style="padding:0 0 10px"><input class="pm-search" id="q" type="search" placeholder="Search main party or sub-firm" autocomplete="off"></div>
+      <div class="pm-scroll"><table class="pm-table"><thead><tr><th>Main party (ERP)</th><th>Sub-firms in Tally</th></tr></thead><tbody id="body"></tbody></table></div>
+    </section>
+    <datalist id="erpParties"></datalist>
+  </main>
+  <script>
+    'use strict';
+    const client=supabase.createClient("https://txkbhadzdbxpieunfvox.supabase.co","sb_publishable_W4I3Q5ODf0g17sq5uDml2Q_sLolXYEk");
+    const el=id=>document.getElementById(id);
+    const esc=v=>String(v==null?"":v).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+    const norm=s=>String(s??"").toUpperCase().replace(/[^A-Z0-9]+/g," ").trim();
+    let parties=[],maps=[],fresh=[];
+    function say(t,bad){el("msg").hidden=!t;el("msg").textContent=t||"";el("msg").className="pm-msg"+(bad?" bad":"");if(t)el("msg").scrollIntoView({block:"nearest"})}
+    const partyOf=v=>parties.find(p=>norm(p)===norm(v))||"";
+
+    async function load(){
+      const [p,m]=await Promise.all([client.rpc("lwb_tally_check_parties"),client.rpc("lwb_tally_party_maps")]);
+      const e=p.error||m.error;
+      if(e)throw Error(/function|schema cache/i.test(e.message)?"Tally party links are not set up yet: run lwb_cashbook_tally_check_setup.sql once in Supabase.":e.message);
+      parties=[...new Set((p.data||[]).map(x=>String(x.customer_name||"").trim()).filter(Boolean))].sort();
+      maps=m.data||[];
+      el("erpParties").innerHTML=parties.map(n=>"<option value=\""+esc(n)+"\">").join("");
+      render();
+    }
+    function render(){
+      const q=norm(el("q").value);
+      const groups=new Map();
+      for(const m of maps){if(!m.customer_name)continue;const k=m.customer_name;if(!groups.has(k))groups.set(k,[]);groups.get(k).push(m)}
+      const rows=[...groups.entries()].filter(([main,subs])=>!q||norm(main).includes(q)||subs.some(s=>norm(s.tally_name).includes(q))).sort((a,b)=>a[0].localeCompare(b[0]));
+      el("count").textContent=maps.filter(m=>m.customer_name).length+" sub-firms under "+groups.size+" main parties";
+      el("body").innerHTML=rows.length?rows.map(([main,subs])=>"<tr><td><b>"+esc(main)+"</b>"+(partyOf(main)?"":"<small class='muted' style='display:block'>not in Party Master</small>")+"</td><td>"+
+        subs.sort((a,b)=>a.tally_name.localeCompare(b.tally_name)).map(s=>"<span class='chip'>"+esc(s.tally_name)+"<button type='button' title='Remove' aria-label='Remove "+esc(s.tally_name)+"' data-del=\""+esc(s.tally_name)+"\">×</button></span>").join("")+"</td></tr>").join("")
+        :"<tr><td colspan='2' class='muted'>"+(maps.length?"Nothing matches.":"No mapping yet. Add sub-firms above, or choose the Tally Sales Register.")+"</td></tr>";
+      el("body").querySelectorAll("[data-del]").forEach(b=>b.onclick=()=>remove(b.dataset.del));
+    }
+    async function setMap(name,main){
+      const {error}=await client.rpc("lwb_tally_set_party_map",{p_tally_name:name,p_customer_name:main});
+      if(error)throw error;
+    }
+    // a sub-firm already under another main party is not moved without asking
+    async function saveMany(pairs){
+      const moved=pairs.filter(([n,m])=>{const old=maps.find(x=>norm(x.tally_key)===norm(n));return old&&old.customer_name&&norm(old.customer_name)!==norm(m)});
+      if(moved.length&&!await confirm("These sub-firms are already under another main party:\n\n"+moved.map(([n,m])=>n+": "+maps.find(x=>norm(x.tally_key)===norm(n)).customer_name+" → "+m).join("\n")+"\n\nMove them?",{ok:"Yes, move"}))return 0;
+      let n=0;
+      for(const [name,main] of pairs){await setMap(name,main);n++}
+      await load();
+      return n;
+    }
+    el("add").onclick=async()=>{
+      const main=partyOf(el("main").value);
+      if(!main){say("Choose the main party from the list (it must be in the ERP Party Master).",true);el("main").focus();return}
+      const subs=[...new Set(el("subs").value.split(/[\n,]+/).map(s=>s.trim()).filter(Boolean))].filter(s=>norm(s)!==norm(main));
+      if(!subs.length){say("Type at least one sub-firm name.",true);el("subs").focus();return}
+      const same=subs.filter(s=>partyOf(s));
+      if(same.length&&!await confirm(same.join(", ")+(same.length>1?" are":" is")+" also a party in the ERP Party Master.\nMap anyway? Its Tally bills will then count under "+main+".",{ok:"Yes, map"}))return;
+      el("add").disabled=true;
+      try{const n=await saveMany(subs.map(s=>[s,main]));if(n){say(n+" sub-firm"+(n>1?"s":"")+" mapped to "+main+".");el("subs").value=""}}
+      catch(e){say("Not saved: "+e.message,true)}
+      finally{el("add").disabled=false}
+    };
+    async function remove(name){
+      if(!await confirm("Remove "+name+" from its main party?\n\nIts Tally bills will need a party again in Tally Bill Check.",{ok:"Remove"}))return;
+      try{await setMap(name,null);await load();say(name+" removed.")}catch(e){say("Not removed: "+e.message,true)}
+    }
+    el("q").oninput=render;
+
+    /* ---------- Sales Register: list the names not mapped yet ---------- */
+    async function readNames(f){
+      await LWBExcel.lib();
+      const book=XLSX.read(await f.arrayBuffer(),{type:"array"});
+      const rows=XLSX.utils.sheet_to_json(book.Sheets[book.SheetNames[0]],{header:1,raw:true,defval:""});
+      const h=rows.findIndex((r,i)=>i<40&&r.some(c=>/^date$/i.test(String(c).trim()))&&r.some(c=>/particular|party|ledger|customer/i.test(String(c))));
+      if(h<0)throw Error(f.name+": the Date / Particulars heading row was not found. Export the Sales Register from Tally as Excel.");
+      const hdr=rows[h].map(c=>String(c).trim().toLowerCase());
+      let c=hdr.findIndex(x=>/^particulars?$/.test(x));if(c<0)c=hdr.findIndex(x=>/party|ledger|customer/.test(x));
+      const out=new Map();
+      rows.slice(h+1).forEach(r=>{const n=String(r[c]??"").replace(/\s+/g," ").trim();if(!n||/^(grand )?total\b/i.test(n))return;const k=norm(n);if(!out.has(k))out.set(k,{name:n,bills:0});out.get(k).bills++});
+      return [...out.values()];
+    }
+    el("reg").onchange=async()=>{
+      const files=[...el("reg").files];if(!files.length)return;
+      try{
+        say("");const all=new Map();
+        for(const f of files)for(const x of await readNames(f)){const k=norm(x.name);if(all.has(k))all.get(k).bills+=x.bills;else all.set(k,x)}
+        const mapped=new Set(maps.map(m=>norm(m.tally_key))),erp=new Set(parties.map(norm));
+        fresh=[...all.values()].filter(x=>!mapped.has(norm(x.name))&&!erp.has(norm(x.name))&&!/^(cash|cash sales?)$/i.test(x.name)).sort((a,b)=>a.name.localeCompare(b.name));
+        el("newCard").hidden=false;
+        el("newNote").textContent=all.size+" party names in the file · "+fresh.length+" not mapped yet";
+        el("newBody").innerHTML=fresh.length?fresh.map((x,i)=>"<tr><td><b>"+esc(x.name)+"</b></td><td>"+x.bills+"</td><td><input list='erpParties' data-new='"+i+"' placeholder='Main party' autocomplete='off'></td></tr>").join("")
+          :"<tr><td colspan='3' class='muted'>Every party in this file is an ERP party or already mapped. Nothing to do.</td></tr>";
+      }catch(e){say(e.message,true)}
+      finally{el("reg").value=""}
+    };
+    el("saveNew").onclick=async()=>{
+      const pairs=[],bad=[];
+      el("newBody").querySelectorAll("[data-new]").forEach(i=>{const v=i.value.trim();if(!v)return;const main=partyOf(v);if(main)pairs.push([fresh[i.dataset.new].name,main]);else bad.push(fresh[i.dataset.new].name+": "+v)});
+      if(bad.length){say("These main parties are not in the ERP Party Master:\n"+bad.join("\n"),true);return}
+      if(!pairs.length){say("Fill the main party for at least one name.",true);return}
+      el("saveNew").disabled=true;
+      try{const n=await saveMany(pairs);if(n){say(n+" Tally name"+(n>1?"s":"")+" mapped.");
+        el("newBody").querySelectorAll("[data-new]").forEach(i=>{if(i.value.trim())i.closest("tr").remove()});
+        if(!el("newBody").querySelector("[data-new]"))el("newBody").innerHTML="<tr><td colspan='3' class='muted'>All names from this file are mapped.</td></tr>"}}
+      catch(e){say("Not saved: "+e.message,true)}
+      finally{el("saveNew").disabled=false}
+    };
+
+    /* ---------- Excel: export / import the whole mapping ---------- */
+    function excelPanel(){
+      LWBExcel.panel({mount:el("xl"),file:"tally-party-mapping",
+        columns:[{h:"Tally Party (Sub-firm)",k:"sub",req:true,sample:"PRIYA TRADERS",alias:["Sub-firm","Tally Party","Tally Name"],note:"Party name exactly as on the Tally bill"},
+          {h:"Main Party (ERP)",k:"main",req:true,sample:"SHREE JAGDISH TRADERS",alias:["Main Party","ERP Party"],note:"Party name as in the ERP Party Master"}],
+        exportRows:()=>maps.filter(m=>m.customer_name).map(m=>({sub:m.tally_name,main:m.customer_name})),
+        plan(rows){
+          const add=[],update=[],errors=[];let same=0;
+          for(const r of rows){
+            const sub=String(r.sub||"").trim(),main=partyOf(r.main);
+            if(!sub){errors.push("Row "+r._row+": Tally party is empty");continue}
+            if(!main){errors.push("Row "+r._row+": main party \""+(r.main||"")+"\" is not in the ERP Party Master");continue}
+            if(norm(sub)===norm(main)){same++;continue}
+            const old=maps.find(m=>norm(m.tally_key)===norm(sub));
+            if(old&&old.customer_name&&norm(old.customer_name)===norm(main))same++;
+            else (old&&old.customer_name?update:add).push([sub,main]);
+          }
+          return {add,update,errors,same};
+        },
+        async apply(p,progress){
+          const all=[...p.add,...p.update];let n=0;
+          for(const [s,m] of all){await setMap(s,m);n++;if(n%10===0)progress(n+" / "+all.length+" saved...")}
+          await load();return n+" mappings saved.";
+        }});
+    }
+
+    (async()=>{
+      const {data:{session}}=await client.auth.getSession();
+      if(!session){location.replace("login.html");return}
+      const {data:p}=await client.from("user_profiles").select("full_name,role,active").eq("id",session.user.id).single();
+      const realRole=String((p&&p.role)||"").toLowerCase().trim(),role=p?await ERPShell.pageRoleFresh(realRole):realRole;
+      if(!p||p.active!==true||!["admin","accounts"].includes(role)){location.replace("dashboard.html");return}
+      ERPShell.mount({role:realRole||role,name:p.full_name||session.user.email,onLogout:async()=>{await client.auth.signOut();location.replace("login.html")}});
+      el("loading").hidden=true;el("page").hidden=false;
+      excelPanel();
+      try{await load()}catch(e){say(e.message,true)}
+    })();
+  </script>
+</body>
+</html>
