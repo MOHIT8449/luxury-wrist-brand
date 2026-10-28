@@ -32,6 +32,16 @@
     .chip button{border:0;background:#fff;color:#b3122b;border-radius:99px;width:22px;height:22px;cursor:pointer;font-weight:700}
     .pm-scroll{overflow:auto}
     .muted{color:var(--erp-muted);font-size:13px}
+    .chip.sug{background:#fff4d6;color:#8a5a00;padding:3px 10px}
+    .pm-tabs{display:flex;gap:8px;flex-wrap:wrap;align-items:center;padding:0 0 10px}
+    .pm-tabs button{height:34px;border-radius:99px;border:1.5px solid var(--erp-line);background:#fff;color:var(--erp-ink);padding:0 14px;font:inherit;font-size:14px;cursor:pointer}
+    .pm-tabs button[aria-pressed=true]{border-color:#1769d8;background:#eaf2ff;color:#123f7a;font-weight:600}
+    .pm-tabs .pm-search{flex:1;min-width:180px;width:auto}
+    .pm-table td input.bad{border-color:#c62828;background:#fff5f5}
+    .pm-err{display:block;color:#b3122b;font-size:12px;margin-top:3px}
+    .pm-table td .pm-skip input{width:18px;min-width:0;height:18px;margin:0}
+    .pm-table.nobills th:nth-child(2),.pm-table.nobills td:nth-child(2){display:none}
+    .pm-skip{display:flex;gap:6px;align-items:center;font-size:13px;white-space:nowrap;cursor:pointer}
     @media(max-width:900px){.pm-grid{grid-template-columns:1fr}}
     [hidden]{display:none!important}
   </style>
@@ -52,16 +62,19 @@
         <button type="button" class="pm-btn main" id="add">Save mapping</button>
       </section>
       <section class="pm-card">
-        <h2>Map everything from the Tally Sales Register</h2>
-        <p>Choose the Sales Register file. Every party name in it that is not an ERP party and not mapped yet is listed below; pick its main party once.</p>
-        <label>Tally Sales Register (Excel / CSV)<input type="file" id="reg" accept=".xls,.xlsx,.csv" multiple></label>
+        <h2>Upload the full Tally party list</h2>
+        <p>Choose the Tally <b>List of Ledgers</b> (Sundry Debtors) or the <b>Sales Register</b>, as Excel / CSV. Every party name is listed below; choose its main ERP party from the list once. Later, upload again: only new names need mapping.</p>
+        <label>Tally party list (Excel / CSV)<input type="file" id="reg" accept=".xls,.xlsx,.csv" multiple></label>
         <div id="xl"></div>
       </section>
     </div>
     <section class="erp-card" id="newCard" hidden style="margin-bottom:14px">
-      <div class="erp-card-head"><h2>Not mapped yet (from the register)</h2><small class="muted" id="newNote"></small>
-        <button type="button" class="pm-btn main sm" id="saveNew" style="margin-left:auto">Save all filled</button></div>
-      <div class="pm-scroll"><table class="pm-table"><thead><tr><th>Tally party name</th><th>Bills</th><th>Main party (ERP)</th></tr></thead><tbody id="newBody"></tbody></table></div>
+      <div class="erp-card-head"><h2>Tally party list</h2><small class="muted" id="newNote"></small>
+        <span style="margin-left:auto;display:flex;gap:8px;flex-wrap:wrap"><button type="button" class="pm-btn sm" id="dlList">⬇ Download to fill in Excel</button>
+        <button type="button" class="pm-btn main sm" id="saveNew">Save all</button></span></div>
+      <div class="pm-tabs"><button type="button" data-view="need">Need mapping <b></b></button><button type="button" data-view="done">Mapped / skipped <b></b></button><button type="button" data-view="erp">Same as ERP party <b></b></button>
+        <input class="pm-search" id="nq" type="search" placeholder="Search Tally name" autocomplete="off"></div>
+      <div class="pm-scroll"><table class="pm-table" id="newTable"><thead><tr><th>Tally party name</th><th>Bills</th><th>Main party (ERP)</th><th></th></tr></thead><tbody id="newBody"></tbody></table></div>
     </section>
     <section class="erp-card">
       <div class="erp-card-head"><h2>Current mapping</h2><small class="muted" id="count"></small></div>
@@ -88,6 +101,7 @@
       maps=m.data||[];
       el("erpParties").innerHTML=parties.map(n=>"<option value=\""+esc(n)+"\">").join("");
       render();
+      if(fresh.length)renderList();
     }
     function render(){
       const q=norm(el("q").value);
@@ -97,7 +111,9 @@
       el("count").textContent=maps.filter(m=>m.customer_name).length+" sub-firms under "+groups.size+" main parties";
       el("body").innerHTML=rows.length?rows.map(([main,subs])=>"<tr><td><b>"+esc(main)+"</b>"+(partyOf(main)?"":"<small class='muted' style='display:block'>not in Party Master</small>")+"</td><td>"+
         subs.sort((a,b)=>a.tally_name.localeCompare(b.tally_name)).map(s=>"<span class='chip'>"+esc(s.tally_name)+"<button type='button' title='Remove' aria-label='Remove "+esc(s.tally_name)+"' data-del=\""+esc(s.tally_name)+"\">×</button></span>").join("")+"</td></tr>").join("")
-        :"<tr><td colspan='2' class='muted'>"+(maps.length?"Nothing matches.":"No mapping yet. Add sub-firms above, or choose the Tally Sales Register.")+"</td></tr>";
+        :"<tr><td colspan='2' class='muted'>"+(maps.length?"Nothing matches.":"No mapping yet. Add sub-firms above, or upload the Tally party list.")+"</td></tr>";
+      const skipped=maps.filter(m=>!m.customer_name&&(!q||norm(m.tally_name).includes(q))).sort((a,b)=>a.tally_name.localeCompare(b.tally_name));
+      if(skipped.length)el("body").innerHTML+="<tr><td><b>Skipped</b><small class='muted' style='display:block'>not a party (no main party)</small></td><td>"+skipped.map(s=>"<span class='chip'>"+esc(s.tally_name)+"<button type='button' title='Remove' aria-label='Remove "+esc(s.tally_name)+"' data-del=\""+esc(s.tally_name)+"\">×</button></span>").join("")+"</td></tr>";
       el("body").querySelectorAll("[data-del]").forEach(b=>b.onclick=()=>remove(b.dataset.del));
     }
     async function setMap(name,main){
@@ -131,43 +147,116 @@
     }
     el("q").oninput=render;
 
-    /* ---------- Sales Register: list the names not mapped yet ---------- */
+    /* ---------- Tally party list (List of Ledgers or Sales Register): map every name once ---------- */
+    // Sales Register: the Particulars column (bills counted). Any other list: the Name / Party / Ledger column, else the first column.
     async function readNames(f){
       await LWBExcel.lib();
       const book=XLSX.read(await f.arrayBuffer(),{type:"array"});
       const rows=XLSX.utils.sheet_to_json(book.Sheets[book.SheetNames[0]],{header:1,raw:true,defval:""});
-      const h=rows.findIndex((r,i)=>i<40&&r.some(c=>/^date$/i.test(String(c).trim()))&&r.some(c=>/particular|party|ledger|customer/i.test(String(c))));
-      if(h<0)throw Error(f.name+": the Date / Particulars heading row was not found. Export the Sales Register from Tally as Excel.");
-      const hdr=rows[h].map(c=>String(c).trim().toLowerCase());
-      let c=hdr.findIndex(x=>/^particulars?$/.test(x));if(c<0)c=hdr.findIndex(x=>/party|ledger|customer/.test(x));
+      const cell=v=>String(v??"").replace(/\s+/g," ").trim();
+      let h=rows.findIndex((r,i)=>i<40&&r.some(c=>/^date$/i.test(cell(c)))&&r.some(c=>/particular|party|ledger|customer/i.test(cell(c))));
+      let c=-1;const reg=h>=0;
+      if(h>=0){const hdr=rows[h].map(x=>cell(x).toLowerCase());c=hdr.findIndex(x=>/^particulars?$/.test(x));if(c<0)c=hdr.findIndex(x=>/party|ledger|customer/.test(x))}
+      else{
+        h=rows.findIndex((r,i)=>i<40&&r.some(x=>/^(name|names|party|party name|ledger|ledger name|particulars?|customer|customer name|tally party.*)$/i.test(cell(x))));
+        if(h>=0)c=rows[h].findIndex(x=>/^(name|names|party|party name|ledger|ledger name|particulars?|customer|customer name|tally party.*)$/i.test(cell(x)));
+        else{c=0;h=-1}
+      }
       const out=new Map();
-      rows.slice(h+1).forEach(r=>{const n=String(r[c]??"").replace(/\s+/g," ").trim();if(!n||/^(grand )?total\b/i.test(n))return;const k=norm(n);if(!out.has(k))out.set(k,{name:n,bills:0});out.get(k).bills++});
+      rows.slice(h+1).forEach(r=>{const n=cell(r[c]);if(!n||n.length>200||/^(grand )?total\b/i.test(n)||!/[A-Za-z]/.test(n))return;const k=norm(n);if(!out.has(k))out.set(k,{name:n,bills:0});if(reg)out.get(k).bills++});
       return [...out.values()];
+    }
+    // close name: "AL SABRI" -> "AL SABRI ENTERPRISE (OLD CITY)"; only when exactly one ERP party fits
+    const base=n=>norm(String(n).replace(/\([^)]*\)/g," "));
+    function lev(a,b){
+      if(Math.abs(a.length-b.length)>2)return 9;
+      let prev=Array.from({length:b.length+1},(_,i)=>i);
+      for(let i=1;i<=a.length;i++){const cur=[i];for(let j=1;j<=b.length;j++)cur[j]=Math.min(prev[j]+1,cur[j-1]+1,prev[j-1]+(a[i-1]===b[j-1]?0:1));prev=cur}
+      return prev[b.length];
+    }
+    function guess(name){
+      const kb=base(name);if(kb.length<3)return "";
+      const fit=pb=>pb===kb||pb.startsWith(kb+" ")||kb.startsWith(pb+" ")||(kb.length>6&&lev(pb,kb)<=2);
+      let hits=parties.filter(p=>fit(base(p)));
+      if(hits.length>1)hits=hits.filter(p=>base(p)===kb);
+      return hits.length===1?hits[0]:"";
+    }
+    let view="need";
+    // each name: need (not mapped yet), done (mapped / skipped) or erp (same name as an ERP party: nothing to do)
+    function stateOf(x){
+      if(parties.some(p=>norm(p)===norm(x.name)))return "erp";
+      const m=maps.find(m=>norm(m.tally_key)===norm(x.name));
+      return m?"done":(/^(cash|cash sales?)$/i.test(x.name)?"erp":"need");
+    }
+    function renderList(){
+      const cnt={need:0,done:0,erp:0};fresh.forEach(x=>cnt[x.st=stateOf(x)]++);
+      el("newNote").textContent=fresh.length+" party names in the file";
+      el("newTable").classList.toggle("nobills",!fresh.some(x=>x.bills));
+      document.querySelectorAll("[data-view]").forEach(b=>{b.setAttribute("aria-pressed",String(b.dataset.view===view));b.querySelector("b").textContent=cnt[b.dataset.view]});
+      const q=norm(el("nq").value);
+      const list=fresh.map((x,i)=>({x,i})).filter(({x})=>x.st===view&&(!q||norm(x.name).includes(q)));
+      el("newBody").innerHTML=list.length?list.map(({x,i})=>{
+        const m=maps.find(m=>norm(m.tally_key)===norm(x.name));
+        if(x.st==="erp")return "<tr><td><b>"+esc(x.name)+"</b></td><td>"+(x.bills||"")+"</td><td class='muted'>"+(/^(cash|cash sales?)$/i.test(x.name)?"Cash sale: not a party":"Same name in the ERP Party Master: matched by itself")+"</td><td></td></tr>";
+        const cur=m?(m.customer_name||""):(x.pick!==undefined?x.pick:guess(x.name));
+        const sug=!m&&x.pick===undefined&&cur;
+        const skip=m?!m.customer_name:!!x.skip;
+        return "<tr data-row='"+i+"'><td><b>"+esc(x.name)+"</b>"+(sug?" <span class='chip sug'>suggested · check</span>":"")+"</td><td>"+(x.bills||"")+"</td>"+
+          "<td><input list='erpParties' data-new='"+i+"' value=\""+esc(skip?"":cur)+"\" placeholder='Choose from the list' autocomplete='off'"+(skip?" disabled":"")+"><small class='pm-err' hidden>Not in the Party Master: choose from the list</small></td>"+
+          "<td><label class='pm-skip'><input type='checkbox' data-skip='"+i+"'"+(skip?" checked":"")+"> Skip</label></td></tr>";
+      }).join(""):"<tr><td colspan='4' class='muted'>"+(view==="need"?(cnt.need?"Nothing matches.":"Every name in this file is mapped. Nothing to do."):"Nothing here.")+"</td></tr>";
+      el("newBody").querySelectorAll("[data-new]").forEach(inp=>{
+        const check=()=>{const v=inp.value.trim(),ok=!v||!!partyOf(v);inp.classList.toggle("bad",!ok);inp.nextElementSibling.hidden=ok;return ok};
+        inp.oninput=()=>{fresh[inp.dataset.new].pick=inp.value;const t=inp.closest("tr").querySelector(".sug");if(t)t.remove()};
+        inp.onchange=()=>{const p=partyOf(inp.value);if(p)inp.value=fresh[inp.dataset.new].pick=p;check()};
+        inp.onblur=check;
+      });
+      el("newBody").querySelectorAll("[data-skip]").forEach(c=>c.onchange=()=>{const x=fresh[c.dataset.skip];x.skip=c.checked;const inp=c.closest("tr").querySelector("[data-new]");inp.disabled=c.checked;if(c.checked){inp.value="";x.pick=""}});
     }
     el("reg").onchange=async()=>{
       const files=[...el("reg").files];if(!files.length)return;
       try{
         say("");const all=new Map();
         for(const f of files)for(const x of await readNames(f)){const k=norm(x.name);if(all.has(k))all.get(k).bills+=x.bills;else all.set(k,x)}
-        const mapped=new Set(maps.map(m=>norm(m.tally_key))),erp=new Set(parties.map(norm));
-        fresh=[...all.values()].filter(x=>!mapped.has(norm(x.name))&&!erp.has(norm(x.name))&&!/^(cash|cash sales?)$/i.test(x.name)).sort((a,b)=>a.name.localeCompare(b.name));
-        el("newCard").hidden=false;
-        el("newNote").textContent=all.size+" party names in the file · "+fresh.length+" not mapped yet";
-        el("newBody").innerHTML=fresh.length?fresh.map((x,i)=>"<tr><td><b>"+esc(x.name)+"</b></td><td>"+x.bills+"</td><td><input list='erpParties' data-new='"+i+"' placeholder='Main party' autocomplete='off'></td></tr>").join("")
-          :"<tr><td colspan='3' class='muted'>Every party in this file is an ERP party or already mapped. Nothing to do.</td></tr>";
+        if(!all.size)throw Error("No party names found in "+files.map(f=>f.name).join(", ")+".");
+        fresh=[...all.values()].sort((a,b)=>a.name.localeCompare(b.name));
+        view="need";el("nq").value="";el("newCard").hidden=false;renderList();
+        el("newCard").scrollIntoView({block:"start",behavior:"smooth"});
       }catch(e){say(e.message,true)}
       finally{el("reg").value=""}
     };
+    document.querySelectorAll("[data-view]").forEach(b=>b.onclick=()=>{view=b.dataset.view;renderList()});
+    el("nq").oninput=renderList;
+    // the list as Excel: fill "Main Party (ERP)" there and bring it back with Import Excel
+    el("dlList").onclick=()=>LWBExcel.write("tally-party-list",[{name:"Mapping",rows:[["Tally Party (Sub-firm)","Main Party (ERP)"],
+      ...fresh.filter(x=>x.st!=="erp").map(x=>{const m=maps.find(m=>norm(m.tally_key)===norm(x.name));return [x.name,m?(m.customer_name||""):""]})]},
+      {name:"ERP Parties",rows:[["Main Party (ERP)"],...parties.map(p=>[p])]}]).catch(e=>say(e.message,true));
     el("saveNew").onclick=async()=>{
-      const pairs=[],bad=[];
-      el("newBody").querySelectorAll("[data-new]").forEach(i=>{const v=i.value.trim();if(!v)return;const main=partyOf(v);if(main)pairs.push([fresh[i.dataset.new].name,main]);else bad.push(fresh[i.dataset.new].name+": "+v)});
-      if(bad.length){say("These main parties are not in the ERP Party Master:\n"+bad.join("\n"),true);return}
-      if(!pairs.length){say("Fill the main party for at least one name.",true);return}
+      const pairs=[],skips=[],bad=[];
+      for(const x of fresh){
+        if(x.st==="erp")continue;
+        const m=maps.find(m=>norm(m.tally_key)===norm(x.name));
+        const v=x.st==="need"&&x.pick===undefined?guess(x.name):(x.pick!==undefined?x.pick:(m&&m.customer_name)||"");
+        if(x.skip){if(!m||m.customer_name)skips.push(x.name);continue}
+        if(x.skip===false&&m&&!m.customer_name&&!v)continue;
+        if(!String(v).trim())continue;
+        const main=partyOf(v);
+        if(!main){bad.push(x.name+": "+v);continue}
+        if(!m||norm(m.customer_name)!==norm(main))pairs.push([x.name,main]);
+      }
+      if(bad.length){say("Choose these main parties from the list (not in the ERP Party Master):\n"+bad.join("\n"),true);el("newBody").querySelectorAll("[data-new]").forEach(i=>i.onblur());return}
+      if(!pairs.length&&!skips.length){say("Nothing new to save. Choose a main party for at least one name.",true);return}
+      const sug=fresh.filter(x=>x.st==="need"&&x.pick===undefined&&!x.skip&&guess(x.name)).length;
+      if(sug&&!await confirm(sug+" name"+(sug>1?"s have":" has")+" a suggested main party you have not changed.\nSave them as suggested?",{ok:"Yes, save"}))return;
       el("saveNew").disabled=true;
-      try{const n=await saveMany(pairs);if(n){say(n+" Tally name"+(n>1?"s":"")+" mapped.");
-        el("newBody").querySelectorAll("[data-new]").forEach(i=>{if(i.value.trim())i.closest("tr").remove()});
-        if(!el("newBody").querySelector("[data-new]"))el("newBody").innerHTML="<tr><td colspan='3' class='muted'>All names from this file are mapped.</td></tr>"}}
-      catch(e){say("Not saved: "+e.message,true)}
+      try{
+        let n=await saveMany(pairs);
+        if(n===0&&pairs.length)return;
+        for(const name of skips){await setMap(name,"");n++}
+        if(skips.length)await load();
+        fresh.forEach(x=>{delete x.pick;delete x.skip});
+        say(pairs.length+" Tally name"+(pairs.length===1?"":"s")+" mapped"+(skips.length?", "+skips.length+" skipped":"")+".");renderList();
+      }catch(e){say("Not saved: "+e.message,true)}
       finally{el("saveNew").disabled=false}
     };
 
@@ -182,6 +271,7 @@
           for(const r of rows){
             const sub=String(r.sub||"").trim(),main=partyOf(r.main);
             if(!sub){errors.push("Row "+r._row+": Tally party is empty");continue}
+            if(!String(r.main||"").trim()){same++;continue}
             if(!main){errors.push("Row "+r._row+": main party \""+(r.main||"")+"\" is not in the ERP Party Master");continue}
             if(norm(sub)===norm(main)){same++;continue}
             const old=maps.find(m=>norm(m.tally_key)===norm(sub));
