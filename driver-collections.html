@@ -56,6 +56,20 @@ button:disabled{opacity:.5;cursor:not-allowed}
 .out{color:#b42323}.ok{color:#17643a}
 .lines td:first-child{color:#58708b}
 @media(max-width:640px){.tabs{grid-template-columns:repeat(2,1fr)}}
+.recv{position:fixed;inset:0;z-index:4000;background:#0b1422b3;display:flex;align-items:flex-start;justify-content:center;padding:16px;overflow-y:auto}
+.recv[hidden]{display:none}
+.recv form{background:white;border-radius:14px;max-width:560px;width:100%;padding:18px;margin:auto 0}
+.recv h2{margin:0 0 4px;font-size:18px}.recv h3{margin:16px 0 8px;font-size:14px;color:#183450}
+.recv label{display:block;font-size:12px;color:#58708b;margin-bottom:4px}
+.recv input,.recv select{width:100%;padding:10px;border:1px solid #bbcbdd;border-radius:8px;font:15px Arial}
+.notes{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.check{display:flex!important;gap:8px;align-items:flex-start;color:#142841!important;font-size:13px!important;margin-top:10px}.check input{width:auto;margin-top:2px}
+.sum{background:#f1f5fb;border-radius:10px;padding:10px 12px;margin-top:14px;font-size:14px;line-height:1.8}
+.sum b{float:right}
+.recv .err{color:#9c2020;font-weight:bold;margin-top:10px}
+.recv .btns{display:flex;gap:10px;margin-top:14px}.recv .btns button{flex:1}
+@media(max-width:640px){.notes{grid-template-columns:repeat(3,1fr)}}
 </style>
 <link rel="stylesheet" href="erp-shell.css">
 <script src="erp-shell.js" data-auto defer></script>
@@ -75,7 +89,27 @@ button:disabled{opacity:.5;cursor:not-allowed}
 <div class="tools"><input id="search" data-party-list placeholder="Party, PO No, Driver or Vehicle"><button id="refresh" class="secondary" type="button">Refresh</button></div>
 <div id="list"></div>
 <div class="viewer" id="viewer" hidden><img id="viewerImg" alt="Payment photo"><button type="button" class="secondary" id="viewerClose">✕ Close</button></div>
-<p class="muted">Verify after counting the cash the driver hands over and checking the UPI / bank screen with the bank. Outstanding = bill after approved returns − cash − UPI. Verifying does not post to the party ledger, Cashbook, Tally or stock: post the payment on Payment Collection / Cashbook as before.</p>
+<p class="muted">💵 Receive money: when the driver hands over the money, count the cash by notes and check each UPI / bank payment in the bank (enter its UTR). Saving marks it received and verified, tells the driver how much the office got, and the cash shows in Cashbook. Outstanding = bill after approved returns − cash − UPI. Party ledger, Tally and stock are not changed here.</p>
+<div class="recv" id="recv" hidden><form id="recvForm" autocomplete="off">
+ <h2>💵 Receive money from driver</h2><div class="meta" id="recvWho"></div>
+ <div class="sum" id="recvBill"></div>
+ <h3>Cash counted (number of notes)</h3>
+ <div class="notes" id="recvNotes"></div>
+ <div class="sum">Cash total <b id="recvCash">₹0.00</b></div>
+ <h3>UPI / Bank / Cheque</h3>
+ <div class="row2"><div><label for="recvOnline">Amount ₹</label><input id="recvOnline" type="number" min="0" step="0.01" inputmode="decimal" placeholder="0"></div>
+  <div><label for="recvMode">Mode</label><select id="recvMode"><option>UPI</option><option>BANK</option><option>CHEQUE</option></select></div></div>
+ <div id="recvDriverUpi" class="meta"></div>
+ <div class="photos" id="recvPhotos"></div>
+ <div id="recvBankBox" hidden>
+  <label for="recvRef" style="margin-top:10px">UTR / bank reference (check it in the bank first)</label><input id="recvRef" maxlength="150" placeholder="e.g. 431245678901">
+  <label class="check"><input type="checkbox" id="recvChecked"> I checked this amount in the bank statement / bank app.</label>
+ </div>
+ <label for="recvNote" style="margin-top:12px">Note (optional)</label><input id="recvNote" maxlength="300" placeholder="e.g. Divyesh handed cash at 6 pm">
+ <div class="sum">Received now <b id="recvTotal">₹0.00</b><br>Outstanding after this <b id="recvOut">₹0.00</b></div>
+ <div class="err" id="recvErr"></div>
+ <div class="btns"><button type="button" class="secondary" id="recvCancel">Cancel</button><button type="submit" class="approve" id="recvSave">✅ Received — Verify</button></div>
+</form></div>
 </main>
 <script>
 const SUPABASE_URL="https://txkbhadzdbxpieunfvox.supabase.co";
@@ -153,7 +187,8 @@ function render(){
    node("div",(r.order_no||"")+" · "+when(r.payment_saved_at||r.reported_at)+" · "+r.delivery_status,"meta"),
    node("div","Driver: "+(r.driver_name||"—")+(r.vehicle_no?" · "+r.vehicle_no:""),"meta"),
    node("div",LABEL[r.status]||r.status,"meta"));
-  if(r.status==="VERIFIED"||r.status==="REJECTED")info.append(node("div",(r.status==="VERIFIED"?"Verified":"Rejected")+" by "+(r.reviewed_by_name||"—")+" · "+when(r.reviewed_at)+(r.review_note?" · "+r.review_note:""),"meta"));
+  if(r.status==="VERIFIED"||r.status==="REJECTED")info.append(node("div",(r.status==="VERIFIED"?(r.office_received?"Received at office":"Verified"):"Rejected")+" by "+(r.reviewed_by_name||"—")+" · "+when(r.reviewed_at)+(r.review_note?" · "+r.review_note:""),"meta"));
+  if(r.bank_ref)info.append(node("div","🏦 Checked in bank · UTR "+r.bank_ref,"meta"));
   info.append(photoStrip(r));
   const amt=node("div",fmt(r.collected),"amount ok");amt.append(node("small","Received"));
   const out=node("small","Outstanding "+fmt(r.outstanding));out.className=Number(r.outstanding)>0?"out":"";out.style.display="block";amt.append(out);
@@ -168,11 +203,13 @@ function render(){
   if(Number(r.online_amount)>0)line("📱 "+(r.online_mode||"UPI")+(r.online_reference?" · Ref "+r.online_reference:""),fmt(r.online_amount));
   line("Outstanding",fmt(r.outstanding),Number(r.outstanding)>0?"out":"");
   card.append(t);
-  if(r.status==="PENDING"&&canVerify()){
+  // Accounts: receive what the driver hands over (also when he entered nothing in his app).
+  if(r.status!=="VERIFIED"&&canVerify()){
    const act=node("div",null,"actions");
-   const ok=node("button","✅ Money received — Verify","approve");ok.type="button";ok.onclick=()=>review(r,"VERIFY");
-   const no=node("button","Reject","reject");no.type="button";no.onclick=()=>review(r,"REJECT");
-   act.append(ok,no);card.append(act);
+   const ok=node("button","💵 Receive money","approve");ok.type="button";ok.onclick=()=>openReceive(r);
+   act.append(ok);
+   if(r.status==="PENDING"){const no=node("button","Reject","reject");no.type="button";no.onclick=()=>review(r,"REJECT");act.append(no)}
+   card.append(act);
   }
   list.append(card);
  }
@@ -199,6 +236,61 @@ async function review(r,action){
  }catch(e){message("Failed: "+e.message,"error");render()}
  finally{busy=false}
 }
+// Receive money: cash by notes + UPI / bank with the UTR checked in the bank. Prefilled with what the driver entered.
+const NOTE_KEYS=["500","200","100","50","20","10","coins"];
+let recvRow=null;
+el("recvNotes").replaceChildren(...NOTE_KEYS.map(k=>{
+ const d=node("div");const l=node("label",k==="coins"?"Coins ₹":"₹"+k+" ×");l.htmlFor="note"+k;
+ const i=document.createElement("input");i.id="note"+k;i.type="number";i.min="0";i.step=k==="coins"?"0.01":"1";i.inputMode=k==="coins"?"decimal":"numeric";i.placeholder="0";i.oninput=recvUpdate;
+ d.append(l,i);return d}));
+function recvNums(){
+ const notes={};let cash=0;
+ NOTE_KEYS.forEach(k=>{const v=Number(el("note"+k).value||0);if(v>0){notes[k]=v;cash+=k==="coins"?v:Number(k)*v}});
+ return {notes,cash:Math.round(cash*100)/100,online:Math.round(Number(el("recvOnline").value||0)*100)/100};
+}
+function recvUpdate(){
+ const n=recvNums(),r=recvRow;
+ el("recvCash").textContent=fmt(n.cash);el("recvTotal").textContent=fmt(n.cash+n.online);
+ el("recvOut").textContent=fmt(Math.max(0,Number(r.net)-n.cash-n.online));
+ el("recvBankBox").hidden=!(n.online>0);el("recvErr").textContent="";
+}
+function openReceive(r){
+ recvRow=r;
+ el("recvWho").textContent=r.party_name+" · "+r.order_no+" · Driver "+(r.driver_name||"—")+(r.vehicle_no?" · "+r.vehicle_no:"");
+ el("recvBill").replaceChildren("Net to collect ",node("b",fmt(r.net)));
+ if(Number(r.collected)>0)el("recvBill").append(document.createElement("br"),"Driver entered ",node("b",fmt(r.collected)));
+ NOTE_KEYS.forEach(k=>el("note"+k).value=(r.cash_notes&&r.cash_notes[k])||"");
+ el("recvOnline").value=Number(r.online_amount)>0?r.online_amount:"";
+ el("recvMode").value=r.online_mode||"UPI";
+ el("recvDriverUpi").textContent=Number(r.online_amount)>0?"Driver's "+(r.online_mode||"UPI")+" screenshot"+(r.online_reference?" · Ref "+r.online_reference:"")+":":"";
+ el("recvPhotos").replaceChildren(...photoStrip(r).childNodes);
+ el("recvRef").value="";el("recvChecked").checked=false;el("recvNote").value="";
+ recvUpdate();el("recv").hidden=false;
+}
+el("recvOnline").oninput=recvUpdate;
+el("recvCancel").onclick=()=>{el("recv").hidden=true};
+el("recvForm").onsubmit=async e=>{
+ e.preventDefault();
+ if(busy)return;
+ const r=recvRow,n=recvNums(),ref=el("recvRef").value.trim(),err=t=>{el("recvErr").textContent=t};
+ if(n.cash+n.online<=0)return err("Enter the cash notes or the UPI amount received.");
+ if(n.online>0&&ref.length<4)return err("Check the UPI / bank payment in the bank and enter its UTR / reference.");
+ if(n.online>0&&!el("recvChecked").checked)return err("Tick that you checked this amount in the bank.");
+ const out=Math.max(0,Number(r.net)-n.cash-n.online);
+ if(!await confirm("Received from "+(r.driver_name||"driver")+" for "+r.party_name+" ("+r.order_no+"):\n"+
+   (n.cash>0?"💵 Cash "+fmt(n.cash)+" ("+notesText(n.notes)+")\n":"")+(n.online>0?"📱 "+el("recvMode").value+" "+fmt(n.online)+" · UTR "+ref+"\n":"")+
+   "Total "+fmt(n.cash+n.online)+" · Outstanding after this "+fmt(out),{title:"Save money received?",ok:"Save"}))return;
+ busy=true;el("recvSave").disabled=true;
+ try{
+  const {error}=await db.rpc("lwb_office_receive_driver_payment",{p_report_id:r.report_id,p_cash_notes:n.notes,p_online_amount:n.online,
+   p_online_mode:n.online>0?el("recvMode").value:null,p_bank_ref:n.online>0?ref:null,p_note:el("recvNote").value.trim()||null});
+  if(error)throw Error(/lwb_office_receive_driver_payment/.test(error.message)?"Run lwb_office_receive_driver_money.sql in Supabase first.":error.message);
+  el("recv").hidden=true;
+  await load();
+  message("Received "+fmt(n.cash+n.online)+" for "+r.order_no+". Driver, Sales Head and Salesman are told."+(out>0?" Still due "+fmt(out)+".":""),"success");
+ }catch(e2){err("Not saved: "+e2.message)}
+ finally{busy=false;el("recvSave").disabled=false}
+};
 document.querySelectorAll(".tab").forEach(t=>t.onclick=()=>{status=t.dataset.status;render()});
 el("search").addEventListener("input",render);
 el("refresh").onclick=load;

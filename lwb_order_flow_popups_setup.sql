@@ -126,6 +126,7 @@ BEGIN
   v_amt := 'Rs ' || to_char(coalesce(NEW.cash_reported,0),'FM9999999990.00');
 
   IF NEW.payment_saved_at IS NOT NULL AND coalesce(NEW.cash_reported,0) > 0
+     AND NEW.payment_status IS DISTINCT FROM 'VERIFIED'
      AND (TG_OP = 'INSERT' OR NEW.payment_saved_at IS DISTINCT FROM OLD.payment_saved_at) THEN
     PERFORM public.lwb_flow_send(NEW.order_id, ARRAY['salesman','godown'], 'Driver Collected Payment',
       concat_ws(' · ', v_o.order_no, v_o.customer_name, coalesce(v_driver,'Driver') || ' collected ' || v_amt,
