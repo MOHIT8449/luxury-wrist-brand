@@ -94,6 +94,10 @@
   {re:/^DELIVERY_RETURN_(PENDING|OPERATIONS)$/,key:"lwbReturnSnooze",title:"↩ Driver return waiting",ok:"Verify now",
    one:"A driver return is",many:" driver returns are",ask:" waiting for your check:",
    foot:"Only approved returns are cut from the bill. Until then the driver collects the full amount."},
+  // Accounts: driver collected money, until it is received from the driver and verified on Driver Collections.
+  {re:/^DELIVERY_COLLECTION$/,key:"lwbCollectSnooze",title:"💰 Money on the way — receive from driver",ok:"Receive & verify",
+   skip:"driver-collections.html",one:"A driver payment is",many:" driver payments are",ask:" on the way to the office:",
+   foot:"When the driver comes back, count the cash / check the UPI photo, then tap Verify on Driver Collections. This reminder stops once it is verified."},
   {re:/^TALLY_BILL_PENDING$/,key:"lwbTallySnooze",title:"🧾 Vehicle loaded — make Tally bill",skip:"accounts-invoice.html",ok:"Enter invoice no.",
    one:"A loaded vehicle is",many:" loaded vehicles are",ask:" waiting for the Tally bill:",
    foot:"Make the bill in Tally, then enter its invoice number. This reminder stops once the number is saved."},
