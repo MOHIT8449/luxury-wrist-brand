@@ -206,12 +206,17 @@ async function finishAuthorizedLogin(user){
   try{let a=await client.from("lwb_user_page_access").select("hidden,extra").eq("user_id",user.id).maybeSingle();
     if(a.error)a=await client.from("lwb_user_page_access").select("hidden").eq("user_id",user.id).maybeSingle();
     localStorage.setItem("lwbHiddenPages",JSON.stringify({uid:user.id,hidden:(!a.error&&a.data&&a.data.hidden)||[],extra:(!a.error&&a.data&&a.data.extra)||[]}))}catch(e){}
+  try{localStorage.setItem("lwbLastActive",String(Date.now()))}catch(e){}
   showMessage("Login successful. Opening your ERP Dashboard...");
   window.location.assign("dashboard.html");
 }
 async function checkExistingLogin(){
+  if(new URLSearchParams(location.search).get("idle"))showMessage("Logged out after 15 minutes without any activity. Please log in again.",true);
   const {data,error}=await client.auth.getSession();
   if(error||!data?.session)return;
+  // Same 15-minute rule as the ERP pages (erp-shell.js): an old idle session needs the password again.
+  let last=0;try{last=Number(localStorage.getItem("lwbLastActive"))||0}catch(e){}
+  if(last&&Date.now()-last>15*60e3){await client.auth.signOut({scope:"local"});try{localStorage.removeItem("lwbLastActive")}catch(e){}return;}
   // Verify current auth session, not merely cached session metadata.
   const result=await client.auth.getUser();
   if(result.error||!result.data?.user){
