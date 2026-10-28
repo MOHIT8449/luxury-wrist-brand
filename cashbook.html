@@ -2827,6 +2827,8 @@ JAY MAMA DEV TREDARS (NILGIRI LIMBAYAT)
   // Tally bills Accounts entered on "Tally Bill & Invoice No." (one line per bill, also sub-firm bills),
   // shown under the PO's main party. A bill already in the imported Tally register is not added twice.
   let erpBillRows = [];
+  // Tally firm key -> main party name, from Accounts > Tally Party Mapping
+  let erpPartyMap = {};
   function erpFeed(ob, seen) {
     const out = [];
     for (const r of erpBillRows) {
@@ -2910,6 +2912,9 @@ JAY MAMA DEV TREDARS (NILGIRI LIMBAYAT)
     if (t.map[k] === "__skip") return "__skip";
     if (t.map[k] && partyById(t.map[k])) return t.map[k];
     if (/^(cash|cash sales?)$/i.test(String(name).trim())) return "__skip";
+    const main = erpPartyMap[k] && tNorm(erpPartyMap[k]);
+    const mp = main && (partiesFor("in").find(p => tNorm(p.name) === main) || state.parties.find(p => tNorm(p.name) === main));
+    if (mp) return mp.id;
     const p = partiesFor("in").find(p => tNorm(p.name) === k) || state.parties.find(p => tNorm(p.name) === k);
     return p ? p.id : tallyGuess(k);
   }
@@ -2929,7 +2934,7 @@ JAY MAMA DEV TREDARS (NILGIRI LIMBAYAT)
     if (hits.length > 1) hits = hits.filter(p => tBase(p.name) === kb);
     return hits.length === 1 ? hits[0].id : "";
   }
-  const isGuess = (name, v) => v && v !== "__skip" && v !== "__new" && !tallyState().map[tNorm(name)] && !state.parties.some(p => p.id === v && tNorm(p.name) === tNorm(name));
+  const isGuess = (name, v) => v && v !== "__skip" && v !== "__new" && !tallyState().map[tNorm(name)] && !erpPartyMap[tNorm(name)] && !state.parties.some(p => p.id === v && tNorm(p.name) === tNorm(name));
 
   async function tallyLoad(file, kind) {
     let rows;
@@ -3067,7 +3072,7 @@ JAY MAMA DEV TREDARS (NILGIRI LIMBAYAT)
   }
   function mapTable(names, pick, extra) {
     return `<div class="rscroll"><table class="tl-map"><thead><tr><th>Tally party</th>${extra.head}<th>Cashbook party</th></tr></thead><tbody>
-      ${names.map(n => { const v = pick[n.name] !== undefined ? pick[n.name] : tallyMatch(n.name); return `<tr class="${v ? "" : "tl-need"}"><td class="tl-name">${esc(n.name)}${v && v !== "__new" && v !== "__skip" && !pick[n.name] && !tallyState().map[tNorm(n.name)] ? (isGuess(n.name, v) ? ` <span class="chip tl-sug">suggested · check</span>` : ` <span class="chip">same name</span>`) : ""}</td>${extra.cells(n)}<td>${partySelect(n.name, v)}</td></tr>`; }).join("")}
+      ${names.map(n => { const v = pick[n.name] !== undefined ? pick[n.name] : tallyMatch(n.name); return `<tr class="${v ? "" : "tl-need"}"><td class="tl-name">${esc(n.name)}${v && v !== "__new" && v !== "__skip" && !pick[n.name] && !tallyState().map[tNorm(n.name)] ? (isGuess(n.name, v) ? ` <span class="chip tl-sug">suggested · check</span>` : erpPartyMap[tNorm(n.name)] ? ` <span class="chip">party mapping</span>` : ` <span class="chip">same name</span>`) : ""}</td>${extra.cells(n)}<td>${partySelect(n.name, v)}</td></tr>`; }).join("")}
     </tbody></table></div>`;
   }
   // save the chosen parties: create new ones and remember every choice for next time
@@ -3440,6 +3445,7 @@ JAY MAMA DEV TREDARS (NILGIRI LIMBAYAT)
 
   // Tally bills from Accounts (invoice no. + amount) become pending bills here
   CB.erpBills().then(rows => { erpBillRows = rows; if (session.mode && !CB.isBusy()) render(); }).catch(() => {});
+  CB.partyMaps().then(rows => { erpPartyMap = Object.fromEntries(rows.map(r => [tNorm(r.tally_key), r.customer_name])); if (session.mode && !CB.isBusy()) render(); }).catch(() => {});
 
   // new ERP Party Master parties join the Cash In party list (Mohit, 26 Oct 2026).
   // state.erpParties remembers the names already handled, so a party deleted here is not added again.

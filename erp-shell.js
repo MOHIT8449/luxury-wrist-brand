@@ -52,6 +52,7 @@
     {group:"Accounts",items:[
       {t:"Tally Bill & Invoice No.",h:"accounts-invoice.html",i:"bill",r:"admin accounts"},
       {t:"Tally Bill Check",h:"tally-check.html",i:"bill",r:"admin accounts"},
+      {t:"Tally Party Mapping",h:"party-mapping.html",i:"users",r:"admin accounts"},
       {t:"Cashbook",h:"cashbook.html",i:"cash",r:"admin",hide:1}]},
     {group:"Returns",items:[
       {t:"Driver Returns Approval",h:"driver-returns.html",i:"undo",r:"admin accounts manager warehouse"},

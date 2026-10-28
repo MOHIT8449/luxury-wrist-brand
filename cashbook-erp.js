@@ -180,6 +180,13 @@
     return data||[];
   };
 
+  // Tally firm -> main party links from Accounts > Tally Party Mapping (lwb_cashbook_party_maps_setup.sql)
+  CB.partyMaps=async function(){
+    const {data,error}=await rpc("lwb_cashbook_party_maps");
+    if(error)throw error;
+    return data||[];
+  };
+
   // party names from the ERP Party Master (lwb_cashbook_erp_parties_setup.sql)
   CB.erpParties=async function(){
     const {data,error}=await rpc("lwb_cashbook_erp_parties");
