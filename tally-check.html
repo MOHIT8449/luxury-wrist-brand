@@ -36,6 +36,15 @@
     .tc-note{font-size:14px;color:var(--erp-muted);margin:10px 2px 0}
     .tc-links input{width:100%;min-width:220px;height:36px;border:1.5px solid var(--erp-line);border-radius:6px;padding:0 8px;font:inherit}
     .tc-scroll{overflow:auto}
+    .tc-tot{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-bottom:14px}
+    .tc-tot>div{background:#fff;border:1px solid var(--erp-line);border-radius:8px;padding:14px;border-left:5px solid #13824a}
+    .tc-tot.bad>div:last-child{border-left-color:#c8102e;background:#fff7f7}
+    .tc-tot h3{margin:0 0 4px;font-size:14px;color:#4b5763;font-weight:600}
+    .tc-tot b{font-size:24px;font-weight:800}
+    .tc-tot small{display:block;color:var(--erp-muted);font-size:13px;margin-top:4px}
+    .gap{color:#c8102e;font-weight:700}
+    .tc-views{margin:-4px 0 12px}.tc-views [aria-pressed=true]{background:#eaf2ff;border-color:#1769d8;color:#123f7a}
+    @media(max-width:800px){.tc-tot{grid-template-columns:1fr}}
     @media(max-width:1100px){.tc-kpis{grid-template-columns:repeat(3,minmax(0,1fr))}}
     @media(max-width:640px){.tc-kpis{grid-template-columns:1fr 1fr}.tc-bar label{flex:1 1 140px}.tc-bar input{width:100%}}
     .tc-q textarea{width:100%;min-width:200px;border:1.5px solid var(--erp-line);border-radius:6px;padding:6px 8px;font:inherit;font-size:14px;resize:vertical}
@@ -48,7 +57,7 @@
   <div id="loading" class="status">Checking account access...</div>
   <main id="page" class="erp-main" hidden>
     <div class="erp-pagehead"><h1>Tally Bill Check</h1></div>
-    <p class="tc-sub">Choose the Tally Sales Register file(s). Every dispatched PO is checked: is its bill made in Tally, and is the amount the same? The Tally file is only read here; only the problems found are kept as open queries until they are cleared.</p>
+    <p class="tc-sub">Choose the Tally Sales Register file(s). PO sales and Tally sales are compared in total and party wise, and every dispatched PO is checked: is its bill made in Tally, and is the amount the same? Below, the Tally Stock Summary can be compared with the ERP stock. The Tally file is only read here; only the problems found are kept as open queries until they are cleared.</p>
     <div class="tc-bar">
       <label>Tally Sales Register (Excel / CSV)<input type="file" id="file" accept=".xls,.xlsx,.csv" multiple></label>
       <label>Dispatched from<input type="date" id="from"></label>
@@ -59,6 +68,14 @@
     </div>
     <div id="err" class="tc-err" hidden></div>
     <div id="out"></div>
+    <section class="erp-card" id="stCard" style="margin-top:14px">
+      <div class="erp-card-head"><h2>Tally stock vs ERP stock</h2>
+        <label style="margin-left:auto;font-size:14px;display:flex;gap:6px;align-items:center"><input type="checkbox" id="stAll"> Show all items</label></div>
+      <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center;padding:0 0 12px">
+        <label class="tc-btn" style="display:inline-flex;align-items:center;cursor:pointer">⬆ Choose Tally Stock Summary<input type="file" id="stFile" accept=".xls,.xlsx,.csv" hidden></label>
+        <small style="color:var(--erp-muted);flex:1;min-width:220px" id="stNote">Export the Stock Summary from Tally as Excel. Each item's closing quantity is compared with the ERP live stock.</small></div>
+      <div id="stOut"></div>
+    </section>
     <section class="erp-card" id="qCard" hidden style="margin-top:14px">
       <div class="erp-card-head"><h2>Open queries</h2><small style="color:var(--erp-muted)" id="qNote"></small>
         <label style="margin-left:auto;font-size:14px;display:flex;gap:6px;align-items:center"><input type="checkbox" id="qAll"> Show closed</label></div>
@@ -215,11 +232,22 @@
       const n=k=>result.filter(r=>r.kind===k).length;
       const kpi=(k,title,big,small,c)=>'<button type="button" class="tc-kpi" data-show="'+k+'" aria-pressed="'+(show===k)+'" style="--c:'+c+'"><h3>'+title+'</h3><div class="big">'+big+'</div><small>'+small+"</small></button>";
       const sum=k=>rs(result.filter(r=>r.kind===k).reduce((a,r)=>a+(k==="extra"?r.ta:r.ea),0));
-      let h='<div class="tc-kpis">'+kpi("all","Dispatched POs",orders.length,bills.length+" Tally bills in file","#1f2a37")+
+      // PO sales vs Tally sales for the whole period: the difference must be explained bill by bill
+      const poT=r2(orders.reduce((a,o)=>a+o.amount,0)),skipped=bills.filter(b=>link(b.party).party===null);
+      const tlT=r2(bills.reduce((a,b)=>a+b.amt,0)-skipped.reduce((a,b)=>a+b.amt,0));
+      const gstT=r2(result.filter(r=>r.kind==="ok").reduce((a,r)=>a+(r.ta-r.ea),0)),gap=r2(tlT-poT-gstT);
+      const ds=bills.map(b=>b.date).sort();
+      let h='<section class="tc-tot'+(Math.abs(gap)>1?" bad":"")+'"><div><h3>PO sales (ERP)</h3><b>'+rs(poT)+'</b><small>'+orders.length+' POs dispatched '+nice(el("from").value)+' to '+nice(el("to").value)+'</small></div>'+
+        '<div><h3>Tally sales (Sales Register)</h3><b>'+rs(tlT)+'</b><small>'+(bills.length-skipped.length)+' bills, '+nice(ds[0])+' to '+nice(ds[ds.length-1])+(skipped.length?' · '+skipped.length+' skipped name'+(skipped.length>1?'s':'')+' left out':'')+'</small></div>'+
+        '<div><h3>Difference (Tally − PO)</h3><b>'+rs(r2(tlT-poT))+'</b><small>'+(gstT?'GST on matched bills '+rs(gstT)+' · ':'')+(Math.abs(gap)>1?'<span class="gap">Not explained: '+rs(gap)+'</span> (see the bills below)':'All explained')+'</small></div></section>';
+      h+='<div class="tc-kpis">'+kpi("all","Dispatched POs",orders.length,bills.length+" Tally bills in file","#1f2a37")+
         kpi("miss",KIND.miss[0],n("miss"),sum("miss"),KIND.miss[2])+kpi("notreg",KIND.notreg[0],n("notreg"),sum("notreg"),KIND.notreg[2])+kpi("diff",KIND.diff[0],n("diff"),"ERP "+sum("diff"),KIND.diff[2])+
-        kpi("extra",KIND.extra[0],n("extra"),sum("extra"),KIND.extra[2])+kpi("ok",KIND.ok[0],n("ok"),sum("ok"),KIND.ok[2])+"</div>";
+        kpi("extra",KIND.extra[0],n("extra"),sum("extra"),KIND.extra[2])+kpi("ok",KIND.ok[0],n("ok"),sum("ok"),KIND.ok[2])+"</div>"+
+        '<div class="tc-views"><button type="button" class="tc-btn sm" data-show="party" aria-pressed="'+(show==="party")+'">Party wise: PO vs Tally</button></div>';
       const unlinked=new Set(bills.filter(b=>link(b.party).party==="").map(b=>b.party)).size;
       if(unlinked)h+='<div class="tc-err" style="background:#fdf0dc;color:#7a4700">'+unlinked+' Tally party names are not linked to an ERP party yet, so their bills show as "Tally bill, no ERP PO". Link them in the table at the bottom (only once).</div>';
+      if(show==="party"){el("out").innerHTML=h+partyWise();el("out").querySelectorAll("[data-show]").forEach(b=>b.onclick=()=>{show=b.dataset.show;render()});
+        const cb=el("pwAll");if(cb)cb.onchange=()=>{pwAll=cb.checked;render()};el("excel").disabled=!result.length;return}
       const list=result.filter(r=>show==="all"||r.kind===show);
       h+='<section class="erp-card"><div class="tc-scroll"><table class="tc-table"><thead><tr><th>Result</th><th>Dispatch / bill date</th><th>Party</th><th>ERP PO</th><th class="n">ERP amount</th><th>Tally bill</th><th class="n">Tally amount</th><th class="n">Difference</th></tr></thead><tbody>'+
         (list.length?list.map(r=>{
@@ -241,6 +269,25 @@
       el("out").innerHTML=h;
       el("out").querySelectorAll("[data-show]").forEach(b=>b.onclick=()=>{show=b.dataset.show;render()});
       el("excel").disabled=!result.length;
+    }
+    // each party: PO total vs Tally total for the period (only parties with a difference, unless "all")
+    let pwAll=false;
+    function partyRows(){
+      const m=new Map();
+      for(const r of result){const k=norm(r.party);const x=m.get(k)||{party:r.party,tally:new Set(),po:0,pos:0,tl:0,bl:0,gst:0};
+        x.po+=r.ea;x.pos+=r.os.length;x.tl+=r.ta;x.bl+=r.ts.length;if(r.kind==="ok")x.gst+=r.ta-r.ea;r.ts.forEach(t=>x.tally.add(t.party));m.set(k,x)}
+      return [...m.values()].map(x=>({...x,po:r2(x.po),tl:r2(x.tl),diff:r2(x.tl-x.po),gap:r2(x.tl-x.po-x.gst)})).sort((a,b)=>Math.abs(b.gap)-Math.abs(a.gap)||a.party.localeCompare(b.party));
+    }
+    function partyWise(){
+      const all=partyRows(),rows=all.filter(x=>pwAll||Math.abs(x.gap)>1);
+      return '<section class="erp-card"><div class="erp-card-head"><h2>Party wise: PO sales vs Tally sales</h2><small style="color:var(--erp-muted)">'+all.filter(x=>Math.abs(x.gap)>1).length+' of '+all.length+' parties differ</small>'+
+        '<label style="margin-left:auto;font-size:14px;display:flex;gap:6px;align-items:center"><input type="checkbox" id="pwAll"'+(pwAll?" checked":"")+'> Show all parties</label></div>'+
+        '<div class="tc-scroll"><table class="tc-table"><thead><tr><th>Party</th><th class="n">POs</th><th class="n">PO sales (ERP)</th><th class="n">Tally bills</th><th class="n">Tally sales</th><th class="n">Difference</th><th class="n">GST on matched</th><th class="n">Not explained</th></tr></thead><tbody>'+
+        (rows.length?rows.map(x=>{const t=[...x.tally].filter(n=>norm(n)!==norm(x.party));
+          return "<tr><td><b>"+esc(x.party)+"</b>"+(t.length?"<small>Tally: "+esc(t.join(", "))+"</small>":"")+"</td><td class='n'>"+x.pos+"</td><td class='n'>"+rs(x.po)+"</td><td class='n'>"+x.bl+"</td><td class='n'>"+rs(x.tl)+"</td>"+
+            "<td class='n'>"+rs(x.diff)+"</td><td class='n'>"+(x.gst?rs(r2(x.gst)):"")+"</td><td class='n'>"+(Math.abs(x.gap)>1?"<b class='gap'>"+rs(x.gap)+"</b>":"<span class='tc-tag t-ok'>OK</span>")+"</td></tr>"}).join("")
+        :'<tr><td colspan="8" class="erp-empty">Every party: PO sales = Tally sales.</td></tr>')+'</tbody></table></div></section>'+
+        '<p class="tc-note">Not explained = Tally sales − PO sales − GST on bills that matched. Open the party in "Dispatched POs" to see which bill or PO makes the difference.</p>';
     }
     function renderLinks(){
       const names=new Map();
@@ -326,6 +373,8 @@
       const nr=n("notreg");if(nr)lines.push("• "+nr+" bill no."+(nr>1?"s":"")+" entered by Accounts but not in the Sales Register");
       if(extra)lines.push("• "+extra+" Tally bill"+(extra>1?"s":"")+" with no ERP PO");
       if(diff)lines.push("• "+diff+" with a different amount");
+      const pw=partyRows().filter(x=>Math.abs(x.gap)>1);
+      if(pw.length)lines.push("• "+pw.length+" part"+(pw.length>1?"ies":"y")+": PO sales and Tally sales differ (see Party wise)");
       if(q&&q.err)lines.push("","Queries were not saved: "+q.err);
       else if(q)lines.push("",(q.new||0)+" new open queries. "+(q.closed?(q.closed+" earlier queries now match and were closed. "):"")+"Accounts writes the reason in Open queries; Admin closes each one after checking.");
       if(!miss&&!extra&&!diff&&!n("notreg"))return alert("All bills match\n\nEvery dispatched PO in these dates has its Tally bill with the same amount."+(q&&q.closed?"\n"+q.closed+" earlier queries now match and were closed.":""),{title:"Tally check done",kind:"success"});
@@ -395,8 +444,77 @@
     function excel(){
       const rows=[["Result","Date","Party","Tally party","ERP PO","ERP bill no. (Accounts)","Amount (Accounts)","ERP amount","Tally bill no.","Tally voucher type","Tally amount","Difference","GST %"]];
       result.forEach(r=>rows.push([KIND[r.kind][0],nice(r.date),r.party,r.tallyName,r.os.map(o=>o.order_no).join(", "),r.os.map(o=>o.inv?o.inv.invoice_no:"").filter(Boolean).join(", "),r.ia!=null?r.ia:"",r.os.length?r.ea:"",r.ts.map(t=>t.vno).join(", "),r.ts.map(t=>t.vtype).join(", "),r.ts.length?r.ta:"",r.os.length&&r.ts.length?r.diff:"",r.gst||""]));
-      LWBExcel.write("tally-bill-check-"+el("from").value+"-to-"+el("to").value,[{name:"Tally check",rows}]);
+      const pw=[["Party","Tally names","POs","PO sales (ERP)","Tally bills","Tally sales","Difference","GST on matched","Not explained"]];
+      partyRows().forEach(x=>pw.push([x.party,[...x.tally].join(", "),x.pos,x.po,x.bl,x.tl,x.diff,r2(x.gst),x.gap]));
+      LWBExcel.write("tally-bill-check-"+el("from").value+"-to-"+el("to").value,[{name:"Tally check",rows},{name:"Party wise",rows:pw}]);
     }
+    /* ---------- Tally Stock Summary vs ERP live stock ---------- */
+    let stock=null,stAll=false;
+    async function readStock(f){
+      await LWBExcel.lib();
+      const book=XLSX.read(await f.arrayBuffer(),{type:"array"});
+      const rows=XLSX.utils.sheet_to_json(book.Sheets[book.SheetNames[0]],{header:1,raw:true,defval:""});
+      const txt=v=>String(v??"").replace(/\s+/g," ").trim();
+      // heading: Particulars / Item / Name; quantity: the first "Quantity" / "Closing" column (Tally puts Closing Balance over Quantity / Rate / Value)
+      let h=-1,ci=-1,cq=-1;
+      for(let i=0;i<Math.min(rows.length,40)&&h<0;i++){
+        const r=rows[i].map(c=>txt(c).toLowerCase());
+        const a=r.findIndex(c=>/^(particulars?|item|item name|stock item|name|sku|sku name)$/.test(c));
+        if(a<0)continue;
+        let q=r.findIndex(c=>/quantity|qty|closing/.test(c));
+        if(q<0&&rows[i+1]){const r2_=rows[i+1].map(c=>txt(c).toLowerCase());q=r2_.findIndex(c=>/quantity|qty/.test(c))}
+        if(q>=0){h=i;ci=a;cq=q}
+      }
+      if(h<0)throw Error(f.name+": the Particulars and Quantity / Closing columns were not found. Export the Stock Summary from Tally as Excel.");
+      const out=new Map();
+      rows.slice(h+1).forEach(r=>{
+        const name=txt(r[ci]),raw=txt(r[cq]);
+        if(!name||/^(grand )?total\b/i.test(name)||/quantity|rate|value/i.test(name))return;
+        const m=raw.replace(/,/g,"").match(/-?\d+(\.\d+)?/);if(!m)return;
+        const k=norm(name),x=out.get(k)||{name,qty:0,unit:""};x.qty+=Number(m[0]);x.unit=x.unit||raw.replace(/[-\d.,\s]+/g," ").trim();out.set(k,x);
+      });
+      return [...out.values()];
+    }
+    async function runStock(){
+      const f=el("stFile").files[0];if(!f)return;
+      el("stOut").innerHTML='<p class="status" style="padding:20px">Checking stock...</p>';
+      try{
+        const tl=await readStock(f);
+        if(!tl.length)throw Error("No stock items with a quantity were found in "+f.name+".");
+        const {data,error}=await client.from("lwb_live_stock").select("sku_name,pcs_per_case,saleable_pcs,damaged_pcs").order("sku_name");
+        if(error)throw error;
+        const erp=new Map((data||[]).map(x=>[norm(x.sku_name),x]));
+        const rows=[];
+        for(const t of tl){
+          const e=erp.get(norm(t.name));if(e)erp.delete(norm(t.name));
+          if(!e){rows.push({kind:"tally",name:t.name,t});continue}
+          const pcs=Number(e.saleable_pcs)||0,ppc=Number(e.pcs_per_case)||0,cases=ppc?r2(pcs/ppc):null;
+          // Tally may keep the item in cases (box / ctn / case) or pieces
+          const inCases=/\b(cases?|box(es)?|ctns?|cartons?|cs)\b/i.test(t.unit)&&cases!=null;
+          const ev=inCases?cases:pcs,diff=r2(t.qty-ev);
+          rows.push({kind:Math.abs(diff)<0.01?"ok":"diff",name:e.sku_name,t,pcs,cases,ev,inCases,diff});
+        }
+        for(const e of erp.values())if(Number(e.saleable_pcs))rows.push({kind:"erp",name:e.sku_name,pcs:Number(e.saleable_pcs)||0,cases:Number(e.pcs_per_case)?r2(e.saleable_pcs/e.pcs_per_case):null});
+        stock={file:f.name,rows};renderStock();
+      }catch(e){el("stOut").innerHTML='<div class="tc-err">'+esc(e.message)+'</div>'}
+      finally{el("stFile").value=""}
+    }
+    const SK={ok:["Same","t-ok"],diff:["Quantity differs","t-diff"],tally:["In Tally only","t-extra"],erp:["In ERP only","t-miss"]};
+    function renderStock(){
+      if(!stock)return;
+      const n=k=>stock.rows.filter(r=>r.kind===k).length;
+      el("stNote").textContent=stock.file+": "+n("ok")+" same · "+n("diff")+" differ · "+n("tally")+" only in Tally · "+n("erp")+" only in ERP";
+      const order={diff:0,tally:1,erp:2,ok:3};
+      const rows=stock.rows.filter(r=>stAll||r.kind!=="ok").sort((a,b)=>order[a.kind]-order[b.kind]||a.name.localeCompare(b.name));
+      el("stOut").innerHTML='<div class="tc-scroll"><table class="tc-table"><thead><tr><th>Result</th><th>Item</th><th class="n">Tally closing qty</th><th class="n">ERP stock (pcs)</th><th class="n">ERP stock (cases)</th><th class="n">Difference</th></tr></thead><tbody>'+
+        (rows.length?rows.map(r=>"<tr><td><span class='tc-tag "+SK[r.kind][1]+"'>"+SK[r.kind][0]+"</span></td><td><b>"+esc(r.name)+"</b>"+(r.t&&norm(r.t.name)!==norm(r.name)?"<small>Tally: "+esc(r.t.name)+"</small>":"")+"</td>"+
+          "<td class='n'>"+(r.t?r.t.qty+(r.t.unit?" "+esc(r.t.unit):""):"—")+"</td><td class='n'>"+(r.pcs!=null?r.pcs:"—")+"</td><td class='n'>"+(r.cases!=null?r.cases:"—")+"</td>"+
+          "<td class='n'>"+(r.kind==="diff"?"<b class='gap'>"+(r.diff>0?"+":"")+r.diff+" "+(r.inCases?"cases":"pcs")+"</b>":"")+"</td></tr>").join("")
+        :'<tr><td colspan="6" class="erp-empty">Every item: Tally stock = ERP stock.</td></tr>')+'</tbody></table></div>'+
+        '<p class="tc-note">Items are matched by name (Tally stock item = ERP SKU name). Tally quantity in box / case / ctn is compared with ERP cases, otherwise with ERP pieces. ERP stock = saleable stock now, so export the Tally Stock Summary as on today.</p>';
+    }
+    el("stFile").onchange=runStock;
+    el("stAll").onchange=()=>{stAll=el("stAll").checked;renderStock()};
     async function start(){
       const {data:{session}}=await client.auth.getSession();
       if(!session){location.replace("login.html");return null}
