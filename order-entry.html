@@ -659,7 +659,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       .maybeSingle();
 
     if(error) throw error;
-    if(profile) profile.role = await lwbPageRole(profile.role);
+    if(profile){profile.loginRole=profile.role;profile.role=await lwbPageRole(profile.role);}
 
     if(!profile){
       await alert("User profile not found.");
@@ -683,6 +683,8 @@ document.addEventListener("DOMContentLoaded", async () => {
     currentProfile=profile;
     document.body.classList.add("compact-entry");
     setupCompactEntry();
+    document.getElementById("saveBtn").textContent=newOrderButtonLabel();
+    if(headCreatesApprovedPo())document.querySelector(".page-title p").textContent="PO saves approved. Assign transport next.";
     if(String(profile.role||"").trim().toLowerCase()==="sales") document.body.classList.add("sales-entry");
 
     document.getElementById("userName").textContent =
@@ -1516,6 +1518,12 @@ function calculateTotals(){
 }
 
 
+// Approval is decided again by the database from the active login's role.
+function headCreatesApprovedPo(){
+  return ["admin","manager"].includes(String(currentProfile?.loginRole||currentProfile?.role||"").trim().toLowerCase());
+}
+function newOrderButtonLabel(){return headCreatesApprovedPo()?"Save & Approve PO":"Submit to Warehouse Manager";}
+
 /* CREATE ORDER NUMBER */
 
 async function generateOrderNo(){
@@ -1780,64 +1788,83 @@ async function saveOrder(){
         ? new Date(dateValue).toISOString()
         : new Date().toISOString();
 
-    // Two salesmen saving together can pick the same next number; retry on a duplicate.
-    let orderNo, order, orderError;
-    for(let attempt=0; attempt<3; attempt++){
-      orderNo=await generateOrderNo();
-      ({data:order,error:orderError} =
+    let orderNo;
+    if(headCreatesApprovedPo()){
+      // Save the header and all approved SKU quantities atomically. No pending PO is exposed.
+      let result;
+      for(let attempt=0;attempt<3;attempt++){
+        result=await db.rpc("lwb_head_create_approved_po",{
+          p_customer_name:customer,p_transportation:transportation||null,p_sales_person:salesPerson,
+          p_order_date:orderDate,p_items:items
+        });
+        if(result.error?.code!=="23505")break;
+      }
+      if(result.error)throw result.error;
+      if(!result.data?.id||result.data.status!=="approved")throw new Error("PO approval was not confirmed. Refresh before retrying.");
+      createdOrder=result.data;orderNo=result.data.order_no;
+      // Use the server totals (including current SKU Master weights).
+      totals.totalQty=Number(result.data.total_qty);totals.totalAmount=Number(result.data.total_amount);totals.totalWeight=Number(result.data.total_weight);
+    }else{
+      // Two salesmen saving together can pick the same next number; retry on a duplicate.
+      let order, orderError;
+      for(let attempt=0; attempt<3; attempt++){
+        orderNo=await generateOrderNo();
+        ({data:order,error:orderError} =
+          await db
+            .from("orders")
+            .insert({
+              order_no:orderNo,
+              order_date:orderDate,
+              customer_name:customer,
+              transportation:transportation || null,
+              sales_person:salesPerson,
+              status:"pending_approval",
+              total_qty:totals.totalQty,
+              total_amount:totals.totalAmount,
+              total_weight:totals.totalWeight,
+              created_by:currentUser.id
+            })
+            .select()
+            .single());
+        if(orderError?.code !== "23505") break;
+      }
+
+      if(orderError) throw orderError;
+
+      createdOrder=order;
+
+      const itemRows =
+        items.map(item=>({
+          order_id:order.id,
+          ...item
+        }));
+
+      const {error:itemError} =
+        await db
+          .from("order_items")
+          .insert(itemRows);
+
+      if(itemError){
+
+        /*
+          Front-end Supabase calls are not one database transaction.
+          If item insert fails, remove newly-created empty order.
+        */
+
         await db
           .from("orders")
-          .insert({
-            order_no:orderNo,
-            order_date:orderDate,
-            customer_name:customer,
-            transportation:transportation || null,
-            sales_person:salesPerson,
-            status:"pending_approval",
-            total_qty:totals.totalQty,
-            total_amount:totals.totalAmount,
-            total_weight:totals.totalWeight,
-            created_by:currentUser.id
-          })
-          .select()
-          .single());
-      if(orderError?.code !== "23505") break;
-    }
+          .delete()
+          .eq("id",order.id);
 
-    if(orderError) throw orderError;
+        throw itemError;
+      }
 
-    createdOrder=order;
-
-    const itemRows =
-      items.map(item=>({
-        order_id:order.id,
-        ...item
-      }));
-
-    const {error:itemError} =
-      await db
-        .from("order_items")
-        .insert(itemRows);
-
-    if(itemError){
-
-      /*
-        Front-end Supabase calls are not one database transaction.
-        If item insert fails, remove newly-created empty order.
-      */
-
-      await db
-        .from("orders")
-        .delete()
-        .eq("id",order.id);
-
-      throw itemError;
     }
 
     document.getElementById("orderNo").value=orderNo;
 
     showMessage(
-      "Order saved successfully! Order No: "+
+      (headCreatesApprovedPo()?"PO approved. Order No: ":"Order saved successfully! Order No: ")+
       orderNo+
       " | Total Qty: "+
       formatNumber(totals.totalQty)+
@@ -1850,15 +1877,15 @@ async function saveOrder(){
     );
 
     alert(
-      "Order submitted successfully.\n\n"+
+      (headCreatesApprovedPo()?"PO saved and approved successfully.\n\n":"Order submitted successfully.\n\n")+
       "Order No: "+orderNo+
       "\nTotal Qty: "+formatNumber(totals.totalQty)+
       "\nTotal Amount: "+formatMoney(totals.totalAmount)+
       "\nFinal Weight: "+formatNumber(totals.totalWeight)+" KG"+
-      "\n\nSent to Warehouse Manager for approval."
+      (headCreatesApprovedPo()?"\n\nReady for transport assignment.":"\n\nSent to Warehouse Manager for approval.")
     );
 
-    saveBtn.textContent="Order Submitted";
+    saveBtn.textContent=headCreatesApprovedPo()?"PO Approved":"Order Submitted";
 
   }catch(error){
 
@@ -1870,7 +1897,7 @@ async function saveOrder(){
     );
 
     saveBtn.disabled=false;
-    saveBtn.textContent="Submit to Warehouse Manager";
+    saveBtn.textContent=newOrderButtonLabel();
 
   }
 
@@ -1917,7 +1944,7 @@ async function resetOrder(){
 
   const btn=document.getElementById("saveBtn");
   btn.disabled=false;
-  btn.textContent="Submit to Warehouse Manager";
+  btn.textContent=newOrderButtonLabel();
 
   document.getElementById("message").className="message";
 
