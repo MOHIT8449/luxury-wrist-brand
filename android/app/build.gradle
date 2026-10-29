@@ -1,0 +1,61 @@
+plugins {
+    id "com.android.application"
+}
+
+// The ERP website this app opens. Pages and features come from the live site,
+// so a merged PR reaches the app without a new APK.
+def siteHost = "luxury-wrist-brand.pages.dev"
+def launchUrl = "https://" + siteHost + "/dashboard.html"
+
+// Release signing comes from environment variables (set by the GitHub Actions
+// build from repository secrets, or by hand on a PC). Without them only the
+// debug APK can be built.
+def keystoreFile = System.getenv("LWB_KEYSTORE_FILE")
+def hasReleaseKey = keystoreFile != null && file(keystoreFile).exists()
+
+android {
+    namespace "com.luxurywristbrand.erp"
+    compileSdk 35
+
+    defaultConfig {
+        applicationId "com.luxurywristbrand.erp"
+        minSdk 21
+        targetSdk 35
+        versionCode((System.getenv("GITHUB_RUN_NUMBER") ?: "1") as int)
+        versionName "1.0." + (System.getenv("GITHUB_RUN_NUMBER") ?: "0")
+
+        resValue "string", "host_name", siteHost
+        resValue "string", "launch_url", launchUrl
+        resValue "string", "provider_authority", "com.luxurywristbrand.erp.fileprovider"
+        resValue "string", "asset_statements",
+            "[{ \\\"relation\\\": [\\\"delegate_permission/common.handle_all_urls\\\"], " +
+            "\\\"target\\\": { \\\"namespace\\\": \\\"web\\\", \\\"site\\\": \\\"https://" + siteHost + "\\\" } }]"
+    }
+
+    signingConfigs {
+        if (hasReleaseKey) {
+            release {
+                storeFile file(keystoreFile)
+                storePassword System.getenv("LWB_KEYSTORE_PASSWORD")
+                keyAlias System.getenv("LWB_KEY_ALIAS") ?: "lwb-erp"
+                keyPassword System.getenv("LWB_KEY_PASSWORD") ?: System.getenv("LWB_KEYSTORE_PASSWORD")
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            if (hasReleaseKey) signingConfig signingConfigs.release
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
+
+dependencies {
+    implementation "com.google.androidbrowserhelper:androidbrowserhelper:2.5.0"
+}

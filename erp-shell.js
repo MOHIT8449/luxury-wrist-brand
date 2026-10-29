@@ -228,6 +228,8 @@
 
   // Phone: "Add to Home screen" opens the ERP like an app.
   function appMeta(){
+    // Service worker: needed for "Install app" and the Android app; it caches nothing.
+    if("serviceWorker" in navigator)navigator.serviceWorker.register("/sw.js").catch(()=>{});
     if(document.querySelector('link[rel="manifest"]'))return;
     const add=(tag,attrs)=>{const n=document.createElement(tag);for(const k in attrs)n.setAttribute(k,attrs[k]);document.head.appendChild(n)};
     add("link",{rel:"manifest",href:"manifest.webmanifest"});

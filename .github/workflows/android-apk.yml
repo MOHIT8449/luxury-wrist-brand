@@ -1,0 +1,83 @@
+# Builds the LWB ERP Android app (APK).
+# - Every PR / push that touches the app: APK is attached to the run (Artifacts).
+# - Push to main with the signing key saved as secrets: the APK is also put on
+#   the "android-app" release, so staff always download the latest from one link:
+#   https://github.com/MOHIT8449/luxury-wrist-brand/releases/download/android-app/lwb-erp.apk
+# Secrets (Settings > Secrets and variables > Actions):
+#   LWB_KEYSTORE_BASE64   the .jks signing key, base64
+#   LWB_KEYSTORE_PASSWORD its password
+name: Android app
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "android/**"
+      - ".github/workflows/android-apk.yml"
+  pull_request:
+    paths:
+      - "android/**"
+      - ".github/workflows/android-apk.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: android
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Load signing key
+        id: key
+        env:
+          KEYSTORE_BASE64: ${{ secrets.LWB_KEYSTORE_BASE64 }}
+        run: |
+          if [ -n "$KEYSTORE_BASE64" ]; then
+            echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/lwb-erp.jks"
+            echo "LWB_KEYSTORE_FILE=$RUNNER_TEMP/lwb-erp.jks" >> "$GITHUB_ENV"
+            echo "signed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::LWB_KEYSTORE_BASE64 secret is not set, building a debug APK (address bar shows, cannot be updated by the signed app)."
+            echo "signed=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build signed APK
+        if: steps.key.outputs.signed == 'true'
+        env:
+          LWB_KEYSTORE_PASSWORD: ${{ secrets.LWB_KEYSTORE_PASSWORD }}
+        run: |
+          ./gradlew --no-daemon assembleRelease
+          cp app/build/outputs/apk/release/app-release.apk "$RUNNER_TEMP/lwb-erp.apk"
+
+      - name: Build debug APK
+        if: steps.key.outputs.signed != 'true'
+        run: |
+          ./gradlew --no-daemon assembleDebug
+          cp app/build/outputs/apk/debug/app-debug.apk "$RUNNER_TEMP/lwb-erp.apk"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: lwb-erp-apk
+          path: ${{ runner.temp }}/lwb-erp.apk
+
+      - name: Publish to the android-app release
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && steps.key.outputs.signed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view android-app >/dev/null 2>&1 || \
+            gh release create android-app --title "LWB ERP Android app" \
+              --notes "Install lwb-erp.apk on the phone. The app opens the live ERP, so website updates need no new APK."
+          gh release upload android-app "$RUNNER_TEMP/lwb-erp.apk" --clobber
