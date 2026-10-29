@@ -41,7 +41,11 @@ BEGIN
              coalesce(d.payment_status, CASE WHEN d.cash_reported > 0 THEN 'PENDING' ELSE 'NONE' END) AS status,
              d.office_received,
              rp.full_name AS received_by, d.payment_reviewed_at AS received_at, d.payment_review_note AS note,
-             GREATEST(0, b.net - CASE WHEN d.payment_status = 'VERIFIED' THEN coalesce(d.cash_reported,0) ELSE 0 END) AS due,
+             GREATEST(0, b.net - CASE WHEN d.payment_status = 'VERIFIED' THEN coalesce(d.cash_reported,0) ELSE 0 END
+                          - coalesce((SELECT sum(c.amount) FROM public.lwb_payment_collections c
+                                      LEFT JOIN public.lwb_internal_bills ib ON ib.id = c.internal_bill_id
+                                      LEFT JOIN public.tax_invoices ti ON ti.id = c.invoice_id
+                                      WHERE c.status = 'POSTED' AND coalesce(ib.order_id, ti.order_id) = d.order_id),0)) AS due,
              CASE WHEN v_tally THEN t.invoice_no END AS tally_invoice_no
       FROM public.lwb_delivery_reports d
       JOIN public.orders o ON o.id = d.order_id
