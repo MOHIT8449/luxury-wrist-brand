@@ -314,7 +314,7 @@
     // Driver page has its own bottom bar and Submit bar; it needs the same keyboard handling.
     if(role==="driver")watchKeyboard();
     watchSuccess();
-    if(role)idleLogout();
+    if(role){idleLogout();otpGuard();}
     bell(top,role);
     refreshAccess().then(changed=>{
       if(!changed)return;
@@ -408,6 +408,17 @@
     ["pointerdown","keydown","touchstart","mousemove","wheel"].forEach(ev=>document.addEventListener(ev,real,{passive:true,capture:true}));
     document.addEventListener("visibilitychange",()=>{if(!document.hidden)check().then(gone=>{if(!gone)mark()})});
     setInterval(check,30e3);
+  }
+
+  // A login that passed the password but not the Authenticator OTP (aal1) is sent back to Login.
+  async function otpGuard(){
+    try{
+      const c=window.__lwbBellClient||(window.__lwbBellClient=window.supabase.createClient(URL_,KEY_));
+      const {data,error}=await c.auth.mfa.getAuthenticatorAssuranceLevel();
+      if(error||!data||data.currentLevel==="aal2")return;
+      const {data:s}=await c.auth.getSession();if(!s||!s.session)return;
+      location.replace("login.html?otp=1");
+    }catch(e){}
   }
 
   // 🔔 ERP notifications on every page, for every logged-in role (Driver too).

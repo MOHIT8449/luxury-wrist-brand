@@ -130,12 +130,14 @@
         extraReady=!pa.error;
         if(pa.error)pa=await client.from("lwb_user_page_access").select("user_id,hidden");
         pageAccess={};pageExtra={};for(const r of (pa.error?[]:pa.data||[])){pageAccess[r.user_id]=r.hidden||[];pageExtra[r.user_id]=r.extra||[]}
+        // Users with a working Authenticator OTP; empty until lwb_login_otp_setup.sql is run.
+        const otp=await client.rpc("lwb_admin_otp_users"),otpSet=new Set(otp.error?[]:(otp.data||[]).map(r=>typeof r==="string"?r:r.lwb_admin_otp_users));
         for(const u of users){
           const row=body.insertRow();
           const login=document.createElement("div");login.className="login-cell";
           login.textContent=u.mobile||u.email||"—";
           const sub=document.createElement("small");
-          sub.textContent=[u.mobile&&u.email?u.email:"",u.last_sign_in_at?"Last sign-in "+new Date(u.last_sign_in_at).toLocaleDateString("en-IN",{day:"2-digit",month:"short"}):"Never signed in"].filter(Boolean).join(" · ");
+          sub.textContent=[u.mobile&&u.email?u.email:"",otp.error?"":otpSet.has(u.user_id)?"OTP set":"OTP not set",u.last_sign_in_at?"Last sign-in "+new Date(u.last_sign_in_at).toLocaleDateString("en-IN",{day:"2-digit",month:"short"}):"Never signed in"].filter(Boolean).join(" · ");
           login.append(sub);cell(row,login);
           const name=input(u.full_name||String(u.email||"").split("@")[0],{maxLength:150});cell(row,name);
           const role=select([["","Select Role"],...ROLES],String(u.erp_role||""));cell(row,role);
@@ -151,6 +153,10 @@
           count();role.addEventListener("change",count);
           pages.onclick=()=>togglePages(row,u,role,count);
           const acts=document.createElement("div");acts.className="role-actions";acts.append(save,pages);
+          if(!otp.error&&otpSet.has(u.user_id)){
+            const reset=document.createElement("button");reset.type="button";reset.className="pg-btn";reset.textContent="Reset OTP";
+            reset.onclick=()=>resetOtp(u,reset);acts.append(reset);
+          }
           cell(row,acts);
         }
         roleMessage(users.length+" users. Mobile login works for users with a Login Mobile.");
@@ -216,6 +222,20 @@
       };
       td.append(head,grid);
       row.after(tr);
+    }
+
+    // Lost or new phone: the user scans a fresh QR on the Login page next time.
+    async function resetOtp(u,btn){
+      const who=u.full_name||u.mobile||u.email||"this user";
+      if(!await ERPShell.confirm("Reset OTP for "+who+"? They will be logged out and must scan a new QR in Google Authenticator at next login."))return;
+      btn.disabled=true;
+      try{
+        const {error}=await client.rpc("lwb_admin_reset_otp",{p_user_id:u.user_id});
+        if(error)throw error;
+        await loadRoleManager();
+        roleMessage("OTP reset for "+who+". They will set it again at next login.");
+      }catch(err){roleMessage("Could not reset OTP: "+err.message,true)}
+      finally{btn.disabled=false}
     }
 
     async function saveUser(u,f,btn){

@@ -122,6 +122,11 @@
     .security-note{font-size:12px;line-height:1.6;color:#767676;margin-top:18px;text-align:center}
     @media(max-width:420px){.login-box{padding:30px 22px}}
 
+    .otp-qr{display:block;width:190px;height:190px;margin:4px auto 12px;border:1px solid #eee;border-radius:10px;background:#fff}
+    .otp-steps{font-size:13px;color:#444;line-height:1.6;margin:0 0 14px 18px}
+    .otp-secret{font:600 13px monospace;word-break:break-all;background:#f6f3ea;border-radius:6px;padding:8px 10px;margin:0 0 16px;text-align:center;user-select:all}
+    #otpCode{font-size:22px;letter-spacing:8px;text-align:center}
+
     .footer {
       text-align: center;
       margin-top: 30px;
@@ -157,9 +162,27 @@
       autocomplete="current-password" required>
     <button type="submit" id="loginButton">Sign In</button>
   </form>
+  <form id="otpForm" hidden>
+    <div id="otpSetup" hidden>
+      <ol class="otp-steps">
+        <li>Phone me <b>Google Authenticator</b> app install karein (Play Store / App Store, free).</li>
+        <li>App me <b>+</b> &gt; <b>Scan a QR code</b> dabakar yeh QR scan karein.</li>
+        <li>App me dikh raha 6-digit code neeche likhein.</li>
+      </ol>
+      <img id="otpQr" class="otp-qr" alt="OTP QR code">
+      <p class="form-note" style="text-align:center;margin:0 0 6px">QR scan nahi ho raha? App me "Enter a setup key" chunein aur yeh key likhein:</p>
+      <p class="otp-secret" id="otpSecret"></p>
+    </div>
+    <p class="form-note" id="otpNote">Google Authenticator app kholein aur LWB ERP ka 6-digit code likhein.</p>
+    <label for="otpCode">OTP Code</label>
+    <input type="text" id="otpCode" inputmode="numeric" pattern="[0-9]{6}" maxlength="6"
+      autocomplete="one-time-code" placeholder="000000" required>
+    <button type="submit" id="otpButton">Verify OTP</button>
+    <button type="button" class="secondary" id="otpBack">Back to Login</button>
+  </form>
   <div id="message" role="status" aria-live="polite"></div>
   <p class="security-note">Only active users created by LWB Admin may enter the ERP.
-  Forgot your password? Ask Admin to set a new one.</p>
+  Forgot your password or lost your OTP phone? Ask Admin.</p>
 
   <div class="footer">
     © Luxury Wrist Brand • Authorized Access Only
@@ -192,16 +215,47 @@ function validIndianMobile(raw){
   if(d.length===11&&d.startsWith("0"))d=d.slice(1);
   return /^[6-9]\d{9}$/.test(d)?d:null;
 }
-async function finishAuthorizedLogin(user){
+const ERP_ROLES=["admin","manager","sales","warehouse","transport","accounts","driver"];
+async function checkProfile(user){
   if(!user?.id)throw Error("Login session could not be verified.");
   const {data:profile,error}=await client.from("user_profiles")
     .select("role,active").eq("id",user.id).maybeSingle();
   if(error||!profile||profile.active!==true||
-     !["admin","manager","sales","warehouse","transport","accounts","driver"]
-        .includes(String(profile.role||"").trim().toLowerCase())){
+     !ERP_ROLES.includes(String(profile.role||"").trim().toLowerCase())){
     await client.auth.signOut();
     throw Error("This Login is not yet approved by LWB Admin. Ask Admin to assign an active ERP Role.");
   }
+}
+// After the password, every ERP login also needs the 6-digit code from the
+// Authenticator app (Supabase MFA, "aal2"). The first time, the user scans a QR.
+let otpFactorId=null,otpUser=null;
+function showOtpForm(setup){
+  el("loginForm").hidden=true;el("otpForm").hidden=false;
+  el("otpSetup").hidden=!setup;
+  el("otpNote").textContent=setup?"Pehli baar: QR scan karke OTP set karein. Agli baar se sirf app ka code lagega."
+    :"Google Authenticator app kholein aur LWB ERP ka 6-digit code likhein.";
+  el("otpCode").value="";el("otpCode").focus();
+}
+async function startOtp(user){
+  const aal=await client.auth.mfa.getAuthenticatorAssuranceLevel();
+  if(!aal.error&&aal.data?.currentLevel==="aal2")return goToErp(user);
+  const {data,error}=await client.auth.mfa.listFactors();
+  if(error)throw Error("OTP could not be loaded: "+error.message);
+  const ready=(data.totp||[]).find(f=>f.status==="verified");
+  otpUser=user;
+  if(ready){otpFactorId=ready.id;showOtpForm(false);return;}
+  // A QR that was shown before but never confirmed is removed and a fresh one made.
+  for(const f of (data.all||[]).filter(f=>f.factor_type==="totp"&&f.status!=="verified"))
+    await client.auth.mfa.unenroll({factorId:f.id});
+  const en=await client.auth.mfa.enroll({factorType:"totp",friendlyName:"LWB ERP",issuer:"LWB ERP"});
+  if(en.error)throw Error("OTP setup failed: "+en.error.message+"\nAsk Admin to check that Authenticator App (TOTP) is ON in Supabase.");
+  otpFactorId=en.data.id;
+  const qr=en.data.totp.qr_code;
+  el("otpQr").src=qr.startsWith("data:")?qr:"data:image/svg+xml;utf-8,"+encodeURIComponent(qr);
+  el("otpSecret").textContent=en.data.totp.secret;
+  showOtpForm(true);
+}
+async function goToErp(user){
   // Pages Admin unticked for this user (Manage Users > Pages); the ERP menu reads this.
   try{let a=await client.from("lwb_user_page_access").select("hidden,extra").eq("user_id",user.id).maybeSingle();
     if(a.error)a=await client.from("lwb_user_page_access").select("hidden").eq("user_id",user.id).maybeSingle();
@@ -210,7 +264,12 @@ async function finishAuthorizedLogin(user){
   showMessage("Login successful. Opening your ERP Dashboard...");
   window.location.assign("dashboard.html");
 }
+async function finishAuthorizedLogin(user){
+  await checkProfile(user);
+  await startOtp(user);
+}
 async function checkExistingLogin(){
+  if(new URLSearchParams(location.search).get("otp"))showMessage("Enter your OTP to open the ERP.",true);
   if(new URLSearchParams(location.search).get("idle"))showMessage("Logged out after 15 minutes without any activity. Please log in again.",true);
   const {data,error}=await client.auth.getSession();
   if(error||!data?.session)return;
@@ -251,6 +310,24 @@ el("loginForm").addEventListener("submit",async event=>{
     await finishAuthorizedLogin(data.user);
   }catch(e){showMessage(e.message,true);}
   finally{setBusy(false);}
+});
+el("otpForm").addEventListener("submit",async event=>{
+  event.preventDefault();
+  if(busy)return;
+  const code=el("otpCode").value.replace(/\D/g,"");
+  if(code.length!==6){showMessage("Enter the 6-digit code from the Authenticator app.",true);return;}
+  busy=true;el("otpButton").disabled=true;el("otpButton").textContent="Verifying...";showMessage("");
+  try{
+    const {error}=await client.auth.mfa.challengeAndVerify({factorId:otpFactorId,code});
+    if(error)throw Error("Wrong or expired OTP. Check the time on your phone and try the new code.");
+    await goToErp(otpUser);
+  }catch(e){showMessage(e.message,true);el("otpCode").select();}
+  finally{busy=false;el("otpButton").disabled=false;el("otpButton").textContent="Verify OTP";}
+});
+el("otpBack").addEventListener("click",async()=>{
+  try{await client.auth.signOut({scope:"local"})}catch(e){}
+  otpFactorId=otpUser=null;
+  el("otpForm").hidden=true;el("loginForm").hidden=false;el("password").value="";showMessage("");
 });
 checkExistingLogin();
 
