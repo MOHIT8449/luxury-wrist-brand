@@ -18,11 +18,13 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
 
 const allowedOrigins = ["https://luxury-wrist-brand.pages.dev"];
-const corsFor = (origin) => ({
+// Newer supabase-js versions send extra headers, so the browser's requested list is allowed back.
+const corsFor = (origin, asked) => ({
   "Access-Control-Allow-Origin":
     allowedOrigins.includes(origin) || /^https:\/\/[a-z0-9-]+\.luxury-wrist-brand\.pages\.dev$/.test(origin)
       ? origin : allowedOrigins[0],
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Headers": /^[a-z0-9,\s-]{1,500}$/i.test(asked || "")
+    ? asked : "authorization, x-client-info, apikey, content-type, x-region",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
   "Content-Type": "application/json; charset=utf-8",
   "Vary": "Origin",
@@ -54,7 +56,7 @@ function sessionIdOf(token) {
 }
 
 Deno.serve(async (req) => {
-  const cors = corsFor(req.headers.get("origin") || "");
+  const cors = corsFor(req.headers.get("origin") || "", req.headers.get("access-control-request-headers") || "");
   const reply = (status, value) => new Response(JSON.stringify(value), { status, headers: cors });
   if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: cors });
   if (req.method !== "POST") return reply(405, { error: "POST required" });
