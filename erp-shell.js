@@ -151,7 +151,19 @@
     return run;
   }
   const DANGER=/(cancel|reject|remove|delete|clear)/i;
-  function erpAlert(text,opts){return show((opts&&opts.kind)||kindOf(text),text,opts)}
+  function erpAlert(text,opts){
+    const kind=(opts&&opts.kind)||kindOf(text);
+    // A successful save needs a short acknowledgement, not a blocking dialog.
+    if(kind==="success"&&document.body){
+      const root=document.querySelector(".erp-main main, main.erp-main, .erp-main")||document.body;
+      let line=root.querySelector(".erp-save-feedback");
+      if(!line){line=document.createElement("div");line.className="erp-save-feedback";line.setAttribute("role","status");root.prepend(line)}
+      clearTimeout(line._hide);line.hidden=false;line.textContent=String(text||"");
+      line._hide=setTimeout(()=>{line.hidden=true},4500);
+      return Promise.resolve();
+    }
+    return show(kind,text,opts);
+  }
   function erpConfirm(text,opts){return show((opts&&opts.danger)||(!opts&&DANGER.test(String(text).split("\n")[0]))?"danger":"confirm",text,opts)}
   function erpPrompt(text,value,opts){return show("prompt",text,Object.assign({value:typeof value==="string"?value:""},opts||{}))}
   window.alert=erpAlert;window.confirm=erpConfirm;window.prompt=erpPrompt;
