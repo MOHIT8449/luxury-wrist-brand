@@ -44,6 +44,8 @@
    return {icon:ic,text:join([title,order])}}
   if(t==="ANNOUNCEMENT")return {icon:"📢",text:join([title,m.length>50?m.slice(0,47)+"…":m])};
   if(t==="MARKET_REPORT"||t==="MARKET_REVIEW"){const id=(m.match(/MKT-\d+/)||[])[0]||"";return {icon:t==="MARKET_REPORT"?"🚩":"✅",text:join([t==="MARKET_REPORT"?"Outside stock":title,id])}}
+  if(t.startsWith("COMPLAINT_")){const id=(m.match(/CMP-\d+/)||[])[0]||"";
+   return {icon:{COMPLAINT_NEW:"📮",COMPLAINT_RESOLVED:"✅",COMPLAINT_CLOSED:"✅"}[t]||"💬",text:join([title.replace(/^URGENT · /,"⚠ "),id])}}
   if(t==="SALES_PLAN"){const n=(m.match(/from (\d+) part/)||[])[1];return {icon:"📋",text:join(["Today's plan",n?n+" parties due":"Sales Head note"])}}
   const short=m.length>60?m.slice(0,57)+"…":m;
   return {icon:"•",text:join([title||"ERP",order||short])};
@@ -72,6 +74,7 @@
   [/^LOADING_ASSIGNMENT_/,["loading-dispatch.html?order={o}","transport-allocation.html"]],
   [/^GODOWN_/,["godown-report.html"]],
   [/^MARKET_/,["market-report.html"]],
+  [/^COMPLAINT_/,["complaint-box.html?id={c}"]],
   [/^SALES_PLAN$/,["my-sales.html","sales-team.html"]],
   [/^ORDER_/,["my-sales.html#orders","warehouse-orders.html","driver-delivery.html?order={o}","loading-dispatch.html"]]
  ];
@@ -80,6 +83,8 @@
   if(!hit)return "";
   const base=h=>h.split(/[?#]/)[0];
   const href=(pages&&pages.length?hit[1].find(h=>pages.includes(base(h))):hit[1][0])||"";
+  // {c} = complaint no. from "CMP-12" in the message.
+  if(href.includes("{c}")){const c=(String(n.message||"").match(/CMP-(\d+)/)||[])[1];return c?href.replace("{c}",c):href.split("?")[0]}
   return n.order_id?href.replace("{o}",encodeURIComponent(n.order_id)):href.split("?")[0];
  }
  // Every new notification pops up once per device (Sales Head copies CC_* stay in the bell only).
@@ -87,7 +92,9 @@
  const POPUP={LOADING_ASSIGNMENT_DRIVER:["🚚 New Transport Assignment","Open order",null],ANNOUNCEMENT:["📢 Focus message","OK",""],MARKET_REPORT:["🚩 Outside market stock","Open report","market-report.html"],
   DELIVERY_RETURN_APPROVED:["✅ Return approved","Open order",null],DELIVERY_RETURN_REJECTED:["❌ Return rejected","Open order",null],
   DELIVERY_COLLECTION_VERIFIED:["✅ Payment verified","Open order",null],DELIVERY_COLLECTION_REJECTED:["❌ Payment rejected","Correct it",null],
-  DELIVERY_RETURN_DEDUCTED:["↩ Return amount cut","Open",null]};
+  DELIVERY_RETURN_DEDUCTED:["↩ Return amount cut","Open",null],
+  COMPLAINT_NEW:["📮 New complaint","Open complaint",null],COMPLAINT_REPLY:["💬 Complaint reply","Open complaint",null],
+  COMPLAINT_RESOLVED:["✅ Complaint solved","Open complaint",null],COMPLAINT_CLOSED:["✅ Complaint closed","Open",null]};
  // Urgent, until done: returns waiting for approval (office) and approved returns to receive (godown).
  // They pop up on every page, again 15 min after "Later", until handled or opened from the bell.
  const URGENT=[
