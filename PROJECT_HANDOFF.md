@@ -327,3 +327,12 @@
 - A party called today moves to "Called today" and comes back the next day if still no order; a new PO removes it.
 - Call Report (Admin / Sales Head; salesman sees "My Calls"): date range, caller, result, "Why parties did not order" counts, Excel. Set Order Days (Admin / Sales Head): per party box or tick many + "Set for selected" (`lwb_set_party_order_days`).
 - Dashboard Verify / Quick Actions: "Call parties: no order in time" with count (`lwb_party_call_due_count`). No bells; orders, stock, ledger and Tally are not changed.
+
+
+## Compact workspace for all roles (29 Oct 2026)
+
+- `order-entry.html`: `compact-entry` is a presentation class for every allowed role; `sales-entry` remains SALES-only for existing role restrictions and saved vehicle behavior. Admin / Sales Head get the same compact mobile SKU cards, transport chips, total weight and fixed Submit Order bar. Date, company, sales person, slab and vehicle controls stay in More options; landing / margin is opt-in. Print temporarily expands metadata. No SQL or calculation changes.
+- Shared `erp-shell.css` / `erp-shell.js`: compact spacing on the 43 pages using the shell, smaller header / bell, searchable mobile side menu, role-specific phone shortcuts respecting per-user page access, keyboard-aware footer and contained report-table scrolling. Driver keeps its existing bottom navigation. Public landing / legal / login pages and standalone Cashbook are outside this shared shell.
+- `erp-operations-notifications.js`: removed automatic notification dialogs and repeated reminders. All notification rows, unread counts, routes and manual read controls remain in the bell. Explicit action errors / confirmations remain. Removed the shared observer that duplicated inline save successes as toasts.
+- `_headers` revalidates the shared UI assets and PO Entry after deploy.
+- Verification: JS syntax and diff checks; local browser mock (no production calls / writes) at 390px and 1280px for Admin / SALES PO entry, PO Approval, Dashboard, Inventory and warehouse Loading. PO entry: 40×640 + 50×520 = ₹51,600; 90 cases / 1,810 kg. PALLET: 1 pallet = 100 cases, ₹64,000 / 1,900 kg with the mock SKU. Sidebar stock search and quiet notification count verified. Other module checks are layout-shell checks, not a full live workflow verification. Real-device login / populated business data should still be checked by staff.
