@@ -150,7 +150,8 @@
       "daily-report.html":"Today's orders, deliveries, payments, outstanding","supplier-master.html":"Supplier records","fleet-master.html#vehicles":"Vehicles and documents","fleet-master.html#drivers":"Drivers by mobile number","goods-inward.html":"Purchase and stock inward","purchase-register.html":"All purchase bills","purchase-claims.html":"Damage, leakage and shortage claims","opening-stock.html":"Opening stock","group-party-loading.html":"Optional",
       "tally-check.html":"Is every dispatched PO billed in Tally?","cashbook.html":"Private cash in / cash out","settings.html":"Users, masters and stock setup","users.html":"Assign ERP roles",
       "my-sales.html":"Today's plan, target and my parties","godown-report.html":"Vehicles, damage, leakage, staff absent","market-report.html":"Outside goods in your market, with photos","stock-transit.html":"Company stock on the way, live stock per SKU","sales-tracking.html":"Targets, salesmen, SKU margin, no-order parties","sales-team.html":"Salesmen, parties, SKU visibility, targets",
-      "complaint-box.html":"Any problem or query: market, godown, driver, accounts"
+      "complaint-box.html":"Any problem or query: market, godown, driver, accounts",
+      "party-calls.html":"Parties with no order in time: call and save the reason"
     };
     function renderQuick(role){
       const list=document.getElementById("quickList");list.replaceChildren();
@@ -165,14 +166,14 @@
     }
     // What this login has to verify / do now (lwb_order_flow_popups_setup.sql). Admin sees every queue.
     const VERIFY_ICON={ORDER_APPROVAL:"check",LOADING:"box",RETURN_APPROVE:"undo",RETURN_RECEIVE:"inbox",TALLY_BILL:"bill",
-      DRIVER_PAYMENT:"cash",OFFICE_PAYMENT:"cash",CREDIT_NOTE:"note",SALES_RETURN:"undo",COMPLAINT:"chat"};
+      DRIVER_PAYMENT:"cash",OFFICE_PAYMENT:"cash",CREDIT_NOTE:"note",SALES_RETURN:"undo",COMPLAINT:"chat",PARTY_CALL:"phone"};
     async function loadVerify(){
       const card=document.getElementById("verifyCard"),list=document.getElementById("verifyList");
       const queue=["admin","manager","accounts","warehouse"].includes(currentRole);
-      const [q,cmp]=await Promise.all([queue?client.rpc("lwb_my_verify_queue"):Promise.resolve(null),complaintsDue()]);
-      if((!q||q.error)&&!cmp){card.hidden=true;return}
+      const [q,cmp,calls]=await Promise.all([queue?client.rpc("lwb_my_verify_queue"):Promise.resolve(null),complaintsDue(),partyCallsDue()]);
+      if((!q||q.error)&&!cmp&&!calls){card.hidden=true;return}
       const LABEL={DRIVER_PAYMENT:"Money on the way — receive from driver"};
-      const hidden=ERPShell.hiddenPages(),due=((q&&!q.error&&q.data)||[]).concat(cmp?[cmp]:[]).filter(r=>Number(r.cnt)>0&&!hidden.includes(r.page));
+      const hidden=ERPShell.hiddenPages(),due=(calls?[calls]:[]).concat((q&&!q.error&&q.data)||[]).concat(cmp?[cmp]:[]).filter(r=>Number(r.cnt)>0&&!hidden.includes(r.page));
       if(!queue&&!due.length){card.hidden=true;return}
       list.replaceChildren();
       due.forEach(r=>{
@@ -196,6 +197,14 @@
       const {count,error}=await r;
       if(error||!count)return null;
       return {item:"COMPLAINT",label:office?"Reply to complaints":"Reply on your complaint",cnt:count,amount:0,page:"complaint-box.html"};
+    }
+    // Party Call List (lwb_party_call_list_setup.sql): parties with no order in their set days.
+    // Salesman = his parties; Admin / Sales Head = every party.
+    async function partyCallsDue(){
+      if(!["admin","manager","sales"].includes(currentRole))return null;
+      const {data,error}=await client.rpc("lwb_party_call_due_count");
+      if(error||!data)return null;
+      return {item:"PARTY_CALL",label:"Call parties: no order in time",cnt:data,amount:0,page:"party-calls.html"};
     }
     const STATUS={
       pending_approval:["Pending Approval","amber","warehouse-orders.html"],approved:["Approved","blue","warehouse-orders.html"],
