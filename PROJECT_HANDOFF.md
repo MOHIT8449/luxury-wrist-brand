@@ -311,3 +311,11 @@
 - Status OPEN (waiting for office) → ANSWERED (office replied) → RESOLVED. Staff reply sends it back to OPEN; staff can tap "Problem solved"; a reply on a solved one opens it again.
 - 🔔 COMPLAINT_NEW / COMPLAINT_REPLY / COMPLAINT_CLOSED to Admin + Sales Head; COMPLAINT_REPLY / COMPLAINT_RESOLVED to the raiser. Bell and popup open `complaint-box.html?id=N` (from "CMP-N" in the message).
 - Dashboard Verify / Quick Actions: "Reply to complaints" (Admin / Sales Head, OPEN from others) and "Reply on your complaint" (any other role, ANSWERED).
+
+## Website launch checklist (29 Oct 2026)
+
+- Public pages: `index.html`, `privacy.html`, `terms.html` (style `assets/legal.css`), branded `404.html` (Cloudflare Pages serves it for any missing page).
+- `_headers`: every page gets `X-Robots-Tag: noindex` (ERP stays out of Google) except `/`, privacy, terms, robots, sitemap and `og-image.png`; plus HSTS, nosniff, SAMEORIGIN framing and referrer policy.
+- `robots.txt`, `sitemap.xml`, `og-image.png` (1200×630 social preview), `favicon.ico` / `favicon-32.png`. Absolute URLs use `luxury-wrist-brand.pages.dev`: change them in `index.html` (canonical, og:url, og:image), `robots.txt` and `sitemap.xml` when a custom domain is added.
+- Analytics: turn on Cloudflare Web Analytics in the Pages project (no code, no cookies, so no cookie banner needed).
+- Still open: the homepage "WhatsApp Us" button links to `https://wa.me/` with no number.
