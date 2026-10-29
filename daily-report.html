@@ -32,6 +32,19 @@
     @media(max-width:1000px){.ds-kpis{grid-template-columns:1fr 1fr}.ds-grid{grid-template-columns:1fr}}
     @media(max-width:520px){.ds-kpis{grid-template-columns:1fr}}
     @media print{.erp-top,.erp-side,.ds-bar{display:none!important}.erp-main{margin:0!important;padding:0!important}}
+    .ds-link{background:none;border:0;padding:0;font:inherit;color:#1d5fbf;font-weight:700;cursor:pointer;text-align:left;text-decoration:underline dotted}
+    .ds-link.o{font-weight:600;margin-right:6px}
+    .ds-modal{position:fixed;inset:0;z-index:4000;background:#0b1422b3;display:flex;align-items:flex-start;justify-content:center;padding:16px;overflow-y:auto}
+    .ds-box{background:#fff;border-radius:12px;max-width:1100px;width:100%;padding:18px;margin:auto 0}
+    .ds-box h2{margin:0 0 4px;font-size:19px}
+    .ds-box .top{display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap;margin-bottom:10px}
+    .ds-box select,.ds-box button{height:38px;border:1px solid var(--erp-line);border-radius:6px;padding:0 10px;font:inherit;background:#fff;cursor:pointer}
+    .ds-tot{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px;margin:10px 0 14px}
+    .ds-tot div{background:#f6f7f9;border-radius:8px;padding:9px 10px;font-size:13px;color:var(--erp-muted)}
+    .ds-tot b{display:block;font-size:18px;color:var(--erp-ink)}
+    .ok{color:#13824a}.wait{color:#b26b00}.due{color:#c8102e}
+    @media(max-width:700px){.ds-tot{grid-template-columns:1fr 1fr}}
+    @media print{body:has(.ds-modal:not([hidden])) #page{display:none!important}.ds-modal{position:static;background:none;padding:0}.ds-box button,.ds-box select{display:none}}
     [hidden]{display:none!important}
   </style>
 </head>
@@ -51,6 +64,13 @@
     <div id="err" class="ds-err" hidden></div>
     <div id="out"></div>
   </main>
+  <div class="ds-modal" id="hist" hidden><div class="ds-box">
+    <div class="top"><div><h2 id="histTitle"></h2><small id="histSub" style="color:var(--erp-muted)"></small></div>
+      <span><select id="histDays" aria-label="Period"><option value="0">This day</option><option value="7">Last 7 days</option><option value="30" selected>Last 30 days</option><option value="90">Last 90 days</option></select>
+      <button type="button" id="histPrint">Print</button> <button type="button" id="histClose">✕ Close</button></span></div>
+    <div class="ds-tot" id="histTot"></div>
+    <div id="histBody"></div>
+  </div></div>
   <script>
     'use strict';
     const client=supabase.createClient("https://txkbhadzdbxpieunfvox.supabase.co","sb_publishable_W4I3Q5ODf0g17sq5uDml2Q_sLolXYEk");
@@ -81,13 +101,16 @@
       let h='<div class="ds-kpis">'+
         kpi("#1d5fbf","📥 Orders Received",num(o.count),rs(o.amount),num(o.cases)+" cases")+
         kpi("#13824a","🚚 Deliveries Completed",num(done),rs(d.amount),(d.partial?d.partial+" partial · ":"")+(d.not_delivered?d.not_delivered+" not delivered · ":"")+num(d.pending_count)+" orders pending delivery ("+rs(d.pending_amount)+")")+
-        kpi("#b26b00","💰 Payments Received",rs(p.verified+p.pending),"",rs(p.verified)+" verified · "+rs(p.pending)+" pending verification"+(d.driver_cash?" · Collected by drivers "+rs(d.driver_cash):""))+
+        kpi("#b26b00","💰 Payments Received",rs(p.verified+p.pending),"",rs(p.verified)+" verified · "+rs(p.pending)+" pending verification"+(d.driver_cash?" · Collected by drivers "+rs(d.driver_cash):"")+(dayRows.length?" (✓ received at office "+rs(split(dayRows).received)+")":""))+
         kpi("#c8102e","📌 Outstanding",rs(u.total),"",num(u.parties)+" parties with balance due (as of this date)")+
         "</div>";
       const dr=d.by_driver||[];
       h+='<section class="erp-card"><div class="erp-card-head"><h2>Deliveries by Driver</h2><small style="color:var(--erp-muted)">'+esc(nice(s.date))+'</small></div>'+
-        table([{t:"Driver"},{t:"Delivered",n:1},{t:"Partial",n:1},{t:"Not Delivered",n:1},{t:"Order Value",n:1},{t:"Cash Collected",n:1},{t:"Orders"}],
-          dr.map(x=>"<tr><td><b>"+esc(x.driver)+"</b><small>"+esc(x.mobile||"")+'</small></td><td class="n">'+x.delivered+'</td><td class="n">'+x.partial+'</td><td class="n">'+x.not_delivered+'</td><td class="n">'+rs(x.amount)+'</td><td class="n">'+rs(x.cash)+"</td><td style='white-space:normal'>"+esc(x.orders)+"</td></tr>"),
+        table([{t:"Driver"},{t:"Delivered",n:1},{t:"Partial",n:1},{t:"Not Delivered",n:1},{t:"Order Value",n:1},{t:"Collected by Driver",n:1},{t:"Orders"}],
+          dr.map(x=>{const m=split(dayRows.filter(r=>sameDriver(r,x)));
+            return "<tr><td><button type='button' class='ds-link' data-driver='"+esc(x.mobile||"")+"' data-name='"+esc(x.driver)+"' title='Bill-wise money history'>"+esc(x.driver)+"</button><small>"+esc(x.mobile||"")+'</small></td><td class="n">'+x.delivered+'</td><td class="n">'+x.partial+'</td><td class="n">'+x.not_delivered+'</td><td class="n">'+rs(x.amount)+'</td><td class="n">'+rs(x.cash)+
+            (m?'<small class="ok">✓ received '+rs(m.received)+'</small>'+(m.road?'<small class="wait">on the way '+rs(m.road)+"</small>":""):"")+
+            "</td><td style='white-space:normal'>"+String(x.orders||"").split(", ").filter(Boolean).map(o=>"<button type='button' class='ds-link o' data-order='"+esc(o)+"' data-driver='"+esc(x.mobile||"")+"' data-name='"+esc(x.driver)+"'>"+esc(o)+"</button>").join("")+"</td></tr>"}),
           '<tr><td>Total</td><td class="n">'+d.delivered+'</td><td class="n">'+d.partial+'</td><td class="n">'+d.not_delivered+'</td><td class="n">'+rs(d.amount)+'</td><td class="n">'+rs(d.driver_cash)+"</td><td></td></tr>",
           "No delivery reports for this date.")+"</section>";
       h+='<div class="ds-grid"><section class="erp-card"><div class="erp-card-head"><h2>Payments by Mode</h2></div>'+
@@ -98,7 +121,7 @@
           '<tr><td>Total</td><td class="n">'+o.count+'</td><td class="n">'+rs(o.amount)+"</td></tr>","No orders received on this date.")+"</section></div>";
       h+='<section class="erp-card" style="margin-top:14px"><div class="erp-card-head"><h2>Top 10 Outstanding Parties</h2><small style="color:var(--erp-muted)"><a href="party-ledger.html">Open Party Ledger</a></small></div>'+
         table([{t:"#"},{t:"Party"},{t:"Balance Due",n:1}],(u.top||[]).map((x,i)=>"<tr><td>"+(i+1)+"</td><td>"+esc(x.party)+'</td><td class="n"><b>'+rs(x.amount)+"</b></td></tr>"),"","No outstanding balances.")+"</section>";
-      h+='<p class="ds-note">Cash collected by drivers is reported only and reaches the ledger after office verification. "Payments Received" lists Payment Collection entries (verified and pending verification). Outstanding = bills − returns − verified payments + opening balance, as of the selected date.</p>';
+      h+='<p class="ds-note">Tap a driver or a PO number to see, bill by bill, how much money came against it, cash / UPI with UTR, and who received it at the office. Cash collected by drivers is reported only and reaches the ledger after office verification. "Payments Received" lists Payment Collection entries (verified and pending verification). Outstanding = bills − returns − verified payments + opening balance, as of the selected date.</p>';
       el("out").innerHTML=h;
     }
     async function load(){
@@ -107,8 +130,54 @@
       const {data,error}=await client.rpc("lwb_daily_summary",{p_date:d});
       if(error){el("out").innerHTML="";el("err").hidden=false;
         el("err").textContent=/lwb_daily_summary|function|schema cache/i.test(error.message)?"Daily Summary is not set up in Supabase yet. Run lwb_daily_summary_setup.sql once in the Supabase SQL Editor, then click Refresh.\n("+error.message+")":error.message;return}
+      // Bill-wise driver money of the day (lwb_driver_bill_history_setup.sql); the page works without it.
+      const hist=await client.rpc("lwb_driver_bill_history",{p_mobile:null,p_from:d,p_to:d});
+      dayRows=hist.error?[]:(hist.data||[]);histReady=!hist.error;
       render(data);
     }
+    let dayRows=[],histReady=false,histFor=null;
+    const digits=v=>String(v||"").replace(/\D/g,"").slice(-10);
+    const sameDriver=(r,x)=>x.mobile?digits(r.mobile)===digits(x.mobile):r.driver===x.driver;
+    // Received = office verified; on the way = driver entered, office not yet received.
+    function split(rows){
+      const s={received:0,road:0,due:0,bill:0};
+      rows.forEach(r=>{const c=Number(r.collected||0);if(r.status==="VERIFIED")s.received+=c;else if(r.status==="PENDING")s.road+=c;
+        if(r.delivery_status!=="NOT_DELIVERED"){s.bill+=Number(r.net||0);s.due+=Number(r.due||0)}});
+      return s;
+    }
+    const when=v=>v?new Date(v).toLocaleString("en-IN",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"}):"";
+    async function openHistory(mobile,name,order){
+      histFor={mobile,name,order};
+      el("histDays").hidden=!!order;
+      el("hist").hidden=false;el("histTitle").textContent=order?"Bill "+order:"Driver "+name;
+      el("histBody").innerHTML='<p class="status" style="padding:30px">Loading...</p>';el("histTot").innerHTML="";
+      if(!histReady){el("histBody").innerHTML='<div class="ds-err">Bill history is not set up yet. Run lwb_driver_bill_history_setup.sql once in Supabase, then Refresh.</div>';return}
+      const day=el("day").value||today(),n=order?60:Number(el("histDays").value);
+      const {data,error}=await client.rpc("lwb_driver_bill_history",{p_mobile:mobile||null,p_from:shift(day,-n),p_to:order?today():day});
+      if(error){el("histBody").innerHTML='<div class="ds-err">'+esc(error.message)+"</div>";return}
+      let rows=data||[];
+      if(order)rows=rows.filter(r=>r.order_no===order);else if(!mobile)rows=rows.filter(r=>r.driver===name);
+      const t=split(rows);
+      el("histSub").textContent=order?(rows[0]?rows[0].party+" · Driver "+rows[0].driver:""):(mobile||"")+" · "+(n?"last "+n+" days to "+nice(day):nice(day));
+      el("histTot").innerHTML=[["Bills",rows.length],["To collect",rs(t.bill)],["✓ Received at office",'<span class="ok">'+rs(t.received)+"</span>"],
+        ["⏳ On the way (driver has it)",'<span class="wait">'+rs(t.road)+"</span>"],["Still due from party",'<span class="due">'+rs(t.due)+"</span>"]]
+        .map(x=>"<div>"+x[0]+"<b>"+x[1]+"</b></div>").join("");
+      const st=r=>r.status==="VERIFIED"?'<span class="ok">✅ '+(r.office_received?"Received at office":"Verified")+"</span><small>"+esc(r.received_by||"")+" · "+when(r.received_at)+"</small>"+(r.note?"<small>"+esc(r.note)+"</small>":"")
+        :r.status==="PENDING"?'<span class="wait">⏳ With driver, not received</span>':r.status==="REJECTED"?'<span class="due">❌ Rejected</span><small>'+esc(r.note||"")+"</small>"
+        :r.delivery_status==="NOT_DELIVERED"?"Not delivered":'<span class="due">No payment yet</span>';
+      el("histBody").innerHTML=table([{t:"Delivered"},{t:"Bill (PO / party)"},{t:"To collect",n:1},{t:"Cash",n:1},{t:"UPI / Bank",n:1},{t:"Money status"},{t:"Due",n:1}],
+        rows.map(r=>"<tr><td>"+when(r.delivered_at)+"<small>"+esc(r.delivery_status)+"</small></td><td><b>"+esc(r.order_no)+"</b><small>"+esc(r.party)+"</small>"+
+          (r.tally_invoice_no?"<small>Tally "+esc(r.tally_invoice_no)+"</small>":"")+'</td><td class="n">'+rs(r.net)+(Number(r.approved_return)>0?"<small>after return "+rs(r.approved_return)+"</small>":"")+
+          '</td><td class="n">'+(Number(r.cash)?rs(r.cash):"—")+'</td><td class="n">'+(Number(r.online)?rs(r.online)+"<small>"+esc(r.online_mode||"UPI")+(r.utr?" · UTR "+esc(r.utr):"")+(r.bank_checked?" 🏦✓":"")+"</small>":"—")+
+          "</td><td>"+st(r)+'</td><td class="n"><b class="'+(Number(r.due)>0?"due":"ok")+'">'+rs(r.due)+"</b></td></tr>"),
+        '<tr><td>Total</td><td>'+rows.length+' bills</td><td class="n">'+rs(t.bill)+'</td><td class="n">'+rs(rows.reduce((a,r)=>a+Number(r.cash||0),0))+'</td><td class="n">'+rs(rows.reduce((a,r)=>a+Number(r.online||0),0))+'</td><td></td><td class="n">'+rs(t.due)+"</td></tr>",
+        "No bills in this period.");
+    }
+    el("out").addEventListener("click",e=>{const b=e.target.closest("[data-driver]");if(b)openHistory(b.dataset.driver,b.dataset.name,b.dataset.order||null)});
+    el("histDays").onchange=()=>histFor&&openHistory(histFor.mobile,histFor.name,histFor.order);
+    el("histClose").onclick=()=>{el("hist").hidden=true};
+    el("hist").onclick=e=>{if(e.target===el("hist"))el("hist").hidden=true};
+    el("histPrint").onclick=()=>window.print();
     const go=n=>{el("day").value=shift(el("day").value||today(),n);load()};
     el("prev").onclick=()=>go(-1);el("next").onclick=()=>go(1);
     el("today").onclick=()=>{el("day").value=today();load()};
