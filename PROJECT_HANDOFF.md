@@ -318,4 +318,4 @@
 - `_headers`: every page gets `X-Robots-Tag: noindex` (ERP stays out of Google) except `/`, privacy, terms, robots, sitemap and `og-image.png`; plus HSTS, nosniff, SAMEORIGIN framing and referrer policy.
 - `robots.txt`, `sitemap.xml`, `og-image.png` (1200×630 social preview), `favicon.ico` / `favicon-32.png`. Absolute URLs use `luxury-wrist-brand.pages.dev`: change them in `index.html` (canonical, og:url, og:image), `robots.txt` and `sitemap.xml` when a custom domain is added.
 - Analytics: turn on Cloudflare Web Analytics in the Pages project (no code, no cookies, so no cookie banner needed).
-- Still open: the homepage "WhatsApp Us" button links to `https://wa.me/` with no number.
+- Homepage "WhatsApp Us" = office 9274382694; "Call Us" list (office, Coca-Cola sales Harsh / Vishal, Rajnigandha sales Vinas, accounts Yogesh) uses tel: links.
