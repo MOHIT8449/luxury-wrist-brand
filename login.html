@@ -125,7 +125,7 @@
     .otp-qr{display:block;width:190px;height:190px;margin:4px auto 12px;border:1px solid #eee;border-radius:10px;background:#fff}
     .otp-steps{font-size:13px;color:#444;line-height:1.6;margin:0 0 14px 18px}
     .otp-secret{font:600 13px monospace;word-break:break-all;background:#f6f3ea;border-radius:6px;padding:8px 10px;margin:0 0 16px;text-align:center;user-select:all}
-    #otpCode{font-size:22px;letter-spacing:8px;text-align:center}
+    #otpCode,#waCode{font-size:22px;letter-spacing:8px;text-align:center}
 
     .footer {
       text-align: center;
@@ -162,6 +162,16 @@
     <input type="password" id="password" placeholder="Enter your password"
       autocomplete="current-password" required>
     <button type="submit" id="loginButton">Sign In</button>
+  </form>
+  <form id="waForm" hidden>
+    <p class="form-note" id="waNote">WhatsApp par 6-digit OTP bheja ja raha hai...</p>
+    <label for="waCode">WhatsApp OTP</label>
+    <input type="text" id="waCode" inputmode="numeric" pattern="[0-9]{6}" maxlength="6"
+      autocomplete="one-time-code" placeholder="000000" required>
+    <button type="submit" id="waButton">Verify OTP</button>
+    <button type="button" class="secondary" id="waResend" disabled>Resend OTP</button>
+    <button type="button" class="secondary" id="waUseApp">Authenticator app se verify karein</button>
+    <button type="button" class="secondary" id="waBack">Back to Login</button>
   </form>
   <form id="otpForm" hidden>
     <div id="otpSetup" hidden>
@@ -267,8 +277,74 @@ async function goToErp(user){
 }
 async function finishAuthorizedLogin(user){
   await checkProfile(user);
-  await startOtp(user);
+  const aal=await client.auth.mfa.getAuthenticatorAssuranceLevel();
+  if(!aal.error&&aal.data?.currentLevel==="aal2")return goToErp(user);
+  const ok=await client.rpc("lwb_login_otp_ok");
+  if(!ok.error&&ok.data===true)return goToErp(user);
+  otpUser=user;
+  // WhatsApp OTP to the Login Mobile. Until WhatsApp is set up, or for a user with
+  // no Login Mobile, the Authenticator app OTP is used instead.
+  const r=await sendWhatsAppOtp();
+  if(r.fallback)return startOtp(user);
+  showWaForm(r);
 }
+
+// ---- WhatsApp OTP (Edge Function login-whatsapp-otp) ----
+let waTimer=null;
+async function callWaOtp(body){
+  try{
+    const {data,error}=await client.functions.invoke("login-whatsapp-otp",{body});
+    if(!error)return data||{};
+    let info={};try{info=await error.context.json()}catch(e){}
+    const status=error.context?.status||0;
+    // Function not deployed yet / network block: behave as "not set up".
+    if(!status||status===404)return {error:error.message,not_configured:true};
+    return {error:info.error||error.message,...info};
+  }catch(e){return {error:e.message,not_configured:true}}
+}
+async function sendWhatsAppOtp(){
+  const r=await callWaOtp({action:"send"});
+  return {...r,fallback:!!(r.not_configured||r.no_mobile)};
+}
+function resendCountdown(seconds){
+  clearInterval(waTimer);
+  let left=Math.max(0,seconds|0);
+  const tick=()=>{el("waResend").disabled=left>0;el("waResend").textContent=left>0?"Resend OTP ("+left+"s)":"Resend OTP";left--;if(left<-1)clearInterval(waTimer)};
+  tick();waTimer=setInterval(tick,1000);
+}
+function showWaForm(r){
+  el("loginForm").hidden=true;el("otpForm").hidden=true;el("waForm").hidden=false;
+  if(r.error){showMessage(r.error,true);el("waNote").textContent="WhatsApp OTP nahi gaya. Resend karein, ya Authenticator app se verify karein.";}
+  else{
+    el("waNote").textContent=(r.sent?"WhatsApp par OTP bheja gaya: ":"OTP pehle hi bheja gaya hai: ")+(r.to||"aapke Login Mobile")+". 5 minute me code likhein.";
+    showMessage("");
+  }
+  resendCountdown(r.wait||0);
+  el("waCode").value="";el("waCode").focus();
+}
+el("waForm").addEventListener("submit",async event=>{
+  event.preventDefault();
+  if(busy)return;
+  const code=el("waCode").value.replace(/\D/g,"");
+  if(code.length!==6){showMessage("Enter the 6-digit code from WhatsApp.",true);return;}
+  busy=true;el("waButton").disabled=true;el("waButton").textContent="Verifying...";showMessage("");
+  try{
+    const r=await callWaOtp({action:"verify",code});
+    if(!r.ok)throw Error(r.error||"Wrong OTP.");
+    await goToErp(otpUser);
+  }catch(e){showMessage(e.message,true);el("waCode").select();}
+  finally{busy=false;el("waButton").disabled=false;el("waButton").textContent="Verify OTP";}
+});
+el("waResend").addEventListener("click",async()=>{
+  el("waResend").disabled=true;
+  const r=await sendWhatsAppOtp();
+  showWaForm(r.fallback?{error:r.error||"WhatsApp OTP is not available."}:r);
+});
+el("waUseApp").addEventListener("click",async()=>{
+  clearInterval(waTimer);el("waForm").hidden=true;showMessage("");
+  try{await startOtp(otpUser)}catch(e){showMessage(e.message,true)}
+});
+el("waBack").addEventListener("click",()=>el("otpBack").click());
 async function checkExistingLogin(){
   if(new URLSearchParams(location.search).get("otp"))showMessage("Enter your OTP to open the ERP.",true);
   if(new URLSearchParams(location.search).get("idle"))showMessage("Logged out after 15 minutes without any activity. Please log in again.",true);
@@ -327,8 +403,8 @@ el("otpForm").addEventListener("submit",async event=>{
 });
 el("otpBack").addEventListener("click",async()=>{
   try{await client.auth.signOut({scope:"local"})}catch(e){}
-  otpFactorId=otpUser=null;
-  el("otpForm").hidden=true;el("loginForm").hidden=false;el("password").value="";showMessage("");
+  otpFactorId=otpUser=null;clearInterval(waTimer);
+  el("otpForm").hidden=true;el("waForm").hidden=true;el("loginForm").hidden=false;el("password").value="";showMessage("");
 });
 checkExistingLogin();
 

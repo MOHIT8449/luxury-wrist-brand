@@ -412,13 +412,15 @@
     setInterval(check,30e3);
   }
 
-  // A login that passed the password but not the Authenticator OTP (aal1) is sent back to Login.
+  // A login that passed the password but no OTP (Authenticator aal2, or WhatsApp OTP saved
+  // by lwb_whatsapp_otp_setup.sql) is sent back to Login.
   async function otpGuard(){
     try{
       const c=window.__lwbBellClient||(window.__lwbBellClient=window.supabase.createClient(URL_,KEY_));
       const {data,error}=await c.auth.mfa.getAuthenticatorAssuranceLevel();
       if(error||!data||data.currentLevel==="aal2")return;
       const {data:s}=await c.auth.getSession();if(!s||!s.session)return;
+      const ok=await c.rpc("lwb_login_otp_ok");if(!ok.error&&ok.data===true)return;
       location.replace("login.html?otp=1");
     }catch(e){}
   }
