@@ -156,9 +156,7 @@
   function erpPrompt(text,value,opts){return show("prompt",text,Object.assign({value:typeof value==="string"?value:""},opts||{}))}
   window.alert=erpAlert;window.confirm=erpConfirm;window.prompt=erpPrompt;
 
-  // Small green toast when a page shows a success message after a click.
-  let lastAct=0;
-  ["click","keydown","submit"].forEach(t=>document.addEventListener(t,()=>{lastAct=Date.now()},true));
+  // Explicit action feedback (save / validation) stays available to each page.
   function toast(text,kind){
     let wrap=document.querySelector(".erp-toasts");
     if(!wrap){wrap=document.createElement("div");wrap.className="erp-toasts";wrap.setAttribute("aria-live","polite");document.body.append(wrap)}
@@ -168,21 +166,6 @@
     wrap.append(t);requestAnimationFrame(()=>t.classList.add("show"));
     setTimeout(()=>{t.classList.remove("show");setTimeout(()=>t.remove(),250)},4200);
   }
-  const seen=new WeakMap();
-  function watchSuccess(){
-    const root=document.querySelector(".erp-main");if(!root||!window.MutationObserver)return;
-    const check=n=>{
-      if(!(n instanceof Element)||!/(^|\s)success(\s|$)/.test(n.className)||n.closest(".erp-dlg-back,.erp-toasts"))return;
-      const text=(n.textContent||"").trim();
-      if(!text||seen.get(n)===text||Date.now()-lastAct>15000||n.hidden||getComputedStyle(n).display==="none")return;
-      seen.set(n,text);toast(text.length>160?text.slice(0,157)+"...":text,"success");
-    };
-    new MutationObserver(list=>list.forEach(m=>{
-      const t=m.target.nodeType===1?m.target:m.target.parentElement;
-      if(t){check(t);const p=t.closest&&t.closest(".success");if(p)check(p)}
-    })).observe(root,{subtree:true,childList:true,characterData:true,attributes:true,attributeFilter:["class","hidden","style"]});
-  }
-
   function allowed(item,role){return item.r==="*"||item.r.split(" ").includes(role)}
   // menuFor(role) = the role's default pages; menuFor(role,hidden) also drops
   // the pages Admin unticked for one user (Manage Users > Pages).
@@ -249,7 +232,8 @@
     const title=opts.title||(current&&current.t)||document.title.split("|")[0].trim();
     const group=opts.group!=null?opts.group:currentGroup;
 
-    document.body.classList.add("erp");
+    document.body.classList.add("erp", "erp-compact");
+    document.body.dataset.erpPage = page.replace(/\.html$/, "");
     const top=document.createElement("div");
     top.className="erp-top";
     top.innerHTML=
@@ -264,7 +248,8 @@
     const side=document.createElement("aside");
     side.className="erp-side";
     function drawSide(){
-      let html='<div class="erp-brand"><b>LUXURY WRIST BRAND</b><small>BUSINESS ERP</small></div>';
+      let html='<div class="erp-brand"><b>LUXURY WRIST BRAND</b><small>BUSINESS ERP</small></div>'+
+        '<div class="erp-menu-find"><input type="search" aria-label="Find a page" placeholder="Find a page…"></div><p class="erp-menu-empty" hidden>No page found</p>';
       groups.forEach(g=>{
         if(g.group)html+='<div class="erp-group">'+esc(g.group)+'</div>';
         g.items.forEach(i=>{html+='<a class="erp-link'+(current&&i.h===current.h?' active':'')+'" href="'+esc(i.h)+'">'+svg(i.i)+'<span>'+esc(i.t)+'</span></a>'});
@@ -272,6 +257,22 @@
       side.innerHTML=html;
     }
     drawSide();
+    side.setAttribute("aria-label", "Main menu");
+    side.addEventListener("input", e => {
+      if(!e.target.matches(".erp-menu-find input")) return;
+      const q=e.target.value.trim().toLowerCase();
+      const links=[...side.querySelectorAll(".erp-link")];
+      links.forEach(a => {a.hidden=!a.textContent.toLowerCase().includes(q)});
+      side.querySelectorAll(".erp-group").forEach(g => {
+        let next=g.nextElementSibling, visible=false;
+        while(next && !next.classList.contains("erp-group")){
+          if(next.classList.contains("erp-link") && !next.hidden) visible=true;
+          next=next.nextElementSibling;
+        }
+        g.hidden=!visible;
+      });
+      side.querySelector(".erp-menu-empty").hidden=links.some(a => !a.hidden);
+    });
     const shade=document.createElement("div");shade.className="erp-shade";
     document.body.prepend(top,side,shade);
 
@@ -280,12 +281,15 @@
     try{closed=localStorage.getItem("erpSideClosed")==="1"}catch(e){}
     if(closed&&!narrow())document.body.classList.add("side-closed");
     top.querySelector(".erp-burger").onclick=()=>{
-      if(narrow()){document.body.classList.toggle("side-open");return}
+      if(narrow()){const on=document.body.classList.toggle("side-open");top.querySelector(".erp-burger").setAttribute("aria-expanded",String(on));if(on)side.querySelector("input").focus();return}
       const c=document.body.classList.toggle("side-closed");
       try{localStorage.setItem("erpSideClosed",c?"1":"0")}catch(e){}
     };
-    shade.onclick=()=>document.body.classList.remove("side-open");
-    side.addEventListener("click",e=>{if(e.target.closest("a"))document.body.classList.remove("side-open")});
+    function closeSide(){document.body.classList.remove("side-open");top.querySelector(".erp-burger").setAttribute("aria-expanded","false")}
+    top.querySelector(".erp-burger").setAttribute("aria-expanded","false");
+    shade.onclick=closeSide;
+    document.addEventListener("keydown",e=>{if(e.key==="Escape" && document.body.classList.contains("side-open")){closeSide();top.querySelector(".erp-burger").focus()}});
+    side.addEventListener("click",e=>{if(e.target.closest("a"))closeSide()});
     top.querySelector(".erp-logout").onclick=opts.onLogout||(()=>{location.href="login.html"});
 
     // Module search: type, then click or press Enter.
@@ -312,37 +316,65 @@
       }
     });
     document.addEventListener("click",e=>{if(!e.target.closest(".erp-search"))box.classList.remove("open")});
-    if(role==="sales")bottomNav(page);
-    // Driver page has its own bottom bar and Submit bar; it needs the same keyboard handling.
-    if(role==="driver")watchKeyboard();
-    watchSuccess();
+    if(role!=="driver")bottomNav(page,role);
+    // Driver keeps its own bottom menu. Keyboard handling applies to every role.
+    watchKeyboard();
+    // Inline success messages already confirm saves; avoid a second toast for the same event.
+    compactTables();
     if(role){idleLogout();otpGuard();}
     bell(top,role);
     refreshAccess().then(changed=>{
       if(!changed)return;
       if(blocked(role,page,hiddenPages()))return;
       groups=menuForMe(role);flat=groups.flatMap(g=>g.items.map(i=>({...i,g:g.group})));drawSide();
+      if(role!=="driver")bottomNav(page,role);
       document.dispatchEvent(new CustomEvent("erp:access"));
     });
     return {menu:groups};
   }
 
-  // Salesman on a phone: the four things he does most, always one tap away.
-  function bottomNav(page){
-    const hidden=hiddenPages(),open=h=>!hidden.includes(h);
-    const items=[["Home","dashboard.html","home"],["New Order","order-entry.html","cart"],["My Orders","my-sales.html#orders","box"],["My Sales","my-sales.html","chart"]]
-      .filter(i=>open(i[1].split("#")[0]));
+  // Small role-specific shortcuts; actual permission checks remain on each page / RPC.
+  function bottomNav(page,role){
+    document.querySelector(".erp-bnav")?.remove();
+    document.body.classList.remove("has-bnav");
+    const presets={
+      sales:[["Home","dashboard.html","home"],["New Order","order-entry.html","cart"],["My Orders","my-sales.html#orders","box"],["My Sales","my-sales.html","chart"]],
+      admin:[["Home","dashboard.html","home"],["New Order","order-entry.html","cart"],["Approve","warehouse-orders.html","check"],["Stock","inventory.html","stock"]],
+      manager:[["Home","dashboard.html","home"],["New Order","order-entry.html","cart"],["Approve","warehouse-orders.html","check"],["Dispatch","loading-dispatch.html","truck"]],
+      accounts:[["Home","dashboard.html","home"],["Bills","accounts-invoice.html","bill"],["Collections","driver-collections.html","cash"],["Returns","driver-returns.html","undo"]],
+      warehouse:[["Home","dashboard.html","home"],["Loading","loading-dispatch.html","truck"],["Stock","inventory.html","stock"],["Returns","driver-returns.html","undo"]],
+      transport:[["Home","dashboard.html","home"],["Assign","transport-allocation.html","truck"],["Vehicles","fleet-master.html#vehicles","box"],["Drivers","fleet-master.html#drivers","users"]]
+    };
+    const permitted=new Set(menuForMe(role).flatMap(g=>g.items.map(i=>i.h.split("#")[0])));
+    const items=(presets[role]||[]).filter(i=>permitted.has(i[1].split("#")[0]));
     if(items.length<2)return;
-    const here=page+(page==="my-sales.html"&&location.hash==="#orders"?"#orders":"");
+    const active=h=>h===(page+(location.hash||"")) || (!h.includes("#") && h===page && !items.some(i=>i[1]===(page+(location.hash||""))));
     const nav=document.createElement("nav");nav.className="erp-bnav";nav.setAttribute("aria-label","Quick menu");
-    nav.innerHTML=items.map(([t,h,i])=>'<a href="'+h+'" class="'+(h==="order-entry.html"?"new":"")+(h===here?" active":"")+'">'+svg(i)+"<span>"+esc(t)+"</span></a>").join("");
+    nav.innerHTML=items.map(([t,h,i])=>'<a href="'+h+'" class="'+(h==="order-entry.html"?"new":"")+(active(h)?" active":"")+'"'+(active(h)?' aria-current="page"':'')+'>'+svg(i)+"<span>"+esc(t)+"</span></a>").join("");
     document.body.appendChild(nav);document.body.classList.add("has-bnav");
-    window.addEventListener("hashchange",()=>{const now=page+(location.hash==="#orders"?"#orders":"");nav.querySelectorAll("a").forEach(a=>a.classList.toggle("active",a.getAttribute("href")===now))});
-    watchKeyboard();
+    nav.dataset.page=page;
+    if(!window.__lwbNavHash){window.__lwbNavHash=true;window.addEventListener("hashchange",()=>bottomNav(page,role))}
+  }
+
+  // Keep large reports scrollable inside their panel, rather than widening the phone page.
+  function compactTables(){
+    const root=document.querySelector(".erp-main");if(!root)return;
+    const scan=()=>root.querySelectorAll("table").forEach(t=>{
+      if(t.closest(".erp-data-scroll, .modal, .overlay, dialog") || t.id==="itemsTable")return;
+      const p=t.parentElement;if(!p)return;
+      if(/scroll|wrap|table/i.test(p.className)){p.classList.add("erp-data-scroll");return}
+      const wrap=document.createElement("div");wrap.className="erp-data-scroll";
+      t.before(wrap);wrap.append(t);
+    });
+    scan();
+    let pending=false;
+    new MutationObserver(()=>{if(pending)return;pending=true;requestAnimationFrame(()=>{pending=false;scan()})}).observe(root,{childList:true,subtree:true});
   }
 
   // While typing, the phone keyboard pushes fixed bars up over the page; hide them until typing ends.
+  let keyboardWatching=false;
   function watchKeyboard(){
+    if(keyboardWatching)return;keyboardWatching=true;
     const typing=el=>el&&(el.tagName==="TEXTAREA"||el.tagName==="SELECT"||el.isContentEditable||(el.tagName==="INPUT"&&!/^(button|submit|reset|checkbox|radio|file|range|color|image|hidden)$/i.test(el.type)));
     // Keyboard open = a text box has focus AND the visible screen is clearly shorter than
     // the full screen. A box that keeps focus after the keyboard is closed (iPhone Chrome)

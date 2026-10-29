@@ -87,82 +87,7 @@
   if(href.includes("{c}")){const c=(String(n.message||"").match(/CMP-(\d+)/)||[])[1];return c?href.replace("{c}",c):href.split("?")[0]}
   return n.order_id?href.replace("{o}",encodeURIComponent(n.order_id)):href.split("?")[0];
  }
- // Every new notification pops up once per device (Sales Head copies CC_* stay in the bell only).
- // These have their own title / button; href null = the notification's own page.
- const POPUP={LOADING_ASSIGNMENT_DRIVER:["🚚 New Transport Assignment","Open order",null],ANNOUNCEMENT:["📢 Focus message","OK",""],MARKET_REPORT:["🚩 Outside market stock","Open report","market-report.html"],
-  DELIVERY_RETURN_APPROVED:["✅ Return approved","Open order",null],DELIVERY_RETURN_REJECTED:["❌ Return rejected","Open order",null],
-  DELIVERY_COLLECTION_VERIFIED:["✅ Payment verified","Open order",null],DELIVERY_COLLECTION_REJECTED:["❌ Payment rejected","Correct it",null],
-  DELIVERY_RETURN_DEDUCTED:["↩ Return amount cut","Open",null],
-  COMPLAINT_NEW:["📮 New complaint","Open complaint",null],COMPLAINT_REPLY:["💬 Complaint reply","Open complaint",null],
-  COMPLAINT_RESOLVED:["✅ Complaint solved","Open complaint",null],COMPLAINT_CLOSED:["✅ Complaint closed","Open",null]};
- // Urgent, until done: returns waiting for approval (office) and approved returns to receive (godown).
- // They pop up on every page, again 15 min after "Later", until handled or opened from the bell.
- const URGENT=[
-  {re:/^DELIVERY_RETURN_(PENDING|OPERATIONS)$/,key:"lwbReturnSnooze",title:"↩ Driver return waiting",ok:"Verify now",
-   one:"A driver return is",many:" driver returns are",ask:" waiting for your check:",
-   foot:"Only approved returns are cut from the bill. Until then the driver collects the full amount."},
-  // Accounts: driver collected money, until it is received from the driver and verified on Driver Collections.
-  {re:/^DELIVERY_COLLECTION$/,key:"lwbCollectSnooze",title:"💰 Money on the way — receive from driver",ok:"Receive & verify",
-   skip:"driver-collections.html",one:"A driver payment is",many:" driver payments are",ask:" on the way to the office:",
-   foot:"When the driver comes back, count the cash / check the UPI photo, then tap Verify on Driver Collections. This reminder stops once it is verified."},
-  {re:/^TALLY_BILL_PENDING$/,key:"lwbTallySnooze",title:"🧾 Vehicle loaded — make Tally bill",skip:"accounts-invoice.html",ok:"Enter invoice no.",
-   one:"A loaded vehicle is",many:" loaded vehicles are",ask:" waiting for the Tally bill:",
-   foot:"Make the bill in Tally, then enter its invoice number. This reminder stops once the number is saved."},
-  // Godown Manager: vehicle assigned to him for loading, until he starts / confirms the loading.
-  {re:/^LOADING_ASSIGNMENT_DISPATCH$/,only:n=>/^Load This Vehicle/i.test(n.title||""),key:"lwbLoadSnooze",title:"🚛 Vehicle Loading Assignment",ok:"Open loading",
-   skip:"loading-dispatch.html",one:"A vehicle is",many:" vehicles are",ask:" assigned to you for loading:",
-   foot:"Please load the approved quantities, then tap ✅ Confirm Vehicle Loaded. Accounts and the Sales Head are informed automatically.",full:true},
-  {re:/^DELIVERY_RETURN_RECEIVE$/,key:"lwbReceiveSnooze",title:"📦 Receive returned goods",ok:"Open",
-   one:"An approved return is",many:" approved returns are",ask:" coming back to the godown:",
-   foot:"When the vehicle comes back, check the goods and tap Goods received on Driver Returns.",full:true}
- ],SNOOZE=15*60e3;
- let popping=false;
- async function urgentPopup(rows,pages){
-  for(const g of URGENT){
-   if(location.pathname.endsWith(g.skip||"driver-returns.html"))continue;
-   const due=rows.filter(n=>!n.is_read&&g.re.test(String(n.notification_type||"").toUpperCase())&&(!g.only||g.only(n))&&Date.now()-new Date(n.created_at)<3*864e5);
-   const href=due.length?route(due[0],pages):"";
-   if(!href)continue;
-   let snoozed=0;try{snoozed=Number(localStorage.getItem(g.key))||0}catch(e){}
-   if(Date.now()-snoozed<SNOOZE)continue;
-   const lines=g.full&&due.length===1?[due[0].message||""]:due.slice(0,5).map(n=>"• "+summary(n).text.replace(/ · (Verify|Warehouse check)$/,"").replace(/^(Return|Receive return goods) · /,""));
-   if(due.length>5)lines.push("… and "+(due.length-5)+" more");
-   const orders=new Set(due.map(n=>n.order_id));
-   const text=(due.length===1?g.one:due.length+g.many)+g.ask+"\n\n"+lines.join("\n")+"\n\n"+g.foot;
-   try{localStorage.setItem(g.key,String(Date.now()))}catch(e){}
-   const go=await window.confirm(text,{title:g.title,ok:g.ok,cancel:"Later"});
-   if(go){location.href=orders.size===1?href:href.split("?")[0];return true}
-  }
-  return false;
- }
- async function popup(rows,pages,markRead){
-  if(popping||typeof window.confirm!=="function")return;
-  popping=true;
-  try{
-   if(await urgentPopup(rows,pages))return;
-   let seen=[];try{seen=JSON.parse(localStorage.getItem("lwbPopped")||"[]")}catch(e){}
-   const type=n=>String(n.notification_type||"").toUpperCase();
-   const fresh=rows.filter(n=>!n.is_read&&!seen.includes(n.id)&&!/^CC_/.test(type(n))&&!URGENT.some(g=>g.re.test(type(n)))
-    &&Date.now()-new Date(n.created_at)<(POPUP[type(n)]?2*864e5:12*36e5));
-   if(!fresh.length)return;
-   seen=seen.concat(fresh.map(n=>n.id)).slice(-300);
-   try{localStorage.setItem("lwbPopped",JSON.stringify(seen))}catch(e){}
-   // Many at once (e.g. after a break): one list instead of a row of popups.
-   if(fresh.length>3){
-    const lines=fresh.slice(0,8).map(n=>{const s=summary(n);return s.icon+" "+s.text});
-    if(fresh.length>8)lines.push("… and "+(fresh.length-8)+" more");
-    await window.alert(lines.join("\n")+"\n\nOpen the 🔔 bell to see each one.",{title:"🔔 "+fresh.length+" new updates",kind:"info"});
-    return;
-   }
-   for(const n of fresh.reverse()){
-    const s=summary(n),[title,ok,page]=POPUP[type(n)]||[s.icon+" "+(n.title||s.text),"Open",null],href=page===null?route(n,pages):page;
-    const text=(n.title&&n.notification_type==="ANNOUNCEMENT"?n.title+"\n\n":"")+(n.message||"");
-    const go=href?await window.confirm(text,{title,ok,cancel:"Later"}):(await window.alert(text,{title,kind:"info"}),false);
-    if(go&&page===null){await markRead(n.id);location.href=href;break}
-    if(go&&!location.pathname.endsWith(href)){location.href=href;break}
-   }
-  }finally{popping=false}
- }
+ // Quiet notifications: updates stay in the bell; no automatic dialogs interrupt entry.
  function init({db,user,mount,pages,role}){
   if(!db||!user?.id||!mount)return;
   // One bell per page. If a page put it in its old (now hidden) header, move it to the ERP top bar.
@@ -191,7 +116,7 @@
   document.head.append(css);
   const wrap=el("div","lwb-op-wrap"),bell=el("button","lwb-op-bell","🔔"),count=el("span","lwb-op-count","0");
   bell.id="lwbOpsBell";bell.type="button";
-  bell.setAttribute("aria-label","ERP Notifications");bell.setAttribute("aria-expanded","false");
+  bell.setAttribute("aria-label","ERP Notifications");bell.title="Notifications";bell.setAttribute("aria-expanded","false");
   bell.append(count);
   const panel=el("section","lwb-op-panel"),head=el("div","lwb-op-head"),reload=el("button",null,"Refresh"),allRead=el("button",null,"Mark all read");
   panel.hidden=true;panel.setAttribute("aria-label","ERP Notifications");
@@ -206,9 +131,9 @@
    if(error){list.replaceChildren(el("p","lwb-op-error","Notification error: "+error.message));return}
    // Driver sees no history: only the last 12 hours.
    const rows=(data||[]).filter(n=>String(role||"").toLowerCase()!=="driver"||Date.now()-new Date(n.created_at)<12*36e5),unread=rows.filter(n=>!n.is_read).length;
+   bell.setAttribute("aria-label", "Notifications" + (unread ? ", " + unread + " unread" : ""));
    count.textContent=unread>99?"99+":String(unread);count.style.display=unread?"inline-block":"none";
    list.replaceChildren();
-   popup(rows,pages,id=>db.from("erp_notifications").update({is_read:true}).eq("id",id).eq("user_id",user.id));
    if(!rows.length){list.append(el("p",null,"No notifications yet."));return}
    allRead.hidden=!unread;
    for(const n of rows){
@@ -256,7 +181,7 @@
   });
   reloadData();
   setInterval(()=>{if(!document.hidden)reloadData()},30000);
-  // Instant: a new row for this login reloads the bell (and pops it up) at once.
+  // Instant: a new row updates the bell count without interrupting the current task.
   // Needs erp_notifications in Supabase Realtime (lwb_order_flow_popups_setup.sql); the 30 s check stays as backup.
   let soon=0;
   try{
