@@ -302,3 +302,12 @@
 - "Right now": 1 Loaded, Tally bill pending · 2 Bill made, not delivered yet · 3 Money with drivers (collected, payment PENDING) · 4 Outstanding with parties (over 30 days in red) · 5 Received (verified + Cashbook). Period strip (Today / Yesterday / 7 days / month / dates): bills made, delivered, driver collected, verified, Cash In at office.
 - Lists: Outstanding party wise (aging 0–7 / 8–30 / 30+, expand to bills), Money with drivers (driver wise, link to Driver Collections), Not delivered yet, Tally bill pending (link to Tally Bill & Invoice No.), All POs; Excel of each.
 - Cashbook: when this browser has the Cashbook key (`localStorage.lwbCbKey`) and the user can open the Cashbook, `lwb_cashbook_load` is read: Cash In entries with an invoice no. of an ERP bill (not driver cash added from the ERP, `erpRef`) reduce that bill's outstanding; Cash In entries not from drivers are the "Cash In at office" figure. Nothing is written.
+
+## Complaint Box (29 Oct 2026)
+
+- SQL: `lwb_complaint_box_setup.sql` (run once; check = 4 rows, all true). Tables `lwb_complaints` + `lwb_complaint_replies`, private bucket `lwb-complaint-photos`.
+- `complaint-box.html` (every role, menu item under Dashboard): any login raises a complaint / query (Market, Godown, Driver / Delivery, Accounts / Payment, Other) with optional PO, party, photo, Urgent.
+- RLS: a login reads only his own complaints; Admin + MANAGER read all. Writes only through `lwb_complaint_add(p)` and `lwb_complaint_reply(id, body, status)`.
+- Status OPEN (waiting for office) → ANSWERED (office replied) → RESOLVED. Staff reply sends it back to OPEN; staff can tap "Problem solved"; a reply on a solved one opens it again.
+- 🔔 COMPLAINT_NEW / COMPLAINT_REPLY / COMPLAINT_CLOSED to Admin + Sales Head; COMPLAINT_REPLY / COMPLAINT_RESOLVED to the raiser. Bell and popup open `complaint-box.html?id=N` (from "CMP-N" in the message).
+- Dashboard Verify / Quick Actions: "Reply to complaints" (Admin / Sales Head, OPEN from others) and "Reply on your complaint" (any other role, ANSWERED).
