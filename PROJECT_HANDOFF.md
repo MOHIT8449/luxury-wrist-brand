@@ -344,3 +344,10 @@
 - Removed the Dashboard Quick Access section and its renderer. `erp-shell.js` does not create the fixed bottom shortcut bar on Dashboard, including after page-access refresh. Other pages keep their quick menus; Pending Work, module search and the side menu remain.
 - `_headers`: Dashboard HTML revalidation added.
 - Verification used actual Dashboard startup/rendering with a local read-only Supabase mock and the exact `dashboard.html` filename (so production page-specific selectors apply). Populated Admin / Manager fixtures checked at 320 / 390 / 1280 CSS-pixel frames, including ₹1,64,970 and ₹1,23,45,67,890. No metric overflow / text overlap / page horizontal overflow; no Dashboard bottom nav or Quick Access list; zero mock writes and no JS errors.
+
+
+## Dense PO Entry — five SKU cards (29 Oct 2026)
+
+- Removed Party's usual SKUs UI and its renderer / quick-add helper; party last-rate lookup and rate autofill are retained. Removed Entry help. Admin / Manager landing-and-margin toggle moved inside More options.
+- Phone SKU cards use two short rows: SKU / remove, then Qty / Rate / Amount. Direct Vehicle CS mode also includes Pallet in the second row. Mobile rate ± buttons are hidden; rate is edited directly in its numeric field. Card padding / margins, Add SKU, total-weight and share spacing reduced. Informational stock / rate hints stay out of the compact row; low-stock and below-slab warnings still appear. Per-role restrictions, save logic and calculations are unchanged.
+- Browser test with actual order-entry.html filename and mocked read-only Supabase: five populated cards are 99 CSS px high, and all five fit in the SKU-list viewport at 360×740 / 390×844; checked desktop 1280×900 and SALES / Admin roles. Direct Vehicle stays at 99px. Totals = 150 cases / ₹83,800 / 2,320 kg; rate edit 640→650 makes ₹84,200. No horizontal overflow or JS errors, zero writes.
