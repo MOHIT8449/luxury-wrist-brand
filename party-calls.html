@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Party Call List | Luxury Wrist Brand ERP</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <link rel="stylesheet" href="erp-shell.css">
+  <link rel="stylesheet" href="sales.css">
+  <script src="erp-shell.js"></script>
+  <script src="sales-common.js"></script>
+  <style>
+    .pc-sum{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
+    .pc-list{display:grid;gap:10px}
+    .pc-card{background:#fff;border:1px solid var(--erp-line);border-radius:8px;padding:12px 14px}
+    .pc-card.due{border-left:4px solid var(--erp-red)}
+    .pc-card.done{border-left:4px solid var(--erp-green)}
+    .pc-card.wait{border-left:4px solid var(--erp-amber)}
+    .pc-top{display:flex;gap:10px;align-items:flex-start}
+    .pc-top .who{flex:1;min-width:0}
+    .pc-top .who b{font-size:15px;overflow-wrap:anywhere}
+    .pc-top .who small{display:block;color:var(--erp-muted);font-size:12.5px;margin-top:2px}
+    .pc-late{text-align:right;white-space:nowrap;font-size:12px;color:var(--erp-muted)}
+    .pc-late b{display:block;font-size:17px;color:var(--erp-red)}
+    .pc-last{margin-top:8px;font-size:12.5px;background:#f6f7f9;border-radius:6px;padding:6px 9px;overflow-wrap:anywhere}
+    .pc-acts{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}
+    .pc-call{display:inline-flex;align-items:center;justify-content:center;gap:6px;height:40px;padding:0 16px;border-radius:6px;background:var(--erp-green);color:#fff;font-weight:700;text-decoration:none;font-size:14.5px}
+    .pc-wa{display:inline-flex;align-items:center;height:40px;padding:0 12px;border-radius:6px;border:1px solid var(--erp-line);color:var(--erp-ink);text-decoration:none;font-weight:600;font-size:13px;background:#fff}
+    .pc-acts .sl-btn{height:40px}
+    .pc-nophone{font-size:12.5px;color:var(--erp-red);align-self:center}
+    .pc-form{margin-top:10px;border-top:1px dashed var(--erp-line);padding-top:10px;display:grid;gap:10px}
+    .pc-form label.t{font-size:12px;font-weight:600;color:#4b5763}
+    .pc-res{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px}
+    .pc-opt{border:1.5px solid var(--erp-line);background:#fff;border-radius:8px;padding:9px 8px;font:inherit;font-size:13px;font-weight:600;cursor:pointer;color:var(--erp-ink);text-align:center}
+    .pc-opt span{display:block;font-size:19px;line-height:1.2}
+    .pc-opt.on{border-color:var(--erp-red);background:var(--erp-red-soft)}
+    .pc-reasons{display:flex;flex-wrap:wrap;gap:6px}
+    .pc-reason{border:1px solid var(--erp-line);background:#fff;border-radius:16px;padding:6px 11px;font:inherit;font-size:13px;cursor:pointer;color:var(--erp-ink)}
+    .pc-reason.on{border-color:var(--erp-red);background:var(--erp-red);color:#fff}
+    .pc-form textarea,.pc-form input[type=date]{width:100%;box-sizing:border-box;border:1.5px solid var(--erp-line);border-radius:6px;padding:8px 10px;font:inherit;font-size:16px;background:#fff}
+    .pc-form textarea{min-height:56px;resize:vertical}
+    .pc-days{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+    .pc-days input{max-width:170px}
+    .pc-save{display:flex;gap:8px}.pc-save .sl-btn{height:42px;flex:1}
+    .pc-group{font-size:13px;font-weight:700;color:#4b5763;margin:14px 2px 2px}
+    .pc-set-in{width:74px!important}
+    @media(max-width:560px){
+      .pc-res{grid-template-columns:1fr 1fr}
+      .pc-call{flex:1}
+      .sl-filters>div{flex:1 1 100%}
+    }
+  </style>
+</head>
+<body>
+  <div id="loading" class="status">Checking account access...</div>
+  <main id="page" class="erp-main" hidden>
+    <div class="erp-pagehead"><h1>📞 Party Call List</h1><span class="grow"></span><button type="button" class="sl-btn ghost" id="refresh">Refresh</button></div>
+    <p class="sl-sub" id="sub">Parties that have not ordered in their set days. Call, talk, and save what the party said.</p>
+    <div class="erp-pills" id="tabs" style="margin-bottom:12px"></div>
+
+    <section id="t_list">
+      <div class="sl-filters" id="listFilters">
+        <div id="smBox" hidden><label for="sm">Salesman</label><select id="sm"></select></div>
+        <div class="grow"><label for="q">Search</label><input id="q" type="search" placeholder="Party, city" autocomplete="off"></div>
+      </div>
+      <div class="pc-sum" id="sum"></div>
+      <div class="pc-list" id="list">Loading...</div>
+    </section>
+
+    <section id="t_report" hidden>
+      <div class="sl-filters">
+        <div><label for="rFrom">From</label><input id="rFrom" type="date"></div>
+        <div><label for="rTo">To</label><input id="rTo" type="date"></div>
+        <div id="rSmBox" hidden><label for="rSm">Salesman / caller</label><select id="rSm"></select></div>
+        <div><label for="rRes">Result</label><select id="rRes"><option value="">All</option></select></div>
+        <button type="button" class="sl-btn ghost" id="rExcel">⬇ Excel</button>
+      </div>
+      <div class="sl-kpis" id="rKpis" style="grid-template-columns:repeat(auto-fit,minmax(150px,1fr))"></div>
+      <section class="erp-card" style="margin-bottom:14px" id="rReasonCard">
+        <div class="erp-card-head"><h2>Why parties did not order</h2></div>
+        <div class="erp-card-body" id="rReasons"></div>
+      </section>
+      <section class="erp-card">
+        <div class="erp-card-head"><h2>Every call</h2></div>
+        <div class="sl-scroll" id="rBox"></div>
+      </section>
+    </section>
+
+    <section id="t_setup" hidden>
+      <div class="sl-filters">
+        <div><label for="sSm">Salesman</label><select id="sSm"></select></div>
+        <div><label for="sShow">Show</label><select id="sShow"><option value="">All parties</option><option value="set">Days set</option><option value="unset">Days not set</option></select></div>
+        <div class="grow"><label for="sQ">Search</label><input id="sQ" type="search" placeholder="Party, city" autocomplete="off"></div>
+      </div>
+      <section class="erp-card">
+        <div class="sl-bulk"><span id="sSel">0 selected</span><span>Order should come every</span>
+          <input id="sDays" class="sl-in pc-set-in" type="number" min="1" max="90" inputmode="numeric" placeholder="days"><span>days</span>
+          <button type="button" class="sl-btn small" id="sApply">Set for selected</button>
+          <button type="button" class="sl-btn small ghost" id="sClear">Remove selected from call list</button></div>
+        <div class="sl-scroll" id="sBox">Loading...</div>
+      </section>
+      <p class="sl-note">Blank = party is not on the call list. Example: 2 = if no order for 2 days, the party shows on the call list. The party's salesman calls; parties with no salesman show to Admin / Sales Head.</p>
+    </section>
+    <p class="sl-note" id="note"></p>
+  </main>
+  <script>
+    const S=LWBSales,{client,el,esc,fmt,key}=S;
+    let me=null,head=false,tab="list",rows=[],err="",openId=null,busy=false,form={};
+    let report=[],setupRows=[],picked=new Set();
+    const RESULTS=[["ORDER_TAKEN","✅","Order taken"],["WILL_ORDER","📅","Will order later"],["NO_ORDER","❌","No order"],["NOT_REACHABLE","📵","Not reachable"]];
+    const RES=Object.fromEntries(RESULTS.map(r=>[r[0],r]));
+    const REASONS=["Stock still available","Payment / credit issue","Rate / scheme issue","Buying from other supplier","Shop closed / owner away","Slow market / low sale","Complaint (damage / delivery)","Other"];
+    const NOREACH=["Phone not picked","Phone switched off","Wrong number"];
+    const setupMsg=m=>/lwb_party_call|order_every_days|lwb_party_calls/.test(m||"")?"Run lwb_party_call_list_setup.sql in Supabase first.":m;
+    const today=()=>S.isoDay(new Date());
+    const addDays=(d,n)=>S.isoDay(new Date(Date.parse(d+"T12:00:00+05:30")+n*864e5));
+    const digits=v=>String(v||"").replace(/\D/g,"").slice(-10);
+    const when=v=>v?new Date(v).toLocaleString("en-IN",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit",hour12:true,timeZone:"Asia/Kolkata"}):"";
+    const lastCallText=c=>{if(!c)return "";const r=RES[c.result];
+      return (r?r[1]+" "+r[2]:c.result)+(c.reason?" — "+c.reason:"")+(c.next_date?" (order on "+S.shortDate(c.next_date)+")":"")+(c.note?" · “"+c.note+"”":"")+" · "+(c.by||"")+", "+when(c.at)};
+
+    function tabs(){
+      const T=[["list","Call List"],["report",head?"Call Report":"My Calls"]].concat(head?[["setup","Set Order Days"]]:[]);
+      el("tabs").innerHTML=T.map(([id,l])=>'<button type="button" class="erp-pill'+(id===tab?" active":"")+'" data-tab="'+id+'">'+esc(l)+"</button>").join("");
+      ["list","report","setup"].forEach(t=>el("t_"+t).hidden=t!==tab);
+    }
+
+    // ---- Call list ----
+    async function loadList(){
+      const r=await client.rpc("lwb_party_call_list",{p_all:false});
+      if(r.error){err=setupMsg(r.error.message);rows=[]}else{err="";rows=r.data||[]}
+      if(head){
+        const sms=new Map();rows.forEach(x=>{if(x.salesman_id)sms.set(x.salesman_id,x.salesman_name||"Salesman")});
+        const cur=el("sm").value;
+        el("sm").innerHTML='<option value="">All</option><option value="none">Office (no salesman)</option>'+[...sms].sort((a,b)=>String(a[1]).localeCompare(b[1])).map(([id,n])=>'<option value="'+esc(id)+'">'+esc(n)+"</option>").join("");
+        el("sm").value=[...el("sm").options].some(o=>o.value===cur)?cur:"";
+      }
+      drawList();
+    }
+    function state(x){return x.due?"due":x.called_today?"done":"wait"}
+    function drawList(){
+      if(err){el("list").innerHTML='<div class="sl-msg">'+esc(err)+"</div>";el("sum").innerHTML="";return}
+      const q=key(el("q").value),sm=el("sm").value;
+      const list=rows.filter(x=>(!q||key(x.customer_name+" "+(x.city||"")).includes(q))&&(!sm||(sm==="none"?!x.salesman_id:x.salesman_id===sm)));
+      const g={due:list.filter(x=>state(x)==="due"),done:list.filter(x=>state(x)==="done"),wait:list.filter(x=>state(x)==="wait")};
+      el("sum").innerHTML='<span class="erp-badge red" style="font-size:13px;padding:6px 10px">To call: '+g.due.length+'</span><span class="erp-badge green" style="font-size:13px;padding:6px 10px">Called today: '+g.done.length+'</span>'+
+        (g.wait.length?'<span class="erp-badge amber" style="font-size:13px;padding:6px 10px">Will order later: '+g.wait.length+"</span>":"");
+      if(!list.length){el("list").innerHTML='<div class="erp-empty">'+(rows.length?"No party matches.":"✓ Every party on the call list has ordered in time. Nothing to call today.")+"</div>";return}
+      let h="";
+      const block=(arr,title)=>{if(!arr.length)return;h+='<div class="pc-group">'+esc(title)+" ("+arr.length+")</div>";arr.forEach(x=>h+=card(x))};
+      block(g.due,"📞 Call now");block(g.done,"✓ Called today");block(g.wait,"📅 Party said it will order later");
+      el("list").innerHTML=h;
+    }
+    function card(x){
+      const st=state(x),ph=digits(x.mobile),late=x.days_since==null?null:x.days_since;
+      let h='<div class="pc-card '+st+'" data-id="'+esc(x.customer_id)+'"><div class="pc-top"><div class="who"><b>'+esc(x.customer_name)+"</b><small>"+
+        [x.city,head?(x.salesman_name||"Office (no salesman)"):"",ph?ph.replace(/(\d{5})(\d{5})/,"$1 $2"):""].filter(Boolean).map(esc).join(" · ")+"</small>"+
+        "<small>Order every "+x.every_days+(x.every_days===1?" day":" days")+" · Last order: "+(x.last_order_date?S.shortDate(x.last_order_date)+(x.last_order_no?" ("+esc(x.last_order_no)+")":""):"never")+"</small></div>"+
+        '<div class="pc-late"><b>'+(late==null?"Never":late+(late===1?" day":" days"))+"</b>"+(late==null?"no order yet":"no order")+"</div></div>";
+      if(x.last_call)h+='<div class="pc-last">Last call: '+esc(lastCallText(x.last_call))+"</div>";
+      h+='<div class="pc-acts">'+(ph?'<a class="pc-call" href="tel:+91'+ph+'" data-call="1">📞 Call</a><a class="pc-wa" href="https://wa.me/91'+ph+'" target="_blank" rel="noopener">WhatsApp</a>':'<span class="pc-nophone">No mobile number in Party Master</span>')+
+        '<button type="button" class="sl-btn'+(st==="due"?"":" ghost")+'" data-act="result">'+(openId===x.customer_id?"Close":st==="done"?"Add another result":"Save call result")+"</button>"+
+        '<a class="sl-btn ghost" style="display:inline-flex;align-items:center;text-decoration:none" href="order-entry.html?party='+encodeURIComponent(x.customer_name)+'">+ PO</a></div>';
+      if(openId===x.customer_id)h+=resultForm();
+      return h+"</div>";
+    }
+    function resultForm(){
+      const f=form,t=today();
+      let h='<div class="pc-form"><label class="t">What did the party say? *</label><div class="pc-res">'+
+        RESULTS.map(r=>'<button type="button" class="pc-opt'+(f.result===r[0]?" on":"")+'" data-res="'+r[0]+'"><span>'+r[1]+"</span>"+esc(r[2])+"</button>").join("")+"</div>";
+      if(f.result==="NO_ORDER"||f.result==="NOT_REACHABLE"){
+        const list=f.result==="NO_ORDER"?REASONS:NOREACH;
+        h+='<label class="t">'+(f.result==="NO_ORDER"?"Why no order? *":"What happened?")+'</label><div class="pc-reasons">'+list.map(r=>'<button type="button" class="pc-reason'+(f.reason===r?" on":"")+'" data-reason="'+esc(r)+'">'+esc(r)+"</button>").join("")+"</div>";
+      }
+      if(f.result==="WILL_ORDER"){
+        h+='<label class="t">When will the party order? *</label><div class="pc-days">'+[[1,"Tomorrow"],[2,"In 2 days"],[3,"In 3 days"],[7,"In 1 week"]].map(([n,l])=>
+          '<button type="button" class="pc-reason'+(f.next_date===addDays(t,n)?" on":"")+'" data-next="'+addDays(t,n)+'">'+l+"</button>").join("")+
+          '<input type="date" id="f_next" min="'+addDays(t,1)+'" max="'+addDays(t,30)+'" value="'+esc(f.next_date||"")+'"></div>';
+      }
+      if(f.result)h+='<label class="t" for="f_note">Note'+(f.reason==="Other"?" *":" (optional)")+'</label><textarea id="f_note" maxlength="500" placeholder="'+(f.result==="ORDER_TAKEN"?"e.g. 50 cases, PO made":"What the party said")+'">'+esc(f.note||"")+"</textarea>"+
+        '<div class="pc-save"><button type="button" class="sl-btn" data-act="save"'+(busy?" disabled":"")+">Save</button></div>";
+      return h+"</div>";
+    }
+    async function save(x){
+      const f=form;
+      if(el("f_note"))f.note=el("f_note").value;
+      if(el("f_next")&&el("f_next").value)f.next_date=el("f_next").value;
+      if(!f.result){await alert("Please choose what the party said.");return}
+      if(f.result==="NO_ORDER"&&!f.reason){await alert("Please choose why the party did not order.");return}
+      if(f.reason==="Other"&&!String(f.note||"").trim()){await alert("Please write the reason in the note.");return}
+      if(f.result==="WILL_ORDER"&&!f.next_date){await alert("Please choose the date the party will order.");return}
+      busy=true;drawList();
+      const r=await client.rpc("lwb_party_call_save",{p:{customer_id:x.customer_id,result:f.result,reason:f.reason||null,note:f.note||null,next_date:f.result==="WILL_ORDER"?f.next_date:null}});
+      busy=false;
+      if(r.error){await alert("Could not save: "+setupMsg(r.error.message));drawList();return}
+      openId=null;form={};
+      ERPShell.toast&&ERPShell.toast("Call result saved for "+x.customer_name+".","success");
+      if(f.result==="ORDER_TAKEN"&&await confirm("Order taken from "+x.customer_name+".\n\nMake the PO now?",{ok:"Open PO Entry",cancel:"Later"})){location.href="order-entry.html?party="+encodeURIComponent(x.customer_name);return}
+      await loadList();
+    }
+
+    // ---- Call report ----
+    async function loadReport(){
+      const from=el("rFrom").value||today(),to=el("rTo").value||today();
+      let qy=client.from("lwb_party_calls").select("*").gte("call_date",from).lte("call_date",to).order("created_at",{ascending:false}).limit(3000);
+      const r=await qy;
+      if(r.error){el("rBox").innerHTML='<div class="sl-msg">'+esc(setupMsg(r.error.message))+"</div>";report=[];el("rKpis").innerHTML="";el("rReasons").innerHTML="";return}
+      report=r.data||[];
+      if(head){
+        const who=new Map();report.forEach(c=>who.set(c.called_by,c.called_by_name||"Staff"));
+        const cur=el("rSm").value;
+        el("rSm").innerHTML='<option value="">All</option>'+[...who].sort((a,b)=>String(a[1]).localeCompare(b[1])).map(([id,n])=>'<option value="'+esc(id)+'">'+esc(n)+"</option>").join("");
+        el("rSm").value=[...el("rSm").options].some(o=>o.value===cur)?cur:"";
+      }
+      drawReport();
+    }
+    function reportRows(){
+      const sm=el("rSm").value,res=el("rRes").value;
+      return report.filter(c=>(!sm||c.called_by===sm)&&(!res||c.result===res));
+    }
+    function drawReport(){
+      const list=reportRows(),n=k=>list.filter(c=>c.result===k).length;
+      el("rKpis").innerHTML=[["","Calls",fmt(list.length),fmt(new Set(list.map(c=>c.customer_id)).size)+" parties"],
+        ["green","Order taken",fmt(n("ORDER_TAKEN")),""],["blue","Will order later",fmt(n("WILL_ORDER")),""],
+        ["red","No order",fmt(n("NO_ORDER")),""],["","Not reachable",fmt(n("NOT_REACHABLE")),""]]
+        .map(x=>'<div class="sl-kpi '+x[0]+'"><span>'+esc(x[1])+"</span><b>"+x[2]+"</b><small>"+x[3]+"</small></div>").join("");
+      const why=new Map();list.filter(c=>c.result==="NO_ORDER").forEach(c=>why.set(c.reason||"—",(why.get(c.reason||"—")||0)+1));
+      const tot=[...why.values()].reduce((a,b)=>a+b,0);
+      el("rReasons").innerHTML=tot?[...why].sort((a,b)=>b[1]-a[1]).map(([r,c])=>'<div style="display:flex;align-items:center;gap:8px;margin:5px 0;font-size:13.5px"><span style="flex:1">'+esc(r)+"</span><b>"+c+"</b>"+S.bar(Math.round(c/tot*100))+"</div>").join(""):'<span style="color:var(--erp-muted)">No "no order" calls in these dates.</span>';
+      const head2=["Date / time","Party",head?"Called by":"","Result","Reason","Note","Order on","Last order"].filter(Boolean);
+      const rows=list.slice(0,1000).map(c=>{const r=RES[c.result];return [esc(when(c.created_at)),esc(c.customer_name),...(head?[esc(c.called_by_name||"")]:[]),
+        '<span class="erp-badge '+({ORDER_TAKEN:"green",WILL_ORDER:"blue",NO_ORDER:"red"}[c.result]||"")+'">'+esc(r?r[2]:c.result)+"</span>",esc(c.reason||"—"),esc(c.note||""),
+        c.next_date?S.shortDate(c.next_date):"—",c.last_order_date?S.shortDate(c.last_order_date):"never"]});
+      el("rBox").innerHTML=rows.length?S.table(head2,rows,[]):'<div class="erp-empty">No calls saved in these dates.</div>';
+    }
+    async function reportExcel(){
+      const list=reportRows();if(!list.length){await alert("No calls to export.");return}
+      const H=["Date","Time","Party","Called by","Result","Reason","Note","Party will order on","Last order","Order every (days)"];
+      await S.excel("Party-Calls-"+(el("rFrom").value||today())+"-to-"+(el("rTo").value||today()),[{name:"Calls",title:"Party Call Report "+(el("rFrom").value||today())+" to "+(el("rTo").value||today()),head:H,
+        rows:list.map(c=>[c.call_date,new Date(c.created_at).toLocaleTimeString("en-IN",{hour:"2-digit",minute:"2-digit",hour12:true,timeZone:"Asia/Kolkata"}),c.customer_name,c.called_by_name||"",(RES[c.result]||[,,c.result])[2],c.reason||"",c.note||"",c.next_date||"",c.last_order_date||"never",c.every_days||""])}]);
+    }
+
+    // ---- Setup: order days per party (Admin / Sales Head) ----
+    async function loadSetup(){
+      el("sBox").innerHTML="Loading...";
+      const [pa,cm]=await Promise.all([client.rpc("lwb_party_activity"),pageAll("lwb_customer_master","id,order_every_days")]);
+      if(pa.error||cm.error){el("sBox").innerHTML='<div class="sl-msg">'+esc(setupMsg((pa.error||cm.error).message))+"</div>";return}
+      const days=new Map(cm.data.map(c=>[c.id,c.order_every_days]));
+      setupRows=(pa.data||[]).map(p=>({...p,every:days.get(p.customer_id)??null}));
+      const sms=new Map();setupRows.forEach(x=>{if(x.salesman_id)sms.set(x.salesman_id,x.salesman_name||"Salesman")});
+      const cur=el("sSm").value;
+      el("sSm").innerHTML='<option value="">All</option><option value="none">Office (no salesman)</option>'+[...sms].sort((a,b)=>String(a[1]).localeCompare(b[1])).map(([id,n])=>'<option value="'+esc(id)+'">'+esc(n)+"</option>").join("");
+      el("sSm").value=[...el("sSm").options].some(o=>o.value===cur)?cur:"";
+      drawSetup();
+    }
+    async function pageAll(table,sel){
+      const out=[];
+      for(let p=0;p<50;p++){const r=await client.from(table).select(sel).order("id").range(p*1000,p*1000+999);if(r.error)return {error:r.error};out.push(...(r.data||[]));if((r.data||[]).length<1000)break}
+      return {data:out};
+    }
+    function setupList(){
+      const q=key(el("sQ").value),sm=el("sSm").value,show=el("sShow").value;
+      return setupRows.filter(x=>(!q||key(x.customer_name+" "+(x.city||"")).includes(q))&&(!sm||(sm==="none"?!x.salesman_id:x.salesman_id===sm))&&(!show||(show==="set"?x.every!=null:x.every==null)));
+    }
+    function drawSetup(){
+      const list=setupList(),t=today();
+      const all=list.length&&list.every(x=>picked.has(x.customer_id));
+      const rows=list.slice(0,1500).map(x=>{const d=x.last_order_date?S.daysBetween(x.last_order_date,t):null;
+        return ['<input type="checkbox" data-pick="'+esc(x.customer_id)+'"'+(picked.has(x.customer_id)?" checked":"")+">",esc(x.customer_name),esc(x.city||"—"),esc(x.salesman_name||"Office"),
+          x.last_order_date?S.shortDate(x.last_order_date)+" · "+d+"d":"never",
+          '<input class="sl-in pc-set-in" type="number" min="1" max="90" inputmode="numeric" data-days="'+esc(x.customer_id)+'" value="'+(x.every??"")+'" placeholder="—">',
+          x.every!=null&&(d==null||d>=x.every)?'<span class="erp-badge red">Call</span>':x.every!=null?'<span class="erp-badge green">OK</span>':""]});
+      el("sBox").innerHTML=rows.length?S.table(["✓","Party","City","Salesman","Last order","Every (days)","Today"],rows,[5]).replace("<th>✓</th>",'<th><input type="checkbox" id="pickAll"'+(all?" checked":"")+"></th>"):'<div class="erp-empty">No party.</div>';
+      el("sSel").textContent=picked.size+" selected";
+    }
+    async function setDays(ids,days){
+      if(!ids.length){await alert("Please tick at least one party.");return false}
+      const r=await client.rpc("lwb_set_party_order_days",{p_customer_ids:ids,p_days:days});
+      if(r.error){await alert("Could not save: "+setupMsg(r.error.message));return false}
+      ids.forEach(id=>{const x=setupRows.find(p=>p.customer_id===id);if(x)x.every=days});
+      return true;
+    }
+
+    function render(){tabs();if(tab==="list")drawList()}
+    async function openTab(t){
+      tab=t;history.replaceState(null,"",t==="list"?location.pathname:"#"+t);render();
+      if(t==="report")await loadReport();
+      if(t==="setup")await loadSetup();
+    }
+
+    (async()=>{
+      me=await S.start(["admin","manager","sales"]);if(!me)return;
+      head=["admin","manager"].includes(me.role);
+      el("smBox").hidden=!head;el("rSmBox").hidden=!head;
+      el("rFrom").value=today();el("rTo").value=today();
+      el("rRes").innerHTML='<option value="">All</option>'+RESULTS.map(r=>'<option value="'+r[0]+'">'+esc(r[2])+"</option>").join("");
+      if(!head)el("sub").textContent="Your parties that have not ordered in their set days. Call, talk, and save what the party said.";
+      document.addEventListener("click",async e=>{
+        const tb=e.target.closest("[data-tab]");if(tb){openTab(tb.dataset.tab);return}
+        const c=e.target.closest(".pc-card");if(!c)return;
+        const x=rows.find(r=>r.customer_id===c.dataset.id);if(!x)return;
+        // Tapping Call opens the phone dialer; the result form opens here for when he comes back.
+        if(e.target.closest("[data-call]")){if(openId!==x.customer_id){openId=x.customer_id;form={};setTimeout(drawList,300)}return}
+        const a=e.target.closest("[data-act]");
+        if(a&&a.dataset.act==="result"){openId=openId===x.customer_id?null:x.customer_id;form={};drawList();return}
+        if(a&&a.dataset.act==="save"){save(x);return}
+        const keep=()=>{if(el("f_note"))form.note=el("f_note").value;if(el("f_next")&&el("f_next").value)form.next_date=el("f_next").value};
+        const o=e.target.closest("[data-res]");if(o){keep();if(form.result!==o.dataset.res){form.reason=null}form.result=o.dataset.res;drawList();return}
+        const rs=e.target.closest("[data-reason]");if(rs){keep();form.reason=form.reason===rs.dataset.reason?null:rs.dataset.reason;drawList();return}
+        const nx=e.target.closest("[data-next]");if(nx){keep();form.next_date=nx.dataset.next;drawList()}
+      });
+      el("q").addEventListener("input",drawList);el("sm").addEventListener("change",drawList);
+      ["rFrom","rTo"].forEach(i=>el(i).addEventListener("change",loadReport));
+      ["rSm","rRes"].forEach(i=>el(i).addEventListener("change",drawReport));
+      el("rExcel").onclick=reportExcel;
+      el("refresh").onclick=()=>tab==="list"?loadList():tab==="report"?loadReport():loadSetup();
+      ["sQ","sSm","sShow"].forEach(i=>el(i).addEventListener(i==="sQ"?"input":"change",drawSetup));
+      el("sBox").addEventListener("change",async e=>{
+        if(e.target.id==="pickAll"){setupList().forEach(x=>e.target.checked?picked.add(x.customer_id):picked.delete(x.customer_id));drawSetup();return}
+        if(e.target.dataset.pick){e.target.checked?picked.add(e.target.dataset.pick):picked.delete(e.target.dataset.pick);el("sSel").textContent=picked.size+" selected";return}
+        if(e.target.dataset.days){
+          const v=e.target.value.trim(),n=v===""?null:Math.round(Number(v));
+          if(n!=null&&!(n>=1&&n<=90)){await alert("Days must be 1 to 90.");drawSetup();return}
+          if(await setDays([e.target.dataset.days],n)){ERPShell.toast&&ERPShell.toast(n==null?"Removed from call list.":"Saved: order every "+n+" days.","success");drawSetup()}
+        }
+      });
+      el("sApply").onclick=async()=>{
+        const n=Math.round(Number(el("sDays").value));
+        if(!(n>=1&&n<=90)){await alert("Please enter days (1 to 90).");return}
+        if(await setDays([...picked],n)){ERPShell.toast&&ERPShell.toast(picked.size+" parties: order every "+n+" days.","success");picked.clear();drawSetup()}
+      };
+      el("sClear").onclick=async()=>{
+        if(!picked.size){await alert("Please tick at least one party.");return}
+        if(!await confirm("Remove "+picked.size+" parties from the call list?"))return;
+        if(await setDays([...picked],null)){picked.clear();drawSetup()}
+      };
+      el("loading").hidden=true;el("page").hidden=false;
+      const start=location.hash.slice(1);
+      tab=["report","setup"].includes(start)&&(head||start==="report")?start:"list";
+      render();
+      await loadList();
+      if(tab!=="list")await openTab(tab);
+      setInterval(()=>{if(!document.hidden&&tab==="list"&&!openId)loadList()},120000);
+    })();
+  </script>
+</body>
+</html>

@@ -319,3 +319,11 @@
 - `robots.txt`, `sitemap.xml`, `og-image.png` (1200×630 social preview), `favicon.ico` / `favicon-32.png`. Absolute URLs use `luxury-wrist-brand.pages.dev`: change them in `index.html` (canonical, og:url, og:image), `robots.txt` and `sitemap.xml` when a custom domain is added.
 - Analytics: turn on Cloudflare Web Analytics in the Pages project (no code, no cookies, so no cookie banner needed).
 - Homepage "WhatsApp Us" = office 9274382694; "Call Us" list (office, Coca-Cola sales Harsh / Vishal, Rajnigandha sales Vinas, accounts Yogesh) uses tel: links.
+
+## Party Call List: parties with no order in time (29 Oct 2026)
+
+- SQL: `lwb_party_call_list_setup.sql` (after the sales team SQL; check = 4 rows, all true). Column `lwb_customer_master.order_every_days` (1-90, blank = not on the list), table `lwb_party_calls` (read: Admin / Sales Head all, salesman own calls + calls on his parties; writes only via `lwb_party_call_save(p)`).
+- `party-calls.html` (menu Sales, roles admin / manager / sales). Call List: parties whose last order (not cancelled) is N+ days old or never; salesman = his assigned parties, Admin / Sales Head = all (filter by salesman, "Office" = no salesman). Each card: 📞 Call (`tel:+91`), WhatsApp, + PO, Save call result: Order taken / Will order later (date 1-30 days, hidden until then) / No order (reason required) / Not reachable.
+- A party called today moves to "Called today" and comes back the next day if still no order; a new PO removes it.
+- Call Report (Admin / Sales Head; salesman sees "My Calls"): date range, caller, result, "Why parties did not order" counts, Excel. Set Order Days (Admin / Sales Head): per party box or tick many + "Set for selected" (`lwb_set_party_order_days`).
+- Dashboard Verify / Quick Actions: "Call parties: no order in time" with count (`lwb_party_call_due_count`). No bells; orders, stock, ledger and Tally are not changed.
