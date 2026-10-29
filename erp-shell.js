@@ -337,6 +337,7 @@
   function bottomNav(page,role){
     document.querySelector(".erp-bnav")?.remove();
     document.body.classList.remove("has-bnav");
+    if(page==="dashboard.html")return; // Dashboard uses its menu and search, without a fixed shortcut bar.
     const presets={
       sales:[["Home","dashboard.html","home"],["New Order","order-entry.html","cart"],["My Orders","my-sales.html#orders","box"],["My Sales","my-sales.html","chart"]],
       admin:[["Home","dashboard.html","home"],["New Order","order-entry.html","cart"],["Approve","warehouse-orders.html","check"],["Stock","inventory.html","stock"]],

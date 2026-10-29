@@ -336,3 +336,11 @@
 - `erp-operations-notifications.js`: removed automatic notification dialogs and repeated reminders. All notification rows, unread counts, routes and manual read controls remain in the bell. Explicit action errors / confirmations remain. Removed the shared observer that duplicated inline save successes as toasts.
 - `_headers` revalidates the shared UI assets and PO Entry after deploy.
 - Verification: JS syntax and diff checks; local browser mock (no production calls / writes) at 390px and 1280px for Admin / SALES PO entry, PO Approval, Dashboard, Inventory and warehouse Loading. PO entry: 40×640 + 50×520 = ₹51,600; 90 cases / 1,810 kg. PALLET: 1 pallet = 100 cases, ₹64,000 / 1,900 kg with the mock SKU. Sidebar stock search and quiet notification count verified. Other module checks are layout-shell checks, not a full live workflow verification. Real-device login / populated business data should still be checked by staff.
+
+
+## Dashboard card layout correction (29 Oct 2026)
+
+- User screenshot showed KPI groups squeezed side by side, overlapping labels / sales amounts, and the search icon over its placeholder. `dashboard.html` now uses a grid with individual metric cards (groups are display:contents), slate / green / amber / blue / red accents, wrapping labels and separate footer text; very long money values span the phone row. Search restores 40px left padding. Compact name + role badge replaces the long role explanation.
+- Removed the Dashboard Quick Access section and its renderer. `erp-shell.js` does not create the fixed bottom shortcut bar on Dashboard, including after page-access refresh. Other pages keep their quick menus; Pending Work, module search and the side menu remain.
+- `_headers`: Dashboard HTML revalidation added.
+- Verification used actual Dashboard startup/rendering with a local read-only Supabase mock and the exact `dashboard.html` filename (so production page-specific selectors apply). Populated Admin / Manager fixtures checked at 320 / 390 / 1280 CSS-pixel frames, including ₹1,64,970 and ₹1,23,45,67,890. No metric overflow / text overlap / page horizontal overflow; no Dashboard bottom nav or Quick Access list; zero mock writes and no JS errors.
