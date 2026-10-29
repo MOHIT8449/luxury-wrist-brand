@@ -1,7 +1,8 @@
 # Builds the LWB ERP Android app (APK).
 # - Every PR / push that touches the app: APK is attached to the run (Artifacts).
-# - Push to main with the signing key saved as secrets: the APK is also put on
-#   the "android-app" release, so staff always download the latest from one link:
+# - Push to main with the signing key saved as secrets: the APK (phones) and the
+#   AAB (Google Play upload) are also put on
+#   the "android-app" release, so staff always download the latest APK from one link:
 #   https://github.com/MOHIT8449/luxury-wrist-brand/releases/download/android-app/lwb-erp.apk
 # Secrets (Settings > Secrets and variables > Actions):
 #   LWB_KEYSTORE_BASE64   the .jks signing key, base64
@@ -58,8 +59,9 @@ jobs:
         env:
           LWB_KEYSTORE_PASSWORD: ${{ secrets.LWB_KEYSTORE_PASSWORD }}
         run: |
-          ./gradlew --no-daemon assembleRelease
+          ./gradlew --no-daemon assembleRelease bundleRelease
           cp app/build/outputs/apk/release/app-release.apk "$RUNNER_TEMP/lwb-erp.apk"
+          cp app/build/outputs/bundle/release/app-release.aab "$RUNNER_TEMP/lwb-erp.aab"
 
       - name: Build debug APK
         if: steps.key.outputs.signed != 'true'
@@ -70,7 +72,10 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: lwb-erp-apk
-          path: ${{ runner.temp }}/lwb-erp.apk
+          path: |
+            ${{ runner.temp }}/lwb-erp.apk
+            ${{ runner.temp }}/lwb-erp.aab
+          if-no-files-found: ignore
 
       - name: Publish to the android-app release
         if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && steps.key.outputs.signed == 'true'
@@ -80,4 +85,4 @@ jobs:
           gh release view android-app >/dev/null 2>&1 || \
             gh release create android-app --title "LWB ERP Android app" \
               --notes "Install lwb-erp.apk on the phone. The app opens the live ERP, so website updates need no new APK."
-          gh release upload android-app "$RUNNER_TEMP/lwb-erp.apk" --clobber
+          gh release upload android-app "$RUNNER_TEMP/lwb-erp.apk" "$RUNNER_TEMP/lwb-erp.aab" --clobber

@@ -21,3 +21,9 @@ A new APK is only needed when this `android/` folder changes.
 The SHA-256 of the release key is in `/.well-known/assetlinks.json` on the
 website. That file is what lets the app hide the address bar. Keep the .jks
 safe: every later APK must be signed with the same key to update the app.
+
+## Google Play
+- Upload `lwb-erp.aab` from the `android-app` release (same link as above, ending in `.aab`).
+- Play re-signs the app with its own key ("Play App Signing"). Copy that SHA-256
+  from Play Console > Test and release > App integrity and add it to
+  `/.well-known/assetlinks.json` next to the upload key, or the Play version shows an address bar.
