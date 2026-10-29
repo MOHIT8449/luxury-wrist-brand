@@ -179,6 +179,14 @@
   document.addEventListener("click",e=>{
    if(!wrap.contains(e.target)){panel.hidden=true;bell.setAttribute("aria-expanded","false")}
   });
+  // Permission / test controls are loaded only once inside the notification panel.
+  (async()=>{
+   try{
+    if(!window.LWBPhonePush)await new Promise((ok,bad)=>{const script=document.createElement('script');script.src='erp-push.js';script.onload=ok;script.onerror=bad;document.head.append(script)});
+    const actualRole=role||document.querySelector('.erp-user .who small')?.textContent?.toLowerCase();
+    await window.LWBPhonePush.init({db,user,role:actualRole,mount:panel});
+   }catch(e){}
+  })();
   reloadData();
   setInterval(()=>{if(!document.hidden)reloadData()},30000);
   // Instant: a new row updates the bell count without interrupting the current task.
