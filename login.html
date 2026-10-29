@@ -285,7 +285,13 @@ async function finishAuthorizedLogin(user){
   // WhatsApp OTP to the Login Mobile. Until WhatsApp is set up, or for a user with
   // no Login Mobile, the Authenticator app OTP is used instead.
   const r=await sendWhatsAppOtp();
-  if(r.fallback)return startOtp(user);
+  if(r.fallback){
+    await startOtp(user);
+    // Say why WhatsApp was skipped, so Admin can fix it.
+    showMessage(r.no_mobile?"WhatsApp OTP: is user ka Login Mobile saved nahi hai (Manage Users). Abhi Authenticator app ka code dalein."
+      :"WhatsApp OTP abhi chalu nahi hai ("+(r.error||"not set up")+"). Abhi Authenticator app ka code dalein.",true);
+    return;
+  }
   showWaForm(r);
 }
 
@@ -298,7 +304,7 @@ async function callWaOtp(body){
     let info={};try{info=await error.context.json()}catch(e){}
     const status=error.context?.status||0;
     // Function not deployed yet / network block: behave as "not set up".
-    if(!status||status===404)return {error:error.message,not_configured:true};
+    if(!status||status===404)return {error:status===404?"function login-whatsapp-otp not found":error.message,not_configured:true};
     return {error:info.error||error.message,...info};
   }catch(e){return {error:e.message,not_configured:true}}
 }
