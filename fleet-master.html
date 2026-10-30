@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Vehicle &amp; Driver Master | Luxury Wrist Brand ERP</title>
+  <title>Vehicle, Driver &amp; Employee Master | Luxury Wrist Brand ERP</title>
   <script src="erp-date.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <link rel="stylesheet" href="erp-shell.css">
@@ -54,6 +54,7 @@
     <div class="erp-pills" id="tabs">
       <a class="erp-pill" data-tab="vehicles" href="#vehicles">Vehicle Master</a>
       <a class="erp-pill" data-tab="drivers" href="#drivers">Driver Master</a>
+      <a class="erp-pill" data-tab="employees" href="#employees" id="empPill" hidden>Employee Master</a>
     </div>
     <div id="setupMsg" class="erp-card" style="padding:16px;margin-bottom:14px;color:#9b2020;background:#ffebeb" hidden></div>
 
@@ -101,6 +102,7 @@
     const status=v=>{if(blank(v))return null;const s=String(v).trim().toLowerCase();return /^(active|yes|haan|y|1|true)$/.test(s)?true:/^(inactive|no|nahi|n|0|false)$/.test(s)?false:undefined};
 
     const VTYPES=["Tempo","Pickup","Chhota Hathi","407","Eicher","Truck","Container","Other"];
+    const WORKS=["Godown helper","Loader","Packer","Picker","Supervisor","Driver","Office","Security","Other"];
     const DOCS=[["insurance_expiry","Insurance"],["puc_expiry","PUC"],["fitness_expiry","Fitness"],["permit_expiry","Permit"]];
     const KIND={
       vehicles:{table:"lwb_vehicles",title:"Vehicle Master",one:"Vehicle",
@@ -127,13 +129,27 @@
           {k:"transporter_name",l:"Transporter Name"},
           {k:"is_active",l:"Status",opts:[["true","Active"],["false","Inactive"]]},
           {k:"address",l:"Address",wide:1},
+          {k:"note",l:"Note",wide:1}]},
+      employees:{rpc:1,title:"Employee Master",one:"Employee",
+        sub:"Godown employees. Every employee gets an Employee ID. In Accounts, Cash Out (upad / salary) is paid to this ID and goes in the employee's ledger. In one month, upad can not go over the monthly salary (only Admin can allow more).",
+        fields:[
+          {k:"emp_code",l:"Employee ID",ph:"Blank = next ID"},
+          {k:"name",l:"Employee Name *"},
+          {k:"mobile",l:"Mobile",type:"tel",ph:"10 digits"},
+          {k:"designation",l:"Work / Post",list:WORKS},
+          {k:"monthly_salary",l:"Monthly Salary ₹ *",type:"number"},
+          {k:"joining_date",l:"Joining Date",dmy:1},
+          {k:"is_active",l:"Status",opts:[["true","Working"],["false","Left"]]},
           {k:"note",l:"Note",wide:1}]}
     };
 
-    let me=null,tab="vehicles",data={vehicles:[],drivers:[]},editing=null,busy=false,loginPhones=new Set(),missing=false;
+    let me=null,tab="vehicles",data={vehicles:[],drivers:[],employees:[]},empNext="",empMonth="",empErr="",editing=null,busy=false,loginPhones=new Set(),missing=false;
     // Admin / Manager edit both lists; Godown (warehouse) can add / edit vehicles, not delete them.
+    // Employee Master: Admin / Manager / Godown add and edit; nobody deletes (mark Left).
     const head=()=>me&&["admin","manager"].includes(me.role);
-    const can=()=>head()||(!!me&&tab==="vehicles"&&me.role==="warehouse");
+    const empRole=()=>!!me&&["admin","manager","warehouse"].includes(me.role);
+    const can=()=>head()||(!!me&&tab==="vehicles"&&me.role==="warehouse")||(tab==="employees"&&empRole());
+    const rs=v=>"₹"+Math.round(Number(v)||0).toLocaleString("en-IN");
     const vehicleById=id=>data.vehicles.find(v=>v.id===id);
 
     async function start(){
@@ -145,10 +161,13 @@
       return {role,realRole,name:p.full_name||session.user.email};
     }
     async function load(){
-      const [v,d,l]=await Promise.all([
+      const [v,d,l,e]=await Promise.all([
         client.from("lwb_vehicles").select("*").order("vehicle_no"),
         client.from("lwb_drivers").select("*").order("driver_name"),
-        head()?client.rpc("lwb_sales_head_active_drivers"):Promise.resolve({data:[]})]);
+        head()?client.rpc("lwb_sales_head_active_drivers"):Promise.resolve({data:[]}),
+        empRole()?client.rpc("lwb_emp_list"):Promise.resolve({data:null})]);
+      empErr=e.error?"Employee Master is not set up in Supabase yet ("+(e.error.message||"")+").":"";
+      if(e.data){data.employees=e.data.rows||[];empNext=e.data.next_code||"";empMonth=e.data.month||""}
       missing=!!(v.error||d.error);
       el("setupMsg").hidden=!missing;
       if(missing)el("setupMsg").textContent="The Vehicle / Driver tables are not set up in Supabase yet. Run lwb_fleet_master_setup.sql once in the Supabase SQL Editor, then refresh this page. ("+((v.error||d.error).message||"")+")";
@@ -161,6 +180,7 @@
       let h;
       if(f.opts)h='<select id="'+id+'">'+f.opts.map(([v,t])=>'<option value="'+v+'">'+esc(t)+"</option>").join("")+"</select>";
       else if(f.vehicle)h='<select id="'+id+'"><option value="">— None —</option>'+data.vehicles.filter(v=>v.is_active||(editing&&editing.default_vehicle_id===v.id)).map(v=>'<option value="'+v.id+'">'+esc(v.vehicle_no)+(v.vehicle_type?" · "+esc(v.vehicle_type):"")+"</option>").join("")+"</select>";
+      else if(f.dmy)h='<input id="'+id+'" type="text" inputmode="numeric" placeholder="DD/MM/YYYY" maxlength="10">';
       else if(f.k==="note"||f.k==="address")h='<textarea id="'+id+'" maxlength="500"></textarea>';
       else h='<input id="'+id+'" type="'+(f.type||"text")+'"'+(f.ph?' placeholder="'+esc(f.ph)+'"':"")+(f.list?' list="'+id+'_l"':"")+(f.type==="number"?' step="any" min="0"':"")+' maxlength="150">'+(f.list?'<datalist id="'+id+'_l">'+f.list.map(x=>'<option value="'+esc(x)+'">').join("")+"</datalist>":"");
       return "<div"+cls+'><label for="'+id+'">'+esc(f.l)+"</label>"+h+"</div>";
@@ -168,18 +188,22 @@
     function fillForm(){
       const K=KIND[tab];
       el("form").innerHTML=K.fields.map(input).join("");
-      for(const f of K.fields){const x=el("f_"+f.k);const v=editing?editing[f.k]:(f.k==="is_active"?true:f.k==="ownership"?"OWN":"");x.value=v==null?"":String(v);x.disabled=!can()||busy}
-      el("formTitle").textContent=(editing?"Edit ":"New ")+K.one+(editing?": "+(editing.vehicle_no||editing.driver_name):"");
-      el("save").disabled=el("clear").disabled=!can()||busy||missing;
-      el("formHint").textContent=!can()?(tab==="vehicles"?"Only Admin / Manager / Godown can make changes.":"Only Admin / Manager can make changes.")+" You can view the list.":editing?"Make your changes, then click Save.":"";
+      for(const f of K.fields){const x=el("f_"+f.k);let v=editing?editing[f.k]:(f.k==="is_active"?true:f.k==="ownership"?"OWN":"");if(f.dmy)v=showDate(v)||"";x.value=v==null?"":String(v);x.disabled=!can()||busy}
+      if(tab==="employees"&&!editing&&empNext)el("f_emp_code").placeholder="Blank = "+empNext;
+      el("formTitle").textContent=(editing?"Edit ":"New ")+K.one+(editing?": "+(editing.vehicle_no||editing.driver_name||(editing.emp_code+" · "+editing.name)):"");
+      const off=K.rpc?!!empErr:missing;
+      el("save").disabled=el("clear").disabled=!can()||busy||off;
+      el("formHint").textContent=!can()?(tab==="drivers"?"Only Admin / Manager can make changes.":"Only Admin / Manager / Godown can make changes.")+" You can view the list.":editing?"Make your changes, then click Save.":"";
     }
     function readForm(){
       const o={};
       for(const f of KIND[tab].fields){let v=el("f_"+f.k).value.trim();
         if(f.k==="is_active")o[f.k]=v==="true";
+        else if(f.dmy)o[f.k]=v===""?null:toDate(v);
         else if(f.type==="number")o[f.k]=v===""?null:Number(v);
         else o[f.k]=v===""?null:v}
       if(tab==="vehicles"){o.vehicle_no=plate(o.vehicle_no);if(o.owner_mobile)o.owner_mobile=phone(o.owner_mobile);if(o.vehicle_type)o.vehicle_type=o.vehicle_type.slice(0,60)}
+      else if(tab==="employees"){if(o.mobile)o.mobile=phone(o.mobile);if(o.emp_code)o.emp_code=o.emp_code.toUpperCase().replace(/\s+/g,"");if(o.name)o.name=o.name.replace(/\s+/g," ")}
       else{o.mobile=phone(o.mobile);if(o.alt_mobile)o.alt_mobile=phone(o.alt_mobile);if(o.license_no)o.license_no=o.license_no.toUpperCase()}
       return o;
     }
@@ -190,6 +214,14 @@
         if(o.owner_mobile&&!okPhone(o.owner_mobile))return "Owner mobile must be 10 digits, starting with 6-9.";
         if(o.capacity_kg!=null&&!(o.capacity_kg>=0))return "Enter a valid capacity.";
         const d=data.vehicles.find(v=>v.vehicle_no===o.vehicle_no&&v.id!==id);if(d)return "This vehicle already exists: "+d.vehicle_no;
+      }else if(tab==="employees"){
+        if(!o.name||o.name.length<2)return "Enter the employee name.";
+        if(o.emp_code&&!/^[A-Z0-9][A-Z0-9-]{1,11}$/.test(o.emp_code))return "Employee ID: 2 to 12 letters / numbers, e.g. EMP001.";
+        if(o.mobile&&!okPhone(o.mobile))return "Mobile must be 10 digits, starting with 6-9.";
+        if(!(o.monthly_salary>=0)||o.monthly_salary==null)return "Enter the monthly salary (0 if none).";
+        if(o.joining_date===undefined)return "Joining date: write it as DD/MM/YYYY.";
+        const d=data.employees.find(v=>o.emp_code&&v.emp_code===o.emp_code&&v.id!==id);if(d)return "Employee ID "+o.emp_code+" is already given to "+d.name+".";
+        const n=data.employees.find(v=>v.name.toLowerCase()===o.name.toLowerCase()&&v.id!==id);if(n)return "An employee with this name already exists: "+n.emp_code+" · "+n.name+". Edit that one, or add a surname.";
       }else{
         if(!o.driver_name)return "Enter the driver name.";
         if(!okPhone(o.mobile||""))return "Driver mobile must be 10 digits, starting with 6-9.";
@@ -202,12 +234,13 @@
       if(!can()||busy)return;const o=readForm(),bad=check(o,editing&&editing.id);
       if(bad){ERPShell.toast(bad,"error");return}
       const K=KIND[tab];
-      if(!await confirm((editing?"UPDATE ":"ADD ")+K.one+"?\n\n"+(o.vehicle_no||o.driver_name+" · "+o.mobile)))return;
+      if(!await confirm((editing?"UPDATE ":"ADD ")+K.one+"?\n\n"+(K.rpc?(o.emp_code||(editing?editing.emp_code:"New ID "+empNext))+" · "+o.name+" · "+rs(o.monthly_salary)+"/month":o.vehicle_no||o.driver_name+" · "+o.mobile)))return;
       busy=true;fillForm();
       try{
-        const r=editing?await client.from(K.table).update(o).eq("id",editing.id):await client.from(K.table).insert(o);
-        if(r.error)throw r.error;
-        ERPShell.toast(K.one+" saved.","success");editing=null;await load();
+        let msg=K.one+" saved.";
+        if(K.rpc){const r=await client.rpc("lwb_emp_save",{p:{...o,id:editing?editing.id:null}});if(r.error)throw r.error;msg="Saved: "+r.data.emp_code+" · "+o.name}
+        else{const r=editing?await client.from(K.table).update(o).eq("id",editing.id):await client.from(K.table).insert(o);if(r.error)throw r.error}
+        ERPShell.toast(msg,"success");editing=null;await load();
       }catch(e){ERPShell.toast("Save failed: "+(e.message||e),"error")}
       busy=false;render();
     }
@@ -226,11 +259,16 @@
     function renderList(){
       const q=el("search").value.trim().toLowerCase().split(/\s+/).filter(Boolean),f=el("filter").value;
       const rows=data[tab].filter(r=>(f==="all"||(f==="active")===!!r.is_active)&&q.every(w=>JSON.stringify(r).toLowerCase().includes(w)));
-      const act=r=>(can()?'<button type="button" data-edit="'+r.id+'">Edit</button>':"")+(head()?'<button type="button" class="del" data-del="'+r.id+'">Delete</button>':"");
+      const act=r=>(can()?'<button type="button" data-edit="'+r.id+'">Edit</button>':"")+(head()&&tab!=="employees"?'<button type="button" class="del" data-del="'+r.id+'">Delete</button>':"");
       if(tab==="vehicles"){
         el("head").innerHTML="<tr><th>#</th><th>Vehicle No</th><th>Type / Capacity</th><th>Ownership</th><th>Documents</th><th>Driver</th><th>Status</th><th></th></tr>";
         el("list").innerHTML=rows.map((r,i)=>{const drv=data.drivers.filter(d=>d.default_vehicle_id===r.id&&d.is_active).map(d=>esc(d.driver_name)).join(", ");
           return '<tr class="'+(r.is_active?"":"off")+'"><td>'+(i+1)+"</td><td><b>"+esc(r.vehicle_no)+"</b>"+(r.note?"<small>"+esc(r.note)+"</small>":"")+"</td><td>"+esc(r.vehicle_type||"-")+(r.capacity_kg!=null?"<small>"+esc(r.capacity_kg)+" KG</small>":"")+"</td><td>"+(r.ownership==="TRANSPORTER"?"Transporter":"Own")+(r.transporter_name?"<small>"+esc(r.transporter_name)+(r.owner_mobile?" · "+esc(r.owner_mobile):"")+"</small>":"")+"</td><td style='white-space:normal;min-width:180px'>"+expiryTags(DOCS.map(([k,l])=>[r[k],l]))+"</td><td>"+(drv||"-")+"</td><td>"+(r.is_active?'<span class="tagx ok">Active</span>':'<span class="tagx bad">Inactive</span>')+"</td><td>"+act(r)+"</td></tr>"}).join("")||'<tr><td colspan="8" class="erp-empty">No vehicles yet. Add one using the form above or Excel.</td></tr>';
+      }else if(tab==="employees"){
+        const mo=empMonth?new Date(empMonth+"T12:00:00Z").toLocaleDateString("en-IN",{month:"short",timeZone:"UTC"}):"This month";
+        el("head").innerHTML="<tr><th>Employee ID</th><th>Name</th><th>Mobile</th><th>Salary / month</th><th>Upad in "+esc(mo)+"</th><th>Salary paid in "+esc(mo)+"</th><th>Joined</th><th>Status</th><th></th></tr>";
+        el("list").innerHTML=rows.map(r=>{const cap=Number(r.month_cap)||0,up=Math.max(0,Number(r.month_upad)||0),left=cap-up;
+          return '<tr class="'+(r.is_active?"":"off")+'"><td><b>'+esc(r.emp_code||"-")+"</b></td><td><b>"+esc(r.name)+"</b><small>"+esc(r.designation||"")+(r.note?(r.designation?" · ":"")+esc(r.note):"")+"</small></td><td>"+esc(r.mobile||"-")+"</td><td>"+(Number(r.monthly_salary)?rs(r.monthly_salary):"-")+(cap&&cap!==Number(r.monthly_salary)?"<small>"+esc(mo)+": "+rs(cap)+"</small>":"")+"</td><td>"+rs(up)+(cap?(left<-0.5?'<small><span class="tagx bad">'+rs(-left)+" over</span></small>":"<small>Left "+rs(left)+"</small>"):"")+"</td><td>"+rs(r.month_paid)+"</td><td>"+(showDate(r.joining_date)||"-")+"</td><td>"+(r.is_active?'<span class="tagx ok">Working</span>':'<span class="tagx bad">Left</span>')+"</td><td>"+act(r)+"</td></tr>"}).join("")||'<tr><td colspan="9" class="erp-empty">'+(empErr?esc(empErr):"No employees yet. Add one using the form above or Excel.")+"</td></tr>";
       }else{
         el("head").innerHTML="<tr><th>#</th><th>Driver</th><th>Mobile</th><th>License</th><th>Default Vehicle</th><th>Transporter</th><th>ERP Login</th><th>Status</th><th></th></tr>";
         el("list").innerHTML=rows.map((r,i)=>{const v=vehicleById(r.default_vehicle_id);
@@ -242,6 +280,7 @@
       const K=KIND[tab];
       el("pageTitle").textContent=K.title;el("pageSub").textContent=K.sub;document.title=K.title+" | Luxury Wrist Brand ERP";
       document.querySelectorAll("#tabs .erp-pill").forEach(a=>a.classList.toggle("active",a.dataset.tab===tab));
+      el("empPill").hidden=!empRole();el("setupMsg").hidden=tab==="employees"?!empErr:!missing;if(tab==="employees"&&empErr)el("setupMsg").textContent=empErr;
       const crumb=document.querySelector(".erp-crumb b");if(crumb)crumb.textContent=K.title;
       document.querySelectorAll(".erp-link").forEach(a=>a.classList.toggle("active",a.getAttribute("href")==="fleet-master.html#"+tab));
       fillForm();renderList();
@@ -267,14 +306,55 @@
         {h:"Transporter Name",k:"transporter_name",sample:"",alias:["Transporter"]},
         {h:"Address",k:"address",sample:""},
         {h:"Status",k:"status",sample:"Active",note:"Active / Inactive"},
+        {h:"Note",k:"note",sample:""}],
+      employees:[{h:"Employee ID",k:"emp_code",sample:"",note:"Blank = the ERP gives the next ID",alias:["Emp ID","ID","Code"]},
+        {h:"Employee Name",k:"name",req:1,sample:"Ramesh Patel",alias:["Name","Employee"]},
+        {h:"Mobile",k:"mobile",sample:"9876543210",note:"10 digits"},
+        {h:"Work / Post",k:"designation",sample:"Loader",note:WORKS.join(", "),alias:["Work","Post","Designation"]},
+        {h:"Monthly Salary",k:"monthly_salary",sample:"15000",note:"Rupees per month",alias:["Salary"]},
+        {h:"Joining Date",k:"joining_date",sample:"",note:"Date: dd/mm/yyyy"},
+        {h:"Status",k:"status",sample:"Working",note:"Working / Left"},
         {h:"Note",k:"note",sample:""}]
     };
     function xlExport(){
+      if(tab==="employees")return data.employees.map(r=>({...r,status:r.is_active?"Working":"Left",joining_date:showDate(r.joining_date),monthly_salary:Number(r.monthly_salary)||0}));
       return data[tab].map(r=>{const o={...r,status:r.is_active?"Active":"Inactive"};
         for(const [k] of DOCS)o[k]=showDate(r[k]);o.license_expiry=showDate(r.license_expiry);
         if(tab==="drivers"){const v=vehicleById(r.default_vehicle_id);o.default_vehicle=v?v.vehicle_no:""}return o});
     }
+    function xlPlanEmp(rows){
+      const p={add:[],update:[],errors:[],same:0},seen=new Set(),cols=XL.employees.map(c=>c.k).filter(k=>k!=="status");
+      for(const r of rows){
+        const err=m=>p.errors.push("Row "+r._row+": "+m),o={};
+        for(const k of cols){const v=r[k];if(!blank(v))o[k]=typeof v==="string"?v.trim():v}
+        if(o.emp_code)o.emp_code=String(o.emp_code).toUpperCase().replace(/\s+/g,"");
+        if(o.name)o.name=String(o.name).replace(/\s+/g," ");
+        if("mobile" in o)o.mobile=phone(o.mobile);
+        if("monthly_salary" in o)o.monthly_salary=LWBExcel.num(o.monthly_salary);
+        if("joining_date" in o){const d=toDate(o.joining_date);if(d===undefined){err("Joining date is not valid: "+o.joining_date);continue}o.joining_date=d}
+        const st=blank(r.status)?null:/^(working|active|yes|y|1|true)$/i.test(String(r.status).trim())?true:/^(left|inactive|no|n|0|false)$/i.test(String(r.status).trim())?false:undefined;
+        if(st===undefined){err("Status must be Working or Left");continue}if(st!=null)o.is_active=st;
+        const old=data.employees.find(x=>o.emp_code?x.emp_code===o.emp_code:o.name&&x.name.toLowerCase()===o.name.toLowerCase());
+        const key=old?"id"+old.id:o.emp_code||String(o.name||"").toLowerCase();
+        if(seen.has(key)){err("This employee appears twice in the file");continue}seen.add(key);
+        const full=old?{...old,...o}:{is_active:true,monthly_salary:0,...o};
+        const msg=check(full,old&&old.id);if(msg){err(msg);continue}
+        if(!old){p.add.push(full);continue}
+        const ch=Object.keys(o).some(k=>String(o[k]??"")!==String(old[k]??""));
+        if(ch)p.update.push({id:old.id,row:full});else p.same++;
+      }
+      return p;
+    }
+    async function xlApplyEmp(p,progress){
+      const all=[...p.add.map(r=>({...r,id:null})),...p.update.map(u=>({...u.row,id:u.id}))];let n=0;
+      for(const r of all){progress("Saving "+(++n)+" / "+all.length);
+        const x=await client.rpc("lwb_emp_save",{p:{id:r.id,emp_code:r.emp_code||null,name:r.name,mobile:r.mobile||null,designation:r.designation||null,monthly_salary:r.monthly_salary||0,joining_date:r.joining_date||null,note:r.note||null,is_active:r.is_active!==false}});
+        if(x.error)throw Error("Stopped at "+(r.emp_code||r.name)+": "+x.error.message)}
+      await load();render();
+      return p.add.length+" added, "+p.update.length+" updated.";
+    }
     function xlPlan(rows){
+      if(tab==="employees")return xlPlanEmp(rows);
       const p={add:[],update:[],errors:[],same:0},seen=new Set(),dateKeys=tab==="vehicles"?DOCS.map(d=>d[0]):["license_expiry"];
       for(const r of rows){
         const o={},err=m=>p.errors.push("Row "+r._row+": "+m);let bad=false;
@@ -307,6 +387,7 @@
       return p;
     }
     async function xlApply(p,progress){
+      if(tab==="employees")return xlApplyEmp(p,progress);
       const T=KIND[tab].table,cols=KIND[tab].fields.map(f=>f.k);
       if(p.add.length){progress("Saving "+p.add.length+" new records...");
         const rows=p.add.map(r=>Object.fromEntries(cols.filter(k=>r[k]!==undefined).map(k=>[k,r[k]])));
@@ -318,13 +399,13 @@
     let xlBox=null;
     function mountXl(){
       if(xlBox)xlBox.remove();
-      xlBox=LWBExcel.panel({mount:el("xlPanel"),file:KIND[tab].title.replace(" ","-"),columns:XL[tab],exportRows:xlExport,plan:xlPlan,apply:xlApply,canImport:()=>can()&&!missing});
+      xlBox=LWBExcel.panel({mount:el("xlPanel"),file:KIND[tab].title.replace(" ","-"),columns:XL[tab],exportRows:xlExport,plan:xlPlan,apply:xlApply,canImport:()=>can()&&(tab==="employees"?!empErr:!missing)});
     }
 
-    function setTab(){const t=location.hash.replace("#","");tab=KIND[t]?t:"vehicles";editing=null;mountXl();render()}
+    function setTab(){const t=location.hash.replace("#","");tab=KIND[t]&&(t!=="employees"||empRole())?t:"vehicles";editing=null;mountXl();render()}
     document.addEventListener("click",e=>{
       const t=e.target;
-      if(t.dataset.edit){editing=data[tab].find(x=>x.id===t.dataset.edit)||null;render();el("formCard").scrollIntoView({behavior:"smooth"});return}
+      if(t.dataset.edit){editing=data[tab].find(x=>String(x.id)===t.dataset.edit)||null;render();el("formCard").scrollIntoView({behavior:"smooth"});return}
       if(t.dataset.del){remove(t.dataset.del);return}
     });
     el("save").onclick=save;

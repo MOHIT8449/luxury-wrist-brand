@@ -187,6 +187,9 @@
     .stf .bal small{display:block;font-size:11.5px;font-weight:600}
     .stf .mo{display:grid;grid-template-columns:repeat(3,1fr);gap:4px;font-size:12.5px;color:#4b5763;background:#f6f7f9;border-radius:8px;padding:6px 8px}
     .stf .mo b{display:block;color:var(--erp-ink);font-size:14px}
+    .stf .cap{position:relative;height:22px;border-radius:6px;background:#eef6f0;overflow:hidden;font-size:12px;font-weight:700;color:#1d5c34}
+    .stf .cap i{position:absolute;inset:0 auto 0 0;background:#cfe9d7}.stf .cap span{position:relative;line-height:22px;padding-left:8px}
+    .stf .cap.over{background:#fdecee;color:#9b2020}.stf .cap.over i{background:#f6c9cf}
     .vh{display:grid;grid-template-columns:minmax(0,auto) 1fr auto;gap:5px 8px;align-items:center;font-size:13px;background:#f6f7f9;border-radius:8px;padding:7px 9px}
     .vh span{color:#3b4652;overflow-wrap:anywhere}.vh b{text-align:right;font-variant-numeric:tabular-nums}
     .vh i{display:block;height:8px;border-radius:4px;background:#e3e8ee;position:relative;overflow:hidden}
@@ -558,6 +561,9 @@
     const isStaffHead=id=>(X.staff_heads||[]).includes(Number(id));
     const headId=name=>((D.categories||[]).find(c=>c.kind==="OUT"&&c.name.toLowerCase()===name)||{}).id;
     const balText=b=>(b=r2(b))>0.5?"To pay "+rs(b):b<-0.5?"Upad with him "+rs(-b):"Nothing due";
+    // this month's upad against the salary (the server stops more; Admin can allow)
+    const capText=s=>{const cap=Number(s.month_cap)||0;if(!cap)return "";const up=Math.max(0,Number(s.month_upad_net)||0);
+      return " · this month upad "+rs(up)+" of "+rs(cap)+(up>cap+0.5?" (over)":", left "+rs(cap-up))};
     const monthName=iso=>new Date(iso.slice(0,7)+"-01T12:00:00Z").toLocaleDateString("en-IN",{month:"long",year:"numeric",timeZone:"UTC"});
     function renderStaff(){
       const mo=to.slice(0,7)+"-01",act=S.filter(x=>x.active),old=S.filter(x=>!x.active);
@@ -565,9 +571,11 @@
       el("tabBody").innerHTML='<div class="stf-head"><b>'+act.length+' staff · '+monthName(mo)+(act.length?' · '+balText(tot).replace("him","staff"):"")+'</b>'+
         '<button type="button" class="acx-btn pri" id="sAdd">+ Add staff</button><button type="button" class="acx-btn" id="sSal"'+(act.length?"":" disabled")+'>Salary of '+monthName(mo)+'</button></div>'+
         (S.length?'<div class="stf">'+[...act,...old].map(x=>{const b=r2(x.balance);
-          return '<div'+(x.active?"":' style="opacity:.55"')+'><div class="nm"><span><b>'+esc(x.name)+'</b><small>'+esc([x.designation,x.mobile].filter(Boolean).join(" · ")||"—")+' · '+rs(x.monthly_salary)+'/month'+(x.active?"":" · left")+'</small></span>'+
+          const cap=Number(x.month_cap)||0,up=Math.max(0,Number(x.month_upad_net)||0);
+          return '<div'+(x.active?"":' style="opacity:.55"')+'><div class="nm"><span><b>'+(x.emp_code?esc(x.emp_code)+' · ':"")+esc(x.name)+'</b><small>'+esc([x.designation,x.mobile].filter(Boolean).join(" · ")||"—")+' · '+rs(x.monthly_salary)+'/month'+(x.active?"":" · left")+'</small></span>'+
             '<span class="bal '+(b>0.5?"minus":b<-0.5?"neutral":"plus")+'">'+(Math.abs(b)<0.5?"✓ 0":rs(Math.abs(b)))+'<small>'+(b>0.5?"to pay":b<-0.5?"upad with him":"nothing due")+'</small></span></div>'+
             '<div class="mo"><span>Salary<b>'+(x.month_salary!=null?rs(x.month_salary):"—")+'</b></span><span>Paid<b>'+rs(x.month_paid)+'</b></span><span>Upad<b>'+rs(x.month_upad)+'</b></span></div>'+
+            (cap&&x.active?'<div class="cap'+(up>cap+0.5?" over":"")+'"><i style="width:'+Math.min(100,Math.round(up/cap*100))+'%"></i><span>'+(up>cap+0.5?"Upad "+rs(up-cap)+" over salary":"Upad left this month "+rs(cap-up))+'</span></div>':"")+
             '<div class="ac"><button type="button" class="acx-btn" data-led="'+x.id+'">Ledger</button>'+(x.active?'<button type="button" class="acx-btn grn" data-pay="'+x.id+'">Pay salary</button><button type="button" class="acx-btn red" data-upad="'+x.id+'">Give upad</button>':"")+'<button type="button" class="acx-btn" data-sedit="'+x.id+'">Edit</button></div></div>'}).join("")+'</div>'
           :'<div class="acx-empty">No staff yet. Add each staff once with the monthly salary; then pay salary / give upad from here and every staff gets a ledger.</div>')+
         '<p class="acx-note">Balance = old balance + salary of each month − salary paid − upad + upad returned. "Pay salary" and "Give upad" are Cash Out entries (they show in the day book too). Upad given back: Cash In → head "Staff advance return".</p>';
@@ -695,7 +703,7 @@
     }
     function editStaff(x){
       x=x||{active:true};const ob=Number(x.opening_balance||0);
-      sheet(x.id?"Edit staff":"Add staff",
+      sheet(x.id?"Edit staff"+(x.emp_code?" · "+x.emp_code:""):"Add staff",
         '<div class="f"><label for="sName">Name</label><input id="sName" type="text" maxlength="80" value="'+esc(x.name||"")+'"></div>'+
         '<div class="f2"><div class="f"><label for="sMob">Mobile</label><input id="sMob" type="text" inputmode="numeric" maxlength="12" value="'+esc(x.mobile||"")+'"></div>'+
         '<div class="f"><label for="sDes">Work / post</label><input id="sDes" type="text" maxlength="60" value="'+esc(x.designation||"")+'" placeholder="e.g. Loader, Driver, Office"></div></div>'+
@@ -788,7 +796,7 @@
     }
     function partyList(){
       const taken=new Set(),seen=new Set(),out=[];
-      for(const x of S.filter(x=>x.active)){seen.add(x.name.toLowerCase());out.push({t:"staff",id:x.id,name:x.name,sub:(x.designation?x.designation+" · ":"")+"Staff"})}
+      for(const x of S.filter(x=>x.active)){seen.add(x.name.toLowerCase());out.push({t:"staff",id:x.id,name:x.name,code:x.emp_code||"",sub:(x.designation?x.designation+" · ":"")+"Employee"})}
       for(const v of V){seen.add(v.no.toLowerCase());out.push({t:"vehicle",id:v.id,name:v.no,sub:[v.type,v.own==="TRANSPORTER"?v.transporter||"Transporter":""].filter(Boolean).concat("Vehicle").join(" · ")})}
       const dueOf=n=>{const p=PI&&PI.parties.get(LWBPartyPay.key(PI.parentOf(n)));return p&&(p.due>0.5||p.advance>0.5)?p:null};
       const pSub=n=>{const p=dueOf(n),m=PI?PI.parentOf(n):n;return (LWBPartyPay.key(m)!==LWBPartyPay.key(n)?"under "+m+" · ":"")+(p?LWBPartyPay.balText(p):"Party Master")};
@@ -866,7 +874,12 @@
             if(up.error)throw Error("Photo upload failed: "+up.error.message);
             p.photos.push(path);
           }
-          const id=await rpc("lwb_acc_add_entry3",{p});
+          let id;
+          try{id=await rpc("lwb_acc_add_entry4",{p})}
+          catch(e){const m=errText(e);if(!/^OVER_SALARY/.test(m))throw e;const t=m.replace(/^OVER_SALARY:\s*/,"");
+            if(!D.is_admin){await ERPShell.alert("⛔ More than the salary.\n\n"+t+"\n\nAsk Admin to save this entry.");return false}
+            if(!await ERPShell.confirm("More than the salary.\n\n"+t+"\n\nYou are Admin: save "+rs(amt)+" anyway?"))return false;
+            id=await rpc("lwb_acc_add_entry4",{p:{...p,over_salary:true}})}
           if(st.kind==="IN"&&st.mode==="CHEQUE"){
             // cheque date / bank / photo go to the cheque register; a failure here does not lose the entry
             try{const photos=[];
@@ -926,7 +939,7 @@
           box.closest(".acx-back")?box.closest(".acx-back").remove():null;document.body.style.overflow="";partyPay(p.party,amt,mode)};
       }
       function staffBal(){partyDue();const p=io&&isStaffHead(st.cat)?staffOf():null,s=p&&S.find(x=>x.id===p.id),v=!p&&!isStaffHead(st.cat)&&vehOf();
-        q("#eStaffBal").textContent=s?balText(s.balance)+" · salary "+rs(s.monthly_salary)+"/month":v?"🚚 Vehicle expense: shows in the Vehicles tab. Shop / driver name: write it in Remark.":""}
+        q("#eStaffBal").textContent=s?(s.emp_code?s.emp_code+" · ":"")+balText(s.balance)+" · salary "+rs(s.monthly_salary)+"/month"+(st.kind==="OUT"?capText(s):""):v?"🚚 Vehicle expense: shows in the Vehicles tab. Shop / driver name: write it in Remark.":""}
       // Party box: type a name or short code, pick from staff, Party Master and names used before
       let hi=0,shown=[];
       function drawList(){
