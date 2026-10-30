@@ -47,7 +47,6 @@
 - `customer-master.html`, `supplier-master.html`, `sku-master.html`: masters.
 - `opening-stock.html`, `goods-inward.html`: stock functions; verify SQL/live behavior before recording material.
 - `sales-return.html`, `credit-note.html`: return/credit functions; full ledger integration not yet verified.
-- `group-party-loading.html`: optional group loading.
 - `driver-delivery.html`: Driver PO / Delivery Status / POD / Collection Report UI.
 - `README_DRIVER_DELIVERY.md`: further Driver Module details and safeguards.
 

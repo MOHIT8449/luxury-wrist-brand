@@ -80,8 +80,7 @@
       {t:"Supplier Master",h:"supplier-master.html",i:"factory",r:"admin manager"},
       {t:"Vehicle Master",h:"fleet-master.html#vehicles",i:"truck",r:"admin manager transport warehouse"},
       {t:"Driver Master",h:"fleet-master.html#drivers",i:"users",r:"admin manager transport warehouse"},
-      {t:"Employee Master",h:"fleet-master.html#employees",i:"users",r:"admin manager warehouse"},
-      {t:"Group Loading",h:"group-party-loading.html",i:"layers",r:"admin"}]},
+      {t:"Employee Master",h:"fleet-master.html#employees",i:"users",r:"admin manager warehouse"}]},
     {group:"Settings",items:[
       {t:"Settings",h:"settings.html",i:"gear",r:"admin manager"},
       {t:"Manage Users",h:"users.html",i:"lock",r:"admin"},
