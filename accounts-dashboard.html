@@ -166,6 +166,10 @@
     .stf .bal small{display:block;font-size:11.5px;font-weight:600}
     .stf .mo{display:grid;grid-template-columns:repeat(3,1fr);gap:4px;font-size:12.5px;color:#4b5763;background:#f6f7f9;border-radius:8px;padding:6px 8px}
     .stf .mo b{display:block;color:var(--erp-ink);font-size:14px}
+    .vh{display:grid;grid-template-columns:minmax(0,auto) 1fr auto;gap:5px 8px;align-items:center;font-size:13px;background:#f6f7f9;border-radius:8px;padding:7px 9px}
+    .vh span{color:#3b4652;overflow-wrap:anywhere}.vh b{text-align:right;font-variant-numeric:tabular-nums}
+    .vh i{display:block;height:8px;border-radius:4px;background:#e3e8ee;position:relative;overflow:hidden}
+    .vh i::after{content:"";position:absolute;inset:0 auto 0 0;width:var(--w);background:#c8102e;border-radius:4px}
     .stf .ac{display:flex;gap:6px;flex-wrap:wrap}.stf .ac .acx-btn{height:34px;padding:0 10px;font-size:13.5px}
     .salrow{display:grid;grid-template-columns:1fr 120px;gap:6px 8px;align-items:center;border-bottom:1px solid var(--erp-line);padding:6px 0}
     .salrow small{color:var(--erp-muted)}.salrow input{height:38px;border:1.5px solid #d5dce5;border-radius:8px;padding:0 8px;font:inherit;font-size:16px;width:100%;box-sizing:border-box}
@@ -220,6 +224,7 @@
         <button type="button" data-t="out">Party outstanding</button>
         <button type="button" data-t="close">Cash handover</button>
         <button type="button" data-t="staff">Staff ledger</button>
+        <button type="button" data-t="veh">Vehicles</button>
         <button type="button" data-t="setup">Heads &amp; Banks</button>
       </div>
       <div id="tabBody"></div>
@@ -256,7 +261,7 @@
     const MODE_NAME={CASH:"Cash",UPI:"UPI",BANK:"Bank / NEFT",RTGS:"RTGS",CHEQUE:"Cheque"};
     const SRC_NAME={ENTRY:"Entered here",PAYMENT:"Payment Collection",DRIVER_CASH:"Driver money",DRIVER_ONLINE:"Driver money",OLD:"Old payment entry"};
     const NOTE_KEYS=["500","200","100","50","20","10"];
-    let X={entries:{},staff_heads:[],payees:[]},S=[],D=null,per="today",from=todayISO(),to=todayISO(),tab="book",bookF="all",outRows=null,me={id:"",role:""};
+    let X={entries:{},staff_heads:[],payees:[]},S=[],V=[],VR={vehicles:[],entries:{}},D=null,per="today",from=todayISO(),to=todayISO(),tab="book",bookF="all",outRows=null,me={id:"",role:""};
 
     function say(t,bad){el("msg").hidden=!t;el("msg").textContent=t||"";el("msg").className="acx-msg"+(bad?" bad":"")}
     const errText=e=>{const m=String(e&&e.message||e||"Something went wrong");
@@ -281,9 +286,11 @@
         const {data,error}=await client.rpc("lwb_acc_dashboard",{p_from:from,p_to:to});
         if(error)throw error;
         D=data;D.lines=D.lines||[];D.pending=D.pending||[];
-        const [ex,st]=await Promise.all([client.rpc("lwb_acc_extras",{p_from:from,p_to:to}),client.rpc("lwb_acc_staff_list",{p_month:to})]);
+        const [ex,st,vl,vr]=await Promise.all([client.rpc("lwb_acc_extras",{p_from:from,p_to:to}),client.rpc("lwb_acc_staff_list",{p_month:to}),
+          client.rpc("lwb_acc_vehicles"),client.rpc("lwb_acc_vehicle_report",{p_from:from,p_to:to})]);
         X=ex.error?{entries:{},staff_heads:[],payees:[]}:ex.data;S=st.error?[]:(st.data||[]);
-        D.lines.forEach(l=>{l.x=l.src==="ENTRY"&&X.entries[l.id]||null});
+        V=vl.error?[]:(vl.data||[]);VR=vr.error||!vr.data?{vehicles:[],entries:{}}:vr.data;
+        D.lines.forEach(l=>{l.x=l.src==="ENTRY"&&X.entries[l.id]||null;l.veh=l.src==="ENTRY"&&VR.entries[l.id]||null});
         say("");render();
       }catch(e){say(errText(e),true)}
       finally{el("reload").disabled=false}
@@ -388,7 +395,7 @@
     function renderTab(){
       el("tabs").querySelectorAll("[data-t]").forEach(b=>b.setAttribute("aria-pressed",String(b.dataset.t===tab)));
       const n=D.pending.length;el("vCnt").hidden=!n;el("vCnt").textContent=n;
-      if(tab==="book")renderBook();else if(tab==="verify")renderVerify();else if(tab==="out")renderOutstanding();else if(tab==="close")renderCloses();else if(tab==="staff")renderStaff();else renderSetup();
+      if(tab==="book")renderBook();else if(tab==="verify")renderVerify();else if(tab==="out")renderOutstanding();else if(tab==="close")renderCloses();else if(tab==="staff")renderStaff();else if(tab==="veh")renderVehicles();else renderSetup();
     }
     function statusTag(l){
       if(l.status==="PENDING")return '<span class="tag t-amb">Waiting bank check</span>';
@@ -398,7 +405,7 @@
     }
     function lineIcon(l){return l.kind==="IN"?'<span class="acx-ic ic-in">+</span>':l.kind==="OUT"?'<span class="acx-ic ic-out">−</span>':l.kind==="DEPOSIT"?'<span class="acx-ic ic-dep">🏦</span>':'<span class="acx-ic ic-dep">₹</span>'}
     function lineTitle(l){return l.kind==="DEPOSIT"?"Bank deposit"+(bankName(l.bank_id)?" · "+bankName(l.bank_id):""):l.kind==="WITHDRAW"?"Cash from bank"+(bankName(l.bank_id)?" · "+bankName(l.bank_id):""):(l.party?l.party+" · ":"")+(l.category||"")}
-    function marks(l){const x=l.x;if(!x)return "";return (x.gst_bill?' <span class="tag t-blu">GST bill</span>':"")+(x.photos&&x.photos.length?' <span class="tag t-gry">📎 '+x.photos.length+'</span>':"")}
+    function marks(l){const x=l.x,v=l.veh?' <span class="tag t-gry">🚚 '+esc(l.veh.vehicle)+'</span>':"";if(!x)return v;return v+(x.gst_bill?' <span class="tag t-blu">GST bill</span>':"")+(x.photos&&x.photos.length?' <span class="tag t-gry">📎 '+x.photos.length+'</span>':"")}
     function sign(l){return l.kind==="IN"||l.kind==="WITHDRAW"?"plus":l.kind==="OUT"?"minus":"neutral"}
     const wide=()=>window.innerWidth>=760;
     // Ledger: oldest first, In / Out columns and the running cash balance (cash lines only move it).
@@ -531,6 +538,39 @@
       el("tabBody").querySelectorAll("[data-pay]").forEach(b=>b.onclick=()=>{const x=find(b.dataset.pay);newEntry("OUT",{cat:headId("salary"),staff:x.id,amount:Math.max(0,r2(x.balance))||""})});
       el("tabBody").querySelectorAll("[data-upad]").forEach(b=>b.onclick=()=>newEntry("OUT",{cat:headId("staff advance"),staff:b.dataset.upad}));
     }
+    // Vehicles: every vehicle's expenses for the dates at the top, head-wise; ledger per vehicle.
+    function renderVehicles(){
+      const R=VR.vehicles||[],tot=R.reduce((a,v)=>a+Number(v.total),0),idle=V.filter(v=>!R.some(r=>r.id===v.id));
+      const dates=from===to?dmy(from):dmy(from)+" to "+dmy(to);
+      el("tabBody").innerHTML='<div class="stf-head"><b>'+R.length+' vehicle'+(R.length===1?"":"s")+' · '+dates+' · '+rs(tot)+'</b>'+
+        '<button type="button" class="acx-btn redf" id="vAdd"'+(V.length?"":" disabled")+'>+ Vehicle expense</button>'+(R.length?'<button type="button" class="acx-btn" id="vXl">⬇ Excel</button>':"")+'</div>'+
+        (R.length?'<div class="stf">'+R.map(v=>{const top=Number(v.heads&&v.heads[0]&&v.heads[0].amount)||1;
+          return '<div><div class="nm"><span><b>🚚 '+esc(v.no)+'</b><small>'+esc(v.type||"Vehicle")+' · '+v.n+' entr'+(v.n===1?"y":"ies")+' · last '+dmy(v.last_date)+'</small></span><span class="bal minus">'+rs(v.total)+'<small>spent</small></span></div>'+
+            '<div class="vh">'+(v.heads||[]).map(h=>'<span>'+esc(h.head)+'</span><i style="--w:'+Math.max(3,Math.round(Number(h.amount)/top*100))+'%"></i><b>'+rs(h.amount)+'</b>').join("")+'</div>'+
+            '<div class="ac"><button type="button" class="acx-btn" data-vled="'+v.id+'">Ledger</button><button type="button" class="acx-btn red" data-vadd="'+v.id+'">+ Expense</button></div></div>'}).join("")+'</div>'
+          :'<div class="acx-empty">'+(V.length?"No vehicle expense in these dates. Cash Out → in Paid to pick the vehicle (type the number), choose the head (Diesel / Fuel, Repair, Tyre ...) and save.":"No vehicles yet. Add them once in Vehicle Master (Fleet).")+'</div>')+
+        (idle.length&&R.length?'<p class="acx-note">No expense in these dates: '+idle.map(v=>esc(v.no)).join(", ")+'</p>':"")+
+        '<p class="acx-note">Change the dates at the top (Today / 7 days / This month or your own dates). Vehicles come from Vehicle Master; new heads from "+ Add new…" in Category.</p>';
+      if(el("vAdd"))el("vAdd").onclick=()=>newEntry("OUT");
+      if(el("vXl"))el("vXl").onclick=()=>LWBExcel.write("vehicle-expense-"+from+"-to-"+to,[{name:"Vehicles",rows:[["Vehicle","Type","Head","Amount"],
+        ...R.flatMap(v=>(v.heads||[]).map(h=>[v.no,v.type||"",h.head,r2(h.amount)])),["Total","","",r2(tot)]]}]).catch(e=>say(e.message,true));
+      el("tabBody").querySelectorAll("[data-vled]").forEach(b=>b.onclick=()=>vehicleLedger(b.dataset.vled));
+      el("tabBody").querySelectorAll("[data-vadd]").forEach(b=>b.onclick=()=>newEntry("OUT",{vehicle:b.dataset.vadd}));
+    }
+    async function vehicleLedger(id){
+      let d;try{d=await rpc("lwb_acc_vehicle_ledger",{p_vehicle:id,p_from:from,p_to:to})}catch(e){await ERPShell.alert(errText(e));return}
+      const L=d.lines||[],tot=L.reduce((a,l)=>a+Number(l.amount),0),no=d.vehicle?d.vehicle.no:"Vehicle";
+      const t=l=>l.time?hm("2000-01-01T"+l.time+":00+05:30"):hm(l.at);
+      const box=sheet("🚚 "+no+" · expenses",
+        '<div class="kv"><span>Dates</span><b>'+(from===to?dmy(from):dmy(from)+" to "+dmy(to))+'</b><span>Total</span><b class="minus">'+rs(tot)+'</b></div>'+
+        '<div style="overflow:auto"><table class="acx-t acx-sl"><thead><tr><th>Date</th><th>Head · details</th><th class="n">Amount</th></tr></thead><tbody>'+
+        L.map(l=>'<tr><td>'+dmy(l.date)+'<small>'+t(l)+'</small></td><td><b>'+esc(l.head||"")+'</b>'+(l.gst_bill?' <span class="tag t-blu">GST bill</span>':"")+(l.photos?' <span class="tag t-gry">📎 '+l.photos+'</span>':"")+
+          '<small>'+esc([l.party!==no?l.party:"",l.remark,MODE_NAME[l.mode],l.ref].filter(Boolean).join(" · "))+'</small></td><td class="n minus">'+rs(l.amount)+'</td></tr>').join("")+
+        '</tbody><tfoot><tr><td></td><td><b>Total ('+L.length+')</b></td><td class="n"><b>'+rs(tot)+'</b></td></tr></tfoot></table></div>'+
+        '<p style="margin:0"><button type="button" class="acx-btn" data-xl>⬇ Excel</button></p>',"",null);
+      box.querySelector("[data-xl]").onclick=()=>LWBExcel.write("vehicle-"+no+"-"+from+"-to-"+to,[{name:no,rows:[["Date","Time","Head","Paid to","Remark","Mode","Ref","Amount"],
+        ...L.map(l=>[dmy(l.date),t(l),l.head||"",l.party||"",l.remark||"",MODE_NAME[l.mode]||l.mode,l.ref||"",r2(l.amount)]),["","","","","","","Total",r2(tot)]]}]).catch(e=>say(e.message,true));
+    }
     function editStaff(x){
       x=x||{active:true};const ob=Number(x.opening_balance||0);
       sheet(x.id?"Edit staff":"Add staff",
@@ -627,6 +667,7 @@
     function partyList(){
       const taken=new Set(),seen=new Set(),out=[];
       for(const x of S.filter(x=>x.active)){seen.add(x.name.toLowerCase());out.push({t:"staff",id:x.id,name:x.name,sub:(x.designation?x.designation+" · ":"")+"Staff"})}
+      for(const v of V){seen.add(v.no.toLowerCase());out.push({t:"vehicle",id:v.id,name:v.no,sub:[v.type,v.own==="TRANSPORTER"?v.transporter||"Transporter":""].filter(Boolean).concat("Vehicle").join(" · ")})}
       for(const n of X.parties||[]){if(seen.has(n.toLowerCase()))continue;seen.add(n.toLowerCase());out.push({t:"party",name:n,code:shortCode(n,taken),sub:"Party Master"})}
       for(const n of X.payees||[]){if(seen.has(n.toLowerCase()))continue;seen.add(n.toLowerCase());out.push({t:"payee",name:n,sub:"Used before"})}
       return out;
@@ -641,6 +682,7 @@
       let st={kind,mode:"CASH",cat:pre.cat||null},files=[],pick=null;
       const PL=partyList();
       if(pre.staff){const x=PL.find(p=>p.t==="staff"&&String(p.id)===String(pre.staff));if(x)pick=x}
+      if(pre.vehicle){const x=PL.find(p=>p.t==="vehicle"&&p.id===pre.vehicle);if(x)pick=x}
       const def=to<=D.today&&to>=from&&from===to?to:D.today;
       const body=(io?'<div class="seg two" id="eKind"><button type="button" class="in" data-k="IN">+ Cash In</button><button type="button" class="out" data-k="OUT">− Cash Out</button></div>':
           '<div class="seg two" id="eKind"><button type="button" class="dep" data-k="DEPOSIT">🏦 Cash to bank</button><button type="button" class="dep" data-k="WITHDRAW">₹ Cash from bank</button></div>')+
@@ -669,14 +711,16 @@
 
       const staffOf=()=>{if(pick&&pick.t==="staff"&&pick.name===q("#eParty").value.trim())return pick;
         const v=q("#eParty").value.trim().toLowerCase();return PL.find(p=>p.t==="staff"&&p.name.toLowerCase()===v)||null};
+      const vehOf=()=>{if(st.kind!=="OUT")return null;if(pick&&pick.t==="vehicle"&&pick.name===q("#eParty").value.trim())return pick;
+        const v=q("#eParty").value.replace(/[\s-]/g,"").toLowerCase();return v?PL.find(p=>p.t==="vehicle"&&p.name.toLowerCase()===v)||null:null};
       const notesTotal=()=>NOTE_KEYS.reduce((a,k)=>a+(Math.floor(num(q('[data-en="'+k+'"]').value))||0)*Number(k),0);
       const readNotes=()=>{const n={};NOTE_KEYS.forEach(k=>{const v=Math.floor(num(q('[data-en="'+k+'"]').value));if(v>0)n[k]=v});return n};
 
       async function save(){
-        const amt=num(q("#eAmt").value),staffOn=io&&isStaffHead(st.cat),stf=staffOn?staffOf():null,gst=st.kind==="OUT"&&q("#eGst").checked;
+        const amt=num(q("#eAmt").value),staffOn=io&&isStaffHead(st.cat),stf=staffOn?staffOf():null,veh=staffOn?null:vehOf(),gst=st.kind==="OUT"&&q("#eGst").checked;
         const nonCash=io&&st.mode!=="CASH",utr=nonCash||st.kind==="DEPOSIT"?q("#eRef").value.trim():"",bill=q("#eBill").value.trim();
         const p={date:dval("eDate"),time:q("#eTime").value||null,kind:st.kind,category_id:io?st.cat:null,mode:io?st.mode:"CASH",bank_id:q("#eBank").value||null,amount:amt,
-          party:stf?"":q("#eParty").value.trim(),ref:[utr,bill&&(utr?"Bill "+bill:bill)].filter(Boolean).join(" · "),remark:q("#eRemark").value,
+          party:stf||veh?"":q("#eParty").value.trim(),vehicle_id:veh?veh.id:null,ref:[utr,bill&&(utr?"Bill "+bill:bill)].filter(Boolean).join(" · "),remark:q("#eRemark").value,
           staff_id:stf?stf.id:null,gst_bill:gst,gst_amount:gst?num(q("#eGstAmt").value)||null:null,gstin:gst?q("#eGstin").value:null,
           notes:st.mode==="CASH"&&!q("#eNotes").hidden?readNotes():null,photos:[]};
         if(!p.date){await ERPShell.alert("Enter the date as DD/MM/YYYY");return false}
@@ -692,7 +736,7 @@
             if(up.error)throw Error("Photo upload failed: "+up.error.message);
             p.photos.push(path);
           }
-          await rpc("lwb_acc_add_entry2",{p});
+          await rpc("lwb_acc_add_entry3",{p});
         }catch(e){await ERPShell.alert(errText(e));return false}
         ERPShell.toast?ERPShell.toast("Saved "+rs(amt)):null;load();
       }
@@ -729,13 +773,14 @@
           k==="IN"?"Party bill payments go through Payment Collection (they show here by themselves). Use this for other cash.":
           isStaffHead(st.cat)?"Pick the staff name in "+q("#ePartyLab").textContent+"; it goes in the staff ledger.":"";
       }
-      function staffBal(){const p=io&&isStaffHead(st.cat)?staffOf():null,s=p&&S.find(x=>x.id===p.id);
-        q("#eStaffBal").textContent=s?balText(s.balance)+" · salary "+rs(s.monthly_salary)+"/month":""}
+      function staffBal(){const p=io&&isStaffHead(st.cat)?staffOf():null,s=p&&S.find(x=>x.id===p.id),v=!p&&!isStaffHead(st.cat)&&vehOf();
+        q("#eStaffBal").textContent=s?balText(s.balance)+" · salary "+rs(s.monthly_salary)+"/month":v?"🚚 Vehicle expense: shows in the Vehicles tab. Shop / driver name: write it in Remark.":""}
       // Party box: type a name or short code, pick from staff, Party Master and names used before
       let hi=0,shown=[];
       function drawList(){
         const v=q("#eParty").value.trim().toLowerCase(),staffFirst=isStaffHead(st.cat);
-        shown=PL.filter(p=>!v||p.name.toLowerCase().includes(v)||(p.code&&p.code.toLowerCase().startsWith(v)))
+        const vs=v.replace(/[\s-]/g,"");
+        shown=PL.filter(p=>!v||p.name.toLowerCase().includes(v)||(p.code&&p.code.toLowerCase().startsWith(v))||(p.t==="vehicle"&&vs&&p.name.toLowerCase().includes(vs)))
           .sort((a,b)=>staffFirst?(a.t==="staff"?0:1)-(b.t==="staff"?0:1):0).slice(0,40);
         hi=0;const L=q("#ePList");
         L.innerHTML=shown.map((p,i)=>'<button type="button" role="option" data-i="'+i+'"'+(i===hi?' class="on"':"")+'><b>'+esc(p.name)+'</b><small>'+(p.code?esc(p.code)+" · ":"")+esc(p.sub)+'</small></button>').join("")||
@@ -806,7 +851,7 @@
         '<span>Mode</span><b>'+MODE_NAME[l.mode]+'</b>'+(l.ref?'<span>Ref</span><b>'+esc(l.ref)+'</b>':"")+(l.order_no?'<span>PO</span><b>'+esc(l.order_no)+'</b>':"")+
         (bankName(l.bank_id)?'<span>Bank</span><b>'+esc(bankName(l.bank_id))+'</b>':"")+(l.needs_verify?'<span>Bank check</span><b>'+statusTag(l)+(l.v_by?' <small>'+esc(l.v_by)+' · '+dmy(istDay(l.v_at))+'</small>':"")+(l.v_note?'<br><small>'+esc(l.v_note)+'</small>':"")+'</b>':"")+
         '<span>From</span><b>'+esc(SRC_NAME[l.src]||"")+'</b>'+(l.by?'<span>By</span><b>'+esc(l.by)+'</b>':"")+(l.remark?'<span>Note</span><b>'+esc(l.remark)+'</b>':"")+
-        (l.x&&l.x.staff?'<span>Staff</span><b>'+esc(l.x.staff)+'</b>':"")+(l.x&&l.x.gst_bill?'<span>GST bill</span><b>Yes'+(l.x.gst_amount?" · GST "+rs(l.x.gst_amount):"")+(l.x.gstin?" · "+esc(l.x.gstin):"")+'</b>':"")+
+        (l.x&&l.x.staff?'<span>Staff</span><b>'+esc(l.x.staff)+'</b>':"")+(l.veh?'<span>Vehicle</span><b>🚚 '+esc(l.veh.vehicle)+'</b>':"")+(l.x&&l.x.gst_bill?'<span>GST bill</span><b>Yes'+(l.x.gst_amount?" · GST "+rs(l.x.gst_amount):"")+(l.x.gstin?" · "+esc(l.x.gstin):"")+'</b>':"")+
         (l.x&&l.x.notes?'<span>Note count</span><b>'+Object.keys(l.x.notes).sort((a,b)=>b-a).map(k=>"₹"+k+" × "+l.x.notes[k]).join(", ")+'</b>':"")+'</div>'+
         (l.x&&l.x.photos&&l.x.photos.length?'<div class="phs" id="lPhs">'+l.x.photos.map(()=>'<span></span>').join("")+'</div>':"")+
         (l.src!=="ENTRY"?'<p class="acx-note" style="margin:0">This came from '+esc(SRC_NAME[l.src])+'. Change or cancel it there.</p>':"")+

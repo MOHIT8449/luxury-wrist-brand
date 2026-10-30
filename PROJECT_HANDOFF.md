@@ -407,3 +407,8 @@
 - Every date on the page is a custom DD/MM/YYYY text box with a 📅 calendar button (`dateBox()`), so the phone / browser locale can not show MM/DD.
 - Tests: 8 PGlite tests.
 - Add entry form follows the Cashbook layout: Cash In / Cash Out, Date (DD/MM/YYYY) + Time, Party (type name or short code; staff, Party Master `lwb_customer_master`, names used before), Amount + Count notes, Remark, Category + Payment mode, "Bill no. · photo · GST" fold, Save & add new. Time and note count are saved in `lwb_acc_entries.entry_time` / `cash_notes`.
+
+### Accounts Dashboard: vehicle-wise expenses (30 Oct 2026)
+- SQL: `lwb_accounts_vehicle_setup.sql` (after `lwb_accounts_staff_setup.sql` and `lwb_fleet_master_setup.sql`). `lwb_acc_entries.vehicle_id` → `lwb_vehicles` (Vehicle Master). New OUT heads: Vehicle service, Tyre, Driver bhatta / food, Toll / Parking, RTO / Insurance / PUC, Vehicle washing.
+- Cash Out: pick the vehicle in "Paid to" (type the number, spaces ignored); page saves through `lwb_acc_add_entry3` (vehicle only on Cash Out, not with staff). Vehicles tab = `lwb_acc_vehicle_report(from,to)` per vehicle and head, `lwb_acc_vehicle_ledger(vehicle,from,to)`, Excel.
+- Tests: 9 PGlite tests.
