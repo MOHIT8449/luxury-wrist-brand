@@ -100,6 +100,19 @@ jobs:
         run: |
           if [ "$(cat "$RUNNER_TEMP/sql.txt")" = "connection-test" ]; then
             [ -n "$DB_URL" ] || { echo "::error::SUPABASE_DB_URL secret is not set"; exit 1; }
+            python3 - <<'PY'
+          import os, re
+          u = os.environ["DB_URL"].strip()
+          m = re.match(r"^postgres(?:ql)?://([^:/@]+):(.*)@([^@/:]+):(\d+)/(\S+)$", u)
+          if not m:
+              print("URL shape: NOT postgresql://user:password@host:port/db")
+          else:
+              user, pw, host, port, db = m.groups()
+              print("user:", user, "| host:", host, "| port:", port, "| db:", db)
+              print("password has [ or ]:", "[" in pw or "]" in pw, "| has spaces:", " " in pw,
+                    "| has @#%/?: chars:", bool(re.search(r"[@#%/?:]", pw)), "| empty:", pw == "")
+          print("value has spaces/newlines inside:", bool(re.search(r"\s", u)))
+          PY
             PGCONNECT_TIMEOUT=20 psql "$DB_URL" -q -v ON_ERROR_STOP=1 -o /dev/null -c "select 1" \
               && echo "Connected to Supabase OK" && echo "- Connection test OK" >> "$GITHUB_STEP_SUMMARY"
             exit
