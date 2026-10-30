@@ -140,12 +140,13 @@
 
     function render(){
       const make=toMake(),parties=[...info.parties.values()],dueP=parties.filter(p=>p.due>0.5||p.advance>0.5||p.opening);
-      const totDue=parties.reduce((a,p)=>a+p.due,0),totAdv=parties.reduce((a,p)=>a+p.advance,0);
+      // one balance per party: positive = to collect, negative = advance
+      const totDue=parties.reduce((a,p)=>a+Math.max(0,p.net),0),totAdv=parties.reduce((a,p)=>a+Math.max(0,-p.net),0);
       const rec=(info.raw.receipts||[]).filter(r=>!r.cancelled&&r.pay_date===info.today).reduce((a,r)=>a+Number(r.total),0);
       el("kpis").innerHTML=[
         ["make","#c8102e","Bills to make",make.length,"loaded "+rs(make.reduce((a,o)=>a+Number(o.erp_amount||0),0))],
-        ["due","#b3122b","To collect",rs(totDue),parties.filter(p=>p.due>0.5).length+" parties"],
-        ["due","#13824a","Advance with us",rs(totAdv),parties.filter(p=>p.advance>0.5).length+" parties"],
+        ["due","#b3122b","To collect",rs(totDue),parties.filter(p=>p.net>0.5).length+" parties"],
+        ["due","#13824a","Advance with us",rs(totAdv),parties.filter(p=>p.net<-0.5).length+" parties"],
         ["pay","#1769d8","Received today",rs(rec),"party payments"]].map(([t,c,h,v,s])=>`<button type="button" class="pb-kpi" style="--c:${c}" data-go="${t}"><h3>${h}</h3><b>${v}</b><small>${s}</small></button>`).join("");
       el("kpis").querySelectorAll("[data-go]").forEach(b=>b.onclick=()=>{tab=b.dataset.go;render()});
       el("cMake").hidden=!make.length;el("cMake").textContent=make.length;
@@ -153,7 +154,7 @@
       el("xl").hidden=tab==="make";
       ({make:renderMake,due:renderDue,pay:renderPay,grp:renderGroups})[tab]();
       el("note").textContent=tab==="make"?"Only POs whose loading is signed (vehicle loaded) come here. Enter one line per Tally bill: the name the bill is made in, its invoice no. and amount. Saved bills go to To collect on the main party at once, and show in the Accounts Dashboard Cash In.":
-        tab==="due"?"To collect = Tally bill − credit notes − driver money − payments split to it, on the main party (all its bill names together), minus the advance not yet adjusted. Party Ledger shows the same on the main party.":
+        tab==="due"?"To collect = Tally bill − credit notes − driver money − payments split to it, on the main party (all its bill names together), minus money paid earlier and not yet set against a bill. One balance per party: red = to collect, green = advance. Party Ledger shows the same on the main party.":
         tab==="pay"?"A party payment is entered once on the main party and split over its bills; the rest is advance. Undo (×) puts a split back to advance; Cancel removes a wrong payment.":
         "A main party (Party Master) and the names its Tally bills are made in. Outstanding, ledger and payments of all these names are on the main party. A name can be under one main party only.";
     }
@@ -218,15 +219,15 @@
       const q=el("q").value.trim().toLowerCase();
       const list=[...info.parties.values()].filter(p=>(p.due>0.5||p.advance>0.5||Math.abs(p.opening)>0.5)&&match(q,p.party,...p.members,...p.bills.flatMap(b=>[b.order_no,b.invoice_no])))
         .sort((a,b)=>b.net-a.net);
-      sheet=[["Main party","Bill names","Bills due","Oldest bill","Days","Bills due ₹","Opening ₹","Advance ₹","To collect ₹"],...list.map(p=>[p.party,p.members.join(", "),p.bills.length,dmy(p.oldest),p.oldest?days(p.oldest):"",r2(p.due),r2(p.opening),r2(p.advance),r2(p.net)])];
+      sheet=[["Main party","Bill names","Bills due","Oldest bill","Days","Bills due ₹","Opening ₹","Paid, not adjusted ₹","Balance ₹ (+ to collect, − advance)"],...list.map(p=>[p.party,p.members.join(", "),p.bills.length,dmy(p.oldest),p.oldest?days(p.oldest):"",r2(p.due),r2(p.opening),r2(p.advance),r2(p.net)])];
       if(!list.length){el("body").innerHTML='<div class="pb-empty">No party owes money.</div>';return}
       const T=k=>list.reduce((a,p)=>a+p[k],0);
-      el("body").innerHTML=`<div class="pb-scroll"><table class="pb-t resp"><thead><tr><th>Main party</th><th class="n">Bills</th><th class="n">Oldest</th><th class="n">Bills due</th><th class="n">Advance</th><th class="n">To collect</th><th></th></tr></thead><tbody>${list.map(p=>{
+      el("body").innerHTML=`<div class="pb-scroll"><table class="pb-t resp"><thead><tr><th>Main party</th><th class="n">Bills</th><th class="n">Oldest</th><th class="n">Bills due</th><th class="n">Paid, not adjusted</th><th class="n">Balance</th><th></th></tr></thead><tbody>${list.map(p=>{
         const a=days(p.oldest),k=key(p.party),isOpen=open.has(k);
         return `<tr class="pr${isOpen?" open":""}" data-p="${esc(k)}"><td><b>${esc(p.party)}</b>${p.members.length?`<div class="chips">${p.members.map(m=>`<span class="chip">${esc(m)}</span>`).join("")}</div>`:""}</td>
           <td class="n hide-ph">${p.bills.length}</td><td class="n hide-ph">${p.oldest?dmy(p.oldest)+`<small class="${a>30?"due":""}">${a} days</small>`:"—"}</td>
-          <td class="n hide-ph">${rs(p.due)}${p.opening?`<small>opening ${rs(p.opening)}</small>`:""}</td><td class="n hide-ph">${p.advance?`<span class="adv">${rs(p.advance)}</span>`:"—"}</td>
-          <td class="n"><span class="${p.net>0.5?"due":"adv"}">${rs(p.net)}</span><small class="ph-only">${p.bills.length} bill${p.bills.length===1?"":"s"}${p.advance>0.5?" · advance "+rs(p.advance):""}</small></td>
+          <td class="n hide-ph">${rs(p.due)}${p.opening?`<small>opening ${rs(p.opening)}</small>`:""}</td><td class="n hide-ph">${p.advance>0.5?rs(p.advance)+(p.bills.length?`<br><button type="button" class="lnk" data-adj="${esc(p.party)}">Adjust now</button>`:""):"—"}</td>
+          <td class="n"><span class="${p.net>0.5?"due":"adv"}">${rs(Math.abs(p.net))}</span><small>${p.net>0.5?"to collect":p.net<-0.5?"advance":"settled"}</small><small class="ph-only">${p.bills.length} bill${p.bills.length===1?"":"s"}</small></td>
           <td class="n"><button type="button" class="pb-btn sm grn" data-pay="${esc(p.party)}">Receive</button></td></tr>${isOpen?`<tr class="sub"><td colspan="7">${partyBills(p)}</td></tr>`:""}`}).join("")}</tbody>
           <tfoot><tr><td>${list.length} parties</td><td class="n hide-ph"></td><td class="hide-ph"></td><td class="n hide-ph">${rs(T("due"))}</td><td class="n hide-ph">${rs(T("advance"))}</td><td class="n">${rs(T("net"))}</td><td></td></tr></tfoot></table></div>`;
       el("body").querySelectorAll("tr.pr").forEach(tr=>tr.onclick=e=>{if(e.target.closest("button"))return;const k=tr.dataset.p;open.has(k)?open.delete(k):open.add(k);renderDue()});
@@ -239,7 +240,7 @@
           <td class="n">${rs(b.bill_amount)}</td><td class="n">${cn?"− "+rs(cn):"—"}${Number(b.credit_pending)>0.5?`<small class="due">CN pending ${rs(b.credit_pending)}</small>`:""}</td><td class="n">${got?rs(got):"—"}</td><td class="n due">${rs(b.due)}</td>
           <td class="n"><button type="button" class="lnk" data-cn="${esc(b.order_id)}">Credit note</button><br><a class="lnk" href="accounts-invoice.html?order=${encodeURIComponent(b.order_id)}">Details</a></td></tr>`}).join("");
       return `${p.bills.length?`<div class="pb-scroll"><table class="pb-t"><thead><tr><th>PO</th><th>Bill date</th><th>Bill in name · no. · amount</th><th class="n">Bill</th><th class="n">Credit note</th><th class="n">Received</th><th class="n">Due</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`:'<p class="pb-note" style="margin:0 0 8px">No bill due.</p>'}
-        <div class="pb-foot"><button type="button" class="pb-btn sm grn" data-pay="${esc(p.party)}">Receive payment</button>${p.advance>0.5&&p.bills.length?`<button type="button" class="pb-btn sm" data-adj="${esc(p.party)}">Adjust advance ${rs(p.advance)}</button>`:""}<a class="pb-btn sm" href="party-ledger.html?party=${encodeURIComponent(p.party)}">Ledger →</a></div>`;
+        <div class="pb-foot"><button type="button" class="pb-btn sm grn" data-pay="${esc(p.party)}">Receive payment</button>${p.advance>0.5&&p.bills.length?`<button type="button" class="pb-btn sm" data-adj="${esc(p.party)}">Adjust ${rs(p.advance)} paid earlier</button>`:""}<a class="pb-btn sm" href="party-ledger.html?party=${encodeURIComponent(p.party)}">Ledger →</a></div>`;
     }
     function wireParty(root){
       root.querySelectorAll("[data-pay]").forEach(b=>b.onclick=()=>payNow(b.dataset.pay));
