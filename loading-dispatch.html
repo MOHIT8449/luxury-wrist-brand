@@ -56,6 +56,7 @@ header,main,.overlay{display:none!important}
 #printArea{display:block!important}
 }
 #printArea{display:none}
+.prio{display:inline-block;font-size:10.5px;font-weight:800;letter-spacing:.4px;border-radius:999px;padding:2px 8px;margin-left:6px;vertical-align:middle}.prio-URGENT{background:#c8102e;color:#fff}.prio-HIGH{background:#fdf3e2;color:#9a5a00;border:1px solid #f1d199}
 </style>
 <link rel="stylesheet" href="erp-shell.css">
 <script src="erp-shell.js" data-auto defer></script>
@@ -183,7 +184,7 @@ async function load(){
 try{
 const o=await db.from('orders').select('*').in('status',['transport_allocated','loading','loaded']).order('order_date',{ascending:false});
 if(o.error)throw o.error;
-orders=o.data||[];
+orders=(o.data||[]).map((x,i)=>[x,i]).sort((a,b)=>prioRank(a[0])-prioRank(b[0])||a[1]-b[1]).map(p=>p[0]);
 // Read assignments only for the listed orders, so old rows beyond any row limit are never missed.
 const found=[],ids=orders.map(x=>x.id);
 for(let i=0;i<ids.length;i+=100){
@@ -198,6 +199,11 @@ const want=new URLSearchParams(location.search).get('order');
 if(want&&orders.some(o=>o.id===want)){history.replaceState(null,'',location.pathname);openOrder(want);}
 }catch(e){message('Loading failed: '+e.message,true);}
 }
+
+// Urgent / High priority orders are loaded first.
+const prioOf=o=>['URGENT','HIGH'].includes(String(o.priority||'').toUpperCase())?String(o.priority).toUpperCase():'NORMAL';
+const prioRank=o=>({URGENT:0,HIGH:1,NORMAL:2})[prioOf(o)];
+const prioBadge=o=>prioOf(o)==='NORMAL'?'':`<span class="prio prio-${prioOf(o)}">${prioOf(o)}</span>`;
 
 function assignment(id){return assignments.find(a=>a.order_id===id)||{};}
 // Only the Godown Manager chosen by the Sales Head loads the vehicle (Sales Head / Admin always can).
@@ -219,7 +225,7 @@ return [o.order_no,o.customer_name,a.driver_name,a.vehicle_no].some(v=>String(v|
 $('rows').innerHTML=visible.length?visible.map(o=>{
 const a=assignment(o.id);
 return `<tr>
-<td><strong>${safe(o.order_no)}</strong></td>
+<td><strong>${safe(o.order_no)}</strong>${prioBadge(o)}</td>
 <td>${safe(date(o.order_date))}</td>
 <td>${safe(o.customer_name)}</td>
 <td>${safe(a.driver_name||'-')}</td>

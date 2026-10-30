@@ -221,6 +221,13 @@ body.compact-entry #itemsTable th:nth-child(8),body.compact-entry td:has(> .row-
 /* Salesman: Order No, date, company and own name fill themselves, so they stay hidden. */
 body.sales-entry .auto-field{display:none}
 .tp-chips,.add-line,.sticky-total,.share-more>summary{display:none}
+/* Delivery priority: Normal / High / Urgent */
+.prio-chips{display:flex;gap:6px}
+.prio-chips button{flex:1;padding:9px 6px;border:1px solid #c9ced6;border-radius:8px;background:#fff;color:#1c2836;font-weight:700;font-size:13px;cursor:pointer}
+.prio-chips button.on[data-p="NORMAL"]{background:#1f2a37;border-color:#1f2a37;color:#fff}
+.prio-chips button.on[data-p="HIGH"]{background:#b26b00;border-color:#b26b00;color:#fff}
+.prio-chips button.on[data-p="URGENT"]{background:#c8102e;border-color:#c8102e;color:#fff}
+.prio-hint{font-size:11.5px;color:#5b6573;margin-top:5px}
 /* Salesman on phone: tap buttons, one short card per SKU, total and Submit always in reach. */
 @media(max-width:760px){
   body.compact-entry .page-title{margin-bottom:10px}
@@ -441,6 +448,16 @@ body.compact-entry .share-more>summary{display:block;cursor:pointer;font-size:13
           <button type="button" data-tp="SELF PICKUP" onclick="pickTransport(this)">Self pickup</button>
           <button type="button" data-tp="DIRECT VEHICLE" onclick="pickTransport(this)">Direct vehicle</button>
         </div>
+      </div>
+
+      <div class="form-group">
+        <label>Delivery Priority</label>
+        <div class="prio-chips" id="prioChips" role="group" aria-label="Delivery priority">
+          <button type="button" data-p="NORMAL" class="on" onclick="pickPriority(this)">Normal</button>
+          <button type="button" data-p="HIGH" onclick="pickPriority(this)">High</button>
+          <button type="button" data-p="URGENT" onclick="pickPriority(this)">Urgent</button>
+        </div>
+        <div class="prio-hint" id="prioHint">Normal: deliver within 36 hours.</div>
       </div>
 
       <div class="form-group" id="slabField">
@@ -1012,6 +1029,9 @@ async function loadOrderForEdit(id) {
   if (!selectedParty) { selectedParty = {customer_name: o.customer_name}; document.getElementById("customerName").value = o.customer_name; }
   document.getElementById("customerName").readOnly = true;
   partyInfo("Party cannot be changed while modifying. Cancel the order and take a new one for another party.");
+
+  const savedPriority = document.querySelector(`#prioChips button[data-p="${String(o.priority || "NORMAL").toUpperCase()}"]`);
+  if (savedPriority) pickPriority(savedPriority);
 
   const transport = String(o.transportation || "");
   const select = document.getElementById("transportation");
@@ -1631,6 +1651,22 @@ function toggleVehicleField(){
 }
 
 // Phone tap buttons for Transportation; tapping the chosen one again clears it (it is optional).
+let orderPriority = "NORMAL";
+function pickPriority(button){
+  orderPriority = button.dataset.p;
+  document.querySelectorAll("#prioChips button").forEach(b => b.classList.toggle("on", b === button));
+  document.getElementById("prioHint").textContent = {
+    NORMAL: "Normal: deliver within 36 hours.",
+    HIGH: "High: Sales Head and Godown are told to deliver this first.",
+    URGENT: "Urgent: needs immediate delivery. Sales Head and Godown get an alert."
+  }[orderPriority];
+}
+async function saveOrderPriority(orderId){
+  if(!orderId) return "";
+  const {error} = await db.rpc("lwb_set_order_priority",{p_order_id:orderId,p_priority:orderPriority});
+  return error ? "\n\nPriority not saved: " + (error.message || "database error") : "";
+}
+
 function pickTransport(button){
   const select = document.getElementById("transportation");
   select.value = select.value === button.dataset.tp ? "" : button.dataset.tp;
@@ -1765,9 +1801,10 @@ async function saveOrder(){
     try{
       const {data,error} = await db.rpc("lwb_sales_modify_order",{p_order_id:editOrder.id,p_transportation:transportation||"",p_items:items});
       if(error) throw error;
+      const priorityNote = String(editOrder.priority || "NORMAL").toUpperCase() === orderPriority ? "" : await saveOrderPriority(editOrder.id);
       await alert("Order " + (editOrder.order_no || "") + (data && data.changed
         ? " saved. Sales Head is informed of the changes."
-        : ": nothing changed."));
+        : ": nothing changed.") + priorityNote);
       location.href = "my-sales.html#orders";
     }catch(error){
       alert("Order could not be saved:\n" + (/lwb_sales_modify_order/.test(error.message || "") ? "Modify is not set up yet. Ask Admin to run lwb_sales_modify_order_setup.sql." : (error.message || "Unknown error")));
@@ -1868,6 +1905,7 @@ async function saveOrder(){
     }
 
     document.getElementById("orderNo").value=orderNo;
+    const priorityNote = orderPriority === "NORMAL" ? "" : await saveOrderPriority(createdOrder && createdOrder.id);
 
     showMessage(
       (headCreatesApprovedPo()?"PO approved. Order No: ":"Order saved successfully! Order No: ")+
@@ -1888,7 +1926,9 @@ async function saveOrder(){
       "\nTotal Qty: "+formatNumber(totals.totalQty)+
       "\nTotal Amount: "+formatMoney(totals.totalAmount)+
       "\nFinal Weight: "+formatNumber(totals.totalWeight)+" KG"+
-      (headCreatesApprovedPo()?"\n\nReady for transport assignment.":"\n\nSent to Warehouse Manager for approval.")
+      (orderPriority === "NORMAL" ? "" : "\nPriority: " + orderPriority)+
+      (headCreatesApprovedPo()?"\n\nReady for transport assignment.":"\n\nSent to Warehouse Manager for approval.")+
+      priorityNote
     );
 
     saveBtn.textContent=headCreatesApprovedPo()?"PO Approved":"Order Submitted";
@@ -1933,6 +1973,7 @@ async function resetOrder(){
   document.getElementById("orderNo").value="Assigned on save";
   document.getElementById("customerName").value="";
   selectedParty = null;
+  pickPriority(document.querySelector('#prioChips button[data-p="NORMAL"]'));
   partyResults = [];
   clearTimeout(partySearchTimer);
   ++partyRequestId;
