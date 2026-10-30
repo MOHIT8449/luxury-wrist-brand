@@ -15,7 +15,7 @@
   const pct=(a,b)=>b>0?Math.round(a/b*1000)/10:null;
   const isoDay=d=>d.toLocaleDateString("en-CA",{timeZone:"Asia/Kolkata"});
   const istDay=v=>{if(!v)return "";const d=new Date(v);return isNaN(d)?String(v).slice(0,10):isoDay(d)};
-  const shortDate=v=>{if(!v)return "—";const d=new Date(String(v).length===10?v+"T00:00:00+05:30":v);return isNaN(d)?String(v):d.toLocaleDateString("en-IN",{day:"2-digit",month:"short",timeZone:"Asia/Kolkata"})};
+  const shortDate=v=>LWBDate.d(v,"—");
   const key=v=>String(v||"").toUpperCase().replace(/\s+/g," ").trim();
   const daysBetween=(a,b)=>Math.round((Date.parse(b+"T00:00:00Z")-Date.parse(a+"T00:00:00Z"))/864e5);
   const SKIP=["cancelled","canceled","rejected"],DONE=["loaded","invoiced","delivered"];
@@ -93,7 +93,7 @@
   async function excel(file,sheets){
     if(!window.XLSX)await loadScript("https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js");
     const book=XLSX.utils.book_new();
-    for(const s of sheets){const ws=XLSX.utils.aoa_to_sheet([[s.title],[],s.head,...s.rows]);ws["!cols"]=s.head.map(h=>({wch:/Party|SKU|Salesman|Name/.test(h)?28:14}));XLSX.utils.book_append_sheet(book,ws,s.name.slice(0,31))}
+    for(const s of sheets){const ws=XLSX.utils.aoa_to_sheet(LWBDate.rows([[s.title],[],s.head,...s.rows]));ws["!cols"]=s.head.map(h=>({wch:/Party|SKU|Salesman|Name/.test(h)?28:14}));XLSX.utils.book_append_sheet(book,ws,s.name.slice(0,31))}
     XLSX.writeFile(book,file+".xlsx");
   }
   // Table helper: head [label], rows [[cells]] (cells already escaped HTML), num = right-aligned column indexes.

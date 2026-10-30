@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Cashbook</title>
+<script src="erp-date.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="cashbook-erp.js"></script>
 <meta name="claude:viewport-fit-sides" content="cover">
@@ -421,7 +422,7 @@ function cashbookApp(CB) {
   const nowTime = () => { const d = new Date(); return pad(d.getHours()) + ":" + pad(d.getMinutes()); };
   // every date the user sees shows the year as 2006; entries keep the real date so filters and balance stay correct
   const SHOWN_YEAR = 2006;
-  const fmtDate = s => { if (!s) return ""; const [, m, d] = s.split("-"); return d + "-" + m + "-" + SHOWN_YEAR; };
+  const fmtDate = s => { if (!s) return ""; const [, m, d] = s.split("-"); return d + "/" + m + "/" + SHOWN_YEAR; };
   // the typed year is ignored; the real year comes from baseYear (the entry's own year, or this year)
   const parseShown = (str, baseYear) => {
     const m = String(str || "").trim().match(/^(\d{1,2})[-\/. ](\d{1,2})(?:[-\/. ](\d{2}|\d{4}))?$/);
@@ -913,7 +914,7 @@ JAY MAMA DEV TREDARS (NILGIRI LIMBAYAT)
   const appHash = pw => hashPw("app", pw);
 
   const bookById = id => state.books.find(b => b.id === id);
-  // search in every field: names and codes, amounts as typed or with commas, dates as DD-MM-2006, remark, category, mode …
+  // search in every field: names and codes, amounts as typed or with commas, dates as DD/MM/2006 (or DD-MM-2006), remark, category, mode …
   const NO_SEARCH = new Set(["id", "party", "created", "updated", "verifiedAt", "handover", "cashDiff", "homeEntry", "diffEntry", "entries", "key", "ts", "doneTs", "bookId"]);
   function hay(x, more) {
     const out = [];
@@ -921,7 +922,7 @@ JAY MAMA DEV TREDARS (NILGIRI LIMBAYAT)
       if (v == null || v === "" || typeof v === "object" || typeof v === "boolean") return;
       if (typeof v === "number") { out.push(String(v), inr.format(v)); return; }
       const s = String(v); out.push(s);
-      if (/^\d{4}-\d\d-\d\d$/.test(s)) out.push(fmtDate(s));
+      if (/^\d{4}-\d\d-\d\d$/.test(s)) out.push(fmtDate(s), fmtDate(s).replace(/\//g, "-"));
       if (/^\d\d:\d\d$/.test(s)) out.push(fmtTime(s));
     };
     for (const [k, v] of Object.entries(x)) if (!NO_SEARCH.has(k)) add(v);
@@ -1514,8 +1515,8 @@ JAY MAMA DEV TREDARS (NILGIRI LIMBAYAT)
           <div style="display:flex;gap:4px;align-items:center"><button type="button" class="btn sm" id="fDayPrev" aria-label="Previous day">‹</button><input type="text" id="fDay" inputmode="numeric" autocomplete="off" placeholder="Pick a date" size="11" value="${ui.duration === "day" ? fmtDate(ui.from) : ""}"><button type="button" class="btn sm" id="fDayNext" aria-label="Next day">›</button></div></div>
         <div class="field"><label for="fDur">Duration</label>
           <select id="fDur">${[["all", "All time"], ["today", "Today"], ["yesterday", "Yesterday"], ["7", "Last 7 days"], ["30", "Last 30 days"], ["month", "This month"], ["lastmonth", "Last month"], ["custom", "Custom range"], ...(ui.duration === "day" ? [["day", "One day"]] : [])].map(([v, l]) => opt(v, l, ui.duration)).join("")}</select></div>
-        ${ui.duration === "custom" ? `<div class="field"><label for="fFrom">From</label><input type="text" id="fFrom" inputmode="numeric" placeholder="DD-MM-YYYY" size="11" value="${fmtDate(ui.from)}"></div>
-        <div class="field"><label for="fTo">To</label><input type="text" id="fTo" inputmode="numeric" placeholder="DD-MM-YYYY" size="11" value="${fmtDate(ui.to)}"></div>` : ""}
+        ${ui.duration === "custom" ? `<div class="field"><label for="fFrom">From</label><input type="text" id="fFrom" inputmode="numeric" placeholder="DD/MM/YYYY" size="11" value="${fmtDate(ui.from)}"></div>
+        <div class="field"><label for="fTo">To</label><input type="text" id="fTo" inputmode="numeric" placeholder="DD/MM/YYYY" size="11" value="${fmtDate(ui.to)}"></div>` : ""}
         <div class="field"><label for="fType">Entry type</label>
           <select id="fType">${opt("all", "All", ui.type)}${opt("in", "Cash In", ui.type)}${opt("out", "Cash Out", ui.type)}</select></div>
         <div class="field"><label for="fMode">Payment mode</label>
@@ -1554,14 +1555,14 @@ JAY MAMA DEV TREDARS (NILGIRI LIMBAYAT)
     $("#topOut").onclick = () => entryModal(b, "out");
     const bind = (id, key) => { const el = $(id); if (el) el.onchange = () => { ui[key] = el.value; render(); }; };
     bind("#fDur", "duration"); bind("#fType", "type"); bind("#fMode", "mode"); bind("#fCat", "cat"); 
-    [["#fFrom", "from"], ["#fTo", "to"]].forEach(([id, key]) => { const el = $(id); if (el) { el.dataset.real = ui[key] || ""; attachCal(el); } if (el) el.onchange = () => { const v = el.value.trim() ? dateOf(el, 0) : ""; if (v === null) { el.setCustomValidity("Use DD-MM-YYYY"); el.reportValidity(); return; } ui[key] = v; render(); }; });
+    [["#fFrom", "from"], ["#fTo", "to"]].forEach(([id, key]) => { const el = $(id); if (el) { el.dataset.real = ui[key] || ""; attachCal(el); } if (el) el.onchange = () => { const v = el.value.trim() ? dateOf(el, 0) : ""; if (v === null) { el.setCustomValidity("Use DD/MM/YYYY"); el.reportValidity(); return; } ui[key] = v; render(); }; });
     const qi = $("#fQ");
     qi.oninput = () => { ui.q = qi.value; const pos = qi.selectionStart; render(); const n = $("#fQ"); n.focus(); try { n.setSelectionRange(pos, pos); } catch (_) {} };
     // one day view: pick a date, or step a day back / forward
     const fd = $("#fDay");
     fd.dataset.real = ui.duration === "day" ? ui.from : ""; attachCal(fd);
     const setDay = v => { Object.assign(ui, { duration: "day", from: v, to: "" }); render(); };
-    fd.onchange = () => { const v = fd.value.trim() ? dateOf(fd, 0) : ""; if (!v) { if (fd.value.trim()) { fd.setCustomValidity("Use DD-MM-" + SHOWN_YEAR); fd.reportValidity(); } return; } setDay(v); };
+    fd.onchange = () => { const v = fd.value.trim() ? dateOf(fd, 0) : ""; if (!v) { if (fd.value.trim()) { fd.setCustomValidity("Use DD/MM/" + SHOWN_YEAR); fd.reportValidity(); } return; } setDay(v); };
     const step = n => { const d = new Date((ui.duration === "day" && ui.from ? ui.from : today()) + "T00:00"); d.setDate(d.getDate() + n); setDay(ymd(d)); };
     $("#fDayPrev").onclick = () => step(ui.duration === "day" ? -1 : 0);
     $("#fDayNext").onclick = () => step(ui.duration === "day" ? 1 : 0);
@@ -2418,7 +2419,7 @@ JAY MAMA DEV TREDARS (NILGIRI LIMBAYAT)
             <button type="button" class="out" data-t="out" aria-pressed="${cur === "out"}">− Cash Out</button>
           </div>
           <div class="row2">
-            <div class="field"><label for="eDate">Date</label><input type="text" id="eDate" inputmode="numeric" autocomplete="off" placeholder="DD-MM-${SHOWN_YEAR}" value="${fmtDate(e.date)}" data-real="${e.date}"></div>
+            <div class="field"><label for="eDate">Date</label><input type="text" id="eDate" inputmode="numeric" autocomplete="off" placeholder="DD/MM/${SHOWN_YEAR}" value="${fmtDate(e.date)}" data-real="${e.date}"></div>
             <div class="field"><label for="eTime">Time</label><input type="time" id="eTime" value="${e.time || ""}"></div>
           </div>
           <div class="field combo"><label for="eParty">Party</label>
@@ -2430,7 +2431,7 @@ JAY MAMA DEV TREDARS (NILGIRI LIMBAYAT)
             <div class="follow-note" id="eFollow" hidden></div>
             <div class="row2">
               <div class="field"><label for="eInv">Invoice no.</label><input type="text" id="eInv" maxlength="30" placeholder="e.g. 3309" value="${esc(e.invoice || "")}"></div>
-              <div class="field"><label for="eInvDate">Invoice date</label><input type="text" id="eInvDate" inputmode="numeric" autocomplete="off" placeholder="DD-MM-${SHOWN_YEAR}" value="${fmtDate(e.invDate || (entry ? "" : today()))}" data-real="${e.invDate || (entry ? "" : today())}"></div>
+              <div class="field"><label for="eInvDate">Invoice date</label><input type="text" id="eInvDate" inputmode="numeric" autocomplete="off" placeholder="DD/MM/${SHOWN_YEAR}" value="${fmtDate(e.invDate || (entry ? "" : today()))}" data-real="${e.invDate || (entry ? "" : today())}"></div>
             </div>
             <div class="row2">
               <div class="field"><label for="eInvAmt">Invoice amount (₹)</label><input type="number" id="eInvAmt" class="num" inputmode="decimal" min="0" step="0.01" placeholder="0.00" value="${e.invAmt || ""}"><div class="words" id="eInvWords"></div></div>
@@ -2676,10 +2677,10 @@ JAY MAMA DEV TREDARS (NILGIRI LIMBAYAT)
       if (isBill && $("#eInvDate").value.trim()) {
         const picked = $("#eInvDate").dataset.real && fmtDate($("#eInvDate").dataset.real) === $("#eInvDate").value.trim();
         invDate = dateOf($("#eInvDate"), entry && entry.invDate ? Number(entry.invDate.slice(0, 4)) : 0);
-        if (!invDate) { $("#eErr").textContent = "Enter the invoice date as DD-MM-" + SHOWN_YEAR + "."; $("#eInvDate").focus(); return; }
+        if (!invDate) { $("#eErr").textContent = "Enter the invoice date as DD/MM/" + SHOWN_YEAR + "."; $("#eInvDate").focus(); return; }
         if (!picked && invDate > today()) { const d = new Date(invDate); d.setFullYear(d.getFullYear() - 1); invDate = ymd(d); }
       } else if (isBill) invDate = date || "";
-      if (!date) { $("#eErr").textContent = "Enter the date as DD-MM-YYYY, for example " + fmtDate(today()) + "."; $("#eDate").focus(); return; }
+      if (!date) { $("#eErr").textContent = "Enter the date as DD/MM/YYYY, for example " + fmtDate(today()) + "."; $("#eDate").focus(); return; }
       const data = { type: cur, amount, date, time: $("#eTime").value, party: partyId, invoice: isOut ? "" : $("#eInv").value.trim(), invDate, invAmt: follow || isOut ? 0 : num("#eInvAmt"), follow: !!follow && !isOut, advance: isAdv, advUsed: isOut ? 0 : advUsed, damage: isOut ? 0 : num("#eDmg"), dmgType: isOut ? "" : $("#eDmgType").value, kasar: isOut ? 0 : num("#eKasar"), remark: $("#eRemark").value.trim(), category: isAdv ? ensureCat("in", "Advance") : $("#eCat").value === "__new" ? "" : $("#eCat").value, mode: $("#eMode").value === "__new" ? "" : $("#eMode").value, via: isDep ? $("#eVia").value : undefined, notes: noteCount && notesTotal(noteCount) ? noteCount : undefined };
       const ch = entry ? reqChanges(entry, data) : [];
       // not admin: a change to a saved entry is only a request; the admin approves it before it is applied
@@ -3268,7 +3269,7 @@ JAY MAMA DEV TREDARS (NILGIRI LIMBAYAT)
     } else if (tab === "bal") {
       const tl = ui.tlb;
       const asOn = ui.tlDate || today();
-      body = `<div class="tl-file"><div class="field" style="max-width:220px"><label for="tlAsOn">Balance as on date</label><input type="text" id="tlAsOn" value="${fmtDate(asOn)}" placeholder="DD-MM-${SHOWN_YEAR}"></div></div>`;
+      body = `<div class="tl-file"><div class="field" style="max-width:220px"><label for="tlAsOn">Balance as on date</label><input type="text" id="tlAsOn" value="${fmtDate(asOn)}" placeholder="DD/MM/${SHOWN_YEAR}"></div></div>`;
       body += fileBox("tlbFile", "Closing balance file", "In Tally open Group Summary of Sundry Debtors (or any ledger list) with Closing Balance, then Export as Excel. Dr = party has to pay, Cr = advance.");
       if (tl && tl.err) body += `<p class="err">${esc(tl.err)}</p>`;
       if (tl && !tl.err) {
@@ -3348,7 +3349,7 @@ JAY MAMA DEV TREDARS (NILGIRI LIMBAYAT)
     if (sumEl) sumEl.onclick = ev => { if (ev.target.closest("#tlGo")) goSales(); else if (ev.target.closest("#tlCancel")) { ui.tls = null; render(); } };
     const cn = !sumEl && $("#tlCancel"); if (cn) cn.onclick = () => { ui[cur] = null; render(); };
     const ao = $("#tlAsOn");
-    if (ao) ao.onchange = () => { let d = parseShown(ao.value); if (d && d > today()) d = parseShown(ao.value, new Date().getFullYear() - 1); if (d) ui.tlDate = d; else toast("Enter the date as DD-MM-" + SHOWN_YEAR); render(); };
+    if (ao) ao.onchange = () => { let d = parseShown(ao.value); if (d && d > today()) d = parseShown(ao.value, new Date().getFullYear() - 1); if (d) ui.tlDate = d; else toast("Enter the date as DD/MM/" + SHOWN_YEAR); render(); };
     const goSales = () => {
       const tl = ui.tls, plan = salesPlan(tl);
       if (plan.list.some(x => !x.party)) { $("#tlErr").textContent = "Choose a party for every row."; return; }

@@ -55,7 +55,7 @@
   const s=(Date.now()-new Date(v))/1000;
   if(s<60)return "now";if(s<3600)return Math.floor(s/60)+" min";if(s<86400)return Math.floor(s/3600)+" hr";
   if(s<7*86400)return Math.floor(s/86400)+" d";
-  return new Date(v).toLocaleDateString("en-IN",{day:"2-digit",month:"short"});
+  return LWBDate.d(v);
  }
  // Page each notification opens. {o} = the notification's order id. The first page this login can open wins.
  const ROUTES=[
