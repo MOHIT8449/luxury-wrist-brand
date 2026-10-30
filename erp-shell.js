@@ -233,7 +233,7 @@
     if(document.querySelector('link[rel="manifest"]'))return;
     const add=(tag,attrs)=>{const n=document.createElement(tag);for(const k in attrs)n.setAttribute(k,attrs[k]);document.head.appendChild(n)};
     add("link",{rel:"manifest",href:"manifest.webmanifest"});
-    add("meta",{name:"theme-color",content:"#c8102e"});
+    add("meta",{name:"theme-color",content:"#002f37"});
     add("link",{rel:"apple-touch-icon",href:"app-icon-192.png"});
     add("meta",{name:"apple-mobile-web-app-capable",content:"yes"});
   }
@@ -265,7 +265,7 @@
     const side=document.createElement("aside");
     side.className="erp-side";
     function drawSide(){
-      let html='<div class="erp-brand"><span class="erp-mark" aria-hidden="true">LW</span><div><b>LUXURY WRIST BRAND</b><small>BUSINESS ERP</small></div></div>'+
+      let html='<div class="erp-brand"><span class="erp-mark" aria-hidden="true">lwb</span><div><b>LUXURY WRIST BRAND</b><small>BUSINESS ERP</small></div></div>'+
         '<div class="erp-menu-find"><input type="search" aria-label="Find a page" placeholder="Find a page…"></div><p class="erp-menu-empty" hidden>No page found</p>';
       groups.forEach(g=>{
         if(g.group)html+='<div class="erp-group">'+esc(g.group)+'</div>';
