@@ -14,7 +14,8 @@
 #   check the database login with the name  connection-test  (changes nothing).
 #
 # Secrets (Settings > Secrets and variables > Actions):
-#   SUPABASE_DB_URL        Session pooler connection string with the DB password
+#   SUPABASE_DB_PASSWORD   the database password (or SUPABASE_DB_URL, a full
+#                          Session pooler connection string)
 #   SUPABASE_ACCESS_TOKEN  personal access token, needed only for Edge Functions
 #
 # This repo is public, so query output is never printed to the log.
@@ -41,6 +42,7 @@ concurrency:
 
 env:
   SUPABASE_PROJECT_REF: txkbhadzdbxpieunfvox
+  SUPABASE_DB_HOST: aws-0-ap-northeast-2.pooler.supabase.com
 
 jobs:
   check:
@@ -97,22 +99,15 @@ jobs:
         if: steps.changes.outputs.sql == 'true'
         env:
           DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
         run: |
+          # Only the password is secret; the pooler host and user are fixed for this project.
+          if [ -n "$DB_PASSWORD" ]; then
+            DB_URL="postgresql://postgres.$SUPABASE_PROJECT_REF:$(python3 -c 'import os,urllib.parse;print(urllib.parse.quote(os.environ["DB_PASSWORD"].strip(),safe=""))')@$SUPABASE_DB_HOST:5432/postgres"
+            echo "::add-mask::$DB_URL"
+          fi
           if [ "$(cat "$RUNNER_TEMP/sql.txt")" = "connection-test" ]; then
-            [ -n "$DB_URL" ] || { echo "::error::SUPABASE_DB_URL secret is not set"; exit 1; }
-            python3 - <<'PY'
-          import os, re
-          u = os.environ["DB_URL"].strip()
-          m = re.match(r"^postgres(?:ql)?://([^:/@]+):(.*)@([^@/:]+):(\d+)/(\S+)$", u)
-          if not m:
-              print("URL shape: NOT postgresql://user:password@host:port/db")
-          else:
-              user, pw, host, port, db = m.groups()
-              print("user:", user, "| host:", host, "| port:", port, "| db:", db)
-              print("password has [ or ]:", "[" in pw or "]" in pw, "| has spaces:", " " in pw,
-                    "| has @#%/?: chars:", bool(re.search(r"[@#%/?:]", pw)), "| empty:", pw == "")
-          print("value has spaces/newlines inside:", bool(re.search(r"\s", u)))
-          PY
+            [ -n "$DB_URL" ] || { echo "::error::SUPABASE_DB_PASSWORD secret is not set"; exit 1; }
             PGCONNECT_TIMEOUT=20 psql "$DB_URL" -q -v ON_ERROR_STOP=1 -o /dev/null -c "select 1" \
               && echo "Connected to Supabase OK" && echo "- Connection test OK" >> "$GITHUB_STEP_SUMMARY"
             exit
@@ -129,7 +124,7 @@ jobs:
           [ ${#run[@]} -eq 0 ] && { echo "Nothing to apply"; exit 0; }
           .github/scripts/supabase-sql-check.sh "${run[@]}"
           if [ -z "$DB_URL" ]; then
-            echo "::error::SUPABASE_DB_URL secret is not set. Add it, then press 'Re-run jobs' on this run."
+            echo "::error::SUPABASE_DB_PASSWORD secret is not set. Add it, then press 'Re-run jobs' on this run."
             exit 1
           fi
           command -v psql >/dev/null || { sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client; }
