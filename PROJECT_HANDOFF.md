@@ -405,4 +405,5 @@
 - Salary paid / upad are normal Cash Out entries (heads Salary / Staff advance, `staff_link`) with `staff_id`; upad given back is Cash In head "Staff advance return". Staff ledger = opening + month salaries − paid − upad + returned (`lwb_acc_staff_list`, `lwb_acc_staff_ledger`).
 - Entries now carry `photo_paths` (private bucket `lwb-acc-bills`, folder = user id, max 5), `gst_bill`, `gst_amount`, `gstin`. Page saves through `lwb_acc_add_entry2`; extras read through `lwb_acc_extras`.
 - Every date on the page is a custom DD/MM/YYYY text box with a 📅 calendar button (`dateBox()`), so the phone / browser locale can not show MM/DD.
-- Tests: 7 PGlite tests.
+- Tests: 8 PGlite tests.
+- Add entry form follows the Cashbook layout: Cash In / Cash Out, Date (DD/MM/YYYY) + Time, Party (type name or short code; staff, Party Master `lwb_customer_master`, names used before), Amount + Count notes, Remark, Category + Payment mode, "Bill no. · photo · GST" fold, Save & add new. Time and note count are saved in `lwb_acc_entries.entry_time` / `cash_notes`.

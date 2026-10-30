@@ -166,3 +166,15 @@ test('bill photo and GST bill on a Cash Out',async()=>{
  assert.deepEqual(e.photo_paths,[ids.accounts+'/bill-1.jpg']);assert.equal(e.gstin,'24ABCDE1234F1Z5');assert.equal(Number(e.gst_amount),180);
  assert.equal((await db.query("select count(*) n from storage.buckets where id='lwb-acc-bills'")).rows[0].n,1);
 });
+
+test('entry time, note count and Party Master names',async()=>{
+ await as('accounts');
+ await db.exec("create table if not exists lwb_customer_master(customer_name text); insert into lwb_customer_master values ('SHREE JAGDISH TRADERS (BARDOLI)'),(' '),('SHREE JAGDISH TRADERS (BARDOLI)')");
+ const add2=p=>call('select public.lwb_acc_add_entry2($1::jsonb) id',[JSON.stringify(p)]).then(r=>r[0].id);
+ const base={date:today,kind:'OUT',category_id:await cat('OUT','Food'),mode:'CASH',amount:700,party:'Hotel Shivam'};
+ await assert.rejects(add2({...base,time:'25:99'}),/time/);
+ const id=await add2({...base,time:'16:27',notes:{500:1,100:2,7:4,50:'x'}});
+ const ex=(await call('select public.lwb_acc_extras($1,$1) j',[today]))[0].j;
+ assert.equal(ex.entries[id].time,'16:27');assert.deepEqual(ex.entries[id].notes,{500:1,100:2});
+ assert.deepEqual(ex.parties,['SHREE JAGDISH TRADERS (BARDOLI)']);
+});

@@ -56,7 +56,9 @@ ALTER TABLE public.lwb_acc_entries
   ADD COLUMN IF NOT EXISTS photo_paths text[] NOT NULL DEFAULT '{}',
   ADD COLUMN IF NOT EXISTS gst_bill boolean NOT NULL DEFAULT false,
   ADD COLUMN IF NOT EXISTS gst_amount numeric(14,2) CHECK (gst_amount IS NULL OR gst_amount >= 0),
-  ADD COLUMN IF NOT EXISTS gstin text CHECK (gstin IS NULL OR length(gstin) <= 15);
+  ADD COLUMN IF NOT EXISTS gstin text CHECK (gstin IS NULL OR length(gstin) <= 15),
+  ADD COLUMN IF NOT EXISTS entry_time time,
+  ADD COLUMN IF NOT EXISTS cash_notes jsonb;
 
 ALTER TABLE public.lwb_acc_staff ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.lwb_acc_staff_salary ENABLE ROW LEVEL SECURITY;
@@ -86,11 +88,13 @@ AS $fn$
 DECLARE
   v_id uuid; v_staff bigint; v_link boolean; v_photos text[] := '{}'; v_x text;
   v_gst boolean := coalesce((p->>'gst_bill')::boolean, false); v_gamt numeric; v_gstin text;
+  v_time time; v_notes jsonb;
 BEGIN
   BEGIN
     v_staff := nullif(p->>'staff_id','')::bigint;
     v_gamt := round(nullif(p->>'gst_amount','')::numeric, 2);
-  EXCEPTION WHEN others THEN RAISE EXCEPTION 'Check the staff and GST amount';
+    v_time := nullif(p->>'time','')::time;
+  EXCEPTION WHEN others THEN RAISE EXCEPTION 'Check the staff, time and GST amount';
   END;
   v_gstin := nullif(upper(btrim(coalesce(p->>'gstin',''))),'');
   IF jsonb_typeof(p->'photos') = 'array' THEN
@@ -102,6 +106,11 @@ BEGIN
   IF cardinality(v_photos) > 5 THEN RAISE EXCEPTION 'Up to 5 photos'; END IF;
   IF v_gstin IS NOT NULL AND v_gstin !~ '^[0-9]{2}[A-Z0-9]{13}$' THEN RAISE EXCEPTION 'GSTIN should be 15 letters / numbers'; END IF;
   IF NOT v_gst THEN v_gamt := NULL; v_gstin := NULL; END IF;
+  -- note count of a cash entry: {"500":3,"100":2}, only the usual notes
+  IF jsonb_typeof(p->'notes') = 'object' THEN
+    SELECT jsonb_object_agg(k, v::int) INTO v_notes FROM jsonb_each_text(p->'notes') AS n(k, v)
+    WHERE k IN ('500','200','100','50','20','10') AND v ~ '^[0-9]{1,5}$' AND v::int > 0;
+  END IF;
 
   v_id := public.lwb_acc_add_entry(p);   -- all the normal checks
 
@@ -116,7 +125,7 @@ BEGIN
     RAISE EXCEPTION 'GST amount is more than the bill amount';
   END IF;
 
-  UPDATE public.lwb_acc_entries SET staff_id = v_staff, photo_paths = v_photos, gst_bill = v_gst, gst_amount = v_gamt, gstin = v_gstin,
+  UPDATE public.lwb_acc_entries SET staff_id = v_staff, photo_paths = v_photos, gst_bill = v_gst, gst_amount = v_gamt, gstin = v_gstin, entry_time = v_time, cash_notes = v_notes,
     party = coalesce(party, (SELECT s.name FROM public.lwb_acc_staff s WHERE s.id = v_staff))
   WHERE id = v_id;
   RETURN v_id;
@@ -127,19 +136,27 @@ $fn$;
 CREATE OR REPLACE FUNCTION public.lwb_acc_extras(p_from date, p_to date)
 RETURNS jsonb LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = ''
 AS $fn$
+DECLARE v_parties jsonb := '[]'::jsonb;
 BEGIN
   IF NOT public.lwb_acc_user() THEN RAISE EXCEPTION 'Accounts Dashboard is for active Accounts or Admin only'; END IF;
+  -- Party Master names for the Party box (same list the Cashbook uses)
+  IF to_regclass('public.lwb_customer_master') IS NOT NULL THEN
+    EXECUTE $q$SELECT coalesce(jsonb_agg(n ORDER BY n), '[]'::jsonb) FROM (SELECT DISTINCT btrim(m.customer_name::text) AS n
+      FROM public.lwb_customer_master m WHERE nullif(btrim(m.customer_name::text), '') IS NOT NULL) x$q$ INTO v_parties;
+  END IF;
   RETURN jsonb_build_object(
     'entries', coalesce((SELECT jsonb_object_agg(e.id, jsonb_build_object('staff_id', e.staff_id, 'staff', s.name,
-        'photos', to_jsonb(e.photo_paths), 'gst_bill', e.gst_bill, 'gst_amount', e.gst_amount, 'gstin', e.gstin))
+        'photos', to_jsonb(e.photo_paths), 'gst_bill', e.gst_bill, 'gst_amount', e.gst_amount, 'gstin', e.gstin,
+        'time', to_char(e.entry_time,'HH24:MI'), 'notes', e.cash_notes))
       FROM public.lwb_acc_entries e LEFT JOIN public.lwb_acc_staff s ON s.id = e.staff_id
       WHERE e.cancelled_at IS NULL AND e.entry_date BETWEEN p_from AND p_to
-        AND (e.staff_id IS NOT NULL OR e.gst_bill OR cardinality(e.photo_paths) > 0)), '{}'::jsonb),
+        AND (e.staff_id IS NOT NULL OR e.gst_bill OR cardinality(e.photo_paths) > 0 OR e.entry_time IS NOT NULL OR e.cash_notes IS NOT NULL)), '{}'::jsonb),
     'staff_heads', coalesce((SELECT jsonb_agg(c.id) FROM public.lwb_acc_categories c WHERE c.staff_link), '[]'::jsonb),
     'payees', coalesce((SELECT jsonb_agg(x.party ORDER BY x.n DESC) FROM (
         SELECT e.party, count(*) AS n FROM public.lwb_acc_entries e
         WHERE e.cancelled_at IS NULL AND e.party IS NOT NULL AND e.staff_id IS NULL AND e.entry_date > public.lwb_acc_today() - 365
-        GROUP BY e.party ORDER BY count(*) DESC LIMIT 300) x), '[]'::jsonb)
+        GROUP BY e.party ORDER BY count(*) DESC LIMIT 300) x), '[]'::jsonb),
+    'parties', v_parties
   );
 END;
 $fn$;
