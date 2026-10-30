@@ -1,0 +1,657 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Accounts Dashboard | Luxury Wrist Brand ERP</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="erp-date.js"></script>
+  <link rel="stylesheet" href="erp-shell.css">
+  <script src="erp-shell.js"></script>
+  <script src="excel-io.js"></script>
+  <style>
+    .status{text-align:center;padding:80px 20px;font-size:15px;color:#555}
+    [hidden]{display:none!important}
+    .ad-msg{padding:11px 14px;border-radius:8px;margin:0 0 12px;background:#fdf0dc;color:#7a4700;white-space:pre-wrap;font-size:14px}
+    .ad-msg.bad{background:#ffebeb;color:#9b2020}
+    .ad-top{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:0 0 12px}
+    .ad-top h1{margin:0;font-size:20px;flex:1 1 auto}
+    .ad-chips{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+    .ad-chips button{height:34px;border-radius:99px;border:1.5px solid var(--erp-line);background:#fff;color:var(--erp-ink);padding:0 13px;font:inherit;font-size:14px;cursor:pointer;white-space:nowrap}
+    .ad-chips button[aria-pressed=true]{border-color:#1769d8;background:#eaf2ff;color:#123f7a;font-weight:700}
+    .ad-chips input{height:34px;border:1.5px solid var(--erp-line);border-radius:8px;padding:0 8px;font:inherit;font-size:14px;background:#fff;max-width:150px}
+    .ad-btn{height:38px;border-radius:8px;padding:0 14px;font:inherit;font-weight:700;font-size:14px;cursor:pointer;border:1px solid var(--erp-line);background:#fff;color:var(--erp-ink);display:inline-flex;align-items:center;justify-content:center;gap:6px;text-decoration:none;white-space:nowrap}
+    .ad-btn.pri{background:#1769d8;border-color:#1769d8;color:#fff}
+    .ad-btn.grn{background:#13824a;border-color:#13824a;color:#fff}
+    .ad-btn.red{background:#fff;border-color:#e7b3bd;color:#b3122b}
+    .ad-btn.redf{background:#c8102e;border-color:#c8102e;color:#fff}
+    .ad-btn:disabled{opacity:.55;cursor:default}
+    .ad-banner{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:12px 14px;border-radius:10px;margin:0 0 12px;border:1px solid;font-size:14px}
+    .ad-banner b{font-size:15px}
+    .ad-banner .grow{flex:1 1 220px;min-width:0}
+    .ad-banner.blue{background:#eef5ff;border-color:#c7dbfa;color:#123f7a}
+    .ad-banner.amb{background:#fff7e8;border-color:#f3d79c;color:#6d4300}
+    .ad-banner.grn{background:#ecf8f1;border-color:#bfe5cf;color:#0f5f37}
+    .ad-banner input{height:38px;border:1.5px solid #c9d4e2;border-radius:8px;padding:0 10px;font:inherit;font-size:16px;width:150px}
+
+    .ad-kpis{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px;margin:0 0 10px}
+    .ad-kpi{background:#fff;border:1px solid var(--erp-line);border-radius:10px;padding:12px 14px;min-width:0}
+    .ad-kpi h3{margin:0 0 3px;font-size:13px;color:#4b5763;font-weight:600;display:flex;align-items:center;gap:6px}
+    .ad-kpi .v{font-size:23px;font-weight:800;line-height:1.2;overflow-wrap:anywhere;font-variant-numeric:tabular-nums}
+    .ad-kpi small{display:block;color:var(--erp-muted);font-size:12.5px;margin-top:3px;line-height:1.35}
+    .ad-kpi .dot{width:9px;height:9px;border-radius:50%;background:var(--c);flex:0 0 auto}
+    .ad-kpi.hand{background:#13283f;border-color:#13283f;color:#fff}
+    .ad-kpi.hand h3,.ad-kpi.hand small{color:#c8d6e6}
+    .ad-kpi.hand .v{font-size:27px}
+    .ad-strip{display:flex;gap:6px 16px;flex-wrap:wrap;font-size:13.5px;color:#3b4652;margin:0 2px 12px}
+    .ad-strip b{color:var(--erp-ink)}
+    .ad-actions{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin:0 0 14px}
+    .ad-actions button{height:52px;border-radius:10px;border:0;font:inherit;font-size:15px;font-weight:800;cursor:pointer;color:#fff;display:flex;align-items:center;justify-content:center;gap:7px}
+    .ad-actions .in{background:#13824a}.ad-actions .out{background:#c8102e}.ad-actions .dep{background:#1d5fbf}.ad-actions .close{background:#13283f}
+    .ad-actions span{font-size:20px;line-height:1}
+
+    .ad-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin:0 0 12px}
+    .ad-card{background:#fff;border:1px solid var(--erp-line);border-radius:10px;padding:12px 14px;min-width:0}
+    .ad-card h2{margin:0 0 8px;font-size:15.5px;display:flex;align-items:center;gap:8px}
+    .ad-card h2 small{margin-left:auto;font-weight:400;color:var(--erp-muted);font-size:12.5px}
+    .ad-t{border-collapse:collapse;width:100%;font-size:14px}
+    .ad-t th,.ad-t td{padding:7px 6px;border-bottom:1px solid var(--erp-line);text-align:left;vertical-align:top}
+    .ad-t th{font-size:12.5px;color:#4b5763;font-weight:700;background:#f6f7f9;white-space:nowrap}
+    .ad-t .n{text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
+    .ad-t tfoot td{font-weight:800;background:#f6f7f9}
+    .ad-t td small{display:block;color:var(--erp-muted);font-size:12px}
+    .ad-bars{display:flex;flex-direction:column;gap:7px}
+    .ad-bar{display:grid;grid-template-columns:minmax(90px,38%) 1fr auto;gap:8px;align-items:center;font-size:13.5px}
+    .ad-bar .lab{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .ad-bar .track{height:12px;background:#f1f3f6;border-radius:0 4px 4px 0;overflow:hidden}
+    .ad-bar .fill{height:100%;background:#c8102e;border-radius:0 4px 4px 0;min-width:2px}
+    .ad-bar .amt{font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap}
+    .ad-empty{color:var(--erp-muted);font-size:14px;padding:10px 2px}
+
+    .ad-tabs{display:flex;gap:6px;overflow-x:auto;margin:0 0 10px;padding-bottom:2px}
+    .ad-tabs button{height:36px;border-radius:8px;border:1.5px solid var(--erp-line);background:#fff;font:inherit;font-size:14px;padding:0 12px;cursor:pointer;white-space:nowrap;color:var(--erp-ink)}
+    .ad-tabs button[aria-pressed=true]{background:#13283f;border-color:#13283f;color:#fff;font-weight:700}
+    .ad-tabs .cnt{display:inline-block;min-width:20px;padding:0 6px;margin-left:5px;border-radius:99px;background:#c8102e;color:#fff;font-size:12px;font-weight:700;line-height:18px}
+    .ad-filter{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin:0 0 8px}
+    .ad-filter input[type=search]{flex:1 1 180px;height:36px;border:1.5px solid var(--erp-line);border-radius:8px;padding:0 10px;font:inherit;font-size:15px}
+    .ad-rows{display:flex;flex-direction:column}
+    .ad-row{display:grid;grid-template-columns:34px 1fr auto;gap:10px;align-items:center;padding:10px 4px;border-bottom:1px solid var(--erp-line);cursor:pointer;background:none;border-left:0;border-right:0;border-top:0;text-align:left;font:inherit;color:inherit;width:100%}
+    .ad-row:hover{background:#f8fafc}
+    .ad-ic{width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:800}
+    .ic-in{background:#e3f5ec;color:#13824a}.ic-out{background:#fdecef;color:#b3122b}.ic-dep{background:#e6efff;color:#1d5fbf}
+    .ad-row .t{min-width:0}
+    .ad-row .t b{display:block;font-size:14.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .ad-row .t small{display:block;color:var(--erp-muted);font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .ad-row .a{text-align:right;font-weight:800;font-size:15px;white-space:nowrap;font-variant-numeric:tabular-nums}
+    .ad-row .a small{display:block;font-weight:600;font-size:11.5px;margin-top:2px}
+    .plus{color:#13824a}.minus{color:#b3122b}.neutral{color:#1d5fbf}
+    .tag{display:inline-block;padding:1px 8px;border-radius:99px;font-size:11.5px;font-weight:700;white-space:nowrap}
+    .t-red{background:#fdecef;color:#b3122b}.t-amb{background:#fdf0dc;color:#9a5b00}.t-grn{background:#e3f5ec;color:#13824a}.t-blu{background:#e6efff;color:#1d5fbf}.t-gry{background:#eef0f3;color:#3b4652}
+    .ad-ver{border:1px solid var(--erp-line);border-radius:10px;padding:10px 12px;margin:0 0 8px;display:grid;grid-template-columns:1fr auto;gap:6px 12px;align-items:center}
+    .ad-ver .amt{font-size:18px;font-weight:800;font-variant-numeric:tabular-nums}
+    .ad-ver .meta{font-size:13px;color:#3b4652;grid-column:1/-1}
+    .ad-ver .act{grid-column:1/-1;display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+    .ad-ver select{height:38px;border:1.5px solid var(--erp-line);border-radius:8px;padding:0 8px;font:inherit;font-size:14px;flex:1 1 160px;min-width:0;background:#fff}
+    .ad-note{font-size:12.5px;color:var(--erp-muted);margin:8px 2px 0;line-height:1.5}
+
+    /* sheet / popup */
+    .ad-back{position:fixed;inset:0;background:rgba(15,23,35,.5);z-index:4000;display:flex;align-items:center;justify-content:center;padding:12px}
+    .ad-sheet{background:#fff;border-radius:14px;width:min(560px,100%);max-height:calc(100dvh - 24px);display:flex;flex-direction:column;box-shadow:0 20px 50px rgba(0,0,0,.25)}
+    .ad-sheet header{display:flex;align-items:center;gap:10px;padding:14px 16px;border-bottom:1px solid var(--erp-line)}
+    .ad-sheet header h3{margin:0;font-size:17px;flex:1}
+    .ad-sheet header button{border:0;background:#f1f3f6;border-radius:8px;width:36px;height:36px;font-size:18px;cursor:pointer}
+    .ad-sheet .body{padding:14px 16px;overflow:auto;display:flex;flex-direction:column;gap:12px}
+    .ad-sheet footer{padding:12px 16px;border-top:1px solid var(--erp-line);display:flex;gap:8px;justify-content:flex-end}
+    .ad-sheet footer .ad-btn{height:44px;min-width:110px}
+    .f label{display:block;font-size:13px;font-weight:700;color:#3b4652;margin:0 0 5px}
+    .f input,.f select,.f textarea{width:100%;box-sizing:border-box;height:42px;border:1.5px solid #d5dce5;border-radius:8px;padding:0 10px;font:inherit;font-size:16px;background:#fff}
+    .f textarea{height:auto;padding:8px 10px;min-height:56px}
+    .f .big{height:52px;font-size:24px;font-weight:800}
+    .f2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+    .pills{display:flex;flex-wrap:wrap;gap:6px}
+    .pills button{min-height:38px;border-radius:99px;border:1.5px solid #d5dce5;background:#fff;font:inherit;font-size:14px;padding:0 13px;cursor:pointer;color:var(--erp-ink)}
+    .pills button[aria-pressed=true]{background:#13283f;border-color:#13283f;color:#fff;font-weight:700}
+    .pills .add{border-style:dashed;color:#1769d8}
+    .seg{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
+    .seg button{min-height:44px;border-radius:9px;border:1.5px solid #d5dce5;background:#fff;font:inherit;font-size:13.5px;font-weight:700;cursor:pointer;color:var(--erp-ink);padding:2px 4px}
+    .seg button[aria-pressed=true].in{background:#13824a;border-color:#13824a;color:#fff}
+    .seg button[aria-pressed=true].out{background:#c8102e;border-color:#c8102e;color:#fff}
+    .seg button[aria-pressed=true].dep{background:#1d5fbf;border-color:#1d5fbf;color:#fff}
+    .notes{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}
+    .note{display:grid;grid-template-columns:62px 36px 1fr 36px;align-items:center;border:1px solid var(--erp-line);border-radius:9px;padding:5px;gap:4px}
+    .note b{font-size:15px;text-align:center}
+    .note button{height:36px;border-radius:7px;border:1px solid #d5dce5;background:#f6f7f9;font-size:18px;cursor:pointer}
+    .note input{height:36px;border:1px solid #d5dce5;border-radius:7px;text-align:center;font:inherit;font-size:16px;width:100%;box-sizing:border-box;min-width:0}
+    .calc{background:#f6f7f9;border-radius:10px;padding:10px 12px;font-size:14px}
+    .calc div{display:flex;justify-content:space-between;padding:3px 0}
+    .calc .tot{border-top:1px solid #d5dce5;margin-top:4px;padding-top:7px;font-weight:800;font-size:16px}
+    .diff{border-radius:9px;padding:9px 12px;font-weight:700;font-size:15px}
+    .diff.ok{background:#e3f5ec;color:#13824a}.diff.bad{background:#fdecef;color:#b3122b}
+    .kv{display:grid;grid-template-columns:auto 1fr;gap:6px 14px;font-size:14px}
+    .kv span{color:var(--erp-muted)}
+    .mlist{display:flex;flex-direction:column;gap:6px}
+    .mlist div{display:flex;align-items:center;gap:8px;border:1px solid var(--erp-line);border-radius:8px;padding:6px 10px;font-size:14px}
+    .mlist div span{flex:1}
+    @media(max-width:1100px){.ad-kpis{grid-template-columns:repeat(3,minmax(0,1fr))}.ad-grid{grid-template-columns:1fr 1fr}}
+    @media(max-width:700px){
+      .ad-kpis{grid-template-columns:1fr 1fr;gap:8px}
+      .ad-kpi{padding:10px 12px}.ad-kpi .v{font-size:19px}
+      .ad-kpi.hand{grid-column:1/-1}.ad-kpi.hand .v{font-size:26px}
+      .ad-grid{grid-template-columns:1fr}
+      .ad-actions{grid-template-columns:1fr 1fr}
+      .ad-back{align-items:flex-end;padding:0}
+      .ad-sheet{border-radius:16px 16px 0 0;max-height:94dvh;width:100%}
+      .notes{grid-template-columns:1fr}
+      .ad-top h1{font-size:18px;flex-basis:100%}
+    }
+  </style>
+</head>
+<body>
+  <div id="loading" class="status">Checking account access...</div>
+  <main id="page" class="erp-main" hidden>
+    <div class="ad-top">
+      <h1>Accounts Dashboard</h1>
+      <div class="ad-chips" id="period">
+        <button type="button" data-p="today">Today</button><button type="button" data-p="yday">Yesterday</button><button type="button" data-p="7">7 days</button><button type="button" data-p="month">This month</button>
+        <input type="date" id="pFrom" aria-label="From date"><input type="date" id="pTo" aria-label="To date">
+        <button type="button" id="reload" title="Refresh">↻</button>
+      </div>
+    </div>
+    <div id="msg" class="ad-msg" hidden></div>
+    <div id="banners"></div>
+
+    <div class="ad-kpis" id="kpis"></div>
+    <div class="ad-strip" id="strip"></div>
+    <div class="ad-actions">
+      <button type="button" class="in" data-new="IN"><span>+</span>Cash In</button>
+      <button type="button" class="out" data-new="OUT"><span>−</span>Cash Out</button>
+      <button type="button" class="dep" data-new="DEPOSIT"><span>🏦</span>Bank Deposit</button>
+      <button type="button" class="close" id="closeBtn"><span>🌙</span>Close Day</button>
+    </div>
+
+    <div class="ad-grid">
+      <section class="ad-card"><h2>Mode wise <small id="modeNote"></small></h2><div id="modes"></div></section>
+      <section class="ad-card"><h2>Expenses by head <small id="expNote"></small></h2><div id="exp"></div></section>
+      <section class="ad-card"><h2>Bank wise <small>verified only</small></h2><div id="banks"></div></section>
+    </div>
+
+    <section class="ad-card">
+      <div class="ad-tabs" id="tabs">
+        <button type="button" data-t="book">Day book</button>
+        <button type="button" data-t="verify">Bank check<span class="cnt" id="vCnt" hidden></span></button>
+        <button type="button" data-t="out">Party outstanding</button>
+        <button type="button" data-t="close">Cash handover</button>
+        <button type="button" data-t="setup">Heads &amp; Banks</button>
+      </div>
+      <div id="tabBody"></div>
+    </section>
+    <p class="ad-note">Cash in hand = opening cash + cash in − cash out − bank deposit + cash taken from bank. Payment Collection and driver money received by Office come in by themselves (on the day they were entered at the office); add only other money here. UPI / Bank / RTGS / Cheque and bank deposits count in a bank after Admin checks the bank.</p>
+  </main>
+  <script>
+    'use strict';
+    const client=supabase.createClient("https://txkbhadzdbxpieunfvox.supabase.co","sb_publishable_W4I3Q5ODf0g17sq5uDml2Q_sLolXYEk");
+    const el=id=>document.getElementById(id);
+    const esc=v=>String(v==null?"":v).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+    const r2=n=>Math.round((Number(n)||0)*100)/100;
+    const rs=v=>(r2(v)<0?"−":"")+"₹"+Math.abs(r2(v)).toLocaleString("en-IN",{maximumFractionDigits:2});
+    const istDay=t=>t?new Date(new Date(t).getTime()+330*60e3).toISOString().slice(0,10):"";
+    const todayISO=()=>istDay(Date.now());
+    const shift=(d,n)=>{const x=new Date(d+"T12:00:00Z");x.setUTCDate(x.getUTCDate()+n);return x.toISOString().slice(0,10)};
+    const dmy=d=>d?String(d).slice(8,10)+"/"+String(d).slice(5,7)+"/"+String(d).slice(0,4):"";
+    const hm=t=>t?new Date(t).toLocaleTimeString("en-IN",{hour:"2-digit",minute:"2-digit",hour12:true,timeZone:"Asia/Kolkata"}):"";
+    const MODES=["CASH","UPI","BANK","RTGS","CHEQUE"];
+    const MODE_NAME={CASH:"Cash",UPI:"UPI",BANK:"Bank / NEFT",RTGS:"RTGS",CHEQUE:"Cheque"};
+    const SRC_NAME={ENTRY:"Entered here",PAYMENT:"Payment Collection",DRIVER_CASH:"Driver money",DRIVER_ONLINE:"Driver money",OLD:"Old payment entry"};
+    const NOTE_KEYS=["500","200","100","50","20","10"];
+    let D=null,per="today",from=todayISO(),to=todayISO(),tab="book",bookF="all",outRows=null,me={id:"",role:""};
+
+    function say(t,bad){el("msg").hidden=!t;el("msg").textContent=t||"";el("msg").className="ad-msg"+(bad?" bad":"")}
+    const errText=e=>{const m=String(e&&e.message||e||"Something went wrong");
+      if(/function .*lwb_acc|schema cache|does not exist/i.test(m))return "Accounts Dashboard database is not set up yet. It sets itself up when this change is merged (lwb_accounts_dashboard_setup.sql).";
+      return m.replace(/^.*?ERROR:\s*/,"")};
+
+    /* ---------- dates ---------- */
+    function setPeriod(p){
+      per=p;const t=todayISO();
+      if(p==="today"){from=to=t}
+      else if(p==="yday"){from=to=shift(t,-1)}
+      else if(p==="7"){from=shift(t,-6);to=t}
+      else if(p==="month"){from=t.slice(0,8)+"01";to=t}
+      el("pFrom").value=from;el("pTo").value=to;
+      el("period").querySelectorAll("[data-p]").forEach(b=>b.setAttribute("aria-pressed",String(b.dataset.p===per)));
+    }
+
+    /* ---------- data ---------- */
+    async function load(){
+      el("reload").disabled=true;
+      try{
+        const {data,error}=await client.rpc("lwb_acc_dashboard",{p_from:from,p_to:to});
+        if(error)throw error;
+        D=data;D.lines=D.lines||[];D.pending=D.pending||[];
+        say("");render();
+      }catch(e){say(errText(e),true)}
+      finally{el("reload").disabled=false}
+    }
+    async function rpc(name,args){const {data,error}=await client.rpc(name,args);if(error)throw Error(errText(error));return data}
+
+    /* ---------- figures ---------- */
+    function totals(){
+      const L=D.lines,t={cashIn:0,cashOut:0,dep:0,wd:0,allIn:0,allOut:0,nonCashIn:0,pendIn:0,byMode:{},exp:new Map(),bank:new Map()};
+      MODES.forEach(m=>t.byMode[m]={in:0,out:0});
+      for(const l of L){
+        const a=Number(l.amount)||0;
+        if(l.kind==="IN"){t.allIn+=a;t.byMode[l.mode]&&(t.byMode[l.mode].in+=a);if(l.mode==="CASH")t.cashIn+=a;else{t.nonCashIn+=a;if(l.status==="PENDING")t.pendIn+=a}}
+        else if(l.kind==="OUT"){t.allOut+=a;t.byMode[l.mode]&&(t.byMode[l.mode].out+=a);if(l.mode==="CASH")t.cashOut+=a;
+          const k=l.category||"Other";t.exp.set(k,(t.exp.get(k)||0)+a)}
+        else if(l.kind==="DEPOSIT")t.dep+=a;
+        else if(l.kind==="WITHDRAW")t.wd+=a;
+        // bank wise, this period
+        const bid=l.bank_id||0;
+        const counts=l.needs_verify?l.status==="VERIFIED":(l.kind==="WITHDRAW"||(l.kind==="OUT"&&l.mode!=="CASH"));
+        if(l.kind!=="IN"||l.mode!=="CASH"){
+          if(l.kind==="OUT"&&l.mode==="CASH")continue;
+          const b=t.bank.get(bid)||{in:0,out:0,wait:0};
+          if(l.needs_verify&&l.status==="PENDING")b.wait+=a;
+          else if(counts){if(l.kind==="IN"||l.kind==="DEPOSIT")b.in+=a;else b.out+=a}
+          t.bank.set(bid,b);
+        }
+      }
+      return t;
+    }
+
+    /* ---------- render ---------- */
+    function render(){renderBanners();renderKpis();renderModes();renderExp();renderBanks();renderTab()}
+    function bankName(id){const b=(D.banks||[]).find(x=>x.id===id);return b?b.name:""}
+    function holderOpen(){return (D.closes||[]).find(c=>c.date===D.last_close&&c.handed_to&&!c.returned_at)}
+
+    function renderBanners(){
+      const h=[];
+      if(!D.opening_set&&!D.last_close){
+        h.push('<div class="ad-banner blue"><div class="grow"><b>Start: how much cash is in hand right now?</b><br>Count the cash once. This is the opening cash; after this the dashboard carries it forward every day.</div>'+
+          '<input id="startAmt" type="text" inputmode="decimal" placeholder="₹ cash in hand"><button type="button" class="ad-btn pri" id="startBtn">Set opening cash</button></div>');
+      }
+      const ho=holderOpen();
+      if(ho){
+        h.push('<div class="ad-banner amb"><div class="grow"><b>☀ '+rs(ho.counted)+' cash is with '+esc(ho.handed_to_name)+'</b><br>Handed over on '+dmy(ho.date)+' night. When it comes back in the morning, confirm here.</div>'+
+          '<button type="button" class="ad-btn grn" data-return="'+ho.id+'">Cash received back</button></div>');
+      }
+      const pn=D.pending.length,pa=D.pending.reduce((a,p)=>a+Number(p.amount),0);
+      if(pn){
+        h.push('<div class="ad-banner '+(D.is_admin?"amb":"blue")+'"><div class="grow"><b>'+(D.is_admin?"🔔 Check the bank: ":"⏳ Waiting for Admin's bank check: ")+pn+' entr'+(pn===1?"y":"ies")+' · '+rs(pa)+'</b><br>'+
+          (D.is_admin?"UPI / Bank / RTGS / Cheque receipts and cash deposits. Verify the ones you see in the bank.":"They count in the bank after Admin verifies them.")+'</div>'+
+          '<button type="button" class="ad-btn'+(D.is_admin?" pri":"")+'" data-tab="verify">'+(D.is_admin?"Verify now":"See list")+'</button></div>');
+      }
+      el("banners").innerHTML=h.join("");
+      const sb=el("startBtn");if(sb)sb.onclick=setOpening;
+    }
+
+    function kpi(title,val,small,c,cls){return '<div class="ad-kpi'+(cls?" "+cls:"")+'"><h3>'+(c?'<i class="dot" style="--c:'+c+'"></i>':"")+title+'</h3><div class="v">'+val+'</div>'+(small?'<small>'+small+'</small>':"")+'</div>'}
+    function renderKpis(){
+      const t=totals(),one=from===to,isToday=one&&to===D.today;
+      const lastClose=(D.closes||[]).find(c=>c.date===to);
+      const handTitle=isToday?"Cash in hand now":one?"Cash in hand at night":"Cash in hand on "+dmy(to);
+      let handSmall=lastClose?(lastClose.is_start?"Opening cash set":"Counted at close"+(lastClose.handed_to_name?" · with "+esc(lastClose.handed_to_name):"")):(isToday?"Day not closed yet":"Book balance");
+      if(lastClose&&!lastClose.is_start&&Math.abs(lastClose.counted-lastClose.expected)>=1)handSmall+=' · book '+rs(lastClose.expected);
+      el("kpis").innerHTML=
+        kpi(one?"Opening cash":"Opening on "+dmy(from),D.opening_set?rs(D.opening):"—",D.opening_set?(one?"Brought from last night":""):"Not set yet","#6b7785")+
+        kpi("Cash In",'<span class="plus">'+rs(t.cashIn)+'</span>',"Cash received"+(t.wd?" · + "+rs(t.wd)+" taken from bank":""),"#13824a")+
+        kpi("Cash Out",'<span class="minus">'+rs(t.cashOut)+'</span>',"Expenses / payments in cash","#c8102e")+
+        kpi("Bank deposit",'<span class="neutral">'+rs(t.dep)+'</span>',"Cash put in the bank","#1d5fbf")+
+        kpi(handTitle,D.closing_set?rs(D.closing):"—",handSmall,"","hand");
+      el("strip").innerHTML='<span>All money in: <b>'+rs(t.allIn)+'</b></span><span>UPI / Bank / Cheque in: <b>'+rs(t.nonCashIn)+'</b>'+(t.pendIn?' <span class="tag t-amb">'+rs(t.pendIn)+' waiting check</span>':"")+'</span><span>All money out: <b>'+rs(t.allOut)+'</b></span>';
+    }
+
+    function renderModes(){
+      const t=totals();let ti=0,to2=0;
+      const rows=MODES.map(m=>{const x=t.byMode[m];ti+=x.in;to2+=x.out;return '<tr><td>'+MODE_NAME[m]+'</td><td class="n plus">'+(x.in?rs(x.in):"–")+'</td><td class="n minus">'+(x.out?rs(x.out):"–")+'</td></tr>'}).join("");
+      el("modes").innerHTML='<table class="ad-t"><thead><tr><th>Mode</th><th class="n">In</th><th class="n">Out</th></tr></thead><tbody>'+rows+
+        (t.dep?'<tr><td>Cash → Bank deposit</td><td class="n"></td><td class="n neutral">'+rs(t.dep)+'</td></tr>':"")+
+        (t.wd?'<tr><td>Bank → Cash</td><td class="n neutral">'+rs(t.wd)+'</td><td class="n"></td></tr>':"")+
+        '</tbody><tfoot><tr><td>Total</td><td class="n">'+rs(ti)+'</td><td class="n">'+rs(to2)+'</td></tr></tfoot></table>';
+      el("modeNote").textContent=from===to?dmy(from):dmy(from)+" – "+dmy(to);
+    }
+
+    function renderExp(){
+      const t=totals(),list=[...t.exp.entries()].sort((a,b)=>b[1]-a[1]),max=list.length?list[0][1]:0,sum=list.reduce((a,x)=>a+x[1],0);
+      el("expNote").textContent=list.length?"total "+rs(sum):"";
+      el("exp").innerHTML=list.length?'<div class="ad-bars">'+list.map(([k,v])=>'<div class="ad-bar" title="'+esc(k)+': '+rs(v)+' ('+Math.round(v*100/sum)+'%)"><span class="lab">'+esc(k)+'</span><span class="track"><span class="fill" style="display:block;width:'+Math.max(1,v*100/max)+'%"></span></span><span class="amt">'+rs(v)+'</span></div>').join("")+'</div>'
+        :'<div class="ad-empty">No expense in these dates.</div>';
+    }
+
+    function renderBanks(){
+      const t=totals(),banks=(D.banks||[]).filter(b=>b.active||t.bank.has(b.id));
+      const rows=banks.map(b=>{const x=t.bank.get(b.id)||{in:0,out:0,wait:0};
+        return '<tr><td><b>'+esc(b.name)+'</b>'+(b.account_no?'<small>A/c '+esc(b.account_no)+'</small>':"")+'</td><td class="n plus">'+(x.in?rs(x.in):"–")+'</td><td class="n minus">'+(x.out?rs(x.out):"–")+'</td><td class="n">'+rs(b.balance)+(x.wait?'<small class="tag t-amb">+'+rs(x.wait)+' wait</small>':"")+'</td></tr>'}).join("");
+      const nb=t.bank.get(0);
+      const extra=nb&&(nb.in||nb.out||nb.wait)?'<tr><td>Bank not chosen yet<small>Admin picks the bank while verifying</small></td><td class="n">'+(nb.in?rs(nb.in):"–")+'</td><td class="n">'+(nb.out?rs(nb.out):"–")+'</td><td class="n">'+(nb.wait?'<span class="tag t-amb">'+rs(nb.wait)+' wait</span>':"")+'</td></tr>':"";
+      el("banks").innerHTML=banks.length||extra?'<table class="ad-t"><thead><tr><th>Bank</th><th class="n">In</th><th class="n">Out</th><th class="n">Balance</th></tr></thead><tbody>'+rows+extra+'</tbody></table>'
+        :'<div class="ad-empty">No bank added yet. Add your bank accounts in <a href="#" data-tab="setup">Heads &amp; Banks</a>.</div>';
+    }
+
+    /* ---------- tabs ---------- */
+    function renderTab(){
+      el("tabs").querySelectorAll("[data-t]").forEach(b=>b.setAttribute("aria-pressed",String(b.dataset.t===tab)));
+      const n=D.pending.length;el("vCnt").hidden=!n;el("vCnt").textContent=n;
+      if(tab==="book")renderBook();else if(tab==="verify")renderVerify();else if(tab==="out")renderOutstanding();else if(tab==="close")renderCloses();else renderSetup();
+    }
+    function statusTag(l){
+      if(l.status==="PENDING")return '<span class="tag t-amb">Waiting bank check</span>';
+      if(l.status==="VERIFIED")return '<span class="tag t-grn">✓ In bank'+(bankName(l.bank_id)?" · "+esc(bankName(l.bank_id)):"")+'</span>';
+      if(l.status==="REJECTED")return '<span class="tag t-red">✗ Not in bank</span>';
+      return "";
+    }
+    function lineIcon(l){return l.kind==="IN"?'<span class="ad-ic ic-in">+</span>':l.kind==="OUT"?'<span class="ad-ic ic-out">−</span>':l.kind==="DEPOSIT"?'<span class="ad-ic ic-dep">🏦</span>':'<span class="ad-ic ic-dep">₹</span>'}
+    function lineTitle(l){return l.kind==="DEPOSIT"?"Bank deposit"+(bankName(l.bank_id)?" · "+bankName(l.bank_id):""):l.kind==="WITHDRAW"?"Cash from bank"+(bankName(l.bank_id)?" · "+bankName(l.bank_id):""):(l.party?l.party+" · ":"")+(l.category||"")}
+    function sign(l){return l.kind==="IN"||l.kind==="WITHDRAW"?"plus":l.kind==="OUT"?"minus":"neutral"}
+    function renderBook(){
+      const q=(el("bookQ")&&el("bookQ").value||"").toLowerCase();
+      const F={all:"All",IN:"Cash In",OUT:"Cash Out",DEPOSIT:"Deposit",PENDING:"Waiting check"};
+      const list=D.lines.filter(l=>(bookF==="all"||(bookF==="PENDING"?l.status==="PENDING":bookF==="DEPOSIT"?(l.kind==="DEPOSIT"||l.kind==="WITHDRAW"):l.kind===bookF))&&
+        (!q||[l.party,l.category,l.ref,l.remark,l.order_no,l.by,l.mode,String(l.amount)].join(" ").toLowerCase().includes(q)));
+      const keep=el("bookQ")?el("bookQ").value:"";
+      el("tabBody").innerHTML='<div class="ad-filter"><div class="ad-chips" id="bookF">'+Object.entries(F).map(([k,v])=>'<button type="button" data-f="'+k+'" aria-pressed="'+(bookF===k)+'">'+v+'</button>').join("")+'</div>'+
+        '<input type="search" id="bookQ" placeholder="Search party, head, ref, PO" autocomplete="off"><button type="button" class="ad-btn" id="bookXl">⬇ Excel</button></div>'+
+        (list.length?'<div class="ad-rows">'+list.map(l=>'<button type="button" class="ad-row" data-line="'+l.src+'|'+l.id+'">'+lineIcon(l)+
+          '<span class="t"><b>'+esc(lineTitle(l))+'</b><small>'+(from!==to?dmy(l.date)+" · ":"")+hm(l.at)+' · '+MODE_NAME[l.mode]+(l.ref?" · "+esc(l.ref):"")+(l.order_no?" · "+esc(l.order_no):"")+" · "+esc(SRC_NAME[l.src]||"")+(l.remark?" · "+esc(l.remark):"")+'</small></span>'+
+          '<span class="a '+sign(l)+'">'+(sign(l)==="plus"?"+":sign(l)==="minus"?"−":"")+rs(l.amount).replace("−","")+'<small>'+statusTag(l)+'</small></span></button>').join("")+'</div>'
+          :'<div class="ad-empty">No money entry in these dates.</div>');
+      el("bookQ").value=keep;if(keep){el("bookQ").focus()}
+      el("bookQ").oninput=renderBook;
+      el("bookF").querySelectorAll("[data-f]").forEach(b=>b.onclick=()=>{bookF=b.dataset.f;renderBook()});
+      el("bookXl").onclick=()=>LWBExcel.write("accounts-daybook-"+from+"-to-"+to,[{name:"Day book",rows:[["Date","Time","Type","Head","Party","Mode","Amount","Ref","PO","Bank","Bank check","From","Remark","Entered by"],
+        ...list.map(l=>[dmy(l.date),hm(l.at),{IN:"Cash In",OUT:"Cash Out",DEPOSIT:"Bank deposit",WITHDRAW:"Cash from bank"}[l.kind],l.category||"",l.party||"",MODE_NAME[l.mode],r2(l.amount),l.ref||"",l.order_no||"",bankName(l.bank_id),{PENDING:"Waiting",VERIFIED:"Verified",REJECTED:"Not in bank",NA:""}[l.status],SRC_NAME[l.src]||"",l.remark||"",l.by||""])]}]).catch(e=>say(e.message,true));
+      el("tabBody").querySelectorAll("[data-line]").forEach(b=>b.onclick=()=>{const [s,i]=b.dataset.line.split("|");showLine(D.lines.find(l=>l.src===s&&l.id===i))});
+    }
+
+    function bankOptions(sel,withBlank){return (withBlank?'<option value="">Choose bank…</option>':"")+(D.banks||[]).filter(b=>b.active).map(b=>'<option value="'+b.id+'"'+(String(b.id)===String(sel||"")?" selected":"")+'>'+esc(b.name)+(b.account_no?" · "+esc(b.account_no):"")+'</option>').join("")}
+    function renderVerify(){
+      const P=D.pending;
+      if(!P.length){el("tabBody").innerHTML='<div class="ad-empty">✓ Nothing is waiting for the bank check.</div>';return}
+      const total=P.reduce((a,p)=>a+Number(p.amount),0);
+      const noBank=!(D.banks||[]).some(b=>b.active);
+      el("tabBody").innerHTML='<p style="margin:0 0 10px;font-size:14px"><b>'+P.length+' entries · '+rs(total)+'</b> '+(D.is_admin?"— open the bank statement and verify each one that you see there.":"— Admin verifies these after checking the bank.")+'</p>'+
+        (D.is_admin&&noBank?'<div class="ad-msg">Add your bank accounts first in <a href="#" data-tab="setup">Heads &amp; Banks</a>.</div>':"")+
+        P.map(p=>'<div class="ad-ver" data-v="'+p.src+'|'+p.id+'"><div><div class="amt">'+rs(p.amount)+' <span class="tag t-blu">'+(p.kind==="DEPOSIT"?"Cash deposit":MODE_NAME[p.mode])+'</span></div></div><div style="text-align:right;font-size:13px">'+dmy(p.date)+'<br>'+hm(p.at)+'</div>'+
+          '<div class="meta">'+esc(p.kind==="DEPOSIT"?"Cash deposited in "+(bankName(p.bank_id)||"bank"):(p.party||p.category||""))+(p.ref?' · Ref <b>'+esc(p.ref)+'</b>':"")+(p.order_no?" · "+esc(p.order_no):"")+' · '+esc(SRC_NAME[p.src]||"")+(p.by?" · by "+esc(p.by):"")+(p.remark?'<br><small>'+esc(p.remark)+'</small>':"")+'</div>'+
+          (D.is_admin?'<div class="act"><select aria-label="Bank">'+bankOptions(p.bank_id,!p.bank_id)+'</select><button type="button" class="ad-btn grn" data-ok>✓ In bank</button><button type="button" class="ad-btn red" data-no>✗ Not in bank</button></div>':"")+'</div>').join("");
+      el("tabBody").querySelectorAll(".ad-ver").forEach(box=>{
+        const [src,id]=box.dataset.v.split("|");
+        const ok=box.querySelector("[data-ok]"),no=box.querySelector("[data-no]");
+        if(ok)ok.onclick=()=>act(ok,async()=>{const b=box.querySelector("select").value;if(!b)throw Error("Choose the bank where this money came");await rpc("lwb_acc_verify_line",{p_src:src,p_id:id,p_ok:true,p_bank_id:Number(b),p_note:null})});
+        if(no)no.onclick=async()=>{const why=await ERPShell.prompt("Why is it not in the bank?","",{title:"Not in bank",placeholder:"e.g. not credited, wrong UTR"});if(why==null)return;
+          act(no,()=>rpc("lwb_acc_verify_line",{p_src:src,p_id:id,p_ok:false,p_bank_id:null,p_note:why}))};
+      });
+    }
+
+    async function renderOutstanding(){
+      if(!outRows){
+        el("tabBody").innerHTML='<div class="ad-empty">Loading party outstanding…</div>';
+        const {data,error}=await client.rpc("lwb_party_bills");
+        if(error){el("tabBody").innerHTML='<div class="ad-msg bad">'+esc(error.message)+'</div>';return}
+        const m=new Map();
+        for(const b of data||[]){const k=String(b.customer_name||"").trim();if(!k)continue;const x=m.get(k)||{party:k,out:0,bills:0,oldest:""};
+          const o=Number(b.outstanding_amount)||0;if(o>0.5){x.out+=o;x.bills++;if(!x.oldest||String(b.bill_date)<x.oldest)x.oldest=String(b.bill_date||"")}m.set(k,x)}
+        outRows=[...m.values()].filter(x=>x.out>0.5).sort((a,b)=>b.out-a.out);
+      }
+      if(tab!=="out")return;
+      const keep=el("outQ")?el("outQ").value:"",q=keep.toLowerCase();
+      const list=outRows.filter(x=>!q||x.party.toLowerCase().includes(q)),tot=list.reduce((a,x)=>a+x.out,0);
+      const age=d=>d?Math.max(0,Math.round((new Date(D.today+"T12:00:00Z")-new Date(d+"T12:00:00Z"))/864e5)):0;
+      el("tabBody").innerHTML='<div class="ad-filter"><input type="search" id="outQ" placeholder="Search party" autocomplete="off"><a class="ad-btn" href="party-ledger.html">Party Ledger →</a><button type="button" class="ad-btn" id="outXl">⬇ Excel</button></div>'+
+        '<p style="margin:0 0 8px;font-size:14px">'+list.length+' parties owe <b>'+rs(tot)+'</b></p>'+
+        (list.length?'<div style="overflow:auto"><table class="ad-t"><thead><tr><th>Party</th><th class="n">Bills</th><th class="n">Oldest</th><th class="n">Outstanding</th></tr></thead><tbody>'+
+          list.map(x=>{const a=age(x.oldest);return '<tr><td><a href="party-ledger.html?party='+encodeURIComponent(x.party)+'"><b>'+esc(x.party)+'</b></a></td><td class="n">'+x.bills+'</td><td class="n">'+(x.oldest?dmy(x.oldest)+'<small class="'+(a>30?"minus":"")+'">'+a+' days</small>':"")+'</td><td class="n"><b>'+rs(x.out)+'</b></td></tr>'}).join("")+'</tbody></table></div>'
+          :'<div class="ad-empty">No party outstanding.</div>');
+      el("outQ").value=keep;if(keep)el("outQ").focus();
+      el("outQ").oninput=renderOutstanding;
+      el("outXl").onclick=()=>LWBExcel.write("party-outstanding-"+D.today,[{name:"Outstanding",rows:[["Party","Bills","Oldest bill","Days","Outstanding"],...list.map(x=>[x.party,x.bills,dmy(x.oldest),age(x.oldest),r2(x.out)])]}]).catch(e=>say(e.message,true));
+    }
+
+    function renderCloses(){
+      const C=(D.closes||[]).filter(c=>c.date>=shift(from,-1));
+      el("tabBody").innerHTML=(C.length?'<div style="overflow:auto"><table class="ad-t"><thead><tr><th>Night of</th><th class="n">Book cash</th><th class="n">Counted</th><th>Handed to</th><th>Morning</th><th></th></tr></thead><tbody>'+
+        C.map(c=>{const d=r2(c.counted-c.expected);
+          return '<tr><td><b>'+dmy(c.date)+'</b><small>'+(c.is_start?"Opening cash set":"by "+esc(c.closed_by||"")+" · "+hm(c.closed_at))+'</small></td><td class="n">'+rs(c.expected)+'</td><td class="n"><b>'+rs(c.counted)+'</b>'+(Math.abs(d)>=1?'<small class="'+(d<0?"minus":"plus")+'">'+(d<0?"short ":"extra ")+rs(Math.abs(d))+'</small>':"")+'</td>'+
+          '<td>'+(c.is_start?"":c.handed_to_name?esc(c.handed_to_name):'<span class="tag t-gry">Kept in office</span>')+(c.note?'<small>'+esc(c.note)+'</small>':"")+'</td>'+
+          '<td>'+(c.is_start?"":c.returned_at?'<span class="tag t-grn">✓ '+rs(c.returned)+' back</span><small>'+hm(c.returned_at)+(c.return_note?" · "+esc(c.return_note):"")+'</small>':c.handed_to?'<button type="button" class="ad-btn grn" data-return="'+c.id+'">Received back</button>':"")+'</td>'+
+          '<td>'+(D.is_admin&&c.date===D.last_close?'<button type="button" class="ad-btn red" data-reopen="'+c.id+'">Reopen</button>':"")+'</td></tr>'}).join("")+'</tbody></table></div>'
+        :'<div class="ad-empty">No day closed in these dates.</div>')+
+        '<p class="ad-note">Every night: Close Day → count the notes → hand the cash to Admin / Sales Head. In the morning tap "Received back"; that cash is the opening cash of the day.'+(D.is_admin?' Admin: "Reopen" undoes the last close (wrong count or a missed entry).':"")+'</p>'+
+        (D.is_admin?'<p style="margin:8px 0 0"><button type="button" class="ad-btn" id="resetOpen">Set opening cash again</button></p>':"");
+      const ro=el("resetOpen");if(ro)ro.onclick=resetOpening;
+    }
+
+    function renderSetup(){
+      const C=D.categories||[],B=D.banks||[];
+      const heads=k=>C.filter(c=>c.kind===k).map(c=>'<div><span'+(c.active?"":' style="color:#9aa5b1;text-decoration:line-through"')+'>'+esc(c.name)+'</span>'+
+        (D.is_admin?'<button type="button" class="ad-btn" data-cat="'+c.id+'" data-on="'+(!c.active)+'">'+(c.active?"Switch off":"Switch on")+'</button>':"")+'</div>').join("");
+      el("tabBody").innerHTML='<div class="ad-grid" style="margin:0">'+
+        '<div><h3 style="margin:0 0 8px;font-size:15px">Cash Out heads (expenses)</h3><div class="mlist">'+heads("OUT")+'</div><p><button type="button" class="ad-btn" data-addcat="OUT">+ Add expense head</button></p></div>'+
+        '<div><h3 style="margin:0 0 8px;font-size:15px">Cash In heads</h3><div class="mlist">'+heads("IN")+'</div><p><button type="button" class="ad-btn" data-addcat="IN">+ Add Cash In head</button></p></div>'+
+        '<div><h3 style="margin:0 0 8px;font-size:15px">Bank accounts</h3><div class="mlist">'+(B.length?B.map(b=>'<div><span><b'+(b.active?"":' style="color:#9aa5b1"')+'>'+esc(b.name)+'</b>'+(b.account_no?' · '+esc(b.account_no):"")+'<br><small style="color:#6b7785">Balance '+rs(b.balance)+(b.opening_date?" (from "+dmy(b.opening_date)+")":"")+'</small></span><button type="button" class="ad-btn" data-bank="'+b.id+'">Edit</button></div>').join(""):'<div><span>No bank yet</span></div>')+
+        '</div><p><button type="button" class="ad-btn pri" data-bank="">+ Add bank</button></p></div></div>';
+      el("tabBody").querySelectorAll("[data-addcat]").forEach(b=>b.onclick=()=>addHead(b.dataset.addcat));
+      el("tabBody").querySelectorAll("[data-cat]").forEach(b=>b.onclick=()=>{const c=C.find(x=>String(x.id)===b.dataset.cat);act(b,()=>rpc("lwb_acc_save_category",{p_id:c.id,p_kind:c.kind,p_name:c.name,p_active:b.dataset.on==="true"}))});
+      el("tabBody").querySelectorAll("[data-bank]").forEach(b=>b.onclick=()=>editBank(B.find(x=>String(x.id)===b.dataset.bank)));
+    }
+
+    /* ---------- actions ---------- */
+    async function act(btn,fn,done){
+      if(btn)btn.disabled=true;
+      try{await fn();if(done)done();await load();return true}
+      catch(e){await ERPShell.alert(errText(e));return false}
+      finally{if(btn)btn.disabled=false}
+    }
+    function sheet(title,body,okText,onOk,okCls){
+      const back=document.createElement("div");back.className="ad-back";
+      back.innerHTML='<div class="ad-sheet" role="dialog" aria-modal="true" aria-label="'+esc(title)+'"><header><h3>'+esc(title)+'</h3><button type="button" data-x aria-label="Close">✕</button></header><div class="body">'+body+'</div>'+
+        (okText?'<footer><button type="button" class="ad-btn" data-x>Cancel</button><button type="button" class="ad-btn '+(okCls||"pri")+'" data-ok>'+okText+'</button></footer>':"")+'</div>';
+      document.body.append(back);document.body.style.overflow="hidden";
+      const close=()=>{back.remove();document.body.style.overflow=""};
+      back.querySelectorAll("[data-x]").forEach(b=>b.onclick=close);
+      back.addEventListener("click",e=>{if(e.target===back)close()});
+      const ok=back.querySelector("[data-ok]");
+      if(ok)ok.onclick=async()=>{ok.disabled=true;try{if(await onOk(back)!==false)close()}finally{ok.disabled=false}};
+      return back;
+    }
+    const num=v=>{const n=Number(String(v||"").replace(/[₹,\s]/g,""));return isFinite(n)?n:NaN};
+
+    async function setOpening(){
+      const v=num(el("startAmt").value);
+      if(!(v>=0)||el("startAmt").value.trim()===""){await ERPShell.alert("Enter the cash in hand (0 if none)");return}
+      if(!await ERPShell.confirm("Opening cash "+rs(v)+" from today ("+dmy(D.today)+")?\n\nCount it once more. After this only Admin can change it."))return;
+      act(el("startBtn"),()=>rpc("lwb_acc_set_opening",{p_date:D.today,p_amount:v,p_note:"Opening cash"}));
+    }
+    async function resetOpening(){
+      const v=await ERPShell.prompt("Cash in hand at the start of today ("+dmy(D.today)+"). Only allowed when today and later days are not closed.","",{title:"Set opening cash again",placeholder:"₹ amount"});
+      if(v==null)return;const n=num(v);if(!(n>=0)){await ERPShell.alert("Enter the amount");return}
+      act(null,()=>rpc("lwb_acc_set_opening",{p_date:D.today,p_amount:n,p_note:"Opening cash set again by Admin"}));
+    }
+
+    function newEntry(kind){
+      const banks=(D.banks||[]).filter(b=>b.active);
+      if((kind==="DEPOSIT"||kind==="WITHDRAW")&&!banks.length){ERPShell.alert("Add your bank account first (Heads & Banks).");tab="setup";renderTab();return}
+      let st={kind,mode:"CASH",cat:null};
+      const def=to<=D.today&&to>=from&&from===to?to:D.today;
+      const body='<div class="seg" id="eKind"><button type="button" class="in" data-k="IN">+ Cash In</button><button type="button" class="out" data-k="OUT">− Cash Out</button><button type="button" class="dep" data-k="DEPOSIT">🏦 Deposit</button><button type="button" class="dep" data-k="WITHDRAW">₹ From bank</button></div>'+
+        '<div class="f2"><div class="f"><label for="eAmt">Amount ₹</label><input id="eAmt" class="big" type="text" inputmode="decimal" autocomplete="off" placeholder="0"></div><div class="f"><label for="eDate">Date</label><input id="eDate" type="date" max="'+D.today+'" value="'+def+'"></div></div>'+
+        '<div class="f" id="eCatBox"><label id="eCatLab">Head</label><div class="pills" id="eCats"></div></div>'+
+        '<div class="f" id="eModeBox"><label>Paid by</label><div class="pills" id="eModes">'+MODES.map(m=>'<button type="button" data-m="'+m+'">'+MODE_NAME[m]+'</button>').join("")+'</div></div>'+
+        '<div class="f" id="eBankBox"><label for="eBank" id="eBankLab">Bank</label><select id="eBank">'+bankOptions(banks.length===1?banks[0].id:"",true)+'</select></div>'+
+        '<div class="f" id="ePartyBox"><label for="eParty" id="ePartyLab">Party</label><input id="eParty" type="text" maxlength="120" autocomplete="off"></div>'+
+        '<div class="f" id="eRefBox"><label for="eRef" id="eRefLab">UTR / Ref no.</label><input id="eRef" type="text" maxlength="100" autocomplete="off"></div>'+
+        '<div class="f"><label for="eRemark">Note</label><input id="eRemark" type="text" maxlength="300" autocomplete="off" placeholder="optional"></div>'+
+        '<div id="eHint" class="ad-note" style="margin:0"></div>';
+      const box=sheet("New entry",body,"Save",async b=>{
+        const amt=num(b.querySelector("#eAmt").value);
+        const p={date:b.querySelector("#eDate").value,kind:st.kind,category_id:st.cat,mode:st.mode,bank_id:b.querySelector("#eBank").value||null,amount:amt,
+          party:b.querySelector("#eParty").value,ref:b.querySelector("#eRef").value,remark:b.querySelector("#eRemark").value};
+        if(!(amt>0)){await ERPShell.alert("Enter the amount");return false}
+        if((st.kind==="IN"||st.kind==="OUT")&&!st.cat){await ERPShell.alert("Choose the head");return false}
+        if(st.kind==="OUT"&&st.mode==="CASH"&&D.closing_set&&p.date===D.today&&amt>Number(D.closing)+0.5&&to===D.today){
+          if(!await ERPShell.confirm("Cash in hand is only "+rs(D.closing)+". Save "+rs(amt)+" Cash Out anyway?"))return false}
+        try{await rpc("lwb_acc_add_entry",{p});}catch(e){await ERPShell.alert(errText(e));return false}
+        ERPShell.toast?ERPShell.toast("Saved "+rs(amt)):null;load();
+      },"grn");
+      const q=s=>box.querySelector(s);
+      function paint(){
+        const k=st.kind,isIO=k==="IN"||k==="OUT";
+        q("#eKind").querySelectorAll("[data-k]").forEach(b=>b.setAttribute("aria-pressed",String(b.dataset.k===k)));
+        box.querySelector("h3").textContent={IN:"Cash In",OUT:"Cash Out / Expense",DEPOSIT:"Cash deposited in bank",WITHDRAW:"Cash taken from bank"}[k];
+        box.querySelector("[data-ok]").className="ad-btn "+(k==="IN"?"grn":k==="OUT"?"redf":"pri");
+        q("#eCatBox").hidden=!isIO;q("#eModeBox").hidden=!isIO;q("#ePartyBox").hidden=!isIO;
+        q("#eCatLab").textContent=k==="IN"?"Money for":"Expense head";
+        q("#eModeBox label").textContent=k==="IN"?"Received by":"Paid by";
+        q("#ePartyLab").textContent=k==="IN"?"Received from":"Paid to";
+        const cats=(D.categories||[]).filter(c=>c.kind===k&&c.active);
+        if(isIO){if(!cats.some(c=>c.id===st.cat))st.cat=null;
+          q("#eCats").innerHTML=cats.map(c=>'<button type="button" data-c="'+c.id+'" aria-pressed="'+(c.id===st.cat)+'">'+esc(c.name)+'</button>').join("")+'<button type="button" class="add" data-c="new">+ New head</button>';
+          q("#eCats").querySelectorAll("[data-c]").forEach(b=>b.onclick=async()=>{
+            if(b.dataset.c==="new"){const id=await addHead(k,true);if(id){st.cat=id;paint()}return}
+            st.cat=Number(b.dataset.c);paint()});
+        }
+        if(!isIO)st.mode="CASH";
+        q("#eModes").querySelectorAll("[data-m]").forEach(b=>{b.setAttribute("aria-pressed",String(b.dataset.m===st.mode));b.onclick=()=>{st.mode=b.dataset.m;paint()}});
+        const nonCash=st.mode!=="CASH";
+        q("#eBankBox").hidden=isIO&&!nonCash;
+        q("#eBankLab").textContent=k==="DEPOSIT"?"Deposited in bank":k==="WITHDRAW"?"Taken from bank":k==="IN"?"Came in bank (Admin can change)":"Paid from bank";
+        q("#eRefBox").hidden=isIO&&!nonCash&&k!=="OUT";
+        q("#eRefLab").textContent=st.mode==="CHEQUE"?"Cheque no.":nonCash?"UTR / Ref no.":k==="DEPOSIT"?"Deposit slip no.":"Bill / voucher no.";
+        q("#eHint").textContent=k==="DEPOSIT"?"Cash leaves the cash in hand now; it shows in the bank after Admin checks the bank.":
+          k==="IN"&&nonCash?"Admin gets a bell to check this in the bank. Payment Collection on Tally bills is entered on Tally Bill & Invoice No. → Money to collect, not here.":
+          k==="IN"?"Party bill payments go through Payment Collection (they show here by themselves). Use this for other cash.":"";
+      }
+      q("#eKind").querySelectorAll("[data-k]").forEach(b=>b.onclick=()=>{st.kind=b.dataset.k;paint()});
+      paint();setTimeout(()=>q("#eAmt").focus(),60);
+    }
+
+    async function addHead(kind,returnId){
+      const name=await ERPShell.prompt("Name of the new "+(kind==="IN"?"Cash In":"expense")+" head","",{title:"New head",placeholder:kind==="IN"?"e.g. Commission received":"e.g. Gate pass fee"});
+      if(!name||!name.trim())return null;
+      try{const id=await rpc("lwb_acc_save_category",{p_id:null,p_kind:kind,p_name:name,p_active:true});
+        D.categories=(D.categories||[]).filter(c=>c.id!==id).concat([{id,kind,name:name.trim(),active:true}]);
+        if(!returnId)load();return id}
+      catch(e){await ERPShell.alert(errText(e));return null}
+    }
+
+    function editBank(b){
+      b=b||{};
+      sheet(b.id?"Edit bank":"Add bank",
+        '<div class="f"><label for="bName">Bank name</label><input id="bName" type="text" maxlength="80" value="'+esc(b.name||"")+'" placeholder="e.g. HDFC Current"></div>'+
+        '<div class="f"><label for="bAcc">Account no. (last digits)</label><input id="bAcc" type="text" maxlength="40" value="'+esc(b.account_no||"")+'"></div>'+
+        '<div class="f2"><div class="f"><label for="bOpen">Opening balance ₹</label><input id="bOpen" type="text" inputmode="decimal" value="'+(b.opening_balance!=null?r2(b.opening_balance):"0")+'"'+(b.id&&!D.is_admin?" disabled":"")+'></div>'+
+        '<div class="f"><label for="bOpenD">Balance as on</label><input id="bOpenD" type="date" value="'+(b.opening_date||"")+'"'+(b.id&&!D.is_admin?" disabled":"")+'></div></div>'+
+        (b.id&&D.is_admin?'<label style="display:flex;gap:8px;align-items:center;font-size:14px"><input type="checkbox" id="bAct"'+(b.active!==false?" checked":"")+' style="width:20px;height:20px"> Active</label>':"")+
+        '<p class="ad-note" style="margin:0">Bank balance = opening balance + verified money in − bank payments, from the "as on" date.'+(b.id&&!D.is_admin?" Only Admin changes the opening balance.":"")+'</p>',
+        "Save",async box=>{
+          const v=s=>box.querySelector(s);
+          try{await rpc("lwb_acc_save_bank",{p_id:b.id||null,p_name:v("#bName").value,p_account_no:v("#bAcc").value,p_opening:num(v("#bOpen").value)||0,
+            p_opening_date:v("#bOpenD").value||null,p_active:v("#bAct")?v("#bAct").checked:true})}
+          catch(e){await ERPShell.alert(errText(e));return false}
+          load();
+        });
+    }
+
+    function showLine(l){
+      if(!l)return;
+      const canCancel=l.src==="ENTRY"&&(D.is_admin||(l.mine&&l.status!=="VERIFIED"))&&!(D.last_close&&l.date<=D.last_close);
+      const box=sheet({IN:"Cash In",OUT:"Cash Out",DEPOSIT:"Bank deposit",WITHDRAW:"Cash from bank"}[l.kind]+" · "+rs(l.amount),
+        '<div class="kv"><span>Date</span><b>'+dmy(l.date)+' · '+hm(l.at)+'</b><span>Head</span><b>'+esc(l.category||"")+'</b>'+(l.party?'<span>Party</span><b>'+esc(l.party)+'</b>':"")+
+        '<span>Mode</span><b>'+MODE_NAME[l.mode]+'</b>'+(l.ref?'<span>Ref</span><b>'+esc(l.ref)+'</b>':"")+(l.order_no?'<span>PO</span><b>'+esc(l.order_no)+'</b>':"")+
+        (bankName(l.bank_id)?'<span>Bank</span><b>'+esc(bankName(l.bank_id))+'</b>':"")+(l.needs_verify?'<span>Bank check</span><b>'+statusTag(l)+(l.v_by?' <small>'+esc(l.v_by)+' · '+dmy(istDay(l.v_at))+'</small>':"")+(l.v_note?'<br><small>'+esc(l.v_note)+'</small>':"")+'</b>':"")+
+        '<span>From</span><b>'+esc(SRC_NAME[l.src]||"")+'</b>'+(l.by?'<span>By</span><b>'+esc(l.by)+'</b>':"")+(l.remark?'<span>Note</span><b>'+esc(l.remark)+'</b>':"")+'</div>'+
+        (l.src!=="ENTRY"?'<p class="ad-note" style="margin:0">This came from '+esc(SRC_NAME[l.src])+'. Change or cancel it there.</p>':"")+
+        '<div style="display:flex;gap:8px;flex-wrap:wrap">'+(canCancel?'<button type="button" class="ad-btn red" data-cancel>Cancel this entry</button>':"")+
+        (D.is_admin&&l.needs_verify&&l.status!=="PENDING"?'<button type="button" class="ad-btn" data-unv>Back to waiting check</button>':"")+'</div>',
+        "",null);
+      const c=box.querySelector("[data-cancel]");
+      if(c)c.onclick=async()=>{const why=await ERPShell.prompt("Why cancel this entry? It stays in the record as cancelled.","",{title:"Cancel entry",placeholder:"e.g. entered twice"});if(why==null)return;
+        if(await act(c,()=>rpc("lwb_acc_cancel_entry",{p_id:l.id,p_reason:why})))box.remove(),document.body.style.overflow=""};
+      const u=box.querySelector("[data-unv]");
+      if(u)u.onclick=async()=>{if(await act(u,()=>rpc("lwb_acc_unverify_line",{p_src:l.src,p_id:l.id})))box.remove(),document.body.style.overflow=""};
+    }
+
+    /* ---------- night close ---------- */
+    async function closeDay(){
+      if(!D.last_close){await ERPShell.alert("Set the opening cash first (box at the top).");return}
+      const day=shift(D.last_close,1);
+      if(day>D.today){await ERPShell.alert("Today ("+dmy(D.today)+") is already closed.");return}
+      let info;
+      try{const {data,error}=await client.rpc("lwb_acc_dashboard",{p_from:day,p_to:day});if(error)throw error;info=data}catch(e){await ERPShell.alert(errText(e));return}
+      const L=info.lines,sum=f=>L.filter(f).reduce((a,l)=>a+Number(l.amount),0);
+      const cin=sum(l=>l.kind==="IN"&&l.mode==="CASH"),cout=sum(l=>l.kind==="OUT"&&l.mode==="CASH"),dep=sum(l=>l.kind==="DEPOSIT"),wd=sum(l=>l.kind==="WITHDRAW");
+      const book=r2(Number(info.opening)+cin-cout-dep+wd);
+      const holders=info.holders||[];
+      const body=(day<D.today?'<div class="ad-msg">'+dmy(day)+' was not closed. Close it first; then close the next day.</div>':"")+
+        '<div class="calc"><div><span>Opening cash</span><b>'+rs(info.opening)+'</b></div><div><span>+ Cash In</span><b class="plus">'+rs(cin)+'</b></div><div><span>− Cash Out</span><b class="minus">'+rs(cout)+'</b></div><div><span>− Bank deposit</span><b>'+rs(dep)+'</b></div>'+(wd?'<div><span>+ Cash from bank</span><b>'+rs(wd)+'</b></div>':"")+'<div class="tot"><span>Cash should be</span><span>'+rs(book)+'</span></div></div>'+
+        '<div class="f"><label>Count the notes</label><div class="notes">'+NOTE_KEYS.map(k=>'<div class="note"><b>₹'+k+'</b><button type="button" data-d="'+k+'" data-s="-1" aria-label="less">−</button><input type="text" inputmode="numeric" data-n="'+k+'" placeholder="0" aria-label="'+k+' notes"><button type="button" data-d="'+k+'" data-s="1" aria-label="more">+</button></div>').join("")+
+        '<div class="note" style="grid-template-columns:62px 1fr"><b>Coins</b><input type="text" inputmode="decimal" data-n="coins" placeholder="₹ 0" aria-label="coins amount"></div></div></div>'+
+        '<div class="diff ok" id="cDiff"></div>'+
+        '<div class="f"><label>Hand over the cash to</label><div class="pills" id="cTo">'+holders.map(h=>'<button type="button" data-h="'+h.id+'">'+esc(h.name)+' · '+(h.role==="admin"?"Admin":"Sales Head")+'</button>').join("")+'<button type="button" data-h="">Keep in office safe</button></div></div>'+
+        '<div class="f"><label for="cNote">Note</label><input id="cNote" type="text" maxlength="300" placeholder="Required if cash is short / extra"></div>';
+      let holder=null;
+      const box=sheet("Close day "+dmy(day)+" · cash handover",body,"Close day & hand over",async b=>{
+        const notes={};b.querySelectorAll("[data-n]").forEach(i=>{const v=num(i.value);if(v>0)notes[i.dataset.n]=i.dataset.n==="coins"?r2(v):Math.floor(v)});
+        const counted=calc(),note=b.querySelector("#cNote").value.trim();
+        if(holder===null){await ERPShell.alert("Choose who gets the cash (or Keep in office safe)");return false}
+        if(Math.abs(counted-book)>=1&&!note){await ERPShell.alert("Cash is "+(counted<book?"short":"extra")+" by "+rs(Math.abs(counted-book))+". Write a note why.");return false}
+        const hn=holder?(holders.find(h=>h.id===holder)||{}).name:"office safe";
+        if(!await ERPShell.confirm("Close "+dmy(day)+" with "+rs(counted)+" cash, handed to "+hn+"?"))return false;
+        try{await rpc("lwb_acc_close_day",{p_date:day,p_notes:notes,p_handed_to:holder||null,p_note:note||null})}catch(e){await ERPShell.alert(errText(e));return false}
+        load();
+      },"pri");
+      function calc(){let t=0;box.querySelectorAll("[data-n]").forEach(i=>{const v=num(i.value);if(v>0)t+=i.dataset.n==="coins"?v:Number(i.dataset.n)*Math.floor(v)});
+        t=r2(t);const d=r2(t-book),c=box.querySelector("#cDiff");
+        c.className="diff "+(Math.abs(d)<1?"ok":"bad");
+        c.textContent="Counted "+rs(t)+(Math.abs(d)<1?" ✓ matches":" · "+(d<0?"short ":"extra ")+rs(Math.abs(d)));return t}
+      box.querySelectorAll("[data-n]").forEach(i=>i.oninput=calc);
+      box.querySelectorAll("[data-d]").forEach(b=>b.onclick=()=>{const i=box.querySelector('[data-n="'+b.dataset.d+'"]');i.value=Math.max(0,(Math.floor(num(i.value))||0)+Number(b.dataset.s))||"";calc()});
+      box.querySelectorAll("[data-h]").forEach(b=>b.onclick=()=>{holder=b.dataset.h;box.querySelectorAll("[data-h]").forEach(x=>x.setAttribute("aria-pressed",String(x===b)))});
+      calc();
+    }
+
+    async function cashBack(id){
+      const c=(D.closes||[]).find(x=>String(x.id)===String(id));if(!c)return;
+      sheet("Cash received back",
+        '<p style="margin:0;font-size:15px">'+esc(c.handed_to_name||"")+' had <b>'+rs(c.counted)+'</b> from '+dmy(c.date)+' night.</p>'+
+        '<div class="f"><label for="rAmt">Cash received now ₹</label><input id="rAmt" class="big" type="text" inputmode="decimal" value="'+r2(c.counted)+'"></div>'+
+        '<div class="f"><label for="rNote">Note</label><input id="rNote" type="text" maxlength="300" placeholder="Required if the amount is different"></div>',
+        "Confirm received",async b=>{
+          try{await rpc("lwb_acc_cash_returned",{p_close_id:c.id,p_amount:num(b.querySelector("#rAmt").value),p_note:b.querySelector("#rNote").value||null})}
+          catch(e){await ERPShell.alert(errText(e));return false}
+          load();
+        },"grn");
+    }
+
+    /* ---------- wiring ---------- */
+    document.addEventListener("click",e=>{
+      const t=e.target.closest("[data-tab],[data-return],[data-reopen]");if(!t)return;
+      if(t.dataset.tab){e.preventDefault();tab=t.dataset.tab;renderTab();el("tabs").scrollIntoView({behavior:"smooth",block:"start"})}
+      else if(t.dataset.return)cashBack(t.dataset.return);
+      else if(t.dataset.reopen)(async()=>{const why=await ERPShell.prompt("Reopen this day? Cash count and handover are cancelled (kept in record). Write why.","",{title:"Reopen day"});if(why==null)return;act(t,()=>rpc("lwb_acc_reopen_day",{p_close_id:Number(t.dataset.reopen),p_reason:why}))})();
+    });
+    el("tabs").querySelectorAll("[data-t]").forEach(b=>b.onclick=()=>{tab=b.dataset.t;renderTab()});
+    el("period").querySelectorAll("[data-p]").forEach(b=>b.onclick=()=>{setPeriod(b.dataset.p);load()});
+    ["pFrom","pTo"].forEach(id=>el(id).onchange=()=>{
+      const f=el("pFrom").value,t=el("pTo").value;if(!f||!t)return;
+      from=f<=t?f:t;to=f<=t?t:f;per="custom";el("period").querySelectorAll("[data-p]").forEach(b=>b.setAttribute("aria-pressed","false"));load()});
+    el("reload").onclick=()=>{outRows=null;load()};
+    document.querySelectorAll("[data-new]").forEach(b=>b.onclick=()=>D&&newEntry(b.dataset.new));
+    el("closeBtn").onclick=()=>D&&closeDay();
+
+    (async()=>{
+      const {data:{session}}=await client.auth.getSession();
+      if(!session){location.replace("login.html");return}
+      const {data:p}=await client.from("user_profiles").select("full_name,role,active").eq("id",session.user.id).single();
+      const realRole=String((p&&p.role)||"").toLowerCase().trim(),role=p?await ERPShell.pageRoleFresh(realRole):realRole;
+      if(!p||p.active!==true||!["admin","accounts"].includes(role)){location.replace("dashboard.html");return}
+      me={id:session.user.id,role:realRole};
+      ERPShell.mount({role:realRole||role,name:p.full_name||session.user.email,onLogout:async()=>{await client.auth.signOut();location.replace("login.html")}});
+      el("loading").hidden=true;el("page").hidden=false;
+      if(location.hash==="#verify")tab="verify";
+      setPeriod("today");
+      await load();
+    })();
+  </script>
+</body>
+</html>
