@@ -4,7 +4,7 @@ import {readFile} from 'node:fs/promises';
 import {PGlite} from '@electric-sql/pglite';
 
 // lwb_accounts_dashboard_setup.sql on a tiny copy of the tables it reads (no live database).
-const ids={admin:'00000000-0000-4000-8000-000000000001',accounts:'00000000-0000-4000-8000-000000000002',manager:'00000000-0000-4000-8000-000000000003',sales:'00000000-0000-4000-8000-000000000004',driver:'00000000-0000-4000-8000-000000000005'};
+const ids={warehouse:'00000000-0000-4000-8000-000000000006',admin:'00000000-0000-4000-8000-000000000001',accounts:'00000000-0000-4000-8000-000000000002',manager:'00000000-0000-4000-8000-000000000003',sales:'00000000-0000-4000-8000-000000000004',driver:'00000000-0000-4000-8000-000000000005'};
 const db=new PGlite();
 await db.exec(`
 CREATE ROLE anon; CREATE ROLE authenticated;
@@ -29,6 +29,7 @@ await db.exec(`create table lwb_vehicles(id uuid primary key default gen_random_
 await db.exec(await readFile(new URL('../../lwb_accounts_staff_setup.sql',import.meta.url),'utf8'));
 await db.exec(await readFile(new URL('../../lwb_accounts_vehicle_setup.sql',import.meta.url),'utf8'));
 await db.exec(await readFile(new URL('../../lwb_accounts_cheque_setup.sql',import.meta.url),'utf8'));
+await db.exec(await readFile(new URL('../../lwb_employee_master_setup.sql',import.meta.url),'utf8'));
 await db.exec('GRANT USAGE ON SCHEMA public,auth TO authenticated');
 
 const today=(await db.query("select public.lwb_acc_today()::text d")).rows[0].d;
@@ -239,4 +240,44 @@ test('cheque register: details + photo, deposit, cleared / bounced, reminder to 
  await assert.rejects(save({src:'ENTRY',id:c1,cheque_no:'9'}),/only Admin/);
  await assert.rejects(dep('ENTRY',c2),/already bounced/);
  await as('manager');await assert.rejects(call('select public.lwb_acc_cheque_list()'),/Accounts/);
+});
+
+test('employee master: Godown adds employees with ID; upad and salary in a month stop at the salary; Admin can allow more',async()=>{
+ // staff added before this file got IDs; new ones continue the series
+ const old=(await db.query("select emp_code from lwb_acc_staff where name='Ramesh'")).rows[0];
+ assert.match(old.emp_code,/^EMP\d{3}$/);
+ await as('sales');
+ await assert.rejects(call(`select public.lwb_emp_list() j`),/Employee Master is for/);
+ await as('warehouse');
+ const a=(await call(`select public.lwb_emp_save('{"name":"Suresh","mobile":"9812345678","designation":"Packer","monthly_salary":12000}'::jsonb) j`))[0].j;
+ assert.match(a.emp_code,/^EMP\d{3}$/);assert.notEqual(a.emp_code,old.emp_code);
+ const b=(await call(`select public.lwb_emp_save('{"emp_code":"gd-07","name":"Mahesh","monthly_salary":10000,"joining_date":"2026-10-01"}'::jsonb) j`))[0].j;
+ assert.equal(b.emp_code,'GD-07');
+ await assert.rejects(call(`select public.lwb_emp_save('{"emp_code":"GD-07","name":"Other"}'::jsonb)`),/already given to Mahesh/);
+ await assert.rejects(call(`select public.lwb_emp_save('{"name":"X1","mobile":"12345"}'::jsonb)`),/10 digits/);
+ const list=(await call(`select public.lwb_emp_list() j`))[0].j;
+ assert.ok(list.rows.some(r=>r.emp_code==='GD-07'&&Number(r.monthly_salary)===10000));
+ // Accounts pays: upad 6000 + 4000 = 10000 ok, 1 more blocked; upad returned frees room; salary paid also stops at 10000
+ await as('accounts');
+ const add4=p=>call('select public.lwb_acc_add_entry4($1::jsonb) id',[JSON.stringify(p)]).then(r=>r[0].id);
+ const upad=await cat('OUT','Staff advance'),sal=await cat('OUT','Salary');
+ await add4({date:today,kind:'OUT',category_id:upad,mode:'CASH',amount:6000,staff_id:b.id});
+ await add4({date:today,kind:'OUT',category_id:upad,mode:'CASH',amount:4000,staff_id:b.id});
+ await assert.rejects(add4({date:today,kind:'OUT',category_id:upad,mode:'CASH',amount:500,staff_id:b.id}),/OVER_SALARY.*Left: Rs 0/);
+ await assert.rejects(add4({date:today,kind:'OUT',category_id:upad,mode:'CASH',amount:500,staff_id:b.id,over_salary:true}),/OVER_SALARY/);
+ await add4({date:today,kind:'IN',category_id:await cat('IN','Staff advance return'),mode:'CASH',amount:1000,staff_id:b.id});
+ await add4({date:today,kind:'OUT',category_id:upad,mode:'CASH',amount:1000,staff_id:b.id});
+ await add4({date:today,kind:'OUT',category_id:sal,mode:'UPI',amount:10000,staff_id:b.id,ref:'SALGD7'});
+ await assert.rejects(add4({date:today,kind:'OUT',category_id:sal,mode:'CASH',amount:100,staff_id:b.id}),/Salary already paid/);
+ await as('admin');
+ const id=await add4({date:today,kind:'OUT',category_id:upad,mode:'CASH',amount:500,staff_id:b.id,over_salary:true});
+ assert.equal((await db.query('select over_salary from lwb_acc_entries where id=$1',[id])).rows[0].over_salary,true);
+ const sl=(await call('select public.lwb_acc_staff_list(null) j'))[0].j.find(x=>x.id===b.id);
+ assert.equal(sl.emp_code,'GD-07');assert.equal(Number(sl.month_cap),10000);assert.equal(Number(sl.month_upad_net),10500);
+ // added from the Accounts Dashboard without an ID: gets the next one
+ await as('accounts');
+ const c=(await call(`select public.lwb_acc_save_staff('{"name":"Naresh","monthly_salary":0}'::jsonb) id`))[0].id;
+ assert.match((await db.query('select emp_code from lwb_acc_staff where id=$1',[c])).rows[0].emp_code,/^EMP\d{3}$/);
+ // salary 0 = no limit
+ await add4({date:today,kind:'OUT',category_id:upad,mode:'CASH',amount:50000,staff_id:c});
 });

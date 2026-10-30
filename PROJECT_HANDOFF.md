@@ -428,3 +428,10 @@
 - RPCs: `lwb_acc_cheque_list`, `lwb_acc_save_cheque`, `lwb_acc_cheque_deposit`, `lwb_acc_cheque_undeposit`, `lwb_acc_cheque_remind_now`. Reminder `lwb_acc_cheque_remind_internal()` (pg_cron `lwb_acc_cheque_reminder`, 10:00 and 18:00 IST) bells Admin, Accounts and Sales Head (manager) with type ACC_CHEQUE_REMINDER while a cheque is due (cheque date reached, not deposited) or deposited but not cleared.
 - Cash In by cheque asks cheque date, party's bank, photo; a party payment by cheque opens the cheque details right after saving.
 - Tests: 10 PGlite tests.
+
+### Employee Master (godown staff) + salary limit on upad (30 Oct 2026)
+- Masters > Employee Master (`fleet-master.html#employees`, next to Vehicle / Driver Master). Admin, Manager and Godown (warehouse) add / edit; nobody deletes (mark Left). Excel import / export.
+- Same rows as the Accounts Dashboard Staff ledger (`lwb_acc_staff`). SQL: `lwb_employee_master_setup.sql` (after the staff + vehicle files) adds `emp_code` (Employee ID, unique; blank = next EMPnnn by trigger, old staff got IDs), `joining_date`, `note`; RPCs `lwb_emp_list`, `lwb_emp_save` (`lwb_emp_editor()` = admin / manager / warehouse / accounts). Opening balance stays with Accounts.
+- Salary limit: `lwb_acc_add_entry4` (the dashboard now calls it; it wraps `lwb_acc_add_entry3`). In one month, upad less upad returned can not go over the month's salary (the "Salary of month" row, else fixed salary; 0 = no limit), and salary paid in one month can not go over it either. Over the limit: error starting `OVER_SALARY`; Admin can save anyway (`over_salary:true`, entry marked `over_salary`).
+- `lwb_acc_staff_list` is redefined there (adds emp_code, month_cap, month_upad_net). Paid to box finds staff by Employee ID too.
+- Tests: 11 PGlite tests.
