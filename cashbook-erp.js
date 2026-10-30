@@ -228,7 +228,7 @@
     if(!data||!data.length){box.textContent="No earlier copies yet.";return}
     const NAME={save:"Timed copy",cleared:"Before data was cleared","before restore":"Before a restore"};
     const pad=n=>String(n).padStart(2,"0");
-    const when=v=>{const d=new Date(v);return pad(d.getDate())+"-"+pad(d.getMonth()+1)+" "+pad(d.getHours())+":"+pad(d.getMinutes())};
+    const when=v=>LWBDate.dt(v);
     const list=document.createElement("div");list.className="pk-list";list.style.maxHeight="240px";
     data.forEach(c=>{
       const b=document.createElement("button");b.type="button";
