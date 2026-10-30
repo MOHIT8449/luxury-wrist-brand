@@ -548,6 +548,43 @@
       }
     }
 
+    /* PO summary: all-time pending delivery + date-wise order flow */
+    .po-sum {margin-bottom:20px}
+    .po-pend {display:grid;grid-template-columns:1.2fr repeat(3,1fr);gap:15px;align-items:stretch;
+      background:#111;color:#fff;border-radius:10px;padding:16px 18px;margin-bottom:15px}
+    .po-pend h3 {font-size:15px;letter-spacing:.5px;text-transform:uppercase}
+    .po-pend small {display:block;color:#bdbdbd;font-size:11px;margin-top:6px;line-height:1.35}
+    .po-pend .v {font-size:11px;color:#bdbdbd;text-transform:uppercase;letter-spacing:.5px}
+    .po-pend .v strong {display:block;color:#fff;font-size:24px;font-weight:800;margin-top:6px;letter-spacing:0;text-transform:none}
+    .po-range {display:flex;flex-wrap:wrap;gap:8px;align-items:center;background:#fff;border:1px solid #e4e4e4;
+      border-radius:10px;padding:10px 12px;margin-bottom:12px}
+    .po-range b {font-size:13px;margin-right:4px}
+    .po-range select,.po-range input {padding:8px 10px;border:1px solid #d6d6d6;border-radius:7px;font:inherit;font-size:13px;background:#fff}
+    .po-range span {font-size:12px;color:#777}
+    .po-flow {display:grid;grid-template-columns:repeat(5,1fr);gap:12px}
+    .po-flow .stat {padding:14px 16px}
+    .po-flow .stat .amt {font-size:12px;color:#555;margin-top:4px;font-weight:700}
+    .po-flow .stat .hint {font-size:10px;color:#999;margin-top:4px}
+    .po-sum-err {color:#af2525;font-size:12px;margin-top:8px}
+    @media (max-width: 900px) {
+      .po-flow {grid-template-columns:repeat(3,1fr)}
+      .po-pend {grid-template-columns:1fr 1fr 1fr}
+      .po-pend > div:first-child {grid-column:1 / -1}
+    }
+    @media (max-width: 640px) {
+      .po-sum {margin-bottom:12px}
+      .po-pend {gap:8px;padding:12px;margin-bottom:10px}
+      .po-pend .v {font-size:10px;letter-spacing:0}
+      .po-pend .v strong {font-size:17px}
+      .po-range {padding:8px;gap:6px}
+      .po-range b,.po-range span {display:none}
+      .po-range select {flex:1 1 100%;font-size:16px;padding:6px 8px}
+      .po-range input {font-size:15px;padding:6px 8px;flex:1 1 40%;min-width:0}
+      .po-flow {grid-template-columns:repeat(2,1fr);gap:6px}
+      .po-flow .stat {padding:8px 10px;text-align:left}
+      .po-flow .stat:first-child {grid-column:1 / -1}
+    }
+
     /* Stat boxes double as quick filters */
     .stat[data-filter] {cursor:pointer}
     .stat.on {border-color:#c8102e;box-shadow:inset 0 -3px 0 #c8102e}
@@ -714,9 +751,44 @@
 
     <div id="message" class="message"></div>
 
+    <section class="po-sum" id="poSummary">
+      <div class="po-pend">
+        <div>
+          <h3>Total Pending Delivery</h3>
+          <small id="sumPendNote">All orders till now that are not delivered yet (cancelled not counted).</small>
+        </div>
+        <div class="v">Orders<strong id="sumPendCount">-</strong></div>
+        <div class="v">Cases<strong id="sumPendCases">-</strong></div>
+        <div class="v">Total Amount<strong id="sumPendAmount">-</strong></div>
+      </div>
+
+      <div class="po-range">
+        <b>Date</b>
+        <select id="sumRange" onchange="pickSummaryRange()">
+          <option value="today">Today</option>
+          <option value="yesterday">Yesterday</option>
+          <option value="week">Last 7 days</option>
+          <option value="month">This month</option>
+          <option value="custom">Custom</option>
+        </select>
+        <input type="date" id="sumFrom" onchange="customSummaryRange()">
+        <span>to</span>
+        <input type="date" id="sumTo" onchange="customSummaryRange()">
+      </div>
+
+      <div class="po-flow">
+        <div class="stat"><div class="label">Total Orders</div><div class="number" id="sumTotal">-</div><div class="amt" id="sumTotalAmt"></div></div>
+        <div class="stat"><div class="label">Approved by Sales Head</div><div class="number" id="sumApproved">-</div><div class="amt" id="sumApprovedAmt"></div></div>
+        <div class="stat"><div class="label">Transport Allocated</div><div class="number" id="sumAllocated">-</div><div class="amt" id="sumAllocatedAmt"></div></div>
+        <div class="stat"><div class="label">Loading Transport</div><div class="number" id="sumLoading">-</div><div class="amt" id="sumLoadingAmt"></div><div class="hint">On vehicle, not delivered</div></div>
+        <div class="stat"><div class="label">Delivered</div><div class="number" id="sumDelivered">-</div><div class="amt" id="sumDeliveredAmt"></div><div class="hint">By delivery date</div></div>
+      </div>
+      <div class="po-sum-err" id="sumError" hidden></div>
+    </section>
+
     <section class="stats">
       <div class="stat" data-filter="all" role="button" tabindex="0" onclick="pickStatusFilter('all')">
-        <div class="label">Total Orders</div>
+        <div class="label">Orders in List</div>
         <div class="number" id="totalOrders">0</div>
       </div>
 
@@ -1179,6 +1251,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     window.LWBOperationsNotifications?.init({db,user:currentUser,mount:document.querySelector(".header-right")});
 
     setupPoAutofill();
+    pickSummaryRange(false);
     await Promise.all([loadOrders(), loadWarehouseSkuMaster(), loadPoSavedDirectory()]);
     const pushOrder=new URLSearchParams(location.search).get('order');
     if(pushOrder){
@@ -1234,6 +1307,7 @@ async function loadOrders() {
 
     updateStats();
     renderOrders();
+    loadSummary();
 
   } catch (error) {
 
@@ -1246,6 +1320,73 @@ async function loadOrders() {
 
   }
 
+}
+
+
+/* -----------------------------
+   SUMMARY (date-wise flow + all-time pending delivery)
+----------------------------- */
+
+function istDate(offsetDays = 0) {
+  const d = new Date(Date.now() + 5.5 * 3600000 + offsetDays * 86400000);
+  return d.toISOString().slice(0, 10);
+}
+
+function pickSummaryRange(load = true) {
+  const range = document.getElementById("sumRange").value;
+  const today = istDate();
+  const from = document.getElementById("sumFrom");
+  const to = document.getElementById("sumTo");
+  if (range === "custom") {
+    if (!from.value) from.value = today;
+    if (!to.value) to.value = today;
+  } else {
+    from.value = range === "yesterday" ? istDate(-1)
+      : range === "week" ? istDate(-6)
+      : range === "month" ? today.slice(0, 8) + "01"
+      : today;
+    to.value = range === "yesterday" ? istDate(-1) : today;
+  }
+  if (load) loadSummary();
+}
+
+function customSummaryRange() {
+  document.getElementById("sumRange").value = "custom";
+  loadSummary();
+}
+
+let summaryRequest = 0;
+
+async function loadSummary() {
+  const from = document.getElementById("sumFrom").value || istDate();
+  const to = document.getElementById("sumTo").value || from;
+  const err = document.getElementById("sumError");
+  const ticket = ++summaryRequest;
+  const { data, error } = await db.rpc("lwb_po_approval_summary", { p_from: from, p_to: to });
+  if (ticket !== summaryRequest) return;
+  if (error) {
+    err.hidden = false;
+    err.textContent = "Summary not loaded: " + (error.message || "database error");
+    return;
+  }
+  err.hidden = true;
+  const put = (key, id) => {
+    const part = data[key] || {};
+    document.getElementById(id).textContent = formatNumber(part.count);
+    document.getElementById(id + "Amt").textContent = formatMoney(part.amount);
+  };
+  put("total", "sumTotal");
+  put("approved", "sumApproved");
+  put("allocated", "sumAllocated");
+  put("loading", "sumLoading");
+  put("delivered", "sumDelivered");
+  const pend = data.pending || {};
+  document.getElementById("sumPendCount").textContent = formatNumber(pend.count);
+  document.getElementById("sumPendCases").textContent = formatNumber(pend.cases);
+  document.getElementById("sumPendAmount").textContent = formatMoney(pend.amount);
+  document.getElementById("sumPendNote").textContent =
+    "All orders till now that are not delivered yet (cancelled not counted)." +
+    (pend.oldest ? " Oldest: " + new Date(pend.oldest).toLocaleDateString("en-IN") : "");
 }
 
 
