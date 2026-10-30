@@ -131,7 +131,9 @@
     };
 
     let me=null,tab="vehicles",data={vehicles:[],drivers:[]},editing=null,busy=false,loginPhones=new Set(),missing=false;
-    const can=()=>me&&["admin","manager"].includes(me.role);
+    // Admin / Manager edit both lists; Godown (warehouse) can add / edit vehicles, not delete them.
+    const head=()=>me&&["admin","manager"].includes(me.role);
+    const can=()=>head()||(!!me&&tab==="vehicles"&&me.role==="warehouse");
     const vehicleById=id=>data.vehicles.find(v=>v.id===id);
 
     async function start(){
@@ -146,7 +148,7 @@
       const [v,d,l]=await Promise.all([
         client.from("lwb_vehicles").select("*").order("vehicle_no"),
         client.from("lwb_drivers").select("*").order("driver_name"),
-        can()?client.rpc("lwb_sales_head_active_drivers"):Promise.resolve({data:[]})]);
+        head()?client.rpc("lwb_sales_head_active_drivers"):Promise.resolve({data:[]})]);
       missing=!!(v.error||d.error);
       el("setupMsg").hidden=!missing;
       if(missing)el("setupMsg").textContent="The Vehicle / Driver tables are not set up in Supabase yet. Run lwb_fleet_master_setup.sql once in the Supabase SQL Editor, then refresh this page. ("+((v.error||d.error).message||"")+")";
@@ -169,7 +171,7 @@
       for(const f of K.fields){const x=el("f_"+f.k);const v=editing?editing[f.k]:(f.k==="is_active"?true:f.k==="ownership"?"OWN":"");x.value=v==null?"":String(v);x.disabled=!can()||busy}
       el("formTitle").textContent=(editing?"Edit ":"New ")+K.one+(editing?": "+(editing.vehicle_no||editing.driver_name):"");
       el("save").disabled=el("clear").disabled=!can()||busy||missing;
-      el("formHint").textContent=!can()?"Only Admin / Manager can make changes. You can view the list.":editing?"Make your changes, then click Save.":"";
+      el("formHint").textContent=!can()?(tab==="vehicles"?"Only Admin / Manager / Godown can make changes.":"Only Admin / Manager can make changes.")+" You can view the list.":editing?"Make your changes, then click Save.":"";
     }
     function readForm(){
       const o={};
@@ -210,7 +212,7 @@
       busy=false;render();
     }
     async function remove(id){
-      const K=KIND[tab],r=data[tab].find(x=>x.id===id);if(!r||!can())return;
+      const K=KIND[tab],r=data[tab].find(x=>x.id===id);if(!r||!head())return;
       if(!await confirm("DELETE "+K.one+"?\n\n"+(r.vehicle_no||r.driver_name+" · "+r.mobile)+"\n\nPast orders and dispatches keep the name; it is only removed from this list. Marking it Inactive is recommended."))return;
       const res=await client.from(K.table).delete().eq("id",id);
       if(res.error){ERPShell.toast("Delete failed: "+res.error.message,"error");return}
@@ -224,7 +226,7 @@
     function renderList(){
       const q=el("search").value.trim().toLowerCase().split(/\s+/).filter(Boolean),f=el("filter").value;
       const rows=data[tab].filter(r=>(f==="all"||(f==="active")===!!r.is_active)&&q.every(w=>JSON.stringify(r).toLowerCase().includes(w)));
-      const act=r=>can()?'<button type="button" data-edit="'+r.id+'">Edit</button><button type="button" class="del" data-del="'+r.id+'">Delete</button>':"";
+      const act=r=>(can()?'<button type="button" data-edit="'+r.id+'">Edit</button>':"")+(head()?'<button type="button" class="del" data-del="'+r.id+'">Delete</button>':"");
       if(tab==="vehicles"){
         el("head").innerHTML="<tr><th>#</th><th>Vehicle No</th><th>Type / Capacity</th><th>Ownership</th><th>Documents</th><th>Driver</th><th>Status</th><th></th></tr>";
         el("list").innerHTML=rows.map((r,i)=>{const drv=data.drivers.filter(d=>d.default_vehicle_id===r.id&&d.is_active).map(d=>esc(d.driver_name)).join(", ");
@@ -232,7 +234,7 @@
       }else{
         el("head").innerHTML="<tr><th>#</th><th>Driver</th><th>Mobile</th><th>License</th><th>Default Vehicle</th><th>Transporter</th><th>ERP Login</th><th>Status</th><th></th></tr>";
         el("list").innerHTML=rows.map((r,i)=>{const v=vehicleById(r.default_vehicle_id);
-          return '<tr class="'+(r.is_active?"":"off")+'"><td>'+(i+1)+"</td><td><b>"+esc(r.driver_name)+"</b>"+(r.note?"<small>"+esc(r.note)+"</small>":"")+"</td><td>"+esc(r.mobile)+(r.alt_mobile?"<small>"+esc(r.alt_mobile)+"</small>":"")+"</td><td>"+esc(r.license_no||"-")+"<div>"+(r.license_expiry?expiryTags([[r.license_expiry,"License"]]):"")+"</div></td><td>"+(v?esc(v.vehicle_no):"-")+"</td><td>"+esc(r.transporter_name||"-")+"</td><td>"+(can()?(loginPhones.has(r.mobile)?'<span class="tagx info">Has login</span>':'<span class="fm-hint">No</span>'):"")+"</td><td>"+(r.is_active?'<span class="tagx ok">Active</span>':'<span class="tagx bad">Inactive</span>')+"</td><td>"+act(r)+"</td></tr>"}).join("")||'<tr><td colspan="9" class="erp-empty">No drivers yet. Add one using the form above or Excel.</td></tr>';
+          return '<tr class="'+(r.is_active?"":"off")+'"><td>'+(i+1)+"</td><td><b>"+esc(r.driver_name)+"</b>"+(r.note?"<small>"+esc(r.note)+"</small>":"")+"</td><td>"+esc(r.mobile)+(r.alt_mobile?"<small>"+esc(r.alt_mobile)+"</small>":"")+"</td><td>"+esc(r.license_no||"-")+"<div>"+(r.license_expiry?expiryTags([[r.license_expiry,"License"]]):"")+"</div></td><td>"+(v?esc(v.vehicle_no):"-")+"</td><td>"+esc(r.transporter_name||"-")+"</td><td>"+(head()?(loginPhones.has(r.mobile)?'<span class="tagx info">Has login</span>':'<span class="fm-hint">No</span>'):"")+"</td><td>"+(r.is_active?'<span class="tagx ok">Active</span>':'<span class="tagx bad">Inactive</span>')+"</td><td>"+act(r)+"</td></tr>"}).join("")||'<tr><td colspan="9" class="erp-empty">No drivers yet. Add one using the form above or Excel.</td></tr>';
       }
       el("listTitle").textContent=KIND[tab].one+" List ("+rows.length+" / "+data[tab].length+")";
     }
