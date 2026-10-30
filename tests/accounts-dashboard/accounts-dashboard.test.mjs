@@ -17,10 +17,15 @@ CREATE TABLE public.lwb_tally_invoices(order_id uuid,invoice_no text);
 CREATE TABLE public.lwb_tally_payments(id uuid default gen_random_uuid() primary key,receipt_id uuid,order_id uuid,pay_date date,mode text,amount numeric(14,2),ref_no text,cash_notes jsonb,remark text,created_by uuid,created_at timestamptz default now(),cancelled_at timestamptz);
 CREATE TABLE public.lwb_delivery_reports(id uuid default gen_random_uuid() primary key,order_id uuid,driver_user_id uuid,cash_reported numeric(14,2) default 0,payment_mode text,payment_reference text,cash_amount numeric(14,2),online_amount numeric(14,2),online_mode text,online_reference text,bank_ref text,payment_status text,payment_reviewed_by uuid,payment_reviewed_at timestamptz);
 CREATE TABLE public.tax_invoices(id uuid primary key,order_id uuid);
+CREATE SCHEMA storage;
+CREATE TABLE storage.buckets(id text primary key,name text,public boolean,file_size_limit bigint,allowed_mime_types text[]);
+CREATE TABLE storage.objects(bucket_id text,name text);
+CREATE FUNCTION storage.foldername(text) RETURNS text[] LANGUAGE sql AS $$ SELECT (string_to_array($1,'/'))[1:array_length(string_to_array($1,'/'),1)-1] $$;
 CREATE TABLE public.lwb_payment_collections(id uuid default gen_random_uuid() primary key,invoice_id uuid,collection_date date,amount numeric(14,2),payment_mode text,reference_no text,remarks text,status text,submitted_by uuid,submitted_at timestamptz default now(),reviewed_at timestamptz);
 `);
 for(const [role,id] of Object.entries(ids))await db.query('insert into user_profiles values($1,$2,true,$3)',[id,role,role+' user']);
 await db.exec(await readFile(new URL('../../lwb_accounts_dashboard_setup.sql',import.meta.url),'utf8'));
+await db.exec(await readFile(new URL('../../lwb_accounts_staff_setup.sql',import.meta.url),'utf8'));
 await db.exec('GRANT USAGE ON SCHEMA public,auth TO authenticated');
 
 const today=(await db.query("select public.lwb_acc_today()::text d")).rows[0].d;
@@ -127,4 +132,49 @@ test('entry rules: head needed, cheque no., duplicate ref, 2 lakh cash, cancel o
  const own=await add({date:today,kind:'OUT',category_id:cid,mode:'CASH',amount:50});
  await call("select public.lwb_acc_cancel_entry($1,'typo')",[own]);
  const d=await dash();assert.ok(!d.lines.some(l=>l.id===own));
+});
+
+test('staff ledger: salary of the month, upad, salary paid, upad returned; staff heads need the staff',async()=>{
+ await as('accounts');
+ const ram=(await call(`select public.lwb_acc_save_staff('{"name":"Ramesh","mobile":"9876543210","designation":"Loader","monthly_salary":15000,"opening_balance":-2000}'::jsonb) id`))[0].id;
+ await assert.rejects(call(`select public.lwb_acc_save_staff('{"name":" ramesh ","monthly_salary":1}'::jsonb)`),/already exists/);
+ const add2=p=>call('select public.lwb_acc_add_entry2($1::jsonb) id',[JSON.stringify(p)]).then(r=>r[0].id);
+ await assert.rejects(add2({date:today,kind:'OUT',category_id:await cat('OUT','Staff advance'),mode:'CASH',amount:3000}),/Choose the staff/);
+ await add2({date:today,kind:'OUT',category_id:await cat('OUT','Staff advance'),mode:'CASH',amount:3000,staff_id:ram});
+ await call(`select public.lwb_acc_save_salaries($1,$2::jsonb)`,[today.slice(0,8)+'01',JSON.stringify([{staff_id:ram,amount:14500,note:'1 day leave'}])]);
+ await add2({date:today,kind:'OUT',category_id:await cat('OUT','Salary'),mode:'UPI',bank_id:null,amount:9000,staff_id:ram,ref:'SAL1'});
+ await add2({date:today,kind:'IN',category_id:await cat('IN','Staff advance return'),mode:'CASH',amount:500,staff_id:ram});
+ const list=(await call('select public.lwb_acc_staff_list(null) j'))[0].j;
+ const r=list.find(x=>x.id===ram);
+ // -2000 + 14500 - 3000 - 9000 + 500 = 1000 still to pay
+ assert.equal(Number(r.balance),1000);assert.equal(Number(r.month_upad),3000);assert.equal(Number(r.month_paid),9000);assert.equal(Number(r.month_salary),14500);
+ const led=(await call('select public.lwb_acc_staff_ledger($1) j',[ram]))[0].j;
+ assert.deepEqual(led.lines.map(l=>l.kind).sort(),['PAID','RETURN','SALARY','UPAD']);
+ const ex=(await call('select public.lwb_acc_extras($1,$1) j',[today]))[0].j;
+ assert.equal(Object.values(ex.entries).filter(e=>e.staff==='Ramesh').length,3);
+});
+
+test('bill photo and GST bill on a Cash Out',async()=>{
+ await as('accounts');
+ const add2=p=>call('select public.lwb_acc_add_entry2($1::jsonb) id',[JSON.stringify(p)]).then(r=>r[0].id);
+ const base={date:today,kind:'OUT',category_id:await cat('OUT','Repair'),mode:'CASH',amount:1180,party:'Shiv Motors'};
+ await assert.rejects(add2({...base,photos:['someone-else/x.jpg']}),/Bad photo/);
+ await assert.rejects(add2({...base,gst_bill:true,gstin:'BAD'}),/GSTIN/);
+ await assert.rejects(add2({...base,gst_bill:true,gst_amount:5000}),/more than the bill/);
+ const id=await add2({...base,photos:[ids.accounts+'/bill-1.jpg'],gst_bill:true,gst_amount:180,gstin:'24abcde1234f1z5'});
+ const e=(await db.query('select photo_paths,gst_bill,gst_amount,gstin from lwb_acc_entries where id=$1',[id])).rows[0];
+ assert.deepEqual(e.photo_paths,[ids.accounts+'/bill-1.jpg']);assert.equal(e.gstin,'24ABCDE1234F1Z5');assert.equal(Number(e.gst_amount),180);
+ assert.equal((await db.query("select count(*) n from storage.buckets where id='lwb-acc-bills'")).rows[0].n,1);
+});
+
+test('entry time, note count and Party Master names',async()=>{
+ await as('accounts');
+ await db.exec("create table if not exists lwb_customer_master(customer_name text); insert into lwb_customer_master values ('SHREE JAGDISH TRADERS (BARDOLI)'),(' '),('SHREE JAGDISH TRADERS (BARDOLI)')");
+ const add2=p=>call('select public.lwb_acc_add_entry2($1::jsonb) id',[JSON.stringify(p)]).then(r=>r[0].id);
+ const base={date:today,kind:'OUT',category_id:await cat('OUT','Food'),mode:'CASH',amount:700,party:'Hotel Shivam'};
+ await assert.rejects(add2({...base,time:'25:99'}),/time/);
+ const id=await add2({...base,time:'16:27',notes:{500:1,100:2,7:4,50:'x'}});
+ const ex=(await call('select public.lwb_acc_extras($1,$1) j',[today]))[0].j;
+ assert.equal(ex.entries[id].time,'16:27');assert.deepEqual(ex.entries[id].notes,{500:1,100:2});
+ assert.deepEqual(ex.parties,['SHREE JAGDISH TRADERS (BARDOLI)']);
 });
