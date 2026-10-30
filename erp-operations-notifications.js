@@ -46,7 +46,7 @@
   if(t==="MARKET_REPORT"||t==="MARKET_REVIEW"){const id=(m.match(/MKT-\d+/)||[])[0]||"";return {icon:t==="MARKET_REPORT"?"🚩":"✅",text:join([t==="MARKET_REPORT"?"Outside stock":title,id])}}
   if(t.startsWith("COMPLAINT_")){const id=(m.match(/CMP-\d+/)||[])[0]||"";
    return {icon:{COMPLAINT_NEW:"📮",COMPLAINT_RESOLVED:"✅",COMPLAINT_CLOSED:"✅"}[t]||"💬",text:join([title.replace(/^URGENT · /,"⚠ "),id])}}
-  if(t.startsWith("ACC_"))return {icon:{ACC_BANK_VERIFY:"🏦",ACC_BANK_REJECTED:"❌",ACC_CASH_HANDOVER:"💵",ACC_CASH_RETURNED:"✅",ACC_CASH_DIFF:"⚠"}[t]||"₹",text:title||"Accounts"};
+  if(t.startsWith("ACC_"))return {icon:{ACC_BANK_VERIFY:"🏦",ACC_BANK_REJECTED:"❌",ACC_CASH_HANDOVER:"💵",ACC_CASH_RETURNED:"✅",ACC_CASH_DIFF:"⚠",ACC_CHEQUE_REMINDER:"🧾"}[t]||"₹",text:title||"Accounts"};
   if(t==="SALES_PLAN"){const n=(m.match(/from (\d+) part/)||[])[1];return {icon:"📋",text:join(["Today's plan",n?n+" parties due":"Sales Head note"])}}
   const short=m.length>60?m.slice(0,57)+"…":m;
   return {icon:"•",text:join([title||"ERP",order||short])};
@@ -75,6 +75,7 @@
   [/^LOADING_ASSIGNMENT_/,["loading-dispatch.html?order={o}","transport-allocation.html"]],
   [/^GODOWN_/,["godown-report.html"]],
   [/^ACC_BANK_VERIFY$/,["accounts-dashboard.html#verify"]],
+  [/^ACC_CHEQUE/,["accounts-dashboard.html#cheques"]],
   [/^ACC_/,["accounts-dashboard.html"]],
   [/^MARKET_/,["market-report.html"]],
   [/^COMPLAINT_/,["complaint-box.html?id={c}"]],

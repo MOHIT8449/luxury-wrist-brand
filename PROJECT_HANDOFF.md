@@ -411,7 +411,7 @@
 ### Accounts Dashboard: vehicle-wise expenses (30 Oct 2026)
 - SQL: `lwb_accounts_vehicle_setup.sql` (after `lwb_accounts_staff_setup.sql` and `lwb_fleet_master_setup.sql`). `lwb_acc_entries.vehicle_id` → `lwb_vehicles` (Vehicle Master). New OUT heads: Vehicle service, Tyre, Driver bhatta / food, Toll / Parking, RTO / Insurance / PUC, Vehicle washing.
 - Cash Out: pick the vehicle in "Paid to" (type the number, spaces ignored); page saves through `lwb_acc_add_entry3` (vehicle only on Cash Out, not with staff). Vehicles tab = `lwb_acc_vehicle_report(from,to)` per vehicle and head, `lwb_acc_vehicle_ledger(vehicle,from,to)`, Excel.
-- Tests: 9 PGlite tests.
+- Tests: 9 PGlite tests (then 10 with cheques).
 
 ## Billing & Outstanding: one flow after loading, group party, party payment with advance (30 Oct 2026)
 - Mohit asked: remove Money Overview, Tally Bill & Invoice No., Tally Bill Check, Tally Party Mapping from the Accounts menu (now `hide:1`; pages still open by link, Manage Users can still tick them) and give one clear flow.
@@ -420,3 +420,10 @@
 - SQL `lwb_party_group_billing_setup.sql`: `lwb_tally_payments.order_id` may be NULL with `party` (party payment, one row per mode as before); `lwb_party_allocs` = split of a party payment over POs. `lwb_order_office_paid` adds the split, so every due figure drops. RPCs: `lwb_party_receive(party,date,lines,allocs,remark)` (allocs NULL = oldest bill first, [] = all advance), `lwb_party_adjust(party,allocs)`, `lwb_party_unadjust(alloc_id)`, `lwb_cancel_tally_payment` (also cancels the split), `lwb_party_group_set(member,parent|NULL)`, `lwb_party_billing(days)` (one JSON for the page). Cash ≥ ₹2 lakh per receipt refused (269ST). `lwb_acc_lines` shows a party payment as Cash In "Party payment" of the main party. `lwb_save_tally_bills` accepts any bill name of the same group.
 - `party-pay.js`: shared popup (party combobox, Cash/UPI/Bank/Cheque + note count, Oldest first / Choose bills / Keep as advance, advance adjust). Accounts Dashboard: "💰 Party payment" button; Cash In from a party with bills shows its bills and "Receive against these bills"; Party outstanding tab is main-party wise with advance.
 - Tests: `tests/party-group` (PGlite, 7 tests). Browser check used a mocked client whose RPCs ran this SQL on PGlite; no live data was written.
+
+### Accounts Dashboard: cash only vs collection, cheque register + reminders (30 Oct 2026)
+- Top cards are cash only (रोकड़): Opening + Cash In − Cash Out − Bank deposit = Cash in hand. Below them: party collection of the dates in all modes (cash / UPI / bank / cheque), "To collect" (bills due after advance, from Billing & Outstanding) and cheques not yet in the bank.
+- SQL: `lwb_accounts_cheque_setup.sql` (after `lwb_accounts_vehicle_setup.sql`). `lwb_acc_cheques` keyed by (src, src_id) for every Cash In line with mode CHEQUE (Cash In entry, party payment, driver): cheque no., cheque date, party's bank, photos (bucket `lwb-acc-bills`), deposit date + our bank. Status IN_HAND → DEPOSITED → CLEARED / BOUNCED (the last two are Admin's bank check, `lwb_acc_verify`).
+- RPCs: `lwb_acc_cheque_list`, `lwb_acc_save_cheque`, `lwb_acc_cheque_deposit`, `lwb_acc_cheque_undeposit`, `lwb_acc_cheque_remind_now`. Reminder `lwb_acc_cheque_remind_internal()` (pg_cron `lwb_acc_cheque_reminder`, 10:00 and 18:00 IST) bells Admin, Accounts and Sales Head (manager) with type ACC_CHEQUE_REMINDER while a cheque is due (cheque date reached, not deposited) or deposited but not cleared.
+- Cash In by cheque asks cheque date, party's bank, photo; a party payment by cheque opens the cheque details right after saving.
+- Tests: 10 PGlite tests.
