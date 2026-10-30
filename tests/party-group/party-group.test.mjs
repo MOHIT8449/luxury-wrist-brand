@@ -194,3 +194,18 @@ test('Tally bill lines: any name of the same group; a name of another group is r
  const o6=await po('LXY-6','AKASH TRADERS',100,null);
  await assert.rejects(save(o6,[{firm:'PRIYA TRADERS',no:'P-13',amount:100}]),/under party SHREE JAGDISH/);
 });
+
+test('money paid before the bill is set against the bill when the bill is saved; one balance',async()=>{
+ await db.exec(await sql('lwb_party_auto_adjust_setup.sql'));
+ await as('accounts');
+ const K='RAJ PAN CENTER';await db.query('insert into lwb_customer_master values($1)',[K]);
+ await db.query('insert into orders(order_no,customer_name) values($1,$2)',['LXY-K0',K]);
+ // advance first: 1,39,460 kept as advance
+ await receive(K,[{mode:'BANK',amount:139460,ref:'K-ADV'}],[]);
+ assert.equal(Number((await data()).advance[K]),139460);
+ const o=await po('LXY-K1',K,134460,null);
+ await call('select public.lwb_save_tally_bills($1,$2,$3::jsonb,null)',[o,today,JSON.stringify([{firm:K,no:'K-9',amount:134460}])]);
+ const d=await data();
+ assert.equal(Number(d.orders.find(x=>x.order_id===o).due),0);
+ assert.equal(Number(d.advance[K]),5000);
+});
