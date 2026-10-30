@@ -642,7 +642,33 @@
       .modal-footer > .btn-grey {display:none}
       .modal-footer .btn {flex:1;padding:13px 8px;font-size:14px}
     }
-  </style>
+
+    /* Compact transport form, same layout in review and the dedicated transport popup. */
+    #reviewModal #postApprovalPanel{margin-top:12px;padding:10px;background:#f8fbf9}
+    #reviewModal #postApprovalPanel h4{font-size:14px;margin-bottom:8px}
+    #reviewModal .po-grid,#reviewModal.transport-only .po-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+    #reviewModal .po-field label{font-size:11px;margin-bottom:3px}
+    #reviewModal .po-field :is(input,select){padding:8px;min-height:40px;font-size:16px}
+    #reviewModal .po-transport-field{grid-column:1/-1}
+    #reviewModal .po-directory-hint:not(.error){display:none}
+    #reviewModal #poQuickInfo{padding:8px 10px;margin-bottom:8px;line-height:1.4}
+    #reviewModal #poSaveBtn{display:none}
+    #reviewModal .po-actions{margin-top:8px}
+    #reviewModal #poAllocationStatus{font-size:11px;margin-top:6px;line-height:1.4}
+    #reviewModal .modal-footer{gap:6px;padding:8px 10px calc(8px + env(safe-area-inset-bottom))}
+    #reviewModal .modal-footer .btn{padding:8px 10px;min-height:40px;font-size:12px;line-height:1.2}
+    @media(max-width:760px){
+      body.erp-compact #reviewModal{padding:0;max-height:none;border-radius:0}
+      #reviewModal .modal-card{height:100dvh;max-height:100dvh;border-radius:0}
+      #reviewModal .modal-footer #printPoDocumentBtn{flex:1}
+      #reviewModal .modal-footer #footSaveTransportBtn{flex:1}
+      #reviewModal .modal-footer #approveOrderBtn{flex:1}
+      #reviewModal .po-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+      #reviewModal .modal-body{padding:10px}
+      #reviewModal .modal-footer .btn-grey{display:none}
+    }
+
+</style>
 <link rel="stylesheet" href="erp-shell.css">
 <script src="erp-shell.js" data-auto defer></script>
 </head>
@@ -842,21 +868,20 @@
 
 
         <section id="postApprovalPanel" hidden>
-          <h4>✓ PO Approved — Driver / Vehicle &amp; Print</h4>
+          <h4>Transport details</h4>
           <div id="poQuickInfo"></div>
-          <p class="po-help">These options appear only after the PO is approved. Once the driver, vehicle and loading person are saved, the order goes to the Dispatch team.</p>
           <div class="po-grid">
-            <div class="po-field"><label for="poDriverName">Driver Name *</label><input id="poDriverName" maxlength="150" placeholder="Type / select saved driver" autocomplete="off" aria-autocomplete="list"></div>
-            <div class="po-field"><label for="poVehicleNo">Vehicle Number *</label><input id="poVehicleNo" maxlength="40" placeholder="Type / select saved vehicle" autocomplete="off" aria-autocomplete="list"></div>
-            <div class="po-field"><label for="poLoadingManager">Godown Manager (Loading) *</label><select id="poLoadingManager" hidden><option value="">Select Godown Manager</option></select><input id="poLoadingPerson" maxlength="150" placeholder="Godown staff"></div>
-            <div class="po-field"><label for="poDriverMobile">Driver Mobile (Required for Driver Portal)</label><input id="poDriverMobile" maxlength="20" inputmode="tel" placeholder="Type / select saved mobile" autocomplete="off" aria-autocomplete="list"></div>
-            <div class="po-field"><label for="poTransportName">Transport Name (Optional)</label><input id="poTransportName" maxlength="150"></div>
+            <div class="po-field"><label for="poDriverName">Driver *</label><input id="poDriverName" maxlength="150" placeholder="Select driver" autocomplete="off" aria-autocomplete="list"></div>
+            <div class="po-field"><label for="poDriverMobile">Driver mobile *</label><input id="poDriverMobile" maxlength="20" inputmode="tel" placeholder="Auto-filled from driver" autocomplete="off" aria-autocomplete="list"></div>
+            <div class="po-field"><label for="poVehicleNo">Vehicle *</label><input id="poVehicleNo" maxlength="40" placeholder="Select vehicle" autocomplete="off" aria-autocomplete="list"></div>
+            <div class="po-field"><label for="poLoadingManager">Godown Manager *</label><select id="poLoadingManager" hidden><option value="">Select manager</option></select><input id="poLoadingPerson" maxlength="150" placeholder="Godown staff"></div>
+            <div class="po-field po-transport-field"><label for="poTransportName">Transport (optional)</label><input id="poTransportName" maxlength="150"></div>
           </div>
           <p id="poSavedDirectoryHint" class="po-directory-hint">Loading Active ERP Drivers and Saved Dispatch Vehicles... Select the Driver created in User Permissions to autofill Mobile.</p>
-          
+
           <div class="po-actions">
             <button id="poSaveBtn" type="button" class="btn btn-green" onclick="saveApprovedTransport()">Save Driver &amp; Vehicle</button>
-            <button id="poPrintBtn" type="button" class="btn btn-blue" onclick="printApprovedPO()">Print Approved PO</button>
+            <button id="poPrintBtn" type="button" class="btn btn-blue" onclick="printApprovedPO()">Delivery Challan</button>
           </div>
           <div id="poAllocationStatus" role="status"></div>
         </section>
@@ -878,6 +903,7 @@
       </div>
 
       <div class="modal-footer">
+        <button type="button" class="btn btn-light" id="printPoDocumentBtn" onclick="printApprovedPO('po')" disabled>Print PO</button>
         <button class="btn btn-grey" onclick="closeModal()">
           Close
         </button>
@@ -891,7 +917,7 @@
         </button>
 
         <button type="button" class="btn btn-green" id="footSaveTransportBtn" onclick="saveApprovedTransport()" hidden>
-          💾 Save Driver, Vehicle &amp; Godown Manager
+          Save Transport
         </button>
 
         <button
@@ -1160,7 +1186,10 @@ document.addEventListener("DOMContentLoaded", async () => {
         const found=await db.from('orders').select('*').eq('id',pushOrder).maybeSingle();
         if(found.error)throw found.error;if(found.data)orders.push(found.data);
       }
-      if(orders.some(o=>o.id===pushOrder))await reviewOrder(pushOrder);
+      if(orders.some(o=>o.id===pushOrder)){
+        await reviewOrder(pushOrder);
+        if(new URLSearchParams(location.search).get("action")==="print"&&reviewReady)await printApprovedPO("po");
+      }
       else showMessage('This order is unavailable for your login.','error');
     }
 
@@ -1438,13 +1467,14 @@ function renderOrders() {
                 class="btn btn-blue"
                 onclick="reviewOrder('${order.id}')"
               >
-                ${isPending(order) ? "Review" : "View"}
+                ${isPending(order) ? "Review" : canEditItems(order) ? "Edit PO" : "View"}
               </button>
+              ${!isCancelled(order) ? `<button class="btn btn-light" onclick="printPoFromList('${order.id}')">Print PO</button>` : ""}
               ${eligibleForPoPrint(order) ? `
               <button class="btn btn-green" title="Driver / Vehicle / Godown Manager"
                 onclick="openTransportAllocation('${order.id}')">🚚 Transport</button>
               <button class="btn btn-light" title="Print Delivery Challan (A4 landscape)"
-                onclick="printFromList('${order.id}')">🖨 Print</button>` : ""}
+                onclick="printFromList('${order.id}')">Challan</button>` : ""}
 
             </td>
 
@@ -1475,7 +1505,7 @@ async function reviewOrder(orderId, transportOnly=false) {
   }
 
   document.getElementById("modalOrderNo").textContent =
-    "Order Review - " +
+    (isPending(selectedOrder)?"Order Review - ":canEditItems(selectedOrder)?"Edit PO - ":"View PO - ") +
     (selectedOrder.order_no || "");
 
   document.getElementById("dOrderNo").textContent =
@@ -1510,6 +1540,7 @@ async function reviewOrder(orderId, transportOnly=false) {
   document.getElementById("managerNoteStatus").classList.remove("error");
 
   reviewReady = false;
+  document.getElementById("printPoDocumentBtn").disabled=true;
   document.getElementById("postApprovalPanel").hidden=true;
   approvedTransport=null;
   document.getElementById("approveOrderBtn").disabled = true;
@@ -1539,6 +1570,8 @@ async function reviewOrder(orderId, transportOnly=false) {
 
     selectedItems = (data || []).map(x => ({...x, approved_qty: x.approved_qty == null ? x.ordered_qty : x.approved_qty, _original_sku_name:x.sku_name}));
     originalItemIds = selectedItems.map(x => x.id);
+    savedPoItemsSignature=poItemsSignature(selectedItems);
+    document.getElementById("printPoDocumentBtn").disabled=isCancelled(selectedOrder);
     reviewReady = true;
     document.getElementById("approveOrderBtn").disabled = false;
     updateWarehouseSkuHint();
@@ -1890,8 +1923,8 @@ async function revealApprovalActions(){
     ])document.getElementById(pair[0]).value=pair[1]||"";
     setPoGodownManager(a);
     allocationStatus(locked?"Loading has started. Allocation is locked.":a.id
-      ?"Driver & Vehicle already assigned. Edit and Save before Loading if required."
-      :"Order Approved. Assign Driver, Vehicle and Godown Manager; then Print.");
+      ?"Transport saved. You can update it before loading."
+      :"Select driver, vehicle and manager; Save Transport.");
   }catch(e){allocationStatus("Could not load transport assignment: "+e.message,true);}
   finally{
     if(selectedOrder&&selectedOrder.id===id){
@@ -1969,36 +2002,62 @@ async function openTransportAllocation(id){
   document.getElementById("modalOrderNo").textContent="🚚 Transport — "+(o?.order_no||"");
   if(!document.getElementById("postApprovalPanel").hidden)document.getElementById("poDriverName").focus();
 }
+let savedPoItemsSignature="";
+function poItemsSignature(items){
+  return JSON.stringify(items.map(i=>[i.id||null,String(i.sku_name||""),number(i.ordered_qty),number(i.approved_qty==null?i.ordered_qty:i.approved_qty),number(i.rate),number(i.unit_weight)]));
+}
+async function printPoFromList(id){
+  await reviewOrder(id);
+  if(selectedOrder?.id===id&&reviewReady)await printApprovedPO("po");
+}
 async function printFromList(id){
   await reviewOrder(id);
   if(selectedOrder&&selectedOrder.id===id&&reviewReady)await printApprovedPO();
 }
-async function printApprovedPO(){
-  if(!eligibleForPoPrint(selectedOrder)||!reviewReady){
-    alert("Approve the PO before printing.");
+async function printApprovedPO(documentType="challan"){
+  const isPo=documentType==="po";
+  if(!reviewReady||!selectedOrder||isCancelled(selectedOrder)||(!isPo&&!eligibleForPoPrint(selectedOrder))){
+    alert(isPo?"Open a saved PO before printing.":"Approve the PO before printing.");
     return;
+  }
+  if(poItemsSignature(selectedItems)!==savedPoItemsSignature){
+    alert("PO has unsaved SKU changes. Save PO before printing.");return;
+  }
+  if(!document.getElementById("postApprovalPanel").hidden && !document.getElementById("poSaveBtn").disabled){
+    const a=approvedTransport||{};
+    const dirty=[["poDriverName",a.driver_name],["poDriverMobile",a.driver_mobile],["poVehicleNo",a.vehicle_no],["poTransportName",a.transporter_name]]
+      .some(([id,value])=>poValue(id)!==String(value||"").trim());
+    const managerDirty=document.getElementById("poLoadingManager").hidden
+      ?poValue("poLoadingPerson")!==String(a.loading_person||"").trim()
+      :poValue("poLoadingManager")!==String(a.loading_manager_id||"");
+    if(dirty||managerDirty){alert("Transport has unsaved changes. Save Transport before printing.");return;}
   }
   if(managerNoteSaving||document.getElementById("managerNote").value.trim()!==managerNoteOriginal.trim()){
-    alert("Manager Note has unsaved changes. Please click Save Note before printing.");
+    alert("Manager Note has unsaved changes. Save the note before printing.");
     return;
   }
-  const order=selectedOrder;
-  const printButton=document.getElementById("poPrintBtn");
+  let order=selectedOrder;
+  const printButton=document.getElementById(isPo?"printPoDocumentBtn":"poPrintBtn");
   printButton.disabled=true;
   try {
     // Use the saved assignment of this exact PO, not another vehicle or
     // uncommitted form inputs. This is the same source as Accounts print.
-    const [result,noteResult]=await Promise.all([
+    const [result,noteResult,itemResult]=await Promise.all([
       db.from("dispatch_assignments")
         .select("driver_name,driver_mobile,vehicle_no,loading_person,transporter_name")
         .eq("order_id",order.id).maybeSingle(),
-      db.from("orders").select("manager_note").eq("id",order.id).single()
+      db.from("orders").select("*").eq("id",order.id).single(),
+      db.from("order_items").select("*").eq("order_id",order.id).order("created_at",{ascending:true})
     ]);
     if(result.error)throw result.error;
     if(noteResult.error)throw noteResult.error;
+    if(itemResult.error)throw itemResult.error;
+    if(!noteResult.data||isCancelled(noteResult.data))throw new Error("This PO is unavailable or cancelled.");
+    if(!isPo&&!eligibleForPoPrint(noteResult.data))throw new Error("PO approval status changed. Refresh.");
+    order=noteResult.data;
     if(!selectedOrder||selectedOrder.id!==order.id)return;
 
-    if(!result.data){
+    if(!isPo&&!result.data){
       // Nothing saved yet: the challan would print Godown Manager / Driver / Vehicle as blank.
       if(await confirm("Driver, Vehicle and Godown Manager are not assigned for PO "+order.order_no+" yet.\nAssign them first so they show on the Delivery Challan.",{title:"Transport not assigned",ok:"🚚 Assign now",cancel:"Print without them"}))return openTransportAllocation(order.id);
       if(!selectedOrder||selectedOrder.id!==order.id)return;
@@ -2007,7 +2066,7 @@ async function printApprovedPO(){
     const printNote=String(noteResult.data?.manager_note||"").trim();
     approvedTransport=result.data?{...approvedTransport,...result.data}:null;
     const safe=value=>escapeHtml(value==null?"":String(value));
-    const approvedLines=selectedItems
+    const approvedLines=(itemResult.data||[])
       .map(item=>({
         sku:item.sku_name,
         qty:number(item.approved_qty==null?item.ordered_qty:item.approved_qty),
@@ -2015,6 +2074,7 @@ async function printApprovedPO(){
         weight:number(item.unit_weight)
       }))
       .filter(item=>item.qty>0);
+    if(!approvedLines.length)throw new Error("This PO has no saved SKU quantities to print.");
     const showWt=value=>safe(number(value).toFixed(2));
     const rows=approvedLines.map((item,i)=>
       "<tr><td>"+(i+1)+"</td><td>"+safe(item.sku)+"</td><td>"+showWt(item.qty)+"</td><td>"+showWt(item.rate)+
@@ -2029,10 +2089,10 @@ async function printApprovedPO(){
     const dash=value=>safe(value||"—");
     const info=pairs=>"<table>"+pairs.map(p=>"<tr><td>"+p[0]+"</td><td>"+p[1]+"</td></tr>").join("")+"</table>";
     document.getElementById("poPrintArea").innerHTML=
-      "<div class='dc-head'><h1>DELIVERY CHALLAN</h1><div class='dc-sub'>Order Bill</div></div>"+
+      "<div class='dc-head'><h1>"+(isPo?"PURCHASE / SALES ORDER":"DELIVERY CHALLAN")+"</h1><div class='dc-sub'>Luxury Wrist Brand · "+safe(order.status)+"</div></div>"+
       "<div class='dc-info'>"+
         info([["Order No.",safe(order.order_no)],["Customer Name",safe(order.customer_name)],["Transportation",dash(order.transportation)]])+
-        info([["Date &amp; Time",safe(formatDateTime(order.created_at||order.order_date))],["Sales Person",dash(order.sales_person)],["Total Items",safe(approvedLines.length)]])+
+        info([["Date &amp; Time",safe(formatDateTime(order.order_date||order.created_at))],["Sales Person",dash(order.sales_person)],["Total Items",safe(approvedLines.length)]])+
       "</div>"+
       "<p class='dc-crew'>Godown Manager: <span>"+dash(a.loading_person)+"</span> &nbsp;|&nbsp; Driver: <span>"+dash(a.driver_name)+
         (a.driver_mobile?" ("+safe(a.driver_mobile)+")":"")+"</span> &nbsp;|&nbsp; Vehicle No: <span>"+dash(a.vehicle_no)+"</span></p>"+
@@ -2044,12 +2104,12 @@ async function printApprovedPO(){
         ? "<div class='po-print-note'><strong>MANAGER NOTE / DELIVERY INSTRUCTIONS</strong>"+
           "<div class='print-note-text'>"+safe(printNote)+"</div></div>"
         : "")+
-      "<p class='po-print-footer'>This is a computer-generated delivery challan and does not require a physical signature to be valid for internal record-keeping. Not a GST invoice; the Tally bill is separate.</p>";
+      "<p class='po-print-footer'>"+(isPo?"PO copy from saved records. Printed "+safe(formatDateTime(new Date().toISOString()))+". Reprint after any changes.":"Internal delivery challan.")+" Not a GST invoice; the Tally bill is separate.</p>";
     // The ERP shell wraps the page in .erp-main; print CSS shows only direct body children, so lift the print area out.
     document.body.appendChild(document.getElementById("poPrintArea"));
     window.print();
   }catch(e){
-    alert("Could not load assigned Driver / Vehicle for Print: "+e.message+". Please retry.");
+    alert("Could not print "+(isPo?"PO":"challan")+": "+e.message+". Please retry.");
   }finally{
     printButton.disabled=false;
   }
@@ -2089,7 +2149,7 @@ function renderItems() {
     </tr>`;
   }).join('') || '<tr><td colspan="9">No SKU items. Add a SKU before approving.</td></tr>';
   document.getElementById("approveOrderBtn").style.display = editable ? "inline-block" : "none";
-  document.getElementById("approveOrderBtn").textContent = isPending(selectedOrder) ? "Approve Order" : "Save Changes";
+  document.getElementById("approveOrderBtn").textContent = isPending(selectedOrder) ? "Approve PO" : "Save PO";
   document.getElementById("cancelOrderBtn").style.display = editable && isPending(selectedOrder) ? "inline-block" : "none";
   document.getElementById("addSkuBtn").style.display = editable ? "inline-block" : "none";
   renderManagerNoteControls();
@@ -2280,7 +2340,7 @@ async function approveOrder() {
   } catch(error) {
     console.error(error);
     alert((approving?'Approval':'Save')+' not completed: '+(error.message||'Unknown error')+'\nSome SKU edits may already be saved. Refresh and review before retrying.');
-  } finally {btn.disabled=false;btn.textContent=selectedOrder&&!isPending(selectedOrder)?'Save Changes':'Approve Order';}
+  } finally {btn.disabled=false;btn.textContent=selectedOrder&&!isPending(selectedOrder)?'Save PO':'Approve PO';}
 }
 
 async function cancelOrder() {
