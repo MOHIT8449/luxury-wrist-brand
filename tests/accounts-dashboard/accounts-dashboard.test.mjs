@@ -28,6 +28,7 @@ await db.exec(await readFile(new URL('../../lwb_accounts_dashboard_setup.sql',im
 await db.exec(`create table lwb_vehicles(id uuid primary key default gen_random_uuid(),vehicle_no text unique,vehicle_type text,ownership text default 'OWN',transporter_name text,is_active boolean default true)`);
 await db.exec(await readFile(new URL('../../lwb_accounts_staff_setup.sql',import.meta.url),'utf8'));
 await db.exec(await readFile(new URL('../../lwb_accounts_vehicle_setup.sql',import.meta.url),'utf8'));
+await db.exec(await readFile(new URL('../../lwb_accounts_cheque_setup.sql',import.meta.url),'utf8'));
 await db.exec('GRANT USAGE ON SCHEMA public,auth TO authenticated');
 
 const today=(await db.query("select public.lwb_acc_today()::text d")).rows[0].d;
@@ -200,4 +201,42 @@ test('vehicle-wise expenses: vehicle on Cash Out, report per head, ledger',async
  assert.equal(led.lines.length,3);assert.ok(led.lines.some(l=>l.party==='GJ05AB1234'));assert.ok(led.lines.some(l=>l.party==='MRF Tyres'));
  assert.deepEqual((await call('select public.lwb_acc_vehicles() j'))[0].j.map(v=>v.no),['GJ05AB1234','GJ05CD5678']);
  await as('manager');await assert.rejects(call('select public.lwb_acc_vehicles()'),/Accounts/);
+});
+
+test('cheque register: details + photo, deposit, cleared / bounced, reminder to Admin, Accounts, Sales Head',async()=>{
+ await as('accounts');
+ const inc=await cat('IN','Other income');
+ const c1=await add({date:today,kind:'IN',category_id:inc,mode:'CHEQUE',amount:50000,ref:'CHQ111',party:'Cheque Party A'});
+ const c2=await add({date:today,kind:'IN',category_id:inc,mode:'CHEQUE',amount:20000,ref:'CHQ222',party:'Cheque Party B'});
+ const c3=await add({date:today,kind:'IN',category_id:inc,mode:'CHEQUE',amount:9000,ref:'CHQ333',party:'Cheque Party C'});
+ const list=async()=>Object.fromEntries((await call('select public.lwb_acc_cheque_list() j'))[0].j.filter(x=>/^Cheque Party/.test(x.party)).map(x=>[x.party.slice(-1),x]));
+ let L=await list();
+ assert.equal(L.A.status,'IN_HAND');assert.equal(L.A.cheque_no,'CHQ111');assert.equal(L.A.cheque_date,today);
+ const save=p=>call('select public.lwb_acc_save_cheque($1::jsonb) r',[JSON.stringify(p)]);
+ await assert.rejects(save({src:'ENTRY',id:c1,photos:['someone/x.jpg']}),/Bad photo/);
+ await assert.rejects(save({src:'ENTRY',id:c1,cheque_no:'12 34'}),/only numbers/);
+ await save({src:'ENTRY',id:c1,cheque_no:'004512',cheque_date:today,drawn_on:'SBI Udhna',photos:[ids.accounts+'/chq-1.jpg']});
+ await save({src:'ENTRY',id:c3,cheque_date:dayAdd(today,10)});            // post-dated
+ L=await list();assert.equal(L.A.cheque_no,'004512');assert.deepEqual(L.A.photos,[ids.accounts+'/chq-1.jpg']);assert.equal(L.A.drawn_on,'SBI Udhna');
+ const dep=(s,id,d=today)=>call('select public.lwb_acc_cheque_deposit($1,$2,$3,$4) r',[s,id,bank,d]);
+ await assert.rejects(dep('ENTRY',c1,dayAdd(today,1)),/future/);
+ await dep('ENTRY',c1);await dep('ENTRY',c2);
+ L=await list();assert.equal(L.A.status,'DEPOSITED');
+ await call('select public.lwb_acc_cheque_undeposit($1,$2)',['ENTRY',c2]);L=await list();assert.equal(L.B.status,'IN_HAND');
+ // reminder: B in hand (due), A deposited, C post-dated
+ await db.query("delete from erp_notifications where notification_type='ACC_CHEQUE_REMINDER'");
+ const n=(await call('select public.lwb_acc_cheque_remind_now() n'))[0].n;
+ const R=await notes('ACC_CHEQUE_REMINDER');
+ assert.equal(n,3);assert.deepEqual(R.map(r=>r.user_id).sort(),[ids.admin,ids.accounts,ids.manager].sort());
+ assert.match(R[0].message,/To deposit: \d+/);assert.match(R[0].message,/Deposited, not yet in bank/);assert.match(R[0].message,/Post-dated/);
+ await call('select public.lwb_acc_cheque_remind_now()');assert.equal((await notes('ACC_CHEQUE_REMINDER')).filter(r=>!r.is_read).length,3);
+ // Admin: A cleared, B bounced
+ await as('admin');
+ await call('select public.lwb_acc_verify_line($1,$2,true,$3,null)',['ENTRY',c1,bank]);
+ await call('select public.lwb_acc_verify_line($1,$2,false,null,$3)',['ENTRY',c2,'Bounced: funds insufficient']);
+ L=await list();assert.equal(L.A.status,'CLEARED');assert.equal(L.B.status,'BOUNCED');assert.match(L.B.verify_note,/insufficient/);
+ await as('accounts');
+ await assert.rejects(save({src:'ENTRY',id:c1,cheque_no:'9'}),/only Admin/);
+ await assert.rejects(dep('ENTRY',c2),/already bounced/);
+ await as('manager');await assert.rejects(call('select public.lwb_acc_cheque_list()'),/Accounts/);
 });
