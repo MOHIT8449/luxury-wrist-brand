@@ -75,6 +75,7 @@
     {group:"Masters",items:[
       {t:"Customer / Party Master",h:"customer-master.html",i:"users",r:"admin manager"},
       {t:"SKU Master",h:"sku-master.html",i:"tag",r:"admin manager"},
+      {t:"Company / Brand",h:"companies.html",i:"factory",r:"admin manager accounts"},
       {t:"Supplier Master",h:"supplier-master.html",i:"factory",r:"admin manager"},
       {t:"Vehicle Master",h:"fleet-master.html#vehicles",i:"truck",r:"admin manager transport warehouse"},
       {t:"Driver Master",h:"fleet-master.html#drivers",i:"users",r:"admin manager transport warehouse"},
