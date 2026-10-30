@@ -10,7 +10,8 @@
 # - Changed supabase/functions/<name>/ folders are deployed.
 # - Every applied file is logged in public.lwb_sql_apply_log.
 # - Pull requests only get the safety check, nothing touches the database.
-# - "Run workflow" (Actions tab) can re-apply one named SQL file by hand.
+# - "Run workflow" (Actions tab) can re-apply one named SQL file by hand, or
+#   check the database login with the name  connection-test  (changes nothing).
 #
 # Secrets (Settings > Secrets and variables > Actions):
 #   SUPABASE_DB_URL        Session pooler connection string with the DB password
@@ -31,7 +32,7 @@ on:
   workflow_dispatch:
     inputs:
       sql_file:
-        description: "Root SQL file to apply now, e.g. lwb_party_ledger_setup.sql"
+        description: "Root SQL file to apply now (e.g. lwb_party_ledger_setup.sql), or connection-test"
         required: true
 
 concurrency:
@@ -71,6 +72,10 @@ jobs:
           MANUAL_FILE: ${{ inputs.sql_file }}
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            if [ "$MANUAL_FILE" = "connection-test" ]; then
+              echo "connection-test" > "$RUNNER_TEMP/sql.txt"; : > "$RUNNER_TEMP/functions.txt"
+              echo "sql=true" >> "$GITHUB_OUTPUT"; echo "functions=false" >> "$GITHUB_OUTPUT"; exit 0
+            fi
             case "$MANUAL_FILE" in */*|*..*|"") echo "::error::Give a root .sql file name"; exit 1;; esac
             [ -f "$MANUAL_FILE" ] || { echo "::error::$MANUAL_FILE not found on this branch"; exit 1; }
             printf '%s\n' "$MANUAL_FILE" > "$RUNNER_TEMP/sql.txt"
@@ -93,6 +98,12 @@ jobs:
         env:
           DB_URL: ${{ secrets.SUPABASE_DB_URL }}
         run: |
+          if [ "$(cat "$RUNNER_TEMP/sql.txt")" = "connection-test" ]; then
+            [ -n "$DB_URL" ] || { echo "::error::SUPABASE_DB_URL secret is not set"; exit 1; }
+            PGCONNECT_TIMEOUT=20 psql "$DB_URL" -q -v ON_ERROR_STOP=1 -o /dev/null -c "select 1" \
+              && echo "Connected to Supabase OK" && echo "- Connection test OK" >> "$GITHUB_STEP_SUMMARY"
+            exit
+          fi
           mapfile -t files < <(grep -v '^$' "$RUNNER_TEMP/sql.txt")
           run=()
           for f in "${files[@]}"; do
