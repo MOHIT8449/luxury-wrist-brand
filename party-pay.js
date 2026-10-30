@@ -49,6 +49,9 @@
     }
     return {raw:d,parties,parentOf,today:d.today||today()};
   }
+  // One balance per party: bills due + opening − money not yet set against bills.
+  // > 0 = still to collect, < 0 = advance (we hold the party's money).
+  const balText=p=>{if(!p)return "";const n=r2(p.net!=null?p.net:p.due+(p.opening||0)-p.advance);return n>0.5?"due "+rs(n):n<-0.5?"advance "+rs(-n):"settled"};
   const billNames=o=>(o.bills||[]).length?(o.bills||[]).map(b=>(b.firm||o.party)+" · "+b.no+((o.bills||[]).length>1?" · "+rs(b.amount):"")).join("\n"):(o.invoice_no||"");
 
   /* ---------- styles (once) ---------- */
@@ -110,7 +113,7 @@
     const names=(()=>{const m=new Map();
       for(const x of info.parties.values())m.set(key(x.party),x.party);
       for(const n of info.raw.parties||[]){const p=info.parentOf(n);if(!m.has(key(p)))m.set(key(p),p)}
-      return [...m.values()].sort((a,b)=>{const A=info.parties.get(key(a)),B=info.parties.get(key(b));return ((B&&B.due)||0)-((A&&A.due)||0)||a.localeCompare(b)})})();
+      return [...m.values()].sort((a,b)=>{const A=info.parties.get(key(a)),B=info.parties.get(key(b));return Math.abs((B&&B.net)||0)-Math.abs((A&&A.net)||0)||a.localeCompare(b)})})();
     const back=document.createElement("div");back.className="lpp-back";
     back.innerHTML=`<div class="lpp" role="dialog" aria-modal="true" aria-labelledby="lppT">
 <header><h3 id="lppT"></h3><button type="button" data-x aria-label="Close">✕</button></header>
@@ -161,7 +164,10 @@
     }
     function drawSum(){
       const p=P();
-      q("[data-sum]").innerHTML=party?`<div class="due"><small>Bills due (${p.bills.length})</small><b>${rs(p.due)}</b></div><div class="adv"><small>Advance with us</small><b>${rs(p.advance)}</b></div><div><small>To collect${p.opening?" (incl. opening)":""}</small><b>${rs(p.due+(p.opening||0)-p.advance)}</b></div>`:"";
+      const n=r2(p.due+(p.opening||0)-p.advance),both=p.advance>0.5&&p.bills.length>0;
+      q("[data-sum]").innerHTML=party?`<div class="${n>0.5?"due":"adv"}"><small>${n>0.5?"Balance: to collect":n<-0.5?"Balance: advance with us":"Balance"}</small><b>${rs(Math.abs(n))}</b></div><div><small>Bills due (${p.bills.length})</small><b>${rs(p.due)}</b></div>`+
+        (both?`<div><small>Paid earlier, not set against bills</small><b>${rs(p.advance)}</b>${adjust?"":`<button type="button" class="lnk" data-adjnow style="display:block;margin-top:2px">Adjust now</button>`}</div>`:p.opening?`<div><small>Opening balance</small><b>${rs(p.opening)}</b></div>`:""):"";
+      const a=q("[data-adjnow]");if(a)a.onclick=()=>{close();open({...o,party,adjust:true})};
       q("[data-sum]").hidden=!party;
     }
     function drawBills(){
@@ -194,7 +200,7 @@
     pin.value=party;
     if(o.party&&o.lockParty){pin.disabled=true}
     function drawList(){const v=key(pin.value);shown=names.filter(n=>!v||key(n).includes(v)||(info.parties.get(key(n))||{members:[]}).members.some(m=>key(m).includes(v))).slice(0,40);hi=0;
-      list.innerHTML=shown.map((n,i)=>{const x=info.parties.get(key(n));return `<button type="button" data-i="${i}"${i?"":' class="on"'}><span>${esc(n)}${x&&x.members.length?`<small style="display:block">${esc(x.members.slice(0,4).join(", "))}${x.members.length>4?" …":""}</small>`:""}</span><small>${x&&x.due?"due "+rs(x.due):""}${x&&x.advance?" · adv "+rs(x.advance):""}</small></button>`}).join("")||'<p class="hint" style="padding:9px">Not in the Party Master</p>';
+      list.innerHTML=shown.map((n,i)=>{const x=info.parties.get(key(n));return `<button type="button" data-i="${i}"${i?"":' class="on"'}><span>${esc(n)}${x&&x.members.length?`<small style="display:block">${esc(x.members.slice(0,4).join(", "))}${x.members.length>4?" …":""}</small>`:""}</span><small>${x&&(x.due>0.5||x.advance>0.5||x.opening)?balText(x):""}</small></button>`}).join("")||'<p class="hint" style="padding:9px">Not in the Party Master</p>';
       list.hidden=false;list.querySelectorAll("[data-i]").forEach(b=>b.onmousedown=e=>{e.preventDefault();pick(shown[Number(b.dataset.i)])})}
     function pick(n){party=n;pin.value=n;list.hidden=true;manual=new Map();drawAll()}
     pin.onfocus=drawList;pin.oninput=()=>{party="";drawList();drawAll()};
@@ -242,5 +248,5 @@
     setTimeout(()=>{(party?(adjust?q("[data-ok]"):q('.amt[data-m="'+(o.mode||"CASH")+'"]')):pin).focus()},60);
     return {close};
   }
-  window.LWBPartyPay={load,open,billNames,key,rs,dmy,errText};
+  window.LWBPartyPay={load,open,billNames,balText,key,rs,dmy,errText};
 })();

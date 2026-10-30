@@ -509,7 +509,7 @@
       if(!outRows){
         el("tabBody").innerHTML='<div class="acx-empty">Loading party outstanding…</div>';
         try{if(!PI)PI=await LWBPartyPay.load(client)}catch(e){el("tabBody").innerHTML='<div class="acx-msg bad">'+esc(e.message)+'</div>';return}
-        outRows=[...PI.parties.values()].filter(x=>x.due>0.5||x.advance>0.5).map(x=>({party:x.party,members:x.members,bills:x.bills.length,oldest:x.oldest,due:x.due,adv:x.advance,out:r2(x.due-x.advance)}))
+        outRows=[...PI.parties.values()].filter(x=>x.due>0.5||x.advance>0.5).map(x=>({party:x.party,members:x.members,bills:x.bills.length,oldest:x.oldest,due:x.due,adv:x.advance,out:r2(x.net)}))
           .sort((a,b)=>b.out-a.out);
       }
       if(tab!=="out")return;
@@ -517,14 +517,14 @@
       const list=outRows.filter(x=>!q||x.party.toLowerCase().includes(q)||x.members.some(m=>m.toLowerCase().includes(q))),tot=list.reduce((a,x)=>a+x.out,0);
       const age=d=>d?Math.max(0,Math.round((new Date(D.today+"T12:00:00Z")-new Date(d+"T12:00:00Z"))/864e5)):0;
       el("tabBody").innerHTML='<div class="acx-filter"><input type="search" id="outQ" placeholder="Search party or bill name" autocomplete="off"><a class="acx-btn" href="party-billing.html?tab=due">Billing &amp; Outstanding →</a><button type="button" class="acx-btn" id="outXl">⬇ Excel</button></div>'+
-        '<p style="margin:0 0 8px;font-size:14px">'+list.filter(x=>x.out>0.5).length+' parties owe <b>'+rs(tot)+'</b></p>'+
-        (list.length?'<div style="overflow:auto"><table class="acx-t"><thead><tr><th>Main party</th><th class="n">Bills</th><th class="n">Oldest</th><th class="n">Bills due</th><th class="n">Advance</th><th class="n">To collect</th><th></th></tr></thead><tbody>'+
-          list.map(x=>{const a=age(x.oldest);return '<tr><td><a href="party-ledger.html?party='+encodeURIComponent(x.party)+'"><b>'+esc(x.party)+'</b></a>'+(x.members.length?'<small>'+esc(x.members.join(", "))+'</small>':"")+'</td><td class="n">'+x.bills+'</td><td class="n">'+(x.oldest?dmy(x.oldest)+'<small class="'+(a>30?"minus":"")+'">'+a+' days</small>':"")+'</td><td class="n">'+rs(x.due)+'</td><td class="n plus">'+(x.adv?rs(x.adv):"—")+'</td><td class="n"><b class="'+(x.out>0?"minus":"plus")+'">'+rs(x.out)+'</b></td><td class="n"><button type="button" class="acx-btn grn" data-pp="'+esc(x.party)+'">Receive</button></td></tr>'}).join("")+'</tbody></table></div>'
+        '<p style="margin:0 0 8px;font-size:14px">'+list.filter(x=>x.out>0.5).length+' parties owe <b>'+rs(list.reduce((a,x)=>a+Math.max(0,x.out),0))+'</b> · advance with us <b>'+rs(list.reduce((a,x)=>a+Math.max(0,-x.out),0))+'</b></p>'+
+        (list.length?'<div style="overflow:auto"><table class="acx-t"><thead><tr><th>Main party</th><th class="n">Bills</th><th class="n">Oldest</th><th class="n">Bills due</th><th class="n">Paid, not adjusted</th><th class="n">Balance</th><th></th></tr></thead><tbody>'+
+          list.map(x=>{const a=age(x.oldest);return '<tr><td><a href="party-ledger.html?party='+encodeURIComponent(x.party)+'"><b>'+esc(x.party)+'</b></a>'+(x.members.length?'<small>'+esc(x.members.join(", "))+'</small>':"")+'</td><td class="n">'+x.bills+'</td><td class="n">'+(x.oldest?dmy(x.oldest)+'<small class="'+(a>30?"minus":"")+'">'+a+' days</small>':"")+'</td><td class="n">'+rs(x.due)+'</td><td class="n plus">'+(x.adv?rs(x.adv):"—")+'</td><td class="n"><b class="'+(x.out>0?"minus":"plus")+'">'+rs(Math.abs(x.out))+'</b><small>'+(x.out>0.5?"to collect":x.out<-0.5?"advance":"settled")+'</small></td><td class="n"><button type="button" class="acx-btn grn" data-pp="'+esc(x.party)+'">Receive</button></td></tr>'}).join("")+'</tbody></table></div>'
           :'<div class="acx-empty">No party outstanding.</div>');
       el("outQ").value=keep;if(keep)el("outQ").focus();
       el("outQ").oninput=renderOutstanding;
       el("tabBody").querySelectorAll("[data-pp]").forEach(b=>b.onclick=()=>partyPay(b.dataset.pp));
-      el("outXl").onclick=()=>LWBExcel.write("party-outstanding-"+D.today,[{name:"Outstanding",rows:[["Main party","Bill names","Bills","Oldest bill","Days","Bills due","Advance","To collect"],...list.map(x=>[x.party,x.members.join(", "),x.bills,dmy(x.oldest),age(x.oldest),r2(x.due),r2(x.adv),r2(x.out)])]}]).catch(e=>say(e.message,true));
+      el("outXl").onclick=()=>LWBExcel.write("party-outstanding-"+D.today,[{name:"Outstanding",rows:[["Main party","Bill names","Bills","Oldest bill","Days","Bills due","Paid, not adjusted","Balance (+ to collect, − advance)"],...list.map(x=>[x.party,x.members.join(", "),x.bills,dmy(x.oldest),age(x.oldest),r2(x.due),r2(x.adv),r2(x.out)])]}]).catch(e=>say(e.message,true));
     }
 
     function renderCloses(){
@@ -792,9 +792,9 @@
       for(const x of S.filter(x=>x.active)){seen.add(x.name.toLowerCase());out.push({t:"staff",id:x.id,name:x.name,sub:(x.designation?x.designation+" · ":"")+"Staff"})}
       for(const v of V){seen.add(v.no.toLowerCase());out.push({t:"vehicle",id:v.id,name:v.no,sub:[v.type,v.own==="TRANSPORTER"?v.transporter||"Transporter":""].filter(Boolean).concat("Vehicle").join(" · ")})}
       const dueOf=n=>{const p=PI&&PI.parties.get(LWBPartyPay.key(PI.parentOf(n)));return p&&(p.due>0.5||p.advance>0.5)?p:null};
-      const pSub=n=>{const p=dueOf(n),m=PI?PI.parentOf(n):n;return (LWBPartyPay.key(m)!==LWBPartyPay.key(n)?"under "+m+" · ":"")+(p?"due "+rs(p.due)+(p.advance>0.5?" · advance "+rs(p.advance):""):"Party Master")};
+      const pSub=n=>{const p=dueOf(n),m=PI?PI.parentOf(n):n;return (LWBPartyPay.key(m)!==LWBPartyPay.key(n)?"under "+m+" · ":"")+(p?LWBPartyPay.balText(p):"Party Master")};
       const pn=[...(X.parties||[])];if(PI)for(const p of PI.parties.values())if(!pn.some(n=>n.toLowerCase()===p.party.toLowerCase()))pn.push(p.party);
-      for(const n of pn){if(seen.has(n.toLowerCase()))continue;seen.add(n.toLowerCase());const p=dueOf(n);out.push({t:"party",name:n,code:shortCode(n,taken),sub:pSub(n),due:p?p.due:0})}
+      for(const n of pn){if(seen.has(n.toLowerCase()))continue;seen.add(n.toLowerCase());const p=dueOf(n);out.push({t:"party",name:n,code:shortCode(n,taken),sub:pSub(n),due:p?Math.abs(p.net):0})}
       for(const n of X.payees||[]){if(seen.has(n.toLowerCase()))continue;seen.add(n.toLowerCase());out.push({t:"payee",name:n,sub:"Used before"})}
       return out;
     }
@@ -918,7 +918,8 @@
         const p=n&&PI?PI.parties.get(LWBPartyPay.key(PI.parentOf(n))):null;
         if(!p||!(p.due>0.5||p.advance>0.5)){box.hidden=true;return}
         box.hidden=false;
-        box.innerHTML='<div class="acx-due"><div class="h"><b>'+esc(p.party)+'</b><span>to collect <b class="minus">'+rs(p.due)+'</b>'+(p.advance>0.5?' · advance <b class="plus">'+rs(p.advance)+'</b>':"")+'</span></div>'+
+        box.innerHTML='<div class="acx-due"><div class="h"><b>'+esc(p.party)+'</b><span>'+(p.net>0.5?'to collect <b class="minus">'+rs(p.net)+'</b>':p.net<-0.5?'advance <b class="plus">'+rs(-p.net)+'</b>':"settled")+'</span></div>'+
+          (p.advance>0.5&&p.bills.length?'<div class="r"><small>Bills '+rs(p.due)+' − paid earlier, not adjusted '+rs(p.advance)+'</small></div>':"")+
           p.bills.slice(0,6).map(b=>'<div class="r"><span>'+esc(b.order_no)+' · '+dmy(b.invoice_date)+'<small>'+esc(LWBPartyPay.billNames(b)).replace(/\n/g,"<br>")+'</small></span><b>'+rs(b.due)+'</b></div>').join("")+
           (p.bills.length>6?'<div class="r"><small>+ '+(p.bills.length-6)+' more bills</small></div>':"")+
           '<button type="button" class="acx-btn grn" id="eDueGo">💰 Receive against these bills →</button></div>';
