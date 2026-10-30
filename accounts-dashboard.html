@@ -9,6 +9,7 @@
   <link rel="stylesheet" href="erp-shell.css">
   <script src="erp-shell.js"></script>
   <script src="excel-io.js"></script>
+  <script src="party-pay.js"></script>
   <style>
     .status{text-align:center;padding:80px 20px;font-size:15px;color:#555}
     [hidden]{display:none!important}
@@ -45,9 +46,9 @@
     .acx-kpi.hand .v{font-size:27px}
     .acx-strip{display:flex;gap:6px 16px;flex-wrap:wrap;font-size:13.5px;color:#3b4652;margin:0 2px 12px}
     .acx-strip b{color:var(--erp-ink)}
-    .acx-actions{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin:0 0 14px}
+    .acx-actions{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px;margin:0 0 14px}
     .acx-actions button{height:52px;border-radius:10px;border:0;font:inherit;font-size:15px;font-weight:800;cursor:pointer;color:#fff;display:flex;align-items:center;justify-content:center;gap:7px}
-    .acx-actions .in{background:#13824a}.acx-actions .out{background:#c8102e}.acx-actions .dep{background:#1d5fbf}.acx-actions .close{background:#13283f}
+    .acx-actions .in{background:#13824a}.acx-actions .ppay{background:#0b6b3a}.acx-actions .out{background:#c8102e}.acx-actions .dep{background:#1d5fbf}.acx-actions .close{background:#13283f}
     .acx-actions span{font-size:20px;line-height:1}
 
     .acx-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin:0 0 12px}
@@ -86,6 +87,10 @@
     .acx-row .a{text-align:right;font-weight:800;font-size:15px;white-space:nowrap;font-variant-numeric:tabular-nums}
     .acx-row .a small{display:block;font-weight:600;font-size:11.5px;margin-top:2px}
     .plus{color:#13824a}.minus{color:#b3122b}.neutral{color:#1d5fbf}
+    .acx-due{margin:8px 0 0;border:1.5px solid #b9e2c9;background:#f3fbf6;border-radius:10px;padding:10px 12px;display:grid;gap:6px;font-size:13px}
+    .acx-due .h{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;font-size:14px}
+    .acx-due .r{display:flex;justify-content:space-between;gap:8px;border-top:1px dashed #cfe9d9;padding-top:5px}
+    .acx-due .r small{display:block;color:var(--erp-muted)}
     .tag{display:inline-block;padding:1px 8px;border-radius:99px;font-size:11.5px;font-weight:700;white-space:nowrap}
     .t-red{background:#fdecef;color:#b3122b}.t-amb{background:#fdf0dc;color:#9a5b00}.t-grn{background:#e3f5ec;color:#13824a}.t-blu{background:#e6efff;color:#1d5fbf}.t-gry{background:#eef0f3;color:#3b4652}
     .acx-ver{border:1px solid var(--erp-line);border-radius:10px;padding:10px 12px;margin:0 0 8px;display:grid;grid-template-columns:1fr auto;gap:6px 12px;align-items:center}
@@ -180,7 +185,7 @@
       .acx-kpi{padding:10px 12px}.acx-kpi .v{font-size:19px}
       .acx-kpi.hand{grid-column:1/-1}.acx-kpi.hand .v{font-size:26px}
       .acx-grid{grid-template-columns:1fr}
-      .acx-actions{grid-template-columns:1fr 1fr}
+      .acx-actions{grid-template-columns:1fr 1fr}.acx-actions .ppay{grid-column:1 / -1}
       .acx-back{align-items:flex-end;padding:0}
       .acx-sheet{border-radius:16px 16px 0 0;max-height:94dvh;width:100%}
       .notes{grid-template-columns:1fr}
@@ -205,6 +210,7 @@
     <div class="acx-kpis" id="kpis"></div>
     <div class="acx-strip" id="strip"></div>
     <div class="acx-actions">
+      <button type="button" class="ppay" id="ppayBtn"><span>💰</span>Party payment</button>
       <button type="button" class="in" data-new="IN"><span>+</span>Cash In</button>
       <button type="button" class="out" data-new="OUT"><span>−</span>Cash Out</button>
       <button type="button" class="dep" data-new="DEPOSIT"><span>🏦</span>Bank Deposit</button>
@@ -229,7 +235,7 @@
       </div>
       <div id="tabBody"></div>
     </section>
-    <p class="acx-note">Cash in hand = opening cash + cash in − cash out − bank deposit + cash taken from bank. Payment Collection and driver money received by Office come in by themselves (on the day they were entered at the office); add only other money here. UPI / Bank / RTGS / Cheque and bank deposits count in a bank after Admin checks the bank.</p>
+    <p class="acx-note">Cash in hand = opening cash + cash in − cash out − bank deposit + cash taken from bank. Party payments (Billing &amp; Outstanding) and driver money received by Office come in by themselves (on the day they were entered at the office); add only other money here. UPI / Bank / RTGS / Cheque and bank deposits count in a bank after Admin checks the bank.</p>
   </main>
   <script>
     'use strict';
@@ -259,9 +265,9 @@
     const hm=t=>t?new Date(t).toLocaleTimeString("en-IN",{hour:"2-digit",minute:"2-digit",hour12:true,timeZone:"Asia/Kolkata"}):"";
     const MODES=["CASH","UPI","BANK","RTGS","CHEQUE"];
     const MODE_NAME={CASH:"Cash",UPI:"UPI",BANK:"Bank / NEFT",RTGS:"RTGS",CHEQUE:"Cheque"};
-    const SRC_NAME={ENTRY:"Entered here",PAYMENT:"Payment Collection",DRIVER_CASH:"Driver money",DRIVER_ONLINE:"Driver money",OLD:"Old payment entry"};
+    const SRC_NAME={ENTRY:"Entered here",PAYMENT:"Party payment (Billing & Outstanding)",DRIVER_CASH:"Driver money",DRIVER_ONLINE:"Driver money",OLD:"Old payment entry"};
     const NOTE_KEYS=["500","200","100","50","20","10"];
-    let X={entries:{},staff_heads:[],payees:[]},S=[],V=[],VR={vehicles:[],entries:{}},D=null,per="today",from=todayISO(),to=todayISO(),tab="book",bookF="all",outRows=null,me={id:"",role:""};
+    let X={entries:{},staff_heads:[],payees:[]},S=[],V=[],VR={vehicles:[],entries:{}},D=null,PI=null,per="today",from=todayISO(),to=todayISO(),tab="book",bookF="all",outRows=null,me={id:"",role:""};
 
     function say(t,bad){el("msg").hidden=!t;el("msg").textContent=t||"";el("msg").className="acx-msg"+(bad?" bad":"")}
     const errText=e=>{const m=String(e&&e.message||e||"Something went wrong");
@@ -292,6 +298,8 @@
         V=vl.error?[]:(vl.data||[]);VR=vr.error||!vr.data?{vehicles:[],entries:{}}:vr.data;
         D.lines.forEach(l=>{l.x=l.src==="ENTRY"&&X.entries[l.id]||null;l.veh=l.src==="ENTRY"&&VR.entries[l.id]||null});
         say("");render();
+        // bills due / advance per main party (Billing & Outstanding); the dashboard works without it
+        LWBPartyPay.load(client).then(i=>{PI=i;if(tab==="out")renderOutstanding()}).catch(()=>{PI=null});
       }catch(e){say(errText(e),true)}
       finally{el("reload").disabled=false}
     }
@@ -461,28 +469,27 @@
       });
     }
 
+    // Party outstanding on the MAIN party (all its bill names), advance taken off (Billing & Outstanding)
     async function renderOutstanding(){
       if(!outRows){
         el("tabBody").innerHTML='<div class="acx-empty">Loading party outstanding…</div>';
-        const {data,error}=await client.rpc("lwb_party_bills");
-        if(error){el("tabBody").innerHTML='<div class="acx-msg bad">'+esc(error.message)+'</div>';return}
-        const m=new Map();
-        for(const b of data||[]){const k=String(b.customer_name||"").trim();if(!k)continue;const x=m.get(k)||{party:k,out:0,bills:0,oldest:""};
-          const o=Number(b.outstanding_amount)||0;if(o>0.5){x.out+=o;x.bills++;if(!x.oldest||String(b.bill_date)<x.oldest)x.oldest=String(b.bill_date||"")}m.set(k,x)}
-        outRows=[...m.values()].filter(x=>x.out>0.5).sort((a,b)=>b.out-a.out);
+        try{if(!PI)PI=await LWBPartyPay.load(client)}catch(e){el("tabBody").innerHTML='<div class="acx-msg bad">'+esc(e.message)+'</div>';return}
+        outRows=[...PI.parties.values()].filter(x=>x.due>0.5||x.advance>0.5).map(x=>({party:x.party,members:x.members,bills:x.bills.length,oldest:x.oldest,due:x.due,adv:x.advance,out:r2(x.due-x.advance)}))
+          .sort((a,b)=>b.out-a.out);
       }
       if(tab!=="out")return;
       const keep=el("outQ")?el("outQ").value:"",q=keep.toLowerCase();
-      const list=outRows.filter(x=>!q||x.party.toLowerCase().includes(q)),tot=list.reduce((a,x)=>a+x.out,0);
+      const list=outRows.filter(x=>!q||x.party.toLowerCase().includes(q)||x.members.some(m=>m.toLowerCase().includes(q))),tot=list.reduce((a,x)=>a+x.out,0);
       const age=d=>d?Math.max(0,Math.round((new Date(D.today+"T12:00:00Z")-new Date(d+"T12:00:00Z"))/864e5)):0;
-      el("tabBody").innerHTML='<div class="acx-filter"><input type="search" id="outQ" placeholder="Search party" autocomplete="off"><a class="acx-btn" href="party-ledger.html">Party Ledger →</a><button type="button" class="acx-btn" id="outXl">⬇ Excel</button></div>'+
-        '<p style="margin:0 0 8px;font-size:14px">'+list.length+' parties owe <b>'+rs(tot)+'</b></p>'+
-        (list.length?'<div style="overflow:auto"><table class="acx-t"><thead><tr><th>Party</th><th class="n">Bills</th><th class="n">Oldest</th><th class="n">Outstanding</th></tr></thead><tbody>'+
-          list.map(x=>{const a=age(x.oldest);return '<tr><td><a href="party-ledger.html?party='+encodeURIComponent(x.party)+'"><b>'+esc(x.party)+'</b></a></td><td class="n">'+x.bills+'</td><td class="n">'+(x.oldest?dmy(x.oldest)+'<small class="'+(a>30?"minus":"")+'">'+a+' days</small>':"")+'</td><td class="n"><b>'+rs(x.out)+'</b></td></tr>'}).join("")+'</tbody></table></div>'
+      el("tabBody").innerHTML='<div class="acx-filter"><input type="search" id="outQ" placeholder="Search party or bill name" autocomplete="off"><a class="acx-btn" href="party-billing.html?tab=due">Billing &amp; Outstanding →</a><button type="button" class="acx-btn" id="outXl">⬇ Excel</button></div>'+
+        '<p style="margin:0 0 8px;font-size:14px">'+list.filter(x=>x.out>0.5).length+' parties owe <b>'+rs(tot)+'</b></p>'+
+        (list.length?'<div style="overflow:auto"><table class="acx-t"><thead><tr><th>Main party</th><th class="n">Bills</th><th class="n">Oldest</th><th class="n">Bills due</th><th class="n">Advance</th><th class="n">To collect</th><th></th></tr></thead><tbody>'+
+          list.map(x=>{const a=age(x.oldest);return '<tr><td><a href="party-ledger.html?party='+encodeURIComponent(x.party)+'"><b>'+esc(x.party)+'</b></a>'+(x.members.length?'<small>'+esc(x.members.join(", "))+'</small>':"")+'</td><td class="n">'+x.bills+'</td><td class="n">'+(x.oldest?dmy(x.oldest)+'<small class="'+(a>30?"minus":"")+'">'+a+' days</small>':"")+'</td><td class="n">'+rs(x.due)+'</td><td class="n plus">'+(x.adv?rs(x.adv):"—")+'</td><td class="n"><b class="'+(x.out>0?"minus":"plus")+'">'+rs(x.out)+'</b></td><td class="n"><button type="button" class="acx-btn grn" data-pp="'+esc(x.party)+'">Receive</button></td></tr>'}).join("")+'</tbody></table></div>'
           :'<div class="acx-empty">No party outstanding.</div>');
       el("outQ").value=keep;if(keep)el("outQ").focus();
       el("outQ").oninput=renderOutstanding;
-      el("outXl").onclick=()=>LWBExcel.write("party-outstanding-"+D.today,[{name:"Outstanding",rows:[["Party","Bills","Oldest bill","Days","Outstanding"],...list.map(x=>[x.party,x.bills,dmy(x.oldest),age(x.oldest),r2(x.out)])]}]).catch(e=>say(e.message,true));
+      el("tabBody").querySelectorAll("[data-pp]").forEach(b=>b.onclick=()=>partyPay(b.dataset.pp));
+      el("outXl").onclick=()=>LWBExcel.write("party-outstanding-"+D.today,[{name:"Outstanding",rows:[["Main party","Bill names","Bills","Oldest bill","Days","Bills due","Advance","To collect"],...list.map(x=>[x.party,x.members.join(", "),x.bills,dmy(x.oldest),age(x.oldest),r2(x.due),r2(x.adv),r2(x.out)])]}]).catch(e=>say(e.message,true));
     }
 
     function renderCloses(){
@@ -668,7 +675,10 @@
       const taken=new Set(),seen=new Set(),out=[];
       for(const x of S.filter(x=>x.active)){seen.add(x.name.toLowerCase());out.push({t:"staff",id:x.id,name:x.name,sub:(x.designation?x.designation+" · ":"")+"Staff"})}
       for(const v of V){seen.add(v.no.toLowerCase());out.push({t:"vehicle",id:v.id,name:v.no,sub:[v.type,v.own==="TRANSPORTER"?v.transporter||"Transporter":""].filter(Boolean).concat("Vehicle").join(" · ")})}
-      for(const n of X.parties||[]){if(seen.has(n.toLowerCase()))continue;seen.add(n.toLowerCase());out.push({t:"party",name:n,code:shortCode(n,taken),sub:"Party Master"})}
+      const dueOf=n=>{const p=PI&&PI.parties.get(LWBPartyPay.key(PI.parentOf(n)));return p&&(p.due>0.5||p.advance>0.5)?p:null};
+      const pSub=n=>{const p=dueOf(n),m=PI?PI.parentOf(n):n;return (LWBPartyPay.key(m)!==LWBPartyPay.key(n)?"under "+m+" · ":"")+(p?"due "+rs(p.due)+(p.advance>0.5?" · advance "+rs(p.advance):""):"Party Master")};
+      const pn=[...(X.parties||[])];if(PI)for(const p of PI.parties.values())if(!pn.some(n=>n.toLowerCase()===p.party.toLowerCase()))pn.push(p.party);
+      for(const n of pn){if(seen.has(n.toLowerCase()))continue;seen.add(n.toLowerCase());const p=dueOf(n);out.push({t:"party",name:n,code:shortCode(n,taken),sub:pSub(n),due:p?p.due:0})}
       for(const n of X.payees||[]){if(seen.has(n.toLowerCase()))continue;seen.add(n.toLowerCase());out.push({t:"payee",name:n,sub:"Used before"})}
       return out;
     }
@@ -687,7 +697,7 @@
       const body=(io?'<div class="seg two" id="eKind"><button type="button" class="in" data-k="IN">+ Cash In</button><button type="button" class="out" data-k="OUT">− Cash Out</button></div>':
           '<div class="seg two" id="eKind"><button type="button" class="dep" data-k="DEPOSIT">🏦 Cash to bank</button><button type="button" class="dep" data-k="WITHDRAW">₹ Cash from bank</button></div>')+
         '<div class="f2"><div class="f"><label>Date</label>'+dateBox("eDate",def,{max:D.today})+'</div><div class="f"><label for="eTime">Time</label><input id="eTime" type="time" value="'+nowHM()+'"></div></div>'+
-        '<div class="f acx-combo" id="ePartyBox"><label for="eParty" id="ePartyLab">Party</label><input id="eParty" type="text" maxlength="120" autocomplete="off" placeholder="Type party name or short code" value="'+esc(pick?pick.name:"")+'" role="combobox" aria-expanded="false" aria-controls="ePList"><div class="acx-clist" id="ePList" role="listbox" hidden></div><div class="acx-note" id="eStaffBal" style="margin:4px 0 0"></div></div>'+
+        '<div class="f acx-combo" id="ePartyBox"><label for="eParty" id="ePartyLab">Party</label><input id="eParty" type="text" maxlength="120" autocomplete="off" placeholder="Type party name or short code" value="'+esc(pick?pick.name:"")+'" role="combobox" aria-expanded="false" aria-controls="ePList"><div class="acx-clist" id="ePList" role="listbox" hidden></div><div class="acx-note" id="eStaffBal" style="margin:4px 0 0"></div><div id="eDue" hidden></div></div>'+
         '<div class="f" id="eBankBox"><label for="eBank" id="eBankLab">Bank</label><select id="eBank">'+bankOptions(banks.length===1?banks[0].id:"",true)+'</select></div>'+
         '<div class="f"><label for="eAmt" id="eAmtLab">Amount (₹)</label><input id="eAmt" class="big" type="text" inputmode="decimal" autocomplete="off" placeholder="0.00">'+
           '<button type="button" class="acx-link" id="eCnt">Count notes</button><div id="eNotes" hidden><div class="notes">'+NOTE_KEYS.map(k=>'<div class="note"><b>₹'+k+'</b><button type="button" data-d="'+k+'" data-s="-1" aria-label="less">−</button><input type="text" inputmode="numeric" data-en="'+k+'" placeholder="0" aria-label="'+k+' notes"><button type="button" data-d="'+k+'" data-s="1" aria-label="more">+</button></div>').join("")+'</div></div></div>'+
@@ -769,11 +779,23 @@
         q("#ePartyLab").textContent=k==="IN"?"Received from":"Paid to";
         staffBal();
         q("#eHint").textContent=k==="DEPOSIT"?"Cash leaves the cash in hand now; it shows in the bank after Admin checks the bank.":
-          k==="IN"&&nonCash?"Admin gets a bell to check this in the bank. Payment Collection on Tally bills is entered on Tally Bill & Invoice No. → Money to collect, not here.":
-          k==="IN"?"Party bill payments go through Payment Collection (they show here by themselves). Use this for other cash.":
+          k==="IN"?"Money from a party with bills: pick the party and use “Receive against these bills” (or 💰 Party payment), so its bills and outstanding go down."+(nonCash?" Admin gets a bell to check this in the bank.":""):
           isStaffHead(st.cat)?"Pick the staff name in "+q("#ePartyLab").textContent+"; it goes in the staff ledger.":"";
       }
-      function staffBal(){const p=io&&isStaffHead(st.cat)?staffOf():null,s=p&&S.find(x=>x.id===p.id),v=!p&&!isStaffHead(st.cat)&&vehOf();
+      // Cash In from a party with Tally bills: show what it owes and take the money against its bills
+      function partyDue(){
+        const box=q("#eDue"),n=st.kind==="IN"&&!isStaffHead(st.cat)?q("#eParty").value.trim():"";
+        const p=n&&PI?PI.parties.get(LWBPartyPay.key(PI.parentOf(n))):null;
+        if(!p||!(p.due>0.5||p.advance>0.5)){box.hidden=true;return}
+        box.hidden=false;
+        box.innerHTML='<div class="acx-due"><div class="h"><b>'+esc(p.party)+'</b><span>to collect <b class="minus">'+rs(p.due)+'</b>'+(p.advance>0.5?' · advance <b class="plus">'+rs(p.advance)+'</b>':"")+'</span></div>'+
+          p.bills.slice(0,6).map(b=>'<div class="r"><span>'+esc(b.order_no)+' · '+dmy(b.invoice_date)+'<small>'+esc(LWBPartyPay.billNames(b)).replace(/\n/g,"<br>")+'</small></span><b>'+rs(b.due)+'</b></div>').join("")+
+          (p.bills.length>6?'<div class="r"><small>+ '+(p.bills.length-6)+' more bills</small></div>':"")+
+          '<button type="button" class="acx-btn grn" id="eDueGo">💰 Receive against these bills →</button></div>';
+        q("#eDueGo").onclick=()=>{const amt=num(q("#eAmt").value),mode=["CASH","UPI","BANK","CHEQUE"].includes(st.mode)?st.mode:st.mode==="RTGS"?"BANK":"CASH";
+          box.closest(".acx-back")?box.closest(".acx-back").remove():null;document.body.style.overflow="";partyPay(p.party,amt,mode)};
+      }
+      function staffBal(){partyDue();const p=io&&isStaffHead(st.cat)?staffOf():null,s=p&&S.find(x=>x.id===p.id),v=!p&&!isStaffHead(st.cat)&&vehOf();
         q("#eStaffBal").textContent=s?balText(s.balance)+" · salary "+rs(s.monthly_salary)+"/month":v?"🚚 Vehicle expense: shows in the Vehicles tab. Shop / driver name: write it in Remark.":""}
       // Party box: type a name or short code, pick from staff, Party Master and names used before
       let hi=0,shown=[];
@@ -781,7 +803,7 @@
         const v=q("#eParty").value.trim().toLowerCase(),staffFirst=isStaffHead(st.cat);
         const vs=v.replace(/[\s-]/g,"");
         shown=PL.filter(p=>!v||p.name.toLowerCase().includes(v)||(p.code&&p.code.toLowerCase().startsWith(v))||(p.t==="vehicle"&&vs&&p.name.toLowerCase().includes(vs)))
-          .sort((a,b)=>staffFirst?(a.t==="staff"?0:1)-(b.t==="staff"?0:1):0).slice(0,40);
+          .sort((a,b)=>staffFirst?(a.t==="staff"?0:1)-(b.t==="staff"?0:1):st.kind==="IN"?(b.due||0)-(a.due||0):0).slice(0,40);
         hi=0;const L=q("#ePList");
         L.innerHTML=shown.map((p,i)=>'<button type="button" role="option" data-i="'+i+'"'+(i===hi?' class="on"':"")+'><b>'+esc(p.name)+'</b><small>'+(p.code?esc(p.code)+" · ":"")+esc(p.sub)+'</small></button>').join("")||
           (v?'<div class="acx-cnone">New name: "'+esc(q("#eParty").value.trim())+'"</div>':'<div class="acx-cnone">No names yet</div>');
@@ -814,6 +836,14 @@
       q("#eKind").querySelectorAll("[data-k]").forEach(b=>b.onclick=()=>{st.kind=b.dataset.k;paint()});
       paint();if(pre.amount)q("#eAmt").value=r2(pre.amount);
       setTimeout(()=>q(io&&!pick?"#eParty":"#eAmt").focus(),60);
+    }
+
+    // Party payment: on the main party, split over its bills (oldest first / by hand), rest advance
+    async function partyPay(party,amount,mode){
+      try{if(!PI)PI=await LWBPartyPay.load(client)}catch(e){await ERPShell.alert(e.message);return}
+      LWBPartyPay.open({client,info:PI,party:party||"",amount,mode,onSaved:r=>{
+        ERPShell.toast?ERPShell.toast(rs(r.amount)+" received from "+r.party+" · "+rs(r.split)+" against bills"+(Number(r.advance)>0.5?" · advance "+rs(r.advance):"")):null;
+        outRows=null;PI=null;load()}});
     }
 
     async function addHead(kind,returnId){
@@ -933,6 +963,7 @@
       const f=dval("pFrom"),t=dval("pTo");if(!f||!t)return;
       from=f<=t?f:t;to=f<=t?t:f;per="custom";el("period").querySelectorAll("[data-p]").forEach(b=>b.setAttribute("aria-pressed","false"));load()}));
     el("reload").onclick=()=>{outRows=null;load()};
+    el("ppayBtn").onclick=()=>D&&partyPay("");
     document.querySelectorAll("[data-new]").forEach(b=>b.onclick=()=>D&&newEntry(b.dataset.new));
     el("closeBtn").onclick=()=>D&&closeDay();
     let wasWide=wide();
