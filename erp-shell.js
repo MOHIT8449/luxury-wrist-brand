@@ -26,6 +26,7 @@
     chart:'<path d="M4 20V11"/><path d="M10 20V5"/><path d="M16 20v-6"/><path d="M2 20h20"/>',
     phone:'<path d="M5 3h4l2 5-3 2a11 11 0 0 0 6 6l2-3 5 2v4a2 2 0 0 1-2 2A17 17 0 0 1 3 5a2 2 0 0 1 2-2z"/>',
     chat:'<path d="M4 5h16v11H9l-5 4z"/><path d="M8 9h8M8 12h5"/>',
+    megaphone:'<path d="M3 11v2a1 1 0 0 0 1 1h2l5 4V6L6 10H4a1 1 0 0 0-1 1z"/><path d="M15 9a4 4 0 0 1 0 6M18 6a8 8 0 0 1 0 12"/>',
     lock:'<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>'
   };
   const svg=(name)=>'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">'+(ICON[name]||ICON.box)+'</svg>';
@@ -232,7 +233,7 @@
     if(document.querySelector('link[rel="manifest"]'))return;
     const add=(tag,attrs)=>{const n=document.createElement(tag);for(const k in attrs)n.setAttribute(k,attrs[k]);document.head.appendChild(n)};
     add("link",{rel:"manifest",href:"manifest.webmanifest"});
-    add("meta",{name:"theme-color",content:"#c8102e"});
+    add("meta",{name:"theme-color",content:"#002f37"});
     add("link",{rel:"apple-touch-icon",href:"app-icon-192.png"});
     add("meta",{name:"apple-mobile-web-app-capable",content:"yes"});
   }
@@ -264,7 +265,7 @@
     const side=document.createElement("aside");
     side.className="erp-side";
     function drawSide(){
-      let html='<div class="erp-brand"><b>LUXURY WRIST BRAND</b><small>BUSINESS ERP</small></div>'+
+      let html='<div class="erp-brand"><span class="erp-mark" aria-hidden="true">lwb</span><div><b>LUXURY WRIST BRAND</b><small>BUSINESS ERP</small></div></div>'+
         '<div class="erp-menu-find"><input type="search" aria-label="Find a page" placeholder="Find a page…"></div><p class="erp-menu-empty" hidden>No page found</p>';
       groups.forEach(g=>{
         if(g.group)html+='<div class="erp-group">'+esc(g.group)+'</div>';
