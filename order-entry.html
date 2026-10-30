@@ -357,6 +357,7 @@ body.compact-entry .share-more>summary{display:block;cursor:pointer;font-size:13
 </style>
 <link rel="stylesheet" href="erp-shell.css">
 <script src="erp-shell.js" data-auto defer></script>
+<script src="brand-filter.js"></script>
 </head>
 
 <body>
@@ -517,7 +518,7 @@ body.compact-entry .share-more>summary{display:block;cursor:pointer;font-size:13
             <th>#</th>
             <th style="min-width:250px">SKU / Product</th>
             <th class="pal-col">Pallet</th>
-            <th id="quantityHeader">QTY (CS)</th>
+            <th id="quantityHeader">QTY (CS / BOX)</th>
             <th>Rate ₹</th>
             <th>Amount ₹</th>
             <th>Unit Weight KG</th>
@@ -1091,6 +1092,8 @@ async function loadSkuMaster() {
     .eq("is_active", true);
 
   if (error) throw error;
+  // Pack unit (Company / Brand): Rajnigandha SKUs are boxes, Coca-Cola cases.
+  if (window.LWBBrand) unitCompanies = ((await LWBBrand.load(db).catch(() => null)) || {}).all || [];
 
   let list = document.getElementById("skuMasterList");
 
@@ -1291,7 +1294,15 @@ function updateRowNumbers(){
 /* Live stock (lwb_live_stock_po_setup.sql): godown + goods in transit per SKU, light text under
    the SKU and in the empty Cases box. Empty for roles not allowed in Sales Team Setup. */
 let stockByKey = new Map();
-const stockText = st => "Stock " + formatNumber(st.g + st.t) + " CS";
+let unitCompanies = [];
+const unitByName = name => {
+  const sku = skuMasterByName.get(String(name || "").trim().toUpperCase());
+  return window.LWBBrand && sku ? LWBBrand.unitOf(sku, unitCompanies) : "CASE";
+};
+const rowUnit = row => unitByName(row.querySelector(".sku-name")?.value);
+const unitShort = row => rowUnit(row) === "BOX" ? "BOX" : "CS";
+const unitPlaceholder = row => rowUnit(row) === "BOX" ? "Boxes" : "Cases";
+const stockText = (st, row) => "Stock " + formatNumber(st.g + st.t) + " " + (row ? unitShort(row) : "CS");
 async function loadStock(){
   const {data, error} = await db.rpc("lwb_po_stock");
   if(error || !Array.isArray(data)) return;
@@ -1304,11 +1315,11 @@ function showStock(row){
   const st = stockByKey.get(skuKey(row.querySelector(".sku-name").value));
   hint.hidden = !st;
   const cs = quantityMode !== "PALLET";
-  if(!st){ qty.placeholder = cs ? "Cases" : "Pallets"; return; }
+  if(!st){ qty.placeholder = cs ? unitPlaceholder(row) : "Pallets"; return; }
   const total = st.g + st.t, want = getRowCaseQty(row);
   hint.className = "stock-hint" + (Number.isSafeInteger(want) && want > total ? " low" : "");
-  hint.innerHTML = "Godown <b>" + formatNumber(st.g) + "</b> · On the way <b>" + formatNumber(st.t) + "</b> · Total <b class=\"tot\">" + formatNumber(total) + " CS</b>";
-  qty.placeholder = cs ? stockText(st) : "Pallets";
+  hint.innerHTML = "Godown <b>" + formatNumber(st.g) + "</b> · On the way <b>" + formatNumber(st.t) + "</b> · Total <b class=\"tot\">" + formatNumber(total) + " " + unitShort(row) + "</b>";
+  qty.placeholder = cs ? stockText(st, row) : "Pallets";
 }
 
 /* One line per SKU: the SKU list leaves out SKUs already on another line. */
@@ -1316,7 +1327,7 @@ let skuNames = [];
 function refreshSkuOptions(input){
   const used = new Set([...document.querySelectorAll("#itemsBody .sku-name")].filter(i => i !== input).map(i => skuKey(i.value)));
   const list = document.getElementById("skuMasterList");
-  list.replaceChildren(...skuNames.filter(n => !used.has(skuKey(n))).map(n => { const o = document.createElement("option"); o.value = n; const st = stockByKey.get(skuKey(n)); if(st) o.label = stockText(st); return o; }));
+  list.replaceChildren(...skuNames.filter(n => !used.has(skuKey(n))).map(n => { const o = document.createElement("option"); o.value = n; const st = stockByKey.get(skuKey(n)); if(st) o.label = "Stock " + formatNumber(st.g + st.t) + " " + (unitByName(n) === "BOX" ? "BOX" : "CS"); return o; }));
 }
 document.getElementById("itemsBody").addEventListener("focusin", e => {
   if (e.target.classList.contains("sku-name")) refreshSkuOptions(e.target);
@@ -1598,10 +1609,10 @@ function updateQuantityModeUI() {
   document.getElementById("qtyModePallet").classList.toggle("selected", pallet);
   document.getElementById("qtyModeCs").setAttribute("aria-pressed", String(!pallet));
   document.getElementById("qtyModePallet").setAttribute("aria-pressed", String(pallet));
-  document.getElementById("quantityHeader").textContent = pallet ? "QTY (PALLET)" : "QTY (CS)";
+  document.getElementById("quantityHeader").textContent = pallet ? "QTY (PALLET)" : "QTY (CS / BOX)";
   document.getElementById("itemsTable").classList.toggle("pallet-mode", pallet);
   document.querySelectorAll("#itemsBody tr").forEach(row => {
-    row.querySelector(".qty").placeholder = pallet ? "Pallets" : "Cases";
+    row.querySelector(".qty").placeholder = pallet ? "Pallets" : unitPlaceholder(row);
     updateRowConversion(row);
     if(typeof showStock === "function") showStock(row);
   });

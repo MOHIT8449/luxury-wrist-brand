@@ -16,7 +16,9 @@
 -- 5. Money to pay the company: purchase bills (Goods Inward, SKU-wise) of the company,
 --    due on invoice date + company credit days, less payments made to it
 --    (lwb_company_payments; oldest bill first).
--- 6. lwb_company_overview(from, to): per company sales, cases, month target,
+--    Pack unit: company BOX / CASE (Rajnigandha BOX), SKU may override; quantities
+--    are reported as cases and boxes separately.
+-- 6. lwb_company_overview(from, to): per company sales, cases / boxes, month target,
 --    outstanding (bill due split by the bill's SKU value), overdue, to pay company.
 --
 -- Nothing is deleted. No order, bill, stock or ledger amount is changed.
@@ -47,6 +49,19 @@ WHERE NOT EXISTS (SELECT 1 FROM public.lwb_companies x WHERE upper(btrim(x.name)
 ALTER TABLE public.sku_master ADD COLUMN IF NOT EXISTS company_id uuid REFERENCES public.lwb_companies(id);
 CREATE INDEX IF NOT EXISTS lwb_sku_master_company_idx ON public.sku_master (company_id);
 CREATE INDEX IF NOT EXISTS lwb_sku_master_key_idx ON public.sku_master (upper(btrim(sku_name)));
+
+-- Pack unit: Rajnigandha sells in BOX, Coca-Cola in CASE. Company default, SKU can override
+-- (sku_master.pack_unit NULL = company's unit). Quantities stay numbers of that unit.
+DO $unit$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                 WHERE table_schema = 'public' AND table_name = 'lwb_companies' AND column_name = 'pack_unit') THEN
+    ALTER TABLE public.lwb_companies ADD COLUMN pack_unit text NOT NULL DEFAULT 'CASE' CHECK (pack_unit IN ('CASE','BOX'));
+    UPDATE public.lwb_companies SET pack_unit = 'BOX' WHERE upper(btrim(name)) = 'RAJNIGANDHA';
+  END IF;
+END
+$unit$;
+ALTER TABLE public.sku_master ADD COLUMN IF NOT EXISTS pack_unit text CHECK (pack_unit IN ('CASE','BOX'));
 
 -- Brand-wise Sales Head / Salesman. No row = all companies.
 CREATE TABLE IF NOT EXISTS public.lwb_user_companies (
@@ -206,13 +221,14 @@ BEGIN
     RAISE EXCEPTION 'Company % already exists', v_name;
   END IF;
   IF v_id IS NULL THEN
-    INSERT INTO public.lwb_companies(name, color, supplier_credit_days, market_credit_days, active, sort_no, updated_by)
-    VALUES (v_name, coalesce(nullif(p->>'color',''),'#2362a4'), coalesce((p->>'supplier_credit_days')::int,0),
+    INSERT INTO public.lwb_companies(name, color, pack_unit, supplier_credit_days, market_credit_days, active, sort_no, updated_by)
+    VALUES (v_name, coalesce(nullif(p->>'color',''),'#2362a4'), coalesce(nullif(upper(p->>'pack_unit'),''),'CASE'), coalesce((p->>'supplier_credit_days')::int,0),
       coalesce((p->>'market_credit_days')::int,0), coalesce((p->>'active')::boolean,true),
       coalesce((p->>'sort_no')::int,(SELECT coalesce(max(sort_no),0)+1 FROM public.lwb_companies)), auth.uid())
     RETURNING id INTO v_id;
   ELSE
     UPDATE public.lwb_companies SET name = v_name, color = coalesce(nullif(p->>'color',''), color),
+      pack_unit = coalesce(nullif(upper(p->>'pack_unit'),''), pack_unit),
       supplier_credit_days = coalesce((p->>'supplier_credit_days')::int, supplier_credit_days),
       market_credit_days = coalesce((p->>'market_credit_days')::int, market_credit_days),
       active = coalesce((p->>'active')::boolean, active), sort_no = coalesce((p->>'sort_no')::int, sort_no),
@@ -336,17 +352,19 @@ BEGIN
                 FROM public.lwb_company_targets t
                 WHERE t.month = v_from AND (v_my IS NULL OR t.company_id = ANY(v_my))
                   AND (v_self IS NULL OR t.salesman_id = v_self)),
-    'sales', (SELECT coalesce(jsonb_agg(jsonb_build_object('company_id', x.c, 'salesman_id', x.sm, 'amount', round(x.amt,2), 'cases', x.cs, 'orders', x.n)), '[]'::jsonb)
+    'sales', (SELECT coalesce(jsonb_agg(jsonb_build_object('company_id', x.c, 'salesman_id', x.sm, 'amount', round(x.amt,2), 'cases', x.cs, 'boxes', x.bx, 'orders', x.n)), '[]'::jsonb)
               FROM (
-                SELECT l.c, l.sm, sum(l.amt) AS amt, sum(l.cs) AS cs, count(DISTINCT l.oid) AS n FROM (
+                SELECT l.c, l.sm, sum(l.amt) AS amt, coalesce(sum(l.cs) FILTER (WHERE l.u = 'CASE'),0) AS cs,
+                       coalesce(sum(l.cs) FILTER (WHERE l.u = 'BOX'),0) AS bx, count(DISTINCT l.oid) AS n FROM (
                   SELECT o.id AS oid, s.company_id AS c, o.created_by AS sm,
                     CASE WHEN sum(coalesce(i.approved_qty, i.ordered_qty) * i.rate) OVER (PARTITION BY o.id) > 0 AND coalesce(o.total_amount,0) > 0
                       THEN o.total_amount * coalesce(i.approved_qty, i.ordered_qty) * i.rate / sum(coalesce(i.approved_qty, i.ordered_qty) * i.rate) OVER (PARTITION BY o.id)
                       ELSE coalesce(i.amount, coalesce(i.approved_qty, i.ordered_qty) * i.rate, 0) END AS amt,
-                    coalesce(i.approved_qty, i.ordered_qty, 0) AS cs
+                    coalesce(i.approved_qty, i.ordered_qty, 0) AS cs, coalesce(s.pack_unit, co.pack_unit, 'CASE') AS u
                   FROM public.orders o
                   JOIN public.order_items i ON i.order_id = o.id
                   LEFT JOIN public.sku_master s ON upper(btrim(s.sku_name)) = upper(btrim(i.sku_name))
+                  LEFT JOIN public.lwb_companies co ON co.id = s.company_id
                   WHERE timezone('Asia/Kolkata', o.order_date::timestamptz)::date >= v_from
                     AND timezone('Asia/Kolkata', o.order_date::timestamptz)::date < v_to
                     AND lower(btrim(coalesce(o.status,''))) NOT IN ('cancelled','canceled','rejected')
@@ -479,7 +497,7 @@ BEGIN
   v_m0 := date_trunc('month', v_to)::date; v_m1 := (v_m0 + interval '1 month')::date;
 
   SELECT coalesce(jsonb_agg(jsonb_build_object('id', c.id, 'name', c.name, 'color', c.color,
-           'supplier_credit_days', c.supplier_credit_days, 'market_credit_days', c.market_credit_days) ORDER BY c.sort_no, c.name), '[]'::jsonb)
+           'supplier_credit_days', c.supplier_credit_days, 'market_credit_days', c.market_credit_days, 'pack_unit', c.pack_unit) ORDER BY c.sort_no, c.name), '[]'::jsonb)
     INTO v_comp FROM public.lwb_companies c WHERE c.active AND (v_my IS NULL OR c.id = ANY(v_my));
 
   -- Order value split by line value; the order total stays the same as on every other screen.
@@ -488,19 +506,22 @@ BEGIN
       CASE WHEN sum(coalesce(i.approved_qty, i.ordered_qty) * i.rate) OVER (PARTITION BY o.id) > 0 AND coalesce(o.total_amount,0) > 0
         THEN o.total_amount * coalesce(i.approved_qty, i.ordered_qty) * i.rate / sum(coalesce(i.approved_qty, i.ordered_qty) * i.rate) OVER (PARTITION BY o.id)
         ELSE coalesce(i.amount, coalesce(i.approved_qty, i.ordered_qty) * i.rate, 0) END AS amt,
-      coalesce(i.approved_qty, i.ordered_qty, 0) AS cs
+      coalesce(i.approved_qty, i.ordered_qty, 0) AS cs, coalesce(s.pack_unit, co.pack_unit, 'CASE') AS u
     FROM public.orders o
     JOIN public.order_items i ON i.order_id = o.id
     LEFT JOIN public.sku_master s ON upper(btrim(s.sku_name)) = upper(btrim(i.sku_name))
+    LEFT JOIN public.lwb_companies co ON co.id = s.company_id
     WHERE timezone('Asia/Kolkata', o.order_date::timestamptz)::date >= least(v_from, v_m0)
       AND timezone('Asia/Kolkata', o.order_date::timestamptz)::date < greatest(v_to + 1, v_m1)
       AND lower(btrim(coalesce(o.status,''))) NOT IN ('cancelled','canceled','rejected')
   ), f AS (SELECT * FROM l WHERE v_my IS NULL OR l.c IS NULL OR l.c = ANY(v_my))
   SELECT
-    (SELECT coalesce(jsonb_object_agg(coalesce(x.c::text,'none'), jsonb_build_object('amount', round(x.a,2), 'cases', x.q, 'orders', x.n)), '{}'::jsonb)
-       FROM (SELECT f.c, sum(f.amt) a, sum(f.cs) q, count(DISTINCT f.oid) n FROM f WHERE f.d BETWEEN v_from AND v_to GROUP BY f.c) x),
-    (SELECT coalesce(jsonb_object_agg(coalesce(x.c::text,'none'), jsonb_build_object('amount', round(x.a,2), 'cases', x.q)), '{}'::jsonb)
-       FROM (SELECT f.c, sum(f.amt) a, sum(f.cs) q FROM f WHERE f.d >= v_m0 AND f.d < v_m1 GROUP BY f.c) x)
+    (SELECT coalesce(jsonb_object_agg(coalesce(x.c::text,'none'), jsonb_build_object('amount', round(x.a,2), 'cases', x.q, 'boxes', x.b, 'orders', x.n)), '{}'::jsonb)
+       FROM (SELECT f.c, sum(f.amt) a, coalesce(sum(f.cs) FILTER (WHERE f.u = 'CASE'),0) q, coalesce(sum(f.cs) FILTER (WHERE f.u = 'BOX'),0) b,
+                    count(DISTINCT f.oid) n FROM f WHERE f.d BETWEEN v_from AND v_to GROUP BY f.c) x),
+    (SELECT coalesce(jsonb_object_agg(coalesce(x.c::text,'none'), jsonb_build_object('amount', round(x.a,2), 'cases', x.q, 'boxes', x.b)), '{}'::jsonb)
+       FROM (SELECT f.c, sum(f.amt) a, coalesce(sum(f.cs) FILTER (WHERE f.u = 'CASE'),0) q, coalesce(sum(f.cs) FILTER (WHERE f.u = 'BOX'),0) b
+             FROM f WHERE f.d >= v_m0 AND f.d < v_m1 GROUP BY f.c) x)
   INTO v_sales, v_month;
 
   -- Month target: company total, else sum of salesman targets.

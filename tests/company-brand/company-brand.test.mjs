@@ -202,3 +202,25 @@ test('direct writes to the new tables are refused',async()=>{
   await db.exec('SET ROLE anon');
   try{await assert.rejects(db.query('select public.lwb_company_overview(current_date,current_date)'),/permission denied/)}finally{await db.exec('RESET ROLE')}
 });
+
+test('pack unit: Rajnigandha in boxes, Coca-Cola in cases, SKU can override',async()=>{
+  assert.equal((await db.query('select pack_unit from lwb_companies where id=$1',[RAJ])).rows[0].pack_unit,'BOX');
+  assert.equal((await db.query('select pack_unit from lwb_companies where id=$1',[COKE])).rows[0].pack_unit,'CASE');
+  await as('admin');
+  let ov=(await one('select public.lwb_company_overview($1,$2) j',[today.slice(0,8)+'01',today])).j;
+  assert.equal(Number(ov.sales[RAJ].boxes),11);assert.equal(Number(ov.sales[RAJ].cases),0);
+  assert.equal(Number(ov.sales[COKE].cases),27);assert.equal(Number(ov.sales[COKE].boxes),0);
+  assert.equal(ov.companies.find(c=>c.id===RAJ).pack_unit,'BOX');
+  await db.query("update sku_master set pack_unit='CASE' where sku_name='RAJNIGANDHA 4G'");
+  ov=(await one('select public.lwb_company_overview($1,$2) j',[today.slice(0,8)+'01',today])).j;
+  assert.equal(Number(ov.sales[RAJ].cases),11);
+  await db.query("update sku_master set pack_unit=null where sku_name='RAJNIGANDHA 4G'");
+  const m=(await one('select public.lwb_company_month($1) j',[today])).j;
+  assert.equal(m.sales.filter(x=>x.company_id===RAJ).reduce((a,x)=>a+Number(x.boxes),0),11);
+  const id=(await one("select public.lwb_company_save('{\"name\":\"BIKAJI\",\"pack_unit\":\"box\"}'::jsonb) id")).id;
+  assert.equal((await db.query('select pack_unit from lwb_companies where id=$1',[id])).rows[0].pack_unit,'BOX');
+  await db.exec(setup); // running the file again keeps a unit someone changed
+  await db.query("update lwb_companies set pack_unit='CASE' where id=$1",[RAJ]);await db.exec(setup);
+  assert.equal((await db.query('select pack_unit from lwb_companies where id=$1',[RAJ])).rows[0].pack_unit,'CASE');
+  await db.query("update lwb_companies set pack_unit='BOX' where id=$1",[RAJ]);
+});
