@@ -15,6 +15,7 @@ export function safeRoute(type, order, role) {
  if(type.startsWith('COMPLAINT'))return '/complaint-box.html';
  if(type.startsWith('GODOWN'))return '/godown-report.html';
  if(type.startsWith('MARKET'))return '/market-report.html';
+ if(type.startsWith('ACC_')&&(role==='admin'||role==='accounts'))return '/accounts-dashboard.html';
  return '/dashboard.html';
 }
 export function messageFor(n,role) {
