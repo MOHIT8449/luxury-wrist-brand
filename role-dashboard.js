@@ -61,10 +61,10 @@
     const m=new Map();for(const o of (a||[]).concat(b||[]))m.set(o.id,o);
     return [...m.values()].map(o=>({...o,day:istDay(o.order_date||o.created_at)}));
   }
-  async function itemsOf(ids){
+  async function itemsOf(ids,cols){
     const out=[];
     for(let i=0;i<ids.length;i+=150){
-      const r=await C.from("order_items").select("order_id,sku_name,ordered_qty,approved_qty,loaded_qty").in("order_id",ids.slice(i,i+150));
+      const r=await C.from("order_items").select(cols||"order_id,sku_name,ordered_qty,approved_qty,loaded_qty").in("order_id",ids.slice(i,i+150));
       if(r.error)return null;out.push(...(r.data||[]));
     }
     return out;
@@ -124,6 +124,91 @@
   }
   function orderRow(o,extra){return '<tr><td><b class="rd-po">'+esc(o.order_no||"—")+"</b></td><td>"+esc(o.customer_name||"—")+"</td>"+extra+"</tr>"}
 
+  /* ---------- order profit (Admin / Sales Head) ----------
+     Profit of a line = (PO rate − landing per case) × cases (approved, else ordered).
+     Landing = Rate & Scheme pack of the SKU, without ROI: same formula as order-entry.html calcLanding,
+     with the MEPD scheme of the SKU category on the order date. Rate packs are readable only by
+     Admin / Manager (RLS), so for anyone else this returns null and the card is left out. */
+  let LAND=null,TEAM=[];
+  async function landingData(){
+    if(LAND&&Date.now()-LAND.at<3e5)return LAND;
+    const [s,p,l,m,k]=await Promise.all([safe(C.from("lwb_rate_settings").select("mepd_pct,roi_main,roi_landing").eq("id",1).maybeSingle()),
+      safe(C.from("lwb_rate_packs").select("*")),safe(C.from("lwb_rate_pack_skus").select("sku_key,pack_id")),
+      safe(C.from("lwb_mepd_schemes").select("categories,mepd_pct,valid_from,valid_to,created_at")),safe(C.from("sku_master").select("sku_name,category"))]);
+    if(!s||!p||!p.length||!l)return null;
+    const packs=new Map(p.filter(x=>x.active!==false).map(x=>[x.id,x])),bySku=new Map(),cat=new Map();
+    for(const x of l){const q=packs.get(x.pack_id);if(q)bySku.set(String(x.sku_key||"").trim().toUpperCase(),q)}
+    for(const x of k||[])cat.set(String(x.sku_name||"").trim().toUpperCase(),x.category);
+    LAND={at:Date.now(),S:{mepd_pct:num(s.mepd_pct),roi_main:num(s.roi_main)},bySku,cat,schemes:m||[]};
+    return LAND;
+  }
+  function landingOf(R,sku,day){
+    const u=String(sku||"").trim().toUpperCase(),r=R.bySku.get(u);if(!r)return null;
+    const c=R.cat.get(u);let sc=null;
+    if(c)for(const x of R.schemes)if(x.valid_from<=day&&day<=x.valid_to&&(x.categories||[]).some(y=>String(y||"").replace(/\s+/g," ").trim().toUpperCase()===String(c).replace(/\s+/g," ").trim().toUpperCase())&&(!sc||String(x.created_at)>String(sc.created_at)))sc=x;
+    const S=R.S,C2=num(r.case_config),D=num(r.gr),F=num(r.free_bottle),H=num(r.qps),I=S.roi_main;
+    const E=D*(sc?num(sc.mepd_pct):r.mepd_pct===""||r.mepd_pct==null?S.mepd_pct:num(r.mepd_pct))/100;
+    if(F>0&&C2){const base=D-E-H-I-((D/C2)-1)*F,O=Math.round(((num(r.slab3_rate)-base)/(1+F/C2))*100)/100;return D-E-((((D/C2)-1)*F)-((O/C2)*F))-H-I}
+    return D-E-num(r.oms)-H-I;
+  }
+  async function profitOf(list){
+    const R=await landingData();if(!R)return null;
+    const items=list.length?await itemsOf(list.map(o=>o.id),"order_id,sku_name,ordered_qty,approved_qty,rate"):[];
+    if(!items)return null;
+    const by=new Map(list.map(o=>[o.id,{o,sale:0,cost:0,profit:0,cases:0,missing:0,lines:[]}]));
+    for(const it of items){const x=by.get(it.order_id);if(!x)continue;
+      const q=qtyOf(it),rate=num(it.rate),land=landingOf(R,it.sku_name,x.o.day),line={sku:String(it.sku_name||"").trim(),q,rate,land,p:land==null?null:(rate-land)*q};
+      x.lines.push(line);x.cases+=q;x.sale+=rate*q;
+      if(land==null)x.missing++;else{x.cost+=land*q;x.profit+=line.p}}
+    const rows=[...by.values()].filter(x=>x.lines.length);
+    const known=rows.reduce((a,x)=>a+x.sale-x.lines.filter(l=>l.land==null).reduce((b,l)=>b+l.rate*l.q,0),0);
+    return {rows,profit:sum(rows,x=>x.profit),sale:sum(rows,x=>x.sale),known,missing:sum(rows,x=>x.missing)};
+  }
+  const margin=(p,s)=>s>0?(Math.round(p/s*1000)/10)+"%":"—";
+  function profitKpi(P,n,tone){
+    if(!P)return "";
+    return '<button type="button" class="rd-kpi rd-'+tone+' rd-tap" data-profit="1"><small>Today\'s Profit</small><b>'+rs(P.profit)+"</b><span>"+
+      (P.rows.length?margin(P.profit,P.known)+" margin · "+fmt(n)+" order"+(n==1?"":"s")+" · tap to see order-wise":"No order yet today")+"</span></button>";
+  }
+  async function ordersOn(day){
+    const r=await C.from("orders").select(ORDER_COLS).gte("order_date",day+"T00:00:00+05:30").lt("order_date",shift(day,1)+"T00:00:00+05:30").order("order_date").limit(2000);
+    if(r.error)throw r.error;
+    return (r.data||[]).map(o=>({...o,day:istDay(o.order_date||o.created_at)})).filter(live);
+  }
+  let PDAY="",pseq=0,open=new Set();
+  function pop(){
+    let el=document.getElementById("rdProfit");
+    if(el)return el;
+    el=document.createElement("div");el.id="rdProfit";el.className="rd-pop";el.hidden=true;
+    el.innerHTML='<div class="rd-pop-box rd-card" role="dialog" aria-modal="true" aria-labelledby="rdProfitT"><h2 id="rdProfitT">💰 Order-wise profit<span class="rd-day"><button type="button" data-pd="-1" aria-label="Previous day">‹</button><b></b><button type="button" data-pd="1" aria-label="Next day">›</button></span><button type="button" class="rd-x" aria-label="Close">×</button></h2><div class="rd-pop-in"></div></div>';
+    el.addEventListener("click",e=>{
+      if(e.target===el||e.target.closest(".rd-x")){el.hidden=true;document.body.classList.remove("rd-lock");return}
+      const d=e.target.closest("[data-pd]");if(d&&!d.disabled){showProfit(shift(PDAY,Number(d.dataset.pd)));return}
+      const tr=e.target.closest("tr[data-oid]");if(tr){const id=tr.dataset.oid;open.has(id)?open.delete(id):open.add(id);tr.classList.toggle("on");const nx=tr.nextElementSibling;if(nx&&nx.classList.contains("rd-lines"))nx.hidden=!open.has(id)}
+    });
+    document.addEventListener("keydown",e=>{if(e.key==="Escape"&&!el.hidden){el.hidden=true;document.body.classList.remove("rd-lock")}});
+    document.body.appendChild(el);
+    return el;
+  }
+  async function showProfit(day){
+    const el=pop(),my=++pseq,inn=el.querySelector(".rd-pop-in");
+    PDAY=day;open=new Set();el.hidden=false;document.body.classList.add("rd-lock");
+    el.querySelector(".rd-day b").textContent=dmy(day)+(day===today()?" · Today":"");
+    el.querySelector('[data-pd="1"]').disabled=day>=today();
+    inn.innerHTML='<div class="rd-empty">Loading…</div>';
+    let P=null;try{P=await profitOf(await ordersOn(day))}catch(e){console.error(e)}
+    if(my!==pseq)return;
+    if(!P){inn.innerHTML='<div class="rd-empty">Profit could not load. Landing (Rate & Scheme) is seen only by Admin and Sales Head.</div>';return}
+    const rows=P.rows.slice().sort((a,b)=>b.profit-a.profit),tone=v=>v<0?"rd-neg":v>0?"rd-pos":"";
+    const lines=x=>'<tr class="rd-lines" hidden><td colspan="7"><table><thead><tr><th>SKU</th><th class="n">Cases</th><th class="n">Rate ₹</th><th class="n">Landing ₹</th><th class="n hide-sm">Per case ₹</th><th class="n">Profit ₹</th></tr></thead><tbody>'+
+      x.lines.map(l=>"<tr><td>"+esc(l.sku)+'</td><td class="n">'+fmt(l.q)+'</td><td class="n">'+l.rate.toFixed(2)+'</td><td class="n">'+(l.land==null?badge("a","Not set"):l.land.toFixed(2))+'</td><td class="n hide-sm '+(l.land==null?"":tone(l.rate-l.land))+'">'+(l.land==null?"—":(l.rate-l.land).toFixed(2))+'</td><td class="n '+tone(l.p)+'">'+(l.p==null?"—":rs(l.p))+"</td></tr>").join("")+"</tbody></table></td></tr>";
+    inn.innerHTML='<div class="rd-psum"><div><small>Orders</small><b>'+fmt(rows.length)+'</b></div><div><small>Sale</small><b>'+rs(P.sale)+'</b></div><div><small>Profit</small><b class="'+tone(P.profit)+'">'+rs(P.profit)+'</b></div><div><small>Margin</small><b>'+margin(P.profit,P.known)+"</b></div></div>"+
+      (rows.length?'<div class="rd-scroll"><table class="rd-ptab"><thead><tr><th>PO No.</th><th>Party</th><th class="hide-sm">Salesman</th><th class="n hide-sm">Cases</th><th class="n">Sale ₹</th><th class="n">Profit ₹</th><th class="n hide-sm">%</th></tr></thead><tbody>'+
+        rows.map(x=>'<tr data-oid="'+esc(x.o.id)+'"><td><b class="rd-po">'+esc(x.o.order_no||"—")+"</b>"+(x.missing?" "+badge("a",x.missing+" SKU no landing"):"")+"</td><td>"+esc(x.o.customer_name||"—")+'</td><td class="hide-sm">'+esc(takerOf(x.o,TEAM))+'</td><td class="n hide-sm">'+fmt(x.cases)+'</td><td class="n">'+fmt(x.sale)+'</td><td class="n '+tone(x.profit)+'"><b>'+fmt(x.profit)+'</b></td><td class="n hide-sm">'+margin(x.profit,x.sale-x.lines.filter(l=>l.land==null).reduce((b,l)=>b+l.rate*l.q,0))+"</td></tr>"+lines(x)).join("")+"</tbody></table></div>"
+        :'<div class="rd-empty">No order on this day.</div>')+
+      '<div class="rd-note">Profit = (PO rate − landing per case) × cases. Landing is from Rate & Scheme, without ROI. Tap an order to see SKU-wise. Cancelled / rejected orders are not counted.'+(P.missing?" <b>"+fmt(P.missing)+" SKU line"+(P.missing==1?"":"s")+"</b> have no landing (link the SKU in Rate & Scheme), so they are left out of profit.":"")+"</div>";
+  }
+
   /* ---------- layout ---------- */
   // Pending Work (dashboard.html's lwb_my_verify_queue card) sits on top of the side column;
   // it is lifted out first so a repaint never deletes it.
@@ -134,7 +219,7 @@
     const s=document.getElementById("rdSide");if(v&&s)s.prepend(v);
   }
   function shell(kpis,main,side){
-    return ('<div class="rd-kpis">'+kpis.join("")+'</div><div class="rd-grid"><div class="rd-col">'+main.filter(Boolean).join("")+'</div><div class="rd-col" id="rdSide">'+side.filter(Boolean).join("")+"</div></div>");
+    return ('<div class="rd-kpis'+(kpis.length>5?" rd-k6":"")+'">'+kpis.join("")+'</div><div class="rd-grid"><div class="rd-col">'+main.filter(Boolean).join("")+'</div><div class="rd-col" id="rdSide">'+side.filter(Boolean).join("")+"</div></div>");
   }
   const ROLES={
     /* ===== Admin: whole business ===== */
@@ -142,12 +227,14 @@
       const t=today(),y=shift(t,-1);
       const [orders,sumy,acc,PI,cq,team]=await Promise.all([loadOrders(),safe(C.rpc("lwb_po_approval_summary",{p_from:t,p_to:t})),
         safe(C.rpc("lwb_acc_dashboard",{p_from:t,p_to:t})),window.LWBPartyPay?LWBPartyPay.load(C).catch(()=>null):null,safe(C.rpc("lwb_acc_cheque_list")),salesTeam()]);
-      const stock=await stockCheck(orders);
       const O=orders||[],L=O.filter(live),td=L.filter(o=>o.day===t),yd=L.filter(o=>o.day===y),mo=L.filter(o=>o.day>=t.slice(0,8)+"01");
+      TEAM=team.team;
+      const [stock,PR]=await Promise.all([stockCheck(orders),orders?profitOf(td).catch(()=>null):null]);
       const tv=sum(td,o=>o.total_amount),yv=sum(yd,o=>o.total_amount),mv=sum(mo,o=>o.total_amount),tgt=companyTarget(team.targets);
       const ch=yv?Math.round((tv-yv)/yv*100):null,out=outstanding(PI),A=acc?accTotals(acc):null,short=stock?stock.filter(x=>x.short>0):null;
       const k=[
         kpi("green","Today's Sales",rs(tv),(ch==null?"":'<span class="'+(ch>=0?"up":"dn")+'">'+(ch>=0?"▲ ":"▼ ")+Math.abs(ch)+"%</span> ")+"vs yesterday "+rs(yv),"sales-tracking.html"),
+        profitKpi(PR,td.length,"violet"),
         kpi("blue",new Date().toLocaleDateString("en-IN",{month:"long"})+" Sales",rs(mv),tgt?pct(mv,tgt)+"% of "+lakh(tgt)+" target":fmt(mo.length)+" orders","sales-tracking.html"),
         kpi("red","Total Outstanding",out?rs(out.total):"—",out?'<span class="dn">'+rs(out.over30)+"</span> over 30 days":"Billing & Outstanding","party-billing.html"),
         kpi("teal","Cash in Hand",acc&&acc.closing_set?rs(acc.closing):"—",A?"Bank deposit today "+rs(A.dep):"Accounts Dashboard","accounts-dashboard.html"),
@@ -176,7 +263,7 @@
       if(cs.length)al.push(dot("amb",fmt(cs.length)+" cheque"+(cs.length==1?"":"s")+" to deposit by "+dmy(shift(t,1))+" · "+rs(sum(cs,x=>x.amount))));
       if(acc&&acc.last_close&&String(acc.last_close)<y)al.push(dot("blu","Night cash handover not closed since "+dmy(shift(String(acc.last_close),1))));
       const alerts=card("⚠️ Alerts","",al.length?al.join(""):'<div class="rd-empty">✓ No alerts right now.</div>');
-      return shell(k,[flow,chart,board],[alerts]);
+      return shell(k.filter(Boolean),[flow,chart,board],[alerts]);
     },
 
     /* ===== Sales Head: approvals, team target, delivery ===== */
@@ -185,6 +272,8 @@
       const [orders,team,acts,dl]=await Promise.all([loadOrders(),salesTeam(),safe(C.rpc("lwb_party_activity")),
         safe(C.from("lwb_delivery_reports").select("order_id,delivery_status,reported_at,delivery_note").gte("reported_at",t+"T00:00:00+05:30"))]);
       const O=orders||[],L=O.filter(live),td=L.filter(o=>o.day===t),mo=L.filter(o=>o.day>=t.slice(0,8)+"01");
+      TEAM=team.team;
+      const PR=orders?await profitOf(td).catch(()=>null):null;
       const wait=O.filter(o=>WAIT.includes(st(o))&&live(o)),age=o=>Date.now()-Date.parse(o.created_at||o.order_date);
       const late=wait.filter(o=>age(o)>APPROVAL_HOURS*36e5),oldest=wait.reduce((a,o)=>!a||age(o)>age(a)?o:a,null);
       const tgt=companyTarget(team.targets),mv=sum(mo,o=>o.total_amount);
@@ -192,6 +281,7 @@
       const k=[
         kpi("amber","Waiting for my approval",fmt(wait.length),wait.length?(late.length?'<span class="dn">'+late.length+" late</span> · ":"")+"oldest "+ago(oldest.created_at||oldest.order_date):"Nothing waiting","warehouse-orders.html"),
         kpi("green","Team sales today",rs(sum(td,o=>o.total_amount)),fmt(sum(td,o=>o.total_qty))+" cases · "+fmt(td.length)+" orders","sales-tracking.html"),
+        profitKpi(PR,td.length,"teal"),
         kpi("blue",new Date().toLocaleDateString("en-IN",{month:"long"})+" target",tgt?pct(mv,tgt)+"%":"Not set",lakh(mv)+(tgt?" of "+lakh(tgt):" sold"),"sales-tracking.html"),
         kpi("violet","Driver to assign",fmt(O.filter(o=>st(o)==="approved").length),"Approved, no vehicle yet","warehouse-orders.html"),
         kpi("red","No order 5+ days",noOrder==null?"—":fmt(noOrder),"parties · Call list","party-calls.html")];
@@ -218,7 +308,7 @@
       const it=td.length?await itemsOf(td.map(o=>o.id)):[];
       if(it&&it.length){const m=new Map();for(const x of it){const k=key(x.sku_name);const v=m.get(k)||{n:x.sku_name,q:0};v.q+=qtyOf(x);m.set(k,v)}
         skus=card("🔥 Top SKUs today","","<table><tbody>"+[...m.values()].sort((a,b)=>b.q-a.q).slice(0,6).map(x=>"<tr><td>"+esc(x.n)+'</td><td class="n">'+fmt(x.q)+" cs</td></tr>").join("")+"</tbody></table>")}
-      return shell(k,[queue,target],[delivery,skus]);
+      return shell(k.filter(Boolean),[queue,target],[delivery,skus]);
     },
 
     /* ===== Accounts: cash, bank, bills, outstanding ===== */
@@ -328,7 +418,8 @@
   window.LWBRoleDash={
     roles:Object.keys(ROLES),
     has:role=>Object.prototype.hasOwnProperty.call(ROLES,role),
-    start(o){C=o.client;ROLE=o.role;UID=o.uid||"";PLAN=o.plan||null;box=o.box;if(!box.querySelector(".rd-card"))paint('<div class="rd-empty">Loading your dashboard…</div>');return render()},
+    start(o){C=o.client;ROLE=o.role;UID=o.uid||"";PLAN=o.plan||null;box=o.box;
+      if(!box.dataset.rdTap){box.dataset.rdTap="1";box.addEventListener("click",e=>{if(e.target.closest("[data-profit]"))showProfit(today())})}if(!box.querySelector(".rd-card"))paint('<div class="rd-empty">Loading your dashboard…</div>');return render()},
     refresh(){if(ROLE)return render()}
   };
 })();
