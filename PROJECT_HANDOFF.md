@@ -4,6 +4,15 @@
 **Purpose:** Continue the same ERP project from a new ChatGPT conversation without restarting or losing the agreed requirements.
 **Status:** Active development / verification. Do not assume all modules are completed or fully tested.
 
+## Automatic Supabase updates (30 Oct 2026)
+
+- `.github/workflows/supabase-apply.yml`: when a PR is merged to `main`, every root `*.sql` file added or changed in it is run on the live Supabase database (commit order, stops on first error) and changed `supabase/functions/*` are deployed. No more pasting SQL in the SQL editor.
+- Needs GitHub Actions secrets `SUPABASE_DB_URL` (Session pooler URI with DB password) and `SUPABASE_ACCESS_TOKEN` (only for Edge Functions).
+- Write SQL so it is safe to run again (`create ... if not exists`, `create or replace`), because editing a file re-runs it.
+- `-- lwb:no-auto-run` on a line skips a file (record-only / read-only scripts).
+- Drop table/schema/column and truncate are refused unless the file has `-- lwb:allow-destructive`, added only after the owner's written OK.
+- Applied files are logged in `public.lwb_sql_apply_log`. Actions > Supabase apply > Run workflow re-applies one named file.
+
 ## Source and infrastructure
 
 - GitHub source: https://github.com/MOHIT8449/luxury-wrist-brand

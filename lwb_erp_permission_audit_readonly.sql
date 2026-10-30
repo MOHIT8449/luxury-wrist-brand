@@ -1,3 +1,4 @@
+-- lwb:no-auto-run  (record / read-only script, never applied automatically)
 -- LUXURY WRIST BRAND | Permissions audit (READ-ONLY).
 -- Does NOT create, delete, update or alter any database data.
 -- Run in Supabase SQL Editor and share results before enforcing Accounts read-only at database level.

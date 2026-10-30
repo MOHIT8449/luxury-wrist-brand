@@ -1,3 +1,4 @@
+-- lwb:no-auto-run  (record / read-only script, never applied automatically)
 -- LUXURY WRIST BRAND ERP — DRIVER: ASSIGNED ORDERS WAITING FOR LOADING
 --
 -- RECORD ONLY: this function ALREADY EXISTS in Supabase (checked 23 Oct 2026
