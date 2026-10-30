@@ -60,8 +60,8 @@
  }
  // Page each notification opens. {o} = the notification's order id. The first page this login can open wins.
  const ROUTES=[
-  [/^TALLY_BILL_PENDING$/,["accounts-invoice.html?order={o}"]],
-  [/^(VEHICLE_LOADED|TALLY_BILL_DONE)$/,["loading-dispatch.html","accounts-invoice.html?order={o}","warehouse-orders.html","driver-delivery.html?order={o}","my-sales.html#orders"]],
+  [/^TALLY_BILL_PENDING$/,["party-billing.html?order={o}"]],
+  [/^(VEHICLE_LOADED|TALLY_BILL_DONE)$/,["loading-dispatch.html","party-billing.html?order={o}","warehouse-orders.html","driver-delivery.html?order={o}","my-sales.html#orders"]],
   [/^ORDER_NEW$/,["warehouse-orders.html"]],
   [/^DELIVERY_COLLECTION_(INFO|RECEIVED)$/,["driver-collections.html?order={o}","my-sales.html#orders","loading-dispatch.html"]],
   [/^DELIVERY_RETURN_INFO$/,["driver-returns.html?order={o}","my-sales.html#orders"]],

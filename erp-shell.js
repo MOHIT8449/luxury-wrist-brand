@@ -55,10 +55,11 @@
       {t:"Team Work Report",h:"team-report.html",i:"users",r:"admin manager"}]},
     {group:"Accounts",items:[
       {t:"Accounts Dashboard",h:"accounts-dashboard.html",i:"cash",r:"admin accounts"},
-      {t:"Money Overview",h:"money-overview.html",i:"cash",r:"admin accounts"},
-      {t:"Tally Bill & Invoice No.",h:"accounts-invoice.html",i:"bill",r:"admin accounts"},
-      {t:"Tally Bill Check",h:"tally-check.html",i:"bill",r:"admin accounts"},
-      {t:"Tally Party Mapping",h:"party-mapping.html",i:"users",r:"admin accounts"},
+      {t:"Billing & Outstanding",h:"party-billing.html",i:"bill",r:"admin accounts"},
+      {t:"Money Overview",h:"money-overview.html",i:"cash",r:"admin accounts",hide:1},
+      {t:"Tally Bill & Invoice No.",h:"accounts-invoice.html",i:"bill",r:"admin accounts",hide:1},
+      {t:"Tally Bill Check",h:"tally-check.html",i:"bill",r:"admin accounts",hide:1},
+      {t:"Tally Party Mapping",h:"party-mapping.html",i:"users",r:"admin accounts",hide:1},
       {t:"Cashbook",h:"cashbook.html",i:"cash",r:"admin",hide:1}]},
     {group:"Returns",items:[
       {t:"Driver Returns Approval",h:"driver-returns.html",i:"undo",r:"admin accounts manager warehouse"},
@@ -355,7 +356,7 @@
       sales:[["Home","dashboard.html","home"],["New Order","order-entry.html","cart"],["My Orders","my-sales.html#orders","box"],["My Sales","my-sales.html","chart"]],
       admin:[["Home","dashboard.html","home"],["New Order","order-entry.html","cart"],["Approve","warehouse-orders.html","check"],["Stock","inventory.html","stock"]],
       manager:[["Home","dashboard.html","home"],["New Order","order-entry.html","cart"],["Approve","warehouse-orders.html","check"],["Dispatch","loading-dispatch.html","truck"]],
-      accounts:[["Home","dashboard.html","home"],["Cash","accounts-dashboard.html","cash"],["Bills","accounts-invoice.html","bill"],["Collections","driver-collections.html","cash"]],
+      accounts:[["Home","dashboard.html","home"],["Cash","accounts-dashboard.html","cash"],["Bills","party-billing.html","bill"],["Collections","driver-collections.html","cash"]],
       warehouse:[["Home","dashboard.html","home"],["Loading","loading-dispatch.html","truck"],["Stock","inventory.html","stock"],["Returns","driver-returns.html","undo"]],
       transport:[["Home","dashboard.html","home"],["Assign","transport-allocation.html","truck"],["Vehicles","fleet-master.html#vehicles","box"],["Drivers","fleet-master.html#drivers","users"]]
     };
