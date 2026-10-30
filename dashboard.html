@@ -8,6 +8,9 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <link rel="stylesheet" href="erp-shell.css">
   <script src="erp-shell.js"></script>
+  <script src="party-pay.js"></script>
+  <script src="role-dashboard.js"></script>
+  <link rel="stylesheet" href="role-dashboard.css">
   <style>
     .status{text-align:center;padding:80px 20px;font-size:15px;color:#555}
     .welcome{color:var(--erp-muted);font-size:13px;margin:-6px 0 14px}
@@ -132,6 +135,7 @@
       <button type="submit" class="send" id="focusSend">Post to all</button>
       <datalist id="focusSkus"></datalist>
     </form>
+    <div id="roleDash" hidden></div>
 
     <div class="erp-pagehead">
       <h1>Order Status</h1><span class="time" id="clock"></span>
@@ -405,7 +409,31 @@
         loadFocus();
       });
     }
-    document.getElementById("refreshBtn").onclick=()=>{loadSummary();loadFocus();loadVerify()};
+    document.getElementById("refreshBtn").onclick=()=>{loadSummary();loadFocus();loadVerify();if(window.LWBRoleDash)LWBRoleDash.refresh()};
+    // Role-wise home (role-dashboard.js): Admin, Sales Head, Accounts, Godown Manager, Salesman.
+    // Driver / Transport keep the order-status Dashboard below. Admin can look at another role's view.
+    const ROLE_NOTE={admin:"Whole business at one place: sales, money, stock, team.",manager:"PO approval, team target, delivery follow-up.",
+      accounts:"Cash, bank, bills to make, outstanding to collect.",warehouse:"Loading, vehicles, stock, returns, damage.",sales:"Today's plan, my target, my orders, my parties."};
+    function roleDashboard(role,name,uid,plan){
+      if(!window.LWBRoleDash||!LWBRoleDash.has(role))return false;
+      const main=document.getElementById("dashboard"),head=main.querySelector(".erp-pagehead"),welcome=document.getElementById("welcomeText");
+      main.classList.add("rd-on");
+      main.prepend(head,welcome,main.querySelector(".hero"));
+      ["kpis","accDash","pills"].forEach(id=>document.getElementById(id).hidden=true);
+      document.querySelector(".dash-grid").hidden=true;
+      const h=(new Date().getUTCHours()*60+new Date().getUTCMinutes()+330)%1440;
+      head.querySelector("h1").textContent=(h<720?"Good morning":h<1020?"Good afternoon":"Good evening")+", "+(String(name||"").trim().split(/\s+/)[0]||"there");
+      const note=document.createElement("span");note.className="rd-sub";note.textContent=ROLE_NOTE[role];welcome.appendChild(note);
+      const box=document.getElementById("roleDash");box.hidden=false;
+      if(role==="admin"){
+        const sel=document.createElement("select");sel.className="rd-view";sel.setAttribute("aria-label","See dashboard of");
+        [["admin","Admin view"],["manager","Sales Head view"],["accounts","Accounts view"],["warehouse","Godown Manager view"],["sales","Salesman view"]].forEach(([v,t])=>sel.add(new Option(t,v)));
+        sel.onchange=()=>LWBRoleDash.start({client,role:sel.value,uid,plan:null,box});
+        head.querySelector(".grow").after(sel);
+      }
+      LWBRoleDash.start({client,role,uid,plan,box});
+      return true;
+    }
 
 
     async function initializeDashboard() {
@@ -469,12 +497,13 @@
         }
 
         // Salesman: creates today's plan bell (once a day) before the bell loads.
-        if(role==="sales")await Promise.race([client.rpc("lwb_my_sales_plan"),new Promise(r=>setTimeout(r,2500))]).catch(()=>{});
+        let plan=null;
+        if(role==="sales")plan=await Promise.race([client.rpc("lwb_my_sales_plan").then(r=>r.error?null:r.data),new Promise(r=>setTimeout(r,2500))]).catch(()=>null);
 
         ERPShell.mount({role,name:profile.full_name||user.email,onLogout:logout});
         startClock();
 
-        const labels={admin:"Admin",manager:"Sales Head",sales:"Salesman",warehouse:"Warehouse",transport:"Transport",accounts:"Accounts",driver:"Driver"};
+        const labels={admin:"Admin",manager:"Sales Head",sales:"Salesman",warehouse:"Godown Manager",transport:"Transport",accounts:"Accounts",driver:"Driver"};
         const welcome=document.getElementById("welcomeText");welcome.replaceChildren();
         const hello=document.createElement("b");hello.textContent=profile.full_name||"User";
         const badge=document.createElement("span");badge.className="dash-role";badge.textContent=labels[role]||role;
@@ -483,6 +512,7 @@
         document.getElementById("accDash").hidden=!["admin","accounts"].includes(role);
         // Dashboard shortcuts live in the searchable menu; no duplicate Quick Access list.
         heroSearch();
+        roleDashboard(role,profile.full_name,user.id,plan);
         loadSummary();
         loadVerify();setInterval(()=>{if(!document.hidden)loadVerify()},60000);
         loadFocus();focusSetup();
