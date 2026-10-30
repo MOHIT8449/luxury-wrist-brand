@@ -7,6 +7,7 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="party-list.js" defer></script>
 <script src="tally-note.js" defer></script>
+<script src="tally-payment.js" defer></script>
 <style>
 :root{--navy:#14253f;--blue:#1769d8;--ink:#182a42;--light:#f3f6fa;--muted:#66788e;--border:#dfe5ee}
 *{box-sizing:border-box}
@@ -73,6 +74,8 @@ td.n,th.n{text-align:right;white-space:nowrap}
 .notes-list li{padding:6px 0;border-top:1px solid #dfe7f3;display:flex;justify-content:space-between;gap:10px;align-items:center}
 .notes-list li.x{color:#99a5b5;text-decoration:line-through}
 button.sm{padding:6px 10px;font-size:12px}
+td.acts{white-space:nowrap}td.acts button{margin:2px 3px 2px 0}
+button.pay{background:#157a48}
 @media(max-width:760px){.tally-grid{grid-template-columns:1fr}}
 .tag{display:inline-block;background:#e3f2e8;color:#16603b;font-weight:bold;font-size:11px;padding:5px 9px;border-radius:14px}
 .money{font-weight:bold;font-variant-numeric:tabular-nums}
@@ -176,8 +179,8 @@ button.sm{padding:6px 10px;font-size:12px}
      <div><button type="button" id="saveTally">Save Invoice No.</button></div>
     </div>
     <p class="small" id="tallyHelp"></p>
-    <div id="noteBox" hidden><div class="heading" style="margin-top:12px"><b>Returns, credit &amp; debit notes</b><button type="button" class="secondary sm" id="addNote">+ Credit / Debit note</button></div>
-    <p class="small" id="moneyLine"></p><ul class="notes-list" id="noteList"></ul></div>
+    <div id="noteBox" hidden><div class="heading" style="margin-top:12px"><b>Returns, credit notes &amp; payments</b><span><button type="button" class="secondary sm" id="addNote">+ Credit note</button> <button type="button" class="sm" id="addPay">+ Payment collection</button></span></div>
+    <p class="small" id="moneyLine"></p><ul class="notes-list" id="noteList"></ul><ul class="notes-list" id="payList"></ul></div>
    </div>
    <div class="bill-section">
     <div><strong id="billState">Checking ERP Bill...</strong><p class="small" id="billHelp">Please wait...</p></div>
@@ -201,6 +204,7 @@ const escapeHtml=v=>val(v).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&
 let db,orders=[],bills=[],selected=null,itemRows=[],loaded=false,loading=false,billSaving=false,setupReady=false,setupError="",legacyOrders=new Set();
 let firmMap=[],modalBills=null,tallyRows=[],tallyReady=false,tallySaving=false,flow=new Map(),flowReady=false,tab="bill";
 let assignedVehicle=null,assignedOrderId=null,assignedError="";
+let pays=[];
 function notice(message,error=false){
  const el=$("message");el.textContent=message;el.className="notice"+(error?" error":"");el.style.display="block";
 }
@@ -227,7 +231,7 @@ async function reload(){
  if(!loaded||loading)return;
  loading=true;$("refresh").disabled=true;
  try{
-  const [o,b,legacy,tally,fl,fm]=await Promise.all([
+  const [o,b,legacy,tally,fl,fm,py]=await Promise.all([
    db.from("orders").select("id,order_no,order_date,customer_name,transportation,status")
     .in("status",["loaded","invoiced","dispatched","delivered"]).order("order_date",{ascending:false}).limit(1500),
    db.from("lwb_internal_bills").select("id,order_id,internal_bill_no,bill_date,customer_name,loaded_qty,goods_amount,items,created_at")
@@ -235,8 +239,10 @@ async function reload(){
    db.from("tax_invoices").select("order_id").limit(2000),
    db.from("lwb_tally_invoices").select("*").limit(5000),
    db.rpc("lwb_tally_bill_status",{p_days:120}),
-   db.rpc("lwb_tally_party_maps")
+   db.rpc("lwb_tally_party_maps"),
+   db.from("lwb_tally_payments").select("id,receipt_id,order_id,pay_date,mode,amount,ref_no,cash_notes,remark,cancelled_at,created_at").order("created_at").limit(5000)
   ]);
+  pays=py.error?[]:(py.data||[]);
   firmMap=fm.error?[]:(fm.data||[]);
   flowReady=!fl.error;flow=new Map((fl.data||[]).map(r=>[r.order_id,r]));
   tallyReady=!tally.error;tallyRows=tally.data||[];
@@ -313,7 +319,7 @@ function delivery(r){
 const inTab=(r,k)=>k==="all"||(k==="bill"&&!r.inv&&recent(r))||(k==="due"&&r.inv&&r.due>1)||(k==="cn"&&r.cn>0.5);
 const HEAD={
  bill:["PO / PARTY / DELIVERY","LOADED","ERP AMOUNT","TALLY BILL: FIRM · INVOICE NO. · AMOUNT · DATE",""],
- due:["PO / PARTY / DELIVERY","TALLY BILL","n:BILL","n:RETURN / NOTES","n:DRIVER GOT","n:DUE",""],
+ due:["PO / PARTY / DELIVERY","TALLY BILL","n:BILL","n:RETURN / CREDIT NOTES","n:RECEIVED","n:DUE",""],
  cn:["PO / PARTY / DELIVERY","TALLY BILL","n:RETURN APPROVED","n:CREDIT NOTE PENDING",""],
  all:["PO / PARTY / DELIVERY","DATE","TALLY BILL","n:BILL","n:DUE","STATUS",""]
 };
@@ -361,9 +367,10 @@ function render(){
    td(tr,r.amt!=null?cash(r.amt):cash(r.erp)+'<span class="sub">ERP, no Tally amount</span>',"n money");
    const ret=num(r.f?.approved_return),cr=num(r.f?.credit_notes),dr=num(r.f?.debit_notes),wait=num(r.f?.pending_return);
    td(tr,[ret?"<span class=\"sub\" style=\"color:inherit;font-size:13px\">Return "+cash(ret)+"</span>":"",wait?'<span class="sub">Return waiting '+cash(wait)+'</span>':"",cr?'<span class="sub">CN − '+cash(cr)+'</span>':"",dr?'<span class="sub">DN + '+cash(dr)+'</span>':"",r.cn>0.5?'<span class="tag red">CN pending '+cash(r.cn)+'</span>':""].join("")||"—","n");
-   td(tr,cash(r.f?.collected)+(num(r.f?.verified)?'<span class="sub">verified '+cash(r.f.verified)+'</span>':""),"n");
+   const off=officePaid(r.o.id),drv=num(r.f?.collected)-off;
+   td(tr,cash(r.f?.collected)+(off?'<span class="sub">payment collection '+cash(off)+'</span>'+(drv>0.005?'<span class="sub">driver '+cash(drv)+'</span>':""):num(r.f?.verified)?'<span class="sub">verified '+cash(r.f.verified)+'</span>':""),"n");
    td(tr,cash(r.due),"n due");
-   const a=td(tr,"");btn(a,"Credit / Debit note",()=>noteFor(r),"sm");a.append(" ");btn(a,"Details",()=>openOrder(r.o.id),"secondary sm");
+   const a=td(tr,"");a.className="acts";btn(a,"Payment collection",()=>payFor(r),"sm pay");btn(a,"Credit note",()=>noteFor(r),"sm");btn(a,"Details",()=>openOrder(r.o.id),"secondary sm");
   }else if(tab==="cn"){
    td(tr,inv(r));
    td(tr,cash(r.f?.approved_return),"n");
@@ -383,9 +390,28 @@ function render(){
 }
 function noteFor(r,kind,amount,reason){
  if(!flowReady){notice("Run lwb_tally_bill_flow_setup.sql once in Supabase first.",true);return}
- LWBNote.open({db,order:{id:r.o.id,order_no:r.o.order_no,party:r.o.customer_name,invoice_no:r.inv},kind,amount,reason,
-  info:r.cn>0.5?"Return approved "+cash(r.f?.approved_return)+"; credit note still pending "+cash(r.cn)+".":"",
-  onSaved:x=>{notice((x.kind==="CREDIT"?"Credit":"Debit")+" note "+x.no+" saved for "+r.o.order_no+".");reload().then(()=>{if(selected?.id===r.o.id)renderTally(selected)})}});
+ LWBNote.open({db,order:{id:r.o.id,order_no:r.o.order_no,party:r.o.customer_name,invoice_no:r.inv},amount,reason,
+  info:(r.cn>0.5?"Return approved "+cash(r.f?.approved_return)+"; credit note still pending "+cash(r.cn)+". ":"")+(r.due!=null?"Money due now "+cash(r.due)+".":""),
+  onSaved:x=>{notice("Credit note "+x.no+" of "+cash(x.amount)+" saved for "+r.o.order_no+". Money due goes down by that much.");reload().then(()=>{if(selected?.id===r.o.id)renderTally(selected)})}});
+}
+// Payment Collection rows (Cash / UPI / Bank / Cheque) entered here, not cancelled
+const officePaid=id=>pays.filter(p=>p.order_id===id&&!p.cancelled_at).reduce((a,p)=>a+num(p.amount),0);
+function payFor(r){
+ if(!flowReady){notice("Run lwb_tally_bill_flow_setup.sql once in Supabase first.",true);return}
+ if(!r.inv){notice("Enter the Tally bill of "+r.o.order_no+" first.",true);return}
+ if(!(r.due>0.5)){notice("Nothing is due on "+r.o.order_no+".",true);return}
+ LWBPay.open({db,order:{id:r.o.id,order_no:r.o.order_no,party:r.o.customer_name,invoice_no:r.inv},due:r.due,
+  onSaved:x=>{notice("Payment "+cash(x.amount)+" saved for "+r.o.order_no+". "+(x.left>0.5?cash(x.left)+" stays in "+r.o.customer_name+"'s outstanding (Party Ledger).":"Bill fully paid."));reload().then(()=>{if(selected?.id===r.o.id)renderTally(selected)})}});
+}
+const MODE={CASH:"Cash",UPI:"UPI",BANK:"Bank",CHEQUE:"Cheque"};
+const notesText=n=>n?Object.entries(n).sort((a,b)=>(b[0]==="coins"?-1:+b[0])-(a[0]==="coins"?-1:+a[0])).map(([k,v])=>k==="coins"?"coins ₹"+v:"₹"+k+"×"+v).join(", "):"";
+async function cancelPay(rid){
+ const list=pays.filter(p=>p.receipt_id===rid);
+ if(!await confirm("Cancel this payment of "+cash(list.reduce((a,p)=>a+num(p.amount),0))+" ("+list.map(p=>MODE[p.mode]).join(" + ")+")?\n\nUse this only when it was entered by mistake. It stays in the list as cancelled and the money goes back to due."))return;
+ const r=await db.rpc("lwb_cancel_tally_payment",{p_receipt_id:rid});
+ if(r.error){notice("Could not cancel: "+r.error.message,true);return}
+ await reload();if(selected)renderTally(selected);
+ notice("Payment cancelled.");
 }
 async function submitBill(order,lines,dt,button){
  if(!lines.length){notice("Enter the Tally invoice no. and amount for "+order.order_no+".",true);return false}
@@ -547,7 +573,7 @@ function renderTally(order){
  $("noteBox").hidden=!(t&&f);
  if(t&&f){
   $("moneyLine").textContent="Bill "+cash(f.bill_amount??f.erp_amount)+(num(f.approved_return)?" · return approved "+cash(f.approved_return):"")+
-   " · credit notes "+cash(f.credit_notes)+" · debit notes "+cash(f.debit_notes)+" · driver got "+cash(f.collected)+" · DUE "+cash(f.due)+
+   " · credit notes "+cash(f.credit_notes)+(num(f.debit_notes)?" · debit notes "+cash(f.debit_notes):"")+" · received "+cash(f.collected)+(officePaid(order.id)?" (payment collection "+cash(officePaid(order.id))+")":"")+" · DUE "+cash(f.due)+
    (num(f.credit_pending)>0.5?" · credit note pending "+cash(f.credit_pending):"");
   const ul=$("noteList");ul.replaceChildren();
   for(const n of f.notes||[]){
@@ -555,6 +581,18 @@ function renderTally(order){
    li.innerHTML="<span><b>"+(n.kind==="CREDIT"?"Credit":"Debit")+" note "+escapeHtml(n.note_no)+"</b> · "+date(n.note_date)+" · "+cash(n.amount)+(n.reason?" · "+escapeHtml(n.reason):"")+(n.cancelled?" (cancelled)":"")+"</span>";
    if(!n.cancelled){const b=document.createElement("button");b.type="button";b.className="secondary sm";b.textContent="Cancel";b.onclick=()=>cancelNote(n);li.appendChild(b)}
    ul.appendChild(li);
+  }
+  const pl=$("payList");pl.replaceChildren();
+  const rec=new Map();
+  for(const p of pays.filter(p=>p.order_id===order.id)){if(!rec.has(p.receipt_id))rec.set(p.receipt_id,[]);rec.get(p.receipt_id).push(p)}
+  for(const [rid,list] of rec){
+   const x=list[0],gone=!!x.cancelled_at;
+   const li=document.createElement("li");if(gone)li.className="x";
+   li.innerHTML="<span><b>Payment "+cash(list.reduce((a,p)=>a+num(p.amount),0))+"</b> · "+date(x.pay_date)+" · "+
+    list.map(p=>MODE[p.mode]+" "+cash(p.amount)+(p.ref_no?" ("+escapeHtml(p.ref_no)+")":"")+(p.cash_notes?" ["+escapeHtml(notesText(p.cash_notes))+"]":"")).join(" + ")+
+    (x.remark?" · "+escapeHtml(x.remark):"")+(gone?" (cancelled)":"")+"</span>";
+   if(!gone){const b=document.createElement("button");b.type="button";b.className="secondary sm";b.textContent="Cancel";b.onclick=()=>cancelPay(rid);li.appendChild(b)}
+   pl.appendChild(li);
   }
  }
 }
@@ -658,6 +696,7 @@ $("refresh").addEventListener("click",reload);
 $("search").addEventListener("input",render);
 document.querySelectorAll("#tabs [data-tab]").forEach(b=>b.addEventListener("click",()=>{tab=b.dataset.tab;render()}));
 $("addNote").addEventListener("click",()=>{if(selected)noteFor(rowOf(selected))});
+$("addPay").addEventListener("click",()=>{if(selected)payFor(rowOf(selected))});
 $("logout").addEventListener("click",async()=>{if(db)await db.auth.signOut();location.href="login.html"});
 init();
 </script>

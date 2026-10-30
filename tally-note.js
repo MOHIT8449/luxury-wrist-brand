@@ -1,5 +1,6 @@
-/* Credit / Debit note popup (Tally note no., date, amount, reason) for one PO's Tally invoice.
-   LWBNote.open({db, order:{id, order_no, party, invoice_no}, kind, amount, reason, title, onSaved})
+/* Credit note popup (Tally note no., date, amount, reason) for one PO's Tally invoice.
+   Parties only get credit notes (debit notes are for purchase suppliers), so no debit note is offered here.
+   LWBNote.open({db, order:{id, order_no, party, invoice_no}, amount, reason, title, onSaved})
    Saves with lwb_save_tally_note (lwb_tally_bill_flow_setup.sql). Accounts / Admin only. */
 (function(){
   "use strict";
@@ -14,8 +15,6 @@
 .lwbn label{display:block;font-size:11px;color:#657992;text-transform:uppercase;margin-bottom:4px}
 .lwbn input{width:100%;box-sizing:border-box;padding:10px;border:1px solid #c2cedf;border-radius:7px;font:14px Arial}
 .lwbn .k{display:grid;grid-template-columns:1fr 1fr;gap:8px}
-.lwbn .k button{padding:11px;border-radius:8px;border:2px solid #c2cedf;background:#fff;color:#23384f;font-weight:bold;cursor:pointer}
-.lwbn .k button[aria-pressed=true]{border-color:#1769d8;background:#eaf2ff;color:#123f7a}
 .lwbn .two{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .lwbn .f{display:flex;gap:9px;justify-content:flex-end;padding:0 18px 16px}
 .lwbn .f button{padding:10px 16px;border:0;border-radius:7px;font-weight:bold;cursor:pointer;background:#e7edf5;color:#23384f}
@@ -24,19 +23,19 @@
 .lwbn .e{color:#a02c2c;font-size:13px;min-height:1px}`;
   function open(o){
     if(!document.getElementById("lwbn-css")){const s=document.createElement("style");s.id="lwbn-css";s.textContent=CSS;document.head.appendChild(s)}
-    let kind=o.kind==="DEBIT"?"DEBIT":"CREDIT";
+    const kind="CREDIT";
     const ord=o.order||{};
     const ov=document.createElement("div");ov.className="lwbn-ov";
     ov.innerHTML=`<div class="lwbn" role="dialog" aria-modal="true" aria-labelledby="lwbnT">
-      <h3 id="lwbnT">${esc(o.title||"Credit / Debit note")}</h3>
+      <h3 id="lwbnT">${esc(o.title||"Credit note")}</h3>
       <div class="b">
         <p><b>${esc(ord.party)}</b> · PO ${esc(ord.order_no)}${ord.invoice_no?" · Tally bill "+esc(ord.invoice_no):""}</p>
         ${o.info?`<p>${esc(o.info)}</p>`:""}
-        <div class="k"><button type="button" data-k="CREDIT">Credit note<br><small style="font-weight:normal">return, rate cut: party pays less</small></button><button type="button" data-k="DEBIT">Debit note<br><small style="font-weight:normal">extra charge: party pays more</small></button></div>
+        <p>Return, damage, leakage or rate cut: the party pays this much less.</p>
         <div class="two"><div><label for="lwbnNo">Tally note no.</label><input id="lwbnNo" maxlength="100" autocomplete="off" placeholder="e.g. CN/45"></div>
         <div><label for="lwbnDate">Note date</label><input id="lwbnDate" type="date"></div></div>
         <div><label for="lwbnAmt">Amount (as in Tally)</label><input id="lwbnAmt" type="number" min="0.01" step="0.01" inputmode="decimal"></div>
-        <div><label for="lwbnWhy">Reason</label><input id="lwbnWhy" maxlength="300" autocomplete="off" placeholder="e.g. 3 cases returned (damaged)"></div>
+        <div><label for="lwbnWhy">Reason</label><input id="lwbnWhy" maxlength="300" autocomplete="off" placeholder="e.g. 3 bottles damaged / leakage"></div>
         <div class="e" id="lwbnErr"></div>
       </div>
       <div class="f"><button type="button" data-x>${esc(o.skipText||"Not now")}</button><button type="button" class="go" data-save>Save note</button></div></div>`;
@@ -45,9 +44,6 @@
     q("#lwbnDate").value=today();
     if(o.amount>0)q("#lwbnAmt").value=Number(o.amount).toFixed(2);
     if(o.reason)q("#lwbnWhy").value=o.reason;
-    const setK=k=>{kind=k;ov.querySelectorAll("[data-k]").forEach(b=>b.setAttribute("aria-pressed",String(b.dataset.k===k)))};
-    setK(kind);
-    ov.querySelectorAll("[data-k]").forEach(b=>b.onclick=()=>setK(b.dataset.k));
     const close=()=>{ov.remove();document.removeEventListener("keydown",esc_)};
     const esc_=e=>{if(e.key==="Escape")close()};
     document.addEventListener("keydown",esc_);
@@ -74,7 +70,7 @@
     return {close};
   }
   // After money or a return comes in: ask for the credit note of an approved return not yet noted,
-  // or (when a delivery with a return is still short of money) offer a credit / debit note. Quietly does nothing if the
+  // or (when a delivery with a return is still short of money) offer a credit note. Quietly does nothing if the
   // Tally bill flow is not set up or the page user cannot read the notes.
   async function check(o){
     const ord=o.order||{};
@@ -92,8 +88,8 @@
       const order={...ord,invoice_no:t.data.invoice_no};
       if(left>0.5)return open({...o,order,kind:"CREDIT",amount:left,reason:o.reason||"Return approved",
         title:"Return: make the credit note",info:"Return approved "+rs(ret)+(cr?", credit notes so far "+rs(cr):"")+". Make the credit note in Tally and enter it here."});
-      if(o.hadReturn&&Number(o.outstanding||0)>1)return open({...o,order,kind:"CREDIT",title:"Money short: credit / debit note?",skipText:"No note needed",
-        info:rs(o.outstanding)+" is still to collect. If it is a rate cut, discount or damage, make a credit note in Tally; if an extra charge, a debit note. If the party pays later, choose No note needed."});
+      if(o.hadReturn&&Number(o.outstanding||0)>1)return open({...o,order,kind:"CREDIT",title:"Money short: credit note?",skipText:"No note needed",
+        info:rs(o.outstanding)+" is still to collect. If it is a rate cut, discount or damage, make a credit note in Tally and enter it here. If the party pays later, choose No note needed."});
     }catch(_){}
   }
   window.LWBNote={open,check};
