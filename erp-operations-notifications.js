@@ -118,7 +118,8 @@
    ".lwb-op-error{color:#ac2828!important}"
   ].join("");
   document.head.append(css);
-  const wrap=el("div","lwb-op-wrap"),bell=el("button","lwb-op-bell","🔔"),count=el("span","lwb-op-count","0");
+  const wrap=el("div","lwb-op-wrap"),bell=el("button","lwb-op-bell"),count=el("span","lwb-op-count","0");
+  bell.innerHTML='<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>';
   bell.id="lwbOpsBell";bell.type="button";
   bell.setAttribute("aria-label","ERP Notifications");bell.title="Notifications";bell.setAttribute("aria-expanded","false");
   bell.append(count);
@@ -126,7 +127,7 @@
   panel.hidden=true;panel.setAttribute("aria-label","ERP Notifications");
   reload.type="button";allRead.type="button";allRead.hidden=true;
   const btns=el("span");btns.style.cssText="display:flex;gap:6px";btns.append(allRead,reload);
-  head.append(el("strong",null,"🔔 ERP Notifications"),btns);
+  head.append(el("strong",null,"ERP Notifications"),btns);
   const list=el("div");panel.append(head,list);wrap.append(bell,panel);mount.prepend(wrap);
   async function reloadData(){
    const {data,error}=await db.from("erp_notifications")

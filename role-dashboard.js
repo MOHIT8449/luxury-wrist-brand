@@ -38,7 +38,16 @@
     const tag=href&&can(href)?'a href="'+esc(href)+'"':"div";
     return "<"+tag+' class="rd-kpi rd-'+tone+'"><small>'+esc(label)+"</small><b>"+value+"</b><span>"+(foot||"")+"</span></"+tag.split(" ")[0]+">";
   }
-  const card=(title,link,body,note,id)=>'<section class="rd-card"'+(id?' id="'+id+'"':"")+"><h2>"+title+(link||"")+"</h2>"+body+(note?'<div class="rd-note">'+note+"</div>":"")+"</section>";
+  // Card titles start with an emoji; show a matching line icon instead.
+  const RD_IC={"⚠️":'<path d="M12 3 2 21h20z"/><path d="M12 10v5M12 18h.01"/>',"✔️":'<path d="M4 12l5 5L20 6"/>',"🌙":'<path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/>',
+    "🎯":'<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1"/>',"🏆":'<path d="M8 4h8v5a4 4 0 0 1-8 0z"/><path d="M8 6H5a3 3 0 0 0 3 4M16 6h3a3 3 0 0 1-3 4M12 13v4M8 21h8M9 17h6"/>',
+    "🏷️":'<path d="M3 3h8l10 10-8 8L3 11z"/><circle cx="7.5" cy="7.5" r="1.5"/>',"💰":'<rect x="2" y="6" width="20" height="13" rx="2"/><path d="M16 12.5h2M2 10h20"/>',"💳":'<rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20M6 15h4"/>',
+    "📅":'<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/>',"📈":'<path d="M3 17l6-6 4 4 8-8"/><path d="M15 7h6v6"/>',"📍":'<path d="M12 22s7-7 7-12a7 7 0 0 0-14 0c0 5 7 12 7 12z"/><circle cx="12" cy="10" r="2.5"/>',
+    "📝":'<path d="M5 3h10l4 4v14H5z"/><path d="M9 12h6M9 16h6"/>',"📦":'<path d="M3 7l9-4 9 4-9 4-9-4z"/><path d="M3 7v10l9 4 9-4V7M12 11v10"/>',"🔥":'<path d="M12 22a7 7 0 0 0 7-7c0-4-3-6-4-10-2 2-3 4-3 6-1-1-2-2-2-4-2 2-5 5-5 8a7 7 0 0 0 7 7z"/>',
+    "🚚":'<path d="M2 6h11v10H2z"/><path d="M13 9h4l4 4v3h-8"/><circle cx="6" cy="18" r="2"/><circle cx="17" cy="18" r="2"/>',"🧾":'<path d="M6 2h12v20l-3-2-3 2-3-2-3 2z"/><path d="M9 7h6M9 11h6M9 15h4"/>'};
+  RD_IC["🚛"]=RD_IC["🚚"];
+  const rdTitle=t=>{const m=/^(\S+)\s+/.exec(t),p=m&&RD_IC[m[1]];return p?'<span class="rd-ic" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">'+p+"</svg></span>"+t.slice(m[0].length):t};
+  const card=(title,link,body,note,id)=>'<section class="rd-card"'+(id?' id="'+id+'"':"")+"><h2>"+rdTitle(title)+(link||"")+"</h2>"+body+(note?'<div class="rd-note">'+note+"</div>":"")+"</section>";
   const badge=(c,t)=>'<span class="rd-b rd-b-'+c+'">'+t+"</span>";
   const bar=(p,c)=>'<div class="rd-bar'+(c?" rd-bar-"+c:"")+'"><i style="width:'+Math.max(0,Math.min(100,p||0))+'%"></i></div>';
   const step=(n,label,extra,hot,href)=>{const t=href&&can(href)?'a href="'+esc(href)+'"':"div";
