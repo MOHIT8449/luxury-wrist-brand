@@ -26,7 +26,7 @@
   let C=null,ROLE="",UID="",PLAN=null,box=null,seq=0;
   // Company / brand filter (brand-filter.js, lwb_company_brand_setup.sql): list = my companies,
   // id = chosen brand ("" = all), map = SKU -> company. Chips for Admin and Sales Head.
-  const BR={list:[],id:"",map:null,allow:null};
+  const BR={list:[],id:"",map:null,allow:null,all:[]};
   const BRAND_ROLES=["admin","manager"];
 
   /* ---------- small helpers ---------- */
@@ -74,6 +74,11 @@
     return out;
   }
   const qtyOf=it=>it.approved_qty!=null?num(it.approved_qty):num(it.ordered_qty);
+  // Pack unit: Rajnigandha boxes, Coca-Cola cases. "cs" / "box" per SKU; totals say cases,
+  // boxes, or qty when the shown brands sell in both.
+  const uOf=sku=>BR.map&&window.LWBBrand&&LWBBrand.unitByName(sku,BR.map,BR.all)==="BOX"?"box":"cs";
+  const qWord=()=>{const L=BR.allow?BR.all.filter(c=>BR.allow.has(c.id)):BR.all.filter(c=>c.active!==false),b=L.filter(c=>c.pack_unit==="BOX").length;
+    return !b?"cases":b===L.length?"boxes":"qty"};
   const brandOf=sku=>BR.map?(BR.map.get(LWBBrand.skuKey(sku))||""):"";
   const inBrand=sku=>!BR.allow||BR.allow.has(brandOf(sku));
   // With a brand chosen, each order keeps only that brand's share (by line value) of its amount, cases and weight.
@@ -299,7 +304,7 @@
       const al=[];
       if(sumy&&sumy.late_approval&&num(sumy.late_approval.count))al.push(dot("red",'<b>'+fmt(sumy.late_approval.count)+"</b> order"+(sumy.late_approval.count==1?"":"s")+" waiting approval over "+APPROVAL_HOURS+" h (oldest "+fmt(sumy.late_approval.max_hours)+" h)"));
       if(sumy&&sumy.late_delivery&&num(sumy.late_delivery.count))al.push(dot("red",'<b>'+fmt(sumy.late_delivery.count)+"</b> order"+(sumy.late_delivery.count==1?"":"s")+" not delivered in 36 h · "+rs(sumy.late_delivery.amount)));
-      (short||[]).slice(0,3).forEach(x=>al.push(dot("amb",esc(x.sku)+": only <b>"+fmt(x.have)+" cs</b> in godown, "+fmt(x.need)+" cs ordered")));
+      (short||[]).slice(0,3).forEach(x=>al.push(dot("amb",esc(x.sku)+": only <b>"+fmt(x.have)+" "+uOf(x.sku)+"</b> in godown, "+fmt(x.need)+" "+uOf(x.sku)+" ordered")));
       const cs=chequesSoon(cq).filter(x=>String(x.cheque_date)<=shift(t,1));
       if(cs.length)al.push(dot("amb",fmt(cs.length)+" cheque"+(cs.length==1?"":"s")+" to deposit by "+dmy(shift(t,1))+" · "+rs(sum(cs,x=>x.amount))));
       if(acc&&acc.last_close&&String(acc.last_close)<y)al.push(dot("blu","Night cash handover not closed since "+dmy(shift(String(acc.last_close),1))));
@@ -324,7 +329,7 @@
       const noOrder=acts?acts.filter(p=>!p.last_order_date||days(String(p.last_order_date).slice(0,10),t)>=5).length:null;
       const k=[
         kpi("amber","Waiting for my approval",fmt(wait.length),wait.length?(late.length?'<span class="dn">'+late.length+" late</span> · ":"")+"oldest "+ago(oldest.created_at||oldest.order_date):"Nothing waiting","warehouse-orders.html"),
-        kpi("green","Team sales today",rs(sum(td,o=>o.total_amount)),fmt(sum(td,o=>o.total_qty))+" cases · "+fmt(td.length)+" orders","sales-tracking.html"),
+        kpi("green","Team sales today",rs(sum(td,o=>o.total_amount)),fmt(sum(td,o=>o.total_qty))+" "+qWord()+" · "+fmt(td.length)+" orders","sales-tracking.html"),
         profitKpi(PR,td.length,"teal"),
         kpi("blue",new Date().toLocaleDateString("en-IN",{month:"long"})+" target",tgt?pct(mv,tgt)+"%":"Not set",lakh(mv)+(tgt?" of "+lakh(tgt):" sold"),"sales-tracking.html"),
         kpi("violet","Driver to assign",fmt(O.filter(o=>st(o)==="approved").length),"Approved, no vehicle yet","warehouse-orders.html"),
@@ -351,7 +356,7 @@
       let skus="";
       const it=td.length?await itemsOf(td.map(o=>o.id)):[];
       if(it&&it.length){const m=new Map();for(const x of it){if(!inBrand(x.sku_name))continue;const k=key(x.sku_name);const v=m.get(k)||{n:x.sku_name,q:0};v.q+=qtyOf(x);m.set(k,v)}
-        skus=card("🔥 Top SKUs today","","<table><tbody>"+[...m.values()].sort((a,b)=>b.q-a.q).slice(0,6).map(x=>"<tr><td>"+esc(x.n)+'</td><td class="n">'+fmt(x.q)+" cs</td></tr>").join("")+"</tbody></table>")}
+        skus=card("🔥 Top SKUs today","","<table><tbody>"+[...m.values()].sort((a,b)=>b.q-a.q).slice(0,6).map(x=>"<tr><td>"+esc(x.n)+'</td><td class="n">'+fmt(x.q)+" "+uOf(x.n)+"</td></tr>").join("")+"</tbody></table>")}
       return shell(k.filter(Boolean),[queue,target],[brandCard(ov),delivery,skus]);
     },
 
@@ -396,7 +401,7 @@
       const inside=gr?gr.filter(x=>x.kind==="VEHICLE"&&["ARRIVED","WORKING"].includes(x.vehicle_status)):null;
       const ret=queueItem(vq,"RETURN_RECEIVE"),loadingVeh=[...new Set(loading.map(vehNo))];
       const k=[
-        kpi("amber","To load today",fmt(toLoad.length)+" order"+(toLoad.length==1?"":"s"),fmt(sum(toLoad,o=>o.total_qty))+" cases · "+fmt(sum(toLoad,o=>o.total_weight))+" kg","loading-dispatch.html"),
+        kpi("amber","To load today",fmt(toLoad.length)+" order"+(toLoad.length==1?"":"s"),fmt(sum(toLoad,o=>o.total_qty))+" "+qWord()+" · "+fmt(sum(toLoad,o=>o.total_weight))+" kg","loading-dispatch.html"),
         kpi("blue","Loading now",fmt(loadingVeh.length)+" vehicle"+(loadingVeh.length==1?"":"s"),esc(loadingVeh.slice(0,3).join(" · "))||"No vehicle loading","loading-dispatch.html"),
         kpi("teal","Vehicles at godown",inside?fmt(inside.length):"—",inside&&inside.length?esc(inside.slice(0,2).map(x=>x.vehicle_no).filter(Boolean).join(" · ")):"From Godown Report","godown-report.html"),
         kpi("red","Returns to receive",ret?fmt(ret.cnt):"0",ret&&num(ret.amount)?"Value "+rs(ret.amount):"From drivers","driver-returns.html"),
@@ -409,7 +414,7 @@
         return '<div class="rd-veh"><div class="h"><b>'+esc(v.n)+"</b>"+badge(v.state==="Loading"?"a":v.state==="Loaded"?"g":"r",v.state)+"</div><small>"+esc([v.driver,v.type].filter(Boolean).join(" · ")||"—")+" · "+v.orders.length+" PO"+(v.orders.length==1?"":"s")+"</small>"+
           (p!=null?bar(p,p>100?"red":p>85?"amb":"blu")+"<small>"+fmt(v.kg)+" / "+fmt(v.cap)+" kg filled ("+p+"%) · "+fmt(v.cases)+" cs</small>":"<small>"+fmt(v.cases)+" cs · "+fmt(v.kg)+" kg</small>")+"</div>"}).join("")+"</div></div>":'<div class="rd-empty">No vehicle to load right now.</div>'):"";
       const sc=stock?card("📦 Stock check for open orders",go("inventory.html","Inventory →"),stock.length?'<div class="rd-scroll"><table><thead><tr><th>SKU</th><th class="n">In godown</th><th class="n">Ordered</th><th class="n">Status</th></tr></thead><tbody>'+
-        stock.slice(0,8).map(x=>"<tr><td>"+esc(x.sku)+'</td><td class="n">'+fmt(x.have)+' cs</td><td class="n">'+fmt(x.need)+' cs</td><td class="n">'+(x.short?badge("r","Short "+fmt(x.short)):x.have-x.need<x.need*0.2?badge("a","Low after"):badge("g","OK"))+(x.transit?" "+badge("b","+"+fmt(x.transit)+" coming"):"")+"</td></tr>").join("")+"</tbody></table></div>":'<div class="rd-empty">No approved order waiting.</div>',"Ordered = approved, not yet loaded orders."):"";
+        stock.slice(0,8).map(x=>"<tr><td>"+esc(x.sku)+'</td><td class="n">'+fmt(x.have)+" "+uOf(x.sku)+'</td><td class="n">'+fmt(x.need)+" "+uOf(x.sku)+'</td><td class="n">'+(x.short?badge("r","Short "+fmt(x.short)):x.have-x.need<x.need*0.2?badge("a","Low after"):badge("g","OK"))+(x.transit?" "+badge("b","+"+fmt(x.transit)+" coming"):"")+"</td></tr>").join("")+"</tbody></table></div>":'<div class="rd-empty">No approved order waiting.</div>',"Ordered = approved, not yet loaded orders."):"";
       const trans=tr&&tr.length?card("🚚 Goods coming (in transit)",go("stock-transit.html","Stock in Transit →"),'<div class="rd-bd">'+fmt(tr.length)+" line"+(tr.length==1?"":"s")+" · "+fmt(sum(tr,x=>x.cases))+" cases on the way</div>"):"";
       const KIND={VEHICLE:["blu","Vehicle"],DAMAGE:["red","Damage"],ABSENT:["amb","Staff absent"],ISSUE:["amb","Issue"]};
       const rep=gr?card("📝 Godown report — today",go("godown-report.html","Godown Report →"),(gr.length?gr.slice(0,5).map(x=>{const k2=KIND[x.kind]||["blu",x.kind];
@@ -436,7 +441,7 @@
       const ring=card("🎯 My target","",'<div class="rd-bd rd-ring"><svg viewBox="0 0 36 36" aria-hidden="true"><circle cx="18" cy="18" r="'+r+'" fill="none" stroke="#eef1f5" stroke-width="3.4"/>'+
         (p!=null?'<circle cx="18" cy="18" r="'+r+'" fill="none" stroke="'+tone+'" stroke-width="3.4" stroke-dasharray="'+arc+' 100" pathLength="100" stroke-linecap="round" transform="rotate(-90 18 18)"/>':"")+
         '<text x="18" y="20.5" text-anchor="middle" font-size="7.5" font-weight="700" fill="'+tone+'">'+(p==null?"—":p+"%")+'</text></svg><div class="t"><small>'+new Date().toLocaleDateString("en-IN",{month:"long"})+"</small><b>"+lakh(mv)+"</b><small>"+(tgt?"of "+lakh(tgt)+(need?" · need "+rs(need)+" / day":" · target done 🎉"):"Target not set · ask Sales Head")+
-        '</small><div class="rd-today"><small>Today</small><b>'+rs(sum(td,o=>o.total_amount))+"</b><small>"+fmt(td.length)+" order"+(td.length==1?"":"s")+" · "+fmt(sum(td,o=>o.total_qty))+" cases</small></div></div></div>");
+        '</small><div class="rd-today"><small>Today</small><b>'+rs(sum(td,o=>o.total_amount))+"</b><small>"+fmt(td.length)+" order"+(td.length==1?"":"s")+" · "+fmt(sum(td,o=>o.total_qty))+" "+qWord()+"</small></div></div></div>");
       const pp=(plan&&plan.parties)||[],notes=(plan&&plan.notes)||[];
       const planCard=plan?card("📍 Today's plan",go("my-sales.html","My Sales →"),(notes.length?'<div class="rd-alert rd-headnote"><span>📢</span><span><b>Sales Head:</b> '+notes.map(esc).join(" · ")+"</span></div>":"")+
         (pp.length?pp.slice(0,8).map(x=>'<div class="rd-alert">'+badge(x.days==null||x.days>=10?"r":x.days>=5?"a":"b",x.days==null?"New":x.days+" days")+"<span><b>"+esc(x.name)+"</b><br><small>"+(x.city?esc(x.city)+" · ":"")+(x.days==null?"No order yet":"Last order "+dmy(x.last_order_date))+"</small></span>"+
@@ -463,9 +468,12 @@
   };
 
   async function brands(){
-    BR.list=[];BR.id="";BR.map=null;BR.allow=null;
-    if(!window.LWBBrand||!["admin","manager","accounts"].includes(ROLE))return;
-    const b=await LWBBrand.load(C).catch(()=>null);BR.list=(b&&b.companies)||[];
+    BR.list=[];BR.id="";BR.map=null;BR.allow=null;BR.all=[];
+    if(!window.LWBBrand)return;
+    const b=await LWBBrand.load(C).catch(()=>null);BR.all=(b&&b.all)||[];
+    if(BR.all.some(c=>c.pack_unit==="BOX"))BR.map=await LWBBrand.skuMap(C);
+    if(!["admin","manager","accounts"].includes(ROLE))return;
+    BR.list=(b&&b.companies)||[];
     // A Sales Head tied to one company always sees only it; chips choose between several.
     if(BRAND_ROLES.includes(ROLE)&&BR.list.length>1)BR.id=LWBBrand.get(BR.list);
     if(BR.id)BR.allow=new Set([BR.id]);else if(b&&b.mine&&b.mine.length&&ROLE!=="accounts")BR.allow=new Set(b.mine);
