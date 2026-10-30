@@ -324,6 +324,7 @@
 ## Website launch checklist (29 Oct 2026)
 
 - Public pages: `index.html`, `privacy.html`, `terms.html` (style `assets/legal.css`), branded `404.html` (Cloudflare Pages serves it for any missing page).
+- Homepage Gallery (30 Oct 2026): 20 warehouse / office photos in `assets/gallery/` (1800px, metadata and GPS removed) with 720px copies in `assets/gallery/thumbs/`. `index.html` shows them in a `#gallery` section (Facility, Warehouse Floor, Office & Dispatch, Stock on Hand) with a tap-to-enlarge viewer (swipe / arrow keys); hero background uses `05-warehouse-floor-1.jpg`. To add a photo: put both sizes in those folders and add one `gallery-item` button.
 - `_headers`: every page gets `X-Robots-Tag: noindex` (ERP stays out of Google) except `/`, privacy, terms, robots, sitemap and `og-image.png`; plus HSTS, nosniff, SAMEORIGIN framing and referrer policy.
 - `robots.txt`, `sitemap.xml`, `og-image.png` (1200×630 social preview), `favicon.ico` / `favicon-32.png`. Absolute URLs use `luxury-wrist-brand.pages.dev`: change them in `index.html` (canonical, og:url, og:image), `robots.txt` and `sitemap.xml` when a custom domain is added.
 - Analytics: turn on Cloudflare Web Analytics in the Pages project (no code, no cookies, so no cookie banner needed).
