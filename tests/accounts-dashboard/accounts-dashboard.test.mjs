@@ -25,7 +25,9 @@ CREATE TABLE public.lwb_payment_collections(id uuid default gen_random_uuid() pr
 `);
 for(const [role,id] of Object.entries(ids))await db.query('insert into user_profiles values($1,$2,true,$3)',[id,role,role+' user']);
 await db.exec(await readFile(new URL('../../lwb_accounts_dashboard_setup.sql',import.meta.url),'utf8'));
+await db.exec(`create table lwb_vehicles(id uuid primary key default gen_random_uuid(),vehicle_no text unique,vehicle_type text,ownership text default 'OWN',transporter_name text,is_active boolean default true)`);
 await db.exec(await readFile(new URL('../../lwb_accounts_staff_setup.sql',import.meta.url),'utf8'));
+await db.exec(await readFile(new URL('../../lwb_accounts_vehicle_setup.sql',import.meta.url),'utf8'));
 await db.exec('GRANT USAGE ON SCHEMA public,auth TO authenticated');
 
 const today=(await db.query("select public.lwb_acc_today()::text d")).rows[0].d;
@@ -177,4 +179,25 @@ test('entry time, note count and Party Master names',async()=>{
  const ex=(await call('select public.lwb_acc_extras($1,$1) j',[today]))[0].j;
  assert.equal(ex.entries[id].time,'16:27');assert.deepEqual(ex.entries[id].notes,{500:1,100:2});
  assert.deepEqual(ex.parties,['SHREE JAGDISH TRADERS (BARDOLI)']);
+});
+
+test('vehicle-wise expenses: vehicle on Cash Out, report per head, ledger',async()=>{
+ await as('accounts');
+ const [v1,v2]=(await db.query("insert into lwb_vehicles(vehicle_no,vehicle_type) values('GJ05AB1234','Tempo'),('GJ05CD5678','Truck') returning id")).rows.map(r=>r.id);
+ await db.query("insert into lwb_vehicles(vehicle_no,is_active) values('GJ05ZZ0001',false)");
+ const add3=p=>call('select public.lwb_acc_add_entry3($1::jsonb) id',[JSON.stringify(p)]).then(r=>r[0].id);
+ const o={date:today,kind:'OUT',mode:'CASH'};
+ await add3({...o,category_id:await cat('OUT','Diesel / Fuel'),amount:3000,vehicle_id:v1});
+ await add3({...o,category_id:await cat('OUT','Tyre'),amount:8500,vehicle_id:v1,party:'MRF Tyres'});
+ await add3({...o,category_id:await cat('OUT','Driver bhatta / food'),amount:300,vehicle_id:v1});
+ await add3({...o,category_id:await cat('OUT','Diesel / Fuel'),amount:2000,vehicle_id:v2});
+ await assert.rejects(add3({...o,kind:'IN',category_id:await cat('IN','Scrap sale'),amount:10,vehicle_id:v1}),/only on Cash Out/);
+ await assert.rejects(add3({...o,category_id:await cat('OUT','Food'),amount:10,vehicle_id:'00000000-0000-4000-8000-0000000000aa'}),/not found/);
+ const r=(await call('select public.lwb_acc_vehicle_report($1,$1) j',[today]))[0].j;
+ assert.deepEqual(r.vehicles.map(v=>[v.no,Number(v.total),v.n]),[['GJ05AB1234',11800,3],['GJ05CD5678',2000,1]]);
+ assert.equal(r.vehicles[0].heads[0].head,'Tyre');assert.equal(Object.keys(r.entries).length,4);
+ const led=(await call('select public.lwb_acc_vehicle_ledger($1,$2,$2) j',[v1,today]))[0].j;
+ assert.equal(led.lines.length,3);assert.ok(led.lines.some(l=>l.party==='GJ05AB1234'));assert.ok(led.lines.some(l=>l.party==='MRF Tyres'));
+ assert.deepEqual((await call('select public.lwb_acc_vehicles() j'))[0].j.map(v=>v.no),['GJ05AB1234','GJ05CD5678']);
+ await as('manager');await assert.rejects(call('select public.lwb_acc_vehicles()'),/Accounts/);
 });
