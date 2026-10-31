@@ -4,7 +4,7 @@
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Goods Inward | Luxury Wrist Brand</title>
 <script src="erp-date.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script><script src="page-role.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script><script src="page-role.js"></script><script src="erp-docs.js"></script>
 <style>
 :root{font-family:Arial,Helvetica,sans-serif;color:#172844;background:#f3f6fb}*{box-sizing:border-box}body{margin:0}
 header{background:#142640;color:white;padding:17px max(22px,4vw);display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}header h1{font-size:23px;margin:0 0 4px;letter-spacing:.5px}header small{color:#d2dbe6}nav{display:flex;gap:10px;flex-wrap:wrap}nav a{color:#fff;border:1px solid #8f9eb0;border-radius:8px;text-decoration:none;padding:9px 14px;font-size:13px}
@@ -149,6 +149,8 @@ main{margin:14px auto}.panel{padding:14px 16px;margin-bottom:12px}
       <div id="dmgWrap" hidden><table class="dmg-table"><thead><tr><th rowspan="2">SKU</th><th colspan="2">Damage</th><th colspan="2">Leakage</th><th colspan="2">Shortage</th></tr><tr><th>Cases</th><th>PCS</th><th>Cases</th><th>PCS</th><th>Cases</th><th>PCS</th></tr></thead><tbody id="dmgBody"></tbody></table>
         <input id="dmgNote" maxlength="300" placeholder="Note (optional), e.g. 2 cases leaked near door"><div class="hint">Saved with the bill as a claim in Purchase Claims. Quantities only: stock is not reduced.</div></div>
     </div>
+    <div id="giDocsBox" class="dmg-box" hidden><div class="dmg-head"><label>Bill copy &amp; photos</label></div><div id="giDocs"></div>
+      <div class="hint">Scan the bill on the printer / scanner and save it as PDF or JPG, then choose it here. A browser can not press the scanner's button itself. On a phone, 📷 takes a photo of each page. Files upload after the bill is saved.</div></div>
     <div class="actions"><button id="save" type="button" disabled>Save Goods Inward & Update Stock</button><button id="reset" type="button" class="secondary">Clear Form</button><span class="small" id="hint">Connect to Supabase and enter invoice details.</span></div>
     <p class="small">Saved purchase bills (view, edit, delete): <a href="purchase-register.html">Purchase Register</a></p>
     <p class="small">Enter SKU-wise <b>Taxable Amount</b> from the supplier invoice. GST is calculated using <b>GST Rate in SKU Master</b>; the Total Amount is read-only and calculated automatically. For CGST + SGST, each tax component is rounded separately to the nearest paisa, as typically shown on supplier invoices. Small differences of ₹0.01 can occur due to supplier rounding; verify the invoice total before posting. <b>Cess is not included</b> in this calculation: if a SKU has nonzero Cess, save is blocked until the tax treatment is configured. This is a warehouse inward record, not a Tax Invoice. Goods Inward and Stock Update save in one atomic transaction.</p>
@@ -353,6 +355,14 @@ function recalc(){
 // Damage / leakage / shortage entered with the bill (saved as a vehicle check after the bill posts).
 const DMG_ISSUES=['DAMAGE','LEAKAGE','SHORTAGE'];
 let dmgKey='';
+// Purchase bill PDF / scan / photo + damage photos (lwb_documents_setup.sql). Files wait until the bill is posted.
+let giDocs=null,giDocsOn=null;
+async function mountGiDocs(){
+  if(!db)return;
+  if(giDocsOn===null)giDocsOn=!!(await ERPDocs.summary(db,'PURCHASE_BILL'));
+  $('giDocsBox').hidden=!giDocsOn;if(!giDocsOn){giDocs=null;return}
+  giDocs=ERPDocs.panel({client:db,mount:$('giDocs'),entity:'PURCHASE_BILL',id:null,slots:['BILL','DAMAGE']});
+}
 function syncDamage(rows){
   const yes=$('dmgMode').value==='yes';$('dmgWrap').hidden=!yes;if(!yes)return;
   const list=(rows||readRows()).filter(r=>r.sku),key=list.map(r=>r.sku.id).join('|');
@@ -395,7 +405,7 @@ async function start(key){
     const {data:prof,error:profileError}=await db.from('user_profiles').select('role,active,full_name').eq('id',user.id).maybeSingle();
     if(profileError)throw profileError;if(!prof||prof.active!==true)throw new Error('Active ERP profile required.');
     prof.role=await lwbPageRole(prof.role);profile=prof;$('access').textContent=['admin','manager'].includes(prof.role)?prof.role.toUpperCase()+' — GOODS INWARD':'VIEW ONLY';
-    $('keybox').style.display='none';clearNotice();await loadData();
+    $('keybox').style.display='none';clearNotice();await loadData();await mountGiDocs();
   }catch(e){$('access').textContent='Not connected';$('keybox').style.display='block';show('Connection failed: '+(e.message||String(e)));}
   recalc();
 }
@@ -509,6 +519,7 @@ async function save(){
   const dmgMode=$('dmgMode').value,dmgItems=dmgMode==='yes'?readDamage():[];
   if(dmgItems===null){show('Damage / leakage / shortage: cases and PCS must be whole numbers.');return;}
   if(dmgMode==='yes'&&!dmgItems.length){show('You chose "Yes" for damage / leakage / shortage. Enter the quantities, or change it to "No" or "Check later".');return;}
+  if(dmgMode==='yes'&&giDocs&&!giDocs.has('DAMAGE')&&!await confirm('No photo of the damage / leakage is added.\n\nA photo helps the company accept the claim. Save without a photo?'))return;
   const dmgNote=$('dmgNote').value.trim();
   const mrpBill=rows.some(r=>r.mode==='MRP');
   const items=rows.map(r=>r.mode==='MRP'
@@ -550,9 +561,17 @@ async function save(){
         :dmgItems.length?`\nDamage / leakage / shortage saved: claim is pending in Purchase Claims.`:`\nVehicle check: no damage.`;
       if(ck.error)spMsg+=ckMsg.replace(/^\n\nWARNING/,'\n\nWARNING');
     }
+    let docMsg='';
+    if(giDocs&&giDocs.count()){
+      let inwardId=data?.id||data?.inward_id||null;
+      if(!inwardId){const f=await db.from('lwb_goods_inward').select('id').eq('invoice_no',invoice).eq('supplier_name',supplier).order('created_at',{ascending:false}).limit(1);inwardId=f.data?.[0]?.id||null;}
+      const bad=inwardId?await giDocs.flush(inwardId):'saved bill not found';
+      docMsg=bad?`\n\nWARNING: Bill copy / photos were NOT saved (${bad}). Add them in Purchase Register → 📎 Bill / Photos.`:`\nBill copy / photos saved.`;
+      if(bad)spMsg+=docMsg;
+    }
     resetForm();
     await loadData();
-    show(`Goods Inward SAVED successfully.\nInvoice: ${data?.invoice_no||invoice}\nSKU Lines: ${data?.sku_count||rows.length}\nTotal Pieces Added: ${format(data?.total_pcs||0)} PCS\n${mrpBill?'Deemed / Taxable Value':'Taxable Amount'}: ${rupees(invoiceTaxable/100)}\nGST Amount: ${rupees(invoiceGst/100)}\nInvoice Total: ${rupees(invoiceGross/100)}\nLive Main Godown stock updated.${spMsg}${ckMsg.includes('WARNING')?'':ckMsg}`,spMsg.includes('WARNING')?'error':'success');
+    show(`Goods Inward SAVED successfully.\nInvoice: ${data?.invoice_no||invoice}\nSKU Lines: ${data?.sku_count||rows.length}\nTotal Pieces Added: ${format(data?.total_pcs||0)} PCS\n${mrpBill?'Deemed / Taxable Value':'Taxable Amount'}: ${rupees(invoiceTaxable/100)}\nGST Amount: ${rupees(invoiceGst/100)}\nInvoice Total: ${rupees(invoiceGross/100)}\nLive Main Godown stock updated.${spMsg}${ckMsg.includes('WARNING')?'':ckMsg}${docMsg.includes('WARNING')?'':docMsg}`,spMsg.includes('WARNING')?'error':'success');
   }catch(e){let msg=e.message||String(e);if(e.code==='23505')msg='Duplicate Invoice or duplicate SKU. This supplier invoice was already posted (or SKU repeated). No stock was added.';show('Inward NOT saved: '+msg);}
   finally{busy=false;recalc();}
 }
@@ -560,6 +579,7 @@ function resetForm(){transportSelectedId='';$('supplierSearch').value='';for(con
   $('dmgMode').value='later';dmgKey='';$('dmgBody').replaceChildren();
   $('invoiceDate').value=new Date().toLocaleDateString('en-CA');$('receivedDate').value=$('invoiceDate').value;
   $('itemsBody').replaceChildren();itemRow();updateSupplierHint();updateTransportHint();recalc();
+  if(giDocsOn)mountGiDocs();
 }
 for(const id of ['invoice','invoiceDate','receivedDate','transport','vehicle','lr','driverName','driverMobile','remarks'])$(id).addEventListener('input',recalc);
 $('dmgMode').addEventListener('change',()=>{dmgKey='';syncDamage()});

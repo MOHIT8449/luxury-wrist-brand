@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Fixed Assets | Luxury Wrist Brand ERP</title>
+  <script src="erp-date.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <link rel="stylesheet" href="erp-shell.css">
+  <script src="erp-shell.js"></script>
+  <script src="erp-recent.js"></script>
+  <script src="erp-list.js"></script>
+  <script src="erp-docs.js"></script>
+  <style>
+    .status{text-align:center;padding:80px 20px;font-size:15px;color:#555}
+    .fa-sub{margin:-8px 0 14px;color:var(--erp-muted);font-size:15px}
+    .fa-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px}
+    .fa-grid label{display:block;font-size:14px;font-weight:600;color:#4b5763;margin-bottom:5px}
+    .fa-grid input,.fa-grid select,.fa-grid textarea{width:100%;height:42px;border:1.5px solid var(--erp-line);border-radius:6px;padding:0 10px;font:inherit;font-size:15px;background:#fff;color:var(--erp-ink);box-sizing:border-box}
+    .fa-grid textarea{padding:9px 10px;resize:vertical}
+    .fa-grid .wide{grid-column:span 2}
+    .fa-grid input:disabled,.fa-grid select:disabled,.fa-grid textarea:disabled{background:#f6f7f9}
+    .fa-actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:16px}
+    .fa-btn{height:42px;border-radius:6px;padding:0 18px;font-weight:600;font-size:15px;cursor:pointer;border:1px solid var(--erp-red);background:var(--erp-red);color:#fff}
+    .fa-btn.light{background:#fff;color:var(--erp-ink);border-color:var(--erp-line)}
+    .fa-btn:disabled{opacity:.45;cursor:not-allowed}
+    .fa-hint{font-size:14px;color:var(--erp-muted)}
+    .fa-tools{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+    .fa-tools input,.fa-tools select{height:40px;border:1.5px solid var(--erp-line);border-radius:6px;padding:0 10px;font:inherit;font-size:15px}
+    .fa-tools input{min-width:240px}
+    .fa-kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-bottom:14px}
+    .fa-kpi{background:#fff;border:1px solid var(--erp-line);border-radius:10px;padding:12px 14px}
+    .fa-kpi span{display:block;font-size:13px;color:var(--erp-muted)}.fa-kpi b{font-size:20px}
+    .fa-table{width:100%;border-collapse:collapse;font-size:14px}
+    .fa-table th,.fa-table td{padding:10px;border-bottom:1px solid var(--erp-line);text-align:left;vertical-align:top}
+    .fa-table th{background:#f6f7f9;font-size:13px;white-space:nowrap}
+    .fa-table td small{display:block;color:var(--erp-muted);font-size:12.5px}
+    .fa-table td.n{text-align:right;white-space:nowrap}
+    .fa-table tr.off td{opacity:.6}
+    .fa-table button{height:34px;border-radius:6px;padding:0 12px;font-weight:600;cursor:pointer;border:1px solid var(--erp-line);background:#fff;margin:2px}
+    .tagx{display:inline-block;font-size:12px;font-weight:700;border-radius:999px;padding:3px 9px;white-space:nowrap}
+    .tagx.ok{background:#e3f7e9;color:#18613c}.tagx.bad{background:#fdecec;color:#b42318}.tagx.warn{background:#fff4e0;color:#8a5300}.tagx.info{background:#e4edff;color:#20518d}
+    @media(max-width:900px){.fa-grid{grid-template-columns:1fr 1fr}.fa-kpis{grid-template-columns:1fr 1fr}}
+    @media(max-width:540px){.fa-grid{grid-template-columns:1fr}.fa-grid .wide{grid-column:span 1}.fa-tools input{min-width:0;width:100%}}
+    [hidden]{display:none!important}
+  </style>
+</head>
+<body>
+  <div id="loading" class="status">Checking account access...</div>
+  <main id="page" class="erp-main" hidden>
+    <div class="erp-pagehead"><h1>Fixed Assets</h1></div>
+    <p class="fa-sub">Computer, printer, weighing scale, pallet truck, furniture, AC, CCTV and everything else the company owns. Every asset needs a photo; add the purchase bill too. Depreciation and books stay in Tally.</p>
+    <div id="setupMsg" class="erp-card" style="padding:16px;margin-bottom:14px;color:#9b2020;background:#ffebeb" hidden></div>
+    <div class="fa-kpis" id="kpis"></div>
+
+    <section class="erp-card" id="formCard">
+      <div class="erp-card-head"><h2 id="formTitle">New Asset</h2></div>
+      <div class="erp-card-body" style="padding:16px">
+        <div class="fa-grid" id="form"></div>
+        <div style="margin-top:16px"><div class="ed-title" id="docsTitle">Asset photo &amp; bill</div><div id="docs"></div></div>
+        <div class="fa-actions"><button type="button" class="fa-btn" id="save">Save</button><button type="button" class="fa-btn light" id="clear">New / Clear</button><span class="fa-hint" id="formHint"></span></div>
+      </div>
+    </section>
+
+    <section class="erp-card" style="margin-top:14px">
+      <div class="erp-card-head"><h2 id="listTitle">Asset List</h2>
+        <div class="fa-tools"><input id="search" type="search" placeholder="Search name, ID, serial, location"><select id="filter"><option value="use">In use / repair</option><option value="out">Sold / scrapped / lost</option><option value="nophoto">Photo missing</option><option value="all">All</option></select></div></div>
+      <div class="erp-scroll" style="overflow:auto"><table class="fa-table"><thead><tr><th>Asset ID</th><th>Asset</th><th>Category</th><th>Bought</th><th class="n">Amount ₹</th><th>Location / with</th><th>Warranty</th><th>Status</th><th></th></tr></thead><tbody id="list"></tbody></table></div>
+    </section>
+  </main>
+  <script>
+    'use strict';
+    const client=supabase.createClient("https://txkbhadzdbxpieunfvox.supabase.co","sb_publishable_W4I3Q5ODf0g17sq5uDml2Q_sLolXYEk");
+    const el=id=>document.getElementById(id);
+    const esc=v=>String(v==null?"":v).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+    const rs=v=>"₹"+(Number(v)||0).toLocaleString("en-IN",{maximumFractionDigits:2});
+    const today=()=>new Date().toLocaleDateString("en-CA",{timeZone:"Asia/Kolkata"});
+    const showDate=d=>LWBDate.d(d)||"";
+    const CATS=["Computer / Laptop","Printer / Scanner","Mobile / Tablet","Weighing scale","Pallet truck / Trolley","Furniture","AC / Fan / Cooler","CCTV / Security","Generator / Inverter","Racks / Shelves","Vehicle","Machine","Other"];
+    const STATUS=[["IN_USE","In use"],["REPAIR","In repair"],["SOLD","Sold"],["SCRAPPED","Scrapped"],["LOST","Lost"]];
+    const FIELDS=[
+      {k:"asset_code",l:"Asset ID",ph:"Blank = next ID (FA001)"},
+      {k:"asset_name",l:"Asset Name *",ph:"e.g. HP LaserJet printer",wide:1},
+      {k:"category",l:"Category",list:CATS},
+      {k:"purchase_date",l:"Purchase Date",type:"date"},
+      {k:"supplier_name",l:"Bought from"},
+      {k:"bill_no",l:"Bill No."},
+      {k:"amount",l:"Amount ₹ (without GST)",type:"number"},
+      {k:"gst_amount",l:"GST ₹",type:"number"},
+      {k:"serial_no",l:"Serial / Model No."},
+      {k:"location",l:"Location",ph:"Office / Godown / Shop"},
+      {k:"assigned_to",l:"With (person)",ph:"Who uses it"},
+      {k:"warranty_till",l:"Warranty Till",type:"date"},
+      {k:"status",l:"Status",opts:STATUS},
+      {k:"status_date",l:"Sold / scrapped on",type:"date"},
+      {k:"note",l:"Note",wide:1,area:1}];
+    let me=null,rows=[],editing=null,busy=false,missing=false,docSum=null,docPanel=null,docKey="",photos=new Map();
+    const can=()=>!!me&&me.edit;
+
+    async function start(){
+      const {data:{session}}=await client.auth.getSession();
+      if(!session){location.replace("login.html");return null}
+      const {data:p}=await client.from("user_profiles").select("full_name,role,active").eq("id",session.user.id).single();
+      const realRole=String((p&&p.role)||"").toLowerCase().trim(),role=p?await ERPShell.pageRoleFresh(realRole):realRole;
+      if(!p||p.active!==true||!["admin","manager","accounts","warehouse"].includes(role)){location.replace("dashboard.html");return null}
+      return {role,realRole,name:p.full_name||session.user.email,edit:["admin","manager","accounts"].includes(role)};
+    }
+    async function load(){
+      const r=await client.from("lwb_fixed_assets").select("*").order("asset_code");
+      missing=!!r.error;el("setupMsg").hidden=!missing;
+      if(missing)el("setupMsg").textContent="Fixed Assets is not set up in Supabase yet (lwb_fixed_assets_setup.sql). ("+(r.error.message||"")+")";
+      rows=ERPRecent.sort(r.data||[]);
+      docSum=await ERPDocs.summary(client,"ASSET");
+      const want=rows.filter(x=>docSum&&(docSum.get(x.id)||new Set()).has("PHOTO")&&!photos.has(x.id)).map(x=>x.id).slice(0,300);
+      if(want.length){const got=await ERPDocs.avatars(client,"ASSET",want);for(const id of want)photos.set(id,got.get(id)||"")}
+    }
+    function fillForm(){
+      el("form").innerHTML=FIELDS.map(f=>{const id="f_"+f.k;let h;
+        if(f.opts)h='<select id="'+id+'">'+f.opts.map(([v,t])=>'<option value="'+v+'">'+esc(t)+"</option>").join("")+"</select>";
+        else if(f.area)h='<textarea id="'+id+'" maxlength="500"></textarea>';
+        else h='<input id="'+id+'" type="'+(f.type||"text")+'"'+(f.ph?' placeholder="'+esc(f.ph)+'"':"")+(f.list?' list="'+id+'_l"':"")+(f.type==="number"?' step="any" min="0"':' maxlength="150"')+">"+(f.list?'<datalist id="'+id+'_l">'+f.list.map(x=>'<option value="'+esc(x)+'">').join("")+"</datalist>":"");
+        return '<div'+(f.wide?' class="wide"':"")+'><label for="'+id+'">'+esc(f.l)+"</label>"+h+"</div>"}).join("");
+      for(const f of FIELDS){const x=el("f_"+f.k);const v=editing?editing[f.k]:(f.k==="status"?"IN_USE":"");x.value=v==null?"":String(v);x.disabled=!can()||busy||missing}
+      el("formTitle").textContent=editing?"Edit "+editing.asset_code+" · "+editing.asset_name:"New Asset";
+      el("save").disabled=el("clear").disabled=!can()||busy||missing;
+      el("formHint").textContent=!can()?"Only Admin / Sales Head / Accounts can add or edit. You can view the list.":editing?"Make your changes, then click Save. Photos upload as soon as you choose them.":"The asset photo is compulsory.";
+      const key=editing?editing.id:"new";
+      el("docsTitle").textContent="Asset photo & bill"+(editing?"":" (upload when you Save)");
+      if(!docSum){el("docs").innerHTML='<div class="fa-hint">Documents are not set up in Supabase yet (lwb_documents_setup.sql).</div>';docPanel=null;docKey="";return}
+      if(key!==docKey||!docPanel){docKey=key;docPanel=ERPDocs.panel({client,mount:el("docs"),entity:"ASSET",id:editing?editing.id:null,canEdit:can(),
+        onChange:async()=>{if(editing){docSum=await ERPDocs.summary(client,"ASSET")||docSum;photos.delete(editing.id);await load();renderList()}}})}
+    }
+    function readForm(){
+      const o={};
+      for(const f of FIELDS){const v=el("f_"+f.k).value.trim();o[f.k]=v===""?null:f.type==="number"?Number(v):v}
+      if(o.asset_code)o.asset_code=o.asset_code.toUpperCase().replace(/\s+/g,"");
+      if(o.asset_name)o.asset_name=o.asset_name.replace(/\s+/g," ");
+      if(!["SOLD","SCRAPPED","LOST"].includes(o.status))o.status_date=null;
+      return o;
+    }
+    function check(o){
+      if(!o.asset_name||o.asset_name.length<2)return "Enter the asset name.";
+      if(o.asset_code&&!/^[A-Z0-9][A-Z0-9-]{1,14}$/.test(o.asset_code))return "Asset ID: 2 to 15 letters / numbers, e.g. FA001.";
+      if(o.amount!=null&&!(o.amount>=0))return "Enter a valid amount.";
+      if(o.gst_amount!=null&&!(o.gst_amount>=0))return "Enter a valid GST amount.";
+      const d=rows.find(r=>o.asset_code&&r.asset_code===o.asset_code&&(!editing||r.id!==editing.id));if(d)return "Asset ID "+o.asset_code+" is already used for "+d.asset_name+".";
+      return "";
+    }
+    async function save(){
+      if(!can()||busy)return;const o=readForm(),bad=check(o);
+      if(bad){ERPShell.toast(bad,"error");return}
+      if(docPanel){const miss=docPanel.missing();
+        if(miss.length&&!editing){await alert("Please add the asset photo before saving (📷 Camera on the phone, or 🖼 Gallery).");return}
+        if(miss.length&&!await confirm("This asset has no photo yet.\n\nSave the other changes anyway?"))return;
+        if(docPanel.busy()){ERPShell.toast("Upload in progress, please wait.","error");return}}
+      if(!await confirm((editing?"UPDATE":"ADD")+" ASSET?\n\n"+(o.asset_code||(editing?editing.asset_code:"New ID"))+" · "+o.asset_name+(o.amount!=null?"\n"+rs(o.amount)+(o.gst_amount?" + GST "+rs(o.gst_amount):""):"")))return;
+      busy=true;fillForm();
+      try{
+        const r=editing?await client.from("lwb_fixed_assets").update(o).eq("id",editing.id).select("id,asset_code").single():await client.from("lwb_fixed_assets").insert(o).select("id,asset_code").single();
+        if(r.error)throw r.error;
+        const docErr=docPanel?await docPanel.flush(r.data.id):"";
+        if(docErr)await alert("Saved "+r.data.asset_code+", but the photo / bill was NOT saved:\n"+docErr+"\n\nOpen the asset with Edit and add it again.");
+        else ERPShell.toast("Saved "+r.data.asset_code+" · "+o.asset_name,"success");
+        editing=null;docKey="";photos.delete(r.data.id);await load();
+      }catch(e){ERPShell.toast("Save failed: "+(e.code==="23505"?"This Asset ID is already used.":e.message||e),"error")}
+      busy=false;render();
+    }
+    const OUT=["SOLD","SCRAPPED","LOST"];
+    const hasPhoto=r=>!!docSum&&(docSum.get(r.id)||new Set()).has("PHOTO");
+    function renderKpis(){
+      const live=rows.filter(r=>!OUT.includes(r.status)),val=live.reduce((a,r)=>a+(Number(r.amount)||0),0),nop=live.filter(r=>docSum&&!hasPhoto(r));
+      const cards=[["Assets in use",live.length,live],["Value (without GST)",rs(val),live],["Photo missing",docSum?nop.length:"—",nop],["Sold / scrapped / lost",rows.length-live.length,rows.filter(r=>OUT.includes(r.status))]];
+      el("kpis").innerHTML=cards.map(c=>'<div class="fa-kpi"><span>'+esc(c[0])+"</span><b>"+esc(c[1])+"</b></div>").join("");
+      if(window.ERPList)el("kpis").querySelectorAll(".fa-kpi").forEach((c,i)=>ERPList.card(c,()=>({title:cards[i][0],rows:cards[i][2],
+        cols:[{t:"Asset ID",v:"asset_code"},{t:"Asset",v:"asset_name"},{t:"Category",v:"category"},{t:"Bought",v:"purchase_date",date:true},{t:"Amount",v:r=>Number(r.amount)||0,money:true,sum:true,dec:2},{t:"Location",v:"location"}],
+        onRow:r=>{editing=r;docKey="";render();el("formCard").scrollIntoView({behavior:"smooth"})}})));
+    }
+    function renderList(){
+      const q=el("search").value.trim().toLowerCase().split(/\s+/).filter(Boolean),f=el("filter").value;
+      const list=rows.filter(r=>(f==="all"||(f==="use"&&!OUT.includes(r.status))||(f==="out"&&OUT.includes(r.status))||(f==="nophoto"&&!OUT.includes(r.status)&&docSum&&!hasPhoto(r)))&&q.every(w=>JSON.stringify(r).toLowerCase().includes(w)));
+      const st=Object.fromEntries(STATUS);
+      el("list").innerHTML=list.map(r=>{const ph=photos.get(r.id),w=r.warranty_till?Math.round((new Date(r.warranty_till+"T00:00:00")-new Date(today()+"T00:00:00"))/864e5):null;
+        return '<tr class="'+(OUT.includes(r.status)?"off":"")+'"><td><b>'+esc(r.asset_code||"-")+"</b></td><td>"+(ph?'<img class="ed-av" alt="" src="'+esc(ph)+'">':"")+"<b>"+esc(r.asset_name)+"</b>"+(r.serial_no?"<small>S/N "+esc(r.serial_no)+"</small>":"")+"<div>"+ERPDocs.badge("ASSET",docSum&&(docSum.get(r.id)||new Set()))+"</div></td><td>"+esc(r.category||"-")+"</td><td>"+(showDate(r.purchase_date)||"-")+(r.supplier_name||r.bill_no?"<small>"+esc([r.supplier_name,r.bill_no&&"Bill "+r.bill_no].filter(Boolean).join(" · "))+"</small>":"")+'</td><td class="n">'+(r.amount!=null?rs(r.amount):"-")+(r.gst_amount?"<small>GST "+rs(r.gst_amount)+"</small>":"")+"</td><td>"+esc(r.location||"-")+(r.assigned_to?"<small>"+esc(r.assigned_to)+"</small>":"")+"</td><td>"+(w==null?"-":w<0?'<span class="tagx bad">Over '+showDate(r.warranty_till)+"</span>":w<=30?'<span class="tagx warn">'+w+" days left</span>":showDate(r.warranty_till))+"</td><td>"+'<span class="tagx '+(r.status==="IN_USE"?"ok":r.status==="REPAIR"?"warn":"bad")+'">'+esc(st[r.status]||r.status)+"</span>"+(r.status_date?"<small>"+showDate(r.status_date)+"</small>":"")+"</td><td>"+'<button type="button" data-edit="'+r.id+'">'+(can()?"Edit":"View")+"</button></td></tr>"}).join("")||'<tr><td colspan="9" class="erp-empty">'+(missing?"Not set up yet.":"No assets yet. Add one with the form above.")+"</td></tr>";
+      el("listTitle").textContent="Asset List ("+list.length+" / "+rows.length+")";
+    }
+    function render(){fillForm();renderKpis();renderList()}
+    document.addEventListener("click",e=>{const t=e.target;
+      if(t.dataset.edit){editing=rows.find(x=>x.id===t.dataset.edit)||null;docKey="";render();el("formCard").scrollIntoView({behavior:"smooth"})}});
+    el("save").onclick=save;
+    el("clear").onclick=()=>{editing=null;docKey="";render()};
+    el("search").oninput=renderList;el("filter").onchange=renderList;
+    (async()=>{
+      me=await start();if(!me)return;
+      ERPShell.mount({role:me.realRole||me.role,name:me.name,onLogout:async()=>{await client.auth.signOut();location.replace("login.html")},group:"Masters"});
+      await load();
+      el("loading").hidden=true;el("page").hidden=false;
+      render();
+    })();
+  </script>
+</body>
+</html>

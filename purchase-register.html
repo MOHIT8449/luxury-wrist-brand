@@ -9,6 +9,7 @@
   <link rel="stylesheet" href="erp-shell.css">
   <script src="erp-shell.js"></script>
 <script src="erp-list.js"></script>
+<script src="erp-docs.js"></script>
   <style>
     .status{text-align:center;padding:80px 20px;font-size:15px;color:#555}
     .pr-sub{margin:-8px 0 14px;color:var(--erp-muted);font-size:15px}
@@ -81,7 +82,12 @@
     const today=()=>new Date().toLocaleDateString("en-CA",{timeZone:"Asia/Kolkata"});
     const pick=(o,keys)=>{for(const k of keys)if(o&&o[k]!=null&&o[k]!=="")return o[k];return null};
 
-    let me=null,bills=[],items=new Map(),skuName=new Map(),openId="",checks=new Map(),checksMissing=false,verifyId="",busy=false;
+    let me=null,bills=[],items=new Map(),skuName=new Map(),openId="",checks=new Map(),checksMissing=false,verifyId="",busy=false,docSum=null;
+    // Bill copy (PDF / scan / photo) and damage photos of each purchase bill (lwb_documents_setup.sql).
+    const billTag=b=>{if(!docSum)return "";const t=docSum.get(String(b.id))||new Set();return (t.has("BILL")?'<span class="ed-tag ok">📄 Bill copy</span>':'<span class="ed-tag warn">No bill copy</span>')+(t.has("DAMAGE")?'<span class="ed-tag bad">📷 Damage photos</span>':"")};
+    async function openDocs(id){const b=bills.find(x=>x.id===id);if(!b)return;
+      await ERPDocs.open({client,entity:"PURCHASE_BILL",id:b.id,title:"Bill "+b.invoice_no+" · "+b.supplier_name});
+      docSum=await ERPDocs.summary(client,"PURCHASE_BILL")||docSum;render()}
     const ISSUES=[["DAMAGE","Damage"],["LEAKAGE","Leakage"],["SHORTAGE","Shortage"]];
 
     async function start(){
@@ -109,6 +115,7 @@
         }
         const c=await client.from("lwb_purchase_checks").select("*,lwb_purchase_check_items(*)");
         checksMissing=!!c.error;checks=new Map((c.data||[]).map(x=>[x.inward_id,x]));
+        docSum=await ERPDocs.summary(client,"PURCHASE_BILL");
       }catch(e){el("err").hidden=false;el("err").textContent="Could not load purchase bills: "+(e.message||String(e))}
       el("refresh").disabled=false;render();
     }
@@ -130,9 +137,9 @@
       let h='<table class="pr-table"><thead><tr><th>Received</th><th>Invoice No.</th><th>Supplier</th><th>Invoice Date</th><th>Vehicle / LR</th><th>Driver</th><th class="n">Lines</th><th class="n">Total PCS</th><th class="n">Taxable ₹</th><th class="n">Invoice Total ₹</th><th>Vehicle Check</th><th></th></tr></thead><tbody>';
       for(const b of list){
         const ls=lines(b),pcs=ls.reduce((a,i)=>a+pcsOf(i),0);
-        h+='<tr'+(b.id===openId?' class="open"':"")+"><td>"+dmy(b.received_date)+"</td><td><b>"+esc(b.invoice_no)+"</b></td><td style='white-space:normal;min-width:200px'>"+esc(b.supplier_name)+"</td><td>"+dmy(b.invoice_date)+"</td><td>"+esc(b.vehicle_no||"—")+"<small>"+esc(b.lr_no?"LR "+b.lr_no:"")+"</small></td><td>"+esc(b.driver_name||"—")+"<small>"+esc(b.driver_mobile||"")+"</small></td>"+
+        h+='<tr'+(b.id===openId?' class="open"':"")+"><td>"+dmy(b.received_date)+"</td><td><b>"+esc(b.invoice_no)+"</b><div>"+billTag(b)+"</div></td><td style='white-space:normal;min-width:200px'>"+esc(b.supplier_name)+"</td><td>"+dmy(b.invoice_date)+"</td><td>"+esc(b.vehicle_no||"—")+"<small>"+esc(b.lr_no?"LR "+b.lr_no:"")+"</small></td><td>"+esc(b.driver_name||"—")+"<small>"+esc(b.driver_mobile||"")+"</small></td>"+
           '<td class="n">'+fmt(ls.length)+'</td><td class="n">'+fmt(pcs)+'</td><td class="n">'+rs(sum(b,"taxable_amount"))+'</td><td class="n">'+rs(sum(b,"total_amount"))+"</td>"+
-          '<td>'+checkTag(b)+'</td><td><button type="button" data-view="'+b.id+'">'+(b.id===openId?"Hide":"View")+'</button><button type="button" data-verify="'+b.id+'">'+(checks.has(b.id)?"Edit Check":"Verify")+"</button></td></tr>";
+          '<td>'+checkTag(b)+'</td><td><button type="button" data-view="'+b.id+'">'+(b.id===openId?"Hide":"View")+'</button><button type="button" data-verify="'+b.id+'">'+(checks.has(b.id)?"Edit Check":"Verify")+"</button>"+(docSum?'<button type="button" data-docs="'+b.id+'">📎 Bill / Photos</button>':"")+"</td></tr>";
         if(b.id===openId)h+='<tr class="pr-items"><td colspan="12"><table><thead><tr><th>#</th><th>SKU</th><th class="n">Cases</th><th class="n">Loose PCS</th><th class="n">Total PCS</th><th class="n">Taxable ₹</th><th class="n">Total ₹</th></tr></thead><tbody>'+
           ls.map((it,i)=>{const s=skuName.get(String(it.sku_id))||{};return "<tr><td>"+(i+1)+"</td><td>"+esc(pick(it,["sku_name"])||s.sku_name||it.sku_id)+'</td><td class="n">'+fmt(pick(it,["cases","quantity_cases"]))+'</td><td class="n">'+fmt(pick(it,["pcs","loose_pcs"]))+'</td><td class="n">'+fmt(pcsOf(it))+'</td><td class="n">'+rs(it.taxable_amount)+'</td><td class="n">'+rs(it.total_amount)+"</td></tr>"}).join("")+
           "</tbody></table>"+(b.remarks?'<p style="margin:8px 0 0">Remarks: '+esc(b.remarks)+"</p>":"")+"</td></tr>";
@@ -140,6 +147,9 @@
       if(!list.length)h+='<tr><td colspan="12" class="erp-empty">No purchase bills found.</td></tr>';
       const vb=bills.find(x=>x.id===verifyId);
       el("vbox").innerHTML=vb?'<section class="erp-card" style="margin-bottom:14px"><div class="erp-card-head"><h2>Vehicle Check · Invoice '+esc(vb.invoice_no)+" · "+esc(vb.supplier_name)+'</h2><small style="color:var(--erp-muted)">'+esc([vb.vehicle_no,dmy(vb.received_date)].filter(Boolean).join(" · "))+'</small></div><div class="vf">'+verifyForm(vb)+"</div></section>":"";
+      if(vb&&docSum&&!checksMissing){const m=document.createElement("div");m.style.margin="10px 0";m.innerHTML='<div class="ed-title">Damage / leakage / breakage photos</div><div class="vf-docs"></div>';
+        const row=el("vbox").querySelector(".vf .row:last-child");(row||el("vbox").querySelector(".vf")).before(m);
+        ERPDocs.panel({client,mount:m.querySelector(".vf-docs"),entity:"PURCHASE_BILL",id:vb.id,slots:["DAMAGE"],onChange:async()=>{docSum=await ERPDocs.summary(client,"PURCHASE_BILL")||docSum}})}
       el("box").innerHTML=h+'</tbody><tfoot><tr><td colspan="7">Total ('+fmt(list.length)+' bills)</td><td class="n">'+fmt(tot.pcs)+'</td><td class="n">'+rs(tot.tax)+'</td><td class="n">'+rs(tot.gross)+"</td><td colspan=\"2\"></td></tr></tfoot></table>";
     }
     /* ---------- vehicle check (damage / leakage / shortage) ---------- */
@@ -195,6 +205,7 @@
       if(t.id==="refresh")return load();
       if(t.dataset.verify){verifyId=verifyId===t.dataset.verify?"":t.dataset.verify;render();if(verifyId)el("vbox").scrollIntoView({behavior:"smooth",block:"start"});return}
       if(t.dataset.vfclose){verifyId="";return render()}
+      if(t.dataset.docs)return openDocs(t.dataset.docs);
       if(t.dataset.vfok)return saveCheck(t.dataset.vfok,true);
       if(t.dataset.vfsave)return saveCheck(t.dataset.vfsave,false);
       if(t.dataset.view){openId=openId===t.dataset.view?"":t.dataset.view;render()}
