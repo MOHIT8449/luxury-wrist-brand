@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Inventory | Luxury Wrist Brand ERP</title>
-  <script src="erp-date.js"></script>
+  <script src="erp-date.js"></script><script src="erp-recent.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="party-list.js" defer></script>
   <script src="brand-filter.js"></script>
@@ -145,7 +145,7 @@
     async function loadIn(start,end){
       inLines=[];
       try{
-        const h=await client.from("lwb_goods_inward").select("id,supplier_name,invoice_no,invoice_date,received_date")
+        const h=await client.from("lwb_goods_inward").select("*")
           .gte("received_date",start.slice(0,10)).lte("received_date",end.slice(0,10)).order("received_date",{ascending:false}).limit(1000);
         if(h.error)throw h.error;
         const heads=new Map((h.data||[]).map(x=>[x.id,x]));
@@ -155,10 +155,10 @@
           if(r.error)throw r.error;
           for(const it of r.data||[]){
             const head=heads.get(it.inward_id)||{},s=skuInfo(pick(it,["sku_id"]),pick(it,["sku_name"]));
-            inLines.push({date:head.received_date,ref:head.invoice_no,party:head.supplier_name,sku:s,pcs:num(pick(it,["quantity_pcs","total_pcs","qty_pcs"])),taxable:num(it.taxable_amount)});
+            inLines.push({at:Math.max(ERPRecent.time(head),ERPRecent.time(it)),date:head.received_date,ref:head.invoice_no,party:head.supplier_name,sku:s,pcs:num(pick(it,["quantity_pcs","total_pcs","qty_pcs"])),taxable:num(it.taxable_amount)});
           }
         }
-        inLines.sort((a,b)=>String(b.date).localeCompare(String(a.date)));
+        inLines.sort((a,b)=>(b.at-a.at)||String(b.date).localeCompare(String(a.date))); // latest added / edited bill first
       }catch(e){errors.in=e.message||String(e)}
     }
 
