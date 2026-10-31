@@ -7,6 +7,7 @@
 <script src="erp-date.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="cashbook-erp.js"></script>
+<script src="erp-info.js"></script>
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@500;600&display=swap">
@@ -998,7 +999,6 @@ JAY MAMA DEV TREDARS (NILGIRI LIMBAYAT)
         <div class="modal-body">
           <div class="ho-sum">
             <div><span>Total balance (cash as per book)</span><b class="num big">₹${inr.format(expected)}</b></div>
-            <div class="hint" style="display:block">Only Cash entries. UPI / bank entries are not counted.</div>
           </div>
           <div class="field"><label>Where the cash goes</label>
             <div class="notes-box"><table class="notes-tbl split-tbl"><thead><tr><th>#</th><th>Name</th><th class="r">Amount (₹)</th><th title="Cash stays in this book">Stays</th><th></th></tr></thead><tbody id="hoRows"></tbody>
@@ -1006,7 +1006,7 @@ JAY MAMA DEV TREDARS (NILGIRI LIMBAYAT)
               <div><button type="button" class="btn sm" id="hoAdd">+ Add line</button></div>
               <datalist id="hoNameList">${names.map(n => `<option value="${esc(n)}">`).join("")}</datalist>
             </div>
-            <small class="hint">Cash given to people comes back next day, so the net balance does not go down. Only the diff changes it, after admin approval. Tick “Stays” for cash that stays here, like the office drawer.</small></div>
+            <button type="button" class="erp-i" aria-label="Info" title="Info" data-tip="Cash given to people comes back next day, so the net balance does not go down. Only the diff changes it, after admin approval. Tick “Stays” for cash that stays here, like the office drawer.">i</button></div>
           <div class="ho-sum" id="hoDiff"></div>
           <div class="field"><button type="button" class="linkbtn" id="hoCountBtn">Count notes (optional)</button><div class="notes-box" id="hoNotes" hidden>${notesTable({})}</div><div class="hint" id="hoNotesChk"></div></div>
           <div class="field"><label for="hoRemark">Remark</label><input type="text" id="hoRemark" maxlength="200" placeholder="e.g. Day end handover"></div>
@@ -1026,7 +1026,7 @@ JAY MAMA DEV TREDARS (NILGIRI LIMBAYAT)
       $("#hoDiff").innerHTML = `<div><span>Total balance</span><b class="num">₹${inr.format(expected)}</b></div>
         <div><span>Total of lines</span><b class="num">₹${inr.format(tot)}</b></div>
         <div><span>Diff</span><b class="num big ${diff < 0 ? "diff-short" : diff > 0 ? "diff-extra" : "diff-ok"}">${diff < 0 ? "Short ₹" + inr.format(-diff) : diff > 0 ? "Extra ₹" + inr.format(diff) : "₹0.00 · matches"}</b></div>
-        ${diff ? `<div class="hint" style="display:block">The diff goes to admin for verify. After approval it is saved in the Cash Diff ledger.</div>` : ""}`;
+        `;
       $("#hoNotesChk").innerHTML = cnt.total ? (Math.abs(cnt.total - tot) < 0.005 ? `<span class="diff-ok">Notes ₹${inr.format(cnt.total)} match the lines.</span>` : `<span class="diff-short">Notes counted ₹${inr.format(cnt.total)}, lines total ₹${inr.format(tot)}.</span>`) : "";
     };
     const bindRows = () => {
@@ -1156,7 +1156,7 @@ JAY MAMA DEV TREDARS (NILGIRI LIMBAYAT)
         if (partyById(p)) pickBill(p, r.invoice_no);
       });
     };
-    box.innerHTML = `<p class="hint" style="margin:0">Tally bills Accounts entered after loading. Due = bill − credit notes + debit notes − what the driver reported. Check the amount before you save a Cash In.</p>
+    box.innerHTML = `<p class="hint" style="margin:0"><button type="button" class="erp-i" aria-label="Info" title="Info" data-tip="Tally bills Accounts entered after loading. Due = bill − credit notes + debit notes − what the driver reported. Check the amount before you save a Cash In.">i</button></p>
       <input id="idQ" type="search" placeholder="Search party, bill or PO" autocomplete="off" style="width:100%">
       <div id="idList" style="max-height:55vh;overflow:auto;border:1px solid var(--line);border-radius:10px"></div>`;
     $("#idQ").oninput = draw; draw();
@@ -1168,7 +1168,7 @@ JAY MAMA DEV TREDARS (NILGIRI LIMBAYAT)
     if (!l) { box.innerHTML = `<p class="err" style="margin:0">Could not load driver cash. Run lwb_cashbook_driver_cash_setup.sql in Supabase, or check the internet.</p>`; return; }
     if (!l.length) { box.innerHTML = `<div class="empty"><b>Nothing pending</b>Every payment drivers reported in the last 15 days is already in the Cashbook.</div>`; return; }
     const tot = r2(l.reduce((a, r) => a + Number(r.amount || 0), 0));
-    box.innerHTML = `<p class="hint" style="margin:0">Reported by drivers in the Driver Portal, not yet entered here. Add opens Cash In already filled in; check it and Save.</p>
+    box.innerHTML = `<p class="hint" style="margin:0"><button type="button" class="erp-i" aria-label="Info" title="Info" data-tip="Reported by drivers in the Driver Portal, not yet entered here. Add opens Cash In already filled in; check it and Save.">i</button></p>
       <div class="ho-sum"><div><span>${l.length} payments</span><b class="num big">₹${inr.format(tot)}</b></div></div>
       <div style="max-height:55vh;overflow:auto;border:1px solid var(--line);border-radius:10px">${l.map((r, i) => `<div style="display:grid;grid-template-columns:1fr auto;gap:4px 10px;padding:10px 12px;border-bottom:1px solid var(--line)">
         <div style="min-width:0;overflow-wrap:anywhere"><b>${esc(isFull() ? r.party : (partyById(tallyMatch(r.party)) || {}).code || r.party)}</b><div class="hint">${fmtDate(r.report_date)} ${fmtTime(r.report_time)} · ${esc(r.driver)} · PO ${esc(r.order_no)}${dueByPo(r.order_no) ? ` · Tally bill ${esc(dueByPo(r.order_no).invoice_no)} · due ₹${inr.format(Number(dueByPo(r.order_no).due))}` : ""}</div></div>
@@ -1226,7 +1226,7 @@ JAY MAMA DEV TREDARS (NILGIRI LIMBAYAT)
       <div class="book-list">${rows}</div>` :
       `<div class="book-list empty"><b>No books yet</b>Click “Add New Book” to create your first cashbook.</div>`}
       ${isAdmin() ? verifyDashboard() + outstandingDashboard() : ""}
-      <p class="note">Your entries are saved in the ERP database, locked to the logins Admin allows. They show on every phone and computer of those logins.${isFull() ? ` Last backup: ${state.lastBackup ? fmtDate(ymd(new Date(state.lastBackup))) + " " + fmtTime(pad(new Date(state.lastBackup).getHours()) + ":" + pad(new Date(state.lastBackup).getMinutes())) : "never"}.${!state.lastBackup || ymd(new Date(state.lastBackup)) !== today() ? ' <b style="color:var(--out)">Take today’s backup before closing.</b>' : ""}` : ""}</p>
+      <p class="note">${isFull() ? `Last backup: ${state.lastBackup ? fmtDate(ymd(new Date(state.lastBackup))) + " " + fmtTime(pad(new Date(state.lastBackup).getHours()) + ":" + pad(new Date(state.lastBackup).getMinutes())) : "never"}.${!state.lastBackup || ymd(new Date(state.lastBackup)) !== today() ? ' <b style="color:var(--out)">Take today’s backup before closing.</b>' : ""}` : ""}</p>
       ${state.books.length && isAdmin() ? `<div id="wipeZone"><button class="btn danger sm" id="wipe" type="button">Delete all data</button></div>` : ""}`;
     const w = $("#wipe");
     if (w) w.onclick = () => {
@@ -1837,7 +1837,7 @@ JAY MAMA DEV TREDARS (NILGIRI LIMBAYAT)
         <thead><tr><th>Date</th><th>Details</th><th class="r" style="color:var(--out)">Debit (bill)</th><th class="r" style="color:var(--in)">Credit (received)</th><th class="r">Balance</th></tr></thead>
         <tbody>${shown.map(l => `<tr><td class="when">${fmtDate(l.date)}${l.time ? `<small>${fmtTime(l.time)}</small>` : ""}</td><td>${l.html}</td><td class="r num amt-out">${l.d ? inr.format(l.d) : ""}</td><td class="r num amt-in">${l.c ? inr.format(l.c) : ""}</td><td class="r num ${l.run > 0 ? "amt-out" : l.run < 0 ? "amt-in" : ""}">${bal(l.run)}</td></tr>`).join("")}
         <tr class="total-row"><td colspan="2">${filtered ? "Total of shown lines · closing balance" : "Total"}</td><td class="r num amt-out">${inr.format(dr)}</td><td class="r num amt-in">${inr.format(cr)}</td><td class="r num ${run > 0 ? "due" : ""}" style="${run < 0 ? "color:var(--in)" : ""}">${bal(run)}</td></tr></tbody></table></div>
-        <div class="count-line">Dr = party has to pay you. Cr = party has paid extra (advance). Balance column always counts the whole ledger.</div>`
+        <div class="count-line"><button type="button" class="erp-i" aria-label="Info" title="Info" data-tip="Dr = party has to pay you. Cr = party has paid extra (advance). Balance column always counts the whole ledger.">i</button></div>`
         : lines.length ? `<div class="empty"><b>No lines match these filters</b>Change Debit / Credit, Details or the search.</div>`
         : `<div class="empty"><b>No entries for this party yet</b>Add a Cash In with this party to start the ledger.</div>`);
       }
@@ -2029,7 +2029,6 @@ JAY MAMA DEV TREDARS (NILGIRI LIMBAYAT)
       </div>
       <div class="field search"><label for="pQ">Search</label><input type="search" id="pQ" placeholder="${kind === "party" ? "Search name or short code" : "Search"}" value="${esc(ui.pq || "")}"></div>
       <div class="book-list">${rows}</div>
-      ${isAdmin() ? "" : `<p class="note">Anyone can add. Only admin can edit, delete or verify.</p>`}
       ${historyBox(kind, side)}`;
     $("#back").onclick = () => { ui.view = null; render(); };
     document.querySelectorAll("[data-lside]").forEach(b => b.onclick = () => { ui.lside = b.dataset.lside; ui.pq = ""; render(); });
@@ -2099,7 +2098,7 @@ JAY MAMA DEV TREDARS (NILGIRI LIMBAYAT)
         <div class="modal-body">
           <div class="field"><label for="paName">Party name with area</label><input type="text" id="paName" maxlength="80" placeholder="e.g. SHREE JAGDISH TRADERS (BARDOLI)" value="${esc(party ? party.name : "")}"></div>
           ${party ? `<div class="row2"><div class="field"><label for="paCode">Short code</label><input type="text" id="paCode" class="code" maxlength="16" value="${esc(party.code)}"></div>
-            <div class="field"><label for="paSide">Show in</label><select id="paSide"><option value="in"${side === "in" ? " selected" : ""}>Cash In</option><option value="out"${side === "out" ? " selected" : ""}>Cash Out</option></select></div></div>` : `<p class="hint" style="margin:0">The short code is made from the first letters, for example SJT-B.</p>`}
+            <div class="field"><label for="paSide">Show in</label><select id="paSide"><option value="in"${side === "in" ? " selected" : ""}>Cash In</option><option value="out"${side === "out" ? " selected" : ""}>Cash Out</option></select></div></div>` : ""}
           <div class="err" id="paErr"></div>
           ${party ? `<div id="paDelZone"><button class="btn danger sm" type="button" id="paDel">Delete party</button></div>` : ""}
         </div>
@@ -2260,7 +2259,7 @@ JAY MAMA DEV TREDARS (NILGIRI LIMBAYAT)
       <div class="modal-head"><h2>Backup</h2>${closeX}</div>
       <form id="bkf">
         <div class="modal-body">
-          <p class="hint" style="margin:0">Saves all books, entries, parties and passwords in one locked file. Keep it in your hidden drive. It opens only with the cashbook password.</p>
+          <p class="hint" style="margin:0"><button type="button" class="erp-i" aria-label="Info" title="Info" data-tip="Saves all books, entries, parties and passwords in one locked file. Keep it in your hidden drive. It opens only with the cashbook password.">i</button></p>
           <div class="field"><label for="bkPw">Password</label><input type="password" id="bkPw" autocomplete="current-password"></div>
           <div class="err" id="bkErr"></div>
           <button class="btn primary" type="submit">Save backup file</button>
@@ -2270,7 +2269,7 @@ JAY MAMA DEV TREDARS (NILGIRI LIMBAYAT)
       <form id="rsf"${isAdmin() ? "" : " hidden"}>
         <div class="modal-body" style="border-top:1px solid var(--line)">
           <h2 style="margin:0;font-size:16px">Restore from backup</h2>
-          <p class="hint" style="margin:0">Replaces everything in this app with the backup. Use the cashbook password that was set when the backup was made.</p>
+          <p class="hint" style="margin:0"><button type="button" class="erp-i" aria-label="Info" title="Info" data-tip="Replaces everything in this app with the backup. Use the cashbook password that was set when the backup was made.">i</button></p>
           <div class="field"><label for="rsFile">Backup file</label><input type="file" id="rsFile" accept=".json,.cbk"></div>
           <div class="field"><label for="rsPw">Password of that backup</label><input type="password" id="rsPw" autocomplete="off"></div>
           <div class="err" id="rsErr"></div>
@@ -2279,7 +2278,7 @@ JAY MAMA DEV TREDARS (NILGIRI LIMBAYAT)
       </form>
       ${isAdmin() && CB.erpAdmin ? `<div class="modal-body" style="border-top:1px solid var(--line)">
           <h2 style="margin:0;font-size:16px">Earlier copies (kept by the ERP)</h2>
-          <p class="hint" style="margin:0">The ERP keeps a copy every 15 minutes and always before the data is cleared. Restore puts that copy back for everyone.</p>
+          <p class="hint" style="margin:0"><button type="button" class="erp-i" aria-label="Info" title="Info" data-tip="The ERP keeps a copy every 15 minutes and always before the data is cleared. Restore puts that copy back for everyone.">i</button></p>
           <div id="cpList" class="hint">Loading…</div>
         </div>` : ""}`);
     $("#bkPw").focus();
@@ -3111,7 +3110,7 @@ JAY MAMA DEV TREDARS (NILGIRI LIMBAYAT)
     const cell = o => `<div class="party-cell">${esc(partyLabel(o.party) || "?")}</div><small>${fmtDate(o.date)}</small>`;
     const diff = (a, b, k) => a[k] !== b[k] ? " tl-chg" : "";
     return `<section class="dash tl-box" id="tlUpd"><div class="dash-head"><span>Tally changes to verify · ${list.length}</span><span class="spacer"></span><button class="btn sm vbtn" type="button" id="updAll">Verify all</button></div>
-      <div class="tl-in"><p class="hint" style="margin:0">These bills were changed in the latest Tally file. Check old and new, then Verify to update the bill, or Reject to keep it as it is.</p></div>
+      <div class="tl-in"><p class="hint" style="margin:0"><button type="button" class="erp-i" aria-label="Info" title="Info" data-tip="These bills were changed in the latest Tally file. Check old and new, then Verify to update the bill, or Reject to keep it as it is.">i</button></p></div>
       <div class="rscroll"><table><thead><tr><th>Inv</th><th>Old</th><th class="r">Old amount</th><th>New</th><th class="r">New amount</th><th>File</th><th></th></tr></thead><tbody>
       ${list.map(u => { const bl = t.bills.find(b => b.id === u.billId); return `<tr><td class="num">Inv ${esc(bl.vno)}</td><td>${cell(u.old)}</td><td class="r num">${inr.format(u.old.amt)}</td><td class="${diff(u.old, u.new, "party") || diff(u.old, u.new, "date")}">${cell(u.new)}</td><td class="r num${diff(u.old, u.new, "amt")}">${inr.format(u.new.amt)}</td><td><small>${esc(u.file)}<br>${fmtTs(u.ts)}</small></td>
         <td class="r" style="white-space:nowrap"><button class="btn sm vbtn" type="button" data-updok="${u.id}">Verify</button> <button class="btn sm" type="button" data-updno="${u.id}">Reject</button></td></tr>`; }).join("")}
@@ -3167,7 +3166,7 @@ JAY MAMA DEV TREDARS (NILGIRI LIMBAYAT)
     const used = state.parties.slice().sort((a, b) => a.name.localeCompare(b.name));
     $("#app").innerHTML = `
       <div class="head-row">
-        <div><h1>History${p ? " · " + esc(p.name) : ""}</h1><p class="sub">Every entry added, changed, verified or deleted, with who did it and when. Kept by the ERP database; nobody can change or delete it.</p></div>
+        <div><h1>History${p ? " · " + esc(p.name) : ""}</h1></div>
         <div class="spacer"></div>
         <div class="actions"><button class="btn" id="hBack" type="button">Back</button></div>
       </div>
@@ -3262,7 +3261,7 @@ JAY MAMA DEV TREDARS (NILGIRI LIMBAYAT)
           <div class="tl-in"><p class="hint" style="margin:0">Check the columns. They were picked from the file headings.</p>
           <div class="tl-cols">${colSel(tl, "date", "Date")}${colSel(tl, "party", "Party (Particulars)")}${colSel(tl, "vno", "Voucher / invoice no.", true)}${colSel(tl, "amt", "Bill amount (Gross Total)")}${colSel(tl, "vtype", "Voucher type", true)}</div></div></section>
           <section class="dash od tl-box"><div class="dash-head"><span>Party mapping · ${plan.names.length} parties</span><span class="spacer"></span><span id="tlNeed">${needText(need)}</span></div>
-          <div class="tl-in"><p class="hint" style="margin:0">Where the Tally name is different, choose the Cashbook party once. It is remembered for every next import.</p></div>
+          <div class="tl-in"><p class="hint" style="margin:0"><button type="button" class="erp-i" aria-label="Info" title="Info" data-tip="Where the Tally name is different, choose the Cashbook party once. It is remembered for every next import.">i</button></p></div>
           ${mapTable(plan.names, tl.pick || {}, { head: `<th class="r">Bills</th><th class="r">Amount</th>`, cells: n => `<td class="r num">${n.count}</td><td class="r num">${inr.format(n.total)}</td>` })}</section>
           <div class="tl-sum" id="tlSum">${salesSum(plan)}</div>`;
       }
@@ -3276,7 +3275,7 @@ JAY MAMA DEV TREDARS (NILGIRI LIMBAYAT)
         const names = balPlan(tl), sum = r2(names.reduce((a, x) => a + x.amt, 0));
         body += `<section class="dash od tl-box"><div class="dash-head"><span>${esc(tl.file)} · ${names.length} parties</span><span class="spacer"></span><span class="num">${drcr(sum)}</span></div>
           <div class="tl-in"><div class="tl-cols">${colSel(tl, "party", "Party (Particulars)")}${colSel(tl, "amt", "Closing balance (with Dr/Cr)", true)}${colSel(tl, "dr", "Debit column", true)}${colSel(tl, "cr", "Credit column", true)}</div>
-          <p class="hint" style="margin:0">Use one Closing balance column, or Debit + Credit columns. Choose the Cashbook party where names differ.</p></div>
+          <p class="hint" style="margin:0"><button type="button" class="erp-i" aria-label="Info" title="Info" data-tip="Use one Closing balance column, or Debit + Credit columns. Choose the Cashbook party where names differ.">i</button></p></div>
           ${mapTable(names, tl.pick || {}, { head: `<th class="r">Closing balance</th>`, cells: n => `<td class="r num">${drcr(n.amt)}</td>` })}</section>
           <div class="tl-sum"><div>Each chosen party’s pending amount will start from this balance on ${fmtDate(asOn)}. Old Tally bills up to that date are not counted again. A party’s old balance is replaced.</div>
             <p class="err" id="tlErr"></p>
@@ -3300,7 +3299,7 @@ JAY MAMA DEV TREDARS (NILGIRI LIMBAYAT)
     }
     $("#app").innerHTML = `
       <div class="head-row"><button class="btn ghost sm" id="back" type="button">← All books</button></div>
-      <div class="head-row"><div><h1>Tally import</h1><p class="sub">Sales bills from Tally go into Outstanding and Pending bills. Cash In and Net Balance do not change. Payments are still taken in the cashbook.</p></div></div>
+      <div class="head-row"><div><h1>Tally import</h1><p class="sub"><button type="button" class="erp-i" aria-label="Info" title="Info" data-tip="Sales bills from Tally go into Outstanding and Pending bills. Cash In and Net Balance do not change. Payments are still taken in the cashbook.">i</button></p></div></div>
       ${updBox()}
       <div class="tabs" role="group" aria-label="Tally import">
         <button type="button" data-ttab="sales" aria-pressed="${tab === "sales"}">Sales Register</button>

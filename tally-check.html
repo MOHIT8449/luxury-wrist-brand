@@ -57,8 +57,7 @@
 <body>
   <div id="loading" class="status">Checking account access...</div>
   <main id="page" class="erp-main" hidden>
-    <div class="erp-pagehead"><h1>Tally Bill Check</h1></div>
-    <p class="tc-sub">Choose the Tally Sales Register file(s). PO sales and Tally sales are compared in total and party wise, and every dispatched PO is checked: is its bill made in Tally, and is the amount the same? Below, the Tally Stock Summary can be compared with the ERP stock. The Tally file is only read here; only the problems found are kept as open queries until they are cleared.</p>
+    <div class="erp-pagehead"><h1>Tally Bill Check<button type="button" class="erp-i" aria-label="Info" title="Info" data-tip="Choose the Tally Sales Register file(s). PO sales and Tally sales are compared in total and party wise, and every dispatched PO is checked: is its bill made in Tally, and is the amount the same? Below, the Tally Stock Summary can be compared with the ERP stock. The Tally file is only read here; only the problems found are kept as open queries until they are cleared.">i</button></h1></div>
     <div class="tc-bar">
       <label>Tally Sales Register (Excel / CSV)<input type="file" id="file" accept=".xls,.xlsx,.csv" multiple></label>
       <label>Dispatched from<input type="date" id="from"></label>
@@ -74,7 +73,7 @@
         <label style="margin-left:auto;font-size:14px;display:flex;gap:6px;align-items:center"><input type="checkbox" id="stAll"> Show all items</label></div>
       <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center;padding:0 0 12px">
         <label class="tc-btn" style="display:inline-flex;align-items:center;cursor:pointer">⬆ Choose Tally Stock Summary<input type="file" id="stFile" accept=".xls,.xlsx,.csv" hidden></label>
-        <small style="color:var(--erp-muted);flex:1;min-width:220px" id="stNote">Export the Stock Summary from Tally as Excel. Each item's closing quantity is compared with the ERP live stock.</small></div>
+        <small style="color:var(--erp-muted);flex:1;min-width:220px" id="stNote"></small></div>
       <div id="stOut"></div>
     </section>
     <section class="erp-card" id="qCard" hidden style="margin-top:14px">
@@ -93,6 +92,7 @@
     const client=supabase.createClient("https://txkbhadzdbxpieunfvox.supabase.co","sb_publishable_W4I3Q5ODf0g17sq5uDml2Q_sLolXYEk");
     const el=id=>document.getElementById(id);
     const esc=v=>String(v==null?"":v).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+    const tipI=t=>'<button type="button" class="erp-i" aria-label="Info" title="Info" data-tip="'+esc(t)+'">i</button>';
     const rs=v=>"₹"+Number(v||0).toLocaleString("en-IN",{maximumFractionDigits:2});
     const pad=n=>String(n).padStart(2,"0");
     const ymd=d=>d.getFullYear()+"-"+pad(d.getMonth()+1)+"-"+pad(d.getDate());
@@ -265,8 +265,8 @@
             "<td class='n'>"+(r.ts.length?rs(r.ta):"—")+"</td>"+
             "<td class='n'>"+(r.os.length&&r.ts.length&&r.kind==="diff"?"<b>"+rs(r.diff)+"</b>":"")+"</td></tr>";
         }).join(""):'<tr><td colspan="8" class="erp-empty">Nothing here.</td></tr>')+"</tbody></table></div></section>";
-      h+='<p class="tc-note">First the Tally bill no. that Accounts entered after loading is looked up in the register (its amount must equal the amount Accounts entered). '+
-        '"Bill no. entered, not in Sales Register" = Accounts gave a bill no. but it is not in this file. Then, for the rest: Matched = same party, bill dated the dispatch day or the next day, and Tally amount = ERP amount (or ERP amount + GST 5 / 12 / 18 / 28 / 40%). When a party has more than one PO or bill on a day (e.g. one bill per brand), the day totals are compared. ERP amount = internal ERP bill, else loaded qty × PO rate.</p>';
+      h+='<p class="tc-note">'+tipI('First the Tally bill no. that Accounts entered after loading is looked up in the register (its amount must equal the amount Accounts entered). '+
+        '"Bill no. entered, not in Sales Register" = Accounts gave a bill no. but it is not in this file. Then, for the rest: Matched = same party, bill dated the dispatch day or the next day, and Tally amount = ERP amount (or ERP amount + GST 5 / 12 / 18 / 28 / 40%). When a party has more than one PO or bill on a day (e.g. one bill per brand), the day totals are compared. ERP amount = internal ERP bill, else loaded qty × PO rate.')+'</p>';
       el("out").innerHTML=h;
       el("out").querySelectorAll("[data-show]").forEach(b=>b.onclick=()=>{show=b.dataset.show;render()});
       el("excel").disabled=!result.length;
@@ -288,7 +288,7 @@
           return "<tr><td><b>"+esc(x.party)+"</b>"+(t.length?"<small>Tally: "+esc(t.join(", "))+"</small>":"")+"</td><td class='n'>"+x.pos+"</td><td class='n'>"+rs(x.po)+"</td><td class='n'>"+x.bl+"</td><td class='n'>"+rs(x.tl)+"</td>"+
             "<td class='n'>"+rs(x.diff)+"</td><td class='n'>"+(x.gst?rs(r2(x.gst)):"")+"</td><td class='n'>"+(Math.abs(x.gap)>1?"<b class='gap'>"+rs(x.gap)+"</b>":"<span class='tc-tag t-ok'>OK</span>")+"</td></tr>"}).join("")
         :'<tr><td colspan="8" class="erp-empty">Every party: PO sales = Tally sales.</td></tr>')+'</tbody></table></div></section>'+
-        '<p class="tc-note">Not explained = Tally sales − PO sales − GST on bills that matched. Open the party in "Dispatched POs" to see which bill or PO makes the difference.</p>';
+        '<p class="tc-note">'+tipI('Not explained = Tally sales − PO sales − GST on bills that matched. Open the party in "Dispatched POs" to see which bill or PO makes the difference.')+'</p>';
     }
     function renderLinks(){
       const names=new Map();
@@ -512,7 +512,7 @@
           "<td class='n'>"+(r.t?r.t.qty+(r.t.unit?" "+esc(r.t.unit):""):"—")+"</td><td class='n'>"+(r.pcs!=null?r.pcs:"—")+"</td><td class='n'>"+(r.cases!=null?r.cases:"—")+"</td>"+
           "<td class='n'>"+(r.kind==="diff"?"<b class='gap'>"+(r.diff>0?"+":"")+r.diff+" "+(r.inCases?"cases":"pcs")+"</b>":"")+"</td></tr>").join("")
         :'<tr><td colspan="6" class="erp-empty">Every item: Tally stock = ERP stock.</td></tr>')+'</tbody></table></div>'+
-        '<p class="tc-note">Items are matched by name (Tally stock item = ERP SKU name). Tally quantity in box / case / ctn is compared with ERP cases, otherwise with ERP pieces. ERP stock = saleable stock now, so export the Tally Stock Summary as on today.</p>';
+        '<p class="tc-note">'+tipI('Items are matched by name (Tally stock item = ERP SKU name). Tally quantity in box / case / ctn is compared with ERP cases, otherwise with ERP pieces. ERP stock = saleable stock now, so export the Tally Stock Summary as on today.')+'</p>';
     }
     el("stFile").onchange=runStock;
     el("stAll").onchange=()=>{stAll=el("stAll").checked;renderStock()};
