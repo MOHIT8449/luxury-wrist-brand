@@ -8,6 +8,7 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <link rel="stylesheet" href="erp-shell.css">
   <script src="erp-shell.js"></script>
+  <script src="erp-docs.js"></script>
   <style>
     .status{text-align:center;padding:80px 20px;font-size:15px;color:#555}
     .roles-small{font-size:12px;color:var(--erp-muted);line-height:1.5;margin:4px 0 0}
@@ -62,6 +63,7 @@
           <div><label for="nuActive">Status</label><select id="nuActive"><option value="true">Active</option><option value="false">Inactive</option></select></div>
           <div><button type="submit" class="nu-btn" id="nuSave">Create Login</button></div>
         </form>
+        <div id="nuDocsBox" style="margin-top:14px" hidden><div class="ed-title">Staff photo (compulsory) and Aadhaar</div><div id="nuDocs"></div></div>
         <div class="nu-done" id="nuDone" hidden><pre id="nuDoneText"></pre><button type="button" class="nu-btn ghost" id="nuCopy">Copy login details</button></div>
       </div>
     </section>
@@ -112,7 +114,13 @@
     const setupHint=e=>/lwb_admin_set_page_access|lwb_user_page_access/.test(e.message||"")?"Run lwb_user_page_access_setup.sql in Supabase first.":/lwb_admin_users|lwb_admin_create_user|lwb_admin_set_login|function/.test(e.message||"")?"Run lwb_user_login_setup.sql in Supabase first.":e.message;
     let pageAccess={},pageExtra={},extraReady=false;
     const PROFIT_KEY="dashboard.html#profit",PROFIT_ROLES=["admin","manager"];
-    let roleAdminUserId=null,roleAdminReady=false;
+    let roleAdminUserId=null,roleAdminReady=false,nuDocs=null,userDocs=null,userPhotos=new Map();
+    // New login: photo is compulsory (lwb_documents_setup.sql). Files wait until the login is created.
+    async function mountNewDocs(){
+      if(!userDocs){el("nuDocsBox").hidden=true;nuDocs=null;return}
+      el("nuDocsBox").hidden=false;
+      nuDocs=ERPDocs.panel({client,mount:el("nuDocs"),entity:"USER",id:null,slots:["PHOTO","AADHAAR"]});
+    }
     function roleMessage(value,isError=false){const m=el("roleManagerMessage");m.textContent=value;m.style.color=isError?"#b12b2b":"#315a83"}
     function newMessage(value,isError=false){const m=el("newUserMessage");m.hidden=!value;m.textContent=value;m.style.color=isError?"#b12b2b":"#315a83"}
     function select(options,initial){const s=document.createElement("select");for(const [v,t] of options)s.add(new Option(t,v));s.value=initial;return s}
@@ -129,6 +137,10 @@
         const {data,error}=await client.rpc("lwb_admin_users");
         if(error)throw error;
         const users=ERPRecent.sort(await ERPRecent.attach(client,"user_profiles",data||[],"user_id","id")); // latest added / edited user first
+        userDocs=await ERPDocs.summary(client,"USER");
+        if(userDocs){const ids=users.filter(u=>(userDocs.get(u.user_id)||new Set()).has("PHOTO")&&!userPhotos.has(u.user_id)).map(u=>u.user_id);
+          if(ids.length){const got=await ERPDocs.avatars(client,"USER",ids);for(const id of ids)userPhotos.set(id,got.get(id)||"")}}
+        if(!nuDocs)mountNewDocs();
         if(!users.length){cell(body.insertRow(),"No users yet.").colSpan=8;return}
         let pa=await client.from("lwb_user_page_access").select("user_id,hidden,extra");
         extraReady=!pa.error;
@@ -142,7 +154,13 @@
           login.textContent=u.mobile||u.email||"—";
           const sub=document.createElement("small");
           sub.textContent=[u.mobile&&u.email?u.email:"",otp.error?"":otpSet.has(u.user_id)?"OTP set":"OTP not set",u.last_sign_in_at?"Last sign-in "+LWBDate.d(u.last_sign_in_at):"Never signed in"].filter(Boolean).join(" · ");
-          login.append(sub);cell(row,login);
+          login.append(sub);
+          if(userDocs){
+            const ph=userPhotos.get(u.user_id);
+            if(ph){const im=document.createElement("img");im.className="ed-av";im.alt="";im.src=ph;login.prepend(im)}
+            const tg=document.createElement("div");tg.innerHTML=ERPDocs.badge("USER",userDocs.get(u.user_id)||new Set(),["PHOTO"]);login.append(tg);
+          }
+          cell(row,login);
           const name=input(u.full_name||String(u.email||"").split("@")[0],{maxLength:150});cell(row,name);
           const role=select([["","Select Role"],...ROLES],String(u.erp_role||""));cell(row,role);
           const mob=input(u.mobile,{type:"tel",inputMode:"numeric",maxLength:14,placeholder:"10 digits"});cell(row,mob);
@@ -158,6 +176,9 @@
           count();role.addEventListener("change",count);
           pages.onclick=()=>togglePages(row,u,role,count);
           const acts=document.createElement("div");acts.className="role-actions";acts.append(save,pages);
+          if(userDocs){const dc=document.createElement("button");dc.type="button";dc.className="pg-btn";dc.textContent="📷 Photo & Docs";
+            dc.onclick=async()=>{await ERPDocs.open({client,entity:"USER",id:u.user_id,title:"Photo & documents · "+(u.full_name||u.mobile||u.email||""),info:true});userPhotos.delete(u.user_id);loadRoleManager()};
+            acts.append(dc)}
           if(!otp.error&&otpSet.has(u.user_id)){
             const reset=document.createElement("button");reset.type="button";reset.className="pg-btn";reset.textContent="Reset OTP";
             reset.onclick=()=>resetOtp(u,reset);acts.append(reset);
@@ -293,14 +314,16 @@
       if(pass.length<6){newMessage("Password must be at least 6 characters.",true);return}
       if(!role){newMessage("Select a role.",true);return}
       if(role==="driver"&&!mob){newMessage("A driver needs a mobile number.",true);return}
+      if(nuDocs&&nuDocs.missing().length){newMessage("Add the staff photo first (📷 Camera or 🖼 Gallery below). A photo is compulsory for every staff login.",true);return}
       el("nuSave").disabled=true;newMessage("Creating login...");
       try{
-        const {error}=await client.rpc("lwb_admin_create_user",{p_full_name:name,p_mobile:mob||null,p_email:email||null,p_password:pass,p_role:role,p_active:el("nuActive").value==="true"});
+        const {data:newId,error}=await client.rpc("lwb_admin_create_user",{p_full_name:name,p_mobile:mob||null,p_email:email||null,p_password:pass,p_role:role,p_active:el("nuActive").value==="true"});
         if(error)throw Error(setupHint(error));
-        newMessage("");
+        const docErr=nuDocs&&newId?await nuDocs.flush(newId):"";
+        newMessage(docErr?"Login created, but the photo / document was NOT saved: "+docErr+" Use 📷 Photo & Docs on the user's row.":"",!!docErr);
         el("nuDoneText").textContent="Login created for "+name+" ("+(ROLES.find(r=>r[0]===role)||["",role])[1]+")\nWebsite: "+location.origin+"/login.html\nLogin: "+[mob,email].filter(Boolean).join(" or ")+"\nPassword: "+pass;
         el("nuDone").hidden=false;
-        el("newUserForm").reset();el("nuRole").value="";
+        el("newUserForm").reset();el("nuRole").value="";mountNewDocs();
         await loadRoleManager();
       }catch(err){newMessage("Could not create login: "+err.message,true)}
       finally{el("nuSave").disabled=false}
