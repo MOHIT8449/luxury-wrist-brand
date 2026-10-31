@@ -86,7 +86,7 @@ html,body{max-width:100%;overflow-x:hidden}main,.panel,.form-grid,.field{min-wid
 #dmgNote{width:100%;height:36px;border:1px solid #cbd5e1;border-radius:6px;padding:0 9px;font:inherit;font-size:14px}
 @media(max-width:700px){.dmg-wrap-scroll{overflow:auto}.dmg-head select{min-width:0;width:100%}}
 .gi-mrp{display:grid;gap:4px}.gi-mrp[hidden],.gi-table input[hidden]{display:none}.gi-mrp label{display:flex;align-items:center;gap:6px;font-size:11px;color:#6b7785;font-weight:600;white-space:nowrap}
-.gi-mrp label span{width:52px;flex:none}.gi-mrp input{text-align:right}.gi-mrp .deemed[data-manual="1"]{background:#fff8e6}
+.gi-mrp label span{width:52px;flex:none}.gi-mrp input{text-align:right}
 .gi-mode{display:table;margin:3px 0 0 auto;font-size:10.5px;font-weight:700;border-radius:4px;padding:1px 5px;background:#fff1d6;color:#8a5300;vertical-align:1px}
 @media(max-width:900px){.gi-table td.amountCell{grid-column:1/-1}.gi-mrp{grid-template-columns:repeat(3,minmax(0,1fr))}.gi-mrp label{display:block}.gi-mrp label span{display:block;width:auto;margin-bottom:2px}.gi-mode{display:inline-block;margin:0 0 0 4px}}
 main{margin:14px auto}.panel{padding:14px 16px;margin-bottom:12px}
@@ -130,7 +130,7 @@ main{margin:14px auto}.panel{padding:14px 16px;margin-bottom:12px}
   </section>
 
   <section class="panel">
-    <div class="sectionhead"><div><h2>Material / SKU Details</h2><p class="sub" style="margin:5px 0 0">Enter Cases / Boxes, Loose PCS and the amount as on the supplier bill. Normal bill: Taxable Amount. MRP bill (Rajnigandha, cigarettes): Net Sale + MRP; Deemed Taxable Value fills itself (MRP ÷ (1 + GST%)) and can be changed. GST % comes from SKU Master; GST and Total calculate automatically.</p></div><button id="add" type="button">+ Add SKU</button></div>
+    <div class="sectionhead"><div><h2>Material / SKU Details</h2><p class="sub" style="margin:5px 0 0">Enter Cases / Boxes, Loose PCS and the amount as on the supplier bill. Normal bill: Taxable Amount. MRP bill (Rajnigandha, cigarettes): Net Sale and Deemed Taxable Value from the bill; GST is on the Deemed Value and Total = Net Sale + GST. GST % comes from SKU Master; GST and Total calculate automatically.</p></div><button id="add" type="button">+ Add SKU</button></div>
     <div class="gi-wrap"><table class="gi-table" aria-label="Goods Inward SKU lines">
       <thead><tr><th>#</th><th>SKU / Product</th><th class="num">PCS/Unit</th><th class="num">Cs / Box</th><th class="num">Loose PCS</th><th class="num">Amount ₹</th><th class="num">GST %</th><th class="num">GST ₹</th><th class="num">Total ₹</th><th>Action</th></tr></thead>
       <tbody id="itemsBody"></tbody>
@@ -239,15 +239,14 @@ function itemRow(){
     <td data-label="Amount ₹" class="amountCell"><input class="taxable" type="text" inputmode="decimal" autocomplete="off" placeholder="Taxable 0.00" aria-label="Taxable Amount from Invoice">
       <div class="gi-mrp" hidden>
         <label><span>Net Sale</span><input class="net" type="text" inputmode="decimal" autocomplete="off" placeholder="0.00" aria-label="Net Sale amount from Invoice"></label>
-        <label><span class="mrpLabel">MRP/Box</span><input class="mrpCase" type="text" inputmode="decimal" autocomplete="off" placeholder="0.00" aria-label="MRP of one case or box"></label>
-        <label><span title="Deemed Taxable Value = Total MRP ÷ (1 + GST%). Fills itself; type to change.">Deemed</span><input class="deemed" type="text" inputmode="decimal" autocomplete="off" placeholder="auto" aria-label="Deemed Taxable Value"></label>
+        <label><span title="Deemed Taxable Value as printed on the bill">Deemed</span><input class="deemed" type="text" inputmode="decimal" autocomplete="off" placeholder="from bill" aria-label="Deemed Taxable Value"></label>
       </div></td>
     <td data-label="GST %" class="num gstRate">—</td>
     <td data-label="GST ₹" class="num gstValue">—</td>
     <td data-label="Total ₹" class="num gross">—</td>
     <td data-label=""><button type="button" class="danger remove">Remove</button></td>`;
   const hidden=card.querySelector('.sku'),search=card.querySelector('.skuSearch'),results=card.querySelector('.skuResults');
-  const combo=makeSearch(search,results,()=>supplierSkus().map(s=>({id:s.id,label:s.sku_name})),o=>{hidden.value=o.id;fillMrp(card,true);recalc();card.querySelector('.cases').focus();card.querySelector('.cases').select();});
+  const combo=makeSearch(search,results,()=>supplierSkus().map(s=>({id:s.id,label:s.sku_name})),o=>{hidden.value=o.id;recalc();card.querySelector('.cases').focus();card.querySelector('.cases').select();});
   skuSearchControls.set(card,combo);
   search.addEventListener('input',()=>{
     const chosen=skus.find(s=>s.id===hidden.value);
@@ -256,9 +255,8 @@ function itemRow(){
   card.querySelector('.remove').addEventListener('click',()=>{
     card.remove();if(!$('itemsBody').children.length)itemRow();recalc();
   });
-  for(const input of card.querySelectorAll('.cases,.pcs,.taxable,.net,.mrpCase'))input.addEventListener('input',recalc);
+  for(const input of card.querySelectorAll('.cases,.pcs,.taxable,.net,.deemed'))input.addEventListener('input',recalc);
   // Deemed value fills itself from MRP until typed; clearing it makes it automatic again.
-  card.querySelector('.deemed').addEventListener('input',e=>{e.target.dataset.manual=e.target.value.trim()?'1':'';recalc();});
   // Enter on the last amount box of the last line adds the next SKU line, like Sales Order entry.
   for(const last of card.querySelectorAll('.taxable,.deemed'))last.addEventListener('keydown',e=>{
     if(e.key==='Enter'&&card===$('itemsBody').lastElementChild){e.preventDefault();itemRow();$('itemsBody').lastElementChild.querySelector('.skuSearch').focus();}
@@ -288,16 +286,6 @@ const unitOf=sku=>(sku?.pack_unit||companyOf(sku)?.pack_unit)==='BOX'?'BOX':'CAS
 const pickedSupplier=()=>suppliers.find(s=>s.id===$('supplier').value)||null;
 // A supplier tied to a company only offers that company's SKUs.
 function supplierSkus(){const c=pickedSupplier()?.company_id;return c?skus.filter(s=>s.company_id===c):skus;}
-function fillMrp(tr,force){
-  const sku=skus.find(s=>s.id===tr.querySelector('.sku')?.value),inp=tr.querySelector('.mrpCase');
-  if(sku&&Number(sku.mrp_per_case)>0&&(force||!inp.value.trim()))inp.value=Number(sku.mrp_per_case).toFixed(2);
-}
-// Deemed Taxable Value = Total MRP / (1 + GST%), rounded to the rupee as on DS Group bills. Paise in, paise out.
-function deemedFromMrp(mrpPaise,rateBasisPoints){
-  if(!Number.isSafeInteger(mrpPaise)||mrpPaise<=0||!Number.isInteger(rateBasisPoints))return null;
-  const d=BigInt(10000+rateBasisPoints),rupee=(BigInt(mrpPaise)*100n+d/2n)/d;
-  return Number(rupee)*100;
-}
 function readRows(){
   const rows=[];
   for(const tr of $('itemsBody').children){
@@ -310,23 +298,15 @@ function readRows(){
     const mode=billingOf(sku),unit=unitOf(sku),mrpMode=mode==='MRP';
     tr.querySelector('.taxable').hidden=mrpMode;tr.querySelector('.gi-mrp').hidden=!mrpMode;
     tr.querySelector('.unitCell').dataset.label=sku?(unit==='BOX'?'Boxes':'Cases'):'Cases / Boxes';
-    tr.querySelector('.mrpLabel').textContent=unit==='BOX'?'MRP/Box':'MRP/Case';
     const rawRate=sku?.gst_rate;
     const gstRate=rawRate===null||rawRate===undefined||rawRate===''?null:Number(rawRate);
     const rateValid=gstRate!==null&&Number.isFinite(gstRate)&&gstRate>=0&&gstRate<=100&&Number.isInteger(Math.round(gstRate*100))&&Math.abs(gstRate*100-Math.round(gstRate*100))<1e-7;
     const cess=sku?.cess_rate===null||sku?.cess_rate===undefined||sku?.cess_rate===''?0:Number(sku.cess_rate);
     const cessOkay=Number.isFinite(cess)&&cess===0;
-    let taxable=null,net=null,mrpCase=null,mrpTotal=null,deemed=null;
+    let taxable=null,net=null,deemed=null;
     if(mrpMode){
-      net=moneyPaise(tr.querySelector('.net').value);mrpCase=moneyPaise(tr.querySelector('.mrpCase').value);
-      // Total MRP of the line: MRP per box x boxes + loose pieces at MRP per box / pieces per box.
-      if(mrpCase!==null&&normalized)mrpTotal=Math.round(mrpCase*normalized.total/pack);
-      const deemedInput=tr.querySelector('.deemed');
-      if(deemedInput.dataset.manual!=='1'){
-        const auto=rateValid&&mrpTotal?deemedFromMrp(mrpTotal,Math.round(gstRate*100)):null;
-        deemedInput.value=auto!==null?paiseText(auto):'';
-      }
-      deemed=moneyPaise(deemedInput.value);taxable=deemed;
+      // Net Sale and Deemed Taxable Value are typed exactly as printed on the bill.
+      net=moneyPaise(tr.querySelector('.net').value);deemed=moneyPaise(tr.querySelector('.deemed').value);taxable=deemed;
     }else taxable=moneyPaise(tr.querySelector('.taxable')?.value);
     const gst=taxable!==null&&rateValid?calculateGST(taxable,Math.round(gstRate*100),$('taxMode').value):null;
     const base=mrpMode?net:taxable;
@@ -340,7 +320,7 @@ function readRows(){
     const supCo=pickedSupplier()?.company_id,otherBrand=!!(sku&&supCo&&sku.company_id!==supCo);
     tr.querySelector('.gstValue').textContent=gst!==null?rupees(gst/100):'—';
     tr.querySelector('.gross').textContent=gross!==null?rupees(gross/100):'—';
-    rows.push({sku,cases,pcs,pack,normalized,taxable,gst,gross,rateValid,cessOkay,amountsOkay,mode,unit,net,mrpCase,mrpTotal,deemed,otherBrand});
+    rows.push({sku,cases,pcs,pack,normalized,taxable,gst,gross,rateValid,cessOkay,amountsOkay,mode,unit,net,deemed,otherBrand});
   }
   return rows;
 }
@@ -366,7 +346,7 @@ function recalc(){
   const unique=new Set(rows.map(r=>r.sku?.id)).size===rows.length;
   const brandOkay=!rows.some(r=>r.otherBrand);
   $('save').disabled=busy||!rolesOkay||!detailsValid||!driverNameOkay||!driverMobileOkay||!transportOkay||!everyValid||!unique||!brandOkay;
-  $('hint').textContent=busy?'Saving all SKU lines together...':!rolesOkay?'Only active admin or manager can save.':!unique?'Duplicate SKU: combine quantities in one line.':!detailsValid?'Choose Supplier from Master, and fill Invoice No. and both dates.':!driverNameOkay?'Enter Driver Name.':!driverMobileOkay?'Enter a valid 10-digit Indian Driver Mobile Number (optional +91).':!transportOkay?'Transport not selected from Master: choose result or click + Save New.':!brandOkay?'An SKU line is not of this supplier\'s company. Remove it or choose the right supplier.':rows.some(r=>r.sku&&!r.rateValid)?'GST Rate missing in SKU Master. Edit that SKU and enter GST % before saving.':rows.some(r=>r.sku&&!r.cessOkay)?'Nonzero Cess found in SKU Master. This version calculates GST only; cannot save until tax treatment is configured.':!everyValid?(rows.some(r=>r.sku&&r.mode==='MRP')?'Select SKU and enter quantity on EVERY line: Taxable Amount, or for MRP bills Net Sale and MRP (Deemed Value fills itself). GST and Total auto-calculate.':'Select SKU, enter positive quantity and Taxable Amount on EVERY line. GST and Total auto-calculate.'):'Ready to save. Verify calculated Invoice Total against the supplier invoice and physical quantities.';
+  $('hint').textContent=busy?'Saving all SKU lines together...':!rolesOkay?'Only active admin or manager can save.':!unique?'Duplicate SKU: combine quantities in one line.':!detailsValid?'Choose Supplier from Master, and fill Invoice No. and both dates.':!driverNameOkay?'Enter Driver Name.':!driverMobileOkay?'Enter a valid 10-digit Indian Driver Mobile Number (optional +91).':!transportOkay?'Transport not selected from Master: choose result or click + Save New.':!brandOkay?'An SKU line is not of this supplier\'s company. Remove it or choose the right supplier.':rows.some(r=>r.sku&&!r.rateValid)?'GST Rate missing in SKU Master. Edit that SKU and enter GST % before saving.':rows.some(r=>r.sku&&!r.cessOkay)?'Nonzero Cess found in SKU Master. This version calculates GST only; cannot save until tax treatment is configured.':!everyValid?(rows.some(r=>r.sku&&r.mode==='MRP')?'Select SKU and enter quantity on EVERY line: Taxable Amount, or for MRP bills Net Sale and Deemed Taxable Value. GST and Total auto-calculate.':'Select SKU, enter positive quantity and Taxable Amount on EVERY line. GST and Total auto-calculate.'):'Ready to save. Verify calculated Invoice Total against the supplier invoice and physical quantities.';
   let i=0;for(const card of $('itemsBody').children)card.querySelector('.line-number').textContent=String(++i);
   syncDamage(rows);
 }
@@ -532,8 +512,7 @@ async function save(){
   const dmgNote=$('dmgNote').value.trim();
   const mrpBill=rows.some(r=>r.mode==='MRP');
   const items=rows.map(r=>r.mode==='MRP'
-    ?{sku_id:r.sku.id,cases:r.cases,pcs:r.pcs,billing_mode:'MRP',net_amount:paiseText(r.net),deemed_value:paiseText(r.deemed),
-      mrp_per_case:r.mrpCase!==null?paiseText(r.mrpCase):null,mrp_amount:r.mrpTotal!==null?paiseText(r.mrpTotal):null}
+    ?{sku_id:r.sku.id,cases:r.cases,pcs:r.pcs,billing_mode:'MRP',net_amount:paiseText(r.net),deemed_value:paiseText(r.deemed)}
     :{sku_id:r.sku.id,cases:r.cases,pcs:r.pcs,rate_per_case:null,taxable_amount:paiseText(r.taxable),total_amount:paiseText(r.gross),...(mrpBill?{billing_mode:'TAXABLE'}:{})});
   const invoiceTaxable=rows.reduce((a,r)=>a+r.taxable,0);
   const invoiceGst=rows.reduce((a,r)=>a+r.gst,0);
