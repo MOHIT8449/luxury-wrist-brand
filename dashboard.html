@@ -452,17 +452,37 @@
       wrap.ontouchstart=()=>hold=true;wrap.ontouchend=()=>setTimeout(()=>hold=false,4000);
       bannerTimer=setInterval(()=>{if(!hold&&!document.hidden)go(at()+1)},6000);
     }
+    // Black / white bars that a resize app padded around the photo: rows / columns at the
+    // edges that are almost all one flat dark or light colour get cut off.
+    function trimBars(g,w,h){
+      const px=g.getImageData(0,0,w,h).data;
+      const flat=(x0,y0,dx,dy,n)=>{let dark=0,light=0;
+        for(let i=0,x=x0,y=y0;i<n;i++,x+=dx,y+=dy){const o=(y*w+x)*4,mx=Math.max(px[o],px[o+1],px[o+2]),mn=Math.min(px[o],px[o+1],px[o+2]);
+          if(mx<28)dark++;else if(mn>238)light++}
+        return Math.max(dark,light)>=n*0.97};
+      let l=0,r=w-1,t=0,btm=h-1;
+      while(l<r&&flat(l,0,0,1,h))l++;
+      while(r>l&&flat(r,0,0,1,h))r--;
+      while(t<btm&&flat(l,t,1,0,r-l+1))t++;
+      while(btm>t&&flat(l,btm,1,0,r-l+1))btm--;
+      const cw=r-l+1,ch=btm-t+1;
+      // Do not trust a trim that leaves less than a third (a mostly dark photo, not bars).
+      return cw<w/3||ch<h/3||(cw===w&&ch===h)?null:{x:l,y:t,w:cw,h:ch};
+    }
     // Phone photos can be huge: keep it at most 1600 px wide as JPEG before upload.
     function bannerFile(file){
       return new Promise((ok,bad)=>{
         const src=URL.createObjectURL(file),im=new Image();
         im.onerror=()=>{URL.revokeObjectURL(src);bad(Error("Photo could not be read"))};
         im.onload=()=>{
-          const k=Math.min(1,1600/im.naturalWidth),c=document.createElement("canvas");
-          c.width=Math.round(im.naturalWidth*k);c.height=Math.round(im.naturalHeight*k);
-          const g=c.getContext("2d");g.fillStyle="#fff";g.fillRect(0,0,c.width,c.height);g.drawImage(im,0,0,c.width,c.height);
           URL.revokeObjectURL(src);
-          c.toBlob(b=>b?ok({blob:b,w:im.naturalWidth,h:im.naturalHeight}):bad(Error("Photo could not be read")),"image/jpeg",0.88);
+          const a=document.createElement("canvas");a.width=im.naturalWidth;a.height=im.naturalHeight;
+          const ga=a.getContext("2d");ga.fillStyle="#fff";ga.fillRect(0,0,a.width,a.height);ga.drawImage(im,0,0);
+          const cut=trimBars(ga,a.width,a.height)||{x:0,y:0,w:a.width,h:a.height};
+          const k=Math.min(1,1600/cut.w),c=document.createElement("canvas");
+          c.width=Math.round(cut.w*k);c.height=Math.round(cut.h*k);
+          c.getContext("2d").drawImage(a,cut.x,cut.y,cut.w,cut.h,0,0,c.width,c.height);
+          c.toBlob(b=>b?ok({blob:b,w:cut.w,h:cut.h,trimmed:cut.w!==a.width||cut.h!==a.height,ow:a.width,oh:a.height}):bad(Error("Photo could not be read")),"image/jpeg",0.88);
         };
         im.src=src;
       });
@@ -487,7 +507,7 @@
         prevImg.src=URL.createObjectURL(banner.blob);prev.hidden=false;
         document.getElementById("focusPreviewPic").style.setProperty("--bg","url(\""+prevImg.src+"\")");
         const r=banner.w/banner.h,info=document.getElementById("focusPreviewInfo");
-        info.textContent=banner.w+" × "+banner.h+" px"+(r<3.8?" · too tall for a banner, it will show smaller with blurred sides. Use height 300–400 px":"");
+        info.textContent=(banner.trimmed?"Black/white side bars removed ("+banner.ow+" × "+banner.oh+" → "+banner.w+" × "+banner.h+" px)":banner.w+" × "+banner.h+" px")+(r<3.8?" · too tall for a banner, it will show smaller with blurred sides. Use height 300–400 px":"");
         info.className=r<3.8?"warn":"";
       };
       document.getElementById("focusCancel").onclick=()=>{form.reset();clearBanner();form.hidden=true;post.hidden=false};
