@@ -34,6 +34,7 @@ button{border:0;border-radius:8px;background:#1569cc;color:white;padding:11px 17
       <div class="field"><label for="state">State</label><input id="state" maxlength="100" placeholder="Gujarat"></div>
       <div class="field"><label for="pincode">Pincode</label><input id="pincode" maxlength="10" placeholder="Postal code"></div>
       <div class="field"><label for="terms">Payment Terms</label><input id="terms" maxlength="200" placeholder="e.g. 15 Days"></div>
+      <div class="field" id="companyField" hidden><label for="company">Company / Brand</label><select id="company"><option value="">— All brands —</option></select></div>
       <div class="field"><label for="isActive">Status</label><select id="isActive"><option value="true">Active</option><option value="false">Inactive</option></select></div>
     </div>
     <div class="actions"><button id="save" type="button" disabled>Save Supplier</button><button id="clear" type="button" class="secondary">Clear / New Supplier</button><span id="formHint" class="small">Admin only can create or update Suppliers.</span></div>
@@ -41,29 +42,31 @@ button{border:0;border-radius:8px;background:#1569cc;color:white;padding:11px 17
   </section>
   <section class="panel">
     <div class="sectionhead"><div><h2>Supplier / Company List</h2><p class="sub" style="margin:5px 0 0" id="count">Loading...</p></div><div class="toolbar"><input id="search" placeholder="Search Supplier, Code, GSTIN, City"><select id="filter"><option value="all">All Suppliers</option><option value="active">Active</option><option value="inactive">Inactive</option></select><button id="refresh" class="secondary" type="button">Refresh</button></div></div>
-    <div class="tablewrap"><table><thead><tr><th>Supplier Code</th><th>Supplier / Company Name</th><th>GSTIN</th><th>City / State</th><th>Contact</th><th>Payment Terms</th><th>Status</th><th>Action</th></tr></thead><tbody id="list"><tr><td colspan="8" class="empty">Loading Supplier Master...</td></tr></tbody></table></div>
+    <div class="tablewrap"><table><thead><tr><th>Supplier Code</th><th>Supplier / Company Name</th><th>Brand</th><th>GSTIN</th><th>City / State</th><th>Contact</th><th>Payment Terms</th><th>Status</th><th>Action</th></tr></thead><tbody id="list"><tr><td colspan="9" class="empty">Loading Supplier Master...</td></tr></tbody></table></div>
   </section>
 </main>
 <script>
 'use strict';
 const SUPABASE_URL='https://txkbhadzdbxpieunfvox.supabase.co';
 const $=id=>document.getElementById(id);
-let db=null,profile=null,suppliers=[],editingId=null,busy=false;
+let db=null,profile=null,suppliers=[],editingId=null,busy=false,companies=[],companyOn=false;
 const formIds=['supplierName','gstin','pan','contactPerson','mobile','email','address','city','state','pincode','terms'];
 const toNullable=value=>{const s=String(value||'').trim();return s||null;};
 function show(msg,type='error'){const e=$('notice');e.className='notice '+type;e.textContent=msg;e.scrollIntoView({block:'nearest',behavior:'smooth'});}
 function clearNotice(){$('notice').className='notice';$('notice').textContent='';}
 function isAdmin(){return profile?.role==='admin'&&profile?.active===true;}
-function resetForm(){editingId=null;for(const id of formIds)$(id).value='';$('isActive').value='true';$('formHeading').textContent='Add Supplier / Company';$('save').textContent='Save Supplier';updateControls();}
+function resetForm(){editingId=null;for(const id of formIds)$(id).value='';$('isActive').value='true';$('company').value='';$('formHeading').textContent='Add Supplier / Company';$('save').textContent='Save Supplier';updateControls();}
 function updateControls(){const editable=isAdmin()&&!busy;$('save').disabled=!editable;$('clear').disabled=!editable;
-  for(const id of [...formIds,'isActive'])$(id).disabled=!editable;
+  for(const id of [...formIds,'isActive','company'])$(id).disabled=!editable;
   $('formHint').textContent=!isAdmin()?'Only an active Admin can add or edit Suppliers.':editingId?'Editing existing Supplier. Changes will not overwrite previous invoice names.':'Create a Supplier; Code is generated automatically.';
 }
 function buildPayload(){return {
   supplier_name:$('supplierName').value.trim(),gstin:toNullable($('gstin').value.toUpperCase()),pan:toNullable($('pan').value.toUpperCase()),
   contact_person:toNullable($('contactPerson').value),mobile:toNullable($('mobile').value),email:toNullable($('email').value),
   address:toNullable($('address').value),city:toNullable($('city').value),state:toNullable($('state').value),
-  pincode:toNullable($('pincode').value),payment_terms:toNullable($('terms').value),is_active:$('isActive').value==='true'
+  pincode:toNullable($('pincode').value),payment_terms:toNullable($('terms').value),is_active:$('isActive').value==='true',
+  // Company / brand (lwb_purchase_mrp_billing_setup.sql): Goods Inward then shows only that brand's SKUs.
+  ...(companyOn?{company_id:$('company').value||null}:{})
 };}
 function validate(p){if(p.supplier_name.length<1||p.supplier_name.length>150)return 'Enter Supplier / Company Name (up to 150 characters).';
   if(p.gstin&&!/^[0-9]{2}[A-Z0-9]{13}$/.test(p.gstin))return 'GSTIN must be 15 characters (2 digits + 13 alphanumeric).';
@@ -86,19 +89,23 @@ async function saveSupplier(){if(!isAdmin()||busy)return;const payload=buildPayl
 function editSupplier(id){if(!isAdmin())return;const s=suppliers.find(row=>row.id===id);if(!s)return;
   editingId=id;const mapping={supplierName:'supplier_name',gstin:'gstin',pan:'pan',contactPerson:'contact_person',mobile:'mobile',email:'email',address:'address',city:'city',state:'state',pincode:'pincode',terms:'payment_terms'};
   for(const [formId,key] of Object.entries(mapping))$(formId).value=s[key]??'';
-  $('isActive').value=String(s.is_active);$('formHeading').textContent='Edit Supplier — '+s.supplier_code;$('save').textContent='Update Supplier';updateControls();$('editPanel').scrollIntoView({behavior:'smooth'});}
+  $('isActive').value=String(s.is_active);$('company').value=s.company_id||'';$('formHeading').textContent='Edit Supplier — '+s.supplier_code;$('save').textContent='Update Supplier';updateControls();$('editPanel').scrollIntoView({behavior:'smooth'});}
 function render(){const body=$('list'),q=$('search').value.toLowerCase().trim(),f=$('filter').value;
   const rows=suppliers.filter(s=>(f==='all'||(f==='active')===s.is_active)&&[s.supplier_name,s.supplier_code,s.gstin,s.city,s.state,s.contact_person,s.mobile].some(x=>String(x||'').toLowerCase().includes(q)));
   body.replaceChildren();$('count').textContent=`${rows.length} shown / ${suppliers.length} total`;
-  if(!rows.length){const tr=body.insertRow(),td=tr.insertCell();td.colSpan=8;td.className='empty';td.textContent='No matching Supplier / Company found.';return;}
+  if(!rows.length){const tr=body.insertRow(),td=tr.insertCell();td.colSpan=9;td.className='empty';td.textContent='No matching Supplier / Company found.';return;}
   for(const s of rows){const tr=body.insertRow();
-    for(const value of [s.supplier_code,s.supplier_name,s.gstin||'—',[s.city,s.state].filter(Boolean).join(', ')||'—',[s.contact_person,s.mobile].filter(Boolean).join(' · ')||'—',s.payment_terms||'—'])tr.insertCell().textContent=value;
+    const co=companies.find(c=>c.id===s.company_id);
+    for(const value of [s.supplier_code,s.supplier_name,co?co.name+(co.purchase_billing==='MRP'?' · MRP bill':''):'All',s.gstin||'—',[s.city,s.state].filter(Boolean).join(', ')||'—',[s.contact_person,s.mobile].filter(Boolean).join(' · ')||'—',s.payment_terms||'—'])tr.insertCell().textContent=value;
     const state=tr.insertCell(),status=document.createElement('span');status.className='status'+(s.is_active?'':' inactive');status.textContent=s.is_active?'Active':'Inactive';state.appendChild(status);
     const action=tr.insertCell();if(isAdmin()){const btn=document.createElement('button');btn.type='button';btn.textContent='Edit';btn.className='secondary';btn.addEventListener('click',()=>editSupplier(s.id));action.appendChild(btn);}else action.textContent='View only';
   }}
 async function loadSuppliers(){if(!db)return;
   $('refresh').disabled=true;
-  try{const {data,error}=await db.from('lwb_supplier_master').select('*').order('supplier_name');if(error)throw error;suppliers=data||[];render();}
+  try{const [{data,error},co]=await Promise.all([db.from('lwb_supplier_master').select('*').order('supplier_name'),db.from('lwb_companies').select('*').order('sort_no').order('name')]);if(error)throw error;suppliers=data||[];
+    companies=co.error?[]:(co.data||[]);companyOn=companies.length>0&&suppliers.every(x=>'company_id' in x)&&(suppliers.length>0||!co.error);
+    const sel=$('company'),cur=sel.value;sel.replaceChildren(new Option('— All brands —',''),...companies.map(c=>new Option(c.name+(c.purchase_billing==='MRP'?' (MRP bill)':''),c.id)));sel.value=cur;
+    $('companyField').hidden=!companyOn;render();}
   catch(e){show('Could not load Supplier Master: '+(e.message||String(e))+'\nRun supplier-master-setup.sql in Supabase SQL Editor.');}
   finally{$('refresh').disabled=false;}}
 async function discoverKey(){try{const r=await fetch('sku-master.html',{cache:'no-store'});if(!r.ok)return null;const html=await r.text();return html.match(/const\s+SUPABASE_PUBLISHABLE_KEY\s*=\s*["'](sb_publishable_[^"']+)["']/)?.[1]||null;}catch{return null;}}

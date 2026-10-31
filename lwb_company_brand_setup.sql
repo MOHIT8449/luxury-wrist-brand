@@ -18,6 +18,8 @@
 --    (lwb_company_payments; oldest bill first).
 --    Pack unit: company BOX / CASE (Rajnigandha BOX), SKU may override; quantities
 --    are reported as cases and boxes separately.
+--    Purchase bill type: TAXABLE (GST on taxable amount) or MRP (GST on Deemed
+--    Taxable Value; Rajnigandha). Used by Goods Inward.
 -- 6. lwb_company_overview(from, to): per company sales, cases / boxes, month target,
 --    outstanding (bill due split by the bill's SKU value), overdue, to pay company.
 --
@@ -62,6 +64,19 @@ BEGIN
 END
 $unit$;
 ALTER TABLE public.sku_master ADD COLUMN IF NOT EXISTS pack_unit text CHECK (pack_unit IN ('CASE','BOX'));
+
+-- Purchase bill type (Goods Inward). TAXABLE: GST on the bill's taxable amount (Coca-Cola).
+-- MRP: GST on the Deemed Taxable Value = MRP / (1 + GST%) and Total = Net Sale + GST
+-- (Rajnigandha pan masala, cigarettes). Set once to MRP for Rajnigandha when the column is added.
+DO $billing$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                 WHERE table_schema = 'public' AND table_name = 'lwb_companies' AND column_name = 'purchase_billing') THEN
+    ALTER TABLE public.lwb_companies ADD COLUMN purchase_billing text NOT NULL DEFAULT 'TAXABLE' CHECK (purchase_billing IN ('TAXABLE','MRP'));
+    UPDATE public.lwb_companies SET purchase_billing = 'MRP' WHERE upper(btrim(name)) = 'RAJNIGANDHA';
+  END IF;
+END
+$billing$;
 
 -- Brand-wise Sales Head / Salesman. No row = all companies.
 CREATE TABLE IF NOT EXISTS public.lwb_user_companies (
@@ -221,14 +236,16 @@ BEGIN
     RAISE EXCEPTION 'Company % already exists', v_name;
   END IF;
   IF v_id IS NULL THEN
-    INSERT INTO public.lwb_companies(name, color, pack_unit, supplier_credit_days, market_credit_days, active, sort_no, updated_by)
-    VALUES (v_name, coalesce(nullif(p->>'color',''),'#2362a4'), coalesce(nullif(upper(p->>'pack_unit'),''),'CASE'), coalesce((p->>'supplier_credit_days')::int,0),
+    INSERT INTO public.lwb_companies(name, color, pack_unit, purchase_billing, supplier_credit_days, market_credit_days, active, sort_no, updated_by)
+    VALUES (v_name, coalesce(nullif(p->>'color',''),'#2362a4'), coalesce(nullif(upper(p->>'pack_unit'),''),'CASE'),
+      coalesce(nullif(upper(p->>'purchase_billing'),''),'TAXABLE'), coalesce((p->>'supplier_credit_days')::int,0),
       coalesce((p->>'market_credit_days')::int,0), coalesce((p->>'active')::boolean,true),
       coalesce((p->>'sort_no')::int,(SELECT coalesce(max(sort_no),0)+1 FROM public.lwb_companies)), auth.uid())
     RETURNING id INTO v_id;
   ELSE
     UPDATE public.lwb_companies SET name = v_name, color = coalesce(nullif(p->>'color',''), color),
       pack_unit = coalesce(nullif(upper(p->>'pack_unit'),''), pack_unit),
+      purchase_billing = coalesce(nullif(upper(p->>'purchase_billing'),''), purchase_billing),
       supplier_credit_days = coalesce((p->>'supplier_credit_days')::int, supplier_credit_days),
       market_credit_days = coalesce((p->>'market_credit_days')::int, market_credit_days),
       active = coalesce((p->>'active')::boolean, active), sort_no = coalesce((p->>'sort_no')::int, sort_no),
