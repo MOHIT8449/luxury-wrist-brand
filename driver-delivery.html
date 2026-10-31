@@ -35,7 +35,7 @@ textarea{min-height:92px;resize:vertical}
 .tag.pending{background:#fff1dc;color:#915e1a}
 .order p{overflow-wrap:anywhere}.order .info{font-size:12px;margin-top:10px}
 .order .info.retok{background:#e8f6ec;color:#17643a;font-weight:700}.order .info.retwait{background:#fff6dc;color:#7a5600;font-weight:700}.order .info.retno{background:#fdeceb;color:#a12a2a;font-weight:700}
-.order .actions{display:flex;gap:8px;margin-top:13px}
+.order .actions{display:flex;gap:8px;margin-top:13px;flex-wrap:wrap}
 .empty{padding:26px;text-align:center;background:white;border:1px dashed var(--border);border-radius:11px;color:var(--muted)}
 .overlay{position:fixed;inset:0;background:#101d31a6;z-index:50;display:none;align-items:center;justify-content:center;padding:12px}
 .overlay.open{display:flex}
@@ -112,6 +112,12 @@ th{font-size:11px;text-align:left;background:#e9f0f9}th,td{padding:11px 10px;bor
 }
 .notif-wrap{position:relative}.notif-bell{position:relative}.notif-count{display:none;position:absolute;top:-7px;right:-5px;min-width:19px;padding:1px 5px;border-radius:12px;background:#d63b35;color:white;font-size:11px;text-align:center}.notif-panel{position:absolute;right:0;top:calc(100% + 9px);width:min(370px,calc(100vw - 28px));max-height:380px;overflow:auto;background:white;color:#172c45;border:1px solid #cbd7e5;box-shadow:0 12px 35px #10243b40;border-radius:10px;z-index:45;padding:12px}.notif-panel[hidden]{display:none}.notif-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}.notif-item{border-top:1px solid #e3eaf3;padding:11px 2px}.notif-item.unread{background:#eef5ff}.notif-item p{font-size:12px;overflow-wrap:anywhere}.notif-actions{display:flex;gap:7px;margin-top:7px}.notif-actions button{font-size:11px;padding:6px 9px}.notif-error{color:#a52626;font-size:12px}
 .return-highlight{background:#ffca45!important;color:#4b3000!important;border:2px solid #b47a12!important;border-radius:8px!important;font-weight:800!important;box-shadow:0 0 0 3px #fff0bf!important;letter-spacing:.2px;white-space:nowrap}
+.trip{display:flex;flex-wrap:wrap;gap:4px;margin-top:9px}
+.trip span{font-size:11px;font-weight:700;border-radius:12px;padding:3px 8px;background:#eef1f4;color:#7a8794}
+.trip span.done{background:#e3f3ea;color:#17643a}
+.trip-btn{background:#e8f0fb!important;color:#164a8a!important;border:2px solid #2d6fc4!important;border-radius:8px!important;font-weight:800!important;white-space:nowrap}
+.tripbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:0 0 12px;padding:10px 12px;background:#f2f7ff;border:1px solid #cfe0f5;border-radius:10px;font-size:13px;color:#24476d}
+.tripbar b{color:#123a63}.tripbar .grow{flex:1}
 .pay-highlight{background:#e7f6ec!important;color:#0f5a2c!important;border:2px solid #1f8a4c!important;border-radius:8px!important;font-weight:800!important;white-space:nowrap}
 .pay-highlight:hover,.pay-highlight:focus-visible{background:#cdeed8!important;outline:2px solid #0f5a2c;outline-offset:1px}
 .return-highlight:hover,.return-highlight:focus-visible{background:#ffdf76!important;outline:2px solid #734e00;outline-offset:1px}
@@ -235,6 +241,7 @@ th{font-size:11px;text-align:left;background:#e9f0f9}th,td{padding:11px 10px;bor
  <button type="button" class="stat" data-filter="pending"><small>Delivery Pending</small><strong id="pendingOrders">0</strong></button>
  <button type="button" class="stat" data-filter="done"><small>Delivered</small><strong id="doneOrders">0</strong></button>
 </div>
+<div class="tripbar" id="tripbar" hidden><span>🚚 <b>Trip</b> <span id="tripGps">GPS: checking…</span></span><span class="grow"></span><button type="button" id="tripStart" class="trip-btn">🏭➜ Left godown</button><button type="button" id="tripBack" class="trip-btn">➜🏭 Back at godown</button></div>
 <div class="panel"><div class="controls">
  <input id="search" data-party-list type="search" placeholder="Search PO / Party / Vehicle" aria-label="Search delivery orders">
  <select id="filter" aria-label="Delivery filter"><option value="all">All Assigned Orders</option><option value="loading">Loading Pending</option><option value="pending">Pending / Waiting Delivery</option><option value="done">Delivery Report Submitted</option></select>
@@ -473,6 +480,7 @@ async function refresh(){
   records=[...assignedRows.filter(x=>!loadedIds.has(x.order_id)),...loadedRows];
   render();
   loadReturnSummary();
+  loadTripStatus();
   loadNotifications();
   if(assigned.error){
    message("Loading Pending Orders unavailable until Supabase RPC is installed: "+assigned.error.message,true);
@@ -483,6 +491,37 @@ async function refresh(){
  }
  finally{$("refresh").disabled=false}
 }
+// Live Tracking trip steps (lwb_live_tracking_setup.sql). GPS marks them by itself;
+// these buttons are for when GPS missed one. Quiet until that SQL is run.
+let tripStatus=new Map(),tripOn=false;
+const TRIP=[["LEFT_GODOWN","Left godown"],["REACHED_PARTY","Reached"],["DELIVERY_REPORT","Delivered"],["LEFT_PARTY","Left party"]];
+const hhmm=v=>v?new Date(v).toLocaleTimeString("en-IN",{hour:"2-digit",minute:"2-digit",hour12:true,timeZone:"Asia/Kolkata"}):"";
+async function loadTripStatus(){
+ if(role!=="driver")return;
+ try{
+  const {data,error}=await db.rpc("lwb_driver_trip_status");
+  if(error)return;
+  tripOn=true;$("tripbar").hidden=false;showTripGps();
+  const next=new Map((data||[]).map(x=>[x.order_id,x.events||{}]));
+  if(JSON.stringify([...next])===JSON.stringify([...tripStatus]))return;
+  tripStatus=next;render();
+ }catch(e){}
+}
+async function markTrip(orderId,event,label){
+ if(!await confirm(label+"?"))return;
+ const p=window.LWBLocation&&(await window.LWBLocation.now());
+ const {data,error}=await db.rpc("lwb_trip_mark",{p_order_id:orderId,p_event:event,p_lat:p?p.lat:null,p_lng:p?p.lng:null});
+ if(error){await alert("Could not save: "+error.message);return}
+ if(window.ERPShell&&ERPShell.toast)ERPShell.toast(label+" saved");
+ await loadTripStatus();
+ return data;
+}
+$("tripStart").onclick=()=>markTrip(null,"LEFT_GODOWN","Left godown (all orders on the vehicle)");
+$("tripBack").onclick=()=>markTrip(null,"BACK_GODOWN","Back at godown");
+window.addEventListener("lwb-trip-events",()=>loadTripStatus());
+function showTripGps(){if(role!=="driver"||!tripOn)return;const L=window.LWBLocation,s=L&&L.status,el=$("tripGps");
+ el.textContent=s==="on"?"GPS ON ✓ (±"+(L.last.acc||"?")+" m)":s==="denied"?"⚠ Location blocked — allow it in phone settings":s==="weak"?"⚠ Searching GPS…":"GPS: starting…";}
+setInterval(showTripGps,3000);
 // Return status on each order card (Approved / Waiting / Rejected), from the driver's own returns.
 let returnSummary=new Map(),paySummary=new Map();
 async function loadReturnSummary(){
@@ -586,6 +625,10 @@ function render(){
   else if(r.report)card.append(elt("p","💰 "+money(r.report.cash_reported)+" • "+(r.report.collection_review_status==="PENDING_OFFICE"?"Payment verification pending":"Payment not collected"),"info"));
   for(const [t,c] of returnCardLines(r))card.append(elt("p",t,"info "+c));
   if(waiting)card.append(elt("p","Delivery opens after loading is completed.","info"));
+  const ev=tripStatus.get(r.order_id);
+  if(ev&&!waiting){const t=elt("div",undefined,"trip");
+   for(const [k,label] of TRIP){const on=k==="DELIVERY_REPORT"?(ev[k]||r.report?.reported_at):ev[k];t.append(elt("span",(on?"✓ ":"")+label+(on?" "+hhmm(on):""),on?"done":""))}
+   card.append(t)}
   card.onclick=e=>{if(!e.target.closest("button"))openOrder(r.order_id)};
   const actions=elt("div",undefined,"actions"),btn=elt("button",waiting?"View Order":r.report?"View Report":"Open Delivery");
   btn.type="button";btn.onclick=()=>openOrder(r.order_id);
@@ -603,6 +646,8 @@ function render(){
      pb.onclick=()=>openPayment(r.order_id);
      actions.append(pb);
     }
+    if(ev&&!r.report&&!ev.REACHED_PARTY){const b=elt("button","📍 Reached","trip-btn");b.type="button";b.onclick=()=>markTrip(r.order_id,"REACHED_PARTY","Reached "+(r.party_name||"party"));actions.append(b)}
+    if(ev&&r.report&&!ev.LEFT_PARTY){const b=elt("button","↪ Left party","trip-btn");b.type="button";b.onclick=()=>markTrip(r.order_id,"LEFT_PARTY","Left "+(r.party_name||"party"));actions.append(b)}
   }
   card.append(actions);wrap.append(card);
  }

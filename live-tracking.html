@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Live Tracking | Luxury Wrist Brand ERP</title>
+  <script src="erp-date.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <link rel="stylesheet" href="erp-shell.css">
+  <link rel="stylesheet" href="sales.css">
+  <link rel="stylesheet" href="assets/leaflet/leaflet.css">
+  <script src="assets/leaflet/leaflet.js"></script>
+  <script src="erp-shell.js"></script>
+  <script src="sales-common.js"></script>
+  <style>
+    .lt-grid{display:grid;grid-template-columns:minmax(330px,420px) 1fr;gap:14px;align-items:start}
+    .lt-map{height:calc(100vh - 230px);min-height:420px;border-radius:var(--erp-r,10px);border:1px solid var(--erp-line);overflow:hidden;position:sticky;top:calc(var(--erp-top) + 12px);background:#e9eef0}
+    .lt-side{display:grid;gap:10px;max-height:calc(100vh - 230px);min-height:420px;overflow-y:auto;padding-right:2px}
+    .lt-card{background:#fff;border:1px solid var(--erp-line);border-radius:var(--erp-r,10px);padding:11px 12px;display:grid;gap:7px;cursor:pointer;transition:border-color .15s,box-shadow .15s}
+    .lt-card:hover,.lt-card.on{border-color:var(--lwb-gold,#c9b26a);box-shadow:0 0 0 3px rgba(201,178,106,.18)}
+    .lt-top{display:flex;gap:8px;align-items:center}
+    .lt-top b{font-size:14.5px}.lt-top .grow{flex:1}
+    .lt-av{width:30px;height:30px;border-radius:50%;display:grid;place-items:center;font-weight:700;font-size:13px;color:#fff;flex:none}
+    .lt-meta{font-size:12px;color:var(--erp-muted)}
+    .lt-meta a{color:var(--erp-blue,#1d5fbf);text-decoration:none;font-weight:600}
+    .lt-order{border-top:1px dashed var(--erp-line);padding-top:7px;display:grid;gap:5px}
+    .lt-order .p{font-weight:600;font-size:13px}
+    .lt-steps{display:flex;flex-wrap:wrap;gap:4px}
+    .lt-steps span{font-size:11px;font-weight:600;border-radius:12px;padding:3px 8px;background:#f0f2f1;color:#8a9696;white-space:nowrap}
+    .lt-steps span.done{background:#e3f3ea;color:#17643a}
+    .lt-steps span.now{background:var(--lwb-gold-soft,#f7f1de);color:var(--lwb-gold-deep,#7a6420);box-shadow:inset 0 0 0 1px var(--lwb-gold,#c9b26a)}
+    .lt-eta{font-size:12.5px;font-weight:600;color:var(--lwb-teal,#002f37)}
+    .lt-eta small{font-weight:400;color:var(--erp-muted)}
+    .lt-link{background:none;border:0;padding:0;color:var(--erp-blue,#1d5fbf);font:inherit;font-size:12px;font-weight:600;cursor:pointer}
+    .lt-tools{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+    .lt-tools .grow{flex:1}
+    .lt-banner{padding:10px 12px;border-radius:8px;background:var(--lwb-gold-soft,#f7f1de);color:#5d4d17;font-size:13px;border:1px solid #eadcae}
+    .lt-banner.info{background:#eef5f6;color:#24474d;border-color:#d3e3e5}
+    .lt-set{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
+    .lt-set label{display:block;font-size:12px;font-weight:600;color:#4b5763;margin-bottom:4px}
+    .lt-set input[type=time],.lt-set input[type=number]{width:100%;box-sizing:border-box;height:38px;border:1.5px solid var(--erp-line);border-radius:6px;padding:0 10px;font:inherit}
+    .lt-set .wide{grid-column:1/-1}
+    .lt-roles{display:flex;flex-wrap:wrap;gap:8px 14px;font-size:13px}
+    .lt-roles label{display:flex;gap:6px;align-items:center;font-weight:500;margin:0}
+    .lt-pin{position:absolute;inset:auto 10px 10px 10px;z-index:500;background:var(--lwb-teal,#002f37);color:#fff;padding:9px 12px;border-radius:8px;font-size:13px;display:flex;gap:10px;align-items:center}
+    .lt-pin button{margin-left:auto}
+    .lt-mk{display:grid;place-items:center;border-radius:50%;color:#fff;font:700 12px/1 var(--erp-font,Arial);border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.35)}
+    .lt-mk.stale{filter:grayscale(1);opacity:.75}
+    .lt-mk.drv{border-radius:9px;font-size:16px}
+    .lt-sq{display:grid;place-items:center;font-size:18px;line-height:1;text-shadow:0 1px 2px #fff}
+    .leaflet-tooltip.lt-tip{font:600 11.5px/1.2 var(--erp-font,Arial);padding:3px 6px;border-radius:6px}
+    @media(max-width:900px){
+      .lt-grid{grid-template-columns:1fr}
+      .lt-map{position:relative;top:0;height:50vh;min-height:300px;order:-1}
+      .lt-sub{display:none}
+      #kpis{grid-template-columns:repeat(3,minmax(0,1fr))!important;gap:6px}
+      #kpis .sl-kpi{padding:8px 10px}#kpis .sl-kpi b{font-size:18px}#kpis .sl-kpi span{display:none}
+      #q{flex:1 1 100%;order:5}
+      .lt-side{max-height:none;min-height:0;overflow:visible}
+      .lt-set{grid-template-columns:1fr 1fr}
+    }
+  </style>
+</head>
+<body>
+  <div id="loading" class="status">Checking account access...</div>
+  <main id="page" class="erp-main" hidden>
+    <div class="erp-pagehead"><h1>Live Tracking</h1><span class="grow"></span><span class="erp-badge blue">Admin · Sales Head · Godown Manager</span></div>
+    <p class="sl-sub lt-sub">Where each driver and staff member is now, which delivery is on the way, the time to reach the party, delivered or not, and left the party. Only office heads see this page; parties never see it.</p>
+
+    <div id="banner"></div>
+    <div class="sl-kpis" id="kpis" style="grid-template-columns:repeat(auto-fit,minmax(140px,1fr))"></div>
+
+    <div class="lt-tools" style="margin-bottom:10px">
+      <div class="erp-pills" id="tabs" style="margin:0"></div>
+      <span class="grow"></span>
+      <input id="q" type="search" placeholder="Search name / party / vehicle" autocomplete="off" style="height:36px;border:1.5px solid var(--erp-line);border-radius:6px;padding:0 10px;min-width:200px">
+      <span class="lt-meta" id="stamp"></span>
+      <button type="button" class="sl-btn ghost small" id="refresh">Refresh</button>
+      <button type="button" class="sl-btn ghost small" id="setBtn" hidden>⚙ Settings</button>
+    </div>
+
+    <section class="erp-card" id="setCard" hidden style="margin-bottom:12px">
+      <div class="erp-card-head"><h2>Tracking settings</h2><button type="button" class="sl-btn ghost small" id="setClose">Close</button></div>
+      <div class="erp-card-body lt-set">
+        <div class="wide"><label>Whose location is shared (their phone sends it while the ERP app is open)</label><div class="lt-roles" id="roles"></div></div>
+        <div><label for="ws">Work hours from</label><input id="ws" type="time"></div>
+        <div><label for="we">Work hours to</label><input id="we" type="time"></div>
+        <div><label for="spd">Average road speed (km/h, for ETA)</label><input id="spd" type="number" min="5" max="80" step="1"></div>
+        <div><label for="rad">Godown circle (metres)</label><input id="rad" type="number" min="50" max="2000" step="10"></div>
+        <div class="wide lt-tools">
+          <span class="lt-meta" id="gdText"></span><span class="grow"></span>
+          <button type="button" class="sl-btn ghost small" id="gdHere">📍 Godown = my location now</button>
+          <button type="button" class="sl-btn ghost small" id="gdMap">🗺 Pick godown on map</button>
+          <button type="button" class="sl-btn" id="setSave">Save settings</button>
+        </div>
+      </div>
+    </section>
+
+    <div class="lt-grid">
+      <div class="lt-side" id="side"></div>
+      <div class="lt-map" id="map"></div>
+    </div>
+    <p class="sl-note" id="note">ETA is an estimate: straight-line distance × 1.3 for roads, at the average speed set above. A party gets its map pin the first time a driver delivers there with GPS on (or pin it by hand). Location comes only while the staff member's ERP app is open on the phone.</p>
+  </main>
+  <script>
+    const S=LWBSales,{client,el,esc,fmt}=S;
+    const ROLE={driver:"Driver",sales:"Salesman",accounts:"Accounts",warehouse:"Godown",transport:"Transport",manager:"Sales Head",admin:"Admin"};
+    const COLOR={driver:"#00434d",sales:"#1d5fbf",accounts:"#7b4fb5",warehouse:"#b26b00",transport:"#2f7d5b",manager:"#a33a5a",admin:"#444"};
+    const STEPS=[["LEFT_GODOWN","Left godown"],["ON_WAY","On the way"],["REACHED_PARTY","Reached"],["DELIVERY_REPORT","Delivered"],["LEFT_PARTY","Left party"]];
+    const STALE_MIN=10;
+    let me=null,data=null,tab="drivers",map=null,layer=null,trailLayer=null,markers=new Map(),focus="",pinMode=null,fitted=false,timer=null;
+
+    const time=v=>v?new Date(v).toLocaleTimeString("en-IN",{hour:"2-digit",minute:"2-digit",hour12:true,timeZone:"Asia/Kolkata"}):"";
+    const ago=v=>{if(!v)return "never";const m=Math.round((Date.now()-new Date(v))/6e4);return m<1?"just now":m<60?m+" min ago":m<1440?Math.floor(m/60)+" h "+(m%60)+" min ago":Math.floor(m/1440)+" day ago"};
+    const fresh=p=>p&&p.lat!=null&&p.status==="ON"&&Date.now()-new Date(p.updated_at)<STALE_MIN*6e4;
+    const initials=n=>String(n||"?").trim().split(/\s+/).slice(0,2).map(w=>w[0]).join("").toUpperCase();
+    function km(a,b,c,d){const R=6371,r=x=>x*Math.PI/180,h=Math.sin(r(c-a)/2)**2+Math.cos(r(a))*Math.cos(r(c))*Math.sin(r(d-b)/2)**2;return 2*R*Math.asin(Math.min(1,Math.sqrt(h)))}
+    function eta(person,t){
+      if(!person||person.lat==null||t.party_lat==null)return null;
+      const road=km(person.lat,person.lng,t.party_lat,t.party_lng)*1.3,spd=Number(data.settings.avg_speed_kmph)||25;
+      return {km:road,min:Math.max(1,Math.round(road/spd*60))};
+    }
+    const fmtMin=m=>m<60?m+" min":Math.floor(m/60)+" h "+(m%60)+" min";
+
+    // Group trips by driver (ERP driver login, else the name on the assignment).
+    function drivers(){
+      const people=new Map(data.people.map(p=>[p.user_id,p])),by=new Map();
+      for(const t of data.trips){
+        const k=t.driver_user_id||("m:"+(t.driver_mobile||t.driver_name));
+        if(!by.has(k))by.set(k,{key:k,person:people.get(t.driver_user_id)||null,name:t.driver_name||"Driver",mobile:t.driver_mobile,vehicle:t.vehicle_no,trips:[]});
+        by.get(k).trips.push(t);
+      }
+      for(const d of by.values()){
+        d.open=d.trips.filter(t=>!t.report_status);
+        d.done=d.trips.filter(t=>t.report_status);
+        d.back=d.person&&data.back_godown[d.person.user_id];
+        // Next stop: nearest undelivered order (or the one he already reached).
+        const at=d.open.find(t=>t.events.REACHED_PARTY);
+        d.next=at||d.open.map(t=>[t,eta(d.person,t)]).sort((a,b)=>(a[1]?a[1].km:1e9)-(b[1]?b[1].km:1e9)).map(x=>x[0])[0]||null;
+      }
+      return [...by.values()].sort((a,b)=>b.open.length-a.open.length||a.name.localeCompare(b.name));
+    }
+    function stage(d){
+      if(!d.open.length)return d.back?["Back at godown "+time(d.back),"green"]:d.done.length?["All delivered","green"]:["No trip","" ];
+      if(d.next&&d.next.events.REACHED_PARTY)return ["At "+d.next.party_name,"amber"];
+      if(d.open.some(t=>t.events.LEFT_GODOWN))return ["On the way","blue"];
+      return ["At godown / not left","" ];
+    }
+    function steps(t,isNext){
+      const ev=t.events||{},out=[];
+      const doneAt={LEFT_GODOWN:ev.LEFT_GODOWN,ON_WAY:ev.LEFT_GODOWN&&(ev.REACHED_PARTY||t.reported_at),REACHED_PARTY:ev.REACHED_PARTY,DELIVERY_REPORT:t.reported_at||ev.DELIVERY_REPORT,LEFT_PARTY:ev.LEFT_PARTY};
+      let nowSet=false;
+      for(const [k,label] of STEPS){
+        let txt=label,cls="";
+        if(doneAt[k]){cls="done";txt="✓ "+(k==="DELIVERY_REPORT"&&t.report_status!=="DELIVERED"?(t.report_status==="PARTIAL"?"Part delivered":"Not delivered"):label)+(k==="ON_WAY"?"":" "+time(doneAt[k]))}
+        else if(!nowSet&&(k!=="ON_WAY"||ev.LEFT_GODOWN)){cls=isNext||k!=="ON_WAY"?"now":"";nowSet=true}
+        out.push('<span class="'+cls+'">'+esc(txt)+"</span>");
+      }
+      return '<div class="lt-steps">'+out.join("")+"</div>";
+    }
+
+    function renderKpis(list){
+      const people=data.people,live=people.filter(fresh).length,off=people.filter(p=>p.status==="DENIED"||p.status==="OFF").length;
+      const onRoad=list.filter(d=>d.open.some(t=>t.events.LEFT_GODOWN)).length;
+      const delivered=data.trips.filter(t=>t.report_status==="DELIVERED"||t.report_status==="PARTIAL").length;
+      const pending=data.trips.filter(t=>!t.report_status).length;
+      const k=(l,v,s)=>'<div class="sl-kpi"><small>'+l+"</small><b>"+v+"</b>"+(s?"<span>"+s+"</span>":"")+"</div>";
+      el("kpis").innerHTML=k("Drivers on the road",onRoad,list.length+" with orders today")+k("Deliveries pending",pending)+k("Delivered today",delivered)+
+        k("Staff live now",live,"of "+people.length+" tracked")+k("Location off",off,off?"asked to allow":"");
+    }
+
+    function driverCard(d){
+      const p=d.person,[st,cls]=stage(d),col=COLOR.driver,lv=fresh(p);
+      let h='<div class="lt-top"><span class="lt-av" style="background:'+col+'">🚚</span><div class="grow"><b>'+esc(d.name)+"</b>"+
+        '<div class="lt-meta">'+esc(d.vehicle||"")+(d.mobile?' · <a href="tel:'+esc(d.mobile)+'" onclick="event.stopPropagation()">📞 '+esc(d.mobile)+"</a>":"")+"</div></div>"+
+        '<span class="erp-badge '+cls+'">'+esc(st)+"</span></div>";
+      h+='<div class="lt-meta">'+(p?(p.lat!=null?(lv?"🟢 Live":"⚪ Last seen")+" · "+ago(p.updated_at)+(p.speed!=null&&lv?" · "+Math.round(p.speed)+" km/h":""):p.status==="DENIED"?"⚠ Location blocked on his phone":"⚪ No location yet (ERP app not opened)"):"⚠ No driver login with this mobile — location not available")+"</div>";
+      if(d.next&&!d.next.events.REACHED_PARTY){
+        const e=eta(p,d.next);
+        h+='<div class="lt-eta">'+(e?"⏱ ~"+fmtMin(e.min)+" to "+esc(d.next.party_name)+" <small>("+e.km.toFixed(1)+" km by road, approx"+(lv?"":", from last seen spot")+")</small>":d.next.party_lat==null?"⏱ ETA after the party is pinned <small>("+esc(d.next.party_name)+")</small>":"")+"</div>";
+      }
+      for(const t of [...d.open,...d.done]){
+        h+='<div class="lt-order"><div class="p">'+esc(t.party_name)+' <span class="lt-meta">· '+esc(t.order_no||"")+(t.party_city?" · "+esc(t.party_city):"")+"</span></div>"+steps(t,t===d.next)+
+          (t.party_lat==null&&me.canPin?'<div><button type="button" class="lt-link" data-pin="'+esc(t.party_name)+'">📌 Pin this party on the map</button></div>':"")+"</div>";
+      }
+      if(p&&p.lat!=null)h+='<div><button type="button" class="lt-link" data-trail="'+p.user_id+'">〰 Show today\'s route</button></div>';
+      return {key:p?p.user_id:d.key,html:h};
+    }
+    function staffCard(p){
+      const col=COLOR[p.role]||"#555",lv=fresh(p);
+      let h='<div class="lt-top"><span class="lt-av" style="background:'+col+'">'+esc(initials(p.name))+'</span><div class="grow"><b>'+esc(p.name)+'</b><div class="lt-meta">'+esc(ROLE[p.role]||p.role)+
+        (p.mobile?' · <a href="tel:'+esc(p.mobile)+'" onclick="event.stopPropagation()">📞 '+esc(p.mobile)+"</a>":"")+"</div></div>"+
+        '<span class="erp-badge '+(lv?"green":p.status==="DENIED"?"red":"")+'">'+(lv?"Live":p.status==="DENIED"?"Location off":p.lat!=null?"Last seen":"Not shared")+"</span></div>";
+      h+='<div class="lt-meta">'+(p.lat!=null?ago(p.updated_at)+(p.accuracy?" · ±"+Math.round(p.accuracy)+" m":"")+(p.speed!=null&&lv&&p.speed>3?" · moving "+Math.round(p.speed)+" km/h":lv?" · not moving":""):p.status==="DENIED"?"Blocked location on the phone — ask to allow it":"ERP app not opened in work hours yet")+"</div>";
+      if(p.lat!=null)h+='<div><button type="button" class="lt-link" data-trail="'+p.user_id+'">〰 Show today\'s route</button></div>';
+      return {key:p.user_id,html:h};
+    }
+
+    function render(){
+      if(!data)return;
+      const q=el("q").value.trim().toLowerCase(),list=drivers();
+      renderKpis(list);
+      el("tabs").innerHTML=[["drivers","🚚 Drivers & deliveries ("+list.length+")"],["staff","👥 All staff ("+data.people.length+")"]]
+        .map(([k,t])=>'<button type="button" class="erp-pill'+(k===tab?" active":"")+'" data-tab="'+k+'">'+t+"</button>").join("");
+      const cards=tab==="drivers"
+        ?list.filter(d=>!q||[d.name,d.vehicle,d.mobile,...d.trips.map(t=>t.party_name+" "+t.order_no)].join(" ").toLowerCase().includes(q)).map(driverCard)
+        :data.people.filter(p=>!q||[p.name,p.mobile,ROLE[p.role]].join(" ").toLowerCase().includes(q))
+          .sort((a,b)=>(fresh(b)-fresh(a))||String(b.updated_at||"").localeCompare(String(a.updated_at||""))).map(staffCard);
+      el("side").innerHTML=cards.length?cards.map(c=>'<div class="lt-card'+(c.key===focus?" on":"")+'" data-key="'+esc(c.key)+'">'+c.html+"</div>").join("")
+        :'<div class="erp-empty">'+(tab==="drivers"?"No loaded orders on the road and no deliveries today.":"Nobody found.")+"</div>";
+      drawMap(list);
+    }
+
+    // ---------- Map ----------
+    function initMap(){
+      map=L.map("map",{zoomControl:true}).setView([21.17,72.83],11);
+      L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png",{maxZoom:19,attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'}).addTo(map);
+      layer=L.layerGroup().addTo(map);trailLayer=L.layerGroup().addTo(map);
+      map.on("click",e=>{if(pinMode)pinMode(e.latlng)});
+    }
+    const icon=(html,cls,size,bg)=>L.divIcon({className:"",html:'<div class="'+cls+'" style="width:'+size+'px;height:'+size+'px'+(bg?";background:"+bg:"")+'">'+html+"</div>",iconSize:[size,size],iconAnchor:[size/2,size/2]});
+    function drawMap(list){
+      layer.clearLayers();markers.clear();
+      const pts=[],s=data.settings;
+      if(s.godown_lat!=null){
+        L.circle([s.godown_lat,s.godown_lng],{radius:s.godown_radius_m,color:"#c9b26a",weight:1.5,fillOpacity:.08}).addTo(layer);
+        L.marker([s.godown_lat,s.godown_lng],{icon:icon("🏭","lt-sq",30),zIndexOffset:-100}).bindTooltip("Godown",{className:"lt-tip"}).addTo(layer);
+        pts.push([s.godown_lat,s.godown_lng]);
+      }
+      const parties=new Map();
+      for(const t of data.trips)if(t.party_lat!=null&&(!parties.has(t.party_name)||!t.report_status))parties.set(t.party_name,t);
+      for(const t of parties.values()){
+        L.marker([t.party_lat,t.party_lng],{icon:icon(t.report_status?"✅":"🏪","lt-sq",26),zIndexOffset:-50})
+          .bindTooltip(esc(t.party_name)+(t.report_status?" · delivered "+time(t.reported_at):" · "+esc(t.order_no)),{className:"lt-tip"}).addTo(layer);
+        pts.push([t.party_lat,t.party_lng]);
+      }
+      const driverIds=new Set(list.map(d=>d.person&&d.person.user_id).filter(Boolean));
+      for(const p of data.people){
+        if(p.lat==null)continue;
+        const isDrv=p.role==="driver",lv=fresh(p),col=COLOR[p.role]||"#555";
+        if(tab==="drivers"&&!isDrv&&!driverIds.has(p.user_id))continue;
+        const m=L.marker([p.lat,p.lng],{icon:icon(isDrv?"🚚":esc(initials(p.name)),"lt-mk"+(isDrv?" drv":"")+(lv?"":" stale"),isDrv?34:30,col),zIndexOffset:lv?500:0})
+          .bindTooltip(esc(p.name)+" · "+(lv?"live":ago(p.updated_at)),{className:"lt-tip",direction:"top",offset:[0,-14],permanent:isDrv&&tab==="drivers"});
+        m.on("click",()=>select(p.user_id));
+        m.addTo(layer);
+        markers.set(p.user_id,m);pts.push([p.lat,p.lng]);
+        if(isDrv){const d=list.find(x=>x.person&&x.person.user_id===p.user_id);
+          if(d&&d.next&&d.next.party_lat!=null&&!d.next.events.REACHED_PARTY)
+            L.polyline([[p.lat,p.lng],[d.next.party_lat,d.next.party_lng]],{color:col,weight:2,dashArray:"5 6",opacity:.7}).addTo(layer)}
+      }
+      if(!fitted&&pts.length){fitted=true;pts.length===1?map.setView(pts[0],14):map.fitBounds(pts,{padding:[30,30],maxZoom:15})}
+    }
+    function select(key){
+      focus=key;render();
+      const c=document.querySelector('.lt-card[data-key="'+CSS.escape(key)+'"]');if(c)c.scrollIntoView({behavior:"smooth",block:"nearest"});
+      const m=markers.get(key);if(m){map.setView(m.getLatLng(),Math.max(map.getZoom(),14));m.openTooltip()}
+    }
+    async function trail(uid){
+      const {data:t,error}=await client.rpc("lwb_location_trail",{p_user_id:uid,p_day:null});
+      if(error){await alert(error.message);return}
+      trailLayer.clearLayers();
+      const p=data.people.find(x=>x.user_id===uid),col=COLOR[p&&p.role]||"#555",line=(t.points||[]).map(x=>[x[0],x[1]]);
+      if(line.length<2){ERPShell.toast("Not enough route points today yet");return}
+      L.polyline(line,{color:col,weight:4,opacity:.75}).addTo(trailLayer);
+      L.circleMarker(line[0],{radius:6,color:col,fillColor:"#fff",fillOpacity:1}).bindTooltip("Start "+time(t.points[0][2]),{className:"lt-tip"}).addTo(trailLayer);
+      const NAME={LEFT_GODOWN:"Left godown",REACHED_PARTY:"Reached",DELIVERY_REPORT:"Delivery report",LEFT_PARTY:"Left",BACK_GODOWN:"Back at godown"};
+      for(const e of t.events||[])if(e.lat!=null)L.circleMarker([e.lat,e.lng],{radius:5,color:"#7a6420",fillColor:"#c9b26a",fillOpacity:1})
+        .bindTooltip(time(e.at)+" · "+NAME[e.event]+(e.party_name?" "+esc(e.party_name):""),{className:"lt-tip"}).addTo(trailLayer);
+      map.fitBounds(line,{padding:[30,30]});
+      ERPShell.toast((p?p.name:"Route")+": "+line.length+" points today");
+    }
+    function startPin(text,done){
+      cancelPin();
+      const bar=document.createElement("div");bar.className="lt-pin";bar.id="pinBar";
+      bar.innerHTML="<span>📌 "+esc(text)+"</span><button type=\"button\" class=\"sl-btn ghost small\">Cancel</button>";
+      bar.querySelector("button").onclick=cancelPin;
+      el("map").appendChild(bar);el("map").style.cursor="crosshair";
+      pinMode=async ll=>{cancelPin();await done(ll)};
+      el("map").scrollIntoView({behavior:"smooth",block:"center"});
+    }
+    function cancelPin(){pinMode=null;const b=el("pinBar");if(b)b.remove();el("map").style.cursor=""}
+
+    // ---------- Data ----------
+    async function load(){
+      el("refresh").disabled=true;
+      try{
+        const r=await client.rpc("lwb_live_map");
+        if(r.error)throw Error(/lwb_live_map|schema cache|function/i.test(r.error.message)?"Live Tracking database setup (lwb_live_tracking_setup.sql) is not on Supabase yet. It is applied automatically after this PR is merged.":r.error.message);
+        data=r.data;me.canPin=true;
+        el("setBtn").hidden=!data.can_edit;
+        const b=[];
+        if(data.settings.godown_lat==null)b.push('<div class="lt-banner">🏭 Godown location is not set, so "Left godown" and "Back at godown" are only marked by the driver\'s buttons. '+(data.can_edit?"Open ⚙ Settings and set the godown.":"Ask Admin or the Sales Head to set it.")+"</div>");
+        el("banner").innerHTML=b.join("")+(b.length?'<div style="height:10px"></div>':"");
+        el("stamp").textContent="Updated "+time(new Date());
+        render();
+      }catch(e){el("side").innerHTML='<div class="erp-empty">'+esc(e.message||e)+"</div>"}
+      el("refresh").disabled=false;
+    }
+
+    // ---------- Settings ----------
+    function openSettings(){
+      const s=data.settings;
+      el("roles").innerHTML=["driver","sales","accounts","warehouse","transport","manager","admin"].map(r=>'<label><input type="checkbox" value="'+r+'"'+(s.tracked_roles.includes(r)?" checked":"")+"> "+ROLE[r]+"</label>").join("");
+      el("ws").value=s.work_start;el("we").value=s.work_end;el("spd").value=s.avg_speed_kmph;el("rad").value=s.godown_radius_m;
+      gd={lat:s.godown_lat,lng:s.godown_lng};showGd();
+      el("setCard").hidden=false;
+    }
+    let gd={lat:null,lng:null};
+    const showGd=()=>{el("gdText").textContent=gd.lat!=null?"Godown: "+gd.lat.toFixed(5)+", "+gd.lng.toFixed(5):"Godown location not set"};
+    el("gdHere").onclick=()=>{
+      if(!navigator.geolocation)return alert("This browser has no location.");
+      navigator.geolocation.getCurrentPosition(p=>{gd={lat:p.coords.latitude,lng:p.coords.longitude};showGd();ERPShell.toast("Godown set to your location (±"+Math.round(p.coords.accuracy)+" m). Press Save.")},
+        e=>alert("Could not read your location: "+e.message),{enableHighAccuracy:true,timeout:15e3});
+    };
+    el("gdMap").onclick=()=>startPin("Tap the godown on the map",async ll=>{gd={lat:ll.lat,lng:ll.lng};showGd();ERPShell.toast("Godown picked. Press Save settings.");el("setCard").scrollIntoView({behavior:"smooth"})});
+    el("setSave").onclick=async()=>{
+      const roles=[...el("roles").querySelectorAll("input:checked")].map(i=>i.value);
+      const p={tracked_roles:roles,work_start:el("ws").value||"08:00",work_end:el("we").value||"21:00",
+        avg_speed_kmph:Number(el("spd").value)||25,godown_radius_m:Number(el("rad").value)||200,godown_lat:gd.lat,godown_lng:gd.lng};
+      const {error}=await client.rpc("lwb_tracking_save_settings",{p});
+      if(error)return alert("Settings not saved: "+error.message);
+      el("setCard").hidden=true;fitted=false;await load();ERPShell.toast("Tracking settings saved");
+    };
+    el("setBtn").onclick=openSettings;el("setClose").onclick=()=>{el("setCard").hidden=true;cancelPin()};
+
+    // ---------- Events ----------
+    el("tabs").onclick=e=>{const b=e.target.closest("[data-tab]");if(b){tab=b.dataset.tab;render()}};
+    el("q").oninput=render;
+    el("refresh").onclick=load;
+    el("side").onclick=async e=>{
+      const pin=e.target.closest("[data-pin]"),tr=e.target.closest("[data-trail]"),card=e.target.closest(".lt-card");
+      if(pin){const name=pin.dataset.pin;startPin("Tap where "+name+" is",async ll=>{
+        const {error}=await client.rpc("lwb_set_party_location",{p_party:name,p_lat:ll.lat,p_lng:ll.lng});
+        if(error)return alert("Party pin not saved: "+error.message);
+        ERPShell.toast(name+" pinned");await load()});return}
+      if(tr){await trail(tr.dataset.trail);return}
+      if(card)select(card.dataset.key);
+    };
+
+    (async()=>{
+      try{
+        me=await S.start(["admin","manager","warehouse"]);if(!me)return;
+        el("loading").hidden=true;el("page").hidden=false;
+        initMap();await load();
+        timer=setInterval(()=>{if(!document.hidden&&!pinMode)load()},20e3);
+        document.addEventListener("visibilitychange",()=>{if(!document.hidden)load()});
+      }catch(e){el("loading").textContent="Error: "+(e.message||e)}
+    })();
+  </script>
+</body>
+</html>

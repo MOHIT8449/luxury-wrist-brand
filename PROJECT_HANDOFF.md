@@ -465,3 +465,12 @@
 - `tasks.html` (menu under Dashboard, every role): Give a Task (title, details, due date with Today / Tomorrow / 3 days / 1 week, Urgent, people grouped by role with Select all), tabs My tasks / Given by me / Team, status filter, notes thread.
 - Dashboard: "My Tasks" card for every role (pending, overdue first, + Give task, "Given by me: N pending · N late").
 - Tests: `tests/task-management` (PGlite, 9 tests). Browser preview with mocked Supabase only; no live tasks created.
+
+## Live Tracking: drivers and staff on a map (31 Oct 2026)
+
+- SQL: `lwb_live_tracking_setup.sql`. Tables `lwb_tracking_settings` (one row: tracked roles, work hours, godown pin + circle, average speed for ETA), `lwb_staff_location` (latest point per user), `lwb_location_history` (route, 1 point a minute or every 40 m, kept 30 days), `lwb_trip_events` (LEFT_GODOWN / REACHED_PARTY / DELIVERY_REPORT / LEFT_PARTY / BACK_GODOWN). `lwb_customer_master.geo_lat / geo_lng` = party pin. No direct table access; everything goes through the RPCs.
+- Phone: `live-location.js` (loaded by `erp-shell.js` on every page) asks `lwb_track_me`, then sends `lwb_track_ping` every 25 s / 50 m while the ERP is open on screen, only for tracked roles (default driver, sales, accounts, warehouse, transport) and only in work hours (default 08:00–21:00 IST). Shows a "📍 Location ON" pill; a blocked permission is saved as DENIED and shown on the map. `_headers` now allows `geolocation=(self)`.
+- Trip steps are marked by GPS inside `lwb_track_ping` (outside godown circle → Left godown; within 150 m of the party pin → Reached; 300 m away after the report → Left party; back in the circle with nothing pending → Back at godown) and by buttons on the driver's order card (`lwb_trip_mark`). Trigger `trg_lwb_trip_delivery_report` adds DELIVERY_REPORT and pins a party at its first delivery (driver GPS within 10 min, ±100 m). Tracking can never block a delivery report.
+- `live-tracking.html` (menu Delivery; Admin, MANAGER, WAREHOUSE or a ticked page): map (Leaflet in `assets/leaflet/`, OpenStreetMap tiles, free), driver cards with steps and ETA (straight line × 1.3 at the set speed, no paid API), all-staff list, today's route, party pin by tap, settings (Admin / Sales Head). Auto-refresh every 20 s.
+- Limits: a web page / the Chrome-based Android app gets GPS only while it is open on screen. Background tracking with the screen off needs a native Android foreground service (APK change) — not built.
+- Tests: `tests/live-tracking` (PGlite, `npm ci && npm test`).
