@@ -39,6 +39,8 @@
    const veh=(m.match(/Vehicle ([A-Z0-9]+)/)||[])[1],drv=((m.match(/Driver ([^(·]+)/)||[])[1]||"").trim();
    return {icon:"🚚",text:join([/updated|changed|badla/i.test(title)?"Loading updated":"Loading",order,veh,drv])};
   }
+  if(t.startsWith("STOCK_MOVE_")){const id=(m.match(/STM-\d+/)||[])[0]||"";return {icon:{STOCK_MOVE_PENDING:"📦",STOCK_MOVE_APPROVED:"✅",STOCK_MOVE_REJECTED:"❌"}[t]||"📦",text:join([title,id])}}
+  if(t.startsWith("STOCK_AUDIT_")){const id=(m.match(/AUD-\d+/)||[])[0]||"";return {icon:t==="STOCK_AUDIT_OK"?"✅":"🌙",text:join([title,id])}}
   if(t.startsWith("GODOWN_")){const id=(m.match(/GDN-\d+/)||[])[0]||"";return {icon:"🏭",text:join([title.replace(/^Godown: /,"Godown · "),id])}}
   if(t.startsWith("ORDER_")){const ic={ORDER_DELIVERED:"✅",ORDER_PARTIAL:"🟠",ORDER_NOT_DELIVERED:"⚠",ORDER_CANCELLED:"✖",ORDER_EDITED:"✏"}[t]||"•";
    return {icon:ic,text:join([title,order])}}
@@ -76,6 +78,9 @@
   [/^LOADING_ASSIGNMENT_DRIVER$/,["driver-delivery.html?order={o}","loading-dispatch.html","transport-allocation.html"]],
   [/^LOADING_ASSIGNMENT_/,["loading-dispatch.html?order={o}","transport-allocation.html"]],
   [/^GODOWN_/,["godown-report.html"]],
+  [/^STOCK_AUDIT_/,["stock-audit.html"]],
+  [/^STOCK_MOVE_PENDING$/,["stock-transfer.html#approvals"]],
+  [/^STOCK_MOVE_/,["stock-transfer.html#history"]],
   [/^ACC_BANK_VERIFY$/,["accounts-dashboard.html#verify"]],
   [/^ACC_CHEQUE/,["accounts-dashboard.html#cheques"]],
   [/^ACC_/,["accounts-dashboard.html"]],
