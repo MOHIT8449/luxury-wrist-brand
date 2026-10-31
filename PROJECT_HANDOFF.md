@@ -4,6 +4,14 @@
 **Purpose:** Continue the same ERP project from a new ChatGPT conversation without restarting or losing the agreed requirements.
 **Status:** Active development / verification. Do not assume all modules are completed or fully tested.
 
+## Latest added / edited record first in every list (31 Oct 2026)
+- Mohit's rule: in every list the record added, edited, modified, approved or cancelled last comes first.
+- SQL: `lwb_latest_first_setup.sql`. Adds `updated_at` (and `created_at` if missing) to the list tables, old rows stay NULL (no mass update), and a BEFORE UPDATE trigger `zz_lwb_touch_updated_at` (function `lwb_touch_updated_at`) sets `updated_at = now()` on every real change. New list tables: add them to the array in that file.
+- `lwb_emp_list()` now lives in `lwb_latest_first_setup.sql` too (adds `created_at` / `updated_at`); if `lwb_employee_master_setup.sql` is edited, keep those two fields there.
+- Pages: `erp-recent.js` (`ERPRecent.sort(rows)`, newest of updated_at / created_at / cancelled_at / approved_at ... first; `ERPRecent.attach(client, table, rows)` for pages that read only some columns). Load it in the page head; new list pages should call it on load.
+- Kept on purpose: PO lists keep Urgent / High first (latest first inside each priority); ledgers and day books stay in date order (running balance); dropdowns stay A–Z; Tasks / Complaint Box already sort by last activity.
+- Test: `tests/latest-first` (PGlite).
+
 ## Stock Transfer, damage ledger, destroy and Night Audit (31 Oct 2026)
 
 - Mohit asked (photo "Stock Transfer"): Saleable -> Damage / Leakage / Breakage / Gasless / Expiry / Loss, approved by Sales Head or Admin before saleable goes down; a ledger per category; Damage-to-Destroy; a nightly Godown Manager audit where a difference stays open until found, else Loss; a daily report (e.g. 5000 handled, 5 lost).

@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Accounts — ERP Bill Create | Luxury Wrist Brand</title>
-<script src="erp-date.js"></script>
+<script src="erp-date.js"></script><script src="erp-recent.js"></script>
 <script>/* the list moved to Billing & Outstanding; ?order= still opens one PO here */
 if(!new URLSearchParams(location.search).get("order"))location.replace("party-billing.html"+location.hash);</script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -235,7 +235,7 @@ async function reload(){
  loading=true;$("refresh").disabled=true;
  try{
   const [o,b,legacy,tally,fl,fm,py]=await Promise.all([
-   db.from("orders").select("id,order_no,order_date,customer_name,transportation,status")
+   db.from("orders").select("*")
     .in("status",["loaded","invoiced","dispatched","delivered"]).order("order_date",{ascending:false}).limit(1500),
    db.from("lwb_internal_bills").select("id,order_id,internal_bill_no,bill_date,customer_name,loaded_qty,goods_amount,items,created_at")
     .order("created_at",{ascending:false}).limit(2000),
@@ -329,7 +329,9 @@ const HEAD={
 function cellHead(){return HEAD[tab].map(h=>h.startsWith("n:")?'<th class="n">'+h.slice(2)+'</th>':'<th>'+h+'</th>').join("")}
 function render(){
  const q=$("search").value.trim().toLowerCase();
- const all=orders.map(rowOf);
+ // latest changed PO first: the order itself, its Tally bill or its payments, whichever changed last
+ const at=new Map();for(const p of pays)if(p.order_id)at.set(p.order_id,Math.max(at.get(p.order_id)||0,ERPRecent.time(p)));
+ const all=orders.map(rowOf).map(r=>[r,Math.max(ERPRecent.time(r.o),ERPRecent.time(r.t),at.get(r.o.id)||0)]).sort((a,b)=>b[1]-a[1]).map(x=>x[0]);
  const count=k=>all.filter(r=>inTab(r,k)).length;
  $("orderCount").textContent=qty(count("bill"));
  $("billCount").textContent=cash(all.filter(r=>inTab(r,"due")).reduce((a,r)=>a+r.due,0));
