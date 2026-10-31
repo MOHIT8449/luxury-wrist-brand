@@ -108,7 +108,7 @@
     const COLOR={driver:"#00434d",sales:"#1d5fbf",accounts:"#7b4fb5",warehouse:"#b26b00",transport:"#2f7d5b",manager:"#a33a5a",admin:"#444"};
     const STEPS=[["LEFT_GODOWN","Left godown"],["ON_WAY","On the way"],["REACHED_PARTY","Reached"],["DELIVERY_REPORT","Delivered"],["LEFT_PARTY","Left party"]];
     const STALE_MIN=10;
-    let me=null,data=null,tab="drivers",map=null,layer=null,trailLayer=null,markers=new Map(),focus="",pinMode=null,fitted=false,timer=null;
+    let me=null,data=null,tab="drivers",map=null,layer=null,trailLayer=null,liveTrails=null,trailCache=new Map(),markers=new Map(),focus="",pinMode=null,fitted=false,timer=null;
 
     const time=v=>v?new Date(v).toLocaleTimeString("en-IN",{hour:"2-digit",minute:"2-digit",hour12:true,timeZone:"Asia/Kolkata"}):"";
     const ago=v=>{if(!v)return "never";const m=Math.round((Date.now()-new Date(v))/6e4);return m<1?"just now":m<60?m+" min ago":m<1440?Math.floor(m/60)+" h "+(m%60)+" min ago":Math.floor(m/1440)+" day ago"};
@@ -215,7 +215,7 @@
     function initMap(){
       map=L.map("map",{zoomControl:true}).setView([21.17,72.83],11);
       L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png",{maxZoom:19,attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'}).addTo(map);
-      layer=L.layerGroup().addTo(map);trailLayer=L.layerGroup().addTo(map);
+      layer=L.layerGroup().addTo(map);liveTrails=L.layerGroup().addTo(map);trailLayer=L.layerGroup().addTo(map);
       map.on("click",e=>{if(pinMode)pinMode(e.latlng)});
     }
     const icon=(html,cls,size,bg)=>L.divIcon({className:"",html:'<div class="'+cls+'" style="width:'+size+'px;height:'+size+'px'+(bg?";background:"+bg:"")+'">'+html+"</div>",iconSize:[size,size],iconAnchor:[size/2,size/2]});
@@ -249,6 +249,35 @@
             L.polyline([[p.lat,p.lng],[d.next.party_lat,d.next.party_lng]],{color:col,weight:2,dashArray:"5 6",opacity:.7}).addTo(layer)}
       }
       if(!fitted&&pts.length){fitted=true;pts.length===1?map.setView(pts[0],14):map.fitBounds(pts,{padding:[30,30],maxZoom:15})}
+      if(tab==="drivers")drawLiveTrails(list);else liveTrails.clearLayers();
+    }
+    // The road each on-road driver has actually travelled today (his GPS breadcrumb,
+    // so it follows the real roads and shows which area he is in). Cached 15 s.
+    async function refreshTrail(uid){
+      const c=trailCache.get(uid);
+      if(c&&Date.now()-c.at<15e3)return c;
+      try{const {data:t,error}=await client.rpc("lwb_location_trail",{p_user_id:uid,p_day:null});
+        if(error)return c;const rec={at:Date.now(),points:t.points||[]};trailCache.set(uid,rec);return rec}
+      catch(e){return c}
+    }
+    async function drawLiveTrails(list){
+      const onRoad=list.filter(d=>d.person&&d.person.lat!=null&&d.open.some(t=>t.events.LEFT_GODOWN));
+      // Draw from cache at once (no flicker), then refresh and redraw.
+      paintTrails(onRoad);
+      await Promise.all(onRoad.map(d=>refreshTrail(d.person.user_id)));
+      if(tab==="drivers")paintTrails(onRoad);
+    }
+    function paintTrails(onRoad){
+      liveTrails.clearLayers();
+      const now=Date.now();
+      for(const d of onRoad){
+        const c=trailCache.get(d.person.user_id);if(!c||c.points.length<2)continue;
+        const line=c.points.map(x=>[x[0],x[1]]);
+        L.polyline(line,{color:COLOR.driver,weight:3,opacity:.45}).addTo(liveTrails);
+        // Last ~15 min brighter, so the live leg stands out.
+        const recent=c.points.filter(x=>now-new Date(x[2])<15*6e4).map(x=>[x[0],x[1]]);
+        if(recent.length>=2)L.polyline(recent,{color:"#1465d4",weight:4,opacity:.85}).addTo(liveTrails);
+      }
     }
     function select(key){
       focus=key;render();
@@ -289,7 +318,7 @@
         data=r.data;me.canPin=true;
         el("setBtn").hidden=!data.can_edit;
         const b=[];
-        if(data.settings.godown_lat==null)b.push('<div class="lt-banner">🏭 Godown location is not set, so "Left godown" and "Back at godown" are only marked by the driver\'s buttons. '+(data.can_edit?"Open ⚙ Settings and set the godown.":"Ask Admin or the Sales Head to set it.")+"</div>");
+        if(data.settings.godown_lat==null)b.push('<div class="lt-banner">🏭 Godown location is not set, so "Left godown" and "Back at godown" can\'t be detected. Deliveries and "Reached party" still work. '+(data.can_edit?"Open ⚙ Settings and set the godown.":"Ask Admin or the Sales Head to set it.")+"</div>");
         el("banner").innerHTML=b.join("")+(b.length?'<div style="height:10px"></div>':"");
         el("stamp").textContent="Updated "+time(new Date());
         render();
