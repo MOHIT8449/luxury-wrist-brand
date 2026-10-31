@@ -2,7 +2,7 @@
 --
 -- RUN ONCE in Supabase SQL Editor, after lwb_announcements_market_report_setup.sql. Safe to run again.
 --
--- Admin / Sales Head can now post a wide banner photo (best size 1600 x 400 px, 4:1)
+-- Admin / Sales Head can now post a wide banner photo (best size 1600 x 300 px, 16:3)
 -- with the focus message. Every role sees the active banners as a sliding banner strip
 -- at the top of the Dashboard until the end date (or until removed). Text is optional
 -- when a photo is posted. Old text-only posts keep working as before.
