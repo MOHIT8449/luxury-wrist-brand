@@ -4,7 +4,7 @@ After the password, every ERP login needs a 6-digit OTP:
 
 - **WhatsApp OTP** to the user's Login Mobile (Manage Users), when WhatsApp is set up.
 - **Authenticator app** (Google Authenticator) for users with no Login Mobile,
-  while WhatsApp is not set up, or by choice ("Authenticator app se verify karein").
+  while WhatsApp is not set up, or by choice ("Verify with Authenticator app").
 
 Until steps 1-4 are done, login keeps using the Authenticator app. Nothing breaks.
 
