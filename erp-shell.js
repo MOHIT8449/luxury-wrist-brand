@@ -51,7 +51,8 @@
       {t:"Sheet & Pallet Ledger",h:"sheet-pallet.html",i:"layers",r:"admin manager accounts warehouse"}]},
     {group:"Delivery",items:[
       {t:"Driver Delivery / POD",h:"driver-delivery.html",i:"pin",r:"admin manager driver accounts"},
-      {t:"Driver Collections",h:"driver-collections.html",i:"cash",r:"admin manager accounts"}]},
+      {t:"Driver Collections",h:"driver-collections.html",i:"cash",r:"admin manager accounts"},
+      {t:"Live Tracking",h:"live-tracking.html",i:"pin",r:"admin manager warehouse"}]},
     {group:"Reports",items:[
       {t:"Daily Summary",h:"daily-report.html",i:"stock",r:"admin manager accounts"},
       {t:"Team Work Report",h:"team-report.html",i:"users",r:"admin manager"}]},
@@ -483,6 +484,17 @@
       const {data}=await c.auth.getSession();const user=data&&data.session&&data.session.user;if(!user)return;
       if(!window.LWBOperationsNotifications)await new Promise((ok,bad)=>{const s=document.createElement("script");s.src="erp-operations-notifications.js";s.onload=ok;s.onerror=bad;document.head.appendChild(s)});
       window.LWBOperationsNotifications.init({db:c,user,role,mount:top.querySelector(".erp-user"),pages:menuForMe(role).flatMap(g=>g.items.map(i=>i.h.split("#")[0]))});
+    }catch(e){}
+    liveLocation();
+  }
+
+  // 📍 Live Tracking: the phone shares its location while the ERP is open
+  // (only roles + hours set on the Live Tracking page; see live-location.js).
+  async function liveLocation(){
+    try{
+      const c=window.__lwbBellClient;if(!c)return;
+      if(!window.LWBLocation)await new Promise((ok,bad)=>{const s=document.createElement("script");s.src="live-location.js";s.onload=ok;s.onerror=bad;document.head.appendChild(s)});
+      window.LWBLocation.start(c);
     }catch(e){}
   }
 
