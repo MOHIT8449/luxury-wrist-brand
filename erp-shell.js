@@ -71,6 +71,8 @@
     {group:"Inventory",items:[
       {t:"Inventory / Stock Report",h:"inventory.html",i:"stock",r:"admin manager warehouse accounts"},
       {t:"Goods in Transit",h:"stock-transit.html",i:"truck",r:"admin manager warehouse"},
+      {t:"Stock Transfer / Damage",h:"stock-transfer.html",i:"undo",r:"admin manager warehouse accounts"},
+      {t:"Night Stock Audit",h:"stock-audit.html",i:"stock",r:"admin manager warehouse accounts"},
       {t:"Goods Inward (Purchase)",h:"goods-inward.html",i:"inbox",r:"admin manager"},
       {t:"Purchase Register",h:"purchase-register.html",i:"inbox",r:"admin"},
       {t:"Purchase Claims",h:"purchase-claims.html",i:"inbox",r:"admin manager"},

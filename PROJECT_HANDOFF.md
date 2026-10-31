@@ -4,6 +4,17 @@
 **Purpose:** Continue the same ERP project from a new ChatGPT conversation without restarting or losing the agreed requirements.
 **Status:** Active development / verification. Do not assume all modules are completed or fully tested.
 
+## Stock Transfer, damage ledger, destroy and Night Audit (31 Oct 2026)
+
+- Mohit asked (photo "Stock Transfer"): Saleable -> Damage / Leakage / Breakage / Gasless / Expiry / Loss, approved by Sales Head or Admin before saleable goes down; a ledger per category; Damage-to-Destroy; a nightly Godown Manager audit where a difference stays open until found, else Loss; a daily report (e.g. 5000 handled, 5 lost).
+- SQL: `lwb_stock_transfer_setup.sql`. Tables `lwb_stock_moves` (one row per SKU line, `batch_id` groups a request; buckets SALEABLE, DAMAGE, LEAKAGE, BREAKAGE, GASLESS, EXPIRY, LOSS, DESTROYED, COMPANY_RETURN; status PENDING / APPROVED / REJECTED / CANCELLED), `lwb_stock_audits` (one per date, DRAFT / SUBMITTED), `lwb_stock_audit_lines`. No direct table access; RPCs `lwb_stx_*`.
+- Allowed moves: Saleable -> 6 categories (TRANSFER); Damage..Expiry -> Destroyed (DESTROY, witness required) or Return to company; any category incl. Loss -> Saleable (TO_SALEABLE, e.g. lost stock found). All need approval (`lwb_stx_decide`, Admin / MANAGER; a Sales Head cannot approve his own request, Admin can; can approve less). Request checks available stock minus waiting requests; approval checks again.
+- Stock link: the old view `lwb_live_stock` is renamed `lwb_live_stock_base`; a new `lwb_live_stock` with the same columns = base saleable + `lwb_stx_adjust()` (approved moves) and damaged_pcs + stock held in Damage..Expiry. So PO Entry, Inventory, Dashboard see it. Skipped with a NOTICE (page shows a warning) if the live object is not a plain one-row-per-SKU view. Undo: drop the new view and rename the base back.
+- Night audit (`stock-audit.html`): count sheet per SKU (cases + pcs, ✓ = same as system, optional Blind count, print); draft, then Submit takes system stock at that moment. diff = physical - (system - loss waiting). Next count of a SKU replaces an older OPEN difference (RECOUNTED, `open_since` kept) or closes it as FOUND when it matches. Open difference -> Found (note) or Not found -> Loss (a Saleable -> Loss request, source AUDIT; reject / cancel reopens it). Audit never changes stock.
+- Reports (`stock-transfer.html`): Stock Status per SKU, Approvals, History, Category Ledger (running balance + opening), Daily Report (`lwb_stx_daily`: handled = Goods Inward cases + loaded cases that day, transfers per category, loss per 1000 handled, audit result). Excel on each.
+- Who: request / audit = admin, manager, warehouse (or ticked page); approve = admin, manager; Accounts view only; Sales / Driver / Transport none. Bells: STOCK_MOVE_PENDING (Admin + Sales Head), STOCK_MOVE_APPROVED / REJECTED (requester), STOCK_AUDIT_DIFF / OK (Admin + Sales Head). Photos go to the private `lwb-godown-photos` bucket.
+- Tests: `tests/stock-transfer` (PGlite, 12 tests). Browser check with a mocked client whose RPCs ran this SQL on PGlite at 390 / 1280 px; no live data written.
+
 ## MRP-based purchase bills: Rajnigandha (31 Oct 2026)
 
 - Pan masala / tobacco purchase bills charge GST on the **Deemed Taxable Value = Total MRP ÷ (1 + GST%)** (rounded to the rupee), and **Line Total = Net Sale + GST**. Checked on DS Group bill 322HA21087 (total ₹11,11,014.00 before ₹0.02 round off).
