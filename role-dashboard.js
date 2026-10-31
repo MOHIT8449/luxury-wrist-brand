@@ -280,7 +280,7 @@
       (rows.length?'<div class="rd-scroll"><table class="rd-ptab"><thead><tr><th>PO No.</th><th>Party</th><th class="hide-sm">Salesman</th><th class="n hide-sm">Cases</th><th class="n">Sale ₹</th><th class="n">Profit ₹</th><th class="n hide-sm">%</th></tr></thead><tbody>'+
         rows.map(x=>'<tr data-oid="'+esc(x.o.id)+'"><td><b class="rd-po">'+esc(x.o.order_no||"—")+"</b>"+(x.missing?" "+badge("a",x.missing+" SKU no landing"):"")+"</td><td>"+esc(x.o.customer_name||"—")+'</td><td class="hide-sm">'+esc(takerOf(x.o,TEAM))+'</td><td class="n hide-sm">'+fmt(x.cases)+'</td><td class="n">'+fmt(x.sale)+'</td><td class="n '+tone(x.profit)+'"><b>'+fmt(x.profit)+'</b></td><td class="n hide-sm">'+margin(x.profit,x.sale-x.lines.filter(l=>l.land==null).reduce((b,l)=>b+l.rate*l.q,0))+"</td></tr>"+lines(x)).join("")+"</tbody></table></div>"
         :'<div class="rd-empty">No order on this day.</div>')+
-      '<div class="rd-note">Profit = (PO rate − landing per case) × cases. Landing is from Rate & Scheme, without ROI. Tap an order to see SKU-wise. Cancelled / rejected orders are not counted.'+(P.missing?" <b>"+fmt(P.missing)+" SKU line"+(P.missing==1?"":"s")+"</b> have no landing (link the SKU in Rate & Scheme), so they are left out of profit.":"")+"</div>";
+      '<div class="rd-note">'+'<button type="button" class="erp-i" aria-label="Info" title="Info" data-tip="Profit = (PO rate − landing per case) × cases. Landing is from Rate &amp; Scheme, without ROI. Tap an order to see SKU-wise. Cancelled / rejected orders are not counted.">i</button>'+(P.missing?" <b>"+fmt(P.missing)+" SKU line"+(P.missing==1?"":"s")+"</b> have no landing (link the SKU in Rate & Scheme), so they are left out of profit.":"")+"</div>";
   }
 
   /* ---------- layout ---------- */

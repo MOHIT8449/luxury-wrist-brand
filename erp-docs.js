@@ -210,7 +210,6 @@
             (canEdit?'<div class="ed-btns">'+(s.doc?'':'<button type="button" class="ed-btn" data-cam="'+s.k+'">📷 Camera</button>')+
               '<button type="button" class="ed-btn" data-pick="'+s.k+'">'+(s.img?'🖼 Gallery':s.doc?'📄 PDF / Scan / Photo':'📎 Photo / PDF')+'</button>'+
               (s.doc?'<button type="button" class="ed-btn" data-cam="'+s.k+'">📷 Phone camera</button>':'')+'</div>':'')+
-            (s.doc&&canEdit?'<div class="ed-hint">Scanner: scan the bill to PDF / JPG on the computer (printer\'s scan button or app), then choose the file here. On a phone, use 📷 for each page.</div>':'')+
             (wait.some(p=>p.fail)?'<div class="ed-hint" style="color:#b42318">Not uploaded. Remove and try again.</div>':'')+
             (id==null&&wait.length?'<div class="ed-hint">Will upload when you Save.</div>':'')+'</div>';
         }).join('')+'</div>'+
@@ -259,7 +258,7 @@
     css();
     return new Promise(done=>{
       const back=document.createElement('div');back.className='ed-back';
-      back.innerHTML='<div class="ed-pop" role="dialog" aria-modal="true"><div class="ed-pop-h"><h3></h3><div class="ed-btns">'+(o.info&&o.canEdit!==false?'<button type="button" class="ed-btn main" data-a="save">Save details</button>':'')+'<button type="button" class="ed-btn" data-a="close">Close ✕</button></div></div><div class="ed-body"></div><p class="ed-hint">Files upload as soon as you choose them. Only office staff with access can open them.</p></div>';
+      back.innerHTML='<div class="ed-pop" role="dialog" aria-modal="true"><div class="ed-pop-h"><h3></h3><div class="ed-btns">'+(o.info&&o.canEdit!==false?'<button type="button" class="ed-btn main" data-a="save">Save details</button>':'')+'<button type="button" class="ed-btn" data-a="close">Close ✕</button></div></div><div class="ed-body"></div></div>';
       back.querySelector('h3').textContent=o.title||'Documents & photos';
       document.body.append(back);
       const p=panel({...o,mount:back.querySelector('.ed-body')});
