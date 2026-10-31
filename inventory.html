@@ -7,6 +7,7 @@
   <script src="erp-date.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="party-list.js" defer></script>
+  <script src="brand-filter.js"></script>
   <link rel="stylesheet" href="erp-shell.css">
   <script src="erp-shell.js"></script>
   <style>
@@ -14,8 +15,10 @@
     .inv-sub{margin:-8px 0 14px;color:var(--erp-muted);font-size:13px}
     .inv-filters{display:flex;gap:10px;align-items:end;flex-wrap:wrap;margin-bottom:14px}
     .inv-filters label{display:block;font-size:12px;font-weight:600;color:#4b5763;margin-bottom:4px}
-    .inv-filters input{height:38px;border:1.5px solid var(--erp-line);border-radius:6px;padding:0 10px;font:inherit;background:#fff;color:var(--erp-ink)}
-    .inv-filters input:focus{outline:none;border-color:var(--erp-red)}
+    .inv-filters input,.inv-filters select{height:38px;border:1.5px solid var(--erp-line);border-radius:6px;padding:0 10px;font:inherit;background:#fff;color:var(--erp-ink)}
+    .inv-filters select{min-width:170px;cursor:pointer}
+    .inv-filters select.on{border-color:var(--erp-red);font-weight:600}
+    .inv-filters input:focus,.inv-filters select:focus{outline:none;border-color:var(--erp-red)}
     .inv-filters .grow{flex:1;min-width:200px}.inv-filters .grow input{width:100%}
     .inv-filters button{height:38px;border-radius:6px;padding:0 16px;font-weight:600;cursor:pointer;border:1px solid var(--erp-red);background:var(--erp-red);color:#fff}
     .inv-filters button.ghost{background:#fff;color:var(--erp-ink);border-color:var(--erp-line)}
@@ -32,7 +35,7 @@
     .inv-note{font-size:12.5px;color:var(--erp-muted);margin:10px 2px 0}
     .inv-msg{padding:16px;color:var(--erp-red);font-weight:600;white-space:pre-wrap}
     @media(max-width:1100px){.inv-kpis{grid-template-columns:repeat(3,minmax(0,1fr))}}
-    @media(max-width:640px){.inv-filters button{flex:1 1 40%}.inv-kpis{grid-template-columns:1fr 1fr}.inv-kpi b{font-size:19px}.inv-filters>div:not(.grow){flex:1 1 40%}.inv-filters input{width:100%}}
+    @media(max-width:640px){.inv-filters button{flex:1 1 40%}.inv-kpis{grid-template-columns:1fr 1fr}.inv-kpi b{font-size:19px}.inv-filters>div:not(.grow){flex:1 1 40%}.inv-filters input,.inv-filters select{width:100%}}
     [hidden]{display:none!important}
   </style>
 </head>
@@ -45,6 +48,7 @@
     <div class="inv-filters">
       <div><label for="from">From</label><input id="from" type="date"></div>
       <div><label for="to">To</label><input id="to" type="date"></div>
+      <div><label for="brand">Brand</label><select id="brand"><option value="">All brands</option></select></div>
       <div class="grow"><label for="q">Search SKU / Invoice / Party</label><input id="q" data-party-list type="search" placeholder="Type to filter the table..." autocomplete="off"></div>
       <button id="refresh" type="button">Refresh</button>
       <button id="excel" type="button" class="ghost">Excel</button>
@@ -84,6 +88,7 @@
     const LOW_CASES=5;
     let skus=new Map(),skuByName=new Map(),live=[],inLines=[],outLines=[],moves=[];
     let errors={},tab="stock";
+    let all={live:[],inLines:[],outLines:[],moves:[]},brands=[],brand="";
 
     function skuInfo(id,name){
       const s=(id!=null&&skus.get(String(id)))||skuByName.get(nameKey(name));
@@ -98,19 +103,43 @@
       errors={};
       try{
         const [skuRes,liveRes]=await Promise.all([
-          client.from("sku_master").select("id,sku_name,pcs_per_case").order("sku_name"),
+          client.from("sku_master").select("id,sku_name,pcs_per_case,company_id").order("sku_name").then(r=>r.error?client.from("sku_master").select("id,sku_name,pcs_per_case").order("sku_name"):r),
           client.from("lwb_live_stock").select("sku_id,sku_name,pcs_per_case,saleable_pcs,damaged_pcs").order("sku_name")
         ]);
         skus=new Map();skuByName=new Map();
-        for(const s of (skuRes.data||[])){const x={id:String(s.id),name:s.sku_name,pack:Math.max(1,num(s.pcs_per_case))};skus.set(x.id,x);skuByName.set(nameKey(s.sku_name),x)}
+        for(const s of (skuRes.data||[])){const x={id:String(s.id),name:s.sku_name,pack:Math.max(1,num(s.pcs_per_case)),company:s.company_id||""};skus.set(x.id,x);skuByName.set(nameKey(s.sku_name),x)}
         for(const s of (liveRes.data||[]))if(!skus.has(String(s.sku_id))){const x={id:String(s.sku_id),name:s.sku_name,pack:Math.max(1,num(s.pcs_per_case))};skus.set(x.id,x);skuByName.set(nameKey(s.sku_name),x)}
         if(liveRes.error)errors.stock=liveRes.error.message;
         live=liveRes.data||[];
       }catch(e){errors.stock=e.message||String(e)}
 
       await Promise.all([loadIn(start,end),loadOut(start,end),loadMoves(start,end)]);
+      all={live,inLines,outLines,moves};
       el("refresh").disabled=false;
+      applyBrand();
       render();
+    }
+
+    // Brand = company tagged on the SKU in SKU Master (sku_master.company_id).
+    function applyBrand(){
+      const ok=s=>!brand||(s&&s.company)===brand;
+      live=all.live.filter(b=>ok(skuInfo(b.sku_id,b.sku_name)));
+      inLines=all.inLines.filter(x=>ok(x.sku));
+      outLines=all.outLines.filter(x=>ok(x.sku));
+      moves=all.moves.filter(x=>ok(x.sku));
+    }
+    const brandName=()=>{const c=brands.find(x=>x.id===brand);return c?c.name:""};
+    async function loadBrands(){
+      const sel=el("brand");
+      try{
+        const r=await LWBBrand.load(client);
+        brands=r.companies||[];
+      }catch(e){brands=[]}
+      if(!brands.length){sel.parentElement.hidden=true;brand="";return}
+      brand=LWBBrand.get(brands);
+      sel.innerHTML='<option value="">All brands</option>'+brands.map(c=>'<option value="'+esc(c.id)+'">'+esc(c.name)+"</option>").join("");
+      sel.value=brand;sel.classList.toggle("on",!!brand);
+      sel.addEventListener("change",()=>{brand=sel.value;LWBBrand.set(brand);sel.classList.toggle("on",!!brand);applyBrand();render()});
     }
 
     async function loadIn(start,end){
@@ -222,12 +251,12 @@
       const v=view(),q=nameKey(el("q").value);
       const rows=q?v.rows.filter(r=>nameKey(r.key).includes(q)):v.rows;
       current={...v,rows};
-      el("tabTitle").textContent=v.title;
+      el("tabTitle").textContent=v.title+(brand?" · "+brandName():"");
       el("tabCount").textContent=v.err?"":rows.length+" rows";
       el("tabNote").textContent=v.note;
       const box=el("tableBox");
       if(v.err){box.innerHTML='<div class="inv-msg">Could not load this report: '+esc(v.err)+"</div>";return}
-      if(!rows.length){box.innerHTML='<div class="erp-empty">'+(q?"No rows match your search.":"No entries for the selected dates.")+"</div>";return}
+      if(!rows.length){box.innerHTML='<div class="erp-empty">'+(q?"No rows match your search.":brand?"No entries for "+brandName()+" in the selected dates.":"No entries for the selected dates.")+"</div>";return}
       const numCls=i=>v.num.includes(i)?' class="num"':"";
       let h="<table class=\"erp-table\"><thead><tr>"+v.head.map((x,i)=>"<th"+numCls(i)+">"+esc(x)+"</th>").join("")+"</tr></thead><tbody>";
       for(const r of rows)h+="<tr>"+r.show.map((c,i)=>"<td"+numCls(i)+">"+(r.html===i?c:esc(c))+"</td>").join("")+"</tr>";
@@ -271,10 +300,10 @@
         if(!current||current.err||!current.rows.length){await ERPShell.alert("Nothing to export for this report.");return}
         if(!window.XLSX)await loadScript("https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js");
         const range=shortDate(el("from").value)+" to "+shortDate(el("to").value);
-        const sheet=XLSX.utils.aoa_to_sheet(LWBDate.rows([["LUXURY WRIST BRAND — "+current.title],[range],[],current.head,...current.rows.map(r=>r.data)]));
+        const sheet=XLSX.utils.aoa_to_sheet(LWBDate.rows([["LUXURY WRIST BRAND — "+current.title+(brand?" — "+brandName():"")],[range],[],current.head,...current.rows.map(r=>r.data)]));
         sheet["!cols"]=current.head.map(h=>({wch:/SKU|Supplier|Party|Reference/.test(h)?30:15}));
         const book=XLSX.utils.book_new();XLSX.utils.book_append_sheet(book,sheet,"Inventory");
-        XLSX.writeFile(book,"Inventory-"+tab+"-"+el("to").value+".xlsx");
+        XLSX.writeFile(book,"Inventory-"+tab+(brand?"-"+brandName().replace(/[^A-Za-z0-9]+/g,"_"):"")+"-"+el("to").value+".xlsx");
       }catch(e){await ERPShell.alert("Excel export failed: "+e.message)}
     }
 
@@ -291,6 +320,7 @@
       el("excel").onclick=exportExcel;
       el("from").addEventListener("change",loadAll);el("to").addEventListener("change",loadAll);
       el("loading").hidden=true;el("page").hidden=false;
+      await loadBrands();
       await loadAll();
     })();
   </script>
