@@ -104,7 +104,12 @@
     .otp-qr{display:block;width:190px;height:190px;margin:4px auto 12px;border:1px solid #eee;border-radius:10px;background:#fff}
     .otp-steps{font-size:13px;color:#444;line-height:1.6;margin:0 0 14px 18px}
     .otp-secret{font:600 13px monospace;word-break:break-all;background:#f6f3ea;border-radius:6px;padding:8px 10px;margin:0 0 16px;text-align:center;user-select:all}
-    #otpCode,#waCode{font-size:22px;letter-spacing:8px;text-align:center}
+    #otpCode,#waCode,#fpCode{font-size:22px;letter-spacing:8px;text-align:center}
+    #fpSendButton,#fpSaveButton{background:linear-gradient(135deg,var(--teal),var(--teal-2));box-shadow:0 10px 22px rgba(0,46,54,.22)}
+    #fpSendButton:hover,#fpSaveButton:hover{background:var(--gold);color:var(--teal)}
+    .link-btn{display:block;width:auto;height:auto;margin:14px auto 0;padding:4px 8px;background:none;box-shadow:none;
+      color:var(--gold-dk);font:600 13px Montserrat,"Segoe UI",Arial,sans-serif;letter-spacing:.2px;text-decoration:underline;text-underline-offset:3px}
+    .link-btn:hover{background:none;color:var(--teal)}
     .footer{text-align:center;margin-top:14px;font-size:11px;letter-spacing:.4px;color:#9aa1a3}
 
     /* Laptop with short screen */
@@ -192,6 +197,31 @@
     <input type="password" id="password" placeholder="Enter your password"
       autocomplete="current-password" required>
     <button type="submit" id="loginButton">Sign In</button>
+    <button type="button" class="link-btn" id="forgotLink">Forgot password? / Password bhool gaye?</button>
+  </form>
+  <!-- Forgot password: a 6-digit code goes to the user's Login Email (Supabase "Reset Password" email). -->
+  <form id="fpForm" hidden>
+    <p class="form-note">Apna <b>Login Email</b> likhein. Us email par 6-digit code aayega.</p>
+    <label for="fpEmail">Login Email</label>
+    <input type="email" id="fpEmail" placeholder="name@example.com"
+      autocomplete="username" autocapitalize="none" spellcheck="false" required>
+    <button type="submit" id="fpSendButton">Send Code</button>
+    <button type="button" class="secondary" id="fpBack">Back to Login</button>
+  </form>
+  <form id="fpCodeForm" hidden>
+    <p class="form-note" id="fpCodeNote">Email par aaya code aur naya password likhein.</p>
+    <label for="fpCode">Email Code</label>
+    <input type="text" id="fpCode" inputmode="numeric" pattern="[0-9]{6,10}" maxlength="10"
+      autocomplete="one-time-code" placeholder="000000" required>
+    <label for="fpPass">New Password</label>
+    <input type="password" id="fpPass" minlength="6" placeholder="At least 6 characters"
+      autocomplete="new-password" required>
+    <label for="fpPass2">Confirm New Password</label>
+    <input type="password" id="fpPass2" minlength="6" placeholder="Same password again"
+      autocomplete="new-password" required>
+    <button type="submit" id="fpSaveButton">Save New Password</button>
+    <button type="button" class="secondary" id="fpResend" disabled>Resend Code</button>
+    <button type="button" class="secondary" id="fpBack2">Back to Login</button>
   </form>
   <form id="waForm" hidden>
     <p class="form-note" id="waNote">WhatsApp par 6-digit OTP bheja ja raha hai...</p>
@@ -223,7 +253,7 @@
   </form>
   <div id="message" role="status" aria-live="polite"></div>
   <p class="security-note">Only active users created by LWB Admin may enter the ERP.
-  Forgot your password or lost your OTP phone? Ask Admin.</p>
+  No Login Email, or lost your OTP phone? Ask Admin.</p>
 
   <div class="footer">
     © Luxury Wrist Brand • Authorized Access Only
@@ -453,15 +483,112 @@ el("otpForm").addEventListener("submit",async event=>{
   try{
     const {error}=await client.auth.mfa.challengeAndVerify({factorId:otpFactorId,code});
     if(error)throw Error("Wrong or expired OTP. Check the time on your phone and try the new code.");
+    if(fpPendingPass){await saveResetPassword();return;}
     await goToErp(otpUser);
   }catch(e){showMessage(e.message,true);el("otpCode").select();}
   finally{busy=false;el("otpButton").disabled=false;el("otpButton").textContent="Verify OTP";}
 });
 el("otpBack").addEventListener("click",async()=>{
   try{await client.auth.signOut({scope:"local"})}catch(e){}
-  otpFactorId=otpUser=null;clearInterval(waTimer);
-  el("otpForm").hidden=true;el("waForm").hidden=true;el("loginForm").hidden=false;el("password").value="";showMessage("");
+  otpFactorId=otpUser=null;fpPendingPass=null;clearInterval(waTimer);clearInterval(fpTimer);
+  ["otpForm","waForm","fpForm","fpCodeForm"].forEach(id=>el(id).hidden=true);
+  el("loginForm").hidden=false;el("password").value="";showMessage("");
 });
+
+// ---- Forgot password (email code) ----
+// 1. Supabase sends its "Reset Password" email with a 6-digit code ({{ .Token }}).
+// 2. The code opens a short recovery session; the new password is saved with it.
+// 3. The normal second step (WhatsApp / Authenticator OTP) is still needed to open the ERP.
+// Mobile-only logins (internal @staff.lwb-erp.in email) have no inbox: Admin resets those.
+let fpEmail="",fpTimer=null,fpPendingPass=null;
+function fpCountdown(seconds){
+  clearInterval(fpTimer);
+  let left=Math.max(0,seconds|0);
+  const tick=()=>{el("fpResend").disabled=left>0;el("fpResend").textContent=left>0?"Resend Code ("+left+"s)":"Resend Code";left--;if(left<-1)clearInterval(fpTimer)};
+  tick();fpTimer=setInterval(tick,1000);
+}
+function showOnly(id){
+  ["loginForm","otpForm","waForm","fpForm","fpCodeForm"].forEach(f=>el(f).hidden=f!==id);
+}
+async function sendResetCode(email){
+  const {error}=await client.auth.resetPasswordForEmail(email);
+  if(error){
+    if(error.status===429||/rate limit|security purposes|seconds/i.test(error.message))
+      throw Error("Code abhi-abhi bheja gaya hai. 1 minute baad Resend karein.");
+    throw Error("Code nahi bheja ja saka: "+error.message);
+  }
+}
+el("forgotLink").addEventListener("click",()=>{
+  const typed=el("login").value.trim();
+  el("fpEmail").value=typed.includes("@")?typed:"";
+  showOnly("fpForm");showMessage("");el("fpEmail").focus();
+});
+el("fpForm").addEventListener("submit",async event=>{
+  event.preventDefault();
+  if(busy)return;
+  const email=el("fpEmail").value.trim().toLowerCase();
+  if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)){showMessage("Enter a valid Login Email.",true);return;}
+  if(email.endsWith("@staff.lwb-erp.in")){showMessage("Is login ka email nahi hai. Naya password ke liye Admin se kahein.",true);return;}
+  busy=true;el("fpSendButton").disabled=true;el("fpSendButton").textContent="Sending...";showMessage("");
+  try{
+    await sendResetCode(email);
+    fpEmail=email;
+    showOnly("fpCodeForm");
+    el("fpCodeNote").textContent="Agar "+email+" ERP me Login Email hai, to us par code bheja gaya hai. Inbox aur Spam dekhein. Code 1 ghante tak chalega.";
+    ["fpCode","fpPass","fpPass2"].forEach(id=>el(id).value="");
+    fpCountdown(60);el("fpCode").focus();
+  }catch(e){showMessage(e.message,true);}
+  finally{busy=false;el("fpSendButton").disabled=false;el("fpSendButton").textContent="Send Code";}
+});
+el("fpResend").addEventListener("click",async()=>{
+  el("fpResend").disabled=true;
+  try{await sendResetCode(fpEmail);showMessage("Naya code bheja gaya.");fpCountdown(60);}
+  catch(e){showMessage(e.message,true);fpCountdown(30);}
+});
+async function saveResetPassword(){
+  const {error}=await client.auth.updateUser({password:fpPendingPass});
+  if(error){
+    // A user with the Authenticator app must pass it before the password can change.
+    if(error.code==="insufficient_aal"||/aal2|AAL2/.test(error.message)){
+      const {data}=await client.auth.mfa.listFactors();
+      const f=(data?.totp||[]).find(x=>x.status==="verified");
+      if(f){otpFactorId=f.id;showOtpForm(false);
+        el("otpNote").textContent="Password badalne ke liye pehle Google Authenticator app ka 6-digit code likhein.";
+        showMessage("");return;}
+    }
+    if(error.code==="same_password")throw Error("Naya password purane jaisa hai. Koi alag password rakhein.");
+    if(error.code==="weak_password")throw Error("Password bahut kamzor hai. Lamba password rakhein (letters + numbers).");
+    throw Error("Password save nahi hua: "+error.message);
+  }
+  fpPendingPass=null;
+  const u=await client.auth.getUser();
+  showMessage("Password badal gaya. Ab OTP se ERP kholein...");
+  await finishAuthorizedLogin(u.data.user);
+}
+el("fpCodeForm").addEventListener("submit",async event=>{
+  event.preventDefault();
+  if(busy)return;
+  const code=el("fpCode").value.replace(/\D/g,""),pass=el("fpPass").value,pass2=el("fpPass2").value;
+  if(code.length<6){showMessage("Enter the code from the email.",true);return;}
+  if(pass.length<6){showMessage("New Password must be at least 6 characters.",true);return;}
+  if(pass!==pass2){showMessage("Dono password same nahi hain.",true);return;}
+  busy=true;el("fpSaveButton").disabled=true;el("fpSaveButton").textContent="Saving...";showMessage("");
+  try{
+    // The same code can be used once; after a weak-password error the session is already open.
+    const s=await client.auth.getSession();
+    if(!s.data?.session||String(s.data.session.user?.email||"").toLowerCase()!==fpEmail){
+      const {data,error}=await client.auth.verifyOtp({email:fpEmail,token:code,type:"recovery"});
+      if(error||!data?.user)throw Error("Code galat hai ya expire ho gaya. Resend Code dabakar naya code lein.");
+      otpUser=data.user;
+    }else otpUser=s.data.session.user;
+    await checkProfile(otpUser);
+    fpPendingPass=pass;
+    await saveResetPassword();
+  }catch(e){showMessage(e.message,true);}
+  finally{busy=false;el("fpSaveButton").disabled=false;el("fpSaveButton").textContent="Save New Password";}
+});
+el("fpBack").addEventListener("click",()=>el("otpBack").click());
+el("fpBack2").addEventListener("click",()=>el("otpBack").click());
 checkExistingLogin();
 
 </script>
