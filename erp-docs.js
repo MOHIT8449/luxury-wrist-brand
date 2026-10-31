@@ -21,6 +21,9 @@
 (function(){
   'use strict';
   const BUCKET='lwb-documents',MAX_MB=10;
+  // Record types whose required slots are enforced. Mohit (31 Oct 2026): everything optional for now,
+  // made compulsory one by one later: add e.g. STAFF:1, DRIVER:1, USER:1, ASSET:1, STOCK_MOVE:1 here.
+  const STRICT={};
   const PHOTO={k:'PHOTO',l:'Photo',img:1,cam:'user',max:1};
   const S={ // slots per record type; req = must be there before Save
     STAFF:[{...PHOTO,l:'Employee photo',req:1},{k:'AADHAAR',l:'Aadhaar card (front + back)',req:1,max:4},{k:'BANK',l:'Bank passbook / cheque',max:2},{k:'PAN',l:'PAN card',max:2},{k:'OTHER',l:'Other document',max:6}],
@@ -48,7 +51,9 @@
 
   const esc=v=>String(v==null?'':v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const toast=(t,k)=>window.ERPShell&&ERPShell.toast?ERPShell.toast(t,k):alert(t);
-  const slotsOf=(entity,keys)=>{const all=S[entity]||[];if(!keys)return all;return keys.map(k=>typeof k==='string'?all.find(s=>s.k===k):k).filter(Boolean)};
+  // Not strict yet: a "required" slot is only "recommended" (orange tag, no block on Save).
+  const soft=(entity,s)=>s&&s.req&&!STRICT[entity]?{...s,req:0,want:1}:s;
+  const slotsOf=(entity,keys)=>{const all=S[entity]||[];return (keys?keys.map(k=>typeof k==='string'?all.find(s=>s.k===k):k):all).filter(Boolean).map(s=>soft(entity,s))};
   const setupMsg=e=>/lwb_doc_|lwb_documents|bucket/i.test((e&&e.message)||'')?'Documents are not set up in Supabase yet (lwb_documents_setup.sql).':(e&&e.message)||String(e);
 
   function css(){
@@ -279,7 +284,8 @@
     return miss.map(m=>'<span class="ed-tag bad">'+esc(m)+' missing</span>').join('')+want.map(m=>'<span class="ed-tag warn">No '+esc(m.toLowerCase())+'</span>').join('')+
       (types.size&&!miss.length?'<span class="ed-tag ok">📎 '+types.size+' doc type'+(types.size>1?'s':'')+'</span>':'');
   }
-  function missingOf(entity,types,keys){if(!types)return [];return slotsOf(entity,keys).filter(s=>s.req&&!types.has(s.k)).map(s=>s.l)}
+  // Required or recommended slots a record does not have yet (list counts / "Documents missing" filter).
+  function missingOf(entity,types,keys){if(!types)return [];return slotsOf(entity,keys).filter(s=>(s.req||s.want)&&!types.has(s.k)).map(s=>s.l)}
   async function avatars(client,entity,ids){
     const out=new Map();if(!ids.length)return out;
     try{
@@ -290,5 +296,5 @@
     }catch(e){}
     return out;
   }
-  window.ERPDocs={panel,open,summary,badge,missingOf,avatars,slots:slotsOf,BUCKET,css};
+  window.ERPDocs={panel,open,summary,badge,missingOf,avatars,slots:slotsOf,strict:e=>!!STRICT[e],BUCKET,css};
 })();
