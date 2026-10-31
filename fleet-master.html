@@ -10,6 +10,7 @@
   <script src="erp-shell.js"></script>
   <script src="erp-recent.js"></script>
   <script src="excel-io.js"></script>
+  <script src="erp-docs.js"></script>
   <style>
     .status{text-align:center;padding:80px 20px;font-size:15px;color:#555}
     .fm-sub{margin:-8px 0 14px;color:var(--erp-muted);font-size:15px}
@@ -63,6 +64,7 @@
       <div class="erp-card-head"><h2 id="formTitle"></h2><small id="formInfo" style="color:var(--erp-muted)"></small></div>
       <div class="erp-card-body" style="padding:16px">
         <div class="fm-grid" id="form"></div>
+        <div id="docsBox" style="margin-top:16px" hidden><div class="ed-title" id="docsTitle">Documents &amp; photos</div><div id="docs"></div></div>
         <div class="fm-actions"><button type="button" class="fm-btn" id="save">Save</button><button type="button" class="fm-btn light" id="clear">New / Clear</button><span class="fm-hint" id="formHint"></span></div>
       </div>
     </section>
@@ -74,7 +76,7 @@
 
     <section class="erp-card" style="margin-top:14px">
       <div class="erp-card-head"><h2 id="listTitle"></h2>
-        <div class="fm-tools"><input id="search" type="search" placeholder="Search"><select id="filter"><option value="active">Active</option><option value="inactive">Inactive</option><option value="all">All</option></select></div></div>
+        <div class="fm-tools"><input id="search" type="search" placeholder="Search"><select id="filter"><option value="active">Active</option><option value="inactive">Inactive</option><option value="all">All</option><option value="nodocs">Documents missing</option></select></div></div>
       <div class="erp-scroll" style="overflow:auto"><table class="fm-table"><thead id="head"></thead><tbody id="list"></tbody></table></div>
     </section>
   </main>
@@ -144,6 +146,8 @@
           {k:"note",l:"Note",wide:1}]}
     };
 
+    let docPanel=null,docKey="",docSum={vehicles:null,drivers:null,employees:null},avatars=new Map();
+    const DOC_ENTITY={vehicles:"VEHICLE",drivers:"DRIVER",employees:"STAFF"};
     let me=null,tab="vehicles",data={vehicles:[],drivers:[],employees:[]},empNext="",empMonth="",empErr="",editing=null,busy=false,loginPhones=new Set(),missing=false;
     // Admin / Manager edit both lists; Godown (warehouse) can add / edit vehicles, not delete them.
     // Employee Master: Admin / Manager / Godown add and edit; nobody deletes (mark Left).
@@ -174,6 +178,31 @@
       if(missing)el("setupMsg").textContent="The Vehicle / Driver tables are not set up in Supabase yet. Run lwb_fleet_master_setup.sql once in the Supabase SQL Editor, then refresh this page. ("+((v.error||d.error).message||"")+")";
       data.vehicles=ERPRecent.sort(v.data||[]);data.drivers=ERPRecent.sort(d.data||[]);
       loginPhones=new Set((l.data||[]).map(x=>phone(x.driver_mobile)).filter(Boolean));
+      // Which records have a photo / Aadhaar / licence (lwb_documents_setup.sql). null = not set up yet.
+      const [sv,sd,se]=await Promise.all(["VEHICLE","DRIVER",empRole()?"STAFF":null].map(x=>x?ERPDocs.summary(client,x):Promise.resolve(null)));
+      docSum={vehicles:sv,drivers:sd,employees:se};
+    }
+    // Small photo next to the name in the list.
+    async function loadAvatars(){
+      const ent=DOC_ENTITY[tab],sum=docSum[tab];if(!sum)return;
+      const want=data[tab].filter(r=>{const t=sum.get(String(r.id));return t&&t.has("PHOTO")&&!avatars.has(ent+r.id)}).map(r=>String(r.id)).slice(0,300);
+      if(!want.length)return;
+      const got=await ERPDocs.avatars(client,ent,want);
+      for(const id of want)avatars.set(ent+id,got.get(id)||"");
+      renderList();
+    }
+    const avatar=r=>{const u=avatars.get(DOC_ENTITY[tab]+r.id);return u?'<img class="ed-av" alt="" src="'+esc(u)+'">':""};
+    const docTags=r=>ERPDocs.badge(DOC_ENTITY[tab],docSum[tab]&&(docSum[tab].get(String(r.id))||new Set()));
+    // The documents box under the form: new record = files wait until Save; saved record = upload at once.
+    function mountDocs(){
+      const key=tab+":"+(editing?editing.id:"new");
+      if(!docSum[tab]){el("docsBox").hidden=true;docPanel=null;docKey="";return}
+      el("docsBox").hidden=false;
+      el("docsTitle").textContent=(tab==="vehicles"?"Vehicle photo & papers":tab==="drivers"?"Driver photo, licence, Aadhaar & bank":"Employee photo, Aadhaar & bank details")+(editing?"":" (upload when you Save)");
+      if(key===docKey&&docPanel)return;
+      docKey=key;
+      docPanel=ERPDocs.panel({client,mount:el("docs"),entity:DOC_ENTITY[tab],id:editing?editing.id:null,canEdit:can(),info:tab!=="vehicles",
+        onChange:async()=>{if(editing){docSum[tab]=await ERPDocs.summary(client,DOC_ENTITY[tab])||docSum[tab];avatars.delete(DOC_ENTITY[tab]+editing.id);renderList();loadAvatars()}}});
     }
 
     function input(f){
@@ -194,6 +223,7 @@
       el("formTitle").textContent=(editing?"Edit ":"New ")+K.one+(editing?": "+(editing.vehicle_no||editing.driver_name||(editing.emp_code+" · "+editing.name)):"");
       const off=K.rpc?!!empErr:missing;
       el("save").disabled=el("clear").disabled=!can()||busy||off;
+      mountDocs();
       el("formHint").textContent=!can()?(tab==="drivers"?"Only Admin / Manager can make changes.":"Only Admin / Manager / Godown can make changes.")+" You can view the list.":editing?"Make your changes, then click Save.":"";
     }
     function readForm(){
@@ -235,13 +265,25 @@
       if(!can()||busy)return;const o=readForm(),bad=check(o,editing&&editing.id);
       if(bad){ERPShell.toast(bad,"error");return}
       const K=KIND[tab];
+      // Photo (and Aadhaar / licence) are compulsory for staff and drivers.
+      if(docPanel){
+        const ie=docPanel.infoError();if(ie){ERPShell.toast(ie,"error");return}
+        const miss=docPanel.missing();
+        if(miss.length&&!editing){await alert("Please add before saving:\n\n"+miss.map(x=>"• "+x).join("\n")+"\n\nUse 📷 Camera on the phone, or 🖼 Gallery / 📎 file on the computer.");return}
+        if(miss.length&&!await confirm("These are still missing for this "+K.one.toLowerCase()+":\n\n"+miss.map(x=>"• "+x).join("\n")+"\n\nSave the other changes anyway?"))return;
+        if(docPanel.busy()){ERPShell.toast("Upload in progress, please wait.","error");return}
+      }
       if(!await confirm((editing?"UPDATE ":"ADD ")+K.one+"?\n\n"+(K.rpc?(o.emp_code||(editing?editing.emp_code:"New ID "+empNext))+" · "+o.name+" · "+rs(o.monthly_salary)+"/month":o.vehicle_no||o.driver_name+" · "+o.mobile)))return;
       busy=true;fillForm();
       try{
-        let msg=K.one+" saved.";
-        if(K.rpc){const r=await client.rpc("lwb_emp_save",{p:{...o,id:editing?editing.id:null}});if(r.error)throw r.error;msg="Saved: "+r.data.emp_code+" · "+o.name}
-        else{const r=editing?await client.from(K.table).update(o).eq("id",editing.id):await client.from(K.table).insert(o);if(r.error)throw r.error}
-        ERPShell.toast(msg,"success");editing=null;await load();
+        let msg=K.one+" saved.",newId=editing?editing.id:null;
+        if(K.rpc){const r=await client.rpc("lwb_emp_save",{p:{...o,id:editing?editing.id:null}});if(r.error)throw r.error;msg="Saved: "+r.data.emp_code+" · "+o.name;newId=r.data.id||newId}
+        else{const r=editing?await client.from(K.table).update(o).eq("id",editing.id).select("id").single():await client.from(K.table).insert(o).select("id").single();if(r.error)throw r.error;newId=(r.data&&r.data.id)||newId}
+        let docMsg="";
+        if(docPanel&&newId!=null){docMsg=await docPanel.flush(newId);avatars.delete(DOC_ENTITY[tab]+newId)}
+        if(docMsg)await alert(msg+"\n\nBut some documents were NOT saved:\n"+docMsg+"\n\nOpen the record with Edit and add them again.");
+        else ERPShell.toast(msg,"success");
+        editing=null;docKey="";await load();loadAvatars();
       }catch(e){ERPShell.toast("Save failed: "+(e.message||e),"error")}
       busy=false;render();
     }
@@ -259,23 +301,25 @@
     }
     function renderList(){
       const q=el("search").value.trim().toLowerCase().split(/\s+/).filter(Boolean),f=el("filter").value;
-      const rows=data[tab].filter(r=>(f==="all"||(f==="active")===!!r.is_active)&&q.every(w=>JSON.stringify(r).toLowerCase().includes(w)));
+      const lacks=r=>{const sum=docSum[tab];if(!sum)return false;const t=sum.get(String(r.id))||new Set();return ERPDocs.missingOf(DOC_ENTITY[tab],t).length>0||(tab==="vehicles"&&!t.has("PHOTO"))};
+      const rows=data[tab].filter(r=>(f==="all"||(f==="nodocs"?r.is_active&&lacks(r):(f==="active")===!!r.is_active))&&q.every(w=>JSON.stringify(r).toLowerCase().includes(w)));
       const act=r=>(can()?'<button type="button" data-edit="'+r.id+'">Edit</button>':"")+(head()&&tab!=="employees"?'<button type="button" class="del" data-del="'+r.id+'">Delete</button>':"");
       if(tab==="vehicles"){
         el("head").innerHTML="<tr><th>#</th><th>Vehicle No</th><th>Type / Capacity</th><th>Ownership</th><th>Documents</th><th>Driver</th><th>Status</th><th></th></tr>";
         el("list").innerHTML=rows.map((r,i)=>{const drv=data.drivers.filter(d=>d.default_vehicle_id===r.id&&d.is_active).map(d=>esc(d.driver_name)).join(", ");
-          return '<tr class="'+(r.is_active?"":"off")+'"><td>'+(i+1)+"</td><td><b>"+esc(r.vehicle_no)+"</b>"+(r.note?"<small>"+esc(r.note)+"</small>":"")+"</td><td>"+esc(r.vehicle_type||"-")+(r.capacity_kg!=null?"<small>"+esc(r.capacity_kg)+" KG</small>":"")+"</td><td>"+(r.ownership==="TRANSPORTER"?"Transporter":"Own")+(r.transporter_name?"<small>"+esc(r.transporter_name)+(r.owner_mobile?" · "+esc(r.owner_mobile):"")+"</small>":"")+"</td><td style='white-space:normal;min-width:180px'>"+expiryTags(DOCS.map(([k,l])=>[r[k],l]))+"</td><td>"+(drv||"-")+"</td><td>"+(r.is_active?'<span class="tagx ok">Active</span>':'<span class="tagx bad">Inactive</span>')+"</td><td>"+act(r)+"</td></tr>"}).join("")||'<tr><td colspan="8" class="erp-empty">No vehicles yet. Add one using the form above or Excel.</td></tr>';
+          return '<tr class="'+(r.is_active?"":"off")+'"><td>'+(i+1)+"</td><td>"+avatar(r)+"<b>"+esc(r.vehicle_no)+"</b>"+(r.note?"<small>"+esc(r.note)+"</small>":"")+"<div>"+docTags(r)+"</div></td><td>"+esc(r.vehicle_type||"-")+(r.capacity_kg!=null?"<small>"+esc(r.capacity_kg)+" KG</small>":"")+"</td><td>"+(r.ownership==="TRANSPORTER"?"Transporter":"Own")+(r.transporter_name?"<small>"+esc(r.transporter_name)+(r.owner_mobile?" · "+esc(r.owner_mobile):"")+"</small>":"")+"</td><td style='white-space:normal;min-width:180px'>"+expiryTags(DOCS.map(([k,l])=>[r[k],l]))+"</td><td>"+(drv||"-")+"</td><td>"+(r.is_active?'<span class="tagx ok">Active</span>':'<span class="tagx bad">Inactive</span>')+"</td><td>"+act(r)+"</td></tr>"}).join("")||'<tr><td colspan="8" class="erp-empty">No vehicles yet. Add one using the form above or Excel.</td></tr>';
       }else if(tab==="employees"){
         const mo=empMonth?new Date(empMonth+"T12:00:00Z").toLocaleDateString("en-IN",{month:"short",timeZone:"UTC"}):"This month";
         el("head").innerHTML="<tr><th>Employee ID</th><th>Name</th><th>Mobile</th><th>Salary / month</th><th>Upad in "+esc(mo)+"</th><th>Salary paid in "+esc(mo)+"</th><th>Joined</th><th>Status</th><th></th></tr>";
         el("list").innerHTML=rows.map(r=>{const cap=Number(r.month_cap)||0,up=Math.max(0,Number(r.month_upad)||0),left=cap-up;
-          return '<tr class="'+(r.is_active?"":"off")+'"><td><b>'+esc(r.emp_code||"-")+"</b></td><td><b>"+esc(r.name)+"</b><small>"+esc(r.designation||"")+(r.note?(r.designation?" · ":"")+esc(r.note):"")+"</small></td><td>"+esc(r.mobile||"-")+"</td><td>"+(Number(r.monthly_salary)?rs(r.monthly_salary):"-")+(cap&&cap!==Number(r.monthly_salary)?"<small>"+esc(mo)+": "+rs(cap)+"</small>":"")+"</td><td>"+rs(up)+(cap?(left<-0.5?'<small><span class="tagx bad">'+rs(-left)+" over</span></small>":"<small>Left "+rs(left)+"</small>"):"")+"</td><td>"+rs(r.month_paid)+"</td><td>"+(showDate(r.joining_date)||"-")+"</td><td>"+(r.is_active?'<span class="tagx ok">Working</span>':'<span class="tagx bad">Left</span>')+"</td><td>"+act(r)+"</td></tr>"}).join("")||'<tr><td colspan="9" class="erp-empty">'+(empErr?esc(empErr):"No employees yet. Add one using the form above or Excel.")+"</td></tr>";
+          return '<tr class="'+(r.is_active?"":"off")+'"><td><b>'+esc(r.emp_code||"-")+"</b></td><td>"+avatar(r)+"<b>"+esc(r.name)+"</b><small>"+esc(r.designation||"")+(r.note?(r.designation?" · ":"")+esc(r.note):"")+"</small><div>"+docTags(r)+"</div></td><td>"+esc(r.mobile||"-")+"</td><td>"+(Number(r.monthly_salary)?rs(r.monthly_salary):"-")+(cap&&cap!==Number(r.monthly_salary)?"<small>"+esc(mo)+": "+rs(cap)+"</small>":"")+"</td><td>"+rs(up)+(cap?(left<-0.5?'<small><span class="tagx bad">'+rs(-left)+" over</span></small>":"<small>Left "+rs(left)+"</small>"):"")+"</td><td>"+rs(r.month_paid)+"</td><td>"+(showDate(r.joining_date)||"-")+"</td><td>"+(r.is_active?'<span class="tagx ok">Working</span>':'<span class="tagx bad">Left</span>')+"</td><td>"+act(r)+"</td></tr>"}).join("")||'<tr><td colspan="9" class="erp-empty">'+(empErr?esc(empErr):"No employees yet. Add one using the form above or Excel.")+"</td></tr>";
       }else{
         el("head").innerHTML="<tr><th>#</th><th>Driver</th><th>Mobile</th><th>License</th><th>Default Vehicle</th><th>Transporter</th><th>ERP Login</th><th>Status</th><th></th></tr>";
         el("list").innerHTML=rows.map((r,i)=>{const v=vehicleById(r.default_vehicle_id);
-          return '<tr class="'+(r.is_active?"":"off")+'"><td>'+(i+1)+"</td><td><b>"+esc(r.driver_name)+"</b>"+(r.note?"<small>"+esc(r.note)+"</small>":"")+"</td><td>"+esc(r.mobile)+(r.alt_mobile?"<small>"+esc(r.alt_mobile)+"</small>":"")+"</td><td>"+esc(r.license_no||"-")+"<div>"+(r.license_expiry?expiryTags([[r.license_expiry,"License"]]):"")+"</div></td><td>"+(v?esc(v.vehicle_no):"-")+"</td><td>"+esc(r.transporter_name||"-")+"</td><td>"+(head()?(loginPhones.has(r.mobile)?'<span class="tagx info">Has login</span>':'<span class="fm-hint">No</span>'):"")+"</td><td>"+(r.is_active?'<span class="tagx ok">Active</span>':'<span class="tagx bad">Inactive</span>')+"</td><td>"+act(r)+"</td></tr>"}).join("")||'<tr><td colspan="9" class="erp-empty">No drivers yet. Add one using the form above or Excel.</td></tr>';
+          return '<tr class="'+(r.is_active?"":"off")+'"><td>'+(i+1)+"</td><td>"+avatar(r)+"<b>"+esc(r.driver_name)+"</b>"+(r.note?"<small>"+esc(r.note)+"</small>":"")+"<div>"+docTags(r)+"</div></td><td>"+esc(r.mobile)+(r.alt_mobile?"<small>"+esc(r.alt_mobile)+"</small>":"")+"</td><td>"+esc(r.license_no||"-")+"<div>"+(r.license_expiry?expiryTags([[r.license_expiry,"License"]]):"")+"</div></td><td>"+(v?esc(v.vehicle_no):"-")+"</td><td>"+esc(r.transporter_name||"-")+"</td><td>"+(head()?(loginPhones.has(r.mobile)?'<span class="tagx info">Has login</span>':'<span class="fm-hint">No</span>'):"")+"</td><td>"+(r.is_active?'<span class="tagx ok">Active</span>':'<span class="tagx bad">Inactive</span>')+"</td><td>"+act(r)+"</td></tr>"}).join("")||'<tr><td colspan="9" class="erp-empty">No drivers yet. Add one using the form above or Excel.</td></tr>';
       }
-      el("listTitle").textContent=KIND[tab].one+" List ("+rows.length+" / "+data[tab].length+")";
+      const sum=docSum[tab],noPhoto=sum&&tab!=="vehicles"?data[tab].filter(r=>r.is_active&&ERPDocs.missingOf(DOC_ENTITY[tab],sum.get(String(r.id))||new Set()).length).length:0;
+      el("listTitle").textContent=KIND[tab].one+" List ("+rows.length+" / "+data[tab].length+")"+(noPhoto?" · "+noPhoto+" with documents missing":"");
     }
     function render(){
       const K=KIND[tab];
@@ -403,14 +447,14 @@
       xlBox=LWBExcel.panel({mount:el("xlPanel"),file:KIND[tab].title.replace(" ","-"),columns:XL[tab],exportRows:xlExport,plan:xlPlan,apply:xlApply,canImport:()=>can()&&(tab==="employees"?!empErr:!missing)});
     }
 
-    function setTab(){const t=location.hash.replace("#","");tab=KIND[t]&&(t!=="employees"||empRole())?t:"vehicles";editing=null;mountXl();render()}
+    function setTab(){const t=location.hash.replace("#","");tab=KIND[t]&&(t!=="employees"||empRole())?t:"vehicles";editing=null;docKey="";mountXl();render();loadAvatars()}
     document.addEventListener("click",e=>{
       const t=e.target;
-      if(t.dataset.edit){editing=data[tab].find(x=>String(x.id)===t.dataset.edit)||null;render();el("formCard").scrollIntoView({behavior:"smooth"});return}
+      if(t.dataset.edit){editing=data[tab].find(x=>String(x.id)===t.dataset.edit)||null;docKey="";render();el("formCard").scrollIntoView({behavior:"smooth"});return}
       if(t.dataset.del){remove(t.dataset.del);return}
     });
     el("save").onclick=save;
-    el("clear").onclick=()=>{editing=null;render()};
+    el("clear").onclick=()=>{editing=null;docKey="";render()};
     el("search").oninput=renderList;el("filter").onchange=renderList;
     window.addEventListener("hashchange",setTab);
 

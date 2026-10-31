@@ -4,6 +4,15 @@
 **Purpose:** Continue the same ERP project from a new ChatGPT conversation without restarting or losing the agreed requirements.
 **Status:** Active development / verification. Do not assume all modules are completed or fully tested.
 
+## Documents and photos on every record (31 Oct 2026)
+- Mohit asked: staff photo compulsory for every employee / driver / salesman; Aadhaar + bank details of employees; driving licence + Aadhaar of drivers; PAN / GST / shop photo of parties; vehicle photo; fixed asset photos; purchase bill PDF / scan; damage / leakage / breakage photos by the Godown Manager.
+- SQL: `lwb_documents_setup.sql`. Private bucket `lwb-documents`, path `ENTITY/<record id>/<DOC TYPE>/<uid without dashes>-<time>-<rand>.<jpg|pdf>`. Table `lwb_documents` (Remove = removed_at, never deleted), `lwb_doc_info` (Aadhaar no., PAN, bank account, IFSC, UPI). RPCs `lwb_doc_add / lwb_doc_list / lwb_doc_summary / lwb_doc_remove / lwb_doc_info_get / lwb_doc_info_save`. Access per record type in `lwb_doc_access(entity, doc_type, mode)` (+ ticked page; driver Aadhaar / bank / PAN only admin, manager, accounts).
+- Record types: STAFF (Employee Master, lwb_acc_staff.id), DRIVER (lwb_drivers), USER (logins), VEHICLE, PARTY, SUPPLIER, PURCHASE_BILL (lwb_goods_inward.id: BILL + DAMAGE), ASSET, STOCK_MOVE (first STM no. of a request), ORDER (loading photos).
+- Shared `erp-docs.js`: `ERPDocs.panel` (camera / gallery / PDF, resizes photos, new record = files wait until `flush(id)`), `ERPDocs.open` popup, `summary`, `badge`, `avatars`. Required slots: photo (+ Aadhaar for employees, licence + Aadhaar for drivers) block saving a NEW record; an old record without them asks before saving and shows "… missing" tags + filter "Documents missing".
+- Wired: Vehicle / Driver / Employee Master, Manage Users (new login needs a photo; "📷 Photo & Docs" per row), Party Master, Supplier Master, Goods Inward (bill copy + damage photos after posting), Purchase Register (📎 Bill / Photos, damage photos in Verify), Stock Transfer (photo compulsory to Damage / Leakage / Breakage / Gasless / Expiry and Destroy), Loading & Dispatch (loaded vehicle + damage photos), new `fixed-assets.html` (`lwb_fixed_assets_setup.sql`, Asset ID FA001…, photo compulsory, menu Masters > Fixed Assets).
+- A browser can not start a printer's scanner (no web access to TWAIN / WIA). Scan to PDF / JPG with the printer's button or app, then choose the file; on a phone take one photo per page.
+- Tests: `tests/documents` (PGlite, 9 tests). Browser check with a mocked client at 1280 / 390 px; no live data written.
+
 ## Latest added / edited record first in every list (31 Oct 2026)
 - Mohit's rule: in every list the record added, edited, modified, approved or cancelled last comes first.
 - SQL: `lwb_latest_first_setup.sql`. Adds `updated_at` (and `created_at` if missing) to the list tables, old rows stay NULL (no mass update), and a BEFORE UPDATE trigger `zz_lwb_touch_updated_at` (function `lwb_touch_updated_at`) sets `updated_at = now()` on every real change. New list tables: add them to the array in that file.

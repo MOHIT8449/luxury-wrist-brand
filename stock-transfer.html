@@ -11,6 +11,7 @@
   <script src="erp-shell.js"></script>
   <script src="erp-list.js"></script>
   <script src="sales-common.js"></script>
+  <script src="erp-docs.js"></script>
   <style>
     .st-types{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-bottom:12px}
     .st-type{display:flex;flex-direction:column;align-items:flex-start;gap:2px;padding:12px 14px;border-radius:8px;border:1px solid var(--erp-line);background:#fff;cursor:pointer;font:inherit;text-align:left;color:var(--erp-ink)}
@@ -85,13 +86,14 @@
           <div><label for="f_from">From</label><select id="f_from"></select></div>
           <div><label for="f_to">To</label><select id="f_to"></select></div>
           <div><label for="f_date">Date</label><input id="f_date" type="date"></div>
-          <div><label for="f_photo">Photo (optional)</label><input id="f_photo" type="file" accept="image/*" capture="environment"></div>
+          <div><label for="f_photo" id="photoLbl">Photo</label><input id="f_photo" type="file" accept="image/*" capture="environment"></div>
           <div class="half"><label for="f_reason">Reason *</label><input id="f_reason" maxlength="300" placeholder="Why is this stock moving?"><div class="st-reasons" id="reasons"></div></div>
           <div class="half"><label for="f_note">Note</label><input id="f_note" maxlength="500" placeholder="Location, stack, vehicle no., anything useful"></div>
           <div id="destroyBox" class="wide" hidden><div class="st-form" style="grid-template-columns:1fr 1fr">
             <div><label for="f_witness">Witness (who saw it destroyed) *</label><input id="f_witness" maxlength="120" placeholder="Name"></div>
             <div><label for="f_method">How destroyed</label><input id="f_method" maxlength="120" placeholder="Crushed / drained / scrap dealer"></div>
           </div></div>
+          <div id="stxDocsBox" class="wide" hidden><label id="stxDocsLbl">Damage / leakage / breakage photos</label><div id="stxDocs"></div></div>
           <div class="st-lines" id="lines"></div>
           <div class="st-end"><button type="button" class="sl-btn ghost small" id="addLine">+ Add SKU</button><small id="totalTxt">One line per SKU. Cases and loose pieces.</small><button type="submit" class="sl-btn" id="save">Send for approval</button></div>
         </form>
@@ -168,6 +170,7 @@
       const [s,m]=await Promise.all([client.rpc("lwb_stx_status"),client.rpc("lwb_stx_moves",{p_status:"PENDING",p_from:null,p_to:null})]);
       if(s.error||m.error){el("statusTable").innerHTML='<div class="sl-msg">'+esc(errText(s.error||m.error))+"</div>";return}
       stock=s.data||[];moves=ERPRecent.sort(m.data||[],"requested_at","decided_at");
+      stxSum=await ERPDocs.summary(client,"STOCK_MOVE");mountStxDocs();
       const linked=stock.length?stock[0].linked:true;
       el("linkWarn").hidden=linked;el("linkWarn").textContent="Saleable stock is not linked to Live Stock on this database: approved transfers are recorded here, but PO Entry / Inventory still show the old saleable number. Ask for a check of lwb_live_stock.";
       el("pendN").textContent=moves.length;
@@ -207,6 +210,7 @@
       el("f_to").innerHTML=T.to.map(b=>'<option value="'+b+'">'+LABEL[b]+"</option>").join("");
       el("f_from").disabled=T.from.length===1;el("f_to").disabled=T.to.length===1;
       el("destroyBox").hidden=t!=="DESTROY";
+      mountStxDocs();
       el("reasons").innerHTML=T.reasons.map(r=>'<span class="sl-chip" data-r="'+esc(r)+'">'+esc(r)+"</span>").join("");
       el("save").textContent=appr?"Save & send for approval":"Send for approval";
       refreshAvail();
@@ -238,6 +242,19 @@
       }
       el("totalTxt").textContent=n?n+" SKU"+(n>1?"s":"")+" · "+fmt(total)+" cases total":"One line per SKU. Cases and loose pieces.";
     }
+    // Godown Manager's photos of the damaged goods (lwb_documents_setup.sql, record STOCK_MOVE = first STM no. of the request).
+    // Compulsory when stock goes to Damage / Leakage / Breakage / Gasless / Expiry, and for Destroy.
+    let stxDocs=null,stxSum=null;
+    const PHOTO_TO=["DAMAGE","LEAKAGE","BREAKAGE","GASLESS","EXPIRY"];
+    const needPhoto=()=>type==="DESTROY"||(type==="TRANSFER"&&PHOTO_TO.includes(el("f_to").value));
+    function mountStxDocs(){
+      if(!stxSum){el("stxDocsBox").hidden=true;return}
+      el("stxDocsBox").hidden=false;el("f_photo").parentElement.hidden=true;
+      if(!stxDocs)stxDocs=ERPDocs.panel({client,mount:el("stxDocs"),entity:"STOCK_MOVE",id:null,slots:[{k:"DAMAGE",l:"Photos of the goods",img:1,cam:"environment",max:6}]});
+      el("stxDocsLbl").textContent=needPhoto()?"Photos of the damaged goods * (compulsory, 1 to 6)":"Photos (optional)";
+    }
+    const stmKey=g=>String(Math.min(...g.map(m=>Number(m.id))));
+    const photoLink=g=>{if(!stxSum)return "";const t=stxSum.get(stmKey(g));return t?' · <span class="st-photo" data-docs="'+stmKey(g)+'">📷 Photos</span>':""};
     function shrink(file){
       return new Promise((ok,bad)=>{const img=new Image(),url=URL.createObjectURL(file);
         img.onload=()=>{const k=Math.min(1,1280/Math.max(img.width,img.height)),c=document.createElement("canvas");c.width=Math.round(img.width*k);c.height=Math.round(img.height*k);
@@ -260,6 +277,7 @@
       if(!lines.length){await alert("Enter at least one SKU and its quantity.");return}
       const reason=el("f_reason").value.trim();if(!reason){await alert("Enter the reason.");el("f_reason").focus();return}
       if(type==="DESTROY"&&!el("f_witness").value.trim()){await alert("Enter who witnessed the destroy.");el("f_witness").focus();return}
+      if(stxDocs&&needPhoto()&&!stxDocs.has("DAMAGE")){await alert("Take at least one photo of the "+LABEL[type==="DESTROY"?el("f_from").value:el("f_to").value].toLowerCase()+" goods (📷 Camera).\n\nThe photo is the proof for Sales Head / Admin approval.");return}
       const summary=lines.map(l=>"• "+l.name+": "+cs(l.cases*l.ppc+l.pcs,l.ppc)).join("\n");
       if(!await confirm(LABEL[from]+" → "+LABEL[to]+"\n\n"+summary+"\n\nReason: "+reason+"\n\nThis goes to Sales Head / Admin for approval. Stock moves only after approval.",{ok:"Send"}))return;
       const btn=el("save");btn.disabled=true;
@@ -269,8 +287,11 @@
         const {data,error}=await client.rpc("lwb_stx_request",{p:{from_bucket:from,to_bucket:to,move_date:el("f_date").value||null,reason,note:el("f_note").value.trim(),
           witness:el("f_witness").value.trim(),method:el("f_method").value.trim(),photo_path:photo,lines:lines.map(({name,ppc,...l})=>l)}});
         if(error)throw error;
-        ERPShell.toast("Sent for approval: STM-"+data.ids[0]+(data.ids.length>1?" (+"+(data.ids.length-1)+")":""));
-        el("form").reset();el("f_date").value=today();el("lines").replaceChildren();addLine();setType(type);
+        let docErr="";
+        if(stxDocs&&stxDocs.count()){docErr=await stxDocs.flush(String(Math.min(...data.ids.map(Number))));stxDocs=null;stxSum=await ERPDocs.summary(client,"STOCK_MOVE")||stxSum}
+        if(docErr)await alert("Sent for approval: STM-"+data.ids[0]+"\n\nBut the photos were NOT saved: "+docErr);
+        else ERPShell.toast("Sent for approval: STM-"+data.ids[0]+(data.ids.length>1?" (+"+(data.ids.length-1)+")":""));
+        el("form").reset();el("f_date").value=today();el("lines").replaceChildren();addLine();stxDocs=null;setType(type);
         await loadStatus();show(appr?"Approvals":"Status");
       }catch(err){await alert("Could not save: "+errText(err))}
       finally{btn.disabled=false}
@@ -289,7 +310,7 @@
           canD?'<span class="st-q"><input type="number" min="0" step="1" data-id="'+m.id+'" data-ppc="'+m.pcs_per_case+'" data-f="c" value="'+Math.trunc(m.qty_pcs/m.pcs_per_case)+'" aria-label="Cases to approve">CS<input type="number" min="0" step="1" data-id="'+m.id+'" data-f="p" value="'+(m.qty_pcs%m.pcs_per_case)+'" aria-label="Pieces to approve">PCS</span>':"—"]);
         return '<div class="st-item"><div class="st-top"><b>'+esc(LABEL[x.from_bucket]+" → "+LABEL[x.to_bucket])+'</b><span class="erp-badge amber">Waiting</span>'+(x.source==="AUDIT"?'<span class="erp-badge blue">Night audit</span>':"")+'<span class="grow"></span><span class="st-meta">STM-'+g.map(m=>m.id).join(", ")+"</span></div>"+
           '<div class="st-meta">'+S.shortDate(x.move_date)+" · by "+esc(x.requested_by_name)+" · "+esc(x.reason)+(x.note?" · "+esc(x.note):"")+(x.witness?" · Witness "+esc(x.witness):"")+(x.method?" · "+esc(x.method):"")+
-          (x.photo_path?' · <span class="st-photo" data-photo="'+esc(x.photo_path)+'">📷 Photo</span>':"")+"</div>"+
+          (x.photo_path?' · <span class="st-photo" data-photo="'+esc(x.photo_path)+'">📷 Photo</span>':"")+photoLink(g)+"</div>"+
           '<div class="sl-scroll">'+S.table(["SKU","Asked","Approve"],rows,[1,2])+"</div>"+
           '<div class="st-btns">'+(canD?'<button type="button" class="sl-btn small" data-act="APPROVE" data-ids="'+g.map(m=>m.id)+'">✅ Approve</button><button type="button" class="sl-btn ghost small" data-act="REJECT" data-ids="'+g.map(m=>m.id)+'">Reject</button>':
             (appr?'<span class="st-meta">You asked for this. Admin or another Sales Head approves it.</span>':'<span class="st-meta">Waiting for Sales Head / Admin.</span>'))+
@@ -298,6 +319,7 @@
     }
     async function onPending(e){
       const ph=e.target.closest("[data-photo]");if(ph){openPhoto(ph.dataset.photo);return}
+      const dc=e.target.closest("[data-docs]");if(dc){ERPDocs.open({client,entity:"STOCK_MOVE",id:dc.dataset.docs,title:"Photos · STM-"+dc.dataset.docs,slots:[{k:"DAMAGE",l:"Photos of the goods",img:1,cam:"environment",max:6}],canEdit:false});return}
       const b=e.target.closest("[data-act]");if(!b)return;
       const idList=b.dataset.ids.split(",").map(Number),card=b.closest(".st-item");
       if(b.dataset.act==="CANCEL"){
@@ -413,7 +435,7 @@
       el("types").addEventListener("click",e=>{const b=e.target.closest("[data-type]");if(b)setType(b.dataset.type)});
       el("reasons").addEventListener("click",e=>{const c=e.target.closest("[data-r]");if(c){el("f_reason").value=c.dataset.r;el("f_reason").focus()}});
       el("lines").addEventListener("click",e=>{const b=e.target.closest(".l-del");if(!b)return;b.closest(".st-line").remove();if(!el("lines").children.length)addLine();refreshAvail()});
-      el("lines").addEventListener("input",refreshAvail);el("f_from").addEventListener("change",refreshAvail);
+      el("lines").addEventListener("input",refreshAvail);el("f_from").addEventListener("change",refreshAvail);el("f_to").addEventListener("change",mountStxDocs);
       el("addLine").onclick=()=>{addLine().querySelector(".l-sku").focus()};
       el("form").addEventListener("submit",save);
       el("pendList").addEventListener("click",onPending);

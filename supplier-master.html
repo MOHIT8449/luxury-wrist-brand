@@ -4,7 +4,7 @@
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Supplier / Company Master | Luxury Wrist Brand</title>
 <script src="erp-date.js"></script><script src="erp-recent.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script><script src="page-role.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script><script src="page-role.js"></script><script src="erp-docs.js"></script>
 <style>
 :root{font-family:Arial,Helvetica,sans-serif;color:#172844;background:#f3f6fb}*{box-sizing:border-box}body{margin:0}
 header{background:#142640;color:white;padding:17px max(22px,4vw);display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}header h1{font-size:23px;margin:0 0 4px;letter-spacing:.5px}header small{color:#d2dbe6}nav{display:flex;gap:10px;flex-wrap:wrap}nav a{color:#fff;border:1px solid #8f9eb0;border-radius:8px;text-decoration:none;padding:9px 14px;font-size:13px}
@@ -38,6 +38,7 @@ button{border:0;border-radius:8px;background:#1569cc;color:white;padding:11px 17
       <div class="field"><label for="isActive">Status</label><select id="isActive"><option value="true">Active</option><option value="false">Inactive</option></select></div>
     </div>
     <div class="actions"><button id="save" type="button" disabled>Save Supplier</button><button id="clear" type="button" class="secondary">Clear / New Supplier</button><span id="formHint" class="small">Admin only can create or update Suppliers.</span></div>
+    <div id="docsBox" style="margin-top:14px" hidden><div class="ed-title">GST certificate, PAN &amp; cancelled cheque</div><div id="docs"></div></div>
     <p class="small">Supplier Code is generated automatically. To remove a supplier from new Goods Inward selection, mark it Inactive — existing purchase history is preserved.</p>
   </section>
   <section class="panel">
@@ -49,13 +50,16 @@ button{border:0;border-radius:8px;background:#1569cc;color:white;padding:11px 17
 'use strict';
 const SUPABASE_URL='https://txkbhadzdbxpieunfvox.supabase.co';
 const $=id=>document.getElementById(id);
-let db=null,profile=null,suppliers=[],editingId=null,busy=false,companies=[],companyOn=false;
+let db=null,profile=null,suppliers=[],editingId=null,busy=false,companies=[],companyOn=false,docSum=null;
+// GST certificate / PAN / cheque of a saved supplier (lwb_documents_setup.sql, record type SUPPLIER).
+function mountDocs(){const on=!!(db&&docSum&&editingId);$('docsBox').hidden=!on;if(!on)return;
+  ERPDocs.panel({client:db,mount:$('docs'),entity:'SUPPLIER',id:editingId,canEdit:['admin','manager','accounts'].includes(profile?.role),onChange:async()=>{docSum=await ERPDocs.summary(db,'SUPPLIER')||docSum;render()}})}
 const formIds=['supplierName','gstin','pan','contactPerson','mobile','email','address','city','state','pincode','terms'];
 const toNullable=value=>{const s=String(value||'').trim();return s||null;};
 function show(msg,type='error'){const e=$('notice');e.className='notice '+type;e.textContent=msg;e.scrollIntoView({block:'nearest',behavior:'smooth'});}
 function clearNotice(){$('notice').className='notice';$('notice').textContent='';}
 function isAdmin(){return profile?.role==='admin'&&profile?.active===true;}
-function resetForm(){editingId=null;for(const id of formIds)$(id).value='';$('isActive').value='true';$('company').value='';$('formHeading').textContent='Add Supplier / Company';$('save').textContent='Save Supplier';updateControls();}
+function resetForm(){editingId=null;for(const id of formIds)$(id).value='';$('isActive').value='true';$('company').value='';$('formHeading').textContent='Add Supplier / Company';$('save').textContent='Save Supplier';updateControls();mountDocs();}
 function updateControls(){const editable=isAdmin()&&!busy;$('save').disabled=!editable;$('clear').disabled=!editable;
   for(const id of [...formIds,'isActive','company'])$(id).disabled=!editable;
   $('formHint').textContent=!isAdmin()?'Only an active Admin can add or edit Suppliers.':editingId?'Editing existing Supplier. Changes will not overwrite previous invoice names.':'Create a Supplier; Code is generated automatically.';
@@ -93,7 +97,7 @@ async function saveSupplier(){if(!isAdmin()||busy)return;const payload=buildPayl
 function editSupplier(id){if(!isAdmin())return;const s=suppliers.find(row=>row.id===id);if(!s)return;
   editingId=id;const mapping={supplierName:'supplier_name',gstin:'gstin',pan:'pan',contactPerson:'contact_person',mobile:'mobile',email:'email',address:'address',city:'city',state:'state',pincode:'pincode',terms:'payment_terms'};
   for(const [formId,key] of Object.entries(mapping))$(formId).value=s[key]??'';
-  $('isActive').value=String(s.is_active);$('company').value=s.company_id||'';$('formHeading').textContent='Edit Supplier — '+s.supplier_code;$('save').textContent='Update Supplier';updateControls();$('editPanel').scrollIntoView({behavior:'smooth'});}
+  $('isActive').value=String(s.is_active);$('company').value=s.company_id||'';$('formHeading').textContent='Edit Supplier — '+s.supplier_code;$('save').textContent='Update Supplier';updateControls();mountDocs();$('editPanel').scrollIntoView({behavior:'smooth'});}
 function render(){const body=$('list'),q=$('search').value.toLowerCase().trim(),f=$('filter').value;
   const rows=suppliers.filter(s=>(f==='all'||(f==='active')===s.is_active)&&[s.supplier_name,s.supplier_code,s.gstin,s.city,s.state,s.contact_person,s.mobile].some(x=>String(x||'').toLowerCase().includes(q)));
   body.replaceChildren();$('count').textContent=`${rows.length} shown / ${suppliers.length} total`;
@@ -101,12 +105,14 @@ function render(){const body=$('list'),q=$('search').value.toLowerCase().trim(),
   for(const s of rows){const tr=body.insertRow();
     const co=companies.find(c=>c.id===s.company_id);
     for(const value of [s.supplier_code,s.supplier_name,co?co.name+(co.purchase_billing==='MRP'?' · MRP bill':''):'All',s.gstin||'—',[s.city,s.state].filter(Boolean).join(', ')||'—',[s.contact_person,s.mobile].filter(Boolean).join(' · ')||'—',s.payment_terms||'—'])tr.insertCell().textContent=value;
+    if(docSum){const tg=document.createElement('div');tg.innerHTML=ERPDocs.badge('SUPPLIER',docSum.get(s.id)||new Set());tr.cells[1].append(tg)}
     const state=tr.insertCell(),status=document.createElement('span');status.className='status'+(s.is_active?'':' inactive');status.textContent=s.is_active?'Active':'Inactive';state.appendChild(status);
     const action=tr.insertCell();if(isAdmin()){const btn=document.createElement('button');btn.type='button';btn.textContent='Edit';btn.className='secondary';btn.addEventListener('click',()=>editSupplier(s.id));action.appendChild(btn);}else action.textContent='View only';
+    if(docSum&&!isAdmin()){const d=document.createElement('button');d.type='button';d.className='secondary';d.textContent='📎 Docs';d.style.marginLeft='6px';d.addEventListener('click',async()=>{await ERPDocs.open({client:db,entity:'SUPPLIER',id:s.id,title:'Documents · '+s.supplier_name,canEdit:['manager','accounts'].includes(profile?.role)});docSum=await ERPDocs.summary(db,'SUPPLIER')||docSum;render()});if(action.textContent==='View only')action.textContent='';action.appendChild(d);}
   }}
 async function loadSuppliers(){if(!db)return;
   $('refresh').disabled=true;
-  try{const [{data,error},co]=await Promise.all([db.from('lwb_supplier_master').select('*').order('supplier_name'),db.from('lwb_companies').select('*').order('sort_no').order('name')]);if(error)throw error;suppliers=ERPRecent.sort(data||[]);
+  try{const [{data,error},co]=await Promise.all([db.from('lwb_supplier_master').select('*').order('supplier_name'),db.from('lwb_companies').select('*').order('sort_no').order('name')]);if(error)throw error;suppliers=ERPRecent.sort(data||[]);docSum=await ERPDocs.summary(db,'SUPPLIER');
     companies=co.error?[]:(co.data||[]);companyOn=companies.length>0&&suppliers.every(x=>'company_id' in x)&&(suppliers.length>0||!co.error);
     const sel=$('company'),cur=sel.value;sel.replaceChildren(new Option('— All brands —',''),...companies.map(c=>new Option(c.name+(c.purchase_billing==='MRP'?' (MRP bill)':''),c.id)));sel.value=cur;
     $('companyField').hidden=!companyOn;render();}

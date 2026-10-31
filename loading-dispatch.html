@@ -8,6 +8,7 @@
 <script src="erp-date.js"></script><script src="erp-recent.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script><script src="page-role.js"></script>
 <script src="party-list.js" defer></script>
+<script src="erp-docs.js"></script>
 <script src="erp-operations-notifications.js"></script>
 <style>
 *{box-sizing:border-box}
@@ -121,6 +122,7 @@ header,main,.overlay{display:none!important}
 <label for="loadingRemarks">Loading Remarks</label>
 <textarea id="loadingRemarks" placeholder="Shortage, damage, or other loading remarks"></textarea>
 </div>
+<div class="panel" id="loadDocsBox" hidden><label>Photos: loaded vehicle and any damage / leakage / breakage</label><div id="loadDocs"></div></div>
 <div class="actions">
 <button class="secondary" id="printBtn">Print Delivery Challan</button>
 <button id="startBtn">Start Loading</button>
@@ -238,6 +240,13 @@ return `<tr>
 }).join(''):'<tr><td colspan="9">No orders found.</td></tr>';
 }
 
+// Godown Manager's photos of the loaded vehicle and of damage at loading (lwb_documents_setup.sql, record ORDER).
+let loadDocs=null,loadDocsOn=null;
+async function mountLoadDocs(id){
+if(loadDocsOn===null)loadDocsOn=!!(await ERPDocs.summary(db,'ORDER'));
+$('loadDocsBox').hidden=!loadDocsOn;if(!loadDocsOn){loadDocs=null;return}
+loadDocs=ERPDocs.panel({client:db,mount:$('loadDocs'),entity:'ORDER',id});
+}
 async function openOrder(id){
 try{
 selected=orders.find(o=>o.id===id);
@@ -278,6 +287,7 @@ $('completeBtn').style.display=selected.status==='loaded'||blocked?'none':'';
 $('assignedNote').hidden=!blocked;
 $('assignedNote').textContent=blocked?'This vehicle is assigned to '+(a.loading_person||'another Godown Manager')+' for loading. Only that Godown Manager (or the Sales Head) can confirm it.':'';
 $('overlay').style.display='block';
+mountLoadDocs(id);
 // Opening the assigned order ends the "Vehicle Loading Assignment" reminder.
 db.from('erp_notifications').update({is_read:true}).eq('user_id',user.id).eq('order_id',id).eq('notification_type','LOADING_ASSIGNMENT_DISPATCH').eq('is_read',false).then(()=>{});
 }catch(e){message(e.message,true);}
@@ -323,6 +333,7 @@ if(!items.length)throw Error('No order items found.');
 if(!quantitiesToSave.some(x=>x.qty>0))throw Error('At least one item must have loaded quantity.');
 }catch(e){alert(e.message);return;}
 if(notMine(assignment(selected.id))){alert('This vehicle is assigned to another Godown Manager.');return;}
+if(loadDocs&&/damage|leak|break|toot|tut|phat|short|gasless/i.test($('loadingRemarks').value)&&!loadDocs.has('DAMAGE')&&!await confirm('Remarks mention damage / leakage, but no photo is added.\n\nTake a photo with 📷 Camera under "Damage / leakage / breakage at loading". Confirm loading without a photo?'))return;
 if(!await confirm('Vehicle Loaded: confirm that the quantities above are loaded in vehicle '+(assignment(selected.id).vehicle_no||'')+' for '+selected.order_no+'?\n\nAccounts and the Sales Head will be notified to make the Tally bill.'))return;
 saving=true;
 try{
