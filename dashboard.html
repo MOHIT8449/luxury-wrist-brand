@@ -71,13 +71,13 @@
     @media(max-width:760px){.focus-form{grid-template-columns:1fr 1fr}.focus-form .msg{grid-column:1/-1}}
     /* Banner posts: wide 16:3 photos (1600 x 300 px) that slide, one per new product / scheme. */
     .banners{position:relative;margin:0 0 16px;border-radius:12px;overflow:hidden;background:#00434d;box-shadow:0 2px 10px rgba(0,47,55,.12)}
-    .bn-track{display:flex;overflow-x:auto;scroll-snap-type:x mandatory;scroll-behavior:smooth;scrollbar-width:none}
+    .bn-track{display:flex;align-items:flex-start;overflow-y:hidden;transition:height .3s;overflow-x:auto;scroll-snap-type:x mandatory;scroll-behavior:smooth;scrollbar-width:none}
     .bn-track::-webkit-scrollbar{display:none}
     .bn-slide{flex:0 0 100%;scroll-snap-align:start;margin:0;position:relative;background:#00434d}
-    .bn-pic{position:relative;aspect-ratio:16/3;overflow:hidden;background:#0b3940}
-    /* Whole photo always shows (never cut); a photo of another shape gets a blurred copy of itself on the sides. */
+    .bn-pic{position:relative;overflow:hidden;background:#0b3940}
+    /* Full width at the photo's own height, never cut. Only a very tall photo (over the max height) gets blurred sides. */
     .bn-pic::before{content:"";position:absolute;inset:-24px;background:var(--bg) center/cover no-repeat;filter:blur(18px) brightness(.55)}
-    .bn-pic img{position:relative;display:block;width:100%;height:100%;object-fit:contain}
+    .bn-pic img{position:relative;display:block;width:100%;height:auto;max-height:420px;object-fit:contain}
     .bn-cap{display:flex;align-items:center;gap:10px;padding:6px 14px;background:#00434d;color:#f7f1de;font-size:13px;min-height:34px;border-top:2px solid var(--lwb-gold,#c9b26a)}
     .bn-cap .tx{flex:1;min-width:0;overflow-wrap:anywhere}
     .bn-cap b{font-weight:600;color:#fff}
@@ -95,7 +95,7 @@
     .bn-preview{grid-column:1/-1;margin:0;border-radius:8px;overflow:hidden;border:1px solid var(--erp-line)}
         .bn-preview figcaption{display:flex;justify-content:space-between;gap:8px;padding:6px 10px;font-size:12px;color:var(--erp-muted);background:#fafaf7}
     .bn-preview figcaption .warn{color:var(--erp-amber)}
-    @media(max-width:760px){.bn-nav{display:none}.bn-cap{padding:7px 10px;font-size:12px}.bn-cap small{display:block;margin:2px 0 0}}
+    @media(max-width:760px){.bn-pic img{max-height:240px}.bn-nav{display:none}.bn-cap{padding:7px 10px;font-size:12px}.bn-cap small{display:block;margin:2px 0 0}}
     [hidden]{display:none!important}
     @media(max-width:1100px){.dash-grid{grid-template-columns:1fr}.side-col{display:contents}#verifyCard{order:-1}}
     @media(max-width:980px){.hero{margin:-14px -12px 0;padding:18px 12px 60px}.hero h2{font-size:18px}
@@ -163,7 +163,7 @@
       <button type="button" id="focusCancel">Close</button>
       <button type="submit" class="send" id="focusSend">Post to all</button>
       <datalist id="focusSkus"></datalist>
-      <div class="bn-file"><label for="focusImg">+ Banner photo</label><input type="file" id="focusImg" accept="image/jpeg,image/png,image/webp"><span id="focusImgHint">Best size 1600 × 300 px (wide strip). Keep text in the middle. Message is optional with a photo.</span></div>
+      <div class="bn-file"><label for="focusImg">+ Banner photo</label><input type="file" id="focusImg" accept="image/jpeg,image/png,image/webp"><span id="focusImgHint">Width 1600 px, height 300–400 px. It fills the full width at the photo's own height. Message is optional with a photo.</span></div>
       <figure class="bn-preview" id="focusPreview" hidden><div class="bn-pic" id="focusPreviewPic"><img id="focusPreviewImg" alt="Banner preview"></div><figcaption><span>This is how everyone will see it</span><span id="focusPreviewInfo"></span></figcaption></figure>
     </form>
     <div id="roleDash" hidden></div>
@@ -415,10 +415,11 @@
       });
     }
     // Banner strip: one slide per photo post, slides every 6 s, swipe on phone, arrows + dots on web.
-    let bannerTimer=null;
+    let bannerTimer=null,bannerFit=()=>{};
+    addEventListener("resize",()=>bannerFit());
     async function showBanners(list,today){
       const wrap=document.getElementById("banners");
-      clearInterval(bannerTimer);wrap.replaceChildren();wrap.hidden=!list.length;
+      clearInterval(bannerTimer);bannerFit=()=>{};wrap.replaceChildren();wrap.hidden=!list.length;
       if(!list.length)return;
       const s=await client.storage.from("lwb-banners").createSignedUrls(list.map(a=>a.image_path),3600);
       const url=new Map((s.data||[]).filter(x=>x.signedUrl).map(x=>[x.path,x.signedUrl]));
@@ -436,13 +437,17 @@
       });
       wrap.appendChild(track);
       if(list.length<2)return;
+      // Banners can differ in height: the strip takes the height of the one on screen.
+      const fit=()=>{const s=track.children[at()];if(s)track.style.height=s.offsetHeight+"px"};
+      track.querySelectorAll("img").forEach(im=>im.addEventListener("load",fit));
+      bannerFit=fit;
       const dots=document.createElement("div");dots.className="bn-dots";
       const go=i=>track.scrollTo({left:((i+list.length)%list.length)*track.clientWidth});
       const at=()=>Math.round(track.scrollLeft/Math.max(track.clientWidth,1));
       list.forEach((_,i)=>{const d=document.createElement("button");d.type="button";d.setAttribute("aria-label","Banner "+(i+1));if(!i)d.className="on";d.onclick=()=>go(i);dots.appendChild(d)});
       const nav=(cls,txt,step)=>{const b=document.createElement("button");b.type="button";b.className="bn-nav "+cls;b.textContent=txt;b.setAttribute("aria-label",step<0?"Previous banner":"Next banner");b.onclick=()=>go(at()+step);return b};
       wrap.append(nav("bn-prev","‹",-1),nav("bn-next","›",1),dots);
-      track.addEventListener("scroll",()=>{const i=at();[...dots.children].forEach((d,k)=>d.classList.toggle("on",k===i))},{passive:true});
+      track.addEventListener("scroll",()=>{const i=at();[...dots.children].forEach((d,k)=>d.classList.toggle("on",k===i));fit()},{passive:true});
       let hold=false;wrap.onmouseenter=()=>hold=true;wrap.onmouseleave=()=>hold=false;
       wrap.ontouchstart=()=>hold=true;wrap.ontouchend=()=>setTimeout(()=>hold=false,4000);
       bannerTimer=setInterval(()=>{if(!hold&&!document.hidden)go(at()+1)},6000);
@@ -482,8 +487,8 @@
         prevImg.src=URL.createObjectURL(banner.blob);prev.hidden=false;
         document.getElementById("focusPreviewPic").style.setProperty("--bg","url(\""+prevImg.src+"\")");
         const r=banner.w/banner.h,info=document.getElementById("focusPreviewInfo");
-        info.textContent=banner.w+" × "+banner.h+" px"+(Math.abs(r-16/3)>0.5?" · not 1600 × 300 shape, it will show smaller with blurred sides":"");
-        info.className=Math.abs(r-16/3)>0.5?"warn":"";
+        info.textContent=banner.w+" × "+banner.h+" px"+(r<3.8?" · too tall for a banner, it will show smaller with blurred sides. Use height 300–400 px":"");
+        info.className=r<3.8?"warn":"";
       };
       document.getElementById("focusCancel").onclick=()=>{form.reset();clearBanner();form.hidden=true;post.hidden=false};
       form.onsubmit=async e=>{
