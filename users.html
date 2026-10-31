@@ -11,7 +11,9 @@
   <style>
     .status{text-align:center;padding:80px 20px;font-size:15px;color:#555}
     .roles-small{font-size:12px;color:var(--erp-muted);line-height:1.5;margin:4px 0 0}
-    .roles-table{min-width:980px}
+    .roles-table{min-width:1180px}
+    .roles-table input[type=email]{min-width:190px}
+    .roles-table input[type=tel]{min-width:120px}
     .roles-table input,.roles-table select,.nu-grid input,.nu-grid select{width:100%;padding:8px;border:1px solid #cfd6de;border-radius:6px;font:inherit;font-size:13px;background:#fff;box-sizing:border-box}
     .roles-table button,.nu-btn{padding:8px 12px;background:var(--erp-red);border:0;border-radius:6px;color:#fff;font-weight:600;cursor:pointer;white-space:nowrap;font:inherit;font-size:13px}
     .roles-table button:disabled,.nu-btn:disabled{opacity:.5;cursor:not-allowed}
@@ -67,7 +69,7 @@
     <section class="erp-card" id="roleManager">
       <div class="erp-card-head">
         <div><h2>Users &amp; Roles</h2>
-          <p class="roles-small">Change role, name, status or login mobile, or type a new password, then Save. Leave New Password empty to keep the current one. <b>Pages</b> ticks or unticks single pages for one user.</p></div>
+          <p class="roles-small">Change role, name, status, login mobile or login email, or type a new password, then Save. The user signs in with the new mobile or email and the same password. Leave New Password empty to keep the current one. <b>Pages</b> ticks or unticks single pages for one user.</p></div>
         <div class="role-actions">
           <button class="erp-btn" type="button" onclick="loadRoleManager()">Refresh Users</button>
         </div>
@@ -76,8 +78,8 @@
         <p id="roleManagerMessage">Loading users...</p>
         <div class="erp-scroll">
           <table class="erp-table roles-table">
-            <thead><tr><th>Login</th><th>Full Name</th><th>ERP Role</th><th>Login Mobile</th><th>New Password</th><th>Status</th><th>Action</th></tr></thead>
-            <tbody id="roleManagerRows"><tr><td colspan="7">Loading...</td></tr></tbody>
+            <thead><tr><th>Login</th><th>Full Name</th><th>ERP Role</th><th>Login Mobile</th><th>Login Email</th><th>New Password</th><th>Status</th><th>Action</th></tr></thead>
+            <tbody id="roleManagerRows"><tr><td colspan="8">Loading...</td></tr></tbody>
           </table>
         </div>
         <p class="roles-small" style="margin-top:10px">Only an active Admin can save. A user may need to sign in again after a role change. A driver's Login Mobile must be the same number the Sales Head saves in Driver Assignment. Tally is not changed.</p>
@@ -127,7 +129,7 @@
         const {data,error}=await client.rpc("lwb_admin_users");
         if(error)throw error;
         const users=data||[];
-        if(!users.length){cell(body.insertRow(),"No users yet.").colSpan=7;return}
+        if(!users.length){cell(body.insertRow(),"No users yet.").colSpan=8;return}
         let pa=await client.from("lwb_user_page_access").select("user_id,hidden,extra");
         extraReady=!pa.error;
         if(pa.error)pa=await client.from("lwb_user_page_access").select("user_id,hidden");
@@ -144,11 +146,12 @@
           const name=input(u.full_name||String(u.email||"").split("@")[0],{maxLength:150});cell(row,name);
           const role=select([["","Select Role"],...ROLES],String(u.erp_role||""));cell(row,role);
           const mob=input(u.mobile,{type:"tel",inputMode:"numeric",maxLength:14,placeholder:"10 digits"});cell(row,mob);
+          const mail=input(u.email,{type:"email",maxLength:254,placeholder:"name@example.com",autocomplete:"off"});cell(row,mail);
           const pass=input("",{placeholder:"Keep current",autocomplete:"new-password"});cell(row,pass);
           const active=select([["true","ACTIVE"],["false","INACTIVE"]],u.is_active===false?"false":"true");cell(row,active);
           const save=document.createElement("button");save.type="button";save.textContent="Save";
           if(u.user_id===roleAdminUserId){role.disabled=true;active.disabled=true}
-          save.onclick=()=>saveUser(u,{name,role,mob,pass,active},save);
+          save.onclick=()=>saveUser(u,{name,role,mob,mail,pass,active},save);
           const pages=document.createElement("button");pages.type="button";pages.className="pg-btn";
           const count=()=>{const mine=ERPShell.menuFor(role.value).flatMap(g=>g.items),off=pageAccess[u.user_id]||[],plus=(pageExtra[u.user_id]||[]).filter(h=>!mine.some(i=>i.h===h));
             pages.textContent="Pages "+mine.filter(i=>!off.includes(i.h)).length+"/"+mine.length+(plus.length?" +"+plus.length:"")+(PROFIT_ROLES.includes(role.value)&&off.includes(PROFIT_KEY)?" · Profit off":"")};
@@ -163,7 +166,7 @@
         }
         roleMessage(users.length+" users. Mobile login works for users with a Login Mobile.");
       }catch(err){
-        cell(body.insertRow(),setupHint(err)).colSpan=7;
+        cell(body.insertRow(),setupHint(err)).colSpan=8;
         roleMessage("Users could not be loaded: "+setupHint(err),true);
       }
     }
@@ -175,7 +178,7 @@
       const role=roleSel.value;
       if(!role){roleMessage("Select a Role first.",true);return}
       const tr=document.createElement("tr");tr.className="pages-row";
-      const td=tr.insertCell();td.colSpan=7;
+      const td=tr.insertCell();td.colSpan=8;
       const head=document.createElement("div");head.className="pg-head";
       const title=document.createElement("b");
       title.textContent="Pages for "+(u.full_name||u.mobile||u.email)+" · "+(ROLES.find(r=>r[0]===role)||["",role.toUpperCase()])[1];
@@ -254,17 +257,28 @@
       if(mobRaw&&!mob){roleMessage("Login Mobile must be a valid 10-digit Indian number.",true);return}
       if(role==="driver"&&!mob){roleMessage("A driver needs the Login Mobile saved by the Sales Head in Driver Assignment.",true);return}
       if(pass&&pass.length<6){roleMessage("New Password must be at least 6 characters.",true);return}
+      const email=f.mail.value.trim().toLowerCase(),emailChanged=email!==String(u.email||"").toLowerCase();
+      if(email&&!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)){roleMessage("Login Email is not valid.",true);return}
+      if(!mob&&!email){roleMessage("Keep a Login Mobile or a Login Email, or the user cannot sign in.",true);return}
       btn.disabled=true;
       try{
         const {error}=await client.rpc("lwb_admin_set_user_role",{p_user_id:u.user_id,p_role:role,p_full_name:fullName,p_active:f.active.value==="true"});
         if(error)throw error;
         const mobChanged=mob!==mobile10(u.mobile);
+        const setEmail=async()=>{
+          const {error}=await client.rpc("lwb_admin_set_email",{p_user_id:u.user_id,p_email:email||null});
+          if(error)throw Error(/lwb_admin_set_email/.test(error.message||"")?"Run lwb_user_login_setup.sql in Supabase first.":error.message);
+        };
+        // New email first when the mobile is being removed; new mobile first when the email is being removed.
+        if(emailChanged&&email)await setEmail();
         if(mobChanged||pass){
           const {error}=await client.rpc("lwb_admin_set_login",{p_user_id:u.user_id,p_mobile:mob||null,p_password:pass||null,p_clear_mobile:!mob&&mobChanged});
           if(error)throw Error(setupHint(error));
         }
+        if(emailChanged&&!email)await setEmail();
         await loadRoleManager();
-        roleMessage("Saved "+fullName+"."+(pass?" New password is set; share it with the user.":""));
+        const login=[mobChanged&&mob?"mobile "+mob:"",emailChanged?(email?"email "+email:"no email"):""].filter(Boolean).join(" and ");
+        roleMessage("Saved "+fullName+"."+(login?" Login is now "+login+".":"")+(pass?" New password is set; share it with the user.":""));
       }catch(err){roleMessage("Could not save: "+err.message,true)}
       finally{btn.disabled=false}
     }
