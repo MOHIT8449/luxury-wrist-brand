@@ -1,0 +1,441 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Stock Transfer | Luxury Wrist Brand ERP</title>
+  <script src="erp-date.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <link rel="stylesheet" href="erp-shell.css">
+  <link rel="stylesheet" href="sales.css">
+  <script src="erp-shell.js"></script>
+  <script src="erp-list.js"></script>
+  <script src="sales-common.js"></script>
+  <style>
+    .st-types{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-bottom:12px}
+    .st-type{display:flex;flex-direction:column;align-items:flex-start;gap:2px;padding:12px 14px;border-radius:8px;border:1px solid var(--erp-line);background:#fff;cursor:pointer;font:inherit;text-align:left;color:var(--erp-ink)}
+    .st-type b{font-size:14.5px}.st-type small{color:var(--erp-muted);font-size:12px}.st-type .ic{font-size:20px;line-height:1}
+    .st-type.on{border-color:var(--erp-red);background:var(--erp-red-soft)}
+    .st-form{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+    .st-form label,.st-line label{display:block;font-size:12px;font-weight:600;color:#4b5763;margin-bottom:3px}
+    .st-form input,.st-form select,.st-form textarea,.st-line input{width:100%;box-sizing:border-box;height:38px;border:1.5px solid var(--erp-line);border-radius:6px;padding:0 10px;font:inherit;background:#fff}
+    .st-form textarea{height:60px;padding:8px 10px;resize:vertical}
+    .st-form input:focus,.st-form select:focus,.st-line input:focus{outline:none;border-color:var(--erp-red)}
+    .st-form .wide{grid-column:1/-1}.st-form .half{grid-column:span 2}
+    .st-lines{grid-column:1/-1;display:grid;gap:8px}
+    .st-line{display:grid;grid-template-columns:minmax(0,2.4fr) 90px 90px minmax(0,1fr) minmax(0,1fr) 36px;gap:8px;align-items:end;background:#fafbfc;border:1px solid var(--erp-line);border-radius:8px;padding:8px}
+    .st-line .avail{grid-column:1/-1;font-size:12px;color:var(--erp-muted);margin-top:-2px}
+    .st-line .avail.bad{color:var(--erp-red);font-weight:600}
+    .st-line button{height:38px;border:1px solid var(--erp-line);border-radius:6px;background:#fff;color:var(--erp-muted);cursor:pointer}
+    .st-reasons{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
+    .st-end{grid-column:1/-1;display:flex;gap:10px;align-items:center;flex-wrap:wrap}.st-end small{flex:1;color:var(--erp-muted);font-size:12px}
+    .st-list{display:grid;gap:10px}
+    .st-item{background:#fff;border:1px solid var(--erp-line);border-left:4px solid #e0a100;border-radius:8px;padding:10px 14px;display:grid;gap:8px}
+    .st-top{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.st-top b{font-size:14.5px}.st-top .grow{flex:1}
+    .st-meta{font-size:12.5px;color:var(--erp-muted)}
+    .st-btns{display:flex;gap:8px;flex-wrap:wrap}
+    .st-q{display:flex;gap:4px;align-items:center}.st-q input{width:64px;height:32px;border:1.5px solid var(--erp-line);border-radius:6px;padding:0 6px;font:inherit}
+    .st-photo{color:var(--erp-blue);cursor:pointer;text-decoration:underline;font-size:12.5px}
+    .st-warn{background:#fff7e6;border:1px solid #f0d08a;border-radius:8px;padding:10px 14px;font-size:13px;margin-bottom:12px}
+    .sec-h{font-size:15px;margin:16px 0 8px}
+    .st-num0{color:#b8bec6}
+    #ledgerTable td:nth-child(3),#histTable td:first-child{white-space:nowrap}
+    #tabStatus .sl-kpis{grid-template-columns:repeat(5,minmax(0,1fr))}
+    @media(max-width:860px){.st-types{grid-template-columns:1fr 1fr}.st-form{grid-template-columns:1fr 1fr}.st-form .half{grid-column:1/-1}#tabStatus .sl-kpis{grid-template-columns:1fr 1fr}
+      .st-line{grid-template-columns:1fr 1fr}.st-line .sku{grid-column:1/-1}.st-line button{grid-column:2}}
+  </style>
+</head>
+<body>
+  <div id="loading" class="status">Checking account access...</div>
+  <main id="page" class="erp-main" hidden>
+    <div class="erp-pagehead"><h1>Stock Transfer</h1><span class="grow"></span><a class="sl-btn ghost small" href="stock-audit.html">🌙 Night Audit</a></div>
+    <p class="sl-sub">Move stock out of Saleable into Damage, Leakage, Breakage, Gasless, Expiry or Loss. Saleable stock goes down only after Sales Head or Admin approves. Destroy, Return to company and Back to saleable also need approval.</p>
+    <div id="linkWarn" class="st-warn" hidden></div>
+
+    <div class="erp-pills" id="tabs">
+      <a class="erp-pill" data-tab="Status">Stock Status</a>
+      <a class="erp-pill" data-tab="New" id="tabNewBtn">+ New Entry</a>
+      <a class="erp-pill" data-tab="Approvals">Approvals <span class="n" id="pendN">0</span></a>
+      <a class="erp-pill" data-tab="History">History</a>
+      <a class="erp-pill" data-tab="Ledger">Category Ledger</a>
+      <a class="erp-pill" data-tab="Daily">Daily Report</a>
+    </div>
+
+    <section id="tabStatus" hidden>
+      <div class="sl-kpis" id="kpis"></div>
+      <div class="sl-filters">
+        <div class="grow"><label for="q">Search SKU</label><input id="q" type="search" placeholder="SKU name"></div>
+        <div><label for="showAll">Show</label><select id="showAll"><option value="">SKUs with damage / loss / waiting</option><option value="1">All SKUs</option></select></div>
+        <button type="button" class="sl-btn ghost" id="xlStatus">Excel</button>
+        <button type="button" class="sl-btn ghost" id="refresh">Refresh</button>
+      </div>
+      <div id="statusTable"></div>
+    </section>
+
+    <section id="tabNew" hidden>
+      <div class="st-types" id="types">
+        <button type="button" class="st-type" data-type="TRANSFER"><span class="ic">📦</span><b>Saleable → Damage etc.</b><small>Damage, Leakage, Breakage, Gasless, Expiry, Loss</small></button>
+        <button type="button" class="st-type" data-type="DESTROY"><span class="ic">🔥</span><b>Destroy</b><small>Damaged stock physically destroyed</small></button>
+        <button type="button" class="st-type" data-type="COMPANY_RETURN"><span class="ic">🏭</span><b>Return to Company</b><small>Sent back / claim (gasless, expiry)</small></button>
+        <button type="button" class="st-type" data-type="TO_SALEABLE"><span class="ic">↩</span><b>Back to Saleable</b><small>Lost stock found, or repacked OK</small></button>
+      </div>
+      <section class="erp-card">
+        <div class="erp-card-head"><h2 id="formTitle">Saleable → Damage etc.</h2></div>
+        <form class="erp-card-body st-form" id="form" autocomplete="off">
+          <div><label for="f_from">From</label><select id="f_from"></select></div>
+          <div><label for="f_to">To</label><select id="f_to"></select></div>
+          <div><label for="f_date">Date</label><input id="f_date" type="date"></div>
+          <div><label for="f_photo">Photo (optional)</label><input id="f_photo" type="file" accept="image/*" capture="environment"></div>
+          <div class="half"><label for="f_reason">Reason *</label><input id="f_reason" maxlength="300" placeholder="Why is this stock moving?"><div class="st-reasons" id="reasons"></div></div>
+          <div class="half"><label for="f_note">Note</label><input id="f_note" maxlength="500" placeholder="Location, stack, vehicle no., anything useful"></div>
+          <div id="destroyBox" class="wide" hidden><div class="st-form" style="grid-template-columns:1fr 1fr">
+            <div><label for="f_witness">Witness (who saw it destroyed) *</label><input id="f_witness" maxlength="120" placeholder="Name"></div>
+            <div><label for="f_method">How destroyed</label><input id="f_method" maxlength="120" placeholder="Crushed / drained / scrap dealer"></div>
+          </div></div>
+          <div class="st-lines" id="lines"></div>
+          <div class="st-end"><button type="button" class="sl-btn ghost small" id="addLine">+ Add SKU</button><small id="totalTxt">One line per SKU. Cases and loose pieces.</small><button type="submit" class="sl-btn" id="save">Send for approval</button></div>
+        </form>
+      </section>
+    </section>
+
+    <section id="tabApprovals" hidden>
+      <div class="st-list" id="pendList"></div>
+    </section>
+
+    <section id="tabHistory" hidden>
+      <div class="sl-filters">
+        <div><label for="h_from">From</label><input id="h_from" type="date"></div>
+        <div><label for="h_to">To</label><input id="h_to" type="date"></div>
+        <div><label for="h_status">Status</label><select id="h_status"><option value="">All</option><option>APPROVED</option><option>PENDING</option><option>REJECTED</option><option>CANCELLED</option></select></div>
+        <div class="grow"><label for="h_q">Search</label><input id="h_q" type="search" placeholder="SKU / reason / STM no."></div>
+        <button type="button" class="sl-btn ghost" id="xlHist">Excel</button>
+      </div>
+      <div id="histTable"></div>
+    </section>
+
+    <section id="tabLedger" hidden>
+      <div class="sl-filters">
+        <div><label for="l_bucket">Category</label><select id="l_bucket"></select></div>
+        <div class="grow"><label for="l_sku">SKU</label><select id="l_sku"><option value="">All SKUs</option></select></div>
+        <div><label for="l_from">From</label><input id="l_from" type="date"></div>
+        <div><label for="l_to">To</label><input id="l_to" type="date"></div>
+        <button type="button" class="sl-btn ghost" id="xlLedger">Excel</button>
+      </div>
+      <div id="ledgerTable"></div>
+    </section>
+
+    <section id="tabDaily" hidden>
+      <div class="sl-filters">
+        <div><label for="d_from">From</label><input id="d_from" type="date"></div>
+        <div><label for="d_to">To</label><input id="d_to" type="date"></div>
+        <button type="button" class="sl-btn ghost" id="xlDaily">Excel</button>
+      </div>
+      <div class="sl-kpis" id="dailyKpis"></div>
+      <div id="dailyTable"></div>
+      <p class="sl-help">Handled = cases received in Goods Inward + cases loaded in vehicles that day. Loss per 1000 = cases moved to Loss for every 1000 cases handled. All figures in cases (loose pieces as part of a case).</p>
+    </section>
+  </main>
+  <datalist id="skuList"></datalist>
+  <script>
+    const S=LWBSales,{client,el,esc,fmt}=S;
+    const HELD=["DAMAGE","LEAKAGE","BREAKAGE","GASLESS","EXPIRY"],CATS=[...HELD,"LOSS"];
+    const LABEL={SALEABLE:"Saleable",DAMAGE:"Damage",LEAKAGE:"Leakage",BREAKAGE:"Breakage",GASLESS:"Gasless",EXPIRY:"Expiry",LOSS:"Loss",DESTROYED:"Destroyed",COMPANY_RETURN:"Return to company"};
+    const TYPES={
+      TRANSFER:{title:"Saleable → Damage etc.",from:["SALEABLE"],to:CATS,reasons:["Leakage found in stack","Broken in loading / unloading","Gasless bottles","Expired / near expiry","Damaged in vehicle","Lost / not found"]},
+      DESTROY:{title:"Destroy damaged stock",from:HELD,to:["DESTROYED"],reasons:["Monthly destroy","Company asked to destroy","Not fit for sale"]},
+      COMPANY_RETURN:{title:"Return to company",from:HELD,to:["COMPANY_RETURN"],reasons:["Company claim","Gasless return","Expiry return"]},
+      TO_SALEABLE:{title:"Back to saleable",from:[...CATS],to:["SALEABLE"],reasons:["Lost stock found","Repacked, OK to sell","Marked by mistake"]}
+    };
+    const setupMsg="Run lwb_stock_transfer_setup.sql first (it runs by itself when the PR is merged).";
+    let me=null,appr=false,user=false,stock=[],skus=[],moves=[],type="TRANSFER",tab="Status";
+    const errText=e=>/lwb_stx_/.test(e.message||"")&&/function|schema cache/.test(e.message||"")?setupMsg:(e.message||String(e));
+    const cs=(p,ppc)=>{p=Number(p)||0;ppc=Math.max(1,Number(ppc)||1);const c=Math.trunc(p/ppc),r=p%ppc;return r?(c?fmt(c)+" CS ":"")+fmt(r)+" PCS":fmt(c)+" CS"};
+    const csNum=(p,ppc)=>Math.round((Number(p)||0)/Math.max(1,Number(ppc)||1)*100)/100;
+    const cell=(p,ppc)=>Number(p)?cs(p,ppc):'<span class="st-num0">—</span>';
+    const today=()=>S.isoDay(new Date());
+    const daysAgo=n=>S.isoDay(new Date(Date.now()-n*864e5));
+
+    // ------------------------------------------------------------- tabs
+    function show(t){
+      tab=t;for(const a of el("tabs").children)a.classList.toggle("active",a.dataset.tab===t);
+      for(const s of ["Status","New","Approvals","History","Ledger","Daily"])el("tab"+s).hidden=s!==t;
+      history.replaceState(null,"","#"+t.toLowerCase());
+      if(t==="History")loadHistory();if(t==="Ledger")loadLedger();if(t==="Daily")loadDaily();
+    }
+
+    // ------------------------------------------------------------- status
+    async function loadStatus(){
+      const [s,m]=await Promise.all([client.rpc("lwb_stx_status"),client.rpc("lwb_stx_moves",{p_status:"PENDING",p_from:null,p_to:null})]);
+      if(s.error||m.error){el("statusTable").innerHTML='<div class="sl-msg">'+esc(errText(s.error||m.error))+"</div>";return}
+      stock=s.data||[];moves=m.data||[];
+      const linked=stock.length?stock[0].linked:true;
+      el("linkWarn").hidden=linked;el("linkWarn").textContent="Saleable stock is not linked to Live Stock on this database: approved transfers are recorded here, but PO Entry / Inventory still show the old saleable number. Ask for a check of lwb_live_stock.";
+      el("pendN").textContent=moves.length;
+      el("l_sku").innerHTML='<option value="">All SKUs</option>'+stock.map(x=>'<option value="'+x.sku_id+'">'+esc(x.sku_name)+"</option>").join("");
+      el("skuList").innerHTML=stock.map(x=>'<option value="'+esc(x.sku_name)+'">').join("");
+      renderStatus();renderPending();refreshAvail();
+    }
+    function renderStatus(){
+      const q=S.key(el("q").value),all=el("showAll").value==="1";
+      const sum=f=>stock.reduce((a,x)=>a+csNum(f(x),x.pcs_per_case),0);
+      const held=x=>HELD.reduce((a,b)=>a+Number(x[b.toLowerCase()+"_pcs"]||0),0);
+      const k=[["Saleable stock",fmt(sum(x=>x.saleable_pcs))+" CS","After approved transfers",x=>Number(x.saleable_pcs)>0,""],
+        ["Waiting approval",fmt(moves.length),"Requests not approved yet",null,"blue"],
+        ["Damage + Leakage + Breakage + Gasless + Expiry",fmt(sum(held))+" CS","Still in godown",x=>held(x)>0,"red"],
+        ["Loss",fmt(sum(x=>x.loss_pcs))+" CS","Lost / not found",x=>Number(x.loss_pcs)>0,"red"],
+        ["Audit short (open)",fmt(sum(x=>x.open_short_pcs))+" CS","Night audit, not found yet",x=>Number(x.open_short_pcs)>0,""]];
+      el("kpis").innerHTML=k.map(c=>'<div class="sl-kpi '+c[4]+'"><span>'+esc(c[0])+"</span><b>"+c[1]+"</b><small>"+esc(c[2])+"</small></div>").join("");
+      if(window.ERPList)el("kpis").querySelectorAll(".sl-kpi").forEach((c,i)=>ERPList.card(c,()=>i===1?{title:"Waiting approval",rows:moves,cols:MCOLS,onRow:()=>show("Approvals")}:
+        {title:k[i][0],rows:stock.filter(k[i][3]),cols:[{t:"SKU",v:r=>r.sku_name},{t:"Cases",v:r=>csNum(i===0?r.saleable_pcs:i===2?held(r):i===3?r.loss_pcs:r.open_short_pcs,r.pcs_per_case),num:true,sum:true}]}));
+      const list=stock.filter(x=>(!q||S.key(x.sku_name).includes(q))&&(all||held(x)||Number(x.loss_pcs)||Number(x.pending_out_pcs)||Number(x.destroyed_pcs)||Number(x.company_return_pcs)||Number(x.open_short_pcs)||Number(x.open_excess_pcs)));
+      if(!list.length){el("statusTable").innerHTML='<div class="erp-empty">'+(stock.length?'No damage, loss or waiting request. Choose "All SKUs" to see every SKU.':"No SKU.")+"</div>";return}
+      el("statusTable").innerHTML='<div class="sl-scroll">'+S.table(["SKU","Saleable","Waiting","Damage","Leakage","Breakage","Gasless","Expiry","Loss","Destroyed","Co. return","Audit short"],
+        list.map(x=>{const p=x.pcs_per_case;return [esc(x.sku_name),"<b>"+cs(x.saleable_pcs,p)+"</b>",cell(x.pending_out_pcs,p),cell(x.damage_pcs,p),cell(x.leakage_pcs,p),cell(x.breakage_pcs,p),cell(x.gasless_pcs,p),cell(x.expiry_pcs,p),cell(x.loss_pcs,p),cell(x.destroyed_pcs,p),cell(x.company_return_pcs,p),
+          Number(x.open_short_pcs)?'<span class="erp-badge red">'+cs(x.open_short_pcs,p)+"</span>":Number(x.open_excess_pcs)?'<span class="erp-badge amber">+'+cs(x.open_excess_pcs,p)+"</span>":'<span class="st-num0">—</span>']}),[1,2,3,4,5,6,7,8,9,10,11])+"</div>";
+    }
+    function statusExcel(){
+      const head=["SKU","Pcs/Case","Saleable CS","Waiting CS","Damage CS","Leakage CS","Breakage CS","Gasless CS","Expiry CS","Loss CS","Destroyed CS","Return to company CS","Audit short CS","Audit extra CS"];
+      S.excel("Stock-status-"+today(),[{name:"Stock status",title:"Stock status "+today(),head,rows:stock.map(x=>{const p=x.pcs_per_case;return [x.sku_name,p,...["saleable","pending_out","damage","leakage","breakage","gasless","expiry","loss","destroyed","company_return","open_short","open_excess"].map(f=>csNum(x[f+"_pcs"],p))]})}]);
+    }
+
+    // ------------------------------------------------------------- new entry
+    function setType(t){
+      type=t;const T=TYPES[t];
+      for(const b of el("types").children)b.classList.toggle("on",b.dataset.type===t);
+      el("formTitle").textContent=T.title;
+      el("f_from").innerHTML=T.from.map(b=>'<option value="'+b+'">'+LABEL[b]+"</option>").join("");
+      el("f_to").innerHTML=T.to.map(b=>'<option value="'+b+'">'+LABEL[b]+"</option>").join("");
+      el("f_from").disabled=T.from.length===1;el("f_to").disabled=T.to.length===1;
+      el("destroyBox").hidden=t!=="DESTROY";
+      el("reasons").innerHTML=T.reasons.map(r=>'<span class="sl-chip" data-r="'+esc(r)+'">'+esc(r)+"</span>").join("");
+      el("save").textContent=appr?"Save & send for approval":"Send for approval";
+      refreshAvail();
+    }
+    function addLine(){
+      const d=document.createElement("div");d.className="st-line";
+      d.innerHTML='<div class="sku"><label>SKU</label><input class="l-sku" list="skuList" placeholder="Type SKU name"></div>'+
+        '<div><label>Cases</label><input class="l-cs" type="number" min="0" step="1" inputmode="numeric" placeholder="0"></div>'+
+        '<div><label>Loose PCS</label><input class="l-pcs" type="number" min="0" step="1" inputmode="numeric" placeholder="0"></div>'+
+        '<div><label>Batch no.</label><input class="l-batch" maxlength="40" placeholder="optional"></div>'+
+        '<div><label>Expiry / Mfg date</label><input class="l-exp" type="date"></div>'+
+        '<button type="button" class="l-del" title="Remove line" aria-label="Remove line">✕</button><div class="avail"></div>';
+      el("lines").appendChild(d);return d;
+    }
+    function lineSku(d){const n=S.key(d.querySelector(".l-sku").value);return stock.find(s=>S.key(s.sku_name)===n)}
+    function linePcs(d,s){const c=Number(d.querySelector(".l-cs").value||0),p=Number(d.querySelector(".l-pcs").value||0);return s?c*s.pcs_per_case+p:0}
+    function availFor(s,from){
+      const waiting=moves.filter(m=>m.sku_id===s.sku_id&&m.from_bucket===from).reduce((a,m)=>a+Number(m.qty_pcs),0);
+      return Number(s[from.toLowerCase()+"_pcs"]||0)-waiting;
+    }
+    function refreshAvail(){
+      const from=el("f_from").value;let total=0,n=0;
+      for(const d of el("lines").children){
+        const s=lineSku(d),a=d.querySelector(".avail");
+        if(!s){a.textContent="";a.classList.remove("bad");continue}
+        const av=availFor(s,from),q=linePcs(d,s);total+=csNum(q,s.pcs_per_case);if(q)n++;
+        a.textContent=LABEL[from]+" available: "+cs(Math.max(av,0),s.pcs_per_case)+" ("+s.pcs_per_case+" pcs / case)"+(q>av?" — more than available":"");
+        a.classList.toggle("bad",q>av);
+      }
+      el("totalTxt").textContent=n?n+" SKU"+(n>1?"s":"")+" · "+fmt(total)+" cases total":"One line per SKU. Cases and loose pieces.";
+    }
+    function shrink(file){
+      return new Promise((ok,bad)=>{const img=new Image(),url=URL.createObjectURL(file);
+        img.onload=()=>{const k=Math.min(1,1280/Math.max(img.width,img.height)),c=document.createElement("canvas");c.width=Math.round(img.width*k);c.height=Math.round(img.height*k);
+          c.getContext("2d").drawImage(img,0,0,c.width,c.height);URL.revokeObjectURL(url);c.toBlob(b=>b?ok(b):bad(Error("Photo could not be read")),"image/jpeg",0.8)};
+        img.onerror=()=>bad(Error("Photo could not be read"));img.src=url});
+    }
+    async function save(e){
+      e.preventDefault();
+      const from=el("f_from").value,to=el("f_to").value,lines=[],seen=new Set();
+      for(const d of el("lines").children){
+        const name=d.querySelector(".l-sku").value.trim(),c=d.querySelector(".l-cs").value.trim(),p=d.querySelector(".l-pcs").value.trim();
+        if(!name&&!c&&!p)continue;
+        const s=lineSku(d);
+        if(!s){await alert("Please select "+(name||"the SKU")+" from the SKU list.");return}
+        if(seen.has(s.sku_id)){await alert(s.sku_name+" is on two lines. Put it on one line.");return}seen.add(s.sku_id);
+        if(!/^\d*$/.test(c)||!/^\d*$/.test(p)||!(Number(c)||Number(p))){await alert("Enter whole cases / pieces for "+s.sku_name+".");return}
+        if(linePcs(d,s)>availFor(s,from)){await alert(s.sku_name+": only "+cs(Math.max(0,availFor(s,from)),s.pcs_per_case)+" in "+LABEL[from]+".");return}
+        lines.push({sku_id:s.sku_id,name:s.sku_name,ppc:s.pcs_per_case,cases:Number(c||0),pcs:Number(p||0),batch_no:d.querySelector(".l-batch").value.trim(),expiry_date:d.querySelector(".l-exp").value||null});
+      }
+      if(!lines.length){await alert("Enter at least one SKU and its quantity.");return}
+      const reason=el("f_reason").value.trim();if(!reason){await alert("Enter the reason.");el("f_reason").focus();return}
+      if(type==="DESTROY"&&!el("f_witness").value.trim()){await alert("Enter who witnessed the destroy.");el("f_witness").focus();return}
+      const summary=lines.map(l=>"• "+l.name+": "+cs(l.cases*l.ppc+l.pcs,l.ppc)).join("\n");
+      if(!await confirm(LABEL[from]+" → "+LABEL[to]+"\n\n"+summary+"\n\nReason: "+reason+"\n\nThis goes to Sales Head / Admin for approval. Stock moves only after approval.",{ok:"Send"}))return;
+      const btn=el("save");btn.disabled=true;
+      try{
+        let photo=null;const f=el("f_photo").files[0];
+        if(f){photo=me.user.id+"/stx-"+Date.now()+".jpg";const up=await client.storage.from("lwb-godown-photos").upload(photo,await shrink(f),{contentType:"image/jpeg"});if(up.error)throw Error("Photo upload failed: "+up.error.message)}
+        const {data,error}=await client.rpc("lwb_stx_request",{p:{from_bucket:from,to_bucket:to,move_date:el("f_date").value||null,reason,note:el("f_note").value.trim(),
+          witness:el("f_witness").value.trim(),method:el("f_method").value.trim(),photo_path:photo,lines:lines.map(({name,ppc,...l})=>l)}});
+        if(error)throw error;
+        ERPShell.toast("Sent for approval: STM-"+data.ids[0]+(data.ids.length>1?" (+"+(data.ids.length-1)+")":""));
+        el("form").reset();el("f_date").value=today();el("lines").replaceChildren();addLine();setType(type);
+        await loadStatus();show(appr?"Approvals":"Status");
+      }catch(err){await alert("Could not save: "+errText(err))}
+      finally{btn.disabled=false}
+    }
+
+    // ------------------------------------------------------------- approvals
+    const MCOLS=[{t:"STM",v:r=>"STM-"+r.id},{t:"Date",v:r=>S.shortDate(r.move_date)},{t:"SKU",v:r=>r.sku_name},{t:"Move",v:r=>LABEL[r.from_bucket]+" → "+LABEL[r.to_bucket]},
+      {t:"Cases",v:r=>csNum(r.qty_pcs,r.pcs_per_case),num:true,sum:true},{t:"Reason",v:r=>r.reason},{t:"By",v:r=>r.requested_by_name},{t:"Status",v:r=>r.status}];
+    function renderPending(){
+      if(!moves.length){el("pendList").innerHTML='<div class="erp-empty">Nothing waiting for approval.</div>';return}
+      const groups=new Map();for(const m of moves){if(!groups.has(m.batch_id))groups.set(m.batch_id,[]);groups.get(m.batch_id).push(m)}
+      el("pendList").innerHTML=[...groups.values()].map(g=>{
+        const x=g[0],canD=g.some(m=>m.can_decide),canC=g.some(m=>m.can_cancel);
+        const rows=g.map(m=>[esc(m.sku_name)+(m.batch_no?'<br><small class="st-meta">Batch '+esc(m.batch_no)+"</small>":"")+(m.expiry_date?'<br><small class="st-meta">Date '+S.shortDate(m.expiry_date)+"</small>":""),
+          cs(m.qty_pcs,m.pcs_per_case),
+          canD?'<span class="st-q"><input type="number" min="0" step="1" data-id="'+m.id+'" data-ppc="'+m.pcs_per_case+'" data-f="c" value="'+Math.trunc(m.qty_pcs/m.pcs_per_case)+'" aria-label="Cases to approve">CS<input type="number" min="0" step="1" data-id="'+m.id+'" data-f="p" value="'+(m.qty_pcs%m.pcs_per_case)+'" aria-label="Pieces to approve">PCS</span>':"—"]);
+        return '<div class="st-item"><div class="st-top"><b>'+esc(LABEL[x.from_bucket]+" → "+LABEL[x.to_bucket])+'</b><span class="erp-badge amber">Waiting</span>'+(x.source==="AUDIT"?'<span class="erp-badge blue">Night audit</span>':"")+'<span class="grow"></span><span class="st-meta">STM-'+g.map(m=>m.id).join(", ")+"</span></div>"+
+          '<div class="st-meta">'+S.shortDate(x.move_date)+" · by "+esc(x.requested_by_name)+" · "+esc(x.reason)+(x.note?" · "+esc(x.note):"")+(x.witness?" · Witness "+esc(x.witness):"")+(x.method?" · "+esc(x.method):"")+
+          (x.photo_path?' · <span class="st-photo" data-photo="'+esc(x.photo_path)+'">📷 Photo</span>':"")+"</div>"+
+          '<div class="sl-scroll">'+S.table(["SKU","Asked","Approve"],rows,[1,2])+"</div>"+
+          '<div class="st-btns">'+(canD?'<button type="button" class="sl-btn small" data-act="APPROVE" data-ids="'+g.map(m=>m.id)+'">✅ Approve</button><button type="button" class="sl-btn ghost small" data-act="REJECT" data-ids="'+g.map(m=>m.id)+'">Reject</button>':
+            (appr?'<span class="st-meta">You asked for this. Admin or another Sales Head approves it.</span>':'<span class="st-meta">Waiting for Sales Head / Admin.</span>'))+
+          (canC?'<button type="button" class="sl-btn ghost small" data-act="CANCEL" data-ids="'+g.map(m=>m.id)+'">Cancel request</button>':"")+"</div></div>";
+      }).join("");
+    }
+    async function onPending(e){
+      const ph=e.target.closest("[data-photo]");if(ph){openPhoto(ph.dataset.photo);return}
+      const b=e.target.closest("[data-act]");if(!b)return;
+      const idList=b.dataset.ids.split(",").map(Number),card=b.closest(".st-item");
+      if(b.dataset.act==="CANCEL"){
+        if(!await confirm("Cancel this request?",{danger:true,ok:"Cancel request",cancel:"Keep"}))return;
+        const {error}=await client.rpc("lwb_stx_cancel",{p_ids:idList});if(error){await alert(errText(error));return}
+        ERPShell.toast("Request cancelled.");await loadStatus();return;
+      }
+      if(b.dataset.act==="REJECT"){
+        const note=await prompt("Reason for rejecting (the godown will see it):","");if(note==null)return;
+        if(!note.trim()){await alert("Enter the reason for rejecting.");return}
+        const {error}=await client.rpc("lwb_stx_decide",{p_ids:idList,p_action:"REJECT",p_note:note.trim(),p_qty:null});
+        if(error){await alert(errText(error));return}ERPShell.toast("Rejected.");await loadStatus();return;
+      }
+      const qty={};let less=false;
+      for(const id of idList){
+        const m=moves.find(x=>x.id==id),c=card.querySelector('input[data-id="'+id+'"][data-f="c"]'),p=card.querySelector('input[data-id="'+id+'"][data-f="p"]');
+        const v=Number(c.value||0)*m.pcs_per_case+Number(p.value||0);
+        if(!(v>0)||v>m.qty_pcs){await alert(m.sku_name+": approve between 1 piece and "+cs(m.qty_pcs,m.pcs_per_case)+".");return}
+        if(v<m.qty_pcs)less=true;qty[id]=v;
+      }
+      if(!await confirm("Approve this stock move?"+(less?"\n\nSome lines are approved for less than asked.":"")+"\n\nStock moves now.",{ok:"Approve"}))return;
+      const {error}=await client.rpc("lwb_stx_decide",{p_ids:idList,p_action:"APPROVE",p_note:null,p_qty:qty});
+      if(error){await alert(errText(error));return}
+      ERPShell.toast("Approved. Stock updated.");await loadStatus();
+    }
+    async function openPhoto(p){
+      const r=await client.storage.from("lwb-godown-photos").createSignedUrl(p,3600);
+      if(r.error||!r.data){await alert("Photo could not be opened: "+(r.error?r.error.message:""));return}
+      window.open(r.data.signedUrl,"_blank","noopener");
+    }
+
+    // ------------------------------------------------------------- history
+    let hist=[];
+    async function loadHistory(){
+      const {data,error}=await client.rpc("lwb_stx_moves",{p_status:el("h_status").value||null,p_from:el("h_from").value||null,p_to:el("h_to").value||null});
+      if(error){el("histTable").innerHTML='<div class="sl-msg">'+esc(errText(error))+"</div>";return}
+      hist=data||[];renderHistory();
+    }
+    function renderHistory(){
+      const q=S.key(el("h_q").value);
+      const list=hist.filter(m=>!q||S.key(m.sku_name+" "+m.reason+" STM-"+m.id+" "+(m.note||"")).includes(q));
+      if(!list.length){el("histTable").innerHTML='<div class="erp-empty">No stock move in these dates.</div>';return}
+      const badge={APPROVED:"green",PENDING:"amber",REJECTED:"red",CANCELLED:""};
+      el("histTable").innerHTML='<div class="sl-scroll">'+S.table(["STM","Date","SKU","Move","Cases","Reason","Asked by","Status","Decided by"],
+        list.map(m=>["STM-"+m.id,S.shortDate(m.move_date),esc(m.sku_name),esc(LABEL[m.from_bucket]+" → "+LABEL[m.to_bucket]),cs(m.qty_pcs,m.pcs_per_case)+(m.qty_pcs<m.requested_pcs?'<br><small class="st-meta">asked '+cs(m.requested_pcs,m.pcs_per_case)+"</small>":""),
+          esc(m.reason)+(m.note?'<br><small class="st-meta">'+esc(m.note)+"</small>":"")+(m.witness?'<br><small class="st-meta">Witness '+esc(m.witness)+"</small>":"")+(m.photo_path?' <span class="st-photo" data-photo="'+esc(m.photo_path)+'">📷</span>':""),
+          esc(m.requested_by_name),'<span class="erp-badge '+(badge[m.status]||"")+'">'+esc(m.status)+"</span>"+(m.status==="PENDING"&&m.can_cancel?' <button type="button" class="sl-btn ghost small" data-cancel="'+m.id+'">Cancel</button>':""),
+          esc(m.decided_by_name||"")+(m.decision_note?'<br><small class="st-meta">'+esc(m.decision_note)+"</small>":"")]),[4])+"</div>";
+    }
+    function histExcel(){
+      S.excel("Stock-moves-"+el("h_from").value+"-to-"+el("h_to").value,[{name:"Stock moves",title:"Stock moves "+el("h_from").value+" to "+el("h_to").value,
+        head:["STM","Date","SKU","From","To","Cases","Pieces","Reason","Note","Batch","Expiry/Mfg","Witness","Asked by","Status","Decided by","Decision note"],
+        rows:hist.map(m=>["STM-"+m.id,m.move_date,m.sku_name,LABEL[m.from_bucket],LABEL[m.to_bucket],csNum(m.qty_pcs,m.pcs_per_case),m.qty_pcs,m.reason,m.note||"",m.batch_no||"",m.expiry_date||"",m.witness||"",m.requested_by_name,m.status,m.decided_by_name||"",m.decision_note||""])}]);
+    }
+
+    // ------------------------------------------------------------- ledger
+    let ledger=[];
+    async function loadLedger(){
+      const {data,error}=await client.rpc("lwb_stx_ledger",{p_bucket:el("l_bucket").value,p_from:el("l_from").value||null,p_to:el("l_to").value||null,p_sku:el("l_sku").value||null});
+      if(error){el("ledgerTable").innerHTML='<div class="sl-msg">'+esc(errText(error))+"</div>";return}
+      ledger=data||[];
+      if(!ledger.length){el("ledgerTable").innerHTML='<div class="erp-empty">No '+esc(LABEL[el("l_bucket").value])+" entry in these dates.</div>";return}
+      const bySku=new Map();for(const r of ledger){if(!bySku.has(r.sku_id))bySku.set(r.sku_id,[]);bySku.get(r.sku_id).push(r)}
+      const bal=[...bySku.values()].map(g=>g.at(-1));
+      const totalCases=bal.reduce((a,r)=>a+csNum(r.balance_pcs,r.pcs_per_case),0);
+      el("ledgerTable").innerHTML='<div class="sl-kpis" style="grid-template-columns:repeat(2,minmax(0,1fr))"><div class="sl-kpi"><span>'+esc(LABEL[el("l_bucket").value])+' balance on '+S.shortDate(el("l_to").value||today())+"</span><b>"+fmt(totalCases)+' CS</b><small>'+bal.filter(r=>Number(r.balance_pcs)).length+" SKUs</small></div>"+
+        '<div class="sl-kpi"><span>In / Out in these dates</span><b>'+fmt(ledger.filter(r=>r.move_id).reduce((a,r)=>a+csNum(r.in_pcs,r.pcs_per_case),0))+" / "+fmt(ledger.reduce((a,r)=>a+csNum(r.out_pcs,r.pcs_per_case),0))+" CS</b><small>Approved moves only</small></div></div>"+
+        '<div class="sl-scroll">'+S.table(["SKU","Date","Entry","From / To","In","Out","Balance","Reason","By / Approved"],
+        ledger.map(r=>[esc(r.sku_name),S.shortDate(r.move_date),r.move_id?"STM-"+r.move_id:"<b>Opening</b>",r.other_bucket?esc(LABEL[r.other_bucket]):"",cell(r.move_id?r.in_pcs:0,r.pcs_per_case),cell(r.out_pcs,r.pcs_per_case),"<b>"+cs(r.balance_pcs,r.pcs_per_case)+"</b>",esc(r.reason||""),esc([r.requested_by_name,r.approved_by_name].filter(Boolean).join(" / "))]),[4,5,6])+"</div>";
+    }
+    function ledgerExcel(){
+      const b=LABEL[el("l_bucket").value];
+      S.excel(b+"-ledger",[{name:b+" ledger",title:b+" ledger "+(el("l_from").value||"start")+" to "+(el("l_to").value||today()),head:["SKU","Date","Entry","From / To","In CS","Out CS","Balance CS","Balance PCS","Reason","Asked by","Approved by"],
+        rows:ledger.map(r=>[r.sku_name,r.move_date,r.move_id?"STM-"+r.move_id:"Opening",r.other_bucket?LABEL[r.other_bucket]:"",csNum(r.move_id?r.in_pcs:0,r.pcs_per_case),csNum(r.out_pcs,r.pcs_per_case),csNum(r.balance_pcs,r.pcs_per_case),Number(r.balance_pcs),r.reason||"",r.requested_by_name||"",r.approved_by_name||""])}]);
+    }
+
+    // ------------------------------------------------------------- daily report
+    let daily=[];
+    async function loadDaily(){
+      const {data,error}=await client.rpc("lwb_stx_daily",{p_from:el("d_from").value||null,p_to:el("d_to").value||null});
+      if(error){el("dailyTable").innerHTML='<div class="sl-msg">'+esc(errText(error))+"</div>";el("dailyKpis").innerHTML="";return}
+      daily=(data||[]).slice().reverse();
+      const t=f=>daily.reduce((a,r)=>a+Number(r[f]||0),0),moved=r=>HELD.reduce((a,b)=>a+Number(r[b.toLowerCase()+"_cases"]||0),0);
+      const handled=t("handled_cases"),loss=t("loss_cases");
+      el("dailyKpis").innerHTML=[["Cases handled",fmt(handled),"Inward "+fmt(t("inward_cases"))+" · Loaded "+fmt(t("loaded_cases"))],
+        ["Moved to Damage etc.",fmt(daily.reduce((a,r)=>a+moved(r),0))+" CS","Approved, out of saleable"],
+        ["Loss",fmt(loss)+" CS",handled?(Math.round(loss*1000/handled*100)/100)+" per 1000 cases handled":""],
+        ["Destroyed / Returned",fmt(t("destroyed_cases"))+" / "+fmt(t("company_return_cases"))+" CS","Back to saleable "+fmt(t("back_to_saleable_cases"))]]
+        .map((c,i)=>'<div class="sl-kpi'+(i==2&&loss?" red":"")+'"><span>'+esc(c[0])+"</span><b>"+c[1]+"</b><small>"+esc(c[2])+"</small></div>").join("");
+      const n=v=>v==null?"—":Number(v)?fmt(Math.round(Number(v)*100)/100):'<span class="st-num0">0</span>';
+      el("dailyTable").innerHTML='<div class="sl-scroll">'+S.table(["Date","Handled","Damage","Leakage","Breakage","Gasless","Expiry","Loss","Destroyed","Returned","Night audit"],
+        daily.map(r=>[S.shortDate(r.day),n(r.handled_cases)+'<br><small class="st-meta">in '+n(r.inward_cases)+" · out "+n(r.loaded_cases)+"</small>",n(r.damage_cases),n(r.leakage_cases),n(r.breakage_cases),n(r.gasless_cases),n(r.expiry_cases),
+          Number(r.loss_cases)?'<b style="color:var(--erp-red)">'+n(r.loss_cases)+"</b>":n(r.loss_cases),n(r.destroyed_cases),n(r.company_return_cases),
+          r.audit_status==="SUBMITTED"?(r.audit_diff_skus?'<span class="erp-badge red">'+r.audit_diff_skus+" diff</span> short "+n(r.audit_short_cases)+(Number(r.audit_excess_cases)?" · extra "+n(r.audit_excess_cases):""):'<span class="erp-badge green">All matched</span>')+'<br><small class="st-meta">'+r.audit_skus+" SKUs</small>":
+            r.audit_status==="DRAFT"?'<span class="erp-badge amber">Not submitted</span>':'<span class="erp-badge red">No audit</span>']),[1,2,3,4,5,6,7,8,9])+"</div>";
+    }
+    function dailyExcel(){
+      S.excel("Stock-daily-"+el("d_from").value+"-to-"+el("d_to").value,[{name:"Daily stock report",title:"Daily stock report "+el("d_from").value+" to "+el("d_to").value,
+        head:["Date","Inward CS","Loaded CS","Handled CS","Damage CS","Leakage CS","Breakage CS","Gasless CS","Expiry CS","Loss CS","Loss per 1000","Destroyed CS","Return to company CS","Back to saleable CS","Waiting requests","Audit","Audit SKUs","Audit diff SKUs","Audit short CS","Audit extra CS"],
+        rows:daily.map(r=>[r.day,r.inward_cases,r.loaded_cases,r.handled_cases,r.damage_cases,r.leakage_cases,r.breakage_cases,r.gasless_cases,r.expiry_cases,r.loss_cases,r.loss_per_1000,r.destroyed_cases,r.company_return_cases,r.back_to_saleable_cases,r.pending_requests,r.audit_status||"No audit",r.audit_skus,r.audit_diff_skus,r.audit_short_cases,r.audit_excess_cases].map(v=>v==null?"":v))}]);
+    }
+
+    // ------------------------------------------------------------- start
+    (async()=>{
+      me=await S.start(["admin","manager","warehouse","accounts"]);if(!me)return;
+      appr=["admin","manager"].includes(me.realRole);user=["admin","manager","warehouse"].includes(me.role);
+      if(!user){el("tabNewBtn").hidden=true}
+      el("f_date").value=today();el("f_date").max=today();el("f_date").min=daysAgo(31);
+      el("h_from").value=daysAgo(30);el("h_to").value=today();el("l_from").value="";el("l_to").value=today();
+      el("d_from").value=daysAgo(6);el("d_to").value=today();
+      el("l_bucket").innerHTML=[...CATS,"DESTROYED","COMPANY_RETURN","SALEABLE"].map(b=>'<option value="'+b+'">'+LABEL[b]+(b==="SALEABLE"?" (transfers only)":"")+"</option>").join("");
+      el("tabs").addEventListener("click",e=>{const a=e.target.closest("[data-tab]");if(a)show(a.dataset.tab)});
+      el("types").addEventListener("click",e=>{const b=e.target.closest("[data-type]");if(b)setType(b.dataset.type)});
+      el("reasons").addEventListener("click",e=>{const c=e.target.closest("[data-r]");if(c){el("f_reason").value=c.dataset.r;el("f_reason").focus()}});
+      el("lines").addEventListener("click",e=>{const b=e.target.closest(".l-del");if(!b)return;b.closest(".st-line").remove();if(!el("lines").children.length)addLine();refreshAvail()});
+      el("lines").addEventListener("input",refreshAvail);el("f_from").addEventListener("change",refreshAvail);
+      el("addLine").onclick=()=>{addLine().querySelector(".l-sku").focus()};
+      el("form").addEventListener("submit",save);
+      el("pendList").addEventListener("click",onPending);
+      el("histTable").addEventListener("click",async e=>{
+        const ph=e.target.closest("[data-photo]");if(ph){openPhoto(ph.dataset.photo);return}
+        const b=e.target.closest("[data-cancel]");if(!b)return;
+        if(!await confirm("Cancel this request?",{danger:true,ok:"Cancel request",cancel:"Keep"}))return;
+        const {error}=await client.rpc("lwb_stx_cancel",{p_ids:[Number(b.dataset.cancel)]});if(error){await alert(errText(error));return}
+        await loadStatus();await loadHistory();
+      });
+      el("q").addEventListener("input",renderStatus);el("showAll").addEventListener("change",renderStatus);
+      el("refresh").onclick=loadStatus;el("xlStatus").onclick=statusExcel;
+      for(const id of ["h_from","h_to","h_status"])el(id).addEventListener("change",loadHistory);el("h_q").addEventListener("input",renderHistory);el("xlHist").onclick=histExcel;
+      for(const id of ["l_bucket","l_sku","l_from","l_to"])el(id).addEventListener("change",loadLedger);el("xlLedger").onclick=ledgerExcel;
+      for(const id of ["d_from","d_to"])el(id).addEventListener("change",loadDaily);el("xlDaily").onclick=dailyExcel;
+      const qt=String(new URLSearchParams(location.search).get("type")||"").toUpperCase();addLine();setType(TYPES[qt]?qt:"TRANSFER");
+      el("loading").hidden=true;el("page").hidden=false;
+      await loadStatus();
+      const h=location.hash.slice(1),want=["status","new","approvals","history","ledger","daily"].find(x=>x===h);
+      show(want?want[0].toUpperCase()+want.slice(1):(appr&&moves.length?"Approvals":"Status"));
+      if(tab==="New"&&!user)show("Status");
+    })();
+  </script>
+</body>
+</html>

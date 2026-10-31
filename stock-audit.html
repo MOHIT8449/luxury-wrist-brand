@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Night Stock Audit | Luxury Wrist Brand ERP</title>
+  <script src="erp-date.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <link rel="stylesheet" href="erp-shell.css">
+  <link rel="stylesheet" href="sales.css">
+  <script src="erp-shell.js"></script>
+  <script src="erp-list.js"></script>
+  <script src="sales-common.js"></script>
+  <style>
+    .au-head{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;margin-bottom:12px}
+    .au-head label{display:block;font-size:12px;font-weight:600;color:#4b5763;margin-bottom:3px}
+    .au-head input,.au-head select{height:38px;border:1.5px solid var(--erp-line);border-radius:6px;padding:0 10px;font:inherit;background:#fff}
+    .au-head .grow{flex:1;min-width:180px}.au-head .grow input{width:100%;box-sizing:border-box}
+    .au-tbl input{width:64px;height:34px;border:1.5px solid var(--erp-line);border-radius:6px;padding:0 6px;font:inherit;text-align:right}
+    .au-tbl input:focus{outline:none;border-color:var(--erp-red)}
+    .au-tbl tr.short td{background:#fff3f3}.au-tbl tr.extra td{background:#fff9e8}.au-tbl tr.ok td{background:#f2fbf5}
+    .au-ok{border:1px solid var(--erp-line);background:#fff;border-radius:6px;height:34px;padding:0 8px;cursor:pointer;color:var(--erp-green);font-weight:700}
+    .au-d{font-weight:700}.au-d.short{color:var(--erp-red)}.au-d.extra{color:#a66b00}.au-d.ok{color:var(--erp-green)}
+    .au-bar{position:sticky;bottom:0;background:#fff;border-top:1px solid var(--erp-line);padding:10px 0;display:flex;gap:10px;align-items:center;flex-wrap:wrap;z-index:5}
+    .au-bar small{flex:1;color:var(--erp-muted);font-size:12.5px}
+    .au-list{display:grid;gap:10px}
+    .au-item{background:#fff;border:1px solid var(--erp-line);border-left:4px solid var(--erp-red);border-radius:8px;padding:10px 14px;display:grid;gap:6px}
+    .au-item.extra{border-left-color:#e0a100}.au-item.wait{border-left-color:var(--erp-blue)}
+    .au-top{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.au-top b{font-size:14.5px}.au-top .grow{flex:1}
+    .au-meta{font-size:12.5px;color:var(--erp-muted)}
+    .au-btns{display:flex;gap:8px;flex-wrap:wrap}
+    .sec-h{font-size:15px;margin:18px 0 8px}
+    .au-muted{color:#b8bec6}
+    .au-head label.au-blind{display:inline-flex;margin:0;color:var(--erp-ink);align-items:center;gap:6px;height:38px;white-space:nowrap;border:1px solid var(--erp-line);border-radius:6px;padding:0 10px;background:#fff;font-size:13px;font-weight:600;cursor:pointer}
+    body.has-bnav .au-bar{bottom:calc(64px + env(safe-area-inset-bottom))}
+    body.kb-open .au-bar{bottom:0}
+    @media(max-width:640px){
+      .au-tbl{overflow:visible}
+      .au-tbl table,.au-tbl tbody{display:block;min-width:0!important;width:100%}
+      .au-tbl thead{display:none}
+      .au-tbl tr{display:grid;grid-template-columns:72px 64px 40px minmax(0,1fr);grid-template-areas:"sku sku sku sku" "sys sys diff diff" "old old old old" "cs pcs ok note";gap:4px 8px;padding:10px 4px;border-bottom:1px solid var(--erp-line)}
+      .au-tbl td{display:block;padding:0!important;border:0!important;text-align:left!important}
+      .au-tbl td:nth-child(1){grid-area:sku;font-weight:600}.au-tbl td:nth-child(2){grid-area:sys}.au-tbl td:nth-child(2)::before{content:"System: ";color:var(--erp-muted);font-weight:400}
+      .au-tbl td:nth-child(3){grid-area:old}.au-tbl td:nth-child(3):has(.au-muted){display:none}
+      .au-tbl td:nth-child(4){grid-area:cs}.au-tbl td:nth-child(5){grid-area:pcs}.au-tbl td:nth-child(6){grid-area:ok}
+      .au-tbl td:nth-child(7){grid-area:diff;text-align:right!important}.au-tbl td:nth-child(8){grid-area:note}
+      .au-tbl td:nth-child(8) input{width:100%!important;box-sizing:border-box}
+      .au-tbl input{width:100%;box-sizing:border-box}
+    }
+    @media print{.erp-top,.erp-side,.erp-bnav,.au-bar,.au-head,.sec-h,#diffs,#past,.sl-sub,.erp-pagehead .sl-btn,.au-ok{display:none!important}.au-tbl input{border:0}}
+  </style>
+</head>
+<body>
+  <div id="loading" class="status">Checking account access...</div>
+  <main id="page" class="erp-main" hidden>
+    <div class="erp-pagehead"><h1>Night Stock Audit</h1><span class="grow"></span><span class="erp-badge" id="auState"></span><a class="sl-btn ghost small" href="stock-transfer.html">📦 Stock Transfer</a></div>
+    <p class="sl-sub">Every night the Godown Manager counts the saleable stock. Enter the physical count for each SKU; the system shows the difference. A shortage stays open until it is found. If it is never found, move it to Loss (Sales Head / Admin approve). The audit itself never changes stock.</p>
+
+    <div class="sl-kpis" id="kpis"></div>
+
+    <h2 class="sec-h">Open differences</h2>
+    <div class="au-list" id="diffs"></div>
+
+    <h2 class="sec-h" id="sheetH">Count sheet</h2>
+    <div class="au-head">
+      <div><label for="day">Audit date</label><input id="day" type="date"></div>
+      <div class="grow"><label for="q">Search SKU</label><input id="q" type="search" placeholder="SKU name"></div>
+      <div><label for="filter">Show</label><select id="filter"><option value="stock">SKUs with stock</option><option value="all">All SKUs</option><option value="todo">Not counted yet</option><option value="diff">Differences only</option></select></div>
+      <label class="au-blind" title="Hide system stock while counting, so the count is not copied"><input type="checkbox" id="blind"> Blind count</label>
+      <button type="button" class="sl-btn ghost" id="print">🖨 Print sheet</button>
+    </div>
+    <div id="sheet"></div>
+    <div class="au-bar" id="bar">
+      <small id="sumTxt"></small>
+      <input id="note" maxlength="500" placeholder="Note for the night (optional)" style="height:38px;border:1.5px solid var(--erp-line);border-radius:6px;padding:0 10px;font:inherit;min-width:200px">
+      <button type="button" class="sl-btn ghost" id="saveDraft">Save draft</button>
+      <button type="button" class="sl-btn" id="submit">Submit audit</button>
+    </div>
+
+    <h2 class="sec-h">Past audits</h2>
+    <div id="past"></div>
+  </main>
+  <script>
+    const S=LWBSales,{client,el,esc,fmt}=S;
+    const setupMsg="Run lwb_stock_transfer_setup.sql first (it runs by itself when the PR is merged).";
+    const errText=e=>/lwb_stx_/.test(e.message||"")&&/function|schema cache/.test(e.message||"")?setupMsg:(e.message||String(e));
+    const cs=(p,ppc)=>{p=Number(p)||0;ppc=Math.max(1,Number(ppc)||1);const s=p<0?"-":"",a=Math.abs(p),c=Math.trunc(a/ppc),r=a%ppc;return s+(r?(c?fmt(c)+" CS ":"")+fmt(r)+" PCS":fmt(c)+" CS")};
+    const csNum=(p,ppc)=>Math.round((Number(p)||0)/Math.max(1,Number(ppc)||1)*100)/100;
+    const today=()=>S.isoDay(new Date()),daysAgo=n=>S.isoDay(new Date(Date.now()-n*864e5));
+    let me=null,user=false,rows=[],counts=new Map(),diffs=[],past=[],submitted=false,dirty=false;
+
+    async function loadSheet(){
+      const {data,error}=await client.rpc("lwb_stx_audit_sheet",{p_date:el("day").value});
+      if(error){el("sheet").innerHTML='<div class="sl-msg">'+esc(errText(error))+"</div>";return}
+      rows=data||[];submitted=rows.some(r=>r.audit_status==="SUBMITTED");counts=new Map();
+      for(const r of rows)if(r.physical_pcs!=null)counts.set(r.sku_id,{pcs:Number(r.physical_pcs),note:r.line_note||""});
+      const st=rows[0]&&rows[0].audit_status;
+      el("auState").textContent=st==="SUBMITTED"?"Submitted":st==="DRAFT"?"Draft saved":"Not started";
+      el("auState").className="erp-badge "+(st==="SUBMITTED"?"green":st==="DRAFT"?"amber":"red");
+      el("bar").hidden=submitted||!user;el("blind").parentElement.hidden=submitted;dirty=false;
+      el("sheetH").textContent="Count sheet · "+S.shortDate(el("day").value);
+      renderSheet();
+    }
+    const expected=r=>Number(r.system_pcs)-Number(r.pending_pcs||0);
+    function diffOf(r){const c=counts.get(r.sku_id);return c==null?null:(submitted&&r.diff_pcs!=null?Number(r.diff_pcs):c.pcs-expected(r))}
+    function renderSheet(){
+      const q=S.key(el("q").value),f=el("filter").value,blind=el("blind").checked&&!submitted;
+      const list=rows.filter(r=>(!q||S.key(r.sku_name).includes(q))&&(f==="all"||(f==="stock"&&(expected(r)>0||counts.has(r.sku_id)||Number(r.open_diff_pcs)))||(f==="todo"&&!counts.has(r.sku_id))||(f==="diff"&&diffOf(r))));
+      if(!list.length){el("sheet").innerHTML='<div class="erp-empty">'+(rows.length?"No SKU for this filter.":"No SKU.")+"</div>";renderSum();return}
+      const head=["SKU","System stock","Earlier open diff","Physical CS","PCS","","Difference","Note"];
+      el("sheet").innerHTML='<div class="sl-scroll au-tbl">'+S.table(head,list.map(r=>{
+        const c=counts.get(r.sku_id),d=diffOf(r),ppc=r.pcs_per_case,cls=d==null?"":d<0?"short":d>0?"extra":"ok";
+        const cc=c?Math.trunc(c.pcs/ppc):"",cp=c?c.pcs%ppc:"";
+        const inputs=submitted||!user?[c?fmt(cc):"—",c?fmt(cp):"",""]:
+          ['<input type="number" min="0" step="1" inputmode="numeric" data-sku="'+r.sku_id+'" data-f="c" value="'+cc+'" placeholder="CS" aria-label="Cases">',
+           '<input type="number" min="0" step="1" inputmode="numeric" data-sku="'+r.sku_id+'" data-f="p" value="'+(c?cp:"")+'" placeholder="PCS" aria-label="Pieces">',
+           blind?"":'<button type="button" class="au-ok" data-same="'+r.sku_id+'" title="Counted, same as system">✓</button>'];
+        return {attr:' class="'+cls+'"',cells:[esc(r.sku_name)+'<br><small class="au-meta">'+ppc+" pcs / case</small>",
+          blind?'<span class="au-muted">hidden</span>':cs(expected(r),ppc)+(Number(r.pending_pcs)?'<br><small class="au-meta">'+cs(r.pending_pcs,ppc)+" loss waiting</small>":""),
+          Number(r.open_diff_pcs)?'<span class="erp-badge red">'+cs(r.open_diff_pcs,ppc)+"</span>"+(r.open_since?'<br><small class="au-meta">since '+S.shortDate(r.open_since)+"</small>":""):'<span class="au-muted">—</span>',
+          ...inputs,
+          d==null?'<span class="au-muted">not counted</span>':blind?'<span class="au-muted">after submit</span>':'<span class="au-d '+cls+'">'+(d===0?"✓ Match":(d>0?"+":"")+cs(d,ppc))+"</span>",
+          submitted||!user?esc(c&&c.note||""):'<input data-sku="'+r.sku_id+'" data-f="n" value="'+esc(c&&c.note||"")+'" maxlength="200" placeholder="note" style="width:120px;text-align:left">']};
+      }),[1,3,4,6])+"</div>";
+      renderSum();
+    }
+    function renderSum(){
+      let n=0,short=0,extra=0,bad=0;
+      for(const r of rows){const d=diffOf(r);if(d==null)continue;n++;if(d<0){short+=csNum(-d,r.pcs_per_case);bad++}else if(d>0){extra+=csNum(d,r.pcs_per_case);bad++}}
+      const withStock=rows.filter(r=>expected(r)>0).length;
+      el("sumTxt").textContent=n+" of "+withStock+" SKUs with stock counted"+(el("blind").checked&&!submitted?"":" · "+bad+" differences · short "+fmt(short)+" CS · extra "+fmt(extra)+" CS");
+    }
+    function onInput(e){
+      const i=e.target.closest("input[data-sku]");if(!i)return;
+      const r=rows.find(x=>x.sku_id===i.dataset.sku),tr=i.closest("tr");
+      const c=tr.querySelector('[data-f="c"]').value,p=tr.querySelector('[data-f="p"]').value,n=tr.querySelector('[data-f="n"]').value;
+      if(c===""&&p==="")counts.delete(r.sku_id);else counts.set(r.sku_id,{pcs:Number(c||0)*r.pcs_per_case+Number(p||0),note:n});
+      dirty=true;
+      const d=diffOf(r),cls=d==null?"":d<0?"short":d>0?"extra":"ok";
+      tr.className=cls;
+      const dc=tr.children[6];
+      if(!(el("blind").checked))dc.innerHTML=d==null?'<span class="au-muted">not counted</span>':'<span class="au-d '+cls+'">'+(d===0?"✓ Match":(d>0?"+":"")+cs(d,r.pcs_per_case))+"</span>";
+      renderSum();
+    }
+    function payload(){return rows.map(r=>{const c=counts.get(r.sku_id);return {sku_id:r.sku_id,physical_pcs:c?c.pcs:null,note:c?c.note:""}}).filter(x=>x.physical_pcs!=null||rows.find(r=>r.sku_id===x.sku_id).physical_pcs!=null)}
+    async function save(submit){
+      for(const [id,c] of counts)if(!Number.isInteger(c.pcs)||c.pcs<0){await alert("Enter whole, positive counts for "+rows.find(r=>r.sku_id===id).sku_name+".");return}
+      if(submit){
+        const left=rows.filter(r=>expected(r)>0&&!counts.has(r.sku_id)).length;
+        if(!counts.size){await alert("Count at least one SKU before submitting.");return}
+        let short=0,bad=0;for(const r of rows){const d=diffOf(r);if(d){bad++;if(d<0)short+=csNum(-d,r.pcs_per_case)}}
+        if(!await confirm("Submit the night audit of "+S.shortDate(el("day").value)+"?\n\n"+counts.size+" SKUs counted"+(left?" · "+left+" SKUs with stock NOT counted":"")+"\nDifferences: "+bad+(short?" · short "+fmt(short)+" CS":"")+"\n\nSystem stock is taken at this moment. After submit the count cannot be changed. Admin and Sales Head get the result.",{ok:"Submit"}))return;
+      }
+      const b=el(submit?"submit":"saveDraft");b.disabled=true;
+      const {data,error}=await client.rpc("lwb_stx_audit_save",{p_date:el("day").value,p_lines:payload(),p_submit:submit,p_note:el("note").value.trim()});
+      b.disabled=false;
+      if(error){await alert("Could not save: "+errText(error));return}
+      ERPShell.toast(submit?(data.diff_skus?"Audit submitted: "+data.diff_skus+" differences opened.":"Audit submitted: all matched."):"Draft saved.");
+      await Promise.all([loadSheet(),loadDiffs(),loadPast()]);
+    }
+    async function loadDiffs(){
+      const {data,error}=await client.rpc("lwb_stx_audit_diffs",{p_all:false});
+      if(error){el("diffs").innerHTML='<div class="sl-msg">'+esc(errText(error))+"</div>";return}
+      diffs=data||[];renderKpis();
+      if(!diffs.length){el("diffs").innerHTML='<div class="erp-empty">No open difference. 👍</div>';return}
+      el("diffs").innerHTML=diffs.map(d=>{
+        const short=d.diff_pcs<0,wait=d.status==="LOSS_PENDING",old=Number(d.days_open)>=3;
+        return '<div class="au-item'+(wait?" wait":short?"":" extra")+'"><div class="au-top"><b>'+esc(d.sku_name)+'</b><span class="erp-badge '+(short?"red":"amber")+'">'+(short?"Short ":"Extra +")+cs(Math.abs(d.diff_pcs),d.pcs_per_case)+"</span>"+
+          (wait?'<span class="erp-badge blue">Loss waiting for approval</span>':"")+'<span class="grow"></span><span class="au-meta">AUD-'+d.audit_id+"</span></div>"+
+          '<div class="au-meta">Counted '+S.shortDate(d.audit_date)+": system "+cs(d.system_pcs-d.pending_pcs,d.pcs_per_case)+", physical "+cs(d.physical_pcs,d.pcs_per_case)+
+          " · open since "+S.shortDate(d.open_since)+' (<b style="color:'+(old?"var(--erp-red)":"inherit")+'">'+d.days_open+" day"+(d.days_open==1?"":"s")+"</b>)"+(d.line_note?" · "+esc(d.line_note):"")+(old&&short&&!wait?" · not found for 3+ days: search once more or move to Loss":"")+"</div>"+
+          (user&&!wait?'<div class="au-btns"><button type="button" class="sl-btn small" data-found="'+d.line_id+'">'+(short?"✅ Found":"✅ Explained")+"</button>"+(short?'<button type="button" class="sl-btn ghost small" data-loss="'+d.line_id+'">Not found → Loss</button>':"")+"</div>":
+            wait?'<div class="au-btns"><a class="sl-btn ghost small" href="stock-transfer.html#approvals">Open approval STM-'+d.move_id+"</a></div>":"")+"</div>";
+      }).join("");
+    }
+    async function onDiff(e){
+      const f=e.target.closest("[data-found]"),l=e.target.closest("[data-loss]");if(!f&&!l)return;
+      const id=Number((f||l).dataset.found||(f||l).dataset.loss),d=diffs.find(x=>x.line_id==id);
+      if(f){
+        const note=await prompt(d.diff_pcs<0?"Where was it found?":"Why was there extra stock?","");if(note==null)return;
+        if(!note.trim()){await alert("Write where it was found / why it differed.");return}
+        const {error}=await client.rpc("lwb_stx_audit_resolve",{p_line_id:id,p_action:"FOUND",p_note:note.trim()});
+        if(error){await alert(errText(error));return}ERPShell.toast("Difference closed.");
+      }else{
+        if(!await confirm(d.sku_name+": move "+cs(-d.diff_pcs,d.pcs_per_case)+" from Saleable to Loss?\n\nSales Head / Admin must approve. Saleable stock goes down after approval.",{ok:"Ask for Loss"}))return;
+        const note=await prompt("Note for the Sales Head (optional):","");if(note==null)return;
+        const {error}=await client.rpc("lwb_stx_audit_resolve",{p_line_id:id,p_action:"LOSS",p_note:note.trim()});
+        if(error){await alert(errText(error));return}ERPShell.toast("Loss sent for approval.");
+      }
+      await Promise.all([loadDiffs(),loadSheet(),loadPast()]);
+    }
+    async function loadPast(){
+      const {data,error}=await client.rpc("lwb_stx_audits",{p_from:daysAgo(30),p_to:today()});
+      if(error){el("past").innerHTML='<div class="sl-msg">'+esc(errText(error))+"</div>";return}
+      past=data||[];renderKpis();
+      if(!past.length){el("past").innerHTML='<div class="erp-empty">No audit in the last 30 days.</div>';return}
+      el("past").innerHTML='<div class="sl-scroll">'+S.table(["Date","Status","SKUs","Matched","Differences","System CS","Physical CS","Short CS","Extra CS","By"],
+        past.map(a=>({attr:' data-day="'+a.audit_date+'" style="cursor:pointer"',cells:[S.shortDate(a.audit_date),'<span class="erp-badge '+(a.status==="SUBMITTED"?"green":"amber")+'">'+esc(a.status==="SUBMITTED"?"Submitted":"Draft")+"</span>",
+          fmt(a.skus),fmt(a.match_skus),a.diff_skus?'<b style="color:var(--erp-red)">'+fmt(a.diff_skus)+"</b>":"0",fmt(a.system_cases),fmt(a.physical_cases),fmt(a.short_cases),fmt(a.excess_cases),esc(a.counted_by||"")]})),[2,3,4,5,6,7,8])+"</div>";
+    }
+    function renderKpis(){
+      const open=diffs.filter(d=>d.status==="OPEN"),shortCs=open.filter(d=>d.diff_pcs<0).reduce((a,d)=>a+csNum(-d.diff_pcs,d.pcs_per_case),0);
+      const t=past.find(a=>a.audit_date===today()),old=open.filter(d=>Number(d.days_open)>=3).length;
+      const k=[["Tonight's audit",t?(t.status==="SUBMITTED"?"Done":"Draft"):"Not done",t?t.skus+" SKUs counted":"Count before closing the godown",t&&t.status==="SUBMITTED"?"green":"red"],
+        ["Open differences",fmt(open.length),fmt(shortCs)+" CS short in total",open.length?"red":"green"],
+        ["Open 3+ days",fmt(old),"Search again or move to Loss",old?"red":""],
+        ["Loss waiting approval",fmt(diffs.filter(d=>d.status==="LOSS_PENDING").length),"Sales Head / Admin","blue"]];
+      el("kpis").innerHTML=k.map(c=>'<div class="sl-kpi '+c[3]+'"><span>'+esc(c[0])+"</span><b>"+c[1]+"</b><small>"+esc(c[2])+"</small></div>").join("");
+      if(window.ERPList){const cols=[{t:"SKU",v:r=>r.sku_name},{t:"Since",v:r=>S.shortDate(r.open_since)},{t:"Days",v:r=>r.days_open,num:true},{t:"Diff CS",v:r=>csNum(r.diff_pcs,r.pcs_per_case),num:true,sum:true}];
+        const lists=[null,open,open.filter(d=>Number(d.days_open)>=3),diffs.filter(d=>d.status==="LOSS_PENDING")];
+        el("kpis").querySelectorAll(".sl-kpi").forEach((c,i)=>{if(lists[i])ERPList.card(c,()=>({title:k[i][0],rows:lists[i],cols}))})}
+    }
+
+    (async()=>{
+      me=await S.start(["admin","manager","warehouse","accounts"]);if(!me)return;
+      user=["admin","manager","warehouse"].includes(me.role);
+      el("day").value=today();el("day").max=today();el("day").min=daysAgo(user?3:400);
+      el("day").addEventListener("change",async()=>{if(dirty&&!await confirm("Counts not saved. Change date anyway?"))return;loadSheet()});
+      el("q").addEventListener("input",renderSheet);el("filter").addEventListener("change",renderSheet);el("blind").addEventListener("change",renderSheet);
+      el("sheet").addEventListener("input",onInput);
+      el("sheet").addEventListener("click",e=>{const b=e.target.closest("[data-same]");if(!b)return;const r=rows.find(x=>x.sku_id===b.dataset.same),tr=b.closest("tr"),ex=Math.max(0,expected(r));
+        tr.querySelector('[data-f="c"]').value=Math.trunc(ex/r.pcs_per_case);tr.querySelector('[data-f="p"]').value=ex%r.pcs_per_case;onInput({target:tr.querySelector('[data-f="c"]')})});
+      el("diffs").addEventListener("click",onDiff);
+      el("past").addEventListener("click",e=>{const tr=e.target.closest("[data-day]");if(!tr)return;el("day").min="";el("day").value=tr.dataset.day;loadSheet();el("sheetH").scrollIntoView({behavior:"smooth"})});
+      el("saveDraft").onclick=()=>save(false);el("submit").onclick=()=>save(true);
+      el("print").onclick=()=>window.print();
+      window.addEventListener("beforeunload",e=>{if(dirty){e.preventDefault();e.returnValue=""}});
+      el("loading").hidden=true;el("page").hidden=false;
+      await Promise.all([loadSheet(),loadDiffs(),loadPast()]);
+    })();
+  </script>
+</body>
+</html>
