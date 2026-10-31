@@ -2043,14 +2043,14 @@ function poNormalPlate(value){
 function rebuildPoDirectory(){
   const driverSeen=new Set(),erpDriverPhones=new Set(),vehicleSeen=new Set();
   poSavedDrivers=[];poSavedVehicles=[];
-  // Driver Master / Vehicle Master come first; one driver per mobile number.
+  // Employee Master drivers / Vehicle Master come first; one driver per mobile number.
   const masterPlate=new Map(poMasterVehicles.map(v=>[v.id,v.vehicle_no]));
   for(const d of poMasterDrivers){
     const phone=poNormalPhone(d.mobile);
     if(!d.driver_name||!(/^[6-9]\d{9}$/.test(phone))||erpDriverPhones.has(phone))continue;
     driverSeen.add(String(d.driver_name).trim().toLowerCase()+"|"+phone);
     erpDriverPhones.add(phone);
-    poSavedDrivers.push({name:String(d.driver_name).trim(),mobile:phone,phone,source:"Driver Master",
+    poSavedDrivers.push({name:String(d.driver_name).trim(),mobile:phone,phone,source:"Employee Master",
       vehicle:masterPlate.get(d.default_vehicle_id)||"",transporter:String(d.transporter_name||"").trim()});
   }
   for(const v of poMasterVehicles){
@@ -2110,11 +2110,12 @@ async function loadPoSavedDirectory(){
       .select("driver_name,driver_mobile,vehicle_no,transporter_name,assigned_at")
       .order("assigned_at",{ascending:false}).limit(2000),
     db.rpc("lwb_sales_head_active_drivers"),
-    db.from("lwb_drivers").select("driver_name,mobile,default_vehicle_id,transporter_name").eq("is_active",true).order("driver_name"),
+    // Drivers = working employees with Work / Post "Driver" in Employee Master (lwb_employee_roles_setup.sql).
+    db.rpc("lwb_staff_pick",{p_role:"driver"}),
     db.from("lwb_vehicles").select("id,vehicle_no,vehicle_type,capacity_kg,transporter_name").eq("is_active",true).order("vehicle_no")
   ]);
   // Before lwb_fleet_master_setup.sql is run these tables are missing; the old lists still work.
-  poMasterDrivers=driverMaster.error?[]:(driverMaster.data||[]);
+  poMasterDrivers=driverMaster.error?[]:(driverMaster.data||[]).map(d=>({driver_name:d.name,mobile:d.mobile,default_vehicle_id:d.default_vehicle_id,transporter_name:d.transporter_name}));
   poMasterVehicles=vehicleMaster.error?[]:(vehicleMaster.data||[]);
   if(historyResult.error){
     poRawAssignments=[];

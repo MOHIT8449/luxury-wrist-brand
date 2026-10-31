@@ -89,7 +89,7 @@
       {t:"Company / Brand",h:"companies.html",i:"factory",r:"admin manager accounts"},
       {t:"Supplier Master",h:"supplier-master.html",i:"factory",r:"admin manager"},
       {t:"Vehicle Master",h:"fleet-master.html#vehicles",i:"truck",r:"admin manager transport warehouse"},
-      {t:"Driver Master",h:"fleet-master.html#drivers",i:"users",r:"admin manager transport warehouse"},
+      {t:"Drivers",h:"fleet-master.html#drivers",i:"users",r:"transport"},
       {t:"Employee Master",h:"fleet-master.html#employees",i:"users",r:"admin manager warehouse"},
       {t:"Fixed Assets",h:"fixed-assets.html",i:"box",r:"admin manager accounts warehouse"}]},
     {group:"Settings",items:[
