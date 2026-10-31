@@ -2,13 +2,12 @@
 
 Login page -> **Forgot password?**
 
-1. User types the **Login Email** (Manage Users). Supabase sends a 6-digit code to it.
-2. User types the code + new password (twice) -> **Save New Password**.
-3. The normal second step still runs (WhatsApp OTP or Authenticator app), then the ERP opens.
-   A user who has the Authenticator app must enter its code before the password changes.
+1. User types the **Login Email** (Manage Users). Supabase sends a code to it (6-10 digits, per the project's OTP length).
+2. User types the code + new password (twice) -> **Save New Password**. Only the email code is needed.
+3. The page goes back to Sign In; the user signs in with the new password and the normal OTP.
 
 Mobile-only logins (no Login Email) cannot use this: Admin types a **New Password** in Manage Users.
-No SQL is needed.
+SQL: [`lwb_password_reset_setup.sql`](./lwb_password_reset_setup.sql) (`lwb_reset_own_password`) saves the password; it runs by itself when the PR is merged. Supabase's own `updateUser` would ask for the Authenticator code first, so it is not used.
 
 ## Setup in Supabase (one time)
 

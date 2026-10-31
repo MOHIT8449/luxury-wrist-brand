@@ -199,9 +199,9 @@
     <button type="submit" id="loginButton">Sign In</button>
     <button type="button" class="link-btn" id="forgotLink">Forgot password?</button>
   </form>
-  <!-- Forgot password: a 6-digit code goes to the user's Login Email (Supabase "Reset Password" email). -->
+  <!-- Forgot password: a code goes to the user's Login Email (Supabase "Reset Password" email). -->
   <form id="fpForm" hidden>
-    <p class="form-note">Enter your <b>Login Email</b>. A 6-digit code will be sent to it.</p>
+    <p class="form-note">Enter your <b>Login Email</b>. A code will be sent to it.</p>
     <label for="fpEmail">Login Email</label>
     <input type="email" id="fpEmail" placeholder="name@example.com"
       autocomplete="username" autocapitalize="none" spellcheck="false" required>
@@ -212,7 +212,7 @@
     <p class="form-note" id="fpCodeNote">Enter the code from the email and your new password.</p>
     <label for="fpCode">Email Code</label>
     <input type="text" id="fpCode" inputmode="numeric" pattern="[0-9]{6,10}" maxlength="10"
-      autocomplete="one-time-code" placeholder="000000" required>
+      autocomplete="one-time-code" placeholder="Code from email" required>
     <label for="fpPass">New Password</label>
     <input type="password" id="fpPass" minlength="6" placeholder="At least 6 characters"
       autocomplete="new-password" required>
@@ -483,24 +483,23 @@ el("otpForm").addEventListener("submit",async event=>{
   try{
     const {error}=await client.auth.mfa.challengeAndVerify({factorId:otpFactorId,code});
     if(error)throw Error("Wrong or expired OTP. Check the time on your phone and try the new code.");
-    if(fpPendingPass){await saveResetPassword();return;}
     await goToErp(otpUser);
   }catch(e){showMessage(e.message,true);el("otpCode").select();}
   finally{busy=false;el("otpButton").disabled=false;el("otpButton").textContent="Verify OTP";}
 });
 el("otpBack").addEventListener("click",async()=>{
   try{await client.auth.signOut({scope:"local"})}catch(e){}
-  otpFactorId=otpUser=null;fpPendingPass=null;clearInterval(waTimer);clearInterval(fpTimer);
+  otpFactorId=otpUser=fpVerified=null;clearInterval(waTimer);clearInterval(fpTimer);
   ["otpForm","waForm","fpForm","fpCodeForm"].forEach(id=>el(id).hidden=true);
   el("loginForm").hidden=false;el("password").value="";showMessage("");
 });
 
 // ---- Forgot password (email code) ----
-// 1. Supabase sends its "Reset Password" email with a 6-digit code ({{ .Token }}).
+// 1. Supabase sends its "Reset Password" email with a code ({{ .Token }}, 6-10 digits).
 // 2. The code opens a short recovery session; the new password is saved with it.
 // 3. The normal second step (WhatsApp / Authenticator OTP) is still needed to open the ERP.
 // Mobile-only logins (internal @staff.lwb-erp.in email) have no inbox: Admin resets those.
-let fpEmail="",fpTimer=null,fpPendingPass=null;
+let fpEmail="",fpTimer=null,fpVerified=null;
 function fpCountdown(seconds){
   clearInterval(fpTimer);
   let left=Math.max(0,seconds|0);
@@ -545,25 +544,21 @@ el("fpResend").addEventListener("click",async()=>{
   try{await sendResetCode(fpEmail);showMessage("A new code has been sent.");fpCountdown(60);}
   catch(e){showMessage(e.message,true);fpCountdown(30);}
 });
-async function saveResetPassword(){
-  const {error}=await client.auth.updateUser({password:fpPendingPass});
+// The email code alone is enough: lwb_reset_own_password (lwb_password_reset_setup.sql) saves the
+// password without asking for the Authenticator code. Then the user signs in as usual.
+async function saveResetPassword(pass){
+  const {error}=await client.rpc("lwb_reset_own_password",{p_password:pass});
   if(error){
-    // A user with the Authenticator app must pass it before the password can change.
-    if(error.code==="insufficient_aal"||/aal2|AAL2/.test(error.message)){
-      const {data}=await client.auth.mfa.listFactors();
-      const f=(data?.totp||[]).find(x=>x.status==="verified");
-      if(f){otpFactorId=f.id;showOtpForm(false);
-        el("otpNote").textContent="To change your password, first enter the 6-digit code from the Google Authenticator app.";
-        showMessage("");return;}
-    }
-    if(error.code==="same_password")throw Error("The new password is the same as the old one. Please choose a different password.");
-    if(error.code==="weak_password")throw Error("Password is too weak. Please use a longer password (letters + numbers).");
-    throw Error("Password could not be saved: "+error.message);
+    if(/lwb_reset_own_password|schema cache|function/i.test(error.message||""))
+      throw Error("Password reset is not set up yet (run lwb_password_reset_setup.sql). Please ask Admin.");
+    throw Error(error.message||"Password could not be saved.");
   }
-  fpPendingPass=null;
-  const u=await client.auth.getUser();
-  showMessage("Password changed. Now verify OTP to open the ERP...");
-  await finishAuthorizedLogin(u.data.user);
+  // End the email-code session everywhere; the new password is used from now on.
+  try{await client.auth.signOut()}catch(e){try{await client.auth.signOut({scope:"local"})}catch(_){}}
+  clearInterval(fpTimer);otpUser=fpVerified=null;
+  showOnly("loginForm");
+  el("login").value=fpEmail;el("password").value="";el("password").focus();
+  showMessage("Password changed. Please sign in with your new password.");
 }
 el("fpCodeForm").addEventListener("submit",async event=>{
   event.preventDefault();
@@ -575,15 +570,13 @@ el("fpCodeForm").addEventListener("submit",async event=>{
   busy=true;el("fpSaveButton").disabled=true;el("fpSaveButton").textContent="Saving...";showMessage("");
   try{
     // The same code can be used once; after a weak-password error the session is already open.
-    const s=await client.auth.getSession();
-    if(!s.data?.session||String(s.data.session.user?.email||"").toLowerCase()!==fpEmail){
+    if(fpVerified!==fpEmail+"|"+code){
       const {data,error}=await client.auth.verifyOtp({email:fpEmail,token:code,type:"recovery"});
       if(error||!data?.user)throw Error("The code is wrong or has expired. Tap Resend Code to get a new code.");
-      otpUser=data.user;
-    }else otpUser=s.data.session.user;
+      otpUser=data.user;fpVerified=fpEmail+"|"+code;
+    }
     await checkProfile(otpUser);
-    fpPendingPass=pass;
-    await saveResetPassword();
+    await saveResetPassword(pass);
   }catch(e){showMessage(e.message,true);}
   finally{busy=false;el("fpSaveButton").disabled=false;el("fpSaveButton").textContent="Save New Password";}
 });
