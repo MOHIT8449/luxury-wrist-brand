@@ -1,6 +1,6 @@
 # LWB — Forgot password (email code)
 
-Login page -> **Forgot password? / Password bhool gaye?**
+Login page -> **Forgot password?**
 
 1. User types the **Login Email** (Manage Users). Supabase sends a 6-digit code to it.
 2. User types the code + new password (twice) -> **Save New Password**.
