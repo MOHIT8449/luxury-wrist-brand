@@ -19,6 +19,8 @@
     .roles-table button:disabled,.nu-btn:disabled{opacity:.5;cursor:not-allowed}
     .nu-btn.ghost{background:#fff;color:var(--erp-ink);border:1px solid var(--erp-line)}
     .roles-table select{min-width:120px}
+    .roles-table tr.changed>td{background:#fff8e6}
+    .roles-table tr.failed>td{background:#fdecec}
     .role-actions{display:flex;gap:8px;flex:none}
     #roleManagerMessage,#newUserMessage{color:#315a83;margin:0 0 10px;font-size:13px;white-space:pre-wrap}
     .nu-grid{display:grid;grid-template-columns:repeat(6,minmax(0,1fr)) auto;gap:10px;align-items:end}
@@ -69,8 +71,9 @@
     <section class="erp-card" id="roleManager">
       <div class="erp-card-head">
         <div><h2>Users &amp; Roles</h2>
-          <p class="roles-small">Change role, name, status, login mobile or login email, or type a new password, then Save. The user signs in with the new mobile or email and the same password. Leave New Password empty to keep the current one. <b>Pages</b> ticks or unticks single pages for one user.</p></div>
+          <p class="roles-small">Change role, name, status, login mobile or login email, or type a new password, then Save. The user signs in with the new mobile or email and the same password. Leave New Password empty to keep the current one. To fill many users at once (for example every Login Email), type in all the rows and press <b>Save All Changes</b>. <b>Pages</b> ticks or unticks single pages for one user.</p></div>
         <div class="role-actions">
+          <button class="erp-btn" type="button" id="saveAllBtn" onclick="saveAllUsers()">Save All Changes</button>
           <button class="erp-btn" type="button" onclick="loadRoleManager()">Refresh Users</button>
         </div>
       </div>
@@ -112,7 +115,7 @@
     const setupHint=e=>/lwb_admin_set_page_access|lwb_user_page_access/.test(e.message||"")?"Run lwb_user_page_access_setup.sql in Supabase first.":/lwb_admin_users|lwb_admin_create_user|lwb_admin_set_login|function/.test(e.message||"")?"Run lwb_user_login_setup.sql in Supabase first.":e.message;
     let pageAccess={},pageExtra={},extraReady=false;
     const PROFIT_KEY="dashboard.html#profit",PROFIT_ROLES=["admin","manager"];
-    let roleAdminUserId=null,roleAdminReady=false;
+    let roleAdminUserId=null,roleAdminReady=false,userRows=[];
     function roleMessage(value,isError=false){const m=el("roleManagerMessage");m.textContent=value;m.style.color=isError?"#b12b2b":"#315a83"}
     function newMessage(value,isError=false){const m=el("newUserMessage");m.hidden=!value;m.textContent=value;m.style.color=isError?"#b12b2b":"#315a83"}
     function select(options,initial){const s=document.createElement("select");for(const [v,t] of options)s.add(new Option(t,v));s.value=initial;return s}
@@ -124,7 +127,7 @@
     async function loadRoleManager(){
       if(!roleAdminReady)return;
       roleMessage("Loading users...");
-      const body=el("roleManagerRows");body.replaceChildren();
+      const body=el("roleManagerRows");body.replaceChildren();userRows=[];
       try{
         const {data,error}=await client.rpc("lwb_admin_users");
         if(error)throw error;
@@ -151,7 +154,11 @@
           const active=select([["true","ACTIVE"],["false","INACTIVE"]],u.is_active===false?"false":"true");cell(row,active);
           const save=document.createElement("button");save.type="button";save.textContent="Save";
           if(u.user_id===roleAdminUserId){role.disabled=true;active.disabled=true}
-          save.onclick=()=>saveUser(u,{name,role,mob,mail,pass,active},save);
+          const f={name,role,mob,mail,pass,active};
+          save.onclick=()=>saveUser(u,f,save);
+          userRows.push({u,f,row});
+          row.addEventListener("input",()=>row.classList.toggle("changed",userChanged(u,f)));
+          row.addEventListener("change",()=>row.classList.toggle("changed",userChanged(u,f)));
           const pages=document.createElement("button");pages.type="button";pages.className="pg-btn";
           const count=()=>{const mine=ERPShell.menuFor(role.value).flatMap(g=>g.items),off=pageAccess[u.user_id]||[],plus=(pageExtra[u.user_id]||[]).filter(h=>!mine.some(i=>i.h===h));
             pages.textContent="Pages "+mine.filter(i=>!off.includes(i.h)).length+"/"+mine.length+(plus.length?" +"+plus.length:"")+(PROFIT_ROLES.includes(role.value)&&off.includes(PROFIT_KEY)?" · Profit off":"")};
@@ -251,17 +258,24 @@
       finally{btn.disabled=false}
     }
 
-    async function saveUser(u,f,btn){
+    // True when anything in the row differs from the saved user.
+    function userChanged(u,f){
+      return f.name.value.trim()!==(u.full_name||String(u.email||"").split("@")[0])||f.role.value!==String(u.erp_role||"")
+        ||mobile10(f.mob.value)!==mobile10(u.mobile)&&f.mob.value.trim()!==String(u.mobile||"")
+        ||f.mail.value.trim().toLowerCase()!==String(u.email||"").toLowerCase()||!!f.pass.value
+        ||f.active.value!==(u.is_active===false?"false":"true");
+    }
+    // Checks one row and saves it. Throws with the reason; returns the "Saved ..." text.
+    async function applyUser(u,f){
       const role=f.role.value,fullName=f.name.value.trim(),mobRaw=f.mob.value.trim(),mob=mobile10(mobRaw),pass=f.pass.value;
-      if(!role||!fullName){roleMessage("Select a Role and enter Full Name.",true);return}
-      if(mobRaw&&!mob){roleMessage("Login Mobile must be a valid 10-digit Indian number.",true);return}
-      if(role==="driver"&&!mob){roleMessage("A driver needs the Login Mobile saved by the Sales Head in Driver Assignment.",true);return}
-      if(pass&&pass.length<6){roleMessage("New Password must be at least 6 characters.",true);return}
+      if(!role||!fullName)throw Error("Select a Role and enter Full Name.");
+      if(mobRaw&&!mob)throw Error("Login Mobile must be a valid 10-digit Indian number.");
+      if(role==="driver"&&!mob)throw Error("A driver needs the Login Mobile saved by the Sales Head in Driver Assignment.");
+      if(pass&&pass.length<6)throw Error("New Password must be at least 6 characters.");
       const email=f.mail.value.trim().toLowerCase(),emailChanged=email!==String(u.email||"").toLowerCase();
-      if(email&&!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)){roleMessage("Login Email is not valid.",true);return}
-      if(!mob&&!email){roleMessage("Keep a Login Mobile or a Login Email, or the user cannot sign in.",true);return}
-      btn.disabled=true;
-      try{
+      if(email&&!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email))throw Error("Login Email is not valid.");
+      if(!mob&&!email)throw Error("Keep a Login Mobile or a Login Email, or the user cannot sign in.");
+      {
         const {error}=await client.rpc("lwb_admin_set_user_role",{p_user_id:u.user_id,p_role:role,p_full_name:fullName,p_active:f.active.value==="true"});
         if(error)throw error;
         const mobChanged=mob!==mobile10(u.mobile);
@@ -276,11 +290,33 @@
           if(error)throw Error(setupHint(error));
         }
         if(emailChanged&&!email)await setEmail();
-        await loadRoleManager();
+        Object.assign(u,{full_name:fullName,erp_role:role,mobile:mob||null,email:email||null,is_active:f.active.value==="true"});
+        f.pass.value="";
         const login=[mobChanged&&mob?"mobile "+mob:"",emailChanged?(email?"email "+email:"no email"):""].filter(Boolean).join(" and ");
-        roleMessage("Saved "+fullName+"."+(login?" Login is now "+login+".":"")+(pass?" New password is set; share it with the user.":""));
-      }catch(err){roleMessage("Could not save: "+err.message,true)}
+        return "Saved "+fullName+"."+(login?" Login is now "+login+".":"")+(pass?" New password is set; share it with the user.":"");
+      }
+    }
+    async function saveUser(u,f,btn){
+      btn.disabled=true;
+      try{const text=await applyUser(u,f);await loadRoleManager();roleMessage(text)}
+      catch(err){roleMessage("Could not save: "+err.message,true)}
       finally{btn.disabled=false}
+    }
+    // One button for many rows, e.g. typing every user's Login Email and saving once.
+    async function saveAllUsers(){
+      const todo=userRows.filter(r=>userChanged(r.u,r.f));
+      if(!todo.length){roleMessage("Nothing changed. Type in the rows first, then press Save All Changes.",true);return}
+      const btn=el("saveAllBtn");btn.disabled=true;
+      const ok=[],bad=[];
+      for(const [i,r] of todo.entries()){
+        roleMessage("Saving "+(i+1)+" of "+todo.length+"...");
+        try{await applyUser(r.u,r.f);ok.push(r.u.full_name);r.row.classList.remove("changed","failed")}
+        catch(err){bad.push((r.f.name.value.trim()||r.u.mobile||r.u.email||"User")+": "+err.message);r.row.classList.add("failed")}
+      }
+      btn.disabled=false;
+      if(!bad.length){await loadRoleManager();roleMessage("Saved "+ok.length+" user"+(ok.length>1?"s":"")+": "+ok.join(", ")+".");return}
+      // Keep the typed values of the rows that failed so they can be fixed and saved again.
+      roleMessage((ok.length?"Saved "+ok.length+". ":"")+"Not saved ("+bad.length+"), fix the red rows and press Save All Changes again:\n"+bad.join("\n"),true);
     }
 
     async function createUser(e){
