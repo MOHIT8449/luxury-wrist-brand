@@ -8,6 +8,7 @@
   <script src="erp-date.js"></script>
   <link rel="stylesheet" href="erp-shell.css">
   <script src="erp-shell.js"></script>
+<script src="erp-list.js"></script>
   <script src="excel-io.js"></script>
   <script src="tally-note.js" defer></script>
   <script src="party-pay.js"></script>
@@ -149,6 +150,14 @@
         ["due","#13824a","Advance with us",rs(totAdv),parties.filter(p=>p.net<-0.5).length+" parties"],
         ["pay","#1769d8","Received today",rs(rec),"party payments"]].map(([t,c,h,v,s])=>`<button type="button" class="pb-kpi" style="--c:${c}" data-go="${t}"><h3>${h}</h3><b>${v}</b><small>${s}</small></button>`).join("");
       el("kpis").querySelectorAll("[data-go]").forEach(b=>b.onclick=()=>{tab=b.dataset.go;render()});
+      // Count card → list popup as well (erp-list.js); the tab below also switches.
+      if(window.ERPList){const kc=el("kpis").querySelectorAll(".pb-kpi"),PC=[{t:"Party",v:"party"},{t:"Balance",v:p=>Math.abs(p.net),money:true,sum:true},{t:"Bills",v:p=>(p.bills||[]).length,num:true,dec:0},{t:"Oldest bill",v:"oldest",date:true}];
+        const L=(i,o)=>kc[i]&&ERPList.card(kc[i],()=>o());
+        L(0,()=>({title:"Bills to make",sub:"Loaded POs without a Tally bill",rows:toMake(),cols:[{t:"PO No.",v:"order_no"},{t:"Party",v:"party"},{t:"Dispatch",v:o=>o.dispatch_date||o.order_date,date:true},{t:"ERP amount",v:"erp_amount",money:true,sum:true}]}));
+        L(1,()=>({title:"To collect",sub:"Parties with money due",rows:[...info.parties.values()].filter(p=>p.net>0.5).sort((a,b)=>b.net-a.net),cols:PC}));
+        L(2,()=>({title:"Advance with us",sub:"Parties who paid in advance",rows:[...info.parties.values()].filter(p=>p.net<-0.5).sort((a,b)=>a.net-b.net),cols:PC}));
+        L(3,()=>({title:"Received today",sub:"Party payments today",rows:(info.raw.receipts||[]).filter(r=>!r.cancelled&&r.pay_date===info.today),
+          cols:[{t:"Party",v:"party"},{t:"Mode",v:r=>(r.modes||[]).map(m=>m.mode).join(", ")},{t:"Ref",v:r=>(r.modes||[]).map(m=>m.ref).filter(Boolean).join(", ")},{t:"By",v:"by"},{t:"Amount",v:"total",money:true,sum:true}]}))}
       el("cMake").hidden=!make.length;el("cMake").textContent=make.length;
       el("tabs").querySelectorAll("[data-t]").forEach(b=>b.setAttribute("aria-pressed",String(b.dataset.t===tab)));
       el("xl").hidden=tab==="make";

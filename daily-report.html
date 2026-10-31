@@ -8,6 +8,7 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <link rel="stylesheet" href="erp-shell.css">
   <script src="erp-shell.js"></script>
+<script src="erp-list.js"></script>
   <style>
     .status{text-align:center;padding:80px 20px;font-size:15px;color:#555}
     .ds-sub{margin:-8px 0 14px;color:var(--erp-muted);font-size:15px}
@@ -124,6 +125,19 @@
         table([{t:"#"},{t:"Party"},{t:"Balance Due",n:1}],(u.top||[]).map((x,i)=>"<tr><td>"+(i+1)+"</td><td>"+esc(x.party)+'</td><td class="n"><b>'+rs(x.amount)+"</b></td></tr>"),"","No outstanding balances.")+"</section>";
       h+='<p class="ds-note">Tap a driver or a PO number to see, bill by bill, how much money came against it, cash / UPI with UTR, and who received it at the office. Money collected by drivers reaches the party ledger when Accounts receives it on Driver Collections. "Payments Received" lists Payment Collection entries (verified and pending verification) and driver money received at the office that day, marked "(driver)". Outstanding = bills − returns − verified payments − driver money received + opening balance, as of the selected date.</p>';
       el("out").innerHTML=h;
+      // Count card → list of the records behind it (erp-list.js, lwb_daily_summary_list)
+      if(window.ERPList){
+        const day=s.date,L=card=>async()=>{const r=await client.rpc("lwb_daily_summary_list",{p_date:day,p_card:card});if(r.error)throw r.error;return r.data||[]};
+        const ST={DELIVERED:"Delivered",PARTIAL:"Partial",NOT_DELIVERED:"Not delivered"};
+        const C=[
+          {title:"Orders Received",load:L("orders"),cols:ERPList.ORDER_COLS},
+          {title:"Deliveries",load:L("deliveries"),cols:[{t:"Time",v:r=>r.reported_at?new Date(r.reported_at).toLocaleTimeString("en-IN",{hour:"2-digit",minute:"2-digit",timeZone:"Asia/Kolkata"}):""},
+            {t:"PO No.",v:"order_no"},{t:"Party",v:"customer_name"},{t:"Driver",v:"driver"},{t:"Vehicle",v:"vehicle_no"},{t:"Status",v:r=>ST[r.delivery_status]||r.delivery_status},
+            {t:"Order value",v:r=>r.delivery_status==="NOT_DELIVERED"?0:r.total_amount,money:true,sum:true},{t:"Collected",v:"cash_reported",money:true,sum:true}]},
+          {title:"Payments Received",load:L("payments"),cols:[{t:"Party",v:"party"},{t:"Bill / PO",v:"bill"},{t:"Mode",v:"mode"},{t:"Ref / UTR",v:"ref"},{t:"From",v:"source"},{t:"Status",v:r=>r.status==="POSTED"?"Verified":"Pending verification"},{t:"Amount",v:"amount",money:true,sum:true,dec:2}]},
+          {title:"Outstanding",load:L("outstanding"),cols:[{t:"Party",v:"party"},{t:"Balance due",v:"amount",money:true,sum:true}],page:"party-ledger.html",pageText:"Open Party Ledger →"}];
+        el("out").querySelectorAll(".ds-kpis .ds-kpi").forEach((k,i)=>C[i]&&ERPList.card(k,()=>Object.assign({sub:nice(day)},C[i])));
+      }
     }
     async function load(){
       const d=el("day").value||today();

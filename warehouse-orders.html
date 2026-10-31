@@ -788,6 +788,7 @@
 </style>
 <link rel="stylesheet" href="erp-shell.css">
 <script src="erp-shell.js" data-auto defer></script>
+<script src="erp-list.js"></script>
 </head>
 
 <body>
@@ -847,15 +848,15 @@
       </div>
 
       <div class="ps-alerts">
-        <button type="button" class="ps-alert a-late" data-filter="late_approval" onclick="pickStatusFilter('late_approval')">
+        <button type="button" class="ps-alert a-late" data-filter="late_approval">
           <div class="ps-ico"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></div>
           <div><b>Approval late (over 12 hrs)</b><strong id="sumLateAppr">-</strong><small id="sumLateApprNote">Approve every order within 12 hours</small></div>
         </button>
-        <button type="button" class="ps-alert a-delay" data-filter="late_delivery" onclick="pickStatusFilter('late_delivery')">
+        <button type="button" class="ps-alert a-delay" data-filter="late_delivery">
           <div class="ps-ico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/></svg></div>
           <div><b>Delivery delayed (over 36 hrs)</b><strong id="sumLateDlv">-</strong><small id="sumLateDlvNote">Deliver every order within 36 hours</small></div>
         </button>
-        <button type="button" class="ps-alert a-urgent" data-filter="urgent" onclick="pickStatusFilter('urgent')">
+        <button type="button" class="ps-alert a-urgent" data-filter="urgent">
           <div class="ps-ico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2s5 5 5 10a5 5 0 0 1-10 0c0-2 1-3.5 2-4.5 0 2 1 3 2 3 0-3 1-6.5 1-8.5z"/></svg></div>
           <div><b>Urgent / High priority</b><strong id="sumUrgent">-</strong><small id="sumUrgentNote">Not delivered yet</small></div>
         </button>
@@ -914,22 +915,22 @@
     </section>
 
     <section class="stats">
-      <div class="stat" data-filter="all" role="button" tabindex="0" onclick="pickStatusFilter('all')">
+      <div class="stat" data-filter="all" role="button" tabindex="0">
         <div class="label">Orders in List</div>
         <div class="number" id="totalOrders">0</div>
       </div>
 
-      <div class="stat" data-filter="pending" role="button" tabindex="0" onclick="pickStatusFilter('pending')">
+      <div class="stat" data-filter="pending" role="button" tabindex="0">
         <div class="label">Pending Review</div>
         <div class="number" id="pendingOrders">0</div>
       </div>
 
-      <div class="stat" data-filter="approved" role="button" tabindex="0" onclick="pickStatusFilter('approved')">
+      <div class="stat" data-filter="approved" role="button" tabindex="0">
         <div class="label">Approved</div>
         <div class="number" id="approvedOrders">0</div>
       </div>
 
-      <div class="stat" data-filter="cancelled" role="button" tabindex="0" onclick="pickStatusFilter('cancelled')">
+      <div class="stat" data-filter="cancelled" role="button" tabindex="0">
         <div class="label">Cancelled</div>
         <div class="number" id="cancelledOrders">0</div>
       </div>
@@ -3108,6 +3109,84 @@ async function logout() {
     "login.html";
 
 }
+
+
+/* -----------------------------
+   COUNT CARDS → LIST POPUP
+   Every card with a number opens the list of those orders (31 Oct 2026).
+----------------------------- */
+
+function orderListCols() {
+  return [
+    { t: "Order No", v: o => o.order_no || "-", html: o => escapeHtml(o.order_no || "-") + priorityBadge(o) },
+    { t: "Date", v: o => o.order_date || o.created_at, date: true },
+    { t: "Customer", v: o => o.customer_name || "-" },
+    { t: "Sales Person", v: o => o.sales_person || "-" },
+    { t: "Cases", v: o => o.total_qty, num: true, sum: true, dec: 0 },
+    { t: "Weight (KG)", v: o => o.total_weight, num: true, sum: true, dec: 0 },
+    { t: "Amount", v: o => o.total_amount, money: true, sum: true },
+    { t: "Status", v: o => normalizedStatus(o).replace(/_/g, " "), html: o => statusBadge(o) + slaBadge(o) }
+  ];
+}
+
+function openOrderFromList(order) {
+  if (!order) return;
+  if (!orders.some(o => o.id === order.id)) orders.push(order);
+  reviewOrder(order.id);
+}
+
+function summaryList(bucket, title, sub, dated) {
+  const from = document.getElementById("sumFrom").value || istDate();
+  const to = document.getElementById("sumTo").value || from;
+  return {
+    title,
+    sub: dated ? sub + " · " + document.getElementById("sumRangeText").textContent : sub,
+    cols: orderListCols(),
+    onRow: openOrderFromList,
+    empty: "No order in this card.",
+    load: async () => {
+      const { data, error } = await db.rpc("lwb_po_summary_orders", { p_bucket: bucket, p_from: from, p_to: to });
+      if (error) throw error;
+      return data || [];
+    }
+  };
+}
+
+function localList(filter, title, sub) {
+  return () => {
+    pickStatusFilter(filter);
+    const test = {
+      all: () => true, pending: isPending, approved: isApproved, cancelled: isCancelled
+    }[filter];
+    return { title, sub, cols: orderListCols(), onRow: openOrderFromList, rows: orders.filter(test) };
+  };
+}
+
+function wireCountCards() {
+  if (!window.ERPList) return;
+  const pend = () => summaryList("pending", "Total Pending Delivery", "All orders not delivered yet (cancelled not counted)");
+  const pendBox = document.querySelector(".ps-pend");
+  ERPList.card(pendBox, pend, false);
+  pendBox.querySelector(".ps-pend-head > div:last-child")
+    .insertAdjacentHTML("beforeend", '<small class="erp-drill-hint">View pending list ›</small>');
+  ERPList.cards({
+    ".ps-alert.a-late": () => summaryList("late_approval", "Approval late (over 12 hrs)", "Waiting for Sales Head approval more than 12 hours"),
+    ".ps-alert.a-delay": () => summaryList("late_delivery", "Delivery delayed (over 36 hrs)", "Not delivered within 36 hours of the order"),
+    ".ps-alert.a-urgent": () => summaryList("urgent", "Urgent / High priority", "Not delivered yet · deliver first")
+  }, undefined, ":scope > div:last-child");
+  ERPList.cards({
+    ".ps-card.c-total": () => summaryList("total", "Total Orders", "Orders taken (cancelled not counted)", true),
+    ".ps-card.c-appr": () => summaryList("approved", "Approved by Sales Head", "Orders approved or further along", true),
+    ".ps-card.c-alloc": () => summaryList("allocated", "Transport Allocated", "Driver / vehicle assigned", true),
+    ".ps-card.c-load": () => summaryList("loading", "Loading Transport", "On the vehicle, not delivered yet", true),
+    ".ps-card.c-dlv": () => summaryList("delivered", "Delivered", "Delivery reported in this period", true),
+    '.stat[data-filter="all"]': localList("all", "Orders in List", "Latest orders loaded on this page"),
+    '.stat[data-filter="pending"]': localList("pending", "Pending Review", "Waiting for Sales Head approval"),
+    '.stat[data-filter="approved"]': localList("approved", "Approved", "Approved orders"),
+    '.stat[data-filter="cancelled"]': localList("cancelled", "Cancelled", "Cancelled orders")
+  });
+}
+wireCountCards();
 
 
 /* Close modal by clicking outside */

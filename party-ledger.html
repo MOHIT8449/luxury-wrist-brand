@@ -257,5 +257,27 @@ el("pdf").onclick=exportPdf;
 el("obSave").onclick=saveOpening;
 init();
 </script>
+<script src="erp-list.js"></script>
+<script>
+/* Count cards → list popup (erp-list.js): click a number to see its records. */
+(function(){
+  if(!window.ERPList)return;
+  const inP=x=>!el("party").value||x.party===el("party").value;
+  const who=()=>el("party").value?" · "+partyName(el("party").value):" · all parties";
+  const entCols=[{t:"Date",v:"entry_date",date:true},{t:"Party",v:x=>partyName(x.party)},{t:"Type",v:x=>KIND[x.entry_kind]||x.entry_kind},{t:"Ref",v:"ref_no"},{t:"PO No.",v:"order_no"},
+    {t:"Debit",v:"debit",money:true,sum:true,dec:2},{t:"Credit",v:"credit",money:true,sum:true,dec:2},{t:"Note",v:"note"}];
+  const partyRows=()=>[...parties.entries()].filter(([k])=>inP({party:k})).map(([k,p])=>({k,name:p.name,debit:p.debit,credit:p.credit,bal:p.debit-p.credit,pending:p.pending,last:p.last}))
+    .filter(p=>Math.abs(p.bal)>0.005).sort((a,b)=>b.bal-a.bal);
+  const pick=r=>{el("party").value=r.k||r.party||"";el("search").value="";render();window.scrollTo(0,0)};
+  ERPList.ids({
+    debit:()=>({title:"Total Debit",sub:"Bills + opening"+who(),rows:entries.filter(x=>inP(x)&&x.debit>0),cols:entCols}),
+    credit:()=>({title:"Total Credit",sub:"Payments + returns"+who(),rows:entries.filter(x=>inP(x)&&x.credit>0),cols:entCols}),
+    balance:()=>({title:"Balance Receivable",sub:"Party-wise balance"+who()+" · tap a party to open its ledger",rows:partyRows(),onRow:pick,
+      cols:[{t:"Party",v:"name"},{t:"Debit",v:"debit",money:true,sum:true},{t:"Credit",v:"credit",money:true,sum:true},{t:"Balance",v:"bal",money:true,sum:true},{t:"Last entry",v:"last",date:true}]}),
+    pending:()=>({title:"Payments Pending Admin Verification",sub:"Bills with payment waiting for check"+who(),rows:bills.filter(x=>inP(x)&&Number(x.pending_amount||0)>0),
+      cols:[{t:"Bill date",v:"bill_date",date:true},{t:"Bill",v:"bill_no"},{t:"PO No.",v:"order_no"},{t:"Party",v:"customer_name"},{t:"Bill amount",v:"bill_amount",money:true,sum:true},{t:"Pending check",v:"pending_amount",money:true,sum:true}]})
+  });
+})();
+</script>
 </body>
 </html>

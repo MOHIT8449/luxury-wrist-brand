@@ -9,6 +9,7 @@
 <script src="party-list.js" defer></script>
 <link rel="stylesheet" href="erp-shell.css">
 <script src="erp-shell.js"></script>
+<script src="erp-list.js"></script>
 <style>
 :root{
   --bg:#f6f7f9; --card:#ffffff; --ink:#1c2230; --muted:#667085; --line:#e3e6eb;
@@ -1214,6 +1215,15 @@ function renderDaily(){
   const tile=(k,v)=>`<div class="stat"><span>${k}</span><b class="big">${v}</b></div>`;
   document.getElementById('dayStats').innerHTML = tile('PO',D.pos.length)+tile('Trucks',D.gadi)+tile('Pallet',fmt(T.P))+tile('Quantity (case)',fmt(T.C))
     +tile('GR ₹',fmt(T.G))+tile('Net total ₹',fmt(T.N))+tile('Weight KG',fmt(T.W))+tile('Received trucks',`${D.rgadi}/${D.gadi}`);
+  // Count card → list (erp-list.js): PO / truck tiles list the POs, the others list product-wise.
+  if(window.ERPList){
+    const POC=[{t:'PO No.',v:o=>'#'+o.no},{t:'Time',v:o=>dtTxt(o.dt)},{t:'Trucks',v:o=>cpoTrucks(o).length,num:true,sum:true,dec:0},{t:'Received',v:o=>recvCount(o)+'/'+cpoTrucks(o).length},
+      {t:'Pallet',v:o=>(o.tot||cpoTotals(o)).P,num:true,sum:true},{t:'Case',v:o=>(o.tot||cpoTotals(o)).C,num:true,sum:true,dec:0},{t:'GR',v:o=>(o.tot||cpoTotals(o)).G,money:true,sum:true},{t:'Net',v:o=>(o.tot||cpoTotals(o)).N,money:true,sum:true}];
+    const PRC=[{t:'Product',v:x=>S.order[x.i].name},{t:'Pallet',v:'pal',num:true,sum:true},{t:'Case',v:'cs',num:true,sum:true,dec:0},{t:'GR',v:'gr',money:true,sum:true},{t:'Net',v:'net',money:true,sum:true},{t:'Weight kg',v:'wt',num:true,sum:true,dec:0},{t:'Received pallet',v:x=>x.rk?x.rpal:'',num:true,sum:true}];
+    document.querySelectorAll('#dayStats .stat').forEach((c,i)=>ERPList.card(c,()=>i<2||i===7
+      ?{title:'Company POs · '+dIN(day),sub:'Saved company POs on this date',rows:[...D.pos].sort((a,b)=>a.no-b.no),cols:POC,onRow:o=>cpoOpen(o.no)}
+      :{title:'Product-wise · '+dIN(day),sub:'All company POs on this date',rows:D.rows,cols:PRC}));
+  }
   let ph=`<tr><th>PO No.</th><th class="l">Time</th><th>Truck no.</th><th>Pallet</th><th>Case</th><th>GR ₹</th><th>Net ₹</th><th>Received</th><th></th></tr>`;
   [...D.pos].sort((a,b)=>a.no-b.no).forEach(o=>{ const g=cpoTrucks(o).length, off=gadiOffset(o), t=o.tot||cpoTotals(o), rc=recvCount(o);
     ph+=`<tr><td>#${o.no}</td><td class="l">${esc(dtTxt(o.dt))}</td><td>${g?(g>1?`${off+1}–${off+g}`:off+1):'-'}</td><td>${fmt(t.P)}</td><td>${fmt(t.C)}</td><td>${fmt(t.G)}</td><td>${fmt(t.N)}</td>
@@ -1462,6 +1472,12 @@ function renderClaims(){
     S.claims[no][f]= f==='recv'? (e.target.value===''?'':+e.target.value) : e.target.value; S.claims[no].dt=nowLocal(); save(); setTimeout(renderClaims,0); }));
   const tile=(k,v,c='')=>`<div class="stat"><span>${k}</span><b class="big ${c}">${v}</b></div>`;
   document.getElementById('claimStats').innerHTML=tile('Total claim ₹',fmt(TC))+tile('Received from company ₹',fmt(TR))+tile('Pending ₹',fmt(TC-TR),TC-TR>0.5?'neg':'pos');
+  // Count card → PO-wise claim list (erp-list.js)
+  if(window.ERPList){
+    const list=[...S.cpos].sort((a,b)=>String(a.dt).localeCompare(String(b.dt))).map(o=>{const tot=claimRows(o).reduce((a,x)=>a+x.amt,0),got=n((S.claims[o.no]||{}).recv);return {o,tot,got,pend:tot-got,note:(S.claims[o.no]||{}).note||''}});
+    const CC=[{t:'Date',v:x=>dtTxt(x.o.dt)},{t:'PO',v:x=>'#'+x.o.no},{t:'Claim',v:'tot',money:true,sum:true,dec:2},{t:'Received',v:'got',money:true,sum:true,dec:2},{t:'Pending',v:'pend',money:true,sum:true,dec:2},{t:'Note',v:'note'}];
+    document.querySelectorAll('#claimStats .stat').forEach((c,i)=>ERPList.card(c,()=>({title:['Total claim','Received from company','Pending claim'][i],sub:'Company PO-wise scheme claim',rows:i===2?list.filter(x=>x.pend>0.5):i===1?list.filter(x=>x.got>0):list,cols:CC})));
+  }
 }
 
 /* ================= Last rates (party + company) ================= */

@@ -11,6 +11,7 @@
   <script src="party-pay.js"></script>
   <script src="brand-filter.js"></script>
   <script src="role-dashboard.js"></script>
+  <script src="erp-list.js"></script>
   <link rel="stylesheet" href="role-dashboard.css">
   <style>
     .status{text-align:center;padding:80px 20px;font-size:15px;color:#555}
@@ -322,15 +323,28 @@
       loaded:["Loaded","green","loading-dispatch.html"],invoiced:["Billed","green","party-ledger.html"],cancelled:["Cancelled","red","warehouse-orders.html"]
     };
     const ORDER_ROLES=["admin","manager","sales","warehouse","transport","accounts"];
-    function pill(label,count,href){
+    // Count card → list of its records (erp-list.js). rows = the records counted.
+    const OC=[{t:"PO No.",v:"order_no"},{t:"Date",v:o=>o.order_date||o.created_at,date:true},{t:"Party",v:"customer_name"},
+      {t:"Cases",v:"total_qty",num:true,sum:true,dec:0},{t:"Amount",v:"total_amount",money:true,sum:true},
+      {t:"Status",v:o=>(STATUS[String(o.status||"").toLowerCase()]||[o.status||"Pending"])[0]}];
+    function drill(el,title,sub,rows,href,cols){
+      if(!window.ERPList||!rows)return el;
+      return ERPList.card(el,()=>({title,sub,rows,cols:cols||OC,page:href||undefined,pageText:"Open page →"}));
+    }
+    function pill(label,count,href,rows){
       const a=document.createElement("a");a.className="erp-pill";a.href=href;
       a.append(document.createTextNode(label));
       const n=document.createElement("span");n.className="n";n.textContent=count==null?"—":count;a.appendChild(n);
+      if(rows&&window.ERPList)ERPList.card(a,()=>({title:label,sub:"Orders in this stage",rows,cols:OC,page:href,pageText:"Open page →"}),false);
       return a;
     }
     let searchOrders=[];
     function dayKey(v){const d=new Date(v);return d.getFullYear()+"-"+d.getMonth()+"-"+d.getDate()}
-    function kpi(label,value,foot,href){
+    function kpi(label,value,foot,href,list){
+      const el=kpiEl(label,value,foot,href);
+      return list?drill(el,list.title||label,list.sub||"",list.rows,href,list.cols):el;
+    }
+    function kpiEl(label,value,foot,href){
       const a=document.createElement(href?"a":"div");a.className="kpi";
       const money=String(value).startsWith("₹");
       a.dataset.tone=money?"green":/Pending/i.test(label)?"amber":/Returns/i.test(label)?"red":/Dispatch|Delivered/i.test(label)?"blue":"slate";
@@ -398,17 +412,18 @@
         const t=on(today),y=on(yest),sum=a=>a.reduce((n,o)=>n+Number(o.total_amount||0),0),qty=a=>a.reduce((n,o)=>n+Number(o.total_qty||0),0);
         const link=["admin","manager"].includes(role)?"warehouse-orders.html":"";
         kpis.appendChild(kpiGroup([
-          kpi("Today's Orders",t.length,"Yesterday: "+y.length,link),
-          kpi("Today's Cases",qty(t).toLocaleString("en-IN"),"Yesterday: "+qty(y).toLocaleString("en-IN"),link),
-          kpi("Today's Sales","₹"+fmtINR(sum(t)),"Yesterday's total: ₹"+fmtINR(sum(y)),link)]));
+          kpi("Today's Orders",t.length,"Yesterday: "+y.length,link,{sub:"Orders taken today",rows:t}),
+          kpi("Today's Cases",qty(t).toLocaleString("en-IN"),"Yesterday: "+qty(y).toLocaleString("en-IN"),link,{sub:"Orders taken today",rows:t}),
+          kpi("Today's Sales","₹"+fmtINR(sum(t)),"Yesterday's total: ₹"+fmtINR(sum(y)),link,{sub:"Orders taken today",rows:t})]));
         const st=k=>rows.filter(o=>String(o.status||"").toLowerCase()===k).length;
         kpis.appendChild(kpiGroup([
-          kpi("Pending Approval",st("pending_approval"),"Approved: "+st("approved"),link),
-          kpi("To Dispatch",st("transport_allocated")+st("loading"),"Loaded, to bill: "+st("loaded"),["admin","manager","warehouse"].includes(role)?"loading-dispatch.html":"")]));
+          kpi("Pending Approval",st("pending_approval"),"Approved: "+st("approved"),link,{sub:"Waiting for Sales Head approval",rows:rows.filter(o=>String(o.status||"").toLowerCase()==="pending_approval")}),
+          kpi("To Dispatch",st("transport_allocated")+st("loading"),"Loaded, to bill: "+st("loaded"),["admin","manager","warehouse"].includes(role)?"loading-dispatch.html":"",{sub:"Driver assigned or loading now",rows:rows.filter(o=>["transport_allocated","loading"].includes(String(o.status||"").toLowerCase()))})]));
       }
       const office=[];
       if(returns&&!returns.error){const r=Array.isArray(returns.data)?returns.data:[];
-        office.push(kpi("Driver Returns",r.length,"Value: ₹"+fmtINR(r.reduce((n,x)=>n+Number(x.total_return_amount||0),0)),"driver-returns.html"))}
+        office.push(kpi("Driver Returns",r.length,"Value: ₹"+fmtINR(r.reduce((n,x)=>n+Number(x.total_return_amount||0),0)),"driver-returns.html",
+          {sub:"Waiting for office check",rows:r,cols:[{t:"PO No.",v:x=>x.order_no||x.po_no||""},{t:"Party",v:x=>x.customer_name||x.party||""},{t:"Driver",v:x=>x.driver_name||""},{t:"Date",v:x=>x.created_at||x.reported_at,date:true},{t:"Return value",v:"total_return_amount",money:true,sum:true}]}))}
       if(office.length)kpis.appendChild(kpiGroup(office));
       // Salesman: own orders not yet delivered / delivered this week (My Sales > My Orders).
       if(mine&&!mine.error&&Array.isArray(mine.data)){
@@ -418,16 +433,16 @@
         const t=live.filter(o=>dayKey(o.order_date)===dayKey(new Date())),m=live.filter(o=>monthKey(o.order_date)===monthKey(new Date()));
         const sum=a=>a.reduce((n,o)=>n+Number(o.total_amount||0),0),n=a=>a.length+(a.length===1?" order":" orders");
         kpis.appendChild(kpiGroup([
-          kpi("Today's Sales","₹"+fmtINR(sum(t)),n(t)+" today","my-sales.html#orders"),
-          kpi("This Month's Sales","₹"+fmtINR(sum(m)),n(m)+" in "+new Date().toLocaleDateString("en-IN",{month:"long"}),"my-sales.html#orders")]));
+          kpi("Today's Sales","₹"+fmtINR(sum(t)),n(t)+" today","my-sales.html#orders",{sub:"My orders today",rows:t}),
+          kpi("This Month's Sales","₹"+fmtINR(sum(m)),n(m)+" in "+new Date().toLocaleDateString("en-IN",{month:"long"}),"my-sales.html#orders",{sub:"My orders this month",rows:m})]));
         kpis.appendChild(kpiGroup([
-          kpi("My Orders Not Delivered",pend.length,"Waiting for approval: "+pend.filter(o=>["","pending","submitted","pending_manager","pending_approval","pending_review","new"].includes(String(o.status||"").toLowerCase().trim())).length,"my-sales.html#orders"),
-          kpi("Delivered (7 days)",r.filter(o=>done(o)&&Date.parse(o.delivered_at)>=week).length,"Cancelled: "+r.filter(off).length,"my-sales.html#orders")]));
+          kpi("My Orders Not Delivered",pend.length,"Waiting for approval: "+pend.filter(o=>["","pending","submitted","pending_manager","pending_approval","pending_review","new"].includes(String(o.status||"").toLowerCase().trim())).length,"my-sales.html#orders",{sub:"Not delivered yet",rows:pend}),
+          kpi("Delivered (7 days)",r.filter(o=>done(o)&&Date.parse(o.delivered_at)>=week).length,"Cancelled: "+r.filter(off).length,"my-sales.html#orders",{sub:"Delivered in the last 7 days",rows:r.filter(o=>done(o)&&Date.parse(o.delivered_at)>=week)})]));
       }
       if(orders&&!orders.error){
         const rows=orders.data||[],count={};
         rows.forEach(o=>{const k=String(o.status||"").toLowerCase();count[k]=(count[k]||0)+1});
-        ["pending_approval","approved","transport_allocated","loading","loaded"].forEach(k=>pills.appendChild(pill(STATUS[k][0],count[k]||0,STATUS[k][2])));
+        ["pending_approval","approved","transport_allocated","loading","loaded"].forEach(k=>pills.appendChild(pill(STATUS[k][0],count[k]||0,STATUS[k][2],rows.filter(o=>String(o.status||"").toLowerCase()===k))));
         const body=document.getElementById("orderRows");body.replaceChildren();
         if(!rows.length){const td=body.insertRow().insertCell();td.colSpan=6;td.className="erp-empty";td.textContent="No records to display"}
         rows.slice(0,10).forEach(o=>{
