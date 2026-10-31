@@ -79,9 +79,13 @@ async function saveSupplier(){if(!isAdmin()||busy)return;const payload=buildPayl
   const wasEditing=!!editingId;
   if(!await confirm(`${wasEditing?'UPDATE':'ADD'} Supplier / Company?\n\n${payload.supplier_name}\nStatus: ${payload.is_active?'Active':'Inactive'}`))return;
   busy=true;updateControls();
-  try{let result;
-    if(wasEditing)result=await db.from('lwb_supplier_master').update(payload).eq('id',editingId).select('id').single();
-    else result=await db.from('lwb_supplier_master').insert(payload).select('id').single();
+  try{
+    // Saved through lwb_supplier_save (lwb_supplier_save_setup.sql): the browser cannot write the table's Company / Brand column directly.
+    let result=await db.rpc('lwb_supplier_save',{p:{...payload,id:editingId}});
+    if(result.error&&(result.error.code==='PGRST202'||/lwb_supplier_save/.test(result.error.message||'')&&/not find|does not exist/i.test(result.error.message||''))){
+      if(wasEditing)result=await db.from('lwb_supplier_master').update(payload).eq('id',editingId).select('id').single();
+      else result=await db.from('lwb_supplier_master').insert(payload).select('id').single();
+    }
     if(result.error)throw result.error;
     resetForm();await loadSuppliers();show(wasEditing?'Supplier updated successfully.':'Supplier created successfully. Select it in Goods Inward.','success');
   }catch(e){show('Supplier NOT saved: '+(e.code==='23505'?'Supplier Name already exists.':e.message||String(e)));}
