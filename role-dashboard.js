@@ -217,6 +217,8 @@
     const known=rows.reduce((a,x)=>a+x.sale-x.lines.filter(l=>l.land==null).reduce((b,l)=>b+l.rate*l.q,0),0);
     return {rows,profit:sum(rows,x=>x.profit),sale:sum(rows,x=>x.sale),known,missing:sum(rows,x=>x.missing)};
   }
+  // Manage Users > Pages > "See profit": unticked = "dashboard.html#profit" in the user's hidden list.
+  const profitOk=()=>!hidden().includes("dashboard.html#profit");
   const margin=(p,s)=>s>0?(Math.round(p/s*1000)/10)+"%":"—";
   function profitKpi(P,n,tone){
     if(!P)return "";
@@ -244,6 +246,7 @@
     return el;
   }
   async function showProfit(day){
+    if(!profitOk())return;
     const el=pop(),my=++pseq,inn=el.querySelector(".rd-pop-in");
     PDAY=day;open=new Set();el.hidden=false;document.body.classList.add("rd-lock");
     el.querySelector(".rd-day b").textContent=dmy(day)+(day===today()?" · Today":"");
@@ -283,7 +286,7 @@
         safe(C.rpc("lwb_acc_dashboard",{p_from:t,p_to:t})),window.LWBPartyPay?LWBPartyPay.load(C).catch(()=>null):null,safe(C.rpc("lwb_acc_cheque_list")),salesTeam(),overview()]);
       const O=orders||[],L=O.filter(live),td=L.filter(o=>o.day===t),yd=L.filter(o=>o.day===y),mo=L.filter(o=>o.day>=t.slice(0,8)+"01");
       TEAM=team.team;
-      const [stock,PR]=await Promise.all([stockCheck(orders),orders?profitOf(td).catch(()=>null):null]);
+      const [stock,PR]=await Promise.all([stockCheck(orders),orders&&profitOk()?profitOf(td).catch(()=>null):null]);
       const tv=sum(td,o=>o.total_amount),yv=sum(yd,o=>o.total_amount),mv=sum(mo,o=>o.total_amount),tgt=BR.id?num(ov&&ov.targets&&ov.targets[BR.id]&&ov.targets[BR.id].amount):companyTarget(team.targets);
       const ch=yv?Math.round((tv-yv)/yv*100):null,A=acc?accTotals(acc):null,short=stock?stock.filter(x=>x.short>0):null;
       const bo=BR.id&&ov&&ov.outstanding?ov.outstanding[BR.id]||{due:0,overdue:0}:null,out=bo?{total:num(bo.due),over:num(bo.overdue),brand:1}:outstanding(PI);
@@ -331,7 +334,7 @@
       const team=BR.allow&&cm?{team:team0.team,targets:brandTargets(cm.targets)}:team0;
       const O=orders||[],L=O.filter(live),td=L.filter(o=>o.day===t),mo=L.filter(o=>o.day>=t.slice(0,8)+"01");
       TEAM=team.team;
-      const PR=orders?await profitOf(td).catch(()=>null):null;
+      const PR=orders&&profitOk()?await profitOf(td).catch(()=>null):null;
       const wait=O.filter(o=>WAIT.includes(st(o))&&live(o)),age=o=>Date.now()-Date.parse(o.created_at||o.order_date);
       const late=wait.filter(o=>age(o)>APPROVAL_HOURS*36e5),oldest=wait.reduce((a,o)=>!a||age(o)>age(a)?o:a,null);
       const tgt=companyTarget(team.targets),mv=sum(mo,o=>o.total_amount);
@@ -496,7 +499,7 @@
     roles:Object.keys(ROLES),
     has:role=>Object.prototype.hasOwnProperty.call(ROLES,role),
     start(o){C=o.client;ROLE=o.role;UID=o.uid||"";PLAN=o.plan||null;box=o.box;
-      if(!box.dataset.rdTap){box.dataset.rdTap="1";box.addEventListener("click",e=>{if(e.target.closest("[data-profit]"))showProfit(today())})}if(!box.querySelector(".rd-card"))paint('<div class="rd-empty">Loading your dashboard…</div>');return render()},
+      if(!box.dataset.rdTap){box.dataset.rdTap="1";document.addEventListener("erp:access",()=>{if(ROLE)render()});box.addEventListener("click",e=>{if(e.target.closest("[data-profit]"))showProfit(today())})}if(!box.querySelector(".rd-card"))paint('<div class="rd-empty">Loading your dashboard…</div>');return render()},
     refresh(){if(ROLE)return render()}
   };
 })();
