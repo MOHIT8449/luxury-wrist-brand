@@ -9,7 +9,8 @@
 -- * Login page: type the mobile number OR the email, plus the password.
 --   A mobile number is looked up here only when the password is correct,
 --   and 8 wrong tries lock that login for 15 minutes.
--- * Admin can change any user's login mobile or password.
+-- * Admin can change any user's login mobile, login email or password.
+--   Blank email = the user signs in with the mobile only.
 --
 -- No order, stock, bill, payment, ledger or Tally data is changed.
 
@@ -138,6 +139,13 @@ BEGIN
       RAISE EXCEPTION 'Assign a role first, then set the mobile';
     END IF;
     UPDATE public.user_profiles SET mobile = v_mobile WHERE id = p_user_id;
+    -- A mobile-only login keeps its internal email in step with the new mobile.
+    IF EXISTS (SELECT 1 FROM auth.users u WHERE u.id = p_user_id AND u.email LIKE '%@staff.lwb-erp.in')
+       AND NOT EXISTS (SELECT 1 FROM auth.users u WHERE u.id <> p_user_id AND lower(u.email) = 'm' || v_mobile || '@staff.lwb-erp.in') THEN
+      UPDATE auth.users SET email = 'm' || v_mobile || '@staff.lwb-erp.in', updated_at = now() WHERE id = p_user_id;
+      UPDATE auth.identities SET identity_data = identity_data || jsonb_build_object('email', 'm' || v_mobile || '@staff.lwb-erp.in'), updated_at = now()
+      WHERE user_id = p_user_id AND provider = 'email';
+    END IF;
   ELSIF p_clear_mobile THEN
     IF EXISTS (SELECT 1 FROM auth.users u WHERE u.id = p_user_id AND u.email LIKE '%@staff.lwb-erp.in') THEN
       RAISE EXCEPTION 'This login has no email, so the mobile cannot be removed';
@@ -149,6 +157,44 @@ BEGIN
     UPDATE auth.users SET encrypted_password = extensions.crypt(p_password, extensions.gen_salt('bf')), updated_at = now()
     WHERE id = p_user_id;
   END IF;
+END;
+$fn$;
+
+-- ---------------------------------------------------------------------------
+-- Change login email (Admin). Blank = remove the email; the user then signs in
+-- with the login mobile only (needs a login mobile). Returns the email shown
+-- in Manage Users (NULL when there is none).
+-- ---------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.lwb_admin_set_email(p_user_id uuid, p_email text)
+RETURNS text LANGUAGE plpgsql SECURITY DEFINER SET search_path = ''
+AS $fn$
+DECLARE
+  v_email text := lower(btrim(coalesce(p_email, '')));
+  v_mobile text;
+  v_old text;
+BEGIN
+  IF NOT public.lwb_is_admin() THEN RAISE EXCEPTION 'Only an active Admin can change logins'; END IF;
+  SELECT lower(u.email::text) INTO v_old FROM auth.users u WHERE u.id = p_user_id;
+  IF NOT FOUND THEN RAISE EXCEPTION 'Login not found'; END IF;
+  IF v_email = '' THEN
+    SELECT public.lwb_mobile10(p.mobile) INTO v_mobile FROM public.user_profiles p WHERE p.id = p_user_id;
+    IF v_mobile IS NULL THEN RAISE EXCEPTION 'This login has no mobile, so the email cannot be removed'; END IF;
+    v_email := 'm' || v_mobile || '@staff.lwb-erp.in';
+  ELSE
+    IF length(v_email) > 254 OR v_email !~ '^[^@\s]+@[^@\s]+\.[^@\s]+$' THEN RAISE EXCEPTION 'Enter a valid email'; END IF;
+    IF v_email LIKE '%@staff.lwb-erp.in' THEN RAISE EXCEPTION 'Enter the user''s real email'; END IF;
+  END IF;
+  IF v_email IS DISTINCT FROM v_old THEN
+    IF EXISTS (SELECT 1 FROM auth.users u WHERE u.id <> p_user_id AND lower(u.email) = v_email) THEN
+      RAISE EXCEPTION 'Email % is already used by another login', v_email;
+    END IF;
+    UPDATE auth.users SET email = v_email, email_confirmed_at = coalesce(email_confirmed_at, now()),
+      email_change = '', email_change_token_new = '', updated_at = now()
+    WHERE id = p_user_id;
+    UPDATE auth.identities SET identity_data = identity_data || jsonb_build_object('email', v_email, 'email_verified', true), updated_at = now()
+    WHERE user_id = p_user_id AND provider = 'email';
+  END IF;
+  RETURN CASE WHEN v_email LIKE '%@staff.lwb-erp.in' THEN NULL ELSE v_email END;
 END;
 $fn$;
 
@@ -184,10 +230,10 @@ $fn$;
 
 REVOKE ALL ON FUNCTION public.lwb_mobile10(text), public.lwb_admin_users(),
   public.lwb_admin_create_user(text,text,text,text,text,boolean), public.lwb_admin_set_login(uuid,text,text,boolean),
-  public.lwb_login_email(text,text) FROM PUBLIC, anon, authenticated;
+  public.lwb_admin_set_email(uuid,text), public.lwb_login_email(text,text) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.lwb_mobile10(text), public.lwb_admin_users(),
-  public.lwb_admin_create_user(text,text,text,text,text,boolean), public.lwb_admin_set_login(uuid,text,text,boolean)
-  TO authenticated;
+  public.lwb_admin_create_user(text,text,text,text,text,boolean), public.lwb_admin_set_login(uuid,text,text,boolean),
+  public.lwb_admin_set_email(uuid,text) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.lwb_login_email(text,text) TO anon, authenticated;
 
 COMMIT;
@@ -195,8 +241,8 @@ COMMIT;
 NOTIFY pgrst, 'reload schema';
 
 -- Check: both lines should say true.
-SELECT 'login functions' AS item, count(*) = 4 AS ok FROM information_schema.routines
-  WHERE routine_schema = 'public' AND routine_name IN ('lwb_admin_users','lwb_admin_create_user','lwb_admin_set_login','lwb_login_email')
+SELECT 'login functions' AS item, count(*) = 5 AS ok FROM information_schema.routines
+  WHERE routine_schema = 'public' AND routine_name IN ('lwb_admin_users','lwb_admin_create_user','lwb_admin_set_login','lwb_admin_set_email','lwb_login_email')
 UNION ALL
 SELECT 'no duplicate mobiles', NOT EXISTS (
   SELECT 1 FROM public.user_profiles WHERE public.lwb_mobile10(mobile) IS NOT NULL
