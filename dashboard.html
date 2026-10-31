@@ -74,7 +74,10 @@
     .bn-track{display:flex;overflow-x:auto;scroll-snap-type:x mandatory;scroll-behavior:smooth;scrollbar-width:none}
     .bn-track::-webkit-scrollbar{display:none}
     .bn-slide{flex:0 0 100%;scroll-snap-align:start;margin:0;position:relative;background:#00434d}
-    .bn-slide img{display:block;width:100%;aspect-ratio:16/3;object-fit:cover;background:#0b3940}
+    .bn-pic{position:relative;aspect-ratio:16/3;overflow:hidden;background:#0b3940}
+    /* Whole photo always shows (never cut); a photo of another shape gets a blurred copy of itself on the sides. */
+    .bn-pic::before{content:"";position:absolute;inset:-24px;background:var(--bg) center/cover no-repeat;filter:blur(18px) brightness(.55)}
+    .bn-pic img{position:relative;display:block;width:100%;height:100%;object-fit:contain}
     .bn-cap{display:flex;align-items:center;gap:10px;padding:6px 14px;background:#00434d;color:#f7f1de;font-size:13px;min-height:34px;border-top:2px solid var(--lwb-gold,#c9b26a)}
     .bn-cap .tx{flex:1;min-width:0;overflow-wrap:anywhere}
     .bn-cap b{font-weight:600;color:#fff}
@@ -90,8 +93,7 @@
     .bn-file label{display:inline-flex;align-items:center;height:34px;padding:0 12px;border-radius:6px;border:1.5px dashed var(--lwb-gold,#c9b26a);background:var(--lwb-gold-soft,#f7f1de);color:var(--erp-ink);font-weight:600;cursor:pointer;flex:none}
     .bn-file input{display:none}
     .bn-preview{grid-column:1/-1;margin:0;border-radius:8px;overflow:hidden;border:1px solid var(--erp-line)}
-    .bn-preview img{display:block;width:100%;aspect-ratio:16/3;object-fit:cover}
-    .bn-preview figcaption{display:flex;justify-content:space-between;gap:8px;padding:6px 10px;font-size:12px;color:var(--erp-muted);background:#fafaf7}
+        .bn-preview figcaption{display:flex;justify-content:space-between;gap:8px;padding:6px 10px;font-size:12px;color:var(--erp-muted);background:#fafaf7}
     .bn-preview figcaption .warn{color:var(--erp-amber)}
     @media(max-width:760px){.bn-nav{display:none}.bn-cap{padding:7px 10px;font-size:12px}.bn-cap small{display:block;margin:2px 0 0}}
     [hidden]{display:none!important}
@@ -162,7 +164,7 @@
       <button type="submit" class="send" id="focusSend">Post to all</button>
       <datalist id="focusSkus"></datalist>
       <div class="bn-file"><label for="focusImg">+ Banner photo</label><input type="file" id="focusImg" accept="image/jpeg,image/png,image/webp"><span id="focusImgHint">Best size 1600 × 300 px (wide strip). Keep text in the middle. Message is optional with a photo.</span></div>
-      <figure class="bn-preview" id="focusPreview" hidden><img id="focusPreviewImg" alt="Banner preview"><figcaption><span>This is how everyone will see it</span><span id="focusPreviewInfo"></span></figcaption></figure>
+      <figure class="bn-preview" id="focusPreview" hidden><div class="bn-pic" id="focusPreviewPic"><img id="focusPreviewImg" alt="Banner preview"></div><figcaption><span>This is how everyone will see it</span><span id="focusPreviewInfo"></span></figcaption></figure>
     </form>
     <div id="roleDash" hidden></div>
 
@@ -423,13 +425,14 @@
       const track=document.createElement("div");track.className="bn-track";
       list.forEach((a,i)=>{
         const f=document.createElement("figure");f.className="bn-slide";
-        const img=document.createElement("img");img.src=url.get(a.image_path)||"";img.loading=i?"lazy":"eager";img.alt=a.message||a.sku_name||"Banner";
+        const pic=document.createElement("div");pic.className="bn-pic";const src=url.get(a.image_path)||"";if(src)pic.style.setProperty("--bg","url(\""+src+"\")");
+        const img=document.createElement("img");img.src=src;pic.append(img);img.loading=i?"lazy":"eager";img.alt=a.message||a.sku_name||"Banner";
         const cap=document.createElement("figcaption");cap.className="bn-cap";
         const tx=document.createElement("div");tx.className="tx";
         if(a.message){const b=document.createElement("b");b.textContent=a.message;tx.append(b)}
         const m=document.createElement("small");m.textContent=bannerMeta(a,today);tx.append(m);
         cap.append(tx);if(isHead())cap.append(removeBtn(a.id,"x"));
-        f.append(img,cap);track.appendChild(f);
+        f.append(pic,cap);track.appendChild(f);
       });
       wrap.appendChild(track);
       if(list.length<2)return;
@@ -477,8 +480,9 @@
         try{banner=await bannerFile(f)}catch(err){clearBanner();await alert(err.message);return}
         if(prevImg.src.startsWith("blob:"))URL.revokeObjectURL(prevImg.src);
         prevImg.src=URL.createObjectURL(banner.blob);prev.hidden=false;
+        document.getElementById("focusPreviewPic").style.setProperty("--bg","url(\""+prevImg.src+"\")");
         const r=banner.w/banner.h,info=document.getElementById("focusPreviewInfo");
-        info.textContent=banner.w+" × "+banner.h+" px"+(Math.abs(r-16/3)>0.5?" · not 1600 × 300 shape, top/bottom or sides will be cut":"");
+        info.textContent=banner.w+" × "+banner.h+" px"+(Math.abs(r-16/3)>0.5?" · not 1600 × 300 shape, it will show smaller with blurred sides":"");
         info.className=Math.abs(r-16/3)>0.5?"warn":"";
       };
       document.getElementById("focusCancel").onclick=()=>{form.reset();clearBanner();form.hidden=true;post.hidden=false};
