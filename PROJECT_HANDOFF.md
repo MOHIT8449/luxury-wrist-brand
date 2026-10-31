@@ -4,6 +4,14 @@
 **Purpose:** Continue the same ERP project from a new ChatGPT conversation without restarting or losing the agreed requirements.
 **Status:** Active development / verification. Do not assume all modules are completed or fully tested.
 
+## Count cards open their list (31 Oct 2026)
+
+- Mohit asked: every card that shows a total number must open the list of the records behind it.
+- `erp-list.js` (shared): `ERPList.open({title,sub,rows|load,cols,onRow,page})` shows a searchable list popup with totals (table on web, cards on phone); `ERPList.card(el, make)` / `ERPList.ids({numberId: make})` make a card clickable and add "View list ›".
+- `lwb_po_summary_lists_setup.sql`: `lwb_po_summary_orders(card, from, to)` returns the orders behind each PO Approval summary card (same rules as `lwb_po_approval_summary`), and `lwb_daily_summary_list(date, card)` the records behind the Daily Summary cards. Read-only. Test: `tests/po-summary-lists`.
+- Wired on: PO Approval, Dashboard (all roles), Loading & Dispatch, Transport Assignment, Accounts Dashboard, Billing & Outstanding, Payment Collection, Party Ledger, Daily Summary, Godown Report, Outside Market Stock, My Sales, Sales Tracking, Party Call List, Purchase Claims, Purchase Register, Sheet & Pallet Ledger, Company PO maker. Pages whose cards already switch the list below (Inventory, Team Work Report, Money Overview, Driver Collections, Driver Returns, Tally Bill Check, Driver phone) keep that.
+- A new count card should use `ERPList` the same way.
+
 ## Automatic Supabase updates (30 Oct 2026)
 
 - `.github/workflows/supabase-apply.yml`: when a PR is merged to `main`, every root `*.sql` file added or changed in it is run on the live Supabase database (commit order, stops on first error) and changed `supabase/functions/*` are deployed. No more pasting SQL in the SQL editor.

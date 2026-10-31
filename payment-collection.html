@@ -229,5 +229,22 @@ el("invoice").addEventListener("change",updateSelectedInfo);
 el("refresh").onclick=loadData;
 init();
 </script>
+<script src="erp-list.js"></script>
+<script>
+/* Count cards → list popup (erp-list.js): click a number to see its records. */
+(function(){
+  if(!window.ERPList)return;
+  const billCols=[{t:"Bill",v:b=>b.bill_no},{t:"Type",v:b=>b.bill_kind==="ERP_BILL"?"ERP Bill":"Old Invoice"},{t:"Party",v:"customer_name"},{t:"PO No.",v:"order_no"},
+    {t:"Date",v:b=>b.bill_date||b.invoice_date,date:true},{t:"Bill amount",v:b=>b.total_amount!=null?b.total_amount:b.bill_amount,money:true,sum:true},{t:"Outstanding",v:"outstanding_amount",money:true,sum:true}];
+  const payCols=()=>{const by=new Map(invoices.map(x=>[x.key,x]));return [{t:"Date",v:"collection_date",date:true},{t:"Bill",v:p=>(by.get(collectionKey(p))||{}).bill_no||""},
+    {t:"Party",v:p=>(by.get(collectionKey(p))||{}).customer_name||""},{t:"Mode",v:"payment_mode"},{t:"Reference",v:"reference_no"},{t:"Amount",v:"amount",money:true,sum:true},{t:"Status",v:"status"}]};
+  ERPList.ids({
+    invoiceCount:()=>({title:"Bills (ERP + Old)",sub:"All ERP bills and old invoices",rows:invoices,cols:billCols}),
+    outstandingTotal:()=>({title:"Outstanding",sub:"Bills with money still due (after approved returns)",rows:invoices.filter(b=>Number(b.outstanding_amount)>0.5),cols:billCols}),
+    pendingCount:()=>({title:"Pending Collections",sub:"Waiting to be posted",rows:collections.filter(x=>x.status==="PENDING"),cols:payCols()}),
+    postedTotal:()=>({title:"Posted Collections",sub:"Posted to the ledger",rows:collections.filter(x=>x.status==="POSTED"),cols:payCols()})
+  });
+})();
+</script>
 </body>
 </html>

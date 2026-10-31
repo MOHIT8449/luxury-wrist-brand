@@ -34,9 +34,19 @@
   const hidden=()=>{try{return ERPShell.hiddenPages()}catch(e){return []}};
   const can=h=>!hidden().includes(String(h).split(/[?#]/)[0]);
   const go=(h,t)=>h&&can(h)?'<a href="'+esc(h)+'">'+t+"</a>":"";
-  function kpi(tone,label,value,foot,href){
+  // Count card → list popup (erp-list.js). lst(title, sub, rows|loader, cols, page) returns an id
+  // the card carries in data-list; paint() makes those cards open the list.
+  let LISTS=new Map(),LN=0;
+  function lst(title,sub,rows,cols,page){
+    const id="l"+(++LN);
+    LISTS.set(id,()=>({title,sub,cols:cols||OCOLS,rows:typeof rows==="function"?undefined:rows,load:typeof rows==="function"?rows:undefined,
+      page:page&&can(page)?page:undefined,pageText:"Open page →",onRow:cols?undefined:o=>{if(o&&o.id&&can("warehouse-orders.html")&&["admin","manager"].includes(ROLE))location.href="warehouse-orders.html?order="+encodeURIComponent(o.id)}}));
+    return id;
+  }
+  const dlA=id=>id?' data-list="'+id+'"':"";
+  function kpi(tone,label,value,foot,href,list){
     const tag=href&&can(href)?'a href="'+esc(href)+'"':"div";
-    return "<"+tag+' class="rd-kpi rd-'+tone+'"><small>'+esc(label)+"</small><b>"+value+"</b><span>"+(foot||"")+"</span></"+tag.split(" ")[0]+">";
+    return "<"+tag+' class="rd-kpi rd-'+tone+'"'+dlA(list)+"><small>"+esc(label)+"</small><b>"+value+"</b><span>"+(foot||"")+"</span></"+tag.split(" ")[0]+">";
   }
   // Card titles start with an emoji; show a matching line icon instead.
   const RD_IC={"⚠️":'<path d="M12 3 2 21h20z"/><path d="M12 10v5M12 18h.01"/>',"✔️":'<path d="M4 12l5 5L20 6"/>',"🌙":'<path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/>',
@@ -50,11 +60,19 @@
   const card=(title,link,body,note,id)=>'<section class="rd-card"'+(id?' id="'+id+'"':"")+"><h2>"+rdTitle(title)+(link||"")+"</h2>"+body+(note?'<div class="rd-note">'+note+"</div>":"")+"</section>";
   const badge=(c,t)=>'<span class="rd-b rd-b-'+c+'">'+t+"</span>";
   const bar=(p,c)=>'<div class="rd-bar'+(c?" rd-bar-"+c:"")+'"><i style="width:'+Math.max(0,Math.min(100,p||0))+'%"></i></div>';
-  const step=(n,label,extra,hot,href)=>{const t=href&&can(href)?'a href="'+esc(href)+'"':"div";
-    return "<"+t+' class="rd-step'+(hot?" hot":"")+'"><b>'+n+"</b><small>"+label+"</small>"+(extra?"<i>"+extra+"</i>":"")+"</"+t.split(" ")[0]+">"};
+  const step=(n,label,extra,hot,href,list)=>{const t=href&&can(href)?'a href="'+esc(href)+'"':"div";
+    return "<"+t+' class="rd-step'+(hot?" hot":"")+'"'+dlA(list)+'><b>'+n+"</b><small>"+label+"</small>"+(extra?"<i>"+extra+"</i>":"")+"</"+t.split(" ")[0]+">"};
   const dot=(c,html)=>'<div class="rd-alert"><span class="rd-dot rd-dot-'+c+'"></span><span>'+html+"</span></div>";
   const ago=v=>{const m=Math.max(0,Math.round((Date.now()-Date.parse(v))/6e4));return m<60?m+" min":m<1440?Math.floor(m/60)+" h "+(m%60)+" min":Math.floor(m/1440)+" days"};
   const sum=(a,f)=>a.reduce((n,x)=>n+num(f(x)),0);
+  const STN=o=>{const s=st(o);return s===""?"Pending":s.replace(/_/g," ").replace(/\b\w/g,c=>c.toUpperCase())};
+  const OCOLS=[{t:"PO No.",v:"order_no"},{t:"Date",v:o=>o.order_date||o.created_at,date:true},{t:"Party",v:"customer_name"},
+    {t:"Salesman",v:o=>takerOf(o,TEAM||[])},{t:"Cases",v:"total_qty",num:true,sum:true,dec:0},{t:"Weight kg",v:"total_weight",num:true,sum:true,dec:0},
+    {t:"Amount",v:"total_amount",money:true,sum:true},{t:"Status",v:o=>(o.priority&&o.priority!=="NORMAL"?o.priority+" · ":"")+STN(o)}];
+  const PCOLS=[{t:"Party",v:"party"},{t:"Due",v:"due",money:true,sum:true},{t:"Oldest bill (days)",v:"oldest",num:true,dec:0}];
+  const SCOLS=[{t:"SKU",v:"sku"},{t:"In godown",v:"have",num:true,sum:true,dec:0},{t:"Ordered",v:"need",num:true,sum:true,dec:0},{t:"Short",v:"short",num:true,sum:true,dec:0},{t:"Coming",v:"transit",num:true,sum:true,dec:0}];
+  const ACOLS=[{t:"Date",v:"date",date:true},{t:"Head",v:"category"},{t:"Party",v:"party"},{t:"Mode",v:"mode"},{t:"PO / Ref",v:l=>[l.order_no,l.ref].filter(Boolean).join(" · ")},{t:"Remark",v:"remark"},{t:"Amount",v:"amount",money:true,sum:true}];
+  const delivered=(from,to)=>async()=>{const r=await C.rpc("lwb_po_summary_orders",{p_bucket:"delivered",p_from:from,p_to:to});if(r.error)throw r.error;return r.data||[]};
   const live=o=>!OFF.includes(st(o));
 
   async function ordersFrom(from){
@@ -272,6 +290,7 @@
     const v=document.getElementById("verifyCard"),home=document.querySelector(".side-col");
     if(v&&home&&box.contains(v))home.prepend(v);
     box.innerHTML=html;
+    if(window.ERPList)box.querySelectorAll("[data-list]").forEach(el=>ERPList.card(el,()=>{const m=LISTS.get(el.dataset.list);return m&&m()},el.classList.contains("rd-step")?false:undefined));
     if(BRAND_ROLES.includes(ROLE)&&BR.list.length>1&&window.LWBBrand&&box.querySelector(".rd-kpis"))box.prepend(LWBBrand.chips(BR.list,BR.id,()=>render()));
     const s=document.getElementById("rdSide");if(v&&s)s.prepend(v);
   }
@@ -291,18 +310,21 @@
       const ch=yv?Math.round((tv-yv)/yv*100):null,A=acc?accTotals(acc):null,short=stock?stock.filter(x=>x.short>0):null;
       const bo=BR.id&&ov&&ov.outstanding?ov.outstanding[BR.id]||{due:0,overdue:0}:null,out=bo?{total:num(bo.due),over:num(bo.overdue),brand:1}:outstanding(PI);
       const k=[
-        kpi("green","Today's Sales",rs(tv),(ch==null?"":'<span class="'+(ch>=0?"up":"dn")+'">'+(ch>=0?"▲ ":"▼ ")+Math.abs(ch)+"%</span> ")+"vs yesterday "+rs(yv),"sales-tracking.html"),
+        kpi("green","Today's Sales",rs(tv),(ch==null?"":'<span class="'+(ch>=0?"up":"dn")+'">'+(ch>=0?"▲ ":"▼ ")+Math.abs(ch)+"%</span> ")+"vs yesterday "+rs(yv),"sales-tracking.html",orders&&lst("Today's Sales","Orders taken today (cancelled not counted)",td,null,"sales-tracking.html")),
         profitKpi(PR,td.length,"violet"),
-        kpi("blue",new Date().toLocaleDateString("en-IN",{month:"long"})+" Sales",rs(mv),tgt?pct(mv,tgt)+"% of "+lakh(tgt)+" target":fmt(mo.length)+" orders","sales-tracking.html"),
-        kpi("red","Total Outstanding",out?rs(out.total):"—",out?(out.brand?'<span class="dn">'+rs(out.over)+"</span> past udhari days":'<span class="dn">'+rs(out.over30)+"</span> over 30 days"):"Billing & Outstanding","party-billing.html"),
-        kpi("teal","Cash in Hand",acc&&acc.closing_set?rs(acc.closing):"—",A?"Bank deposit today "+rs(A.dep):"Accounts Dashboard","accounts-dashboard.html"),
-        kpi("amber","Short Stock SKUs",short?fmt(short.length):"—",short?(short.length?"Less than open orders":"All open orders covered"):"Stock not available","inventory.html")];
+        kpi("blue",new Date().toLocaleDateString("en-IN",{month:"long"})+" Sales",rs(mv),tgt?pct(mv,tgt)+"% of "+lakh(tgt)+" target":fmt(mo.length)+" orders","sales-tracking.html",orders&&lst(new Date().toLocaleDateString("en-IN",{month:"long"})+" Sales","Orders this month (cancelled not counted)",mo,null,"sales-tracking.html")),
+        kpi("red","Total Outstanding",out?rs(out.total):"—",out?(out.brand?'<span class="dn">'+rs(out.over)+"</span> past udhari days":'<span class="dn">'+rs(out.over30)+"</span> over 30 days"):"Billing & Outstanding","party-billing.html",out&&out.parties&&lst("Total Outstanding","Party-wise due after advance",out.parties,PCOLS,"party-billing.html")),
+        kpi("teal","Cash in Hand",acc&&acc.closing_set?rs(acc.closing):"—",A?"Bank deposit today "+rs(A.dep):"Accounts Dashboard","accounts-dashboard.html",acc&&lst("Today's cash book","All money entries today",acc.lines||[],ACOLS,"accounts-dashboard.html")),
+        kpi("amber","Short Stock SKUs",short?fmt(short.length):"—",short?(short.length?"Less than open orders":"All open orders covered"):"Stock not available","inventory.html",short&&lst("Short Stock SKUs","Godown stock less than approved, not yet loaded orders",short,SCOLS,"inventory.html"))];
       const c=s=>O.filter(o=>st(o)===s).length,wait=O.filter(o=>WAIT.includes(st(o))&&live(o));
       const late=wait.filter(o=>Date.now()-Date.parse(o.created_at||o.order_date)>APPROVAL_HOURS*36e5).length;
       const flow=orders&&card("🚚 Order Flow",go("warehouse-orders.html","Open PO Approval →"),'<div class="rd-bd"><div class="rd-flow">'+
-        step(wait.length,"Waiting approval",late?late+" late":"",late,"warehouse-orders.html")+step(c("approved"),"Approved","",0,"warehouse-orders.html")+
-        step(c("transport_allocated"),"Driver assigned","",0,"loading-dispatch.html")+step(c("loading"),"Loading now","",c("loading")>0,"loading-dispatch.html")+
-        step(c("loaded"),"Loaded, to bill","",0,"accounts-invoice.html")+step(sumy?num(sumy.delivered&&sumy.delivered.count):"—","Delivered today","",0,"")+"</div></div>",
+        step(wait.length,"Waiting approval",late?late+" late":"",late,"warehouse-orders.html",lst("Waiting approval","Orders waiting for Sales Head approval",wait,null,"warehouse-orders.html"))+
+        step(c("approved"),"Approved","",0,"warehouse-orders.html",lst("Approved","Approved, driver not assigned yet",O.filter(o=>st(o)==="approved"),null,"warehouse-orders.html"))+
+        step(c("transport_allocated"),"Driver assigned","",0,"loading-dispatch.html",lst("Driver assigned","Waiting for loading",O.filter(o=>st(o)==="transport_allocated"),null,"loading-dispatch.html"))+
+        step(c("loading"),"Loading now","",c("loading")>0,"loading-dispatch.html",lst("Loading now","On the vehicle now",O.filter(o=>st(o)==="loading"),null,"loading-dispatch.html"))+
+        step(c("loaded"),"Loaded, to bill","",0,"accounts-invoice.html",lst("Loaded, to bill","Loaded orders waiting for the Tally bill",O.filter(o=>st(o)==="loaded"),null,"accounts-invoice.html"))+
+        step(sumy?num(sumy.delivered&&sumy.delivered.count):"—","Delivered today","",0,"",sumy&&lst("Delivered today","Delivery reported today",delivered(t,t)))+"</div></div>",
         "Approval is late after "+APPROVAL_HOURS+" hours.");
       const chart=orders?card("📈 Sales — last 7 days","",'<div class="rd-bd">'+sevenDays(O)+"</div>"):"";
       // Salesman today: share of his daily target (month target ÷ days in month), else of the best seller.
@@ -340,12 +362,13 @@
       const tgt=companyTarget(team.targets),mv=sum(mo,o=>o.total_amount);
       const noOrder=acts?acts.filter(p=>!p.last_order_date||days(String(p.last_order_date).slice(0,10),t)>=5).length:null;
       const k=[
-        kpi("amber","Waiting for my approval",fmt(wait.length),wait.length?(late.length?'<span class="dn">'+late.length+" late</span> · ":"")+"oldest "+ago(oldest.created_at||oldest.order_date):"Nothing waiting","warehouse-orders.html"),
-        kpi("green","Team sales today",rs(sum(td,o=>o.total_amount)),fmt(sum(td,o=>o.total_qty))+" "+qWord()+" · "+fmt(td.length)+" orders","sales-tracking.html"),
+        kpi("amber","Waiting for my approval",fmt(wait.length),wait.length?(late.length?'<span class="dn">'+late.length+" late</span> · ":"")+"oldest "+ago(oldest.created_at||oldest.order_date):"Nothing waiting","warehouse-orders.html",orders&&lst("Waiting for my approval","Orders waiting for approval",wait,null,"warehouse-orders.html")),
+        kpi("green","Team sales today",rs(sum(td,o=>o.total_amount)),fmt(sum(td,o=>o.total_qty))+" "+qWord()+" · "+fmt(td.length)+" orders","sales-tracking.html",orders&&lst("Team sales today","Orders taken today",td,null,"sales-tracking.html")),
         profitKpi(PR,td.length,"teal"),
-        kpi("blue",new Date().toLocaleDateString("en-IN",{month:"long"})+" target",tgt?pct(mv,tgt)+"%":"Not set",lakh(mv)+(tgt?" of "+lakh(tgt):" sold"),"sales-tracking.html"),
-        kpi("violet","Driver to assign",fmt(O.filter(o=>st(o)==="approved").length),"Approved, no vehicle yet","warehouse-orders.html"),
-        kpi("red","No order 5+ days",noOrder==null?"—":fmt(noOrder),"parties · Call list","party-calls.html")];
+        kpi("blue",new Date().toLocaleDateString("en-IN",{month:"long"})+" target",tgt?pct(mv,tgt)+"%":"Not set",lakh(mv)+(tgt?" of "+lakh(tgt):" sold"),"sales-tracking.html",orders&&lst(new Date().toLocaleDateString("en-IN",{month:"long"})+" sales","Orders this month",mo,null,"sales-tracking.html")),
+        kpi("violet","Driver to assign",fmt(O.filter(o=>st(o)==="approved").length),"Approved, no vehicle yet","warehouse-orders.html",orders&&lst("Driver to assign","Approved, no vehicle yet",O.filter(o=>st(o)==="approved"),null,"warehouse-orders.html")),
+        kpi("red","No order 5+ days",noOrder==null?"—":fmt(noOrder),"parties · Call list","party-calls.html",acts&&lst("No order 5+ days","Parties with no order for 5 days or more",acts.filter(p=>!p.last_order_date||days(String(p.last_order_date).slice(0,10),t)>=5),
+          [{t:"Party",v:"customer_name"},{t:"City",v:"city"},{t:"Salesman",v:"salesman_name"},{t:"Last order",v:"last_order_date",date:true},{t:"Last PO",v:"last_order_no"},{t:"Orders 30 d",v:"orders_30d",num:true,dec:0}],"party-calls.html"))];
       const P={URGENT:0,HIGH:1};
       const q=wait.slice().sort((a,b)=>(P[a.priority]??2)-(P[b.priority]??2)||age(b)-age(a)).slice(0,8);
       const queue=orders&&card("✔️ PO Approval queue",go("warehouse-orders.html","Open all →"),q.length?'<div class="rd-scroll"><table><thead><tr><th>PO No.</th><th>Party</th><th class="hide-sm">Salesman</th><th class="n">Cases</th><th class="n">Amount ₹</th><th>Waiting</th></tr></thead><tbody>'+
@@ -363,7 +386,9 @@
         left+" day"+(left==1?"":"s")+" left"+(need?" · need "+lakh(need)+" per day to reach "+lakh(tgt):tgt&&mv>=tgt?" · target reached 🎉":"")):"";
       let delivery="";
       if(dl){const byId=new Map(O.map(o=>[o.id,o])),n=s=>dl.filter(r=>r.delivery_status===s).length,bad=dl.filter(r=>r.delivery_status==="NOT_DELIVERED").slice(0,4);
-        delivery=card("📦 Today's delivery","",'<div class="rd-bd"><div class="rd-flow rd-flow3">'+step('<span class="g">'+n("DELIVERED")+"</span>","Delivered")+step('<span class="a">'+n("PARTIAL")+"</span>","Part delivered")+step('<span class="r">'+n("NOT_DELIVERED")+"</span>","Not delivered")+"</div></div>"+
+        const dOf=s=>lst("Today's delivery · "+s.replace("_"," ").toLowerCase(),"Driver reports today",dl.filter(r=>r.delivery_status===s).map(r=>({...(byId.get(r.order_id)||{order_no:"PO"}),delivery_note:r.delivery_note,reported_at:r.reported_at})),
+          [{t:"PO No.",v:"order_no"},{t:"Party",v:"customer_name"},{t:"Cases",v:"total_qty",num:true,sum:true,dec:0},{t:"Amount",v:"total_amount",money:true,sum:true},{t:"Reported",v:r=>r.reported_at?new Date(r.reported_at).toLocaleTimeString("en-IN",{hour:"2-digit",minute:"2-digit"}):""},{t:"Note",v:"delivery_note"}]);
+        delivery=card("📦 Today's delivery","",'<div class="rd-bd"><div class="rd-flow rd-flow3">'+step('<span class="g">'+n("DELIVERED")+"</span>","Delivered","",0,"",dOf("DELIVERED"))+step('<span class="a">'+n("PARTIAL")+"</span>","Part delivered","",0,"",dOf("PARTIAL"))+step('<span class="r">'+n("NOT_DELIVERED")+"</span>","Not delivered","",0,"",dOf("NOT_DELIVERED"))+"</div></div>"+
           bad.map(r=>{const o=byId.get(r.order_id);return dot("red","<b>"+esc(o?o.order_no:"PO")+"</b> "+esc(o?o.customer_name:"")+(r.delivery_note?" — "+esc(r.delivery_note):""))}).join(""))}
       let skus="";
       const it=td.length?await itemsOf(td.map(o=>o.id)):[];
@@ -380,11 +405,12 @@
       const toBill=PI?(PI.raw.orders||[]).filter(o=>!o.invoice_no&&!OFF.includes(st(o))).sort((a,b)=>String(a.dispatch_date||"").localeCompare(String(b.dispatch_date||""))):null;
       const nb=toBill?toBill.length:tb?num(tb.cnt):null;
       const k=[
-        kpi("teal","Cash in Hand now",acc&&acc.closing_set?rs(acc.closing):"—",acc?(acc.opening_set?"Opening "+rs(acc.opening):"Set opening cash first"):"Accounts Dashboard","accounts-dashboard.html"),
-        kpi("green","Cash In today",A?rs(A.cashIn):"—",A?"UPI "+rs(A.upi)+" · Bank "+rs(A.bank)+(A.cheque?" · Cheque "+rs(A.cheque):""):"","accounts-dashboard.html"),
-        kpi("red","Cash Out today",A?rs(A.cashOut):"—",A?"Bank deposit "+rs(A.dep):"","accounts-dashboard.html"),
+        kpi("teal","Cash in Hand now",acc&&acc.closing_set?rs(acc.closing):"—",acc?(acc.opening_set?"Opening "+rs(acc.opening):"Set opening cash first"):"Accounts Dashboard","accounts-dashboard.html",acc&&lst("Today's cash book","All money entries today",acc.lines||[],ACOLS,"accounts-dashboard.html")),
+        kpi("green","Cash In today",A?rs(A.cashIn):"—",A?"UPI "+rs(A.upi)+" · Bank "+rs(A.bank)+(A.cheque?" · Cheque "+rs(A.cheque):""):"","accounts-dashboard.html",acc&&lst("Money In today","Cash, UPI, bank and cheque received today",(acc.lines||[]).filter(l=>l.kind==="IN"),ACOLS,"accounts-dashboard.html")),
+        kpi("red","Cash Out today",A?rs(A.cashOut):"—",A?"Bank deposit "+rs(A.dep):"","accounts-dashboard.html",acc&&lst("Money Out today","Expenses and bank deposits today",(acc.lines||[]).filter(l=>l.kind!=="IN"),ACOLS,"accounts-dashboard.html")),
         kpi("blue","With drivers",drv?rs(drv.amount):"₹0",drv?fmt(drv.cnt)+" to receive":"Nothing to receive",drv?drv.page:"driver-collections.html"),
-        kpi("amber","Bills to make",nb==null?"—":fmt(nb),"Loaded POs · Tally","party-billing.html")];
+        kpi("amber","Bills to make",nb==null?"—":fmt(nb),"Loaded POs · Tally","party-billing.html",toBill&&lst("Bills to make (Tally)","Loaded POs without a Tally bill, oldest first",toBill,
+          [{t:"PO No.",v:"order_no"},{t:"Party",v:"party"},{t:"Dispatch",v:"dispatch_date",date:true},{t:"ERP amount",v:"erp_amount",money:true,sum:true}],"party-billing.html"))];
       const ageBox=out?'<div class="rd-bd"><div class="rd-age"><div class="g">0–15 days<b>'+rs(out.age.a)+'</b></div><div class="b">16–30 days<b>'+rs(out.age.b)+'</b></div><div class="a">31–60 days<b>'+rs(out.age.c)+'</b></div><div class="r">60+ days<b>'+rs(out.age.d)+"</b></div></div></div>":"";
       const ost=out?card("💳 Outstanding to collect · "+rs(out.total),go("party-billing.html","Billing & Outstanding →"),ageBox+(out.parties.length?'<div class="rd-scroll"><table><thead><tr><th>Party</th><th class="n">Due ₹</th><th class="n">Oldest bill</th></tr></thead><tbody>'+
         out.parties.slice(0,8).map(p=>"<tr><td>"+esc(p.party)+'</td><td class="n">'+fmt(p.due)+'</td><td class="n">'+(p.oldest==null?"—":badge(p.oldest>60?"r":p.oldest>30?"a":"g",p.oldest+" days"))+"</td></tr>").join("")+"</tbody></table></div>":'<div class="rd-empty">✓ Nothing due.</div>'),"After advance; age counted from the Tally bill date."):"";
@@ -413,11 +439,14 @@
       const inside=gr?gr.filter(x=>x.kind==="VEHICLE"&&["ARRIVED","WORKING"].includes(x.vehicle_status)):null;
       const ret=queueItem(vq,"RETURN_RECEIVE"),loadingVeh=[...new Set(loading.map(vehNo))];
       const k=[
-        kpi("amber","To load today",fmt(toLoad.length)+" order"+(toLoad.length==1?"":"s"),fmt(sum(toLoad,o=>o.total_qty))+" "+qWord()+" · "+fmt(sum(toLoad,o=>o.total_weight))+" kg","loading-dispatch.html"),
-        kpi("blue","Loading now",fmt(loadingVeh.length)+" vehicle"+(loadingVeh.length==1?"":"s"),esc(loadingVeh.slice(0,3).join(" · "))||"No vehicle loading","loading-dispatch.html"),
-        kpi("teal","Vehicles at godown",inside?fmt(inside.length):"—",inside&&inside.length?esc(inside.slice(0,2).map(x=>x.vehicle_no).filter(Boolean).join(" · ")):"From Godown Report","godown-report.html"),
+        kpi("amber","To load today",fmt(toLoad.length)+" order"+(toLoad.length==1?"":"s"),fmt(sum(toLoad,o=>o.total_qty))+" "+qWord()+" · "+fmt(sum(toLoad,o=>o.total_weight))+" kg","loading-dispatch.html",orders&&lst("To load","Driver assigned, waiting for loading",toLoad.map(o=>({...o,vehicle:vehNo(o)})),
+          [{t:"PO No.",v:"order_no"},{t:"Party",v:"customer_name"},{t:"Vehicle",v:"vehicle"},{t:"Cases",v:"total_qty",num:true,sum:true,dec:0},{t:"Weight kg",v:"total_weight",num:true,sum:true,dec:0}],"loading-dispatch.html")),
+        kpi("blue","Loading now",fmt(loadingVeh.length)+" vehicle"+(loadingVeh.length==1?"":"s"),esc(loadingVeh.slice(0,3).join(" · "))||"No vehicle loading","loading-dispatch.html",orders&&lst("Loading now","Orders on the vehicle now",loading.map(o=>({...o,vehicle:vehNo(o)})),
+          [{t:"Vehicle",v:"vehicle"},{t:"PO No.",v:"order_no"},{t:"Party",v:"customer_name"},{t:"Cases",v:"total_qty",num:true,sum:true,dec:0},{t:"Weight kg",v:"total_weight",num:true,sum:true,dec:0}],"loading-dispatch.html")),
+        kpi("teal","Vehicles at godown",inside?fmt(inside.length):"—",inside&&inside.length?esc(inside.slice(0,2).map(x=>x.vehicle_no).filter(Boolean).join(" · ")):"From Godown Report","godown-report.html",inside&&lst("Vehicles at godown","Arrived / working today",inside,
+          [{t:"Vehicle",v:"vehicle_no"},{t:"Status",v:"vehicle_status"},{t:"Person",v:"person_name"},{t:"Note",v:"note"}],"godown-report.html")),
         kpi("red","Returns to receive",ret?fmt(ret.cnt):"0",ret&&num(ret.amount)?"Value "+rs(ret.amount):"From drivers","driver-returns.html"),
-        kpi("violet","Short stock SKUs",short?fmt(short.length):"—",short?(short.length?"Less than open orders":"All open orders covered"):"Stock not available","inventory.html")];
+        kpi("violet","Short stock SKUs",short?fmt(short.length):"—",short?(short.length?"Less than open orders":"All open orders covered"):"Stock not available","inventory.html",short&&lst("Short stock SKUs","Godown stock less than open orders",short,SCOLS,"inventory.html"))];
       const vm=new Map((veh||[]).map(v=>[String(v.vehicle_no||"").toUpperCase(),v])),g=new Map();
       for(const o of load){const n=vehNo(o),a=aOf.get(o.id);const x=g.get(n)||{n,driver:a&&a.driver_name||"",orders:[]};x.orders.push(o);g.set(n,x)}
       const vs=[...g.values()].map(x=>{const s=x.orders.map(st),state=s.includes("loading")?"Loading":s.every(v=>v==="loaded")?"Loaded":"Waiting";return {...x,state,cases:sum(x.orders,o=>o.total_qty),kg:sum(x.orders,o=>o.total_weight),cap:num((vm.get(x.n)||{}).capacity_kg),type:(vm.get(x.n)||{}).vehicle_type||""}})
@@ -463,8 +492,8 @@
       const waiting=L.filter(o=>WAIT.includes(s2(o))),appr=L.filter(o=>s2(o)==="approved"||s2(o)==="transport_allocated"),way=L.filter(o=>["loading","loaded","invoiced","dispatched"].includes(s2(o))&&!done(o)),week=Date.now()-7*864e5;
       const stage=o=>o.delivery_status==="DELIVERED"?badge("g","Delivered"):o.delivery_status==="PARTIAL"?badge("a","Part delivered"):o.delivery_status==="NOT_DELIVERED"?badge("r","Not delivered"):
         WAIT.includes(s2(o))?badge("a","Waiting"):s2(o)==="approved"?badge("b","Approved"):s2(o)==="transport_allocated"?badge("b","Driver assigned"):s2(o)==="loading"?badge("b","Loading"):badge("b","On the way");
-      const orders=mine?card("🧾 My orders",go("my-sales.html#orders","All →"),'<div class="rd-bd"><div class="rd-flow rd-flow4">'+step(waiting.length,"Waiting approval","",waiting.length>0,"my-sales.html#orders")+step(appr.length,"Approved")+step(way.length,"On the way")+
-        step('<span class="g">'+L.filter(o=>done(o)&&Date.parse(o.delivered_at)>=week).length+"</span>","Delivered (7 d)")+"</div></div>"+(L.length?"<table><tbody>"+L.slice(0,5).map(o=>'<tr><td><b class="rd-po">'+esc(o.order_no||"—")+"</b> "+esc(o.customer_name||"")+'</td><td class="n">'+stage(o)+"</td></tr>").join("")+"</tbody></table>":'<div class="rd-empty">No order in the last 45 days.</div>')):"";
+      const orders=mine?card("🧾 My orders",go("my-sales.html#orders","All →"),'<div class="rd-bd"><div class="rd-flow rd-flow4">'+step(waiting.length,"Waiting approval","",waiting.length>0,"my-sales.html#orders",lst("Waiting approval","My orders waiting for Sales Head",waiting))+step(appr.length,"Approved","",0,"",lst("Approved","My approved orders",appr))+step(way.length,"On the way","",0,"",lst("On the way","Loaded / dispatched, not delivered yet",way))+
+        step('<span class="g">'+L.filter(o=>done(o)&&Date.parse(o.delivered_at)>=week).length+"</span>","Delivered (7 d)","",0,"",lst("Delivered (7 days)","My orders delivered in the last 7 days",L.filter(o=>done(o)&&Date.parse(o.delivered_at)>=week)))+"</div></div>"+(L.length?"<table><tbody>"+L.slice(0,5).map(o=>'<tr><td><b class="rd-po">'+esc(o.order_no||"—")+"</b> "+esc(o.customer_name||"")+'</td><td class="n">'+stage(o)+"</td></tr>").join("")+"</tbody></table>":'<div class="rd-empty">No order in the last 45 days.</div>')):"";
       // To collect: outstanding of parties this salesman ordered for (45 days) or has in his plan.
       let coll="";
       if(Array.isArray(bills)){const mineP=new Set(M.map(o=>key(o.customer_name)).concat(pp.map(x=>key(x.name)))),g=new Map();
@@ -493,6 +522,7 @@
   }
   async function render(){
     const my=++seq;
+    LISTS=new Map();
     try{await brands();const html=await ROLES[ROLE]();if(my===seq)paint(html)}catch(e){console.error(e);if(my===seq&&!box.querySelector(".rd-card"))paint('<div class="rd-empty">Dashboard could not load. Tap refresh.</div>')}
   }
   window.LWBRoleDash={

@@ -8,6 +8,7 @@
   <script src="erp-date.js"></script>
   <link rel="stylesheet" href="erp-shell.css">
   <script src="erp-shell.js"></script>
+<script src="erp-list.js"></script>
   <script src="excel-io.js"></script>
   <script src="party-pay.js"></script>
   <style>
@@ -396,6 +397,15 @@
         kpi("Cash Out",'<span class="minus">'+rs(t.cashOut)+'</span>',"Expenses / payments in cash","#c8102e")+
         kpi("Bank deposit",'<span class="neutral">'+rs(t.dep)+'</span>',"Cash put in the bank","#1d5fbf")+
         kpi(handTitle,D.closing_set?rs(D.closing):"—",handSmall,"","hand");
+      // Count card → list of the entries behind it (erp-list.js)
+      if(window.ERPList){const kc=el("kpis").querySelectorAll(".acx-kpi"),dates=one?dmy(from):dmy(from)+" – "+dmy(to);
+        const LC=[{t:"Date",v:"date",date:true},{t:"Head",v:l=>l.category||(l.kind==="DEPOSIT"?"Bank deposit":l.kind==="WITHDRAW"?"Bank → Cash":"")},{t:"Party",v:"party"},{t:"Mode",v:l=>MODE_NAME[l.mode]||l.mode||""},
+          {t:"PO / Ref",v:l=>[l.order_no,l.ref].filter(Boolean).join(" · ")},{t:"Remark",v:"remark"},{t:"Amount",v:"amount",money:true,sum:true,dec:2}];
+        const L=(i,title,sub,f)=>kc[i]&&ERPList.card(kc[i],()=>({title,sub:sub+" · "+dates,rows:D.lines.filter(f),cols:LC}));
+        L(1,"Cash In","Cash received (and cash taken from bank)",l=>(l.kind==="IN"&&l.mode==="CASH")||l.kind==="WITHDRAW");
+        L(2,"Cash Out","Expenses / payments in cash",l=>l.kind==="OUT"&&l.mode==="CASH");
+        L(3,"Bank deposit","Cash put in the bank",l=>l.kind==="DEPOSIT");
+        L(4,handTitle,"Every entry that moved cash",l=>Math.abs(Number(l.cash)||0)>0.005)}
       // Party money of the dates in every mode (cash + UPI + bank + cheque); bills still to collect; cheques not yet in bank
       const coll=D.lines.filter(l=>l.kind==="IN"&&l.src!=="ENTRY"),cm={};coll.forEach(l=>{const m=l.mode==="RTGS"?"BANK":l.mode;cm[m]=(cm[m]||0)+Number(l.amount)});
       const collT=coll.reduce((a,l)=>a+Number(l.amount),0),other=t.allIn-collT;
@@ -406,6 +416,9 @@
           '<small>'+(other>0.5?"Other money in: "+rs(other)+" · ":"")+(t.pendIn?rs(t.pendIn)+" UPI / bank / cheque waiting Admin's bank check · ":"")+'All money out: '+rs(t.allOut)+'</small></div>'+
         '<div data-tab="out"><h4>📒 To collect (bills due)</h4><div class="v minus">'+(due==null?(piErr?"—":"…"):rs(due))+'</div><small>All parties, after advance · tap for list</small></div>'+
         '<div data-tab="cheques"><h4>🧾 Cheques not in bank</h4><div class="v">'+rs(sum(ch)+sum(cd))+'</div><small>In hand '+ch.length+' ('+rs(sum(ch))+') · deposited '+cd.length+' ('+rs(sum(cd))+')</small></div>';
+      if(window.ERPList){const first=el("strip").firstElementChild;
+        if(first)ERPList.card(first,()=>({title:"Party collection",sub:"All modes · "+(one?dmy(to):dmy(from)+" – "+dmy(to)),rows:coll,
+          cols:[{t:"Date",v:"date",date:true},{t:"Party",v:"party"},{t:"Mode",v:l=>MODE_NAME[l.mode]||l.mode},{t:"PO / Ref",v:l=>[l.order_no,l.ref].filter(Boolean).join(" · ")},{t:"Bank check",v:l=>l.status==="NA"?"":l.status},{t:"Amount",v:"amount",money:true,sum:true,dec:2}]}))}
     }
 
     function renderModes(){
