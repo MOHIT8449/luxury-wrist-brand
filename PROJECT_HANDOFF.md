@@ -454,3 +454,14 @@
 - `brand-filter.js` (`LWBBrand`): chips, choice kept in localStorage `lwbBrand`. Dashboard: chips for Admin / Sales Head (orders split by brand share), Brand-wise card (Admin, Sales Head, Accounts), brand-wise Sales Head sees only his brands' figures; Salesman "My brand targets".
 - Box / Case unit: `lwb_companies.pack_unit` (CASE / BOX; RAJNIGANDHA = BOX on first add) and `sku_master.pack_unit` (NULL = company's). `lwb_company_month` / `lwb_company_overview` return `cases` and `boxes` separately; `LWBBrand.unitOf` / `unitByName` / `qty`. Companies tab "Sells in", SKU Master Unit field / filter / Excel "Unit" column, PO Entry placeholder Boxes / Cases, dashboard qty words.
 - Tests: `tests/company-brand` (PGlite, 10 tests). Browser check used a mocked client whose queries ran this SQL on PGlite with RLS; no live data written.
+
+## Task Management (31 Oct 2026)
+
+- SQL: `lwb_task_management_setup.sql` (auto-applied on merge; check = 4 rows, all true). Tables `lwb_tasks` (one row per person; `batch_id` groups a task given to many) + `lwb_task_updates` (every status change / due change / note).
+- Chain (channel wise): 1 Admin > 2 Sales Head (MANAGER) > 3 Godown Manager (WAREHOUSE) > 4 Accounts > 5 Salesman / Driver / Transport (`lwb_task_rank`). A login gives tasks to his own level or below (self included); Admin to anyone. `lwb_task_people()` lists who he can pick.
+- RLS: a task is read by the person, the giver, Admin, and anyone senior to the person (Team view). Writes only through `lwb_task_add(p)` and `lwb_task_update(id, status, note, due)`.
+- Status OPEN → IN_PROGRESS → DONE (person or giver). Giver / Admin: OPEN again, CANCELLED, change due date. A senior in Team view can only write a note.
+- 🔔 TASK_NEW to the person; TASK_DONE / TASK_NOTE to the giver; TASK_REOPENED / TASK_CANCELLED / TASK_DUE_CHANGED / TASK_NOTE to the person. `lwb_task_due_bells()` (called when the Dashboard opens): TASK_DUE once a day for my tasks due today / overdue, TASK_OVERDUE once to the giver. Bells and phone push open `tasks.html?id=N` (from "TSK-N").
+- `tasks.html` (menu under Dashboard, every role): Give a Task (title, details, due date with Today / Tomorrow / 3 days / 1 week, Urgent, people grouped by role with Select all), tabs My tasks / Given by me / Team, status filter, notes thread.
+- Dashboard: "My Tasks" card for every role (pending, overdue first, + Give task, "Given by me: N pending · N late").
+- Tests: `tests/task-management` (PGlite, 9 tests). Browser preview with mocked Supabase only; no live tasks created.

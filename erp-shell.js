@@ -34,6 +34,7 @@
   // Same role lists as the dashboard cards and each page's own role check.
   const MENU=[
     {group:"",items:[{t:"Dashboard",h:"dashboard.html",i:"home",r:"*"},
+      {t:"Tasks",h:"tasks.html",i:"check",r:"*"},
       {t:"Complaint Box",h:"complaint-box.html",i:"chat",r:"*"}]},
     {group:"Sales",items:[
       {t:"PO / Sales Order Entry",h:"order-entry.html",i:"cart",r:"admin manager sales"},

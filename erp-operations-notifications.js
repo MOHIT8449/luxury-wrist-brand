@@ -46,6 +46,8 @@
   if(t==="MARKET_REPORT"||t==="MARKET_REVIEW"){const id=(m.match(/MKT-\d+/)||[])[0]||"";return {icon:t==="MARKET_REPORT"?"🚩":"✅",text:join([t==="MARKET_REPORT"?"Outside stock":title,id])}}
   if(t.startsWith("COMPLAINT_")){const id=(m.match(/CMP-\d+/)||[])[0]||"";
    return {icon:{COMPLAINT_NEW:"📮",COMPLAINT_RESOLVED:"✅",COMPLAINT_CLOSED:"✅"}[t]||"💬",text:join([title.replace(/^URGENT · /,"⚠ "),id])}}
+  if(t.startsWith("TASK_")){const id=(m.match(/TSK-\d+/)||[])[0]||"";
+   return {icon:{TASK_NEW:"📋",TASK_DONE:"✅",TASK_DUE:"⏰",TASK_OVERDUE:"⚠",TASK_CANCELLED:"✖",TASK_REOPENED:"↺"}[t]||"💬",text:join([title.replace(/^URGENT · /,"⚠ "),id])}}
   if(t.startsWith("ACC_"))return {icon:{ACC_BANK_VERIFY:"🏦",ACC_BANK_REJECTED:"❌",ACC_CASH_HANDOVER:"💵",ACC_CASH_RETURNED:"✅",ACC_CASH_DIFF:"⚠",ACC_CHEQUE_REMINDER:"🧾"}[t]||"₹",text:title||"Accounts"};
   if(t==="SALES_PLAN"){const n=(m.match(/from (\d+) part/)||[])[1];return {icon:"📋",text:join(["Today's plan",n?n+" parties due":"Sales Head note"])}}
   const short=m.length>60?m.slice(0,57)+"…":m;
@@ -79,6 +81,7 @@
   [/^ACC_/,["accounts-dashboard.html"]],
   [/^MARKET_/,["market-report.html"]],
   [/^COMPLAINT_/,["complaint-box.html?id={c}"]],
+  [/^TASK_/,["tasks.html?id={t}"]],
   [/^SALES_PLAN$/,["my-sales.html","sales-team.html"]],
   [/^ORDER_/,["my-sales.html#orders","warehouse-orders.html","driver-delivery.html?order={o}","loading-dispatch.html"]]
  ];
@@ -89,6 +92,8 @@
   const href=(pages&&pages.length?hit[1].find(h=>pages.includes(base(h))):hit[1][0])||"";
   // {c} = complaint no. from "CMP-12" in the message.
   if(href.includes("{c}")){const c=(String(n.message||"").match(/CMP-(\d+)/)||[])[1];return c?href.replace("{c}",c):href.split("?")[0]}
+  // {t} = task no. from "TSK-12" in the message.
+  if(href.includes("{t}")){const c=(String(n.message||"").match(/TSK-(\d+)/)||[])[1];return c?href.replace("{t}",c):href.split("?")[0]}
   return n.order_id?href.replace("{o}",encodeURIComponent(n.order_id)):href.split("?")[0];
  }
  // Quiet notifications: updates stay in the bell; no automatic dialogs interrupt entry.

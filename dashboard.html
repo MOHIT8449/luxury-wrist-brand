@@ -96,6 +96,22 @@
         .bn-preview figcaption{display:flex;justify-content:space-between;gap:8px;padding:6px 10px;font-size:12px;color:var(--erp-muted);background:#fafaf7}
     .bn-preview figcaption .warn{color:var(--erp-amber)}
     @media(max-width:760px){.bn-pic img{max-height:240px}.bn-nav{display:none}.bn-cap{padding:7px 10px;font-size:12px}.bn-cap small{display:block;margin:2px 0 0}}
+    /* My Tasks (tasks.html, lwb_task_management_setup.sql) */
+    .tk-dash{margin:0 0 16px;background:#fff;border:1px solid var(--erp-line);border-radius:10px;overflow:hidden}
+    .tk-dash-h{display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid var(--erp-line);flex-wrap:wrap}
+    .tk-dash-h b{font-size:15px}.tk-dash-h small{color:var(--erp-muted);font-size:12.5px}
+    .tk-dash-h .grow{flex:1}
+    .tk-dash-h a{font-size:13px;font-weight:600;color:var(--erp-red);text-decoration:none;white-space:nowrap}
+    .tk-dash-h a.give{background:var(--erp-red);color:#fff;border-radius:6px;padding:6px 11px}
+    .tk-dash-row{display:flex;align-items:center;gap:10px;padding:9px 14px;border-bottom:1px solid #f0f2f0;text-decoration:none;color:var(--erp-ink)}
+    .tk-dash-row:last-child{border-bottom:0}
+    .tk-dash-row:hover{background:var(--erp-red-soft)}
+    .tk-dash-row .tx{flex:1;min-width:0}
+    .tk-dash-row .tx b{display:block;font-size:14px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .tk-dash-row .tx small{display:block;color:var(--erp-muted);font-size:12px}
+    .tk-dash-row.late{box-shadow:inset 3px 0 0 var(--erp-danger,#c62828)}
+    .tk-dash-row.today{box-shadow:inset 3px 0 0 var(--erp-amber)}
+    .tk-dash-none{padding:10px 14px;color:var(--erp-muted);font-size:13px}
     [hidden]{display:none!important}
     @media(max-width:1100px){.dash-grid{grid-template-columns:1fr}.side-col{display:contents}#verifyCard{order:-1}}
     @media(max-width:980px){.hero{margin:-14px -12px 0;padding:18px 12px 60px}.hero h2{font-size:18px}
@@ -166,6 +182,7 @@
       <div class="bn-file"><label for="focusImg">+ Banner photo</label><input type="file" id="focusImg" accept="image/jpeg,image/png,image/webp"><span id="focusImgHint">Width 1600 px, height 300–400 px. It fills the full width at the photo's own height. Message is optional with a photo.</span></div>
       <figure class="bn-preview" id="focusPreview" hidden><div class="bn-pic" id="focusPreviewPic"><img id="focusPreviewImg" alt="Banner preview"></div><figcaption><span>This is how everyone will see it</span><span id="focusPreviewInfo"></span></figcaption></figure>
     </form>
+    <section class="tk-dash" id="taskCard" hidden></section>
     <div id="roleDash" hidden></div>
 
     <div class="erp-pagehead">
@@ -258,6 +275,46 @@
       const {data,error}=await client.rpc("lwb_party_call_due_count");
       if(error||!data)return null;
       return {item:"PARTY_CALL",label:"Call parties: no order in time",cnt:data,amount:0,page:"party-calls.html"};
+    }
+    // My Tasks (lwb_task_management_setup.sql): pending tasks given to me, and how my given tasks stand.
+    // lwb_task_due_bells makes today's "due / overdue" bells once a day.
+    let taskUid="";
+    async function loadTasks(){
+      const card=document.getElementById("taskCard");
+      if(ERPShell.hiddenPages().includes("tasks.html")){card.hidden=true;return}
+      const [mine,given]=await Promise.all([
+        client.from("lwb_tasks").select("id,title,due_date,priority,status,assigned_by_name").eq("assigned_to",taskUid).in("status",["OPEN","IN_PROGRESS"]).order("due_date").limit(50),
+        client.from("lwb_tasks").select("id,due_date,status").eq("assigned_by",taskUid).neq("assigned_to",taskUid).in("status",["OPEN","IN_PROGRESS"]).limit(1000)]);
+      if(mine.error){card.hidden=true;return}
+      const today=new Date().toLocaleDateString("en-CA",{timeZone:"Asia/Kolkata"});
+      const late=x=>Math.round((Date.parse(today)-Date.parse(x.due_date))/864e5);
+      const rows=(mine.data||[]).sort((a,b)=>a.due_date<b.due_date?-1:a.due_date>b.due_date?1:(b.priority==="URGENT")-(a.priority==="URGENT"));
+      const g=given.error?[]:given.data||[],gLate=g.filter(x=>late(x)>0).length;
+      card.replaceChildren();
+      const h=document.createElement("div");h.className="tk-dash-h";
+      const t=document.createElement("b");t.textContent="📋 My Tasks";
+      const s=document.createElement("small");s.textContent=rows.length?rows.length+" pending":"";
+      const grow=document.createElement("span");grow.className="grow";
+      h.append(t,s,grow);
+      if(g.length){const a=document.createElement("a");a.href="tasks.html";a.textContent="Given by me: "+g.length+" pending"+(gLate?" · "+gLate+" late":"");if(gLate)a.style.color="var(--erp-danger,#c62828)";h.append(a)}
+      const give=document.createElement("a");give.className="give";give.href="tasks.html?new=1";give.textContent="+ Give task";h.append(give);
+      card.append(h);
+      if(!rows.length){const n=document.createElement("div");n.className="tk-dash-none";n.textContent="✓ No pending task for you.";card.append(n)}
+      rows.slice(0,5).forEach(x=>{
+        const d=late(x),a=document.createElement("a");a.className="tk-dash-row"+(d>0?" late":d===0?" today":"");a.href="tasks.html?id="+x.id;
+        const tx=document.createElement("span");tx.className="tx";
+        const b=document.createElement("b");b.textContent=x.title;
+        const sm=document.createElement("small");sm.textContent="TSK-"+x.id+(x.assigned_by_name?" · from "+x.assigned_by_name:"")+(x.status==="IN_PROGRESS"?" · started":"");
+        tx.append(b,sm);
+        const badge=document.createElement("span");
+        badge.className="erp-badge"+(d>0?" red":d===0?" amber":"");
+        badge.textContent=d>0?"Overdue "+d+(d===1?" day":" days"):d===0?"Due today":d===-1?"Tomorrow":LWBDate.d(x.due_date);
+        a.append(tx);
+        if(x.priority==="URGENT"){const u=document.createElement("span");u.className="erp-badge red";u.textContent="Urgent";a.append(u)}
+        a.append(badge);card.append(a);
+      });
+      if(rows.length>5){const a=document.createElement("a");a.className="tk-dash-row";a.href="tasks.html";a.textContent="See all "+rows.length+" tasks →";card.append(a)}
+      card.hidden=false;
     }
     const STATUS={
       pending_approval:["Pending Approval","amber","warehouse-orders.html"],approved:["Approved","blue","warehouse-orders.html"],
@@ -521,7 +578,7 @@
       document.getElementById("focus").addEventListener("click",onRemove);
       document.getElementById("banners").addEventListener("click",onRemove);
     }
-    document.getElementById("refreshBtn").onclick=()=>{loadSummary();loadFocus();loadVerify();if(window.LWBRoleDash)LWBRoleDash.refresh()};
+    document.getElementById("refreshBtn").onclick=()=>{loadSummary();loadFocus();loadVerify();loadTasks();if(window.LWBRoleDash)LWBRoleDash.refresh()};
     // Role-wise home (role-dashboard.js): Admin, Sales Head, Accounts, Godown Manager, Salesman.
     // Driver / Transport keep the order-status Dashboard below. Admin can look at another role's view.
     const ROLE_NOTE={admin:"Whole business at one place: sales, money, stock, team.",manager:"PO approval, team target, delivery follow-up.",
@@ -628,6 +685,9 @@
         loadSummary();
         loadVerify();setInterval(()=>{if(!document.hidden)loadVerify()},60000);
         loadFocus();focusSetup();
+        taskUid=user.id;
+        client.rpc("lwb_task_due_bells").then(()=>{},()=>{});
+        loadTasks();setInterval(()=>{if(!document.hidden)loadTasks()},60000);
 
         document.getElementById("loading").style.display =
           "none";
