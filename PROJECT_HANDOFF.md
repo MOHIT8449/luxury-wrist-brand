@@ -4,6 +4,12 @@
 **Purpose:** Continue the same ERP project from a new ChatGPT conversation without restarting or losing the agreed requirements.
 **Status:** Active development / verification. Do not assume all modules are completed or fully tested.
 
+## MRP-based purchase bills: Rajnigandha (31 Oct 2026)
+
+- Pan masala / tobacco purchase bills charge GST on the **Deemed Taxable Value = Total MRP ÷ (1 + GST%)** (rounded to the rupee), and **Line Total = Net Sale + GST**. Checked on DS Group bill 322HA21087 (total ₹11,11,014.00 before ₹0.02 round off).
+- `lwb_companies.purchase_billing` TAXABLE / MRP (Rajnigandha set to MRP; editable in Companies > master). Supplier Master has Company / Brand (`lwb_supplier_master.company_id`): Goods Inward then offers only that brand's SKUs.
+- Goods Inward MRP lines: Net Sale, MRP per box (remembered in `sku_master.mrp_per_case`), Deemed Value (fills itself, can be typed). Saved through `lwb_post_goods_inward_mrp` (`lwb_purchase_mrp_billing_setup.sql`), which calls the live `lwb_post_goods_inward` and then writes `billing_mode, net_amount, mrp_amount, mrp_per_case, deemed_value` and `total_amount = net + GST` on the lines. Normal bills still call `lwb_post_goods_inward` directly. Test: `tests/purchase-mrp`.
+
 ## Count cards open their list (31 Oct 2026)
 
 - Mohit asked: every card that shows a total number must open the list of the records behind it.

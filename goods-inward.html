@@ -47,7 +47,7 @@ html,body{max-width:100%;overflow-x:hidden}main,.panel,.form-grid,.field{min-wid
 .gi-table th{font-size:12.5px;padding:10px 8px;white-space:nowrap;text-align:left}
 .gi-table th.num{text-align:right}
 .gi-table th:nth-child(1){width:38px}.gi-table th:nth-child(2){width:auto}.gi-table th:nth-child(3){width:78px}
-.gi-table th:nth-child(4),.gi-table th:nth-child(5){width:92px}.gi-table th:nth-child(6){width:132px}
+.gi-table th:nth-child(4),.gi-table th:nth-child(5){width:92px}.gi-table th:nth-child(6){width:220px}
 .gi-table th:nth-child(7){width:70px}.gi-table th:nth-child(8){width:110px}.gi-table th:nth-child(9){width:124px}.gi-table th:nth-child(10){width:96px}
 .gi-table td{padding:8px;vertical-align:top;font-size:13.5px}
 .gi-table td.num{text-align:right;padding-top:17px;white-space:nowrap}
@@ -85,6 +85,10 @@ html,body{max-width:100%;overflow-x:hidden}main,.panel,.form-grid,.field{min-wid
 .dmg-table td input{width:70px;height:32px;border:1px solid #cbd5e1;border-radius:5px;padding:0 6px;text-align:right;font:inherit}
 #dmgNote{width:100%;height:36px;border:1px solid #cbd5e1;border-radius:6px;padding:0 9px;font:inherit;font-size:14px}
 @media(max-width:700px){.dmg-wrap-scroll{overflow:auto}.dmg-head select{min-width:0;width:100%}}
+.gi-mrp{display:grid;gap:4px}.gi-mrp[hidden],.gi-table input[hidden]{display:none}.gi-mrp label{display:flex;align-items:center;gap:6px;font-size:11px;color:#6b7785;font-weight:600;white-space:nowrap}
+.gi-mrp label span{width:52px;flex:none}.gi-mrp input{text-align:right}.gi-mrp .deemed[data-manual="1"]{background:#fff8e6}
+.gi-mode{display:table;margin:3px 0 0 auto;font-size:10.5px;font-weight:700;border-radius:4px;padding:1px 5px;background:#fff1d6;color:#8a5300;vertical-align:1px}
+@media(max-width:900px){.gi-table td.amountCell{grid-column:1/-1}.gi-mrp{grid-template-columns:repeat(3,minmax(0,1fr))}.gi-mrp label{display:block}.gi-mrp label span{display:block;width:auto;margin-bottom:2px}.gi-mode{display:inline-block;margin:0 0 0 4px}}
 main{margin:14px auto}.panel{padding:14px 16px;margin-bottom:12px}
 .panel h2{font-size:18px}.sectionhead{margin-bottom:10px}.sectionhead .sub{margin:2px 0 0!important;font-size:13px}
 .form-grid{grid-template-columns:repeat(6,minmax(0,1fr));gap:8px 12px}
@@ -126,16 +130,16 @@ main{margin:14px auto}.panel{padding:14px 16px;margin-bottom:12px}
   </section>
 
   <section class="panel">
-    <div class="sectionhead"><div><h2>Material / SKU Details</h2><p class="sub" style="margin:5px 0 0">Enter Cases, Loose PCS and Taxable Amount as on the supplier bill. GST % comes from SKU Master; GST and Total calculate automatically.</p></div><button id="add" type="button">+ Add SKU</button></div>
+    <div class="sectionhead"><div><h2>Material / SKU Details</h2><p class="sub" style="margin:5px 0 0">Enter Cases / Boxes, Loose PCS and the amount as on the supplier bill. Normal bill: Taxable Amount. MRP bill (Rajnigandha, cigarettes): Net Sale + MRP; Deemed Taxable Value fills itself (MRP ÷ (1 + GST%)) and can be changed. GST % comes from SKU Master; GST and Total calculate automatically.</p></div><button id="add" type="button">+ Add SKU</button></div>
     <div class="gi-wrap"><table class="gi-table" aria-label="Goods Inward SKU lines">
-      <thead><tr><th>#</th><th>SKU / Product</th><th class="num">PCS/Case</th><th class="num">Cases</th><th class="num">Loose PCS</th><th class="num">Taxable ₹</th><th class="num">GST %</th><th class="num">GST ₹</th><th class="num">Total ₹</th><th>Action</th></tr></thead>
+      <thead><tr><th>#</th><th>SKU / Product</th><th class="num">PCS/Unit</th><th class="num">Cs / Box</th><th class="num">Loose PCS</th><th class="num">Amount ₹</th><th class="num">GST %</th><th class="num">GST ₹</th><th class="num">Total ₹</th><th>Action</th></tr></thead>
       <tbody id="itemsBody"></tbody>
     </table></div>
     <div class="gi-tax" id="taxLine">GST type: select Supplier</div>
     <div class="statrow">
       <div class="stat"><span>Total SKU Lines</span><strong id="totalSku">0</strong></div>
       <div class="stat"><span>Total Quantity</span><strong id="totalPcs">0 PCS</strong></div>
-      <div class="stat"><span>Taxable Amount</span><strong id="totalTaxable" class="money">₹0.00</strong></div>
+      <div class="stat"><span id="taxableLabel">Taxable Amount</span><strong id="totalTaxable" class="money">₹0.00</strong></div>
       <div class="stat"><span>GST Amount (Auto)</span><strong id="totalGst" class="money">₹0.00</strong></div>
       <div class="stat"><span>Total Amount (Auto)</span><strong id="totalAmount" class="money">₹0.00</strong></div>
     </div>
@@ -156,7 +160,7 @@ main{margin:14px auto}.panel{padding:14px 16px;margin-bottom:12px}
 'use strict';
 const SUPABASE_URL='https://txkbhadzdbxpieunfvox.supabase.co';
 const $ = id => document.getElementById(id);
-let db=null,profile=null,skus=[],suppliers=[],transports=[],stock=[],busy=false,lineId=0;
+let db=null,profile=null,skus=[],suppliers=[],companies=[],transports=[],stock=[],busy=false,lineId=0;
 let transportSelectedId='',transportMasterReady=false,addingTransport=false;
 const skuSearchControls=new WeakMap();
 const format=n=>Number(n).toLocaleString('en-IN');
@@ -229,16 +233,21 @@ function itemRow(){
       <select class="sku" hidden aria-hidden="true"><option value="">No SKU selected</option></select>
       <div class="gi-conv"><span class="converted">—</span> · <span class="total">—</span> PCS</div>
     </td>
-    <td data-label="PCS/Case" class="num pack">—</td>
-    <td data-label="Cases"><input class="cases" type="number" inputmode="numeric" min="0" step="1" value="0" aria-label="Cases"></td>
+    <td data-label="PCS/Unit" class="num pack">—</td>
+    <td data-label="Cases / Boxes" class="unitCell"><input class="cases" type="number" inputmode="numeric" min="0" step="1" value="0" aria-label="Cases or Boxes"></td>
     <td data-label="Loose PCS"><input class="pcs" type="number" inputmode="numeric" min="0" step="1" value="0" aria-label="Loose Pieces"></td>
-    <td data-label="Taxable ₹"><input class="taxable" type="text" inputmode="decimal" autocomplete="off" placeholder="0.00" aria-label="Taxable Amount from Invoice"></td>
+    <td data-label="Amount ₹" class="amountCell"><input class="taxable" type="text" inputmode="decimal" autocomplete="off" placeholder="Taxable 0.00" aria-label="Taxable Amount from Invoice">
+      <div class="gi-mrp" hidden>
+        <label><span>Net Sale</span><input class="net" type="text" inputmode="decimal" autocomplete="off" placeholder="0.00" aria-label="Net Sale amount from Invoice"></label>
+        <label><span class="mrpLabel">MRP/Box</span><input class="mrpCase" type="text" inputmode="decimal" autocomplete="off" placeholder="0.00" aria-label="MRP of one case or box"></label>
+        <label><span title="Deemed Taxable Value = Total MRP ÷ (1 + GST%). Fills itself; type to change.">Deemed</span><input class="deemed" type="text" inputmode="decimal" autocomplete="off" placeholder="auto" aria-label="Deemed Taxable Value"></label>
+      </div></td>
     <td data-label="GST %" class="num gstRate">—</td>
     <td data-label="GST ₹" class="num gstValue">—</td>
     <td data-label="Total ₹" class="num gross">—</td>
     <td data-label=""><button type="button" class="danger remove">Remove</button></td>`;
   const hidden=card.querySelector('.sku'),search=card.querySelector('.skuSearch'),results=card.querySelector('.skuResults');
-  const combo=makeSearch(search,results,()=>skus.map(s=>({id:s.id,label:s.sku_name})),o=>{hidden.value=o.id;recalc();card.querySelector('.cases').focus();card.querySelector('.cases').select();});
+  const combo=makeSearch(search,results,()=>supplierSkus().map(s=>({id:s.id,label:s.sku_name})),o=>{hidden.value=o.id;fillMrp(card,true);recalc();card.querySelector('.cases').focus();card.querySelector('.cases').select();});
   skuSearchControls.set(card,combo);
   search.addEventListener('input',()=>{
     const chosen=skus.find(s=>s.id===hidden.value);
@@ -247,9 +256,11 @@ function itemRow(){
   card.querySelector('.remove').addEventListener('click',()=>{
     card.remove();if(!$('itemsBody').children.length)itemRow();recalc();
   });
-  for(const input of card.querySelectorAll('.cases,.pcs,.taxable'))input.addEventListener('input',recalc);
-  // Enter on Taxable Amount of the last line adds the next SKU line, like Sales Order entry.
-  card.querySelector('.taxable').addEventListener('keydown',e=>{
+  for(const input of card.querySelectorAll('.cases,.pcs,.taxable,.net,.mrpCase'))input.addEventListener('input',recalc);
+  // Deemed value fills itself from MRP until typed; clearing it makes it automatic again.
+  card.querySelector('.deemed').addEventListener('input',e=>{e.target.dataset.manual=e.target.value.trim()?'1':'';recalc();});
+  // Enter on the last amount box of the last line adds the next SKU line, like Sales Order entry.
+  for(const last of card.querySelectorAll('.taxable,.deemed'))last.addEventListener('keydown',e=>{
     if(e.key==='Enter'&&card===$('itemsBody').lastElementChild){e.preventDefault();itemRow();$('itemsBody').lastElementChild.querySelector('.skuSearch').focus();}
   });
   $('itemsBody').appendChild(card);populateSkuSelect(hidden);recalc();
@@ -270,6 +281,23 @@ function calculateGST(taxablePaise,rateBasisPoints,mode){
   const result=mode==='intrastate' ? 2n*((t*r+10000n)/20000n) : (t*r+5000n)/10000n;
   return result<=BigInt(Number.MAX_SAFE_INTEGER)?Number(result):null;
 }
+// Company / brand of an SKU and its purchase bill type (lwb_company_brand_setup.sql).
+const companyOf=sku=>companies.find(c=>c.id===sku?.company_id)||null;
+const billingOf=sku=>companyOf(sku)?.purchase_billing==='MRP'?'MRP':'TAXABLE';
+const unitOf=sku=>(sku?.pack_unit||companyOf(sku)?.pack_unit)==='BOX'?'BOX':'CASE';
+const pickedSupplier=()=>suppliers.find(s=>s.id===$('supplier').value)||null;
+// A supplier tied to a company only offers that company's SKUs.
+function supplierSkus(){const c=pickedSupplier()?.company_id;return c?skus.filter(s=>s.company_id===c):skus;}
+function fillMrp(tr,force){
+  const sku=skus.find(s=>s.id===tr.querySelector('.sku')?.value),inp=tr.querySelector('.mrpCase');
+  if(sku&&Number(sku.mrp_per_case)>0&&(force||!inp.value.trim()))inp.value=Number(sku.mrp_per_case).toFixed(2);
+}
+// Deemed Taxable Value = Total MRP / (1 + GST%), rounded to the rupee as on DS Group bills. Paise in, paise out.
+function deemedFromMrp(mrpPaise,rateBasisPoints){
+  if(!Number.isSafeInteger(mrpPaise)||mrpPaise<=0||!Number.isInteger(rateBasisPoints))return null;
+  const d=BigInt(10000+rateBasisPoints),rupee=(BigInt(mrpPaise)*100n+d/2n)/d;
+  return Number(rupee)*100;
+}
 function readRows(){
   const rows=[];
   for(const tr of $('itemsBody').children){
@@ -279,22 +307,40 @@ function readRows(){
     const cases=whole?Number(casesText):NaN,pcs=whole?Number(pcsText):NaN;
     const pack=Number(sku?.pcs_per_case)||0;
     const normalized=sku?normalize(cases,pcs,pack):null;
-    const taxable=moneyPaise(tr.querySelector('.taxable')?.value);
+    const mode=billingOf(sku),unit=unitOf(sku),mrpMode=mode==='MRP';
+    tr.querySelector('.taxable').hidden=mrpMode;tr.querySelector('.gi-mrp').hidden=!mrpMode;
+    tr.querySelector('.unitCell').dataset.label=sku?(unit==='BOX'?'Boxes':'Cases'):'Cases / Boxes';
+    tr.querySelector('.mrpLabel').textContent=unit==='BOX'?'MRP/Box':'MRP/Case';
     const rawRate=sku?.gst_rate;
     const gstRate=rawRate===null||rawRate===undefined||rawRate===''?null:Number(rawRate);
     const rateValid=gstRate!==null&&Number.isFinite(gstRate)&&gstRate>=0&&gstRate<=100&&Number.isInteger(Math.round(gstRate*100))&&Math.abs(gstRate*100-Math.round(gstRate*100))<1e-7;
     const cess=sku?.cess_rate===null||sku?.cess_rate===undefined||sku?.cess_rate===''?0:Number(sku.cess_rate);
     const cessOkay=Number.isFinite(cess)&&cess===0;
+    let taxable=null,net=null,mrpCase=null,mrpTotal=null,deemed=null;
+    if(mrpMode){
+      net=moneyPaise(tr.querySelector('.net').value);mrpCase=moneyPaise(tr.querySelector('.mrpCase').value);
+      // Total MRP of the line: MRP per box x boxes + loose pieces at MRP per box / pieces per box.
+      if(mrpCase!==null&&normalized)mrpTotal=Math.round(mrpCase*normalized.total/pack);
+      const deemedInput=tr.querySelector('.deemed');
+      if(deemedInput.dataset.manual!=='1'){
+        const auto=rateValid&&mrpTotal?deemedFromMrp(mrpTotal,Math.round(gstRate*100)):null;
+        deemedInput.value=auto!==null?paiseText(auto):'';
+      }
+      deemed=moneyPaise(deemedInput.value);taxable=deemed;
+    }else taxable=moneyPaise(tr.querySelector('.taxable')?.value);
     const gst=taxable!==null&&rateValid?calculateGST(taxable,Math.round(gstRate*100),$('taxMode').value):null;
-    const gross=gst!==null&&Number.isSafeInteger(taxable+gst)?taxable+gst:null;
-    const amountsOkay=taxable!==null&&gst!==null&&gross!==null&&cessOkay;
+    const base=mrpMode?net:taxable;
+    const gross=gst!==null&&base!==null&&Number.isSafeInteger(base+gst)?base+gst:null;
+    const amountsOkay=taxable!==null&&gst!==null&&gross!==null&&cessOkay&&(!mrpMode||(net>0&&deemed>0));
     tr.querySelector('.pack').textContent=pack?format(pack):'—';
-    tr.querySelector('.converted').textContent=normalized?`${format(normalized.cases)} CS + ${format(normalized.pcs)} PCS`:'Enter quantity';
+    tr.querySelector('.converted').textContent=normalized?`${format(normalized.cases)} ${unit==='BOX'?'BOX':'CS'} + ${format(normalized.pcs)} PCS`:'Enter quantity';
     tr.querySelector('.total').textContent=normalized?format(normalized.total):'—';
     tr.querySelector('.gstRate').textContent=rateValid?gstRate.toFixed(2)+'%':sku?'Set in SKU Master':'—';
+    if(mrpMode&&rateValid){const m=document.createElement('span');m.className='gi-mode';m.textContent='MRP';m.title='GST on Deemed Taxable Value; Total = Net Sale + GST';tr.querySelector('.gstRate').appendChild(m);}
+    const supCo=pickedSupplier()?.company_id,otherBrand=!!(sku&&supCo&&sku.company_id!==supCo);
     tr.querySelector('.gstValue').textContent=gst!==null?rupees(gst/100):'—';
     tr.querySelector('.gross').textContent=gross!==null?rupees(gross/100):'—';
-    rows.push({sku,cases,pcs,pack,normalized,taxable,gst,gross,rateValid,cessOkay,amountsOkay});
+    rows.push({sku,cases,pcs,pack,normalized,taxable,gst,gross,rateValid,cessOkay,amountsOkay,mode,unit,net,mrpCase,mrpTotal,deemed,otherBrand});
   }
   return rows;
 }
@@ -307,6 +353,7 @@ function recalc(){
   const sumGross=validRows.reduce((a,r)=>a+(r.gross||0),0);
   $('totalSku').textContent=format(count);$('totalPcs').textContent=format(allPcs)+' PCS';
   $('totalTaxable').textContent=rupees(sumTaxable/100);
+  $('taxableLabel').textContent=rows.some(r=>r.sku&&r.mode==='MRP')?(rows.some(r=>r.sku&&r.mode!=='MRP')?'Taxable + Deemed Value':'Deemed Taxable Value'):'Taxable Amount';
   $('totalGst').textContent=rupees(sumGst/100);
   $('totalAmount').textContent=rupees(sumGross/100);
   const rolesOkay=profile?.active===true&&['admin','manager'].includes(profile.role);
@@ -317,8 +364,9 @@ function recalc(){
   const transportOkay=!$('transport').value.trim() || transports.some(t=>t.id===transportSelectedId&&t.transport_name===$('transport').value);
   const everyValid=rows.length>0&&rows.every(r=>r.sku&&r.normalized!==null&&r.amountsOkay);
   const unique=new Set(rows.map(r=>r.sku?.id)).size===rows.length;
-  $('save').disabled=busy||!rolesOkay||!detailsValid||!driverNameOkay||!driverMobileOkay||!transportOkay||!everyValid||!unique;
-  $('hint').textContent=busy?'Saving all SKU lines together...':!rolesOkay?'Only active admin or manager can save.':!unique?'Duplicate SKU: combine quantities in one line.':!detailsValid?'Choose Supplier from Master, and fill Invoice No. and both dates.':!driverNameOkay?'Enter Driver Name.':!driverMobileOkay?'Enter a valid 10-digit Indian Driver Mobile Number (optional +91).':!transportOkay?'Transport not selected from Master: choose result or click + Save New.':rows.some(r=>r.sku&&!r.rateValid)?'GST Rate missing in SKU Master. Edit that SKU and enter GST % before saving.':rows.some(r=>r.sku&&!r.cessOkay)?'Nonzero Cess found in SKU Master. This version calculates GST only; cannot save until tax treatment is configured.':!everyValid?'Select SKU, enter positive quantity and Taxable Amount on EVERY line. GST and Total auto-calculate.':'Ready to save. Verify calculated Invoice Total against the supplier invoice and physical quantities.';
+  const brandOkay=!rows.some(r=>r.otherBrand);
+  $('save').disabled=busy||!rolesOkay||!detailsValid||!driverNameOkay||!driverMobileOkay||!transportOkay||!everyValid||!unique||!brandOkay;
+  $('hint').textContent=busy?'Saving all SKU lines together...':!rolesOkay?'Only active admin or manager can save.':!unique?'Duplicate SKU: combine quantities in one line.':!detailsValid?'Choose Supplier from Master, and fill Invoice No. and both dates.':!driverNameOkay?'Enter Driver Name.':!driverMobileOkay?'Enter a valid 10-digit Indian Driver Mobile Number (optional +91).':!transportOkay?'Transport not selected from Master: choose result or click + Save New.':!brandOkay?'An SKU line is not of this supplier\'s company. Remove it or choose the right supplier.':rows.some(r=>r.sku&&!r.rateValid)?'GST Rate missing in SKU Master. Edit that SKU and enter GST % before saving.':rows.some(r=>r.sku&&!r.cessOkay)?'Nonzero Cess found in SKU Master. This version calculates GST only; cannot save until tax treatment is configured.':!everyValid?(rows.some(r=>r.sku&&r.mode==='MRP')?'Select SKU and enter quantity on EVERY line: Taxable Amount, or for MRP bills Net Sale and MRP (Deemed Value fills itself). GST and Total auto-calculate.':'Select SKU, enter positive quantity and Taxable Amount on EVERY line. GST and Total auto-calculate.'):'Ready to save. Verify calculated Invoice Total against the supplier invoice and physical quantities.';
   let i=0;for(const card of $('itemsBody').children)card.querySelector('.line-number').textContent=String(++i);
   syncDamage(rows);
 }
@@ -374,12 +422,18 @@ async function start(key){
 async function loadData(){
   if(!db)return;
   try{
-    const [skuRes,supplierRes,stockRes,transportRes]=await Promise.all([
-      db.from('sku_master').select('id,sku_name,pcs_per_case,gst_rate,cess_rate,is_active').eq('is_active',true).order('sku_name'),
-      db.from('lwb_supplier_master').select('id,supplier_code,supplier_name,gstin,city,is_active').eq('is_active',true).order('supplier_name'),
+    // Brand columns come from lwb_company_brand_setup.sql / lwb_purchase_mrp_billing_setup.sql; older databases still load.
+    const withFallback=async(full,basic)=>{const r=await full();return r.error?basic():r;};
+    const [skuRes,supplierRes,stockRes,transportRes,companyRes]=await Promise.all([
+      withFallback(()=>db.from('sku_master').select('id,sku_name,pcs_per_case,gst_rate,cess_rate,is_active,company_id,pack_unit,mrp_per_case').eq('is_active',true).order('sku_name'),
+        ()=>db.from('sku_master').select('id,sku_name,pcs_per_case,gst_rate,cess_rate,is_active').eq('is_active',true).order('sku_name')),
+      withFallback(()=>db.from('lwb_supplier_master').select('id,supplier_code,supplier_name,gstin,city,is_active,company_id').eq('is_active',true).order('supplier_name'),
+        ()=>db.from('lwb_supplier_master').select('id,supplier_code,supplier_name,gstin,city,is_active').eq('is_active',true).order('supplier_name')),
       db.from('lwb_live_stock').select('sku_id,sku_name,pcs_per_case,saleable_pcs,damaged_pcs').order('sku_name'),
-      db.from('lwb_transport_master').select('id,transport_name,is_active').eq('is_active',true).order('transport_name')
+      db.from('lwb_transport_master').select('id,transport_name,is_active').eq('is_active',true).order('transport_name'),
+      db.from('lwb_companies').select('*')
     ]);
+    companies=companyRes.error?[]:(companyRes.data||[]);
     for(const r of [skuRes,supplierRes,stockRes])if(r.error)throw r.error;
     skus=(skuRes.data||[]).filter(s=>Number(s.pcs_per_case)>0);suppliers=supplierRes.data||[];stock=stockRes.data||[];
     transportMasterReady=!transportRes.error;
@@ -459,7 +513,8 @@ function updateSupplierHint(){
   updateTaxMode();
   const s=suppliers.find(x=>x.id===$('supplier').value);
   const hint=$('supplierHint');hint.replaceChildren();
-  if(s){hint.appendChild(document.createTextNode([s.supplier_code,s.gstin?'GSTIN: '+s.gstin:'',s.city||''].filter(Boolean).join(' · ')+' · '));}
+  const co=s&&companies.find(c=>c.id===s.company_id);
+  if(s){hint.appendChild(document.createTextNode([s.supplier_code,co?co.name+(co.purchase_billing==='MRP'?' (MRP bill)':'')+' SKUs only':'',s.gstin?'GSTIN: '+s.gstin:'',s.city||''].filter(Boolean).join(' · ')+' · '));}
   else if(!suppliers.length){hint.appendChild(document.createTextNode('No active Supplier found. '));}
   else hint.appendChild(document.createTextNode('Select registered Supplier. '));
   const a=document.createElement('a');a.href='supplier-master.html';a.textContent='Open Supplier Master';hint.appendChild(a);
@@ -475,20 +530,29 @@ async function save(){
   if(dmgItems===null){show('Damage / leakage / shortage: cases and PCS must be whole numbers.');return;}
   if(dmgMode==='yes'&&!dmgItems.length){show('You chose "Yes" for damage / leakage / shortage. Enter the quantities, or change it to "No" or "Check later".');return;}
   const dmgNote=$('dmgNote').value.trim();
-  const items=rows.map(r=>({sku_id:r.sku.id,cases:r.cases,pcs:r.pcs,rate_per_case:null,taxable_amount:paiseText(r.taxable),total_amount:paiseText(r.gross)}));
+  const mrpBill=rows.some(r=>r.mode==='MRP');
+  const items=rows.map(r=>r.mode==='MRP'
+    ?{sku_id:r.sku.id,cases:r.cases,pcs:r.pcs,billing_mode:'MRP',net_amount:paiseText(r.net),deemed_value:paiseText(r.deemed),
+      mrp_per_case:r.mrpCase!==null?paiseText(r.mrpCase):null,mrp_amount:r.mrpTotal!==null?paiseText(r.mrpTotal):null}
+    :{sku_id:r.sku.id,cases:r.cases,pcs:r.pcs,rate_per_case:null,taxable_amount:paiseText(r.taxable),total_amount:paiseText(r.gross),...(mrpBill?{billing_mode:'TAXABLE'}:{})});
   const invoiceTaxable=rows.reduce((a,r)=>a+r.taxable,0);
   const invoiceGst=rows.reduce((a,r)=>a+r.gst,0);
   const invoiceGross=rows.reduce((a,r)=>a+r.gross,0);
-  const preview=rows.map(r=>`${r.sku.sku_name}: ${r.normalized.cases} CS + ${r.normalized.pcs} PCS | Taxable ${rupees(r.taxable/100)} + GST ${r.sku.gst_rate}% (${rupees(r.gst/100)}) = Total ${rupees(r.gross/100)}`).join('\n');
-  if(!await confirm(`POST GOODS INWARD TO MAIN GODOWN?\n\nSupplier: ${supplier}\nInvoice: ${invoice}\nDriver: ${driverName} (${driverMobile})\nSKU Lines: ${rows.length}\nInvoice Taxable: ${rupees(invoiceTaxable/100)}\nGST (${ $('taxMode').value==='intrastate'?'CGST+SGST':'IGST' }): ${rupees(invoiceGst/100)}\nInvoice Total: ${rupees(invoiceGross/100)}\nPallets / Sheets: ${format(spP)} / ${format(spS)}\nVehicle check: ${dmgMode==='later'?'Check later':dmgMode==='no'?'No damage':dmgItems.map(d=>d.sku_name+' '+d.issue+' '+d.cases+' CS + '+d.pcs+' PCS').join('; ')}\n\n${preview}\n\nAll quantities will increase live stock immediately. Continue only for physically received goods.`))return;
+  const preview=rows.map(r=>`${r.sku.sku_name}: ${r.normalized.cases} ${r.unit==='BOX'?'BOX':'CS'} + ${r.normalized.pcs} PCS | `+(r.mode==='MRP'
+    ?`Net Sale ${rupees(r.net/100)} + GST ${r.sku.gst_rate}% on Deemed ${rupees(r.deemed/100)} (${rupees(r.gst/100)}) = Total ${rupees(r.gross/100)}`
+    :`Taxable ${rupees(r.taxable/100)} + GST ${r.sku.gst_rate}% (${rupees(r.gst/100)}) = Total ${rupees(r.gross/100)}`)).join('\n');
+  if(!await confirm(`POST GOODS INWARD TO MAIN GODOWN?\n\nSupplier: ${supplier}\nInvoice: ${invoice}\nDriver: ${driverName} (${driverMobile})\nSKU Lines: ${rows.length}\n${mrpBill?'Deemed / Taxable Value':'Invoice Taxable'}: ${rupees(invoiceTaxable/100)}\nGST (${ $('taxMode').value==='intrastate'?'CGST+SGST':'IGST' }): ${rupees(invoiceGst/100)}\nInvoice Total: ${rupees(invoiceGross/100)}\nPallets / Sheets: ${format(spP)} / ${format(spS)}\nVehicle check: ${dmgMode==='later'?'Check later':dmgMode==='no'?'No damage':dmgItems.map(d=>d.sku_name+' '+d.issue+' '+d.cases+' CS + '+d.pcs+' PCS').join('; ')}\n\n${preview}\n\nAll quantities will increase live stock immediately. Continue only for physically received goods.`))return;
   busy=true;recalc();
   try{
-    const {data,error}=await db.rpc('lwb_post_goods_inward',{
+    const header={
       p_supplier_name:supplier,p_invoice_no:invoice,p_invoice_date:$('invoiceDate').value,
       p_received_date:$('receivedDate').value,p_transport_name:$('transport').value.trim(),
-      p_vehicle_no:$('vehicle').value.trim(),p_lr_no:$('lr').value.trim(),p_remarks:$('remarks').value.trim(),p_items:items,
+      p_vehicle_no:$('vehicle').value.trim(),p_lr_no:$('lr').value.trim(),p_remarks:$('remarks').value.trim(),
       p_driver_name:driverName,p_driver_mobile:driverMobile,p_supplier_id:selectedSupplier.id
-    });
+    };
+    // MRP bills (Rajnigandha) post through lwb_post_goods_inward_mrp, which recomputes GST on the deemed value.
+    const {data,error}=mrpBill?await db.rpc('lwb_post_goods_inward_mrp',{p_header:header,p_items:items})
+      :await db.rpc('lwb_post_goods_inward',{...header,p_items:items});
     if(error)throw error;
     let spMsg='';
     if(spP+spS>0){
@@ -509,7 +573,7 @@ async function save(){
     }
     resetForm();
     await loadData();
-    show(`Goods Inward SAVED successfully.\nInvoice: ${data?.invoice_no||invoice}\nSKU Lines: ${data?.sku_count||rows.length}\nTotal Pieces Added: ${format(data?.total_pcs||0)} PCS\nTaxable Amount: ${rupees(invoiceTaxable/100)}\nGST Amount: ${rupees(invoiceGst/100)}\nInvoice Total: ${rupees(invoiceGross/100)}\nLive Main Godown stock updated.${spMsg}${ckMsg.includes('WARNING')?'':ckMsg}`,spMsg.includes('WARNING')?'error':'success');
+    show(`Goods Inward SAVED successfully.\nInvoice: ${data?.invoice_no||invoice}\nSKU Lines: ${data?.sku_count||rows.length}\nTotal Pieces Added: ${format(data?.total_pcs||0)} PCS\n${mrpBill?'Deemed / Taxable Value':'Taxable Amount'}: ${rupees(invoiceTaxable/100)}\nGST Amount: ${rupees(invoiceGst/100)}\nInvoice Total: ${rupees(invoiceGross/100)}\nLive Main Godown stock updated.${spMsg}${ckMsg.includes('WARNING')?'':ckMsg}`,spMsg.includes('WARNING')?'error':'success');
   }catch(e){let msg=e.message||String(e);if(e.code==='23505')msg='Duplicate Invoice or duplicate SKU. This supplier invoice was already posted (or SKU repeated). No stock was added.';show('Inward NOT saved: '+msg);}
   finally{busy=false;recalc();}
 }
