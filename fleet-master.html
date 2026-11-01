@@ -125,9 +125,9 @@
           {k:"note",l:"Note",wide:1}]},
       // Read-only list for Transport: drivers come from Employee Master (Work / Post = Driver).
       drivers:{ro:1,title:"Drivers",one:"Driver",fields:[],
-        sub:"Drivers are kept in Employee Master (Work / Post = Driver). Admin, Manager or Godown add and edit them there. The Driver Portal login is matched by the same mobile number."},
+        sub:"Drivers come from Employee Master (Work / Post = Driver)."},
       employees:{rpc:1,title:"Employee Master",one:"Employee",
-        sub:"All staff in one place: drivers, loaders, Godown managers and others. Choose the Work / Post: PO Approval & Driver and Transport Assignment list every working Driver from here by themselves (there is no separate Driver Master now). A Driver needs a mobile number, because the Driver Portal login is matched by it. In Accounts, Cash Out (upad / salary) is paid to the Employee ID; in one month upad can not go over the monthly salary (only Admin can allow more).",
+        sub:"All staff in one place. Work / Post = Driver puts the person in the driver list of PO Approval and Transport Assignment.",
         fields:[
           {k:"emp_code",l:"Employee ID",ph:"Blank = next ID"},
           {k:"name",l:"Employee Name *"},
@@ -147,7 +147,7 @@
 
     let docPanel=null,docKey="",docSum={vehicles:null,drivers:null,employees:null},avatars=new Map();
     const DOC_ENTITY={vehicles:"VEHICLE",drivers:"STAFF",employees:"STAFF"};
-    let me=null,tab="vehicles",data={vehicles:[],drivers:[],employees:[]},empNext="",empMonth="",empErr="",editing=null,busy=false,loginPhones=new Set(),missing=false;
+    let me=null,tab="vehicles",data={vehicles:[],drivers:[],employees:[]},empNext="",empMonth="",empErr="",editing=null,busy=false,loginPhones=new Set(),missing=false,tripOf=new Map();
     // Vehicles: Admin / Manager add, edit, delete; Godown (warehouse) add / edit.
     // Employee Master (drivers too): Admin / Manager / Godown add and edit; nobody deletes (mark Left).
     // Drivers tab: read-only list for Transport.
@@ -167,11 +167,13 @@
     }
     async function load(){
       // Drivers = working employees with Work / Post "Driver" (lwb_employee_roles_setup.sql).
-      const [v,d,l,e]=await Promise.all([
+      const [v,d,l,e,vp]=await Promise.all([
         client.from("lwb_vehicles").select("*").order("vehicle_no"),
         client.rpc("lwb_staff_pick",{p_role:"driver"}),
         ["admin","manager","transport"].includes(me.role)?client.rpc("lwb_sales_head_active_drivers"):Promise.resolve({data:[]}),
-        empRole()?client.rpc("lwb_emp_list2"):Promise.resolve({data:null})]);
+        empRole()?client.rpc("lwb_emp_list2"):Promise.resolve({data:null}),
+        client.rpc("lwb_vehicle_pick")]);
+      tripOf=new Map(((vp&&vp.data)||[]).filter(x=>x.on_trip&&x.on_trip.length).map(x=>[x.id,x.on_trip]));
       empErr=e.error?"Employee Master is not set up in Supabase yet ("+(e.error.message||"")+").":"";
       if(e.data){data.employees=ERPRecent.sort(e.data.rows||[]);empNext=e.data.next_code||"";empMonth=e.data.month||""}
       missing=!!v.error;
@@ -323,7 +325,7 @@
       if(tab==="vehicles"){
         el("head").innerHTML="<tr><th>#</th><th>Vehicle No</th><th>Type / Capacity</th><th>Ownership</th><th>Documents</th><th>Driver</th><th>Status</th><th></th></tr>";
         el("list").innerHTML=rows.map((r,i)=>{const drv=data.drivers.filter(d=>d.default_vehicle_id===r.id).map(d=>esc(d.name)).join(", ");
-          return '<tr class="'+(r.is_active?"":"off")+'"><td>'+(i+1)+"</td><td>"+avatar(r)+"<b>"+esc(r.vehicle_no)+"</b>"+(r.note?"<small>"+esc(r.note)+"</small>":"")+"<div>"+docTags(r)+"</div></td><td>"+esc(r.vehicle_type||"-")+(r.capacity_kg!=null?"<small>"+esc(r.capacity_kg)+" KG</small>":"")+"</td><td>"+(r.ownership==="TRANSPORTER"?"Transporter":"Own")+(r.transporter_name?"<small>"+esc(r.transporter_name)+(r.owner_mobile?" · "+esc(r.owner_mobile):"")+"</small>":"")+"</td><td style='white-space:normal;min-width:180px'>"+expiryTags(DOCS.map(([k,l])=>[r[k],l]))+"</td><td>"+(drv||"-")+"</td><td>"+(r.is_active?'<span class="tagx ok">Active</span>':'<span class="tagx bad">Inactive</span>')+"</td><td>"+act(r)+"</td></tr>"}).join("")||'<tr><td colspan="8" class="erp-empty">No vehicles yet. Add one using the form above or Excel.</td></tr>';
+          return '<tr class="'+(r.is_active?"":"off")+'"><td>'+(i+1)+"</td><td>"+avatar(r)+"<b>"+esc(r.vehicle_no)+"</b>"+(r.note?"<small>"+esc(r.note)+"</small>":"")+"<div>"+docTags(r)+"</div></td><td>"+esc(r.vehicle_type||"-")+(r.capacity_kg!=null?"<small>"+esc(r.capacity_kg)+" KG</small>":"")+"</td><td>"+(r.ownership==="TRANSPORTER"?"Transporter":"Own")+(r.transporter_name?"<small>"+esc(r.transporter_name)+(r.owner_mobile?" · "+esc(r.owner_mobile):"")+"</small>":"")+"</td><td style='white-space:normal;min-width:180px'>"+expiryTags(DOCS.map(([k,l])=>[r[k],l]))+"</td><td>"+(drv||"-")+"</td><td>"+(r.is_active?(tripOf.has(r.id)?'<span class="tagx warn">On trip</span><small>'+esc(tripOf.get(r.id).join(", "))+"</small>":'<span class="tagx ok">Free</span>'):'<span class="tagx bad">Inactive</span>')+"</td><td>"+act(r)+"</td></tr>"}).join("")||'<tr><td colspan="8" class="erp-empty">No vehicles yet. Add one using the form above or Excel.</td></tr>';
       }else if(tab==="employees"){
         const mo=empMonth?new Date(empMonth+"T12:00:00Z").toLocaleDateString("en-IN",{month:"short",timeZone:"UTC"}):"This month";
         el("head").innerHTML="<tr><th>Employee ID</th><th>Name</th><th>Work / Post</th><th>Mobile</th><th>Salary / month</th><th>Upad in "+esc(mo)+"</th><th>Salary paid in "+esc(mo)+"</th><th>Joined</th><th>Status</th><th></th></tr>";

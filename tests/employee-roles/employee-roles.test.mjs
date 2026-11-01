@@ -21,10 +21,11 @@ CREATE TABLE public.lwb_user_page_access(user_id uuid,extra text[]);
 CREATE FUNCTION public.lwb_has_page(p text) RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER AS $$
   SELECT EXISTS(SELECT 1 FROM public.lwb_user_page_access a WHERE a.user_id=auth.uid() AND p=ANY(a.extra)) $$;
 CREATE TABLE public.erp_notifications(id bigserial primary key,user_id uuid,title text,message text,notification_type text,order_id uuid,is_read boolean default false,created_at timestamptz default now());
-CREATE TABLE public.orders(id uuid default gen_random_uuid() primary key,order_no text,customer_name text);
+CREATE TABLE public.orders(id uuid default gen_random_uuid() primary key,order_no text,customer_name text,status text);
+CREATE TABLE public.dispatch_assignments(id uuid default gen_random_uuid() primary key,order_id uuid,driver_name text,driver_mobile text,vehicle_no text,assigned_at timestamptz default now());
 CREATE TABLE public.lwb_tally_invoices(order_id uuid,invoice_no text);
 CREATE TABLE public.lwb_tally_payments(id uuid default gen_random_uuid() primary key,receipt_id uuid,order_id uuid,pay_date date,mode text,amount numeric(14,2),ref_no text,cash_notes jsonb,remark text,created_by uuid,created_at timestamptz default now(),cancelled_at timestamptz);
-CREATE TABLE public.lwb_delivery_reports(id uuid default gen_random_uuid() primary key,order_id uuid,driver_user_id uuid,cash_reported numeric(14,2) default 0,payment_mode text,payment_reference text,cash_amount numeric(14,2),online_amount numeric(14,2),online_mode text,online_reference text,bank_ref text,payment_status text,payment_reviewed_by uuid,payment_reviewed_at timestamptz);
+CREATE TABLE public.lwb_delivery_reports(id uuid default gen_random_uuid() primary key,order_id uuid,delivery_status text,driver_user_id uuid,cash_reported numeric(14,2) default 0,payment_mode text,payment_reference text,cash_amount numeric(14,2),online_amount numeric(14,2),online_mode text,online_reference text,bank_ref text,payment_status text,payment_reviewed_by uuid,payment_reviewed_at timestamptz);
 CREATE TABLE public.tax_invoices(id uuid primary key,order_id uuid);
 CREATE TABLE public.lwb_payment_collections(id uuid default gen_random_uuid() primary key,invoice_id uuid,collection_date date,amount numeric(14,2),payment_mode text,reference_no text,remarks text,status text,submitted_by uuid,submitted_at timestamptz default now(),reviewed_at timestamptz);
 CREATE TABLE storage.buckets(id text primary key,name text,public boolean,file_size_limit bigint,allowed_mime_types text[]);
@@ -126,6 +127,20 @@ test('driver needs a mobile, and one mobile = one working driver', async()=>{
   await call('select lwb_emp_save2($1::jsonb)',[JSON.stringify({id:r.id,emp_code:r.emp_code,name:'Ramesh Patel',mobile:'9876543210',designation:'Driver',monthly_salary:18000,default_vehicle_id:veh[1],is_active:true})]);
   assert.equal((await staff('Ramesh Patel')).default_vehicle_id,veh[1]);
   await as('transport');await assert.rejects(call('select lwb_emp_save2($1::jsonb)',[JSON.stringify({name:'X Y',monthly_salary:0})]),/Only Admin, Manager, Godown or Accounts/);
+});
+
+test('vehicle list: every active vehicle, out on a trip until the driver reports delivery', async()=>{
+  const o=(await db.query("insert into orders(order_no,status) values('LXY-00033','transport_allocated'),('LXY-00030','loaded'),('LXY-00020','loaded') returning id")).rows.map(r=>r.id);
+  await db.query("insert into dispatch_assignments(order_id,driver_name,driver_mobile,vehicle_no) values($1,'Ramesh','+91 98765 43210','gj-05-fw-9821'),($2,'Suresh','9000000001','GJ05AB1111')",[o[0],o[1]]);
+  await db.query("insert into dispatch_assignments(order_id,driver_name,driver_mobile,vehicle_no,assigned_at) values($1,'Old','9000000001','GJ05AB1111',now()-interval '30 days')",[o[2]]);
+  await db.query("insert into lwb_delivery_reports(order_id,delivery_status) values($1,'DELIVERED')",[o[1]]);
+  await as('head');
+  const v=(await call('select lwb_vehicle_pick() j'))[0].j;
+  assert.deepEqual(v.map(x=>[x.vehicle_no,x.on_trip]),[['GJ05AB1111',null],['GJ05FW9821',['LXY-00033']]]);
+  const d=await pick('head','driver');
+  assert.deepEqual(d.find(x=>x.name==='Ramesh Patel').on_trip,['LXY-00033']);
+  assert.equal(d.find(x=>x.name==='Suresh Bhai').on_trip,null);
+  await as('sales');await assert.rejects(call('select lwb_vehicle_pick()'),/can not read/);
 });
 
 test('old Driver Master rows are kept, nothing deleted', async()=>{

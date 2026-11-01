@@ -19,7 +19,8 @@
 --   * lwb_emp_list2 / lwb_emp_save2: Employee Master with the driver details (they call lwb_emp_list /
 --     lwb_emp_save, so the salary rules stay in one place);
 --   * lwb_staff_pick(role): active employees of one Work / Post (name, mobile, vehicle; no salary) for the
---     pick lists.
+--     pick lists, and lwb_vehicle_pick(): every active vehicle of Vehicle Master. Both say who / which is
+--     out on a trip now (assigned, not yet reported delivered), so the free ones can be picked.
 -- The Driver Portal is not changed: a driver login is still matched to orders by the same 10-digit mobile.
 -- No order, dispatch, bill, stock, payment, ledger or Tally data is changed.
 
@@ -138,6 +139,20 @@ BEGIN
 END;
 $fn$;
 
+-- Orders out on a trip now: assigned and not yet reported delivered by the driver (last 10 days).
+-- Used to show a vehicle / driver as "On trip" in the pick lists.
+CREATE OR REPLACE FUNCTION public.lwb_trips_open()
+RETURNS TABLE(vehicle_key text, driver_phone text, order_no text)
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path = ''
+AS $fn$
+  SELECT upper(regexp_replace(coalesce(a.vehicle_no,''), '[^A-Za-z0-9]', '', 'g')), public.lwb_emp_phone(a.driver_mobile), o.order_no
+  FROM public.dispatch_assignments a JOIN public.orders o ON o.id = a.order_id
+  WHERE lower(coalesce(o.status,'')) IN ('transport_allocated','allocated','loading','loaded','invoiced','dispatched')
+    AND a.assigned_at > now() - interval '10 days'
+    AND NOT EXISTS (SELECT 1 FROM public.lwb_delivery_reports r WHERE r.order_id = o.id);
+$fn$;
+REVOKE ALL ON FUNCTION public.lwb_trips_open() FROM PUBLIC, anon, authenticated;
+
 -- Active employees of one Work / Post (p_role blank = all), A–Z. No salary or ledger.
 CREATE OR REPLACE FUNCTION public.lwb_staff_pick(p_role text DEFAULT NULL)
 RETURNS jsonb LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = ''
@@ -149,10 +164,27 @@ BEGIN
     SELECT jsonb_agg(jsonb_build_object('id', s.id, 'emp_code', s.emp_code, 'name', s.name, 'mobile', s.mobile,
       'alt_mobile', s.alt_mobile, 'designation', s.designation, 'role', public.lwb_emp_role(s.designation),
       'default_vehicle_id', s.default_vehicle_id, 'vehicle_no', v.vehicle_no, 'transporter_name', s.transporter_name,
-      'license_expiry', s.license_expiry)
+      'license_expiry', s.license_expiry,
+      'on_trip', (SELECT jsonb_agg(DISTINCT t.order_no) FROM public.lwb_trips_open() t
+                  WHERE t.driver_phone <> '' AND t.driver_phone = public.lwb_emp_phone(s.mobile)))
       ORDER BY lower(s.name))
     FROM public.lwb_acc_staff s LEFT JOIN public.lwb_vehicles v ON v.id = s.default_vehicle_id
     WHERE s.active AND (v_role = '' OR public.lwb_emp_role(s.designation) = v_role)), '[]'::jsonb);
+END;
+$fn$;
+
+-- Every active vehicle of Vehicle Master, with the orders it is out on now ('on_trip', null = free).
+CREATE OR REPLACE FUNCTION public.lwb_vehicle_pick()
+RETURNS jsonb LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = ''
+AS $fn$
+BEGIN
+  IF NOT public.lwb_staff_pick_reader() THEN RAISE EXCEPTION 'You can not read the vehicle list'; END IF;
+  RETURN coalesce((
+    SELECT jsonb_agg(jsonb_build_object('id', v.id, 'vehicle_no', v.vehicle_no, 'vehicle_type', v.vehicle_type,
+      'capacity_kg', v.capacity_kg, 'ownership', v.ownership, 'transporter_name', v.transporter_name,
+      'on_trip', (SELECT jsonb_agg(DISTINCT t.order_no) FROM public.lwb_trips_open() t WHERE t.vehicle_key = v.vehicle_no))
+      ORDER BY v.vehicle_no)
+    FROM public.lwb_vehicles v WHERE v.is_active), '[]'::jsonb);
 END;
 $fn$;
 
@@ -213,8 +245,8 @@ BEGIN
 END;
 $fn$;
 
-REVOKE ALL ON FUNCTION public.lwb_staff_pick_reader(), public.lwb_staff_pick(text), public.lwb_emp_list2(), public.lwb_emp_save2(jsonb) FROM PUBLIC, anon;
-GRANT EXECUTE ON FUNCTION public.lwb_staff_pick_reader(), public.lwb_staff_pick(text), public.lwb_emp_list2(), public.lwb_emp_save2(jsonb) TO authenticated;
+REVOKE ALL ON FUNCTION public.lwb_staff_pick_reader(), public.lwb_staff_pick(text), public.lwb_vehicle_pick(), public.lwb_emp_list2(), public.lwb_emp_save2(jsonb) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.lwb_staff_pick_reader(), public.lwb_staff_pick(text), public.lwb_vehicle_pick(), public.lwb_emp_list2(), public.lwb_emp_save2(jsonb) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.lwb_emp_role(text), public.lwb_emp_phone(text) TO authenticated;
 
 -- Driving licence can now be kept on an employee (lwb_documents_setup.sql has the same list).
