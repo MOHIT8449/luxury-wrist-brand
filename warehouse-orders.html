@@ -413,6 +413,7 @@
     .po-field input {width:100%;padding:10px;border:1px solid #b6c7d5;border-radius:7px;font:14px Arial}
     .po-field select {width:100%;padding:10px;border:1px solid #b6c7d5;border-radius:7px;font:14px Arial;background:#fff}
     .po-field [hidden] {display:none}
+    .po-field-info {display:block;margin-top:4px;font-size:12px;color:#55606b;min-height:15px}
     .po-autofill-menu {position:absolute;left:0;right:0;top:100%;margin-top:3px;background:#fff;
       border:1px solid #b9c8d8;border-radius:8px;box-shadow:0 8px 24px #162f4b27;z-index:40;
       max-height:230px;overflow:auto;padding:4px}
@@ -1080,11 +1081,9 @@
           <h4>Transport details</h4>
           <div id="poQuickInfo"></div>
           <div class="po-grid">
-            <div class="po-field"><label for="poDriverName">Driver *</label><input id="poDriverName" maxlength="150" placeholder="Select driver" autocomplete="off" aria-autocomplete="list"></div>
-            <div class="po-field"><label for="poDriverMobile">Driver mobile *</label><input id="poDriverMobile" maxlength="20" inputmode="tel" placeholder="Auto-filled from driver" autocomplete="off" aria-autocomplete="list"></div>
-            <div class="po-field"><label for="poVehicleNo">Vehicle *</label><input id="poVehicleNo" maxlength="40" placeholder="Select vehicle" autocomplete="off" aria-autocomplete="list"></div>
+            <div class="po-field"><label for="poDriverName">Driver *</label><input id="poDriverName" maxlength="150" placeholder="Select driver" autocomplete="off" aria-autocomplete="list"><small class="po-field-info" id="poDriverInfo"></small><input id="poDriverMobile" type="hidden"></div>
+            <div class="po-field"><label for="poVehicleNo">Vehicle *</label><input id="poVehicleNo" maxlength="40" placeholder="Select vehicle" autocomplete="off" aria-autocomplete="list"><small class="po-field-info" id="poVehicleInfo"></small><input id="poTransportName" type="hidden"></div>
             <div class="po-field"><label for="poLoadingManager">Godown Manager *</label><select id="poLoadingManager" hidden><option value="">Select manager</option></select><input id="poLoadingPerson" maxlength="150" placeholder="Godown staff"></div>
-            <div class="po-field po-transport-field"><label for="poTransportName">Transport (optional)</label><input id="poTransportName" maxlength="150"></div>
           </div>
           <p id="poSavedDirectoryHint" class="po-directory-hint"></p>
 
@@ -2095,6 +2094,7 @@ function rebuildPoDirectory(){
       }
     }
   }
+  if(document.getElementById("poDriverInfo"))showPoFieldInfo();
   const hint=document.getElementById("poSavedDirectoryHint");
   if(hint){
     const issues=[poErpDirectoryError,poDirectoryError].filter(Boolean);
@@ -2187,14 +2187,25 @@ function poChooseSaved(kind,item){
   if(!item)return;
   if(kind==="vehicle"){
     document.getElementById("poVehicleNo").value=item.vehicle;
-    if(item.transporter)document.getElementById("poTransportName").value=item.transporter;
+    document.getElementById("poTransportName").value=item.transporter||"";
   }else{
     document.getElementById("poDriverName").value=item.name;
-    document.getElementById("poDriverMobile").value=item.mobile;
+    document.getElementById("poDriverMobile").value=item.mobile||"";
     const veh=document.getElementById("poVehicleNo");
-    if(item.vehicle&&!veh.value.trim()){veh.value=item.vehicle;if(item.transporter)document.getElementById("poTransportName").value=item.transporter;}
+    if(item.vehicle&&!veh.value.trim()){veh.value=item.vehicle;document.getElementById("poTransportName").value=item.transporter||"";}
   }
   closePoPicker();
+  showPoFieldInfo();
+}
+// Line under Driver (mobile, Employee ID, free / on trip) and under Vehicle (type, KG, free / on trip),
+// like the Godown Manager list shows the mobile. The mobile is not a separate box any more.
+function showPoFieldInfo(){
+  const mob=poNormalPhone(document.getElementById("poDriverMobile").value);
+  const d=poSavedDrivers.find(x=>x.phone&&x.phone===mob);
+  document.getElementById("poDriverInfo").textContent=mob?"📞 "+mob+(d&&d.source?" · "+d.source:""):(document.getElementById("poDriverName").value.trim()?"Select the driver from the list":"");
+  const plate=poNormalPlate(document.getElementById("poVehicleNo").value);
+  const v=poSavedVehicles.find(x=>poNormalPlate(x.vehicle)===plate);
+  document.getElementById("poVehicleInfo").textContent=plate?(v?(v.detail||v.transporter||""):"Not in Vehicle Master"):"";
 }
 function showPoPicker(input,kind){
   if(input.disabled||document.getElementById("postApprovalPanel").hidden)return;
@@ -2244,7 +2255,7 @@ function poExactAutofill(kind,value){
 }
 function setupPoAutofill(){
   for(const [id,kind] of [
-    ["poDriverName","name"],["poDriverMobile","mobile"],["poVehicleNo","vehicle"]
+    ["poDriverName","name"],["poVehicleNo","vehicle"]
   ]){
     const input=document.getElementById(id);
     if(!input||input.dataset.poAutofillReady)return;
@@ -2265,6 +2276,9 @@ function setupPoAutofill(){
     input.addEventListener("input",()=>{
       // Exact historical match auto-fills. Partial typing only filters results.
       const term=input.value;
+      if(kind==="name")document.getElementById("poDriverMobile").value="";
+      if(kind==="vehicle")document.getElementById("poTransportName").value="";
+      showPoFieldInfo();
       const exact=kind==="vehicle"
         ?poSavedVehicles.filter(x=>poNormalPlate(x.vehicle)===poNormalPlate(term))
         :poSavedDrivers.filter(x=>kind==="mobile"
@@ -2351,6 +2365,7 @@ async function revealApprovalActions(){
       ["poTransportName",a.transporter_name]
     ])document.getElementById(pair[0]).value=pair[1]||"";
     setPoGodownManager(a);
+    showPoFieldInfo();
     allocationStatus(locked?"Loading has started. Allocation is locked.":a.id
       ?"Transport saved. You can update it before loading."
       :"Select driver, vehicle and manager; Save Transport.");
@@ -2380,6 +2395,9 @@ async function saveApprovedTransport(){
   }
   if(!payload.driver_name||!payload.vehicle_no||!payload.loading_person){
     allocationStatus("Driver Name, Vehicle Number and "+(poGodownManagers?"Godown Manager":"Loading Person")+" are required.",true);return;
+  }
+  if(!payload.driver_mobile){
+    allocationStatus("Select the driver from the list, so the mobile number comes with it. Driver Portal matches orders by this number.",true);return;
   }
   if(payload.driver_mobile){
     // Driver Portal matches orders by this exact mobile, so reject typos.
