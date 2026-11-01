@@ -434,8 +434,7 @@
     .manager-note-actions {display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-top:10px}
     .manager-note-actions span {font-size:12px;color:#477054;line-height:1.6}
     .manager-note-actions span.error {color:#bc2a2a}
-    #saveManagerNoteBtn[hidden] {display:none!important}
-    #footSaveTransportBtn[hidden],#poSaveBtn[hidden] {display:none!important}
+    #poSaveBtn {display:none!important}
     /* 🚚 Transport from the list: a small popup with only the transport fields */
     #poQuickInfo {display:none}
     #reviewModal.transport-only .modal-card {width:min(620px,100%)}
@@ -444,7 +443,6 @@
     #reviewModal.transport-only #postApprovalPanel > h4,
     #reviewModal.transport-only .po-help,
     #reviewModal.transport-only .po-actions,
-    #reviewModal.transport-only #approveOrderBtn,
     #reviewModal.transport-only #cancelOrderBtn {display:none!important}
     #reviewModal.transport-only #poQuickInfo {display:block;background:#f3f7fb;border:1px solid #dbe5ef;border-radius:8px;padding:10px 12px;margin-bottom:14px;font-size:13px;line-height:1.6}
     #reviewModal.transport-only .po-grid {grid-template-columns:1fr 1fr}
@@ -779,7 +777,6 @@
       body.erp-compact #reviewModal{padding:0;max-height:none;border-radius:0}
       #reviewModal .modal-card{height:100dvh;max-height:100dvh;border-radius:0}
       #reviewModal .modal-footer #printPoDocumentBtn{flex:1}
-      #reviewModal .modal-footer #footSaveTransportBtn{flex:1}
       #reviewModal .modal-footer #approveOrderBtn{flex:1}
       #reviewModal .po-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
       #reviewModal .modal-body{padding:10px}
@@ -1089,7 +1086,6 @@
 
           <div class="po-actions">
             <button id="poSaveBtn" type="button" class="btn btn-green" onclick="saveApprovedTransport()">Save Driver &amp; Vehicle</button>
-            <button id="poPrintBtn" type="button" class="btn btn-blue" onclick="printApprovedPO()">Delivery Challan</button>
           </div>
           <div id="poAllocationStatus" role="status"></div>
         </section>
@@ -1103,8 +1099,6 @@
           placeholder="Party delivery instructions / special message for PO print..."
         ></textarea>
         <div class="manager-note-actions">
-          <button type="button" class="btn btn-green" id="saveManagerNoteBtn"
-            onclick="saveManagerNote()" hidden>Save Note</button>
           <span id="managerNoteStatus" role="status" aria-live="polite"></span>
         </div>
 
@@ -1122,10 +1116,6 @@
           onclick="cancelOrder()"
         >
           Cancel Order
-        </button>
-
-        <button type="button" class="btn btn-green" id="footSaveTransportBtn" onclick="saveApprovedTransport()" hidden>
-          Save Transport
         </button>
 
         <button
@@ -2329,13 +2319,8 @@ function allocationStatus(message,error=false){
   const el=document.getElementById("poAllocationStatus");
   el.textContent=message;el.classList.toggle("error",error);
 }
-// The panel's Save button sits mid-form; the same Save also stays in the sticky footer
-// while Driver / Vehicle / Godown Manager can still be saved.
-function syncFootSave(){
-  const panel=document.getElementById("postApprovalPanel"),save=document.getElementById("poSaveBtn"),foot=document.getElementById("footSaveTransportBtn");
-  foot.hidden=panel.hidden||save.hidden;foot.disabled=save.disabled;
-}
-new MutationObserver(syncFootSave).observe(document.getElementById("postApprovalPanel"),{attributes:true,subtree:true,attributeFilter:["hidden","disabled"]});
+// poSaveBtn is never shown: its disabled flag says whether Driver / Vehicle / Godown Manager can be
+// saved now. The one Submit button in the footer saves them with the PO and the note (submitPo).
 async function revealApprovalActions(){
   const order=selectedOrder;
   const panel=document.getElementById("postApprovalPanel");
@@ -2368,7 +2353,7 @@ async function revealApprovalActions(){
     showPoFieldInfo();
     allocationStatus(locked?"Loading has started. Allocation is locked.":a.id
       ?"Transport saved. You can update it before loading."
-      :"Select driver, vehicle and manager; Save Transport.");
+      :"Select driver, vehicle and Godown Manager, then press Submit.");
   }catch(e){allocationStatus("Could not load transport assignment: "+e.message,true);}
   finally{
     if(selectedOrder&&selectedOrder.id===id){
@@ -2376,11 +2361,21 @@ async function revealApprovalActions(){
     }
   }
 }
-async function saveApprovedTransport(){
-  if(transportSaving||!eligibleForPoPrint(selectedOrder)||poAllocationLocked(selectedOrder))return;
-  const id=selectedOrder.id;
+// Driver / Vehicle / Godown Manager typed but not saved yet.
+function poTransportDirty(){
+  if(document.getElementById("postApprovalPanel").hidden||document.getElementById("poSaveBtn").disabled)return false;
+  const a=approvedTransport||{};
+  const dirty=[["poDriverName",a.driver_name],["poDriverMobile",a.driver_mobile],["poVehicleNo",a.vehicle_no],["poTransportName",a.transporter_name]]
+    .some(([id,value])=>poValue(id)!==String(value||"").trim());
+  const managerDirty=document.getElementById("poLoadingManager").hidden
+    ?poValue("poLoadingPerson")!==String(a.loading_person||"").trim()
+    :poValue("poLoadingManager")!==String(a.loading_manager_id||"");
+  return dirty||managerDirty;
+}
+// Checks the transport fields; returns what to save, or null (message shown).
+function poTransportPayload(){
   const payload={
-    order_id:id,
+    order_id:selectedOrder.id,
     driver_name:poValue("poDriverName"),
     vehicle_no:poValue("poVehicleNo").toUpperCase(),
     loading_person:poValue("poLoadingPerson"),
@@ -2394,20 +2389,27 @@ async function saveApprovedTransport(){
     payload.loading_person=m?m.full_name:(sel.value?sel.selectedOptions[0].text.replace(/ \(inactive\)$/,""):"");
   }
   if(!payload.driver_name||!payload.vehicle_no||!payload.loading_person){
-    allocationStatus("Driver Name, Vehicle Number and "+(poGodownManagers?"Godown Manager":"Loading Person")+" are required.",true);return;
+    allocationStatus("Driver Name, Vehicle Number and "+(poGodownManagers?"Godown Manager":"Loading Person")+" are required.",true);return null;
   }
   if(!payload.driver_mobile){
-    allocationStatus("Select the driver from the list, so the mobile number comes with it. Driver Portal matches orders by this number.",true);return;
+    allocationStatus("Select the driver from the list, so the mobile number comes with it. Driver Portal matches orders by this number.",true);return null;
   }
   if(payload.driver_mobile){
     // Driver Portal matches orders by this exact mobile, so reject typos.
     const phone=poNormalPhone(payload.driver_mobile);
     if(!/^[6-9]\d{9}$/.test(phone)){
-      allocationStatus("Driver Mobile must be a valid 10-digit Indian mobile (or +91). Driver Portal matches orders by this number.",true);return;
+      allocationStatus("Driver Mobile must be a valid 10-digit Indian mobile (or +91). Driver Portal matches orders by this number.",true);return null;
     }
     payload.driver_mobile=phone;
   }
-  if(!await confirm("Assign Driver / Vehicle to Approved PO "+selectedOrder.order_no+"?"))return;
+  return payload;
+}
+// Saves Driver / Vehicle / Godown Manager (called by Submit, after its one confirm). true = saved.
+async function saveApprovedTransport(){
+  if(transportSaving||!eligibleForPoPrint(selectedOrder)||poAllocationLocked(selectedOrder))return false;
+  const id=selectedOrder.id;
+  const payload=poTransportPayload();
+  if(!payload)return false;
   const btn=document.getElementById("poSaveBtn");
   transportSaving=true;btn.disabled=true;
   try{
@@ -2435,9 +2437,9 @@ async function saveApprovedTransport(){
     }
     allocationStatus("Saved! Driver: "+payload.driver_name+", Vehicle: "+payload.vehicle_no+", Godown Manager: "+payload.loading_person+". Both are notified.");
     // Small Transport popup: close by itself once saved.
-    if(document.getElementById("reviewModal").classList.contains("transport-only"))setTimeout(()=>{if(selectedOrder&&selectedOrder.id===id)closeModal()},1500);
     await loadOrders();
-  }catch(e){allocationStatus("Assignment failed: "+e.message,true);}
+    return true;
+  }catch(e){allocationStatus("Assignment failed: "+e.message,true);return false;}
   finally{transportSaving=false;if(selectedOrder&&selectedOrder.id===id)btn.disabled=poAllocationLocked(selectedOrder);}
 }
 // List shortcuts next to Review: open the order straight at Transport Allocation, or print it.
@@ -2468,23 +2470,15 @@ async function printApprovedPO(documentType="challan"){
     return;
   }
   if(poItemsSignature(selectedItems)!==savedPoItemsSignature){
-    alert("PO has unsaved SKU changes. Save PO before printing.");return;
+    alert("PO has unsaved SKU changes. Press Submit before printing.");return;
   }
-  if(!document.getElementById("postApprovalPanel").hidden && !document.getElementById("poSaveBtn").disabled){
-    const a=approvedTransport||{};
-    const dirty=[["poDriverName",a.driver_name],["poDriverMobile",a.driver_mobile],["poVehicleNo",a.vehicle_no],["poTransportName",a.transporter_name]]
-      .some(([id,value])=>poValue(id)!==String(value||"").trim());
-    const managerDirty=document.getElementById("poLoadingManager").hidden
-      ?poValue("poLoadingPerson")!==String(a.loading_person||"").trim()
-      :poValue("poLoadingManager")!==String(a.loading_manager_id||"");
-    if(dirty||managerDirty){alert("Transport has unsaved changes. Save Transport before printing.");return;}
-  }
+  if(poTransportDirty()){alert("Transport has unsaved changes. Press Submit before printing.");return;}
   if(managerNoteSaving||document.getElementById("managerNote").value.trim()!==managerNoteOriginal.trim()){
-    alert("Manager Note has unsaved changes. Save the note before printing.");
+    alert("Manager Note has unsaved changes. Press Submit before printing.");
     return;
   }
   let order=selectedOrder;
-  const printButton=document.getElementById(isPo?"printPoDocumentBtn":"poPrintBtn");
+  const printButton=document.getElementById(isPo?"printPoDocumentBtn":"poPrintBtn")||{};
   printButton.disabled=true;
   try {
     // Use the saved assignment of this exact PO, not another vehicle or
@@ -2595,8 +2589,9 @@ function renderItems() {
       <td class="i-act">${editable?`<button class="btn btn-red" title="Remove SKU" aria-label="Remove SKU" onclick="removeSku(${i})">Remove</button>`:''}</td>
     </tr>`;
   }).join('') || '<tr><td colspan="9">No SKU items. Add a SKU before approving.</td></tr>';
-  document.getElementById("approveOrderBtn").style.display = editable ? "inline-block" : "none";
-  document.getElementById("approveOrderBtn").textContent = isPending(selectedOrder) ? "Approve PO" : "Save PO";
+  // One button: Approve PO for a pending PO; Submit for an approved one (PO, note and transport together).
+  document.getElementById("approveOrderBtn").style.display = (editable || eligibleForPoPrint(selectedOrder)) ? "inline-block" : "none";
+  document.getElementById("approveOrderBtn").textContent = isPending(selectedOrder) ? "Approve PO" : "Submit";
   document.getElementById("cancelOrderBtn").style.display = editable && isPending(selectedOrder) ? "inline-block" : "none";
   document.getElementById("addSkuBtn").style.display = editable ? "inline-block" : "none";
   renderManagerNoteControls();
@@ -2647,36 +2642,34 @@ function calculateApprovalTotals() {
 function managerNoteChanged(){renderManagerNoteControls();}
 function renderManagerNoteControls(){
   const note=document.getElementById("managerNote");
-  const btn=document.getElementById("saveManagerNoteBtn");
   const msg=document.getElementById("managerNoteStatus");
   const pending=Boolean(selectedOrder&&isPending(selectedOrder));
   const approved=Boolean(selectedOrder&&eligibleForPoPrint(selectedOrder));
   const canEdit=pending||approved;
   note.disabled=!canEdit||managerNoteSaving;
-  btn.hidden=!approved;
-  btn.disabled=managerNoteSaving||!reviewReady||
-    note.value.trim()===managerNoteOriginal.trim();
   if(managerNoteSaving) {
     msg.textContent="Saving Manager Note...";
   } else if(!canEdit) {
     msg.textContent="Note cannot be changed for this order status.";
   } else if(pending) {
-    msg.textContent="Pending PO: Note will save when you press Approve Order.";
+    msg.textContent="Pending PO: Note will save when you press Approve PO.";
   } else if(note.value.trim()!==managerNoteOriginal.trim()){
-    msg.textContent="Unsaved changes — press Save Note before printing.";
+    msg.textContent="Unsaved changes — press Submit before printing.";
   } else if(note.value.trim()){
     msg.textContent="Note saved. This message will appear on Approved PO Print.";
   } else {
-    msg.textContent="Enter special instructions, then Save Note to show them on print.";
+    msg.textContent="Enter special instructions, then press Submit to show them on print.";
   }
 }
 async function saveManagerNote(){
-  if(managerNoteSaving||!selectedOrder||!eligibleForPoPrint(selectedOrder)||!reviewReady)return;
-  if(!["admin","manager"].includes(String(currentProfile?.role||"").trim().toLowerCase()))return;
+  if(managerNoteSaving||!selectedOrder||!eligibleForPoPrint(selectedOrder)||!reviewReady)return false;
+  if(!["admin","manager"].includes(String(currentProfile?.role||"").trim().toLowerCase())){
+    const m=document.getElementById("managerNoteStatus");m.textContent="Only Admin or Manager can change the Manager Note.";m.classList.add("error");return false;
+  }
   const order=selectedOrder;
   const note=document.getElementById("managerNote").value.trim();
-  if(note.length>1200) {alert("Manager Note maximum 1200 characters.");return;}
-  if(note===managerNoteOriginal.trim()){renderManagerNoteControls();return;}
+  if(note.length>1200) {alert("Manager Note maximum 1200 characters.");return false;}
+  if(note===managerNoteOriginal.trim()){renderManagerNoteControls();return true;}
   managerNoteSaving=true;
   const status=document.getElementById("managerNoteStatus");
   status.classList.remove("error");
@@ -2701,46 +2694,87 @@ async function saveManagerNote(){
     if(selectedOrder?.id===order.id){
       status.textContent="Note Save Failed: "+(error.message||"Unknown error");
       status.classList.add("error");
-      return;
     }
+    return false;
   }finally{
     managerNoteSaving=false;
     if(selectedOrder?.id===order.id&&!status.classList.contains("error")){
       renderManagerNoteControls();
     }else if(selectedOrder?.id===order.id){
       document.getElementById("managerNote").disabled=false;
-      document.getElementById("saveManagerNoteBtn").disabled=false;
     }
   }
+  return true;
 }
 
 // Sales Head can change an approved PO (SKU, cases, rate, weight) until loading starts.
 const canEditItems=o=>Boolean(o)&&(isPending(o)||(eligibleForPoPrint(o)&&!poAllocationLocked(o)));
-async function approveOrder() {
-  if (!selectedOrder || !canEditItems(selectedOrder) || !reviewReady) return;
-  const approving=isPending(selectedOrder);
-  if (!selectedItems.length) { alert('Add at least one SKU.'); return; }
+// SKU lines are ready to save? Shows what is wrong and returns false otherwise.
+function poItemsValid() {
+  if (!selectedItems.length) { alert('Add at least one SKU.'); return false; }
   for (const item of selectedItems) {
     if (!String(item.sku_name||'').trim()) { alert('SKU name is required.'); return; }
     const originalUnchanged = Boolean(item.id) && String(item.sku_name).trim() === String(item._original_sku_name || '').trim();
     const inSkuMaster = warehouseSkuMaster.some(x => String(x.sku_name).trim().toUpperCase() === String(item.sku_name).trim().toUpperCase());
     if(!originalUnchanged && !inSkuMaster) {
       alert('Please select a valid SKU from Master dropdown: '+item.sku_name);
-      return;
+      return false;
     }
     if (![item.approved_qty,item.rate,item.unit_weight].every(v=>Number.isFinite(Number(v)) && Number(v)>=0)) {
-      alert('Quantity, rate and weight must be valid non-negative numbers.'); return;
+      alert('Quantity, rate and weight must be valid non-negative numbers.'); return false;
     }
     if (!Number.isSafeInteger(Number(item.approved_qty))) {
-      alert('Approved Qty must be whole cases: '+item.sku_name); return;
+      alert('Approved Qty must be whole cases: '+item.sku_name); return false;
     }
   }
   if (!selectedItems.some(item=>Number(item.approved_qty)>0)) {
-    alert('At least one SKU needs Approved Qty above 0. To reject the full PO, use Cancel Order.'); return;
+    alert('At least one SKU needs Approved Qty above 0. To reject the full PO, use Cancel Order.'); return false;
   }
-  if (!await confirm(approving
+  return true;
+}
+// One Submit for an approved PO: saves Driver / Vehicle / Godown Manager, SKU changes and the
+// Manager Note together, after one confirm. Only what changed is saved.
+let poSubmitting=false;
+async function submitPo() {
+  if (poSubmitting || !selectedOrder || !reviewReady || isPending(selectedOrder)) return;
+  const order=selectedOrder;
+  const itemsDirty=canEditItems(order)&&poItemsSignature(selectedItems)!==savedPoItemsSignature;
+  const noteDirty=document.getElementById('managerNote').value.trim()!==managerNoteOriginal.trim();
+  const transportDirty=poTransportDirty();
+  if (!itemsDirty && !noteDirty && !transportDirty) {
+    allocationStatus(approvedTransport?.id?'Nothing changed. Everything is saved.':'Nothing to save yet. Select driver, vehicle and Godown Manager, then press Submit.');
+    return;
+  }
+  if (transportDirty && !poTransportPayload()) return;
+  if (itemsDirty && !poItemsValid()) return;
+  const what=[itemsDirty&&'SKU / Qty / Rate',transportDirty&&'Driver / Vehicle / Godown Manager',noteDirty&&'Manager Note'].filter(Boolean);
+  if (!await confirm('Save '+what.join(', ')+' for PO '+order.order_no+'?')) return;
+  const btn=document.getElementById('approveOrderBtn');
+  poSubmitting=true; btn.disabled=true; btn.textContent='Saving...';
+  let ok=true;
+  try {
+    // Transport first: saving SKU lines reloads the PO, which would clear unsaved transport fields.
+    if (transportDirty) ok=await saveApprovedTransport();
+    if (ok && itemsDirty) ok=await approveOrder({quiet:true});   // also saves the note
+    else if (ok && noteDirty) ok=await saveManagerNote();
+  } finally {
+    poSubmitting=false;
+    btn.disabled=false; btn.textContent=selectedOrder&&isPending(selectedOrder)?'Approve PO':'Submit';
+  }
+  if (!ok || selectedOrder?.id!==order.id) return;
+  if (transportDirty) allocationStatus('Saved! Driver: '+(approvedTransport?.driver_name||'-')+', Vehicle: '+(approvedTransport?.vehicle_no||'-')+', Godown Manager: '+(approvedTransport?.loading_person||'-')+'. Both are notified.');
+  showMessage('PO '+order.order_no+' saved: '+what.join(', ')+'.'+(itemsDirty||noteDirty?' Print the PO again if it was already printed.':''),'success');
+  // Small Transport popup: close by itself once saved.
+  if (document.getElementById('reviewModal').classList.contains('transport-only')) setTimeout(()=>{if(selectedOrder&&selectedOrder.id===order.id)closeModal()},1500);
+}
+async function approveOrder(opts={}) {
+  if (selectedOrder && !isPending(selectedOrder) && !opts.quiet) return submitPo();
+  if (!selectedOrder || !canEditItems(selectedOrder) || !reviewReady) return false;
+  const approving=isPending(selectedOrder);
+  if (!poItemsValid()) return false;
+  if (!opts.quiet && !await confirm(approving
     ? 'Approve '+selectedOrder.order_no+' with '+selectedItems.length+' SKU(s)?'
-    : 'Save changes to approved PO '+selectedOrder.order_no+' ('+selectedItems.length+' SKU)? Driver / Vehicle assignment stays the same.')) return;
+    : 'Save changes to approved PO '+selectedOrder.order_no+' ('+selectedItems.length+' SKU)?')) return false;
   const btn=document.getElementById('approveOrderBtn');
   btn.disabled=true; btn.textContent=approving?'Approving...':'Saving...';
   try {
@@ -2782,12 +2816,13 @@ async function approveOrder() {
     const id=selectedOrder.id;
     await loadOrders();
     await reviewOrder(id);
-    if(!approving)alert('Changes saved for '+(selectedOrder?.order_no||'PO')+'. Print the PO again if it was already printed.');
     document.getElementById("postApprovalPanel").scrollIntoView({behavior:"smooth",block:"nearest"});
+    return true;
   } catch(error) {
     console.error(error);
     alert((approving?'Approval':'Save')+' not completed: '+(error.message||'Unknown error')+'\nSome SKU edits may already be saved. Refresh and review before retrying.');
-  } finally {btn.disabled=false;btn.textContent=selectedOrder&&!isPending(selectedOrder)?'Save PO':'Approve PO';}
+    return false;
+  } finally {btn.disabled=false;btn.textContent=selectedOrder&&!isPending(selectedOrder)?'Submit':'Approve PO';}
 }
 
 async function cancelOrder() {

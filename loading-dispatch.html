@@ -20,7 +20,7 @@ main{max-width:1400px;margin:35px auto;padding:0 20px}
 h1{margin-bottom:8px}
 p{color:#66758a}
 .panel{background:white;border:1px solid #dfe5ed;border-radius:12px;padding:20px;margin-top:20px}
-.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:15px}
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:15px}
 .stat{background:white;border:1px solid #dfe5ed;border-radius:12px;padding:20px}
 .stat strong{display:block;font-size:30px;margin-top:12px}
 button,.btn{background:#1769e8;color:white;border:0;border-radius:7px;padding:12px 17px;cursor:pointer;font-weight:bold;text-decoration:none}
@@ -78,6 +78,7 @@ header,main,.overlay{display:none!important}
 </div>
 <div id="message" class="message"></div>
 <div class="stats">
+<div class="stat">Approved, no vehicle yet<strong id="approvedCount">0</strong></div>
 <div class="stat">Awaiting Loading<strong id="pendingCount">0</strong></div>
 <div class="stat">Loading in Progress<strong id="loadingCount">0</strong></div>
 <div class="stat">Loaded Orders<strong id="loadedCount">0</strong></div>
@@ -184,7 +185,8 @@ await load();
 
 async function load(){
 try{
-const o=await db.from('orders').select('*').in('status',['transport_allocated','loading','loaded']).order('order_date',{ascending:false});
+// Approved POs show at once (quantity is final): the goods can be got ready before the driver / vehicle is given.
+const o=await db.from('orders').select('*').in('status',[...APPROVED,'transport_allocated','loading','loaded']).order('order_date',{ascending:false});
 if(o.error)throw o.error;
 orders=ERPRecent.sort(o.data||[]).map((x,i)=>[x,i]).sort((a,b)=>prioRank(a[0])-prioRank(b[0])||a[1]-b[1]).map(p=>p[0]);
 // Read assignments only for the listed orders, so old rows beyond any row limit are never missed.
@@ -207,11 +209,14 @@ const prioOf=o=>['URGENT','HIGH'].includes(String(o.priority||'').toUpperCase())
 const prioRank=o=>({URGENT:0,HIGH:1,NORMAL:2})[prioOf(o)];
 const prioBadge=o=>prioOf(o)==='NORMAL'?'':`<span class="prio prio-${prioOf(o)}">${prioOf(o)}</span>`;
 
+const APPROVED=['approved','approved_next','manager_approved','warehouse_approved'];
+const waiting=o=>APPROVED.includes(String(o.status||'').toLowerCase());
 function assignment(id){return assignments.find(a=>a.order_id===id)||{};}
 // Only the Godown Manager chosen by the Sales Head loads the vehicle (Sales Head / Admin always can).
 function notMine(a){return role==='warehouse'&&a.loading_manager_id&&a.loading_manager_id!==user.id;}
 
 function render(){
+$('approvedCount').textContent=orders.filter(waiting).length;
 $('pendingCount').textContent=orders.filter(o=>o.status==='transport_allocated').length;
 $('loadingCount').textContent=orders.filter(o=>o.status==='loading').length;
 $('loadedCount').textContent=orders.filter(o=>o.status==='loaded').length;
@@ -234,8 +239,8 @@ return `<tr>
 <td>${safe(a.vehicle_no||'-')}</td>
 <td>${safe(a.loading_person||'-')}</td>
 <td>${fmt(o.total_qty)}</td>
-<td><span class="badge">${safe(o.status==='loaded'?'VEHICLE LOADED':o.status.replaceAll('_',' ').toUpperCase())}</span></td>
-<td><button data-id="${safe(o.id)}">${o.status==='loaded'?'View / Print':'Verify Loading'}</button></td>
+<td><span class="badge">${safe(o.status==='loaded'?'VEHICLE LOADED':waiting(o)?'APPROVED · NO VEHICLE YET':o.status.replaceAll('_',' ').toUpperCase())}</span></td>
+<td><button data-id="${safe(o.id)}">${o.status==='loaded'?'View / Print':waiting(o)?'View':'Verify Loading'}</button></td>
 </tr>`;
 }).join(''):'<tr><td colspan="9">No orders found.</td></tr>';
 }
@@ -274,18 +279,19 @@ return `<tr>
 <td>${safe(item.sku_name)}</td>
 <td>${fmt(item.ordered_qty)}</td>
 <td>${fmt(approved)}</td>
-<td><input class="qty" type="number" min="0" max="${approved}" step="1" data-index="${i}" value="${loaded}" ${selected.status==='loaded'?'disabled':''}></td>
+<td><input class="qty" type="number" min="0" max="${approved}" step="1" data-index="${i}" value="${loaded}" ${selected.status==='loaded'||waiting(selected)?'disabled':''}></td>
 <td>${money(item.rate)}</td>
 <td>${fmt(item.unit_weight)} KG</td>
 </tr>`;
 }).join('');
 $('loadingRemarks').value=a.remarks||'';
-$('loadingRemarks').disabled=selected.status==='loaded';
-const blocked=notMine(a);
+$('loadingRemarks').disabled=selected.status==='loaded'||waiting(selected);
+const blocked=notMine(a),early=waiting(selected);
 $('startBtn').style.display=selected.status==='transport_allocated'&&!blocked?'':'none';
-$('completeBtn').style.display=selected.status==='loaded'||blocked?'none':'';
-$('assignedNote').hidden=!blocked;
-$('assignedNote').textContent=blocked?'This vehicle is assigned to '+(a.loading_person||'another Godown Manager')+' for loading. Only that Godown Manager (or the Sales Head) can confirm it.':'';
+$('completeBtn').style.display=selected.status==='loaded'||blocked||early?'none':'';
+$('printBtn').style.display=early?'none':'';
+$('assignedNote').hidden=!blocked&&!early;
+$('assignedNote').textContent=early?'PO approved: get the goods ready. Loading starts once the Sales Head gives the driver and vehicle.':blocked?'This vehicle is assigned to '+(a.loading_person||'another Godown Manager')+' for loading. Only that Godown Manager (or the Sales Head) can confirm it.':'';
 $('overlay').style.display='block';
 mountLoadDocs(id);
 // Opening the assigned order ends the "Vehicle Loading Assignment" reminder.

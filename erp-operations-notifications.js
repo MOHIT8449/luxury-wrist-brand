@@ -21,6 +21,8 @@
   const join=a=>a.filter(Boolean).join(" · ");
   if(t==="TALLY_BILL_PENDING")return {icon:"🧾",text:join(["Make Tally bill",order])};
   if(t==="VEHICLE_LOADED")return {icon:"🚛",text:join(["Vehicle loaded",order,(m.match(/Vehicle ([A-Z0-9]+)/)||[])[1]])};
+  if(t==="PO_APPROVED_BILL")return {icon:"🧾",text:join(["PO approved · Make bill",order,money])};
+  if(t==="PO_APPROVED_LOADING")return {icon:"📦",text:join(["PO approved · Get ready",order])};
   if(t==="TALLY_BILL_DONE")return {icon:"🧾",text:join(["Bill made",order])};
   if(t==="ORDER_NEW")return {icon:"🛒",text:join(["New order",order,money,"Approve"])};
   if(t==="DELIVERY_COLLECTION_INFO")return {icon:"💰",text:join(["Driver collected",order,money])};
@@ -64,7 +66,8 @@
  }
  // Page each notification opens. {o} = the notification's order id. The first page this login can open wins.
  const ROUTES=[
-  [/^TALLY_BILL_PENDING$/,["party-billing.html?order={o}"]],
+  [/^(TALLY_BILL_PENDING|PO_APPROVED_BILL)$/,["party-billing.html?order={o}"]],
+  [/^PO_APPROVED_LOADING$/,["loading-dispatch.html?order={o}","warehouse-orders.html"]],
   [/^(VEHICLE_LOADED|TALLY_BILL_DONE)$/,["loading-dispatch.html","party-billing.html?order={o}","warehouse-orders.html","driver-delivery.html?order={o}","my-sales.html#orders"]],
   [/^ORDER_NEW$/,["warehouse-orders.html"]],
   [/^DELIVERY_COLLECTION_(INFO|RECEIVED)$/,["driver-collections.html?order={o}","my-sales.html#orders","loading-dispatch.html"]],
