@@ -106,7 +106,10 @@
 
     const VTYPES=["Tempo","Pickup","Chhota Hathi","407","Eicher","Truck","Container","Other"];
     // Work / Post of an employee. PO Approval & Driver and Transport Assignment list the "Driver" ones by themselves.
-    const WORKS=["Driver","Loader","Godown Manager","Manager","Supervisor","Godown helper","Packer","Picker","Salesman","Office","Accounts","Security","Other"];
+    const WORKS=["Driver","Loader","Godown Manager","Manager","Supervisor","Godown helper","Packer","Picker","Salesman","Transport","Office","Accounts","Security","Other"];
+    // ERP login roles (lwb_employee_login_link_setup.sql); Tasks, Godown Manager and salesman lists use the login.
+    const LOGIN_ROLES=[["driver","Driver"],["warehouse","Godown Manager"],["manager","Manager / Sales Head"],["sales","Salesman"],["accounts","Accounts"],["transport","Transport"],["admin","Admin"]];
+    const loginLabel=r=>(LOGIN_ROLES.find(x=>x[0]===r)||["",r||"-"])[1];
     const roleKey=v=>String(v||"").trim().replace(/\s+/g," ").toLowerCase();
     const isDriver=r=>roleKey(r&&r.designation)==="driver";
     const DOCS=[["insurance_expiry","Insurance"],["puc_expiry","PUC"],["fitness_expiry","Fitness"],["permit_expiry","Permit"]];
@@ -147,7 +150,7 @@
 
     let docPanel=null,docKey="",docSum={vehicles:null,drivers:null,employees:null},avatars=new Map();
     const DOC_ENTITY={vehicles:"VEHICLE",drivers:"STAFF",employees:"STAFF"};
-    let me=null,tab="vehicles",data={vehicles:[],drivers:[],employees:[]},empNext="",empMonth="",empErr="",editing=null,busy=false,loginPhones=new Set(),missing=false,tripOf=new Map();
+    let me=null,tab="vehicles",data={vehicles:[],drivers:[],employees:[]},empNext="",empMonth="",empErr="",editing=null,busy=false,loginPhones=new Set(),missing=false,tripOf=new Map(),loginOf=new Map(),loginErr=false;
     // Vehicles: Admin / Manager add, edit, delete; Godown (warehouse) add / edit.
     // Employee Master (drivers too): Admin / Manager / Godown add and edit; nobody deletes (mark Left).
     // Drivers tab: read-only list for Transport.
@@ -167,12 +170,14 @@
     }
     async function load(){
       // Drivers = working employees with Work / Post "Driver" (lwb_employee_roles_setup.sql).
-      const [v,d,l,e,vp]=await Promise.all([
+      const [v,d,l,e,vp,lk]=await Promise.all([
         client.from("lwb_vehicles").select("*").order("vehicle_no"),
         client.rpc("lwb_staff_pick",{p_role:"driver"}),
         ["admin","manager","transport"].includes(me.role)?client.rpc("lwb_sales_head_active_drivers"):Promise.resolve({data:[]}),
         empRole()?client.rpc("lwb_emp_list2"):Promise.resolve({data:null}),
-        client.rpc("lwb_vehicle_pick")]);
+        client.rpc("lwb_vehicle_pick"),
+        empRole()?client.rpc("lwb_emp_logins"):Promise.resolve({data:[]})]);
+      loginErr=!!lk.error;loginOf=new Map(((lk&&lk.data)||[]).map(x=>[x.id,x]));
       tripOf=new Map(((vp&&vp.data)||[]).filter(x=>x.on_trip&&x.on_trip.length).map(x=>[x.id,x.on_trip]));
       empErr=e.error?"Employee Master is not set up in Supabase yet ("+(e.error.message||"")+").":"";
       if(e.data){data.employees=ERPRecent.sort(e.data.rows||[]);empNext=e.data.next_code||"";empMonth=e.data.month||""}
@@ -313,8 +318,33 @@
     // Work / Post, and for a driver: default vehicle, licence expiry, ERP login.
     function roleCell(r){
       if(!isDriver(r))return esc(r.designation||"-");
-      const lg=["admin","manager"].includes(me.role)?(loginPhones.has(r.mobile)?' <span class="tagx info">Has login</span>':' <span class="tagx warn">No login</span>'):"";
-      return '<b>Driver</b>'+lg+"<small>"+(r.vehicle_no?"Vehicle "+esc(r.vehicle_no):"No default vehicle")+(r.transporter_name?" · "+esc(r.transporter_name):"")+"</small>"+(r.license_expiry?"<div>"+expiryTags([[r.license_expiry,"Licence"]])+"</div>":"");
+      return '<b>Driver</b>'+"<small>"+(r.vehicle_no?"Vehicle "+esc(r.vehicle_no):"No default vehicle")+(r.transporter_name?" · "+esc(r.transporter_name):"")+"</small>"+(r.license_expiry?"<div>"+expiryTags([[r.license_expiry,"Licence"]])+"</div>":"");
+    }
+    // ERP login of the employee: Tasks, Godown Manager, salesman and driver popups go to it.
+    const isAdmin=()=>!!me&&me.realRole==="admin";
+    function loginCell(r){
+      if(loginErr)return "-";
+      const x=loginOf.get(r.id);
+      if(x&&x.user_id)return '<span class="tagx '+(x.login_active?"ok":"bad")+'">'+esc(loginLabel(x.login_role))+(x.login_active?"":" · off")+"</span><small>"+esc(x.login_mobile||"")+"</small>";
+      if(!r.is_active)return "-";
+      return isAdmin()?'<button type="button" data-login="'+r.id+'">Create login</button>':'<span class="fm-hint">No login</span>';
+    }
+    function makePassword(){const a="abcdefghjkmnpqrstuvwxyz",d="23456789",pick=s=>s[crypto.getRandomValues(new Uint32Array(1))[0]%s.length];
+      let p="";for(let i=0;i<4;i++)p+=pick(a);for(let i=0;i<4;i++)p+=pick(d);return p.charAt(0).toUpperCase()+p.slice(1)}
+    async function createLogin(id){
+      const r=data.employees.find(x=>String(x.id)===String(id)),x=r&&loginOf.get(r.id);if(!r||!isAdmin())return;
+      if(!r.mobile){await alert("Add the mobile number of "+r.name+" first (Edit), then Create login. The login is the mobile number.");return}
+      let role=x&&x.role_for_post;
+      if(!role){
+        const ans=await prompt("ERP login for "+r.name+" ("+(r.designation||"-")+").\nType the number of the login role:\n\n"+LOGIN_ROLES.slice(0,6).map((y,i)=>(i+1)+". "+y[1]).join("\n"),"");
+        if(ans==null)return;const k=LOGIN_ROLES.slice(0,6)[Number(String(ans).trim())-1];if(!k){ERPShell.toast("Choose 1 to 6.","error");return}role=k[0];
+      }
+      const pass=await prompt("Create ERP login for "+r.emp_code+" · "+r.name+"\nRole: "+loginLabel(role)+" · Login: "+r.mobile+"\n\nPassword (at least 6 characters):",makePassword());
+      if(pass==null)return;if(String(pass).length<6){ERPShell.toast("Password must be at least 6 characters.","error");return}
+      const res=await client.rpc("lwb_emp_create_login",{p_staff:r.id,p_password:String(pass),p_role:role});
+      if(res.error){ERPShell.toast("Login not created: "+res.error.message,"error");return}
+      await alert("Login created for "+r.name+" ("+loginLabel(role)+")\nWebsite: "+location.origin+"/login.html\nLogin: "+r.mobile+"\nPassword: "+pass+"\n\nShare this with "+r.name+".");
+      await load();render();
     }
     function renderList(){
       const q=el("search").value.trim().toLowerCase().split(/\s+/).filter(Boolean),f=el("filter").value;
@@ -328,9 +358,9 @@
           return '<tr class="'+(r.is_active?"":"off")+'"><td>'+(i+1)+"</td><td>"+avatar(r)+"<b>"+esc(r.vehicle_no)+"</b>"+(r.note?"<small>"+esc(r.note)+"</small>":"")+"<div>"+docTags(r)+"</div></td><td>"+esc(r.vehicle_type||"-")+(r.capacity_kg!=null?"<small>"+esc(r.capacity_kg)+" KG</small>":"")+"</td><td>"+(r.ownership==="TRANSPORTER"?"Transporter":"Own")+(r.transporter_name?"<small>"+esc(r.transporter_name)+(r.owner_mobile?" · "+esc(r.owner_mobile):"")+"</small>":"")+"</td><td style='white-space:normal;min-width:180px'>"+expiryTags(DOCS.map(([k,l])=>[r[k],l]))+"</td><td>"+(drv||"-")+"</td><td>"+(r.is_active?(tripOf.has(r.id)?'<span class="tagx warn">On trip</span><small>'+esc(tripOf.get(r.id).join(", "))+"</small>":'<span class="tagx ok">Free</span>'):'<span class="tagx bad">Inactive</span>')+"</td><td>"+act(r)+"</td></tr>"}).join("")||'<tr><td colspan="8" class="erp-empty">No vehicles yet. Add one using the form above or Excel.</td></tr>';
       }else if(tab==="employees"){
         const mo=empMonth?new Date(empMonth+"T12:00:00Z").toLocaleDateString("en-IN",{month:"short",timeZone:"UTC"}):"This month";
-        el("head").innerHTML="<tr><th>Employee ID</th><th>Name</th><th>Work / Post</th><th>Mobile</th><th>Salary / month</th><th>Upad in "+esc(mo)+"</th><th>Salary paid in "+esc(mo)+"</th><th>Joined</th><th>Status</th><th></th></tr>";
+        el("head").innerHTML="<tr><th>Employee ID</th><th>Name</th><th>Work / Post</th><th>ERP Login</th><th>Mobile</th><th>Salary / month</th><th>Upad in "+esc(mo)+"</th><th>Salary paid in "+esc(mo)+"</th><th>Joined</th><th>Status</th><th></th></tr>";
         el("list").innerHTML=rows.map(r=>{const cap=Number(r.month_cap)||0,up=Math.max(0,Number(r.month_upad)||0),left=cap-up;
-          return '<tr class="'+(r.is_active?"":"off")+'"><td><b>'+esc(r.emp_code||"-")+"</b></td><td>"+avatar(r)+"<b>"+esc(r.name)+"</b>"+(r.note?"<small>"+esc(r.note)+"</small>":"")+"<div>"+docTags(r)+"</div></td><td>"+roleCell(r)+"</td><td>"+esc(r.mobile||"-")+(r.alt_mobile?"<small>"+esc(r.alt_mobile)+"</small>":"")+"</td><td>"+(Number(r.monthly_salary)?rs(r.monthly_salary):"-")+(cap&&cap!==Number(r.monthly_salary)?"<small>"+esc(mo)+": "+rs(cap)+"</small>":"")+"</td><td>"+rs(up)+(cap?(left<-0.5?'<small><span class="tagx bad">'+rs(-left)+" over</span></small>":"<small>Left "+rs(left)+"</small>"):"")+"</td><td>"+rs(r.month_paid)+"</td><td>"+(showDate(r.joining_date)||"-")+"</td><td>"+(r.is_active?'<span class="tagx ok">Working</span>':'<span class="tagx bad">Left</span>')+"</td><td>"+act(r)+"</td></tr>"}).join("")||'<tr><td colspan="10" class="erp-empty">'+(empErr?esc(empErr):"No employees yet. Add one using the form above or Excel.")+"</td></tr>";
+          return '<tr class="'+(r.is_active?"":"off")+'"><td><b>'+esc(r.emp_code||"-")+"</b></td><td>"+avatar(r)+"<b>"+esc(r.name)+"</b>"+(r.note?"<small>"+esc(r.note)+"</small>":"")+"<div>"+docTags(r)+"</div></td><td>"+roleCell(r)+"</td><td>"+loginCell(r)+"</td><td>"+esc(r.mobile||"-")+(r.alt_mobile?"<small>"+esc(r.alt_mobile)+"</small>":"")+"</td><td>"+(Number(r.monthly_salary)?rs(r.monthly_salary):"-")+(cap&&cap!==Number(r.monthly_salary)?"<small>"+esc(mo)+": "+rs(cap)+"</small>":"")+"</td><td>"+rs(up)+(cap?(left<-0.5?'<small><span class="tagx bad">'+rs(-left)+" over</span></small>":"<small>Left "+rs(left)+"</small>"):"")+"</td><td>"+rs(r.month_paid)+"</td><td>"+(showDate(r.joining_date)||"-")+"</td><td>"+(r.is_active?'<span class="tagx ok">Working</span>':'<span class="tagx bad">Left</span>')+"</td><td>"+act(r)+"</td></tr>"}).join("")||'<tr><td colspan="11" class="erp-empty">'+(empErr?esc(empErr):"No employees yet. Add one using the form above or Excel.")+"</td></tr>";
       }else{
         // Transport: read-only list of working drivers from Employee Master.
         el("head").innerHTML="<tr><th>#</th><th>Driver</th><th>Mobile</th><th>Default Vehicle</th><th>Transporter</th><th>Licence</th><th>ERP Login</th></tr>";
@@ -469,6 +499,7 @@
       const t=e.target;
       if(t.dataset.edit){editing=data[tab].find(x=>String(x.id)===t.dataset.edit)||null;docKey="";render();el("formCard").scrollIntoView({behavior:"smooth"});return}
       if(t.dataset.del){remove(t.dataset.del);return}
+      if(t.dataset.login){createLogin(t.dataset.login);return}
     });
     el("save").onclick=save;
     el("clear").onclick=()=>{editing=null;docKey="";render()};
