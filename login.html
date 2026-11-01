@@ -6,6 +6,7 @@
   <title>ERP Login | Luxury Wrist Brand</title>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="quick-unlock.js"></script>
 
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -110,6 +111,11 @@
     .link-btn{display:block;width:auto;height:auto;margin:14px auto 0;padding:4px 8px;background:none;box-shadow:none;
       color:var(--gold-dk);font:600 13px Montserrat,"Segoe UI",Arial,sans-serif;letter-spacing:.2px;text-decoration:underline;text-underline-offset:3px}
     .link-btn:hover{background:none;color:var(--teal)}
+    /* Fingerprint / face / phone PIN unlock (quick-unlock.js) */
+    .unlock-ic{display:block;width:74px;height:74px;margin:2px auto 14px;padding:16px;border-radius:50%;background:#f7efda;color:var(--gold-dk)}
+    #lockNote,#offerNote{text-align:center}
+    #unlockButton,#offerOn{background:linear-gradient(135deg,var(--teal),var(--teal-2));box-shadow:0 10px 22px rgba(0,46,54,.22)}
+    #unlockButton:hover,#offerOn:hover{background:var(--gold);color:var(--teal)}
     .footer{text-align:center;margin-top:14px;font-size:11px;letter-spacing:.4px;color:#9aa1a3}
 
     /* Laptop with short screen */
@@ -251,6 +257,20 @@
     <button type="submit" id="otpButton">Verify OTP</button>
     <button type="button" class="secondary" id="otpBack">Back to Login</button>
   </form>
+  <!-- ERP locked after 15 idle minutes (quick-unlock.js): open with fingerprint / face / phone PIN. -->
+  <form id="lockForm" hidden>
+    <svg class="unlock-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><path d="M12 11v3a8 8 0 0 1-1.5 4.7"/><path d="M8.5 10.5a3.5 3.5 0 0 1 7 0V13a12 12 0 0 1-.6 3.8"/><path d="M5.6 15.5A11 11 0 0 0 6 13v-2.5a6 6 0 0 1 9.6-4.8"/><path d="M18 9a6 6 0 0 1 .1 1.5V13c0 2.2-.4 4.2-1.2 6"/><path d="M8.8 20a14 14 0 0 0 .7-2.4"/><path d="M4 12.5v-2a8 8 0 0 1 1.3-4.4"/></svg>
+    <p class="form-note" id="lockNote">ERP is locked after 15 minutes without work. Open it with your fingerprint, face or phone PIN.</p>
+    <button type="submit" id="unlockButton">Unlock</button>
+    <button type="button" class="secondary" id="lockPassword">Login with password instead</button>
+  </form>
+  <!-- After a full login: offer fingerprint unlock on this phone. -->
+  <form id="offerForm" hidden>
+    <svg class="unlock-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><path d="M12 11v3a8 8 0 0 1-1.5 4.7"/><path d="M8.5 10.5a3.5 3.5 0 0 1 7 0V13a12 12 0 0 1-.6 3.8"/><path d="M5.6 15.5A11 11 0 0 0 6 13v-2.5a6 6 0 0 1 9.6-4.8"/><path d="M18 9a6 6 0 0 1 .1 1.5V13c0 2.2-.4 4.2-1.2 6"/><path d="M8.8 20a14 14 0 0 0 .7-2.4"/><path d="M4 12.5v-2a8 8 0 0 1 1.3-4.4"/></svg>
+    <p class="form-note" id="offerNote"><b>Unlock with fingerprint next time?</b><br>After 15 minutes without work the ERP will lock instead of logging out. Open it again with your fingerprint, face or phone PIN / pattern, without the password and OTP.</p>
+    <button type="submit" id="offerOn">Yes, turn on</button>
+    <button type="button" class="secondary" id="offerNo">Not now</button>
+  </form>
   <div id="message" role="status" aria-live="polite"></div>
   <p class="security-note">Only active users created by LWB Admin may enter the ERP.
   No Login Email, or lost your OTP phone? Ask Admin.</p>
@@ -321,7 +341,7 @@ async function checkProfile(user){
 // Authenticator app (Supabase MFA, "aal2"). The first time, the user scans a QR.
 let otpFactorId=null,otpUser=null;
 function showOtpForm(setup){
-  el("loginForm").hidden=true;el("otpForm").hidden=false;
+  el("loginForm").hidden=el("lockForm").hidden=el("offerForm").hidden=true;el("otpForm").hidden=false;
   el("otpSetup").hidden=!setup;
   el("otpNote").textContent=setup?"First time: scan the QR code to set up OTP. From next time, only the app code is needed."
     :"Open the Google Authenticator app and enter the 6-digit code for LWB ERP.";
@@ -352,9 +372,57 @@ async function goToErp(user){
     if(a.error)a=await client.from("lwb_user_page_access").select("hidden").eq("user_id",user.id).maybeSingle();
     localStorage.setItem("lwbHiddenPages",JSON.stringify({uid:user.id,hidden:(!a.error&&a.data&&a.data.hidden)||[],extra:(!a.error&&a.data&&a.data.extra)||[]}))}catch(e){}
   try{localStorage.setItem("lwbLastActive",String(Date.now()))}catch(e){}
-  showMessage("Login successful. Opening your ERP Dashboard...");
-  window.location.assign("dashboard.html");
+  const back=unlockBack||"dashboard.html";
+  await offerUnlock(user);
+  LWBUnlock.unlock();
+  showMessage(unlockBack?"Unlocked. Opening the ERP...":"Login successful. Opening your ERP Dashboard...");
+  window.location.assign(back);
 }
+
+// ---- Fingerprint / face / phone PIN unlock (quick-unlock.js) ----
+let unlockBack=null,lockUser=null;
+async function offerUnlock(user){
+  try{if(LWBUnlock.isOn(user.id)||LWBUnlock.declined(user.id)||!(await LWBUnlock.supported()))return;}catch(e){return}
+  showOnly("offerForm");showMessage("");
+  return new Promise(done=>{
+    el("offerForm").onsubmit=async event=>{
+      event.preventDefault();
+      el("offerOn").disabled=true;el("offerOn").textContent="Waiting for fingerprint...";
+      try{await LWBUnlock.enable(user);showMessage("Fingerprint unlock is on for this phone.");done();}
+      catch(e){
+        el("offerOn").disabled=false;el("offerOn").textContent="Yes, turn on";
+        showMessage(e&&e.name==="NotAllowedError"?"Fingerprint was cancelled. Tap \"Yes, turn on\" to try again, or \"Not now\".":"Fingerprint unlock could not be turned on: "+(e&&e.message||e),true);
+      }
+    };
+    el("offerNo").onclick=()=>{LWBUnlock.notNow(user.id);done();};
+  });
+}
+function showLock(user){
+  lockUser=user;showOnly("lockForm");showMessage("");
+  const who=user.email&&!/@staff\.lwb-erp\.in$/i.test(user.email)?user.email:"";
+  el("lockNote").textContent="ERP is locked after 15 minutes without work. Open it with your fingerprint, face or phone PIN."+(who?" Login: "+who:"");
+  tryUnlock(true);
+}
+async function tryUnlock(auto){
+  if(busy||!lockUser)return;
+  busy=true;el("unlockButton").disabled=true;el("unlockButton").textContent="Checking...";
+  try{
+    await LWBUnlock.verify(lockUser.id);
+    // The phone said yes: check the login is still valid, then the usual role / OTP checks.
+    const r=await client.auth.getUser();
+    if(r.error||!r.data?.user||r.data.user.id!==lockUser.id){
+      try{await client.auth.signOut({scope:"local"})}catch(e){}
+      LWBUnlock.unlock();unlockBack=lockUser=null;showOnly("loginForm");
+      throw Error("Your login has ended. Please log in again with your password.");
+    }
+    await finishAuthorizedLogin(r.data.user);
+  }catch(e){
+    if(!(auto&&e&&e.name==="NotAllowedError"))
+      showMessage(e&&e.name==="NotAllowedError"?"Fingerprint was cancelled. Tap Unlock to try again.":(e&&e.message)||String(e),true);
+  }finally{busy=false;el("unlockButton").disabled=false;el("unlockButton").textContent="Unlock";}
+}
+el("lockForm").addEventListener("submit",event=>{event.preventDefault();tryUnlock(false)});
+el("lockPassword").addEventListener("click",()=>{LWBUnlock.unlock();unlockBack=lockUser=null;el("otpBack").click()});
 async function finishAuthorizedLogin(user){
   await checkProfile(user);
   const aal=await client.auth.mfa.getAuthenticatorAssuranceLevel();
@@ -399,7 +467,7 @@ function resendCountdown(seconds){
   tick();waTimer=setInterval(tick,1000);
 }
 function showWaForm(r){
-  el("loginForm").hidden=true;el("otpForm").hidden=true;el("waForm").hidden=false;
+  el("loginForm").hidden=el("lockForm").hidden=el("offerForm").hidden=true;el("otpForm").hidden=true;el("waForm").hidden=false;
   if(r.error){showMessage(r.error,true);el("waNote").textContent="WhatsApp OTP could not be sent. Tap Resend, or verify with the Authenticator app.";}
   else{
     el("waNote").textContent=(r.sent?"OTP sent on WhatsApp to ":"OTP already sent to ")+(r.to||"your Login Mobile")+". Enter the code within 5 minutes.";
@@ -435,10 +503,29 @@ async function checkExistingLogin(){
   if(new URLSearchParams(location.search).get("otp"))showMessage("Enter your OTP to open the ERP.",true);
   if(new URLSearchParams(location.search).get("idle"))showMessage("Logged out after 15 minutes without any activity. Please log in again.",true);
   const {data,error}=await client.auth.getSession();
-  if(error||!data?.session)return;
-  // Same 15-minute rule as the ERP pages (erp-shell.js): an old idle session needs the password again.
+  const lk=LWBUnlock.locked();
+  if(error||!data?.session){
+    if(lk){LWBUnlock.unlock();showMessage("Your login has ended. Please log in again with your password.",true);}
+    return;
+  }
+  // Same 15-minute rule as the ERP pages (erp-shell.js): an old idle session needs the password again,
+  // or, with fingerprint unlock on for this login on this phone, the fingerprint / face / phone PIN.
+  const uid=data.session.user.id;
   let last=0;try{last=Number(localStorage.getItem("lwbLastActive"))||0}catch(e){}
-  if(last&&Date.now()-last>15*60e3){await client.auth.signOut({scope:"local"});try{localStorage.removeItem("lwbLastActive")}catch(e){}return;}
+  const idle=!!(last&&Date.now()-last>15*60e3);
+  if((lk||idle)&&LWBUnlock.isOn(uid)){
+    unlockBack=lk&&lk.uid===uid?LWBUnlock.safeBack(lk.back):"dashboard.html";
+    if(!lk||lk.uid!==uid)LWBUnlock.lock(uid,unlockBack);
+    try{localStorage.removeItem("lwbLastActive")}catch(e){}
+    showLock(data.session.user);
+    return;
+  }
+  if(lk||idle){
+    LWBUnlock.unlock();
+    await client.auth.signOut({scope:"local"});try{localStorage.removeItem("lwbLastActive")}catch(e){}
+    showMessage("Logged out after 15 minutes without any activity. Please log in again.",true);
+    return;
+  }
   // Verify current auth session, not merely cached session metadata.
   const result=await client.auth.getUser();
   if(result.error||!result.data?.user){
@@ -489,8 +576,8 @@ el("otpForm").addEventListener("submit",async event=>{
 });
 el("otpBack").addEventListener("click",async()=>{
   try{await client.auth.signOut({scope:"local"})}catch(e){}
-  otpFactorId=otpUser=fpVerified=null;clearInterval(waTimer);clearInterval(fpTimer);
-  ["otpForm","waForm","fpForm","fpCodeForm"].forEach(id=>el(id).hidden=true);
+  otpFactorId=otpUser=fpVerified=unlockBack=lockUser=null;clearInterval(waTimer);clearInterval(fpTimer);LWBUnlock.unlock();
+  ["otpForm","waForm","fpForm","fpCodeForm","lockForm","offerForm"].forEach(id=>el(id).hidden=true);
   el("loginForm").hidden=false;el("password").value="";showMessage("");
 });
 
@@ -507,7 +594,7 @@ function fpCountdown(seconds){
   tick();fpTimer=setInterval(tick,1000);
 }
 function showOnly(id){
-  ["loginForm","otpForm","waForm","fpForm","fpCodeForm"].forEach(f=>el(f).hidden=f!==id);
+  ["loginForm","otpForm","waForm","fpForm","fpCodeForm","lockForm","offerForm"].forEach(f=>el(f).hidden=f!==id);
 }
 async function sendResetCode(email){
   const {error}=await client.auth.resetPasswordForEmail(email);

@@ -31,3 +31,7 @@ safe: every later APK must be signed with the same key to update the app.
 ## Phone notifications
 
 This app now declares Android POST_NOTIFICATIONS for Chrome notification delegation. Install the newest signed APK over the existing app, then sign in → 🔔 → Enable phone alerts → Allow → Test. Server setup and safeguards are in ../README_PHONE_PUSH.md. User/OS permission must be granted on each device; no notification permission is requested just by opening an order page.
+
+## Fingerprint unlock
+After 15 minutes idle the ERP locks and opens with the phone's fingerprint / face / PIN
+(`quick-unlock.js`, WebAuthn in Chrome). It is part of the website, so no new APK is needed.

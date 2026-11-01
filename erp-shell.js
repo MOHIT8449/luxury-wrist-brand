@@ -4,6 +4,11 @@
    Menu visibility is navigation only; Supabase RLS/RPC checks stay the
    real permission check on every page. */
 (function(){
+  // Quick unlock (quick-unlock.js): while the ERP is locked after 15 idle minutes, every ERP
+  // page goes to the lock screen first, and a lock in another tab locks this tab too.
+  const toLock=()=>{document.documentElement.style.visibility="hidden";location.replace("login.html?lock=1")};
+  try{if(localStorage.getItem("lwbLocked"))toLock()}catch(e){}
+  window.addEventListener("storage",e=>{if(e.key==="lwbLocked"&&e.newValue)toLock()});
   // Shared "i" info icon (erp-info.js): help text opens on click instead of filling the page.
   if(!window.ERPInfo&&!document.querySelector('script[src*="erp-info.js"]')){
     const cur=document.currentScript,base=cur&&cur.src?cur.src.replace(/[^/]*$/,""):"";
@@ -318,6 +323,7 @@
     document.addEventListener("keydown",e=>{if(e.key==="Escape" && document.body.classList.contains("side-open")){closeSide();top.querySelector(".erp-burger").focus()}});
     side.addEventListener("click",e=>{if(e.target.closest("a"))closeSide()});
     top.querySelector(".erp-logout").onclick=opts.onLogout||(()=>{location.href="login.html"});
+    if(role)unlockSetting(top.querySelector(".erp-avatar"));
 
     // Module search: type, then click or press Enter.
     const input=top.querySelector(".erp-search input"),box=top.querySelector(".erp-results");
@@ -459,8 +465,17 @@
       const t=read();
       if(out||!t||Date.now()-t<IDLE_MS)return false;
       out=true;
-      try{const c=window.__lwbBellClient||(window.__lwbBellClient=window.supabase.createClient(URL_,KEY_));await c.auth.signOut({scope:"local"})}catch(e){}
+      const c=window.__lwbBellClient||(window.__lwbBellClient=window.supabase.createClient(URL_,KEY_));
       try{localStorage.removeItem(IDLE_KEY)}catch(e){}
+      // Fingerprint unlock on for this login on this phone: lock (session kept) instead of logout.
+      let uid="";try{const {data}=await c.auth.getSession();uid=(data&&data.session&&data.session.user&&data.session.user.id)||""}catch(e){}
+      let on=null;try{on=JSON.parse(localStorage.getItem("lwbUnlock")||"null")}catch(e){}
+      if(uid&&on&&on.uid===uid&&on.cred){
+        try{localStorage.setItem("lwbLocked",JSON.stringify({uid,back:location.pathname.replace(/^\//,"")+location.search+location.hash,at:Date.now()}))}catch(e){}
+        location.replace("login.html?lock=1");
+        return true;
+      }
+      try{await c.auth.signOut({scope:"local"})}catch(e){}
       location.replace("login.html?idle=1");
       return true;
     }
@@ -470,6 +485,33 @@
     ["pointerdown","keydown","touchstart","mousemove","wheel"].forEach(ev=>document.addEventListener(ev,real,{passive:true,capture:true}));
     document.addEventListener("visibilitychange",()=>{if(!document.hidden)check().then(gone=>{if(!gone)mark()})});
     setInterval(check,30e3);
+  }
+
+  // Tap the round initial (avatar) in the top bar: turn fingerprint / face / PIN unlock on or off
+  // for this phone. Only shown as a button where the phone or laptop supports it.
+  function loadUnlock(){
+    if(window.LWBUnlock)return Promise.resolve(window.LWBUnlock);
+    return new Promise((ok,bad)=>{const s=document.createElement("script");s.src="quick-unlock.js";s.onload=()=>ok(window.LWBUnlock);s.onerror=bad;document.head.appendChild(s)});
+  }
+  async function unlockSetting(av){
+    try{
+      if(!av||!window.supabase)return;
+      const U=await loadUnlock();if(!(await U.supported()))return;
+      const c=window.__lwbBellClient||(window.__lwbBellClient=window.supabase.createClient(URL_,KEY_));
+      av.setAttribute("role","button");av.tabIndex=0;av.title="Fingerprint unlock";av.style.cursor="pointer";
+      const tap=async()=>{
+        const {data}=await c.auth.getSession();const user=data&&data.session&&data.session.user;if(!user)return;
+        if(U.isOn(user.id)){
+          if(await erpConfirm("Fingerprint unlock is ON on this phone.\n\nAfter 15 minutes without work the ERP locks, and opens again with your fingerprint, face or phone PIN.",{title:"Fingerprint unlock",ok:"Turn off",cancel:"Keep on"})){U.disable();toast("Fingerprint unlock turned off. After 15 minutes the password is needed again.")}
+          return;
+        }
+        if(!(await erpConfirm("Turn on fingerprint unlock on this phone?\n\nAfter 15 minutes without work the ERP will lock instead of logging out. Open it again with your fingerprint, face or phone PIN / pattern. No password needed.",{title:"Fingerprint unlock",ok:"Turn on",cancel:"Not now"})))return;
+        try{await U.enable(user);toast("Fingerprint unlock is on for this phone.")}
+        catch(e){if(e&&e.name!=="NotAllowedError")erpAlert("Fingerprint unlock could not be turned on.\n\n"+(e&&e.message||e),{kind:"error"})}
+      };
+      av.addEventListener("click",tap);
+      av.addEventListener("keydown",e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();tap()}});
+    }catch(e){}
   }
 
   // A login that passed the password but no OTP (Authenticator aal2, or WhatsApp OTP saved
