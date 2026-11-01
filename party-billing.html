@@ -128,13 +128,18 @@
 
     async function load(){
       el("reload").disabled=true;
-      try{info=await LWBPartyPay.load(client);say("");render()}
+      try{
+        const [x,early]=await Promise.all([LWBPartyPay.load(client),client.rpc("lwb_bills_before_loading")]);
+        // Approved POs not loaded yet (lwb_bill_before_loading_setup.sql); missing function = only loaded ones, as before.
+        x.early=early.error?[]:(early.data||[]).map(o=>({...o,early:true,parent:x.parentOf(o.party)}));
+        info=x;say("");render()}
       catch(e){say(e.message,true);if(!info)el("body").innerHTML='<div class="pb-empty">Nothing to show yet.</div>'}
       finally{el("reload").disabled=false}
     }
     const orders=()=>info.raw.orders||[];
-    // loaded (loading signed) and no Tally bill yet; old delivered POs from before this screen are left out
-    const toMake=()=>orders().filter(o=>!o.invoice_no&&(["loaded","invoiced"].includes(String(o.status).toLowerCase())||days(o.dispatch_date||o.order_date)<=30));
+    // no Tally bill yet: loaded (loading signed) first, then approved POs not loaded yet (quantity is final from
+    // approval, so the bill can be made while the party waits). Old delivered POs from before this screen are left out.
+    const toMake=()=>orders().filter(o=>!o.invoice_no&&(["loaded","invoiced"].includes(String(o.status).toLowerCase())||days(o.dispatch_date||o.order_date)<=30)).concat(info.early||[]);
     const membersOf=p=>{const x=info.parties.get(key(p));return x?x.members:[]};
     const match=(q,...v)=>!q||v.some(x=>String(x==null?"":x).toLowerCase().includes(q));
 
@@ -144,7 +149,7 @@
       const totDue=parties.reduce((a,p)=>a+Math.max(0,p.net),0),totAdv=parties.reduce((a,p)=>a+Math.max(0,-p.net),0);
       const rec=(info.raw.receipts||[]).filter(r=>!r.cancelled&&r.pay_date===info.today).reduce((a,r)=>a+Number(r.total),0);
       el("kpis").innerHTML=[
-        ["make","#c8102e","Bills to make",make.length,"loaded "+rs(make.reduce((a,o)=>a+Number(o.erp_amount||0),0))],
+        ["make","#c8102e","Bills to make",make.length,rs(make.reduce((a,o)=>a+Number(o.erp_amount||0),0))+(make.some(o=>o.early)?" · "+make.filter(o=>o.early).length+" not loaded yet":"")],
         ["due","#b3122b","To collect",rs(totDue),parties.filter(p=>p.net>0.5).length+" parties"],
         ["due","#13824a","Advance with us",rs(totAdv),parties.filter(p=>p.net<-0.5).length+" parties"],
         ["pay","#1769d8","Received today",rs(rec),"party payments"]].map(([t,c,h,v,s])=>`<button type="button" class="pb-kpi" style="--c:${c}" data-go="${t}"><h3>${h}</h3><b>${v}</b><small>${s}</small></button>`).join("");
@@ -152,7 +157,7 @@
       // Count card → list popup as well (erp-list.js); the tab below also switches.
       if(window.ERPList){const kc=el("kpis").querySelectorAll(".pb-kpi"),PC=[{t:"Party",v:"party"},{t:"Balance",v:p=>Math.abs(p.net),money:true,sum:true},{t:"Bills",v:p=>(p.bills||[]).length,num:true,dec:0},{t:"Oldest bill",v:"oldest",date:true}];
         const L=(i,o)=>kc[i]&&ERPList.card(kc[i],()=>o());
-        L(0,()=>({title:"Bills to make",sub:"Loaded POs without a Tally bill",rows:toMake(),cols:[{t:"PO No.",v:"order_no"},{t:"Party",v:"party"},{t:"Dispatch",v:o=>o.dispatch_date||o.order_date,date:true},{t:"ERP amount",v:"erp_amount",money:true,sum:true}]}));
+        L(0,()=>({title:"Bills to make",sub:"Approved and loaded POs without a Tally bill",rows:toMake(),cols:[{t:"PO No.",v:"order_no"},{t:"Party",v:"party"},{t:"Stage",v:o=>o.early?"Approved, not loaded":"Loaded"},{t:"Date",v:o=>o.dispatch_date||o.order_date,date:true},{t:"ERP amount",v:"erp_amount",money:true,sum:true}]}));
         L(1,()=>({title:"To collect",sub:"Parties with money due",rows:[...info.parties.values()].filter(p=>p.net>0.5).sort((a,b)=>b.net-a.net),cols:PC}));
         L(2,()=>({title:"Advance with us",sub:"Parties who paid in advance",rows:[...info.parties.values()].filter(p=>p.net<-0.5).sort((a,b)=>a.net-b.net),cols:PC}));
         L(3,()=>({title:"Received today",sub:"Party payments today",rows:(info.raw.receipts||[]).filter(r=>!r.cancelled&&r.pay_date===info.today),
@@ -161,7 +166,7 @@
       el("tabs").querySelectorAll("[data-t]").forEach(b=>b.setAttribute("aria-pressed",String(b.dataset.t===tab)));
       el("xl").hidden=tab==="make";
       ({make:renderMake,due:renderDue,pay:renderPay,grp:renderGroups})[tab]();
-      el("note").textContent=tab==="make"?"Only POs whose loading is signed (vehicle loaded) come here. Enter one line per Tally bill: the name the bill is made in, its invoice no. and amount. Saved bills go to To collect on the main party at once, and show in the Accounts Dashboard Cash In.":
+      el("note").textContent=tab==="make"?"Every approved PO comes here at once (its quantity is final), so the bill can be made before loading; loaded ones show their loaded value. Enter one line per Tally bill: the name the bill is made in, its invoice no. and amount. Saved bills go to To collect on the main party at once, and show in the Accounts Dashboard Cash In.":
         tab==="due"?"To collect = Tally bill − credit notes − driver money − payments split to it, on the main party (all its bill names together), minus money paid earlier and not yet set against a bill. One balance per party: red = to collect, green = advance. Party Ledger shows the same on the main party.":
         tab==="pay"?"A party payment is entered once on the main party and split over its bills; the rest is advance. Undo (×) puts a split back to advance; Cancel removes a wrong payment.":
         "A main party (Party Master) and the names its Tally bills are made in. Outstanding, ledger and payments of all these names are on the main party. A name can be under one main party only.";
@@ -175,12 +180,12 @@
     function renderMake(){
       const q=el("q").value.trim().toLowerCase();
       const list=toMake().filter(o=>match(q,o.order_no,o.party,o.parent,...membersOf(o.parent)));
-      if(!list.length){el("body").innerHTML='<div class="pb-empty">✓ No loaded vehicle is waiting for a Tally bill.</div>';return}
+      if(!list.length){el("body").innerHTML='<div class="pb-empty">✓ No approved PO is waiting for a Tally bill.</div>';return}
       el("body").innerHTML='<datalist id="dlAll"></datalist><div class="pb-bills">'+list.map(o=>{
         const d=DELIVERY[String(o.delivery||"").toUpperCase()],grp=key(o.parent)!==key(o.party);
         const names=[...new Set([o.party,o.parent,...membersOf(o.parent)])];
         return `<div class="pb-bill${o.order_id===want?" hl":""}" data-o="${esc(o.order_id)}">
-          <div class="hd"><span><b>${esc(o.order_no)}</b> <small>loaded ${dmy(o.dispatch_date||o.order_date)}</small> ${d?`<span class="tag ${d[0]}">${d[1]}</span>`:""}</span><span>Loaded value <b>${rs(o.erp_amount)}</b></span></div>
+          <div class="hd"><span><b>${esc(o.order_no)}</b> ${o.early?`<small>approved ${dmy(String(o.approved_at||o.order_date||"").slice(0,10))}</small> <span class="tag t-amb">${o.vehicle_no?"Vehicle "+esc(o.vehicle_no)+" · not loaded yet":"Not loaded yet"}</span>`:`<small>loaded ${dmy(o.dispatch_date||o.order_date)}</small>`} ${d?`<span class="tag ${d[0]}">${d[1]}</span>`:""}</span><span>${o.early?"PO value ("+esc(Number(o.qty||0).toLocaleString("en-IN"))+" CS)":"Loaded value"} <b>${rs(o.erp_amount)}</b></span></div>
           <div class="who">${esc(o.party)}${grp?` <span class="tag t-blu">under ${esc(o.parent)}</span>`:""}${names.length>1?`<small style="color:var(--erp-muted)"> · bill names: ${esc(names.filter(n=>key(n)!==key(o.party)).join(", "))}</small>`:""}</div>
           <datalist id="dl-${esc(o.order_id)}">${names.map(n=>`<option value="${esc(n)}">`).join("")}</datalist>
           <div class="pb-lines"></div>
@@ -188,7 +193,7 @@
       el("body").querySelectorAll(".pb-bill").forEach(card=>{
         const o=list.find(x=>x.order_id===card.dataset.o),lines=card.querySelector(".pb-lines"),tot=card.querySelector(".tot");
         const total=()=>{const l=[...lines.children],s=l.reduce((a,r)=>a+num(r.querySelector(".am").value),0);
-          tot.innerHTML=s?(l.length>1?l.length+" bills · ":"")+"total <b>"+rs(s)+"</b>"+(o.erp_amount&&Math.abs(s-o.erp_amount)>1?` <small>(loaded ${rs(o.erp_amount)})</small>`:""):""};
+          tot.innerHTML=s?(l.length>1?l.length+" bills · ":"")+"total <b>"+rs(s)+"</b>"+(o.erp_amount&&Math.abs(s-o.erp_amount)>1?` <small>(${o.early?"PO":"loaded"} ${rs(o.erp_amount)})</small>`:""):""};
         const add=(firm)=>{const r=document.createElement("div");r.className="pb-line";
           r.innerHTML=`<input class="fm" list="dl-${esc(o.order_id)}" maxlength="200" placeholder="Bill in name" aria-label="Bill made in name"><input class="no" maxlength="100" placeholder="Invoice no." aria-label="Tally invoice no."><input class="am" inputmode="decimal" placeholder="Amount ₹" aria-label="Bill amount"><button type="button" class="x" aria-label="Remove">×</button>`;
           r.querySelector(".fm").value=firm==null?o.party:firm;
