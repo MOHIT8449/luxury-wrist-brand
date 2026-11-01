@@ -55,6 +55,7 @@
       <div class="erp-card-body">
         <p id="newUserMessage" hidden></p>
         <form class="nu-grid" id="newUserForm" autocomplete="off">
+          <div id="nuEmpBox" hidden><label for="nuEmp">From Employee Master</label><select id="nuEmp"><option value="">— New person —</option></select></div>
           <div><label for="nuName">Full Name *</label><input id="nuName" maxlength="150" required></div>
           <div><label for="nuMobile">Mobile Number</label><input id="nuMobile" type="tel" inputmode="numeric" maxlength="14" placeholder="10 digits"></div>
           <div><label for="nuEmail">Email (optional)</label><input id="nuEmail" type="email" placeholder="name@example.com"></div>
@@ -136,6 +137,9 @@
         const {data,error}=await client.rpc("lwb_admin_users");
         if(error)throw error;
         const users=ERPRecent.sort(await ERPRecent.attach(client,"user_profiles",data||[],"user_id","id")); // latest added / edited user first
+        // Employee Master: which employee each login belongs to (lwb_employee_login_link_setup.sql).
+        const ek=await client.rpc("lwb_emp_logins");emps=ek.error?null:(ek.data||[]);fillEmpPick();
+        const empOf=new Map((emps||[]).filter(x=>x.user_id).map(x=>[x.user_id,x]));
         userDocs=await ERPDocs.summary(client,"USER");
         if(userDocs){const ids=users.filter(u=>(userDocs.get(u.user_id)||new Set()).has("PHOTO")&&!userPhotos.has(u.user_id)).map(u=>u.user_id);
           if(ids.length){const got=await ERPDocs.avatars(client,"USER",ids);for(const id of ids)userPhotos.set(id,got.get(id)||"")}}
@@ -152,7 +156,8 @@
           const login=document.createElement("div");login.className="login-cell";
           login.textContent=u.mobile||u.email||"—";
           const sub=document.createElement("small");
-          sub.textContent=[u.mobile&&u.email?u.email:"",otp.error?"":otpSet.has(u.user_id)?"OTP set":"OTP not set",u.last_sign_in_at?"Last sign-in "+LWBDate.d(u.last_sign_in_at):"Never signed in"].filter(Boolean).join(" · ");
+          const em=empOf.get(u.user_id);
+          sub.textContent=[em?"Employee "+em.emp_code+" · "+(em.designation||"-"):"",u.mobile&&u.email?u.email:"",otp.error?"":otpSet.has(u.user_id)?"OTP set":"OTP not set",u.last_sign_in_at?"Last sign-in "+LWBDate.d(u.last_sign_in_at):"Never signed in"].filter(Boolean).join(" · ");
           login.append(sub);
           if(userDocs){
             const ph=userPhotos.get(u.user_id);
@@ -303,6 +308,17 @@
       finally{btn.disabled=false}
     }
 
+    // New login from an employee: fills name, mobile and the role of the Work / Post; linked after Create.
+    let emps=null;
+    function fillEmpPick(){
+      const sel=el("nuEmp"),box=el("nuEmpBox"),cur=sel.value;box.hidden=!emps;if(!emps)return;
+      sel.replaceChildren(new Option("— New person —",""),...emps.filter(x=>x.is_active&&!x.user_id).map(x=>new Option(x.emp_code+" · "+x.name+(x.designation?" · "+x.designation:""),String(x.id))));
+      sel.value=[...sel.options].some(o=>o.value===cur)?cur:"";
+    }
+    function pickEmp(){
+      const x=(emps||[]).find(y=>String(y.id)===el("nuEmp").value);if(!x)return;
+      el("nuName").value=x.name||"";el("nuMobile").value=x.mobile||"";if(x.role_for_post)el("nuRole").value=x.role_for_post;
+    }
     async function createUser(e){
       e.preventDefault();
       const name=el("nuName").value.trim(),mobRaw=el("nuMobile").value.trim(),mob=mobile10(mobRaw),email=el("nuEmail").value.trim(),pass=el("nuPass").value,role=el("nuRole").value;
@@ -318,8 +334,10 @@
       try{
         const {data:newId,error}=await client.rpc("lwb_admin_create_user",{p_full_name:name,p_mobile:mob||null,p_email:email||null,p_password:pass,p_role:role,p_active:el("nuActive").value==="true"});
         if(error)throw Error(setupHint(error));
+        const empId=el("nuEmp").value;
+        let linkErr="";if(empId&&newId){const ln=await client.rpc("lwb_emp_link_login",{p_staff:Number(empId),p_user:newId});if(ln.error)linkErr=" Not linked to the employee: "+ln.error.message}
         const docErr=nuDocs&&newId?await nuDocs.flush(newId):"";
-        newMessage(docErr?"Login created, but the photo / document was NOT saved: "+docErr+" Use 📷 Photo & Docs on the user's row.":"",!!docErr);
+        newMessage((docErr?"Login created, but the photo / document was NOT saved: "+docErr+" Use 📷 Photo & Docs on the user's row.":"")+linkErr,!!(docErr||linkErr));
         el("nuDoneText").textContent="Login created for "+name+" ("+(ROLES.find(r=>r[0]===role)||["",role])[1]+")\nWebsite: "+location.origin+"/login.html\nLogin: "+[mob,email].filter(Boolean).join(" or ")+"\nPassword: "+pass;
         el("nuDone").hidden=false;
         el("newUserForm").reset();el("nuRole").value="";mountNewDocs();
@@ -344,6 +362,7 @@
       const rs=el("nuRole");rs.add(new Option("Select Role",""));for(const [v,t] of ROLES)rs.add(new Option(t,v));
       el("nuGen").onclick=()=>{el("nuPass").value=makePassword()};
       el("newUserForm").addEventListener("submit",createUser);
+      el("nuEmp").addEventListener("change",pickEmp);
       el("nuCopy").onclick=async()=>{try{await navigator.clipboard.writeText(el("nuDoneText").textContent);ERPShell.toast("Copied. Paste it in WhatsApp.")}catch(e){await alert(el("nuDoneText").textContent)}};
       renderPreview();
       el("loading").hidden=true;el("page").hidden=false;
