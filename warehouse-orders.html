@@ -479,6 +479,42 @@
       #poPrintArea .po-print-note strong {font-size:13px;display:block;margin-bottom:4px}
       #poPrintArea .po-print-note .print-note-text {font-size:13px;font-weight:600;white-space:pre-wrap;overflow-wrap:anywhere}
       #poPrintArea .po-print-footer {margin-top:16px;border-top:1px solid #ccc;padding-top:7px;font-size:11px;color:#444;text-align:center}
+      /* PO print: A5 portrait, one even type scale (8.5pt body, 7pt labels, 7.5pt table). */
+      @page poA5 {size:A5 portrait;margin:7mm 7mm 8mm}
+      body:has(#poPrintArea.po-a5) {background:#fff!important}
+      #poPrintArea.po-a5 {page:poA5;font:8.5pt/1.35 Arial,Helvetica,sans-serif;color:#111}
+      #poPrintArea.po-a5 * {box-sizing:border-box}
+      #poPrintArea.po-a5 table {border-collapse:collapse;width:100%;min-width:0}
+      #poPrintArea.po-a5 thead {display:table-header-group}
+      #poPrintArea.po-a5 tr {break-inside:avoid}
+      #poPrintArea.po-a5 .num {text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+      #poPrintArea .pa-band {background:#002f37!important;color:#fff!important;padding:3mm 3.5mm;display:flex;justify-content:space-between;align-items:center;border-bottom:1.2mm solid #c9b26a}
+      #poPrintArea .pa-band h1 {font-size:13pt;margin:0;color:#e4d08f!important;letter-spacing:.8pt}
+      #poPrintArea .pa-band .pa-no {text-align:right}
+      #poPrintArea .pa-band .pa-no small {font-size:6.5pt;opacity:.8;display:block;letter-spacing:.5pt}
+      #poPrintArea .pa-band .pa-no b {font-size:11pt}
+      #poPrintArea .pa-meta {display:grid;grid-template-columns:repeat(3,1fr);gap:1.5mm;margin:2.5mm 0}
+      #poPrintArea .pa-meta div {border:.6pt solid #cfdcdc;border-radius:1.2mm;padding:1.3mm 1.8mm;background:#f6f9f9!important;overflow-wrap:anywhere}
+      #poPrintArea .pa-meta label {display:block;font-size:6.5pt;color:#5d7275;text-transform:uppercase;letter-spacing:.3pt}
+      #poPrintArea .pa-meta span {font-weight:700;font-size:8.5pt}
+      #poPrintArea .pa-meta .pa-cust {grid-column:1/3}
+      #poPrintArea .pa-items th {background:#e6f0f0!important;color:#002f37;font-size:7pt;padding:1.4mm 1.2mm;text-align:right;text-transform:uppercase;letter-spacing:0;font-weight:700;border-bottom:1pt solid #002f37}
+      #poPrintArea .pa-items td {font-size:7.5pt;padding:1.3mm 1.2mm;border-bottom:.4pt solid #dde5e5}
+      #poPrintArea .pa-items tbody tr:nth-child(even) td {background:#fafcfc!important}
+      #poPrintArea .pa-items th:nth-child(1),#poPrintArea .pa-items td:nth-child(1) {text-align:center;width:6mm}
+      #poPrintArea .pa-items th:nth-child(2),#poPrintArea .pa-items td:nth-child(2) {text-align:left;overflow-wrap:anywhere}
+      #poPrintArea .pa-sum {display:grid;grid-template-columns:repeat(3,1fr);gap:1.5mm;margin-top:2.5mm;break-inside:avoid}
+      #poPrintArea .pa-sum div {background:#002f37!important;color:#fff!important;border-radius:1.2mm;padding:1.6mm 2mm}
+      #poPrintArea .pa-sum div:nth-child(2) {background:#7a6420!important}
+      #poPrintArea .pa-sum label {display:block;font-size:6.5pt;opacity:.85;text-transform:uppercase}
+      #poPrintArea .pa-sum b {font-size:10.5pt}
+      #poPrintArea .pa-words {margin-top:1.8mm;font-size:7.5pt;color:#333}
+      #poPrintArea .pa-words b {color:#7a6420}
+      #poPrintArea .pa-note {margin-top:2mm;background:#f7f1de!important;border-left:1.2mm solid #c9b26a;padding:1.8mm 2.4mm;font-size:8pt;white-space:pre-wrap;overflow-wrap:anywhere;break-inside:avoid}
+      #poPrintArea .pa-note b {display:block;font-size:7pt;color:#7a6420;text-transform:uppercase;margin-bottom:.6mm}
+      #poPrintArea .pa-sign {display:grid;grid-template-columns:repeat(3,1fr);gap:5mm;margin-top:11mm;font-size:7pt;text-align:center;color:#002f37;break-inside:avoid}
+      #poPrintArea .pa-sign div {border-top:.6pt solid #002f37;padding-top:1mm}
+      #poPrintArea .pa-foot {margin-top:3mm;font-size:6.5pt;color:#6b7785;text-align:center}
     }
     .message {
       padding: 12px 15px;
@@ -2529,7 +2565,33 @@ async function printApprovedPO(documentType="challan"){
     },{qty:0,amount:0,weight:0});
     const dash=value=>safe(value||"—");
     const info=pairs=>"<table>"+pairs.map(p=>"<tr><td>"+p[0]+"</td><td>"+p[1]+"</td></tr>").join("")+"</table>";
-    document.getElementById("poPrintArea").innerHTML=
+    const printArea=document.getElementById("poPrintArea");
+    printArea.className=isPo?"po-a5":"";
+    if(isPo){
+      // A5 PO layout: no company name, dates shown without the year.
+      const noYear=value=>safe(formatDateTime(value).replace(/\/\d{4}/,""));
+      const money=value=>safe(number(value).toLocaleString("en-IN",{minimumFractionDigits:2,maximumFractionDigits:2}));
+      const qty=value=>safe(number(value).toLocaleString("en-IN",{maximumFractionDigits:2}));
+      const box=(label,value,cls)=>"<div"+(cls?" class='"+cls+"'":"")+"><label>"+label+"</label><span>"+value+"</span></div>";
+      printArea.innerHTML=
+        "<div class='pa-band'><h1>PO INVOICE</h1><div class='pa-no'><small>ORDER NO.</small><b>"+safe(order.order_no)+"</b></div></div>"+
+        "<div class='pa-meta'>"+
+          box("Customer",safe(order.customer_name),"pa-cust")+box("Date &amp; Time",noYear(order.order_date||order.created_at))+
+          box("Sales Person",dash(order.sales_person))+box("Transport",dash(order.transportation))+box("Vehicle No.",dash(a.vehicle_no))+
+          box("Driver",dash(a.driver_name))+box("Driver Mobile",dash(a.driver_mobile))+box("Godown Manager",dash(a.loading_person))+
+        "</div>"+
+        "<table class='pa-items'><thead><tr><th>Sr</th><th>SKU / Product</th><th>Qty</th><th>Rate ₹</th><th>Amount ₹</th><th>Unit Wt</th><th>Total Wt</th></tr></thead><tbody>"+
+        approvedLines.map((item,i)=>"<tr><td>"+(i+1)+"</td><td>"+safe(item.sku)+"</td><td class='num'>"+qty(item.qty)+"</td><td class='num'>"+money(item.rate)+
+          "</td><td class='num'>"+money(item.qty*item.rate)+"</td><td class='num'>"+money(item.weight)+"</td><td class='num'>"+money(item.qty*item.weight)+"</td></tr>").join("")+
+        "</tbody></table>"+
+        "<div class='pa-sum'><div><label>Total Qty ("+approvedLines.length+" items)</label><b>"+qty(total.qty)+"</b></div>"+
+          "<div><label>Total Amount</label><b>₹"+money(total.amount)+"</b></div><div><label>Total Weight</label><b>"+money(total.weight)+" KG</b></div></div>"+
+        "<div class='pa-words'><b>In words:</b> "+safe(amountInWords(total.amount)||"Zero Rupees Only")+"</div>"+
+        (printNote?"<div class='pa-note'><b>Manager Note / Delivery Instructions</b>"+safe(printNote)+"</div>":"")+
+        "<div class='pa-sign'><div>Prepared By</div><div>Godown Manager</div><div>Driver</div></div>"+
+        "<div class='pa-foot'>Status: "+safe(order.status)+" · Printed "+noYear(new Date().toISOString())+" · Reprint after any changes · Not a GST invoice; the Tally bill is separate.</div>";
+    } else
+    printArea.innerHTML=
       "<div class='dc-head'><h1>"+(isPo?"PURCHASE / SALES ORDER":"DELIVERY CHALLAN")+"</h1><div class='dc-sub'>Luxury Wrist Brand · "+safe(order.status)+"</div></div>"+
       "<div class='dc-info'>"+
         info([["Order No.",safe(order.order_no)],["Customer Name",safe(order.customer_name)],["Transportation",dash(order.transportation)]])+
