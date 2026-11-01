@@ -44,14 +44,16 @@ async function init(){try{const {data:{user:u},error:e}=await db.auth.getUser();
 // Godown Manager (WAREHOUSE login) who loads the vehicle (lwb_loading_workflow_setup.sql); old free text until then.
 let godownManagers=null;
 async function loadGodownManagers(){const r=await db.rpc('lwb_godown_managers');godownManagers=r.error?null:(r.data||[]);const sel=$('loadingManager'),txt=$('loadingPerson');sel.hidden=!godownManagers;txt.hidden=!!godownManagers;txt.required=!godownManagers;sel.required=!!godownManagers;if(godownManagers)sel.replaceChildren(new Option('Select Godown Manager',''),...godownManagers.map(m=>new Option(m.full_name+(m.mobile?' · '+m.mobile:''),m.user_id)));}
-// Driver Master / Vehicle Master suggestions. Choosing a driver fills the mobile, and the
+// Drivers from Employee Master (Work / Post = Driver) and Vehicle Master suggestions. Choosing a driver fills the mobile, and the
 // default vehicle when the vehicle box is empty. Missing tables (SQL not run yet) are ignored.
 let fleetDrivers=[],fleetVehicles=[];
-async function loadFleet(){const [d,v]=await Promise.all([db.from('lwb_drivers').select('driver_name,mobile,default_vehicle_id,transporter_name').eq('is_active',true).order('driver_name'),db.from('lwb_vehicles').select('id,vehicle_no,vehicle_type,transporter_name').eq('is_active',true).order('vehicle_no')]);
-fleetDrivers=d.error?[]:(d.data||[]);fleetVehicles=v.error?[]:(v.data||[]);
+async function loadFleet(){const [d,v]=await Promise.all([db.rpc('lwb_staff_pick',{p_role:'driver'}),db.rpc('lwb_vehicle_pick')]);
+let veh=v;if(veh.error)veh=await db.from('lwb_vehicles').select('id,vehicle_no,vehicle_type,transporter_name').eq('is_active',true).order('vehicle_no');
+const trip=x=>x.on_trip&&x.on_trip.length?'On trip: '+x.on_trip.join(', '):('on_trip' in x?'Free':''),freeFirst=(a,b)=>(a.on_trip?1:0)-(b.on_trip?1:0);
+fleetDrivers=d.error?[]:(d.data||[]).slice().sort(freeFirst).map(x=>({driver_name:x.name,mobile:x.mobile||'',default_vehicle_id:x.default_vehicle_id,transporter_name:x.transporter_name,status:trip(x)}));fleetVehicles=veh.error?[]:(veh.data||[]).slice().sort(freeFirst).map(x=>({...x,status:trip(x)}));
 const opt=(val,label)=>{const o=document.createElement('option');o.value=val;o.label=label;return o;};
-$('driverList').replaceChildren(...fleetDrivers.map(x=>opt(x.driver_name,x.mobile)));
-$('vehicleList').replaceChildren(...fleetVehicles.map(x=>opt(x.vehicle_no,[x.vehicle_type,x.transporter_name].filter(Boolean).join(' · '))));}
+$('driverList').replaceChildren(...fleetDrivers.map(x=>opt(x.driver_name,[x.mobile,x.status].filter(Boolean).join(' · '))));
+$('vehicleList').replaceChildren(...fleetVehicles.map(x=>opt(x.vehicle_no,[x.status,x.vehicle_type,x.transporter_name].filter(Boolean).join(' · '))));}
 function fleetPickDriver(){const n=$('driverName').value.trim().toLowerCase();const hits=fleetDrivers.filter(x=>x.driver_name.trim().toLowerCase()===n);if(hits.length!==1)return;const d=hits[0];$('driverMobile').value=d.mobile;
 const v=fleetVehicles.find(x=>x.id===d.default_vehicle_id);if(v&&!$('vehicleNo').value.trim())$('vehicleNo').value=v.vehicle_no;if(d.transporter_name&&!$('transporterName').value.trim())$('transporterName').value=d.transporter_name;}
 function fleetPickVehicle(){const k=$('vehicleNo').value.toUpperCase().replace(/[^A-Z0-9]/g,'');const v=fleetVehicles.find(x=>x.vehicle_no===k);if(v&&v.transporter_name&&!$('transporterName').value.trim())$('transporterName').value=v.transporter_name;}

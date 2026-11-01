@@ -26,7 +26,7 @@
   const STRICT={};
   const PHOTO={k:'PHOTO',l:'Photo',img:1,cam:'user',max:1};
   const S={ // slots per record type; req = must be there before Save
-    STAFF:[{...PHOTO,l:'Employee photo',req:1},{k:'AADHAAR',l:'Aadhaar card (front + back)',req:1,max:4},{k:'BANK',l:'Bank passbook / cheque',max:2},{k:'PAN',l:'PAN card',max:2},{k:'OTHER',l:'Other document',max:6}],
+    STAFF:[{...PHOTO,l:'Employee photo',req:1},{k:'AADHAAR',l:'Aadhaar card (front + back)',req:1,max:4},{k:'DL',l:'Driving licence (drivers)',max:4},{k:'BANK',l:'Bank passbook / cheque',max:2},{k:'PAN',l:'PAN card',max:2},{k:'OTHER',l:'Other document',max:6}],
     DRIVER:[{...PHOTO,l:'Driver photo',req:1},{k:'DL',l:'Driving licence (front + back)',req:1,max:4},{k:'AADHAAR',l:'Aadhaar card (front + back)',req:1,max:4},{k:'BANK',l:'Bank passbook / cheque',max:2},{k:'PAN',l:'PAN card',max:2},{k:'OTHER',l:'Other document',max:6}],
     USER:[{...PHOTO,l:'Staff photo',req:1},{k:'AADHAAR',l:'Aadhaar card',max:4},{k:'BANK',l:'Bank passbook / cheque',max:2},{k:'PAN',l:'PAN card',max:2},{k:'OTHER',l:'Other document',max:6}],
     VEHICLE:[{k:'PHOTO',l:'Vehicle photo (number plate visible)',img:1,cam:'environment',max:4,want:1},{k:'RC',l:'RC book',max:4},{k:'INSURANCE',l:'Insurance',max:4},{k:'PUC',l:'PUC',max:2},{k:'FITNESS',l:'Fitness',max:2},{k:'PERMIT',l:'Permit',max:4},{k:'OTHER',l:'Other document',max:6}],

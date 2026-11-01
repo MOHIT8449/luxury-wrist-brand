@@ -2043,22 +2043,22 @@ function poNormalPlate(value){
 function rebuildPoDirectory(){
   const driverSeen=new Set(),erpDriverPhones=new Set(),vehicleSeen=new Set();
   poSavedDrivers=[];poSavedVehicles=[];
-  // Driver Master / Vehicle Master come first; one driver per mobile number.
-  const masterPlate=new Map(poMasterVehicles.map(v=>[v.id,v.vehicle_no]));
+  // Employee Master drivers / Vehicle Master come first; one driver per mobile number.
+  const trip=x=>x.on_trip&&x.on_trip.length?"🚚 On trip: "+x.on_trip.join(", "):"✅ Free";
   for(const d of poMasterDrivers){
     const phone=poNormalPhone(d.mobile);
     if(!d.driver_name||!(/^[6-9]\d{9}$/.test(phone))||erpDriverPhones.has(phone))continue;
     driverSeen.add(String(d.driver_name).trim().toLowerCase()+"|"+phone);
     erpDriverPhones.add(phone);
-    poSavedDrivers.push({name:String(d.driver_name).trim(),mobile:phone,phone,source:"Driver Master",
-      vehicle:masterPlate.get(d.default_vehicle_id)||"",transporter:String(d.transporter_name||"").trim()});
+    poSavedDrivers.push({name:String(d.driver_name).trim(),mobile:phone,phone,source:(d.emp_code?d.emp_code+" · ":"")+trip(d),
+      vehicle:d.vehicle_no||"",transporter:String(d.transporter_name||"").trim()});
   }
   for(const v of poMasterVehicles){
     const key=poNormalPlate(v.vehicle_no);
     if(!key||vehicleSeen.has(key))continue;
     vehicleSeen.add(key);
     poSavedVehicles.push({vehicle:v.vehicle_no,transporter:String(v.transporter_name||"").trim(),
-      detail:[v.vehicle_type,v.capacity_kg!=null?v.capacity_kg+" KG":"","Vehicle Master"].filter(Boolean).join(" · ")});
+      detail:["on_trip" in v?trip(v):"",v.vehicle_type,v.capacity_kg!=null?v.capacity_kg+" KG":"",v.transporter_name].filter(Boolean).join(" · ")});
   }
   // Active ERP driver logins FIRST. They need no previous dispatch history.
   for(const p of poActiveErpDrivers){
@@ -2099,7 +2099,9 @@ function rebuildPoDirectory(){
   if(hint){
     const issues=[poErpDirectoryError,poDirectoryError].filter(Boolean);
     hint.classList.toggle("error",issues.length>0);
-    hint.textContent=issues.length?"Directory warning: "+issues.join(" | "):"";
+    const free=list=>list.filter(x=>!(x.on_trip&&x.on_trip.length)).length;
+    hint.textContent=(issues.length?"Directory warning: "+issues.join(" | ")+" · ":"")+"Drivers: "+free(poMasterDrivers)+" free of "+poMasterDrivers.length+
+      " · Vehicles: "+free(poMasterVehicles)+" free of "+poMasterVehicles.length;
   }
 }
 async function loadPoSavedDirectory(){
@@ -2110,12 +2112,17 @@ async function loadPoSavedDirectory(){
       .select("driver_name,driver_mobile,vehicle_no,transporter_name,assigned_at")
       .order("assigned_at",{ascending:false}).limit(2000),
     db.rpc("lwb_sales_head_active_drivers"),
-    db.from("lwb_drivers").select("driver_name,mobile,default_vehicle_id,transporter_name").eq("is_active",true).order("driver_name"),
-    db.from("lwb_vehicles").select("id,vehicle_no,vehicle_type,capacity_kg,transporter_name").eq("is_active",true).order("vehicle_no")
+    // Drivers = working employees with Work / Post "Driver" in Employee Master (lwb_employee_roles_setup.sql).
+    db.rpc("lwb_staff_pick",{p_role:"driver"}),
+    // Every active vehicle of Vehicle Master, with the orders it is out on now (free ones first).
+    db.rpc("lwb_vehicle_pick")
   ]);
+  let vehicles=vehicleMaster;
+  if(vehicles.error)vehicles=await db.from("lwb_vehicles").select("id,vehicle_no,vehicle_type,capacity_kg,transporter_name").eq("is_active",true).order("vehicle_no");
   // Before lwb_fleet_master_setup.sql is run these tables are missing; the old lists still work.
-  poMasterDrivers=driverMaster.error?[]:(driverMaster.data||[]);
-  poMasterVehicles=vehicleMaster.error?[]:(vehicleMaster.data||[]);
+  const freeFirst=(a,b)=>(a.on_trip?1:0)-(b.on_trip?1:0);
+  poMasterDrivers=driverMaster.error?[]:(driverMaster.data||[]).map(d=>({driver_name:d.name,mobile:d.mobile,vehicle_no:d.vehicle_no,transporter_name:d.transporter_name,on_trip:d.on_trip,emp_code:d.emp_code})).sort(freeFirst);
+  poMasterVehicles=vehicles.error?[]:(vehicles.data||[]).slice().sort(freeFirst);
   if(historyResult.error){
     poRawAssignments=[];
     poDirectoryError=historyResult.error.message||"Unable to read previous assignments";
