@@ -9,6 +9,28 @@
   const toLock=()=>{document.documentElement.style.visibility="hidden";location.replace("login.html?lock=1")};
   try{if(localStorage.getItem("lwbLocked"))toLock()}catch(e){}
   window.addEventListener("storage",e=>{if(e.key==="lwbLocked"&&e.newValue)toLock()});
+  // With fingerprint unlock ON for this login on this phone, a Logout button (top bar or a page's
+  // own) LOCKS instead, so the next open needs only the fingerprint. "Login with password instead"
+  // on the lock screen still ends the session fully.
+  function unlockUid(){
+    try{
+      const on=JSON.parse(localStorage.getItem("lwbUnlock")||"null");if(!on||!on.uid||!on.cred)return "";
+      const t=JSON.parse(localStorage.getItem("sb-txkbhadzdbxpieunfvox-auth-token")||"null");
+      const uid=t&&t.user&&t.user.id;return uid===on.uid?uid:"";
+    }catch(e){return ""}
+  }
+  function lockNow(uid,why){
+    try{localStorage.setItem("lwbLocked",JSON.stringify({uid,why,back:why==="logout"?"dashboard.html":location.pathname.replace(/^\//,"")+location.search+location.hash,at:Date.now()}))}catch(e){}
+    try{localStorage.removeItem("lwbLastActive")}catch(e){}
+    location.replace("login.html?lock=1");
+  }
+  document.addEventListener("click",e=>{
+    const b=e.target.closest&&e.target.closest("button,a");
+    if(!b||!(b.classList.contains("erp-logout")||b.id==="logout"||/^\s*logout\s*$/i.test(b.textContent||"")))return;
+    const uid=unlockUid();if(!uid)return;
+    e.preventDefault();e.stopImmediatePropagation();
+    lockNow(uid,"logout");
+  },true);
   // Shared "i" info icon (erp-info.js): help text opens on click instead of filling the page.
   if(!window.ERPInfo&&!document.querySelector('script[src*="erp-info.js"]')){
     const cur=document.currentScript,base=cur&&cur.src?cur.src.replace(/[^/]*$/,""):"";
@@ -470,11 +492,7 @@
       // Fingerprint unlock on for this login on this phone: lock (session kept) instead of logout.
       let uid="";try{const {data}=await c.auth.getSession();uid=(data&&data.session&&data.session.user&&data.session.user.id)||""}catch(e){}
       let on=null;try{on=JSON.parse(localStorage.getItem("lwbUnlock")||"null")}catch(e){}
-      if(uid&&on&&on.uid===uid&&on.cred){
-        try{localStorage.setItem("lwbLocked",JSON.stringify({uid,back:location.pathname.replace(/^\//,"")+location.search+location.hash,at:Date.now()}))}catch(e){}
-        location.replace("login.html?lock=1");
-        return true;
-      }
+      if(uid&&on&&on.uid===uid&&on.cred){lockNow(uid,"idle");return true}
       try{await c.auth.signOut({scope:"local"})}catch(e){}
       location.replace("login.html?idle=1");
       return true;
