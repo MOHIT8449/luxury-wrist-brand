@@ -354,6 +354,37 @@ body.compact-entry .share-more>summary{display:block;cursor:pointer;font-size:13
   .saved-po-actions[hidden]{display:none}
   .saved-po-actions a{text-decoration:none;padding:9px 14px}
   @media print{.saved-po-actions{display:none!important}}
+
+/* Self pickup: outside driver's name, mobile, vehicle and the Godown Manager, right below Transportation. */
+.pickup-box{grid-column:1/-1;border:1px solid #f0d58c;background:linear-gradient(180deg,#fffaf0,#fff);border-left:4px solid #c9a24a;border-radius:10px;padding:12px 14px}
+.pickup-box[hidden]{display:none}
+.pickup-head{display:flex;align-items:center;gap:10px;margin-bottom:10px}
+.pickup-ico{font-size:20px;line-height:1}
+.pickup-head b{display:block;font-size:14px;color:var(--erp-ink,#1f2a37)}
+.pickup-head small{display:block;font-size:12px;color:#7a6a3a;margin-top:2px}
+.pickup-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
+.pickup-note{display:block;margin-top:4px;font-size:11.5px;color:#9a6700}
+.pickup-note:empty{display:none}
+@media(max-width:900px){.pickup-grid{grid-template-columns:1fr 1fr}}
+@media(max-width:640px){
+  .pickup-box{padding:8px 10px}
+  .pickup-head{margin-bottom:6px}.pickup-head small{display:none}.pickup-ico{font-size:16px}
+  .pickup-grid{gap:6px 8px}
+  .pickup-grid .form-group label{margin-bottom:3px;font-size:10px}
+  .pickup-grid .form-control{padding:8px 9px}
+}
+
+/* Totals: one highlighted line instead of a tall box (less scrolling). */
+.summary{display:block;margin-top:14px}
+.summary-box{width:100%;display:flex;flex-wrap:wrap;border:0;border-radius:10px;overflow:hidden;background:var(--erp-red,#00434d);color:#fff;box-shadow:0 2px 8px rgba(0,47,55,.15)}
+.summary-row,body.show-landing .summary-row.mgr-col{flex:1 1 0;min-width:120px;flex-direction:column;justify-content:center;gap:3px;padding:10px 16px;border:0;border-left:1px solid rgba(255,255,255,.14)}
+.summary-row:first-child{border-left:0}
+.summary-row>span{font-size:10.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:rgba(255,255,255,.72)}
+.summary-row strong{font-size:18px;font-variant-numeric:tabular-nums;white-space:nowrap}
+.summary-row.sum-amount{flex-grow:1.4;background:rgba(0,0,0,.14)}
+.summary-row.sum-amount strong{font-size:21px;color:#f2c94c}
+.summary-row.mgr-col{display:none;background:rgba(255,255,255,.06)}
+@media print{.summary-box{background:#fff;color:#111;border:1px solid #ccc;box-shadow:none}.summary-row>span{color:#555}.summary-row.sum-amount strong{color:#111}}
 </style>
 <link rel="stylesheet" href="erp-shell.css">
 <script src="erp-shell.js" data-auto defer></script>
@@ -460,6 +491,34 @@ body.compact-entry .share-more>summary{display:block;cursor:pointer;font-size:13
         <div class="prio-hint" id="prioHint">Normal: deliver within 36 hours.</div>
       </div>
 
+      <div class="pickup-box" id="pickupBox" hidden>
+        <div class="pickup-head">
+          <span class="pickup-ico" aria-hidden="true">🚚</span>
+          <div><b>Self pickup — driver details</b><small>Outside driver changes every time, so fill it for this order.</small></div>
+        </div>
+        <div class="pickup-grid">
+          <div class="form-group">
+            <label for="pkDriverName">Driver Name</label>
+            <input id="pkDriverName" class="form-control" maxlength="80" autocomplete="off" placeholder="e.g. Ramesh Patel">
+          </div>
+          <div class="form-group">
+            <label for="pkDriverMobile">Driver Mobile</label>
+            <input id="pkDriverMobile" class="form-control" type="tel" inputmode="numeric" maxlength="10" autocomplete="off"
+                   placeholder="10-digit mobile" oninput="this.value=this.value.replace(/\D/g,'').slice(0,10)">
+          </div>
+          <div class="form-group">
+            <label for="pkVehicle">Vehicle Number</label>
+            <input id="pkVehicle" class="form-control" maxlength="20" autocomplete="off" placeholder="e.g. GJ05AB1234"
+                   oninput="this.value=this.value.toUpperCase()">
+          </div>
+          <div class="form-group">
+            <label for="pkGodown">Godown Manager</label>
+            <select id="pkGodown" class="form-control"><option value="">Select Godown Manager</option></select>
+            <small class="pickup-note" id="pkGodownNote"></small>
+          </div>
+        </div>
+      </div>
+
       <div class="form-group" id="slabField">
         <label for="rateSlab">Rate slab</label>
         <select id="rateSlab" class="form-control" onchange="calculateTotals()">
@@ -556,7 +615,7 @@ body.compact-entry .share-more>summary{display:block;cursor:pointer;font-size:13
           <strong id="totalQty">0</strong>
         </div>
 
-        <div class="summary-row">
+        <div class="summary-row sum-amount">
           <span>Total Amount</span>
           <strong id="totalAmount">₹0.00</strong>
         </div>
@@ -1039,6 +1098,15 @@ async function loadOrderForEdit(id) {
   syncSlabToTransport();
   const vehicle = transport.match(/VEHICLE:\s*([^|]+)/);
   if (vehicle && !document.getElementById("vehicleNumber").disabled) document.getElementById("vehicleNumber").value = vehicle[1].trim();
+  if (select.value === "SELF PICKUP") {
+    const {data:pk} = await db.from("lwb_order_pickup").select("*").eq("order_id", o.id).maybeSingle();
+    if (pk) {
+      document.getElementById("pkDriverName").value = pk.driver_name || "";
+      document.getElementById("pkDriverMobile").value = pk.driver_mobile || "";
+      document.getElementById("pkVehicle").value = pk.vehicle_no || "";
+      await loadPickupManagers(pk.godown_staff_id == null ? "" : pk.godown_staff_id);
+    }
+  }
   const pallet = select.value === "DIRECT VEHICLE" && (items || []).length > 0 && items.every(i => i.entry_uom === "PALLET" && i.ordered_pallet_qty);
   if (pallet) setQuantityMode("PALLET", true);
 
@@ -1654,6 +1722,9 @@ function toggleVehicleField(){
   document.getElementById("vehicleLabel").textContent = "Vehicle Number (Optional)";
   if(vehicle.hidden) input.value = "";
   document.getElementById("qtyModeField").hidden = mode !== "DIRECT VEHICLE";
+  const pickup = document.getElementById("pickupBox");
+  pickup.hidden = mode !== "SELF PICKUP";
+  if(!pickup.hidden) loadPickupManagers();
   document.body.classList.toggle("direct-vehicle", mode === "DIRECT VEHICLE");
   document.querySelectorAll("#tpChips button").forEach(b => b.classList.toggle("on", b.dataset.tp === mode));
   updateQuantityModeUI();
@@ -1680,6 +1751,52 @@ function pickTransport(button){
   const select = document.getElementById("transportation");
   select.value = select.value === button.dataset.tp ? "" : button.dataset.tp;
   select.dispatchEvent(new Event("change"));
+}
+
+/* SELF PICKUP: outside driver's name, mobile, vehicle no. and the Godown Manager (Employee Master). */
+let pickupManagersLoad = null;
+function loadPickupManagers(selectId){
+  const sel = document.getElementById("pkGodown");
+  const note = document.getElementById("pkGodownNote");
+  if(!pickupManagersLoad) pickupManagersLoad = (async () => {
+    const {data,error} = await db.rpc("lwb_pickup_godown_managers");
+    if(error){
+      note.textContent = /lwb_pickup_godown_managers/.test(error.message || "") ? "Setup pending: lwb_self_pickup_driver_setup.sql" : "Godown Manager list not loaded.";
+      pickupManagersLoad = null;
+      return;
+    }
+    const list = Array.isArray(data) ? data : [];
+    const keep = sel.value;
+    sel.replaceChildren(new Option("Select Godown Manager", ""));
+    list.forEach(m => sel.add(new Option(m.name + (m.mobile ? " · " + m.mobile : ""), String(m.id))));
+    sel.value = keep;
+    note.textContent = list.length ? "" : "No Godown Manager in Employee Master yet (Work / Post = Godown Manager).";
+  })();
+  return pickupManagersLoad.then(() => { if(selectId != null) sel.value = String(selectId); });
+}
+function pickupDetails(){
+  if(document.getElementById("transportation").value !== "SELF PICKUP") return null;
+  const v = id => document.getElementById(id).value.trim();
+  const p = {driver_name:v("pkDriverName"), driver_mobile:v("pkDriverMobile"), vehicle_no:v("pkVehicle").toUpperCase(), godown_staff_id:v("pkGodown") || null};
+  return (p.driver_name || p.driver_mobile || p.vehicle_no || p.godown_staff_id) ? p : null;
+}
+function pickupText(){
+  const p = pickupDetails();
+  if(!p) return "";
+  const sel = document.getElementById("pkGodown");
+  const gm = p.godown_staff_id && sel.selectedIndex > 0 ? sel.options[sel.selectedIndex].text.split(" · ")[0] : "";
+  return [p.driver_name && "Driver: " + p.driver_name, p.driver_mobile && "Mobile: " + p.driver_mobile,
+          p.vehicle_no && "Vehicle: " + p.vehicle_no, gm && "Godown Manager: " + gm].filter(Boolean).join(" | ");
+}
+function clearPickup(){
+  ["pkDriverName","pkDriverMobile","pkVehicle","pkGodown"].forEach(id => document.getElementById(id).value = "");
+}
+async function saveOrderPickup(orderId, clearIfNone){
+  if(!orderId) return "";
+  const p = pickupDetails();
+  if(!p && !clearIfNone) return "";
+  const {error} = await db.rpc("lwb_set_order_pickup",{p_order_id:orderId,p:p || {}});
+  return error ? "\n\nPickup driver details not saved: " + (/lwb_set_order_pickup/.test(error.message || "") ? "ask Admin to run lwb_self_pickup_driver_setup.sql." : (error.message || "database error")) : "";
 }
 
 /* SAVE ORDER */
@@ -1709,6 +1826,13 @@ async function saveOrder(){
 
   if(!customer){
     alert("Customer Name is required.");
+    return;
+  }
+
+  const pickupMobile = transportationType === "SELF PICKUP" ? document.getElementById("pkDriverMobile").value.trim() : "";
+  if(pickupMobile && !/^[6-9]\d{9}$/.test(pickupMobile)){
+    alert("Driver mobile must be a 10-digit mobile number.");
+    document.getElementById("pkDriverMobile").focus();
     return;
   }
 
@@ -1810,7 +1934,8 @@ async function saveOrder(){
     try{
       const {data,error} = await db.rpc("lwb_sales_modify_order",{p_order_id:editOrder.id,p_transportation:transportation||"",p_items:items});
       if(error) throw error;
-      const priorityNote = String(editOrder.priority || "NORMAL").toUpperCase() === orderPriority ? "" : await saveOrderPriority(editOrder.id);
+      const priorityNote = (String(editOrder.priority || "NORMAL").toUpperCase() === orderPriority ? "" : await saveOrderPriority(editOrder.id))
+        + await saveOrderPickup(editOrder.id, true);
       await alert("Order " + (editOrder.order_no || "") + (data && data.changed
         ? " saved. Sales Head is informed of the changes."
         : ": nothing changed.") + priorityNote);
@@ -1914,7 +2039,8 @@ async function saveOrder(){
     }
 
     document.getElementById("orderNo").value=orderNo;
-    const priorityNote = orderPriority === "NORMAL" ? "" : await saveOrderPriority(createdOrder && createdOrder.id);
+    const priorityNote = (orderPriority === "NORMAL" ? "" : await saveOrderPriority(createdOrder && createdOrder.id))
+      + await saveOrderPickup(createdOrder && createdOrder.id, false);
 
     showMessage(
       (headCreatesApprovedPo()?"PO approved. Order No: ":"Order saved successfully! Order No: ")+
@@ -1936,6 +2062,7 @@ async function saveOrder(){
       "\nTotal Amount: "+formatMoney(totals.totalAmount)+
       "\nFinal Weight: "+formatNumber(totals.totalWeight)+" KG"+
       (orderPriority === "NORMAL" ? "" : "\nPriority: " + orderPriority)+
+      (pickupText() ? "\n" + pickupText().split(" | ").join("\n") : "")+
       (headCreatesApprovedPo()?"\n\nReady for transport assignment.":"\n\nSent to Warehouse Manager for approval.")+
       priorityNote
     );
@@ -1990,6 +2117,7 @@ async function resetOrder(){
   partyInfo("");
   document.getElementById("transportation").value="";
   document.getElementById("vehicleNumber").value="";
+  clearPickup();
   document.getElementById("rateSlab").value="auto";
   partyRates = new Map();
   partyRatesFor = "";
@@ -2325,6 +2453,7 @@ function copyOrderMessage(){
   if(!lines.length){ alert("Enter SKU and quantity first."); return; }
   const h = orderHead(), t = orderSums(lines);
   let text = "*ORDER" + (h.no !== "-" ? " " + h.no : "") + "*\n*Customer:* " + h.party + "\n*Date:* " + h.date + "\n*Transport:* " + h.trans + "\n";
+  if(pickupText()) text += "*Pickup:* " + pickupText() + "\n";
   if(h.sales) text += "*Sales person:* " + h.sales + "\n";
   text += "\n";
   lines.forEach(l => {
@@ -2389,7 +2518,7 @@ function downloadOrderCsv(){
   if(!lines.length){ alert("Enter SKU and quantity first."); return; }
   const h = orderHead(), t = orderSums(lines);
   const q = v => '"' + String(v ?? "").replace(/"/g,'""') + '"';
-  const rows = [["Order No",h.no],["Date",h.date],["Customer",h.party],["Transport",h.trans],["Sales person",h.sales],[],
+  const rows = [["Order No",h.no],["Date",h.date],["Customer",h.party],["Transport",h.trans],...(pickupText()?[["Pickup",pickupText()]]:[]),["Sales person",h.sales],[],
     ["SKU","Pallet","Quantity (case)","Rate","Amount","Weight KG"],
     ...lines.map(l => [l.sku, l.pallet ?? "", l.cases, l.rate ?? "", l.amount.toFixed(2), l.weight.toFixed(2)]),
     ["TOTAL", r2(t.pallet), t.cases, "", t.amount.toFixed(2), t.weight.toFixed(2)]];

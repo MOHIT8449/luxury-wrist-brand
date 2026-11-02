@@ -1,0 +1,72 @@
+import {test} from 'node:test';
+import assert from 'node:assert/strict';
+import {readFile} from 'node:fs/promises';
+import {PGlite} from '@electric-sql/pglite';
+
+// lwb_self_pickup_driver_setup.sql on an empty PGlite database (no live data).
+const ids={admin:'00000000-0000-4000-8000-000000000001',sales:'00000000-0000-4000-8000-000000000002',
+  other:'00000000-0000-4000-8000-000000000003',driver:'00000000-0000-4000-8000-000000000004'};
+const roles={admin:'admin',sales:'sales',other:'sales',driver:'driver'};
+const db=new PGlite();
+await db.exec(`
+CREATE ROLE anon; CREATE ROLE authenticated;
+CREATE SCHEMA auth;
+CREATE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql AS $$ SELECT nullif(current_setting('request.jwt.claim.sub',true),'')::uuid $$;
+CREATE TABLE public.user_profiles(id uuid primary key,role text,active boolean,full_name text);
+CREATE TABLE public.orders(id uuid default gen_random_uuid() primary key,order_no text,customer_name text,status text,transportation text,created_by uuid);
+CREATE TABLE public.lwb_acc_staff(id bigserial primary key,emp_code text,name text,mobile text,designation text,monthly_salary numeric,active boolean default true);
+ALTER TABLE public.orders ENABLE ROW LEVEL SECURITY;
+CREATE POLICY own ON public.orders FOR SELECT TO authenticated USING (created_by = auth.uid() OR EXISTS (SELECT 1 FROM public.user_profiles p WHERE p.id=auth.uid() AND p.role='admin'));
+GRANT USAGE ON SCHEMA public, auth TO authenticated; GRANT SELECT ON public.orders, public.user_profiles TO authenticated;
+`);
+for(const [k,id] of Object.entries(ids))await db.query('insert into user_profiles values($1,$2,true,$3)',[id,roles[k],'Name '+k]);
+const staff=(await db.query(`insert into lwb_acc_staff(emp_code,name,mobile,designation,monthly_salary,active) values
+ ('EMP001','Vijay Godown','9811111111','Godown Manager',20000,true),('EMP002','Kalu Loader','9822222222','Loader',12000,true),
+ ('EMP003','Old GM','9833333333','godown  manager',0,false) returning id`)).rows.map(r=>r.id);
+const ord=(await db.query(`insert into orders(order_no,customer_name,status,transportation,created_by) values
+ ('LXY-1','A','pending_approval','SELF PICKUP',$1),('LXY-2','B','pending_approval','DELIVERY',$1),('LXY-3','C','approved','SELF PICKUP',$1) returning id`,[ids.sales])).rows.map(r=>r.id);
+const sql=await readFile(new URL('../../lwb_self_pickup_driver_setup.sql',import.meta.url),'utf8');
+await db.exec(sql);await db.exec(sql); // safe to run again
+
+async function run(who,q,params){
+  await db.query("select set_config('request.jwt.claim.sub',$1,false)",[ids[who]]);
+  await db.exec('SET ROLE authenticated');
+  try{return await db.query(q,params)}finally{await db.exec('RESET ROLE')}
+}
+
+test('godown manager list = active Employee Master Godown Managers only, no salary', async()=>{
+  const r=(await run('sales','select public.lwb_pickup_godown_managers() v')).rows[0].v;
+  assert.deepEqual(r.map(x=>x.name),['Vijay Godown']);
+  assert.equal(r[0].monthly_salary,undefined);
+  await assert.rejects(run('driver','select public.lwb_pickup_godown_managers()'),/not active/);
+});
+
+test('salesman saves pickup details on own pending SELF PICKUP order; mobile and vehicle cleaned', async()=>{
+  const p={driver_name:'  Ramesh   Patel ',driver_mobile:'+91 98765 43210',vehicle_no:'gj-05 ab 1234',godown_staff_id:String(staff[0])};
+  const r=(await run('sales','select public.lwb_set_order_pickup($1,$2) v',[ord[0],p])).rows[0].v;
+  assert.equal(r.saved,true);
+  const row=(await run('sales','select * from lwb_order_pickup where order_id=$1',[ord[0]])).rows[0];
+  assert.equal(row.driver_name,'Ramesh Patel');assert.equal(row.driver_mobile,'9876543210');
+  assert.equal(row.vehicle_no,'GJ05AB1234');assert.equal(row.godown_manager_name,'Vijay Godown');
+  // another salesman can not read it (orders RLS) nor write it
+  assert.equal((await run('other','select * from lwb_order_pickup')).rows.length,0);
+  await assert.rejects(run('other','select public.lwb_set_order_pickup($1,$2)',[ord[0],p]),/Only Admin/);
+});
+
+test('bad mobile / non-godown employee refused; approved order only for Admin', async()=>{
+  await assert.rejects(run('sales','select public.lwb_set_order_pickup($1,$2)',[ord[0],{driver_mobile:'12345'}]),/10-digit/);
+  await assert.rejects(run('sales','select public.lwb_set_order_pickup($1,$2)',[ord[0],{godown_staff_id:staff[1]}]),/Godown Manager/);
+  await assert.rejects(run('sales','select public.lwb_set_order_pickup($1,$2)',[ord[0],{godown_staff_id:staff[2]}]),/Godown Manager/);
+  await assert.rejects(run('sales','select public.lwb_set_order_pickup($1,$2)',[ord[2],{driver_name:'X'}]),/Only Admin/);
+  const r=(await run('admin','select public.lwb_set_order_pickup($1,$2) v',[ord[2],{driver_name:'X',vehicle_no:'GJ01'}])).rows[0].v;
+  assert.equal(r.saved,true);
+});
+
+test('not SELF PICKUP or empty details clears the row', async()=>{
+  const r=(await run('sales','select public.lwb_set_order_pickup($1,$2) v',[ord[1],{driver_name:'Y'}])).rows[0].v;
+  assert.equal(r.saved,false);
+  await run('sales','select public.lwb_set_order_pickup($1,$2)',[ord[0],{}]);
+  assert.equal((await db.query('select count(*)::int n from lwb_order_pickup where order_id=$1',[ord[0]])).rows[0].n,0);
+  // direct writes are refused
+  await assert.rejects(run('admin',"insert into lwb_order_pickup(order_id) values($1)",[ord[0]]),/permission denied/);
+});
