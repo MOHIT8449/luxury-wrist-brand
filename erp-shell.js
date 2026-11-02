@@ -85,6 +85,13 @@
       {t:"Outside Market Stock",h:"market-report.html",i:"pin",r:"admin manager sales"},
       {t:"Sales Tracking",h:"sales-tracking.html",i:"chart",r:"admin manager"},
       {t:"Sales Team Setup",h:"sales-team.html",i:"users",r:"admin manager"}]},
+    // Purchase in one place (Mohit, 2 Nov 2026): entry, the list of every purchase bill (like the PO list),
+    // damage claims, and the scanned sales bill PDFs uploaded every night.
+    {group:"Purchase",items:[
+      {t:"Purchase Entry (Goods Inward)",h:"goods-inward.html",i:"inbox",r:"admin manager",k:"goods inward purchase bill new"},
+      {t:"Purchase List",h:"purchase-register.html",i:"note",r:"admin manager warehouse accounts",k:"purchase register bills verify damage photo",pt:"Purchase List / Register"},
+      {t:"Purchase Claims",h:"purchase-claims.html",i:"inbox",r:"admin manager",k:"damage leakage shortage claim"},
+      {t:"Sales Bill PDFs",h:"sales-bill-scans.html",i:"bill",r:"admin accounts manager",k:"scan pdf sales bill invoice register upload"}]},
     {group:"Dispatch",items:[
       {t:"Godown Report",h:"godown-report.html",i:"note",r:"admin manager warehouse"},
       {t:"Loading & Dispatch",h:"loading-dispatch.html",i:"box",r:"admin manager warehouse"},
@@ -114,9 +121,6 @@
       {t:"Goods in Transit",h:"stock-transit.html",i:"truck",r:"admin manager warehouse"},
       {t:"Stock Transfer / Damage",h:"stock-transfer.html",i:"undo",r:"admin manager warehouse accounts"},
       {t:"Night Stock Audit",h:"stock-audit.html",i:"stock",r:"admin manager warehouse accounts"},
-      {t:"Goods Inward (Purchase)",h:"goods-inward.html",i:"inbox",r:"admin manager"},
-      {t:"Purchase Register",h:"purchase-register.html",i:"inbox",r:"admin"},
-      {t:"Purchase Claims",h:"purchase-claims.html",i:"inbox",r:"admin manager"},
       {t:"Opening Stock",h:"opening-stock.html",i:"box",r:"admin"}]},
     {group:"Masters",items:[
       {t:"Customer / Party Master",h:"customer-master.html",i:"users",r:"admin manager"},

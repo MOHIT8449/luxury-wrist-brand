@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sales Bill PDFs | Luxury Wrist Brand ERP</title>
+  <script src="erp-date.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <link rel="stylesheet" href="erp-shell.css">
+  <script src="erp-shell.js"></script>
+  <script src="erp-list.js"></script>
+  <script src="excel-io.js"></script>
+  <style>
+    /* Sales Bill PDF register (Mohit, 2 Nov 2026): the scanned sales bills are uploaded every night;
+       find any bill again by its invoice number. lwb_purchase_register_setup.sql */
+    .status{text-align:center;padding:80px 20px;font-size:15px;color:#555}
+    .sb-err{background:#ffebeb;color:#9b2020;padding:10px 12px;border-radius:8px;margin-bottom:10px;white-space:pre-wrap}
+    .sb-find{display:flex;gap:8px;padding:10px 12px}
+    .sb-find input{flex:1;min-width:0;height:42px;border:1.5px solid #cfd6de;border-radius:8px;padding:0 12px;font:inherit;font-size:16px}
+    .sb-find input:focus{outline:none;border-color:#c9b26a;box-shadow:0 0 0 3px rgba(201,178,106,.18)}
+    .sb-btn{height:36px;border-radius:6px;padding:0 12px;font:inherit;font-weight:600;font-size:14px;cursor:pointer;border:1px solid var(--erp-line);background:#fff;color:var(--erp-ink);white-space:nowrap}
+    .sb-btn.main{background:var(--erp-red);border-color:var(--erp-red);color:#fff}.sb-btn:disabled{opacity:.5;cursor:not-allowed}
+    .sb-btn.sm{height:30px;padding:0 9px;font-size:13px}
+    .sb-find .sb-btn{height:42px}
+    .sb-hits{padding:0 12px 10px}
+    .sb-hit{display:flex;align-items:center;gap:10px;padding:8px 10px;border:1px solid var(--erp-line);border-radius:8px;margin-top:6px;background:#fff}
+    .sb-hit.exact{border-color:#13824a;background:#f1faf4}
+    .sb-hit b{font-size:15px}.sb-hit small{color:var(--erp-muted);display:block;font-size:12.5px}
+    .sb-hit .grow{flex:1;min-width:0}
+    .sb-up{display:grid;grid-template-columns:150px minmax(180px,1fr) minmax(240px,2fr) auto;gap:8px;align-items:end;padding:10px 12px}
+    .sb-up label{display:block;font-size:12.5px;font-weight:600;color:#4b5763;margin-bottom:3px}
+    .sb-up input,.sb-tools input{width:100%;height:36px;border:1px solid #cfd6de;border-radius:6px;padding:0 9px;font:inherit;font-size:14px;background:#fff;min-width:0}
+    .sb-up input[type=file]{padding:5px 6px}
+    .sb-up .inv{display:flex;gap:6px}.sb-up .inv input{flex:1}
+    .sb-up .note{grid-column:1/-1;color:var(--erp-muted);font-size:12.5px;margin:-2px 0 0}
+    .sb-kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin-bottom:10px}
+    .sb-kpi{background:#fff;border:1px solid var(--erp-line);border-radius:8px;padding:9px 12px}
+    .sb-kpi span{display:block;font-size:12.5px;color:#4b5763}.sb-kpi b{font-size:19px}.sb-kpi.bad b{color:var(--erp-red)}
+    .sb-tools{display:flex;gap:8px;align-items:center;padding:10px 12px;border-bottom:1px solid var(--erp-line)}
+    .sb-tools .chips{display:flex;gap:4px}.sb-tools .chips button.on{background:#002f37;border-color:#002f37;color:#fff}
+    .sb-tools .dates{display:flex;gap:4px;align-items:center}.sb-tools .dates input{width:135px}.sb-tools .dates span{color:var(--erp-muted);font-size:13px}
+    .sb-table{border-collapse:collapse;width:100%;font-size:14px}
+    .sb-table th,.sb-table td{border-bottom:1px solid var(--erp-line);padding:7px 9px;text-align:left;vertical-align:top}
+    .sb-table th{background:#f6f7f9;font-size:12px;font-weight:700;color:#2b3440;text-transform:uppercase;letter-spacing:.3px;white-space:nowrap}
+    .sb-table td small{display:block;color:var(--erp-muted);font-size:12.5px}
+    .sb-table .inv{max-width:420px;overflow-wrap:anywhere}
+    .sb-acts{display:flex;gap:4px;flex-wrap:nowrap}
+    .sb-miss{display:inline-block;margin:2px 3px 0 0;padding:1px 6px;border-radius:4px;font-size:11.5px;font-weight:700;background:#fdecef;color:#c8102e}
+    @media(max-width:900px){.sb-up{grid-template-columns:1fr 1fr}.sb-up .w2{grid-column:1/-1}}
+    @media(max-width:760px){
+      .sb-kpis{grid-template-columns:1fr 1fr;gap:6px}.sb-kpi b{font-size:16px}
+      .sb-tools{flex-wrap:wrap;padding:8px}.sb-tools .chips{flex:1 1 100%}.sb-tools .chips button{flex:1}.sb-tools .dates{flex:1 1 100%}.sb-tools .dates input{flex:1;width:auto}
+      .sb-up{grid-template-columns:1fr;padding:8px}.sb-up .w2{grid-column:auto}
+      .sb-table thead{display:none}.sb-table,.sb-table tbody{display:block}
+      .sb-table tr{display:grid;grid-template-columns:1fr auto;gap:2px 10px;padding:9px 10px;border-bottom:1px solid var(--erp-line)}
+      .sb-table td{display:block;border:0;padding:0}
+      .sb-table td.c-by{grid-column:2;grid-row:1;text-align:right;font-size:12.5px}
+      .sb-table td.c-inv,.sb-table td.c-act{grid-column:1/-1}
+      .sb-table td.c-act .sb-acts button{flex:1;height:34px}
+      .sb-hit{flex-wrap:wrap}
+    }
+    [hidden]{display:none!important}
+  </style>
+</head>
+<body>
+  <div id="loading" class="status">Checking account access...</div>
+  <main id="page" class="erp-main" hidden>
+    <div class="erp-pagehead"><h1>Sales Bill PDFs<button type="button" class="erp-i" aria-label="Info" title="Info" data-tip="Every night: scan the day's sales bills to one PDF, choose the bill date, enter the invoice numbers in it (ranges like 101-140 are fine, or press 'From Tally') and Upload.
+Later type any invoice number in Find to open its PDF.
+'Not in any PDF' = Tally bills of these dates whose number is in no uploaded PDF.">i</button></h1></div>
+    <div id="err" class="sb-err" hidden></div>
+    <section class="erp-card" style="margin-bottom:10px">
+      <div class="sb-find"><input id="find" type="search" placeholder="Find a bill: type invoice number, e.g. 145 or LWB/145" aria-label="Find invoice number" autocomplete="off"><button type="button" class="sb-btn main" id="findBtn">Find</button></div>
+      <div class="sb-hits" id="hits"></div>
+    </section>
+    <section class="erp-card" style="margin-bottom:10px" id="upCard" hidden>
+      <div class="erp-card-head"><h2>Upload tonight's scanned bills</h2></div>
+      <div class="sb-up">
+        <div><label for="upDate">Bill date *</label><input id="upDate" type="date"></div>
+        <div><label for="upFile">Scanned PDF *</label><input id="upFile" type="file" accept="application/pdf,image/jpeg,image/png"></div>
+        <div class="w2"><label for="upInv">Invoice numbers in this PDF *</label><div class="inv"><input id="upInv" placeholder="e.g. LWB/101-LWB/140, 145, 150" autocomplete="off"><button type="button" class="sb-btn" id="fromTally" title="Fill the Tally invoice numbers of this bill date">From Tally</button></div></div>
+        <button type="button" class="sb-btn main" id="upBtn">⬆ Upload</button>
+        <p class="note" id="upNote">PDF / JPG / PNG up to 30 MB.</p>
+      </div>
+    </section>
+    <div class="sb-kpis" id="kpis"></div>
+    <section class="erp-card">
+      <div class="sb-tools">
+        <div class="chips" id="chips"><button type="button" class="sb-btn" data-days="7">7 Days</button><button type="button" class="sb-btn" data-days="30">30 Days</button><button type="button" class="sb-btn" data-days="month">Month</button></div>
+        <div class="dates"><input id="from" type="date" aria-label="From"><span>to</span><input id="to" type="date" aria-label="To"></div>
+        <span style="flex:1"></span>
+        <button type="button" class="sb-btn" id="xls">⬇ Excel</button>
+      </div>
+      <div id="box"></div>
+    </section>
+  </main>
+  <script>
+    'use strict';
+    const client=supabase.createClient("https://txkbhadzdbxpieunfvox.supabase.co","sb_publishable_W4I3Q5ODf0g17sq5uDml2Q_sLolXYEk");
+    const BUCKET="lwb-sales-bills",MAX_MB=30;
+    const el=id=>document.getElementById(id);
+    const esc=v=>String(v==null?"":v).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+    const fmt=v=>Number(v||0).toLocaleString("en-IN");
+    const dmy=d=>d?String(d).slice(8,10)+"/"+String(d).slice(5,7)+"/"+String(d).slice(0,4):"—";
+    const today=()=>new Date().toLocaleDateString("en-CA",{timeZone:"Asia/Kolkata"});
+    const addDays=(d,n)=>{const x=new Date(d+"T00:00:00Z");x.setUTCDate(x.getUTCDate()+n);return x.toISOString().slice(0,10)};
+    const key=v=>String(v||"").toUpperCase().replace(/[^A-Z0-9]/g,"");
+    let me=null,canEdit=false,scans=[],tally=null,busy=false;
+
+    // "LWB/101-LWB/140, 145" -> LWB/101 ... LWB/140, 145. A range keeps the prefix and the digit width.
+    function parseInv(text){
+      const out=[],bad=[];
+      for(let t of String(text||"").split(/[,;\n]+/)){
+        t=t.trim();if(!t)continue;
+        const m=t.match(/^(.*?)(\d+)\s*(?:-|to|TO)\s*(.*?)(\d+)$/);
+        if(m&&(m[3]===""||m[3].trim().toUpperCase()===m[1].trim().toUpperCase())&&!(m[1]===""&&/\D/.test(m[3]))){
+          const a=Number(m[2]),b=Number(m[4]),w=m[2].length;
+          if(b<a||b-a>1000){bad.push(t);continue}
+          for(let n=a;n<=b;n++)out.push(m[1]+String(n).padStart(w,"0"));
+        }else out.push(t);
+      }
+      return {list:[...new Map(out.map(x=>[key(x),x])).values()].filter(x=>key(x)),bad};
+    }
+    // Short text of a list: "LWB/101 – LWB/140 (40)"
+    function shortList(nos){
+      if(!nos.length)return "—";
+      const s=[...nos].sort((a,b)=>a.localeCompare(b,"en",{numeric:true}));
+      return s.length===1?s[0]:s[0]+" – "+s[s.length-1]+" ("+s.length+")";
+    }
+
+    async function start(){
+      const {data:{session}}=await client.auth.getSession();
+      if(!session){location.replace("login.html");return null}
+      const {data:p}=await client.from("user_profiles").select("full_name,role,active").eq("id",session.user.id).single();
+      const realRole=String((p&&p.role)||"").toLowerCase().trim(),role=p?await ERPShell.pageRoleFresh(realRole):realRole;
+      if(!p||p.active!==true||!["admin","accounts","manager"].includes(role)){location.replace("dashboard.html");return null}
+      return {id:session.user.id,role,realRole,name:p.full_name||session.user.email};
+    }
+    async function load(){
+      el("err").hidden=true;el("box").innerHTML='<div class="erp-empty">Loading...</div>';
+      const f=el("from").value,t=el("to").value;
+      let q=client.from("lwb_sales_bill_scans").select("*").order("bill_date",{ascending:false}).order("created_at",{ascending:false}).limit(1000);
+      if(f)q=q.gte("bill_date",f);if(t)q=q.lte("bill_date",t);
+      const r=await q;
+      if(r.error){el("err").hidden=false;el("err").textContent=/does not exist|schema cache/i.test(r.error.message)?"Sales Bill PDF register is not set up yet (lwb_purchase_register_setup.sql).":"Could not load: "+r.error.message;scans=[]}
+      else scans=r.data||[];
+      // Tally bills of the same dates (Admin / Accounts) to show which are not in any PDF.
+      tally=null;
+      if(me.role!=="manager"){let tq=client.from("lwb_tally_invoices").select("invoice_no,invoice_date").limit(5000);if(f)tq=tq.gte("invoice_date",f);if(t)tq=tq.lte("invoice_date",t);
+        const tr=await tq;if(!tr.error)tally=tr.data||[]}
+      render();
+    }
+    function missingList(){
+      if(!tally)return null;
+      const have=new Set(scans.flatMap(s=>s.invoice_keys||[]));
+      const out=[];for(const x of tally)for(const no of String(x.invoice_no||"").split(/[,;]+/).map(v=>v.trim()).filter(Boolean))if(!have.has(key(no)))out.push({invoice_no:no,invoice_date:x.invoice_date});
+      return out.sort((a,b)=>String(b.invoice_date).localeCompare(a.invoice_date)||a.invoice_no.localeCompare(b.invoice_no,"en",{numeric:true}));
+    }
+    function render(){
+      const miss=missingList(),days=new Set(scans.map(s=>s.bill_date)),invs=scans.reduce((a,s)=>a+(s.invoice_nos||[]).length,0);
+      const K=[["PDFs uploaded",fmt(scans.length),""],["Days covered",fmt(days.size),""],["Invoices in PDFs",fmt(invs),""]];
+      if(miss)K.push(["Not in any PDF",fmt(miss.length),miss.length?"bad":""]);
+      el("kpis").innerHTML=K.map(([a,b,c])=>'<div class="sb-kpi '+c+'"><span>'+a+"</span><b>"+b+"</b></div>").join("");
+      if(window.ERPList&&miss){const c=el("kpis").lastElementChild;ERPList.card(c,()=>({title:"Tally bills not in any PDF",sub:"Bill dates "+dmy(el("from").value)+" to "+dmy(el("to").value),rows:miss,cols:[{t:"Bill date",v:"invoice_date",date:true},{t:"Invoice No",v:"invoice_no"}],empty:"Every Tally bill is in a PDF."}))}
+      const missByDay=new Map();for(const m of miss||[]){missByDay.set(m.invoice_date,(missByDay.get(m.invoice_date)||0)+1)}
+      let h='<table class="sb-table"><thead><tr><th>Bill date</th><th>Invoice numbers</th><th>File</th><th>Uploaded</th><th></th></tr></thead><tbody>';
+      for(const s of scans){
+        const acts='<button type="button" class="sb-btn sm main" data-open="'+s.id+'">Open PDF</button>'+(canEdit?'<button type="button" class="sb-btn sm" data-edit="'+s.id+'">Edit nos.</button><button type="button" class="sb-btn sm" data-del="'+s.id+'" style="color:var(--erp-red)">Remove</button>':"");
+        h+='<tr><td class="c-date"><b>'+dmy(s.bill_date)+"</b>"+(missByDay.get(s.bill_date)?'<span class="sb-miss">'+missByDay.get(s.bill_date)+" not in PDF</span>":"")+'</td><td class="c-inv inv"><b>'+esc(shortList(s.invoice_nos||[]))+"</b><small>"+esc(s.invoice_text||"")+(s.note?" · "+esc(s.note):"")+'</small></td><td class="c-file">'+esc(s.file_name||"PDF")+"<small>"+(s.size_bytes?(s.size_bytes/1048576).toFixed(1)+" MB":"")+'</small></td><td class="c-by">'+esc(s.uploaded_by_name||"")+"<small>"+esc(window.LWBDate?LWBDate.dt(s.created_at):dmy(String(s.created_at).slice(0,10)))+'</small></td><td class="c-act"><div class="sb-acts">'+acts+"</div></td></tr>";
+      }
+      // Days with Tally bills but no PDF at all
+      for(const [d,n] of [...missByDay].filter(([d])=>!days.has(d)).sort((a,b)=>b[0].localeCompare(a[0])))
+        h+='<tr><td class="c-date"><b>'+dmy(d)+'</b><span class="sb-miss">No PDF</span></td><td class="c-inv inv" colspan="4"><small>'+fmt(n)+" Tally bill"+(n>1?"s":"")+" of this date are not uploaded yet.</small></td></tr>";
+      if(!scans.length&&!missByDay.size)h+='<tr><td colspan="5" class="erp-empty">No PDF uploaded for these dates.</td></tr>';
+      el("box").innerHTML=h+"</tbody></table>";
+    }
+    async function openPdf(path){
+      const w=window.open("","_blank");
+      const r=await client.storage.from(BUCKET).createSignedUrl(path,600);
+      if(r.error||!r.data){if(w)w.close();return ERPShell.toast("Could not open the file: "+(r.error?r.error.message:"not found"),"error")}
+      if(w)w.location=r.data.signedUrl;else location.href=r.data.signedUrl;
+    }
+    async function find(){
+      const q=el("find").value.trim();
+      if(!key(q)){el("hits").innerHTML="";return}
+      el("hits").innerHTML='<div class="sb-hit">Searching...</div>';
+      const r=await client.rpc("lwb_sbs_find",{p_q:q});
+      if(r.error){el("hits").innerHTML='<div class="sb-hit">Search failed: '+esc(r.error.message)+"</div>";return}
+      const rows=r.data||[];
+      if(!rows.length){el("hits").innerHTML='<div class="sb-hit">No PDF has invoice "'+esc(q)+'".'+(tally&&tally.some(t=>key(t.invoice_no)===key(q))?" The bill is in Tally but its PDF is not uploaded yet.":"")+"</div>";return}
+      el("hits").innerHTML=rows.slice(0,12).map(x=>'<div class="sb-hit'+(x.exact?" exact":"")+'"><div class="grow"><b>'+esc(x.invoice_no)+"</b><small>Bill date "+dmy(x.bill_date)+" · "+esc(x.file_name||"PDF")+" · "+fmt(x.invoice_count)+" bills in this PDF"+(x.uploaded_by_name?" · by "+esc(x.uploaded_by_name):"")+'</small></div><button type="button" class="sb-btn main" data-path="'+esc(x.path)+'">Open PDF</button></div>').join("");
+    }
+    async function upload(){
+      if(busy)return;
+      const d=el("upDate").value,f=el("upFile").files[0],p=parseInv(el("upInv").value);
+      if(!/^\d{4}-\d{2}-\d{2}$/.test(d))return ERPShell.toast("Select the bill date.","error");
+      if(!f)return ERPShell.toast("Choose the scanned PDF.","error");
+      if(!["application/pdf","image/jpeg","image/png"].includes(f.type))return ERPShell.toast("Only PDF, JPG or PNG.","error");
+      if(f.size>MAX_MB*1048576)return ERPShell.toast("File is more than "+MAX_MB+" MB. Scan in black & white or lower DPI.","error");
+      if(p.bad.length)return ERPShell.toast("Check these: "+p.bad.join(", "),"error");
+      if(!p.list.length)return ERPShell.toast("Enter the invoice numbers in this PDF.","error");
+      // Same invoice already in another PDF?
+      const allKeys=new Set(p.list.map(key)),dup=scans.filter(s=>(s.invoice_keys||[]).some(k=>allKeys.has(k)));
+      if(!await confirm("UPLOAD SALES BILL PDF?\n\nBill date: "+dmy(d)+"\nFile: "+f.name+" ("+(f.size/1048576).toFixed(1)+" MB)\nInvoices: "+shortList(p.list)+(dup.length?"\n\nNote: some of these numbers are already in the PDF of "+dup.map(s=>dmy(s.bill_date)).join(", ")+".":"")))return;
+      busy=true;el("upBtn").disabled=true;el("upBtn").textContent="Uploading...";
+      try{
+        const ext=(f.type==="application/pdf"?"pdf":f.type==="image/png"?"png":"jpg");
+        const path=d+"/"+me.id.replace(/-/g,"")+"-"+Date.now()+"-"+(f.name.replace(/\.[^.]*$/,"").replace(/[^A-Za-z0-9_]+/g,"_").slice(0,40)||"bills")+"."+ext;
+        const up=await client.storage.from(BUCKET).upload(path,f,{contentType:f.type,upsert:false});
+        if(up.error)throw up.error;
+        const r=await client.rpc("lwb_sbs_add",{p:{bill_date:d,path,file_name:f.name,size:f.size,invoice_text:el("upInv").value.trim(),invoice_nos:p.list}});
+        if(r.error)throw r.error;
+        ERPShell.toast("Uploaded: "+shortList(p.list),"success");
+        el("upFile").value="";el("upInv").value="";updNote();
+        if(d<el("from").value||d>el("to").value)setRange("30");else await load();
+      }catch(e){ERPShell.toast("Upload failed: "+(e.message||String(e)),"error")}
+      busy=false;el("upBtn").disabled=false;el("upBtn").textContent="⬆ Upload";
+    }
+    async function fromTally(){
+      const d=el("upDate").value;if(!d)return ERPShell.toast("Select the bill date first.","error");
+      const r=await client.from("lwb_tally_invoices").select("invoice_no").eq("invoice_date",d).limit(2000);
+      if(r.error)return ERPShell.toast("Could not read Tally bills: "+r.error.message,"error");
+      const nos=[...new Set((r.data||[]).flatMap(x=>String(x.invoice_no||"").split(/[,;]+/).map(v=>v.trim()).filter(Boolean)))].sort((a,b)=>a.localeCompare(b,"en",{numeric:true}));
+      if(!nos.length)return ERPShell.toast("No Tally bill number is saved for "+dmy(d)+".","error");
+      el("upInv").value=nos.join(", ");updNote();
+    }
+    async function editNos(id){
+      const s=scans.find(x=>String(x.id)===String(id));if(!s)return;
+      const t=await prompt("Invoice numbers in this PDF ("+dmy(s.bill_date)+"):",s.invoice_text||(s.invoice_nos||[]).join(", "));
+      if(t==null)return;
+      const p=parseInv(t);if(p.bad.length||!p.list.length)return ERPShell.toast(p.bad.length?"Check these: "+p.bad.join(", "):"Enter the invoice numbers.","error");
+      const r=await client.rpc("lwb_sbs_update",{p_id:s.id,p_invoice_text:t.trim(),p_invoice_nos:p.list,p_note:s.note||null,p_remove:false});
+      if(r.error)return ERPShell.toast("Not saved: "+r.error.message,"error");
+      ERPShell.toast("Saved: "+shortList(p.list),"success");await load();
+    }
+    async function remove(id){
+      const s=scans.find(x=>String(x.id)===String(id));if(!s)return;
+      if(!await confirm("REMOVE THIS PDF FROM THE REGISTER?\n\n"+dmy(s.bill_date)+" · "+(s.file_name||"PDF")+"\n"+shortList(s.invoice_nos||[])))return;
+      const r=await client.rpc("lwb_sbs_update",{p_id:s.id,p_invoice_text:null,p_invoice_nos:null,p_note:null,p_remove:true});
+      if(r.error)return ERPShell.toast("Not removed: "+r.error.message,"error");
+      ERPShell.toast("Removed.","success");await load();
+    }
+    function updNote(){const p=parseInv(el("upInv").value);el("upNote").textContent=p.bad.length?"Check: "+p.bad.join(", "):p.list.length?fmt(p.list.length)+" invoice numbers: "+shortList(p.list):"PDF / JPG / PNG up to 30 MB. Ranges like 101-140 are fine.";el("upNote").style.color=p.bad.length?"var(--erp-red)":""}
+    async function excel(){
+      const rows=scans.flatMap(s=>(s.invoice_nos||[]).map(n=>[dmy(s.bill_date),n,s.file_name||"",s.uploaded_by_name||""]));
+      for(const m of missingList()||[])rows.push([dmy(m.invoice_date),m.invoice_no,"NOT IN ANY PDF",""]);
+      try{await LWBExcel.write("Sales-Bill-PDFs-"+today(),[{name:"Sales Bill PDFs",rows:[["Bill date","Invoice No","PDF file","Uploaded by"],...rows]}])}catch(e){ERPShell.toast(e.message,"error")}
+    }
+    function setRange(k){
+      const t=today();el("to").value=t;el("from").value=k==="month"?t.slice(0,8)+"01":addDays(t,-(Number(k)-1));
+      document.querySelectorAll("#chips button").forEach(x=>x.classList.toggle("on",x.dataset.days===k));load();
+    }
+    document.addEventListener("click",e=>{
+      const t=e.target.closest("button");if(!t)return;
+      if(t.dataset.days&&t.closest("#chips"))return setRange(t.dataset.days);
+      if(t.id==="findBtn")return find();
+      if(t.id==="upBtn")return upload();
+      if(t.id==="fromTally")return fromTally();
+      if(t.id==="xls")return excel();
+      if(t.dataset.path)return openPdf(t.dataset.path);
+      if(t.dataset.open){const s=scans.find(x=>String(x.id)===t.dataset.open);if(s)openPdf(s.path);return}
+      if(t.dataset.edit)return editNos(t.dataset.edit);
+      if(t.dataset.del)return remove(t.dataset.del);
+    });
+    let ft=0;el("find").addEventListener("input",()=>{clearTimeout(ft);ft=setTimeout(find,400)});
+    el("find").addEventListener("keydown",e=>{if(e.key==="Enter"){clearTimeout(ft);find()}});
+    el("upInv").addEventListener("input",updNote);
+    ["from","to"].forEach(id=>el(id).addEventListener("change",()=>{document.querySelectorAll("#chips button").forEach(x=>x.classList.remove("on"));load()}));
+    (async()=>{
+      me=await start();if(!me)return;
+      canEdit=["admin","accounts"].includes(me.role);
+      el("upCard").hidden=!canEdit;el("fromTally").hidden=!canEdit;el("upDate").value=today();
+      ERPShell.mount({role:me.realRole||me.role,name:me.name,onLogout:async()=>{await client.auth.signOut();location.replace("login.html")},group:"Purchase"});
+      el("loading").hidden=true;el("page").hidden=false;
+      const q=new URLSearchParams(location.search).get("inv");if(q){el("find").value=q}
+      setRange("30");if(q)find();
+    })();
+  </script>
+</body>
+</html>
