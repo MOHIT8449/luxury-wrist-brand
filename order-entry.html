@@ -626,7 +626,7 @@ body.compact-entry .share-more>summary{display:block;cursor:pointer;font-size:13
 
     </div>
 
-    <div id="savedPoActions" class="saved-po-actions" hidden><a id="savedPoList" class="btn btn-green" href="warehouse-orders.html">Open in PO / Sales List &rarr;</a><a id="savedPoPrint" class="btn btn-light">Print PO</a><a id="savedPoEdit" class="btn btn-light">Edit PO</a><button type="button" class="btn btn-light" onclick="resetOrder()">+ New Order</button></div>
+    <div id="savedPoActions" class="saved-po-actions" hidden><a id="savedPoList" class="btn btn-green" href="warehouse-orders.html">Open in PO / Sales List &rarr;</a><a id="savedSlipPrint" class="btn btn-green" hidden>🧾 Print Slip</a><a id="savedPoPrint" class="btn btn-light">Print PO</a><a id="savedPoEdit" class="btn btn-light">Edit PO</a><button type="button" class="btn btn-light" onclick="resetOrder()">+ New Order</button></div>
 
   </section>
 
@@ -653,6 +653,25 @@ body.compact-entry .share-more>summary{display:block;cursor:pointer;font-size:13
     <div class="pd-actions">
       <button type="button" class="btn btn-grey" onclick="document.getElementById('pickupDlg').close('back')">Back</button>
       <button type="submit" id="pkSave" class="btn btn-green">Save &amp; Submit</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="slipDlg" class="party-dlg pickup-dlg" aria-labelledby="qsTitle">
+  <form id="slipForm" novalidate>
+    <div class="pickup-head">
+      <span class="pickup-ico" aria-hidden="true">🧾</span>
+      <div><h3 id="qsTitle">Rajnigandha slip — driver &amp; vehicle</h3><small>PO saves, the slip prints and Accounts gets it for the Tally bill. No approval, transport or loading.</small></div>
+    </div>
+    <div class="pd-two">
+      <label>Driver Name *<input id="qsDriverName" maxlength="80" autocomplete="off" placeholder="e.g. Ramesh Patel"></label>
+      <label>Vehicle Number *<input id="qsVehicle" maxlength="20" autocomplete="off" placeholder="e.g. GJ01AB1234"
+             oninput="this.value=this.value.toUpperCase()"></label>
+    </div>
+    <p class="pd-note error" id="qsError"></p>
+    <div class="pd-actions">
+      <button type="button" class="btn btn-grey" onclick="document.getElementById('slipDlg').close('back')">Back</button>
+      <button type="submit" id="qsSave" class="btn btn-green">Save PO &amp; Print Slip</button>
     </div>
   </form>
 </dialog>
@@ -1811,6 +1830,38 @@ async function saveOrderPickup(orderId, clearIfNone){
   return error ? "\n\nPickup driver details not saved: " + (/lwb_set_order_pickup/.test(error.message || "") ? "ask Admin to run lwb_self_pickup_driver_setup.sql." : (error.message || "database error")) : "";
 }
 
+/* RAJNIGANDHA QUICK SLIP (lwb_quick_slip_setup.sql): every SKU of one brand marked quick_slip
+   (Rajnigandha). Sales Head / Admin types driver + vehicle, the PO saves approved and goes straight to
+   "loaded" for the Tally bill, and a small thermal slip prints. Other brands keep the full flow. */
+function quickSlipBrand(items){
+  const ids = items.map(i => String((skuMasterByName.get(String(i.sku_name).toUpperCase()) || {}).company_id || ""));
+  const quick = id => unitCompanies.find(c => c.id === id && c.quick_slip === true);
+  const slipIds = [...new Set(ids.filter(quick))];
+  if(!slipIds.length) return null;
+  if(slipIds.length > 1 || ids.some(id => !quick(id)))
+    return {mixed:true, name:quick(slipIds[0]).name};
+  return quick(slipIds[0]);
+}
+function askSlipDetails(){
+  const dlg = document.getElementById("slipDlg"), form = document.getElementById("slipForm"), err = document.getElementById("qsError");
+  err.textContent = "";
+  return new Promise(done => {
+    const v = id => document.getElementById(id).value.trim();
+    const submit = e => {
+      e.preventDefault();
+      const bad = !v("qsDriverName") ? ["qsDriverName","Enter the driver name."]
+        : v("qsVehicle").replace(/[^A-Z0-9]/gi,"").length < 4 ? ["qsVehicle","Enter the vehicle number."] : null;
+      if(bad){ err.textContent = bad[1]; document.getElementById(bad[0]).focus(); return; }
+      dlg.close("ok");
+    };
+    form.addEventListener("submit", submit);
+    dlg.addEventListener("close", () => { form.removeEventListener("submit", submit); done(dlg.returnValue === "ok" ? {driver_name:v("qsDriverName"), vehicle_no:v("qsVehicle").toUpperCase()} : null); }, {once:true});
+    dlg.returnValue = "";
+    try { dlg.showModal(); } catch(e) { dlg.setAttribute("open", ""); }
+    setTimeout(() => document.getElementById("qsDriverName").focus(), 30);
+  });
+}
+
 /* SAVE ORDER */
 
 async function saveOrder(){
@@ -1930,7 +1981,16 @@ async function saveOrder(){
     return;
   }
 
-  if(transportationType === "SELF PICKUP" && !await askPickupDetails()) return;
+  const slipBrand = !editOrder && headCreatesApprovedPo() ? quickSlipBrand(items) : null;
+  if(slipBrand && slipBrand.mixed){
+    alert(slipBrand.name + " and other brand SKUs are in one PO. Make a separate PO for " + slipBrand.name + " (it prints a slip and goes straight to Accounts).");
+    return;
+  }
+  let slipDetails = null;
+  if(slipBrand){
+    slipDetails = await askSlipDetails();
+    if(!slipDetails) return;
+  }else if(transportationType === "SELF PICKUP" && !await askPickupDetails()) return;
 
   const totals=calculateTotals();
 
@@ -2048,8 +2108,14 @@ async function saveOrder(){
     }
 
     document.getElementById("orderNo").value=orderNo;
-    const priorityNote = (orderPriority === "NORMAL" ? "" : await saveOrderPriority(createdOrder && createdOrder.id))
-      + await saveOrderPickup(createdOrder && createdOrder.id, false);
+    let slipNote = "", slipDone = false;
+    if(slipDetails && createdOrder?.id){
+      const {error:slipError} = await db.rpc("lwb_quick_slip_dispatch",{p_order_id:createdOrder.id,p:slipDetails});
+      if(slipError) slipNote = "\n\nSlip not made: " + (/lwb_quick_slip/.test(slipError.message || "") ? "ask Admin to run lwb_quick_slip_setup.sql." : (slipError.message || "database error")) + "\nOpen Rajnigandha Slips to enter driver & vehicle again.";
+      else slipDone = true;
+    }
+    const priorityNote = slipNote + (orderPriority === "NORMAL" ? "" : await saveOrderPriority(createdOrder && createdOrder.id))
+      + (slipDetails ? "" : await saveOrderPickup(createdOrder && createdOrder.id, false));
 
     showMessage(
       (headCreatesApprovedPo()?"PO approved. Order No: ":"Order saved successfully! Order No: ")+
@@ -2072,7 +2138,7 @@ async function saveOrder(){
       "\nFinal Weight: "+formatNumber(totals.totalWeight)+" KG"+
       (orderPriority === "NORMAL" ? "" : "\nPriority: " + orderPriority)+
       (pickupText() ? "\n" + pickupText().split(" | ").join("\n") : "")+
-      (headCreatesApprovedPo()?"\n\nReady for transport assignment.":"\n\nSent to Warehouse Manager for approval.")+
+      (slipDone?"\nDriver: "+slipDetails.driver_name+"\nVehicle: "+slipDetails.vehicle_no+"\n\nSlip ready to print. Sent to Accounts for the Tally bill.":headCreatesApprovedPo()?"\n\nReady for transport assignment.":"\n\nSent to Warehouse Manager for approval.")+
       priorityNote
     );
 
@@ -2091,6 +2157,16 @@ async function saveOrder(){
       printLink.onclick=event=>printSavedPoInFrame(event,printLink.href);
       document.getElementById("savedPoEdit").href=url;
       document.getElementById("savedPoActions").hidden=false;
+      const slipLink=document.getElementById("savedSlipPrint");
+      slipLink.hidden=!slipBrand;
+      if(slipBrand){
+        // Rajnigandha: the slip is the print; PO goes to Accounts, so the list link opens the slips page.
+        slipLink.href="quick-slip.html?order="+encodeURIComponent(createdOrder.id)+"&print=1";
+        slipLink.onclick=event=>printSavedPoInFrame(event,slipLink.href);
+        if(slipDone){document.getElementById("savedPoList").href="quick-slip.html?order="+encodeURIComponent(createdOrder.id);
+          document.getElementById("savedPoList").innerHTML="Open Rajnigandha Slips &rarr;";printSavedPoInFrame({preventDefault(){}},slipLink.href);}
+        else slipLink.href="quick-slip.html";
+      }
     }
 
   }catch(error){
@@ -2117,6 +2193,9 @@ async function resetOrder(){
   if(!await confirm("Create a new blank order?")) return;
 
   document.getElementById("savedPoActions").hidden=true;
+  document.getElementById("savedSlipPrint").hidden=true;
+  document.getElementById("savedPoList").innerHTML="Open in PO / Sales List &rarr;";
+  ["qsDriverName","qsVehicle"].forEach(id=>document.getElementById(id).value="");
   if(editOrder){
     // Leave the order as it is and start a fresh one.
     editOrder = null;
