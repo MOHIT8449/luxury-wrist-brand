@@ -729,6 +729,15 @@
     .po-pg button {border:1px solid #e3e7ec;background:#fff;border-radius:6px;padding:5px 10px;font:inherit;font-size:13px;cursor:pointer;color:#1f2a37}
     .po-pg button:disabled {opacity:.4;cursor:default}
     .po-pg span {padding:0 6px}
+    .po-foot[hidden],.po-selbar[hidden] {display:none!important}
+
+    /* Dashboard / PO List switch */
+    .po-view {display:inline-flex;background:#fff;border:1px solid #e3e7ec;border-radius:10px;padding:3px;gap:2px;margin-bottom:14px}
+    .po-view button {border:0;background:transparent;font:inherit;font-size:14px;font-weight:700;color:#6b7785;padding:9px 18px;border-radius:8px;cursor:pointer;white-space:nowrap}
+    .po-view button:hover {color:#1f2a37;background:#f4f5f7}
+    .po-view button.on {background:var(--erp-red,#c8102e);color:#fff}
+    body.po-view-dash #poListView {display:none}
+    body.po-view-list #poSummary {display:none}
 
     /* Select many POs: approve / print together (2 Nov 2026) */
     .po-sel {width:18px;height:18px;margin:0 8px 0 0;vertical-align:-3px;accent-color:var(--erp-red,#c8102e);cursor:pointer}
@@ -763,6 +772,8 @@
       .page-title .btn {padding:9px 12px;font-size:12px;white-space:nowrap}
 
       .po-refresh {gap:6px}
+      .po-view {display:flex;width:100%}
+      .po-view button {flex:1;padding:10px 6px}
       .po-updated {font-size:11px}
       .po-tabs {flex-wrap:nowrap;overflow-x:auto;margin:0 -12px 10px;padding:0 12px 2px;scrollbar-width:none}
       .po-tabs::-webkit-scrollbar {display:none}
@@ -937,6 +948,12 @@
 
     <div id="message" class="message"></div>
 
+    <!-- Dashboard or PO List, one at a time (2 Nov 2026, Mohit: like the Cases / Pallet button) -->
+    <div class="po-view" role="tablist" aria-label="View">
+      <button type="button" role="tab" data-view="list" onclick="setPoView('list')">📋 PO List</button>
+      <button type="button" role="tab" data-view="dash" onclick="setPoView('dash')">📊 Dashboard</button>
+    </div>
+
     <section class="po-sum" id="poSummary">
       <div class="ps-pend">
         <div class="ps-pend-head">
@@ -1019,6 +1036,7 @@
       <div class="po-sum-err" id="sumError" hidden></div>
     </section>
 
+    <div id="poListView">
     <!-- PO list: one tab per stage with counts, date range, column filters, Excel (2 Nov 2026, like the company DMS) -->
     <section class="po-tabs" id="poTabs" role="tablist" aria-label="PO stage"></section>
 
@@ -1083,6 +1101,7 @@
       </div>
       <div class="po-foot" id="poFoot" hidden></div>
     </section>
+    </div>
 
   </main>
 
@@ -1983,6 +2002,22 @@ async function exportPoExcel() {
    SELECT MANY POs: approve / print together (2 Nov 2026)
    Approve uses the same approveOrder() as the popup, one PO at a time, as ordered.
 ----------------------------- */
+
+function setPoView(view) {
+  view = view === "dash" ? "dash" : "list";
+  document.body.classList.toggle("po-view-dash", view === "dash");
+  document.body.classList.toggle("po-view-list", view === "list");
+  document.querySelectorAll(".po-view button").forEach(btn => {
+    btn.classList.toggle("on", btn.dataset.view === view);
+    btn.setAttribute("aria-selected", btn.dataset.view === view);
+  });
+  try { localStorage.setItem("lwbPoView", view); } catch (e) {}
+}
+(function () {
+  let view = "list";
+  try { view = localStorage.getItem("lwbPoView") || "list"; } catch (e) {}
+  setPoView(view);
+})();
 
 const pickedIds = new Set();
 let bulkBusy = false;
