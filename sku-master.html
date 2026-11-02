@@ -24,6 +24,7 @@
 <div><label for="hsn">HSN Code</label><input id="hsn" inputmode="numeric" maxlength="20" placeholder="e.g. 22021010"></div>
 <div><label for="pcs" id="pcsLab">PCS per Case *</label><input id="pcs" type="number" min="1" step="1" required placeholder="24"></div>
 <div><label for="gst">GST Rate (%)</label><input id="gst" type="number" min="0" max="100" step="0.01" placeholder="Optional"></div>
+<div><label for="mrp" id="mrpLab">MRP per Case (₹)</label><input id="mrp" type="number" min="0" step="0.01" placeholder="Optional"></div>
 <div><label for="weight" id="weightLab">Unit Weight per Case (KG)</label><input id="weight" type="number" min="0" step="0.001" placeholder="e.g. 12.500" disabled></div>
 <div><label for="palletCases" id="palletLab">CS per Pallet</label><input id="palletCases" type="number" min="1" max="100000" step="1" placeholder="e.g. 117" disabled></div>
 <div><label for="active">Status</label><select id="active"><option value="true">Active</option><option value="false">Inactive</option></select></div>
@@ -40,7 +41,7 @@
 <div class="actions"><button type="button" class="secondary" id="bulkCheck">Check List</button><button type="button" id="bulkSave" disabled>Add / Update SKUs</button><span id="bulkInfo" class="hint"></span></div></section>
 <section class="panel"><div class="toolbar"><div><h2 style="margin-bottom:5px">SKU List</h2><span id="status">Loading...</span></div><input id="search" placeholder="Search SKU name or HSN..."></div>
 <div id="brandBar" hidden><div id="brandChips"></div><div class="sku-bulk"><select id="unitFilter" aria-label="Unit"><option value="">All units</option><option value="CASE">Cases only</option><option value="BOX">IC only</option></select></div><div class="sku-bulk" id="bulkCo" hidden><span id="bulkCnt">0 selected</span><select id="bulkCoSel"><option value="">— No company —</option></select><button type="button" id="bulkCoBtn" disabled>Set company of selected SKUs</button></div></div>
-<div class="table-wrap"><table><thead><tr><th class="co-col" hidden><input type="checkbox" id="pickAll" aria-label="Select all shown"></th><th class="co-col" hidden>Company</th><th class="co-col" hidden>Unit</th><th>Category</th><th>SKU Name</th><th>HSN</th><th>PCS/Case</th><th>Unit Wt/Case KG</th><th>CS/Pallet · IC/Carton</th><th>GST %</th><th>Status</th><th>Action</th></tr></thead><tbody id="rows"><tr><td colspan="9">Loading...</td></tr></tbody></table></div></section>
+<div class="table-wrap"><table><thead><tr><th class="co-col" hidden><input type="checkbox" id="pickAll" aria-label="Select all shown"></th><th class="co-col" hidden>Company</th><th class="co-col" hidden>Unit</th><th>Category</th><th>SKU Name</th><th>HSN</th><th>PCS/Case</th><th>Unit Wt/Case KG</th><th>CS/Pallet · IC/Carton</th><th>GST %</th><th>MRP ₹</th><th>Status</th><th>Action</th></tr></thead><tbody id="rows"><tr><td colspan="10">Loading...</td></tr></tbody></table></div></section>
 </main>
 <script>
 'use strict';
@@ -51,7 +52,7 @@ const SUPABASE_PUBLISHABLE_KEY='sb_publishable_W4I3Q5ODf0g17sq5uDml2Q_sLolXYEk';
 const $=id=>document.getElementById(id);
 let packs=[],links=new Map(),ratesOn=false;
 const skuKey=v=>String(v||'').trim().toUpperCase();
-let db=null,skus=[],editingId=null,weightColumnAvailable=false,palletColumnAvailable=false,categoryColumnAvailable=false,canEdit=false;
+let db=null,skus=[],editingId=null,weightColumnAvailable=false,mrpColumnAvailable=false,palletColumnAvailable=false,categoryColumnAvailable=false,canEdit=false;
 let companies=[],coOn=false,brand='',picked=new Set(),shown=[];
 const coById=id=>companies.find(c=>c.id===id)||null;
 const coName=id=>{const c=coById(id);return c?c.name:''};
@@ -80,14 +81,14 @@ async function setCompanyBulk(){
 function notice(message,error=false){const el=$('message');el.textContent=message;el.className='message '+(error?'error':'success');}
 function resetForm(){$('skuForm').reset();editingId=null;$('formTitle').textContent='Add New SKU';$('saveBtn').textContent='Save SKU';$('pcs').value='24';$('weight').value='';$('palletCases').value='';unitLabels();}
 // Sells in IC (inner carton, was Box): PCS per IC, IC per Carton. Cases: PCS per Case, CS per Pallet.
-function unitLabels(){const co=companies.find(c=>c.id===$('company').value);const ic=($('packUnit').value||co?.pack_unit)==='BOX';$('pcsLab').textContent=ic?'PCS per IC *':'PCS per Case *';$('weightLab').textContent=ic?'Unit Weight per IC (KG)':'Unit Weight per Case (KG)';$('palletLab').textContent=ic?'IC per Carton':'CS per Pallet';}
+function unitLabels(){const co=companies.find(c=>c.id===$('company').value);const ic=($('packUnit').value||co?.pack_unit)==='BOX';$('pcsLab').textContent=ic?'PCS per IC *':'PCS per Case *';$('weightLab').textContent=ic?'Unit Weight per IC (KG)':'Unit Weight per Case (KG)';$('palletLab').textContent=ic?'IC per Carton':'CS per Pallet';$('mrpLab').textContent=ic?'MRP per IC (₹)':'MRP per Case (₹)';}
 $('packUnit').addEventListener('change',unitLabels);$('company').addEventListener('change',unitLabels);
 function showValue(v){return v===null||v===undefined||v===''?'—':String(v);}
 function addCell(row,value){const cell=document.createElement('td');cell.textContent=showValue(value);row.appendChild(cell);return cell;}
 function render(){const q=$('search').value.toLowerCase().trim();const matches=skus.filter(x=>(!coOn||!$('unitFilter').value||unitOf(x)===$('unitFilter').value)&&(!coOn||!brand||(brand==='none'?!x.company_id:x.company_id===brand))&&(String(x.sku_name||'').toLowerCase().includes(q)||String(x.hsn_code||'').toLowerCase().includes(q)||String(x.category||'').toLowerCase().includes(q)||coName(x.company_id).toLowerCase().includes(q)));shown=matches;if(coOn)pickInfo();const body=$('rows');body.replaceChildren();$('status').textContent=`${matches.length} shown / ${skus.length} total`;
-if(!matches.length){const tr=document.createElement('tr');const td=addCell(tr,skus.length?'No matching SKUs.':'No SKUs found.');td.colSpan=9+(coOn?3:0);body.appendChild(tr);return;}
-for(const item of matches){const tr=document.createElement('tr');if(coOn){const pk=document.createElement('td'),cb=document.createElement('input');cb.type='checkbox';cb.checked=picked.has(item.id);cb.disabled=!canEdit;cb.setAttribute('aria-label','Select '+item.sku_name);cb.onchange=()=>{cb.checked?picked.add(item.id):picked.delete(item.id);pickInfo()};pk.append(cb);tr.append(pk);const c=coById(item.company_id),cc=addCell(tr,c?c.name:'—');if(c)cc.style.cssText='color:'+c.color+';font-weight:700';const uc=addCell(tr,(unitOf(item)==='BOX'?'IC':'Case')+(item.pack_unit?' (own)':''));if(unitOf(item)==='BOX')uc.style.fontWeight='700';}addCell(tr,item.category);addCell(tr,item.sku_name);addCell(tr,item.hsn_code);addCell(tr,item.pcs_per_case);addCell(tr,item.unit_weight_kg);addCell(tr,item.cases_per_pallet);addCell(tr,item.gst_rate);addCell(tr,item.is_active===false?'Inactive':'Active');const td=document.createElement('td');const btn=document.createElement('button');btn.type='button';btn.textContent='Edit';btn.disabled=!canEdit;btn.addEventListener('click',()=>editSku(item.id));td.appendChild(btn);tr.appendChild(td);body.appendChild(tr);}}
-function editSku(id){const x=skus.find(item=>item.id===id);if(!x)return;editingId=id;$('skuName').value=x.sku_name||'';$('category').value=x.category||'';$('hsn').value=x.hsn_code||'';$('pcs').value=x.pcs_per_case??'';$('weight').value=x.unit_weight_kg??'';$('palletCases').value=x.cases_per_pallet??'';$('gst').value=x.gst_rate??'';$('active').value=String(x.is_active!==false);$('company').value=x.company_id||'';$('packUnit').value=x.pack_unit||'';unitLabels();$('formTitle').textContent='Edit SKU';$('saveBtn').textContent='Update SKU';window.scrollTo({top:0,behavior:'smooth'});}
+if(!matches.length){const tr=document.createElement('tr');const td=addCell(tr,skus.length?'No matching SKUs.':'No SKUs found.');td.colSpan=10+(coOn?3:0);body.appendChild(tr);return;}
+for(const item of matches){const tr=document.createElement('tr');if(coOn){const pk=document.createElement('td'),cb=document.createElement('input');cb.type='checkbox';cb.checked=picked.has(item.id);cb.disabled=!canEdit;cb.setAttribute('aria-label','Select '+item.sku_name);cb.onchange=()=>{cb.checked?picked.add(item.id):picked.delete(item.id);pickInfo()};pk.append(cb);tr.append(pk);const c=coById(item.company_id),cc=addCell(tr,c?c.name:'—');if(c)cc.style.cssText='color:'+c.color+';font-weight:700';const uc=addCell(tr,(unitOf(item)==='BOX'?'IC':'Case')+(item.pack_unit?' (own)':''));if(unitOf(item)==='BOX')uc.style.fontWeight='700';}addCell(tr,item.category);addCell(tr,item.sku_name);addCell(tr,item.hsn_code);addCell(tr,item.pcs_per_case);addCell(tr,item.unit_weight_kg);addCell(tr,item.cases_per_pallet);addCell(tr,item.gst_rate);addCell(tr,item.mrp_per_case);addCell(tr,item.is_active===false?'Inactive':'Active');const td=document.createElement('td');const btn=document.createElement('button');btn.type='button';btn.textContent='Edit';btn.disabled=!canEdit;btn.addEventListener('click',()=>editSku(item.id));td.appendChild(btn);tr.appendChild(td);body.appendChild(tr);}}
+function editSku(id){const x=skus.find(item=>item.id===id);if(!x)return;editingId=id;$('skuName').value=x.sku_name||'';$('category').value=x.category||'';$('hsn').value=x.hsn_code||'';$('pcs').value=x.pcs_per_case??'';$('weight').value=x.unit_weight_kg??'';$('palletCases').value=x.cases_per_pallet??'';$('gst').value=x.gst_rate??'';$('mrp').value=x.mrp_per_case??'';$('active').value=String(x.is_active!==false);$('company').value=x.company_id||'';$('packUnit').value=x.pack_unit||'';unitLabels();$('formTitle').textContent='Edit SKU';$('saveBtn').textContent='Update SKU';window.scrollTo({top:0,behavior:'smooth'});}
 // SKU -> Rate & Scheme rate group, so slab rate on PO Entry comes from this one SKU Master.
 async function loadRateGroups(){
   if(!canEdit)return;
@@ -109,6 +110,7 @@ async function loadSkus(){const {data,error}=await db.from('sku_master').select(
 const hasCol=async c=>skus.length?skus.some(x=>Object.prototype.hasOwnProperty.call(x,c)):!(await db.from('sku_master').select(c).limit(1)).error;
 weightColumnAvailable=await hasCol('unit_weight_kg');
 palletColumnAvailable=await hasCol('cases_per_pallet');
+mrpColumnAvailable=await hasCol('mrp_per_case');$('mrp').disabled=!mrpColumnAvailable||!canEdit;
 categoryColumnAvailable=await hasCol('category');
 unitOn=await hasCol('pack_unit');
 await loadCompanies(await hasCol('company_id'));
@@ -144,6 +146,11 @@ if(palletColumnAvailable){
     return;
   }
   payload.cases_per_pallet=palletCases;
+}
+if(mrpColumnAvailable){
+  const mrpText=$('mrp').value.trim(),mrp=mrpText===''?null:Number(mrpText);
+  if(mrp!==null&&(!Number.isFinite(mrp)||mrp<0||mrp>99999999)){notice('Enter a valid MRP (0 or more).',true);return;}
+  payload.mrp_per_case=mrp===null?null:Math.round(mrp*100)/100;
 }
 const oldName=editingId?(skus.find(x=>x.id===editingId)||{}).sku_name:'';
 $('saveBtn').disabled=true;try{let query=editingId?db.from('sku_master').update(payload).eq('id',editingId):db.from('sku_master').insert(payload);const {error}=await query;if(error)throw error;const rgErr=await saveRateGroup(oldName,name);resetForm();await loadRateGroups();await loadSkus();notice('SKU saved successfully.'+rgErr,!!rgErr);}catch(e){notice('Save failed: '+e.message,true);}finally{$('saveBtn').disabled=!canEdit;}}
@@ -202,6 +209,7 @@ const XL_COLS=[
   {h:'HSN Code',k:'hsn_code',sample:'22021010',alias:['HSN']},
   {h:'PCS per Case',k:'pcs_per_case',sample:24,alias:['PCS/Case','PCS'],note:'Required for new SKUs (taken from the Rate pack if blank)'},
   {h:'GST %',k:'gst_rate',sample:40,alias:['GST','GST Rate']},
+  {h:'MRP per Case',k:'mrp_per_case',sample:480,alias:['MRP','MRP ₹','MRP per IC','MRP/Case'],note:'MRP of one case / IC (optional)'},
   {h:'Unit Wt per Case KG',k:'unit_weight_kg',sample:7.6,alias:['Unit Wt/Case KG','Weight']},
   {h:'CS per Pallet',k:'cases_per_pallet',sample:130,alias:['CS/Pallet','Cases per Pallet','Box per Carton','Box/Carton','IC per Carton','IC/Carton'],note:'IC SKUs (Rajnigandha): IC per carton'},
   {h:'Status',k:'status',sample:'Active',note:'Active or Inactive'}];
@@ -218,7 +226,7 @@ function xlPlan(rows){
     if(r.pack_unit!=null&&unitOn){const t=normSku(r.pack_unit),u=/^(BOX(ES)?|ICS?|INNER CARTONS?)$/.test(t)?'BOX':/^CASES?$/.test(t)?'CASE':'';if(!u){bad('Unit must be CASE or BOX');continue}f.pack_unit=u}
     if(r.company!=null&&coOn){const c=companies.find(x=>normSku(x.name)===normSku(r.company));if(!c){bad('Company "'+r.company+'" not found on Company / Brand page');continue}f.company_id=c.id}
     if(r.hsn_code!=null)f.hsn_code=String(r.hsn_code).trim();
-    const nums=[['pcs_per_case',1,100000,true],['gst_rate',0,100],['unit_weight_kg',0,999999,false,weightColumnAvailable],['cases_per_pallet',1,100000,true,palletColumnAvailable]];
+    const nums=[['pcs_per_case',1,100000,true],['gst_rate',0,100],['unit_weight_kg',0,999999,false,weightColumnAvailable],['cases_per_pallet',1,100000,true,palletColumnAvailable],['mrp_per_case',0,99999999,false,mrpColumnAvailable]];
     let err='';for(const [k,lo,hi,int,on=true] of nums){if(r[k]==null||!on)continue;const v=N(r[k]);if(!Number.isFinite(v)||v<lo||v>hi||int&&!Number.isInteger(v)){err=XL_COLS.find(c=>c.k===k).h+' is invalid: '+r[k];break}f[k]=v}
     if(err){bad(err);continue}
     if(r.status!=null){const t=normSku(r.status);if(!/^(ACTIVE|INACTIVE)$/.test(t)){bad('Status must be Active or Inactive');continue}f.is_active=t==='ACTIVE'}
