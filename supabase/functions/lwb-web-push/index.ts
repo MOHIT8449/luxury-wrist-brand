@@ -96,12 +96,20 @@ Deno.serve(async(req)=>{
    // Per-device test throttle; no business notification / order / payment is created.
    const recent=await db.from('lwb_push_subscriptions').update({last_test_at:new Date().toISOString()}).eq('id',sub.data.id).or('last_test_at.is.null,last_test_at.lt.'+new Date(Date.now()-10000).toISOString()).select('id');
    if(!recent.data?.length)return reply(429,{error:'Please wait 10 seconds before testing'});
-   await send(sub.data,{title:'Luxury Wrist Brand',body:'Phone notifications are connected. Tap to open ERP.',url:'/dashboard.html',tag:'lwb-test',user_id:uid},c);
+   try{await send(sub.data,{title:'Luxury Wrist Brand',body:'Phone notifications are connected. Tap to open ERP.',url:'/dashboard.html',tag:'lwb-test',user_id:uid},c);}
+   catch(e){
+    const code=Number(e.statusCode||0);
+    // Expired / unknown endpoint: drop it so the phone shows Enable again.
+    if(code===404||code===410){await db.from('lwb_push_subscriptions').delete().eq('id',sub.data.id);return reply(410,{error:'This phone connection expired. Tap Turn off, then Enable phone alerts again'});}
+    return reply(502,{error:code?'Push service rejected the test (HTTP '+code+')':'Push service could not be reached: '+String(e?.name||'Error')});
+   }
    return reply(200,{accepted:true});
   }
   return reply(400,{error:'Unknown action'});
  }catch(e){
   // Never return provider endpoints, subscription keys or server secrets in errors / logs.
-  return reply(500,{error:'Phone alert service is not ready. Please try again later.'});
+  const why=String(e?.message||e?.name||'unknown').replace(/https?:\/\/\S+/g,'[url]').slice(0,120);
+  console.error('lwb-web-push failed:',String(e?.name||'Error'),why);
+  return reply(500,{error:'Phone alert service error: '+why});
  }
 });
