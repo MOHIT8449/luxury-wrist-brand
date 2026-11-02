@@ -11,13 +11,19 @@
 --     the latest driver delivery report. Admin, Sales Head (MANAGER), Godown Manager (WAREHOUSE) and
 --     Accounts, max 500 orders per call.
 -- 2 Nov 2026: Godown Manager and Accounts also open PO / Sales List (view only) and see the journey.
+-- 2 Nov 2026 (Mohit): step 7 "Collection": how much of this bill the party has paid. Adds bill_amount,
+--   collected (driver payments not rejected + office / party payments set against this PO) and due
+--   (same formula as Billing & Outstanding: bill − credit notes + debit notes − collected; no Tally
+--   amount yet = loaded value − approved returns). The return type changed, so the function is dropped first.
 
 BEGIN;
 
-CREATE OR REPLACE FUNCTION public.lwb_po_journey(p_ids uuid[])
+DROP FUNCTION IF EXISTS public.lwb_po_journey(uuid[]);
+CREATE FUNCTION public.lwb_po_journey(p_ids uuid[])
 RETURNS TABLE(order_id uuid, assigned_at timestamptz, vehicle_no text, driver_name text, driver_mobile text,
   loading_person text, loading_started_at timestamptz, loading_completed_at timestamptz,
-  bill_no text, bill_at timestamptz, delivery_status text, reported_at timestamptz)
+  bill_no text, bill_at timestamptz, delivery_status text, reported_at timestamptz,
+  bill_amount numeric, collected numeric, due numeric)
 LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = ''
 AS $fn$
 BEGIN
@@ -35,7 +41,12 @@ BEGIN
            nullif(da.j->>'loading_started_at','')::timestamptz,
            nullif(da.j->>'loading_completed_at','')::timestamptz,
            t.invoice_no, coalesce(t.updated_at, t.entered_at),
-           dr.delivery_status, dr.reported_at
+           dr.delivery_status, dr.reported_at,
+           t.amount,
+           round(coalesce(pay.got,0) + op.amt, 2),
+           CASE WHEN t.order_id IS NULL AND bn.gross = 0 THEN NULL
+                ELSE round(coalesce(t.amount, bn.net + coalesce(n.cr,0)) - coalesce(n.cr,0) + coalesce(n.dr,0)
+                           - coalesce(pay.got,0) - op.amt, 2) END
     FROM (SELECT DISTINCT x FROM unnest(p_ids) AS x) ids
     JOIN public.orders o ON o.id = ids.x
     LEFT JOIN LATERAL (
@@ -48,10 +59,21 @@ BEGIN
       SELECT r.delivery_status, r.reported_at FROM public.lwb_delivery_reports r
       WHERE r.order_id = o.id
       ORDER BY r.reported_at DESC
-      LIMIT 1) dr ON true;
+      LIMIT 1) dr ON true
+    CROSS JOIN LATERAL public.lwb_order_bill_numbers(o.id) bn
+    CROSS JOIN LATERAL (SELECT public.lwb_order_office_paid(o.id) AS amt) op
+    LEFT JOIN LATERAL (
+      SELECT sum(x.amount) FILTER (WHERE x.kind = 'CREDIT' AND x.cancelled_at IS NULL) AS cr,
+             sum(x.amount) FILTER (WHERE x.kind = 'DEBIT' AND x.cancelled_at IS NULL) AS dr
+      FROM public.lwb_tally_notes x WHERE x.order_id = o.id) n ON true
+    LEFT JOIN LATERAL (
+      SELECT sum(d.cash_reported) FILTER (WHERE coalesce(d.payment_status,'') <> 'REJECTED') AS got
+      FROM public.lwb_delivery_reports d WHERE d.order_id = o.id) pay ON true;
 END;
 $fn$;
 REVOKE ALL ON FUNCTION public.lwb_po_journey(uuid[]) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.lwb_po_journey(uuid[]) TO authenticated;
 
 COMMIT;
+
+NOTIFY pgrst, 'reload schema';
