@@ -4,6 +4,15 @@
 **Purpose:** Continue the same ERP project from a new ChatGPT conversation without restarting or losing the agreed requirements.
 **Status:** Active development / verification. Do not assume all modules are completed or fully tested.
 
+## Admin Business Overview on the Dashboard (2 Nov 2026)
+
+- Mohit asked for a full business view on the Admin dashboard (sales / purchase register, SKU-wise, profit & loss, expenses, charts). 3 mockups were shown; Mohit picked design A. No SQL.
+- New `admin-business.js` (`LWBBizDash`), mounted by `role-dashboard.js` admin view in `<section id="bzDash">` (styles `bz-` in `role-dashboard.css`). It replaces the old Admin KPI row and 7-day chart; Order Flow, Salesman today, Pending Work and the old Brand-wise (targets / to pay company) stay below. Alerts now show in its "Needs attention" card.
+- Range Today / 7 Days / 30 Days / This Month (default), kept per browser `localStorage lwbBizRange`; follows the Brand chips.
+- 8 KPIs: Sales, Purchase, Gross Profit, Expenses, Net Profit, Outstanding, Stock Value, Cash + Bank. Then Sales · Purchase · Gross profit line chart (at least 7 days), Profit & Loss, Brand-wise (sales, qty IC / cs, purchase, gross, margin, to collect, stock value), Expenses donut, Top 8 SKUs (qty, sales, margin bar, stock days), Needs attention.
+- Sources: order_items qty × rate by order_date (cancelled / rejected out); landing = Rate & Scheme pack (`landingOf`, same as Today's Profit) else Rajnigandha Rate List landing (`lwb_price_limits_get`); lines without landing are left out of profit and counted in a note. Purchase = `lwb_goods_inward(_items)` total_amount by received_date. Expenses = `lwb_acc_dashboard` OUT lines without "Supplier payment" (company-wide, also when a brand is chosen). Stock = `lwb_po_stock` godown cases × landing. Cash + Bank = closing cash + active bank balances. Gross Profit card on Today opens the order-wise profit popup.
+- Checked with a mocked database at 1366 px and 390 px: no side scroll. Not yet checked on live data.
+
 ## PO Approval: Brand filter + last 7 days trend graphs (2 Nov 2026)
 
 - Mohit asked: a Brand filter next to Sales person / Transport on `warehouse-orders.html`, and on the Dashboard view graphs of the last 7 days (day-wise rise / fall) for sales amount and quantity. No SQL.

@@ -23,7 +23,7 @@
   const OPEN=["pending_approval","approved","transport_allocated","loading","loaded"];
   const APPROVAL_HOURS=12;
   const ORDER_COLS="id,order_no,order_date,created_at,customer_name,sales_person,status,total_qty,total_amount,total_weight,created_by,priority";
-  let C=null,ROLE="",UID="",PLAN=null,box=null,seq=0;
+  let C=null,ROLE="",UID="",PLAN=null,box=null,seq=0,BIZ=null,BIZFRESH=false;
   // Company / brand filter (brand-filter.js, lwb_company_brand_setup.sql): list = my companies,
   // id = chosen brand ("" = all), map = SKU -> company. Chips for Admin and Sales Head.
   const BR={list:[],id:"",map:null,allow:null,all:[]};
@@ -291,7 +291,7 @@
     if(v&&home&&box.contains(v))home.prepend(v);
     box.innerHTML=html;
     if(window.ERPList)box.querySelectorAll("[data-list]").forEach(el=>ERPList.card(el,()=>{const m=LISTS.get(el.dataset.list);return m&&m()},el.classList.contains("rd-step")?false:undefined));
-    if(BRAND_ROLES.includes(ROLE)&&BR.list.length>1&&window.LWBBrand&&box.querySelector(".rd-kpis"))box.prepend(LWBBrand.chips(BR.list,BR.id,()=>render()));
+    if(BRAND_ROLES.includes(ROLE)&&BR.list.length>1&&window.LWBBrand&&box.querySelector(".rd-kpis,#bzDash"))box.prepend(LWBBrand.chips(BR.list,BR.id,()=>render()));
     const s=document.getElementById("rdSide");if(v&&s)s.prepend(v);
   }
   function shell(kpis,main,side){
@@ -342,6 +342,16 @@
       const cs=chequesSoon(cq).filter(x=>String(x.cheque_date)<=shift(t,1));
       if(cs.length)al.push(dot("amb",fmt(cs.length)+" cheque"+(cs.length==1?"":"s")+" to deposit by "+dmy(shift(t,1))+" · "+rs(sum(cs,x=>x.amount))));
       if(acc&&acc.last_close&&String(acc.last_close)<y)al.push(dot("blu","Night cash handover not closed since "+dmy(shift(String(acc.last_close),1))));
+      // Business Overview (admin-business.js, Mohit's design A): sales, purchase, P&L, brand-wise, expenses,
+      // top SKUs; the alerts show in its "Needs attention" card. The old Today KPI row and 7-day chart are inside it.
+      if(window.LWBBizDash){
+        if(!BR.map&&window.LWBBrand)BR.map=await LWBBrand.skuMap(C).catch(()=>null);
+        BIZ={C,can,landingData:()=>landingData(),landingOf,brandOf,inBrand,uOf,companies:BR.list.length?BR.list:BR.all,allow:BR.allow,allBrands:!BR.allow,brandKey:BR.id,
+          colorOf:s=>{const c=BR.all.find(x=>x.id===brandOf(s));return (c&&c.color)||"#9aa5a8"},out:out?{total:out.total,over:out.brand?out.over:out.over30,brand:out.brand}:ov&&ov.outstanding?{total:Object.values(ov.outstanding).reduce((a,x)=>a+num(x&&x.due),0),over:Object.values(ov.outstanding).reduce((a,x)=>a+num(x&&x.overdue),0),brand:1}:null,
+          short:short?short.length:null,ov,alerts:al.join(""),profitOk:profitOk(),fresh:BIZFRESH};
+        BIZFRESH=false;
+        return '<section class="bz" id="bzDash"></section><div class="rd-grid"><div class="rd-col">'+[flow,board].filter(Boolean).join("")+'</div><div class="rd-col" id="rdSide">'+brandCard(ov)+"</div></div>";
+      }
       const alerts=card("⚠️ Alerts","",al.length?al.join(""):'<div class="rd-empty">✓ No alerts right now.</div>');
       return shell(k.filter(Boolean),[flow,chart,board],[brandCard(ov),alerts]);
     },
@@ -523,13 +533,14 @@
   async function render(){
     const my=++seq;
     LISTS=new Map();
-    try{await brands();const html=await ROLES[ROLE]();if(my===seq)paint(html)}catch(e){console.error(e);if(my===seq&&!box.querySelector(".rd-card"))paint('<div class="rd-empty">Dashboard could not load. Tap refresh.</div>')}
+    BIZ=null;
+    try{await brands();const html=await ROLES[ROLE]();if(my===seq){paint(html);if(BIZ&&window.LWBBizDash)LWBBizDash.mount(box.querySelector("#bzDash"),BIZ)}}catch(e){console.error(e);if(my===seq&&!box.querySelector(".rd-card"))paint('<div class="rd-empty">Dashboard could not load. Tap refresh.</div>')}
   }
   window.LWBRoleDash={
     roles:Object.keys(ROLES),
     has:role=>Object.prototype.hasOwnProperty.call(ROLES,role),
     start(o){C=o.client;ROLE=o.role;UID=o.uid||"";PLAN=o.plan||null;box=o.box;
       if(!box.dataset.rdTap){box.dataset.rdTap="1";document.addEventListener("erp:access",()=>{if(ROLE)render()});box.addEventListener("click",e=>{if(e.target.closest("[data-profit]"))showProfit(today())})}if(!box.querySelector(".rd-card"))paint('<div class="rd-empty">Loading your dashboard…</div>');return render()},
-    refresh(){if(ROLE)return render()}
+    refresh(){if(ROLE){BIZFRESH=true;return render()}}
   };
 })();
