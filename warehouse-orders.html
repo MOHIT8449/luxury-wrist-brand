@@ -1611,8 +1611,13 @@ document.addEventListener("DOMContentLoaded", async () => {
         if(found.error)throw found.error;if(found.data)orders.push(found.data);
       }
       if(orders.some(o=>o.id===pushOrder)){
-        await reviewOrder(pushOrder);
-        if(new URLSearchParams(location.search).get("action")==="print"&&reviewReady)await printApprovedPO("po");
+        if(new URLSearchParams(location.search).get("action")==="print"){
+          // Opened by "Print PO" on New Sales Order (often in a hidden frame): go straight to the printer dialog.
+          const tell=t=>{try{if(window.parent!==window)window.parent.postMessage({lwbPoPrint:t},location.origin)}catch(e){}};
+          await printQuietly(pushOrder,"po",()=>tell("ready"));
+          tell("done");
+        }
+        else await reviewOrder(pushOrder);
       }
       else showMessage('This order is unavailable for your login.','error');
     }
@@ -2504,7 +2509,8 @@ function renderOrders() {
    REVIEW ORDER
 ----------------------------- */
 
-async function reviewOrder(orderId, transportOnly=false) {
+// quiet: load the PO for printing without opening the popup (Print / Challan from the list).
+async function reviewOrder(orderId, transportOnly=false, quiet=false) {
   document.getElementById("reviewModal").classList.toggle("transport-only",transportOnly);
 
   selectedOrder =
@@ -2566,7 +2572,7 @@ async function reviewOrder(orderId, transportOnly=false) {
     </tr>
   `;
 
-  document.getElementById("reviewModal")
+  if (!quiet) document.getElementById("reviewModal")
     .classList.add("show");
 
 
@@ -2590,7 +2596,7 @@ async function reviewOrder(orderId, transportOnly=false) {
     document.getElementById("approveOrderBtn").disabled = false;
     updateWarehouseSkuHint();
     renderItems();
-    await revealApprovalActions();
+    if (!quiet) await revealApprovalActions();
 
   } catch (error) {
 
@@ -3054,13 +3060,22 @@ let savedPoItemsSignature="";
 function poItemsSignature(items){
   return JSON.stringify(items.map(i=>[i.id||null,String(i.sku_name||""),number(i.ordered_qty),number(i.approved_qty==null?i.ordered_qty:i.approved_qty),number(i.rate),number(i.unit_weight)]));
 }
+// Print straight from the list: the printer dialog opens directly, the review popup stays closed.
 async function printPoFromList(id){
-  await reviewOrder(id);
-  if(selectedOrder?.id===id&&reviewReady)await printApprovedPO("po");
+  await printQuietly(id,"po");
 }
 async function printFromList(id){
-  await reviewOrder(id);
-  if(selectedOrder&&selectedOrder.id===id&&reviewReady)await printApprovedPO();
+  await printQuietly(id,"challan");
+}
+async function printQuietly(id,type,onReady){
+  if(document.getElementById("reviewModal").classList.contains("show"))closeModal();
+  await reviewOrder(id,false,true);
+  try{
+    if(selectedOrder?.id===id&&reviewReady){onReady?.();await printApprovedPO(type);}
+    else showMessage("Could not load this PO for printing. Please retry.","error");
+  }finally{
+    if(!document.getElementById("reviewModal").classList.contains("show"))closeModal();
+  }
 }
 async function printApprovedPO(documentType="challan",collect=null){
   const isPo=documentType==="po";

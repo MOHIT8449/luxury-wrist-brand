@@ -2086,7 +2086,9 @@ async function saveOrder(){
     saveBtn.textContent=headCreatesApprovedPo()?"PO Approved":"Order Submitted";
     if(headCreatesApprovedPo()&&createdOrder?.id){
       const url="warehouse-orders.html?order="+encodeURIComponent(createdOrder.id);
-      document.getElementById("savedPoPrint").href=url+"&action=print";
+      const printLink=document.getElementById("savedPoPrint");
+      printLink.href=url+"&action=print";
+      printLink.onclick=event=>printSavedPoInFrame(event,printLink.href);
       document.getElementById("savedPoEdit").href=url;
       document.getElementById("savedPoActions").hidden=false;
     }
@@ -2622,6 +2624,28 @@ async function logout(){
   window.location.href="login.html";
 }
 
+
+// Print PO without leaving this page: the PO page loads in a hidden frame and opens the printer dialog.
+// Android Chrome prints the whole page for a frame, so there (or if the frame does not answer) the link opens normally.
+function printSavedPoInFrame(event,href){
+  if(/Android/i.test(navigator.userAgent))return;
+  event.preventDefault();
+  document.getElementById("poPrintFrame")?.remove();
+  const frame=document.createElement("iframe");
+  frame.id="poPrintFrame";frame.title="PO print";frame.setAttribute("aria-hidden","true");
+  frame.style.cssText="position:fixed;right:0;bottom:0;width:1px;height:1px;border:0;opacity:0;pointer-events:none";
+  let answered=false;
+  const fallback=setTimeout(()=>{if(!answered){frame.remove();location.href=href}},20000);
+  const onMessage=e=>{
+    if(e.source!==frame.contentWindow||!e.data?.lwbPoPrint)return;
+    if(e.data.lwbPoPrint==="ready"){answered=true;clearTimeout(fallback);return}
+    window.removeEventListener("message",onMessage);
+    if(!answered){clearTimeout(fallback);frame.remove();location.href=href} // PO did not load in the frame: open it normally.
+  };
+  window.addEventListener("message",onMessage);
+  frame.src=href;
+  document.body.appendChild(frame);
+}
 </script>
 
 </body>
