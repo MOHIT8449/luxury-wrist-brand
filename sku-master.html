@@ -35,10 +35,6 @@
 <section class="panel"><h2>Excel Import / Export<button type="button" class="erp-i" aria-label="Info" title="Info" data-tip="Export downloads the full SKU list to Excel. Edit it, or fill new SKUs in the Template, then Import. Rows are matched by SKU Name: a new name creates an SKU, an existing name updates it. Blank cells keep the saved value.">i</button></h2>
 
 <div id="xlPanel" style="margin-top:10px"></div></section>
-<section class="panel" id="bulkPanel" hidden><h2>Bulk Add SKUs<button type="button" class="erp-i" aria-label="Info" title="Info" data-tip="Copy two columns from Excel and paste here: CATEGORY · SKU (a third column, PCS/Case, is optional). A blank category uses the category from the row above. If PCS/Case is missing, it is taken from the Rate &amp; Scheme pack. For SKUs that already exist, only the category is updated.">i</button></h2>
-
-<textarea id="bulkText" rows="8" style="width:100%;margin-top:8px;font:13px monospace" placeholder="250ML CSD&#9;300ML TH MRP.20&#10;&#9;250ML SP MRP.20"></textarea>
-<div class="actions"><button type="button" class="secondary" id="bulkCheck">Check List</button><button type="button" id="bulkSave" disabled>Add / Update SKUs</button><span id="bulkInfo" class="hint"></span></div></section>
 <section class="panel"><div class="toolbar"><div><h2 style="margin-bottom:5px">SKU List</h2><span id="status">Loading...</span></div><input id="search" placeholder="Search SKU name or HSN..."></div>
 <div id="brandBar" hidden><div id="brandChips"></div><div class="sku-bulk"><select id="unitFilter" aria-label="Unit"><option value="">All units</option><option value="CASE">Cases only</option><option value="BOX">IC only</option></select></div><div class="sku-bulk" id="bulkCo" hidden><span id="bulkCnt">0 selected</span><select id="bulkCoSel"><option value="">— No company —</option></select><button type="button" id="bulkCoBtn" disabled>Set company of selected SKUs</button></div></div>
 <div class="table-wrap"><table><thead><tr><th class="co-col" hidden><input type="checkbox" id="pickAll" aria-label="Select all shown"></th><th class="co-col" hidden>Company</th><th class="co-col" hidden>Unit</th><th>Category</th><th>SKU Name</th><th>HSN</th><th>PCS/Case</th><th>Unit Wt/Case KG</th><th>CS/Pallet · IC/Carton</th><th>GST %</th><th>MRP ₹</th><th>Status</th><th>Action</th></tr></thead><tbody id="rows"><tr><td colspan="10">Loading...</td></tr></tbody></table></div></section>
@@ -116,7 +112,6 @@ unitOn=await hasCol('pack_unit');
 await loadCompanies(await hasCol('company_id'));
 $('category').disabled=!categoryColumnAvailable||!canEdit;$('category').placeholder=categoryColumnAvailable?'e.g. 250ML CSD':'Run lwb_sku_category_setup.sql';
 $('categoryList').replaceChildren(...[...new Set(skus.map(x=>x.category).filter(Boolean))].sort().map(c=>new Option(c)));
-$('bulkPanel').hidden=!canEdit;
 $('weight').disabled=!weightColumnAvailable||!canEdit;
 $('palletCases').disabled=!palletColumnAvailable||!canEdit;
 $('palletHint').textContent=palletColumnAvailable
@@ -154,52 +149,7 @@ if(mrpColumnAvailable){
 }
 const oldName=editingId?(skus.find(x=>x.id===editingId)||{}).sku_name:'';
 $('saveBtn').disabled=true;try{let query=editingId?db.from('sku_master').update(payload).eq('id',editingId):db.from('sku_master').insert(payload);const {error}=await query;if(error)throw error;const rgErr=await saveRateGroup(oldName,name);resetForm();await loadRateGroups();await loadSkus();notice('SKU saved successfully.'+rgErr,!!rgErr);}catch(e){notice('Save failed: '+e.message,true);}finally{$('saveBtn').disabled=!canEdit;}}
-/* Bulk Add: "CATEGORY <tab> SKU [<tab> PCS/Case]" lines pasted from Excel. */
 const normSku=v=>String(v||'').replace(/\s+/g,' ').trim().toUpperCase();
-let bulkPlan=null;
-function planBulk(){
-  const have=new Map(skus.map(x=>[normSku(x.sku_name),x])),seen=new Set(),add=[],update=[],noCase=[],multi=[],mapped=[];let cat='',same=0;
-  for(const line of $('bulkText').value.split(/\r?\n/)){
-    const c=line.split('\t').map(x=>x.trim());if(!c.join(''))continue;
-    let sku,pcs;if(c.length>=2){if(c[0])cat=normSku(c[0]);sku=normSku(c[1]);pcs=Number(c[2])}else sku=normSku(c[0]);
-    if(!sku||/^(SKU|CTG\.?|CATEGORY)$/.test(sku)||seen.has(sku))continue;seen.add(sku);
-    let old=have.get(sku);
-    if(!old&&window.LWBPackMatch&&LWBPackMatch.sameSku){const m=LWBPackMatch.sameSku(sku,skus);
-      if(Array.isArray(m)){multi.push(sku+' ('+m.map(x=>x.sku_name).join(' / ')+')');continue}
-      if(m){old=m;mapped.push(sku+' = '+m.sku_name)}}
-    if(old){if(categoryColumnAvailable&&cat&&old.category!==cat)update.push({id:old.id,sku:old.sku_name,cat,pack:(window.LWBPackMatch&&LWBPackMatch.match(sku,packs)||{}).id});else same++;continue}
-    const caseN=Number.isInteger(pcs)&&pcs>0?pcs:(window.LWBPackMatch?LWBPackMatch.caseFor(sku,packs):null);
-    if(!caseN){noCase.push(sku);continue}
-    const pack=window.LWBPackMatch?LWBPackMatch.match(sku,packs):null;
-    add.push({sku,cat,pcs:caseN,pack:pack&&pack.id});
-  }
-  bulkPlan={add,update,noCase,multi,mapped};
-  $('bulkInfo').textContent=add.length+' new SKUs · '+update.length+' existing SKUs to update category · '+same+' unchanged'
-    +(mapped.length?' · Matched to existing SKUs ('+mapped.length+'): '+mapped.join('; '):'')
-    +(multi.length?' · Skipped, more than one existing SKU matched ('+multi.length+'): '+multi.join('; '):'')
-    +(noCase.length?' · '+noCase.length+' without PCS/Case: '+noCase.join(', '):'')
-    +(add.length?' · New: '+add.map(r=>r.sku).join(', '):'');
-  $('bulkSave').disabled=!canEdit||!(add.length+update.length);
-  return bulkPlan;
-}
-async function saveBulk(){
-  const {add,update}=planBulk();if(!add.length&&!update.length)return;
-  if(!(await confirm('Add '+add.length+' new SKUs and update the category of '+update.length+'?')))return;
-  $('bulkSave').disabled=true;$('bulkCheck').disabled=true;const failed=[],linksToSave=[];let done=0;
-  for(const r of add){
-    const row={sku_name:r.sku,pcs_per_case:r.pcs,is_active:true};if(categoryColumnAvailable&&r.cat)row.category=r.cat;
-    const {error}=await db.from('sku_master').insert(row);
-    if(error)failed.push(r.sku+' — '+error.message);else{done++;if(r.pack&&!links.has(r.sku))linksToSave.push({sku_name:r.sku,pack_id:r.pack})}
-    $('bulkInfo').textContent=done+' / '+(add.length+update.length)+' saving...';
-  }
-  for(const r of update){const {error}=await db.from('sku_master').update({category:r.cat}).eq('id',r.id);if(error)failed.push(r.sku+' — '+error.message);else{done++;if(r.pack&&!links.has(r.sku))linksToSave.push({sku_name:r.sku,pack_id:r.pack})}}
-  let linkMsg='';
-  if(linksToSave.length&&ratesOn){const {error}=await db.rpc('lwb_link_rate_skus',{p_links:linksToSave});linkMsg=error?' Rate link failed: '+error.message:' '+linksToSave.length+' SKUs linked to Rate & Scheme packs.'}
-  await loadRateGroups();await loadSkus();$('bulkCheck').disabled=false;
-  if(!failed.length)$('bulkText').value='';
-  notice(done+' SKUs saved.'+linkMsg+(failed.length?' Not saved ('+failed.length+'): '+failed.slice(0,5).join('; '):''),!!failed.length);
-  planBulk();
-}
 /* Excel Import / Export (excel-io.js). Matched by SKU Name; blank cells keep the saved value. */
 const XL_COLS=[
   {h:'Company',k:'company',sample:'COCA-COLA',alias:['Brand','Company / Brand'],note:'Company / brand name from Company / Brand page (blank keeps saved)'},
@@ -250,7 +200,7 @@ async function xlApply(plan,progress){
   await loadRateGroups();await loadSkus();
   return done+' SKUs saved.'+linkMsg+(failed.length?'\nNot saved ('+failed.length+'):\n'+failed.join('\n'):'');
 }
-async function init(){resetForm();LWBExcel.panel({mount:$('xlPanel'),file:'SKU-Master',columns:XL_COLS,exportRows:xlExport,plan:xlPlan,apply:xlApply,canImport:()=>canEdit});$('bulkCheck').addEventListener('click',planBulk);$('bulkSave').addEventListener('click',saveBulk);$('bulkText').addEventListener('input',()=>{$('bulkSave').disabled=true;$('bulkInfo').textContent='Click Check List';});$('skuForm').addEventListener('submit',saveSku);$('clearBtn').addEventListener('click',resetForm);$('search').addEventListener('input',render);$('unitFilter').addEventListener('change',render);$('bulkCoBtn').addEventListener('click',setCompanyBulk);$('pickAll').addEventListener('change',e=>{for(const x of shown)e.target.checked?picked.add(x.id):picked.delete(x.id);render();pickInfo()});
+async function init(){resetForm();LWBExcel.panel({mount:$('xlPanel'),file:'SKU-Master',columns:XL_COLS,exportRows:xlExport,plan:xlPlan,apply:xlApply,canImport:()=>canEdit});$('skuForm').addEventListener('submit',saveSku);$('clearBtn').addEventListener('click',resetForm);$('search').addEventListener('input',render);$('unitFilter').addEventListener('change',render);$('bulkCoBtn').addEventListener('click',setCompanyBulk);$('pickAll').addEventListener('change',e=>{for(const x of shown)e.target.checked?picked.add(x.id):picked.delete(x.id);render();pickInfo()});
 if(SUPABASE_PUBLISHABLE_KEY.includes('PASTE_YOUR')){notice('Setup needed: add your Supabase publishable key in this HTML file.',true);$('rows').replaceChildren();$('status').textContent='Supabase key not configured';return;}
 if(!window.supabase){notice('Supabase library did not load. Check internet connection.',true);return;}
 try{db=window.supabase.createClient(SUPABASE_URL,SUPABASE_PUBLISHABLE_KEY);const {data:{user},error}=await db.auth.getUser();if(error||!user){notice('Please log in to ERP first, then open SKU Master.',true);$('status').textContent='Login required';return;}const {data:profile,error:pe}=await db.from('user_profiles').select('role,active').eq('id',user.id).maybeSingle();if(pe)throw pe;if(profile)profile.role=await lwbPageRole(profile.role);if(!profile||profile.active!==true){notice('Your ERP login is not active.',true);$('status').textContent='Access denied';return;}canEdit=['admin','manager'].includes(String(profile.role||'').trim().toLowerCase());// Only Admin / Manager can add or edit SKUs; other roles get a read-only list.
