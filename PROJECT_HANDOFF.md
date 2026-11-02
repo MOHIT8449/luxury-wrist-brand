@@ -4,6 +4,13 @@
 **Purpose:** Continue the same ERP project from a new ChatGPT conversation without restarting or losing the agreed requirements.
 **Status:** Active development / verification. Do not assume all modules are completed or fully tested.
 
+## PO Approval: Brand filter + last 7 days trend graphs (2 Nov 2026)
+
+- Mohit asked: a Brand filter next to Sales person / Transport on `warehouse-orders.html`, and on the Dashboard view graphs of the last 7 days (day-wise rise / fall) for sales amount and quantity. No SQL.
+- Brand of a PO = the companies of its SKU lines (`sku_master.company_id`, via `brand-filter.js` / LWBBrand). List shows a PO when any line is of the picked brand; tab counts follow. Lines are read in chunks of 150 order ids (`loadItemsFor`, cached; also fills the Lines column). Filter is hidden when the login has fewer than 2 brands.
+- Dashboard "Sales Trend" (Mohit's change, same day): line graphs (up / down like a heartbeat), switch 7 Days / 30 Days / Month-wise (last 6 months, kept per device `localStorage lwbTrendMode`). Sales Amount line + Quantity with one line per brand in its own unit (Rajnigandha IC, Coca-Cola CS; never mixed). Each 7-day / month point shows ▲ / ▼ % vs the one before; badges "Today vs yesterday" / "This month vs last month"; hover / tap shows the day's values. Counts lines (approved qty, else ordered) × rate by `order_date` (India day); cancelled POs not counted. Own Brand + Sales person dropdowns, kept the same as the PO List ones (`syncFilter`). SVG drawn at the card width, redrawn on resize. 30 Days also shows a day-wise box per day (newest first: amount, ▲ / ▼ % vs the day before, brand-wise qty), Mohit asked to see every day's rise / fall.
+- Toolbar (search, 3 filters, Today / 7 / 30 Days, dates, Excel) is one line at 1366 px; phone shows the 3 filters in one row.
+
 ## One quantity box per SKU line (2 Nov 2026)
 
 - Mohit: the PO line had both Pallet and Qty (CS / BOX) boxes, but an order comes in one unit only. Now "Qty in [Case / Box | Pallet / Carton]" sits under the Delivery Priority buttons, next to "+ Add SKU" (kept per device, `localStorage lwbQtyBig`); only one box shows per line. Words follow the Brand pick (Coca-Cola: Case / Pallet, Rajnigandha: Box / Carton, All: both). Big unit shows "= 260 CS" / "= 60 BOX" under the box; the hidden box is filled from it, so saving is unchanged (cases / boxes are saved).
