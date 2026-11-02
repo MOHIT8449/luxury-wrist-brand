@@ -26,7 +26,6 @@
 <div><label for="gst">GST Rate (%)</label><input id="gst" type="number" min="0" max="100" step="0.01" placeholder="Optional"></div>
 <div><label for="weight" id="weightLab">Unit Weight per Case (KG)</label><input id="weight" type="number" min="0" step="0.001" placeholder="e.g. 12.500" disabled></div>
 <div><label for="palletCases" id="palletLab">CS per Pallet</label><input id="palletCases" type="number" min="1" max="100000" step="1" placeholder="e.g. 117" disabled></div>
-<div id="rateGroupField" hidden><label for="rateGroup">Rate Group (Rate &amp; Scheme)</label><select id="rateGroup"><option value="">— No rate group —</option></select></div>
 <div><label for="active">Status</label><select id="active"><option value="true">Active</option><option value="false">Inactive</option></select></div>
 </div><div class="actions"><button id="saveBtn" type="submit">Save SKU</button><button class="secondary" id="clearBtn" type="button">Clear / New SKU</button></div></form>
 
@@ -41,7 +40,7 @@
 <div class="actions"><button type="button" class="secondary" id="bulkCheck">Check List</button><button type="button" id="bulkSave" disabled>Add / Update SKUs</button><span id="bulkInfo" class="hint"></span></div></section>
 <section class="panel"><div class="toolbar"><div><h2 style="margin-bottom:5px">SKU List</h2><span id="status">Loading...</span></div><input id="search" placeholder="Search SKU name or HSN..."></div>
 <div id="brandBar" hidden><div id="brandChips"></div><div class="sku-bulk"><select id="unitFilter" aria-label="Unit"><option value="">All units</option><option value="CASE">Cases only</option><option value="BOX">IC only</option></select></div><div class="sku-bulk" id="bulkCo" hidden><span id="bulkCnt">0 selected</span><select id="bulkCoSel"><option value="">— No company —</option></select><button type="button" id="bulkCoBtn" disabled>Set company of selected SKUs</button></div></div>
-<div class="table-wrap"><table><thead><tr><th class="co-col" hidden><input type="checkbox" id="pickAll" aria-label="Select all shown"></th><th class="co-col" hidden>Company</th><th class="co-col" hidden>Unit</th><th>Category</th><th>SKU Name</th><th>HSN</th><th>PCS/Case</th><th>Unit Wt/Case KG</th><th>CS/Pallet · IC/Carton</th><th>GST %</th><th class="rg-col" hidden>Rate Group</th><th>Status</th><th>Action</th></tr></thead><tbody id="rows"><tr><td colspan="9">Loading...</td></tr></tbody></table></div></section>
+<div class="table-wrap"><table><thead><tr><th class="co-col" hidden><input type="checkbox" id="pickAll" aria-label="Select all shown"></th><th class="co-col" hidden>Company</th><th class="co-col" hidden>Unit</th><th>Category</th><th>SKU Name</th><th>HSN</th><th>PCS/Case</th><th>Unit Wt/Case KG</th><th>CS/Pallet · IC/Carton</th><th>GST %</th><th>Status</th><th>Action</th></tr></thead><tbody id="rows"><tr><td colspan="9">Loading...</td></tr></tbody></table></div></section>
 </main>
 <script>
 'use strict';
@@ -86,23 +85,22 @@ $('packUnit').addEventListener('change',unitLabels);$('company').addEventListene
 function showValue(v){return v===null||v===undefined||v===''?'—':String(v);}
 function addCell(row,value){const cell=document.createElement('td');cell.textContent=showValue(value);row.appendChild(cell);return cell;}
 function render(){const q=$('search').value.toLowerCase().trim();const matches=skus.filter(x=>(!coOn||!$('unitFilter').value||unitOf(x)===$('unitFilter').value)&&(!coOn||!brand||(brand==='none'?!x.company_id:x.company_id===brand))&&(String(x.sku_name||'').toLowerCase().includes(q)||String(x.hsn_code||'').toLowerCase().includes(q)||String(x.category||'').toLowerCase().includes(q)||coName(x.company_id).toLowerCase().includes(q)));shown=matches;if(coOn)pickInfo();const body=$('rows');body.replaceChildren();$('status').textContent=`${matches.length} shown / ${skus.length} total`;
-if(!matches.length){const tr=document.createElement('tr');const td=addCell(tr,skus.length?'No matching SKUs.':'No SKUs found.');td.colSpan=(ratesOn?10:9)+(coOn?3:0);body.appendChild(tr);return;}
-for(const item of matches){const tr=document.createElement('tr');if(coOn){const pk=document.createElement('td'),cb=document.createElement('input');cb.type='checkbox';cb.checked=picked.has(item.id);cb.disabled=!canEdit;cb.setAttribute('aria-label','Select '+item.sku_name);cb.onchange=()=>{cb.checked?picked.add(item.id):picked.delete(item.id);pickInfo()};pk.append(cb);tr.append(pk);const c=coById(item.company_id),cc=addCell(tr,c?c.name:'—');if(c)cc.style.cssText='color:'+c.color+';font-weight:700';const uc=addCell(tr,(unitOf(item)==='BOX'?'IC':'Case')+(item.pack_unit?' (own)':''));if(unitOf(item)==='BOX')uc.style.fontWeight='700';}addCell(tr,item.category);addCell(tr,item.sku_name);addCell(tr,item.hsn_code);addCell(tr,item.pcs_per_case);addCell(tr,item.unit_weight_kg);addCell(tr,item.cases_per_pallet);addCell(tr,item.gst_rate);if(ratesOn){const p=packs.find(x=>x.id===links.get(skuKey(item.sku_name)));addCell(tr,p?p.pack_name+' (₹'+p.slab3_rate+')':'');}addCell(tr,item.is_active===false?'Inactive':'Active');const td=document.createElement('td');const btn=document.createElement('button');btn.type='button';btn.textContent='Edit';btn.disabled=!canEdit;btn.addEventListener('click',()=>editSku(item.id));td.appendChild(btn);tr.appendChild(td);body.appendChild(tr);}}
-function editSku(id){const x=skus.find(item=>item.id===id);if(!x)return;editingId=id;$('skuName').value=x.sku_name||'';$('category').value=x.category||'';$('hsn').value=x.hsn_code||'';$('pcs').value=x.pcs_per_case??'';$('weight').value=x.unit_weight_kg??'';$('palletCases').value=x.cases_per_pallet??'';$('gst').value=x.gst_rate??'';$('active').value=String(x.is_active!==false);$('rateGroup').value=links.get(skuKey(x.sku_name))||'';$('company').value=x.company_id||'';$('packUnit').value=x.pack_unit||'';unitLabels();$('formTitle').textContent='Edit SKU';$('saveBtn').textContent='Update SKU';window.scrollTo({top:0,behavior:'smooth'});}
+if(!matches.length){const tr=document.createElement('tr');const td=addCell(tr,skus.length?'No matching SKUs.':'No SKUs found.');td.colSpan=9+(coOn?3:0);body.appendChild(tr);return;}
+for(const item of matches){const tr=document.createElement('tr');if(coOn){const pk=document.createElement('td'),cb=document.createElement('input');cb.type='checkbox';cb.checked=picked.has(item.id);cb.disabled=!canEdit;cb.setAttribute('aria-label','Select '+item.sku_name);cb.onchange=()=>{cb.checked?picked.add(item.id):picked.delete(item.id);pickInfo()};pk.append(cb);tr.append(pk);const c=coById(item.company_id),cc=addCell(tr,c?c.name:'—');if(c)cc.style.cssText='color:'+c.color+';font-weight:700';const uc=addCell(tr,(unitOf(item)==='BOX'?'IC':'Case')+(item.pack_unit?' (own)':''));if(unitOf(item)==='BOX')uc.style.fontWeight='700';}addCell(tr,item.category);addCell(tr,item.sku_name);addCell(tr,item.hsn_code);addCell(tr,item.pcs_per_case);addCell(tr,item.unit_weight_kg);addCell(tr,item.cases_per_pallet);addCell(tr,item.gst_rate);addCell(tr,item.is_active===false?'Inactive':'Active');const td=document.createElement('td');const btn=document.createElement('button');btn.type='button';btn.textContent='Edit';btn.disabled=!canEdit;btn.addEventListener('click',()=>editSku(item.id));td.appendChild(btn);tr.appendChild(td);body.appendChild(tr);}}
+function editSku(id){const x=skus.find(item=>item.id===id);if(!x)return;editingId=id;$('skuName').value=x.sku_name||'';$('category').value=x.category||'';$('hsn').value=x.hsn_code||'';$('pcs').value=x.pcs_per_case??'';$('weight').value=x.unit_weight_kg??'';$('palletCases').value=x.cases_per_pallet??'';$('gst').value=x.gst_rate??'';$('active').value=String(x.is_active!==false);$('company').value=x.company_id||'';$('packUnit').value=x.pack_unit||'';unitLabels();$('formTitle').textContent='Edit SKU';$('saveBtn').textContent='Update SKU';window.scrollTo({top:0,behavior:'smooth'});}
 // SKU -> Rate & Scheme rate group, so slab rate on PO Entry comes from this one SKU Master.
 async function loadRateGroups(){
   if(!canEdit)return;
   const [p,l]=await Promise.all([db.from('lwb_rate_packs').select('id,pack_name,slab3_rate,case_config,active').order('sort_no'),db.from('lwb_rate_pack_skus').select('sku_key,pack_id')]);
   if(p.error||l.error)return;
   packs=(p.data||[]).filter(x=>x.active!==false);links=new Map((l.data||[]).map(x=>[x.sku_key,x.pack_id]));ratesOn=true;
-  $('rateGroupField').hidden=false;document.querySelectorAll('.rg-col').forEach(x=>x.hidden=false);
-  $('rateGroup').replaceChildren(new Option('— No rate group —',''),...packs.map(x=>new Option(x.pack_name+' (Slab 3 ₹'+x.slab3_rate+')',x.id)));
 }
 async function saveRateGroup(oldName,newName){
   if(!ratesOn)return'';
-  const want=$('rateGroup').value||null,oldKey=skuKey(oldName),newKey=skuKey(newName),changes=[];
+  // Rate group is linked in Rate & Scheme > SKU Link (not here); a renamed SKU keeps its link.
+  const oldKey=skuKey(oldName),newKey=skuKey(newName),changes=[];
   if(oldKey&&oldKey!==newKey&&links.has(oldKey))changes.push({sku_name:oldKey,pack_id:null});
-  if((links.get(newKey)||null)!==want||(oldKey&&oldKey!==newKey))changes.push({sku_name:newKey,pack_id:want});
+  if(oldKey&&oldKey!==newKey&&links.has(oldKey)&&!links.has(newKey))changes.push({sku_name:newKey,pack_id:links.get(oldKey)});
   if(!changes.length)return'';
   const {error}=await db.rpc('lwb_link_rate_skus',{p_links:changes});
   return error?' Rate group not saved: '+error.message:'';
@@ -205,8 +203,7 @@ const XL_COLS=[
   {h:'PCS per Case',k:'pcs_per_case',sample:24,alias:['PCS/Case','PCS'],note:'Required for new SKUs (taken from the Rate pack if blank)'},
   {h:'GST %',k:'gst_rate',sample:40,alias:['GST','GST Rate']},
   {h:'Unit Wt per Case KG',k:'unit_weight_kg',sample:7.6,alias:['Unit Wt/Case KG','Weight']},
-  {h:'CS per Pallet',k:'cases_per_pallet',sample:130,alias:['CS/Pallet','Cases per Pallet','Box per Carton','Box/Carton','IC per Carton','IC/Carton'],note:'Box SKUs (Rajnigandha): boxes per carton'},
-  {h:'Rate Group',k:'rate_group',note:'Rate & Scheme pack name (optional)'},
+  {h:'CS per Pallet',k:'cases_per_pallet',sample:130,alias:['CS/Pallet','Cases per Pallet','Box per Carton','Box/Carton','IC per Carton','IC/Carton'],note:'IC SKUs (Rajnigandha): IC per carton'},
   {h:'Status',k:'status',sample:'Active',note:'Active or Inactive'}];
 function xlExport(){return skus.map(x=>({...x,company:coById(x.company_id)?coById(x.company_id).name:'',rate_group:(packs.find(p=>p.id===links.get(skuKey(x.sku_name)))||{}).pack_name||'',status:x.is_active===false?'Inactive':'Active'}))}
 function xlPlan(rows){
