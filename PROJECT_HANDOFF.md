@@ -623,3 +623,10 @@
 - Loading & Dispatch also lists approved POs with no vehicle yet ("APPROVED · NO VEHICLE YET", view only: no Start / Confirm / Challan until the Sales Head gives driver and vehicle).
 - Edit PO (`warehouse-orders.html`): the Delivery Challan, Save Driver & Vehicle, Save Transport, Save Note and Save PO buttons are replaced by ONE **Submit** in the footer (`submitPo`): one confirm, then it saves only what changed, in this order: Driver / Vehicle / Godown Manager, SKU lines (with the note), or the note alone. A pending PO still has **Approve PO**. Print PO stays. The list's Challan shortcut is unchanged.
 - Tests: `tests/bill-before-loading` (PGlite, `npm ci && npm test`).
+
+## Coca-Cola min rate and Admin rate OK (2 Nov 2026)
+- `lwb_cc_rate_limit_setup.sql` (needs `lwb_rajni_rate_limit_setup.sql`). Rate & Scheme > Slab Rate: **Min margin** per pack (Admin only) and **Min rate** = Landing (excl. ROI) + Min margin. Each Rate & Scheme save calls `lwb_pack_limits_sync`, which writes landing / min rate of the pack's linked SKUs into `lwb_sku_price_limits` (same table as the Rajnigandha Rate List). A scheme change counts only after the next Rate & Scheme save.
+- Deferred trigger `lwb_rate_po_route` on `orders`: a non-Admin approved PO (Sales Head's own PO, or a Salesman PO approved by the Sales Head) with a line below the min rate goes back to `pending_approval`, a WAITING row in `lwb_rate_approvals`, and a `PO_RATE_APPROVAL` bell to Admin. Rajnigandha slips keep their own flow.
+- PO / Sales List: tag "Wait Admin ₹ OK"; Admin gets "₹ Rate OK" (popup with only ✔ Approve → `lwb_rate_approve`, then the PO is approved and goes on: transport, loading, bill). `warehouse-orders.html?rate=<order id>` opens the popup (bell link). Admin approving the PO normally also counts as the rate OK.
+- New Sales Order: Sales Head button "Send to Admin for rate OK" when a line is below min; message after save says it went to Admin.
+- Tests: `tests/cc-rate-limit`.

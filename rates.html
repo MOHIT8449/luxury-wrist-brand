@@ -32,7 +32,7 @@
     .rt-table tbody tr:nth-child(even) td{background:#fafbfc}
     .rt-table tbody tr:hover td{background:#f1f5fb}
     .rt-table td.l,.rt-table th.l{text-align:left}
-    .rt-table td.strong{font-weight:700}.rt-table td.red{color:var(--erp-red);font-weight:700}
+    .rt-table td.strong{font-weight:700}.rt-table .mn{background:#fff8e6}.rt-table td.red{color:var(--erp-red);font-weight:700}
     .rt-table input{width:88px;height:34px;text-align:right;border:1px solid var(--erp-line);border-radius:5px;padding:0 6px;font:inherit;background:#fffbe6;color:var(--erp-ink)}
     .rt-table input.name{width:250px;font-weight:600;text-align:left}
     .rt-table input[type=checkbox]{width:auto;height:auto}
@@ -154,7 +154,7 @@
       if(s.data)settings={mepd_pct:+s.data.mepd_pct,roi_main:+s.data.roi_main,roi_landing:+s.data.roi_landing};
       packs=(p.data||[]).map(x=>({id:x.id,sort_no:x.sort_no,pack_name:x.pack_name,case_config:+x.case_config,gr:+x.gr,mepd_pct:numOrBlank(x.mepd_pct),
         free_bottle:+x.free_bottle,oms:numOrBlank(x.oms),qps:+x.qps,slab3_rate:+x.slab3_rate,unit_weight:numOrBlank(x.unit_weight),bottle:numOrBlank(x.bottle),
-        slab_landing:numOrBlank(x.slab_landing),slab_margins:[0,1,2,3,4].map(i=>numOrBlank((x.slab_margins||[])[i])),active:x.active!==false})).sort((a,b)=>a.sort_no-b.sort_no||a.pack_name.localeCompare(b.pack_name));
+        slab_landing:numOrBlank(x.slab_landing),slab_margins:[0,1,2,3,4].map(i=>numOrBlank((x.slab_margins||[])[i])),min_margin:numOrBlank(x.min_margin),active:x.active!==false})).sort((a,b)=>a.sort_no-b.sort_no||a.pack_name.localeCompare(b.pack_name));
       history=h.data||[];
       saved=stateNow();
       await loadLinks();await loadSchemes();
@@ -311,16 +311,16 @@
     function renderSlabRate(){
       el("tabTitle").textContent="Slab Rate";
       el("tabInfo").textContent="Enter the Slab 3 MGR rate";
-      el("tabNote").textContent="Enter the Slab 3 MGR rate; Slab 1 = +5, Slab 2 and 4 = −5. Margin = MGR rate − landing. PO / Sales Order Entry uses these rates.";
+      el("tabNote").textContent="Enter the Slab 3 MGR rate; Slab 1 = +5, Slab 2 and 4 = −5. Margin = MGR rate − landing. PO / Sales Order Entry uses these rates. Min rate = Landing + Min margin (Admin): a Sales Head can not approve a PO below it, it goes to Admin for rate OK. Blank Min margin = no limit.";
       let h='<div class="rt-bar" style="align-items:center"><div><label>Rate list date</label><input type="date" id="imgDate" value="'+esc(imgDate||LWBMepd.day())+'"></div>'+
         '<button type="button" id="imgCopy" style="margin-top:20px">📋 Copy image (WhatsApp)</button><button type="button" id="imgSave" style="margin-top:20px;background:#fff;color:var(--erp-ink);border-color:var(--erp-line)">⬇ Image download</button></div>'+
         '<table class="rt-table"><thead><tr><th>#</th><th class="l">PACK</th><th>LANDING<small>excl. ROI</small></th>'+
-        SLAB_NAMES.map((s,i)=>"<th>SLAB "+(i+1)+" MARGIN<small>"+esc(s)+"</small></th><th>MGR RATE</th>").join("")+"</tr></thead><tbody>";
+        SLAB_NAMES.map((s,i)=>"<th>SLAB "+(i+1)+" MARGIN<small>"+esc(s)+"</small></th><th>MGR RATE</th>").join("")+'<th class="mn">MIN MARGIN<small>Admin</small></th><th class="mn">MIN RATE</th></tr></thead><tbody>';
       packs.forEach((r,i)=>{const c=calcLanding(r);
         h+='<tr class="'+(r.active===false?"off":"")+'"><td>'+(i+1)+'</td><td class="l">'+esc(r.pack_name)+'</td><td class="strong">'+fmt(c.J,2)+"</td>"+
-          "<td>"+fmt(c.K,2)+"</td><td>"+fmt(c.L)+"</td><td>"+fmt(c.M,2)+"</td><td>"+fmt(c.N)+"</td><td>"+fmt(c.O,2)+"</td><td>"+cellInput(i,"slab3_rate",r.slab3_rate)+"</td><td>"+fmt(c.Q,2)+"</td><td>"+fmt(c.R)+"</td></tr>";
+          "<td>"+fmt(c.K,2)+"</td><td>"+fmt(c.L)+"</td><td>"+fmt(c.M,2)+"</td><td>"+fmt(c.N)+"</td><td>"+fmt(c.O,2)+"</td><td>"+cellInput(i,"slab3_rate",r.slab3_rate)+"</td><td>"+fmt(c.Q,2)+"</td><td>"+fmt(c.R)+'</td><td class="mn">'+(me.realRole==="admin"?cellInput(i,"min_margin",r.min_margin):esc(r.min_margin===""?"—":r.min_margin))+'</td><td class="mn strong">'+(r.min_margin===""||r.min_margin==null?'<span style="color:#889;font-weight:400">No limit</span>':fmt(r2(c.J+n(r.min_margin)),2))+"</td></tr>";
       });
-      if(!packs.length)h+='<tr><td colspan="11" class="l">Create packs in the Landing tab first.</td></tr>';
+      if(!packs.length)h+='<tr><td colspan="13" class="l">Create packs in the Landing tab first.</td></tr>';
       h+="</tbody></table>";
       if(me.edit)h+='<button type="button" class="rt-add" id="saveBelow" style="border-style:solid;background:var(--erp-red);color:#fff;border-color:var(--erp-red)"'+(isDirty()?"":" disabled")+'>Save</button>';
       el("box").innerHTML=h;
@@ -399,7 +399,7 @@
       const r=packs[+t.dataset.i],f=t.dataset.f,v=t.value.trim();
       if(f==="pack_name")r.pack_name=t.value;
       else if(/^m\d$/.test(f))r.slab_margins[+f.slice(1)]=v===""?"":(isNaN(+v)?r.slab_margins[+f.slice(1)]:+v);
-      else if(["mepd_pct","oms","unit_weight","bottle","slab_landing"].includes(f))r[f]=v===""?"":(isNaN(+v)?r[f]:+v);
+      else if(["mepd_pct","oms","unit_weight","bottle","slab_landing","min_margin"].includes(f))r[f]=v===""?"":(isNaN(+v)?r[f]:+v);
       else r[f]=v===""?0:(isNaN(+v)?r[f]:+v);
       clearTimeout(render._t);render._t=setTimeout(()=>keepFocus(render),350);
       showState();
@@ -506,6 +506,17 @@
       if(c)await saveLinks();
     }
 
+    /* Min rate (lwb_cc_rate_limit_setup.sql): every save sends each pack's landing (excl. ROI) so the min rate of its
+       SKUs follows scheme changes; Admin's Min margin goes with it (the database ignores it from a Sales Head). */
+    async function syncMinRates(margins){
+      const rows=packs.filter(p=>p.id).map(p=>{const m=margins.get(p.pack_name.trim().toUpperCase());
+        const r={pack_id:p.id,landing:r2(calcLanding(p).J)};if(me.realRole==="admin")r.min_margin=m===""||m==null?null:n(m);return r});
+      if(!rows.length)return;
+      const {error}=await client.rpc("lwb_pack_limits_sync",{p:rows});
+      if(error){if(!/lwb_pack_limits_sync/.test(error.message||""))await ERPShell.alert("Rates saved, but Min rate not updated: "+error.message);return}
+      if(me.realRole==="admin")await load();
+    }
+
     /* ---------- save ---------- */
     async function save(){
       if(busy||!isDirty())return;
@@ -528,7 +539,9 @@
         const {error}=await client.rpc("lwb_save_rates",{p_settings:settings,p_packs:payload,p_note:note||(changed?"Rate update":null),p_snapshot:changed?snapRows():null});
         if(error)throw error;
         importedLedger=null;el("note").value="";
+        const margins=new Map(packs.map(p=>[p.pack_name.trim().toUpperCase(),p.min_margin]));
         await load();
+        await syncMinRates(margins);
         ERPShell.toast("Rates saved"+(changed?", ledger entry created.":"."),"success");
         if(autoLinkAfterSave)await linkPendingSkus();
       }catch(e){await ERPShell.alert("Save failed: "+(e.message||e))}

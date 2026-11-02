@@ -821,6 +821,18 @@
     .track-card .modal-footer[hidden] {display:none}
     .track-card .modal-footer a.btn {text-decoration:none}
     .track-modal .bill-card {width:min(460px,100%)}
+    .status.rate-wait {background:#fff1dc;color:#9a5b00;margin-top:3px}
+    .track-modal .rate-card {width:min(760px,100%)}
+    .rate-card table {width:100%;min-width:0;border-collapse:collapse;font-size:13px}
+    .rate-card th,.rate-card td {padding:6px 8px;border-bottom:1px solid #eef1f5;text-align:right;white-space:nowrap}
+    .rate-card th:first-child,.rate-card td:first-child {text-align:left;white-space:normal}
+    .rate-card th {background:#f5f7fa;font-size:11.5px}
+    .rate-card tr.low td {background:#fdecef}
+    .rate-card .low-tag {color:#c8102e;font-weight:800;font-size:11px;margin-left:6px}
+    .rate-card .ok {color:#13824a;font-weight:700} .rate-card .warn {color:#b26a00;font-weight:700}
+    .rate-card .rate-sub {color:#667;font-size:12.5px;margin:0 0 8px}
+    .rate-card .rate-scroll {overflow-x:auto}
+    @media (max-width:600px){.rate-card .hide-m{display:none}.rate-card table{table-layout:fixed;font-size:12px}.rate-card th:first-child,.rate-card td:first-child{width:38%}.rate-card th,.rate-card td{padding:6px 4px;white-space:normal}.rate-card .low-tag{display:block;margin:0}}
     .bill-info {background:#f6f7f9;border-radius:8px;padding:10px 12px;font-size:13px;line-height:1.5;margin-bottom:12px}
     .bill-form {display:grid;gap:10px}
     .bill-form[hidden] {display:none}
@@ -1220,6 +1232,24 @@
       <div class="modal-footer">
         <a class="btn btn-light" id="billMore" href="party-billing.html">Billing &amp; Outstanding</a>
         <button class="btn btn-green" id="billSave" onclick="saveBill()">Save bill</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Coca-Cola PO with a rate below the minimum: Admin only presses Approve (lwb_cc_rate_limit_setup.sql) -->
+  <div class="modal track-modal" id="rateModal" onclick="if(event.target===this)closeRateOk()">
+    <div class="modal-card track-card rate-card">
+      <div class="modal-header">
+        <h3 id="rateTitle">Rate below min</h3>
+        <button class="close-btn" onclick="closeRateOk()" aria-label="Close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p class="rate-sub" id="rateSub"></p>
+        <div class="rate-scroll" id="rateBody"></div>
+      </div>
+      <div class="modal-footer" style="justify-content:flex-end">
+        <button class="btn btn-light" onclick="closeRateOk()">Back</button>
+        <button class="btn btn-green" id="rateOkBtn" onclick="approveRateOk()">✔ Approve</button>
       </div>
     </div>
   </div>
@@ -1667,6 +1697,8 @@ document.addEventListener("DOMContentLoaded", async () => {
     setupPoAutofill();
     pickSummaryRange("today", false);
     await Promise.all([loadOrders(), loadWarehouseSkuMaster(), VIEW_ONLY ? null : loadPoSavedDirectory()]);
+    const rateId=new URLSearchParams(location.search).get('rate');
+    if(rateId){if(rateWait.has(rateId))openRateOk(rateId);else showMessage('This PO is not waiting for a rate OK any more.','success');}
     const pushOrder=new URLSearchParams(location.search).get('order');
     if(pushOrder){
       if(!orders.some(o=>o.id===pushOrder)){
@@ -1726,7 +1758,7 @@ async function loadOrders() {
     [...inRange, ...open].forEach(order => byId.set(order.id, order));
 
     orders = ERPRecent.sort([...byId.values()]);
-    await loadDeliveredOrders();
+    await Promise.all([loadDeliveredOrders(), loadRateWait()]);
 
     fillColumnFilters();
     updateStats();
@@ -2637,6 +2669,7 @@ function renderOrders() {
             <td class="c-act"><div class="act-row">
               <button class="btn btn-light btn-track" title="Track: where is this PO now" onclick="trackOrder('${order.id}')">📍<span class="lbl-long"> Track</span></button>
               ${CAN_BILL && VIEW_ONLY && eligibleForPoPrint(order) ? `<button class="btn btn-green" title="Enter the Tally bill no." onclick="openBill('${order.id}')">🧾 Bill</button>` : ""}
+              ${IS_ADMIN && rateWait.has(order.id) ? `<button class="btn btn-green" title="Rate below min: check and approve" onclick="openRateOk('${order.id}')">₹ Rate OK</button>` : ""}
               ${!isCancelled(order) ? `<button class="btn btn-light" title="Print PO" onclick="printPoFromList('${order.id}')">Print</button>` : ""}
               ${eligibleForPoPrint(order) && !VIEW_ONLY ? `<button class="btn btn-green" title="Driver / Vehicle / Godown Manager"
                 onclick="openTransportAllocation('${order.id}')">🚚<span class="lbl-long"> Transport</span></button>` : ""}
@@ -3523,6 +3556,56 @@ let VIEW_ONLY=false;
 let CAN_BILL=false; // Accounts / Admin: enter the Tally bill no. from the list
 let IS_ADMIN=false; // Admin: delete orders for ever (dummy / duplicate data)
 let CAN_HEAD=false; // Admin / Sales Head: cancel or modify at any stage before delivery
+// Rate below the minimum (lwb_cc_rate_limit_setup.sql): POs waiting for Admin's rate OK, and the min rate by SKU.
+let rateWait=new Map(), saleMin=null, rateOrderId=null;
+const rateKey=n=>String(n||"").trim().toUpperCase();
+async function loadRateWait(){
+  if(VIEW_ONLY)return;
+  try{
+    if(!saleMin){const {data,error}=await db.rpc("lwb_sale_rates");saleMin=new Map(error?[]:(data||[]).filter(x=>x.min_rate!=null).map(x=>[rateKey(x.sku_key),Number(x.min_rate)]));}
+    const {data,error}=await db.rpc("lwb_rate_waiting");
+    rateWait=new Map(error?[]:(data||[]).filter(r=>!r.slip).map(r=>[r.order_id,r]));
+  }catch(e){rateWait=new Map();}
+}
+// SKU lines of this PO below the minimum rate (no landing here).
+function belowMinItems(items){
+  return (items||[]).filter(it=>{const m=saleMin&&saleMin.get(rateKey(it.sku_name));return m!=null&&(Number(it.rate)||0)<m;})
+    .map(it=>({sku:it.sku_name,rate:Number(it.rate)||0,min:saleMin.get(rateKey(it.sku_name))}));
+}
+function openRateOk(id){
+  const r=rateWait.get(id);if(!r)return;
+  rateOrderId=id;
+  const rs=v=>"₹"+(Number(v)||0).toLocaleString("en-IN",{maximumFractionDigits:2});
+  const see=r.lines.some(l=>l.landing!=null);
+  document.getElementById("rateTitle").textContent="PO "+(r.order_no||"")+(r.brand?" · "+r.brand:"");
+  document.getElementById("rateSub").textContent=[r.party,r.sales_person?"by "+r.sales_person:"",formatDate(r.order_date||r.requested_at),r.transportation].filter(Boolean).join(" · ");
+  let q=0,amt=0,land=0,pf=0;
+  const rows=r.lines.map(l=>{
+    const low=l.min_rate!=null&&Number(l.rate)<Number(l.min_rate),per=l.landing!=null?Number(l.rate)-Number(l.landing):null;
+    q+=Number(l.qty)||0;amt+=(Number(l.qty)||0)*Number(l.rate);if(per!=null){land+=(Number(l.qty)||0)*Number(l.landing);pf+=(Number(l.qty)||0)*per;}
+    const cls=per==null?"":per<=0||low?"warn":"ok";
+    return '<tr'+(low?' class="low"':'')+'><td>'+escapeHtml(l.sku)+(low?'<span class="low-tag">Below min</span>':'')+'</td><td>'+formatNumber(l.qty)+'</td><td>'+rs(l.rate)+'</td><td>'+(l.min_rate!=null?rs(l.min_rate):"-")+'</td>'+
+      (see?'<td class="hide-m">'+(l.landing!=null?rs(l.landing):"-")+'</td><td class="hide-m '+cls+'">'+(per!=null?rs(per):"-")+'</td><td class="'+cls+'">'+(per!=null?rs(per*(Number(l.qty)||0)):"-")+'</td>':'')+'</tr>';
+  }).join("");
+  document.getElementById("rateBody").innerHTML='<table><thead><tr><th>SKU</th><th>CS</th><th>Given ₹</th><th>Min ₹</th>'+
+    (see?'<th class="hide-m">Landing ₹</th><th class="hide-m">Profit/CS</th><th>Profit</th>':'')+'</tr></thead><tbody>'+rows+
+    '<tr><th>Total</th><th>'+formatNumber(q)+'</th><th>'+rs(amt)+'</th><th></th>'+(see?'<th class="hide-m">'+rs(land)+'</th><th class="hide-m"></th><th class="'+(pf>0?"ok":"warn")+'">'+rs(pf)+'</th>':'')+'</tr></tbody></table>';
+  document.getElementById("rateOkBtn").hidden=!r.can_approve;
+  document.getElementById("rateModal").classList.add("show");
+}
+function closeRateOk(){document.getElementById("rateModal").classList.remove("show");rateOrderId=null;}
+async function approveRateOk(){
+  const id=rateOrderId,r=rateWait.get(id);if(!r)return;
+  const btn=document.getElementById("rateOkBtn");btn.disabled=true;
+  try{
+    const {error}=await db.rpc("lwb_rate_approve",{p_order_id:id});
+    if(error)throw error;
+    closeRateOk();
+    showMessage("PO "+(r.order_no||"")+" approved. Assign transport next.","success");
+    await loadOrders();
+  }catch(e){alert("Could not approve: "+(e.message||e));}
+  finally{btn.disabled=false;}
+}
 const lateEditable=o=>Boolean(o)&&CAN_HEAD&&poAllocationLocked(o)&&!isDeliveredOrder(o);
 const canEditItems=o=>Boolean(o)&&!VIEW_ONLY&&(isPending(o)||(eligibleForPoPrint(o)&&!poAllocationLocked(o))||lateEditable(o));
 const canCancelOrder=o=>Boolean(o)&&!VIEW_ONLY&&CAN_HEAD&&!isCancelled(o)&&!isDeliveredOrder(o);
@@ -3590,7 +3673,15 @@ async function approveOrder(opts={}) {
   const approving=isPending(selectedOrder);
   if (!poItemsValid()) return false;
   if (!approving && lateEditable(selectedOrder)) return saveLateModify();
-  if (!opts.quiet && !await confirm(approving
+  // Rate below the minimum: a Sales Head's approval sends the PO to Admin for a rate OK (database rule).
+  const low=approving&&!IS_ADMIN?belowMinItems(selectedItems):[];
+  if(low.length){
+    const list=low.map(x=>x.sku+" ₹"+x.rate+" (min ₹"+x.min+")").join("\n");
+    if(rateWait.has(selectedOrder.id)){alert("This PO is already waiting for Admin rate OK.\n\n"+list+"\n\nRaise the rate to the minimum to approve it yourself.");return false;}
+    if(!await confirm("Rate below the minimum:\n"+list+"\n\nThe PO goes to Admin for a rate OK. After Admin approves it, assign transport as usual.",
+      {title:"Send to Admin for rate OK",ok:"Send to Admin"}))return false;
+  }
+  if (!opts.quiet && !low.length && !await confirm(approving
     ? 'Approve '+selectedOrder.order_no+' with '+selectedItems.length+' SKU(s)?'
     : 'Save changes to approved PO '+selectedOrder.order_no+' ('+selectedItems.length+' SKU)?')) return false;
   const btn=document.getElementById('approveOrderBtn');
@@ -3633,6 +3724,11 @@ async function approveOrder(opts={}) {
     // Reload the order so newly added SKU lines get their ids (a second save must not add them again).
     const id=selectedOrder.id;
     await loadOrders();
+    if(approving&&rateWait.has(id)){
+      closeModal();
+      showMessage("PO "+(orders.find(o=>o.id===id)?.order_no||"")+" sent to Admin for rate OK (rate below the minimum).","success");
+      return true;
+    }
     await reviewOrder(id);
     document.getElementById("postApprovalPanel").scrollIntoView({behavior:"smooth",block:"nearest"});
     return true;
@@ -3831,7 +3927,7 @@ function statusBadge(order) {
           ? status.replace(/_/g, " ")
           : "pending"
       )}
-    </span>
+    </span>${rateWait.has(order.id) ? '<span class="status rate-wait" title="Rate below min: waiting for Admin rate OK">Wait Admin ₹ OK</span>' : ""}
   `;
 
 }
