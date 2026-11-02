@@ -56,19 +56,19 @@ test('tapping an owned banner opens the same order; foreign links stay on the ER
  assert.equal(w.navigated[1],'https://luxury-wrist-brand.pages.dev/dashboard.html');
 });
 class Element{
- constructor(tag){this.tag=tag;this.children=[];this.textContent='';this.hidden=false;this.disabled=false;this.className='';}
- append(...nodes){this.children.push(...nodes);}prepend(n){this.children.unshift(n);}setAttribute(){}
+ constructor(tag){this.tag=tag;this.children=[];this.classList={add(){},remove(){}};this.textContent='';this.hidden=false;this.disabled=false;this.className='';}
+ append(...nodes){this.children.push(...nodes);}remove(){}prepend(n){this.children.unshift(n);}setAttribute(){}
  querySelector(sel){return this.children.find(c=>'.'+c.className===sel)||null;}
 }
-function phone({existing=false,permission='default'}={}){
+function phone({existing=false,permission='default',mobile=false,store=new Map()}={}){
  const mount=new Element('section'),calls=[],windows={Notification:{permission},PushManager:function(){},isSecureContext:true};let subscription=existing?sub():null,onAuth;
  function sub(){return {endpoint:'https://fcm.googleapis.com/wp/local-only',toJSON:()=>({endpoint:'https://fcm.googleapis.com/wp/local-only',keys:{p256dh:'B'+'a'.repeat(86),auth:'b'.repeat(22)}}),unsubscribe:async()=>{calls.push('unsubscribe');subscription=null;return true}};}
  const reg={active:{postMessage(m,ports){calls.push(m.type);queueMicrotask(()=>ports[0].postMessage(null));}},pushManager:{getSubscription:async()=>subscription,subscribe:async opts=>{calls.push('permission-request');assert.equal(opts.applicationServerKey.length,65);windows.Notification.permission='granted';subscription=sub();return subscription;}}};
  function Channel(){const port={};this.port1={onmessage:null,close(){}};this.port2={postMessage:v=>this.port1.onmessage?.({data:v})};}
  const db={rpc:async(name,args)=>{calls.push(name);return {data:name==='lwb_push_public_config'?{enabled:true,public_key:Buffer.alloc(65).toString('base64url')}:true,error:null}},functions:{invoke:async()=>({data:{accepted:true},error:null})},auth:{onAuthStateChange:f=>{onAuth=f;}}};
- const ctx=vm.createContext({window:windows,Notification:windows.Notification,document:{createElement:t=>new Element(t)},navigator:{userAgent:'QA phone',serviceWorker:{addEventListener(){},register:async()=>reg,ready:Promise.resolve(reg)}},location:{origin:'https://luxury-wrist-brand.pages.dev',href:'https://luxury-wrist-brand.pages.dev/dashboard.html',assign(){}},URL,Uint8Array,atob,MessageChannel:Channel,setTimeout,clearTimeout,queueMicrotask});
+ const ctx=vm.createContext({window:windows,Notification:windows.Notification,document:{createElement:t=>new Element(t),body:mobile?new Element('body'):undefined},sessionStorage:{getItem:k=>store.get(k)||null,setItem:(k,v)=>store.set(k,v),removeItem:k=>store.delete(k)},requestAnimationFrame:f=>f(),navigator:{userAgent:mobile?'Mozilla/5.0 (Linux; Android 14) Mobile':'QA phone',serviceWorker:{addEventListener(){},register:async()=>reg,ready:Promise.resolve(reg)}},location:{origin:'https://luxury-wrist-brand.pages.dev',href:'https://luxury-wrist-brand.pages.dev/dashboard.html',assign(){}},URL,Uint8Array,atob,MessageChannel:Channel,setTimeout,clearTimeout,queueMicrotask});
  vm.runInContext(fs.readFileSync(path.join(root,'erp-push.js'),'utf8'),ctx);
- return {calls,mount,init:()=>windows.LWBPhonePush.init({db,user:{id:'owner'},role:'admin',mount}),signOut:()=>onAuth('SIGNED_OUT',null)};
+ return {calls,mount,ctx,store,init:()=>windows.LWBPhonePush.init({db,user:{id:'owner'},role:'admin',mount}),signOut:()=>onAuth('SIGNED_OUT',null)};
 }
 test('phone permission is never requested on page load; Enable binds and Turn off unsubscribes',async()=>{
  const p=phone();await p.init();assert.equal(p.calls.includes('permission-request'),false);
@@ -79,4 +79,29 @@ test('phone permission is never requested on page load; Enable binds and Turn of
 test('an existing granted subscription rebinds to login; logout clears device and unsubscribes',async()=>{
  const p=phone({existing:true,permission:'granted'});await p.init();assert.ok(p.calls.includes('lwb_push_subscribe'));assert.equal(p.calls.includes('permission-request'),false);
  p.signOut();await new Promise(r=>setImmediate(r));assert.ok(p.calls.includes('LWB_PUSH_CLEAR'));assert.ok(p.calls.includes('unsubscribe'));
+});
+
+test('phone login without alerts shows the reminder once per login; Allow requests permission',async()=>{
+ const store=new Map();
+ const p=phone({mobile:true,store});await p.init();
+ const body=vm.runInContext('document.body',p.ctx);
+ assert.equal(body.children.length,1);assert.equal(p.calls.includes('permission-request'),false);
+ const dlg=body.children[0].children[0],row=dlg.children.find(c=>c.className==='erp-dlg-actions');
+ await row.children[1].onclick();await new Promise(r=>setImmediate(r));
+ assert.ok(p.calls.includes('permission-request'));assert.ok(p.calls.includes('lwb_push_subscribe'));
+ const again=phone({mobile:true,store});await again.init();
+ assert.equal(vm.runInContext('document.body',again.ctx).children.length,0,'same login is not asked twice');
+ const fresh=phone({mobile:true});await fresh.init();
+ assert.equal(vm.runInContext('document.body',fresh.ctx).children.length,1,'next login asks again');
+});
+test('no reminder when alerts are already on, or on desktop',async()=>{
+ const on=phone({mobile:true,existing:true,permission:'granted'});await on.init();
+ assert.equal(vm.runInContext('document.body',on.ctx).children.length,0);
+ const desk=phone();await desk.init();assert.equal(vm.runInContext('document.body',desk.ctx),undefined);
+});
+test('blocked permission shows settings help without a permission request',async()=>{
+ const p=phone({mobile:true,permission:'denied'});await p.init();
+ const body=vm.runInContext('document.body',p.ctx);assert.equal(body.children.length,1);
+ const dlg=body.children[0].children[0];assert.ok(dlg.children.some(c=>c.className==='erp-dlg-text'));
+ assert.equal(p.calls.includes('permission-request'),false);
 });
