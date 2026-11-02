@@ -452,6 +452,8 @@
     #poAllocationStatus {font-size:12px;color:#1a613a;margin-top:12px;line-height:1.6}
     #poAllocationStatus.error {color:#bb2929}
     #poPrintArea {display:none}
+    #poPrintArea .po-bulk-page {break-after:page;page-break-after:always}
+    #poPrintArea .po-bulk-page:last-child {break-after:auto;page-break-after:auto}
     @media(max-width:760px){.po-grid{grid-template-columns:1fr 1fr}}
     @media(max-width:480px){.po-grid{grid-template-columns:1fr}}
     @media print {
@@ -728,6 +730,30 @@
     .po-pg button:disabled {opacity:.4;cursor:default}
     .po-pg span {padding:0 6px}
 
+    /* Select many POs: approve / print together (2 Nov 2026) */
+    .po-sel {width:18px;height:18px;margin:0 8px 0 0;vertical-align:-3px;accent-color:var(--erp-red,#c8102e);cursor:pointer}
+    .po-selbar {position:sticky;top:calc(var(--erp-top,58px) + 6px);z-index:20;display:flex;align-items:center;gap:8px;flex-wrap:wrap;
+      background:var(--lwb-gold-soft,#fff8e1);border:1px solid var(--lwb-gold,#e0c060);border-radius:10px;padding:9px 12px;margin-bottom:10px;font-weight:700;color:#1f2a37}
+    .po-selbar .sp {flex:1}
+    .po-selbar .btn:disabled {opacity:.45;cursor:not-allowed}
+    tr.row-picked td {background:var(--lwb-gold-soft,#fffbea)!important}
+
+    /* PO journey in the review popup */
+    .po-journey {list-style:none;margin:0 0 14px;padding:12px 14px;display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:8px;
+      background:#fafaf7;border:1px solid #e3e7ec;border-radius:10px;counter-reset:none}
+    .po-journey:empty {display:none}
+    .po-journey li {position:relative;padding-top:30px;min-width:0;font-size:12px;color:#6b7785;line-height:1.35}
+    .po-journey li::before {content:"";position:absolute;top:10px;left:22px;right:-8px;height:2px;background:#d7dde3}
+    .po-journey li:last-child::before {display:none}
+    .po-journey li.done::before {background:#13824a}
+    .po-journey .dot {position:absolute;top:0;left:0;width:22px;height:22px;border-radius:50%;background:#d7dde3;color:#fff;
+      display:grid;place-items:center;font-size:12px;font-weight:800;z-index:1}
+    .po-journey li.done .dot {background:#13824a}
+    .po-journey li.now .dot {background:var(--lwb-gold,#e0a800);box-shadow:0 0 0 4px var(--lwb-gold-soft,#fff3c4)}
+    .po-journey li.stop .dot {background:#c62828}
+    .po-journey b {display:block;color:#1f2a37;font-size:12.5px}
+    .po-journey small {display:block;overflow-wrap:anywhere}
+
     /* Phone: PO list as cards, review popup full screen, SKU lines as cards. */
     @media (max-width: 640px) {
       .page-title {margin-bottom:12px}
@@ -752,6 +778,16 @@
       .po-range .ps-dates input {font-size:13px;min-width:0;flex:1;width:0}
       #poExcelBtn {flex:none;padding:9px 10px}
       .po-foot {background:#fff;border:1px solid #e4e4e4;border-radius:10px}
+      .po-selbar {position:fixed;top:auto;left:10px;right:10px;bottom:calc(84px + env(safe-area-inset-bottom,0px));z-index:60;font-size:13px;
+        box-shadow:0 8px 24px rgba(0,47,55,.22);margin:0}
+      #ordersArea tbody tr.row-picked {background:var(--lwb-gold-soft,#fffbea);border-color:var(--lwb-gold,#e0c060)}
+      #ordersArea tbody tr.row-picked td {background:none!important}
+      .po-selbar .sp {display:none}
+      .po-selbar #poSelText {flex:1 1 100%}
+      .po-selbar .btn {flex:1;padding:10px 6px;font-size:12.5px}
+      .po-journey {grid-template-columns:1fr;gap:0;padding:10px 12px}
+      .po-journey li {padding:0 0 12px 32px;min-height:34px}
+      .po-journey li::before {top:22px;bottom:0;left:10px;right:auto;width:2px;height:auto}
 
       .table-card {background:none;border:0;overflow:visible}
       .table-card .empty,.table-card .loading {background:#fff;border:1px solid #e4e4e4;border-radius:10px}
@@ -1033,6 +1069,14 @@
     </section>
     <div class="po-range-note" id="listRangeNote"></div>
 
+    <div class="po-selbar" id="poSelBar" hidden>
+      <span id="poSelText"></span>
+      <span class="sp"></span>
+      <button type="button" class="btn btn-blue" id="bulkApproveBtn" onclick="bulkApprove()">✔ Approve selected</button>
+      <button type="button" class="btn btn-light" id="bulkPrintBtn" onclick="bulkPrint()">🖨 Print selected</button>
+      <button type="button" class="btn btn-light" onclick="clearSelection()">✖ Clear</button>
+    </div>
+
     <section class="table-card">
       <div id="ordersArea" class="loading">
         Loading orders...
@@ -1110,6 +1154,8 @@
           </div>
 
         </div>
+
+        <ol class="po-journey" id="poJourney" aria-label="PO journey"></ol>
 
         <h4 class="section-title">SKU Verification & Modification</h4>
         <small class="warehouse-sku-hint" id="warehouseSkuHint"></small>
@@ -1934,6 +1980,166 @@ async function exportPoExcel() {
 
 
 /* -----------------------------
+   SELECT MANY POs: approve / print together (2 Nov 2026)
+   Approve uses the same approveOrder() as the popup, one PO at a time, as ordered.
+----------------------------- */
+
+const pickedIds = new Set();
+let bulkBusy = false;
+
+function togglePick(id, on) {
+  on ? pickedIds.add(id) : pickedIds.delete(id);
+  document.querySelectorAll(`#ordersArea input.po-sel[data-id="${id}"]`).forEach(box => box.closest("tr")?.classList.toggle("row-picked", on));
+  const page = document.querySelectorAll("#ordersArea input.po-sel[data-id]");
+  const all = document.getElementById("pickPage");
+  if (all) all.checked = page.length > 0 && [...page].every(box => box.checked);
+  renderSelBar();
+}
+
+function pickPage(on) {
+  document.querySelectorAll("#ordersArea input.po-sel[data-id]").forEach(box => {
+    box.checked = on;
+    togglePick(box.dataset.id, on);
+  });
+}
+
+function clearSelection() {
+  pickedIds.clear();
+  renderOrders();
+}
+
+function pickedOrders() {
+  return [...pickedIds].map(id => orders.find(o => o.id === id)).filter(Boolean);
+}
+
+function renderSelBar() {
+  const bar = document.getElementById("poSelBar");
+  const list = pickedOrders();
+  if (!list.length) { bar.hidden = true; return; }
+  const sum = key => list.reduce((t, o) => t + (Number(o[key]) || 0), 0);
+  bar.hidden = false;
+  document.getElementById("poSelText").textContent =
+    `☑ ${list.length} PO selected · ${formatNumber(sum("total_qty"))} CS · ${formatMoney(sum("total_amount"))} · ${formatNumber(sum("total_weight"))} KG`;
+  const approveBtn = document.getElementById("bulkApproveBtn");
+  const allPending = list.every(isPending);
+  approveBtn.disabled = bulkBusy || !allPending;
+  approveBtn.title = allPending ? "" : "Only Pending Review POs can be approved together";
+  document.getElementById("bulkPrintBtn").disabled = bulkBusy || list.some(isCancelled);
+}
+
+async function bulkApprove() {
+  const list = pickedOrders();
+  if (!list.length || bulkBusy) return;
+  if (!list.every(isPending)) { alert("Only Pending Review POs can be approved together."); return; }
+  if (!await confirm("Approve " + list.length + " PO as ordered (no SKU, rate or qty change)?\n\n" +
+    list.map(o => o.order_no + " · " + (o.customer_name || "")).join("\n") +
+    "\n\nTo change a PO, open it with Review instead.", { title: "Approve selected POs", ok: "✔ Approve " + list.length })) return;
+  bulkBusy = true;
+  renderSelBar();
+  const done = [], failed = [];
+  try {
+    for (const [i, order] of list.entries()) {
+      showMessage("Approving " + (i + 1) + " of " + list.length + ": " + order.order_no + "...", "success");
+      await reviewOrder(order.id);
+      const ok = reviewReady && selectedOrder?.id === order.id && isPending(selectedOrder) && await approveOrder({ quiet: true });
+      (ok ? done : failed).push(order.order_no);
+      if (!ok) break;
+    }
+  } finally {
+    bulkBusy = false;
+    closeModal();
+    pickedIds.clear();
+    await loadOrders();
+  }
+  const left = list.length - done.length - failed.length;
+  showMessage(done.length + " PO approved" + (done.length ? ": " + done.join(", ") : "") +
+    (failed.length ? ". Stopped at " + failed[0] + (left ? " (" + left + " not tried)" : "") + ". Open it with Review." : "."),
+    failed.length ? "error" : "success");
+}
+
+async function bulkPrint() {
+  const list = pickedOrders();
+  if (!list.length || bulkBusy) return;
+  bulkBusy = true;
+  renderSelBar();
+  const parts = [];
+  try {
+    for (const [i, order] of list.entries()) {
+      showMessage("Preparing print " + (i + 1) + " of " + list.length + ": " + order.order_no + "...", "success");
+      await reviewOrder(order.id);
+      if (!reviewReady || selectedOrder?.id !== order.id || !await printApprovedPO("po", parts)) break;
+    }
+  } finally {
+    bulkBusy = false;
+    closeModal();
+    renderSelBar();
+  }
+  if (parts.length !== list.length) {
+    showMessage("Print stopped: " + parts.length + " of " + list.length + " PO ready. Check the PO that failed.", "error");
+    return;
+  }
+  const area = document.getElementById("poPrintArea");
+  area.className = "po-a5";
+  area.innerHTML = parts.map(html => '<div class="po-bulk-page">' + html + "</div>").join("");
+  document.body.appendChild(area);
+  showMessage(list.length + " PO sent to print.", "success");
+  window.print();
+}
+
+
+/* -----------------------------
+   PO JOURNEY: made → approved → transport → loading → loaded → delivered
+----------------------------- */
+
+async function renderJourney(order) {
+  const box = document.getElementById("poJourney");
+  const id = order.id;
+  const draw = a => {
+    if (selectedOrder?.id !== id) return;
+    a = a || {};
+    const when = v => v ? escapeHtml(formatDateTime(v)) : "";
+    const took = (from, to) => {
+      if (!from || !to) return "";
+      const h = (new Date(to) - new Date(from)) / 3600000;
+      return Number.isFinite(h) && h >= 0 ? " · " + (h < 1 ? Math.round(h * 60) + " min" : h < 48 ? h.toFixed(1) + " hrs" : Math.round(h / 24) + " days") : "";
+    };
+    const made = order.created_at || order.order_date;
+    const delivered = deliveredOrders.get(id) || (isDeliveredOrder(order) ? order.delivered_at || order.updated_at : null);
+    const status = normalizedStatus(order);
+    const reached = {
+      approved: !isPending(order) && !isCancelled(order) || !!order.approved_at,
+      transport: !!(a.assigned_at || a.driver_name || a.vehicle_no),
+      loading: !!a.loading_started_at || ["loading", "loaded", "invoiced", "dispatched"].includes(status),
+      loaded: !!a.loading_completed_at || ["loaded", "invoiced", "dispatched"].includes(status),
+      delivered: !!delivered
+    };
+    const steps = [
+      { k: "made", t: "PO made", s: when(made) + (order.sales_person ? " · " + escapeHtml(order.sales_person) : ""), on: true },
+      { k: "approved", t: "Approved", s: when(order.approved_at) + took(made, order.approved_at), on: reached.approved },
+      { k: "transport", t: "Transport assigned", s: [when(a.assigned_at), a.vehicle_no, a.driver_name, a.loading_person && "Godown: " + a.loading_person].filter(Boolean).map(v => escapeHtml(String(v))).join(" · "), on: reached.transport },
+      { k: "loading", t: "Loading started", s: when(a.loading_started_at), on: reached.loading },
+      { k: "loaded", t: "Vehicle loaded", s: when(a.loading_completed_at), on: reached.loaded },
+      { k: "delivered", t: "Delivered", s: when(delivered) + took(made, delivered), on: reached.delivered }
+    ];
+    if (isCancelled(order)) {
+      const at = steps.findIndex(step => !step.on);
+      steps.splice(at < 0 ? steps.length : at, steps.length,
+        { k: "cancelled", t: "Cancelled", s: when(order.cancelled_at) + (order.cancel_reason ? " · " + escapeHtml(order.cancel_reason) : ""), on: true, stop: true });
+    }
+    const next = steps.findIndex(step => !step.on);
+    box.innerHTML = steps.map((step, i) =>
+      `<li class="${step.stop ? "stop" : step.on ? "done" : i === next ? "now" : ""}"><span class="dot">${step.stop ? "✕" : step.on ? "✓" : i + 1}</span>` +
+      `<b>${step.t}</b><small>${step.s || (i === next ? "Waiting" : "")}</small></li>`).join("");
+  };
+  draw(null);
+  if (isPending(order) || isCancelled(order) && !order.approved_at) return;
+  const { data, error } = await db.from("dispatch_assignments").select("*").eq("order_id", id).maybeSingle();
+  if (error) { console.warn("Journey: transport not loaded", error); return; }
+  draw(data);
+}
+
+
+/* -----------------------------
    STATUS HELPERS
 ----------------------------- */
 
@@ -2003,6 +2209,7 @@ function updateStats() {
 ----------------------------- */
 
 function pickStatusFilter(value) {
+  if (document.getElementById("statusFilter").value !== value) pickedIds.clear();
   document.getElementById("statusFilter").value = value;
   listPage = 1;
   renderOrders();
@@ -2034,8 +2241,10 @@ function renderOrders() {
   const pages = Math.max(1, Math.ceil(filtered.length / LIST_PAGE_SIZE));
   if (listPage > pages) listPage = pages;
   renderListFoot(filtered, pages);
+  [...pickedIds].forEach(id => { if (!orders.some(o => o.id === id)) pickedIds.delete(id); });
 
   if (!filtered.length) {
+    renderSelBar();
 
     area.className = "empty";
 
@@ -2055,7 +2264,8 @@ function renderOrders() {
 
       <thead>
         <tr>
-          <th>Order No</th>
+          <th><input type="checkbox" class="po-sel" id="pickPage" onchange="pickPage(this.checked)"
+            ${pageOrders.every(o => pickedIds.has(o.id)) ? "checked" : ""} aria-label="Select all on this page">Order No</th>
           <th>Date</th>
           <th>Customer</th>
           <th style="text-align:right">Lines</th>
@@ -2073,10 +2283,12 @@ function renderOrders() {
 
         ${pageOrders.map(order => `
 
-          <tr class="${isLateApproval(order) || isLateDelivery(order) ? "row-late" : orderPriority(order) === "URGENT" ? "row-urgent" : ""}">
+          <tr class="${isLateApproval(order) || isLateDelivery(order) ? "row-late" : orderPriority(order) === "URGENT" ? "row-urgent" : ""}${pickedIds.has(order.id) ? " row-picked" : ""}">
 
             <td class="order-no c-no">
-              ${escapeHtml(order.order_no || "-")}${priorityBadge(order)}
+              <input type="checkbox" class="po-sel" data-id="${order.id}" ${pickedIds.has(order.id) ? "checked" : ""}
+                onclick="event.stopPropagation()" onchange="togglePick('${order.id}', this.checked)"
+                aria-label="Select ${escapeHtml(order.order_no || "")}">${escapeHtml(order.order_no || "-")}${priorityBadge(order)}
             </td>
 
             <td class="c-date">
@@ -2145,6 +2357,7 @@ function renderOrders() {
   `;
 
   loadOrderLines(pageOrders);
+  renderSelBar();
 
 }
 
@@ -2187,6 +2400,8 @@ async function reviewOrder(orderId, transportOnly=false) {
 
   document.getElementById("dStatus").textContent =
     selectedOrder.status || "Pending";
+
+  renderJourney(selectedOrder);
 
   renderPriorityPick();
 
@@ -2709,7 +2924,7 @@ async function printFromList(id){
   await reviewOrder(id);
   if(selectedOrder&&selectedOrder.id===id&&reviewReady)await printApprovedPO();
 }
-async function printApprovedPO(documentType="challan"){
+async function printApprovedPO(documentType="challan",collect=null){
   const isPo=documentType==="po";
   if(!reviewReady||!selectedOrder||isCancelled(selectedOrder)||(!isPo&&!eligibleForPoPrint(selectedOrder))){
     alert(isPo?"Open a saved PO before printing.":"Approve the PO before printing.");
@@ -2818,6 +3033,7 @@ async function printApprovedPO(documentType="challan"){
         : "")+
       "<p class='po-print-footer'>"+(isPo?"PO copy from saved records. Printed "+safe(formatDateTime(new Date().toISOString()))+". Reprint after any changes.":"Internal delivery challan.")+" Not a GST invoice; the Tally bill is separate.</p>";
     // The ERP shell wraps the page in .erp-main; print CSS shows only direct body children, so lift the print area out.
+    if(collect){collect.push(printArea.innerHTML);return true;}
     document.body.appendChild(document.getElementById("poPrintArea"));
     window.print();
   }catch(e){
