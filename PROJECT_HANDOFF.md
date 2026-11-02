@@ -4,6 +4,11 @@
 **Purpose:** Continue the same ERP project from a new ChatGPT conversation without restarting or losing the agreed requirements.
 **Status:** Active development / verification. Do not assume all modules are completed or fully tested.
 
+## Dashboard top bar in one line (2 Nov 2026)
+
+- Mohit: search, My Tasks, Give task and Post banner were big blocks pushing the Business Overview down. Now one line on `dashboard.html` (all roles): search box + "📋 My Tasks" (count badge, red when one is overdue) + "+ Give task" + "+ Post banner". The task list opens only when "My Tasks" is pressed (closed on every page load); the banner form still opens below on "+ Post banner". Phone: search on top, the 3 buttons in one row. No SQL.
+- Brand pick on the role dashboard (Admin / Sales Head) is now a dropdown (`#rdBrand`, All brands / each company) right next to the "Admin view" dropdown in the page head, instead of the chips row (`brandPick()` in role-dashboard.js; same `lwbBrand` saved choice). Other pages keep their chips.
+
 ## Admin Business Overview on the Dashboard (2 Nov 2026)
 
 - Mohit asked for a full business view on the Admin dashboard (sales / purchase register, SKU-wise, profit & loss, expenses, charts). 3 mockups were shown; Mohit picked design A. No SQL.

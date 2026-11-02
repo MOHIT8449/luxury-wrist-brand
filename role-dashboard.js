@@ -291,8 +291,22 @@
     if(v&&home&&box.contains(v))home.prepend(v);
     box.innerHTML=html;
     if(window.ERPList)box.querySelectorAll("[data-list]").forEach(el=>ERPList.card(el,()=>{const m=LISTS.get(el.dataset.list);return m&&m()},el.classList.contains("rd-step")?false:undefined));
-    if(BRAND_ROLES.includes(ROLE)&&BR.list.length>1&&window.LWBBrand&&box.querySelector(".rd-kpis,#bzDash"))box.prepend(LWBBrand.chips(BR.list,BR.id,()=>render()));
+    brandPick(BRAND_ROLES.includes(ROLE)&&BR.list.length>1&&!!window.LWBBrand&&!!box.querySelector(".rd-kpis,#bzDash"));
     const s=document.getElementById("rdSide");if(v&&s)s.prepend(v);
+  }
+  // Brand pick: a dropdown right next to the "Admin view" dropdown in the page head (Mohit, 2 Nov 2026; was chips).
+  function brandPick(show){
+    let sel=document.getElementById("rdBrand");
+    if(!show){if(sel)sel.hidden=true;return}
+    if(!sel){
+      sel=document.createElement("select");sel.id="rdBrand";sel.className="rd-view rd-brand";sel.setAttribute("aria-label","Brand");
+      sel.onchange=()=>{LWBBrand.set(sel.value);render()};
+      const head=document.querySelector("#dashboard .erp-pagehead"),view=head&&head.querySelector(".rd-view:not(#rdBrand)"),grow=head&&head.querySelector(".grow");
+      if(view)view.after(sel);else if(grow)grow.after(sel);else box.prepend(sel);
+    }
+    const want=[["","All brands"]].concat(BR.list.map(c=>[c.id,c.name]));
+    if(sel.options.length!==want.length||want.some((w,i)=>sel.options[i].value!==String(w[0])))sel.replaceChildren(...want.map(w=>new Option(w[1],w[0])));
+    sel.value=BR.id||"";sel.hidden=false;
   }
   function shell(kpis,main,side){
     return ('<div class="rd-kpis'+(kpis.length>5?" rd-k6":"")+'">'+kpis.join("")+'</div><div class="rd-grid"><div class="rd-col">'+main.filter(Boolean).join("")+'</div><div class="rd-col" id="rdSide">'+side.filter(Boolean).join("")+"</div></div>");
