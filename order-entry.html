@@ -156,7 +156,8 @@ body.show-landing table{min-width:1420px}
 .step:hover{background:#fde2e2}
 .out-cell{text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
 .pos{color:#12632f;font-weight:700}.neg{color:#b3261e;font-weight:700}
-tr.below-landing td{background:#fff1f0}
+tr.below-landing td,tr.below-min td{background:#fff1f0}
+tr.below-min .rate{border-color:#c8102e;color:#c8102e;font-weight:700}
 .mgr-col{display:none}
 body.show-landing .mgr-col{display:table-cell}
 body.show-landing .summary-row.mgr-col{display:flex}
@@ -1725,8 +1726,14 @@ function headCreatesApprovedPo(){
 }
 // Where a submitted PO is listed: Sales Head / Admin see the approval list, a Salesman his own orders.
 function poListUrl(){return headCreatesApprovedPo()?"warehouse-orders.html":"my-sales.html#orders";}
+function isAdminLogin(){ return String(currentProfile?.loginRole||currentProfile?.role||"").trim().toLowerCase() === "admin"; }
+// Rajnigandha lines below the Admin's min rate: the slip waits for Admin's rate OK (Admin himself is not stopped).
+function belowMinLines(items){
+  if(isAdminLogin()) return [];
+  return items.filter(i => { const l = saleLimits.get(skuKey(i.sku_name)); return l && l.min != null && number(i.rate) < l.min && quickCompany(skuCompanyId(i.sku_name)); });
+}
 function newOrderButtonLabel(){
-  if(pickedBrand()?.quick_slip === true) return "Save & Print Slip";
+  if(pickedBrand()?.quick_slip === true) return document.querySelector("#itemsBody tr.below-min") && !isAdminLogin() ? "Send to Admin for rate OK" : "Save & Print Slip";
   return headCreatesApprovedPo()?"Save & Approve PO":"Submit to Warehouse Manager";
 }
 
@@ -2187,16 +2194,27 @@ async function saveOrder(){
       const r = await createPoRecord(split.other, base);
       createdOrder = r.order; made.push({...r, slip:false});
     }
-    let slipOrder = null, slipNote = "", slipDone = false;
+    let slipOrder = null, slipNote = "", slipDone = false, rateWaiting = false;
     if(split.slip.length){
       try{
         // Slip PO: no transport / pallet, the driver + vehicle are on the slip.
         const r = await createPoRecord(split.slip.map(i => { const x = {...i}; delete x.entry_uom; delete x.ordered_pallet_qty; delete x.cases_per_pallet_snapshot; return x; }),
           {...base, transportation:""});
         slipOrder = r.order; made.push({...r, slip:true});
-        const {error:slipError} = await db.rpc("lwb_quick_slip_dispatch",{p_order_id:slipOrder.id,p:slipDetails});
+        let slipError = null;
+        if(belowMinLines(split.slip).length){
+          const {error} = await db.rpc("lwb_rate_request",{p_order_id:slipOrder.id,p:slipDetails,p_note:null});
+          if(error) slipNote = "\n\nNot sent to Admin: " + (/lwb_rate_request/.test(error.message || "") ? "ask Admin to run lwb_rajni_rate_limit_setup.sql." : (error.message || "database error"));
+          else { rateWaiting = true; slipNote = "\n\nRate is below the allowed min, so this PO is sent to Admin for rate OK. The slip is made and goes to Accounts when Admin approves."; }
+        }else{
+          ({error:slipError} = await db.rpc("lwb_quick_slip_dispatch",{p_order_id:slipOrder.id,p:slipDetails}));
+          if(slipError && /RATE_BELOW_MIN/.test(slipError.message || "")){
+            const {error} = await db.rpc("lwb_rate_request",{p_order_id:slipOrder.id,p:slipDetails,p_note:null});
+            if(!error){ slipError = null; rateWaiting = true; slipNote = "\n\nRate is below the allowed min, so this PO is sent to Admin for rate OK. The slip is made and goes to Accounts when Admin approves."; }
+          }
+        }
         if(slipError) slipNote = "\n\nSlip not made: " + (/lwb_quick_slip/.test(slipError.message || "") ? "ask Admin to run lwb_quick_slip_setup.sql." : (slipError.message || "database error")) + "\nOpen Rajnigandha Slips to enter driver & vehicle again.";
-        else slipDone = true;
+        else if(!slipNote) slipDone = true;
       }catch(error){
         if(!made.length) throw error;
         slipNote = "\n\n" + slipName + " PO could not be saved: " + (error.message || "Unknown error") + "\nMake it again as a separate order.";
@@ -2220,7 +2238,7 @@ async function saveOrder(){
       priorityNote
     );
 
-    saveBtn.textContent = slipDone && !createdOrder ? "Slip Made" : headCreatesApprovedPo() ? "PO Approved" : "Order Submitted";
+    saveBtn.textContent = rateWaiting && !createdOrder ? "Sent to Admin" : slipDone && !createdOrder ? "Slip Made" : headCreatesApprovedPo() ? "PO Approved" : "Order Submitted";
     const list = document.getElementById("savedPoList");
     list.href = poListUrl();
     document.getElementById("savedPoPrint").hidden = true;
@@ -2371,7 +2389,8 @@ let partyRates = new Map();      // SKU key -> {rate, order_no, order_date}
 let partyRatesFor = "";
 let landingBySku = new Map();    // SKU key -> rate pack (Admin / Sales head only)
 let rateSettings = null;
-let mepdSchemes = [];            // MEPD % by SKU category and date (Rate & Scheme > MEPD Scheme)
+let mepdSchemes = [];
+let saleLimits = new Map();      // SKU key -> {min, std}: Rajnigandha Rate List (lwb_rajni_rate_limit_setup.sql), no landing            // MEPD % by SKU category and date (Rate & Scheme > MEPD Scheme)
 
 const skuKey = value => String(value || "").trim().toUpperCase();
 const r2 = v => Math.round(+(v*100).toFixed(6))/100;
@@ -2390,6 +2409,10 @@ async function loadRates(){
     note.hidden = false;
     note.textContent = "Slab rate is not set yet (Rate & Scheme). Enter the rate manually.";
   }
+  try{
+    const {data,error} = await db.rpc("lwb_sale_rates");
+    if(!error) saleLimits = new Map((data || []).map(x => [skuKey(x.sku_key), {min:x.min_rate == null ? null : number(x.min_rate), std:x.std_rate == null ? null : number(x.std_rate)}]));
+  }catch(error){ saleLimits = new Map(); }
   const role = String(currentProfile?.role || "").trim().toLowerCase();
   if(!["admin","manager"].includes(role)) return;
   try{
@@ -2512,14 +2535,20 @@ function applyRates(){
     const last = partyRates.get(key);
     const slabRate = slabRateFor(key, slab);
     const lastRate = last ? partyRateNow(last, key) : null;
-    const auto = last ? lastRate : slabRate;
+    const lim = saleLimits.get(key);
+    const auto = last ? lastRate : (slabRate ?? lim?.std ?? null);
     if(row.dataset.hand !== "1" && auto != null && document.activeElement !== rateInput && rateInput.value !== String(auto)){
       rateInput.value = String(auto);
       refreshRowAmounts(row);
     }
     if(last) usedLast = true;
     const rate = number(rateInput.value);
-    if(row.dataset.hand === "1" && slabRate != null && rateInput.value !== "" && rate < slabRate){
+    const lowMin = lim && lim.min != null && rateInput.value !== "" && rate < lim.min;
+    row.classList.toggle("below-min", !!lowMin);
+    if(lowMin){
+      hint.textContent = "Rate below allowed (min ₹" + formatNumber(lim.min) + ")" + (isAdminLogin() ? "" : ". Admin approval needed.");
+      hint.className = "rate-hint warn";
+    }else if(row.dataset.hand === "1" && slabRate != null && rateInput.value !== "" && rate < slabRate){
       hint.textContent = "Below slab rate ₹" + formatNumber(slabRate);
       hint.className = "rate-hint warn";
     }else if(last){
@@ -2538,6 +2567,8 @@ function applyRates(){
       hint.className = "rate-hint";
     }
   });
+  const sb = document.getElementById("saveBtn");
+  if(sb && !sb.disabled && !editOrder && /Save & Print Slip|Send to Admin/.test(sb.textContent)) sb.textContent = newOrderButtonLabel();
   document.getElementById("slabWhy").textContent =
     (document.getElementById("rateSlab").value === "auto" ? "→ " : "") + why +
     (usedLast ? " · SKUs with a previous bill use the last billed rate" : "");

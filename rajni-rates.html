@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Rajnigandha Rate List | Luxury Wrist Brand ERP</title>
+  <script src="erp-date.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <link rel="stylesheet" href="erp-shell.css">
+  <link rel="stylesheet" href="sales.css">
+  <script src="erp-shell.js"></script>
+  <script src="sales-common.js"></script>
+  <style>
+    /* Rajnigandha rate list (lwb_rajni_rate_limit_setup.sql): Admin sets landing, min and std sale rate per box. */
+    .rr-wrap{display:grid;grid-template-columns:minmax(0,1fr) 240px;gap:10px;align-items:start}
+    .rr-card{background:#fff;border:1px solid var(--erp-line,#dfe4ea);border-radius:8px;padding:10px 12px;min-width:0}
+    .rr-card h2{font-size:14px;margin:0 0 6px}
+    .rr-tools{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:8px}
+    .rr-tools input[type=search]{height:32px;border:1px solid var(--erp-line,#d6dde6);border-radius:6px;padding:0 8px;font:inherit;font-size:13px;width:220px;max-width:100%}
+    .rr-tag{display:inline-block;font-size:11px;font-weight:700;padding:1px 8px;border-radius:10px;background:#fff3e0;color:#9a5b00}
+    .rr-tag.red{background:#fdecef;color:#b3263f}.rr-tag.grn{background:#e6f4ec;color:#13824a}
+    .rr-list{width:100%;border-collapse:collapse;font-size:13px}
+    .rr-list th{font-size:11.5px;text-align:left;color:#556;font-weight:600;padding:5px 6px;border-bottom:1px solid #e3e7ec;white-space:nowrap;background:#f7f8fa}
+    .rr-list td{padding:3px 6px;border-bottom:1px solid #eef1f4;vertical-align:middle}
+    .rr-list td.n,.rr-list th.n{text-align:right;white-space:nowrap}
+    .rr-list input{width:64px;height:30px;border:1.5px solid #e3e7ec;border-radius:5px;padding:0 6px;text-align:right;font:inherit;font-size:13.5px}
+    .rr-list input:focus{border-color:var(--erp-red,#c8102e);outline:none}
+    .rr-list tr.chg td{background:#fffaf0}
+    .rr-list input.bad{border-color:#c8102e;color:#c8102e}
+    .rr-list .sku{font-weight:600;overflow-wrap:anywhere;min-width:190px}
+    a.sl-btn.ghost,a.sl-btn.ghost:visited{text-decoration:none!important;color:#1f2a37!important;background:#fff;border:1px solid #d6dde6}
+    .g{color:#13824a;font-weight:700}.r{color:#c8102e;font-weight:700}.mut{color:#6b7785;font-size:12px}
+    .rr-scroll{max-height:calc(100vh - 210px);overflow:auto}
+    .rr-who{width:100%;border-collapse:collapse;font-size:13px}
+    .rr-who td{padding:5px 2px;border-bottom:1px solid #eef1f4}
+    .rr-who td small{display:block;color:#6b7785;font-size:11px}
+    .rr-who button{border:1px solid #d6dde6;background:#fff;color:#1f2a37;border-radius:14px;padding:3px 10px;font:600 12px inherit;cursor:pointer;white-space:nowrap}
+    .rr-who button[aria-pressed=true]{background:#c8102e;border-color:#c8102e;color:#fff}
+    @media(max-width:900px){.rr-wrap{grid-template-columns:minmax(0,1fr)}.rr-scroll{max-height:none}}
+    @media(max-width:640px){
+      .rr-list thead{display:none}
+      .rr-list tr{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:4px 6px;padding:7px 2px;border-bottom:1px solid #eef1f4}
+      .rr-list td{border:0;padding:0}.rr-list td.sku{grid-column:1/-1}.rr-list td.hide-m{display:none}
+      .rr-list td.n{text-align:left}.rr-list input{width:100%}
+      .rr-list td[data-l]::before{content:attr(data-l);display:block;font-size:10.5px;color:#6b7785;font-weight:600}
+      .rr-tools input[type=search]{width:100%}
+    }
+  </style>
+</head>
+<body>
+  <div id="loading" class="status">Checking account access...</div>
+  <main id="page" class="erp-main" hidden>
+    <div class="erp-pagehead"><h1>Rajnigandha Rate List<button type="button" class="erp-i" aria-label="Info" title="Info" data-tip="Landing = what the company charges us per box. Min sale = lowest rate a Salesman / Sales Head can give; below it the PO goes to Admin for rate OK before the slip is made. Std sale = rate filled by itself on the PO. Every change is kept in a date-wise history.">i</button></h1>
+      <span class="rr-tag">Only Admin sees Landing &amp; Profit</span><span class="grow" style="flex:1"></span><a class="sl-btn ghost small" href="quick-slip.html">Rajnigandha Slips</a></div>
+    <div id="status" class="sl-msg" hidden></div>
+    <div class="rr-wrap">
+      <div class="rr-card">
+        <div class="rr-tools"><input type="search" id="q" placeholder="Search SKU" aria-label="Search SKU"><span id="cnt" class="mut"></span><span style="flex:1"></span>
+          <span id="chgN" class="mut"></span><button type="button" class="sl-btn" id="save" disabled>💾 Save rates</button></div>
+        <div class="rr-scroll"><table class="rr-list"><thead><tr><th>SKU (per box)</th><th class="n hide-m">MRP</th><th class="n">Landing ₹</th><th class="n">Min sale ₹</th><th class="n">Std sale ₹</th><th class="n">Profit @ Min</th><th class="n">Profit @ Std</th><th>Changed</th></tr></thead><tbody id="rows"></tbody></table></div>
+      </div>
+      <div class="rr-card">
+        <h2>Who can see Landing &amp; Profit</h2>
+        <table class="rr-who"><tbody id="who"></tbody></table>
+        <p class="mut" style="margin:6px 0 0">Tap to show / hide for one person. Admin always sees it. Sales roles never see the landing unless ticked here.</p>
+      </div>
+    </div>
+  </main>
+  <script>
+    const S=LWBSales,{client,el,esc,fmt}=S;
+    const setupMsg="Run lwb_rajni_rate_limit_setup.sql first (it runs by itself when the PR is merged).";
+    const errText=e=>/lwb_price|lwb_sku_price/.test(e.message||"")&&/function|schema cache/.test(e.message||"")?setupMsg:(e.message||String(e));
+    const key=v=>String(v||"").trim().toUpperCase();
+    const money=n=>Number(n||0).toLocaleString("en-IN",{maximumFractionDigits:2});
+    const numOrNull=v=>{const t=String(v??"").trim();return t===""?null:Number(t)};
+    let skus=[],saved=new Map(),viewers=new Set();
+    function msg(t,bad){el("status").hidden=!t;el("status").textContent=t||"";el("status").className="sl-msg"+(bad?" error":"")}
+    const profitCell=(sale,land)=>sale==null||land==null?'<span class="mut">—</span>':'<span class="'+(sale-land<0?"r":"g")+'">₹'+money(sale-land)+'</span>';
+
+    function render(){
+      const q=key(el("q").value);
+      const list=skus.filter(s=>!q||key(s.sku_name).includes(q));
+      el("cnt").textContent=list.length+" SKU";
+      el("rows").innerHTML=list.map(s=>{
+        const k=key(s.sku_name),v=saved.get(k)||{};
+        const by=v.updated_at?esc(LWBDate.d(v.updated_at))+(v.updated_by?"<br>"+esc(v.updated_by):""):'<span class="rr-tag red">Not set</span>';
+        const inp=(f,l)=>'<td class="n" data-l="'+l+'"><input type="number" min="0" step="0.01" inputmode="decimal" data-k="'+esc(k)+'" data-f="'+f+'" value="'+(v[f]==null?"":esc(v[f]))+'" aria-label="'+l+' '+esc(s.sku_name)+'"></td>';
+        return '<tr data-k="'+esc(k)+'"><td class="sku">'+esc(s.sku_name)+'</td><td class="n hide-m">'+(s.mrp_per_case!=null?money(s.mrp_per_case):"")+'</td>'+
+          inp("landing","Landing ₹")+inp("min_rate","Min sale ₹")+inp("std_rate","Std sale ₹")+
+          '<td class="n" data-l="Profit @ Min" data-p="min"></td><td class="n" data-l="Profit @ Std" data-p="std"></td><td class="mut hide-m" style="font-size:11.5px">'+by+'</td></tr>';
+      }).join("")||'<tr><td colspan="8" class="mut">No Rajnigandha SKU found in SKU Master.</td></tr>';
+      document.querySelectorAll("#rows tr[data-k]").forEach(refreshRow);
+      countChanges();
+    }
+    function rowVals(tr){const o={};tr.querySelectorAll("input").forEach(i=>o[i.dataset.f]=numOrNull(i.value));return o}
+    function refreshRow(tr){
+      const v=rowVals(tr),old=saved.get(tr.dataset.k)||{};
+      tr.querySelector('[data-p="min"]').innerHTML=profitCell(v.min_rate,v.landing);
+      tr.querySelector('[data-p="std"]').innerHTML=profitCell(v.std_rate,v.landing);
+      tr.querySelector('[data-f="std_rate"]').classList.toggle("bad",v.std_rate!=null&&v.min_rate!=null&&v.std_rate<v.min_rate);
+      tr.querySelector('[data-f="min_rate"]').classList.toggle("bad",v.min_rate!=null&&v.landing!=null&&v.min_rate<v.landing);
+      tr.classList.toggle("chg",["landing","min_rate","std_rate"].some(f=>(old[f]==null?null:Number(old[f]))!==v[f]));
+    }
+    function countChanges(){const n=document.querySelectorAll("#rows tr.chg").length;el("chgN").textContent=n?n+" changed":"";el("save").disabled=!n}
+    el("rows").addEventListener("input",e=>{const tr=e.target.closest("tr");if(tr){refreshRow(tr);countChanges()}});
+    el("q").addEventListener("input",render);
+
+    el("save").onclick=async()=>{
+      const rows=[...document.querySelectorAll("#rows tr.chg")].map(tr=>({sku_key:tr.dataset.k,...rowVals(tr)}));
+      const bad=rows.find(r=>r.std_rate!=null&&r.min_rate!=null&&r.std_rate<r.min_rate);
+      if(bad){msg(bad.sku_key+": Std sale is below Min sale.",true);return}
+      el("save").disabled=true;el("save").textContent="Saving...";
+      const {data,error}=await client.rpc("lwb_price_limits_save",{p:rows});
+      el("save").textContent="💾 Save rates";
+      if(error){msg(errText(error),true);countChanges();return}
+      msg(data+" SKU rate"+(data===1?"":"s")+" saved. From now on PO below Min goes to Admin.");
+      await loadLimits();render();
+    };
+
+    async function loadLimits(){
+      const {data,error}=await client.rpc("lwb_price_limits_get");
+      if(error)throw error;
+      saved=new Map((data.rows||[]).map(r=>[r.sku_key,r]));viewers=new Set(data.viewers||[]);
+    }
+    async function loadWho(){
+      const {data,error}=await client.from("user_profiles").select("id,full_name,role,active").eq("active",true).order("full_name");
+      if(error){el("who").innerHTML='<tr><td class="mut">'+esc(error.message)+'</td></tr>';return}
+      const word={admin:"Admin",manager:"Sales Head",accounts:"Accounts",sales:"Salesman",salesman:"Salesman",warehouse:"Godown"};
+      const list=(data||[]).filter(p=>["admin","manager","accounts","sales","salesman","warehouse"].includes(String(p.role||"").toLowerCase()));
+      el("who").innerHTML=list.map(p=>{const r=String(p.role||"").toLowerCase();
+        return '<tr><td>'+esc(p.full_name||"—")+'<small>'+esc(word[r]||r)+'</small></td><td style="text-align:right">'+
+          (r==="admin"?'<span class="rr-tag grn">Always</span>':'<button type="button" data-u="'+esc(p.id)+'" aria-pressed="'+viewers.has(p.id)+'">'+(viewers.has(p.id)?"Showing":"Hidden")+'</button>')+'</td></tr>'}).join("");
+    }
+    el("who").addEventListener("click",async e=>{
+      const b=e.target.closest("button[data-u]");if(!b)return;
+      const on=b.getAttribute("aria-pressed")!=="true";b.disabled=true;
+      const {error}=await client.rpc("lwb_price_viewer_set",{p_user:b.dataset.u,p_on:on});
+      b.disabled=false;if(error){msg(errText(error),true);return}
+      on?viewers.add(b.dataset.u):viewers.delete(b.dataset.u);
+      b.setAttribute("aria-pressed",String(on));b.textContent=on?"Showing":"Hidden";
+    });
+
+    (async()=>{
+      const me=await S.start(["admin"]);if(!me)return;
+      el("loading").hidden=true;el("page").hidden=false;
+      try{
+        const [co,sk]=await Promise.all([client.from("lwb_companies").select("id,name,quick_slip"),client.from("sku_master").select("*").order("sku_name")]);
+        if(co.error)throw co.error;if(sk.error)throw sk.error;
+        const slipCo=new Set((co.data||[]).filter(c=>c.quick_slip===true).map(c=>c.id));
+        skus=(sk.data||[]).filter(s=>slipCo.has(s.company_id)&&s.is_active!==false);
+        await loadLimits();
+      }catch(e){msg(errText(e),true)}
+      render();loadWho();
+    })();
+  </script>
+</body>
+</html>
