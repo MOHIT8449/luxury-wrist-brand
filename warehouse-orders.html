@@ -9,6 +9,7 @@
   <script src="erp-date.js"></script><script src="erp-recent.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script><script src="page-role.js"></script>
   <script src="party-list.js" defer></script>
+  <script src="brand-filter.js"></script>
   <script src="erp-operations-notifications.js"></script>
 
   <style>
@@ -775,6 +776,72 @@
       .po-foot {padding:7px 10px}
     }
 
+    /* Brand filter + last 7 days trend graphs (2 Nov 2026) */
+    .toolbar select[hidden],.tr-filters select[hidden] {display:none}
+    /* Search + 3 filters + range + Excel in one line on a 1366 px screen */
+    @media (min-width: 641px) {
+      #poListView .toolbar {flex-wrap:nowrap}
+      #poListView .toolbar input#searchBox {min-width:100px;flex:1 1 100px}
+      #poListView .toolbar select {max-width:135px;min-width:0;flex:0 1 auto;padding:7px 4px}
+      .po-range {flex-wrap:nowrap;gap:6px}
+      .po-range .ps-chips button {padding:5px 8px}
+      .po-range .ps-dates {padding:3px 6px;gap:4px}
+      .po-range .ps-dates input {font-size:12.5px;width:112px}
+      #poExcelBtn {padding:7px 10px;white-space:nowrap}
+    }
+    @media (min-width: 641px) and (max-width: 1300px) {#poListView .toolbar {flex-wrap:wrap}}
+    .tr-head {display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between;margin:14px 0 8px}
+    .tr-head h4 {font-size:14px;color:#1f2a37}
+    .tr-head h4 small {display:block;font-size:11.5px;color:#6b7785;font-weight:400;margin-top:2px}
+    .tr-filters {display:flex;gap:6px;flex-wrap:nowrap;min-width:0}
+    .tr-filters select {padding:6px 8px;border:1px solid #d6dde6;border-radius:8px;font:inherit;font-size:13px;background:#fff;color:#1f2a37;min-width:0;max-width:200px}
+    .tr-wrap {display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+    .tr-card {background:#fff;border:1px solid #e3e7ec;border-radius:12px;padding:12px 14px 8px;min-width:0}
+    .tr-top {display:flex;justify-content:space-between;align-items:flex-start;gap:8px;flex-wrap:wrap}
+    .tr-top .lbl {font-size:11.5px;color:#6b7785;text-transform:uppercase;letter-spacing:.5px;font-weight:700}
+    .tr-top .big {font-size:20px;font-weight:800;color:#1f2a37;font-variant-numeric:tabular-nums;margin-top:2px}
+    .tr-top .big small {font-size:12px;color:#6b7785;font-weight:600;margin-left:4px}
+    .tr-badges {display:flex;gap:4px;flex-wrap:wrap;align-items:center}
+    .tr-badges:has(.tr-badge + .tr-badge)::before {content:"Today vs yesterday:";font-size:11px;color:#6b7785}
+    .tr-badge {font-size:12px;font-weight:700;border-radius:999px;padding:3px 9px;white-space:nowrap;background:#eef1f5;color:#4b5866}
+    .tr-badge.up {background:#e6f5ec;color:#13824a}
+    .tr-badge.down {background:#fdecec;color:#b42318}
+    .tr-legend {display:flex;gap:12px;font-size:11.5px;color:#4b5866;margin-top:6px}
+    .tr-legend i {display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:5px;vertical-align:-1px}
+    .tr-chart {display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:4px;margin-top:8px;position:relative}
+    .tr-chart::before {content:"";position:absolute;left:0;right:0;top:calc(18px + 104px);border-top:1px solid #d6dde6}
+    .tr-col {display:flex;flex-direction:column;align-items:center;min-width:0;position:relative;border-radius:8px;padding-bottom:2px}
+    .tr-col:hover {background:#f6f8fa}
+    .tr-val {font-size:11px;font-weight:700;color:#1f2a37;height:18px;line-height:18px;white-space:nowrap;font-variant-numeric:tabular-nums}
+    .tr-bars {height:104px;width:100%;display:flex;align-items:flex-end;justify-content:center;gap:2px}
+    .tr-bars i {display:block;width:min(30px,40%);border-radius:4px 4px 0 0;min-height:2px}
+    .tr-bars.two i {width:min(18px,30%)}
+    .tr-col.today .tr-day {color:#1f2a37;font-weight:800}
+    .tr-day {font-size:11px;color:#6b7785;margin-top:4px;white-space:nowrap}
+    .tr-chg {font-size:10.5px;font-weight:700;white-space:nowrap;color:#6b7785}
+    .tr-chg.up {color:#13824a}
+    .tr-chg.down {color:#b42318}
+    .tr-chg i {display:inline-block;width:7px;height:7px;border-radius:2px;margin-right:3px;vertical-align:0}
+    .tr-tip {display:none;position:absolute;bottom:calc(100% - 14px);left:50%;transform:translateX(-50%);z-index:5;background:#1f2a37;color:#fff;
+      font-size:11.5px;line-height:1.45;border-radius:7px;padding:6px 9px;white-space:nowrap;pointer-events:none;box-shadow:0 4px 12px rgba(0,0,0,.18)}
+    .tr-col:first-child .tr-tip {left:0;transform:none}
+    .tr-col:last-child .tr-tip {left:auto;right:0;transform:none}
+    .tr-col:hover .tr-tip {display:block}
+    .tr-empty {font-size:13px;color:#6b7785;padding:30px 0;text-align:center}
+    @media (max-width: 900px) {.tr-wrap {grid-template-columns:1fr}}
+    @media (max-width: 640px) {
+      #poListView .toolbar select {flex:1 1 0;min-width:0;font-size:13px;padding:8px 4px}
+      .tr-head {margin:10px 0 6px}
+      .tr-filters {width:100%}
+      .tr-filters select {flex:1 1 0;max-width:none;font-size:14px}
+      .tr-card {padding:10px 8px 6px}
+      .tr-top {padding:0 4px}
+      .tr-bars {height:96px}
+      .tr-chart::before {top:calc(18px + 96px)}
+      .tr-val {font-size:9.5px}
+      .tr-day,.tr-chg {font-size:9.5px}
+    }
+
     /* Dashboard / PO List switch */
     .po-title {display:flex;align-items:center;gap:14px;flex-wrap:wrap;min-width:0}
     .po-range-note:empty {display:none}
@@ -1117,6 +1184,19 @@
         </div>
       </div>
       <div class="po-sum-err" id="sumError" hidden></div>
+
+      <!-- Last 7 days trend: sales amount + quantity, day by day (2 Nov 2026, Mohit) -->
+      <div class="tr-head">
+        <h4>Last 7 Days Trend<small id="trRangeText"></small></h4>
+        <div class="tr-filters">
+          <select id="trBrand" onchange="syncFilter(this)" aria-label="Brand" hidden><option value="">All brands</option></select>
+          <select id="trSp" onchange="syncFilter(this)" aria-label="Sales person"><option value="">All sales persons</option></select>
+        </div>
+      </div>
+      <div class="tr-wrap">
+        <div class="tr-card" id="trAmt"><div class="tr-empty">Loading…</div></div>
+        <div class="tr-card" id="trQty"><div class="tr-empty">Loading…</div></div>
+      </div>
     </section>
 
     <div id="poListView">
@@ -1132,12 +1212,16 @@
         oninput="resetPageAndRender()"
       >
 
-      <select id="spFilter" onchange="resetPageAndRender()" aria-label="Sales person">
+      <select id="spFilter" onchange="syncFilter(this)" aria-label="Sales person">
         <option value="">All sales persons</option>
       </select>
 
       <select id="tpFilter" onchange="resetPageAndRender()" aria-label="Transportation">
         <option value="">All transport</option>
+      </select>
+
+      <select id="brFilter" onchange="syncFilter(this)" aria-label="Brand" hidden>
+        <option value="">All brands</option>
       </select>
 
       <div class="po-range">
@@ -1666,6 +1750,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     setupPoAutofill();
     pickSummaryRange("today", false);
+    await loadBrands();
     await Promise.all([loadOrders(), loadWarehouseSkuMaster(), VIEW_ONLY ? null : loadPoSavedDirectory()]);
     const pushOrder=new URLSearchParams(location.search).get('order');
     if(pushOrder){
@@ -1726,12 +1811,13 @@ async function loadOrders() {
     [...inRange, ...open].forEach(order => byId.set(order.id, order));
 
     orders = ERPRecent.sort([...byId.values()]);
-    await loadDeliveredOrders();
+    await Promise.all([loadDeliveredOrders(), brandPick() ? loadItemsFor(orders.map(o => o.id)) : null]);
 
     fillColumnFilters();
     updateStats();
     renderOrders();
     loadSummary();
+    loadTrend();
     listLoadedAt = new Date();
     document.getElementById("listUpdated").textContent =
       "⟳ Updated " + listLoadedAt.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "Asia/Kolkata" });
@@ -2022,6 +2108,220 @@ function fillColumnFilters() {
   fill("tpFilter", orders.map(o => o.transportation), "All transport");
 }
 
+/* -----------------------------
+   BRAND FILTER (Rajnigandha, Coca-Cola ...) + LAST 7 DAYS TREND (2 Nov 2026, Mohit)
+   An order's brand comes from its SKU lines (SKU Master company). The list shows a PO
+   when any line is of the picked brand; the graphs count only that brand's lines.
+----------------------------- */
+
+let brandList = [];
+let brandCompanies = [];
+let skuBrandMap = null;
+const orderItemsCache = new Map();
+const FILTER_PAIRS = { spFilter: "trSp", trSp: "spFilter", brFilter: "trBrand", trBrand: "brFilter" };
+
+function brandPick() {
+  return document.getElementById("brFilter").value;
+}
+
+async function loadBrands() {
+  if (!window.LWBBrand) return;
+  try {
+    const [info, map] = await Promise.all([LWBBrand.load(db), LWBBrand.skuMap(db)]);
+    skuBrandMap = map;
+    brandCompanies = info.companies || [];
+    const mine = Array.isArray(info.mine) && info.mine.length ? info.mine : null;
+    brandList = mine ? brandCompanies.filter(c => mine.includes(c.id)) : brandCompanies;
+  } catch (error) {
+    console.warn("Brands not loaded", error);
+    brandList = [];
+  }
+  // One brand only (or none set up): nothing to pick, the filter stays hidden.
+  ["brFilter", "trBrand"].forEach(id => {
+    const sel = document.getElementById(id);
+    sel.innerHTML = '<option value="">All brands</option>' +
+      brandList.map(c => `<option value="${escapeHtml(c.id)}">${escapeHtml(c.name)}</option>`).join("");
+    sel.hidden = brandList.length < 2 || !skuBrandMap;
+  });
+}
+
+function itemBrand(item) {
+  return (skuBrandMap && skuBrandMap.get(LWBBrand.skuKey(item.sku_name))) || "";
+}
+
+function matchesBrand(order, brand) {
+  if (!brand) return true;
+  const items = orderItemsCache.get(order.id);
+  if (!items) return false;
+  return items.some(item => itemBrand(item) === brand);
+}
+
+/* SKU lines of many orders, 150 ids per call, kept for the session. Also fills the Lines column. */
+async function loadItemsFor(ids) {
+  const need = [...new Set(ids)].filter(id => id && !orderItemsCache.has(id));
+  const chunks = [];
+  for (let i = 0; i < need.length; i += 150) chunks.push(need.slice(i, i + 150));
+  for (let i = 0; i < chunks.length; i += 4) {
+    await Promise.all(chunks.slice(i, i + 4).map(async part => {
+      const { data, error } = await db.from("order_items")
+        .select("order_id,sku_name,ordered_qty,approved_qty,rate,amount")
+        .in("order_id", part).limit(10000);
+      if (error) { console.warn("SKU lines not loaded", error); return; }
+      part.forEach(id => orderItemsCache.set(id, []));
+      (data || []).forEach(row => orderItemsCache.get(row.order_id)?.push(row));
+      part.forEach(id => orderLines.set(id, orderItemsCache.get(id).length));
+    }));
+  }
+}
+
+/* A filter changed on the list or on the dashboard: keep its twin the same, then redraw both. */
+async function syncFilter(el) {
+  const twin = document.getElementById(FILTER_PAIRS[el.id]);
+  if (twin) twin.value = [...twin.options].some(o => o.value === el.value) ? el.value : "";
+  if (el.id === "brFilter" || el.id === "trBrand") {
+    if (brandPick()) {
+      const area = document.getElementById("ordersArea");
+      if (orders.some(o => !orderItemsCache.has(o.id))) { area.className = "loading"; area.innerHTML = "Loading brand-wise orders..."; }
+      await loadItemsFor(orders.map(o => o.id));
+    }
+  }
+  resetPageAndRender();
+  renderTrend();
+}
+
+function istDay(v) {
+  if (!v) return "";
+  if (typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v.trim())) return v.trim();
+  const t = new Date(v);
+  return isNaN(t) ? "" : new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata", year: "numeric", month: "2-digit", day: "2-digit" }).format(t);
+}
+
+let trendOrders = [];
+let trendTicket = 0;
+
+async function loadTrend() {
+  const ticket = ++trendTicket;
+  try {
+    // 8 days: the 7 on the graph plus the day before, so day 1 also shows its rise / fall.
+    const rows = await fetchAllOrders(q => q.gte("order_date", istDate(-8)).lte("order_date", istDate() + "T23:59:59"));
+    if (ticket !== trendTicket) return;
+    trendOrders = rows.filter(o => !isCancelled(o));
+    await loadItemsFor(trendOrders.map(o => o.id));
+    if (ticket !== trendTicket) return;
+    const sel = document.getElementById("trSp");
+    const keep = sel.value;
+    const names = [...new Set([...trendOrders, ...orders].map(o => String(o.sales_person || "").trim()).filter(Boolean))]
+      .sort((a, b) => a.localeCompare(b));
+    sel.innerHTML = '<option value="">All sales persons</option>' +
+      names.map(v => `<option value="${escapeHtml(v)}">${escapeHtml(v)}</option>`).join("");
+    sel.value = names.includes(keep) ? keep : (names.includes(document.getElementById("spFilter").value) ? document.getElementById("spFilter").value : "");
+    renderTrend();
+  } catch (error) {
+    console.error(error);
+    ["trAmt", "trQty"].forEach(id => document.getElementById(id).innerHTML =
+      `<div class="tr-empty">Graph not loaded: ${escapeHtml(error.message || "database error")}</div>`);
+  }
+}
+
+function shortMoney(v) {
+  v = Math.round(number(v));
+  if (v >= 10000000) return "₹" + (v / 10000000).toFixed(2).replace(/\.?0+$/, "") + "Cr";
+  if (v >= 100000) return "₹" + (v / 100000).toFixed(2).replace(/\.?0+$/, "") + "L";
+  if (v >= 1000) return "₹" + (v / 1000).toFixed(1).replace(/\.0$/, "") + "K";
+  return "₹" + v;
+}
+
+function changeOf(now, before) {
+  if (!before && !now) return { css: "", text: "–" };
+  if (!before) return { css: "up", text: "▲ new" };
+  const pct = Math.round((now - before) * 100 / before);
+  if (pct === 0) return { css: "", text: "= 0%" };
+  return pct > 0 ? { css: "up", text: "▲ " + pct + "%" } : { css: "down", text: "▼ " + Math.abs(pct) + "%" };
+}
+
+function renderTrend() {
+  const amtBox = document.getElementById("trAmt");
+  if (!amtBox) return;
+  const brand = document.getElementById("trBrand").value;
+  const sp = document.getElementById("trSp").value;
+  const keys = [];
+  for (let i = -7; i <= 0; i++) keys.push(istDate(i));
+  const days = new Map(keys.map(k => [k, { amt: 0, cs: 0, box: 0, pos: 0 }]));
+  trendOrders.forEach(order => {
+    if (sp && String(order.sales_person || "").trim() !== sp) return;
+    const day = days.get(istDay(order.order_date || order.created_at));
+    if (!day) return;
+    const items = orderItemsCache.get(order.id) || [];
+    let hit = false;
+    if (!items.length) {
+      if (brand) return;
+      day.amt += number(order.total_amount);
+      day.cs += number(order.total_qty);
+      day.pos++;
+      return;
+    }
+    items.forEach(item => {
+      if (brand && itemBrand(item) !== brand) return;
+      const q = number(item.approved_qty == null ? item.ordered_qty : item.approved_qty);
+      const rate = number(item.rate);
+      day.amt += rate ? q * rate : number(item.amount);
+      const unit = window.LWBBrand && skuBrandMap ? LWBBrand.unitByName(item.sku_name, skuBrandMap, brandCompanies) : "CASE";
+      day[unit === "BOX" ? "box" : "cs"] += q;
+      hit = true;
+    });
+    if (hit) day.pos++;
+  });
+  const list = keys.map(k => ({ key: k, ...days.get(k) }));
+  const brandName = brand ? (brandList.find(c => c.id === brand) || {}).name : "All brands";
+  const first = new Date(keys[1] + "T00:00:00"), last = new Date(keys[7] + "T00:00:00");
+  const show = d => d.toLocaleDateString("en-IN", { day: "2-digit", month: "short" });
+  document.getElementById("trRangeText").textContent =
+    show(first) + " – " + show(last) + " · " + brandName + (sp ? " · " + sp : "") + " · cancelled POs not counted";
+
+  const hasBox = list.some(d => d.box), hasCs = list.some(d => d.cs) || !hasBox;
+  const qtySeries = [];
+  if (hasCs) qtySeries.push({ k: "cs", label: "Cases", color: "#1d5fbf", fmt: v => formatNumber(v) + " CS" });
+  if (hasBox) qtySeries.push({ k: "box", label: "Boxes", color: "#b26b00", fmt: v => formatNumber(v) + " BOX" });
+
+  amtBox.innerHTML = trendChart(list, "Sales Amount", [{ k: "amt", label: "Amount", color: "#00434d", fmt: v => formatMoney(v), short: shortMoney }]);
+  document.getElementById("trQty").innerHTML = trendChart(list, "Quantity", qtySeries);
+}
+
+function trendChart(list, title, series) {
+  const shown = list.slice(1);
+  const max = Math.max(1, ...series.flatMap(s => shown.map(d => d[s.k])));
+  const short = s => s.short || (v => formatNumber(v));
+  const total = series.map(s => `${short(s)(shown.reduce((t, d) => t + d[s.k], 0))}${s.short ? "" : " " + (s.k === "box" ? "BOX" : "CS")}`).join(" · ");
+  const today = list[7], yday = list[6];
+  const main = series[0];
+  const badge = series.map(s => {
+    const ch = changeOf(today[s.k], yday[s.k]);
+    return `<span class="tr-badge ${ch.css}" title="Today vs yesterday">${series.length > 1 ? s.label : "Today"} ${ch.text}${series.length > 1 ? "" : " vs yesterday"}</span>`;
+  }).join(" ");
+  const legend = series.length > 1
+    ? `<div class="tr-legend">${series.map(s => `<span><i style="background:${s.color}"></i>${s.label}</span>`).join("")}</div>` : "";
+  const cols = shown.map((d, i) => {
+    const prev = list[i];
+    const date = new Date(d.key + "T00:00:00");
+    const label = date.toLocaleDateString("en-IN", { weekday: "short" }) + " " + date.getDate();
+    const top = series.length > 1 ? series.map(s => formatNumber(d[s.k])).join("/") : short(main)(d[main.k]);
+    const tip = `<b>${date.toLocaleDateString("en-IN", { weekday: "long", day: "2-digit", month: "short" })}</b><br>` +
+      series.map(s => `${s.label}: ${s.fmt(d[s.k])} (${changeOf(d[s.k], prev[s.k]).text} vs day before)`).join("<br>") +
+      `<br>${d.pos} PO`;
+    return `<div class="tr-col${i === 6 ? " today" : ""}" tabindex="0" aria-label="${escapeHtml(tip.replace(/<[^>]+>/g, " "))}">
+      <span class="tr-val">${d[main.k] || (series[1] && d[series[1].k]) ? top : ""}</span>
+      <div class="tr-bars${series.length > 1 ? " two" : ""}">${series.map(s =>
+        `<i style="height:${d[s.k] ? Math.max(2, Math.round(d[s.k] * 100 / max)) : 0}%;background:${s.color}"></i>`).join("")}</div>
+      <span class="tr-day">${i === 6 ? "Today" : label}</span>
+      ${series.map(s => { const c = changeOf(d[s.k], prev[s.k]);
+        return `<span class="tr-chg ${c.css}">${series.length > 1 ? `<i style="background:${s.color}"></i>` : ""}${c.text}</span>`; }).join("")}
+      <span class="tr-tip">${tip}</span>
+    </div>`;
+  }).join("");
+  return `<div class="tr-top"><div><div class="lbl">${title} · 7 days</div><div class="big">${total}</div></div><div class="tr-badges">${badge}</div></div>
+    ${legend}<div class="tr-chart">${cols}</div>`;
+}
+
 /* One stage per order, in the order the PO moves. */
 function orderStage(order) {
   if (isCancelled(order)) return "cancelled";
@@ -2062,6 +2362,7 @@ function matchesColumnFilters(order) {
   const search = document.getElementById("searchBox").value.trim().toLowerCase();
   const sp = document.getElementById("spFilter").value;
   const tp = document.getElementById("tpFilter").value;
+  if (!matchesBrand(order, brandPick())) return false;
   if (sp && String(order.sales_person || "").trim() !== sp) return false;
   if (tp && String(order.transportation || "").trim() !== tp) return false;
   if (!search) return true;
