@@ -3,70 +3,124 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Purchase Register | Luxury Wrist Brand ERP</title>
+  <title>Purchase List | Luxury Wrist Brand ERP</title>
   <script src="erp-date.js"></script><script src="erp-recent.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <link rel="stylesheet" href="erp-shell.css">
   <script src="erp-shell.js"></script>
 <script src="erp-list.js"></script>
 <script src="erp-docs.js"></script>
+<script src="excel-io.js"></script>
   <style>
+    /* Purchase List (2 Nov 2026): like the PO / Sales List: tabs with counts, one-line toolbar, Excel.
+       Phone: each bill is a card, no left-right scroll. */
     .status{text-align:center;padding:80px 20px;font-size:15px;color:#555}
-    .pr-sub{margin:-8px 0 14px;color:var(--erp-muted);font-size:15px}
-    .pr-err{background:#ffebeb;color:#9b2020;padding:14px 16px;border-radius:8px;margin-bottom:14px;white-space:pre-wrap}
-    .pr-tools{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;padding:14px 16px}
-    .pr-tools label{display:block;font-size:13px;font-weight:600;color:#4b5763;margin-bottom:4px}
-    .pr-tools input{height:40px;border:1.5px solid var(--erp-line);border-radius:6px;padding:0 10px;font:inherit;font-size:15px}
-    .pr-tools .grow{flex:1;min-width:220px}.pr-tools .grow input{width:100%}
-    .pr-btn{height:40px;border-radius:6px;padding:0 16px;font-weight:600;font-size:15px;cursor:pointer;border:1px solid var(--erp-line);background:#fff;color:var(--erp-ink)}
-    .pr-kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-bottom:14px}
-    .pr-kpi{background:#fff;border:1px solid var(--erp-line);border-radius:8px;padding:14px}
-    .pr-kpi span{display:block;font-size:14px;color:#4b5763}.pr-kpi b{font-size:22px}
-    .pr-table{border-collapse:collapse;width:100%;font-size:15px}
-    .pr-table th,.pr-table td{border-bottom:1px solid var(--erp-line);padding:9px 12px;text-align:left;white-space:nowrap;vertical-align:top}
-    .pr-table th{background:#f6f7f9;font-size:14px;font-weight:700;color:#2b3440;position:sticky;top:0}
-    .pr-table .n{text-align:right}
-    .pr-table td small{display:block;color:var(--erp-muted);font-size:13px}
+    .pr-err{background:#ffebeb;color:#9b2020;padding:10px 12px;border-radius:8px;margin-bottom:10px;white-space:pre-wrap}
+    .pr-head-btns{display:flex;gap:8px;margin-left:auto}
+    .pr-head-btns a{display:inline-flex;align-items:center;height:36px;padding:0 12px;border-radius:6px;font-weight:600;font-size:14px;text-decoration:none;border:1px solid var(--erp-line);background:#fff;color:var(--erp-ink);white-space:nowrap}
+    .pr-head-btns a.main{background:var(--erp-red);border-color:var(--erp-red);color:#fff}
+    .pr-tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}
+    .pr-tab{display:inline-flex;align-items:center;gap:7px;background:#fff;border:1px solid var(--erp-line);border-radius:999px;padding:5px 5px 5px 12px;font:inherit;font-size:13.5px;font-weight:600;color:var(--erp-ink);cursor:pointer;white-space:nowrap}
+    .pr-tab b{min-width:24px;text-align:center;border-radius:999px;padding:2px 7px;font-size:12px;background:#eef0f3;color:#3b4652}
+    .pr-tab.warn b{background:#fff4e0;color:#b26b00}.pr-tab.bad b{background:#fdecef;color:#c8102e}
+    .pr-tab.zero{color:#8a96a3}
+    .pr-tab.on{background:var(--erp-red);border-color:var(--erp-red);color:#fff}.pr-tab.on b{background:#fff;color:var(--erp-ink)}
+    .pr-tools{display:flex;gap:8px;align-items:center;padding:10px 12px;border-bottom:1px solid var(--erp-line)}
+    .pr-tools input,.pr-tools select{height:36px;border:1px solid #cfd6de;border-radius:6px;padding:0 9px;font:inherit;font-size:14px;background:#fff;min-width:0}
+    .pr-tools #q{flex:1 1 200px}
+    .pr-table td.c-sup{min-width:120px;max-width:200px}.pr-table .c-rec,.pr-table tr.bill>td.c-rec{display:none}
+    .pr-inv{border:0;background:none;padding:0;font:inherit;font-weight:700;color:var(--erp-ink);cursor:pointer;text-align:left}.pr-inv:hover{color:var(--erp-red);text-decoration:underline}
+    body .erp-main .pr-inv{min-height:0!important;height:auto}.pr-table td.c-act{width:1%}.pr-tools #sup{flex:0 1 190px}
+    .pr-chips{display:flex;gap:4px;flex:none}
+    .pr-chips button,.pr-x{height:36px;border:1px solid #cfd6de;border-radius:6px;background:#fff;color:var(--erp-ink);font:inherit;font-size:13px;font-weight:600;padding:0 10px;cursor:pointer;white-space:nowrap}
+    .pr-chips button.on{background:#002f37;border-color:#002f37;color:#fff}
+    .pr-dates{display:flex;gap:4px;align-items:center;flex:none}.pr-dates input{width:132px}.pr-dates span{color:var(--erp-muted);font-size:13px}
+    .pr-kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin-bottom:10px}
+    .pr-kpi{background:#fff;border:1px solid var(--erp-line);border-radius:8px;padding:9px 12px}
+    .pr-kpi span{display:block;font-size:12.5px;color:#4b5763}.pr-kpi b{font-size:19px}
+    .pr-table{border-collapse:collapse;width:100%;font-size:14px;table-layout:auto}
+    .pr-table th,.pr-table td{border-bottom:1px solid var(--erp-line);padding:7px 9px;text-align:left;vertical-align:top}
+    .pr-table th{background:#f6f7f9;font-size:12px;font-weight:700;color:#2b3440;text-transform:uppercase;letter-spacing:.3px;white-space:nowrap}
+    .pr-table .n{text-align:right;white-space:nowrap}
+    .pr-table td small{display:block;color:var(--erp-muted);font-size:12.5px}
     .pr-table tfoot td{font-weight:800;background:#fafbfc}
-    .pr-table button{height:32px;padding:0 12px;border-radius:5px;border:1px solid var(--erp-line);background:#fff;color:var(--erp-ink);font:inherit;font-size:14px;font-weight:600;cursor:pointer;margin-right:4px}
-    .pr-table button.del{color:var(--erp-red);border-color:#f3c2ca}
-    .pr-table button:disabled{opacity:.45;cursor:not-allowed}
-    .pr-table tr.open td{background:#fff6f7}
-    .chk{display:inline-block;padding:3px 8px;border-radius:5px;font-size:13px;font-weight:700}
-    .chk.none{background:#f1f3f5;color:#5b6573}.chk.ok{background:#e4f6e9;color:#0d6b36}.chk.claim{background:#fee8e8;color:#9e2525}
-    .vf{background:#fbfbfc;padding:12px 14px 16px}
-    .vf table{border-collapse:collapse;width:100%;font-size:14px;margin:8px 0}
-    .vf th,.vf td{border:1px solid var(--erp-line);padding:5px 7px;background:#fff;white-space:nowrap}
-    .vf th{background:#f6f7f9;font-size:13px}
-    .vf td input{width:64px;height:32px;border:1.5px solid var(--erp-line);border-radius:5px;padding:0 6px;font:inherit;text-align:right}
+    .pr-table tr.open>td{background:#fff6f7}
+    .pr-acts{display:flex;gap:4px;flex-wrap:nowrap}
+    .pr-acts button{height:30px;padding:0 9px;border-radius:5px;border:1px solid var(--erp-line);background:#fff;color:var(--erp-ink);font:inherit;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap}
+    .pr-acts button.go{background:#13824a;border-color:#13824a;color:#fff}
+    .pr-acts button.task{border-color:#e8c98a;background:#fff8ea;color:#8a5a00}
+    .chk{display:inline-block;padding:2px 7px;border-radius:5px;font-size:12px;font-weight:700;white-space:nowrap}
+    .chk.none{background:#fff2dc;color:#b26b00}.chk.ok{background:#e4f6e9;color:#0d6b36}.chk.claim{background:#fee8e8;color:#9e2525}
+    .tg{display:inline-block;margin:2px 3px 0 0;padding:1px 6px;border-radius:4px;font-size:11.5px;font-weight:700;white-space:nowrap}
+    .tg.ok{background:#e4f6e9;color:#0d6b36}.tg.warn{background:#fff2dc;color:#b26b00}.tg.bad{background:#fdecef;color:#c8102e}.tg.task{background:#e5eefb;color:#1d5fbf}
+    .vf{background:#fbfbfc;padding:10px 12px 12px}
+    .vf-scroll{overflow-x:auto}
+    .vf table{border-collapse:collapse;width:100%;font-size:13.5px;margin:8px 0}
+    .vf th,.vf td{border:1px solid var(--erp-line);padding:4px 6px;background:#fff;white-space:nowrap}
+    .vf th{background:#f6f7f9;font-size:12.5px}
+    .vf td input{width:58px;height:32px;border:1.5px solid var(--erp-line);border-radius:5px;padding:0 6px;font:inherit;text-align:right}
     .vf .grp{text-align:center}
-    .vf .row{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap}
-    .vf .row label{display:block;font-size:13px;font-weight:600;color:#4b5763;margin-bottom:3px}
+    .vf .row{display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap}
+    .vf .row label{display:block;font-size:12.5px;font-weight:600;color:#4b5763;margin-bottom:3px}
     .vf .row input{height:36px;border:1.5px solid var(--erp-line);border-radius:6px;padding:0 9px;font:inherit}
-    .vf .btn{height:36px;border-radius:6px;padding:0 14px;font-weight:600;font-size:14px;cursor:pointer;border:1px solid var(--erp-line);background:#fff;color:var(--erp-ink)}
+    .vf .btns{display:flex;gap:6px;flex-wrap:nowrap;align-items:center;margin-top:8px}
+    .vf .btn{height:36px;border-radius:6px;padding:0 12px;font-weight:600;font-size:14px;cursor:pointer;border:1px solid var(--erp-line);background:#fff;color:var(--erp-ink);white-space:nowrap}
     .vf .btn.ok{background:#13824a;border-color:#13824a;color:#fff}.vf .btn.red{background:var(--erp-red);border-color:var(--erp-red);color:#fff}
-    .pr-items td{background:#fbfbfc;padding:0 12px 12px}
-    .pr-items table{border-collapse:collapse;width:100%;font-size:14px;margin-top:8px}
-    .pr-items th,.pr-items td td{border:1px solid var(--erp-line);padding:6px 9px;background:#fff}
-    @media(max-width:900px){.pr-kpis{grid-template-columns:1fr 1fr}}
+    .pr-items td{background:#fbfbfc;padding:0 9px 10px}
+    .pr-items table{border-collapse:collapse;width:100%;font-size:13.5px;margin-top:6px}
+    .pr-items th,.pr-items td td{border:1px solid var(--erp-line);padding:5px 8px;background:#fff}
+    .pr-more{display:flex;justify-content:center;padding:10px}
+    @media(max-width:1280px){.pr-dates input{width:122px}.pr-tools #sup{flex-basis:150px}}
+    @media(max-width:1100px){.pr-tools{flex-wrap:wrap}.pr-tools #q{flex-basis:100%}}
+    @media(max-width:760px){
+      .pr-kpis{grid-template-columns:1fr 1fr;gap:6px}.pr-kpi{padding:7px 10px}.pr-kpi b{font-size:16px}
+      .pr-tabs{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;padding-bottom:2px}.pr-tabs::-webkit-scrollbar{display:none}
+      .pr-tools{padding:8px}.pr-tools #sup{flex:1 1 100%}
+      .pr-dates{flex:1 1 0;min-width:0}.pr-dates input{min-width:0;padding:0 4px;font-size:13px}.pr-x{flex:none}.pr-dates input{flex:1;width:auto}
+      .pr-chips{flex:1 1 100%}.pr-chips button{flex:1;padding:0 4px}
+      .pr-head-btns a{height:34px;padding:0 10px;font-size:13px}
+      /* Each bill becomes a card */
+      .pr-table thead{display:none}
+      .pr-table,.pr-table tbody,.pr-table tfoot{display:block}
+      .pr-table tr.bill{display:grid;grid-template-columns:1fr auto;gap:2px 10px;padding:9px 10px;border-bottom:1px solid var(--erp-line)}
+      .pr-table tr.bill>td{display:block;border:0;padding:0}
+      .pr-table tr.bill>td.c-amt{grid-row:1}
+      .pr-table tr.bill>td.c-inv{grid-column:1;grid-row:1}
+      .pr-table tr.bill>td.c-sup{grid-column:1/-1}
+      .pr-table tr.bill>td.c-veh{grid-column:1}
+      .pr-table tr.bill>td.c-pcs{grid-column:2;text-align:right}
+      .pr-table tr.bill>td.c-amt{grid-column:2;text-align:right;font-weight:700}
+      .pr-table tr.bill>td.c-chk{grid-column:1}
+      .pr-table tr.bill>td.c-act{grid-column:1/-1;margin-top:6px}
+      .pr-table tr.bill>td.c-act .pr-acts button{flex:1;height:34px}
+      .pr-table tr.bill>td.c-pcs::before{content:"PCS ";color:var(--erp-muted);font-size:12px}
+      .pr-table tr.pr-items,.pr-table tfoot tr{display:block}.pr-table tr.pr-items>td,.pr-table tfoot td{display:block;border:0}
+      .pr-table tfoot td:empty{display:none}
+      .pr-items .scroll{overflow-x:auto}
+    }
     [hidden]{display:none!important}
   </style>
 </head>
 <body>
   <div id="loading" class="status">Checking account access...</div>
   <main id="page" class="erp-main" hidden>
-    <div class="erp-pagehead"><h1>Purchase Register<button type="button" class="erp-i" aria-label="Info" title="Info" data-tip="All purchase bills saved in Goods Inward. View shows the items. After the vehicle is unloaded, press Verify to record damage, leakage or shortage (or No Damage). Claims: Purchase Claims">i</button></h1><a class="pr-btn" href="goods-inward.html" style="display:inline-flex;align-items:center;text-decoration:none">+ New Purchase</a></div>
+    <div class="erp-pagehead"><h1>Purchase List<button type="button" class="erp-i" aria-label="Info" title="Info" data-tip="Every purchase bill saved in Purchase Entry (Goods Inward).
+Check pending: vehicle not checked yet. Photo pending: damage entered but no damage photo.
+Verify: enter damage / leakage / shortage (or No Damage) and add photos. 📷 Task gives the Godown Manager a photo task; it closes by itself when the photos are added.">i</button></h1>
+      <div class="pr-head-btns"><a href="sales-bill-scans.html" id="sbsLink" hidden>📄 Sales Bill PDFs</a><a href="goods-inward.html" class="main" id="newLink" hidden>+ New Purchase</a></div></div>
     <div id="err" class="pr-err" hidden></div>
+    <div class="pr-tabs" id="tabs" role="tablist" aria-label="Bill status"></div>
     <div class="pr-kpis" id="kpis"></div>
     <div id="vbox"></div>
     <section class="erp-card">
       <div class="pr-tools">
-        <div><label for="from">From (received)</label><input id="from" type="date"></div>
-        <div><label for="to">To</label><input id="to" type="date"></div>
-        <div class="grow"><label for="q">Search</label><input id="q" type="search" placeholder="Invoice no., supplier, vehicle, driver"></div>
-        <button type="button" class="pr-btn" id="refresh">Refresh</button>
+        <input id="q" type="search" placeholder="Search invoice, supplier, vehicle, driver" aria-label="Search">
+        <select id="sup" aria-label="Supplier"><option value="">All suppliers</option></select>
+        <div class="pr-chips" id="chips"><button type="button" data-days="0">Today</button><button type="button" data-days="7">7 Days</button><button type="button" data-days="30">30 Days</button><button type="button" data-days="month">Month</button></div>
+        <div class="pr-dates"><input id="from" type="date" aria-label="From (received)"><span>to</span><input id="to" type="date" aria-label="To"></div>
+        <button type="button" class="pr-x" id="xls">⬇ Excel</button>
       </div>
-      <div style="overflow:auto" id="box"></div>
+      <div id="box"></div>
     </section>
   </main>
   <script>
@@ -79,101 +133,139 @@
     const rs=v=>"₹"+num(v).toLocaleString("en-IN",{minimumFractionDigits:2,maximumFractionDigits:2});
     const dmy=d=>d?String(d).slice(8,10)+"/"+String(d).slice(5,7)+"/"+String(d).slice(0,4):"—";
     const today=()=>new Date().toLocaleDateString("en-CA",{timeZone:"Asia/Kolkata"});
+    const addDays=(d,n)=>{const x=new Date(d+"T00:00:00Z");x.setUTCDate(x.getUTCDate()+n);return x.toISOString().slice(0,10)};
     const pick=(o,keys)=>{for(const k of keys)if(o&&o[k]!=null&&o[k]!=="")return o[k];return null};
+    const PAGE=100;
 
-    let me=null,bills=[],items=new Map(),skuName=new Map(),openId="",checks=new Map(),checksMissing=false,verifyId="",busy=false,docSum=null;
-    // Bill copy (PDF / scan / photo) and damage photos of each purchase bill (lwb_documents_setup.sql).
-    const billTag=b=>{if(!docSum)return "";const t=docSum.get(String(b.id))||new Set();return (t.has("BILL")?'<span class="ed-tag ok">📄 Bill copy</span>':'<span class="ed-tag warn">No bill copy</span>')+(t.has("DAMAGE")?'<span class="ed-tag bad">📷 Damage photos</span>':"")};
-    async function openDocs(id){const b=bills.find(x=>x.id===id);if(!b)return;
-      await ERPDocs.open({client,entity:"PURCHASE_BILL",id:b.id,title:"Bill "+b.invoice_no+" · "+b.supplier_name});
-      docSum=await ERPDocs.summary(client,"PURCHASE_BILL")||docSum;render()}
+    let me=null,bills=[],items=new Map(),skuName=new Map(),openId="",checks=new Map(),checksMissing=false,verifyId="",busy=false,docSum=null,tasks=new Map(),tab="all",shownMax=PAGE;
+    // Rights: Admin / Sales Head everything; Godown Manager checks vehicles + photos (no amounts); Accounts view only.
+    const can={};
     const ISSUES=[["DAMAGE","Damage"],["LEAKAGE","Leakage"],["SHORTAGE","Shortage"]];
+    const docs=b=>docSum?docSum.get(String(b.id))||new Set():null;
+    // What is left on a bill: CHECK (vehicle not checked) / PHOTO (damage, no damage photo) / ""
+    function todo(b){const ch=checks.get(b.id);if(checksMissing)return "";if(!ch)return "CHECK";const d=docs(b);return ch.has_damage&&d&&!d.has("DAMAGE")?"PHOTO":""}
+    const TABS=[
+      ["all","All",()=>true,""],
+      ["check","Check pending",b=>todo(b)==="CHECK","warn"],
+      ["photo","Photo pending",b=>todo(b)==="PHOTO","bad"],
+      ["claim","Damage / Claim",b=>!!(checks.get(b.id)||{}).has_damage,"bad"],
+      ["ok","Verified OK",b=>{const c=checks.get(b.id);return !!c&&!c.has_damage},""],
+      ["nobill","No bill copy",b=>{const d=docs(b);return !!d&&!d.has("BILL")},"warn"]];
 
     async function start(){
       const {data:{session}}=await client.auth.getSession();
       if(!session){location.replace("login.html");return null}
       const {data:p}=await client.from("user_profiles").select("full_name,role,active").eq("id",session.user.id).single();
       const realRole=String((p&&p.role)||"").toLowerCase().trim(),role=p?await ERPShell.pageRoleFresh(realRole):realRole;
-      if(!p||p.active!==true||role!=="admin"){location.replace("dashboard.html");return null}
+      if(!p||p.active!==true||!["admin","manager","warehouse","accounts"].includes(role)){location.replace("dashboard.html");return null}
       return {id:session.user.id,role,realRole,name:p.full_name||session.user.email};
     }
     async function load(){
-      el("refresh").disabled=true;el("err").hidden=true;el("box").innerHTML='<div class="erp-empty">Loading purchase bills...</div>';
+      el("err").hidden=true;el("box").innerHTML='<div class="erp-empty">Loading purchase bills...</div>';
       try{
-        let q=client.from("lwb_goods_inward").select("*").order("received_date",{ascending:false}).order("created_at",{ascending:false}).limit(2000);
+        let q=client.from("lwb_goods_inward").select("*").order("received_date",{ascending:false}).order("created_at",{ascending:false}).limit(3000);
         if(el("from").value)q=q.gte("received_date",el("from").value);
         if(el("to").value)q=q.lte("received_date",el("to").value);
         const [h,s]=await Promise.all([q,client.from("sku_master").select("id,sku_name,pcs_per_case")]);
         if(h.error)throw h.error;
         bills=ERPRecent.sort(h.data||[]);skuName=new Map((s.data||[]).map(x=>[String(x.id),x]));items=new Map();
+        // A bill opened from a task (?bill=) is shown even when it is older than the dates.
+        const want=new URLSearchParams(location.search).get("bill");
+        if(want&&!bills.some(b=>b.id===want)){const x=await client.from("lwb_goods_inward").select("*").eq("id",want).maybeSingle();if(x.data)bills.unshift(x.data)}
         const ids=bills.map(b=>b.id);
         for(let i=0;i<ids.length;i+=100){
           const r=await client.from("lwb_goods_inward_items").select("*").in("inward_id",ids.slice(i,i+100));
           if(r.error)throw r.error;
           for(const it of r.data||[]){if(!items.has(it.inward_id))items.set(it.inward_id,[]);items.get(it.inward_id).push(it)}
         }
-        const c=await client.from("lwb_purchase_checks").select("*,lwb_purchase_check_items(*)");
+        const [c,t]=await Promise.all([client.from("lwb_purchase_checks").select("*,lwb_purchase_check_items(*)"),client.rpc("lwb_purchase_open_tasks")]);
         checksMissing=!!c.error;checks=new Map((c.data||[]).map(x=>[x.inward_id,x]));
+        tasks=new Map(((t&&t.data)||[]).map(x=>[String(x.inward_id),x]));
         docSum=await ERPDocs.summary(client,"PURCHASE_BILL");
+        const sups=[...new Set(bills.map(b=>b.supplier_name).filter(Boolean))].sort(),cur=el("sup").value;
+        el("sup").innerHTML='<option value="">All suppliers</option>'+sups.map(x=>'<option'+(x===cur?" selected":"")+">"+esc(x)+"</option>").join("");
+        if(want&&!verifyId&&(can.check)){verifyId=want;history.replaceState(null,"",location.pathname)}
       }catch(e){el("err").hidden=false;el("err").textContent="Could not load purchase bills: "+(e.message||String(e))}
-      el("refresh").disabled=false;render();
+      render();
+      if(verifyId)el("vbox").scrollIntoView({behavior:"smooth",block:"start"});
     }
     const lines=b=>items.get(b.id)||[];
     const pcsOf=it=>num(pick(it,["quantity_pcs","total_pcs","qty_pcs"]));
     const sum=(b,f)=>lines(b).reduce((a,i)=>a+num(i[f]),0);
-    function shown(){
-      const q=el("q").value.trim().toUpperCase();
-      return bills.filter(b=>!q||[b.invoice_no,b.supplier_name,b.vehicle_no,b.driver_name,b.driver_mobile,b.lr_no,b.transport_name].some(v=>String(v||"").toUpperCase().includes(q)));
+    function filtered(){
+      const q=el("q").value.trim().toUpperCase(),sp=el("sup").value;
+      return bills.filter(b=>(!sp||b.supplier_name===sp)&&(!q||[b.invoice_no,b.supplier_name,b.vehicle_no,b.driver_name,b.driver_mobile,b.lr_no,b.transport_name].some(v=>String(v||"").toUpperCase().includes(q))));
     }
-    function render(){
-      const list=shown();
-      const tot={pcs:0,tax:0,gross:0};for(const b of list){tot.pcs+=lines(b).reduce((a,i)=>a+pcsOf(i),0);tot.tax+=sum(b,"taxable_amount");tot.gross+=sum(b,"total_amount")}
-      el("kpis").innerHTML=[["Bills",fmt(list.length)],["Total PCS",fmt(tot.pcs)],["Taxable",rs(tot.tax)],["Invoice Total",rs(tot.gross)]].map(([a,b])=>'<div class="pr-kpi"><span>'+a+"</span><b>"+b+"</b></div>").join("");
-      // Count card → list of those bills (erp-list.js)
-      if(window.ERPList){const BC=[{t:"Received",v:"received_date",date:true},{t:"Invoice",v:"invoice_no"},{t:"Supplier",v:"supplier_name"},{t:"Invoice date",v:"invoice_date",date:true},
-          {t:"Vehicle",v:"vehicle_no"},{t:"Total PCS",v:b=>lines(b).reduce((a,i)=>a+pcsOf(i),0),num:true,sum:true,dec:0},{t:"Taxable",v:b=>sum(b,"taxable_amount"),money:true,sum:true,dec:2},{t:"Invoice total",v:b=>sum(b,"total_amount"),money:true,sum:true,dec:2}];
-        el("kpis").querySelectorAll(".pr-kpi").forEach(c=>ERPList.card(c,()=>({title:"Purchase bills",sub:"Bills in this list",rows:shown(),cols:BC})))}
-      let h='<table class="pr-table"><thead><tr><th>Received</th><th>Invoice No.</th><th>Supplier</th><th>Invoice Date</th><th>Vehicle / LR</th><th>Driver</th><th class="n">Lines</th><th class="n">Total PCS</th><th class="n">Taxable ₹</th><th class="n">Invoice Total ₹</th><th>Vehicle Check</th><th></th></tr></thead><tbody>';
-      for(const b of list){
-        const ls=lines(b),pcs=ls.reduce((a,i)=>a+pcsOf(i),0);
-        h+='<tr'+(b.id===openId?' class="open"':"")+"><td>"+dmy(b.received_date)+"</td><td><b>"+esc(b.invoice_no)+"</b><div>"+billTag(b)+"</div></td><td style='white-space:normal;min-width:200px'>"+esc(b.supplier_name)+"</td><td>"+dmy(b.invoice_date)+"</td><td>"+esc(b.vehicle_no||"—")+"<small>"+esc(b.lr_no?"LR "+b.lr_no:"")+"</small></td><td>"+esc(b.driver_name||"—")+"<small>"+esc(b.driver_mobile||"")+"</small></td>"+
-          '<td class="n">'+fmt(ls.length)+'</td><td class="n">'+fmt(pcs)+'</td><td class="n">'+rs(sum(b,"taxable_amount"))+'</td><td class="n">'+rs(sum(b,"total_amount"))+"</td>"+
-          '<td>'+checkTag(b)+'</td><td><button type="button" data-view="'+b.id+'">'+(b.id===openId?"Hide":"View")+'</button><button type="button" data-verify="'+b.id+'">'+(checks.has(b.id)?"Edit Check":"Verify")+"</button>"+(docSum?'<button type="button" data-docs="'+b.id+'">📎 Bill / Photos</button>':"")+"</td></tr>";
-        if(b.id===openId)h+='<tr class="pr-items"><td colspan="12"><table><thead><tr><th>#</th><th>SKU</th><th class="n">Cases</th><th class="n">Loose PCS</th><th class="n">Total PCS</th><th class="n">Taxable ₹</th><th class="n">Total ₹</th></tr></thead><tbody>'+
-          ls.map((it,i)=>{const s=skuName.get(String(it.sku_id))||{};return "<tr><td>"+(i+1)+"</td><td>"+esc(pick(it,["sku_name"])||s.sku_name||it.sku_id)+'</td><td class="n">'+fmt(pick(it,["cases","quantity_cases"]))+'</td><td class="n">'+fmt(pick(it,["pcs","loose_pcs"]))+'</td><td class="n">'+fmt(pcsOf(it))+'</td><td class="n">'+rs(it.taxable_amount)+'</td><td class="n">'+rs(it.total_amount)+"</td></tr>"}).join("")+
-          "</tbody></table>"+(b.remarks?'<p style="margin:8px 0 0">Remarks: '+esc(b.remarks)+"</p>":"")+"</td></tr>";
-      }
-      if(!list.length)h+='<tr><td colspan="12" class="erp-empty">No purchase bills found.</td></tr>';
-      const vb=bills.find(x=>x.id===verifyId);
-      el("vbox").innerHTML=vb?'<section class="erp-card" style="margin-bottom:14px"><div class="erp-card-head"><h2>Vehicle Check · Invoice '+esc(vb.invoice_no)+" · "+esc(vb.supplier_name)+'</h2><small style="color:var(--erp-muted)">'+esc([vb.vehicle_no,dmy(vb.received_date)].filter(Boolean).join(" · "))+'</small></div><div class="vf">'+verifyForm(vb)+"</div></section>":"";
-      if(vb&&docSum&&!checksMissing){const m=document.createElement("div");m.style.margin="10px 0";m.innerHTML='<div class="ed-title">Damage / leakage / breakage photos</div><div class="vf-docs"></div>';
-        const row=el("vbox").querySelector(".vf .row:last-child");(row||el("vbox").querySelector(".vf")).before(m);
-        ERPDocs.panel({client,mount:m.querySelector(".vf-docs"),entity:"PURCHASE_BILL",id:vb.id,slots:["DAMAGE"],onChange:async()=>{docSum=await ERPDocs.summary(client,"PURCHASE_BILL")||docSum}})}
-      el("box").innerHTML=h+'</tbody><tfoot><tr><td colspan="7">Total ('+fmt(list.length)+' bills)</td><td class="n">'+fmt(tot.pcs)+'</td><td class="n">'+rs(tot.tax)+'</td><td class="n">'+rs(tot.gross)+"</td><td colspan=\"2\"></td></tr></tfoot></table>";
-    }
-    /* ---------- vehicle check (damage / leakage / shortage) ---------- */
-    const qtyTxt=(c,p)=>(c?fmt(c)+" cs":"")+(c&&p?" + ":"")+(p?fmt(p)+" pcs":"")||"0";
-    function claimCases(ch){return (ch.lwb_purchase_check_items||[]).reduce((a,i)=>a+i.cases+i.pcs/Math.max(1,i.pcs_per_case),0)}
+    const shown=()=>{const f=(TABS.find(t=>t[0]===tab)||TABS[0])[2];return filtered().filter(f)};
     function checkTag(b){
       const ch=checks.get(b.id);
-      if(!ch)return '<span class="chk none">Not verified</span>';
+      if(checksMissing)return "";
+      if(!ch)return '<span class="chk none">Check pending</span>';
       if(!ch.has_damage)return '<span class="chk ok">✓ No damage</span><small>'+dmy(ch.verified_on)+"</small>";
-      return '<span class="chk claim">Claim · '+fmt(Math.round(claimCases(ch)*10)/10)+" cs</span><small>"+({PENDING:"Mail not sent",SENT:"Awaiting approval",APPROVED:ch.return_required&&!ch.returned_on?"Approved · return goods":"Approved · amount due",RECEIVED:"Amount received",REJECTED:"Rejected"}[ch.claim_status]||ch.claim_status)+"</small>";
+      const cs=(ch.lwb_purchase_check_items||[]).reduce((a,i)=>a+i.cases+i.pcs/Math.max(1,i.pcs_per_case),0);
+      return '<span class="chk claim">Claim · '+fmt(Math.round(cs*10)/10)+" cs</span><small>"+({PENDING:"Mail not sent",SENT:"Awaiting approval",APPROVED:ch.return_required&&!ch.returned_on?"Approved · return goods":"Approved · amount due",RECEIVED:"Amount received",REJECTED:"Rejected"}[ch.claim_status]||ch.claim_status)+"</small>";
     }
+    function tags(b){
+      const d=docs(b),t=tasks.get(String(b.id));let h="";
+      if(d)h+=d.has("BILL")?'<span class="tg ok">📄 Bill</span>':'<span class="tg warn">No bill copy</span>';
+      if(d&&d.has("DAMAGE"))h+='<span class="tg bad">📷 Photos</span>';
+      else if(todo(b)==="PHOTO")h+='<span class="tg bad">Photo pending</span>';
+      if(t)h+='<span class="tg task" title="'+esc(t.people)+'">📷 Task: '+esc(String(t.people||"").split(",")[0])+(t.tasks>1?" +"+(t.tasks-1):"")+"</span>";
+      return h;
+    }
+    function render(){
+      const base=filtered(),list=shown(),amt=can.amounts;
+      el("tabs").innerHTML=TABS.map(([k,l,f,cls])=>{const n=base.filter(f).length;if(k==="nobill"&&!docSum||(["check","photo","claim","ok"].includes(k)&&checksMissing))return "";
+        return '<button type="button" role="tab" class="pr-tab'+(k===tab?" on":"")+(n?(k!=="all"&&k!=="ok"?" "+cls:""):" zero")+'" data-tab="'+k+'" aria-selected="'+(k===tab)+'">'+l+"<b>"+fmt(n)+"</b></button>"}).join("");
+      const tot={pcs:0,tax:0,gross:0};for(const b of list){tot.pcs+=lines(b).reduce((a,i)=>a+pcsOf(i),0);tot.tax+=sum(b,"taxable_amount");tot.gross+=sum(b,"total_amount")}
+      const K=[["Bills",fmt(list.length)],["Total PCS",fmt(tot.pcs)]];
+      if(amt)K.push(["Taxable",rs(tot.tax)],["Invoice Total",rs(tot.gross)]);
+      else K.push(["Check pending",fmt(base.filter(b=>todo(b)==="CHECK").length)],["Photo pending",fmt(base.filter(b=>todo(b)==="PHOTO").length)]);
+      el("kpis").innerHTML=K.map(([a,b])=>'<div class="pr-kpi"><span>'+a+"</span><b>"+b+"</b></div>").join("");
+      if(window.ERPList){const BC=[{t:"Received",v:"received_date",date:true},{t:"Invoice",v:"invoice_no"},{t:"Supplier",v:"supplier_name"},{t:"Vehicle",v:"vehicle_no"},{t:"Total PCS",v:b=>lines(b).reduce((a,i)=>a+pcsOf(i),0),num:true,sum:true,dec:0}]
+          .concat(amt?[{t:"Taxable",v:b=>sum(b,"taxable_amount"),money:true,sum:true,dec:2},{t:"Invoice total",v:b=>sum(b,"total_amount"),money:true,sum:true,dec:2}]:[]);
+        el("kpis").querySelectorAll(".pr-kpi").forEach(c=>ERPList.card(c,()=>({title:"Purchase bills",sub:"Bills in this list",rows:list,cols:BC,onRow:b=>{openId=b.id;render()}})))}
+      const cols=amt?10:9;
+      let h='<table class="pr-table"><thead><tr><th class="c-rec">Received</th><th>Invoice / Received</th><th>Supplier</th><th>Vehicle / Driver</th><th class="n">PCS</th>'+(amt?'<th class="n">Invoice Total ₹</th>':"")+"<th>Vehicle Check</th><th></th></tr></thead><tbody>";
+      for(const b of list.slice(0,shownMax)){
+        const ls=lines(b),pcs=ls.reduce((a,i)=>a+pcsOf(i),0),t=todo(b),hasTask=tasks.has(String(b.id));
+        let acts="";
+        if(can.check&&!checksMissing)acts+='<button type="button" class="'+(t==="CHECK"?"go":"")+'" data-verify="'+b.id+'">'+(checks.has(b.id)?"Edit":"Verify")+"</button>";
+        if(docSum)acts+='<button type="button" data-docs="'+b.id+'" title="Bill copy / photos" aria-label="Bill copy / photos">📎</button>';
+        if(can.task&&t&&!hasTask)acts+='<button type="button" class="task" data-task="'+b.id+'" title="Give the Godown Manager a task to check / upload photos">📷 Task</button>';
+        h+='<tr class="bill'+(b.id===openId?" open":"")+'"><td class="c-rec">'+dmy(b.received_date)+'</td><td class="c-inv"><button type="button" class="pr-inv" data-view="'+b.id+'" title="Show / hide the SKU lines">'+esc(b.invoice_no)+(b.id===openId?" ▴":" ▾")+"</button><small>Recd "+dmy(b.received_date)+" · Inv "+dmy(b.invoice_date)+"</small><div>"+tags(b)+'</div></td><td class="c-sup">'+esc(b.supplier_name)+
+          '</td><td class="c-veh">'+esc(b.vehicle_no||"—")+"<small>"+esc([b.driver_name,b.lr_no?"LR "+b.lr_no:""].filter(Boolean).join(" · "))+'</small></td><td class="n c-pcs">'+fmt(pcs)+"</td>"+
+          (amt?'<td class="n c-amt">'+rs(sum(b,"total_amount"))+"</td>":"")+'<td class="c-chk">'+checkTag(b)+'</td><td class="c-act"><div class="pr-acts">'+acts+"</div></td></tr>";
+        if(b.id===openId)h+='<tr class="pr-items"><td colspan="'+cols+'"><div class="scroll"><table><thead><tr><th>#</th><th>SKU</th><th class="n">Cases</th><th class="n">Loose</th><th class="n">PCS</th>'+(amt?'<th class="n">Taxable ₹</th><th class="n">Total ₹</th>':"")+"</tr></thead><tbody>"+
+          ls.map((it,i)=>{const s=skuName.get(String(it.sku_id))||{};return "<tr><td>"+(i+1)+"</td><td>"+esc(pick(it,["sku_name"])||s.sku_name||it.sku_id)+'</td><td class="n">'+fmt(pick(it,["cases","quantity_cases"]))+'</td><td class="n">'+fmt(pick(it,["pcs","loose_pcs"]))+'</td><td class="n">'+fmt(pcsOf(it))+"</td>"+(amt?'<td class="n">'+rs(it.taxable_amount)+'</td><td class="n">'+rs(it.total_amount)+"</td>":"")+"</tr>"}).join("")+
+          "</tbody></table></div>"+(b.remarks?'<p style="margin:6px 0 0">Remarks: '+esc(b.remarks)+"</p>":"")+(b.transport_name?'<p style="margin:4px 0 0;color:var(--erp-muted)">Transport: '+esc(b.transport_name)+(b.driver_mobile?" · Driver "+esc(b.driver_mobile):"")+"</p>":"")+"</td></tr>";
+      }
+      if(!list.length)h+='<tr><td colspan="'+cols+'" class="erp-empty">No purchase bills in this list.</td></tr>';
+      h+="</tbody>";
+      if(list.length)h+='<tfoot><tr><td colspan="3">Total ('+fmt(list.length)+' bills)</td><td class="n">'+fmt(tot.pcs)+" PCS</td>"+(amt?'<td class="n">'+rs(tot.gross)+"</td>":"")+'<td colspan="2"></td></tr></tfoot>';
+      h+="</table>";
+      if(list.length>shownMax)h+='<div class="pr-more"><button type="button" class="pr-x" id="more">Show more ('+fmt(list.length-shownMax)+" more)</button></div>";
+      el("box").innerHTML=h;
+      const vb=bills.find(x=>x.id===verifyId);
+      el("vbox").innerHTML=vb?'<section class="erp-card" style="margin-bottom:10px"><div class="erp-card-head"><h2>Vehicle Check · Inv '+esc(vb.invoice_no)+" · "+esc(vb.supplier_name)+'</h2><small style="color:var(--erp-muted)">'+esc([vb.vehicle_no,dmy(vb.received_date)].filter(Boolean).join(" · "))+'</small></div><div class="vf">'+verifyForm(vb)+"</div></section>":"";
+      if(vb&&docSum&&!checksMissing){const m=document.createElement("div");m.style.margin="8px 0";m.innerHTML='<div class="ed-title">Damage / leakage / breakage photos</div><div class="vf-docs"></div>';
+        el("vbox").querySelector(".vf .btns").before(m);
+        ERPDocs.panel({client,mount:m.querySelector(".vf-docs"),entity:"PURCHASE_BILL",id:vb.id,slots:["DAMAGE"],onChange:async()=>{docSum=await ERPDocs.summary(client,"PURCHASE_BILL")||docSum;await loadTasks()}})}
+    }
+    async function loadTasks(){const t=await client.rpc("lwb_purchase_open_tasks");if(!t.error)tasks=new Map((t.data||[]).map(x=>[String(x.inward_id),x]));render()}
+    /* ---------- vehicle check (damage / leakage / shortage) ---------- */
+    const qtyTxt=(c,p)=>(c?fmt(c)+" cs":"")+(c&&p?" + ":"")+(p?fmt(p)+" pcs":"")||"0";
     function verifyForm(b){
-      if(checksMissing)return '<b>Vehicle check is not set up yet.</b> Run lwb_purchase_claim_setup.sql once in the Supabase SQL Editor, then press Refresh.';
       const ch=checks.get(b.id)||{},old=ch.lwb_purchase_check_items||[];
       const val=(sku,issue,f)=>{const x=old.find(i=>String(i.sku_id||i.sku_name)===sku&&i.issue===issue);return x&&x[f]?x[f]:""};
-      const ls=lines(b);
-      let h='<div class="row"><div><label for="vfDate">Checked on *</label><input id="vfDate" type="date" value="'+(ch.verified_on||today())+'"></div><div style="flex:1;min-width:220px"><label for="vfNote">Note</label><input id="vfNote" style="width:100%" maxlength="300" value="'+esc(ch.note||"")+'" placeholder="e.g. 2 cases leaked near door"></div></div>'+
-        '<table><thead><tr><th rowspan="2">SKU</th><th rowspan="2" class="n">Billed</th>'+ISSUES.map(([,l])=>'<th colspan="2" class="grp">'+l+"</th>").join("")+"</tr><tr>"+ISSUES.map(()=>"<th>Cases</th><th>PCS</th>").join("")+"</tr></thead><tbody>";
-      for(const it of ls){
+      let h='<div class="row"><div><label for="vfDate">Checked on *</label><input id="vfDate" type="date" value="'+(ch.verified_on||today())+'"></div><div style="flex:1;min-width:200px"><label for="vfNote">Note</label><input id="vfNote" style="width:100%" maxlength="300" value="'+esc(ch.note||"")+'" placeholder="e.g. 2 cases leaked near door"></div></div>'+
+        '<div class="vf-scroll"><table><thead><tr><th rowspan="2">SKU</th><th rowspan="2" class="n">Billed</th>'+ISSUES.map(([,l])=>'<th colspan="2" class="grp">'+l+"</th>").join("")+"</tr><tr>"+ISSUES.map(()=>"<th>Cs</th><th>PCS</th>").join("")+"</tr></thead><tbody>";
+      for(const it of lines(b)){
         const s=skuName.get(String(it.sku_id))||{},key=String(it.sku_id||pick(it,["sku_name"])),pack=Math.max(1,num(s.pcs_per_case||pick(it,["pcs_per_case"]))||1);
         h+='<tr class="vf-line" data-sku="'+esc(it.sku_id||"")+'" data-name="'+esc(pick(it,["sku_name"])||s.sku_name||"")+'" data-pack="'+pack+'"><td>'+esc(pick(it,["sku_name"])||s.sku_name||it.sku_id)+'</td><td class="n">'+qtyTxt(num(pick(it,["cases"])),num(pick(it,["pcs"])))+"</td>"+
           ISSUES.map(([k])=>'<td><input type="number" min="0" step="1" inputmode="numeric" data-issue="'+k+'" data-f="cases" value="'+val(key,k,"cases")+'" placeholder="0"></td><td><input type="number" min="0" step="1" inputmode="numeric" data-issue="'+k+'" data-f="pcs" value="'+val(key,k,"pcs")+'" placeholder="0"></td>').join("")+"</tr>";
       }
-      return h+'</tbody></table><div class="row"><button type="button" class="btn ok" data-vfok="'+b.id+'">✓ No Damage (Verified OK)</button><button type="button" class="btn red" data-vfsave="'+b.id+'">Save Damage / Claim</button><button type="button" class="btn" data-vfclose="1">Cancel</button>'+
-        '<span style="color:var(--erp-muted);font-size:13px">Quantities only; live stock is not changed. Claims appear in Purchase Claims.</span></div>';
+      return h+'</tbody></table></div><div class="btns"><button type="button" class="btn ok" data-vfok="'+b.id+'">✓ No Damage</button><button type="button" class="btn red" data-vfsave="'+b.id+'">Save Damage</button><button type="button" class="btn" data-vfclose="1">Close</button></div>';
     }
     async function saveCheck(id,noDamage){
       if(busy)return;
@@ -195,27 +287,69 @@
       const r=await client.rpc("lwb_save_purchase_check",{p_inward_id:id,p_verified_on:d,p_note:el("vfNote").value.trim(),p_items:list});
       busy=false;
       if(r.error)return ERPShell.toast("Save failed: "+r.error.message,"error");
-      ERPShell.toast(noDamage?"Bill verified: no damage.":"Damage saved. Claim is pending in Purchase Claims.","success");
+      let msg=noDamage?"Bill verified: no damage.":"Damage saved. Claim is pending in Purchase Claims.";
+      // Damage but no photo yet: the Godown Manager gets the photo task.
+      const d2=docs(b);
+      if(!noDamage&&can.task&&d2&&!d2.has("DAMAGE")){const t=await client.rpc("lwb_purchase_photo_task",{p_inward:id});if(!t.error&&(t.data||[]).length)msg+=" Godown Manager got a photo task.";}
+      ERPShell.toast(msg,"success");
       verifyId="";await load();
+    }
+    async function giveTask(id){
+      const b=bills.find(x=>x.id===id);if(!b)return;
+      const what=todo(b)==="PHOTO"?"upload the damage photos":"check the vehicle and upload photos of any damage";
+      if(!await confirm("GIVE PHOTO TASK TO GODOWN MANAGER?\n\nInvoice "+b.invoice_no+" · "+b.supplier_name+"\nVehicle "+(b.vehicle_no||"—")+"\n\nTask: "+what+". It closes by itself when done."))return;
+      const r=await client.rpc("lwb_purchase_photo_task",{p_inward:id});
+      if(r.error)return ERPShell.toast("Task not given: "+r.error.message,"error");
+      ERPShell.toast((r.data||[]).length?"Task given to "+(r.data.length)+" Godown Manager"+(r.data.length>1?"s":"")+".":"Nothing to give: no active Godown Manager login, or a task is already open.",(r.data||[]).length?"success":"error");
+      await loadTasks();
+    }
+    async function openDocs(id){const b=bills.find(x=>x.id===id);if(!b)return;
+      await ERPDocs.open({client,entity:"PURCHASE_BILL",id:b.id,title:"Bill "+b.invoice_no+" · "+b.supplier_name});
+      docSum=await ERPDocs.summary(client,"PURCHASE_BILL")||docSum;await loadTasks()}
+    async function excel(){
+      const list=shown(),amt=can.amounts;
+      const head=["Received","Invoice No","Invoice Date","Supplier","Vehicle","Driver","Driver Mobile","LR No","Transport","Lines","Total PCS"].concat(amt?["Taxable","Invoice Total"]:[]).concat(["Vehicle Check","Claim","Bill copy","Damage photos","Photo task"]);
+      const rows=list.map(b=>{const ch=checks.get(b.id),d=docs(b),t=tasks.get(String(b.id));
+        return [dmy(b.received_date),b.invoice_no,dmy(b.invoice_date),b.supplier_name,b.vehicle_no||"",b.driver_name||"",b.driver_mobile||"",b.lr_no||"",b.transport_name||"",lines(b).length,lines(b).reduce((a,i)=>a+pcsOf(i),0)]
+          .concat(amt?[sum(b,"taxable_amount"),sum(b,"total_amount")]:[])
+          .concat([!ch?"Check pending":ch.has_damage?"Damage":"No damage",ch&&ch.has_damage?ch.claim_status:"",d?(d.has("BILL")?"Yes":"No"):"",d?(d.has("DAMAGE")?"Yes":"No"):"",t?t.people:""])});
+      try{await LWBExcel.write("Purchase-List-"+today(),[{name:"Purchase List",rows:[head,...rows]}])}catch(e){ERPShell.toast(e.message,"error")}
+    }
+    function setRange(k){
+      const t=today();el("to").value=t;
+      el("from").value=k==="month"?t.slice(0,8)+"01":k==="0"?t:addDays(t,-(Number(k)-1));
+      document.querySelectorAll("#chips button").forEach(x=>x.classList.toggle("on",x.dataset.days===k));
+      try{localStorage.setItem("lwbPrRange",k)}catch(e){}
+      shownMax=PAGE;load();
     }
 
     document.addEventListener("click",e=>{
-      const t=e.target;
-      if(t.id==="refresh")return load();
+      const t=e.target.closest("button");if(!t)return;
+      if(t.dataset.tab){tab=t.dataset.tab;shownMax=PAGE;return render()}
+      if(t.dataset.days!=null&&t.closest("#chips"))return setRange(t.dataset.days);
+      if(t.id==="xls")return excel();
+      if(t.id==="more"){shownMax+=PAGE;return render()}
       if(t.dataset.verify){verifyId=verifyId===t.dataset.verify?"":t.dataset.verify;render();if(verifyId)el("vbox").scrollIntoView({behavior:"smooth",block:"start"});return}
       if(t.dataset.vfclose){verifyId="";return render()}
       if(t.dataset.docs)return openDocs(t.dataset.docs);
+      if(t.dataset.task)return giveTask(t.dataset.task);
       if(t.dataset.vfok)return saveCheck(t.dataset.vfok,true);
       if(t.dataset.vfsave)return saveCheck(t.dataset.vfsave,false);
       if(t.dataset.view){openId=openId===t.dataset.view?"":t.dataset.view;render()}
     });
-    el("q").addEventListener("input",render);
-    ["from","to"].forEach(id=>el(id).addEventListener("change",load));
+    el("q").addEventListener("input",()=>{shownMax=PAGE;render()});
+    el("sup").addEventListener("change",()=>{shownMax=PAGE;render()});
+    ["from","to"].forEach(id=>el(id).addEventListener("change",()=>{document.querySelectorAll("#chips button").forEach(x=>x.classList.remove("on"));shownMax=PAGE;load()}));
     (async()=>{
       me=await start();if(!me)return;
-      ERPShell.mount({role:me.realRole||me.role,name:me.name,onLogout:async()=>{await client.auth.signOut();location.replace("login.html")},group:"Inventory"});
+      const r=me.role;
+      Object.assign(can,{amounts:r!=="warehouse",check:["admin","manager","warehouse"].includes(r),task:["admin","manager"].includes(r)});
+      el("newLink").hidden=!["admin","manager"].includes(r);el("sbsLink").hidden=!["admin","manager","accounts"].includes(r);
+      ERPShell.mount({role:me.realRole||me.role,name:me.name,onLogout:async()=>{await client.auth.signOut();location.replace("login.html")},group:"Purchase"});
       el("loading").hidden=true;el("page").hidden=false;
-      await load();
+      let k="30";try{k=localStorage.getItem("lwbPrRange")||"30"}catch(e){}
+      if(!["0","7","30","month"].includes(k))k="30";
+      setRange(k);
     })();
   </script>
 </body>
