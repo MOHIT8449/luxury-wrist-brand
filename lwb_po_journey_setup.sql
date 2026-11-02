@@ -1,0 +1,55 @@
+-- LUXURY WRIST BRAND ERP — PO JOURNEY: WHERE HAS EACH PO REACHED
+--
+-- Runs by itself when merged to main. Safe to run again. Read only: nothing is changed or deleted.
+--
+-- Mohit asked (2 Nov 2026): on PO Approval, every PO shows its journey
+--   1 PO made → 2 Approved → 3 Transport assigned → 4 Loading start → 5 Out for delivery → 6 Delivered.
+-- "Out for delivery" = loading has started and Accounts has entered the Tally bill no.
+-- The Tally bill table is readable only by Accounts / Admin, so the Sales Head gets the bill no. and
+-- time through this function (no amounts).
+--   * lwb_po_journey(order ids): per order the transport, loading times, Tally bill no. + entry time and
+--     the latest driver delivery report. Admin and Sales Head (MANAGER) only, max 500 orders per call.
+
+BEGIN;
+
+CREATE OR REPLACE FUNCTION public.lwb_po_journey(p_ids uuid[])
+RETURNS TABLE(order_id uuid, assigned_at timestamptz, vehicle_no text, driver_name text, driver_mobile text,
+  loading_person text, loading_started_at timestamptz, loading_completed_at timestamptz,
+  bill_no text, bill_at timestamptz, delivery_status text, reported_at timestamptz)
+LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = ''
+AS $fn$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM public.user_profiles p WHERE p.id = auth.uid() AND p.active = true
+                 AND lower(btrim(p.role)) IN ('admin','manager')) THEN
+    RAISE EXCEPTION 'Admin / Sales Head only.';
+  END IF;
+  IF coalesce(cardinality(p_ids), 0) > 500 THEN
+    RAISE EXCEPTION 'Max 500 orders at a time.';
+  END IF;
+  RETURN QUERY
+    SELECT o.id,
+           nullif(da.j->>'assigned_at','')::timestamptz,
+           da.j->>'vehicle_no', da.j->>'driver_name', da.j->>'driver_mobile', da.j->>'loading_person',
+           nullif(da.j->>'loading_started_at','')::timestamptz,
+           nullif(da.j->>'loading_completed_at','')::timestamptz,
+           t.invoice_no, coalesce(t.updated_at, t.entered_at),
+           dr.delivery_status, dr.reported_at
+    FROM (SELECT DISTINCT x FROM unnest(p_ids) AS x) ids
+    JOIN public.orders o ON o.id = ids.x
+    LEFT JOIN LATERAL (
+      SELECT to_jsonb(a) AS j FROM public.dispatch_assignments a
+      WHERE a.order_id = o.id
+      ORDER BY (to_jsonb(a)->>'assigned_at') DESC NULLS LAST
+      LIMIT 1) da ON true
+    LEFT JOIN public.lwb_tally_invoices t ON t.order_id = o.id
+    LEFT JOIN LATERAL (
+      SELECT r.delivery_status, r.reported_at FROM public.lwb_delivery_reports r
+      WHERE r.order_id = o.id
+      ORDER BY r.reported_at DESC
+      LIMIT 1) dr ON true;
+END;
+$fn$;
+REVOKE ALL ON FUNCTION public.lwb_po_journey(uuid[]) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.lwb_po_journey(uuid[]) TO authenticated;
+
+COMMIT;
