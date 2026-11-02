@@ -62,13 +62,28 @@
       const card=el("card");
       if(setupError){card.innerHTML='<div class="sl-msg">'+esc(setupError)+"</div>";el("note").textContent="";return}
       ({team:renderTeam,parties:renderParties,skus:renderSkus,targets:renderTargets,plan:renderPlan})[tab](card);
+      stackTables(card);
+    }
+    // Phone: tables turn into compact cards; each cell gets its column name as label.
+    function stackTables(root){
+      root.querySelectorAll("table.erp-table").forEach(t=>{
+        t.classList.add("sl-stack");
+        const h=[...t.querySelectorAll("thead th")].map(th=>th.textContent.trim());
+        t.querySelectorAll("tbody tr,tfoot tr").forEach(tr=>[...tr.children].forEach((td,i)=>{
+          if(h[i])td.dataset.label=h[i];
+          if((i===0&&h[i])||["Party","Salesmen","Due parties"].includes(h[i]))td.classList.add("sl-wide");
+          if((i===0&&h[i])||h[i]==="Party")td.classList.add("sl-first");
+          if(!h[i]&&td.querySelector("button"))td.classList.add("sl-act");
+          if(!h[i]&&td.querySelector("input[type=checkbox]"))td.classList.add("sl-pick");
+        }));
+      });
     }
 
     // ---- Salesmen
     function renderTeam(card){
       const rows=team.map(t=>({attr:' data-id="'+t.user_id+'"'+(t.active?"":' class="off"'),cells:[
         esc(t.full_name||"—")+(t.active?"":' <span class="erp-badge">Inactive</span>'),esc(t.mobile||"—"),
-        '<select class="sl-in" data-f="kind"><option value=""'+(t.kind?"":" selected")+'>Field (own parties only) · not saved</option><option value="FIELD"'+(t.kind==="FIELD"?" selected":"")+'>Field (own parties only)</option><option value="OFFICE"'+(t.kind==="OFFICE"?" selected":"")+'>Office (all parties)</option></select>',
+        '<select class="sl-in" data-f="kind"><option value=""'+(t.kind?"":" selected")+'>Field · not saved</option><option value="FIELD"'+(t.kind==="FIELD"?" selected":"")+'>Field (own parties)</option><option value="OFFICE"'+(t.kind==="OFFICE"?" selected":"")+'>Office (all parties)</option></select>',
         '<input class="sl-in" data-f="area" maxlength="120" placeholder="e.g. Surat city, Bardoli" value="'+esc(t.area||"")+'">',
         fmt(t.parties),'<button type="button" class="sl-btn small" data-save-sm>Save</button>']}));
       card.innerHTML='<div class="erp-card-head"><h2>Salesmen</h2><small style="color:var(--erp-muted)">'+team.length+' SALES logins</small></div>'+
@@ -182,7 +197,7 @@
       const q=key(pf.sq||""),list=skus.filter(s=>!q||key(s.sku_name+" "+(s.category||"")).includes(q));
       const limited=skus.filter(s=>skuRule(s.sku_name).mode!=="ALL").length;
       const rows=list.map(s=>{const r=skuRule(s.sku_name);return {attr:' data-sku="'+esc(s.sku_name)+'"',cells:[esc(s.sku_name),esc(s.category||"—"),
-        '<select class="sl-in" data-mode><option value="ALL">All salesmen</option><option value="ONLY"'+(r.mode==="ONLY"?" selected":"")+'>Only selected salesmen</option><option value="HIDE"'+(r.mode==="HIDE"?" selected":"")+'>Hidden for selected</option></select>',
+        '<select class="sl-in" data-mode><option value="ALL">All salesmen</option><option value="ONLY"'+(r.mode==="ONLY"?" selected":"")+'>Only selected</option><option value="HIDE"'+(r.mode==="HIDE"?" selected":"")+'>Hide for selected</option></select>',
         '<div class="sl-chips"'+(r.mode==="ALL"?" hidden":"")+">"+salesmen().concat(team.filter(t=>!isSales(t)&&r.ids.has(t.user_id))).map(t=>'<label class="sl-chip'+(r.ids.has(t.user_id)?" on":"")+'"><input type="checkbox" value="'+t.user_id+'"'+(r.ids.has(t.user_id)?" checked":"")+">"+esc(t.full_name)+"</label>").join("")+"</div>",
         '<button type="button" class="sl-btn small" data-save-sku>Save</button>']}});
       card.innerHTML='<div class="erp-card-head"><h2>SKU Visibility per Salesman</h2><small style="color:var(--erp-muted)">'+limited+" SKUs limited</small></div>"+
