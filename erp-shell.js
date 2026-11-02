@@ -27,6 +27,8 @@
   document.addEventListener("click",e=>{
     const b=e.target.closest&&e.target.closest("button,a");
     if(!b||!(b.classList.contains("erp-logout")||b.id==="logout"||/^\s*logout\s*$/i.test(b.textContent||"")))return;
+    // Phone alerts stop only on a real Logout tap (erp-push.js), not on the 15-minute idle logout.
+    try{localStorage.setItem("lwbPushLogout",String(Date.now()))}catch(e){}
     const uid=unlockUid();if(!uid)return;
     e.preventDefault();e.stopImmediatePropagation();
     lockNow(uid,"logout");

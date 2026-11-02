@@ -8,7 +8,7 @@ Push updates are generated from **new** `erp_notifications` rows. The existing o
 2. Open the ERP app and sign in. Until alerts are on, every login on a phone shows a **Turn on phone alerts** popup: tap **Allow**, then **Allow** on the phone's prompt. (Or tap **🔔**, then **Enable phone alerts**.) If alerts were blocked, the popup shows the phone Settings steps.
 3. Tap **Test**. Check the phone's notification panel, then tap the notification. Provider acceptance alone is not proof that the phone displayed it.
 
-Each staff member enables alerts with their own ERP login. **Turn off** disconnects the current device. Explicit sign-out clears the device identity and unsubscribes it; the server also removes expired provider endpoints. On iPhone/iPad use the ERP installed on the Home Screen, then grant permission inside it. Browser / OS support, connection, battery restrictions, notification-channel settings and Do Not Disturb can affect timing, sound and banners. No app can guarantee a sound or heads-up banner against OS settings.
+Each staff member enables alerts with their own ERP login. **Turn off** disconnects the current device. Explicit sign-out (Logout tap) clears the device identity and unsubscribes it; the 15-minute idle logout and an expired session keep alerts on; the server also removes expired provider endpoints. On iPhone/iPad use the ERP installed on the Home Screen, then grant permission inside it. Browser / OS support, connection, battery restrictions, notification-channel settings and Do Not Disturb can affect timing, sound and banners. No app can guarantee a sound or heads-up banner against OS settings.
 
 ## Deployment
 

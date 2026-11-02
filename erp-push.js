@@ -96,8 +96,13 @@
    const next=await workerMessage(reg,'LWB_PUSH_OPEN',user.id);
    if(next?.url){const u=new URL(next.url,location.origin);if(u.origin===location.origin&&u.href!==location.href){location.assign(u.href);return;}}
    db.auth.onAuthStateChange((event,session)=>{
-    if(event==='SIGNED_OUT'||(session?.user?.id&&session.user.id!==user.id)){
+    const otherUser=!!(session?.user?.id&&session.user.id!==user.id);
+    if(event==='SIGNED_OUT'||otherUser){
      signedOut=true;
+     // Idle (15 min) logout or an expired session keeps this phone's alerts, like any app.
+     // Only a Logout tap (erp-shell.js marks it) or another user's login disconnects them.
+     let tapped=0;try{tapped=Number(localStorage.getItem('lwbPushLogout'))||0;localStorage.removeItem('lwbPushLogout');}catch(e){}
+     if(!otherUser&&Date.now()-tapped>2*60e3)return;
      try{sessionStorage.removeItem('lwb-push-asked-'+user.id);}catch(e){}
      // Clear device identity immediately; unsubscribe also invalidates the provider endpoint.
      workerMessage(reg,'LWB_PUSH_CLEAR').catch(()=>{});
