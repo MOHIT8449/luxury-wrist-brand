@@ -1,4 +1,5 @@
-/* Phone push controls. Permission is requested only from the Enable button. */
+/* Phone push controls. Permission is requested only from a button tap (bell Enable, or the
+   reminder popup shown once per login on phones until alerts are on for that login). */
 (function(){
  'use strict';
  const el=(tag,text)=>{const n=document.createElement(tag);if(text)n.textContent=text;return n;};
@@ -31,6 +32,31 @@
    if(Notification.permission==='denied'){status.textContent='Phone alerts are blocked. Allow notifications in this app / browser settings.';return;}
    if(subscription&&Notification.permission==='granted'){status.textContent='Phone alerts: on for this login.';test.hidden=false;off.hidden=false;}
    else{status.textContent='Receive order and delivery updates on this phone.';enable.hidden=false;}
+  }
+  // Reminder popup: once per app open / login on a phone, until this login has alerts on.
+  function remind(){
+   if(!document.body||!/Android|iPhone|iPad|Mobile/i.test(navigator.userAgent||''))return;
+   if(!config?.enabled||!config.public_key)return;
+   if(subscription&&Notification.permission==='granted')return;
+   const key='lwb-push-asked-'+user.id;
+   try{if(sessionStorage.getItem(key))return;sessionStorage.setItem(key,'1');}catch(e){}
+   const blocked=Notification.permission==='denied';
+   const back=el('div'),dlg=el('div'),ic=el('div','🔔'),h=el('h3',blocked?'Phone alerts are blocked':'Turn on phone alerts'),
+    lead=el('p',blocked?'New orders, tasks and delivery updates cannot reach this phone.':'Get new orders, tasks, approvals and delivery updates in the phone notification bar, even when the app is closed.'),
+    row=el('div'),later=el('button',blocked?'OK':'Later'),allow=el('button','Allow');
+   back.className='erp-dlg-back';dlg.className='erp-dlg confirm lwb-push-ask';dlg.setAttribute('role','alertdialog');dlg.setAttribute('aria-modal','true');
+   ic.className='erp-dlg-ic';lead.className='erp-dlg-lead';row.className='erp-dlg-actions';later.className='erp-dlg-no';allow.className='erp-dlg-ok';
+   later.type=allow.type='button';
+   dlg.append(ic,h,lead);
+   if(blocked){const help=el('p','Phone Settings → Apps → LUXURY GROUP (or Chrome) → Notifications → Allow. Then reopen the app.');help.className='erp-dlg-text';dlg.append(help);row.append(later);}
+   else row.append(later,allow);
+   dlg.append(row);back.append(dlg);document.body.append(back);
+   requestAnimationFrame(()=>back.classList.add('show'));
+   const close=()=>{back.classList.remove('show');setTimeout(()=>back.remove(),160);};
+   later.onclick=close;
+   // Subscribe straight from this tap so the OS permission prompt keeps the user gesture.
+   allow.onclick=()=>{close();enable.onclick();};
+   return back;
   }
   async function save(sub){
    const r=await db.rpc('lwb_push_subscribe',{p_subscription:sub.toJSON(),p_device:navigator.userAgent.slice(0,240)});
@@ -72,6 +98,7 @@
    db.auth.onAuthStateChange((event,session)=>{
     if(event==='SIGNED_OUT'||(session?.user?.id&&session.user.id!==user.id)){
      signedOut=true;
+     try{sessionStorage.removeItem('lwb-push-asked-'+user.id);}catch(e){}
      // Clear device identity immediately; unsubscribe also invalidates the provider endpoint.
      workerMessage(reg,'LWB_PUSH_CLEAR').catch(()=>{});
      reg.pushManager.getSubscription().then(s=>s?.unsubscribe()).catch(()=>{});
@@ -84,7 +111,7 @@
    config=r.data;subscription=await reg.pushManager.getSubscription();
    // A new login rebinds this phone to that user. No permission prompts during page load.
    if(config.enabled&&config.public_key&&subscription&&Notification.permission==='granted')await save(subscription);
-   draw();
+   draw();remind();
   }catch(e){status.textContent='Phone alerts could not connect. Reopen the app and try again.';}
  }
  window.LWBPhonePush={init};
