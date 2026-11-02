@@ -161,6 +161,21 @@ tr.below-landing td{background:#fff1f0}
 body.show-landing .mgr-col{display:table-cell}
 body.show-landing .summary-row.mgr-col{display:flex}
 table.pallet-mode .pal-col{display:none}
+/* One quantity box per SKU line (Mohit, 2 Nov 2026): "Qty in" switch = small unit (Case / Box) or big unit
+   (Pallet / Carton). The other box stays in the page, hidden, and is filled from it (1 Pallet = CS/Pallet,
+   1 Carton = Box/Carton from SKU Master). Direct Vehicle's whole-pallet mode is unchanged. */
+.unit-pick{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:700;color:#5a6676;text-transform:uppercase}
+.unit-pick .seg{display:inline-flex;border:1px solid #cfd6de;border-radius:8px;overflow:hidden}
+.unit-pick button{height:32px;padding:0 12px;border:0;background:#fff;color:#22303f;font:inherit;font-size:13px;font-weight:700;text-transform:none;cursor:pointer}
+.unit-pick button.on{background:#0b3b46;color:#fff}
+#itemsTable:not(.pallet-mode) .qty-col{display:table-cell}
+body:not(.big-unit) #itemsTable:not(.pallet-mode) .pal-col{display:none!important}
+body.big-unit #itemsTable:not(.pallet-mode) .qty-col{display:none!important}
+body.big-unit #itemsTable:not(.pallet-mode) .pal-col{display:table-cell!important}
+.pal-conv{display:block;font-size:11.5px;color:#5a6676;margin-top:2px}
+.pal-conv.warning{color:#b3263f}
+.pal-conv:empty{display:none}
+@media print{.unit-pick{display:none!important}}
 .slab-why{display:block;margin-top:5px;font-size:12px;color:#12632f;font-weight:600}
 .rates-off{display:block;margin-top:5px;font-size:12px;color:#9a6700}
 /* Salesman: no slab choice, no vehicle number, no Party Master link (rate is set automatically). */
@@ -278,6 +293,9 @@ body.sales-entry .auto-field,body.auto-entry .auto-field,body.auto-entry #slabFi
   body.compact-entry #itemsBody td:nth-child(2) input{font-weight:700}
   body.compact-entry #itemsBody input{padding:7px 8px}
   body.compact-entry:not(.direct-vehicle) #itemsBody td.pal-col{display:none}
+  body.compact-entry.big-unit #itemsTable:not(.pallet-mode) #itemsBody tr{grid-template-columns:1fr 1.25fr;grid-template-areas:"sku sku" "pal rate" "amt amt"}
+  body.compact-entry:not(.big-unit) #itemsTable:not(.pallet-mode) #itemsBody tr{grid-template-columns:1fr 1.25fr;grid-template-areas:"sku sku" "qty rate" "amt amt"}
+  .items-head{flex-wrap:wrap;gap:8px}
   body.compact-entry #itemsBody td.row-number{display:none}
   body.compact-entry #itemsBody td:nth-child(2){grid-area:sku}
   body.compact-entry #itemsBody td:nth-child(3){grid-area:pal}
@@ -542,6 +560,9 @@ body.compact-entry .share-more>summary{display:block;cursor:pointer;font-size:13
       <div>
         <div class="card-title" style="margin:0">Order Items</div>
       </div>
+      <div class="unit-pick" id="unitPick">Qty in<span class="seg" role="group" aria-label="Quantity unit">
+        <button type="button" id="unitSmall" class="on" aria-pressed="true" onclick="setBigUnit(false)">Case</button>
+        <button type="button" id="unitBig" aria-pressed="false" onclick="setBigUnit(true)">Pallet</button></span></div>
 
       <button class="btn btn-blue" onclick="addItem()">
         + Add SKU
@@ -556,8 +577,8 @@ body.compact-entry .share-more>summary{display:block;cursor:pointer;font-size:13
           <tr>
             <th>#</th>
             <th style="min-width:250px">SKU / Product</th>
-            <th class="pal-col">Pallet</th>
-            <th id="quantityHeader">QTY (CS / BOX)</th>
+            <th class="pal-col" id="bigUnitHeader">Pallet</th>
+            <th id="quantityHeader" class="qty-col">QTY (CS / BOX)</th>
             <th>Rate ₹</th>
             <th>Amount ₹</th>
             <th>Unit Weight KG</th>
@@ -805,6 +826,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     addItem();
     await loadSkuMaster();
+    updateUnitPick();
     initBrandPick();
     initializePartySearch();
     await loadRates();
@@ -1235,8 +1257,9 @@ function addItem(focus){
              inputmode="decimal"
              placeholder="Pallet"
              oninput="palletInput(this)">
+      <small class="pal-conv"></small>
     </td>
-    <td>
+    <td class="qty-col">
       <input class="qty number" aria-label="Quantity"
              type="number"
              min="0"
@@ -1301,6 +1324,7 @@ function addItem(focus){
   tr.querySelectorAll("td").forEach((td,i)=>{if(!td.classList.contains("row-number"))td.dataset.label=heads[i]||""});
 
   tbody.appendChild(tr);
+  tr.querySelector("td.pal-col").dataset.label = unitWords()[1];
 
   updateRowNumbers();
   updateQuantityModeUI();
@@ -1688,6 +1712,7 @@ function updateQuantityModeUI() {
   document.getElementById("qtyModePallet").setAttribute("aria-pressed", String(pallet));
   document.getElementById("quantityHeader").textContent = pallet ? "QTY (PALLET)" : "QTY (CS / BOX)";
   document.getElementById("itemsTable").classList.toggle("pallet-mode", pallet);
+  if(typeof updateUnitPick === "function" && document.getElementById("unitPick")) setTimeout(updateUnitPick);
   document.querySelectorAll("#itemsBody tr").forEach(row => {
     row.querySelector(".qty").placeholder = pallet ? "Pallets" : unitPlaceholder(row);
     updateRowConversion(row);
@@ -1876,6 +1901,7 @@ function brandChanged(){
     : !b && slipName ? "A party taking " + slipName + " and other brands: one save makes 2 POs (" + slipName + " slip + normal PO)." : "";
   const btn = document.getElementById("saveBtn");
   if(btn && !btn.disabled) btn.textContent = newOrderButtonLabel();
+  updateUnitPick();
   const off = [...document.querySelectorAll("#itemsBody .sku-name")].filter(i => i.value.trim() && !brandHasSku(i.value)).length;
   if(off) showMessage(off + " SKU line(s) are not " + (b ? b.name : "") + ". Remove them or pick All brands.", "error");
 }
@@ -2497,14 +2523,51 @@ function casesPerPallet(row){
   return Number.isFinite(cpp) && cpp > 0 ? cpp : 0;
 }
 
+// Big / small unit words of a line: BOX SKUs (Rajnigandha) are Carton / Box, CASE SKUs Pallet / CS.
+function lineUnits(row){
+  const name = row.querySelector(".sku-name").value;
+  return name && unitByName(name) === "BOX" ? {big:"Carton", small:"BOX"} : {big:"Pallet", small:"CS"};
+}
+function palConv(row){
+  const box = row.querySelector(".pal-conv"); if(!box) return;
+  const cpp = casesPerPallet(row), u = lineUnits(row), qty = row.querySelector(".qty").value.trim();
+  box.className = "pal-conv" + (row.querySelector(".sku-name").value.trim() && !cpp ? " warning" : "");
+  box.textContent = !row.querySelector(".sku-name").value.trim() ? "" : !cpp ? "Set " + u.small + " per " + u.big + " in SKU Master"
+    : qty === "" ? "1 " + u.big + " = " + formatNumber(cpp) + " " + u.small : "= " + formatNumber(Number(qty)) + " " + u.small;
+}
 function syncPallet(row){
   if(quantityMode !== "CS") return;
-  const cpp = casesPerPallet(row), qty = row.querySelector(".qty").value.trim();
+  const cpp = casesPerPallet(row), qty = row.querySelector(".qty").value.trim(), u = lineUnits(row);
   const pallet = row.querySelector(".pallet");
+  palConv(row);
   if(document.activeElement === pallet) return;
   pallet.value = (!cpp || qty === "") ? "" : String(r2(Number(qty)/cpp));
-  pallet.placeholder = cpp ? "Pallet" : "—";
-  pallet.title = cpp ? "1 Pallet = " + cpp + " CS" : "Set CS/Pallet in SKU Master";
+  pallet.placeholder = cpp ? u.big : "—";
+  pallet.title = cpp ? "1 " + u.big + " = " + cpp + " " + u.small : "Set " + u.small + " per " + u.big + " in SKU Master";
+}
+let bigUnit = false;
+try { bigUnit = localStorage.getItem("lwbQtyBig") === "1"; } catch(e) {}
+function unitWords(){
+  const b = typeof pickedBrand === "function" ? pickedBrand() : null;
+  if(b) return b.pack_unit === "BOX" ? ["Box","Carton"] : ["Case","Pallet"];
+  return ["Case / Box","Pallet / Carton"];
+}
+function setBigUnit(on){
+  bigUnit = !!on;
+  try { localStorage.setItem("lwbQtyBig", bigUnit ? "1" : "0"); } catch(e) {}
+  updateUnitPick();
+}
+function updateUnitPick(){
+  const [small, big] = unitWords();
+  document.body.classList.toggle("big-unit", bigUnit);
+  const sb = document.getElementById("unitSmall"), bb = document.getElementById("unitBig");
+  sb.textContent = small; bb.textContent = big;
+  sb.classList.toggle("on", !bigUnit); bb.classList.toggle("on", bigUnit);
+  sb.setAttribute("aria-pressed", String(!bigUnit)); bb.setAttribute("aria-pressed", String(bigUnit));
+  document.getElementById("unitPick").hidden = quantityMode === "PALLET";
+  document.getElementById("bigUnitHeader").textContent = big;
+  document.querySelectorAll("#itemsBody td.pal-col").forEach(td => td.dataset.label = big);
+  document.querySelectorAll("#itemsBody tr").forEach(row => { syncPallet(row); palConv(row); });
 }
 
 function palletInput(input){
@@ -2512,6 +2575,7 @@ function palletInput(input){
   const cpp = casesPerPallet(row), v = input.value.trim();
   if(cpp) row.querySelector(".qty").value = v === "" ? "" : String(Math.round(Number(v)*cpp));
   calculateRow(row.querySelector(".qty"));
+  palConv(row);
 }
 
 function qtyInput(input){

@@ -4,6 +4,12 @@
 **Purpose:** Continue the same ERP project from a new ChatGPT conversation without restarting or losing the agreed requirements.
 **Status:** Active development / verification. Do not assume all modules are completed or fully tested.
 
+## One quantity box per SKU line (2 Nov 2026)
+
+- Mohit: the PO line had both Pallet and Qty (CS / BOX) boxes, but an order comes in one unit only. Now "Qty in [Case / Box | Pallet / Carton]" sits on the Order Items heading (kept per device, `localStorage lwbQtyBig`); only one box shows per line. Words follow the Brand pick (Coca-Cola: Case / Pallet, Rajnigandha: Box / Carton, All: both). Big unit shows "= 260 CS" / "= 60 BOX" under the box; the hidden box is filled from it, so saving is unchanged (cases / boxes are saved).
+- Carton uses the same SKU Master field as Pallet (`cases_per_pallet`, label now "CS per Pallet / Box per Carton"): for a BOX SKU enter boxes per carton there. No SQL.
+- Direct Vehicle whole-pallet mode (CS / PALLET buttons) is unchanged; the switch hides in that mode.
+
 ## Rajnigandha quick slip (kachcha parchi) flow (2 Nov 2026)
 
 - Mohit asked: Coca-Cola keeps the full PO flow. A Rajnigandha PO (Sales Head Vinesh Chalavadiya) is made, driver name + vehicle no. typed at once, a small thermal slip (3x4 or 2x4 inch) prints, and the PO goes straight to Accounts for the Tally bill. No approval / transport / loading in between. Slip shows PO, date, party name, party mobile + address (Party Master), SKU / qty / rate / amount, total. Mohit (later the same day): slip has no heading at all, no driver / vehicle lines (they are still entered and saved, shown on the Slips list), no driver mobile, and one "Receiver sign" line instead of Driver / Godown sign.
