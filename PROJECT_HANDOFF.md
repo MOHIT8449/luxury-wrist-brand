@@ -20,6 +20,9 @@
 - Totals (Total SKU, Pallet, Quantity, Amount, Final Weight) are one highlighted horizontal strip instead of a tall box (phone keeps the sticky total bar).
 - Search old driver (2 Nov 2026): the popup has "Search old driver (name / mobile / vehicle)"; picking fills name, mobile and vehicle. Source `lwb_pickup_drivers()` (`lwb_self_pickup_driver_search.sql`): earlier `lwb_order_pickup` rows, one per mobile (else name + vehicle), newest first, max 500. A new driver typed once shows up next time.
 - Bottom buttons (2 Nov 2026): Order image copy / Message copy / Excel / New Order and the "Share / Print / Excel" link are removed. Only Submit, plus Print for Sales Head / Admin (`headCreatesApprovedPo()`); Salesman has no Print.
+- Godown Manager list fix (2 Nov 2026, `lwb_self_pickup_godown_list_fix.sql`): the list was empty because no Employee Master row had Work / Post "Godown Manager"; Godown Managers work with a Godown (warehouse) login. `lwb_pickup_godown_managers()` now returns Employee Master Godown / Warehouse Managers AND active warehouse logins (one per person: linked user_id or same mobile), each with `key` 'S:<staff id>' / 'U:<login id>'. `lwb_order_pickup.godown_user_id` added; `lwb_set_order_pickup` takes `p.godown_key` (old `godown_staff_id` still works).
+- Mohit dropped "Search old driver" (types each time); the popup has only the 4 fields. `lwb_pickup_drivers()` stays in the DB, unused.
+- Print: Order Entry print shows a "Self pickup: Driver | Mobile | Vehicle | Godown Manager" line; PO Approval PO print / challan fall back to `lwb_order_pickup` when no dispatch assignment exists (PO print also shows Driver Mobile).
 - Old preview `erp-pro-redesign.luxury-wrist-brand.pages.dev` is a stale branch preview; the live site is `luxury-wrist-brand.pages.dev`.
 - Not yet shown on PO Approval / Loading & Dispatch (they can `select` from `lwb_order_pickup`).
 - Test: `tests/self-pickup` (PGlite, 4 tests).

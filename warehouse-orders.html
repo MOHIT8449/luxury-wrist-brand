@@ -2944,12 +2944,15 @@ async function printApprovedPO(documentType="challan",collect=null){
   try {
     // Use the saved assignment of this exact PO, not another vehicle or
     // uncommitted form inputs. This is the same source as Accounts print.
-    const [result,noteResult,itemResult]=await Promise.all([
+    const [result,noteResult,itemResult,pickupResult]=await Promise.all([
       db.from("dispatch_assignments")
         .select("driver_name,driver_mobile,vehicle_no,loading_person,transporter_name")
         .eq("order_id",order.id).maybeSingle(),
       db.from("orders").select("*").eq("id",order.id).single(),
-      db.from("order_items").select("*").eq("order_id",order.id).order("created_at",{ascending:true})
+      db.from("order_items").select("*").eq("order_id",order.id).order("created_at",{ascending:true}),
+      // Self Pickup: driver / vehicle / Godown Manager typed on the order (lwb_self_pickup_driver_setup.sql).
+      db.from("lwb_order_pickup").select("driver_name,driver_mobile,vehicle_no,godown_manager_name").eq("order_id",order.id).maybeSingle()
+        .then(r=>r,()=>({data:null}))
     ]);
     if(result.error)throw result.error;
     if(noteResult.error)throw noteResult.error;
@@ -2959,12 +2962,18 @@ async function printApprovedPO(documentType="challan",collect=null){
     order=noteResult.data;
     if(!selectedOrder||selectedOrder.id!==order.id)return;
 
-    if(!isPo&&!result.data){
+    const pk=pickupResult&&!pickupResult.error?pickupResult.data:null;
+    if(!isPo&&!result.data&&!pk){
       // Nothing saved yet: the challan would print Godown Manager / Driver / Vehicle as blank.
       if(await confirm("Driver, Vehicle and Godown Manager are not assigned for PO "+order.order_no+" yet.\nAssign them first so they show on the Delivery Challan.",{title:"Transport not assigned",ok:"🚚 Assign now",cancel:"Print without them"}))return openTransportAllocation(order.id);
       if(!selectedOrder||selectedOrder.id!==order.id)return;
     }
-    const a=result.data||{};
+    // Saved assignment wins; a Self Pickup order without one prints the driver typed on the order.
+    const a={...(result.data||{})};
+    if(pk){
+      a.driver_name=a.driver_name||pk.driver_name;a.driver_mobile=a.driver_mobile||pk.driver_mobile;
+      a.vehicle_no=a.vehicle_no||pk.vehicle_no;a.loading_person=a.loading_person||pk.godown_manager_name;
+    }
     const printNote=String(noteResult.data?.manager_note||"").trim();
     approvedTransport=result.data?{...approvedTransport,...result.data}:null;
     const safe=value=>escapeHtml(value==null?"":String(value));
@@ -3003,7 +3012,7 @@ async function printApprovedPO(documentType="challan",collect=null){
         "<div class='pa-meta'>"+
           box("Customer",safe(order.customer_name),"pa-cust")+box("Date &amp; Time",noYear(order.order_date||order.created_at))+
           box("Sales Person",dash(order.sales_person),"pa-cust")+box("Transport",dash(order.transportation))+
-          box("Godown Manager",dash(a.loading_person))+box("Driver",dash(a.driver_name))+box("Vehicle No.",dash(a.vehicle_no))+
+          box("Godown Manager",dash(a.loading_person))+box("Driver",dash(a.driver_name))+box("Driver Mobile",dash(a.driver_mobile))+box("Vehicle No.",dash(a.vehicle_no))+
         "</div>"+
         "<table class='pa-items'><thead><tr><th>Sr</th><th>SKU / Product</th><th>Qty</th><th>Rate ₹</th><th>Amount ₹</th><th>Loaded</th></tr></thead><tbody>"+
         approvedLines.map((item,i)=>"<tr><td>"+(i+1)+"</td><td>"+safe(item.sku)+"</td><td class='num'>"+qty(item.qty)+"</td><td class='num'>"+money(item.rate)+

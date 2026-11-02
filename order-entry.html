@@ -363,18 +363,11 @@ body.compact-entry .share-more>summary{display:block;cursor:pointer;font-size:13
 .pickup-head small{display:block;font-size:12.5px;color:#7a6a3a;margin-top:3px}
 .pickup-dlg select{width:100%;padding:10px 11px;border:1px solid #ccc;border-radius:7px;font:inherit;font-size:16px;text-transform:none;color:#1c2836;background:#fff}
 .pickup-dlg .pd-note:empty{display:none}
-.pk-search{position:relative;padding:10px;border:1px dashed #c9a24a;border-radius:9px;background:#fffaf0}
-.pk-search input{background:#fff}
-.pk-field{position:relative;margin-top:4px}
-.pk-results{position:absolute;left:0;right:0;top:calc(100% + 2px);z-index:5;max-height:240px;overflow:auto;background:#fff;border:1px solid #d6dae0;border-radius:8px;box-shadow:0 10px 24px #18284126}
-.pk-results[hidden]{display:none}
-.pk-results button{display:block;width:100%;text-align:left;padding:9px 11px;border:0;border-bottom:1px solid #eef0f3;background:#fff;font:inherit;font-size:14px;color:#1c2836;cursor:pointer}
-.pk-results button:hover,.pk-results button.on{background:#eef6f6}
-.pk-results button small{display:block;font-size:12px;color:#5b6573;margin-top:2px}
-.pk-results .pk-none{padding:9px 11px;font-size:13px;color:#5b6573}
+.pickup-print{display:none}
+@media print{.pickup-print:not([hidden]){display:block;margin-top:10px;padding:8px 12px;border:1px solid #999;border-radius:8px;font-size:13px}}
 .print-btn{border:1px solid #c9ced6;margin-left:auto}
 .print-btn[hidden]{display:none}
-.pk-or{display:block;margin-top:6px;font-size:11.5px;color:#7a6a3a}
+
 @media(max-width:420px){.pickup-dlg .pd-two{grid-template-columns:1fr}}
 
 /* Totals: one light line (white, black text) instead of a tall box (less scrolling). */
@@ -608,6 +601,8 @@ body.compact-entry .share-more>summary{display:block;cursor:pointer;font-size:13
       </div>
     </div>
 
+    <div class="pickup-print" id="pickupPrint" hidden></div>
+
     <div class="actions">
 
       <div class="sticky-total" id="stickyTotal" aria-live="polite"></div>
@@ -636,15 +631,6 @@ body.compact-entry .share-more>summary{display:block;cursor:pointer;font-size:13
     <div class="pickup-head">
       <span class="pickup-ico" aria-hidden="true">🚚</span>
       <div><h3 id="pkTitle">Self pickup — driver details</h3><small>Outside driver changes every time. Fill these to submit the order.</small></div>
-    </div>
-    <div class="pk-search">
-      <label for="pkSearch">Search old driver (name / mobile / vehicle)</label>
-      <div class="pk-field">
-        <input id="pkSearch" type="search" autocomplete="off" placeholder="Type to search drivers entered before"
-               role="combobox" aria-expanded="false" aria-controls="pkResults">
-        <div id="pkResults" class="pk-results" role="listbox" hidden></div>
-      </div>
-      <small class="pk-or">Not in the list? Type the new driver below; it is saved for next time.</small>
     </div>
     <div class="pd-two">
       <label>Driver Name *<input id="pkDriverName" maxlength="80" autocomplete="off" placeholder="e.g. Ramesh Patel"></label>
@@ -1105,7 +1091,7 @@ async function loadOrderForEdit(id) {
       document.getElementById("pkDriverName").value = pk.driver_name || "";
       document.getElementById("pkDriverMobile").value = pk.driver_mobile || "";
       document.getElementById("pkVehicle").value = pk.vehicle_no || "";
-      await loadPickupManagers(pk.godown_staff_id == null ? "" : pk.godown_staff_id);
+      await loadPickupManagers(pk.godown_staff_id != null ? "S:" + pk.godown_staff_id : pk.godown_user_id ? "U:" + pk.godown_user_id : "");
     }
   }
   const pallet = select.value === "DIRECT VEHICLE" && (items || []).length > 0 && items.every(i => i.entry_uom === "PALLET" && i.ordered_pallet_qty);
@@ -1767,71 +1753,12 @@ function loadPickupManagers(selectId){
     const list = Array.isArray(data) ? data : [];
     const keep = sel.value;
     sel.replaceChildren(new Option("Select Godown Manager", ""));
-    list.forEach(m => sel.add(new Option(m.name + (m.mobile ? " · " + m.mobile : ""), String(m.id))));
+    list.forEach(m => sel.add(new Option(m.name + (m.mobile ? " · " + m.mobile : ""), m.key || "S:" + m.id)));
     sel.value = keep;
-    note.textContent = list.length ? "" : "No Godown Manager in Employee Master yet (Work / Post = Godown Manager).";
+    note.textContent = list.length ? "" : "No Godown Manager found. Add one in Employee Master (Work / Post = Godown Manager).";
   })();
   return pickupManagersLoad.then(() => { if(selectId != null) sel.value = String(selectId); });
 }
-// Drivers of earlier Self Pickup orders: search by name / mobile / vehicle and pick to fill.
-let pickupDriversLoad = null;
-function loadPickupDrivers(){
-  if(!pickupDriversLoad) pickupDriversLoad = db.rpc("lwb_pickup_drivers").then(({data,error}) => {
-    if(error){ pickupDriversLoad = null; return []; }
-    return Array.isArray(data) ? data : [];
-  }, () => { pickupDriversLoad = null; return []; });
-  return pickupDriversLoad;
-}
-function setupPickupSearch(){
-  const box = document.getElementById("pkSearch"), list = document.getElementById("pkResults");
-  if(box.dataset.ready) return;
-  box.dataset.ready = "1";
-  let shown = [], active = -1;
-  const norm = t => String(t || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
-  const close = () => { list.hidden = true; box.setAttribute("aria-expanded","false"); active = -1; };
-  const pick = d => {
-    document.getElementById("pkDriverName").value = d.driver_name || "";
-    document.getElementById("pkDriverMobile").value = d.driver_mobile || "";
-    document.getElementById("pkVehicle").value = d.vehicle_no || "";
-    box.value = ""; close();
-    document.getElementById("pkError").textContent = "";
-    document.getElementById(document.getElementById("pkGodown").value ? "pkSave" : "pkGodown").focus();
-  };
-  const render = async () => {
-    const q = box.value.trim(), qn = norm(q);
-    const all = await loadPickupDrivers();
-    shown = (q ? all.filter(d => String(d.driver_name || "").toUpperCase().includes(q.toUpperCase())
-                         || (qn && (norm(d.driver_mobile).includes(qn) || norm(d.vehicle_no).includes(qn)))) : all).slice(0, 8);
-    list.replaceChildren();
-    if(!shown.length){
-      const none = document.createElement("div"); none.className = "pk-none";
-      none.textContent = all.length ? "No driver found. Type the new driver below." : "No driver saved yet. Type the driver below.";
-      list.append(none);
-    }
-    shown.forEach((d, i) => {
-      const b = document.createElement("button"); b.type = "button"; b.setAttribute("role","option");
-      b.append(d.driver_name || "(no name)");
-      const sm = document.createElement("small");
-      sm.textContent = [d.driver_mobile, d.vehicle_no, d.times > 1 ? d.times + " pickups" : ""].filter(Boolean).join(" · ");
-      b.append(sm);
-      b.addEventListener("mousedown", e => e.preventDefault());
-      b.addEventListener("click", () => pick(d));
-      if(i === active) b.classList.add("on");
-      list.append(b);
-    });
-    list.hidden = false; box.setAttribute("aria-expanded","true");
-  };
-  box.addEventListener("input", () => { active = -1; render(); });
-  box.addEventListener("focus", render);
-  box.addEventListener("blur", () => setTimeout(close, 120));
-  box.addEventListener("keydown", e => {
-    if(list.hidden || !shown.length) return;
-    if(e.key === "ArrowDown" || e.key === "ArrowUp"){ e.preventDefault(); active = (active + (e.key === "ArrowDown" ? 1 : shown.length - 1)) % shown.length; render(); }
-    else if(e.key === "Enter"){ e.preventDefault(); pick(shown[Math.max(active, 0)]); }
-    else if(e.key === "Escape"){ e.preventDefault(); e.stopPropagation(); close(); }
-  });
-}
-
 // Submit with SELF PICKUP: popup asks the driver details; resolves true when filled, false on Back.
 function askPickupDetails(){
   const dlg = document.getElementById("pickupDlg");
@@ -1839,8 +1766,6 @@ function askPickupDetails(){
   const err = document.getElementById("pkError");
   err.textContent = "";
   loadPickupManagers();
-  loadPickupDrivers();
-  setupPickupSearch();
   return new Promise(done => {
     const v = id => document.getElementById(id).value.trim();
     const submit = e => {
@@ -1858,23 +1783,30 @@ function askPickupDetails(){
     dlg.returnValue = "";
     if(dlg.open) dlg.close();
     try { dlg.showModal(); } catch(e) { dlg.setAttribute("open", ""); }
-    setTimeout(() => document.getElementById(v("pkDriverName") ? "pkSave" : "pkSearch").focus(), 30);
+    setTimeout(() => document.getElementById(v("pkDriverName") ? "pkSave" : "pkDriverName").focus(), 30);
   });
 }
 function pickupDetails(){
   if(document.getElementById("transportation").value !== "SELF PICKUP") return null;
   const v = id => document.getElementById(id).value.trim();
-  const p = {driver_name:v("pkDriverName"), driver_mobile:v("pkDriverMobile"), vehicle_no:v("pkVehicle").toUpperCase(), godown_staff_id:v("pkGodown") || null};
-  return (p.driver_name || p.driver_mobile || p.vehicle_no || p.godown_staff_id) ? p : null;
+  const p = {driver_name:v("pkDriverName"), driver_mobile:v("pkDriverMobile"), vehicle_no:v("pkVehicle").toUpperCase(), godown_key:v("pkGodown") || null};
+  return (p.driver_name || p.driver_mobile || p.vehicle_no || p.godown_key) ? p : null;
 }
 function pickupText(){
   const p = pickupDetails();
   if(!p) return "";
   const sel = document.getElementById("pkGodown");
-  const gm = p.godown_staff_id && sel.selectedIndex > 0 ? sel.options[sel.selectedIndex].text.split(" · ")[0] : "";
+  const gm = p.godown_key && sel.selectedIndex > 0 ? sel.options[sel.selectedIndex].text.split(" · ")[0] : "";
   return [p.driver_name && "Driver: " + p.driver_name, p.driver_mobile && "Mobile: " + p.driver_mobile,
           p.vehicle_no && "Vehicle: " + p.vehicle_no, gm && "Godown Manager: " + gm].filter(Boolean).join(" | ");
 }
+// Print: Self Pickup driver / mobile / vehicle / Godown Manager under the totals.
+window.addEventListener("beforeprint", () => {
+  const box = document.getElementById("pickupPrint"), t = pickupText();
+  box.hidden = !t;
+  box.replaceChildren();
+  if(t){ const b = document.createElement("b"); b.textContent = "Self pickup: "; box.append(b, t); }
+});
 function clearPickup(){
   ["pkDriverName","pkDriverMobile","pkVehicle","pkGodown"].forEach(id => document.getElementById(id).value = "");
 }
