@@ -30,6 +30,9 @@
     const salesmen=()=>team.filter(isSales);
     const assignable=salesmen;
     let empNoLogin=[];
+    // Brand per salesman (Mohit, 2 Nov 2026): Coca-Cola salesman sells only Coca-Cola, Rajnigandha only Rajnigandha;
+    // "All brands" (e.g. the godown Sales Head) gets both. Same data as Companies > Team brands (lwb_user_companies).
+    let brands=[],brandOf=new Map();
     const nameOf=id=>(team.find(t=>t.user_id===id)||{}).full_name||"—";
     const TABS=[["team","Salesmen"],["parties","Party Assignment"],["skus","SKU Visibility"],["targets","Monthly Targets"],["plan","Morning Plan"]];
 
@@ -38,6 +41,9 @@
       const r=await client.rpc("lwb_sales_team");
       if(r.error){setupError=/lwb_sales_team/.test(r.error.message)?"Run lwb_sales_team_setup.sql in Supabase first.":r.error.message;render();return}
       team=r.data||[];
+      const [bc,bt]=await Promise.all([client.from("lwb_companies").select("id,name,active,sort_no").order("sort_no").order("name"),client.rpc("lwb_brand_team")]);
+      brands=bc.error?[]:(bc.data||[]).filter(c=>c.active!==false);
+      brandOf=new Map(bt.error?[]:(bt.data||[]).map(u=>[u.user_id,u.company_ids||[]]));
       // Employee Master "Salesman" posts that have no ERP login yet (best effort; needs Employee Master access).
       client.rpc("lwb_emp_logins").then(x=>{
         const list=Array.isArray(x.data)?x.data:[];
@@ -86,13 +92,31 @@
         esc(t.full_name||"—")+(isHead(t)?' <span class="erp-badge">Sales Head</span>':"")+(t.active?"":' <span class="erp-badge">Inactive</span>'),esc(t.mobile||"—"),
         isHead(t)?'<select class="sl-in" data-f="kind" disabled><option value="OFFICE">Sales Head (all parties)</option></select>':'<select class="sl-in" data-f="kind"><option value=""'+(t.kind?"":" selected")+'>Field · not saved</option><option value="FIELD"'+(t.kind==="FIELD"?" selected":"")+'>Field (own parties)</option><option value="OFFICE"'+(t.kind==="OFFICE"?" selected":"")+'>Office (all parties)</option></select>',
         '<input class="sl-in" data-f="area" maxlength="120" placeholder="e.g. Surat city, Bardoli" value="'+esc(t.area||"")+'">',
+        brandSelect(t),
         fmt(t.parties),'<button type="button" class="sl-btn small" data-save-sm>Save</button>']}));
       card.innerHTML='<div class="erp-card-head"><h2>Salesmen</h2><small style="color:var(--erp-muted)">'+team.filter(isHead).length+' Sales Heads · '+team.filter(t=>!isHead(t)).length+' salesmen</small></div>'+
-        (rows.length?'<div class="sl-scroll">'+S.table(["Salesman","Mobile","Type","Area / Route","Parties",""],rows,[4])+"</div>":'<div class="erp-empty">No SALES logins yet. Give the SALES role in Manage Users first.</div>')+
+        (rows.length?'<div class="sl-scroll">'+S.table(["Salesman","Mobile","Type","Area / Route","Brand","Parties",""],rows,[5])+"</div>":'<div class="erp-empty">No SALES logins yet. Give the SALES role in Manage Users first.</div>')+
         (empNoLogin.length?'<div class="sl-msg" style="margin:12px">'+empNoLogin.length+' Sales Head / Salesman in Employee Master without an ERP login: <b>'+empNoLogin.map(e=>esc(e.name)).join(", ")+'</b>. Create the login in <a href="fleet-master.html#employees">Employee Master</a> (ERP Login column); he then shows here and in Party Assignment, SKU Visibility, Targets and Morning Plan.</div>':"");
-      el("note").textContent="Every SALES login is a Field salesman unless set to Office. Field salesman: sees only his own parties everywhere (PO Entry, PO list, Party Call List, Complaint Box, returns, reports), no outstanding or ledger. Office salesman: takes orders for every party. Sales Head = MANAGER role in Manage Users; Admin and Sales Head see everything.";
+      el("note").textContent="Every SALES login is a Field salesman unless set to Office. Field salesman: sees only his own parties everywhere (PO Entry, PO list, Party Call List, Complaint Box, returns, reports), no outstanding or ledger. Office salesman: takes orders for every party. Sales Head = MANAGER role in Manage Users; Admin and Sales Head see everything. Brand: a salesman set to one brand sees and sells only that brand's SKUs (New Sales Order shows only that brand); All brands = both.";
+    }
+    function brandSelect(t){
+      if(!brands.length)return "—";
+      const ids=brandOf.get(t.user_id)||[],cur=ids.length===1?ids[0]:ids.length?"multi":"";
+      const lock=isHead(t)&&me&&me.role!=="admin";
+      return '<select class="sl-in" data-f="brand"'+(lock?' disabled title="Only Admin can set a Sales Head\'s brand"':"")+'><option value="">All brands</option>'+
+        brands.map(c=>'<option value="'+c.id+'"'+(c.id===cur?" selected":"")+">Only "+esc(c.name)+"</option>").join("")+
+        (cur==="multi"?'<option value="multi" selected>'+esc(ids.map(i=>(brands.find(c=>c.id===i)||{}).name||"?").join(" + "))+"</option>":"")+"</select>";
+    }
+    async function saveBrand(tr){
+      const sel=tr.querySelector('[data-f="brand"]');if(!sel||sel.disabled||sel.value==="multi")return true;
+      const now=brandOf.get(tr.dataset.id)||[],want=sel.value?[sel.value]:[];
+      if(now.length===want.length&&now.every(x=>want.includes(x)))return true;
+      const {error}=await client.rpc("lwb_set_user_companies",{p_user_id:tr.dataset.id,p_company_ids:want});
+      if(error){await alert("Brand not saved: "+error.message);return false}
+      brandOf.set(tr.dataset.id,want);return true;
     }
     async function saveSalesman(tr){
+      if(!await saveBrand(tr))return;
       const kind=tr.querySelector('[data-f="kind"]').value,area=tr.querySelector('[data-f="area"]').value;
       if(!kind){await alert("Select Field or Office.");return}
       const {error}=await client.rpc("lwb_save_salesman",{p_user_id:tr.dataset.id,p_kind:kind,p_area:area});
