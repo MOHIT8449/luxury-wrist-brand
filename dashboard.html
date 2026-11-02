@@ -99,6 +99,19 @@
     .bn-preview figcaption .warn{color:var(--erp-amber)}
     @media(max-width:760px){.bn-pic img{max-height:240px}.bn-nav{display:none}.bn-cap{padding:7px 10px;font-size:12px}.bn-cap small{display:block;margin:2px 0 0}}
     /* My Tasks (tasks.html, lwb_task_management_setup.sql) */
+    .hero-row{display:flex;align-items:center;gap:8px;max-width:900px;margin:0 auto}
+    .hero-row .hero-search{flex:1;min-width:0;max-width:none;margin:0}
+    .hero-row .focus-post{display:contents}
+    .hero-row .focus-post[hidden]{display:none}
+    .hero-btn{flex:none;height:40px;padding:0 12px;border-radius:8px;border:1px solid var(--erp-line);background:#fff;color:var(--erp-ink);font:inherit;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap;display:inline-flex;align-items:center;gap:6px;text-decoration:none}
+    .hero-btn.pri{background:var(--erp-red);border-color:var(--erp-red);color:#fff}
+    .hero-btn[aria-expanded="true"]{border-color:var(--erp-red);background:var(--erp-red-soft)}
+    .hero-n{min-width:18px;height:18px;border-radius:9px;background:var(--erp-red);color:#fff;font-size:11px;line-height:18px;text-align:center;padding:0 5px}
+    .hero-n.late{background:var(--erp-danger,#c62828)}
+    .rd-on .hero-row{max-width:none}
+    .rd-on .hero-search input{height:40px}
+    .rd-on .hero-search>svg{top:11px}
+    @media(max-width:700px){.hero-row{flex-wrap:wrap;gap:6px}.hero-row .hero-search{flex:1 1 100%}.hero-btn{flex:1 1 0;justify-content:center;height:36px;padding:0 8px;font-size:12.5px}}
     .tk-dash{margin:0 0 16px;background:#fff;border:1px solid var(--erp-line);border-radius:10px;overflow:hidden}
     .tk-dash-h{display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid var(--erp-line);flex-wrap:wrap}
     .tk-dash-h b{font-size:15px}.tk-dash-h small{color:var(--erp-muted);font-size:12.5px}
@@ -163,17 +176,22 @@
   <main id="dashboard" class="erp-main" style="display:none">
     <div class="hero">
       <h2>Search Anything</h2>
+      <div class="hero-row">
       <div class="hero-search">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
         <input id="heroSearch" type="search" placeholder="Search Party, PO No. or Module" autocomplete="off" aria-label="Search Anything">
         <div class="hero-results" id="heroResults"></div>
+      </div>
+      <!-- Mohit (2 Nov 2026): search, My Tasks, Give task and Post banner in one line; the task list opens only on "My Tasks". -->
+      <button type="button" class="hero-btn" id="taskBtn" hidden aria-expanded="false" aria-controls="taskCard">📋 My Tasks<span class="hero-n" id="taskN" hidden></span></button>
+      <a class="hero-btn pri" id="giveBtn" href="tasks.html?new=1" hidden>+ Give task</a>
+      <div class="focus-post" id="focusPost" hidden><button type="button" id="focusOpen" class="hero-btn">+ Post banner</button></div>
       </div>
     </div>
     <div class="kpis" id="kpis"></div>
     <a class="acc-dash" id="accDash" href="accounts-dashboard.html" hidden><span class="acc-ic">₹</span><span><b>Accounts Dashboard</b><small>Today's cash in / cash out, bank deposit, cash handover, bank check</small></span><span class="acc-go">Open →</span></a>
     <div class="banners" id="banners" hidden></div>
     <div class="focus" id="focus"></div>
-    <div class="focus-post" id="focusPost" hidden><button type="button" id="focusOpen">+ Post banner / message</button></div>
     <form class="focus-form" id="focusForm" hidden autocomplete="off">
       <input class="msg" id="focusMsg" maxlength="300" placeholder="e.g. 300ml Thums Up stock arrived today, push it" aria-label="Message">
       <input id="focusSku" list="focusSkus" placeholder="SKU (optional)" aria-label="SKU">
@@ -283,11 +301,12 @@
     let taskUid="";
     async function loadTasks(){
       const card=document.getElementById("taskCard");
-      if(ERPShell.hiddenPages().includes("tasks.html")){card.hidden=true;return}
+      const tb=document.getElementById("taskBtn"),gb=document.getElementById("giveBtn"),tn=document.getElementById("taskN");
+      if(ERPShell.hiddenPages().includes("tasks.html")){card.hidden=true;tb.hidden=true;gb.hidden=true;return}
       const [mine,given]=await Promise.all([
         client.from("lwb_tasks").select("id,title,due_date,priority,status,assigned_by_name").eq("assigned_to",taskUid).in("status",["OPEN","IN_PROGRESS"]).order("due_date").limit(50),
         client.from("lwb_tasks").select("id,due_date,status").eq("assigned_by",taskUid).neq("assigned_to",taskUid).in("status",["OPEN","IN_PROGRESS"]).limit(1000)]);
-      if(mine.error){card.hidden=true;return}
+      if(mine.error){card.hidden=true;tb.hidden=true;gb.hidden=true;return}
       const today=new Date().toLocaleDateString("en-CA",{timeZone:"Asia/Kolkata"});
       const late=x=>Math.round((Date.parse(today)-Date.parse(x.due_date))/864e5);
       const rows=(mine.data||[]).sort((a,b)=>a.due_date<b.due_date?-1:a.due_date>b.due_date?1:(b.priority==="URGENT")-(a.priority==="URGENT"));
@@ -299,7 +318,7 @@
       const grow=document.createElement("span");grow.className="grow";
       h.append(t,s,grow);
       if(g.length){const a=document.createElement("a");a.href="tasks.html";a.textContent="Given by me: "+g.length+" pending"+(gLate?" · "+gLate+" late":"");if(gLate)a.style.color="var(--erp-danger,#c62828)";h.append(a)}
-      const give=document.createElement("a");give.className="give";give.href="tasks.html?new=1";give.textContent="+ Give task";h.append(give);
+
       card.append(h);
       if(!rows.length){const n=document.createElement("div");n.className="tk-dash-none";n.textContent="✓ No pending task for you.";card.append(n)}
       rows.slice(0,5).forEach(x=>{
@@ -316,7 +335,11 @@
         a.append(badge);card.append(a);
       });
       if(rows.length>5){const a=document.createElement("a");a.className="tk-dash-row";a.href="tasks.html";a.textContent="See all "+rows.length+" tasks →";card.append(a)}
-      card.hidden=false;
+      const lateN=rows.filter(x=>late(x)>0).length;
+      tn.textContent=rows.length;tn.hidden=!rows.length;tn.classList.toggle("late",lateN>0);tb.title=rows.length?rows.length+" pending"+(lateN?" · "+lateN+" overdue":""):"No pending task";
+      tb.hidden=false;gb.hidden=false;
+      if(!tb.dataset.on){tb.dataset.on="1";tb.onclick=()=>{const open=card.hidden;card.hidden=!open;tb.setAttribute("aria-expanded",String(open))}}
+      card.hidden=tb.getAttribute("aria-expanded")!=="true";
     }
     const STATUS={
       pending_approval:["Pending Approval","amber","warehouse-orders.html"],approved:["Approved","blue","warehouse-orders.html"],
