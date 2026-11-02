@@ -186,6 +186,15 @@
 **New chat kickoff text:**
 "Continue our LUXURY WRIST BRAND ERP project. Read `PROJECT_HANDOFF.md` from GitHub repo `MOHIT8449/luxury-wrist-brand`. The Driver/Delivery SQL is complete; DRIVER role and mobile mapping were saved; `lwb_sales_head_active_drivers` RPC ran successfully; `warehouse-orders.html` now merges active ERP drivers into the dropdown. First verify the new driver's name in Sales Head dropdown, correct matching mobile and actual loaded PO in Driver Portal. Email login only; Twilio/WhatsApp postponed. Guide me step by step in Hindi."
 
+## Every salesman in Sales Team Setup; salesman sees only his parties (2 Nov 2026)
+
+- Mohit: SKU Visibility / Targets / Morning Plan tick boxes showed only salesmen that already had a party; and a salesman (e.g. Nadim Tinwala) must see only his assigned parties everywhere.
+- SQL: `lwb_salesman_party_scope_setup.sql`. Every SALES login gets a `lwb_salesmen` row (FIELD; OFFICE rows kept), and trigger `zz_lwb_user_salesman_autoadd` on `user_profiles` adds new SALES logins (never blocks the save). `lwb_set_sku_visibility`, `lwb_save_sales_targets`, `lwb_add_sales_plan_note` accept any SALES login (helper `lwb_ensure_salesman`, not callable by users).
+- Field salesman (any SALES login not set to OFFICE): restrictive SELECT policy `lwb_sales_party_scope` added on `tax_invoices`, `sales_returns`, `sales_return_items`, `lwb_payment_collections` (only rows of orders visible to him / collections he submitted). `lwb_complaint_add` refuses a party or PO that is not his. Party Master, orders, order items, Party Call List, party activity, ledger / outstanding were already limited.
+- `sales-team.html` lists every active SALES login in all tabs, and on Salesmen shows Employee Master "Salesman" posts that have no ERP login yet. `complaint-box.html` party field is a dropdown of the user's own parties (`party-list.js`).
+- Compact format (Mohit, standing rule for every page): small inputs that never clip text, tight table rows, buttons in one row, no side scroll on phone. `sales.css` now has `.sl-stack` (phone: one compact card per table row, labels from the header); Sales Team Setup uses it on every tab.
+- Test: `tests/salesman-scope` (PGlite, 4 tests). Browser check with a mocked client at 1366 / 390 px; no live data written.
+
 ## Sales Team module (25 Oct 2026)
 
 - SQL: `lwb_sales_team_setup.sql` (run once). Roles unchanged: Sales Head = MANAGER, salesmen = SALES.
