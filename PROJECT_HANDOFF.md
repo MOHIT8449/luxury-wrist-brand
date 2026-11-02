@@ -12,6 +12,7 @@
 - `lwb_head_cancel_order(id, reason, note)`: Admin / Sales Head, any status until delivered (status delivered or driver report DELIVERED / PARTIAL refuses: use Sales Return). After transport is assigned, Godown Manager (assignment `loading_manager_id`), Driver (mobile) and, once loaded, Accounts get an `ORDER_CANCELLED` bell. The salesman still gets the old cancel bell from the trigger. Salesman's own cancel (My Orders, pending only) is unchanged.
 - `lwb_head_modify_order(id, items, note, reason)`: Admin / Sales Head while status is loading / loaded / invoiced and not delivered. Replaces the SKU lines (approved_qty, rate, weight; add / remove), cuts `loaded_qty` down to the new cases, recalculates totals, `ORDER_EDITED` bell to the same people. Earlier stages still save the old way (direct update on PO Approval).
 - Page: `warehouse-orders.html` review popup has 🗑 Delete (Admin) and Cancel Order (Admin / Sales Head, any stage before delivery); the selection bar has 🗑 Delete selected (Admin). Delete asks for a reason, shows the linked rows that go with it, then needs DELETE typed. Not verified on live data yet.
+- PO list rows (2 Nov 2026, Mohit): the Review / Edit PO / View button and the Challan button are gone. Clicking anywhere on a line (not its checkbox or buttons, `openRow`) opens the PO for edit. Challan prints from the popup (Challan button next to Print PO, approved POs).
 
 ## PO Approval list: stage tabs like the company DMS (2 Nov 2026)
 

@@ -208,6 +208,7 @@
       vertical-align: middle;
     }
 
+    #ordersArea tr.po-row {cursor:pointer}
     tr:hover td {
       background: #fafafa;
     }
@@ -444,7 +445,8 @@
     #reviewModal.transport-only .po-help,
     #reviewModal.transport-only .po-actions,
     #reviewModal.transport-only #cancelOrderBtn,
-    #reviewModal.transport-only #deleteOrderBtn {display:none!important}
+    #reviewModal.transport-only #deleteOrderBtn,
+    #reviewModal.transport-only #printChallanBtn {display:none!important}
     #reviewModal.transport-only #poQuickInfo {display:block;background:#f3f7fb;border:1px solid #dbe5ef;border-radius:8px;padding:10px 12px;margin-bottom:14px;font-size:13px;line-height:1.6}
     #reviewModal.transport-only .po-grid {grid-template-columns:1fr 1fr}
     #reviewModal.transport-only .po-directory-hint:not(.error) {display:none}
@@ -1370,6 +1372,7 @@
 
       <div class="modal-footer">
         <button type="button" class="btn btn-light" id="printPoDocumentBtn" onclick="printApprovedPO('po')" disabled>Print PO</button>
+        <button type="button" class="btn btn-light" id="printChallanBtn" onclick="printApprovedPO('challan')" style="display:none">Challan</button>
         <button class="btn btn-grey" onclick="closeModal()">
           Close
         </button>
@@ -2583,7 +2586,8 @@ function renderOrders() {
 
         ${pageOrders.map(order => `
 
-          <tr class="${isLateApproval(order) || isLateDelivery(order) ? "row-late" : orderPriority(order) === "URGENT" ? "row-urgent" : ""}${pickedIds.has(order.id) ? " row-picked" : ""}">
+          <tr class="po-row ${isLateApproval(order) || isLateDelivery(order) ? "row-late" : orderPriority(order) === "URGENT" ? "row-urgent" : ""}${pickedIds.has(order.id) ? " row-picked" : ""}"
+            onclick="openRow(event, '${order.id}')" title="Click to open ${VIEW_ONLY ? "" : "and edit "}this PO">
 
             <td class="order-no c-no">
               <input type="checkbox" class="po-sel" data-id="${order.id}" ${pickedIds.has(order.id) ? "checked" : ""}
@@ -2633,11 +2637,9 @@ function renderOrders() {
             <td class="c-act"><div class="act-row">
               <button class="btn btn-light btn-track" title="Track: where is this PO now" onclick="trackOrder('${order.id}')">📍<span class="lbl-long"> Track</span></button>
               ${CAN_BILL && VIEW_ONLY && eligibleForPoPrint(order) ? `<button class="btn btn-green" title="Enter the Tally bill no." onclick="openBill('${order.id}')">🧾 Bill</button>` : ""}
-              <button class="btn btn-blue" onclick="reviewOrder('${order.id}')">${VIEW_ONLY ? "View" : isPending(order) ? "Review" : canEditItems(order) ? "Edit PO" : "View"}</button>
               ${!isCancelled(order) ? `<button class="btn btn-light" title="Print PO" onclick="printPoFromList('${order.id}')">Print</button>` : ""}
               ${eligibleForPoPrint(order) && !VIEW_ONLY ? `<button class="btn btn-green" title="Driver / Vehicle / Godown Manager"
-                onclick="openTransportAllocation('${order.id}')">🚚<span class="lbl-long"> Transport</span></button><button class="btn btn-light" title="Print Delivery Challan (A4 landscape)"
-                onclick="printFromList('${order.id}')">Challan</button>` : ""}
+                onclick="openTransportAllocation('${order.id}')">🚚<span class="lbl-long"> Transport</span></button>` : ""}
             </div></td>
 
           </tr>
@@ -3214,6 +3216,12 @@ function poItemsSignature(items){
 async function printPoFromList(id){
   await printQuietly(id,"po");
 }
+// Click anywhere on a PO line (not on its buttons / checkbox) opens it for edit.
+function openRow(event, id) {
+  if (event.target.closest("button, a, input, select, label, textarea")) return;
+  if (window.getSelection && String(window.getSelection()).trim()) return; // selecting text
+  reviewOrder(id);
+}
 async function printFromList(id){
   await printQuietly(id,"challan");
 }
@@ -3393,6 +3401,7 @@ function renderItems() {
   document.getElementById("approveOrderBtn").textContent = isPending(selectedOrder) ? "Approve PO" : "Submit";
   document.getElementById("cancelOrderBtn").style.display = canCancelOrder(selectedOrder) ? "inline-block" : "none";
   document.getElementById("deleteOrderBtn").style.display = IS_ADMIN && selectedOrder ? "inline-block" : "none";
+  document.getElementById("printChallanBtn").style.display = !VIEW_ONLY && eligibleForPoPrint(selectedOrder) ? "inline-block" : "none";
   document.getElementById("addSkuBtn").style.display = editable ? "inline-block" : "none";
   renderManagerNoteControls();
   document.getElementById("postApprovalPanel").hidden=!eligibleForPoPrint(selectedOrder);
