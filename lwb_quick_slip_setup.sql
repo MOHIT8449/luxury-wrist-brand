@@ -17,6 +17,9 @@
 --     (stock goes out the same way as a normal loading), so Accounts gets the "Make Tally bill" popup and
 --     the PO shows on Billing / Tally bill pages. Called again on a slip PO it only corrects driver / vehicle.
 --   * lwb_quick_slip_get(order), lwb_quick_slip_printed(order), lwb_quick_slip_list(from, to): slip page.
+--   * 2 Nov 2026 (Mohit): every login picks the brand on the PO form. A Salesman's own Rajnigandha order
+--     (saved for approval) also becomes a slip at once: no Sales Head approval, straight to Accounts.
+--     He reads / prints only his own slips.
 -- No Tally, ledger, payment or bill amount is written here.
 
 BEGIN;
@@ -61,6 +64,15 @@ AS $fn$
   SELECT coalesce((SELECT lower(btrim(p.role)) FROM public.user_profiles p WHERE p.id = auth.uid() AND p.active = true), '');
 $fn$;
 
+-- Can this login see / print the slip of this order: office roles, or the salesman who made the order.
+CREATE OR REPLACE FUNCTION public.lwb_quick_slip_reader(p_order_id uuid)
+RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER SET search_path = ''
+AS $fn$
+  SELECT public.lwb_quick_slip_role() IN ('admin','manager','accounts','warehouse')
+      OR (public.lwb_quick_slip_role() IN ('sales','salesman')
+          AND EXISTS (SELECT 1 FROM public.orders o WHERE o.id = p_order_id AND o.created_by = auth.uid()));
+$fn$;
+
 -- The one quick-slip brand of an order, or NULL (no lines, an SKU without brand, mixed brands, or a brand
 -- that does not use quick slips).
 CREATE OR REPLACE FUNCTION public.lwb_quick_slip_company(p_order_id uuid)
@@ -85,8 +97,8 @@ AS $fn$
 DECLARE v_o public.orders%ROWTYPE; v_s public.lwb_quick_slips%ROWTYPE; v_c public.lwb_companies%ROWTYPE; v_lines jsonb;
         v_pm text; v_pa text;
 BEGIN
-  IF public.lwb_quick_slip_role() NOT IN ('admin','manager','accounts','warehouse') THEN
-    RAISE EXCEPTION 'Only Admin, Sales Head, Accounts or Godown can see slips.';
+  IF NOT public.lwb_quick_slip_reader(p_order_id) THEN
+    RAISE EXCEPTION 'Only Admin, Sales Head, Accounts, Godown or the salesman of this order can see the slip.';
   END IF;
   SELECT * INTO v_o FROM public.orders WHERE id = p_order_id;
   IF NOT FOUND THEN RAISE EXCEPTION 'Order not found.'; END IF;
@@ -134,9 +146,11 @@ DECLARE
   v_mob text := regexp_replace(coalesce(p->>'driver_mobile',''), '\D', '', 'g');
   v_veh text := upper(regexp_replace(coalesce(p->>'vehicle_no',''), '[^A-Za-z0-9]', '', 'g'));
   v_info text;
+  v_role text := public.lwb_quick_slip_role();
+  v_pending boolean;
 BEGIN
-  IF public.lwb_quick_slip_role() NOT IN ('admin','manager') THEN
-    RAISE EXCEPTION 'Only Admin or Sales Head can make a slip.';
+  IF v_role NOT IN ('admin','manager','sales','salesman') THEN
+    RAISE EXCEPTION 'Only Admin, Sales Head or the salesman of the order can make a slip.';
   END IF;
   IF v_name = '' THEN RAISE EXCEPTION 'Enter the driver name.'; END IF;
   IF length(v_veh) < 4 THEN RAISE EXCEPTION 'Enter the vehicle number.'; END IF;
@@ -147,6 +161,11 @@ BEGIN
   SELECT * INTO v_o FROM public.orders WHERE id = p_order_id FOR UPDATE;
   IF NOT FOUND THEN RAISE EXCEPTION 'Order not found.'; END IF;
   v_st := lower(btrim(coalesce(v_o.status,'')));
+  v_pending := v_st IN ('','pending','submitted','pending_manager','pending_approval','pending_review','new');
+  -- A salesman: only his own order (the Sales Head / Admin may also slip a salesman's pending order).
+  IF v_role IN ('sales','salesman') AND v_o.created_by IS DISTINCT FROM auth.uid() THEN
+    RAISE EXCEPTION 'Only Admin, Sales Head or the salesman of the order can make a slip.';
+  END IF;
 
   -- Slip made already: only correct the driver / vehicle (until delivered or cancelled).
   IF EXISTS (SELECT 1 FROM public.lwb_quick_slips WHERE order_id = v_o.id) THEN
@@ -158,8 +177,11 @@ BEGIN
     RETURN public.lwb_quick_slip_get(v_o.id);
   END IF;
 
-  IF v_st NOT IN ('approved','approved_next','manager_approved','warehouse_approved') THEN
-    RAISE EXCEPTION 'PO % is % — a slip is made right after the PO is approved.', v_o.order_no, coalesce(nullif(v_st,''),'-');
+  IF NOT v_pending AND v_st NOT IN ('approved','approved_next','manager_approved','warehouse_approved') THEN
+    RAISE EXCEPTION 'PO % is % — a slip is made when the PO is saved.', v_o.order_no, coalesce(nullif(v_st,''),'-');
+  END IF;
+  IF v_role IN ('sales','salesman') AND NOT v_pending THEN
+    RAISE EXCEPTION 'PO % is already %. Ask the Sales Head.', v_o.order_no, v_st;
   END IF;
   v_cid := public.lwb_quick_slip_company(v_o.id);
   IF v_cid IS NULL THEN
@@ -173,9 +195,14 @@ BEGIN
   INSERT INTO public.lwb_quick_slips (order_id, company_id, driver_name, driver_mobile, vehicle_no, created_by)
   VALUES (v_o.id, v_cid, v_name, nullif(v_mob,''), v_veh, auth.uid());
 
-  -- Goods leave with the slip: loaded = approved quantity, same as a full loading.
-  UPDATE public.order_items SET loaded_qty = coalesce(approved_qty, ordered_qty, 0) WHERE order_id = v_o.id;
-  UPDATE public.orders SET status = 'loaded' WHERE id = v_o.id;
+  -- Goods leave with the slip: approved = ordered (when not approved yet), loaded = approved, like a full loading.
+  UPDATE public.order_items SET approved_qty = coalesce(approved_qty, ordered_qty, 0) WHERE order_id = v_o.id;
+  UPDATE public.order_items SET loaded_qty = approved_qty WHERE order_id = v_o.id;
+  IF v_pending THEN
+    UPDATE public.orders SET status = 'loaded', approved_by = auth.uid(), approved_at = now() WHERE id = v_o.id;
+  ELSE
+    UPDATE public.orders SET status = 'loaded' WHERE id = v_o.id;
+  END IF;
 
   -- Popups: Godown does not load this PO; Accounts' "make bill" names the slip, driver and vehicle.
   v_info := coalesce(v_o.order_no,'PO') || ' · ' || coalesce(btrim(v_o.customer_name),'') ||
@@ -184,7 +211,7 @@ BEGIN
                                   FROM public.order_items i WHERE i.order_id = v_o.id), 0), 'FM9999999990.00');
   BEGIN
     UPDATE public.erp_notifications SET is_read = true
-    WHERE order_id = v_o.id AND is_read = false AND notification_type IN ('PO_APPROVED_LOADING','PO_APPROVED_BILL');
+    WHERE order_id = v_o.id AND is_read = false AND notification_type IN ('PO_APPROVED_LOADING','PO_APPROVED_BILL','ORDER_NEW');
     UPDATE public.erp_notifications SET title = 'Rajnigandha Slip — Make Tally Bill',
       message = v_info || '. Slip given to the driver. Make the bill in Tally, then enter the invoice number.'
     WHERE order_id = v_o.id AND is_read = false AND notification_type = 'TALLY_BILL_PENDING';
@@ -203,8 +230,8 @@ RETURNS integer LANGUAGE plpgsql SECURITY DEFINER SET search_path = ''
 AS $fn$
 DECLARE v_n integer;
 BEGIN
-  IF public.lwb_quick_slip_role() NOT IN ('admin','manager','accounts','warehouse') THEN
-    RAISE EXCEPTION 'Only Admin, Sales Head, Accounts or Godown can print slips.';
+  IF NOT public.lwb_quick_slip_reader(p_order_id) THEN
+    RAISE EXCEPTION 'Only Admin, Sales Head, Accounts, Godown or the salesman of this order can print the slip.';
   END IF;
   UPDATE public.lwb_quick_slips SET print_count = print_count + 1, last_printed_at = now()
   WHERE order_id = p_order_id AND public.lwb_company_ok(company_id)
@@ -219,11 +246,12 @@ $fn$;
 CREATE OR REPLACE FUNCTION public.lwb_quick_slip_list(p_from date, p_to date)
 RETURNS jsonb LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = ''
 AS $fn$
-DECLARE v_from date := coalesce(p_from, (now() AT TIME ZONE 'Asia/Kolkata')::date);
+DECLARE v_role text := public.lwb_quick_slip_role();
+        v_from date := coalesce(p_from, (now() AT TIME ZONE 'Asia/Kolkata')::date);
         v_to date := coalesce(p_to, (now() AT TIME ZONE 'Asia/Kolkata')::date);
 BEGIN
-  IF public.lwb_quick_slip_role() NOT IN ('admin','manager','accounts','warehouse') THEN
-    RAISE EXCEPTION 'Only Admin, Sales Head, Accounts or Godown can see slips.';
+  IF v_role NOT IN ('admin','manager','accounts','warehouse','sales','salesman') THEN
+    RAISE EXCEPTION 'Only Admin, Sales Head, Accounts, Godown or Salesman can see slips.';
   END IF;
   IF v_to < v_from OR v_to - v_from > 400 THEN RAISE EXCEPTION 'Choose up to 400 days.'; END IF;
   RETURN jsonb_build_object(
@@ -238,12 +266,14 @@ BEGIN
         FROM public.lwb_quick_slips s JOIN public.orders o ON o.id = s.order_id
         WHERE (s.created_at AT TIME ZONE 'Asia/Kolkata')::date BETWEEN v_from AND v_to
           AND public.lwb_company_ok(s.company_id)
+          AND (v_role NOT IN ('sales','salesman') OR o.created_by = auth.uid())
         ORDER BY s.created_at DESC LIMIT 1000) x), '[]'::jsonb),
     'waiting', coalesce((
       SELECT jsonb_agg(jsonb_build_object('order_id', o.id, 'order_no', o.order_no, 'order_date', o.order_date,
                'party', btrim(o.customer_name), 'total_qty', o.total_qty, 'total_amount', o.total_amount) ORDER BY o.order_date DESC)
       FROM (SELECT o.* FROM public.orders o
-            WHERE lower(btrim(coalesce(o.status,''))) IN ('approved','approved_next','manager_approved','warehouse_approved')
+            WHERE v_role IN ('admin','manager')
+              AND lower(btrim(coalesce(o.status,''))) IN ('approved','approved_next','manager_approved','warehouse_approved')
               AND o.order_date >= now() - interval '30 days'
               AND NOT EXISTS (SELECT 1 FROM public.lwb_quick_slips s WHERE s.order_id = o.id)
               AND NOT EXISTS (SELECT 1 FROM public.dispatch_assignments a WHERE a.order_id = o.id)
@@ -253,7 +283,7 @@ BEGIN
 END;
 $fn$;
 
-REVOKE ALL ON FUNCTION public.lwb_quick_slip_role(), public.lwb_quick_slip_company(uuid) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.lwb_quick_slip_role(), public.lwb_quick_slip_company(uuid), public.lwb_quick_slip_reader(uuid) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.lwb_quick_slip_get(uuid), public.lwb_quick_slip_dispatch(uuid, jsonb),
   public.lwb_quick_slip_printed(uuid), public.lwb_quick_slip_list(date, date) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.lwb_quick_slip_get(uuid), public.lwb_quick_slip_dispatch(uuid, jsonb),

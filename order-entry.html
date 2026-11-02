@@ -46,6 +46,13 @@ button{border:0;cursor:pointer;font-family:inherit}
 }
 .card-title{font-size:16px;font-weight:800;margin-bottom:15px}
 .card-title-row{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.brand-pick{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:0 0 10px}
+.brand-pick>b{font-size:12px;letter-spacing:.5px;color:#5a6676;text-transform:uppercase}
+.brand-pick .lwb-brands{margin:0}
+.brand-pick small{flex-basis:100%;font-size:12.5px;color:#7a5200}
+.brand-pick small:empty{display:none}
+@media print{.brand-pick{display:none!important}}
+@media(max-width:640px){.brand-pick{gap:6px}.brand-pick>b{display:none}.brand-pick .lwb-brands{flex-wrap:nowrap;gap:5px}.brand-pick .lwb-brands button{height:30px;padding:0 9px;font-size:12px}}
 .po-list-link{font-size:13px;font-weight:700;color:#0b6b5e;text-decoration:none;border:1px solid #cfe3df;border-radius:8px;padding:5px 10px;background:#f3faf8;white-space:nowrap}
 .po-list-link:hover{background:#e3f3ef}
 @media print{.po-list-link{display:none!important}}
@@ -426,6 +433,7 @@ body.compact-entry .share-more>summary{display:block;cursor:pointer;font-size:13
 
   <section class="card">
     <div class="card-title card-title-row">Order Details<a id="poListLink" class="po-list-link" href="warehouse-orders.html">PO / Sales List &rarr;</a></div>
+    <div class="brand-pick" id="brandPick" hidden><b>Brand</b><span id="brandChips"></span><small id="brandHint"></small></div>
 
     <div class="form-grid">
 
@@ -797,6 +805,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     addItem();
     await loadSkuMaster();
+    initBrandPick();
     initializePartySearch();
     await loadRates();
     loadMinWeights(null).catch(() => {});
@@ -1407,7 +1416,7 @@ let skuNames = [];
 function refreshSkuOptions(input){
   const used = new Set([...document.querySelectorAll("#itemsBody .sku-name")].filter(i => i !== input).map(i => skuKey(i.value)));
   const list = document.getElementById("skuMasterList");
-  list.replaceChildren(...skuNames.filter(n => !used.has(skuKey(n))).map(n => { const o = document.createElement("option"); o.value = n; const st = stockByKey.get(skuKey(n)); if(st) o.label = "Stock " + formatNumber(st.g + st.t) + " " + (unitByName(n) === "BOX" ? "BOX" : "CS"); return o; }));
+  list.replaceChildren(...skuNames.filter(n => !used.has(skuKey(n)) && brandHasSku(n)).map(n => { const o = document.createElement("option"); o.value = n; const st = stockByKey.get(skuKey(n)); if(st) o.label = "Stock " + formatNumber(st.g + st.t) + " " + (unitByName(n) === "BOX" ? "BOX" : "CS"); return o; }));
 }
 document.getElementById("itemsBody").addEventListener("focusin", e => {
   if (e.target.classList.contains("sku-name")) refreshSkuOptions(e.target);
@@ -1624,7 +1633,10 @@ function headCreatesApprovedPo(){
 }
 // Where a submitted PO is listed: Sales Head / Admin see the approval list, a Salesman his own orders.
 function poListUrl(){return headCreatesApprovedPo()?"warehouse-orders.html":"my-sales.html#orders";}
-function newOrderButtonLabel(){return headCreatesApprovedPo()?"Save & Approve PO":"Submit to Warehouse Manager";}
+function newOrderButtonLabel(){
+  if(pickedBrand()?.quick_slip === true) return "Save & Print Slip";
+  return headCreatesApprovedPo()?"Save & Approve PO":"Submit to Warehouse Manager";
+}
 
 /* CREATE ORDER NUMBER */
 
@@ -1833,14 +1845,45 @@ async function saveOrderPickup(orderId, clearIfNone){
 /* RAJNIGANDHA QUICK SLIP (lwb_quick_slip_setup.sql): every SKU of one brand marked quick_slip
    (Rajnigandha). Sales Head / Admin types driver + vehicle, the PO saves approved and goes straight to
    "loaded" for the Tally bill, and a small thermal slip prints. Other brands keep the full flow. */
-function quickSlipBrand(items){
-  const ids = items.map(i => String((skuMasterByName.get(String(i.sku_name).toUpperCase()) || {}).company_id || ""));
-  const quick = id => unitCompanies.find(c => c.id === id && c.quick_slip === true);
-  const slipIds = [...new Set(ids.filter(quick))];
-  if(!slipIds.length) return null;
-  if(slipIds.length > 1 || ids.some(id => !quick(id)))
-    return {mixed:true, name:quick(slipIds[0]).name};
-  return quick(slipIds[0]);
+/* Brand on top of the form (Mohit, 2 Nov 2026): All brands / Rajnigandha / Coca-Cola, for every login.
+   A brand limits the SKU list to it. Rajnigandha (quick_slip brand) lines always make a slip PO;
+   "All brands" with Rajnigandha + another brand saves 2 POs (slip PO + normal PO). */
+let brandChoice = "";
+function skuCompanyId(name){ return String((skuMasterByName.get(String(name || "").trim().toUpperCase()) || {}).company_id || ""); }
+function pickedBrand(){ return brandChoice ? unitCompanies.find(c => c.id === brandChoice) || null : null; }
+function brandHasSku(name){ return !brandChoice || skuCompanyId(name) === brandChoice; }
+function quickCompany(id){ return unitCompanies.find(c => c.id === id && c.quick_slip === true) || null; }
+async function initBrandPick(){
+  if(!window.LWBBrand || editOrder) return;
+  const info = await LWBBrand.load(db).catch(() => null);
+  let list = (info && info.companies) || [];
+  if(info && Array.isArray(info.mine)) list = list.filter(c => info.mine.includes(c.id));
+  if(!list.length) return;
+  brandChoice = LWBBrand.get(list);
+  if(list.length === 1) brandChoice = list[0].id;
+  const box = document.getElementById("brandChips");
+  box.replaceChildren(LWBBrand.chips(list.length === 1 ? [] : list, brandChoice, v => { brandChoice = v; brandChanged(); }));
+  if(list.length === 1){ box.firstChild.innerHTML = ""; box.textContent = list[0].name; box.style.fontWeight = "700"; }
+  document.getElementById("brandPick").hidden = false;
+  brandChanged();
+}
+function brandChanged(){
+  const b = pickedBrand();
+  document.getElementById("company").value = b ? b.name : "ALL BRANDS";
+  const slipName = (unitCompanies.find(c => c.quick_slip === true) || {}).name;
+  document.getElementById("brandHint").textContent = b && b.quick_slip === true
+    ? "Driver name + vehicle no. are asked on save, a small slip prints and the PO goes straight to Accounts for the Tally bill."
+    : !b && slipName ? "A party taking " + slipName + " and other brands: one save makes 2 POs (" + slipName + " slip + normal PO)." : "";
+  const btn = document.getElementById("saveBtn");
+  if(btn && !btn.disabled) btn.textContent = newOrderButtonLabel();
+  const off = [...document.querySelectorAll("#itemsBody .sku-name")].filter(i => i.value.trim() && !brandHasSku(i.value)).length;
+  if(off) showMessage(off + " SKU line(s) are not " + (b ? b.name : "") + ". Remove them or pick All brands.", "error");
+}
+// Lines of a quick-slip brand (Rajnigandha) vs the rest.
+function splitBySlipBrand(items){
+  const slip = [], other = [], brands = new Set();
+  items.forEach(i => { const c = quickCompany(skuCompanyId(i.sku_name)); if(c){ slip.push(i); brands.add(c.name); } else other.push(i); });
+  return {slip, other, brands:[...brands]};
 }
 function askSlipDetails(){
   const dlg = document.getElementById("slipDlg"), form = document.getElementById("slipForm"), err = document.getElementById("qsError");
@@ -1981,16 +2024,26 @@ async function saveOrder(){
     return;
   }
 
-  const slipBrand = !editOrder && headCreatesApprovedPo() ? quickSlipBrand(items) : null;
-  if(slipBrand && slipBrand.mixed){
-    alert(slipBrand.name + " and other brand SKUs are in one PO. Make a separate PO for " + slipBrand.name + " (it prints a slip and goes straight to Accounts).");
+  const split = editOrder ? {slip:[], other:items, brands:[]} : splitBySlipBrand(items);
+  if(!editOrder && pickedBrand() && items.some(i => skuCompanyId(i.sku_name) !== brandChoice)){
+    alert("Some SKU lines are not " + pickedBrand().name + ". Remove them, or pick All brands at the top.");
     return;
   }
+  if(split.brands.length > 1){
+    alert(split.brands.join(" and ") + " SKUs are in one order. Make one order per brand.");
+    return;
+  }
+  const slipName = split.brands[0] || "";
+  if(split.slip.length && split.other.length && !await confirm(
+    "This order has " + slipName + " and other brand SKUs. 2 POs will be saved:\n\n" +
+    "1. " + slipName + " (" + split.slip.length + " SKU): slip prints, goes straight to Accounts.\n" +
+    "2. Other brands (" + split.other.length + " SKU): normal PO.\n\nContinue?")) return;
   let slipDetails = null;
-  if(slipBrand){
+  if(split.slip.length){
     slipDetails = await askSlipDetails();
     if(!slipDetails) return;
-  }else if(transportationType === "SELF PICKUP" && !await askPickupDetails()) return;
+  }
+  if(split.other.length && transportationType === "SELF PICKUP" && !await askPickupDetails()) return;
 
   const totals=calculateTotals();
 
@@ -2034,139 +2087,68 @@ async function saveOrder(){
         ? new Date(dateValue).toISOString()
         : new Date().toISOString();
 
-    let orderNo;
-    if(headCreatesApprovedPo()){
-      // Save the header and all approved SKU quantities atomically. No pending PO is exposed.
-      let result;
-      for(let attempt=0;attempt<3;attempt++){
-        result=await db.rpc("lwb_head_create_approved_po",{
-          p_customer_name:customer,p_transportation:transportation||null,p_sales_person:salesPerson,
-          p_order_date:orderDate,p_items:items
-        });
-        if(result.error?.code!=="23505")break;
+    const base = {customer, transportation, salesPerson, orderDate};
+    const made = [];
+    if(split.other.length){
+      const r = await createPoRecord(split.other, base);
+      createdOrder = r.order; made.push({...r, slip:false});
+    }
+    let slipOrder = null, slipNote = "", slipDone = false;
+    if(split.slip.length){
+      try{
+        // Slip PO: no transport / pallet, the driver + vehicle are on the slip.
+        const r = await createPoRecord(split.slip.map(i => { const x = {...i}; delete x.entry_uom; delete x.ordered_pallet_qty; delete x.cases_per_pallet_snapshot; return x; }),
+          {...base, transportation:""});
+        slipOrder = r.order; made.push({...r, slip:true});
+        const {error:slipError} = await db.rpc("lwb_quick_slip_dispatch",{p_order_id:slipOrder.id,p:slipDetails});
+        if(slipError) slipNote = "\n\nSlip not made: " + (/lwb_quick_slip/.test(slipError.message || "") ? "ask Admin to run lwb_quick_slip_setup.sql." : (slipError.message || "database error")) + "\nOpen Rajnigandha Slips to enter driver & vehicle again.";
+        else slipDone = true;
+      }catch(error){
+        if(!made.length) throw error;
+        slipNote = "\n\n" + slipName + " PO could not be saved: " + (error.message || "Unknown error") + "\nMake it again as a separate order.";
       }
-      if(result.error)throw result.error;
-      if(!result.data?.id||result.data.status!=="approved")throw new Error("PO approval was not confirmed. Refresh before retrying.");
-      createdOrder=result.data;orderNo=result.data.order_no;
-      // Use the server totals (including current SKU Master weights).
-      totals.totalQty=Number(result.data.total_qty);totals.totalAmount=Number(result.data.total_amount);totals.totalWeight=Number(result.data.total_weight);
-    }else{
-      // Two salesmen saving together can pick the same next number; retry on a duplicate.
-      let order, orderError;
-      for(let attempt=0; attempt<3; attempt++){
-        orderNo=await generateOrderNo();
-        ({data:order,error:orderError} =
-          await db
-            .from("orders")
-            .insert({
-              order_no:orderNo,
-              order_date:orderDate,
-              customer_name:customer,
-              transportation:transportation || null,
-              sales_person:salesPerson,
-              status:"pending_approval",
-              total_qty:totals.totalQty,
-              total_amount:totals.totalAmount,
-              total_weight:totals.totalWeight,
-              created_by:currentUser.id
-            })
-            .select()
-            .single());
-        if(orderError?.code !== "23505") break;
-      }
-
-      if(orderError) throw orderError;
-
-      createdOrder=order;
-
-      const itemRows =
-        items.map(item=>({
-          order_id:order.id,
-          ...item
-        }));
-
-      const {error:itemError} =
-        await db
-          .from("order_items")
-          .insert(itemRows);
-
-      if(itemError){
-
-        /*
-          Front-end Supabase calls are not one database transaction.
-          If item insert fails, remove newly-created empty order.
-        */
-
-        await db
-          .from("orders")
-          .delete()
-          .eq("id",order.id);
-
-        throw itemError;
-      }
-
     }
 
-    document.getElementById("orderNo").value=orderNo;
-    let slipNote = "", slipDone = false;
-    if(slipDetails && createdOrder?.id){
-      const {error:slipError} = await db.rpc("lwb_quick_slip_dispatch",{p_order_id:createdOrder.id,p:slipDetails});
-      if(slipError) slipNote = "\n\nSlip not made: " + (/lwb_quick_slip/.test(slipError.message || "") ? "ask Admin to run lwb_quick_slip_setup.sql." : (slipError.message || "database error")) + "\nOpen Rajnigandha Slips to enter driver & vehicle again.";
-      else slipDone = true;
-    }
-    const priorityNote = slipNote + (orderPriority === "NORMAL" ? "" : await saveOrderPriority(createdOrder && createdOrder.id))
-      + (slipDetails ? "" : await saveOrderPickup(createdOrder && createdOrder.id, false));
+    document.getElementById("orderNo").value = made.map(m => m.orderNo).join(" + ");
+    const priorityNote = slipNote + (!createdOrder ? "" : (orderPriority === "NORMAL" ? "" : await saveOrderPriority(createdOrder.id))
+      + await saveOrderPickup(createdOrder.id, false));
 
-    showMessage(
-      (headCreatesApprovedPo()?"PO approved. Order No: ":"Order saved successfully! Order No: ")+
-      orderNo+
-      " | Total Qty: "+
-      formatNumber(totals.totalQty)+
-      " | Total Amount: "+
-      formatMoney(totals.totalAmount)+
-      " | Final Weight: "+
-      formatNumber(totals.totalWeight)+
-      " KG",
-      "success"
-    );
-
+    const sum = m => "Order No: " + m.orderNo + (m.slip ? " (" + slipName + " slip)" : "") +
+      "\nTotal Qty: " + formatNumber(m.totals.totalQty) + "\nTotal Amount: " + formatMoney(m.totals.totalAmount) +
+      (m.slip ? "" : "\nFinal Weight: " + formatNumber(m.totals.totalWeight) + " KG");
+    showMessage(made.map(m => "Order No: " + m.orderNo + " | Total Qty: " + formatNumber(m.totals.totalQty) + " | Total Amount: " + formatMoney(m.totals.totalAmount)).join("  •  "), "success");
+    const normalTail = createdOrder ? (orderPriority === "NORMAL" ? "" : "\nPriority: " + orderPriority) +
+      (pickupText() ? "\n" + pickupText().split(" | ").join("\n") : "") +
+      (headCreatesApprovedPo() ? "\nReady for transport assignment." : "\nSent to Warehouse Manager for approval.") : "";
     alert(
-      (headCreatesApprovedPo()?"PO saved and approved successfully.\n\n":"Order submitted successfully.\n\n")+
-      "Order No: "+orderNo+
-      "\nTotal Qty: "+formatNumber(totals.totalQty)+
-      "\nTotal Amount: "+formatMoney(totals.totalAmount)+
-      "\nFinal Weight: "+formatNumber(totals.totalWeight)+" KG"+
-      (orderPriority === "NORMAL" ? "" : "\nPriority: " + orderPriority)+
-      (pickupText() ? "\n" + pickupText().split(" | ").join("\n") : "")+
-      (slipDone?"\nDriver: "+slipDetails.driver_name+"\nVehicle: "+slipDetails.vehicle_no+"\n\nSlip ready to print. Sent to Accounts for the Tally bill.":headCreatesApprovedPo()?"\n\nReady for transport assignment.":"\n\nSent to Warehouse Manager for approval.")+
+      (made.length > 1 ? "2 POs saved.\n\n" : createdOrder && headCreatesApprovedPo() ? "PO saved and approved successfully.\n\n" : createdOrder ? "Order submitted successfully.\n\n" : "PO saved.\n\n") +
+      made.map(m => sum(m) + (m.slip ? (slipDone ? "\nDriver: " + slipDetails.driver_name + "\nVehicle: " + slipDetails.vehicle_no + "\nSlip ready to print. Sent to Accounts for the Tally bill." : "") : normalTail)).join("\n\n") +
       priorityNote
     );
 
-    saveBtn.textContent=headCreatesApprovedPo()?"PO Approved":"Order Submitted";
-    // The saved PO now sits in PO / Sales List: offer to open it there.
-    document.getElementById("savedPoList").href=poListUrl();
-    document.getElementById("savedPoPrint").hidden=true;
-    document.getElementById("savedPoEdit").hidden=true;
-    document.getElementById("savedPoActions").hidden=false;
-    if(headCreatesApprovedPo()&&createdOrder?.id){
-      document.getElementById("savedPoPrint").hidden=false;
-      document.getElementById("savedPoEdit").hidden=false;
-      const url="warehouse-orders.html?order="+encodeURIComponent(createdOrder.id);
-      const printLink=document.getElementById("savedPoPrint");
-      printLink.href=url+"&action=print";
-      printLink.onclick=event=>printSavedPoInFrame(event,printLink.href);
-      document.getElementById("savedPoEdit").href=url;
-      document.getElementById("savedPoActions").hidden=false;
-      const slipLink=document.getElementById("savedSlipPrint");
-      slipLink.hidden=!slipBrand;
-      if(slipBrand){
-        // Rajnigandha: the slip is the print; PO goes to Accounts, so the list link opens the slips page.
-        slipLink.href="quick-slip.html?order="+encodeURIComponent(createdOrder.id)+"&print=1";
-        slipLink.onclick=event=>printSavedPoInFrame(event,slipLink.href);
-        if(slipDone){document.getElementById("savedPoList").href="quick-slip.html?order="+encodeURIComponent(createdOrder.id);
-          document.getElementById("savedPoList").innerHTML="Open Rajnigandha Slips &rarr;";printSavedPoInFrame({preventDefault(){}},slipLink.href);}
-        else slipLink.href="quick-slip.html";
-      }
+    saveBtn.textContent = slipDone && !createdOrder ? "Slip Made" : headCreatesApprovedPo() ? "PO Approved" : "Order Submitted";
+    const list = document.getElementById("savedPoList");
+    list.href = poListUrl();
+    document.getElementById("savedPoPrint").hidden = true;
+    document.getElementById("savedPoEdit").hidden = true;
+    document.getElementById("savedPoActions").hidden = false;
+    if(headCreatesApprovedPo() && createdOrder?.id){
+      document.getElementById("savedPoPrint").hidden = false;
+      document.getElementById("savedPoEdit").hidden = false;
+      const url = "warehouse-orders.html?order=" + encodeURIComponent(createdOrder.id);
+      const printLink = document.getElementById("savedPoPrint");
+      printLink.href = url + "&action=print";
+      printLink.onclick = event => printSavedPoInFrame(event, printLink.href);
+      document.getElementById("savedPoEdit").href = url;
+    }
+    const slipLink = document.getElementById("savedSlipPrint");
+    slipLink.hidden = !slipOrder;
+    if(slipOrder){
+      // Rajnigandha: the slip is the print; the slip PO goes to Accounts.
+      slipLink.href = slipDone ? "quick-slip.html?order=" + encodeURIComponent(slipOrder.id) + "&print=1" : "quick-slip.html";
+      slipLink.onclick = slipDone ? event => printSavedPoInFrame(event, slipLink.href) : null;
+      if(!createdOrder){ list.href = "quick-slip.html" + (slipDone ? "?order=" + encodeURIComponent(slipOrder.id) : ""); list.innerHTML = "Open Rajnigandha Slips &rarr;"; }
+      if(slipDone) printSavedPoInFrame({preventDefault(){}}, slipLink.href);
     }
 
   }catch(error){
@@ -2183,6 +2165,49 @@ async function saveOrder(){
 
   }
 
+}
+
+// One PO from some SKU lines: Sales Head / Admin save it approved (one database call),
+// a Salesman saves it for approval (or the slip call approves it for a slip brand).
+async function createPoRecord(lines, base){
+  const totals = {totalQty:0, totalAmount:0, totalWeight:0};
+  lines.forEach(i => { totals.totalQty += Number(i.ordered_qty) || 0; totals.totalAmount += Number(i.amount) || 0; totals.totalWeight += Number(i.total_weight) || 0; });
+  if(headCreatesApprovedPo()){
+    // Save the header and all approved SKU quantities atomically. No pending PO is exposed.
+    let result;
+    for(let attempt=0;attempt<3;attempt++){
+      result=await db.rpc("lwb_head_create_approved_po",{
+        p_customer_name:base.customer,p_transportation:base.transportation||null,p_sales_person:base.salesPerson,
+        p_order_date:base.orderDate,p_items:lines
+      });
+      if(result.error?.code!=="23505")break;
+    }
+    if(result.error)throw result.error;
+    if(!result.data?.id||result.data.status!=="approved")throw new Error("PO approval was not confirmed. Refresh before retrying.");
+    // Use the server totals (including current SKU Master weights).
+    return {order:result.data, orderNo:result.data.order_no,
+      totals:{totalQty:Number(result.data.total_qty), totalAmount:Number(result.data.total_amount), totalWeight:Number(result.data.total_weight)}};
+  }
+  // Two salesmen saving together can pick the same next number; retry on a duplicate.
+  let order, orderError, orderNo;
+  for(let attempt=0; attempt<3; attempt++){
+    orderNo=await generateOrderNo();
+    ({data:order,error:orderError} = await db.from("orders").insert({
+      order_no:orderNo, order_date:base.orderDate, customer_name:base.customer,
+      transportation:base.transportation || null, sales_person:base.salesPerson, status:"pending_approval",
+      total_qty:totals.totalQty, total_amount:totals.totalAmount, total_weight:totals.totalWeight,
+      created_by:currentUser.id
+    }).select().single());
+    if(orderError?.code !== "23505") break;
+  }
+  if(orderError) throw orderError;
+  const {error:itemError} = await db.from("order_items").insert(lines.map(item => ({order_id:order.id, ...item})));
+  if(itemError){
+    // Front-end Supabase calls are not one database transaction: remove the empty order.
+    await db.from("orders").delete().eq("id",order.id);
+    throw itemError;
+  }
+  return {order, orderNo, totals};
 }
 
 

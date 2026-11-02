@@ -4,10 +4,10 @@ import {readFile} from 'node:fs/promises';
 import {PGlite} from '@electric-sql/pglite';
 
 // lwb_quick_slip_setup.sql on an empty PGlite database (no live data).
-const ids={admin:'00000000-0000-4000-8000-000000000001',head:'00000000-0000-4000-8000-000000000002',
+const ids={sales2:'00000000-0000-4000-8000-000000000006',admin:'00000000-0000-4000-8000-000000000001',head:'00000000-0000-4000-8000-000000000002',
   accounts:'00000000-0000-4000-8000-000000000003',sales:'00000000-0000-4000-8000-000000000004',
   coke:'00000000-0000-4000-8000-000000000005'};
-const roles={admin:'admin',head:'manager',accounts:'accounts',sales:'sales',coke:'manager'};
+const roles={sales2:'salesman',admin:'admin',head:'manager',accounts:'accounts',sales:'sales',coke:'manager'};
 const db=new PGlite();
 await db.exec(`
 CREATE ROLE anon; CREATE ROLE authenticated;
@@ -18,7 +18,7 @@ CREATE TABLE public.lwb_companies(id uuid default gen_random_uuid() primary key,
 CREATE TABLE public.lwb_user_companies(user_id uuid,company_id uuid);
 CREATE TABLE public.sku_master(sku_name text,company_id uuid);
 CREATE TABLE public.orders(id uuid default gen_random_uuid() primary key,order_no text,order_date timestamptz default now(),
-  customer_name text,sales_person text,status text,total_qty numeric,total_amount numeric,created_by uuid);
+  customer_name text,sales_person text,status text,total_qty numeric,total_amount numeric,created_by uuid,approved_by uuid,approved_at timestamptz);
 CREATE TABLE public.order_items(id bigserial primary key,order_id uuid,sku_name text,ordered_qty numeric,approved_qty numeric,loaded_qty numeric default 0,rate numeric);
 CREATE TABLE public.dispatch_assignments(order_id uuid);
 CREATE TABLE public.lwb_customer_master(customer_name text,mobile text,billing_address text,city text,pincode text,is_active boolean);
@@ -42,16 +42,18 @@ for(const [k,id] of Object.entries(ids))await db.query('insert into user_profile
 const [rg,cc]=(await db.query(`insert into lwb_companies(name,pack_unit) values('RAJNIGANDHA','BOX'),('COCA-COLA','CASE') returning id`)).rows.map(r=>r.id);
 await db.query(`insert into lwb_user_companies values($1,$2)`,[ids.coke,cc]);
 await db.query(`insert into sku_master values('RG PAN MASALA 10',$1),('RG SILVER PEARLS 5',$1),('COKE 250ML',$2),('LOOSE ITEM',null)`,[rg,cc]);
-async function order(no,status,lines){
-  const id=(await db.query(`insert into orders(order_no,customer_name,sales_person,status,total_qty,total_amount,created_by) values($1,' SHREE KRISHNA ','Vinesh',$2,0,0,$3) returning id`,[no,status,ids.head])).rows[0].id;
-  for(const [s,q,r] of lines)await db.query(`insert into order_items(order_id,sku_name,ordered_qty,approved_qty,rate) values($1,$2,$3,$3,$4)`,[id,s,q,r]);
+async function order(no,status,lines,by='head'){
+  const id=(await db.query(`insert into orders(order_no,customer_name,sales_person,status,total_qty,total_amount,created_by) values($1,' SHREE KRISHNA ','Vinesh',$2,0,0,$3) returning id`,[no,status,ids[by]])).rows[0].id;
+  const pend=status.startsWith('pending');
+  for(const [s,q,r] of lines)await db.query(`insert into order_items(order_id,sku_name,ordered_qty,approved_qty,rate) values($1,$2,$3,$4,$5)`,[id,s,q,pend?null:q,r]);
   await db.query(`insert into erp_notifications(title,notification_type,order_id) values('PO Approved — Get Ready to Load','PO_APPROVED_LOADING',$1),('PO Approved — Make Bill','PO_APPROVED_BILL',$1)`,[id]);
   return id;
 }
 const o1=await order('LXY-1','approved',[['rg pan masala 10',20,2450],['RG SILVER PEARLS 5',10,1180]]);
 const oMix=await order('LXY-2','approved',[['RG PAN MASALA 10',1,100],['COKE 250ML',1,100]]);
 const oCoke=await order('LXY-3','approved',[['COKE 250ML',5,300]]);
-const oPend=await order('LXY-4','pending_approval',[['RG PAN MASALA 10',1,100]]);
+const oPend=await order('LXY-4','pending_approval',[['RG PAN MASALA 10',4,100]],'sales');
+const oDel=await order('LXY-8','delivered',[['RG PAN MASALA 10',1,100]]);
 const oLoose=await order('LXY-5','approved',[['RG PAN MASALA 10',1,100],['LOOSE ITEM',1,1]]);
 const oTr=await order('LXY-6','approved',[['RG PAN MASALA 10',2,100]]);
 await db.query('insert into dispatch_assignments values($1)',[oTr]);
@@ -95,13 +97,14 @@ test('refused: mixed brand, Coca-Cola, SKU without brand, not approved, transpor
   await assert.rejects(run('head','select public.lwb_quick_slip_dispatch($1,$2)',[oMix,P]),/not a quick-slip/);
   await assert.rejects(run('head','select public.lwb_quick_slip_dispatch($1,$2)',[oCoke,P]),/not a quick-slip/);
   await assert.rejects(run('head','select public.lwb_quick_slip_dispatch($1,$2)',[oLoose,P]),/not a quick-slip/);
-  await assert.rejects(run('head','select public.lwb_quick_slip_dispatch($1,$2)',[oPend,P]),/pending_approval/);
+  await assert.rejects(run('head','select public.lwb_quick_slip_dispatch($1,$2)',[oDel,P]),/delivered/);
+  await assert.rejects(run('sales2','select public.lwb_quick_slip_dispatch($1,$2)',[oPend,P]),/salesman of the order/);
   await assert.rejects(run('head','select public.lwb_quick_slip_dispatch($1,$2)',[oTr,P]),/Transport is already assigned/);
   await assert.rejects(run('head','select public.lwb_quick_slip_dispatch($1,$2)',[o7,{vehicle_no:'GJ01AB1234'}]),/driver name/);
   await assert.rejects(run('head','select public.lwb_quick_slip_dispatch($1,$2)',[o7,{driver_name:'A',vehicle_no:'GJ'}]),/vehicle number/);
   await assert.rejects(run('head','select public.lwb_quick_slip_dispatch($1,$2)',[o7,{driver_name:'A',vehicle_no:'GJ01AB1',driver_mobile:'12345'}]),/10-digit/);
-  await assert.rejects(run('accounts','select public.lwb_quick_slip_dispatch($1,$2)',[o7,P]),/Only Admin or Sales Head/);
-  await assert.rejects(run('sales','select public.lwb_quick_slip_dispatch($1,$2)',[o7,P]),/Only Admin or Sales Head/);
+  await assert.rejects(run('accounts','select public.lwb_quick_slip_dispatch($1,$2)',[o7,P]),/Only Admin, Sales Head or the salesman/);
+  await assert.rejects(run('sales','select public.lwb_quick_slip_dispatch($1,$2)',[o7,P]),/salesman of the order/);
   // a Coca-Cola-only Sales Head can not touch a Rajnigandha PO
   await assert.rejects(run('coke','select public.lwb_quick_slip_dispatch($1,$2)',[o7,P]),/Order not found/);
   assert.equal((await db.query('select status from orders where id=$1',[o7])).rows[0].status,'approved');
@@ -113,7 +116,7 @@ test('slip read / print count / list: Accounts can read and reprint, salesman ca
   const s=(await run('accounts','select public.lwb_quick_slip_get($1) v',[o1])).rows[0].v;assert.equal(s.order_no,'LXY-1');
   assert.equal((await run('accounts','select public.lwb_quick_slip_printed($1) v',[o1])).rows[0].v,1);
   assert.equal((await run('head','select public.lwb_quick_slip_printed($1) v',[o1])).rows[0].v,2);
-  await assert.rejects(run('sales','select public.lwb_quick_slip_get($1)',[o1]),/Only Admin/);
+  await assert.rejects(run('sales','select public.lwb_quick_slip_get($1)',[o1]),/salesman of this order/);
   await assert.rejects(run('accounts','select public.lwb_quick_slip_get($1)',[o7]),/has no slip/);
   await assert.rejects(run('coke','select public.lwb_quick_slip_get($1)',[o1]),/Order not found/);
   const l=(await run('head','select public.lwb_quick_slip_list(null,null) v')).rows[0].v;
@@ -122,4 +125,20 @@ test('slip read / print count / list: Accounts can read and reprint, salesman ca
   assert.deepEqual(l.waiting.map(x=>x.order_no).sort(),['LXY-7']);
   const lc=(await run('coke','select public.lwb_quick_slip_list(null,null) v')).rows[0].v;
   assert.equal(lc.slips.length,0);assert.equal(lc.waiting.length,0);
+});
+
+test('salesman: own pending Rajnigandha order becomes a slip at once (no approval), sees only his slips', async()=>{
+  const s=(await run('sales','select public.lwb_quick_slip_dispatch($1,$2) v',[oPend,{driver_name:'Kalu',vehicle_no:'GJ05ZZ1111'}])).rows[0].v;
+  assert.equal(s.order_no,'LXY-4');assert.equal(Number(s.total_qty),4);assert.equal(Number(s.total_amount),400);
+  const o=(await db.query('select status,approved_by from orders where id=$1',[oPend])).rows[0];
+  assert.equal(o.status,'loaded');assert.equal(o.approved_by,ids.sales);
+  const q=(await db.query('select approved_qty::int a,loaded_qty::int l from order_items where order_id=$1',[oPend])).rows[0];
+  assert.deepEqual([q.a,q.l],[4,4]);
+  assert.equal((await run('sales','select public.lwb_quick_slip_printed($1) v',[oPend])).rows[0].v,1);
+  const l=(await run('sales','select public.lwb_quick_slip_list(null,null) v')).rows[0].v;
+  assert.deepEqual(l.slips.map(x=>x.order_no),['LXY-4']);assert.equal(l.waiting.length,0);
+  await assert.rejects(run('sales2','select public.lwb_quick_slip_get($1)',[oPend]),/salesman of this order/);
+  // a salesman can not slip an approved order (Sales Head does)
+  const oA=await order('LXY-9','approved',[['RG PAN MASALA 10',1,100]],'sales');
+  await assert.rejects(run('sales','select public.lwb_quick_slip_dispatch($1,$2)',[oA,P]),/Ask the Sales Head/);
 });
