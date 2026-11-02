@@ -59,7 +59,7 @@
     if(sku&&sku.pack_unit)return sku.pack_unit;
     const c=sku&&(list||[]).find(x=>x.id===sku.company_id);return c&&c.pack_unit?c.pack_unit:"CASE";
   }
-  const word=(u,n)=>u==="BOX"?(Number(n)===1?"box":"boxes"):(Number(n)===1?"case":"cases");
+  const word=(u,n)=>u==="BOX"?"IC":(Number(n)===1?"case":"cases");
   const fmt=n=>Math.round(Number(n)||0).toLocaleString("en-IN");
   function qty(cases,boxes){
     const out=[];if(Number(boxes))out.push(fmt(boxes)+" "+word("BOX",boxes));if(Number(cases)||!out.length)out.push(fmt(cases)+" "+word("CASE",cases));
