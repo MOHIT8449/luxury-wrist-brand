@@ -8,7 +8,9 @@
 -- The Tally bill table is readable only by Accounts / Admin, so the Sales Head gets the bill no. and
 -- time through this function (no amounts).
 --   * lwb_po_journey(order ids): per order the transport, loading times, Tally bill no. + entry time and
---     the latest driver delivery report. Admin and Sales Head (MANAGER) only, max 500 orders per call.
+--     the latest driver delivery report. Admin, Sales Head (MANAGER), Godown Manager (WAREHOUSE) and
+--     Accounts, max 500 orders per call.
+-- 2 Nov 2026: Godown Manager and Accounts also open PO / Sales List (view only) and see the journey.
 
 BEGIN;
 
@@ -20,8 +22,8 @@ LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = ''
 AS $fn$
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM public.user_profiles p WHERE p.id = auth.uid() AND p.active = true
-                 AND lower(btrim(p.role)) IN ('admin','manager')) THEN
-    RAISE EXCEPTION 'Admin / Sales Head only.';
+                 AND lower(btrim(p.role)) IN ('admin','manager','warehouse','accounts')) THEN
+    RAISE EXCEPTION 'Admin / Sales Head / Godown Manager / Accounts only.';
   END IF;
   IF coalesce(cardinality(p_ids), 0) > 500 THEN
     RAISE EXCEPTION 'Max 500 orders at a time.';

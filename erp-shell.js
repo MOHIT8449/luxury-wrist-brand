@@ -73,9 +73,10 @@
       {t:"Complaint Box",h:"complaint-box.html",i:"chat",r:"*"}]},
     {group:"Sales",items:[
       // Take a new PO on "PO / Sales Order"; a submitted PO shows in "PO / Sales List" right below
-      // (Sales Head / Admin: the approval + driver list; Salesman: his own orders).
+      // (Sales Head / Admin: the approval + driver list; Godown Manager / Accounts: same list, view only;
+      // Salesman: his own orders with PO given > Approved > Dispatched > Delivered).
       {t:"PO / Sales Order",h:"order-entry.html",i:"cart",r:"admin manager sales",k:"new order entry"},
-      {t:"PO / Sales List",h:"warehouse-orders.html",i:"note",r:"admin manager",k:"po approval driver warehouse orders",pt:"PO / Sales List (Approval & Driver)"},
+      {t:"PO / Sales List",h:"warehouse-orders.html",i:"note",r:"admin manager warehouse accounts",k:"po approval driver warehouse orders",pt:"PO / Sales List (all POs; approve for Admin / Sales Head)"},
       {t:"PO / Sales List",h:"my-sales.html#orders",i:"note",r:"sales",k:"my orders modify",pt:"PO / Sales List (Salesman's own orders)"},
       {t:"My Sales",h:"my-sales.html",i:"chart",r:"sales"},
       {t:"Party Call List",h:"party-calls.html",i:"phone",r:"admin manager sales"},
@@ -406,8 +407,8 @@
       sales:[["Home","dashboard.html","home"],["New Order","order-entry.html","cart"],["PO List","my-sales.html#orders","note"],["My Sales","my-sales.html","chart"]],
       admin:[["Home","dashboard.html","home"],["New Order","order-entry.html","cart"],["PO List","warehouse-orders.html","note"],["Stock","inventory.html","stock"]],
       manager:[["Home","dashboard.html","home"],["New Order","order-entry.html","cart"],["PO List","warehouse-orders.html","note"],["Dispatch","loading-dispatch.html","truck"]],
-      accounts:[["Home","dashboard.html","home"],["Cash","accounts-dashboard.html","cash"],["Bills","party-billing.html","bill"],["Collections","driver-collections.html","cash"]],
-      warehouse:[["Home","dashboard.html","home"],["Loading","loading-dispatch.html","truck"],["Stock","inventory.html","stock"],["Returns","driver-returns.html","undo"]],
+      accounts:[["Home","dashboard.html","home"],["PO List","warehouse-orders.html","note"],["Cash","accounts-dashboard.html","cash"],["Bills","party-billing.html","bill"]],
+      warehouse:[["Home","dashboard.html","home"],["PO List","warehouse-orders.html","note"],["Loading","loading-dispatch.html","truck"],["Stock","inventory.html","stock"]],
       transport:[["Home","dashboard.html","home"],["Assign","transport-allocation.html","truck"],["Vehicles","fleet-master.html#vehicles","box"],["Drivers","fleet-master.html#drivers","users"]]
     };
     const permitted=new Set(menuForMe(role).flatMap(g=>g.items.map(i=>i.h.split("#")[0])));
