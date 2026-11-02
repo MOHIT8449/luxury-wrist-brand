@@ -4,6 +4,13 @@
 **Purpose:** Continue the same ERP project from a new ChatGPT conversation without restarting or losing the agreed requirements.
 **Status:** Active development / verification. Do not assume all modules are completed or fully tested.
 
+## Rajnigandha quick slip (kachcha parchi) flow (2 Nov 2026)
+
+- Mohit asked: Coca-Cola keeps the full PO flow. A Rajnigandha PO (Sales Head Vinesh Chalavadiya) is made, driver name + vehicle no. typed at once, a small thermal slip (3x4 or 2x4 inch) prints, and the PO goes straight to Accounts for the Tally bill. No approval / transport / loading in between. Slip shows brand, PO, date, party name, party mobile + address (Party Master), driver, vehicle, SKU / qty / rate / amount, total. Mohit: no "Luxury Wrist Brand" heading on the slip, no driver mobile.
+- SQL `lwb_quick_slip_setup.sql` (test `tests/quick-slip`): `lwb_companies.quick_slip` (ON for RAJNIGANDHA when the column is added), table `lwb_quick_slips` (RPC only), `lwb_quick_slip_dispatch(order, {driver_name, vehicle_no})` (Admin / Sales Head; approved PO whose every SKU is of one quick-slip brand, no dispatch assignment; sets loaded_qty = approved, status 'loaded' so the normal "Make Tally bill" popup goes to Accounts, re-worded "Rajnigandha Slip — Make Tally Bill"; godown "get ready" popup marked read; called again it only corrects driver / vehicle), `lwb_quick_slip_get`, `lwb_quick_slip_printed` (reprint count), `lwb_quick_slip_list(from, to)` (slips + approved Rajnigandha POs still waiting for driver / vehicle, e.g. a salesman's PO approved later).
+- `order-entry.html`: Sales Head / Admin save with only quick-slip brand SKUs -> popup Driver Name + Vehicle Number -> PO saved approved -> slip made -> slip prints in a hidden frame (same as Print PO). Mixed Rajnigandha + other brand in one PO is refused (make separate POs). Salesman orders unchanged.
+- `quick-slip.html` (menu Sales > Rajnigandha Slips; Admin, Sales Head, Accounts, Godown): slip list with View / Print / Reprint, waiting POs with "Driver & slip", 3 inch / 2 inch switch (kept per device), page height follows the slip so one long strip prints.
+
 ## Delete / Cancel / Modify orders at any stage (2 Nov 2026)
 
 - Mohit: Admin deletes any sales order / PO (dummy and duplicate data); others only Cancel; Sales Head can modify or cancel even after the vehicle is loading / loaded (market cancels).
