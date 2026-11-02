@@ -767,7 +767,7 @@
       #ordersArea th .sp-tp {display:block;font-size:inherit;color:inherit;margin:0}
       #ordersArea .c-sp {min-width:96px}
       .toolbar input#searchBox {min-width:160px;flex:1 1 160px}
-      #ordersArea .act-row .btn {padding:6px 9px;font-size:12px;border-radius:6px;white-space:nowrap;border:1px solid #d7dde3}
+      #ordersArea .act-row .btn {padding:6px 7px;font-size:12px;border-radius:6px;white-space:nowrap;border:1px solid #d7dde3}
       #ordersArea .act-row .btn-blue,#ordersArea .act-row .btn-green {border-color:transparent}
       .po-foot {padding:7px 10px}
     }
@@ -805,6 +805,9 @@
     .po-journey li.stop .dot {background:#c62828}
     .po-journey b {display:block;color:#1f2a37;font-size:12.5px}
     .po-journey small {display:block;overflow-wrap:anywhere}
+    .track-card {width:min(980px,100%)}
+    .track-card .modal-header h3 {font-size:16px;margin:0}
+    .track-card .po-journey {margin:0}
 
     /* Phone: PO list as cards, review popup full screen, SKU lines as cards. */
     @media (max-width: 640px) {
@@ -830,7 +833,7 @@
       .po-view {display:flex;width:100%;margin-bottom:0}
       .po-view button {flex:1;padding:10px 6px}
       .po-updated {font-size:11px}
-      .po-tabs {flex-wrap:nowrap;overflow-x:auto;margin:0 -12px 10px;padding:0 12px 2px;scrollbar-width:none}
+      .po-tabs {flex-wrap:nowrap;overflow-x:auto;margin:0 0 10px;padding:0 0 2px;scrollbar-width:none}
       .po-tabs::-webkit-scrollbar {display:none}
       .po-tab {font-size:12.5px;padding:6px 6px 6px 11px}
 
@@ -874,6 +877,8 @@
       #ordersArea .sp-tp {display:none}
       #ordersArea .act-row {display:flex;gap:8px;width:100%}
       #ordersArea .act-row .btn {flex:1;padding:11px 6px;font-size:13px;white-space:nowrap}
+      #ordersArea .act-row .btn.btn-track {flex:0 0 auto;padding:11px 14px}
+      #ordersArea .act-row .btn.btn-track .lbl-long {display:none}
       #ordersArea .c-cust {grid-area:cust;font-size:15px;font-weight:700;color:#1f2a37;overflow-wrap:anywhere}
       #ordersArea .c-sp {grid-area:sp}
       #ordersArea .c-tp {grid-area:tp}
@@ -886,6 +891,8 @@
 
       .modal {padding:0;align-items:stretch}
       .modal-card {width:100%;max-height:none;height:100%;border-radius:0;display:flex;flex-direction:column}
+      .track-modal {align-items:flex-end}
+      .track-modal .track-card {height:auto;max-height:88vh;border-radius:14px 14px 0 0}
       .modal-header {padding:12px 14px}
       .modal-header h3 {font-size:16px}
       .modal-body {padding:12px 14px;flex:1}
@@ -1163,6 +1170,18 @@
 
   </main>
 
+
+  <div class="modal track-modal" id="trackModal" onclick="if(event.target===this)closeTrack()">
+    <div class="modal-card track-card">
+      <div class="modal-header">
+        <h3 id="trackTitle">Track PO</h3>
+        <button class="close-btn" onclick="closeTrack()" aria-label="Close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <ol class="po-journey" id="trackJourney" aria-label="Where this PO is now"></ol>
+      </div>
+    </div>
+  </div>
 
   <div class="modal" id="reviewModal">
     <div class="modal-card">
@@ -2181,54 +2200,88 @@ async function bulkPrint() {
 
 
 /* -----------------------------
-   PO JOURNEY: made → approved → transport → loading → loaded → delivered
+   PO JOURNEY: PO made → approved → transport → loading start → out for delivery → delivered
+   Out for delivery = loading started AND Accounts entered the Tally bill no.
 ----------------------------- */
 
-async function renderJourney(order) {
-  const box = document.getElementById("poJourney");
+async function loadJourneyData(order) {
   const id = order.id;
-  const draw = a => {
-    if (selectedOrder?.id !== id) return;
-    a = a || {};
-    const when = v => v ? escapeHtml(formatDateTime(v)) : "";
-    const took = (from, to) => {
-      if (!from || !to) return "";
-      const h = (new Date(to) - new Date(from)) / 3600000;
-      return Number.isFinite(h) && h >= 0 ? " · " + (h < 1 ? Math.round(h * 60) + " min" : h < 48 ? h.toFixed(1) + " hrs" : Math.round(h / 24) + " days") : "";
-    };
-    const made = order.created_at || order.order_date;
-    const delivered = deliveredOrders.get(id) || (isDeliveredOrder(order) ? order.delivered_at || order.updated_at : null);
-    const status = normalizedStatus(order);
-    const reached = {
-      approved: !isPending(order) && !isCancelled(order) || !!order.approved_at,
-      transport: !!(a.assigned_at || a.driver_name || a.vehicle_no),
-      loading: !!a.loading_started_at || ["loading", "loaded", "invoiced", "dispatched"].includes(status),
-      loaded: !!a.loading_completed_at || ["loaded", "invoiced", "dispatched"].includes(status),
-      delivered: !!delivered
-    };
-    const steps = [
-      { k: "made", t: "PO made", s: when(made) + (order.sales_person ? " · " + escapeHtml(order.sales_person) : ""), on: true },
-      { k: "approved", t: "Approved", s: when(order.approved_at) + took(made, order.approved_at), on: reached.approved },
-      { k: "transport", t: "Transport assigned", s: [when(a.assigned_at), a.vehicle_no, a.driver_name, a.loading_person && "Godown: " + a.loading_person].filter(Boolean).map(v => escapeHtml(String(v))).join(" · "), on: reached.transport },
-      { k: "loading", t: "Loading started", s: when(a.loading_started_at), on: reached.loading },
-      { k: "loaded", t: "Vehicle loaded", s: when(a.loading_completed_at), on: reached.loaded },
-      { k: "delivered", t: "Delivered", s: when(delivered) + took(made, delivered), on: reached.delivered }
-    ];
-    if (isCancelled(order)) {
-      const at = steps.findIndex(step => !step.on);
-      steps.splice(at < 0 ? steps.length : at, steps.length,
-        { k: "cancelled", t: "Cancelled", s: when(order.cancelled_at) + (order.cancel_reason ? " · " + escapeHtml(order.cancel_reason) : ""), on: true, stop: true });
-    }
-    const next = steps.findIndex(step => !step.on);
-    box.innerHTML = steps.map((step, i) =>
-      `<li class="${step.stop ? "stop" : step.on ? "done" : i === next ? "now" : ""}"><span class="dot">${step.stop ? "✕" : step.on ? "✓" : i + 1}</span>` +
-      `<b>${step.t}</b><small>${step.s || (i === next ? "Waiting" : "")}</small></li>`).join("");
+  const rpc = await db.rpc("lwb_po_journey", { p_ids: [id] });
+  if (!rpc.error) return (rpc.data || [])[0] || {};
+  console.warn("Journey: lwb_po_journey not available, using dispatch only", rpc.error);
+  const { data, error } = await db.from("dispatch_assignments").select("*").eq("order_id", id)
+    .order("assigned_at", { ascending: false }).limit(1);
+  if (error) { console.warn("Journey: transport not loaded", error); return null; }
+  return (data || [])[0] || {};
+}
+
+function drawJourney(order, box, a) {
+  a = a || {};
+  const id = order.id;
+  const when = v => v ? escapeHtml(formatDateTime(v)) : "";
+  const took = (from, to) => {
+    if (!from || !to) return "";
+    const h = (new Date(to) - new Date(from)) / 3600000;
+    return Number.isFinite(h) && h >= 0 ? " · " + (h < 1 ? Math.round(h * 60) + " min" : h < 48 ? h.toFixed(1) + " hrs" : Math.round(h / 24) + " days") : "";
   };
-  draw(null);
+  const later = (x, y) => !x ? y : !y ? x : new Date(x) > new Date(y) ? x : y;
+  const made = order.created_at || order.order_date;
+  const status = normalizedStatus(order);
+  const report = String(a.delivery_status || "").toUpperCase();
+  const delivered = (["DELIVERED", "PARTIAL"].includes(report) && a.reported_at) || deliveredOrders.get(id) ||
+    (isDeliveredOrder(order) ? order.delivered_at || order.updated_at : null);
+  const loadStart = a.loading_started_at || null;
+  const loadingOn = !!(loadStart || a.loading_completed_at) || ["loading", "loaded", "invoiced", "dispatched"].includes(status);
+  const billNo = a.bill_no || "";
+  const outOn = !!billNo && loadingOn || ["invoiced", "dispatched"].includes(status);
+  const outAt = billNo ? later(a.bill_at, loadStart) : null;
+  const steps = [
+    { t: "PO made", s: when(made) + (order.sales_person ? " · " + escapeHtml(order.sales_person) : ""), on: true },
+    { t: "Approved", s: when(order.approved_at) + took(made, order.approved_at),
+      on: !isPending(order) && !isCancelled(order) || !!order.approved_at },
+    { t: "Transport assigned", s: [when(a.assigned_at), a.vehicle_no, a.driver_name, a.loading_person && "Godown: " + a.loading_person]
+        .filter(Boolean).map(v => escapeHtml(String(v))).join(" · "), on: !!(a.assigned_at || a.driver_name || a.vehicle_no) },
+    { t: "Loading start", s: when(loadStart) + (a.loading_completed_at ? " · Loaded " + when(a.loading_completed_at) : ""), on: loadingOn },
+    { t: "Out for delivery", s: billNo ? "Bill " + escapeHtml(billNo) + (outAt ? " · " + when(outAt) : "") : "", on: outOn,
+      wait: billNo ? "Bill " + escapeHtml(billNo) + " made · waiting for loading"
+        : a.loading_completed_at ? "Vehicle loaded · Tally bill pending" : loadingOn ? "Tally bill pending (Accounts)" : "" },
+    { t: "Delivered", s: when(delivered) + took(made, delivered) + (report === "PARTIAL" ? " · Partial" : ""), on: !!delivered,
+      wait: report === "NOT_DELIVERED" ? "Driver: not delivered · " + when(a.reported_at) : "" }
+  ];
+  // A later step reached means the earlier ones happened too (old orders may miss a timestamp).
+  for (let i = steps.length - 1, seen = false; i >= 0; i--) { if (steps[i].on) seen = true; else if (seen) steps[i].on = true; }
+  if (isCancelled(order)) {
+    const at = steps.findIndex(step => !step.on);
+    steps.splice(at < 0 ? steps.length : at, steps.length,
+      { t: "Cancelled", s: when(order.cancelled_at) + (order.cancel_reason ? " · " + escapeHtml(order.cancel_reason) : ""), on: true, stop: true });
+  }
+  const next = steps.findIndex(step => !step.on);
+  box.innerHTML = steps.map((step, i) =>
+    `<li class="${step.stop ? "stop" : step.on ? "done" : i === next ? "now" : ""}"><span class="dot">${step.stop ? "✕" : step.on ? "✓" : i + 1}</span>` +
+    `<b>${step.t}</b><small>${step.on ? step.s : i === next ? step.wait || "Waiting" : ""}</small></li>`).join("");
+  return next < 0 ? steps[steps.length - 1].t : steps[next].t;
+}
+
+async function renderJourney(order, box = document.getElementById("poJourney")) {
+  const id = String(order.id);
+  box.dataset.oid = id;
+  drawJourney(order, box, null);
   if (isPending(order) || isCancelled(order) && !order.approved_at) return;
-  const { data, error } = await db.from("dispatch_assignments").select("*").eq("order_id", id).maybeSingle();
-  if (error) { console.warn("Journey: transport not loaded", error); return; }
-  draw(data);
+  const data = await loadJourneyData(order);
+  if (data && box.dataset.oid === id) drawJourney(order, box, data);
+}
+
+function trackOrder(id) {
+  const order = orders.find(o => String(o.id) === String(id));
+  if (!order) return;
+  document.getElementById("trackTitle").textContent = (order.order_no || "PO") + " · " + (order.customer_name || "");
+  document.getElementById("trackModal").classList.add("show");
+  renderJourney(order, document.getElementById("trackJourney"));
+}
+
+function closeTrack() {
+  document.getElementById("trackModal").classList.remove("show");
+  document.getElementById("trackJourney").dataset.oid = "";
 }
 
 
@@ -2424,6 +2477,7 @@ function renderOrders() {
             </td>
 
             <td class="c-act"><div class="act-row">
+              <button class="btn btn-light btn-track" title="Track: where is this PO now" onclick="trackOrder('${order.id}')">📍<span class="lbl-long"> Track</span></button>
               <button class="btn btn-blue" onclick="reviewOrder('${order.id}')">${isPending(order) ? "Review" : canEditItems(order) ? "Edit PO" : "View"}</button>
               ${!isCancelled(order) ? `<button class="btn btn-light" title="Print PO" onclick="printPoFromList('${order.id}')">Print</button>` : ""}
               ${eligibleForPoPrint(order) ? `<button class="btn btn-green" title="Driver / Vehicle / Godown Manager"
