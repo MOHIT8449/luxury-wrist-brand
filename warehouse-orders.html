@@ -797,7 +797,7 @@
     body.po-view-only #reviewModal table thead th:last-child {display:none!important}
 
     /* PO journey in the review popup */
-    .po-journey {list-style:none;margin:0 0 14px;padding:12px 14px;display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:8px;
+    .po-journey {list-style:none;margin:0 0 14px;padding:12px 14px;display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:8px;
       background:#fafaf7;border:1px solid #e3e7ec;border-radius:10px;counter-reset:none}
     .po-journey:empty {display:none}
     .po-journey li {position:relative;padding-top:30px;min-width:0;font-size:12px;color:#6b7785;line-height:1.35}
@@ -814,6 +814,15 @@
     .track-card {width:min(980px,100%)}
     .track-card .modal-header h3 {font-size:16px;margin:0}
     .track-card .po-journey {margin:0}
+    .track-card .modal-footer {padding:10px 14px;justify-content:flex-start}
+    .track-card .modal-footer[hidden] {display:none}
+    .track-card .modal-footer a.btn {text-decoration:none}
+    .track-modal .bill-card {width:min(460px,100%)}
+    .bill-info {background:#f6f7f9;border-radius:8px;padding:10px 12px;font-size:13px;line-height:1.5;margin-bottom:12px}
+    .bill-form {display:grid;gap:10px}
+    .bill-form[hidden] {display:none}
+    .bill-form label {display:grid;gap:4px;font-size:12px;font-weight:600;color:#55686c}
+    .bill-form input {font:inherit;font-size:15px;padding:9px 10px;border:1px solid #cfd6dc;border-radius:8px;width:100%;box-sizing:border-box}
 
     /* Phone: PO list as cards, review popup full screen, SKU lines as cards. */
     @media (max-width: 640px) {
@@ -1185,6 +1194,28 @@
       </div>
       <div class="modal-body">
         <ol class="po-journey" id="trackJourney" aria-label="Where this PO is now"></ol>
+      </div>
+      <div class="modal-footer" id="trackFoot" hidden></div>
+    </div>
+  </div>
+
+  <div class="modal track-modal" id="billModal" onclick="if(event.target===this)closeBill()">
+    <div class="modal-card track-card bill-card">
+      <div class="modal-header">
+        <h3 id="billTitle">Tally bill</h3>
+        <button class="close-btn" onclick="closeBill()" aria-label="Close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="bill-info" id="billInfo"></div>
+        <div class="bill-form" id="billForm">
+          <label>Tally invoice no.<input id="billNo" autocomplete="off" maxlength="60"></label>
+          <label>Bill amount ₹ (as in Tally)<input id="billAmt" inputmode="decimal" autocomplete="off"></label>
+          <label>Invoice date<input id="billDate" type="date"></label>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <a class="btn btn-light" id="billMore" href="party-billing.html">Billing &amp; Outstanding</a>
+        <button class="btn btn-green" id="billSave" onclick="saveBill()">Save bill</button>
       </div>
     </div>
   </div>
@@ -1596,6 +1627,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     // PO / Sales List: Admin and Sales Head work here; Godown Manager and Accounts see the
     // same list and PO journey, view only (no approve / edit / transport).
     VIEW_ONLY = ["warehouse", "accounts"].includes(role);
+    CAN_BILL = ["accounts", "admin"].includes(role);
     if (VIEW_ONLY) {
       document.body.classList.add("po-view-only");
       const h = document.querySelector(".po-title h2"); if (h) h.textContent = "PO / Sales List";
@@ -2264,10 +2296,12 @@ function drawJourney(order, box, a) {
       wait: billNo ? "Bill " + escapeHtml(billNo) + " made · waiting for loading"
         : a.loading_completed_at ? "Vehicle loaded · Tally bill pending" : loadingOn ? "Tally bill pending (Accounts)" : "" },
     { t: "Delivered", s: when(delivered) + took(made, delivered) + (report === "PARTIAL" ? " · Partial" : ""), on: !!delivered,
-      wait: report === "NOT_DELIVERED" ? "Driver: not delivered · " + when(a.reported_at) : "" }
+      wait: report === "NOT_DELIVERED" ? "Driver: not delivered · " + when(a.reported_at) : "" },
+    collectionStep(a)
   ];
   // A later step reached means the earlier ones happened too (old orders may miss a timestamp).
-  for (let i = steps.length - 1, seen = false; i >= 0; i--) { if (steps[i].on) seen = true; else if (seen) steps[i].on = true; }
+  // Collection is left out: a party can pay at the counter before the goods reach it.
+  for (let i = 5, seen = false; i >= 0; i--) { if (steps[i].on) seen = true; else if (seen) steps[i].on = true; }
   if (isCancelled(order)) {
     const at = steps.findIndex(step => !step.on);
     steps.splice(at < 0 ? steps.length : at, steps.length,
@@ -2276,8 +2310,20 @@ function drawJourney(order, box, a) {
   const next = steps.findIndex(step => !step.on);
   box.innerHTML = steps.map((step, i) =>
     `<li class="${step.stop ? "stop" : step.on ? "done" : i === next ? "now" : ""}"><span class="dot">${step.stop ? "✕" : step.on ? "✓" : i + 1}</span>` +
-    `<b>${step.t}</b><small>${step.on ? step.s : i === next ? step.wait || "Waiting" : ""}</small></li>`).join("");
+    `<b>${step.t}</b><small>${step.on ? step.s : i === next ? step.wait || "Waiting" : step.info || ""}</small></li>`).join("");
   return next < 0 ? steps[steps.length - 1].t : steps[next].t;
+}
+
+// Step 7: how much of this bill the party has paid (driver payments + office / party payments).
+function collectionStep(a) {
+  const rs = v => "₹" + Math.round(Number(v) || 0).toLocaleString("en-IN");
+  const bill = Number(a.bill_amount) || 0, got = Number(a.collected) || 0;
+  const due = a.due == null ? null : Number(a.due);
+  const total = bill || (due == null ? 0 : due + got);
+  const paid = due != null && due <= 0.5 && (bill > 0 || got > 0);
+  const part = got > 0 ? rs(got) + " received of " + rs(total) + " · " + rs(due) + " due" : due > 0.5 ? rs(due) + " to collect" : "";
+  return { t: "Collection", on: paid, info: part, wait: part || "Payment pending",
+    s: rs(got) + " received · fully paid" + (due < -0.5 ? " · " + rs(-due) + " extra" : "") };
 }
 
 async function renderJourney(order, box = document.getElementById("poJourney")) {
@@ -2287,6 +2333,7 @@ async function renderJourney(order, box = document.getElementById("poJourney")) 
   if (isPending(order) || isCancelled(order) && !order.approved_at) return;
   const data = await loadJourneyData(order);
   if (data && box.dataset.oid === id) drawJourney(order, box, data);
+  return data;
 }
 
 function trackOrder(id) {
@@ -2294,7 +2341,78 @@ function trackOrder(id) {
   if (!order) return;
   document.getElementById("trackTitle").textContent = (order.order_no || "PO") + " · " + (order.customer_name || "");
   document.getElementById("trackModal").classList.add("show");
-  renderJourney(order, document.getElementById("trackJourney"));
+  const foot = document.getElementById("trackFoot");
+  foot.hidden = true;
+  renderJourney(order, document.getElementById("trackJourney")).then(data => {
+    if (!CAN_BILL || !eligibleForPoPrint(order) || document.getElementById("trackJourney").dataset.oid !== String(id)) return;
+    foot.innerHTML = data?.bill_no
+      ? `<a class="btn btn-light" href="party-billing.html?order=${encodeURIComponent(order.id)}">🧾 Bill ${escapeHtml(data.bill_no)} · Billing &amp; Outstanding</a>`
+      : `<button class="btn btn-green" onclick="openBill('${order.id}')">🧾 Enter Tally bill no.</button>`;
+    foot.hidden = false;
+  });
+}
+
+/* Accounts / Admin: Tally bill no. straight from the PO list (same save as Billing & Outstanding). */
+let billOrder = null;
+async function openBill(id) {
+  const order = orders.find(o => String(o.id) === String(id));
+  if (!order || !CAN_BILL) return;
+  billOrder = order;
+  const rs = v => "₹" + Math.round(Number(v) || 0).toLocaleString("en-IN");
+  document.getElementById("billTitle").textContent = "Tally bill · " + (order.order_no || "") + " · " + (order.customer_name || "");
+  const info = document.getElementById("billInfo"), form = document.getElementById("billForm"), save = document.getElementById("billSave");
+  document.getElementById("billMore").href = "party-billing.html?order=" + encodeURIComponent(order.id);
+  info.textContent = "Checking…"; form.hidden = true; save.hidden = true;
+  document.getElementById("billModal").classList.add("show");
+  const data = await loadJourneyData(order);
+  if (billOrder !== order) return;
+  if (data?.bill_no) {
+    info.innerHTML = "Bill <b>" + escapeHtml(data.bill_no) + "</b> is already saved" + (data.bill_amount != null ? " · " + rs(data.bill_amount) : "") +
+      (data.collected > 0 ? "<br>Received " + rs(data.collected) : "") + (data.due != null ? " · Due " + rs(data.due) : "") +
+      "<br>To change it or add a sub-firm bill, open Billing &amp; Outstanding.";
+    return;
+  }
+  info.innerHTML = "PO value " + rs(order.total_amount) + " · " + escapeHtml(order.status || "") +
+    "<br>Enter the bill no. and amount exactly as in Tally. The amount goes to To collect for this party.";
+  document.getElementById("billNo").value = "";
+  document.getElementById("billAmt").value = "";
+  document.getElementById("billDate").value = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+  form.hidden = false; save.hidden = false; save.disabled = false;
+  document.getElementById("billNo").focus();
+}
+
+function closeBill() {
+  document.getElementById("billModal").classList.remove("show");
+  billOrder = null;
+}
+
+async function saveBill() {
+  const order = billOrder;
+  if (!order) return;
+  const no = document.getElementById("billNo").value.trim();
+  const amount = Number(String(document.getElementById("billAmt").value).replace(/[₹,\s]/g, ""));
+  const date = document.getElementById("billDate").value;
+  const today = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+  if (!no) return alert("Enter the Tally invoice no.");
+  if (!(amount > 0)) return alert("Enter the bill amount.");
+  if (!date) return alert("Enter the invoice date.");
+  if (date > today) return alert("The invoice date can not be after today.");
+  const rs = "₹" + amount.toLocaleString("en-IN", { maximumFractionDigits: 2 });
+  if (!await confirm("Save Tally bill for " + order.order_no + "?\n\n" + (order.customer_name || "") + " · bill " + no + " · " + rs +
+    "\nDate " + date.split("-").reverse().join("/"))) return;
+  const btn = document.getElementById("billSave");
+  btn.disabled = true;
+  try {
+    const { error } = await db.rpc("lwb_save_tally_bills", { p_order_id: order.id, p_invoice_date: date,
+      p_bills: [{ firm: order.customer_name || "", no, amount }], p_note: null });
+    if (error) throw error;
+    closeBill();
+    showMessage("Bill " + no + " saved for " + order.order_no + " · " + rs + " to collect.", "success");
+    if (document.getElementById("trackModal").classList.contains("show") && document.getElementById("trackJourney").dataset.oid === String(order.id)) trackOrder(order.id);
+  } catch (e) {
+    btn.disabled = false;
+    alert("Could not save the bill: " + (e.message || e));
+  }
 }
 
 function closeTrack() {
@@ -2496,6 +2614,7 @@ function renderOrders() {
 
             <td class="c-act"><div class="act-row">
               <button class="btn btn-light btn-track" title="Track: where is this PO now" onclick="trackOrder('${order.id}')">📍<span class="lbl-long"> Track</span></button>
+              ${CAN_BILL && VIEW_ONLY && eligibleForPoPrint(order) ? `<button class="btn btn-green" title="Enter the Tally bill no." onclick="openBill('${order.id}')">🧾 Bill</button>` : ""}
               <button class="btn btn-blue" onclick="reviewOrder('${order.id}')">${VIEW_ONLY ? "View" : isPending(order) ? "Review" : canEditItems(order) ? "Edit PO" : "View"}</button>
               ${!isCancelled(order) ? `<button class="btn btn-light" title="Print PO" onclick="printPoFromList('${order.id}')">Print</button>` : ""}
               ${eligibleForPoPrint(order) && !VIEW_ONLY ? `<button class="btn btn-green" title="Driver / Vehicle / Godown Manager"
@@ -3371,6 +3490,7 @@ async function saveManagerNote(){
 
 // Sales Head can change an approved PO (SKU, cases, rate, weight) until loading starts.
 let VIEW_ONLY=false;
+let CAN_BILL=false; // Accounts / Admin: enter the Tally bill no. from the list
 const canEditItems=o=>Boolean(o)&&!VIEW_ONLY&&(isPending(o)||(eligibleForPoPrint(o)&&!poAllocationLocked(o)));
 // SKU lines are ready to save? Shows what is wrong and returns false otherwise.
 function poItemsValid() {
