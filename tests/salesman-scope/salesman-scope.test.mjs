@@ -40,6 +40,7 @@ await load('lwb_party_salesman_assign_setup.sql');
 await db.query("insert into lwb_salesmen(user_id,kind) values($1,'FIELD'),($2,'OFFICE')",[ids.harsh,ids.office]);
 await load('lwb_salesman_party_scope_setup.sql');
 await load('lwb_salesman_party_scope_setup.sql'); // safe to run again
+await load('lwb_sales_head_in_team_setup.sql');await load('lwb_sales_head_in_team_setup.sql');
 
 const P=(await db.query(`insert into lwb_customer_master(customer_name,city) values('NADIM SHOP','SURAT'),('HARSH SHOP','BARDOLI'),('OFFICE SHOP','SURAT') returning id`)).rows.map(r=>r.id);
 const O=(await db.query(`insert into orders(order_no,customer_name,status,created_by) values('LXY-00001','NADIM SHOP','approved',$1),('LXY-00002','HARSH SHOP','approved',$2),('LXY-00003','OFFICE SHOP','approved',$3) returning id`,[ids.admin,ids.admin,ids.admin])).rows.map(r=>r.id);
@@ -109,4 +110,17 @@ test('complaint: field salesman can name only his own party and PO', async()=>{
   // Office salesman / Godown etc. unchanged
   await run('office','select lwb_complaint_add($1)',[{category:'MARKET',subject:'x',party_name:'HARSH SHOP'}]);
   await run('acc','select lwb_complaint_add($1)',[{category:'ACCOUNTS',subject:'x',party_name:'Any party'}]);
+});
+
+test('Sales Head shows in the team, can get parties / targets as OFFICE, still sees every party', async()=>{
+  const team=(await run('admin','select full_name,role from lwb_sales_team()')).rows;
+  assert.equal(team[0].role,'manager');assert.ok(team.some(r=>r.full_name==='Name head'));
+  assert.ok(!team.some(r=>r.role==='accounts'));
+  await run('admin','select lwb_assign_parties($1,$2)',[[P[2]],ids.head]);
+  assert.equal((await db.query('select kind from lwb_salesmen where user_id=$1',[ids.head])).rows[0].kind,'OFFICE');
+  await run('admin',"select lwb_save_salesman($1,'FIELD','Rajnigandha')",[ids.head]);
+  assert.equal((await db.query('select kind from lwb_salesmen where user_id=$1',[ids.head])).rows[0].kind,'OFFICE');
+  await run('admin',"select lwb_save_sales_targets('2026-11-01',$1)",[JSON.stringify([{salesman_id:ids.head,target_amount:5000}])]);
+  assert.equal((await run('head','select * from lwb_customer_master')).rows.length,3);
+  await assert.rejects(run('admin','select lwb_assign_parties($1,$2)',[[P[2]],ids.acc]),/not an active Salesman or Sales Head/);
 });
