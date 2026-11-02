@@ -208,6 +208,7 @@
       vertical-align: middle;
     }
 
+    #ordersArea tr.po-row {cursor:pointer}
     tr:hover td {
       background: #fafafa;
     }
@@ -443,7 +444,9 @@
     #reviewModal.transport-only #postApprovalPanel > h4,
     #reviewModal.transport-only .po-help,
     #reviewModal.transport-only .po-actions,
-    #reviewModal.transport-only #cancelOrderBtn {display:none!important}
+    #reviewModal.transport-only #cancelOrderBtn,
+    #reviewModal.transport-only #deleteOrderBtn,
+    #reviewModal.transport-only #printChallanBtn {display:none!important}
     #reviewModal.transport-only #poQuickInfo {display:block;background:#f3f7fb;border:1px solid #dbe5ef;border-radius:8px;padding:10px 12px;margin-bottom:14px;font-size:13px;line-height:1.6}
     #reviewModal.transport-only .po-grid {grid-template-columns:1fr 1fr}
     #reviewModal.transport-only .po-directory-hint:not(.error) {display:none}
@@ -791,7 +794,7 @@
     tr.row-picked td {background:var(--lwb-gold-soft,#fffbea)!important}
 
     /* Godown Manager / Accounts: view only */
-    body.po-view-only #bulkApproveBtn, body.po-view-only #cancelOrderBtn, body.po-view-only #approveOrderBtn,
+    body.po-view-only #bulkApproveBtn, body.po-view-only #bulkDeleteBtn, body.po-view-only #deleteOrderBtn, body.po-view-only #cancelOrderBtn, body.po-view-only #approveOrderBtn,
     body.po-view-only #addSkuBtn, body.po-view-only #postApprovalPanel, body.po-view-only .manager-note-actions,
     body.po-view-only #warehouseSkuHint, body.po-view-only #itemsBody .i-act,
     body.po-view-only #reviewModal table thead th:last-child {display:none!important}
@@ -1172,6 +1175,7 @@
       <span class="sp"></span>
       <button type="button" class="btn btn-blue" id="bulkApproveBtn" onclick="bulkApprove()">✔ Approve selected</button>
       <button type="button" class="btn btn-light" id="bulkPrintBtn" onclick="bulkPrint()">🖨 Print selected</button>
+      <button type="button" class="btn btn-red" id="bulkDeleteBtn" onclick="deleteOrders(pickedOrders().map(o=>o.id))" hidden title="Admin: delete dummy / duplicate orders for ever">🗑 Delete selected</button>
       <button type="button" class="btn btn-light" onclick="clearSelection()">✖ Clear</button>
     </div>
 
@@ -1368,8 +1372,20 @@
 
       <div class="modal-footer">
         <button type="button" class="btn btn-light" id="printPoDocumentBtn" onclick="printApprovedPO('po')" disabled>Print PO</button>
+        <button type="button" class="btn btn-light" id="printChallanBtn" onclick="printApprovedPO('challan')" style="display:none">Challan</button>
         <button class="btn btn-grey" onclick="closeModal()">
           Close
+        </button>
+
+        <button
+          type="button"
+          class="btn btn-red"
+          id="deleteOrderBtn"
+          onclick="selectedOrder&&deleteOrders([selectedOrder.id])"
+          title="Admin: delete this order for ever (dummy / duplicate)"
+          style="display:none"
+        >
+          🗑 Delete
         </button>
 
         <button
@@ -1628,6 +1644,8 @@ document.addEventListener("DOMContentLoaded", async () => {
     // same list and PO journey, view only (no approve / edit / transport).
     VIEW_ONLY = ["warehouse", "accounts"].includes(role);
     CAN_BILL = ["accounts", "admin"].includes(role);
+    IS_ADMIN = role === "admin";
+    CAN_HEAD = ["admin", "manager"].includes(role);
     if (VIEW_ONLY) {
       document.body.classList.add("po-view-only");
       const h = document.querySelector(".po-title h2"); if (h) h.textContent = "PO / Sales List";
@@ -2187,6 +2205,9 @@ function renderSelBar() {
   approveBtn.disabled = bulkBusy || !allPending;
   approveBtn.title = allPending ? "" : "Only Pending Review POs can be approved together";
   document.getElementById("bulkPrintBtn").disabled = bulkBusy || list.some(isCancelled);
+  const delBtn = document.getElementById("bulkDeleteBtn");
+  delBtn.hidden = !IS_ADMIN;
+  delBtn.disabled = bulkBusy;
 }
 
 async function bulkApprove() {
@@ -2565,7 +2586,8 @@ function renderOrders() {
 
         ${pageOrders.map(order => `
 
-          <tr class="${isLateApproval(order) || isLateDelivery(order) ? "row-late" : orderPriority(order) === "URGENT" ? "row-urgent" : ""}${pickedIds.has(order.id) ? " row-picked" : ""}">
+          <tr class="po-row ${isLateApproval(order) || isLateDelivery(order) ? "row-late" : orderPriority(order) === "URGENT" ? "row-urgent" : ""}${pickedIds.has(order.id) ? " row-picked" : ""}"
+            onclick="openRow(event, '${order.id}')" title="Click to open ${VIEW_ONLY ? "" : "and edit "}this PO">
 
             <td class="order-no c-no">
               <input type="checkbox" class="po-sel" data-id="${order.id}" ${pickedIds.has(order.id) ? "checked" : ""}
@@ -2615,11 +2637,9 @@ function renderOrders() {
             <td class="c-act"><div class="act-row">
               <button class="btn btn-light btn-track" title="Track: where is this PO now" onclick="trackOrder('${order.id}')">📍<span class="lbl-long"> Track</span></button>
               ${CAN_BILL && VIEW_ONLY && eligibleForPoPrint(order) ? `<button class="btn btn-green" title="Enter the Tally bill no." onclick="openBill('${order.id}')">🧾 Bill</button>` : ""}
-              <button class="btn btn-blue" onclick="reviewOrder('${order.id}')">${VIEW_ONLY ? "View" : isPending(order) ? "Review" : canEditItems(order) ? "Edit PO" : "View"}</button>
               ${!isCancelled(order) ? `<button class="btn btn-light" title="Print PO" onclick="printPoFromList('${order.id}')">Print</button>` : ""}
               ${eligibleForPoPrint(order) && !VIEW_ONLY ? `<button class="btn btn-green" title="Driver / Vehicle / Godown Manager"
-                onclick="openTransportAllocation('${order.id}')">🚚<span class="lbl-long"> Transport</span></button><button class="btn btn-light" title="Print Delivery Challan (A4 landscape)"
-                onclick="printFromList('${order.id}')">Challan</button>` : ""}
+                onclick="openTransportAllocation('${order.id}')">🚚<span class="lbl-long"> Transport</span></button>` : ""}
             </div></td>
 
           </tr>
@@ -3196,6 +3216,12 @@ function poItemsSignature(items){
 async function printPoFromList(id){
   await printQuietly(id,"po");
 }
+// Click anywhere on a PO line (not on its buttons / checkbox) opens it for edit.
+function openRow(event, id) {
+  if (event.target.closest("button, a, input, select, label, textarea")) return;
+  if (window.getSelection && String(window.getSelection()).trim()) return; // selecting text
+  reviewOrder(id);
+}
 async function printFromList(id){
   await printQuietly(id,"challan");
 }
@@ -3373,7 +3399,9 @@ function renderItems() {
   // One button: Approve PO for a pending PO; Submit for an approved one (PO, note and transport together).
   document.getElementById("approveOrderBtn").style.display = (editable || eligibleForPoPrint(selectedOrder)) ? "inline-block" : "none";
   document.getElementById("approveOrderBtn").textContent = isPending(selectedOrder) ? "Approve PO" : "Submit";
-  document.getElementById("cancelOrderBtn").style.display = editable && isPending(selectedOrder) ? "inline-block" : "none";
+  document.getElementById("cancelOrderBtn").style.display = canCancelOrder(selectedOrder) ? "inline-block" : "none";
+  document.getElementById("deleteOrderBtn").style.display = IS_ADMIN && selectedOrder ? "inline-block" : "none";
+  document.getElementById("printChallanBtn").style.display = !VIEW_ONLY && eligibleForPoPrint(selectedOrder) ? "inline-block" : "none";
   document.getElementById("addSkuBtn").style.display = editable ? "inline-block" : "none";
   renderManagerNoteControls();
   document.getElementById("postApprovalPanel").hidden=!eligibleForPoPrint(selectedOrder);
@@ -3488,10 +3516,16 @@ async function saveManagerNote(){
   return true;
 }
 
-// Sales Head can change an approved PO (SKU, cases, rate, weight) until loading starts.
+// Sales Head can change an approved PO (SKU, cases, rate, weight). After loading starts
+// (loading / loaded / billed, not delivered) only Admin / Sales Head, with a reason, through
+// lwb_head_modify_order (Godown Manager, Driver and Accounts get a bell).
 let VIEW_ONLY=false;
 let CAN_BILL=false; // Accounts / Admin: enter the Tally bill no. from the list
-const canEditItems=o=>Boolean(o)&&!VIEW_ONLY&&(isPending(o)||(eligibleForPoPrint(o)&&!poAllocationLocked(o)));
+let IS_ADMIN=false; // Admin: delete orders for ever (dummy / duplicate data)
+let CAN_HEAD=false; // Admin / Sales Head: cancel or modify at any stage before delivery
+const lateEditable=o=>Boolean(o)&&CAN_HEAD&&poAllocationLocked(o)&&!isDeliveredOrder(o);
+const canEditItems=o=>Boolean(o)&&!VIEW_ONLY&&(isPending(o)||(eligibleForPoPrint(o)&&!poAllocationLocked(o))||lateEditable(o));
+const canCancelOrder=o=>Boolean(o)&&!VIEW_ONLY&&CAN_HEAD&&!isCancelled(o)&&!isDeliveredOrder(o);
 // SKU lines are ready to save? Shows what is wrong and returns false otherwise.
 function poItemsValid() {
   if (!selectedItems.length) { alert('Add at least one SKU.'); return false; }
@@ -3555,6 +3589,7 @@ async function approveOrder(opts={}) {
   if (!selectedOrder || !canEditItems(selectedOrder) || !reviewReady) return false;
   const approving=isPending(selectedOrder);
   if (!poItemsValid()) return false;
+  if (!approving && lateEditable(selectedOrder)) return saveLateModify();
   if (!opts.quiet && !await confirm(approving
     ? 'Approve '+selectedOrder.order_no+' with '+selectedItems.length+' SKU(s)?'
     : 'Save changes to approved PO '+selectedOrder.order_no+' ('+selectedItems.length+' SKU)?')) return false;
@@ -3608,136 +3643,142 @@ async function approveOrder(opts={}) {
   } finally {btn.disabled=false;btn.textContent=selectedOrder&&!isPending(selectedOrder)?'Submit':'Approve PO';}
 }
 
+// Cancel: Admin / Sales Head, any stage until delivered (lwb_head_cancel_order).
+// After transport is assigned, Godown Manager + Driver (+ Accounts once loaded) get a bell.
 async function cancelOrder() {
-
-  if (!selectedOrder) {
+  const order = selectedOrder;
+  if (!order) return;
+  if (!canCancelOrder(order)) {
+    alert(isDeliveredOrder(order) ? "This order is already delivered. Use Sales Return instead." : "This order cannot be cancelled.");
     return;
   }
+  const stage = normalizedStatus(order);
+  const onVehicle = ["loading", "loaded", "invoiced", "dispatched"].includes(stage);
+  const crew = onVehicle || ["transport_allocated", "allocated"].includes(stage);
+  const reason = await prompt(
+    "Cancellation reason for " + order.order_no + " · " + (order.customer_name || "") + ":" +
+    (onVehicle ? "\n\nThe vehicle is already " + (stage === "loading" ? "loading" : "loaded") +
+      ". " + (stage === "loading" ? "Godown Manager and Driver" : "Godown Manager, Driver and Accounts") + " will be told not to deliver it and to bring the goods back."
+      : crew ? "\n\nGodown Manager and Driver will be told not to load it." : ""),
+    "", { title: "Cancel Order", ok: "Next", danger: true });
+  if (reason === null) return;
+  if (reason.trim().length < 3) { alert("Cancellation reason is required."); return; }
+  if (!await confirm("Cancel order " + order.order_no + "?\nReason: " + reason.trim(),
+    { title: "Cancel Order", ok: "Yes, cancel order", cancel: "No", danger: true })) return;
 
-  if (!isPending(selectedOrder)) {
-    alert("This order is already processed.");
-    return;
-  }
-
-
-  const reason =
-    await prompt(
-      "Enter cancellation reason for " +
-      selectedOrder.order_no +
-      ":"
-    );
-
-
-  if (reason === null) {
-    return;
-  }
-
-
-  if (!reason.trim()) {
-
-    alert(
-      "Cancellation reason is required."
-    );
-
-    return;
-
-  }
-
-
-  const confirmed =
-    await confirm(
-      "Are you sure you want to CANCEL this order?"
-    );
-
-
-  if (!confirmed) {
-    return;
-  }
-
-
-  const cancelBtn =
-    document.getElementById(
-      "cancelOrderBtn"
-    );
-
+  const cancelBtn = document.getElementById("cancelOrderBtn");
   cancelBtn.disabled = true;
-  cancelBtn.textContent =
-    "Cancelling...";
-
-
+  cancelBtn.textContent = "Cancelling...";
   try {
-
-    const managerNote =
-      document
-        .getElementById("managerNote")
-        .value
-        .trim();
-
-
-    const order = selectedOrder;
-
-    const { data: cancelled, error } = await db
-      .from("orders")
-      .update({
-
-        status: "cancelled",
-
-        cancelled_by:
-          currentUser.id,
-
-        cancelled_at:
-          new Date().toISOString(),
-
-        cancel_reason:
-          reason.trim(),
-
-        manager_note:
-          managerNote || null
-
-      })
-      .eq("id", order.id)
-      .eq("status", order.status)
-      .select("id");
-
-
-    if (error) {
-      throw error;
-    }
-
-    if (!cancelled?.length) {
-      throw new Error("Order status changed. Refresh the page.");
-    }
-
-
+    const { error } = await db.rpc("lwb_head_cancel_order", {
+      p_order_id: order.id,
+      p_reason: reason.trim(),
+      p_note: document.getElementById("managerNote").value.trim()
+    });
+    if (error) throw error;
     closeModal();
-
-    showMessage(
-      "Order " +
-      order.order_no +
-      " cancelled.",
-      "success"
-    );
-
+    showMessage("Order " + order.order_no + " cancelled." + (crew ? " Godown Manager and Driver are notified." : ""), "success");
     await loadOrders();
-
-
   } catch (error) {
-
     console.error(error);
-
-    alert(
-      "Cancellation failed: " +
-      (error.message || "Unknown error")
-    );
-
+    alert("Cancellation failed: " + (error.message || "Unknown error"));
   } finally {
-
     cancelBtn.disabled = false;
-    cancelBtn.textContent =
-      "Cancel Order";
-
+    cancelBtn.textContent = "Cancel Order";
   }
+}
 
+// Modify while the vehicle is loading / loaded / billed: Admin / Sales Head, reason needed.
+// Loaded cases above the new cases are cut down; Godown Manager, Driver (and Accounts once loaded) get a bell.
+async function saveLateModify() {
+  const order = selectedOrder;
+  const stage = normalizedStatus(order) === "loading" ? "loading" : "already loaded";
+  const reason = await prompt(
+    "The vehicle is " + stage + " for " + order.order_no + ".\nWhy is the order changed? (e.g. market cancelled 5 CS)\n\n" +
+    (stage === "loading" ? "Godown Manager and Driver" : "Godown Manager, Driver and Accounts") + " will get the change list.",
+    "", { title: "Modify order during loading", ok: "Save change" });
+  if (reason === null) return false;
+  if (reason.trim().length < 3) { alert("Write why the order is changed."); return false; }
+  const btn = document.getElementById("approveOrderBtn");
+  btn.disabled = true; btn.textContent = "Saving...";
+  try {
+    const items = selectedItems.map(it => ({
+      id: it.id || null, sku_name: String(it.sku_name || "").trim(),
+      approved_qty: Number(it.approved_qty) || 0, rate: Number(it.rate) || 0, unit_weight: Number(it.unit_weight) || 0
+    }));
+    const { data, error } = await db.rpc("lwb_head_modify_order", {
+      p_order_id: order.id, p_items: items,
+      p_note: document.getElementById("managerNote").value.trim(), p_reason: reason.trim()
+    });
+    if (error) throw error;
+    const id = order.id;
+    await loadOrders();
+    await reviewOrder(id);
+    showMessage("PO " + order.order_no + " changed" + (data?.changes?.length ? ": " + data.changes.join(", ") : "") +
+      ". Godown Manager and Driver are notified. Print the PO again.", "success");
+    return true;
+  } catch (error) {
+    console.error(error);
+    alert("Change not saved: " + (error.message || "Unknown error"));
+    return false;
+  } finally {
+    btn.disabled = false; btn.textContent = selectedOrder && isPending(selectedOrder) ? "Approve PO" : "Submit";
+  }
+}
+
+// Admin only: delete orders for ever with everything linked to them (lwb_admin_delete_orders).
+const DELETE_LINK_NAMES = {
+  order_items: "SKU lines", dispatch_assignments: "Transport / loading", lwb_delivery_reports: "Driver delivery report",
+  lwb_tally_invoices: "Tally bill no.", lwb_internal_bills: "ERP bill", erp_notifications: "Bell notifications",
+  lwb_order_pickup: "Self pickup details", lwb_driver_delivery_returns: "Driver returns", lwb_party_payments: "Payments"
+};
+async function deleteOrders(ids) {
+  ids = [...new Set((ids || []).filter(Boolean))];
+  if (!IS_ADMIN || !ids.length || bulkBusy) return;
+  let preview;
+  try {
+    const { data, error } = await db.rpc("lwb_order_delete_preview", { p_ids: ids });
+    if (error) throw error;
+    preview = data || {};
+  } catch (error) {
+    alert("Cannot check this order: " + (error.message || "Unknown error"));
+    return;
+  }
+  const list = preview.orders || [];
+  if (!list.length) { alert("These orders are already deleted. Refresh the page."); return; }
+  const linked = Object.entries(preview.linked || {}).map(([t, n]) => "• " + (DELETE_LINK_NAMES[t] || t.replace(/^lwb_/, "").replace(/_/g, " ")) + ": " + n);
+  const shown = list.slice(0, 12).map(o => o.order_no + " · " + (o.customer_name || "") + " · " + (o.status || "pending"));
+  if (list.length > 12) shown.push("... and " + (list.length - 12) + " more");
+  const reason = await prompt(
+    "DELETE " + list.length + " order" + (list.length > 1 ? "s" : "") + " for ever? This cannot be undone.\n\n" + shown.join("\n") +
+    (linked.length ? "\n\nThese linked records will also be deleted:\n" + linked.join("\n") : "") +
+    "\n\nUse this only for dummy / duplicate data. For a real order use Cancel.\n\nWhy are you deleting? (e.g. dummy, duplicate)",
+    "", { title: "Delete order" + (list.length > 1 ? "s" : ""), ok: "Next", danger: true });
+  if (reason === null) return;
+  if (reason.trim().length < 3) { alert("Write why these orders are deleted."); return; }
+  const typed = await prompt("Type DELETE to delete " + list.length + " order" + (list.length > 1 ? "s" : "") + " for ever.", "",
+    { title: "Confirm delete", ok: "🗑 Delete for ever", danger: true });
+  if (typed === null) return;
+  if (typed.trim().toUpperCase() !== "DELETE") { alert("Not deleted. You must type DELETE."); return; }
+  bulkBusy = true;
+  renderSelBar();
+  const btn = document.getElementById("deleteOrderBtn");
+  btn.disabled = true;
+  try {
+    const { data, error } = await db.rpc("lwb_admin_delete_orders", { p_ids: list.map(o => o.id), p_reason: reason.trim() });
+    if (error) throw error;
+    if (selectedOrder && ids.includes(selectedOrder.id)) closeModal();
+    ids.forEach(id => pickedIds.delete(id));
+    showMessage("Deleted " + (data?.deleted?.length || list.length) + " order(s): " + (data?.deleted || []).join(", ") + ".", "success");
+    await loadOrders();
+  } catch (error) {
+    console.error(error);
+    alert("Delete failed, nothing was deleted: " + (error.message || "Unknown error"));
+  } finally {
+    bulkBusy = false;
+    btn.disabled = false;
+    renderSelBar();
+  }
 }
 
 
