@@ -106,6 +106,7 @@
       {t:"Team Work Report",h:"team-report.html",i:"users",r:"admin manager"}]},
     {group:"Accounts",items:[
       {t:"Accounts Dashboard",h:"accounts-dashboard.html",i:"cash",r:"admin accounts"},
+      {t:"Bank Statement",h:"bank-statement.html",i:"book",r:"admin accounts"},
       {t:"Billing & Outstanding",h:"party-billing.html",i:"bill",r:"admin accounts"},
       {t:"Money Overview",h:"money-overview.html",i:"cash",r:"admin accounts",hide:1},
       {t:"Tally Bill & Invoice No.",h:"accounts-invoice.html",i:"bill",r:"admin accounts",hide:1},
