@@ -64,7 +64,14 @@
    if(signedOut){await sub.unsubscribe();return;}
    subscription=sub;await workerMessage(reg,'LWB_PUSH_USER',user.id);
   }
-  async function edge(body){const r=await db.functions.invoke('lwb-web-push',{body});if(r.error||r.data?.error)throw Error(r.data?.error||'Phone alert service is not ready yet.');return r.data;}
+  async function edge(body){
+   const r=await db.functions.invoke('lwb-web-push',{body});
+   if(!r.error&&!r.data?.error)return r.data;
+   // On a non-2xx reply supabase-js keeps the server's JSON in error.context; show its reason.
+   let why=r.data?.error,code=r.error?.context?.status;
+   if(!why){try{why=(await r.error.context.clone().json())?.error;}catch(e){}}
+   throw Error((why?String(why).slice(0,160):'Phone alert service is not ready yet.')+(code?' ('+code+')':''));
+  }
   enable.onclick=async()=>{
    if(busy)return;setBusy(true);
    try{
