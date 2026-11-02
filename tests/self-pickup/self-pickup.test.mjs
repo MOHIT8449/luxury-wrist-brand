@@ -27,6 +27,8 @@ const ord=(await db.query(`insert into orders(order_no,customer_name,status,tran
  ('LXY-1','A','pending_approval','SELF PICKUP',$1),('LXY-2','B','pending_approval','DELIVERY',$1),('LXY-3','C','approved','SELF PICKUP',$1) returning id`,[ids.sales])).rows.map(r=>r.id);
 const sql=await readFile(new URL('../../lwb_self_pickup_driver_setup.sql',import.meta.url),'utf8');
 await db.exec(sql);await db.exec(sql); // safe to run again
+const searchSql=await readFile(new URL('../../lwb_self_pickup_driver_search.sql',import.meta.url),'utf8');
+await db.exec(searchSql);await db.exec(searchSql);
 
 async function run(who,q,params){
   await db.query("select set_config('request.jwt.claim.sub',$1,false)",[ids[who]]);
@@ -69,4 +71,18 @@ test('not SELF PICKUP or empty details clears the row', async()=>{
   assert.equal((await db.query('select count(*)::int n from lwb_order_pickup where order_id=$1',[ord[0]])).rows[0].n,0);
   // direct writes are refused
   await assert.rejects(run('admin',"insert into lwb_order_pickup(order_id) values($1)",[ord[0]]),/permission denied/);
+});
+
+test('drivers entered before: one row per mobile, newest vehicle first, no drivers login', async()=>{
+  const o=(await db.query(`insert into orders(order_no,customer_name,status,transportation,created_by) values
+   ('LXY-4','D','pending_approval','SELF PICKUP',$1),('LXY-5','E','pending_approval','SELF PICKUP',$1),('LXY-6','F','pending_approval','SELF PICKUP',$1) returning id`,[ids.sales])).rows.map(r=>r.id);
+  await run('admin','select public.lwb_set_order_pickup($1,$2)',[o[0],{driver_name:'Salim',driver_mobile:'9909012345',vehicle_no:'GJ05CX1'}]);
+  await db.query("update lwb_order_pickup set updated_at=now()-interval '1 day' where order_id=$1",[o[0]]);
+  await run('admin','select public.lwb_set_order_pickup($1,$2)',[o[1],{driver_name:'Salim Bhai',driver_mobile:'9909012345',vehicle_no:'GJ05CX2'}]);
+  await run('admin','select public.lwb_set_order_pickup($1,$2)',[o[2],{driver_name:'Raju',vehicle_no:'GJ01'}]);
+  const r=(await run('sales','select public.lwb_pickup_drivers() v')).rows[0].v;
+  const salim=r.filter(d=>d.driver_mobile==='9909012345');
+  assert.equal(salim.length,1);assert.equal(salim[0].vehicle_no,'GJ05CX2');assert.equal(salim[0].times,2);
+  assert.ok(r.some(d=>d.driver_name==='Raju'&&d.driver_mobile==null));
+  await assert.rejects(run('driver','select public.lwb_pickup_drivers()'),/not active/);
 });

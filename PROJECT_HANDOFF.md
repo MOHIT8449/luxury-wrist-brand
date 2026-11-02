@@ -8,6 +8,9 @@
 - Mohit asked: when Transportation = SELF PICKUP an outside driver (different every time) takes the goods. Mohit wants it at the end: after everything is filled, pressing Submit with SELF PICKUP opens a popup asking Driver Name, Driver Mobile (10 digits), Vehicle Number (typed) and Godown Manager (Employee Master, Work / Post = Godown Manager; required when the list has anyone). Back returns to the form without saving.
 - SQL: `lwb_self_pickup_driver_setup.sql`. Table `lwb_order_pickup` (one row per order; read = whoever can read the order, via orders RLS; write only via RPC). `lwb_pickup_godown_managers()` (any active non-driver login, no salary) and `lwb_set_order_pickup(order, p)` (Admin / Sales Head / Godown / Transport any open order; salesman own order before approval; empty p or not SELF PICKUP clears). Saved after the order is created / modified, like priority. Shown in Message copy, Excel and the save popup.
 - Totals (Total SKU, Pallet, Quantity, Amount, Final Weight) are one highlighted horizontal strip instead of a tall box (phone keeps the sticky total bar).
+- Search old driver (2 Nov 2026): the popup has "Search old driver (name / mobile / vehicle)"; picking fills name, mobile and vehicle. Source `lwb_pickup_drivers()` (`lwb_self_pickup_driver_search.sql`): earlier `lwb_order_pickup` rows, one per mobile (else name + vehicle), newest first, max 500. A new driver typed once shows up next time.
+- Bottom buttons (2 Nov 2026): Order image copy / Message copy / Excel / New Order and the "Share / Print / Excel" link are removed. Only Submit, plus Print for Sales Head / Admin (`headCreatesApprovedPo()`); Salesman has no Print.
+- Old preview `erp-pro-redesign.luxury-wrist-brand.pages.dev` is a stale branch preview; the live site is `luxury-wrist-brand.pages.dev`.
 - Not yet shown on PO Approval / Loading & Dispatch (they can `select` from `lwb_order_pickup`).
 - Test: `tests/self-pickup` (PGlite, 4 tests).
 
