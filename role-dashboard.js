@@ -103,9 +103,9 @@
   const qtyOf=it=>it.approved_qty!=null?num(it.approved_qty):num(it.ordered_qty);
   // Pack unit: Rajnigandha boxes, Coca-Cola cases. "cs" / "box" per SKU; totals say cases,
   // boxes, or qty when the shown brands sell in both.
-  const uOf=sku=>BR.map&&window.LWBBrand&&LWBBrand.unitByName(sku,BR.map,BR.all)==="BOX"?"box":"cs";
+  const uOf=sku=>BR.map&&window.LWBBrand&&LWBBrand.unitByName(sku,BR.map,BR.all)==="BOX"?"IC":"cs";
   const qWord=()=>{const L=BR.allow?BR.all.filter(c=>BR.allow.has(c.id)):BR.all.filter(c=>c.active!==false),b=L.filter(c=>c.pack_unit==="BOX").length;
-    return !b?"cases":b===L.length?"boxes":"qty"};
+    return !b?"cases":b===L.length?"IC":"qty"};
   const brandOf=sku=>BR.map?(BR.map.get(LWBBrand.skuKey(sku))||""):"";
   const inBrand=sku=>!BR.allow||BR.allow.has(brandOf(sku));
   // With a brand chosen, each order keeps only that brand's share (by line value) of its amount, cases and weight.

@@ -134,7 +134,7 @@ main{margin:14px auto}.panel{padding:14px 16px;margin-bottom:12px}
 GST % comes from SKU Master. For CGST + SGST each tax is rounded separately, so ₹0.01 differences can occur; check the bill total before saving.
 Cess is not included: an SKU with Cess cannot be saved yet.">i</button></h2></div><button id="add" type="button">+ Add SKU</button></div>
     <div class="gi-wrap"><table class="gi-table" aria-label="Goods Inward SKU lines">
-      <thead><tr><th>#</th><th>SKU / Product</th><th class="num">PCS/Unit</th><th class="num">Cs / Box</th><th class="num">Loose PCS</th><th class="num">Amount ₹</th><th class="num">GST %</th><th class="num">GST ₹</th><th class="num">Total ₹</th><th>Action</th></tr></thead>
+      <thead><tr><th>#</th><th>SKU / Product</th><th class="num">PCS/Unit</th><th class="num">Cs / IC</th><th class="num">Loose PCS</th><th class="num">Amount ₹</th><th class="num">GST %</th><th class="num">GST ₹</th><th class="num">Total ₹</th><th>Action</th></tr></thead>
       <tbody id="itemsBody"></tbody>
     </table></div>
     <div class="gi-tax" id="taxLine">GST type: select Supplier</div>
@@ -237,7 +237,7 @@ function itemRow(){
       <div class="gi-conv"><span class="converted">—</span> · <span class="total">—</span> PCS</div>
     </td>
     <td data-label="PCS/Unit" class="num pack">—</td>
-    <td data-label="Cases / Boxes" class="unitCell"><input class="cases" type="number" inputmode="numeric" min="0" step="1" value="0" aria-label="Cases or Boxes"></td>
+    <td data-label="Cases / IC" class="unitCell"><input class="cases" type="number" inputmode="numeric" min="0" step="1" value="0" aria-label="Cases or IC"></td>
     <td data-label="Loose PCS"><input class="pcs" type="number" inputmode="numeric" min="0" step="1" value="0" aria-label="Loose Pieces"></td>
     <td data-label="Amount ₹" class="amountCell"><input class="taxable" type="text" inputmode="decimal" autocomplete="off" placeholder="Taxable 0.00" aria-label="Taxable Amount from Invoice">
       <div class="gi-mrp" hidden>
@@ -300,7 +300,7 @@ function readRows(){
     const normalized=sku?normalize(cases,pcs,pack):null;
     const mode=billingOf(sku),unit=unitOf(sku),mrpMode=mode==='MRP';
     tr.querySelector('.taxable').hidden=mrpMode;tr.querySelector('.gi-mrp').hidden=!mrpMode;
-    tr.querySelector('.unitCell').dataset.label=sku?(unit==='BOX'?'Boxes':'Cases'):'Cases / Boxes';
+    tr.querySelector('.unitCell').dataset.label=sku?(unit==='BOX'?'IC':'Cases'):'Cases / IC';
     const rawRate=sku?.gst_rate;
     const gstRate=rawRate===null||rawRate===undefined||rawRate===''?null:Number(rawRate);
     const rateValid=gstRate!==null&&Number.isFinite(gstRate)&&gstRate>=0&&gstRate<=100&&Number.isInteger(Math.round(gstRate*100))&&Math.abs(gstRate*100-Math.round(gstRate*100))<1e-7;
@@ -316,7 +316,7 @@ function readRows(){
     const gross=gst!==null&&base!==null&&Number.isSafeInteger(base+gst)?base+gst:null;
     const amountsOkay=taxable!==null&&gst!==null&&gross!==null&&cessOkay&&(!mrpMode||(net>0&&deemed>0));
     tr.querySelector('.pack').textContent=pack?format(pack):'—';
-    tr.querySelector('.converted').textContent=normalized?`${format(normalized.cases)} ${unit==='BOX'?'BOX':'CS'} + ${format(normalized.pcs)} PCS`:'Enter quantity';
+    tr.querySelector('.converted').textContent=normalized?`${format(normalized.cases)} ${unit==='BOX'?'IC':'CS'} + ${format(normalized.pcs)} PCS`:'Enter quantity';
     tr.querySelector('.total').textContent=normalized?format(normalized.total):'—';
     tr.querySelector('.gstRate').textContent=rateValid?gstRate.toFixed(2)+'%':sku?'Set in SKU Master':'—';
     if(mrpMode&&rateValid){const m=document.createElement('span');m.className='gi-mode';m.textContent='MRP';m.title='GST on Deemed Taxable Value; Total = Net Sale + GST';tr.querySelector('.gstRate').appendChild(m);}
@@ -529,7 +529,7 @@ async function save(){
   const invoiceTaxable=rows.reduce((a,r)=>a+r.taxable,0);
   const invoiceGst=rows.reduce((a,r)=>a+r.gst,0);
   const invoiceGross=rows.reduce((a,r)=>a+r.gross,0);
-  const preview=rows.map(r=>`${r.sku.sku_name}: ${r.normalized.cases} ${r.unit==='BOX'?'BOX':'CS'} + ${r.normalized.pcs} PCS | `+(r.mode==='MRP'
+  const preview=rows.map(r=>`${r.sku.sku_name}: ${r.normalized.cases} ${r.unit==='BOX'?'IC':'CS'} + ${r.normalized.pcs} PCS | `+(r.mode==='MRP'
     ?`Net Sale ${rupees(r.net/100)} + GST ${r.sku.gst_rate}% on Deemed ${rupees(r.deemed/100)} (${rupees(r.gst/100)}) = Total ${rupees(r.gross/100)}`
     :`Taxable ${rupees(r.taxable/100)} + GST ${r.sku.gst_rate}% (${rupees(r.gst/100)}) = Total ${rupees(r.gross/100)}`)).join('\n');
   if(!await confirm(`POST GOODS INWARD TO MAIN GODOWN?\n\nSupplier: ${supplier}\nInvoice: ${invoice}\nDriver: ${driverName} (${driverMobile})\nSKU Lines: ${rows.length}\n${mrpBill?'Deemed / Taxable Value':'Invoice Taxable'}: ${rupees(invoiceTaxable/100)}\nGST (${ $('taxMode').value==='intrastate'?'CGST+SGST':'IGST' }): ${rupees(invoiceGst/100)}\nInvoice Total: ${rupees(invoiceGross/100)}\nPallets / Sheets: ${format(spP)} / ${format(spS)}\nVehicle check: ${dmgMode==='later'?'Check later':dmgMode==='no'?'No damage':dmgItems.map(d=>d.sku_name+' '+d.issue+' '+d.cases+' CS + '+d.pcs+' PCS').join('; ')}\n\n${preview}\n\nAll quantities will increase live stock immediately. Continue only for physically received goods.`))return;
