@@ -4,6 +4,14 @@
 **Purpose:** Continue the same ERP project from a new ChatGPT conversation without restarting or losing the agreed requirements.
 **Status:** Active development / verification. Do not assume all modules are completed or fully tested.
 
+## PO Approval list: stage tabs like the company DMS (2 Nov 2026)
+
+- `warehouse-orders.html` only, no SQL. Mohit compared it with HCCB Vxceed DMS (Sales Order list: Posted / In Progress / Closed / Void / Blocked / Expired / Draft / All tabs with counts, date range, column filters, export).
+- The 4 stat boxes + status dropdown are replaced by stage tabs with counts: Pending Review, Approved, Transport Assigned (transport_allocated / allocated), Loading, Loaded / Billed (loaded / invoiced / dispatched, not delivered), Delivered (delivery report or delivered status), Cancelled, All, plus Urgent / High, Approval late 12h+, Delivery late 36h+. Before this, a PO with transport assigned showed only under "All".
+- The list is no longer the latest 300 orders: it loads orders whose `order_date` is in the chosen range (Today / 7 Days (default) / 30 Days / custom, max 5000) plus every open order (pending, approved, transport_allocated, allocated, loading) of any date.
+- Sales person and Transportation filters (tab counts follow the search and filters), 50 per page with a pager and a total line (POs, CS, amount, KG), "Lines" column (SKU count, read from `order_items` for the orders on screen), "Updated HH:MM" next to Refresh, Excel of the current tab (`excel-io.js`).
+- Not done yet (need Mohit's rules / SQL): Blocked (party outstanding or overdue limit), Expired (pending X days), Draft, checkbox bulk approve / print.
+
 ## Self pickup driver details + one-line totals on New Sales Order (2 Nov 2026)
 - Mohit asked: when Transportation = SELF PICKUP an outside driver (different every time) takes the goods. Mohit wants it at the end: after everything is filled, pressing Submit with SELF PICKUP opens a popup asking Driver Name, Driver Mobile (10 digits), Vehicle Number (typed) and Godown Manager (Employee Master, Work / Post = Godown Manager; required when the list has anyone). Back returns to the form without saving.
 - SQL: `lwb_self_pickup_driver_setup.sql`. Table `lwb_order_pickup` (one row per order; read = whoever can read the order, via orders RLS; write only via RPC). `lwb_pickup_godown_managers()` (any active non-driver login, no salary) and `lwb_set_order_pickup(order, p)` (Admin / Sales Head / Godown / Transport any open order; salesman own order before approval; empty p or not SELF PICKUP clears). Saved after the order is created / modified, like priority. Shown in Message copy, Excel and the save popup.
