@@ -46,6 +46,7 @@
   if(t.startsWith("GODOWN_")){const id=(m.match(/GDN-\d+/)||[])[0]||"";return {icon:"🏭",text:join([title.replace(/^Godown: /,"Godown · "),id])}}
   if(t.startsWith("ORDER_")){const ic={ORDER_DELIVERED:"✅",ORDER_PARTIAL:"🟠",ORDER_NOT_DELIVERED:"⚠",ORDER_CANCELLED:"✖",ORDER_EDITED:"✏"}[t]||"•";
    return {icon:ic,text:join([title,order])}}
+  if(t==="RATE_APPROVAL"||t==="RATE_APPROVED")return {icon:t==="RATE_APPROVAL"?"₹":"✅",text:join([t==="RATE_APPROVAL"?"Rate below min":"Rate OK",order])};
   if(t==="ANNOUNCEMENT")return {icon:"📢",text:join([title,m.length>50?m.slice(0,47)+"…":m])};
   if(t==="MARKET_REPORT"||t==="MARKET_REVIEW"){const id=(m.match(/MKT-\d+/)||[])[0]||"";return {icon:t==="MARKET_REPORT"?"🚩":"✅",text:join([t==="MARKET_REPORT"?"Outside stock":title,id])}}
   if(t.startsWith("COMPLAINT_")){const id=(m.match(/CMP-\d+/)||[])[0]||"";
@@ -70,6 +71,8 @@
   [/^PO_APPROVED_LOADING$/,["loading-dispatch.html?order={o}","warehouse-orders.html"]],
   [/^(VEHICLE_LOADED|TALLY_BILL_DONE)$/,["loading-dispatch.html","party-billing.html?order={o}","warehouse-orders.html","driver-delivery.html?order={o}","my-sales.html#orders"]],
   [/^ORDER_NEW$/,["warehouse-orders.html"]],
+  [/^RATE_APPROVAL$/,["quick-slip.html?review={o}"]],
+  [/^RATE_APPROVED$/,["quick-slip.html?order={o}"]],
   [/^DELIVERY_COLLECTION_(INFO|RECEIVED)$/,["driver-collections.html?order={o}","my-sales.html#orders","loading-dispatch.html"]],
   [/^DELIVERY_RETURN_INFO$/,["driver-returns.html?order={o}","my-sales.html#orders"]],
   [/^TALLY_NOTE_/,["accounts-invoice.html?order={o}"]],
