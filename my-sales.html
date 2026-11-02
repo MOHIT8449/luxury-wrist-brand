@@ -29,15 +29,28 @@
     .mo-line span{flex:1;min-width:0;overflow-wrap:anywhere}
     .mo-line .q{width:70px;text-align:right;color:var(--erp-muted)}
     .mo-line.gone span{text-decoration:line-through;color:#9aa4ae}
+    /* PO / Sales List (#orders): only the order list, each PO with 4 steps */
+    body.ms-list-mode #sub,body.ms-list-mode #kpis,body.ms-list-mode #planCard,body.ms-list-mode #tabs{display:none}
+    .mo-track{list-style:none;margin:10px 0 0;padding:0;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:4px}
+    .mo-track li{position:relative;padding-top:26px;font-size:11.5px;line-height:1.3;color:#7a8592;text-align:center;min-width:0}
+    .mo-track li::before{content:"";position:absolute;top:9px;left:calc(50% + 12px);right:calc(-50% + 12px);height:2px;background:#d7dde3}
+    .mo-track li:last-child::before{display:none}
+    .mo-track li.done::before{background:#13824a}
+    .mo-track .dot{position:absolute;top:0;left:calc(50% - 10px);width:20px;height:20px;border-radius:50%;background:#d7dde3;color:#fff;font:700 11px/20px system-ui;text-align:center}
+    .mo-track li.done .dot{background:#13824a}
+    .mo-track li.now .dot{background:var(--lwb-gold,#e0a800);box-shadow:0 0 0 3px #fff3c4}
+    .mo-track li.stop .dot{background:#c62828}
+    .mo-track b{display:block;color:#1f2a37;font-size:12px}
+    .mo-track small{display:block;overflow-wrap:anywhere}
   </style>
 </head>
 <body>
   <div id="loading" class="status">Checking account access...</div>
   <main id="page" class="erp-main" hidden>
-    <div class="erp-pagehead"><h1>My Sales</h1><span class="grow"></span><a class="sl-btn" href="order-entry.html" style="display:inline-flex;align-items:center;text-decoration:none">+ New PO</a></div>
+    <div class="erp-pagehead"><h1 id="pageH1">My Sales</h1><span class="grow"></span><a class="sl-btn" href="order-entry.html" style="display:inline-flex;align-items:center;text-decoration:none">+ New PO</a></div>
     <p class="sl-sub" id="sub"></p>
     <div class="sl-kpis" id="kpis" style="grid-template-columns:repeat(auto-fit,minmax(160px,1fr))"></div>
-    <section class="erp-card" style="margin-bottom:14px">
+    <section class="erp-card" id="planCard" style="margin-bottom:14px">
       <div class="erp-card-head"><h2>Today's Plan</h2><small id="planInfo" style="color:var(--erp-muted)"></small></div>
       <div class="erp-card-body" id="plan">Loading...</div>
     </section>
@@ -59,6 +72,7 @@
       const pl=await client.rpc("lwb_my_sales_plan");
       if(pl.error){err=/lwb_my_sales_plan/.test(pl.error.message)?"Sales Team setup is not installed yet. Ask Admin.":pl.error.message;render();return}
       plan=pl.data||{};
+      if(tab==="orders"){await loadMyOrders();render()}
       const [pa,ta]=await Promise.all([client.rpc("lwb_party_activity"),client.from("lwb_sales_targets").select("*").eq("month",m.from).eq("salesman_id",me.user.id).maybeSingle()]);
       parties=pa.data||[];target=ta.data||null;
       await loadMyOrders();
@@ -75,6 +89,10 @@
     }
 
     function render(){
+      // Menu "PO / Sales List" opens #orders: show only the order list.
+      const listMode=tab==="orders";
+      document.body.classList.toggle("ms-list-mode",listMode);
+      el("pageH1").textContent=listMode?"PO / Sales List":"My Sales";
       if(err&&!plan){el("plan").innerHTML='<div class="sl-msg">'+esc(err)+"</div>";return}
       const today=S.isoDay(new Date()),m=S.monthRange(today.slice(0,7));
       if(plan&&plan.setup===false)el("sub").textContent="Admin or Sales Head has not set you up as a Field or Office salesman yet.";
@@ -150,6 +168,22 @@
       if(st==="invoiced")return ["blue","Billed · on the way",veh];
       return ["",esc(st.replace(/_/g," ")||"—"),""];
     }
+    // Salesman sees 4 steps only: PO given > Approved > Dispatched > Delivered.
+    function track(o){
+      const st=S.status(o),d=o.delivery_status||"",when=v=>v?esc(LWBDate.dt(v)):"";
+      const veh=[o.driver_name,o.vehicle_no].filter(Boolean).map(esc).join(" · ");
+      const out=["loading","loaded","invoiced","dispatched","delivered"].includes(st)||!!d;
+      const steps=[
+        {t:"PO given",s:S.shortDate(o.order_date),on:true},
+        {t:"Approved",s:"",on:!isWaiting(o)},
+        {t:"Dispatched",s:veh,on:out,wait:st==="transport_allocated"?"Driver assigned"+(veh?" · "+veh:""):""},
+        {t:"Delivered",s:when(o.delivered_at)+(d==="PARTIAL"?" · Part":""),on:isDelivered(o),
+          stop:d==="NOT_DELIVERED",wait:d==="NOT_DELIVERED"?"Not delivered":""}
+      ];
+      for(let i=steps.length-1,seen=false;i>=0;i--){if(steps[i].on)seen=true;else if(seen)steps[i].on=true}
+      const next=steps.findIndex(x=>!x.on);
+      return '<ol class="mo-track" aria-label="Where this PO is">'+steps.map((x,i)=>'<li class="'+(x.stop?"stop":x.on?"done":i===next?"now":"")+'"><span class="dot">'+(x.stop?"✕":x.on?"✓":i+1)+"</span><b>"+x.t+"</b><small>"+(x.on?x.s:i===next?(x.wait||"Waiting"):"")+"</small></li>").join("")+"</ol>";
+    }
     function renderOrders(hit){
       if(!myOrders)return '<div class="sl-msg">'+esc(moErr||"Loading...")+"</div>";
       const groups={pending:myOrders.filter(isPendingDelivery),delivered:myOrders.filter(o=>!isCancelled(o)&&isDelivered(o)),cancelled:myOrders.filter(isCancelled),all:myOrders};
@@ -162,7 +196,8 @@
         const [c,label,extra]=stage(o),open=openId===o.id;
         h+='<div class="mo-card" data-id="'+esc(o.id)+'"><div class="mo-top"><div class="who"><b>'+esc(o.order_no||"—")+"</b> · "+esc(o.customer_name||"")+
           "<small>"+S.shortDate(o.order_date)+(o.mine?"":" · taken by office")+'</small></div><div class="mo-amt"><b>'+short(o.total_amount)+"</b>"+fmt(o.total_qty)+" cases</div></div>"+
-          '<div class="mo-stage"><span class="erp-badge '+c+'">'+label+"</span>"+(extra?"<span>"+extra+"</span>":"")+"</div>";
+          '<div class="mo-stage"><span class="erp-badge '+c+'">'+label+"</span>"+(extra?"<span>"+extra+"</span>":"")+"</div>"+
+          (isCancelled(o)?"":track(o));
         h+='<div class="mo-acts">'+(o.can_edit?'<button type="button" class="sl-btn small" data-act="edit">Modify Order</button><button type="button" class="sl-btn small ghost" data-act="cancel">Cancel Order</button>':"")+
           '<button type="button" class="sl-btn small ghost" data-act="view">'+(open?"Hide SKUs":"View SKUs")+"</button></div>";
         if(open){

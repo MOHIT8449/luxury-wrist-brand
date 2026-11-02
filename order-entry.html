@@ -45,6 +45,10 @@ button{border:0;cursor:pointer;font-family:inherit}
   border-radius:10px;padding:20px;margin-bottom:18px
 }
 .card-title{font-size:16px;font-weight:800;margin-bottom:15px}
+.card-title-row{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.po-list-link{font-size:13px;font-weight:700;color:#0b6b5e;text-decoration:none;border:1px solid #cfe3df;border-radius:8px;padding:5px 10px;background:#f3faf8;white-space:nowrap}
+.po-list-link:hover{background:#e3f3ef}
+@media print{.po-list-link{display:none!important}}
 
 .form-grid{
   display:grid;grid-template-columns:repeat(3,1fr);
@@ -351,6 +355,8 @@ body.compact-entry .share-more>summary{display:block;cursor:pointer;font-size:13
   body.erp.erp-compact.compact-entry #saveBtn{padding:9px 12px;min-height:38px}
 }
   .saved-po-actions{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0}
+  .saved-po-actions a,.saved-po-actions button{text-decoration:none}
+  .saved-po-actions [hidden]{display:none!important}
   .saved-po-actions[hidden]{display:none}
   .saved-po-actions a{text-decoration:none;padding:9px 14px}
   @media print{.saved-po-actions{display:none!important}}
@@ -419,7 +425,7 @@ body.compact-entry .share-more>summary{display:block;cursor:pointer;font-size:13
   <div id="message" class="message"></div>
 
   <section class="card">
-    <div class="card-title">Order Details</div>
+    <div class="card-title card-title-row">Order Details<a id="poListLink" class="po-list-link" href="warehouse-orders.html">PO / Sales List &rarr;</a></div>
 
     <div class="form-grid">
 
@@ -620,7 +626,7 @@ body.compact-entry .share-more>summary{display:block;cursor:pointer;font-size:13
 
     </div>
 
-    <div id="savedPoActions" class="saved-po-actions" hidden><a id="savedPoPrint" class="btn btn-light">Print PO</a><a id="savedPoEdit" class="btn btn-light">Edit PO</a></div>
+    <div id="savedPoActions" class="saved-po-actions" hidden><a id="savedPoList" class="btn btn-green" href="warehouse-orders.html">Open in PO / Sales List &rarr;</a><a id="savedPoPrint" class="btn btn-light">Print PO</a><a id="savedPoEdit" class="btn btn-light">Edit PO</a><button type="button" class="btn btn-light" onclick="resetOrder()">+ New Order</button></div>
 
   </section>
 
@@ -767,6 +773,8 @@ document.addEventListener("DOMContentLoaded", async () => {
     // A salesman's own name is filled in; ask only when the profile has none.
     if(!profile.full_name) document.getElementById("spField").classList.remove("auto-field");
     document.getElementById("printBtn").hidden = !headCreatesApprovedPo();
+    document.getElementById("poListLink").href = poListUrl();
+    document.getElementById("savedPoList").href = poListUrl();
 
     addItem();
     await loadSkuMaster();
@@ -1612,6 +1620,8 @@ function calculateTotals(){
 function headCreatesApprovedPo(){
   return ["admin","manager"].includes(String(currentProfile?.loginRole||currentProfile?.role||"").trim().toLowerCase());
 }
+// Where a submitted PO is listed: Sales Head / Admin see the approval list, a Salesman his own orders.
+function poListUrl(){return headCreatesApprovedPo()?"warehouse-orders.html":"my-sales.html#orders";}
 function newOrderButtonLabel(){return headCreatesApprovedPo()?"Save & Approve PO":"Submit to Warehouse Manager";}
 
 /* CREATE ORDER NUMBER */
@@ -2084,7 +2094,14 @@ async function saveOrder(){
     );
 
     saveBtn.textContent=headCreatesApprovedPo()?"PO Approved":"Order Submitted";
+    // The saved PO now sits in PO / Sales List: offer to open it there.
+    document.getElementById("savedPoList").href=poListUrl();
+    document.getElementById("savedPoPrint").hidden=true;
+    document.getElementById("savedPoEdit").hidden=true;
+    document.getElementById("savedPoActions").hidden=false;
     if(headCreatesApprovedPo()&&createdOrder?.id){
+      document.getElementById("savedPoPrint").hidden=false;
+      document.getElementById("savedPoEdit").hidden=false;
       const url="warehouse-orders.html?order="+encodeURIComponent(createdOrder.id);
       const printLink=document.getElementById("savedPoPrint");
       printLink.href=url+"&action=print";
