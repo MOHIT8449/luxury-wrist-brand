@@ -4,6 +4,14 @@
 **Purpose:** Continue the same ERP project from a new ChatGPT conversation without restarting or losing the agreed requirements.
 **Status:** Active development / verification. Do not assume all modules are completed or fully tested.
 
+## Esc closes any popup, every page (3 Nov 2026)
+
+- Mohit: on any page, Esc must close the open popup, like Back (top one first, one per press).
+- New `esc-close.js` (`LWBEsc`), loaded by `erp-shell.js` on every ERP page (cashbook.html loads it directly). No SQL.
+- On Esc it finds the top open popup (big fixed backdrops, role=dialog boxes, non-modal `<dialog>`, `<details>` menus, positioned dropdown lists by class like list / menu / results / options / panel). Page code that already handles Esc runs first; if the page did nothing, it presses the popup's ✕ / Close / Cancel button, else taps the backdrop, else hides it. Modal `<dialog>` and the side menu are left to the browser / shell.
+- `event.lwbPopup` is set when a popup is open; `order-entry.html` Esc = Save Draft now skips itself then, so Esc only closes the popup.
+- Checked with a mocked database (1366 px and 390 px) on 6 pages + popup on popup + Sales Order draft; idle pages show no false popup.
+
 ## PO / Sales Order drafts (3 Nov 2026)
 
 - Mohit: when goods are being given / bill made but the party has not confirmed, no PO should be made. Keep it as a Draft (Esc = save draft), open and edit it later, then submit it as a PO.

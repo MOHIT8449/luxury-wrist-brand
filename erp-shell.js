@@ -608,6 +608,8 @@
     }catch(e){}
     mount({role,name,onLogout:async()=>{try{await client.auth.signOut()}catch(e){}location.replace("login.html")}});
   }
+  // Esc closes the popup on top, on every ERP page (esc-close.js).
+  if(!window.LWBEsc&&!document.querySelector('script[src*="esc-close.js"]')){const s=document.createElement("script");s.src="esc-close.js";document.head.appendChild(s)}
   window.ERPShell={mount,menuFor,menuForMe,hiddenPages,extraPages,pageRole,pageRoleFresh,allPages,icon:svg,alert:erpAlert,confirm:erpConfirm,prompt:erpPrompt,toast};
   const me=document.currentScript;
   if(me&&me.hasAttribute("data-auto")){
