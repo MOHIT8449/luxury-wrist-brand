@@ -89,6 +89,12 @@ button{border:0;cursor:pointer;font-family:inherit}
 .qty-mode-btn{padding:10px 24px;border-radius:7px;background:transparent;color:#34445f;font-size:13px;font-weight:800;cursor:pointer}
 .qty-mode-btn.selected{background:#1769e0;color:#fff;box-shadow:0 1px 5px #143a6b2b}
 .qty-mode-hint{display:inline-block;font-size:12px;color:#51647d;margin:0 12px}
+/* Pallet & Sheet going with the vehicle (3 Nov 2026): two small boxes in one row. */
+.sp-row{display:flex;gap:8px;align-items:center}
+#spqField .sp-in{display:flex;align-items:center;gap:6px;flex:1 1 0;min-width:0;margin:0;font-size:12px;font-weight:700;color:#34445f}
+#spqField .sp-in input{width:100%;min-width:0;text-align:center;padding:7px 6px}
+.sp-note{display:block;font-size:11px;color:#607388;margin-top:3px}
+@media(max-width:700px){#spqField{grid-column:1/-1}}
 .case-conversion{display:block;font-size:11px;color:#245983;min-height:16px;margin-top:4px}
 .case-conversion.warning{color:#a72c26;font-weight:700}
 .unit-weight[readonly]{background:#edf1f6;color:#32445f;cursor:not-allowed}
@@ -631,6 +637,16 @@ body.compact-entry .share-more>summary{display:block;cursor:pointer;font-size:13
                   aria-pressed="false" onclick="setQuantityMode('PALLET')">PALLET</button>
         </div>
         <span id="qtyModeHint" class="qty-mode-hint"></span>
+      </div>
+
+      <!-- Pallet & Sheet that go with the vehicle to the party: saved on the PO and in the Sheet & Pallet Ledger. -->
+      <div class="form-group" id="spqField" hidden>
+        <label for="spPallets">Pallet &amp; Sheet (with vehicle)</label>
+        <div class="sp-row">
+          <label class="sp-in">Pallet<input id="spPallets" class="form-control" type="text" inputmode="numeric" maxlength="3" placeholder="0" autocomplete="off" oninput="spInput(this)"></label>
+          <label class="sp-in">Sheet<input id="spSheets" class="form-control" type="text" inputmode="numeric" maxlength="4" placeholder="0" autocomplete="off" oninput="spInput(this)"></label>
+        </div>
+        <span class="sp-note">Auto-added to the party's pallet ledger.</span>
       </div>
 
     </div>
@@ -1223,6 +1239,9 @@ async function loadOrderForEdit(id) {
   }
   const pallet = select.value === "DIRECT VEHICLE" && (items || []).length > 0 && items.every(i => i.entry_uom === "PALLET" && i.ordered_pallet_qty);
   if (pallet) setQuantityMode("PALLET", true);
+  spHand = o.sp_pallets != null;
+  document.getElementById("spPallets").value = o.sp_pallets ? String(o.sp_pallets) : "";
+  document.getElementById("spSheets").value = o.sp_sheets ? String(o.sp_sheets) : "";
 
   document.getElementById("itemsBody").innerHTML = "";
   itemCounter = 0;
@@ -1692,6 +1711,7 @@ function calculateTotals(){
 
   document.getElementById("totalSku").textContent=skuCount;
   document.getElementById("totalPallet").textContent=formatNumber(r2(totalPallet));
+  updateSpField(totalPallet);
   document.getElementById("totalQty").textContent=formatNumber(totalQty);
   document.getElementById("totalAmount").textContent=formatMoney(totalAmount);
   document.getElementById("totalWeight").textContent=
@@ -1837,6 +1857,41 @@ function toggleVehicleField(){
   document.body.classList.toggle("direct-vehicle", mode === "DIRECT VEHICLE");
   document.querySelectorAll("#tpChips button").forEach(b => b.classList.toggle("on", b.dataset.tp === mode));
   updateQuantityModeUI();
+  updateSpField();
+}
+
+/* PALLET & SHEET with the vehicle (Mohit, 3 Nov 2026): Direct Vehicle or a pallet order also takes
+   returnable pallets and sheets to the party. Pallet fills from Total Pallet until typed by hand;
+   sheets are typed. Saved on the PO (lwb_set_order_sheet_pallet) and the Sheet & Pallet Ledger. */
+let spHand = false, spLastPallet = 0;
+function spWanted(){
+  return document.getElementById("transportation").value === "DIRECT VEHICLE" || quantityMode === "PALLET"
+    || (typeof bigUnit !== "undefined" && bigUnit && /Pallet/.test(unitWords()[1]));
+}
+function updateSpField(totalPallet){
+  if(totalPallet != null) spLastPallet = totalPallet;
+  const on = spWanted();
+  document.getElementById("spqField").hidden = !on;
+  if(on && !spHand){
+    const p = Math.ceil(spLastPallet - 0.01);
+    document.getElementById("spPallets").value = p > 0 ? String(p) : "";
+  }
+}
+function spInput(input){
+  input.value = input.value.replace(/\D/g, "");
+  if(input.id === "spPallets") spHand = input.value !== "";
+}
+function spValues(){
+  if(!spWanted()) return {p:0, s:0};
+  return {p:Number(document.getElementById("spPallets").value) || 0, s:Number(document.getElementById("spSheets").value) || 0};
+}
+async function saveOrderSheetPallet(orderId, before){
+  const {p, s} = spValues();
+  if(!orderId) return "";
+  if(before ? (Number(before.sp_pallets) || 0) === p && (Number(before.sp_sheets) || 0) === s : !p && !s) return "";
+  const {error} = await db.rpc("lwb_set_order_sheet_pallet", {p_order_id:orderId, p_pallets:p, p_sheets:s});
+  if(error) return "\n\nPallet / Sheet not saved: " + (/lwb_set_order_sheet_pallet/.test(error.message || "") ? "ask Admin to run lwb_order_sheet_pallet_setup.sql." : (error.message || "database error"));
+  return p || s ? "\nPallet: " + p + " | Sheet: " + s + " (added to Sheet & Pallet Ledger)" : "\nPallet / Sheet removed.";
 }
 
 // Phone tap buttons for Transportation; tapping the chosen one again clears it (it is optional).
@@ -2158,7 +2213,7 @@ async function saveOrder(){
       const {data,error} = await db.rpc("lwb_sales_modify_order",{p_order_id:editOrder.id,p_transportation:transportation||"",p_items:items});
       if(error) throw error;
       const priorityNote = (String(editOrder.priority || "NORMAL").toUpperCase() === orderPriority ? "" : await saveOrderPriority(editOrder.id))
-        + await saveOrderPickup(editOrder.id, true);
+        + await saveOrderPickup(editOrder.id, true) + await saveOrderSheetPallet(editOrder.id, editOrder);
       await alert("Order " + (editOrder.order_no || "") + (data && data.changed
         ? " saved. Sales Head is informed of the changes."
         : ": nothing changed.") + priorityNote);
@@ -2190,9 +2245,11 @@ async function saveOrder(){
 
     const base = {customer, transportation, salesPerson, orderDate};
     const made = [];
+    let spNote = "";
     if(split.other.length){
       const r = await createPoRecord(split.other, base);
       createdOrder = r.order; made.push({...r, slip:false});
+      spNote = await saveOrderSheetPallet(createdOrder.id, null);
     }
     let slipOrder = null, slipNote = "", slipDone = false, rateWaiting = false;
     if(split.slip.length){
@@ -2235,7 +2292,7 @@ async function saveOrder(){
     alert(
       (made.length > 1 ? "2 POs saved.\n\n" : createdOrder && headCreatesApprovedPo() ? "PO saved and approved successfully.\n\n" : createdOrder ? "Order submitted successfully.\n\n" : "PO saved.\n\n") +
       made.map(m => sum(m) + (m.slip ? (slipDone ? "\nDriver: " + slipDetails.driver_name + "\nVehicle: " + slipDetails.vehicle_no + "\nSlip ready to print. Sent to Accounts for the Tally bill." : "") : normalTail)).join("\n\n") +
-      priorityNote
+      priorityNote + spNote
     );
 
     saveBtn.textContent = rateWaiting && !createdOrder ? "Sent to Admin" : slipDone && !createdOrder ? "Slip Made" : headCreatesApprovedPo() ? "PO Approved" : "Order Submitted";
@@ -2359,6 +2416,8 @@ async function resetOrder(){
   renderPartyKyc();
   partyMinKg = null;
   quantityMode = "CS";
+  spHand = false;
+  document.getElementById("spSheets").value = "";
   toggleVehicleField();
 
   document.getElementById("itemsBody").innerHTML="";
@@ -2667,6 +2726,7 @@ function updateUnitPick(){
   document.getElementById("bigUnitHeader").textContent = big;
   document.querySelectorAll("#itemsBody td.pal-col").forEach(td => td.dataset.label = big);
   document.querySelectorAll("#itemsBody tr").forEach(row => { syncPallet(row); palConv(row); });
+  if(document.getElementById("spqField")) updateSpField();
 }
 
 function palletInput(input){
