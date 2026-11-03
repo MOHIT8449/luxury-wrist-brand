@@ -1768,7 +1768,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     setupPoAutofill();
     pickSummaryRange("today", false);
-    await loadBrands();
+    await Promise.all([loadBrands(), loadSalesPeople()]);
     await Promise.all([loadOrders(), loadWarehouseSkuMaster(), VIEW_ONLY ? null : loadPoSavedDirectory()]);
     const pushOrder=new URLSearchParams(location.search).get('order');
     if(pushOrder){
@@ -2122,7 +2122,7 @@ function fillColumnFilters() {
       list.map(v => `<option value="${escapeHtml(v)}">${escapeHtml(v)}</option>`).join("");
     sel.value = list.includes(keep) ? keep : "";
   };
-  fill("spFilter", orders.map(o => o.sales_person), "All sales persons");
+  fillPersonSelect(document.getElementById("spFilter"), orders);
   fill("tpFilter", orders.map(o => o.transportation), "All transport");
 }
 
@@ -2252,12 +2252,7 @@ async function loadTrend() {
     await loadItemsFor(trendOrders.map(o => o.id));
     if (ticket !== trendTicket) return;
     const sel = document.getElementById("trSp");
-    const keep = sel.value || document.getElementById("spFilter").value;
-    const names = [...new Set([...trendOrders, ...orders].map(o => String(o.sales_person || "").trim()).filter(Boolean))]
-      .sort((a, b) => a.localeCompare(b));
-    sel.innerHTML = '<option value="">All sales persons</option>' +
-      names.map(v => `<option value="${escapeHtml(v)}">${escapeHtml(v)}</option>`).join("");
-    sel.value = names.includes(keep) ? keep : "";
+    fillPersonSelect(sel, [...trendOrders, ...orders], sel.value || document.getElementById("spFilter").value);
     renderTrend();
   } catch (error) {
     console.error(error);
@@ -2307,7 +2302,7 @@ function renderTrend() {
   const buckets = new Map(keys.map(k => [k, blank()]));
   let otherUnit = "CS";
   trendOrders.forEach(order => {
-    if (sp && String(order.sales_person || "").trim() !== sp) return;
+    if (sp && personKey(order.sales_person) !== personKey(sp)) return;
     const day = istDay(order.order_date || order.created_at);
     const b = buckets.get(trendMode === "month" ? day.slice(0, 7) : day);
     if (!b) return;
@@ -2494,6 +2489,46 @@ window.addEventListener("resize", () => {
   document.querySelectorAll("#trChips button").forEach(b => b.classList.toggle("on", b.dataset.tr === trendMode));
 })();
 
+/* Sales person dropdowns: every active Sales Head, Salesman and Admin login (not only the
+   names that have a PO in the loaded range), plus any other name found on the orders. */
+let salesPeople = null;
+const personKey = v => String(v || "").trim().replace(/\s+/g, " ").toUpperCase();
+
+async function loadSalesPeople() {
+  const out = [];
+  const add = (name, role) => { if (String(name || "").trim()) out.push({ name: String(name).trim(), role }); };
+  try {
+    const team = await db.rpc("lwb_sales_team");
+    if (!team.error) (team.data || []).filter(r => r.active !== false)
+      .forEach(r => add(r.full_name, r.role === "manager" ? "head" : "sales"));
+  } catch (e) { console.warn("Sales team not loaded", e); }
+  try {
+    const adm = await db.from("user_profiles").select("full_name,role,active").in("role", ["admin", "manager", "sales", "salesman"]);
+    if (!adm.error) (adm.data || []).filter(r => r.active !== false)
+      .forEach(r => { const role = String(r.role || "").trim().toLowerCase(); add(r.full_name, role === "admin" ? "admin" : role === "manager" ? "head" : "sales"); });
+  } catch (e) { console.warn("Users not loaded", e); }
+  if (currentProfile && ["admin", "manager"].includes(String(currentProfile.role || "").toLowerCase()))
+    add(currentProfile.full_name, String(currentProfile.role).toLowerCase() === "admin" ? "admin" : "head");
+  const seen = new Map();
+  out.forEach(p => { const k = personKey(p.name); if (!seen.has(k)) seen.set(k, p); });
+  salesPeople = [...seen.values()];
+}
+
+function fillPersonSelect(sel, orderRows, keep = sel.value) {
+  const people = salesPeople || [];
+  const known = new Set(people.map(p => personKey(p.name)));
+  const extra = [...new Map(orderRows.map(o => String(o.sales_person || "").trim()).filter(Boolean)
+    .filter(n => !known.has(personKey(n))).map(n => [personKey(n), n])).values()];
+  const group = (label, names) => names.length
+    ? `<optgroup label="${label}">` + names.sort((a, b) => a.localeCompare(b))
+      .map(v => `<option value="${escapeHtml(v)}">${escapeHtml(v)}</option>`).join("") + "</optgroup>" : "";
+  const of = role => people.filter(p => p.role === role).map(p => p.name);
+  sel.innerHTML = '<option value="">All sales persons</option>' +
+    group("Sales Head", of("head")) + group("Salesman", of("sales")) + group("Admin", of("admin")) + group("Other", extra);
+  const match = [...sel.options].find(o => o.value && personKey(o.value) === personKey(keep));
+  sel.value = match ? match.value : "";
+}
+
 /* One stage per order, in the order the PO moves. */
 function orderStage(order) {
   if (isCancelled(order)) return "cancelled";
@@ -2535,7 +2570,7 @@ function matchesColumnFilters(order) {
   const sp = document.getElementById("spFilter").value;
   const tp = document.getElementById("tpFilter").value;
   if (!matchesBrand(order, brandPick())) return false;
-  if (sp && String(order.sales_person || "").trim() !== sp) return false;
+  if (sp && personKey(order.sales_person) !== personKey(sp)) return false;
   if (tp && String(order.transportation || "").trim() !== tp) return false;
   if (!search) return true;
   return [order.order_no, order.customer_name, order.sales_person, order.transportation, order.status]
