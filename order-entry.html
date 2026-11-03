@@ -418,6 +418,24 @@ body.compact-entry .share-more>summary{display:block;cursor:pointer;font-size:13
 /* Compact PO form (Mohit, 2 Nov 2026): one header line, Qty-in switch and + Add SKU under the priority buttons,
    short SKU rows and a one-line total bar, so 10 SKU lines fit one screen without scrolling up and down. */
 .oe-head{flex-wrap:wrap;gap:6px 14px;margin-bottom:8px}
+/* Drafts (lwb_po_draft_setup.sql) */
+.drafts-link{border:1px solid #e0c47a;background:#fff8e6;color:#7a5200;border-radius:999px;padding:4px 11px;font:inherit;font-size:12.5px;font-weight:700;cursor:pointer;white-space:nowrap}
+.drafts-link b{background:#7a5200;color:#fff;border-radius:999px;padding:0 7px;margin-left:3px;font-size:11.5px}
+.draft-btn kbd{font:inherit;font-size:10.5px;border:1px solid #c9ced6;border-bottom-width:2px;border-radius:4px;padding:0 4px;margin-left:4px;color:#5b6573}
+.oe-foot .actions{flex-wrap:nowrap}
+.draft-dlg{width:min(640px,calc(100vw - 24px))}
+.draft-dlg .df-wrap{display:grid;gap:8px;padding:14px}
+.draft-dlg .df-head{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.draft-dlg .df-head .btn{padding:6px 12px}
+.df-list{display:grid;gap:6px;max-height:60vh;overflow:auto}
+.df-row{display:flex;align-items:center;gap:8px;border:1px solid #e6e9ee;border-radius:8px;padding:7px 9px}
+.df-row .df-main{flex:1;min-width:0;cursor:pointer}
+.df-row .df-main b{display:block;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.df-row .df-main small{display:block;font-size:12px;color:#5b6573;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.df-row .btn{padding:5px 10px;min-height:0;font-size:12.5px;white-space:nowrap}
+.df-row .df-del{background:#fde2e2;color:#b3261e}
+.df-empty{padding:18px;text-align:center;color:#5b6573;font-size:13px}
+@media(max-width:760px){.draft-btn kbd,.draft-btn .draft-save{display:none}.draft-btn{white-space:nowrap;padding-left:10px!important;padding-right:10px!important}}
 .oe-head h2{font-size:17px;font-weight:800;margin:0;white-space:nowrap}
 .oe-head .brand-pick{margin:0;flex:1;min-width:0}
 .oe-head .brand-pick small{flex-basis:auto}
@@ -527,6 +545,7 @@ body.compact-entry .share-more>summary{display:block;cursor:pointer;font-size:13
     <!-- One header line: page name, brand chips and the PO list link (Mohit: compact, 10 SKUs on one screen). -->
     <div class="card-title card-title-row oe-head"><h2 id="pageHeading">New Sales Order</h2>
       <div class="brand-pick" id="brandPick" hidden><b>Brand</b><span id="brandChips"></span><small id="brandHint"></small></div>
+      <button type="button" id="draftsLink" class="drafts-link" onclick="openDraftList()" hidden>📝 Drafts <b id="draftCount">0</b></button>
       <a id="poListLink" class="po-list-link" href="warehouse-orders.html">PO / Sales List &rarr;</a></div>
 
     <div class="form-grid">
@@ -715,6 +734,8 @@ body.compact-entry .share-more>summary{display:block;cursor:pointer;font-size:13
       <!-- Print only for Sales Head / Admin; Salesman sees only Submit. -->
       <button id="printBtn" type="button" class="btn btn-light print-btn" onclick="window.print()" hidden>Print</button>
 
+      <button id="draftBtn" type="button" class="btn btn-light draft-btn" onclick="saveDraft()" title="Order not confirmed yet: keep it as a draft (no PO is made). Shortcut: Esc">📝<span class="draft-save"> Save</span> Draft <kbd>Esc</kbd></button>
+
       <button id="saveBtn" class="btn btn-green" onclick="saveOrder()">
         Submit Order
       </button>
@@ -772,6 +793,14 @@ body.compact-entry .share-more>summary{display:block;cursor:pointer;font-size:13
       <button type="submit" id="qsSave" class="btn btn-green">Save PO &amp; Print Slip</button>
     </div>
   </form>
+</dialog>
+
+<dialog id="draftDlg" class="party-dlg draft-dlg" aria-labelledby="dfTitle">
+  <div class="df-wrap">
+    <div class="df-head"><h3 id="dfTitle">📝 Draft orders</h3><button type="button" class="btn btn-grey" onclick="document.getElementById('draftDlg').close()">Close</button></div>
+    <p class="pd-note">Not confirmed yet, so no PO is made. Open one to edit, then Submit to make the PO.</p>
+    <div id="draftList" class="df-list"></div>
+  </div>
 </dialog>
 
 <dialog id="partyDlg" class="party-dlg" aria-labelledby="pdTitle">
@@ -896,7 +925,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     addItem();
     await loadSkuMaster();
     updateUnitPick();
-    initBrandPick();
+    const brandReady = initBrandPick().catch(() => {});
     initializePartySearch();
     await loadRates();
     loadMinWeights(null).catch(() => {});
@@ -904,6 +933,9 @@ document.addEventListener("DOMContentLoaded", async () => {
     await prefillParty(new URLSearchParams(location.search).get("party"));
     const editId = new URLSearchParams(location.search).get("edit");
     if(editId) await loadOrderForEdit(editId);
+    const draftId = new URLSearchParams(location.search).get("draft");
+    if(draftId && !editId){ await brandReady; await loadDraft(draftId); }
+    refreshDraftCount();
     document.getElementById("orderDate").addEventListener("change", updateLandingCells);
     calculateTotals();
 
@@ -1240,6 +1272,7 @@ async function loadOrderForEdit(id) {
   if (!(items || []).length) addItem();
   const btn = document.getElementById("saveBtn");
   btn.textContent = "Save Changes";
+  document.getElementById("draftBtn").hidden = true;
   calculateTotals();
 }
 
@@ -2222,6 +2255,7 @@ async function saveOrder(){
     }
 
     document.getElementById("orderNo").value = made.map(m => m.orderNo).join(" + ");
+    await dropDraftAfterSubmit();
     const priorityNote = slipNote + (!createdOrder ? "" : (orderPriority === "NORMAL" ? "" : await saveOrderPriority(createdOrder.id))
       + await saveOrderPickup(createdOrder.id, false));
 
@@ -2323,6 +2357,198 @@ async function createPoRecord(lines, base){
 }
 
 
+/* DRAFTS (lwb_po_draft_setup.sql, Mohit 3 Nov 2026): an order that is not confirmed yet is kept as a
+   draft, not a PO. "📝 Save Draft" or Esc saves it (no PO no., no stock / approval / bell). Drafts show in
+   "📝 Drafts" here and in the Draft tab of PO / Sales List; ?draft=<id> opens one again. Submit makes the
+   PO the normal way and then removes the draft. */
+let currentDraft = null;      // {id, ...} of the draft open in the form
+let draftSaving = false;
+
+function draftState(){
+  const v = id => document.getElementById(id).value;
+  const items = [...document.querySelectorAll("#itemsBody tr")].map(row => ({
+    sku: row.querySelector(".sku-name").value.trim(),
+    qty: row.querySelector(".qty").value.trim(),
+    rate: row.querySelector(".rate").value.trim(),
+    hand: row.dataset.hand === "1"
+  })).filter(i => i.sku || i.qty || i.rate);
+  return {
+    v: 1, customer: v("customerName").trim(), party: selectedParty || null,
+    salesPerson: v("salesPerson").trim(), orderDate: v("orderDate"), brand: brandChoice || "",
+    priority: orderPriority || "NORMAL", transportation: v("transportation"),
+    vehicle: v("vehicleNumber").trim().toUpperCase(), rateSlab: v("rateSlab"), quantityMode,
+    pickup: pickupDetails(), items
+  };
+}
+function draftTotals(items){
+  let qty = 0, amount = 0, weight = 0, lines = 0;
+  document.querySelectorAll("#itemsBody tr").forEach(row => {
+    if(!row.querySelector(".sku-name").value.trim()) return;
+    lines++;
+    const cases = getRowCaseQty(row);
+    if(!Number.isFinite(cases)) return;
+    qty += cases; amount += cases * number(row.querySelector(".rate").value);
+    weight += cases * number(row.querySelector(".unit-weight").value);
+  });
+  return {lines, qty, amount: r2(amount), weight: r2(weight)};
+}
+function draftSetupMissing(error){
+  return /lwb_po_drafts|relation .* does not exist|schema cache/i.test(error?.message || "");
+}
+
+async function saveDraft(fromKey){
+  if(draftSaving || editOrder) return;
+  const saveBtn = document.getElementById("saveBtn");
+  if(saveBtn.disabled || !document.getElementById("savedPoActions").hidden) return;   // PO already submitted
+  const d = draftState();
+  if(!d.customer && !d.items.length){
+    if(!fromKey) alert("Nothing to save yet. Pick a party or add a SKU first.");
+    return;
+  }
+  const t = draftTotals(d.items);
+  const row = {customer_name: d.customer || null, sales_person: d.salesPerson || null, transportation: d.transportation || null,
+    line_count: t.lines, total_qty: t.qty, total_amount: t.amount, total_weight: t.weight, data: d};
+  const btn = document.getElementById("draftBtn");
+  draftSaving = true; btn.disabled = true;
+  try{
+    const q = currentDraft
+      ? db.from("lwb_po_drafts").update(row).eq("id", currentDraft.id).select().maybeSingle()
+      : db.from("lwb_po_drafts").insert(row).select().single();
+    let {data, error} = await q;
+    if(!error && !data && currentDraft){
+      // The draft was removed meanwhile (submitted / deleted elsewhere): save it as a new one.
+      ({data, error} = await db.from("lwb_po_drafts").insert(row).select().single());
+    }
+    if(error) throw error;
+    currentDraft = data;
+    history.replaceState(null, "", "order-entry.html?draft=" + encodeURIComponent(data.id));
+    document.getElementById("pageHeading").textContent = "Draft Order";
+    shareToast("📝 Draft saved" + (d.customer ? ": " + d.customer : "") + ". No PO made yet.");
+    showMessage("Draft saved" + (d.customer ? " for " + d.customer : "") + " (" + t.lines + " SKU, " + formatMoney(t.amount) +
+      "). Open it from 📝 Drafts or PO / Sales List > Draft, then Submit to make the PO.", "success");
+    refreshDraftCount();
+  }catch(error){
+    console.error(error);
+    alert("Draft not saved:\n" + (draftSetupMissing(error) ? "Drafts are not set up yet. Ask Admin to run lwb_po_draft_setup.sql in Supabase." : (error.message || "Unknown error")));
+  }finally{
+    draftSaving = false; btn.disabled = false;
+  }
+}
+
+async function loadDraft(id){
+  const {data, error} = await db.from("lwb_po_drafts").select("*").eq("id", id).maybeSingle();
+  if(error || !data){
+    await alert(error && draftSetupMissing(error) ? "Drafts are not set up yet. Ask Admin to run lwb_po_draft_setup.sql." : "Draft not found. It may be submitted or deleted already.");
+    history.replaceState(null, "", "order-entry.html");
+    return;
+  }
+  const d = data.data || {};
+  currentDraft = data;
+  document.getElementById("pageHeading").textContent = "Draft Order";
+  const chip = document.querySelector(`#brandChips button[data-b="${CSS.escape(d.brand || "")}"]`);
+  if(chip && chip.getAttribute("aria-pressed") !== "true") chip.click();
+  if(d.orderDate) document.getElementById("orderDate").value = d.orderDate;
+  if(d.salesPerson && !document.getElementById("salesPerson").value) document.getElementById("salesPerson").value = d.salesPerson;
+  if(d.party && d.party.customer_name){ pickParty(d.party); }
+  else if(d.customer){ await prefillParty(d.customer); if(!selectedParty) document.getElementById("customerName").value = d.customer; }
+  const prio = document.querySelector(`#prioChips button[data-p="${String(d.priority || "NORMAL").toUpperCase()}"]`);
+  if(prio) pickPriority(prio);
+  const select = document.getElementById("transportation");
+  select.value = d.transportation || "";
+  toggleVehicleField();
+  syncSlabToTransport();
+  if(d.vehicle && !document.getElementById("vehicleNumber").disabled) document.getElementById("vehicleNumber").value = d.vehicle;
+  if(d.pickup){
+    document.getElementById("pkDriverName").value = d.pickup.driver_name || "";
+    document.getElementById("pkDriverMobile").value = d.pickup.driver_mobile || "";
+    document.getElementById("pkVehicle").value = d.pickup.vehicle_no || "";
+    if(d.pickup.godown_key) await loadPickupManagers(d.pickup.godown_key);
+  }
+  if(d.rateSlab != null && [...document.getElementById("rateSlab").options].some(o => o.value === d.rateSlab)) document.getElementById("rateSlab").value = d.rateSlab;
+  if(d.quantityMode === "PALLET") setQuantityMode("PALLET", true);
+  document.getElementById("itemsBody").innerHTML = "";
+  itemCounter = 0;
+  for(const i of (d.items || [])){
+    addItem();
+    const row = document.querySelector("#itemsBody tr:last-child");
+    const sku = row.querySelector(".sku-name");
+    sku.value = i.sku || "";
+    applySkuDefaultWeight(sku);
+    row.querySelector(".qty").value = i.qty || "";
+    if(i.rate !== "" && i.rate != null){ row.querySelector(".rate").value = i.rate; if(i.hand) row.dataset.hand = "1"; }
+    syncPallet(row);
+    calculateRow(row.querySelector(".qty"));
+  }
+  if(!(d.items || []).length) addItem();
+  calculateTotals();
+  showMessage("Draft opened" + (data.updated_by_name ? " (last saved by " + data.updated_by_name + ")" : "") +
+    ". Change what you need, then Submit to make the PO, or Esc to save the draft again.", "success");
+}
+
+// After the PO is made from a draft, the draft goes away.
+async function dropDraftAfterSubmit(){
+  document.getElementById("draftBtn").hidden = true;
+  if(!currentDraft) return;
+  const id = currentDraft.id;
+  currentDraft = null;
+  const {error} = await db.from("lwb_po_drafts").delete().eq("id", id);
+  if(error) console.warn("Draft not removed", error);
+  history.replaceState(null, "", "order-entry.html");
+  refreshDraftCount();
+}
+
+async function refreshDraftCount(){
+  const link = document.getElementById("draftsLink");
+  const {count, error} = await db.from("lwb_po_drafts").select("id", {count: "exact", head: true});
+  if(error){ link.hidden = true; return; }
+  document.getElementById("draftCount").textContent = count || 0;
+  link.hidden = false;
+}
+
+function draftAge(at){
+  const d = new Date(at);
+  return isNaN(d) ? "" : d.toLocaleString("en-IN", {day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit"});
+}
+async function openDraftList(){
+  const dlg = document.getElementById("draftDlg"), box = document.getElementById("draftList");
+  box.innerHTML = '<div class="df-empty">Loading drafts…</div>';
+  try { dlg.showModal(); } catch(e) { dlg.setAttribute("open", ""); }
+  const {data, error} = await db.from("lwb_po_drafts")
+    .select("id,customer_name,sales_person,line_count,total_qty,total_amount,created_by_name,updated_by_name,updated_at")
+    .order("updated_at", {ascending: false}).limit(200);
+  if(error){ box.innerHTML = '<div class="df-empty">' + (draftSetupMissing(error) ? "Drafts are not set up yet (lwb_po_draft_setup.sql)." : "Could not load drafts.") + '</div>'; return; }
+  document.getElementById("draftCount").textContent = (data || []).length;
+  if(!(data || []).length){ box.innerHTML = '<div class="df-empty">No draft orders.</div>'; return; }
+  const esc = t => String(t == null ? "" : t).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+  box.innerHTML = data.map(r => `<div class="df-row${currentDraft && currentDraft.id === r.id ? " on" : ""}">
+      <div class="df-main" onclick="location.href='order-entry.html?draft=${encodeURIComponent(r.id)}'">
+        <b>${esc(r.customer_name || "(No party yet)")}</b>
+        <small>${r.line_count} SKU · ${formatNumber(r.total_qty)} qty · ${formatMoney(r.total_amount)} · ${esc(r.sales_person || r.created_by_name || "")} · ${draftAge(r.updated_at)}</small>
+      </div>
+      <a class="btn btn-green" href="order-entry.html?draft=${encodeURIComponent(r.id)}">Open</a>
+      <button type="button" class="btn df-del" onclick="deleteDraft('${r.id}')" title="Delete draft">🗑</button>
+    </div>`).join("");
+}
+async function deleteDraft(id){
+  if(!await confirm("Delete this draft? No PO was made from it.")) return;
+  const {error} = await db.from("lwb_po_drafts").delete().eq("id", id);
+  if(error){ alert("Draft not deleted:\n" + (error.message || "Unknown error")); return; }
+  if(currentDraft && currentDraft.id === id){ currentDraft = null; history.replaceState(null, "", "order-entry.html"); }
+  openDraftList();
+}
+
+// Esc = Save Draft, unless a popup / party list / menu is open (then Esc only closes that).
+document.addEventListener("keydown", event => {
+  if(event.key !== "Escape" || event.repeat || event.defaultPrevented) return;
+  if(document.querySelector(".erp-dlg-back, dialog[open]")) return;
+  if(!document.getElementById("partyOptions").hidden) return;
+  if(document.body.classList.contains("side-open") || document.querySelector(".erp-results.open")) return;
+  if(document.activeElement && document.activeElement.closest(".erp-search, .erp-topbar")) return;
+  event.preventDefault();
+  saveDraft(true);
+}, true);
+
+
 /* RESET */
 
 async function resetOrder(){
@@ -2333,6 +2559,9 @@ async function resetOrder(){
   document.getElementById("savedSlipPrint").hidden=true;
   document.getElementById("savedPoList").innerHTML="Open in PO / Sales List &rarr;";
   ["qsDriverName","qsVehicle"].forEach(id=>document.getElementById(id).value="");
+  currentDraft = null;
+  document.getElementById("draftBtn").hidden = false;
+  if(new URLSearchParams(location.search).get("draft")) history.replaceState(null, "", "order-entry.html");
   if(editOrder){
     // Leave the order as it is and start a fresh one.
     editOrder = null;
