@@ -733,6 +733,8 @@
     .po-tab.on b {background:var(--lwb-gold,#fff);color:var(--lwb-teal,#1f2a37)}
     .po-tab:focus-visible {outline:2px solid var(--lwb-gold,#c9b26a);outline-offset:2px}
     .po-tab-sep {width:1px;background:#e3e7ec;margin:4px 2px}
+    .draft-badge {display:inline-block;background:#fff4e0;color:#8a5a00;border:1px solid #f0d49a;border-radius:6px;padding:1px 7px;font-size:11px;font-weight:800;letter-spacing:.4px}
+    .draft-table .draft-del {background:#fde2e2;color:#b3261e;border-color:#f6c9c9}
     .toolbar {--ps-red:var(--erp-red,#c8102e);--ps-line:#e3e7ec;--ps-ink:#1f2a37;--ps-muted:#6b7785}
     .toolbar input#searchBox {min-width:240px}
     .po-range {display:flex;gap:8px;align-items:center;flex-wrap:wrap}
@@ -1260,6 +1262,7 @@
       </div>
 
       <select id="statusFilter" onchange="resetPageAndRender()" hidden aria-hidden="true">
+        <option value="draft">Draft</option>
         <option value="pending">Pending Review</option>
         <option value="approved">Approved</option>
         <option value="transport">Transport Assigned</option>
@@ -1832,7 +1835,7 @@ async function loadOrders() {
     [...inRange, ...open].forEach(order => byId.set(order.id, order));
 
     orders = ERPRecent.sort([...byId.values()]);
-    await Promise.all([loadDeliveredOrders(), brandPick() ? loadItemsFor(orders.map(o => o.id)) : null]);
+    await Promise.all([loadDeliveredOrders(), brandPick() ? loadItemsFor(orders.map(o => o.id)) : null, loadDrafts()]);
 
     fillColumnFilters();
     updateStats();
@@ -2125,7 +2128,7 @@ function fillColumnFilters() {
       list.map(v => `<option value="${escapeHtml(v)}">${escapeHtml(v)}</option>`).join("");
     sel.value = list.includes(keep) ? keep : "";
   };
-  fill("spFilter", orders.map(o => o.sales_person), "All sales persons");
+  fill("spFilter", orders.map(o => o.sales_person).concat(drafts.map(d => d.sales_person)), "All sales persons");
   fill("tpFilter", orders.map(o => o.transportation), "All transport");
 }
 
@@ -2511,6 +2514,7 @@ function orderStage(order) {
 }
 
 const PO_TABS = [
+  { k: "draft", t: "📝 Draft", draft: true },
   { k: "pending", t: "Pending Review" },
   { k: "approved", t: "Approved" },
   { k: "transport", t: "Transport Assigned" },
@@ -2548,7 +2552,8 @@ function matchesColumnFilters(order) {
 function renderTabs(base, current) {
   document.getElementById("poTabs").innerHTML = PO_TABS.map(tab => {
     if (tab.sep) return '<span class="po-tab-sep" aria-hidden="true"></span>';
-    const n = base.filter(order => matchesTab(order, tab.k)).length;
+    if (tab.draft && !draftsOn) return "";
+    const n = tab.draft ? drafts.filter(matchesDraftFilters).length : base.filter(order => matchesTab(order, tab.k)).length;
     const css = ["po-tab", tab.warn ? "warn" : "", tab.k === current ? "on" : "", n ? "" : "zero"].join(" ");
     return `<button type="button" role="tab" aria-selected="${tab.k === current}" class="${css}"
       onclick="pickStatusFilter('${tab.k}')">${tab.t} <b>${n}</b></button>`;
@@ -3007,6 +3012,7 @@ function renderOrders() {
 
   const base = orders.filter(matchesColumnFilters);
   renderTabs(base, filter);
+  if (filter === "draft") { renderDrafts(area); return; }
 
   let filtered = base.filter(order => matchesTab(order, filter));
 
@@ -3131,6 +3137,95 @@ function renderOrders() {
   loadOrderLines(pageOrders);
   renderSelBar();
 
+}
+
+
+/* -----------------------------
+   DRAFTS (lwb_po_draft_setup.sql, Mohit 3 Nov 2026)
+   An order not confirmed yet is saved on New Sales Order as a draft (Save Draft / Esc): no PO no.,
+   no stock / approval. Admin / Sales Head see every draft here; clicking one opens it in New Sales
+   Order (?draft=<id>), where Submit makes the PO and removes the draft. Tab hides until the SQL is run.
+----------------------------- */
+let drafts = [];
+let draftsOn = false;
+
+async function loadDrafts() {
+  if (!CAN_HEAD) { draftsOn = false; drafts = []; return; }
+  const { data, error } = await db.from("lwb_po_drafts")
+    .select("id,customer_name,sales_person,transportation,line_count,total_qty,total_amount,total_weight,created_by_name,updated_by_name,created_at,updated_at")
+    .order("updated_at", { ascending: false }).limit(500);
+  if (error) { console.warn("Drafts not loaded", error); draftsOn = false; drafts = []; return; }
+  draftsOn = true;
+  drafts = data || [];
+}
+
+function matchesDraftFilters(d) {
+  const search = document.getElementById("searchBox").value.trim().toLowerCase();
+  const sp = document.getElementById("spFilter").value;
+  const tp = document.getElementById("tpFilter").value;
+  if (sp && String(d.sales_person || "").trim() !== sp) return false;
+  if (tp && String(d.transportation || "").trim() !== tp) return false;
+  if (!search) return true;
+  return [d.customer_name, d.sales_person, d.transportation, d.created_by_name, d.updated_by_name, "draft"]
+    .join(" ").toLowerCase().includes(search);
+}
+
+function openDraft(id) { location.href = "order-entry.html?draft=" + encodeURIComponent(id); }
+
+function renderDrafts(area) {
+  pickedIds.clear();
+  renderSelBar();
+  lastFiltered = [];
+  const list = drafts.filter(matchesDraftFilters);
+  const foot = document.getElementById("poFoot");
+  if (!list.length) {
+    foot.hidden = true;
+    area.className = "empty";
+    area.innerHTML = "No draft orders. On New Sales Order, press <b>📝 Save Draft</b> or <b>Esc</b> to keep an order that is not confirmed yet.";
+    return;
+  }
+  const sum = key => list.reduce((t, d) => t + (Number(d[key]) || 0), 0);
+  foot.hidden = false;
+  foot.innerHTML = `<span class="tot">Total ${list.length} draft · ${formatNumber(sum("total_qty"))} qty · ${formatMoney(sum("total_amount"))} · ${formatNumber(sum("total_weight"))} KG</span>
+    <span class="sp"></span><span>Not a PO yet: open one, then Submit to make the PO.</span>`;
+  area.className = "table-wrap";
+  area.innerHTML = `
+    <table class="draft-table">
+      <thead><tr>
+        <th>Draft</th><th>Saved</th><th>Customer</th><th style="text-align:right">Lines</th>
+        <th class="h-sp">Sales Person<small class="sp-tp">/ Transport</small></th><th class="h-tp">Transportation</th>
+        <th style="text-align:right">Qty</th><th style="text-align:right">Amount</th><th style="text-align:right">Weight</th>
+        <th>Saved by</th><th>Action</th>
+      </tr></thead>
+      <tbody>${list.map(d => `
+        <tr class="po-row" onclick="if(!event.target.closest('button'))openDraft('${d.id}')" title="Click to open this draft and submit it as a PO">
+          <td class="order-no c-no"><span class="draft-badge">DRAFT</span></td>
+          <td class="c-date">${formatDate(d.updated_at || d.created_at)}</td>
+          <td class="c-cust">${escapeHtml(d.customer_name || "(No party yet)")}</td>
+          <td class="c-lines">${Number(d.line_count) || 0}</td>
+          <td class="c-sp" data-label="Sales person">${escapeHtml(d.sales_person || "-")}<small class="sp-tp">${escapeHtml(d.transportation || "-")}</small></td>
+          <td class="c-tp" data-label="Transport">${escapeHtml(d.transportation || "-")}</td>
+          <td class="c-qty" data-label="Qty" style="text-align:right">${formatNumber(d.total_qty)}</td>
+          <td class="money c-amt" data-label="Amount" style="text-align:right">${formatMoney(d.total_amount)}</td>
+          <td class="c-wt" data-label="Weight" style="text-align:right">${formatNumber(d.total_weight)} KG</td>
+          <td class="c-st" data-label="Saved by">${escapeHtml(d.updated_by_name || d.created_by_name || "-")}</td>
+          <td class="c-act"><div class="act-row">
+            <button class="btn btn-green" title="Open, edit and submit as PO" onclick="openDraft('${d.id}')">✏️<span class="lbl-long"> Open</span></button>
+            <button class="btn btn-light draft-del" title="Delete draft" onclick="deleteDraft('${d.id}')">🗑</button>
+          </div></td>
+        </tr>`).join("")}
+      </tbody>
+    </table>`;
+}
+
+async function deleteDraft(id) {
+  const d = drafts.find(x => x.id === id);
+  if (!await confirm("Delete the draft of " + (d && d.customer_name || "this party") + "? No PO was made from it.")) return;
+  const { error } = await db.from("lwb_po_drafts").delete().eq("id", id);
+  if (error) { alert("Draft not deleted:\n" + (error.message || "Unknown error")); return; }
+  drafts = drafts.filter(x => x.id !== id);
+  showMessage("Draft deleted.", "success");
+  renderOrders();
 }
 
 
