@@ -4,6 +4,13 @@
 **Purpose:** Continue the same ERP project from a new ChatGPT conversation without restarting or losing the agreed requirements.
 **Status:** Active development / verification. Do not assume all modules are completed or fully tested.
 
+## Billing: bill names stay on the bill, PO item changes through Admin (3 Nov 2026)
+
+- Mohit: a Tally bill name typed by Accounts (often a spelling variant) must not make a party; keep it under the main party as bill name + invoice no. + amount. One PO can have many bills (already allowed). Any change of PO items (qty + / −, rate, wrong SKU sent, SKU added / removed) by Accounts goes to Admin with a popup of the value difference; collection follows the approved value. Ideas shown as 4 options; Mohit picked D (name + invoice + amount only, no item split per bill) plus an "Items" button on each PO.
+- SQL `lwb_bill_change_setup.sql` (test `tests/bill-change`, PGlite, 9 tests). `lwb_save_tally_bills` no longer inserts `lwb_tally_party_map` rows (bill name only in `lwb_tally_invoices.bills`; a name linked by hand to another main party is still refused). Table `lwb_bill_changes` (WAITING / APPROVED / SENT_BACK / REPLACED, one WAITING per PO, lines with sku_old / sku, qty_old / qty, rate_old / rate, kind QTY / RATE / SKU / ADD / REMOVE, old / new value, diff, bill_no). RPCs: `lwb_bill_change_items(order)`, `lwb_bill_change_request(order, items, reason, note, bill_no)` (full new line list; a line left out = removed; Accounts -> WAITING + BILL_CHANGE_APPROVAL bell to Admins; Admin -> applied at once), `lwb_bill_change_decide(id, approve, reply)` (Admin; refuses if the PO lines changed after the request, STALE), `lwb_bill_change_list(days)`. Applying changes `loaded_qty` after loading (else `approved_qty`), rate and sku_name; new SKU = new order_items row; the Tally bill amount and the chosen bill line move by the difference (refused if it would go to 0 or below). Bells BILL_CHANGE_APPROVED / BILL_CHANGE_SENT_BACK to the requester.
+- `bill-change.js` (LWBBillChange.open / review). `party-billing.html`: "ⓘ Items / Edit" on every Bills to make card and "ⓘ Items" on every To collect bill row; "⏳ Waiting Admin ±₹" tag; new tab "PO changes" (count of waiting; Admin "Check & approve"). Bell opens `party-billing.html?tab=chg&change=<order>`. Bill name list also offers names used before on that main party. Phone: card footer in one row.
+- Checked with a mocked client whose RPCs ran this SQL on PGlite at 1366 px and 390 px: no side scroll. Not yet checked on live data. Old auto links already in `lwb_tally_party_map` are left as they are.
+
 ## Esc closes any popup, every page (3 Nov 2026)
 
 - Mohit: on any page, Esc must close the open popup, like Back (top one first, one per press).

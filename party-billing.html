@@ -12,6 +12,7 @@
   <script src="excel-io.js"></script>
   <script src="tally-note.js" defer></script>
   <script src="party-pay.js"></script>
+  <script src="bill-change.js"></script>
   <style>
     .status{text-align:center;padding:80px 20px;font-size:15px;color:#555}
     [hidden]{display:none!important}
@@ -84,7 +85,11 @@
       .pb-t.resp thead{display:none}.pb-t.resp tr.pr{display:grid;grid-template-columns:1fr auto;border-bottom:1px solid var(--erp-line)}
       .pb-t.resp tr.pr td{border:0;padding:4px 8px}.pb-t.resp tr.pr td.hide-ph{display:none}.pb-t.resp tr.pr td:first-child{grid-column:1 / -1;padding-top:10px}
       .pb-t.resp td small.ph-only{display:block}
-      .pb-t.resp tr.sub{display:block}.pb-t.resp tr.sub>td{display:block}}
+      .pb-t.resp tr.sub{display:block}.pb-t.resp tr.sub>td{display:block}
+      .pb-t.resp.chg tr.pr{grid-template-columns:auto 1fr auto;align-items:center}
+      .pb-foot.mk{gap:6px}.pb-foot.mk .lg{display:none}.pb-foot.mk .tot{order:-1;flex-basis:100%;margin:0}.pb-foot.mk .tot:empty{display:none}
+      .pb-foot.mk .pb-dbx input.dt{width:104px;padding:0 6px;font-size:15px}.pb-foot.mk .pb-dbx button{width:34px}
+      .pb-foot.mk .pb-btn{padding:0 10px}.pb-foot.mk [data-save]{margin-left:auto}}
   </style>
 </head>
 <body>
@@ -101,6 +106,7 @@
         <button type="button" data-t="due">To collect</button>
         <button type="button" data-t="pay">Payments</button>
         <button type="button" data-t="grp">Party groups</button>
+        <button type="button" data-t="chg" id="tChg">PO changes<span class="cnt" id="cChg" hidden></span></button>
         <input class="q" id="q" type="search" placeholder="Search party, bill name, PO, bill no." autocomplete="off">
         <button type="button" class="pb-btn sm" id="xl">⬇ Excel</button>
       </div>
@@ -122,17 +128,19 @@
       return isNaN(d)||d.toISOString().slice(0,10)!==iso?"":iso};
     const MODE={CASH:"Cash",UPI:"UPI",BANK:"Bank",CHEQUE:"Cheque"};
     const DELIVERY={DELIVERED:["t-grn","Delivered"],PARTIAL:["t-amb","Part delivered"],NOT_DELIVERED:["t-red","Not delivered"]};
-    let info=null,tab="make",open=new Set(),want=new URLSearchParams(location.search).get("order"),sheet=[];
+    let info=null,tab="make",open=new Set(),want=new URLSearchParams(location.search).get("order"),sheet=[],admin=false,changes=[],wantChg=new URLSearchParams(location.search).get("change");
     const toast=t=>ERPShell.toast?ERPShell.toast(t):say(t,false,true);
     function say(t,bad,ok){el("msg").hidden=!t;el("msg").textContent=t||"";el("msg").className="pb-msg"+(bad?" bad":ok?" ok":"")}
 
     async function load(){
       el("reload").disabled=true;
       try{
-        const [x,early]=await Promise.all([LWBPartyPay.load(client),client.rpc("lwb_bills_before_loading")]);
+        const [x,early,chg]=await Promise.all([LWBPartyPay.load(client),client.rpc("lwb_bills_before_loading"),client.rpc("lwb_bill_change_list",{p_days:30})]);
+        // PO item changes for Admin (lwb_bill_change_setup.sql); missing function = no list.
+        changes=chg.error?[]:(chg.data||[]);
         // Approved POs not loaded yet (lwb_bill_before_loading_setup.sql); missing function = only loaded ones, as before.
         x.early=early.error?[]:(early.data||[]).map(o=>({...o,early:true,parent:x.parentOf(o.party)}));
-        info=x;say("");render()}
+        info=x;say("");render();openWanted()}
       catch(e){say(e.message,true);if(!info)el("body").innerHTML='<div class="pb-empty">Nothing to show yet.</div>'}
       finally{el("reload").disabled=false}
     }
@@ -143,6 +151,16 @@
     const membersOf=p=>{const x=info.parties.get(key(p));return x?x.members:[]};
     const match=(q,...v)=>!q||v.some(x=>String(x==null?"":x).toLowerCase().includes(q));
 
+    const waitOf=id=>changes.find(c=>c.order_id===id&&c.status==="WAITING");
+    const waitTag=id=>{const c=waitOf(id);return c?` <button type="button" class="tag t-amb" data-wv="${esc(c.id)}" style="border:0;cursor:pointer">⏳ Waiting Admin ${LWBBillChange.sg(Number(c.diff))}</button>`:""};
+    function editItems(id){const o=orders().find(x=>x.order_id===id)||(info.early||[]).find(x=>x.order_id===id);
+      LWBBillChange.open({client,admin,order:{order_id:id,order_no:o&&o.order_no,party:o&&o.party},onSaved:load})}
+    function viewChange(id){const c=changes.find(x=>x.id===id);if(c)LWBBillChange.review({client,admin,change:c,onDone:load})}
+    function wireChg(root){
+      root.querySelectorAll("[data-it]").forEach(b=>b.onclick=e=>{e.stopPropagation();editItems(b.dataset.it)});
+      root.querySelectorAll("[data-wv]").forEach(b=>b.onclick=e=>{e.stopPropagation();viewChange(b.dataset.wv)})}
+    function openWanted(){if(!wantChg)return;const c=changes.find(x=>x.order_id===wantChg&&x.status==="WAITING")||changes.find(x=>x.id===wantChg);wantChg=null;
+      if(c){tab="chg";render();LWBBillChange.review({client,admin,change:c,onDone:load})}}
     function render(){
       const make=toMake(),parties=[...info.parties.values()],dueP=parties.filter(p=>p.due>0.5||p.advance>0.5||p.opening);
       // one balance per party: positive = to collect, negative = advance
@@ -163,12 +181,15 @@
         L(3,()=>({title:"Received today",sub:"Party payments today",rows:(info.raw.receipts||[]).filter(r=>!r.cancelled&&r.pay_date===info.today),
           cols:[{t:"Party",v:"party"},{t:"Mode",v:r=>(r.modes||[]).map(m=>m.mode).join(", ")},{t:"Ref",v:r=>(r.modes||[]).map(m=>m.ref).filter(Boolean).join(", ")},{t:"By",v:"by"},{t:"Amount",v:"total",money:true,sum:true}]}))}
       el("cMake").hidden=!make.length;el("cMake").textContent=make.length;
+      const nw=changes.filter(c=>c.status==="WAITING").length;el("cChg").hidden=!nw;el("cChg").textContent=nw;
       el("tabs").querySelectorAll("[data-t]").forEach(b=>b.setAttribute("aria-pressed",String(b.dataset.t===tab)));
       el("xl").hidden=tab==="make";
-      ({make:renderMake,due:renderDue,pay:renderPay,grp:renderGroups})[tab]();
+      ({make:renderMake,due:renderDue,pay:renderPay,grp:renderGroups,chg:renderChg})[tab]();
+      wireChg(el("body"));
       el("note").textContent=tab==="make"?"Every approved PO comes here at once (its quantity is final), so the bill can be made before loading; loaded ones show their loaded value. Enter one line per Tally bill: the name the bill is made in, its invoice no. and amount. Saved bills go to To collect on the main party at once, and show in the Accounts Dashboard Cash In.":
         tab==="due"?"To collect = Tally bill − credit notes − driver money − payments split to it, on the main party (all its bill names together), minus money paid earlier and not yet set against a bill. One balance per party: red = to collect, green = advance. Party Ledger shows the same on the main party.":
         tab==="pay"?"A party payment is entered once on the main party and split over its bills; the rest is advance. Undo (×) puts a split back to advance; Cancel removes a wrong payment.":
+        tab==="chg"?"Any change of PO items (qty + / −, rate, SKU replaced, added or removed) goes to Admin with the value difference. Approved: the PO lines change and the Tally bill amount moves by the same difference, so To collect follows. Use ⓘ Items on a bill to start one.":
         "A main party (Party Master) and the names its Tally bills are made in. Outstanding, ledger and payments of all these names are on the main party. A name can be under one main party only.";
     }
 
@@ -184,12 +205,14 @@
       el("body").innerHTML='<datalist id="dlAll"></datalist><div class="pb-bills">'+list.map(o=>{
         const d=DELIVERY[String(o.delivery||"").toUpperCase()],grp=key(o.parent)!==key(o.party);
         const names=[...new Set([o.party,o.parent,...membersOf(o.parent)])];
+        // bill names used before on this main party (kept on the bills only, not as parties)
+        const used=[...new Set(orders().filter(x=>key(x.parent)===key(o.parent)).flatMap(x=>(x.bills||[]).map(b=>String(b.firm||"").trim())).filter(Boolean))].filter(n=>!names.some(m=>key(m)===key(n)));
         return `<div class="pb-bill${o.order_id===want?" hl":""}" data-o="${esc(o.order_id)}">
-          <div class="hd"><span><b>${esc(o.order_no)}</b> ${o.early?`<small>approved ${dmy(String(o.approved_at||o.order_date||"").slice(0,10))}</small> <span class="tag t-amb">${o.vehicle_no?"Vehicle "+esc(o.vehicle_no)+" · not loaded yet":"Not loaded yet"}</span>`:`<small>loaded ${dmy(o.dispatch_date||o.order_date)}</small>`} ${d?`<span class="tag ${d[0]}">${d[1]}</span>`:""}</span><span>${o.early?"PO value ("+esc(Number(o.qty||0).toLocaleString("en-IN"))+" CS)":"Loaded value"} <b>${rs(o.erp_amount)}</b></span></div>
+          <div class="hd"><span><b>${esc(o.order_no)}</b> ${o.early?`<small>approved ${dmy(String(o.approved_at||o.order_date||"").slice(0,10))}</small> <span class="tag t-amb">${o.vehicle_no?"Vehicle "+esc(o.vehicle_no)+" · not loaded yet":"Not loaded yet"}</span>`:`<small>loaded ${dmy(o.dispatch_date||o.order_date)}</small>`} ${d?`<span class="tag ${d[0]}">${d[1]}</span>`:""}${waitTag(o.order_id)}</span><span>${o.early?"PO value ("+esc(Number(o.qty||0).toLocaleString("en-IN"))+" CS)":"Loaded value"} <b>${rs(o.erp_amount)}</b></span></div>
           <div class="who">${esc(o.party)}${grp?` <span class="tag t-blu">under ${esc(o.parent)}</span>`:""}${names.length>1?`<small style="color:var(--erp-muted)"> · bill names: ${esc(names.filter(n=>key(n)!==key(o.party)).join(", "))}</small>`:""}</div>
-          <datalist id="dl-${esc(o.order_id)}">${names.map(n=>`<option value="${esc(n)}">`).join("")}</datalist>
+          <datalist id="dl-${esc(o.order_id)}">${names.concat(used).map(n=>`<option value="${esc(n)}">`).join("")}</datalist>
           <div class="pb-lines"></div>
-          <div class="pb-foot"><button type="button" class="lnk" data-add>+ Another bill name</button>${dateBox(info.today)}<button type="button" class="pb-btn pri" data-save>Save bill</button><span class="tot"></span></div></div>`}).join("")+'</div>';
+          <div class="pb-foot mk"><button type="button" class="lnk" data-add>+ <span class="lg">Another </span>bill</button>${dateBox(info.today)}<button type="button" class="pb-btn sm" data-it="${esc(o.order_id)}" title="See items, change qty / rate / SKU (goes to Admin)">ⓘ Items<span class="lg"> / Edit</span></button><span class="tot"></span><button type="button" class="pb-btn pri" data-save>Save<span class="lg"> bill</span></button></div></div>`}).join("")+'</div>';
       el("body").querySelectorAll(".pb-bill").forEach(card=>{
         const o=list.find(x=>x.order_id===card.dataset.o),lines=card.querySelector(".pb-lines"),tot=card.querySelector(".tot");
         const total=()=>{const l=[...lines.children],s=l.reduce((a,r)=>a+num(r.querySelector(".am").value),0);
@@ -251,7 +274,7 @@
         return `<tr><td><b>${esc(b.order_no)}</b>${key(b.party)!==key(p.party)?`<small>PO party ${esc(b.party)}</small>`:""}${d?` <span class="tag ${d[0]}">${d[1]}</span>`:""}</td><td>${dmy(b.invoice_date)}<small class="${a>30?"due":""}">${a} days</small></td>
           <td>${(b.bills||[]).length?(b.bills||[]).map(x=>`<span class="bline"><b>${esc(x.firm||b.party)}</b> · ${esc(x.no)} · ${rs(x.amount)}</span>`).join(""):esc(b.invoice_no)}</td>
           <td class="n">${rs(b.bill_amount)}</td><td class="n">${cn?"− "+rs(cn):"—"}${Number(b.credit_pending)>0.5?`<small class="due">CN pending ${rs(b.credit_pending)}</small>`:""}</td><td class="n">${got?rs(got):"—"}</td><td class="n due">${rs(b.due)}</td>
-          <td class="n"><button type="button" class="lnk" data-cn="${esc(b.order_id)}">Credit note</button><br><a class="lnk" href="accounts-invoice.html?order=${encodeURIComponent(b.order_id)}">Details</a></td></tr>`}).join("");
+          <td class="n"><button type="button" class="lnk" data-it="${esc(b.order_id)}">ⓘ Items</button>${waitTag(b.order_id)}<br><button type="button" class="lnk" data-cn="${esc(b.order_id)}">Credit note</button><br><a class="lnk" href="accounts-invoice.html?order=${encodeURIComponent(b.order_id)}">Details</a></td></tr>`}).join("");
       return `${p.bills.length?`<div class="pb-scroll"><table class="pb-t"><thead><tr><th>PO</th><th>Bill date</th><th>Bill in name · no. · amount</th><th class="n">Bill</th><th class="n">Credit note</th><th class="n">Received</th><th class="n">Due</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`:'<p class="pb-note" style="margin:0 0 8px">No bill due.</p>'}
         <div class="pb-foot"><button type="button" class="pb-btn sm grn" data-pay="${esc(p.party)}">Receive payment</button>${p.advance>0.5&&p.bills.length?`<button type="button" class="pb-btn sm" data-adj="${esc(p.party)}">Adjust ${rs(p.advance)} paid earlier</button>`:""}<a class="pb-btn sm" href="party-ledger.html?party=${encodeURIComponent(p.party)}">Ledger →</a></div>`;
     }
@@ -290,6 +313,19 @@
         const {error}=await client.rpc("lwb_cancel_tally_payment",{p_receipt_id:r.receipt_id});if(error)return ERPShell.alert(errText(error));toast("Payment cancelled");load()});
     }
 
+    /* ---------- PO changes (Admin approval) ---------- */
+    function renderChg(){
+      const q=el("q").value.trim().toLowerCase(),ST={WAITING:["t-amb","Waiting Admin"],APPROVED:["t-grn","Approved"],SENT_BACK:["t-red","Sent back"]};
+      const list=changes.filter(c=>match(q,c.order_no,c.party,c.by,c.reason,c.note));
+      sheet=[["Date","PO","Party","By","Reason","Old ₹","New ₹","Difference ₹","Status","Admin reply"],...list.map(c=>[dmy(String(c.requested_at).slice(0,10)),c.order_no,c.party,c.by||"",c.reason||"",r2(c.old_value),r2(c.new_value),r2(c.diff),(ST[c.status]||[,c.status])[1],c.reply||""])];
+      if(!list.length){el("body").innerHTML='<div class="pb-empty">No PO change in the last 30 days. Use ⓘ Items / Edit on a bill to change qty, rate or SKU.</div>';return}
+      el("body").innerHTML=`<div class="pb-scroll"><table class="pb-t resp chg"><thead><tr><th>PO / party</th><th class="hide-ph">By</th><th class="n hide-ph">Old → New</th><th class="n">Difference</th><th>Status</th><th></th></tr></thead><tbody>${list.map(c=>{const st=ST[c.status]||["t-gry",c.status];
+        return `<tr class="pr" data-wv="${esc(c.id)}"><td><b>${esc(c.order_no)}</b> · ${esc(c.party)}<small>${(c.lines||[]).length} line${(c.lines||[]).length===1?"":"s"}${c.reason?" · "+esc(c.reason):""}</small></td>
+          <td class="hide-ph">${esc(c.by||"")}<small>${dmy(String(c.requested_at).slice(0,10))}</small></td><td class="n hide-ph">${rs(c.old_value)} → ${rs(c.new_value)}</td>
+          <td class="n"><b class="${c.diff>=0?"adv":"due"}">${LWBBillChange.sg(Number(c.diff))}</b></td><td><span class="tag ${st[0]}">${st[1]}</span>${c.reply?`<small>${esc(c.reply)}</small>`:""}</td>
+          <td class="n"><button type="button" class="pb-btn sm${admin&&c.status==="WAITING"?" grn":""}" data-wv="${esc(c.id)}">${admin&&c.status==="WAITING"?"Check & approve":"View"}</button></td></tr>`}).join("")}</tbody></table></div>`;
+    }
+
     /* ---------- Party groups ---------- */
     function renderGroups(){
       const q=el("q").value.trim().toLowerCase();
@@ -324,7 +360,7 @@
     el("q").oninput=()=>{const k=el("q").value;render();el("q").value=k};
     el("reload").onclick=load;
     el("payBtn").onclick=()=>{if(info)payNow("")};
-    el("xl").onclick=()=>LWBExcel.write("billing-"+tab+"-"+info.today,[{name:{due:"To collect",pay:"Payments",grp:"Party groups"}[tab]||"Sheet",rows:sheet.length?sheet:[["Nothing"]]}]).catch(e=>say(e.message,true));
+    el("xl").onclick=()=>LWBExcel.write("billing-"+tab+"-"+info.today,[{name:{due:"To collect",pay:"Payments",grp:"Party groups",chg:"PO changes"}[tab]||"Sheet",rows:sheet.length?sheet:[["Nothing"]]}]).catch(e=>say(e.message,true));
 
     (async()=>{
       const {data:{session}}=await client.auth.getSession();
@@ -332,9 +368,10 @@
       const {data:p}=await client.from("user_profiles").select("full_name,role,active").eq("id",session.user.id).single();
       const realRole=String((p&&p.role)||"").toLowerCase().trim(),role=p?await ERPShell.pageRoleFresh(realRole):realRole;
       if(!p||p.active!==true||!["admin","accounts"].includes(role)){location.replace("dashboard.html");return}
+      admin=realRole==="admin";
       ERPShell.mount({role:realRole||role,name:p.full_name||session.user.email,onLogout:async()=>{await client.auth.signOut();location.replace("login.html")}});
       el("loading").hidden=true;el("page").hidden=false;
-      const t=new URLSearchParams(location.search).get("tab");if(["make","due","pay","grp"].includes(t))tab=t;
+      const t=new URLSearchParams(location.search).get("tab");if(["make","due","pay","grp","chg"].includes(t))tab=t;
       await load();
     })();
   </script>
