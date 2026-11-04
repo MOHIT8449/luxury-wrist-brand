@@ -10,6 +10,7 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script><script src="page-role.js"></script>
   <script src="party-list.js" defer></script>
   <script src="brand-filter.js"></script>
+  <script src="party-credit.js"></script>
   <script src="erp-operations-notifications.js"></script>
 
   <style>
@@ -3309,6 +3310,21 @@ async function deleteDraft(id) {
 ----------------------------- */
 
 // quiet: load the PO for printing without opening the popup (Print / Challan from the list).
+// Party balance / credit check under the PO details (lwb_party_credit_limit_setup.sql); open POs only.
+let creditSeqW = 0;
+async function showOrderCredit(order){
+  const grid = document.getElementById("dCustomer").closest(".detail-box").parentElement;
+  let box = document.getElementById("dCredit");
+  if(!box){ box = document.createElement("div"); box.id = "dCredit"; grid.after(box); }
+  box.replaceChildren();
+  const st = String(order?.status || "").toLowerCase();
+  if(!order?.id || !window.LWBCredit || ["delivered","cancelled","canceled","rejected"].includes(st)) return;
+  const seq = ++creditSeqW;
+  const rows = await LWBCredit.order(db, order.id).catch(() => null);
+  if(seq !== creditSeqW || !rows) return;
+  const el = LWBCredit.box(rows);
+  if(el) box.append(el);
+}
 async function reviewOrder(orderId, transportOnly=false, quiet=false) {
   document.getElementById("reviewModal").classList.toggle("transport-only",transportOnly);
 
@@ -3334,6 +3350,7 @@ async function reviewOrder(orderId, transportOnly=false, quiet=false) {
 
   document.getElementById("dCustomer").textContent =
     selectedOrder.customer_name || "-";
+  showOrderCredit(selectedOrder);
 
   document.getElementById("dSalesPerson").textContent =
     selectedOrder.sales_person || "-";

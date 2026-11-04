@@ -580,7 +580,7 @@ dialog.setup-dlg{position:fixed;inset:0;margin:auto;height:fit-content}
 </style>
 <link rel="stylesheet" href="erp-shell.css">
 <script src="erp-shell.js" data-auto defer></script>
-<script src="brand-filter.js"></script>
+<script src="brand-filter.js"></script><script src="party-credit.js"></script>
 </head>
 
 <body>
@@ -649,7 +649,7 @@ dialog.setup-dlg{position:fixed;inset:0;margin:auto;height:fit-content}
           <div id="partyOptions" class="party-options" role="listbox"
                aria-label="Saved parties" hidden></div>
         </div>
-        <div id="partyHint" class="party-hint"></div>
+        <div id="partyHint" class="party-hint"></div><div id="creditBox"></div>
         <div id="partyKyc" class="party-kyc" role="status" hidden></div>
         <a class="party-master-link" href="customer-master.html#new" target="_blank" rel="noopener">+ New Party</a>
         <button type="button" id="setupSum" class="setup-sum" onclick="openOrderSetup()" hidden></button>
@@ -1053,6 +1053,25 @@ function pickParty(party, quiet) {
   loadPartyRates(party.customer_name);
   loadPartyKyc(party);
   if (party.id) loadMinWeights(party);
+  refreshCredit();
+}
+
+/* PARTY CREDIT: brand-wise balance, oldest bill, credit days / limit (lwb_party_credit_limit_setup.sql). */
+let partyCredit = [], creditSeq = 0;
+function creditCompanies(){
+  if(typeof pickedBrand === "function" && pickedBrand()) return [pickedBrand()];
+  return (unitCompanies || []).filter(c => c && c.id && c.active !== false);
+}
+async function refreshCredit(){
+  const box = document.getElementById("creditBox"), seq = ++creditSeq;
+  if(!box) return;
+  const party = selectedParty && selectedParty.customer_name;
+  if(!party || !window.LWBCredit || editOrder){ partyCredit = []; box.replaceChildren(); return; }
+  const rows = await LWBCredit.load(db, party, creditCompanies()).catch(() => null);
+  if(seq !== creditSeq) return;
+  partyCredit = rows || [];
+  const el = LWBCredit.box(partyCredit);
+  box.replaceChildren(...(el ? [el] : []));
 }
 
 function renderPartyResults() {
@@ -2216,6 +2235,7 @@ function brandChanged(){
   const btn = document.getElementById("saveBtn");
   if(btn && !btn.disabled) btn.textContent = newOrderButtonLabel();
   updateUnitPick();
+  if(typeof refreshCredit === "function") refreshCredit();
   const off = [...document.querySelectorAll("#itemsBody .sku-name")].filter(i => i.value.trim() && !brandHasSku(i.value)).length;
   if(off) showMessage(off + " SKU line(s) are not " + (b ? b.name : "") + ". Remove them or pick All brands.", "error");
 }
@@ -2378,8 +2398,14 @@ async function saveOrder(){
     "This order has " + slipName + " and other brand SKUs. 2 POs will be saved:\n\n" +
     "1. " + slipName + " (" + split.slip.length + " SKU): slip prints, goes straight to Accounts.\n" +
     "2. Other brands (" + split.other.length + " SKU): normal PO.\n\nContinue?")) return;
+  // Party over its credit limit / past credit days: ask once. A salesman's Rajnigandha slip
+  // then waits for Sales Head approval instead of printing at once.
+  const creditBad = editOrder || !window.LWBCredit ? [] : LWBCredit.bad(partyCredit);
+  if(creditBad.length && !await confirm("⚠ इस party का पैसा बाकी है:\n\n" + LWBCredit.text(creditBad) +
+    (headCreatesApprovedPo() ? "\n\nफिर भी PO बनाना है?" : "\n\nPO Sales Head / Admin के approval के लिए जाएगा। भेजें?"))) return;
+  const slipHeld = creditBad.length > 0 && split.slip.length > 0 && !headCreatesApprovedPo();
   let slipDetails = null;
-  if(split.slip.length){
+  if(split.slip.length && !slipHeld){
     slipDetails = await askSlipDetails();
     if(!slipDetails) return;
   }
@@ -2443,7 +2469,9 @@ async function saveOrder(){
           {...base, transportation:""});
         slipOrder = r.order; made.push({...r, slip:true});
         let slipError = null;
-        if(belowMinLines(split.slip).length){
+        if(slipHeld){
+          slipNote = "\n\nParty का पैसा बाकी है, इसलिए ये " + slipName + " PO Sales Head के approval के लिए गया। Approve होने के बाद Driver & slip बनेगी।";
+        }else if(belowMinLines(split.slip).length){
           const {error} = await db.rpc("lwb_rate_request",{p_order_id:slipOrder.id,p:slipDetails,p_note:null});
           if(error) slipNote = "\n\nNot sent to Admin: " + (/lwb_rate_request/.test(error.message || "") ? "ask Admin to run lwb_rajni_rate_limit_setup.sql." : (error.message || "database error"));
           else { rateWaiting = true; slipNote = "\n\nRate is below the allowed min, so this PO is sent to Admin for rate OK. The slip is made and goes to Accounts when Admin approves."; }
@@ -2496,8 +2524,8 @@ async function saveOrder(){
       document.getElementById("savedPoEdit").href = url;
     }
     const slipLink = document.getElementById("savedSlipPrint");
-    slipLink.hidden = !slipOrder;
-    if(slipOrder){
+    slipLink.hidden = !slipOrder || slipHeld;
+    if(slipOrder && !slipHeld){
       // Rajnigandha: the slip is the print; the slip PO goes to Accounts.
       slipLink.href = slipDone ? "quick-slip.html?order=" + encodeURIComponent(slipOrder.id) + "&print=1" : "quick-slip.html";
       slipLink.onclick = slipDone ? event => printSavedPoInFrame(event, slipLink.href) : null;

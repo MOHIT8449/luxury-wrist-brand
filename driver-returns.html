@@ -47,6 +47,19 @@ button:disabled{opacity:.5;cursor:not-allowed}
 .viewer[hidden]{display:none}
 .viewer img{max-width:100%;max-height:100%;border-radius:8px}
 .viewer button{position:fixed;top:12px;right:12px}
+.rcv-bg{position:fixed;inset:0;z-index:4000;background:#0b142299;display:flex;align-items:center;justify-content:center;padding:12px}.rcv-bg[hidden]{display:none}
+.rcv-box{background:#fff;border-radius:12px;width:min(520px,100%);max-height:92vh;overflow:auto;padding:14px}
+.rcv-head{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:6px}.rcv-head button{padding:6px 10px}
+.rcv-line{border:1px solid var(--line);border-radius:8px;padding:8px;margin-bottom:8px}
+.rcv-top{display:flex;justify-content:space-between;gap:8px;margin-bottom:6px;flex-wrap:wrap}
+.rcv-chips{display:grid;grid-template-columns:repeat(3,1fr);gap:5px}
+.rcv-chip{background:#fff;color:#142841;border:1px solid #c9d3df;padding:7px 4px;font-size:12.5px;font-weight:600}
+.rcv-chip.on{background:#e6f0f0;border-color:#00434d;color:#00434d}
+.rcv-warn{color:#a05a00;font-size:12px}
+.rcv-sum{background:#f6f8fb;border-radius:8px;padding:8px;font-size:13px;line-height:1.6}.rcv-sum .g{color:#13824a;font-weight:700}.rcv-sum .a{color:#b26b00;font-weight:700}
+.rcv-note{width:100%;margin:8px 0;padding:9px;border:1px solid #bbcbdd;border-radius:8px;font:14px Arial}
+.rcv-btns{display:flex;gap:8px}.rcv-btns button{flex:1;padding:10px 8px}
+@media(min-width:600px){.rcv-chips{grid-template-columns:repeat(6,1fr)}}
 @media(min-width:900px){
  .tabs{grid-template-columns:repeat(3,200px)}.tab strong{font-size:20px}
  .card{grid-template-columns:270px 1fr 150px;grid-template-areas:"info lines amt" "info lines act";column-gap:20px;padding:14px 18px}
@@ -72,8 +85,15 @@ button:disabled{opacity:.5;cursor:not-allowed}
 <div class="only" id="only" hidden><span id="onlyText"></span><button id="onlyAll" class="secondary" type="button">Show all</button></div>
 <div class="tools"><input id="search" data-party-list placeholder="Party, PO No, Driver or Vehicle"><button id="refresh" class="secondary" type="button">Refresh</button></div>
 <div id="list"></div>
+<div class="rcv-bg" id="rcvDlg" hidden role="dialog" aria-modal="true" aria-labelledby="rcvTitle"><div class="rcv-box">
+<div class="rcv-head"><b id="rcvTitle">Receive goods</b><button type="button" class="secondary" id="rcvX" aria-label="Close">✕</button></div>
+<div class="muted" style="margin:0 0 8px">Where does each SKU go in the godown?</div>
+<div id="rcvBody"></div>
+<input id="rcvNote" maxlength="300" placeholder="Note (optional)" class="rcv-note">
+<div class="rcv-btns"><button type="button" class="secondary" id="rcvCancel">Cancel</button><button type="button" class="approve" id="rcvOk">📦 Receive &amp; update stock</button></div>
+</div></div>
 <div class="viewer" id="viewer" hidden><img id="viewerImg" alt="Return photo"><button type="button" class="secondary" id="viewerClose">✕ Close</button></div>
-<button type="button" class="erp-i" aria-label="Info" title="Info" data-tip="Approve only after checking the damaged goods. Approved amount reduces the party&#x27;s ERP outstanding. Rejected return frees the quantity so the driver can record it again. Stock, GST and Tally are not changed here.">i</button>
+<button type="button" class="erp-i" aria-label="Info" title="Info" data-tip="Approve only after checking the damaged goods. Approved amount reduces the party&#x27;s ERP outstanding. Rejected return frees the quantity so the driver can record it again. When the godown receives the goods, each SKU goes into Saleable or Damage / Leakage / Breakage / Gasless / Expiry stock. GST and Tally are not changed here.">i</button>
 </main>
 <script>
 const SUPABASE_URL="https://txkbhadzdbxpieunfvox.supabase.co";
@@ -133,15 +153,52 @@ async function loadReceipts(){
  if(error){receipts=null;return}
  for(const x of data||[])receipts.set(x.return_id,x);
 }
+// Receive the goods and put each SKU line into stock (lwb_return_stock_setup.sql):
+// Saleable / Damage / Leakage / Breakage / Gasless / Expiry, default = the driver's reason.
+const PLACES=[["SALEABLE","Saleable"],["DAMAGE","Damage"],["LEAKAGE","Leakage"],["BREAKAGE","Breakage"],["GASLESS","Gasless"],["EXPIRY","Expiry"]];
+const csTxt=(pcs,ppc)=>{ppc=Math.max(1,ppc||1);const c=Math.floor(pcs/ppc),p=pcs%ppc;return (c?c+" CS":"")+(c&&p?" ":"")+(p?p+" PCS":"")||"0"};
 async function receive(r){
  if(busy||!canReceive())return;
- const note=await prompt("Goods of "+r.order_no+" received at the godown. Note (optional):","");
- if(note===null)return;
+ let lines=null;
+ const {data,error}=await db.rpc("lwb_return_receive_lines",{p_return_id:r.id});
+ if(!error)lines=data||[];
+ if(!lines){ // stock SQL not run yet: old receive (time only)
+  const note=await prompt("Goods of "+r.order_no+" received at the godown. Note (optional):","");
+  if(note===null)return;
+  return doReceive(r,null,note,"lwb_receive_return_goods");
+ }
+ const pick=new Map(lines.map(l=>[l.item_id,l.default_bucket]));
+ const dlg=el("rcvDlg"),body=el("rcvBody");
+ el("rcvTitle").textContent="Receive goods · "+(r.order_no||"")+" · "+(r.party_name||"");
+ const draw=()=>{
+  body.replaceChildren();
+  for(const l of lines){
+   const box=node("div",null,"rcv-line");
+   const top=node("div",null,"rcv-top");top.append(node("b",l.sku_name),node("span",csTxt(l.qty_pcs,l.pcs_per_case)+" · "+(REASON[l.reason]||l.reason),"muted"));
+   box.append(top);
+   if(!l.sku_id){box.append(node("div","Not in SKU Master: stock will not change for this line.","rcv-warn"));body.append(box);continue}
+   const ch=node("div",null,"rcv-chips");
+   for(const [k,t] of PLACES){const b=node("button",(pick.get(l.item_id)===k?"✓ ":"")+t,"rcv-chip"+(pick.get(l.item_id)===k?" on":""));b.type="button";b.onclick=()=>{pick.set(l.item_id,k);draw()};ch.append(b)}
+   box.append(ch);body.append(box);
+  }
+  const sale=lines.filter(l=>l.sku_id&&pick.get(l.item_id)==="SALEABLE"),held=lines.filter(l=>l.sku_id&&pick.get(l.item_id)!=="SALEABLE");
+  const sum=node("div",null,"rcv-sum");
+  sum.append(node("div","Saleable stock: "+(sale.length?sale.map(l=>"+"+csTxt(l.qty_pcs,l.pcs_per_case)).join(", "):"—"),"g"),
+   node("div","Damage / leakage etc.: "+(held.length?held.map(l=>csTxt(l.qty_pcs,l.pcs_per_case)).join(", "):"—"),"a"));
+  body.append(sum);
+ };
+ draw();el("rcvNote").value="";dlg.hidden=false;setTimeout(()=>{const f=body.querySelector(".rcv-chip.on");if(f)f.focus()},30);
+ el("rcvOk").onclick=()=>{dlg.hidden=true;doReceive(r,[...pick].map(([item_id,bucket])=>({item_id,bucket})),el("rcvNote").value,"lwb_receive_return_goods2")};
+}
+async function doReceive(r,lines,note,fn){
  busy=true;document.querySelectorAll(".actions button").forEach(b=>b.disabled=true);
  try{
-  const {error}=await db.rpc("lwb_receive_return_goods",{p_return_id:r.id,p_note:note.trim()||null});
+  const args=fn==="lwb_receive_return_goods2"?{p_return_id:r.id,p_lines:lines,p_note:String(note||"").trim()||null}:{p_return_id:r.id,p_note:String(note||"").trim()||null};
+  const {data,error}=await db.rpc(fn,args);
   if(error)throw error;
-  await load();message("Goods received for "+r.order_no+".","success");
+  await load();
+  const sk=data&&data.skipped&&data.skipped.length?" Not in SKU Master (stock not changed): "+data.skipped.join(", ")+".":"";
+  message("Goods received for "+r.order_no+(data&&data.lines?". Stock updated ("+data.lines+" line"+(data.lines>1?"s":"")+").":".")+sk,sk?"error":"success");
  }catch(e){message("Failed: "+e.message,"error");render()}
  finally{busy=false}
 }
@@ -170,6 +227,8 @@ function photoStrip(r){
  });
  return box;
 }
+el("rcvX").onclick=el("rcvCancel").onclick=()=>{el("rcvDlg").hidden=true};
+el("rcvDlg").onclick=e=>{if(e.target===el("rcvDlg"))el("rcvDlg").hidden=true};
 el("viewer").onclick=e=>{if(e.target!==el("viewerImg"))el("viewer").hidden=true};
 function render(){
  document.querySelectorAll(".tab").forEach(t=>t.classList.toggle("active",t.dataset.status===status));
@@ -205,7 +264,7 @@ function render(){
   if(status==="APPROVED"&&receipts){
    const got=receipts.get(r.id);
    if(got)info.append(node("div","📦 Goods received by "+(got.received_by_name||"—")+" · "+when(got.received_at)+(got.received_note?" · "+got.received_note:""),"meta"));
-   else if(canReceive()){const act=node("div",null,"actions"),b=node("button","📦 Goods received","approve");b.type="button";b.onclick=()=>receive(r);act.append(b);card.append(act)}
+   else if(canReceive()){const act=node("div",null,"actions"),b=node("button","📦 Receive goods → stock","approve");b.type="button";b.onclick=()=>receive(r);act.append(b);card.append(act)}
    else info.append(node("div","📦 Godown has not received the goods yet","meta"));
   }
   if(status==="PENDING_OFFICE"&&canReview()){
