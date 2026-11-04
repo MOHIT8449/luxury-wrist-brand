@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Sales Team Setup | Luxury Wrist Brand ERP</title>
+  <title>Salesman Master | Luxury Wrist Brand ERP</title>
   <script src="erp-date.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <link rel="stylesheet" href="erp-shell.css">
@@ -11,14 +11,49 @@
   <script src="erp-shell.js"></script>
   <script src="sales-common.js"></script>
   <script src="excel-io.js"></script>
+  <script src="master-popup.js"></script>
+  <style>
+.sm-bar{display:flex;gap:8px;align-items:center;padding:10px 12px;border-bottom:1px solid var(--erp-line);flex-wrap:nowrap}
+.sm-bar h2{margin:0;font-size:16px;white-space:nowrap}.sm-bar input,.sm-bar select{min-width:0;padding:7px 9px;border:1px solid var(--erp-line);border-radius:8px;font:inherit}
+.sm-bar input{flex:1;max-width:260px}.sm-bar .grow{flex:1}
+.sm-tag{display:inline-block;border-radius:10px;padding:1px 8px;font-size:11.5px;font-weight:700;margin:1px 3px 1px 0;white-space:nowrap}
+.sm-tag.cc{background:#fde8e8;color:#b3121b}.sm-tag.rj{background:#fff4dc;color:#8a5a00}.sm-tag.all{background:#e6f4ea;color:#17663a}.sm-tag.off{background:#eef1f5;color:#5b6876}.sm-tag.warn{background:#fff1e0;color:#a14d00}
+#smPanel{padding:14px 16px;max-width:620px}#smPanel h2{margin:0 0 10px;font-size:17px}
+.sm-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px 12px}.sm-grid label{display:block;font-size:12px;font-weight:600;color:var(--erp-muted);margin-bottom:3px}
+.sm-grid input,.sm-grid select{width:100%;box-sizing:border-box;padding:8px 9px;border:1px solid var(--erp-line);border-radius:8px;font:inherit}.sm-full{grid-column:span 2}
+.sm-seg{display:flex;gap:6px}.sm-seg label{flex:1;min-width:0;margin:0;display:flex;align-items:center;justify-content:center;gap:6px;border:1px solid var(--erp-line);border-radius:8px;padding:8px 6px;font-size:13.5px;color:inherit;font-weight:600;cursor:pointer;background:#fff}
+.sm-seg input{width:auto;margin:0;flex:none}.sm-seg label:has(input:checked){border-color:#193d65;background:#eaf0f8;color:#193d65}
+.sm-hint{font-size:11.5px;color:var(--erp-muted);margin-top:3px}
+#card .sm-cards{display:none}
+.sm-c{padding:9px 12px;border-bottom:1px solid var(--erp-line);display:grid;grid-template-columns:1fr auto;gap:3px 8px;align-items:center}
+.sm-c.off{opacity:.6}.sm-c b{font-size:14.5px}.sm-c small{color:var(--erp-muted);font-size:12.5px;grid-column:1}.sm-c .sm-tags{grid-column:1}.sm-c button{grid-row:1/4;grid-column:2}
+.sm-act{display:flex;gap:8px;justify-content:flex-end;margin-top:12px;flex-wrap:nowrap}.sm-act button{white-space:nowrap}
+@media(max-width:700px){.sm-bar{flex-wrap:wrap}.sm-bar h2{flex-basis:100%}.sm-bar input{max-width:none;flex:1 1 100%}.sm-bar .grow{display:none}.sm-bar select,.sm-bar .mp-new{flex:1}#card .sm-cards{display:block}#card .sm-tablebox{display:none}.sm-seg label{font-size:12.5px;padding:8px 3px;gap:4px;white-space:nowrap}#smPanel{max-width:none}.sm-act{position:sticky;bottom:0;background:#fff;padding:8px 0}.sm-act button{flex:1}}
+  </style>
 </head>
 <body>
   <div id="loading" class="status">Checking account access...</div>
   <main id="page" class="erp-main" hidden>
-    <div class="erp-pagehead"><h1>Sales Team Setup</h1><span class="grow"></span><a class="sl-btn ghost" href="sales-tracking.html" style="display:inline-flex;align-items:center;text-decoration:none">Sales Tracking →</a></div>
+    <div class="erp-pagehead"><h1>Salesman Master</h1><span class="grow"></span><a class="sl-btn ghost" href="sales-tracking.html" style="display:inline-flex;align-items:center;text-decoration:none">Sales Tracking →</a></div>
     <div class="erp-pills" id="tabs"></div>
     <section class="erp-card" id="card"></section>
     <p class="sl-note" id="note"></p>
+    <section class="erp-card" id="smPanel">
+      <h2 id="smTitle">New Salesman</h2>
+      <div class="sm-grid">
+        <div><label for="smName">Name *</label><input id="smName" maxlength="80" autocomplete="off"></div>
+        <div><label for="smMob">Mobile * <small>(login ID)</small></label><input id="smMob" inputmode="numeric" maxlength="10" autocomplete="off"></div>
+        <div class="sm-full"><label>Brands he can sell *</label><div class="sm-seg" id="smBrands"></div><div class="sm-hint">Tick one brand, or both. He sees only the SKUs, rates and orders of the ticked brands.</div></div>
+        <div><label>Post</label><div class="sm-seg"><label><input type="radio" name="smPost" value="sales" checked>Salesman</label><label><input type="radio" name="smPost" value="manager">Sales Head</label></div></div>
+        <div><label>Type</label><div class="sm-seg"><label><input type="radio" name="smKind" value="FIELD" checked>Field</label><label><input type="radio" name="smKind" value="OFFICE">Office</label></div></div>
+        <div><label for="smArea">Area / Route</label><input id="smArea" maxlength="120" placeholder="e.g. Surat city, Bardoli"></div>
+        <div id="smPassBox"><label for="smPass">Login password</label><input id="smPass" maxlength="40" autocomplete="off"></div>
+        <div><label for="smJoin">Joining date</label><input id="smJoin" type="date"></div>
+        <div><label for="smSal">Monthly salary ₹</label><input id="smSal" inputmode="numeric" maxlength="8" placeholder="0"></div>
+        <div id="smActBox" hidden><label>Status</label><div class="sm-seg"><label><input type="radio" name="smAct" value="1" checked>Active</label><label><input type="radio" name="smAct" value="0">Inactive</label></div></div>
+      </div>
+      <div class="sm-act"><button type="button" class="sl-btn ghost" id="smCancel">Cancel</button><button type="button" class="sl-btn" id="smSave">Save Salesman</button></div>
+    </section>
   </main>
   <script>
     const S=LWBSales,{client,el,esc,fmt,short,num,key}=S;
@@ -29,7 +64,7 @@
     const isSales=t=>["sales","salesman","manager"].includes(t.role)&&t.active!==false;
     const salesmen=()=>team.filter(isSales);
     const assignable=salesmen;
-    let empNoLogin=[];
+    let empNoLogin=[],empAll=[],empInfo=new Map();
     // Brand per salesman (Mohit, 2 Nov 2026): Coca-Cola salesman sells only Coca-Cola, Rajnigandha only Rajnigandha;
     // "All brands" (e.g. the godown Sales Head) gets both. Same data as Companies > Team brands (lwb_user_companies).
     let brands=[],brandOf=new Map();
@@ -46,10 +81,11 @@
       brandOf=new Map(bt.error?[]:(bt.data||[]).map(u=>[u.user_id,u.company_ids||[]]));
       // Employee Master "Salesman" posts that have no ERP login yet (best effort; needs Employee Master access).
       client.rpc("lwb_emp_logins").then(x=>{
-        const list=Array.isArray(x.data)?x.data:[];
+        const list=Array.isArray(x.data)?x.data:[];empAll=list;
         empNoLogin=list.filter(e=>e.is_active!==false&&!e.user_id&&/sales|manager|head/i.test(e.designation||""));
-        if(tab==="team"&&empNoLogin.length)render();
-      },()=>{});
+        if(tab==="team")render();smHash();
+      },()=>{smHash()});
+      client.rpc("lwb_emp_list2").then(x=>{const rows=x.data&&Array.isArray(x.data.rows)?x.data.rows:[];empInfo=new Map(rows.map(r=>[String(r.id),r]))},()=>{});
       const [pa,sk,ru,ta,no,st]=await Promise.all([
         client.rpc("lwb_party_activity"),
         client.from("sku_master").select("sku_name,category,is_active").order("sku_name"),
@@ -86,42 +122,98 @@
       });
     }
 
-    // ---- Salesmen
-    function renderTeam(card){
-      const rows=team.map(t=>({attr:' data-id="'+t.user_id+'"'+(t.active?"":' class="off"'),cells:[
-        esc(t.full_name||"—")+(isHead(t)?' <span class="erp-badge">Sales Head</span>':"")+(t.active?"":' <span class="erp-badge">Inactive</span>'),esc(t.mobile||"—"),
-        isHead(t)?'<select class="sl-in" data-f="kind" disabled><option value="OFFICE">Sales Head (all parties)</option></select>':'<select class="sl-in" data-f="kind"><option value=""'+(t.kind?"":" selected")+'>Field · not saved</option><option value="FIELD"'+(t.kind==="FIELD"?" selected":"")+'>Field (own parties)</option><option value="OFFICE"'+(t.kind==="OFFICE"?" selected":"")+'>Office (all parties)</option></select>',
-        '<input class="sl-in" data-f="area" maxlength="120" placeholder="e.g. Surat city, Bardoli" value="'+esc(t.area||"")+'">',
-        brandSelect(t),
-        fmt(t.parties),'<button type="button" class="sl-btn small" data-save-sm>Save</button>']}));
-      card.innerHTML='<div class="erp-card-head"><h2>Salesmen</h2><small style="color:var(--erp-muted)">'+team.filter(isHead).length+' Sales Heads · '+team.filter(t=>!isHead(t)).length+' salesmen</small></div>'+
-        (rows.length?'<div class="sl-scroll">'+S.table(["Salesman","Mobile","Type","Area / Route","Brand","Parties",""],rows,[5])+"</div>":'<div class="erp-empty">No SALES logins yet. Give the SALES role in Manage Users first.</div>')+
-        (empNoLogin.length?'<div class="sl-msg" style="margin:12px">'+empNoLogin.length+' Sales Head / Salesman in Employee Master without an ERP login: <b>'+empNoLogin.map(e=>esc(e.name)).join(", ")+'</b>. Create the login in <a href="fleet-master.html#employees">Employee Master</a> (ERP Login column); he then shows here and in Party Assignment, SKU Visibility, Targets and Morning Plan.</div>':"");
-      el("note").textContent="Every SALES login is a Field salesman unless set to Office. Field salesman: sees only his own parties everywhere (PO Entry, PO list, Party Call List, Complaint Box, returns, reports), no outstanding or ledger. Office salesman: takes orders for every party. Sales Head = MANAGER role in Manage Users; Admin and Sales Head see everything. Brand: a salesman set to one brand sees and sells only that brand's SKUs (New Sales Order shows only that brand); All brands = both.";
-    }
-    function brandSelect(t){
+    // ---- Salesman Master (Mohit, 4 Nov 2026): one place to make a salesman. The popup saves the employee
+    // (Employee Master), makes his ERP login (Admin), his Field / Office type + area, and the brands he may sell.
+    let smF={q:"",brand:""},smEdit=null,smPop=null,smDirty=new Set();
+    const brandCls=n=>/coca/i.test(n)?"cc":/rajni/i.test(n)?"rj":"off";
+    const brandName=id=>(brands.find(c=>c.id===id)||{}).name||"?";
+    function brandTags(ids){
       if(!brands.length)return "—";
-      const ids=brandOf.get(t.user_id)||[],cur=ids.length===1?ids[0]:ids.length?"multi":"";
-      const lock=isHead(t)&&me&&me.role!=="admin";
-      return '<select class="sl-in" data-f="brand"'+(lock?' disabled title="Only Admin can set a Sales Head\'s brand"':"")+'><option value="">All brands</option>'+
-        brands.map(c=>'<option value="'+c.id+'"'+(c.id===cur?" selected":"")+">Only "+esc(c.name)+"</option>").join("")+
-        (cur==="multi"?'<option value="multi" selected>'+esc(ids.map(i=>(brands.find(c=>c.id===i)||{}).name||"?").join(" + "))+"</option>":"")+"</select>";
+      if(!ids||!ids.length||brands.every(c=>ids.includes(c.id)))return '<span class="sm-tag all">All brands</span>';
+      return ids.map(i=>'<span class="sm-tag '+brandCls(brandName(i))+'">'+esc(brandName(i))+"</span>").join("");
     }
-    async function saveBrand(tr){
-      const sel=tr.querySelector('[data-f="brand"]');if(!sel||sel.disabled||sel.value==="multi")return true;
-      const now=brandOf.get(tr.dataset.id)||[],want=sel.value?[sel.value]:[];
-      if(now.length===want.length&&now.every(x=>want.includes(x)))return true;
-      const {error}=await client.rpc("lwb_set_user_companies",{p_user_id:tr.dataset.id,p_company_ids:want});
-      if(error){await alert("Brand not saved: "+error.message);return false}
-      brandOf.set(tr.dataset.id,want);return true;
+    function smRows(){
+      const staffOf=new Map(empAll.filter(e=>e.user_id).map(e=>[e.user_id,e]));
+      const a=team.map(t=>({id:t.user_id,user_id:t.user_id,staff:staffOf.get(t.user_id)||null,name:t.full_name,mobile:t.mobile,role:t.role,active:t.active!==false,kind:t.kind,area:t.area,parties:t.parties,brandIds:brandOf.get(t.user_id)||[],login:true}));
+      const b=empNoLogin.map(e=>({id:"e"+e.id,user_id:null,staff:e,name:e.name,mobile:e.mobile,role:/manager|head/i.test(e.designation||"")?"manager":"sales",active:e.is_active!==false,kind:"",area:"",parties:0,brandIds:[],login:false}));
+      const q=key(smF.q);
+      return a.concat(b).filter(r=>(!q||key(r.name+" "+(r.mobile||"")+" "+(r.area||"")).includes(q))&&
+        (!smF.brand||!r.brandIds.length||r.brandIds.includes(smF.brand)));
     }
-    async function saveSalesman(tr){
-      if(!await saveBrand(tr))return;
-      const kind=tr.querySelector('[data-f="kind"]').value,area=tr.querySelector('[data-f="area"]').value;
-      if(!kind){await alert("Select Field or Office.");return}
-      const {error}=await client.rpc("lwb_save_salesman",{p_user_id:tr.dataset.id,p_kind:kind,p_area:area});
-      if(error){await alert("Could not save: "+error.message);return}
-      ERPShell.toast("Salesman saved.");await loadAll();
+    function renderTeam(card){
+      const list=smRows();
+      const rows=list.map(r=>({attr:' data-sm="'+r.id+'"'+(r.active?"":' class="off"'),cells:[
+        "<b>"+esc(r.name||"—")+"</b>"+(r.role==="manager"?' <span class="erp-badge">Sales Head</span>':"")+(r.active?"":' <span class="erp-badge">Inactive</span>'),
+        esc(r.mobile||"—"),brandTags(r.brandIds),
+        r.role==="manager"?"Sales Head":r.kind==="OFFICE"?"Office":r.kind==="FIELD"?"Field":'<span class="sm-tag warn">Not set</span>',
+        esc(r.area||"—"),fmt(r.parties||0),
+        r.login?'<span class="sm-tag all">✓ Login</span>':'<span class="sm-tag warn">No login</span>',
+        '<button type="button" class="sl-btn small" data-sm-edit="'+r.id+'">Edit</button>']}));
+      card.innerHTML='<div class="sm-bar"><h2>Salesmen <small style="color:var(--erp-muted);font-weight:400">'+team.filter(isHead).length+" Sales Heads · "+team.filter(t=>!isHead(t)).length+" salesmen</small></h2>"+
+        '<input id="sq" type="search" placeholder="Search name / mobile / area" value="'+esc(smF.q)+'" autocomplete="off">'+
+        '<select id="sbr" aria-label="Brand"><option value="">All brands</option>'+brands.map(c=>'<option value="'+c.id+'"'+(smF.brand===c.id?" selected":"")+">"+esc(c.name)+"</option>").join("")+"</select>"+
+        '<span class="grow"></span>'+(isAdminMe()?'<button type="button" class="mp-new" data-sm-new>+ New Salesman</button>':"")+"</div>"+
+        (rows.length?'<div class="sl-scroll sm-tablebox">'+S.table(["Salesman","Mobile","Brands","Type","Area / Route","Parties","Login",""],rows,[5])+"</div>"+
+        '<div class="sm-cards">'+list.map(r=>'<div class="sm-c'+(r.active?"":" off")+'"><b>'+esc(r.name||"—")+(r.role==="manager"?' <span class="erp-badge">Sales Head</span>':"")+(r.active?"":' <span class="erp-badge">Inactive</span>')+"</b>"+
+          '<button type="button" class="sl-btn small" data-sm-edit="'+r.id+'">Edit</button>'+
+          "<small>"+esc(r.mobile||"—")+" · "+(r.role==="manager"?"Sales Head":r.kind==="OFFICE"?"Office":r.kind==="FIELD"?"Field":"Type not set")+" · "+esc(r.area||"no area")+" · "+fmt(r.parties||0)+" parties</small>"+
+          '<div class="sm-tags">'+brandTags(r.brandIds)+(r.login?"":'<span class="sm-tag warn">No login</span>')+"</div></div>").join("")+"</div>":'<div class="erp-empty">No salesman yet. Press + New Salesman.</div>');
+      el("note").textContent="Salesman Master is the one place to add a salesman: name, mobile (login), brands he can sell, Field / Office and area. Employee Master, Manage Users and Company / Brand show the same people. Field salesman sees only his own parties; Office salesman takes orders for every party. A salesman with one brand sees only that brand's SKUs, rates and orders.";
+    }
+    const isAdminMe=()=>!!me&&me.realRole==="admin";
+    // Links from Employee Master / Manage Users / Company-Brand: #new, #user=<login id>, #emp=<employee id>.
+    let smHashDone=false;
+    function smHash(){
+      if(smHashDone||!smPop)return;const h=location.hash;if(!/^#(new|user=|emp=)/.test(h))return;
+      if(h.startsWith("#user=")&&!team.length)return;
+      smHashDone=true;tab="team";render();
+      if(h==="#new"){if(isAdminMe())smOpen(null);return}
+      const v=decodeURIComponent(h.split("=")[1]||""),r=smRows().find(x=>h.startsWith("#user=")?x.user_id===v:x.staff&&String(x.staff.id)===v);
+      if(r)smOpen(r);
+    }
+    function smOpen(r){
+      smEdit=r||null;const isNew=!r;
+      el("smTitle").textContent=isNew?"New Salesman":"Edit · "+(r.name||"");
+      el("smName").value=r?r.name||"":"";el("smMob").value=r?r.mobile||"":"";el("smArea").value=r?r.area||"":"";
+      const info=r&&r.staff?empInfo.get(String(r.staff.id))||r.staff:{};
+      el("smJoin").value=info.joining_date||"";el("smSal").value=info.monthly_salary?Number(info.monthly_salary):"";smDirty=new Set();
+      // Sales Head: brands, type and area only (name, mobile, post, active, login are Admin's).
+      const lock=!isAdminMe();["smName","smMob"].forEach(i=>el(i).disabled=lock);
+      document.querySelectorAll('input[name="smPost"],input[name="smAct"]').forEach(x=>x.disabled=lock);
+      const ids=r?r.brandIds:[];
+      el("smBrands").innerHTML=brands.map(c=>'<label><input type="checkbox" value="'+c.id+'"'+(r&&r.login&&(!ids.length||ids.includes(c.id))?" checked":"")+">"+esc(c.name)+"</label>").join("")||'<span class="sm-hint">No brand in Company / Brand yet.</span>';
+      document.querySelector('input[name="smPost"][value="'+(r&&r.role==="manager"?"manager":"sales")+'"]').checked=true;
+      document.querySelector('input[name="smKind"][value="'+(r&&r.kind==="OFFICE"?"OFFICE":"FIELD")+'"]').checked=true;
+      document.querySelector('input[name="smAct"][value="'+(r&&!r.active?"0":"1")+'"]').checked=true;
+      el("smActBox").hidden=isNew;
+      const needLogin=!r||!r.login;el("smPassBox").hidden=!needLogin||me.realRole!=="admin";el("smPass").value=needLogin?makePass():"";
+      el("smSave").textContent=isNew?"Save Salesman":"Save changes";
+      smPop.open();
+    }
+    function makePass(){const a="abcdefghjkmnpqrstuvwxyz",d="23456789",pick=x=>x[crypto.getRandomValues(new Uint32Array(1))[0]%x.length];
+      let p="";for(let i=0;i<4;i++)p+=pick(a);for(let i=0;i<4;i++)p+=pick(d);return p.charAt(0).toUpperCase()+p.slice(1)}
+    async function smSave(){
+      const r=smEdit,name=el("smName").value.trim().replace(/\s+/g," "),mob=el("smMob").value.replace(/\D/g,"").slice(-10);
+      const post=document.querySelector('input[name="smPost"]:checked').value,kind=post==="manager"?"OFFICE":document.querySelector('input[name="smKind"]:checked').value;
+      const active=document.querySelector('input[name="smAct"]:checked').value==="1",area=el("smArea").value.trim();
+      let ids=[...el("smBrands").querySelectorAll("input:checked")].map(x=>x.value);
+      if(name.length<2){await alert("Write the salesman name.");return}
+      if(!/^[6-9]\d{9}$/.test(mob)){await alert("Mobile should be 10 digits. It is his login ID.");return}
+      if(brands.length&&!ids.length){await alert("Tick at least one brand he can sell.");return}
+      if(brands.length&&brands.every(c=>ids.includes(c.id)))ids=[];// every brand = All brands
+      const pass=el("smPassBox").hidden?"":el("smPass").value.trim();
+      if(!el("smPassBox").hidden&&pass.length<6){await alert("Password must be at least 6 characters.");return}
+      const b=el("smSave");b.disabled=true;
+      try{
+        const {data,error}=await client.rpc("lwb_salesman_save",{p:{user_id:r&&r.user_id||null,staff_id:r&&r.staff?r.staff.id:null,name,mobile:mob,role:post,kind,area,active,
+          company_ids:ids,password:pass||null,...(!r||smDirty.has("smJoin")?{joining_date:el("smJoin").value||null}:{}),...(!r||smDirty.has("smSal")?{monthly_salary:Number(el("smSal").value)||0}:{})}});
+        if(error)throw error;
+        smPop.close();
+        if(pass&&data&&data.login_made)await alert("Salesman saved: "+name+"\nWebsite: "+location.origin+"/login.html\nLogin: "+mob+"\nPassword: "+pass+"\n\nShare this with "+name+".");
+        else ERPShell.toast("Salesman saved.");
+        await loadAll();
+      }catch(e){const m=String(e.message||e);await alert(/lwb_salesman_save/.test(m)?"Run lwb_salesman_master_setup.sql in Supabase first.":"Could not save: "+m)}
+      b.disabled=false;
     }
 
     // ---- Parties
@@ -152,7 +244,7 @@
         '<div class="sl-bulk"><b id="pickN">'+picked.size+' selected</b><button type="button" class="sl-btn ghost small" data-pick-all>Select all shown</button><button type="button" class="sl-btn ghost small" data-pick-none>Clear</button>'+
         '<span>Assign to</span><select class="sl-in" id="bulkSm" style="width:auto">'+smOptions("",true)+'</select><button type="button" class="sl-btn small" data-bulk>Assign selected</button>'+
         '<span style="flex:1"></span><button type="button" class="sl-btn ghost small" data-xl-exp>⬇ Export Excel</button><label class="sl-btn ghost small" style="display:inline-flex;align-items:center">⬆ Import Excel<input type="file" accept=".xlsx,.xls,.csv" data-xl-imp hidden></label></div>'+
-        (assignable().length?"":'<div class="erp-empty">No SALES login yet. Create salesmen in Manage Users with the SALES role.</div>')+
+        (assignable().length?"":'<div class="erp-empty">No salesman yet. Add one in the Salesmen tab (+ New Salesman).</div>')+
         (rows.length?'<div class="sl-scroll">'+S.table(["","Party","City","Salesman","Last Order","Orders (30 days)"],rows,[5])+"</div>":'<div class="erp-empty">No party matches.</div>');
       el("note").textContent=(list.length>500?"Showing first 500 of "+fmt(list.length)+". Use the filters. ":"")+"Changing the Salesman dropdown saves at once. For many parties: Export Excel, fill the Salesman column, then Import Excel. A party with Office (no salesman) is visible only to Office salesmen, the Sales Head and Admin.";
     }
@@ -285,7 +377,9 @@
       document.addEventListener("click",async e=>{
         const t=e.target;
         const tb=t.closest("[data-tab]");if(tb){tab=tb.dataset.tab;try{localStorage.setItem("lwb_sales_team_tab",tab)}catch(x){}render();return}
-        if(t.closest("[data-save-sm]"))return saveSalesman(t.closest("tr"));
+        if(t.closest("[data-sm-new]"))return smOpen(null);
+        const se=t.closest("[data-sm-edit]");if(se){const r=smRows().find(x=>x.id===se.dataset.smEdit);if(r)smOpen(r);return}
+        if(t.id==="smSave")return smSave();if(t.id==="smCancel")return smPop.close();
         if(t.closest("[data-save-sku]"))return saveSku(t.closest("tr"));
         if(t.closest("[data-save-targets]"))return saveTargets();
         if(t.matches("[data-pick]")){const id=t.closest("tr").dataset.id;t.checked?picked.add(id):picked.delete(id);el("pickN").textContent=picked.size+" selected";return}
@@ -342,14 +436,18 @@
         if(t.matches("[data-assign]")){if(!await assign([t.closest("tr").dataset.id],t.value))await loadAll();return}
         if(t.matches("[data-mode]")){const c=t.closest("tr").querySelector(".sl-chips");c.hidden=t.value==="ALL";return}
         if(t.matches(".sl-chips input")){t.closest(".sl-chip").classList.toggle("on",t.checked);return}
+        if(["smJoin","smSal"].includes(t.id)){smDirty.add(t.id);return}
         if(t.id==="psm"){pf.sm=t.value;render()}else if(t.id==="pcity"){pf.city=t.value;render()}
         else if(t.id==="tm"&&t.value){tMonth=t.value;render()}
+        else if(t.id==="sbr"){smF.brand=t.value;render()}
       });
       let timer;
       document.addEventListener("input",e=>{
         const t=e.target;if(t.id!=="pq"&&t.id!=="sq")return;
-        clearTimeout(timer);timer=setTimeout(()=>{if(t.id==="pq")pf.q=t.value;else pf.sq=t.value;render();const f=el(t.id);if(f){f.focus();f.setSelectionRange(f.value.length,f.value.length)}},250);
+        clearTimeout(timer);timer=setTimeout(()=>{if(t.id==="pq")pf.q=t.value;else if(tab==="team")smF.q=t.value;else pf.sq=t.value;render();const f=el(t.id);if(f){f.focus();f.setSelectionRange(f.value.length,f.value.length)}},250);
       });
+      smPop=LWBMasterPopup.mount({panel:"smPanel",bar:null});
+      window.addEventListener("hashchange",()=>{smHashDone=false;smHash()});
       el("loading").hidden=true;el("page").hidden=false;
       await loadAll();
     })();

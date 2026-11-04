@@ -88,7 +88,7 @@
       {t:"Party Call List",h:"party-calls.html",i:"phone",r:"admin manager sales"},
       {t:"Outside Market Stock",h:"market-report.html",i:"pin",r:"admin manager sales"},
       {t:"Sales Tracking",h:"sales-tracking.html",i:"chart",r:"admin manager"},
-      {t:"Sales Team Setup",h:"sales-team.html",i:"users",r:"admin manager"}]},
+      {t:"Salesman Master",h:"sales-team.html",i:"users",r:"admin manager"}]},
     // Purchase in one place (Mohit, 2 Nov 2026): entry, the list of every purchase bill (like the PO list),
     // damage claims, and the scanned sales bill PDFs uploaded every night.
     {group:"Purchase",items:[

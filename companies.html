@@ -183,18 +183,16 @@
     }
 
     /* ---------- Team brands ---------- */
+    // Read only (Mohit, 4 Nov 2026): brands of a salesman are set in Salesman Master, one place for the whole salesman.
     async function renderTeam(){
       const {data,error}=await client.rpc("lwb_brand_team");if(error)throw error;cache.team=data||[];
-      const list=cache.team.filter(u=>role==="admin"||u.role!=="manager");
-      el("body").innerHTML=list.length?'<div class="cb-scroll"><table class="cb-t"><thead><tr><th>Name</th><th>Role</th><th>Companies (none ticked = all brands)</th><th></th></tr></thead><tbody>'+
-        list.map(u=>'<tr data-u="'+u.user_id+'"><td><b>'+esc(u.full_name||"—")+"</b>"+(u.active===false?'<small>Inactive</small>':"")+"</td><td>"+(u.role==="manager"?'<span class="tag t-blu">Sales Head</span>':'<span class="tag t-gry">Salesman</span>')+'</td><td><div class="cb-checks">'+
-          B.companies.map(c=>'<label style="--c:'+esc(c.color)+'"><input type="checkbox" value="'+c.id+'"'+(u.company_ids.includes(c.id)?" checked":"")+">"+esc(c.name)+"</label>").join("")+
-          '</div></td><td><button type="button" class="cb-btn sm pri" data-save>Save</button></td></tr>').join("")+"</tbody></table></div>":'<div class="cb-empty">No Sales Head or Salesman login yet.</div>';
-      el("body").querySelectorAll("[data-save]").forEach(b=>b.onclick=async()=>{
-        const tr=b.closest("tr"),ids=[...tr.querySelectorAll("input:checked")].map(x=>x.value);
-        b.disabled=true;const {error}=await client.rpc("lwb_set_user_companies",{p_user_id:tr.dataset.u,p_company_ids:ids});b.disabled=false;
-        if(error)return ERPShell.alert(errText(error));toast(ids.length?"Saved: only "+ids.map(coName).join(", "):"Saved: all brands");cache.team=null});
-      el("note").textContent="A Sales Head or Salesman with a company ticked sees only that company's SKUs, orders, targets and brand figures. Accounts and Godown Manager always see every company."+(role==="manager"?" Only Admin can change a Sales Head.":"");
+      const list=cache.team;
+      el("body").innerHTML='<div class="cb-empty" style="text-align:left;padding:10px 12px">Brands of a salesman are now set in <a href="sales-team.html"><b>Salesman Master</b></a> (Edit on his row).</div>'+
+        (list.length?'<div class="cb-scroll"><table class="cb-t"><thead><tr><th>Name</th><th>Role</th><th>Brands</th><th></th></tr></thead><tbody>'+
+        list.map(u=>'<tr><td><b>'+esc(u.full_name||"—")+"</b>"+(u.active===false?'<small>Inactive</small>':"")+"</td><td>"+(u.role==="manager"?'<span class="tag t-blu">Sales Head</span>':'<span class="tag t-gry">Salesman</span>')+"</td><td>"+
+          (u.company_ids.length?u.company_ids.map(i=>'<span class="tag t-gry">'+esc(coName(i))+"</span>").join(" "):'<span class="tag t-grn">All brands</span>')+
+          '</td><td><a class="cb-btn sm" href="sales-team.html#user='+u.user_id+'">Edit</a></td></tr>').join("")+"</tbody></table></div>":'<div class="cb-empty">No Sales Head or Salesman login yet.</div>');
+      el("note").textContent="A Sales Head or Salesman with a brand sees only that brand's SKUs, orders, targets and brand figures. Accounts and Godown Manager always see every company.";
     }
 
     /* ---------- Pay company ---------- */
