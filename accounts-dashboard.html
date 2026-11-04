@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Accounts Dashboard | Luxury Wrist Brand ERP</title>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="brand-filter.js"></script>
   <script src="erp-date.js"></script>
   <link rel="stylesheet" href="erp-shell.css">
   <script src="erp-shell.js"></script>
@@ -411,12 +412,13 @@
       // Party money of the dates in every mode (cash + UPI + bank + cheque); bills still to collect; cheques not yet in bank
       const coll=D.lines.filter(l=>l.kind==="IN"&&l.src!=="ENTRY"),cm={};coll.forEach(l=>{const m=l.mode==="RTGS"?"BANK":l.mode;cm[m]=(cm[m]||0)+Number(l.amount)});
       const collT=coll.reduce((a,l)=>a+Number(l.amount),0),other=t.allIn-collT;
-      const due=PI?[...PI.parties.values()].reduce((a,p)=>a+Math.max(0,p.due-p.advance),0):null;
+      const dbr=PI&&PI.branded&&window.LWBBrand?LWBBrand.get(PI.companies):"";
+      const due=PI?[...PI.parties.values()].map(p=>dbr?LWBPartyPay.slice(p,dbr):p).reduce((a,p)=>a+Math.max(0,p.due-p.advance),0):null;
       const ch=C.filter(c=>c.status==="IN_HAND"),cd=C.filter(c=>c.status==="DEPOSITED"),sum=a=>a.reduce((x,c)=>x+Number(c.amount),0);
       el("strip").innerHTML='<div><h4>💰 Party collection '+(one?(isToday?"today":dmy(to)):"in these dates")+' (all modes)</h4><div class="v plus">'+rs(collT)+'</div>'+
           '<div class="modes">'+["CASH","UPI","BANK","CHEQUE"].map(m=>'<span>'+(m==="BANK"?"Bank / RTGS":MODE_NAME[m])+' <b>'+rs(cm[m]||0)+'</b></span>').join("")+'</div>'+
           '<small>'+(other>0.5?"Other money in: "+rs(other)+" · ":"")+(t.pendIn?rs(t.pendIn)+" UPI / bank / cheque waiting Admin's bank check · ":"")+'All money out: '+rs(t.allOut)+'</small></div>'+
-        '<div data-tab="out"><h4>📒 To collect (bills due)</h4><div class="v minus">'+(due==null?(piErr?"—":"…"):rs(due))+'</div><small>All parties, after advance · tap for list</small></div>'+
+        '<div data-tab="out"><h4>📒 To collect (bills due)</h4><div class="v minus">'+(due==null?(piErr?"—":"…"):rs(due))+'</div><small>'+(dbr?esc((PI.brandOf(dbr)||{}).name||"")+" · ":"All parties, ")+'after advance · tap for list</small></div>'+
         '<div data-tab="cheques"><h4>🧾 Cheques not in bank</h4><div class="v">'+rs(sum(ch)+sum(cd))+'</div><small>In hand '+ch.length+' ('+rs(sum(ch))+') · deposited '+cd.length+' ('+rs(sum(cd))+')</small></div>';
       if(window.ERPList){const first=el("strip").firstElementChild;
         if(first)ERPList.card(first,()=>({title:"Party collection",sub:"All modes · "+(one?dmy(to):dmy(from)+" – "+dmy(to)),rows:coll,
@@ -523,12 +525,14 @@
 
     // Party outstanding on the MAIN party (all its bill names), advance taken off (Billing & Outstanding)
     async function renderOutstanding(){
-      if(!outRows){
+      if(!PI){
         el("tabBody").innerHTML='<div class="acx-empty">Loading party outstanding…</div>';
         try{if(!PI)PI=await LWBPartyPay.load(client)}catch(e){el("tabBody").innerHTML='<div class="acx-msg bad">'+esc(e.message)+'</div>';return}
-        outRows=[...PI.parties.values()].filter(x=>x.due>0.5||x.advance>0.5).map(x=>({party:x.party,members:x.members,bills:x.bills.length,oldest:x.oldest,due:x.due,adv:x.advance,out:r2(x.net)}))
-          .sort((a,b)=>b.out-a.out);
       }
+      // Brand chips (All / Rajnigandha / Coca-Cola), same choice as every other page
+      const br=PI.branded&&window.LWBBrand?LWBBrand.get(PI.companies):"";
+      outRows=[...PI.parties.values()].map(x=>br?LWBPartyPay.slice(x,br):x).filter(x=>x.due>0.5||x.advance>0.5||Math.abs(x.opening||0)>0.5).map(x=>({party:x.party,members:x.members,bills:x.bills.length,oldest:x.oldest,due:x.due,adv:x.advance,out:r2(x.net)}))
+        .sort((a,b)=>b.out-a.out);
       if(tab!=="out")return;
       const keep=el("outQ")?el("outQ").value:"",q=keep.toLowerCase();
       const list=outRows.filter(x=>!q||x.party.toLowerCase().includes(q)||x.members.some(m=>m.toLowerCase().includes(q))),tot=list.reduce((a,x)=>a+x.out,0);
@@ -538,6 +542,7 @@
         (list.length?'<div style="overflow:auto"><table class="acx-t"><thead><tr><th>Main party</th><th class="n">Bills</th><th class="n">Oldest</th><th class="n">Bills due</th><th class="n">Paid, not adjusted</th><th class="n">Balance</th><th></th></tr></thead><tbody>'+
           list.map(x=>{const a=age(x.oldest);return '<tr><td><a href="party-ledger.html?party='+encodeURIComponent(x.party)+'"><b>'+esc(x.party)+'</b></a>'+(x.members.length?'<small>'+esc(x.members.join(", "))+'</small>':"")+'</td><td class="n">'+x.bills+'</td><td class="n">'+(x.oldest?dmy(x.oldest)+'<small class="'+(a>30?"minus":"")+'">'+a+' days</small>':"")+'</td><td class="n">'+rs(x.due)+'</td><td class="n plus">'+(x.adv?rs(x.adv):"—")+'</td><td class="n"><b class="'+(x.out>0?"minus":"plus")+'">'+rs(Math.abs(x.out))+'</b><small>'+(x.out>0.5?"to collect":x.out<-0.5?"advance":"settled")+'</small></td><td class="n"><button type="button" class="acx-btn grn" data-pp="'+esc(x.party)+'">Receive</button></td></tr>'}).join("")+'</tbody></table></div>'
           :'<div class="acx-empty">No party outstanding.</div>');
+      if(PI.branded&&window.LWBBrand)el("tabBody").prepend(LWBBrand.chips(PI.companies,br,()=>{renderOutstanding();renderKpis()}));
       el("outQ").value=keep;if(keep)el("outQ").focus();
       el("outQ").oninput=renderOutstanding;
       el("tabBody").querySelectorAll("[data-pp]").forEach(b=>b.onclick=()=>partyPay(b.dataset.pp));

@@ -6,6 +6,7 @@
   <title>Stock Transfer | Luxury Wrist Brand ERP</title>
   <script src="erp-date.js"></script><script src="erp-recent.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="brand-filter.js"></script>
   <link rel="stylesheet" href="erp-shell.css">
   <link rel="stylesheet" href="sales.css">
   <script src="erp-shell.js"></script>
@@ -131,6 +132,7 @@
         <div><label for="d_to">To</label><input id="d_to" type="date"></div>
         <button type="button" class="sl-btn ghost" id="xlDaily">Excel</button>
       </div>
+      <div class="sl-msg" id="dailyNote" hidden>Daily report is for all brands together.</div>
       <div class="sl-kpis" id="dailyKpis"></div>
       <div id="dailyTable"></div>
       <button type="button" class="erp-i" aria-label="Info" title="Info" data-tip="Handled = cases received in Goods Inward + cases loaded in vehicles that day. Loss per 1000 = cases moved to Loss for every 1000 cases handled. All figures in cases (loose pieces as part of a case).">i</button>
@@ -149,6 +151,9 @@
     };
     const setupMsg="Run lwb_stock_transfer_setup.sql first (it runs by itself when the PR is merged).";
     let me=null,appr=false,user=false,stock=[],skus=[],moves=[],type="TRANSFER",tab="Status";
+    // Brand filter (All / Rajnigandha / Coca-Cola) by the SKU's company
+    let BB={get:()=>""},SM=null;
+    const inB=x=>!BB.get()||!SM||SM.get(LWBBrand.skuKey(x.sku_name))===BB.get();
     const errText=e=>/lwb_stx_/.test(e.message||"")&&/function|schema cache/.test(e.message||"")?setupMsg:(e.message||String(e));
     const cs=(p,ppc)=>{p=Number(p)||0;ppc=Math.max(1,Number(ppc)||1);const c=Math.trunc(p/ppc),r=p%ppc;return r?(c?fmt(c)+" CS ":"")+fmt(r)+" PCS":fmt(c)+" CS"};
     const csNum=(p,ppc)=>Math.round((Number(p)||0)/Math.max(1,Number(ppc)||1)*100)/100;
@@ -168,7 +173,7 @@
     async function loadStatus(){
       const [s,m]=await Promise.all([client.rpc("lwb_stx_status"),client.rpc("lwb_stx_moves",{p_status:"PENDING",p_from:null,p_to:null})]);
       if(s.error||m.error){el("statusTable").innerHTML='<div class="sl-msg">'+esc(errText(s.error||m.error))+"</div>";return}
-      stock=s.data||[];moves=ERPRecent.sort(m.data||[],"requested_at","decided_at");
+      stock=(s.data||[]).filter(inB);moves=ERPRecent.sort((m.data||[]).filter(inB),"requested_at","decided_at");
       stxSum=await ERPDocs.summary(client,"STOCK_MOVE");mountStxDocs();
       const linked=stock.length?stock[0].linked:true;
       el("linkWarn").hidden=linked;el("linkWarn").textContent="Saleable stock is not linked to Live Stock on this database: approved transfers are recorded here, but PO Entry / Inventory still show the old saleable number. Ask for a check of lwb_live_stock.";
@@ -355,7 +360,7 @@
     async function loadHistory(){
       const {data,error}=await client.rpc("lwb_stx_moves",{p_status:el("h_status").value||null,p_from:el("h_from").value||null,p_to:el("h_to").value||null});
       if(error){el("histTable").innerHTML='<div class="sl-msg">'+esc(errText(error))+"</div>";return}
-      hist=ERPRecent.sort(data||[],"requested_at","decided_at");renderHistory();
+      hist=ERPRecent.sort((data||[]).filter(inB),"requested_at","decided_at");renderHistory();
     }
     function renderHistory(){
       const q=S.key(el("h_q").value);
@@ -379,7 +384,7 @@
     async function loadLedger(){
       const {data,error}=await client.rpc("lwb_stx_ledger",{p_bucket:el("l_bucket").value,p_from:el("l_from").value||null,p_to:el("l_to").value||null,p_sku:el("l_sku").value||null});
       if(error){el("ledgerTable").innerHTML='<div class="sl-msg">'+esc(errText(error))+"</div>";return}
-      ledger=data||[];
+      ledger=(data||[]).filter(inB);
       if(!ledger.length){el("ledgerTable").innerHTML='<div class="erp-empty">No '+esc(LABEL[el("l_bucket").value])+" entry in these dates.</div>";return}
       const bySku=new Map();for(const r of ledger){if(!bySku.has(r.sku_id))bySku.set(r.sku_id,[]);bySku.get(r.sku_id).push(r)}
       const bal=[...bySku.values()].map(g=>g.at(-1));
@@ -401,6 +406,7 @@
       const {data,error}=await client.rpc("lwb_stx_daily",{p_from:el("d_from").value||null,p_to:el("d_to").value||null});
       if(error){el("dailyTable").innerHTML='<div class="sl-msg">'+esc(errText(error))+"</div>";el("dailyKpis").innerHTML="";return}
       daily=(data||[]).slice().reverse();
+      el("dailyNote")&&(el("dailyNote").hidden=!BB.get());
       const t=f=>daily.reduce((a,r)=>a+Number(r[f]||0),0),moved=r=>HELD.reduce((a,b)=>a+Number(r[b.toLowerCase()+"_cases"]||0),0);
       const handled=t("handled_cases"),loss=t("loss_cases");
       el("dailyKpis").innerHTML=[["Cases handled",fmt(handled),"Inward "+fmt(t("inward_cases"))+" · Loaded "+fmt(t("loaded_cases"))],
@@ -452,6 +458,7 @@
       for(const id of ["d_from","d_to"])el(id).addEventListener("change",loadDaily);el("xlDaily").onclick=dailyExcel;
       const qt=String(new URLSearchParams(location.search).get("type")||"").toUpperCase();addLine();setType(TYPES[qt]?qt:"TRANSFER");
       el("loading").hidden=true;el("page").hidden=false;
+      if(window.LWBBrand)try{BB=await LWBBrand.mount(client,{into:"#tabs",after:true,onChange:async()=>{await loadStatus();if(tab==="History")loadHistory();if(tab==="Ledger")loadLedger();if(tab==="Daily")loadDaily()}});if(BB.companies.length>1)SM=await LWBBrand.skuMap(client)}catch(e){}
       await loadStatus();
       const h=location.hash.slice(1),want=["status","new","approvals","history","ledger","daily"].find(x=>x===h);
       show(want?want[0].toUpperCase()+want.slice(1):(appr&&moves.length?"Approvals":"Status"));

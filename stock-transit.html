@@ -6,6 +6,7 @@
   <title>Goods in Transit | Luxury Wrist Brand ERP</title>
   <script src="erp-date.js"></script><script src="erp-recent.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="brand-filter.js"></script>
   <link rel="stylesheet" href="erp-shell.css">
   <link rel="stylesheet" href="sales.css">
   <script src="erp-shell.js"></script>
@@ -65,6 +66,8 @@
   <script>
     const S=LWBSales,{client,el,esc,fmt}=S;
     let me=null,stock=[],skus=[],open=[];
+    let BB={get:()=>""},SM=null;
+    const inB=n=>!BB.get()||!SM||SM.get(LWBBrand.skuKey(n))===BB.get();
     const setupMsg="Run lwb_live_stock_po_setup.sql in Supabase first.";
     const k=v=>String(v||"").trim().toUpperCase();
     function addLine(){
@@ -92,7 +95,7 @@
     async function load(){
       const [t,s]=await Promise.all([client.from("lwb_stock_transit").select("*").eq("status","OPEN").order("created_at",{ascending:false}),client.rpc("lwb_po_stock")]);
       if(t.error||s.error){const m=(t.error||s.error).message;el("open").innerHTML='<div class="sl-msg">'+esc(/lwb_stock_transit|lwb_po_stock/.test(m)?setupMsg:m)+"</div>";el("stock").innerHTML="";return}
-      open=ERPRecent.sort(t.data||[]);stock=s.data||[];
+      open=ERPRecent.sort((t.data||[]).filter(x=>inB(x.sku_name)));stock=(s.data||[]).filter(x=>inB(x.sku_name));
       renderOpen();renderStock();
     }
     function renderOpen(){
@@ -111,7 +114,7 @@
     function renderStock(){
       const q=k(el("q").value),all=el("all").value==="1";
       const by=new Map(stock.map(r=>[k(r.sku_name),r]));
-      const names=all?[...new Set([...skus,...stock.map(r=>r.sku_name)].map(n=>n))]:stock.map(r=>r.sku_name);
+      const names=all?[...new Set([...skus.filter(inB),...stock.map(r=>r.sku_name)].map(n=>n))]:stock.map(r=>r.sku_name);
       const list=[...new Map(names.map(n=>[k(n),n])).values()].filter(n=>!q||k(n).includes(q)).map(n=>{const r=by.get(k(n))||{};const g=Math.max(0,Math.floor(Number(r.godown_cases)||0)),t=Number(r.transit_cases)||0;return {n,g,t}})
         .filter(x=>all||x.g||x.t).sort((a,b)=>a.n.localeCompare(b.n));
       if(!list.length){el("stock").innerHTML='<div class="erp-empty">'+(stock.length||all?"No SKU matches.":"No stock to show. If your role is not ticked in Sales Team Setup > Morning Plan, stock is hidden.")+"</div>";return}
@@ -136,6 +139,7 @@
       });
       el("q").addEventListener("input",renderStock);el("all").addEventListener("change",renderStock);el("refresh").onclick=load;
       el("loading").hidden=true;el("page").hidden=false;
+      if(window.LWBBrand)try{BB=await LWBBrand.mount(client,{into:"#page .erp-pagehead",after:true,onChange:load});if(BB.companies.length>1)SM=await LWBBrand.skuMap(client)}catch(e){}
       await load();
     })();
   </script>

@@ -4,7 +4,8 @@
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Driver Returns Approval | Luxury Wrist Brand ERP</title>
 <script src="erp-date.js"></script><script src="erp-recent.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script><script src="page-role.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="brand-filter.js"></script><script src="page-role.js"></script>
 <script src="party-list.js" defer></script>
 <script src="tally-note.js" defer></script>
 <style>
@@ -83,6 +84,8 @@ const fmt=n=>"₹"+Number(n||0).toLocaleString("en-IN",{minimumFractionDigits:2,
 const REASON={LEAKAGE:"Leakage",BREAKAGE:"Breakage",DAMAGE:"Damage",GASLESS:"Gasless",LOW_FILL:"Low Fill"};
 const STATUSES=["PENDING_OFFICE","APPROVED","REJECTED"];
 let role="",status="PENDING_OFFICE",lists={},busy=false,photos=new Map(),photoUrls=new Map(),receipts=new Map();
+let BB={get:()=>""},OB=new Map();
+const inBrand=r=>!BB.get()||LWBBrand.has(OB.get(r.order_id),BB.get());
 const canReceive=()=>role==="warehouse"||role==="manager"||role==="admin";
 // Opened from a notification: driver-returns.html?order=<order id> shows only that order's returns.
 let onlyOrder=new URLSearchParams(location.search).get("order")||"";
@@ -99,6 +102,7 @@ async function init(){
   if(p.error)throw p.error;
   role=await lwbPageRole(String(p.data.role||"").toLowerCase().trim());
   if(p.data.active!==true||!["admin","accounts","manager","warehouse"].includes(role))throw Error("Only office staff can open Driver Return Approval.");
+  if(window.LWBBrand)try{BB=await LWBBrand.mount(db,{into:"main",onChange:render})}catch(e){}
   await load();
  }catch(e){message("Could not start: "+e.message,"error")}
 }
@@ -107,7 +111,7 @@ async function load(){
   message("Loading driver returns...");
   const results=await Promise.all(STATUSES.map(s=>db.rpc("lwb_office_list_driver_returns",{p_status:s})));
   results.forEach((r,i)=>{if(r.error)throw r.error;lists[STATUSES[i]]=ERPRecent.sort(Array.isArray(r.data)?r.data:[])});
-  STATUSES.forEach(s=>el("count"+s).textContent=lists[s].length);
+  if(BB.companies&&BB.companies.length>1)OB=await LWBBrand.orderBrands(db,STATUSES.flatMap(s=>lists[s]).map(r=>r.order_id));
   await Promise.all([loadPhotos(),loadReceipts()]);
   let note=canReview()?"":"View only. Godown Manager, Sales Head or Admin approve / reject returns.";
   if(onlyOrder){
@@ -169,8 +173,9 @@ function photoStrip(r){
 el("viewer").onclick=e=>{if(e.target!==el("viewerImg"))el("viewer").hidden=true};
 function render(){
  document.querySelectorAll(".tab").forEach(t=>t.classList.toggle("active",t.dataset.status===status));
+ STATUSES.forEach(s=>el("count"+s).textContent=(lists[s]||[]).filter(inBrand).length);
  const q=el("search").value.toLowerCase().trim().split(/\s+/).filter(Boolean);
- const all=(lists[status]||[]).filter(r=>!onlyOrder||r.order_id===onlyOrder);
+ const all=(lists[status]||[]).filter(r=>(!onlyOrder||r.order_id===onlyOrder)&&(onlyOrder||inBrand(r)));
  el("only").hidden=!onlyOrder;
  if(onlyOrder){const o=STATUSES.flatMap(x=>lists[x]).find(r=>r.order_id===onlyOrder);el("onlyText").textContent="From notification: "+(o?.order_no||"order")+" · "+(o?.party_name||"")}
  const rows=all.filter(r=>q.every(w=>[r.party_name,r.order_no,r.driver_name,r.vehicle_no].join(" ").toLowerCase().includes(w)));

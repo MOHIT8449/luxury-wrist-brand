@@ -6,6 +6,7 @@
   <title>Night Stock Audit | Luxury Wrist Brand ERP</title>
   <script src="erp-date.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="brand-filter.js"></script>
   <link rel="stylesheet" href="erp-shell.css">
   <link rel="stylesheet" href="sales.css">
   <script src="erp-shell.js"></script>
@@ -87,6 +88,9 @@
     const csNum=(p,ppc)=>Math.round((Number(p)||0)/Math.max(1,Number(ppc)||1)*100)/100;
     const today=()=>S.isoDay(new Date()),daysAgo=n=>S.isoDay(new Date(Date.now()-n*864e5));
     let me=null,user=false,rows=[],counts=new Map(),diffs=[],past=[],submitted=false,dirty=false;
+    // Brand filter shows only that brand's SKUs; the count sheet still saves every SKU.
+    let BB={get:()=>""},SM=null;
+    const inB=n=>!BB.get()||!SM||SM.get(LWBBrand.skuKey(n))===BB.get();
 
     async function loadSheet(){
       const {data,error}=await client.rpc("lwb_stx_audit_sheet",{p_date:el("day").value});
@@ -104,7 +108,7 @@
     function diffOf(r){const c=counts.get(r.sku_id);return c==null?null:(submitted&&r.diff_pcs!=null?Number(r.diff_pcs):c.pcs-expected(r))}
     function renderSheet(){
       const q=S.key(el("q").value),f=el("filter").value,blind=el("blind").checked&&!submitted;
-      const list=rows.filter(r=>(!q||S.key(r.sku_name).includes(q))&&(f==="all"||(f==="stock"&&(expected(r)>0||counts.has(r.sku_id)||Number(r.open_diff_pcs)))||(f==="todo"&&!counts.has(r.sku_id))||(f==="diff"&&diffOf(r))));
+      const list=rows.filter(r=>inB(r.sku_name)&&(!q||S.key(r.sku_name).includes(q))&&(f==="all"||(f==="stock"&&(expected(r)>0||counts.has(r.sku_id)||Number(r.open_diff_pcs)))||(f==="todo"&&!counts.has(r.sku_id))||(f==="diff"&&diffOf(r))));
       if(!list.length){el("sheet").innerHTML='<div class="erp-empty">'+(rows.length?"No SKU for this filter.":"No SKU.")+"</div>";renderSum();return}
       const head=["SKU","System stock","Earlier open diff","Physical CS","PCS","","Difference","Note"];
       el("sheet").innerHTML='<div class="sl-scroll au-tbl">'+S.table(head,list.map(r=>{
@@ -160,7 +164,7 @@
     async function loadDiffs(){
       const {data,error}=await client.rpc("lwb_stx_audit_diffs",{p_all:false});
       if(error){el("diffs").innerHTML='<div class="sl-msg">'+esc(errText(error))+"</div>";return}
-      diffs=data||[];renderKpis();
+      diffs=(data||[]).filter(d=>inB(d.sku_name));renderKpis();
       if(!diffs.length){el("diffs").innerHTML='<div class="erp-empty">No open difference. 👍</div>';return}
       el("diffs").innerHTML=diffs.map(d=>{
         const short=d.diff_pcs<0,wait=d.status==="LOSS_PENDING",old=Number(d.days_open)>=3;
@@ -225,6 +229,7 @@
       el("print").onclick=()=>window.print();
       window.addEventListener("beforeunload",e=>{if(dirty){e.preventDefault();e.returnValue=""}});
       el("loading").hidden=true;el("page").hidden=false;
+      if(window.LWBBrand)try{BB=await LWBBrand.mount(client,{into:"#page .erp-pagehead",after:true,onChange:()=>{renderSheet();loadDiffs()}});if(BB.companies.length>1)SM=await LWBBrand.skuMap(client)}catch(e){}
       await Promise.all([loadSheet(),loadDiffs(),loadPast()]);
     })();
   </script>
