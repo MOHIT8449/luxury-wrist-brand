@@ -50,6 +50,7 @@
 .erp-ls .n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
 .erp-ls tbody tr:hover{background:#f7f1de}
 .erp-ls tbody tr.go{cursor:pointer}
+.erp-ls tbody tr:focus{outline:2px solid #c9b26a;outline-offset:-2px;background:#f7f1de}
 .erp-ls tfoot td{position:sticky;bottom:0;background:#e6f0f0;font-weight:700;color:#002f37;border-top:2px solid #c9b26a}
 .erp-ls-msg{padding:34px 18px;text-align:center;color:#5d6f72}
 .erp-ls-msg.err{color:#a00d25}
@@ -67,7 +68,11 @@
   .erp-ls tbody tr{margin:8px 10px;width:auto;border:1px solid #e3e7ec;border-radius:10px;padding:6px 10px;background:#fff}
   .erp-ls td{display:flex!important;justify-content:space-between;gap:12px;border:0!important;padding:3px 0!important;text-align:right!important;white-space:normal!important;overflow-wrap:anywhere}
   .erp-ls td::before{content:attr(data-l)!important;display:block!important;position:static!important;color:#5d6f72;font-size:12px;text-align:left;flex:none;max-width:45%}
-  .erp-ls td.first{font-weight:600;color:#002f37}
+  .erp-ls td.first{font-weight:600;color:#002f37;grid-column:1/-1}
+  .erp-ls tbody tr{display:grid!important;grid-template-columns:minmax(0,1fr) minmax(0,1fr);column-gap:14px;padding:4px 10px}
+  .erp-ls tbody td[data-l="#"]{display:none!important}
+  .erp-ls tbody td:empty{display:none!important}
+  .erp-ls td::before{max-width:55%}
   .erp-ls tfoot tr{margin:8px 10px 10px;width:auto;border-radius:10px;padding:6px 10px;background:#e6f0f0;border:1px solid #c9b26a}
   .erp-ls tfoot td{position:static;border:0;background:none}
   .erp-ls tfoot td:empty{display:none}
@@ -80,7 +85,7 @@
   const num=v=>{const n=Number(String(v==null?"":v).replace(/[₹,\s]/g,""));return Number.isFinite(n)?n:0};
   const fmt=(v,c)=>{
     if(v==null||v==="")return "";
-    if(c.money)return "₹"+num(v).toLocaleString("en-IN",{maximumFractionDigits:c.dec==null?0:c.dec});
+    if(c.money)return (num(v)<0?"−":"")+"₹"+Math.abs(num(v)).toLocaleString("en-IN",{maximumFractionDigits:c.dec==null?0:c.dec});
     if(c.num)return num(v).toLocaleString("en-IN",{maximumFractionDigits:c.dec==null?2:c.dec})+(c.unit?" "+c.unit:"");
     if(c.date){const d=new Date(String(v).length===10?v+"T00:00:00":v);return isNaN(d)?String(v):d.toLocaleDateString("en-IN",{day:"2-digit",month:"short",year:"numeric"})}
     return String(v);
@@ -140,11 +145,23 @@
       const hasSum=sums.some(s=>s!=null);
       const cls=(c,i)=>[(c.num||c.money)?"n":"",c.date?"d":"",i===0?"first":""].filter(Boolean).join(" ");
       body.innerHTML=`<table><thead><tr><th>#</th>${cols.map((c,i)=>`<th class="${cls(c,i)}">${esc(c.t)}</th>`).join("")}</tr></thead>
-        <tbody>${list.slice(0,1500).map((r,ri)=>`<tr data-i="${rows.indexOf(r)}"${opts.onRow?' class="go"':""}><td data-l="#">${ri+1}</td>${cols.map((c,i)=>`<td class="${cls(c,i)}" data-l="${esc(c.t)}">${cell(c,r)}</td>`).join("")}</tr>`).join("")}</tbody>
+        <tbody>${list.slice(0,1500).map((r,ri)=>`<tr data-i="${rows.indexOf(r)}"${opts.onRow?' class="go" tabindex="0"':""}><td data-l="#">${ri+1}</td>${cols.map((c,i)=>`<td class="${cls(c,i)}" data-l="${esc(c.t)}">${cell(c,r)}</td>`).join("")}</tr>`).join("")}</tbody>
         ${hasSum?`<tfoot><tr><td data-l="">Total</td>${cols.map((c,i)=>`<td class="${cls(c,i)}" data-l="${esc(c.t)}">${sums[i]==null?"":esc(fmt(sums[i],c.money?c:Object.assign({num:true},c)))}</td>`).join("")}</tr></tfoot>`:""}</table>
         ${list.length>1500?`<div class="erp-ls-msg">Showing first 1500 of ${list.length}. Use search to narrow.</div>`:""}`;
     }
     search.oninput=draw;
+    // Keyboard: ↓ from search goes to the rows, ↑ / ↓ move between rows, Enter opens a row (Mohit: work by keyboard).
+    const trs=()=>[...body.querySelectorAll("tbody tr[data-i]")];
+    search.addEventListener("keydown",e=>{
+      if(e.key==="ArrowDown"){const t=trs()[0];if(t){e.preventDefault();if(!t.hasAttribute("tabindex"))t.tabIndex=-1;t.focus()}}
+      else if(e.key==="Enter"&&opts.onRow){const t=trs();if(t.length===1){e.preventDefault();const r=rows[Number(t[0].dataset.i)];close();opts.onRow(r)}}
+    });
+    body.addEventListener("keydown",e=>{
+      const tr=e.target.closest&&e.target.closest("tbody tr[data-i]");if(!tr)return;
+      if(e.key==="ArrowDown"||e.key==="ArrowUp"){e.preventDefault();const t=trs(),i=t.indexOf(tr)+(e.key==="ArrowDown"?1:-1);
+        if(i<0){search.focus();return}const n=t[i];if(n){if(!n.hasAttribute("tabindex"))n.tabIndex=-1;n.focus()}}
+      else if(e.key==="Enter"&&opts.onRow){e.preventDefault();const r=rows[Number(tr.dataset.i)];close();opts.onRow(r)}
+    });
     body.addEventListener("click",e=>{
       if(!opts.onRow)return;
       const tr=e.target.closest("tbody tr[data-i]");if(!tr||e.target.closest("a,button"))return;
