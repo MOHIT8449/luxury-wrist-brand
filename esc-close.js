@@ -115,5 +115,5 @@
     if(!shown(p.el)||(p.kind==="dialog"&&!p.el.open))return; // or already closed it
     if(closePopup(p))e.preventDefault();
   });
-  window.LWBEsc={top:()=>{const p=topPopup();return p&&p.el},closeTop:()=>{const p=topPopup();return !!(p&&closePopup(p))}};
+  window.LWBEsc={top:()=>{const p=topPopup();return p&&p.el},info:()=>{const p=topPopup();return p?{el:p.el,kind:p.kind}:null},closeTop:()=>{const p=topPopup();return !!(p&&closePopup(p))}};
 })();
