@@ -6,6 +6,7 @@
   <title>Outside Market Stock | Luxury Wrist Brand ERP</title>
   <script src="erp-date.js"></script><script src="erp-recent.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="brand-filter.js"></script>
   <link rel="stylesheet" href="erp-shell.css">
   <link rel="stylesheet" href="sales.css">
   <script src="erp-shell.js"></script>
@@ -131,11 +132,14 @@
       finally{btn.disabled=false;btn.textContent="Send Report"}
     }
 
+    // Brand filter: reports of the chosen brand's SKUs (a report without SKU shows in every brand).
+    let BB={get:()=>""},SM=null;
+    const inB=x=>!BB.get()||!SM||!x.sku_name||SM.get(LWBBrand.skuKey(x.sku_name))===BB.get();
     async function load(){
       const from=new Date(Date.now()-(Number(el("days").value)-1)*864e5);
       const r=await client.from("lwb_market_reports").select("*").gte("report_date",S.isoDay(from)).order("created_at",{ascending:false}).limit(500);
       if(r.error){el("list").innerHTML='<div class="sl-msg">'+esc(/lwb_market_reports/.test(r.error.message)?setupMsg:r.error.message)+"</div>";el("kpis").innerHTML="";return}
-      rows=ERPRecent.sort(r.data||[]);
+      rows=ERPRecent.sort((r.data||[]).filter(inB));
       const ids=[...new Set(rows.flatMap(x=>[x.created_by,x.reviewed_by]).filter(id=>id&&!names.has(id)))];
       if(ids.length){const u=await client.from("user_profiles").select("id,full_name").in("id",ids);for(const x of u.data||[])names.set(x.id,x.full_name)}
       render();
@@ -204,6 +208,7 @@
       el("days").addEventListener("change",load);
       ["state","q"].forEach(id=>el(id).addEventListener("input",render));
       el("loading").hidden=true;el("page").hidden=false;
+      if(window.LWBBrand)try{BB=await LWBBrand.mount(client,{into:"#page .erp-pagehead",after:true,onChange:load});if(BB.companies.length>1)SM=await LWBBrand.skuMap(client)}catch(e){}
       await load();
     })();
   </script>
