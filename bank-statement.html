@@ -89,6 +89,13 @@
     .bs-bk input,.bs-bk select{height:38px;border:1.5px solid var(--erp-line);border-radius:8px;padding:0 9px;font:inherit;font-size:15px;font-weight:400;background:#fff;color:var(--erp-ink);min-width:0;width:100%}
     .bs-bk .amt{font-size:20px;font-weight:800}.bs-bk .amt.in{color:#13824a}.bs-bk .amt.out{color:#b3122b}
     .bs-bk .acts{display:flex;gap:6px;justify-content:flex-end}
+    .bs-bk .cap{font-size:12.5px;font-weight:700;color:#3b4652;margin:0 0 3px}
+    .bs-bk .note{font-size:12.5px;color:var(--erp-muted)}
+    .bs-bk label{position:relative}
+    .bs-ta{position:absolute;left:0;right:0;top:100%;z-index:5;margin-top:2px;background:#fff;border:1.5px solid var(--erp-line);border-radius:8px;box-shadow:0 8px 20px rgba(0,0,0,.14);max-height:240px;overflow:auto}
+    .bs-ta button{display:block;width:100%;text-align:left;border:0;background:#fff;padding:7px 10px;font:inherit;font-size:14px;font-weight:400;cursor:pointer;color:var(--erp-ink)}
+    .bs-ta button small{display:block;font-size:11.5px;color:var(--erp-muted)}
+    .bs-ta button.on,.bs-ta button:hover{background:#e8f0fd}
     @media(max-width:760px){
       .bs-kpis{grid-template-columns:1fr 1fr}
       .bs-r{grid-template-columns:22px minmax(0,1fr) auto;gap:2px 8px}
@@ -146,7 +153,7 @@
       return m.replace(/^.*?ERROR:\s*/,"")};
     const HOW={AUTO:"Matched by itself",MATCH:"Matched",PARTY:"Party payment",DEPOSIT:"Cash deposit",WITHDRAW:"Cash withdrawn",IN:"Other income",OUT:"Expense",IGNORE:"Ignored"};
     const SRC={ENTRY:"Accounts entry",PAYMENT:"Party payment",DRIVER_ONLINE:"Driver money",DRIVER_CASH:"Driver money",OLD:"Old payment"};
-    let D=null,bankId=null,tab="OPEN",dir="all",q="",days=90,sel=new Set(),parties=[],pending=null,shown=200;
+    let D=null,bankId=null,tab="OPEN",dir="all",q="",days=90,sel=new Set(),parties=[],suppliers=[],pending=null,shown=200;
 
     function say(t,kind){el("msg").hidden=!t;el("msg").textContent=t||"";el("msg").className="bs-msg"+(kind?" "+kind:"")}
     async function rpc(name,args){const {data,error}=await client.rpc(name,args);if(error)throw Error(errText(error));return data}
@@ -228,27 +235,81 @@
     const typesFor=(ins,outs)=>ins&&outs?[["IGNORE","Ignore (own transfer etc.)"]]
         :ins?[["PARTY","Party payment"],["DEPOSIT","Cash deposit"],["IN","Other income (head)"],["IGNORE","Ignore"]]
         :[["OUT","Expense (head)"],["WITHDRAW","Cash withdrawn"],["IGNORE","Ignore"]];
-    /* one line at a time, like Tally: Book -> what is it -> Save */
+    /* one line at a time, like Tally: Book -> what is it -> name -> Enter */
+    const BOOK_IN=[["PARTY","Party payment"],["DEPOSIT","Cash deposit"],["IN","Other income"],["IGNORE","Ignore"]];
+    const BOOK_OUT=[["SUP","Supplier / Company"],["EXP","Expense"],["AST","Asset purchase"],["WITHDRAW","Cash withdrawn"],["IGNORE","Ignore"]];
+    const headNamed=n=>D.categories.find(c=>c.kind==="OUT"&&key(c.name)===key(n));
+    const SPECIAL_OUT=new Set([key("Supplier payment"),key("Asset purchase")]);
+    function guessSupplier(l){const n=key(l.narration);if(n.length<5)return null;let best=null;
+      for(const x of suppliers){const k=key(x.name);if(k.length>=5&&n.includes(k.slice(0,Math.min(12,k.length)))&&(!best||k.length>key(best.name).length))best=x}return best}
+    // small list under the box, only the names that match what is typed (not the whole list)
+    function typeahead(inp,items){
+      const box=document.createElement("div");box.className="bs-ta";box.hidden=true;inp.after(box);
+      let hits=[],hi=-1;
+      const draw=()=>{const words=String(inp.value||"").toUpperCase().split(/\s+/).filter(Boolean),all=words.length?items():[];
+        hits=all.filter(x=>{const k=x.label.toUpperCase();return words.every(w=>k.includes(w))})
+          .sort((x,y)=>(y.label.toUpperCase().startsWith(words[0]||"")-x.label.toUpperCase().startsWith(words[0]||""))||x.label.localeCompare(y.label)).slice(0,6);
+        if(hits.length===1&&key(hits[0].label)===key(inp.value))hits=[];
+        hi=hits.length?0:-1;
+        box.innerHTML=hits.map((x,i)=>'<button type="button" tabindex="-1" data-h="'+i+'"'+(i===hi?' class="on"':"")+'>'+esc(x.label)+(x.sub?'<small>'+esc(x.sub)+'</small>':"")+'</button>').join("");
+        box.hidden=!hits.length||document.activeElement!==inp};
+      const pick=i=>{inp.value=hits[i].label;box.hidden=true;hits=[];inp.dispatchEvent(new Event("change"))};
+      inp.addEventListener("input",draw);inp.addEventListener("focus",draw);
+      inp.addEventListener("blur",()=>setTimeout(()=>{box.hidden=true},150));
+      box.addEventListener("mousedown",e=>{const b=e.target.closest("[data-h]");if(b){e.preventDefault();pick(Number(b.dataset.h))}});
+      inp.addEventListener("keydown",e=>{if(box.hidden)return;
+        if(e.key==="ArrowDown"||e.key==="ArrowUp"){e.preventDefault();hi=(hi+(e.key==="ArrowDown"?1:-1)+hits.length)%hits.length;
+          box.querySelectorAll("[data-h]").forEach((b,i)=>b.classList.toggle("on",i===hi))}
+        else if(e.key==="Enter"&&hi>=0){e.preventDefault();e.stopPropagation();pick(hi)}
+        else if(e.key==="Escape"){e.stopPropagation();box.hidden=true}});
+      return {open:()=>!box.hidden};
+    }
     function bookOne(l){
-      const isIn=+l.credit>0,types=typesFor(isIn,!isIn);let type=types[0][0];
+      const isIn=+l.credit>0,types=isIn?BOOK_IN:BOOK_OUT;let type=types[0][0];
       const s=sheet("Book "+(isIn?"money in":"money out")+" · "+dmy(l.date),
         '<div class="bs-bk" style="display:flex;flex-direction:column;gap:9px">'+
         '<div><div class="amt '+(isIn?"in":"out")+'">'+(isIn?"+":"−")+rs(+l.credit||+l.debit)+'</div><div style="font-size:13px;color:var(--erp-muted);overflow-wrap:anywhere">'+esc(l.narration||"")+(l.ref?" · Ref "+esc(l.ref):"")+'</div></div>'+
-        '<div class="bs-types" role="group" aria-label="What is it">'+types.map(t=>'<button type="button" data-ty="'+t[0]+'">'+t[1]+'</button>').join("")+'</div>'+
-        '<label id="kParty"><span></span><input id="kP" list="bsParties" autocomplete="off"></label>'+
+        '<div><div class="cap">Category</div><div class="bs-types" role="group" aria-label="Category">'+types.map(t=>'<button type="button" data-ty="'+t[0]+'">'+t[1]+'</button>').join("")+'</div></div>'+
         '<label id="kHead"><span>Head</span><select id="kH"></select></label>'+
+        '<label id="kParty"><span></span><input id="kP" autocomplete="off" enterkeyhint="done"></label>'+
+        '<div class="note" id="kNote"></div>'+
         '<div class="acts"><button type="button" class="bs-btn" data-x2>Cancel</button><button type="button" class="bs-btn grn" id="kSave">Save</button></div></div>');
-      const B=s.back,P=B.querySelector("#kP"),H=B.querySelector("#kH");
+      const B=s.back,P=B.querySelector("#kP"),H=B.querySelector("#kH"),N=B.querySelector("#kNote");
+      const supItems=()=>suppliers.map(x=>({label:x.name,sub:x.coName&&key(x.coName)!==key(x.name)?x.coName:"",x}));
+      const list=()=>type==="PARTY"?parties.map(n=>({label:n})):["SUP","EXP","AST"].includes(type)?supItems():[];
+      const ta=typeahead(P,list);
+      const supOf=v=>suppliers.find(x=>key(x.name)===key(v));
       const paint=()=>{B.querySelectorAll("[data-ty]").forEach(b=>b.setAttribute("aria-pressed",String(b.dataset.ty===type)));
-        B.querySelector("#kParty").hidden=!["PARTY","IN","OUT","IGNORE"].includes(type);
-        B.querySelector("#kParty span").textContent=type==="PARTY"?"Party (from Party Master)":type==="IGNORE"?"Why (optional)":"Paid "+(isIn?"by":"to")+" (optional)";
-        B.querySelector("#kHead").hidden=!["IN","OUT"].includes(type);
-        H.innerHTML='<option value="">Choose head…</option>'+D.categories.filter(c=>c.kind===type).map(c=>'<option value="'+c.id+'">'+esc(c.name)+'</option>').join("");
-        if(type==="PARTY"&&!P.value)P.value=guessParty(l)||""};
-      B.querySelectorAll("[data-ty]").forEach(b=>b.onclick=()=>{type=b.dataset.ty;P.value="";paint()});
+        const lab={PARTY:"Party (type the name)",SUP:"Supplier / company (type the name)",EXP:"Paid to (optional)",AST:"Bought from (optional)",IN:"Received from (optional)",IGNORE:"Why (optional)"}[type];
+        B.querySelector("#kParty").hidden=!lab;B.querySelector("#kParty span").textContent=lab||"";
+        const heads=type==="EXP"?D.categories.filter(c=>c.kind==="OUT"&&!SPECIAL_OUT.has(key(c.name))):type==="IN"?D.categories.filter(c=>c.kind==="IN"):[];
+        B.querySelector("#kHead").hidden=!heads.length;B.querySelector("#kHead span").textContent=type==="EXP"?"Expense head":"Income head";
+        H.innerHTML='<option value="">Choose…</option>'+heads.map(c=>'<option value="'+c.id+'">'+esc(c.name)+'</option>').join("");
+        if(type==="PARTY"&&!P.value)P.value=guessParty(l)||"";
+        if(type==="SUP"&&!P.value){const g=guessSupplier(l);if(g)P.value=g.name}
+        note()};
+      const note=()=>{const x=type==="SUP"&&supOf(P.value);
+        N.textContent=type==="SUP"?(x?(x.coId?"Saved as Supplier payment, and as a payment to "+x.coName+" (its bills show paid).":"Saved as Supplier payment to "+x.name+"."):"Pick the name from the list. New supplier? Add it on Supplier Master first.")
+          :type==="AST"?"Saved under the head Asset purchase.":type==="PARTY"?"Party outstanding drops (oldest bill first).":"";N.hidden=!N.textContent};
+      P.addEventListener("input",note);P.addEventListener("change",note);
+      B.querySelectorAll("[data-ty]").forEach(b=>b.onclick=()=>{type=b.dataset.ty;P.value="";paint();const f=!B.querySelector("#kHead").hidden?H:!B.querySelector("#kParty").hidden?P:null;if(f)f.focus()});
       B.querySelector("[data-x2]").onclick=s.close;
-      B.querySelector("#kSave").onclick=async e=>{if(await save([l],type,P.value.trim(),H.value,e.target,true))s.close()};
-      paint();
+      const go=async btn=>{const name=P.value.trim(),p={};
+        if(type==="PARTY"){if(!name)return ERPShell.alert("Type the party name");p.type="PARTY";p.party=name}
+        else if(type==="SUP"){const x=supOf(name);if(!x)return ERPShell.alert("Pick the supplier / company from the list. A new one is added on Supplier Master.");
+          const h=headNamed("Supplier payment");if(!h)return ERPShell.alert("The head Supplier payment is missing on Accounts Dashboard > Heads.");
+          Object.assign(p,{type:"OUT",category_id:h.id,party:x.name});if(x.coId)p.company_id=x.coId}
+        else if(type==="AST"){const h=headNamed("Asset purchase");if(!h)return ERPShell.alert("The head Asset purchase is missing on Accounts Dashboard > Heads.");Object.assign(p,{type:"OUT",category_id:h.id,party:name||null})}
+        else if(type==="EXP"||type==="IN"){if(!H.value)return ERPShell.alert("Choose the head");Object.assign(p,{type:type==="EXP"?"OUT":"IN",category_id:Number(H.value),party:name||null})}
+        else{p.type=type;if(type==="IGNORE")p.note=name||null}
+        btn.disabled=true;
+        try{const r=await rpc("lwb_bank_stmt_assign",{p_ids:[l.id],p});
+          if(r.errors&&r.errors.length)throw Error(r.errors[0].error);
+          s.close();sel.delete(l.id);await load();ERPShell.toast&&ERPShell.toast("Booked")}
+        catch(e){btn.disabled=false;await ERPShell.alert(errText(e))}};
+      const sv=B.querySelector("#kSave");sv.onclick=()=>go(sv);
+      B.addEventListener("keydown",e=>{if(e.key==="Enter"&&!e.defaultPrevented&&!ta.open()&&!(e.target.tagName==="BUTTON")){e.preventDefault();if(!sv.disabled)go(sv)}});
+      paint();setTimeout(()=>{if(!B.querySelector("#kParty").hidden){P.focus();P.select()}},30);
     }
     function drawBar(){
       const bar=el("bar");if(!bar)return;
@@ -457,6 +518,11 @@
       try{bankId=Number(localStorage.getItem("lwbBankStmtBank"))||null}catch(_){}
       await load();
       if(D&&D.bank_id!==bankId){bankId=D.bank_id}
+      Promise.all([client.from("lwb_supplier_master").select("*"),client.from("lwb_companies").select("id,name,active")]).then(([sp,co])=>{
+        const cos=co.error?[]:(co.data||[]).filter(c=>c.active!==false),coName=id=>(cos.find(c=>c.id===id)||{}).name||"";
+        const m=new Map();for(const x of sp.error?[]:sp.data||[])if(x.is_active!==false&&x.supplier_name)m.set(key(x.supplier_name),{name:x.supplier_name,coId:x.company_id||null,coName:coName(x.company_id)});
+        for(const c of cos)if(!m.has(key(c.name)))m.set(key(c.name),{name:c.name,coId:c.id,coName:c.name});
+        suppliers=[...m.values()].sort((a,b)=>a.name.localeCompare(b.name))}).catch(()=>{});
       LWBPartyPay.load(client).then(i=>{const m=new Map();for(const x of i.parties.values())m.set(key(x.party),x.party);for(const n of i.raw.parties||[]){const pp=i.parentOf(n);if(!m.has(key(pp)))m.set(key(pp),pp)}
         parties=[...m.values()].sort();const dl=document.createElement("datalist");dl.id="bsParties";dl.innerHTML=parties.map(n=>'<option value="'+esc(n)+'">').join("");document.body.append(dl);if(D)renderTab()}).catch(()=>{});
     })();

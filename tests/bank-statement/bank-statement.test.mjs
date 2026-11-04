@@ -28,6 +28,8 @@ CREATE TABLE public.lwb_payment_collections(id uuid default gen_random_uuid() pr
 CREATE TABLE public.lwb_party_opening_balances(id uuid default gen_random_uuid() primary key,customer_name text,as_of_date date,amount numeric(14,2),remarks text,updated_by uuid,updated_at timestamptz default now());
 CREATE TABLE public.lwb_customer_master(customer_name text);
 CREATE TABLE public.lwb_tally_party_map(tally_key text primary key,tally_name text not null,customer_name text,updated_at timestamptz default now(),updated_by uuid);
+CREATE TABLE public.lwb_companies(id uuid default gen_random_uuid() primary key,name text not null,active boolean default true);
+CREATE TABLE public.lwb_company_payments(id uuid default gen_random_uuid() primary key,company_id uuid not null references lwb_companies(id),pay_date date not null,amount numeric(14,2) not null,mode text not null default 'BANK' check (mode in ('BANK','UPI','CHEQUE','CASH','CREDIT_NOTE')),ref_no text,note text,created_by uuid,created_at timestamptz default now(),cancelled_at timestamptz,cancelled_by uuid,acc_entry_id uuid);
 CREATE SCHEMA storage;
 CREATE TABLE storage.buckets(id text primary key,name text,public boolean,file_size_limit bigint,allowed_mime_types text[]);
 CREATE TABLE storage.objects(bucket_id text,name text);
@@ -160,4 +162,25 @@ test('Suspense: tick many and book them at once; party outstanding drops; undo p
  await imp(first);L=await list();
  assert.equal(L.lines.find(l=>l.id===m.id).status,'OPEN');
  assert.equal(await bankBal(),25000+12000+1000-118-10000-20000);
+});
+
+test('money out to a company (Coca-Cola): Supplier payment + company payment; undo cancels both',async()=>{
+ const cp=await sql('lwb_accounts_company_pay_setup.sql');
+ await db.exec(cp.slice(cp.indexOf('CREATE OR REPLACE FUNCTION public.lwb_acc_entry_company_cancel'),cp.indexOf('-- Same as lwb_company_brand_setup.sql')));
+ const co=(await db.query("insert into lwb_companies(name) values('Coca-Cola') returning id")).rows[0].id;
+ await as('admin');
+ await imp([row(0,'RTGS/ICICR420261103/CITI0000007/HINDUSTANCOCA COLA',null,435000,'S20043178')],'cc.xlsx');
+ let L=await list();const ln=L.lines.find(l=>Number(l.debit)===435000);
+ const head=n=>db.query("select id from lwb_acc_categories where kind='OUT' and name=$1",[n]).then(r=>r.rows[0].id);
+ const sup=await head('Supplier payment'),rent=await head('Rent');
+ assert.ok(await head('Asset purchase'),'Asset purchase head is added');
+ await assert.rejects(assign([ln.id],{type:'OUT',category_id:rent,company_id:co}),/Supplier payment/);
+ await assert.rejects(assign([ln.id],{type:'PARTY',party:P,company_id:co}),/money out/);
+ const r=await assign([ln.id],{type:'OUT',category_id:sup,company_id:co});
+ assert.deepEqual([r.done,r.errors.length],[1,0]);
+ const pay=(await db.query('select p.*,e.party,e.kind,e.amount ea from lwb_company_payments p join lwb_acc_entries e on e.id=p.acc_entry_id')).rows;
+ assert.equal(pay.length,1);assert.equal(Number(pay[0].amount),435000);assert.equal(pay[0].mode,'BANK');
+ assert.equal(pay[0].party,'Coca-Cola');assert.equal(pay[0].kind,'OUT');assert.equal(pay[0].ref_no,'S20043178');
+ await one('select public.lwb_bank_stmt_undo($1)',[ln.id]);
+ assert.ok((await db.query('select cancelled_at from lwb_company_payments')).rows[0].cancelled_at,'company payment cancelled with the line');
 });

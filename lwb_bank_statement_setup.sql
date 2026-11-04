@@ -84,7 +84,7 @@ REVOKE ALL ON TABLE public.lwb_bank_stmt_imports, public.lwb_bank_stmt_lines FRO
 INSERT INTO public.lwb_acc_categories (kind, name, sort)
 SELECT v.kind, v.name, v.sort FROM (VALUES
   ('OUT','Bank charges',170),('OUT','Loan EMI / Interest',180),('OUT','GST / Tax paid',190),
-  ('IN','Bank interest',50),('IN','Loan received',60)
+  ('IN','Bank interest',50),('IN','Loan received',60),('OUT','Asset purchase',165)
 ) v(kind, name, sort)
 WHERE NOT EXISTS (SELECT 1 FROM public.lwb_acc_categories c WHERE c.kind = v.kind AND lower(btrim(c.name)) = lower(v.name));
 
@@ -335,6 +335,7 @@ DECLARE
   v_cat bigint; v_note text := left(nullif(btrim(coalesce(p->>'note','')),''), 300);
   v_id uuid; s public.lwb_bank_stmt_lines%ROWTYPE; v_amt numeric; v_mode text; v_ref text; v_res jsonb; v_pay uuid;
   v_entry uuid; v_kind text; v_remark text; v_done integer := 0; v_err jsonb := '[]'::jsonb; c record;
+  v_co uuid; v_co_name text;
 BEGIN
   IF NOT public.lwb_acc_admin() THEN RAISE EXCEPTION 'Only Admin books bank statement lines'; END IF;
   IF p_ids IS NULL OR cardinality(p_ids) = 0 THEN RAISE EXCEPTION 'Tick the lines first'; END IF;
@@ -347,6 +348,18 @@ BEGIN
     RAISE EXCEPTION 'Choose the % head', CASE v_type WHEN 'IN' THEN 'income' ELSE 'expense' END;
   END IF;
   IF v_type = 'MATCH' AND cardinality(p_ids) <> 1 THEN RAISE EXCEPTION 'Match one line at a time'; END IF;
+  -- Money out to a company (Coca-Cola, Rajnigandha ...): also saved as that company's payment,
+  -- the same way Accounts Dashboard Cash Out > Supplier payment does (lwb_acc_add_entry5).
+  BEGIN v_co := nullif(p->>'company_id','')::uuid; EXCEPTION WHEN others THEN RAISE EXCEPTION 'Choose the company again'; END;
+  IF v_co IS NOT NULL THEN
+    IF v_type <> 'OUT' THEN RAISE EXCEPTION 'A company payment is money out'; END IF;
+    IF NOT EXISTS (SELECT 1 FROM public.lwb_acc_categories k WHERE k.id = v_cat AND lower(btrim(k.name)) = 'supplier payment') THEN
+      RAISE EXCEPTION 'A company payment needs the head Supplier payment';
+    END IF;
+    SELECT co.name INTO v_co_name FROM public.lwb_companies co WHERE co.id = v_co;
+    IF v_co_name IS NULL THEN RAISE EXCEPTION 'Company not found'; END IF;
+    v_party := coalesce(v_party, v_co_name);
+  END IF;
 
   FOREACH v_id IN ARRAY p_ids LOOP
     BEGIN
@@ -393,6 +406,10 @@ BEGIN
                 CASE WHEN v_kind IN ('IN','OUT') THEN v_mode ELSE 'CASH' END, s.bank_id, v_amt,
                 CASE WHEN v_kind IN ('IN','OUT') THEN left(v_party,120) END, v_ref, v_remark, auth.uid())
         RETURNING id INTO v_entry;
+        IF v_co IS NOT NULL THEN
+          INSERT INTO public.lwb_company_payments (company_id, pay_date, amount, mode, ref_no, note, created_by, acc_entry_id)
+          VALUES (v_co, s.txn_date, v_amt, v_mode, left(v_ref, 80), left(v_remark, 300), auth.uid(), v_entry);
+        END IF;
         PERFORM public.lwb_bank_link(v_id, 'ENTRY', v_entry, v_kind, v_kind IN ('IN','DEPOSIT'));
         UPDATE public.lwb_bank_stmt_lines SET category_id = CASE WHEN v_kind IN ('IN','OUT') THEN v_cat END,
                party = CASE WHEN v_kind IN ('IN','OUT') THEN left(v_party,120) END, note = v_note
