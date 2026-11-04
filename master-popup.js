@@ -20,6 +20,15 @@ body.mp-open{overflow:hidden}
   .mp-modal{padding:0}.mp-modal>.mp-card{min-height:100%;border-radius:0!important}
   .mp-card .fields,.mp-card .form-grid,.mp-card .fa-grid{grid-template-columns:minmax(0,1fr) minmax(0,1fr)!important;gap:8px!important}
   .mp-card .fields>:first-child,.mp-card .form-grid>:first-child,.mp-card .fa-grid>:nth-child(2),.mp-card .field.full{grid-column:span 2!important}
+  .mp-card .fm-grid{grid-template-columns:minmax(0,1fr) minmax(0,1fr)!important;gap:8px!important}
+  .mp-card .fm-grid .wide,.mp-card .fm-grid>:has(textarea){grid-column:span 2!important}
+  .mp-card .fm-grid label{font-size:12.5px!important;margin-bottom:3px!important}
+  .mp-card .fm-grid input,.mp-card .fm-grid select{height:38px!important;font-size:14px!important}
+  .mp-card .erp-card-body{padding:10px 12px!important}
+  .mp-card .fm-actions{position:sticky;bottom:0;background:#fff;padding:8px 0;margin-top:8px!important;flex-wrap:nowrap!important;z-index:1}
+  .mp-card .fm-actions .fm-btn{flex:1;padding:0 10px}.mp-card .fm-actions .fm-hint:empty{display:none}
+  .mp-card .fm-actions .fm-hint{position:absolute;bottom:100%;left:0;font-size:11.5px;background:#fff}
+  .mp-card :is(.row-end,.tk-actions,.mk-end,.tr-end){position:sticky;bottom:0;background:#fff;padding:8px 0;z-index:1}
   .mp-card input,.mp-card select{min-width:0;max-width:100%}
   .mp-card .fa-actions,.mp-card .actions{position:sticky;bottom:0;background:#fff;padding:8px 0;margin-top:8px;display:flex;gap:6px;flex-wrap:nowrap;z-index:1}
   .mp-card .actions button{white-space:nowrap}
@@ -34,6 +43,7 @@ body.mp-open{overflow:hidden}
   table.mp-cards tbody td.mp-act button{flex:1;padding:7px 10px}
   table.mp-cards tbody td[colspan]{grid-column:span 2}
   table.mp-cards tbody td[hidden]{display:none!important}
+  table.mp-cards tbody td[data-label="#"]{display:none!important}
 }`;
   function style() {
     if (document.getElementById("mpStyle")) return;
@@ -49,7 +59,7 @@ body.mp-open{overflow:hidden}
         if (td.colSpan > 1) return;
         if (heads[i] && td.dataset.label !== heads[i]) td.dataset.label = heads[i];
         td.classList.toggle("mp-main", i === mainIdx);
-        td.classList.toggle("mp-act", i === heads.length - 1 && /action/i.test(heads[i] || ""));
+        td.classList.toggle("mp-act", i === heads.length - 1 && /action|review/i.test(heads[i] || ""));
       }));
     };
     label(); new MutationObserver(label).observe(t.tBodies[0] || t, { childList: true, subtree: true });
@@ -82,5 +92,30 @@ body.mp-open{overflow:hidden}
     if (/^#(new|add)$/.test(location.hash)) setTimeout(() => { sync(); if (!nb.hidden) nb.click(); }, 900);
     return { open, close };
   }
-  window.LWBMasterPopup = { mount, cards };
+  // Pages that already show / hide a form card (card.hidden) with their own "+ New" and Close buttons:
+  // sheet() puts the card in a popup that opens when the page un-hides the card and closes when it hides it
+  // again. ✕, Esc and a tap outside press the page's own Close (o.close: id or element), so its reset runs.
+  function sheet(o) {
+    style();
+    const card = typeof o.card === "string" ? document.getElementById(o.card) : o.card; if (!card) return null;
+    const modal = document.createElement("div"); modal.className = "mp-modal"; modal.hidden = true;
+    card.parentNode.insertBefore(modal, card); modal.appendChild(card); card.classList.add("mp-card");
+    card.setAttribute("role", "dialog"); card.setAttribute("aria-modal", "true"); card.style.marginBottom = "0";
+    const closeBtn = () => typeof o.close === "string" ? document.getElementById(o.close) : o.close;
+    const shut = () => { const b = closeBtn(); if (b && !b.hidden) b.click(); else card.hidden = true; };
+    if (o.title && !card.querySelector(".erp-card-head")) { const h = document.createElement("div"); h.className = "erp-card-head"; h.innerHTML = "<h2></h2>"; h.firstChild.textContent = o.title; card.prepend(h); }
+    const x = document.createElement("button"); x.type = "button"; x.className = "mp-x"; x.textContent = "✕"; x.setAttribute("aria-label", "Close");
+    x.onclick = shut; card.prepend(x);
+    // The page's own Close button sits where ✕ is: hide it, ✕ does the same.
+    const b0 = closeBtn(); if (b0 && card.querySelector(".erp-card-head") && card.querySelector(".erp-card-head").contains(b0)) b0.style.display = "none";
+    modal.addEventListener("click", e => { if (e.target === modal) shut(); });
+    document.addEventListener("keydown", e => { if (e.key === "Escape" && !modal.hidden) shut(); });
+    const sync = () => { const on = !card.hidden; if (modal.hidden === !on) return; modal.hidden = !on;
+      document.body.classList.toggle("mp-open", on); if (on) { modal.scrollTop = 0;
+        setTimeout(() => { const f = card.querySelector("input:not([type=hidden]):not([disabled]):not([type=file]),select,textarea"); if (f && !card.contains(document.activeElement)) f.focus(); }, 30); } };
+    new MutationObserver(sync).observe(card, { attributes: true, attributeFilter: ["hidden"] }); sync();
+    // The page may still call card.scrollIntoView(): harmless inside the popup.
+    return { sync };
+  }
+  window.LWBMasterPopup = { mount, cards, sheet };
 })();

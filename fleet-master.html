@@ -11,6 +11,7 @@
   <script src="erp-recent.js"></script>
   <script src="excel-io.js"></script>
   <script src="erp-docs.js"></script>
+  <script src="master-popup.js"></script>
   <style>
     .status{text-align:center;padding:80px 20px;font-size:15px;color:#555}
     .fm-sub{margin:-8px 0 14px;color:var(--erp-muted);font-size:15px}
@@ -46,6 +47,15 @@
     @media(max-width:900px){.fm-grid{grid-template-columns:1fr 1fr}}
     @media(max-width:540px){.fm-grid{grid-template-columns:1fr}.fm-grid .wide{grid-column:span 1}.fm-tools input{min-width:0;width:100%}}
     [hidden]{display:none!important}
+    @media(max-width:640px){
+      .fm-sub{display:none}
+      #tabs .erp-pill{font-size:14px;padding:7px 14px}
+      .erp-card-head:has(#listTools){flex-wrap:wrap;gap:6px;padding:10px 12px}
+      #listTitle{width:100%;font-size:15px}
+      #listTools{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:6px;width:100%}
+      #listTools #search{grid-column:1/-1;height:38px}
+      #listTools select{height:38px;min-width:0;font-size:14px}#listTools .fm-btn,#listTools .mp-new{height:38px;padding:0 10px;font-size:14px}
+    }
   </style>
 </head>
 <body>
@@ -76,7 +86,7 @@
 
     <section class="erp-card" style="margin-top:14px">
       <div class="erp-card-head"><h2 id="listTitle"></h2>
-        <div class="fm-tools"><input id="search" type="search" placeholder="Search"><select id="roleFilter" hidden><option value="">All Work / Post</option></select><select id="filter"><option value="active">Active</option><option value="inactive">Inactive</option><option value="all">All</option><option value="nodocs">Documents missing</option></select></div></div>
+        <div class="fm-tools" id="listTools"><input id="search" type="search" placeholder="Search"><select id="roleFilter" hidden><option value="">All Work / Post</option></select><select id="filter"><option value="active">Active</option><option value="inactive">Inactive</option><option value="all">All</option><option value="nodocs">Documents missing</option></select><button type="button" class="fm-btn light" id="xlBtn">⬇⬆ Excel</button></div></div>
       <div class="erp-scroll" style="overflow:auto"><table class="fm-table"><thead id="head"></thead><tbody id="list"></tbody></table></div>
     </section>
   </main>
@@ -290,7 +300,7 @@
         if(docPanel.busy()){ERPShell.toast("Upload in progress, please wait.","error");return}
       }
       if(!await confirm((editing?"UPDATE ":"ADD ")+K.one+"?\n\n"+(K.rpc?(o.emp_code||(editing?editing.emp_code:"New ID "+empNext))+" · "+o.name+" · "+o.designation+" · "+rs(o.monthly_salary)+"/month":o.vehicle_no)))return;
-      busy=true;fillForm();
+      busy=true;fillForm();let saved=false;
       try{
         let msg=K.one+" saved.",newId=editing?editing.id:null;
         if(K.rpc){const r=await client.rpc("lwb_emp_save2",{p:{...o,id:editing?editing.id:null}});if(r.error)throw r.error;msg="Saved: "+r.data.emp_code+" · "+o.name;newId=r.data.id||newId}
@@ -299,9 +309,9 @@
         if(docPanel&&newId!=null){docMsg=await docPanel.flush(newId);avatars.delete(DOC_ENTITY[tab]+newId)}
         if(docMsg)await alert(msg+"\n\nBut some documents were NOT saved:\n"+docMsg+"\n\nOpen the record with Edit and add them again.");
         else ERPShell.toast(msg,"success");
-        editing=null;docKey="";await load();loadAvatars();
+        editing=null;docKey="";await load();loadAvatars();saved=true;
       }catch(e){ERPShell.toast("Save failed: "+(e.message||e),"error")}
-      busy=false;render();
+      busy=false;render();if(saved&&window.MP)MP.close();
     }
     async function remove(id){
       const K=KIND[tab],r=data[tab].find(x=>x.id===id);if(!r||!head())return;
@@ -353,12 +363,12 @@
       const rows=data[tab].filter(r=>(f==="all"||(f==="nodocs"?act1(r)&&lacks(r):(f==="active")===act1(r)))&&(!rf||roleKey(r.designation)===rf)&&q.every(w=>JSON.stringify(r).toLowerCase().includes(w)));
       const act=r=>(can()?'<button type="button" data-edit="'+r.id+'">Edit</button>':"")+(head()&&tab!=="employees"?'<button type="button" class="del" data-del="'+r.id+'">Delete</button>':"");
       if(tab==="vehicles"){
-        el("head").innerHTML="<tr><th>#</th><th>Vehicle No</th><th>Type / Capacity</th><th>Ownership</th><th>Documents</th><th>Driver</th><th>Status</th><th></th></tr>";
+        el("head").innerHTML="<tr><th>#</th><th>Vehicle No</th><th>Type / Capacity</th><th>Ownership</th><th>Documents</th><th>Driver</th><th>Status</th><th>Action</th></tr>";
         el("list").innerHTML=rows.map((r,i)=>{const drv=data.drivers.filter(d=>d.default_vehicle_id===r.id).map(d=>esc(d.name)).join(", ");
           return '<tr class="'+(r.is_active?"":"off")+'"><td>'+(i+1)+"</td><td>"+avatar(r)+"<b>"+esc(r.vehicle_no)+"</b>"+(r.note?"<small>"+esc(r.note)+"</small>":"")+"<div>"+docTags(r)+"</div></td><td>"+esc(r.vehicle_type||"-")+(r.capacity_kg!=null?"<small>"+esc(r.capacity_kg)+" KG</small>":"")+"</td><td>"+(r.ownership==="TRANSPORTER"?"Transporter":"Own")+(r.transporter_name?"<small>"+esc(r.transporter_name)+(r.owner_mobile?" · "+esc(r.owner_mobile):"")+"</small>":"")+"</td><td style='white-space:normal;min-width:180px'>"+expiryTags(DOCS.map(([k,l])=>[r[k],l]))+"</td><td>"+(drv||"-")+"</td><td>"+(r.is_active?(tripOf.has(r.id)?'<span class="tagx warn">On trip</span><small>'+esc(tripOf.get(r.id).join(", "))+"</small>":'<span class="tagx ok">Free</span>'):'<span class="tagx bad">Inactive</span>')+"</td><td>"+act(r)+"</td></tr>"}).join("")||'<tr><td colspan="8" class="erp-empty">No vehicles yet. Add one using the form above or Excel.</td></tr>';
       }else if(tab==="employees"){
         const mo=empMonth?new Date(empMonth+"T12:00:00Z").toLocaleDateString("en-IN",{month:"short",timeZone:"UTC"}):"This month";
-        el("head").innerHTML="<tr><th>Employee ID</th><th>Name</th><th>Work / Post</th><th>ERP Login</th><th>Mobile</th><th>Salary / month</th><th>Upad in "+esc(mo)+"</th><th>Salary paid in "+esc(mo)+"</th><th>Joined</th><th>Status</th><th></th></tr>";
+        el("head").innerHTML="<tr><th>Employee ID</th><th>Name</th><th>Work / Post</th><th>ERP Login</th><th>Mobile</th><th>Salary / month</th><th>Upad in "+esc(mo)+"</th><th>Salary paid in "+esc(mo)+"</th><th>Joined</th><th>Status</th><th>Action</th></tr>";
         el("list").innerHTML=rows.map(r=>{const cap=Number(r.month_cap)||0,up=Math.max(0,Number(r.month_upad)||0),left=cap-up;
           return '<tr class="'+(r.is_active?"":"off")+'"><td><b>'+esc(r.emp_code||"-")+"</b></td><td>"+avatar(r)+"<b>"+esc(r.name)+"</b>"+(r.note?"<small>"+esc(r.note)+"</small>":"")+"<div>"+docTags(r)+"</div></td><td>"+roleCell(r)+"</td><td>"+loginCell(r)+"</td><td>"+esc(r.mobile||"-")+(r.alt_mobile?"<small>"+esc(r.alt_mobile)+"</small>":"")+"</td><td>"+(Number(r.monthly_salary)?rs(r.monthly_salary):"-")+(cap&&cap!==Number(r.monthly_salary)?"<small>"+esc(mo)+": "+rs(cap)+"</small>":"")+"</td><td>"+rs(up)+(cap?(left<-0.5?'<small><span class="tagx bad">'+rs(-left)+" over</span></small>":"<small>Left "+rs(left)+"</small>"):"")+"</td><td>"+rs(r.month_paid)+"</td><td>"+(showDate(r.joining_date)||"-")+"</td><td>"+(r.is_active?'<span class="tagx ok">Working</span>':'<span class="tagx bad">Left</span>')+"</td><td>"+act(r)+"</td></tr>"}).join("")||'<tr><td colspan="11" class="erp-empty">'+(empErr?esc(empErr):"No employees yet. Add one using the form above or Excel.")+"</td></tr>";
       }else{
@@ -374,7 +384,7 @@
       el("pageTitle").textContent=K.title;el("pageSub").textContent=K.sub;document.title=K.title+" | Luxury Wrist Brand ERP";
       document.querySelectorAll("#tabs .erp-pill").forEach(a=>a.classList.toggle("active",a.dataset.tab===tab));
       el("empPill").hidden=!empRole();el("drvPill").hidden=empRole()||me.role!=="transport";
-      el("formCard").hidden=el("xlCard").hidden=!!K.ro;el("roleFilter").hidden=tab!=="employees";el("setupMsg").hidden=tab==="employees"?!empErr:!missing;if(tab==="employees"&&empErr)el("setupMsg").textContent=empErr;
+      el("formCard").hidden=!!K.ro;el("xlCard").hidden=!!K.ro||!xlOpen;el("xlBtn").hidden=!!K.ro;const nb=document.querySelector("#listTools .mp-new");if(nb)nb.textContent="+ New "+K.one;el("roleFilter").hidden=tab!=="employees";el("setupMsg").hidden=tab==="employees"?!empErr:!missing;if(tab==="employees"&&empErr)el("setupMsg").textContent=empErr;
       const crumb=document.querySelector(".erp-crumb b");if(crumb)crumb.textContent=K.title;
       document.querySelectorAll(".erp-link").forEach(a=>a.classList.toggle("active",a.getAttribute("href")==="fleet-master.html#"+tab));
       fillForm();renderList();
@@ -497,11 +507,14 @@
       tab=KIND[t]&&(t!=="employees"||empRole())&&(t!=="drivers"||me.role==="transport")?t:"vehicles";editing=null;docKey="";mountXl();render();loadAvatars()}
     document.addEventListener("click",e=>{
       const t=e.target;
-      if(t.dataset.edit){editing=data[tab].find(x=>String(x.id)===t.dataset.edit)||null;docKey="";render();el("formCard").scrollIntoView({behavior:"smooth"});return}
+      if(t.dataset.edit){editing=data[tab].find(x=>String(x.id)===t.dataset.edit)||null;docKey="";render();if(window.MP)MP.open();else el("formCard").scrollIntoView({behavior:"smooth"});return}
       if(t.dataset.del){remove(t.dataset.del);return}
       if(t.dataset.login){createLogin(t.dataset.login);return}
     });
     el("save").onclick=save;
+    // List first; "+ New Vehicle / Employee" and Edit open the form in a popup (master-popup.js). Excel opens on its button.
+    let xlOpen=false;
+    el("xlBtn").onclick=()=>{xlOpen=!xlOpen;el("xlCard").hidden=!xlOpen;if(xlOpen)el("xlCard").scrollIntoView({behavior:"smooth",block:"nearest"})};
     el("clear").onclick=()=>{editing=null;docKey="";render()};
     el("search").oninput=renderList;el("filter").onchange=renderList;el("roleFilter").onchange=()=>{if(!editing&&!busy)fillForm();renderList()};
     el("roleFilter").append(...WORKS.map(w=>new Option(w,roleKey(w))));
@@ -512,6 +525,8 @@
       ERPShell.mount({role:me.realRole||me.role,name:me.name,onLogout:async()=>{await client.auth.signOut();location.replace("login.html")},group:"Masters"});
       await load();
       el("loading").hidden=true;el("page").hidden=false;
+      el("xlCard").parentNode.appendChild(el("xlCard"));
+      window.MP=LWBMasterPopup.mount({panel:"formCard",bar:"listTools",newLabel:"+ New",onNew:()=>{editing=null;docKey="";render()},canNew:()=>!KIND[tab].ro&&can(),cancelAfter:"clear",cards:".fm-table",mainCol:1});
       setTab();
     })();
   </script>

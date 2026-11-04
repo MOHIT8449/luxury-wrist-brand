@@ -177,6 +177,17 @@
   // A new popup: cursor into its first field; when it closes, back where it was.
   let pop=null,back=null,hist=[];
   D.addEventListener("focusin",e=>{const t=e.target;if(t&&t!==D.body&&t.nodeType===1){hist=hist.filter(x=>x!==t);hist.push(t);if(hist.length>6)hist.shift()}},true);
+  // Phone keyboard: the Enter key shows "Next" (go to the next field), "Done" on the last field before
+  // Save, "Search" in a search box. Pages that set enterkeyhint themselves keep theirs.
+  D.addEventListener("focusin",e=>{
+    const t=e.target;
+    if(!isField(t)||t.tagName==="SELECT"||t.tagName==="TEXTAREA"||off(t)||(t.hasAttribute("enterkeyhint")&&!t.dataset.ekh))return;
+    if(/^(checkbox|radio|date|time|datetime-local|month|file)$/i.test(t.type))return;
+    let h="next";
+    if(isSearch(t)&&!t.form&&!t.getAttribute("list"))h="search";
+    else{const all=tabbables(scopeOf(t),true).filter(x=>x.tagName!=="SELECT"&&writable(x)&&!/^(checkbox|radio|file)$/i.test(x.type));if(all[all.length-1]===t)h="done"}
+    t.setAttribute("enterkeyhint",h);t.dataset.ekh="1";
+  },true);
   function watchPopup(){
     const p=popup();
     if(p&&p!==pop){

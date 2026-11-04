@@ -10,6 +10,7 @@
   <script src="erp-shell.js"></script>
   <script src="erp-list.js"></script>
   <script src="excel-io.js"></script>
+  <script src="master-popup.js"></script>
   <style>
     /* Sales Bill PDF register (Mohit, 2 Nov 2026): the scanned sales bills are uploaded every night;
        find any bill again by its invoice number. lwb_purchase_register_setup.sql */
@@ -211,7 +212,7 @@ Later type any invoice number in Find to open its PDF.
         const r=await client.rpc("lwb_sbs_add",{p:{bill_date:d,path,file_name:f.name,size:f.size,invoice_text:el("upInv").value.trim(),invoice_nos:p.list}});
         if(r.error)throw r.error;
         ERPShell.toast("Uploaded: "+shortList(p.list),"success");
-        el("upFile").value="";el("upInv").value="";updNote();
+        el("upFile").value="";el("upInv").value="";updNote();if(window.MP)MP.close();
         if(d<el("from").value||d>el("to").value)setRange("30");else await load();
       }catch(e){ERPShell.toast("Upload failed: "+(e.message||String(e)),"error")}
       busy=false;el("upBtn").disabled=false;el("upBtn").textContent="⬆ Upload";
@@ -270,6 +271,8 @@ Later type any invoice number in Find to open its PDF.
       me=await start();if(!me)return;
       canEdit=["admin","accounts"].includes(me.role)&&!ERPShell.viewOnly(me.role,"sales-bill-scans.html");
       el("upCard").hidden=!canEdit;el("fromTally").hidden=!canEdit;el("upDate").value=today();
+      // Bills list first; "+ Upload PDF" opens the upload form in a popup (master-popup.js).
+      window.MP=LWBMasterPopup.mount({panel:"upCard",bar:document.querySelector(".sb-tools"),newLabel:"⬆ Upload PDF",canNew:()=>canEdit});
       ERPShell.mount({role:me.realRole||me.role,name:me.name,onLogout:async()=>{await client.auth.signOut();location.replace("login.html")},group:"Purchase"});
       el("loading").hidden=true;el("page").hidden=false;
       const q=new URLSearchParams(location.search).get("inv");if(q){el("find").value=q}
