@@ -184,3 +184,26 @@ test('money out to a company (Coca-Cola): Supplier payment + company payment; un
  await one('select public.lwb_bank_stmt_undo($1)',[ln.id]);
  assert.ok((await db.query('select cancelled_at from lwb_company_payments')).rows[0].cancelled_at,'company payment cancelled with the line');
 });
+
+test('Contra: own bank to own bank is booked on both banks; the other bank matches it; undo is blocked until that is undone',async()=>{
+ await as('accounts');
+ const hdfc=await one("select public.lwb_acc_save_bank(null,'HDFC 1234','50100001234',0,null,true)");
+ await as('admin');
+ const before=await bankBal(),hBal=async()=>Number((await dash()).banks.find(b=>b.id===hdfc).balance),h0=await hBal();
+ await imp([row(0,'INF/INFT/046541805641/Self-XXX154',null,15000,'S25373196')],'contra.xlsx');
+ let L=await list();const ln=L.lines.find(l=>Number(l.debit)===15000);
+ await assert.rejects(assign([ln.id],{type:'CONTRA',to_bank_id:999}),/other bank/);
+ const bad=await assign([ln.id],{type:'CONTRA',to_bank_id:bank});assert.match(bad.errors[0].error,/not this one/);
+ assert.equal((await assign([ln.id],{type:'CONTRA',to_bank_id:hdfc})).done,1);
+ assert.equal(await bankBal(),before-15000);assert.equal(await hBal(),h0,'money into HDFC waits for the HDFC bank check');
+ L=await list();assert.equal(L.lines.find(l=>l.id===ln.id).how,'CONTRA');
+ // HDFC statement: the 15,000 credit matches the contra entry by itself
+ const icici=bank;bank=hdfc;
+ const r=await imp([row(0,'NEFT FROM ICICI SELF',15000,null,'S25373196')],'hdfc.xlsx');
+ assert.equal(r.matched,1);assert.equal(await hBal(),h0+15000);
+ bank=icici;
+ await assert.rejects(one('select public.lwb_bank_stmt_undo($1)',[ln.id]),/other bank/);
+ bank=hdfc;const hl=(await list()).lines[0];await one('select public.lwb_bank_stmt_undo($1)',[hl.id]);bank=icici;
+ await one('select public.lwb_bank_stmt_undo($1)',[ln.id]);
+ assert.equal(await bankBal(),before);assert.equal(await hBal(),h0);
+});

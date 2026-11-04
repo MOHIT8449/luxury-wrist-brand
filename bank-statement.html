@@ -151,7 +151,7 @@
     const errText=e=>{const m=String(e&&e.message||e||"Something went wrong");
       if(/lwb_bank_stmt|schema cache|does not exist/i.test(m))return "Bank Statement database is not set up yet. It sets itself up when this change is merged (lwb_bank_statement_setup.sql).";
       return m.replace(/^.*?ERROR:\s*/,"")};
-    const HOW={AUTO:"Matched by itself",MATCH:"Matched",PARTY:"Party payment",DEPOSIT:"Cash deposit",WITHDRAW:"Cash withdrawn",IN:"Other income",OUT:"Expense",IGNORE:"Ignored"};
+    const HOW={CONTRA:"Contra (bank transfer)",AUTO:"Matched by itself",MATCH:"Matched",PARTY:"Party payment",DEPOSIT:"Cash deposit",WITHDRAW:"Cash withdrawn",IN:"Other income",OUT:"Expense",IGNORE:"Ignored"};
     const SRC={ENTRY:"Accounts entry",PAYMENT:"Party payment",DRIVER_ONLINE:"Driver money",DRIVER_CASH:"Driver money",OLD:"Old payment"};
     let D=null,bankId=null,tab="OPEN",dir="all",q="",days=90,sel=new Set(),parties=[],suppliers=[],pending=null,shown=200;
 
@@ -236,19 +236,19 @@
         :ins?[["PARTY","Party payment"],["DEPOSIT","Cash deposit"],["IN","Other income (head)"],["IGNORE","Ignore"]]
         :[["OUT","Expense (head)"],["WITHDRAW","Cash withdrawn"],["IGNORE","Ignore"]];
     /* one line at a time, like Tally: Book -> what is it -> name -> Enter */
-    const BOOK_IN=[["PARTY","Party payment"],["DEPOSIT","Cash deposit"],["IN","Other income"],["IGNORE","Ignore"]];
-    const BOOK_OUT=[["SUP","Supplier / Company"],["EXP","Expense"],["AST","Asset purchase"],["WITHDRAW","Cash withdrawn"],["IGNORE","Ignore"]];
+    const BOOK_IN=[["PARTY","Party payment"],["DEPOSIT","Cash deposit"],["IN","Other income"],["CONTRA","Contra (from own bank)"],["IGNORE","Ignore"]];
+    const BOOK_OUT=[["SUP","Supplier / Company"],["EXP","Expense"],["AST","Asset purchase"],["WITHDRAW","Cash withdrawn"],["CONTRA","Contra (to own bank)"],["IGNORE","Ignore"]];
     const headNamed=n=>D.categories.find(c=>c.kind==="OUT"&&key(c.name)===key(n));
-    const SPECIAL_OUT=new Set([key("Supplier payment"),key("Asset purchase")]);
+    const SPECIAL_OUT=new Set([key("Supplier payment"),key("Asset purchase"),key("Contra (bank transfer)")]);
     function guessSupplier(l){const n=key(l.narration);if(n.length<5)return null;let best=null;
       for(const x of suppliers){const k=key(x.name);if(k.length>=5&&n.includes(k.slice(0,Math.min(12,k.length)))&&(!best||k.length>key(best.name).length))best=x}return best}
     // small list under the box, only the names that match what is typed (not the whole list)
-    function typeahead(inp,items){
+    function typeahead(inp,items,o={}){
       const box=document.createElement("div");box.className="bs-ta";box.hidden=true;inp.after(box);
       let hits=[],hi=-1;
-      const draw=()=>{const words=String(inp.value||"").toUpperCase().split(/\s+/).filter(Boolean),all=words.length?items():[];
+      const draw=()=>{const words=String(inp.value||"").toUpperCase().split(/\s+/).filter(Boolean),all=words.length||o.empty?items():[];
         hits=all.filter(x=>{const k=x.label.toUpperCase();return words.every(w=>k.includes(w))})
-          .sort((x,y)=>(y.label.toUpperCase().startsWith(words[0]||"")-x.label.toUpperCase().startsWith(words[0]||""))||x.label.localeCompare(y.label)).slice(0,6);
+          .sort((x,y)=>(y.label.toUpperCase().startsWith(words[0]||"")-x.label.toUpperCase().startsWith(words[0]||""))||x.label.localeCompare(y.label)).slice(0,o.max||6);
         if(hits.length===1&&key(hits[0].label)===key(inp.value))hits=[];
         hi=hits.length?0:-1;
         box.innerHTML=hits.map((x,i)=>'<button type="button" tabindex="-1" data-h="'+i+'"'+(i===hi?' class="on"':"")+'>'+esc(x.label)+(x.sub?'<small>'+esc(x.sub)+'</small>':"")+'</button>').join("");
@@ -270,29 +270,33 @@
         '<div class="bs-bk" style="display:flex;flex-direction:column;gap:9px">'+
         '<div><div class="amt '+(isIn?"in":"out")+'">'+(isIn?"+":"−")+rs(+l.credit||+l.debit)+'</div><div style="font-size:13px;color:var(--erp-muted);overflow-wrap:anywhere">'+esc(l.narration||"")+(l.ref?" · Ref "+esc(l.ref):"")+'</div></div>'+
         '<div><div class="cap">Category</div><div class="bs-types" role="group" aria-label="Category">'+types.map(t=>'<button type="button" data-ty="'+t[0]+'">'+t[1]+'</button>').join("")+'</div></div>'+
-        '<label id="kHead"><span>Head</span><select id="kH"></select></label>'+
+        '<label id="kHead"><span>Head</span><input id="kH" autocomplete="off" enterkeyhint="done" placeholder="Type a head, or a new one"></label>'+
         '<label id="kParty"><span></span><input id="kP" autocomplete="off" enterkeyhint="done"></label>'+
+        '<label id="kBank"><span>'+(isIn?"Came from which of our banks":"Sent to which of our banks")+'</span><select id="kB">'+D.banks.filter(b=>b.id!==bankId).map(b=>'<option value="'+b.id+'">'+esc(b.name)+'</option>').join("")+'</select></label>'+
         '<div class="note" id="kNote"></div>'+
         '<div class="acts"><button type="button" class="bs-btn" data-x2>Cancel</button><button type="button" class="bs-btn grn" id="kSave">Save</button></div></div>');
-      const B=s.back,P=B.querySelector("#kP"),H=B.querySelector("#kH"),N=B.querySelector("#kNote");
+      const B=s.back,P=B.querySelector("#kP"),H=B.querySelector("#kH"),N=B.querySelector("#kNote"),KB=B.querySelector("#kB");
       const supItems=()=>suppliers.map(x=>({label:x.name,sub:x.coName&&key(x.coName)!==key(x.name)?x.coName:"",x}));
       const list=()=>type==="PARTY"?parties.map(n=>({label:n})):["SUP","EXP","AST"].includes(type)?supItems():[];
       const ta=typeahead(P,list);
+      const headList=()=>type==="EXP"?D.categories.filter(c=>c.kind==="OUT"&&!SPECIAL_OUT.has(key(c.name))):type==="IN"?D.categories.filter(c=>c.kind==="IN"&&key(c.name)!==key("Contra (bank transfer)")):[];
+      const taH=typeahead(H,()=>headList().map(c=>({label:c.name})),{empty:true,max:30});
+      const headOf=v=>headList().find(c=>key(c.name)===key(v));
       const supOf=v=>suppliers.find(x=>key(x.name)===key(v));
       const paint=()=>{B.querySelectorAll("[data-ty]").forEach(b=>b.setAttribute("aria-pressed",String(b.dataset.ty===type)));
         const lab={PARTY:"Party (type the name)",SUP:"Supplier / company (type the name)",EXP:"Paid to (optional)",AST:"Bought from (optional)",IN:"Received from (optional)",IGNORE:"Why (optional)"}[type];
         B.querySelector("#kParty").hidden=!lab;B.querySelector("#kParty span").textContent=lab||"";
-        const heads=type==="EXP"?D.categories.filter(c=>c.kind==="OUT"&&!SPECIAL_OUT.has(key(c.name))):type==="IN"?D.categories.filter(c=>c.kind==="IN"):[];
-        B.querySelector("#kHead").hidden=!heads.length;B.querySelector("#kHead span").textContent=type==="EXP"?"Expense head":"Income head";
-        H.innerHTML='<option value="">Choose…</option>'+heads.map(c=>'<option value="'+c.id+'">'+esc(c.name)+'</option>').join("");
+        B.querySelector("#kBank").hidden=type!=="CONTRA"||!KB.options.length;
+        B.querySelector("#kHead").hidden=!["EXP","IN"].includes(type);B.querySelector("#kHead span").textContent=type==="EXP"?"Expense head":"Income head";H.value="";
         if(type==="PARTY"&&!P.value)P.value=guessParty(l)||"";
         if(type==="SUP"&&!P.value){const g=guessSupplier(l);if(g)P.value=g.name}
         note()};
-      const note=()=>{const x=type==="SUP"&&supOf(P.value);
-        N.textContent=type==="SUP"?(x?(x.coId?"Saved as Supplier payment, and as a payment to "+x.coName+" (its bills show paid).":"Saved as Supplier payment to "+x.name+"."):"Pick the name from the list. New supplier? Add it on Supplier Master first.")
+      const note=()=>{const x=type==="SUP"&&supOf(P.value),hn=H.value.trim();
+        N.textContent=(type==="EXP"||type==="IN")&&hn.length>=2&&!headOf(hn)?"“"+hn+"” is a new head. It is added when you Save and shows in the list next time.":type==="SUP"?(x?(x.coId?"Saved as Supplier payment, and as a payment to "+x.coName+" (its bills show paid).":"Saved as Supplier payment to "+x.name+"."):"Pick the name from the list. New supplier? Add it on Supplier Master first.")
+          :type==="CONTRA"?(KB.options.length?"Booked on both banks (head Contra). The other bank's statement line matches it by itself.":"Only one bank is added. Add the other bank on Accounts Dashboard > Heads & Banks.")
           :type==="AST"?"Saved under the head Asset purchase.":type==="PARTY"?"Party outstanding drops (oldest bill first).":"";N.hidden=!N.textContent};
-      P.addEventListener("input",note);P.addEventListener("change",note);
-      B.querySelectorAll("[data-ty]").forEach(b=>b.onclick=()=>{type=b.dataset.ty;P.value="";paint();const f=!B.querySelector("#kHead").hidden?H:!B.querySelector("#kParty").hidden?P:null;if(f)f.focus()});
+      KB.onchange=note;P.addEventListener("input",note);P.addEventListener("change",note);H.addEventListener("input",note);H.addEventListener("change",note);
+      B.querySelectorAll("[data-ty]").forEach(b=>b.onclick=()=>{type=b.dataset.ty;P.value="";paint();const f=!B.querySelector("#kHead").hidden?H:!B.querySelector("#kParty").hidden?P:!B.querySelector("#kBank").hidden?KB:B.querySelector("#kSave");f.focus()});
       B.querySelector("[data-x2]").onclick=s.close;
       const go=async btn=>{const name=P.value.trim(),p={};
         if(type==="PARTY"){if(!name)return ERPShell.alert("Type the party name");p.type="PARTY";p.party=name}
@@ -300,7 +304,14 @@
           const h=headNamed("Supplier payment");if(!h)return ERPShell.alert("The head Supplier payment is missing on Accounts Dashboard > Heads.");
           Object.assign(p,{type:"OUT",category_id:h.id,party:x.name});if(x.coId)p.company_id=x.coId}
         else if(type==="AST"){const h=headNamed("Asset purchase");if(!h)return ERPShell.alert("The head Asset purchase is missing on Accounts Dashboard > Heads.");Object.assign(p,{type:"OUT",category_id:h.id,party:name||null})}
-        else if(type==="EXP"||type==="IN"){if(!H.value)return ERPShell.alert("Choose the head");Object.assign(p,{type:type==="EXP"?"OUT":"IN",category_id:Number(H.value),party:name||null})}
+        else if(type==="EXP"||type==="IN"){const hn=H.value.trim().replace(/\s+/g," ");if(hn.length<2)return ERPShell.alert("Type the head (for example Rent, Diesel)");
+          let h=headOf(hn);
+          if(!h){if(SPECIAL_OUT.has(key(hn))&&type==="EXP")return ERPShell.alert("Use the "+hn+" button above for this.");
+            try{const id=await rpc("lwb_acc_save_category",{p_id:null,p_kind:type==="EXP"?"OUT":"IN",p_name:hn,p_active:true});
+              h={id,kind:type==="EXP"?"OUT":"IN",name:hn};if(!D.categories.some(c=>c.id===id))D.categories.push(h)}
+            catch(e){return ERPShell.alert(errText(e))}}
+          Object.assign(p,{type:type==="EXP"?"OUT":"IN",category_id:Number(h.id),party:name||null})}
+        else if(type==="CONTRA"){if(!KB.value)return ERPShell.alert("Add the other bank on Accounts Dashboard > Heads & Banks first.");Object.assign(p,{type:"CONTRA",to_bank_id:Number(KB.value)})}
         else{p.type=type;if(type==="IGNORE")p.note=name||null}
         btn.disabled=true;
         try{const r=await rpc("lwb_bank_stmt_assign",{p_ids:[l.id],p});
@@ -308,7 +319,7 @@
           s.close();sel.delete(l.id);await load();ERPShell.toast&&ERPShell.toast("Booked")}
         catch(e){btn.disabled=false;await ERPShell.alert(errText(e))}};
       const sv=B.querySelector("#kSave");sv.onclick=()=>go(sv);
-      B.addEventListener("keydown",e=>{if(e.key==="Enter"&&!e.defaultPrevented&&!ta.open()&&!(e.target.tagName==="BUTTON")){e.preventDefault();if(!sv.disabled)go(sv)}});
+      B.addEventListener("keydown",e=>{if(e.key==="Enter"&&!e.defaultPrevented&&!ta.open()&&!taH.open()&&!(e.target.tagName==="BUTTON")){e.preventDefault();if(!sv.disabled)go(sv)}});
       paint();setTimeout(()=>{if(!B.querySelector("#kParty").hidden){P.focus();P.select()}},30);
     }
     function drawBar(){
