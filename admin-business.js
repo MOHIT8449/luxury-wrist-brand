@@ -217,9 +217,12 @@
   }
   function lineChart(el,days,series){
     const W=Math.max(260,el.clientWidth||600),H=W<500?170:Math.max(200,Math.min(340,(el.parentNode.clientHeight||0)-40)),P={l:46,r:8,t:10,b:20},n=days.length;
+    // Nothing to draw: say so instead of an empty chart with 1 / 1 / 0 / 0 on the axis.
+    if(!series.some(s=>s.v.some(v=>Number(v)>0))){el.innerHTML='<div class="bz-empty bz-nochart">No sale or purchase in these days.</div>';return}
     const max=Math.max(1,...series.flatMap(s=>s.v))*1.08,x=i=>P.l+(n<2?0:i*(W-P.l-P.r)/(n-1)),y=v=>P.t+(H-P.t-P.b)*(1-Math.max(0,v)/max);
     let g="";
-    for(let k=0;k<=3;k++){const v=max*k/3;g+='<line x1="'+P.l+'" x2="'+(W-P.r)+'" y1="'+y(v)+'" y2="'+y(v)+'" stroke="#eef0ec"/><text x="'+(P.l-5)+'" y="'+(y(v)+3)+'" font-size="9.5" fill="#55686c" text-anchor="end">'+lakh(v).replace("₹","")+"</text>"}
+    let lastT="";
+    for(let k=0;k<=3;k++){const v=max*k/3,t=lakh(v).replace("₹","");g+='<line x1="'+P.l+'" x2="'+(W-P.r)+'" y1="'+y(v)+'" y2="'+y(v)+'" stroke="#eef0ec"/>'+(t===lastT?"":'<text x="'+(P.l-5)+'" y="'+(y(v)+3)+'" font-size="9.5" fill="#55686c" text-anchor="end">'+t+"</text>");lastT=t}
     const step=Math.max(1,Math.ceil(n/(W<500?5:9)));
     days.forEach((d,i)=>{if((i%step===0&&n-1-i>=step/2)||i===n-1)g+='<text x="'+x(i)+'" y="'+(H-5)+'" font-size="9.5" fill="#55686c" text-anchor="middle">'+dm(d)+"</text>"});
     series.forEach((s,j)=>{const p=s.v.map((v,i)=>x(i)+","+y(v)).join(" ");
