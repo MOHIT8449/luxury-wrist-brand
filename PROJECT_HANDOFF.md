@@ -4,6 +4,13 @@
 **Purpose:** Continue the same ERP project from a new ChatGPT conversation without restarting or losing the agreed requirements.
 **Status:** Active development / verification. Do not assume all modules are completed or fully tested.
 
+## Brand Data Reset: Rajnigandha fresh start (4 Nov 2026)
+
+- Mohit asked: remove everything done in Rajnigandha till today (payments, purchase / stock, POs, bills, outstanding) so opening outstanding, payments and stock can be entered fresh.
+- Page `brand-reset.html` (Admin only; Settings card "Brand Data Reset", Module Search; not in the side menu). Pick brand -> table of what goes (POs + linked, PO payments, party payments, opening balances, purchase bills, stock, payments to company) -> type the brand name -> "Delete <brand> data" -> steps run with a progress bar -> "Download backup" (JSON) + links to Opening Stock, Party opening balance, Billing & Outstanding, Company / Brand.
+- SQL `lwb_brand_reset_setup.sql` (test `tests/brand-reset`, 5 PGlite tests). Creates only tables / functions; deletes nothing by itself. `lwb_brand_reset_preview(company)`, `lwb_brand_reset_start(company, typed_name)` (freezes order / inward / party lists in `lwb_brand_resets`), `lwb_brand_reset_step(reset_id)` (40 POs or 40 purchase bills or one stock table per call, all or nothing per call; call again to continue), `lwb_brand_reset_backup(reset_id, after)`. Every removed row is copied to `lwb_brand_reset_rows` first.
+- Scope: POs having an SKU of the brand (walker like Admin Delete PO: foreign keys + any order_id column); party payments (no PO) + opening balances only of parties whose every PO is of that brand; Goods Inward bills with that brand's SKUs; `lwb_inventory_movements`, `lwb_stock_moves`, `lwb_stock_audit_lines`, `lwb_stock_transit` rows of its SKUs; `lwb_company_payments` of the company; cheque details / bank checks of removed payments. Kept: SKU Master, rate lists, parties, other brands, Accounts Dashboard cash / bank entries, party payments / opening of parties that also buy another brand (listed as a warning). A PO or purchase bill with two brands stops the reset (listed).
+
 ## Keyboard first on every page (4 Nov 2026)
 
 - Mohit: 95% of the work must be done with Tab / Enter / arrows, not the mouse (Tally style). New `erp-keys.js`, loaded by `erp-shell.js` on every ERP page (cashbook.html loads it directly). It runs last (window, bubble) and does nothing when the page already handled the key (`preventDefault`); `data-keys="off"` on an element leaves its keys to the page.
