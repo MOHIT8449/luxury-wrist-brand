@@ -4,6 +4,14 @@
 **Purpose:** Continue the same ERP project from a new ChatGPT conversation without restarting or losing the agreed requirements.
 **Status:** Active development / verification. Do not assume all modules are completed or fully tested.
 
+## Order → payment audit fixes (4 Nov 2026)
+
+- Admin Business Overview: Expenses / Net profit no longer count Supplier payment, Contra (bank transfer), Asset purchase or GST / Tax paid (`NOT_EXPENSE` in `admin-business.js`). Contra is also left out of money in / out on the Accounts home (`role-dashboard.js` accTotals) and of "All money in / out" and expense-by-head on the Accounts Dashboard (bank-wise rows keep it).
+- Dashboard Outstanding now = bills due + party opening balance − advance (same as Billing & Outstanding); opening balance counts as 60+ days.
+- Business Overview sales / profit use loaded qty once the PO is loaded (approved before that).
+- `lwb_order_payment_audit_fixes.sql`: `lwb_office_receive_driver_payment` limits the money to what is still due (Tally bill − credit + debit notes − office money; no Tally bill: loaded value − office money). `lwb_head_cancel_order` refuses a PO with a Tally bill until a credit note squares it and no money is taken on it. Tests: `tests/order-payment-audit`.
+- Open question to Mohit: Billing page "due" subtracts driver-reported money before the office receives it; Outstanding (`lwb_party_bills`) only after verify.
+
 ## PO entry on the phone: order setup popup after the party (4 Nov 2026)
 
 - Mohit: on the phone, picking the party opens one popup ("Order for PARTY"): Brand chips, Transport (Delivery / Self pickup / Direct vehicle), Priority, Qty in (Case / Pallet), then "Start order →" which focuses the first SKU.
