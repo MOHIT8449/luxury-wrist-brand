@@ -48,6 +48,10 @@
     .bs-r{display:grid;grid-template-columns:24px 82px minmax(0,1fr) 116px auto;gap:4px 10px;align-items:center;padding:7px 2px;border-bottom:1px solid var(--erp-line);font-size:13.5px}
     .bs-r.head{font-size:12px;font-weight:700;color:#4b5763;padding:4px 2px;background:#f6f8fb;border-radius:6px}
     .bs-r.sel{background:#eef5ff}
+    .bs-r.cur{outline:2px solid #1769d8;outline-offset:-2px;border-radius:6px;background:#f3f8ff}
+    .bs-keys{font-size:12px;color:var(--erp-muted);margin:0 0 6px}
+    .bs-keys kbd{display:inline-block;border:1px solid var(--erp-line);border-bottom-width:2px;border-radius:4px;padding:0 4px;font:inherit;font-size:11.5px;background:#fff;color:var(--erp-ink)}
+    @media(max-width:760px){.bs-keys{display:none}}
     .bs-r input[type=checkbox]{width:18px;height:18px;margin:0;cursor:pointer}
     .bs-r .d{white-space:nowrap;font-variant-numeric:tabular-nums}
     .bs-r .n{min-width:0;overflow-wrap:anywhere;line-height:1.35}
@@ -153,7 +157,7 @@
       return m.replace(/^.*?ERROR:\s*/,"")};
     const HOW={CONTRA:"Contra (bank transfer)",AUTO:"Matched by itself",MATCH:"Matched",PARTY:"Party payment",DEPOSIT:"Cash deposit",WITHDRAW:"Cash withdrawn",IN:"Other income",OUT:"Expense",IGNORE:"Ignored"};
     const SRC={ENTRY:"Accounts entry",PAYMENT:"Party payment",DRIVER_ONLINE:"Driver money",DRIVER_CASH:"Driver money",OLD:"Old payment"};
-    let D=null,bankId=null,tab="OPEN",dir="all",q="",days=90,sel=new Set(),parties=[],suppliers=[],pending=null,shown=200;
+    let D=null,bankId=null,tab="OPEN",dir="all",q="",days=90,sel=new Set(),parties=[],suppliers=[],cur=0,vis=[],pending=null,shown=200;
 
     function say(t,kind){el("msg").hidden=!t;el("msg").textContent=t||"";el("msg").className="bs-msg"+(kind?" "+kind:"")}
     async function rpc(name,args){const {data,error}=await client.rpc(name,args);if(error)throw Error(errText(error));return data}
@@ -191,10 +195,11 @@
       let list=D.lines.filter(l=>l.status===tab&&(dir==="all"||(dir==="in"?+l.credit>0:+l.debit>0))&&
         (!words.length||words.every(w=>(String(l.narration||"")+" "+(l.ref||"")+" "+(l.party||"")+" "+(+l.credit||+l.debit)).toUpperCase().includes(w))));
       const admin=D.is_admin&&tab==="OPEN";
-      const vis=list.slice(0,shown);
+      vis=list.slice(0,shown);if(cur>=vis.length)cur=Math.max(0,vis.length-1);
       el("body").innerHTML='<div class="bs-filter"><input type="search" id="q" placeholder="Search narration, ref, party, amount" value="'+esc(q)+'" autocomplete="off">'+
         '<select id="dir" aria-label="In or out"><option value="all">In + Out</option><option value="in"'+(dir==="in"?" selected":"")+'>Money in</option><option value="out"'+(dir==="out"?" selected":"")+'>Money out</option></select>'+
         (tab==="OPEN"?"":'<select id="days" aria-label="Days">'+[30,90,180,365].map(n=>'<option value="'+n+'"'+(n===days?" selected":"")+'>Last '+n+' days</option>').join("")+'</select>')+'</div>'+
+        (admin&&list.length?'<div class="bs-keys">Keyboard: <kbd>↑</kbd> <kbd>↓</kbd> line · <kbd>Enter</kbd> book · <kbd>Space</kbd> tick · <kbd>Ctrl</kbd>+<kbd>A</kbd> tick all · <kbd>B</kbd> book ticked · <kbd>/</kbd> search · <kbd>M</kbd> match · <kbd>Esc</kbd> close</div>':"")+
         (admin&&list.length?'<div class="bs-hint">Press <b>✍ Book</b> on a line, pick or type its category (a new one is added), add a remark, press Enter. To book many lines the same way, tick them and use the bar below.</div>':"")+
         (list.length?'<div class="bs-list"><div class="bs-r head">'+(admin?'<input type="checkbox" id="all" aria-label="Tick all shown"'+(vis.length&&vis.every(l=>sel.has(l.id))?" checked":"")+'>':"<span></span>")+'<span>Date</span><span>Narration</span><span style="text-align:right">Amount</span><span></span></div>'+
           vis.map(l=>row(l,admin)).join("")+'</div>'+(list.length>shown?'<div class="bs-more"><button type="button" class="bs-btn sm" id="more">Show '+Math.min(200,list.length-shown)+' more of '+(list.length-shown)+'</button></div>':"")
@@ -210,7 +215,33 @@
       el("body").querySelectorAll("[data-sg]").forEach(b=>b.onclick=()=>suggest(D.lines.find(l=>l.id===b.dataset.sg)));
       el("body").querySelectorAll("[data-undo]").forEach(b=>b.onclick=()=>undo(D.lines.find(l=>l.id===b.dataset.undo),b));
       if(admin)drawBar();
+      paintCur(false);
     }
+    // Keyboard first (accountants work without the mouse): the blue line is the current one.
+    function paintCur(scroll){
+      const rows=el("body").querySelectorAll(".bs-r[data-row]");
+      rows.forEach((r,i)=>r.classList.toggle("cur",i===cur&&tab!=="UP"));
+      if(scroll&&rows[cur])rows[cur].scrollIntoView({block:"nearest"});
+    }
+    document.addEventListener("keydown",e=>{
+      if(!D||tab==="UP"||document.querySelector(".bs-back")||e.defaultPrevented)return;
+      const t=e.target,typing=t&&((t.tagName==="INPUT"&&t.type!=="checkbox")||t.tagName==="SELECT"||t.tagName==="TEXTAREA");
+      if(t&&(t.tagName==="BUTTON"||t.tagName==="A"||t.type==="checkbox")&&(e.key==="Enter"||e.key===" "))return;
+      if(typing){if(t.id==="q"&&(e.key==="ArrowDown"||e.key==="Enter")&&vis.length){e.preventDefault();t.blur();cur=0;paintCur(true)}
+        else if(t.id==="q"&&e.key==="Escape"){t.blur()}return}
+      if(e.altKey||e.metaKey)return;
+      const l=vis[cur],k=e.key;
+      if(k==="ArrowDown"||k==="ArrowUp"){if(!vis.length)return;e.preventDefault();cur=Math.min(vis.length-1,Math.max(0,cur+(k==="ArrowDown"?1:-1)));paintCur(true)}
+      else if(k==="Home"||k==="End"){if(!vis.length)return;e.preventDefault();cur=k==="Home"?0:vis.length-1;paintCur(true)}
+      else if(k==="PageDown"||k==="PageUp"){if(!vis.length)return;e.preventDefault();cur=Math.min(vis.length-1,Math.max(0,cur+(k==="PageDown"?10:-10)));paintCur(true)}
+      else if(k==="/"){e.preventDefault();const q=el("q");if(q){q.focus();q.select()}}
+      else if(!D.is_admin||tab!=="OPEN")return;
+      else if(k==="Enter"&&l&&!e.ctrlKey){e.preventDefault();bookOne(l)}
+      else if(k===" "&&l&&!e.ctrlKey){e.preventDefault();sel.has(l.id)?sel.delete(l.id):sel.add(l.id);if(cur<vis.length-1)cur++;renderTab();paintCur(true)}
+      else if((k==="a"||k==="A")&&e.ctrlKey){e.preventDefault();const all=vis.every(x=>sel.has(x.id));vis.forEach(x=>all?sel.delete(x.id):sel.add(x.id));renderTab()}
+      else if((k==="b"||k==="B")&&!e.ctrlKey&&sel.size){e.preventDefault();const s2=document.getElementById("bType");if(s2)s2.focus()}
+      else if((k==="m"||k==="M")&&!e.ctrlKey&&l&&l.sugg&&l.sugg.length){e.preventDefault();suggest(l)}
+    });
     function guessParty(l){const n=key(l.narration);if(n.length<5)return "";
       let best="";for(const p of parties){const k=key(p);if(k.length>=5&&n.includes(k.slice(0,Math.min(14,k.length)))&&k.length>key(best).length)best=p}return best}
     function row(l,admin){
@@ -227,7 +258,7 @@
         info=[l.party||k.party,l.category&&l.how!=="PARTY"?l.category:(k.category&&l.status==="MATCHED"?k.category:""),k.mode&&l.status==="MATCHED"?k.mode:"",k.date&&k.date!==l.date?"ERP date "+dmy(k.date):"",l.note].filter(Boolean).map(esc).join(" · ");
         if(D.is_admin)x+='<button type="button" class="bs-btn sm" data-undo="'+l.id+'">Undo</button>';
       }
-      return '<div class="bs-r'+(sel.has(l.id)?" sel":"")+'">'+(admin?'<input type="checkbox" data-ck="'+l.id+'" aria-label="Tick"'+(sel.has(l.id)?" checked":"")+'>':"<span></span>")+
+      return '<div class="bs-r'+(sel.has(l.id)?" sel":"")+'" data-row="'+l.id+'">'+(admin?'<input type="checkbox" data-ck="'+l.id+'" aria-label="Tick"'+(sel.has(l.id)?" checked":"")+'>':"<span></span>")+
         '<span class="d">'+dmy(l.date)+'</span><span class="n"><span class="pd">'+dmy(l.date)+' · </span>'+esc(l.narration||"—")+(sub?'<small>'+sub+'</small>':"")+(info?'<small class="lk">→ '+info+'</small>':"")+'</span>'+amt+'<span class="x">'+x+'</span></div>';
     }
 
@@ -332,7 +363,7 @@
         if(e.target===C&&cur()){next();return}if(!sv.disabled)go(sv)});
       // a name in the narration picks the category by itself
       if(isIn&&guessParty(l))C.value="Party payment";else if(!isIn&&guessSupplier(l))C.value="Supplier / Company payment";
-      paint();setTimeout(()=>{(C.value?P:C).focus()},30);
+      paint();setTimeout(()=>{const f=C.value?P:C;f.focus();f.select()},30);
     }
     function drawBar(){
       const bar=el("bar");if(!bar)return;
@@ -379,8 +410,9 @@
       const back=document.createElement("div");back.className="bs-back";
       back.innerHTML='<div class="bs-sheet" role="dialog" aria-modal="true" aria-label="'+esc(title)+'"><header><h3>'+esc(title)+'</h3><button type="button" data-x aria-label="Close">✕</button></header><div class="body">'+body+'</div></div>';
       document.body.append(back);document.body.style.overflow="hidden";
-      const close=()=>{back.remove();document.body.style.overflow=""};
+      const close=()=>{back.remove();document.body.style.overflow="";if(document.activeElement&&document.activeElement!==document.body)document.activeElement.blur();setTimeout(()=>paintCur(true),0)};
       back.querySelector("[data-x]").onclick=close;back.addEventListener("click",e=>{if(e.target===back)close()});
+      back.addEventListener("keydown",e=>{if(e.key==="Escape"&&!e.defaultPrevented){e.preventDefault();e.stopPropagation();close()}});
       return {back,close};
     }
     function suggest(l){
