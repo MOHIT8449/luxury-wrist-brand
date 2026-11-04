@@ -4,7 +4,8 @@
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Goods Inward | Luxury Wrist Brand</title>
 <script src="erp-date.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script><script src="page-role.js"></script><script src="erp-docs.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="brand-filter.js"></script><script src="page-role.js"></script><script src="erp-docs.js"></script>
 <style>
 :root{font-family:Arial,Helvetica,sans-serif;color:#172844;background:#f3f6fb}*{box-sizing:border-box}body{margin:0}
 header{background:#142640;color:white;padding:17px max(22px,4vw);display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}header h1{font-size:23px;margin:0 0 4px;letter-spacing:.5px}header small{color:#d2dbe6}nav{display:flex;gap:10px;flex-wrap:wrap}nav a{color:#fff;border:1px solid #8f9eb0;border-radius:8px;text-decoration:none;padding:9px 14px;font-size:13px}
@@ -165,6 +166,8 @@ Cess is not included: an SKU with Cess cannot be saved yet.">i</button></h2></di
 'use strict';
 const SUPABASE_URL='https://txkbhadzdbxpieunfvox.supabase.co';
 const $ = id => document.getElementById(id);
+// Brand filter: supplier list shows the chosen brand's suppliers only.
+let BB={get:()=>''};
 let db=null,profile=null,skus=[],suppliers=[],companies=[],transports=[],stock=[],busy=false,lineId=0;
 let transportSelectedId='',transportMasterReady=false,addingTransport=false;
 const skuSearchControls=new WeakMap();
@@ -464,6 +467,7 @@ async function loadData(){
     companies=companyRes.error?[]:(companyRes.data||[]);
     for(const r of [skuRes,supplierRes,stockRes])if(r.error)throw r.error;
     skus=(skuRes.data||[]).filter(s=>Number(s.pcs_per_case)>0);suppliers=supplierRes.data||[];stock=stockRes.data||[];
+    if(window.LWBBrand&&!BB.companies)try{BB=await LWBBrand.mount(db,{into:'main section.panel',onChange:()=>{}})}catch(e){}
     transportMasterReady=!transportRes.error;
     transports=transportMasterReady?(transportRes.data||[]):[];
     $('addTransport').disabled=!transportMasterReady||!['admin','manager'].includes(profile?.role||'');
@@ -475,7 +479,7 @@ async function loadData(){
 }
 // Shared searchable dropdown behavior: filter BEFORE showing, never show irrelevant items.
 makeSearch($('supplierSearch'),$('supplierResults'),
-  ()=>suppliers.map(s=>({id:s.id,label:`${s.supplier_name} (${s.supplier_code})`})),
+  ()=>suppliers.filter(s=>!BB.get()||!s.company_id||s.company_id===BB.get()).map(s=>({id:s.id,label:`${s.supplier_name} (${s.supplier_code})`})),
   o=>{$('supplier').value=o.id;updateSupplierHint();recalc();if($('invoice').value.trim())checkDuplicate(true);}
 );
 $('supplierSearch').addEventListener('input',()=>{
