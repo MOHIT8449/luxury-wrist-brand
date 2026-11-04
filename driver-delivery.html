@@ -5,7 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Driver & Delivery | Luxury Wrist Brand ERP</title>
 <script src="erp-date.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script><script src="page-role.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="brand-filter.js"></script><script src="page-role.js"></script>
 <script src="party-list.js" defer></script>
 <style>
 :root{--navy:#132842;--blue:#1465d4;--bg:#f1f5fa;--border:#dce5ef;--ink:#172c45;--muted:#65758b;--green:#117346}
@@ -432,6 +433,7 @@ async function init(){
   $("pageTitle").textContent=role==="driver"?"My Deliveries":"Delivery Monitoring — Office (View Only)";
   $("welcome").textContent=(p.data.full_name||user.email)+" • "+role.toUpperCase()+
     (role==="driver"?" • Login Mobile: "+(p.data.mobile||"NOT MAPPED"):" • Read Only");
+  if(role!=="driver"&&window.LWBBrand)try{BB=await LWBBrand.mount(db,{into:"main .top",after:true,onChange:render})}catch(e){}
   await refresh();
   await openFromLink();
   await loadNotifications();
@@ -469,6 +471,7 @@ async function refresh(){
   const assignedRows=!assigned.error&&Array.isArray(assigned.data)?assigned.data:[];
   const loadedIds=new Set(loadedRows.map(x=>x.order_id));
   records=[...assignedRows.filter(x=>!loadedIds.has(x.order_id)),...loadedRows];
+  if(BB.companies&&BB.companies.length>1)OB=await LWBBrand.orderBrands(db,records.map(r=>r.order_id));
   render();
   loadReturnSummary();
   loadNotifications();
@@ -483,6 +486,9 @@ async function refresh(){
 }
 // Return status on each order card (Approved / Waiting / Rejected), from the driver's own returns.
 let returnSummary=new Map(),paySummary=new Map();
+// Brand filter for office view (All / Rajnigandha / Coca-Cola): a PO counts in a brand when it has an SKU of it.
+let BB={get:()=>""},OB=new Map();
+const inB=r=>!BB.get()||LWBBrand.has(OB.get(r.order_id),BB.get());
 async function loadReturnSummary(){
  if(role!=="driver")return;
  const ids=records.filter(r=>!isWaitingForLoading(r)).map(r=>r.order_id);
@@ -552,16 +558,17 @@ $("notifBell").onclick=()=>{
 $("notifReload").onclick=loadNotifications;
 const isWaitingForLoading=r=>r.loading_pending===true||["transport_allocated","loading"].includes(String(r.order_status||"").toLowerCase());
 function render(){
+ const R=records.filter(inB);
  const query=$("search").value.trim().toLowerCase(),f=$("filter").value;
  document.querySelectorAll(".stats .stat").forEach(b=>b.classList.toggle("active",b.dataset.filter===f));
- $("totalOrders").textContent=num(records.length);
- $("loadingPendingOrders").textContent=num(records.filter(isWaitingForLoading).length);
- $("pendingOrders").textContent=num(records.filter(r=>!r.report&&!isWaitingForLoading(r)).length);
- $("doneOrders").textContent=num(records.filter(r=>r.report).length);
+ $("totalOrders").textContent=num(R.length);
+ $("loadingPendingOrders").textContent=num(R.filter(isWaitingForLoading).length);
+ $("pendingOrders").textContent=num(R.filter(r=>!r.report&&!isWaitingForLoading(r)).length);
+ $("doneOrders").textContent=num(R.filter(r=>r.report).length);
  $("navAll").textContent=$("totalOrders").textContent;$("navLoading").textContent=$("loadingPendingOrders").textContent;
  $("navPending").textContent=$("pendingOrders").textContent;$("navDone").textContent=$("doneOrders").textContent;
  document.querySelectorAll(".dnav button").forEach(b=>b.classList.toggle("active",b.dataset.filter===f));
- const list=records.filter(r=>(f==="all"||(f==="loading"&&isWaitingForLoading(r))||
+ const list=R.filter(r=>(f==="all"||(f==="loading"&&isWaitingForLoading(r))||
   (f==="pending"&&!r.report&&!isWaitingForLoading(r))||(f==="done"&&r.report))&&
   [r.order_no,r.party_name,r.vehicle_no,r.driver_name].some(v=>String(v||"").toLowerCase().includes(query)));
  const wrap=$("orders");wrap.replaceChildren();

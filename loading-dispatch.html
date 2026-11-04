@@ -6,7 +6,8 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Loading & Dispatch | Luxury Wrist Brand</title>
 <script src="erp-date.js"></script><script src="erp-recent.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script><script src="page-role.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="brand-filter.js"></script><script src="page-role.js"></script>
 <script src="party-list.js" defer></script>
 <script src="erp-docs.js"></script>
 <script src="erp-operations-notifications.js"></script>
@@ -142,6 +143,9 @@ const SUPABASE_URL='https://txkbhadzdbxpieunfvox.supabase.co';
 const SUPABASE_PUBLISHABLE_KEY='sb_publishable_W4I3Q5ODf0g17sq5uDml2Q_sLolXYEk';
 const db=supabase.createClient(SUPABASE_URL,SUPABASE_PUBLISHABLE_KEY);
 
+// Brand filter (All / Rajnigandha / Coca-Cola): a PO counts in a brand when it has an SKU of it.
+let BB={get:()=>''},OB=new Map();
+const inB=o=>!BB.get()||LWBBrand.has(OB.get(o.id),BB.get());
 let user=null,role='',orders=[],assignments=[],selected=null,items=[],saving=false;
 
 const $=id=>document.getElementById(id);
@@ -179,6 +183,7 @@ role=String(profile.data.role||'').trim().toLowerCase();
 // Godown Manager sees the vehicles assigned to him first.
 if(role==='warehouse'){$('mineOption').hidden=false;$('filter').value='mine';}
 window.LWBOperationsNotifications?.init({db,user,mount:document.querySelector("header > div:last-child")});
+if(window.LWBBrand)try{BB=await LWBBrand.mount(db,{into:'main > div',after:true,onChange:render})}catch(e){}
 await load();
 }catch(e){message(e.message,true);}
 }
@@ -197,6 +202,7 @@ if(a.error)throw a.error;
 found.push(...(a.data||[]));
 }
 assignments=found;
+if(BB.companies&&BB.companies.length>1)OB=await LWBBrand.orderBrands(db,ids);
 render();
 // Opened from a loading-assignment notification
 const want=new URLSearchParams(location.search).get('order');
@@ -216,13 +222,13 @@ function assignment(id){return assignments.find(a=>a.order_id===id)||{};}
 function notMine(a){return role==='warehouse'&&a.loading_manager_id&&a.loading_manager_id!==user.id;}
 
 function render(){
-$('approvedCount').textContent=orders.filter(waiting).length;
-$('pendingCount').textContent=orders.filter(o=>o.status==='transport_allocated').length;
-$('loadingCount').textContent=orders.filter(o=>o.status==='loading').length;
-$('loadedCount').textContent=orders.filter(o=>o.status==='loaded').length;
+$('approvedCount').textContent=orders.filter(inB).filter(waiting).length;
+$('pendingCount').textContent=orders.filter(inB).filter(o=>o.status==='transport_allocated').length;
+$('loadingCount').textContent=orders.filter(inB).filter(o=>o.status==='loading').length;
+$('loadedCount').textContent=orders.filter(inB).filter(o=>o.status==='loaded').length;
 const q=$('search').value.toLowerCase().trim();
 const filter=$('filter').value;
-const visible=orders.filter(o=>{
+const visible=orders.filter(inB).filter(o=>{
 const a=assignment(o.id);
 if((filter==='active'||filter==='mine')&&o.status==='loaded')return false;
 if(filter==='loaded'&&o.status!=='loaded')return false;
