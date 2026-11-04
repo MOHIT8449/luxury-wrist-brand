@@ -53,6 +53,7 @@
   css.textContent='.lwb-brands{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin:0 0 12px}'+
     '.lwb-brands button{height:32px;border-radius:99px;border:1.5px solid #d6dde6;background:#fff;color:#22303f;padding:0 12px;font:inherit;font-size:13px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:6px;white-space:nowrap}'+
     '.lwb-brands button i{width:9px;height:9px;border-radius:50%;background:var(--bc)}'+
+    '.lwb-brandbar{margin:0 0 12px}.lwb-brandbar .lwb-brands{margin:0}'+
     '.lwb-brands button[aria-pressed=true]{border-color:var(--bc);background:color-mix(in srgb,var(--bc) 10%,#fff);color:var(--bc)}';
   (document.head||document.documentElement).appendChild(css);
   function unitOf(sku,list){
@@ -70,5 +71,31 @@
     const k=skuKey(name),own=units.get(k);if(own)return own;
     const c=(list||[]).find(x=>x.id===(map&&map.get(k)));return c&&c.pack_unit?c.pack_unit:"CASE";
   }
-  window.LWBBrand={load,get,set,chips,skuMap,skuKey,unitOf,unitByName,word,qty};
+  // One brand bar for a page: All brands / each company chips, saved choice shared with every page.
+  // LWBBrand.mount(client,{into, onChange}) -> {get(), companies, name(id), color(id)}; nothing shown with < 2 brands.
+  async function mount(client,o){
+    o=o||{};const info=await load(client),list=(info.companies||[]).filter(c=>!info.mine||info.mine.includes(c.id));
+    const st={companies:list,value:"",get(){return st.value},name:id=>(list.find(c=>c.id===id)||{}).name||"",color:id=>(list.find(c=>c.id===id)||{}).color||"#8a94a3"};
+    if(list.length<2)return st;
+    st.value=get(list);
+    const bar=document.createElement("div");bar.className="lwb-brandbar";
+    bar.appendChild(chips(list,st.value,v=>{st.value=v;o.onChange&&o.onChange(v)}));
+    const into=typeof o.into==="string"?document.querySelector(o.into):o.into||document.querySelector("main");
+    if(into){if(o.after)into.after(bar);else into.prepend(bar)}
+    return st;
+  }
+  // Brands of POs: Map(order id -> Set of company ids), from their SKU lines (chunks of 150 ids).
+  async function orderBrands(client,ids){
+    const out=new Map(),map=await skuMap(client);ids=[...new Set((ids||[]).filter(Boolean))];
+    if(!map)return out;
+    for(let i=0;i<ids.length;i+=150){
+      const r=await client.from("order_items").select("order_id,sku_name").in("order_id",ids.slice(i,i+150));
+      if(r.error)break;
+      for(const x of r.data||[]){const c=map.get(skuKey(x.sku_name));if(!out.has(x.order_id))out.set(x.order_id,new Set());if(c)out.get(x.order_id).add(c)}
+    }
+    return out;
+  }
+  // Is a row of brand b? (b "" = all). set: Set / array of companies, or one company id.
+  function has(set,b){if(!b)return true;if(!set)return false;if(typeof set==="string")return set===b;return set.has?set.has(b):set.includes(b)}
+  window.LWBBrand={load,get,set,chips,skuMap,skuKey,unitOf,unitByName,word,qty,mount,orderBrands,has};
 })();

@@ -8,6 +8,7 @@
 <script>/* the list moved to Billing & Outstanding; ?order= still opens one PO here */
 if(!new URLSearchParams(location.search).get("order"))location.replace("party-billing.html"+location.hash);</script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="brand-filter.js"></script>
 <script src="party-list.js" defer></script>
 <script src="tally-note.js" defer></script>
 <script src="tally-payment.js" defer></script>
@@ -207,6 +208,8 @@ let db,orders=[],bills=[],selected=null,itemRows=[],loaded=false,loading=false,b
 let firmMap=[],modalBills=null,tallyRows=[],tallyReady=false,tallySaving=false,flow=new Map(),flowReady=false,tab="bill";
 let assignedVehicle=null,assignedOrderId=null,assignedError="";
 let pays=[];
+// Brand filter (All / Rajnigandha / Coca-Cola): a PO counts in a brand when it has an SKU of it.
+let BB={get:()=>""},OB=new Map();
 function notice(message,error=false){
  const el=$("message");el.textContent=message;el.className="notice"+(error?" error":"");el.style.display="block";
 }
@@ -226,6 +229,7 @@ async function init(){
    notice("Access denied. Active Admin / Accounts Role required.",true);return;
   }
   loaded=true;
+  if(window.LWBBrand)try{BB=await LWBBrand.mount(db,{into:"main",onChange:render})}catch(e){}
   await reload();
  }catch(e){notice("Cannot connect: "+e.message,true)}
 }
@@ -250,6 +254,7 @@ async function reload(){
   tallyReady=!tally.error;tallyRows=tally.data||[];
   if(o.error)throw o.error;
   orders=o.data||[];
+  if(BB.companies&&BB.companies.length>1)OB=await LWBBrand.orderBrands(db,orders.map(x=>x.id));
   setupReady=!b.error;
   setupError=b.error?.message||"";
   bills=b.data||[];
@@ -330,7 +335,7 @@ function render(){
  const q=$("search").value.trim().toLowerCase();
  // latest changed PO first: the order itself, its Tally bill or its payments, whichever changed last
  const at=new Map();for(const p of pays)if(p.order_id)at.set(p.order_id,Math.max(at.get(p.order_id)||0,ERPRecent.time(p)));
- const all=orders.map(rowOf).map(r=>[r,Math.max(ERPRecent.time(r.o),ERPRecent.time(r.t),at.get(r.o.id)||0)]).sort((a,b)=>b[1]-a[1]).map(x=>x[0]);
+ const all=orders.filter(o=>!BB.get()||LWBBrand.has(OB.get(o.id),BB.get())).map(rowOf).map(r=>[r,Math.max(ERPRecent.time(r.o),ERPRecent.time(r.t),at.get(r.o.id)||0)]).sort((a,b)=>b[1]-a[1]).map(x=>x[0]);
  const count=k=>all.filter(r=>inTab(r,k)).length;
  $("orderCount").textContent=qty(count("bill"));
  $("billCount").textContent=cash(all.filter(r=>inTab(r,"due")).reduce((a,r)=>a+r.due,0));
