@@ -4,6 +4,14 @@
 **Purpose:** Continue the same ERP project from a new ChatGPT conversation without restarting or losing the agreed requirements.
 **Status:** Active development / verification. Do not assume all modules are completed or fully tested.
 
+## Admin dashboard: every number opens its list (4 Nov 2026)
+
+- Mohit: on a dashboard, tapping any number must open the full list behind it (e.g. which POs make the ₹50 L profit). Keyboard too.
+- `admin-business.js` (Business Overview): all 8 KPI cards, every P&L row, every brand row + Total, every expense head and every Top SKU row carry `data-bzd`; tap or Tab + Enter opens an `erp-list.js` popup. Sales / Gross profit = PO-wise (tap a PO = its SKU lines with rate, landing, cost, profit, "Open PO →"); Purchase = Goods Inward bills (tap = SKUs); Expenses / a head = Accounts money-out lines; Net profit = GP of each PO + each expense (total = net); Outstanding = party-wise due (brand-wise when a brand is chosen); Stock value = SKU × landing; Cash + Bank = cash in hand + each bank; brand row = SKU-wise sales / GP / purchase / stock. A chart day opens that day's POs. Landing / GP columns are hidden when "See profit" is off.
+- Expenses list follows NOT_EXPENSE from the order-to-payment audit (Contra / Asset purchase / GST not counted).
+- `erp-list.js` (all list popups): ↓ from search goes to the rows, ↑ / ↓ move, Enter opens a row; negative money shows −₹; phone cards in two columns, no "#" line.
+- Checked with a mocked database at 1366 px and 390 px: no side scroll, no JS errors. Not yet checked on live data.
+
 ## Order → payment audit fixes (4 Nov 2026)
 
 - Admin Business Overview: Expenses / Net profit no longer count Supplier payment, Contra (bank transfer), Asset purchase or GST / Tax paid (`NOT_EXPENSE` in `admin-business.js`). Contra is also left out of money in / out on the Accounts home (`role-dashboard.js` accTotals) and of "All money in / out" and expense-by-head on the Accounts Dashboard (bank-wise rows keep it).

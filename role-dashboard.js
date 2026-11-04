@@ -364,7 +364,7 @@
       if(window.LWBBizDash){
         if(!BR.map&&window.LWBBrand)BR.map=await LWBBrand.skuMap(C).catch(()=>null);
         BIZ={C,can,landingData:()=>landingData(),landingOf,brandOf,inBrand,uOf,companies:BR.list.length?BR.list:BR.all,allow:BR.allow,allBrands:!BR.allow,brandKey:BR.id,
-          colorOf:s=>{const c=BR.all.find(x=>x.id===brandOf(s));return (c&&c.color)||"#9aa5a8"},out:out?{total:out.total,over:out.brand?out.over:out.over30,brand:out.brand}:ov&&ov.outstanding?{total:Object.values(ov.outstanding).reduce((a,x)=>a+num(x&&x.due),0),over:Object.values(ov.outstanding).reduce((a,x)=>a+num(x&&x.overdue),0),brand:1}:null,
+          colorOf:s=>{const c=BR.all.find(x=>x.id===brandOf(s));return (c&&c.color)||"#9aa5a8"},out:out?{total:out.total,over:out.brand?out.over:out.over30,brand:out.brand,parties:out.parties||null}:ov&&ov.outstanding?{total:Object.values(ov.outstanding).reduce((a,x)=>a+num(x&&x.due),0),over:Object.values(ov.outstanding).reduce((a,x)=>a+num(x&&x.overdue),0),brand:1}:null,
           short:short?short.length:null,ov,alerts:al.join(""),profitOk:profitOk(),fresh:BIZFRESH};
         BIZFRESH=false;
         return '<section class="bz" id="bzDash"></section><div class="rd-grid"><div class="rd-col">'+[flow,board].filter(Boolean).join("")+'</div><div class="rd-col" id="rdSide">'+brandCard(ov)+"</div></div>";
