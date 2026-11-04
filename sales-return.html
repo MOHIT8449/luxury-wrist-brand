@@ -6,7 +6,8 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Sales Return | Luxury Wrist Brand</title>
 <script src="erp-date.js"></script><script src="erp-recent.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script><script src="page-role.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="brand-filter.js"></script><script src="page-role.js"></script>
 <style>
 *{box-sizing:border-box}
 body{margin:0;background:#f3f6fb;color:#17243b;font-family:Arial,sans-serif}
@@ -131,6 +132,7 @@ Submit for Approval
 
 <section>
 <h2>4. Sales Return Approval Queue</h2>
+<div id="brandSlot"></div>
 <button class="secondary" onclick="loadReturns()">Refresh</button>
 <div class="table-wrap">
 <table>
@@ -164,6 +166,7 @@ let currentUser;
 let userRole = "";
 let selectedInvoice = null;
 let invoiceItems = [];
+let BB = {get: () => ""}, OB = new Map();
 
 const el = id => document.getElementById(id);
 
@@ -244,6 +247,7 @@ async function initialize() {
 
     el("returnDate").value = localDate();
 
+    if (window.LWBBrand) try { BB = await LWBBrand.mount(db, {into: "#brandSlot", onChange: loadReturns}); } catch(e) {}
     await loadReturns();
 
   } catch(err) {
@@ -541,7 +545,7 @@ async function loadReturns() {
 
     const result = await db.from("sales_returns")
       .select(
-        "id,return_no,return_date,original_invoice_no," +
+        "id,order_id,return_no,return_date,original_invoice_no," +
         "total_amount,status,approval_status," +
         "requires_admin_approval,credit_note_no"
       )
@@ -554,7 +558,11 @@ async function loadReturns() {
     tbody.innerHTML = "";
 
     // latest added / edited / approved return first
-    const returnRows = ERPRecent.sort(await ERPRecent.attach(db, "sales_returns", result.data || []));
+    let returnRows = ERPRecent.sort(await ERPRecent.attach(db, "sales_returns", result.data || []));
+    if (BB.companies && BB.companies.length > 1) {
+      OB = await LWBBrand.orderBrands(db, returnRows.map(r => r.order_id));
+      returnRows = returnRows.filter(r => LWBBrand.has(OB.get(r.order_id), BB.get()));
+    }
     for (const r of returnRows) {
       const tr = document.createElement("tr");
 

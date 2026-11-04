@@ -6,6 +6,7 @@
   <title>Purchase Claims | Luxury Wrist Brand ERP</title>
   <script src="erp-date.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="brand-filter.js"></script>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Anton&display=swap">
   <link rel="stylesheet" href="erp-shell.css">
   <script src="erp-shell.js"></script>
@@ -104,6 +105,10 @@
     const rs=v=>"₹"+num(v).toLocaleString("en-IN",{minimumFractionDigits:2,maximumFractionDigits:2});
     const lines=t=>String(t||"").split(/\r?\n/).map(l=>l.trim()).filter(Boolean).map(l=>l[0]==="*"?"<b>"+esc(l.slice(1).trim())+"</b>":esc(l)).join("<br>");
 
+    // Brand filter: a claim is of a brand when one of its SKUs is.
+    let BB={get:()=>""},SM=null,allClaims=[];
+    const inB=x=>{const c=BB.get();if(!c||!SM)return true;return (x.lwb_purchase_check_items||[]).some(i=>SM.get(LWBBrand.skuKey(i.sku_name))===c)||(billItems.get(x.inward_id)||[]).some(i=>SM.get(LWBBrand.skuKey(i.sku_name))===c)};
+    const pickBrand=()=>{claims=allClaims.filter(inB)};
     let me=null,claims=[],bills=new Map(),billItems=new Map(),settings={},filter="open",busy=false,act=null;
 
     async function start(){
@@ -129,6 +134,7 @@
         for(const b of r.data||[])bills.set(b.id,b);
         for(const x of it.data||[]){if(!billItems.has(x.inward_id))billItems.set(x.inward_id,[]);billItems.get(x.inward_id).push(x)}
       }
+      allClaims=claims;pickBrand();
     }
     function tot(ch){
       const t={DAMAGE:[0,0],LEAKAGE:[0,0],SHORTAGE:[0,0],cases:0};
@@ -341,6 +347,7 @@
       me=await start();if(!me)return;
       ERPShell.mount({role:me.realRole||me.role,name:me.name,onLogout:async()=>{await client.auth.signOut();location.replace("login.html")},group:"Purchase"});
       el("loading").hidden=true;el("page").hidden=false;
+      if(window.LWBBrand)try{BB=await LWBBrand.mount(client,{into:"#page .erp-pagehead",after:true,onChange:()=>{pickBrand();render()}});if(BB.companies.length>1)SM=await LWBBrand.skuMap(client)}catch(e){}
       await load();setTab();
     })();
   </script>

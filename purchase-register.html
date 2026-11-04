@@ -6,6 +6,7 @@
   <title>Purchase List | Luxury Wrist Brand ERP</title>
   <script src="erp-date.js"></script><script src="erp-recent.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="brand-filter.js"></script>
   <link rel="stylesheet" href="erp-shell.css">
   <script src="erp-shell.js"></script>
 <script src="erp-list.js"></script>
@@ -166,7 +167,7 @@ Verify: enter damage / leakage / shortage (or No Damage) and add photos. 📷 Ta
         let q=client.from("lwb_goods_inward").select("*").order("received_date",{ascending:false}).order("created_at",{ascending:false}).limit(3000);
         if(el("from").value)q=q.gte("received_date",el("from").value);
         if(el("to").value)q=q.lte("received_date",el("to").value);
-        const [h,s]=await Promise.all([q,client.from("sku_master").select("id,sku_name,pcs_per_case")]);
+        const [h,s]=await Promise.all([q,client.from("sku_master").select("*")]);
         if(h.error)throw h.error;
         bills=ERPRecent.sort(h.data||[]);skuName=new Map((s.data||[]).map(x=>[String(x.id),x]));items=new Map();
         // A bill opened from a task (?bill=) is shown even when it is older than the dates.
@@ -192,9 +193,13 @@ Verify: enter damage / leakage / shortage (or No Damage) and add photos. 📷 Ta
     const lines=b=>items.get(b.id)||[];
     const pcsOf=it=>num(pick(it,["quantity_pcs","total_pcs","qty_pcs"]));
     const sum=(b,f)=>lines(b).reduce((a,i)=>a+num(i[f]),0);
+    // Brand filter: a bill is of a brand when one of its SKUs is (or its supplier is tied to that brand).
+    let BB={get:()=>""};
+    const inB=b=>{const c=BB.get();if(!c)return true;if(b.company_id)return b.company_id===c;
+      return lines(b).some(it=>{const s=skuName.get(String(it.sku_id));return s&&s.company_id===c})};
     function filtered(){
       const q=el("q").value.trim().toUpperCase(),sp=el("sup").value;
-      return bills.filter(b=>(!sp||b.supplier_name===sp)&&(!q||[b.invoice_no,b.supplier_name,b.vehicle_no,b.driver_name,b.driver_mobile,b.lr_no,b.transport_name].some(v=>String(v||"").toUpperCase().includes(q))));
+      return bills.filter(b=>inB(b)&&(!sp||b.supplier_name===sp)&&(!q||[b.invoice_no,b.supplier_name,b.vehicle_no,b.driver_name,b.driver_mobile,b.lr_no,b.transport_name].some(v=>String(v||"").toUpperCase().includes(q))));
     }
     const shown=()=>{const f=(TABS.find(t=>t[0]===tab)||TABS[0])[2];return filtered().filter(f)};
     function checkTag(b){
@@ -347,6 +352,7 @@ Verify: enter damage / leakage / shortage (or No Damage) and add photos. 📷 Ta
       el("newLink").hidden=!["admin","manager"].includes(r);el("sbsLink").hidden=!["admin","manager","accounts"].includes(r);
       ERPShell.mount({role:me.realRole||me.role,name:me.name,onLogout:async()=>{await client.auth.signOut();location.replace("login.html")},group:"Purchase"});
       el("loading").hidden=true;el("page").hidden=false;
+      if(window.LWBBrand)try{BB=await LWBBrand.mount(client,{into:"#page .erp-pagehead",after:true,onChange:render})}catch(e){}
       let k="30";try{k=localStorage.getItem("lwbPrRange")||"30"}catch(e){}
       if(!["0","7","30","month"].includes(k))k="30";
       setRange(k);

@@ -4,7 +4,8 @@
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Driver Collections | Luxury Wrist Brand ERP</title>
 <script src="erp-date.js"></script><script src="erp-recent.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script><script src="page-role.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="brand-filter.js"></script><script src="page-role.js"></script>
 <script src="party-list.js" defer></script>
 <script src="tally-note.js" defer></script>
 <style>
@@ -119,6 +120,9 @@ const el=id=>document.getElementById(id);
 const fmt=n=>"₹"+Number(n||0).toLocaleString("en-IN",{minimumFractionDigits:2,maximumFractionDigits:2});
 const STATUSES=["PENDING","OUTSTANDING","VERIFIED","REJECTED"];
 let role="",status="PENDING",lists={},busy=false,photoUrls=new Map();
+// Brand filter (All / Rajnigandha / Coca-Cola): a PO counts in a brand when it has an SKU of it.
+let BB={get:()=>""},OB=new Map();
+const inBrand=r=>!BB.get()||LWBBrand.has(OB.get(r.order_id),BB.get());
 // Cash / UPI payments are verified by Accounts (or Admin); Sales Head only views them.
 const canVerify=()=>role==="admin"||role==="accounts";
 // Opened from a notification: driver-collections.html?order=<order id> shows only that order.
@@ -138,6 +142,7 @@ async function init(){
   if(p.error)throw p.error;
   role=await lwbPageRole(String(p.data.role||"").toLowerCase().trim());
   if(p.data.active!==true||!["admin","accounts","manager"].includes(role))throw Error("Only Admin, Accounts or Sales Head can open Driver Collections.");
+  if(window.LWBBrand)try{BB=await LWBBrand.mount(db,{into:"main",onChange:render})}catch(e){}
   await load();
  }catch(e){message("Could not start: "+e.message,"error")}
 }
@@ -146,7 +151,7 @@ async function load(){
   message("Loading driver collections...");
   const results=await Promise.all(STATUSES.map(s=>db.rpc("lwb_office_list_driver_collections",{p_status:s})));
   results.forEach((r,i)=>{if(r.error)throw r.error;lists[STATUSES[i]]=ERPRecent.sort(Array.isArray(r.data)?r.data:[],"reported_at","office_received_at","payment_verified_at")});
-  STATUSES.forEach(s=>el("count"+s).textContent=lists[s].length);
+  if(BB.companies&&BB.companies.length>1)OB=await LWBBrand.orderBrands(db,STATUSES.flatMap(s=>lists[s]).map(r=>r.order_id));
   const need=[...new Set(STATUSES.flatMap(s=>lists[s]).flatMap(r=>r.online_photo_paths||[]))].filter(p=>!photoUrls.has(p));
   if(need.length){const signed=await db.storage.from("lwb-delivery-pod").createSignedUrls(need,3600);for(const x of signed.data||[])if(x.signedUrl)photoUrls.set(x.path,x.signedUrl)}
   let note=canVerify()?"":"View only. Accounts verify driver payments.";
@@ -174,8 +179,9 @@ el("viewer").onclick=e=>{if(e.target!==el("viewerImg"))el("viewer").hidden=true}
 const LABEL={PENDING:"⏳ To verify",VERIFIED:"✅ Verified",REJECTED:"❌ Rejected",NONE:"No payment entered"};
 function render(){
  document.querySelectorAll(".tab").forEach(t=>t.classList.toggle("active",t.dataset.status===status));
+ STATUSES.forEach(s=>el("count"+s).textContent=(lists[s]||[]).filter(inBrand).length);
  const q=el("search").value.toLowerCase().trim().split(/\s+/).filter(Boolean);
- const all=(lists[status]||[]).filter(r=>!onlyOrder||r.order_id===onlyOrder);
+ const all=(lists[status]||[]).filter(r=>(!onlyOrder||r.order_id===onlyOrder)&&(onlyOrder||inBrand(r)));
  el("only").hidden=!onlyOrder;
  if(onlyOrder){const o=STATUSES.flatMap(x=>lists[x]).find(r=>r.order_id===onlyOrder);el("onlyText").textContent="From notification: "+(o?.order_no||"order")+" · "+(o?.party_name||"")}
  const rows=all.filter(r=>q.every(w=>[r.party_name,r.order_no,r.driver_name,r.vehicle_no].join(" ").toLowerCase().includes(w)));

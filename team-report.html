@@ -6,6 +6,7 @@
   <title>Team Work Report | Luxury Wrist Brand ERP</title>
   <script src="erp-date.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="brand-filter.js"></script>
   <script src="party-list.js" defer></script>
   <link rel="stylesheet" href="erp-shell.css">
   <script src="erp-shell.js"></script>
@@ -100,6 +101,9 @@
       return out;
     }
 
+    // Brand filter (All / Rajnigandha / Coca-Cola): dispatch work counts only that brand's SKU lines; sales count POs with an SKU of it.
+    let BB={get:()=>""},skuCo=new Map();
+    const lineIn=it=>!BB.get()||(skuCo.get(String(it.sku_id))||skuCo.get(nameKey(it.sku_name)))===BB.get();
     async function loadAll(){
       const from=el("from").value,to=el("to").value;
       if(!from||!to||from>to){await ERPShell.alert("Select a valid From and To date.");return}
@@ -108,8 +112,8 @@
       errors={};
       try{
         const s=await client.from("sku_master").select("*");
-        skuWeight=new Map();
-        for(const x of s.data||[]){const w=num(x.unit_weight_kg);skuWeight.set(String(x.id),w);skuWeight.set(nameKey(x.sku_name),w)}
+        skuWeight=new Map();skuCo=new Map();
+        for(const x of s.data||[]){const w=num(x.unit_weight_kg);skuWeight.set(String(x.id),w);skuWeight.set(nameKey(x.sku_name),w);skuCo.set(String(x.id),x.company_id||"");skuCo.set(nameKey(x.sku_name),x.company_id||"")}
       }catch(e){}
       await Promise.all([loadDispatch(start,end),loadSales(from,to)]);
       el("refresh").disabled=false;
@@ -139,12 +143,13 @@
           byOrder.set(o.id,po);pos.push(po);
         }
         for(const it of items){
-          const po=byOrder.get(it.order_id);if(!po)continue;
+          const po=byOrder.get(it.order_id);if(!po||!lineIn(it))continue;
           const cases=num(it.loaded_qty);if(!cases)continue;
           const w=num(it.unit_weight)||skuWeight.get(String(it.sku_id))||skuWeight.get(nameKey(it.sku_name))||0;
           const line={po,sku:it.sku_name||"Unknown SKU",cases,kg:cases*w,amount:cases*num(it.rate)};
           po.cases+=line.cases;po.kg+=line.kg;po.amount+=line.amount;lines.push(line);
         }
+        if(BB.get())pos=pos.filter(p=>p.cases>0);
         pos.sort((a,b)=>b.day.localeCompare(a.day)||String(b.no).localeCompare(String(a.no)));
         // Show each driver by the latest name typed for that mobile.
         const latest=new Map();for(const p of pos)if(!latest.has(p.driverKey))latest.set(p.driverKey,p.driver);
@@ -159,6 +164,7 @@
         const r=await client.from("orders").select("*").gte("order_date",from).lt("order_date",next).limit(5000);
         if(r.error)throw r.error;
         salesOrders=(r.data||[]).filter(o=>!SKIP_SALES.includes(String(o.status||"").toLowerCase().trim()));
+        if(BB.get()){const ob=await LWBBrand.orderBrands(client,salesOrders.map(o=>o.id));salesOrders=salesOrders.filter(o=>LWBBrand.has(ob.get(o.id),BB.get()))}
       }catch(e){errors.sales=e.message||String(e)}
     }
 
@@ -323,6 +329,7 @@
       el("month").addEventListener("change",setMonth);
       el("from").addEventListener("change",loadAll);el("to").addEventListener("change",loadAll);
       el("loading").hidden=true;el("page").hidden=false;
+      if(window.LWBBrand)try{BB=await LWBBrand.mount(client,{into:"#page .erp-pagehead",after:true,onChange:loadAll})}catch(e){}
       await loadAll();
     })();
   </script>

@@ -5,7 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Opening Stock | Luxury Wrist Brand</title>
   <script src="erp-date.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script><script src="page-role.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="brand-filter.js"></script><script src="page-role.js"></script>
   <style>
     :root{font-family:Arial,Helvetica,sans-serif;color:#16243b;background:#f3f6fa}
     *{box-sizing:border-box}body{margin:0}header{background:#142640;color:white;padding:18px max(22px,5vw);display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap}header h1{font-size:23px;margin:0 0 5px}header small{opacity:.85}a{color:inherit}header a{border:1px solid #a7b2c0;padding:10px 14px;border-radius:7px;text-decoration:none}
@@ -51,6 +52,7 @@
 'use strict';
 const SUPABASE_URL = 'https://txkbhadzdbxpieunfvox.supabase.co';
 const $ = id => document.getElementById(id);
+let BB = {get:()=>''}, allSkus = [];
 let db = null, profile = null, skus = [], balances = [], openingSkuIds = new Set(), busy = false;
 function show(message, type='error') { const n=$('notice');n.className='notice '+type;n.textContent=message;n.scrollIntoView({block:'nearest',behavior:'smooth'}); }
 function qty(v) { return Number(v).toLocaleString('en-IN'); }
@@ -107,13 +109,15 @@ async function loadAll(){
   $('refresh').disabled=true;
   try{
     const [skuRes,stockRes,openRes] = await Promise.all([
-      db.from('sku_master').select('id,sku_name,pcs_per_case,is_active').eq('is_active',true).order('sku_name'),
+      db.from('sku_master').select('*').eq('is_active',true).order('sku_name'),
       db.from('lwb_live_stock').select('sku_id,sku_name,pcs_per_case,saleable_pcs,damaged_pcs').order('sku_name'),
       db.from('lwb_inventory_movements').select('sku_id').eq('movement_type','OPENING').eq('stock_bucket','SALEABLE')
     ]);
     for(const result of [skuRes,stockRes,openRes]) if(result.error) throw result.error;
     const old=$('sku').value;
-    skus=(skuRes.data||[]).filter(s=>Number(s.pcs_per_case)>0);
+    if(window.LWBBrand&&!BB.companies)try{BB=await LWBBrand.mount(db,{into:'main',onChange:()=>loadAll()})}catch(e){}
+    allSkus=(skuRes.data||[]).filter(s=>Number(s.pcs_per_case)>0);
+    skus=allSkus.filter(s=>!BB.get()||s.company_id===BB.get());
     balances=stockRes.data||[];
     openingSkuIds=new Set((openRes.data||[]).map(o=>o.sku_id));
     $('sku').replaceChildren(new Option('Select SKU from Master...', ''), ...skus.map(s=>new Option(s.sku_name,s.id)));

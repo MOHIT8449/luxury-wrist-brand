@@ -5,6 +5,7 @@
 <title>Payment Collection | Luxury Wrist Brand ERP</title>
 <script src="erp-date.js"></script><script src="erp-recent.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="brand-filter.js"></script>
 <script src="party-list.js" defer></script>
 <style>
 :root{--navy:#132843;--blue:#1569dc;--bg:#f1f5fb;--line:#dfe6f0;--muted:#5b7089}
@@ -89,7 +90,10 @@ const db=window.supabase.createClient(SUPABASE_URL,SUPABASE_PUBLISHABLE_KEY);
 const el=id=>document.getElementById(id);
 const fmt=n=>"₹"+Number(n||0).toLocaleString("en-IN",{minimumFractionDigits:2,maximumFractionDigits:2});
 const clean=v=>String(v==null?"":v);
-let role="",invoices=[],collections=[],busy=false;
+let role="",allInvoices=[],invoices=[],allCollections=[],collections=[],busy=false;
+// Brand filter (All / Rajnigandha / Coca-Cola): a bill counts in a brand when its PO has an SKU of it.
+let BB={get:()=>""},OB=new Map();
+const inBrand=b=>!BB.get()||LWBBrand.has(OB.get(b.order_id),BB.get());
 const canReview=()=>role==="admin";
 const canSubmit=()=>["admin","manager","sales","salesman","collector"].includes(role);
 const canView=()=>canSubmit()||role==="accounts";
@@ -113,6 +117,7 @@ async function init(){
     const readonly=!canSubmit();
     el("entryPanel").hidden=readonly;
     if(readonly)msg("Accounts access: VIEW ONLY. No payment entry or posting allowed.");
+    if(window.LWBBrand)try{BB=await LWBBrand.mount(db,{into:"main",onChange:applyBrand})}catch(e){}
     await loadData();
   }catch(e){msg("Connection / Setup error: "+e.message,"error")}
 }
@@ -124,14 +129,21 @@ async function loadData(){
       db.from("lwb_payment_collections").select("*").order("submitted_at",{ascending:false}).limit(300)
     ]);
     if(i.error)throw i.error;if(p.error)throw p.error;
-    invoices=(i.data||[]).filter(b=>b.bill_kind!=="TALLY_BILL").map(b=>({...b,key:billKey(b.bill_kind,b.bill_id)}));collections=ERPRecent.sort(p.data||[]);
+    allInvoices=(i.data||[]).filter(b=>b.bill_kind!=="TALLY_BILL").map(b=>({...b,key:billKey(b.bill_kind,b.bill_id)}));allCollections=ERPRecent.sort(p.data||[]);
+    if(BB.companies&&BB.companies.length>1)OB=await LWBBrand.orderBrands(db,allInvoices.map(b=>b.order_id));
+    applyBrand(true);
+    msg("Connected. "+invoices.length+" bills loaded. Only posted collections and driver money received on Driver Collections affect the ledger. Do not enter driver money here again.","success");
+  }catch(e){msg("Setup/Read failed: "+e.message+" — Run lwb_party_ledger_setup.sql in Supabase SQL Editor.","error")}
+}
+function applyBrand(){
+    invoices=allInvoices.filter(inBrand);
+    const byKey=new Map(allInvoices.map(x=>[x.key,x]));
+    collections=allCollections.filter(c=>{const b=byKey.get(collectionKey(c));return !BB.get()||(b&&inBrand(b))});
     el("invoiceCount").textContent=invoices.length;
     el("outstandingTotal").textContent=fmt(invoices.reduce((sum,x)=>sum+Number(x.outstanding_amount||0),0));
     el("pendingCount").textContent=collections.filter(x=>x.status==="PENDING").length;
     el("postedTotal").textContent=fmt(collections.filter(x=>x.status==="POSTED").reduce((sum,x)=>sum+Number(x.amount||0),0));
     renderInvoiceSelect();renderCollections();
-    msg("Connected. "+invoices.length+" bills loaded. Only posted collections and driver money received on Driver Collections affect the ledger. Do not enter driver money here again.","success");
-  }catch(e){msg("Setup/Read failed: "+e.message+" — Run lwb_party_ledger_setup.sql in Supabase SQL Editor.","error")}
 }
 function renderInvoiceSelect(){
   const selected=el("invoice").value;

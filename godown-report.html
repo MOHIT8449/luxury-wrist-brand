@@ -6,6 +6,7 @@
   <title>Godown Report | Luxury Wrist Brand ERP</title>
   <script src="erp-date.js"></script><script src="erp-recent.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="brand-filter.js"></script>
   <link rel="stylesheet" href="erp-shell.css">
   <link rel="stylesheet" href="sales.css">
   <script src="erp-shell.js"></script>
@@ -137,10 +138,13 @@
       finally{if(el("send")){btn.disabled=false;btn.textContent="Send Report"}}
     }
 
+    // Brand filter: damage reports of the chosen brand's SKUs; vehicles, staff and other issues are for the whole godown.
+    let BB={get:()=>""},SM=null;
+    const inB=x=>!BB.get()||!SM||!x.sku_name||SM.get(LWBBrand.skuKey(x.sku_name))===BB.get();
     async function load(){
       const r=await client.from("lwb_godown_reports").select("*").eq("report_date",el("day").value).order("created_at",{ascending:false});
       if(r.error){el("list").innerHTML='<div class="sl-msg">'+esc(/lwb_godown_reports/.test(r.error.message)?"Run lwb_godown_report_setup.sql in Supabase first.":r.error.message)+"</div>";el("kpis").innerHTML="";return}
-      rows=ERPRecent.sort(r.data||[]);
+      rows=ERPRecent.sort((r.data||[]).filter(inB));
       const ids=[...new Set(rows.flatMap(x=>[x.created_by,x.reviewed_by]).filter(id=>id&&!names.has(id)))];
       if(ids.length){const u=await client.from("user_profiles").select("id,full_name").in("id",ids);for(const x of u.data||[])names.set(x.id,x.full_name)}
       render();
@@ -214,6 +218,7 @@
       el("refresh").onclick=load;
       const q=new URLSearchParams(location.search).get("new");if(FORMS[q])openForm(q);
       el("loading").hidden=true;el("page").hidden=false;
+      if(window.LWBBrand)try{BB=await LWBBrand.mount(client,{into:"#page .erp-pagehead",after:true,onChange:load});if(BB.companies.length>1)SM=await LWBBrand.skuMap(client)}catch(e){}
       await load();
     })();
   </script>

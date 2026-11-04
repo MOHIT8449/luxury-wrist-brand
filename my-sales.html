@@ -6,6 +6,7 @@
   <title>My Sales | Luxury Wrist Brand ERP</title>
   <script src="erp-date.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="brand-filter.js"></script>
   <link rel="stylesheet" href="erp-shell.css">
   <link rel="stylesheet" href="sales.css">
   <script src="erp-shell.js"></script>
@@ -67,6 +68,8 @@
     let myOrders=null,moErr="",moFilter="pending",openId=null,busy=false;
     const TABS=[["parties","My Parties"],["orders","My Orders"],["skus","My SKUs"]];
 
+    // Brand filter (salesman selling both brands): sales count only that brand's SKU lines; order list shows POs with an SKU of it.
+    let BB={get:()=>""},SM=null;
     async function load(){
       const today=S.isoDay(new Date()),m=S.monthRange(today.slice(0,7));
       const pl=await client.rpc("lwb_my_sales_plan");
@@ -84,6 +87,7 @@
         const items=await S.inChunks("order_items","order_id",orders.map(o=>o.id),"order_id,sku_name,ordered_qty,approved_qty,loaded_qty,rate");
         const by=new Map(orders.map(o=>[o.id,o]));
         lines=items.map(it=>{const o=by.get(it.order_id),q=S.lineQty(it,o,"booked");return {o,sku:String(it.sku_name||"").trim(),q,amt:q*num(it.rate)}}).filter(l=>l.q);
+        if(BB.get()&&SM){lines=lines.filter(l=>SM.get(LWBBrand.skuKey(l.sku))===BB.get());const keep=new Set(lines.map(l=>l.o.id));orders=orders.filter(o=>keep.has(o.id))}
       }catch(e){err=e.message}
       render();
     }
@@ -147,6 +151,7 @@
       const r=await client.rpc("lwb_my_orders",{p_days:45});
       if(r.error){myOrders=null;moErr=/lwb_my_orders/.test(r.error.message)?"Order follow-up setup is not installed yet. Ask Admin to run lwb_sales_order_followup_setup.sql":r.error.message;return}
       moErr="";myOrders=Array.isArray(r.data)?r.data:[];
+      if(BB.get()&&SM)myOrders=myOrders.filter(o=>(o.items||[]).some(i=>SM.get(LWBBrand.skuKey(i.sku_name))===BB.get()));
     }
     const isCancelled=o=>["cancelled","canceled","rejected"].includes(S.status(o));
     const isWaiting=o=>["","pending","submitted","pending_manager","pending_approval","pending_review","new"].includes(S.status(o));
@@ -237,6 +242,7 @@
       // Bottom bar "My Orders" / "My Sales" on the same page switch the tab.
       window.addEventListener("hashchange",()=>{tab=location.hash==="#orders"?"orders":"parties";render();window.scrollTo({top:0})});
       el("loading").hidden=true;el("page").hidden=false;
+      if(window.LWBBrand)try{BB=await LWBBrand.mount(client,{into:"#page .erp-pagehead",after:true,onChange:load});if(BB.companies.length>1)SM=await LWBBrand.skuMap(client)}catch(e){}
       await load();
     })();
   </script>
