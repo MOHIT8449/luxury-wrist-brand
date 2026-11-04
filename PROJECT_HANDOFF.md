@@ -4,6 +4,13 @@
 **Purpose:** Continue the same ERP project from a new ChatGPT conversation without restarting or losing the agreed requirements.
 **Status:** Active development / verification. Do not assume all modules are completed or fully tested.
 
+## Return goods into stock + party credit limit on PO (5 Nov 2026)
+
+- Mohit picked these from the full site review (project files `site-review-modules/review.md`).
+- Returns: `lwb_return_stock_setup.sql` (test `tests/return-stock`, 4 PGlite tests). Godown "Receive goods → stock" on an approved driver return opens a popup: each SKU line goes to Saleable / Damage / Leakage / Breakage / Gasless / Expiry (default = driver's reason, Low fill = Damage). `lwb_receive_return_goods2(return, [{item_id, bucket}], note)` writes APPROVED `lwb_stock_moves` rows (kind RETURN_IN, from_bucket PARTY, source RETURN, order_id, return_item_id; unique per line), so `lwb_live_stock` / Stock Transfer / category ledger change at once. SKU not in SKU Master = skipped and written in the receive note. Old `lwb_receive_return_goods` now calls it with defaults. `lwb_return_receive_lines(return)` for the popup. Returns received before this are not back-filled. **If `lwb_driver_payment_setup.sql` is run again, run this file after it.**
+- Credit: `lwb_party_credit_limit_setup.sql` (test `tests/party-credit`, 4 tests). `lwb_customer_master.credit_limit` (₹, blank = none, checked per brand; Party Master field, `lwb_party_master_save` patched in place). `lwb_party_credit(party, company)` = bills due (`lwb_tally_bill_rows`) + opening − advance of that brand, oldest unpaid bill days, credit days (party+brand, else party, else brand market days), over_limit / over_days; field salesman only his parties. `lwb_order_credit(order)`. `party-credit.js` (LWBCredit). New PO: red box under the party (one line per brand when All brands), confirm on Submit when over; a field salesman's Rajnigandha slip PO over credit is saved pending (no slip) for Sales Head approval. PO / Sales review popup shows the same box for open POs. Not blocked on the server.
+- Checked with a mocked database at 390 / 1366 px: no side scroll, no JS errors. Not yet checked on live data. Screenshots: project files `return-stock-credit/`.
+
 ## Phone / app: forms in popups, photo buttons gold, keyboard Next (4 Nov 2026)
 
 - Mohit: in the app no page should show an add form with the list under it; the form opens in a popup, less scrolling, Next on the keyboard goes to the next field, photo buttons stand out. No SQL.
