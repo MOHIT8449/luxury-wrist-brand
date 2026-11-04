@@ -80,8 +80,10 @@
       {t:"New PO / Sales Order",h:"order-entry.html",i:"cart",r:"admin manager sales",k:"new order entry po",pt:"PO / Sales Order (new PO)",nm:"admin manager sales",par:"warehouse-orders.html my-sales.html#orders"},
       {t:"PO / Sales",h:"warehouse-orders.html",i:"note",r:"admin manager warehouse accounts",k:"po approval driver warehouse orders",pt:"PO / Sales List (all POs; approve for Admin / Sales Head)",nm:"accounts"},
       {t:"PO / Sales",h:"my-sales.html#orders",i:"note",r:"sales",k:"my orders modify",pt:"PO / Sales List (Salesman's own orders)"},
-      {t:"Rajnigandha Slips",h:"quick-slip.html",i:"note",r:"admin manager accounts warehouse sales",k:"rajnigandha slip parchi thermal print kachcha",vo:"accounts",nm:"accounts"},
-      {t:"Rajnigandha Rate List",h:"rajni-rates.html",i:"bill",r:"admin",k:"rajnigandha rate landing min max profit margin approval"},
+      // Rajnigandha (Mohit, 4 Nov 2026): no own menu items. A Rajnigandha PO prints its slip from PO / Sales
+      // (Print), its waiting POs show on top of that list; the rate list is the Rajnigandha tab of Rate List.
+      {t:"Rajnigandha Slips",h:"quick-slip.html",i:"note",r:"admin manager accounts warehouse sales",k:"rajnigandha slip parchi thermal print kachcha",vo:"accounts",nm:"admin manager accounts warehouse sales",par:"warehouse-orders.html my-sales.html#orders"},
+      {t:"Rajnigandha Rate List",h:"rajni-rates.html",i:"bill",r:"admin",k:"rajnigandha rate landing min max profit margin approval",nm:"admin",par:"rates.html"},
       {t:"My Sales",h:"my-sales.html",i:"chart",r:"sales"},
       {t:"Party Call List",h:"party-calls.html",i:"phone",r:"admin manager sales"},
       {t:"Outside Market Stock",h:"market-report.html",i:"pin",r:"admin manager sales"},
@@ -143,7 +145,7 @@
     {group:"Settings",items:[
       {t:"Settings",h:"settings.html",i:"gear",r:"admin manager"},
       {t:"Manage Users",h:"users.html",i:"lock",r:"admin"},
-      {t:"Rate & Scheme",h:"rates.html",i:"tag",r:"admin manager"}]}
+      {t:"Rate List",h:"rates.html",i:"tag",r:"admin manager",k:"rate scheme mepd landing slab rajnigandha coca-cola brand",pt:"Rate List (Coca-Cola Rate & Scheme)"}]}
   ];
 
 
@@ -437,6 +439,7 @@
   // only with the pages this login may open.
   const PAGE_TABS=[
     [["Driver Returns","driver-returns.html"],["Sales Return","sales-return.html"],["Credit Note","credit-note.html"]],
+    [["Coca-Cola","rates.html"],["Rajnigandha","rajni-rates.html"]],
     [["Stock","inventory.html"],["Transit","stock-transit.html"],["Transfer","stock-transfer.html"],["Audit","stock-audit.html"],["Opening","opening-stock.html"]]
   ];
   function pageTabs(page,role){

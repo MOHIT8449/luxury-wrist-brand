@@ -455,6 +455,8 @@
     .po-actions {display:flex;gap:10px;margin-top:15px;flex-wrap:wrap}
     #poAllocationStatus {font-size:12px;color:#1a613a;margin-top:12px;line-height:1.6}
     #poAllocationStatus.error {color:#bb2929}
+    .rj-wait{display:flex;gap:8px;align-items:center;flex-wrap:wrap;background:#fff4e0;border:1px solid #f0c987;color:#7a4b00;border-radius:8px;padding:7px 10px;margin:0 0 8px;font-size:13px;font-weight:600;text-decoration:none}
+    .rj-wait b{color:#5c3800}.rj-wait span.go{margin-left:auto;font-weight:700;white-space:nowrap}
     #poPrintArea {display:none}
     #poPrintArea .po-bulk-page {break-after:page;page-break-after:always}
     #poPrintArea .po-bulk-page:last-child {break-after:auto;page-break-after:auto}
@@ -1234,6 +1236,8 @@
 
     <div id="poListView">
     <!-- PO list: one tab per stage with counts, date range, column filters, Excel (2 Nov 2026, like the company DMS) -->
+    <!-- Rajnigandha POs still waiting (rate OK by Admin, driver & vehicle): Mohit, 4 Nov 2026 -->
+    <a class="rj-wait" id="rjWait" href="quick-slip.html" hidden></a>
     <section class="po-tabs" id="poTabs" role="tablist" aria-label="PO stage"></section>
 
     <section class="toolbar">
@@ -1496,7 +1500,7 @@
       </div>
 
       <div class="modal-footer">
-        <button type="button" class="btn btn-light" id="printPoDocumentBtn" onclick="printApprovedPO('po')" disabled>Print PO</button>
+        <button type="button" class="btn btn-light" id="printPoDocumentBtn" onclick="printPoFromModal()" disabled>Print PO</button>
         <button type="button" class="btn btn-light" id="printChallanBtn" onclick="printApprovedPO('challan')" style="display:none">Challan</button>
         <button class="btn btn-grey" onclick="closeModal()">
           Close
@@ -1794,6 +1798,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     pickSummaryRange("today", false);
     await loadBrands();
     await Promise.all([loadOrders(), loadWarehouseSkuMaster(), VIEW_ONLY ? null : loadPoSavedDirectory()]);
+    if (CAN_HEAD) loadRajniWaiting();
     const pushOrder=new URLSearchParams(location.search).get('order');
     if(pushOrder){
       if(!orders.some(o=>o.id===pushOrder)){
@@ -3856,7 +3861,55 @@ function poItemsSignature(items){
 }
 // Print straight from the list: the printer dialog opens directly, the review popup stays closed.
 async function printPoFromList(id){
+  if(await printSlipIfAny(id))return;
   await printQuietly(id,"po");
+}
+/* Rajnigandha (quick-slip brand) PO, Mohit 4 Nov 2026: Print gives its thermal slip, not the A5 PO.
+   Only a PO whose every line is of a quick-slip brand and that has a slip; else the normal PO prints. */
+async function printSlipIfAny(id){
+  const slipCos=new Set(brandCompanies.filter(c=>c.quick_slip===true).map(c=>c.id));
+  if(!slipCos.size||!skuBrandMap)return false;
+  if(!orderItemsCache.has(id))await loadItemsFor([id]);
+  const items=orderItemsCache.get(id)||[];
+  if(!items.length||!items.every(i=>slipCos.has(itemBrand(i))))return false;
+  const {data,error}=await db.rpc("lwb_quick_slip_get",{p_order_id:id});
+  if(error||!data)return false;
+  const href="quick-slip.html?order="+encodeURIComponent(id)+"&print=1";
+  if(/Android/i.test(navigator.userAgent)){location.href=href;return true}
+  if(document.getElementById("reviewModal").classList.contains("show"))closeModal();
+  document.getElementById("slipPrintFrame")?.remove();
+  const frame=document.createElement("iframe");
+  frame.id="slipPrintFrame";frame.title="Slip print";frame.setAttribute("aria-hidden","true");
+  frame.style.cssText="position:fixed;right:0;bottom:0;width:1px;height:1px;border:0;opacity:0;pointer-events:none";
+  let answered=false;
+  const fallback=setTimeout(()=>{if(!answered){frame.remove();location.href=href}},20000);
+  const onMessage=e=>{
+    if(e.source!==frame.contentWindow||!e.data?.lwbPoPrint)return;
+    if(e.data.lwbPoPrint==="ready"){answered=true;clearTimeout(fallback);return}
+    window.removeEventListener("message",onMessage);clearTimeout(fallback);
+    if(!answered){frame.remove();location.href=href}
+  };
+  window.addEventListener("message",onMessage);
+  frame.src=href;document.body.appendChild(frame);
+  return true;
+}
+async function printPoFromModal(){
+  if(selectedOrder&&await printSlipIfAny(selectedOrder.id))return;
+  printApprovedPO("po");
+}
+/* Rajnigandha POs waiting for Admin rate OK or for driver & vehicle (were on the Rajnigandha Slips page). */
+async function loadRajniWaiting(){
+  const box=document.getElementById("rjWait");
+  try{
+    const [l,rw]=await Promise.all([db.rpc("lwb_quick_slip_list",{p_from:null,p_to:null}),db.rpc("lwb_rate_waiting")]);
+    if(l.error)return;
+    const rate=rw.error?[]:(rw.data||[]),rateIds=new Set(rate.map(r=>r.order_id));
+    const drv=((l.data&&l.data.waiting)||[]).filter(w=>!rateIds.has(w.order_id));
+    if(!rate.length&&!drv.length){box.hidden=true;return}
+    box.innerHTML="Rajnigandha:"+(rate.length?" <b>"+rate.length+"</b> waiting for Admin rate OK":"")+(rate.length&&drv.length?" ·":"")+
+      (drv.length?" <b>"+drv.length+"</b> waiting for driver &amp; vehicle":"")+'<span class="go">Open &rarr;</span>';
+    box.hidden=false;
+  }catch(e){box.hidden=true}
 }
 // Click anywhere on a PO line (not on its buttons / checkbox) opens it for edit.
 function openRow(event, id) {
