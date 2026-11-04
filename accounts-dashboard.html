@@ -826,7 +826,8 @@
       const banks=(D.banks||[]).filter(b=>b.active);
       if((kind==="DEPOSIT"||kind==="WITHDRAW")&&!banks.length){ERPShell.alert("Add your bank account first (Heads & Banks).");tab="setup";renderTab();return}
       const io=kind==="IN"||kind==="OUT";
-      let st={kind,mode:"CASH",cat:pre.cat||null},files=[],cqFiles=[],pick=null;
+      const supCat=(D.categories||[]).find(c=>c.kind==="OUT"&&c.active&&String(c.name).trim().toLowerCase()==="supplier payment");
+      let st={kind,mode:"CASH",cat:pre.cat||(pre.company&&supCat?supCat.id:null)},files=[],cqFiles=[],pick=null;
       const PL=partyList();
       if(pre.staff){const x=PL.find(p=>p.t==="staff"&&String(p.id)===String(pre.staff));if(x)pick=x}
       if(pre.vehicle){const x=PL.find(p=>p.t==="vehicle"&&p.id===pre.vehicle);if(x)pick=x}
@@ -835,6 +836,7 @@
           '<div class="seg two" id="eKind"><button type="button" class="dep" data-k="DEPOSIT">🏦 Cash to bank</button><button type="button" class="dep" data-k="WITHDRAW">₹ Cash from bank</button></div>')+
         '<div class="f2"><div class="f"><label>Date</label>'+dateBox("eDate",def,{max:D.today})+'</div><div class="f"><label for="eTime">Time</label><input id="eTime" type="time" value="'+nowHM()+'"></div></div>'+
         '<div class="f acx-combo" id="ePartyBox"><label for="eParty" id="ePartyLab">Party</label><input id="eParty" type="text" maxlength="120" autocomplete="off" placeholder="Type party name or short code" value="'+esc(pick?pick.name:"")+'" role="combobox" aria-expanded="false" aria-controls="ePList"><div class="acx-clist" id="ePList" role="listbox" hidden></div><div class="acx-note" id="eStaffBal" style="margin:4px 0 0"></div><div id="eDue" hidden></div></div>'+
+        '<div class="f" id="eCoBox" hidden><label for="eCo">Company paid (shows in Company / Brand &gt; Pay company)</label><select id="eCo"><option value="">Not a company payment</option>'+(COS||[]).map(c=>'<option value="'+esc(c.id)+'"'+(c.id===pre.company?" selected":"")+'>'+esc(c.name)+'</option>').join("")+'</select></div>'+
         '<div class="f" id="eBankBox"><label for="eBank" id="eBankLab">Bank</label><select id="eBank">'+bankOptions(banks.length===1?banks[0].id:"",true)+'</select></div>'+
         '<div class="f"><label for="eAmt" id="eAmtLab">Amount (₹)</label><input id="eAmt" class="big" type="text" inputmode="decimal" autocomplete="off" placeholder="0.00">'+
           '<button type="button" class="acx-link" id="eCnt">Count notes</button><div id="eNotes" hidden><div class="notes">'+NOTE_KEYS.map(k=>'<div class="note"><b>₹'+k+'</b><button type="button" data-d="'+k+'" data-s="-1" aria-label="less">−</button><input type="text" inputmode="numeric" data-en="'+k+'" placeholder="0" aria-label="'+k+' notes"><button type="button" data-d="'+k+'" data-s="1" aria-label="more">+</button></div>').join("")+'</div></div></div>'+
@@ -872,7 +874,7 @@
         const nonCash=io&&st.mode!=="CASH",utr=nonCash||st.kind==="DEPOSIT"?q("#eRef").value.trim():"",bill=q("#eBill").value.trim();
         const p={date:dval("eDate"),time:q("#eTime").value||null,kind:st.kind,category_id:io?st.cat:null,mode:io?st.mode:"CASH",bank_id:st.kind==="IN"&&st.mode==="CHEQUE"?null:q("#eBank").value||null,amount:amt,
           party:stf||veh?"":q("#eParty").value.trim(),vehicle_id:veh?veh.id:null,ref:[utr,bill&&(utr?"Bill "+bill:bill)].filter(Boolean).join(" · "),remark:q("#eRemark").value,
-          staff_id:stf?stf.id:null,gst_bill:gst,gst_amount:gst?num(q("#eGstAmt").value)||null:null,gstin:gst?q("#eGstin").value:null,
+          staff_id:stf?stf.id:null,company_id:q("#eCoBox").hidden?null:q("#eCo").value||null,gst_bill:gst,gst_amount:gst?num(q("#eGstAmt").value)||null:null,gstin:gst?q("#eGstin").value:null,
           notes:st.mode==="CASH"&&!q("#eNotes").hidden?readNotes():null,photos:[]};
         if(!p.date){await ERPShell.alert("Enter the date as DD/MM/YYYY");return false}
         if(!(amt>0)){await ERPShell.alert("Enter the amount");return false}
@@ -889,11 +891,11 @@
             p.photos.push(path);
           }
           let id;
-          try{id=await rpc("lwb_acc_add_entry4",{p})}
+          try{id=await addEntry(p)}
           catch(e){const m=errText(e);if(!/^OVER_SALARY/.test(m))throw e;const t=m.replace(/^OVER_SALARY:\s*/,"");
             if(!D.is_admin){await ERPShell.alert("⛔ More than the salary.\n\n"+t+"\n\nAsk Admin to save this entry.");return false}
             if(!await ERPShell.confirm("More than the salary.\n\n"+t+"\n\nYou are Admin: save "+rs(amt)+" anyway?"))return false;
-            id=await rpc("lwb_acc_add_entry4",{p:{...p,over_salary:true}})}
+            id=await addEntry({...p,over_salary:true})}
           if(st.kind==="IN"&&st.mode==="CHEQUE"){
             // cheque date / bank / photo go to the cheque register; a failure here does not lose the entry
             try{const photos=[];
@@ -922,6 +924,8 @@
         box.querySelector("h3").textContent=io?"Add entry":k==="DEPOSIT"?"Cash deposited in bank":"Cash taken from bank";
         box.querySelector("[data-ok]").className="acx-btn "+(k==="IN"?"grn":k==="OUT"?"redf":"pri");
         if(io)fillCats();
+        // Paying a company (Coca-Cola, Rajnigandha): one Cash Out entry, also saved as the company payment.
+        q("#eCoBox").hidden=!(k==="OUT"&&supCat&&st.cat===supCat.id&&(COS||[]).length);
         q("#eCatRow").hidden=!io;q("#ePartyBox").hidden=!io;
         q("#eMode").value=st.mode;
         const nonCash=io&&st.mode!=="CASH";
@@ -980,6 +984,7 @@
         if(v==="new"){const id=await addHead(st.kind,true);if(id)st.cat=id;paint();return}
         st.cat=v?Number(v):null;paint()};
       q("#eMode").onchange=()=>{st.mode=q("#eMode").value;paint()};
+      q("#eCo").onchange=()=>{const c=(COS||[]).find(x=>x.id===q("#eCo").value);if(c&&!q("#eParty").value.trim())q("#eParty").value=c.name};
       // Count notes fills the amount
       q("#eCnt").onclick=()=>{q("#eNotes").hidden=!q("#eNotes").hidden};
       const noteSum=()=>{const t=notesTotal();q("#eCnt").textContent=t?"Note count: "+rs(t):"Count notes";if(t)q("#eAmt").value=t};
@@ -995,7 +1000,9 @@
       ["#eCam","#eGal"].forEach(id=>q(id).onchange=e=>{for(const f of e.target.files){if(files.length<5)files.push(f)}e.target.value="";drawPhotos()});
       q("#eKind").querySelectorAll("[data-k]").forEach(b=>b.onclick=()=>{st.kind=b.dataset.k;paint()});
       paint();if(pre.amount)q("#eAmt").value=r2(pre.amount);
-      setTimeout(()=>q(io&&!pick?"#eParty":"#eAmt").focus(),60);
+      const preCo=pre.company&&!q("#eCoBox").hidden?(COS||[]).find(c=>c.id===pre.company):null;
+      if(preCo){q("#eParty").value=preCo.name;pick=null}
+      setTimeout(()=>q(io&&!pick&&!preCo?"#eParty":"#eAmt").focus(),60);
     }
 
     // Party payment: on the main party, split over its bills (oldest first / by hand), rest advance
@@ -1127,6 +1134,14 @@
     el("reload").onclick=()=>{outRows=null;load()};
     el("ppayBtn").onclick=()=>D&&partyPay("");
     document.querySelectorAll("[data-new]").forEach(b=>b.onclick=()=>D&&newEntry(b.dataset.new));
+    // lwb_accounts_company_pay_setup.sql: entry5 = entry4 + company payment; entry4 until that SQL is run.
+    async function addEntry(p){
+      try{return await rpc("lwb_acc_add_entry5",{p})}
+      catch(e){if(!p.company_id&&/lwb_acc_add_entry5|schema cache|does not exist/i.test(errText(e)))return rpc("lwb_acc_add_entry4",{p});throw e}
+    }
+    let COS=null;
+    async function loadCompanies(){if(COS)return;const r=await client.from("lwb_companies").select("id,name").order("name");COS=r.error?[]:(r.data||[])}
+
     el("closeBtn").onclick=()=>D&&closeDay();
     let wasWide=wide();
     window.addEventListener("resize",()=>{if(wide()!==wasWide){wasWide=wide();if(D&&tab==="book")renderBook()}});
@@ -1142,7 +1157,10 @@
       el("loading").hidden=true;el("page").hidden=false;
       if(location.hash==="#verify")tab="verify";if(location.hash==="#cheques")tab="cheques";
       setPeriod("today");
-      await load();
+      await Promise.all([load(),loadCompanies().catch(()=>{COS=[]})]);
+      // Dashboard buttons: ?new=IN / ?new=OUT opens Add entry; &company=<id> = pay that company.
+      const qs=new URLSearchParams(location.search),nw=String(qs.get("new")||"").toUpperCase();
+      if(D&&["IN","OUT"].includes(nw)){newEntry(nw,{company:qs.get("company")||""});history.replaceState(null,"",location.pathname+location.hash)}
     })();
   </script>
 </body>

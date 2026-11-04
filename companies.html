@@ -101,6 +101,9 @@
     let role="",tab="sum",B={companies:[],all:[]},from="",to="",month="",payCo="",cache={};
     function say(t,bad,ok){el("msg").hidden=!t;el("msg").textContent=t||"";el("msg").className="cb-msg"+(bad?" bad":ok?" ok":"")}
     const may=r=>r.split(" ").includes(role);
+    // Accounts only looks here (Mohit, 4 Nov 2026). A company payment is entered once, as Cash Out > Supplier payment
+    // on the Accounts Dashboard; that entry also shows in this list (lwb_accounts_company_pay_setup.sql).
+    const ro=()=>!!window.ERPShell&&ERPShell.viewOnly(role,"companies.html");
     const coName=id=>{const c=B.all.find(x=>x.id===id);return c?c.name:"No company"};
     const coColor=id=>{const c=B.all.find(x=>x.id===id);return c?c.color:"#8a94a3"};
 
@@ -205,11 +208,12 @@
       el("body").innerHTML='<div class="cb-bar"><div><label for="pCo">Company</label><select id="pCo">'+B.companies.map(x=>'<option value="'+x.id+'"'+(x.id===payCo?" selected":"")+">"+esc(x.name)+"</option>").join("")+"</select></div>"+
         '<div style="margin-left:auto;text-align:right"><small style="color:var(--erp-muted)">To pay '+esc(c.name)+'</small><div style="font-size:22px;font-weight:800">'+rs(total)+'</div><small class="'+(late>0?"red":"grn")+'">'+(late>0?rs(late)+" late":"Nothing late")+"</small></div></div>"+
         (P.error?'<p class="cb-msg bad">'+esc(P.error)+"</p>":"")+
+        (ro()?'<p class="cb-msg">To pay '+esc(c.name)+', make one entry on the Accounts Dashboard: <b>− Cash Out → Supplier payment</b> and pick the company. It shows here by itself. <a href="accounts-dashboard.html?new=OUT&amp;company='+encodeURIComponent(c.id)+'">Pay '+esc(c.name)+' →</a></p>':
         '<form class="cb-form" id="pForm"><div class="cb-f"><label for="pDate">Paid on</label><input type="date" id="pDate" value="'+t+'" max="'+t+'" required></div>'+
         '<div class="cb-f"><label for="pAmt">Amount ₹</label><input id="pAmt" inputmode="decimal" placeholder="'+(total?Math.round(total):"0")+'" required></div>'+
         '<div class="cb-f"><label for="pMode">Mode</label><select id="pMode">'+Object.entries(MODES).map(([k,v])=>'<option value="'+k+'">'+v+"</option>").join("")+'</select></div>'+
         '<div class="cb-f"><label for="pRef">UTR / Cheque no.</label><input id="pRef" maxlength="80"></div><div class="cb-f"><label for="pNote">Note</label><input id="pNote" maxlength="300"></div>'+
-        '<div class="cb-f"><button type="submit" class="cb-btn go" id="pSave">+ Save payment</button></div></form>'+
+        '<div class="cb-f"><button type="submit" class="cb-btn go" id="pSave">+ Save payment</button></div></form>')+
         '<h3 style="font-size:15px;margin:4px 0 8px">Purchase bills (Goods Inward) — '+esc(c.name)+' SKUs · credit '+num(c.supplier_credit_days)+' days</h3>'+
         (bills.length?'<div class="cb-scroll"><table class="cb-t resp"><thead><tr><th>Invoice</th><th>Bill date</th><th>Pay by</th><th class="n">Bill ₹</th><th class="n">Paid ₹</th><th class="n">Left ₹</th><th>Status</th></tr></thead><tbody>'+
           bills.slice().reverse().map(b=>"<tr><td><b>"+esc(b.invoice_no||"—")+"</b><small>"+esc(b.supplier_name||"")+'</small></td><td data-l="Bill">'+dmy(b.invoice_date)+'</td><td data-l="Pay by">'+dmy(b.due_date)+'</td><td class="n" data-l="Bill ₹">'+fmt(b.amount)+'</td><td class="n" data-l="Paid ₹">'+fmt(b.paid)+'</td><td class="n" data-l="Left ₹"><b>'+fmt(b.balance)+"</b></td><td>"+status(b)+"</td></tr>").join("")+
@@ -219,13 +223,13 @@
           P.payments.map(p=>"<tr"+(p.cancelled?' style="opacity:.55"':"")+"><td>"+dmy(p.pay_date)+(p.by?"<small>"+esc(p.by)+"</small>":"")+'</td><td class="n" data-l="₹"><b>'+fmt(p.amount)+"</b></td><td>"+esc(MODES[p.mode]||p.mode)+"</td><td>"+esc([p.ref_no,p.note].filter(Boolean).join(" · ")||"—")+"</td><td>"+
             (p.cancelled?'<span class="tag t-gry">Cancelled</span>':role==="admin"?'<button type="button" class="lnk red" data-cancel="'+p.id+'">Cancel</button>':"")+"</td></tr>").join("")+"</tbody></table></div>":'<div class="cb-empty">No payment saved yet.</div>');
       el("pCo").onchange=()=>{payCo=el("pCo").value;renderPay()};
-      el("pForm").onsubmit=async e=>{e.preventDefault();const amt=num(el("pAmt").value);if(amt<=0)return ERPShell.alert("Enter the amount.");
+      if(el("pForm"))el("pForm").onsubmit=async e=>{e.preventDefault();const amt=num(el("pAmt").value);if(amt<=0)return ERPShell.alert("Enter the amount.");
         if(!await ERPShell.confirm("Save payment to "+c.name+"?\n\n"+rs(amt)+" · "+MODES[el("pMode").value]+" · "+dmy(el("pDate").value)))return;
         el("pSave").disabled=true;const {error}=await client.rpc("lwb_company_pay",{p_company_id:payCo,p_date:el("pDate").value,p_amount:amt,p_mode:el("pMode").value,p_ref:el("pRef").value,p_note:el("pNote").value});
         el("pSave").disabled=false;if(error)return ERPShell.alert(errText(error));toast("Payment saved");renderPay()};
       el("body").querySelectorAll("[data-cancel]").forEach(b=>b.onclick=async()=>{if(!await ERPShell.confirm("Cancel this payment? The bills will show as unpaid again."))return;
         const {error}=await client.rpc("lwb_company_pay_cancel",{p_id:b.dataset.cancel});if(error)return ERPShell.alert(errText(error));toast("Payment cancelled");renderPay()});
-      el("note").textContent="Bill amount = Goods Inward invoice total of this company's SKUs. Pay by = bill date + company credit days. A payment clears the oldest bill first. This page does not post to the Accounts Dashboard cash or bank.";
+      el("note").textContent="Bill amount = Goods Inward invoice total of this company's SKUs. Pay by = bill date + company credit days. A payment clears the oldest bill first. "+(ro()?"Payments entered as Cash Out on the Accounts Dashboard show here by themselves.":"This page does not post to the Accounts Dashboard cash or bank.");
     }
 
     /* ---------- Party udhari ---------- */
@@ -233,7 +237,7 @@
       const [pc,pm]=await Promise.all([client.from("lwb_party_company_credit").select("*"),cache.parties?{data:cache.parties}:client.from("lwb_customer_master").select("customer_name,credit_days,is_active").order("customer_name").limit(5000)]);
       if(pc.error)throw pc.error;cache.parties=pm.data||[];
       const list=(pc.data||[]).slice().sort((a,b)=>a.party_key.localeCompare(b.party_key)||coName(a.company_id).localeCompare(coName(b.company_id)));
-      const edit=may("admin manager accounts");
+      const edit=may("admin manager accounts")&&!ro();
       el("body").innerHTML='<div class="cb-grid" style="margin:0 0 14px">'+B.companies.map(c=>'<div class="cb-co" style="--c:'+esc(c.color)+'"><h3>'+esc(c.name)+'</h3><div class="cb-row"><span>Market udhari (all parties)</span><b>'+num(c.market_credit_days)+' days</b></div><div class="cb-row"><span>Company gives us</span><b>'+num(c.supplier_credit_days)+" days</b></div></div>").join("")+"</div>"+
         (edit?'<form class="cb-form" id="uForm"><div class="cb-f" style="grid-column:span 2"><label for="uParty">Party</label><input id="uParty" list="uList" autocomplete="off" placeholder="Type party name" required><datalist id="uList">'+cache.parties.filter(p=>p.is_active!==false).map(p=>'<option value="'+esc(p.customer_name)+'">').join("")+"</datalist></div>"+
           '<div class="cb-f"><label for="uCo">Company</label><select id="uCo">'+B.companies.map(c=>'<option value="'+c.id+'">'+esc(c.name)+"</option>").join("")+'</select></div><div class="cb-f"><label for="uDays">Udhari days</label><input id="uDays" type="number" min="0" max="365" step="1" required></div>'+

@@ -421,31 +421,55 @@
       return shell(k.filter(Boolean),[queue,target],[brandCard(ov),delivery,skus]);
     },
 
-    /* ===== Accounts: cash, bank, bills, outstanding ===== */
+    /* ===== Accounts: cash in / out, bank match, where each order is, returns (Mohit, 4 Nov 2026) =====
+       Bills to make stays only in Pending Work; the full outstanding list stays on Billing & Outstanding. */
     async accounts(){
       const t=today();
-      const [acc,PI,cq,vq,ov]=await Promise.all([safe(C.rpc("lwb_acc_dashboard",{p_from:t,p_to:t})),window.LWBPartyPay?LWBPartyPay.load(C).catch(()=>null):null,safe(C.rpc("lwb_acc_cheque_list")),verifyQueue(),overview()]);
-      const A=acc?accTotals(acc):null,out=outstanding(PI),drv=queueItem(vq,"DRIVER_PAYMENT"),tb=queueItem(vq,"TALLY_BILL");
-      const toBill=PI?(PI.raw.orders||[]).filter(o=>!o.invoice_no&&!OFF.includes(st(o))).sort((a,b)=>String(a.dispatch_date||"").localeCompare(String(b.dispatch_date||""))):null;
-      const nb=toBill?toBill.length:tb?num(tb.cnt):null;
+      const [acc,PI,cq,vq,ov,bk,orders,dl,rp,ra]=await Promise.all([safe(C.rpc("lwb_acc_dashboard",{p_from:t,p_to:t})),window.LWBPartyPay?LWBPartyPay.load(C).catch(()=>null):null,
+        safe(C.rpc("lwb_acc_cheque_list")),verifyQueue(),overview(),safe(C.rpc("lwb_bank_stmt_open_count")),loadOrders(),
+        safe(C.from("lwb_delivery_reports").select("order_id,delivery_status,reported_at,delivery_note").gte("reported_at",t+"T00:00:00+05:30")),
+        safe(C.rpc("lwb_office_list_driver_returns",{p_status:"PENDING_OFFICE"})),safe(C.rpc("lwb_office_list_driver_returns",{p_status:"APPROVED"}))]);
+      const A=acc?accTotals(acc):null,out=outstanding(PI),drv=queueItem(vq,"DRIVER_PAYMENT"),cn=queueItem(vq,"CREDIT_NOTE");
+      const qa='<div class="rd-qa rd-qa-row">'+[["accounts-dashboard.html?new=IN","+","Cash In"],["accounts-dashboard.html?new=OUT","−","Cash Out"],["bank-statement.html","🏦","Bank match"],["driver-returns.html","↩","Returns"]]
+        .filter(x=>can(x[0])).map(x=>'<a href="'+x[0]+'"><span>'+x[1]+"</span>"+x[2]+"</a>").join("")+"</div>";
       const k=[
         kpi("teal","Cash in Hand now",acc&&acc.closing_set?rs(acc.closing):"—",acc?(acc.opening_set?"Opening "+rs(acc.opening):"Set opening cash first"):"Accounts Dashboard","accounts-dashboard.html",acc&&lst("Today's cash book","All money entries today",acc.lines||[],ACOLS,"accounts-dashboard.html")),
         kpi("green","Cash In today",A?rs(A.cashIn):"—",A?"UPI "+rs(A.upi)+" · Bank "+rs(A.bank)+(A.cheque?" · Cheque "+rs(A.cheque):""):"","accounts-dashboard.html",acc&&lst("Money In today","Cash, UPI, bank and cheque received today",(acc.lines||[]).filter(l=>l.kind==="IN"),ACOLS,"accounts-dashboard.html")),
         kpi("red","Cash Out today",A?rs(A.cashOut):"—",A?"Bank deposit "+rs(A.dep):"","accounts-dashboard.html",acc&&lst("Money Out today","Expenses and bank deposits today",(acc.lines||[]).filter(l=>l.kind!=="IN"),ACOLS,"accounts-dashboard.html")),
         kpi("blue","With drivers",drv?rs(drv.amount):"₹0",drv?fmt(drv.cnt)+" to receive":"Nothing to receive",drv?drv.page:"driver-collections.html"),
-        kpi("amber","Bills to make",nb==null?"—":fmt(nb),"Loaded POs · Tally","party-billing.html",toBill&&lst("Bills to make (Tally)","Loaded POs without a Tally bill, oldest first",toBill,
-          [{t:"PO No.",v:"order_no"},{t:"Party",v:"party"},{t:"Dispatch",v:"dispatch_date",date:true},{t:"ERP amount",v:"erp_amount",money:true,sum:true}],"party-billing.html"))];
+        kpi("amber","Bank to match",bk?fmt(bk.cnt):"—",bk?(num(bk.cnt)?"In "+rs(bk.credit)+" · Out "+rs(bk.debit)+(bk.oldest?" · from "+dmy(bk.oldest):""):"✓ All matched"):"Bank Statement","bank-statement.html")];
+      // Where each order is: on the vehicle (not delivered yet) and today's driver reports.
+      let where="";
+      if(orders){const O=orders.filter(live),byId=new Map(orders.map(o=>[o.id,o])),R=dl||[];
+        const way=O.filter(o=>["loading","loaded","invoiced","dispatched"].includes(st(o)));
+        const rOf=s=>R.filter(r=>r.delivery_status===s).map(r=>({...(byId.get(r.order_id)||{order_no:"PO"}),delivery_note:r.delivery_note,reported_at:r.reported_at}));
+        const DC=[{t:"PO No.",v:"order_no"},{t:"Party",v:"customer_name"},{t:"Cases",v:"total_qty",num:true,sum:true,dec:0},{t:"Amount",v:"total_amount",money:true,sum:true},{t:"Reported",v:r=>r.reported_at?new Date(r.reported_at).toLocaleTimeString("en-IN",{hour:"2-digit",minute:"2-digit"}):""},{t:"Note",v:"delivery_note"}];
+        const bad=R.filter(r=>r.delivery_status==="NOT_DELIVERED"||r.delivery_status==="PARTIAL").slice(0,4);
+        where=card("🚚 Orders — where are they",go("driver-delivery.html","Delivery / POD →"),'<div class="rd-bd"><div class="rd-flow rd-flow4">'+
+          step(way.length,"On vehicle","",0,"",lst("On vehicle","Loaded / dispatched, not delivered yet",way,null,"warehouse-orders.html"))+
+          step('<span class="g">'+rOf("DELIVERED").length+"</span>","Delivered today","",0,"",lst("Delivered today","Driver reports today",rOf("DELIVERED"),DC))+
+          step('<span class="a">'+rOf("PARTIAL").length+"</span>","Part delivered","",rOf("PARTIAL").length>0,"",lst("Part delivered","Driver reports today",rOf("PARTIAL"),DC))+
+          step('<span class="r">'+rOf("NOT_DELIVERED").length+"</span>","Not delivered","",rOf("NOT_DELIVERED").length>0,"",lst("Not delivered","Driver reports today",rOf("NOT_DELIVERED"),DC))+"</div></div>"+
+          bad.map(r=>{const o=byId.get(r.order_id)||{};return dot(r.delivery_status==="PARTIAL"?"amb":"red","<b>"+esc(o.order_no||"PO")+"</b> "+esc(o.customer_name||"")+" · "+(r.delivery_status==="PARTIAL"?"part delivered":"not delivered")+(r.delivery_note?" — "+esc(r.delivery_note):""))}).join(""))}
+      // Returns: waiting for office approval, approved today, credit notes to make.
+      let rets="";
+      if(rp||ra||cn){const P=rp||[],T=(ra||[]).filter(r=>istDay(r.reviewed_at||r.created_at)===t);
+        const RC=[{t:"PO No.",v:"order_no"},{t:"Party",v:"party_name"},{t:"Driver",v:"driver_name"},{t:"Return ₹",v:"total_return_amount",money:true,sum:true},{t:"Note",v:"note"}];
+        rets=card("📦 Returns",go("driver-returns.html","Returns →"),'<div class="rd-bd"><div class="rd-flow rd-flow3">'+
+          step(P.length,"To approve",P.length?rs(sum(P,r=>r.total_return_amount)):"",P.length>0,"driver-returns.html",lst("Returns to approve","Driver returns waiting for the office",P,RC,"driver-returns.html"))+
+          step(T.length,"Approved today",T.length?rs(sum(T,r=>r.total_return_amount)):"",0,"",lst("Returns approved today","Approved by the office today",T,RC,"driver-returns.html"))+
+          step(cn?fmt(cn.cnt):0,"Credit note to make",cn&&num(cn.amount)?rs(cn.amount):"",!!(cn&&num(cn.cnt)),cn?cn.page:"credit-note.html")+"</div></div>")}
+      // Outstanding: age split + top 5 only; the full list is on Billing & Outstanding.
       const ageBox=out?'<div class="rd-bd"><div class="rd-age"><div class="g">0–15 days<b>'+rs(out.age.a)+'</b></div><div class="b">16–30 days<b>'+rs(out.age.b)+'</b></div><div class="a">31–60 days<b>'+rs(out.age.c)+'</b></div><div class="r">60+ days<b>'+rs(out.age.d)+"</b></div></div></div>":"";
-      const ost=out?card("💳 Outstanding to collect · "+rs(out.total),go("party-billing.html","Billing & Outstanding →"),ageBox+(out.parties.length?'<div class="rd-scroll"><table><thead><tr><th>Party</th><th class="n">Due ₹</th><th class="n">Oldest bill</th></tr></thead><tbody>'+
-        out.parties.slice(0,8).map(p=>"<tr><td>"+esc(p.party)+'</td><td class="n">'+fmt(p.due)+'</td><td class="n">'+(p.oldest==null?"—":badge(p.oldest>60?"r":p.oldest>30?"a":"g",p.oldest+" days"))+"</td></tr>").join("")+"</tbody></table></div>":'<div class="rd-empty">✓ Nothing due.</div>'),"After advance; age counted from the Tally bill date."):"";
-      const bills=toBill?card("🧾 Bills to make (Tally)",go("party-billing.html","Open →"),toBill.length?'<div class="rd-scroll"><table><thead><tr><th>PO No.</th><th>Party</th><th class="n">ERP amount ₹</th><th class="hide-sm n">Dispatch</th></tr></thead><tbody>'+
-        toBill.slice(0,8).map(o=>orderRow({order_no:o.order_no,customer_name:o.party},'<td class="n">'+fmt(o.erp_amount)+'</td><td class="hide-sm n">'+dmy(o.dispatch_date)+"</td>")).join("")+"</tbody></table></div>":'<div class="rd-empty">✓ Every loaded PO has its bill.</div>',toBill.length>8?"Showing 8 of "+toBill.length+", oldest first":""):"";
+      const ost=out?card("💳 Outstanding to collect · "+rs(out.total),go("party-billing.html","All parties →"),ageBox+(out.parties.length?'<div class="rd-scroll"><table><tbody>'+
+        out.parties.slice(0,5).map(p=>"<tr><td>"+esc(p.party)+'</td><td class="n">'+fmt(p.due)+'</td><td class="n">'+(p.oldest==null?"—":badge(p.oldest>60?"r":p.oldest>30?"a":"g",p.oldest+" days"))+"</td></tr>").join("")+"</tbody></table></div>":'<div class="rd-empty">✓ Nothing due.</div>'),
+        out.parties.length>5?"Top 5 of "+out.parties.length+" parties":""):"";
       const cs=chequesSoon(cq);
-      const cheques=cq?card("📅 Cheques to deposit",go("accounts-dashboard.html","Cheques →"),cs.length?"<table><tbody>"+cs.slice(0,6).map(c=>"<tr><td>"+(String(c.cheque_date)<=t?badge("a",dmy(c.cheque_date)):dmy(c.cheque_date))+"</td><td>"+esc(c.party||"—")+'</td><td class="n">'+rs(c.amount)+"</td></tr>").join("")+"</tbody></table>":'<div class="rd-empty">No cheque due in the next 7 days.</div>'):"";
+      const cheques=cq&&cs.length?card("📅 Cheques to deposit",go("accounts-dashboard.html#cheques","Cheques →"),"<table><tbody>"+cs.slice(0,6).map(c=>"<tr><td>"+(String(c.cheque_date)<=t?badge("a",dmy(c.cheque_date)):dmy(c.cheque_date))+"</td><td>"+esc(c.party||"—")+'</td><td class="n">'+rs(c.amount)+"</td></tr>").join("")+"</tbody></table>"):"";
       let night="";
       if(acc){const c=(acc.closes||[]).find(x=>x.date===t&&!x.is_start);
         night=card("🌙 Night cash handover","",'<div class="rd-bd rd-line">'+(c?badge("g","Closed")+"<span>Counted "+rs(c.counted)+(c.handed_to_name?" · with "+esc(c.handed_to_name):"")+"</span>":badge("a","Not closed")+"<span>Close today after counting the notes</span>"+go("accounts-dashboard.html",'<span class="rd-btn">Close day</span>'))+"</div>")}
-      return shell(k,[ost,bills],[brandCard(ov),cheques,night]);
+      return qa+shell(k,[where,rets,ost],[night,cheques,brandCard(ov)]);
     },
 
     /* ===== Godown Manager: loading, vehicles, stock, returns ===== */

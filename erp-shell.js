@@ -76,9 +76,9 @@
       // (Sales Head / Admin: the approval + driver list; Godown Manager / Accounts: same list, view only;
       // Salesman: his own orders with PO given > Approved > Dispatched > Delivered).
       {t:"PO / Sales Order",h:"order-entry.html",i:"cart",r:"admin manager sales",k:"new order entry"},
-      {t:"PO / Sales List",h:"warehouse-orders.html",i:"note",r:"admin manager warehouse accounts",k:"po approval driver warehouse orders",pt:"PO / Sales List (all POs; approve for Admin / Sales Head)"},
+      {t:"PO / Sales List",h:"warehouse-orders.html",i:"note",r:"admin manager warehouse accounts",k:"po approval driver warehouse orders",pt:"PO / Sales List (all POs; approve for Admin / Sales Head)",nm:"accounts"},
       {t:"PO / Sales List",h:"my-sales.html#orders",i:"note",r:"sales",k:"my orders modify",pt:"PO / Sales List (Salesman's own orders)"},
-      {t:"Rajnigandha Slips",h:"quick-slip.html",i:"note",r:"admin manager accounts warehouse sales",k:"rajnigandha slip parchi thermal print kachcha"},
+      {t:"Rajnigandha Slips",h:"quick-slip.html",i:"note",r:"admin manager accounts warehouse sales",k:"rajnigandha slip parchi thermal print kachcha",vo:"accounts",nm:"accounts"},
       {t:"Rajnigandha Rate List",h:"rajni-rates.html",i:"bill",r:"admin",k:"rajnigandha rate landing min max profit margin approval"},
       {t:"My Sales",h:"my-sales.html",i:"chart",r:"sales"},
       {t:"Party Call List",h:"party-calls.html",i:"phone",r:"admin manager sales"},
@@ -89,25 +89,25 @@
     // damage claims, and the scanned sales bill PDFs uploaded every night.
     {group:"Purchase",items:[
       {t:"Purchase Entry (Goods Inward)",h:"goods-inward.html",i:"inbox",r:"admin manager",k:"goods inward purchase bill new"},
-      {t:"Purchase List",h:"purchase-register.html",i:"note",r:"admin manager warehouse accounts",k:"purchase register bills verify damage photo",pt:"Purchase List / Register"},
+      {t:"Purchase List",h:"purchase-register.html",i:"note",r:"admin manager warehouse accounts",k:"purchase register bills verify damage photo",pt:"Purchase List / Register",vo:"accounts"},
       {t:"Purchase Claims",h:"purchase-claims.html",i:"inbox",r:"admin manager",k:"damage leakage shortage claim"},
-      {t:"Sales Bill PDFs",h:"sales-bill-scans.html",i:"bill",r:"admin accounts manager",k:"scan pdf sales bill invoice register upload"}]},
+      {t:"Sales Bill PDFs",h:"sales-bill-scans.html",i:"bill",r:"admin accounts manager",k:"scan pdf sales bill invoice register upload",vo:"accounts",nm:"accounts"}]},
     {group:"Dispatch",items:[
       {t:"Godown Report",h:"godown-report.html",i:"note",r:"admin manager warehouse"},
       {t:"Loading & Dispatch",h:"loading-dispatch.html",i:"box",r:"admin manager warehouse"},
       {t:"Transport Assignment",h:"transport-allocation.html",i:"truck",r:"admin manager transport"},
-      {t:"Sheet & Pallet Ledger",h:"sheet-pallet.html",i:"layers",r:"admin manager accounts warehouse"}]},
+      {t:"Sheet & Pallet Ledger",h:"sheet-pallet.html",i:"layers",r:"admin manager accounts warehouse",vo:"accounts"}]},
     {group:"Delivery",items:[
-      {t:"Driver Delivery / POD",h:"driver-delivery.html",i:"pin",r:"admin manager driver accounts"},
-      {t:"Driver Collections",h:"driver-collections.html",i:"cash",r:"admin manager accounts"},
+      {t:"Driver Delivery / POD",h:"driver-delivery.html",i:"pin",r:"admin manager driver accounts",nm:"accounts"},
+      {t:"Driver Collections",h:"driver-collections.html",i:"cash",r:"admin manager accounts",nm:"accounts"},
       {t:"Live Tracking",h:"live-tracking.html",i:"pin",r:"admin manager warehouse"}]},
     {group:"Reports",items:[
-      {t:"Daily Summary",h:"daily-report.html",i:"stock",r:"admin manager accounts"},
+      {t:"Daily Summary",h:"daily-report.html",i:"stock",r:"admin manager accounts",nm:"accounts"},
       {t:"Team Work Report",h:"team-report.html",i:"users",r:"admin manager"}]},
     {group:"Accounts",items:[
       {t:"Accounts Dashboard",h:"accounts-dashboard.html",i:"cash",r:"admin accounts"},
       {t:"Bank Statement",h:"bank-statement.html",i:"book",r:"admin accounts"},
-      {t:"Billing & Outstanding",h:"party-billing.html",i:"bill",r:"admin accounts"},
+      {t:"Billing & Outstanding",h:"party-billing.html",i:"bill",r:"admin accounts",nm:"accounts"},
       {t:"Money Overview",h:"money-overview.html",i:"cash",r:"admin accounts",hide:1},
       {t:"Tally Bill & Invoice No.",h:"accounts-invoice.html",i:"bill",r:"admin accounts",hide:1},
       {t:"Tally Bill Check",h:"tally-check.html",i:"bill",r:"admin accounts",hide:1},
@@ -118,20 +118,20 @@
       {t:"Sales Return",h:"sales-return.html",i:"undo",r:"admin sales warehouse"},
       {t:"Credit Note Preview",h:"credit-note.html",i:"note",r:"admin accounts"}]},
     {group:"Inventory",items:[
-      {t:"Inventory / Stock Report",h:"inventory.html",i:"stock",r:"admin manager warehouse accounts"},
+      {t:"Inventory / Stock Report",h:"inventory.html",i:"stock",r:"admin manager warehouse accounts",vo:"accounts"},
       {t:"Goods in Transit",h:"stock-transit.html",i:"truck",r:"admin manager warehouse"},
-      {t:"Stock Transfer / Damage",h:"stock-transfer.html",i:"undo",r:"admin manager warehouse accounts"},
-      {t:"Night Stock Audit",h:"stock-audit.html",i:"stock",r:"admin manager warehouse accounts"},
+      {t:"Stock Transfer / Damage",h:"stock-transfer.html",i:"undo",r:"admin manager warehouse accounts",vo:"accounts"},
+      {t:"Night Stock Audit",h:"stock-audit.html",i:"stock",r:"admin manager warehouse accounts",vo:"accounts"},
       {t:"Opening Stock",h:"opening-stock.html",i:"box",r:"admin"}]},
     {group:"Masters",items:[
       {t:"Customer / Party Master",h:"customer-master.html",i:"users",r:"admin manager"},
       {t:"SKU Master",h:"sku-master.html",i:"tag",r:"admin manager"},
-      {t:"Company / Brand",h:"companies.html",i:"factory",r:"admin manager accounts"},
+      {t:"Company / Brand",h:"companies.html",i:"factory",r:"admin manager accounts",vo:"accounts"},
       {t:"Supplier Master",h:"supplier-master.html",i:"factory",r:"admin manager"},
       {t:"Vehicle Master",h:"fleet-master.html#vehicles",i:"truck",r:"admin manager transport warehouse"},
       {t:"Drivers",h:"fleet-master.html#drivers",i:"users",r:"transport"},
       {t:"Employee Master",h:"fleet-master.html#employees",i:"users",r:"admin manager warehouse"},
-      {t:"Fixed Assets",h:"fixed-assets.html",i:"box",r:"admin manager accounts warehouse"}]},
+      {t:"Fixed Assets",h:"fixed-assets.html",i:"box",r:"admin manager accounts warehouse",vo:"accounts"}]},
     {group:"Settings",items:[
       {t:"Settings",h:"settings.html",i:"gear",r:"admin manager"},
       {t:"Manage Users",h:"users.html",i:"lock",r:"admin"},
@@ -237,9 +237,26 @@
   // menuFor(role) = the role's default pages; menuFor(role,hidden) also drops
   // the pages Admin unticked for one user (Manage Users > Pages).
   // extra = pages of OTHER roles Admin ticked for this user.
+  // vo = roles that only look at the page (no entry / edit there). Accounts (Mohit, 4 Nov 2026): its menu keeps
+  // cash, bank, orders and returns; the other pages it may still open sit at the bottom under "View only".
+  const viewOnlyItem=(i,role)=>!!i.vo&&i.vo.split(" ").includes(role);
+  // nm = not in the side menu for these roles, but still allowed and found by Module Search / Dashboard search.
+  const noMenuItem=(i,role)=>!!i.nm&&i.nm.split(" ").includes(role);
   function menuFor(role,hidden,extra){
-    const off=new Set(hidden||[]),plus=new Set(extra||[]);
-    return MENU.map(g=>({group:g.group,items:g.items.filter(i=>(allowed(i,role)&&!off.has(i.h))||plus.has(i.h))})).filter(g=>g.items.length);
+    const off=new Set(hidden||[]),plus=new Set(extra||[]),vo=[],nm=[];
+    const out=MENU.map(g=>({group:g.group,items:g.items.filter(i=>{
+      const ok=(allowed(i,role)&&!off.has(i.h))||plus.has(i.h);
+      if(ok&&noMenuItem(i,role)){nm.push({...i,g:g.group});return false}
+      if(ok&&viewOnlyItem(i,role)){vo.push(i);return false}
+      return ok})})).filter(g=>g.items.length);
+    if(vo.length)out.push({group:"View only",items:vo});
+    if(nm.length)out.push({group:"More",items:nm,so:1});   // search only, not drawn in the side menu
+    return out;
+  }
+  // true when this role may only look at this page (pages hide their entry / edit buttons).
+  function viewOnly(role,page){
+    page=String(page||location.pathname.split("/").pop()||"").split(/[?#]/)[0];role=String(role||"").toLowerCase();
+    return MENU.some(g=>g.items.some(i=>i.h.split("#")[0]===page&&viewOnlyItem(i,role)));
   }
   const allPages=()=>MENU.map(g=>({group:g.group,items:g.items.map(i=>({t:i.pt||i.t,h:i.h}))}));
 
@@ -257,7 +274,7 @@
   function extraPages(){const c=access();return c&&Array.isArray(c.extra)?c.extra:[]}
   // hide:1 pages (Cashbook) are never listed in the menu, search or dashboard; they open only
   // from their own private link. menuFor still has them, so Manage Users can tick them.
-  function menuForMe(role){return menuFor(role,hiddenPages(),extraPages()).map(g=>({group:g.group,items:g.items.filter(i=>!i.hide)})).filter(g=>g.items.length)}
+  function menuForMe(role){return menuFor(role,hiddenPages(),extraPages()).map(g=>({group:g.group,so:g.so,items:g.items.filter(i=>!i.hide)})).filter(g=>g.items.length)}
   const herePage=()=>(location.pathname.split("/").pop()||"dashboard.html").replace(/^$/,"dashboard.html");
   const withHtml=p=>/\.html$/.test(p)?p:p+".html";
   // Role a page should treat this user as. His own role when the page is his;
@@ -322,6 +339,7 @@
       let html='<div class="erp-brand"><span class="erp-mark" aria-hidden="true">lwb</span><div><b>LUXURY WRIST BRAND</b><small>BUSINESS ERP</small></div></div>'+
         '<div class="erp-menu-find"><input type="search" aria-label="Find a page" placeholder="Find a page…"></div><p class="erp-menu-empty" hidden>No page found</p>';
       groups.forEach(g=>{
+        if(g.so)return;
         if(g.group)html+='<div class="erp-group">'+esc(g.group)+'</div>';
         g.items.forEach(i=>{html+='<a class="erp-link'+(current&&i.h===current.h?' active':'')+'" href="'+esc(i.h)+'">'+svg(i.i)+'<span>'+esc(i.t)+'</span></a>'});
       });
@@ -414,7 +432,7 @@
       sales:[["Home","dashboard.html","home"],["New Order","order-entry.html","cart"],["PO List","my-sales.html#orders","note"],["My Sales","my-sales.html","chart"]],
       admin:[["Home","dashboard.html","home"],["New Order","order-entry.html","cart"],["PO List","warehouse-orders.html","note"],["Stock","inventory.html","stock"]],
       manager:[["Home","dashboard.html","home"],["New Order","order-entry.html","cart"],["PO List","warehouse-orders.html","note"],["Dispatch","loading-dispatch.html","truck"]],
-      accounts:[["Home","dashboard.html","home"],["PO List","warehouse-orders.html","note"],["Cash","accounts-dashboard.html","cash"],["Bills","party-billing.html","bill"]],
+      accounts:[["Home","dashboard.html","home"],["Cash","accounts-dashboard.html","cash"],["Bank","bank-statement.html","book"],["Returns","driver-returns.html","undo"]],
       warehouse:[["Home","dashboard.html","home"],["PO List","warehouse-orders.html","note"],["Loading","loading-dispatch.html","truck"],["Stock","inventory.html","stock"]],
       transport:[["Home","dashboard.html","home"],["Assign","transport-allocation.html","truck"],["Vehicles","fleet-master.html#vehicles","box"],["Drivers","fleet-master.html#drivers","users"]]
     };
@@ -610,7 +628,7 @@
   }
   // Esc closes the popup on top, on every ERP page (esc-close.js).
   if(!window.LWBEsc&&!document.querySelector('script[src*="esc-close.js"]')){const s=document.createElement("script");s.src="esc-close.js";document.head.appendChild(s)}
-  window.ERPShell={mount,menuFor,menuForMe,hiddenPages,extraPages,pageRole,pageRoleFresh,allPages,icon:svg,alert:erpAlert,confirm:erpConfirm,prompt:erpPrompt,toast};
+  window.ERPShell={mount,menuFor,viewOnly,menuForMe,hiddenPages,extraPages,pageRole,pageRoleFresh,allPages,icon:svg,alert:erpAlert,confirm:erpConfirm,prompt:erpPrompt,toast};
   const me=document.currentScript;
   if(me&&me.hasAttribute("data-auto")){
     if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",auto);else auto();
