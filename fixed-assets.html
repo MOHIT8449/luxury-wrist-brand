@@ -8,6 +8,7 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <link rel="stylesheet" href="erp-shell.css">
   <script src="erp-shell.js"></script>
+  <script src="master-popup.js"></script>
   <script src="erp-recent.js"></script>
   <script src="erp-list.js"></script>
   <script src="erp-docs.js"></script>
@@ -57,7 +58,7 @@
       <div class="erp-card-body" style="padding:16px">
         <div class="fa-grid" id="form"></div>
         <div style="margin-top:16px"><div class="ed-title" id="docsTitle">Asset photo &amp; bill</div><div id="docs"></div></div>
-        <div class="fa-actions"><button type="button" class="fa-btn" id="save">Save</button><button type="button" class="fa-btn light" id="clear">New / Clear</button><span class="fa-hint" id="formHint"></span></div>
+        <div class="fa-actions"><button type="button" class="fa-btn" id="save">Save</button><button type="button" class="fa-btn light" id="clear">Clear</button><span class="fa-hint" id="formHint"></span></div>
       </div>
     </section>
 
@@ -94,7 +95,7 @@
       {k:"status_date",l:"Sold / scrapped on",type:"date"},
       {k:"note",l:"Note",wide:1,area:1}];
     let me=null,rows=[],editing=null,busy=false,missing=false,docSum=null,docPanel=null,docKey="",photos=new Map();
-    const can=()=>!!me&&me.edit;
+    const can=()=>!!me&&me.edit;window.faCan=()=>can();
 
     async function start(){
       const {data:{session}}=await client.auth.getSession();
@@ -160,7 +161,7 @@
         const docErr=docPanel?await docPanel.flush(r.data.id):"";
         if(docErr)await alert("Saved "+r.data.asset_code+", but the photo / bill was NOT saved:\n"+docErr+"\n\nOpen the asset with Edit and add it again.");
         else ERPShell.toast("Saved "+r.data.asset_code+" · "+o.asset_name,"success");
-        editing=null;docKey="";photos.delete(r.data.id);await load();
+        editing=null;docKey="";photos.delete(r.data.id);window.MP&&MP.close();await load();
       }catch(e){ERPShell.toast("Save failed: "+(e.code==="23505"?"This Asset ID is already used.":e.message||e),"error")}
       busy=false;render();
     }
@@ -172,19 +173,19 @@
       el("kpis").innerHTML=cards.map(c=>'<div class="fa-kpi"><span>'+esc(c[0])+"</span><b>"+esc(c[1])+"</b></div>").join("");
       if(window.ERPList)el("kpis").querySelectorAll(".fa-kpi").forEach((c,i)=>ERPList.card(c,()=>({title:cards[i][0],rows:cards[i][2],
         cols:[{t:"Asset ID",v:"asset_code"},{t:"Asset",v:"asset_name"},{t:"Category",v:"category"},{t:"Bought",v:"purchase_date",date:true},{t:"Amount",v:r=>Number(r.amount)||0,money:true,sum:true,dec:2},{t:"Location",v:"location"}],
-        onRow:r=>{editing=r;docKey="";render();el("formCard").scrollIntoView({behavior:"smooth"})}})));
+        onRow:r=>{editing=r;docKey="";render();window.MP&&MP.open()}})));
     }
     function renderList(){
       const q=el("search").value.trim().toLowerCase().split(/\s+/).filter(Boolean),f=el("filter").value;
       const list=rows.filter(r=>(f==="all"||(f==="use"&&!OUT.includes(r.status))||(f==="out"&&OUT.includes(r.status))||(f==="nophoto"&&!OUT.includes(r.status)&&docSum&&!hasPhoto(r)))&&q.every(w=>JSON.stringify(r).toLowerCase().includes(w)));
       const st=Object.fromEntries(STATUS);
       el("list").innerHTML=list.map(r=>{const ph=photos.get(r.id),w=r.warranty_till?Math.round((new Date(r.warranty_till+"T00:00:00")-new Date(today()+"T00:00:00"))/864e5):null;
-        return '<tr class="'+(OUT.includes(r.status)?"off":"")+'"><td><b>'+esc(r.asset_code||"-")+"</b></td><td>"+(ph?'<img class="ed-av" alt="" src="'+esc(ph)+'">':"")+"<b>"+esc(r.asset_name)+"</b>"+(r.serial_no?"<small>S/N "+esc(r.serial_no)+"</small>":"")+"<div>"+ERPDocs.badge("ASSET",docSum&&(docSum.get(r.id)||new Set()))+"</div></td><td>"+esc(r.category||"-")+"</td><td>"+(showDate(r.purchase_date)||"-")+(r.supplier_name||r.bill_no?"<small>"+esc([r.supplier_name,r.bill_no&&"Bill "+r.bill_no].filter(Boolean).join(" · "))+"</small>":"")+'</td><td class="n">'+(r.amount!=null?rs(r.amount):"-")+(r.gst_amount?"<small>GST "+rs(r.gst_amount)+"</small>":"")+"</td><td>"+esc(r.location||"-")+(r.assigned_to?"<small>"+esc(r.assigned_to)+"</small>":"")+"</td><td>"+(w==null?"-":w<0?'<span class="tagx bad">Over '+showDate(r.warranty_till)+"</span>":w<=30?'<span class="tagx warn">'+w+" days left</span>":showDate(r.warranty_till))+"</td><td>"+'<span class="tagx '+(r.status==="IN_USE"?"ok":r.status==="REPAIR"?"warn":"bad")+'">'+esc(st[r.status]||r.status)+"</span>"+(r.status_date?"<small>"+showDate(r.status_date)+"</small>":"")+"</td><td>"+'<button type="button" data-edit="'+r.id+'">'+(can()?"Edit":"View")+"</button></td></tr>"}).join("")||'<tr><td colspan="9" class="erp-empty">'+(missing?"Not set up yet.":"No assets yet. Add one with the form above.")+"</td></tr>";
+        return '<tr class="'+(OUT.includes(r.status)?"off":"")+'"><td><b>'+esc(r.asset_code||"-")+"</b></td><td>"+(ph?'<img class="ed-av" alt="" src="'+esc(ph)+'">':"")+"<b>"+esc(r.asset_name)+"</b>"+(r.serial_no?"<small>S/N "+esc(r.serial_no)+"</small>":"")+"<div>"+ERPDocs.badge("ASSET",docSum&&(docSum.get(r.id)||new Set()))+"</div></td><td>"+esc(r.category||"-")+"</td><td>"+(showDate(r.purchase_date)||"-")+(r.supplier_name||r.bill_no?"<small>"+esc([r.supplier_name,r.bill_no&&"Bill "+r.bill_no].filter(Boolean).join(" · "))+"</small>":"")+'</td><td class="n">'+(r.amount!=null?rs(r.amount):"-")+(r.gst_amount?"<small>GST "+rs(r.gst_amount)+"</small>":"")+"</td><td>"+esc(r.location||"-")+(r.assigned_to?"<small>"+esc(r.assigned_to)+"</small>":"")+"</td><td>"+(w==null?"-":w<0?'<span class="tagx bad">Over '+showDate(r.warranty_till)+"</span>":w<=30?'<span class="tagx warn">'+w+" days left</span>":showDate(r.warranty_till))+"</td><td>"+'<span class="tagx '+(r.status==="IN_USE"?"ok":r.status==="REPAIR"?"warn":"bad")+'">'+esc(st[r.status]||r.status)+"</span>"+(r.status_date?"<small>"+showDate(r.status_date)+"</small>":"")+"</td><td>"+'<button type="button" data-edit="'+r.id+'">'+(can()?"Edit":"View")+"</button></td></tr>"}).join("")||'<tr><td colspan="9" class="erp-empty">'+(missing?"Not set up yet.":"No assets yet. Tap + New Asset to add one.")+"</td></tr>";
       el("listTitle").textContent="Asset List ("+list.length+" / "+rows.length+")";
     }
     function render(){fillForm();renderKpis();renderList()}
     document.addEventListener("click",e=>{const t=e.target;
-      if(t.dataset.edit){editing=rows.find(x=>x.id===t.dataset.edit)||null;docKey="";render();el("formCard").scrollIntoView({behavior:"smooth"})}});
+      if(t.dataset.edit){editing=rows.find(x=>x.id===t.dataset.edit)||null;docKey="";render();window.MP&&MP.open()}});
     el("save").onclick=save;
     el("clear").onclick=()=>{editing=null;docKey="";render()};
     el("search").oninput=renderList;el("filter").onchange=renderList;
@@ -196,5 +197,10 @@
       render();
     })();
   </script>
+<script>
+// List first; add / edit asset in a popup (4 Nov 2026).
+window.MP=LWBMasterPopup.mount({panel:"formCard",bar:document.querySelector("#listTitle").parentNode.querySelector(".fa-tools"),newLabel:"+ New Asset",
+  onNew:()=>document.getElementById("clear").click(),canNew:()=>!!(window.faCan&&faCan()),cancelAfter:"clear",cards:"#list",mainCol:1});
+</script>
 </body>
 </html>

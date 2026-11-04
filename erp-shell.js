@@ -80,8 +80,10 @@
       {t:"New PO / Sales Order",h:"order-entry.html",i:"cart",r:"admin manager sales",k:"new order entry po",pt:"PO / Sales Order (new PO)",nm:"admin manager sales",par:"warehouse-orders.html my-sales.html#orders"},
       {t:"PO / Sales",h:"warehouse-orders.html",i:"note",r:"admin manager warehouse accounts",k:"po approval driver warehouse orders",pt:"PO / Sales List (all POs; approve for Admin / Sales Head)",nm:"accounts"},
       {t:"PO / Sales",h:"my-sales.html#orders",i:"note",r:"sales",k:"my orders modify",pt:"PO / Sales List (Salesman's own orders)"},
-      {t:"Rajnigandha Slips",h:"quick-slip.html",i:"note",r:"admin manager accounts warehouse sales",k:"rajnigandha slip parchi thermal print kachcha",vo:"accounts",nm:"accounts"},
-      {t:"Rajnigandha Rate List",h:"rajni-rates.html",i:"bill",r:"admin",k:"rajnigandha rate landing min max profit margin approval"},
+      // Rajnigandha (Mohit, 4 Nov 2026): no own menu items. A Rajnigandha PO prints its slip from PO / Sales
+      // (Print), its waiting POs show on top of that list; the rate list is the Rajnigandha tab of Rate List.
+      {t:"Rajnigandha Slips",h:"quick-slip.html",i:"note",r:"admin manager accounts warehouse sales",k:"rajnigandha slip parchi thermal print kachcha",vo:"accounts",nm:"admin manager accounts warehouse sales",par:"warehouse-orders.html my-sales.html#orders"},
+      {t:"Rajnigandha Rate List",h:"rajni-rates.html",i:"bill",r:"admin",k:"rajnigandha rate landing min max profit margin approval",nm:"admin",par:"rates.html"},
       {t:"My Sales",h:"my-sales.html",i:"chart",r:"sales"},
       {t:"Party Call List",h:"party-calls.html",i:"phone",r:"admin manager sales"},
       {t:"Outside Market Stock",h:"market-report.html",i:"pin",r:"admin manager sales"},
@@ -118,15 +120,19 @@
       {t:"Tally Party Mapping",h:"party-mapping.html",i:"users",r:"admin accounts",hide:1},
       {t:"Cashbook",h:"cashbook.html",i:"cash",r:"admin",hide:1}]},
     {group:"Returns",items:[
-      {t:"Driver Returns Approval",h:"driver-returns.html",i:"undo",r:"admin accounts manager warehouse"},
-      {t:"Sales Return",h:"sales-return.html",i:"undo",r:"admin sales warehouse"},
-      {t:"Credit Note Preview",h:"credit-note.html",i:"note",r:"admin accounts"}]},
+      // One "Returns" item (Mohit, 4 Nov 2026): Sales Return and Credit Note are tabs on top of it (PAGE_TABS);
+      // they leave the side menu only for roles that also have Driver Returns (Salesman keeps Sales Return).
+      {t:"Returns",h:"driver-returns.html",i:"undo",r:"admin accounts manager warehouse",pt:"Driver Returns Approval"},
+      {t:"Sales Return",h:"sales-return.html",i:"undo",r:"admin sales warehouse",nm:"admin warehouse",par:"driver-returns.html"},
+      {t:"Credit Note Preview",h:"credit-note.html",i:"note",r:"admin accounts",nm:"admin accounts",par:"driver-returns.html"}]},
     {group:"Inventory",items:[
-      {t:"Inventory / Stock Report",h:"inventory.html",i:"stock",r:"admin manager warehouse accounts",vo:"accounts"},
-      {t:"Goods in Transit",h:"stock-transit.html",i:"truck",r:"admin manager warehouse"},
-      {t:"Stock Transfer / Damage",h:"stock-transfer.html",i:"undo",r:"admin manager warehouse accounts",vo:"accounts"},
-      {t:"Night Stock Audit",h:"stock-audit.html",i:"stock",r:"admin manager warehouse accounts",vo:"accounts"},
-      {t:"Opening Stock",h:"opening-stock.html",i:"box",r:"admin"}]},
+      // One "Inventory" item (Mohit, 4 Nov 2026): the other stock pages are tabs on top of it (PAGE_TABS),
+      // still found by Module Search and ticked in Manage Users.
+      {t:"Inventory",h:"inventory.html",i:"stock",r:"admin manager warehouse accounts",vo:"accounts",pt:"Inventory / Stock Report"},
+      {t:"Goods in Transit",h:"stock-transit.html",i:"truck",r:"admin manager warehouse",nm:"admin manager warehouse",par:"inventory.html"},
+      {t:"Stock Transfer / Damage",h:"stock-transfer.html",i:"undo",r:"admin manager warehouse accounts",vo:"accounts",nm:"admin manager warehouse accounts",par:"inventory.html"},
+      {t:"Night Stock Audit",h:"stock-audit.html",i:"stock",r:"admin manager warehouse accounts",vo:"accounts",nm:"admin manager warehouse accounts",par:"inventory.html"},
+      {t:"Opening Stock",h:"opening-stock.html",i:"box",r:"admin",nm:"admin",par:"inventory.html"}]},
     {group:"Masters",items:[
       {t:"Customer / Party Master",h:"customer-master.html",i:"users",r:"admin manager"},
       {t:"SKU Master",h:"sku-master.html",i:"tag",r:"admin manager"},
@@ -139,7 +145,7 @@
     {group:"Settings",items:[
       {t:"Settings",h:"settings.html",i:"gear",r:"admin manager"},
       {t:"Manage Users",h:"users.html",i:"lock",r:"admin"},
-      {t:"Rate & Scheme",h:"rates.html",i:"tag",r:"admin manager"}]}
+      {t:"Rate List",h:"rates.html",i:"tag",r:"admin manager",k:"rate scheme mepd landing slab rajnigandha coca-cola brand",pt:"Rate List (Coca-Cola Rate & Scheme)"}]}
   ];
 
 
@@ -411,6 +417,7 @@
     });
     document.addEventListener("click",e=>{if(!e.target.closest(".erp-search"))box.classList.remove("open")});
     if(role!=="driver")bottomNav(page,role);
+    pageTabs(page,role);
     // Driver keeps its own bottom menu. Keyboard handling applies to every role.
     watchKeyboard();
     // Inline success messages already confirm saves; avoid a second toast for the same event.
@@ -422,9 +429,28 @@
       if(blocked(role,page,hiddenPages()))return;
       groups=menuForMe(role);flat=groups.flatMap(g=>g.items.map(i=>({...i,g:g.group})));drawSide();
       if(role!=="driver")bottomNav(page,role);
+      pageTabs(page,role);
       document.dispatchEvent(new CustomEvent("erp:access"));
     });
     return {menu:groups};
+  }
+
+  // Page tabs (Mohit, 4 Nov 2026): pages merged into one menu item show a tab row on top,
+  // only with the pages this login may open.
+  const PAGE_TABS=[
+    [["Driver Returns","driver-returns.html"],["Sales Return","sales-return.html"],["Credit Note","credit-note.html"]],
+    [["Coca-Cola","rates.html"],["Rajnigandha","rajni-rates.html"]],
+    [["Stock","inventory.html"],["Transit","stock-transit.html"],["Transfer","stock-transfer.html"],["Audit","stock-audit.html"],["Opening","opening-stock.html"]]
+  ];
+  function pageTabs(page,role){
+    document.querySelector(".erp-ptabs")?.remove();
+    const set=PAGE_TABS.find(t=>t.some(x=>x[1]===page));if(!set)return;
+    const permitted=new Set(menuFor(role,hiddenPages(),extraPages()).flatMap(g=>g.items.map(i=>i.h.split("#")[0])));
+    const tabs=set.filter(x=>permitted.has(x[1])||x[1]===page);if(tabs.length<2)return;
+    const root=document.querySelector(".erp-main");if(!root)return;
+    const nav=document.createElement("nav");nav.className="erp-ptabs";nav.setAttribute("aria-label","Pages");
+    nav.innerHTML=tabs.map(([t,h])=>'<a href="'+h+'"'+(h===page?' class="on" aria-current="page"':"")+">"+esc(t)+"</a>").join("");
+    root.prepend(nav);
   }
 
   // Small role-specific shortcuts; actual permission checks remain on each page / RPC.

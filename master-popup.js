@@ -18,10 +18,10 @@
 body.mp-open{overflow:hidden}
 @media(max-width:700px){
   .mp-modal{padding:0}.mp-modal>.mp-card{min-height:100%;border-radius:0!important}
-  .mp-card .fields,.mp-card .form-grid{grid-template-columns:minmax(0,1fr) minmax(0,1fr)!important;gap:8px!important}
-  .mp-card .fields>:first-child,.mp-card .form-grid>:first-child,.mp-card .field.full{grid-column:span 2!important}
+  .mp-card .fields,.mp-card .form-grid,.mp-card .fa-grid{grid-template-columns:minmax(0,1fr) minmax(0,1fr)!important;gap:8px!important}
+  .mp-card .fields>:first-child,.mp-card .form-grid>:first-child,.mp-card .fa-grid>:nth-child(2),.mp-card .field.full{grid-column:span 2!important}
   .mp-card input,.mp-card select{min-width:0;max-width:100%}
-  .mp-card .actions{position:sticky;bottom:0;background:#fff;padding:8px 0;margin-top:8px;display:flex;gap:6px;flex-wrap:nowrap;z-index:1}
+  .mp-card .fa-actions,.mp-card .actions{position:sticky;bottom:0;background:#fff;padding:8px 0;margin-top:8px;display:flex;gap:6px;flex-wrap:nowrap;z-index:1}
   .mp-card .actions button{white-space:nowrap}
   .mp-card .actions{flex-wrap:wrap!important}.mp-card .actions .small,.mp-card .actions .hint{flex-basis:100%;order:9;font-size:11.5px}
   .mp-cards-on .tablewrap,.mp-cards-on .scroll,.mp-cards-on .table-wrap{overflow:visible!important;border:0!important}

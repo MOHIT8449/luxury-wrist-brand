@@ -4,6 +4,21 @@
 **Purpose:** Continue the same ERP project from a new ChatGPT conversation without restarting or losing the agreed requirements.
 **Status:** Active development / verification. Do not assume all modules are completed or fully tested.
 
+## Rajnigandha: no own menu items; Rate List brand tabs; slip prints from PO / Sales (4 Nov 2026)
+
+- Settings > "Rate List" (rates.html, was "Rate & Scheme") has brand tabs on top: Coca-Cola (rates.html) | Rajnigandha (rajni-rates.html, Admin only). "Rajnigandha Rate List" left the side menu (nm, par rates.html).
+- "Rajnigandha Slips" (quick-slip.html) left the side menu for every role (nm, par PO / Sales); the page still opens from notifications, search, the PO save screen and the banner below.
+- warehouse-orders.html: Print (list row and "Print PO" in the popup) on a PO whose every line is a quick-slip brand and that has a slip prints the thermal slip (quick-slip.html?order=..&print=1 in a hidden frame; Android opens the page). Other POs print the A5 PO as before.
+- Admin / Sales Head see an amber "Rajnigandha: N waiting for Admin rate OK · M waiting for driver & vehicle" bar above the PO stage tabs (lwb_rate_waiting + lwb_quick_slip_list); it opens quick-slip.html.
+
+## Returns and Inventory page tabs; Fixed Assets and Users popups (4 Nov 2026)
+
+- Side menu: one "Returns" item (Driver Returns). Sales Return and Credit Note are hidden from the menu (still in search / Manage Users) and open as tabs on top of the Returns pages.
+- One "Inventory" item. Goods in Transit, Stock Transfer, Night Audit and Opening are tabs on top of Inventory (`PAGE_TABS` + `pageTabs()` in erp-shell.js; a tab shows only if the login may open that page). `par` lights the parent menu item.
+- Fixed Assets: list first, "+ New Asset" opens the form in a popup (master-popup.js). Edit opens the same popup; it closes after a good save.
+- Manage Users: "+ New User" opens the create-login form in a popup (stays open after Create so the login details can be copied).
+- Tally Bill / Tally Check were already hidden from the menu, no change.
+
 ## One "Purchase" menu item; Supplier and SKU Master list + popup (4 Nov 2026)
 
 - Mohit: same as PO / Sales for Purchase, and the other masters list-first with the form in a popup. No SQL.
