@@ -76,6 +76,9 @@ CREATE UNIQUE INDEX IF NOT EXISTS lwb_bank_stmt_lines_link_uidx ON public.lwb_ba
   WHERE link_src IS NOT NULL AND status IN ('MATCHED','ASSIGNED');
 CREATE INDEX IF NOT EXISTS lwb_bank_stmt_lines_open_idx ON public.lwb_bank_stmt_lines(bank_id, status, txn_date);
 
+-- Contra (own bank to own bank): the entry made on the other bank, cancelled with the line on Undo.
+ALTER TABLE public.lwb_bank_stmt_lines ADD COLUMN IF NOT EXISTS pair_entry uuid;
+
 ALTER TABLE public.lwb_bank_stmt_imports ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.lwb_bank_stmt_lines ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON TABLE public.lwb_bank_stmt_imports, public.lwb_bank_stmt_lines FROM PUBLIC, anon, authenticated;
@@ -84,7 +87,8 @@ REVOKE ALL ON TABLE public.lwb_bank_stmt_imports, public.lwb_bank_stmt_lines FRO
 INSERT INTO public.lwb_acc_categories (kind, name, sort)
 SELECT v.kind, v.name, v.sort FROM (VALUES
   ('OUT','Bank charges',170),('OUT','Loan EMI / Interest',180),('OUT','GST / Tax paid',190),
-  ('IN','Bank interest',50),('IN','Loan received',60)
+  ('IN','Bank interest',50),('IN','Loan received',60),('OUT','Asset purchase',165),
+  ('IN','Contra (bank transfer)',70),('OUT','Contra (bank transfer)',175)
 ) v(kind, name, sort)
 WHERE NOT EXISTS (SELECT 1 FROM public.lwb_acc_categories c WHERE c.kind = v.kind AND lower(btrim(c.name)) = lower(v.name));
 
@@ -335,11 +339,12 @@ DECLARE
   v_cat bigint; v_note text := left(nullif(btrim(coalesce(p->>'note','')),''), 300);
   v_id uuid; s public.lwb_bank_stmt_lines%ROWTYPE; v_amt numeric; v_mode text; v_ref text; v_res jsonb; v_pay uuid;
   v_entry uuid; v_kind text; v_remark text; v_done integer := 0; v_err jsonb := '[]'::jsonb; c record;
+  v_co uuid; v_co_name text; v_to bigint; v_to_name text; v_from_name text; v_pair uuid; v_cin bigint; v_cout bigint;
 BEGIN
   IF NOT public.lwb_acc_admin() THEN RAISE EXCEPTION 'Only Admin books bank statement lines'; END IF;
   IF p_ids IS NULL OR cardinality(p_ids) = 0 THEN RAISE EXCEPTION 'Tick the lines first'; END IF;
   IF cardinality(p_ids) > 500 THEN RAISE EXCEPTION 'Tick 500 lines or less at a time'; END IF;
-  IF v_type NOT IN ('PARTY','DEPOSIT','WITHDRAW','IN','OUT','IGNORE','MATCH') THEN RAISE EXCEPTION 'Choose what these lines are'; END IF;
+  IF v_type NOT IN ('PARTY','DEPOSIT','WITHDRAW','IN','OUT','IGNORE','MATCH','CONTRA') THEN RAISE EXCEPTION 'Choose what these lines are'; END IF;
   BEGIN v_cat := nullif(p->>'category_id','')::bigint; EXCEPTION WHEN others THEN RAISE EXCEPTION 'Choose the head'; END;
   IF v_type = 'PARTY' AND v_party IS NULL THEN RAISE EXCEPTION 'Choose the party'; END IF;
   IF v_type IN ('IN','OUT') AND (v_cat IS NULL OR NOT EXISTS (SELECT 1 FROM public.lwb_acc_categories k
@@ -347,6 +352,28 @@ BEGIN
     RAISE EXCEPTION 'Choose the % head', CASE v_type WHEN 'IN' THEN 'income' ELSE 'expense' END;
   END IF;
   IF v_type = 'MATCH' AND cardinality(p_ids) <> 1 THEN RAISE EXCEPTION 'Match one line at a time'; END IF;
+  -- Contra: money moved between two of our own banks. Booked on both banks (out of one, into the other)
+  -- under the head Contra (bank transfer); the other bank's statement line then matches its entry.
+  IF v_type = 'CONTRA' THEN
+    BEGIN v_to := nullif(p->>'to_bank_id','')::bigint; EXCEPTION WHEN others THEN RAISE EXCEPTION 'Choose the other bank'; END;
+    SELECT b.name INTO v_to_name FROM public.lwb_acc_banks b WHERE b.id = v_to AND b.active;
+    IF v_to_name IS NULL THEN RAISE EXCEPTION 'Choose the other bank'; END IF;
+    SELECT k.id INTO v_cin FROM public.lwb_acc_categories k WHERE k.kind = 'IN' AND lower(btrim(k.name)) = 'contra (bank transfer)';
+    SELECT k.id INTO v_cout FROM public.lwb_acc_categories k WHERE k.kind = 'OUT' AND lower(btrim(k.name)) = 'contra (bank transfer)';
+    IF v_cin IS NULL OR v_cout IS NULL THEN RAISE EXCEPTION 'The head Contra (bank transfer) is missing'; END IF;
+  END IF;
+  -- Money out to a company (Coca-Cola, Rajnigandha ...): also saved as that company's payment,
+  -- the same way Accounts Dashboard Cash Out > Supplier payment does (lwb_acc_add_entry5).
+  BEGIN v_co := nullif(p->>'company_id','')::uuid; EXCEPTION WHEN others THEN RAISE EXCEPTION 'Choose the company again'; END;
+  IF v_co IS NOT NULL THEN
+    IF v_type <> 'OUT' THEN RAISE EXCEPTION 'A company payment is money out'; END IF;
+    IF NOT EXISTS (SELECT 1 FROM public.lwb_acc_categories k WHERE k.id = v_cat AND lower(btrim(k.name)) = 'supplier payment') THEN
+      RAISE EXCEPTION 'A company payment needs the head Supplier payment';
+    END IF;
+    SELECT co.name INTO v_co_name FROM public.lwb_companies co WHERE co.id = v_co;
+    IF v_co_name IS NULL THEN RAISE EXCEPTION 'Company not found'; END IF;
+    v_party := coalesce(v_party, v_co_name);
+  END IF;
 
   FOREACH v_id IN ARRAY p_ids LOOP
     BEGIN
@@ -373,6 +400,25 @@ BEGIN
         END IF;
         PERFORM public.lwb_bank_link(v_id, c.src, c.id, 'MATCH', c.need);
 
+      ELSIF v_type = 'CONTRA' THEN
+        IF v_to = s.bank_id THEN RAISE EXCEPTION 'Choose the other bank, not this one'; END IF;
+        SELECT b.name INTO v_from_name FROM public.lwb_acc_banks b WHERE b.id = s.bank_id;
+        -- this bank
+        INSERT INTO public.lwb_acc_entries (entry_date, kind, category_id, mode, bank_id, amount, party, ref_no, remark, created_by)
+        VALUES (s.txn_date, CASE WHEN s.debit > 0 THEN 'OUT' ELSE 'IN' END, CASE WHEN s.debit > 0 THEN v_cout ELSE v_cin END,
+                'BANK', s.bank_id, v_amt, left(CASE WHEN s.debit > 0 THEN 'To ' ELSE 'From ' END || v_to_name, 120), v_ref, v_remark, auth.uid())
+        RETURNING id INTO v_entry;
+        -- the other bank (waits for that bank's statement)
+        INSERT INTO public.lwb_acc_entries (entry_date, kind, category_id, mode, bank_id, amount, party, ref_no, remark, created_by)
+        VALUES (s.txn_date, CASE WHEN s.debit > 0 THEN 'IN' ELSE 'OUT' END, CASE WHEN s.debit > 0 THEN v_cin ELSE v_cout END,
+                'BANK', v_to, v_amt, left(CASE WHEN s.debit > 0 THEN 'From ' ELSE 'To ' END || v_from_name, 120), v_ref,
+                left('Contra · ' || v_remark, 300), auth.uid())
+        RETURNING id INTO v_pair;
+        PERFORM public.lwb_bank_link(v_id, 'ENTRY', v_entry, 'CONTRA', s.credit > 0);
+        UPDATE public.lwb_bank_stmt_lines SET category_id = CASE WHEN s.debit > 0 THEN v_cout ELSE v_cin END,
+               party = left(CASE WHEN s.debit > 0 THEN 'To ' ELSE 'From ' END || v_to_name, 120), note = v_note, pair_entry = v_pair
+        WHERE id = v_id;
+
       ELSIF v_type = 'PARTY' THEN
         -- the bank line is unique already; a reference used before stays only in the remark
         IF v_ref IS NOT NULL AND EXISTS (SELECT 1 FROM public.lwb_tally_payments x WHERE x.mode = v_mode
@@ -393,6 +439,10 @@ BEGIN
                 CASE WHEN v_kind IN ('IN','OUT') THEN v_mode ELSE 'CASH' END, s.bank_id, v_amt,
                 CASE WHEN v_kind IN ('IN','OUT') THEN left(v_party,120) END, v_ref, v_remark, auth.uid())
         RETURNING id INTO v_entry;
+        IF v_co IS NOT NULL THEN
+          INSERT INTO public.lwb_company_payments (company_id, pay_date, amount, mode, ref_no, note, created_by, acc_entry_id)
+          VALUES (v_co, s.txn_date, v_amt, v_mode, left(v_ref, 80), left(v_remark, 300), auth.uid(), v_entry);
+        END IF;
         PERFORM public.lwb_bank_link(v_id, 'ENTRY', v_entry, v_kind, v_kind IN ('IN','DEPOSIT'));
         UPDATE public.lwb_bank_stmt_lines SET category_id = CASE WHEN v_kind IN ('IN','OUT') THEN v_cat END,
                party = CASE WHEN v_kind IN ('IN','OUT') THEN left(v_party,120) END, note = v_note
@@ -425,6 +475,16 @@ BEGIN
     UPDATE public.lwb_party_allocs SET cancelled_at = now(), cancelled_by = auth.uid()
     WHERE receipt_id = s.receipt_id AND cancelled_at IS NULL;
   ELSIF s.status = 'ASSIGNED' AND s.link_src = 'ENTRY' THEN
+    IF s.pair_entry IS NOT NULL THEN
+      IF EXISTS (SELECT 1 FROM public.lwb_bank_stmt_lines x WHERE x.link_src = 'ENTRY' AND x.link_id = s.pair_entry
+                   AND x.status IN ('MATCHED','ASSIGNED')) THEN
+        RAISE EXCEPTION 'The other bank''s statement line is matched to this transfer. Undo it there first.';
+      END IF;
+      UPDATE public.lwb_acc_entries SET cancelled_at = now(), cancelled_by = auth.uid(),
+             cancel_reason = 'Bank statement contra undone'
+      WHERE id = s.pair_entry AND cancelled_at IS NULL;
+      DELETE FROM public.lwb_acc_verify WHERE src = 'ENTRY' AND src_id = s.pair_entry;
+    END IF;
     UPDATE public.lwb_acc_entries SET cancelled_at = now(), cancelled_by = auth.uid(),
            cancel_reason = 'Bank statement line undone'
     WHERE id = s.link_id AND cancelled_at IS NULL;
@@ -434,7 +494,7 @@ BEGIN
   END IF;
   UPDATE public.lwb_bank_stmt_lines
      SET status = 'OPEN', how = NULL, link_src = NULL, link_id = NULL, receipt_id = NULL, verified_here = false,
-         party = NULL, category_id = NULL, note = NULL, done_by = NULL, done_at = NULL,
+         party = NULL, category_id = NULL, note = NULL, done_by = NULL, done_at = NULL, pair_entry = NULL,
          no_auto = (s.status = 'MATCHED')
    WHERE id = p_id;
   PERFORM public.lwb_acc_ping_admins();
