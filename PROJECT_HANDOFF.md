@@ -4,6 +4,14 @@
 **Purpose:** Continue the same ERP project from a new ChatGPT conversation without restarting or losing the agreed requirements.
 **Status:** Active development / verification. Do not assume all modules are completed or fully tested.
 
+## Salesman Master: one place to make a salesman, brands picked at once (4 Nov 2026)
+
+- Mohit: when a salesman is made, pick which brands he may sell (Coca-Cola, Rajnigandha or both); combine every place where sales team / salesmen are made into one Salesman Master. Preview shown, Mohit said OK.
+- SQL `lwb_salesman_master_setup.sql` (run after lwb_sales_head_in_team_setup.sql, lwb_company_brand_setup.sql, lwb_employee_login_link_setup.sql; test `tests/salesman-master`, PGlite, 7 tests). `lwb_salesman_save(p jsonb)` in one transaction: Employee Master row (`lwb_emp_save2`, other fields kept), login (`lwb_emp_create_login`, Admin only, mobile = login ID; a login with the same mobile is linked instead), `lwb_save_salesman` (Field / Office + area), `lwb_set_user_companies` (all brands ticked = no rows = all brands). Sales Head: no new login; his save changes only brands (within his own brands), type and area.
+- `sales-team.html` is now **Salesman Master** (menu item renamed). Salesmen tab: search + brand filter + "+ New Salesman" (Admin) in one row; list Salesman / Mobile / Brands / Type / Area / Parties / Login / Edit; phone = compact cards. Popup (master-popup.js): Name, Mobile, Brands tick boxes, Post (Salesman / Sales Head), Type (Field / Office), Area, Password (new login), Joining date, Salary, Status (edit). `#new`, `#user=<login id>`, `#emp=<employee id>` open it.
+- Combined: Manage Users "+ New User" with role SALES / MANAGER goes to Salesman Master; Employee Master shows a Salesman Master link for Work / Post Salesman / Manager and its "Create login" for them opens Salesman Master; Company / Brand > Team brands is read only with Edit links.
+- Checked with a mocked database at 1366 px and 390 px: no side scroll. Not yet checked on live data.
+
 ## PO entry on the phone: order setup popup after the party (4 Nov 2026)
 
 - Mohit: on the phone, picking the party opens one popup ("Order for PARTY"): Brand chips, Transport (Delivery / Self pickup / Direct vehicle), Priority, Qty in (Case / Pallet), then "Start order →" which focuses the first SKU.
