@@ -76,7 +76,7 @@
       // (Sales Head / Admin: the approval + driver list; Godown Manager / Accounts: same list, view only;
       // Salesman: his own orders with PO given > Approved > Dispatched > Delivered).
       {t:"PO / Sales Order",h:"order-entry.html",i:"cart",r:"admin manager sales",k:"new order entry"},
-      {t:"PO / Sales List",h:"warehouse-orders.html",i:"note",r:"admin manager warehouse accounts",k:"po approval driver warehouse orders",pt:"PO / Sales List (all POs; approve for Admin / Sales Head)"},
+      {t:"PO / Sales List",h:"warehouse-orders.html",i:"note",r:"admin manager warehouse accounts",k:"po approval driver warehouse orders",pt:"PO / Sales List (all POs; approve for Admin / Sales Head)",nm:"accounts"},
       {t:"PO / Sales List",h:"my-sales.html#orders",i:"note",r:"sales",k:"my orders modify",pt:"PO / Sales List (Salesman's own orders)"},
       {t:"Rajnigandha Slips",h:"quick-slip.html",i:"note",r:"admin manager accounts warehouse sales",k:"rajnigandha slip parchi thermal print kachcha",vo:"accounts"},
       {t:"Rajnigandha Rate List",h:"rajni-rates.html",i:"bill",r:"admin",k:"rajnigandha rate landing min max profit margin approval"},
@@ -98,16 +98,16 @@
       {t:"Transport Assignment",h:"transport-allocation.html",i:"truck",r:"admin manager transport"},
       {t:"Sheet & Pallet Ledger",h:"sheet-pallet.html",i:"layers",r:"admin manager accounts warehouse",vo:"accounts"}]},
     {group:"Delivery",items:[
-      {t:"Driver Delivery / POD",h:"driver-delivery.html",i:"pin",r:"admin manager driver accounts"},
-      {t:"Driver Collections",h:"driver-collections.html",i:"cash",r:"admin manager accounts"},
+      {t:"Driver Delivery / POD",h:"driver-delivery.html",i:"pin",r:"admin manager driver accounts",nm:"accounts"},
+      {t:"Driver Collections",h:"driver-collections.html",i:"cash",r:"admin manager accounts",nm:"accounts"},
       {t:"Live Tracking",h:"live-tracking.html",i:"pin",r:"admin manager warehouse"}]},
     {group:"Reports",items:[
-      {t:"Daily Summary",h:"daily-report.html",i:"stock",r:"admin manager accounts"},
+      {t:"Daily Summary",h:"daily-report.html",i:"stock",r:"admin manager accounts",nm:"accounts"},
       {t:"Team Work Report",h:"team-report.html",i:"users",r:"admin manager"}]},
     {group:"Accounts",items:[
       {t:"Accounts Dashboard",h:"accounts-dashboard.html",i:"cash",r:"admin accounts"},
       {t:"Bank Statement",h:"bank-statement.html",i:"book",r:"admin accounts"},
-      {t:"Billing & Outstanding",h:"party-billing.html",i:"bill",r:"admin accounts"},
+      {t:"Billing & Outstanding",h:"party-billing.html",i:"bill",r:"admin accounts",nm:"accounts"},
       {t:"Money Overview",h:"money-overview.html",i:"cash",r:"admin accounts",hide:1},
       {t:"Tally Bill & Invoice No.",h:"accounts-invoice.html",i:"bill",r:"admin accounts",hide:1},
       {t:"Tally Bill Check",h:"tally-check.html",i:"bill",r:"admin accounts",hide:1},
@@ -240,13 +240,17 @@
   // vo = roles that only look at the page (no entry / edit there). Accounts (Mohit, 4 Nov 2026): its menu keeps
   // cash, bank, orders and returns; the other pages it may still open sit at the bottom under "View only".
   const viewOnlyItem=(i,role)=>!!i.vo&&i.vo.split(" ").includes(role);
+  // nm = not in the side menu for these roles, but still allowed and found by Module Search / Dashboard search.
+  const noMenuItem=(i,role)=>!!i.nm&&i.nm.split(" ").includes(role);
   function menuFor(role,hidden,extra){
-    const off=new Set(hidden||[]),plus=new Set(extra||[]),vo=[];
+    const off=new Set(hidden||[]),plus=new Set(extra||[]),vo=[],nm=[];
     const out=MENU.map(g=>({group:g.group,items:g.items.filter(i=>{
       const ok=(allowed(i,role)&&!off.has(i.h))||plus.has(i.h);
+      if(ok&&noMenuItem(i,role)){nm.push({...i,g:g.group});return false}
       if(ok&&viewOnlyItem(i,role)){vo.push(i);return false}
       return ok})})).filter(g=>g.items.length);
     if(vo.length)out.push({group:"View only",items:vo});
+    if(nm.length)out.push({group:"More",items:nm,so:1});   // search only, not drawn in the side menu
     return out;
   }
   // true when this role may only look at this page (pages hide their entry / edit buttons).
@@ -270,7 +274,7 @@
   function extraPages(){const c=access();return c&&Array.isArray(c.extra)?c.extra:[]}
   // hide:1 pages (Cashbook) are never listed in the menu, search or dashboard; they open only
   // from their own private link. menuFor still has them, so Manage Users can tick them.
-  function menuForMe(role){return menuFor(role,hiddenPages(),extraPages()).map(g=>({group:g.group,items:g.items.filter(i=>!i.hide)})).filter(g=>g.items.length)}
+  function menuForMe(role){return menuFor(role,hiddenPages(),extraPages()).map(g=>({group:g.group,so:g.so,items:g.items.filter(i=>!i.hide)})).filter(g=>g.items.length)}
   const herePage=()=>(location.pathname.split("/").pop()||"dashboard.html").replace(/^$/,"dashboard.html");
   const withHtml=p=>/\.html$/.test(p)?p:p+".html";
   // Role a page should treat this user as. His own role when the page is his;
@@ -335,6 +339,7 @@
       let html='<div class="erp-brand"><span class="erp-mark" aria-hidden="true">lwb</span><div><b>LUXURY WRIST BRAND</b><small>BUSINESS ERP</small></div></div>'+
         '<div class="erp-menu-find"><input type="search" aria-label="Find a page" placeholder="Find a page…"></div><p class="erp-menu-empty" hidden>No page found</p>';
       groups.forEach(g=>{
+        if(g.so)return;
         if(g.group)html+='<div class="erp-group">'+esc(g.group)+'</div>';
         g.items.forEach(i=>{html+='<a class="erp-link'+(current&&i.h===current.h?' active':'')+'" href="'+esc(i.h)+'">'+svg(i.i)+'<span>'+esc(i.t)+'</span></a>'});
       });
@@ -427,7 +432,7 @@
       sales:[["Home","dashboard.html","home"],["New Order","order-entry.html","cart"],["PO List","my-sales.html#orders","note"],["My Sales","my-sales.html","chart"]],
       admin:[["Home","dashboard.html","home"],["New Order","order-entry.html","cart"],["PO List","warehouse-orders.html","note"],["Stock","inventory.html","stock"]],
       manager:[["Home","dashboard.html","home"],["New Order","order-entry.html","cart"],["PO List","warehouse-orders.html","note"],["Dispatch","loading-dispatch.html","truck"]],
-      accounts:[["Home","dashboard.html","home"],["PO List","warehouse-orders.html","note"],["Cash","accounts-dashboard.html","cash"],["Bills","party-billing.html","bill"]],
+      accounts:[["Home","dashboard.html","home"],["Cash","accounts-dashboard.html","cash"],["Bank","bank-statement.html","book"],["Returns","driver-returns.html","undo"]],
       warehouse:[["Home","dashboard.html","home"],["PO List","warehouse-orders.html","note"],["Loading","loading-dispatch.html","truck"],["Stock","inventory.html","stock"]],
       transport:[["Home","dashboard.html","home"],["Assign","transport-allocation.html","truck"],["Vehicles","fleet-master.html#vehicles","box"],["Drivers","fleet-master.html#drivers","users"]]
     };
