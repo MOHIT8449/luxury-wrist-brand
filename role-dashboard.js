@@ -170,8 +170,11 @@
     if(!PI)return null;
     const t=PI.today||today(),age={a:0,b:0,c:0,d:0},parties=[];
     for(const p of PI.parties.values()){
-      const net=Math.max(0,p.due-p.advance);if(net<1)continue;
+      // Same balance as Billing & Outstanding: bills due + opening balance − advance not yet set against bills.
+      const open=num(p.opening),net=Math.max(0,p.due+open-p.advance);if(net<1)continue;
       let left=p.advance;
+      if(open<0)left-=open;  // opening in the party's favour works like advance
+      else if(open>0){const use=Math.min(left,open);left-=use;if(open-use>=0.5)age.d+=open-use}  // opening = old money, 60+ days
       for(const b of p.bills){let due=num(b.due);const use=Math.min(left,due);left-=use;due-=use;if(due<0.5)continue;
         const d=b.invoice_date?days(String(b.invoice_date).slice(0,10),t):0;age[d<=15?"a":d<=30?"b":d<=60?"c":"d"]+=due}
       parties.push({party:p.party,due:net,oldest:p.oldest?days(String(p.oldest).slice(0,10),t):null});
@@ -181,7 +184,7 @@
   }
   function accTotals(D){
     const t={cashIn:0,cashOut:0,dep:0,upi:0,bank:0,cheque:0};
-    for(const l of (D&&D.lines)||[]){const a=num(l.amount);
+    for(const l of (D&&D.lines)||[]){const a=num(l.amount);if(/^contra\b/i.test(String(l.category||"")))continue;  // own bank to own bank: not money in / out
       if(l.kind==="IN"){if(l.mode==="CASH")t.cashIn+=a;else if(l.mode==="UPI")t.upi+=a;else if(l.mode==="CHEQUE")t.cheque+=a;else t.bank+=a}
       else if(l.kind==="OUT"&&l.mode==="CASH")t.cashOut+=a;else if(l.kind==="DEPOSIT")t.dep+=a}
     return t;

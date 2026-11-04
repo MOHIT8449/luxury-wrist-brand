@@ -5,7 +5,9 @@
      Cost       = landing per case / box: Rate & Scheme pack (Coca-Cola, same as Today's Profit), else the
                   Rajnigandha Rate List landing (lwb_price_limits_get). Lines with no landing are left out of profit.
      Purchase   = Goods Inward bills (lwb_goods_inward + items, invoice total) by received date.
-     Expenses   = Accounts money OUT entries (lwb_acc_dashboard), without "Supplier payment" (that is purchase).
+     Expenses   = Accounts money OUT entries (lwb_acc_dashboard), without the heads that are not a business expense:
+                  Supplier payment (that is purchase), Contra (own bank to own bank), Asset purchase (capital)
+                  and GST / Tax paid (tax collected from parties, passed on). NOT_EXPENSE below.
      Stock      = lwb_po_stock godown cases × landing.  Cash + Bank = closing cash + bank balances.
    Range switch Today / 7 Days / 30 Days / This Month is kept per browser (localStorage lwbBizRange). */
 (function(){
@@ -32,6 +34,8 @@
   const setRange=v=>{try{localStorage.setItem("lwbBizRange",v)}catch(e){}};
   const COL={sales:"#00434d",purch:"#c9b26a",gp:"#13824a"};
   const EXC=["#00434d","#c9b26a","#1d5fbf","#b26b00","#13824a","#9aa5a8"];
+  // Money-out heads that are not an expense of the business (Mohit, 4 Nov 2026: contra was cutting net profit).
+  const NOT_EXPENSE=/^(supplier payment|contra\b.*|asset purchase|gst \/ tax paid)$/i;
 
   let CTX=null,EL=null,seq=0,cache=null;
 
@@ -51,7 +55,9 @@
     for(let i=0;i<parts.length;i+=4){const rs2=await Promise.all(parts.slice(i,i+4).map(f));for(const r of rs2){if(r.error)throw r.error;out.push(...(r.data||[]))}}
     return out;
   }
-  const qtyOf=it=>it.approved_qty!=null?num(it.approved_qty):num(it.ordered_qty);
+  // After loading the loaded qty is what the party got (and what is billed); before it, approved, else ordered.
+  const LOADED=["loaded","invoiced","dispatched","delivered"];
+  const qtyOf=(it,s)=>LOADED.includes(s)&&it.loaded_qty!=null?num(it.loaded_qty):it.approved_qty!=null?num(it.approved_qty):num(it.ordered_qty);
 
   async function load(R){
     const C=CTX.C,len=span(R.from,R.to),prevFrom=shift(R.from,-len),start=[prevFrom,R.chartFrom].sort()[0],end=shift(R.to,1);
@@ -65,7 +71,7 @@
       safe(C.rpc("lwb_po_stock"))]);
     const O=orders.map(o=>({...o,day:istDay(o.order_date||o.created_at)})).filter(o=>!OFF.includes(st(o)));
     const cur=O.filter(o=>o.day>=R.chartFrom);
-    const items=cur.length?await chunks(cur.map(o=>o.id),150,ids=>C.from("order_items").select("order_id,sku_name,ordered_qty,approved_qty,rate").in("order_id",ids)):[];
+    const items=cur.length?await chunks(cur.map(o=>o.id),150,ids=>C.from("order_items").select("order_id,sku_name,ordered_qty,approved_qty,loaded_qty,rate").in("order_id",ids)):[];
     const inItems=inward&&inward.length?await chunks(inward.map(b=>b.id),100,ids=>C.from("lwb_goods_inward_items").select("*").in("inward_id",ids)).catch(()=>null):[];
     return {O,items,land,rajni,inward:inward||null,inItems,skus:skus||[],acc,stock};
   }
@@ -75,13 +81,13 @@
     const rl=new Map();for(const x of (D.rajni&&D.rajni.rows)||[])if(x.landing!=null&&num(x.landing)>0)rl.set(key(x.sku_key),num(x.landing));
     const landing=(sku,day)=>{let v=null;if(D.land&&CTX.landingOf){try{v=CTX.landingOf(D.land,sku,day)}catch(e){v=null}}
       if(v==null||!Number.isFinite(v))v=rl.has(key(sku))?rl.get(key(sku)):null;return v};
-    const dayOf=new Map(D.O.map(o=>[o.id,o.day]));
+    const dayOf=new Map(D.O.map(o=>[o.id,o.day])),stOf=new Map(D.O.map(o=>[o.id,st(o)]));
     const days=[];for(let d=R.chartFrom;d<=R.to;d=shift(d,1))days.push(d);
     const S={sales:0,known:0,gp:0,missing:0},byDay=new Map(days.map(d=>[d,{s:0,p:0,g:0}])),brand=new Map(),sku=new Map();
     const B=id=>{if(!brand.has(id))brand.set(id,{sales:0,qty:0,gp:0,known:0,purch:0,stock:0,unit:""});return brand.get(id)};
     for(const it of D.items){
       const day=dayOf.get(it.order_id);if(!day||!inBrand(it.sku_name))continue;
-      const q=qtyOf(it),v=q*num(it.rate);if(!q&&!v)continue;
+      const q=qtyOf(it,stOf.get(it.order_id)),v=q*num(it.rate);if(!q&&!v)continue;
       const l=landing(it.sku_name,day),g=l==null?0:(num(it.rate)-l)*q,x=byDay.get(day);
       if(x){x.s+=v;x.g+=g}
       if(day<R.from)continue;
@@ -109,7 +115,7 @@
     // Expenses
     const E={total:0,cats:new Map(),ok:!!D.acc};
     for(const l of (D.acc&&D.acc.lines)||[]){
-      if(l.kind!=="OUT")continue;const c=String(l.category||"Other expense").trim();if(/^supplier payment$/i.test(c))continue;
+      if(l.kind!=="OUT")continue;const c=String(l.category||"Other expense").trim();if(NOT_EXPENSE.test(c))continue;
       E.total+=num(l.amount);E.cats.set(c,(E.cats.get(c)||0)+num(l.amount));
     }
     const cats=[...E.cats].sort((a,b)=>b[1]-a[1]),ec=cats.slice(0,5);if(cats.length>5)ec.push(["Other",sum(cats.slice(5),x=>x[1])]);
@@ -189,7 +195,7 @@
       return '<tr><td title="'+esc(s.name)+'"><span class="bz-dot" style="background:'+esc(CTX.colorOf(s.name))+'"></span>'+esc(s.name)+'</td><td class="n bz-hm">'+fmt(s.qty)+" "+esc(s.unit)+'</td><td class="n">'+lakh(s.sales)+'</td><td class="bz-mg">'+(m==null?'<small>no landing</small>':'<div class="bz-bar"><i style="width:'+Math.max(2,Math.min(100,m/mx*100))+"%;background:"+(m<0?"#c62828":m<4?"#b26b00":"#13824a")+'"></i></div><small>'+(Math.round(m*10)/10)+"%</small>")+'</td><td class="n">'+(s.stock==null?"—":s.stock<=0?'<span class="bz-pill r">0 · out</span>':s.days==null?fmt(s.stock)+" "+esc(s.unit):s.days<1?'<span class="bz-pill a">&lt;1 d</span>':s.days<3?'<span class="bz-pill a">'+s.days+" d</span>":s.days+" d")+"</td></tr>"}).join("")+"</tbody></table>"
       :'<div class="bz-empty">No sale in '+esc(rangeTxt)+".</div>";
     const seg='<div class="bz-seg" role="group" aria-label="Period">'+RANGES.map(r=>'<button type="button" data-bz="'+r[0]+'"'+(r[0]===R.key?' class="on" aria-pressed="true"':' aria-pressed="false"')+">"+r[1]+"</button>").join("")+"</div>";
-    EL.innerHTML='<div class="bz-hd"><h2>Business Overview</h2>'+seg+'<span class="bz-rg">'+esc(rangeTxt)+'</span><button type="button" class="erp-i" aria-label="Info" title="Info" data-tip="Sales = SKU qty × PO rate by order date (cancelled not counted). Gross profit = (rate − landing) × qty; landing from Rate &amp; Scheme (Coca-Cola) or Rajnigandha Rate List. Purchase = Goods Inward invoice total by received date. Expenses = Accounts money-out entries, without Supplier payment. Stock value = godown stock × landing.">i</button></div>'+
+    EL.innerHTML='<div class="bz-hd"><h2>Business Overview</h2>'+seg+'<span class="bz-rg">'+esc(rangeTxt)+'</span><button type="button" class="erp-i" aria-label="Info" title="Info" data-tip="Sales = SKU qty × PO rate by order date (cancelled not counted). Gross profit = (rate − landing) × qty; landing from Rate &amp; Scheme (Coca-Cola) or Rajnigandha Rate List. Purchase = Goods Inward invoice total by received date. Expenses = Accounts money-out entries, without Supplier payment, Contra (bank transfer), Asset purchase and GST / Tax paid. Stock value = godown stock × landing.">i</button></div>'+
       '<div class="bz-kpis">'+k.join("")+"</div>"+
       '<div class="bz-g bz-r2"><section class="bz-c"><h3>Sales · Purchase · Gross Profit<span class="bz-leg"><span><i style="background:'+COL.sales+'"></i>Sales</span><span><i style="background:'+COL.purch+'"></i>Purchase</span><span><i style="background:'+COL.gp+'"></i>Gross profit ×10</span></span></h3><div class="bz-chart" id="bzChart"></div></section>'+
       '<section class="bz-c"><h3>Profit &amp; Loss<span class="bz-r">'+esc(rangeTxt)+"</span></h3>"+plH+"</section></div>"+
