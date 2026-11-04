@@ -10,12 +10,13 @@
 .sku-bulk{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:0 0 12px}.sku-bulk select{width:auto;min-width:180px}.sku-bulk span{font-size:13px;color:#4b5b72;font-weight:700}#brandBar{margin-top:6px}</style>
 <link rel="stylesheet" href="erp-shell.css">
 <script src="erp-shell.js" data-auto defer></script>
+<script src="master-popup.js"></script>
 </head>
 <body>
 <header><div><h1>LUXURY WRIST BRAND</h1><small>ERP / SKU Master Management</small></div><a href="dashboard.html">← Dashboard</a></header>
 <main>
 <div id="message" class="message" role="alert"></div>
-<section class="panel"><h2 id="formTitle">Add New SKU</h2>
+<section class="panel" id="skuFormPanel"><h2 id="formTitle">Add New SKU</h2>
 <form id="skuForm"><div class="fields">
 <div><label for="skuName">SKU Name *</label><input id="skuName" required maxlength="200" placeholder="e.g. 300ML THUMS UP 1X24"></div>
 <div id="companyField" hidden><label for="company">Company / Brand</label><select id="company"><option value="">— No company —</option></select></div>
@@ -28,18 +29,18 @@
 <div><label for="weight" id="weightLab">Unit Weight per Case (KG)</label><input id="weight" type="number" min="0" step="0.001" placeholder="e.g. 12.500" disabled></div>
 <div><label for="palletCases" id="palletLab">CS per Pallet</label><input id="palletCases" type="number" min="1" max="100000" step="1" placeholder="e.g. 117" disabled></div>
 <div><label for="active">Status</label><select id="active"><option value="true">Active</option><option value="false">Inactive</option></select></div>
-</div><div class="actions"><button id="saveBtn" type="submit">Save SKU</button><button class="secondary" id="clearBtn" type="button">Clear / New SKU</button></div></form>
+</div><div class="actions"><button id="saveBtn" type="submit">Save SKU</button><button class="secondary" id="clearBtn" type="button">Clear</button></div></form>
 
 <small class="hint" id="weightHint"></small>
 <small class="hint" id="palletHint"></small></section>
-<section class="panel"><h2>Excel Import / Export<button type="button" class="erp-i" aria-label="Info" title="Info" data-tip="Export downloads the full SKU list to Excel. Edit it, or fill new SKUs in the Template, then Import. Rows are matched by SKU Name: a new name creates an SKU, an existing name updates it. Blank cells keep the saved value.">i</button></h2>
+<section class="panel sku-extra" id="xlBox" hidden><h2>Excel Import / Export<button type="button" class="erp-i" aria-label="Info" title="Info" data-tip="Export downloads the full SKU list to Excel. Edit it, or fill new SKUs in the Template, then Import. Rows are matched by SKU Name: a new name creates an SKU, an existing name updates it. Blank cells keep the saved value.">i</button></h2>
 
 <div id="xlPanel" style="margin-top:10px"></div></section>
-<section class="panel" id="bulkPanel" hidden><h2>Bulk Add SKUs<button type="button" class="erp-i" aria-label="Info" title="Info" data-tip="Copy two columns from Excel and paste here: CATEGORY · SKU (a third column, PCS/Case, is optional). A blank category uses the category from the row above. If PCS/Case is missing, it is taken from the Rate &amp; Scheme pack. For SKUs that already exist, only the category is updated.">i</button></h2>
+<section class="panel sku-extra" id="bulkPanel" hidden><h2>Bulk Add SKUs<button type="button" class="erp-i" aria-label="Info" title="Info" data-tip="Copy two columns from Excel and paste here: CATEGORY · SKU (a third column, PCS/Case, is optional). A blank category uses the category from the row above. If PCS/Case is missing, it is taken from the Rate &amp; Scheme pack. For SKUs that already exist, only the category is updated.">i</button></h2>
 
 <textarea id="bulkText" rows="8" style="width:100%;margin-top:8px;font:13px monospace" placeholder="250ML CSD&#9;300ML TH MRP.20&#10;&#9;250ML SP MRP.20"></textarea>
 <div class="actions"><button type="button" class="secondary" id="bulkCheck">Check List</button><button type="button" id="bulkSave" disabled>Add / Update SKUs</button><span id="bulkInfo" class="hint"></span></div></section>
-<section class="panel"><div class="toolbar"><div><h2 style="margin-bottom:5px">SKU List</h2><span id="status">Loading...</span></div><input id="search" placeholder="Search SKU name or HSN..."></div>
+<section class="panel"><div class="toolbar"><div><h2 style="margin-bottom:5px">SKU List</h2><span id="status">Loading...</span></div><input id="search" placeholder="Search SKU name or HSN..."><div class="sku-btns" id="skuBtns"><button type="button" class="secondary" id="bulkBtn" data-sx="bulkPanel" hidden>Bulk add</button><button type="button" class="secondary" data-sx="xlBox">⬇⬆ Excel</button></div></div>
 <div id="brandBar" hidden><div id="brandChips"></div><div class="sku-bulk"><select id="unitFilter" aria-label="Unit"><option value="">All units</option><option value="CASE">Cases only</option><option value="BOX">IC only</option></select></div><div class="sku-bulk" id="bulkCo" hidden><span id="bulkCnt">0 selected</span><select id="bulkCoSel"><option value="">— No company —</option></select><button type="button" id="bulkCoBtn" disabled>Set company of selected SKUs</button></div></div>
 <div class="table-wrap"><table><thead><tr><th class="co-col" hidden><input type="checkbox" id="pickAll" aria-label="Select all shown"></th><th class="co-col" hidden>Company</th><th class="co-col" hidden>Unit</th><th>Category</th><th>SKU Name</th><th>HSN</th><th>PCS/Case</th><th>Unit Wt/Case KG</th><th>CS/Pallet · IC/Carton</th><th>GST %</th><th>MRP ₹</th><th>Status</th><th>Action</th></tr></thead><tbody id="rows"><tr><td colspan="10">Loading...</td></tr></tbody></table></div></section>
 </main>
@@ -88,7 +89,7 @@ function addCell(row,value){const cell=document.createElement('td');cell.textCon
 function render(){const q=$('search').value.toLowerCase().trim();const matches=skus.filter(x=>(!coOn||!$('unitFilter').value||unitOf(x)===$('unitFilter').value)&&(!coOn||!brand||(brand==='none'?!x.company_id:x.company_id===brand))&&(String(x.sku_name||'').toLowerCase().includes(q)||String(x.hsn_code||'').toLowerCase().includes(q)||String(x.category||'').toLowerCase().includes(q)||coName(x.company_id).toLowerCase().includes(q)));shown=matches;if(coOn)pickInfo();const body=$('rows');body.replaceChildren();$('status').textContent=`${matches.length} shown / ${skus.length} total`;
 if(!matches.length){const tr=document.createElement('tr');const td=addCell(tr,skus.length?'No matching SKUs.':'No SKUs found.');td.colSpan=10+(coOn?3:0);body.appendChild(tr);return;}
 for(const item of matches){const tr=document.createElement('tr');if(coOn){const pk=document.createElement('td'),cb=document.createElement('input');cb.type='checkbox';cb.checked=picked.has(item.id);cb.disabled=!canEdit;cb.setAttribute('aria-label','Select '+item.sku_name);cb.onchange=()=>{cb.checked?picked.add(item.id):picked.delete(item.id);pickInfo()};pk.append(cb);tr.append(pk);const c=coById(item.company_id),cc=addCell(tr,c?c.name:'—');if(c)cc.style.cssText='color:'+c.color+';font-weight:700';const uc=addCell(tr,(unitOf(item)==='BOX'?'IC':'Case')+(item.pack_unit?' (own)':''));if(unitOf(item)==='BOX')uc.style.fontWeight='700';}addCell(tr,item.category);addCell(tr,item.sku_name);addCell(tr,item.hsn_code);addCell(tr,item.pcs_per_case);addCell(tr,item.unit_weight_kg);addCell(tr,item.cases_per_pallet);addCell(tr,item.gst_rate);addCell(tr,item.mrp_per_case);addCell(tr,item.is_active===false?'Inactive':'Active');const td=document.createElement('td');const btn=document.createElement('button');btn.type='button';btn.textContent='Edit';btn.disabled=!canEdit;btn.addEventListener('click',()=>editSku(item.id));td.appendChild(btn);tr.appendChild(td);body.appendChild(tr);}}
-function editSku(id){const x=skus.find(item=>item.id===id);if(!x)return;editingId=id;$('skuName').value=x.sku_name||'';$('category').value=x.category||'';$('hsn').value=x.hsn_code||'';$('pcs').value=x.pcs_per_case??'';$('weight').value=x.unit_weight_kg??'';$('palletCases').value=x.cases_per_pallet??'';$('gst').value=x.gst_rate??'';$('mrp').value=x.mrp_per_case??'';$('active').value=String(x.is_active!==false);$('company').value=x.company_id||'';$('packUnit').value=x.pack_unit||'';unitLabels();$('formTitle').textContent='Edit SKU';$('saveBtn').textContent='Update SKU';window.scrollTo({top:0,behavior:'smooth'});}
+function editSku(id){const x=skus.find(item=>item.id===id);if(!x)return;editingId=id;$('skuName').value=x.sku_name||'';$('category').value=x.category||'';$('hsn').value=x.hsn_code||'';$('pcs').value=x.pcs_per_case??'';$('weight').value=x.unit_weight_kg??'';$('palletCases').value=x.cases_per_pallet??'';$('gst').value=x.gst_rate??'';$('mrp').value=x.mrp_per_case??'';$('active').value=String(x.is_active!==false);$('company').value=x.company_id||'';$('packUnit').value=x.pack_unit||'';unitLabels();$('formTitle').textContent='Edit SKU';$('saveBtn').textContent='Update SKU';window.MP&&MP.open();}
 // SKU -> Rate & Scheme rate group, so slab rate on PO Entry comes from this one SKU Master.
 async function loadRateGroups(){
   if(!canEdit)return;
@@ -116,7 +117,7 @@ unitOn=await hasCol('pack_unit');
 await loadCompanies(await hasCol('company_id'));
 $('category').disabled=!categoryColumnAvailable||!canEdit;$('category').placeholder=categoryColumnAvailable?'e.g. 250ML CSD':'Run lwb_sku_category_setup.sql';
 $('categoryList').replaceChildren(...[...new Set(skus.map(x=>x.category).filter(Boolean))].sort().map(c=>new Option(c)));
-$('bulkPanel').hidden=!canEdit;
+$('bulkBtn').hidden=!canEdit;
 $('weight').disabled=!weightColumnAvailable||!canEdit;
 $('palletCases').disabled=!palletColumnAvailable||!canEdit;
 $('palletHint').textContent=palletColumnAvailable
@@ -153,7 +154,7 @@ if(mrpColumnAvailable){
   payload.mrp_per_case=mrp===null?null:Math.round(mrp*100)/100;
 }
 const oldName=editingId?(skus.find(x=>x.id===editingId)||{}).sku_name:'';
-$('saveBtn').disabled=true;try{let query=editingId?db.from('sku_master').update(payload).eq('id',editingId):db.from('sku_master').insert(payload);const {error}=await query;if(error)throw error;const rgErr=await saveRateGroup(oldName,name);resetForm();await loadRateGroups();await loadSkus();notice('SKU saved successfully.'+rgErr,!!rgErr);}catch(e){notice('Save failed: '+e.message,true);}finally{$('saveBtn').disabled=!canEdit;}}
+$('saveBtn').disabled=true;try{let query=editingId?db.from('sku_master').update(payload).eq('id',editingId):db.from('sku_master').insert(payload);const {error}=await query;if(error)throw error;const rgErr=await saveRateGroup(oldName,name);resetForm();window.MP&&MP.close();await loadRateGroups();await loadSkus();notice('SKU saved successfully.'+rgErr,!!rgErr);}catch(e){notice('Save failed: '+e.message,true);}finally{$('saveBtn').disabled=!canEdit;}}
 /* Bulk Add: "CATEGORY <tab> SKU [<tab> PCS/Case]" lines pasted from Excel. */
 const normSku=v=>String(v||'').replace(/\s+/g,' ').trim().toUpperCase();
 let bulkPlan=null;
@@ -257,5 +258,14 @@ try{db=window.supabase.createClient(SUPABASE_URL,SUPABASE_PUBLISHABLE_KEY);const
 for(const control of $('skuForm').elements)control.disabled=!canEdit;if(!canEdit)notice('View only: Admin / Manager can change SKU Master.');await loadRateGroups();await loadSkus();}catch(e){notice('Connection failed: '+e.message,true);}}
 init();
 </script>
+<script>
+// List first; add / edit SKU in a popup; Bulk add and Excel behind buttons (4 Nov 2026).
+window.MP=LWBMasterPopup.mount({panel:'skuFormPanel',bar:'skuBtns',newLabel:'+ New SKU',onNew:()=>resetForm(),canNew:()=>canEdit,cancelAfter:'clearBtn',cards:'#rows',mainCol:4});
+document.querySelectorAll('[data-sx]').forEach(b=>b.addEventListener('click',()=>{const p=$(b.dataset.sx),show=p.hidden;
+  document.querySelectorAll('.sku-extra').forEach(x=>x.hidden=true);document.querySelectorAll('[data-sx]').forEach(x=>x.classList.remove('on'));
+  if(show){p.hidden=false;b.classList.add('on');p.scrollIntoView({behavior:'smooth',block:'start'})}}));
+</script>
+<style>.sku-btns{display:flex;gap:6px;flex-wrap:nowrap}.sku-btns button{padding:8px 11px;font-size:13px;white-space:nowrap}.sku-btns button.on{background:#002f37;color:#fff}
+@media(max-width:700px){.sku-btns{width:100%}.sku-btns button{flex:1;padding:8px 4px;font-size:12px}}</style>
 </body>
 </html>

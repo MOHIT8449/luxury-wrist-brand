@@ -90,8 +90,10 @@
     // Purchase in one place (Mohit, 2 Nov 2026): entry, the list of every purchase bill (like the PO list),
     // damage claims, and the scanned sales bill PDFs uploaded every night.
     {group:"Purchase",items:[
-      {t:"Purchase Entry (Goods Inward)",h:"goods-inward.html",i:"inbox",r:"admin manager",k:"goods inward purchase bill new"},
-      {t:"Purchase List",h:"purchase-register.html",i:"note",r:"admin manager warehouse accounts",k:"purchase register bills verify damage photo",pt:"Purchase List / Register",vo:"accounts"},
+      // One "Purchase" item (Mohit, 4 Nov 2026): the list, with "+ New Purchase" on top. Purchase Entry is
+      // not drawn in the side menu (nm) but stays in search and Manage Users; its list item is lit (par).
+      {t:"New Purchase (Goods Inward)",h:"goods-inward.html",i:"inbox",r:"admin manager",k:"goods inward purchase bill new entry",pt:"Purchase Entry (Goods Inward)",nm:"admin manager",par:"purchase-register.html"},
+      {t:"Purchase",h:"purchase-register.html",i:"note",r:"admin manager warehouse accounts",k:"purchase register bills verify damage photo",pt:"Purchase List / Register",vo:"accounts"},
       {t:"Purchase Claims",h:"purchase-claims.html",i:"inbox",r:"admin manager",k:"damage leakage shortage claim"},
       {t:"Sales Bill PDFs",h:"sales-bill-scans.html",i:"bill",r:"admin accounts manager",k:"scan pdf sales bill invoice register upload",vo:"accounts",nm:"accounts"}]},
     {group:"Dispatch",items:[

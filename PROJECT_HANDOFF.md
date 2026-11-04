@@ -4,6 +4,15 @@
 **Purpose:** Continue the same ERP project from a new ChatGPT conversation without restarting or losing the agreed requirements.
 **Status:** Active development / verification. Do not assume all modules are completed or fully tested.
 
+## One "Purchase" menu item; Supplier and SKU Master list + popup (4 Nov 2026)
+
+- Mohit: same as PO / Sales for Purchase, and the other masters list-first with the form in a popup. No SQL.
+- Menu: "Purchase Entry (Goods Inward)" is `nm` for admin / manager with `par:"purchase-register.html"`; the list item is now "Purchase" (it already had "+ New Purchase"). Goods Inward has a "📋 Purchase List" link.
+- New `master-popup.js` (`LWBMasterPopup.mount({panel, bar, newLabel, onNew, canNew, cancelAfter, cards, mainCol})`): moves a page's form section into a popup (✕ / Esc / backdrop / Cancel), adds "+ New …" to the list header, `#new` opens it, and on a phone turns the list table into cards (labels from the table head). Two-column form and sticky Save row on the phone.
+- Supplier Master and SKU Master use it (Edit opens the popup, a good save closes it). SKU Master: Bulk add and Excel are buttons in the list row (one open at a time). Customer / Party Master keeps its own popup from the earlier change.
+- Checked with a mocked database at 1366 px and 390 px: no side scroll. Not yet checked on live data.
+- Still to do from `page-merge/merge-plan.md`: Fixed Assets / Users popups, Returns / Tally / Inventory merges.
+
 ## PO Filled %, one "PO / Sales" menu item, Party Master popup (4 Nov 2026)
 
 - Mohit: show how much of a salesman's order was really loaded (order 100, loaded 90 = "90% filled"), merge New + List pages so the menu is shorter, and Party Master = list with "+ New Party" in a popup. No SQL.
