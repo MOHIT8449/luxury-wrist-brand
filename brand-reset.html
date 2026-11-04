@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Brand Data Reset | Luxury Wrist Brand ERP</title>
+  <script src="erp-date.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <link rel="stylesheet" href="erp-shell.css">
+  <link rel="stylesheet" href="sales.css">
+  <script src="erp-shell.js"></script>
+  <script src="sales-common.js"></script>
+  <style>
+    /* Brand Data Reset (lwb_brand_reset_setup.sql): Admin removes one brand's data till today for a fresh start. */
+    .br-wrap{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:10px;align-items:start}
+    .br-card{background:#fff;border:1px solid var(--erp-line,#dfe4ea);border-radius:8px;padding:10px 12px;min-width:0}
+    .br-card h2{font-size:14px;margin:0 0 6px}
+    .br-top{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:8px}
+    .br-top select{height:34px;border:1px solid var(--erp-line,#d6dde6);border-radius:6px;padding:0 8px;font:inherit;font-size:13.5px;max-width:100%}
+    .br-t{width:100%;border-collapse:collapse;font-size:13px}
+    .br-t th{font-size:11.5px;text-align:left;color:#556;font-weight:600;padding:5px 6px;border-bottom:1px solid #e3e7ec;background:#f7f8fa}
+    .br-t td{padding:5px 6px;border-bottom:1px solid #eef1f4;vertical-align:top;overflow-wrap:anywhere}
+    .br-t td.n,.br-t th.n{text-align:right;white-space:nowrap}
+    .br-t td small{display:block;color:#6b7785;font-size:11.5px}
+    .br-warn{background:#fff6e5;border:1px solid #f3d29a;color:#7a4b00;border-radius:6px;padding:7px 9px;font-size:12.5px;margin:8px 0 0}
+    .br-stop{background:#fdecef;border:1px solid #f2b8c3;color:#9b1c33;border-radius:6px;padding:7px 9px;font-size:12.5px;margin:8px 0 0}
+    .br-ok{background:#e6f4ec;border:1px solid #b5dcc5;color:#13623a;border-radius:6px;padding:7px 9px;font-size:13px;margin:8px 0 0}
+    .br-warn ul,.br-stop ul{margin:4px 0 0;padding-left:18px}
+    details.br-more{margin-top:8px;font-size:12.5px}
+    details.br-more summary{cursor:pointer;color:#2362a4;font-weight:600}
+    .br-chips{display:flex;flex-wrap:wrap;gap:4px;margin-top:6px}
+    .br-chips span{background:#f3f5f8;border:1px solid #e3e7ec;border-radius:10px;padding:1px 8px;font-size:11.5px}
+    .br-confirm label{display:block;font-size:12.5px;color:#445;margin:4px 0}
+    .br-confirm input{width:100%;height:36px;border:1.5px solid #e3e7ec;border-radius:6px;padding:0 8px;font:inherit;font-size:14px;text-transform:uppercase}
+    .br-confirm input:focus{border-color:var(--erp-red,#c8102e);outline:none}
+    .br-row{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+    .br-row .sl-btn{flex:1 1 auto}
+    .br-bar{height:8px;background:#eef1f4;border-radius:4px;overflow:hidden;margin-top:8px}
+    .br-bar i{display:block;height:100%;width:0;background:var(--erp-red,#c8102e);transition:width .2s}
+    .br-next{margin:6px 0 0;padding-left:18px;font-size:13px}
+    .br-next li{margin:3px 0}
+    .mut{color:#6b7785;font-size:12px}
+    @media(max-width:900px){.br-wrap{grid-template-columns:minmax(0,1fr)}}
+  </style>
+</head>
+<body>
+  <div id="loading" class="status">Checking account access...</div>
+  <main id="page" class="erp-main" hidden>
+    <div class="erp-pagehead"><h1>Brand Data Reset<button type="button" class="erp-i" aria-label="Info" title="Info" data-tip="Removes everything done till today in one brand (POs / slips, bills, payments, purchase bills, stock, company payments) so opening outstanding, payments and stock can be entered fresh. SKU Master, rate lists, parties and other brands stay. Every removed row is kept as a backup you can download.">i</button></h1></div>
+    <div id="status" class="sl-msg" hidden></div>
+    <div class="br-wrap">
+      <div class="br-card">
+        <div class="br-top"><select id="brand" aria-label="Brand"></select>
+          <button type="button" class="sl-btn ghost small" id="refresh">↻ Check again</button><span id="when" class="mut"></span></div>
+        <div id="preview" class="mut">Pick a brand.</div>
+      </div>
+      <div class="br-card br-confirm" id="side">
+        <h2>Delete and start fresh</h2>
+        <p class="mut" style="margin:0 0 4px">Take a screenshot or Excel of the outstanding first if you still need old figures. Removed rows are kept as a backup (download after the reset).</p>
+        <label for="typed">Type the brand name <b id="bName">—</b> to confirm</label>
+        <input id="typed" autocomplete="off" spellcheck="false">
+        <div class="br-row"><button type="button" class="sl-btn" id="go" disabled>🗑 Delete brand data</button></div>
+        <div class="br-bar" id="bar" hidden><i></i></div>
+        <div id="prog" class="mut" style="margin-top:6px"></div>
+        <div id="after"></div>
+      </div>
+    </div>
+  </main>
+  <script>
+    const S=LWBSales,{client,el,esc}=S;
+    const setupMsg="Run lwb_brand_reset_setup.sql first (it runs by itself when the PR is merged).";
+    const errText=e=>/lwb_brand_reset/.test(e.message||"")&&/function|schema cache/.test(e.message||"")?setupMsg:(e.message||String(e));
+    const money=n=>"₹"+Number(n||0).toLocaleString("en-IN",{maximumFractionDigits:0});
+    const num=n=>Number(n||0).toLocaleString("en-IN");
+    const TBL={orders:"POs",order_items:"PO SKU lines",dispatch_assignments:"Transport / loading",lwb_delivery_reports:"Delivery reports",
+      lwb_quick_slips:"Rajnigandha slips",lwb_rate_approvals:"Rate OK requests",lwb_order_landing:"Landing kept on slips",
+      lwb_tally_invoices:"Tally bill numbers",lwb_internal_bills:"ERP bills",lwb_tally_notes:"Credit / debit notes",
+      lwb_tally_payments:"Payments received",lwb_party_allocs:"Payment split over bills",lwb_party_opening_balances:"Party opening balances",
+      lwb_goods_inward:"Purchase bills",lwb_goods_inward_items:"Purchase bill lines",lwb_purchase_checks:"Purchase checks / claims",
+      lwb_purchase_check_items:"Purchase claim lines",lwb_inventory_movements:"Stock movements",lwb_stock_moves:"Stock transfer / damage",
+      lwb_stock_audit_lines:"Night audit lines",lwb_stock_transit:"Goods in transit",lwb_company_payments:"Payments to company",
+      erp_notifications:"Bells / notifications",lwb_driver_delivery_returns:"Driver returns",lwb_driver_delivery_return_items:"Driver return lines",
+      sales_returns:"Sales returns",sales_return_items:"Sales return lines",lwb_bill_changes:"Bill change requests",lwb_acc_cheques:"Cheque details",
+      lwb_acc_verify:"Bank checks",lwb_order_pickup:"Self pickup details"};
+    const PART={pos:"POs and everything linked",party_payments:"Party payments + opening balances",purchases:"Purchase bills",stock:"Stock",company_payments:"Payments to company"};
+    let companies=[],prev=null,busy=false;
+    function msg(t,bad){el("status").hidden=!t;el("status").textContent=t||"";el("status").className="sl-msg"+(bad?" error":"")}
+    const co=()=>companies.find(c=>c.id===el("brand").value);
+
+    function render(){
+      const p=prev;if(!p){el("preview").innerHTML='<span class="mut">Pick a brand.</span>';return}
+      const row=(l,n,a,sub)=>'<tr><td>'+l+(sub?'<small>'+sub+'</small>':'')+'</td><td class="n">'+num(n)+'</td><td class="n">'+(a==null?"—":money(a))+'</td></tr>';
+      const range=p.pos.n?LWBDate.d(p.pos.from)+" to "+LWBDate.d(p.pos.to):"";
+      let h='<table class="br-t"><thead><tr><th>What goes</th><th class="n">Count</th><th class="n">Amount</th></tr></thead><tbody>'+
+        row("POs / slips with everything linked",p.pos.n,p.pos.amount,range+(range?" · ":"")+"SKU lines, loading, delivery, bills, returns, bells")+
+        row("Payments received against these POs",p.po_payments.n,p.po_payments.amount)+
+        row("Party payments (no PO)",p.party_payments.n,p.party_payments.amount,"Only parties who bought just "+esc(p.company.name)+" ("+p.only_parties+")")+
+        row("Party opening balances",p.opening.n,p.opening.amount,"Same parties only")+
+        row("Purchase bills (Goods Inward)",p.purchases.n,p.purchases.amount,"With purchase checks / claims")+
+        row("Stock of "+p.skus+" SKUs becomes 0",(p.stock||[]).length,null,"Opening, inward, dispatch, returns, transfers, audit lines, goods in transit")+
+        row("Payments made to the company",p.company_payments.n,p.company_payments.amount,"Accounts Dashboard cash / bank entries stay")+
+        '</tbody></table>';
+      if(p.mixed_orders.length||p.mixed_inwards.length){
+        h+='<div class="br-stop"><b>Reset is stopped:</b> these have '+esc(p.company.name)+' and another brand together. Delete or split them first.<ul>'+
+          p.mixed_orders.map(o=>'<li>PO '+esc(o.order_no)+' · '+esc(o.party)+' · '+esc(LWBDate.d(o.date))+' · other: '+esc(o.other_skus)+'</li>').join("")+
+          p.mixed_inwards.map(g=>'<li>Purchase '+esc(g.invoice_no)+' · '+esc(g.supplier)+' · '+esc(LWBDate.d(g.date))+'</li>').join("")+'</ul></div>';
+      }
+      if(p.mixed_parties.length){
+        const adv=new Map((p.mixed_advance||[]).map(a=>[a.party,a.amount]));
+        h+='<div class="br-warn"><b>'+p.mixed_parties.length+(p.mixed_parties.length===1?' party also buys':' parties also buy')+' another brand.</b> Their party payments and opening balance stay as they are (one balance per party). Check them by hand after the reset.'+
+          (adv.size?' Money of these parties set against '+esc(p.company.name)+' bills becomes advance again:':'')+'<ul>'+
+          p.mixed_parties.slice(0,30).map(x=>'<li>'+esc(x.party)+(adv.has(x.party)?' · '+money(adv.get(x.party))+' becomes advance':'')+'</li>').join("")+
+          (p.mixed_parties.length>30?'<li>… '+(p.mixed_parties.length-30)+' more</li>':'')+'</ul></div>';
+      }
+      if(p.bank_lines) h+='<div class="br-warn">'+p.bank_lines+' bank statement line(s) are matched to a payment that will go. Match them again on Bank Statement.</div>';
+      if((p.stock||[]).length) h+='<details class="br-more"><summary>Stock today ('+p.stock.length+' SKUs)</summary><div class="br-chips">'+
+        p.stock.map(s=>'<span>'+esc(s.sku)+': '+num(Math.floor(s.pcs/(s.per_case||1)))+(s.per_case>1?' box':' pcs')+'</span>').join("")+'</div></details>';
+      const lk=Object.entries(p.linked||{}).sort((a,b)=>b[1]-a[1]);
+      if(lk.length) h+='<details class="br-more"><summary>Every table ('+num(lk.reduce((a,x)=>a+x[1],0))+' rows)</summary><div class="br-chips">'+
+        lk.map(([t,n])=>'<span title="'+esc(t)+'">'+esc(TBL[t]||t)+': '+num(n)+'</span>').join("")+'</div></details>';
+      if(p.last) h+='<div class="br-ok">Last reset '+esc(LWBDate.d(p.last.at))+' by '+esc(p.last.by||"Admin")+'. <a href="#" data-dl="'+p.last.id+'">Download its backup</a></div>';
+      el("preview").innerHTML=h;
+      checkTyped();
+    }
+    function checkTyped(){
+      const c=co(),p=prev;
+      const ok=!!(c&&p&&!busy&&el("typed").value.trim().toUpperCase()===c.name.trim().toUpperCase()&&!p.mixed_orders.length&&!p.mixed_inwards.length);
+      el("go").disabled=!ok;
+    }
+    async function load(){
+      const c=co();if(!c)return;
+      el("bName").textContent=c.name;el("go").textContent="🗑 Delete "+c.name+" data";
+      el("preview").innerHTML='<span class="mut">Counting...</span>';msg("");
+      const {data,error}=await client.rpc("lwb_brand_reset_preview",{p_company:c.id});
+      if(error){prev=null;el("preview").innerHTML="";msg(errText(error),true);return}
+      prev=data;el("when").textContent="as of "+new Date().toLocaleTimeString("en-IN",{hour:"2-digit",minute:"2-digit"});
+      render();
+      if(data.running) el("prog").textContent="A reset was started and not finished. Type the name and press the button to finish it.";
+    }
+    async function download(id){
+      const rows=[];let after=0,head=null;
+      for(;;){
+        const {data,error}=await client.rpc("lwb_brand_reset_backup",{p_reset:id,p_after:after});
+        if(error){msg(errText(error),true);return}
+        head=data.reset;rows.push(...data.rows);if(data.rows.length<2000)break;after=data.rows[data.rows.length-1].n;
+      }
+      const blob=new Blob([JSON.stringify({reset:head,rows},null,1)],{type:"application/json"});
+      const a=document.createElement("a");a.href=URL.createObjectURL(blob);
+      a.download="backup-"+String(head&&head.company_name||"brand").toLowerCase().replace(/[^a-z0-9]+/g,"-")+"-reset-"+id+".json";
+      document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},500);
+    }
+    el("preview").addEventListener("click",e=>{const a=e.target.closest("[data-dl]");if(a){e.preventDefault();download(Number(a.dataset.dl))}});
+    el("after").addEventListener("click",e=>{const a=e.target.closest("[data-dl]");if(a){e.preventDefault();download(Number(a.dataset.dl))}});
+    el("typed").addEventListener("input",checkTyped);
+    el("brand").addEventListener("change",()=>{el("typed").value="";el("after").innerHTML="";el("prog").textContent="";load()});
+    el("refresh").onclick=load;
+
+    el("go").onclick=async()=>{
+      const c=co();if(!c||!prev)return;
+      if(!await ERPShell.confirm("Delete ALL "+c.name+" data till today?\n\nPOs, bills, payments, purchase bills, stock and company payments of "+c.name+" go. Other brands stay.\nThis can not be undone from the ERP (a backup copy is kept).",{danger:true}))return;
+      busy=true;checkTyped();el("typed").disabled=true;el("brand").disabled=true;el("after").innerHTML="";
+      const bar=el("bar"),fill=bar.querySelector("i");bar.hidden=false;fill.style.width="3%";
+      const st=await client.rpc("lwb_brand_reset_start",{p_company:c.id,p_typed_name:el("typed").value});
+      if(st.error){busy=false;el("typed").disabled=false;el("brand").disabled=false;bar.hidden=true;msg(errText(st.error),true);checkTyped();return}
+      const id=st.data,total=Math.max(1,prev.pos.n);let r=null,guard=0;
+      while(guard++<2000){
+        const {data,error}=await client.rpc("lwb_brand_reset_step",{p_reset:id});
+        if(error){msg(errText(error)+" — nothing of this step changed. Press the button again to continue.",true);break}
+        r=data;if(r.done)break;
+        const done=r.part==="pos"?(1-r.left/total)*70:r.part==="party_payments"?75:r.part==="purchases"?82:r.part==="stock"?92:97;
+        fill.style.width=Math.max(5,Math.round(done))+"%";
+        el("prog").textContent="Removing: "+(PART[r.part]||r.part)+(r.part==="pos"?" · "+r.left+" POs left":"")+"...";
+      }
+      busy=false;el("typed").disabled=false;el("brand").disabled=false;
+      if(r&&r.done){
+        fill.style.width="100%";setTimeout(()=>{bar.hidden=true},600);el("prog").textContent="";el("typed").value="";
+        const cnt=r.counts||{},rows=Object.values(cnt).reduce((a,n)=>a+Number(n),0);
+        el("after").innerHTML='<div class="br-ok"><b>'+esc(c.name)+' data removed.</b> '+num(cnt.orders||0)+' POs, '+num(cnt.lwb_tally_payments||0)+' payments, '+
+          num(cnt.lwb_goods_inward||0)+' purchase bills, '+num(cnt.lwb_inventory_movements||0)+' stock rows ('+num(rows)+' rows in all).</div>'+
+          '<div class="br-row"><button type="button" class="sl-btn ghost" data-dl="'+id+'">⬇ Download backup</button></div>'+
+          '<h2 style="margin-top:10px">Now enter fresh</h2><ol class="br-next">'+
+          '<li><a href="opening-stock.html">Opening Stock</a> — today\'s box count per SKU</li>'+
+          '<li><a href="party-ledger.html#openingPanel">Party opening balance</a> — each party\'s outstanding</li>'+
+          '<li><a href="party-billing.html">Billing &amp; Outstanding</a> — payments from today</li>'+
+          '<li><a href="companies.html">Company / Brand</a> — what we still owe the company</li></ol>';
+      }
+      await load();
+    };
+
+    (async()=>{
+      const me=await S.start(["admin"]);if(!me)return;
+      el("loading").hidden=true;el("page").hidden=false;
+      const {data,error}=await client.from("lwb_companies").select("id,name,quick_slip").order("name");
+      if(error){msg(errText(error),true);return}
+      companies=data||[];
+      const pick=new URLSearchParams(location.search).get("brand");
+      const def=companies.find(c=>pick&&c.name.toUpperCase()===pick.toUpperCase())||companies.find(c=>c.quick_slip===true)||companies[0];
+      el("brand").innerHTML=companies.map(c=>'<option value="'+esc(c.id)+'"'+(def&&c.id===def.id?" selected":"")+'>'+esc(c.name)+'</option>').join("");
+      load();
+    })();
+  </script>
+</body>
+</html>
