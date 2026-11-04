@@ -4,6 +4,14 @@
 **Purpose:** Continue the same ERP project from a new ChatGPT conversation without restarting or losing the agreed requirements.
 **Status:** Active development / verification. Do not assume all modules are completed or fully tested.
 
+## Returns and Inventory page tabs; Fixed Assets and Users popups (4 Nov 2026)
+
+- Side menu: one "Returns" item (Driver Returns). Sales Return and Credit Note are hidden from the menu (still in search / Manage Users) and open as tabs on top of the Returns pages.
+- One "Inventory" item. Goods in Transit, Stock Transfer, Night Audit and Opening are tabs on top of Inventory (`PAGE_TABS` + `pageTabs()` in erp-shell.js; a tab shows only if the login may open that page). `par` lights the parent menu item.
+- Fixed Assets: list first, "+ New Asset" opens the form in a popup (master-popup.js). Edit opens the same popup; it closes after a good save.
+- Manage Users: "+ New User" opens the create-login form in a popup (stays open after Create so the login details can be copied).
+- Tally Bill / Tally Check were already hidden from the menu, no change.
+
 ## One "Purchase" menu item; Supplier and SKU Master list + popup (4 Nov 2026)
 
 - Mohit: same as PO / Sales for Purchase, and the other masters list-first with the form in a popup. No SQL.
