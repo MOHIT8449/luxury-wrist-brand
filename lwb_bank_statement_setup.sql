@@ -385,7 +385,8 @@ BEGIN
       IF v_type IN ('WITHDRAW','OUT') AND s.debit = 0 THEN RAISE EXCEPTION 'This is money into the bank'; END IF;
       v_mode := CASE WHEN s.narration ~* '(^|[^A-Z])UPI' THEN 'UPI' ELSE 'BANK' END;
       v_ref := CASE WHEN length(public.lwb_bank_norm(s.ref_no)) >= 4 AND public.lwb_bank_norm(s.ref_no) !~ '^0+$' THEN s.ref_no END;
-      v_remark := left('Bank statement ' || to_char(s.txn_date,'DD/MM/YYYY') || coalesce(' · ' || s.narration,''), 300);
+      -- the remark typed on Book comes first (like Tally narration), then the bank line
+      v_remark := left(coalesce(v_note || ' · ', '') || 'Bank statement ' || to_char(s.txn_date,'DD/MM/YYYY') || coalesce(' · ' || s.narration,''), 300);
 
       IF v_type = 'IGNORE' THEN
         UPDATE public.lwb_bank_stmt_lines SET status = 'IGNORED', how = 'IGNORE', note = v_note, done_by = auth.uid(), done_at = now()

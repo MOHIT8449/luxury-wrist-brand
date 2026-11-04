@@ -48,6 +48,10 @@
     .bs-r{display:grid;grid-template-columns:24px 82px minmax(0,1fr) 116px auto;gap:4px 10px;align-items:center;padding:7px 2px;border-bottom:1px solid var(--erp-line);font-size:13.5px}
     .bs-r.head{font-size:12px;font-weight:700;color:#4b5763;padding:4px 2px;background:#f6f8fb;border-radius:6px}
     .bs-r.sel{background:#eef5ff}
+    .bs-r.cur{outline:2px solid #1769d8;outline-offset:-2px;border-radius:6px;background:#f3f8ff}
+    .bs-keys{font-size:12px;color:var(--erp-muted);margin:0 0 6px}
+    .bs-keys kbd{display:inline-block;border:1px solid var(--erp-line);border-bottom-width:2px;border-radius:4px;padding:0 4px;font:inherit;font-size:11.5px;background:#fff;color:var(--erp-ink)}
+    @media(max-width:760px){.bs-keys{display:none}}
     .bs-r input[type=checkbox]{width:18px;height:18px;margin:0;cursor:pointer}
     .bs-r .d{white-space:nowrap;font-variant-numeric:tabular-nums}
     .bs-r .n{min-width:0;overflow-wrap:anywhere;line-height:1.35}
@@ -153,7 +157,7 @@
       return m.replace(/^.*?ERROR:\s*/,"")};
     const HOW={CONTRA:"Contra (bank transfer)",AUTO:"Matched by itself",MATCH:"Matched",PARTY:"Party payment",DEPOSIT:"Cash deposit",WITHDRAW:"Cash withdrawn",IN:"Other income",OUT:"Expense",IGNORE:"Ignored"};
     const SRC={ENTRY:"Accounts entry",PAYMENT:"Party payment",DRIVER_ONLINE:"Driver money",DRIVER_CASH:"Driver money",OLD:"Old payment"};
-    let D=null,bankId=null,tab="OPEN",dir="all",q="",days=90,sel=new Set(),parties=[],suppliers=[],pending=null,shown=200;
+    let D=null,bankId=null,tab="OPEN",dir="all",q="",days=90,sel=new Set(),parties=[],suppliers=[],cur=0,vis=[],pending=null,shown=200;
 
     function say(t,kind){el("msg").hidden=!t;el("msg").textContent=t||"";el("msg").className="bs-msg"+(kind?" "+kind:"")}
     async function rpc(name,args){const {data,error}=await client.rpc(name,args);if(error)throw Error(errText(error));return data}
@@ -191,11 +195,12 @@
       let list=D.lines.filter(l=>l.status===tab&&(dir==="all"||(dir==="in"?+l.credit>0:+l.debit>0))&&
         (!words.length||words.every(w=>(String(l.narration||"")+" "+(l.ref||"")+" "+(l.party||"")+" "+(+l.credit||+l.debit)).toUpperCase().includes(w))));
       const admin=D.is_admin&&tab==="OPEN";
-      const vis=list.slice(0,shown);
+      vis=list.slice(0,shown);if(cur>=vis.length)cur=Math.max(0,vis.length-1);
       el("body").innerHTML='<div class="bs-filter"><input type="search" id="q" placeholder="Search narration, ref, party, amount" value="'+esc(q)+'" autocomplete="off">'+
         '<select id="dir" aria-label="In or out"><option value="all">In + Out</option><option value="in"'+(dir==="in"?" selected":"")+'>Money in</option><option value="out"'+(dir==="out"?" selected":"")+'>Money out</option></select>'+
         (tab==="OPEN"?"":'<select id="days" aria-label="Days">'+[30,90,180,365].map(n=>'<option value="'+n+'"'+(n===days?" selected":"")+'>Last '+n+' days</option>').join("")+'</select>')+'</div>'+
-        (admin&&list.length?'<div class="bs-hint">Press <b>✍ Book</b> on a line to say whose payment or which expense it is. To book many lines the same way, tick them and use the bar below.</div>':"")+
+        (admin&&list.length?'<div class="bs-keys">Keyboard: <kbd>↑</kbd> <kbd>↓</kbd> line · <kbd>Enter</kbd> book · <kbd>Space</kbd> tick · <kbd>Ctrl</kbd>+<kbd>A</kbd> tick all · <kbd>B</kbd> book ticked · <kbd>/</kbd> search · <kbd>M</kbd> match · <kbd>Esc</kbd> close</div>':"")+
+        (admin&&list.length?'<div class="bs-hint">Press <b>✍ Book</b> on a line, pick or type its category (a new one is added), add a remark, press Enter. To book many lines the same way, tick them and use the bar below.</div>':"")+
         (list.length?'<div class="bs-list"><div class="bs-r head">'+(admin?'<input type="checkbox" id="all" aria-label="Tick all shown"'+(vis.length&&vis.every(l=>sel.has(l.id))?" checked":"")+'>':"<span></span>")+'<span>Date</span><span>Narration</span><span style="text-align:right">Amount</span><span></span></div>'+
           vis.map(l=>row(l,admin)).join("")+'</div>'+(list.length>shown?'<div class="bs-more"><button type="button" class="bs-btn sm" id="more">Show '+Math.min(200,list.length-shown)+' more of '+(list.length-shown)+'</button></div>':"")
         :'<div class="bs-empty">'+(tab==="OPEN"?(D.lines.length?"Suspense is empty. Every line is booked.":"Upload the bank statement (Excel / CSV) to start."):"Nothing here.")+'</div>')+
@@ -210,7 +215,33 @@
       el("body").querySelectorAll("[data-sg]").forEach(b=>b.onclick=()=>suggest(D.lines.find(l=>l.id===b.dataset.sg)));
       el("body").querySelectorAll("[data-undo]").forEach(b=>b.onclick=()=>undo(D.lines.find(l=>l.id===b.dataset.undo),b));
       if(admin)drawBar();
+      paintCur(false);
     }
+    // Keyboard first (accountants work without the mouse): the blue line is the current one.
+    function paintCur(scroll){
+      const rows=el("body").querySelectorAll(".bs-r[data-row]");
+      rows.forEach((r,i)=>r.classList.toggle("cur",i===cur&&tab!=="UP"));
+      if(scroll&&rows[cur])rows[cur].scrollIntoView({block:"nearest"});
+    }
+    document.addEventListener("keydown",e=>{
+      if(!D||tab==="UP"||document.querySelector(".bs-back")||e.defaultPrevented)return;
+      const t=e.target,typing=t&&((t.tagName==="INPUT"&&t.type!=="checkbox")||t.tagName==="SELECT"||t.tagName==="TEXTAREA");
+      if(t&&(t.tagName==="BUTTON"||t.tagName==="A"||t.type==="checkbox")&&(e.key==="Enter"||e.key===" "))return;
+      if(typing){if(t.id==="q"&&(e.key==="ArrowDown"||e.key==="Enter")&&vis.length){e.preventDefault();t.blur();cur=0;paintCur(true)}
+        else if(t.id==="q"&&e.key==="Escape"){t.blur()}return}
+      if(e.altKey||e.metaKey)return;
+      const l=vis[cur],k=e.key;
+      if(k==="ArrowDown"||k==="ArrowUp"){if(!vis.length)return;e.preventDefault();cur=Math.min(vis.length-1,Math.max(0,cur+(k==="ArrowDown"?1:-1)));paintCur(true)}
+      else if(k==="Home"||k==="End"){if(!vis.length)return;e.preventDefault();cur=k==="Home"?0:vis.length-1;paintCur(true)}
+      else if(k==="PageDown"||k==="PageUp"){if(!vis.length)return;e.preventDefault();cur=Math.min(vis.length-1,Math.max(0,cur+(k==="PageDown"?10:-10)));paintCur(true)}
+      else if(k==="/"){e.preventDefault();const q=el("q");if(q){q.focus();q.select()}}
+      else if(!D.is_admin||tab!=="OPEN")return;
+      else if(k==="Enter"&&l&&!e.ctrlKey){e.preventDefault();bookOne(l)}
+      else if(k===" "&&l&&!e.ctrlKey){e.preventDefault();sel.has(l.id)?sel.delete(l.id):sel.add(l.id);if(cur<vis.length-1)cur++;renderTab();paintCur(true)}
+      else if((k==="a"||k==="A")&&e.ctrlKey){e.preventDefault();const all=vis.every(x=>sel.has(x.id));vis.forEach(x=>all?sel.delete(x.id):sel.add(x.id));renderTab()}
+      else if((k==="b"||k==="B")&&!e.ctrlKey&&sel.size){e.preventDefault();const s2=document.getElementById("bType");if(s2)s2.focus()}
+      else if((k==="m"||k==="M")&&!e.ctrlKey&&l&&l.sugg&&l.sugg.length){e.preventDefault();suggest(l)}
+    });
     function guessParty(l){const n=key(l.narration);if(n.length<5)return "";
       let best="";for(const p of parties){const k=key(p);if(k.length>=5&&n.includes(k.slice(0,Math.min(14,k.length)))&&k.length>key(best).length)best=p}return best}
     function row(l,admin){
@@ -227,7 +258,7 @@
         info=[l.party||k.party,l.category&&l.how!=="PARTY"?l.category:(k.category&&l.status==="MATCHED"?k.category:""),k.mode&&l.status==="MATCHED"?k.mode:"",k.date&&k.date!==l.date?"ERP date "+dmy(k.date):"",l.note].filter(Boolean).map(esc).join(" · ");
         if(D.is_admin)x+='<button type="button" class="bs-btn sm" data-undo="'+l.id+'">Undo</button>';
       }
-      return '<div class="bs-r'+(sel.has(l.id)?" sel":"")+'">'+(admin?'<input type="checkbox" data-ck="'+l.id+'" aria-label="Tick"'+(sel.has(l.id)?" checked":"")+'>':"<span></span>")+
+      return '<div class="bs-r'+(sel.has(l.id)?" sel":"")+'" data-row="'+l.id+'">'+(admin?'<input type="checkbox" data-ck="'+l.id+'" aria-label="Tick"'+(sel.has(l.id)?" checked":"")+'>':"<span></span>")+
         '<span class="d">'+dmy(l.date)+'</span><span class="n"><span class="pd">'+dmy(l.date)+' · </span>'+esc(l.narration||"—")+(sub?'<small>'+sub+'</small>':"")+(info?'<small class="lk">→ '+info+'</small>':"")+'</span>'+amt+'<span class="x">'+x+'</span></div>';
     }
 
@@ -236,10 +267,7 @@
         :ins?[["PARTY","Party payment"],["DEPOSIT","Cash deposit"],["IN","Other income (head)"],["IGNORE","Ignore"]]
         :[["OUT","Expense (head)"],["WITHDRAW","Cash withdrawn"],["IGNORE","Ignore"]];
     /* one line at a time, like Tally: Book -> what is it -> name -> Enter */
-    const BOOK_IN=[["PARTY","Party payment"],["DEPOSIT","Cash deposit"],["IN","Other income"],["CONTRA","Contra (from own bank)"],["IGNORE","Ignore"]];
-    const BOOK_OUT=[["SUP","Supplier / Company"],["EXP","Expense"],["AST","Asset purchase"],["WITHDRAW","Cash withdrawn"],["CONTRA","Contra (to own bank)"],["IGNORE","Ignore"]];
     const headNamed=n=>D.categories.find(c=>c.kind==="OUT"&&key(c.name)===key(n));
-    const SPECIAL_OUT=new Set([key("Supplier payment"),key("Asset purchase"),key("Contra (bank transfer)")]);
     function guessSupplier(l){const n=key(l.narration);if(n.length<5)return null;let best=null;
       for(const x of suppliers){const k=key(x.name);if(k.length>=5&&n.includes(k.slice(0,Math.min(12,k.length)))&&(!best||k.length>key(best.name).length))best=x}return best}
     // small list under the box, only the names that match what is typed (not the whole list)
@@ -248,12 +276,12 @@
       let hits=[],hi=-1;
       const draw=()=>{const words=String(inp.value||"").toUpperCase().split(/\s+/).filter(Boolean),all=words.length||o.empty?items():[];
         hits=all.filter(x=>{const k=x.label.toUpperCase();return words.every(w=>k.includes(w))})
-          .sort((x,y)=>(y.label.toUpperCase().startsWith(words[0]||"")-x.label.toUpperCase().startsWith(words[0]||""))||x.label.localeCompare(y.label)).slice(0,o.max||6);
+          .sort((x,y)=>!words.length?0:(y.label.toUpperCase().startsWith(words[0]||"")-x.label.toUpperCase().startsWith(words[0]||""))||x.label.localeCompare(y.label)).slice(0,o.max||6);
         if(hits.length===1&&key(hits[0].label)===key(inp.value))hits=[];
         hi=hits.length?0:-1;
         box.innerHTML=hits.map((x,i)=>'<button type="button" tabindex="-1" data-h="'+i+'"'+(i===hi?' class="on"':"")+'>'+esc(x.label)+(x.sub?'<small>'+esc(x.sub)+'</small>':"")+'</button>').join("");
         box.hidden=!hits.length||document.activeElement!==inp};
-      const pick=i=>{inp.value=hits[i].label;box.hidden=true;hits=[];inp.dispatchEvent(new Event("change"))};
+      const pick=i=>{inp.value=hits[i].label;box.hidden=true;hits=[];inp.dispatchEvent(new Event("change"));inp.dispatchEvent(new Event("pick"))};
       inp.addEventListener("input",draw);inp.addEventListener("focus",draw);
       inp.addEventListener("blur",()=>setTimeout(()=>{box.hidden=true},150));
       box.addEventListener("mousedown",e=>{const b=e.target.closest("[data-h]");if(b){e.preventDefault();pick(Number(b.dataset.h))}});
@@ -265,62 +293,77 @@
       return {open:()=>!box.hidden};
     }
     function bookOne(l){
-      const isIn=+l.credit>0,types=isIn?BOOK_IN:BOOK_OUT;let type=types[0][0];
-      const s=sheet("Book "+(isIn?"money in":"money out")+" · "+dmy(l.date),
+      const isIn=+l.credit>0,kind=isIn?"IN":"OUT";
+      // Category = one box: the fixed ones (they do special work) + your own categories (Accounts heads).
+      // Type a new name and it is added on Save, and shows in the list next time.
+      const SYS=isIn?[["PARTY","Party payment"],["DEPOSIT","Cash deposit"],["CONTRA","Contra (from own bank)"],["IGNORE","Ignore"]]
+                    :[["SUP","Supplier / Company payment"],["WITHDRAW","Cash withdrawn"],["CONTRA","Contra (to own bank)"],["IGNORE","Ignore"]];
+      const skip=new Set([key("Supplier payment"),key("Contra (bank transfer)"),key("Party payment")]);
+      const heads=()=>D.categories.filter(c=>c.kind===kind&&!skip.has(key(c.name)));
+      const cats=()=>[...SYS.map(t=>({label:t[1],sub:"",t:t[0]})),...heads().map(c=>({label:c.name,sub:"",t:"HEAD",c}))];
+      const s=sheet((isIn?"Money in":"Money out")+" · "+dmy(l.date),
         '<div class="bs-bk" style="display:flex;flex-direction:column;gap:9px">'+
         '<div><div class="amt '+(isIn?"in":"out")+'">'+(isIn?"+":"−")+rs(+l.credit||+l.debit)+'</div><div style="font-size:13px;color:var(--erp-muted);overflow-wrap:anywhere">'+esc(l.narration||"")+(l.ref?" · Ref "+esc(l.ref):"")+'</div></div>'+
-        '<div><div class="cap">Category</div><div class="bs-types" role="group" aria-label="Category">'+types.map(t=>'<button type="button" data-ty="'+t[0]+'">'+t[1]+'</button>').join("")+'</div></div>'+
-        '<label id="kHead"><span>Head</span><input id="kH" autocomplete="off" enterkeyhint="done" placeholder="Type a head, or a new one"></label>'+
-        '<label id="kParty"><span></span><input id="kP" autocomplete="off" enterkeyhint="done"></label>'+
+        '<label id="kCat"><span>Category</span><input id="kC" autocomplete="off" enterkeyhint="next" placeholder="Type or pick: '+(isIn?"Sales, Party payment…":"Purchase, Rent, Asset…")+'"></label>'+
+        '<label id="kParty"><span></span><input id="kP" autocomplete="off" enterkeyhint="next"></label>'+
         '<label id="kBank"><span>'+(isIn?"Came from which of our banks":"Sent to which of our banks")+'</span><select id="kB">'+D.banks.filter(b=>b.id!==bankId).map(b=>'<option value="'+b.id+'">'+esc(b.name)+'</option>').join("")+'</select></label>'+
+        '<label id="kRem"><span>Remark (optional)</span><input id="kR" maxlength="200" autocomplete="off" enterkeyhint="done" placeholder="Like Tally narration"></label>'+
         '<div class="note" id="kNote"></div>'+
         '<div class="acts"><button type="button" class="bs-btn" data-x2>Cancel</button><button type="button" class="bs-btn grn" id="kSave">Save</button></div></div>');
-      const B=s.back,P=B.querySelector("#kP"),H=B.querySelector("#kH"),N=B.querySelector("#kNote"),KB=B.querySelector("#kB");
+      const B=s.back,C=B.querySelector("#kC"),P=B.querySelector("#kP"),R=B.querySelector("#kR"),N=B.querySelector("#kNote"),KB=B.querySelector("#kB");
+      const sh=(id,on)=>{B.querySelector(id).hidden=!on};
+      const catOf=v=>cats().find(x=>key(x.label)===key(v));
+      const cur=()=>{const v=C.value.trim();if(!v)return null;return catOf(v)||{t:"NEW",label:v.replace(/\s+/g," ")}};
       const supItems=()=>suppliers.map(x=>({label:x.name,sub:x.coName&&key(x.coName)!==key(x.name)?x.coName:"",x}));
-      const list=()=>type==="PARTY"?parties.map(n=>({label:n})):["SUP","EXP","AST"].includes(type)?supItems():[];
-      const ta=typeahead(P,list);
-      const headList=()=>type==="EXP"?D.categories.filter(c=>c.kind==="OUT"&&!SPECIAL_OUT.has(key(c.name))):type==="IN"?D.categories.filter(c=>c.kind==="IN"&&key(c.name)!==key("Contra (bank transfer)")):[];
-      const taH=typeahead(H,()=>headList().map(c=>({label:c.name})),{empty:true,max:30});
-      const headOf=v=>headList().find(c=>key(c.name)===key(v));
+      const partyItems=()=>parties.map(n=>({label:n}));
+      const taC=typeahead(C,cats,{empty:true,max:40});
+      const ta=typeahead(P,()=>{const c=cur(),t=c&&c.t;return t==="PARTY"?partyItems():t==="SUP"?supItems():(t==="HEAD"||t==="NEW")?(isIn?partyItems():supItems()):[]});
       const supOf=v=>suppliers.find(x=>key(x.name)===key(v));
-      const paint=()=>{B.querySelectorAll("[data-ty]").forEach(b=>b.setAttribute("aria-pressed",String(b.dataset.ty===type)));
-        const lab={PARTY:"Party (type the name)",SUP:"Supplier / company (type the name)",EXP:"Paid to (optional)",AST:"Bought from (optional)",IN:"Received from (optional)",IGNORE:"Why (optional)"}[type];
-        B.querySelector("#kParty").hidden=!lab;B.querySelector("#kParty span").textContent=lab||"";
-        B.querySelector("#kBank").hidden=type!=="CONTRA"||!KB.options.length;
-        B.querySelector("#kHead").hidden=!["EXP","IN"].includes(type);B.querySelector("#kHead span").textContent=type==="EXP"?"Expense head":"Income head";H.value="";
-        if(type==="PARTY"&&!P.value)P.value=guessParty(l)||"";
-        if(type==="SUP"&&!P.value){const g=guessSupplier(l);if(g)P.value=g.name}
+      let last="";
+      const paint=()=>{const c=cur(),t=c&&c.t;
+        const lab={PARTY:"Party (type the name)",SUP:"Supplier / company (type the name)",HEAD:isIn?"Received from (optional)":"Paid to (optional)",NEW:isIn?"Received from (optional)":"Paid to (optional)"}[t];
+        sh("#kParty",!!lab);B.querySelector("#kParty span").textContent=lab||"";
+        sh("#kBank",t==="CONTRA"&&KB.options.length>0);
+        B.querySelector("#kRem span").textContent=t==="IGNORE"?"Why (optional)":"Remark (optional)";
+        if(t!==last){if(last)P.value="";last=t||"";
+          if(t==="PARTY"&&!P.value)P.value=guessParty(l)||"";
+          if(t==="SUP"&&!P.value){const g=guessSupplier(l);if(g)P.value=g.name}}
         note()};
-      const note=()=>{const x=type==="SUP"&&supOf(P.value),hn=H.value.trim();
-        N.textContent=(type==="EXP"||type==="IN")&&hn.length>=2&&!headOf(hn)?"“"+hn+"” is a new head. It is added when you Save and shows in the list next time.":type==="SUP"?(x?(x.coId?"Saved as Supplier payment, and as a payment to "+x.coName+" (its bills show paid).":"Saved as Supplier payment to "+x.name+"."):"Pick the name from the list. New supplier? Add it on Supplier Master first.")
-          :type==="CONTRA"?(KB.options.length?"Booked on both banks (head Contra). The other bank's statement line matches it by itself.":"Only one bank is added. Add the other bank on Accounts Dashboard > Heads & Banks.")
-          :type==="AST"?"Saved under the head Asset purchase.":type==="PARTY"?"Party outstanding drops (oldest bill first).":"";N.hidden=!N.textContent};
-      KB.onchange=note;P.addEventListener("input",note);P.addEventListener("change",note);H.addEventListener("input",note);H.addEventListener("change",note);
-      B.querySelectorAll("[data-ty]").forEach(b=>b.onclick=()=>{type=b.dataset.ty;P.value="";paint();const f=!B.querySelector("#kHead").hidden?H:!B.querySelector("#kParty").hidden?P:!B.querySelector("#kBank").hidden?KB:B.querySelector("#kSave");f.focus()});
+      const note=()=>{const c=cur(),t=c&&c.t,x=t==="SUP"&&supOf(P.value);
+        N.textContent=t==="NEW"&&c.label.length>=2?"“"+c.label+"” is a new category. It is added when you Save and shows in the list next time.":
+          t==="SUP"?(x?(x.coId?"Saved as Supplier payment, and as a payment to "+x.coName+" (its bills show paid).":"Saved as Supplier payment to "+x.name+"."):"Pick the name from the list. New supplier? Add it on Supplier Master first.")
+          :t==="CONTRA"?(KB.options.length?"Booked on both banks. The other bank's statement line matches it by itself.":"Only one bank is added. Add the other bank on Accounts Dashboard > Heads & Banks.")
+          :t==="PARTY"?"Party outstanding drops (oldest bill first).":"";N.hidden=!N.textContent};
+      const next=()=>{const f=["#kParty","#kBank","#kRem"].map(i=>B.querySelector(i)).find(x=>!x.hidden);(f?f.querySelector("input,select"):B.querySelector("#kSave")).focus()};
+      C.addEventListener("input",paint);C.addEventListener("change",paint);C.addEventListener("pick",next);
+      KB.onchange=note;P.addEventListener("input",note);P.addEventListener("change",note);
       B.querySelector("[data-x2]").onclick=s.close;
-      const go=async btn=>{const name=P.value.trim(),p={};
-        if(type==="PARTY"){if(!name)return ERPShell.alert("Type the party name");p.type="PARTY";p.party=name}
-        else if(type==="SUP"){const x=supOf(name);if(!x)return ERPShell.alert("Pick the supplier / company from the list. A new one is added on Supplier Master.");
+      const go=async btn=>{const c=cur(),name=P.value.trim(),rem=R.value.trim(),p={note:rem||null};
+        if(!c)return ERPShell.alert("Type or pick the category");
+        if(c.t==="PARTY"){if(!name)return ERPShell.alert("Type the party name");Object.assign(p,{type:"PARTY",party:name})}
+        else if(c.t==="SUP"){const x=supOf(name);if(!x)return ERPShell.alert("Pick the supplier / company from the list. A new one is added on Supplier Master.");
           const h=headNamed("Supplier payment");if(!h)return ERPShell.alert("The head Supplier payment is missing on Accounts Dashboard > Heads.");
           Object.assign(p,{type:"OUT",category_id:h.id,party:x.name});if(x.coId)p.company_id=x.coId}
-        else if(type==="AST"){const h=headNamed("Asset purchase");if(!h)return ERPShell.alert("The head Asset purchase is missing on Accounts Dashboard > Heads.");Object.assign(p,{type:"OUT",category_id:h.id,party:name||null})}
-        else if(type==="EXP"||type==="IN"){const hn=H.value.trim().replace(/\s+/g," ");if(hn.length<2)return ERPShell.alert("Type the head (for example Rent, Diesel)");
-          let h=headOf(hn);
-          if(!h){if(SPECIAL_OUT.has(key(hn))&&type==="EXP")return ERPShell.alert("Use the "+hn+" button above for this.");
-            try{const id=await rpc("lwb_acc_save_category",{p_id:null,p_kind:type==="EXP"?"OUT":"IN",p_name:hn,p_active:true});
-              h={id,kind:type==="EXP"?"OUT":"IN",name:hn};if(!D.categories.some(c=>c.id===id))D.categories.push(h)}
+        else if(c.t==="HEAD"||c.t==="NEW"){let h=c.c;
+          if(!h){if(c.label.length<2)return ERPShell.alert("Write a category name (2 letters or more)");
+            if(skip.has(key(c.label)))return ERPShell.alert("Pick “"+(isIn?"Party payment":"Supplier / Company payment")+"” from the list for this.");
+            try{const id=await rpc("lwb_acc_save_category",{p_id:null,p_kind:kind,p_name:c.label,p_active:true});
+              h={id,kind,name:c.label};if(!D.categories.some(x=>x.id===id))D.categories.push(h)}
             catch(e){return ERPShell.alert(errText(e))}}
-          Object.assign(p,{type:type==="EXP"?"OUT":"IN",category_id:Number(h.id),party:name||null})}
-        else if(type==="CONTRA"){if(!KB.value)return ERPShell.alert("Add the other bank on Accounts Dashboard > Heads & Banks first.");Object.assign(p,{type:"CONTRA",to_bank_id:Number(KB.value)})}
-        else{p.type=type;if(type==="IGNORE")p.note=name||null}
+          Object.assign(p,{type:kind,category_id:Number(h.id),party:name||null})}
+        else if(c.t==="CONTRA"){if(!KB.value)return ERPShell.alert("Add the other bank on Accounts Dashboard > Heads & Banks first.");Object.assign(p,{type:"CONTRA",to_bank_id:Number(KB.value)})}
+        else p.type=c.t;
         btn.disabled=true;
         try{const r=await rpc("lwb_bank_stmt_assign",{p_ids:[l.id],p});
           if(r.errors&&r.errors.length)throw Error(r.errors[0].error);
-          s.close();sel.delete(l.id);await load();ERPShell.toast&&ERPShell.toast("Booked")}
+          s.close();sel.delete(l.id);await load();ERPShell.toast&&ERPShell.toast("Saved")}
         catch(e){btn.disabled=false;await ERPShell.alert(errText(e))}};
       const sv=B.querySelector("#kSave");sv.onclick=()=>go(sv);
-      B.addEventListener("keydown",e=>{if(e.key==="Enter"&&!e.defaultPrevented&&!ta.open()&&!taH.open()&&!(e.target.tagName==="BUTTON")){e.preventDefault();if(!sv.disabled)go(sv)}});
-      paint();setTimeout(()=>{if(!B.querySelector("#kParty").hidden){P.focus();P.select()}},30);
+      B.addEventListener("keydown",e=>{if(e.key!=="Enter"||e.defaultPrevented||ta.open()||taC.open()||e.target.tagName==="BUTTON")return;e.preventDefault();
+        if(e.target===C&&cur()){next();return}if(!sv.disabled)go(sv)});
+      // a name in the narration picks the category by itself
+      if(isIn&&guessParty(l))C.value="Party payment";else if(!isIn&&guessSupplier(l))C.value="Supplier / Company payment";
+      paint();setTimeout(()=>{const f=C.value?P:C;f.focus();f.select()},30);
     }
     function drawBar(){
       const bar=el("bar");if(!bar)return;
@@ -367,8 +410,9 @@
       const back=document.createElement("div");back.className="bs-back";
       back.innerHTML='<div class="bs-sheet" role="dialog" aria-modal="true" aria-label="'+esc(title)+'"><header><h3>'+esc(title)+'</h3><button type="button" data-x aria-label="Close">✕</button></header><div class="body">'+body+'</div></div>';
       document.body.append(back);document.body.style.overflow="hidden";
-      const close=()=>{back.remove();document.body.style.overflow=""};
+      const close=()=>{back.remove();document.body.style.overflow="";if(document.activeElement&&document.activeElement!==document.body)document.activeElement.blur();setTimeout(()=>paintCur(true),0)};
       back.querySelector("[data-x]").onclick=close;back.addEventListener("click",e=>{if(e.target===back)close()});
+      back.addEventListener("keydown",e=>{if(e.key==="Escape"&&!e.defaultPrevented){e.preventDefault();e.stopPropagation();close()}});
       return {back,close};
     }
     function suggest(l){
