@@ -287,7 +287,7 @@
   }
 
   /* ---------- layout ---------- */
-  // Pending Work (dashboard.html's lwb_my_verify_queue card) sits on top of the side column;
+  // Pending Work (dashboard.html's lwb_my_verify_queue card) sits on top of the dashboard;
   // it is lifted out first so a repaint never deletes it.
   function paint(html){
     const v=document.getElementById("verifyCard"),home=document.querySelector(".side-col");
@@ -295,7 +295,8 @@
     box.innerHTML=html;
     if(window.ERPList)box.querySelectorAll("[data-list]").forEach(el=>ERPList.card(el,()=>{const m=LISTS.get(el.dataset.list);return m&&m()},el.classList.contains("rd-step")?false:undefined));
     brandPick(BRAND_ROLES.includes(ROLE)&&BR.list.length>1&&!!window.LWBBrand&&!!box.querySelector(".rd-kpis,#bzDash"));
-    const s=document.getElementById("rdSide");if(v&&s)s.prepend(v);
+    // Pending Work goes on top of the dashboard (was low in the side column: 2000 px down on a phone).
+    if(v){v.classList.add("rd-top");box.prepend(v)}
   }
   // Brand pick: a dropdown right next to the "Admin view" dropdown in the page head (Mohit, 2 Nov 2026; was chips).
   function brandPick(show){

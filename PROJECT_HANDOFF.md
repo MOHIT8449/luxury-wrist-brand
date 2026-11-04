@@ -4,6 +4,15 @@
 **Purpose:** Continue the same ERP project from a new ChatGPT conversation without restarting or losing the agreed requirements.
 **Status:** Active development / verification. Do not assume all modules are completed or fully tested.
 
+## Compact Dashboard and phone PO list (4 Nov 2026)
+
+- Mohit asked what to change after a site review; he OK'd all 6 points.
+- Dashboard (every role dashboard): Pending Work moved to the top (was 2000 px down on the phone), as compact rows (2–4 per line on a computer). When the side column is empty, main cards sit side by side. The name + role + role note line under the greeting is gone. Date badge hidden on the phone.
+- One search box at a time: top bar Module Search hidden on the Dashboard (the big search finds party, PO and page; Alt+M goes to it). Side menu "Find a page" shows only on the phone menu (≤980 px).
+- Business Overview chart with no sale / purchase shows "No sale or purchase in these days." instead of 1 / 1 / 0 / 0 on the axis; repeated axis labels are skipped. KPI small text wraps to 2 lines instead of "No expe…".
+- PO / Sales on the phone (≤640 px): each PO is a 4-line card (Party + ₹ / PO no + status / date + cases / salesman + buttons), about 2× more POs on a screen. Sales person / transport / fill / brand selects and the date range sit behind a "⚙ Filter" button (red count when a filter is on).
+- Checked with a mocked database at 1366 / 390 px (Admin + all role views): no side scroll, no JS errors. tests/erp-keys pass. Not yet checked on live data.
+
 ## Keyboard first on every page (4 Nov 2026)
 
 - Mohit: 95% of the work must be done with Tab / Enter / arrows, not the mouse (Tally style). New `erp-keys.js`, loaded by `erp-shell.js` on every ERP page (cashbook.html loads it directly). It runs last (window, bubble) and does nothing when the page already handled the key (`preventDefault`); `data-keys="off"` on an element leaves its keys to the page.

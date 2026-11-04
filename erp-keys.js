@@ -274,7 +274,7 @@
     if((e.ctrlKey||e.metaKey)&&!e.altKey&&(k==="k"||k==="K")){const s=pageSearch();if(s){e.preventDefault();focus(s,true)}return}
     if(e.altKey&&!e.ctrlKey&&!e.metaKey){
       const c=(e.code||"").replace(/^Key|^Digit/,"");
-      if(c==="M"){const s=D.querySelector(".erp-top .erp-search input");if(s&&usable(s)){e.preventDefault();focus(s,true)}}
+      if(c==="M"){const s=[...D.querySelectorAll(".erp-top .erp-search input,#heroSearch")].find(usable);if(s){e.preventDefault();focus(s,true)}}
       else if(c==="N"){const b=newButton();if(b){e.preventDefault();b.click()}}
       else if(c==="S"){const b=saveButton();if(b){e.preventDefault();b.click()}}
       else if(c==="H"){if(!/dashboard\.html$/.test(location.pathname)){e.preventDefault();location.href="dashboard.html"}}
