@@ -80,6 +80,15 @@
     .bs-sheet .body{padding:12px 14px;overflow:auto;display:flex;flex-direction:column;gap:8px}
     .bs-cand{border:1px solid var(--erp-line);border-radius:9px;padding:8px 10px;display:flex;gap:8px;align-items:center}
     .bs-cand div{flex:1;min-width:0;font-size:13.5px}.bs-cand small{display:block;color:var(--erp-muted);font-size:12px}
+    .bs-hint{font-size:13px;color:var(--erp-muted);margin:0 0 6px}
+    .bs-types{display:flex;flex-wrap:wrap;gap:6px}
+    .bs-types button{height:34px;border-radius:8px;border:1.5px solid var(--erp-line);background:#fff;font:inherit;font-size:13.5px;padding:0 10px;cursor:pointer;color:var(--erp-ink)}
+    .bs-types button[aria-pressed=true]{background:#13283f;border-color:#13283f;color:#fff;font-weight:700}
+    .bs-bk label{display:flex;flex-direction:column;gap:3px;font-size:12.5px;font-weight:700;color:#3b4652}
+    .bs-bk label[hidden]{display:none}
+    .bs-bk input,.bs-bk select{height:38px;border:1.5px solid var(--erp-line);border-radius:8px;padding:0 9px;font:inherit;font-size:15px;font-weight:400;background:#fff;color:var(--erp-ink);min-width:0;width:100%}
+    .bs-bk .amt{font-size:20px;font-weight:800}.bs-bk .amt.in{color:#13824a}.bs-bk .amt.out{color:#b3122b}
+    .bs-bk .acts{display:flex;gap:6px;justify-content:flex-end}
     @media(max-width:760px){
       .bs-kpis{grid-template-columns:1fr 1fr}
       .bs-r{grid-template-columns:22px minmax(0,1fr) auto;gap:2px 8px}
@@ -179,6 +188,7 @@
       el("body").innerHTML='<div class="bs-filter"><input type="search" id="q" placeholder="Search narration, ref, party, amount" value="'+esc(q)+'" autocomplete="off">'+
         '<select id="dir" aria-label="In or out"><option value="all">In + Out</option><option value="in"'+(dir==="in"?" selected":"")+'>Money in</option><option value="out"'+(dir==="out"?" selected":"")+'>Money out</option></select>'+
         (tab==="OPEN"?"":'<select id="days" aria-label="Days">'+[30,90,180,365].map(n=>'<option value="'+n+'"'+(n===days?" selected":"")+'>Last '+n+' days</option>').join("")+'</select>')+'</div>'+
+        (admin&&list.length?'<div class="bs-hint">Press <b>✍ Book</b> on a line to say whose payment or which expense it is. To book many lines the same way, tick them and use the bar below.</div>':"")+
         (list.length?'<div class="bs-list"><div class="bs-r head">'+(admin?'<input type="checkbox" id="all" aria-label="Tick all shown"'+(vis.length&&vis.every(l=>sel.has(l.id))?" checked":"")+'>':"<span></span>")+'<span>Date</span><span>Narration</span><span style="text-align:right">Amount</span><span></span></div>'+
           vis.map(l=>row(l,admin)).join("")+'</div>'+(list.length>shown?'<div class="bs-more"><button type="button" class="bs-btn sm" id="more">Show '+Math.min(200,list.length-shown)+' more of '+(list.length-shown)+'</button></div>':"")
         :'<div class="bs-empty">'+(tab==="OPEN"?(D.lines.length?"Suspense is empty. Every line is booked.":"Upload the bank statement (Excel / CSV) to start."):"Nothing here.")+'</div>')+
@@ -189,6 +199,7 @@
       if(el("more"))el("more").onclick=()=>{shown+=200;renderTab()};
       if(el("all"))el("all").onchange=e=>{vis.forEach(l=>e.target.checked?sel.add(l.id):sel.delete(l.id));renderTab()};
       el("body").querySelectorAll("[data-ck]").forEach(c=>c.onchange=()=>{c.checked?sel.add(c.dataset.ck):sel.delete(c.dataset.ck);c.closest(".bs-r").classList.toggle("sel",c.checked);drawBar()});
+      el("body").querySelectorAll("[data-bk]").forEach(b=>b.onclick=()=>bookOne(D.lines.find(l=>l.id===b.dataset.bk)));
       el("body").querySelectorAll("[data-sg]").forEach(b=>b.onclick=()=>suggest(D.lines.find(l=>l.id===b.dataset.sg)));
       el("body").querySelectorAll("[data-undo]").forEach(b=>b.onclick=()=>undo(D.lines.find(l=>l.id===b.dataset.undo),b));
       if(admin)drawBar();
@@ -200,6 +211,7 @@
       const sub=[l.ref?"Ref "+esc(l.ref):"",l.balance!=null?"Bal "+rs(l.balance):""].filter(Boolean).join(" · ");
       let x="",info="";
       if(l.status==="OPEN"){
+        if(D.is_admin)x+='<button type="button" class="bs-btn sm pri" data-bk="'+l.id+'">✍ Book</button>';
         if(l.sugg&&l.sugg.length)x+='<button type="button" class="bs-btn sm" data-sg="'+l.id+'">🔗 Match'+(l.sugg.length>1?" ("+l.sugg.length+")":"")+'</button>';
         const g=+l.credit>0&&guessParty(l);if(g)x+='<span class="tag t-blu" title="Party name found in the narration">👤 '+esc(g)+'</span>';
       }else{
@@ -213,15 +225,38 @@
     }
 
     /* ---------- bulk booking ---------- */
+    const typesFor=(ins,outs)=>ins&&outs?[["IGNORE","Ignore (own transfer etc.)"]]
+        :ins?[["PARTY","Party payment"],["DEPOSIT","Cash deposit"],["IN","Other income (head)"],["IGNORE","Ignore"]]
+        :[["OUT","Expense (head)"],["WITHDRAW","Cash withdrawn"],["IGNORE","Ignore"]];
+    /* one line at a time, like Tally: Book -> what is it -> Save */
+    function bookOne(l){
+      const isIn=+l.credit>0,types=typesFor(isIn,!isIn);let type=types[0][0];
+      const s=sheet("Book "+(isIn?"money in":"money out")+" · "+dmy(l.date),
+        '<div class="bs-bk" style="display:flex;flex-direction:column;gap:9px">'+
+        '<div><div class="amt '+(isIn?"in":"out")+'">'+(isIn?"+":"−")+rs(+l.credit||+l.debit)+'</div><div style="font-size:13px;color:var(--erp-muted);overflow-wrap:anywhere">'+esc(l.narration||"")+(l.ref?" · Ref "+esc(l.ref):"")+'</div></div>'+
+        '<div class="bs-types" role="group" aria-label="What is it">'+types.map(t=>'<button type="button" data-ty="'+t[0]+'">'+t[1]+'</button>').join("")+'</div>'+
+        '<label id="kParty"><span></span><input id="kP" list="bsParties" autocomplete="off"></label>'+
+        '<label id="kHead"><span>Head</span><select id="kH"></select></label>'+
+        '<div class="acts"><button type="button" class="bs-btn" data-x2>Cancel</button><button type="button" class="bs-btn grn" id="kSave">Save</button></div></div>');
+      const B=s.back,P=B.querySelector("#kP"),H=B.querySelector("#kH");
+      const paint=()=>{B.querySelectorAll("[data-ty]").forEach(b=>b.setAttribute("aria-pressed",String(b.dataset.ty===type)));
+        B.querySelector("#kParty").hidden=!["PARTY","IN","OUT","IGNORE"].includes(type);
+        B.querySelector("#kParty span").textContent=type==="PARTY"?"Party (from Party Master)":type==="IGNORE"?"Why (optional)":"Paid "+(isIn?"by":"to")+" (optional)";
+        B.querySelector("#kHead").hidden=!["IN","OUT"].includes(type);
+        H.innerHTML='<option value="">Choose head…</option>'+D.categories.filter(c=>c.kind===type).map(c=>'<option value="'+c.id+'">'+esc(c.name)+'</option>').join("");
+        if(type==="PARTY"&&!P.value)P.value=guessParty(l)||""};
+      B.querySelectorAll("[data-ty]").forEach(b=>b.onclick=()=>{type=b.dataset.ty;P.value="";paint()});
+      B.querySelector("[data-x2]").onclick=s.close;
+      B.querySelector("#kSave").onclick=async e=>{if(await save([l],type,P.value.trim(),H.value,e.target,true))s.close()};
+      paint();
+    }
     function drawBar(){
       const bar=el("bar");if(!bar)return;
       const L=D.lines.filter(l=>sel.has(l.id));
       if(!L.length){bar.className="";bar.innerHTML="";return}
       const ins=L.filter(l=>+l.credit>0),outs=L.filter(l=>+l.debit>0);
       const sum=a=>a.reduce((s,l)=>s+Number(l.credit)+Number(l.debit),0);
-      const types=ins.length&&outs.length?[["IGNORE","Ignore (own transfer etc.)"]]
-        :ins.length?[["PARTY","Party payment"],["DEPOSIT","Cash deposit"],["IN","Other income (head)"],["IGNORE","Ignore"]]
-        :[["OUT","Expense (head)"],["WITHDRAW","Cash withdrawn"],["IGNORE","Ignore"]];
+      const types=typesFor(ins.length,outs.length);
       const prev=bar.querySelector("#bType"),keep=prev&&types.some(t=>t[0]===prev.value)?prev.value:types[0][0];
       const pv=bar.querySelector("#bParty"),pval=pv?pv.value:"";
       bar.className="bs-bar";
@@ -241,19 +276,20 @@
       bar.querySelector("#bClear").onclick=()=>{sel.clear();renderTab()};
       bar.querySelector("#bSave").onclick=()=>save(L,t.value,p.value.trim(),h.value,bar.querySelector("#bSave"));
     }
-    async function save(L,type,party,head,btn){
+    async function save(L,type,party,head,btn,one){
       if(type==="PARTY"&&!party){await ERPShell.alert("Choose the party");return}
       if((type==="IN"||type==="OUT")&&!head){await ERPShell.alert("Choose the head");return}
       const sum=L.reduce((s,l)=>s+Number(l.credit)+Number(l.debit),0);
       const what={PARTY:"party payment of "+party+" (oldest bill first, outstanding drops)",DEPOSIT:"cash deposit",WITHDRAW:"cash withdrawn from bank",IN:"income",OUT:"expense",IGNORE:"ignored"}[type];
-      if(!await ERPShell.confirm("Book "+L.length+" line"+(L.length>1?"s":"")+" ("+rs(sum)+") as "+what+"?"))return;
+      if(!one&&!await ERPShell.confirm("Book "+L.length+" line"+(L.length>1?"s":"")+" ("+rs(sum)+") as "+what+"?"))return;
       const p={type};if(type==="PARTY"||type==="IN"||type==="OUT")p.party=party||null;if(type==="IGNORE")p.note=party||null;if(head)p.category_id=Number(head);
       btn.disabled=true;
       try{const r=await rpc("lwb_bank_stmt_assign",{p_ids:L.map(l=>l.id),p});
         sel.clear();await load();
         if(r.errors&&r.errors.length)await ERPShell.alert(r.done+" booked. Not booked:\n"+r.errors.map(e=>dmy(e.date)+" "+rs(e.amount)+": "+e.error).join("\n"));
-        else ERPShell.toast&&ERPShell.toast(r.done+" line"+(r.done>1?"s":"")+" booked")}
-      catch(e){await ERPShell.alert(errText(e))}finally{btn.disabled=false}
+        else ERPShell.toast&&ERPShell.toast(r.done+" line"+(r.done>1?"s":"")+" booked");
+        return r.done>0}
+      catch(e){await ERPShell.alert(errText(e));return false}finally{btn.disabled=false}
     }
     function sheet(title,body){
       const back=document.createElement("div");back.className="bs-back";
