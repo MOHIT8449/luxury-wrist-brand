@@ -4,6 +4,13 @@
 **Purpose:** Continue the same ERP project from a new ChatGPT conversation without restarting or losing the agreed requirements.
 **Status:** Active development / verification. Do not assume all modules are completed or fully tested.
 
+## PO entry on the phone: one line per SKU, Next key adds the next line (4 Nov 2026)
+
+- Mohit: salesman order punching was slow on the phone. order-entry.html at ≤640 px now shows each SKU as one line: SKU | Qty (or Pallet) | Rate | ✕, under one small "SKU · Qty · Rate ₹" header (`.m-head`). No amount per line on the phone; the bottom bar shows total ₹ · cases · kg. Desktop table unchanged.
+- Keyboard: SKU, Pallet, Qty and Rate have `enterkeyhint="next"`. Enter / Next walks SKU → Qty → Rate → next line; on the last line, a SKU with a quantity gets a new empty line (`lineEnter`). Picking a SKU from the list jumps to Qty (`lineSkuPicked`); Rate text is selected on focus.
+- Phone Submit label is "Submit Order" (desktop keeps "Submit to Warehouse Manager").
+- Checked with a mocked database at 412 / 360 / 1366 px (Case, Pallet, Direct vehicle CS / PALLET): 44 px lines, no side scroll, no JS errors. Not yet checked on live data.
+
 ## Rajnigandha: no own menu items; Rate List brand tabs; slip prints from PO / Sales (4 Nov 2026)
 
 - Settings > "Rate List" (rates.html, was "Rate & Scheme") has brand tabs on top: Coca-Cola (rates.html) | Rajnigandha (rajni-rates.html, Admin only). "Rajnigandha Rate List" left the side menu (nm, par rates.html).

@@ -518,7 +518,40 @@ body.compact-entry .share-more>summary{display:block;cursor:pointer;font-size:13
   #oeMain th{padding:8px}
   #oeMain .oe-head h2{font-size:19px}
   #oeMain .oe-foot .summary-row strong{font-size:16px}
-}</style>
+}
+/* Phone: one line per SKU (Mohit, 4 Nov 2026): SKU | Qty | Rate | ✕. No amount per line; the bottom bar shows
+   total ₹ · cases · kg. Two IDs so this wins over the older card rules above. */
+.m-head{display:none}
+@media(max-width:640px){
+  #oeMain .m-head{display:grid;grid-template-columns:minmax(0,1fr) 62px 74px 30px;gap:4px;padding:0 6px 2px;font-size:10.5px;font-weight:700;color:#6b7785;text-transform:uppercase;letter-spacing:.3px}
+  #oeMain .m-head .q::after{content:"Qty"}
+  body.big-unit #oeMain .m-head .q::after{content:"Pallet"}
+  #oeMain #itemsTable #itemsBody tr{grid-template-columns:minmax(0,1fr) 62px 74px 30px;grid-template-areas:"sku qty rate del";gap:4px;padding:3px 4px;margin:0 0 3px;border-radius:6px;align-items:start}
+  body.big-unit #oeMain #itemsTable:not(.pallet-mode) #itemsBody tr{grid-template-areas:"sku pal rate del"}
+  body:not(.big-unit) #oeMain #itemsTable #itemsBody td.pal-col{display:none}
+  #oeMain #itemsTable #itemsBody td::before{display:none}
+  #oeMain #itemsTable #itemsBody td:nth-child(2){grid-area:sku;margin:0}
+  #oeMain #itemsTable #itemsBody td:nth-child(3){grid-area:pal}
+  #oeMain #itemsTable #itemsBody td:nth-child(4){grid-area:qty}
+  #oeMain #itemsTable #itemsBody td:nth-child(5){grid-area:rate}
+  #oeMain #itemsTable #itemsBody td:nth-child(n+6):not(:last-child),#oeMain #itemsTable #itemsBody td.row-number{display:none}
+  body.order-advanced.show-landing #oeMain #itemsTable #itemsBody td.mgr-col{display:block;grid-column:1/-1}
+  #oeMain #itemsTable #itemsBody td:last-child{grid-area:del;position:static}
+  #oeMain #itemsTable #itemsBody input{height:36px;min-height:36px;padding:4px 6px;font-size:16px;border-radius:5px}
+  #oeMain #itemsTable #itemsBody .sku-name{font-weight:600;font-size:15px;text-overflow:ellipsis}
+  #oeMain #itemsTable #itemsBody .qty,#oeMain #itemsTable #itemsBody .pallet,#oeMain #itemsTable #itemsBody .rate{text-align:right}
+  #oeMain #itemsTable #itemsBody .remove-btn{width:30px;height:36px;min-height:36px;line-height:36px;padding:0;font-size:0;border-radius:5px}
+  #oeMain #itemsTable #itemsBody .remove-btn::after{content:"✕";font-size:14px}
+  #oeMain #itemsTable #itemsBody .pal-conv,#oeMain #itemsTable #itemsBody .case-conversion{font-size:10px;line-height:1.2}
+  #oeMain .add-line{margin-top:2px}
+  body.compact-entry .actions .sticky-total{flex:1 0 auto;min-width:96px}
+}
+@media(max-width:380px){
+  #oeMain .m-head,#oeMain #itemsTable #itemsBody tr{grid-template-columns:minmax(0,1fr) 52px 64px 28px}
+  #oeMain #itemsTable #itemsBody .remove-btn{width:28px}
+  #oeMain #itemsTable #itemsBody .sku-name{padding:4px 5px}
+}
+</style>
 <link rel="stylesheet" href="erp-shell.css">
 <script src="erp-shell.js" data-auto defer></script>
 <script src="brand-filter.js"></script>
@@ -673,6 +706,7 @@ body.compact-entry .share-more>summary{display:block;cursor:pointer;font-size:13
 
   <section class="card items-card">
 
+    <div class="m-head" aria-hidden="true"><span>SKU</span><span class="q"></span><span>Rate ₹</span><span></span></div>
     <div class="table-wrap">
 
       <table id="itemsTable">
@@ -1361,7 +1395,7 @@ function addItem(focus){
     <td class="row-number"></td>
 
     <td>
-       <input class="sku-name" aria-label="SKU / Product"
+       <input class="sku-name" aria-label="SKU / Product" enterkeyhint="next"
              list="skuMasterList"
              autocomplete="off"
              oninput="applySkuDefaultWeight(this)"
@@ -1371,7 +1405,7 @@ function addItem(focus){
       <small class="stock-hint" hidden></small>
     </td>
     <td class="pal-col">
-      <input class="pallet number" aria-label="Pallet quantity"
+      <input class="pallet number" aria-label="Pallet quantity" enterkeyhint="next"
              type="number"
              min="0"
              step="0.01"
@@ -1381,7 +1415,7 @@ function addItem(focus){
       <small class="pal-conv"></small>
     </td>
     <td class="qty-col">
-      <input class="qty number" aria-label="Quantity"
+      <input class="qty number" aria-label="Quantity" enterkeyhint="next"
              type="number"
              min="0"
              step="1"
@@ -1395,7 +1429,7 @@ function addItem(focus){
     <td>
       <div class="rate-box">
       <button type="button" class="step" tabindex="-1" title="Rate −1" onclick="rateStep(this,-1)">−</button>
-      <input class="rate number" aria-label="Rate per case"
+      <input class="rate number" aria-label="Rate per case" enterkeyhint="next"
              type="number"
              min="0"
              step="0.01"
@@ -1462,6 +1496,39 @@ function addItem(focus){
    Tab creates a new row only when the last row has a SKU, a positive quantity,
    a valid CS/PALLET conversion and a valid entered rate. Existing next rows
    are reused rather than producing duplicates. Shift+Tab is left unchanged. */
+/* Phone keyboard (Mohit): the Next / Enter key walks SKU -> Qty -> Rate -> next line; on the last line a filled
+   SKU gets a new empty line. Picking a SKU from the list jumps to Qty. */
+const lineFields = row => [...row.querySelectorAll(".sku-name,.pallet,.qty,.rate")].filter(i => i.offsetParent !== null && !i.readOnly);
+function lineEnter(event){
+  if(event.key !== "Enter" || event.shiftKey || event.ctrlKey || event.altKey || event.metaKey || event.isComposing) return;
+  const input = event.target, row = input.closest && input.closest("#itemsBody tr");
+  if(!row) return;
+  event.preventDefault();
+  const fields = lineFields(row), at = fields.indexOf(input);
+  if(at >= 0 && at < fields.length - 1){ fields[at + 1].focus(); return; }
+  const next = row.nextElementSibling;
+  if(next){ next.querySelector(".sku-name")?.focus(); return; }
+  const cases = getRowCaseQty(row);
+  if(!row.querySelector(".sku-name").value.trim() || !Number.isSafeInteger(cases) || cases <= 0){ input.blur(); return; }
+  addItem();
+  const newSku = document.querySelector("#itemsBody tr:last-child .sku-name");
+  if(newSku){ newSku.focus({preventScroll:true}); newSku.scrollIntoView({block:"nearest"}); }
+}
+function lineSkuPicked(event){
+  const input = event.target;
+  if(!input.classList || !input.classList.contains("sku-name")) return;
+  if(event.inputType && event.inputType !== "insertReplacementText") return;
+  if(!skuMasterByName.has(skuKey(input.value))) return;
+  const row = input.closest("tr"), fields = row ? lineFields(row) : [];
+  if(fields[1]) setTimeout(() => fields[1].focus(), 0);
+}
+document.addEventListener("DOMContentLoaded", () => {
+  const body = document.getElementById("itemsBody");
+  body.addEventListener("keydown", lineEnter);
+  body.addEventListener("input", lineSkuPicked);
+  body.addEventListener("focusin", e => { if(e.target.classList.contains("rate") && e.target.value) e.target.select(); });
+});
+
 function handleRateTab(event, input) {
   if(event.key !== "Tab" || event.shiftKey || event.ctrlKey || event.altKey || event.metaKey) return;
 
@@ -1787,7 +1854,8 @@ function belowMinLines(items){
 }
 function newOrderButtonLabel(){
   if(pickedBrand()?.quick_slip === true) return document.querySelector("#itemsBody tr.below-min") && !isAdminLogin() ? "Send to Admin for rate OK" : "Save & Print Slip";
-  return headCreatesApprovedPo()?"Save & Approve PO":"Submit to Warehouse Manager";
+  // Phone: short label so the total ₹ · cases · kg stays readable in the bottom bar.
+  return headCreatesApprovedPo()?"Save & Approve PO":(matchMedia("(max-width:640px)").matches?"Submit Order":"Submit to Warehouse Manager");
 }
 
 /* CREATE ORDER NUMBER */
