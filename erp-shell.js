@@ -658,6 +658,8 @@
   }
   // Esc closes the popup on top, on every ERP page (esc-close.js).
   if(!window.LWBEsc&&!document.querySelector('script[src*="esc-close.js"]')){const s=document.createElement("script");s.src="esc-close.js";document.head.appendChild(s)}
+  // Keyboard first: Enter = next field, arrows in lists, shortcuts (erp-keys.js).
+  if(!window.LWBKeys&&!document.querySelector('script[src*="erp-keys.js"]')){const s=document.createElement("script");s.src="erp-keys.js";document.head.appendChild(s)}
   window.ERPShell={mount,menuFor,viewOnly,menuForMe,hiddenPages,extraPages,pageRole,pageRoleFresh,allPages,icon:svg,alert:erpAlert,confirm:erpConfirm,prompt:erpPrompt,toast};
   const me=document.currentScript;
   if(me&&me.hasAttribute("data-auto")){
