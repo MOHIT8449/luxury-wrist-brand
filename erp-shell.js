@@ -72,12 +72,14 @@
       {t:"Tasks",h:"tasks.html",i:"check",r:"*"},
       {t:"Complaint Box",h:"complaint-box.html",i:"chat",r:"*"}]},
     {group:"Sales",items:[
-      // Take a new PO on "PO / Sales Order"; a submitted PO shows in "PO / Sales List" right below
+      // One "PO / Sales" item (Mohit, 4 Nov 2026): the list, with "+ New PO" on top of it. New PO itself
+      // (order-entry.html) is not drawn in the side menu (nm) but stays in search, Manage Users and the
+      // phone bottom bar; while it is open its list item is lit (par).
       // (Sales Head / Admin: the approval + driver list; Godown Manager / Accounts: same list, view only;
       // Salesman: his own orders with PO given > Approved > Dispatched > Delivered).
-      {t:"PO / Sales Order",h:"order-entry.html",i:"cart",r:"admin manager sales",k:"new order entry"},
-      {t:"PO / Sales List",h:"warehouse-orders.html",i:"note",r:"admin manager warehouse accounts",k:"po approval driver warehouse orders",pt:"PO / Sales List (all POs; approve for Admin / Sales Head)",nm:"accounts"},
-      {t:"PO / Sales List",h:"my-sales.html#orders",i:"note",r:"sales",k:"my orders modify",pt:"PO / Sales List (Salesman's own orders)"},
+      {t:"New PO / Sales Order",h:"order-entry.html",i:"cart",r:"admin manager sales",k:"new order entry po",pt:"PO / Sales Order (new PO)",nm:"admin manager sales",par:"warehouse-orders.html my-sales.html#orders"},
+      {t:"PO / Sales",h:"warehouse-orders.html",i:"note",r:"admin manager warehouse accounts",k:"po approval driver warehouse orders",pt:"PO / Sales List (all POs; approve for Admin / Sales Head)",nm:"accounts"},
+      {t:"PO / Sales",h:"my-sales.html#orders",i:"note",r:"sales",k:"my orders modify",pt:"PO / Sales List (Salesman's own orders)"},
       {t:"Rajnigandha Slips",h:"quick-slip.html",i:"note",r:"admin manager accounts warehouse sales",k:"rajnigandha slip parchi thermal print kachcha",vo:"accounts",nm:"accounts"},
       {t:"Rajnigandha Rate List",h:"rajni-rates.html",i:"bill",r:"admin",k:"rajnigandha rate landing min max profit margin approval"},
       {t:"My Sales",h:"my-sales.html",i:"chart",r:"sales"},
@@ -341,7 +343,7 @@
       groups.forEach(g=>{
         if(g.so)return;
         if(g.group)html+='<div class="erp-group">'+esc(g.group)+'</div>';
-        g.items.forEach(i=>{html+='<a class="erp-link'+(current&&i.h===current.h?' active':'')+'" href="'+esc(i.h)+'">'+svg(i.i)+'<span>'+esc(i.t)+'</span></a>'});
+        g.items.forEach(i=>{html+='<a class="erp-link'+(current&&(i.h===current.h||String(current.par||"").split(" ").includes(i.h))?' active':'')+'" href="'+esc(i.h)+'">'+svg(i.i)+'<span>'+esc(i.t)+'</span></a>'});
       });
       side.innerHTML=html;
     }
