@@ -6,6 +6,7 @@
   <title>Sales Tracking | Luxury Wrist Brand ERP</title>
   <script src="erp-date.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="brand-filter.js"></script>
   <link rel="stylesheet" href="erp-shell.css">
   <link rel="stylesheet" href="sales.css">
   <script src="erp-shell.js"></script>
@@ -43,6 +44,8 @@
     let team=[],parties=[],targets=[],orders=[],lines=[],skuCat=new Map(),cost=null,err="",tab="target",day=S.isoDay(new Date()),ageBucket="all",ageSm="";
     const TABS=[["target","Target & Achievement"],["daily","Daily Work"],["sku","SKU Sales & Margin"],["smsku","Salesman SKUs"],["party","Top Parties"],["noorder","No-Order Parties"]];
 
+    // Brand filter (All / Rajnigandha / Coca-Cola): only that brand's SKU lines count.
+    let BB={get:()=>""},skuCo=new Map();
     async function loadAll(){
       const from=el("from").value,to=el("to").value;
       if(!from||!to||from>to){await alert("Select a valid From and To date.");return}
@@ -51,10 +54,10 @@
         const tm=await client.rpc("lwb_sales_team");
         if(tm.error)throw Error(/lwb_sales_team/.test(tm.error.message)?"Run lwb_sales_team_setup.sql in Supabase first.":tm.error.message);
         team=tm.data||[];
-        const [pa,ta,sk]=await Promise.all([client.rpc("lwb_party_activity"),client.from("lwb_sales_targets").select("*"),client.from("sku_master").select("sku_name,category")]);
+        const [pa,ta,sk]=await Promise.all([client.rpc("lwb_party_activity"),client.from("lwb_sales_targets").select("*"),client.from("sku_master").select("*")]);
         if(pa.error)throw pa.error;
         parties=pa.data||[];targets=ta.data||[];
-        skuCat=new Map((sk.data||[]).map(s=>[key(s.sku_name),s.category]));
+        skuCat=new Map((sk.data||[]).map(s=>[key(s.sku_name),s.category]));skuCo=new Map((sk.data||[]).map(s=>[key(s.sku_name),s.company_id||""]));
         orders=await S.orders(from,to);
         const items=await S.inChunks("order_items","order_id",orders.map(o=>o.id),"order_id,sku_name,ordered_qty,approved_qty,loaded_qty,rate");
         if(!cost)cost=await S.loadLanding();
@@ -81,13 +84,14 @@
       for(const it of items){
         const o=byOrder.get(it.order_id);if(!o)continue;
         o.hasItems=true;
+        if(BB.get()&&skuCo.get(key(it.sku_name))!==BB.get())continue;
         const q=S.lineQty(it,o,basis);if(!q)continue;
         const amt=q*num(it.rate),c=cost?cost.cost(it.sku_name,skuCat.get(key(it.sku_name)),o.day):null;
         const l={o,sku:String(it.sku_name||"Unknown SKU").trim(),q,amt,cost:c==null?null:q*c};
         o.cases+=q;o.value+=amt;lines.push(l);
       }
       // A booked PO with no item rows keeps its PO total.
-      if(basis==="booked")for(const o of orders)if(!o.hasItems){o.value=num(o.total_amount);o.cases=num(o.total_qty)}
+      if(basis==="booked"&&!BB.get())for(const o of orders)if(!o.hasItems){o.value=num(o.total_amount);o.cases=num(o.total_qty)}
       orders=orders.filter(o=>o.value>0||o.cases>0);
     }
 
@@ -236,6 +240,7 @@
       el("from").addEventListener("change",loadAll);el("to").addEventListener("change",loadAll);
       el("basis").addEventListener("change",loadAll);el("credit").addEventListener("change",loadAll);
       el("loading").hidden=true;el("page").hidden=false;
+      if(window.LWBBrand)try{BB=await LWBBrand.mount(client,{into:"#page .erp-pagehead",after:true,onChange:loadAll})}catch(e){}
       await loadAll();
     })();
   </script>
