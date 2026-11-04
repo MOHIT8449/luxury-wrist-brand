@@ -7,6 +7,7 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="party-list.js" defer></script>
 <script src="brand-filter.js"></script>
+<script src="master-popup.js"></script>
 <style>
 :root{--navy:#132843;--blue:#1569dc;--line:#dde5f0;--bg:#f1f5fb}
 *{box-sizing:border-box}body{margin:0;font:14px Arial,sans-serif;background:var(--bg);color:#142841}
@@ -20,6 +21,12 @@ main{max-width:1430px;margin:auto;padding:22px}
 #message.error{background:#fde4e4;color:#9c2020}
 .filters{display:flex;gap:12px;align-items:end;flex-wrap:wrap}
 .filters .field{flex:1;min-width:220px}
+@media(max-width:700px){
+.filters{display:grid!important;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px!important}
+.filters .field{grid-column:span 2;min-width:0}.filters .field label{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:12px}
+.filters>button,.filters .mp-new{min-width:0;padding:0 4px!important;height:40px;font-size:13px}
+#obBar{display:contents}
+}
 .field label{display:block;font-size:12px;font-weight:bold;margin-bottom:7px}
 .field input,.field select{width:100%;padding:11px;border:1px solid #bbcbdd;border-radius:8px;font:14px Arial}
 button{background:#1569dc;color:white;border:0;border-radius:8px;padding:12px 17px;font-weight:bold;cursor:pointer}
@@ -56,10 +63,11 @@ tr.pick{cursor:pointer}tr.pick:hover td{background:#f4f8fe}
 <div id="brandRow" hidden></div>
 <div class="filters">
 <div class="field"><label for="party">Party / Customer</label><select id="party"><option value="">All Parties</option></select></div>
-<div class="field"><label for="search">Bill / Order / Reference Search</label><input id="search" placeholder="Bill No, Order No or Party Name"></div>
+<div class="field"><label for="search">Bill / Order / Ref. Search</label><input id="search" placeholder="Bill No, Order No or Party Name"></div>
 <button id="excel" type="button">Excel</button>
 <button id="pdf" type="button">PDF</button>
 <button id="refresh" type="button">Refresh</button>
+<span id="obBar" style="display:contents"></span>
 </div></section>
 <section class="metrics">
 <div class="metric"><small>Total Debit (Bills + Opening)</small><strong id="debit">—</strong></div>
@@ -110,7 +118,7 @@ async function loadBrands(){
  const sel=el("obBrand");sel.replaceChildren(new Option("Select brand",""),...brands.map(c=>new Option(c.name,c.id)));sel.value=fb;el("obBrandF").hidden=false;
 }
 function put(row,val,cls){const td=row.insertCell();td.textContent=String(val==null?"":val);if(cls)td.className=cls;return td}
-function message(value,error){el("message").textContent=value;el("message").className=error?"error":"";el("message").hidden=!value}
+function message(value,error){el("message").textContent=value;el("message").className=error?"error":"";el("message").hidden=!value;if(value&&document.body.classList.contains("mp-open")&&window.ERPShell&&ERPShell.toast)ERPShell.toast(value,error?"error":"success")}
 const shortDate=d=>{const m=/^(\d{4})-(\d{2})-(\d{2})/.exec(String(d||""));return m?m[3]+"/"+m[2]+"/"+m[1]:String(d||"")};
 function today(){const d=new Date();return [d.getFullYear(),String(d.getMonth()+1).padStart(2,"0"),String(d.getDate()).padStart(2,"0")].join("-")}
 async function init(){
@@ -122,7 +130,9 @@ async function init(){
   role=String(result.data.role||"").toLowerCase().trim();
   if(result.data.active!==true||!["admin","accounts","manager","sales","salesman","collector"].includes(role))throw Error("Only authorized ERP team can view party ledgers.");
   el("openingPanel").hidden=role!=="admin";
-  if(location.hash==="#openingPanel"&&role==="admin")setTimeout(()=>el("openingPanel").scrollIntoView(),300);
+  // Opening Balance (Admin): "+ Opening Balance" next to Refresh opens it in a popup (master-popup.js).
+  window.MP=LWBMasterPopup.mount({panel:"openingPanel",bar:"obBar",newLabel:"+ Opening",canNew:()=>role==="admin"});
+  if(location.hash==="#openingPanel"&&role==="admin")setTimeout(()=>MP.open(),300);
   el("obDate").value=today();
   try{await loadBrands()}catch(e){brands=[]}
   await reload();

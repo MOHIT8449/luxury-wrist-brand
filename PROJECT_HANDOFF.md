@@ -4,6 +4,16 @@
 **Purpose:** Continue the same ERP project from a new ChatGPT conversation without restarting or losing the agreed requirements.
 **Status:** Active development / verification. Do not assume all modules are completed or fully tested.
 
+## Phone / app: forms in popups, photo buttons gold, keyboard Next (4 Nov 2026)
+
+- Mohit: in the app no page should show an add form with the list under it; the form opens in a popup, less scrolling, Next on the keyboard goes to the next field, photo buttons stand out. No SQL.
+- List first + "+ New ..." popup (`master-popup.js` mount): Vehicle / Employee Master (`fleet-master.html`; Excel opens from an "Excel" button in the list row; Edit opens the popup; closes after a good save; phone cards), Opening Stock (list + "+ Enter" per SKU without opening = popup with that SKU picked), Payment Collection, Goods in Transit, Party Ledger Opening Balance ("+ Opening" next to Refresh; `#openingPanel` opens it), Sales Bill PDFs ("⬆ Upload PDF").
+- New `LWBMasterPopup.sheet({card, close, title})`: a page's own show / hide form card becomes a popup (opens when the page un-hides the card, ✕ / Esc / outside tap press the page's Close). Used by Complaint Box, Tasks, Godown Report, Market Report (Sales Head / Admin only; salesman keeps the form on the page).
+- master-popup phone cards: "#" column hidden; a last column named Action or Review is the button row. Popup forms `.fm-grid` two columns, sticky Save row.
+- `erp-shell.css`: on phone / touch, camera buttons (erp-docs 📷 Camera, Accounts 📷 Take photo, Driver Take Photo, Market photo tiles) are gold with a glow; plain photo file inputs get a gold button.
+- `erp-keys.js`: sets `enterkeyhint` on focus (Next, Done on the last field, Search in a list search) unless the page set its own.
+- Checked with a mocked database at 390 / 1366 px on all 55 pages: no side scroll, no new JS errors. Not yet checked on live data. Screenshots: project files `app-compact-popups/`.
+
 ## Party money brand-wise: Rajnigandha and Coca-Cola never mixed (4 Nov 2026)
 
 - Mohit: one party buys both brands; their outstanding is separate and must stay separate. A payment must say which brand (like a PO), and every screen needs All / Rajnigandha / Coca-Cola. Step 1 (money) done here; Step 2 (brand filter on every other report / stock page) is next.

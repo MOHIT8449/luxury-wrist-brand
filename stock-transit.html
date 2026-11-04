@@ -6,7 +6,7 @@
   <title>Goods in Transit | Luxury Wrist Brand ERP</title>
   <script src="erp-date.js"></script><script src="erp-recent.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="brand-filter.js"></script>
+<script src="brand-filter.js"></script><script src="master-popup.js"></script>
   <link rel="stylesheet" href="erp-shell.css">
   <link rel="stylesheet" href="sales.css">
   <script src="erp-shell.js"></script>
@@ -41,7 +41,7 @@
   <main id="page" class="erp-main" hidden>
     <div class="erp-pagehead"><h1>Goods in Transit<button type="button" class="erp-i" aria-label="Info" title="Info" data-tip="Company stock that is ordered or dispatched but not yet in the godown. It shows as &quot;On the way&quot; next to each SKU in PO Entry. Mark it Received when the truck is unloaded (enter the stock in Goods Inward as usual).">i</button></h1></div>
 
-    <section class="erp-card" style="margin-bottom:14px">
+    <section class="erp-card" style="margin-bottom:14px" id="addCard">
       <div class="erp-card-head"><h2>Add stock on the way</h2></div>
       <form class="erp-card-body tr-form" id="form" autocomplete="off">
         <div><label for="f_ref">Truck / Invoice No.</label><input id="f_ref" maxlength="60" placeholder="e.g. GJ05AB1234" style="text-transform:uppercase"></div>
@@ -51,7 +51,7 @@
       </form>
     </section>
 
-    <h2 class="sec">On the way now</h2>
+    <div id="openBar" style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap"><h2 class="sec">On the way now</h2></div>
     <div class="tr-list" id="open"></div>
 
     <h2 class="sec">Stock by SKU</h2>
@@ -90,7 +90,7 @@
       btn.disabled=false;
       if(error){await alert("Could not save: "+(/lwb_add_stock_transit/.test(error.message)?setupMsg:error.message));return}
       ERPShell.toast(lines.length+" SKU"+(lines.length>1?"s":"")+" added as on the way.");
-      el("form").reset();el("lines").replaceChildren();addLine();await load();
+      el("form").reset();el("lines").replaceChildren();addLine();await load();if(window.MP)MP.close();
     }
     async function load(){
       const [t,s]=await Promise.all([client.from("lwb_stock_transit").select("*").eq("status","OPEN").order("created_at",{ascending:false}),client.rpc("lwb_po_stock")]);
@@ -130,6 +130,8 @@
       el("addLine").onclick=()=>addLine().querySelector(".l-sku").focus();
       el("lines").addEventListener("click",e=>{const b=e.target.closest(".l-del");if(!b)return;b.closest(".tr-line").remove();if(!el("lines").children.length)addLine()});
       el("form").addEventListener("submit",save);
+      // List first; "+ Add stock on the way" opens the form in a popup (master-popup.js).
+      window.MP=LWBMasterPopup.mount({panel:"addCard",bar:"openBar",newLabel:"+ Add stock on the way"});
       el("open").addEventListener("click",async e=>{
         const b=e.target.closest("[data-close]");if(!b)return;
         const rec=b.dataset.close==="RECEIVED";
