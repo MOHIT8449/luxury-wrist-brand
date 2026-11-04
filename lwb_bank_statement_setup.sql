@@ -196,7 +196,7 @@ BEGIN
   CREATE TEMP TABLE IF NOT EXISTS pg_temp.lwb_bank_stmt_in (
     n integer, d date, narration text, ref text, debit numeric, credit numeric, balance numeric, ok boolean, fp text
   ) ON COMMIT DROP;
-  DELETE FROM pg_temp.lwb_bank_stmt_in;
+  DELETE FROM pg_temp.lwb_bank_stmt_in WHERE true;  -- Supabase blocks DELETE with no WHERE
 
   INSERT INTO pg_temp.lwb_bank_stmt_in (n, d, narration, ref, debit, credit, balance, ok)
   SELECT t.n,
