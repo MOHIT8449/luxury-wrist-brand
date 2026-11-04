@@ -6,6 +6,7 @@
   <title>Daily Summary | Luxury Wrist Brand ERP</title>
   <script src="erp-date.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="brand-filter.js"></script>
   <link rel="stylesheet" href="erp-shell.css">
   <script src="erp-shell.js"></script>
 <script src="erp-list.js"></script>
@@ -127,7 +128,7 @@
       el("out").innerHTML=h;
       // Count card → list of the records behind it (erp-list.js, lwb_daily_summary_list)
       if(window.ERPList){
-        const day=s.date,L=card=>async()=>{const r=await client.rpc("lwb_daily_summary_list",{p_date:day,p_card:card});if(r.error)throw r.error;return r.data||[]};
+        const day=s.date,L=card=>async()=>{const br=BB.get(),r=br?await client.rpc("lwb_daily_summary_list_b",{p_date:day,p_card:card,p_company_id:br}):await client.rpc("lwb_daily_summary_list",{p_date:day,p_card:card});if(r.error)throw r.error;return r.data||[]};
         const ST={DELIVERED:"Delivered",PARTIAL:"Partial",NOT_DELIVERED:"Not delivered"};
         const C=[
           {title:"Orders Received",load:L("orders"),cols:ERPList.ORDER_COLS},
@@ -142,15 +143,19 @@
     async function load(){
       const d=el("day").value||today();
       el("err").hidden=true;el("out").innerHTML='<p class="status" style="padding:30px">Loading...</p>';
-      const {data,error}=await client.rpc("lwb_daily_summary",{p_date:d});
+      // Brand filter (All / Rajnigandha / Coca-Cola): lwb_brand_reports_setup.sql
+      const br=BB.get();
+      const {data,error}=br?await client.rpc("lwb_daily_summary_b",{p_date:d,p_company_id:br}):await client.rpc("lwb_daily_summary",{p_date:d});
       if(error){el("out").innerHTML="";el("err").hidden=false;
         el("err").textContent=/lwb_daily_summary|function|schema cache/i.test(error.message)?"Daily Summary is not set up in Supabase yet. Run lwb_daily_summary_setup.sql once in the Supabase SQL Editor, then click Refresh.\n("+error.message+")":error.message;return}
       // Bill-wise driver money of the day (lwb_driver_bill_history_setup.sql); the page works without it.
       const hist=await client.rpc("lwb_driver_bill_history",{p_mobile:null,p_from:d,p_to:d});
-      dayRows=hist.error?[]:(hist.data||[]);histReady=!hist.error;
+      dayRows=await brandRows(hist.error?[]:(hist.data||[]));histReady=!hist.error;
       render(data);
     }
-    let dayRows=[],histReady=false,histFor=null;
+    let dayRows=[],histReady=false,histFor=null,BB={get:()=>""};
+    // Bills of the chosen brand only (POs with an SKU of it)
+    async function brandRows(rows){if(!BB.get()||!rows.length)return rows;const ob=await LWBBrand.orderBrands(client,rows.map(r=>r.order_id));return rows.filter(r=>LWBBrand.has(ob.get(r.order_id),BB.get()))}
     const digits=v=>String(v||"").replace(/\D/g,"").slice(-10);
     const sameDriver=(r,x)=>x.mobile?digits(r.mobile)===digits(x.mobile):r.driver===x.driver;
     // Received = office verified; on the way = driver entered, office not yet received.
@@ -170,7 +175,7 @@
       const day=el("day").value||today(),n=order?60:Number(el("histDays").value);
       const {data,error}=await client.rpc("lwb_driver_bill_history",{p_mobile:mobile||null,p_from:shift(day,-n),p_to:order?today():day});
       if(error){el("histBody").innerHTML='<div class="ds-err">'+esc(error.message)+"</div>";return}
-      let rows=data||[];
+      let rows=await brandRows(data||[]);
       if(order)rows=rows.filter(r=>r.order_no===order);else if(!mobile)rows=rows.filter(r=>r.driver===name);
       const t=split(rows);
       el("histSub").textContent=order?(rows[0]?rows[0].party+" · Driver "+rows[0].driver:""):(mobile||"")+" · "+(n?"last "+n+" days to "+nice(day):nice(day));
@@ -201,6 +206,7 @@
       const me=await start();if(!me)return;
       ERPShell.mount({role:me.realRole||me.role,name:me.name,onLogout:async()=>{await client.auth.signOut();location.replace("login.html")}});
       el("loading").hidden=true;el("page").hidden=false;
+      if(window.LWBBrand)try{BB=await LWBBrand.mount(client,{into:"#page .erp-pagehead",after:true,onChange:load})}catch(e){}
       el("day").value=today();load();
     })();
   </script>

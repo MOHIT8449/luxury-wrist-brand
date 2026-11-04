@@ -6,6 +6,7 @@
   <title>Party Call List | Luxury Wrist Brand ERP</title>
   <script src="erp-date.js"></script><script src="erp-recent.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="brand-filter.js"></script>
   <link rel="stylesheet" href="erp-shell.css">
   <link rel="stylesheet" href="sales.css">
   <script src="erp-shell.js"></script>
@@ -108,6 +109,8 @@
     const S=LWBSales,{client,el,esc,fmt,key}=S;
     let me=null,head=false,tab="list",rows=[],err="",openId=null,busy=false,form={};
     let report=[],setupRows=[],picked=new Set();
+    // Brand filter: a party is due when its last order OF THAT BRAND is late (lwb_brand_reports_setup.sql)
+    let BB={get:()=>""};
     const RESULTS=[["ORDER_TAKEN","✅","Order taken"],["WILL_ORDER","📅","Will order later"],["NO_ORDER","❌","No order"],["NOT_REACHABLE","📵","Not reachable"]];
     const RES=Object.fromEntries(RESULTS.map(r=>[r[0],r]));
     const REASONS=["Stock still available","Payment / credit issue","Rate / scheme issue","Buying from other supplier","Shop closed / owner away","Slow market / low sale","Complaint (damage / delivery)","Other"];
@@ -128,7 +131,7 @@
 
     // ---- Call list ----
     async function loadList(){
-      const r=await client.rpc("lwb_party_call_list",{p_all:false});
+      const r=BB.get()?await client.rpc("lwb_party_call_list_b",{p_all:false,p_company_id:BB.get()}):await client.rpc("lwb_party_call_list",{p_all:false});
       if(r.error){err=setupMsg(r.error.message);rows=[]}else{err="";rows=r.data||[]}
       if(head){
         const sms=new Map();rows.forEach(x=>{if(x.salesman_id)sms.set(x.salesman_id,x.salesman_name||"Salesman")});
@@ -339,6 +342,7 @@
         if(await setDays([...picked],null)){picked.clear();drawSetup()}
       };
       el("loading").hidden=true;el("page").hidden=false;
+      if(window.LWBBrand)try{BB=await LWBBrand.mount(client,{into:"#page .erp-pagehead",after:true,onChange:()=>loadList()})}catch(e){}
       const start=location.hash.slice(1);
       tab=["report","setup"].includes(start)&&(head||start==="report")?start:"list";
       render();

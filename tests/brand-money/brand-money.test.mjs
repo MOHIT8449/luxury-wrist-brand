@@ -168,3 +168,41 @@ test('opening balance per brand; ledger rows carry the brand',async()=>{
  const bal=b=>led.filter(l=>l.company_id===b).reduce((a,l)=>a+Number(l.debit)-Number(l.credit),0);
  assert.equal(bal(C),30000+15000+46000-50000);
 });
+
+test('brand-wise Daily Summary, its lists and the call list (lwb_brand_reports_setup.sql)',async()=>{
+ await db.exec(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS total_amount numeric, ADD COLUMN IF NOT EXISTS total_qty numeric, ADD COLUMN IF NOT EXISTS total_weight numeric, ADD COLUMN IF NOT EXISTS sales_person text;
+  ALTER TABLE lwb_delivery_reports ADD COLUMN IF NOT EXISTS assignment_id uuid;
+  ALTER TABLE user_profiles ADD COLUMN IF NOT EXISTS mobile text;
+  ALTER TABLE dispatch_assignments ADD COLUMN IF NOT EXISTS id uuid, ADD COLUMN IF NOT EXISTS driver_name text, ADD COLUMN IF NOT EXISTS driver_mobile text, ADD COLUMN IF NOT EXISTS vehicle_no text;
+  ALTER TABLE lwb_customer_master ADD COLUMN IF NOT EXISTS id uuid default gen_random_uuid(), ADD COLUMN IF NOT EXISTS city text, ADD COLUMN IF NOT EXISTS mobile text, ADD COLUMN IF NOT EXISTS is_active boolean default true, ADD COLUMN IF NOT EXISTS order_every_days int;
+  CREATE TABLE IF NOT EXISTS lwb_party_salesman(customer_id uuid, salesman_id uuid);
+  CREATE TABLE IF NOT EXISTS lwb_party_calls(id bigserial, customer_id uuid, call_date date, next_date date, result text, reason text, note text, called_by_name text, created_at timestamptz default now());
+  CREATE OR REPLACE FUNCTION public.lwb_sales_head() RETURNS boolean LANGUAGE sql STABLE AS $$ SELECT true $$;
+  CREATE OR REPLACE FUNCTION public.lwb_is_sales_user() RETURNS boolean LANGUAGE sql STABLE AS $$ SELECT true $$;
+  UPDATE orders o SET total_amount=(SELECT sum(loaded_qty*rate) FROM order_items i WHERE i.order_id=o.id), total_qty=1;
+  UPDATE lwb_customer_master SET order_every_days=1;`);
+ await db.exec(await sql('lwb_brand_reports_setup.sql'));
+ await db.exec(await sql('lwb_brand_reports_setup.sql')); // safe to run again
+ await as('accounts');
+ const sum=async co=>(await call('select public.lwb_daily_summary_b($1,$2) j',[today,co]))[0].j;
+ const all=await sum(null),rj=await sum(R),ck=await sum(C);
+ // today's POs: R-2 (Q, Rajnigandha 20,000), C-2 (Coca-Cola 15,000), R-3 (Rajnigandha 9,000)
+ assert.equal(all.orders.count,3);assert.equal(Number(all.orders.amount),44000);
+ assert.equal(rj.orders.count,2);assert.equal(Number(rj.orders.amount),29000);
+ assert.equal(ck.orders.count,1);assert.equal(Number(ck.orders.amount),15000);
+ // outstanding of a brand = that brand's ledger only
+ const bal=async b=>Number((await call("select coalesce(sum(x.v) filter (where x.v>0.5),0) s from (select customer_name, sum(debit-credit) v from public.lwb_party_ledger_b() where company_id=$1 group by 1) x",[b]))[0].s);
+ assert.ok(Number(ck.outstanding.total)>0);
+ assert.equal(Number(ck.outstanding.total),await bal(C));
+ assert.equal(Number(rj.outstanding.total),await bal(R));
+ assert.ok(Number(all.outstanding.total)>=Number(ck.outstanding.total));
+ const lo=async co=>(await call("select public.lwb_daily_summary_list_b($1,'orders',$2) j",[today,co]))[0].j;
+ assert.deepEqual((await lo(C)).map(x=>x.order_no),['C-2']);
+ assert.equal((await lo(null)).length,3);
+ // call list: Q never bought Coca-Cola, so it is not on the Coca-Cola list
+ await as('manager');
+ const cl=async co=>(await call('select customer_name from public.lwb_party_call_list_b(true,$1) order by 1',[co])).map(x=>x.customer_name);
+ assert.deepEqual(await cl(null),[P,Q]);
+ assert.deepEqual(await cl(C),[P]);
+ assert.deepEqual(await cl(R),[P,Q]);
+});
