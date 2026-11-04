@@ -5,7 +5,10 @@
    LWBPartyPay.load(client)            -> {raw, parties: Map(main party -> summary), parentOf(name)}
    LWBPartyPay.open({client, info, party, amount, mode, adjust, onSaved})
      info   : result of load()
-     adjust : true = only split the advance already received (no new money) */
+     adjust : true = only split the advance already received (no new money)
+     brand  : company id to start with (Rajnigandha / Coca-Cola). Money of one brand goes only to that
+              brand's bills; its advance and opening stay with that brand (lwb_brand_money_setup.sql).
+   info.parties: x.brands[companyId | ""] = {bills, due, advance, opening, net, oldest}  ("" = no brand) */
 (function(){
   if(window.LWBPartyPay)return;
   const esc=v=>String(v==null?"":v).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -28,27 +31,44 @@
   async function load(client){
     const {data,error}=await client.rpc("lwb_party_billing",{p_days:400});
     if(error)throw Error(errText(error));
-    const d=data||{},groups=d.groups||[],adv=d.advance||{},open=d.openings||{};
+    const d=data||{},groups=d.groups||[],adv=d.advance||{},open=d.openings||{},companies=d.companies||[];
+    const hasB=Array.isArray(d.advance_b);
     const parentByKey=new Map(groups.map(g=>[key(g.member),g.parent]));
     const parentOf=n=>{let v=String(n||"").trim();for(let i=0;i<4;i++){const p=parentByKey.get(key(v));if(!p||key(p)===key(v))break;v=p}return v};
     const parties=new Map();
-    const get=p=>{const k=key(p);if(!parties.has(k))parties.set(k,{party:p,bills:[],due:0,advance:0,opening:0,members:[],billed:0,oldest:""});return parties.get(k)};
+    const get=p=>{const k=key(p);if(!parties.has(k))parties.set(k,{party:p,bills:[],due:0,advance:0,opening:0,members:[],billed:0,oldest:"",brands:{}});return parties.get(k)};
+    const slot=(x,c)=>{c=c||"";return x.brands[c]||(x.brands[c]={company_id:c,bills:[],due:0,advance:0,opening:0,net:0,oldest:""})};
     for(const o of d.orders||[]){
       o.parent=o.parent||parentOf(o.party);
       if(!o.invoice_no)continue;
       const due=r2(o.due);
       const x=get(o.parent);x.billed+=Number(o.bill_amount)||0;
-      if(due>0.5){x.bills.push(o);x.due+=due;if(!x.oldest||String(o.invoice_date)<x.oldest)x.oldest=String(o.invoice_date||"")}
+      if(due>0.5){x.bills.push(o);x.due+=due;if(!x.oldest||String(o.invoice_date)<x.oldest)x.oldest=String(o.invoice_date||"");
+        const b=slot(x,o.company_id);b.bills.push(o);b.due+=due;if(!b.oldest||String(o.invoice_date)<b.oldest)b.oldest=String(o.invoice_date||"")}
     }
-    for(const [p,a] of Object.entries(adv))get(parentOf(p)).advance+=Number(a)||0;
-    for(const [p,a] of Object.entries(open))get(parentOf(p)).opening+=Number(a)||0;
+    if(hasB){
+      for(const a of d.advance_b){const x=get(parentOf(a.parent)),v=Number(a.amount)||0;x.advance+=v;slot(x,a.company_id).advance+=v}
+      for(const a of d.openings_b||[]){const x=get(parentOf(a.parent)),v=Number(a.amount)||0;x.opening+=v;slot(x,a.company_id).opening+=v}
+    }else{
+      for(const [p,a] of Object.entries(adv))get(parentOf(p)).advance+=Number(a)||0;
+      for(const [p,a] of Object.entries(open))get(parentOf(p)).opening+=Number(a)||0;
+    }
     for(const g of groups)get(g.parent).members.push(g.member);
     for(const x of parties.values()){
       x.bills.sort((a,b)=>String(a.invoice_date).localeCompare(String(b.invoice_date))||String(a.entered_at).localeCompare(String(b.entered_at))||String(a.order_no).localeCompare(String(b.order_no)));
       x.due=r2(x.due);x.advance=r2(x.advance);x.net=r2(x.due+x.opening-x.advance);
+      for(const b of Object.values(x.brands)){b.bills.sort((a,c)=>String(a.invoice_date).localeCompare(String(c.invoice_date))||String(a.order_no).localeCompare(String(c.order_no)));
+        b.due=r2(b.due);b.advance=r2(b.advance);b.opening=r2(b.opening);b.net=r2(b.due+b.opening-b.advance)}
     }
-    return {raw:d,parties,parentOf,today:d.today||today()};
+    const brandOf=id=>companies.find(c=>c.id===id)||null;
+    return {raw:d,parties,parentOf,today:d.today||today(),companies,brandOf,branded:hasB&&companies.length>1};
   }
+  // One brand of a party (id "" = money / bills with no brand). Same shape as a party, with its name and bill names.
+  const EMPTY={bills:[],due:0,advance:0,opening:0,net:0,oldest:""};
+  function slice(x,c){if(!x)return null;const b=x.brands&&x.brands[c||""]||EMPTY;return {...b,company_id:c||"",party:x.party,members:x.members,brands:x.brands}}
+  // Brands this party has something in (bills due, advance or opening), real brands only.
+  const activeBrands=x=>x&&x.brands?Object.values(x.brands).filter(b=>b.company_id&&(b.due>0.5||Math.abs(b.advance)>0.5||Math.abs(b.opening)>0.5)).map(b=>b.company_id):[];
+  const savedBrand=()=>{try{return localStorage.getItem("lwbBrand")||""}catch(e){return ""}};
   // One balance per party: bills due + opening − money not yet set against bills.
   // > 0 = still to collect, < 0 = advance (we hold the party's money).
   const balText=p=>{if(!p)return "";const n=r2(p.net!=null?p.net:p.due+(p.opening||0)-p.advance);return n>0.5?"due "+rs(n):n<-0.5?"advance "+rs(-n):"settled"};
@@ -96,6 +116,12 @@
 .lpp .left b.g{color:#13824a}.lpp .left b.r{color:#b3122b}
 .lpp .err{background:#ffebeb;color:#9b2020;border-radius:8px;padding:9px 11px;white-space:pre-wrap}
 .lpp .hint{color:#66788e;font-size:13px;margin:0}
+.lpp .bpk{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px}
+.lpp .bpk button{border:2px solid #d5dbe3;background:#fff;border-radius:10px;padding:7px 10px;text-align:left;font:inherit;cursor:pointer;color:var(--bc)}
+.lpp .bpk button b{display:flex;align-items:center;gap:6px;font-size:14px}.lpp .bpk button b i{width:9px;height:9px;border-radius:50%;background:var(--bc)}
+.lpp .bpk button small{display:block;color:#66788e;font-size:12px;margin-top:1px}
+.lpp .bpk button[aria-pressed=true]{border-color:var(--bc);background:color-mix(in srgb,var(--bc) 9%,#fff)}
+.lpp .bpk.need button{border-color:#e0a1a1}
 .lpp .clist{position:absolute;left:0;right:0;top:100%;z-index:5;background:#fff;border:1px solid #d5dbe3;border-radius:8px;box-shadow:0 10px 24px rgba(0,0,0,.12);max-height:260px;overflow:auto;margin-top:2px}
 .lpp .clist button{display:flex;justify-content:space-between;gap:8px;width:100%;text-align:left;border:0;border-bottom:1px solid #f0f2f5;background:#fff;padding:9px 10px;font:inherit;cursor:pointer}
 .lpp .clist button.on,.lpp .clist button:hover{background:#eef4ff}.lpp .clist small{color:#66788e;white-space:nowrap}
@@ -109,7 +135,15 @@
   function open(o){
     css();
     const info=o.info,adjust=!!o.adjust;
-    let party=o.party?info.parentOf(o.party):"",how="auto",busy=false;
+    let party=o.party?info.parentOf(o.party):"",how="auto",busy=false,brand="";
+    const BR=info.branded?info.companies:[];
+    function pickDefaultBrand(){
+      if(!BR.length){brand="";return}
+      if(o.brand&&BR.some(c=>c.id===o.brand)){brand=o.brand;return}
+      const act=activeBrands(info.parties.get(key(party)));
+      if(act.length===1){brand=act[0];return}
+      const sv=savedBrand();brand=act.length===0&&BR.some(c=>c.id===sv)?sv:"";
+    }
     const names=(()=>{const m=new Map();
       for(const x of info.parties.values())m.set(key(x.party),x.party);
       for(const n of info.raw.parties||[]){const p=info.parentOf(n);if(!m.has(key(p)))m.set(key(p),p)}
@@ -120,7 +154,9 @@
 <div class="bd">
  <div style="position:relative" data-pbox><label class="l" for="lppP">Party (main party or any name it is billed in)</label>
   <input id="lppP" autocomplete="off" placeholder="Type party name" role="combobox" aria-expanded="false"><div class="clist" hidden></div></div>
+ <div data-brand hidden><label class="l">Payment किस brand का है? <span style="color:#b3122b">*</span></label><div class="bpk" data-bpk></div></div>
  <div class="sum" data-sum></div>
+ <p class="hint" data-nob hidden></p>
  <div data-money>
   <div class="row2" style="margin-bottom:10px"><div><label class="l">Date received</label><div class="dbx"><input class="dt" inputmode="numeric" maxlength="10" placeholder="DD/MM/YYYY" aria-label="Date received"><button type="button" aria-label="Open calendar">📅</button><input type="date" tabindex="-1" aria-hidden="true"></div></div>
    <div><label class="l" for="lppR">Remark</label><input id="lppR" maxlength="300" autocomplete="off" placeholder="optional"></div></div>
@@ -151,7 +187,21 @@
     dt.oninput=()=>{const d=dt.value.replace(/\D/g,"");if(/^\d{8}$/.test(d)&&!dt.value.includes("/"))dt.value=d.slice(0,2)+"/"+d.slice(2,4)+"/"+d.slice(4)};
     if(o.amount)q('.amt[data-m="'+(o.mode||"CASH")+'"]').value=r2(o.amount);
 
-    const P=()=>info.parties.get(key(party))||{party,bills:[],due:0,advance:0,opening:0,members:[]};
+    const whole=()=>info.parties.get(key(party))||{party,bills:[],due:0,advance:0,opening:0,members:[],brands:{}};
+    const P=()=>BR.length?slice(whole(),brand):whole();
+    const bname=()=>{const c=BR.find(x=>x.id===brand);return c?c.name:""};
+    function drawBrand(){
+      const box=q("[data-brand]");box.hidden=!BR.length||!party;if(box.hidden)return;
+      const w=whole();
+      q("[data-bpk]").className="bpk"+(brand?"":" need");
+      q("[data-bpk]").innerHTML=BR.map(c=>{const b=slice(w,c.id),n=r2(b.net);
+        return `<button type="button" data-b="${esc(c.id)}" aria-pressed="${c.id===brand}" style="--bc:${esc(c.color||"#2362a4")}"><b><i></i>${esc(c.name)}</b><small>${n>0.5?"बाकी "+rs(n):n<-0.5?"advance "+rs(-n):"कुछ बाकी नहीं"}${b.bills.length?" · "+b.bills.length+" bill"+(b.bills.length>1?"s":""):""}</small></button>`}).join("");
+      q("[data-bpk]").querySelectorAll("[data-b]").forEach(b=>b.onclick=()=>{brand=b.dataset.b;manual=new Map();drawAll()});
+      const nb=slice(w,""),nob=q("[data-nob]"),m=r2(nb.advance),ob=r2(nb.opening);
+      nob.hidden=!(Math.abs(m)>0.5||Math.abs(ob)>0.5);
+      nob.textContent="बिना brand का पुराना पैसा: "+[Math.abs(m)>0.5?"payment "+rs(m):"",Math.abs(ob)>0.5?"opening "+rs(ob):""].filter(Boolean).join(" · ")+". उसे Billing & Outstanding > Payments / Party Ledger में brand दें।";
+      q("[data-ok]").textContent=(adjust?"Save adjustment":"Save "+(bname()?bname()+" ":"")+"payment");
+    }
     const money=()=>adjust?P().advance:r2(qa(".amt").reduce((a,i)=>a+num(i.value),0));
     let manual=new Map();
     function plan(){
@@ -165,16 +215,17 @@
     function drawSum(){
       const p=P();
       const n=r2(p.due+(p.opening||0)-p.advance),both=p.advance>0.5&&p.bills.length>0;
-      q("[data-sum]").innerHTML=party?`<div class="${n>0.5?"due":"adv"}"><small>${n>0.5?"Balance: to collect":n<-0.5?"Balance: advance with us":"Balance"}</small><b>${rs(Math.abs(n))}</b></div><div><small>Bills due (${p.bills.length})</small><b>${rs(p.due)}</b></div>`+
+      q("[data-sum]").innerHTML=party&&(!BR.length||brand)?`<div class="${n>0.5?"due":"adv"}"><small>${bname()?esc(bname())+" · ":""}${n>0.5?"to collect":n<-0.5?"advance with us":"balance"}</small><b>${rs(Math.abs(n))}</b></div><div><small>Bills due (${p.bills.length})</small><b>${rs(p.due)}</b></div>`+
         (both?`<div><small>Paid earlier, not set against bills</small><b>${rs(p.advance)}</b>${adjust?"":`<button type="button" class="lnk" data-adjnow style="display:block;margin-top:2px">Adjust now</button>`}</div>`:p.opening?`<div><small>Opening balance</small><b>${rs(p.opening)}</b></div>`:""):"";
-      const a=q("[data-adjnow]");if(a)a.onclick=()=>{close();open({...o,party,adjust:true})};
-      q("[data-sum]").hidden=!party;
+      const a=q("[data-adjnow]");if(a)a.onclick=()=>{close();open({...o,party,brand,adjust:true})};
+      q("[data-sum]").hidden=!party||(BR.length&&!brand);
     }
     function drawBills(){
       const p=P(),pl=plan(),box=q("[data-bills]");
       if(!party){box.innerHTML='<p class="hint">Choose the party to see its bills.</p>';return}
-      if(!p.bills.length){box.innerHTML='<p class="hint">No bill is due for this party'+(adjust?".":" — the money stays as advance and is adjusted when the next bill is made.")+'</p>';return}
-      box.innerHTML=`<div style="overflow:auto;max-height:300px"><table><thead><tr><th>PO / bill</th><th class="n">Due</th><th class="n">${how==="pick"?"Take now":"Goes to bill"}</th></tr></thead><tbody>${p.bills.map(b=>{
+      if(BR.length&&!brand){box.innerHTML='<p class="hint">ऊपर brand चुनें: उसी brand के bill दिखेंगे।</p>';return}
+      if(!p.bills.length){box.innerHTML='<p class="hint">No '+(bname()?bname()+" ":"")+'bill is due for this party'+(adjust?".":" — the money stays as advance and is adjusted when the next bill is made.")+'</p>';return}
+      box.innerHTML=`<div style="overflow:auto;max-height:300px"><table><thead><tr><th>${bname()?esc(bname())+" bill":"PO / bill"}</th><th class="n">Due</th><th class="n">${how==="pick"?"Take now":"Goes to bill"}</th></tr></thead><tbody>${p.bills.map(b=>{
         const v=pl.get(b.order_id)||0;
         return `<tr><td><b>${esc(b.order_no)}</b> · ${dmy(b.invoice_date)}<small>${esc(billNames(b))}</small></td><td class="n">${rs(b.due)}</td><td class="n">${how==="pick"?`<input data-o="${esc(b.order_id)}" inputmode="decimal" value="${v?r2(v):""}" placeholder="0" aria-label="Amount for ${esc(b.order_no)}"><br><button type="button" class="lnk" data-full="${esc(b.order_id)}">full</button>`:(v?"<b>"+rs(v)+"</b>":"—")}</td></tr>`}).join("")}</tbody></table></div>`;
       box.querySelectorAll("[data-o]").forEach(i=>i.oninput=()=>{manual.set(i.dataset.o,num(i.value));drawLeft()});
@@ -186,7 +237,7 @@
       q("[data-left]").innerHTML=adjust?`<span>Advance ${rs(m)}</span><span>Adjusted now <b>${rs(split)}</b></span><span>Advance left <b class="${left<-0.5?"r":"g"}">${rs(left)}</b></span>`:
         `<span>Against bills <b>${rs(split)}</b></span><span>${left<-0.5?"More than received":"Stays as advance"} <b class="${left<-0.5?"r":"g"}">${rs(Math.abs(left))}</b></span>`;
     }
-    function drawAll(){drawSum();qa("[data-h]").forEach(b=>b.setAttribute("aria-pressed",String(b.dataset.h===how)));drawBills();drawLeft()}
+    function drawAll(){drawBrand();drawSum();qa("[data-h]").forEach(b=>b.setAttribute("aria-pressed",String(b.dataset.h===how)));drawBills();drawLeft()}
     qa("[data-h]").forEach(b=>b.onclick=()=>{if(b.dataset.h==="pick"&&!manual.size){how="auto";manual=new Map(plan())}how=b.dataset.h;drawAll()});
     qa(".amt").forEach(i=>i.oninput=()=>{if(how==="auto")drawBills();drawLeft()});
     // cash note count
@@ -202,7 +253,7 @@
     function drawList(){const v=key(pin.value);shown=names.filter(n=>!v||key(n).includes(v)||(info.parties.get(key(n))||{members:[]}).members.some(m=>key(m).includes(v))).slice(0,40);hi=0;
       list.innerHTML=shown.map((n,i)=>{const x=info.parties.get(key(n));return `<button type="button" data-i="${i}"${i?"":' class="on"'}><span>${esc(n)}${x&&x.members.length?`<small style="display:block">${esc(x.members.slice(0,4).join(", "))}${x.members.length>4?" …":""}</small>`:""}</span><small>${x&&(x.due>0.5||x.advance>0.5||x.opening)?balText(x):""}</small></button>`}).join("")||'<p class="hint" style="padding:9px">Not in the Party Master</p>';
       list.hidden=false;list.querySelectorAll("[data-i]").forEach(b=>b.onmousedown=e=>{e.preventDefault();pick(shown[Number(b.dataset.i)])})}
-    function pick(n){party=n;pin.value=n;list.hidden=true;manual=new Map();drawAll()}
+    function pick(n){party=n;pin.value=n;list.hidden=true;manual=new Map();if(!o.brand||!brand)pickDefaultBrand();drawAll()}
     pin.onfocus=drawList;pin.oninput=()=>{party="";drawList();drawAll()};
     pin.onblur=()=>setTimeout(()=>{list.hidden=true;if(!party&&pin.value.trim()){const p=info.parentOf(pin.value.trim());const m=names.find(n=>key(n)===key(p));if(m)pick(m)}},150);
     pin.onkeydown=e=>{if(list.hidden)return;if(e.key==="ArrowDown"||e.key==="ArrowUp"){e.preventDefault();hi=Math.max(0,Math.min(shown.length-1,hi+(e.key==="ArrowDown"?1:-1)));list.querySelectorAll("[data-i]").forEach((b,i)=>b.classList.toggle("on",i===hi))}
@@ -213,6 +264,7 @@
       if(busy)return;const err=q("[data-err]");err.hidden=true;
       const fail=t=>{err.textContent=t;err.hidden=false;err.scrollIntoView({block:"nearest"})};
       if(!party)return fail("Choose the party.");
+      if(BR.length&&!brand)return fail("Brand चुनें: यह payment Rajnigandha का है या Coca-Cola का?");
       const pl=plan(),allocs=[...pl].filter(([,v])=>v>0).map(([id,v])=>({order_id:id,amount:r2(v)}));
       const split=allocs.reduce((a,x)=>a+x.amount,0);
       let args;
@@ -220,6 +272,7 @@
         if(!allocs.length)return fail("Nothing to adjust.");
         if(split>P().advance+0.5)return fail("Adjusted "+rs(split)+" is more than the advance "+rs(P().advance)+".");
         args=["lwb_party_adjust",{p_party:party,p_allocs:how==="auto"?null:allocs}];
+        if(BR.length)args[1].p_company_id=brand;
       }else{
         const date=parseDmy(dt.value);if(!date)return fail("Enter the date as DD/MM/YYYY.");
         if(date>info.today)return fail("The date can not be after today.");
@@ -234,6 +287,7 @@
         const cash=lines.filter(l=>l.mode==="CASH").reduce((a,l)=>a+l.amount,0);
         if(cash>=200000)return fail("Cash of ₹2 lakh or more in one receipt is not allowed (Income Tax 269ST). Split it into Bank / UPI.");
         args=["lwb_party_receive",{p_party:party,p_pay_date:date,p_lines:lines,p_allocs:how==="auto"?null:how==="adv"?[]:allocs,p_remark:q("#lppR").value.trim()||null}];
+        if(BR.length)args[1].p_company_id=brand;
       }
       busy=true;q("[data-ok]").disabled=true;
       try{
@@ -244,9 +298,10 @@
       }catch(e){fail(errText(e))}
       finally{busy=false;q("[data-ok]").disabled=false}
     };
+    pickDefaultBrand();
     drawAll();
     setTimeout(()=>{(party?(adjust?q("[data-ok]"):q('.amt[data-m="'+(o.mode||"CASH")+'"]')):pin).focus()},60);
     return {close};
   }
-  window.LWBPartyPay={load,open,billNames,balText,key,rs,dmy,errText};
+  window.LWBPartyPay={load,open,billNames,balText,key,rs,dmy,errText,slice,activeBrands};
 })();
