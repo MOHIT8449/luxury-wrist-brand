@@ -4,6 +4,15 @@
 **Purpose:** Continue the same ERP project from a new ChatGPT conversation without restarting or losing the agreed requirements.
 **Status:** Active development / verification. Do not assume all modules are completed or fully tested.
 
+## PO Filled %, one "PO / Sales" menu item, Party Master popup (4 Nov 2026)
+
+- Mohit: show how much of a salesman's order was really loaded (order 100, loaded 90 = "90% filled"), merge New + List pages so the menu is shorter, and Party Master = list with "+ New Party" in a popup. No SQL.
+- `warehouse-orders.html` (now titled **PO / Sales**): Qty cell of a Loaded / Billed or Delivered PO shows a "N% filled" badge (sum `order_items.loaded_qty` ÷ sum `ordered_qty`; green 100%, amber 90–99%, red below 90%; no badge when nothing loaded was saved, e.g. old POs). Filter **All fill / Full 100% / Short (<100%) / Below 90%** (only loaded / delivered POs pass). Excel has Loaded and Filled % columns. "+ New PO" (Admin / Sales Head) next to ⟳ Refresh.
+- Menu: "PO / Sales Order" (`order-entry.html`) is `nm` for admin / manager / sales (not drawn in the side menu; still in Module Search, Manage Users and the phone bottom bar "New Order") and has `par` so "PO / Sales" is lit while it is open. Both list items are named "PO / Sales". `order-entry.html` link "📋 PO List".
+- `customer-master.html`: the list is first; add / edit open in a popup (`#pmModal`, Esc / ✕ / Cancel close it, closes after a good save). Bulk add, Excel and Duplicates are buttons in the list's button row (one panel open at a time). `customer-master.html#new` opens the popup (PO entry "+ New Party" link). Phone: one compact card per party, no side scroll.
+- Checked with a mocked database at 1366 px and 390 px: no side scroll. Not yet checked on live data.
+- Planned next (Mohit agreed the plan, `page-merge/merge-plan.md` in project files): Purchase Entry + Purchase List, other masters as popups, Returns / Tally / Inventory merges.
+
 ## Accounts: own work in front, other pages view only, company payment entered once (4 Nov 2026)
 
 - Mohit: Accounts (e.g. YOGESH PATEL) saw data it does not use. Its work is cash in / cash out, matching entries (bank), which order went where, and returns. Other pages it still needs to see, but not change; no money entry should be needed twice.

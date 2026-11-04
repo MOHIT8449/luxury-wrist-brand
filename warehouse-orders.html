@@ -721,6 +721,8 @@
 
     /* PO list: stage tabs with counts, date range, column filters, pager (2 Nov 2026) */
     .po-refresh {display:flex;align-items:center;gap:10px}
+    .po-new {background:#c9b26a;color:#002f37;border:1px solid #c9b26a;font-weight:700;text-decoration:none;white-space:nowrap}
+    .po-new:hover {background:#e4d08f}
     .po-updated {font-size:12px;color:#6b7785;white-space:nowrap}
     .po-tabs {display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px}
     .po-tab {display:inline-flex;align-items:center;gap:7px;background:#fff;border:1px solid #e3e7ec;border-radius:999px;
@@ -1068,6 +1070,13 @@
       #reviewModal .modal-footer .btn-grey{display:none}
     }
 
+/* Filled % badge (4 Nov 2026) */
+      #ordersArea .fill-w {display:block;line-height:1}
+      .fill-b {display:inline-flex;align-items:center;gap:4px;margin-top:3px;border-radius:999px;padding:1px 7px 1px 2px;font-size:11px;font-weight:700;white-space:nowrap}
+      .fill-b i {width:13px;height:13px;border-radius:50%;flex:0 0 13px;background:conic-gradient(currentColor var(--p),rgba(0,0,0,.12) 0)}
+      .fill-b.full {background:#e6f4ec;color:#13824a}
+      .fill-b.mid {background:#fff4e0;color:#b26b00}
+      .fill-b.low {background:#fdecec;color:#c62828}
 </style>
 <link rel="stylesheet" href="erp-shell.css">
 <script src="erp-shell.js" data-auto defer></script>
@@ -1103,7 +1112,7 @@
 
     <div class="page-title">
       <div class="po-title">
-        <h2>Sales Head — PO Approval</h2>
+        <h2>PO / Sales</h2>
         <!-- Dashboard or PO List, one at a time (2 Nov 2026, Mohit: like the Cases / Pallet button) -->
         <div class="po-view" role="tablist" aria-label="View">
           <button type="button" role="tab" data-view="list" onclick="setPoView('list')">📋 PO List</button>
@@ -1113,9 +1122,10 @@
 
       <div class="po-refresh">
         <span id="listUpdated" class="po-updated"></span>
-        <button class="btn btn-blue" onclick="loadOrders()">
-          Refresh Orders
+        <button class="btn btn-light" onclick="loadOrders()" title="Refresh orders">
+          ⟳ Refresh
         </button>
+        <a class="btn btn-gold po-new" id="poNewBtn" href="order-entry.html" hidden>+ New PO</a>
       </div>
     </div>
 
@@ -1241,6 +1251,13 @@
 
       <select id="tpFilter" onchange="resetPageAndRender()" aria-label="Transportation">
         <option value="">All transport</option>
+      </select>
+
+      <select id="fillFilter" onchange="resetPageAndRender()" aria-label="Filled" title="Filled % = loaded qty ÷ ordered qty (only loaded / delivered POs)">
+        <option value="">All fill</option>
+        <option value="full">Full 100%</option>
+        <option value="short">Short (&lt;100%)</option>
+        <option value="low">Below 90%</option>
       </select>
 
       <select id="brFilter" onchange="syncFilter(this)" aria-label="Brand" hidden>
@@ -1751,6 +1768,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     // PO / Sales List: Admin and Sales Head work here; Godown Manager and Accounts see the
     // same list and PO journey, view only (no approve / edit / transport).
     VIEW_ONLY = ["warehouse", "accounts"].includes(role);
+    document.getElementById("poNewBtn").hidden = !["admin", "manager"].includes(role) || !!(window.ERPShell && ERPShell.hiddenPages().includes("order-entry.html"));
     CAN_BILL = ["accounts", "admin"].includes(role);
     IS_ADMIN = role === "admin";
     CAN_HEAD = ["admin", "manager"].includes(role);
@@ -1835,6 +1853,7 @@ async function loadOrders() {
     [...inRange, ...open].forEach(order => byId.set(order.id, order));
 
     orders = ERPRecent.sort([...byId.values()]);
+    orderFill.clear();
     await Promise.all([loadDeliveredOrders(), brandPick() ? loadItemsFor(orders.map(o => o.id)) : null, loadDrafts()]);
 
     fillColumnFilters();
@@ -2073,6 +2092,7 @@ let listPage = 1;
 let listLoadedAt = null;
 let lastFiltered = [];
 const orderLines = new Map();
+const orderFill = new Map(); // order id -> {ordered, loaded, pct}
 
 async function fetchAllOrders(scope) {
   const rows = [];
@@ -2188,12 +2208,12 @@ async function loadItemsFor(ids) {
   for (let i = 0; i < chunks.length; i += 4) {
     await Promise.all(chunks.slice(i, i + 4).map(async part => {
       const { data, error } = await db.from("order_items")
-        .select("order_id,sku_name,ordered_qty,approved_qty,rate,amount")
+        .select("order_id,sku_name,ordered_qty,approved_qty,loaded_qty,rate,amount")
         .in("order_id", part).limit(10000);
       if (error) { console.warn("SKU lines not loaded", error); return; }
       part.forEach(id => orderItemsCache.set(id, []));
       (data || []).forEach(row => orderItemsCache.get(row.order_id)?.push(row));
-      part.forEach(id => orderLines.set(id, orderItemsCache.get(id).length));
+      part.forEach(id => { orderLines.set(id, orderItemsCache.get(id).length); setFill(id, orderItemsCache.get(id)); });
     }));
   }
 }
@@ -2582,16 +2602,46 @@ function renderListFoot(filtered, pages) {
 
 /* Lines = number of SKUs on the PO; read only for the orders on screen. */
 async function loadOrderLines(pageOrders) {
-  const ids = pageOrders.map(o => o.id).filter(id => !orderLines.has(id));
+  const ids = pageOrders.map(o => o.id).filter(id => !orderLines.has(id) || !orderFill.has(id));
   if (!ids.length) return;
-  const { data, error } = await db.from("order_items").select("order_id").in("order_id", ids).limit(5000);
-  if (error) { console.warn("Lines not loaded", error); return; }
-  ids.forEach(id => orderLines.set(id, 0));
-  (data || []).forEach(row => orderLines.set(row.order_id, (orderLines.get(row.order_id) || 0) + 1));
+  const rows = [];
+  for (let i = 0; i < ids.length; i += 150) {
+    const { data, error } = await db.from("order_items").select("order_id,ordered_qty,approved_qty,loaded_qty").in("order_id", ids.slice(i, i + 150)).limit(10000);
+    if (error) { console.warn("Lines not loaded", error); return; }
+    rows.push(...(data || []));
+  }
+  const by = new Map(ids.map(id => [id, []]));
+  rows.forEach(row => by.get(row.order_id)?.push(row));
+  by.forEach((list, id) => { orderLines.set(id, list.length); setFill(id, list); });
   document.querySelectorAll("#ordersArea td.c-lines[data-id]").forEach(td => {
     if (orderLines.has(td.dataset.id)) td.textContent = orderLines.get(td.dataset.id);
   });
+  document.querySelectorAll("#ordersArea [data-fill]").forEach(el => { el.innerHTML = fillBadge(el.dataset.fill); });
 }
+
+/* Filled % (Mohit, 4 Nov 2026): loaded qty ÷ ordered qty of the PO, shown once the PO is loaded.
+   Green 100%, amber 90–99%, red below 90%. Filter "All fill / Full / Short / Below 90%". */
+function setFill(id, items) {
+  const ordered = items.reduce((a, x) => a + (Number(x.ordered_qty) || 0), 0);
+  const loaded = items.reduce((a, x) => a + (Number(x.loaded_qty) || 0), 0);
+  // No loaded qty saved (old POs before the loading screen) = no badge, not 0%.
+  orderFill.set(id, { ordered, loaded, pct: ordered > 0 && loaded > 0 ? Math.round(loaded / ordered * 100) : null });
+}
+function fillStage(order) { return ["loaded", "delivered"].includes(orderStage(order)); }
+function fillBadge(id) {
+  const f = orderFill.get(id);
+  if (!f || f.pct == null) return "";
+  const c = f.pct >= 100 ? "full" : f.pct >= 90 ? "mid" : "low";
+  return `<span class="fill-b ${c}" title="Loaded ${formatNumber(f.loaded)} of ${formatNumber(f.ordered)} ordered"><i style="--p:${Math.min(100, f.pct)}%"></i>${f.pct}% filled</span>`;
+}
+function matchesFill(order, want) {
+  if (!want) return true;
+  if (!fillStage(order)) return false;
+  const f = orderFill.get(order.id);
+  if (!f || f.pct == null) return false;
+  return want === "full" ? f.pct >= 100 : want === "short" ? f.pct < 100 : f.pct < 90;
+}
+let fillLoading = false;
 
 function stageLabel(order) {
   const tab = PO_TABS.find(t => t.k === orderStage(order));
@@ -2606,11 +2656,14 @@ async function exportPoExcel() {
   try {
     await loadOrderLines(rows.slice(0, 1000));
     const aoa = [["Order No", "Date", "Customer", "Sales Person", "Transportation", "Priority", "Lines",
-      "Cases", "Amount", "Weight KG", "Stage", "Status", "Hours since order"]];
+      "Cases", "Loaded", "Filled %", "Amount", "Weight KG", "Stage", "Status", "Hours since order"]];
     rows.forEach(o => aoa.push([
       o.order_no || "", LWBDate.d(o.order_date || o.created_at), o.customer_name || "", o.sales_person || "",
       o.transportation || "", orderPriority(o), orderLines.has(o.id) ? orderLines.get(o.id) : "",
-      Number(o.total_qty) || 0, Number(o.total_amount) || 0, Number(o.total_weight) || 0,
+      Number(o.total_qty) || 0,
+      fillStage(o) && orderFill.has(o.id) ? orderFill.get(o.id).loaded : "",
+      fillStage(o) && orderFill.has(o.id) && orderFill.get(o.id).pct != null ? orderFill.get(o.id).pct : "",
+      Number(o.total_amount) || 0, Number(o.total_weight) || 0,
       stageLabel(o), o.status || "pending", Math.round(hoursSinceTaken(o))
     ]));
     const tab = document.getElementById("statusFilter").value;
@@ -3015,6 +3068,23 @@ function renderOrders() {
   if (filter === "draft") { renderDrafts(area); return; }
 
   let filtered = base.filter(order => matchesTab(order, filter));
+  const fillWant = document.getElementById("fillFilter").value;
+  if (fillWant) {
+    const need = filtered.filter(o => fillStage(o) && !orderFill.has(o.id));
+    if (need.length) {
+      area.className = "loading";
+      area.innerHTML = "Checking filled % of " + need.length + " PO" + (need.length === 1 ? "" : "s") + "...";
+      if (!fillLoading) {
+        fillLoading = true;
+        loadOrderLines(need).finally(() => {
+          need.forEach(o => { if (!orderFill.has(o.id)) orderFill.set(o.id, { ordered: 0, loaded: 0, pct: null }); });
+          fillLoading = false; renderOrders();
+        });
+      }
+      return;
+    }
+    filtered = filtered.filter(o => matchesFill(o, fillWant));
+  }
 
 
   // Urgent first, then High; same priority keeps the latest added / edited first (ERPRecent).
@@ -3097,7 +3167,7 @@ function renderOrders() {
             </td>
 
             <td class="c-qty" data-label="Qty" style="text-align:right">
-              ${formatNumber(order.total_qty)}
+              ${formatNumber(order.total_qty)}${fillStage(order) ? `<span class="fill-w" data-fill="${order.id}">${fillBadge(order.id)}</span>` : ""}
             </td>
 
             <td
