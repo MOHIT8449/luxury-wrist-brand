@@ -4,6 +4,15 @@
 **Purpose:** Continue the same ERP project from a new ChatGPT conversation without restarting or losing the agreed requirements.
 **Status:** Active development / verification. Do not assume all modules are completed or fully tested.
 
+## Keyboard first on every page (4 Nov 2026)
+
+- Mohit: 95% of the work must be done with Tab / Enter / arrows, not the mouse (Tally style). New `erp-keys.js`, loaded by `erp-shell.js` on every ERP page (cashbook.html loads it directly). It runs last (window, bubble) and does nothing when the page already handled the key (`preventDefault`); `data-keys="off"` on an element leaves its keys to the page.
+- Enter = next field (skips read-only), Shift+Enter = previous, Ctrl+Enter in a textarea = next. Last field: the Save / Submit button gets the cursor (a real `<form>` still submits). A clear Save button of a block between two blocks is stopped on first. After a page's own name picker takes the Enter (value filled in), the cursor goes on to the next field.
+- Search box over a list: Enter / ↓ goes into the first row. ↑ ↓ move between rows (same column), Enter / Space opens. Clickable rows / cards that are not buttons (`onclick`, pointer cursor) get `tabindex=0`. ← → between buttons in one row (Today / 7 Days, tabs).
+- Shortcuts: `/` or Ctrl+K page search, Alt+M Module Search, Alt+N "+ New", Ctrl+S / Alt+S Save, Alt+1..9 tab, Alt+H Dashboard, `?` / F1 shortcut list (Hindi). A popup that opens puts the cursor in its first field, Tab stays inside, closing it returns the cursor. On a computer the page search has the cursor on load; a one-time tip says "? दबाएँ".
+- `esc-close.js` exposes `LWBEsc.info()` (top popup + kind). Small fixes: order-entry empty last line + Enter goes to Submit; Enter handlers in accounts-invoice, party-billing, dashboard search now `preventDefault`; PO Maker header no longer makes a 6 px side scroll.
+- Test: `tests/erp-keys` (Playwright on a small fixture page). Checked 57 pages with a mocked database at 1366 / 390 px: no new JS errors, no side scroll. Not yet checked on live data.
+
 ## Admin dashboard: every number opens its list (4 Nov 2026)
 
 - Mohit: on a dashboard, tapping any number must open the full list behind it (e.g. which POs make the ₹50 L profit). Keyboard too.
