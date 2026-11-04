@@ -551,6 +551,32 @@ body.compact-entry .share-more>summary{display:block;cursor:pointer;font-size:13
   #oeMain #itemsTable #itemsBody .remove-btn{width:28px}
   #oeMain #itemsTable #itemsBody .sku-name{padding:4px 5px}
 }
+
+/* Order setup popup (phone): Brand / Transport / Priority / Qty in. */
+.setup-sum{display:none}
+dialog.setup-dlg{position:fixed;inset:0;margin:auto;height:fit-content}
+.setup-dlg form{gap:12px;padding:14px}
+.setup-dlg .su-head small{font-size:11px;font-weight:700;color:#6b7785;text-transform:uppercase}
+.setup-dlg .su-head h3{font-size:17px;margin:0}
+.setup-dlg .su-body{display:grid;gap:12px}
+.setup-dlg .su-body .form-group{margin:0}
+.setup-dlg .su-body label{font-size:11px}
+.setup-dlg .su-body select,.setup-dlg .su-body .add-sku-top{display:none!important}
+.setup-dlg .su-body .brand-pick{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.setup-dlg .su-body .brand-pick>b{flex:1 1 100%;font-size:11px;text-transform:uppercase;color:#5b6573}
+.setup-dlg .su-body .brand-pick .lwb-brands{margin:0}
+.setup-dlg .su-body .brand-pick small{flex:1 1 100%;font-size:11px;color:#6b7785}
+.setup-dlg .su-body .tp-chips,.setup-dlg .su-body .prio-chips{display:grid!important;grid-template-columns:repeat(3,1fr);gap:6px}
+.setup-dlg .su-body .tp-chips button,.setup-dlg .su-body .prio-chips button{min-height:42px}
+.setup-dlg .su-body .prio-tools{display:flex;margin-top:10px}
+.setup-dlg .su-go{width:100%;min-height:44px;font-size:15px}
+@media(max-width:640px){
+  #oeMain #brandPick,#oeMain #tpGroup,#oeMain #prioGroup{display:none!important}
+  #oeMain .setup-sum:not([hidden]){display:flex;flex-wrap:wrap;align-items:center;gap:2px;width:100%;margin-top:6px;padding:7px 10px;border:1px solid #d6dde6;border-radius:7px;background:#f6f8fb;font:inherit;font-size:13px;color:#3b4654;text-align:left;cursor:pointer}
+  #oeMain .setup-sum b{font-weight:700;color:#1c2836}
+  #oeMain .setup-sum .su-edit{margin-left:auto;color:#1769e0;font-weight:700}
+  #oeMain .party-master-link{display:none}
+}
 </style>
 <link rel="stylesheet" href="erp-shell.css">
 <script src="erp-shell.js" data-auto defer></script>
@@ -626,9 +652,10 @@ body.compact-entry .share-more>summary{display:block;cursor:pointer;font-size:13
         <div id="partyHint" class="party-hint"></div>
         <div id="partyKyc" class="party-kyc" role="status" hidden></div>
         <a class="party-master-link" href="customer-master.html#new" target="_blank" rel="noopener">+ New Party</a>
+        <button type="button" id="setupSum" class="setup-sum" onclick="openOrderSetup()" hidden></button>
       </div>
 
-      <div class="form-group">
+      <div class="form-group" id="tpGroup">
         <label for="transportation">Transportation (Optional)</label>
         <select id="transportation" class="form-control" onchange="toggleVehicleField();syncSlabToTransport();calculateTotals()">
           <option value="">Select Transportation</option>
@@ -643,7 +670,7 @@ body.compact-entry .share-more>summary{display:block;cursor:pointer;font-size:13
         </div>
       </div>
 
-      <div class="form-group">
+      <div class="form-group" id="prioGroup">
         <label>Delivery Priority <span class="prio-hint" id="prioHint">Normal: deliver within 36 hours.</span></label>
         <div class="prio-chips" id="prioChips" role="group" aria-label="Delivery priority">
           <button type="button" data-p="NORMAL" class="on" onclick="pickPriority(this)">Normal</button>
@@ -801,6 +828,13 @@ body.compact-entry .share-more>summary{display:block;cursor:pointer;font-size:13
 
 </main>
 
+<dialog id="setupDlg" class="party-dlg setup-dlg" aria-labelledby="suTitle">
+  <form method="dialog" id="setupForm">
+    <div class="su-head"><small>Order for</small><h3 id="suTitle">Party</h3></div>
+    <div id="setupBody" class="su-body"></div>
+    <button type="submit" class="btn btn-green su-go" value="ok">Start order →</button>
+  </form>
+</dialog>
 <dialog id="pickupDlg" class="party-dlg pickup-dlg" aria-labelledby="pkTitle">
   <form id="pickupForm" novalidate>
     <div class="pickup-head">
@@ -1010,8 +1044,9 @@ function partyInfo(message) {
   document.getElementById("partyHint").textContent = message;
 }
 
-function pickParty(party) {
+function pickParty(party, quiet) {
   selectedParty = party;
+  if(!quiet && !editOrder) setTimeout(openOrderSetup, 0);
   document.getElementById("customerName").value = party.customer_name;
   partyInfo("Selected from Party Master: " + (party.customer_code || party.customer_name));
   setPartyMenu(false);
@@ -1496,6 +1531,49 @@ function addItem(focus){
    Tab creates a new row only when the last row has a SKU, a positive quantity,
    a valid CS/PALLET conversion and a valid entered rate. Existing next rows
    are reused rather than producing duplicates. Shift+Tab is left unchanged. */
+/* Phone (Mohit, 4 Nov 2026): after the party is picked, one popup asks Brand, Transport, Priority and Qty in.
+   The real controls move into the popup and back, so every existing handler keeps working. On the phone the form
+   then shows only the party, with a one-line summary that reopens the popup. */
+const isPhone = () => matchMedia("(max-width:640px)").matches;
+const setupParts = () => ["brandPick","tpGroup","prioGroup"].map(id => document.getElementById(id)).filter(Boolean);
+let setupSlots = null;
+function openOrderSetup(){
+  const dlg = document.getElementById("setupDlg");
+  if(!isPhone() || !selectedParty || dlg.open) return;
+  document.getElementById("partyOptions").hidden = true;
+  document.getElementById("suTitle").textContent = selectedParty.customer_name || "Party";
+  const body = document.getElementById("setupBody");
+  setupSlots = setupParts().map(el => { const slot = document.createComment("setup"); el.before(slot); body.append(el); return [slot, el]; });
+  dlg.returnValue = "";
+  try { dlg.showModal(); } catch(e) { dlg.setAttribute("open", ""); }
+  document.activeElement && document.activeElement.blur && document.activeElement.blur();
+}
+function orderSetupDone(){
+  document.body.classList.add("setup-done");
+  const sum = document.getElementById("setupSum");
+  const tp = document.getElementById("transportation").value;
+  const brand = !document.getElementById("brandPick").hidden ? ((typeof pickedBrand === "function" && pickedBrand()) ? pickedBrand().name : "All brands") : "";
+  const unit = (typeof unitWords === "function" ? unitWords() : ["Case","Pallet"])[bigUnit ? 1 : 0];
+  const prio = {NORMAL:"Normal", HIGH:"High", URGENT:"Urgent"}[orderPriority] || "Normal";
+  sum.replaceChildren();
+  [brand, tp ? tp.charAt(0) + tp.slice(1).toLowerCase() : "No transport", prio, unit].filter(Boolean).forEach((t, i) => {
+    if(i) sum.append(" · ");
+    const b = document.createElement("b"); b.textContent = t; sum.append(b);
+  });
+  const edit = document.createElement("span"); edit.className = "su-edit"; edit.textContent = "✎ Change"; sum.append(edit);
+  sum.hidden = false;
+}
+document.addEventListener("DOMContentLoaded", () => {
+  const dlg = document.getElementById("setupDlg");
+  dlg.addEventListener("close", () => {
+    (setupSlots || []).forEach(([slot, el]) => { slot.replaceWith(el); });
+    setupSlots = null;
+    orderSetupDone();
+    const empty = [...document.querySelectorAll("#itemsBody .sku-name")].find(i => !i.value.trim());
+    if(empty){ empty.scrollIntoView({block:"center"}); setTimeout(() => empty.focus(), 50); }
+  });
+});
+
 /* Phone keyboard (Mohit): the Next / Enter key walks SKU -> Qty -> Rate -> next line; on the last line a filled
    SKU gets a new empty line. Picking a SKU from the list jumps to Qty. */
 const lineFields = row => [...row.querySelectorAll(".sku-name,.pallet,.qty,.rate")].filter(i => i.offsetParent !== null && !i.readOnly);
@@ -2574,7 +2652,7 @@ async function loadDraft(id){
   if(chip && chip.getAttribute("aria-pressed") !== "true") chip.click();
   if(d.orderDate) document.getElementById("orderDate").value = d.orderDate;
   if(d.salesPerson && !document.getElementById("salesPerson").value) document.getElementById("salesPerson").value = d.salesPerson;
-  if(d.party && d.party.customer_name){ pickParty(d.party); }
+  if(d.party && d.party.customer_name){ pickParty(d.party, true); orderSetupDone(); }
   else if(d.customer){ await prefillParty(d.customer); if(!selectedParty) document.getElementById("customerName").value = d.customer; }
   const prio = document.querySelector(`#prioChips button[data-p="${String(d.priority || "NORMAL").toUpperCase()}"]`);
   if(prio) pickPriority(prio);
@@ -2698,6 +2776,7 @@ async function resetOrder(){
   document.getElementById("orderNo").value="Assigned on save";
   document.getElementById("customerName").value="";
   selectedParty = null;
+  document.getElementById("setupSum").hidden = true;
   pickPriority(document.querySelector('#prioChips button[data-p="NORMAL"]'));
   partyResults = [];
   clearTimeout(partySearchTimer);

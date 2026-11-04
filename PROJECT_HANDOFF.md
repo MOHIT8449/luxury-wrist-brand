@@ -4,6 +4,13 @@
 **Purpose:** Continue the same ERP project from a new ChatGPT conversation without restarting or losing the agreed requirements.
 **Status:** Active development / verification. Do not assume all modules are completed or fully tested.
 
+## PO entry on the phone: order setup popup after the party (4 Nov 2026)
+
+- Mohit: on the phone, picking the party opens one popup ("Order for PARTY"): Brand chips, Transport (Delivery / Self pickup / Direct vehicle), Priority, Qty in (Case / Pallet), then "Start order →" which focuses the first SKU.
+- The real controls (#brandPick, #tpGroup, #prioGroup) are moved into #setupDlg and back on close, so all old handlers stay. On ≤640 px the form shows only the party plus a summary line ("All brands · Delivery · High · Case ✎ Change") that reopens the popup. Desktop unchanged, no popup there.
+- Not opened when editing a PO or opening a draft (pickParty(party, true)); a draft shows the summary line.
+- Checked with a mocked database at 412 / 360 / 1366 px: no side scroll, no JS errors. Not yet checked on live data.
+
 ## PO entry on the phone: one line per SKU, Next key adds the next line (4 Nov 2026)
 
 - Mohit: salesman order punching was slow on the phone. order-entry.html at ≤640 px now shows each SKU as one line: SKU | Qty (or Pallet) | Rate | ✕, under one small "SKU · Qty · Rate ₹" header (`.m-head`). No amount per line on the phone; the bottom bar shows total ₹ · cases · kg. Desktop table unchanged.
