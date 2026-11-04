@@ -157,7 +157,7 @@
       return m.replace(/^.*?ERROR:\s*/,"")};
     const HOW={CONTRA:"Contra (bank transfer)",AUTO:"Matched by itself",MATCH:"Matched",PARTY:"Party payment",DEPOSIT:"Cash deposit",WITHDRAW:"Cash withdrawn",IN:"Other income",OUT:"Expense",IGNORE:"Ignored"};
     const SRC={ENTRY:"Accounts entry",PAYMENT:"Party payment",DRIVER_ONLINE:"Driver money",DRIVER_CASH:"Driver money",OLD:"Old payment"};
-    let D=null,bankId=null,tab="OPEN",dir="all",q="",days=90,sel=new Set(),parties=[],suppliers=[],cur=0,vis=[],pending=null,shown=200;
+    let D=null,bankId=null,tab="OPEN",dir="all",q="",days=90,sel=new Set(),parties=[],suppliers=[],bankCos=[],cur=0,vis=[],pending=null,shown=200;
 
     function say(t,kind){el("msg").hidden=!t;el("msg").textContent=t||"";el("msg").className="bs-msg"+(kind?" "+kind:"")}
     async function rpc(name,args){const {data,error}=await client.rpc(name,args);if(error)throw Error(errText(error));return data}
@@ -306,6 +306,7 @@
         '<div><div class="amt '+(isIn?"in":"out")+'">'+(isIn?"+":"−")+rs(+l.credit||+l.debit)+'</div><div style="font-size:13px;color:var(--erp-muted);overflow-wrap:anywhere">'+esc(l.narration||"")+(l.ref?" · Ref "+esc(l.ref):"")+'</div></div>'+
         '<label id="kCat"><span>Category</span><input id="kC" autocomplete="off" enterkeyhint="next" placeholder="Type or pick: '+(isIn?"Sales, Party payment…":"Purchase, Rent, Asset…")+'"></label>'+
         '<label id="kParty"><span></span><input id="kP" autocomplete="off" enterkeyhint="next"></label>'+
+        '<label id="kBrand" hidden><span>Brand (Rajnigandha / Coca-Cola) *</span><select id="kBr"><option value="">Choose brand…</option>'+bankCos.map(c=>'<option value="'+esc(c.id)+'">'+esc(c.name)+'</option>').join("")+'</select></label>'+
         '<label id="kBank"><span>'+(isIn?"Came from which of our banks":"Sent to which of our banks")+'</span><select id="kB">'+D.banks.filter(b=>b.id!==bankId).map(b=>'<option value="'+b.id+'">'+esc(b.name)+'</option>').join("")+'</select></label>'+
         '<label id="kRem"><span>Remark (optional)</span><input id="kR" maxlength="200" autocomplete="off" enterkeyhint="done" placeholder="Like Tally narration"></label>'+
         '<div class="note" id="kNote"></div>'+
@@ -324,6 +325,7 @@
         const lab={PARTY:"Party (type the name)",SUP:"Supplier / company (type the name)",HEAD:isIn?"Received from (optional)":"Paid to (optional)",NEW:isIn?"Received from (optional)":"Paid to (optional)"}[t];
         sh("#kParty",!!lab);B.querySelector("#kParty span").textContent=lab||"";
         sh("#kBank",t==="CONTRA"&&KB.options.length>0);
+        sh("#kBrand",t==="PARTY"&&bankCos.length>0);
         B.querySelector("#kRem span").textContent=t==="IGNORE"?"Why (optional)":"Remark (optional)";
         if(t!==last){if(last)P.value="";last=t||"";
           if(t==="PARTY"&&!P.value)P.value=guessParty(l)||"";
@@ -333,14 +335,15 @@
         N.textContent=t==="NEW"&&c.label.length>=2?"“"+c.label+"” is a new category. It is added when you Save and shows in the list next time.":
           t==="SUP"?(x?(x.coId?"Saved as Supplier payment, and as a payment to "+x.coName+" (its bills show paid).":"Saved as Supplier payment to "+x.name+"."):"Pick the name from the list. New supplier? Add it on Supplier Master first.")
           :t==="CONTRA"?(KB.options.length?"Booked on both banks. The other bank's statement line matches it by itself.":"Only one bank is added. Add the other bank on Accounts Dashboard > Heads & Banks.")
-          :t==="PARTY"?"Party outstanding drops (oldest bill first).":"";N.hidden=!N.textContent};
-      const next=()=>{const f=["#kParty","#kBank","#kRem"].map(i=>B.querySelector(i)).find(x=>!x.hidden);(f?f.querySelector("input,select"):B.querySelector("#kSave")).focus()};
+          :t==="PARTY"?"Party outstanding of this brand drops (oldest bill of the brand first).":"";N.hidden=!N.textContent};
+      const next=()=>{const f=["#kParty","#kBrand","#kBank","#kRem"].map(i=>B.querySelector(i)).find(x=>!x.hidden);(f?f.querySelector("input,select"):B.querySelector("#kSave")).focus()};
       C.addEventListener("input",paint);C.addEventListener("change",paint);C.addEventListener("pick",next);
       KB.onchange=note;P.addEventListener("input",note);P.addEventListener("change",note);
       B.querySelector("[data-x2]").onclick=s.close;
       const go=async btn=>{const c=cur(),name=P.value.trim(),rem=R.value.trim(),p={note:rem||null};
         if(!c)return ERPShell.alert("Type or pick the category");
-        if(c.t==="PARTY"){if(!name)return ERPShell.alert("Type the party name");Object.assign(p,{type:"PARTY",party:name})}
+        if(c.t==="PARTY"){if(!name)return ERPShell.alert("Type the party name");Object.assign(p,{type:"PARTY",party:name});
+          if(bankCos.length){const b=B.querySelector("#kBr").value;if(!b)return ERPShell.alert("Choose the brand: is this Rajnigandha money or Coca-Cola money?");p.company_id=b}}
         else if(c.t==="SUP"){const x=supOf(name);if(!x)return ERPShell.alert("Pick the supplier / company from the list. A new one is added on Supplier Master.");
           const h=headNamed("Supplier payment");if(!h)return ERPShell.alert("The head Supplier payment is missing on Accounts Dashboard > Heads.");
           Object.assign(p,{type:"OUT",category_id:h.id,party:x.name});if(x.coId)p.company_id=x.coId}
@@ -373,31 +376,33 @@
       const sum=a=>a.reduce((s,l)=>s+Number(l.credit)+Number(l.debit),0);
       const types=typesFor(ins.length,outs.length);
       const prev=bar.querySelector("#bType"),keep=prev&&types.some(t=>t[0]===prev.value)?prev.value:types[0][0];
-      const pv=bar.querySelector("#bParty"),pval=pv?pv.value:"";
+      const pv=bar.querySelector("#bParty"),pval=pv?pv.value:"";const pbb=bar.querySelector("#bBrand"),bval=pbb?pbb.value:"";
       bar.className="bs-bar";
       bar.innerHTML='<span class="sum">'+L.length+' ticked'+(ins.length?' · In '+rs(sum(ins)):"")+(outs.length?' · Out '+rs(sum(outs)):"")+'</span>'+
         '<select id="bType" aria-label="Book as">'+types.map(t=>'<option value="'+t[0]+'"'+(t[0]===keep?" selected":"")+'>'+t[1]+'</option>').join("")+'</select>'+
         '<input id="bParty" list="bsParties" autocomplete="off" aria-label="Party">'+
+        (bankCos.length?'<select id="bBrand" aria-label="Brand"><option value="">Brand…</option>'+bankCos.map(c=>'<option value="'+esc(c.id)+'">'+esc(c.name)+'</option>').join("")+'</select>':"")+
         '<select id="bHead" aria-label="Head"></select>'+
         '<button type="button" class="bs-btn grn" id="bSave">Save</button><button type="button" class="bs-btn" id="bClear">Clear</button>';
       const t=bar.querySelector("#bType"),p=bar.querySelector("#bParty"),h=bar.querySelector("#bHead");
       const paint=()=>{const v=t.value;
         p.hidden=!["PARTY","IN","OUT","IGNORE"].includes(v);
         p.placeholder=v==="PARTY"?"Party name (Party Master)":v==="IGNORE"?"Why (optional)":"Paid to / from (optional)";
-        h.hidden=!["IN","OUT"].includes(v);
+        h.hidden=!["IN","OUT"].includes(v);const bb=bar.querySelector("#bBrand");if(bb)bb.hidden=v!=="PARTY";
         h.innerHTML='<option value="">Choose head…</option>'+D.categories.filter(c=>c.kind===v).map(c=>'<option value="'+c.id+'">'+esc(c.name)+'</option>').join("");
         if(v==="PARTY"&&!p.value){const g=[...new Set(ins.map(guessParty))];if(g.length===1&&g[0])p.value=g[0]}};
-      t.onchange=()=>{p.value="";paint()};p.value=pval;paint();
+      t.onchange=()=>{p.value="";paint()};p.value=pval;paint();if(bar.querySelector("#bBrand"))bar.querySelector("#bBrand").value=bval;
       bar.querySelector("#bClear").onclick=()=>{sel.clear();renderTab()};
-      bar.querySelector("#bSave").onclick=()=>save(L,t.value,p.value.trim(),h.value,bar.querySelector("#bSave"));
+      bar.querySelector("#bSave").onclick=()=>save(L,t.value,p.value.trim(),h.value,bar.querySelector("#bSave"),false,(bar.querySelector("#bBrand")||{}).value);
     }
-    async function save(L,type,party,head,btn,one){
+    async function save(L,type,party,head,btn,one,brand){
       if(type==="PARTY"&&!party){await ERPShell.alert("Choose the party");return}
+      if(type==="PARTY"&&bankCos.length&&!brand){await ERPShell.alert("Choose the brand: is this Rajnigandha money or Coca-Cola money?");return}
       if((type==="IN"||type==="OUT")&&!head){await ERPShell.alert("Choose the head");return}
       const sum=L.reduce((s,l)=>s+Number(l.credit)+Number(l.debit),0);
       const what={PARTY:"party payment of "+party+" (oldest bill first, outstanding drops)",DEPOSIT:"cash deposit",WITHDRAW:"cash withdrawn from bank",IN:"income",OUT:"expense",IGNORE:"ignored"}[type];
       if(!one&&!await ERPShell.confirm("Book "+L.length+" line"+(L.length>1?"s":"")+" ("+rs(sum)+") as "+what+"?"))return;
-      const p={type};if(type==="PARTY"||type==="IN"||type==="OUT")p.party=party||null;if(type==="IGNORE")p.note=party||null;if(head)p.category_id=Number(head);
+      const p={type};if(type==="PARTY"||type==="IN"||type==="OUT")p.party=party||null;if(type==="PARTY"&&brand)p.company_id=brand;if(type==="IGNORE")p.note=party||null;if(head)p.category_id=Number(head);
       btn.disabled=true;
       try{const r=await rpc("lwb_bank_stmt_assign",{p_ids:L.map(l=>l.id),p});
         sel.clear();await load();
@@ -577,6 +582,7 @@
         const cos=co.error?[]:(co.data||[]).filter(c=>c.active!==false),coName=id=>(cos.find(c=>c.id===id)||{}).name||"";
         const m=new Map();for(const x of sp.error?[]:sp.data||[])if(x.is_active!==false&&x.supplier_name)m.set(key(x.supplier_name),{name:x.supplier_name,coId:x.company_id||null,coName:coName(x.company_id)});
         for(const c of cos)if(!m.has(key(c.name)))m.set(key(c.name),{name:c.name,coId:c.id,coName:c.name});
+        bankCos=cos.length>1?cos:[];
         suppliers=[...m.values()].sort((a,b)=>a.name.localeCompare(b.name))}).catch(()=>{});
       LWBPartyPay.load(client).then(i=>{const m=new Map();for(const x of i.parties.values())m.set(key(x.party),x.party);for(const n of i.raw.parties||[]){const pp=i.parentOf(n);if(!m.has(key(pp)))m.set(key(pp),pp)}
         parties=[...m.values()].sort();const dl=document.createElement("datalist");dl.id="bsParties";dl.innerHTML=parties.map(n=>'<option value="'+esc(n)+'">').join("");document.body.append(dl);if(D)renderTab()}).catch(()=>{});

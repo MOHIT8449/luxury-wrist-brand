@@ -4,6 +4,15 @@
 **Purpose:** Continue the same ERP project from a new ChatGPT conversation without restarting or losing the agreed requirements.
 **Status:** Active development / verification. Do not assume all modules are completed or fully tested.
 
+## Party money brand-wise: Rajnigandha and Coca-Cola never mixed (4 Nov 2026)
+
+- Mohit: one party buys both brands; their outstanding is separate and must stay separate. A payment must say which brand (like a PO), and every screen needs All / Rajnigandha / Coca-Cola. Step 1 (money) done here; Step 2 (brand filter on every other report / stock page) is next.
+- SQL `lwb_brand_money_setup.sql` (test `tests/brand-money`, PGlite, 5 tests). Brand of a PO = `lwb_order_company(order)` (company of its SKU lines; NULL if mixed). `lwb_tally_payments.company_id` (party payments) and `lwb_party_opening_balances.company_id` (+ unique index party + brand; old one-per-party index dropped). Old rows got the brand by themselves when the party bought only one brand; two-brand parties' old money / opening stay "No brand" until Admin / Accounts picks it.
+- `lwb_party_receive(.., p_company_id)` and `lwb_party_adjust(p_party, p_allocs, p_company_id)` (old signatures dropped): money goes only to that brand's bills, rest = that brand's advance (`lwb_party_apply_b`, `lwb_party_receipt_free_b`). No brand sent: party's only brand, else saved as "No brand", not split (bank statement). New Tally bill auto-adjust uses only its brand's advance. `lwb_party_receipt_brand(receipt, company)` gives old money a brand (refused while split to the other brand's PO). `lwb_set_party_opening_balance(.., p_company_id)` (old 4-arg dropped); brand needed for a two-brand party; amount 0 + NULL brand removes an old no-brand row. `lwb_party_openings()`, `lwb_party_ledger_b()` (ledger + company_id). `lwb_party_billing` now also returns company_id per bill / receipt, `advance_b`, `openings_b`, `companies`. Bank statement assign is patched in place (pg_get_functiondef) to pass `p->>'company_id'`.
+- **Do not re-run** `lwb_party_group_billing_setup.sql` / `lwb_party_ledger_setup.sql` without this file after them: they would bring back the old 5-arg receive / 4-arg opening (ambiguous calls) and the one-per-party opening index.
+- UI: `party-pay.js` popup has brand cards (बाकी per brand), required when 2+ brands; bills / summary / advance of that brand only; button "Save RAJNIGANDHA payment". `party-billing.html`: brand chips (LWBBrand, same saved choice); All = one column per brand + total to look at, "बिना brand" note; a brand = old columns for that brand; Payments tab shows brand tag or "Brand चुनें" select. `party-ledger.html`: brand chips, brand tag per row (All), opening panel with Brand + list of openings with Edit. `bank-statement.html`: Party payment asks the brand (single + bulk).
+- Checked with a mocked database at 1366 / 390 px: no side scroll, no JS errors. Not yet checked on live data.
+
 ## Brand Data Reset: Rajnigandha fresh start (4 Nov 2026)
 
 - Mohit asked: remove everything done in Rajnigandha till today (payments, purchase / stock, POs, bills, outstanding) so opening outstanding, payments and stock can be entered fresh.
