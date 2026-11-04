@@ -6,6 +6,7 @@
   <title>Money Overview | Luxury Wrist Brand ERP</title>
   <script src="erp-date.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="brand-filter.js"></script>
   <link rel="stylesheet" href="erp-shell.css">
   <script src="erp-shell.js"></script>
   <script src="excel-io.js"></script>
@@ -99,12 +100,15 @@
     function say(t,bad){el("msg").hidden=!t;el("msg").textContent=t||"";el("msg").className="mo-msg"+(bad?" bad":"")}
 
     /* ---------- data ---------- */
+    // Brand filter (All / Rajnigandha / Coca-Cola): POs with an SKU of that brand; Cashbook money only when it is against one of their bills.
+    let BB={get:()=>""};
     async function load(){
       el("reload").disabled=true;
       try{
         const {data,error}=await client.rpc("lwb_accounts_money",{p_days:120});
         if(error)throw Error(/function|schema cache/i.test(error.message)?"Money Overview is not set up yet: run lwb_accounts_money_setup.sql once in Supabase.":error.message);
         rows=(data||[]).map(prep);
+        if(BB.get()){const ob=await LWBBrand.orderBrands(client,rows.map(r=>r.order_id));rows=rows.filter(r=>LWBBrand.has(ob.get(r.order_id),BB.get()))}
         await loadCashbook();
         say(cb&&cb.err?cb.err:"");
         el("asOf").textContent="as on "+LWBDate.dt(new Date());
@@ -136,7 +140,7 @@
         if(x.erpRef||!x.invoice)continue;
         let hit=byNo.get(vkey(x.invoice))||[];
         if(hit.length>1){const pn=norm(parties.get(x.party));const h2=hit.filter(r=>norm(r.party)===pn);if(h2.length)hit=h2}
-        if(hit.length){hit[0].office+=Number(x.amount)||0}
+        if(hit.length){hit[0].office+=Number(x.amount)||0;x.hit=true}
       }
       cb={ins};
     }
@@ -174,7 +178,7 @@
       const S=(l,f)=>r2(l.reduce((s,r)=>s+f(r),0));
       const bills=rows.filter(r=>inR(r.invoice_date)),dels=rows.filter(r=>inR(r.delDay)&&r.del!=="NOT_DELIVERED"),
         cols=rows.filter(r=>inR(r.colDay)&&r.collected>0),vers=rows.filter(r=>inR(r.verDay)&&r.verified>0);
-      const office=cb&&cb.ins?cb.ins.filter(x=>inR(x.date)&&!x.erpRef):null;
+      const office=cb&&cb.ins?cb.ins.filter(x=>inR(x.date)&&!x.erpRef&&(!BB.get()||x.hit)):null;
       const box=(t,v,s)=>"<div><h3>"+t+"</h3><b>"+v+"</b><small>"+s+"</small></div>";
       el("today").innerHTML=
         box("Bills made (to market)",rs(S(bills,r=>r.billed)),pl(bills.length,"PO"))+
@@ -262,6 +266,7 @@
       if(!p||p.active!==true||!["admin","accounts"].includes(role)){location.replace("dashboard.html");return}
       ERPShell.mount({role:realRole||role,name:p.full_name||session.user.email,onLogout:async()=>{await client.auth.signOut();location.replace("login.html")}});
       el("loading").hidden=true;el("page").hidden=false;
+      if(window.LWBBrand)try{BB=await LWBBrand.mount(client,{into:"#page .erp-pagehead",after:true,onChange:load})}catch(e){}
       await load();
     })();
   </script>
