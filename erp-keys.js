@@ -243,25 +243,26 @@
   // The list of keys (? popup and keyboard-shortcuts.html). Keys in one group are pressed together
   // ("Ctrl+S"); groups are alternatives. COMMON works on every ERP page.
   const COMMON=[
-    [["Enter"],"अगला खाना (next field) · आखिरी खाने पर Save बटन"],[["Shift+Enter"],"पिछला खाना"],
-    [["Tab","Shift+Tab"],"आगे / पीछे"],[["↑","↓"],"लिस्ट / टेबल की लाइन ऊपर-नीचे"],[["Enter","Space"],"लाइन या कार्ड खोलें"],[["↑","↓","Enter"],"नाम की लिस्ट (पार्टी / SKU) से चुनें"],
-    [["←","→"],"एक लाइन के बटन (Today, 7 Days, टैब)"],[["/","Ctrl+K"],"पेज की सर्च"],[["Alt+M"],"Module Search (कोई भी पेज खोलें)"],
-    [["Alt+N"],"+ New (नया)"],[["Ctrl+S","Alt+S"],"Save / Submit"],[["Alt+1…9"],"टैब 1 … 9"],
-    [["Alt+H"],"Dashboard"],[["Esc"],"पॉपअप बंद"],[["?","F1"],"शॉर्टकट की लिस्ट"]];
+    [["Enter"],"Next field · on the last field: Save button"],[["Shift+Enter"],"Previous field"],
+    [["Tab","Shift+Tab"],"Forward / back"],[["↑","↓"],"Move up / down the rows of a list or table"],[["Enter","Space"],"Open a row or card"],
+    [["↑","↓","Enter"],"Pick from a name list (party / SKU)"],
+    [["←","→"],"Buttons in one row (Today, 7 Days, tabs)"],[["/","Ctrl+K"],"Page search"],[["Alt+M"],"Module Search (open any page)"],
+    [["Alt+N"],"+ New"],[["Ctrl+S","Alt+S"],"Save / Submit"],[["Alt+1…9"],"Tab 1 … 9"],
+    [["Alt+H"],"Dashboard"],[["Esc"],"Close the popup"],[["?","F1"],"List of shortcuts"]];
   // Keys a page adds on top of COMMON (from the page's own code). r = only for these roles.
   const PAGES={
-    "dashboard.html":[[["↑","↓","Enter"],"ऊपर की सर्च: पेज / पार्टी चुनकर खोलें"],[["Esc"],"सर्च खाली करें"]],
-    "order-entry.html":[[["↑","↓","Enter"],"पार्टी का नाम चुनें"],[["Enter"],"SKU लाइन में अगला खाना · आखिरी खाने पर नई SKU लाइन"],
-      [["Tab"],"Rate के बाद: नई SKU लाइन"],[["Enter"],"खाली आखिरी लाइन पर: Submit बटन"],[["Esc"],"Draft सेव (पॉपअप / लिस्ट खुली हो तो सिर्फ़ बंद)"]],
-    "goods-inward.html":[[["↓","Enter"],"SKU सर्च की लिस्ट खोलें"],[["↑","↓","Enter"],"SKU चुनें"],[["Enter"],"आखिरी लाइन के Amount पर: नई SKU लाइन"]],
-    "warehouse-orders.html":[[["↑","↓","Enter"],"SKU / PO की लिस्ट से चुनें"],[["Esc"],"लिस्ट बंद"]],
-    "bank-statement.html":[[["↓","Enter"],"सर्च से पहली एंट्री पर"],[["↑","↓"],"एंट्री ऊपर-नीचे"],[["Home","End"],"पहली / आखिरी एंट्री"],
-      [["PgUp","PgDn"],"10 एंट्री ऊपर / नीचे"],[["Enter"],"एंट्री Book करें",["admin"]],[["Space"],"एंट्री पर टिक",["admin"]],
-      [["Ctrl+A"],"सब एंट्री पर टिक",["admin"]],[["B"],"टिक वाली एंट्री: Book type चुनें",["admin"]],[["M"],"मिलती पार्टी / बिल (match) देखें",["admin"]]],
-    "accounts-dashboard.html":[[["↑","↓","Enter"],"एंट्री में पार्टी का नाम चुनें"]],
-    "party-billing.html":[[["Enter"],"बिल नंबर / रकम भरकर Enter = Save"]],
-    "complaint-box.html":[[["Enter","Space"],"शिकायत खोलें / बंद करें"]],
-    "tasks.html":[[["Enter","Space"],"टास्क खोलें / बंद करें"]]
+    "dashboard.html":[[["↑","↓","Enter"],"Top search: pick a page / party and open it"],[["Esc"],"Clear the search"]],
+    "order-entry.html":[[["↑","↓","Enter"],"Pick the party"],[["Enter"],"Next box in the SKU line · last box: new SKU line"],
+      [["Tab"],"After Rate: new SKU line"],[["Enter"],"On an empty last line: go to Submit"],[["Esc"],"Save Draft (if a popup / list is open, it only closes)"]],
+    "goods-inward.html":[[["↓","Enter"],"Open the SKU search list"],[["↑","↓","Enter"],"Pick the SKU"],[["Enter"],"On the last line's Amount: new SKU line"]],
+    "warehouse-orders.html":[[["↑","↓","Enter"],"Pick from the SKU / PO list"],[["Esc"],"Close the list"]],
+    "bank-statement.html":[[["↓","Enter"],"From the search to the first entry"],[["↑","↓"],"Entry up / down"],[["Home","End"],"First / last entry"],
+      [["PgUp","PgDn"],"10 entries up / down"],[["Enter"],"Book the entry",["admin"]],[["Space"],"Tick the entry",["admin"]],
+      [["Ctrl+A"],"Tick all entries",["admin"]],[["B"],"Ticked entries: choose Book type",["admin"]],[["M"],"See the matching party / bill",["admin"]]],
+    "accounts-dashboard.html":[[["↑","↓","Enter"],"Pick the party in an entry"]],
+    "party-billing.html":[[["Enter"],"After bill no. / amount: Save"]],
+    "complaint-box.html":[[["Enter","Space"],"Open / close a complaint"]],
+    "tasks.html":[[["Enter","Space"],"Open / close a task"]]
   };
   const forRole=(rows,role)=>(rows||[]).filter(r=>!r[2]||!role||r[2].includes(role));
   const keys=g=>g.map(k=>'<span class="lwbk-g">'+k.split("+").map(x=>"<kbd>"+x+"</kbd>").join("+")+'</span>').join(" ");
@@ -274,8 +275,8 @@
     const pg=forRole(PAGES[herePage()],myRole());
     const b=D.createElement("div");b.id="lwbk-help";b.className="lwbk-back";b.setAttribute("role","dialog");b.setAttribute("aria-label","Keyboard shortcuts");
     b.innerHTML='<div class="lwbk-box"><div class="lwbk-hd"><b>⌨ Keyboard shortcuts</b><button type="button" class="lwbk-x" aria-label="Close">×</button></div>'+
-      (pg.length?'<div class="lwbk-sub">इस पेज के खास</div>'+table(pg)+'<div class="lwbk-sub">हर पेज पर</div>':'')+table(COMMON)+
-      (/keyboard-shortcuts\.html$/.test(location.pathname)?'':'<a class="lwbk-all" href="keyboard-shortcuts.html">आपके सभी पेज के शॉर्टकट देखें →</a>')+'</div>';
+      (pg.length?'<div class="lwbk-sub">This page</div>'+table(pg)+'<div class="lwbk-sub">Every page</div>':'')+table(COMMON)+
+      (/keyboard-shortcuts\.html$/.test(location.pathname)?'':'<a class="lwbk-all" href="keyboard-shortcuts.html">See shortcuts for all your pages →</a>')+'</div>';
     const close=()=>b.remove();
     b.addEventListener("click",e=>{if(e.target===b||e.target.closest(".lwbk-x"))close()});
     b.addEventListener("keydown",e=>{if(e.key==="Escape"){e.preventDefault();e.stopPropagation();close()}});
@@ -411,7 +412,7 @@ tr[data-lwbk]:focus-visible{outline-offset:-2px}
     let seen="1";try{seen=localStorage.getItem("lwbk-tip")}catch(e){}
     if(!seen&&matchMedia("(pointer:fine)").matches&&!/login\.html$/.test(location.pathname)){
       const tip=D.createElement("div");tip.className="lwbk-tip";
-      tip.innerHTML='<span>⌨ पूरा काम कीबोर्ड से: <b>?</b> दबाएँ</span><button type="button">OK</button>';
+      tip.innerHTML='<span>⌨ Do all work from the keyboard: press <b>?</b></span><button type="button">OK</button>';
       const done=()=>{tip.remove();try{localStorage.setItem("lwbk-tip","1")}catch(e){}};
       tip.querySelector("button").onclick=done;setTimeout(done,12000);
       D.body.appendChild(tip);
