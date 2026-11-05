@@ -4,6 +4,14 @@
 **Purpose:** Continue the same ERP project from a new ChatGPT conversation without restarting or losing the agreed requirements.
 **Status:** Active development / verification. Do not assume all modules are completed or fully tested.
 
+## Hired vehicles: rent per party, Manager sets, Admin verifies (5 Nov 2026)
+
+- Mohit: a third-party vehicle (e.g. Porter) taking an order to a party is paid per party. The first trip to a new party: Manager enters the rent, Admin verifies; after that every trip to that party adds by itself. Rate is per vehicle + party; 2 parties in one day = 2 lines.
+- SQL `lwb_hired_party_rate_setup.sql` (after the two hired files; tests in `tests/hired-vehicle-rent`, 6 tests). Rent type `PARTY`. `lwb_hired_party_rates` (vehicle + party_key, rate, WAITING / VERIFIED / SENT_BACK, set_by, verified_by), `lwb_hired_pending` (trip days to a party with no verified rate, NEED_RATE / DONE / CANCELLED). `lwb_hired_charges.party_key`; the auto trip index is now one per vehicle + day + party (`lwb_hired_charges_auto2_uidx`). Party = `orders.customer_name` (upper, trimmed).
+- RPCs: `lwb_hired_rate_list()` (Admin / Manager), `lwb_hired_rate_set(vehicle, party, rate, note)` (Manager → WAITING + bell HIRED_RATE_VERIFY to Admins; Admin → VERIFIED; Manager cannot change a verified rate), `lwb_hired_rate_verify(rate_id, ok, rate, note)` (Admin; OK posts all waiting days as auto lines; send back needs a note, bell HIRED_RATE_SENT_BACK to the setter). Ledger shows waiting days as grey "⏳" lines (₹0, not in balance).
+- UI: Vehicle Master → "Trip rent to set" tab (Rate needed / Waiting for Admin / Verified party rates), "Per party" in the rent box. Accounts → Hired vehicle rent: "⏳ n waiting rate" tag, + Trip uses a verified party select.
+- Checked with a mocked database at 390 / 1366 px as Manager and Admin: no side scroll, no JS errors. Screenshots: project files `hired-vehicle-ledger/party-rate/`.
+
 ## Hired vehicles: trip added by itself on Transport Assignment (5 Nov 2026)
 
 - Mohit: when an order is assigned to a hired vehicle, its trip should come into the rent ledger by itself.

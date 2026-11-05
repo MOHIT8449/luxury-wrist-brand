@@ -729,8 +729,8 @@
       el("tabBody").querySelectorAll("[data-vadd]").forEach(b=>b.onclick=()=>newEntry("OUT",{vehicle:b.dataset.vadd}));
     }
     // Hired vehicles (outside owners on fixed rent): rent added − rent paid − expenses cut = still to pay.
-    const HV_TYPE={MONTHLY:["Monthly","t-blu"],TRIP:["Per trip","t-grn"],ROUTE:["Route","t-amb"]};
-    const hvRate=v=>v.rent_type==="MONTHLY"?rs(v.monthly_rent)+" / month":v.rent_type==="TRIP"?rs(v.trip_rate)+" / trip":(v.routes||[]).map(r=>r.name+" "+rs(r.rate)).join(" · ");
+    const HV_TYPE={MONTHLY:["Monthly","t-blu"],TRIP:["Per trip","t-grn"],ROUTE:["Route","t-amb"],PARTY:["Per party","t-red"]};
+    const hvRate=v=>v.rent_type==="MONTHLY"?rs(v.monthly_rent)+" / month":v.rent_type==="TRIP"?rs(v.trip_rate)+" / trip":v.rent_type==="PARTY"?"Per party · "+(v.party_rates||[]).length+" rate"+((v.party_rates||[]).length===1?"":"s"):(v.routes||[]).map(r=>r.name+" "+rs(r.rate)).join(" · ");
     const hvBal=b=>Number(b)<-0.5?'<span class="plus">'+rs(-b)+'</span><small>advance with him</small>':'<span class="minus">'+rs(b)+'</span><small>to pay</small>';
     const rentCat=()=>(D.categories||[]).find(c=>c.kind==="OUT"&&c.active!==false&&String(c.name).trim().toLowerCase()==="vehicle rent");
     function hvTabs(){return '<div class="hv-sub" id="hvSub"><button type="button" data-hv="own" aria-pressed="'+(hvSub==="own")+'">Own vehicle expenses</button><button type="button" data-hv="hired" aria-pressed="'+(hvSub==="hired")+'">Hired vehicle rent ('+HV.length+')</button></div>'}
@@ -744,7 +744,7 @@
         '<button type="button" class="acx-btn redf" id="hvPay">Pay rent</button><button type="button" class="acx-btn" id="hvXl">⬇ Excel</button></div>'+
         '<div class="hv-sum"><div><small>Rent in these dates</small><b>'+rs(sum("rent"))+'</b></div><div><small>Paid + cut</small><b class="plus">'+rs(sum("paid")+sum("cut"))+'</b></div><div><small>Still to pay (today)</small><b class="minus">'+rs(due)+'</b></div></div>'+
         '<div class="stf">'+HV.map(v=>{const ty=HV_TYPE[v.rent_type]||["",""];
-          return '<div'+(v.active?"":' style="opacity:.6"')+'><div class="nm"><span><b>🚚 '+esc(v.no)+'</b> <span class="tag '+ty[1]+'">'+ty[0]+'</span>'+(v.active?"":' <span class="tag t-gry">Not hired now</span>')+
+          return '<div'+(v.active?"":' style="opacity:.6"')+'><div class="nm"><span><b>🚚 '+esc(v.no)+'</b> <span class="tag '+ty[1]+'">'+ty[0]+'</span>'+(v.active?"":' <span class="tag t-gry">Not hired now</span>')+(Number(v.pending)?' <span class="tag t-amb">⏳ '+v.pending+' waiting rate</span>':"")+
             '<small>'+esc([v.type,v.owner,v.mobile].filter(Boolean).join(" · "))+'</small><small>'+esc(hvRate(v))+'</small></span><span class="bal">'+hvBal(v.balance)+'</span></div>'+
             '<div class="mo"><span>Rent'+(v.rent_type!=="MONTHLY"?" · "+v.trips+" trip"+(Number(v.trips)===1?"":"s"):"")+'<b>'+rs(v.rent)+'</b></span><span>Paid<b>'+rs(v.paid)+'</b></span><span>'+"Diesel / adv. cut"+'<b>'+rs(v.cut)+'</b></span></div>'+
             '<div class="ac"><button type="button" class="acx-btn" data-hled="'+v.id+'">Ledger</button>'+(v.active?'<button type="button" class="acx-btn" data-htrip="'+v.id+'">'+(v.rent_type==="MONTHLY"?"+ Extra":"+ Trip")+'</button><button type="button" class="acx-btn red" data-hpay="'+v.id+'">Pay</button>':"")+'</div></div>'}).join("")+'</div>'+
@@ -759,7 +759,8 @@
     }
     function hvLine(l){
       const a=Number(l.amount),sub=[];let t;
-      if(l.src==="MONEY"){t=l.kind==="PAID"?"Rent paid":(l.head||"Expense")+" (cut)";sub.push(MODE_NAME[l.mode]||l.mode,l.ref?"ref "+l.ref:"",l.remark)}
+      if(l.src==="PENDING"){t="1 trip"+(l.route?" · "+l.route:"")+" · ⏳";sub.push(l.remark,(l.order_nos||[]).join(", "))}
+      else if(l.src==="MONEY"){t=l.kind==="PAID"?"Rent paid":(l.head||"Expense")+" (cut)";sub.push(MODE_NAME[l.mode]||l.mode,l.ref?"ref "+l.ref:"",l.remark)}
       else if(l.kind==="MONTH"){t="Monthly rent";sub.push(l.remark)}
       else if(l.kind==="TRIP"){t=l.trips+" trip"+(l.trips===1?"":"s")+(l.route?" · "+l.route:"")+(l.auto?" · Auto":"");if(l.auto&&l.remark==="Auto · Transport Assignment")l={...l,remark:"From Transport Assignment"};sub.push(l.trips+" × "+rs(l.rate)+(Number(l.extra)?" + "+rs(l.extra)+" extra":""),(l.order_nos||[]).join(", "),l.remark)}
       else{t=a<0?"Cut from rent":"Extra";sub.push(l.remark)}
@@ -772,12 +773,12 @@
       const rows=L.map(l=>{const x=hvLine(l);bal+=x.a;return {...x,l,bal}});
       const plusT=rows.filter(r=>r.a>0).reduce((s,r)=>s+r.a,0),minusT=rows.filter(r=>r.a<0).reduce((s,r)=>s-r.a,0);
       const box=sheet("🚚 "+(v.no||"Vehicle")+" · rent ledger",
-        '<div class="hv-kv"><span>Owner</span><b>'+esc(v.owner||"-")+'</b><span>Rate</span><b>'+esc(hvRate({...v,routes:(HV.find(x=>x.id===id)||{}).routes}))+'</b>'+
+        '<div class="hv-kv"><span>Owner</span><b>'+esc(v.owner||"-")+'</b><span>Rate</span><b>'+esc(hvRate({...v,routes:(HV.find(x=>x.id===id)||{}).routes,party_rates:(HV.find(x=>x.id===id)||{}).party_rates}))+'</b>'+
           '<span>Dates</span><b>'+(from===to?dmy(from):dmy(from)+" – "+dmy(to))+'</b><span>Balance</span><b>'+(bal<-0.5?'<span class="plus">Advance '+rs(-bal)+'</span>':'<span class="minus">To pay '+rs(bal)+'</span>')+'</b></div>'+
         '<table class="acx-t acx-sl hv-led"><thead><tr><th>Date</th><th>Particulars</th><th class="n">Amount</th><th class="n">Balance</th></tr></thead><tbody>'+
         '<tr><td>'+sd(from)+'</td><td>Old balance</td><td></td><td class="n">'+rs(d.opening)+'</td></tr>'+
-        rows.map(r=>'<tr><td>'+sd(r.l.date)+'</td><td><b>'+esc(r.t)+'</b>'+(r.sub?'<small>'+esc(r.sub)+'</small>':"")+(r.l.src==="CHARGE"?'<button type="button" class="cx" data-hcx="'+esc(r.l.id)+'">Cancel</button>':"")+'</td>'+
-          '<td class="n '+(r.a<0?"minus":"plus")+'">'+(r.a<0?"−"+rs(-r.a):"+"+rs(r.a))+'</td><td class="n">'+rs(r.bal)+'</td></tr>').join("")+
+        rows.map(r=>'<tr'+(r.l.src==="PENDING"?' style="opacity:.6"':"")+'><td>'+sd(r.l.date)+'</td><td><b>'+esc(r.t)+'</b>'+(r.sub?'<small>'+esc(r.sub)+'</small>':"")+(r.l.src==="PENDING"?'<small>Rate is set in Vehicle Master → Trip rent to set. Not in the balance yet.</small>':"")+(r.l.src==="CHARGE"?'<button type="button" class="cx" data-hcx="'+esc(r.l.id)+'">Cancel</button>':"")+'</td>'+
+          '<td class="n '+(r.a<0?"minus":"plus")+'">'+(r.l.src==="PENDING"?"—":r.a<0?"−"+rs(-r.a):"+"+rs(r.a))+'</td><td class="n">'+rs(r.bal)+'</td></tr>').join("")+
         '</tbody><tfoot><tr><td></td><td>Rent <span class="plus">+'+rs(plusT)+'</span><small>Paid / cut <span class="minus">−'+rs(minusT)+'</span></small></td><td></td><td class="n">'+rs(bal)+'</td></tr></tfoot></table>'+
         '<p class="acx-note" style="margin:0">+ balance = still to pay him · − balance = we gave more (advance).</p>'+
         '<div style="display:flex;gap:8px"><button type="button" class="acx-btn" data-xl style="flex:1">⬇ Excel</button><button type="button" class="acx-btn" data-add style="flex:1">'+(v.rent_type==="MONTHLY"?"+ Extra":"+ Trip")+'</button><button type="button" class="acx-btn redf" data-pay style="flex:1">Pay rent</button></div>',"",null);
@@ -801,7 +802,7 @@
         '<div id="hTrip">'+
           '<div class="f"><label>From Transport Assignment (last 31 days)</label><div class="hv-days" id="hDays"><span class="acx-note" style="margin:0">Loading…</span></div></div>'+
           '<div class="f2" style="margin-top:10px"><div class="f"><label>Date</label>'+dateBox("hDate",D.today,{max:D.today})+'</div>'+
-          (v.rent_type==="ROUTE"?'<div class="f"><label for="hRoute">Route</label><select id="hRoute">'+(v.routes||[]).map(r=>'<option value="'+esc(r.name)+'">'+esc(r.name)+' ('+rs(r.rate)+')</option>').join("")+'</select></div>'
+          (v.rent_type==="ROUTE"||v.rent_type==="PARTY"?'<div class="f"><label for="hRoute">'+(v.rent_type==="PARTY"?"Party (verified rate)":"Route")+'</label><select id="hRoute">'+(v.rent_type==="PARTY"?v.party_rates||[]:v.routes||[]).map(r=>'<option value="'+esc(r.name)+'">'+esc(r.name)+' ('+rs(r.rate)+')</option>').join("")+'</select></div>'
             :'<div class="f"><label>Rate</label><input type="text" value="'+rs(v.trip_rate)+' / trip" disabled></div>')+'</div>'+
           '<div class="f2" style="margin-top:10px"><div class="f"><label for="hTrips">Trips</label><input id="hTrips" type="text" inputmode="numeric" value="1" autocomplete="off"></div>'+
           '<div class="f"><label for="hExtra">Extra ₹ (halt / loading)</label><input id="hExtra" type="text" inputmode="decimal" placeholder="0" autocomplete="off"></div></div></div>'+
@@ -816,7 +817,7 @@
           if(!dval("hDate")){await ERPShell.alert("Enter the date");return false}
           if(!(n>=1&&n<=99&&Number.isInteger(n))){await ERPShell.alert("Trips: 1 to 99");return false}
           if(!(ex>=0)){await ERPShell.alert("Check the extra amount");return false}
-          p={vehicle_id:id,kind:"TRIP",date:dval("hDate"),trips:n,extra:ex,route:v.rent_type==="ROUTE"?box.querySelector("#hRoute").value:null,remark,orders}}
+          p={vehicle_id:id,kind:"TRIP",date:dval("hDate"),trips:n,extra:ex,route:v.rent_type==="ROUTE"||v.rent_type==="PARTY"?box.querySelector("#hRoute").value:null,remark,orders}}
         else{const a=num(box.querySelector("#hAmt").value);
           if(!dval("hEDate")){await ERPShell.alert("Enter the date");return false}
           if(!a){await ERPShell.alert("Enter the amount (− to cut)");return false}
@@ -825,7 +826,7 @@
         try{await rpc("lwb_hired_add",{p})}catch(e){await ERPShell.alert(errText(e));return false}
         await load();ERPShell.toast&&ERPShell.toast("Saved","success")},"grn");
       const q=s=>box.querySelector(s);
-      const rate=()=>v.rent_type==="ROUTE"?Number(((v.routes||[]).find(r=>r.name===q("#hRoute").value)||{}).rate)||0:Number(v.trip_rate)||0;
+      const rate=()=>v.rent_type==="ROUTE"||v.rent_type==="PARTY"?Number(((v.rent_type==="PARTY"?v.party_rates||[]:v.routes||[]).find(r=>r.name===q("#hRoute").value)||{}).rate)||0:Number(v.trip_rate)||0;
       const total=()=>{if(mode==="TRIP"){const n=Number(q("#hTrips").value)||0,ex=num(q("#hExtra").value||"0")||0;q("#hTot").innerHTML="Rent added: <b>"+rs(n*rate()+ex)+"</b>"+(orders?" · orders "+esc(orders.join(", ")):"")}
         else{const a=num(q("#hAmt").value)||0;q("#hTot").innerHTML=a?(a<0?"Cut from rent: <b>"+rs(-a)+"</b>":"Extra rent: <b>"+rs(a)+"</b>"):""}};
       const sync=()=>{if(q("#hMode"))q("#hMode").querySelectorAll("[data-m]").forEach(b=>b.setAttribute("aria-pressed",String(b.dataset.m===mode)));

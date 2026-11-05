@@ -29,10 +29,11 @@ for(const [role,id] of Object.entries(ids))await db.query('insert into user_prof
 await db.exec(await sql('lwb_accounts_dashboard_setup.sql'));
 await db.exec(`create table lwb_vehicles(id uuid primary key default gen_random_uuid(),vehicle_no text unique,vehicle_type text,ownership text default 'OWN' check (ownership in ('OWN','TRANSPORTER')),transporter_name text,owner_mobile text,is_active boolean default true);
 CREATE FUNCTION public.lwb_fleet_editor() RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER SET search_path = '' AS $$ SELECT EXISTS (SELECT 1 FROM public.user_profiles p WHERE p.id = auth.uid() AND p.active AND p.role IN ('admin','manager')) $$;`);
-for(const f of ['lwb_accounts_staff_setup.sql','lwb_accounts_vehicle_setup.sql','lwb_employee_master_setup.sql','lwb_hired_vehicle_rent_setup.sql','lwb_hired_auto_trip_setup.sql'])await db.exec(await sql(f));
+for(const f of ['lwb_accounts_staff_setup.sql','lwb_accounts_vehicle_setup.sql','lwb_employee_master_setup.sql','lwb_hired_vehicle_rent_setup.sql','lwb_hired_auto_trip_setup.sql','lwb_hired_party_rate_setup.sql'])await db.exec(await sql(f));
 // safe to run again
 await db.exec(await sql('lwb_hired_vehicle_rent_setup.sql'));
 await db.exec(await sql('lwb_hired_auto_trip_setup.sql'));
+await db.exec(await sql('lwb_hired_party_rate_setup.sql'));await db.exec(await sql('lwb_hired_party_rate_setup.sql'));
 await db.exec('GRANT USAGE ON SCHEMA public,auth TO authenticated');
 
 const today=(await db.query("select public.lwb_acc_today()::text d")).rows[0].d;
@@ -177,4 +178,61 @@ test('auto trip: route rate, monthly / own vehicle untouched, order moved, cance
   assert.equal(await one('select public.lwb_hired_auto_fill($1)',[fv]),1);
   assert.equal(await one('select public.lwb_hired_auto_fill($1)',[fv]),0);
   await as('sales');await assert.rejects(call('select public.lwb_hired_auto_fill($1)',[fv]),/Accounts/);
+});
+
+test('per party: first rate by Manager, Admin verifies, then it adds by itself; 2 parties = 2 lines',async()=>{
+  const v=await veh('GJ05PT3321');
+  await as('manager');await save(v,{rent_type:'PARTY',start_date:dayAdd(today,-3)});
+  const o=async(no,party)=>(await db.query("insert into orders(order_no,customer_name,status) values($1,$2,'loaded') returning id",[no,party])).rows[0].id;
+  const asg=async(id,ago=0)=>db.query("insert into dispatch_assignments(order_id,vehicle_no,assigned_at) values($1,'GJ05PT3321',now()-($2||' days')::interval)",[id,String(ago)]);
+  const live=async()=>(await db.query("select charge_date::text d,route_name,party_key,amount,order_nos,auto from lwb_hired_charges where vehicle_id=$1 and cancelled_at is null order by charge_date,id",[v])).rows;
+  await asg(await o('PO-61','Shree Jagdish Traders (Bardoli)'),1);
+  await asg(await o('PO-62','SHREE  JAGDISH TRADERS (BARDOLI)'),1);   // same party, other spelling, same day
+  await asg(await o('PO-63','Patel Stores (Gondal)'),1);
+  assert.equal((await live()).length,0);
+  let L=await one('select public.lwb_hired_rate_list()');
+  assert.equal(L.groups.length,2);
+  const g=L.groups.find(x=>x.party_key==='SHREE JAGDISH TRADERS (BARDOLI)');assert.deepEqual(g.orders.sort(),['PO-61','PO-62']);assert.equal(Number(g.days),1);
+  // ledger shows the waiting days, not in the balance
+  await as('accounts');
+  let led=await ledger(v,dayAdd(today,-3),today);assert.equal(led.lines.filter(l=>l.src==='PENDING').length,2);
+  assert.equal(Number((await list(dayAdd(today,-3),today)).find(x=>x.id===v).balance),0);
+  await assert.rejects(call('select public.lwb_hired_rate_set($1,$2,1200,null)',[v,'Shree Jagdish Traders (Bardoli)']),/Admin \/ Manager/);
+  // Manager sets -> WAITING, bell to Admin; nothing in the ledger yet
+  await as('manager');
+  await assert.rejects(call('select public.lwb_hired_rate_set($1,$2,0,null)',[v,'Shree Jagdish Traders (Bardoli)']),/Enter the rent/);
+  assert.equal(await one('select public.lwb_hired_rate_set($1,$2,1200,null)',[v,'shree jagdish traders (bardoli)']),'WAITING');
+  assert.equal((await db.query("select count(*)::int n from erp_notifications where notification_type='HIRED_RATE_VERIFY' and user_id=$1",[ids.admin])).rows[0].n,1);
+  assert.equal((await live()).length,0);
+  const rid=(await db.query("select id from lwb_hired_party_rates where vehicle_id=$1 and status='WAITING'",[v])).rows[0].id;
+  await assert.rejects(call('select public.lwb_hired_rate_verify($1,true,null,null)',[rid]),/Only Admin/);
+  // Admin sends back, Manager sets again, Admin verifies with a changed rate
+  await as('admin');
+  await assert.rejects(call('select public.lwb_hired_rate_verify($1,false,null,$2)',[rid,'']),/why/);
+  await call('select public.lwb_hired_rate_verify($1,false,null,$2)',[rid,'Too high, ask again']);
+  assert.equal((await db.query("select count(*)::int n from erp_notifications where notification_type='HIRED_RATE_SENT_BACK' and user_id=$1",[ids.manager])).rows[0].n,1);
+  await as('manager');await call('select public.lwb_hired_rate_set($1,$2,1150,null)',[v,'Shree Jagdish Traders (Bardoli)']);
+  await as('admin');assert.equal(await one('select public.lwb_hired_rate_verify($1,true,1100,null)',[rid]),1);
+  let C=await live();assert.equal(C.length,1);assert.equal(Number(C[0].amount),1100);assert.deepEqual(C[0].order_nos.sort(),['PO-61','PO-62']);
+  // Manager can not change a verified rate; next trip to that party adds by itself
+  await as('manager');await assert.rejects(call('select public.lwb_hired_rate_set($1,$2,900,null)',[v,'Shree Jagdish Traders (Bardoli)']),/already verified/);
+  await asg(await o('PO-64','Shree Jagdish Traders (Bardoli)'),0);
+  C=await live();assert.equal(C.length,2);assert.equal(Number(C[1].amount),1100);assert.equal(C[1].auto,true);
+  // Admin sets a new party's rate: verified at once; 2 parties the same day = 2 lines
+  await as('admin');assert.equal(await one('select public.lwb_hired_rate_set($1,$2,1000,null)',[v,'Patel Stores (Gondal)']),'VERIFIED');
+  await asg(await o('PO-65','Patel Stores (Gondal)'),0);
+  C=await live();assert.equal(C.length,4);
+  assert.deepEqual(C.filter(c=>c.d===today).map(c=>[c.route_name,Number(c.amount)]).sort(),[['Patel Stores (Gondal)',1000],['Shree Jagdish Traders (Bardoli)',1100]]);
+  L=await one('select public.lwb_hired_rate_list()');assert.equal(L.groups.length,0);
+  // + Trip by hand for a verified party; an unknown party is refused
+  await as('accounts');
+  await add({vehicle_id:v,date:today,route:'patel stores (gondal)',trips:1});
+  await assert.rejects(add({vehicle_id:v,date:today,route:'Nobody',trips:1}),/Choose the party/);
+  // order moved away from a waiting day: the day goes away
+  await as('manager');
+  const mv=await o('PO-66','New Party (Surat)');await asg(mv,0);
+  assert.equal((await one('select public.lwb_hired_rate_list()')).groups.length,1);
+  await db.query("update dispatch_assignments set vehicle_no='GJ05AB1234' where order_id=$1",[mv]);
+  assert.equal((await one('select public.lwb_hired_rate_list()')).groups.length,0);
+  await as('accounts');await assert.rejects(call('select public.lwb_hired_rate_list()'),/Admin \/ Manager/);
 });
