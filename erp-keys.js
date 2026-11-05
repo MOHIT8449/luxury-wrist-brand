@@ -240,19 +240,43 @@
     return kids.length>=2&&kids.includes(el)?kids:[];
   }
 
+  // The list of keys (? popup and keyboard-shortcuts.html). Keys in one group are pressed together
+  // ("Ctrl+S"); groups are alternatives. COMMON works on every ERP page.
+  const COMMON=[
+    [["Enter"],"Next field · on the last field: Save button"],[["Shift+Enter"],"Previous field"],
+    [["Tab","Shift+Tab"],"Forward / back"],[["↑","↓"],"Move up / down the rows of a list or table"],[["Enter","Space"],"Open a row or card"],
+    [["↑","↓","Enter"],"Pick from a name list (party / SKU)"],
+    [["←","→"],"Buttons in one row (Today, 7 Days, tabs)"],[["/","Ctrl+K"],"Page search"],[["Alt+M"],"Module Search (open any page)"],
+    [["Alt+N"],"+ New"],[["Ctrl+S","Alt+S"],"Save / Submit"],[["Alt+1…9"],"Tab 1 … 9"],
+    [["Alt+H"],"Dashboard"],[["Esc"],"Close the popup"],[["?","F1"],"List of shortcuts"]];
+  // Keys a page adds on top of COMMON (from the page's own code). r = only for these roles.
+  const PAGES={
+    "dashboard.html":[[["↑","↓","Enter"],"Top search: pick a page / party and open it"],[["Esc"],"Clear the search"]],
+    "order-entry.html":[[["↑","↓","Enter"],"Pick the party"],[["Enter"],"Next box in the SKU line · last box: new SKU line"],
+      [["Tab"],"After Rate: new SKU line"],[["Enter"],"On an empty last line: go to Submit"],[["Esc"],"Save Draft (if a popup / list is open, it only closes)"]],
+    "goods-inward.html":[[["↓","Enter"],"Open the SKU search list"],[["↑","↓","Enter"],"Pick the SKU"],[["Enter"],"On the last line's Amount: new SKU line"]],
+    "warehouse-orders.html":[[["↑","↓","Enter"],"Pick from the SKU / PO list"],[["Esc"],"Close the list"]],
+    "bank-statement.html":[[["↓","Enter"],"From the search to the first entry"],[["↑","↓"],"Entry up / down"],[["Home","End"],"First / last entry"],
+      [["PgUp","PgDn"],"10 entries up / down"],[["Enter"],"Book the entry",["admin"]],[["Space"],"Tick the entry",["admin"]],
+      [["Ctrl+A"],"Tick all entries",["admin"]],[["B"],"Ticked entries: choose Book type",["admin"]],[["M"],"See the matching party / bill",["admin"]]],
+    "accounts-dashboard.html":[[["↑","↓","Enter"],"Pick the party in an entry"]],
+    "party-billing.html":[[["Enter"],"After bill no. / amount: Save"]],
+    "complaint-box.html":[[["Enter","Space"],"Open / close a complaint"]],
+    "tasks.html":[[["Enter","Space"],"Open / close a task"]]
+  };
+  const forRole=(rows,role)=>(rows||[]).filter(r=>!r[2]||!role||r[2].includes(role));
+  const keys=g=>g.map(k=>'<span class="lwbk-g">'+k.split("+").map(x=>"<kbd>"+x+"</kbd>").join("+")+'</span>').join(" ");
+  const table=rows=>'<table>'+rows.map(r=>'<tr><td>'+keys(r[0])+'</td><td>'+r[1]+'</td></tr>').join("")+'</table>';
+  const herePage=()=>(location.pathname.split("/").pop()||"dashboard.html");
+  const myRole=()=>{const s=D.querySelector(".erp-top .erp-user .who small");return s?s.textContent.trim().toLowerCase():""};
+
   function help(){
     if(D.getElementById("lwbk-help"))return;
-    // Each key group: "Ctrl+S" is pressed together, groups are alternatives.
-    const rows=[
-      [["Enter"],"अगला खाना (next field) · आखिरी खाने पर Save बटन"],[["Shift+Enter"],"पिछला खाना"],
-      [["Tab","Shift+Tab"],"आगे / पीछे"],[["↑","↓"],"लिस्ट / टेबल की लाइन ऊपर-नीचे"],[["Enter","Space"],"लाइन या कार्ड खोलें"],
-      [["←","→"],"एक लाइन के बटन (Today, 7 Days, टैब)"],[["/","Ctrl+K"],"पेज की सर्च"],[["Alt+M"],"Module Search"],
-      [["Alt+N"],"+ New (नया)"],[["Ctrl+S","Alt+S"],"Save / Submit"],[["Alt+1…9"],"टैब 1 … 9"],
-      [["Alt+H"],"Dashboard"],[["Esc"],"पॉपअप बंद"],[["?","F1"],"यह लिस्ट"]];
-    const keys=g=>g.map(k=>k.split("+").map(x=>"<kbd>"+x+"</kbd>").join("+")).join(" ");
+    const pg=forRole(PAGES[herePage()],myRole());
     const b=D.createElement("div");b.id="lwbk-help";b.className="lwbk-back";b.setAttribute("role","dialog");b.setAttribute("aria-label","Keyboard shortcuts");
-    b.innerHTML='<div class="lwbk-box"><div class="lwbk-hd"><b>⌨ Keyboard shortcuts</b><button type="button" class="lwbk-x" aria-label="Close">×</button></div><table>'+
-      rows.map(r=>'<tr><td>'+keys(r[0])+'</td><td>'+r[1]+'</td></tr>').join("")+'</table></div>';
+    b.innerHTML='<div class="lwbk-box"><div class="lwbk-hd"><b>⌨ Keyboard shortcuts</b><button type="button" class="lwbk-x" aria-label="Close">×</button></div>'+
+      (pg.length?'<div class="lwbk-sub">This page</div>'+table(pg)+'<div class="lwbk-sub">Every page</div>':'')+table(COMMON)+
+      (/keyboard-shortcuts\.html$/.test(location.pathname)?'':'<a class="lwbk-all" href="keyboard-shortcuts.html">See shortcuts for all your pages →</a>')+'</div>';
     const close=()=>b.remove();
     b.addEventListener("click",e=>{if(e.target===b||e.target.closest(".lwbk-x"))close()});
     b.addEventListener("keydown",e=>{if(e.key==="Escape"){e.preventDefault();e.stopPropagation();close()}});
@@ -365,6 +389,10 @@ tr[data-lwbk]:focus-visible{outline-offset:-2px}
 .lwbk-box td{padding:5px 4px;border-top:1px solid #eef0f1;vertical-align:top}
 .lwbk-box td:first-child{white-space:nowrap!important;width:1%;padding-right:10px}
 .lwbk-box td:last-child{white-space:normal!important;overflow-wrap:anywhere}
+.lwbk-g{display:inline-block;white-space:nowrap}
+.lwbk-sub{margin:8px 0 2px;font-size:11.5px;font-weight:700;color:#8a7430;text-transform:uppercase;letter-spacing:.4px}
+.lwbk-all{display:block;margin-top:8px;padding:8px;border-radius:8px;background:#f7f3e6;color:#0b2b30;font-weight:600;text-align:center;text-decoration:none}
+.lwbk-all:hover{background:#efe6c9}
 .lwbk-box kbd{display:inline-block;min-width:18px;padding:1px 6px;border:1px solid #cfd6d8;border-bottom-width:2px;border-radius:5px;background:#f7f9f9;font:600 12px/1.4 ui-monospace,Consolas,monospace;text-align:center}
 @media (pointer:coarse){.lwbk-tip{display:none!important}}
 .lwbk-tip{position:fixed;right:14px;bottom:14px;z-index:5500;background:#0b2b30;color:#fff;border-radius:10px;padding:8px 12px;font:13px/1.3 system-ui,sans-serif;box-shadow:0 8px 24px rgba(0,0,0,.2);display:flex;gap:10px;align-items:center}
@@ -384,12 +412,12 @@ tr[data-lwbk]:focus-visible{outline-offset:-2px}
     let seen="1";try{seen=localStorage.getItem("lwbk-tip")}catch(e){}
     if(!seen&&matchMedia("(pointer:fine)").matches&&!/login\.html$/.test(location.pathname)){
       const tip=D.createElement("div");tip.className="lwbk-tip";
-      tip.innerHTML='<span>⌨ पूरा काम कीबोर्ड से: <b>?</b> दबाएँ</span><button type="button">OK</button>';
+      tip.innerHTML='<span>⌨ Do all work from the keyboard: press <b>?</b></span><button type="button">OK</button>';
       const done=()=>{tip.remove();try{localStorage.setItem("lwbk-tip","1")}catch(e){}};
       tip.querySelector("button").onclick=done;setTimeout(done,12000);
       D.body.appendChild(tip);
     }
   }
   if(D.readyState==="loading")D.addEventListener("DOMContentLoaded",start);else start();
-  window.LWBKeys={help,scan:()=>scanClicky(D.body),next:el=>{const sc=scopeOf(el),fl=tabbables(sc,true);return fl[fl.indexOf(el)+1]||null}};
+  window.LWBKeys={help,COMMON,PAGES,forRole,keysHtml:keys,scan:()=>scanClicky(D.body),next:el=>{const sc=scopeOf(el),fl=tabbables(sc,true);return fl[fl.indexOf(el)+1]||null}};
 })();

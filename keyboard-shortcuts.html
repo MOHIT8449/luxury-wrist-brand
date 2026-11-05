@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Keyboard Shortcuts | Luxury Wrist Brand ERP</title>
+  <script src="erp-date.js"></script><script src="erp-recent.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <link rel="stylesheet" href="erp-shell.css">
+  <link rel="stylesheet" href="sales.css">
+  <script src="erp-shell.js"></script>
+  <script src="sales-common.js"></script>
+  <script src="erp-keys.js"></script>
+  <style>
+    /* Keyboard Shortcuts (Mohit, 5 Nov 2026): each role sees the keys of the pages it can open.
+       Admin can also look at another role's list. Keys come from erp-keys.js (COMMON + PAGES). */
+    .ks-bar{display:flex;gap:8px;align-items:end;margin-bottom:10px}
+    .ks-bar>div{min-width:0}
+    .ks-bar label{display:block;font-size:12px;font-weight:600;color:#4b5763;margin-bottom:3px}
+    .ks-bar select,.ks-bar input{height:36px;border:1.5px solid var(--erp-line);border-radius:6px;padding:0 10px;font:inherit;background:#fff;color:var(--erp-ink);width:100%}
+    .ks-bar .grow{flex:1}
+    .ks-sec{background:#fff;border:1px solid var(--erp-line);border-radius:8px;padding:8px 12px;margin-bottom:10px}
+    .ks-sec h2{font-size:14px;margin:0 0 4px;display:flex;align-items:center;gap:6px}
+    .ks-sec h2 small{font-weight:500;color:var(--erp-muted);font-size:12px}
+    .ks-grid{columns:3 300px;column-gap:10px}
+    .ks-grid .ks-sec{break-inside:avoid;display:inline-block;width:100%;margin:0 0 10px}
+    .ks-sec h2 a{color:inherit;text-decoration:none}.ks-sec h2 a:hover{text-decoration:underline}
+    .ks-t{width:100%;border-collapse:collapse;font-size:13px}
+    .ks-t td{padding:4px 4px;border-top:1px solid #eef0f1;vertical-align:top}
+    .ks-t td:first-child{width:150px;padding-right:10px}
+    .ks-t{table-layout:fixed}
+    .lwbk-g{display:inline-block;white-space:nowrap;margin:0 2px 2px 0}
+    .ks-t td:last-child{overflow-wrap:anywhere}
+    .ks-t tr:first-child td{border-top:0}
+    .ks-common .ks-t tbody{display:grid;grid-template-columns:1fr 1fr;column-gap:24px}
+    .ks-common .ks-t tr{display:grid;grid-template-columns:170px 1fr;border-top:1px solid #eef0f1}
+    .ks-common .ks-t td{border:0;width:auto}
+    .ks-role{font-size:10.5px;font-weight:700;color:#8a7430;background:#f7f3e6;border-radius:4px;padding:0 4px;margin-left:4px;white-space:nowrap}
+    kbd{display:inline-block;min-width:18px;padding:1px 6px;border:1px solid #cfd6d8;border-bottom-width:2px;border-radius:5px;background:#f7f9f9;font:600 12px/1.4 ui-monospace,Consolas,monospace;text-align:center;color:#0b2b30}
+    .ks-pages{display:flex;flex-wrap:wrap;gap:6px}
+    .ks-pages a{font-size:12.5px;padding:4px 9px;border:1px solid var(--erp-line);border-radius:14px;color:var(--erp-ink);text-decoration:none;background:#fafbfc}
+    .ks-pages a:hover{border-color:#c9b26a}
+    .ks-note{font-size:12px;color:var(--erp-muted);margin:0 0 6px}
+    .ks-none{padding:14px;text-align:center;color:var(--erp-muted)}
+    @media(max-width:700px){
+      .ks-common .ks-t tbody{grid-template-columns:1fr}
+      .ks-common .ks-t tr{grid-template-columns:140px 1fr}
+      .ks-t td:first-child{width:140px}
+      .ks-bar select{max-width:150px}
+    }
+  </style>
+</head>
+<body>
+  <div id="loading" class="status">Checking account access...</div>
+  <main id="page" class="erp-main" hidden>
+    <div class="erp-pagehead"><h1>⌨ Keyboard Shortcuts</h1><span class="grow"></span>
+      <button type="button" class="erp-i" aria-label="Info" title="Info" data-tip="Work without the mouse: these are the shortcuts that work on your pages. Press ? or F1 on any page to see that page's list.">i</button></div>
+    <div class="ks-bar">
+      <div id="roleBox" hidden><label for="role">Role</label><select id="role"></select></div>
+      <div class="grow"><label for="q">Search</label><input id="q" type="search" placeholder="Save, Esc, party, Book…" autocomplete="off"></div>
+    </div>
+    <div id="out"></div>
+  </main>
+  <script>
+    const S=LWBSales,{el,esc}=S;
+    const ROLES=[["admin","Admin"],["manager","Sales Head"],["sales","Salesman"],["warehouse","Godown Manager"],["accounts","Accountant"],["transport","Transport"],["driver","Driver"]];
+    const roleName=r=>(ROLES.find(x=>x[0]===r)||[r,r])[1];
+    let me=null;
+    const K=()=>window.LWBKeys;
+    function rowHtml(r){
+      return '<tr><td>'+K().keysHtml(r[0])+'</td><td>'+r[1]+(r[2]?'<span class="ks-role">'+esc(r[2].map(roleName).join(", "))+' only</span>':'')+'</td></tr>';
+    }
+    const hit=(q,...parts)=>!q||parts.join(" ").toLowerCase().includes(q);
+    function pagesFor(role){
+      const own=role===me.realRole;
+      const groups=own?ERPShell.menuForMe(role):ERPShell.menuFor(role).map(g=>({...g,items:g.items.filter(i=>!i.hide)}));
+      const seen=new Set(),out=[];
+      groups.forEach(g=>g.items.forEach(i=>{const h=i.h.split("#")[0];if(seen.has(h)||h==="keyboard-shortcuts.html")return;seen.add(h);out.push({t:i.t,h:i.h,g:g.group==="More"||g.group==="View only"?(i.g||g.group):g.group})}));
+      return out;
+    }
+    function draw(){
+      const role=el("role").value||me.realRole,q=el("q").value.trim().toLowerCase();
+      const common=K().COMMON.filter(r=>hit(q,r[0].join(" "),r[1]));
+      const pages=pagesFor(role);
+      const special=[],plain=[];
+      pages.forEach(p=>{
+        const rows=K().forRole(K().PAGES[p.h.split("#")[0]],role);
+        if(rows.length)special.push({...p,rows:hit(q,p.t)?rows:rows.filter(r=>hit(q,r[0].join(" "),r[1]))});
+        else plain.push(p);
+      });
+      let h="";
+      if(common.length)h+='<section class="ks-sec ks-common"><h2>Every page <small>· for everyone</small></h2><table class="ks-t">'+common.map(rowHtml).join("")+'</table></section>';
+      const sp=special.filter(p=>p.rows.length);
+      if(sp.length)h+='<div class="ks-grid">'+sp.map(p=>'<section class="ks-sec"><h2><a href="'+esc(p.h)+'">'+esc(p.t)+'</a> <small>· '+esc(p.g||"Home")+'</small></h2><table class="ks-t">'+p.rows.map(rowHtml).join("")+'</table></section>').join("")+'</div>';
+      const pl=plain.filter(p=>hit(q,p.t,p.g));
+      if(pl.length)h+='<section class="ks-sec"><h2>Other pages <small>· the common shortcuts above work here</small></h2><div class="ks-pages">'+pl.map(p=>'<a href="'+esc(p.h)+'">'+esc(p.t)+'</a>').join("")+'</div></section>';
+      el("out").innerHTML=h||'<div class="ks-sec ks-none">No shortcut found.</div>';
+    }
+    (async()=>{
+      me=await S.start(ROLES.map(r=>r[0]));if(!me)return;
+      if(!K())await new Promise(ok=>setTimeout(ok,300));
+      const sel=el("role");
+      sel.innerHTML=ROLES.map(([r,t])=>'<option value="'+r+'"'+(r===me.realRole?" selected":"")+'>'+esc(t)+(r===me.realRole?" (you)":"")+'</option>').join("");
+      // Admin can look at what each role sees; everyone else sees only their own pages.
+      el("roleBox").hidden=me.realRole!=="admin";
+      sel.onchange=draw;
+      el("q").addEventListener("input",draw);
+      el("loading").hidden=true;el("page").hidden=false;
+      draw();
+    })();
+  </script>
+</body>
+</html>
