@@ -138,7 +138,7 @@
         (pay?'<td class="n">'+lakh(P.balance)+(num(P.overdue)?'<small class="dn">'+lakh(P.overdue)+" late</small>":P.next_due?"<small>by "+dmy(P.next_due)+"</small>":"")+"</td>":"")+"</tr>"}).join("");
     const none=num(ov.skus_without_company);
     return card("🏷️ Brand-wise — "+new Date().toLocaleDateString("en-IN",{month:"long"}),go("companies.html","Company / Brand →"),'<div class="rd-scroll"><table class="rd-brand"><thead><tr><th>Brand</th><th class="n">Sales</th>'+(out?'<th class="n">To collect</th>':"")+(pay?'<th class="n">To pay co.</th>':"")+"</tr></thead><tbody>"+rows+"</tbody></table></div>",
-      !ov.limited&&none?none+" SKU"+(none==1?"":"s")+" without company · set in SKU Master":"Late = past party / company udhari days");
+      !ov.limited&&none?none+" SKU"+(none==1?"":"s")+" without company · set in SKU Master":"Late = past party / company credit days");
   }
   // Cases ordered on approved / not yet loaded orders vs godown stock (lwb_po_stock).
   async function stockCheck(orders){
@@ -330,7 +330,7 @@
         kpi("green","Today's Sales",rs(tv),(ch==null?"":'<span class="'+(ch>=0?"up":"dn")+'">'+(ch>=0?"▲ ":"▼ ")+Math.abs(ch)+"%</span> ")+"vs yesterday "+rs(yv),"sales-tracking.html",orders&&lst("Today's Sales","Orders taken today (cancelled not counted)",td,null,"sales-tracking.html")),
         profitKpi(PR,td.length,"violet"),
         kpi("blue",new Date().toLocaleDateString("en-IN",{month:"long"})+" Sales",rs(mv),tgt?pct(mv,tgt)+"% of "+lakh(tgt)+" target":fmt(mo.length)+" orders","sales-tracking.html",orders&&lst(new Date().toLocaleDateString("en-IN",{month:"long"})+" Sales","Orders this month (cancelled not counted)",mo,null,"sales-tracking.html")),
-        kpi("red","Total Outstanding",out?rs(out.total):"—",out?(out.brand?'<span class="dn">'+rs(out.over)+"</span> past udhari days":'<span class="dn">'+rs(out.over30)+"</span> over 30 days"):"Billing & Outstanding","party-billing.html",out&&out.parties&&lst("Total Outstanding","Party-wise due after advance",out.parties,PCOLS,"party-billing.html")),
+        kpi("red","Total Outstanding",out?rs(out.total):"—",out?(out.brand?'<span class="dn">'+rs(out.over)+"</span> past credit days":'<span class="dn">'+rs(out.over30)+"</span> over 30 days"):"Billing & Outstanding","party-billing.html",out&&out.parties&&lst("Total Outstanding","Party-wise due after advance",out.parties,PCOLS,"party-billing.html")),
         kpi("teal","Cash in Hand",acc&&acc.closing_set?rs(acc.closing):"—",A?"Bank deposit today "+rs(A.dep):"Accounts Dashboard","accounts-dashboard.html",acc&&lst("Today's cash book","All money entries today",acc.lines||[],ACOLS,"accounts-dashboard.html")),
         kpi("amber","Short Stock SKUs",short?fmt(short.length):"—",short?(short.length?"Less than open orders":"All open orders covered"):"Stock not available","inventory.html",short&&lst("Short Stock SKUs","Godown stock less than approved, not yet loaded orders",short,SCOLS,"inventory.html"))];
       const c=s=>O.filter(o=>st(o)===s).length,wait=O.filter(o=>WAIT.includes(st(o))&&live(o));

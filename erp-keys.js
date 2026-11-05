@@ -21,7 +21,7 @@
   const D=document;
   const FIELD='input:not([type=hidden]):not([type=button]):not([type=submit]):not([type=reset]):not([type=image]):not([type=file]),select,textarea';
   const TABBABLE='a[href],button,input:not([type=hidden]),select,textarea,summary,[tabindex],[contenteditable="true"]';
-  const SEARCH=/search|find|filter|खोज|ढूं?ढ|सर्च/i;
+  const SEARCH=/search|find|filter/i;
   const off=el=>!!(el&&el.closest&&el.closest('[data-keys="off"]'));
   function shown(el){
     if(!el||!el.isConnected||el.hidden)return false;
@@ -79,8 +79,8 @@
   const writable=el=>!(el.readOnly&&el.tagName!=="SELECT");
 
   // Save / Submit button of a scope (best guess from type, class and text).
-  const GOOD=/(^|\s|[^a-z])(save|submit|update|book|confirm|create|add|post|apply|send|ok|done|start|next|go|proceed|approve|record|generate|सेव|जमा|पक्का|आगे)(\b|$)/i;
-  const BAD=/(cancel|close|back|delete|remove|clear|reset|discard|undo|print|excel|export|download|logout|×|✕|✖|रद्द|बंद|हटा)/i;
+  const GOOD=/(^|\s|[^a-z])(save|submit|update|book|confirm|create|add|post|apply|send|ok|done|start|next|go|proceed|approve|record|generate)(\b|$)/i;
+  const BAD=/(cancel|close|back|delete|remove|clear|reset|discard|undo|print|excel|export|download|logout|×|✕|✖)/i;
   function primary(root,after,before){
     let best=null,bs=0;
     for(const b of root.querySelectorAll('button,input[type=submit],input[type=button],[role=button]')){
@@ -225,7 +225,7 @@
     const a=D.activeElement,p=popup();
     const r=p||(a&&a!==D.body&&a.closest&&a.closest("form"))||main();
     const sv=[...r.querySelectorAll("button,input[type=submit],[role=button]")].filter(b=>usable(b)&&!(r===main()&&chrome(b))&&!BAD.test(txt(b)));
-    return sv.find(b=>/(^|\s|💾)(save|submit|update|सेव)/i.test(txt(b)))||primary(r,a&&a!==D.body?a:null);
+    return sv.find(b=>/(^|\s|💾)(save|submit|update)/i.test(txt(b)))||primary(r,a&&a!==D.body?a:null);
   }
   function tabGroups(){
     const r=popup()||main();

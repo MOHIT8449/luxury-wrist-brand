@@ -258,7 +258,7 @@
         cols:[{t:"Party",v:"party"},{t:"Due ₹",v:"due",money:true,sum:true},{t:"Oldest bill (days)",v:"oldest",num:true,dec:0}]};
       const o=(CTX.ov&&CTX.ov.outstanding)||{};
       return {title:"Outstanding",sub:"Brand-wise due · party list is on Billing & Outstanding",rows:(CTX.companies||[]).filter(c=>o[c.id]).map(c=>({brand:c.name,due:num(o[c.id].due),over:num(o[c.id].overdue)})),
-        page:okPage("party-billing.html"),pageText:"Open Billing & Outstanding →",cols:[{t:"Brand",v:"brand"},{t:"Due ₹",v:"due",money:true,sum:true},{t:"Past udhari days ₹",v:"over",money:true,sum:true}]};
+        page:okPage("party-billing.html"),pageText:"Open Billing & Outstanding →",cols:[{t:"Brand",v:"brand"},{t:"Due ₹",v:"due",money:true,sum:true},{t:"Past credit days ₹",v:"over",money:true,sum:true}]};
     }:null;
     const stockD=SV.ok?()=>stockList("Stock value","Godown stock × landing (today)",SV.rows):null;
     const cashD=M.acc?()=>({title:"Cash + Bank",sub:"Closing cash in hand and bank balances",page:okPage("accounts-dashboard.html"),pageText:"Open Accounts →",
@@ -270,7 +270,7 @@
       kpi(COL.gp,"Gross Profit",lakh(S.gp),gpPct+" margin"+(S.missing?" · "+fmt(S.missing)+" lines no landing":""),gpD),
       kpi("#c62828","Expenses",E.ok?lakh(E.total):"—",E.ok?(CTX.allBrands?"":"All brands · ")+(M.ec[0]?esc(M.ec[0][0])+" "+lakh(M.ec[0][1]):"No expense entered"):"Accounts",expD()),
       kpi(net>=0?COL.gp:"#c62828","Net Profit",E.ok?lakh(net):"—",E.ok?'<em class="'+(net>=0?"up":"dn")+'">'+pctTxt(net,S.known)+"</em> of sales":"Needs Accounts",netD),
-      kpi("#b26b00","Outstanding",out?lakh(out.total):"—",out?'<em class="dn">'+lakh(out.over)+"</em> "+(out.brand?"past udhari days":"over 30 days"):"Billing & Outstanding",outD),
+      kpi("#b26b00","Outstanding",out?lakh(out.total):"—",out?'<em class="dn">'+lakh(out.over)+"</em> "+(out.brand?"past credit days":"over 30 days"):"Billing & Outstanding",outD),
       kpi("#1d5fbf","Stock Value",SV.ok?lakh(SV.total):"—",short?fmt(short)+" SKU"+(short==1?"":"s")+" short":"Godown stock × landing",stockD),
       kpi(COL.sales,"Cash + Bank",M.acc?lakh(num(M.cash)+M.bank):"—",M.acc?"Cash "+(M.cash==null?"not set":lakh(M.cash))+" · Bank "+lakh(M.bank):"Accounts",cashD)];
     // P&L (every row opens its list)
