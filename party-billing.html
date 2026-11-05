@@ -63,7 +63,7 @@
     .pb-bill{border:1px solid var(--erp-line);border-radius:10px;padding:12px;background:#fff}
     .pb-bill.hl{box-shadow:0 0 0 3px #1769d8}
     .pb-bill .hd{display:flex;gap:8px;flex-wrap:wrap;align-items:baseline;justify-content:space-between}
-    .pb-bill .hd b{font-size:15px}.pb-bill .hd small{color:var(--erp-muted)}
+    .pb-bill .hd b{font-size:15px}.pb-po{text-decoration:underline dotted #c9b26a;text-underline-offset:3px}.pb-bill .hd small{color:var(--erp-muted)}
     .pb-bill .who{margin:2px 0 8px;font-size:14px}
     .pb-lines{display:grid;gap:6px}
     .pb-line{display:grid;grid-template-columns:minmax(0,2fr) minmax(0,1fr) minmax(0,1fr) 36px;gap:6px}
@@ -233,7 +233,7 @@
         // bill names used before on this main party (kept on the bills only, not as parties)
         const used=[...new Set(orders().filter(x=>key(x.parent)===key(o.parent)).flatMap(x=>(x.bills||[]).map(b=>String(b.firm||"").trim())).filter(Boolean))].filter(n=>!names.some(m=>key(m)===key(n)));
         return `<div class="pb-bill${o.order_id===want?" hl":""}" data-o="${esc(o.order_id)}">
-          <div class="hd"><span><b>${esc(o.order_no)}</b> ${o.early?`<small>approved ${dmy(String(o.approved_at||o.order_date||"").slice(0,10))}</small> <span class="tag t-amb">${o.vehicle_no?"Vehicle "+esc(o.vehicle_no)+" · not loaded yet":"Not loaded yet"}</span>`:`<small>loaded ${dmy(o.dispatch_date||o.order_date)}</small>`} ${d?`<span class="tag ${d[0]}">${d[1]}</span>`:""}${markTag(o.order_id,!!d)}${waitTag(o.order_id)}</span><span>${o.early?"PO value ("+esc(Number(o.qty||0).toLocaleString("en-IN"))+" CS)":"Loaded value"} <b>${rs(o.erp_amount)}</b></span></div>
+          <div class="hd"><span><b class="pb-po" data-drill-order="${esc(o.order_id)}" data-drill-no="${esc(o.order_no)}">${esc(o.order_no)}</b> ${o.early?`<small>approved ${dmy(String(o.approved_at||o.order_date||"").slice(0,10))}</small> <span class="tag t-amb">${o.vehicle_no?"Vehicle "+esc(o.vehicle_no)+" · not loaded yet":"Not loaded yet"}</span>`:`<small>loaded ${dmy(o.dispatch_date||o.order_date)}</small>`} ${d?`<span class="tag ${d[0]}">${d[1]}</span>`:""}${markTag(o.order_id,!!d)}${waitTag(o.order_id)}</span><span>${o.early?"PO value ("+esc(Number(o.qty||0).toLocaleString("en-IN"))+" CS)":"Loaded value"} <b>${rs(o.erp_amount)}</b></span></div>
           <div class="who">${esc(o.party)}${grp?` <span class="tag t-blu">under ${esc(o.parent)}</span>`:""}${names.length>1?`<small style="color:var(--erp-muted)"> · bill names: ${esc(names.filter(n=>key(n)!==key(o.party)).join(", "))}</small>`:""}</div>
           <datalist id="dl-${esc(o.order_id)}">${names.concat(used).map(n=>`<option value="${esc(n)}">`).join("")}</datalist>
           <div class="pb-lines"></div>
@@ -314,7 +314,7 @@
     }
     function partyBills(p){
       const rows=p.bills.map(b=>{const d=DELIVERY[String(b.delivery||"").toUpperCase()],a=days(b.invoice_date),cn=Number(b.credit_notes)||0,got=(Number(b.driver)||0)+(Number(b.office)||0);
-        return `<tr><td><b>${esc(b.order_no)}</b>${!fb&&BR().length?" "+btag(b.company_id):""}${key(b.party)!==key(p.party)?`<small>PO party ${esc(b.party)}</small>`:""}${d?` <span class="tag ${d[0]}">${d[1]}</span>`:""}</td><td>${dmy(b.invoice_date)}<small class="${a>30?"due":""}">${a} days</small></td>
+        return `<tr data-drill-order="${esc(b.order_id)}" data-drill-no="${esc(b.order_no)}" data-drill-bill="${esc(b.invoice_no||"bill")}"><td><b>${esc(b.order_no)}</b>${!fb&&BR().length?" "+btag(b.company_id):""}${key(b.party)!==key(p.party)?`<small>PO party ${esc(b.party)}</small>`:""}${d?` <span class="tag ${d[0]}">${d[1]}</span>`:""}</td><td>${dmy(b.invoice_date)}<small class="${a>30?"due":""}">${a} days</small></td>
           <td>${(b.bills||[]).length?(b.bills||[]).map(x=>`<span class="bline"><b>${esc(x.firm||b.party)}</b> · ${esc(x.no)} · ${rs(x.amount)}</span>`).join(""):esc(b.invoice_no)}</td>
           <td class="n">${rs(b.bill_amount)}</td><td class="n">${cn?"− "+rs(cn):"—"}${Number(b.credit_pending)>0.5?`<small class="due">CN pending ${rs(b.credit_pending)}</small>`:""}</td><td class="n">${got?rs(got):"—"}</td><td class="n due">${rs(b.due)}</td>
           <td class="n"><button type="button" class="lnk" data-it="${esc(b.order_id)}">ⓘ Items</button>${waitTag(b.order_id)}<br><button type="button" class="lnk" data-cn="${esc(b.order_id)}">Credit note</button><br><a class="lnk" href="accounts-invoice.html?order=${encodeURIComponent(b.order_id)}">Details</a></td></tr>`}).join("");
@@ -341,10 +341,10 @@
       if(!list.length){el("body").innerHTML='<div class="pb-empty">No party payment yet. Use “+ Party payment”.</div>';return}
       el("body").innerHTML=`<div class="pb-scroll"><table class="pb-t"><thead><tr><th>Date</th><th>Main party</th><th>Received</th><th class="n">Amount</th><th>Against bills</th><th class="n">Advance</th><th></th></tr></thead><tbody>${list.map(r=>{
         const s=(r.allocs||[]).reduce((a,x)=>a+Number(x.amount),0),left=r2(r.total-s);
-        return `<tr${r.cancelled?' style="opacity:.55"':""}><td>${dmy(r.pay_date)}<small>${esc(r.by||"")}</small></td><td><b>${esc(r.party)}</b>${BR().length?(r.company_id||r.cancelled?" "+btag(r.company_id):` <select class="bsel" data-rb="${esc(r.receipt_id)}" aria-label="Brand of this payment"><option value="">Pick brand…</option>${BR().map(c=>`<option value="${esc(c.id)}">${esc(c.name)}</option>`).join("")}</select>`):""}${r.remark?`<small>${esc(r.remark)}</small>`:""}</td>
+        return `<tr data-drill-party="${esc(r.party)}"${r.cancelled?' style="opacity:.55"':""}><td>${dmy(r.pay_date)}<small>${esc(r.by||"")}</small></td><td><b>${esc(r.party)}</b>${BR().length?(r.company_id||r.cancelled?" "+btag(r.company_id):` <select class="bsel" data-rb="${esc(r.receipt_id)}" aria-label="Brand of this payment"><option value="">Pick brand…</option>${BR().map(c=>`<option value="${esc(c.id)}">${esc(c.name)}</option>`).join("")}</select>`):""}${r.remark?`<small>${esc(r.remark)}</small>`:""}</td>
           <td>${(r.modes||[]).map(m=>`<span class="bline">${MODE[m.mode]||m.mode} ${rs(m.amount)}${m.ref?` <small style="display:inline">${esc(m.ref)}</small>`:""}</span>`).join("")}</td>
           <td class="n"><b>${rs(r.total)}</b></td>
-          <td>${r.cancelled?'<span class="tag t-gry">Cancelled</span>':(r.allocs||[]).map(a=>`<span class="chip">${esc(a.order_no)}${a.invoice_no?" · "+esc(a.invoice_no):""} · ${rs(a.amount)}<button type="button" data-un="${esc(a.id)}" title="Undo: back to advance" aria-label="Undo">×</button></span>`).join(" ")||"—"}</td>
+          <td>${r.cancelled?'<span class="tag t-gry">Cancelled</span>':(r.allocs||[]).map(a=>`<span class="chip" data-drill-order="${esc(a.order_id||"")}" data-drill-no="${esc(a.order_no)}" data-drill-bill="${esc(a.invoice_no||"bill")}">${esc(a.order_no)}${a.invoice_no?" · "+esc(a.invoice_no):""} · ${rs(a.amount)}<button type="button" data-un="${esc(a.id)}" title="Undo: back to advance" aria-label="Undo">×</button></span>`).join(" ")||"—"}</td>
           <td class="n">${!r.cancelled&&left>0.005?`<span class="adv">${rs(left)}</span>`:"—"}</td>
           <td class="n">${r.cancelled?"":`<button type="button" class="lnk" data-cx="${esc(r.receipt_id)}" style="color:#b3122b">Cancel</button>`}</td></tr>`}).join("")}</tbody></table></div>`;
       el("body").querySelectorAll("[data-rb]").forEach(s=>s.onchange=async()=>{
