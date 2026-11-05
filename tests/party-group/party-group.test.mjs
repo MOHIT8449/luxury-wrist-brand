@@ -52,6 +52,7 @@ for(const [role,id] of Object.entries(ids)){await db.query('insert into auth.use
 await db.exec(await sql('lwb_party_payment_collection_setup.sql'));
 await db.exec(await sql('lwb_accounts_dashboard_setup.sql'));
 await db.exec(await sql('lwb_party_group_billing_setup.sql'));
+await db.exec(await sql('lwb_allow_large_cash_entries.sql'));
 await db.exec('GRANT USAGE ON SCHEMA public,auth TO authenticated');
 
 const today=(await db.query("select (now() at time zone 'Asia/Kolkata')::date::text d")).rows[0].d;
@@ -112,7 +113,8 @@ test('loaded PO with no Tally bill is pending; bill lines show the names; due on
 test('party payment: 5 lakh by bank on the group, oldest bill first, rest stays advance',async()=>{
  await as('accounts');
  await assert.rejects(receive('NOBODY',[{mode:'BANK',amount:5}]),/Party Master/);
- await assert.rejects(receive(P,[{mode:'CASH',amount:250000}]),/269ST/);
+ // 2 lakh+ cash is saved in full (own record book); rolled back so the rest of the test is unchanged
+ await db.exec('BEGIN');assert.equal(Number((await receive(P,[{mode:'CASH',amount:322200}])).amount),322200);await db.exec('ROLLBACK');
  await assert.rejects(receive(P,[{mode:'CHEQUE',amount:5}]),/cheque number/);
  // paid in the name of a bill name: goes to the main party
  const r=await receive('Priya Traders',[{mode:'BANK',amount:400000,ref:'UTR500'},{mode:'CASH',notes:{500:100,200:250}}]);

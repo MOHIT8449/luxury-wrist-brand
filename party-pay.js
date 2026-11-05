@@ -116,6 +116,7 @@
 .lpp .left b.g{color:#13824a}.lpp .left b.r{color:#b3122b}
 .lpp .err{background:#ffebeb;color:#9b2020;border-radius:8px;padding:9px 11px;white-space:pre-wrap}
 .lpp .hint{color:#66788e;font-size:13px;margin:0}
+.lpp .cwarn{background:#fff6d6;color:#7a5600;border-radius:8px;padding:6px 10px;font-size:13px;margin:6px 0 0}
 .lpp .bpk{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px}
 .lpp .bpk button{border:2px solid #d5dbe3;background:#fff;border-radius:10px;padding:7px 10px;text-align:left;font:inherit;cursor:pointer;color:var(--bc)}
 .lpp .bpk button b{display:flex;align-items:center;gap:6px;font-size:14px}.lpp .bpk button b i{width:9px;height:9px;border-radius:50%;background:var(--bc)}
@@ -163,6 +164,7 @@
   <label class="l">Money received</label>
   <div class="modes">${MODES.map(([m,t,ph])=>`<div class="mode"><b>${t}</b><input class="amt" data-m="${m}" inputmode="decimal" autocomplete="off" placeholder="₹ 0" aria-label="${t} amount">${m==="CASH"?`<button type="button" class="lnk" data-cnt>Count notes</button>`:`<input class="ref" data-r="${m}" maxlength="100" autocomplete="off" placeholder="${ph}" aria-label="${t} ${ph}">`}</div>${m==="CASH"?`<div class="notes" data-notes hidden>${NOTES.map(n=>`<span>₹${n}×<input data-n="${n}" inputmode="numeric" placeholder="0" aria-label="${n} notes"></span>`).join("")}<span>coins<input data-n="coins" inputmode="decimal" placeholder="0" aria-label="coins"></span></div>`:""}`).join("")}</div>
   <div class="tot" style="margin-top:8px">Total <b data-tot>₹0</b></div>
+  <p class="cwarn" data-cwarn hidden>Cash is ₹2 lakh or more (269ST). It will still save in full.</p>
  </div>
  <div><label class="l">${adjust?"Adjust the advance against":"Use this money for"}</label>
   <div class="seg${adjust?" two":""}" data-how><button type="button" data-h="auto">Oldest bill first</button><button type="button" data-h="pick">Choose bills</button>${adjust?"":`<button type="button" data-h="adv">Keep as advance</button>`}</div></div>
@@ -234,6 +236,7 @@
     function drawLeft(){
       const m=money(),split=r2([...plan().values()].reduce((a,v)=>a+v,0)),left=r2(m-split);
       q("[data-tot]").textContent=rs(m);
+      q("[data-cwarn]").hidden=!(num(q('.amt[data-m="CASH"]').value)>=200000);
       q("[data-left]").innerHTML=adjust?`<span>Advance ${rs(m)}</span><span>Adjusted now <b>${rs(split)}</b></span><span>Advance left <b class="${left<-0.5?"r":"g"}">${rs(left)}</b></span>`:
         `<span>Against bills <b>${rs(split)}</b></span><span>${left<-0.5?"More than received":"Stays as advance"} <b class="${left<-0.5?"r":"g"}">${rs(Math.abs(left))}</b></span>`;
     }
@@ -284,8 +287,6 @@
           lines.push(l)}
         if(!lines.length)return fail("Enter the money received (Cash / UPI / Bank / Cheque).");
         const m=money();if(split>m+0.5)return fail("Bills "+rs(split)+" is more than the money received "+rs(m)+".");
-        const cash=lines.filter(l=>l.mode==="CASH").reduce((a,l)=>a+l.amount,0);
-        if(cash>=200000)return fail("Cash of ₹2 lakh or more in one receipt is not allowed (Income Tax 269ST). Split it into Bank / UPI.");
         args=["lwb_party_receive",{p_party:party,p_pay_date:date,p_lines:lines,p_allocs:how==="auto"?null:how==="adv"?[]:allocs,p_remark:q("#lppR").value.trim()||null}];
         if(BR.length)args[1].p_company_id=brand;
       }
