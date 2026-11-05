@@ -164,6 +164,12 @@ body.show-landing table{min-width:1420px}
 .pos{color:#12632f;font-weight:700}.neg{color:#b3261e;font-weight:700}
 tr.below-landing td,tr.below-min td{background:#fff1f0}
 tr.below-min .rate{border-color:#c8102e;color:#c8102e;font-weight:700}
+/* Rate below Min sale (landing + margin): the whole line turns red. */
+#itemsBody tr.below-min td{background:#fde4e4;border-color:#f3b4b4}
+#itemsBody tr.below-min td:first-child{box-shadow:inset 4px 0 0 #c8102e}
+#itemsBody tr.below-min input,#itemsBody tr.below-min .sku-name{color:#b3261e;border-color:#e89a9a;background:#fff7f7}
+.rate-hint.need{color:#9a6700;font-weight:600}
+@media(max-width:760px){#itemsBody tr.below-min{border-color:#c8102e!important;background:#fde4e4!important;box-shadow:inset 4px 0 0 #c8102e}}
 .mgr-col{display:none}
 body.show-landing .mgr-col{display:table-cell}
 body.show-landing .summary-row.mgr-col{display:flex}
@@ -1483,7 +1489,7 @@ function addItem(focus){
     <td>
       <div class="rate-box">
       <button type="button" class="step" tabindex="-1" title="Rate −1" onclick="rateStep(this,-1)">−</button>
-      <input class="rate number" aria-label="Rate per case" enterkeyhint="next"
+      <input class="rate number" aria-label="Rate per case" enterkeyhint="next" placeholder="Rate"
              type="number"
              min="0"
              step="0.01"
@@ -1948,6 +1954,8 @@ function headCreatesApprovedPo(){
 }
 // Where a submitted PO is listed: Sales Head / Admin see the approval list, a Salesman his own orders.
 function poListUrl(){return headCreatesApprovedPo()?"warehouse-orders.html":"my-sales.html#orders";}
+// Every login except Admin types the rate by hand: no last bill / slab / std rate is filled in the box.
+function manualRateLogin(){ return !isAdminLogin(); }
 function isAdminLogin(){ return String(currentProfile?.loginRole||currentProfile?.role||"").trim().toLowerCase() === "admin"; }
 // Rajnigandha lines below the Admin's min rate: the slip waits for Admin's rate OK (Admin himself is not stopped).
 function belowMinLines(items){
@@ -3019,7 +3027,8 @@ function applyRates(){
     const lastRate = last ? partyRateNow(last, key) : null;
     const lim = saleLimits.get(key);
     const auto = last ? lastRate : (slabRate ?? lim?.std ?? null);
-    if(row.dataset.hand !== "1" && auto != null && document.activeElement !== rateInput && rateInput.value !== String(auto)){
+    // Salesman / Sales Head type the rate on every line (Mohit, 5 Nov 2026); only Admin gets it filled by itself.
+    if(!manualRateLogin() && row.dataset.hand !== "1" && auto != null && document.activeElement !== rateInput && rateInput.value !== String(auto)){
       rateInput.value = String(auto);
       refreshRowAmounts(row);
     }
@@ -3028,8 +3037,11 @@ function applyRates(){
     const lowMin = lim && lim.min != null && rateInput.value !== "" && rate < lim.min;
     row.classList.toggle("below-min", !!lowMin);
     if(lowMin){
-      hint.textContent = "Rate below allowed (min ₹" + formatNumber(lim.min) + ")" + (isAdminLogin() ? "" : ". Admin approval needed.");
+      hint.textContent = "Below minimum rate ₹" + formatNumber(lim.min) + (isAdminLogin() ? "" : ". Admin approval needed.");
       hint.className = "rate-hint warn";
+    }else if(manualRateLogin() && rateInput.value === ""){
+      hint.textContent = last ? "Enter rate · Last bill ₹" + formatNumber(last.rate) : "Enter rate";
+      hint.className = "rate-hint need";
     }else if(row.dataset.hand === "1" && slabRate != null && rateInput.value !== "" && rate < slabRate){
       hint.textContent = "Below slab rate ₹" + formatNumber(slabRate);
       hint.className = "rate-hint warn";
