@@ -122,7 +122,7 @@
     {group:"Accounts",items:[
       {t:"Accounts Dashboard",h:"accounts-dashboard.html",i:"cash",r:"admin accounts"},
       {t:"Bank Statement",h:"bank-statement.html",i:"book",r:"admin accounts"},
-      {t:"Billing & Outstanding",h:"party-billing.html",i:"bill",r:"admin accounts",k:"bills to make tally bill sales bill outstanding collect payment rajnigandha bill pending",pt:"Billing & Outstanding (Bills to make)"},
+      {t:"Billing & Outstanding",h:"party-billing.html",i:"bill",r:"admin accounts",k:"bills to make tally bill sales bill outstanding collect payment rajnigandha bill pending party ledger statement khata",pt:"Billing & Outstanding (Bills to make)"},
       {t:"Money Overview",h:"money-overview.html",i:"cash",r:"admin accounts",hide:1},
       {t:"Tally Bill & Invoice No.",h:"accounts-invoice.html",i:"bill",r:"admin accounts",hide:1},
       {t:"Tally Bill Check",h:"tally-check.html",i:"bill",r:"admin accounts",hide:1},
@@ -679,6 +679,8 @@
   if(!window.ERPList&&!document.querySelector('script[src*="erp-list.js"]')){const s=document.createElement("script");s.src="erp-list.js";document.head.appendChild(s)}
   // Keyboard first: Enter = next field, arrows in lists, shortcuts (erp-keys.js).
   if(!window.LWBKeys&&!document.querySelector('script[src*="erp-keys.js"]')){const s=document.createElement("script");s.src="erp-keys.js";document.head.appendChild(s)}
+  // Every drop-down searches like the SKU box in New PO (erp-select.js).
+  if(!window.LWBSelect&&!document.querySelector('script[src*="erp-select.js"]')){const s=document.createElement("script");s.src="erp-select.js";document.head.appendChild(s)}
   window.ERPShell={mount,menuFor,viewOnly,menuForMe,hiddenPages,extraPages,pageRole,pageRoleFresh,allPages,icon:svg,alert:erpAlert,confirm:erpConfirm,prompt:erpPrompt,toast};
   const me=document.currentScript;
   if(me&&me.hasAttribute("data-auto")){

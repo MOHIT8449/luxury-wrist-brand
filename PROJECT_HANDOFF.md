@@ -11,6 +11,12 @@
 - ERPList popups: a row with no own `onRow` opens `LWBDrill` by itself when it has `order_id` / `order_no`+`id` (PO) or `party` / `customer_name` (party); `drill:false` turns it off. A popup opened from a row has "‹ Back" + a trail ("To collect › PARTY"); Esc = one step back. New options `links:[{t,go}]` (footer buttons) and `load(ui)` (`ui.title()`, `ui.sub()`).
 - Page rows: `data-drill-order="<id>"` (+ `data-drill-no`, `data-drill-bill`) or `data-drill-party="<name>"` on any element opens the same popup (click / Enter). Used on Billing & Outstanding (bill rows under a party, PO no. on Bills to make, Payments rows + split chips), Party Ledger (entry + bill rows), Money Overview (bill / PO rows), Daily Report (top outstanding, driver bill history), Accounts Dashboard (Party outstanding rows), My Orders cards. Accounts Dashboard count popups open the money line itself.
 - Checked with a mocked database at 390 / 1366 px: no side scroll, no new JS errors. Not yet checked on live data. Screenshots: project files `drill-down/`.
+## Every drop-down searches like the SKU box (5 Nov 2026)
+
+- Mohit: the SKU box in New PO lets you type and the list narrows; every drop-down on the website (party, vehicle, employee, supplier, head, bank ...) must work the same way.
+- New `erp-select.js` (LWBSelect), loaded by `erp-shell.js` on every ERP page (cashbook.html loads it directly). No page code changed: the page keeps its own `<select>`; a click / tap, or a letter typed on it, opens a search box right on top of it with the list under it. Every typed word must be in the name (anywhere); names that start with it come first. ↑ ↓ move, Enter picks and goes to the next field, Esc / outside tap closes. The pick sets `select.value` and fires input + change, so onchange code runs as before.
+- Only single drop-downs with 6+ options (short ones like Active / Inactive stay native). Opt out: `data-nosearch` on the select or a block around it. Inputs that already search (SKU datalist, New PO party picker, Goods Inward supplier) are unchanged.
+- Checked with a mocked database at 1366 / 390 px (Party Ledger party pick, keyboard pick), loaded on all ERP pages with no new JS errors, no side scroll. Screenshots: project files `search-dropdown/`.
 
 ## Hired vehicles: rent per party, Manager sets, Admin verifies (5 Nov 2026)
 
