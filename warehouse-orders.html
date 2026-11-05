@@ -1085,6 +1085,24 @@
       #reviewModal .modal-footer .btn-grey{display:none}
     }
 
+/* Admin mark Loaded / Delivered (5 Nov 2026) */
+    .adm-mark {display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin:-6px 0 12px;padding:6px 10px;border:1px dashed #d9b44a;border-radius:8px;background:#fffaf0;font-size:12px;color:#5b4a1a}
+    .adm-mark[hidden] {display:none}
+    .adm-mark .am-log {flex:1 1 220px;min-width:0;line-height:1.35}
+    .adm-mark .am-log b {color:#1f2a37}
+    .adm-mark .am-btns {display:flex;gap:6px;margin-left:auto}
+    .adm-mark .btn {padding:6px 10px!important;min-height:32px!important;font-size:12px!important;flex:0 0 auto!important;white-space:nowrap}
+    .track-card .adm-mark {margin:10px 0 0}
+    #markModal {z-index:1010}
+    .track-modal .mark-card {width:min(440px,100%)}
+    .mark-card .mark-sub {margin:0 0 10px;color:#55606d;font-size:12.5px;line-height:1.4}
+    .mark-card .mark-form {display:grid;grid-template-columns:150px minmax(0,1fr);gap:8px}
+    .mark-card .mark-form label {display:flex;flex-direction:column;gap:3px;font-size:11px;font-weight:700;color:#55606d;min-width:0}
+    .mark-card .mark-form input {padding:8px;min-height:40px;font-size:16px;border:1px solid #c7ced6;border-radius:6px;width:100%;min-width:0}
+    .mark-card .mark-warn {margin:8px 0 0;font-size:12px;color:#8a5a00;line-height:1.4}
+    .mark-card .mark-warn:empty {display:none}
+    @media(max-width:480px){.mark-card .mark-form {grid-template-columns:1fr}.adm-mark .am-btns {margin-left:0;width:100%}.adm-mark .am-btns .btn {flex:1 1 0!important}}
+
 /* Filled % badge (4 Nov 2026) */
       #ordersArea .fill-w {display:block;line-height:1}
       .fill-b {display:inline-flex;align-items:center;gap:4px;margin-top:3px;border-radius:999px;padding:1px 7px 1px 2px;font-size:11px;font-weight:700;white-space:nowrap}
@@ -1341,6 +1359,7 @@
       </div>
       <div class="modal-body">
         <ol class="po-journey" id="trackJourney" aria-label="Where this PO is now"></ol>
+        <div class="adm-mark" id="trackAdmMark" hidden></div>
       </div>
       <div class="modal-footer" id="trackFoot" hidden></div>
     </div>
@@ -1454,6 +1473,7 @@
         </div>
 
         <ol class="po-journey" id="poJourney" aria-label="PO journey"></ol>
+        <div class="adm-mark" id="poAdmMark" hidden></div>
 
         <h4 class="section-title">SKU Verification & Modification</h4>
         <small class="warehouse-sku-hint" id="warehouseSkuHint"></small>
@@ -1570,6 +1590,28 @@
     </div>
   </div>
 
+
+<!-- Admin: mark Loaded / Delivered by hand when the driver / Godown Manager did not (lwb_admin_mark_load_deliver_setup.sql) -->
+<div class="modal track-modal" id="markModal" onclick="if(event.target===this)closeMark()">
+  <div class="modal-card track-card mark-card" role="dialog" aria-labelledby="markTitle">
+    <div class="modal-header">
+      <h3 id="markTitle">Mark delivered</h3>
+      <button class="close-btn" onclick="closeMark()" aria-label="Close">&times;</button>
+    </div>
+    <div class="modal-body">
+      <p class="mark-sub" id="markSub"></p>
+      <div class="mark-form">
+        <label>Date<input id="markDate" type="date"></label>
+        <label>Note (optional)<input id="markNote" maxlength="300" autocomplete="off" placeholder="e.g. Driver did not mark in app"></label>
+      </div>
+      <p class="mark-warn" id="markWarn"></p>
+    </div>
+    <div class="modal-footer" style="justify-content:flex-end">
+      <button class="btn btn-light" onclick="closeMark()">Back</button>
+      <button class="btn btn-green" id="markSave" onclick="saveMark()">✓ Mark</button>
+    </div>
+  </div>
+</div>
 
 <div id="warehouseSkuOptions" class="warehouse-sku-options" role="listbox" aria-label="SKU Master results"></div>
 <div id="poPrintArea" aria-hidden="true"></div>
@@ -2939,6 +2981,7 @@ function trackOrder(id) {
   document.getElementById("trackModal").classList.add("show");
   const foot = document.getElementById("trackFoot");
   foot.hidden = true;
+  renderAdminMark(order, "trackAdmMark");
   renderJourney(order, document.getElementById("trackJourney")).then(data => {
     if (!CAN_BILL || !eligibleForPoPrint(order) || document.getElementById("trackJourney").dataset.oid !== String(id)) return;
     foot.innerHTML = data?.bill_no
@@ -2946,6 +2989,74 @@ function trackOrder(id) {
       : `<button class="btn btn-green" onclick="openBill('${order.id}')">🧾 Enter Tally bill no.</button>`;
     foot.hidden = false;
   });
+}
+
+/* Admin (temporary): driver / Godown Manager did not press Loaded / Delivered in the app, so the PO is
+   stuck and Accounts cannot finish the bill. Admin marks it with a date; every mark is logged
+   (lwb_admin_mark_order, lwb_admin_order_marks). Everyone who opens the PO sees the log line. */
+const MARK_LOADABLE = ["approved","approved_next","manager_approved","warehouse_approved","transport_allocated","allocated","loading"];
+const MARK_LOADED = ["loaded","invoiced","dispatched"];
+let markFor = null;
+const canMarkLoaded = o => IS_ADMIN && !!o && MARK_LOADABLE.includes(normalizedStatus(o));
+const canMarkDelivered = o => IS_ADMIN && !!o && !isDeliveredOrder(o) && (canMarkLoaded(o) || MARK_LOADED.includes(normalizedStatus(o)));
+const dmy = d => d ? String(d).slice(0,10).split("-").reverse().join("/") : "";
+async function renderAdminMark(order, boxId) {
+  const box = document.getElementById(boxId);
+  if (!box) return;
+  box.hidden = true; box.innerHTML = ""; box.dataset.oid = order ? String(order.id) : "";
+  if (!order || isPending(order) || isCancelled(order)) return;
+  let marks = [];
+  const { data, error } = await db.rpc("lwb_admin_order_marks", { p_ids: [order.id] });
+  if (!error) marks = data || [];
+  if (box.dataset.oid !== String(order.id)) return;
+  const log = marks.map(m => `Admin <b>${escapeHtml(m.marked_by_name || "")}</b> marked <b>${m.kind === "LOADED" ? "Loaded" : "Delivered"}</b> on ${dmy(m.mark_date)}${m.note ? " · " + escapeHtml(m.note) : ""}`).join("<br>");
+  const btns = (canMarkLoaded(order) ? `<button type="button" class="btn btn-light" onclick="openMark('${order.id}','LOADED')">✓ Mark Loaded</button>` : "")
+    + (canMarkDelivered(order) ? `<button type="button" class="btn btn-green" onclick="openMark('${order.id}','DELIVERED')">✓ Mark Delivered</button>` : "");
+  if (!log && !btns) return;
+  box.innerHTML = `<span class="am-log">${log || "Driver / Godown did not mark it in the app? Admin can mark it here."}</span>${btns ? `<span class="am-btns">${btns}</span>` : ""}`;
+  box.hidden = false;
+}
+function openMark(id, kind) {
+  const order = orders.find(o => String(o.id) === String(id)) || (selectedOrder && String(selectedOrder.id) === String(id) ? selectedOrder : null);
+  if (!order || !IS_ADMIN) return;
+  markFor = { order, kind };
+  const today = new Date(Date.now() + 19800000).toISOString().slice(0,10); // IST date
+  const both = kind === "DELIVERED" && canMarkLoaded(order);
+  document.getElementById("markTitle").textContent = (kind === "LOADED" ? "Mark Loaded · " : "Mark Delivered · ") + (order.order_no || "PO");
+  document.getElementById("markSub").textContent = (order.customer_name || "") + " · Use this only when the goods have really "
+    + (kind === "LOADED" ? "been loaded" : "been delivered") + " but it was not marked in the app. Your name and the date are saved.";
+  const d = document.getElementById("markDate");
+  d.max = today; d.value = today;
+  const od = String(order.order_date || "").slice(0,10);
+  if (od) d.min = od;
+  document.getElementById("markNote").value = "";
+  document.getElementById("markWarn").textContent = both
+    ? "Not loaded in the app yet: it will be marked Loaded too (loaded qty = approved qty)."
+    : kind === "LOADED" ? "Loaded qty = approved qty. Accounts get the \"make Tally bill\" popup." : "";
+  document.getElementById("markSave").textContent = kind === "LOADED" ? "✓ Mark Loaded" : both ? "✓ Mark Loaded + Delivered" : "✓ Mark Delivered";
+  document.getElementById("markModal").classList.add("show");
+  setTimeout(() => d.focus(), 30);
+}
+function closeMark() { document.getElementById("markModal").classList.remove("show"); markFor = null; }
+async function saveMark() {
+  if (!markFor) return;
+  const { order, kind } = markFor, btn = document.getElementById("markSave");
+  const date = document.getElementById("markDate").value;
+  if (!date) { alert("Enter the date."); return; }
+  btn.disabled = true;
+  try {
+    const { data, error } = await db.rpc("lwb_admin_mark_order", {
+      p_order_id: order.id, p_loaded: true, p_delivered: kind === "DELIVERED",
+      p_date: date, p_note: document.getElementById("markNote").value.trim() || null });
+    if (error) throw error;
+    closeMark();
+    if (document.getElementById("trackModal").classList.contains("show")) closeTrack();
+    if (document.getElementById("reviewModal").classList.contains("show")) closeModal();
+    const done = (data && data.marked || []).map(k => k === "LOADED" ? "Loaded" : "Delivered").join(" + ");
+    showMessage((order.order_no || "PO") + " marked " + (done || kind.toLowerCase()) + ". It is now in Accounts > Bills to make.", "success");
+    await loadOrders();
+  } catch (e) { alert("Could not mark: " + (e.message || e)); }
+  finally { btn.disabled = false; }
 }
 
 /* Accounts / Admin: Tally bill no. straight from the PO list (same save as Billing & Outstanding). */
@@ -3398,6 +3509,7 @@ async function reviewOrder(orderId, transportOnly=false, quiet=false) {
     selectedOrder.status || "Pending";
 
   renderJourney(selectedOrder);
+  renderAdminMark(selectedOrder, "poAdmMark");
 
   renderPriorityPick();
 

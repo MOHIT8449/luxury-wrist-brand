@@ -4,6 +4,13 @@
 **Purpose:** Continue the same ERP project from a new ChatGPT conversation without restarting or losing the agreed requirements.
 **Status:** Active development / verification. Do not assume all modules are completed or fully tested.
 
+## Admin marks a PO Loaded / Delivered by hand, temporary (5 Nov 2026)
+
+- Mohit: goods are delivered but the driver / Godown Manager often do not press Loaded / Delivered in the app, so the PO is stuck and Accounts cannot finish the bill. For now Admin may mark it.
+- SQL `lwb_admin_mark_load_deliver_setup.sql` (test `tests/admin-mark-order`, PGlite, 7 tests). Table `lwb_admin_order_marks` (order, LOADED / DELIVERED, date, old status, note, who; RPC only). `lwb_admin_mark_order(order, loaded, delivered, date, note)` Admin only: Loaded = approved .. loading -> 'loaded', loaded qty = approved qty on lines with none, transport row gets loading start / end of that date (noon IST for a past day), godown loading bells read. Delivered = loaded / invoiced / dispatched -> 'delivered' (an unloaded PO is loaded first); refused when a driver report says Delivered / Partial; if the live status check refuses 'delivered' the PO stays loaded and the mark still counts. Date today or up to 90 days back, not before the PO date. Accounts get a TALLY_BILL_PENDING bell when no Tally bill yet. `lwb_admin_order_marks(ids | NULL = 90 days)`; `lwb_po_delivered_orders` also counts the Delivered mark.
+- UI: `warehouse-orders.html` review popup and Track popup: dashed strip under the journey with "✓ Mark Loaded" / "✓ Mark Delivered" (Admin, by stage) and the log line ("Admin X marked Delivered on DD/MM/YYYY · note") for everyone. Small popup: Date + Note. `party-billing.html` Bills to make: marked POs always listed (old delivered ones too) with a "Delivered · by Admin" / "Loaded · by Admin" tag.
+- Checked with a mocked database at 1366 / 390 px: no side scroll, no JS errors. Screenshots: project files `admin-mark-delivered/`.
+
 ## PO image for WhatsApp, no order no. (5 Nov 2026)
 
 - Mohit: Salesman, Sales Head and Admin need a "Share" on every created PO that gives a clean image for a WhatsApp group. Same card as before but the ORDER NO. row is removed and the colours are blue / white.
