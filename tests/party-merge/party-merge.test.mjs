@@ -93,3 +93,33 @@ test('salesman of the kept party is kept; two opening balances are refused', asy
   assert.equal((await one(`SELECT customer_name FROM lwb_tally_party_map WHERE tally_key='RAJ STORES'`)).customer_name,'RAJ STORE');
   assert.equal((await one(`SELECT salesman_id FROM lwb_party_salesman WHERE customer_id=$1`,[a])).salesman_id,'20000000-0000-4000-8000-00000000000a');
 });
+
+test('merged duplicate can be deleted; the kept party only after it', async()=>{
+  await db.exec(await sql('lwb_party_merged_delete_setup.sql'));
+  await db.exec(await sql('lwb_party_merged_delete_setup.sql')); // safe to run again
+  await as(admin);
+  const k='10000000-0000-4000-8000-0000000000c1',d='10000000-0000-4000-8000-0000000000c2';
+  await db.exec(`INSERT INTO lwb_customer_master(id,customer_code,customer_name,gst_registration_status,is_active) VALUES
+     ('${k}','CUS-000249','RG. RAJDHANI (SLABATPURA)','UNREGISTERED',false),('${d}','CUS-000350','RAJDHANI (SLABATPURA)','UNREGISTERED',true);
+    INSERT INTO lwb_party_salesman VALUES ('${k}','20000000-0000-4000-8000-0000000000c1'),('${d}','20000000-0000-4000-8000-0000000000c2');
+    INSERT INTO lwb_party_calls(customer_id,customer_name) VALUES ('${d}','RAJDHANI (SLABATPURA)');`);
+  await one(`SELECT lwb_merge_party($1,$2)`,[k,d]);
+  assert.equal((await one(`SELECT is_active FROM lwb_customer_master WHERE id=$1`,[k])).is_active,true); // kept party becomes Active
+  await assert.rejects(db.query(`SELECT lwb_delete_customer($1)`,[k]),/kept party of merged duplicate CUS-000350 RAJDHANI/);
+  await as(manager);
+  await assert.rejects(db.query(`SELECT lwb_delete_customer($1)`,[d]),/Only an active Admin/);
+  await as(admin);
+  assert.equal((await one(`SELECT lwb_delete_customer($1) r`,[d])).r,'RAJDHANI (SLABATPURA)');
+  assert.equal(Number((await one(`SELECT count(*) n FROM lwb_customer_master WHERE id=$1`,[d])).n),0);
+  assert.equal((await one(`SELECT salesman_id FROM lwb_party_salesman WHERE customer_id=$1`,[k])).salesman_id,'20000000-0000-4000-8000-0000000000c1');
+  assert.equal(Number((await one(`SELECT count(*) n FROM lwb_party_salesman WHERE customer_id=$1`,[d])).n),0);
+  assert.equal(Number((await one(`SELECT count(*) n FROM lwb_party_merges WHERE drop_id=$1`,[d])).n),1); // merge log stays
+  // a normal party linked by id is still refused, naming the table
+  const p='10000000-0000-4000-8000-0000000000c3';
+  await db.exec(`INSERT INTO lwb_customer_master(id,customer_name,gst_registration_status) VALUES ('${p}','LINKED ONE','UNREGISTERED');
+    INSERT INTO lwb_party_calls(customer_id,customer_name) VALUES ('${p}','X');`);
+  await assert.rejects(db.query(`SELECT lwb_delete_customer($1)`,[p]),/linked to other records \(lwb_party_calls\)/);
+  // with no merged duplicate left, the kept party (no orders) can be deleted too
+  await db.exec(`DELETE FROM lwb_party_salesman WHERE customer_id='${k}'; DELETE FROM lwb_party_calls WHERE customer_id='${k}'`);
+  assert.equal((await one(`SELECT lwb_delete_customer($1) r`,[k])).r,'RG. RAJDHANI (SLABATPURA)');
+});
