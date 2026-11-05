@@ -9,6 +9,7 @@
 <script src="erp-date.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script><script src="page-role.js"></script>
 <script src="mepd-scheme.js"></script>
+<script src="po-share.js"></script>
 
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
@@ -3232,7 +3233,7 @@ function copyOrderMessage(){
   const lines = orderLines();
   if(!lines.length){ alert("Enter SKU and quantity first."); return; }
   const h = orderHead(), t = orderSums(lines);
-  let text = "*ORDER" + (h.no !== "-" ? " " + h.no : "") + "*\n*Customer:* " + h.party + "\n*Date:* " + h.date + "\n*Transport:* " + h.trans + "\n";
+  let text = "*ORDER*\n*Customer:* " + h.party + "\n*Date:* " + h.date + "\n*Transport:* " + h.trans + "\n";
   if(pickupText()) text += "*Pickup:* " + pickupText() + "\n";
   if(h.sales) text += "*Sales person:* " + h.sales + "\n";
   text += "\n";
@@ -3249,32 +3250,9 @@ function copyOrderMessage(){
 function orderCanvas(){
   const lines = orderLines();
   if(!lines.length) return null;
-  const h = orderHead(), T = orderSums(lines);
-  const C=[300,90,90,130], W=C.reduce((a,b)=>a+b,0), X=[0]; C.forEach((w,i)=>X.push(X[i]+w));
-  const rowH=40, sc=3, info=[["DATE",h.date],["ORDER NO.",h.no],["CUSTOMER",h.party],["TRANSPORT",h.trans]];
-  const nrows=1+info.length+1+lines.length+3;
-  const cv=document.createElement("canvas"); cv.width=W*sc; cv.height=(nrows*rowH+2)*sc;
-  const x=cv.getContext("2d"); x.scale(sc,sc);
-  const DARK="#4f6228", LIGHT="#d8e4bc", LIGHT2="#ebf1de", LINE="#7f8f5a";
-  const font=(b,sz)=>(b?"bold ":"")+sz+'px "Bahnschrift","Segoe UI","Arial Narrow",Arial,sans-serif';
-  x.fillStyle="#fff"; x.fillRect(0,0,W,nrows*rowH+2);
-  const cell=(c1,c2,cy,bg,txt,color,bold,align)=>{
-    const cx=X[c1], w=X[c2+1]-X[c1];
-    x.fillStyle=bg; x.fillRect(cx,cy,w,rowH); x.strokeStyle=LINE; x.lineWidth=1; x.strokeRect(cx+.5,cy+.5,w-1,rowH-1);
-    let sz=17; x.font=font(bold,sz); while(x.measureText(String(txt)).width>w-14 && sz>9){ sz--; x.font=font(bold,sz); }
-    x.fillStyle=color; x.textBaseline="middle";
-    const tx= align==="l"? cx+10 : align==="r"? cx+w-10 : cx+w/2; x.textAlign= align==="l"?"left":align==="r"?"right":"center";
-    x.fillText(String(txt),tx,cy+rowH/2+1);
-  };
-  let y=1;
-  cell(0,3,y,DARK,"LUXURY WRIST BRAND","#ffffff",true,"c"); y+=rowH;
-  info.forEach(([a,b])=>{ cell(0,0,y,LIGHT,a,"#1f2d0a",true,"c"); cell(1,3,y,LIGHT2,b,"#1f2d0a",true,"c"); y+=rowH; });
-  ["PRODUCT NAME","QTY","RATE","AMOUNT"].forEach((t,i)=>cell(i,i,y,DARK,t,"#ffffff",true,"c")); y+=rowH;
-  lines.forEach(l=>{ cell(0,0,y,"#fff",l.sku,"#262626",false,"l"); cell(1,1,y,"#fff",formatNumber(l.cases),"#262626",false,"c");
-    cell(2,2,y,"#fff",l.rate==null?"":formatNumber(l.rate),"#262626",false,"c"); cell(3,3,y,"#fff",formatNumber(l.amount),"#262626",false,"r"); y+=rowH; });
-  [["TOTAL QTY",formatNumber(T.cases)+" case ("+formatNumber(T.pallet)+" pallet)"],["TOTAL AMOUNT","₹ "+formatNumber(T.amount)],["WEIGHT",formatNumber(T.weight)+" KG"]].forEach(([a,b])=>{
-    cell(0,0,y,LIGHT,a,"#1f2d0a",true,"c"); cell(1,3,y,LIGHT2,b,"#1f2d0a",true,"c"); y+=rowH; });
-  return cv;
+  const h = orderHead();
+  // WhatsApp image: no order no. (Mohit), blue / white look from po-share.js
+  return LWBPoShare.draw({date:h.date, party:h.party, trans:h.trans, lines});
 }
 
 async function copyOrderImage(){
