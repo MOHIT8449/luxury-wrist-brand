@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Accounts Fresh Start | Luxury Wrist Brand ERP</title>
+  <script src="erp-date.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <link rel="stylesheet" href="erp-shell.css">
+  <link rel="stylesheet" href="sales.css">
+  <script src="erp-shell.js"></script>
+  <script src="sales-common.js"></script>
+  <style>
+    /* Accounts Fresh Start (lwb_accounts_fresh_start_setup.sql): Admin removes every Accounts Dashboard entry till today. */
+    .ar-wrap{display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:10px;align-items:start}
+    .ar-card{background:#fff;border:1px solid var(--erp-line,#dfe4ea);border-radius:8px;padding:10px 12px;min-width:0}
+    .ar-card h2{font-size:14px;margin:0 0 6px}
+    .ar-top{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:8px}
+    .ar-top label{font-size:12.5px;color:#445}
+    .ar-in{height:34px;border:1px solid var(--erp-line,#d6dde6);border-radius:6px;padding:0 8px;font:inherit;font-size:13.5px;min-width:0}
+    .ar-t{width:100%;border-collapse:collapse;font-size:13px}
+    .ar-t th{font-size:11.5px;text-align:left;color:#556;font-weight:600;padding:5px 6px;border-bottom:1px solid #e3e7ec;background:#f7f8fa}
+    .ar-t td{padding:5px 6px;border-bottom:1px solid #eef1f4;vertical-align:top;overflow-wrap:anywhere}
+    .ar-t td.n,.ar-t th.n{text-align:right;white-space:nowrap}
+    .ar-t td small{display:block;color:#6b7785;font-size:11.5px}
+    .ar-t tr.keep td{color:#13623a}
+    .ar-warn{background:#fff6e5;border:1px solid #f3d29a;color:#7a4b00;border-radius:6px;padding:7px 9px;font-size:12.5px;margin:8px 0 0}
+    .ar-ok{background:#e6f4ec;border:1px solid #b5dcc5;color:#13623a;border-radius:6px;padding:7px 9px;font-size:13px;margin:8px 0 0}
+    .ar-f{display:grid;grid-template-columns:minmax(0,1fr) 130px;gap:4px 8px;align-items:center;font-size:12.5px;margin:4px 0}
+    .ar-f span small{display:block;color:#6b7785;font-size:11px}
+    .ar-f input{width:100%;height:32px;border:1px solid #d6dde6;border-radius:6px;padding:0 8px;font:inherit;font-size:13.5px;text-align:right}
+    .ar-sec{font-size:11.5px;font-weight:700;color:#556;text-transform:uppercase;letter-spacing:.03em;margin:8px 0 2px}
+    .ar-confirm label{display:block;font-size:12.5px;color:#445;margin:8px 0 4px}
+    .ar-confirm #typed{width:100%;height:36px;border:1.5px solid #e3e7ec;border-radius:6px;padding:0 8px;font:inherit;font-size:14px;text-transform:uppercase}
+    .ar-confirm #typed:focus{border-color:var(--erp-red,#c8102e);outline:none}
+    .ar-row{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+    .ar-row .sl-btn{flex:1 1 0;min-width:0;padding:0 8px}
+    .ar-next{margin:6px 0 0;padding-left:18px;font-size:13px}
+    .ar-next li{margin:3px 0}
+    .mut{color:#6b7785;font-size:12px}
+    @media(max-width:900px){.ar-wrap{grid-template-columns:minmax(0,1fr)}}
+  </style>
+</head>
+<body>
+  <div id="loading" class="status">Checking account access...</div>
+  <main id="page" class="erp-main" hidden>
+    <div class="erp-pagehead"><h1>Accounts Fresh Start<button type="button" class="erp-i" aria-label="Info" title="Info" data-tip="Removes every Accounts Dashboard entry made till now (Cash In / Out, bank deposits, opening cash, day close, bank checks, cheques, bank statement uploads, staff salary) so the cash book starts fresh from the start date. Parties, POs, bills and party payments stay. Every removed row is kept as a backup you can download.">i</button></h1></div>
+    <div id="status" class="sl-msg" hidden></div>
+    <div class="ar-wrap">
+      <div class="ar-card">
+        <div class="ar-top"><label for="start">Start fresh from</label><input type="date" id="start" class="ar-in">
+          <button type="button" class="sl-btn ghost small" id="refresh">↻ Check again</button><span id="when" class="mut"></span></div>
+        <div id="preview" class="mut">Counting...</div>
+      </div>
+      <div class="ar-card ar-confirm" id="side">
+        <h2>New opening figures</h2>
+        <p class="mut" style="margin:0 0 4px">At the start of <b id="sDate">—</b>. Leave cash empty to set it later on the Accounts Dashboard.</p>
+        <div class="ar-sec">Cash</div>
+        <div class="ar-f"><span>Cash in hand</span><input id="cash" inputmode="decimal" placeholder="later" autocomplete="off"></div>
+        <div class="ar-sec">Bank balance</div>
+        <div id="banks"></div>
+        <label for="typed">Type <b>RESET</b> to confirm</label>
+        <input id="typed" autocomplete="off" spellcheck="false">
+        <div class="ar-row"><button type="button" class="sl-btn" id="go" disabled>🗑 Delete accounts entries</button></div>
+        <div id="after"></div>
+      </div>
+    </div>
+  </main>
+  <script>
+    const S=LWBSales,{client,el,esc}=S;
+    const setupMsg="Run lwb_accounts_fresh_start_setup.sql first (it runs by itself when the PR is merged).";
+    const errText=e=>/lwb_acc_reset/.test(e.message||"")&&/function|schema cache/.test(e.message||"")?setupMsg:(e.message||String(e));
+    const money=n=>(Number(n)<0?"−₹":"₹")+Math.abs(Number(n||0)).toLocaleString("en-IN",{maximumFractionDigits:0});
+    const num=n=>Number(n||0).toLocaleString("en-IN");
+    const amt=v=>{const t=String(v||"").replace(/[,₹\s]/g,"");return t===""?null:Number(t)};
+    let prev=null,busy=false;
+    function msg(t,bad){el("status").hidden=!t;el("status").textContent=t||"";el("status").className="sl-msg"+(bad?" error":"")}
+
+    function render(){
+      const p=prev;if(!p)return;
+      const e=p.entries||{},dc=p.day_close||{},bs=p.bank_stmt||{n:0,imports:0},cp=p.company_pay||{n:0},hid=p.erp_hidden||{},kept=p.erp_kept||{};
+      const row=(l,n,a,sub,cls)=>'<tr'+(cls?' class="'+cls+'"':'')+'><td>'+l+(sub?'<small>'+sub+'</small>':'')+'</td><td class="n">'+(n==null?"—":num(n))+'</td><td class="n">'+(a==null?"—":money(a))+'</td></tr>';
+      const range=e.n?LWBDate.d(e.from)+" to "+LWBDate.d(e.to):"";
+      let h='<table class="ar-t"><thead><tr><th>What goes</th><th class="n">Count</th><th class="n">Amount</th></tr></thead><tbody>'+
+        row("Cash In entries",e.n_in,e.cash_in,range)+
+        row("Cash Out entries (expenses, salary, upad, vehicle)",e.n_out,e.cash_out)+
+        row("Bank deposits / cash from bank",e.n_deposit,Number(e.deposit||0)+Number(e.withdraw||0))+
+        (e.n_cancelled?row("Cancelled entries",e.n_cancelled,null):"")+
+        row("Opening cash + day close / handover",dc.n,p.cash_now,"Cash in hand now"+(dc.n?" · "+LWBDate.d(dc.from)+" to "+LWBDate.d(dc.to):""))+
+        row("Bank checks (verify ticks)",p.verify,null)+
+        row("Cheque details",p.cheques,null)+
+        row("Bank statement lines",bs.n,null,bs.imports+" upload(s) · "+num(bs.open)+" in suspense")+
+        row("Staff monthly salary rows",p.staff_salary,null,(p.staff_opening||0)+" staff opening balance(s) become 0")+
+        '</tbody></table>';
+      h+='<table class="ar-t" style="margin-top:8px"><thead><tr><th>What stays</th><th class="n">Count</th><th class="n">Amount</th></tr></thead><tbody>'+
+        row("Party payments / Payment Collection / driver money before "+esc(LWBDate.d(p.start)),hid.n,hid.amount,"Stay in party ledger and outstanding. Not counted on the dashboard any more.","keep")+
+        row("Same from "+esc(LWBDate.d(p.start)),kept.n,kept.amount,"Keep counting on the dashboard","keep")+
+        (cp.n?row("Company payments made by Cash Out",cp.n,cp.amount,"Stay in the company ledger","keep"):"")+
+        row("Parties, POs, Tally bills, stock, heads, staff and vehicle master",null,null,"","keep")+
+        '</tbody></table>';
+      if(p.last) h+='<div class="ar-ok">Last fresh start '+esc(LWBDate.d(p.last.at))+' by '+esc(p.last.by||"Admin")+' (from '+esc(LWBDate.d(p.last.start))+'). <a href="#" data-dl="'+p.last.id+'">Download its backup</a></div>';
+      el("preview").innerHTML=h;
+      checkTyped();
+    }
+    function renderBanks(){
+      const old=new Map([...document.querySelectorAll("#banks input")].map(i=>[i.dataset.id,i.value]));
+      el("banks").innerHTML=(prev.banks||[]).filter(b=>b.active!==false).map(b=>'<div class="ar-f"><span>'+esc(b.name)+'<small>'+(b.account_no?'A/c '+esc(b.account_no)+' · ':'')+'now '+money(b.balance)+'</small></span>'+
+        '<input id="bk'+b.id+'" data-id="'+b.id+'" inputmode="decimal" placeholder="0" autocomplete="off" value="'+esc(old.get(String(b.id))||"")+'"></div>').join("")||'<span class="mut">No bank yet.</span>';
+    }
+    function checkTyped(){
+      const bad=[el("cash"),...document.querySelectorAll("#banks input")].some(i=>{const v=amt(i.value);return v!=null&&!isFinite(v)})||(amt(el("cash").value)<0);
+      el("go").disabled=!(prev&&!busy&&!bad&&el("typed").value.trim().toUpperCase()==="RESET");
+    }
+    async function load(){
+      el("preview").innerHTML='<span class="mut">Counting...</span>';msg("");
+      el("sDate").textContent=LWBDate.d(el("start").value);
+      const {data,error}=await client.rpc("lwb_acc_reset_preview",{p_start:el("start").value});
+      if(error){prev=null;el("preview").innerHTML="";msg(errText(error),true);checkTyped();return}
+      prev=data;el("when").textContent="as of "+new Date().toLocaleTimeString("en-IN",{hour:"2-digit",minute:"2-digit"});
+      renderBanks();render();
+    }
+    async function download(id){
+      const rows=[];let after=0,head=null;
+      for(;;){
+        const {data,error}=await client.rpc("lwb_acc_reset_backup",{p_reset:id,p_after:after});
+        if(error){msg(errText(error),true);return}
+        head=data.reset;rows.push(...data.rows);if(data.rows.length<2000)break;after=data.rows[data.rows.length-1].n;
+      }
+      const blob=new Blob([JSON.stringify({reset:head,rows},null,1)],{type:"application/json"});
+      const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="backup-accounts-fresh-start-"+id+".json";
+      document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},500);
+    }
+    document.addEventListener("click",e=>{const a=e.target.closest("[data-dl]");if(a){e.preventDefault();download(Number(a.dataset.dl))}});
+    el("typed").addEventListener("input",checkTyped);
+    el("cash").addEventListener("input",checkTyped);
+    el("banks").addEventListener("input",checkTyped);
+    el("start").addEventListener("change",()=>{el("after").innerHTML="";load()});
+    el("refresh").onclick=load;
+
+    el("go").onclick=async()=>{
+      if(!prev)return;
+      const cash=amt(el("cash").value),banks=[...document.querySelectorAll("#banks input")].map(i=>({id:Number(i.dataset.id),balance:amt(i.value)||0}));
+      if(!await ERPShell.confirm("Delete ALL Accounts Dashboard entries till now?\n\nCash In / Out, deposits, opening cash, day close, bank checks, cheques and bank statement lines go. Party payments and outstanding stay.\nAccounts start fresh from "+LWBDate.d(el("start").value)+".\nThis can not be undone from the ERP (a backup copy is kept).",{danger:true}))return;
+      busy=true;checkTyped();el("go").textContent="Deleting...";
+      const {data,error}=await client.rpc("lwb_acc_reset_run",{p_start:el("start").value,p_typed:el("typed").value,p_opening_cash:cash,p_banks:banks});
+      busy=false;el("go").textContent="🗑 Delete accounts entries";
+      if(error){msg(errText(error)+" — nothing was changed.",true);checkTyped();return}
+      const c=data.counts||{};el("typed").value="";el("cash").value="";document.querySelectorAll("#banks input").forEach(i=>i.value="");
+      el("after").innerHTML='<div class="ar-ok"><b>Accounts entries removed.</b> '+num(c.lwb_acc_entries||0)+' entries, '+num(c.lwb_acc_day_close||0)+' day closes, '+
+        num(c.lwb_acc_verify||0)+' bank checks, '+num(c.lwb_bank_stmt_lines||0)+' statement lines.</div>'+
+        '<div class="ar-row"><button type="button" class="sl-btn ghost" data-dl="'+data.id+'">⬇ Download backup</button>'+
+        '<a class="sl-btn" style="display:inline-flex;align-items:center;justify-content:center;text-decoration:none;color:#fff" href="accounts-dashboard.html">Open Accounts Dashboard</a></div>'+
+        (cash==null?'<ol class="ar-next"><li>Set today\'s opening cash on the Accounts Dashboard</li></ol>':'');
+      await load();
+    };
+
+    (async()=>{
+      const me=await S.start(["admin"]);if(!me)return;
+      el("loading").hidden=true;el("page").hidden=false;
+      const t=new Date(Date.now()+330*60000).toISOString().slice(0,10);
+      el("start").value=t;el("start").max=t;
+      load();
+    })();
+  </script>
+</body>
+</html>
