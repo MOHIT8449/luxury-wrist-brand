@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Change History | Luxury Wrist Brand ERP</title>
+  <script src="erp-date.js"></script><script src="erp-recent.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <link rel="stylesheet" href="erp-shell.css">
+  <link rel="stylesheet" href="sales.css">
+  <script src="erp-shell.js"></script>
+  <script src="sales-common.js"></script>
+  <style>
+    /* Change History (Mohit, 5 Nov 2026): who added / changed / deleted what. Admin only. */
+    .ch-filters>div{min-width:0}
+    .ch-filters select{max-width:190px}
+    .ch-acts{display:flex;gap:8px;align-items:end}
+    .ch-sum{font-size:12.5px;color:var(--erp-muted);margin:-4px 2px 8px}
+    .ch-list{background:#fff;border:1px solid var(--erp-line);border-radius:8px}
+    .ch-list td{vertical-align:top}
+    .ch-when{white-space:nowrap;font-size:12.5px}
+    .ch-who b{display:block;font-size:13.5px}
+    .ch-who small,.ch-mod{white-space:nowrap}.ch-mod small{color:var(--erp-muted);font-size:11.5px}
+    .ch-rec{font-weight:600;overflow-wrap:anywhere}
+    .ch-diff{display:grid;gap:2px;font-size:12.5px;overflow-wrap:anywhere}
+    .ch-diff span b{font-weight:600;color:#4b5763}
+    .ch-diff del{color:var(--erp-red);text-decoration:line-through}
+    .ch-diff ins{color:var(--erp-green);text-decoration:none;font-weight:600}
+    .ch-more{border:0;background:none;color:var(--erp-blue);font:inherit;font-size:12px;padding:0;cursor:pointer;justify-self:start}
+    .ch-foot{display:flex;justify-content:center;padding:10px}
+    @media(max-width:700px){
+      .ch-filters{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+      .ch-filters>div,.ch-filters select,.ch-filters input{width:100%;max-width:none}
+      .ch-filters .grow{min-width:0}
+      .ch-acts{grid-column:1/-1}
+      .ch-acts .sl-btn{flex:1}
+      .ch-list .sl-stack tr{grid-template-columns:1fr auto;gap:3px 10px}
+      .ch-list .sl-stack td.sl-first{padding-right:0!important}
+      .ch-list .sl-stack td.ch-when{text-align:right!important;color:var(--erp-muted)}
+      .ch-who b{display:inline;margin-right:5px}
+      .ch-list .sl-stack .ch-rec{text-align:right;display:block}
+      .ch-list .sl-stack td.sl-wide{border-top:1px dashed var(--erp-line)!important;padding-top:4px!important}
+    }
+  </style>
+</head>
+<body>
+  <div id="loading" class="status">Checking account access...</div>
+  <main id="page" class="erp-main" hidden>
+    <div class="erp-pagehead"><h1>🕘 Change History</h1><span class="grow"></span>
+      <button type="button" class="erp-i" aria-label="Info" title="Info" data-tip="Every add, edit and delete in the ERP, with the employee and time. Deleted records keep their old details. Nobody can change this history. Kept for 400 days.">i</button></div>
+    <div class="sl-filters ch-filters">
+      <div><label for="from">From</label><input id="from" type="date"></div>
+      <div><label for="to">To</label><input id="to" type="date"></div>
+      <div><label for="who">Employee</label><select id="who"><option value="">All</option></select></div>
+      <div><label for="mod">Module</label><select id="mod"><option value="">All</option></select></div>
+      <div><label for="act">Action</label><select id="act"><option value="">All</option><option value="INSERT">Added</option><option value="UPDATE">Edited</option><option value="DELETE">Deleted</option></select></div>
+      <div class="grow"><label for="q">Search</label><input id="q" type="search" placeholder="PO no., party, SKU, amount" autocomplete="off"></div>
+      <div class="ch-acts"><button type="button" class="sl-btn ghost" id="refresh">Refresh</button><button type="button" class="sl-btn ghost" id="excel">⬇ Excel</button></div>
+    </div>
+    <div class="ch-sum" id="sum"></div>
+    <div class="ch-list" id="list">Loading...</div>
+  </main>
+  <script>
+    const S=LWBSales,{client,el,esc}=S;
+    const PAGE=100;
+    let rows=[],total=0,busy=false,timer=null;
+    const MOD={orders:"PO / Sales Order",order_items:"PO items",sku_master:"SKU Master",lwb_customer_master:"Party Master",
+      tax_invoices:"Bills",dispatch_assignments:"Transport assignment",user_profiles:"Users",sales_returns:"Sales Return",
+      sales_return_items:"Sales Return items",credit_notes:"Credit Note",lwb_payment_collections:"Payment collection",
+      lwb_acc_entries:"Accounts entry",lwb_acc_banks:"Bank",lwb_acc_cheques:"Cheque",lwb_acc_staff:"Staff",lwb_acc_staff_salary:"Salary",
+      lwb_cashbook:"Cashbook",lwb_tally_payments:"Party payment",lwb_tally_invoices:"Tally bill",lwb_internal_bills:"ERP bill",
+      lwb_party_opening_balances:"Opening balance",lwb_supplier_master:"Supplier",lwb_vehicles:"Vehicle",lwb_drivers:"Driver",
+      lwb_delivery_reports:"Delivery report",lwb_driver_delivery_returns:"Driver return",lwb_stock_moves:"Stock transfer",
+      lwb_fixed_assets:"Fixed asset",lwb_tasks:"Task",lwb_complaints:"Complaint",lwb_company_payments:"Company payment",
+      lwb_user_page_access:"Page access",lwb_companies:"Company / Brand",lwb_quick_slips:"Rajnigandha slip"};
+    const ACT={INSERT:["Added","green"],UPDATE:["Edited","amber"],DELETE:["Deleted","red"]};
+    const HIDE=new Set(["id","created_at","updated_at","created_by","updated_by"]);
+    const modName=t=>MOD[t]||String(t||"").replace(/^lwb_/,"").replace(/_/g," ").replace(/^./,c=>c.toUpperCase());
+    const val=v=>v==null||v===""?"—":typeof v==="object"?JSON.stringify(v):String(v);
+    const short=v=>{const s=val(v);return s.length>80?s.slice(0,80)+"…":s};
+    const today=()=>S.isoDay(new Date());
+    const daysAgo=n=>S.isoDay(new Date(Date.now()-n*864e5));
+
+    function diff(r,full){
+      const c=r.changes||{};
+      if(r.action==="UPDATE"){
+        return Object.entries(c).map(([k,[o,n]])=>'<span><b>'+esc(k)+':</b> <del>'+esc(short(o))+'</del> → <ins>'+esc(short(n))+'</ins></span>').join("");
+      }
+      const keys=Object.keys(c).filter(k=>!HIDE.has(k)&&c[k]!=null&&c[k]!=="");
+      const show=full?keys:keys.slice(0,3);
+      return show.map(k=>'<span><b>'+esc(k)+':</b> '+esc(full?val(c[k]):short(c[k]))+'</span>').join("")
+        +(keys.length>3&&!full?'<button type="button" class="ch-more" data-more="'+r.id+'">+ '+(keys.length-3)+' more</button>':"");
+    }
+    function row(r,full){
+      const a=ACT[r.action]||[r.action,""];
+      return {attr:' data-id="'+r.id+'"',cells:[
+        '<span class="ch-who"><b>'+esc(r.user_name)+'</b><small>'+esc(r.user_role||"")+'</small></span>',
+        '<span class="ch-when">'+esc(LWBDate.dt(r.changed_at))+'</span>',
+        '<span class="ch-mod"><span class="erp-badge '+a[1]+'">'+esc(a[0])+'</span> '+esc(modName(r.table_name))+'</span>',
+        '<span class="ch-rec">'+esc(r.row_label||"—")+'</span>',
+        '<div class="ch-diff">'+diff(r,full)+'</div>']};
+    }
+    function draw(){
+      el("sum").textContent=total?total.toLocaleString("en-IN")+" changes"+(rows.length<total?" · showing "+rows.length:""):"";
+      if(!rows.length){el("list").innerHTML='<div class="erp-empty">No change in this period.</div>';return}
+      const head=["Employee","Time","Action / Module","Record","What changed"];
+      let h=S.table(head,rows.map(r=>row(r,false)));
+      // Phone cards: labels from the header (sl-stack in sales.css).
+      h=h.replace('<table class="erp-table"','<table class="erp-table sl-stack"');
+      el("list").innerHTML=h+(rows.length<total?'<div class="ch-foot"><button type="button" class="sl-btn ghost small" id="more">Load more</button></div>':"");
+      el("list").querySelectorAll("tbody tr").forEach(tr=>{
+        const tds=tr.children;
+        tds[0].classList.add("sl-first");tds[1].classList.add("ch-when");tds[4].classList.add("sl-wide");
+      });
+    }
+    async function load(more){
+      if(busy)return;busy=true;
+      if(!more){rows=[];el("list").innerHTML="Loading..."}
+      const r=await client.rpc("lwb_change_log_list",{p_from:el("from").value||null,p_to:el("to").value||null,
+        p_user:el("who").value||null,p_table:el("mod").value||null,p_action:el("act").value||null,
+        p_q:el("q").value.trim()||null,p_limit:PAGE,p_offset:more?rows.length:0});
+      busy=false;
+      if(r.error){el("list").innerHTML='<div class="sl-msg">'+esc(/lwb_change_log/.test(r.error.message)&&!/Admin/.test(r.error.message)?"Run lwb_change_history_setup.sql in Supabase first.":r.error.message)+"</div>";el("sum").textContent="";return}
+      total=Number(r.data.total||0);rows=rows.concat(r.data.rows||[]);draw();
+    }
+    async function excel(){
+      const all=[];let off=0;
+      while(off<Math.min(total,5000)){
+        const r=await client.rpc("lwb_change_log_list",{p_from:el("from").value||null,p_to:el("to").value||null,p_user:el("who").value||null,
+          p_table:el("mod").value||null,p_action:el("act").value||null,p_q:el("q").value.trim()||null,p_limit:500,p_offset:off});
+        if(r.error){ERPShell.toast&&ERPShell.toast(r.error.message,"error");return}
+        all.push(...(r.data.rows||[]));off+=500;if(!(r.data.rows||[]).length)break;
+      }
+      const text=r=>r.action==="UPDATE"?Object.entries(r.changes||{}).map(([k,[o,n]])=>k+": "+val(o)+" → "+val(n)).join("; ")
+        :Object.entries(r.changes||{}).filter(([k,v])=>!HIDE.has(k)&&v!=null&&v!=="").map(([k,v])=>k+": "+val(v)).join("; ");
+      await S.excel("Change History "+el("from").value+" to "+el("to").value,[{name:"Change History",title:"LWB Change History",
+        head:["Time","Employee","Role","Action","Module","Record","What changed"],
+        rows:all.map(r=>[LWBDate.dt(r.changed_at),r.user_name,r.user_role||"",(ACT[r.action]||[r.action])[0],modName(r.table_name),r.row_label||"",text(r)])}]);
+    }
+    (async()=>{
+      const me=await S.start(["admin"]);if(!me)return;
+      el("from").value=daysAgo(6);el("to").value=today();
+      const m=await client.rpc("lwb_change_log_meta");
+      if(!m.error){
+        el("who").innerHTML='<option value="">All</option>'+(m.data.users||[]).map(u=>'<option value="'+esc(u.id)+'">'+esc(u.name+" ("+(u.role||"")+")"+(u.active?"":" — inactive"))+"</option>").join("");
+        el("mod").innerHTML='<option value="">All</option>'+(m.data.tables||[]).map(t=>[t,modName(t)]).sort((a,b)=>a[1].localeCompare(b[1])).map(([t,n])=>'<option value="'+esc(t)+'">'+esc(n)+"</option>").join("");
+      }
+      ["from","to","who","mod","act"].forEach(id=>el(id).addEventListener("change",()=>load(false)));
+      el("q").addEventListener("input",()=>{clearTimeout(timer);timer=setTimeout(()=>load(false),400)});
+      el("refresh").onclick=()=>load(false);
+      el("excel").onclick=excel;
+      el("list").addEventListener("click",e=>{
+        if(e.target.id==="more")return load(true);
+        const id=e.target.dataset.more;if(!id)return;
+        const r=rows.find(x=>String(x.id)===id);if(!r)return;
+        e.target.closest(".ch-diff").innerHTML=diff(r,true);
+      });
+      el("loading").hidden=true;el("page").hidden=false;
+      await load(false);
+    })();
+  </script>
+</body>
+</html>

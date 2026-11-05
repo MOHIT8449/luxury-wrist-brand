@@ -145,6 +145,8 @@
     {group:"Settings",items:[
       {t:"Settings",h:"settings.html",i:"gear",r:"admin manager"},
       {t:"Manage Users",h:"users.html",i:"lock",r:"admin"},
+      // Change History (Mohit, 5 Nov 2026): who added / edited / deleted what. Admin only.
+      {t:"Change History",h:"change-history.html",i:"undo",r:"admin",k:"history audit log who edited changed deleted added employee activity"},
       // Brand Data Reset (Mohit, 4 Nov 2026): Admin removes one brand's data till today for a fresh start.
       // Not in the side menu (nm); opens from the Settings card and Module Search.
       {t:"Brand Data Reset",h:"brand-reset.html",i:"lock",r:"admin",k:"reset delete clear brand rajnigandha fresh start opening data",nm:"admin",par:"settings.html"},
