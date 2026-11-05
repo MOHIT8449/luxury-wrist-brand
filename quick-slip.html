@@ -67,6 +67,21 @@
     .qs-tag.ok{background:#e6f4ec;color:#13824a}
     .qs-sum{font-size:12.5px;color:#556;white-space:nowrap}.qs-sum b{color:#1f2a37}.qs-sum b.g,.qs-g{color:#13824a!important;font-weight:700}
     .qs-low{color:#9a5b00!important;font-weight:700}
+    /* Bill pending (lwb_rajni_bill_pending_setup.sql) */
+    .qs-tabs{display:inline-flex;gap:4px}
+    .qs-tabs button{height:30px;padding:0 10px;border:1px solid var(--erp-line,#d6dde6);border-radius:16px;background:#fff;font:inherit;font-size:12.5px;font-weight:600;color:#22303f;cursor:pointer;white-space:nowrap}
+    .qs-tabs button[aria-pressed=true]{background:#00434d;border-color:#00434d;color:#fff}
+    .qs-tabs .cnt{display:inline-block;min-width:16px;margin-left:4px;padding:0 5px;border-radius:8px;background:#c62828;color:#fff;font-size:10.5px;line-height:16px}
+    .qs-chips{display:flex;gap:4px;flex-wrap:wrap;margin-top:3px}
+    .qs-c{font-size:11px;font-weight:700;padding:1px 7px;border-radius:9px;white-space:nowrap;background:#eef0ec;color:#55686c}
+    .qs-c.ok{background:#e6f4ec;color:#13824a}.qs-c.bad{background:#fdecec;color:#c62828}.qs-c.amb{background:#fff3e0;color:#9a5b00}
+    .qs-list tr.pend td:first-child{box-shadow:inset 3px 0 0 #c62828}
+    .sl-btn.grn{background:#13824a;border-color:#13824a}
+    .pd-seg{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:4px;margin:3px 0 8px}
+    .pd-seg.bk{grid-template-columns:repeat(auto-fit,minmax(96px,1fr))}
+    .pd-seg button{height:34px;border:1px solid #cfd6de;border-radius:6px;background:#fff;font:inherit;font-size:13px;font-weight:600;cursor:pointer;color:#22303f;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:0 4px}
+    .pd-seg button[aria-pressed=true]{background:#00434d;border-color:#00434d;color:#fff}
+    .qs-dlg .lbl{font-size:12.5px;font-weight:600}
     #rateCard{border-color:#f0c78a}
     .rt-dlg{border:0;border-radius:10px;padding:12px 14px;width:min(860px,calc(100vw - 24px));box-sizing:border-box}
     .rt-dlg h3{margin:0;font-size:16px;display:flex;gap:8px;align-items:center;justify-content:space-between}
@@ -85,6 +100,8 @@
       .qs-list td.po{grid-row:1;grid-column:1}.qs-list td.n{grid-row:1;grid-column:2;font-weight:700}
       .qs-list td.party,.qs-list td.drv{grid-column:1/-1}
       .qs-list td.qs-act-td{grid-column:1/-1}.qs-list .qs-act{justify-content:flex-start}
+      .qs-list tr.pend{box-shadow:inset 3px 0 0 #c62828;padding-left:10px!important}.qs-list tr.pend td:first-child{box-shadow:none}
+      .qs-list td.drv .sub{display:inline;margin-left:6px}
       .qs-tools .grow{display:none}.qs-tools h2{width:100%}.qs-tools input[type=date]{flex:1;min-width:0}
       .erp-pagehead h1{font-size:19px}
     }
@@ -112,9 +129,9 @@
           <table class="qs-list"><thead><tr><th>PO</th><th>Party</th><th class="n">Amount</th><th></th></tr></thead><tbody id="waitBody"></tbody></table>
         </div>
         <div class="qs-card" style="margin-top:10px">
-          <div class="qs-tools"><h2 style="margin:0">Slips</h2><span class="qs-sum" id="sum"></span><span class="grow" style="flex:1"></span>
-            <input type="date" id="from" aria-label="From"><input type="date" id="to" aria-label="To">
-            <button type="button" class="sl-btn ghost small" id="reload">Show</button></div>
+          <div class="qs-tools"><span class="qs-tabs" role="group" aria-label="Show"><button type="button" data-tab="pend" aria-pressed="true">Bill pending<span class="cnt" id="pendN" hidden></span></button><button type="button" data-tab="all" aria-pressed="false">All slips</button></span><span class="qs-sum" id="sum"></span><span class="grow" style="flex:1"></span>
+            <span id="dates" style="display:contents"><input type="date" id="from" aria-label="From"><input type="date" id="to" aria-label="To">
+            <button type="button" class="sl-btn ghost small" id="reload">Show</button></span></div>
           <table class="qs-list"><thead><tr><th>PO / Date</th><th>Party</th><th>Driver · Vehicle</th><th class="n">Qty</th><th class="n">Amount</th><th class="n pf" hidden>Profit</th><th></th></tr></thead><tbody id="slipBody"></tbody></table>
           <div id="slipEmpty" class="qs-empty" hidden>No slip in these dates.</div>
         </div>
@@ -143,6 +160,21 @@
     </form>
   </dialog>
 
+  <dialog id="payDlg" class="qs-dlg" aria-labelledby="pdT">
+    <form id="payForm" novalidate>
+      <h3 id="pdT">Payment received</h3>
+      <p id="pdSub"></p>
+      <label>Amount ₹ *<input id="pdAmt" inputmode="decimal" autocomplete="off"></label>
+      <div class="lbl">Mode *</div>
+      <div class="pd-seg" id="pdMode"><button type="button" data-m="CASH">Cash</button><button type="button" data-m="UPI">UPI</button><button type="button" data-m="BANK">Bank</button><button type="button" data-m="CHEQUE">Cheque</button></div>
+      <div id="pdBankBox" hidden><div class="lbl">Into which bank *</div><div class="pd-seg bk" id="pdBank"></div></div>
+      <label id="pdRefL">Received by / UTR (optional)<input id="pdRef" maxlength="100" autocomplete="off"></label>
+      <p style="font-size:12px">Until the bill is made, this money stays as the party's advance. When Accounts saves the Tally bill, it is set against the bill by itself.</p>
+      <p class="err" id="pdErr"></p>
+      <div class="qs-act"><button type="button" class="sl-btn ghost" onclick="document.getElementById('payDlg').close()">Cancel</button><button type="submit" class="sl-btn" id="pdSave">Save</button></div>
+    </form>
+  </dialog>
+
   <dialog id="rateDlg" class="rt-dlg" aria-labelledby="rtT">
     <h3 id="rtT"><span>Rate approval · <span id="rtNo"></span></span><span class="qs-tag" id="rtTag">Waiting for Admin</span></h3>
     <div class="sub" id="rtSub"></div>
@@ -162,7 +194,7 @@
     const tell=t=>{try{if(inFrame)window.parent.postMessage({lwbPoPrint:t},location.origin)}catch(e){}};
     const money=n=>Number(n||0).toLocaleString("en-IN",{minimumFractionDigits:0,maximumFractionDigits:2});
     const unitWord=(u,n)=>u==="BOX"?"IC":(Number(n)===1?"case":"cases");
-    let me=null,head=false,cur=null,width="3",rateWait=[],profit=null;
+    let me=null,head=false,cur=null,width="3",rateWait=[],profit=null,view="pend",L={slips:[],pending:[],can_mark:false},banks=null,lastPf=null,pendSeen=false;
     try{width=localStorage.getItem("lwbSlipWidth")==="2"?"2":"3"}catch(e){}
 
     function slipHtml(s){
@@ -229,14 +261,76 @@
       const pfCell=id=>{if(!profit)return "";const p=profit[id];if(!p)return '<td class="hide-m" style="text-align:right">—</td>';
         return '<td class="hide-m" style="text-align:right"><span class="'+(Number(p.profit)<0?"qs-low":"qs-g")+'">₹'+money(p.profit)+'</span>'+
           (p.rate_ok_by_admin?'<span class="sub">Admin rate OK</span>':"")+(Number(p.missing)?'<span class="sub">'+p.missing+' SKU no landing</span>':"")+'</td>'};
-      el("slipBody").innerHTML=slips.map(s=>'<tr data-id="'+esc(s.order_id)+'"'+(cur&&cur.order_id===s.order_id?' class="on"':"")+'><td class="po"><b>'+esc(s.order_no)+'</b><span class="sub">'+esc(LWBDate.dt(s.slip_at))+'</span></td>'+
-        '<td class="party">'+esc(s.party)+'</td><td class="drv">'+esc(s.driver_name)+'<span class="sub">'+esc(s.vehicle_no)+'</span></td>'+
-        '<td class="hide-m" style="text-align:right">'+fmt(s.total_qty)+'</td><td class="n">₹'+money(s.total_amount)+'</td>'+pfCell(s.order_id)+
-        '<td class="qs-act-td"><div class="qs-act"><button type="button" class="sl-btn ghost small" data-view="'+esc(s.order_id)+'">View</button><button type="button" class="sl-btn small" data-print="'+esc(s.order_id)+'">🖨 '+(Number(s.print_count)?"Reprint":"Print")+'</button></div></td></tr>').join("");
-      el("slipEmpty").hidden=slips.length>0;
+      L={slips,pending:data.pending||[],can_mark:!!data.can_mark};lastPf=pfCell;if(!L.pending.length&&view==="pend"&&!pendSeen)view="all";pendSeen=true;renderSlips(pfCell);
+
       el("waitCard").hidden=!wait.length||!head;el("waitN").textContent=wait.length?"("+wait.length+")":"";
       el("waitBody").innerHTML=wait.map(w=>'<tr><td class="po"><b>'+esc(w.order_no)+'</b><span class="sub">'+esc(S.shortDate(w.order_date))+'</span></td><td class="party">'+esc(w.party)+'</td>'+
         '<td class="n">₹'+money(w.total_amount)+'</td><td class="qs-act-td"><div class="qs-act"><button type="button" class="sl-btn small" data-make="'+esc(w.order_id)+'" data-no="'+esc(w.order_no)+'" data-party="'+esc(w.party)+'">Driver &amp; slip</button></div></td></tr>').join("");
+    }
+
+    // Slip rows: "Bill pending" = every slip without a Tally bill (any date); "All slips" = the dates above.
+    const dm=t=>t?LWBDate.dt(t).slice(0,5):"";
+    function chips(s){
+      const amt=Number(s.total_amount||0),paid=Number(s.paid||0),c=[];
+      c.push(s.delivered_at?'<span class="qs-c ok">✓ Delivered '+esc(dm(s.delivered_at))+'</span>':'<span class="qs-c">○ Not delivered</span>');
+      c.push(paid>0.5?'<span class="qs-c '+(paid+0.5>=amt?"ok":"amb")+'">✓ Paid ₹'+money(paid)+(paid+0.5<amt?" of ₹"+money(amt):"")+(s.pay_modes?" "+esc(s.pay_modes):"")+'</span>':'<span class="qs-c">○ Not paid</span>');
+      if(s.bill_no)c.push('<span class="qs-c ok">✓ Bill '+esc(s.bill_no)+'</span>');
+      else{const d=Number(s.days||0);c.push('<span class="qs-c '+(d>=1?"bad":"amb")+'">⏳ Bill pending · '+(d>=1?d+" day"+(d===1?"":"s"):"today")+'</span>')}
+      return '<div class="qs-chips">'+c.join("")+'</div>';
+    }
+    function renderSlips(pfCell){
+      const byId=new Map(L.slips.map(s=>[s.order_id,s])),dayOf=t=>Math.round((Date.parse(S.isoDay(new Date()))-Date.parse(S.isoDay(new Date(t))))/864e5);
+      const pend=L.pending.map(p=>Object.assign({},byId.get(p.order_id)||{},p,{total_amount:p.amount,total_qty:p.qty,bill_no:null}));
+      const rows=view==="pend"?pend:L.slips.map(s=>Object.assign({days:dayOf(s.slip_at)},s));
+      el("pendN").hidden=!pend.length;el("pendN").textContent=pend.length;
+      document.querySelectorAll(".qs-tabs button").forEach(b=>b.setAttribute("aria-pressed",String(b.dataset.tab===view)));
+      el("dates").hidden=view==="pend";el("dates").style.display=view==="pend"?"none":"contents";
+      const mine=()=>["admin","manager","accounts","sales","salesman"].includes(me.role);
+      el("slipBody").innerHTML=rows.map(s=>'<tr data-id="'+esc(s.order_id)+'" class="'+(cur&&cur.order_id===s.order_id?"on ":"")+(!s.bill_no&&Number(s.days||0)>=1?"pend":"")+'"><td class="po"><b>'+esc(s.order_no)+'</b><span class="sub">'+esc(LWBDate.dt(s.slip_at))+'</span></td>'+
+        '<td class="party">'+esc(s.party)+chips(s)+'</td><td class="drv">'+esc(s.driver_name)+'<span class="sub">'+esc(s.vehicle_no)+'</span></td>'+
+        '<td class="hide-m" style="text-align:right">'+(s.total_qty==null?"—":fmt(s.total_qty))+'</td><td class="n">₹'+money(s.total_amount)+'</td>'+(pfCell?pfCell(s.order_id):"")+
+        '<td class="qs-act-td"><div class="qs-act">'+
+          (!s.delivered_at&&!s.bill_no&&mine(s)?'<button type="button" class="sl-btn grn small" data-dlv="'+esc(s.order_id)+'">✓ Delivered</button>':"")+
+          (L.can_mark&&Number(s.paid||0)+0.5<Number(s.total_amount||0)?'<button type="button" class="sl-btn '+(s.delivered_at?"grn":"ghost")+' small" data-paid="'+esc(s.order_id)+'">₹ Mark paid</button>':"")+
+          '<button type="button" class="sl-btn ghost small" data-view="'+esc(s.order_id)+'">View</button><button type="button" class="sl-btn small" data-print="'+esc(s.order_id)+'">🖨 '+(Number(s.print_count)?"Reprint":"Print")+'</button></div></td></tr>').join("");
+      el("slipEmpty").textContent=view==="pend"?"✓ No slip is waiting for a Tally bill.":"No slip in these dates.";
+      el("slipEmpty").hidden=rows.length>0;
+    }
+    async function markDelivered(id){
+      const {error}=await client.rpc("lwb_quick_slip_delivered",{p_order_id:id,p_on:true});
+      if(error){msg(errText(error));return}
+      msg("");await loadList();
+    }
+    async function askPaid(id){
+      const s=L.pending.find(x=>x.order_id===id)||L.slips.find(x=>x.order_id===id);if(!s)return;
+      const amt=Number(s.amount!=null?s.amount:s.total_amount||0),left=Math.max(0,amt-Number(s.paid||0));
+      if(banks===null){const r=await client.rpc("lwb_money_banks");banks=r.error?[]:(r.data||[])}
+      let mode="CASH",bank="";try{bank=localStorage.getItem("lwbPayBank")||""}catch(e){}
+      if(!banks.some(b=>String(b.id)===bank))bank=banks.length===1?String(banks[0].id):"";
+      el("pdT").textContent="Payment received · "+s.order_no;el("pdSub").textContent=s.party+" · slip ₹"+money(amt)+(Number(s.paid)?" · paid ₹"+money(s.paid):"");
+      el("pdAmt").value=left?String(Math.round(left*100)/100):"";el("pdRef").value="";el("pdErr").textContent="";
+      el("pdBank").innerHTML=banks.map(b=>'<button type="button" data-b="'+esc(b.id)+'">'+esc(b.name)+(b.last4?" ··"+esc(b.last4):"")+'</button>').join("");
+      const draw=()=>{el("pdMode").querySelectorAll("button").forEach(b=>b.setAttribute("aria-pressed",String(b.dataset.m===mode)));
+        el("pdBankBox").hidden=mode==="CASH";el("pdBank").querySelectorAll("button").forEach(b=>b.setAttribute("aria-pressed",String(b.dataset.b===bank)));
+        el("pdRefL").firstChild.textContent=mode==="CHEQUE"?"Cheque no. *":mode==="CASH"?"Received by (optional)":"Received by / UTR (optional)"};
+      el("pdMode").onclick=e=>{const b=e.target.closest("button");if(b){mode=b.dataset.m;draw()}};
+      el("pdBank").onclick=e=>{const b=e.target.closest("button");if(b){bank=b.dataset.b;draw()}};
+      draw();
+      el("payForm").onsubmit=async e=>{
+        e.preventDefault();
+        const a=Number(String(el("pdAmt").value).replace(/[,₹\s]/g,""));
+        if(!(a>0)){el("pdErr").textContent="Enter the amount.";el("pdAmt").focus();return}
+        if(mode!=="CASH"&&!bank){el("pdErr").textContent=banks.length?"Choose the bank the money came into.":"Add our banks in Accounts Dashboard first.";return}
+        const ref=el("pdRef").value.trim();
+        if(mode==="CHEQUE"&&!ref){el("pdErr").textContent="Enter the cheque number.";el("pdRef").focus();return}
+        el("pdSave").disabled=true;
+        const {data,error}=await client.rpc("lwb_quick_slip_paid",{p_order_id:id,p:{amount:a,mode,bank_id:mode==="CASH"?null:Number(bank),ref:ref||null}});
+        el("pdSave").disabled=false;
+        if(error){el("pdErr").textContent=errText(error);return}
+        if(mode!=="CASH")try{localStorage.setItem("lwbPayBank",bank)}catch(x){}
+        el("payDlg").close();msg("₹"+money(a)+" saved for "+s.order_no+(data&&data.billed?". Set against the bill.":". It stays as advance until Accounts makes the bill."));await loadList();
+      };
+      el("payDlg").showModal();setTimeout(()=>el("pdAmt").focus(),30);
     }
 
     function askDriver(id,title,prev){
@@ -303,6 +397,9 @@
       const b=e.target.closest("button");if(!b)return;
       if(b.dataset.review)review(b.dataset.review);
       else if(b.dataset.view)show(b.dataset.view,false);
+      else if(b.dataset.dlv)markDelivered(b.dataset.dlv);
+      else if(b.dataset.paid)askPaid(b.dataset.paid);
+      else if(b.dataset.tab){view=b.dataset.tab;renderSlips(lastPf)}
       else if(b.dataset.print)show(b.dataset.print,true);
       else if(b.dataset.make)askDriver(b.dataset.make,b.dataset.no+" · "+b.dataset.party,null);
       else if(b.dataset.w){width=b.dataset.w;try{localStorage.setItem("lwbSlipWidth",width)}catch(x){}render()}
