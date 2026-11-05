@@ -30,6 +30,7 @@ await db.exec(await readFile(new URL('../../lwb_accounts_staff_setup.sql',import
 await db.exec(await readFile(new URL('../../lwb_accounts_vehicle_setup.sql',import.meta.url),'utf8'));
 await db.exec(await readFile(new URL('../../lwb_accounts_cheque_setup.sql',import.meta.url),'utf8'));
 await db.exec(await readFile(new URL('../../lwb_employee_master_setup.sql',import.meta.url),'utf8'));
+await db.exec(await readFile(new URL('../../lwb_allow_large_cash_entries.sql',import.meta.url),'utf8'));
 await db.exec('GRANT USAGE ON SCHEMA public,auth TO authenticated');
 
 const today=(await db.query("select public.lwb_acc_today()::text d")).rows[0].d;
@@ -125,7 +126,8 @@ test('entry rules: head needed, cheque no., duplicate ref, 2 lakh cash, cancel o
  await as('accounts');
  await assert.rejects(add({date:today,kind:'OUT',mode:'CASH',amount:5}),/expense head/);
  await assert.rejects(add({date:today,kind:'IN',category_id:await cat('IN','Other income'),mode:'CHEQUE',amount:5}),/cheque number/);
- await assert.rejects(add({date:today,kind:'IN',category_id:await cat('IN','Other income'),mode:'CASH',amount:250000}),/269ST/);
+ const big=await add({date:today,kind:'IN',category_id:await cat('IN','Other income'),mode:'CASH',amount:250000});
+ await call("select public.lwb_acc_cancel_entry($1,'test')",[big]);
  await assert.rejects(add({date:dayAdd(today,1),kind:'OUT',category_id:await cat('OUT','Food'),mode:'CASH',amount:5}),/future/);
  await add({date:today,kind:'IN',category_id:await cat('IN','Other income'),mode:'RTGS',amount:5000,ref:'R1'});
  await assert.rejects(add({date:today,kind:'IN',category_id:await cat('IN','Other income'),mode:'RTGS',amount:5000,ref:'r1'}),/already entered/);

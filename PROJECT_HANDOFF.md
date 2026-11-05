@@ -841,3 +841,8 @@
 - New Sales Order: Sales Head button "Send to Admin for rate OK" when a line is below min; message after save says it went to Admin.
 - Salesman PO below min (5 Nov 2026 fix): deferred trigger `lwb_rate_po_punch` on `order_items` gives Admin the `PO_RATE_APPROVAL` bell as soon as the lines are saved (one bell per PO; WAITING row made then). Before this Admin heard nothing until the Sales Head approved, and #225 itself was never merged. Admin's Approve approves the PO directly; the Sales Head can't approve it below min.
 - Tests: `tests/cc-rate-limit`.
+
+## Cash of ₹2 lakh or more is allowed (5 Nov 2026)
+- The ERP is the company's own record book (like Tally), so a cash receipt of ₹2,00,000 or more must save in full.
+- `lwb_allow_large_cash_entries.sql` removes the old "Income Tax 269ST / compliance review" hard stop from every live function that had it (party payment, brand money, group billing, accounts Cash In, driver payment / delivery, office receive). It edits the live definition with `pg_get_functiondef`, so the newest version of each function stays.
+- Party payment popup (`party-pay.js`) shows only a soft yellow note when cash is ₹2 lakh or more; Driver Delivery no longer blocks it.
