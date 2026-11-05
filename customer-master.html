@@ -141,7 +141,7 @@ function bulkList(){const have=new Set(all.map(x=>normName(x.customer_name))),se
 for(const line of $('bulkNames').value.split(/\r?\n/)){const n=normName(line.split('\t')[0]);if(!n)continue;if(n.length<2||n.length>200){bad++;continue}if(have.has(n)||seen.has(n)){dup++;continue}seen.add(n);add.push(n)}
 return {add,dup,bad}}
 function bulkCheck(){const {add,dup,bad}=bulkList();$('bulkInfo').textContent=add.length+' new · '+dup+' already in list / repeated'+(bad?' · '+bad+' too short/long':'');$('bulkSave').disabled=role!=='admin'||!add.length;return add}
-async function bulkSave(){if(!db||role!=='admin')return;const add=bulkCheck(),state=val('bulkState')||'Gujarat';if(!add.length)return;if(!confirm('Add '+add.length+' new parties to Party Master?'))return;
+async function bulkSave(){if(!db||role!=='admin')return;const add=bulkCheck(),state=val('bulkState')||'Gujarat';if(!add.length)return;if(!await confirm('Add '+add.length+' new parties to Party Master?'))return;
 $('bulkSave').disabled=true;$('bulkCheck').disabled=true;let done=0;const failed=[];
 // One party per insert so each gets its own Customer Code from the database.
 const ids=[],bsm=$('bulkSm').value;
@@ -150,7 +150,7 @@ if(bsm&&ids.length){const e=await assignSm(ids,bsm);if(e)failed.push('Salesman n
 await refresh();$('bulkCheck').disabled=false;$('bulkNames').value=failed.map(x=>x.split(' — ')[0]).join('\n');
 m(done+' parties added to Party Master'+(bsm&&done?' for salesman '+smName(bsm):'')+'.'+(failed.length?' Not saved ('+failed.length+'): '+failed.slice(0,5).join('; ')+(failed.length>5?' ...':''):''),failed.length?'error':'success');bulkCheck()}
 $('bulkCheck').onclick=bulkCheck;$('bulkSave').onclick=bulkSave;$('bulkNames').oninput=()=>{$('bulkSave').disabled=true;$('bulkInfo').textContent='Click Check List'};
-async function delParty(c){if(!db||role!=='admin')return;if(!confirm('Delete party "'+c.customer_name+'" ('+(c.customer_code||'')+')?\n\nOnly a party with no orders, bills or opening balance can be deleted.'))return;
+async function delParty(c){if(!db||role!=='admin')return;const into=c.merged_into&&all.find(x=>x.id===c.merged_into);if(!await confirm(into?'Delete merged duplicate "'+c.customer_name+'" ('+(c.customer_code||'')+')?\n\nIts POs, bills and ledger are already on '+into.customer_code+' '+into.customer_name+'. Only this duplicate entry is removed.':'Delete party "'+c.customer_name+'" ('+(c.customer_code||'')+')?\n\nOnly a party with no orders, bills or opening balance can be deleted.'))return;
 const {data,error}=await db.rpc('lwb_delete_customer',{p_id:c.id});if(error){m('Delete failed: '+(/lwb_delete_customer/.test(error.message)?'Run lwb_party_delete_setup.sql in Supabase first.':error.message),'error');return;}
 if(editing===c.id)reset();await refresh();m('Party deleted: '+(data||c.customer_name),'success');}
 /* Excel Import / Export (excel-io.js). Matched by Party Name; blank cells keep the saved value. */
@@ -217,7 +217,7 @@ function showOld(){const list=oldList(),box=$('oldBox');box.classList.toggle('sh
   $('oldNames').textContent=list.map(x=>x.customer_code+'  '+x.customer_name).join('\n');$('oldInfo').textContent='';$('oldGo').disabled=false}
 $('oldHide').onclick=()=>$('oldBox').classList.remove('show');
 $('oldGo').onclick=async()=>{const list=oldList();if(!db||role!=='admin'||!list.length)return;
-  if(!confirm('Set '+list.length+' parties Inactive?\n\nThey are not deleted. Old POs and ledger stay. You can make a party Active again with Edit.'))return;
+  if(!await confirm('Set '+list.length+' parties Inactive?\n\nThey are not deleted. Old POs and ledger stay. You can make a party Active again with Edit.'))return;
   $('oldGo').disabled=true;let done=0;const failed=[];
   for(let i=0;i<list.length;i+=100){const ids=list.slice(i,i+100).map(x=>x.id);const {error}=pmErr(await db.rpc('lwb_party_master_set_active',{p_ids:ids,p_active:false}));if(error)failed.push(error.message);else done+=ids.length;$('oldInfo').textContent=done+' / '+list.length+' done...'}
   await refresh();showOld();m(done+' old parties set Inactive.'+(failed.length?' Not saved: '+failed[0]:''),failed.length?'error':'success')};
@@ -271,7 +271,7 @@ async function findDups(){if(!db)return;dupShown=true;const groups=dupGroups();$
     tools.append(go,no);card.append(tools);box.append(card)}
   if(groups.length>dupLimit){const more=document.createElement('button');more.className='secondary';more.textContent='Show more ('+(groups.length-dupLimit)+')';more.onclick=()=>{dupLimit+=30;findDups()};box.append(more)}}
 async function mergeGroup(rows,keepId,dropIds,btn){if(!db||role!=='admin')return;const keep=rows.find(x=>x.id===keepId),drops=rows.filter(x=>dropIds.includes(x.id));if(!keep||!drops.length){m('Tick at least one party to merge.','error');return}
-  if(!confirm('Keep: '+keep.customer_code+' '+keep.customer_name+'\n\nMerge into it:\n'+drops.map(x=>x.customer_code+' '+x.customer_name).join('\n')+'\n\nTheir POs, bills, payments, ledger and salesman move to the kept party. The merged parties are set Inactive (not deleted).'))return;
+  if(!await confirm('Keep: '+keep.customer_code+' '+keep.customer_name+'\n\nMerge into it:\n'+drops.map(x=>x.customer_code+' '+x.customer_name).join('\n')+'\n\nTheir POs, bills, payments, ledger and salesman move to the kept party. The merged parties are set Inactive (not deleted).'))return;
   btn.disabled=true;const done=[],failed=[];
   for(const d of drops){const {error}=await db.rpc('lwb_merge_party',{p_keep:keepId,p_drop:d.id});if(error)failed.push(d.customer_name+' — '+(/lwb_merge_party/.test(error.message)?'Run lwb_party_merge_setup.sql first':error.message));else done.push(d.customer_name)}
   for(const id of [keepId,...dropIds])dupUsage.delete(id);await refresh();

@@ -15,7 +15,7 @@
 --      bills still made in the old name land on the kept party's ledger.
 --   3. Details the kept party is missing (mobile, address, city, pincode,
 --      contact, PAN, GSTIN) are copied from the duplicate.
---   4. The duplicate is NOT deleted: it is set Inactive and marked
+--   4. The kept party is set Active. The duplicate is NOT deleted: it is set Inactive and marked
 --      "merged into" the kept party. Every merge is written to lwb_party_merges.
 --
 -- lwb_party_usage(ids): number of POs and the last PO date of each party,
@@ -191,6 +191,7 @@ BEGIN
     is_active = false, merged_into = p_keep, merged_at = now()
   WHERE id = p_drop;
   UPDATE public.lwb_customer_master SET
+    is_active       = true,  -- the kept party is the one in use (5 Nov 2026)
     mobile          = coalesce(nullif(btrim(k.mobile),''), d.mobile),
     billing_address = coalesce(nullif(btrim(k.billing_address),''), d.billing_address),
     city            = coalesce(nullif(btrim(k.city),''), d.city),
