@@ -52,14 +52,14 @@ button:disabled{opacity:.5;cursor:not-allowed}
 .rcv-head{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:6px}.rcv-head button{padding:6px 10px}
 .rcv-line{border:1px solid var(--line);border-radius:8px;padding:8px;margin-bottom:8px}
 .rcv-top{display:flex;justify-content:space-between;gap:8px;margin-bottom:6px;flex-wrap:wrap}
-.rcv-chips{display:grid;grid-template-columns:repeat(3,1fr);gap:5px}
+.rcv-chips{display:grid;grid-template-columns:1fr 1fr;gap:5px}
 .rcv-chip{background:#fff;color:#142841;border:1px solid #c9d3df;padding:7px 4px;font-size:12.5px;font-weight:600}
 .rcv-chip.on{background:#e6f0f0;border-color:#00434d;color:#00434d}
 .rcv-warn{color:#a05a00;font-size:12px}
 .rcv-sum{background:#f6f8fb;border-radius:8px;padding:8px;font-size:13px;line-height:1.6}.rcv-sum .g{color:#13824a;font-weight:700}.rcv-sum .a{color:#b26b00;font-weight:700}
 .rcv-note{width:100%;margin:8px 0;padding:9px;border:1px solid #bbcbdd;border-radius:8px;font:14px Arial}
 .rcv-btns{display:flex;gap:8px}.rcv-btns button{flex:1;padding:10px 8px}
-@media(min-width:600px){.rcv-chips{grid-template-columns:repeat(6,1fr)}}
+@media(min-width:600px){.rcv-chips{grid-template-columns:1fr 2fr 1fr 1fr}}
 @media(min-width:900px){
  .tabs{grid-template-columns:repeat(3,200px)}.tab strong{font-size:20px}
  .card{grid-template-columns:270px 1fr 150px;grid-template-areas:"info lines amt" "info lines act";column-gap:20px;padding:14px 18px}
@@ -93,7 +93,7 @@ button:disabled{opacity:.5;cursor:not-allowed}
 <div class="rcv-btns"><button type="button" class="secondary" id="rcvCancel">Cancel</button><button type="button" class="approve" id="rcvOk">📦 Receive &amp; update stock</button></div>
 </div></div>
 <div class="viewer" id="viewer" hidden><img id="viewerImg" alt="Return photo"><button type="button" class="secondary" id="viewerClose">✕ Close</button></div>
-<button type="button" class="erp-i" aria-label="Info" title="Info" data-tip="Approve only after checking the damaged goods. Approved amount reduces the party&#x27;s ERP outstanding. Rejected return frees the quantity so the driver can record it again. When the godown receives the goods, each SKU goes into Saleable or Damage / Leakage / Breakage / Gasless / Expiry stock. GST and Tally are not changed here.">i</button>
+<button type="button" class="erp-i" aria-label="Info" title="Info" data-tip="Approve only after checking the damaged goods. Approved amount reduces the party&#x27;s ERP outstanding. Rejected return frees the quantity so the driver can record it again. When the godown receives the goods, each SKU goes into Saleable, Damage / Leakage / Breakage (OLN), Gasless or Expiry stock. GST and Tally are not changed here.">i</button>
 </main>
 <script>
 const SUPABASE_URL="https://txkbhadzdbxpieunfvox.supabase.co";
@@ -101,7 +101,7 @@ const SUPABASE_PUBLISHABLE_KEY="sb_publishable_W4I3Q5ODf0g17sq5uDml2Q_sLolXYEk";
 const db=window.supabase.createClient(SUPABASE_URL,SUPABASE_PUBLISHABLE_KEY);
 const el=id=>document.getElementById(id);
 const fmt=n=>"₹"+Number(n||0).toLocaleString("en-IN",{minimumFractionDigits:2,maximumFractionDigits:2});
-const REASON={LEAKAGE:"Leakage",BREAKAGE:"Breakage",DAMAGE:"Damage",GASLESS:"Gasless",LOW_FILL:"Low Fill"};
+const REASON={LEAKAGE:"Damage / Leakage / Breakage",BREAKAGE:"Damage / Leakage / Breakage",DAMAGE:"Damage / Leakage / Breakage",GASLESS:"Gasless",LOW_FILL:"Low Fill"};
 const STATUSES=["PENDING_OFFICE","APPROVED","REJECTED"];
 let role="",status="PENDING_OFFICE",lists={},busy=false,photos=new Map(),photoUrls=new Map(),receipts=new Map();
 let BB={get:()=>""},OB=new Map();
@@ -154,8 +154,8 @@ async function loadReceipts(){
  for(const x of data||[])receipts.set(x.return_id,x);
 }
 // Receive the goods and put each SKU line into stock (lwb_return_stock_setup.sql):
-// Saleable / Damage / Leakage / Breakage / Gasless / Expiry, default = the driver's reason.
-const PLACES=[["SALEABLE","Saleable"],["DAMAGE","Damage"],["LEAKAGE","Leakage"],["BREAKAGE","Breakage"],["GASLESS","Gasless"],["EXPIRY","Expiry"]];
+// Saleable / Damage-Leakage-Breakage (one option, OLN; saved as Damage) / Gasless / Expiry, default = the driver's reason.
+const PLACES=[["SALEABLE","Saleable"],["DAMAGE","Damage / Leakage / Breakage (OLN)"],["GASLESS","Gasless"],["EXPIRY","Expiry"]];
 const csTxt=(pcs,ppc)=>{ppc=Math.max(1,ppc||1);const c=Math.floor(pcs/ppc),p=pcs%ppc;return (c?c+" CS":"")+(c&&p?" ":"")+(p?p+" PCS":"")||"0"};
 async function receive(r){
  if(busy||!canReceive())return;
@@ -167,7 +167,8 @@ async function receive(r){
   if(note===null)return;
   return doReceive(r,null,note,"lwb_receive_return_goods");
  }
- const pick=new Map(lines.map(l=>[l.item_id,l.default_bucket]));
+ const oln=b=>b==="LEAKAGE"||b==="BREAKAGE"?"DAMAGE":b;
+ const pick=new Map(lines.map(l=>[l.item_id,oln(l.default_bucket)]));
  const dlg=el("rcvDlg"),body=el("rcvBody");
  el("rcvTitle").textContent="Receive goods · "+(r.order_no||"")+" · "+(r.party_name||"");
  const draw=()=>{
@@ -184,7 +185,7 @@ async function receive(r){
   const sale=lines.filter(l=>l.sku_id&&pick.get(l.item_id)==="SALEABLE"),held=lines.filter(l=>l.sku_id&&pick.get(l.item_id)!=="SALEABLE");
   const sum=node("div",null,"rcv-sum");
   sum.append(node("div","Saleable stock: "+(sale.length?sale.map(l=>"+"+csTxt(l.qty_pcs,l.pcs_per_case)).join(", "):"—"),"g"),
-   node("div","Damage / leakage etc.: "+(held.length?held.map(l=>csTxt(l.qty_pcs,l.pcs_per_case)).join(", "):"—"),"a"));
+   node("div","Damage / Leakage / Breakage etc.: "+(held.length?held.map(l=>csTxt(l.qty_pcs,l.pcs_per_case)).join(", "):"—"),"a"));
   body.append(sum);
  };
  draw();el("rcvNote").value="";dlg.hidden=false;setTimeout(()=>{const f=body.querySelector(".rcv-chip.on");if(f)f.focus()},30);

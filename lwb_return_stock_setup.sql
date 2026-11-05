@@ -12,7 +12,7 @@
 -- Each line becomes an APPROVED lwb_stock_moves row (kind RETURN_IN, from PARTY), so
 -- lwb_live_stock (saleable / damaged), Stock Transfer status and the category ledger
 -- see it at once. The return was already approved by the office, so no second approval.
--- Default per line = the driver's reason (Low fill -> Damage).
+-- Default per line = the driver's reason. Damage / Leakage / Breakage / Low fill -> Damage (one option, OLN; 5 Nov 2026).
 -- Returns received before this file are NOT back-filled.
 -- Orders, bills, payments, party ledger and Tally are NOT changed.
 
@@ -58,9 +58,8 @@ GRANT EXECUTE ON FUNCTION public.lwb_stx_label(text) TO authenticated;
 CREATE OR REPLACE FUNCTION public.lwb_return_default_bucket(p_reason text)
 RETURNS text LANGUAGE sql IMMUTABLE SET search_path = ''
 AS $fn$
-  SELECT CASE upper(btrim(coalesce(p_reason,'')))
-    WHEN 'LEAKAGE' THEN 'LEAKAGE' WHEN 'BREAKAGE' THEN 'BREAKAGE' WHEN 'GASLESS' THEN 'GASLESS'
-    ELSE 'DAMAGE' END;
+  -- Damage, Leakage and Breakage are one return option (OLN / claim): all go to Damage.
+  SELECT CASE upper(btrim(coalesce(p_reason,''))) WHEN 'GASLESS' THEN 'GASLESS' ELSE 'DAMAGE' END;
 $fn$;
 GRANT EXECUTE ON FUNCTION public.lwb_return_default_bucket(text) TO authenticated;
 

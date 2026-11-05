@@ -56,7 +56,7 @@ test('lines show default place and SKU match; old checks still hold', async()=>{
   await as('godown');
   const l=await call('select * from lwb_return_receive_lines($1)',[r]);
   const by=Object.fromEntries(l.map(x=>[x.sku_name,x]));
-  assert.equal(by['250ml thumsup '].default_bucket,'LEAKAGE');assert.equal(by['250ml thumsup '].qty_pcs,144);
+  assert.equal(by['250ml thumsup '].default_bucket,'DAMAGE'); // leakage = damage (OLN)assert.equal(by['250ml thumsup '].qty_pcs,144);
   assert.equal(by['600ML SPRITE'].default_bucket,'DAMAGE');assert.equal(by['600ML SPRITE'].qty_pcs,4);
   assert.equal(by['OLD SKU X'].sku_id,null);
   await as('sales');await assert.rejects(call('select lwb_return_receive_lines($1)',[r]),/office staff/);
@@ -97,7 +97,7 @@ test('bad place refused; old one-tap receive also moves stock', async()=>{
   const before=await live();
   await as('godown');assert.equal((await call('select lwb_receive_return_goods($1,null) r',[r]))[0].r,'RECEIVED');
   const after=await live();
-  assert.equal(after[sku.thums].d-before[sku.thums].d,144); // leakage = held
+  assert.equal(after[sku.thums].d-before[sku.thums].d,144); // leakage -> damage, held
   assert.equal(after[sku.thums].s,before[sku.thums].s);
 });
 
