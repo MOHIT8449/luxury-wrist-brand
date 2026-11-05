@@ -1956,6 +1956,8 @@ function belowMinLines(items){
 }
 function newOrderButtonLabel(){
   if(pickedBrand()?.quick_slip === true) return document.querySelector("#itemsBody tr.below-min") && !isAdminLogin() ? "Send to Admin for rate OK" : "Save & Print Slip";
+  // Coca-Cola: a Sales Head PO below the min rate goes to Admin for rate OK (lwb_cc_rate_limit_setup.sql).
+  if(headCreatesApprovedPo() && !isAdminLogin() && document.querySelector("#itemsBody tr.below-min")) return "Send to Admin for rate OK";
   // Phone: short label so the total ₹ · cases · kg stays readable in the bottom bar.
   return headCreatesApprovedPo()?"Save & Approve PO":(matchMedia("(max-width:640px)").matches?"Submit Order":"Submit to Warehouse Manager");
 }
@@ -2461,6 +2463,15 @@ async function saveOrder(){
       createdOrder = r.order; made.push({...r, slip:false});
       spNote = await saveOrderSheetPallet(createdOrder.id, null);
     }
+    // Rate below the min: the database sends the Sales Head's PO to Admin (status back to pending_approval).
+    let poRateWait = false;
+    if(createdOrder && headCreatesApprovedPo() && !isAdminLogin()){
+      const {data} = await db.from("orders").select("status").eq("id", createdOrder.id).maybeSingle();
+      poRateWait = String(data?.status || "").toLowerCase() === "pending_approval";
+    }
+    // Salesman PO below the min rate: the database sends Admin a "Rate below min" bell at once.
+    const poRateLow = createdOrder && !poRateWait && !headCreatesApprovedPo() && !isAdminLogin() &&
+      split.other.some(i => { const l = saleLimits.get(skuKey(i.sku_name)); return l && l.min != null && number(i.rate) < l.min; });
     let slipOrder = null, slipNote = "", slipDone = false, rateWaiting = false;
     if(split.slip.length){
       try{
@@ -2501,14 +2512,16 @@ async function saveOrder(){
     showMessage(made.map(m => "Order No: " + m.orderNo + " | Total Qty: " + formatNumber(m.totals.totalQty) + " | Total Amount: " + formatMoney(m.totals.totalAmount)).join("  •  "), "success");
     const normalTail = createdOrder ? (orderPriority === "NORMAL" ? "" : "\nPriority: " + orderPriority) +
       (pickupText() ? "\n" + pickupText().split(" | ").join("\n") : "") +
-      (headCreatesApprovedPo() ? "\nReady for transport assignment." : "\nSent to Warehouse Manager for approval.") : "";
+      (poRateWait ? "\nRate is below the allowed min, so this PO is sent to Admin for rate OK. Assign transport after Admin approves."
+        : poRateLow ? "\nRate is below the allowed min, so Admin is informed for rate OK."
+        : headCreatesApprovedPo() ? "\nReady for transport assignment." : "\nSent to Warehouse Manager for approval.") : "";
     alert(
-      (made.length > 1 ? "2 POs saved.\n\n" : createdOrder && headCreatesApprovedPo() ? "PO saved and approved successfully.\n\n" : createdOrder ? "Order submitted successfully.\n\n" : "PO saved.\n\n") +
+      (made.length > 1 ? "2 POs saved.\n\n" : createdOrder && poRateWait ? "PO saved. Sent to Admin for rate OK.\n\n" : createdOrder && headCreatesApprovedPo() ? "PO saved and approved successfully.\n\n" : createdOrder ? "Order submitted successfully.\n\n" : "PO saved.\n\n") +
       made.map(m => sum(m) + (m.slip ? (slipDone ? "\nDriver: " + slipDetails.driver_name + "\nVehicle: " + slipDetails.vehicle_no + "\nSlip ready to print. Sent to Accounts for the Tally bill." : "") : normalTail)).join("\n\n") +
       priorityNote + spNote
     );
 
-    saveBtn.textContent = rateWaiting && !createdOrder ? "Sent to Admin" : slipDone && !createdOrder ? "Slip Made" : headCreatesApprovedPo() ? "PO Approved" : "Order Submitted";
+    saveBtn.textContent = (rateWaiting && !createdOrder) || poRateWait ? "Sent to Admin" : slipDone && !createdOrder ? "Slip Made" : headCreatesApprovedPo() ? "PO Approved" : "Order Submitted";
     const list = document.getElementById("savedPoList");
     list.href = poListUrl();
     document.getElementById("savedPoPrint").hidden = true;
@@ -3037,7 +3050,7 @@ function applyRates(){
     }
   });
   const sb = document.getElementById("saveBtn");
-  if(sb && !sb.disabled && !editOrder && /Save & Print Slip|Send to Admin/.test(sb.textContent)) sb.textContent = newOrderButtonLabel();
+  if(sb && !sb.disabled && !editOrder && /Save & Print Slip|Send to Admin|Save & Approve PO/.test(sb.textContent)) sb.textContent = newOrderButtonLabel();
   document.getElementById("slabWhy").textContent =
     (document.getElementById("rateSlab").value === "auto" ? "→ " : "") + why +
     (usedLast ? " · SKUs with a previous bill use the last billed rate" : "");

@@ -6,6 +6,10 @@ export function validEndpoint(raw) {
 export function safeRoute(type, order, role) {
  const id=order ? '?order='+encodeURIComponent(String(order)) : '';
  if(type==='ORDER_NEW')return '/warehouse-orders.html'+id;
+ const o=order ? encodeURIComponent(String(order)) : '';
+ if(type==='PO_RATE_APPROVAL')return '/warehouse-orders.html'+(o?'?rate='+o:'');
+ if(type==='RATE_APPROVAL')return '/quick-slip.html'+(o?'?review='+o:'');
+ if(type==='PO_RATE_APPROVED')return '/warehouse-orders.html'+id;
  if(type.startsWith('LOADING_ASSIGNMENT_DRIVER'))return '/driver-delivery.html'+id;
  if(type.startsWith('LOADING_ASSIGNMENT'))return '/loading-dispatch.html'+id;
  if(type==='TALLY_BILL_PENDING')return '/accounts-invoice.html'+id;
