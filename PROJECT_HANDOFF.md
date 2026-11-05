@@ -4,6 +4,15 @@
 **Purpose:** Continue the same ERP project from a new ChatGPT conversation without restarting or losing the agreed requirements.
 **Status:** Active development / verification. Do not assume all modules are completed or fully tested.
 
+## Hired vehicles on fixed rent + rent ledger (5 Nov 2026)
+
+- Mohit: outside pickups / Bolero work for us all the time on a fixed rent (per month, per route or per trip) and need a ledger of what we owe. Not staff, so not in Employee Master: they stay in Vehicle Master with Ownership "Hired · fixed rent" (saved as TRANSPORTER + a rent setup). One ledger per vehicle.
+- SQL `lwb_hired_vehicle_rent_setup.sql` (test `tests/hired-vehicle-rent`, PGlite, 4 tests). Head "Vehicle rent" (OUT). Tables (RPC only): `lwb_hired_vehicles` (rent_type MONTHLY / TRIP / ROUTE, monthly_rent, trip_rate, start_date, opening_balance, cut_expenses, active), `lwb_hired_routes` (name + rate per vehicle), `lwb_hired_charges` (MONTH / TRIP / EXTRA, amount, cancel kept).
+- Balance = opening + charges − Cash Out on the vehicle with head Vehicle rent − (if cut_expenses) every other Cash Out on that vehicle from the start date. `lwb_hired_post_months()` adds each month's rent on the 1st (first month for the days from the start date; a cancelled month is not added again); the Accounts page calls it once on open.
+- RPCs: `lwb_hired_save(vehicle, p)` (Admin / Manager; `{active:false}` = not hired any more, ledger kept), `lwb_hired_setups()`, `lwb_hired_list(from, to)`, `lwb_hired_ledger(vehicle, from, to)`, `lwb_hired_dispatch_days(vehicle, from, to)` (Transport Assignment days of the vehicle with trips already added), `lwb_hired_add(p)` (TRIP: trips × trip / route rate + extra; EXTRA: + or − with remark), `lwb_hired_cancel(id, note)`. Readers: Accounts / Admin / Manager.
+- UI: `fleet-master.html` vehicle popup: Ownership "Hired · fixed rent" (Admin / Manager) opens "How rent is counted" (Monthly fixed / Per trip / Per route + routes, start date, old balance, cut tick); list shows a Hired tag with the rate. `accounts-dashboard.html` Vehicles tab: "Own vehicle expenses | Hired vehicle rent" chips; hired cards (rent / paid / cut / to pay), Ledger popup (Date, Particulars, Amount, Balance, Cancel per rent line, Excel), "+ Trip" / "+ Extra" popup (tap a Transport Assignment day), Pay = Add entry Cash Out with the vehicle and head Vehicle rent.
+- Checked with a mocked database (this SQL on PGlite) at 390 / 1366 px: no side scroll, no JS errors; trip, extra and a new hired vehicle saved from the pages. Not yet checked on live data. Screenshots: project files `hired-vehicle-ledger/live/`.
+
 ## Admin marks a PO Loaded / Delivered by hand, temporary (5 Nov 2026)
 
 - Mohit: goods are delivered but the driver / Godown Manager often do not press Loaded / Delivered in the app, so the PO is stuck and Accounts cannot finish the bill. For now Admin may mark it.
