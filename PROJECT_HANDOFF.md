@@ -9,6 +9,7 @@
 - Mohit: Salesman, Sales Head and Admin need a "Share" on every created PO that gives a clean image for a WhatsApp group. Same card as before but the ORDER NO. row is removed and the colours are blue / white.
 - New `po-share.js` (LWBPoShare): `draw()` makes the card (Date, Customer, Transport, SKU / Qty / Rate / Amount, Total qty + pallets, Total amount, Weight); `open(client, orderId)` loads `orders` + `order_items` (approved qty if set, else ordered) and shows a popup with preview + Share (phone share sheet) / Copy image / Download.
 - Buttons: `my-sales.html#orders` card ("Share", not on cancelled), `warehouse-orders.html` list row and the Order Review popup footer (`#sharePoBtn`, next to Print PO; not on cancelled). `order-entry.html` image now uses the same card (no order no.), and its WhatsApp text no longer shows the order no. No SQL.
+- Same day, Mohit: no "Share" button / popup; only a small image icon. One tap = `LWBPoShare.quick()`: computer copies the PNG to the clipboard, phone (coarse pointer / Android / iPhone) downloads it; copy refused -> download. Icon (`LWBPoShare.ICON`) on PO list rows, Order Review popup (`#sharePoBtn`) and My Orders cards. `show()` popup is kept but not used.
 - Checked with a mocked database at 390 / 1366 px: no side scroll, no JS errors. Screenshots: project files `po-share-image/`.
 
 ## English only on every page (5 Nov 2026)

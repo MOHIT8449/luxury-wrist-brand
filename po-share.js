@@ -1,7 +1,9 @@
 /* LUXURY WRIST BRAND ERP — PO as a clean image for a WhatsApp group (no order no.).
    LWBPoShare.draw({date, party, trans, lines:[{sku,cases,pallet,rate,amount,weight}]}) -> canvas (blue / white)
    LWBPoShare.fromOrder(client, orderId) -> same object, loaded from orders + order_items
-   LWBPoShare.open(client, orderId) / LWBPoShare.show(data) -> popup with preview + Share / Copy / Download */
+   LWBPoShare.open(client, orderId) / LWBPoShare.show(data) -> popup with preview + Share / Copy / Download
+   LWBPoShare.quick(client, orderId) -> one tap: computer copies the image, phone downloads it (Mohit, 5 Nov)
+   LWBPoShare.ICON -> small image icon for the list / popup button */
 (function(){
   const NAVY="#0b3d91",BLUE="#dbe7fb",PALE="#f2f6fd",LINE="#8fa9d6",INK="#0f2347";
   const FONT=(b,sz)=>(b?"bold ":"")+sz+'px "Bahnschrift","Segoe UI","Arial Narrow",Arial,sans-serif';
@@ -115,5 +117,20 @@
   async function open(client,id){
     try{show(await fromOrder(client,id))}catch(e){say("Could not make the image: "+(e.message||e),"error")}
   }
-  window.LWBPoShare={draw,fromOrder,show,open,copy,download,share};
+  const phone=()=>{try{return matchMedia("(pointer:coarse)").matches||/Android|iPhone|iPad/i.test(navigator.userAgent)}catch(e){return false}};
+  let busy=false;
+  async function quick(client,id){
+    if(busy)return;busy=true;
+    try{
+      const d=await fromOrder(client,id);
+      if(!d.lines.length){say("This order has no SKU line to copy.","error");return}
+      const cv=draw(d),name=fileName(d);
+      if(phone()){await download(cv,name);say("Order image downloaded. Attach it in WhatsApp.");return}
+      try{await copy(cv);say("Order image copied. Paste it in the WhatsApp group (Ctrl+V).")}
+      catch(e){await download(cv,name);say("Copy is not allowed here, so the image was downloaded.")}
+    }catch(e){say("Could not make the image: "+(e.message||e),"error")}
+    finally{busy=false}
+  }
+  const ICON='<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-3px"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="M21 16l-5-5-9 9"/></svg>';
+  window.LWBPoShare={draw,fromOrder,show,open,quick,ICON,copy,download,share};
 })();
