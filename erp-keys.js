@@ -240,19 +240,42 @@
     return kids.length>=2&&kids.includes(el)?kids:[];
   }
 
+  // The list of keys (? popup and keyboard-shortcuts.html). Keys in one group are pressed together
+  // ("Ctrl+S"); groups are alternatives. COMMON works on every ERP page.
+  const COMMON=[
+    [["Enter"],"अगला खाना (next field) · आखिरी खाने पर Save बटन"],[["Shift+Enter"],"पिछला खाना"],
+    [["Tab","Shift+Tab"],"आगे / पीछे"],[["↑","↓"],"लिस्ट / टेबल की लाइन ऊपर-नीचे"],[["Enter","Space"],"लाइन या कार्ड खोलें"],[["↑","↓","Enter"],"नाम की लिस्ट (पार्टी / SKU) से चुनें"],
+    [["←","→"],"एक लाइन के बटन (Today, 7 Days, टैब)"],[["/","Ctrl+K"],"पेज की सर्च"],[["Alt+M"],"Module Search (कोई भी पेज खोलें)"],
+    [["Alt+N"],"+ New (नया)"],[["Ctrl+S","Alt+S"],"Save / Submit"],[["Alt+1…9"],"टैब 1 … 9"],
+    [["Alt+H"],"Dashboard"],[["Esc"],"पॉपअप बंद"],[["?","F1"],"शॉर्टकट की लिस्ट"]];
+  // Keys a page adds on top of COMMON (from the page's own code). r = only for these roles.
+  const PAGES={
+    "dashboard.html":[[["↑","↓","Enter"],"ऊपर की सर्च: पेज / पार्टी चुनकर खोलें"],[["Esc"],"सर्च खाली करें"]],
+    "order-entry.html":[[["↑","↓","Enter"],"पार्टी का नाम चुनें"],[["Enter"],"SKU लाइन में अगला खाना · आखिरी खाने पर नई SKU लाइन"],
+      [["Tab"],"Rate के बाद: नई SKU लाइन"],[["Enter"],"खाली आखिरी लाइन पर: Submit बटन"],[["Esc"],"Draft सेव (पॉपअप / लिस्ट खुली हो तो सिर्फ़ बंद)"]],
+    "goods-inward.html":[[["↓","Enter"],"SKU सर्च की लिस्ट खोलें"],[["↑","↓","Enter"],"SKU चुनें"],[["Enter"],"आखिरी लाइन के Amount पर: नई SKU लाइन"]],
+    "warehouse-orders.html":[[["↑","↓","Enter"],"SKU / PO की लिस्ट से चुनें"],[["Esc"],"लिस्ट बंद"]],
+    "bank-statement.html":[[["↓","Enter"],"सर्च से पहली एंट्री पर"],[["↑","↓"],"एंट्री ऊपर-नीचे"],[["Home","End"],"पहली / आखिरी एंट्री"],
+      [["PgUp","PgDn"],"10 एंट्री ऊपर / नीचे"],[["Enter"],"एंट्री Book करें",["admin"]],[["Space"],"एंट्री पर टिक",["admin"]],
+      [["Ctrl+A"],"सब एंट्री पर टिक",["admin"]],[["B"],"टिक वाली एंट्री: Book type चुनें",["admin"]],[["M"],"मिलती पार्टी / बिल (match) देखें",["admin"]]],
+    "accounts-dashboard.html":[[["↑","↓","Enter"],"एंट्री में पार्टी का नाम चुनें"]],
+    "party-billing.html":[[["Enter"],"बिल नंबर / रकम भरकर Enter = Save"]],
+    "complaint-box.html":[[["Enter","Space"],"शिकायत खोलें / बंद करें"]],
+    "tasks.html":[[["Enter","Space"],"टास्क खोलें / बंद करें"]]
+  };
+  const forRole=(rows,role)=>(rows||[]).filter(r=>!r[2]||!role||r[2].includes(role));
+  const keys=g=>g.map(k=>'<span class="lwbk-g">'+k.split("+").map(x=>"<kbd>"+x+"</kbd>").join("+")+'</span>').join(" ");
+  const table=rows=>'<table>'+rows.map(r=>'<tr><td>'+keys(r[0])+'</td><td>'+r[1]+'</td></tr>').join("")+'</table>';
+  const herePage=()=>(location.pathname.split("/").pop()||"dashboard.html");
+  const myRole=()=>{const s=D.querySelector(".erp-top .erp-user .who small");return s?s.textContent.trim().toLowerCase():""};
+
   function help(){
     if(D.getElementById("lwbk-help"))return;
-    // Each key group: "Ctrl+S" is pressed together, groups are alternatives.
-    const rows=[
-      [["Enter"],"अगला खाना (next field) · आखिरी खाने पर Save बटन"],[["Shift+Enter"],"पिछला खाना"],
-      [["Tab","Shift+Tab"],"आगे / पीछे"],[["↑","↓"],"लिस्ट / टेबल की लाइन ऊपर-नीचे"],[["Enter","Space"],"लाइन या कार्ड खोलें"],
-      [["←","→"],"एक लाइन के बटन (Today, 7 Days, टैब)"],[["/","Ctrl+K"],"पेज की सर्च"],[["Alt+M"],"Module Search"],
-      [["Alt+N"],"+ New (नया)"],[["Ctrl+S","Alt+S"],"Save / Submit"],[["Alt+1…9"],"टैब 1 … 9"],
-      [["Alt+H"],"Dashboard"],[["Esc"],"पॉपअप बंद"],[["?","F1"],"यह लिस्ट"]];
-    const keys=g=>g.map(k=>k.split("+").map(x=>"<kbd>"+x+"</kbd>").join("+")).join(" ");
+    const pg=forRole(PAGES[herePage()],myRole());
     const b=D.createElement("div");b.id="lwbk-help";b.className="lwbk-back";b.setAttribute("role","dialog");b.setAttribute("aria-label","Keyboard shortcuts");
-    b.innerHTML='<div class="lwbk-box"><div class="lwbk-hd"><b>⌨ Keyboard shortcuts</b><button type="button" class="lwbk-x" aria-label="Close">×</button></div><table>'+
-      rows.map(r=>'<tr><td>'+keys(r[0])+'</td><td>'+r[1]+'</td></tr>').join("")+'</table></div>';
+    b.innerHTML='<div class="lwbk-box"><div class="lwbk-hd"><b>⌨ Keyboard shortcuts</b><button type="button" class="lwbk-x" aria-label="Close">×</button></div>'+
+      (pg.length?'<div class="lwbk-sub">इस पेज के खास</div>'+table(pg)+'<div class="lwbk-sub">हर पेज पर</div>':'')+table(COMMON)+
+      (/keyboard-shortcuts\.html$/.test(location.pathname)?'':'<a class="lwbk-all" href="keyboard-shortcuts.html">आपके सभी पेज के शॉर्टकट देखें →</a>')+'</div>';
     const close=()=>b.remove();
     b.addEventListener("click",e=>{if(e.target===b||e.target.closest(".lwbk-x"))close()});
     b.addEventListener("keydown",e=>{if(e.key==="Escape"){e.preventDefault();e.stopPropagation();close()}});
@@ -365,6 +388,10 @@ tr[data-lwbk]:focus-visible{outline-offset:-2px}
 .lwbk-box td{padding:5px 4px;border-top:1px solid #eef0f1;vertical-align:top}
 .lwbk-box td:first-child{white-space:nowrap!important;width:1%;padding-right:10px}
 .lwbk-box td:last-child{white-space:normal!important;overflow-wrap:anywhere}
+.lwbk-g{display:inline-block;white-space:nowrap}
+.lwbk-sub{margin:8px 0 2px;font-size:11.5px;font-weight:700;color:#8a7430;text-transform:uppercase;letter-spacing:.4px}
+.lwbk-all{display:block;margin-top:8px;padding:8px;border-radius:8px;background:#f7f3e6;color:#0b2b30;font-weight:600;text-align:center;text-decoration:none}
+.lwbk-all:hover{background:#efe6c9}
 .lwbk-box kbd{display:inline-block;min-width:18px;padding:1px 6px;border:1px solid #cfd6d8;border-bottom-width:2px;border-radius:5px;background:#f7f9f9;font:600 12px/1.4 ui-monospace,Consolas,monospace;text-align:center}
 @media (pointer:coarse){.lwbk-tip{display:none!important}}
 .lwbk-tip{position:fixed;right:14px;bottom:14px;z-index:5500;background:#0b2b30;color:#fff;border-radius:10px;padding:8px 12px;font:13px/1.3 system-ui,sans-serif;box-shadow:0 8px 24px rgba(0,0,0,.2);display:flex;gap:10px;align-items:center}
@@ -391,5 +418,5 @@ tr[data-lwbk]:focus-visible{outline-offset:-2px}
     }
   }
   if(D.readyState==="loading")D.addEventListener("DOMContentLoaded",start);else start();
-  window.LWBKeys={help,scan:()=>scanClicky(D.body),next:el=>{const sc=scopeOf(el),fl=tabbables(sc,true);return fl[fl.indexOf(el)+1]||null}};
+  window.LWBKeys={help,COMMON,PAGES,forRole,keysHtml:keys,scan:()=>scanClicky(D.body),next:el=>{const sc=scopeOf(el),fl=tabbables(sc,true);return fl[fl.indexOf(el)+1]||null}};
 })();

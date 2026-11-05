@@ -62,6 +62,7 @@
     phone:'<path d="M5 3h4l2 5-3 2a11 11 0 0 0 6 6l2-3 5 2v4a2 2 0 0 1-2 2A17 17 0 0 1 3 5a2 2 0 0 1 2-2z"/>',
     chat:'<path d="M4 5h16v11H9l-5 4z"/><path d="M8 9h8M8 12h5"/>',
     megaphone:'<path d="M3 11v2a1 1 0 0 0 1 1h2l5 4V6L6 10H4a1 1 0 0 0-1 1z"/><path d="M15 9a4 4 0 0 1 0 6M18 6a8 8 0 0 1 0 12"/>',
+    keyboard:'<rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M6 14h.01M18 14h.01M9 14h6"/>',
     lock:'<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>'
   };
   const svg=(name)=>'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">'+(ICON[name]||ICON.box)+'</svg>';
@@ -70,7 +71,9 @@
   const MENU=[
     {group:"",items:[{t:"Dashboard",h:"dashboard.html",i:"home",r:"*"},
       {t:"Tasks",h:"tasks.html",i:"check",r:"*"},
-      {t:"Complaint Box",h:"complaint-box.html",i:"chat",r:"*"}]},
+      {t:"Complaint Box",h:"complaint-box.html",i:"chat",r:"*"},
+      // Keyboard Shortcuts (Mohit, 5 Nov 2026): every role sees the keys of the pages it can open.
+      {t:"Keyboard Shortcuts",h:"keyboard-shortcuts.html",i:"keyboard",r:"*",k:"keyboard shortcut keys help hotkey"}]},
     {group:"Sales",items:[
       // One "PO / Sales" item (Mohit, 4 Nov 2026): the list, with "+ New PO" on top of it. New PO itself
       // (order-entry.html) is not drawn in the side menu (nm) but stays in search, Manage Users and the
@@ -344,7 +347,7 @@
       '<div class="erp-crumb" aria-label="Breadcrumb">'+(group?'<a class="mid" href="dashboard.html" style="text-decoration:none">'+esc(group)+'</a><span>/</span>':'')+'<b>'+esc(title)+'</b></div>'+
       '<div class="erp-search"><input type="search" placeholder="Module Search" aria-label="Module Search">'+
       '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg><div class="erp-results"></div></div>'+
-      '<div class="erp-user"><div class="who"><b>'+esc(opts.name||"User")+'</b><small>'+esc(role.toUpperCase())+'</small></div>'+
+      '<div class="erp-user"><button class="erp-keys-btn" type="button" aria-label="Keyboard shortcuts" title="Keyboard shortcuts (?)">'+svg("keyboard")+'</button><div class="who"><b>'+esc(opts.name||"User")+'</b><small>'+esc(role.toUpperCase())+'</small></div>'+
       '<div class="erp-avatar">'+esc((opts.name||"U").trim().charAt(0).toUpperCase())+'</div>'+
       '<button class="erp-logout" type="button">Logout</button></div>';
 
@@ -394,6 +397,7 @@
     shade.onclick=closeSide;
     document.addEventListener("keydown",e=>{if(e.key==="Escape" && document.body.classList.contains("side-open")){closeSide();top.querySelector(".erp-burger").focus()}});
     side.addEventListener("click",e=>{if(e.target.closest("a"))closeSide()});
+    top.querySelector(".erp-keys-btn").onclick=()=>{if(window.LWBKeys&&LWBKeys.help)LWBKeys.help();else location.href="keyboard-shortcuts.html"};
     top.querySelector(".erp-logout").onclick=opts.onLogout||(()=>{location.href="login.html"});
     if(role)unlockSetting(top.querySelector(".erp-avatar"));
 
