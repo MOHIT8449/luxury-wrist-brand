@@ -58,6 +58,17 @@
     .rent-row button,.rent-add{height:38px;border:1px solid var(--erp-line);border-radius:6px;background:#fff;color:var(--erp-ink);font:inherit;font-weight:600;cursor:pointer}
     .rent-add{padding:0 12px;font-size:14px}
     .rent-box .fm-grid{gap:8px 12px}
+    .rt-cnt{display:inline-block;min-width:20px;padding:0 6px;border-radius:99px;background:#fdecef;color:#b3122b;font-size:12px;font-weight:800;text-align:center;margin-left:4px}
+    .rt-h{display:flex;align-items:center;gap:8px;margin:4px 0 8px;font-size:15px}.rt-h:not(:first-child){margin-top:14px}
+    .rt-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:8px}
+    .rt-c{border:1px solid var(--erp-line);border-radius:10px;padding:9px 11px;display:flex;flex-direction:column;gap:6px}
+    .rt-c.need{background:#fff8e8;border-color:#f1d391}
+    .rt-c small{display:block;color:var(--erp-muted);font-size:12.5px}.rt-c .p{font-weight:800;font-size:14px}
+    .rt-c .bk{color:#9e2525;font-size:12.5px;font-weight:600}
+    .rt-row{display:flex;gap:6px;align-items:center}.rt-row input{flex:1;min-width:0;height:38px;border:1.5px solid var(--erp-line);border-radius:6px;padding:0 10px;font:inherit;font-size:15px}
+    .rt-row button{height:38px;border-radius:6px;padding:0 12px;font:inherit;font-size:14px;font-weight:700;cursor:pointer;border:1px solid var(--erp-line);background:#fff;color:var(--erp-ink);white-space:nowrap}
+    .rt-row button.go{background:#13824a;border-color:#13824a;color:#fff}.rt-row button.bk{color:#b3122b;border-color:#e7b3bd}
+    .rt-v{display:flex;justify-content:space-between;gap:8px;font-size:14px;padding:6px 0;border-bottom:1px solid var(--erp-line)}.rt-v:last-child{border:0}.rt-v small{color:var(--erp-muted);font-size:12px}
     .rent-chk{display:flex;gap:8px;align-items:flex-start;font-size:14px;margin-top:8px}.rent-chk input{width:18px;height:18px;margin:1px 0 0;flex:none}
     @media(max-width:640px){
       .fm-sub{display:none}
@@ -79,6 +90,7 @@
       <a class="erp-pill" data-tab="vehicles" href="#vehicles">Vehicle Master</a>
       <a class="erp-pill" data-tab="employees" href="#employees" id="empPill" hidden>Employee Master</a>
       <a class="erp-pill" data-tab="drivers" href="#drivers" id="drvPill" hidden>Drivers</a>
+      <a class="erp-pill" data-tab="rates" href="#rates" id="ratePill" hidden>Trip rent to set <span class="rt-cnt" id="rateCnt" hidden></span></a>
     </div>
     <div id="setupMsg" class="erp-card" style="padding:16px;margin-bottom:14px;color:#9b2020;background:#ffebeb" hidden></div>
 
@@ -97,7 +109,8 @@
       <div class="erp-card-body" style="padding:16px" id="xlPanel"></div>
     </section>
 
-    <section class="erp-card" style="margin-top:14px">
+    <section class="erp-card" id="rateCard" hidden><div class="erp-card-body" style="padding:12px 14px" id="rateBody"></div></section>
+    <section class="erp-card" style="margin-top:14px" id="listCard">
       <div class="erp-card-head"><h2 id="listTitle"></h2>
         <div class="fm-tools" id="listTools"><input id="search" type="search" placeholder="Search"><select id="roleFilter" hidden><option value="">All Work / Post</option></select><select id="filter"><option value="active">Active</option><option value="inactive">Inactive</option><option value="all">All</option><option value="nodocs">Documents missing</option></select><button type="button" class="fm-btn light" id="xlBtn">⬇⬆ Excel</button></div></div>
       <div class="erp-scroll" style="overflow:auto"><table class="fm-table"><thead id="head"></thead><tbody id="list"></tbody></table></div>
@@ -150,6 +163,7 @@
           {k:"is_active",l:"Status",opts:[["true","Active"],["false","Inactive"]]},
           {k:"note",l:"Note",wide:1}]},
       // Read-only list for Transport: drivers come from Employee Master (Work / Post = Driver).
+      rates:{ro:1,title:"Trip rent to set",one:"Trip rent",fields:[],sub:"Per party vehicles: the first trip to a new party waits here. Manager enters the rent, Admin verifies; next trips to that party add by themselves."},
       drivers:{ro:1,title:"Drivers",one:"Driver",fields:[],
         sub:"Drivers come from Employee Master (Work / Post = Driver)."},
       employees:{rpc:1,title:"Employee Master",one:"Employee",
@@ -173,8 +187,8 @@
 
     let docPanel=null,docKey="",docSum={vehicles:null,drivers:null,employees:null},avatars=new Map();
     const DOC_ENTITY={vehicles:"VEHICLE",drivers:"STAFF",employees:"STAFF"};
-    let hiredOf=new Map(),hiredOk=false,rentSt=null;
-    let me=null,tab="vehicles",data={vehicles:[],drivers:[],employees:[]},empNext="",empMonth="",empErr="",editing=null,busy=false,loginPhones=new Set(),missing=false,tripOf=new Map(),loginOf=new Map(),loginErr=false;
+    let hiredOf=new Map(),hiredOk=false,rentSt=null,RL=null;
+    let me=null,tab="vehicles",data={vehicles:[],drivers:[],employees:[],rates:[]},empNext="",empMonth="",empErr="",editing=null,busy=false,loginPhones=new Set(),missing=false,tripOf=new Map(),loginOf=new Map(),loginErr=false;
     // Vehicles: Admin / Manager add, edit, delete; Godown (warehouse) add / edit.
     // Employee Master (drivers too): Admin / Manager / Godown add and edit; nobody deletes (mark Left).
     // Drivers tab: read-only list for Transport.
@@ -204,6 +218,7 @@
       // Rent setups of hired vehicles: Admin / Manager only (money)
       const hs=head()?await client.rpc("lwb_hired_setups"):{error:true};
       hiredOk=!hs.error;hiredOf=new Map(hiredOk?(hs.data||[]).map(x=>[x.vehicle_id,x]):[]);
+      const rl=hiredOk?await client.rpc("lwb_hired_rate_list"):{error:true};RL=rl.error?null:rl.data;
       loginErr=!!lk.error;loginOf=new Map(((lk&&lk.data)||[]).map(x=>[x.id,x]));
       tripOf=new Map(((vp&&vp.data)||[]).filter(x=>x.on_trip&&x.on_trip.length).map(x=>[x.id,x.on_trip]));
       empErr=e.error?"Employee Master is not set up in Supabase yet ("+(e.error.message||"")+").":"";
@@ -271,8 +286,8 @@
       el("formHint").textContent=!can()?"Only Admin / Manager / Godown can make changes. You can view the list.":editing?"Make your changes, then click Save.":"";
     }
     // Hired vehicle: rent box under the form (Ownership = Hired · fixed rent). Admin / Manager only.
-    const RENT_TYPES=[["MONTHLY","Monthly fixed"],["TRIP","Per trip"],["ROUTE","Per route"]];
-    const rentText=h=>!h?"":h.rent_type==="MONTHLY"?rs(h.monthly_rent)+" / month":h.rent_type==="TRIP"?rs(h.trip_rate)+" / trip":(h.routes||[]).map(r=>r.name+" "+rs(r.rate)).join(" · ")||"Per route";
+    const RENT_TYPES=[["MONTHLY","Monthly"],["TRIP","Per trip"],["ROUTE","Per route"],["PARTY","Per party"]];
+    const rentText=h=>!h?"":h.rent_type==="MONTHLY"?rs(h.monthly_rent)+" / month":h.rent_type==="TRIP"?rs(h.trip_rate)+" / trip":h.rent_type==="PARTY"?"Per party · "+(h.party_rates||[]).filter(r=>!r.status||r.status==="VERIFIED").length+" rates":(h.routes||[]).map(r=>r.name+" "+rs(r.rate)).join(" · ")||"Per route";
     function mountRent(){
       const box=el("rentBox"),own=el("f_ownership");
       if(!hiredOk||!own){box.hidden=true;box.innerHTML="";rentSt=null;return}
@@ -285,9 +300,11 @@
         '<div data-rk="TRIP"><label for="rTrip">Rent for one trip ₹ *</label>'+num("rTrip",h&&Number(h.trip_rate)||"")+'</div>'+
         '<div><label for="rStart">Rent start date *</label><input id="rStart" type="date" value="'+esc(h?h.start_date:today())+'"'+(off?" disabled":"")+'></div>'+
         '<div><label for="rOpen">Old balance ₹ (still to pay)</label><input id="rOpen" type="number" step="any" inputmode="decimal" value="'+esc(h?Number(h.opening_balance):0)+'"'+(off?" disabled":"")+'></div></div>'+
+        '<div data-rk="PARTY" style="margin-top:8px">'+((h&&h.party_rates||[]).length?(h.party_rates.map(r=>'<div class="rt-v"><span>'+esc(r.name)+'</span><span><b>'+rs(r.rate)+'</b> '+(r.status==="VERIFIED"?'<span class="tagx ok">✓</span>':r.status==="WAITING"?'<span class="tagx warn">Waiting Admin</span>':'<span class="tagx bad">Sent back</span>')+'</span></div>').join("")):"")+
+          '<div class="fm-hint" style="font-size:13px">A trip to a new party goes to "Trip rent to set": Manager enters the rent, Admin verifies; after that it adds by itself.</div></div>'+
         '<div data-rk="ROUTE" style="margin-top:8px"><div id="rRoutes"></div><button type="button" class="rent-add" id="rAddRoute"'+(off?" disabled":"")+'>+ Route</button></div>'+
         '<label class="rent-chk"><input type="checkbox" id="rCut"'+(!h||h.cut_expenses?" checked":"")+(off?" disabled":"")+'> Diesel / advance we give this vehicle (Cash Out) is cut from the rent</label>'+
-        '<div class="fm-hint" style="margin-top:6px;font-size:13px">Per trip / route: an order assigned to this vehicle adds that day\'s trip by itself. Ledger and payment: Accounts Dashboard → Vehicles → Hired vehicle rent.</div>';
+        '<div class="fm-hint" style="margin-top:6px;font-size:13px">Per trip / route / party: an order assigned to this vehicle adds that day\'s trip by itself. Ledger and payment: Accounts Dashboard → Vehicles → Hired vehicle rent.</div>';
       const routes=()=>{el("rRoutes").innerHTML=rentSt.routes.map((r,i)=>'<div class="rent-row"><input data-rn="'+i+'" placeholder="Route, e.g. Rajkot to Gondal" maxlength="60" value="'+esc(r.name)+'"'+(off?" disabled":"")+'><input data-rr="'+i+'" type="number" min="0" step="any" inputmode="decimal" placeholder="₹ / trip" value="'+esc(r.rate)+'"'+(off?" disabled":"")+'><button type="button" data-rx="'+i+'" aria-label="Remove route"'+(off?" disabled":"")+'>✕</button></div>').join("")};
       const sync=()=>{box.hidden=own.value!=="HIRED";
         box.querySelectorAll("[data-rt]").forEach(b=>b.setAttribute("aria-pressed",String(b.dataset.rt===rentSt.type)));
@@ -366,7 +383,7 @@
         if(docPanel.busy()){ERPShell.toast("Upload in progress, please wait.","error");return}
       }
       if(!await confirm((editing?"UPDATE ":"ADD ")+K.one+"?\n\n"+(K.rpc?(o.emp_code||(editing?editing.emp_code:"New ID "+empNext))+" · "+o.name+" · "+o.designation+" · "+rs(o.monthly_salary)+"/month":o.vehicle_no+
-        (rent?"\nHired · "+rentText(rent)+" · from "+showDate(rent.start_date):wasHired?"\nNot hired on rent any more (ledger is kept)":""))))return;
+        (rent?"\nHired · "+rentText({...rent,party_rates:(hiredOf.get(editing&&editing.id)||{}).party_rates})+" · from "+showDate(rent.start_date):wasHired?"\nNot hired on rent any more (ledger is kept)":""))))return;
       busy=true;fillForm();let saved=false;
       try{
         let msg=K.one+" saved.",newId=editing?editing.id:null;
@@ -450,6 +467,34 @@
       const sum=docSum[tab],noPhoto=sum&&tab!=="vehicles"?data[tab].filter(r=>r.is_active&&ERPDocs.missingOf(DOC_ENTITY[tab],sum.get(String(r.id))||new Set()).length).length:0;
       el("listTitle").textContent=KIND[tab].one+" List ("+rows.length+" / "+data[tab].length+")"+(noPhoto?" · "+noPhoto+" with documents missing":"");
     }
+    // Trip rent to set: per party vehicles' first trips to a new party (lwb_hired_party_rate_setup.sql).
+    function renderRates(){
+      const G=RL.groups||[],need=G.filter(g=>g.status!=="WAITING"),wait=G.filter(g=>g.status==="WAITING"),ver=(RL.rates||[]).filter(r=>r.status==="VERIFIED"),adm=RL.is_admin;
+      const days=g=>g.days+" trip day"+(Number(g.days)===1?"":"s")+" · "+(g.first_date===g.last_date?showDate(g.first_date):showDate(g.first_date)+" – "+showDate(g.last_date));
+      const head=(g,cls)=>'<div class="rt-c '+cls+'"><div><b>🚚 '+esc(g.no)+'</b>'+(g.owner?' · '+esc(g.owner):"")+'<div class="p">'+esc(g.party)+'</div><small>'+days(g)+(g.orders&&g.orders.length?' · '+esc(g.orders.join(", ")):"")+'</small>';
+      el("rateBody").innerHTML=
+        '<div class="rt-h"><b>Rate needed</b><span class="rt-cnt">'+need.length+'</span></div>'+
+        (need.length?'<div class="rt-list">'+need.map((g,i)=>head(g,"need")+(g.status==="SENT_BACK"?'<div class="bk">Sent back by Admin: '+esc(g.note||"")+'</div>':"")+'</div>'+
+          '<div class="rt-row"><input type="number" min="0" step="any" inputmode="decimal" placeholder="₹ rent for one trip" data-rin="n'+i+'" value="'+(g.rate?Number(g.rate):"")+'"><button type="button" class="go" data-rset="'+i+'">'+(adm?"Save &amp; verify":"Send to Admin")+'</button></div></div>').join("")+'</div>'
+          :'<p class="fm-hint">Nothing waiting. A per party vehicle\'s first trip to a new party comes here.</p>')+
+        '<div class="rt-h"><b>Waiting for Admin</b><span class="rt-cnt">'+wait.length+'</span></div>'+
+        (wait.length?'<div class="rt-list">'+wait.map((g,i)=>head(g,"")+'<small>'+rs(g.rate)+' per trip · by '+esc(g.set_by_name||"-")+'</small></div>'+
+          (adm?'<div class="rt-row"><input type="number" min="0" step="any" inputmode="decimal" data-rin="w'+i+'" value="'+Number(g.rate)+'" aria-label="Rent"><button type="button" class="bk" data-rback="'+i+'">Send back</button><button type="button" class="go" data-rok="'+i+'">✓ Verify</button></div>'
+            :'<span class="tagx warn" style="align-self:flex-start">Waiting for Admin</span>')+'</div>').join("")+'</div>':'<p class="fm-hint">None.</p>')+
+        '<div class="rt-h"><b>Verified party rates</b><span class="rt-cnt" style="background:#e4f6e9;color:#0d6b36">'+ver.length+'</span></div>'+
+        (ver.length?'<div>'+ver.map(r=>'<div class="rt-v"><span><b>'+esc(r.no)+'</b> → '+esc(r.party)+'<small> · '+esc(r.verified_by_name||"")+(r.verified_at?" "+showDate(String(r.verified_at).slice(0,10)):"")+'</small></span><b>'+rs(r.rate)+'</b></div>').join("")+'</div>':'<p class="fm-hint">None yet.</p>');
+      const val=k=>{const x=el("rateBody").querySelector('[data-rin="'+k+'"]');return x?Number(x.value):NaN};
+      const run=async(b,fn,ok)=>{b.disabled=true;try{const r=await fn();if(r.error)throw r.error;ERPShell.toast(ok,"success");await load();render()}catch(e){ERPShell.toast(String(e.message||e).replace(/^.*?ERROR:\s*/,""),"error");b.disabled=false}};
+      el("rateBody").querySelectorAll("[data-rset]").forEach(b=>b.onclick=()=>{const g=need[+b.dataset.rset],r=val("n"+b.dataset.rset);
+        if(!(r>0)){ERPShell.toast("Enter the rent for one trip.","error");return}
+        run(b,()=>client.rpc("lwb_hired_rate_set",{p_vehicle:g.vehicle_id,p_party:g.party,p_rate:r,p_note:null}),adm?"Verified: "+g.party+" "+rs(r):"Sent to Admin: "+g.party+" "+rs(r))});
+      el("rateBody").querySelectorAll("[data-rok]").forEach(b=>b.onclick=()=>{const g=wait[+b.dataset.rok],r=val("w"+b.dataset.rok);
+        if(!(r>0)){ERPShell.toast("Check the rent.","error");return}
+        run(b,()=>client.rpc("lwb_hired_rate_verify",{p_rate_id:g.rate_id,p_ok:true,p_rate:r,p_note:null}),"Verified: "+g.party+" "+rs(r))});
+      el("rateBody").querySelectorAll("[data-rback]").forEach(b=>b.onclick=async()=>{const g=wait[+b.dataset.rback];
+        const why=await prompt("Send back "+g.no+" → "+g.party+" ("+rs(g.rate)+")? Write why:","");if(why==null)return;
+        run(b,()=>client.rpc("lwb_hired_rate_verify",{p_rate_id:g.rate_id,p_ok:false,p_rate:null,p_note:why}),"Sent back")});
+    }
     function render(){
       const K=KIND[tab];
       el("pageTitle").textContent=K.title;el("pageSub").textContent=K.sub;document.title=K.title+" | Luxury Wrist Brand ERP";
@@ -457,6 +502,9 @@
       el("empPill").hidden=!empRole();el("drvPill").hidden=empRole()||me.role!=="transport";
       el("formCard").hidden=!!K.ro;el("xlCard").hidden=!!K.ro||!xlOpen;el("xlBtn").hidden=!!K.ro;const nb=document.querySelector("#listTools .mp-new");if(nb)nb.textContent="+ New "+K.one;el("roleFilter").hidden=tab!=="employees";el("setupMsg").hidden=tab==="employees"?!empErr:!missing;if(tab==="employees"&&empErr)el("setupMsg").textContent=empErr;
       const crumb=document.querySelector(".erp-crumb b");if(crumb)crumb.textContent=K.title;
+      el("ratePill").hidden=!RL;el("listCard").hidden=tab==="rates";el("rateCard").hidden=tab!=="rates";
+      const rn=RL?RL.groups.filter(g=>RL.is_admin||g.status!=="WAITING").length:0;el("rateCnt").hidden=!rn;el("rateCnt").textContent=rn;
+      if(tab==="rates")renderRates();
       document.querySelectorAll(".erp-link").forEach(a=>a.classList.toggle("active",a.getAttribute("href")==="fleet-master.html#"+tab));
       fillForm();renderList();
     }
@@ -575,7 +623,7 @@
     // #drivers (old Driver Master link): Employee Master showing drivers; Transport gets the read-only list.
     function setTab(){let t=location.hash.replace("#","");
       if(t==="drivers"&&empRole()){t="employees";el("roleFilter").value="driver"}
-      tab=KIND[t]&&(t!=="employees"||empRole())&&(t!=="drivers"||me.role==="transport")?t:"vehicles";editing=null;docKey="";mountXl();render();loadAvatars()}
+      tab=KIND[t]&&(t!=="employees"||empRole())&&(t!=="drivers"||me.role==="transport")&&(t!=="rates"||!!RL)?t:"vehicles";editing=null;docKey="";mountXl();render();loadAvatars()}
     document.addEventListener("click",e=>{
       const t=e.target;
       if(t.dataset.edit){editing=data[tab].find(x=>String(x.id)===t.dataset.edit)||null;docKey="";render();if(window.MP)MP.open();else el("formCard").scrollIntoView({behavior:"smooth"});return}
