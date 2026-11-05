@@ -4,6 +4,13 @@
 **Purpose:** Continue the same ERP project from a new ChatGPT conversation without restarting or losing the agreed requirements.
 **Status:** Active development / verification. Do not assume all modules are completed or fully tested.
 
+## PO image for WhatsApp, no order no. (5 Nov 2026)
+
+- Mohit: Salesman, Sales Head and Admin need a "Share" on every created PO that gives a clean image for a WhatsApp group. Same card as before but the ORDER NO. row is removed and the colours are blue / white.
+- New `po-share.js` (LWBPoShare): `draw()` makes the card (Date, Customer, Transport, SKU / Qty / Rate / Amount, Total qty + pallets, Total amount, Weight); `open(client, orderId)` loads `orders` + `order_items` (approved qty if set, else ordered) and shows a popup with preview + Share (phone share sheet) / Copy image / Download.
+- Buttons: `my-sales.html#orders` card ("Share", not on cancelled), `warehouse-orders.html` list row ("Share", not on cancelled). `order-entry.html` image now uses the same card (no order no.), and its WhatsApp text no longer shows the order no. No SQL.
+- Checked with a mocked database at 390 / 1366 px: no side scroll, no JS errors. Screenshots: project files `po-share-image/`.
+
 ## English only on every page (5 Nov 2026)
 
 - Mohit: no Hindi word anywhere on the website / app; simple English only. Rule for all new work too.
