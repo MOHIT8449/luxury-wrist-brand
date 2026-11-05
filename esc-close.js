@@ -61,13 +61,13 @@
     for(const p of popups()){p.z=zPath(p.el);if(!best||above(p,best))best=p}
     return best;
   }
-  const CLOSE_TXT=/^(×|✕|✖|✗|╳|x|close|cancel|back|← ?back|बंद|बंद करें|रद्द|रद्द करें|वापस)$/i;
+  const CLOSE_TXT=/^(×|✕|✖|✗|╳|x|close|cancel|back|← ?back)$/i;
   function closeButton(root){
     const all=[...root.querySelectorAll("button,a,[role=button],input[type=button],.close,.x")].filter(b=>shown(b)&&!b.disabled);
     const txt=b=>String(b.value||b.textContent||"").replace(/[‍️]/g,"").replace(/\s+/g," ").trim();
     const lab=b=>((b.getAttribute("aria-label")||"")+" "+(b.title||"")).toLowerCase();
     return all.find(b=>b.hasAttribute("data-close")||b.hasAttribute("data-dismiss"))
-      ||all.find(b=>/^(×|✕|✖|✗|╳|x)$/i.test(txt(b))||/(^|\s)(close|बंद)/.test(lab(b)))
+      ||all.find(b=>/^(×|✕|✖|✗|╳|x)$/i.test(txt(b))||/(^|\s)(close)/.test(lab(b)))
       ||all.find(b=>/(^|[-_ ])(close|btn-close|x-close|closebtn)([-_ ]|$)/i.test(names(b)))
       ||all.find(b=>CLOSE_TXT.test(txt(b))||(txt(b).length<=18&&/^(✕|✖|×)?\s*(close|cancel)\b/i.test(txt(b))));
   }

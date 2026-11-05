@@ -4,6 +4,13 @@
 **Purpose:** Continue the same ERP project from a new ChatGPT conversation without restarting or losing the agreed requirements.
 **Status:** Active development / verification. Do not assume all modules are completed or fully tested.
 
+## English only on every page (5 Nov 2026)
+
+- Mohit: no Hindi word anywhere on the website / app; simple English only. Rule for all new work too.
+- Hindi script text replaced (party payment popup, party due box + PO confirm, Billing & Outstanding brand pick). Hinglish words replaced: upad -> advance (Staff ledger, Employee Master, Accounts reset), udhari -> credit (Company / Brand, dashboards), kasar -> Discount (Cashbook), "Khud bharunga" -> "Manual (I will enter rates)" (PO rate slab), "Chhota Hathi" -> "Mini truck" (vehicle type list), "Shuru" -> "Start" (PO Maker). Data keys (UPAD, kasar, month_upad) are unchanged.
+- Server error "Upad already taken" is shown as "Advance already taken" by the Accounts page (SQL not re-run on purpose). `lwb_english_labels_setup.sql` renames the head "Driver bhatta / food" to "Driver allowance / food".
+- Kept: Indian business words that are normal English here (Godown, Challan, Paise, Lakh), people / party / company names, hidden search keywords in the menu.
+
 ## Return goods into stock + party credit limit on PO (5 Nov 2026)
 
 - Same day, Mohit: Damage, Leakage and Breakage are one return option ("Damage / Leakage / Breakage (OLN)", claim). Driver return entry (driver-delivery.html) offers only that + Gasless + Low fill (saved as DAMAGE; old LEAKAGE / BREAKAGE rows show the same label). Receive popup places: Saleable | Damage / Leakage / Breakage (OLN) -> DAMAGE | Gasless | Expiry; `lwb_return_default_bucket` sends Leakage / Breakage to DAMAGE. Stock Transfer categories are unchanged.

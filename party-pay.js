@@ -154,7 +154,7 @@
 <div class="bd">
  <div style="position:relative" data-pbox><label class="l" for="lppP">Party (main party or any name it is billed in)</label>
   <input id="lppP" autocomplete="off" placeholder="Type party name" role="combobox" aria-expanded="false"><div class="clist" hidden></div></div>
- <div data-brand hidden><label class="l">Payment किस brand का है? <span style="color:#b3122b">*</span></label><div class="bpk" data-bpk></div></div>
+ <div data-brand hidden><label class="l">Which brand is this payment for? <span style="color:#b3122b">*</span></label><div class="bpk" data-bpk></div></div>
  <div class="sum" data-sum></div>
  <p class="hint" data-nob hidden></p>
  <div data-money>
@@ -195,11 +195,11 @@
       const w=whole();
       q("[data-bpk]").className="bpk"+(brand?"":" need");
       q("[data-bpk]").innerHTML=BR.map(c=>{const b=slice(w,c.id),n=r2(b.net);
-        return `<button type="button" data-b="${esc(c.id)}" aria-pressed="${c.id===brand}" style="--bc:${esc(c.color||"#2362a4")}"><b><i></i>${esc(c.name)}</b><small>${n>0.5?"बाकी "+rs(n):n<-0.5?"advance "+rs(-n):"कुछ बाकी नहीं"}${b.bills.length?" · "+b.bills.length+" bill"+(b.bills.length>1?"s":""):""}</small></button>`}).join("");
+        return `<button type="button" data-b="${esc(c.id)}" aria-pressed="${c.id===brand}" style="--bc:${esc(c.color||"#2362a4")}"><b><i></i>${esc(c.name)}</b><small>${n>0.5?"Due "+rs(n):n<-0.5?"advance "+rs(-n):"Nothing due"}${b.bills.length?" · "+b.bills.length+" bill"+(b.bills.length>1?"s":""):""}</small></button>`}).join("");
       q("[data-bpk]").querySelectorAll("[data-b]").forEach(b=>b.onclick=()=>{brand=b.dataset.b;manual=new Map();drawAll()});
       const nb=slice(w,""),nob=q("[data-nob]"),m=r2(nb.advance),ob=r2(nb.opening);
       nob.hidden=!(Math.abs(m)>0.5||Math.abs(ob)>0.5);
-      nob.textContent="बिना brand का पुराना पैसा: "+[Math.abs(m)>0.5?"payment "+rs(m):"",Math.abs(ob)>0.5?"opening "+rs(ob):""].filter(Boolean).join(" · ")+". उसे Billing & Outstanding > Payments / Party Ledger में brand दें।";
+      nob.textContent="Old money with no brand: "+[Math.abs(m)>0.5?"payment "+rs(m):"",Math.abs(ob)>0.5?"opening "+rs(ob):""].filter(Boolean).join(" · ")+". Set its brand in Billing & Outstanding > Payments / Party Ledger.";
       q("[data-ok]").textContent=(adjust?"Save adjustment":"Save "+(bname()?bname()+" ":"")+"payment");
     }
     const money=()=>adjust?P().advance:r2(qa(".amt").reduce((a,i)=>a+num(i.value),0));
@@ -223,7 +223,7 @@
     function drawBills(){
       const p=P(),pl=plan(),box=q("[data-bills]");
       if(!party){box.innerHTML='<p class="hint">Choose the party to see its bills.</p>';return}
-      if(BR.length&&!brand){box.innerHTML='<p class="hint">ऊपर brand चुनें: उसी brand के bill दिखेंगे।</p>';return}
+      if(BR.length&&!brand){box.innerHTML='<p class="hint">Pick the brand above to see its bills.</p>';return}
       if(!p.bills.length){box.innerHTML='<p class="hint">No '+(bname()?bname()+" ":"")+'bill is due for this party'+(adjust?".":" — the money stays as advance and is adjusted when the next bill is made.")+'</p>';return}
       box.innerHTML=`<div style="overflow:auto;max-height:300px"><table><thead><tr><th>${bname()?esc(bname())+" bill":"PO / bill"}</th><th class="n">Due</th><th class="n">${how==="pick"?"Take now":"Goes to bill"}</th></tr></thead><tbody>${p.bills.map(b=>{
         const v=pl.get(b.order_id)||0;
@@ -264,7 +264,7 @@
       if(busy)return;const err=q("[data-err]");err.hidden=true;
       const fail=t=>{err.textContent=t;err.hidden=false;err.scrollIntoView({block:"nearest"})};
       if(!party)return fail("Choose the party.");
-      if(BR.length&&!brand)return fail("Brand चुनें: यह payment Rajnigandha का है या Coca-Cola का?");
+      if(BR.length&&!brand)return fail("Pick the brand: is this payment for Rajnigandha or Coca-Cola?");
       const pl=plan(),allocs=[...pl].filter(([,v])=>v>0).map(([id,v])=>({order_id:id,amount:r2(v)}));
       const split=allocs.reduce((a,x)=>a+x.amount,0);
       let args;

@@ -31,8 +31,8 @@
   function line(r,withName){
     const p=[];
     if(withName&&r.company)p.push("<b>"+r.company.name+"</b>");
-    p.push("बाकी <b"+(r.over_limit?' class="r"':"")+">"+rs(r.balance)+"</b>"+(r.credit_limit?" / limit "+rs(r.credit_limit):""));
-    if(r.oldest_days!=null)p.push("पुराना bill <b"+(r.over_days?' class="r"':"")+">"+r.oldest_days+" दिन</b>"+(r.credit_days?" (credit "+r.credit_days+" दिन)":""));
+    p.push("Due <b"+(r.over_limit?' class="r"':"")+">"+rs(r.balance)+"</b>"+(r.credit_limit?" / limit "+rs(r.credit_limit):""));
+    if(r.oldest_days!=null)p.push("Oldest bill <b"+(r.over_days?' class="r"':"")+">"+r.oldest_days+" days</b>"+(r.credit_days?" (credit "+r.credit_days+" days)":""));
     return '<div class="ln">'+p.map(x=>"<span>"+x+"</span>").join("")+"</div>";
   }
   function box(rows){
@@ -41,12 +41,12 @@
     if(!rows.length)return null;
     const b=bad(rows).length;
     const el=document.createElement("div");el.className="lwb-cr"+(b?"":" ok");el.setAttribute("role","status");
-    el.innerHTML='<div class="h">'+(b?"⚠ इस party का पैसा बाकी है":"Party का बाकी")+"</div>"+rows.map(r=>line(r,rows.length>1||!!r.company)).join("");
+    el.innerHTML='<div class="h">'+(b?"⚠ This party has money due":"Party due")+"</div>"+rows.map(r=>line(r,rows.length>1||!!r.company)).join("");
     return el;
   }
   function text(rows){
-    return bad(rows).map(r=>(r.company?r.company.name+": ":"")+"बाकी "+rs(r.balance)+(r.over_limit?" (limit "+rs(r.credit_limit)+" से ऊपर)":"")+
-      (r.over_days?", सबसे पुराना bill "+r.oldest_days+" दिन (credit "+r.credit_days+" दिन)":"")).join("\n");
+    return bad(rows).map(r=>(r.company?r.company.name+": ":"")+"Due "+rs(r.balance)+(r.over_limit?" (over limit "+rs(r.credit_limit)+")":"")+
+      (r.over_days?", oldest bill "+r.oldest_days+" days (credit "+r.credit_days+" days)":"")).join("\n");
   }
   window.LWBCredit={load,order,box,bad,text};
 })();

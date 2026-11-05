@@ -296,7 +296,7 @@
     function say(t,bad){el("msg").hidden=!t;el("msg").textContent=t||"";el("msg").className="acx-msg"+(bad?" bad":"")}
     const errText=e=>{const m=String(e&&e.message||e||"Something went wrong");
       if(/function .*lwb_acc|schema cache|does not exist/i.test(m))return "Accounts Dashboard database is not set up yet. It sets itself up when this change is merged (lwb_accounts_dashboard_setup.sql).";
-      return m.replace(/^.*?ERROR:\s*/,"")};
+      return m.replace(/^.*?ERROR:\s*/,"").replace(/\bUpad\b/g,"Advance")};
 
     /* ---------- dates ---------- */
     function setPeriod(p){
@@ -580,10 +580,10 @@
     /* ---------- staff ledger ---------- */
     const isStaffHead=id=>(X.staff_heads||[]).includes(Number(id));
     const headId=name=>((D.categories||[]).find(c=>c.kind==="OUT"&&c.name.toLowerCase()===name)||{}).id;
-    const balText=b=>(b=r2(b))>0.5?"To pay "+rs(b):b<-0.5?"Upad with him "+rs(-b):"Nothing due";
-    // this month's upad against the salary (the server stops more; Admin can allow)
+    const balText=b=>(b=r2(b))>0.5?"To pay "+rs(b):b<-0.5?"Advance with him "+rs(-b):"Nothing due";
+    // this month's advance against the salary (the server stops more; Admin can allow)
     const capText=s=>{const cap=Number(s.month_cap)||0;if(!cap)return "";const up=Math.max(0,Number(s.month_upad_net)||0);
-      return " · this month upad "+rs(up)+" of "+rs(cap)+(up>cap+0.5?" (over)":", left "+rs(cap-up))};
+      return " · this month advance "+rs(up)+" of "+rs(cap)+(up>cap+0.5?" (over)":", left "+rs(cap-up))};
     const monthName=iso=>new Date(iso.slice(0,7)+"-01T12:00:00Z").toLocaleDateString("en-IN",{month:"long",year:"numeric",timeZone:"UTC"});
     function renderStaff(){
       const mo=to.slice(0,7)+"-01",act=S.filter(x=>x.active),old=S.filter(x=>!x.active);
@@ -593,12 +593,12 @@
         (S.length?'<div class="stf">'+[...act,...old].map(x=>{const b=r2(x.balance);
           const cap=Number(x.month_cap)||0,up=Math.max(0,Number(x.month_upad_net)||0);
           return '<div'+(x.active?"":' style="opacity:.55"')+'><div class="nm"><span><b>'+(x.emp_code?esc(x.emp_code)+' · ':"")+esc(x.name)+'</b><small>'+esc([x.designation,x.mobile].filter(Boolean).join(" · ")||"—")+' · '+rs(x.monthly_salary)+'/month'+(x.active?"":" · left")+'</small></span>'+
-            '<span class="bal '+(b>0.5?"minus":b<-0.5?"neutral":"plus")+'">'+(Math.abs(b)<0.5?"✓ 0":rs(Math.abs(b)))+'<small>'+(b>0.5?"to pay":b<-0.5?"upad with him":"nothing due")+'</small></span></div>'+
-            '<div class="mo"><span>Salary<b>'+(x.month_salary!=null?rs(x.month_salary):"—")+'</b></span><span>Paid<b>'+rs(x.month_paid)+'</b></span><span>Upad<b>'+rs(x.month_upad)+'</b></span></div>'+
-            (cap&&x.active?'<div class="cap'+(up>cap+0.5?" over":"")+'"><i style="width:'+Math.min(100,Math.round(up/cap*100))+'%"></i><span>'+(up>cap+0.5?"Upad "+rs(up-cap)+" over salary":"Upad left this month "+rs(cap-up))+'</span></div>':"")+
-            '<div class="ac"><button type="button" class="acx-btn" data-led="'+x.id+'">Ledger</button>'+(x.active?'<button type="button" class="acx-btn grn" data-pay="'+x.id+'">Pay salary</button><button type="button" class="acx-btn red" data-upad="'+x.id+'">Give upad</button>':"")+'<button type="button" class="acx-btn" data-sedit="'+x.id+'">Edit</button></div></div>'}).join("")+'</div>'
-          :'<div class="acx-empty">No staff yet. Add each staff once with the monthly salary; then pay salary / give upad from here and every staff gets a ledger.</div>')+
-        '<p class="acx-note">'+tipI('Balance = old balance + salary of each month − salary paid − upad + upad returned. "Pay salary" and "Give upad" are Cash Out entries (they show in the day book too). Upad given back: Cash In → head "Staff advance return".')+'</p>';
+            '<span class="bal '+(b>0.5?"minus":b<-0.5?"neutral":"plus")+'">'+(Math.abs(b)<0.5?"✓ 0":rs(Math.abs(b)))+'<small>'+(b>0.5?"to pay":b<-0.5?"advance with him":"nothing due")+'</small></span></div>'+
+            '<div class="mo"><span>Salary<b>'+(x.month_salary!=null?rs(x.month_salary):"—")+'</b></span><span>Paid<b>'+rs(x.month_paid)+'</b></span><span>Advance<b>'+rs(x.month_upad)+'</b></span></div>'+
+            (cap&&x.active?'<div class="cap'+(up>cap+0.5?" over":"")+'"><i style="width:'+Math.min(100,Math.round(up/cap*100))+'%"></i><span>'+(up>cap+0.5?"Advance "+rs(up-cap)+" over salary":"Advance left this month "+rs(cap-up))+'</span></div>':"")+
+            '<div class="ac"><button type="button" class="acx-btn" data-led="'+x.id+'">Ledger</button>'+(x.active?'<button type="button" class="acx-btn grn" data-pay="'+x.id+'">Pay salary</button><button type="button" class="acx-btn red" data-upad="'+x.id+'">Give advance</button>':"")+'<button type="button" class="acx-btn" data-sedit="'+x.id+'">Edit</button></div></div>'}).join("")+'</div>'
+          :'<div class="acx-empty">No staff yet. Add each staff once with the monthly salary; then pay salary / give advance from here and every staff gets a ledger.</div>')+
+        '<p class="acx-note">'+tipI('Balance = old balance + salary of each month − salary paid − advance + advance returned. "Pay salary" and "Give advance" are Cash Out entries (they show in the day book too). Advance given back: Cash In → head "Staff advance return".')+'</p>';
       el("sAdd").onclick=()=>editStaff();
       el("sSal").onclick=()=>makeSalary(mo);
       const find=id=>S.find(x=>String(x.id)===id);
@@ -728,7 +728,7 @@
         '<div class="f2"><div class="f"><label for="sMob">Mobile</label><input id="sMob" type="text" inputmode="numeric" maxlength="12" value="'+esc(x.mobile||"")+'"></div>'+
         '<div class="f"><label for="sDes">Work / post</label><input id="sDes" type="text" maxlength="60" value="'+esc(x.designation||"")+'" placeholder="e.g. Loader, Driver, Office"></div></div>'+
         '<div class="f"><label for="sSalary">Monthly salary ₹</label><input id="sSalary" type="text" inputmode="decimal" value="'+(x.monthly_salary!=null?r2(x.monthly_salary):"")+'"></div>'+
-        '<div class="f"><label>Old balance (before using this page)</label><div class="f2"><input id="sOpen" type="text" inputmode="decimal" value="'+(ob?Math.abs(ob):"")+'" placeholder="₹ 0"><select id="sOpenT"><option value="1">We have to pay him</option><option value="-1"'+(ob<0?" selected":"")+'>Upad is with him</option></select></div></div>'+
+        '<div class="f"><label>Old balance (before using this page)</label><div class="f2"><input id="sOpen" type="text" inputmode="decimal" value="'+(ob?Math.abs(ob):"")+'" placeholder="₹ 0"><select id="sOpenT"><option value="1">We have to pay him</option><option value="-1"'+(ob<0?" selected":"")+'>Advance is with him</option></select></div></div>'+
         '<div class="f"><label>Old balance as on</label>'+dateBox("sOpenD",x.opening_date||"")+'</div>'+
         (x.id?'<label class="chk"><input type="checkbox" id="sAct"'+(x.active?" checked":"")+'> Working (untick when the staff leaves)</label>':""),
         "Save",async b=>{const v=id=>b.querySelector(id).value;
@@ -752,15 +752,15 @@
     }
     async function staffLedger(x){
       let d;try{d=await rpc("lwb_acc_staff_ledger",{p_staff:x.id})}catch(e){await ERPShell.alert(errText(e));return}
-      let bal=Number(d.staff.opening_balance)||0;const KIND={SALARY:"Salary",PAID:"Salary paid",UPAD:"Upad",RETURN:"Upad returned"};
+      let bal=Number(d.staff.opening_balance)||0;const KIND={SALARY:"Salary",PAID:"Salary paid",UPAD:"Advance",RETURN:"Advance returned"};
       const rows=d.lines.map(l=>{bal=r2(bal+Number(l.plus)-Number(l.minus));return {...l,bal}});
       const box=sheet(x.name+" · ledger",
         '<div class="kv"><span>Monthly salary</span><b>'+rs(x.monthly_salary)+'</b><span>Balance</span><b>'+balText(bal)+'</b></div>'+
         '<div style="overflow:auto"><table class="acx-t acx-sl"><thead><tr><th>Date</th><th>Particulars</th><th class="n">Amount</th><th class="n">Balance</th></tr></thead><tbody>'+
         '<tr><td>'+dmy(d.staff.opening_date)+'</td><td>Old balance</td><td class="n"></td><td class="n">'+rs(d.staff.opening_balance)+'</td></tr>'+
         rows.map(l=>'<tr><td>'+dmy(l.date)+'</td><td><b>'+KIND[l.kind]+'</b><small>'+esc(l.particulars)+(l.ref?" · "+esc(l.ref):"")+'</small></td><td class="n '+(Number(l.plus)?"plus":"minus")+'">'+(Number(l.plus)?"+"+rs(l.plus):"−"+rs(l.minus))+'</td><td class="n">'+rs(l.bal)+'</td></tr>').join("")+
-        '</tbody></table></div><p class="acx-note" style="margin:0">'+tipI('+ balance = still to pay him · − balance = upad still with him.')+'</p><p style="margin:0"><button type="button" class="acx-btn" data-xl>⬇ Excel</button></p>',"",null);
-      box.querySelector("[data-xl]").onclick=()=>LWBExcel.write("staff-ledger-"+x.name.replace(/\W+/g,"-"),[{name:"Ledger",rows:[["Date","Particulars","Salary (+)","Paid / Upad (-)","Balance"],["",
+        '</tbody></table></div><p class="acx-note" style="margin:0">'+tipI('+ balance = still to pay him · − balance = advance still with him.')+'</p><p style="margin:0"><button type="button" class="acx-btn" data-xl>⬇ Excel</button></p>',"",null);
+      box.querySelector("[data-xl]").onclick=()=>LWBExcel.write("staff-ledger-"+x.name.replace(/\W+/g,"-"),[{name:"Ledger",rows:[["Date","Particulars","Salary (+)","Paid / Advance (-)","Balance"],["",
         "Old balance","","",r2(d.staff.opening_balance)],...rows.map(l=>[dmy(l.date),KIND[l.kind]+" · "+l.particulars,r2(l.plus)||"",r2(l.minus)||"",l.bal])]}]).catch(e=>say(e.message,true));
     }
     // Phone photos are large: resize to 1280px JPEG before upload.
@@ -886,7 +886,7 @@
         if(!(amt>0)){await ERPShell.alert("Enter the amount");return false}
         if(st.kind==="IN"&&st.mode==="CHEQUE"&&q("#eCqDate .dtxt").value.trim()&&!dval("eCqDate")){await ERPShell.alert("Enter the cheque date as DD/MM/YYYY");return false}
         if(io&&!st.cat){await ERPShell.alert("Choose the category");return false}
-        if(staffOn&&!stf){await ERPShell.alert(S.some(x=>x.active)?"Salary / upad: pick the staff name in Party.":"Add the staff first in Staff ledger.");return false}
+        if(staffOn&&!stf){await ERPShell.alert(S.some(x=>x.active)?"Salary / advance: pick the staff name in Party.":"Add the staff first in Staff ledger.");return false}
         if(st.kind==="OUT"&&st.mode==="CASH"&&D.closing_set&&p.date===D.today&&amt>Number(D.closing)+0.5&&to===D.today){
           if(!await ERPShell.confirm("Cash in hand is only "+rs(D.closing)+". Save "+rs(amt)+" Cash Out anyway?"))return false}
         try{

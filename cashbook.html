@@ -1381,7 +1381,7 @@ JAY MAMA DEV TREDARS (NILGIRI LIMBAYAT)
   const DMG_TYPES = ["Damage", "Leakage", "Breakage", "Gasless"];
   const r2 = n => Math.round(n * 100) / 100;
   const billKey = x => x.party + "|" + String(x.invoice).trim().toLowerCase();
-  // a bill = every Cash In with the same party and invoice no.; due = invoice - deductions - kasar - received. Locked books are left out.
+  // a bill = every Cash In with the same party and invoice no.; due = invoice - deductions - discount - received. Locked books are left out.
   function bills(excludeId) {
     const map = new Map();
     const feed = [...tallyFeed().map(x => ({ ...x, type: "in", amount: 0 }))];
@@ -1421,7 +1421,7 @@ JAY MAMA DEV TREDARS (NILGIRI LIMBAYAT)
     if (!x.invoice && !x.invAmt) return "";
     const parts = [];
     if (x.damage) parts.push((x.dmgType || "Damage") + " " + inr.format(x.damage));
-    if (x.kasar) parts.push("Kasar " + inr.format(x.kasar));
+    if (x.kasar) parts.push("Discount " + inr.format(x.kasar));
     if (x.advUsed) parts.push("Advance " + inr.format(x.advUsed));
     const bl = bm && x.type === "in" && x.party && x.invoice ? bm.get(billKey(x)) : null;
     return `${x.invoice ? "Inv " + esc(x.invoice) : ""}${x.invDate ? " (" + fmtDate(x.invDate) + ")" : ""}${x.invAmt ? (x.invoice ? " · " : "") + inr.format(x.invAmt) : ""}${x.follow ? " · part payment" : ""}${parts.length ? `<small>− ${parts.join(" − ")}</small>` : ""}${bl && bl.due > 0 ? `<small class="due">Pending ₹${inr.format(bl.due)}</small>` : ""}`;
@@ -1760,7 +1760,7 @@ JAY MAMA DEV TREDARS (NILGIRI LIMBAYAT)
       const sorted = [...groups.entries()].map(([p, l]) => ({ p, l: l.sort((a, b) => a.date.localeCompare(b.date)), t: r2(l.reduce((a, x) => a + x.due, 0)) })).sort((a, b) => b.t - a.t);
       const grand = r2(sorted.reduce((a, g) => a + g.t, 0));
       body = sorted.length ? AGE_KEY + `<div class="rscroll"><table>
-        <thead><tr><th>Invoice</th><th>Date</th><th class="r">Invoice amt</th><th class="r">Deduction + Kasar</th><th class="r">Advance</th><th class="r">Received</th><th>Days</th><th class="r">Pending</th></tr></thead>
+        <thead><tr><th>Invoice</th><th>Date</th><th class="r">Invoice amt</th><th class="r">Deduction + Discount</th><th class="r">Advance</th><th class="r">Received</th><th>Days</th><th class="r">Pending</th></tr></thead>
         <tbody>${sorted.map(g => `<tr class="party-head"><td colspan="6" class="${pcls.trim()}">${pl(g.p)}</td><td>${ageChip(Math.max(...g.l.map(bl => daysOld(bl.invDate || bl.date))))}</td><td class="r num due">₹${inr.format(g.t)}</td></tr>` + g.l.map(bl => `<tr class="${daysOld(bl.invDate || bl.date) > 60 ? "old-row" : ""}">
           <td class="num">Inv ${esc(bl.invoice)}</td><td class="when">${fmtDate(bl.invDate || bl.date)}${bl.time ? `<small>${fmtTime(bl.time)}</small>` : ""}</td><td class="r num">${inr.format(bl.invAmt)}</td>
           <td class="r num">${inr.format(r2(bl.damage + bl.kasar))}</td><td class="r num">${inr.format(r2(bl.advUsed))}</td><td class="r num">${inr.format(r2(bl.recd))}</td><td>${ageChip(daysOld(bl.invDate || bl.date))}</td><td class="r num due">${inr.format(bl.due)}</td></tr>`).join("")).join("")}
@@ -1801,7 +1801,7 @@ JAY MAMA DEV TREDARS (NILGIRI LIMBAYAT)
         if (x.type === "out") { add(x.date, "Paid to party" + (x.remark ? " · " + esc(x.remark) : ""), x.amount, 0, "Paid to party"); continue; }
         if (x.invAmt) add(x.date, "Bill" + inv, x.invAmt, 0, "Bill");
         if (x.damage) add(x.date, esc(x.dmgType || "Damage") + inv, 0, x.damage, x.dmgType || "Damage");
-        if (x.kasar) add(x.date, "Kasar" + inv, 0, x.kasar, "Kasar");
+        if (x.kasar) add(x.date, "Discount" + inv, 0, x.kasar, "Discount");
         if (x.advUsed) add(x.date, `Advance adjusted${inv} <span class="hint">(${inr.format(x.advUsed)})</span>`, 0, 0, "Advance adjusted");
         if (x.amount) add(x.date, (x.advance ? "Advance received" : "Received" + inv) + (x.mode ? " · " + esc(x.mode) : ""), 0, x.amount, x.advance ? "Advance received" : "Received");
       }
@@ -1891,10 +1891,10 @@ JAY MAMA DEV TREDARS (NILGIRI LIMBAYAT)
       const total = r2(list.reduce((a, x) => a + (isK ? x.kasar : x.damage), 0));
       const byType = !isK ? DMG_TYPES.map(t => [t, r2(list.filter(x => (x.dmgType || "Damage") === t).reduce((a, x) => a + x.damage, 0))]).filter(([, v]) => v) : [];
       body = (byType.length ? `<div class="count-line">${byType.map(([t, v]) => `${t}: <b class="num">₹${inr.format(v)}</b>`).join(" · ")}</div>` : "") + (list.length ? `<div class="rscroll"><table>
-        <thead><tr><th>Date</th><th>Party</th><th>Invoice</th>${isK ? "" : "<th>Type</th>"}<th>Book</th><th class="r">${isK ? "Kasar" : "Amount"}</th></tr></thead>
+        <thead><tr><th>Date</th><th>Party</th><th>Invoice</th>${isK ? "" : "<th>Type</th>"}<th>Book</th><th class="r">${isK ? "Discount" : "Amount"}</th></tr></thead>
         <tbody>${list.map(x => `<tr><td class="when">${fmtDate(x.date)}${x.time ? `<small>${fmtTime(x.time)}</small>` : ""}</td><td class="party-cell${pcls}">${pl(x.party)}</td><td class="num">${x.invoice ? "Inv " + esc(x.invoice) : ""}</td>${isK ? "" : `<td><span class="chip">${esc(x.dmgType || "Damage")}</span></td>`}<td>${esc(x.bookName)}</td><td class="r num">${inr.format(isK ? x.kasar : x.damage)}</td></tr>`).join("")}
         <tr class="total-row"><td colspan="${isK ? 4 : 5}">Total · ${list.length} entries</td><td class="r num">₹${inr.format(total)}</td></tr></tbody></table></div>`
-        : `<div class="empty"><b>No ${isK ? "kasar" : "deduction"} entries</b>Entries with ${isK ? "kasar" : "damage, leakage, breakage or gasless"} show here.</div>`);
+        : `<div class="empty"><b>No ${isK ? "discount" : "deduction"} entries</b>Entries with ${isK ? "discount" : "damage, leakage, breakage or gasless"} show here.</div>`);
     }
     const opt = (v, l, c) => `<option value="${v}"${v === c ? " selected" : ""}>${l}</option>`;
     $("#app").innerHTML = `
@@ -1902,7 +1902,7 @@ JAY MAMA DEV TREDARS (NILGIRI LIMBAYAT)
       <div class="head-row"><div><h1>Reports</h1><p class="sub">From all books${state.books.some(isLocked) ? ", except locked books" : ""}.</p></div></div>
       <div class="tabs" role="group" aria-label="Report">
         <button type="button" data-tab="out" aria-pressed="${ui.rtab === "out"}">Outstanding</button>
-        <button type="button" data-tab="kasar" aria-pressed="${ui.rtab === "kasar"}">Kasar ledger</button>
+        <button type="button" data-tab="kasar" aria-pressed="${ui.rtab === "kasar"}">Discount ledger</button>
         <button type="button" data-tab="dmg" aria-pressed="${ui.rtab === "dmg"}">Damage / Leakage / Breakage / Gasless</button>
         <button type="button" data-tab="adv" aria-pressed="${ui.rtab === "adv"}">Advance</button>
         <button type="button" data-tab="ledger" aria-pressed="${ui.rtab === "ledger"}">Party ledger</button>
@@ -1913,7 +1913,7 @@ JAY MAMA DEV TREDARS (NILGIRI LIMBAYAT)
         ${ui.rtab !== "out" && ui.rtab !== "dep" ? `<div class="field"><label for="rDur">Duration</label><select id="rDur">${[["all", "All time"], ["today", "Today"], ["7", "Last 7 days"], ["30", "Last 30 days"], ["month", "This month"], ["lastmonth", "Last month"]].map(([v, l]) => opt(v, l, ui.rdur)).join("")}</select></div>` : ""}
         ${ui.rtab === "dmg" ? multiSelect("rtypes", "Type", DMG_TYPES) : ""}
         ${ui.rtab === "ledger" ? `<div class="field"><label for="rSide">Debit / Credit</label><select id="rSide">${opt("all", "All", ui.rside || "all")}${opt("dr", "Debit only", ui.rside)}${opt("cr", "Credit only", ui.rside)}</select></div>
-        ${multiSelect("rkinds", "Details", ["Bill", "Received", "Advance received", "Advance adjusted", "Kasar", ...DMG_TYPES, "Paid to party"])}` : ""}
+        ${multiSelect("rkinds", "Details", ["Bill", "Received", "Advance received", "Advance adjusted", "Discount", ...DMG_TYPES, "Paid to party"])}` : ""}
         <div class="field search"><label for="rQ">Search</label><input type="search" id="rQ" placeholder="${ui.rtab === "ledger" ? "Search anything: details, invoice, amount, date" : "Search anything: party, invoice, amount, date, book, remark"}" value="${esc(ui.rq || "")}"></div>
       </section>
       <section class="table-card">${body}</section>`;
@@ -2442,7 +2442,7 @@ JAY MAMA DEV TREDARS (NILGIRI LIMBAYAT)
               <div class="field"><label for="eDmg">Deduction amount (₹)</label><input type="number" id="eDmg" class="num" inputmode="decimal" min="0" step="0.01" placeholder="0.00" value="${e.damage || ""}"></div>
             </div>
             <div class="row2">
-              <div class="field"><label for="eKasar">Kasar (₹)</label><input type="number" id="eKasar" class="num" inputmode="decimal" min="0" step="0.01" placeholder="0.00" value="${e.kasar || ""}"></div>
+              <div class="field"><label for="eKasar">Discount (₹)</label><input type="number" id="eKasar" class="num" inputmode="decimal" min="0" step="0.01" placeholder="0.00" value="${e.kasar || ""}"></div>
               <div class="field" id="eAdvUseWrap" hidden><label for="eAdvUse">Advance adjust (₹) <span class="hint" id="eAdvAvail"></span></label><input type="number" id="eAdvUse" class="num" inputmode="decimal" min="0" step="0.01" placeholder="0.00" value="${e.advUsed || ""}"></div>
             </div>
             <div class="calc num" id="eCalc" hidden></div>
@@ -3127,7 +3127,7 @@ JAY MAMA DEV TREDARS (NILGIRI LIMBAYAT)
     t.pending = t.pending.filter(w => w.id !== u.id);
   }
   /* ---------- History (kept by the ERP database on every save) ---------- */
-  const H_FIELD = { amount: "Amount", date: "Date", time: "Time", party: "Party", remark: "Remark", category: "Category", mode: "Mode", type: "Type", invoice: "Invoice no.", invDate: "Invoice date", invAmt: "Invoice amount", damage: "Deduction", dmgType: "Deduction type", kasar: "Kasar", advance: "Advance", advUsed: "Advance adjust", verified: "Verified", verifiedAt: "Verified at", flag: "Report", req: "Request", reqDone: "Request done", notes: "Note count", bank: "Bank", via: "Deposited through", erpRef: "ERP driver payment", follow: "Part payment of bill", created: "Created" };
+  const H_FIELD = { amount: "Amount", date: "Date", time: "Time", party: "Party", remark: "Remark", category: "Category", mode: "Mode", type: "Type", invoice: "Invoice no.", invDate: "Invoice date", invAmt: "Invoice amount", damage: "Deduction", dmgType: "Deduction type", kasar: "Discount", advance: "Advance", advUsed: "Advance adjust", verified: "Verified", verifiedAt: "Verified at", flag: "Report", req: "Request", reqDone: "Request done", notes: "Note count", bank: "Bank", via: "Deposited through", erpRef: "ERP driver payment", follow: "Part payment of bill", created: "Created" };
   const H_ACT = { added: "Added", deleted: "Deleted", verified: "Verified", reported: "Reported", "change requested": "Change requested", "request rejected": "Request rejected", changed: "Changed", "book added": "Book added", "book deleted": "Book deleted" };
   const hVal = (k, v) => {
     if (v === undefined || v === null || v === "") return "—";
