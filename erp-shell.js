@@ -81,7 +81,7 @@
       // (Sales Head / Admin: the approval + driver list; Godown Manager / Accounts: same list, view only;
       // Salesman: his own orders with PO given > Approved > Dispatched > Delivered).
       {t:"New PO / Sales Order",h:"order-entry.html",i:"cart",r:"admin manager sales",k:"new order entry po",pt:"PO / Sales Order (new PO)",nm:"admin manager sales",par:"warehouse-orders.html my-sales.html#orders"},
-      {t:"PO / Sales",h:"warehouse-orders.html",i:"note",r:"admin manager warehouse accounts",k:"po approval driver warehouse orders",pt:"PO / Sales List (all POs; approve for Admin / Sales Head)",nm:"accounts"},
+      {t:"PO / Sales",h:"warehouse-orders.html",i:"note",r:"admin manager warehouse accounts",k:"po approval driver warehouse orders",pt:"PO / Sales List (all POs; approve for Admin / Sales Head)"},
       {t:"PO / Sales",h:"my-sales.html#orders",i:"note",r:"sales",k:"my orders modify",pt:"PO / Sales List (Salesman's own orders)"},
       // Rajnigandha (Mohit, 4 Nov 2026): no own menu items. A Rajnigandha PO prints its slip from PO / Sales
       // (Print), its waiting POs show on top of that list; the rate list is the Rajnigandha tab of Rate List.
@@ -100,7 +100,7 @@
       {t:"New Purchase (Goods Inward)",h:"goods-inward.html",i:"inbox",r:"admin manager",k:"goods inward purchase bill new entry",pt:"Purchase Entry (Goods Inward)",nm:"admin manager",par:"purchase-register.html"},
       {t:"Purchase",h:"purchase-register.html",i:"note",r:"admin manager warehouse accounts",k:"purchase register bills verify damage photo",pt:"Purchase List / Register",vo:"accounts"},
       {t:"Purchase Claims",h:"purchase-claims.html",i:"inbox",r:"admin manager",k:"damage leakage shortage claim"},
-      {t:"Sales Bill PDFs",h:"sales-bill-scans.html",i:"bill",r:"admin accounts manager",k:"scan pdf sales bill invoice register upload",vo:"accounts",nm:"accounts"}]},
+      {t:"Sales Bill PDFs",h:"sales-bill-scans.html",i:"bill",r:"admin accounts manager",k:"scan pdf sales bill invoice register upload",vo:"accounts"}]},
     {group:"Dispatch",items:[
       {t:"Godown Report",h:"godown-report.html",i:"note",r:"admin manager warehouse"},
       {t:"Loading & Dispatch",h:"loading-dispatch.html",i:"box",r:"admin manager warehouse"},
@@ -116,7 +116,7 @@
     {group:"Accounts",items:[
       {t:"Accounts Dashboard",h:"accounts-dashboard.html",i:"cash",r:"admin accounts"},
       {t:"Bank Statement",h:"bank-statement.html",i:"book",r:"admin accounts"},
-      {t:"Billing & Outstanding",h:"party-billing.html",i:"bill",r:"admin accounts",nm:"accounts"},
+      {t:"Billing & Outstanding",h:"party-billing.html",i:"bill",r:"admin accounts",k:"bills to make tally bill sales bill outstanding collect payment rajnigandha bill pending",pt:"Billing & Outstanding (Bills to make)"},
       {t:"Money Overview",h:"money-overview.html",i:"cash",r:"admin accounts",hide:1},
       {t:"Tally Bill & Invoice No.",h:"accounts-invoice.html",i:"bill",r:"admin accounts",hide:1},
       {t:"Tally Bill Check",h:"tally-check.html",i:"bill",r:"admin accounts",hide:1},
@@ -257,7 +257,8 @@
   // the pages Admin unticked for one user (Manage Users > Pages).
   // extra = pages of OTHER roles Admin ticked for this user.
   // vo = roles that only look at the page (no entry / edit there). Accounts (Mohit, 4 Nov 2026): its menu keeps
-  // cash, bank, orders and returns; the other pages it may still open sit at the bottom under "View only".
+  // cash, bank, orders and returns (5 Nov 2026: PO / Sales List and Billing & Outstanding with Bills to make are
+  // back in the Accounts side menu, Sales Bill PDFs under View only); the other pages it may still open sit at the bottom under "View only".
   const viewOnlyItem=(i,role)=>!!i.vo&&i.vo.split(" ").includes(role);
   // nm = not in the side menu for these roles, but still allowed and found by Module Search / Dashboard search.
   const noMenuItem=(i,role)=>!!i.nm&&i.nm.split(" ").includes(role);
@@ -472,7 +473,7 @@
       sales:[["Home","dashboard.html","home"],["New Order","order-entry.html","cart"],["PO List","my-sales.html#orders","note"],["My Sales","my-sales.html","chart"]],
       admin:[["Home","dashboard.html","home"],["New Order","order-entry.html","cart"],["PO List","warehouse-orders.html","note"],["Stock","inventory.html","stock"]],
       manager:[["Home","dashboard.html","home"],["New Order","order-entry.html","cart"],["PO List","warehouse-orders.html","note"],["Dispatch","loading-dispatch.html","truck"]],
-      accounts:[["Home","dashboard.html","home"],["Cash","accounts-dashboard.html","cash"],["Bank","bank-statement.html","book"],["Returns","driver-returns.html","undo"]],
+      accounts:[["Home","dashboard.html","home"],["Bills","party-billing.html","bill"],["PO List","warehouse-orders.html","note"],["Cash","accounts-dashboard.html","cash"],["Bank","bank-statement.html","book"]],
       warehouse:[["Home","dashboard.html","home"],["PO List","warehouse-orders.html","note"],["Loading","loading-dispatch.html","truck"],["Stock","inventory.html","stock"]],
       transport:[["Home","dashboard.html","home"],["Assign","transport-allocation.html","truck"],["Vehicles","fleet-master.html#vehicles","box"],["Drivers","fleet-master.html#drivers","users"]]
     };

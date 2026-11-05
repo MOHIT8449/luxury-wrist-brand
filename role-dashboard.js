@@ -425,7 +425,7 @@
     },
 
     /* ===== Accounts: cash in / out, bank match, where each order is, returns (Mohit, 4 Nov 2026) =====
-       Bills to make stays only in Pending Work; the full outstanding list stays on Billing & Outstanding. */
+       Quick row (5 Nov 2026): Bills to make, PO List, Cash In, Cash Out. Bank and Returns stay in the menu; the full outstanding list stays on Billing & Outstanding. */
     async accounts(){
       const t=today();
       const [acc,PI,cq,vq,ov,bk,orders,dl,rp,ra]=await Promise.all([safe(C.rpc("lwb_acc_dashboard",{p_from:t,p_to:t})),window.LWBPartyPay?LWBPartyPay.load(C).catch(()=>null):null,
@@ -433,7 +433,7 @@
         safe(C.from("lwb_delivery_reports").select("order_id,delivery_status,reported_at,delivery_note").gte("reported_at",t+"T00:00:00+05:30")),
         safe(C.rpc("lwb_office_list_driver_returns",{p_status:"PENDING_OFFICE"})),safe(C.rpc("lwb_office_list_driver_returns",{p_status:"APPROVED"}))]);
       const A=acc?accTotals(acc):null,out=outstanding(PI),drv=queueItem(vq,"DRIVER_PAYMENT"),cn=queueItem(vq,"CREDIT_NOTE");
-      const qa='<div class="rd-qa rd-qa-row">'+[["accounts-dashboard.html?new=IN","+","Cash In"],["accounts-dashboard.html?new=OUT","−","Cash Out"],["bank-statement.html","🏦","Bank match"],["driver-returns.html","↩","Returns"]]
+      const qa='<div class="rd-qa rd-qa-row">'+[["party-billing.html","🧾","Bills to make"],["warehouse-orders.html","📋","PO List"],["accounts-dashboard.html?new=IN","+","Cash In"],["accounts-dashboard.html?new=OUT","−","Cash Out"]]
         .filter(x=>can(x[0])).map(x=>'<a href="'+x[0]+'"><span>'+x[1]+"</span>"+x[2]+"</a>").join("")+"</div>";
       const k=[
         kpi("teal","Cash in Hand now",acc&&acc.closing_set?rs(acc.closing):"—",acc?(acc.opening_set?"Opening "+rs(acc.opening):"Set opening cash first"):"Accounts Dashboard","accounts-dashboard.html",acc&&lst("Today's cash book","All money entries today",acc.lines||[],ACOLS,"accounts-dashboard.html")),
