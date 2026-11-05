@@ -4,6 +4,13 @@
 **Purpose:** Continue the same ERP project from a new ChatGPT conversation without restarting or losing the agreed requirements.
 **Status:** Active development / verification. Do not assume all modules are completed or fully tested.
 
+## Hired vehicles: trip added by itself on Transport Assignment (5 Nov 2026)
+
+- Mohit: when an order is assigned to a hired vehicle, its trip should come into the rent ledger by itself.
+- SQL `lwb_hired_auto_trip_setup.sql` (after `lwb_hired_vehicle_rent_setup.sql`; tests in `tests/hired-vehicle-rent`, 5 tests). `lwb_hired_charges.auto` + one auto TRIP per vehicle per day. Trigger `trg_lwb_hired_assignment_trip` on `dispatch_assignments` (insert / vehicle_no / assigned_at): per trip / per route hired vehicles only, from the start date, not for cancelled orders; one trip a day (trip rate, or the first route's rate), more orders that day join the line (`order_nos`); a day with a hand trip only gets the order added. Order moved to another vehicle: taken off the old line, which is cancelled when empty (and revived if an order comes back). A day Accounts cancelled stays cancelled. Errors never stop the assignment (WARNING only).
+- `lwb_hired_auto_fill(vehicle)`: Vehicle Master calls it after saving a per trip / route rent setup (assignments from the start date, up to 62 days back). `lwb_hired_ledger` lines carry `auto`; the ledger shows "· Auto".
+- Checked with a mocked database at 390 / 1366 px: no side scroll, no JS errors. Screenshots: project files `hired-vehicle-ledger/auto-trip/`.
+
 ## Hired vehicles on fixed rent + rent ledger (5 Nov 2026)
 
 - Mohit: outside pickups / Bolero work for us all the time on a fixed rent (per month, per route or per trip) and need a ledger of what we owe. Not staff, so not in Employee Master: they stay in Vehicle Master with Ownership "Hired · fixed rent" (saved as TRANSPORTER + a rent setup). One ledger per vehicle.

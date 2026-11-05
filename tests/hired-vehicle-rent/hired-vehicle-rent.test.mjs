@@ -29,9 +29,10 @@ for(const [role,id] of Object.entries(ids))await db.query('insert into user_prof
 await db.exec(await sql('lwb_accounts_dashboard_setup.sql'));
 await db.exec(`create table lwb_vehicles(id uuid primary key default gen_random_uuid(),vehicle_no text unique,vehicle_type text,ownership text default 'OWN' check (ownership in ('OWN','TRANSPORTER')),transporter_name text,owner_mobile text,is_active boolean default true);
 CREATE FUNCTION public.lwb_fleet_editor() RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER SET search_path = '' AS $$ SELECT EXISTS (SELECT 1 FROM public.user_profiles p WHERE p.id = auth.uid() AND p.active AND p.role IN ('admin','manager')) $$;`);
-for(const f of ['lwb_accounts_staff_setup.sql','lwb_accounts_vehicle_setup.sql','lwb_employee_master_setup.sql','lwb_hired_vehicle_rent_setup.sql'])await db.exec(await sql(f));
+for(const f of ['lwb_accounts_staff_setup.sql','lwb_accounts_vehicle_setup.sql','lwb_employee_master_setup.sql','lwb_hired_vehicle_rent_setup.sql','lwb_hired_auto_trip_setup.sql'])await db.exec(await sql(f));
 // safe to run again
 await db.exec(await sql('lwb_hired_vehicle_rent_setup.sql'));
+await db.exec(await sql('lwb_hired_auto_trip_setup.sql'));
 await db.exec('GRANT USAGE ON SCHEMA public,auth TO authenticated');
 
 const today=(await db.query("select public.lwb_acc_today()::text d")).rows[0].d;
@@ -120,16 +121,60 @@ test('monthly: rent added on the 1st of every month, first month for the days on
   await as('sales');await assert.rejects(call('select public.lwb_hired_post_months()'),/Accounts/);
 });
 
-test('per trip: Transport Assignment days of the vehicle with trips already added',async()=>{
+test('per trip: assigning orders adds one trip for the day by itself; days list shows it',async()=>{
   const v=await veh('GJ01DT7788');
   await as('manager');await save(v,{rent_type:'TRIP',trip_rate:900,start_date:dayAdd(today,-5)});
   const o1=(await db.query("insert into orders(order_no,status) values('PO-11','delivered'),('PO-12','loaded'),('PO-13','cancelled') returning id")).rows.map(x=>x.id);
   await db.query("insert into dispatch_assignments(order_id,vehicle_no,assigned_at) values($1,'GJ 01 DT 7788',now()),($2,'gj01dt7788',now()),($3,'GJ01DT7788',now())",o1);
+  let C=(await db.query("select trips,amount,order_nos,auto from lwb_hired_charges where vehicle_id=$1 and cancelled_at is null",[v])).rows;
+  assert.equal(C.length,1);assert.equal(C[0].auto,true);assert.equal(Number(C[0].amount),900);assert.deepEqual(C[0].order_nos,['PO-11','PO-12']);
   await as('accounts');
   let D=await one('select public.lwb_hired_dispatch_days($1,$2,$3)',[v,dayAdd(today,-5),today]);
-  assert.equal(D.length,1);assert.deepEqual(D[0].orders.sort(),['PO-11','PO-12']);assert.equal(Number(D[0].added),0);
-  await add({vehicle_id:v,date:D[0].date,trips:2,orders:D[0].orders});
+  assert.equal(D.length,1);assert.deepEqual(D[0].orders.sort(),['PO-11','PO-12']);assert.equal(Number(D[0].added),1);
+  // a second trip that day by hand
+  await add({vehicle_id:v,date:D[0].date,trips:1});
   D=await one('select public.lwb_hired_dispatch_days($1,$2,$3)',[v,dayAdd(today,-5),today]);
   assert.equal(Number(D[0].added),2);
   const r=(await list(dayAdd(today,-5),today)).find(x=>x.id===v);assert.equal(Number(r.rent),1800);
+  const L=await ledger(v,today,today);assert.equal(L.lines.filter(l=>l.auto).length,1);
+});
+
+test('auto trip: route rate, monthly / own vehicle untouched, order moved, cancelled day stays, fill from start',async()=>{
+  const rv=(await db.query("select id from lwb_vehicles where vehicle_no='GJ05CX1100'")).rows[0].id;
+  const own=await veh('GJ05AB1234'),mon=(await db.query("select id from lwb_vehicles where vehicle_no='GJ03BW4521'")).rows[0].id;
+  const o=async no=>(await db.query("insert into orders(order_no,status) values($1,'loaded') returning id",[no])).rows[0].id;
+  const before=async v=>(await db.query("select count(*)::int n from lwb_hired_charges where vehicle_id=$1",[v])).rows[0].n;
+  const nMon=await before(mon);
+  const a=await o('PO-21'),b=await o('PO-22'),c=await o('PO-23');
+  // GJ05CX1100 already has a hand trip today: the order joins it, no new line
+  await db.query("insert into dispatch_assignments(order_id,vehicle_no) values($1,'GJ05CX1100')",[a]);
+  let R=(await db.query("select order_nos,auto from lwb_hired_charges where vehicle_id=$1 and kind='TRIP' and cancelled_at is null",[rv])).rows;
+  assert.equal(R.length,1);assert.equal(R[0].auto,false);assert.deepEqual(R[0].order_nos,['PO-1','PO-21']);
+  // monthly and own vehicles: nothing
+  await db.query("insert into dispatch_assignments(order_id,vehicle_no) values($1,'GJ03BW4521'),($2,'GJ05AB1234')",[b,c]);
+  assert.equal(await before(mon),nMon);assert.equal(await before(own),0);
+  // a new route vehicle gets its first route's rate; moving the order away cancels the auto line, moving back revives it
+  const nv=await veh('GJ10ZZ5555');
+  await as('admin');await save(nv,{rent_type:'ROUTE',start_date:dayAdd(today,-3),routes:[{name:'Surat to Navsari',rate:1200},{name:'Surat to Bardoli',rate:1400}]});
+  const d=await o('PO-31');
+  const da=(await db.query("insert into dispatch_assignments(order_id,vehicle_no) values($1,'GJ10ZZ5555') returning id",[d])).rows[0].id;
+  R=(await db.query("select route_name,amount from lwb_hired_charges where vehicle_id=$1 and cancelled_at is null",[nv])).rows;
+  assert.deepEqual(R.map(x=>[x.route_name,Number(x.amount)]),[['Surat to Navsari',1200]]);
+  await db.query("update dispatch_assignments set vehicle_no='GJ05AB1234' where id=$1",[da]);
+  assert.equal((await db.query("select count(*)::int n from lwb_hired_charges where vehicle_id=$1 and cancelled_at is null",[nv])).rows[0].n,0);
+  await db.query("update dispatch_assignments set vehicle_no='GJ10ZZ5555' where id=$1",[da]);
+  assert.equal((await db.query("select count(*)::int n from lwb_hired_charges where vehicle_id=$1 and cancelled_at is null",[nv])).rows[0].n,1);
+  // Accounts cancels the day: a new order that day does not bring it back
+  const id=(await db.query("select id from lwb_hired_charges where vehicle_id=$1",[nv])).rows[0].id;
+  await as('accounts');await call('select public.lwb_hired_cancel($1,$2)',[id,'did not go']);
+  await db.query("insert into dispatch_assignments(order_id,vehicle_no) values($1,'GJ10ZZ5555')",[await o('PO-32')]);
+  assert.equal((await db.query("select count(*)::int n from lwb_hired_charges where vehicle_id=$1 and cancelled_at is null",[nv])).rows[0].n,0);
+  // fill: assignments from before the rent setup come in from the start date
+  const fv=await veh('GJ06FF1111');
+  const e=await o('PO-41'),f=await o('PO-42');
+  await db.query("insert into dispatch_assignments(order_id,vehicle_no,assigned_at) values($1,'GJ06FF1111',now()-interval '2 days'),($2,'GJ06FF1111',now()-interval '9 days')",[e,f]);
+  await as('admin');await save(fv,{rent_type:'TRIP',trip_rate:500,start_date:dayAdd(today,-4)});
+  assert.equal(await one('select public.lwb_hired_auto_fill($1)',[fv]),1);
+  assert.equal(await one('select public.lwb_hired_auto_fill($1)',[fv]),0);
+  await as('sales');await assert.rejects(call('select public.lwb_hired_auto_fill($1)',[fv]),/Accounts/);
 });
