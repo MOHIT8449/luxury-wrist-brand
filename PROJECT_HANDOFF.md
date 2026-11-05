@@ -4,6 +4,13 @@
 **Purpose:** Continue the same ERP project from a new ChatGPT conversation without restarting or losing the agreed requirements.
 **Status:** Active development / verification. Do not assume all modules are completed or fully tested.
 
+## Every drop-down searches like the SKU box (5 Nov 2026)
+
+- Mohit: the SKU box in New PO lets you type and the list narrows; every drop-down on the website (party, vehicle, employee, supplier, head, bank ...) must work the same way.
+- New `erp-select.js` (LWBSelect), loaded by `erp-shell.js` on every ERP page (cashbook.html loads it directly). No page code changed: the page keeps its own `<select>`; a click / tap, or a letter typed on it, opens a search box right on top of it with the list under it. Every typed word must be in the name (anywhere); names that start with it come first. ↑ ↓ move, Enter picks and goes to the next field, Esc / outside tap closes. The pick sets `select.value` and fires input + change, so onchange code runs as before.
+- Only single drop-downs with 6+ options (short ones like Active / Inactive stay native). Opt out: `data-nosearch` on the select or a block around it. Inputs that already search (SKU datalist, New PO party picker, Goods Inward supplier) are unchanged.
+- Checked with a mocked database at 1366 / 390 px (Party Ledger party pick, keyboard pick), loaded on all ERP pages with no new JS errors, no side scroll. Screenshots: project files `search-dropdown/`.
+
 ## Hired vehicles: rent per party, Manager sets, Admin verifies (5 Nov 2026)
 
 - Mohit: a third-party vehicle (e.g. Porter) taking an order to a party is paid per party. The first trip to a new party: Manager enters the rent, Admin verifies; after that every trip to that party adds by itself. Rate is per vehicle + party; 2 parties in one day = 2 lines.
