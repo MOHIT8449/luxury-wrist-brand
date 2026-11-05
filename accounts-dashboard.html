@@ -34,6 +34,8 @@
     .acx-banner .grow{flex:1 1 220px;min-width:0}
     .acx-banner.blue{background:#eef5ff;border-color:#c7dbfa;color:#123f7a}
     .acx-banner.amb{background:#fff7e8;border-color:#f3d79c;color:#6d4300}
+    .acx-banner.red{background:#fdecec;border-color:#f3c2c2;color:#7a1d1d}
+    .acx-banner .sb{display:block;font-size:13px;margin-top:3px}.acx-banner .sb span{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.acx-banner .sb b{font-size:13px}
     .acx-banner.grn{background:#ecf8f1;border-color:#bfe5cf;color:#0f5f37}
     .acx-banner input{height:38px;border:1.5px solid #c9d4e2;border-radius:8px;padding:0 10px;font:inherit;font-size:16px;width:150px}
 
@@ -291,7 +293,7 @@
     const MODE_NAME={CASH:"Cash",UPI:"UPI",BANK:"Bank / NEFT",RTGS:"RTGS",CHEQUE:"Cheque"};
     const SRC_NAME={ENTRY:"Entered here",PAYMENT:"Party payment (Billing & Outstanding)",DRIVER_CASH:"Driver money",DRIVER_ONLINE:"Driver money",OLD:"Old payment entry"};
     const NOTE_KEYS=["500","200","100","50","20","10"];
-    let X={entries:{},staff_heads:[],payees:[]},S=[],V=[],VR={vehicles:[],entries:{}},C=[],piErr=false,D=null,PI=null,per="today",from=todayISO(),to=todayISO(),tab="book",bookF="all",outRows=null,me={id:"",role:""};
+    let SB=[],X={entries:{},staff_heads:[],payees:[]},S=[],V=[],VR={vehicles:[],entries:{}},C=[],piErr=false,D=null,PI=null,per="today",from=todayISO(),to=todayISO(),tab="book",bookF="all",outRows=null,me={id:"",role:""};
 
     function say(t,bad){el("msg").hidden=!t;el("msg").textContent=t||"";el("msg").className="acx-msg"+(bad?" bad":"")}
     const errText=e=>{const m=String(e&&e.message||e||"Something went wrong");
@@ -319,6 +321,8 @@
         const [ex,st,vl,vr,cq]=await Promise.all([client.rpc("lwb_acc_extras",{p_from:from,p_to:to}),client.rpc("lwb_acc_staff_list",{p_month:to}),
           client.rpc("lwb_acc_vehicles"),client.rpc("lwb_acc_vehicle_report",{p_from:from,p_to:to}),client.rpc("lwb_acc_cheque_list")]);
         C=cq.error?[]:(cq.data||[]);
+        // Rajnigandha slips without a Tally bill (lwb_rajni_bill_pending_setup.sql); missing = no banner.
+        client.rpc("lwb_slip_bill_pending").then(r=>{SB=r.error?[]:(r.data||[]);renderBanners()},()=>{});
         X=ex.error?{entries:{},staff_heads:[],payees:[]}:ex.data;S=st.error?[]:(st.data||[]);
         V=vl.error?[]:(vl.data||[]);VR=vr.error||!vr.data?{vehicles:[],entries:{}}:vr.data;
         D.lines.forEach(l=>{l.x=l.src==="ENTRY"&&X.entries[l.id]||null;l.veh=l.src==="ENTRY"&&VR.entries[l.id]||null});
@@ -378,6 +382,11 @@
           (D.is_admin?"UPI / Bank / RTGS / Cheque receipts and cash deposits. Verify the ones you see in the bank.":"They count in the bank after Admin verifies them.")+'</div>'+
           '<button type="button" class="acx-btn'+(D.is_admin?" pri":"")+'" data-tab="verify">'+(D.is_admin?"Verify now":"See list")+'</button></div>');
       }
+      if(SB.length){const sa=SB.reduce((a,r)=>a+Number(r.amount||0),0),od=SB.reduce((a,r)=>Math.max(a,Number(r.days||0)),0),
+          dd=n=>Number(n)?n+" day"+(Number(n)===1?"":"s"):"today";
+        h.push('<div class="acx-banner '+(od>=1?"red":"amb")+'"><div class="grow"><b>🧾 '+SB.length+' Rajnigandha bill'+(SB.length===1?"":"s")+' pending · '+rs(sa)+'</b><br>Goods are out, the Tally bill is not made. Oldest '+dd(od)+'.'+
+          '<span class="sb">'+SB.slice(0,3).map(r=>'<span>'+dmy(r.slip_date).slice(0,5)+' <b>'+esc(r.order_no)+'</b> '+esc(r.party)+' '+rs(r.amount)+' · '+(r.delivered_at?"Delivered":"Loaded")+(Number(r.paid)>0.5?" · Paid":"")+' · '+dd(r.days)+'</span>').join("")+(SB.length>3?"<span>+ "+(SB.length-3)+" more</span>":"")+'</span></div>'+
+          '<a class="acx-btn pri" href="party-billing.html?tab=make">Make bills</a></div>')}
       const cdue=chequesDue();
       if(cdue.length){const late=cdue.filter(c=>c.status==="IN_HAND").length;
         h.push('<div class="acx-banner amb"><div class="grow"><b>🧾 '+cdue.length+' cheque'+(cdue.length===1?"":"s")+' not in bank yet · '+rs(cdue.reduce((a,c)=>a+Number(c.amount),0))+'</b><br>'+

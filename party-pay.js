@@ -98,6 +98,9 @@
 .lpp .dbx button{flex:0 0 44px;border:1.5px solid #d5dbe3;background:#fff;border-radius:8px;cursor:pointer;font-size:18px}
 .lpp .modes{display:grid;gap:8px}
 .lpp .mode{display:grid;grid-template-columns:92px minmax(0,1fr) minmax(0,1fr);gap:8px;align-items:center}
+.lpp .modes.bks .mode{grid-template-columns:92px minmax(0,1fr) minmax(0,1fr) minmax(0,1.1fr)}
+.lpp .mode select.bk{height:40px;border:1.5px solid #d5dbe3;border-radius:8px;padding:0 6px;font:inherit;font-size:14px;background:#fff;min-width:0;width:100%}
+.lpp .mode select.bk.need{border-color:#e0a1a1}
 .lpp .mode b{font-size:14px}
 .lpp .notes{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;margin:4px 0 0 100px}
 .lpp .notes span{display:flex;align-items:center;gap:4px;font-size:13px}.lpp .notes input{height:34px;font-size:15px;padding:0 6px}
@@ -126,7 +129,9 @@
 .lpp .clist button{display:flex;justify-content:space-between;gap:8px;width:100%;text-align:left;border:0;border-bottom:1px solid #f0f2f5;background:#fff;padding:9px 10px;font:inherit;cursor:pointer}
 .lpp .clist button.on,.lpp .clist button:hover{background:#eef4ff}.lpp .clist small{color:#66788e;white-space:nowrap}
 @media(max-width:560px){.lpp-back{padding:0;align-items:flex-end}.lpp{border-radius:14px 14px 0 0;max-height:96dvh}
- .lpp .mode{grid-template-columns:72px minmax(0,1fr)}.lpp .mode input.ref{grid-column:2}.lpp .notes{margin-left:0}
+ .lpp .mode{grid-template-columns:72px minmax(0,1fr)}.lpp .mode input.ref{grid-column:2}
+ .lpp .modes.bks .mode{grid-template-columns:72px minmax(0,1fr) minmax(0,1fr)}.lpp .modes.bks .mode input.amt{grid-column:2 / -1}
+ .lpp .modes.bks .mode input.ref{grid-column:2}.lpp .modes.bks .mode select.bk{grid-column:3;font-size:13px}.lpp .notes{margin-left:0}
  .lpp .sum b{font-size:14px}.lpp td input{width:92px}.lpp .seg button{font-size:12px}}`;
     document.head.appendChild(s);
   }
@@ -161,7 +166,7 @@
   <div class="row2" style="margin-bottom:10px"><div><label class="l">Date received</label><div class="dbx"><input class="dt" inputmode="numeric" maxlength="10" placeholder="DD/MM/YYYY" aria-label="Date received"><button type="button" aria-label="Open calendar">📅</button><input type="date" tabindex="-1" aria-hidden="true"></div></div>
    <div><label class="l" for="lppR">Remark</label><input id="lppR" maxlength="300" autocomplete="off" placeholder="optional"></div></div>
   <label class="l">Money received</label>
-  <div class="modes">${MODES.map(([m,t,ph])=>`<div class="mode"><b>${t}</b><input class="amt" data-m="${m}" inputmode="decimal" autocomplete="off" placeholder="₹ 0" aria-label="${t} amount">${m==="CASH"?`<button type="button" class="lnk" data-cnt>Count notes</button>`:`<input class="ref" data-r="${m}" maxlength="100" autocomplete="off" placeholder="${ph}" aria-label="${t} ${ph}">`}</div>${m==="CASH"?`<div class="notes" data-notes hidden>${NOTES.map(n=>`<span>₹${n}×<input data-n="${n}" inputmode="numeric" placeholder="0" aria-label="${n} notes"></span>`).join("")}<span>coins<input data-n="coins" inputmode="decimal" placeholder="0" aria-label="coins"></span></div>`:""}`).join("")}</div>
+  <div class="modes">${MODES.map(([m,t,ph])=>`<div class="mode"><b>${t}</b><input class="amt" data-m="${m}" inputmode="decimal" autocomplete="off" placeholder="₹ 0" aria-label="${t} amount">${m==="CASH"?`<button type="button" class="lnk" data-cnt>Count notes</button>`:`<input class="ref" data-r="${m}" maxlength="100" autocomplete="off" placeholder="${ph}" aria-label="${t} ${ph}"><select class="bk" data-k="${m}" aria-label="${t}: into which bank" hidden><option value="">Select bank</option></select>`}</div>${m==="CASH"?`<div class="notes" data-notes hidden>${NOTES.map(n=>`<span>₹${n}×<input data-n="${n}" inputmode="numeric" placeholder="0" aria-label="${n} notes"></span>`).join("")}<span>coins<input data-n="coins" inputmode="decimal" placeholder="0" aria-label="coins"></span></div>`:""}`).join("")}</div>
   <div class="tot" style="margin-top:8px">Total <b data-tot>₹0</b></div>
  </div>
  <div><label class="l">${adjust?"Adjust the advance against":"Use this money for"}</label>
@@ -186,6 +191,15 @@
     dp.onchange=()=>{dt.value=dmy(dp.value)};
     dt.oninput=()=>{const d=dt.value.replace(/\D/g,"");if(/^\d{8}$/.test(d)&&!dt.value.includes("/"))dt.value=d.slice(0,2)+"/"+d.slice(2,4)+"/"+d.slice(4)};
     if(o.amount)q('.amt[data-m="'+(o.mode||"CASH")+'"]').value=r2(o.amount);
+    // Our bank of each UPI / Bank / Cheque line (lwb_rajni_bill_pending_setup.sql); no list = no picker.
+    let banks=[];
+    const lastBank=()=>{try{return localStorage.getItem("lwbPayBank")||""}catch(_){return ""}};
+    o.client.rpc("lwb_money_banks").then(({data,error})=>{
+      banks=error?[]:(data||[]);if(!banks.length)return;
+      q(".modes").classList.add("bks");const lb=lastBank();
+      qa("select.bk").forEach(sel=>{sel.insertAdjacentHTML("beforeend",banks.map(b=>`<option value="${esc(b.id)}">${esc(b.name)}${b.last4?" ··"+esc(b.last4):""}</option>`).join(""));
+        if(banks.length===1)sel.value=String(banks[0].id);else if(banks.some(b=>String(b.id)===lb))sel.value=lb;
+        sel.hidden=false;sel.onchange=()=>sel.classList.remove("need")})}).catch(()=>{});
 
     const whole=()=>info.parties.get(key(party))||{party,bills:[],due:0,advance:0,opening:0,members:[],brands:{}};
     const P=()=>BR.length?slice(whole(),brand):whole();
@@ -280,7 +294,9 @@
         for(const [m,t] of MODES){const a=num(q('.amt[data-m="'+m+'"]').value);if(!a)continue;if(a<0)return fail(t+": amount can not be less than zero.");
           const l={mode:m,amount:r2(a)};
           if(m==="CASH"){const n=readNotes();if(Object.keys(n).length&&!notes.hidden)l.notes=n}
-          else{l.ref=q('[data-r="'+m+'"]').value.trim();if(m==="CHEQUE"&&!l.ref)return fail("Enter the cheque number.")}
+          else{l.ref=q('[data-r="'+m+'"]').value.trim();if(m==="CHEQUE"&&!l.ref)return fail("Enter the cheque number.");
+            if(banks.length){const sel=q('select.bk[data-k="'+m+'"]');if(!sel.value){sel.classList.add("need");return fail(t+": choose the bank the money came into.")}
+              l.bank_id=Number(sel.value);try{localStorage.setItem("lwbPayBank",sel.value)}catch(_){}}}
           lines.push(l)}
         if(!lines.length)return fail("Enter the money received (Cash / UPI / Bank / Cheque).");
         const m=money();if(split>m+0.5)return fail("Bills "+rs(split)+" is more than the money received "+rs(m)+".");

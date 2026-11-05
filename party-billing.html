@@ -60,6 +60,11 @@
     .pb-bills{display:grid;gap:10px}
     .pb-bill{border:1px solid var(--erp-line);border-radius:10px;padding:12px;background:#fff}
     .pb-bill.hl{box-shadow:0 0 0 3px #1769d8}
+    /* Rajnigandha slip without a Tally bill (lwb_rajni_bill_pending_setup.sql) */
+    .pb-bill.slip{border-left:4px solid #b26b00}.pb-bill.slip.late{border-left-color:#c62828;background:#fffafa}
+    .pb-bill .sc{display:flex;gap:4px;flex-wrap:wrap;margin:-4px 0 8px}
+    .pb-warn{display:flex;gap:10px;align-items:center;background:#fdecec;border:1px solid #f3c2c2;border-radius:10px;padding:9px 12px;margin:0 0 10px;font-size:13.5px;color:#7a1d1d}
+    .pb-warn b{color:#c62828;font-size:14.5px}
     .pb-bill .hd{display:flex;gap:8px;flex-wrap:wrap;align-items:baseline;justify-content:space-between}
     .pb-bill .hd b{font-size:15px}.pb-bill .hd small{color:var(--erp-muted)}
     .pb-bill .who{margin:2px 0 8px;font-size:14px}
@@ -135,14 +140,16 @@
       return isNaN(d)||d.toISOString().slice(0,10)!==iso?"":iso};
     const MODE={CASH:"Cash",UPI:"UPI",BANK:"Bank",CHEQUE:"Cheque"};
     const DELIVERY={DELIVERED:["t-grn","Delivered"],PARTIAL:["t-amb","Part delivered"],NOT_DELIVERED:["t-red","Not delivered"]};
-    let fb="",info=null,tab="make",open=new Set(),want=new URLSearchParams(location.search).get("order"),sheet=[],admin=false,changes=[],wantChg=new URLSearchParams(location.search).get("change");
+    let SLIP=new Map(),fb="",info=null,tab="make",open=new Set(),want=new URLSearchParams(location.search).get("order"),sheet=[],admin=false,changes=[],wantChg=new URLSearchParams(location.search).get("change");
     const toast=t=>ERPShell.toast?ERPShell.toast(t):say(t,false,true);
     function say(t,bad,ok){el("msg").hidden=!t;el("msg").textContent=t||"";el("msg").className="pb-msg"+(bad?" bad":ok?" ok":"")}
 
     async function load(){
       el("reload").disabled=true;
       try{
-        const [x,early,chg]=await Promise.all([LWBPartyPay.load(client),client.rpc("lwb_bills_before_loading"),client.rpc("lwb_bill_change_list",{p_days:30})]);
+        const [x,early,chg,sp]=await Promise.all([LWBPartyPay.load(client),client.rpc("lwb_bills_before_loading"),client.rpc("lwb_bill_change_list",{p_days:30}),client.rpc("lwb_slip_bill_pending")]);
+        // Rajnigandha slips without a bill: delivered / paid / days (lwb_rajni_bill_pending_setup.sql); missing = no highlight.
+        SLIP=new Map((sp.error?[]:(sp.data||[])).map(r=>[r.order_id,r]));
         // PO item changes for Admin (lwb_bill_change_setup.sql); missing function = no list.
         changes=chg.error?[]:(chg.data||[]);
         // Approved POs not loaded yet (lwb_bill_before_loading_setup.sql); missing function = only loaded ones, as before.
@@ -219,18 +226,25 @@
     function renderMake(){
       const q=el("q").value.trim().toLowerCase();
       const list=toMake().filter(o=>match(q,o.order_no,o.party,o.parent,...membersOf(o.parent)));
+      // Rajnigandha slips waiting longest for the bill come first.
+      const sw=o=>{const r=SLIP.get(o.order_id);return r?Number(r.days||0)+1:0};list.sort((a,b)=>sw(b)-sw(a));
       if(!list.length){el("body").innerHTML='<div class="pb-empty">✓ No approved PO is waiting for a Tally bill.</div>';return}
-      el("body").innerHTML='<datalist id="dlAll"></datalist><div class="pb-bills">'+list.map(o=>{
+      const sp=list.map(o=>SLIP.get(o.order_id)).filter(Boolean).sort((a,b)=>Number(b.days)-Number(a.days)),old=sp[0];
+      const warn=sp.length?`<div class="pb-warn"><span>⚠️</span><span><b>${sp.length} Rajnigandha bill${sp.length===1?"":"s"} pending · ${rs(sp.reduce((a,r)=>a+Number(r.amount||0),0))}</b><br>Oldest ${esc(old.order_no)} · ${Number(old.days)?old.days+" day"+(Number(old.days)===1?"":"s"):"today"}${old.delivered_at?" · delivered":""}${Number(old.paid)>0.5?" · payment received":""}. Goods are out; only the Tally bill is left.</span></div>`:"";
+      el("body").innerHTML=warn+'<datalist id="dlAll"></datalist><div class="pb-bills">'+list.map(o=>{
         const d=DELIVERY[String(o.delivery||"").toUpperCase()],grp=key(o.parent)!==key(o.party);
         const names=[...new Set([o.party,o.parent,...membersOf(o.parent)])];
         // bill names used before on this main party (kept on the bills only, not as parties)
         const used=[...new Set(orders().filter(x=>key(x.parent)===key(o.parent)).flatMap(x=>(x.bills||[]).map(b=>String(b.firm||"").trim())).filter(Boolean))].filter(n=>!names.some(m=>key(m)===key(n)));
-        return `<div class="pb-bill${o.order_id===want?" hl":""}" data-o="${esc(o.order_id)}">
-          <div class="hd"><span><b>${esc(o.order_no)}</b> ${o.early?`<small>approved ${dmy(String(o.approved_at||o.order_date||"").slice(0,10))}</small> <span class="tag t-amb">${o.vehicle_no?"Vehicle "+esc(o.vehicle_no)+" · not loaded yet":"Not loaded yet"}</span>`:`<small>loaded ${dmy(o.dispatch_date||o.order_date)}</small>`} ${d?`<span class="tag ${d[0]}">${d[1]}</span>`:""}${waitTag(o.order_id)}</span><span>${o.early?"PO value ("+esc(Number(o.qty||0).toLocaleString("en-IN"))+" CS)":"Loaded value"} <b>${rs(o.erp_amount)}</b></span></div>
+        const sl=SLIP.get(o.order_id),sd=sl?Number(sl.days||0):0,dd=t=>t?dmy(String(t).slice(0,10)).slice(0,5):"";
+        const slipTag=sl?` <span class="tag ${sd>=1?"t-red":"t-amb"}">${sd>=1?"Bill pending "+sd+" day"+(sd===1?"":"s"):"Slip today"}</span>`:"";
+        const slipChips=sl?`<div class="sc">${sl.delivered_at?`<span class="tag t-grn">✓ Delivered ${esc(dd(sl.delivered_at))}</span>`:'<span class="tag t-gry">Not delivered</span>'}${Number(sl.paid)>0.5?`<span class="tag t-grn">✓ ${rs(sl.paid)} received${sl.pay_modes?" "+esc(sl.pay_modes):""} (advance)</span>`:'<span class="tag t-gry">Not paid yet</span>'}</div>`:"";
+        return `<div class="pb-bill${o.order_id===want?" hl":""}${sl?" slip"+(sd>=1?" late":""):""}" data-o="${esc(o.order_id)}">
+          <div class="hd"><span><b>${esc(o.order_no)}</b> ${o.early?`<small>approved ${dmy(String(o.approved_at||o.order_date||"").slice(0,10))}</small> <span class="tag t-amb">${o.vehicle_no?"Vehicle "+esc(o.vehicle_no)+" · not loaded yet":"Not loaded yet"}</span>`:`<small>${sl?"slip":"loaded"} ${dmy(sl?sl.slip_date:o.dispatch_date||o.order_date)}</small>`}${slipTag} ${d?`<span class="tag ${d[0]}">${d[1]}</span>`:""}${waitTag(o.order_id)}</span><span>${o.early?"PO value ("+esc(Number(o.qty||0).toLocaleString("en-IN"))+" CS)":"Loaded value"} <b>${rs(o.erp_amount)}</b></span></div>
           <div class="who">${esc(o.party)}${grp?` <span class="tag t-blu">under ${esc(o.parent)}</span>`:""}${names.length>1?`<small style="color:var(--erp-muted)"> · bill names: ${esc(names.filter(n=>key(n)!==key(o.party)).join(", "))}</small>`:""}</div>
-          <datalist id="dl-${esc(o.order_id)}">${names.concat(used).map(n=>`<option value="${esc(n)}">`).join("")}</datalist>
+          ${slipChips}<datalist id="dl-${esc(o.order_id)}">${names.concat(used).map(n=>`<option value="${esc(n)}">`).join("")}</datalist>
           <div class="pb-lines"></div>
-          <div class="pb-foot mk"><button type="button" class="lnk" data-add>+ <span class="lg">Another </span>bill</button>${dateBox(info.today)}<button type="button" class="pb-btn sm" data-it="${esc(o.order_id)}" title="See items, change qty / rate / SKU (goes to Admin)">ⓘ Items<span class="lg"> / Edit</span></button><span class="tot"></span><button type="button" class="pb-btn pri" data-save>Save<span class="lg"> bill</span></button></div></div>`}).join("")+'</div>';
+          <div class="pb-foot mk"><button type="button" class="lnk" data-add>+ <span class="lg">Another </span>bill</button>${dateBox(sl&&sl.slip_date<=info.today?sl.slip_date:info.today)}<button type="button" class="pb-btn sm" data-it="${esc(o.order_id)}" title="See items, change qty / rate / SKU (goes to Admin)">ⓘ Items<span class="lg"> / Edit</span></button><span class="tot"></span><button type="button" class="pb-btn pri" data-save>Save<span class="lg"> bill</span></button></div></div>`}).join("")+'</div>';
       el("body").querySelectorAll(".pb-bill").forEach(card=>{
         const o=list.find(x=>x.order_id===card.dataset.o),lines=card.querySelector(".pb-lines"),tot=card.querySelector(".tot");
         const total=()=>{const l=[...lines.children],s=l.reduce((a,r)=>a+num(r.querySelector(".am").value),0);

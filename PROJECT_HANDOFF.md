@@ -819,3 +819,10 @@
 - New Sales Order: Sales Head button "Send to Admin for rate OK" when a line is below min; message after save says it went to Admin.
 - Salesman PO below min (5 Nov 2026 fix): deferred trigger `lwb_rate_po_punch` on `order_items` gives Admin the `PO_RATE_APPROVAL` bell as soon as the lines are saved (one bell per PO; WAITING row made then). Before this Admin heard nothing until the Sales Head approved, and #225 itself was never merged. Admin's Approve approves the PO directly; the Sales Head can't approve it below min.
 - Tests: `tests/cc-rate-limit`.
+
+## Rajnigandha bill pending and bank-wise payments (5 Nov 2026)
+- `lwb_rajni_bill_pending_setup.sql` (needs `lwb_quick_slip_setup.sql`, `lwb_brand_money_setup.sql`, `lwb_bank_statement_setup.sql`, `lwb_accounts_fresh_start_setup.sql`). A slip PO is loaded at once; until its Tally bill is saved it is "Bill pending".
+- `lwb_quick_slips.delivered_at/by` via `lwb_quick_slip_delivered(order, on)`; `lwb_quick_slip_paid(order, {amount, mode, bank_id, ref})` books a party payment of the slip's brand (`lwb_tally_payments.slip_order_id`, `bank_id`), kept as advance until the bill is saved (the bill then takes the advance by itself).
+- `lwb_tally_payments.bank_id`: party payment UPI / Bank / Cheque lines carry our bank (`lwb_money_banks()` picker in `party-pay.js`; `lwb_party_receive` p_lines[].bank_id optional). `lwb_acc_lines_all()` now shows it, so the bank statement matches only on that bank.
+- `lwb_slip_bill_pending()` feeds: Rajnigandha Slips "Bill pending" tab (chips + ✓ Delivered / ₹ Mark paid), Billing & Outstanding > Bills to make (red card, days pending, banner, bill date = slip date), Accounts Dashboard banner. Daily 10:00 IST bell `SLIP_BILL_PENDING` (pg_cron) to Accounts + Admin.
+- Tests: `tests/rajni-bill-pending`. All new text is English only.
