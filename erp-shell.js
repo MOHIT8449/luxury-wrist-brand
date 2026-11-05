@@ -39,6 +39,12 @@
     const s=document.createElement("script");s.src=base+"erp-info.js";
     (document.head||document.documentElement).appendChild(s);
   }
+  // Typed text in CAPITAL letters on every page (erp-caps.js).
+  if(!window.ERPCaps&&!document.querySelector('script[src*="erp-caps.js"]')){
+    const cur=document.currentScript,base=cur&&cur.src?cur.src.replace(/[^/]*$/,""):"";
+    const s=document.createElement("script");s.src=base+"erp-caps.js";
+    (document.head||document.documentElement).appendChild(s);
+  }
   const ICON={
     home:'<path d="M3 11l9-8 9 8v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/>',
     cart:'<path d="M3 4h2l2.4 11h10.2L20 7H6.2"/><circle cx="9" cy="19" r="1.5"/><circle cx="17" cy="19" r="1.5"/>',
