@@ -4,6 +4,13 @@
 **Purpose:** Continue the same ERP project from a new ChatGPT conversation without restarting or losing the agreed requirements.
 **Status:** Active development / verification. Do not assume all modules are completed or fully tested.
 
+## Drill down everywhere: list → party → bill → items (5 Nov 2026)
+
+- Mohit: tapping Outstanding gave the party list, but tapping a party did nothing. Every list row must open its detail, as deep as it goes (party → its bills → what is in the bill).
+- `erp-list.js` (now loaded on every page by `erp-shell.js`): new `LWBDrill` — `order(row|id)` = PO / bill popup with SKU lines (ordered / approved / loaded / rate / amount; "Bill details" + "Open PO →"), `party(row|name)` = bills due of the main party (from `LWBPartyPay.load`, party-pay.js loaded on demand; tap a bill = its items, "Ledger →"); no bill due or no Billing access = the party's recent POs. No SQL.
+- ERPList popups: a row with no own `onRow` opens `LWBDrill` by itself when it has `order_id` / `order_no`+`id` (PO) or `party` / `customer_name` (party); `drill:false` turns it off. A popup opened from a row has "‹ Back" + a trail ("To collect › PARTY"); Esc = one step back. New options `links:[{t,go}]` (footer buttons) and `load(ui)` (`ui.title()`, `ui.sub()`).
+- Page rows: `data-drill-order="<id>"` (+ `data-drill-no`, `data-drill-bill`) or `data-drill-party="<name>"` on any element opens the same popup (click / Enter). Used on Billing & Outstanding (bill rows under a party, PO no. on Bills to make, Payments rows + split chips), Party Ledger (entry + bill rows), Money Overview (bill / PO rows), Daily Report (top outstanding, driver bill history), Accounts Dashboard (Party outstanding rows), My Orders cards. Accounts Dashboard count popups open the money line itself.
+- Checked with a mocked database at 390 / 1366 px: no side scroll, no new JS errors. Not yet checked on live data. Screenshots: project files `drill-down/`.
 ## Every drop-down searches like the SKU box (5 Nov 2026)
 
 - Mohit: the SKU box in New PO lets you type and the list narrows; every drop-down on the website (party, vehicle, employee, supplier, head, bank ...) must work the same way.
