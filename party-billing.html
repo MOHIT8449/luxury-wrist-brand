@@ -137,14 +137,16 @@
       return isNaN(d)||d.toISOString().slice(0,10)!==iso?"":iso};
     const MODE={CASH:"Cash",UPI:"UPI",BANK:"Bank",CHEQUE:"Cheque"};
     const DELIVERY={DELIVERED:["t-grn","Delivered"],PARTIAL:["t-amb","Part delivered"],NOT_DELIVERED:["t-red","Not delivered"]};
-    let fb="",info=null,tab="make",open=new Set(),want=new URLSearchParams(location.search).get("order"),sheet=[],admin=false,changes=[],wantChg=new URLSearchParams(location.search).get("change");
+    let marks=new Map(),fb="",info=null,tab="make",open=new Set(),want=new URLSearchParams(location.search).get("order"),sheet=[],admin=false,changes=[],wantChg=new URLSearchParams(location.search).get("change");
     const toast=t=>ERPShell.toast?ERPShell.toast(t):say(t,false,true);
     function say(t,bad,ok){el("msg").hidden=!t;el("msg").textContent=t||"";el("msg").className="pb-msg"+(bad?" bad":ok?" ok":"")}
 
     async function load(){
       el("reload").disabled=true;
       try{
-        const [x,early,chg]=await Promise.all([LWBPartyPay.load(client),client.rpc("lwb_bills_before_loading"),client.rpc("lwb_bill_change_list",{p_days:30})]);
+        const [x,early,chg,mk]=await Promise.all([LWBPartyPay.load(client),client.rpc("lwb_bills_before_loading"),client.rpc("lwb_bill_change_list",{p_days:30}),client.rpc("lwb_admin_order_marks",{p_ids:null})]);
+        // Admin marked Loaded / Delivered by hand (lwb_admin_mark_load_deliver_setup.sql); missing function = none.
+        marks=new Map();for(const m of (mk.error?[]:(mk.data||[]))){const a=marks.get(m.order_id)||{};a[m.kind]=m;marks.set(m.order_id,a)}
         // PO item changes for Admin (lwb_bill_change_setup.sql); missing function = no list.
         changes=chg.error?[]:(chg.data||[]);
         // Approved POs not loaded yet (lwb_bill_before_loading_setup.sql); missing function = only loaded ones, as before.
@@ -165,10 +167,13 @@
     const orders=()=>(info.raw.orders||[]).filter(o=>inB(o.company_id));
     // no Tally bill yet: loaded (loading signed) first, then approved POs not loaded yet (quantity is final from
     // approval, so the bill can be made while the party waits). Old delivered POs from before this screen are left out.
-    const toMake=()=>orders().filter(o=>!o.invoice_no&&(["loaded","invoiced"].includes(String(o.status).toLowerCase())||days(o.dispatch_date||o.order_date)<=30)).concat((info.early||[]).filter(o=>!fb));
+    const toMake=()=>orders().filter(o=>!o.invoice_no&&(["loaded","invoiced"].includes(String(o.status).toLowerCase())||marks.has(o.order_id)||days(o.dispatch_date||o.order_date)<=30)).concat((info.early||[]).filter(o=>!fb));
     const membersOf=p=>{const x=info.parties.get(key(p));return x?x.members:[]};
     const match=(q,...v)=>!q||v.some(x=>String(x==null?"":x).toLowerCase().includes(q));
 
+    // Admin mark tag: "Delivered · by Admin" (title = who and when)
+    const markTag=(id,hasReport)=>{const m=marks.get(id);if(!m)return "";const x=m.DELIVERED||m.LOADED,t=m.DELIVERED?"Delivered":"Loaded";
+      if(m.DELIVERED&&hasReport)return "";return ` <span class="tag ${m.DELIVERED?"t-grn":"t-amb"}" title="${esc("Marked by "+(x.marked_by_name||"Admin")+" on "+dmy(x.mark_date)+(x.note?" · "+x.note:""))}">${t} · by Admin</span>`};
     const waitOf=id=>changes.find(c=>c.order_id===id&&c.status==="WAITING");
     const waitTag=id=>{const c=waitOf(id);return c?` <button type="button" class="tag t-amb" data-wv="${esc(c.id)}" style="border:0;cursor:pointer">⏳ Waiting Admin ${LWBBillChange.sg(Number(c.diff))}</button>`:""};
     function editItems(id){const o=orders().find(x=>x.order_id===id)||(info.early||[]).find(x=>x.order_id===id);
@@ -228,7 +233,7 @@
         // bill names used before on this main party (kept on the bills only, not as parties)
         const used=[...new Set(orders().filter(x=>key(x.parent)===key(o.parent)).flatMap(x=>(x.bills||[]).map(b=>String(b.firm||"").trim())).filter(Boolean))].filter(n=>!names.some(m=>key(m)===key(n)));
         return `<div class="pb-bill${o.order_id===want?" hl":""}" data-o="${esc(o.order_id)}">
-          <div class="hd"><span><b>${esc(o.order_no)}</b> ${o.early?`<small>approved ${dmy(String(o.approved_at||o.order_date||"").slice(0,10))}</small> <span class="tag t-amb">${o.vehicle_no?"Vehicle "+esc(o.vehicle_no)+" · not loaded yet":"Not loaded yet"}</span>`:`<small>loaded ${dmy(o.dispatch_date||o.order_date)}</small>`} ${d?`<span class="tag ${d[0]}">${d[1]}</span>`:""}${waitTag(o.order_id)}</span><span>${o.early?"PO value ("+esc(Number(o.qty||0).toLocaleString("en-IN"))+" CS)":"Loaded value"} <b>${rs(o.erp_amount)}</b></span></div>
+          <div class="hd"><span><b>${esc(o.order_no)}</b> ${o.early?`<small>approved ${dmy(String(o.approved_at||o.order_date||"").slice(0,10))}</small> <span class="tag t-amb">${o.vehicle_no?"Vehicle "+esc(o.vehicle_no)+" · not loaded yet":"Not loaded yet"}</span>`:`<small>loaded ${dmy(o.dispatch_date||o.order_date)}</small>`} ${d?`<span class="tag ${d[0]}">${d[1]}</span>`:""}${markTag(o.order_id,!!d)}${waitTag(o.order_id)}</span><span>${o.early?"PO value ("+esc(Number(o.qty||0).toLocaleString("en-IN"))+" CS)":"Loaded value"} <b>${rs(o.erp_amount)}</b></span></div>
           <div class="who">${esc(o.party)}${grp?` <span class="tag t-blu">under ${esc(o.parent)}</span>`:""}${names.length>1?`<small style="color:var(--erp-muted)"> · bill names: ${esc(names.filter(n=>key(n)!==key(o.party)).join(", "))}</small>`:""}</div>
           <datalist id="dl-${esc(o.order_id)}">${names.concat(used).map(n=>`<option value="${esc(n)}">`).join("")}</datalist>
           <div class="pb-lines"></div>
