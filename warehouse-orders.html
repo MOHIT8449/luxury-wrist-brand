@@ -883,7 +883,7 @@
     tr.row-picked td {background:var(--lwb-gold-soft,#fffbea)!important}
 
     /* Godown Manager / Accounts: view only */
-    body.po-view-only #bulkApproveBtn, body.po-view-only #bulkDeleteBtn, body.po-view-only #deleteOrderBtn, body.po-view-only #cancelOrderBtn, body.po-view-only #approveOrderBtn,
+    body.po-view-only #bulkApproveBtn, body.po-view-only #bulkDeleteBtn, body.po-view-only #bulkLoadBtn, body.po-view-only #bulkDeliverBtn, body.po-view-only #deleteOrderBtn, body.po-view-only #cancelOrderBtn, body.po-view-only #approveOrderBtn,
     body.po-view-only #addSkuBtn, body.po-view-only #postApprovalPanel, body.po-view-only .manager-note-actions,
     body.po-view-only #warehouseSkuHint, body.po-view-only #itemsBody .i-act,
     body.po-view-only #reviewModal table thead th:last-child {display:none!important}
@@ -979,7 +979,12 @@
       #ordersArea tbody tr.row-picked td {background:none!important}
       .po-selbar .sp {display:none}
       .po-selbar #poSelText {flex:1 1 100%}
-      .po-selbar .btn {flex:1;padding:10px 6px;font-size:12.5px}
+      .po-selbar {gap:6px}
+      #poSelBar {padding:6px 8px;gap:5px}
+      #poSelBar .sp {display:none!important}
+      #poSelBar .btn {flex:1 1 auto;min-width:0;padding:10px 4px;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+      #poSelBar .btn .lg {display:none}
+      #poSelBar #bulkDeleteBtn,#poSelBar #bulkClearBtn {flex:0 0 36px}
       .po-journey {grid-template-columns:1fr;gap:0;padding:10px 12px}
       .po-journey li {padding:0 0 12px 32px;min-height:34px}
       .po-journey li::before {top:22px;bottom:0;left:10px;right:auto;width:2px;height:auto}
@@ -1108,6 +1113,7 @@
     .mark-card .mark-form input {padding:8px;min-height:40px;font-size:16px;border:1px solid #c7ced6;border-radius:6px;width:100%;min-width:0}
     .mark-card .mark-warn {margin:8px 0 0;font-size:12px;color:#8a5a00;line-height:1.4}
     .mark-card .mark-warn:empty {display:none}
+    .mark-card .mark-list {display:block;max-height:132px;overflow-y:auto;margin:0 0 6px;padding:6px 8px;background:#f6f8fa;border:1px solid #e3e7ec;border-radius:6px;color:#1f2a37;font-size:12px;line-height:1.5}
     @media(max-width:480px){.mark-card .mark-form {grid-template-columns:1fr}.adm-mark .am-btns {margin-left:0;width:100%}.adm-mark .am-btns .btn {flex:1 1 0!important}}
 
 /* Filled % badge (4 Nov 2026) */
@@ -1341,10 +1347,12 @@
     <div class="po-selbar" id="poSelBar" hidden>
       <span id="poSelText"></span>
       <span class="sp"></span>
-      <button type="button" class="btn btn-blue" id="bulkApproveBtn" onclick="bulkApprove()">✔ Approve selected</button>
-      <button type="button" class="btn btn-light" id="bulkPrintBtn" onclick="bulkPrint()">🖨 Print selected</button>
-      <button type="button" class="btn btn-red" id="bulkDeleteBtn" onclick="deleteOrders(pickedOrders().map(o=>o.id))" hidden title="Admin: delete dummy / duplicate orders for ever">🗑 Delete selected</button>
-      <button type="button" class="btn btn-light" onclick="clearSelection()">✖ Clear</button>
+      <button type="button" class="btn btn-blue" id="bulkApproveBtn" onclick="bulkApprove()">✔ Approve<span class="lg"> selected</span></button>
+      <button type="button" class="btn btn-light" id="bulkPrintBtn" onclick="bulkPrint()">🖨 Print<span class="lg"> selected</span></button>
+      <button type="button" class="btn btn-light" id="bulkLoadBtn" onclick="openBulkMark('LOADED')" hidden title="Admin: mark the selected POs Loaded together"></button>
+      <button type="button" class="btn btn-green" id="bulkDeliverBtn" onclick="openBulkMark('DELIVERED')" hidden title="Admin: mark the selected POs Delivered together"></button>
+      <button type="button" class="btn btn-red" id="bulkDeleteBtn" onclick="deleteOrders(pickedOrders().map(o=>o.id))" hidden title="Admin: delete dummy / duplicate orders for ever">🗑<span class="lg"> Delete selected</span></button>
+      <button type="button" class="btn btn-light" id="bulkClearBtn" onclick="clearSelection()" title="Clear selection">✖<span class="lg"> Clear</span></button>
     </div>
 
     <section class="table-card">
@@ -2827,8 +2835,16 @@ function renderSelBar() {
     `☑ ${list.length} PO selected · ${formatNumber(sum("total_qty"))} CS · ${formatMoney(sum("total_amount"))} · ${formatNumber(sum("total_weight"))} KG`;
   const approveBtn = document.getElementById("bulkApproveBtn");
   const allPending = list.every(isPending);
+  approveBtn.hidden = !list.some(isPending);
   approveBtn.disabled = bulkBusy || !allPending;
   approveBtn.title = allPending ? "" : "Only Pending Review POs can be approved together";
+  // Admin: Loaded / Delivered together, only when at least one picked PO can take it
+  const loadBtn = document.getElementById("bulkLoadBtn"), delivBtn = document.getElementById("bulkDeliverBtn");
+  const nLoad = list.filter(canMarkLoaded).length, nDeliv = list.filter(canMarkDelivered).length;
+  loadBtn.hidden = !nLoad; loadBtn.disabled = bulkBusy;
+  loadBtn.innerHTML = '🚚 <span class="lg">Mark </span>Loaded' + (nLoad < list.length ? " (" + nLoad + ")" : "");
+  delivBtn.hidden = !nDeliv; delivBtn.disabled = bulkBusy;
+  delivBtn.innerHTML = '✓ <span class="lg">Mark </span>Delivered' + (nDeliv < list.length ? " (" + nDeliv + ")" : "");
   document.getElementById("bulkPrintBtn").disabled = bulkBusy || list.some(isCancelled);
   const delBtn = document.getElementById("bulkDeleteBtn");
   delBtn.hidden = !IS_ADMIN;
@@ -3046,8 +3062,70 @@ function openMark(id, kind) {
   setTimeout(() => d.focus(), 30);
 }
 function closeMark() { document.getElementById("markModal").classList.remove("show"); markFor = null; }
+
+/* Admin: select many POs → Mark Loaded / Mark Delivered together (6 Nov 2026). Each PO goes through the
+   same lwb_admin_mark_order as one PO, so loaded qty (= approved qty) and stock move exactly the same way.
+   POs that cannot take the mark are left out and named in the popup. */
+function openBulkMark(kind) {
+  const list = pickedOrders();
+  if (!IS_ADMIN || !list.length || bulkBusy) return;
+  const ok = list.filter(kind === "LOADED" ? canMarkLoaded : canMarkDelivered);
+  const skip = list.filter(o => !ok.includes(o));
+  if (!ok.length) { alert("None of the selected POs can be marked " + (kind === "LOADED" ? "Loaded" : "Delivered") + "."); return; }
+  markFor = { orders: ok, kind, bulk: true };
+  const both = kind === "DELIVERED" ? ok.filter(canMarkLoaded).length : 0;
+  const today = new Date(Date.now() + 19800000).toISOString().slice(0,10); // IST date
+  document.getElementById("markTitle").textContent = (kind === "LOADED" ? "Mark Loaded · " : "Mark Delivered · ") + ok.length + " PO";
+  const sum = ok.reduce((t, o) => t + (Number(o.total_amount) || 0), 0);
+  document.getElementById("markSub").innerHTML =
+    `<span class="mark-list">${ok.map(o => `<b>${escapeHtml(o.order_no || "PO")}</b> ${escapeHtml(o.customer_name || "")}`).join("<br>")}</span>` +
+    `${ok.length} PO · ${formatMoney(sum)}. Use this only when the goods have really ` + (kind === "LOADED" ? "been loaded" : "been delivered") +
+    ". Your name and the date are saved on each PO.";
+  const d = document.getElementById("markDate");
+  d.max = today; d.value = today;
+  const od = ok.map(o => String(o.order_date || "").slice(0,10)).filter(Boolean).sort().pop();
+  d.min = od || "";
+  document.getElementById("markNote").value = "";
+  document.getElementById("markWarn").textContent = [
+    kind === "LOADED" ? "Loaded qty = approved qty, stock goes out like Vehicle Loaded. Accounts get the \"make Tally bill\" popup." : "",
+    both ? both + " PO not loaded yet: marked Loaded too (loaded qty = approved qty)." : "",
+    skip.length ? skip.length + " left out (" + skip.map(o => o.order_no).join(", ") + "): " + (kind === "LOADED" ? "not approved or already loaded." : "not approved or already delivered.") : ""
+  ].filter(Boolean).join(" ");
+  document.getElementById("markSave").textContent = (kind === "LOADED" ? "✓ Mark " : "✓ Deliver ") + ok.length + " PO";
+  document.getElementById("markModal").classList.add("show");
+  setTimeout(() => d.focus(), 30);
+}
+
+async function saveBulkMark() {
+  const { orders: list, kind } = markFor, btn = document.getElementById("markSave");
+  const date = document.getElementById("markDate").value;
+  if (!date) { alert("Enter the date."); return; }
+  const late = list.filter(o => String(o.order_date || "").slice(0,10) > date);
+  if (late.length) { alert("Date is before the PO date of " + late.map(o => o.order_no).join(", ") + "."); return; }
+  const note = document.getElementById("markNote").value.trim() || null;
+  btn.disabled = true; bulkBusy = true; renderSelBar();
+  const done = [], failed = [];
+  try {
+    for (const [i, order] of list.entries()) {
+      showMessage("Marking " + (i + 1) + " of " + list.length + ": " + order.order_no + "...", "success");
+      const { error } = await db.rpc("lwb_admin_mark_order", {
+        p_order_id: order.id, p_loaded: true, p_delivered: kind === "DELIVERED", p_date: date, p_note: note });
+      error ? failed.push(order.order_no + " (" + (error.message || error) + ")") : done.push(order.order_no);
+    }
+  } finally {
+    bulkBusy = false; btn.disabled = false;
+    closeMark();
+    pickedIds.clear();
+    await loadOrders();
+  }
+  const word = kind === "LOADED" ? "Loaded" : "Delivered";
+  showMessage(done.length + " PO marked " + word + (done.length ? ": " + done.join(", ") : "") +
+    (failed.length ? ". Not done: " + failed.join("; ") : ". They are now in Accounts > Bills to make."), failed.length ? "error" : "success");
+}
+
 async function saveMark() {
   if (!markFor) return;
+  if (markFor.bulk) return saveBulkMark();
   const { order, kind } = markFor, btn = document.getElementById("markSave");
   const date = document.getElementById("markDate").value;
   if (!date) { alert("Enter the date."); return; }
