@@ -9,56 +9,118 @@
   if(value!==undefined)x.textContent=String(value);
   return x;
  }
- // One short line per notification: icon + order no + the key number. Full text opens on click.
+ // One format for every notification, every role:
+ //   line 1  icon · what happened · [action pill]                 time  ✓
+ //   line 2  party name                                            ₹ value
+ //   line 3  order no · cases · vehicle · cash / due · by whom
  // CC_<type> = Sales Head copy of another login's notification: same text and page, never a popup.
  const baseType=n=>String(n.notification_type||"").toUpperCase().replace(/^CC_/,"");
- function summary(n){
-  const t=baseType(n),m=String(n.message||""),title=String(n.title||"");
-  const order=(m.match(/\b[A-Z]{2,6}-\d{3,}\b/)||[])[0]||"";
-  const amt=(m.match(/(?:Rs\.?|₹)\s?([\d,]+(?:\.\d+)?)/i)||[])[1];
-  const val=amt?Number(amt.replace(/,/g,"")):0;
-  const money=amt?"₹"+val.toLocaleString("en-IN",{minimumFractionDigits:val%1?2:0,maximumFractionDigits:2}):"";
-  const join=a=>a.filter(Boolean).join(" · ");
-  if(t==="TALLY_BILL_PENDING")return {icon:"🧾",text:join(["Make Tally bill",order])};
-  if(t==="VEHICLE_LOADED")return {icon:"🚛",text:join(["Vehicle loaded",order,(m.match(/Vehicle ([A-Z0-9]+)/)||[])[1]])};
-  if(t==="PO_APPROVED_BILL")return {icon:"🧾",text:join(["PO approved · Make bill",order,money])};
-  if(t==="PO_APPROVED_LOADING")return {icon:"📦",text:join(["PO approved · Get ready",order])};
-  if(t==="TALLY_BILL_DONE")return {icon:"🧾",text:join(["Bill made",order])};
-  if(t==="ORDER_NEW")return {icon:"🛒",text:join(["New order",order,money,"Approve"])};
-  if(t==="DELIVERY_COLLECTION_INFO")return {icon:"💰",text:join(["Driver collected",order,money])};
-  if(t==="DELIVERY_COLLECTION_RECEIVED")return {icon:"✅",text:join(["Payment received",order,money])};
-  if(t==="DELIVERY_RETURN_INFO")return {icon:"↩",text:join(["Driver took a return",order,money])};
-  if(t.startsWith("TALLY_NOTE_"))return {icon:"📝",text:join([t.endsWith("DEBIT")?"Debit note":"Credit note",order,money])};
-  if(t==="SALES_RETURN_NEW")return {icon:"↩",text:join(["Sales return",order,money,"Credit note"])};
-  if(t==="DELIVERY_RETURN_RECEIVE")return {icon:"📦",text:join(["Receive return goods",order,money])};
-  if(t==="DELIVERY_RETURN_DEDUCTED")return {icon:"↩",text:join(["Return cut",order,money])};
-  if(t==="DELIVERY_RETURN_APPROVED"||t==="DELIVERY_RETURN_REJECTED")return {icon:t.endsWith("APPROVED")?"✅":"❌",text:join([t.endsWith("APPROVED")?"Return approved":"Return rejected",order,money])};
-  if(t.startsWith("DELIVERY_RETURN"))return {icon:"↩",text:join(["Return",order,money,t.endsWith("OPERATIONS")?"Warehouse check":"Verify"])};
-  if(t==="DELIVERY_COLLECTION"){const out=(m.match(/Outstanding Rs ([\d.]+)/)||[])[1];
-   return {icon:"💰",text:join(["Collection",order,money,Number(out)>0?"Due ₹"+Number(out).toLocaleString("en-IN"):"","Verify"])}}
-  if(t.startsWith("DELIVERY_COLLECTION_"))return {icon:t.endsWith("VERIFIED")?"✅":"❌",text:join([t.endsWith("VERIFIED")?"Payment verified":"Payment rejected",order,money])};
-  if(t.startsWith("LOADING_ASSIGNMENT")){
-   const veh=(m.match(/Vehicle ([A-Z0-9]+)/)||[])[1],drv=((m.match(/Driver ([^(·]+)/)||[])[1]||"").trim();
-   return {icon:"🚚",text:join([/updated|changed|badla/i.test(title)?"Loading updated":"Loading",order,veh,drv])};
+ const num=s=>Number(String(s||"").replace(/,/g,""));
+ const inr=v=>"₹"+Number(v).toLocaleString("en-IN",{minimumFractionDigits:v%1?2:0,maximumFractionDigits:2});
+ // tone: act = needs you · move = dispatch · money = cash · ok = done · bad = cancel/reject · info = update
+ const KIND=[
+  [/^ORDER_NEW$/,"🛒","act","New order","Approve"],
+  [/^TALLY_BILL_PENDING$/,"🧾","act","Vehicle loaded","Make bill"],
+  [/^PO_APPROVED_BILL$/,"🧾","act","PO approved","Make bill"],
+  [/^PO_APPROVED_LOADING$/,"📦","act","PO approved","Get ready"],
+  [/^TALLY_BILL_DONE$/,"🧾","ok","Bill made",""],
+  [/^VEHICLE_LOADED$/,"🚛","move","Vehicle loaded",""],
+  [/^LOADING_ASSIGNMENT/,"🚚","move","Vehicle assigned",""],
+  [/^ORDER_DELIVERED$/,"✅","ok","Delivered",""],
+  [/^ORDER_PARTIAL$/,"🟠","info","Part delivered",""],
+  [/^ORDER_NOT_DELIVERED$/,"⚠","bad","Not delivered",""],
+  [/^ORDER_CANCELLED$/,"✖","bad","Order cancelled",""],
+  [/^ORDER_EDITED$/,"✏","info","Order changed",""],
+  [/^DELIVERY_COLLECTION$/,"💰","act","Cash collected","Verify"],
+  [/^DELIVERY_COLLECTION_INFO$/,"💰","money","Cash collected",""],
+  [/^DELIVERY_COLLECTION_RECEIVED$/,"✅","money","Payment received",""],
+  [/^DELIVERY_COLLECTION_VERIFIED$/,"✅","money","Payment verified",""],
+  [/^DELIVERY_COLLECTION_/,"❌","bad","Payment rejected",""],
+  [/^DELIVERY_RETURN_INFO$/,"↩","info","Return taken",""],
+  [/^DELIVERY_RETURN_RECEIVE$/,"📦","act","Return goods","Receive"],
+  [/^DELIVERY_RETURN_DEDUCTED$/,"↩","info","Return cut",""],
+  [/^DELIVERY_RETURN_APPROVED$/,"✅","ok","Return approved",""],
+  [/^DELIVERY_RETURN_REJECTED$/,"❌","bad","Return rejected",""],
+  [/^DELIVERY_RETURN_OPERATIONS$/,"↩","act","Return","Check"],
+  [/^DELIVERY_RETURN/,"↩","act","Return","Verify"],
+  [/^SALES_RETURN_NEW$/,"↩","act","Sales return","Credit note"],
+  [/^TALLY_NOTE_.*DEBIT$/,"📝","info","Debit note",""],
+  [/^TALLY_NOTE_/,"📝","info","Credit note",""],
+  [/^BILL_CHANGE_APPROVAL$/,"✏","act","PO change","Approve"],
+  [/^BILL_CHANGE_APPROVED$/,"✅","ok","PO change approved",""],
+  [/^BILL_CHANGE_SENT_BACK$/,"↩","bad","PO change sent back",""],
+  [/^(PO_)?RATE_APPROVAL$/,"₹","act","Rate below min","Approve"],
+  [/^(PO_)?RATE_APPROVED$/,"✅","ok","Rate approved",""],
+  [/^STOCK_MOVE_PENDING$/,"📦","act","Stock transfer","Approve"],
+  [/^STOCK_MOVE_APPROVED$/,"✅","ok","Stock transfer approved",""],
+  [/^STOCK_MOVE_REJECTED$/,"❌","bad","Stock transfer rejected",""],
+  [/^STOCK_AUDIT_OK$/,"✅","ok","Stock check OK",""],
+  [/^STOCK_AUDIT_/,"🌙","act","Stock check",""],
+  [/^GODOWN_/,"🏭","info","",""],
+  [/^ACC_BANK_VERIFY$/,"🏦","act","Bank entry","Verify"],
+  [/^ACC_BANK_REJECTED$/,"❌","bad","Bank entry rejected",""],
+  [/^ACC_CASH_HANDOVER$/,"💵","act","Cash handover","Check"],
+  [/^ACC_CASH_RETURNED$/,"✅","money","Cash returned",""],
+  [/^ACC_CASH_DIFF$/,"⚠","bad","Cash difference",""],
+  [/^ACC_CHEQUE/,"🧾","act","Cheque","Deposit"],
+  [/^ACC_/,"₹","info","",""],
+  [/^MARKET_REPORT$/,"🚩","info","Outside stock",""],
+  [/^MARKET_REVIEW$/,"✅","ok","",""],
+  [/^COMPLAINT_(RESOLVED|CLOSED)$/,"✅","ok","",""],
+  [/^COMPLAINT_NEW$/,"📮","act","",""],
+  [/^COMPLAINT_/,"💬","info","",""],
+  [/^TASK_DONE$/,"✅","ok","",""],
+  [/^TASK_(OVERDUE|CANCELLED)$/,"⚠","bad","",""],
+  [/^TASK_/,"📋","act","",""],
+  [/^ANNOUNCEMENT$/,"📢","info","",""],
+  [/^SALES_PLAN$/,"📋","info","Today's plan",""]
+ ];
+ // ord = this notification's order row (party, value), when this login can read it.
+ function summary(n,ord){
+  const t=baseType(n),m=String(n.message||"").replace(/\s+/g," ").trim(),title=String(n.title||"").trim();
+  const k=KIND.find(r=>r[0].test(t))||[null,"•","info","",""];
+  let [,icon,tone,head,action]=k;
+  if(/URGENT/i.test(title)&&tone!=="ok")tone="bad";
+  if(!head)head=title.replace(/^URGENT · /i,"").replace(/^Godown: /,"Godown · ")||"ERP update";
+  if(/^LOADING_ASSIGNMENT/.test(t)&&/updated|changed|badla/i.test(title))head="Vehicle changed";
+  if(t==="VEHICLE_LOADED"&&/differs/i.test(title)){head="Loaded ≠ bill";tone="act";action="Check"}
+  const ref=(m.match(/\b[A-Z]{2,6}-\d{3,}\b/)||m.match(/\b(?:STM|AUD|GDN|MKT|CMP|TSK)-\d+\b/)||[])[0]||ord?.order_no||"";
+  // Party: order row first; else "LXY-1 · PARTY · …" or "… on LXY-1 (PARTY): …".
+  let party=String(ord?.customer_name||"").trim();
+  const seg=m.split(" · ").map(s=>s.trim());
+  const isOrder=!!n.order_id&&/^[A-Z]{2,6}-\d{3,}$/.test(ref);
+  if(!party&&isOrder&&seg[0]===ref&&seg[1]&&!/^(Vehicle|Rs|₹|By |Driver|\d)/i.test(seg[1]))party=seg[1].replace(/\..*$/,"").replace(/ (?:delivered|loaded|cancelled|by|on|from)\b.*$/i,"").trim();
+  if(!party&&isOrder)party=((m.match(/[A-Z]{2,6}-\d{3,} \(([^)]+)\)/)||[])[1]||"").trim();
+  // Value: the main ₹ figure of the message (order / loaded / collected value), else the order total.
+  let amount="";
+  const delta=t.startsWith("BILL_CHANGE_")&&(m.match(/([+-])\s?Rs\.? ?([\d,]+(?:\.\d+)?)/)||null);
+  if(delta)amount=delta[1]+inr(num(delta[2]));
+  else{const a=(m.match(/(?:Rs\.?|₹)\s?([\d,]+(?:\.\d+)?)/i)||[])[1];
+   if(a)amount=inr(num(a));else if(ord?.total_amount!=null&&/^(ORDER_|PO_|LOADING|VEHICLE|TALLY_BILL)/.test(t))amount=inr(Number(ord.total_amount))}
+  const d=[];
+  if(ref)d.push(ref);
+  const qty=(m.match(/\b(\d[\d,]*)\s?(?:CS|cases)\b/i)||[])[1];if(qty)d.push(num(qty)+" CS");
+  const veh=(m.match(/Vehicle ([A-Z0-9]{5,})/)||[])[1];if(veh)d.push("🚛 "+veh);
+  const drv=((m.match(/Driver ([^(·.]+)/)||[])[1]||"").trim();if(drv&&/^LOADING/.test(t))d.push("Driver "+drv);
+  const cash=(m.match(/Cash Rs\.? ?([\d,]+(?:\.\d+)?)/i)||[])[1];if(cash)d.push("Cash "+inr(num(cash)));
+  const onl=m.match(/\+ ([A-Za-z]+) Rs\.? ?([\d,]+(?:\.\d+)?)/);if(onl)d.push(onl[1].toUpperCase()+" "+inr(num(onl[2])));
+  if(/nothing paid/i.test(m))d.push("Nothing paid");
+  const due=(m.match(/Outstanding Rs\.? ?([\d,]+(?:\.\d+)?)/i)||[])[1];if(num(due)>0)d.push("Due "+inr(num(due)));
+  const why=((m.match(/Reason: ([^.]+)/i)||[])[1]||"").trim();if(why&&!/^not given$/i.test(why))d.push("Reason: "+why);
+  if(t==="SALES_PLAN"){const p=(m.match(/from (\d+) part/)||[])[1];if(p)d.push(p+" parties due")}
+  // Who did it: "By X", "Loaded by X", or "X on LXY-1 (…)" (driver collection).
+  let by=((m.match(/\b(?:by|By) ([A-Za-z][^·.()\d:]{1,30})/)||[])[1]||"").trim();
+  if(!by&&/^DELIVERY_COLLECTION$/.test(t))by=((m.match(/^([^·(:]{2,30}?) on [A-Z]{2,6}-\d/)||[])[1]||"").trim();
+  if(!by&&ord?.sales_person&&t==="ORDER_NEW")by=ord.sales_person;
+  if(by)d.push("By "+by);
+  // No party (tasks, banners, accounts…): show the message itself on line 2.
+  let line2=party;
+  if(!line2){
+   line2=seg.filter(s=>s!==ref).join(" · ").replace(/\b(?:STM|AUD|GDN|MKT|CMP|TSK)-\d+\b/g,"").replace(/^[\s·:,-]+/,"");
+   line2=line2.split(/\. (?=[A-Z])/)[0].replace(/\.$/,"");
+   if(line2.length>70)line2=line2.slice(0,67)+"…";
   }
-  if(t.startsWith("STOCK_MOVE_")){const id=(m.match(/STM-\d+/)||[])[0]||"";return {icon:{STOCK_MOVE_PENDING:"📦",STOCK_MOVE_APPROVED:"✅",STOCK_MOVE_REJECTED:"❌"}[t]||"📦",text:join([title,id])}}
-  if(t.startsWith("STOCK_AUDIT_")){const id=(m.match(/AUD-\d+/)||[])[0]||"";return {icon:t==="STOCK_AUDIT_OK"?"✅":"🌙",text:join([title,id])}}
-  if(t.startsWith("GODOWN_")){const id=(m.match(/GDN-\d+/)||[])[0]||"";return {icon:"🏭",text:join([title.replace(/^Godown: /,"Godown · "),id])}}
-  if(t.startsWith("ORDER_")){const ic={ORDER_DELIVERED:"✅",ORDER_PARTIAL:"🟠",ORDER_NOT_DELIVERED:"⚠",ORDER_CANCELLED:"✖",ORDER_EDITED:"✏"}[t]||"•";
-   return {icon:ic,text:join([title,order])}}
-  if(t.startsWith("BILL_CHANGE_")){const d=(m.match(/\(([+-]Rs [\d.]+)\)/)||m.match(/ · ([+-]Rs [\d.]+)/)||[])[1]||"";
-   return {icon:{BILL_CHANGE_APPROVAL:"✏",BILL_CHANGE_APPROVED:"✅",BILL_CHANGE_SENT_BACK:"↩"}[t]||"✏",text:join([{BILL_CHANGE_APPROVAL:"PO change · Admin OK",BILL_CHANGE_APPROVED:"PO change approved",BILL_CHANGE_SENT_BACK:"PO change sent back"}[t]||title,order,d.replace("Rs ","₹")])}}
-  if(/^(PO_)?RATE_APPROV(AL|ED)$/.test(t)){const ask=t.endsWith("AL");return {icon:ask?"₹":"✅",text:join([ask?"Rate below min":"Rate OK",order])}}
-  if(t==="ANNOUNCEMENT")return {icon:"📢",text:join([title,m.length>50?m.slice(0,47)+"…":m])};
-  if(t==="MARKET_REPORT"||t==="MARKET_REVIEW"){const id=(m.match(/MKT-\d+/)||[])[0]||"";return {icon:t==="MARKET_REPORT"?"🚩":"✅",text:join([t==="MARKET_REPORT"?"Outside stock":title,id])}}
-  if(t.startsWith("COMPLAINT_")){const id=(m.match(/CMP-\d+/)||[])[0]||"";
-   return {icon:{COMPLAINT_NEW:"📮",COMPLAINT_RESOLVED:"✅",COMPLAINT_CLOSED:"✅"}[t]||"💬",text:join([title.replace(/^URGENT · /,"⚠ "),id])}}
-  if(t.startsWith("TASK_")){const id=(m.match(/TSK-\d+/)||[])[0]||"";
-   return {icon:{TASK_NEW:"📋",TASK_DONE:"✅",TASK_DUE:"⏰",TASK_OVERDUE:"⚠",TASK_CANCELLED:"✖",TASK_REOPENED:"↺"}[t]||"💬",text:join([title.replace(/^URGENT · /,"⚠ "),id])}}
-  if(t.startsWith("ACC_"))return {icon:{ACC_BANK_VERIFY:"🏦",ACC_BANK_REJECTED:"❌",ACC_CASH_HANDOVER:"💵",ACC_CASH_RETURNED:"✅",ACC_CASH_DIFF:"⚠",ACC_CHEQUE_REMINDER:"🧾"}[t]||"₹",text:title||"Accounts"};
-  if(t==="SALES_PLAN"){const n=(m.match(/from (\d+) part/)||[])[1];return {icon:"📋",text:join(["Today's plan",n?n+" parties due":"Sales Head note"])}}
-  const short=m.length>60?m.slice(0,57)+"…":m;
-  return {icon:"•",text:join([title||"ERP",order||short])};
+  return {icon,tone,head,action,line2,isParty:!!party,amount,details:d};
  }
  function ago(v){
   if(!v)return "";
@@ -123,19 +185,31 @@
    ".lwb-op-wrap{position:relative;display:inline-flex;align-items:center}",
    ".lwb-op-bell{background:#ffdc67!important;color:#382900!important;border:1px solid #e6af22!important;border-radius:8px!important;min-width:45px;min-height:39px;font-size:18px!important;position:relative;cursor:pointer}",
    ".lwb-op-count{position:absolute;top:-9px;right:-7px;background:#c72a38;color:#fff;font-size:11px;padding:2px 5px;border-radius:12px;display:none;min-width:18px}",
-   ".lwb-op-panel{position:absolute;top:calc(100% + 9px);right:0;z-index:99999;width:min(460px,92vw);max-height:440px;overflow-y:auto;background:#fff;color:#173450;border:1px solid #cbd5e2;border-radius:10px;box-shadow:0 12px 35px #0003;padding:12px;font:13px/1.4 Arial,sans-serif;white-space:normal;text-align:left}",
+   ".lwb-op-panel{position:absolute;top:calc(100% + 9px);right:0;z-index:99999;width:min(460px,92vw);max-height:min(560px,80vh);overflow-y:auto;background:#fff;color:#173450;border:1px solid #cbd5e2;border-radius:10px;box-shadow:0 12px 35px #0003;padding:12px;font:13px/1.4 Arial,sans-serif;white-space:normal;text-align:left}",
    ".lwb-op-panel[hidden]{display:none}.lwb-op-head{display:flex;align-items:center;justify-content:space-between;gap:9px;margin-bottom:8px}",
    ".lwb-op-panel button{padding:7px 9px;border:1px solid #bbd1e7;background:#eef5fc;color:#164679;border-radius:6px;cursor:pointer;font:12px Arial,sans-serif}",
-   ".lwb-op-msg{border-top:1px solid #e0e8f1;color:#173450}",
-   ".lwb-op-msg.unread{background:#fff8e0}.lwb-op-msg p{margin:2px 10px 8px 28px;color:#51657a;overflow-wrap:anywhere}",
-   ".lwb-op-row{display:flex;align-items:center;gap:8px;padding:8px 6px;cursor:pointer}",
+   ".lwb-op-msg{border-top:1px solid #e0e8f1;border-left:4px solid #c6d3e1;color:#173450;padding:7px 8px 7px 6px;cursor:default}",
+   ".lwb-op-msg.link{cursor:pointer}.lwb-op-msg.link:hover{background:#f3f8fd}",
+   ".lwb-op-msg.unread{background:#fffaeb}.lwb-op-msg.unread.link:hover{background:#fff3d1}",
+   ".lwb-op-msg.t-act{border-left-color:#e3a008}.lwb-op-msg.t-move{border-left-color:#1f7a8c}.lwb-op-msg.t-money{border-left-color:#16865a}",
+   ".lwb-op-msg.t-ok{border-left-color:#3aa371}.lwb-op-msg.t-bad{border-left-color:#c72a38}.lwb-op-msg.t-info{border-left-color:#8aa0b8}",
+   ".lwb-op-msg:not(.unread){border-left-color:#dfe6ee}",
+   ".lwb-op-l{display:flex;align-items:center;gap:6px;min-width:0}",
+   ".lwb-op-l+.lwb-op-l{margin-top:2px;padding-left:26px}",
    ".lwb-op-ic{flex:0 0 20px;text-align:center;font-size:15px}",
-   ".lwb-op-sum{flex:1;min-width:0;font-weight:700;font-size:13.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}",
-   ".lwb-op-msg:not(.unread) .lwb-op-sum{font-weight:400;color:#51657a}",
+   ".lwb-op-what{flex:1;min-width:0;display:flex;align-items:center;gap:6px;font-weight:700;font-size:13.5px}",
+   ".lwb-op-what b{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}",
+   ".lwb-op-act{flex:0 0 auto;font-size:11px;font-weight:700;padding:1px 7px;border-radius:10px;background:#fde8b0;color:#6b4a00}",
+   ".lwb-op-msg:not(.unread) .lwb-op-act{background:#edf1f5;color:#5b6d80}",
    ".lwb-op-time{flex:0 0 auto;color:#71849a;font-size:12px}",
-   ".lwb-op-go{flex:0 0 auto;color:#164679;font-size:18px;line-height:1}",
-   ".lwb-op-row.link:hover{background:#eef5fc}",
-   ".lwb-op-panel button.lwb-op-tick{padding:3px 7px;font-size:12px}",
+   ".lwb-op-party{flex:1;min-width:0;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}",
+   ".lwb-op-party.p{font-weight:600;text-transform:uppercase;letter-spacing:.2px}.lwb-op-party:not(.p){color:#3d5168}",
+   ".lwb-op-amt{flex:0 0 auto;font-weight:700;font-size:13.5px;font-variant-numeric:tabular-nums;color:#0f2b45}",
+   ".lwb-op-det{color:#5d7086;font-size:12px;overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}",
+   ".lwb-op-msg:not(.unread) .lwb-op-what{font-weight:600;color:#3d5168}",
+   ".lwb-op-msg p{margin:4px 4px 0 26px;color:#51657a;font-size:12px;overflow-wrap:anywhere}",
+   ".lwb-op-panel button.lwb-op-tick{flex:0 0 auto;padding:2px 7px;font-size:12px}",
+   "@media(max-width:560px){.lwb-op-panel{position:fixed;left:8px;right:8px;width:auto;max-height:calc(100vh - 80px);padding:10px}}",
    ".lwb-op-error{color:#ac2828!important}"
   ].join("");
   document.head.append(css);
@@ -150,6 +224,7 @@
   const btns=el("span");btns.style.cssText="display:flex;gap:6px";btns.append(allRead,reload);
   head.append(el("strong",null,"ERP Notifications"),btns);
   const list=el("div");panel.append(head,list);wrap.append(bell,panel);mount.prepend(wrap);
+  const orders=new Map();
   async function reloadData(){
    const {data,error}=await db.from("erp_notifications")
     .select("id,title,message,order_id,notification_type,is_read,created_at")
@@ -159,18 +234,31 @@
    const rows=(data||[]).filter(n=>String(role||"").toLowerCase()!=="driver"||Date.now()-new Date(n.created_at)<12*36e5),unread=rows.filter(n=>!n.is_read).length;
    bell.setAttribute("aria-label", "Notifications" + (unread ? ", " + unread + " unread" : ""));
    count.textContent=unread>99?"99+":String(unread);count.style.display=unread?"inline-block":"none";
+   // Party name + order value for every order notification, in one read (rows this login may see).
+   const need=[...new Set(rows.map(n=>n.order_id).filter(id=>id&&!orders.has(id)))];
+   if(need.length){
+    try{const {data:od}=await db.from("orders").select("id,order_no,customer_name,total_amount,sales_person").in("id",need);
+     for(const o of od||[])orders.set(o.id,o);}catch(e){}
+   }
    list.replaceChildren();
    if(!rows.length){list.append(el("p",null,"No notifications yet."));return}
    allRead.hidden=!unread;
    for(const n of rows){
-    const box=el("div","lwb-op-msg"+(n.is_read?"":" unread")),sum=summary(n);
-    const href=route(n,pages),row=el("div","lwb-op-row"+(href?" link":""));
-    row.title=href?"Open":"Click to view details";
-    row.append(el("span","lwb-op-ic",sum.icon),el("span","lwb-op-sum",sum.text),el("span","lwb-op-time",ago(n.created_at)));
-    if(href)row.append(el("span","lwb-op-go","›"));
+    const sum=summary(n,orders.get(n.order_id)),href=route(n,pages);
+    const box=el("div","lwb-op-msg t-"+sum.tone+(n.is_read?"":" unread")+(href?" link":""));
+    box.title=href?"Open":"Click to view details";
+    const l1=el("div","lwb-op-l"),hd=el("span","lwb-op-what");
+    hd.append(el("b",null,sum.head));
+    if(sum.action)hd.append(el("span","lwb-op-act",sum.action));
+    l1.append(el("span","lwb-op-ic",sum.icon),hd,el("span","lwb-op-time",ago(n.created_at)));
+    const l2=el("div","lwb-op-l");
+    l2.append(el("span","lwb-op-party"+(sum.isParty?" p":""),sum.line2||"—"));
+    if(sum.amount)l2.append(el("span","lwb-op-amt",sum.amount));
+    const l3=sum.details.length?el("div","lwb-op-l"):null;
+    if(l3)l3.append(el("span","lwb-op-det",sum.details.join(" · ")));
     const full=el("p",null,(n.title?n.title+": ":"")+(n.message||""));full.hidden=true;
     // Click opens the page of this notification (and marks it read); others show the full text.
-    row.addEventListener("click",async e=>{
+    box.addEventListener("click",async e=>{
      if(e.target.closest("button"))return;
      if(!href){full.hidden=!full.hidden;return}
      if(!n.is_read)await db.from("erp_notifications").update({is_read:true}).eq("id",n.id).eq("user_id",user.id);
@@ -185,9 +273,9 @@
       if(err){read.disabled=false;box.append(el("p","lwb-op-error",err.message))}
       else await reloadData();
      });
-     row.append(read);
+     l1.append(read);
     }
-    box.append(row,full);
+    box.append(l1,l2);if(l3)box.append(l3);box.append(full);
     list.append(box);
    }
   }
@@ -199,7 +287,7 @@
   });
   bell.addEventListener("click",()=>{
     panel.hidden=!panel.hidden;bell.setAttribute("aria-expanded",String(!panel.hidden));
-    if(!panel.hidden)reloadData();
+    if(!panel.hidden){panel.style.top=innerWidth<=560?Math.round(bell.getBoundingClientRect().bottom+8)+"px":"";reloadData()}
   });
   reload.addEventListener("click",reloadData);
   document.addEventListener("click",e=>{
