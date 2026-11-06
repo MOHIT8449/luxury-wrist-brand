@@ -32,7 +32,7 @@
     VEHICLE:[{k:'PHOTO',l:'Vehicle photo (number plate visible)',img:1,cam:'environment',max:4,want:1},{k:'RC',l:'RC book',max:4},{k:'INSURANCE',l:'Insurance',max:4},{k:'PUC',l:'PUC',max:2},{k:'FITNESS',l:'Fitness',max:2},{k:'PERMIT',l:'Permit',max:4},{k:'OTHER',l:'Other document',max:6}],
     PARTY:[{k:'SHOP',l:'Shop photo',img:1,cam:'environment',max:4,want:1},{k:'PAN',l:'PAN card',max:2},{k:'GST',l:'GST certificate',max:4},{k:'OWNER',l:'Owner photo',img:1,cam:'environment',max:2},{k:'CHEQUE',l:'Cancelled cheque',max:2},{k:'OTHER',l:'Other document',max:6}],
     SUPPLIER:[{k:'GST',l:'GST certificate',max:4},{k:'PAN',l:'PAN card',max:2},{k:'CHEQUE',l:'Cancelled cheque',max:2},{k:'OTHER',l:'Other document',max:6}],
-    PURCHASE_BILL:[{k:'BILL',l:'Purchase bill (PDF / scan / photo)',doc:1,max:10,want:1},{k:'DAMAGE',l:'Damage / leakage / breakage photos',img:1,cam:'environment',max:10},{k:'OTHER',l:'LR / other',max:6}],
+    PURCHASE_BILL:[{k:'BILL',l:'Purchase bill (PDF / scan / photo)',s:'Bill',doc:1,max:10,want:1},{k:'DAMAGE',l:'Damage / leakage / breakage photos',s:'Damage photos',img:1,cam:'environment',max:10},{k:'OTHER',l:'LR / other',max:6}],
     ASSET:[{k:'PHOTO',l:'Asset photo',img:1,cam:'environment',req:1,max:6},{k:'BILL',l:'Purchase bill (PDF / scan / photo)',doc:1,max:6},{k:'WARRANTY',l:'Warranty card',max:4},{k:'OTHER',l:'Other document',max:6}],
     STOCK_MOVE:[{k:'DAMAGE',l:'Damage / leakage / breakage photos',img:1,cam:'environment',req:1,max:6}],
     ORDER:[{k:'LOADED',l:'Loaded vehicle photo',img:1,cam:'environment',max:4},{k:'DAMAGE',l:'Damage / leakage / breakage at loading',img:1,cam:'environment',max:6}]
@@ -85,7 +85,13 @@
 .ed-tag{display:inline-block;font-size:11.5px;font-weight:700;border-radius:999px;padding:2px 8px;margin:2px 2px 0 0;white-space:nowrap}
 .ed-tag.bad{background:#fdecec;color:#b42318}.ed-tag.ok{background:#e3f7e9;color:#18613c}.ed-tag.warn{background:#fff4e0;color:#8a5300}
 .ed-av{width:36px;height:36px;border-radius:50%;object-fit:cover;border:1px solid #dfe3e8;vertical-align:middle;margin-right:8px;background:#eef1f4;display:inline-block}
-@media(max-width:540px){.ed-wrap{grid-template-columns:1fr}.ed-pop{padding:12px}}`;
+@media(max-width:540px){.ed-wrap{grid-template-columns:1fr}.ed-pop{padding:12px}}
+.ed-compact .ed-wrap{display:flex;flex-wrap:wrap;gap:6px 16px;align-items:center}
+.ed-compact .ed-slot{border:0;background:none;padding:0;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.ed-compact .ed-slot.ok{background:none}.ed-compact .ed-h{margin:0;font-size:13px;gap:4px}.ed-compact .ed-h small{font-size:11.5px;color:#18613c}
+.ed-compact .ed-files{margin:0;gap:4px}.ed-compact .ed-f{width:34px;height:34px;font-size:9px}.ed-compact .ed-f .x{width:16px;height:16px;line-height:16px;font-size:10px}
+.ed-compact .ed-btn{width:36px;height:34px;padding:0;justify-content:center;font-size:17px}
+.ed-compact .ed-hint{margin:0;font-size:11px}`;
     document.head.append(s);
   }
 
@@ -139,7 +145,7 @@
     css();
     const client=o.client,entity=o.entity,slots=slotsOf(entity,o.slots),canEdit=o.canEdit!==false,infoKeys=o.info?(INFO[entity]||[]):[];
     let id=o.id==null||o.id===''?null:String(o.id),files=[],pending=[],info={},infoLoaded=false,busy=0,err='';
-    const root=document.createElement('div');root.className='ed-root';
+    const root=document.createElement('div');root.className='ed-root'+(o.compact?' ed-compact':'');
     if(o.mount){o.mount.replaceChildren(root)}
     const pickers={};
     function picker(slot,cam){
@@ -205,6 +211,13 @@
         '<div class="ed-wrap">'+slots.map(s=>{
           const mine=files.filter(f=>f.doc_type===s.k),wait=pending.filter(p=>p.slot.k===s.k),n=mine.length+wait.length;
           const cls='ed-slot'+(s.req?' req':'')+(n?' ok':s.req?' miss':'');
+          // Compact (Goods Inward): short name + icon-only buttons in one line.
+          if(o.compact){const sl=s.s||s.l.replace(/ \(.*\)$/,''),camT='Camera: take a photo',pickT=s.img?'Gallery: choose photos':'Choose PDF / scan / photo';
+            return '<div class="'+cls+'" title="'+esc(s.l)+'"><div class="ed-h"><span>'+esc(sl)+(s.req?' <span class="r">*</span>':'')+'</span>'+(n?'<small>✓ '+n+'</small>':'')+'</div>'+
+              (n?'<div class="ed-files">'+mine.map(d=>fileTile(d,canEdit)).join('')+wait.map(p=>fileTile(p,canEdit)).join('')+'</div>':'')+
+              (canEdit?'<button type="button" class="ed-btn" data-pick="'+s.k+'" title="'+pickT+'" aria-label="'+esc(sl)+': '+pickT+'">'+(s.img?'🖼':'📄')+'</button>'+
+                '<button type="button" class="ed-btn" data-cam="'+s.k+'" title="'+camT+'" aria-label="'+esc(sl)+': '+camT+'">📷</button>':'')+
+              (wait.some(p=>p.fail)?'<span class="ed-hint" style="color:#b42318">Not uploaded</span>':'')+'</div>';}
           return '<div class="'+cls+'"><div class="ed-h"><span>'+esc(s.l)+(s.req?' <span class="r">*</span>':'')+'</span><small>'+(n?'✓ '+n:s.req?'Required':s.want?'Recommended':'Optional')+'</small></div>'+
             (n?'<div class="ed-files">'+mine.map(d=>fileTile(d,canEdit)).join('')+wait.map(p=>fileTile(p,canEdit)).join('')+'</div>':'')+
             (canEdit?'<div class="ed-btns">'+(s.doc?'':'<button type="button" class="ed-btn" data-cam="'+s.k+'">📷 Camera</button>')+
