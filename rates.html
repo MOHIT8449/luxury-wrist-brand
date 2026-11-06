@@ -115,6 +115,7 @@
       <div><label for="mepd">MEPD % (when no scheme)</label><input id="mepd" type="number" step="0.01"></div>
       <div><label for="roi">ROI (per case, main)</label><input id="roi" type="number" step="0.01"></div>
       <div><label for="roi5">Landing with ROI</label><input id="roi5" type="number" step="0.01"></div>
+      <div id="chkWrap" hidden><label for="chk" title="A market PO with a rate below Landing + this ₹ is not stopped: Admin and Sales Head get a &quot;please check this order&quot; popup. Blank = off.">Check margin ₹</label><input id="chk" type="number" step="0.5" min="0" placeholder="Off"></div>
       <div class="grow"><label for="note">Note (e.g. "Company budget 24 Oct")</label><input id="note" maxlength="200" placeholder="What changed and who informed"></div>
       <button id="save" type="button" disabled>Save</button>
       <label class="rt-file" id="importWrap" title="Backup from the old CC PO Maker (.json)">PO Maker backup import<input id="importFile" type="file" accept=".json,application/json" hidden></label>
@@ -137,6 +138,7 @@
 
     let schemes=[],schemeErr="",skuCat=new Map(),cats=[],schemeForm={cats:[],pct:"",from:"",to:"",note:""};
     let skus=[],links=new Map(),linksSaved="",linkErr="",backupLinks=null;
+    let checkOn=false;
     let me=null,settings={mepd_pct:1.25,roi_main:0,roi_landing:5},packs=[],history=[],saved="",tab="landing",busy=false,importedLedger=null;
 
     const n=v=>(v===""||v==null||isNaN(+v))?0:+v;
@@ -202,20 +204,21 @@
 
     async function load(){
       const [s,p,h]=await Promise.all([
-        client.from("lwb_rate_settings").select("mepd_pct,roi_main,roi_landing").eq("id",1).maybeSingle(),
+        client.from("lwb_rate_settings").select("*").eq("id",1).maybeSingle(),
         client.from("lwb_rate_packs").select("*").order("sort_no").order("pack_name"),
         client.from("lwb_rate_history").select("id,created_at,note,settings,rows").order("created_at",{ascending:false}).limit(500)
       ]);
       const err=s.error||p.error||h.error;
       if(err){el("box").innerHTML='<div class="erp-empty">Rate tables are not set up yet, or you do not have access: '+esc(err.message)+'<br>Run lwb_rate_scheme_setup.sql in Supabase.</div>';throw err}
-      if(s.data)settings={mepd_pct:+s.data.mepd_pct,roi_main:+s.data.roi_main,roi_landing:+s.data.roi_landing};
+      if(s.data)settings={mepd_pct:+s.data.mepd_pct,roi_main:+s.data.roi_main,roi_landing:+s.data.roi_landing,check_margin:s.data.check_margin==null?"":+s.data.check_margin};
+      checkOn=!!s.data&&"check_margin" in s.data&&me.realRole==="admin";el("chkWrap").hidden=!checkOn;
       packs=(p.data||[]).map(x=>({id:x.id,sort_no:x.sort_no,pack_name:x.pack_name,case_config:+x.case_config,gr:+x.gr,mepd_pct:numOrBlank(x.mepd_pct),
         free_bottle:+x.free_bottle,oms:numOrBlank(x.oms),qps:+x.qps,slab3_rate:+x.slab3_rate,unit_weight:numOrBlank(x.unit_weight),bottle:numOrBlank(x.bottle),
         slab_landing:numOrBlank(x.slab_landing),slab_margins:[0,1,2,3,4].map(i=>numOrBlank((x.slab_margins||[])[i])),min_margin:numOrBlank(x.min_margin),active:x.active!==false})).sort((a,b)=>a.sort_no-b.sort_no||a.pack_name.localeCompare(b.pack_name));
       history=h.data||[];
       saved=stateNow();
       await loadLinks();await loadSchemes();
-      el("mepd").value=settings.mepd_pct;el("roi").value=settings.roi_main;el("roi5").value=settings.roi_landing;
+      el("mepd").value=settings.mepd_pct;el("roi").value=settings.roi_main;el("roi5").value=settings.roi_landing;el("chk").value=settings.check_margin??"";
       render();
     }
 
@@ -488,6 +491,7 @@
     /* ---------- edits ---------- */
     document.addEventListener("input",e=>{
       const t=e.target;
+      if(t.id==="chk"){settings.check_margin=t.value.trim()===""||isNaN(+t.value)?"":+t.value;showState();return}
       if(["mepd","roi","roi5"].includes(t.id)){
         settings[{mepd:"mepd_pct",roi:"roi_main",roi5:"roi_landing"}[t.id]]=n(t.value);
         clearTimeout(render._t);render._t=setTimeout(()=>keepFocus(render),250);return;
@@ -635,8 +639,13 @@
         const payload=packs.map((p,i)=>({id:p.id||null,sort_no:i,pack_name:p.pack_name.trim(),case_config:n(p.case_config),gr:n(p.gr),mepd_pct:p.mepd_pct===""?null:n(p.mepd_pct),
           free_bottle:n(p.free_bottle),oms:p.oms===""?null:n(p.oms),qps:n(p.qps),slab3_rate:n(p.slab3_rate),unit_weight:p.unit_weight===""?null:n(p.unit_weight),
           bottle:p.bottle===""?null:n(p.bottle),slab_landing:p.slab_landing===""?null:n(p.slab_landing),slab_margins:p.slab_margins.map(m=>m===""?null:n(m)),active:p.active!==false}));
+        const chkBefore=(JSON.parse(saved).settings||{}).check_margin??"",chkNow=settings.check_margin??"";
         const {error}=await client.rpc("lwb_save_rates",{p_settings:settings,p_packs:payload,p_note:note||(changed?"Rate update":null),p_snapshot:changed?snapRows():null});
         if(error)throw error;
+        if(checkOn&&String(chkBefore)!==String(chkNow)){
+          const {error:ce}=await client.rpc("lwb_rate_check_margin_set",{p_margin:chkNow===""?null:n(chkNow)});
+          if(ce)await ERPShell.alert("Rates saved, but the check margin was not saved: "+ce.message);
+        }
         importedLedger=null;el("note").value="";
         const margins=new Map(packs.map(p=>[p.pack_name.trim().toUpperCase(),p.min_margin]));
         await load();

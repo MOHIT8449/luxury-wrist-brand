@@ -51,6 +51,7 @@
   [/^BILL_CHANGE_SENT_BACK$/,"↩","bad","PO change sent back",""],
   [/^(PO_)?RATE_APPROVAL$/,"₹","act","Rate below min","Approve"],
   [/^(PO_)?RATE_APPROVED$/,"✅","ok","Rate approved",""],
+  [/^ORDER_RATE_CHECK$/,"⚠","act","Please check order","Check"],
   [/^STOCK_MOVE_PENDING$/,"📦","act","Stock transfer","Approve"],
   [/^STOCK_MOVE_APPROVED$/,"✅","ok","Stock transfer approved",""],
   [/^STOCK_MOVE_REJECTED$/,"❌","bad","Stock transfer rejected",""],
@@ -159,6 +160,7 @@
   [/^BILL_CHANGE_/,["party-billing.html?tab=chg&change={o}"]],
   [/^RATE_APPROVED$/,["quick-slip.html?order={o}"]],
   [/^PO_RATE_APPROVAL$/,["warehouse-orders.html?rate={o}"]],
+  [/^ORDER_RATE_CHECK$/,["warehouse-orders.html?order={o}"]],
   [/^PO_RATE_APPROVED$/,["warehouse-orders.html?order={o}","my-sales.html#orders"]],
   [/^DELIVERY_COLLECTION_(INFO|RECEIVED)$/,["driver-collections.html?order={o}","my-sales.html#orders","loading-dispatch.html"]],
   [/^DELIVERY_RETURN_INFO$/,["driver-returns.html?order={o}","my-sales.html#orders"]],
@@ -270,6 +272,7 @@
      for(const o of od||[])orders.set(o.id,o);}catch(e){}
    }
    arrived(rows);
+   rateCheck(rows);
    list.replaceChildren();
    if(!rows.length){list.append(el("p",null,"No notifications yet."));return}
    allRead.hidden=!unread;
@@ -309,6 +312,22 @@
     box.append(l1,l2);if(l3)box.append(l3);box.append(full);
     list.append(box);
    }
+  }
+  // "Market order — please check once" (lwb_rate_check_setup.sql, Admin / Sales Head): a popup once per
+  // notification on this device; "Open order" opens it, "Later" leaves it in the bell. The PO is never stopped.
+  let rcBusy=false;
+  async function rateCheck(rows){
+   if(rcBusy||!window.ERPShell||document.querySelector(".erp-dlg-back,.pd-back"))return;
+   let seen=[];try{seen=JSON.parse(localStorage.getItem("lwb-rate-check-seen")||"[]")}catch(e){}
+   const n=rows.find(x=>!x.is_read&&baseType(x)==="ORDER_RATE_CHECK"&&String(x.notification_type).toUpperCase()==="ORDER_RATE_CHECK"&&!seen.includes(x.id)&&Date.now()-new Date(x.created_at)<2*864e5);
+   if(!n)return;
+   rcBusy=true;
+   try{localStorage.setItem("lwb-rate-check-seen",JSON.stringify(seen.concat(n.id).slice(-60)))}catch(e){}
+   try{
+    const go=await ERPShell.confirm("⚠ Market order — please check once\n\n"+String(n.message||"").split(" · ").join("\n").split(" | ").join("\n"),{ok:"Open order",cancel:"Later"});
+    if(go){try{await db.from("erp_notifications").update({is_read:true}).eq("id",n.id).eq("user_id",user.id)}catch(e){}
+     location.href="warehouse-orders.html?order="+encodeURIComponent(n.order_id)}
+   }finally{rcBusy=false}
   }
   // "Purchase vehicle arrived" (Godown Manager): popup until the vehicle is checked; Later = 15 min.
   let pdLoading=false;
