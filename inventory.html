@@ -41,6 +41,7 @@
     .inv-warn{background:#fff4e5;border:1px solid #f0b45a;color:#7a4a00;border-radius:8px;padding:9px 12px;font-size:13px;margin-bottom:12px}
     .inv-warn b{color:#a35a00}
     .inv-bad{display:block;color:#c0392b!important;font-weight:600;font-size:11.5px;margin-top:1px}
+    .inv-bk{color:#a35a00;font-weight:600}.inv-neg{color:#c0392b}
     .inv-sub2{display:block;color:var(--erp-muted);font-size:11.5px;margin-top:1px}
     @media(max-width:640px){
       /* Phone: one card per SKU — name on top, then Opening / In / Other / Out / Closing in one row */
@@ -48,7 +49,7 @@
       .inv-t-stock tr{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:0 4px;padding:7px 4px;border-bottom:1px solid var(--erp-line)}
       body .inv-scroll .inv-t-stock td{display:block;border:0;padding:2px 2px!important;text-align:left}
       .inv-t-stock td:first-child{grid-column:1/-1;font-weight:600}
-      body .inv-scroll .inv-t-stock td:nth-child(7){display:none}
+      body .inv-scroll .inv-t-stock td:nth-child(9){display:none}
       .inv-t-stock .inv-bad{font-size:10.5px}
       .inv-t-stock td[data-l]:not(:first-child)::before{content:attr(data-l);display:block;font-size:10.5px;color:var(--erp-muted);font-weight:500}
       .inv-t-stock tfoot tr{background:#fafbfc}
@@ -264,22 +265,23 @@
           if(!ledger){
             const inP=inBy.get(s.id)||0,outP=outBy.get(s.id)||0;
             return {key:b.sku_name,pk:{1:[0,s],2:[inP,s],3:[0,s],4:[outP,s],5:[sale,s]},
-              data:[b.sku_name,fmt(s.pack)+" pcs / "+unitOf(s),unitOf(s),"",LWBBrand.packNum(inP,s.pack),"",LWBBrand.packNum(outP,s.pack),LWBBrand.packNum(sale,s.pack),"",state[0]],
-              show:[sku,"—",T(inP),"—",T(outP),"<b>"+esc(packText(sale,s))+"</b>",badge],html:[0,1,2,3,4,5,6]};
+              data:[b.sku_name,fmt(s.pack)+" pcs / "+unitOf(s),unitOf(s),"",LWBBrand.packNum(inP,s.pack),"",LWBBrand.packNum(outP,s.pack),LWBBrand.packNum(sale,s.pack),"","","","",state[0]],
+              show:[sku,"—",T(inP),"—",T(outP),"<b>"+esc(packText(sale,s))+"</b>","—","—",badge],html:[0,1,2,3,4,5,6,7,8]};
           }
           const open=num(L&&L.opening_pcs)+num(L&&L.opening_entry),inP=num(L&&L.in_pcs),oth=num(L&&L.return_pcs)+num(L&&L.other_pcs),outP=num(L&&L.out_pcs);
           const book=L?num(L.book_pcs):sale,sys=L?num(L.system_pcs):sale,diff=Math.round(sys-book);
           const openCell=T(open)+(L&&num(L.opening_entry)?"<small class=\"inv-sub2\">Opening entry "+esc(packText(num(L.opening_entry),s))+"</small>":"");
           const closeCell="<b>"+esc(packText(book,s))+"</b>"+(diff?'<small class="inv-bad">System '+esc(packText(sys,s))+" ("+(diff>0?"+":"")+esc(packText(diff,s))+")</small>":"");
-          return {key:b.sku_name,diff,pk:{1:[open,s],2:[inP,s],3:[oth,s],4:[outP,s],5:[book,s]},
-            data:[b.sku_name,fmt(s.pack)+" pcs / "+unitOf(s),unitOf(s),LWBBrand.packNum(open,s.pack),LWBBrand.packNum(inP,s.pack),LWBBrand.packNum(oth,s.pack),LWBBrand.packNum(outP,s.pack),LWBBrand.packNum(book,s.pack),LWBBrand.packNum(sys,s.pack),diff?LWBBrand.packNum(diff,s.pack):0,state[0]],
-            show:[sku,openCell,T(inP),oth?esc(LWBBrand.pack(oth,s.pack,s.unit,{plus:true})):"—",T(outP),closeCell,badge],html:[0,1,2,3,4,5,6]};
+          const bkd=num(L&&L.booked_pcs),free=book-bkd;
+          return {key:b.sku_name,diff,pk:{1:[open,s],2:[inP,s],3:[oth,s],4:[outP,s],5:[book,s],6:[bkd,s],7:[free,s]},
+            data:[b.sku_name,fmt(s.pack)+" pcs / "+unitOf(s),unitOf(s),LWBBrand.packNum(open,s.pack),LWBBrand.packNum(inP,s.pack),LWBBrand.packNum(oth,s.pack),LWBBrand.packNum(outP,s.pack),LWBBrand.packNum(book,s.pack),LWBBrand.packNum(sys,s.pack),diff?LWBBrand.packNum(diff,s.pack):0,LWBBrand.packNum(bkd,s.pack),LWBBrand.packNum(free,s.pack),state[0]],
+            show:[sku,openCell,T(inP),oth?esc(LWBBrand.pack(oth,s.pack,s.unit,{plus:true})):"—",T(outP),closeCell,bkd?'<span class="inv-bk">'+esc(packText(bkd,s))+"</span>":"—",'<b'+(free<0?' class="inv-neg"':"")+">"+esc(packText(free,s))+"</b>",badge],html:[0,1,2,3,4,5,6,7,8]};
         });
-        const head=["SKU","Opening","+ Stock In","± Return / Other","− Stock Out","= Closing","Status"];
+        const head=["SKU","Opening","+ Stock In","± Return / Other","− Stock Out","= Closing","Booked","Free","Status"];
         return {title:"Saleable Stock",head,
-          xhead:["SKU","Pack","Unit","Opening (IC / CS)","Stock In (IC / CS)","Return / Other (IC / CS)","Stock Out (IC / CS)","Closing (IC / CS)","System stock (IC / CS)","Difference (IC / CS)","Status"],num:[1,2,3,4,5],rows,
+          xhead:["SKU","Pack","Unit","Opening (IC / CS)","Stock In (IC / CS)","Return / Other (IC / CS)","Stock Out (IC / CS)","Closing (IC / CS)","System stock (IC / CS)","Difference (IC / CS)","Booked (IC / CS)","Free (IC / CS)","Status"],num:[1,2,3,4,5,6,7],rows,
           err:errors.stock,note:ledger
-            ?"Opening = stock on the morning of From (plus Opening Stock entries made in the dates). Closing = Opening + Stock In ± Return / Other − Stock Out, at the end of To. Stock Out = every PO loaded on a vehicle (or marked Loaded by Admin). Return / Other = approved Driver Return to saleable, Stock Transfer / Damage / Loss. Red System line = what the system shows when it does not match. In IC (Rajnigandha) or CS (Coca-Cola)."
+            ?"Opening = stock on the morning of From (plus Opening Stock entries made in the dates). Closing = Opening + Stock In ± Return / Other − Stock Out, at the end of To. Stock Out = every PO loaded on a vehicle (or marked Loaded by Admin). Return / Other = approved Driver Return to saleable, Stock Transfer / Damage / Loss. Booked = POs given (pending approval, approved, loading) but not loaded yet; drafts do not count. Free = Closing − Booked, what can still be sold. Red System line = what the system shows when it does not match. In IC (Rajnigandha) or CS (Coca-Cola)."
             :"Closing = saleable stock now. Opening is shown after lwb_inventory_ledger_setup.sql runs. Stock In and Stock Out are for the selected dates."};
       }
       if(tab==="in"){
@@ -348,14 +350,16 @@
     }
 
     function renderKpis(){
-      let low=0;const saleL=[],dmgL=[];
+      let low=0;const saleL=[],dmgL=[],bookL=[];
       for(const b of live){const s=skuInfo(b.sku_id,b.sku_name),pack=Math.max(1,num(b.pcs_per_case)||s.pack),sale=Math.max(0,num(b.saleable_pcs));
-        saleL.push({pcs:sale-sale%pack,per:pack,unit:s.unit});if(num(b.damaged_pcs))dmgL.push({pcs:num(b.damaged_pcs),per:pack,unit:s.unit});if(sale/pack<LOW_CASES)low++}
+        const L=ledger&&ledgerBy.get(String(b.sku_id)),bk=L?Math.max(0,num(L.book_pcs)):sale;
+        if(L&&num(L.booked_pcs))bookL.push({pcs:num(L.booked_pcs),per:pack,unit:s.unit});
+        saleL.push({pcs:bk-bk%pack,per:pack,unit:s.unit});if(num(b.damaged_pcs))dmgL.push({pcs:num(b.damaged_pcs),per:pack,unit:s.unit});if(sale/pack<LOW_CASES)low++}
       const inTxt=LWBBrand.packSum(inLines.map(x=>({pcs:x.pcs,per:x.sku.pack,unit:x.sku.unit}))),outTxt=LWBBrand.packSum(outLines.map(x=>({pcs:x.cases,per:1,unit:x.sku.unit})));
       const invoices=new Set(inLines.map(x=>x.ref+"|"+x.party)).size,pos=new Set(outLines.map(x=>x.ref)).size;
       const k=[
         ["stock","","SKUs in Stock",fmt(live.filter(b=>num(b.saleable_pcs)>0).length),fmt(live.length)+" SKUs total"],
-        ["stock","green","Saleable Stock",LWBBrand.packSum(saleL),"Full IC / CS in Main Godown"],
+        ["stock","green","Saleable Stock",LWBBrand.packSum(saleL),ledger?(bookL.length?"Booked "+LWBBrand.packSum(bookL)+" (POs not loaded)":"Closing, full IC / CS"):"Full IC / CS in Main Godown"],
         ["stock","red","Low / Out of Stock",fmt(low),"Under "+LOW_CASES+" IC / CS"],
         ["in","blue","Stock In (period)",inTxt,fmt(invoices)+" purchase invoices"],
         ["out","","Stock Out (period)",outTxt,fmt(pos)+" POs loaded"]

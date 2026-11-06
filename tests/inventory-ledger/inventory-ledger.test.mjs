@@ -122,3 +122,18 @@ test('live stock fed by DISPATCH stock rows: no difference',async()=>{
   assert.equal(x.other_pcs,-96);          // sale rows are not "other"
   assert.equal(x.book_pcs,x.system_pcs);
 });
+
+test('Booked = POs given but not loaded yet (approved, pending, loading part); loaded and cancelled not',async()=>{
+  const db=await setup(VIEW_IGNORES);
+  await db.exec(`ALTER TABLE order_items ADD COLUMN ordered_qty numeric, ADD COLUMN approved_qty numeric;
+INSERT INTO orders(id,order_no,customer_name,status) VALUES
+ ('b0000000-0000-4000-8000-000000000005','PO-5','E','approved'),('b0000000-0000-4000-8000-000000000006','PO-6','F','pending_approval'),
+ ('b0000000-0000-4000-8000-000000000007','PO-7','G','loading'),('b0000000-0000-4000-8000-000000000008','PO-8','H','cancelled');
+INSERT INTO order_items(order_id,sku_id,sku_name,ordered_qty,approved_qty,loaded_qty) VALUES
+ ('b0000000-0000-4000-8000-000000000005','${SKU}','RG 2.2G',6,4,null),('b0000000-0000-4000-8000-000000000006','${SKU}','RG 2.2G',2,null,null),
+ ('b0000000-0000-4000-8000-000000000007','${SKU}','RG 2.2G',5,5,2),('b0000000-0000-4000-8000-000000000008','${SKU}','RG 2.2G',7,7,null);
+UPDATE order_items SET ordered_qty=loaded_qty,approved_qty=loaded_qty WHERE ordered_qty IS NULL;`);
+  const x=row(await ledger(db,'2026-11-01','2026-11-06'));
+  assert.equal(x.booked_pcs,(4+2+3)*96);
+  assert.equal(x.out_pcs,9*96); // loaded POs are Stock Out, not Booked
+});
