@@ -41,7 +41,10 @@
     .inv-warn{background:#fff4e5;border:1px solid #f0b45a;color:#7a4a00;border-radius:8px;padding:9px 12px;font-size:13px;margin-bottom:12px}
     .inv-warn b{color:#a35a00}
     .inv-bad{display:block;color:#c0392b!important;font-weight:600;font-size:11.5px;margin-top:1px}
-    .inv-bk{color:#a35a00;font-weight:600}.inv-neg{color:#c0392b}
+    .inv-bk{color:#a35a00;font-weight:600}
+    .inv-st{font-size:11px;padding:1px 7px;margin-top:3px;display:inline-block}
+    .inv-t-stock th:last-child,.inv-t-stock td:last-child{background:#eef6f4}
+    .inv-t-stock td:last-child b{font-size:15px}.inv-neg{color:#c0392b}
     .inv-sub2{display:block;color:var(--erp-muted);font-size:11.5px;margin-top:1px}
     @media(max-width:640px){
       /* Phone: one card per SKU — name on top, then Opening / In / Other / Out / Closing in one row */
@@ -49,7 +52,6 @@
       .inv-t-stock tr{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:0 4px;padding:7px 4px;border-bottom:1px solid var(--erp-line)}
       body .inv-scroll .inv-t-stock td{display:block;border:0;padding:2px 2px!important;text-align:left}
       .inv-t-stock td:first-child{grid-column:1/-1;font-weight:600}
-      body .inv-scroll .inv-t-stock td:nth-child(9){display:none}
       .inv-t-stock .inv-bad{font-size:10.5px}
       .inv-t-stock td[data-l]:not(:first-child)::before{content:attr(data-l);display:block;font-size:10.5px;color:var(--erp-muted);font-weight:500}
       .inv-t-stock tfoot tr{background:#fafbfc}
@@ -261,23 +263,23 @@
           const s0=skuInfo(b.sku_id,b.sku_name),s={...s0,pack:Math.max(1,num(b.pcs_per_case)||s0.pack)},sale=Math.max(0,num(b.saleable_pcs)),full=Math.floor(sale/s.pack);
           const state=num(b.saleable_pcs)<=0?["Out of stock","red"]:full<LOW_CASES?["Low","amber"]:["In stock","green"];
           const L=ledgerBy.get(String(b.sku_id))||null;cur=s;
-          const sku='<span class="inv-sku">'+esc(b.sku_name)+"<small>"+fmt(s.pack)+" pcs / "+unitOf(s)+"</small></span>",badge='<span class="erp-badge '+state[1]+'">'+state[0]+"</span>";
+          const sku='<span class="inv-sku">'+esc(b.sku_name)+"<small>"+fmt(s.pack)+" pcs / "+unitOf(s)+"</small></span>",badge=' <span class="erp-badge inv-st '+state[1]+'">'+state[0]+"</span>";
           if(!ledger){
             const inP=inBy.get(s.id)||0,outP=outBy.get(s.id)||0;
-            return {key:b.sku_name,pk:{1:[0,s],2:[inP,s],3:[0,s],4:[outP,s],5:[sale,s]},
+            return {key:b.sku_name,pk:{1:[0,s],2:[inP,s],3:[0,s],4:[outP,s],7:[sale,s]},
               data:[b.sku_name,fmt(s.pack)+" pcs / "+unitOf(s),unitOf(s),"",LWBBrand.packNum(inP,s.pack),"",LWBBrand.packNum(outP,s.pack),LWBBrand.packNum(sale,s.pack),"","","","",state[0]],
-              show:[sku,"—",T(inP),"—",T(outP),"<b>"+esc(packText(sale,s))+"</b>","—","—",badge],html:[0,1,2,3,4,5,6,7,8]};
+              show:[sku+badge,"—",T(inP),"—",T(outP),"—","—","<b>"+esc(packText(sale,s))+"</b>"],html:[0,1,2,3,4,5,6,7]};
           }
           const open=num(L&&L.opening_pcs)+num(L&&L.opening_entry),inP=num(L&&L.in_pcs),oth=num(L&&L.return_pcs)+num(L&&L.other_pcs),outP=num(L&&L.out_pcs);
           const book=L?num(L.book_pcs):sale,sys=L?num(L.system_pcs):sale,diff=Math.round(sys-book);
           const openCell=T(open)+(L&&num(L.opening_entry)?"<small class=\"inv-sub2\">Opening entry "+esc(packText(num(L.opening_entry),s))+"</small>":"");
           const closeCell="<b>"+esc(packText(book,s))+"</b>"+(diff?'<small class="inv-bad">System '+esc(packText(sys,s))+" ("+(diff>0?"+":"")+esc(packText(diff,s))+")</small>":"");
           const bkd=num(L&&L.booked_pcs),free=book-bkd;
-          return {key:b.sku_name,diff,pk:{1:[open,s],2:[inP,s],3:[oth,s],4:[outP,s],5:[book,s],6:[bkd,s],7:[free,s]},
+          return {key:b.sku_name,diff,pk:{1:[open,s],2:[inP,s],3:[oth,s],4:[outP,s],5:[bkd,s],6:[free,s],7:[book,s]},
             data:[b.sku_name,fmt(s.pack)+" pcs / "+unitOf(s),unitOf(s),LWBBrand.packNum(open,s.pack),LWBBrand.packNum(inP,s.pack),LWBBrand.packNum(oth,s.pack),LWBBrand.packNum(outP,s.pack),LWBBrand.packNum(book,s.pack),LWBBrand.packNum(sys,s.pack),diff?LWBBrand.packNum(diff,s.pack):0,LWBBrand.packNum(bkd,s.pack),LWBBrand.packNum(free,s.pack),state[0]],
-            show:[sku,openCell,T(inP),oth?esc(LWBBrand.pack(oth,s.pack,s.unit,{plus:true})):"—",T(outP),closeCell,bkd?'<span class="inv-bk">'+esc(packText(bkd,s))+"</span>":"—",'<b'+(free<0?' class="inv-neg"':"")+">"+esc(packText(free,s))+"</b>",badge],html:[0,1,2,3,4,5,6,7,8]};
+            show:[sku+badge,openCell,T(inP),oth?esc(LWBBrand.pack(oth,s.pack,s.unit,{plus:true})):"—",T(outP),bkd?'<span class="inv-bk">'+esc(packText(bkd,s))+"</span>":"—",'<b'+(free<0?' class="inv-neg"':"")+">"+esc(packText(free,s))+"</b>",closeCell],html:[0,1,2,3,4,5,6,7]};
         });
-        const head=["SKU","Opening","+ Stock In","± Return / Other","− Stock Out","= Closing","Booked","Free","Status"];
+        const head=["SKU","Opening","+ Stock In","± Return / Other","− Stock Out","Booked","Free","= Closing Stock"];
         return {title:"Saleable Stock",head,
           xhead:["SKU","Pack","Unit","Opening (IC / CS)","Stock In (IC / CS)","Return / Other (IC / CS)","Stock Out (IC / CS)","Closing (IC / CS)","System stock (IC / CS)","Difference (IC / CS)","Booked (IC / CS)","Free (IC / CS)","Status"],num:[1,2,3,4,5,6,7],rows,
           err:errors.stock,note:ledger
