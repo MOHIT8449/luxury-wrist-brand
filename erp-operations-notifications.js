@@ -57,6 +57,9 @@
   [/^STOCK_AUDIT_OK$/,"✅","ok","Stock check OK",""],
   [/^STOCK_AUDIT_/,"🌙","act","Stock check",""],
   [/^GODOWN_/,"🏭","info","",""],
+  [/^PURCHASE_ARRIVED$/,"🚛","act","Purchase vehicle arrived","Check"],
+  [/^PURCHASE_DAMAGE$/,"⚠","bad","Purchase damage","View"],
+  [/^PURCHASE_CHECK_OK$/,"✅","ok","Purchase vehicle OK",""],
   [/^ACC_BANK_VERIFY$/,"🏦","act","Bank entry","Verify"],
   [/^ACC_BANK_REJECTED$/,"❌","bad","Bank entry rejected",""],
   [/^ACC_CASH_HANDOVER$/,"💵","act","Cash handover","Check"],
@@ -113,6 +116,14 @@
   if(!by&&/^DELIVERY_COLLECTION$/.test(t))by=((m.match(/^([^·(:]{2,30}?) on [A-Z]{2,6}-\d/)||[])[1]||"").trim();
   if(!by&&ord?.sales_person&&t==="ORDER_NEW")by=ord.sales_person;
   if(by)d.push("By "+by);
+  // Purchase vehicle (lwb_purchase_damage_report_setup.sql): "Vehicle X · SUPPLIER · Inv N · 15 CS. lines…"
+  if(/^PURCHASE_/.test(t)){
+   const p=m.split(". ")[0].split(" · "),inv=(p.find(s=>/^Inv /.test(s))||""),cs=(p.find(s=>/ CS$/.test(s))||""),v=(p[0]||"").replace(/^Vehicle /,"");
+   const dd=[inv,cs,v?"🚛 "+v:"",p.find(s=>/^In \d/.test(s))||"",p.find(s=>/^Out \d/.test(s))||""].filter(Boolean),lines=t==="PURCHASE_DAMAGE"?(m.split(". ")[1]||""):"";
+   if(lines)dd.push(lines);if(by)dd.push("By "+by);
+   const dc=t==="PURCHASE_DAMAGE"?((title.match(/([\d.,]+) CS/)||[])[1]||""):"";
+   return {icon,tone,head,action,line2:p[1]||"Purchase bill",isParty:true,amount:dc?dc+" CS":"",details:dd};
+  }
   // No party (tasks, banners, accounts…): show the message itself on line 2.
   let line2=party;
   if(!line2){
@@ -151,6 +162,8 @@
   [/^LOADING_ASSIGNMENT_DRIVER$/,["driver-delivery.html?order={o}","loading-dispatch.html","transport-allocation.html"]],
   [/^LOADING_ASSIGNMENT_/,["loading-dispatch.html?order={o}","transport-allocation.html"]],
   [/^GODOWN_/,["godown-report.html"]],
+  [/^PURCHASE_ARRIVED$/,["purchase-register.html?bill={r}"]],
+  [/^PURCHASE_/,["purchase-register.html?report={r}"]],
   [/^STOCK_AUDIT_/,["stock-audit.html"]],
   [/^STOCK_MOVE_PENDING$/,["stock-transfer.html#approvals"]],
   [/^STOCK_MOVE_/,["stock-transfer.html#history"]],
@@ -171,6 +184,7 @@
   // {c} = complaint no. from "CMP-12" in the message.
   if(href.includes("{c}")){const c=(String(n.message||"").match(/CMP-(\d+)/)||[])[1];return c?href.replace("{c}",c):href.split("?")[0]}
   // {t} = task no. from "TSK-12" in the message.
+  if(href.includes("{r}"))return n.ref_id?href.replace("{r}",encodeURIComponent(n.ref_id)):href.split("?")[0];
   if(href.includes("{t}")){const c=(String(n.message||"").match(/TSK-(\d+)/)||[])[1];return c?href.replace("{t}",c):href.split("?")[0]}
   return n.order_id?href.replace("{o}",encodeURIComponent(n.order_id)):href.split("?")[0];
  }
@@ -227,7 +241,7 @@
   const orders=new Map();
   async function reloadData(){
    const {data,error}=await db.from("erp_notifications")
-    .select("id,title,message,order_id,notification_type,is_read,created_at")
+    .select("*")
     .eq("user_id",user.id).order("created_at",{ascending:false}).limit(70);
    if(error){list.replaceChildren(el("p","lwb-op-error","Notification error: "+error.message));return}
    // Driver sees no history: only the last 12 hours.
@@ -240,6 +254,7 @@
     try{const {data:od}=await db.from("orders").select("id,order_no,customer_name,total_amount,sales_person").in("id",need);
      for(const o of od||[])orders.set(o.id,o);}catch(e){}
    }
+   arrived(rows);
    list.replaceChildren();
    if(!rows.length){list.append(el("p",null,"No notifications yet."));return}
    allRead.hidden=!unread;
@@ -278,6 +293,18 @@
     box.append(l1,l2);if(l3)box.append(l3);box.append(full);
     list.append(box);
    }
+  }
+  // "Purchase vehicle arrived" (Godown Manager): popup until the vehicle is checked; Later = 15 min.
+  let pdLoading=false;
+  async function arrived(rows){
+   const a=rows.filter(n=>!n.is_read&&n.ref_id&&baseType(n)==="PURCHASE_ARRIVED"&&Date.now()-new Date(n.created_at)<4*864e5);
+   if(!a.length||pdLoading||document.querySelector(".pd-back"))return;
+   pdLoading=true;
+   try{
+    if(!window.LWBPurchaseDamage)await new Promise((ok,bad)=>{const s=document.createElement("script");s.src="purchase-damage.js";s.onload=ok;s.onerror=bad;document.head.append(s)});
+    await window.LWBPurchaseDamage.arrivals({client:db,rows:a,role:String(role||"").toLowerCase(),onDone:()=>reloadData()});
+   }catch(e){}
+   pdLoading=false;
   }
   allRead.addEventListener("click",async()=>{
    allRead.disabled=true;

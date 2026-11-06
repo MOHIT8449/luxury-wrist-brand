@@ -11,6 +11,7 @@
   <script src="erp-shell.js"></script>
 <script src="erp-list.js"></script>
 <script src="erp-docs.js"></script>
+<script src="purchase-damage.js"></script>
 <script src="excel-io.js"></script>
   <style>
     /* Purchase List (2 Nov 2026): like the PO / Sales List: tabs with counts, one-line toolbar, Excel.
@@ -54,19 +55,6 @@
     .chk.none{background:#fff2dc;color:#b26b00}.chk.ok{background:#e4f6e9;color:#0d6b36}.chk.claim{background:#fee8e8;color:#9e2525}
     .tg{display:inline-block;margin:2px 3px 0 0;padding:1px 6px;border-radius:4px;font-size:11.5px;font-weight:700;white-space:nowrap}
     .tg.ok{background:#e4f6e9;color:#0d6b36}.tg.warn{background:#fff2dc;color:#b26b00}.tg.bad{background:#fdecef;color:#c8102e}.tg.task{background:#e5eefb;color:#1d5fbf}
-    .vf{background:#fbfbfc;padding:10px 12px 12px}
-    .vf-scroll{overflow-x:auto}
-    .vf table{border-collapse:collapse;width:100%;font-size:13.5px;margin:8px 0}
-    .vf th,.vf td{border:1px solid var(--erp-line);padding:4px 6px;background:#fff;white-space:nowrap}
-    .vf th{background:#f6f7f9;font-size:12.5px}
-    .vf td input{width:58px;height:32px;border:1.5px solid var(--erp-line);border-radius:5px;padding:0 6px;font:inherit;text-align:right}
-    .vf .grp{text-align:center}
-    .vf .row{display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap}
-    .vf .row label{display:block;font-size:12.5px;font-weight:600;color:#4b5763;margin-bottom:3px}
-    .vf .row input{height:36px;border:1.5px solid var(--erp-line);border-radius:6px;padding:0 9px;font:inherit}
-    .vf .btns{display:flex;gap:6px;flex-wrap:nowrap;align-items:center;margin-top:8px}
-    .vf .btn{height:36px;border-radius:6px;padding:0 12px;font-weight:600;font-size:14px;cursor:pointer;border:1px solid var(--erp-line);background:#fff;color:var(--erp-ink);white-space:nowrap}
-    .vf .btn.ok{background:#13824a;border-color:#13824a;color:#fff}.vf .btn.red{background:var(--erp-red);border-color:var(--erp-red);color:#fff}
     .pr-items td{background:#fbfbfc;padding:0 9px 10px}
     .pr-items table{border-collapse:collapse;width:100%;font-size:13.5px;margin-top:6px}
     .pr-items th,.pr-items td td{border:1px solid var(--erp-line);padding:5px 8px;background:#fff}
@@ -107,12 +95,11 @@
   <main id="page" class="erp-main" hidden>
     <div class="erp-pagehead"><h1>Purchase List<button type="button" class="erp-i" aria-label="Info" title="Info" data-tip="Every purchase bill saved in Purchase Entry (Goods Inward).
 Check pending: vehicle not checked yet. Photo pending: damage entered but no damage photo.
-Verify: enter damage / leakage / shortage (or No Damage) and add photos. 📷 Task gives the Godown Manager a photo task; it closes by itself when the photos are added.">i</button></h1>
+Verify: All OK, or damage / leakage / shortage lines (SKU · type · qty) with photos. Admin and Sales Head get the report; damaged goods leave saleable stock. 📷 Task gives the Godown Manager a photo task; it closes by itself when the photos are added.">i</button></h1>
       <div class="pr-head-btns"><a href="sales-bill-scans.html" id="sbsLink" hidden>📄 Sales Bill PDFs</a><a href="goods-inward.html" class="main" id="newLink" hidden>+ New Purchase</a></div></div>
     <div id="err" class="pr-err" hidden></div>
     <div class="pr-tabs" id="tabs" role="tablist" aria-label="Bill status"></div>
     <div class="pr-kpis" id="kpis"></div>
-    <div id="vbox"></div>
     <section class="erp-card">
       <div class="pr-tools">
         <input id="q" type="search" placeholder="Search invoice, supplier, vehicle, driver" aria-label="Search">
@@ -138,10 +125,9 @@ Verify: enter damage / leakage / shortage (or No Damage) and add photos. 📷 Ta
     const pick=(o,keys)=>{for(const k of keys)if(o&&o[k]!=null&&o[k]!=="")return o[k];return null};
     const PAGE=100;
 
-    let me=null,bills=[],items=new Map(),skuName=new Map(),openId="",checks=new Map(),checksMissing=false,verifyId="",busy=false,docSum=null,tasks=new Map(),tab="all",shownMax=PAGE;
+    let me=null,bills=[],items=new Map(),skuName=new Map(),openId="",checks=new Map(),checksMissing=false,docSum=null,tasks=new Map(),tab="all",shownMax=PAGE;
     // Rights: Admin / Sales Head everything; Godown Manager checks vehicles + photos (no amounts); Accounts view only.
     const can={};
-    const ISSUES=[["DAMAGE","Damage"],["LEAKAGE","Leakage"],["SHORTAGE","Shortage"]];
     const docs=b=>docSum?docSum.get(String(b.id))||new Set():null;
     // What is left on a bill: CHECK (vehicle not checked) / PHOTO (damage, no damage photo) / ""
     function todo(b){const ch=checks.get(b.id);if(checksMissing)return "";if(!ch)return "CHECK";const d=docs(b);return ch.has_damage&&d&&!d.has("DAMAGE")?"PHOTO":""}
@@ -171,7 +157,7 @@ Verify: enter damage / leakage / shortage (or No Damage) and add photos. 📷 Ta
         if(h.error)throw h.error;
         bills=ERPRecent.sort(h.data||[]);skuName=new Map((s.data||[]).map(x=>[String(x.id),x]));items=new Map();
         // A bill opened from a task (?bill=) is shown even when it is older than the dates.
-        const want=new URLSearchParams(location.search).get("bill");
+        const want=new URLSearchParams(location.search).get("bill")||new URLSearchParams(location.search).get("report");
         if(want&&!bills.some(b=>b.id===want)){const x=await client.from("lwb_goods_inward").select("*").eq("id",want).maybeSingle();if(x.data)bills.unshift(x.data)}
         const ids=bills.map(b=>b.id);
         for(let i=0;i<ids.length;i+=100){
@@ -185,12 +171,21 @@ Verify: enter damage / leakage / shortage (or No Damage) and add photos. 📷 Ta
         docSum=await ERPDocs.summary(client,"PURCHASE_BILL");
         const sups=[...new Set(bills.map(b=>b.supplier_name).filter(Boolean))].sort(),cur=el("sup").value;
         el("sup").innerHTML='<option value="">All suppliers</option>'+sups.map(x=>'<option'+(x===cur?" selected":"")+">"+esc(x)+"</option>").join("");
-        if(want&&!verifyId&&(can.check)){verifyId=want;history.replaceState(null,"",location.pathname)}
+        // ?bill= (task / "vehicle arrived") opens the check popup; ?report= (Admin / Sales Head bell) the report.
+        const rep=new URLSearchParams(location.search).get("report");
+        const bq=new URLSearchParams(location.search).get("bill");
+        if(bq&&can.check){history.replaceState(null,"",location.pathname);openCheck(bq)}
+        else if(rep||bq){history.replaceState(null,"",location.pathname);openReport(rep||bq)}
       }catch(e){el("err").hidden=false;el("err").textContent="Could not load purchase bills: "+(e.message||String(e))}
       render();
-      if(verifyId)el("vbox").scrollIntoView({behavior:"smooth",block:"start"});
     }
+    const openCheck=id=>LWBPurchaseDamage.form({client,id,role:me.role,onDone:load});
+    const openReport=id=>LWBPurchaseDamage.view({client,id,role:me.role,onEdit:load});
     const lines=b=>items.get(b.id)||[];
+    // Vehicle Time In / Out at the godown: "In 10:20 · Out 11:40 (1h 20m)"
+    const hm=v=>new Date(v).toLocaleTimeString("en-GB",{timeZone:"Asia/Kolkata",hour:"2-digit",minute:"2-digit",hour12:false});
+    const vMin=b=>b.time_in&&b.time_out?Math.round((new Date(b.time_out)-new Date(b.time_in))/6e4):null;
+    const vTime=b=>{const m=vMin(b);return "In "+hm(b.time_in)+(b.time_out?" · Out "+hm(b.time_out)+" ("+(m>=60?Math.floor(m/60)+"h ":"")+(m%60)+"m)":" · Out —")};
     const pcsOf=it=>num(pick(it,["quantity_pcs","total_pcs","qty_pcs"]));
     const sum=(b,f)=>lines(b).reduce((a,i)=>a+num(i[f]),0);
     // Brand filter: a bill is of a brand when one of its SKUs is (or its supplier is tied to that brand).
@@ -206,9 +201,9 @@ Verify: enter damage / leakage / shortage (or No Damage) and add photos. 📷 Ta
       const ch=checks.get(b.id);
       if(checksMissing)return "";
       if(!ch)return '<span class="chk none">Check pending</span>';
-      if(!ch.has_damage)return '<span class="chk ok">✓ No damage</span><small>'+dmy(ch.verified_on)+"</small>";
+      if(!ch.has_damage)return '<button type="button" class="pr-inv" data-report="'+b.id+'" title="Open the check report"><span class="chk ok">✓ No damage</span></button><small>'+dmy(ch.verified_on)+"</small>";
       const cs=(ch.lwb_purchase_check_items||[]).reduce((a,i)=>a+i.cases+i.pcs/Math.max(1,i.pcs_per_case),0);
-      return '<span class="chk claim">Claim · '+fmt(Math.round(cs*10)/10)+" cs</span><small>"+({PENDING:"Mail not sent",SENT:"Awaiting approval",APPROVED:ch.return_required&&!ch.returned_on?"Approved · return goods":"Approved · amount due",RECEIVED:"Amount received",REJECTED:"Rejected"}[ch.claim_status]||ch.claim_status)+"</small>";
+      return '<button type="button" class="pr-inv" data-report="'+b.id+'" title="Open the damage report"><span class="chk claim">⚠ Damage · '+fmt(Math.round(cs*10)/10)+" cs</span></button><small>"+({PENDING:"Mail not sent",SENT:"Awaiting approval",APPROVED:ch.return_required&&!ch.returned_on?"Approved · return goods":"Approved · amount due",RECEIVED:"Amount received",REJECTED:"Rejected"}[ch.claim_status]||ch.claim_status)+"</small>";
     }
     function tags(b){
       const d=docs(b),t=tasks.get(String(b.id));let h="";
@@ -239,7 +234,7 @@ Verify: enter damage / leakage / shortage (or No Damage) and add photos. 📷 Ta
         if(docSum)acts+='<button type="button" data-docs="'+b.id+'" title="Bill copy / photos" aria-label="Bill copy / photos">📎</button>';
         if(can.task&&t&&!hasTask)acts+='<button type="button" class="task" data-task="'+b.id+'" title="Give the Godown Manager a task to check / upload photos">📷 Task</button>';
         h+='<tr class="bill'+(b.id===openId?" open":"")+'"><td class="c-rec">'+dmy(b.received_date)+'</td><td class="c-inv"><button type="button" class="pr-inv" data-view="'+b.id+'" title="Show / hide the SKU lines">'+esc(b.invoice_no)+(b.id===openId?" ▴":" ▾")+"</button><small>Recd "+dmy(b.received_date)+" · Inv "+dmy(b.invoice_date)+"</small><div>"+tags(b)+'</div></td><td class="c-sup">'+esc(b.supplier_name)+
-          '</td><td class="c-veh">'+esc(b.vehicle_no||"—")+"<small>"+esc([b.driver_name,b.lr_no?"LR "+b.lr_no:""].filter(Boolean).join(" · "))+'</small></td><td class="n c-pcs">'+fmt(pcs)+"</td>"+
+          '</td><td class="c-veh">'+esc(b.vehicle_no||"—")+"<small>"+esc([b.driver_name,b.lr_no?"LR "+b.lr_no:""].filter(Boolean).join(" · "))+"</small>"+(b.time_in?"<small>🕘 "+esc(vTime(b))+"</small>":"")+'</td><td class="n c-pcs">'+fmt(pcs)+"</td>"+
           (amt?'<td class="n c-amt">'+rs(sum(b,"total_amount"))+"</td>":"")+'<td class="c-chk">'+checkTag(b)+'</td><td class="c-act"><div class="pr-acts">'+acts+"</div></td></tr>";
         if(b.id===openId)h+='<tr class="pr-items"><td colspan="'+cols+'"><div class="scroll"><table><thead><tr><th>#</th><th>SKU</th><th class="n">Cases</th><th class="n">Loose</th><th class="n">PCS</th>'+(amt?'<th class="n">Taxable ₹</th><th class="n">Total ₹</th>':"")+"</tr></thead><tbody>"+
           ls.map((it,i)=>{const s=skuName.get(String(it.sku_id))||{};return "<tr><td>"+(i+1)+"</td><td>"+esc(pick(it,["sku_name"])||s.sku_name||it.sku_id)+'</td><td class="n">'+fmt(pick(it,["cases","quantity_cases"]))+'</td><td class="n">'+fmt(pick(it,["pcs","loose_pcs"]))+'</td><td class="n">'+fmt(pcsOf(it))+"</td>"+(amt?'<td class="n">'+rs(it.taxable_amount)+'</td><td class="n">'+rs(it.total_amount)+"</td>":"")+"</tr>"}).join("")+
@@ -251,54 +246,8 @@ Verify: enter damage / leakage / shortage (or No Damage) and add photos. 📷 Ta
       h+="</table>";
       if(list.length>shownMax)h+='<div class="pr-more"><button type="button" class="pr-x" id="more">Show more ('+fmt(list.length-shownMax)+" more)</button></div>";
       el("box").innerHTML=h;
-      const vb=bills.find(x=>x.id===verifyId);
-      el("vbox").innerHTML=vb?'<section class="erp-card" style="margin-bottom:10px"><div class="erp-card-head"><h2>Vehicle Check · Inv '+esc(vb.invoice_no)+" · "+esc(vb.supplier_name)+'</h2><small style="color:var(--erp-muted)">'+esc([vb.vehicle_no,dmy(vb.received_date)].filter(Boolean).join(" · "))+'</small></div><div class="vf">'+verifyForm(vb)+"</div></section>":"";
-      if(vb&&docSum&&!checksMissing){const m=document.createElement("div");m.style.margin="8px 0";m.innerHTML='<div class="ed-title">Damage / leakage / breakage photos</div><div class="vf-docs"></div>';
-        el("vbox").querySelector(".vf .btns").before(m);
-        ERPDocs.panel({client,mount:m.querySelector(".vf-docs"),entity:"PURCHASE_BILL",id:vb.id,slots:["DAMAGE"],onChange:async()=>{docSum=await ERPDocs.summary(client,"PURCHASE_BILL")||docSum;await loadTasks()}})}
     }
     async function loadTasks(){const t=await client.rpc("lwb_purchase_open_tasks");if(!t.error)tasks=new Map((t.data||[]).map(x=>[String(x.inward_id),x]));render()}
-    /* ---------- vehicle check (damage / leakage / shortage) ---------- */
-    const qtyTxt=(c,p)=>(c?fmt(c)+" cs":"")+(c&&p?" + ":"")+(p?fmt(p)+" pcs":"")||"0";
-    function verifyForm(b){
-      const ch=checks.get(b.id)||{},old=ch.lwb_purchase_check_items||[];
-      const val=(sku,issue,f)=>{const x=old.find(i=>String(i.sku_id||i.sku_name)===sku&&i.issue===issue);return x&&x[f]?x[f]:""};
-      let h='<div class="row"><div><label for="vfDate">Checked on *</label><input id="vfDate" type="date" value="'+(ch.verified_on||today())+'"></div><div style="flex:1;min-width:200px"><label for="vfNote">Note</label><input id="vfNote" style="width:100%" maxlength="300" value="'+esc(ch.note||"")+'" placeholder="e.g. 2 cases leaked near door"></div></div>'+
-        '<div class="vf-scroll"><table><thead><tr><th rowspan="2">SKU</th><th rowspan="2" class="n">Billed</th>'+ISSUES.map(([,l])=>'<th colspan="2" class="grp">'+l+"</th>").join("")+"</tr><tr>"+ISSUES.map(()=>"<th>Cs</th><th>PCS</th>").join("")+"</tr></thead><tbody>";
-      for(const it of lines(b)){
-        const s=skuName.get(String(it.sku_id))||{},key=String(it.sku_id||pick(it,["sku_name"])),pack=Math.max(1,num(s.pcs_per_case||pick(it,["pcs_per_case"]))||1);
-        h+='<tr class="vf-line" data-sku="'+esc(it.sku_id||"")+'" data-name="'+esc(pick(it,["sku_name"])||s.sku_name||"")+'" data-pack="'+pack+'"><td>'+esc(pick(it,["sku_name"])||s.sku_name||it.sku_id)+'</td><td class="n">'+qtyTxt(num(pick(it,["cases"])),num(pick(it,["pcs"])))+"</td>"+
-          ISSUES.map(([k])=>'<td><input type="number" min="0" step="1" inputmode="numeric" data-issue="'+k+'" data-f="cases" value="'+val(key,k,"cases")+'" placeholder="0"></td><td><input type="number" min="0" step="1" inputmode="numeric" data-issue="'+k+'" data-f="pcs" value="'+val(key,k,"pcs")+'" placeholder="0"></td>').join("")+"</tr>";
-      }
-      return h+'</tbody></table></div><div class="btns"><button type="button" class="btn ok" data-vfok="'+b.id+'">✓ No Damage</button><button type="button" class="btn red" data-vfsave="'+b.id+'">Save Damage</button><button type="button" class="btn" data-vfclose="1">Close</button></div>';
-    }
-    async function saveCheck(id,noDamage){
-      if(busy)return;
-      const b=bills.find(x=>x.id===id);if(!b)return;
-      const d=el("vfDate").value,list=[];
-      if(!/^\d{4}-\d{2}-\d{2}$/.test(d))return ERPShell.toast("Select the check date.","error");
-      if(!noDamage){
-        for(const tr of document.querySelectorAll(".vf-line"))for(const [k] of ISSUES){
-          const g=f=>{const v=tr.querySelector('[data-issue="'+k+'"][data-f="'+f+'"]').value.trim();return v===""?0:Number(v)};
-          const c=g("cases"),p=g("pcs");
-          if(![c,p].every(n=>Number.isInteger(n)&&n>=0))return ERPShell.toast("Cases and PCS must be whole numbers.","error");
-          if(c+p>0)list.push({sku_id:tr.dataset.sku||null,sku_name:tr.dataset.name||"SKU",pcs_per_case:Number(tr.dataset.pack)||1,issue:k,cases:c,pcs:p});
-        }
-        if(!list.length)return ERPShell.toast("Enter damage, leakage or shortage quantities, or press No Damage.","error");
-      }
-      const txt=noDamage?"Vehicle checked: NO damage, leakage or shortage.":list.map(x=>x.sku_name+" · "+x.issue+": "+qtyTxt(x.cases,x.pcs)).join("\n");
-      if(!await confirm((noDamage?"MARK BILL AS VERIFIED OK?":"SAVE DAMAGE / CLAIM?")+"\n\nInvoice "+b.invoice_no+" · "+b.supplier_name+"\n"+txt))return;
-      busy=true;
-      const r=await client.rpc("lwb_save_purchase_check",{p_inward_id:id,p_verified_on:d,p_note:el("vfNote").value.trim(),p_items:list});
-      busy=false;
-      if(r.error)return ERPShell.toast("Save failed: "+r.error.message,"error");
-      let msg=noDamage?"Bill verified: no damage.":"Damage saved. Claim is pending in Purchase Claims.";
-      // Damage but no photo yet: the Godown Manager gets the photo task.
-      const d2=docs(b);
-      if(!noDamage&&can.task&&d2&&!d2.has("DAMAGE")){const t=await client.rpc("lwb_purchase_photo_task",{p_inward:id});if(!t.error&&(t.data||[]).length)msg+=" Godown Manager got a photo task.";}
-      ERPShell.toast(msg,"success");
-      verifyId="";await load();
-    }
     async function giveTask(id){
       const b=bills.find(x=>x.id===id);if(!b)return;
       const what=todo(b)==="PHOTO"?"upload the damage photos":"check the vehicle and upload photos of any damage";
@@ -313,9 +262,9 @@ Verify: enter damage / leakage / shortage (or No Damage) and add photos. 📷 Ta
       docSum=await ERPDocs.summary(client,"PURCHASE_BILL")||docSum;await loadTasks()}
     async function excel(){
       const list=shown(),amt=can.amounts;
-      const head=["Received","Invoice No","Invoice Date","Supplier","Vehicle","Driver","Driver Mobile","LR No","Transport","Lines","Total PCS"].concat(amt?["Taxable","Invoice Total"]:[]).concat(["Vehicle Check","Claim","Bill copy","Damage photos","Photo task"]);
+      const head=["Received","Invoice No","Invoice Date","Supplier","Vehicle","Time In","Time Out","Minutes in godown","Driver","Driver Mobile","LR No","Transport","Lines","Total PCS"].concat(amt?["Taxable","Invoice Total"]:[]).concat(["Vehicle Check","Claim","Bill copy","Damage photos","Photo task"]);
       const rows=list.map(b=>{const ch=checks.get(b.id),d=docs(b),t=tasks.get(String(b.id));
-        return [dmy(b.received_date),b.invoice_no,dmy(b.invoice_date),b.supplier_name,b.vehicle_no||"",b.driver_name||"",b.driver_mobile||"",b.lr_no||"",b.transport_name||"",lines(b).length,lines(b).reduce((a,i)=>a+pcsOf(i),0)]
+        return [dmy(b.received_date),b.invoice_no,dmy(b.invoice_date),b.supplier_name,b.vehicle_no||"",b.time_in?hm(b.time_in):"",b.time_out?hm(b.time_out):"",vMin(b)==null?"":vMin(b),b.driver_name||"",b.driver_mobile||"",b.lr_no||"",b.transport_name||"",lines(b).length,lines(b).reduce((a,i)=>a+pcsOf(i),0)]
           .concat(amt?[sum(b,"taxable_amount"),sum(b,"total_amount")]:[])
           .concat([!ch?"Check pending":ch.has_damage?"Damage":"No damage",ch&&ch.has_damage?ch.claim_status:"",d?(d.has("BILL")?"Yes":"No"):"",d?(d.has("DAMAGE")?"Yes":"No"):"",t?t.people:""])});
       try{await LWBExcel.write("Purchase-List-"+today(),[{name:"Purchase List",rows:[head,...rows]}])}catch(e){ERPShell.toast(e.message,"error")}
@@ -334,12 +283,10 @@ Verify: enter damage / leakage / shortage (or No Damage) and add photos. 📷 Ta
       if(t.dataset.days!=null&&t.closest("#chips"))return setRange(t.dataset.days);
       if(t.id==="xls")return excel();
       if(t.id==="more"){shownMax+=PAGE;return render()}
-      if(t.dataset.verify){verifyId=verifyId===t.dataset.verify?"":t.dataset.verify;render();if(verifyId)el("vbox").scrollIntoView({behavior:"smooth",block:"start"});return}
-      if(t.dataset.vfclose){verifyId="";return render()}
+      if(t.dataset.verify)return openCheck(t.dataset.verify);
+      if(t.dataset.report)return openReport(t.dataset.report);
       if(t.dataset.docs)return openDocs(t.dataset.docs);
       if(t.dataset.task)return giveTask(t.dataset.task);
-      if(t.dataset.vfok)return saveCheck(t.dataset.vfok,true);
-      if(t.dataset.vfsave)return saveCheck(t.dataset.vfsave,false);
       if(t.dataset.view){openId=openId===t.dataset.view?"":t.dataset.view;render()}
     });
     el("q").addEventListener("input",()=>{shownMax=PAGE;render()});
