@@ -58,6 +58,8 @@ html,body{max-width:100%;overflow-x:hidden}main,.panel,.form-grid,.field{min-wid
 .gi-table td:nth-child(4) input,.gi-table td:nth-child(5) input,.gi-table td:nth-child(6) input{text-align:right}
 .gi-table .remove{padding:9px 12px;width:100%}
 .gi-conv{font-size:11.5px;color:#6b7785;margin-top:5px}
+.gi-ctn{display:block;margin:0 0 2px}.gi-ctn input{width:100%;margin:1px 0 4px;font-weight:700}.gi-ctn span{display:block;font-size:11px;color:#6b7785;line-height:1.2}.gi-ctn[hidden],.gi-ctnhint[hidden]{display:none}
+.gi-ctnhint{font-size:11px;color:#6b7785;margin-top:3px}
 .gi-tax{margin:10px 2px 0;font-size:12.5px;color:#3b4652;font-weight:600}
 @media(max-width:900px){
  .gi-wrap{border:0}
@@ -204,7 +206,7 @@ const SUPABASE_URL='https://txkbhadzdbxpieunfvox.supabase.co';
 const $ = id => document.getElementById(id);
 // Brand filter: supplier list shows the chosen brand's suppliers only.
 let BB={get:()=>''};
-let db=null,profile=null,skus=[],suppliers=[],companies=[],transports=[],stock=[],busy=false,lineId=0;
+let db=null,profile=null,skus=[],suppliers=[],companies=[],transports=[],stock=[],busy=false,lineId=0,cartonOf=new Map();
 let transportSelectedId='',transportMasterReady=false,addingTransport=false,dataState='loading',dataError='';
 const skuSearchControls=new WeakMap();
 // Godown Manager (warehouse) may enter the purchase bill himself when no Admin / Sales Head is there
@@ -287,7 +289,7 @@ function itemRow(){
       <div class="gi-conv"><span class="converted">—</span> · <span class="total">—</span> PCS</div>
     </td>
     <td data-label="PCS/Unit" class="num pack">—</td>
-    <td data-label="Cases / IC" class="unitCell"><input class="cases" type="number" inputmode="numeric" min="0" step="1" value="0" aria-label="Cases or IC"></td>
+    <td data-label="Cases / IC" class="unitCell"><label class="gi-ctn" hidden><span>Carton</span><input class="ctn" type="number" inputmode="numeric" min="0" step="1" value="0" aria-label="Cartons"><span>+ loose IC</span></label><input class="cases" type="number" inputmode="numeric" min="0" step="1" value="0" aria-label="Cases or IC"><div class="gi-ctnhint" hidden></div></td>
     <td data-label="Loose PCS"><input class="pcs" type="number" inputmode="numeric" min="0" step="1" value="0" aria-label="Loose Pieces"></td>
     <td data-label="Amount ₹" class="amountCell"><input class="taxable" type="text" inputmode="decimal" autocomplete="off" placeholder="Taxable 0.00" aria-label="Taxable Amount from Invoice">
       <div class="gi-mrp" hidden>
@@ -308,7 +310,7 @@ function itemRow(){
   card.querySelector('.remove').addEventListener('click',()=>{
     card.remove();if(!$('itemsBody').children.length)itemRow();recalc();
   });
-  for(const input of card.querySelectorAll('.cases,.pcs,.taxable,.net,.deemed'))input.addEventListener('input',recalc);
+  for(const input of card.querySelectorAll('.ctn,.cases,.pcs,.taxable,.net,.deemed'))input.addEventListener('input',recalc);
   // Deemed value fills itself from MRP until typed; clearing it makes it automatic again.
   // Enter on the last amount box of the last line adds the next SKU line, like Sales Order entry.
   for(const last of card.querySelectorAll('.taxable,.deemed'))last.addEventListener('keydown',e=>{
@@ -344,8 +346,15 @@ function readRows(){
   for(const tr of $('itemsBody').children){
     const sku=skus.find(s=>s.id===tr.querySelector('.sku')?.value);
     const casesText=tr.querySelector('.cases')?.value||'',pcsText=tr.querySelector('.pcs')?.value||'';
-    const whole=/^\d+$/.test(casesText)&&/^\d+$/.test(pcsText);
-    const cases=whole?Number(casesText):NaN,pcs=whole?Number(pcsText):NaN;
+    // Rajnigandha bills come in cartons (Mohit, 6 Nov 2026): carton x "IC per Carton" (SKU Master) + loose IC.
+    const unit0=unitOf(sku),ctnPer=unit0==='BOX'?Math.round(Number(cartonOf.get(sku?.id))||0):0;
+    const ctnBox=tr.querySelector('.gi-ctn'),ctnText=ctnPer>0?(tr.querySelector('.ctn')?.value||'0'):'0';
+    ctnBox.hidden=!(ctnPer>0);
+    const hint=tr.querySelector('.gi-ctnhint');hint.hidden=!sku||unit0!=='BOX';
+    hint.textContent=ctnPer>0?'1 carton = '+format(ctnPer)+' IC':'IC per Carton not set in SKU Master';
+    const whole=/^\d+$/.test(casesText)&&/^\d+$/.test(pcsText)&&/^\d+$/.test(ctnText);
+    const ctn=whole?Number(ctnText):0;
+    const cases=whole?ctn*ctnPer+Number(casesText):NaN,pcs=whole?Number(pcsText):NaN;
     const pack=Number(sku?.pcs_per_case)||0;
     const normalized=sku?normalize(cases,pcs,pack):null;
     const mode=billingOf(sku),unit=unitOf(sku),mrpMode=mode==='MRP';
@@ -373,7 +382,7 @@ function readRows(){
     const supCo=pickedSupplier()?.company_id,otherBrand=!!(sku&&supCo&&sku.company_id!==supCo);
     tr.querySelector('.gstValue').textContent=gst!==null?rupees(gst/100):'—';
     tr.querySelector('.gross').textContent=gross!==null?rupees(gross/100):'—';
-    rows.push({sku,cases,pcs,pack,normalized,taxable,gst,gross,rateValid,cessOkay,amountsOkay,mode,unit,net,deemed,otherBrand});
+    rows.push({sku,ctn,cases,pcs,pack,normalized,taxable,gst,gross,rateValid,cessOkay,amountsOkay,mode,unit,net,deemed,otherBrand});
   }
   return rows;
 }
@@ -522,8 +531,9 @@ async function loadData(){
         ()=>db.from('lwb_supplier_master').select('id,supplier_code,supplier_name,gstin,city,is_active').eq('is_active',true).order('supplier_name')),
       db.from('lwb_live_stock').select('sku_id,sku_name,pcs_per_case,saleable_pcs,damaged_pcs').order('sku_name'),
       db.from('lwb_transport_master').select('id,transport_name,is_active').eq('is_active',true).order('transport_name'),
-      db.from('lwb_companies').select('*')
-    ]);
+      db.from('lwb_companies').select('*'),
+      db.from('sku_master').select('id,cases_per_pallet').eq('is_active',true)
+    ]).then(r=>{const c=r.pop();cartonOf=new Map(c.error?[]:(c.data||[]).filter(x=>Number(x.cases_per_pallet)>0).map(x=>[x.id,Number(x.cases_per_pallet)]));return r;});
     companies=companyRes.error?[]:(companyRes.data||[]);
     loadGodownManagers();
     // Live stock is not needed to enter a bill; only SKU and Supplier Master must load.
@@ -703,7 +713,7 @@ async function save(){
   const invoiceTaxable=rows.reduce((a,r)=>a+r.taxable,0);
   const invoiceGst=rows.reduce((a,r)=>a+r.gst,0);
   const invoiceGross=rows.reduce((a,r)=>a+r.gross,0);
-  const preview=rows.map(r=>`${r.sku.sku_name}: ${r.normalized.cases} ${r.unit==='BOX'?'IC':'CS'} + ${r.normalized.pcs} PCS | `+(r.mode==='MRP'
+  const preview=rows.map(r=>`${r.sku.sku_name}: ${r.ctn?format(r.ctn)+' carton = ':''}${r.normalized.cases} ${r.unit==='BOX'?'IC':'CS'} + ${r.normalized.pcs} PCS | `+(r.mode==='MRP'
     ?`Net Sale ${rupees(r.net/100)} + GST ${r.sku.gst_rate}% on Deemed ${rupees(r.deemed/100)} (${rupees(r.gst/100)}) = Total ${rupees(r.gross/100)}`
     :`Taxable ${rupees(r.taxable/100)} + GST ${r.sku.gst_rate}% (${rupees(r.gst/100)}) = Total ${rupees(r.gross/100)}`)).join('\n');
   if(!await confirm(`POST GOODS INWARD TO MAIN GODOWN?\n\nSupplier: ${supplier}\nInvoice: ${invoice}\nDriver: ${driverName||'—'}${driverMobile?' ('+driverMobile+')':''}\nSKU Lines: ${rows.length}\n${mrpBill?'Deemed / Taxable Value':'Invoice Taxable'}: ${rupees(invoiceTaxable/100)}\nGST (${ $('taxMode').value==='intrastate'?'CGST+SGST':'IGST' }): ${rupees(invoiceGst/100)}\nInvoice Total: ${rupees(invoiceGross/100)}\nPallets / Sheets: ${format(spP)} / ${format(spS)}\nVehicle check: ${dmgMode==='later'?'Check later':dmgMode==='no'?'No damage':dmgItems.map(d=>d.sku_name+' '+d.issue+' '+d.cases+' CS + '+d.pcs+' PCS').join('; ')}\n\n${preview}\n\nAll quantities will increase live stock immediately. Continue only for physically received goods.`))return;
