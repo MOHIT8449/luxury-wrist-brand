@@ -36,7 +36,8 @@
         let r=await client.from("sku_master").select("sku_name,company_id,pack_unit").range(p*1000,p*1000+999);
         if(r.error)r=await client.from("sku_master").select("sku_name,company_id").range(p*1000,p*1000+999);
         if(r.error)return null;
-        for(const s of r.data||[]){out.set(skuKey(s.sku_name),s.company_id||"");if(s.pack_unit)units.set(skuKey(s.sku_name),s.pack_unit)}
+        // Same name twice (old + new row after a rename / Excel import): a row with a brand wins over a blank one (Mohit, 6 Nov 2026: "No brand" on Dashboard).
+        for(const s of r.data||[]){const k=skuKey(s.sku_name);if(s.company_id||!out.get(k))out.set(k,s.company_id||"");if(s.pack_unit)units.set(skuKey(s.sku_name),s.pack_unit)}
         if((r.data||[]).length<1000)break;
       }
       return out;
