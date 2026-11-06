@@ -304,5 +304,17 @@
     setTimeout(()=>{(party?(adjust?q("[data-ok]"):q('.amt[data-m="'+(o.mode||"CASH")+'"]')):pin).focus()},60);
     return {close};
   }
-  window.LWBPartyPay={load,open,billNames,balText,key,rs,dmy,errText,slice,activeBrands};
+  // Same party under another name? "RG. SHIV TOBECO (PARVAT PATIYA)" (Tally / old Party Master name) and
+  // "SHIV TOBECO (PARVAT PATIYA)" (main party with the bills) are one shop: money booked on the first one
+  // shows as advance with 0 bills while the bills stay due on the second. core() drops the RG / M/S words.
+  const SKIP=new Set("RG M S MS MESSRS SHREE SHRI SRI THE".split(" "));
+  const core=v=>key(v).split(" ").filter(w=>w&&!SKIP.has(w)).join("");
+  // -> the other main party with bills / opening and the same core name, or null
+  function lookalike(info,name){if(!info||!info.parties||!name)return null;const k=key(name),c=core(name);if(c.length<4)return null;
+    let best=null;for(const x of info.parties.values()){if(key(x.party)===k)continue;
+      if(core(x.party)!==c&&!(x.members||[]).some(m=>core(m)===c))continue;
+      if(!(x.bills.length||Math.abs(x.opening)>0.5||x.due>0.5))continue;
+      if(!best||x.bills.length+Math.abs(x.net)>best.bills.length+Math.abs(best.net))best=x}
+    return best}
+  window.LWBPartyPay={load,open,billNames,balText,key,rs,dmy,errText,slice,activeBrands,lookalike,core};
 })();
