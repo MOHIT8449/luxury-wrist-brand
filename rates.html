@@ -18,6 +18,13 @@
     .rt-bar label{display:block;font-size:12.5px;font-weight:600;color:#4b5763;margin-bottom:2px}
     .rt-bar input{height:34px;font-size:14px;border:1.5px solid var(--erp-line);border-radius:6px;padding:0 10px;font:inherit;background:#fff;color:var(--erp-ink)}
     .rt-bar input[type=number]{width:96px}
+    .rt-bar input[type=date]{width:150px}
+    #circN:not(:empty){margin-left:6px;background:var(--erp-red);color:#fff;border-radius:999px;padding:0 7px;font-size:12px}
+    .rt-led-day{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+    .rt-led-day input{height:32px;border:1.5px solid var(--erp-line);border-radius:6px;padding:0 8px;font:inherit}
+    .rt-led-from{font-size:13px;color:var(--erp-muted)}
+    .rt-table td.nt{white-space:normal;min-width:150px}
+    .rt-clip{border:1px solid var(--erp-line);background:#fff;border-radius:5px;padding:1px 6px;cursor:pointer;font:inherit;font-size:12.5px;margin:0 2px}
     .rt-bar .grow{flex:1;min-width:200px}.rt-bar .grow input{width:100%}
     .rt-bar button,.rt-file{height:34px;border-radius:6px;padding:0 14px;font-weight:600;cursor:pointer;border:1px solid var(--erp-red);background:var(--erp-red);color:#fff;display:inline-flex;align-items:center;font-size:14px;white-space:nowrap}
     .rt-bar button:disabled{opacity:.45;cursor:not-allowed}
@@ -80,6 +87,8 @@
       .rt-bar{gap:6px}
       .rt-bar>div:not(.grow){flex:1 1 0;min-width:0}
       .rt-bar label{font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+      .rt-bar>div.vfw{flex:1 1 100%}.rt-bar input[type=date]{width:100%}
+      .rt-file .lg{display:none}
       .erp-main .rt-bar input{min-height:36px!important;height:36px}
       .erp-main .rt-bar button,.erp-main .rt-file{min-height:36px!important;height:36px;flex:1 1 0}
       /* tabs and chips: one row each that slides sideways inside itself (like the company app), the page itself never scrolls sideways */
@@ -96,6 +105,9 @@
       .rt-grid td{border:0;padding:0;text-align:left;min-width:0}
       .rt-grid td[data-l]::before{content:attr(data-l);display:block;font-size:10.5px;font-weight:700;color:var(--erp-muted);text-transform:uppercase;line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
       .rt-grid td.idx{display:none}
+      .erp-main .rt-grid td{white-space:normal;overflow-wrap:anywhere;min-width:0}
+      .rt-grid td.full{grid-column:1/-1;min-width:0!important}
+      .rt-led-day input{flex:1;min-width:0}
       .rt-grid td.pk{grid-column:1/-1;min-width:0;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
       .rt-grid td.pk input.name{flex:1;max-width:none;min-width:0}
       .rt-grid td.pk .skus{flex:1 1 100%;max-width:none}
@@ -115,9 +127,11 @@
       <div><label for="mepd">MEPD % (when no scheme)</label><input id="mepd" type="number" step="0.01"></div>
       <div><label for="roi" title="ROI per case, only when the company supports it (e.g. 5). Blank = no ROI. Landing = after ROI.">ROI ₹ (per case)</label><input id="roi" type="number" step="0.01" min="0" placeholder="0"></div>
       <div id="chkWrap" hidden><label for="chk" title="A market PO with a rate below Landing + this ₹ is not stopped: Admin and Sales Head get a &quot;please check this order&quot; popup. Blank = off.">Check margin ₹</label><input id="chk" type="number" step="0.5" min="0" placeholder="Off"></div>
+      <div class="vfw"><label for="vf" title="Date the company scheme starts. Saved with the Rate Ledger entry.">Valid from</label><input id="vf" type="date"></div>
       <div class="grow"><label for="note">Note (e.g. "Company budget 24 Oct")</label><input id="note" maxlength="200" placeholder="What changed and who informed"></div>
+      <label class="rt-file" id="circWrap" title="Company circular / scheme photo or PDF, saved with the Rate Ledger entry">📎 Circular<span id="circN"></span><input id="circ" type="file" accept="image/*,application/pdf" multiple hidden></label>
       <button id="save" type="button" disabled>Save</button>
-      <label class="rt-file" id="importWrap" title="Backup from the old CC PO Maker (.json)">PO Maker backup import<input id="importFile" type="file" accept=".json,application/json" hidden></label>
+      <label class="rt-file" id="importWrap" title="Backup from the old CC PO Maker (.json)"><span class="lg">PO Maker backup&nbsp;</span>import<input id="importFile" type="file" accept=".json,application/json" hidden></label>
     </div>
 
     <div class="erp-pills" id="tabs"></div>
@@ -205,7 +219,7 @@
       const [s,p,h]=await Promise.all([
         client.from("lwb_rate_settings").select("*").eq("id",1).maybeSingle(),
         client.from("lwb_rate_packs").select("*").order("sort_no").order("pack_name"),
-        client.from("lwb_rate_history").select("id,created_at,note,settings,rows").order("created_at",{ascending:false}).limit(500)
+        client.from("lwb_rate_history").select("*").order("created_at",{ascending:false}).limit(500)
       ]);
       const err=s.error||p.error||h.error;
       if(err){el("box").innerHTML='<div class="erp-empty">Rate tables are not set up yet, or you do not have access: '+esc(err.message)+'<br>Run lwb_rate_scheme_setup.sql in Supabase.</div>';throw err}
@@ -215,6 +229,8 @@
         free_bottle:+x.free_bottle,oms:numOrBlank(x.oms),qps:+x.qps,slab3_rate:+x.slab3_rate,unit_weight:numOrBlank(x.unit_weight),bottle:numOrBlank(x.bottle),
         slab_landing:numOrBlank(x.slab_landing),slab_margins:[0,1,2,3,4].map(i=>numOrBlank((x.slab_margins||[])[i])),min_margin:numOrBlank(x.min_margin),active:x.active!==false})).sort((a,b)=>a.sort_no-b.sort_no||a.pack_name.localeCompare(b.pack_name));
       history=h.data||[];
+      try{const pp=await client.rpc("lwb_rate_history_people");people=pp.error?{}:(pp.data||{})}catch(e){people={}}
+      if(!el("vf").value)el("vf").value=LWBMepd.day();
       saved=stateNow();
       await loadLinks();await loadSchemes();
       el("mepd").value=settings.mepd_pct;el("roi").value=settings.roi_main||"";el("chk").value=settings.check_margin??"";
@@ -352,10 +368,11 @@
     function packLinkedSkus(r){return skus.filter(x=>(r.id&&links.get(skuKey(x))===r.id)||(!links.has(skuKey(x))&&backupLinks&&backupLinks.get(skuKey(x))===skuKey(r.pack_name)))}
     function packCats(r){const c=[...new Set(packLinkedSkus(r).map(x=>skuCat.get(skuKey(x))).filter(Boolean))];return c.length?c:["NO CATEGORY"]}
     function packSize(r){let ml=sizeMl(r.pack_name);if(ml==null){for(const x of packLinkedSkus(r)){ml=sizeMl(x);if(ml!=null)break}}return ml}
+    const packShownName=name=>{const p=packs.find(x=>skuKey(x.pack_name)===skuKey(name));return !p||packShown(p)};
     const packShown=r=>(catF==="ALL"||packCats(r).includes(catF))&&(sizeF==="ALL"||sizeLabel(packSize(r))===sizeF);
     function renderChips(){
       const box=el("chips");
-      if(tab!=="landing"&&tab!=="slabrate"){box.innerHTML="";return}
+      if(tab!=="landing"&&tab!=="slabrate"&&tab!=="ledger"){box.innerHTML="";return}
       const cc=new Map(),sc=new Map();
       packs.forEach(r=>{packCats(r).forEach(c=>cc.set(c,(cc.get(c)||0)+1));const sz=packSize(r),k=sizeLabel(sz);if(!sc.has(k))sc.set(k,{ml:sz==null?1e9:sz,n:0});sc.get(k).n++});
       const catList=[...cc.keys()].sort((a,b)=>(a==="NO CATEGORY")-(b==="NO CATEGORY")||a.localeCompare(b));
@@ -464,26 +481,52 @@
       ERPShell.toast("Slabs filled for "+done+" packs. Review them, then click Save.","success");
       if(miss.length)await ERPShell.alert("These names were not found as packs in Landing (paste Landing first):\n"+miss.join("\n"));
     }
-    let ledSku=0;
+    let ledSku=0,ledDay="",people={};
+    // The day a ledger entry starts: its "Valid from" date, else the day it was saved (India time).
+    const entryDay=e=>e.valid_from||ymd(new Date(e.created_at));
+    // Entry running on a day: latest start on or before it; same start = the later save.
+    function entryOn(day){
+      let best=null;
+      for(const e of history){const d=entryDay(e);if(d>day)continue;
+        if(!best||d>entryDay(best)||(d===entryDay(best)&&String(e.created_at)>String(best.created_at)))best=e}
+      return best;
+    }
+    const byTxt=e=>e.created_by?(people[e.created_by]||"—"):"";
+    const clips=e=>(e.files||[]).map((f,i)=>'<button type="button" class="rt-clip" data-circ="'+esc(f)+'" title="'+esc(f.split("/").pop())+'">📎'+(e.files.length>1?i+1:"")+"</button>").join("");
+    const fromTxt=e=>e.valid_from?LWBDate.d(new Date(e.valid_from+"T00:00:00")):"";
     function renderLedger(){
       el("tabTitle").textContent="Rate Ledger";
       el("tabInfo").textContent=history.length+" entries";
       el("tabNote").textContent=ratesChanged()?"Rates or schemes have changed; saving will create a new entry.":"The ledger is up to date. Past entries are never changed or deleted.";
+      const LBL={gr:"GR",mepd:"MEPD",fb:"Free btl",oms:"OMS",qps:"QPS",roi:"ROI",land:"Landing",s1:"Slab 1",s2:"Slab 2",s3:"Slab 3",s4:"Slab 4"};
+      const td=(l,v,cls)=>'<td data-l="'+l+'"'+(cls?' class="'+cls+'"':"")+">"+v+"</td>";
+      const num=(k,v)=>fmt(v,["mepd","oms","land"].includes(k)?2:k==="fb"?1:0);
+      const vals=(r,prev)=>SNAP_KEYS.map(k=>'<td data-l="'+LBL[k]+'"'+(prev&&prev[k]!==r[k]?' class="chg" title="previously '+esc(prev[k])+'"':"")+">"+num(k,r[k])+"</td>").join("");
+      const head='<th>GR</th><th>MEPD</th><th>FREE BTL</th><th>OMS</th><th>QPS</th><th>ROI</th><th>LANDING</th><th>SLAB 1</th><th>SLAB 2</th><th>SLAB 3</th><th>SLAB 4</th>';
+      // 1. Rates on a day: which scheme was running that day (to check the POs punched that day)
+      const day=ledDay||LWBMepd.day(),on=entryOn(day);
+      let h='<div class="erp-card-body rt-led-day"><b>Rates on date</b><input type="date" id="ledDay" value="'+esc(day)+'">'+
+        (on?'<span class="rt-led-from">Entry of '+esc(dtTxt(on.created_at))+(on.valid_from?" · valid from "+esc(fromTxt(on)):"")+(byTxt(on)?" · by "+esc(byTxt(on)):"")+(on.note?" · "+esc(on.note):"")+"</span>"+clips(on):'<span class="rt-led-from">No ledger entry on or before this date.</span>')+"</div>";
+      if(on){h+='<table class="rt-table rt-grid"><thead><tr><th class="l">PACK</th>'+head+"</tr></thead><tbody>"+
+        (on.rows||[]).filter(r=>packShownName(r.name)).map(r=>'<tr><td class="l pk"><b>'+esc(r.name)+"</b></td>"+vals(r)+"</tr>").join("")+"</tbody></table>"}
+      // 2. One pack, entry by entry
       const names=[...new Set(history.flatMap(e=>(e.rows||[]).map(r=>r.name)).concat(packs.map(p=>p.pack_name)))];
       if(ledSku>=names.length)ledSku=0;
       const sku=names[ledSku];
-      let h='<div class="erp-card-body rt-hist-head"><b>SKU history</b><select id="ledSku">'+names.map((x,i)=>'<option value="'+i+'"'+(i===ledSku?" selected":"")+">"+esc(x)+"</option>").join("")+"</select></div>";
-      h+='<table class="rt-table"><thead><tr><th class="l">DATE</th><th class="l">NOTE</th><th>GR</th><th>MEPD</th><th>FREE BTL</th><th>OMS</th><th>QPS</th><th>ROI</th><th>LANDING</th><th>SLAB 1</th><th>SLAB 2</th><th>SLAB 3</th><th>SLAB 4</th></tr></thead><tbody>';
+      h+='<div class="erp-card-body rt-hist-head"><b>Pack history</b><select id="ledSku">'+names.map((x,i)=>'<option value="'+i+'"'+(i===ledSku?" selected":"")+">"+esc(x)+"</option>").join("")+"</select></div>";
+      h+='<table class="rt-table rt-grid"><thead><tr><th class="l">SAVED</th><th class="l">VALID FROM</th><th class="l">BY</th><th class="l">NOTE</th>'+head+"<th></th></tr></thead><tbody>";
       const asc=history.slice().reverse();let prev=null;const lines=[];
       asc.forEach(e=>{const r=(e.rows||[]).find(x=>x.name===sku);if(!r)return;
-        lines.unshift('<tr><td class="l">'+esc(dtTxt(e.created_at))+'</td><td class="l">'+esc(e.note||"")+"</td>"+SNAP_KEYS.map(k=>"<td"+(prev&&prev[k]!==r[k]?' class="chg" title="previously '+esc(prev[k])+'"':"")+">"+fmt(r[k],["mepd","oms","land"].includes(k)?2:0)+"</td>").join("")+"</tr>");
+        lines.unshift('<tr><td class="l pk"><b>'+esc(dtTxt(e.created_at))+"</b>"+clips(e)+"</td>"+td("Valid from",esc(fromTxt(e)),"l")+td("By",esc(byTxt(e)),"l")+td("Note",esc(e.note||""),"l nt full")+vals(r,prev)+'<td class="idx"></td></tr>');
         prev=r;});
-      h+=(lines.join("")||'<tr><td class="l" colspan="13">No entries for this SKU.</td></tr>')+"</tbody></table>";
-      h+='<div class="erp-card-body"><b>Ledger entries (date wise)</b></div><table class="rt-table"><thead><tr><th>#</th><th class="l">DATE</th><th class="l">NOTE</th><th class="l">CHANGES (vs previous entry)</th></tr></thead><tbody>';
+      h+=(lines.join("")||'<tr><td class="l" colspan="16">No entries for this pack.</td></tr>')+"</tbody></table>";
+      // 3. All entries
+      h+='<div class="erp-card-body"><b>Ledger entries (date wise)</b></div><table class="rt-table rt-grid"><thead><tr><th>#</th><th class="l">SAVED</th><th class="l">VALID FROM</th><th class="l">BY</th><th class="l">NOTE</th><th class="l">CHANGES (vs previous entry)</th></tr></thead><tbody>';
       history.forEach((e,idx)=>{const P=history[idx+1];
         const ch=P?(e.rows||[]).map(r=>{const o=(P.rows||[]).find(x=>x.name===r.name);if(!o)return r.name+": new";const ks=SNAP_KEYS.filter(k=>o[k]!==r[k]);return ks.length?r.name+": "+ks.map(k=>k.toUpperCase()+" "+fmt(o[k],2)+"→"+fmt(r[k],2)).join(", "):""}).filter(Boolean):["First entry"];
-        h+="<tr><td>"+(history.length-idx)+'</td><td class="l">'+esc(dtTxt(e.created_at))+'</td><td class="l">'+esc(e.note||"")+'</td><td class="wrap">'+esc(ch.slice(0,8).join(" | ")+(ch.length>8?" | +"+(ch.length-8)+" more":""))+"</td></tr>";});
-      if(!history.length)h+='<tr><td colspan="4" class="l">No entries yet.</td></tr>';
+        h+='<tr><td class="idx">'+(history.length-idx)+'</td><td class="l pk"><b>'+esc(dtTxt(e.created_at))+"</b>"+clips(e)+"</td>"+td("Valid from",esc(fromTxt(e)),"l")+td("By",esc(byTxt(e)),"l")+td("Note",esc(e.note||""),"l nt")+
+          td("Changes",esc(ch.slice(0,8).join(" | ")+(ch.length>8?" | +"+(ch.length-8)+" more":"")),"wrap full")+"</tr>";});
+      if(!history.length)h+='<tr><td colspan="6" class="l">No entries yet.</td></tr>';
       el("box").innerHTML=h+"</tbody></table>";
     }
 
@@ -510,10 +553,33 @@
       if(t.type==="checkbox"&&t.dataset.f==="active"){packs[+t.dataset.i].active=t.checked;render();return}
       if(t.dataset.scat!=null){const c=t.dataset.scat;schemeForm.cats=t.checked?[...new Set([...schemeForm.cats,c])]:schemeForm.cats.filter(x=>x!==c);return}
       if(t.id==="ledSku"){ledSku=+t.value;renderLedger();return}
+      if(t.id==="ledDay"){ledDay=t.value;renderLedger();return}
+      if(t.id==="circ"){circFiles=[...t.files].filter(f=>f.size<=10485760);if(circFiles.length<t.files.length)ERPShell.toast("Files over 10 MB were left out.","error");el("circN").textContent=circFiles.length||"";return}
       if(t.dataset.link!=null){const k=skuKey(t.dataset.link);if(t.value)links.set(k,t.value);else links.delete(k);renderLinks();return}
       if(t.id==="importFile"){importBackup(t.files[0]);t.value=""}
     });
+    let circFiles=[];
+    async function openCircular(path){
+      const w=window.open("","_blank");
+      const {data,error}=await client.storage.from("lwb-rate-circulars").createSignedUrl(path,600);
+      if(error||!data){if(w)w.close();await ERPShell.alert("Circular could not be opened: "+(error?error.message:""));return}
+      if(w)w.location=data.signedUrl;else location.href=data.signedUrl;
+    }
+    // After a save that made a ledger entry: the "Valid from" date and the circulars go on that entry.
+    async function saveLedgerMeta(){
+      const paths=[];
+      for(const f of circFiles){
+        const path=me.user.id+"/"+Date.now()+"-"+f.name.replace(/[^A-Za-z0-9._-]+/g,"_").slice(-80);
+        const up=await client.storage.from("lwb-rate-circulars").upload(path,f,{contentType:f.type||undefined});
+        if(up.error)throw new Error("Circular "+f.name+" not uploaded: "+up.error.message);
+        paths.push(path);
+      }
+      const {error}=await client.rpc("lwb_rate_history_meta",{p_valid_from:el("vf").value||null,p_files:paths});
+      if(error)throw error;
+      circFiles=[];el("circ").value="";el("circN").textContent="";
+    }
     document.addEventListener("click",e=>{
+      const cb=e.target.closest("[data-circ]");if(cb){openCircular(cb.dataset.circ);return}
       const b=e.target.closest("[data-tab]");if(b){tab=b.dataset.tab;render();return}
       const ch=e.target.closest("[data-chip]");if(ch){if(ch.dataset.chip==="cat")catF=ch.dataset.v;else sizeF=ch.dataset.v;render();return}
       if(e.target.id==="linkSave"){saveLinks();return}
@@ -645,6 +711,8 @@
           const {error:ce}=await client.rpc("lwb_rate_check_margin_set",{p_margin:chkNow===""?null:n(chkNow)});
           if(ce)await ERPShell.alert("Rates saved, but the check margin was not saved: "+ce.message);
         }
+        if(changed){try{await saveLedgerMeta()}catch(me2){await ERPShell.alert("Rates saved, but the valid-from date / circular was not added: "+(me2.message||me2))}}
+        else if(circFiles.length)await ERPShell.alert("No rate changed, so no ledger entry was made and the circular was not attached. Change the rate and save again with the circular.");
         importedLedger=null;el("note").value="";
         const margins=new Map(packs.map(p=>[p.pack_name.trim().toUpperCase(),p.min_margin]));
         await load();
