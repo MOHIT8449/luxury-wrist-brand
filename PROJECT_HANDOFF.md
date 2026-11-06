@@ -4,6 +4,14 @@
 **Purpose:** Continue the same ERP project from a new ChatGPT conversation without restarting or losing the agreed requirements.
 **Status:** Active development / verification. Do not assume all modules are completed or fully tested.
 
+## Inventory: Opening + In − Out = Closing, Stock Out fix, stock check (6 Nov 2026)
+
+- Mohit (Rajnigandha screenshot): Stock In / Stock Out / opening did not add up; Stock Out showed 0 POs loaded.
+- Causes found in `inventory.html`: Stock Out counted only status loaded / invoiced / delivered with a Loading & Dispatch time (dispatched, closed, completed, Admin-marked POs without a transport row were missed); the page never showed opening / closing, so the saleable number could not be checked; live stock (`lwb_live_stock_base`, created by hand, not in the repo) may not take loaded qty out at all.
+- SQL `lwb_inventory_ledger_setup.sql` (read only, test `tests/inventory-ledger`, PGlite, 5 tests): `lwb_inventory_ledger(from, to)` (admin / manager / warehouse / accounts) returns per SKU opening (system on the morning of From = now − changes since), opening entries in the dates, purchase in, returns, other approved moves, out (loaded qty × pack; vehicle loaded time, else Admin LOADED mark; every status except cancelled / rejected), book closing, system stock at end of To; plus `out_lines` and `link` (does live stock follow loading: view reads order_items, trigger, or stock rows with an order / negative dispatch rows).
+- Page: Saleable Stock tab = SKU | Opening | + In | ± Return / Other | − Stock Out | = Closing | Status; red "System …" line and an orange banner when system ≠ book (plus = loaded POs not taken out of godown stock). Phone: one card per SKU. Falls back to the old view (with the wider status list) until the SQL runs.
+- Next if the banner shows: make live stock take loaded qty out (only loads after the SKU's Opening entry), after Mohit confirms.
+
 ## Goods Inward: vehicle / driver popup, brand rule, Transport Master SQL (6 Nov 2026)
 
 - Mohit: after the supplier is chosen a popup must open for all vehicle details; Driver Name, Driver Mobile and Godown Manager required for COCA-COLA, optional for RAJNIGANDHA (no driver / Godown Manager step there). The page said "Transport Master not connected. Run transport-master-setup.sql", but that file never existed in the repo. Page must be compact (everything visible together).
