@@ -82,7 +82,9 @@ async function setCompanyBulk(){
 function notice(message,error=false){const el=$('message');el.textContent=message;el.className='message '+(error?'error':'success');}
 function resetForm(){$('skuForm').reset();editingId=null;$('formTitle').textContent='Add New SKU';$('saveBtn').textContent='Save SKU';$('pcs').value='24';$('weight').value='';$('palletCases').value='';unitLabels();}
 // Sells in IC (inner carton, was Box): PCS per IC, IC per Carton. Cases: PCS per Case, CS per Pallet.
-function unitLabels(){const co=companies.find(c=>c.id===$('company').value);const ic=($('packUnit').value||co?.pack_unit)==='BOX';$('pcsLab').textContent=ic?'PCS per IC *':'PCS per Case *';$('weightLab').textContent=ic?'Unit Weight per IC (KG)':'Unit Weight per Case (KG)';$('palletLab').textContent=ic?'IC per Carton':'CS per Pallet';$('mrpLab').textContent=ic?'MRP per IC (₹)':'MRP per Case (₹)';}
+function unitLabels(){const co=companies.find(c=>c.id===$('company').value);const ic=($('packUnit').value||co?.pack_unit)==='BOX';$('pcsLab').textContent=ic?'PCS per IC (optional)':'PCS per Case *';$('weightLab').textContent=ic?'Unit Weight per IC (KG)':'Unit Weight per Case (KG)';$('palletLab').textContent=ic?'IC per Carton':'CS per Pallet';$('mrpLab').textContent=ic?'MRP per IC (₹)':'MRP per Case (₹)';
+/* Mohit 6 Nov 2026: for IC (Rajnigandha) SKUs PCS per IC is optional; blank keeps the saved value (stock is saved in PCS). */
+$('pcs').required=!ic;}
 $('packUnit').addEventListener('change',unitLabels);$('company').addEventListener('change',unitLabels);
 function showValue(v){return v===null||v===undefined||v===''?'—':String(v);}
 function addCell(row,value){const cell=document.createElement('td');cell.textContent=showValue(value);row.appendChild(cell);return cell;}
@@ -127,7 +129,13 @@ $('weightHint').textContent=weightColumnAvailable
 ? ''
 : 'Weight column is not yet in SKU Master. Run the safe lwb_sku_weight_optional.sql setup first; existing SKUs remain unchanged.';
 render();}
-async function saveSku(event){event.preventDefault();if(!db){notice('Supabase is not connected.',true);return;}if(!canEdit){notice('Only Admin / Manager can change SKU Master.',true);return;}const name=$('skuName').value.trim();const pcs=Number($('pcs').value);if(!name||!Number.isInteger(pcs)||pcs<1){notice('Valid SKU Name and PCS per Case required.',true);return;}
+async function saveSku(event){event.preventDefault();if(!db){notice('Supabase is not connected.',true);return;}if(!canEdit){notice('Only Admin / Manager can change SKU Master.',true);return;}const name=$('skuName').value.trim();const icUnit=($('packUnit').value||companies.find(c=>c.id===$('company').value)?.pack_unit)==='BOX';
+const oldSku=editingId?skus.find(x=>x.id===editingId):null;
+// IC SKU: PCS per IC blank = keep the saved value (a new IC SKU takes IC per Carton, else 1).
+const pcsText=$('pcs').value.trim();
+const pcs=icUnit&&pcsText===''?(Number(oldSku?.pcs_per_case)||Number($('palletCases').value)||1):Number(pcsText);
+if(icUnit&&oldSku&&pcsText!==''&&pcs!==Number(oldSku.pcs_per_case)&&!confirm('PCS per IC changes from '+oldSku.pcs_per_case+' to '+pcs+'. Stock of this SKU is saved in PCS, so its IC stock will change. Continue?'))return;
+if(!name||!Number.isInteger(pcs)||pcs<1){notice('Valid SKU Name and PCS per Case required.',true);return;}
 const numberOrNull=id=>$(id).value.trim()===''?null:Number($(id).value);
 const payload={sku_name:name,hsn_code:$('hsn').value.trim()||null,pcs_per_case:pcs,gst_rate:numberOrNull('gst'),is_active:$('active').value==='true'};
 if(categoryColumnAvailable)payload.category=$('category').value.trim().toUpperCase()||null;
