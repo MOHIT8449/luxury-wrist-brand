@@ -168,11 +168,23 @@ test('no link column: stock rows found by invoice no.; none found = refused', as
   assert.equal(await a.stock(a.sku.THUMSUP),10000);
   assert.equal(await a.stock(a.sku.SPRITE),10000); // opening rows untouched
 
+  // no link saved at all: the row of the same SKU and pieces saved with the bill is used
   const b=await makeDb('none');
-  const id2=await b.postCoke('HC-400',[b.tax(b.sku.THUMSUP,10,1000)]);
+  const id2=await b.postCoke('HC-400',[b.tax(b.sku.THUMSUP,10,1000),b.tax(b.sku.SPRITE,2,200)]);
+  const id3=await b.postCoke('HC-401',[b.tax(b.sku.THUMSUP,10,1000)]); // same qty, another bill
   const pre=(await b.call('admin','select public.lwb_purchase_bill_preview($1) r',[id2])).r;
-  assert.equal(pre.can,false);assert.match(pre.why,/not found/);
-  await assert.rejects(b.call('admin','select public.lwb_purchase_bill_delete($1,$2) r',[id2,'test delete']),/not found/);
-  assert.equal(await b.stock(b.sku.THUMSUP),10240);
+  assert.equal(pre.can,true);assert.equal(pre.stock_rows,2);
+  await b.call('admin','select public.lwb_purchase_bill_delete($1,$2) r',[id2,'test delete']);
+  assert.equal(await b.stock(b.sku.THUMSUP),10240);assert.equal(await b.stock(b.sku.SPRITE),10000);
+  await b.call('admin','select public.lwb_purchase_bill_delete($1,$2) r',[id3,'test delete']);
+  assert.equal(await b.stock(b.sku.THUMSUP),10000);
+  assert.equal(Number((await b.db.query("select count(*) n from lwb_inventory_movements where movement_type='OPENING'")).rows[0].n),4);
+
+  // stock rows really missing: refused, nothing changed, the message lists the stock columns
+  const id4=await b.postCoke('HC-402',[b.tax(b.sku.THUMSUP,1,100)]);
+  await b.db.query("delete from lwb_inventory_movements where movement_type='PURCHASE_IN'");
+  const p4=(await b.call('admin','select public.lwb_purchase_bill_preview($1) r',[id4])).r;
+  assert.equal(p4.can,false);assert.match(p4.why,/not found/);assert.match(p4.why,/Stock columns: id, sku_id/);
+  await assert.rejects(b.call('admin','select public.lwb_purchase_bill_delete($1,$2) r',[id4,'test delete']),/not found/);
   assert.equal((await b.db.query('select count(*)::int n from lwb_goods_inward')).rows[0].n,1);
 });
