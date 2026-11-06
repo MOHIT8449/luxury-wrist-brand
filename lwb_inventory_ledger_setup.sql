@@ -73,7 +73,7 @@ BEGIN
 
   -- Stock rows (Opening, purchase, anything else) as they are saved.
   CREATE TEMP TABLE IF NOT EXISTS pg_temp.lwb_inv_mv(sku_id uuid, mtype text, pcs numeric, at timestamptz, has_order boolean) ON COMMIT DROP;
-  TRUNCATE pg_temp.lwb_inv_mv;
+  DELETE FROM pg_temp.lwb_inv_mv;  -- scratch rows of an earlier call in the same transaction
   IF to_regclass('public.lwb_inventory_movements') IS NOT NULL THEN
     INSERT INTO pg_temp.lwb_inv_mv
     SELECT nullif(j->>'sku_id','')::uuid,
@@ -94,7 +94,7 @@ BEGIN
 
   -- Approved stock transfer / return / PO change moves that touch saleable.
   CREATE TEMP TABLE IF NOT EXISTS pg_temp.lwb_inv_sx(sku_id uuid, kind text, pcs numeric, at timestamptz) ON COMMIT DROP;
-  TRUNCATE pg_temp.lwb_inv_sx;
+  DELETE FROM pg_temp.lwb_inv_sx;  -- scratch rows of an earlier call in the same transaction
   IF to_regclass('public.lwb_stock_moves') IS NOT NULL THEN
     INSERT INTO pg_temp.lwb_inv_sx
     SELECT m.sku_id, CASE WHEN m.kind = 'BILL_CHANGE' THEN 'BILL_CHANGE'
@@ -108,7 +108,7 @@ BEGIN
   -- Loaded PO lines (cases / IC) with the time the vehicle was loaded.
   CREATE TEMP TABLE IF NOT EXISTS pg_temp.lwb_inv_out(order_id uuid, order_no text, party text, status text, sku_id uuid,
     sku_name text, cases numeric, pcs numeric, at timestamptz) ON COMMIT DROP;
-  TRUNCATE pg_temp.lwb_inv_out;
+  DELETE FROM pg_temp.lwb_inv_out;  -- scratch rows of an earlier call in the same transaction
   INSERT INTO pg_temp.lwb_inv_out
   SELECT o.id, o.order_no::text, o.customer_name::text, o.status::text, s.id, coalesce(s.sku_name, j->>'sku_name'),
          nullif(j->>'loaded_qty','')::numeric,
