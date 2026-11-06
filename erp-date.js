@@ -88,11 +88,16 @@
       const el=e.target;
       if(el&&el.classList&&el.classList.contains("lwb-dmy")&&!el.disabled&&!el.readOnly&&el.showPicker){try{el.showPicker()}catch(_){}}
     });
+    /* Android Chrome / WebView draws the picker's own text outside
+       ::-webkit-datetime-edit, so opacity alone left both dates on top of each
+       other (08//10//2026). The native text is now made fully transparent and
+       only the DD/MM/YYYY copy is visible. */
     const css=document.createElement("style");
     css.textContent=`
-input.lwb-dmy{position:relative}
+input.lwb-dmy{position:relative;-webkit-text-fill-color:transparent}
 input.lwb-dmy::-webkit-datetime-edit{opacity:0}
-input.lwb-dmy::before{content:attr(data-dmy);position:absolute;top:50%;transform:translateY(-50%);white-space:nowrap;pointer-events:none;color:inherit}
+input.lwb-dmy::-webkit-datetime-edit,input.lwb-dmy::-webkit-datetime-edit *{-webkit-text-fill-color:transparent;color:transparent}
+input.lwb-dmy::before{content:attr(data-dmy);position:absolute;top:50%;transform:translateY(-50%);white-space:nowrap;pointer-events:none;color:inherit;-webkit-text-fill-color:currentColor}
 input.lwb-dmy.lwb-dmy-empty::before{opacity:.55}`;
     (document.head||document.documentElement).appendChild(css);
   }
