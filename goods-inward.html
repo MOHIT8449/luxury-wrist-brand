@@ -122,6 +122,10 @@ main{margin:14px auto}.panel{padding:14px 16px;margin-bottom:12px}
 .td-foot{display:flex;justify-content:flex-end;align-items:center;gap:10px;margin-top:12px}.td-foot button{padding:8px 22px}.td-msg{flex:1;color:#b91c1c}
 .field input.bad{border-color:#d97706;background:#fffaf0}
 body.td-open{overflow:hidden}
+.gi-check{gap:8px 14px}.gi-check select#dmgMode{min-width:0;width:auto;max-width:100%}
+#giDocsBox{margin-left:auto}#giDocsBox[hidden]{display:none}
+@media(max-width:540px){main .statrow{grid-template-columns:repeat(3,minmax(0,1fr))!important;gap:6px!important;margin:8px 0!important}main .statrow .stat{padding:6px 8px!important}main .statrow .stat span{font-size:10.5px!important;margin-bottom:1px!important}main .statrow .stat strong{font-size:13.5px!important}}
+@media(max-width:700px){.gi-check label{flex-basis:100%}.gi-check select#dmgMode{width:100%}#giDocsBox{margin-left:0;flex-basis:100%}}
 @media(max-width:900px){.gi-table tr{grid-template-columns:repeat(3,minmax(0,1fr));gap:6px 10px;padding:8px 10px}
  .gi-table td.line-number{grid-column:1/-1;display:flex;justify-content:space-between;align-items:center}
  .gi-table td:last-child{grid-column:1/-1;text-align:right}.gi-table .remove{padding:5px 12px;width:auto;font-size:12px}
@@ -179,19 +183,17 @@ Cess is not included: an SKU with Cess cannot be saved yet.">i</button></h2></di
       <div class="stat"><span>Total SKU Lines</span><strong id="totalSku">0</strong></div>
       <div class="stat"><span>Total Quantity</span><strong id="totalPcs">0 PCS</strong></div>
       <div class="stat"><span id="taxableLabel">Taxable Amount</span><strong id="totalTaxable" class="money">₹0.00</strong></div>
-      <div class="stat"><span>GST Amount (Auto)</span><strong id="totalGst" class="money">₹0.00</strong></div>
-      <div class="stat"><span>Total Amount (Auto)</span><strong id="totalAmount" class="money">₹0.00</strong></div>
+      <div class="stat"><span>GST Amount</span><strong id="totalGst" class="money">₹0.00</strong></div>
+      <div class="stat"><span>Total Amount</span><strong id="totalAmount" class="money">₹0.00</strong></div>
     </div>
     <div class="dmg-box">
-      <div class="dmg-head"><label for="dmgMode">Damage / Leakage / Shortage in this vehicle?</label>
-        <select id="dmgMode"><option value="later">Check later: Godown Manager gets a task to check + photo</option><option value="no">No: everything received OK</option><option value="yes">Yes: damage / leakage / shortage (Godown Manager gets a photo task)</option></select></div>
+      <div class="dmg-head gi-check"><label for="dmgMode">Damage / Leakage?</label>
+        <select id="dmgMode" title="Damage / Leakage / Shortage in this vehicle"><option value="later">Check later (Godown Manager task)</option><option value="no">No: all received OK</option><option value="yes">Yes: damage / leakage / shortage</option></select>
+        <div id="giDocsBox" hidden><div id="giDocs"></div></div></div>
       <div id="dmgWrap" hidden><table class="dmg-table"><thead><tr><th rowspan="2">SKU</th><th colspan="2">Damage</th><th colspan="2">Leakage</th><th colspan="2">Shortage</th></tr><tr><th>Cases</th><th>PCS</th><th>Cases</th><th>PCS</th><th>Cases</th><th>PCS</th></tr></thead><tbody id="dmgBody"></tbody></table>
         <input id="dmgNote" maxlength="300" placeholder="Note (optional)"></div>
     </div>
-    <div id="giDocsBox" class="dmg-box" hidden><div class="dmg-head"><label>Bill copy &amp; photos</label></div><div id="giDocs"></div>
-</div>
     <div class="actions"><button id="save" type="button" disabled>Save Goods Inward & Update Stock</button><button id="reset" type="button" class="secondary">Clear Form</button><span class="small" id="hint">Connect to Supabase and enter invoice details.</span></div>
-    <p class="small"><a href="purchase-register.html">Purchase Register</a></p>
   </section>
 
 
@@ -205,6 +207,15 @@ let BB={get:()=>''};
 let db=null,profile=null,skus=[],suppliers=[],companies=[],transports=[],stock=[],busy=false,lineId=0;
 let transportSelectedId='',transportMasterReady=false,addingTransport=false,dataState='loading',dataError='';
 const skuSearchControls=new WeakMap();
+// Godown Manager (warehouse) may enter the purchase bill himself when no Admin / Sales Head is there
+// (Mohit, 6 Nov 2026; database: lwb_goods_inward_godown_setup.sql). He is the checker, so no Godown Manager pick,
+// no "vehicle arrived" popup and no photo task: he adds the photos on this page.
+const CAN_POST=['admin','manager','warehouse'];
+const isGodown=()=>profile?.role==='warehouse';
+function godownMode(){
+  const later=$('dmgMode').querySelector('option[value="later"]');
+  if(isGodown()){if(later)later.remove();if($('dmgMode').value==='later'||!$('dmgMode').value)$('dmgMode').value='no';$('godownRow').hidden=true;}
+}
 const format=n=>Number(n).toLocaleString('en-IN');
 const rupees=n=>'₹'+Number(n).toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2});
 const driverMobileClean=raw=>String(raw||'').replace(/[\s()-]/g,'');
@@ -378,13 +389,13 @@ function recalc(){
   $('taxableLabel').textContent=rows.some(r=>r.sku&&r.mode==='MRP')?(rows.some(r=>r.sku&&r.mode!=='MRP')?'Taxable + Deemed Value':'Deemed Taxable Value'):'Taxable Amount';
   $('totalGst').textContent=rupees(sumGst/100);
   $('totalAmount').textContent=rupees(sumGross/100);
-  const rolesOkay=profile?.active===true&&['admin','manager'].includes(profile.role);
+  const rolesOkay=profile?.active===true&&CAN_POST.includes(profile.role);
   const supplierSelected=suppliers.find(s=>s.id===$('supplier').value);
   const detailsValid=!!supplierSelected&&!!$('invoice').value.trim()&&!!$('invoiceDate').value&&!!$('receivedDate').value;
   const strict=tdStrict(),dName=$('driverName').value.trim(),dMob=$('driverMobile').value.trim();
   const driverNameOkay=dName.length<=100&&(!strict||dName.length>0);
   const driverMobileOkay=dMob?validDriverMobile(dMob):!strict;
-  const godownOkay=!strict||!godownList||!godownList.length||!!$('godownMgr').value;
+  const godownOkay=!strict||isGodown()||!godownList||!godownList.length||!!$('godownMgr').value;
   // Without the Transport Master the typed name is saved on the bill as text.
   const transportOkay=!transportMasterReady||!$('transport').value.trim() || transports.some(t=>t.id===transportSelectedId&&t.transport_name===$('transport').value);
   const everyValid=rows.length>0&&rows.every(r=>r.sku&&r.normalized!==null&&r.amountsOkay);
@@ -392,7 +403,7 @@ function recalc(){
   const brandOkay=!rows.some(r=>r.otherBrand);
   const dupOkay=!dupSame();
   $('save').disabled=busy||!dupOkay||!rolesOkay||!detailsValid||!driverNameOkay||!driverMobileOkay||!godownOkay||!transportOkay||!everyValid||!unique||!brandOkay;
-  $('hint').textContent=busy?'Saving all SKU lines together...':!dupOkay?'DUPLICATE: this supplier invoice number is already saved. Check the number.':!rolesOkay?'Only active admin or manager can save.':!unique?'Duplicate SKU: combine quantities in one line.':!detailsValid?'Choose Supplier from Master, and fill Invoice No. and both dates.':!driverNameOkay?'Enter Driver Name in 🚚 Vehicle / Driver details.':!driverMobileOkay?'Driver Mobile: enter a valid 10-digit Indian mobile (optional +91) in 🚚 Vehicle / Driver details.':!godownOkay?'Choose the Godown Manager in 🚚 Vehicle / Driver details.':!transportOkay?'Transport not selected from Master: choose a result or click + Save New in 🚚 Vehicle / Driver details.':!brandOkay?'An SKU line is not of this supplier\'s company. Remove it or choose the right supplier.':rows.some(r=>r.sku&&!r.rateValid)?'GST Rate missing in SKU Master. Edit that SKU and enter GST % before saving.':rows.some(r=>r.sku&&!r.cessOkay)?'Nonzero Cess found in SKU Master. This version calculates GST only; cannot save until tax treatment is configured.':!everyValid?(rows.some(r=>r.sku&&r.mode==='MRP')?'Select SKU and enter quantity on EVERY line: Taxable Amount, or for MRP bills Net Sale and Deemed Taxable Value. GST and Total auto-calculate.':'Select SKU, enter positive quantity and Taxable Amount on EVERY line. GST and Total auto-calculate.'):'Ready to save. Verify calculated Invoice Total against the supplier invoice and physical quantities.';
+  $('hint').textContent=busy?'Saving all SKU lines together...':!dupOkay?'DUPLICATE: this supplier invoice number is already saved. Check the number.':!rolesOkay?'Only an active Admin, Sales Head or Godown Manager can save.':!unique?'Duplicate SKU: combine quantities in one line.':!detailsValid?'Choose Supplier from Master, and fill Invoice No. and both dates.':!driverNameOkay?'Enter Driver Name in 🚚 Vehicle / Driver details.':!driverMobileOkay?'Driver Mobile: enter a valid 10-digit Indian mobile (optional +91) in 🚚 Vehicle / Driver details.':!godownOkay?'Choose the Godown Manager in 🚚 Vehicle / Driver details.':!transportOkay?'Transport not selected from Master: choose a result or click + Save New in 🚚 Vehicle / Driver details.':!brandOkay?'An SKU line is not of this supplier\'s company. Remove it or choose the right supplier.':rows.some(r=>r.sku&&!r.rateValid)?'GST Rate missing in SKU Master. Edit that SKU and enter GST % before saving.':rows.some(r=>r.sku&&!r.cessOkay)?'Nonzero Cess found in SKU Master. This version calculates GST only; cannot save until tax treatment is configured.':!everyValid?(rows.some(r=>r.sku&&r.mode==='MRP')?'Select SKU and enter quantity on EVERY line: Taxable Amount, or for MRP bills Net Sale and Deemed Taxable Value. GST and Total auto-calculate.':'Select SKU, enter positive quantity and Taxable Amount on EVERY line. GST and Total auto-calculate.'):'Ready to save. Verify calculated Invoice Total against the supplier invoice and physical quantities.';
   let i=0;for(const card of $('itemsBody').children)card.querySelector('.line-number').textContent=String(++i);
   syncDamage(rows);tdRender();
 }
@@ -439,7 +450,7 @@ async function mountGiDocs(){
   if(!db)return;
   if(giDocsOn===null)giDocsOn=!!(await ERPDocs.summary(db,'PURCHASE_BILL'));
   $('giDocsBox').hidden=!giDocsOn;if(!giDocsOn){giDocs=null;return}
-  giDocs=ERPDocs.panel({client:db,mount:$('giDocs'),entity:'PURCHASE_BILL',id:null,slots:['BILL','DAMAGE']});
+  giDocs=ERPDocs.panel({client:db,mount:$('giDocs'),entity:'PURCHASE_BILL',id:null,slots:['BILL','DAMAGE'],compact:true});
 }
 function syncDamage(rows){
   const yes=$('dmgMode').value==='yes';$('dmgWrap').hidden=!yes;if(!yes)return;
@@ -482,7 +493,8 @@ async function start(key){
     if(!user){show('Please log in to your ERP first.','info');return;}
     const {data:prof,error:profileError}=await db.from('user_profiles').select('role,active,full_name').eq('id',user.id).maybeSingle();
     if(profileError)throw profileError;if(!prof||prof.active!==true)throw new Error('Active ERP profile required.');
-    prof.role=await lwbPageRole(prof.role);profile=prof;$('access').textContent=['admin','manager'].includes(prof.role)?prof.role.toUpperCase()+' — GOODS INWARD':'VIEW ONLY';
+    prof.role=await lwbPageRole(prof.role);profile=prof;$('access').textContent=prof.role==='warehouse'?'GODOWN MANAGER — GOODS INWARD':CAN_POST.includes(prof.role)?prof.role.toUpperCase()+' — GOODS INWARD':'VIEW ONLY';
+    godownMode();
     $('keybox').style.display='none';clearNotice();await loadData();await mountGiDocs();
   }catch(e){$('access').textContent='Not connected';$('keybox').style.display='block';show('Connection failed: '+(e.message||String(e)));}
   recalc();
@@ -492,7 +504,7 @@ let godownList=null;
 async function loadGodownManagers(){
   const r=await db.rpc('lwb_godown_managers');
   godownList=r.error?null:(r.data||[]);
-  $('godownRow').hidden=!godownList||!godownList.length;if(!godownList)return;
+  $('godownRow').hidden=isGodown()||!godownList||!godownList.length;if(!godownList)return;
   let last='';try{last=localStorage.getItem('lwbGiGodown')||''}catch(e){}
   const cur=$('godownMgr').value||last;
   $('godownMgr').replaceChildren(new Option('Choose Godown Manager',''),...godownList.map(m=>new Option(m.full_name+(m.mobile?' · '+m.mobile:''),m.user_id)));
@@ -520,7 +532,7 @@ async function loadData(){
     if(window.LWBBrand&&!BB.companies)try{BB=await LWBBrand.mount(db,{into:'main section.panel',onChange:()=>{}})}catch(e){}
     transportMasterReady=!transportRes.error;
     transports=transportMasterReady?(transportRes.data||[]):[];
-    $('addTransport').disabled=!transportMasterReady||!['admin','manager'].includes(profile?.role||'');
+    $('addTransport').disabled=!transportMasterReady||!CAN_POST.includes(profile?.role||'');
     updateTransportHint();
     refreshSupplierOptions();
     setAllOptions();
@@ -561,7 +573,7 @@ function updateTransportHint(){
 async function saveNewTransport(){
   const name=$('transport').value.trim().replace(/\s+/g,' ');
   if(!transportMasterReady){show('Transport list is not set up yet. Admin: run lwb_transport_master_setup.sql once in Supabase SQL Editor. Until then the typed name is saved on the bill only.','info');return;}
-  if(!['admin','manager'].includes(profile?.role||'')){show('Only active Admin or Manager can add Transport.');return;}
+  if(!CAN_POST.includes(profile?.role||'')){show('Only an active Admin, Sales Head or Godown Manager can add Transport.');return;}
   if(name.length<2||name.length>150){show('Enter Transport Name (2 to 150 characters).');return;}
   const existing=transports.find(t=>normalizeSearch(t.transport_name)===normalizeSearch(name));
   if(existing){transportSelectedId=existing.id;$('transport').value=existing.transport_name;updateTransportHint();recalc();show('Transport already saved. Selected from Master.','info');return;}
@@ -618,7 +630,7 @@ function tdMissing(){
   const m=[];
   if(!$('driverName').value.trim())m.push('Driver Name');
   if(!validDriverMobile($('driverMobile').value))m.push('Driver Mobile');
-  if(godownList&&godownList.length&&!$('godownMgr').value)m.push('Godown Manager');
+  if(!isGodown()&&godownList&&godownList.length&&!$('godownMgr').value)m.push('Godown Manager');
   return m;
 }
 function tdRender(){
@@ -626,8 +638,8 @@ function tdRender(){
   document.querySelectorAll('#tdModal .td-req').forEach(el=>{el.textContent=strict?'*':'(optional)';el.classList.toggle('opt',!strict);});
   $('tdRule').innerHTML='';
   const rule=$('tdRule');
-  if(co){const b=document.createElement('span');b.className='co';b.textContent=co.name;rule.append(b,document.createTextNode(strict?': Driver Name, Mobile and Godown Manager are required.':': all details are optional.'));}
-  else rule.textContent=sup?'Driver Name, Mobile and Godown Manager are required.':'Choose the supplier first.';
+  if(co){const b=document.createElement('span');b.className='co';b.textContent=co.name;rule.append(b,document.createTextNode(strict?(isGodown()?': Driver Name and Mobile are required.':': Driver Name, Mobile and Godown Manager are required.'):': all details are optional.'));}
+  else rule.textContent=sup?(isGodown()?'Driver Name and Mobile are required.':'Driver Name, Mobile and Godown Manager are required.'):'Choose the supplier first.';
   const mob=$('driverMobile').value.trim();$('driverMobile').classList.toggle('bad',!!mob&&!validDriverMobile(mob));
   // One-line summary under the bill header.
   const miss=tdMissing(),parts=[];
@@ -681,8 +693,8 @@ async function save(){
   if(dmgMode==='yes'&&!dmgItems.length){show('You chose "Yes" for damage / leakage / shortage. Enter the quantities, or change it to "No" or "Check later".');return;}
   if(dmgMode==='yes'&&giDocs&&!giDocs.has('DAMAGE')&&!await confirm('No photo of the damage / leakage is added.\n\nA photo helps the company accept the claim. Save without a photo?'))return;
   const dmgNote=$('dmgNote').value.trim();
-  const godownId=$('godownMgr').value||null;
-  if(tdStrict()&&godownList&&godownList.length&&!godownId){tdOpen();show('Choose the Godown Manager who will check this vehicle. Only that person gets the "vehicle arrived" popup.');$('godownMgr').focus();return;}
+  const godownId=isGodown()?null:($('godownMgr').value||null);
+  if(tdStrict()&&!isGodown()&&godownList&&godownList.length&&!godownId){tdOpen();show('Choose the Godown Manager who will check this vehicle. Only that person gets the "vehicle arrived" popup.');$('godownMgr').focus();return;}
   try{if(godownId)localStorage.setItem('lwbGiGodown',godownId)}catch(e){}
   const mrpBill=rows.some(r=>r.mode==='MRP');
   const items=rows.map(r=>r.mode==='MRP'
@@ -734,7 +746,7 @@ async function save(){
     }
     // Godown Manager photo task: "Check later", or damage without a photo (lwb_purchase_register_setup.sql).
     let taskMsg='';
-    if(dmgMode!=='no'){
+    if(dmgMode!=='no'&&!isGodown()){
       let inwardId=data?.id||data?.inward_id||null;
       if(!inwardId){const f=await db.from('lwb_goods_inward').select('id').eq('invoice_no',invoice).eq('supplier_name',supplier).order('created_at',{ascending:false}).limit(1);inwardId=f.data?.[0]?.id||null;}
       const t=inwardId?await db.rpc('lwb_purchase_photo_task',godownId?{p_inward:inwardId,p_assignees:[godownId]}:{p_inward:inwardId}):{error:{message:'saved bill not found'}};
@@ -744,7 +756,7 @@ async function save(){
     // "Vehicle arrived" popup to the chosen Godown Manager (skipped by the server when the vehicle is already checked).
     let arrMsg='';
     // Brands with no Godown Manager step (Rajnigandha): no popup when nobody is chosen.
-    if(godownId||tdStrict()){
+    if(!isGodown()&&(godownId||tdStrict())){
       let inwardId=data?.id||data?.inward_id||null;
       if(!inwardId){const f=await db.from('lwb_goods_inward').select('id').eq('invoice_no',invoice).eq('supplier_name',supplier).order('created_at',{ascending:false}).limit(1);inwardId=f.data?.[0]?.id||null;}
       const a=inwardId?await db.rpc('lwb_purchase_arrived',{p_inward:inwardId,p_godown:godownId}):{error:{message:'saved bill not found'}};
@@ -760,7 +772,7 @@ async function save(){
   finally{busy=false;recalc();}
 }
 function resetForm(){transportSelectedId='';dupHits=[];dupFor='';dupShown='';if($('invoiceHint'))$('invoiceHint').textContent='';$('invoice').classList.remove('dup');$('supplierSearch').value='';for(const id of ['supplier','invoice','transport','vehicle','lr','driverName','driverMobile','remarks','spPallets','spSheets','dmgNote'])$(id).value='';
-  $('dmgMode').value='later';dmgKey='';$('dmgBody').replaceChildren();
+  $('dmgMode').value=isGodown()?'no':'later';dmgKey='';$('dmgBody').replaceChildren();
   $('invoiceDate').value=new Date().toLocaleDateString('en-CA');$('receivedDate').value=$('invoiceDate').value;
   $('itemsBody').replaceChildren();itemRow();updateSupplierHint();updateTransportHint();recalc();
   if(giDocsOn)mountGiDocs();

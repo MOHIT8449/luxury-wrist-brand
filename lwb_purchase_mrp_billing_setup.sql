@@ -63,9 +63,9 @@ DECLARE
   v_n integer;
 BEGIN
   IF NOT (EXISTS (SELECT 1 FROM public.user_profiles p WHERE p.id = auth.uid() AND p.active = true
-                  AND lower(btrim(p.role)) IN ('admin','manager'))
+                  AND lower(btrim(p.role)) IN ('admin','manager','warehouse'))
           OR public.lwb_has_page('goods-inward.html')) THEN
-    RAISE EXCEPTION 'Only active Admin or Manager can post Goods Inward';
+    RAISE EXCEPTION 'Only active Admin, Sales Head or Godown Manager can post Goods Inward';
   END IF;
   IF jsonb_typeof(p_items) IS DISTINCT FROM 'array' OR jsonb_array_length(p_items) = 0 THEN
     RAISE EXCEPTION 'Add at least one SKU line';

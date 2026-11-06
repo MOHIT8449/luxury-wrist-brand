@@ -3,7 +3,7 @@
 -- RUN ONCE in Supabase SQL Editor. Safe to run again.
 --
 -- Goods Inward reads lwb_transport_master (active names) and Admin / Sales Head
--- (MANAGER) add a new name from the page. Before this file the page said
+-- (MANAGER) / Godown Manager (WAREHOUSE) add a new name from the page. Before this file the page said
 -- "Transport Master not connected"; it still works without it (transport is then
 -- saved as typed text only, nothing is remembered).
 --
@@ -49,7 +49,7 @@ BEGIN
   END IF;
 END $do$;
 
--- Rules: every active ERP login reads; Admin / Sales Head add or change.
+-- Rules: every active ERP login reads; Admin / Sales Head / Godown Manager add or change.
 ALTER TABLE public.lwb_transport_master ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS lwb_transport_master_read ON public.lwb_transport_master;
 CREATE POLICY lwb_transport_master_read ON public.lwb_transport_master FOR SELECT TO authenticated
@@ -57,11 +57,11 @@ CREATE POLICY lwb_transport_master_read ON public.lwb_transport_master FOR SELEC
 DROP POLICY IF EXISTS lwb_transport_master_insert ON public.lwb_transport_master;
 CREATE POLICY lwb_transport_master_insert ON public.lwb_transport_master FOR INSERT TO authenticated
   WITH CHECK (EXISTS (SELECT 1 FROM public.user_profiles p WHERE p.id = auth.uid() AND p.active = true
-                      AND lower(btrim(p.role)) IN ('admin','manager')));
+                      AND lower(btrim(p.role)) IN ('admin','manager','warehouse')));
 DROP POLICY IF EXISTS lwb_transport_master_update ON public.lwb_transport_master;
 CREATE POLICY lwb_transport_master_update ON public.lwb_transport_master FOR UPDATE TO authenticated
   USING (EXISTS (SELECT 1 FROM public.user_profiles p WHERE p.id = auth.uid() AND p.active = true
-                 AND lower(btrim(p.role)) IN ('admin','manager')))
+                 AND lower(btrim(p.role)) IN ('admin','manager','warehouse')))
   WITH CHECK (true);
 
 REVOKE ALL ON public.lwb_transport_master FROM anon;
