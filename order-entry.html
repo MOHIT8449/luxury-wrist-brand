@@ -167,6 +167,9 @@ tr.below-landing td,tr.below-min td{background:#fff1f0}
 tr.below-min .rate{border-color:#c8102e;color:#c8102e;font-weight:700}
 /* Rate below Min sale (landing + margin): the whole line turns red. */
 #itemsBody tr.below-min td{background:#fde4e4;border-color:#f3b4b4}
+#itemsBody tr.below-slab td:first-child{box-shadow:inset 4px 0 0 #c8102e}
+#itemsBody tr.below-slab .rate{border-color:#c8102e;color:#c8102e;font-weight:700}
+@media(max-width:760px){#itemsBody tr.below-slab{box-shadow:inset 4px 0 0 #c8102e}}
 #itemsBody tr.below-min td:first-child{box-shadow:inset 4px 0 0 #c8102e}
 #itemsBody tr.below-min input,#itemsBody tr.below-min .sku-name{color:#b3261e;border-color:#e89a9a;background:#fff7f7}
 .rate-hint.need{color:#9a6700;font-weight:600}
@@ -2359,6 +2362,13 @@ async function saveOrder(){
     return;
   }
 
+  // Rate below the slab this order should get: never stopped, only told (lwb_rate_check_setup.sql).
+  const lowSlabRows = isAdminLogin() ? [] : [...document.querySelectorAll("#itemsBody tr.below-slab")];
+  if(lowSlabRows.length){
+    const list = lowSlabRows.map(r => "• " + r.querySelector(".sku-name").value + " ₹" + r.querySelector(".rate").value + " — " + r.dataset.slabWhy).join("\n");
+    if(!await confirm("⚠ Rate below the slab rate\n\n" + list + "\n\nThe order will be saved, and Admin / Sales Head will get a popup to check it once.", {ok:"Save anyway", cancel:"Change rate"})) return;
+  }
+
   if(!salesPerson){
     alert("Sales Person is required.");
     return;
@@ -3033,6 +3043,17 @@ function currentSlab(){
     : {slab:2, why:"Slab 3 (weight " + formatNumber(kg) + " KG, 3 tons or more)"};
 }
 
+/* The slab this order should get by its party / transport / weight (Admin's manual pick is not used here).
+   A rate below it = red mark + "please check" popup to Admin / Sales Head (lwb_rate_check_setup.sql). */
+function autoSlab(){
+  const party = document.getElementById("customerName").value;
+  if(/JAGDISH/i.test(party)) return {slab:3, why:"Shree Jagdish party (Slab 4)"};
+  if(document.getElementById("transportation").value === "SELF PICKUP") return {slab:1, why:"Self pickup (Slab 2)"};
+  const kg = orderWeightKg();
+  if(!(kg > 0)) return {slab:null, why:""};
+  return kg < AUTO_TON_KG ? {slab:0, why:"Below 3 ton order, " + formatNumber(kg) + " kg (Slab 1)"} : {slab:2, why:"3 & 4 ton order (Slab 3)"};
+}
+
 function slabRateFor(key, slab){
   if(slab == null || !slab3BySku.has(key)) return null;
   const s3 = slab3BySku.get(key);
@@ -3075,12 +3096,19 @@ function applyRates(){
     const rate = number(rateInput.value);
     const lowMin = lim && lim.min != null && rateInput.value !== "" && rate < lim.min;
     row.classList.toggle("below-min", !!lowMin);
+    const should = autoSlab(), shouldRate = slabRateFor(key, should.slab);
+    const lowSlab = !lowMin && shouldRate != null && rateInput.value !== "" && rate < shouldRate;
+    row.classList.toggle("below-slab", !!lowSlab);
+    row.dataset.slabWhy = lowSlab ? should.why + " needs ₹" + formatNumber(shouldRate) : "";
     if(lowMin){
       hint.textContent = "Below minimum rate ₹" + formatNumber(lim.min) + (isAdminLogin() ? "" : ". Admin approval needed.");
       hint.className = "rate-hint warn";
     }else if(manualRateLogin() && rateInput.value === ""){
       hint.textContent = last ? "Enter rate · Last bill ₹" + formatNumber(last.rate) : "Enter rate";
       hint.className = "rate-hint need";
+    }else if(lowSlab){
+      hint.textContent = "⚠ " + should.why + ": slab rate ₹" + formatNumber(shouldRate) + (isAdminLogin() ? "" : ". Admin / Sales Head will be asked to check.");
+      hint.className = "rate-hint warn";
     }else if(row.dataset.hand === "1" && slabRate != null && rateInput.value !== "" && rate < slabRate){
       hint.textContent = "Below slab rate ₹" + formatNumber(slabRate);
       hint.className = "rate-hint warn";
