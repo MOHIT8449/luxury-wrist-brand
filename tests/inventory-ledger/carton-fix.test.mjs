@@ -22,8 +22,9 @@ INSERT INTO lwb_inventory_movements(sku_id,sku_name,movement_type,stock_bucket,q
   await db.exec(sql);await db.exec(sql);
   const q=async id=>(await db.query(`select coalesce(sum(qty_pcs),0)::int n from lwb_inventory_movements where sku_id=$1 and movement_type='PURCHASE_IN'`,[id])).rows[0].n;
   assert.equal(await q('20000000-0000-4000-8000-000000000001'),960*48); // 10 carton x 48 IC x 96 pcs
-  assert.equal(await q('20000000-0000-4000-8000-000000000002'),180);    // no carton size: left as is
+  assert.equal(await q('20000000-0000-4000-8000-000000000002'),180*180); // IC per Carton empty: taken from PCS per IC (180)
   assert.equal(await q('20000000-0000-4000-8000-000000000003'),2400);   // Coca-Cola: cases, untouched
   const n=(await db.query(`select notes from lwb_inventory_movements where notes is not null`)).rows;
-  assert.equal(n.length,1);assert.match(n[0].notes,/10 carton x 48 IC/);
+  assert.equal(n.length,2);assert.ok(n.some(x=>/10 carton x 48 IC/.test(x.notes)));
+  assert.equal((await db.query(`select pcs_per_case from sku_master where id='20000000-0000-4000-8000-000000000002'`)).rows[0].pcs_per_case,180); // PCS per IC untouched
 });

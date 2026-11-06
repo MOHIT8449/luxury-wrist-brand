@@ -32,6 +32,13 @@ ALTER TABLE public.lwb_purchase_carton_fix_run ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON public.lwb_purchase_carton_fix, public.lwb_purchase_carton_fix_run FROM PUBLIC, anon, authenticated;
 INSERT INTO public.lwb_purchase_carton_fix_run(id) VALUES (1) ON CONFLICT (id) DO NOTHING;
 
+-- Mohit (6 Nov 2026): for Rajnigandha (IC / BOX SKUs) the number typed in "PCS per IC" is really
+-- "IC per Carton" (1 carton = 96 IC for 0.25GM). Copy it into IC per Carton where that is empty.
+-- PCS per IC is left as it is: stock is kept in PCS = IC x PCS per IC, so changing it would change stock.
+UPDATE public.sku_master s SET cases_per_pallet = s.pcs_per_case
+WHERE coalesce(s.cases_per_pallet, 0) = 0 AND coalesce(s.pcs_per_case, 0) > 1
+  AND coalesce(s.pack_unit, (SELECT c.pack_unit FROM public.lwb_companies c WHERE c.id = s.company_id)) = 'BOX';
+
 DO $do$
 DECLARE
   v_cut timestamptz := (SELECT first_run_at FROM public.lwb_purchase_carton_fix_run WHERE id = 1);
