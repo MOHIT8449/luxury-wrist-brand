@@ -20,7 +20,7 @@
 --   * booked_pcs      POs given but not loaded yet (pending / approved / transport / loading; drafts never).
 --   * diff_pcs        system − book. 0 = stock is right. Plus = the system did not take the sale out.
 -- out_lines: every loaded PO line inside the dates (vehicle loaded time from Loading & Dispatch, else the
--- Admin "Loaded" mark date). Status after loading (loaded, invoiced, dispatched, delivered, closed ...) all
+-- Admin "Loaded" mark date, else the Rajnigandha quick slip time, else the PO time). Status after loading (loaded, invoiced, dispatched, delivered, closed ...) all
 -- count; only cancelled / rejected POs are left out. Self pickup and Admin-marked POs are included.
 -- link: does the live stock take loaded qty out by itself (view reads order_items, a trigger writes
 -- stock rows on loading, or stock rows carry an order)? Shown on the page as a warning when it does not.
@@ -120,7 +120,14 @@ BEGIN
       (SELECT max(a.loading_completed_at) FROM public.dispatch_assignments a WHERE a.order_id = o.id),
       (SELECT CASE WHEN mk.mark_date = (mk.marked_at AT TIME ZONE 'Asia/Kolkata')::date THEN mk.marked_at
                    ELSE (mk.mark_date + time '12:00') AT TIME ZONE 'Asia/Kolkata' END
-         FROM public.lwb_admin_order_marks mk WHERE mk.order_id = o.id AND mk.kind = 'LOADED' LIMIT 1)) AS at) w
+         FROM public.lwb_admin_order_marks mk WHERE mk.order_id = o.id AND mk.kind = 'LOADED' LIMIT 1),
+      -- Rajnigandha quick slip: goods leave with the slip (status 'loaded', no transport / loading row)
+      (SELECT q.created_at FROM public.lwb_quick_slips q WHERE q.order_id = o.id),
+      -- Status says loaded but no time was kept anywhere: the PO's own time
+      CASE WHEN lower(btrim(coalesce(o.status::text,''))) IN ('loaded','invoiced','dispatched','delivered',
+                'partially_delivered','partial','closed','completed')
+           THEN coalesce(nullif(to_jsonb(o)->>'loaded_at','')::timestamptz, nullif(to_jsonb(o)->>'created_at','')::timestamptz,
+                         (nullif(to_jsonb(o)->>'order_date','')::date + time '12:00') AT TIME ZONE 'Asia/Kolkata') END) AS at) w
   JOIN public.order_items i ON i.order_id = o.id
   CROSS JOIN LATERAL to_jsonb(i) j
   LEFT JOIN LATERAL (
@@ -148,7 +155,8 @@ BEGIN
   WHERE lower(btrim(coalesce(o.status::text,''))) NOT IN ('cancelled','canceled','rejected','draft','deleted',
           'loaded','invoiced','dispatched','delivered','partially_delivered','partial','closed','completed','returned')
     AND NOT EXISTS (SELECT 1 FROM public.dispatch_assignments a WHERE a.order_id = o.id AND a.loading_completed_at IS NOT NULL)
-    AND NOT EXISTS (SELECT 1 FROM public.lwb_admin_order_marks mk WHERE mk.order_id = o.id AND mk.kind = 'LOADED');
+    AND NOT EXISTS (SELECT 1 FROM public.lwb_admin_order_marks mk WHERE mk.order_id = o.id AND mk.kind = 'LOADED')
+    AND NOT EXISTS (SELECT 1 FROM public.lwb_quick_slips q WHERE q.order_id = o.id);
 
   SELECT coalesce(jsonb_agg(jsonb_build_object('order_no', x.order_no, 'party', x.party, 'status', x.status,
            'sku_id', x.sku_id, 'sku_name', x.sku_name, 'cases', x.cases, 'pcs', x.pcs, 'at', x.at) ORDER BY x.at DESC), '[]'::jsonb)

@@ -23,6 +23,7 @@ CREATE TABLE public.order_items(id bigserial primary key,order_id uuid,sku_id uu
 CREATE TABLE public.dispatch_assignments(id bigserial primary key,order_id uuid,loading_completed_at timestamptz);
 CREATE TABLE public.lwb_admin_order_marks(order_id uuid,kind text,mark_date date,marked_at timestamptz);
 CREATE TABLE public.lwb_inventory_movements(id bigserial primary key,sku_id uuid,sku_name text,movement_type text,stock_bucket text,qty_pcs int,order_id uuid,created_at timestamptz);
+CREATE TABLE public.lwb_quick_slips(order_id uuid primary key,created_at timestamptz);
 CREATE TABLE public.lwb_stock_moves(id bigserial primary key,kind text,from_bucket text,to_bucket text,sku_id uuid,qty_pcs int,status text,move_date date,decided_at timestamptz);
 INSERT INTO user_profiles VALUES ('${ADMIN}','admin',true),('${SALES}','salesman',true);
 INSERT INTO sku_master VALUES ('${SKU}','RG 2.2G',96);
@@ -136,4 +137,15 @@ UPDATE order_items SET ordered_qty=loaded_qty,approved_qty=loaded_qty WHERE orde
   const x=row(await ledger(db,'2026-11-01','2026-11-06'));
   assert.equal(x.booked_pcs,(4+2+3)*96);
   assert.equal(x.out_pcs,9*96); // loaded POs are Stock Out, not Booked
+});
+
+test('Rajnigandha quick slip POs (status loaded, no transport) count in Stock Out on the slip day',async()=>{
+  const db=await setup(VIEW_IGNORES);
+  await db.exec(`INSERT INTO orders(id,order_no,customer_name,status) VALUES ('c0000000-0000-4000-8000-000000000009','LXY-1','Q','loaded');
+INSERT INTO order_items(order_id,sku_id,sku_name,loaded_qty) VALUES ('c0000000-0000-4000-8000-000000000009','${SKU}','RG 2.2G',4);
+INSERT INTO lwb_quick_slips VALUES ('c0000000-0000-4000-8000-000000000009','2026-11-06 15:51+05:30');`);
+  const r=await ledger(db,'2026-11-06','2026-11-06');
+  assert.ok(r.out_lines.some(x=>x.order_no==='LXY-1'));
+  assert.equal(row(r).out_pcs,(2+4)*96); // PO-2 (vehicle 6 Nov) + slip
+  assert.equal(row(r).booked_pcs,0);
 });
