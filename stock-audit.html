@@ -84,7 +84,11 @@
     const S=LWBSales,{client,el,esc,fmt}=S;
     const setupMsg="Run lwb_stock_transfer_setup.sql first (it runs by itself when the PR is merged).";
     const errText=e=>/lwb_stx_/.test(e.message||"")&&/function|schema cache/.test(e.message||"")?setupMsg:(e.message||String(e));
-    const cs=(p,ppc)=>{p=Number(p)||0;ppc=Math.max(1,Number(ppc)||1);const s=p<0?"-":"",a=Math.abs(p),c=Math.trunc(a/ppc),r=a%ppc;return s+(r?(c?fmt(c)+" CS ":"")+fmt(r)+" PCS":fmt(c)+" CS")};
+    // In the unit the SKU is sold in: Rajnigandha IC, Coca-Cola CS (+ loose pcs). U = SKU name -> unit.
+    let U=()=>"CASE";
+    const cs=(p,ppc,name)=>LWBBrand.pack(p,ppc,U(name));
+    const sh=name=>LWBBrand.short(U(name));
+    const tot=l=>LWBBrand.packSum(l.map(([p,x])=>({pcs:p,per:x.pcs_per_case,unit:U(x.sku_name)})));
     const csNum=(p,ppc)=>Math.round((Number(p)||0)/Math.max(1,Number(ppc)||1)*100)/100;
     const today=()=>S.isoDay(new Date()),daysAgo=n=>S.isoDay(new Date(Date.now()-n*864e5));
     let me=null,user=false,rows=[],counts=new Map(),diffs=[],past=[],submitted=false,dirty=false;
@@ -110,28 +114,29 @@
       const q=S.key(el("q").value),f=el("filter").value,blind=el("blind").checked&&!submitted;
       const list=rows.filter(r=>inB(r.sku_name)&&(!q||S.key(r.sku_name).includes(q))&&(f==="all"||(f==="stock"&&(expected(r)>0||counts.has(r.sku_id)||Number(r.open_diff_pcs)))||(f==="todo"&&!counts.has(r.sku_id))||(f==="diff"&&diffOf(r))));
       if(!list.length){el("sheet").innerHTML='<div class="erp-empty">'+(rows.length?"No SKU for this filter.":"No SKU.")+"</div>";renderSum();return}
-      const head=["SKU","System stock","Earlier open diff","Physical CS","PCS","","Difference","Note"];
+      const head=["SKU","System stock","Earlier open diff","Physical IC / CS","PCS","","Difference","Note"];
       el("sheet").innerHTML='<div class="sl-scroll au-tbl">'+S.table(head,list.map(r=>{
         const c=counts.get(r.sku_id),d=diffOf(r),ppc=r.pcs_per_case,cls=d==null?"":d<0?"short":d>0?"extra":"ok";
         const cc=c?Math.trunc(c.pcs/ppc):"",cp=c?c.pcs%ppc:"";
         const inputs=submitted||!user?[c?fmt(cc):"—",c?fmt(cp):"",""]:
-          ['<input type="number" min="0" step="1" inputmode="numeric" data-sku="'+r.sku_id+'" data-f="c" value="'+cc+'" placeholder="CS" aria-label="Cases">',
+          ['<input type="number" min="0" step="1" inputmode="numeric" data-sku="'+r.sku_id+'" data-f="c" value="'+cc+'" placeholder="'+sh(r.sku_name)+'" aria-label="'+sh(r.sku_name)+'">',
            '<input type="number" min="0" step="1" inputmode="numeric" data-sku="'+r.sku_id+'" data-f="p" value="'+(c?cp:"")+'" placeholder="PCS" aria-label="Pieces">',
            blind?"":'<button type="button" class="au-ok" data-same="'+r.sku_id+'" title="Counted, same as system">✓</button>'];
-        return {attr:' class="'+cls+'"',cells:[esc(r.sku_name)+'<br><small class="au-meta">'+ppc+" pcs / case</small>",
-          blind?'<span class="au-muted">hidden</span>':cs(expected(r),ppc)+(Number(r.pending_pcs)?'<br><small class="au-meta">'+cs(r.pending_pcs,ppc)+" loss waiting</small>":""),
-          Number(r.open_diff_pcs)?'<span class="erp-badge red">'+cs(r.open_diff_pcs,ppc)+"</span>"+(r.open_since?'<br><small class="au-meta">since '+S.shortDate(r.open_since)+"</small>":""):'<span class="au-muted">—</span>',
+        return {attr:' class="'+cls+'"',cells:[esc(r.sku_name)+'<br><small class="au-meta">'+ppc+" pcs / "+sh(r.sku_name)+"</small>",
+          blind?'<span class="au-muted">hidden</span>':cs(expected(r),ppc,r.sku_name)+(Number(r.pending_pcs)?'<br><small class="au-meta">'+cs(r.pending_pcs,ppc,r.sku_name)+" loss waiting</small>":""),
+          Number(r.open_diff_pcs)?'<span class="erp-badge red">'+cs(r.open_diff_pcs,ppc,r.sku_name)+"</span>"+(r.open_since?'<br><small class="au-meta">since '+S.shortDate(r.open_since)+"</small>":""):'<span class="au-muted">—</span>',
           ...inputs,
-          d==null?'<span class="au-muted">not counted</span>':blind?'<span class="au-muted">after submit</span>':'<span class="au-d '+cls+'">'+(d===0?"✓ Match":(d>0?"+":"")+cs(d,ppc))+"</span>",
+          d==null?'<span class="au-muted">not counted</span>':blind?'<span class="au-muted">after submit</span>':'<span class="au-d '+cls+'">'+(d===0?"✓ Match":(d>0?"+":"")+cs(d,ppc,r.sku_name))+"</span>",
           submitted||!user?esc(c&&c.note||""):'<input data-sku="'+r.sku_id+'" data-f="n" value="'+esc(c&&c.note||"")+'" maxlength="200" placeholder="note" style="width:120px;text-align:left">']};
       }),[1,3,4,6])+"</div>";
       renderSum();
     }
     function renderSum(){
-      let n=0,short=0,extra=0,bad=0;
-      for(const r of rows){const d=diffOf(r);if(d==null)continue;n++;if(d<0){short+=csNum(-d,r.pcs_per_case);bad++}else if(d>0){extra+=csNum(d,r.pcs_per_case);bad++}}
+      let n=0,bad=0;const sl=[],el2=[];
+      for(const r of rows){const d=diffOf(r);if(d==null)continue;n++;if(d<0){sl.push([-d,r]);bad++}else if(d>0){el2.push([d,r]);bad++}}
+      const short=tot(sl),extra=tot(el2);
       const withStock=rows.filter(r=>expected(r)>0).length;
-      el("sumTxt").textContent=n+" of "+withStock+" SKUs with stock counted"+(el("blind").checked&&!submitted?"":" · "+bad+" differences · short "+fmt(short)+" CS · extra "+fmt(extra)+" CS");
+      el("sumTxt").textContent=n+" of "+withStock+" SKUs with stock counted"+(el("blind").checked&&!submitted?"":" · "+bad+" differences · short "+short+" · extra "+extra);
     }
     function onInput(e){
       const i=e.target.closest("input[data-sku]");if(!i)return;
@@ -142,7 +147,7 @@
       const d=diffOf(r),cls=d==null?"":d<0?"short":d>0?"extra":"ok";
       tr.className=cls;
       const dc=tr.children[6];
-      if(!(el("blind").checked))dc.innerHTML=d==null?'<span class="au-muted">not counted</span>':'<span class="au-d '+cls+'">'+(d===0?"✓ Match":(d>0?"+":"")+cs(d,r.pcs_per_case))+"</span>";
+      if(!(el("blind").checked))dc.innerHTML=d==null?'<span class="au-muted">not counted</span>':'<span class="au-d '+cls+'">'+(d===0?"✓ Match":(d>0?"+":"")+cs(d,r.pcs_per_case,r.sku_name))+"</span>";
       renderSum();
     }
     function payload(){return rows.map(r=>{const c=counts.get(r.sku_id);return {sku_id:r.sku_id,physical_pcs:c?c.pcs:null,note:c?c.note:""}}).filter(x=>x.physical_pcs!=null||rows.find(r=>r.sku_id===x.sku_id).physical_pcs!=null)}
@@ -151,8 +156,8 @@
       if(submit){
         const left=rows.filter(r=>expected(r)>0&&!counts.has(r.sku_id)).length;
         if(!counts.size){await alert("Count at least one SKU before submitting.");return}
-        let short=0,bad=0;for(const r of rows){const d=diffOf(r);if(d){bad++;if(d<0)short+=csNum(-d,r.pcs_per_case)}}
-        if(!await confirm("Submit the night audit of "+S.shortDate(el("day").value)+"?\n\n"+counts.size+" SKUs counted"+(left?" · "+left+" SKUs with stock NOT counted":"")+"\nDifferences: "+bad+(short?" · short "+fmt(short)+" CS":"")+"\n\nSystem stock is taken at this moment. After submit the count cannot be changed. Admin and Sales Head get the result.",{ok:"Submit"}))return;
+        let bad=0;const sl=[];for(const r of rows){const d=diffOf(r);if(d){bad++;if(d<0)sl.push([-d,r])}}const short=sl.length?tot(sl):"";
+        if(!await confirm("Submit the night audit of "+S.shortDate(el("day").value)+"?\n\n"+counts.size+" SKUs counted"+(left?" · "+left+" SKUs with stock NOT counted":"")+"\nDifferences: "+bad+(short?" · short "+short:"")+"\n\nSystem stock is taken at this moment. After submit the count cannot be changed. Admin and Sales Head get the result.",{ok:"Submit"}))return;
       }
       const b=el(submit?"submit":"saveDraft");b.disabled=true;
       const {data,error}=await client.rpc("lwb_stx_audit_save",{p_date:el("day").value,p_lines:payload(),p_submit:submit,p_note:el("note").value.trim()});
@@ -168,9 +173,9 @@
       if(!diffs.length){el("diffs").innerHTML='<div class="erp-empty">No open difference. 👍</div>';return}
       el("diffs").innerHTML=diffs.map(d=>{
         const short=d.diff_pcs<0,wait=d.status==="LOSS_PENDING",old=Number(d.days_open)>=3;
-        return '<div class="au-item'+(wait?" wait":short?"":" extra")+'"><div class="au-top"><b>'+esc(d.sku_name)+'</b><span class="erp-badge '+(short?"red":"amber")+'">'+(short?"Short ":"Extra +")+cs(Math.abs(d.diff_pcs),d.pcs_per_case)+"</span>"+
+        return '<div class="au-item'+(wait?" wait":short?"":" extra")+'"><div class="au-top"><b>'+esc(d.sku_name)+'</b><span class="erp-badge '+(short?"red":"amber")+'">'+(short?"Short ":"Extra +")+cs(Math.abs(d.diff_pcs),d.pcs_per_case,d.sku_name)+"</span>"+
           (wait?'<span class="erp-badge blue">Loss waiting for approval</span>':"")+'<span class="grow"></span><span class="au-meta">AUD-'+d.audit_id+"</span></div>"+
-          '<div class="au-meta">Counted '+S.shortDate(d.audit_date)+": system "+cs(d.system_pcs-d.pending_pcs,d.pcs_per_case)+", physical "+cs(d.physical_pcs,d.pcs_per_case)+
+          '<div class="au-meta">Counted '+S.shortDate(d.audit_date)+": system "+cs(d.system_pcs-d.pending_pcs,d.pcs_per_case,d.sku_name)+", physical "+cs(d.physical_pcs,d.pcs_per_case,d.sku_name)+
           " · open since "+S.shortDate(d.open_since)+' (<b style="color:'+(old?"var(--erp-red)":"inherit")+'">'+d.days_open+" day"+(d.days_open==1?"":"s")+"</b>)"+(d.line_note?" · "+esc(d.line_note):"")+(old&&short&&!wait?" · not found for 3+ days: search once more or move to Loss":"")+"</div>"+
           (user&&!wait?'<div class="au-btns"><button type="button" class="sl-btn small" data-found="'+d.line_id+'">'+(short?"✅ Found":"✅ Explained")+"</button>"+(short?'<button type="button" class="sl-btn ghost small" data-loss="'+d.line_id+'">Not found → Loss</button>':"")+"</div>":
             wait?'<div class="au-btns"><a class="sl-btn ghost small" href="stock-transfer.html#approvals">Open approval STM-'+d.move_id+"</a></div>":"")+"</div>";
@@ -185,7 +190,7 @@
         const {error}=await client.rpc("lwb_stx_audit_resolve",{p_line_id:id,p_action:"FOUND",p_note:note.trim()});
         if(error){await alert(errText(error));return}ERPShell.toast("Difference closed.");
       }else{
-        if(!await confirm(d.sku_name+": move "+cs(-d.diff_pcs,d.pcs_per_case)+" from Saleable to Loss?\n\nSales Head / Admin must approve. Saleable stock goes down after approval.",{ok:"Ask for Loss"}))return;
+        if(!await confirm(d.sku_name+": move "+cs(-d.diff_pcs,d.pcs_per_case,d.sku_name)+" from Saleable to Loss?\n\nSales Head / Admin must approve. Saleable stock goes down after approval.",{ok:"Ask for Loss"}))return;
         const note=await prompt("Note for the Sales Head (optional):","");if(note==null)return;
         const {error}=await client.rpc("lwb_stx_audit_resolve",{p_line_id:id,p_action:"LOSS",p_note:note.trim()});
         if(error){await alert(errText(error));return}ERPShell.toast("Loss sent for approval.");
@@ -197,19 +202,19 @@
       if(error){el("past").innerHTML='<div class="sl-msg">'+esc(errText(error))+"</div>";return}
       past=data||[];renderKpis();
       if(!past.length){el("past").innerHTML='<div class="erp-empty">No audit in the last 30 days.</div>';return}
-      el("past").innerHTML='<div class="sl-scroll">'+S.table(["Date","Status","SKUs","Matched","Differences","System CS","Physical CS","Short CS","Extra CS","By"],
+      el("past").innerHTML='<div class="sl-scroll">'+S.table(["Date","Status","SKUs","Matched","Differences","System IC / CS","Physical IC / CS","Short IC / CS","Extra IC / CS","By"],
         past.map(a=>({attr:' data-day="'+a.audit_date+'" style="cursor:pointer"',cells:[S.shortDate(a.audit_date),'<span class="erp-badge '+(a.status==="SUBMITTED"?"green":"amber")+'">'+esc(a.status==="SUBMITTED"?"Submitted":"Draft")+"</span>",
           fmt(a.skus),fmt(a.match_skus),a.diff_skus?'<b style="color:var(--erp-red)">'+fmt(a.diff_skus)+"</b>":"0",fmt(a.system_cases),fmt(a.physical_cases),fmt(a.short_cases),fmt(a.excess_cases),esc(a.counted_by||"")]})),[2,3,4,5,6,7,8])+"</div>";
     }
     function renderKpis(){
-      const open=diffs.filter(d=>d.status==="OPEN"),shortCs=open.filter(d=>d.diff_pcs<0).reduce((a,d)=>a+csNum(-d.diff_pcs,d.pcs_per_case),0);
+      const open=diffs.filter(d=>d.status==="OPEN"),shortCs=tot(open.filter(d=>d.diff_pcs<0).map(d=>[-d.diff_pcs,d]));
       const t=past.find(a=>a.audit_date===today()),old=open.filter(d=>Number(d.days_open)>=3).length;
       const k=[["Tonight's audit",t?(t.status==="SUBMITTED"?"Done":"Draft"):"Not done",t?t.skus+" SKUs counted":"Count before closing the godown",t&&t.status==="SUBMITTED"?"green":"red"],
-        ["Open differences",fmt(open.length),fmt(shortCs)+" CS short in total",open.length?"red":"green"],
+        ["Open differences",fmt(open.length),shortCs+" short in total",open.length?"red":"green"],
         ["Open 3+ days",fmt(old),"Search again or move to Loss",old?"red":""],
         ["Loss waiting approval",fmt(diffs.filter(d=>d.status==="LOSS_PENDING").length),"Sales Head / Admin","blue"]];
       el("kpis").innerHTML=k.map(c=>'<div class="sl-kpi '+c[3]+'"><span>'+esc(c[0])+"</span><b>"+c[1]+"</b><small>"+esc(c[2])+"</small></div>").join("");
-      if(window.ERPList){const cols=[{t:"SKU",v:r=>r.sku_name},{t:"Since",v:r=>S.shortDate(r.open_since)},{t:"Days",v:r=>r.days_open,num:true},{t:"Diff CS",v:r=>csNum(r.diff_pcs,r.pcs_per_case),num:true,sum:true}];
+      if(window.ERPList){const cols=[{t:"SKU",v:r=>r.sku_name},{t:"Since",v:r=>S.shortDate(r.open_since)},{t:"Days",v:r=>r.days_open,num:true},{t:"Difference",v:r=>cs(r.diff_pcs,r.pcs_per_case,r.sku_name),num:true}];
         const lists=[null,open,open.filter(d=>Number(d.days_open)>=3),diffs.filter(d=>d.status==="LOSS_PENDING")];
         el("kpis").querySelectorAll(".sl-kpi").forEach((c,i)=>{if(lists[i])ERPList.card(c,()=>({title:k[i][0],rows:lists[i],cols}))})}
     }
@@ -230,6 +235,7 @@
       window.addEventListener("beforeunload",e=>{if(dirty){e.preventDefault();e.returnValue=""}});
       el("loading").hidden=true;el("page").hidden=false;
       if(window.LWBBrand)try{BB=await LWBBrand.mount(client,{into:"#page .erp-pagehead",after:true,onChange:()=>{renderSheet();loadDiffs()}});if(BB.companies.length>1)SM=await LWBBrand.skuMap(client)}catch(e){}
+      if(window.LWBBrand)try{U=await LWBBrand.units(client)}catch(e){}
       await Promise.all([loadSheet(),loadDiffs(),loadPast()]);
     })();
   </script>

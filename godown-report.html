@@ -87,7 +87,7 @@
         '<div><label for="f_driver_mobile">Driver Mobile</label><input id="f_driver_mobile" type="tel" inputmode="numeric" maxlength="14"></div>',
       DAMAGE:'<div class="wide"><label for="f_sku_name">SKU *</label><input id="f_sku_name" list="skuList" placeholder="Search SKU" required></div>'+
         '<div><label for="f_damage_type">Type</label><select id="f_damage_type">'+opt([["LEAKAGE","Leakage"],["DAMAGE","Damage"],["BREAKAGE","Breakage"],["SHORTAGE","Shortage"],["EXPIRY","Expiry"],["OTHER","Other"]])+'</select></div>'+
-        '<div><label for="f_cases">Cases</label><input id="f_cases" type="number" min="0" step="1" inputmode="numeric"></div>'+
+        '<div><label for="f_cases">IC / Cases</label><input id="f_cases" type="number" min="0" step="1" inputmode="numeric"></div>'+
         '<div><label for="f_pcs">Loose Pieces</label><input id="f_pcs" type="number" min="0" step="1" inputmode="numeric"></div>'+
         '<div class="wide"><label for="f_photo">Photo</label><input id="f_photo" type="file" accept="image/*" capture="environment" style="height:auto;padding:8px"></div>',
       ABSENT:'<div><label for="f_person_type">Who</label><select id="f_person_type">'+opt([["LABOUR","Labour"],["DRIVER","Driver"],["LOADER","Loader"],["OTHER","Other staff"]])+'</select></div>'+
@@ -141,6 +141,7 @@
 
     // Brand filter: damage reports of the chosen brand's SKUs; vehicles, staff and other issues are for the whole godown.
     let BB={get:()=>""},SM=null;
+    let U=()=>"CASE";const sh=n=>U(n)==="BOX"?"IC":"cases"; // Rajnigandha sells in IC, Coca-Cola in cases
     const inB=x=>!BB.get()||!SM||!x.sku_name||SM.get(LWBBrand.skuKey(x.sku_name))===BB.get();
     async function load(){
       const r=await client.from("lwb_godown_reports").select("*").eq("report_date",el("day").value).order("created_at",{ascending:false});
@@ -159,14 +160,14 @@
       // Count card → list of those reports (erp-list.js)
       if(window.ERPList){const KL=[["Vehicles",x=>x.kind==="VEHICLE"],["Damage / Leakage",x=>x.kind==="DAMAGE"],["Staff Absent",x=>x.kind==="ABSENT"],["Not Seen by Office",x=>x.review_status==="OPEN"]];
         const GC=[{t:"Time",v:x=>time(x.created_at)},{t:"Type",v:x=>cap(x.kind)},{t:"Detail",v:x=>[x.vehicle_no,x.purpose&&cap(x.purpose),x.damage_type&&cap(x.damage_type),x.sku_name,x.person_name,x.driver_name].filter(Boolean).join(" · ")},
-          {t:"Cases",v:"cases",num:true,sum:true,dec:0},{t:"Pcs",v:"pcs",num:true,sum:true,dec:0},{t:"Vehicle status",v:x=>x.vehicle_status?cap(x.vehicle_status):""},{t:"Office",v:x=>cap(x.review_status||"")},{t:"By",v:x=>names.get(x.created_by)||""},{t:"Note",v:"note"}];
+          {t:"IC / Cases",v:x=>fmt(x.cases||0)+" "+sh(x.sku_name),num:true},{t:"Pcs",v:"pcs",num:true,sum:true,dec:0},{t:"Vehicle status",v:x=>x.vehicle_status?cap(x.vehicle_status):""},{t:"Office",v:x=>cap(x.review_status||"")},{t:"By",v:x=>names.get(x.created_by)||""},{t:"Note",v:"note"}];
         el("kpis").querySelectorAll(".sl-kpi").forEach((c,i)=>ERPList.card(c,()=>({title:KL[i][0],sub:"Godown report · "+el("day").value,rows:rows.filter(KL[i][1]),cols:GC})))}
       if(!list.length){el("list").innerHTML='<div class="erp-empty">No report for this date.</div>';return}
       el("list").innerHTML=list.map(x=>{
         let head="",body="";
         if(x.kind==="VEHICLE"){head=esc(x.vehicle_no)+" · "+esc(cap(x.purpose));
           body=[x.driver_name&&"Driver "+esc(x.driver_name)+(x.driver_mobile?" ("+esc(x.driver_mobile)+")":""),"In "+time(x.arrived_at),x.started_at&&"Started "+time(x.started_at),x.done_at&&(x.vehicle_status==="LEFT"?"Left ":"Done ")+time(x.done_at)].filter(Boolean).join(" · ")}
-        else if(x.kind==="DAMAGE"){head=esc(cap(x.damage_type))+" · "+esc(x.sku_name);body=fmt(x.cases||0)+" cases, "+fmt(x.pcs||0)+" pcs"}
+        else if(x.kind==="DAMAGE"){head=esc(cap(x.damage_type))+" · "+esc(x.sku_name);body=fmt(x.cases||0)+" "+sh(x.sku_name)+", "+fmt(x.pcs||0)+" pcs"}
         else if(x.kind==="ABSENT"){head=esc(cap(x.person_type))+" absent · "+esc(x.person_name)}
         else head="Issue";
         const vs=x.kind==="VEHICLE"&&VSTATE[x.vehicle_status],rs=RSTATE[x.review_status]||["",""];
@@ -222,6 +223,7 @@
       const q=new URLSearchParams(location.search).get("new");if(FORMS[q])openForm(q);
       el("loading").hidden=true;el("page").hidden=false;
       if(window.LWBBrand)try{BB=await LWBBrand.mount(client,{into:"#page .erp-pagehead",after:true,onChange:load});if(BB.companies.length>1)SM=await LWBBrand.skuMap(client)}catch(e){}
+      if(window.LWBBrand)try{U=await LWBBrand.units(client)}catch(e){}
       await load();
     })();
   </script>

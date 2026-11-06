@@ -82,7 +82,7 @@
       .pr-table tr.bill>td.c-chk{grid-column:1}
       .pr-table tr.bill>td.c-act{grid-column:1/-1;margin-top:6px}
       .pr-table tr.bill>td.c-act .pr-acts button{flex:1;height:34px}
-      .pr-table tr.bill>td.c-pcs::before{content:"PCS ";color:var(--erp-muted);font-size:12px}
+      .pr-table tr.bill>td.c-pcs::before{content:"Qty ";color:var(--erp-muted);font-size:12px}
       .pr-table tr.pr-items,.pr-table tfoot tr{display:block}.pr-table tr.pr-items>td,.pr-table tfoot td{display:block;border:0}
       .pr-table tfoot td:empty{display:none}
       .pr-items .scroll{overflow-x:auto}
@@ -188,6 +188,14 @@ Verify: All OK, or damage / leakage / shortage lines (SKU · type · qty) with p
     const vTime=b=>{const m=vMin(b);return "In "+hm(b.time_in)+(b.time_out?" · Out "+hm(b.time_out)+" ("+(m>=60?Math.floor(m/60)+"h ":"")+(m%60)+"m)":" · Out —")};
     const pcsOf=it=>num(pick(it,["quantity_pcs","total_pcs","qty_pcs"]));
     const sum=(b,f)=>lines(b).reduce((a,i)=>a+num(i[f]),0);
+    // Quantities in the unit the SKU is sold in: Rajnigandha IC, Coca-Cola CS (+ loose pcs).
+    let cos=[];
+    const skuOf=it=>skuName.get(String(it.sku_id))||{};
+    const unitOf=it=>window.LWBBrand?LWBBrand.unitOf(skuOf(it),cos):"CASE";
+    const packOf=it=>Math.max(1,num(skuOf(it).pcs_per_case)||1);
+    const lineQty=it=>window.LWBBrand?LWBBrand.pack(pcsOf(it),packOf(it),unitOf(it)):fmt(pcsOf(it))+" PCS";
+    const qtyList=ls=>ls.map(it=>({pcs:pcsOf(it),per:packOf(it),unit:unitOf(it)}));
+    const qtySum=ls=>window.LWBBrand?LWBBrand.packSum(qtyList(ls)):fmt(ls.reduce((a,i)=>a+pcsOf(i),0));
     // Brand filter: a bill is of a brand when one of its SKUs is (or its supplier is tied to that brand).
     let BB={get:()=>""};
     const inB=b=>{const c=BB.get();if(!c)return true;if(b.company_id)return b.company_id===c;
@@ -217,32 +225,32 @@ Verify: All OK, or damage / leakage / shortage lines (SKU · type · qty) with p
       const base=filtered(),list=shown(),amt=can.amounts;
       el("tabs").innerHTML=TABS.map(([k,l,f,cls])=>{const n=base.filter(f).length;if(k==="nobill"&&!docSum||(["check","photo","claim","ok"].includes(k)&&checksMissing))return "";
         return '<button type="button" role="tab" class="pr-tab'+(k===tab?" on":"")+(n?(k!=="all"&&k!=="ok"?" "+cls:""):" zero")+'" data-tab="'+k+'" aria-selected="'+(k===tab)+'">'+l+"<b>"+fmt(n)+"</b></button>"}).join("");
-      const tot={pcs:0,tax:0,gross:0};for(const b of list){tot.pcs+=lines(b).reduce((a,i)=>a+pcsOf(i),0);tot.tax+=sum(b,"taxable_amount");tot.gross+=sum(b,"total_amount")}
-      const K=[["Bills",fmt(list.length)],["Total PCS",fmt(tot.pcs)]];
+      const tot={ls:[],tax:0,gross:0};for(const b of list){tot.ls.push(...lines(b));tot.tax+=sum(b,"taxable_amount");tot.gross+=sum(b,"total_amount")}
+      const K=[["Bills",fmt(list.length)],["Total Qty",qtySum(tot.ls)]];
       if(amt)K.push(["Taxable",rs(tot.tax)],["Invoice Total",rs(tot.gross)]);
       else K.push(["Check pending",fmt(base.filter(b=>todo(b)==="CHECK").length)],["Photo pending",fmt(base.filter(b=>todo(b)==="PHOTO").length)]);
       el("kpis").innerHTML=K.map(([a,b])=>'<div class="pr-kpi"><span>'+a+"</span><b>"+b+"</b></div>").join("");
-      if(window.ERPList){const BC=[{t:"Received",v:"received_date",date:true},{t:"Invoice",v:"invoice_no"},{t:"Supplier",v:"supplier_name"},{t:"Vehicle",v:"vehicle_no"},{t:"Total PCS",v:b=>lines(b).reduce((a,i)=>a+pcsOf(i),0),num:true,sum:true,dec:0}]
+      if(window.ERPList){const BC=[{t:"Received",v:"received_date",date:true},{t:"Invoice",v:"invoice_no"},{t:"Supplier",v:"supplier_name"},{t:"Vehicle",v:"vehicle_no"},{t:"Qty",v:b=>qtySum(lines(b)),num:true}]
           .concat(amt?[{t:"Taxable",v:b=>sum(b,"taxable_amount"),money:true,sum:true,dec:2},{t:"Invoice total",v:b=>sum(b,"total_amount"),money:true,sum:true,dec:2}]:[]);
         el("kpis").querySelectorAll(".pr-kpi").forEach(c=>ERPList.card(c,()=>({title:"Purchase bills",sub:"Bills in this list",rows:list,cols:BC,onRow:b=>{openId=b.id;render()}})))}
       const cols=amt?10:9;
-      let h='<table class="pr-table"><thead><tr><th class="c-rec">Received</th><th>Invoice / Received</th><th>Supplier</th><th>Vehicle / Driver</th><th class="n">PCS</th>'+(amt?'<th class="n">Invoice Total ₹</th>':"")+"<th>Vehicle Check</th><th></th></tr></thead><tbody>";
+      let h='<table class="pr-table"><thead><tr><th class="c-rec">Received</th><th>Invoice / Received</th><th>Supplier</th><th>Vehicle / Driver</th><th class="n">Qty</th>'+(amt?'<th class="n">Invoice Total ₹</th>':"")+"<th>Vehicle Check</th><th></th></tr></thead><tbody>";
       for(const b of list.slice(0,shownMax)){
-        const ls=lines(b),pcs=ls.reduce((a,i)=>a+pcsOf(i),0),t=todo(b),hasTask=tasks.has(String(b.id));
+        const ls=lines(b),t=todo(b),hasTask=tasks.has(String(b.id));
         let acts="";
         if(can.check&&!checksMissing)acts+='<button type="button" class="'+(t==="CHECK"?"go":"")+'" data-verify="'+b.id+'">'+(checks.has(b.id)?"Edit":"Verify")+"</button>";
         if(docSum)acts+='<button type="button" data-docs="'+b.id+'" title="Bill copy / photos" aria-label="Bill copy / photos">📎</button>';
         if(can.task&&t&&!hasTask)acts+='<button type="button" class="task" data-task="'+b.id+'" title="Give the Godown Manager a task to check / upload photos">📷 Task</button>';
         h+='<tr class="bill'+(b.id===openId?" open":"")+'"><td class="c-rec">'+dmy(b.received_date)+'</td><td class="c-inv"><button type="button" class="pr-inv" data-view="'+b.id+'" title="Show / hide the SKU lines">'+esc(b.invoice_no)+(b.id===openId?" ▴":" ▾")+"</button><small>Recd "+dmy(b.received_date)+" · Inv "+dmy(b.invoice_date)+"</small><div>"+tags(b)+'</div></td><td class="c-sup">'+esc(b.supplier_name)+
-          '</td><td class="c-veh">'+esc(b.vehicle_no||"—")+"<small>"+esc([b.driver_name,b.lr_no?"LR "+b.lr_no:""].filter(Boolean).join(" · "))+"</small>"+(b.time_in?"<small>🕘 "+esc(vTime(b))+"</small>":"")+'</td><td class="n c-pcs">'+fmt(pcs)+"</td>"+
+          '</td><td class="c-veh">'+esc(b.vehicle_no||"—")+"<small>"+esc([b.driver_name,b.lr_no?"LR "+b.lr_no:""].filter(Boolean).join(" · "))+"</small>"+(b.time_in?"<small>🕘 "+esc(vTime(b))+"</small>":"")+'</td><td class="n c-pcs">'+esc(qtySum(ls))+"</td>"+
           (amt?'<td class="n c-amt">'+rs(sum(b,"total_amount"))+"</td>":"")+'<td class="c-chk">'+checkTag(b)+'</td><td class="c-act"><div class="pr-acts">'+acts+"</div></td></tr>";
-        if(b.id===openId)h+='<tr class="pr-items"><td colspan="'+cols+'"><div class="scroll"><table><thead><tr><th>#</th><th>SKU</th><th class="n">Cases</th><th class="n">Loose</th><th class="n">PCS</th>'+(amt?'<th class="n">Taxable ₹</th><th class="n">Total ₹</th>':"")+"</tr></thead><tbody>"+
-          ls.map((it,i)=>{const s=skuName.get(String(it.sku_id))||{};return "<tr><td>"+(i+1)+"</td><td>"+esc(pick(it,["sku_name"])||s.sku_name||it.sku_id)+'</td><td class="n">'+fmt(pick(it,["cases","quantity_cases"]))+'</td><td class="n">'+fmt(pick(it,["pcs","loose_pcs"]))+'</td><td class="n">'+fmt(pcsOf(it))+"</td>"+(amt?'<td class="n">'+rs(it.taxable_amount)+'</td><td class="n">'+rs(it.total_amount)+"</td>":"")+"</tr>"}).join("")+
+        if(b.id===openId)h+='<tr class="pr-items"><td colspan="'+cols+'"><div class="scroll"><table><thead><tr><th>#</th><th>SKU</th><th class="n">Quantity</th>'+(amt?'<th class="n">Taxable ₹</th><th class="n">Total ₹</th>':"")+"</tr></thead><tbody>"+
+          ls.map((it,i)=>{const s=skuName.get(String(it.sku_id))||{};return "<tr><td>"+(i+1)+"</td><td>"+esc(pick(it,["sku_name"])||s.sku_name||it.sku_id)+'</td><td class="n">'+esc(lineQty(it))+"</td>"+(amt?'<td class="n">'+rs(it.taxable_amount)+'</td><td class="n">'+rs(it.total_amount)+"</td>":"")+"</tr>"}).join("")+
           "</tbody></table></div>"+(b.remarks?'<p style="margin:6px 0 0">Remarks: '+esc(b.remarks)+"</p>":"")+(b.transport_name?'<p style="margin:4px 0 0;color:var(--erp-muted)">Transport: '+esc(b.transport_name)+(b.driver_mobile?" · Driver "+esc(b.driver_mobile):"")+"</p>":"")+"</td></tr>";
       }
       if(!list.length)h+='<tr><td colspan="'+cols+'" class="erp-empty">No purchase bills in this list.</td></tr>';
       h+="</tbody>";
-      if(list.length)h+='<tfoot><tr><td colspan="3">Total ('+fmt(list.length)+' bills)</td><td class="n">'+fmt(tot.pcs)+" PCS</td>"+(amt?'<td class="n">'+rs(tot.gross)+"</td>":"")+'<td colspan="2"></td></tr></tfoot>';
+      if(list.length)h+='<tfoot><tr><td colspan="3">Total ('+fmt(list.length)+' bills)</td><td class="n">'+esc(qtySum(tot.ls))+"</td>"+(amt?'<td class="n">'+rs(tot.gross)+"</td>":"")+'<td colspan="2"></td></tr></tfoot>';
       h+="</table>";
       if(list.length>shownMax)h+='<div class="pr-more"><button type="button" class="pr-x" id="more">Show more ('+fmt(list.length-shownMax)+" more)</button></div>";
       el("box").innerHTML=h;
@@ -262,9 +270,9 @@ Verify: All OK, or damage / leakage / shortage lines (SKU · type · qty) with p
       docSum=await ERPDocs.summary(client,"PURCHASE_BILL")||docSum;await loadTasks()}
     async function excel(){
       const list=shown(),amt=can.amounts;
-      const head=["Received","Invoice No","Invoice Date","Supplier","Vehicle","Time In","Time Out","Minutes in godown","Driver","Driver Mobile","LR No","Transport","Lines","Total PCS"].concat(amt?["Taxable","Invoice Total"]:[]).concat(["Vehicle Check","Claim","Bill copy","Damage photos","Photo task"]);
+      const head=["Received","Invoice No","Invoice Date","Supplier","Vehicle","Time In","Time Out","Minutes in godown","Driver","Driver Mobile","LR No","Transport","Lines","Total Qty (IC / CS)","Total PCS"].concat(amt?["Taxable","Invoice Total"]:[]).concat(["Vehicle Check","Claim","Bill copy","Damage photos","Photo task"]);
       const rows=list.map(b=>{const ch=checks.get(b.id),d=docs(b),t=tasks.get(String(b.id));
-        return [dmy(b.received_date),b.invoice_no,dmy(b.invoice_date),b.supplier_name,b.vehicle_no||"",b.time_in?hm(b.time_in):"",b.time_out?hm(b.time_out):"",vMin(b)==null?"":vMin(b),b.driver_name||"",b.driver_mobile||"",b.lr_no||"",b.transport_name||"",lines(b).length,lines(b).reduce((a,i)=>a+pcsOf(i),0)]
+        return [dmy(b.received_date),b.invoice_no,dmy(b.invoice_date),b.supplier_name,b.vehicle_no||"",b.time_in?hm(b.time_in):"",b.time_out?hm(b.time_out):"",vMin(b)==null?"":vMin(b),b.driver_name||"",b.driver_mobile||"",b.lr_no||"",b.transport_name||"",lines(b).length,qtySum(lines(b)),lines(b).reduce((a,i)=>a+pcsOf(i),0)]
           .concat(amt?[sum(b,"taxable_amount"),sum(b,"total_amount")]:[])
           .concat([!ch?"Check pending":ch.has_damage?"Damage":"No damage",ch&&ch.has_damage?ch.claim_status:"",d?(d.has("BILL")?"Yes":"No"):"",d?(d.has("DAMAGE")?"Yes":"No"):"",t?t.people:""])});
       try{await LWBExcel.write("Purchase-List-"+today(),[{name:"Purchase List",rows:[head,...rows]}])}catch(e){ERPShell.toast(e.message,"error")}
@@ -299,6 +307,7 @@ Verify: All OK, or damage / leakage / shortage lines (SKU · type · qty) with p
       el("newLink").hidden=!["admin","manager"].includes(r);el("sbsLink").hidden=!["admin","manager","accounts"].includes(r);
       ERPShell.mount({role:me.realRole||me.role,name:me.name,onLogout:async()=>{await client.auth.signOut();location.replace("login.html")},group:"Purchase"});
       el("loading").hidden=true;el("page").hidden=false;
+      if(window.LWBBrand)try{const r=await LWBBrand.load(client);cos=r.all||r.companies||[]}catch(e){}
       if(window.LWBBrand)try{BB=await LWBBrand.mount(client,{into:"#page .erp-pagehead",after:true,onChange:render})}catch(e){}
       let k="30";try{k=localStorage.getItem("lwbPrRange")||"30"}catch(e){}
       if(!["0","7","30","month"].includes(k))k="30";

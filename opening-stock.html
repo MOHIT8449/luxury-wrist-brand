@@ -28,7 +28,7 @@
       <div class="flex" style="justify-content:space-between"><div><h2>Opening Stock Entry</h2></div><div class="flex"><span class="tag">AUTO UOM CONVERSION v2</span><span class="tag" id="access">Connecting...</span></div></div>
       <div class="grid">
         <div class="field"><label for="sku">SKU / Product *</label><select id="sku"><option value="">Loading SKU Master...</option></select></div>
-        <div class="field"><label for="cases">UOM1 — Cases *</label><input id="cases" type="number" inputmode="numeric" min="0" step="1" value="0"></div>
+        <div class="field"><label for="cases" id="casesLab">IC / Cases *</label><input id="cases" type="number" inputmode="numeric" min="0" step="1" value="0"></div>
         <div class="field"><label for="loose">UOM0 — Loose PCS *</label><input id="loose" type="number" inputmode="numeric" min="0" step="1" value="0"></div>
       </div>
       <div class="line">
@@ -37,8 +37,8 @@
         <div class="field os-ro"><label>Entry Type</label><input value="Opening Stock (Saleable)" readonly></div>
       </div>
       <div class="results">
-        <div class="metric"><span>PCS per Case (SKU Master)</span><strong id="pack">—</strong></div>
-        <div class="metric"><span>Converted Quantity (CS + PCS)</span><strong id="converted">—</strong></div>
+        <div class="metric"><span id="packLab">PCS per IC / Case (SKU Master)</span><strong id="pack">—</strong></div>
+        <div class="metric"><span>Converted Quantity</span><strong id="converted">—</strong></div>
         <div class="metric"><span>Total Opening Pieces</span><strong id="total">0 PCS</strong></div>
         <div class="metric"><span>Current Saleable Stock</span><strong id="current">—</strong></div>
       </div>
@@ -46,7 +46,7 @@
     </section>
     <section class="panel">
       <div class="flex" style="justify-content:space-between"><div><h2>Live SKU Stock — Main Godown</h2></div><div class="flex" id="listBar"><button id="refresh" type="button">Refresh Stock</button></div></div>
-      <div class="table-scroll"><table><thead><tr><th>SKU</th><th class="num">PCS/Case</th><th class="num">Saleable CS</th><th class="num">Loose PCS</th><th class="num">Damaged PCS</th><th>Opening Entry</th><th>Action</th></tr></thead><tbody id="rows"><tr><td colspan="7">Connecting...</td></tr></tbody></table></div>
+      <div class="table-scroll"><table><thead><tr><th>SKU</th><th class="num">Pack</th><th class="num">Saleable Stock</th><th class="num">Damaged</th><th>Opening Entry</th><th>Action</th></tr></thead><tbody id="rows"><tr><td colspan="7">Connecting...</td></tr></tbody></table></div>
     </section>
   </main>
 <script>
@@ -66,17 +66,24 @@ function normalizeCounts(cases,loose,pack) {
   if(!Number.isSafeInteger(normalizedCases)||normalizedCases>2147483647)return null;
   return {total, cases:normalizedCases, loose:normalizedLoose};
 }
+// Shown in the unit the SKU is sold in: Rajnigandha IC, Coca-Cola CS (+ loose pcs).
+let cos=[];
+const unitOf=sku=>window.LWBBrand?LWBBrand.unitOf(sku,cos):'CASE';
+const sh=sku=>unitOf(sku)==='BOX'?'IC':'CS';
+const packTxt=(pcs,sku)=>window.LWBBrand?LWBBrand.pack(pcs,sku.pcs_per_case,unitOf(sku)):qty(pcs)+' PCS';
 function selectedSku() { return skus.find(s=>s.id===$('sku').value); }
 function balanceFor(id){return balances.find(b=>b.sku_id===id);}
 function updatePreview(){
   const sku=selectedSku(),pack=Number(sku?.pcs_per_case)||0,c=Number($('cases').value),p=Number($('loose').value);
+  $('casesLab').textContent=sku?(sh(sku)==='IC'?'IC (Inner Carton) *':'Cases *'):'IC / Cases *';
+  $('packLab').textContent=sku?'PCS per '+sh(sku)+' (SKU Master)':'PCS per IC / Case (SKU Master)';
   $('pack').textContent=pack?qty(pack)+' PCS':'—';
   const normalized=normalizeCounts(c,p,pack);
-  $('converted').textContent=normalized?`${qty(normalized.cases)} CS + ${qty(normalized.loose)} PCS`:'—';
+  $('converted').textContent=normalized?packTxt(normalized.total,sku):'—';
   $('total').textContent=normalized?qty(normalized.total)+' PCS':'Invalid Quantity';
   const stock=balanceFor(sku?.id),openingDone=openingSkuIds.has(sku?.id);
   const stockPcs=Number(stock?.saleable_pcs)||0;
-  $('current').textContent=sku?`${qty(Math.floor(stockPcs/pack))} CS + ${qty(stockPcs%pack)} PCS`:'—';
+  $('current').textContent=sku?packTxt(stockPcs,sku):'—';
   $('save').disabled=!profile||profile.role!=='admin'||profile.active!==true||!sku||openingDone||normalized===null||busy;
   $('hint').textContent=openingDone?'Opening stock already recorded for this SKU.':!sku?'Select a SKU to begin.':profile?.role!=='admin'?'Only an active admin can save opening stock.':normalized===null?'Enter whole, non-negative Cases and PCS with a positive total.':'Ready to save once. Extra PCS are converted into full cases automatically.';
 }
@@ -117,6 +124,7 @@ async function loadAll(){
     for(const result of [skuRes,stockRes,openRes]) if(result.error) throw result.error;
     const old=$('sku').value;
     if(window.LWBBrand&&!BB.companies)try{BB=await LWBBrand.mount(db,{into:'main',onChange:()=>loadAll()})}catch(e){}
+    if(window.LWBBrand&&!cos.length)try{const r=await LWBBrand.load(db);cos=r.all||r.companies||[]}catch(e){}
     allSkus=(skuRes.data||[]).filter(s=>Number(s.pcs_per_case)>0);
     skus=allSkus.filter(s=>!BB.get()||s.company_id===BB.get());
     balances=stockRes.data||[];
@@ -132,8 +140,8 @@ function renderRows(){
   for(const sku of skus){
     const pack=Number(sku.pcs_per_case),b=balanceFor(sku.id),sale=Number(b?.saleable_pcs)||0,damaged=Number(b?.damaged_pcs)||0;
     const tr=document.createElement('tr');
-    for(const value of [sku.sku_name,qty(pack),qty(Math.floor(sale/pack)),qty(sale%pack),qty(damaged),openingSkuIds.has(sku.id)?'Entered':'Not entered']){
-      const td=document.createElement('td');td.textContent=value;tr.appendChild(td);
+    for(const [i,value] of [sku.sku_name,qty(pack)+' pcs / '+sh(sku),packTxt(sale,sku),damaged?packTxt(damaged,sku):'—',openingSkuIds.has(sku.id)?'Entered':'Not entered'].entries()){
+      const td=document.createElement('td');td.textContent=value;if(i>0&&i<4)td.className='num';if(i===2)td.style.fontWeight='700';tr.appendChild(td);
     }
     // Tap "+ Enter" on a SKU still without opening: the popup opens with that SKU picked, cursor in Cases.
     const act=document.createElement('td');
@@ -141,20 +149,20 @@ function renderRows(){
     else act.hidden=true;
     tr.appendChild(act);$('rows').appendChild(tr);
   }
-  if(!skus.length){const row=document.createElement('tr'),c=document.createElement('td');c.colSpan=7;c.textContent='No active SKUs found.';row.appendChild(c);$('rows').appendChild(row);}
+  if(!skus.length){const row=document.createElement('tr'),c=document.createElement('td');c.colSpan=6;c.textContent='No active SKUs found.';row.appendChild(c);$('rows').appendChild(row);}
 }
 async function saveOpening(){
   const sku=selectedSku();if(!db||!sku||!profile||profile.role!=='admin'||busy)return;
   const cases=Number($('cases').value), loose=Number($('loose').value),pack=Number(sku.pcs_per_case),normalized=normalizeCounts(cases,loose,pack);
   if(normalized===null){show('Enter whole, non-negative Cases and PCS with a positive total.');return;}
   if(openingSkuIds.has(sku.id)){show('Opening stock already entered for this SKU.');return;}
-  const confirmed=await confirm(`Add opening stock to MAIN godown?\n\nSKU: ${sku.sku_name}\nEntered: ${cases} CS + ${loose} PCS\nConverted: ${normalized.cases} CS + ${normalized.loose} PCS\nTotal Pieces: ${normalized.total}\n\nThis can be added only once for this SKU.`);
+  const confirmed=await confirm(`Add opening stock to MAIN godown?\n\nSKU: ${sku.sku_name}\nEntered: ${cases} ${sh(sku)} + ${loose} PCS\nConverted: ${packTxt(normalized.total,sku)}\nTotal Pieces: ${normalized.total}\n\nThis can be added only once for this SKU.`);
   if(!confirmed)return;
   busy=true;updatePreview();
   try{
     const {error}=await db.rpc('lwb_add_opening_stock',{p_sku_id:sku.id,p_cases:normalized.cases,p_loose_pcs:normalized.loose,p_reference_no:$('ref').value.trim()||null});
     if(error)throw error;
-    show(`Opening stock saved successfully: ${sku.sku_name} — ${normalized.cases} CS + ${normalized.loose} PCS (${normalized.total} pieces).`,'success');
+    show(`Opening stock saved successfully: ${sku.sku_name} — ${packTxt(normalized.total,sku)} (${normalized.total} pieces).`,'success');
     $('cases').value='0';$('loose').value='0';$('ref').value='';
     await loadAll();MP.close();
   }catch(e){show('Could not save opening stock: '+(e.message||String(e)));}

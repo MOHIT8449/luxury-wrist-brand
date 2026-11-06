@@ -155,9 +155,13 @@
     let BB={get:()=>""},SM=null;
     const inB=x=>!BB.get()||!SM||SM.get(LWBBrand.skuKey(x.sku_name))===BB.get();
     const errText=e=>/lwb_stx_/.test(e.message||"")&&/function|schema cache/.test(e.message||"")?setupMsg:(e.message||String(e));
-    const cs=(p,ppc)=>{p=Number(p)||0;ppc=Math.max(1,Number(ppc)||1);const c=Math.trunc(p/ppc),r=p%ppc;return r?(c?fmt(c)+" CS ":"")+fmt(r)+" PCS":fmt(c)+" CS"};
+    // In the unit the SKU is sold in: Rajnigandha IC, Coca-Cola CS (+ loose pcs). U = SKU name -> unit.
+    let U=()=>"CASE";
+    const cs=(p,ppc,name)=>LWBBrand.pack(p,ppc,U(name));
+    const sh=name=>LWBBrand.short(U(name));
+    const tot=(l,f)=>LWBBrand.packSum(l.map(x=>({pcs:f(x),per:x.pcs_per_case,unit:U(x.sku_name)})));
     const csNum=(p,ppc)=>Math.round((Number(p)||0)/Math.max(1,Number(ppc)||1)*100)/100;
-    const cell=(p,ppc)=>Number(p)?cs(p,ppc):'<span class="st-num0">—</span>';
+    const cell=(p,ppc,name)=>Number(p)?cs(p,ppc,name):'<span class="st-num0">—</span>';
     const today=()=>S.isoDay(new Date());
     const daysAgo=n=>S.isoDay(new Date(Date.now()-n*864e5));
 
@@ -184,25 +188,25 @@
     }
     function renderStatus(){
       const q=S.key(el("q").value),all=el("showAll").value==="1";
-      const sum=f=>stock.reduce((a,x)=>a+csNum(f(x),x.pcs_per_case),0);
+      const sum=f=>tot(stock,f);
       const held=x=>HELD.reduce((a,b)=>a+Number(x[b.toLowerCase()+"_pcs"]||0),0);
-      const k=[["Saleable stock",fmt(sum(x=>x.saleable_pcs))+" CS","After approved transfers",x=>Number(x.saleable_pcs)>0,""],
+      const k=[["Saleable stock",sum(x=>x.saleable_pcs),"After approved transfers",x=>Number(x.saleable_pcs)>0,""],
         ["Waiting approval",fmt(moves.length),"Requests not approved yet",null,"blue"],
-        ["Damage + Leakage + Breakage + Gasless + Expiry",fmt(sum(held))+" CS","Still in godown",x=>held(x)>0,"red"],
-        ["Loss",fmt(sum(x=>x.loss_pcs))+" CS","Lost / not found",x=>Number(x.loss_pcs)>0,"red"],
-        ["Audit short (open)",fmt(sum(x=>x.open_short_pcs))+" CS","Night audit, not found yet",x=>Number(x.open_short_pcs)>0,""]];
-      el("kpis").innerHTML=k.map(c=>'<div class="sl-kpi '+c[4]+'"><span>'+esc(c[0])+"</span><b>"+c[1]+"</b><small>"+esc(c[2])+"</small></div>").join("");
+        ["Damage + Leakage + Breakage + Gasless + Expiry",sum(held),"Still in godown",x=>held(x)>0,"red"],
+        ["Loss",sum(x=>x.loss_pcs),"Lost / not found",x=>Number(x.loss_pcs)>0,"red"],
+        ["Audit short (open)",sum(x=>x.open_short_pcs),"Night audit, not found yet",x=>Number(x.open_short_pcs)>0,""]];
+      el("kpis").innerHTML=k.map(c=>'<div class="sl-kpi '+c[4]+'"><span>'+esc(c[0])+"</span><b>"+String(c[1]).split(" · ").map(t=>'<span style="white-space:nowrap">'+t+"</span>").join(" · ")+"</b><small>"+esc(c[2])+"</small></div>").join("");
       if(window.ERPList)el("kpis").querySelectorAll(".sl-kpi").forEach((c,i)=>ERPList.card(c,()=>i===1?{title:"Waiting approval",rows:moves,cols:MCOLS,onRow:()=>show("Approvals")}:
-        {title:k[i][0],rows:stock.filter(k[i][3]),cols:[{t:"SKU",v:r=>r.sku_name},{t:"Cases",v:r=>csNum(i===0?r.saleable_pcs:i===2?held(r):i===3?r.loss_pcs:r.open_short_pcs,r.pcs_per_case),num:true,sum:true}]}));
+        {title:k[i][0],rows:stock.filter(k[i][3]),cols:[{t:"SKU",v:r=>r.sku_name},{t:"Qty",v:r=>cs(i===0?r.saleable_pcs:i===2?held(r):i===3?r.loss_pcs:r.open_short_pcs,r.pcs_per_case,r.sku_name),num:true}]}));
       const list=stock.filter(x=>(!q||S.key(x.sku_name).includes(q))&&(all||held(x)||Number(x.loss_pcs)||Number(x.pending_out_pcs)||Number(x.destroyed_pcs)||Number(x.company_return_pcs)||Number(x.open_short_pcs)||Number(x.open_excess_pcs)));
       if(!list.length){el("statusTable").innerHTML='<div class="erp-empty">'+(stock.length?'No damage, loss or waiting request. Choose "All SKUs" to see every SKU.':"No SKU.")+"</div>";return}
       el("statusTable").innerHTML='<div class="sl-scroll">'+S.table(["SKU","Saleable","Waiting","Damage","Leakage","Breakage","Gasless","Expiry","Loss","Destroyed","Co. return","Audit short"],
-        list.map(x=>{const p=x.pcs_per_case;return [esc(x.sku_name),"<b>"+cs(x.saleable_pcs,p)+"</b>",cell(x.pending_out_pcs,p),cell(x.damage_pcs,p),cell(x.leakage_pcs,p),cell(x.breakage_pcs,p),cell(x.gasless_pcs,p),cell(x.expiry_pcs,p),cell(x.loss_pcs,p),cell(x.destroyed_pcs,p),cell(x.company_return_pcs,p),
-          Number(x.open_short_pcs)?'<span class="erp-badge red">'+cs(x.open_short_pcs,p)+"</span>":Number(x.open_excess_pcs)?'<span class="erp-badge amber">+'+cs(x.open_excess_pcs,p)+"</span>":'<span class="st-num0">—</span>']}),[1,2,3,4,5,6,7,8,9,10,11])+"</div>";
+        list.map(x=>{const p=x.pcs_per_case;return [esc(x.sku_name),"<b>"+cs(x.saleable_pcs,p,x.sku_name)+"</b>",cell(x.pending_out_pcs,p,x.sku_name),cell(x.damage_pcs,p,x.sku_name),cell(x.leakage_pcs,p,x.sku_name),cell(x.breakage_pcs,p,x.sku_name),cell(x.gasless_pcs,p,x.sku_name),cell(x.expiry_pcs,p,x.sku_name),cell(x.loss_pcs,p,x.sku_name),cell(x.destroyed_pcs,p,x.sku_name),cell(x.company_return_pcs,p,x.sku_name),
+          Number(x.open_short_pcs)?'<span class="erp-badge red">'+cs(x.open_short_pcs,p,x.sku_name)+"</span>":Number(x.open_excess_pcs)?'<span class="erp-badge amber">+'+cs(x.open_excess_pcs,p,x.sku_name)+"</span>":'<span class="st-num0">—</span>']}),[1,2,3,4,5,6,7,8,9,10,11])+"</div>";
     }
     function statusExcel(){
-      const head=["SKU","Pcs/Case","Saleable CS","Waiting CS","Damage CS","Leakage CS","Breakage CS","Gasless CS","Expiry CS","Loss CS","Destroyed CS","Return to company CS","Audit short CS","Audit extra CS"];
-      S.excel("Stock-status-"+today(),[{name:"Stock status",title:"Stock status "+today(),head,rows:stock.map(x=>{const p=x.pcs_per_case;return [x.sku_name,p,...["saleable","pending_out","damage","leakage","breakage","gasless","expiry","loss","destroyed","company_return","open_short","open_excess"].map(f=>csNum(x[f+"_pcs"],p))]})}]);
+      const head=["SKU","Unit","Pcs per unit","Saleable","Waiting","Damage","Leakage","Breakage","Gasless","Expiry","Loss","Destroyed","Return to company","Audit short","Audit extra"];
+      S.excel("Stock-status-"+today(),[{name:"Stock status",title:"Stock status "+today(),head,rows:stock.map(x=>{const p=x.pcs_per_case;return [x.sku_name,sh(x.sku_name),p,...["saleable","pending_out","damage","leakage","breakage","gasless","expiry","loss","destroyed","company_return","open_short","open_excess"].map(f=>csNum(x[f+"_pcs"],p))]})}]);
     }
 
     // ------------------------------------------------------------- new entry
@@ -222,7 +226,7 @@
     function addLine(){
       const d=document.createElement("div");d.className="st-line";
       d.innerHTML='<div class="sku"><label>SKU</label><input class="l-sku" list="skuList" placeholder="Type SKU name"></div>'+
-        '<div><label>Cases</label><input class="l-cs" type="number" min="0" step="1" inputmode="numeric" placeholder="0"></div>'+
+        '<div><label class="l-unit">IC / CS</label><input class="l-cs" type="number" min="0" step="1" inputmode="numeric" placeholder="0"></div>'+
         '<div><label>Loose PCS</label><input class="l-pcs" type="number" min="0" step="1" inputmode="numeric" placeholder="0"></div>'+
         '<div><label>Batch no.</label><input class="l-batch" maxlength="40" placeholder="optional"></div>'+
         '<div><label>Expiry / Mfg date</label><input class="l-exp" type="date"></div>'+
@@ -236,15 +240,16 @@
       return Number(s[from.toLowerCase()+"_pcs"]||0)-waiting;
     }
     function refreshAvail(){
-      const from=el("f_from").value;let total=0,n=0;
+      const from=el("f_from").value;let total=[],n=0;
       for(const d of el("lines").children){
         const s=lineSku(d),a=d.querySelector(".avail");
-        if(!s){a.textContent="";a.classList.remove("bad");continue}
-        const av=availFor(s,from),q=linePcs(d,s);total+=csNum(q,s.pcs_per_case);if(q)n++;
-        a.textContent=LABEL[from]+" available: "+cs(Math.max(av,0),s.pcs_per_case)+" ("+s.pcs_per_case+" pcs / case)"+(q>av?" — more than available":"");
+        if(!s){a.textContent="";a.classList.remove("bad");d.querySelector(".l-unit").textContent="IC / CS";continue}
+        const av=availFor(s,from),q=linePcs(d,s);if(q){n++;total.push({pcs:q,per:s.pcs_per_case,unit:U(s.sku_name)})}
+        d.querySelector(".l-unit").textContent=sh(s.sku_name);
+        a.textContent=LABEL[from]+" available: "+cs(Math.max(av,0),s.pcs_per_case,s.sku_name)+" ("+s.pcs_per_case+" pcs / "+sh(s.sku_name)+")"+(q>av?" — more than available":"");
         a.classList.toggle("bad",q>av);
       }
-      el("totalTxt").textContent=n?n+" SKU"+(n>1?"s":"")+" · "+fmt(total)+" cases total":"One line per SKU. Cases and loose pieces.";
+      el("totalTxt").textContent=n?n+" SKU"+(n>1?"s":"")+" · "+LWBBrand.packSum(total)+" total":"One line per SKU. IC / CS and loose pieces.";
     }
     // Godown Manager's photos of the damaged goods (lwb_documents_setup.sql, record STOCK_MOVE = first STM no. of the request).
     // Compulsory when stock goes to Damage / Leakage / Breakage / Gasless / Expiry, and for Destroy.
@@ -275,14 +280,14 @@
         if(!s){await alert("Please select "+(name||"the SKU")+" from the SKU list.");return}
         if(seen.has(s.sku_id)){await alert(s.sku_name+" is on two lines. Put it on one line.");return}seen.add(s.sku_id);
         if(!/^\d*$/.test(c)||!/^\d*$/.test(p)||!(Number(c)||Number(p))){await alert("Enter whole cases / pieces for "+s.sku_name+".");return}
-        if(linePcs(d,s)>availFor(s,from)){await alert(s.sku_name+": only "+cs(Math.max(0,availFor(s,from)),s.pcs_per_case)+" in "+LABEL[from]+".");return}
+        if(linePcs(d,s)>availFor(s,from)){await alert(s.sku_name+": only "+cs(Math.max(0,availFor(s,from)),s.pcs_per_case,s.sku_name)+" in "+LABEL[from]+".");return}
         lines.push({sku_id:s.sku_id,name:s.sku_name,ppc:s.pcs_per_case,cases:Number(c||0),pcs:Number(p||0),batch_no:d.querySelector(".l-batch").value.trim(),expiry_date:d.querySelector(".l-exp").value||null});
       }
       if(!lines.length){await alert("Enter at least one SKU and its quantity.");return}
       const reason=el("f_reason").value.trim();if(!reason){await alert("Enter the reason.");el("f_reason").focus();return}
       if(type==="DESTROY"&&!el("f_witness").value.trim()){await alert("Enter who witnessed the destroy.");el("f_witness").focus();return}
       if(stxDocs&&needPhoto()&&!stxDocs.has("DAMAGE")){await alert("Take at least one photo of the "+LABEL[type==="DESTROY"?el("f_from").value:el("f_to").value].toLowerCase()+" goods (📷 Camera).\n\nThe photo is the proof for Sales Head / Admin approval.");return}
-      const summary=lines.map(l=>"• "+l.name+": "+cs(l.cases*l.ppc+l.pcs,l.ppc)).join("\n");
+      const summary=lines.map(l=>"• "+l.name+": "+cs(l.cases*l.ppc+l.pcs,l.ppc,l.name)).join("\n");
       if(!await confirm(LABEL[from]+" → "+LABEL[to]+"\n\n"+summary+"\n\nReason: "+reason+"\n\nThis goes to Sales Head / Admin for approval. Stock moves only after approval.",{ok:"Send"}))return;
       const btn=el("save");btn.disabled=true;
       try{
@@ -303,15 +308,15 @@
 
     // ------------------------------------------------------------- approvals
     const MCOLS=[{t:"STM",v:r=>"STM-"+r.id},{t:"Date",v:r=>S.shortDate(r.move_date)},{t:"SKU",v:r=>r.sku_name},{t:"Move",v:r=>LABEL[r.from_bucket]+" → "+LABEL[r.to_bucket]},
-      {t:"Cases",v:r=>csNum(r.qty_pcs,r.pcs_per_case),num:true,sum:true},{t:"Reason",v:r=>r.reason},{t:"By",v:r=>r.requested_by_name},{t:"Status",v:r=>r.status}];
+      {t:"Qty",v:r=>cs(r.qty_pcs,r.pcs_per_case,r.sku_name),num:true},{t:"Reason",v:r=>r.reason},{t:"By",v:r=>r.requested_by_name},{t:"Status",v:r=>r.status}];
     function renderPending(){
       if(!moves.length){el("pendList").innerHTML='<div class="erp-empty">Nothing waiting for approval.</div>';return}
       const groups=new Map();for(const m of moves){if(!groups.has(m.batch_id))groups.set(m.batch_id,[]);groups.get(m.batch_id).push(m)}
       el("pendList").innerHTML=[...groups.values()].map(g=>{
         const x=g[0],canD=g.some(m=>m.can_decide),canC=g.some(m=>m.can_cancel);
         const rows=g.map(m=>[esc(m.sku_name)+(m.batch_no?'<br><small class="st-meta">Batch '+esc(m.batch_no)+"</small>":"")+(m.expiry_date?'<br><small class="st-meta">Date '+S.shortDate(m.expiry_date)+"</small>":""),
-          cs(m.qty_pcs,m.pcs_per_case),
-          canD?'<span class="st-q"><input type="number" min="0" step="1" data-id="'+m.id+'" data-ppc="'+m.pcs_per_case+'" data-f="c" value="'+Math.trunc(m.qty_pcs/m.pcs_per_case)+'" aria-label="Cases to approve">CS<input type="number" min="0" step="1" data-id="'+m.id+'" data-f="p" value="'+(m.qty_pcs%m.pcs_per_case)+'" aria-label="Pieces to approve">PCS</span>':"—"]);
+          cs(m.qty_pcs,m.pcs_per_case,m.sku_name),
+          canD?'<span class="st-q"><input type="number" min="0" step="1" data-id="'+m.id+'" data-ppc="'+m.pcs_per_case+'" data-f="c" value="'+Math.trunc(m.qty_pcs/m.pcs_per_case)+'" aria-label="Cases to approve">'+sh(m.sku_name)+'<input type="number" min="0" step="1" data-id="'+m.id+'" data-f="p" value="'+(m.qty_pcs%m.pcs_per_case)+'" aria-label="Pieces to approve">PCS</span>':"—"]);
         return '<div class="st-item"><div class="st-top"><b>'+esc(LABEL[x.from_bucket]+" → "+LABEL[x.to_bucket])+'</b><span class="erp-badge amber">Waiting</span>'+(x.source==="AUDIT"?'<span class="erp-badge blue">Night audit</span>':"")+'<span class="grow"></span><span class="st-meta">STM-'+g.map(m=>m.id).join(", ")+"</span></div>"+
           '<div class="st-meta">'+S.shortDate(x.move_date)+" · by "+esc(x.requested_by_name)+" · "+esc(x.reason)+(x.note?" · "+esc(x.note):"")+(x.witness?" · Witness "+esc(x.witness):"")+(x.method?" · "+esc(x.method):"")+
           (x.photo_path?' · <span class="st-photo" data-photo="'+esc(x.photo_path)+'">📷 Photo</span>':"")+photoLink(g)+"</div>"+
@@ -341,7 +346,7 @@
       for(const id of idList){
         const m=moves.find(x=>x.id==id),c=card.querySelector('input[data-id="'+id+'"][data-f="c"]'),p=card.querySelector('input[data-id="'+id+'"][data-f="p"]');
         const v=Number(c.value||0)*m.pcs_per_case+Number(p.value||0);
-        if(!(v>0)||v>m.qty_pcs){await alert(m.sku_name+": approve between 1 piece and "+cs(m.qty_pcs,m.pcs_per_case)+".");return}
+        if(!(v>0)||v>m.qty_pcs){await alert(m.sku_name+": approve between 1 piece and "+cs(m.qty_pcs,m.pcs_per_case,m.sku_name)+".");return}
         if(v<m.qty_pcs)less=true;qty[id]=v;
       }
       if(!await confirm("Approve this stock move?"+(less?"\n\nSome lines are approved for less than asked.":"")+"\n\nStock moves now.",{ok:"Approve"}))return;
@@ -368,7 +373,7 @@
       if(!list.length){el("histTable").innerHTML='<div class="erp-empty">No stock move in these dates.</div>';return}
       const badge={APPROVED:"green",PENDING:"amber",REJECTED:"red",CANCELLED:""};
       el("histTable").innerHTML='<div class="sl-scroll">'+S.table(["STM","Date","SKU","Move","Cases","Reason","Asked by","Status","Decided by"],
-        list.map(m=>["STM-"+m.id,S.shortDate(m.move_date),esc(m.sku_name),esc(LABEL[m.from_bucket]+" → "+LABEL[m.to_bucket]),cs(m.qty_pcs,m.pcs_per_case)+(m.qty_pcs<m.requested_pcs?'<br><small class="st-meta">asked '+cs(m.requested_pcs,m.pcs_per_case)+"</small>":""),
+        list.map(m=>["STM-"+m.id,S.shortDate(m.move_date),esc(m.sku_name),esc(LABEL[m.from_bucket]+" → "+LABEL[m.to_bucket]),cs(m.qty_pcs,m.pcs_per_case,m.sku_name)+(m.qty_pcs<m.requested_pcs?'<br><small class="st-meta">asked '+cs(m.requested_pcs,m.pcs_per_case,m.sku_name)+"</small>":""),
           esc(m.reason)+(m.note?'<br><small class="st-meta">'+esc(m.note)+"</small>":"")+(m.witness?'<br><small class="st-meta">Witness '+esc(m.witness)+"</small>":"")+(m.photo_path?' <span class="st-photo" data-photo="'+esc(m.photo_path)+'">📷</span>':""),
           esc(m.requested_by_name),'<span class="erp-badge '+(badge[m.status]||"")+'">'+esc(m.status)+"</span>"+(m.status==="PENDING"&&m.can_cancel?' <button type="button" class="sl-btn ghost small" data-cancel="'+m.id+'">Cancel</button>':""),
           esc(m.decided_by_name||"")+(m.decision_note?'<br><small class="st-meta">'+esc(m.decision_note)+"</small>":"")]),[4])+"</div>";
@@ -388,16 +393,16 @@
       if(!ledger.length){el("ledgerTable").innerHTML='<div class="erp-empty">No '+esc(LABEL[el("l_bucket").value])+" entry in these dates.</div>";return}
       const bySku=new Map();for(const r of ledger){if(!bySku.has(r.sku_id))bySku.set(r.sku_id,[]);bySku.get(r.sku_id).push(r)}
       const bal=[...bySku.values()].map(g=>g.at(-1));
-      const totalCases=bal.reduce((a,r)=>a+csNum(r.balance_pcs,r.pcs_per_case),0);
-      el("ledgerTable").innerHTML='<div class="sl-kpis" style="grid-template-columns:repeat(2,minmax(0,1fr))"><div class="sl-kpi"><span>'+esc(LABEL[el("l_bucket").value])+' balance on '+S.shortDate(el("l_to").value||today())+"</span><b>"+fmt(totalCases)+' CS</b><small>'+bal.filter(r=>Number(r.balance_pcs)).length+" SKUs</small></div>"+
-        '<div class="sl-kpi"><span>In / Out in these dates</span><b>'+fmt(ledger.filter(r=>r.move_id).reduce((a,r)=>a+csNum(r.in_pcs,r.pcs_per_case),0))+" / "+fmt(ledger.reduce((a,r)=>a+csNum(r.out_pcs,r.pcs_per_case),0))+" CS</b><small>Approved moves only</small></div></div>"+
+      const totalCases=tot(bal,r=>r.balance_pcs);
+      el("ledgerTable").innerHTML='<div class="sl-kpis" style="grid-template-columns:repeat(2,minmax(0,1fr))"><div class="sl-kpi"><span>'+esc(LABEL[el("l_bucket").value])+' balance on '+S.shortDate(el("l_to").value||today())+"</span><b>"+totalCases+'</b><small>'+bal.filter(r=>Number(r.balance_pcs)).length+" SKUs</small></div>"+
+        '<div class="sl-kpi"><span>In / Out in these dates</span><b>'+tot(ledger.filter(r=>r.move_id),r=>r.in_pcs)+" / "+tot(ledger,r=>r.out_pcs)+"</b><small>Approved moves only</small></div></div>"+
         '<div class="sl-scroll">'+S.table(["SKU","Date","Entry","From / To","In","Out","Balance","Reason","By / Approved"],
-        ledger.map(r=>[esc(r.sku_name),S.shortDate(r.move_date),r.move_id?"STM-"+r.move_id:"<b>Opening</b>",r.other_bucket?esc(LABEL[r.other_bucket]):"",cell(r.move_id?r.in_pcs:0,r.pcs_per_case),cell(r.out_pcs,r.pcs_per_case),"<b>"+cs(r.balance_pcs,r.pcs_per_case)+"</b>",esc(r.reason||""),esc([r.requested_by_name,r.approved_by_name].filter(Boolean).join(" / "))]),[4,5,6])+"</div>";
+        ledger.map(r=>[esc(r.sku_name),S.shortDate(r.move_date),r.move_id?"STM-"+r.move_id:"<b>Opening</b>",r.other_bucket?esc(LABEL[r.other_bucket]):"",cell(r.move_id?r.in_pcs:0,r.pcs_per_case,r.sku_name),cell(r.out_pcs,r.pcs_per_case,r.sku_name),"<b>"+cs(r.balance_pcs,r.pcs_per_case,r.sku_name)+"</b>",esc(r.reason||""),esc([r.requested_by_name,r.approved_by_name].filter(Boolean).join(" / "))]),[4,5,6])+"</div>";
     }
     function ledgerExcel(){
       const b=LABEL[el("l_bucket").value];
-      S.excel(b+"-ledger",[{name:b+" ledger",title:b+" ledger "+(el("l_from").value||"start")+" to "+(el("l_to").value||today()),head:["SKU","Date","Entry","From / To","In CS","Out CS","Balance CS","Balance PCS","Reason","Asked by","Approved by"],
-        rows:ledger.map(r=>[r.sku_name,r.move_date,r.move_id?"STM-"+r.move_id:"Opening",r.other_bucket?LABEL[r.other_bucket]:"",csNum(r.move_id?r.in_pcs:0,r.pcs_per_case),csNum(r.out_pcs,r.pcs_per_case),csNum(r.balance_pcs,r.pcs_per_case),Number(r.balance_pcs),r.reason||"",r.requested_by_name||"",r.approved_by_name||""])}]);
+      S.excel(b+"-ledger",[{name:b+" ledger",title:b+" ledger "+(el("l_from").value||"start")+" to "+(el("l_to").value||today()),head:["SKU","Date","Entry","From / To","Unit","In","Out","Balance","Balance PCS","Reason","Asked by","Approved by"],
+        rows:ledger.map(r=>[r.sku_name,r.move_date,r.move_id?"STM-"+r.move_id:"Opening",r.other_bucket?LABEL[r.other_bucket]:"",sh(r.sku_name),csNum(r.move_id?r.in_pcs:0,r.pcs_per_case),csNum(r.out_pcs,r.pcs_per_case),csNum(r.balance_pcs,r.pcs_per_case),Number(r.balance_pcs),r.reason||"",r.requested_by_name||"",r.approved_by_name||""])}]);
     }
 
     // ------------------------------------------------------------- daily report
@@ -409,10 +414,10 @@
       el("dailyNote")&&(el("dailyNote").hidden=!BB.get());
       const t=f=>daily.reduce((a,r)=>a+Number(r[f]||0),0),moved=r=>HELD.reduce((a,b)=>a+Number(r[b.toLowerCase()+"_cases"]||0),0);
       const handled=t("handled_cases"),loss=t("loss_cases");
-      el("dailyKpis").innerHTML=[["Cases handled",fmt(handled),"Inward "+fmt(t("inward_cases"))+" · Loaded "+fmt(t("loaded_cases"))],
-        ["Moved to Damage etc.",fmt(daily.reduce((a,r)=>a+moved(r),0))+" CS","Approved, out of saleable"],
-        ["Loss",fmt(loss)+" CS",handled?(Math.round(loss*1000/handled*100)/100)+" per 1000 cases handled":""],
-        ["Destroyed / Returned",fmt(t("destroyed_cases"))+" / "+fmt(t("company_return_cases"))+" CS","Back to saleable "+fmt(t("back_to_saleable_cases"))]]
+      el("dailyKpis").innerHTML=[["IC / CS handled",fmt(handled),"Inward "+fmt(t("inward_cases"))+" · Loaded "+fmt(t("loaded_cases"))],
+        ["Moved to Damage etc.",fmt(daily.reduce((a,r)=>a+moved(r),0))+" IC/CS","Approved, out of saleable"],
+        ["Loss",fmt(loss)+" IC/CS",handled?(Math.round(loss*1000/handled*100)/100)+" per 1000 IC/CS handled":""],
+        ["Destroyed / Returned",fmt(t("destroyed_cases"))+" / "+fmt(t("company_return_cases"))+" IC/CS","Back to saleable "+fmt(t("back_to_saleable_cases"))]]
         .map((c,i)=>'<div class="sl-kpi'+(i==2&&loss?" red":"")+'"><span>'+esc(c[0])+"</span><b>"+c[1]+"</b><small>"+esc(c[2])+"</small></div>").join("");
       const n=v=>v==null?"—":Number(v)?fmt(Math.round(Number(v)*100)/100):'<span class="st-num0">0</span>';
       el("dailyTable").innerHTML='<div class="sl-scroll">'+S.table(["Date","Handled","Damage","Leakage","Breakage","Gasless","Expiry","Loss","Destroyed","Returned","Night audit"],
@@ -423,7 +428,7 @@
     }
     function dailyExcel(){
       S.excel("Stock-daily-"+el("d_from").value+"-to-"+el("d_to").value,[{name:"Daily stock report",title:"Daily stock report "+el("d_from").value+" to "+el("d_to").value,
-        head:["Date","Inward CS","Loaded CS","Handled CS","Damage CS","Leakage CS","Breakage CS","Gasless CS","Expiry CS","Loss CS","Loss per 1000","Destroyed CS","Return to company CS","Back to saleable CS","Waiting requests","Audit","Audit SKUs","Audit diff SKUs","Audit short CS","Audit extra CS"],
+        head:["Date","Inward IC/CS","Loaded IC/CS","Handled IC/CS","Damage IC/CS","Leakage IC/CS","Breakage IC/CS","Gasless IC/CS","Expiry IC/CS","Loss IC/CS","Loss per 1000","Destroyed IC/CS","Return to company IC/CS","Back to saleable IC/CS","Waiting requests","Audit","Audit SKUs","Audit diff SKUs","Audit short IC/CS","Audit extra IC/CS"],
         rows:daily.map(r=>[r.day,r.inward_cases,r.loaded_cases,r.handled_cases,r.damage_cases,r.leakage_cases,r.breakage_cases,r.gasless_cases,r.expiry_cases,r.loss_cases,r.loss_per_1000,r.destroyed_cases,r.company_return_cases,r.back_to_saleable_cases,r.pending_requests,r.audit_status||"No audit",r.audit_skus,r.audit_diff_skus,r.audit_short_cases,r.audit_excess_cases].map(v=>v==null?"":v))}]);
     }
 
@@ -459,6 +464,7 @@
       const qt=String(new URLSearchParams(location.search).get("type")||"").toUpperCase();addLine();setType(TYPES[qt]?qt:"TRANSFER");
       el("loading").hidden=true;el("page").hidden=false;
       if(window.LWBBrand)try{BB=await LWBBrand.mount(client,{into:"#tabs",after:true,onChange:async()=>{await loadStatus();if(tab==="History")loadHistory();if(tab==="Ledger")loadLedger();if(tab==="Daily")loadDaily()}});if(BB.companies.length>1)SM=await LWBBrand.skuMap(client)}catch(e){}
+      if(window.LWBBrand)try{U=await LWBBrand.units(client)}catch(e){}
       await loadStatus();
       const h=location.hash.slice(1),want=["status","new","approvals","history","ledger","daily"].find(x=>x===h);
       show(want?want[0].toUpperCase()+want.slice(1):(appr&&moves.length?"Approvals":"Status"));
