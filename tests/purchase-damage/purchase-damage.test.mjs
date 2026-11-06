@@ -65,19 +65,31 @@ const live=async()=>{await as('sales');return Object.fromEntries((await call('se
 const moves=async(b)=>(await db.query("select to_bucket,sku_id,qty_pcs,status from lwb_stock_moves where inward_id=$1 order by id",[b])).rows;
 const report=async(who,b,items,note='')=>{await as(who);return (await call("select lwb_purchase_damage_report($1,current_date,$2,$3) r",[b,note,JSON.stringify(items)]))[0].r};
 
-test('new purchase bill: every Godown Manager gets one "vehicle arrived" bell with vehicle, supplier, invoice, cases', async()=>{
+const arrived=async(b,who=null,as_='head')=>{await as(as_);return (await call('select lwb_purchase_arrived($1,$2) n',[b,who?ids[who]:null]))[0].n};
+
+test('vehicle arrived goes only to the Godown Manager chosen on Purchase Entry; moving it closes the old popup', async()=>{
   const b=await bill('INV-1');
-  for(const g of ['godown','godown2']){
-    const n=await bells(g,'PURCHASE_ARRIVED');
-    assert.equal(n.length,1);assert.equal(n[0].ref_id,b);assert.equal(n[0].ref_type,'PURCHASE_BILL');
-    assert.equal(n[0].title,'Purchase vehicle arrived: GJ05AB1234');
-    assert.match(n[0].message,/^Vehicle GJ05AB1234 · DS GROUP · Inv INV-1 · 15 CS\. /);
-  }
+  assert.equal((await bells('godown','PURCHASE_ARRIVED')).length,0); // nothing until Purchase Entry sends it
+  assert.equal(await arrived(b,'godown2'),1);
+  assert.equal((await bells('godown','PURCHASE_ARRIVED')).length,0);
+  const n=await bells('godown2','PURCHASE_ARRIVED');
+  assert.equal(n.length,1);assert.equal(n[0].ref_id,b);assert.equal(n[0].ref_type,'PURCHASE_BILL');
+  assert.equal(n[0].title,'Purchase vehicle arrived: GJ05AB1234');
+  assert.match(n[0].message,/^Vehicle GJ05AB1234 · DS GROUP · Inv INV-1 · 15 CS\. .* Entry by Name head\.$/);
+  assert.equal(await arrived(b,'godown2'),0); // no second popup
+  assert.equal(await arrived(b,'godown'),1);   // moved to another Godown Manager
+  assert.ok((await bells('godown2','PURCHASE_ARRIVED')).every(x=>x.is_read));
+  assert.equal((await bells('godown','PURCHASE_ARRIVED')).filter(x=>!x.is_read).length,1);
+  assert.equal((await db.query('select godown_user_id from lwb_goods_inward where id=$1',[b])).rows[0].godown_user_id,ids.godown);
+  await assert.rejects(arrived(b,'acc'),/active Godown Manager/);
+  await assert.rejects(arrived(b,'godown','godown'),/Only Admin \/ Sales Head/);
+  // none chosen: every Godown Manager
+  const b2=await bill('INV-1B');assert.equal(await arrived(b2,null),2);
   assert.equal((await bells('admin','PURCHASE_ARRIVED')).length,0);
 });
 
 test('Godown Manager reports damage: Admin + Sales Head get the report, arrived bells close, damaged goods leave saleable', async()=>{
-  const b=await bill('INV-2');
+  const b=await bill('INV-2');await arrived(b,'godown');
   const before=await live();
   const r=await report('godown',b,[{sku_id:sku.rg,sku_name:'RG 4G',pcs_per_case:24,issue:'DAMAGE',cases:2,pcs:0},
     {sku_id:sku.rg,sku_name:'RG 4G',pcs_per_case:24,issue:'LEAKAGE',cases:0,pcs:6},{sku_id:sku.pp,sku_name:'PASS PASS',pcs_per_case:12,issue:'SHORTAGE',cases:1,pcs:0}],'door side wet');
@@ -89,7 +101,8 @@ test('Godown Manager reports damage: Admin + Sales Head get the report, arrived 
     assert.match(n[0].message,/Inv INV-2 · 15 CS\. PASS PASS Shortage 1 cs, RG 4G Damage 2 cs, RG 4G Leakage 6 pcs\. Photos 0\. Kept out of saleable stock\. Note: door side wet\. By Name godown\.$/);
   }
   assert.equal((await bells('acc','PURCHASE_DAMAGE')).length,0);
-  for(const g of ['godown','godown2'])assert.ok((await bells(g,'PURCHASE_ARRIVED')).filter(n=>n.ref_id===b).every(n=>n.is_read));
+  assert.equal((await bells('godown','PURCHASE_ARRIVED')).filter(n=>n.ref_id===b).length,1);
+  assert.ok((await bells('godown','PURCHASE_ARRIVED')).filter(n=>n.ref_id===b).every(n=>n.is_read));
   const m=await moves(b);
   assert.deepEqual(m.map(x=>[x.to_bucket,x.qty_pcs,x.status]).sort(),[['DAMAGE',48,'APPROVED'],['LEAKAGE',6,'APPROVED'],['LOSS',12,'APPROVED']]);
   const after=await live();
@@ -116,11 +129,12 @@ test('changing the report moves stock again (no double count); All OK gives stoc
 });
 
 test('check saved at Goods Inward (old RPC) also moves stock and closes the arrived popup', async()=>{
-  const b=await bill('INV-4');
+  const b=await bill('INV-4');await arrived(b,'godown');
   await as('head');
   await call("select lwb_save_purchase_check($1,current_date,'',$2)",[b,JSON.stringify([{sku_id:sku.pp,sku_name:'PASS PASS',pcs_per_case:12,issue:'LEAKAGE',cases:1,pcs:0}])]);
   assert.deepEqual((await moves(b)).map(x=>[x.to_bucket,x.qty_pcs]),[['LEAKAGE',12]]);
-  assert.ok((await bells('godown','PURCHASE_ARRIVED')).filter(n=>n.ref_id===b).every(n=>n.is_read));
+  const nb=(await bells('godown','PURCHASE_ARRIVED')).filter(n=>n.ref_id===b);assert.equal(nb.length,1);assert.ok(nb[0].is_read);
+  assert.equal(await arrived(b,'godown'),0); // already checked: no popup
   // Admin deletes the check: stock lines cancelled
   await as('admin');await call('delete from lwb_purchase_checks where inward_id=$1',[b]);
   assert.ok((await moves(b)).every(x=>x.status==='CANCELLED'));
@@ -138,4 +152,18 @@ test('rules: only Admin / Sales Head / Godown Manager; not more than billed; typ
   await report('godown',b,[{sku_id:sku.pp,sku_name:'PASS PASS',pcs_per_case:12,issue:'DAMAGE',cases:1,pcs:0}]);
   await db.query("update lwb_purchase_checks set claim_status='SENT' where inward_id=$1",[b]);
   await assert.rejects(report('godown',b,[]),/already with the company/);
+});
+
+test('vehicle Time In / Time Out: saved by Godown Manager; out before in or future refused', async()=>{
+  const b=await bill('INV-6');
+  await as('godown');
+  await call("select lwb_purchase_vehicle_time($1,now()-interval '2 hours',now()-interval '30 minutes')",[b]);
+  const r=(await db.query("select extract(epoch from time_out-time_in)/60 m from lwb_goods_inward where id=$1",[b])).rows[0];
+  assert.equal(Math.round(r.m),90);
+  await assert.rejects(call("select lwb_purchase_vehicle_time($1,now()-interval '1 hour',now()-interval '2 hours')",[b]),/after Time In/);
+  await assert.rejects(call("select lwb_purchase_vehicle_time($1,now()+interval '1 hour',null)",[b]),/future/);
+  await report('godown',b,[]);
+  const m=(await bells('admin','PURCHASE_CHECK_OK')).filter(n=>n.ref_id===b)[0].message;
+  assert.match(m,/· In \d\d:\d\d · Out \d\d:\d\d \(1h 30m\)\./);
+  await as('acc');await assert.rejects(call("select lwb_purchase_vehicle_time($1,now(),null)",[b]),/Only Admin/);
 });

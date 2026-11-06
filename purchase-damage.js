@@ -3,7 +3,7 @@
  * Needs lwb_purchase_damage_report_setup.sql. Loaded by the bell (erp-operations-notifications.js)
  * and by the Purchase List.
  *
- *   LWBPurchaseDamage.form({client, id, role, onDone})  -> popup: All OK, or lines (SKU · type · cases · PCS) + photos + note.
+ *   LWBPurchaseDamage.form({client, id, role, mode, arrivedAt, onDone}) -> popup: Time In / Out, All OK, or lines (SKU · type · cases · PCS) + photos + note.
  *                                                         Submit = lwb_purchase_damage_report (Admin + Sales Head get the report).
  *   LWBPurchaseDamage.view({client, id, role, onEdit})  -> read-only report: lines, photos, who / when, claim status.
  *   LWBPurchaseDamage.arrivals({client, rows, role, onDone}) -> "Purchase vehicle arrived" popup for unread
@@ -21,6 +21,11 @@
   const toast=(t,k)=>window.ERPShell&&ERPShell.toast?ERPShell.toast(t,k):alert(t);
   const qtyTxt=(c,p)=>[c?fmt(c)+' cs':'',p?fmt(p)+' pcs':''].filter(Boolean).join(' + ')||'0';
   const pick=(o,keys)=>{for(const k of keys)if(o&&o[k]!=null&&o[k]!=='')return o[k];return null};
+  // Vehicle Time In / Out: "HH:MM" in IST <-> ISO time. Out earlier than In = next day.
+  const hhmm=v=>v?new Date(v).toLocaleTimeString('en-GB',{timeZone:'Asia/Kolkata',hour:'2-digit',minute:'2-digit',hour12:false}):'';
+  const isoOf=(day,t)=>t?new Date(day+'T'+t+':00+05:30').toISOString():null;
+  const durTxt=(a,b)=>{if(!a||!b)return '';const m=Math.round((new Date(b)-new Date(a))/6e4);if(m<0)return '';return (m>=60?Math.floor(m/60)+'h ':'')+(m%60)+'m'};
+  const timeTxt=b=>b.time_in?'In '+hhmm(b.time_in)+(b.time_out?' · Out '+hhmm(b.time_out)+' ('+durTxt(b.time_in,b.time_out)+')':' · Out —'):'';
   const vehOf=b=>String(b.vehicle_no||'').toUpperCase().replace(/[^A-Z0-9]/g,'')||'No vehicle no.';
 
   function css(){
@@ -41,6 +46,11 @@
 .pd-pick button{height:40px;border-radius:8px;border:1.5px solid #cfd6de;background:#fff;font:inherit;font-weight:700;font-size:14px;cursor:pointer;color:#1f2a37;padding:0 6px}
 .pd-pick button.on.ok{background:#e4f6e9;border-color:#13824a;color:#0d6b36}
 .pd-pick button.on.bad{background:#fdecef;border-color:#c8102e;color:#9e1528}
+.pd-time{display:flex;gap:6px;align-items:flex-end;margin-bottom:8px;flex-wrap:wrap}
+.pd-time label{display:flex;flex-direction:column;font-size:12.5px;font-weight:700;color:#4b5763;gap:3px;flex:1 1 90px;min-width:0}
+.pd-time input{height:36px;border:1.5px solid #e3e7ec;border-radius:6px;padding:0 6px;font:inherit;font-size:14px;min-width:0;width:100%}
+.pd-time button{height:36px;border:1px solid #cfd6de;border-radius:6px;background:#fff;font:inherit;font-size:13px;font-weight:600;cursor:pointer;padding:0 8px;flex:none}
+.pd-dur{flex:1 1 100%;font-size:12.5px;font-weight:700;color:#0d6b36}.pd-dur:empty{display:none}
 .pd-lab{font-size:12.5px;font-weight:700;color:#4b5763;margin:8px 0 4px}
 .pd-line{display:grid;grid-template-columns:minmax(0,1fr) 104px 58px 58px 32px;gap:5px;align-items:center;margin-bottom:5px}
 .pd-line select,.pd-line input,.pd-note{height:36px;border:1.5px solid #e3e7ec;border-radius:6px;padding:0 6px;font:inherit;font-size:14px;background:#fff;min-width:0;width:100%}
@@ -115,18 +125,24 @@
     try{d=await loadBill(client,o.id)}catch(e){toast('Could not open the bill: '+(e.message||e),'error');return}
     const ck=d.check;
     if(ck&&o.role==='warehouse'&&!['NONE','PENDING'].includes(ck.claim_status)){toast('The claim is already with the company. Ask Admin / Sales Head to change it.','error');return view(o)}
-    let mode=ck?(ck.has_damage?'dmg':'ok'):'';
+    let mode=o.mode||(ck?(ck.has_damage?'dmg':'ok'):'');
     let lines=(ck&&ck.lwb_purchase_check_items||[]).map(i=>({sku:String(i.sku_id||''),name:i.sku_name,issue:i.issue,cs:i.cases||'',pc:i.pcs||''}));
     const first=()=>({sku:d.skus.length===1?d.skus[0].id:'',issue:'DAMAGE',cs:'',pc:''});
     const back=shell('<div class="pd-h"><span class="ic">🚛</span><div><h3>'+esc(vehOf(d.bill))+' · Vehicle check</h3><small>'+esc(subOf(d))+'</small></div><button type="button" class="x" data-a="close" aria-label="Close">✕</button></div>'+
       '<div class="pd-skus">'+d.skus.map(s=>'<b>'+esc(s.name)+'</b> '+qtyTxt(s.cs,s.pc)).join(' · ')+'</div>'+
       '<div class="pd-pick"><button type="button" class="ok" data-m="ok">✓ All OK</button><button type="button" class="bad" data-m="dmg">⚠ Damage / Leak / Short</button></div>'+
+      '<div class="pd-time"><label>Time In<input type="time" class="tin"></label><button type="button" data-now="tin">Now</button><label>Time Out<input type="time" class="tout"></label><button type="button" data-now="tout">Now</button><span class="pd-dur"></span></div>'+
       '<div class="pd-dmg" hidden><div class="pd-hd"><span>SKU</span><span>Type</span><span>Cases</span><span>PCS</span><span></span></div><div class="pd-lines"></div><button type="button" class="pd-add" data-a="add">+ Add line</button><div class="pd-err" hidden></div>'+
       '<div class="pd-lab">Photos of damaged / leaking cases</div><div class="pd-photos"></div></div>'+
       '<div class="pd-lab">Note</div><input class="pd-note" maxlength="300" placeholder="e.g. 2 cases wet near the door">'+
       '<div class="pd-foot"><button type="button" class="go" data-a="save" disabled>Submit</button><button type="button" data-a="close">Later</button></div>');
     const $=s=>back.querySelector(s);
     $('.pd-note').value=ck&&ck.note||'';
+    const day=ck&&ck.verified_on||today();
+    $('.tin').value=hhmm(d.bill.time_in||o.arrivedAt||'');$('.tout').value=hhmm(d.bill.time_out||'');
+    const times=()=>{const a=isoOf(day,$('.tin').value);let b=isoOf(day,$('.tout').value);if(a&&b&&b<a)b=new Date(new Date(b).getTime()+864e5).toISOString();return [a,b]};
+    const showDur=()=>{const [a,b]=times();$('.pd-dur').textContent=a&&b?'⏱ '+durTxt(a,b):''};
+    back.querySelectorAll('.pd-time input').forEach(i=>i.addEventListener('input',showDur));showDur();
     let docs=null;
     if(await needDocs()){docs=ERPDocs.panel({client,mount:$('.pd-photos'),entity:'PURCHASE_BILL',id:o.id,slots:['DAMAGE']})}else $('.pd-photos').textContent='Photos: not available on this page.';
     const skuOpts=v=>'<option value="">Choose SKU</option>'+d.skus.map(s=>'<option value="'+esc(s.id)+'"'+(s.id===v?' selected':'')+'>'+esc(s.name)+' ('+qtyTxt(s.cs,s.pc)+')</option>').join('');
@@ -167,6 +183,7 @@
       if(e.target===back)return close();
       const b=e.target.closest('button');if(!b||!back.contains(b)||b.closest('.ed-root'))return;
       if(b.dataset.m){readLines();mode=b.dataset.m;return draw()}
+      if(b.dataset.now){$('.'+b.dataset.now).value=hhmm(new Date());return showDur()}
       if(b.dataset.rm!=null){readLines();lines.splice(Number(b.dataset.rm),1);if(!lines.length)lines.push(first());return drawLines()}
       const a=b.dataset.a;
       if(a==='close')return close();
@@ -175,11 +192,15 @@
         let items=[];
         if(mode==='dmg'){const r=collect();const er=$('.pd-err');er.hidden=!r.err.length;er.textContent=r.err.join(' ');if(r.err.length)return;items=r.items}
         if(docs&&docs.busy())return toast('Photo upload in progress, please wait.','error');
+        const [tIn,tOut]=times();
+        if(!tIn){toast('Enter the vehicle Time In (press Now when it came).','error');$('.tin').focus();return}
         const photos=docs?docs.has('DAMAGE'):0;
         const txt=mode==='ok'?'All goods OK: no damage, leakage or shortage.':items.map(x=>x.sku_name+' · '+x.issue.charAt(0)+x.issue.slice(1).toLowerCase()+': '+qtyTxt(x.cases,x.pcs)).join('\n')+'\nPhotos: '+photos;
         if(mode==='dmg'&&docs&&!photos&&!await confirm('NO PHOTO ADDED\n\nA photo helps the company accept the claim. Submit without a photo?'))return;
-        if(!await confirm((mode==='ok'?'SUBMIT: ALL OK?':'SUBMIT DAMAGE REPORT?')+'\n\n'+vehOf(d.bill)+' · Inv '+d.bill.invoice_no+'\n'+txt+'\n\nAdmin and Sales Head will get this report.'))return;
+        if(!await confirm((mode==='ok'?'SUBMIT: ALL OK?':'SUBMIT DAMAGE REPORT?')+'\n\n'+vehOf(d.bill)+' · Inv '+d.bill.invoice_no+'\n'+txt+'\nTime In '+hhmm(tIn)+(tOut?' · Out '+hhmm(tOut)+' ('+durTxt(tIn,tOut)+')':' · Out not entered')+'\n\nAdmin and Sales Head will get this report.'))return;
         busy=true;b.disabled=true;
+        const tm=await client.rpc('lwb_purchase_vehicle_time',{p_inward:o.id,p_in:tIn,p_out:tOut});
+        if(tm.error){busy=false;b.disabled=false;return toast('Vehicle time not saved: '+tm.error.message,'error')}
         const r=await client.rpc('lwb_purchase_damage_report',{p_inward_id:o.id,p_verified_on:ck&&ck.verified_on||today(),p_note:$('.pd-note').value.trim(),p_items:items});
         busy=false;b.disabled=false;
         if(r.error)return toast('Not submitted: '+r.error.message,'error');
@@ -204,7 +225,7 @@
     const cs=it.reduce((a,i)=>a+i.cases+i.pcs/Math.max(1,i.pcs_per_case),0);
     const canEdit=['admin','manager'].includes(o.role)||(o.role==='warehouse'&&(!ck||['NONE','PENDING'].includes(ck.claim_status)));
     const back=shell('<div class="pd-h"><span class="ic">'+(ck&&ck.has_damage?'⚠':'🚛')+'</span><div><h3>'+esc(vehOf(d.bill))+' · Damage report</h3><small>'+esc(subOf(d))+'</small></div><button type="button" class="x" data-a="close" aria-label="Close">✕</button></div>'+
-      '<div class="pd-meta">'+chip+(claim&&ck.has_damage?' <span class="pd-chip warn">'+esc(claim)+'</span>':'')+'<br>'+(ck?'Checked '+dmy(ck.verified_on)+(who?' by '+esc(who):''):'The Godown Manager has not checked this vehicle yet.')+'</div>'+
+      '<div class="pd-meta">'+chip+(claim&&ck.has_damage?' <span class="pd-chip warn">'+esc(claim)+'</span>':'')+'<br>'+(ck?'Checked '+dmy(ck.verified_on)+(who?' by '+esc(who):''):'The Godown Manager has not checked this vehicle yet.')+(timeTxt(d.bill)?'<br>🕘 '+esc(timeTxt(d.bill)):'')+'</div>'+
       (it.length?'<table class="pd-t"><thead><tr><th>SKU</th><th class="ty">Type</th><th class="n">Qty</th></tr></thead><tbody>'+it.map(i=>'<tr><td>'+esc(i.sku_name)+'</td><td class="ty">'+esc(i.issue.charAt(0)+i.issue.slice(1).toLowerCase())+'</td><td class="n">'+qtyTxt(i.cases,i.pcs)+'</td></tr>').join('')+
         '<tr><td colspan="2"><b>Total</b></td><td class="n"><b>'+fmt(Math.round(cs*10)/10)+' cs</b></td></tr></tbody></table><div class="pd-meta">Stock: damage and leakage moved out of saleable to Damage / Leakage; shortage taken off saleable (Loss).</div>':'')+
       (ck&&ck.note?'<div class="pd-meta"><b>Note:</b> '+esc(ck.note)+'</div>':'')+
@@ -249,19 +270,8 @@
     back.addEventListener('click',async e=>{
       const t=e.target.closest('button');if(!t)return;
       if(t.dataset.a==='later'){try{localStorage.setItem(SNOOZE,String(Date.now()+15*60e3))}catch(er){}return close()}
-      if(t.dataset.dmg){close();return form({client,id:t.dataset.dmg,role:o.role,onDone:o.onDone})}
-      if(t.dataset.ok){
-        const b=bills.find(x=>x.id===t.dataset.ok);
-        if(!await confirm('ALL GOODS OK?\n\n'+vehOf(b)+' · Inv '+b.invoice_no+'\nNo damage, leakage or shortage.\n\nAdmin and Sales Head will get this report.'))return;
-        t.disabled=true;
-        const r=await client.rpc('lwb_purchase_damage_report',{p_inward_id:b.id,p_verified_on:today(),p_note:'',p_items:[]});
-        t.disabled=false;
-        if(r.error)return toast('Not submitted: '+r.error.message,'error');
-        toast('Vehicle '+vehOf(b)+': all OK. Admin and Sales Head informed.','success');
-        t.closest('.pd-card').remove();bills.splice(bills.indexOf(b),1);
-        if(!bills.length)close();
-        o.onDone&&o.onDone(r.data);
-      }
+      if(t.dataset.dmg){close();return form({client,id:t.dataset.dmg,role:o.role,mode:'dmg',arrivedAt:byBill.get(t.dataset.dmg).created_at,onDone:o.onDone})}
+      if(t.dataset.ok){close();return form({client,id:t.dataset.ok,role:o.role,mode:'ok',arrivedAt:byBill.get(t.dataset.ok).created_at,onDone:o.onDone})}
     });
   }
   window.LWBPurchaseDamage={form,view,arrivals};

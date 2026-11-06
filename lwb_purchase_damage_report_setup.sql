@@ -5,9 +5,9 @@
 -- leaking / short he enters SKU, quantity, type and photos. After Submit the report goes to Admin
 -- and the Sales Head.
 --
---   1. New purchase bill (any page that inserts lwb_goods_inward) -> PURCHASE_ARRIVED bell to every
---      active Godown Manager (WAREHOUSE login), sent when the save commits. The page shows it as a
---      popup until the vehicle is checked (or "Later", 15 min).
+--   1. Purchase Entry picks the Godown Manager; lwb_purchase_arrived(bill, manager) sends the
+--      PURCHASE_ARRIVED bell to that person only (Mohit: "jisko main assign karun usi ko aana chahiye").
+--      The page shows it as a popup until the vehicle is checked (or "Later", 15 min).
 --   2. lwb_purchase_damage_report(inward, date, note, items): the Godown Manager / Admin / Sales Head
 --      submits the check (same rules as lwb_save_purchase_check). Admin + Sales Head get
 --      PURCHASE_DAMAGE (or PURCHASE_CHECK_OK when all fine). The arrived bells of that bill are marked read.
@@ -20,6 +20,8 @@
 --      Later steps stay in Stock Transfer as before (Damage -> Return to company / Destroy, with approval).
 --      Checks saved before this file are not back-filled.
 --
+--   4. Vehicle Time In / Time Out (lwb_goods_inward.time_in / time_out) entered with the check.
+--
 -- Needs: lwb_purchase_claim_setup.sql, lwb_purchase_register_setup.sql, lwb_stock_transfer_setup.sql.
 -- If lwb_purchase_register_setup.sql runs again, nothing here needs to run again.
 -- Safe to run again. Nothing is dropped or deleted.
@@ -30,6 +32,11 @@ BEGIN;
 ALTER TABLE public.erp_notifications ADD COLUMN IF NOT EXISTS ref_type text;
 ALTER TABLE public.erp_notifications ADD COLUMN IF NOT EXISTS ref_id text;
 CREATE INDEX IF NOT EXISTS erp_notifications_ref_idx ON public.erp_notifications (ref_type, ref_id) WHERE ref_type IS NOT NULL;
+
+-- Vehicle Time In / Time Out at the godown, the Godown Manager who checks the vehicle.
+ALTER TABLE public.lwb_goods_inward ADD COLUMN IF NOT EXISTS time_in timestamptz;
+ALTER TABLE public.lwb_goods_inward ADD COLUMN IF NOT EXISTS time_out timestamptz;
+ALTER TABLE public.lwb_goods_inward ADD COLUMN IF NOT EXISTS godown_user_id uuid;
 
 -- Stock lines booked from a purchase vehicle check.
 ALTER TABLE public.lwb_stock_moves ADD COLUMN IF NOT EXISTS inward_id uuid;
@@ -53,36 +60,47 @@ $fn$;
 REVOKE ALL ON FUNCTION public.lwb_pdr_bill_text(uuid) FROM PUBLIC, anon, authenticated;
 
 -- ---------------------------------------------------------------------------
--- 1. Vehicle arrived -> Godown Managers (sent at commit, after the SKU lines are saved).
+-- 1. Vehicle arrived -> the Godown Manager chosen on Purchase Entry (only that person).
+--    Called by Goods Inward after the bill is saved. No one chosen = every active Godown Manager.
+--    Called again with another person = the bill moves to that person (the old popup closes).
+--    Bill already checked = nothing is sent.
 -- ---------------------------------------------------------------------------
-CREATE OR REPLACE FUNCTION public.lwb_pdr_arrived_trg()
-RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path = ''
+DROP TRIGGER IF EXISTS trg_lwb_pdr_arrived ON public.lwb_goods_inward;  -- first draft sent to everyone; now Goods Inward calls the RPC below
+
+CREATE OR REPLACE FUNCTION public.lwb_purchase_arrived(p_inward uuid, p_godown uuid DEFAULT NULL)
+RETURNS integer LANGUAGE plpgsql SECURITY DEFINER SET search_path = ''
 AS $fn$
-DECLARE v_txt text; v_by text;
+DECLARE g record; v_txt text; v_by text; v_n integer := 0;
 BEGIN
-  BEGIN
-    IF EXISTS (SELECT 1 FROM public.lwb_purchase_checks c WHERE c.inward_id = NEW.id) THEN RETURN NULL; END IF;
-    IF EXISTS (SELECT 1 FROM public.erp_notifications n WHERE n.ref_type = 'PURCHASE_BILL' AND n.ref_id = NEW.id::text
-               AND n.notification_type = 'PURCHASE_ARRIVED') THEN RETURN NULL; END IF;
-    v_txt := public.lwb_pdr_bill_text(NEW.id);
-    SELECT nullif(btrim(p.full_name),'') INTO v_by FROM public.user_profiles p WHERE p.id = auth.uid();
-    INSERT INTO public.erp_notifications(user_id, title, message, notification_type, ref_type, ref_id)
-    SELECT p.id, left('Purchase vehicle arrived: ' || coalesce(nullif(btrim(NEW.vehicle_no),''), 'Inv ' || NEW.invoice_no), 150),
-           left(v_txt || '. Check the goods. Report damage / leakage / shortage with photos, or press All OK.'
-                || coalesce(' Entry by ' || v_by || '.', ''), 600),
-           'PURCHASE_ARRIVED', 'PURCHASE_BILL', NEW.id::text
-    FROM public.user_profiles p
-    WHERE p.active = true AND lower(btrim(p.role)) = 'warehouse' AND p.id IS DISTINCT FROM auth.uid();
-  EXCEPTION WHEN others THEN
-    RAISE WARNING 'lwb_pdr_arrived_trg: %', SQLERRM;  -- never blocks a purchase entry
-  END;
-  RETURN NULL;
+  IF public.lwb_pr_role() NOT IN ('admin','manager') THEN RAISE EXCEPTION 'Only Admin / Sales Head can send the purchase vehicle to a Godown Manager'; END IF;
+  SELECT x.id, x.invoice_no, x.vehicle_no INTO g FROM public.lwb_goods_inward x WHERE x.id = p_inward;
+  IF g.id IS NULL THEN RAISE EXCEPTION 'Purchase bill not found'; END IF;
+  IF p_godown IS NOT NULL AND NOT EXISTS (SELECT 1 FROM public.user_profiles p WHERE p.id = p_godown AND p.active = true AND lower(btrim(p.role)) = 'warehouse') THEN
+    RAISE EXCEPTION 'Choose an active Godown Manager login';
+  END IF;
+  UPDATE public.lwb_goods_inward SET godown_user_id = p_godown WHERE id = p_inward;
+  IF EXISTS (SELECT 1 FROM public.lwb_purchase_checks c WHERE c.inward_id = p_inward) THEN RETURN 0; END IF;
+  -- Moved to another person: close the old popups.
+  UPDATE public.erp_notifications SET is_read = true
+  WHERE ref_type = 'PURCHASE_BILL' AND ref_id = p_inward::text AND notification_type = 'PURCHASE_ARRIVED' AND is_read = false
+    AND p_godown IS NOT NULL AND user_id <> p_godown;
+  v_txt := public.lwb_pdr_bill_text(p_inward);
+  SELECT nullif(btrim(p.full_name),'') INTO v_by FROM public.user_profiles p WHERE p.id = auth.uid();
+  INSERT INTO public.erp_notifications(user_id, title, message, notification_type, ref_type, ref_id)
+  SELECT p.id, left('Purchase vehicle arrived: ' || coalesce(nullif(btrim(g.vehicle_no),''), 'Inv ' || g.invoice_no), 150),
+         left(v_txt || '. Check the goods. Report damage / leakage / shortage with photos, or press All OK.'
+              || coalesce(' Entry by ' || v_by || '.', ''), 600),
+         'PURCHASE_ARRIVED', 'PURCHASE_BILL', p_inward::text
+  FROM public.user_profiles p
+  WHERE p.active = true AND lower(btrim(p.role)) = 'warehouse' AND (p_godown IS NULL OR p.id = p_godown)
+    AND NOT EXISTS (SELECT 1 FROM public.erp_notifications n WHERE n.user_id = p.id AND n.ref_type = 'PURCHASE_BILL'
+                    AND n.ref_id = p_inward::text AND n.notification_type = 'PURCHASE_ARRIVED' AND n.is_read = false);
+  GET DIAGNOSTICS v_n = ROW_COUNT;
+  RETURN v_n;
 END;
 $fn$;
-REVOKE ALL ON FUNCTION public.lwb_pdr_arrived_trg() FROM PUBLIC, anon, authenticated;
-DROP TRIGGER IF EXISTS trg_lwb_pdr_arrived ON public.lwb_goods_inward;
-CREATE CONSTRAINT TRIGGER trg_lwb_pdr_arrived AFTER INSERT ON public.lwb_goods_inward
-  DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION public.lwb_pdr_arrived_trg();
+REVOKE ALL ON FUNCTION public.lwb_purchase_arrived(uuid, uuid) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.lwb_purchase_arrived(uuid, uuid) TO authenticated;
 
 -- ---------------------------------------------------------------------------
 -- 3. Stock follows the check lines of a bill. Returns the number of stock lines now booked.
@@ -210,6 +228,13 @@ BEGIN
 
   SELECT coalesce(nullif(btrim(p.full_name),''), 'Staff') INTO v_by FROM public.user_profiles p WHERE p.id = auth.uid();
   v_txt := public.lwb_pdr_bill_text(p_inward_id);
+  -- Time In / Out (when entered): " · In 10:20 · Out 11:40 (1h 20m)"
+  SELECT v_txt || coalesce(' · In ' || to_char(g.time_in AT TIME ZONE 'Asia/Kolkata', 'HH24:MI'), '')
+         || coalesce(' · Out ' || to_char(g.time_out AT TIME ZONE 'Asia/Kolkata', 'HH24:MI')
+              || ' (' || CASE WHEN g.time_out - g.time_in >= interval '1 hour'
+                              THEN floor(extract(epoch FROM g.time_out - g.time_in) / 3600)::int || 'h ' ELSE '' END
+              || (floor(extract(epoch FROM g.time_out - g.time_in) / 60)::int % 60) || 'm)', '')
+  INTO v_txt FROM public.lwb_goods_inward g WHERE g.id = p_inward_id;
   IF to_regclass('public.lwb_documents') IS NOT NULL THEN
     EXECUTE 'SELECT count(*)::int FROM public.lwb_documents d WHERE d.entity_type = ''PURCHASE_BILL'' AND d.entity_id = $1 AND d.doc_type = ''DAMAGE'' AND d.removed_at IS NULL'
       INTO v_photos USING p_inward_id::text;
@@ -240,6 +265,26 @@ $fn$;
 REVOKE ALL ON FUNCTION public.lwb_purchase_damage_report(uuid, date, text, jsonb) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.lwb_purchase_damage_report(uuid, date, text, jsonb) TO authenticated;
 
+-- ---------------------------------------------------------------------------
+-- 4. Vehicle Time In / Time Out at the godown (Mohit, 6 Nov 2026), entered with the vehicle check.
+--    Admin / Sales Head / Godown Manager. Out must be after In; not in the future.
+-- ---------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.lwb_purchase_vehicle_time(p_inward uuid, p_in timestamptz, p_out timestamptz)
+RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path = ''
+AS $fn$
+BEGIN
+  IF NOT public.lwb_pc_checker() THEN RAISE EXCEPTION 'Only Admin, Sales Head or Godown Manager can enter vehicle time'; END IF;
+  IF NOT EXISTS (SELECT 1 FROM public.lwb_goods_inward g WHERE g.id = p_inward) THEN RAISE EXCEPTION 'Purchase bill not found'; END IF;
+  IF p_in IS NULL THEN RAISE EXCEPTION 'Enter the vehicle Time In'; END IF;
+  IF p_in > now() + interval '10 minutes' OR p_out > now() + interval '10 minutes' THEN RAISE EXCEPTION 'Vehicle time is in the future'; END IF;
+  IF p_out IS NOT NULL AND p_out < p_in THEN RAISE EXCEPTION 'Time Out must be after Time In'; END IF;
+  IF p_out - p_in > interval '3 days' THEN RAISE EXCEPTION 'Time In and Time Out are more than 3 days apart'; END IF;
+  UPDATE public.lwb_goods_inward SET time_in = p_in, time_out = p_out WHERE id = p_inward;
+END;
+$fn$;
+REVOKE ALL ON FUNCTION public.lwb_purchase_vehicle_time(uuid, timestamptz, timestamptz) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.lwb_purchase_vehicle_time(uuid, timestamptz, timestamptz) TO authenticated;
+
 -- The arrived popup of a bill that someone already checked (e.g. at Goods Inward) is closed by itself.
 CREATE OR REPLACE FUNCTION public.lwb_pdr_arrived_done_trg()
 RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path = ''
@@ -260,5 +305,5 @@ COMMIT;
 
 -- Check (all true):
 SELECT to_regprocedure('public.lwb_purchase_damage_report(uuid,date,text,jsonb)') IS NOT NULL AS report_rpc,
-       EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'trg_lwb_pdr_arrived') AS arrived_trigger,
+       to_regprocedure('public.lwb_purchase_arrived(uuid,uuid)') IS NOT NULL AS arrived_rpc,
        EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'trg_lwb_pdr_stock') AS stock_trigger;

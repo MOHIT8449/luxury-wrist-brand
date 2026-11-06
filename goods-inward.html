@@ -149,6 +149,8 @@ Cess is not included: an SKU with Cess cannot be saved yet.">i</button></h2></di
       <div class="stat"><span>Total Amount (Auto)</span><strong id="totalAmount" class="money">₹0.00</strong></div>
     </div>
     <div class="dmg-box">
+      <div class="dmg-head" id="godownRow" style="margin-bottom:8px" hidden><label for="godownMgr">Godown Manager (gets the "vehicle arrived" popup) *</label>
+        <select id="godownMgr"><option value="">Choose Godown Manager</option></select></div>
       <div class="dmg-head"><label for="dmgMode">Damage / Leakage / Shortage in this vehicle?</label>
         <select id="dmgMode"><option value="later">Check later: Godown Manager gets a task to check + photo</option><option value="no">No: everything received OK</option><option value="yes">Yes: damage / leakage / shortage (Godown Manager gets a photo task)</option></select></div>
       <div id="dmgWrap" hidden><table class="dmg-table"><thead><tr><th rowspan="2">SKU</th><th colspan="2">Damage</th><th colspan="2">Leakage</th><th colspan="2">Shortage</th></tr><tr><th>Cases</th><th>PCS</th><th>Cases</th><th>PCS</th><th>Cases</th><th>PCS</th></tr></thead><tbody id="dmgBody"></tbody></table>
@@ -450,6 +452,17 @@ async function start(key){
   }catch(e){$('access').textContent='Not connected';$('keybox').style.display='block';show('Connection failed: '+(e.message||String(e)));}
   recalc();
 }
+// Godown Manager who checks this purchase vehicle: only that person gets the popup (lwb_purchase_damage_report_setup.sql).
+let godownList=null;
+async function loadGodownManagers(){
+  const r=await db.rpc('lwb_godown_managers');
+  godownList=r.error?null:(r.data||[]);
+  $('godownRow').hidden=!godownList||!godownList.length;if(!godownList)return;
+  let last='';try{last=localStorage.getItem('lwbGiGodown')||''}catch(e){}
+  const cur=$('godownMgr').value||last;
+  $('godownMgr').replaceChildren(new Option('Choose Godown Manager',''),...godownList.map(m=>new Option(m.full_name+(m.mobile?' · '+m.mobile:''),m.user_id)));
+  if(godownList.some(m=>m.user_id===cur))$('godownMgr').value=cur;
+}
 async function loadData(){
   if(!db)return;
   try{
@@ -465,6 +478,7 @@ async function loadData(){
       db.from('lwb_companies').select('*')
     ]);
     companies=companyRes.error?[]:(companyRes.data||[]);
+    loadGodownManagers();
     for(const r of [skuRes,supplierRes,stockRes])if(r.error)throw r.error;
     skus=(skuRes.data||[]).filter(s=>Number(s.pcs_per_case)>0);suppliers=supplierRes.data||[];stock=stockRes.data||[];
     if(window.LWBBrand&&!BB.companies)try{BB=await LWBBrand.mount(db,{into:'main section.panel',onChange:()=>{}})}catch(e){}
@@ -564,6 +578,9 @@ async function save(){
   if(dmgMode==='yes'&&!dmgItems.length){show('You chose "Yes" for damage / leakage / shortage. Enter the quantities, or change it to "No" or "Check later".');return;}
   if(dmgMode==='yes'&&giDocs&&!giDocs.has('DAMAGE')&&!await confirm('No photo of the damage / leakage is added.\n\nA photo helps the company accept the claim. Save without a photo?'))return;
   const dmgNote=$('dmgNote').value.trim();
+  const godownId=$('godownMgr').value||null;
+  if(godownList&&godownList.length&&!godownId){show('Choose the Godown Manager who will check this vehicle. Only that person gets the "vehicle arrived" popup.');$('godownMgr').focus();return;}
+  try{if(godownId)localStorage.setItem('lwbGiGodown',godownId)}catch(e){}
   const mrpBill=rows.some(r=>r.mode==='MRP');
   const items=rows.map(r=>r.mode==='MRP'
     ?{sku_id:r.sku.id,cases:r.cases,pcs:r.pcs,billing_mode:'MRP',net_amount:paiseText(r.net),deemed_value:paiseText(r.deemed)}
@@ -617,10 +634,21 @@ async function save(){
     if(dmgMode!=='no'){
       let inwardId=data?.id||data?.inward_id||null;
       if(!inwardId){const f=await db.from('lwb_goods_inward').select('id').eq('invoice_no',invoice).eq('supplier_name',supplier).order('created_at',{ascending:false}).limit(1);inwardId=f.data?.[0]?.id||null;}
-      const t=inwardId?await db.rpc('lwb_purchase_photo_task',{p_inward:inwardId}):{error:{message:'saved bill not found'}};
+      const t=inwardId?await db.rpc('lwb_purchase_photo_task',godownId?{p_inward:inwardId,p_assignees:[godownId]}:{p_inward:inwardId}):{error:{message:'saved bill not found'}};
       taskMsg=t.error?(/function|schema cache/i.test(t.error.message)?'':`\nGodown Manager task was not given (${t.error.message}). Use Purchase List → 📷 Task.`)
         :(t.data||[]).length?`\nGodown Manager task given (${dmgMode==='yes'?'upload damage photos':'check vehicle + photos'}).`:'';
     }
+    // "Vehicle arrived" popup to the chosen Godown Manager (skipped by the server when the vehicle is already checked).
+    let arrMsg='';
+    {
+      let inwardId=data?.id||data?.inward_id||null;
+      if(!inwardId){const f=await db.from('lwb_goods_inward').select('id').eq('invoice_no',invoice).eq('supplier_name',supplier).order('created_at',{ascending:false}).limit(1);inwardId=f.data?.[0]?.id||null;}
+      const a=inwardId?await db.rpc('lwb_purchase_arrived',{p_inward:inwardId,p_godown:godownId}):{error:{message:'saved bill not found'}};
+      const gm=godownList&&godownList.find(m=>m.user_id===godownId);
+      arrMsg=a.error?(/function|schema cache/i.test(a.error.message)?'':`\nGodown Manager popup was not sent (${a.error.message}).`)
+        :a.data>0?`\nGodown Manager popup sent to ${gm?gm.full_name:'all Godown Managers'}.`:'';
+    }
+    taskMsg+=arrMsg;
     resetForm();
     await loadData();
     show(`Goods Inward SAVED successfully.\nInvoice: ${data?.invoice_no||invoice}\nSKU Lines: ${data?.sku_count||rows.length}\nTotal Pieces Added: ${format(data?.total_pcs||0)} PCS\n${mrpBill?'Deemed / Taxable Value':'Taxable Amount'}: ${rupees(invoiceTaxable/100)}\nGST Amount: ${rupees(invoiceGst/100)}\nInvoice Total: ${rupees(invoiceGross/100)}\nLive Main Godown stock updated.${taskMsg}${spMsg}${ckMsg.includes('WARNING')?'':ckMsg}${docMsg.includes('WARNING')?'':docMsg}`,spMsg.includes('WARNING')?'error':'success');

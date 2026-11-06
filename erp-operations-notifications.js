@@ -119,7 +119,7 @@
   // Purchase vehicle (lwb_purchase_damage_report_setup.sql): "Vehicle X · SUPPLIER · Inv N · 15 CS. lines…"
   if(/^PURCHASE_/.test(t)){
    const p=m.split(". ")[0].split(" · "),inv=(p.find(s=>/^Inv /.test(s))||""),cs=(p.find(s=>/ CS$/.test(s))||""),v=(p[0]||"").replace(/^Vehicle /,"");
-   const dd=[inv,cs,v?"🚛 "+v:""].filter(Boolean),lines=t==="PURCHASE_DAMAGE"?(m.split(". ")[1]||""):"";
+   const dd=[inv,cs,v?"🚛 "+v:"",p.find(s=>/^In \d/.test(s))||"",p.find(s=>/^Out \d/.test(s))||""].filter(Boolean),lines=t==="PURCHASE_DAMAGE"?(m.split(". ")[1]||""):"";
    if(lines)dd.push(lines);if(by)dd.push("By "+by);
    const dc=t==="PURCHASE_DAMAGE"?((title.match(/([\d.,]+) CS/)||[])[1]||""):"";
    return {icon,tone,head,action,line2:p[1]||"Purchase bill",isParty:true,amount:dc?dc+" CS":"",details:dd};

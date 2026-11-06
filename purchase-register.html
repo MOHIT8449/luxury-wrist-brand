@@ -182,6 +182,10 @@ Verify: All OK, or damage / leakage / shortage lines (SKU · type · qty) with p
     const openCheck=id=>LWBPurchaseDamage.form({client,id,role:me.role,onDone:load});
     const openReport=id=>LWBPurchaseDamage.view({client,id,role:me.role,onEdit:load});
     const lines=b=>items.get(b.id)||[];
+    // Vehicle Time In / Out at the godown: "In 10:20 · Out 11:40 (1h 20m)"
+    const hm=v=>new Date(v).toLocaleTimeString("en-GB",{timeZone:"Asia/Kolkata",hour:"2-digit",minute:"2-digit",hour12:false});
+    const vMin=b=>b.time_in&&b.time_out?Math.round((new Date(b.time_out)-new Date(b.time_in))/6e4):null;
+    const vTime=b=>{const m=vMin(b);return "In "+hm(b.time_in)+(b.time_out?" · Out "+hm(b.time_out)+" ("+(m>=60?Math.floor(m/60)+"h ":"")+(m%60)+"m)":" · Out —")};
     const pcsOf=it=>num(pick(it,["quantity_pcs","total_pcs","qty_pcs"]));
     const sum=(b,f)=>lines(b).reduce((a,i)=>a+num(i[f]),0);
     // Brand filter: a bill is of a brand when one of its SKUs is (or its supplier is tied to that brand).
@@ -230,7 +234,7 @@ Verify: All OK, or damage / leakage / shortage lines (SKU · type · qty) with p
         if(docSum)acts+='<button type="button" data-docs="'+b.id+'" title="Bill copy / photos" aria-label="Bill copy / photos">📎</button>';
         if(can.task&&t&&!hasTask)acts+='<button type="button" class="task" data-task="'+b.id+'" title="Give the Godown Manager a task to check / upload photos">📷 Task</button>';
         h+='<tr class="bill'+(b.id===openId?" open":"")+'"><td class="c-rec">'+dmy(b.received_date)+'</td><td class="c-inv"><button type="button" class="pr-inv" data-view="'+b.id+'" title="Show / hide the SKU lines">'+esc(b.invoice_no)+(b.id===openId?" ▴":" ▾")+"</button><small>Recd "+dmy(b.received_date)+" · Inv "+dmy(b.invoice_date)+"</small><div>"+tags(b)+'</div></td><td class="c-sup">'+esc(b.supplier_name)+
-          '</td><td class="c-veh">'+esc(b.vehicle_no||"—")+"<small>"+esc([b.driver_name,b.lr_no?"LR "+b.lr_no:""].filter(Boolean).join(" · "))+'</small></td><td class="n c-pcs">'+fmt(pcs)+"</td>"+
+          '</td><td class="c-veh">'+esc(b.vehicle_no||"—")+"<small>"+esc([b.driver_name,b.lr_no?"LR "+b.lr_no:""].filter(Boolean).join(" · "))+"</small>"+(b.time_in?"<small>🕘 "+esc(vTime(b))+"</small>":"")+'</td><td class="n c-pcs">'+fmt(pcs)+"</td>"+
           (amt?'<td class="n c-amt">'+rs(sum(b,"total_amount"))+"</td>":"")+'<td class="c-chk">'+checkTag(b)+'</td><td class="c-act"><div class="pr-acts">'+acts+"</div></td></tr>";
         if(b.id===openId)h+='<tr class="pr-items"><td colspan="'+cols+'"><div class="scroll"><table><thead><tr><th>#</th><th>SKU</th><th class="n">Cases</th><th class="n">Loose</th><th class="n">PCS</th>'+(amt?'<th class="n">Taxable ₹</th><th class="n">Total ₹</th>':"")+"</tr></thead><tbody>"+
           ls.map((it,i)=>{const s=skuName.get(String(it.sku_id))||{};return "<tr><td>"+(i+1)+"</td><td>"+esc(pick(it,["sku_name"])||s.sku_name||it.sku_id)+'</td><td class="n">'+fmt(pick(it,["cases","quantity_cases"]))+'</td><td class="n">'+fmt(pick(it,["pcs","loose_pcs"]))+'</td><td class="n">'+fmt(pcsOf(it))+"</td>"+(amt?'<td class="n">'+rs(it.taxable_amount)+'</td><td class="n">'+rs(it.total_amount)+"</td>":"")+"</tr>"}).join("")+
@@ -258,9 +262,9 @@ Verify: All OK, or damage / leakage / shortage lines (SKU · type · qty) with p
       docSum=await ERPDocs.summary(client,"PURCHASE_BILL")||docSum;await loadTasks()}
     async function excel(){
       const list=shown(),amt=can.amounts;
-      const head=["Received","Invoice No","Invoice Date","Supplier","Vehicle","Driver","Driver Mobile","LR No","Transport","Lines","Total PCS"].concat(amt?["Taxable","Invoice Total"]:[]).concat(["Vehicle Check","Claim","Bill copy","Damage photos","Photo task"]);
+      const head=["Received","Invoice No","Invoice Date","Supplier","Vehicle","Time In","Time Out","Minutes in godown","Driver","Driver Mobile","LR No","Transport","Lines","Total PCS"].concat(amt?["Taxable","Invoice Total"]:[]).concat(["Vehicle Check","Claim","Bill copy","Damage photos","Photo task"]);
       const rows=list.map(b=>{const ch=checks.get(b.id),d=docs(b),t=tasks.get(String(b.id));
-        return [dmy(b.received_date),b.invoice_no,dmy(b.invoice_date),b.supplier_name,b.vehicle_no||"",b.driver_name||"",b.driver_mobile||"",b.lr_no||"",b.transport_name||"",lines(b).length,lines(b).reduce((a,i)=>a+pcsOf(i),0)]
+        return [dmy(b.received_date),b.invoice_no,dmy(b.invoice_date),b.supplier_name,b.vehicle_no||"",b.time_in?hm(b.time_in):"",b.time_out?hm(b.time_out):"",vMin(b)==null?"":vMin(b),b.driver_name||"",b.driver_mobile||"",b.lr_no||"",b.transport_name||"",lines(b).length,lines(b).reduce((a,i)=>a+pcsOf(i),0)]
           .concat(amt?[sum(b,"taxable_amount"),sum(b,"total_amount")]:[])
           .concat([!ch?"Check pending":ch.has_damage?"Damage":"No damage",ch&&ch.has_damage?ch.claim_status:"",d?(d.has("BILL")?"Yes":"No"):"",d?(d.has("DAMAGE")?"Yes":"No"):"",t?t.people:""])});
       try{await LWBExcel.write("Purchase-List-"+today(),[{name:"Purchase List",rows:[head,...rows]}])}catch(e){ERPShell.toast(e.message,"error")}
