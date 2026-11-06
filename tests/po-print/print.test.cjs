@@ -6,7 +6,7 @@ const source=fs.readFileSync(require('node:path').join(__dirname,'../../warehous
 const printing=source.slice(source.indexOf('let savedPoItemsSignature='),source.indexOf('function warehouseSkuInputMarkup'));
 const choice=source.slice(source.indexOf('function poChooseSaved('),source.indexOf('function showPoPicker('));
 const fnSource=name=>{const start=source.indexOf('function '+name+'(');return source.slice(start,source.indexOf('\n}\n',start)+3)};
-const helpers=fnSource('poNormalPhone')+fnSource('poTransportDirty');
+const helpers=fnSource('isSelfPickup')+fnSource('poNormalPhone')+fnSource('poTransportDirty');
 function setup(status='approved'){
  const nodes=new Map();const node=id=>{if(!nodes.has(id))nodes.set(id,{value:'',hidden:false,disabled:false,innerHTML:''});return nodes.get(id)};
  node('postApprovalPanel').hidden=true;node('managerNote').value='';

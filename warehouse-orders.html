@@ -1532,7 +1532,8 @@
           <h4>Transport details</h4>
           <div id="poQuickInfo"></div>
           <div class="po-grid">
-            <div class="po-field"><label for="poDriverName">Driver *</label><input id="poDriverName" maxlength="150" placeholder="Select driver" autocomplete="off" aria-autocomplete="list"><small class="po-field-info" id="poDriverInfo"></small><input id="poDriverMobile" type="hidden"></div>
+            <div class="po-field"><label for="poDriverName">Driver *</label><input id="poDriverName" maxlength="150" placeholder="Select driver" autocomplete="off" aria-autocomplete="list"><small class="po-field-info" id="poDriverInfo"></small></div>
+            <div class="po-field" id="poMobileField" hidden><label for="poDriverMobile">Driver Mobile *</label><input id="poDriverMobile" type="tel" inputmode="numeric" maxlength="10" autocomplete="off" placeholder="10-digit mobile" oninput="this.value=this.value.replace(/\D/g,'').slice(0,10);poMobileTyped()"><small class="po-field-info" id="poMobileInfo"></small></div>
             <div class="po-field"><label for="poVehicleNo">Vehicle *</label><input id="poVehicleNo" maxlength="40" placeholder="Select vehicle" autocomplete="off" aria-autocomplete="list"><small class="po-field-info" id="poVehicleInfo"></small><input id="poTransportName" type="hidden"></div>
             <div class="po-field"><label for="poLoadingManager">Godown Manager *</label><select id="poLoadingManager" hidden><option value="">Select manager</option></select><input id="poLoadingPerson" maxlength="150" placeholder="Godown staff"></div>
           </div>
@@ -2934,7 +2935,7 @@ function drawJourney(order, box, a) {
     { t: "PO made", s: when(made) + (order.sales_person ? " · " + escapeHtml(order.sales_person) : ""), on: true },
     { t: "Approved", s: when(order.approved_at) + took(made, order.approved_at),
       on: !isPending(order) && !isCancelled(order) || !!order.approved_at },
-    { t: "Transport assigned", s: [when(a.assigned_at), a.vehicle_no, a.driver_name, a.loading_person && "Godown: " + a.loading_person]
+    { t: "Transport assigned", s: [when(a.assigned_at), a.vehicle_no, a.driver_name, a.driver_mobile && "📞 " + a.driver_mobile, a.loading_person && "Godown: " + a.loading_person]
         .filter(Boolean).map(v => escapeHtml(String(v))).join(" · "), on: !!(a.assigned_at || a.driver_name || a.vehicle_no) },
     { t: "Loading start", s: when(loadStart) + (a.loading_completed_at ? " · Loaded " + when(a.loading_completed_at) : ""), on: loadingOn },
     { t: "Out for delivery", s: billNo ? "Bill " + escapeHtml(billNo) + (outAt ? " · " + when(outAt) : "") : "", on: outOn,
@@ -3599,6 +3600,26 @@ async function reviewOrder(orderId, transportOnly=false, quiet=false) {
    The active ERP profile takes precedence over stale historical names for
    the same phone; saved vehicles remain available.
 */
+// Self Pickup order: outside driver, so the mobile is typed (box shown) and earlier pickup drivers are offered.
+function isSelfPickup(o){
+  return String(o&&o.transportation||"").split("|")[0].trim().toUpperCase()==="SELF PICKUP";
+}
+let poPickupDrivers=[];
+// Typed mobile of a driver used before (Self Pickup / earlier dispatch): fill the name and vehicle too.
+function poMobileTyped(){
+  const phone=poNormalPhone(document.getElementById("poDriverMobile").value);
+  const info=document.getElementById("poMobileInfo");
+  info.textContent="";
+  if(!/^[6-9]\d{9}$/.test(phone)){showPoFieldInfo();return;}
+  const d=poSavedDrivers.find(x=>x.phone===phone);
+  if(d){
+    const name=document.getElementById("poDriverName"),veh=document.getElementById("poVehicleNo");
+    if(!name.value.trim())name.value=d.name;
+    if(d.vehicle&&!veh.value.trim())veh.value=d.vehicle;
+    info.textContent="Used before: "+d.name+(d.vehicle?" · "+d.vehicle:"");
+  }
+  showPoFieldInfo();
+}
 function poNormalPhone(value){
   const digits=String(value||"").replace(/\D/g,"");
   return digits.length===12&&digits.startsWith("91")?digits.slice(2):digits;
@@ -3639,6 +3660,15 @@ function rebuildPoDirectory(){
       poSavedDrivers.push({name,mobile:phone,phone,source:"ERP Driver User"});
     }
   }
+  // Outside drivers of earlier Self Pickup orders (lwb_self_pickup_driver_search.sql), with the vehicle used last.
+  for(const p of poPickupDrivers){
+    const name=String(p.driver_name||"").trim(),phone=poNormalPhone(p.driver_mobile);
+    if(!name||!(/^[6-9]\d{9}$/.test(phone))||erpDriverPhones.has(phone))continue;
+    const key=name.toLowerCase()+"|"+phone;
+    if(driverSeen.has(key))continue;
+    driverSeen.add(key);erpDriverPhones.add(phone);
+    poSavedDrivers.push({name,mobile:phone,phone,source:"Self pickup before",vehicle:String(p.vehicle_no||"").toUpperCase(),transporter:""});
+  }
   // Keep historic drivers and vehicles. Skip obsolete names when their
   // number is now owned by an active, registered ERP DRIVER user.
   for(const a of poRawAssignments){
@@ -3674,7 +3704,7 @@ function rebuildPoDirectory(){
 async function loadPoSavedDirectory(){
   // Protected RPC allows only active ERP Admin/Manager to read active Driver
   // names/phones. Historical dispatch list remains independently available.
-  const [historyResult,erpResult,driverMaster,vehicleMaster]=await Promise.all([
+  const [historyResult,erpResult,driverMaster,vehicleMaster,pickupDrivers]=await Promise.all([
     db.from("dispatch_assignments")
       .select("driver_name,driver_mobile,vehicle_no,transporter_name,assigned_at")
       .order("assigned_at",{ascending:false}).limit(2000),
@@ -3682,8 +3712,10 @@ async function loadPoSavedDirectory(){
     // Drivers = working employees with Work / Post "Driver" in Employee Master (lwb_employee_roles_setup.sql).
     db.rpc("lwb_staff_pick",{p_role:"driver"}),
     // Every active vehicle of Vehicle Master, with the orders it is out on now (free ones first).
-    db.rpc("lwb_vehicle_pick")
+    db.rpc("lwb_vehicle_pick"),
+    db.rpc("lwb_pickup_drivers").then(r=>r,()=>({data:[]}))
   ]);
+  poPickupDrivers=Array.isArray(pickupDrivers?.data)?pickupDrivers.data:[];
   let vehicles=vehicleMaster;
   if(vehicles.error)vehicles=await db.from("lwb_vehicles").select("id,vehicle_no,vehicle_type,capacity_kg,transporter_name").eq("is_active",true).order("vehicle_no");
   // Before lwb_fleet_master_setup.sql is run these tables are missing; the old lists still work.
@@ -3769,10 +3801,11 @@ function poChooseSaved(kind,item){
 function showPoFieldInfo(){
   const mob=poNormalPhone(document.getElementById("poDriverMobile").value);
   const d=poSavedDrivers.find(x=>x.phone&&x.phone===mob);
-  document.getElementById("poDriverInfo").textContent=mob?"📞 "+mob+(d&&d.source?" · "+d.source:""):(document.getElementById("poDriverName").value.trim()?"Select the driver from the list":"");
+  const selfPk=isSelfPickup(selectedOrder);
+  document.getElementById("poDriverInfo").textContent=selfPk?(d&&d.source?d.source:""):mob?"📞 "+mob+(d&&d.source?" · "+d.source:""):(document.getElementById("poDriverName").value.trim()?"Select the driver from the list":"");
   const plate=poNormalPlate(document.getElementById("poVehicleNo").value);
   const v=poSavedVehicles.find(x=>poNormalPlate(x.vehicle)===plate);
-  document.getElementById("poVehicleInfo").textContent=plate?(v?(v.detail||v.transporter||""):"Not in Vehicle Master"):"";
+  document.getElementById("poVehicleInfo").textContent=plate?(v?(v.detail||v.transporter||""):selfPk?"Outside vehicle":"Not in Vehicle Master"):"";
 }
 function showPoPicker(input,kind){
   if(input.disabled||document.getElementById("postApprovalPanel").hidden)return;
@@ -3843,7 +3876,7 @@ function setupPoAutofill(){
     input.addEventListener("input",()=>{
       // Exact historical match auto-fills. Partial typing only filters results.
       const term=input.value;
-      if(kind==="name")document.getElementById("poDriverMobile").value="";
+      if(kind==="name"&&!isSelfPickup(selectedOrder))document.getElementById("poDriverMobile").value="";
       if(kind==="vehicle")document.getElementById("poTransportName").value="";
       showPoFieldInfo();
       const exact=kind==="vehicle"
@@ -3898,6 +3931,16 @@ function allocationStatus(message,error=false){
 }
 // poSaveBtn is never shown: its disabled flag says whether Driver / Vehicle / Godown Manager can be
 // saved now. The one Submit button in the footer saves them with the PO and the note (submitPo).
+// Self Pickup: the details typed on this order (lwb_order_pickup), else the same party's last Self Pickup.
+async function poPickupPrefill(order){
+  const own=await db.from("lwb_order_pickup").select("driver_name,driver_mobile,vehicle_no,godown_user_id,godown_manager_name")
+    .eq("order_id",order.id).maybeSingle().then(r=>r,()=>({data:null}));
+  if(own&&own.data&&(own.data.driver_name||own.data.driver_mobile||own.data.vehicle_no))return {...own.data,from:"Filled from this order"};
+  const last=await db.rpc("lwb_party_last_pickup",{p_customer_name:order.customer_name||""}).then(r=>r,()=>({data:null}));
+  const l=last&&!last.error?last.data:null;
+  if(l&&(l.driver_name||l.driver_mobile||l.vehicle_no))return {...l,from:"Party's last pickup"+(l.order_no?" · "+l.order_no:"")};
+  return null;
+}
 async function revealApprovalActions(){
   const order=selectedOrder;
   const panel=document.getElementById("postApprovalPanel");
@@ -3906,6 +3949,9 @@ async function revealApprovalActions(){
   const id=order.id;
   approvedTransport=null;
   const locked=poAllocationLocked(order);
+  const selfPk=isSelfPickup(order);
+  document.getElementById("poMobileField").hidden=!selfPk;
+  document.getElementById("poMobileInfo").textContent="";
   document.getElementById("poSaveBtn").hidden=locked;
   document.getElementById("poSaveBtn").disabled=true;
   ["poDriverName","poVehicleNo","poLoadingPerson","poLoadingManager","poDriverMobile","poTransportName"].forEach(field=>{
@@ -3921,14 +3967,29 @@ async function revealApprovalActions(){
     if(!selectedOrder||selectedOrder.id!==id)return;
     approvedTransport=result.data||null;
     const a=approvedTransport||{};
+    // Self Pickup with nothing assigned yet: bring the driver typed on the order, else this party's last pickup.
+    let filledFrom="";
+    const fill=selfPk&&!a.id?await poPickupPrefill(order):null;
+    if(!selectedOrder||selectedOrder.id!==id)return;
     for(const pair of [
       ["poDriverName",a.driver_name],["poVehicleNo",a.vehicle_no],
       ["poLoadingPerson",a.loading_person],["poDriverMobile",a.driver_mobile],
       ["poTransportName",a.transporter_name]
     ])document.getElementById(pair[0]).value=pair[1]||"";
     setPoGodownManager(a);
+    if(fill){
+      document.getElementById("poDriverName").value=fill.driver_name||"";
+      document.getElementById("poDriverMobile").value=fill.driver_mobile||"";
+      document.getElementById("poVehicleNo").value=fill.vehicle_no||"";
+      const sel=document.getElementById("poLoadingManager");
+      if(fill.godown_user_id&&[...sel.options].some(o=>o.value===fill.godown_user_id))sel.value=fill.godown_user_id;
+      else if(fill.godown_manager_name&&!sel.hidden){const m=[...sel.options].find(o=>o.value&&o.text.split(" · ")[0].trim().toLowerCase()===String(fill.godown_manager_name).trim().toLowerCase());if(m)sel.value=m.value;}
+      if(sel.hidden)document.getElementById("poLoadingPerson").value=fill.godown_manager_name||"";
+      filledFrom=fill.from;
+    }
     showPoFieldInfo();
-    allocationStatus(locked?"Loading has started. Allocation is locked.":a.id
+    if(filledFrom)document.getElementById("poMobileInfo").textContent=filledFrom;
+    allocationStatus(locked?"Loading has started. Allocation is locked.":filledFrom?"Self pickup details filled. Check them, then press Submit.":a.id
       ?"Transport saved. You can update it before loading."
       :"Select driver, vehicle and Godown Manager, then press Submit.");
   }catch(e){allocationStatus("Could not load transport assignment: "+e.message,true);}
@@ -3969,7 +4030,7 @@ function poTransportPayload(){
     allocationStatus("Driver Name, Vehicle Number and "+(poGodownManagers?"Godown Manager":"Loading Person")+" are required.",true);return null;
   }
   if(!payload.driver_mobile){
-    allocationStatus("Select the driver from the list, so the mobile number comes with it. Driver Portal matches orders by this number.",true);return null;
+    allocationStatus(isSelfPickup(selectedOrder)?"Enter the driver's 10-digit mobile number.":"Select the driver from the list, so the mobile number comes with it. Driver Portal matches orders by this number.",true);return null;
   }
   if(payload.driver_mobile){
     // Driver Portal matches orders by this exact mobile, so reject typos.
@@ -4001,6 +4062,14 @@ async function saveApprovedTransport(){
       : await db.from("dispatch_assignments").insert(payload).select("id").single();
     if(result.error)throw result.error;
     approvedTransport={...payload,id:result.data.id};
+    // Self Pickup: keep the same driver / mobile / vehicle on the order, so the party's next pickup fills them.
+    if(isSelfPickup(selectedOrder)){
+      const pkSave=key=>db.rpc("lwb_set_order_pickup",{p_order_id:id,p:{driver_name:payload.driver_name,driver_mobile:payload.driver_mobile,
+        vehicle_no:payload.vehicle_no,godown_key:key}}).then(r=>r,e=>({error:e}));
+      let pk=await pkSave(payload.loading_manager_id?"U:"+payload.loading_manager_id:"");
+      if(pk.error&&/Godown Manager/i.test(pk.error.message||""))pk=await pkSave("");
+      if(pk.error)console.warn("Self pickup details not copied to the order:",pk.error.message||pk.error);
+    }
     // The first manual assignment is now stored in Supabase; reuse it immediately.
     poAddSavedAssignment(payload);
     const canTransition=["approved","approved_next","manager_approved","warehouse_approved","transport_allocated","allocated"];

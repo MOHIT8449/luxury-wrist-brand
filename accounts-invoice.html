@@ -474,8 +474,13 @@ async function fetchAssignedVehicle(orderId){
    .select("driver_name,driver_mobile,vehicle_no,loading_person,transporter_name")
    .eq("order_id",orderId).maybeSingle();
   if(result.error)throw result.error;
+  // Self Pickup: a blank driver / mobile / vehicle comes from the details typed on the same order.
+  const pk=await db.from("lwb_order_pickup").select("driver_name,driver_mobile,vehicle_no,godown_manager_name")
+   .eq("order_id",orderId).maybeSingle().then(r=>r.error?null:r.data,()=>null);
   if(selected?.id!==orderId)return false;
-  assignedVehicle=result.data||null;
+  const a=result.data?{...result.data}:null;
+  assignedVehicle=pk?{...(a||{}),driver_name:a?.driver_name||pk.driver_name,driver_mobile:a?.driver_mobile||pk.driver_mobile,
+   vehicle_no:a?.vehicle_no||pk.vehicle_no,loading_person:a?.loading_person||pk.godown_manager_name}:a;
   assignedOrderId=orderId;
  }catch(e){
   if(selected?.id!==orderId)return false;
