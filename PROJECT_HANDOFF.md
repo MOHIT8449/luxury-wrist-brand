@@ -4,6 +4,16 @@
 **Purpose:** Continue the same ERP project from a new ChatGPT conversation without restarting or losing the agreed requirements.
 **Status:** Active development / verification. Do not assume all modules are completed or fully tested.
 
+## Edit / Delete an old purchase bill (6 Nov 2026)
+
+- Mohit: no way to change or remove an old purchase bill (the "Edit" on Purchase List was only the vehicle check; now labelled "Check").
+- SQL `lwb_purchase_bill_edit_delete_setup.sql` (test `tests/purchase-bill-edit`, PGlite, 4 tests). Admin only. `lwb_purchase_bill_preview(bill)` (lines, stock now / after, check, photos, `can` / `why`), `lwb_purchase_bill_delete(bill, reason)`, `lwb_purchase_bill_edit(bill, reason, header, items)`, `lwb_purchase_bill_log_list(days)`. Table `lwb_purchase_bill_log` keeps the old bill, lines and stock rows.
+- Stock: the bill's `lwb_inventory_movements` rows (found by a link column such as inward_id / reference_id / ref_id / source_id, an FK, a line-id column, else PURCHASE / INWARD rows with reference_no = invoice no. and SKU on the bill; carton-fix rows are copies so they match too) are deleted. None found and live stock does not read `lwb_goods_inward_items` = refused, nothing changed. The SQL result row says which link was found on live.
+- Delete also: vehicle-check stock moves CANCELLED, check / claim deleted, photos hidden (`removed_at`), open photo tasks CANCELLED, PURCHASE_BILL bells removed, the COMPANY_IN pallet / sheet entry of the bill removed, other FK children removed.
+- Edit: old invoice no. renamed for the moment, corrected bill posted through `lwb_post_goods_inward(_mrp)` (same GST / stock rules), check / claim, stock moves, photos, tasks, bells, other FK children, time in / out, godown manager moved to the new bill id; damage lines of a removed SKU dropped; old bill + its stock rows removed. One transaction.
+- UI: Purchase List row (Admin) "✏️ Bill" -> `goods-inward.html?edit=<id>` (form filled, note on top, damage box / pallets / godown pick hidden, duplicate check ignores this bill, "Save changes" asks the reason). "🗑" -> popup with stock − per SKU and stock after, minus-stock / claim / photo warnings, reason, Delete bill. Screenshots: project files `purchase-bill-edit-delete/`.
+- Not checked on live data: the real link column of `lwb_inventory_movements` (see the SQL result after merge).
+
 ## Inventory: Opening + In − Out = Closing, Stock Out fix, stock check (6 Nov 2026)
 
 - Mohit (Rajnigandha screenshot): Stock In / Stock Out / opening did not add up; Stock Out showed 0 POs loaded.

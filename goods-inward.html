@@ -125,6 +125,7 @@ main{margin:14px auto}.panel{padding:14px 16px;margin-bottom:12px}
 .field input.bad{border-color:#d97706;background:#fffaf0}
 body.td-open{overflow:hidden}
 .gi-check{gap:8px 14px}.gi-check select#dmgMode{min-width:0;width:auto;max-width:100%}
+.gi-editnote{border:1px solid #f0c36a;background:#fff8e8;color:#6b4500;border-radius:8px;padding:8px 12px;font-size:13px;margin-top:4px}.gi-editnote[hidden]{display:none}
 #giDocsBox{margin-left:auto}#giDocsBox[hidden]{display:none}
 @media(max-width:540px){main .statrow{grid-template-columns:repeat(3,minmax(0,1fr))!important;gap:6px!important;margin:8px 0!important}main .statrow .stat{padding:6px 8px!important}main .statrow .stat span{font-size:10.5px!important;margin-bottom:1px!important}main .statrow .stat strong{font-size:13.5px!important}}
 @media(max-width:700px){.gi-check label{flex-basis:100%}.gi-check select#dmgMode{width:100%}#giDocsBox{margin-left:0;flex-basis:100%}}
@@ -146,7 +147,7 @@ body.td-open{overflow:hidden}
   <section class="keybox" id="keybox"><div class="flex"><div class="field" style="flex:1;min-width:220px"><label for="keyInput">Browser-safe Supabase Publishable Key</label><input id="keyInput" placeholder="sb_publishable_..." autocomplete="off"></div><button id="connect" type="button">Connect</button></div></section>
 
   <section class="panel">
-    <div class="sectionhead"><div><h2>New Purchase / Goods Inward</h2></div><span id="access" class="tag">Connecting...</span><a href="purchase-register.html" class="gi-list-link">📋 Purchase List</a></div>
+    <div class="sectionhead"><div><h2 id="giTitle">New Purchase / Goods Inward</h2></div><span id="access" class="tag">Connecting...</span><a href="purchase-register.html" class="gi-list-link">📋 Purchase List</a></div>
     <div class="form-grid">
       <div class="field w2"><label for="supplierSearch">Supplier / Company *</label><div class="search-wrap"><input id="supplierSearch" type="search" autocomplete="off" role="combobox" aria-autocomplete="list" aria-controls="supplierResults" aria-expanded="false" placeholder="Type supplier name or code..." required><div id="supplierResults" class="search-results" role="listbox"></div></div><select id="supplier" hidden aria-hidden="true"><option value="">Choose supplier</option></select><select id="taxMode" hidden aria-hidden="true"><option value="intrastate">CGST + SGST</option><option value="interstate">IGST</option></select><div class="hint" id="supplierHint">Select a Supplier from Master. <a href="supplier-master.html">Add / Edit Supplier</a></div></div>
       <div class="field"><label for="invoice">Invoice No. *</label><input id="invoice" maxlength="100" required placeholder="Invoice Number" autocomplete="off"><div class="hint dup-msg" id="invoiceHint"></div></div>
@@ -164,8 +165,8 @@ body.td-open{overflow:hidden}
       <div class="field"><label for="driverName">Driver Name <span class="td-req">*</span></label><input id="driverName" maxlength="100" placeholder="Driver full name" autocomplete="off"></div>
       <div class="field"><label for="driverMobile">Driver Mobile <span class="td-req">*</span></label><input id="driverMobile" type="tel" inputmode="tel" maxlength="20" placeholder="10-digit mobile or +91" autocomplete="off"></div>
       <div class="field w2" id="godownRow" hidden><label for="godownMgr">Godown Manager <span class="td-req">*</span></label><select id="godownMgr"><option value="">Choose Godown Manager</option></select><div class="hint">Only this person gets the "vehicle arrived" popup.</div></div>
-      <div class="field"><label for="spPallets" title="Added to the Sheet &amp; Pallet company ledger when the bill is saved">Pallets Received</label><input id="spPallets" type="number" min="0" step="1" inputmode="numeric" placeholder="0"></div>
-      <div class="field"><label for="spSheets" title="Added to the Sheet &amp; Pallet company ledger when the bill is saved">Sheets Received</label><input id="spSheets" type="number" min="0" step="1" inputmode="numeric" placeholder="0"></div>
+      <div class="field gi-sp"><label for="spPallets" title="Added to the Sheet &amp; Pallet company ledger when the bill is saved">Pallets Received</label><input id="spPallets" type="number" min="0" step="1" inputmode="numeric" placeholder="0"></div>
+      <div class="field gi-sp"><label for="spSheets" title="Added to the Sheet &amp; Pallet company ledger when the bill is saved">Sheets Received</label><input id="spSheets" type="number" min="0" step="1" inputmode="numeric" placeholder="0"></div>
       <div class="field w2"><label for="remarks">Remarks</label><input id="remarks" maxlength="500" placeholder="Optional inward notes"></div>
      </div>
      <div class="td-foot"><span class="small td-msg" id="tdMsg"></span><button type="button" id="tdDone">Done</button></div>
@@ -188,7 +189,8 @@ Cess is not included: an SKU with Cess cannot be saved yet.">i</button></h2></di
       <div class="stat"><span>GST Amount</span><strong id="totalGst" class="money">₹0.00</strong></div>
       <div class="stat"><span>Total Amount</span><strong id="totalAmount" class="money">₹0.00</strong></div>
     </div>
-    <div class="dmg-box">
+    <div class="gi-editnote" id="editNote" hidden></div>
+    <div class="dmg-box" id="dmgBox">
       <div class="dmg-head gi-check"><label for="dmgMode">Damage / Leakage?</label>
         <select id="dmgMode" title="Damage / Leakage / Shortage in this vehicle"><option value="later">Check later (Godown Manager task)</option><option value="no">No: all received OK</option><option value="yes">Yes: damage / leakage / shortage</option></select>
         <div id="giDocsBox" hidden><div id="giDocs"></div></div></div>
@@ -404,7 +406,7 @@ function recalc(){
   const strict=tdStrict(),dName=$('driverName').value.trim(),dMob=$('driverMobile').value.trim();
   const driverNameOkay=dName.length<=100&&(!strict||dName.length>0);
   const driverMobileOkay=dMob?validDriverMobile(dMob):!strict;
-  const godownOkay=!strict||isGodown()||!godownList||!godownList.length||!!$('godownMgr').value;
+  const godownOkay=!strict||isGodown()||!!editBill||!godownList||!godownList.length||!!$('godownMgr').value;
   // Without the Transport Master the typed name is saved on the bill as text.
   const transportOkay=!transportMasterReady||!$('transport').value.trim() || transports.some(t=>t.id===transportSelectedId&&t.transport_name===$('transport').value);
   const everyValid=rows.length>0&&rows.every(r=>r.sku&&r.normalized!==null&&r.amountsOkay);
@@ -422,7 +424,7 @@ function recalc(){
 let dupHits=[],dupFor='',dupTimer=0,dupShown='';
 const invKey=v=>String(v||'').toUpperCase().replace(/[^A-Z0-9]/g,'');
 function dupSame(){const sup=pickedSupplier();if(!sup||!dupHits.length||dupFor!==invKey($('invoice').value))return false;
-  return dupHits.some(h=>(h.supplier_id&&h.supplier_id===sup.id)||String(h.supplier_name||'').toUpperCase()===String(sup.supplier_name||'').toUpperCase());}
+  return dupHits.some(h=>!(editBill&&h.id===editBill.id)&&((h.supplier_id&&h.supplier_id===sup.id)||String(h.supplier_name||'').toUpperCase()===String(sup.supplier_name||'').toUpperCase()));}
 async function checkDuplicate(popup){
   const raw=$('invoice').value.trim(),key=invKey(raw);
   if(!db||!key){dupHits=[];dupFor='';showDup(false);return;}
@@ -430,7 +432,7 @@ async function checkDuplicate(popup){
     let r=await db.rpc('lwb_purchase_invoice_find',{p_invoice:raw});
     if(r.error)r=await db.from('lwb_goods_inward').select('id,invoice_no,supplier_name,invoice_date,received_date,vehicle_no').ilike('invoice_no',raw.replace(/[%_]/g,''));
     if(invKey($('invoice').value)!==key)return; // typed on meanwhile
-    dupHits=r.error?[]:(r.data||[]);dupFor=key;
+    dupHits=(r.error?[]:(r.data||[])).filter(h=>!(editBill&&h.id===editBill.id));dupFor=key;
   }
   showDup(popup);
 }
@@ -504,7 +506,7 @@ async function start(key){
     if(profileError)throw profileError;if(!prof||prof.active!==true)throw new Error('Active ERP profile required.');
     prof.role=await lwbPageRole(prof.role);profile=prof;$('access').textContent=prof.role==='warehouse'?'GODOWN MANAGER — GOODS INWARD':CAN_POST.includes(prof.role)?prof.role.toUpperCase()+' — GOODS INWARD':'VIEW ONLY';
     godownMode();
-    $('keybox').style.display='none';clearNotice();await loadData();await mountGiDocs();
+    $('keybox').style.display='none';clearNotice();await loadData();await mountGiDocs();await loadEdit();
   }catch(e){$('access').textContent='Not connected';$('keybox').style.display='block';show('Connection failed: '+(e.message||String(e)));}
   recalc();
 }
@@ -513,7 +515,7 @@ let godownList=null;
 async function loadGodownManagers(){
   const r=await db.rpc('lwb_godown_managers');
   godownList=r.error?null:(r.data||[]);
-  $('godownRow').hidden=isGodown()||!godownList||!godownList.length;if(!godownList)return;
+  $('godownRow').hidden=isGodown()||!!editBill||!godownList||!godownList.length;if(!godownList)return;
   let last='';try{last=localStorage.getItem('lwbGiGodown')||''}catch(e){}
   const cur=$('godownMgr').value||last;
   $('godownMgr').replaceChildren(new Option('Choose Godown Manager',''),...godownList.map(m=>new Option(m.full_name+(m.mobile?' · '+m.mobile:''),m.user_id)));
@@ -704,7 +706,7 @@ async function save(){
   if(dmgMode==='yes'&&giDocs&&!giDocs.has('DAMAGE')&&!await confirm('No photo of the damage / leakage is added.\n\nA photo helps the company accept the claim. Save without a photo?'))return;
   const dmgNote=$('dmgNote').value.trim();
   const godownId=isGodown()?null:($('godownMgr').value||null);
-  if(tdStrict()&&!isGodown()&&godownList&&godownList.length&&!godownId){tdOpen();show('Choose the Godown Manager who will check this vehicle. Only that person gets the "vehicle arrived" popup.');$('godownMgr').focus();return;}
+  if(!editBill&&tdStrict()&&!isGodown()&&godownList&&godownList.length&&!godownId){tdOpen();show('Choose the Godown Manager who will check this vehicle. Only that person gets the "vehicle arrived" popup.');$('godownMgr').focus();return;}
   try{if(godownId)localStorage.setItem('lwbGiGodown',godownId)}catch(e){}
   const mrpBill=rows.some(r=>r.mode==='MRP');
   const items=rows.map(r=>r.mode==='MRP'
@@ -716,6 +718,7 @@ async function save(){
   const preview=rows.map(r=>`${r.sku.sku_name}: ${r.ctn?format(r.ctn)+' carton = ':''}${r.normalized.cases} ${r.unit==='BOX'?'IC':'CS'} + ${r.normalized.pcs} PCS | `+(r.mode==='MRP'
     ?`Net Sale ${rupees(r.net/100)} + GST ${r.sku.gst_rate}% on Deemed ${rupees(r.deemed/100)} (${rupees(r.gst/100)}) = Total ${rupees(r.gross/100)}`
     :`Taxable ${rupees(r.taxable/100)} + GST ${r.sku.gst_rate}% (${rupees(r.gst/100)}) = Total ${rupees(r.gross/100)}`)).join('\n');
+  if(editBill)return saveEdit(header0(supplier,invoice,driverName,driverMobile,selectedSupplier),items,preview,rupees(invoiceGross/100));
   if(!await confirm(`POST GOODS INWARD TO MAIN GODOWN?\n\nSupplier: ${supplier}\nInvoice: ${invoice}\nDriver: ${driverName||'—'}${driverMobile?' ('+driverMobile+')':''}\nSKU Lines: ${rows.length}\n${mrpBill?'Deemed / Taxable Value':'Invoice Taxable'}: ${rupees(invoiceTaxable/100)}\nGST (${ $('taxMode').value==='intrastate'?'CGST+SGST':'IGST' }): ${rupees(invoiceGst/100)}\nInvoice Total: ${rupees(invoiceGross/100)}\nPallets / Sheets: ${format(spP)} / ${format(spS)}\nVehicle check: ${dmgMode==='later'?'Check later':dmgMode==='no'?'No damage':dmgItems.map(d=>d.sku_name+' '+d.issue+' '+d.cases+' CS + '+d.pcs+' PCS').join('; ')}\n\n${preview}\n\nAll quantities will increase live stock immediately. Continue only for physically received goods.`))return;
   busy=true;recalc();
   try{
@@ -779,6 +782,65 @@ async function save(){
     await loadData();
     show(`Goods Inward SAVED successfully.\nInvoice: ${data?.invoice_no||invoice}\nSKU Lines: ${data?.sku_count||rows.length}\nTotal Pieces Added: ${format(data?.total_pcs||0)} PCS\n${mrpBill?'Deemed / Taxable Value':'Taxable Amount'}: ${rupees(invoiceTaxable/100)}\nGST Amount: ${rupees(invoiceGst/100)}\nInvoice Total: ${rupees(invoiceGross/100)}\nLive Main Godown stock updated.${taskMsg}${spMsg}${ckMsg.includes('WARNING')?'':ckMsg}${docMsg.includes('WARNING')?'':docMsg}`,spMsg.includes('WARNING')?'error':'success');
   }catch(e){let msg=e.message||String(e);if(e.code==='23505')msg='Duplicate Invoice or duplicate SKU. This supplier invoice was already posted (or SKU repeated). No stock was added.';show('Inward NOT saved: '+msg);}
+  finally{busy=false;recalc();}
+}
+function header0(supplier,invoice,driverName,driverMobile,selectedSupplier){
+  return {p_supplier_name:supplier,p_invoice_no:invoice,p_invoice_date:$('invoiceDate').value,
+    p_received_date:$('receivedDate').value,p_transport_name:$('transport').value.trim(),
+    p_vehicle_no:$('vehicle').value.trim(),p_lr_no:$('lr').value.trim(),p_remarks:$('remarks').value.trim(),
+    p_driver_name:driverName,p_driver_mobile:driverMobile,p_supplier_id:selectedSupplier.id};
+}
+// ---- Edit an old bill (Admin, from Purchase List "✏️ Bill"; lwb_purchase_bill_edit_delete_setup.sql) ----
+// The form is filled from the bill. Save posts the corrected bill like a new one and removes the old bill and
+// the stock it added, in one step on the server. The vehicle check / claim, photos and pallets stay as they are.
+const EDIT_ID=new URLSearchParams(location.search).get('edit')||'';
+let editBill=null;
+async function loadEdit(){
+  if(!EDIT_ID||!db||editBill)return;
+  if(profile?.role!=='admin'){show('Only Admin can edit a purchase bill.');return;}
+  const [h,it]=await Promise.all([db.from('lwb_goods_inward').select('*').eq('id',EDIT_ID).maybeSingle(),
+    db.from('lwb_goods_inward_items').select('*').eq('inward_id',EDIT_ID).order('id')]);
+  if(h.error||!h.data){show('Bill to edit not found: '+(h.error?h.error.message:'it may be deleted or changed already.')+'\nOpen it again from the Purchase List.');return;}
+  const b=h.data,lines=it.data||[],up=v=>String(v||'').trim().toUpperCase();
+  const sup=suppliers.find(x=>x.id===b.supplier_id)||suppliers.find(x=>up(x.supplier_name)===up(b.supplier_name));
+  if(!sup){show('Supplier "'+b.supplier_name+'" is not active in Supplier Master. Make it active there, then open Edit again.');return;}
+  editBill=b;
+  $('supplier').value=sup.id;refreshSupplierOptions();
+  $('invoice').value=b.invoice_no||'';$('invoiceDate').value=b.invoice_date||'';$('receivedDate').value=b.received_date||'';
+  $('vehicle').value=b.vehicle_no||'';$('lr').value=b.lr_no||'';$('remarks').value=b.remarks||'';
+  $('driverName').value=b.driver_name||'';$('driverMobile').value=b.driver_mobile||'';
+  $('transport').value=b.transport_name||'';const tr=transports.find(t=>up(t.transport_name)===up(b.transport_name));transportSelectedId=tr?tr.id:'';
+  $('itemsBody').replaceChildren();const missing=[];
+  for(const l of lines){
+    const sku=skus.find(x=>x.id===l.sku_id);if(!sku){missing.push(l.sku_name||l.sku_id);continue;}
+    itemRow();const card=$('itemsBody').lastElementChild;
+    card.querySelector('.sku').value=sku.id;card.querySelector('.skuSearch').value=sku.sku_name;
+    card.querySelector('.cases').value=String(Number(l.cases)||0);card.querySelector('.pcs').value=String(Number(l.pcs)||0);
+    if(billingOf(sku)==='MRP'){card.querySelector('.net').value=l.net_amount??'';card.querySelector('.deemed').value=l.deemed_value??l.taxable_amount??'';}
+    else card.querySelector('.taxable').value=l.taxable_amount??'';
+  }
+  if(!$('itemsBody').children.length)itemRow();
+  $('dmgMode').value='later';$('dmgBox').hidden=true;document.querySelectorAll('.gi-sp').forEach(x=>x.hidden=true);$('godownRow').hidden=true;
+  $('giTitle').textContent='Edit Purchase Bill · '+b.invoice_no;$('save').textContent='Save changes';$('reset').hidden=true;
+  $('editNote').hidden=false;$('giTitle').closest('.sectionhead').after($('editNote'));$('editNote').style.margin='0 0 10px';
+  $('editNote').textContent='Editing an old bill. Change qty, SKU, amount, invoice or vehicle and press Save changes: the old stock of this bill is taken out and the new qty goes in. Vehicle check / claim, photos and pallets stay as they are.'+(missing.length?' ⚠ Not active in SKU Master, so not shown: '+missing.join(', ')+'.':'');
+  document.title='Edit Purchase Bill | Luxury Wrist Brand';
+  dupFor='';await checkDuplicate(false);recalc();tdRender();
+  // the supplier list is already chosen: do not leave its dropdown open over the form
+  for(const ms of [0,500,1200])setTimeout(()=>{if(document.activeElement===$('supplierSearch'))$('supplierSearch').blur();supplierCombo.close()},ms);
+}
+async function saveEdit(header,items,preview,total){
+  const why=await prompt(`SAVE CHANGES TO BILL ${editBill.invoice_no}?\n\nOld stock of this bill is taken out, the new qty goes in.\nNew Invoice Total: ${total}\n\n${preview}\n\nWrite the reason for the change:`,'',{title:'Edit purchase bill',ok:'Save changes',placeholder:'Reason, e.g. qty typed wrong'});
+  if(why==null)return;
+  if(why.trim().length<3){show('Enter the reason for changing this bill.');return;}
+  busy=true;recalc();
+  try{
+    const {data,error}=await db.rpc('lwb_purchase_bill_edit',{p_inward:editBill.id,p_reason:why.trim(),p_header:header,p_items:items});
+    if(error)throw error;
+    show(`Bill CHANGED.\nInvoice: ${header.p_invoice_no}\nInvoice Total: ${total}\nStock updated (old qty out, new qty in).\nOpening the Purchase List...`,'success');
+    setTimeout(()=>location.replace('purchase-register.html'),1500);
+  }catch(e){let msg=e.message||String(e);if(/function|schema cache/i.test(msg))msg='Edit is not set up yet (lwb_purchase_bill_edit_delete_setup.sql runs when the change is merged).';
+    show('Bill NOT changed: '+msg+'\nNothing was changed.');}
   finally{busy=false;recalc();}
 }
 function resetForm(){transportSelectedId='';dupHits=[];dupFor='';dupShown='';if($('invoiceHint'))$('invoiceHint').textContent='';$('invoice').classList.remove('dup');$('supplierSearch').value='';for(const id of ['supplier','invoice','transport','vehicle','lr','driverName','driverMobile','remarks','spPallets','spSheets','dmgNote'])$(id).value='';
