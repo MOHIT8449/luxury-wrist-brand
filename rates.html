@@ -79,6 +79,17 @@
     .rt-grid td.num{min-width:54px}
     .rt-acts{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
     .rt-acts .rt-add{margin:0;padding:6px 12px;font-size:13.5px}
+    .rt-sub{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap;padding:8px 10px 4px!important}.rt-sub small{color:var(--erp-muted);font-size:12px}
+    .rt-base{display:inline-block;border-radius:999px;padding:2px 8px;font-size:11.5px;font-weight:700;background:#e8f5ee;color:#13824a}
+    .rt-mini{height:26px;min-width:26px;border:1px solid var(--erp-line);background:#fff;border-radius:5px;cursor:pointer;font-weight:700;padding:0 5px;margin-right:2px}
+    .erp-main .rt-mini{color:var(--erp-ink)!important;font-size:14px!important;line-height:1!important;padding:0 5px!important;min-height:0!important}.rt-mini:disabled{opacity:.35;cursor:default}.rt-mini.del{color:#b42318}
+    .rt-grid small.mg{display:block;font-size:11px;color:#6b7785;line-height:1.1;margin-top:1px}.rt-grid small.mg.neg{color:#b42318;font-weight:700}
+    .rt-grid input.own{background:#fff3c4!important;border-color:#e0b100!important;font-weight:700}
+    .rt-grid input.txt{max-width:120px;min-width:80px}
+    .erp-main .rt-grid select{height:28px!important;min-height:0!important;padding:0 4px!important;line-height:normal;width:140px;min-width:0!important;max-width:160px;font:inherit;font-size:13.5px;border:1px solid var(--erp-line);border-radius:5px;background:#fffbe6}
+    .rt-slabs tr.off td{opacity:.55}.rt-slabs tr.off td.act{opacity:1}
+    .rt-slabs td.mv{white-space:nowrap}
+    .rt-slabs input.name{min-width:150px;max-width:210px}.rt-slabs td.pk{min-width:160px}.rt-slabs th{min-width:0}.rt-slabs .skus{white-space:normal;max-width:210px}
     .rt-card-head{padding:8px 12px!important}
     /* Phone: each pack is a small card, no left-right scroll */
     @media(max-width:760px){
@@ -113,6 +124,7 @@
       .rt-grid td.pk .skus{flex:1 1 100%;max-width:none}
       .erp-main .rt-grid input,.erp-main .rt-grid input.name{max-width:none;min-width:0;height:34px;min-height:34px!important;font-size:16px}
       .rt-grid td.act{display:flex;align-items:center;gap:4px}
+      .erp-main .rt-grid select{max-width:none;width:100%;height:34px!important;font-size:15px}.erp-main .rt-grid input.txt{max-width:none;min-width:0}.rt-slabs td.mv{grid-column:1/-1}.rt-slabs td.tp{grid-column:span 2}.erp-main .rt-mini{height:34px;min-width:44px}
       .erp-main .rt-grid td.act input{width:22px;height:22px;min-height:0!important}
     }
     [hidden]{display:none!important}
@@ -145,9 +157,13 @@
   <script>
     const client=supabase.createClient("https://txkbhadzdbxpieunfvox.supabase.co","sb_publishable_W4I3Q5ODf0g17sq5uDml2Q_sLolXYEk");
     const el=id=>document.getElementById(id);
-    const SLAB_NAMES=["BELOW 3 TONE","SELF PICKUP","3 & 4 TONE","SHREE JAGDISH TRADERS"];
     const SLAB_CH=["SELF PICKUP","DIRECT VEHICLE","12 PALLET","HIGH VOLUME PARTY","MARKET RATE"];
-    const SNAP_KEYS=["gr","mepd","fb","oms","qps","roi","land","s1","s2","s3","s4"];
+    const BASE_KEYS=["gr","mepd","fb","oms","qps","roi","land"];
+    // Slab List (lwb_rate_slabs_setup.sql). Same as the rule before it, used until that file is applied.
+    const DEF_SLABS=[["s4","SHREE JAGDISH TRADERS","JAGDISH","",-5,0,1],["s2","SELF PICKUP","","SELF PICKUP",-5,0,1],["s1","BELOW 3 TON","","",5,0,1,"",3000],["s3","3 & 4 TON","","",0,1,1,3000]]
+      .map(([code,name,party,transport,diff,base,on,min_kg="",below_kg=""])=>({code,name,party,transport,min_kg,below_kg,min_pallets:"",diff,is_base:!!base,in_image:code!=="s4",active:!!on}));
+    const TRANSPORTS=["SELF PICKUP","DELIVERY","DIRECT VEHICLE"];
+    let slabs=DEF_SLABS.map(x=>({...x})),slabsOn=false;
 
     let schemes=[],schemeErr="",skuCat=new Map(),cats=[],schemeForm={cats:[],pct:"",from:"",to:"",note:""};
     let skus=[],links=new Map(),linksSaved="",linkErr="",backupLinks=null;
@@ -188,7 +204,7 @@
       }else{
         G=n(r.oms);J=D-E-G-H-I;mg=rate=>r2(rate-J);
       }
-      return {E,G,J,K:mg(L),L,M:mg(N),N,O:mg(P),P,Q:R-J,R};
+      return {E,G,J,K:mg(L),L,M:mg(N),N,O:mg(P),P,Q:R-J,R,mg};
     }
     // Today's MEPD scheme for the categories of the SKUs linked to this pack.
     function packScheme(r){
@@ -198,12 +214,19 @@
     }
     function snapRows(){
       return packs.filter(p=>p.active!==false).map(r=>{const c=calcLanding(r);
-        return {name:r.pack_name,gr:n(r.gr),mepd:r2(c.E),fb:n(r.free_bottle),oms:r2(c.G),qps:n(r.qps),roi:n(settings.roi_main),land:r2(c.J),s1:c.L,s2:c.N,s3:c.P,s4:c.R}});
+        return {name:r.pack_name,gr:n(r.gr),mepd:r2(c.E),fb:n(r.free_bottle),oms:r2(c.G),qps:n(r.qps),roi:n(settings.roi_main),land:r2(c.J),...Object.fromEntries(slabs.filter(x=>x.active).map(x=>[x.code,slabRate(r,x)]))}});
     }
-    const snapSig=rows=>rows.map(r=>[r.name].concat(SNAP_KEYS.map(k=>r[k])).join(",")).join("|");
+    const codeNo=c=>+String(c).slice(1);
+    // Slab rate of a pack: Base = the typed Base rate (slab3_rate); others = own rate of this pack, or Base ± difference.
+    function slabRate(r,x){if(x.is_base)return n(r.slab3_rate);const o=(r.own||{})[x.code];return o!=null&&o!==""?+o:r2(n(r.slab3_rate)+n(x.diff))}
+    // Columns of the ledger: rates + every slab that is ON now or was in an old entry (s1..s4 = the old 4 slabs).
+    function snapKeys(){const c=new Set(slabs.filter(x=>x.active).map(x=>x.code));history.forEach(e=>(e.rows||[]).forEach(r=>Object.keys(r).forEach(k=>{if(/^s\d+$/.test(k))c.add(k)})));
+      return BASE_KEYS.concat([...c].sort((a,b)=>codeNo(a)-codeNo(b)))}
+    const slabLbl=k=>{const x=slabs.find(y=>y.code===k);return x?x.name:"Slab "+codeNo(k)};
+    const snapSig=rows=>{const K=snapKeys();return rows.map(r=>[r.name].concat(K.map(k=>r[k])).join(",")).join("|")};
     function ratesChanged(){const last=history[0];return !last||snapSig(last.rows||[])!==snapSig(snapRows())}
 
-    const stateNow=()=>JSON.stringify({settings,packs});
+    const stateNow=()=>JSON.stringify({settings,packs,slabs});
     function isDirty(){return stateNow()!==saved}
     function showState(){
       const d=isDirty();
@@ -227,8 +250,13 @@
       checkOn=!!s.data&&"check_margin" in s.data&&me.realRole==="admin";el("chkWrap").hidden=!checkOn;
       packs=(p.data||[]).map(x=>({id:x.id,sort_no:x.sort_no,pack_name:x.pack_name,case_config:+x.case_config,gr:+x.gr,mepd_pct:numOrBlank(x.mepd_pct),
         free_bottle:+x.free_bottle,oms:numOrBlank(x.oms),qps:+x.qps,slab3_rate:+x.slab3_rate,unit_weight:numOrBlank(x.unit_weight),bottle:numOrBlank(x.bottle),
-        slab_landing:numOrBlank(x.slab_landing),slab_margins:[0,1,2,3,4].map(i=>numOrBlank((x.slab_margins||[])[i])),min_margin:numOrBlank(x.min_margin),active:x.active!==false})).sort((a,b)=>a.sort_no-b.sort_no||a.pack_name.localeCompare(b.pack_name));
+        slab_landing:numOrBlank(x.slab_landing),slab_margins:[0,1,2,3,4].map(i=>numOrBlank((x.slab_margins||[])[i])),min_margin:numOrBlank(x.min_margin),own:{},active:x.active!==false})).sort((a,b)=>a.sort_no-b.sort_no||a.pack_name.localeCompare(b.pack_name));
       history=h.data||[];
+      try{const [sl,sr]=await Promise.all([client.from("lwb_rate_slabs").select("*").order("sort_no").order("code"),client.from("lwb_rate_slab_rates").select("pack_id,code,rate")]);
+        if(!sl.error&&(sl.data||[]).length){slabsOn=true;slabs=sl.data.map(x=>({code:x.code,name:x.name,party:x.party||"",transport:x.transport||"",min_kg:numOrBlank(x.min_kg),below_kg:numOrBlank(x.below_kg),
+          min_pallets:numOrBlank(x.min_pallets),diff:+x.diff,is_base:!!x.is_base,in_image:x.in_image!==false,active:x.active!==false}))}
+        if(!sr.error)(sr.data||[]).forEach(x=>{const pk=packs.find(q=>q.id===x.pack_id);if(pk)pk.own[x.code]=+x.rate});
+      }catch(e){slabsOn=false}
       try{const pp=await client.rpc("lwb_rate_history_people");people=pp.error?{}:(pp.data||{})}catch(e){people={}}
       if(!el("vf").value)el("vf").value=LWBMepd.day();
       saved=stateNow();
@@ -399,7 +427,7 @@
     function renderLanding(){
       el("tabTitle").textContent="Landing";
       el("tabInfo").textContent=packs.filter(p=>p.active!==false).length+" packs";
-      el("tabNote").textContent="Landing only. Slab 1–4 margins / MGR rates are in the \"Slab Rate\" tab. For packs with free bottles, OMS is calculated from the Slab 3 rate. Blank MEPD % = default MEPD above; a red Scheme % means today's MEPD Scheme % is applied. Blank OMS = calculated by the free bottle formula. Unticking Active disables the pack (it is not deleted).";
+      el("tabNote").textContent="Landing only. Slab rates are in the \"Slab Rate\" tab. For packs with free bottles, OMS is calculated from the Slab 3 rate. Blank MEPD % = default MEPD above; a red Scheme % means today's MEPD Scheme % is applied. Blank OMS = calculated by the free bottle formula. Unticking Active disables the pack (it is not deleted).";
       const shown=packs.filter(packShown).length;
       el("tabInfo").textContent=(shown<packs.length?shown+" of "+packs.length+" shown · ":"")+packs.filter(p=>p.active!==false).length+" packs";
       const td=(l,v,cls)=>'<td data-l="'+l+'"'+(cls?' class="'+cls+'"':"")+">"+v+"</td>";
@@ -423,32 +451,69 @@
       el("box").innerHTML=h;
       if(!packs.length)el("box").insertAdjacentHTML("afterbegin",'<div class="erp-empty">No packs yet. Use "PO Maker backup import" above to bring in old data, or click "+ New pack".</div>');
     }
+    // Plain words for a slab rule: "Party has JAGDISH · Transport = SELF PICKUP · 3,000 kg or more"
+    function slabWhen(x){
+      const w=[];if(x.party)w.push("Party has "+x.party);if(x.transport)w.push("Transport = "+x.transport.toLowerCase());
+      if(x.min_kg!==""&&x.below_kg!=="")w.push(fmt(x.min_kg)+" to below "+fmt(x.below_kg)+" kg");else if(x.min_kg!=="")w.push(fmt(x.min_kg)+" kg or more");else if(x.below_kg!=="")w.push("below "+fmt(x.below_kg)+" kg");
+      if(x.min_pallets!=="")w.push(fmt(x.min_pallets)+" pallets or more");
+      return w.length?w.join(" · "):"Every order with weight";
+    }
+    const diffTxt=d=>n(d)>0?"+"+fmt(d,n(d)%1?2:0):n(d)<0?"−"+fmt(-n(d),n(d)%1?2:0):"0";
     function renderSlabRate(){
       el("tabTitle").textContent="Slab Rate";
-      el("tabInfo").textContent="Enter the Slab 3 MGR rate";
-      el("tabNote").textContent="Enter the Slab 3 MGR rate; Slab 1 = +5, Slab 2 and 4 = −5. Margin = MGR rate − landing. PO / Sales Order Entry uses these rates. Min rate = Landing + Min margin (Admin): a Sales Head can not approve a PO below it, it goes to Admin for rate OK. Blank Min margin = no limit.";
-      let h='<div class="rt-bar" style="align-items:center"><div><label>Rate list date</label><input type="date" id="imgDate" value="'+esc(imgDate||LWBMepd.day())+'"></div>'+
-        '<button type="button" id="imgCopy" style="margin-top:20px">📋 Copy image (WhatsApp)</button><button type="button" id="imgSave" style="margin-top:20px;background:#fff;color:var(--erp-ink);border-color:var(--erp-line)">⬇ Image download</button></div>'+
-        '<table class="rt-table rt-grid"><thead><tr><th>#</th><th class="l">PACK</th><th>LANDING</th>'+
-        SLAB_NAMES.map((s,i)=>"<th>SLAB "+(i+1)+" MARGIN<small>"+esc(s)+"</small></th><th>MGR RATE</th>").join("")+'<th class="mn">MIN MARGIN<small>Admin</small></th><th class="mn">MIN RATE</th></tr></thead><tbody>';
+      const on=slabs.filter(x=>x.active),base=on.find(x=>x.is_base)||{code:"s3",name:"BASE",is_base:true};
+      el("tabInfo").textContent=on.length+" slabs ON · type only the "+base.name+" (Base) rate";
+      el("tabNote").textContent="1. Slab List: top to bottom, the first slab whose rule fits the order is used (PO Entry picks it by itself, and Admin / Sales Head get the \"please check\" popup below it). Blank box = any. 2. Type only the Base rate; other slabs = Base ± difference. Type a rate in a slab box to give that pack its own rate (yellow); clear it to go back. Small number = margin over landing. Min rate = Landing + Min margin (Admin): a Sales Head can not approve a PO below it. Blank Min margin = no limit.";
+      const dis=me.edit&&slabsOn?"":" disabled";
+      const sIn=(k,f,v,w)=>'<input data-i="s'+k+'" data-f="sl_'+f+'" value="'+esc(v)+'"'+(w?' class="'+w+'"':' inputmode="decimal"')+' autocomplete="off"'+dis+">";
       const td=(l,v,cls)=>'<td data-l="'+l+'"'+(cls?' class="'+cls+'"':"")+">"+v+"</td>";
+      // 1. Slab List
+      let h='<div class="erp-card-body rt-sub"><b>1. Slab List</b><small>Set once. Top to bottom: the first rule that fits is used.</small></div>'+
+        '<table class="rt-table rt-grid rt-slabs"><thead><tr><th>#</th><th class="l">SLAB NAME</th><th class="l">PARTY HAS</th><th class="l">TRANSPORT</th><th>KG FROM</th><th>KG BELOW</th><th>PALLETS FROM</th><th>₹ VS BASE<small>per case</small></th><th>BASE</th><th>IN IMAGE</th><th>ON</th><th></th></tr></thead><tbody>';
+      slabs.forEach((x,k)=>{
+        h+='<tr class="'+(x.active?"":"off")+'"><td class="idx">'+(k+1)+'</td><td class="l pk">'+sIn(k,"name",x.name,"name")+'<div class="skus">'+esc(slabWhen(x))+"</div></td>"+
+          td("Party has",sIn(k,"party",x.party,"txt"),"l")+
+          td("Transport",'<select data-i="s'+k+'" data-f="sl_transport"'+dis+'><option value="">Any</option>'+TRANSPORTS.map(t=>'<option'+(t===x.transport?" selected":"")+">"+t+"</option>").join("")+"</select>","l tp")+
+          td("Kg from",sIn(k,"min_kg",x.min_kg))+td("Kg below",sIn(k,"below_kg",x.below_kg))+td("Pallets from",sIn(k,"min_pallets",x.min_pallets))+
+          td("₹ vs Base",x.is_base?'<span class="rt-base">BASE</span>':sIn(k,"diff",x.diff))+
+          td("Base",'<input type="radio" name="slBase" aria-label="Base" data-i="s'+k+'" data-f="sl_base"'+(x.is_base?" checked":"")+dis+">","act")+
+          td("Image",'<input type="checkbox" aria-label="In image" data-i="s'+k+'" data-f="sl_image"'+(x.in_image?" checked":"")+dis+">","act")+
+          td("On",'<input type="checkbox" aria-label="On" data-i="s'+k+'" data-f="sl_on"'+(x.active?" checked":"")+dis+">","act")+
+          '<td class="act mv">'+(me.edit&&slabsOn?'<button type="button" class="rt-mini" data-smove="'+k+'|-1" title="Up"'+(k?"":" disabled")+'>↑</button><button type="button" class="rt-mini" data-smove="'+k+'|1" title="Down"'+(k<slabs.length-1?"":" disabled")+'>↓</button>'+
+            (x.is_base?"":'<button type="button" class="rt-mini del" data-sdel="'+k+'" title="Remove">✕</button>'):"")+"</td></tr>";
+      });
+      h+="</tbody></table>";
+      if(!slabsOn)h+='<div class="erp-card-body" style="color:#b42318;font-size:12.5px">Slab List is not set up yet (lwb_rate_slabs_setup.sql). Today\'s rule is shown; it can be changed once that file is applied.</div>';
+      else if(me.edit)h+='<div class="rt-acts"><button type="button" class="rt-add" id="slabAdd">+ New slab</button></div>';
+      // 2. Rates per pack
+      const cols=on.filter(x=>!x.is_base);
+      h+='<div class="erp-card-body rt-sub"><b>2. Slab Rate</b><small>Type only the '+esc(base.name)+' (Base) rate.</small></div>'+
+        '<div class="rt-bar" style="align-items:flex-end;padding:0 10px 6px"><div><label>Rate list date</label><input type="date" id="imgDate" value="'+esc(imgDate||LWBMepd.day())+'"></div>'+
+        '<button type="button" id="imgCopy">📋 Copy image (WhatsApp)</button><button type="button" id="imgSave" style="background:#fff;color:var(--erp-ink);border-color:var(--erp-line)">⬇ Image download</button></div>'+
+        '<table class="rt-table rt-grid"><thead><tr><th>#</th><th class="l">PACK</th><th>LANDING</th><th>'+esc(base.name)+"<small>BASE · type here</small></th>"+
+        cols.map(x=>"<th>"+esc(x.name)+"<small>"+diffTxt(x.diff)+"</small></th>").join("")+'<th class="mn">MIN MARGIN<small>Admin</small></th><th class="mn">MIN RATE</th></tr></thead><tbody>';
+      const mgn=(c,rate)=>'<small class="mg'+(c.mg(rate)<0?" neg":"")+'">'+fmt(c.mg(rate),2)+"</small>";
       packs.forEach((r,i)=>{if(!packShown(r))return;const c=calcLanding(r);
         h+='<tr class="'+(r.active===false?"off":"")+'"><td class="idx">'+(i+1)+'</td><td class="l pk"><b>'+esc(r.pack_name)+"</b></td>"+td("Landing",fmt(c.J,2),"strong")+
-          td("S1 margin",fmt(c.K,2))+td("S1 rate",fmt(c.L))+td("S2 margin",fmt(c.M,2))+td("S2 rate",fmt(c.N))+td("S3 margin",fmt(c.O,2))+td("S3 MGR rate",cellInput(i,"slab3_rate",r.slab3_rate))+td("S4 margin",fmt(c.Q,2))+td("S4 rate",fmt(c.R))+
+          td(esc(base.name)+" (Base)",cellInput(i,"slab3_rate",r.slab3_rate)+mgn(c,n(r.slab3_rate)),"bs")+
+          cols.map(x=>{const own=(r.own||{})[x.code]!=null,rate=slabRate(r,x),calc=r2(n(r.slab3_rate)+n(x.diff));
+            return td(esc(x.name),cellInput(i,"own:"+x.code,own?rate:"").replace("<input",'<input placeholder="'+esc(fmt(calc))+'"'+(own?' class="own" title="Own rate of this pack (Base '+esc(diffTxt(x.diff))+' = '+esc(fmt(calc))+')"':""))+mgn(c,rate))}).join("")+
           td("Min margin",me.realRole==="admin"?cellInput(i,"min_margin",r.min_margin):esc(r.min_margin===""?"—":r.min_margin),"mn")+td("Min rate",r.min_margin===""||r.min_margin==null?'<span style="color:#889;font-weight:400">No limit</span>':fmt(r2(c.J+n(r.min_margin)),2),"mn strong")+"</tr>";
       });
       if(!packs.length)h+='<tr><td colspan="13" class="l">Create packs in the Landing tab first.</td></tr>';
       h+="</tbody></table>";
-      if(me.edit)h+='<button type="button" class="rt-add" id="saveBelow" style="border-style:solid;background:var(--erp-red);color:#fff;border-color:var(--erp-red)"'+(isDirty()?"":" disabled")+'>Save</button>';
+      if(me.edit)h+='<div class="rt-acts"><button type="button" class="rt-add" id="saveBelow" style="border-style:solid;background:var(--erp-red);color:#fff;border-color:var(--erp-red)"'+(isDirty()?"":" disabled")+'>Save</button></div>';
       el("box").innerHTML=h;
     }
     let imgDate="";
-    // Market rate list image: active packs with a Slab 3 rate, Slab 1-3 MGR rate (Slab 4 is one party's, so it stays out)
+    // Market rate list image: active packs with a Base rate; slabs ON with "In image" ticked (party slabs usually off), in slab number order.
     function slabImage(){
       imgDate=el("imgDate").value||LWBMepd.day();
-      const rows=packs.filter(r=>r.active!==false&&String(r.pack_name).trim()&&n(r.slab3_rate)>0).map(r=>{const c=calcLanding(r);return{name:r.pack_name.trim(),rates:[c.L,c.N,n(r.slab3_rate)]}});
-      if(!rows.length)throw Error("No pack has a Slab 3 rate entered.");
-      return LWBSlabImage.draw({date:LWBDate.d(imgDate),heads:SLAB_NAMES.slice(0,3).map((t,i)=>[t,"SLAB "+(i+1)]),rows});
+      const cols=slabs.filter(x=>x.active&&x.in_image).sort((a,b)=>codeNo(a.code)-codeNo(b.code)).slice(0,6);
+      if(!cols.length)throw Error("Tick \"In image\" for at least one slab.");
+      const rows=packs.filter(r=>r.active!==false&&String(r.pack_name).trim()&&n(r.slab3_rate)>0).map(r=>({name:r.pack_name.trim(),rates:cols.map(x=>slabRate(r,x))}));
+      if(!rows.length)throw Error("No pack has a Base rate entered.");
+      return LWBSlabImage.draw({date:LWBDate.d(imgDate),heads:cols.map(x=>[x.name,"SLAB "+codeNo(x.code)]),rows});
     }
     function renderSlab(){
       el("tabTitle").textContent="Slab";
@@ -498,11 +563,11 @@
       el("tabTitle").textContent="Rate Ledger";
       el("tabInfo").textContent=history.length+" entries";
       el("tabNote").textContent=ratesChanged()?"Rates or schemes have changed; saving will create a new entry.":"The ledger is up to date. Past entries are never changed or deleted.";
-      const LBL={gr:"GR",mepd:"MEPD",fb:"Free btl",oms:"OMS",qps:"QPS",roi:"ROI",land:"Landing",s1:"Slab 1",s2:"Slab 2",s3:"Slab 3",s4:"Slab 4"};
+      const SNAP_KEYS=snapKeys(),LBL={gr:"GR",mepd:"MEPD",fb:"Free btl",oms:"OMS",qps:"QPS",roi:"ROI",land:"Landing"};SNAP_KEYS.forEach(k=>{if(!LBL[k])LBL[k]=slabLbl(k)});
       const td=(l,v,cls)=>'<td data-l="'+l+'"'+(cls?' class="'+cls+'"':"")+">"+v+"</td>";
       const num=(k,v)=>fmt(v,["mepd","oms","land"].includes(k)?2:k==="fb"?1:0);
       const vals=(r,prev)=>SNAP_KEYS.map(k=>'<td data-l="'+LBL[k]+'"'+(prev&&prev[k]!==r[k]?' class="chg" title="previously '+esc(prev[k])+'"':"")+">"+num(k,r[k])+"</td>").join("");
-      const head='<th>GR</th><th>MEPD</th><th>FREE BTL</th><th>OMS</th><th>QPS</th><th>ROI</th><th>LANDING</th><th>SLAB 1</th><th>SLAB 2</th><th>SLAB 3</th><th>SLAB 4</th>';
+      const head='<th>GR</th><th>MEPD</th><th>FREE BTL</th><th>OMS</th><th>QPS</th><th>ROI</th><th>LANDING</th>'+SNAP_KEYS.slice(BASE_KEYS.length).map(k=>"<th>"+esc(LBL[k])+"</th>").join("");
       // 1. Rates on a day: which scheme was running that day (to check the POs punched that day)
       const day=ledDay||LWBMepd.day(),on=entryOn(day);
       let h='<div class="erp-card-body rt-led-day"><b>Rates on date</b><input type="date" id="ledDay" value="'+esc(day)+'">'+
@@ -523,7 +588,7 @@
       // 3. All entries
       h+='<div class="erp-card-body"><b>Ledger entries (date wise)</b></div><table class="rt-table rt-grid"><thead><tr><th>#</th><th class="l">SAVED</th><th class="l">VALID FROM</th><th class="l">BY</th><th class="l">NOTE</th><th class="l">CHANGES (vs previous entry)</th></tr></thead><tbody>';
       history.forEach((e,idx)=>{const P=history[idx+1];
-        const ch=P?(e.rows||[]).map(r=>{const o=(P.rows||[]).find(x=>x.name===r.name);if(!o)return r.name+": new";const ks=SNAP_KEYS.filter(k=>o[k]!==r[k]);return ks.length?r.name+": "+ks.map(k=>k.toUpperCase()+" "+fmt(o[k],2)+"→"+fmt(r[k],2)).join(", "):""}).filter(Boolean):["First entry"];
+        const ch=P?(e.rows||[]).map(r=>{const o=(P.rows||[]).find(x=>x.name===r.name);if(!o)return r.name+": new";const ks=SNAP_KEYS.filter(k=>o[k]!==r[k]);return ks.length?r.name+": "+ks.map(k=>String(LBL[k]).toUpperCase()+" "+fmt(o[k],2)+"→"+fmt(r[k],2)).join(", "):""}).filter(Boolean):["First entry"];
         h+='<tr><td class="idx">'+(history.length-idx)+'</td><td class="l pk"><b>'+esc(dtTxt(e.created_at))+"</b>"+clips(e)+"</td>"+td("Valid from",esc(fromTxt(e)),"l")+td("By",esc(byTxt(e)),"l")+td("Note",esc(e.note||""),"l nt")+
           td("Changes",esc(ch.slice(0,8).join(" | ")+(ch.length>8?" | +"+(ch.length-8)+" more":"")),"wrap full")+"</tr>";});
       if(!history.length)h+='<tr><td colspan="6" class="l">No entries yet.</td></tr>';
@@ -539,8 +604,15 @@
         clearTimeout(render._t);render._t=setTimeout(()=>keepFocus(render),250);return;
       }
       const sf={scPct:"pct",scFrom:"from",scTo:"to",scNote:"note"}[t.id];if(sf){schemeForm[sf]=t.value;return}
-      if(t.dataset.i==null||t.type==="checkbox")return;
+      if(t.dataset.i==null||t.type==="checkbox"||t.type==="radio"||t.tagName==="SELECT")return;
+      if(String(t.dataset.i)[0]==="s"){const x=slabs[+t.dataset.i.slice(1)],f=t.dataset.f.slice(3),v=t.value.trim();
+        if(f==="name")x.name=t.value.toUpperCase();else if(f==="party")x.party=t.value.toUpperCase().trim();
+        else x[f]=v===""?(f==="diff"?0:""):(isNaN(+v)?x[f]:+v);
+        clearTimeout(render._t);render._t=setTimeout(()=>keepFocus(render),450);showState();return}
       const r=packs[+t.dataset.i],f=t.dataset.f,v=t.value.trim();
+      if(f.startsWith("own:")){const code=f.slice(4),x=slabs.find(y=>y.code===code);r.own=r.own||{};
+        if(v===""||isNaN(+v)||(x&&+v===r2(n(r.slab3_rate)+n(x.diff))))delete r.own[code];else r.own[code]=+v;
+        clearTimeout(render._t);render._t=setTimeout(()=>keepFocus(render),450);showState();return}
       if(f==="pack_name")r.pack_name=t.value;
       else if(/^m\d$/.test(f))r.slab_margins[+f.slice(1)]=v===""?"":(isNaN(+v)?r.slab_margins[+f.slice(1)]:+v);
       else if(["mepd_pct","oms","unit_weight","bottle","slab_landing","min_margin"].includes(f))r[f]=v===""?"":(isNaN(+v)?r[f]:+v);
@@ -551,6 +623,10 @@
     document.addEventListener("change",e=>{
       const t=e.target;
       if(t.type==="checkbox"&&t.dataset.f==="active"){packs[+t.dataset.i].active=t.checked;render();return}
+      if(t.dataset.f&&t.dataset.f.startsWith("sl_")&&String(t.dataset.i)[0]==="s"){const k=+t.dataset.i.slice(1),x=slabs[k],f=t.dataset.f;
+        if(f==="sl_transport")x.transport=t.value;else if(f==="sl_image")x.in_image=t.checked;else if(f==="sl_on")x.active=t.checked;
+        else if(f==="sl_base"){slabs.forEach((y,j)=>{y.is_base=j===k});x.diff=0;x.active=true}
+        keepFocus(render);return}
       if(t.dataset.scat!=null){const c=t.dataset.scat;schemeForm.cats=t.checked?[...new Set([...schemeForm.cats,c])]:schemeForm.cats.filter(x=>x!==c);return}
       if(t.id==="ledSku"){ledSku=+t.value;renderLedger();return}
       if(t.id==="ledDay"){ledDay=t.value;renderLedger();return}
@@ -583,6 +659,14 @@
       const b=e.target.closest("[data-tab]");if(b){tab=b.dataset.tab;render();return}
       const ch=e.target.closest("[data-chip]");if(ch){if(ch.dataset.chip==="cat")catF=ch.dataset.v;else sizeF=ch.dataset.v;render();return}
       if(e.target.id==="linkSave"){saveLinks();return}
+      const mv=e.target.closest("[data-smove]");if(mv){const [k,d]=mv.dataset.smove.split("|").map(Number),j=k+d;if(j<0||j>=slabs.length)return;[slabs[k],slabs[j]]=[slabs[j],slabs[k]];render();return}
+      const sd=e.target.closest("[data-sdel]");if(sd){(async()=>{const x=slabs[+sd.dataset.sdel];if(!x||x.is_base)return;
+        if(!await ERPShell.confirm("Remove slab "+x.name+"?\n\nOld Rate Ledger entries keep its rates. It is removed when you Save.",{ok:"Remove",cancel:"Keep"}))return;
+        slabs.splice(+sd.dataset.sdel,1);render()})();return}
+      if(e.target.id==="slabAdd"){const used=snapKeys().concat(slabs.map(x=>x.code)).filter(k=>/^s\d+$/.test(k)).map(codeNo);
+        slabs.push({code:"s"+(Math.max(0,...used)+1),name:"NEW SLAB",party:"",transport:"",min_kg:"",below_kg:"",min_pallets:"",diff:0,is_base:false,in_image:false,active:false});render();
+        const ins=document.querySelectorAll('input[data-f="sl_name"]');if(ins.length){ins[ins.length-1].focus();ins[ins.length-1].select()}
+        ERPShell.toast("New slab added OFF. Set its rule and ₹, move it up with ↑, then tick ON.","info");return}
       if(e.target.id==="saveBelow"){el("save").click();return}
       if(e.target.id==="imgCopy"||e.target.id==="imgSave"){const copy=e.target.id==="imgCopy";
         (async()=>{try{const cv=slabImage();if(isDirty())ERPShell.toast("Note: changes are not saved yet; the image shows the new rates.","info");
@@ -693,6 +777,14 @@
       const names=packs.map(p=>p.pack_name.trim().toUpperCase());
       const dup=names.find((x,i)=>names.indexOf(x)!==i);
       if(dup){await ERPShell.alert("Duplicate pack name: "+dup);return}
+      if(slabsOn){
+        const on=slabs.filter(x=>x.active);
+        if(on.filter(x=>x.is_base).length!==1){await ERPShell.alert("Slab List: mark one slab (ON) as Base.");return}
+        const nb=slabs.findIndex(x=>!String(x.name||"").trim());if(nb>=0){await ERPShell.alert("Slab List: enter a name for slab "+(nb+1)+".");return}
+        const sn=slabs.map(x=>x.name.trim()),sd=sn.find((x,i)=>sn.indexOf(x)!==i);if(sd){await ERPShell.alert("Slab List: duplicate slab name "+sd+".");return}
+      }
+      const slabsBefore=JSON.stringify(JSON.parse(saved).slabs),ownBefore=JSON.stringify((JSON.parse(saved).packs||[]).map(p=>[p.pack_name,p.own]));
+      const slabsDirty=slabsOn&&(JSON.stringify(slabs)!==slabsBefore||JSON.stringify(packs.map(p=>[p.pack_name,p.own]))!==ownBefore);
       const changed=ratesChanged(),note=el("note").value.trim();
       if(!await ERPShell.confirm("Save rates?\n\n"+(changed?"Rates / schemes changed: a new Rate Ledger entry will be created"+(note?" (\""+note+"\")":"")+".":"Only names / weights / slab sheet changed; no ledger entry will be created.")))return;
       busy=true;showState();
@@ -707,6 +799,13 @@
         const chkBefore=(JSON.parse(saved).settings||{}).check_margin??"",chkNow=settings.check_margin??"";
         const {error}=await client.rpc("lwb_save_rates",{p_settings:settings,p_packs:payload,p_note:note||(changed?"Rate update":null),p_snapshot:changed?snapRows():null});
         if(error)throw error;
+        if(slabsDirty){
+          const ids=await client.from("lwb_rate_packs").select("id,pack_name");
+          const idOf=new Map((ids.data||[]).map(x=>[skuKey(x.pack_name),x.id]));
+          const rates=packs.flatMap(p=>Object.entries(p.own||{}).filter(([c])=>slabs.some(x=>x.code===c&&!x.is_base)).map(([code,rate])=>({pack_id:idOf.get(skuKey(p.pack_name)),code,rate}))).filter(x=>x.pack_id);
+          const {error:se}=await client.rpc("lwb_rate_slabs_save",{p_slabs:slabs.map(x=>({...x,min_kg:x.min_kg===""?null:x.min_kg,below_kg:x.below_kg===""?null:x.below_kg,min_pallets:x.min_pallets===""?null:x.min_pallets})),p_rates:rates});
+          if(se)await ERPShell.alert("Rates saved, but the Slab List was not saved: "+se.message);
+        }
         if(checkOn&&String(chkBefore)!==String(chkNow)){
           const {error:ce}=await client.rpc("lwb_rate_check_margin_set",{p_margin:chkNow===""?null:n(chkNow)});
           if(ce)await ERPShell.alert("Rates saved, but the check margin was not saved: "+ce.message);

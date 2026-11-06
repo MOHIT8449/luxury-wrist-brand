@@ -700,12 +700,12 @@ dialog.setup-dlg{position:fixed;inset:0;margin:auto;height:fit-content}
       <div class="form-group" id="slabField">
         <label for="rateSlab">Rate slab</label>
         <select id="rateSlab" class="form-control" onchange="calculateTotals()">
-          <option value="auto">Auto (from weight / transport / party)</option>
+          <option value="auto">Auto (from party / transport / weight)</option>
           <option value="">Manual (I will enter rates)</option>
-          <option value="0">Slab 1 (Below 3 tone)</option>
-          <option value="1">Slab 2 (Self pickup)</option>
-          <option value="2">Slab 3 (3 &amp; 4 tone)</option>
-          <option value="3">Slab 4 (Shree Jagdish)</option>
+          <option value="s1">BELOW 3 TON</option>
+          <option value="s2">SELF PICKUP</option>
+          <option value="s3">3 &amp; 4 TON (Base)</option>
+          <option value="s4">SHREE JAGDISH TRADERS</option>
         </select>
         <span id="slabWhy" class="slab-why"></span>
         <span id="ratesOff" class="rates-off" hidden></span>
@@ -2770,7 +2770,7 @@ async function loadDraft(id){
     document.getElementById("pkVehicle").value = d.pickup.vehicle_no || "";
     if(d.pickup.godown_key) await loadPickupManagers(d.pickup.godown_key);
   }
-  if(d.rateSlab != null && [...document.getElementById("rateSlab").options].some(o => o.value === d.rateSlab)) document.getElementById("rateSlab").value = d.rateSlab;
+  if(d.rateSlab != null && [...document.getElementById("rateSlab").options].some(o => o.value === slabPickValue(d.rateSlab))) document.getElementById("rateSlab").value = slabPickValue(d.rateSlab);
   if(d.quantityMode === "PALLET") setQuantityMode("PALLET", true);
   document.getElementById("itemsBody").innerHTML = "";
   itemCounter = 0;
@@ -2949,6 +2949,12 @@ async function loadRates(){
     note.textContent = "Slab rate is not set yet (Rate & Scheme). Enter the rate manually.";
   }
   try{
+    const [sl,own] = await Promise.all([db.from("lwb_rate_slabs").select("*").order("sort_no").order("code"), db.rpc("lwb_order_slab_rates")]);
+    if(!sl.error && (sl.data || []).length) rateSlabs = sl.data.map(x => ({...x, party:x.party ? String(x.party).toUpperCase() : null, transport:x.transport || null}));
+    ownSlabRates = own.error ? new Map() : new Map((own.data || []).map(x => [skuKey(x.sku) + "|" + x.code, number(x.rate)]));
+  }catch(error){ console.warn("Slab List not loaded", error); }
+  fillSlabOptions();
+  try{
     const {data,error} = await db.rpc("lwb_sale_rates");
     if(!error) saleLimits = new Map((data || []).map(x => [skuKey(x.sku_key), {min:x.min_rate == null ? null : number(x.min_rate), std:x.std_rate == null ? null : number(x.std_rate)}]));
   }catch(error){ saleLimits = new Map(); }
@@ -3019,45 +3025,73 @@ function orderWeightKg(){
   return kg;
 }
 
-/* Transportation sets the slab in "Rate slab":
-   Self Pickup = Slab 2; Delivery / Direct Vehicle = Auto (by weight).
-   Shree Jagdish party stays Slab 4. "Manual" is never changed. */
+/* Slab List (Rate & Scheme > Slab Rate, lwb_rate_slabs_setup.sql): top to bottom, the first ON slab whose
+   rule fits the order (party / transport / weight / pallets) is its slab. Rate = Base (Slab 3) ± the slab's
+   ₹ difference, or the pack's own rate for that slab. Until that file is applied, today's rule is used. */
+const DEF_SLABS = [
+  {code:"s4", name:"SHREE JAGDISH TRADERS", party:"JAGDISH", diff:-5},
+  {code:"s2", name:"SELF PICKUP", transport:"SELF PICKUP", diff:-5},
+  {code:"s1", name:"BELOW 3 TON", below_kg:3000, diff:5},
+  {code:"s3", name:"3 & 4 TON", min_kg:3000, diff:0, is_base:true}
+].map(x => ({party:null, transport:null, min_kg:null, below_kg:null, min_pallets:null, is_base:false, active:true, ...x}));
+let rateSlabs = DEF_SLABS;
+let ownSlabRates = new Map();   // "SKU|code" -> own rate of that pack for that slab
+
+function orderPallets(){
+  let p = 0;
+  document.querySelectorAll("#itemsBody tr").forEach(row => {
+    const cases = getRowCaseQty(row), cpp = Number(skuMasterByName.get(skuKey(row.querySelector(".sku-name").value))?.cases_per_pallet);
+    if(Number.isFinite(cases) && cpp > 0) p += cases / cpp;
+  });
+  return Math.round(p * 100) / 100;
+}
+const slabTitle = s => s.name.charAt(0) + s.name.slice(1).toLowerCase();
+/* fill = rate to fill in (no weight yet counts as a small order); else = the slab the order should get (same as the database check). */
+function pickSlab(fill){
+  const party = String(document.getElementById("customerName").value || "").toUpperCase();
+  const tp = String(document.getElementById("transportation").value || "").toUpperCase();
+  const kg = orderWeightKg(), pal = orderPallets();
+  const s = rateSlabs.find(x => x.active &&
+    (!x.party || party.includes(x.party)) && (!x.transport || tp === x.transport) &&
+    (x.min_kg == null || kg >= Number(x.min_kg)) && (x.below_kg == null || ((fill || kg > 0) && kg < Number(x.below_kg))) &&
+    (x.min_pallets == null || pal >= Number(x.min_pallets)) &&
+    (fill || x.party || x.transport || x.min_pallets != null || kg > 0));
+  if(!s) return {slab:null, why:""};
+  const why = s.min_kg != null || s.below_kg != null ? slabTitle(s) + " order, " + formatNumber(kg) + " kg"
+    : s.min_pallets != null ? slabTitle(s) + ", " + formatNumber(pal) + " pallets" : slabTitle(s);
+  return {slab:s, why};
+}
+function fillSlabOptions(){
+  const sel = document.getElementById("rateSlab"), cur = sel.value;
+  sel.innerHTML = '<option value="auto">Auto (from party / transport / weight)</option><option value="">Manual (I will enter rates)</option>' +
+    rateSlabs.filter(x => x.active).map(x => '<option value="' + x.code + '">' + String(x.name).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])) + (x.is_base ? " (Base)" : "") + "</option>").join("");
+  sel.value = [...sel.options].some(o => o.value === cur) ? cur : "auto";
+}
+// Old drafts saved the slab as 0..3 (Slab 1..4).
+const slabPickValue = v => /^[0-3]$/.test(String(v)) ? "s" + (Number(v) + 1) : v;
+
+/* Transport changed: the slab goes back to Auto (party / transport / weight). "Manual" is never changed. */
 function syncSlabToTransport(){
   const slab = document.getElementById("rateSlab");
-  if(slab.value === "") return;
-  const party = document.getElementById("customerName").value;
-  const mode = document.getElementById("transportation").value;
-  slab.value = /JAGDISH/i.test(party) ? "3" : mode === "SELF PICKUP" ? "1" : "auto";
+  if(slab.value !== "") slab.value = "auto";
 }
 
 function currentSlab(){
   const pick = document.getElementById("rateSlab").value;
   if(pick === "") return {slab:null, why:"Enter rate manually"};
-  if(pick !== "auto") return {slab:Number(pick), why:""};
-  const party = document.getElementById("customerName").value;
-  if(/JAGDISH/i.test(party)) return {slab:3, why:"Slab 4 (Shree Jagdish party)"};
-  if(document.getElementById("transportation").value === "SELF PICKUP") return {slab:1, why:"Slab 2 (Self pickup)"};
-  const kg = orderWeightKg();
-  return kg < AUTO_TON_KG
-    ? {slab:0, why:"Slab 1 (weight " + formatNumber(kg) + " KG, below 3 tons)"}
-    : {slab:2, why:"Slab 3 (weight " + formatNumber(kg) + " KG, 3 tons or more)"};
+  if(pick !== "auto") return {slab:rateSlabs.find(x => x.code === pick) || null, why:""};
+  return pickSlab(true);
 }
 
-/* The slab this order should get by its party / transport / weight (Admin's manual pick is not used here).
-   A rate below it = red mark + "please check" popup to Admin / Sales Head (lwb_rate_check_setup.sql). */
-function autoSlab(){
-  const party = document.getElementById("customerName").value;
-  if(/JAGDISH/i.test(party)) return {slab:3, why:"Shree Jagdish party (Slab 4)"};
-  if(document.getElementById("transportation").value === "SELF PICKUP") return {slab:1, why:"Self pickup (Slab 2)"};
-  const kg = orderWeightKg();
-  if(!(kg > 0)) return {slab:null, why:""};
-  return kg < AUTO_TON_KG ? {slab:0, why:"Below 3 ton order, " + formatNumber(kg) + " kg (Slab 1)"} : {slab:2, why:"3 & 4 ton order (Slab 3)"};
-}
+/* The slab this order should get by its party / transport / weight / pallets (Admin's manual pick is not used here).
+   A rate below it = red mark + "please check" popup to Admin / Sales Head (lwb_rate_slabs_setup.sql). */
+function autoSlab(){ return pickSlab(false); }
 
 function slabRateFor(key, slab){
   if(slab == null || !slab3BySku.has(key)) return null;
-  const s3 = slab3BySku.get(key);
-  return [s3+5, s3-5, s3, s3-5][slab];
+  if(slab.is_base) return slab3BySku.get(key);
+  const own = ownSlabRates.get(key + "|" + slab.code);
+  return own != null ? own : r2(slab3BySku.get(key) + Number(slab.diff || 0));
 }
 
 /* Party's last bill rate moved by every Rate & Scheme change since that bill:
