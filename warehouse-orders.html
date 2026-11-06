@@ -917,6 +917,13 @@
     .rate-card th:first-child,.rate-card td:first-child {text-align:left;white-space:normal}
     .rate-card th {background:#f5f7fa;font-size:11.5px}
     .rate-card tr.low td {background:#fdecef}
+    /* PO popup: a SKU line below the min rate is red (6 Nov, Mohit) */
+    #itemsBody tr.rate-low td {background:#fde4e4!important}
+    #itemsBody tr.rate-low td:first-child {box-shadow:inset 4px 0 0 #c8102e}
+    #itemsBody tr.rate-low input[data-field="rate"] {border-color:#c8102e!important;color:#c8102e;font-weight:700;background:#fff7f7}
+    #itemsBody .min-tag {display:block;color:#c8102e;font-size:10px;font-weight:700;line-height:1.2;margin-top:2px}
+    #itemsBody .min-tag:empty {display:none}
+    #itemsBody tr.rate-low {background:#fde4e4!important;border-color:#e89a9a!important}
     .rate-card .low-tag {color:#c8102e;font-weight:800;font-size:11px;margin-left:6px}
     .rate-card .ok {color:#13824a;font-weight:700} .rate-card .warn {color:#b26a00;font-weight:700}
     .rate-card .rate-sub {color:#667;font-size:12.5px;margin:0 0 8px}
@@ -4250,12 +4257,13 @@ function renderItems() {
     const rate = Number(item.rate) || 0;
     const unit = Number(item.unit_weight) || 0;
     const input = (field, value, type="text") => `<input ${editable ? "" : "disabled"} type="${type}" class="${field==='unit_weight'&&editable?'manager-weight-input':''}" style="width:${field==='sku_name'?'190':'95'}px;max-width:100%;padding:7px;border:1px solid #bbb;border-radius:5px" data-index="${i}" data-field="${field}" value="${escapeHtml(value)}" oninput="itemChanged(this)" ${type==='number'?'min="0" step="any"':''}>`;
-    return `<tr>
+    const minR = saleMin && saleMin.get(rateKey(item.sku_name)), low = minR != null && rate < minR;
+    return `<tr class="${low?'rate-low':''}" id="itemRow${i}">
       <td class="i-no">${i+1}</td>
       <td class="i-sku" data-label="SKU / Product">${warehouseSkuInputMarkup(item, i, editable)}</td>
       <td class="i-ord" data-label="Ordered Qty" style="text-align:right">${formatNumber(item.ordered_qty)}</td>
       <td class="i-qty" data-label="Approved Qty">${input('approved_qty', qty, 'number')}</td>
-      <td class="i-rate" data-label="Rate ₹">${input('rate', rate, 'number')}</td>
+      <td class="i-rate" data-label="Rate ₹">${input('rate', rate, 'number')}<span class="min-tag" id="itemMin${i}">${low?'Below min ₹'+formatNumber(minR):''}</span></td>
       <td class="i-amt" data-label="Amount" id="itemAmount${i}" style="text-align:right">${formatMoney(qty*rate)}</td>
       <td class="i-uw" data-label="Unit Wt KG / Case">${input('unit_weight', unit, 'number')}</td>
       <td class="i-tw" data-label="Total Weight" id="itemWeight${i}" style="text-align:right">${formatNumber(qty*unit)} KG</td>
@@ -4282,6 +4290,10 @@ function itemChanged(input) {
   const i = Number(input.dataset.index);
   document.getElementById('itemAmount'+i).textContent = formatMoney(Number(item.approved_qty)*Number(item.rate));
   document.getElementById('itemWeight'+i).textContent = formatNumber(Number(item.approved_qty)*Number(item.unit_weight))+' KG';
+  // Rate below the min (landing + margin): the line turns red at once (Sales Head / Admin see it while approving).
+  const minR = saleMin && saleMin.get(rateKey(item.sku_name)), low = minR != null && (Number(item.rate)||0) < minR;
+  document.getElementById('itemRow'+i)?.classList.toggle('rate-low', low);
+  const tag=document.getElementById('itemMin'+i); if(tag) tag.textContent = low ? 'Below min ₹'+formatNumber(minR) : '';
   calculateApprovalTotals();
 }
 
