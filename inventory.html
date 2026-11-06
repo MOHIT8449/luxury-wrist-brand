@@ -194,7 +194,7 @@
         ledger=r.data||{};
         for(const x of ledger.rows||[])ledgerBy.set(String(x.sku_id),x);
         outLines=(ledger.out_lines||[]).map(x=>{const s=skuInfo(x.sku_id,x.sku_name);return {date:x.at,ref:x.order_no,party:x.party,status:x.status,sku:s,cases:num(x.cases),pcs:num(x.cases)*s.pack}});
-      }catch(e){ledger=null;console.warn("Inventory ledger not available:",e.message||e)}
+      }catch(e){ledger=null;errors.ledger=[e.message||String(e),e.details,e.hint,e.code].filter(Boolean).join(" · ");console.warn("Inventory ledger not available:",e)}
     }
 
     // Old way (until lwb_inventory_ledger_setup.sql runs): loaded POs from Loading & Dispatch only.
@@ -335,7 +335,10 @@
     // SKUs whose system stock is not Opening + In ± Other − Out (e.g. a loaded PO not taken out of godown stock).
     function renderWarn(){
       const w=el("warn");
-      if(!ledger){w.hidden=true;return}
+      if(!ledger){
+        if(!errors.ledger){w.hidden=true;return}
+        w.innerHTML="<b>⚠ Opening / Closing could not load, old view shown.</b> Send this line to support: "+esc(errors.ledger);w.hidden=false;return;
+      }
       const bad=live.map(b=>{const L=ledgerBy.get(String(b.sku_id));return L?{b,d:Math.round(num(L.system_pcs)-num(L.book_pcs))}:null}).filter(x=>x&&x.d);
       if(!bad.length){w.hidden=true;return}
       const f=ledger.link||{},list=bad.slice(0,4).map(x=>{const s=skuInfo(x.b.sku_id,x.b.sku_name),p={...s,pack:Math.max(1,num(x.b.pcs_per_case)||s.pack)};return esc(x.b.sku_name)+" "+(x.d>0?"+":"")+esc(packText(x.d,p))}).join(", ");
