@@ -588,7 +588,7 @@ dialog.setup-dlg{position:fixed;inset:0;margin:auto;height:fit-content}
 </style>
 <link rel="stylesheet" href="erp-shell.css">
 <script src="erp-shell.js" data-auto defer></script>
-<script src="brand-filter.js"></script><script src="party-credit.js"></script>
+<script src="brand-filter.js"></script><script src="party-credit.js"></script><script src="sku-rank.js"></script>
 </head>
 
 <body>
@@ -1415,12 +1415,16 @@ function schedulePartySearch(text) {
 
 /* ITEM ROW */
 async function loadSkuMaster() {
-  const { data, error } = await db
+  // Best-selling SKU first, never-sold last (sku-rank.js, last 90 days of POs).
+  const ranked = window.LWBSkuRank ? LWBSkuRank.load(db).catch(() => null) : null;
+  const { data: rows, error } = await db
     .from("sku_master")
     .select("*")
     .eq("is_active", true);
 
   if (error) throw error;
+  await ranked;
+  const data = window.LWBSkuRank ? LWBSkuRank.sort(rows || [], s => s.sku_name) : rows;
   // Pack unit (Company / Brand): Rajnigandha SKUs are boxes, Coca-Cola cases.
   if (window.LWBBrand) unitCompanies = ((await LWBBrand.load(db).catch(() => null)) || {}).all || [];
 
