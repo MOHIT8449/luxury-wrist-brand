@@ -24,7 +24,8 @@
   const span=(a,b)=>Math.round((Date.parse(b+"T12:00:00Z")-Date.parse(a+"T12:00:00Z"))/864e5)+1;
   const dm=d=>String(d).slice(8,10)+"/"+String(d).slice(5,7);
   const dmy=d=>dm(d)+"/"+String(d).slice(0,4);
-  const key=v=>String(v==null?"":v).toUpperCase().replace(/\s+/g," ").trim();
+  // SKU key = the SKU's current name (an old PO line of a renamed SKU joins its SKU; the line itself is not changed).
+  const key=v=>window.LWBBrand&&LWBBrand.nowKey?LWBBrand.nowKey(v):String(v==null?"":v).toUpperCase().replace(/\s+/g," ").trim();
   const st=o=>String((o&&o.status)||"").toLowerCase().trim().replace(/[\s-]+/g,"_");
   const OFF=["cancelled","canceled","rejected"];
   const safe=p=>Promise.resolve(p).then(r=>r&&r.error?null:r?("data" in r?r.data:r):null).catch(()=>null);

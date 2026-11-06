@@ -17,6 +17,8 @@
   const istDay=v=>{if(!v)return "";const d=new Date(v);return isNaN(d)?String(v).slice(0,10):isoDay(d)};
   const shortDate=v=>LWBDate.d(v,"—");
   const key=v=>String(v||"").toUpperCase().replace(/\s+/g," ").trim();
+  // SKU key = the SKU's current name (brand-filter.js aliases; an old name after a rename -> its SKU). Party names keep key().
+  const skuKey=v=>window.LWBBrand&&LWBBrand.nowKey?LWBBrand.nowKey(v):key(v);
   const daysBetween=(a,b)=>Math.round((Date.parse(b+"T00:00:00Z")-Date.parse(a+"T00:00:00Z"))/864e5);
   const SKIP=["cancelled","canceled","rejected"],DONE=["loaded","invoiced","delivered"];
   const status=o=>String(o.status||"").toLowerCase().trim();
@@ -77,14 +79,15 @@
       client.from("lwb_rate_settings").select("mepd_pct,roi_main,roi_landing").eq("id",1).maybeSingle(),
       client.from("lwb_rate_packs").select("*"),
       client.from("lwb_rate_pack_skus").select("sku_key,pack_id"),
-      client.from("lwb_mepd_schemes").select("categories,mepd_pct,valid_from,valid_to,created_at")
+      client.from("lwb_mepd_schemes").select("categories,mepd_pct,valid_from,valid_to,created_at"),
+      window.LWBBrand&&LWBBrand.aliases?LWBBrand.aliases(client):null
     ]);
     if(st.error||pk.error||ln.error||!st.data)return null;
     const packs=new Map((pk.data||[]).map(p=>[p.id,p])),bySku=new Map();
-    for(const l of ln.data||[]){const p=packs.get(l.pack_id);if(p&&p.active!==false)bySku.set(key(l.sku_key),p)}
+    for(const l of ln.data||[]){const p=packs.get(l.pack_id);if(p&&p.active!==false){const k=skuKey(l.sku_key);if(!bySku.has(k)||key(l.sku_key)===k)bySku.set(k,p)}}
     const settings=st.data,schemes=sc.error?[]:(sc.data||[]);
-    return {has:k=>bySku.has(key(k)),cost:(sku,category,day)=>{
-      const p=bySku.get(key(sku));if(!p)return null;
+    return {has:k=>bySku.has(skuKey(k)),cost:(sku,category,day)=>{
+      const p=bySku.get(skuKey(sku));if(!p)return null;
       const s=window.LWBMepd?LWBMepd.find(schemes,category,day):null;
       return landing(p,settings,s);
     }};
@@ -106,5 +109,5 @@
     return h+"</table>";
   }
   function bar(p){const v=p==null?0:Math.max(0,Math.min(100,p));return '<span class="sl-bar"><i style="width:'+v+'%" class="'+(p==null?"":p>=100?"ok":p>=60?"mid":"low")+'"></i></span>'}
-  window.LWBSales={client,el,esc,num,fmt,rupees,short,pct,isoDay,istDay,shortDate,key,daysBetween,SKIP,DONE,status,start,inChunks,orders,monthRange,lineQty,loadLanding,excel,table,bar};
+  window.LWBSales={client,el,esc,num,fmt,rupees,short,pct,isoDay,istDay,shortDate,key,skuKey,daysBetween,SKIP,DONE,status,start,inChunks,orders,monthRange,lineQty,loadLanding,excel,table,bar};
 })();
