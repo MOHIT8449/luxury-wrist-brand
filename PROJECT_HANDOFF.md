@@ -4,6 +4,14 @@
 **Purpose:** Continue the same ERP project from a new ChatGPT conversation without restarting or losing the agreed requirements.
 **Status:** Active development / verification. Do not assume all modules are completed or fully tested.
 
+## Goods Inward: vehicle / driver popup, brand rule, Transport Master SQL (6 Nov 2026)
+
+- Mohit: after the supplier is chosen a popup must open for all vehicle details; Driver Name, Driver Mobile and Godown Manager required for COCA-COLA, optional for RAJNIGANDHA (no driver / Godown Manager step there). The page said "Transport Master not connected. Run transport-master-setup.sql", but that file never existed in the repo. Page must be compact (everything visible together).
+- `goods-inward.html`: header row = Supplier, Invoice No., Invoice Date, Received Date, "🚚 Details" button; one summary line under it (vehicle · transport · LR · driver · godown · pallets / sheets · note · Edit). Popup (`#tdModal`) holds Vehicle, LR, Transport (+ Save New), Driver Name, Driver Mobile, Godown Manager (moved out of the damage box), Pallets, Sheets, Remarks; opens by itself after a supplier pick, Done checks the required fields, Esc / ✕ close. Rule `tdStrict()`: supplier company name contains RAJNI = all optional, any other brand (or no company) = required. A typed mobile must still be valid. Rajnigandha bill with no Godown Manager: no "vehicle arrived" call. Supplier search shows Loading / load error / empty master / brand filter messages instead of "No matching item found". Live stock failing no longer blocks the page.
+- SQL `lwb_transport_master_setup.sql` (RUN ONCE, safe again; test `tests/transport-master`, PGlite, 3 tests): `lwb_transport_master` (name cleaned, unique ignoring case, is_active), RLS read = active login, add / change = Admin / Sales Head, grants. Without it the page still saves the typed transport name on the bill (+ Save New stays off).
+- Not checked: whether the live `lwb_post_goods_inward` refuses an empty driver name / mobile (its source is not in the repo). If a Rajnigandha bill with no driver is refused, that function needs the driver check relaxed.
+- Checked with a mocked database at 1366 / 390 px: no side scroll, no JS errors. Screenshots: project files `goods-inward-popup/`.
+
 ## Advance with 0 bills: same shop under another name (6 Nov 2026)
 
 - Mohit: Billing & Outstanding "Advance with us" showed RG. SHIV TOBECO (PARVAT PATIYA) ₹20,000, AMBALAL ₹2, CHAMUDA ₹2 with 0 bills after the 3 Nov bank statement. Cause: the ₹20,000 was booked on the old Party Master / Tally name "RG. SHIV TOBECO (PARVAT PATIYA)", which is not linked to the main party "SHIV TOBECO (PARVAT PATIYA)" (opening ₹53,820), so it sits as advance there. The ₹2 = payment a little more than the bill.
