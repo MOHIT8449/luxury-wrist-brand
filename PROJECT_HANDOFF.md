@@ -4,6 +4,14 @@
 **Purpose:** Continue the same ERP project from a new ChatGPT conversation without restarting or losing the agreed requirements.
 **Status:** Active development / verification. Do not assume all modules are completed or fully tested.
 
+## Godown damage report for purchase vehicles (6 Nov 2026)
+
+- Mohit: when a purchase vehicle reaches the godown, the Godown Manager must get a popup "vehicle arrived" and report damage / leakage with SKU, quantity, type and photos; after Submit the report goes to Admin and Sales Head.
+- SQL `lwb_purchase_damage_report_setup.sql` (after purchase claim / register + stock transfer; test `tests/purchase-damage`, PGlite, 5 tests). `erp_notifications.ref_type / ref_id` (link to a non-order record). New purchase bill (deferred trigger `trg_lwb_pdr_arrived` on `lwb_goods_inward`) -> PURCHASE_ARRIVED to every active WAREHOUSE login. `lwb_purchase_damage_report(inward, date, note, items)` (Admin / Sales Head / Godown Manager; not more than billed per SKU) saves through `lwb_save_purchase_check`, sends PURCHASE_DAMAGE / PURCHASE_CHECK_OK to Admin + MANAGER, marks the arrived bells read. A check saved anywhere also closes the arrived bells (`trg_lwb_pdr_arrived_done`).
+- Stock: deferred trigger `trg_lwb_pdr_stock` on `lwb_purchase_checks` keeps APPROVED `lwb_stock_moves` (kind TRANSFER, source MANUAL, `inward_id`) equal to the check lines: Damage -> DAMAGE, Leakage -> LEAKAGE, Shortage -> LOSS (out of saleable, not held). A changed check cancels the old lines and books new ones; a deleted check cancels them. Old checks are not back-filled. Return to company / destroy stays in Stock Transfer.
+- `purchase-damage.js` (LWBPurchaseDamage): `arrivals` popup (bell, any page; Report damage / All OK / Later 15 min, localStorage `lwbPurchaseSnooze`), `form` (All OK, or lines SKU · type · cases · PCS + photos + note), `view` (read-only report with photos, Change / Claims). Purchase List Verify / Edit, `?bill=` and `?report=` use it (the old wide inline table is gone). Bell: PURCHASE_ARRIVED opens `purchase-register.html?bill=`, PURCHASE_DAMAGE / _CHECK_OK `?report=`.
+- Checked with a mocked database at 390 / 1366 px: no side scroll, no JS errors. Not yet checked on live data. Screenshots: project files `purchase-damage-report/`.
+
 ## Drill down everywhere: list → party → bill → items (5 Nov 2026)
 
 - Mohit: tapping Outstanding gave the party list, but tapping a party did nothing. Every list row must open its detail, as deep as it goes (party → its bills → what is in the bill).
