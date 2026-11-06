@@ -123,6 +123,7 @@ async function init(){
   role=await lwbPageRole(String(p.data.role||"").toLowerCase().trim());
   if(p.data.active!==true||!["admin","accounts","manager","warehouse"].includes(role))throw Error("Only office staff can open Driver Return Approval.");
   if(window.LWBBrand)try{BB=await LWBBrand.mount(db,{into:"main",onChange:render})}catch(e){}
+  if(window.LWBBrand)try{U=await LWBBrand.units(db)}catch(e){}
   await load();
  }catch(e){message("Could not start: "+e.message,"error")}
 }
@@ -156,7 +157,9 @@ async function loadReceipts(){
 // Receive the goods and put each SKU line into stock (lwb_return_stock_setup.sql):
 // Saleable / Damage-Leakage-Breakage (one option, OLN; saved as Damage) / Gasless / Expiry, default = the driver's reason.
 const PLACES=[["SALEABLE","Saleable"],["DAMAGE","Damage / Leakage / Breakage (OLN)"],["GASLESS","Gasless"],["EXPIRY","Expiry"]];
-const csTxt=(pcs,ppc)=>{ppc=Math.max(1,ppc||1);const c=Math.floor(pcs/ppc),p=pcs%ppc;return (c?c+" CS":"")+(c&&p?" ":"")+(p?p+" PCS":"")||"0"};
+// In the unit the SKU is sold in: Rajnigandha IC, Coca-Cola CS (+ loose pcs). U = SKU name -> unit.
+let U=()=>"CASE";
+const csTxt=(pcs,ppc,name)=>LWBBrand.pack(pcs,ppc,U(name));
 async function receive(r){
  if(busy||!canReceive())return;
  let lines=null;
@@ -175,7 +178,7 @@ async function receive(r){
   body.replaceChildren();
   for(const l of lines){
    const box=node("div",null,"rcv-line");
-   const top=node("div",null,"rcv-top");top.append(node("b",l.sku_name),node("span",csTxt(l.qty_pcs,l.pcs_per_case)+" · "+(REASON[l.reason]||l.reason),"muted"));
+   const top=node("div",null,"rcv-top");top.append(node("b",l.sku_name),node("span",csTxt(l.qty_pcs,l.pcs_per_case,l.sku_name)+" · "+(REASON[l.reason]||l.reason),"muted"));
    box.append(top);
    if(!l.sku_id){box.append(node("div","Not in SKU Master: stock will not change for this line.","rcv-warn"));body.append(box);continue}
    const ch=node("div",null,"rcv-chips");
@@ -184,8 +187,8 @@ async function receive(r){
   }
   const sale=lines.filter(l=>l.sku_id&&pick.get(l.item_id)==="SALEABLE"),held=lines.filter(l=>l.sku_id&&pick.get(l.item_id)!=="SALEABLE");
   const sum=node("div",null,"rcv-sum");
-  sum.append(node("div","Saleable stock: "+(sale.length?sale.map(l=>"+"+csTxt(l.qty_pcs,l.pcs_per_case)).join(", "):"—"),"g"),
-   node("div","Damage / Leakage / Breakage etc.: "+(held.length?held.map(l=>csTxt(l.qty_pcs,l.pcs_per_case)).join(", "):"—"),"a"));
+  sum.append(node("div","Saleable stock: "+(sale.length?sale.map(l=>"+"+csTxt(l.qty_pcs,l.pcs_per_case,l.sku_name)).join(", "):"—"),"g"),
+   node("div","Damage / Leakage / Breakage etc.: "+(held.length?held.map(l=>csTxt(l.qty_pcs,l.pcs_per_case,l.sku_name)).join(", "):"—"),"a"));
   body.append(sum);
  };
  draw();el("rcvNote").value="";dlg.hidden=false;setTimeout(()=>{const f=body.querySelector(".rcv-chip.on");if(f)f.focus()},30);
@@ -255,7 +258,7 @@ function render(){
    const tr=body.insertRow();
    tr.insertCell().textContent=i.sku;
    const c=tr.insertCell();c.append(node("span",REASON[i.reason]||i.reason,"tag"));
-   const q=tr.insertCell();q.className="num";q.textContent=i.qty+" "+i.uom+(i.uom==="PCS"?" ("+Number(i.qty_cases).toFixed(2)+" CS)":"");
+   const q=tr.insertCell();q.className="num";const su=LWBBrand.short(U(i.sku));q.textContent=i.qty+" "+(i.uom==="PCS"?"pcs ("+Number(i.qty_cases).toFixed(2)+" "+su+")":su);
    const a=tr.insertCell();a.className="num";a.textContent=fmt(i.return_amount);
   }
   card.append(t);

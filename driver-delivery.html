@@ -434,6 +434,7 @@ async function init(){
   $("welcome").textContent=(p.data.full_name||user.email)+" • "+role.toUpperCase()+
     (role==="driver"?" • Login Mobile: "+(p.data.mobile||"NOT MAPPED"):" • Read Only");
   if(role!=="driver"&&window.LWBBrand)try{BB=await LWBBrand.mount(db,{into:"main .top",after:true,onChange:render})}catch(e){}
+  if(window.LWBBrand)try{U=await LWBBrand.units(db)}catch(e){}
   await refresh();
   await openFromLink();
   await loadNotifications();
@@ -488,6 +489,8 @@ async function refresh(){
 let returnSummary=new Map(),paySummary=new Map();
 // Brand filter for office view (All / Rajnigandha / Coca-Cola): a PO counts in a brand when it has an SKU of it.
 let BB={get:()=>""},OB=new Map();
+// Rajnigandha sells in IC, Coca-Cola in CS (brand-filter.js); U = SKU name -> unit.
+let U=()=>"CASE";
 const inB=r=>!BB.get()||LWBBrand.has(OB.get(r.order_id),BB.get());
 async function loadReturnSummary(){
  if(role!=="driver")return;
@@ -634,7 +637,7 @@ async function openOrder(id){
  $("paymentNetTip").hidden=true;
  if(!waiting&&role==="driver")loadReturnOptions(r.order_id);
  $("itemsTitle").textContent=waiting?"Planned SKU / Cases":"Actual Loaded SKU / Cases";
- $("casesColumn").textContent=waiting?"PLANNED CS":"LOADED CS";
+ $("casesColumn").textContent=waiting?"PLANNED IC / CS":"LOADED IC / CS";
  $("casesLabel").textContent=waiting?"Total Planned":"Total Loaded";
  $("goodsValueRow").hidden=waiting;
  $("details").replaceChildren(
@@ -654,10 +657,10 @@ async function openOrder(id){
  const table=$("items");table.replaceChildren();
  const items=Array.isArray(r.loaded_skus)?r.loaded_skus:[];
  for(const sku of items){
-  const tr=elt("tr");tr.append(elt("td",sku.sku),elt("td",num(sku.cases)+" CS"));table.append(tr);
+  const tr=elt("tr");tr.append(elt("td",sku.sku),elt("td",num(sku.cases)+" "+(window.LWBBrand?LWBBrand.short(U(sku.sku)):"CS")));table.append(tr);
  }
  if(!items.length){const tr=elt("tr"),td=elt("td",waiting?"No planned SKU recorded":"No Actual Loaded SKU recorded");td.colSpan=2;tr.append(td);table.append(tr);}
- $("totalCases").textContent=num(waiting?r.planned_cases:r.loaded_cases)+" CS";
+ $("totalCases").textContent=items.length&&window.LWBBrand?LWBBrand.packSum(items.map(x=>({pcs:x.cases,per:1,unit:U(x.sku)}))):num(waiting?r.planned_cases:r.loaded_cases)+" CS";
  $("goodsValue").textContent=waiting?"—":role==="driver"?"Calculating…":money(r.loaded_goods_value);
  $("savedPanel").hidden=!r.report;
  $("deliveryForm").hidden=waiting||Boolean(r.report)||role!=="driver";
@@ -1031,7 +1034,7 @@ async function renderReturnList(){
   head.append(elt("span",st==="approved"?"✅ Approved":st==="rejected"?"❌ Rejected":"⏳ Waiting for approval","retstatus"),elt("b",money(r.total_return_amount)));
   card.append(head);
   for(const g of returnLineGroups(r)){
-   const q=[g.cs?num(g.cs)+" CS":"",g.pcs?num(g.pcs)+" PCS":""].filter(Boolean).join(" + ");
+   const q=[g.cs?num(g.cs)+" "+(window.LWBBrand?LWBBrand.short(U(g.sku)):"CS"):"",g.pcs?num(g.pcs)+" PCS":""].filter(Boolean).join(" + ");
    card.append(elt("p",g.sku+" · "+q+" · "+(RETURN_REASON[g.reason]||g.reason)+" · "+money(g.amount),"retline"));
   }
   card.append(elt("p","Saved "+date(r.created_at)+(r.note?" · "+r.note:""),"retmeta"));
@@ -1116,7 +1119,7 @@ function renderReturnRows(){
  if(!returnLines.length){wrap.append(elt("p","Add one or more returned SKU lines.","return-note"))}
  returnLines.forEach((r,i)=>{
   const div=elt("div",undefined,"return-row");
-  const choices=[["","Select billed/loaded SKU"],...(returnOptions?.items||[]).filter(x=>availableFor(x)>0).map(x=>[x.order_item_id,x.sku+" • "+num(availableFor(x))+" CS left"])];
+  const choices=[["","Select billed/loaded SKU"],...(returnOptions?.items||[]).filter(x=>availableFor(x)>0).map(x=>[x.order_item_id,x.sku+" • "+num(availableFor(x))+" "+(window.LWBBrand?LWBBrand.short(U(x.sku)):"CS")+" left"])];
   if(r.order_item_id&&!choices.some(x=>x[0]===r.order_item_id)){
    const old=returnSku(r);if(old)choices.push([r.order_item_id,old.sku+" • none remaining"]);
   }
@@ -1137,7 +1140,7 @@ function renderReturnRows(){
   const amount=elt("span","₹0","line-total r-amt");
   amount.dataset.index=String(i);
   const remove=elt("button","✕ Remove","r-del");remove.type="button";remove.onclick=()=>{returnLines.splice(i,1);renderReturnRows()};
-  div.append(lineField("SKU (Loaded Order)",sku,"r-sku"),lineField("CS",qty,"r-cs"),lineField(validPack?"PCS (1 CS = "+pack+")":item?"PCS (no packing)":"PCS",pcs,"r-pcs"),lineField("Rate / CS ",rate,"r-rate"),lineField("Reason",reason,"r-reason"),amount,remove);
+  div.append(lineField("SKU (Loaded Order)",sku,"r-sku"),lineField(item&&window.LWBBrand?LWBBrand.short(U(item.sku)):"CS",qty,"r-cs"),lineField(validPack?"PCS (1 "+(window.LWBBrand?LWBBrand.short(U(item.sku)):"CS")+" = "+pack+")":item?"PCS (no packing)":"PCS",pcs,"r-pcs"),lineField("Rate / CS ",rate,"r-rate"),lineField("Reason",reason,"r-reason"),amount,remove);
   wrap.append(div);
  });
  calculateReturn();

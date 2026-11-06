@@ -5,6 +5,11 @@
    LWBBrand.skuMap(client)   -> Map(SKU key -> company id), to split order lines by brand
    LWBBrand.unitOf(sku, companies) -> "BOX" | "CASE" (SKU's own unit, else its company's, else CASE)
    LWBBrand.qty(cases, boxes)  -> "83 boxes · 20 cases" (Rajnigandha sells in boxes, Coca-Cola in cases)
+   LWBBrand.short(unit)      -> "IC" | "CS"
+   LWBBrand.pack(pcs, perUnit, unit) -> "12 IC + 5 pcs" / "3 CS" (stock in the unit the SKU is sold in)
+   LWBBrand.packNum(pcs, perUnit) -> 12.5 (full units, decimal, for Excel / totals)
+   LWBBrand.packSum(list)    -> "120 IC · 45 CS" from [{pcs, per, unit}] (totals never mix units)
+   LWBBrand.units(client)    -> resolver(sku name | {sku_name, company_id, pack_unit}) -> "BOX" | "CASE"
    A brand-limited Sales Head / Salesman only gets his companies back from the database. */
 (function(){
   if(window.LWBBrand)return;
@@ -97,5 +102,28 @@
   }
   // Is a row of brand b? (b "" = all). set: Set / array of companies, or one company id.
   function has(set,b){if(!b)return true;if(!set)return false;if(typeof set==="string")return set===b;return set.has?set.has(b):set.includes(b)}
-  window.LWBBrand={load,get,set,chips,skuMap,skuKey,unitOf,unitByName,word,qty,mount,orderBrands,has};
+  // Quantities in the unit the SKU is sold in (Mohit 6 Nov 2026): Rajnigandha in IC, Coca-Cola in CS.
+  // Stock is kept in PCS; only the display changes. Loose pieces show after a "+".
+  const short=u=>u==="BOX"?"IC":"CS";
+  function pack(pcs,per,unit,o){
+    per=Math.max(1,Math.round(Number(per)||1));const n=Math.round(Number(pcs)||0),neg=n<0,a=Math.abs(n),c=Math.floor(a/per),l=a%per;
+    const t=(c||!l?fmt(c)+" "+short(unit):"")+(c&&l?" + ":"")+(l?fmt(l)+" pcs":"");
+    return (neg?"−":o&&o.plus&&n>0?"+":"")+t;
+  }
+  const packNum=(pcs,per)=>Math.round((Number(pcs)||0)/Math.max(1,Number(per)||1)*100)/100;
+  function packSum(list){
+    const by=new Map();
+    for(const x of list||[]){const u=x.unit==="BOX"?"BOX":"CASE";by.set(u,(by.get(u)||0)+(Number(x.pcs)||0)/Math.max(1,Number(x.per)||1))}
+    const out=["BOX","CASE"].filter(u=>by.has(u)&&Math.round(by.get(u)*10)).map(u=>{const v=Math.round(by.get(u)*10)/10;return v.toLocaleString("en-IN")+" "+short(u)});
+    return out.join(" · ")||"0";
+  }
+  async function unitsFor(client){
+    const [info,map]=await Promise.all([load(client),skuMap(client)]);
+    const list=(info&&(info.all||info.companies))||[];
+    return s=>{
+      if(s&&typeof s==="object"){if(s.pack_unit)return s.pack_unit;if(s.company_id){const c=list.find(x=>x.id===s.company_id);if(c&&c.pack_unit)return c.pack_unit}s=s.sku_name||s.name}
+      return unitByName(s,map,list);
+    };
+  }
+  window.LWBBrand={load,get,set,chips,skuMap,skuKey,unitOf,unitByName,word,qty,mount,orderBrands,has,short,pack,packNum,packSum,units:unitsFor};
 })();

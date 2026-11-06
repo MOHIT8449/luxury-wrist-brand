@@ -27,6 +27,8 @@
     .inv-kpi:hover{border-color:var(--erp-red)}
     .inv-kpi span{display:block;font-size:12.5px;color:var(--erp-muted)}
     .inv-kpi b{display:block;font-size:22px;font-weight:600;margin-top:4px}
+    .inv-kpi b .nw{display:inline;white-space:nowrap;font-size:inherit;color:inherit;margin:0}
+    .inv-sku small{display:block;color:var(--erp-muted);font-size:11.5px;margin-top:1px}
     .inv-kpi small{display:block;font-size:12px;color:var(--erp-muted);margin-top:2px}
     .inv-kpi.green b{color:var(--erp-green)}.inv-kpi.red b{color:var(--erp-red)}.inv-kpi.blue b{color:var(--erp-blue)}
     .inv-scroll{overflow:auto}
@@ -35,7 +37,7 @@
     .inv-note{font-size:12.5px;color:var(--erp-muted);margin:10px 2px 0}
     .inv-msg{padding:16px;color:var(--erp-red);font-weight:600;white-space:pre-wrap}
     @media(max-width:1100px){.inv-kpis{grid-template-columns:repeat(3,minmax(0,1fr))}}
-    @media(max-width:640px){.inv-filters button{flex:1 1 40%}.inv-kpis{grid-template-columns:1fr 1fr}.inv-kpi b{font-size:19px}.inv-filters>div:not(.grow){flex:1 1 40%}.inv-filters input,.inv-filters select{width:100%}}
+    @media(max-width:640px){.inv-scroll .erp-table{min-width:0;font-size:12.5px}body .inv-scroll .erp-table th,body .inv-scroll .erp-table td{padding:7px 5px;font-size:12.5px}body .inv-scroll .erp-table td.num{white-space:normal}.inv-t-stock tr>:nth-child(4),.inv-t-stock tr>:nth-child(5){display:none}.inv-t-stock .erp-badge{padding:2px 6px;font-size:11px}.inv-t-moves tr>:nth-child(4),.inv-t-moves tr>:nth-child(6),.inv-t-in tr>:nth-child(2),.inv-t-in tr>:nth-child(3),.inv-t-out tr>:nth-child(3),.inv-t-out tr>:nth-child(4){display:none}.inv-kpi b{font-size:16px!important}.inv-filters button{flex:1 1 40%}.inv-kpis{grid-template-columns:1fr 1fr}.inv-kpi b{font-size:19px}.inv-filters>div:not(.grow){flex:1 1 40%}.inv-filters input,.inv-filters select{width:100%}}
     [hidden]{display:none!important}
   </style>
 </head>
@@ -82,7 +84,10 @@
     const shortDate=v=>LWBDate.d(v,"—");
     const nameKey=v=>String(v||"").toUpperCase().replace(/\s+/g," ").trim();
     const pick=(row,keys)=>{for(const k of keys)if(row&&row[k]!=null&&row[k]!=="")return row[k];return null};
-    const caseText=(pcs,pack)=>{pack=Math.max(1,num(pack));const neg=pcs<0;pcs=Math.abs(Math.round(pcs));const c=Math.floor(pcs/pack),l=pcs%pack;return (neg?"−":"")+fmt(c)+" CS"+(l?" + "+fmt(l)+" PCS":"")};
+    // Quantities in the unit the SKU is sold in: Rajnigandha IC, Coca-Cola CS, loose pcs after "+" (brand-filter.js).
+    const packText=(pcs,s)=>LWBBrand.pack(pcs,s.pack,s.unit);
+    const unitOf=s=>LWBBrand.short(s.unit);
+    let allCompanies=[];
 
     const LOW_CASES=5;
     let skus=new Map(),skuByName=new Map(),live=[],inLines=[],outLines=[],moves=[];
@@ -91,7 +96,7 @@
 
     function skuInfo(id,name){
       const s=(id!=null&&skus.get(String(id)))||skuByName.get(nameKey(name));
-      return s||{id:id!=null?String(id):"name:"+nameKey(name),name:name||"Unknown SKU",pack:1};
+      return s||{id:id!=null?String(id):"name:"+nameKey(name),name:name||"Unknown SKU",pack:1,unit:"CASE"};
     }
 
     async function loadAll(){
@@ -102,12 +107,12 @@
       errors={};
       try{
         const [skuRes,liveRes]=await Promise.all([
-          client.from("sku_master").select("id,sku_name,pcs_per_case,company_id").order("sku_name").then(r=>r.error?client.from("sku_master").select("id,sku_name,pcs_per_case").order("sku_name"):r),
+          client.from("sku_master").select("id,sku_name,pcs_per_case,company_id,pack_unit").order("sku_name").then(r=>r.error?client.from("sku_master").select("id,sku_name,pcs_per_case,company_id").order("sku_name"):r).then(r=>r.error?client.from("sku_master").select("id,sku_name,pcs_per_case").order("sku_name"):r),
           client.from("lwb_live_stock").select("sku_id,sku_name,pcs_per_case,saleable_pcs,damaged_pcs").order("sku_name")
         ]);
         skus=new Map();skuByName=new Map();
-        for(const s of (skuRes.data||[])){const x={id:String(s.id),name:s.sku_name,pack:Math.max(1,num(s.pcs_per_case)),company:s.company_id||""};skus.set(x.id,x);skuByName.set(nameKey(s.sku_name),x)}
-        for(const s of (liveRes.data||[]))if(!skus.has(String(s.sku_id))){const x={id:String(s.sku_id),name:s.sku_name,pack:Math.max(1,num(s.pcs_per_case))};skus.set(x.id,x);skuByName.set(nameKey(s.sku_name),x)}
+        for(const s of (skuRes.data||[])){const x={id:String(s.id),name:s.sku_name,pack:Math.max(1,num(s.pcs_per_case)),company:s.company_id||"",unit:LWBBrand.unitOf(s,allCompanies)};skus.set(x.id,x);skuByName.set(nameKey(s.sku_name),x)}
+        for(const s of (liveRes.data||[]))if(!skus.has(String(s.sku_id))){const x={id:String(s.sku_id),name:s.sku_name,pack:Math.max(1,num(s.pcs_per_case)),unit:"CASE"};skus.set(x.id,x);skuByName.set(nameKey(s.sku_name),x)}
         if(liveRes.error)errors.stock=liveRes.error.message;
         live=liveRes.data||[];
       }catch(e){errors.stock=e.message||String(e)}
@@ -132,7 +137,7 @@
       const sel=el("brand");
       try{
         const r=await LWBBrand.load(client);
-        brands=r.companies||[];
+        brands=r.companies||[];allCompanies=r.all||brands;
       }catch(e){brands=[]}
       if(!brands.length){sel.parentElement.hidden=true;brand="";return}
       brand=LWBBrand.get(brands);
@@ -215,32 +220,36 @@
     // Each tab returns {head, rows (export values), cells (display), num (right-aligned columns), foot}
     function view(){
       const {inBy,outBy}=sums();
+      // pk: columns that hold PCS, footer adds them per unit (IC and CS never mixed).
       if(tab==="stock"){
         const rows=live.map(b=>{
-          const s=skuInfo(b.sku_id,b.sku_name),pack=Math.max(1,num(b.pcs_per_case)||s.pack),sale=num(b.saleable_pcs),cases=Math.floor(Math.max(0,sale)/pack);
-          const state=sale<=0?["Out of stock","red"]:cases<LOW_CASES?["Low","amber"]:["In stock","green"];
-          return {key:b.sku_name,data:[b.sku_name,pack,cases,Math.max(0,sale)%pack,sale,num(b.damaged_pcs),inBy.get(s.id)||0,outBy.get(s.id)||0,state[0]],
-            show:[b.sku_name,fmt(pack),fmt(cases),fmt(Math.max(0,sale)%pack),fmt(sale),fmt(b.damaged_pcs),inBy.get(s.id)?caseText(inBy.get(s.id),pack):"—",outBy.get(s.id)?caseText(outBy.get(s.id),pack):"—",'<span class="erp-badge '+state[1]+'">'+state[0]+'</span>'],html:8};
+          const s0=skuInfo(b.sku_id,b.sku_name),s={...s0,pack:Math.max(1,num(b.pcs_per_case)||s0.pack)},sale=Math.max(0,num(b.saleable_pcs)),full=Math.floor(sale/s.pack);
+          const state=num(b.saleable_pcs)<=0?["Out of stock","red"]:full<LOW_CASES?["Low","amber"]:["In stock","green"];
+          const inP=inBy.get(s.id)||0,outP=outBy.get(s.id)||0,dmg=num(b.damaged_pcs);
+          return {key:b.sku_name,pk:{1:[sale,s],2:[dmg,s],3:[inP,s],4:[outP,s]},
+            data:[b.sku_name,fmt(s.pack)+" pcs / "+unitOf(s),unitOf(s),full,sale%s.pack,LWBBrand.packNum(dmg,s.pack),LWBBrand.packNum(inP,s.pack),LWBBrand.packNum(outP,s.pack),state[0]],
+            show:['<span class="inv-sku">'+esc(b.sku_name)+"<small>"+fmt(s.pack)+" pcs / "+unitOf(s)+"</small></span>","<b>"+esc(packText(sale,s))+"</b>",dmg?esc(packText(dmg,s)):"—",inP?esc(packText(inP,s)):"—",outP?esc(packText(outP,s)):"—",'<span class="erp-badge '+state[1]+'">'+state[0]+'</span>'],html:[0,1,5]};
         });
-        return {title:"Saleable Stock",head:["SKU","PCS / Case","Saleable Cases","Loose PCS","Saleable PCS","Damaged PCS","Stock In (period)","Stock Out (period)","Status"],num:[1,2,3,4,5,6,7],rows,
-          sum:[2,4,5],err:errors.stock,note:"Saleable balance comes from the live stock view. Stock In and Stock Out columns are for the selected dates. Low = less than "+LOW_CASES+" cases."};
+        return {title:"Saleable Stock",head:["SKU","Saleable Stock","Damaged","Stock In (period)","Stock Out (period)","Status"],
+          xhead:["SKU","Pack","Unit","Saleable (full IC / CS)","Loose PCS","Damaged (IC / CS)","Stock In (IC / CS)","Stock Out (IC / CS)","Status"],num:[1,2,3,4],rows,
+          err:errors.stock,note:"Stock is shown in the unit each SKU is sold in: Rajnigandha in IC, Coca-Cola in CS, loose pieces after +. Stock In and Stock Out are for the selected dates. Low = less than "+LOW_CASES+" IC / CS."};
       }
       if(tab==="in"){
-        const rows=inLines.map(x=>({key:x.ref+" "+x.party+" "+x.sku.name,data:[shortDate(x.date),x.ref,x.party,x.sku.name,Math.floor(x.pcs/x.sku.pack),x.pcs%x.sku.pack,x.pcs,x.taxable],
-          show:[shortDate(x.date),x.ref||"—",x.party||"—",x.sku.name,fmt(Math.floor(x.pcs/x.sku.pack)),fmt(x.pcs%x.sku.pack),fmt(x.pcs),rupees(x.taxable)]}));
-        return {title:"Stock In — Purchase",head:["Received","Invoice No.","Supplier","SKU","Cases","Loose PCS","Total PCS","Taxable ₹"],num:[4,5,6,7],rows,sum:[4,6,7],money:[7],err:errors.in,
-          note:"Every SKU line received through Goods Inward in the selected dates. Invoice-wise list: Goods Inward page, Purchase Report."};
+        const rows=inLines.map(x=>({key:x.ref+" "+x.party+" "+x.sku.name,pk:{4:[x.pcs,x.sku]},data:[shortDate(x.date),x.ref,x.party,x.sku.name,unitOf(x.sku),Math.floor(x.pcs/x.sku.pack),x.pcs%x.sku.pack,x.taxable],
+          show:[shortDate(x.date),x.ref||"—",x.party||"—",x.sku.name,packText(x.pcs,x.sku),rupees(x.taxable)]}));
+        return {title:"Stock In — Purchase",head:["Received","Invoice No.","Supplier","SKU","Quantity","Taxable ₹"],xhead:["Received","Invoice No.","Supplier","SKU","Unit","IC / CS","Loose PCS","Taxable ₹"],num:[4,5],rows,sum:[5],xsum:{5:7},money:[5],err:errors.in,
+          note:"Every SKU line received through Goods Inward in the selected dates, in IC (Rajnigandha) or CS (Coca-Cola). Invoice-wise list: Goods Inward page, Purchase Report."};
       }
       if(tab==="out"){
-        const rows=outLines.map(x=>({key:x.ref+" "+x.party+" "+x.sku.name,data:[shortDate(x.date),x.ref,x.party,x.status,x.sku.name,x.cases,x.pcs],
-          show:[shortDate(x.date),x.ref||"—",x.party||"—",x.status||"—",x.sku.name,fmt(x.cases),fmt(x.pcs)]}));
-        return {title:"Stock Out — Dispatch",head:["Loaded On","PO No.","Party","Status","SKU","Cases Loaded","PCS"],num:[5,6],rows,sum:[5,6],err:errors.out,
-          note:"Cases actually loaded on vehicles (Loading & Dispatch) in the selected dates. This report does not change stock."};
+        const rows=outLines.map(x=>({key:x.ref+" "+x.party+" "+x.sku.name,pk:{5:[x.pcs,x.sku]},data:[shortDate(x.date),x.ref,x.party,x.status,x.sku.name,unitOf(x.sku),x.cases],
+          show:[shortDate(x.date),x.ref||"—",x.party||"—",x.status||"—",x.sku.name,fmt(x.cases)+" "+unitOf(x.sku)]}));
+        return {title:"Stock Out — Dispatch",head:["Loaded On","PO No.","Party","Status","SKU","Loaded"],xhead:["Loaded On","PO No.","Party","Status","SKU","Unit","Loaded"],num:[5],rows,err:errors.out,
+          note:"IC / CS actually loaded on vehicles (Loading & Dispatch) in the selected dates. This report does not change stock."};
       }
-      const rows=moves.map(m=>({key:m.sku.name+" "+m.type+" "+m.bucket+" "+m.ref,data:[shortDate(m.date),m.sku.name,m.type,m.bucket,m.pcs,m.ref],
-        show:[shortDate(m.date),m.sku.name,m.type,m.bucket,fmt(m.pcs),m.ref||"—"]}));
-      return {title:"Stock Movements",head:["Date","SKU","Type","Bucket","Qty PCS","Reference"],num:[4],rows,err:errors.moves,
-        note:"Audit trail of every stock entry (opening, inward and others) saved in the system, newest first."};
+      const rows=moves.map(m=>({key:m.sku.name+" "+m.type+" "+m.bucket+" "+m.ref,data:[shortDate(m.date),m.sku.name,m.type,m.bucket,unitOf(m.sku),m.pcs<0?-Math.floor(-m.pcs/m.sku.pack):Math.floor(m.pcs/m.sku.pack),(m.pcs<0?-1:1)*(Math.abs(m.pcs)%m.sku.pack),m.ref],
+        show:[shortDate(m.date),m.sku.name,m.type,m.bucket,packText(m.pcs,m.sku),m.ref||"—"]}));
+      return {title:"Stock Movements",head:["Date","SKU","Type","Bucket","Quantity","Reference"],xhead:["Date","SKU","Type","Bucket","Unit","IC / CS","Loose PCS","Reference"],num:[4],rows,err:errors.moves,
+        note:"Audit trail of every stock entry (opening, inward and others) saved in the system, newest first. Quantity in IC (Rajnigandha) or CS (Coca-Cola)."};
     }
 
     const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -257,14 +266,17 @@
       if(v.err){box.innerHTML='<div class="inv-msg">Could not load this report: '+esc(v.err)+"</div>";return}
       if(!rows.length){box.innerHTML='<div class="erp-empty">'+(q?"No rows match your search.":brand?"No entries for "+brandName()+" in the selected dates.":"No entries for the selected dates.")+"</div>";return}
       const numCls=i=>v.num.includes(i)?' class="num"':"";
-      let h="<table class=\"erp-table\"><thead><tr>"+v.head.map((x,i)=>"<th"+numCls(i)+">"+esc(x)+"</th>").join("")+"</tr></thead><tbody>";
-      for(const r of rows)h+="<tr>"+r.show.map((c,i)=>"<td"+numCls(i)+">"+(r.html===i?c:esc(c))+"</td>").join("")+"</tr>";
+      let h="<table class=\"erp-table inv-t-"+tab+"\"><thead><tr>"+v.head.map((x,i)=>"<th"+numCls(i)+">"+esc(x)+"</th>").join("")+"</tr></thead><tbody>";
+      const isHtml=(r,i)=>Array.isArray(r.html)?r.html.includes(i):r.html===i;
+      for(const r of rows)h+="<tr>"+r.show.map((c,i)=>"<td"+numCls(i)+">"+(isHtml(r,i)?c:esc(c))+"</td>").join("")+"</tr>";
       h+="</tbody>";
-      if(v.sum){
+      const pkCols=rows.length&&rows[0].pk?Object.keys(rows[0].pk).map(Number):[];
+      if(v.sum||pkCols.length){
         h+="<tfoot><tr>"+v.head.map((x,i)=>{
           if(i===0)return "<td>Total</td>";
-          if(!v.sum.includes(i))return "<td></td>";
-          const t=rows.reduce((a,r)=>a+num(r.data[i]),0);
+          if(pkCols.includes(i))return '<td class="num">'+esc(LWBBrand.packSum(rows.map(r=>({pcs:r.pk[i][0],per:r.pk[i][1].pack,unit:r.pk[i][1].unit}))))+"</td>";
+          if(!(v.sum||[]).includes(i))return "<td></td>";
+          const t=rows.reduce((a,r)=>a+num(r.data[(v.xsum&&v.xsum[i])??i]),0);
           return '<td class="num">'+((v.money||[]).includes(i)?rupees(t):fmt(t))+"</td>";
         }).join("")+"</tr></tfoot>";
       }
@@ -272,19 +284,20 @@
     }
 
     function renderKpis(){
-      let saleCases=0,damaged=0,low=0;
-      for(const b of live){const pack=Math.max(1,num(b.pcs_per_case)),c=Math.floor(Math.max(0,num(b.saleable_pcs))/pack);saleCases+=c;damaged+=num(b.damaged_pcs);if(c<LOW_CASES)low++}
-      const inPcs=inLines.reduce((a,x)=>a+x.pcs,0),outCases=outLines.reduce((a,x)=>a+x.cases,0);
+      let low=0;const saleL=[],dmgL=[];
+      for(const b of live){const s=skuInfo(b.sku_id,b.sku_name),pack=Math.max(1,num(b.pcs_per_case)||s.pack),sale=Math.max(0,num(b.saleable_pcs));
+        saleL.push({pcs:sale-sale%pack,per:pack,unit:s.unit});if(num(b.damaged_pcs))dmgL.push({pcs:num(b.damaged_pcs),per:pack,unit:s.unit});if(sale/pack<LOW_CASES)low++}
+      const inTxt=LWBBrand.packSum(inLines.map(x=>({pcs:x.pcs,per:x.sku.pack,unit:x.sku.unit}))),outTxt=LWBBrand.packSum(outLines.map(x=>({pcs:x.cases,per:1,unit:x.sku.unit})));
       const invoices=new Set(inLines.map(x=>x.ref+"|"+x.party)).size,pos=new Set(outLines.map(x=>x.ref)).size;
       const k=[
         ["stock","","SKUs in Stock",fmt(live.filter(b=>num(b.saleable_pcs)>0).length),fmt(live.length)+" SKUs total"],
-        ["stock","green","Saleable Cases",fmt(saleCases),"Full cases in Main Godown"],
-        ["stock","red","Low / Out of Stock",fmt(low),"Under "+LOW_CASES+" cases"],
-        ["in","blue","Stock In (period)",fmt(inPcs)+" PCS",fmt(invoices)+" purchase invoices"],
-        ["out","","Stock Out (period)",fmt(outCases)+" CS",fmt(pos)+" POs loaded"]
+        ["stock","green","Saleable Stock",LWBBrand.packSum(saleL),"Full IC / CS in Main Godown"],
+        ["stock","red","Low / Out of Stock",fmt(low),"Under "+LOW_CASES+" IC / CS"],
+        ["in","blue","Stock In (period)",inTxt,fmt(invoices)+" purchase invoices"],
+        ["out","","Stock Out (period)",outTxt,fmt(pos)+" POs loaded"]
       ];
-      if(damaged)k[2][4]+=" · "+fmt(damaged)+" damaged PCS";
-      el("kpis").innerHTML=k.map(x=>'<button type="button" class="inv-kpi '+x[1]+'" data-tab="'+x[0]+'"><span>'+esc(x[2])+"</span><b>"+esc(x[3])+"</b><small>"+esc(x[4])+"</small></button>").join("");
+      if(dmgL.length)k[2][4]+=" · "+LWBBrand.packSum(dmgL)+" damaged";
+      el("kpis").innerHTML=k.map(x=>'<button type="button" class="inv-kpi '+x[1]+'" data-tab="'+x[0]+'"><span>'+esc(x[2])+"</span><b>"+String(x[3]).split(" · ").map(t=>'<span class="nw">'+esc(t)+"</span>").join(" · ")+"</b><small>"+esc(x[4])+"</small></button>").join("");
     }
 
     const TABS=[["stock","Saleable Stock",()=>live.length],["in","Stock In (Purchase)",()=>inLines.length],["out","Stock Out (Dispatch)",()=>outLines.length],["moves","Stock Movements",()=>moves.length]];
@@ -299,8 +312,8 @@
         if(!current||current.err||!current.rows.length){await ERPShell.alert("Nothing to export for this report.");return}
         if(!window.XLSX)await loadScript("https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js");
         const range=shortDate(el("from").value)+" to "+shortDate(el("to").value);
-        const sheet=XLSX.utils.aoa_to_sheet(LWBDate.rows([["LUXURY WRIST BRAND — "+current.title+(brand?" — "+brandName():"")],[range],[],current.head,...current.rows.map(r=>r.data)]));
-        sheet["!cols"]=current.head.map(h=>({wch:/SKU|Supplier|Party|Reference/.test(h)?30:15}));
+        const sheet=XLSX.utils.aoa_to_sheet(LWBDate.rows([["LUXURY WRIST BRAND — "+current.title+(brand?" — "+brandName():"")],[range],[],current.xhead||current.head,...current.rows.map(r=>r.data)]));
+        sheet["!cols"]=(current.xhead||current.head).map(h=>({wch:/SKU|Supplier|Party|Reference/.test(h)?30:15}));
         const book=XLSX.utils.book_new();XLSX.utils.book_append_sheet(book,sheet,"Inventory");
         XLSX.writeFile(book,"Inventory-"+tab+(brand?"-"+brandName().replace(/[^A-Za-z0-9]+/g,"_"):"")+"-"+el("to").value+".xlsx");
       }catch(e){await ERPShell.alert("Excel export failed: "+e.message)}
