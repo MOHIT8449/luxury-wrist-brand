@@ -113,8 +113,7 @@
 
     <div class="rt-bar">
       <div><label for="mepd">MEPD % (when no scheme)</label><input id="mepd" type="number" step="0.01"></div>
-      <div><label for="roi">ROI (per case, main)</label><input id="roi" type="number" step="0.01"></div>
-      <div><label for="roi5">Landing with ROI</label><input id="roi5" type="number" step="0.01"></div>
+      <div><label for="roi" title="ROI per case, only when the company supports it (e.g. 5). Blank = no ROI. Landing = after ROI.">ROI ₹ (per case)</label><input id="roi" type="number" step="0.01" min="0" placeholder="0"></div>
       <div id="chkWrap" hidden><label for="chk" title="A market PO with a rate below Landing + this ₹ is not stopped: Admin and Sales Head get a &quot;please check this order&quot; popup. Blank = off.">Check margin ₹</label><input id="chk" type="number" step="0.5" min="0" placeholder="Off"></div>
       <div class="grow"><label for="note">Note (e.g. "Company budget 24 Oct")</label><input id="note" maxlength="200" placeholder="What changed and who informed"></div>
       <button id="save" type="button" disabled>Save</button>
@@ -210,7 +209,7 @@
       ]);
       const err=s.error||p.error||h.error;
       if(err){el("box").innerHTML='<div class="erp-empty">Rate tables are not set up yet, or you do not have access: '+esc(err.message)+'<br>Run lwb_rate_scheme_setup.sql in Supabase.</div>';throw err}
-      if(s.data)settings={mepd_pct:+s.data.mepd_pct,roi_main:+s.data.roi_main,roi_landing:+s.data.roi_landing,check_margin:s.data.check_margin==null?"":+s.data.check_margin};
+      if(s.data)settings={mepd_pct:+s.data.mepd_pct,roi_main:+s.data.roi_main,roi_landing:+s.data.roi_main,check_margin:s.data.check_margin==null?"":+s.data.check_margin};
       checkOn=!!s.data&&"check_margin" in s.data&&me.realRole==="admin";el("chkWrap").hidden=!checkOn;
       packs=(p.data||[]).map(x=>({id:x.id,sort_no:x.sort_no,pack_name:x.pack_name,case_config:+x.case_config,gr:+x.gr,mepd_pct:numOrBlank(x.mepd_pct),
         free_bottle:+x.free_bottle,oms:numOrBlank(x.oms),qps:+x.qps,slab3_rate:+x.slab3_rate,unit_weight:numOrBlank(x.unit_weight),bottle:numOrBlank(x.bottle),
@@ -218,7 +217,7 @@
       history=h.data||[];
       saved=stateNow();
       await loadLinks();await loadSchemes();
-      el("mepd").value=settings.mepd_pct;el("roi").value=settings.roi_main;el("roi5").value=settings.roi_landing;el("chk").value=settings.check_margin??"";
+      el("mepd").value=settings.mepd_pct;el("roi").value=settings.roi_main||"";el("chk").value=settings.check_margin??"";
       render();
     }
 
@@ -387,16 +386,16 @@
       const shown=packs.filter(packShown).length;
       el("tabInfo").textContent=(shown<packs.length?shown+" of "+packs.length+" shown · ":"")+packs.filter(p=>p.active!==false).length+" packs";
       const td=(l,v,cls)=>'<td data-l="'+l+'"'+(cls?' class="'+cls+'"':"")+">"+v+"</td>";
-      let h='<table class="rt-table rt-grid"><thead><tr><th>#</th><th class="l">PACK</th><th>CASE<br>CONFIG</th><th>GR</th><th>MEPD %</th><th>MEPD</th><th>FREE<br>BOTTLE</th><th>OMS</th><th>QPS</th><th>ROI</th><th>LANDING<small>excl. ROI</small></th><th>LANDING<small>ROI '+esc(settings.roi_landing)+"</small></th>"+
+      let h='<table class="rt-table rt-grid"><thead><tr><th>#</th><th class="l">PACK</th><th>CASE<br>CONFIG</th><th>GR</th><th>MEPD %</th><th>MEPD</th><th>FREE<br>BOTTLE</th><th>OMS</th><th>QPS</th><th>ROI</th><th>LANDING</th>'+
         "<th>ACTIVE</th></tr></thead><tbody>";
       packs.forEach((r,i)=>{
         if(!packShown(r))return;
-        const c=calcLanding(r),c5=calcLanding(r,settings.roi_landing),fb=n(r.free_bottle)>0,sc=packScheme(r);
+        const c=calcLanding(r),fb=n(r.free_bottle)>0,sc=packScheme(r);
         h+='<tr class="'+(r.active===false?"off":"")+'"><td class="idx">'+(i+1)+'</td><td class="l pk">'+cellInput(i,"pack_name",r.pack_name,"name")+packSkus(r)+"</td>"+
           td("Case config",cellInput(i,"case_config",r.case_config))+td("GR",cellInput(i,"gr",r.gr))+
           td("MEPD %",cellInput(i,"mepd_pct",r.mepd_pct).replace("<input",'<input placeholder="'+esc(settings.mepd_pct)+'"')+(sc?'<div class="sch" title="MEPD Scheme '+esc(sc.valid_from+' to '+sc.valid_to)+'">Scheme '+esc(sc.mepd_pct)+'%</div>':""))+
           td("MEPD",fmt(c.E,2),"num")+td("Free bottle",cellInput(i,"free_bottle",r.free_bottle))+td("OMS",fb?fmt(c.G,2):cellInput(i,"oms",r.oms),"num")+
-          td("QPS",cellInput(i,"qps",r.qps))+td("ROI",fmt(settings.roi_main,2),"num")+td("Landing",fmt(c.J,2),"strong num")+td("Land. ROI "+esc(settings.roi_landing),fmt(c5.J,2),"red num")+
+          td("QPS",cellInput(i,"qps",r.qps))+td("ROI",fmt(settings.roi_main,2),"num")+td("Landing",fmt(c.J,2),"strong num")+
           '<td class="act" data-l="Active"><input type="checkbox" aria-label="Active" data-i="'+i+'" data-f="active"'+(r.active!==false?" checked":"")+(me.edit?"":" disabled")+"></td></tr>";
       });
       if(packs.length&&!shown)h+='<tr><td colspan="13" class="l">No pack in this category / pack size. Click ALL.</td></tr>';
@@ -413,7 +412,7 @@
       el("tabNote").textContent="Enter the Slab 3 MGR rate; Slab 1 = +5, Slab 2 and 4 = −5. Margin = MGR rate − landing. PO / Sales Order Entry uses these rates. Min rate = Landing + Min margin (Admin): a Sales Head can not approve a PO below it, it goes to Admin for rate OK. Blank Min margin = no limit.";
       let h='<div class="rt-bar" style="align-items:center"><div><label>Rate list date</label><input type="date" id="imgDate" value="'+esc(imgDate||LWBMepd.day())+'"></div>'+
         '<button type="button" id="imgCopy" style="margin-top:20px">📋 Copy image (WhatsApp)</button><button type="button" id="imgSave" style="margin-top:20px;background:#fff;color:var(--erp-ink);border-color:var(--erp-line)">⬇ Image download</button></div>'+
-        '<table class="rt-table rt-grid"><thead><tr><th>#</th><th class="l">PACK</th><th>LANDING<small>excl. ROI</small></th>'+
+        '<table class="rt-table rt-grid"><thead><tr><th>#</th><th class="l">PACK</th><th>LANDING</th>'+
         SLAB_NAMES.map((s,i)=>"<th>SLAB "+(i+1)+" MARGIN<small>"+esc(s)+"</small></th><th>MGR RATE</th>").join("")+'<th class="mn">MIN MARGIN<small>Admin</small></th><th class="mn">MIN RATE</th></tr></thead><tbody>';
       const td=(l,v,cls)=>'<td data-l="'+l+'"'+(cls?' class="'+cls+'"':"")+">"+v+"</td>";
       packs.forEach((r,i)=>{if(!packShown(r))return;const c=calcLanding(r);
@@ -492,8 +491,8 @@
     document.addEventListener("input",e=>{
       const t=e.target;
       if(t.id==="chk"){settings.check_margin=t.value.trim()===""||isNaN(+t.value)?"":+t.value;showState();return}
-      if(["mepd","roi","roi5"].includes(t.id)){
-        settings[{mepd:"mepd_pct",roi:"roi_main",roi5:"roi_landing"}[t.id]]=n(t.value);
+      if(["mepd","roi"].includes(t.id)){
+        settings[{mepd:"mepd_pct",roi:"roi_main"}[t.id]]=n(t.value);settings.roi_landing=settings.roi_main;
         clearTimeout(render._t);render._t=setTimeout(()=>keepFocus(render),250);return;
       }
       const sf={scPct:"pct",scFrom:"from",scTo:"to",scNote:"note"}[t.id];if(sf){schemeForm[sf]=t.value;return}
@@ -664,7 +663,7 @@
       if(!await ERPShell.confirm("Import "+S.landing.length+" packs and MEPD / ROI from the backup?\n\nPacks with the same name are updated and new ones are added. Nothing is written to the database until you click Save."))return;
       if(S.mepd!=null)settings.mepd_pct=n(S.mepd);
       if(S.roi!=null)settings.roi_main=n(S.roi);
-      if(S.roi5!=null)settings.roi_landing=n(S.roi5);
+      settings.roi_landing=settings.roi_main;
       S.landing.forEach((r,i)=>{
         const sl=(S.slab||[])[i]||{};
         const key=String(r.name||"").trim().toUpperCase();if(!key)return;
@@ -677,7 +676,7 @@
       // PO Maker's Party PO SKU list says which landing pack each SKU uses.
       if(Array.isArray(S.poDef))backupLinks=new Map(S.poDef.filter(d=>d&&d.name&&S.landing[d.li]).map(d=>[skuKey(d.name),skuKey(S.landing[d.li].name)]));
       importedLedger=!history.length&&Array.isArray(S.ledger)&&S.ledger.length?S.ledger.map(L=>({dt:L.dt,note:L.note,rows:L.rows||[],settings:{}})):null;
-      el("mepd").value=settings.mepd_pct;el("roi").value=settings.roi_main;el("roi5").value=settings.roi_landing;
+      el("mepd").value=settings.mepd_pct;el("roi").value=settings.roi_main||"";
       if(!el("note").value)el("note").value="Imported from PO Maker";
       render();
       ERPShell.toast(importedLedger?"Backup loaded (including "+importedLedger.length+" past ledger entries). Now click Save.":"Backup loaded. Now click Save.","success");
