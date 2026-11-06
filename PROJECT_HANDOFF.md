@@ -4,6 +4,12 @@
 **Purpose:** Continue the same ERP project from a new ChatGPT conversation without restarting or losing the agreed requirements.
 **Status:** Active development / verification. Do not assume all modules are completed or fully tested.
 
+## Advance with 0 bills: same shop under another name (6 Nov 2026)
+
+- Mohit: Billing & Outstanding "Advance with us" showed RG. SHIV TOBECO (PARVAT PATIYA) ₹20,000, AMBALAL ₹2, CHAMUDA ₹2 with 0 bills after the 3 Nov bank statement. Cause: the ₹20,000 was booked on the old Party Master / Tally name "RG. SHIV TOBECO (PARVAT PATIYA)", which is not linked to the main party "SHIV TOBECO (PARVAT PATIYA)" (opening ₹53,820), so it sits as advance there. The ₹2 = payment a little more than the bill.
+- `party-pay.js`: `LWBPartyPay.lookalike(info, name)` / `core(name)` (RG, M/S, SHREE ... words dropped) finds the other main party with bills / opening. `party-billing.html`: advance popup has a "Check" column, Outstanding rows a ⚠ line ("Same shop as X?" / "Paid ₹2 extra (round off)"). `bank-statement.html`: Party payment on a party with no bill while a same-name party has bills asks "book on X?" first. `customer-master.html`: RG is a skip word, so Find Duplicates pairs RG. names with the main party (Merge moves the payment and adds the Tally link).
+- No SQL. Live data not changed. Checked with a mocked database at 1366 / 390 px: no side scroll, no JS errors. Screenshots: project files `advance-check/`.
+
 ## Godown damage report for purchase vehicles (6 Nov 2026)
 
 - Mohit: when a purchase vehicle reaches the godown, the Godown Manager must get a popup "vehicle arrived" and report damage / leakage with SKU, quantity, type and photos; after Submit the report goes to Admin and Sales Head.

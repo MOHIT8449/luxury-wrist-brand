@@ -50,7 +50,7 @@
     .pb-t tr.pr{cursor:pointer}.pb-t tr.pr:hover td{background:#f7faff}.pb-t tr.open td{background:#eef4ff}
     .pb-t tr.sub>td{background:#fbfcfe;padding:10px}
     .pb-t tfoot td{font-weight:700;background:#f6f7f9}
-    .due{color:#b3122b;font-weight:800}.adv{color:#13824a;font-weight:700}
+    .due{color:#b3122b;font-weight:800}.adv{color:#13824a;font-weight:700}.adv-chk{display:block;color:#9a5b00;font-weight:700;font-size:11.5px;margin-top:2px}
     .tag{display:inline-block;padding:2px 9px;border-radius:99px;font-size:12px;font-weight:700;white-space:nowrap}
     .t-red{background:#fdecef;color:#b3122b}.t-amb{background:#fdf0dc;color:#9a5b00}.t-grn{background:#e3f5ec;color:#13824a}.t-blu{background:#e6efff;color:#1d5fbf}.t-gry{background:#eef0f3;color:#3b4652}
     .chips{display:flex;gap:4px;flex-wrap:wrap;margin-top:3px}
@@ -187,6 +187,11 @@
     /* ---------- brand (All / Rajnigandha / Coca-Cola) ---------- */
     const BR=()=>info&&info.branded?info.companies:[];
     const V=p=>fb?LWBPartyPay.slice(p,fb):p;      // the party as seen in the chosen brand
+    // Advance with 0 bills: same shop under another name (RG. ...), or a few rupees paid extra
+    const advNote=p=>{if(!(p.net<-0.5)||(p.bills||[]).length)return "";const t=LWBPartyPay.lookalike(info,p.party);
+      if(t)return "Same shop as "+t.party+"? ("+LWBPartyPay.balText(V(t))+")";
+      return -p.net<10?"Paid "+rs(-p.net)+" extra (round off)":""};
+    const advTag=p=>{const n=advNote(p);return n?`<small class="adv-chk">⚠ ${esc(n)}</small>`:""};
     const inB=c=>!fb||(c||"")===fb;
     const btag=c=>{const b=info.brandOf(c);return b?`<span class="btag" style="--bc:${esc(b.color||"#2362a4")}"><i></i>${esc(b.name)}</span>`:'<span class="btag" style="--bc:#8a94a3"><i></i>No brand</span>'};
     function brandChips(){
@@ -227,10 +232,11 @@
       el("kpis").querySelectorAll("[data-go]").forEach(b=>b.onclick=()=>{tab=b.dataset.go;render()});
       // Count card → list popup as well (erp-list.js); the tab below also switches.
       if(window.ERPList){const kc=el("kpis").querySelectorAll(".pb-kpi"),PC=[{t:"Party",v:"party"},{t:"Balance",v:p=>Math.abs(p.net),money:true,sum:true},{t:"Bills",v:p=>(p.bills||[]).length,num:true,dec:0},{t:"Oldest bill",v:"oldest",date:true}];
+        const PA=[...PC,{t:"Check",v:p=>advNote(p)}];
         const L=(i,o)=>kc[i]&&ERPList.card(kc[i],()=>o());
         L(0,()=>({title:"Bills to make",sub:"Approved and loaded POs without a Tally bill",rows:toMake(),cols:[{t:"PO No.",v:"order_no"},{t:"Party",v:"party"},{t:"Stage",v:o=>o.early?"Approved, not loaded":"Loaded"},{t:"Date",v:o=>o.dispatch_date||o.order_date,date:true},{t:"ERP amount",v:"erp_amount",money:true,sum:true}]}));
         L(1,()=>({title:"To collect",sub:"Parties with money due",rows:parties.filter(p=>p.net>0.5).sort((a,b)=>b.net-a.net),cols:PC}));
-        L(2,()=>({title:"Advance with us",sub:"Parties who paid in advance",rows:parties.filter(p=>p.net<-0.5).sort((a,b)=>a.net-b.net),cols:PC}));
+        L(2,()=>({title:"Advance with us",sub:"Parties who paid in advance",rows:parties.filter(p=>p.net<-0.5).sort((a,b)=>a.net-b.net),cols:PA}));
         L(3,()=>({title:"Received today",sub:"Party payments today",rows:(info.raw.receipts||[]).filter(r=>!r.cancelled&&r.pay_date===info.today&&inB(r.company_id)),
           cols:[{t:"Party",v:"party"},{t:"Mode",v:r=>(r.modes||[]).map(m=>m.mode).join(", ")},{t:"Ref",v:r=>(r.modes||[]).map(m=>m.ref).filter(Boolean).join(", ")},{t:"By",v:"by"},{t:"Amount",v:"total",money:true,sum:true}]}))}
       el("cMake").hidden=!make.length;el("cMake").textContent=make.length;
@@ -316,7 +322,7 @@
       const T=k=>list.reduce((a,p)=>a+p[k],0);
       el("body").innerHTML=`<div class="pb-scroll"><table class="pb-t resp"><thead><tr><th>Main party</th><th class="n">Bills</th><th class="n">Oldest</th><th class="n">Bills due</th><th class="n">Paid, not adjusted</th><th class="n">Balance</th><th></th></tr></thead><tbody>${list.map(p=>{
         const a=days(p.oldest),k=key(p.party),isOpen=open.has(k);
-        return `<tr class="pr${isOpen?" open":""}" data-p="${esc(k)}"><td><b>${esc(p.party)}</b>${p.members.length?`<div class="chips">${p.members.map(m=>`<span class="chip">${esc(m)}</span>`).join("")}</div>`:""}</td>
+        return `<tr class="pr${isOpen?" open":""}" data-p="${esc(k)}"><td><b>${esc(p.party)}</b>${advTag(p)}${p.members.length?`<div class="chips">${p.members.map(m=>`<span class="chip">${esc(m)}</span>`).join("")}</div>`:""}</td>
           <td class="n hide-ph">${p.bills.length}</td><td class="n hide-ph">${p.oldest?dmy(p.oldest)+`<small class="${a>30?"due":""}">${a} days</small>`:"—"}</td>
           <td class="n hide-ph">${rs(p.due)}${p.opening?`<small>opening ${rs(p.opening)}</small>`:""}</td><td class="n hide-ph">${p.advance>0.5?rs(p.advance)+(p.bills.length?`<br><button type="button" class="lnk" data-adj="${esc(p.party)}">Adjust now</button>`:""):"—"}</td>
           <td class="n"><span class="${p.net>0.5?"due":"adv"}">${rs(Math.abs(p.net))}</span><small>${p.net>0.5?"to collect":p.net<-0.5?"advance":"settled"}</small><small class="ph-only">${p.bills.length} bill${p.bills.length===1?"":"s"}</small></td>
@@ -335,7 +341,7 @@
       const tot=c=>list.reduce((a,p)=>a+LWBPartyPay.slice(p,c).net,0);
       el("body").innerHTML=`<div class="pb-scroll"><table class="pb-t resp all" style="--nb:${bs.length}"><thead><tr><th>Main party</th>${bs.map(c=>`<th class="n">${btag(c.id)}</th>`).join("")}<th class="n hide-ph">Total</th><th></th></tr></thead><tbody>${list.map(p=>{
         const k=key(p.party),isOpen=open.has(k);
-        return `<tr class="pr${isOpen?" open":""}" data-p="${esc(k)}"><td><b>${esc(p.party)}</b>${p.members.length?`<div class="chips">${p.members.map(m=>`<span class="chip">${esc(m)}</span>`).join("")}</div>`:""}${nob(p)}</td>
+        return `<tr class="pr${isOpen?" open":""}" data-p="${esc(k)}"><td><b>${esc(p.party)}</b>${advTag(p)}${p.members.length?`<div class="chips">${p.members.map(m=>`<span class="chip">${esc(m)}</span>`).join("")}</div>`:""}${nob(p)}</td>
           ${bs.map(c=>`<td class="n bc"><small class="ph-only">${esc(c.name)}</small>${cell(p,c.id)}</td>`).join("")}<td class="n hide-ph"><b>${rs(p.net)}</b></td>
           <td class="n"><button type="button" class="pb-btn sm grn" data-pay="${esc(p.party)}">Receive</button></td></tr>${isOpen?`<tr class="sub"><td colspan="${bs.length+3}">${partyBills(p)}</td></tr>`:""}`}).join("")}</tbody>
           <tfoot><tr><td>${list.length} parties</td>${bs.map(c=>`<td class="n"><small class="ph-only" style="display:none">${esc(c.name)}</small>${rs(tot(c.id))}</td>`).join("")}<td class="n hide-ph">${rs(list.reduce((a,p)=>a+p.net,0))}</td><td></td></tr></tfoot></table></div>`;
