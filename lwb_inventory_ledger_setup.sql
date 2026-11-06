@@ -17,6 +17,7 @@
 --   * out_pcs         IC / CS actually loaded on vehicles inside the dates, × pcs per IC / CS.
 --   * book_pcs        opening + opening entry + in + returns + other − out  (what the stock SHOULD be on p_to).
 --   * system_pcs      what the system had at the end of p_to (now − changes after p_to).
+--   * booked_pcs      POs given but not loaded yet (pending / approved / transport / loading; drafts never).
 --   * diff_pcs        system − book. 0 = stock is right. Plus = the system did not take the sale out.
 -- out_lines: every loaded PO line inside the dates (vehicle loaded time from Loading & Dispatch, else the
 -- Admin "Loaded" mark date). Status after loading (loaded, invoiced, dispatched, delivered, closed ...) all
@@ -130,6 +131,25 @@ BEGIN
     AND lower(btrim(coalesce(o.status::text,''))) NOT IN ('cancelled','canceled','rejected','draft','deleted')
     AND coalesce(nullif(j->>'loaded_qty','')::numeric, 0) > 0;
 
+  -- Booked: POs given (pending approval, approved, transport given, loading) but not loaded yet.
+  -- Drafts are not POs (own table), so they never count. Qty = approved qty, else ordered qty, less what is loaded.
+  CREATE TEMP TABLE IF NOT EXISTS pg_temp.lwb_inv_bk(sku_id uuid, pcs numeric) ON COMMIT DROP;
+  DELETE FROM pg_temp.lwb_inv_bk;  -- scratch rows of an earlier call in the same transaction
+  INSERT INTO pg_temp.lwb_inv_bk
+  SELECT s.id, greatest(coalesce(nullif(j->>'approved_qty','')::numeric, nullif(j->>'ordered_qty','')::numeric, 0)
+                        - coalesce(nullif(j->>'loaded_qty','')::numeric, 0), 0) * greatest(coalesce(s.pcs_per_case,1),1)
+  FROM public.orders o
+  JOIN public.order_items i ON i.order_id = o.id
+  CROSS JOIN LATERAL to_jsonb(i) j
+  JOIN LATERAL (
+    SELECT x.id, x.pcs_per_case FROM public.sku_master x
+    WHERE x.id::text = j->>'sku_id' OR upper(btrim(x.sku_name)) = upper(btrim(coalesce(j->>'sku_name','')))
+    ORDER BY coalesce(x.id::text = j->>'sku_id', false) DESC, coalesce(x.is_active, true) DESC LIMIT 1) s ON true
+  WHERE lower(btrim(coalesce(o.status::text,''))) NOT IN ('cancelled','canceled','rejected','draft','deleted',
+          'loaded','invoiced','dispatched','delivered','partially_delivered','partial','closed','completed','returned')
+    AND NOT EXISTS (SELECT 1 FROM public.dispatch_assignments a WHERE a.order_id = o.id AND a.loading_completed_at IS NOT NULL)
+    AND NOT EXISTS (SELECT 1 FROM public.lwb_admin_order_marks mk WHERE mk.order_id = o.id AND mk.kind = 'LOADED');
+
   SELECT coalesce(jsonb_agg(jsonb_build_object('order_no', x.order_no, 'party', x.party, 'status', x.status,
            'sku_id', x.sku_id, 'sku_name', x.sku_name, 'cases', x.cases, 'pcs', x.pcs, 'at', x.at) ORDER BY x.at DESC), '[]'::jsonb)
     INTO v_out FROM pg_temp.lwb_inv_out x WHERE x.at < v_to;
@@ -159,6 +179,7 @@ BEGIN
       sum(pcs) FILTER (WHERE at >= v_to) AS after_to,
       sum(pcs) FILTER (WHERE at < v_to) AS out_pcs
     FROM pg_temp.lwb_inv_out WHERE sku_id IS NOT NULL GROUP BY 1),
+  bk AS (SELECT sku_id, sum(pcs) AS booked_pcs FROM pg_temp.lwb_inv_bk GROUP BY 1),
   ids AS (SELECT sku_id FROM live UNION SELECT sku_id FROM mv UNION SELECT sku_id FROM sx UNION SELECT sku_id FROM ot),
   r AS (
     SELECT ids.sku_id, coalesce(live.now_pcs,0) AS now_pcs,
@@ -167,13 +188,13 @@ BEGIN
       coalesce(mv.after_to,0) + coalesce(sx.after_to,0) - CASE WHEN v_view_uses_orders THEN coalesce(ot.after_to,0) ELSE 0 END AS sys_after_to,
       coalesce(mv.opening_entry,0) AS opening_entry, coalesce(mv.in_pcs,0) AS in_pcs,
       coalesce(sx.return_pcs,0) AS return_pcs, coalesce(mv.other_pcs,0) + coalesce(sx.other_pcs,0) AS other_pcs,
-      coalesce(ot.out_pcs,0) AS out_pcs
-    FROM ids LEFT JOIN live USING (sku_id) LEFT JOIN mv USING (sku_id) LEFT JOIN sx USING (sku_id) LEFT JOIN ot USING (sku_id))
+      coalesce(ot.out_pcs,0) AS out_pcs, coalesce(bk.booked_pcs,0) AS booked_pcs
+    FROM ids LEFT JOIN live USING (sku_id) LEFT JOIN mv USING (sku_id) LEFT JOIN sx USING (sku_id) LEFT JOIN ot USING (sku_id) LEFT JOIN bk USING (sku_id))
   SELECT coalesce(jsonb_agg(jsonb_build_object(
       'sku_id', r.sku_id, 'now_pcs', r.now_pcs,
       'opening_pcs', r.now_pcs - r.sys_since_from,
       'opening_entry', r.opening_entry, 'in_pcs', r.in_pcs, 'return_pcs', r.return_pcs, 'other_pcs', r.other_pcs,
-      'out_pcs', r.out_pcs,
+      'out_pcs', r.out_pcs, 'booked_pcs', r.booked_pcs,
       'book_pcs', r.now_pcs - r.sys_since_from + r.opening_entry + r.in_pcs + r.return_pcs + r.other_pcs - r.out_pcs,
       'system_pcs', r.now_pcs - r.sys_after_to)), '[]'::jsonb)
     INTO v_rows FROM r;
