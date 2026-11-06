@@ -15,6 +15,9 @@
   if(window.LWBBrand)return;
   const KEY="lwbBrand";
   const skuKey=v=>String(v==null?"":v).toUpperCase().replace(/\s+/g," ").trim();
+  // Same words in any order = same SKU ("250ML THUMS UP ZERO MRP 10" = "ZERO 250ML THUMS UP MRP 10").
+  // Old PO lines keep the name they were saved with, so a SKU renamed in SKU Master still finds its brand (Mohit, 6 Nov 2026).
+  const wordKey=v=>skuKey(v).split(" ").sort().join(" ");
   const esc=v=>String(v==null?"":v).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
   let cache=null,skuCache=null,units=new Map();
   function read(){try{return localStorage.getItem(KEY)||""}catch(e){return ""}}
@@ -39,6 +42,9 @@
         for(const s of r.data||[]){out.set(skuKey(s.sku_name),s.company_id||"");if(s.pack_unit)units.set(skuKey(s.sku_name),s.pack_unit)}
         if((r.data||[]).length<1000)break;
       }
+      const byWords=new Map();for(const [k,c] of out){const w=wordKey(k);if(!byWords.has(w)||(c&&!byWords.get(w)))byWords.set(w,c)}
+      const get=out.get.bind(out),has=out.has.bind(out);
+      out.get=k=>has(k)?get(k):byWords.get(wordKey(k));out.has=k=>has(k)||byWords.has(wordKey(k));
       return out;
     })().catch(()=>null);
     return skuCache;
