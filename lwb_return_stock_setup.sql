@@ -34,13 +34,17 @@ BEGIN
 END;
 $do$;
 ALTER TABLE public.lwb_stock_moves ADD CONSTRAINT lwb_stock_moves_kind_ck
-  CHECK (kind IN ('TRANSFER','DESTROY','COMPANY_RETURN','TO_SALEABLE','RETURN_IN'));
+  CHECK (kind IN ('TRANSFER','DESTROY','COMPANY_RETURN','TO_SALEABLE','RETURN_IN','BILL_CHANGE'));
 ALTER TABLE public.lwb_stock_moves ADD CONSTRAINT lwb_stock_moves_source_ck
-  CHECK (source IN ('MANUAL','AUDIT','RETURN'));
+  CHECK (source IN ('MANUAL','AUDIT','RETURN','BILL_CHANGE'));
 ALTER TABLE public.lwb_stock_moves ADD CONSTRAINT lwb_stock_moves_from_ck
   CHECK (from_bucket IN ('SALEABLE','DAMAGE','LEAKAGE','BREAKAGE','GASLESS','EXPIRY','LOSS','PARTY'));
 ALTER TABLE public.lwb_stock_moves ADD CONSTRAINT lwb_stock_moves_return_ck
-  CHECK ((kind = 'RETURN_IN') = (from_bucket = 'PARTY'));
+  CHECK ((kind <> 'RETURN_IN' OR from_bucket = 'PARTY')
+     AND (from_bucket <> 'PARTY' OR kind IN ('RETURN_IN','BILL_CHANGE'))
+     AND (to_bucket <> 'PARTY' OR kind = 'BILL_CHANGE')
+     AND (kind <> 'BILL_CHANGE' OR (from_bucket = 'PARTY' AND to_bucket = 'SALEABLE') OR (from_bucket = 'SALEABLE' AND to_bucket = 'PARTY')));
+-- PO change after loading (lwb_bill_change_stock_setup.sql) also moves SALEABLE <-> PARTY.
 
 -- One stock line per return line.
 CREATE UNIQUE INDEX IF NOT EXISTS lwb_stock_moves_return_item_uq

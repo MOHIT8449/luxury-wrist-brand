@@ -59,6 +59,22 @@ await db.exec(between(pop,'CREATE OR REPLACE FUNCTION public.lwb_flow_send','REV
 await db.exec(await sql('lwb_bill_before_loading_setup.sql'));
 await db.exec(await sql('lwb_bill_change_setup.sql'));
 await db.exec(await sql('lwb_bill_change_setup.sql'));  // safe to run again
+// Stock: stand-in for lwb_stock_transfer_setup.sql (moves table, base stock, today) + the stock file.
+await db.exec(`
+ALTER TABLE public.sku_master ADD COLUMN id uuid DEFAULT gen_random_uuid(), ADD COLUMN pcs_per_case int DEFAULT 24;
+CREATE TABLE public.stock_now(sku_id uuid primary key,saleable_pcs numeric);
+CREATE TABLE public.lwb_stock_moves(id bigserial primary key,batch_id uuid not null,kind text not null CHECK (kind IN ('TRANSFER','DESTROY','COMPANY_RETURN','TO_SALEABLE')),
+  from_bucket text not null,to_bucket text not null,sku_id uuid not null,sku_name text not null,pcs_per_case int not null,qty_pcs int not null CHECK (qty_pcs>0),requested_pcs int not null,
+  move_date date not null,reason text not null,note text,source text not null default 'MANUAL' CHECK (source IN ('MANUAL','AUDIT')),status text not null default 'PENDING',
+  requested_by uuid,requested_at timestamptz default now(),decided_by uuid,decided_at timestamptz,decision_note text,
+  CHECK (from_bucket IN ('SALEABLE','DAMAGE','LEAKAGE','BREAKAGE','GASLESS','EXPIRY','LOSS')),
+  CHECK (to_bucket IN ('SALEABLE','DAMAGE','LEAKAGE','BREAKAGE','GASLESS','EXPIRY','LOSS','DESTROYED','COMPANY_RETURN')),CHECK (from_bucket<>to_bucket));
+CREATE FUNCTION public.lwb_stx_today() RETURNS date LANGUAGE sql AS $$ SELECT current_date $$;
+CREATE FUNCTION public.lwb_stx_base() RETURNS TABLE(sku_id uuid,saleable_pcs numeric,damaged_pcs numeric) LANGUAGE sql STABLE AS $$
+  SELECT s.id,coalesce(n.saleable_pcs,0),0::numeric FROM public.sku_master s LEFT JOIN public.stock_now n ON n.sku_id=s.id $$;
+`);
+await db.exec(await sql('lwb_bill_change_stock_setup.sql'));
+await db.exec(await sql('lwb_bill_change_stock_setup.sql'));  // safe to run again
 await db.exec('GRANT USAGE ON SCHEMA public,auth TO authenticated; GRANT SELECT,UPDATE ON orders TO authenticated');
 
 const today=(await db.query("select (now() at time zone 'Asia/Kolkata')::date::text d")).rows[0].d;
@@ -185,4 +201,61 @@ test('Before loading the approved qty changes',async()=>{
  const it=await items(p);assert.equal(it[0].a,12);assert.equal(it[0].l,null);
  const q=(await db.query("insert into orders(order_no,customer_name,status) values('PO-2003','RAM STORES','pending') returning id")).rows[0].id;
  await assert.rejects(req(q,[{sku_name:'MAAZA 600',qty:1,rate:1}]),/Only an approved PO/);
+});
+
+// ---- Godown stock follows an approved change after loading / delivery ----
+const moves=async id=>(await db.query("select sku_name,from_bucket f,to_bucket t,qty_pcs::int q,kind,source from lwb_stock_moves where order_id=$1 order by sku_name",[id])).rows;
+let d;
+test('Delivered PO: Accounts change waits, no stock yet; Admin approves -> stock follows, per SKU',async()=>{
+ d=(await db.query("insert into orders(order_no,customer_name,status) values('LXY-00104','S B TRADING','delivered') returning id")).rows[0].id;
+ await db.query("insert into order_items(order_id,sku_name,ordered_qty,approved_qty,loaded_qty,rate) values ($1,'THUMS UP 250',50,50,50,605),($1,'THUMS UP 740',25,25,25,670),($1,'MAAZA 600',10,10,10,500)",[d]);
+ await as('accounts');
+ const j=await its(d);assert.equal(j.qty_col,'loaded_qty');
+ const [a,b,m]=j.items;  // sorted by SKU: MAAZA 600, THUMS UP 250, THUMS UP 740
+ // Maaza line left out = removed (10 back), 250: 50 -> 49 (1 back), 740: 25 -> 27 (2 more out)
+ const r=await req(d,[{item_id:b.item_id,sku_name:'THUMS UP 250',qty:49,rate:605},{item_id:m.item_id,sku_name:'THUMS UP 740',qty:27,rate:670}],'Less qty reached');
+ assert.equal(r.status,'WAITING');
+ assert.deepEqual(await moves(d),[]);
+ await as('admin');
+ await decide(r.id,true);
+ assert.deepEqual(await moves(d),[
+  {sku_name:'MAAZA 600',f:'PARTY',t:'SALEABLE',q:240,kind:'BILL_CHANGE',source:'BILL_CHANGE'},
+  {sku_name:'THUMS UP 250',f:'PARTY',t:'SALEABLE',q:24,kind:'BILL_CHANGE',source:'BILL_CHANGE'},
+  {sku_name:'THUMS UP 740',f:'SALEABLE',t:'PARTY',q:48,kind:'BILL_CHANGE',source:'BILL_CHANGE'}]);
+ const st=(await db.query('select stock_applied s from lwb_bill_changes where id=$1',[r.id])).rows[0].s;
+ assert.deepEqual(st.map(x=>[x.sku,Number(x.cases)]),[['MAAZA 600',10],['THUMS UP 250',1],['THUMS UP 740',-2]]);
+});
+
+test('SKU replaced after delivery: old SKU back, new SKU out; rate change moves nothing',async()=>{
+ await as('admin');
+ let j=await its(d);
+ const it=j.items.filter(i=>Number(i.qty)>0);
+ const t250=it.find(i=>i.sku_name==='THUMS UP 250');
+ const r=await req(d,it.map(i=>({item_id:i.item_id,sku_name:i===t250?'MAAZA 600':i.sku_name,qty:Number(i.qty),rate:Number(i.rate)})));
+ const mv=(await db.query("select sku_name,from_bucket f,qty_pcs::int q from lwb_stock_moves where bill_change_id=$1 order by sku_name",[r.id])).rows;
+ assert.deepEqual(mv,[{sku_name:'MAAZA 600',f:'SALEABLE',q:49*24},{sku_name:'THUMS UP 250',f:'PARTY',q:49*24}]);
+ j=await its(d);
+ const r2=await req(d,j.items.filter(i=>Number(i.qty)>0).map(i=>({item_id:i.item_id,sku_name:i.sku_name,qty:Number(i.qty),rate:Number(i.rate)+1})));
+ assert.equal((await db.query('select count(*)::int c from lwb_stock_moves where bill_change_id=$1',[r2.id])).rows[0].c,0);
+});
+
+test('Live stock that already follows loaded qty is not counted twice',async()=>{
+ await db.exec(`CREATE OR REPLACE FUNCTION public.lwb_stx_base() RETURNS TABLE(sku_id uuid,saleable_pcs numeric,damaged_pcs numeric) LANGUAGE sql STABLE AS $$
+  SELECT s.id,10000-coalesce((SELECT sum(i.loaded_qty) FROM public.order_items i WHERE upper(i.sku_name)=upper(s.sku_name)),0)*s.pcs_per_case,0::numeric FROM public.sku_master s $$`);
+ await as('admin');
+ const j=await its(d);
+ const it=j.items.filter(i=>Number(i.qty)>0);
+ const r=await req(d,it.map(i=>({item_id:i.item_id,sku_name:i.sku_name,qty:Number(i.qty)-1,rate:Number(i.rate)})));
+ assert.equal((await db.query('select count(*)::int c from lwb_stock_moves where bill_change_id=$1',[r.id])).rows[0].c,0);
+ const st=(await db.query('select stock_applied s from lwb_bill_changes where id=$1',[r.id])).rows[0].s;
+ assert.ok(st.length===it.length&&st.every(x=>Number(x.cases)===1));
+});
+
+test('Before loading no stock moves',async()=>{
+ const p=(await db.query("insert into orders(order_no,customer_name,status) values('LXY-00200','RAM STORES','approved') returning id")).rows[0].id;
+ await db.query("insert into order_items(order_id,sku_name,ordered_qty,approved_qty,rate) values ($1,'THUMS UP 250',10,10,400)",[p]);
+ await as('admin');
+ const j=await its(p);
+ await req(p,[{item_id:j.items[0].item_id,sku_name:'THUMS UP 250',qty:5,rate:400}]);
+ assert.deepEqual(await moves(p),[]);
 });

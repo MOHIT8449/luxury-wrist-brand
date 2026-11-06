@@ -50,6 +50,7 @@
  .bc-hist{margin-top:8px;font-size:13px}.bc-hist summary{cursor:pointer;font-weight:700;color:#33404d}
  .bc-hist .h{border-top:1px solid var(--erp-line,#e3e6e2);padding:5px 0;display:flex;gap:6px;flex-wrap:wrap;align-items:center}
  .bc-note{color:var(--erp-muted,#55686c);font-size:12.5px;margin-top:6px}
+ .bc-stk{display:flex;gap:4px 6px;flex-wrap:wrap;align-items:center;margin-top:6px;font-size:12.5px}.bc-stk small{color:var(--erp-muted,#55686c);width:100%}
  del{color:#8a969a}ins{text-decoration:none;font-weight:700}
  @media(max-width:600px){.bc-back{padding:8px}.bc-box{padding:10px}
   .bc-t.ed thead{display:none}.bc-t.ed tr{display:grid;grid-template-columns:auto auto 1fr auto;gap:4px 6px;align-items:center;border-bottom:1px solid var(--erp-line,#e3e6e2);padding:6px 0}
@@ -64,6 +65,13 @@
  const say=(t)=>window.ERPShell&&ERPShell.alert?ERPShell.alert(t):alert(t);
  const ask=(t)=>window.ERPShell&&ERPShell.confirm?ERPShell.confirm(t):Promise.resolve(confirm(t));
  const toast=t=>window.ERPShell&&ERPShell.toast?ERPShell.toast(t):0;
+ // Clear "OK" popup after a send / approve (the old toast was missed by users).
+ const done=(title,t)=>{return window.ERPShell&&ERPShell.alert?ERPShell.alert(t,{kind:"info",title:"✓ "+title}):alert(title+"\n\n"+t)};
+ // Godown stock a change moves after loading: + = back to godown, − = more went to the party.
+ function stockMoves(lines){const m=new Map(),add=(k,q)=>{if(!k)return;const u=k.trim().toUpperCase();const x=m.get(u)||{sku:k.trim(),c:0};x.c+=q;m.set(u,x)};
+  for(const l of lines||[]){add(l.sku_old,Number(l.qty_old)||0);add(l.sku,-(Number(l.qty)||0))}
+  return [...m.values()].filter(x=>Math.abs(x.c)>0.0001)}
+ const stockText=lines=>stockMoves(lines).map(x=>`${x.sku} ${x.c>0?"+":"−"}${Math.abs(x.c)} CS`).join(", ");
 
  function lineText(l){
   const k=l.kind||[];
@@ -89,6 +97,7 @@
    <datalist id="bc-skus">${(d.skus||[]).map(s=>`<option value="${esc(s)}">`).join("")}</datalist>
    <div style="overflow:auto"><table class="bc-t ed"><thead><tr><th>Item</th><th>Qty (CS)</th><th class="n">Rate</th><th class="n">Amount</th><th></th></tr></thead><tbody></tbody></table></div>
    <div class="bc-row"><button type="button" class="bc-lnk" data-add>+ Add SKU</button><span class="sp bc-sum" data-sum></span></div>
+   ${loaded?`<div class="bc-stk" data-stk hidden></div>`:""}
    <div class="bc-row"><select class="bc-in" data-reason style="flex:1 1 170px"><option value="">Reason…</option>${REASONS.map(r=>`<option>${r}</option>`).join("")}</select>
     <input class="bc-in" data-note maxlength="500" placeholder="Note for Admin" style="flex:2 1 200px">
     ${bills.length>1?`<select class="bc-in" data-bill title="Bill that takes the difference" style="flex:1 1 150px">${bills.map(x=>`<option value="${esc(x.no)}">Bill ${esc(x.no)} · ${esc(x.firm||"")}</option>`).join("")}</select>`:""}
@@ -112,6 +121,9 @@
     const sw=tr.querySelector("[data-sw]");if(sw)sw.onclick=()=>{x.swap=!x.swap;if(!x.swap)x.sku=x.sku0;draw();if(x.swap)tb.querySelector(`tr[data-i="${tr.dataset.i}"] .bc-sk`).select()};
     tr.querySelector("[data-rm]").onclick=()=>{if(!x.id){rows.splice(rows.indexOf(x),1)}else x.q=x.q===0?x.q0:0;draw()}});
    const nv=rows.reduce((a,x)=>a+x.q*x.r,0),df=r2(nv-oldV);
+   const stk=b.querySelector("[data-stk]");
+   if(stk){const m=stockMoves(rows.filter(x=>x.id||x.q>0).map(x=>({sku_old:x.id?x.sku0:null,qty_old:x.id?x.q0:0,sku:x.sku,qty:x.q})));
+    stk.hidden=!m.length;stk.innerHTML=`<b>${admin?"Godown stock":"On approve, godown stock"}</b>`+m.map(x=>`<span class="bc-tag ${x.c>0?"bc-grn":"bc-red"}">${esc(x.sku)} ${x.c>0?"+":"−"}${Math.abs(x.c)} CS</span>`).join("")}
    sum.innerHTML=`Old ${rs(oldV)} → New ${rs(nv)} <span class="bc-tag ${df>0.004?"bc-grn":df<-0.004?"bc-red":"bc-amb"}">${Math.abs(df)>0.004?sg(df):"no change"}</span>`;
   }
   draw();
@@ -119,6 +131,8 @@
   const wv=b.querySelector("[data-wv]");if(wv)wv.onclick=()=>review({client,admin,change:{...wait,order_no:d.order_no,party:d.party},onDone:()=>{close();o.onSaved&&o.onSaved()}});
   b.querySelectorAll("[data-hv]").forEach(x=>x.onclick=()=>{const c=d.changes.find(y=>y.id===x.dataset.hv);review({client,admin,change:{...c,order_no:d.order_no,party:d.party},onDone:()=>{close();o.onSaved&&o.onSaved()}})});
   b.querySelector("[data-send]").onclick=async e=>{
+   const btn=e.currentTarget;  // e.currentTarget is null after an await: keep the button first
+   if(btn.disabled)return;
    const items=rows.filter(x=>x.id||x.q>0).map(x=>({item_id:x.id||null,sku_name:x.sku.trim(),qty:x.q,rate:x.r}));
    if(items.some(x=>!x.sku_name))return say("Type the SKU of every new line.");
    if(items.some(x=>x.qty>0&&!(x.rate>0)))return say("Enter the rate of every line.");
@@ -126,30 +140,46 @@
    const reason=b.querySelector("[data-reason]").value,note=b.querySelector("[data-note]").value.trim(),bs=b.querySelector("[data-bill]");
    if(!admin&&!reason)return say("Choose the reason for the change.");
    if(!await ask(`${admin?"Save":"Send to Admin"} this change on ${d.order_no}?\n\nOld ${rs(oldV)} → New ${rs(nv)} (${sg(df)})`))return;
-   e.currentTarget.disabled=true;
-   const {data:r,error}=await client.rpc("lwb_bill_change_request",{p_order_id:d.order_id,p_items:items,p_reason:reason||null,p_note:note||null,p_bill_no:bs?bs.value:(bills[0]&&bills[0].no)||null});
-   if(error){e.currentTarget.disabled=false;return say(errText(error))}
-   toast(r.status==="APPROVED"?"Change saved · "+sg(r.diff):"Sent to Admin · "+sg(r.diff));close();o.onSaved&&o.onSaved(r)};
+   btn.disabled=true;const label=btn.textContent;btn.textContent=admin?"Saving…":"Sending…";
+   let r,error;
+   try{({data:r,error}=await client.rpc("lwb_bill_change_request",{p_order_id:d.order_id,p_items:items,p_reason:reason||null,p_note:note||null,p_bill_no:bs?bs.value:(bills[0]&&bills[0].no)||null}))}
+   catch(x){error=x}
+   if(error){btn.disabled=false;btn.textContent=label;return say(errText(error))}
+   close();o.onSaved&&o.onSaved(r);
+   const stock=loaded?stockText(rows.filter(x=>x.id||x.q>0).map(x=>({sku_old:x.id?x.sku0:null,qty_old:x.id?x.q0:0,sku:x.sku,qty:x.q}))):"";
+   done(r.status==="APPROVED"?"Change saved":"Sent to Admin",
+    `${d.order_no} · Old ${rs(oldV)} → New ${rs(nv)} (${sg(df)})`+(r.status==="APPROVED"?(stock?"\n\nStock: "+stock:""):"\n\nAdmin will approve it. Until then nothing changes."+(stock?"\nOn approve, stock: "+stock:"")))};
  }
 
  /* ---------- Admin review ---------- */
+ function stockRow(c){
+  if(c.qty_col!=="loaded_qty")return "";
+  const sa=Array.isArray(c.stock_applied)?c.stock_applied:null;
+  const list=sa?sa.map(x=>({sku:x.sku,c:Number(x.cases)||0,skip:x.skipped})):stockMoves(c.lines);
+  if(!list.length)return c.status==="WAITING"?`<div class="bc-note">Stock: no change (rate only).</div>`:"";
+  return `<div class="bc-stk"><b>${sa?"Godown stock moved":c.status==="WAITING"?"On approve, godown stock":"Godown stock"}</b>${list.map(x=>`<span class="bc-tag ${x.skip?"bc-amb":x.c>0?"bc-grn":"bc-red"}">${esc(x.sku)} ${x.c>0?"+":"−"}${Math.abs(x.c)} CS${x.skip?" · not in SKU Master":""}</span>`).join("")}<small>+ back to godown · − more went to party</small></div>`;
+ }
  function review(o){
   const {client,change:c,admin}=o,st=ST[c.status]||["",c.status],can=admin&&c.status==="WAITING";
   const {b,close}=shell(`<div class="bc-hd"><div><h3>Change on ${esc(c.order_no)} · ${esc(c.party)}</h3><small>By ${esc(c.by||"")} · ${dmy(c.requested_at)} ${new Date(c.requested_at).toLocaleTimeString("en-IN",{hour:"numeric",minute:"2-digit"})}${c.reason?" · "+esc(c.reason):""} · <span class="bc-tag ${st[0]}">${st[1]}</span></small></div><button type="button" class="bc-x" aria-label="Close">✕</button></div>
    <div class="bc-diff"><div>Old value<b>${rs(c.old_value)}</b></div><div>New value<b>${rs(c.new_value)}</b></div><div class="${c.diff>0?"pos":c.diff<0?"neg":""}">Difference<b>${sg(c.diff)}</b></div></div>
    <div style="overflow:auto"><table class="bc-t"><thead><tr><th>Change</th><th class="n">Qty</th><th class="n">Rate</th><th class="n">₹</th></tr></thead><tbody>
    ${(c.lines||[]).map(l=>`<tr><td>${lineText(l)}</td><td class="n">${qtyText(l)}</td><td class="n">${rateText(l)}</td><td class="n ${l.diff>0?"bc-pos":l.diff<0?"bc-neg":""}">${sg(l.diff)}</td></tr>`).join("")}</tbody></table></div>
+   ${stockRow(c)}
    ${c.note?`<div class="bc-note">Note: ${esc(c.note)}</div>`:""}
    ${c.bill_applied?`<div class="bc-note">Tally bill${c.bill_applied.no?" "+esc(c.bill_applied.no):""}: ${rs(c.bill_applied.from)} → ${rs(c.bill_applied.to)}</div>`:c.bill_no&&can?`<div class="bc-note">On approve, Tally bill ${esc(c.bill_no)} moves by ${sg(c.diff)}.</div>`:""}
    ${c.reply?`<div class="bc-note">Admin: ${esc(c.reply)}${c.decided?" ("+esc(c.decided)+")":""}</div>`:""}
    ${can?`<div class="bc-row act"><input class="bc-in" data-reply maxlength="500" placeholder="Reply to Accounts (optional)" style="flex:1 1 200px"><button type="button" class="bc-btn bad" data-no>Send back</button><button type="button" class="bc-btn ok" data-ok>Approve ${sg(c.diff)}</button></div>`:""}`,true);
   if(!can)return;
   const go=async(ok,btn)=>{
+   if(btn.disabled)return;
    if(!await ask(ok?`Approve ${sg(c.diff)} on ${c.order_no}?\n\nThe PO lines change${c.bill_no?" and the Tally bill moves by the same amount":""}.`:`Send this change back to ${c.by||"Accounts"}? Nothing changes.`))return;
    btn.disabled=true;
    const {error}=await client.rpc("lwb_bill_change_decide",{p_id:c.id,p_approve:ok,p_reply:b.querySelector("[data-reply]").value.trim()||null});
    if(error){btn.disabled=false;return say(errText(error))}
-   toast(ok?"Approved · "+sg(c.diff):"Sent back");close();o.onDone&&o.onDone()};
+   close();o.onDone&&o.onDone();
+   const stock=c.qty_col==="loaded_qty"?stockText(c.lines):"";
+   done(ok?"Approved":"Sent back",ok?`${c.order_no} · ${sg(c.diff)} · PO lines changed${c.bill_no?", Tally bill moved":""}.`+(stock?"\n\nStock: "+stock:""):`${c.order_no} · sent back to ${c.by||"Accounts"}. Nothing changed.`)};
   b.querySelector("[data-ok]").onclick=e=>go(true,e.currentTarget);
   b.querySelector("[data-no]").onclick=e=>go(false,e.currentTarget);
  }

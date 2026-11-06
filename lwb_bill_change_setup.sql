@@ -193,6 +193,7 @@ DECLARE
   v_b jsonb;
   v_new jsonb := '[]'::jsonb;
   v_applied jsonb;
+  v_snap jsonb;
 BEGIN
   SELECT * INTO c FROM public.lwb_bill_changes WHERE id = p_id FOR UPDATE;
   -- the PO must still be as it was when the change was asked
@@ -206,6 +207,11 @@ BEGIN
       RAISE EXCEPTION 'STALE: PO lines changed after this request (%). Accounts should send the change again.', l->>'sku_old';
     END IF;
   END LOOP;
+
+  -- after loading: godown stock follows the change (lwb_bill_change_stock_setup.sql)
+  IF to_regprocedure('public.lwb_bill_change_stock_before(uuid)') IS NOT NULL THEN
+    EXECUTE 'SELECT public.lwb_bill_change_stock_before($1)' INTO v_snap USING p_id;
+  END IF;
 
   FOR l IN SELECT * FROM jsonb_array_elements(c.lines) LOOP
     v_qty := (l->>'qty')::numeric;
@@ -222,6 +228,9 @@ BEGIN
       WHERE order_id = c.order_id AND id::text = l->>'item_id';
     END IF;
   END LOOP;
+  IF v_snap IS NOT NULL THEN
+    EXECUTE 'SELECT public.lwb_bill_change_stock_after($1, $2)' USING p_id, v_snap;
+  END IF;
 
   -- Tally bill already entered: its amount follows the approved value (the chosen bill line takes the difference)
   SELECT t.amount, t.bills INTO v_t FROM public.lwb_tally_invoices t WHERE t.order_id = c.order_id FOR UPDATE;
