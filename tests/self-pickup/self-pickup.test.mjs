@@ -33,6 +33,8 @@ const searchSql=await readFile(new URL('../../lwb_self_pickup_driver_search.sql'
 await db.exec(searchSql);await db.exec(searchSql);
 const gmSql=await readFile(new URL('../../lwb_self_pickup_godown_list_fix.sql',import.meta.url),'utf8');
 await db.exec(gmSql);await db.exec(gmSql);
+const histSql=await readFile(new URL('../../lwb_self_pickup_history_setup.sql',import.meta.url),'utf8');
+await db.exec(histSql);await db.exec(histSql);
 
 async function run(who,q,params){
   await db.query("select set_config('request.jwt.claim.sub',$1,false)",[ids[who]]);
@@ -101,4 +103,19 @@ test('Godown login picked as Godown Manager is saved by key', async()=>{
   await run('sales','select public.lwb_set_order_pickup($1,$2)',[ord[0],{driver_name:'A',godown_key:'S:'+staff[0]}]);
   assert.equal((await db.query('select godown_manager_name n from lwb_order_pickup where order_id=$1',[ord[0]])).rows[0].n,'Vijay Godown');
   await assert.rejects(run('sales','select public.lwb_set_order_pickup($1,$2)',[ord[0],{godown_key:'U:'+ids.sales}]),/Godown Manager/);
+});
+
+test('repeat party: last Self Pickup driver / mobile / vehicle of the same party', async()=>{
+  const o=(await db.query(`insert into orders(order_no,customer_name,status,transportation,created_by) values
+   ('LXY-7','Shree  Ram Traders','delivered','SELF PICKUP',$1),('LXY-8','SHREE RAM TRADERS ','approved','SELF PICKUP',$1),
+   ('LXY-9','Shree Ram Traders','pending_approval','SELF PICKUP',$1) returning id`,[ids.sales])).rows.map(r=>r.id);
+  await run('admin','select public.lwb_set_order_pickup($1,$2)',[o[1],{driver_name:'Mahesh',driver_mobile:'9725011111',vehicle_no:'GJ03BV7788',godown_key:'U:'+ids.harsh}]);
+  const r=(await run('sales','select public.lwb_party_last_pickup($1) v',['shree ram traders'])).rows[0].v;
+  assert.equal(r.driver_mobile,'9725011111');assert.equal(r.vehicle_no,'GJ03BV7788');assert.equal(r.order_no,'LXY-8');
+  assert.equal(r.godown_key,'U:'+ids.harsh);
+  // cancelled orders are skipped; unknown party = null
+  await db.query("update orders set status='cancelled' where id=$1",[o[1]]);
+  assert.equal((await run('sales','select public.lwb_party_last_pickup($1) v',['Shree Ram Traders'])).rows[0].v,null);
+  assert.equal((await run('sales','select public.lwb_party_last_pickup($1) v',['Nobody'])).rows[0].v,null);
+  await assert.rejects(run('driver','select public.lwb_party_last_pickup($1)',['x']),/not active/);
 });

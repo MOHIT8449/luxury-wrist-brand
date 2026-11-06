@@ -409,6 +409,7 @@ body.compact-entry .share-more>summary{display:block;cursor:pointer;font-size:13
 .pickup-head small{display:block;font-size:12.5px;color:#7a6a3a;margin-top:3px}
 .pickup-dlg select{width:100%;padding:10px 11px;border:1px solid #ccc;border-radius:7px;font:inherit;font-size:16px;text-transform:none;color:#1c2836;background:#fff}
 .pickup-dlg .pd-note:empty{display:none}
+.pickup-dlg .pk-fill{margin:6px 0 0;padding:6px 9px;border-radius:7px;background:#fff7e0;color:#7a5a12;font-weight:600}
 .pickup-print{display:none}
 @media print{.pickup-print:not([hidden]){display:block;margin-top:10px;padding:8px 12px;border:1px solid #999;border-radius:8px;font-size:13px}}
 .print-btn{border:1px solid #c9ced6;margin-left:auto}
@@ -851,13 +852,14 @@ dialog.setup-dlg{position:fixed;inset:0;margin:auto;height:fit-content}
     <div class="pd-two">
       <label>Driver Name *<input id="pkDriverName" maxlength="80" autocomplete="off" placeholder="e.g. Ramesh Patel"></label>
       <label>Driver Mobile *<input id="pkDriverMobile" type="tel" inputmode="numeric" maxlength="10" autocomplete="off"
-             placeholder="10-digit mobile" oninput="this.value=this.value.replace(/\D/g,'').slice(0,10)"></label>
+             placeholder="10-digit mobile" oninput="this.value=this.value.replace(/\D/g,'').slice(0,10);pickupMobileTyped()"></label>
     </div>
     <div class="pd-two">
       <label>Vehicle Number *<input id="pkVehicle" maxlength="20" autocomplete="off" placeholder="e.g. GJ05AB1234"
              oninput="this.value=this.value.toUpperCase()"></label>
       <label>Godown Manager *<select id="pkGodown"><option value="">Select Godown Manager</option></select></label>
     </div>
+    <p class="pd-note pk-fill" id="pkFillNote"></p>
     <p class="pd-note" id="pkGodownNote"></p>
     <p class="pd-note error" id="pkError"></p>
     <div class="pd-actions">
@@ -2152,8 +2154,39 @@ function loadPickupManagers(selectId){
   })();
   return pickupManagersLoad.then(() => { if(selectId != null) sel.value = String(selectId); });
 }
+// Repeat customer: the party's last Self Pickup driver / mobile / vehicle (lwb_self_pickup_history_setup.sql).
+async function fillPickupFromParty(){
+  const note = document.getElementById("pkFillNote");
+  const v = id => document.getElementById(id).value.trim();
+  if(v("pkDriverName") || v("pkDriverMobile") || v("pkVehicle")) return;
+  const party = (selectedParty && selectedParty.customer_name) || v("customerName");
+  if(!party) return;
+  const {data,error} = await db.rpc("lwb_party_last_pickup",{p_customer_name:party}).then(r => r, () => ({error:true}));
+  if(error || !data || !(data.driver_name || data.driver_mobile || data.vehicle_no)) return;
+  if(v("pkDriverName") || v("pkDriverMobile") || v("pkVehicle")) return;
+  document.getElementById("pkDriverName").value = data.driver_name || "";
+  document.getElementById("pkDriverMobile").value = data.driver_mobile || "";
+  document.getElementById("pkVehicle").value = data.vehicle_no || "";
+  if(data.godown_key) await loadPickupManagers(data.godown_key);
+  note.textContent = "Filled from this party's last pickup" + (data.order_no ? " (PO " + data.order_no + ")" : "") + ". Change if a new driver came.";
+}
+// Typed mobile of a driver who came before: fill the name and vehicle too.
+let pickupDriversLoad = null;
+async function pickupMobileTyped(){
+  const mob = document.getElementById("pkDriverMobile").value;
+  if(!/^[6-9]\d{9}$/.test(mob)) return;
+  if(!pickupDriversLoad) pickupDriversLoad = db.rpc("lwb_pickup_drivers").then(r => Array.isArray(r.data) ? r.data : [], () => []);
+  const d = (await pickupDriversLoad).find(x => x.driver_mobile === mob);
+  if(!d || document.getElementById("pkDriverMobile").value !== mob) return;
+  const name = document.getElementById("pkDriverName"), veh = document.getElementById("pkVehicle");
+  if(!name.value.trim()) name.value = d.driver_name || "";
+  if(!veh.value.trim()) veh.value = d.vehicle_no || "";
+  document.getElementById("pkFillNote").textContent = "Driver came before: " + (d.driver_name || "") + (d.vehicle_no ? " · " + d.vehicle_no : "");
+}
 // Submit with SELF PICKUP: popup asks the driver details; resolves true when filled, false on Back.
-function askPickupDetails(){
+async function askPickupDetails(){
+  document.getElementById("pkFillNote").textContent = "";
+  await fillPickupFromParty();
   const dlg = document.getElementById("pickupDlg");
   const form = document.getElementById("pickupForm");
   const err = document.getElementById("pkError");
@@ -2202,6 +2235,7 @@ window.addEventListener("beforeprint", () => {
 });
 function clearPickup(){
   ["pkDriverName","pkDriverMobile","pkVehicle","pkGodown"].forEach(id => document.getElementById(id).value = "");
+  document.getElementById("pkFillNote").textContent = "";
 }
 async function saveOrderPickup(orderId, clearIfNone){
   if(!orderId) return "";
