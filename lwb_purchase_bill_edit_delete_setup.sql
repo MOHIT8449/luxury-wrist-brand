@@ -65,10 +65,13 @@ DECLARE
   v_part jsonb;
   c text;
   v_inv text;
+  v_at timestamptz;
   v_found boolean := false;
+  v_one jsonb;
+  l record;
 BEGIN
   IF to_regclass('public.lwb_inventory_movements') IS NULL THEN RETURN v_out; END IF;
-  SELECT g.invoice_no INTO v_inv FROM public.lwb_goods_inward g WHERE g.id = p_inward;
+  SELECT g.invoice_no, g.created_at INTO v_inv, v_at FROM public.lwb_goods_inward g WHERE g.id = p_inward;
 
   -- 1. A column that holds the bill id (by name, or a foreign key to lwb_goods_inward).
   FOR c IN
@@ -110,20 +113,53 @@ BEGIN
     END LOOP;
   END IF;
 
-  -- 3. No link column at all: purchase rows with the invoice no. as reference, SKU on the bill.
-  IF NOT v_found AND v_inv IS NOT NULL THEN
-    FOR c IN
-      SELECT k.column_name::text FROM information_schema.columns k
-      WHERE k.table_schema = 'public' AND k.table_name = 'lwb_inventory_movements'
-        AND k.column_name IN ('reference_no','ref_no','reference','invoice_no')
+  -- 3. Nothing found by id: purchase rows of the bill's SKUs whose text (reference no., notes, ...)
+  --    holds the invoice no.
+  IF jsonb_array_length(v_out) = 0 AND length(btrim(coalesce(v_inv,''))) >= 4 THEN
+    SELECT coalesce(jsonb_agg(j), '[]'::jsonb) INTO v_part
+    FROM public.lwb_inventory_movements m CROSS JOIN LATERAL to_jsonb(m) j
+    WHERE upper(coalesce(j->>'movement_type','')) ~ '(PURCHASE|INWARD|GRN|RECEIPT)'
+      AND j->>'sku_id' IN (SELECT i.sku_id::text FROM public.lwb_goods_inward_items i WHERE i.inward_id = p_inward)
+      AND EXISTS (SELECT 1 FROM jsonb_each_text(j) e
+                  WHERE e.key NOT IN ('id','sku_id','sku_name','movement_type','stock_bucket','created_at','updated_at')
+                    AND position(upper(btrim(v_inv)) IN upper(coalesce(e.value,''))) > 0);
+    v_out := v_out || v_part;
+  END IF;
+
+  -- 4. Still nothing (no link saved at all): for each bill line, the purchase row of that SKU with the
+  --    same pieces, saved within 10 minutes of the bill (closest first, each row used once).
+  IF jsonb_array_length(v_out) = 0 AND v_at IS NOT NULL THEN
+    FOR l IN
+      SELECT i.sku_id::text AS sku,
+             coalesce(nullif(to_jsonb(i)->>'quantity_pcs','')::numeric,
+                      coalesce(nullif(to_jsonb(i)->>'cases','')::numeric,0) * greatest(coalesce(s.pcs_per_case,1),1)
+                      + coalesce(nullif(to_jsonb(i)->>'pcs','')::numeric,0)) AS pcs
+      FROM public.lwb_goods_inward_items i LEFT JOIN public.sku_master s ON s.id::text = i.sku_id::text
+      WHERE i.inward_id = p_inward
     LOOP
-      EXECUTE format('SELECT coalesce(jsonb_agg(to_jsonb(m)), ''[]''::jsonb) FROM public.lwb_inventory_movements m
-                      WHERE upper(btrim(m.%I::text)) = upper(btrim($1))
-                        AND upper(coalesce(to_jsonb(m)->>''movement_type'','''')) ~ ''(PURCHASE|INWARD)''
-                        AND to_jsonb(m)->>''sku_id'' IN (SELECT i.sku_id::text FROM public.lwb_goods_inward_items i WHERE i.inward_id = $2)', c)
-        INTO v_part USING v_inv, p_inward;
-      v_out := v_out || v_part;
+      SELECT j INTO v_one
+      FROM public.lwb_inventory_movements m CROSS JOIN LATERAL to_jsonb(m) j
+      WHERE upper(coalesce(j->>'movement_type','')) ~ '(PURCHASE|INWARD|GRN|RECEIPT)'
+        AND upper(coalesce(j->>'stock_bucket','SALEABLE')) = 'SALEABLE'
+        AND j->>'sku_id' = l.sku
+        AND coalesce(nullif(j->>'quantity_pcs','')::numeric, nullif(j->>'qty_pcs','')::numeric, nullif(j->>'pcs','')::numeric) = l.pcs
+        AND coalesce(nullif(j->>'created_at','')::timestamptz, nullif(j->>'movement_at','')::timestamptz) BETWEEN v_at - interval '10 minutes' AND v_at + interval '10 minutes'
+        AND NOT EXISTS (SELECT 1 FROM jsonb_array_elements(v_out) x WHERE x->>'id' = j->>'id')
+      ORDER BY abs(extract(epoch FROM coalesce(nullif(j->>'created_at','')::timestamptz, nullif(j->>'movement_at','')::timestamptz) - v_at))
+      LIMIT 1;
+      IF v_one IS NOT NULL THEN v_out := v_out || jsonb_build_array(v_one); END IF;
+      v_one := NULL;
     END LOOP;
+  END IF;
+
+  -- 5. "Carton to IC" fix rows added for a row found above (lwb_purchase_carton_fix_setup.sql).
+  IF jsonb_array_length(v_out) > 0 AND to_regclass('public.lwb_purchase_carton_fix') IS NOT NULL THEN
+    EXECUTE 'SELECT coalesce(jsonb_agg(to_jsonb(m)), ''[]''::jsonb) FROM public.lwb_inventory_movements m
+             WHERE m.id::text IN (SELECT substr(a.movement_id, 7) FROM public.lwb_purchase_carton_fix o
+                                  JOIN public.lwb_purchase_carton_fix a ON a.movement_id LIKE ''added:%'' AND a.sku_id = o.sku_id AND a.fixed_at = o.fixed_at
+                                  WHERE o.movement_id IN (SELECT r->>''id'' FROM jsonb_array_elements($1) r))'
+      INTO v_part USING v_out;
+    v_out := v_out || v_part;
   END IF;
 
   -- one entry per row
@@ -229,7 +265,12 @@ BEGIN
 
   v_ok := jsonb_array_length(v_rows) > 0 OR v_reads OR to_regclass('public.lwb_inventory_movements') IS NULL;
   IF NOT v_ok THEN
-    v_why := 'The stock rows of this bill were not found, so stock cannot be taken back. Nothing was changed. Send this message to the developer.';
+    v_why := 'The stock rows of this bill were not found, so stock cannot be taken back. Nothing was changed. Send this message to the developer.'
+      || E'\n\nStock columns: ' || coalesce((SELECT string_agg(k.column_name::text, ', ' ORDER BY k.ordinal_position) FROM information_schema.columns k
+                                  WHERE k.table_schema = 'public' AND k.table_name = 'lwb_inventory_movements'), '-')
+      || E'\nTypes: ' || coalesce((SELECT string_agg(t || ' ' || n, ', ') FROM (SELECT to_jsonb(m)->>'movement_type' AS t, count(*) AS n
+                                  FROM public.lwb_inventory_movements m GROUP BY 1 ORDER BY 2 DESC LIMIT 8) x), '-')
+      || E'\nStock view reads bill lines: ' || v_reads::text;
   END IF;
 
   RETURN jsonb_build_object(
