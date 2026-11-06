@@ -60,6 +60,9 @@
   [/^PURCHASE_ARRIVED$/,"🚛","act","Purchase vehicle arrived","Check"],
   [/^PURCHASE_DAMAGE$/,"⚠","bad","Purchase damage","View"],
   [/^PURCHASE_CHECK_OK$/,"✅","ok","Purchase vehicle OK",""],
+  [/^HIRED_RATE_VERIFY$/,"🚚","act","Trip rent","Verify"],
+  [/^HIRED_RATE_SENT_BACK$/,"↩","bad","Trip rent sent back","Set again"],
+  [/^PARTY_CREATED$/,"👤","act","New party added","Check"],
   [/^ACC_BANK_VERIFY$/,"🏦","act","Bank entry","Verify"],
   [/^ACC_BANK_REJECTED$/,"❌","bad","Bank entry rejected",""],
   [/^ACC_CASH_HANDOVER$/,"💵","act","Cash handover","Check"],
@@ -131,6 +134,12 @@
    line2=line2.split(/\. (?=[A-Z])/)[0].replace(/\.$/,"");
    if(line2.length>70)line2=line2.slice(0,67)+"…";
   }
+  // Trip rent: "GJ16AW2503 → PARTY (CITY): ₹1700 per trip" → party on line 2, vehicle + rate on line 3.
+  if(/^HIRED_RATE_/.test(t)){const h=m.match(/^([A-Z0-9]{5,}) → ([^:]+):\s*(.*)$/);
+   if(h){const rate=(h[3].match(/₹\s?([\d.,]+) per trip/)||[])[1];
+    return {icon,tone,head,action,line2:h[2].trim(),isParty:true,amount:rate?inr(num(rate)):amount,
+     details:["🚛 "+h[1],rate?"per trip":h[3].replace(/\. Set it again.*$/,"").replace(/\. Vehicle Master.*$/,"")].filter(Boolean)}}}
+  if(/^ACC_CHEQUE/.test(t)){const c=(m.match(/To deposit: (\d+)/)||[])[1];if(c)line2=c+(c==="1"?" cheque":" cheques")+" to deposit"}
   return {icon,tone,head,action,line2,isParty:!!party,amount,details:d};
  }
  function ago(v){
@@ -160,7 +169,9 @@
   [/^DELIVERY_COLLECTION_/,["driver-delivery.html?order={o}&tab=deliver"]],
   [/^DELIVERY_RETURN_/,["driver-delivery.html?order={o}&tab=return"]],
   [/^LOADING_ASSIGNMENT_DRIVER$/,["driver-delivery.html?order={o}","loading-dispatch.html","transport-allocation.html"]],
-  [/^LOADING_ASSIGNMENT_/,["loading-dispatch.html?order={o}","transport-allocation.html"]],
+  [/^LOADING_ASSIGNMENT/,["loading-dispatch.html?order={o}","transport-allocation.html"]],
+  [/^HIRED_RATE_/,["fleet-master.html#rates"]],
+  [/^PARTY_CREATED$/,["customer-master.html"]],
   [/^GODOWN_/,["godown-report.html"]],
   [/^PURCHASE_ARRIVED$/,["purchase-register.html?bill={r}"]],
   [/^PURCHASE_/,["purchase-register.html?report={r}"]],
@@ -199,8 +210,8 @@
    ".lwb-op-wrap{position:relative;display:inline-flex;align-items:center}",
    ".lwb-op-bell{background:#ffdc67!important;color:#382900!important;border:1px solid #e6af22!important;border-radius:8px!important;min-width:45px;min-height:39px;font-size:18px!important;position:relative;cursor:pointer}",
    ".lwb-op-count{position:absolute;top:-9px;right:-7px;background:#c72a38;color:#fff;font-size:11px;padding:2px 5px;border-radius:12px;display:none;min-width:18px}",
-   ".lwb-op-panel{position:absolute;top:calc(100% + 9px);right:0;z-index:99999;width:min(460px,92vw);max-height:min(560px,80vh);overflow-y:auto;background:#fff;color:#173450;border:1px solid #cbd5e2;border-radius:10px;box-shadow:0 12px 35px #0003;padding:12px;font:13px/1.4 Arial,sans-serif;white-space:normal;text-align:left}",
-   ".lwb-op-panel[hidden]{display:none}.lwb-op-head{display:flex;align-items:center;justify-content:space-between;gap:9px;margin-bottom:8px}",
+   ".lwb-op-panel{position:absolute;top:calc(100% + 9px);right:0;z-index:99999;width:min(520px,94vw);max-height:calc(100vh - 90px);overflow-y:auto;overscroll-behavior:contain;background:#fff;color:#173450;border:1px solid #cbd5e2;border-radius:10px;box-shadow:0 12px 35px #0004;padding:0 10px 10px;font:13px/1.4 Arial,sans-serif;white-space:normal;text-align:left}",
+   ".lwb-op-panel[hidden]{display:none}.lwb-op-head{position:sticky;top:0;z-index:2;background:#fff;display:flex;align-items:center;justify-content:space-between;gap:9px;padding:10px 0 8px;border-bottom:2px solid #173450}.lwb-op-head strong{font-size:15px}.lwb-op-head small{color:#c72a38;font-weight:700;margin-left:6px}.lwb-op-foot{margin-top:8px;padding-top:8px;border-top:1px solid #e0e8f1;font-size:12px}",
    ".lwb-op-panel button{padding:7px 9px;border:1px solid #bbd1e7;background:#eef5fc;color:#164679;border-radius:6px;cursor:pointer;font:12px Arial,sans-serif}",
    ".lwb-op-msg{border-top:1px solid #e0e8f1;border-left:4px solid #c6d3e1;color:#173450;padding:7px 8px 7px 6px;cursor:default}",
    ".lwb-op-msg.link{cursor:pointer}.lwb-op-msg.link:hover{background:#f3f8fd}",
@@ -211,19 +222,20 @@
    ".lwb-op-l{display:flex;align-items:center;gap:6px;min-width:0}",
    ".lwb-op-l+.lwb-op-l{margin-top:2px;padding-left:26px}",
    ".lwb-op-ic{flex:0 0 20px;text-align:center;font-size:15px}",
-   ".lwb-op-what{flex:1;min-width:0;display:flex;align-items:center;gap:6px;font-weight:700;font-size:13.5px}",
+   ".lwb-op-what{flex:1;min-width:0;display:flex;align-items:center;gap:6px;font-weight:700;font-size:14.5px}",
    ".lwb-op-what b{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}",
    ".lwb-op-act{flex:0 0 auto;font-size:11px;font-weight:700;padding:1px 7px;border-radius:10px;background:#fde8b0;color:#6b4a00}",
    ".lwb-op-msg:not(.unread) .lwb-op-act{background:#edf1f5;color:#5b6d80}",
-   ".lwb-op-time{flex:0 0 auto;color:#71849a;font-size:12px}",
-   ".lwb-op-party{flex:1;min-width:0;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}",
+   ".lwb-op-time{flex:0 0 auto;color:#5d7086;font-size:12.5px}",
+   ".lwb-op-go{flex:0 0 auto;color:#164679;font-size:20px;line-height:1;font-weight:700}",
+   ".lwb-op-party{flex:1;min-width:0;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}",
    ".lwb-op-party.p{font-weight:600;text-transform:uppercase;letter-spacing:.2px}.lwb-op-party:not(.p){color:#3d5168}",
-   ".lwb-op-amt{flex:0 0 auto;font-weight:700;font-size:13.5px;font-variant-numeric:tabular-nums;color:#0f2b45}",
-   ".lwb-op-det{color:#5d7086;font-size:12px;overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}",
+   ".lwb-op-amt{flex:0 0 auto;font-weight:700;font-size:14.5px;font-variant-numeric:tabular-nums;color:#0f2b45}",
+   ".lwb-op-det{color:#4a5d72;font-size:12.5px;overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}",
    ".lwb-op-msg:not(.unread) .lwb-op-what{font-weight:600;color:#3d5168}",
    ".lwb-op-msg p{margin:4px 4px 0 26px;color:#51657a;font-size:12px;overflow-wrap:anywhere}",
    ".lwb-op-panel button.lwb-op-tick{flex:0 0 auto;padding:2px 7px;font-size:12px}",
-   "@media(max-width:560px){.lwb-op-panel{position:fixed;left:8px;right:8px;width:auto;max-height:calc(100vh - 80px);padding:10px}}",
+   "@media(max-width:560px){.lwb-op-panel{position:fixed;left:8px;right:8px;width:auto;max-height:calc(100vh - 80px);padding:0 8px 8px}}",
    ".lwb-op-error{color:#ac2828!important}"
   ].join("");
   document.head.append(css);
@@ -236,8 +248,10 @@
   panel.hidden=true;panel.setAttribute("aria-label","ERP Notifications");
   reload.type="button";allRead.type="button";allRead.hidden=true;
   const btns=el("span");btns.style.cssText="display:flex;gap:6px";btns.append(allRead,reload);
-  head.append(el("strong",null,"ERP Notifications"),btns);
-  const list=el("div");panel.append(head,list);wrap.append(bell,panel);mount.prepend(wrap);
+  const ttl=el("strong",null,"Notifications"),newTxt=el("small");ttl.append(newTxt);
+  head.append(ttl,btns);
+  // Phone-alert switch sits at the bottom so the list starts right under the header.
+  const list=el("div"),foot=el("div","lwb-op-foot");panel.append(head,list,foot);wrap.append(bell,panel);mount.prepend(wrap);
   const orders=new Map();
   async function reloadData(){
    const {data,error}=await db.from("erp_notifications")
@@ -247,6 +261,7 @@
    // Driver sees no history: only the last 12 hours.
    const rows=(data||[]).filter(n=>String(role||"").toLowerCase()!=="driver"||Date.now()-new Date(n.created_at)<12*36e5),unread=rows.filter(n=>!n.is_read).length;
    bell.setAttribute("aria-label", "Notifications" + (unread ? ", " + unread + " unread" : ""));
+   newTxt.textContent=unread?unread+" new":"";
    count.textContent=unread>99?"99+":String(unread);count.style.display=unread?"inline-block":"none";
    // Party name + order value for every order notification, in one read (rows this login may see).
    const need=[...new Set(rows.map(n=>n.order_id).filter(id=>id&&!orders.has(id)))];
@@ -266,6 +281,7 @@
     hd.append(el("b",null,sum.head));
     if(sum.action)hd.append(el("span","lwb-op-act",sum.action));
     l1.append(el("span","lwb-op-ic",sum.icon),hd,el("span","lwb-op-time",ago(n.created_at)));
+    if(href)l1.append(el("span","lwb-op-go","›"));
     const l2=el("div","lwb-op-l");
     l2.append(el("span","lwb-op-party"+(sum.isParty?" p":""),sum.line2||"—"));
     if(sum.amount)l2.append(el("span","lwb-op-amt",sum.amount));
@@ -325,7 +341,7 @@
    try{
     if(!window.LWBPhonePush)await new Promise((ok,bad)=>{const script=document.createElement('script');script.src='erp-push.js';script.onload=ok;script.onerror=bad;document.head.append(script)});
     const actualRole=role||document.querySelector('.erp-user .who small')?.textContent?.toLowerCase();
-    await window.LWBPhonePush.init({db,user,role:actualRole,mount:panel});
+    await window.LWBPhonePush.init({db,user,role:actualRole,mount:foot});
    }catch(e){}
   })();
   reloadData();
