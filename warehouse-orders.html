@@ -923,6 +923,7 @@
     #itemsBody tr.rate-low input[data-field="rate"] {border-color:#c8102e!important;color:#c8102e;font-weight:700;background:#fff7f7}
     #itemsBody .min-tag {display:block;color:#c8102e;font-size:10px;font-weight:700;line-height:1.2;margin-top:2px}
     #itemsBody .min-tag:empty {display:none}
+    #itemsBody td.i-rate {white-space:nowrap}
     #itemsBody tr.rate-low {background:#fde4e4!important;border-color:#e89a9a!important}
     .rate-card .low-tag {color:#c8102e;font-weight:800;font-size:11px;margin-left:6px}
     .rate-card .ok {color:#13824a;font-weight:700} .rate-card .warn {color:#b26a00;font-weight:700}
@@ -1053,7 +1054,12 @@
       #itemsBody .i-act .btn {width:34px;height:34px;padding:0;font-size:0;line-height:34px;text-align:center}
       #itemsBody .i-act .btn::after {content:"✕";font-size:15px}
       #itemsBody .i-qty {grid-area:qty}
-      #itemsBody .i-rate {grid-area:rate}
+      #itemsBody .i-rate {grid-area:rate;display:flex;flex-wrap:wrap;align-items:center;gap:0 4px}
+      #itemsBody .i-rate::before {flex-basis:100%}
+      #itemsBody .i-rate .min-tag {flex-basis:100%}
+      #itemsBody .i-rate input {flex:1 1 0;width:auto!important;min-width:0}
+      #itemsBody .i-rate .pf-slot {margin-left:0}
+      #itemsBody .i-rate .pf-slot small {display:none}
       #itemsBody td:is(.i-uw,.i-tw) {display:none}
       .warehouse-sku-hint:not(.error) {display:none}
       #itemsBody td.i-qty::before {content:"Approved Qty"}
@@ -1530,6 +1536,11 @@
             <div class="summary-row">
               <span>Total Weight</span>
               <strong id="summaryWeight">0 KG</strong>
+            </div>
+
+            <div class="summary-row lwb-pf-only" id="summaryProfitRow" hidden>
+              <span>Profit <small id="summaryProfitNote"></small></span>
+              <strong id="summaryProfit" class="lwb-pf-sum">₹0</strong>
             </div>
 
           </div>
@@ -4410,7 +4421,7 @@ function renderItems() {
       <td class="i-sku" data-label="SKU / Product">${warehouseSkuInputMarkup(item, i, editable)}</td>
       <td class="i-ord" data-label="Ordered Qty" style="text-align:right">${formatNumber(item.ordered_qty)}</td>
       <td class="i-qty" data-label="Approved Qty">${input('approved_qty', qty, 'number')}</td>
-      <td class="i-rate" data-label="Rate ₹">${input('rate', rate, 'number')}<span class="min-tag" id="itemMin${i}">${low?'Below min ₹'+formatNumber(minR):''}</span></td>
+      <td class="i-rate" data-label="Rate ₹">${input('rate', rate, 'number')}<span class="min-tag" id="itemMin${i}">${low?'Below min ₹'+formatNumber(minR):''}</span><span class="pf-slot" id="itemPf${i}"></span></td>
       <td class="i-amt" data-label="Amount" id="itemAmount${i}" style="text-align:right">${formatMoney(qty*rate)}</td>
       <td class="i-uw" data-label="Unit Wt KG / Case">${input('unit_weight', unit, 'number')}</td>
       <td class="i-tw" data-label="Total Weight" id="itemWeight${i}" style="text-align:right">${formatNumber(qty*unit)} KG</td>
@@ -4466,8 +4477,29 @@ function calculateApprovalTotals() {
   document.getElementById('summaryQty').textContent = formatNumber(totals.qty);
   document.getElementById('summaryAmount').textContent = formatMoney(totals.amount);
   document.getElementById('summaryWeight').textContent = formatNumber(totals.weight)+' KG';
+  paintProfit();
   return totals;
 }
+
+// Profit per SKU line (rate − landing) for Admin / a person Admin allowed, when the top-bar Profit
+// switch is ON (profit-view.js). Nobody else gets the landing, so nothing shows for them.
+function paintProfit(){
+  const P=window.LWBProfit, on=!!(P&&P.on());
+  selectedItems.forEach((item,i)=>{
+    const slot=document.getElementById('itemPf'+i); if(!slot) return;
+    slot.innerHTML = on ? P.tag(item.sku_name, item.rate, Number(item.approved_qty)||0) : '';
+    document.getElementById('itemRow'+i)?.classList.toggle('pf-loss', on && P.loss(item.sku_name, item.rate));
+  });
+  const row=document.getElementById('summaryProfitRow'); if(!row) return;
+  const t=on?P.total(selectedItems.map(it=>({sku:it.sku_name,rate:it.rate,qty:Number(it.approved_qty)||0}))):null;
+  row.hidden=!t||!t.known;
+  if(t&&t.known){
+    const el=document.getElementById('summaryProfit');
+    el.textContent=t.text; el.classList.toggle('neg',t.profit<=0);
+    document.getElementById('summaryProfitNote').textContent=t.missing?'('+t.missing+' SKU no landing)':'';
+  }
+}
+document.addEventListener('lwb:profit',()=>{if(typeof selectedItems!=='undefined'&&selectedItems)paintProfit();});
 
 
 /* Manager Note is independently editable after PO approval/loading.

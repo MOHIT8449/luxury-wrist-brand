@@ -170,6 +170,9 @@ tr.below-min .rate{border-color:#c8102e;color:#c8102e;font-weight:700}
 #itemsBody tr.below-slab td:first-child{box-shadow:inset 4px 0 0 #c8102e}
 #itemsBody tr.below-slab .rate{border-color:#c8102e;color:#c8102e;font-weight:700}
 @media(max-width:760px){#itemsBody tr.below-slab{box-shadow:inset 4px 0 0 #c8102e}}
+/* Profit tag on the same line as the rate (profit-view.js); phone shows only the per-case profit. */
+#itemsBody .rate-box .pf-slot{margin-left:4px;flex:none}
+@media(max-width:640px){#itemsBody .rate-box .pf-slot{margin-left:3px}#itemsBody .rate-box .pf-slot small{display:none}#itemsBody .rate-box input.rate{flex:1 1 auto;min-width:50px!important}#itemsBody .rate-box .lwb-pf{padding:1px 5px;font-size:11px}}
 #itemsBody tr.below-min td:first-child{box-shadow:inset 4px 0 0 #c8102e}
 #itemsBody tr.below-min input,#itemsBody tr.below-min .sku-name{color:#b3261e;border-color:#e89a9a;background:#fff7f7}
 .rate-hint.need{color:#9a6700;font-weight:600}
@@ -556,11 +559,14 @@ body.compact-entry .share-more>summary{display:block;cursor:pointer;font-size:13
   #oeMain #itemsTable #itemsBody .pal-conv,#oeMain #itemsTable #itemsBody .case-conversion{font-size:10px;line-height:1.2}
   #oeMain .add-line{margin-top:2px}
   body.compact-entry .actions .sticky-total{flex:1 0 auto;min-width:96px}
+  /* Profit ON: Rate column a little wider so "665 +₹25" fits on one line. */
+  body.lwb-profit-on #oeMain .m-head,body.lwb-profit-on #oeMain #itemsTable #itemsBody tr{grid-template-columns:minmax(0,1fr) 56px 118px 30px}
 }
 @media(max-width:380px){
   #oeMain .m-head,#oeMain #itemsTable #itemsBody tr{grid-template-columns:minmax(0,1fr) 52px 64px 28px}
   #oeMain #itemsTable #itemsBody .remove-btn{width:28px}
   #oeMain #itemsTable #itemsBody .sku-name{padding:4px 5px}
+  body.lwb-profit-on #oeMain .m-head,body.lwb-profit-on #oeMain #itemsTable #itemsBody tr{grid-template-columns:minmax(0,1fr) 48px 108px 28px}
 }
 
 /* Order setup popup (phone): Brand / Transport / Priority / Qty in. */
@@ -801,6 +807,11 @@ dialog.setup-dlg{position:fixed;inset:0;margin:auto;height:fit-content}
         <div class="summary-row">
           <span>Final Weight</span>
           <strong id="totalWeight">0 KG</strong>
+        </div>
+
+        <div class="summary-row lwb-pf-only" id="profitRow" hidden>
+          <span>Profit <small id="profitNote"></small></span>
+          <strong id="totalProfit" class="lwb-pf-sum">₹0</strong>
         </div>
 
         <div class="summary-row mgr-col"><span>Total GR</span><strong id="totalGr">₹0.00</strong></div>
@@ -1507,6 +1518,7 @@ function addItem(focus){
              oninput="rateTyped(this)"
              onkeydown="handleRateTab(event,this)">
       <button type="button" class="step" tabindex="-1" title="Rate +1" onclick="rateStep(this,1)">+</button>
+      <span class="pf-slot"></span>
       </div>
     </td>
 
@@ -1936,6 +1948,7 @@ function calculateTotals(){
     formatNumber(totalWeight)+" KG";
 
   updateLandingCells();
+  paintProfit();
 
   const sticky = document.getElementById("stickyTotal");
   const amount = document.createElement("b");
@@ -3210,6 +3223,29 @@ function updateLandingCells(){
   d.textContent = formatMoney(diff); d.className = diff < 0 ? "neg" : diff > 0 ? "pos" : "";
   d5.textContent = formatMoney(diff5); d5.className = diff5 < 0 ? "neg" : diff5 > 0 ? "pos" : "";
 }
+
+// Profit per SKU line (rate − landing) for Admin / a person Admin allowed, when the top-bar Profit
+// switch is ON (profit-view.js). Nobody else gets the landing, so nothing shows for them.
+function paintProfit(){
+  const P = window.LWBProfit, on = !!(P && P.on()), lines = [];
+  document.querySelectorAll("#itemsBody tr").forEach(row => {
+    const slot = row.querySelector(".pf-slot"); if(!slot) return;
+    const sku = row.querySelector(".sku-name").value, rateRaw = row.querySelector(".rate").value, qty = getRowCaseQty(row);
+    const q = Number.isFinite(qty) ? qty : 0;
+    slot.innerHTML = on && rateRaw !== "" ? P.tag(sku, number(rateRaw), q) : "";
+    row.classList.toggle("pf-loss", on && rateRaw !== "" && P.loss(sku, number(rateRaw)));
+    if(on && rateRaw !== "") lines.push({sku, rate:number(rateRaw), qty:q});
+  });
+  const row = document.getElementById("profitRow"); if(!row) return;
+  const t = on ? P.total(lines) : null;
+  row.hidden = !t || !t.known;
+  if(t && t.known){
+    const el = document.getElementById("totalProfit");
+    el.textContent = t.text; el.classList.toggle("neg", t.profit <= 0);
+    document.getElementById("profitNote").textContent = t.missing ? "(" + t.missing + " SKU no landing)" : "";
+  }
+}
+document.addEventListener("lwb:profit", () => paintProfit());
 
 function casesPerPallet(row){
   const sku = skuMasterByName.get(skuKey(row.querySelector(".sku-name").value));

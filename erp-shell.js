@@ -636,7 +636,17 @@
       if(!window.LWBOperationsNotifications)await new Promise((ok,bad)=>{const s=document.createElement("script");s.src="erp-operations-notifications.js";s.onload=ok;s.onerror=bad;document.head.appendChild(s)});
       window.LWBOperationsNotifications.init({db:c,user,role,mount:top.querySelector(".erp-user"),pages:menuForMe(role).flatMap(g=>g.items.map(i=>i.h.split("#")[0]))});
     }catch(e){}
+    profitSwitch(top,role);
     liveLocation();
+  }
+
+  // 💜 "Profit ON/OFF" in the top bar: Admin always, others only when Admin allowed them (profit-view.js).
+  async function profitSwitch(top,role){
+    try{
+      const c=window.__lwbBellClient;if(!c||role==="driver")return;
+      if(!window.LWBProfit)await new Promise((ok,bad)=>{const s=document.createElement("script");s.src="profit-view.js";s.onload=ok;s.onerror=bad;document.head.appendChild(s)});
+      await window.LWBProfit.init({client:c,mount:top.querySelector(".erp-user")});
+    }catch(e){}
   }
 
   // 📍 Live Tracking: the phone shares its location while the ERP is open
