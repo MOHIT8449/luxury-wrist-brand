@@ -1169,6 +1169,8 @@ async function loadPartyKyc(party) {
   if (error || selectedParty !== party) return;   // rule not set up yet, or party changed meanwhile
   partyKyc = data;
   renderPartyKyc();
+  if (data?.godown_km != null)
+    partyInfo("Selected from Party Master: " + (party.customer_code || party.customer_name) + " · 🏭 " + data.godown_km + " km from godown");
 }
 
 // What can stop an order: mobile / address. PAN / GSTIN is only a reminder
@@ -1269,7 +1271,18 @@ document.getElementById("partyForm").addEventListener("submit", async (event) =>
 
 /* SHOP LOCATION: the phone's GPS saved on the party (lwb_party_pan_optional_location_setup.sql).
    Live Tracking and the trip / area suggestion use it. */
-let partyGeo = null;
+let partyGeo = null, godownPoint;
+async function loadGodownPoint() {
+  if (godownPoint !== undefined) return godownPoint;
+  const {data,error} = await db.rpc("lwb_godown_point");
+  godownPoint = error ? null : data;   // not set up / not set: no distance shown
+  return godownPoint;
+}
+function kmBetween(a, b) {
+  const r = Math.PI / 180, dLat = (b.lat - a.lat) * r, dLng = (b.lng - a.lng) * r;
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(a.lat * r) * Math.cos(b.lat * r) * Math.sin(dLng / 2) ** 2;
+  return 12742 * Math.asin(Math.min(1, Math.sqrt(h)));
+}
 const partySetupMissing = error => /lwb_sales_(create_party|fill_party_details)|p_lat|Could not find the function/i.test(error?.message || "");
 function resetPartyLocation(saved) {
   partyGeo = null;
@@ -1285,7 +1298,7 @@ document.getElementById("pdLocBtn").addEventListener("click", () => {
   if (!navigator.geolocation) { text.textContent = "This phone / browser cannot give location."; return; }
   btn.disabled = true;
   text.textContent = "Getting location...";
-  navigator.geolocation.getCurrentPosition(pos => {
+  navigator.geolocation.getCurrentPosition(async pos => {
     const {latitude: lat, longitude: lng, accuracy} = pos.coords;
     partyGeo = {lat, lng};
     btn.disabled = false;
@@ -1297,6 +1310,8 @@ document.getElementById("pdLocBtn").addEventListener("click", () => {
     link.rel = "noopener";
     link.textContent = "Map";
     text.replaceChildren(lat.toFixed(5) + ", " + lng.toFixed(5) + " (±" + Math.round(accuracy) + " m) · ", link);
+    const g = await loadGodownPoint();
+    if (g && partyGeo?.lat === lat) text.append(" · 🏭 " + kmBetween(partyGeo, g).toFixed(1) + " km from godown");
   }, err => {
     btn.disabled = false;
     text.textContent = err.code === 1 ? "Location blocked. Allow location for this site, then tap again."
