@@ -264,6 +264,12 @@ body.compact-entry #itemsTable th:nth-child(8),body.compact-entry td:has(> .row-
 .party-dlg .pd-note{font-size:12.5px;color:#5b6573;line-height:1.45}
 .party-dlg .pd-note.error{color:#b3261e;font-weight:700}
 .party-dlg .pd-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:4px}
+.party-dlg .pd-loc{display:flex;align-items:center;gap:8px;min-width:0}
+.party-dlg .pd-loc[hidden]{display:none}
+.party-dlg .pd-loc button{flex:none;padding:8px 11px;border-radius:7px;border:1px solid #1769e0;background:#eef4ff;color:#1769e0;font-weight:700;font-size:13px;white-space:nowrap}
+.party-dlg .pd-loc button.done{border-color:#1b7f3b;background:#e7f6ec;color:#1b7f3b}
+.party-dlg .pd-loc span{flex:1;min-width:0;font-size:12px;color:#5b6573;line-height:1.35;overflow-wrap:anywhere}
+.party-dlg .pd-loc a{color:#1769e0;font-weight:700}
 /* Salesman: Order No, date, company and own name fill themselves, so they stay hidden. */
 body.sales-entry .auto-field,body.auto-entry .auto-field,body.auto-entry #slabField{display:none}
 @media print{body.auto-entry:not(.sales-entry) .auto-field{display:block!important}}
@@ -925,7 +931,11 @@ dialog.setup-dlg{position:fixed;inset:0;margin:auto;height:fit-content}
       <label>PAN<input id="pdPan" maxlength="10" autocomplete="off" placeholder="ABCDE1234F" oninput="this.value=this.value.toUpperCase()"></label>
       <label>GSTIN<input id="pdGstin" maxlength="15" autocomplete="off" placeholder="15 characters" oninput="this.value=this.value.toUpperCase()"></label>
     </div>
-    <p class="pd-note">PAN or GSTIN is needed (one is enough).</p>
+    <p class="pd-note" id="pdPanNote">PAN / GSTIN optional. If the party gives it later, fill it with "Fill details".</p>
+    <div class="pd-loc" id="pdLocRow">
+      <button type="button" id="pdLocBtn">📍 Shop location</button>
+      <span id="pdLocText">Optional. Stand at the shop and tap.</span>
+    </div>
     <div class="pd-actions">
       <button type="button" class="btn btn-grey" onclick="document.getElementById('partyDlg').close()">Cancel</button>
       <button type="submit" id="pdSave" class="btn btn-green">Save</button>
@@ -1209,6 +1219,7 @@ function openPartyDialog(mode) {
   set("pdPin", k.pincode, has(k.pincode));
   set("pdPan", k.pan, has(k.pan));
   set("pdGstin", k.gstin, has(k.gstin));
+  resetPartyLocation(mode === "fill" && k.has_location);
   document.getElementById("partyDlg").showModal();
   const first = [...document.querySelectorAll("#partyForm input, #partyForm textarea")]
     .find(el => !el.readOnly && !el.closest("[hidden]") && !el.value);
@@ -1224,23 +1235,25 @@ document.getElementById("partyForm").addEventListener("submit", async (event) =>
   if (partyDialogMode === "new" && v("pdName").length < 2) return fail("Enter the party name.");
   if (!/^[6-9][0-9]{9}$/.test(mobile)) return fail("Enter a 10-digit mobile number.");
   if (!v("pdAddress")) return fail("Enter the billing address.");
-  if (!pan && !gstin) return fail("Enter PAN or GSTIN.");
   if (pan && !/^[A-Z]{5}[0-9]{4}[A-Z]$/.test(pan)) return fail("PAN format must be 5 letters + 4 numbers + 1 letter.");
   if (gstin && !/^[0-9]{2}[A-Z0-9]{13}$/.test(gstin)) return fail("GSTIN must be 15 characters.");
   const btn = document.getElementById("pdSave");
   btn.disabled = true;
   try {
     const args = {p_mobile: mobile, p_address: v("pdAddress"), p_city: v("pdCity"), p_pincode: v("pdPin"), p_pan: pan, p_gstin: gstin};
+    if (partyGeo) Object.assign(args, {p_lat: partyGeo.lat, p_lng: partyGeo.lng});
     if (partyDialogMode === "fill") {
       const {data,error} = await db.rpc("lwb_sales_fill_party_details", {p_customer_id: selectedParty.id, ...args});
-      if (error) return fail(error.message);
+      if (error) return fail(partySetupMissing(error) ? "Shop location needs one setup step. Ask Admin." : error.message);
       partyKyc = data;
       renderPartyKyc();
       document.getElementById("partyDlg").close();
       ERPShell.toast(data?.missing?.length ? "Saved. Still missing: " + data.missing.join(", ") : "Party details saved.");
     } else {
       const {data,error} = await db.rpc("lwb_sales_create_party", {p_name: v("pdName"), ...args});
-      if (error) return fail(/lwb_sales_create_party/.test(error.message) ? "Adding a party from here is not set up yet. Ask Admin." : error.message);
+      if (error) return fail(partySetupMissing(error) || /PAN or GSTIN/.test(error.message)
+        ? "PAN optional / shop location needs one setup step (lwb_party_pan_optional_location_setup.sql). Ask Admin."
+        : error.message);
       document.getElementById("partyDlg").close();
       pickParty(data);
       ERPShell.toast(data.customer_name + " added to your parties.");
@@ -1248,6 +1261,43 @@ document.getElementById("partyForm").addEventListener("submit", async (event) =>
   } finally {
     btn.disabled = false;
   }
+});
+
+/* SHOP LOCATION: the phone's GPS saved on the party (lwb_party_pan_optional_location_setup.sql).
+   Live Tracking and the trip / area suggestion use it. */
+let partyGeo = null;
+const partySetupMissing = error => /lwb_sales_(create_party|fill_party_details)|p_lat|Could not find the function/i.test(error?.message || "");
+function resetPartyLocation(saved) {
+  partyGeo = null;
+  const btn = document.getElementById("pdLocBtn");
+  btn.disabled = false;
+  btn.className = "";
+  btn.textContent = "📍 Shop location";
+  document.getElementById("pdLocRow").hidden = !!saved;
+  document.getElementById("pdLocText").textContent = "Optional. Stand at the shop and tap.";
+}
+document.getElementById("pdLocBtn").addEventListener("click", () => {
+  const btn = document.getElementById("pdLocBtn"), text = document.getElementById("pdLocText");
+  if (!navigator.geolocation) { text.textContent = "This phone / browser cannot give location."; return; }
+  btn.disabled = true;
+  text.textContent = "Getting location...";
+  navigator.geolocation.getCurrentPosition(pos => {
+    const {latitude: lat, longitude: lng, accuracy} = pos.coords;
+    partyGeo = {lat, lng};
+    btn.disabled = false;
+    btn.className = "done";
+    btn.textContent = "✓ Location";
+    const link = document.createElement("a");
+    link.href = "https://maps.google.com/?q=" + lat.toFixed(6) + "," + lng.toFixed(6);
+    link.target = "_blank";
+    link.rel = "noopener";
+    link.textContent = "Map";
+    text.replaceChildren(lat.toFixed(5) + ", " + lng.toFixed(5) + " (±" + Math.round(accuracy) + " m) · ", link);
+  }, err => {
+    btn.disabled = false;
+    text.textContent = err.code === 1 ? "Location blocked. Allow location for this site, then tap again."
+      : "Could not get location. Go outside / turn on GPS and tap again.";
+  }, {enableHighAccuracy: true, timeout: 15000, maximumAge: 0});
 });
 
 async function searchSavedParties(queryText) {
