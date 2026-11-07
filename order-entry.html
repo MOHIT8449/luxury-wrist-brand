@@ -803,6 +803,11 @@ dialog.setup-dlg{position:fixed;inset:0;margin:auto;height:fit-content}
           <strong id="totalWeight">0 KG</strong>
         </div>
 
+        <div class="summary-row lwb-pf-only" id="profitRow" hidden>
+          <span>Profit <small id="profitNote"></small></span>
+          <strong id="totalProfit" class="lwb-pf-sum">₹0</strong>
+        </div>
+
         <div class="summary-row mgr-col"><span>Total GR</span><strong id="totalGr">₹0.00</strong></div>
         <div class="summary-row mgr-col"><span>Diff total excl. ROI</span><strong id="totalDiff">₹0.00</strong></div>
         <div class="summary-row mgr-col"><span id="totalDiff5Label">Diff total ROI</span><strong id="totalDiff5">₹0.00</strong></div>
@@ -1508,6 +1513,7 @@ function addItem(focus){
              onkeydown="handleRateTab(event,this)">
       <button type="button" class="step" tabindex="-1" title="Rate +1" onclick="rateStep(this,1)">+</button>
       </div>
+      <span class="pf-slot"></span>
     </td>
 
     <td>
@@ -1936,6 +1942,7 @@ function calculateTotals(){
     formatNumber(totalWeight)+" KG";
 
   updateLandingCells();
+  paintProfit();
 
   const sticky = document.getElementById("stickyTotal");
   const amount = document.createElement("b");
@@ -3210,6 +3217,28 @@ function updateLandingCells(){
   d.textContent = formatMoney(diff); d.className = diff < 0 ? "neg" : diff > 0 ? "pos" : "";
   d5.textContent = formatMoney(diff5); d5.className = diff5 < 0 ? "neg" : diff5 > 0 ? "pos" : "";
 }
+
+// Profit per SKU line (rate − landing) for Admin / a person Admin allowed, when the top-bar Profit
+// switch is ON (profit-view.js). Nobody else gets the landing, so nothing shows for them.
+function paintProfit(){
+  const P = window.LWBProfit, on = !!(P && P.on()), lines = [];
+  document.querySelectorAll("#itemsBody tr").forEach(row => {
+    const slot = row.querySelector(".pf-slot"); if(!slot) return;
+    const sku = row.querySelector(".sku-name").value, rateRaw = row.querySelector(".rate").value, qty = getRowCaseQty(row);
+    const q = Number.isFinite(qty) ? qty : 0;
+    slot.innerHTML = on && rateRaw !== "" ? P.tag(sku, number(rateRaw), q) : "";
+    if(on && rateRaw !== "") lines.push({sku, rate:number(rateRaw), qty:q});
+  });
+  const row = document.getElementById("profitRow"); if(!row) return;
+  const t = on ? P.total(lines) : null;
+  row.hidden = !t || !t.known;
+  if(t && t.known){
+    const el = document.getElementById("totalProfit");
+    el.textContent = t.text; el.classList.toggle("neg", t.profit <= 0);
+    document.getElementById("profitNote").textContent = t.missing ? "(" + t.missing + " SKU no landing)" : "";
+  }
+}
+document.addEventListener("lwb:profit", () => paintProfit());
 
 function casesPerPallet(row){
   const sku = skuMasterByName.get(skuKey(row.querySelector(".sku-name").value));

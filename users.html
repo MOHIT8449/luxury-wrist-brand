@@ -44,6 +44,8 @@
     .pg-grid label.off{color:#a0a8b1;cursor:not-allowed}
     .pg-grid label small{color:#a0a8b1;font-size:11px}
     .roles-table button.pg-btn{background:#fff;color:var(--erp-ink);border:1px solid var(--erp-line)}
+    .roles-table button.pf-allow{display:inline-block;width:auto;margin:4px 0 0;padding:2px 9px;border-radius:10px;border:1px solid var(--erp-line);background:#fff;color:#5b6672;font:600 11px "Segoe UI",Roboto,Arial,sans-serif;cursor:pointer;box-shadow:none}
+    .roles-table button.pf-allow[aria-pressed=true]{background:#f3e8ff;color:#6b21a8;border-color:#d8b4fe}
     [hidden]{display:none!important}
   </style>
 </head>
@@ -152,6 +154,8 @@
         pageAccess={};pageExtra={};for(const r of (pa.error?[]:pa.data||[])){pageAccess[r.user_id]=r.hidden||[];pageExtra[r.user_id]=r.extra||[]}
         // Users with a working Authenticator OTP; empty until lwb_login_otp_setup.sql is run.
         const otp=await client.rpc("lwb_admin_otp_users"),otpSet=new Set(otp.error?[]:(otp.data||[]).map(r=>typeof r==="string"?r:r.lwb_admin_otp_users));
+        // Who may see Profit on PO screens (lwb_profit_view_setup.sql); Admin always sees it.
+        const pv=await client.rpc("lwb_profit_landing"),pfReady=!pv.error&&pv.data&&pv.data.admin===true,pfSet=new Set(pfReady?pv.data.viewers||[]:[]);
         for(const u of users){
           const row=body.insertRow();
           const login=document.createElement("div");login.className="login-cell";
@@ -184,6 +188,17 @@
           if(userDocs){const dc=document.createElement("button");dc.type="button";dc.className="pg-btn";dc.textContent="📷 Photo & Docs";
             dc.onclick=async()=>{await ERPDocs.open({client,entity:"USER",id:u.user_id,title:"Photo & documents · "+(u.full_name||u.mobile||u.email||""),info:true});userPhotos.delete(u.user_id);loadRoleManager()};
             acts.append(dc)}
+          if(pfReady&&u.erp_role!=="admin"&&u.erp_role!=="driver"){
+            const pf=document.createElement("button");pf.type="button";pf.className="pf-allow";
+            const show=()=>{const y=pfSet.has(u.user_id);pf.setAttribute("aria-pressed",String(y));pf.textContent=y?"Profit: ON":"Profit: OFF";
+              pf.title=y?"Sees profit (rate − landing) on PO screens. Tap to stop.":"Does not see profit. Tap to allow profit on PO screens."};
+            show();
+            pf.onclick=async()=>{const y=!pfSet.has(u.user_id);pf.disabled=true;
+              const {error}=await client.rpc("lwb_price_viewer_set",{p_user:u.user_id,p_on:y});pf.disabled=false;
+              if(error){roleMessage("Profit permission not saved: "+error.message,true);return}
+              y?pfSet.add(u.user_id):pfSet.delete(u.user_id);show();
+              roleMessage((u.full_name||u.mobile||u.email)+(y?" now sees profit on PO screens.":" no longer sees profit."))};
+            login.append(pf)}
           if(!otp.error&&otpSet.has(u.user_id)){
             const reset=document.createElement("button");reset.type="button";reset.className="pg-btn";reset.textContent="Reset OTP";
             reset.onclick=()=>resetOtp(u,reset);acts.append(reset);
