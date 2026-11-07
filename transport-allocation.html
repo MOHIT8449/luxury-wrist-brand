@@ -109,9 +109,13 @@ const sugCaps=()=>[...new Set(fleetVehicles.map(v=>Number(v.capacity_kg)).filter
 const sugCap=()=>sug.cap||sugCaps().slice(-1)[0]||1700;
 async function sugLoad(){if(!window.LWBSuggest)return;const r=await LWBSuggest.items(db,orders.filter(o=>stage(o)==='ready'));sug.err=r.error?r.error.message:null;sug.items=r.error?null:r.items;}
 function sugGroup(list){const ids=new Set(list.map(o=>o.id)),its=sug.items.filter(x=>ids.has(x.id)).map(x=>{const o=orders.find(y=>y.id===x.id);return o?{...x,kg:Number(o.total_weight)||0}:x;});
-  const g=LWBSuggest.group(its,{mode:sug.mode,cap:sugCap(),vehicles:fleetVehicles});const rank=t=>Math.min(...t.items.map(x=>prioRank(orders.find(o=>o.id===x.id)||{})));
+  // Full load (same kg as the PO list, default 3,000): one PO = one vehicle, never merged
+  let full=3000;try{full=Number(localStorage.getItem('lwbFullLoadKg'))||3000;}catch(_){}
+  const big=its.filter(x=>x.kg>=full);
+  const g=LWBSuggest.group(its.filter(x=>x.kg<full),{mode:sug.mode,cap:sugCap(),vehicles:fleetVehicles});
+  big.forEach(x=>g.trips.push({name:'🚛 Full load · '+(x.area||x.party),part:'',areas:[],items:[x],kg:x.kg,spread:0,near:null}));const rank=t=>Math.min(...t.items.map(x=>prioRank(orders.find(o=>o.id===x.id)||{})));
   g.trips.sort((a,b)=>rank(a)-rank(b)||b.kg-a.kg);return g;}
-function sugHead(t,i){const cap=sugCap(),kg=t.kg,over=kg>cap,pa=new Set(t.items.map(x=>x.party.trim().toUpperCase())).size,zero=t.items.filter(x=>!x.kg).length,k=LWBSuggest.kgf;
+function sugHead(t,i){const kg=t.kg,cap=/^🚛/.test(t.name)?Math.max(kg,1):sugCap(),over=kg>cap,pa=new Set(t.items.map(x=>x.party.trim().toUpperCase())).size,zero=t.items.filter(x=>!x.kg).length,k=LWBSuggest.kgf;
   const m=[t.items.length+' PO',pa+' part'+(pa===1?'y':'ies')];if(t.areas.length>1)m.push(t.areas.join(', '));if(t.spread>0.05)m.push('within '+Math.max(1,Math.round(t.spread))+' km');if(t.items.length===1&&t.near!=null)m.push('nearest other party '+Math.round(t.near)+' km');
   const why=over?`<span class="why w">⚠ ${k(kg-cap)} kg over</span>`:zero?`<span class="why w">⚠ ${zero} PO with 0 kg</span>`:t.vehicle?`<span class="why">✓ ${safe(t.vehicle.vehicle_no)} free (${k(t.vehicle.capacity_kg)} kg)</span>`:kg<cap*0.6?`<span class="why">Room for ${k(cap-kg)} kg more</span>`:'';
   return `<tr class="sgh"><td colspan="10"><div class="sgh-in"><b>💡 Trip ${i+1} · ${safe(t.name)}${t.part?' ('+t.part+')':''}</b><span class="m">${safe(m.join(' · '))}</span><span class="kg ${over?'w':''}">${k(kg)} / ${k(cap)} kg</span><span class="bar ${over?'w':''}"><i style="width:${Math.min(100,Math.round(kg/cap*100))}%"></i></span>${why}${t.items.length>1?`<span class="bt"><button type="button" class="secondary" data-sgsel="${i}">☑ Select</button><button type="button" class="primary" data-sgmake="${i}">🚚 One trip (${t.items.length} PO)</button></span>`:''}</div></td></tr>`;}
