@@ -35,7 +35,7 @@
   // item = {id, ref, party, amount, when, lines:[text], meta:[text], field?, acts:[{t, kind, href|run}]}
   // act kind: ok (green, does it here), no (red), go (opens the page). run(c, item, fieldValue, ui).
   const SECTIONS=[
-    {key:"rate",icon:"₹",title:"Rate OK",sub:"Rate below min",roles:["admin"],page:"warehouse-orders.html",
+    {key:"rate",icon:"₹",title:"Low rate approval",sub:"Rate below minimum",roles:["admin"],page:"warehouse-orders.html",
      async load(c){
        const rows=(await rpc(c,"lwb_rate_waiting"))||[];
        const items=rows.filter(r=>r.can_approve).map(r=>{
@@ -49,7 +49,7 @@
        });
        return {items,amount:sum(items,i=>i.amount)};
      }},
-    {key:"market",icon:"⚠",title:"Market check",sub:"Low rate / wrong slab",roles:["admin","manager"],page:"warehouse-orders.html",
+    {key:"market",icon:"⚠",title:"Market order check",sub:"Low margin / wrong slab",roles:["admin","manager"],page:"warehouse-orders.html",
      async load(c,ctx){
        if(!ctx.bells)return null;
        const seen=new Set(),items=[];
@@ -65,7 +65,7 @@
        return {items,amount:sum(items,i=>i.amount),
          bulk:items.length>1?{t:"✓ All checked",confirm:"Mark all "+items.length+" market orders as checked?",run:c2=>readBells(c2,ctx.uid,"ORDER_RATE_CHECK")}:null};
      }},
-    {key:"po",icon:"🛒",title:"New PO",sub:"Salesman orders",roles:["admin","manager"],page:"warehouse-orders.html",
+    {key:"po",icon:"🛒",title:"New order approval",sub:"Salesman POs",roles:["admin","manager"],page:"warehouse-orders.html",
      async load(c,ctx){
        if(!ctx.pending)return null;
        const items=ctx.pending.map(o=>({id:o.id,ref:o.order_no,party:o.customer_name,amount:num(o.total_amount),when:o.created_at||o.order_date,
@@ -73,7 +73,7 @@
          acts:[{t:"Open & approve",kind:"go",href:orderLink(o.id)}]}));
        return {items,amount:sum(items,i=>i.amount)};
      }},
-    {key:"change",icon:"✏",title:"PO change",sub:"Qty / rate / SKU after bill",roles:["admin"],page:"party-billing.html?tab=chg",
+    {key:"change",icon:"✏",title:"Order change approval",sub:"Qty / rate / SKU change",roles:["admin"],page:"party-billing.html?tab=chg",
      async load(c){
        const rows=((await rpc(c,"lwb_bill_change_list",{p_days:1}))||[]).filter(r=>r.status==="WAITING");
        const K={QTY:"Qty",RATE:"Rate",SKU:"SKU",ADD:"Added",REMOVE:"Removed"};
@@ -94,7 +94,7 @@
                {t:"Open",kind:"go",href:"party-billing.html?tab=chg&change="+encodeURIComponent(r.order_id)}]}));
        return {items,amount:sum(items,i=>i.amount)};
      }},
-    {key:"rent",icon:"🚚",title:"Trip rent",sub:"Fixed rent per party",roles:["admin"],page:"fleet-master.html#rates",
+    {key:"rent",icon:"🚚",title:"Driver trip rent",sub:"Fixed rent to verify",roles:["admin"],page:"fleet-master.html#rates",
      async load(c){
        const d=await rpc(c,"lwb_hired_rate_list");
        if(!d||!d.is_admin)return null;
@@ -107,7 +107,7 @@
                {t:"↩ Send back",kind:"no",ask:"Why is it sent back?",run:(c2,i,f,why)=>rpc(c2,"lwb_hired_rate_verify",{p_rate_id:g.rate_id,p_ok:false,p_rate:null,p_note:why})}]}));
        return {items,amount:sum(items,i=>i.amount)};
      }},
-    {key:"bank",icon:"🏦",title:"Bank check",sub:"Payments to verify",roles:["admin"],page:"accounts-dashboard.html#verify",
+    {key:"bank",icon:"🏦",title:"Bank payment check",sub:"Money in bank?",roles:["admin"],page:"accounts-dashboard.html#verify",
      async load(c){
        const day=new Date().toLocaleDateString("en-CA",{timeZone:"Asia/Kolkata"});
        const D=await rpc(c,"lwb_acc_dashboard",{p_from:day,p_to:day});
@@ -125,7 +125,7 @@
        const groups=[...g.entries()].sort((a,b)=>(a[0]==="")-(b[0]==="")||b[1].amount-a[1].amount).map(([k,v])=>({key:k,...v}));
        return {items,amount:sum(items,i=>i.amount),groups};
      }},
-    {key:"stock",icon:"📦",title:"Stock move",sub:"Godown stock moves",roles:["admin","manager"],page:"stock-transfer.html#approvals",
+    {key:"stock",icon:"📦",title:"Stock transfer approval",sub:"Damage / leakage moves",roles:["admin","manager"],page:"stock-transfer.html#approvals",
      async load(c){
        const rows=((await rpc(c,"lwb_stx_moves",{p_status:"PENDING",p_from:null,p_to:null}))||[]).filter(m=>m.can_decide);
        const lab=b=>String(b||"").replace(/_/g," ").toLowerCase().replace(/^./,x=>x.toUpperCase());
@@ -138,7 +138,7 @@
                {t:"Open",kind:"go",href:"stock-transfer.html#approvals"}]}));
        return {items};
      }},
-    {key:"dreturn",icon:"↩",title:"Driver return",sub:"Goods back from party",roles:["admin","manager"],page:"driver-returns.html",
+    {key:"dreturn",icon:"↩",title:"Driver return check",sub:"Goods back from party",roles:["admin","manager"],page:"driver-returns.html",
      async load(c){
        const rows=(await rpc(c,"lwb_office_list_driver_returns",{p_status:"PENDING_OFFICE"}))||[];
        const items=rows.map(r=>({id:String(r.id||r.return_id||r.order_id),ref:r.order_no||"Return",party:r.party_name||r.customer_name||"",amount:num(r.total_return_amount||r.amount),when:r.created_at,
@@ -147,7 +147,7 @@
          acts:[{t:"Open & verify",kind:"go",href:"driver-returns.html"+(r.order_id?"?order="+encodeURIComponent(r.order_id):"")}]}));
        return {items,amount:sum(items,i=>i.amount)};
      }},
-    {key:"sreturn",icon:"↩",title:"Sales return",sub:"Return to approve",roles:["admin"],page:"sales-return.html",
+    {key:"sreturn",icon:"↩",title:"Sales return approval",sub:"Return to approve",roles:["admin"],page:"sales-return.html",
      async load(c){
        const {data,error}=await c.from("sales_returns").select("id,order_id,return_no,return_date,total_amount,approval_status,created_at").ilike("approval_status","pending").order("created_at",{ascending:false}).limit(200);
        if(error)return null;
@@ -155,7 +155,7 @@
          acts:[{t:"Open & approve",kind:"go",href:"sales-return.html"}]}));
        return {items,amount:sum(items,i=>i.amount)};
      }},
-    {key:"party",icon:"👤",title:"New party",sub:"Added by salesman",roles:["admin","manager"],page:"customer-master.html",
+    {key:"party",icon:"👤",title:"New party check",sub:"Added by salesman",roles:["admin","manager"],page:"customer-master.html",
      async load(c,ctx){
        if(!ctx.bells)return null;
        const items=ctx.bells.filter(b=>b.notification_type==="PARTY_CREATED").map(n=>{
