@@ -1171,8 +1171,11 @@ async function loadPartyKyc(party) {
   renderPartyKyc();
 }
 
+// What can stop an order: mobile / address. PAN / GSTIN is only a reminder
+// (lwb_party_pan_optional_location_setup.sql); before that SQL every missing item counts.
+const kycBlocking = k => k ? (k.blocking || k.missing || []) : [];
 function kycBlocked() {
-  return !!(partyKyc && partyKyc.enforced && partyKyc.missing?.length && partyKyc.used >= partyKyc.limit);
+  return !!(partyKyc && partyKyc.enforced && kycBlocking(partyKyc).length && partyKyc.used >= partyKyc.limit);
 }
 
 function renderPartyKyc() {
@@ -1182,9 +1185,10 @@ function renderPartyKyc() {
   if (!k || !k.missing?.length || editOrder) { box.hidden = true; box.replaceChildren(); return; }
   const left = Math.max(0, k.limit - k.used);
   const text = document.createElement("span");
+  const counts = kycBlocking(k).length > 0;
   text.textContent = "Party details missing: " + k.missing.join(", ") + "." +
-    (!k.enforced ? "" : kycBlocked() ? " Fill them to place this order."
-      : " " + left + " more order" + (left === 1 ? "" : "s") + " allowed without them.");
+    (!counts ? " Fill when the party gives it." : !k.enforced ? "" : kycBlocked() ? " Fill them to place this order."
+      : " " + left + " more order" + (left === 1 ? "" : "s") + " allowed without " + kycBlocking(k).join(" / ") + ".");
   const fill = document.createElement("button");
   fill.type = "button";
   fill.textContent = "Fill details";

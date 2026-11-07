@@ -75,3 +75,15 @@ test('Fill details adds PAN later and location only when none is saved', async()
   await one(`SELECT public.lwb_sales_fill_party_details($1,'','','','','','',22.5,72.9)`,[old]);
   assert.equal((await one(`SELECT geo_lat FROM public.lwb_customer_master WHERE id=$1`,[old])).geo_lat,22.5);
 });
+
+test('missing PAN never stops or counts a salesman order; missing address still does', async()=>{
+  await as(ids.sales);
+  const r=(await create('NO PAN SHOP','','',null,null)).r;
+  for (let i=0;i<5;i++) await db.query(`INSERT INTO public.orders(customer_name) VALUES ('NO PAN SHOP')`);
+  assert.equal((await one(`SELECT kyc_orders_used FROM public.lwb_customer_master WHERE id=$1`,[r.id])).kyc_orders_used,0);
+  const k=(await one(`SELECT public.lwb_party_kyc($1) k`,[r.id])).k;
+  assert.deepEqual(k.missing,['PAN / GSTIN']); assert.deepEqual(k.blocking,[]);
+  await db.query(`UPDATE public.lwb_customer_master SET billing_address='' WHERE id=$1`,[r.id]);
+  for (let i=0;i<3;i++) await db.query(`INSERT INTO public.orders(customer_name) VALUES ('NO PAN SHOP')`);
+  await assert.rejects(db.query(`INSERT INTO public.orders(customer_name) VALUES ('NO PAN SHOP')`),/has no Address\./);
+});

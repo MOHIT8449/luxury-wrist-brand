@@ -5,14 +5,16 @@
 --
 -- 1. PO Entry "Add new party": only name, mobile and billing address are needed.
 --    PAN / GSTIN can be left empty (the party often gives it later). The party
---    still shows "Party details missing: PAN / GSTIN" with the "Fill details"
---    button, and the few-orders rule of lwb_party_details_rule_setup.sql stays.
+--    still shows "PAN / GSTIN not given yet" with the "Fill details" button.
+--    A missing PAN / GSTIN never stops or counts a salesman order; the few-orders
+--    rule of lwb_party_details_rule_setup.sql now looks only at mobile and address.
 -- 2. "📍 Shop location" on the same popup saves the phone's GPS on the party
 --    (lwb_customer_master.geo_lat / geo_lng / geo_set_at, the same columns that
 --    Live Tracking and the trip / area suggestion already use).
 --    "Fill details" can add the location only when the party has none yet;
 --    a saved location is changed only from the Live Tracking map pin.
 --
+-- Also replaces the order trigger function lwb_orders_party_details_guard (same trigger).
 -- Only lwb_customer_master, lwb_party_salesman, lwb_salesmen and
 -- erp_notifications are written. No order, stock, bill, ledger or Tally data.
 
@@ -55,7 +57,8 @@ BEGIN
     'enforced', public.lwb_is_sales_user(),
     'mobile', m.mobile, 'address', m.billing_address, 'city', m.city, 'pincode', m.pincode,
     'pan', m.pan, 'gstin', m.gstin,
-    'has_location', m.geo_lat IS NOT NULL AND m.geo_lng IS NOT NULL);
+    'has_location', m.geo_lat IS NOT NULL AND m.geo_lng IS NOT NULL,
+    'blocking', to_jsonb(array_remove(public.lwb_party_missing(m.mobile, m.billing_address, m.pan, m.gstin), 'PAN / GSTIN')));
 END;
 $fn$;
 
@@ -159,6 +162,34 @@ BEGIN
   RETURN jsonb_build_object('id', v_row.id, 'customer_code', v_row.customer_code, 'customer_name', v_row.customer_name);
 END;
 $fn$;
+
+-- Every salesman order: count it while mobile or address is missing, refuse it past the limit.
+-- (PAN / GSTIN is only a reminder now; it never blocks.)
+CREATE OR REPLACE FUNCTION public.lwb_orders_party_details_guard()
+RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path = ''
+AS $fn$
+DECLARE
+  m public.lwb_customer_master%ROWTYPE;
+  v_missing text[];
+  v_limit integer;
+BEGIN
+  IF NOT public.lwb_is_sales_user() THEN RETURN NEW; END IF;
+  SELECT * INTO m FROM public.lwb_customer_master
+  WHERE upper(btrim(customer_name)) = upper(btrim(coalesce(NEW.customer_name,'')))
+  ORDER BY is_active DESC NULLS LAST LIMIT 1 FOR UPDATE;
+  IF NOT FOUND THEN RETURN NEW; END IF;
+  v_missing := array_remove(public.lwb_party_missing(m.mobile, m.billing_address, m.pan, m.gstin), 'PAN / GSTIN');
+  IF cardinality(v_missing) = 0 THEN RETURN NEW; END IF;
+  v_limit := coalesce(m.kyc_free_orders, (SELECT s.kyc_free_orders FROM public.lwb_sales_settings s WHERE s.id = 1), 3);
+  IF m.kyc_orders_used >= v_limit THEN
+    RAISE EXCEPTION 'Party details missing: % has no %. Fill the party details first (% orders were allowed without them).',
+      m.customer_name, array_to_string(v_missing, ', '), v_limit;
+  END IF;
+  UPDATE public.lwb_customer_master SET kyc_orders_used = kyc_orders_used + 1 WHERE id = m.id;
+  RETURN NEW;
+END;
+$fn$;
+REVOKE ALL ON FUNCTION public.lwb_orders_party_details_guard() FROM PUBLIC, anon;
 
 REVOKE ALL ON FUNCTION public.lwb_party_kyc(uuid),
   public.lwb_sales_fill_party_details(uuid,text,text,text,text,text,text,double precision,double precision),
