@@ -101,6 +101,15 @@
     return {trips:out,unknown};
   }
 
+  // ready POs -> items for group(): one RPC; {items} or {error}
+  async function items(db,orders){
+    const ready=(orders||[]).filter(x=>x&&x.id);if(!ready.length)return {items:[]};
+    const r=await db.rpc('lwb_trip_suggest_data',{p_order_ids:ready.map(x=>x.id)});
+    if(r.error)return {error:r.error};
+    const by=new Map((r.data||[]).map(x=>[String(x.order_id),x]));
+    return {items:ready.map(x=>{const d=by.get(String(x.id))||{};return {id:x.id,order_no:x.order_no,party:x.customer_name||'',kg:Number(x.total_weight)||0,area:d.area||null,src:d.src||null,lat:d.lat??null,lng:d.lng??null,sm_area:d.sm_area||null,salesman:d.salesman||null};})};
+  }
+
   async function open(o){
     const {db}=o,ready=(o.orders||[]).filter(x=>x&&x.id);
     const m=modal('💡 Suggested trips · '+ready.length+' ready PO');
@@ -185,5 +194,5 @@
     load();
   }
 
-  window.LWBSuggest={open,areas,group,css};
+  window.LWBSuggest={open,areas,group,items,css,kgf,srcText};
 })();
