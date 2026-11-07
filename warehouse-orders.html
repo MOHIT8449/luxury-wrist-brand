@@ -1355,8 +1355,8 @@
       <span class="sp"></span>
       <button type="button" class="btn btn-blue" id="bulkApproveBtn" onclick="bulkApprove()">✔ Approve<span class="lg"> selected</span></button>
       <button type="button" class="btn btn-light" id="bulkPrintBtn" onclick="bulkPrint()">🖨 Print<span class="lg"> selected</span></button>
-      <button type="button" class="btn btn-light" id="bulkLoadBtn" onclick="openBulkMark('LOADED')" hidden title="Admin: mark the selected POs Loaded together"></button>
-      <button type="button" class="btn btn-green" id="bulkDeliverBtn" onclick="openBulkMark('DELIVERED')" hidden title="Admin: mark the selected POs Delivered together"></button>
+      <button type="button" class="btn btn-light" id="bulkLoadBtn" onclick="openBulkMark('LOADED')" hidden title="Mark the selected POs Loaded together"></button>
+      <button type="button" class="btn btn-green" id="bulkDeliverBtn" onclick="openBulkMark('DELIVERED')" hidden title="Mark the selected POs Delivered together"></button>
       <button type="button" class="btn btn-red" id="bulkDeleteBtn" onclick="deleteOrders(pickedOrders().map(o=>o.id))" hidden title="Admin: delete dummy / duplicate orders for ever">🗑<span class="lg"> Delete selected</span></button>
       <button type="button" class="btn btn-light" id="bulkClearBtn" onclick="clearSelection()" title="Clear selection">✖<span class="lg"> Clear</span></button>
     </div>
@@ -1878,6 +1878,8 @@ document.addEventListener("DOMContentLoaded", async () => {
     CAN_BILL = ["accounts", "admin"].includes(role);
     IS_ADMIN = role === "admin";
     CAN_HEAD = ["admin", "manager"].includes(role);
+    // Sales Head marks Loaded / Delivered too, until Admin unticks it in Manage Users > Pages (7 Nov 2026)
+    CAN_MARK = IS_ADMIN || (role === "manager" && !(window.ERPShell && ERPShell.hiddenPages().includes(MARK_KEY)));
     if (VIEW_ONLY) {
       document.body.classList.add("po-view-only");
       const h = document.querySelector(".po-title h2"); if (h) h.textContent = "PO / Sales List";
@@ -3032,8 +3034,8 @@ function trackOrder(id) {
 const MARK_LOADABLE = ["approved","approved_next","manager_approved","warehouse_approved","transport_allocated","allocated","loading"];
 const MARK_LOADED = ["loaded","invoiced","dispatched"];
 let markFor = null;
-const canMarkLoaded = o => IS_ADMIN && !!o && MARK_LOADABLE.includes(normalizedStatus(o));
-const canMarkDelivered = o => IS_ADMIN && !!o && !isDeliveredOrder(o) && (canMarkLoaded(o) || MARK_LOADED.includes(normalizedStatus(o)));
+const canMarkLoaded = o => CAN_MARK && !!o && MARK_LOADABLE.includes(normalizedStatus(o));
+const canMarkDelivered = o => CAN_MARK && !!o && !isDeliveredOrder(o) && (canMarkLoaded(o) || MARK_LOADED.includes(normalizedStatus(o)));
 const dmy = d => d ? String(d).slice(0,10).split("-").reverse().join("/") : "";
 async function renderAdminMark(order, boxId) {
   const box = document.getElementById(boxId);
@@ -3044,16 +3046,16 @@ async function renderAdminMark(order, boxId) {
   const { data, error } = await db.rpc("lwb_admin_order_marks", { p_ids: [order.id] });
   if (!error) marks = data || [];
   if (box.dataset.oid !== String(order.id)) return;
-  const log = marks.map(m => `Admin <b>${escapeHtml(m.marked_by_name || "")}</b> marked <b>${m.kind === "LOADED" ? "Loaded" : "Delivered"}</b> on ${dmy(m.mark_date)}${m.note ? " · " + escapeHtml(m.note) : ""}`).join("<br>");
+  const log = marks.map(m => `${m.marked_by_role === "MANAGER" ? "Sales Head" : "Admin"} <b>${escapeHtml(m.marked_by_name || "")}</b> marked <b>${m.kind === "LOADED" ? "Loaded" : "Delivered"}</b> on ${dmy(m.mark_date)}${m.note ? " · " + escapeHtml(m.note) : ""}`).join("<br>");
   const btns = (canMarkLoaded(order) ? `<button type="button" class="btn btn-light" onclick="openMark('${order.id}','LOADED')">✓ Mark Loaded</button>` : "")
     + (canMarkDelivered(order) ? `<button type="button" class="btn btn-green" onclick="openMark('${order.id}','DELIVERED')">✓ Mark Delivered</button>` : "");
   if (!log && !btns) return;
-  box.innerHTML = `<span class="am-log">${log || "Driver / Godown did not mark it in the app? Admin can mark it here."}</span>${btns ? `<span class="am-btns">${btns}</span>` : ""}`;
+  box.innerHTML = `<span class="am-log">${log || "Driver / Godown did not mark it in the app? Mark it here."}</span>${btns ? `<span class="am-btns">${btns}</span>` : ""}`;
   box.hidden = false;
 }
 function openMark(id, kind) {
   const order = orders.find(o => String(o.id) === String(id)) || (selectedOrder && String(selectedOrder.id) === String(id) ? selectedOrder : null);
-  if (!order || !IS_ADMIN) return;
+  if (!order || !CAN_MARK) return;
   markFor = { order, kind };
   const today = new Date(Date.now() + 19800000).toISOString().slice(0,10); // IST date
   const both = kind === "DELIVERED" && canMarkLoaded(order);
@@ -3079,7 +3081,7 @@ function closeMark() { document.getElementById("markModal").classList.remove("sh
    POs that cannot take the mark are left out and named in the popup. */
 function openBulkMark(kind) {
   const list = pickedOrders();
-  if (!IS_ADMIN || !list.length || bulkBusy) return;
+  if (!CAN_MARK || !list.length || bulkBusy) return;
   const ok = list.filter(kind === "LOADED" ? canMarkLoaded : canMarkDelivered);
   const skip = list.filter(o => !ok.includes(o));
   if (!ok.length) { alert("None of the selected POs can be marked " + (kind === "LOADED" ? "Loaded" : "Delivered") + "."); return; }
@@ -4580,6 +4582,8 @@ let VIEW_ONLY=false;
 let CAN_BILL=false; // Accounts / Admin: enter the Tally bill no. from the list
 let IS_ADMIN=false; // Admin: delete orders for ever (dummy / duplicate data)
 let CAN_HEAD=false; // Admin / Sales Head: cancel or modify at any stage before delivery
+let CAN_MARK=false; // Admin, and Sales Head unless Admin turned it off: mark Loaded / Delivered by hand
+const MARK_KEY="warehouse-orders.html#mark"; // in the user's hidden list = turned off (Manage Users > Pages)
 // Rate below the minimum (lwb_cc_rate_limit_setup.sql): POs waiting for Admin's rate OK, and the min rate by SKU.
 let rateWait=new Map(), saleMin=null, rateOrderId=null;
 const rateKey=n=>String(n||"").trim().toUpperCase();
