@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Approvals | Luxury Wrist Brand ERP</title>
+  <script src="erp-date.js"></script><script src="erp-recent.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <link rel="stylesheet" href="erp-shell.css">
+  <link rel="stylesheet" href="sales.css">
+  <script src="erp-shell.js"></script>
+  <script src="sales-common.js"></script>
+  <script src="approvals.js"></script>
+  <style>
+    /* Approvals (Mohit, 7 Nov 2026): one card per kind of permission with its pending count; the card opens
+       its list and the approval is given right here. Compact, no side scroll, buttons in one row. */
+    .ap-total{font-size:13px;color:var(--erp-muted);white-space:nowrap}
+    .ap-total b{color:var(--erp-ink)}
+    .ap-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(185px,1fr));gap:8px;margin:0 0 10px}
+    .ap-card{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:2px 8px;text-align:left;background:#fff;border:1px solid var(--erp-line);border-left:4px solid #e0a100;border-radius:8px;padding:8px 10px;font:inherit;color:var(--erp-ink);cursor:pointer;min-width:0}
+    .ap-card:hover{background:#fffaeb}
+    .ap-card.on{border-color:var(--erp-red);border-left-color:var(--erp-red);background:var(--erp-red-soft);box-shadow:var(--erp-ring)}
+    .ap-card.zero{border-left-color:#c9d3d6;color:var(--erp-muted)}
+    .ap-card .ic{grid-row:1/3;font-size:20px;line-height:1}
+    .ap-card .t{font-weight:600;font-size:13.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .ap-card .n{grid-row:1/3;grid-column:3;font-size:22px;font-weight:700;font-variant-numeric:tabular-nums;min-width:28px;text-align:right}
+    .ap-card:not(.zero) .n{color:#b26b00}
+    .ap-card .s{font-size:11.5px;color:var(--erp-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .ap-card .s b{color:var(--erp-ink);font-weight:600}
+    .ap-panel{background:#fff;border:1px solid var(--erp-line);border-radius:8px;padding:0 10px 8px}
+    .ap-ph{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:8px 0;border-bottom:2px solid var(--erp-red);position:sticky;top:var(--erp-top,54px);background:#fff;z-index:3}
+    .ap-ph h2{margin:0;font-size:15.5px}
+    .ap-ph small{color:var(--erp-muted);font-size:12.5px}
+    .ap-ph .grow{flex:1}
+    .ap-chips{display:flex;gap:6px;flex-wrap:wrap;padding:8px 0 2px}
+    .ap-chip{border:1px solid var(--erp-line);background:#fff;border-radius:999px;padding:4px 10px;font:inherit;font-size:12.5px;cursor:pointer;color:var(--erp-ink)}
+    .ap-chip.on{background:var(--erp-red);border-color:var(--erp-red);color:#fff}
+    .ap-row{border-bottom:1px solid var(--erp-line);padding:7px 0;display:grid;grid-template-columns:minmax(0,1fr);gap:3px;min-width:0}
+    .ap-row:last-child{border-bottom:0}
+    .ap-l1{display:flex;align-items:baseline;gap:8px;min-width:0}
+    .ap-ref{font-weight:700;font-size:13.5px;white-space:nowrap}
+    .ap-party{flex:1;min-width:0;font-weight:600;font-size:13.5px;text-transform:uppercase;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .ap-amt{font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap}
+    .ap-amt.neg{color:var(--erp-danger,#c62828)}
+    .ap-when{color:var(--erp-muted);font-size:12px;white-space:nowrap}
+    .ap-lines{margin:0;padding:0;list-style:none;font-size:12.5px;color:#7a3e00;display:grid;gap:1px}
+    .ap-lines li{overflow-wrap:anywhere}
+    .ap-meta{font-size:12px;color:var(--erp-muted);overflow-wrap:anywhere}
+    .ap-acts{display:flex;align-items:center;gap:6px;flex-wrap:nowrap;margin-top:2px}
+    .ap-acts .sl-btn{height:30px;padding:0 10px;font-size:12.5px}
+    .ap-acts .ok{background:var(--erp-green);border-color:var(--erp-green)}
+    .ap-acts .no{background:#fff;color:var(--erp-danger,#c62828);border-color:#f0c4c4}
+    .ap-acts a.sl-btn{display:inline-flex;align-items:center;justify-content:center;text-decoration:none}
+    .ap-acts select,.ap-acts input{height:30px;border:1.5px solid var(--erp-line);border-radius:6px;padding:0 6px;font:inherit;font-size:12.5px;min-width:0;background:#fff}
+    .ap-acts select{max-width:190px;height:32px!important;padding:0 6px!important;line-height:normal!important}.ap-acts input{width:90px}
+    .ap-empty{padding:16px 4px;color:var(--erp-muted);font-size:13.5px}
+    .ap-msg{margin:0 0 8px;padding:7px 10px;border-radius:6px;background:#fff2dc;color:#6b4a00;font-size:13px}
+    @media(max-width:700px){
+      .ap-cards{grid-template-columns:1fr 1fr;gap:6px}
+      .ap-card{padding:6px 8px;gap:1px 6px}
+      .ap-card .ic{font-size:17px}.ap-card .t{font-size:12.5px}.ap-card .n{font-size:19px;min-width:20px}
+      .ap-card .s{font-size:11px}
+      .ap-ph{top:var(--erp-top,52px)}
+      .ap-full{display:none!important}
+      .ap-l1{flex-wrap:wrap;gap:2px 8px}
+      .ap-party{flex-basis:100%;order:3}
+      .ap-ref{flex:1}
+      .ap-acts{gap:5px}
+      .ap-acts .sl-btn{flex:1 1 0;min-width:0;padding:0 6px;overflow:hidden;text-overflow:ellipsis}
+      .ap-acts select{flex:1.3 1 0;max-width:none}.ap-acts input{flex:1 1 0;width:auto}
+    }
+  </style>
+</head>
+<body>
+  <div id="loading" class="status">Checking account access...</div>
+  <main id="page" class="erp-main" hidden>
+    <div class="erp-pagehead"><h1>✅ Approvals</h1><span class="ap-total" id="total"></span><span class="grow"></span>
+      <button type="button" class="sl-btn ghost small" id="refresh">Refresh</button>
+      <button type="button" class="erp-i" aria-label="Info" title="Info" data-tip="Everything waiting for your OK, in one place. Tap a card to see its list and approve there. The same counts show on the Dashboard. Market order checks no longer pop up again and again: they wait here.">i</button></div>
+    <div class="ap-cards" id="cards"></div>
+    <section class="ap-panel" id="panel" hidden></section>
+  </main>
+  <script>
+    const S=LWBSales,{client,el}=S,A=LWBApprovals,{esc,inr,short,dmy,errText}=A;
+    let me=null,secs=[],cur="",bankPick="",busy=false;
+    const ago=v=>{if(!v)return "";const s=(Date.now()-new Date(v))/1000;if(s<3600)return Math.max(1,Math.floor(s/60))+" min";if(s<86400)return Math.floor(s/3600)+" hr";if(s<7*86400)return Math.floor(s/86400)+" d";return dmy(v)};
+
+    function drawCards(){
+      const t=A.total(secs);
+      el("total").innerHTML=t?"<b>"+t+"</b> waiting for you":"✓ Nothing waiting";
+      el("cards").innerHTML=secs.map(s=>'<button type="button" class="ap-card'+(s.count?"":" zero")+(s.key===cur?" on":"")+'" data-k="'+s.key+'" aria-pressed="'+(s.key===cur)+'">'+
+        '<span class="ic">'+esc(s.icon)+'</span><span class="t">'+esc(s.title)+'</span><span class="n">'+(s.count||"✓")+'</span>'+
+        '<span class="s">'+(s.count&&s.amount?"<b>"+(s.key==="change"?inr(s.amount):short(s.amount))+"</b>":esc(s.sub))+'</span></button>').join("");
+    }
+    function item(i,s){
+      const f=i.field;
+      const field=!f?"":f.type==="select"?'<select data-f aria-label="'+esc(f.label)+'">'+f.options.map(o=>'<option value="'+esc(o.v)+'"'+(String(o.v)===String(f.value)?" selected":"")+'>'+esc(o.t)+'</option>').join("")+'</select>'
+        :'<input data-f type="number" min="1" step="0.01" inputmode="decimal" value="'+esc(f.value)+'" aria-label="'+esc(f.label)+'" title="'+esc(f.label)+'">';
+      const amt=i.amount==null?"":'<span class="ap-amt'+(i.signed&&i.amount<0?" neg":"")+'">'+(i.signed&&i.amount>0?"+":"")+inr(i.amount)+'</span>';
+      return '<div class="ap-row" data-id="'+esc(i.id)+'">'+
+        '<div class="ap-l1"><span class="ap-ref">'+esc(i.ref)+'</span><span class="ap-party">'+esc(i.party||"")+'</span>'+amt+'<span class="ap-when">'+esc(ago(i.when))+'</span></div>'+
+        (i.lines&&i.lines.length?'<ul class="ap-lines">'+i.lines.map(l=>'<li>'+esc(l)+'</li>').join("")+'</ul>':"")+
+        (i.meta&&i.meta.length?'<div class="ap-meta">'+i.meta.map(esc).join(" · ")+'</div>':"")+
+        '<div class="ap-acts">'+field+i.acts.map((a,n)=>a.href?'<a class="sl-btn ghost" href="'+esc(a.href)+'">'+esc(a.t)+'</a>':'<button type="button" class="sl-btn '+a.kind+'" data-a="'+n+'">'+esc(a.t)+'</button>').join("")+'</div></div>';
+    }
+    function drawPanel(){
+      const s=secs.find(x=>x.key===cur),p=el("panel");
+      if(!s){p.hidden=true;return}
+      let items=s.items;
+      const chips=s.groups&&s.groups.length>1?'<div class="ap-chips">'+[{key:"*",name:"All banks",count:s.count,amount:s.amount}].concat(s.groups).map(g=>
+        '<button type="button" class="ap-chip'+((bankPick||"*")===g.key?" on":"")+'" data-g="'+esc(g.key)+'">'+esc(g.name)+' · '+g.count+' · '+short(g.amount)+'</button>').join("")+'</div>':"";
+      if(s.groups&&bankPick&&bankPick!=="*")items=items.filter(i=>i.group===bankPick);
+      const amt=items.reduce((t,i)=>t+(Number(i.amount)||0),0);
+      p.innerHTML='<div class="ap-ph"><h2>'+esc(s.icon+" "+s.title)+'</h2><small>'+items.length+(items.length===1?" item":" items")+(amt&&s.key!=="stock"?" · "+(s.key==="change"?inr(amt):short(amt)):"")+'</small><span class="grow"></span>'+
+        (s.bulk&&items.length>1&&!s.groups?'<button type="button" class="sl-btn small ok" id="bulk" style="background:var(--erp-green);border-color:var(--erp-green)">'+esc(s.bulk.t)+'</button>':"")+
+        (s.page?'<a class="sl-btn ghost small ap-full" href="'+esc(s.page)+'" style="display:inline-flex;align-items:center;text-decoration:none">Full page →</a>':"")+'</div>'+chips+
+        (items.length?items.map(i=>item(i,s)).join(""):'<div class="ap-empty">✓ Nothing waiting here.</div>');
+      p.hidden=false;
+    }
+    async function run(btn,fn){
+      if(busy)return;busy=true;
+      const row=btn.closest(".ap-row")||el("panel");row.querySelectorAll("button,select,input").forEach(b=>b.disabled=true);
+      try{await fn();ERPShell.toast("Done.");await load()}
+      catch(e){await alert(errText(e));row.querySelectorAll("button,select,input").forEach(b=>b.disabled=false)}
+      finally{busy=false}
+    }
+    async function act(btn){
+      const s=secs.find(x=>x.key===cur);if(!s)return;
+      const row=btn.closest(".ap-row"),i=s.items.find(x=>String(x.id)===row.dataset.id);if(!i)return;
+      const a=i.acts[Number(btn.dataset.a)];if(!a||!a.run)return;
+      const fv=row.querySelector("[data-f]")?row.querySelector("[data-f]").value:null;
+      let why=null;
+      if(a.ask){why=await prompt(a.ask,"",{title:a.t.replace(/^\W+\s*/,""),placeholder:"Write the reason"});if(why==null)return;
+        if(!why.trim()){await alert("Write the reason first.");return}why=why.trim()}
+      if(a.confirm&&!await confirm(a.confirm,{ok:a.t.replace(/^\W+\s*/,"")}))return;
+      run(btn,()=>a.run(client,i,fv,why));
+    }
+    function pick(k,scroll){
+      cur=k;bankPick="";try{history.replaceState(null,"","#"+k)}catch(e){}
+      drawCards();drawPanel();
+      if(scroll&&innerWidth<=700)el("panel").scrollIntoView({behavior:"smooth",block:"start"});
+    }
+    async function load(){
+      el("refresh").disabled=true;
+      try{secs=await A.load(client,{uid:me.user.id,role:me.role})}
+      catch(e){el("cards").innerHTML='<div class="ap-msg">'+esc(errText(e))+'</div>';return}
+      finally{el("refresh").disabled=false}
+      if(!secs.some(s=>s.key===cur))cur=(secs.find(s=>s.count)||secs[0]||{}).key||"";
+      drawCards();drawPanel();
+    }
+    (async()=>{
+      me=await S.start(["admin","manager"]);if(!me)return;
+      cur=location.hash.slice(1);
+      el("cards").addEventListener("click",e=>{const b=e.target.closest("[data-k]");if(b)pick(b.dataset.k,true)});
+      el("panel").addEventListener("click",async e=>{
+        const g=e.target.closest("[data-g]");if(g){bankPick=g.dataset.g;drawPanel();return}
+        if(e.target.id==="bulk"){const s=secs.find(x=>x.key===cur);if(!s||!s.bulk)return;
+          if(s.bulk.confirm&&!await confirm(s.bulk.confirm,{ok:"Yes"}))return;run(e.target,()=>s.bulk.run(client));return}
+        const b=e.target.closest("button[data-a]");if(b)act(b);
+      });
+      el("refresh").onclick=load;
+      document.addEventListener("visibilitychange",()=>{if(!document.hidden&&!busy&&!document.querySelector(".erp-dlg-back"))load()});
+      el("loading").hidden=true;el("page").hidden=false;
+      await load();
+    })();
+  </script>
+</body>
+</html>

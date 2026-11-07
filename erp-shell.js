@@ -76,6 +76,8 @@
   // Same role lists as the dashboard cards and each page's own role check.
   const MENU=[
     {group:"",items:[{t:"Dashboard",h:"dashboard.html",i:"home",r:"*"},
+      // Approvals (Mohit, 7 Nov 2026): everything waiting for Admin / Sales Head OK, one card each (approvals.js).
+      {t:"Approvals",h:"approvals.html",i:"check",r:"admin manager",k:"approval approve permission pending verify check bank payment trip rent rate market order po change stock"},
       {t:"Tasks",h:"tasks.html",i:"check",r:"*"},
       {t:"Complaint Box",h:"complaint-box.html",i:"chat",r:"*"},
       // Keyboard Shortcuts (Mohit, 5 Nov 2026): every role sees the keys of the pages it can open.

@@ -160,7 +160,7 @@
   [/^BILL_CHANGE_/,["party-billing.html?tab=chg&change={o}"]],
   [/^RATE_APPROVED$/,["quick-slip.html?order={o}"]],
   [/^PO_RATE_APPROVAL$/,["warehouse-orders.html?rate={o}"]],
-  [/^ORDER_RATE_CHECK$/,["warehouse-orders.html?order={o}"]],
+  [/^ORDER_RATE_CHECK$/,["approvals.html#market","warehouse-orders.html?order={o}"]],
   [/^PO_RATE_APPROVED$/,["warehouse-orders.html?order={o}","my-sales.html#orders"]],
   [/^DELIVERY_COLLECTION_(INFO|RECEIVED)$/,["driver-collections.html?order={o}","my-sales.html#orders","loading-dispatch.html"]],
   [/^DELIVERY_RETURN_INFO$/,["driver-returns.html?order={o}","my-sales.html#orders"]],
@@ -272,7 +272,7 @@
      for(const o of od||[])orders.set(o.id,o);}catch(e){}
    }
    arrived(rows);
-   rateCheck(rows);
+   // Market order checks no longer pop up (Mohit, 7 Nov 2026): they wait in the bell and on Approvals.
    list.replaceChildren();
    if(!rows.length){list.append(el("p",null,"No notifications yet."));return}
    allRead.hidden=!unread;
@@ -313,22 +313,9 @@
     list.append(box);
    }
   }
-  // "Market order — please check once" (lwb_rate_check_setup.sql, Admin / Sales Head): a popup once per
-  // notification on this device; "Open order" opens it, "Later" leaves it in the bell. The PO is never stopped.
-  let rcBusy=false;
-  async function rateCheck(rows){
-   if(rcBusy||!window.ERPShell||document.querySelector(".erp-dlg-back,.pd-back"))return;
-   let seen=[];try{seen=JSON.parse(localStorage.getItem("lwb-rate-check-seen")||"[]")}catch(e){}
-   const n=rows.find(x=>!x.is_read&&baseType(x)==="ORDER_RATE_CHECK"&&String(x.notification_type).toUpperCase()==="ORDER_RATE_CHECK"&&!seen.includes(x.id)&&Date.now()-new Date(x.created_at)<2*864e5);
-   if(!n)return;
-   rcBusy=true;
-   try{localStorage.setItem("lwb-rate-check-seen",JSON.stringify(seen.concat(n.id).slice(-60)))}catch(e){}
-   try{
-    const go=await ERPShell.confirm("⚠ Market order — please check once\n\n"+String(n.message||"").split(" · ").join("\n").split(" | ").join("\n"),{ok:"Open order",cancel:"Later"});
-    if(go){try{await db.from("erp_notifications").update({is_read:true}).eq("id",n.id).eq("user_id",user.id)}catch(e){}
-     location.href="warehouse-orders.html?order="+encodeURIComponent(n.order_id)}
-   }finally{rcBusy=false}
-  }
+  // "Market order — please check once" (lwb_rate_check_setup.sql) used to pop up here for every PO, again and
+  // again. Now it is only a bell row + the "Market order check" card on Approvals (approvals.html), where
+  // "✓ Checked OK" marks it read. The PO is never stopped, as before.
   // "Purchase vehicle arrived" (Godown Manager): popup until the vehicle is checked; Later = 15 min.
   let pdLoading=false;
   async function arrived(rows){
