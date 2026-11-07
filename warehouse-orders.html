@@ -1354,6 +1354,8 @@
         <option value="draft">Draft</option>
         <option value="pending">Pending Review</option>
         <option value="approved">Approved</option>
+        <option value="approved_full">Full load</option>
+        <option value="approved_merge">Merge</option>
         <option value="transport">Transport Assigned</option>
         <option value="loading">Loading</option>
         <option value="loaded">Loaded / Billed</option>
@@ -2662,10 +2664,17 @@ function orderStage(order) {
   return "other";
 }
 
+// Full load = one PO fills a vehicle (3-4 ton): one PO, one vehicle, straight to Transport. Kg set in the tab bar.
+let FULL_LOAD_KG = 3000;
+try { FULL_LOAD_KG = Number(localStorage.getItem("lwbFullLoadKg")) || 3000; } catch (e) {}
+const isFullLoad = order => (Number(order.total_weight) || 0) >= FULL_LOAD_KG;
+function setFullLoadKg(v) { v = Number(v); if (!(v > 0)) return; FULL_LOAD_KG = v; try { localStorage.setItem("lwbFullLoadKg", String(v)); } catch (e) {} poSug.key = ""; renderOrders(); }
+
 const PO_TABS = [
   { k: "draft", t: "📝 Draft", draft: true },
   { k: "pending", t: "Pending Review" },
-  { k: "approved", t: "Approved" },
+  { k: "approved_full", t: "🚛 Full load" },
+  { k: "approved_merge", t: "🧩 Merge" },
   { k: "transport", t: "Transport Assigned" },
   { k: "loading", t: "Loading" },
   { k: "loaded", t: "Loaded / Billed" },
@@ -2683,6 +2692,9 @@ function matchesTab(order, tab) {
   if (tab === "urgent") return orderPriority(order) !== "NORMAL" && !isCancelled(order) && !isDeliveredOrder(order);
   if (tab === "late_approval") return isLateApproval(order);
   if (tab === "late_delivery") return isLateDelivery(order);
+  // Approved split (Mohit, 7 Nov 2026): a full vehicle load goes straight to Transport; smaller POs are merged.
+  if (tab === "approved_full") return orderStage(order) === "approved" && isFullLoad(order);
+  if (tab === "approved_merge") return orderStage(order) === "approved" && !isFullLoad(order);
   return orderStage(order) === tab;
 }
 
@@ -3334,7 +3346,7 @@ const poSugVehicles=()=>typeof poMasterVehicles!=="undefined"&&Array.isArray(poM
 const poSugCaps=()=>[...new Set(poSugVehicles().map(v=>Number(v.capacity_kg)).filter(c=>c>0))].sort((a,b)=>a-b);
 const poSugCap=()=>poSug.cap||poSugCaps().slice(-1)[0]||1700;
 const poSugUsable=()=>!!window.LWBSuggest&&!VIEW_ONLY&&poSug.err!=="denied";
-function sugReady(){return orders.filter(o=>matchesTab(o,"approved")&&eligibleForPoPrint(o));}
+function sugReady(){return orders.filter(o=>matchesTab(o,"approved_merge")&&eligibleForPoPrint(o));}
 async function sugLoad(){const list=sugReady(),key=list.map(o=>o.id+":"+(o.total_weight||0)).sort().join(",");
   if(key===poSug.key&&poSug.items)return false;poSug.key=key;poSug.busy=true;
   try{const r=await LWBSuggest.items(db,list);
@@ -3348,10 +3360,11 @@ function sugGroup(list){if(!poSug.items)return null;const ids=new Set(list.map(o
 // Approved tab: order the list trip by trip and remember which row starts a trip
 function sugArrange(filtered,filter){
   poSug.head=new Map();poSug.trips=[];
-  const show=filter==="approved"&&poSugUsable();sugPaintBar(show);
+  const show=(filter==="approved"||filter==="approved_merge")&&poSugUsable();sugPaintBar(show,filter);
+  if(filter==="approved_full"&&!VIEW_ONLY)sugPaintFull();
   if(!show||!poSug.on)return filtered;
   if(!poSug.items||poSug.key!==sugReady().map(o=>o.id+":"+(o.total_weight||0)).sort().join(",")){
-    if(!poSug.busy)sugLoad().then(ch=>{if(ch&&document.getElementById("statusFilter").value==="approved")renderOrders();});return filtered;}
+    if(!poSug.busy)sugLoad().then(ch=>{if(ch&&/^approved(_merge)?$/.test(document.getElementById("statusFilter").value))renderOrders();});return filtered;}
   const g=sugGroup(filtered);if(!g)return filtered;poSug.trips=g.trips;
   const byId=new Map(filtered.map(o=>[o.id,o])),out=[],done=new Set();
   g.trips.forEach((t,i)=>t.items.forEach((x,j)=>{const o=byId.get(x.id);if(!o)return;if(j===0)poSug.head.set(o.id,i);out.push(o);done.add(o.id);}));
@@ -3365,11 +3378,13 @@ function sugHeadFor(order){if(!poSug.head.has(order.id))return "";const i=poSug.
   const why=over?`<span class="why w">⚠ ${k(kg-cap)} kg over</span>`:zero?`<span class="why w">⚠ ${zero} PO with 0 kg</span>`:t.vehicle?`<span class="why">✓ ${escapeHtml(t.vehicle.vehicle_no)} free (${k(t.vehicle.capacity_kg)} kg)</span>`:kg<cap*0.6?`<span class="why">Room for ${k(cap-kg)} kg more</span>`:"";
   const bt=t.items.length>1?`<span class="bt"><button type="button" class="btn btn-light" onclick="sugSelect(${i})">☑ Select</button><button type="button" class="btn btn-green" onclick="sugTransport(${i})">🚚 Transport (${t.items.length} PO)</button></span>`:"";
   return `<tr class="sgh"><td colspan="11"><div class="sgh-in"><b>💡 Trip ${i+1} · ${escapeHtml(t.name)}${t.part?" ("+t.part+")":""}</b><span class="m">${escapeHtml(m.join(" · "))}</span><span class="kg ${over?"w":""}">${k(kg)} / ${k(cap)} kg</span><span class="bar ${over?"w":""}"><i style="width:${Math.min(100,Math.round(kg/cap*100))}%"></i></span>${why}${bt}</div></td></tr>`;}
-function sugPaintBar(show){const b=document.getElementById("poSugBar");b.hidden=!show;if(!show)return;const caps=poSugCaps(),cap=poSugCap(),k=LWBSuggest.kgf;
+function sugPaintFull(){const b=document.getElementById("poSugBar");b.hidden=false;
+  b.innerHTML=`<b>🚛 Full load</b><span class="mu">PO of</span><label style="display:flex;align-items:center;gap:4px"><input type="number" min="500" step="100" value="${FULL_LOAD_KG}" onchange="setFullLoadKg(this.value)"> kg or more</label><span class="mu">= one vehicle by itself. Press 🚚 Transport on the PO. Smaller POs are in 🧩 Merge.</span>`;}
+function sugPaintBar(show,filter){const b=document.getElementById("poSugBar");b.hidden=!show;if(!show)return;const caps=poSugCaps(),cap=poSugCap(),k=LWBSuggest.kgf;
   b.innerHTML=`<b>💡 Trip suggestion</b><button type="button" class="chip ${poSug.on?"on":""}" onclick="sugSet('on')">${poSug.on?"On":"Off"}</button>`+(poSug.on?
     `<button type="button" class="chip ${poSug.mode==="area"?"on":""}" onclick="sugSet('mode','area')">By area</button><button type="button" class="chip ${poSug.mode==="salesman"?"on":""}" onclick="sugSet('mode','salesman')">By salesman</button>`+
     caps.map(c=>`<button type="button" class="chip ${c===cap?"on":""}" onclick="sugSet('cap',${c})">${k(c)} kg</button>`).join("")+
-    `<label style="display:flex;align-items:center;gap:4px">Vehicle <input type="number" min="100" step="50" value="${cap}" onchange="sugSet('cap',this.value)"> kg</label><button type="button" class="chip" onclick="sugAreas()">📍 Party area</button>`+
+    `<label style="display:flex;align-items:center;gap:4px">Vehicle <input type="number" min="100" step="50" value="${cap}" onchange="sugSet('cap',this.value)"> kg</label><button type="button" class="chip" onclick="sugAreas()">📍 Party area</button><span class="mu">Below ${k(FULL_LOAD_KG)} kg</span>`+
     (poSug.err?`<span class="err">${/lwb_trip_suggest_data/.test(poSug.err)?"Suggestion not ready yet":escapeHtml(poSug.err)}</span>`:!poSug.items?'<span class="mu">Finding areas…</span>':""):"");}
 function sugSet(what,v){if(what==="on")poSug.on=!poSug.on;else if(what==="mode")poSug.mode=v;else if(what==="cap"&&Number(v)>0)poSug.cap=Number(v);poSugKeep();renderOrders();}
 function sugSelect(i){const t=poSug.trips[i];if(!t)return;const all=t.items.every(x=>pickedIds.has(x.id));t.items.forEach(x=>all?pickedIds.delete(x.id):pickedIds.add(x.id));renderOrders();}
@@ -3380,7 +3395,7 @@ async function sugTransport(i){const t=poSug.trips[i];if(!t)return;const ids=t.i
   await openTransportAllocation(ids[0]);}
 // Transport popup: same-side Approved POs, ticked = saved with the same driver / vehicle
 function sugHintFor(order){const box=document.getElementById("poSugHint");box.hidden=true;box.innerHTML="";
-  if(!poSugUsable()||!poSug.items||!order||!matchesTab(order,"approved")){if(!order||!poSugPlan||poSugPlan.lead!==order.id)poSugPlan=null;return;}
+  if(!poSugUsable()||!poSug.items||!order||!matchesTab(order,"approved_merge")){if(!order||!poSugPlan||poSugPlan.lead!==order.id)poSugPlan=null;return;}
   const g=sugGroup(sugReady());const t=g&&g.trips.find(x=>x.items.some(y=>y.id===order.id));
   if(!poSugPlan||poSugPlan.lead!==order.id)poSugPlan={lead:order.id,ids:new Set(),vno:t&&t.vehicle?t.vehicle.vehicle_no:""};
   if(!t||t.items.length<2)return;
