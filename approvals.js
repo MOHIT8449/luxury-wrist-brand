@@ -40,7 +40,7 @@
        const rows=(await rpc(c,"lwb_rate_waiting"))||[];
        const items=rows.filter(r=>r.can_approve).map(r=>{
          const lines=(r.lines||[]),val=sum(lines,l=>num(l.qty)*num(l.rate));
-         return {id:r.order_id,ref:r.order_no,party:r.party,amount:val,when:r.requested_at,
+         return {id:r.order_id,orderId:r.order_id,person:r.sales_person,ref:r.order_no,party:r.party,amount:val,when:r.requested_at,
            lines:lines.filter(l=>l.min_rate!=null&&num(l.rate)<num(l.min_rate)).map(l=>l.sku+" · ₹"+num(l.rate)+" (min ₹"+num(l.min_rate)+")"+(l.landing!=null?" · landing ₹"+num(l.landing):"")),
            meta:[r.brand,r.sales_person&&"By "+r.sales_person,r.slip?"Rajnigandha slip":"",r.note].filter(Boolean),
            acts:[{t:"✓ Approve rate",kind:"ok",confirm:"Approve the rate of "+r.order_no+"?\n\n"+(r.slip?"The slip is made and goes to Accounts.":"The PO is approved and goes on for transport."),
@@ -57,7 +57,7 @@
          if(!n.order_id||seen.has(n.order_id))continue;seen.add(n.order_id);
          const seg=String(n.message||"").split(" · "),why=seg.slice(3).join(" · ").split(" | ").filter(Boolean);
          const o=ctx.orders.get(n.order_id);
-         items.push({id:n.order_id,ref:seg[0]||(o&&o.order_no)||"PO",party:seg[1]||(o&&o.customer_name)||"",amount:o?num(o.total_amount):null,when:n.created_at,
+         items.push({id:n.order_id,orderId:n.order_id,person:seg[2]||(o&&o.sales_person),ref:seg[0]||(o&&o.order_no)||"PO",party:seg[1]||(o&&o.customer_name)||"",amount:o?num(o.total_amount):null,when:n.created_at,
            lines:why,meta:[seg[2]&&"By "+seg[2]].filter(Boolean),
            acts:[{t:"✓ Checked OK",kind:"ok",run:c2=>readBells(c2,ctx.uid,"ORDER_RATE_CHECK",[n.order_id])},
                  {t:"Open PO",kind:"go",href:orderLink(n.order_id)}]});
@@ -68,7 +68,7 @@
     {key:"po",icon:"🛒",title:"New order approval",sub:"Salesman POs",roles:["admin","manager"],page:"warehouse-orders.html",
      async load(c,ctx){
        if(!ctx.pending)return null;
-       const items=ctx.pending.map(o=>({id:o.id,ref:o.order_no,party:o.customer_name,amount:num(o.total_amount),when:o.created_at||o.order_date,
+       const items=ctx.pending.map(o=>({id:o.id,orderId:o.id,person:o.sales_person,ref:o.order_no,party:o.customer_name,amount:num(o.total_amount),when:o.created_at||o.order_date,
          lines:[],meta:[dmy(o.order_date),o.sales_person&&"By "+o.sales_person,o.transportation].filter(Boolean),
          acts:[{t:"Open & approve",kind:"go",href:orderLink(o.id)}]}));
        return {items,amount:sum(items,i=>i.amount)};
@@ -77,7 +77,7 @@
      async load(c){
        const rows=((await rpc(c,"lwb_bill_change_list",{p_days:1}))||[]).filter(r=>r.status==="WAITING");
        const K={QTY:"Qty",RATE:"Rate",SKU:"SKU",ADD:"Added",REMOVE:"Removed"};
-       const items=rows.map(r=>({id:r.id,ref:r.order_no,party:r.party,amount:num(r.diff),signed:true,when:r.requested_at,
+       const items=rows.map(r=>({id:r.id,orderId:r.order_id,ref:r.order_no,party:r.party,amount:num(r.diff),signed:true,when:r.requested_at,
          lines:(r.lines||[]).filter(l=>l.kind).map(l=>{
            const k=String(l.kind).toUpperCase(),sku=l.sku||l.sku_old||"";
            if(k==="ADD")return "Added "+sku+" · "+num(l.qty)+" × ₹"+num(l.rate);
@@ -98,7 +98,7 @@
      async load(c){
        const d=await rpc(c,"lwb_hired_rate_list");
        if(!d||!d.is_admin)return null;
-       const items=(d.groups||[]).filter(g=>g.status==="WAITING"&&g.rate_id).map(g=>({id:String(g.rate_id),ref:g.no,party:g.party,amount:num(g.rate)*num(g.days),when:g.set_at,
+       const items=(d.groups||[]).filter(g=>g.status==="WAITING"&&g.rate_id).map(g=>({id:String(g.rate_id),person:g.set_by_name,ref:g.no,party:g.party,amount:num(g.rate)*num(g.days),when:g.set_at,
          lines:[num(g.days)+(num(g.days)===1?" trip day":" trip days")+" · "+dmy(g.first_date)+(g.last_date&&g.last_date!==g.first_date?" to "+dmy(g.last_date):""),
                 (g.orders||[]).length?"PO "+(g.orders||[]).join(", "):""].filter(Boolean),
          meta:[g.owner,g.set_by_name&&"Set by "+g.set_by_name,g.note].filter(Boolean),
@@ -114,7 +114,7 @@
        if(!D||!D.is_admin)return null;
        const banks=(D.banks||[]).filter(b=>b.active),name=id=>{const b=(D.banks||[]).find(x=>String(x.id)===String(id));return b?b.name:""};
        const opts=[{v:"",t:"Choose bank…"}].concat(banks.map(b=>({v:String(b.id),t:b.name+(b.account_no?" · "+b.account_no:"")})));
-       const items=(D.pending||[]).map(p=>({id:p.src+"|"+p.id,ref:p.kind==="DEPOSIT"?"Cash deposit":(MODE[p.mode]||p.mode||"Bank"),party:p.kind==="DEPOSIT"?"Cash deposited in "+(name(p.bank_id)||"bank"):(p.party||p.category||""),
+       const items=(D.pending||[]).map(p=>({id:p.src+"|"+p.id,person:p.by,ref:p.kind==="DEPOSIT"?"Cash deposit":(MODE[p.mode]||p.mode||"Bank"),party:p.kind==="DEPOSIT"?"Cash deposited in "+(name(p.bank_id)||"bank"):(p.party||p.category||""),
          amount:num(p.amount),when:p.at||p.date,group:p.bank_id?String(p.bank_id):"",groupName:name(p.bank_id)||"Bank not chosen yet",
          lines:[],meta:[dmy(p.date),p.ref&&"Ref "+p.ref,p.order_no,p.category&&p.party?p.category:"",p.by&&"By "+p.by,p.remark].filter(Boolean),
          field:{type:"select",label:"Bank",value:p.bank_id?String(p.bank_id):"",options:opts},
@@ -130,7 +130,7 @@
        const rows=((await rpc(c,"lwb_stx_moves",{p_status:"PENDING",p_from:null,p_to:null}))||[]).filter(m=>m.can_decide);
        const lab=b=>String(b||"").replace(/_/g," ").toLowerCase().replace(/^./,x=>x.toUpperCase());
        const cs=m=>{const p=num(m.pcs_per_case)||1,q=num(m.qty_pcs);return Math.floor(q/p)+" CS"+(q%p?" "+(q%p)+" PCS":"")};
-       const items=rows.map(m=>({id:String(m.id),ref:"STM-"+m.id,party:m.sku_name,amount:null,when:m.requested_at,
+       const items=rows.map(m=>({id:String(m.id),sku:m.sku_name,person:m.requested_by_name,ref:"STM-"+m.id,party:m.sku_name,amount:null,when:m.requested_at,
          lines:[lab(m.from_bucket)+" → "+lab(m.to_bucket)+" · "+cs(m)],
          meta:[dmy(m.move_date),m.reason,m.note,m.requested_by_name&&"By "+m.requested_by_name].filter(Boolean),
          acts:[{t:"✓ Approve",kind:"ok",confirm:"Approve STM-"+m.id+"?\n\n"+m.sku_name+" · "+cs(m)+"\nStock moves now.",run:c2=>rpc(c2,"lwb_stx_decide",{p_ids:[m.id],p_action:"APPROVE",p_note:null,p_qty:null})},
@@ -141,7 +141,7 @@
     {key:"dreturn",icon:"↩",title:"Driver return check",sub:"Goods back from party",roles:["admin","manager"],page:"driver-returns.html",
      async load(c){
        const rows=(await rpc(c,"lwb_office_list_driver_returns",{p_status:"PENDING_OFFICE"}))||[];
-       const items=rows.map(r=>({id:String(r.id||r.return_id||r.order_id),ref:r.order_no||"Return",party:r.party_name||r.customer_name||"",amount:num(r.total_return_amount||r.amount),when:r.created_at,
+       const items=rows.map(r=>({id:String(r.id||r.return_id||r.order_id),orderId:r.order_id,person:r.driver_name,ref:r.order_no||"Return",party:r.party_name||r.customer_name||"",amount:num(r.total_return_amount||r.amount),when:r.created_at,
          lines:(r.items||[]).map(li=>li.sku+" · "+num(li.qty_cases||li.qty)+" "+(li.qty_cases!=null?"CS":(li.uom||""))+(li.reason?" · "+li.reason:"")),
          meta:[r.driver_name&&"Driver "+r.driver_name,r.vehicle_no,r.note].filter(Boolean),
          acts:[{t:"Open & verify",kind:"go",href:"driver-returns.html"+(r.order_id?"?order="+encodeURIComponent(r.order_id):"")}]}));
@@ -151,7 +151,7 @@
      async load(c){
        const {data,error}=await c.from("sales_returns").select("id,order_id,return_no,return_date,total_amount,approval_status,created_at").ilike("approval_status","pending").order("created_at",{ascending:false}).limit(200);
        if(error)return null;
-       const items=(data||[]).map(r=>({id:String(r.id),ref:r.return_no||"Return",party:"",amount:num(r.total_amount),when:r.created_at,lines:[],meta:[dmy(r.return_date)].filter(Boolean),
+       const items=(data||[]).map(r=>({id:String(r.id),orderId:r.order_id,ref:r.return_no||"Return",party:"",amount:num(r.total_amount),when:r.created_at,lines:[],meta:[dmy(r.return_date)].filter(Boolean),
          acts:[{t:"Open & approve",kind:"go",href:"sales-return.html"}]}));
        return {items,amount:sum(items,i=>i.amount)};
      }},
@@ -160,7 +160,7 @@
        if(!ctx.bells)return null;
        const items=ctx.bells.filter(b=>b.notification_type==="PARTY_CREATED").map(n=>{
          const m=String(n.message||""),head=m.split(". ")[0].split(" · ");
-         return {id:String(n.id),ref:"Party",party:head[0]||"",amount:null,when:n.created_at,lines:[],
+         return {id:String(n.id),person:(m.match(/Added by ([^.]+?) from/)||[])[1]||"",ref:"Party",party:head[0]||"",amount:null,when:n.created_at,lines:[],
            meta:head.slice(1).concat(((m.match(/Added by ([^.]+?) from/)||[])[1]||"")?["By "+(m.match(/Added by ([^.]+?) from/)||[])[1]]:[]),
            acts:[{t:"✓ Checked OK",kind:"ok",run:async c2=>{const {error}=await c2.from("erp_notifications").update({is_read:true}).eq("id",n.id).eq("user_id",ctx.uid);if(error)throw Error(errText(error))}},
                  {t:"Open Party Master",kind:"go",href:"customer-master.html"}]};
@@ -188,9 +188,38 @@
     // A PO waiting for the Admin rate OK is counted there, not again as a new PO.
     const rate=out.find(s=>s.key==="rate"),po=out.find(s=>s.key==="po");
     if(rate&&po){const ids=new Set(rate.items.map(i=>i.id));po.items=po.items.filter(i=>!ids.has(i.id));po.count=po.items.length;po.amount=sum(po.items,i=>i.amount)}
+    try{await tag(c,out,ctx)}catch(e){}
     return out;
+  }
+  // Brand (company ids) and person of every item, for the Brand / By filters (Mohit, 7 Nov 2026).
+  // Brand = companies of the PO's SKU lines (or the stock move's SKU); person = who brought / entered it.
+  async function tag(c,secs,ctx){
+    const all=secs.flatMap(s=>s.items);
+    const ids=[...new Set(all.map(i=>i.orderId).filter(Boolean))];
+    const miss=ids.filter(id=>!(ctx.orders.get(id)||{}).sales_person);
+    for(let k=0;k<miss.length;k+=150){const r=await c.from("orders").select("id,order_no,customer_name,total_amount,sales_person").in("id",miss.slice(k,k+150));
+      (r.data||[]).forEach(o=>ctx.orders.set(o.id,Object.assign({},ctx.orders.get(o.id)||{},o)))}
+    all.forEach(i=>{if(!i.person&&i.orderId){const o=ctx.orders.get(i.orderId);if(o&&o.sales_person)i.person=o.sales_person}
+      i.person=String(i.person||"").replace(/\s+/g," ").trim().toUpperCase()});
+    if(!window.LWBBrand)return;
+    const [ob,map]=await Promise.all([LWBBrand.orderBrands(c,ids),LWBBrand.skuMap(c)]);
+    all.forEach(i=>{
+      if(i.orderId)i.brands=[...(ob.get(i.orderId)||[])].map(String);
+      else if(i.sku&&map){const b=map.get(LWBBrand.skuKey(i.sku));i.brands=b?[String(b)]:[]}
+    });
+  }
+  // Same sections with only the items of brand b ("" = all) and person p ("" = all, "@manager" / "@sales" = a group).
+  function filter(secs,{brand,person,group}){
+    return secs.map(s=>{
+      const items=s.items.filter(i=>(!brand||!i.brands||i.brands.includes(String(brand)))&&
+        (!person||i.person===person)&&(!group||group.has(i.person)));
+      const amount=sum(items,i=>i.amount);
+      const groups=s.groups?(()=>{const g=new Map();items.forEach(i=>{const x=g.get(i.group)||{key:i.group,name:i.groupName,count:0,amount:0};x.count++;x.amount+=num(i.amount);g.set(i.group,x)});
+        return [...g.values()].sort((a,b)=>(a.key==="")-(b.key==="")||b.amount-a.amount)})():s.groups;
+      return Object.assign({},s,{items,count:items.length,amount,groups});
+    });
   }
   const total=secs=>secs.reduce((t,s)=>t+s.count,0);
 
-  window.LWBApprovals={load,total,SECTIONS,esc,inr,short,dmy,errText};
+  window.LWBApprovals={load,filter,total,SECTIONS,esc,inr,short,dmy,errText};
 })();

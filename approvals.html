@@ -10,12 +10,17 @@
   <link rel="stylesheet" href="sales.css">
   <script src="erp-shell.js"></script>
   <script src="sales-common.js"></script>
+  <script src="brand-filter.js"></script>
   <script src="approvals.js"></script>
   <style>
     /* Approvals (Mohit, 7 Nov 2026): one card per kind of permission with its pending count; the card opens
        its list and the approval is given right here. Compact, no side scroll, buttons in one row. */
     .ap-total{font-size:13px;color:var(--erp-muted);white-space:nowrap}
     .ap-total b{color:var(--erp-ink)}
+    .ap-filt{display:flex;gap:6px;min-width:0}
+    .ap-filt select{height:34px!important;border:1.5px solid var(--erp-line);border-radius:6px;padding:0 26px 0 8px!important;line-height:normal!important;font:inherit;font-size:13px;background:#fff;max-width:200px;min-width:0}
+    .ap-filt select.on{border-color:var(--erp-red);background:var(--erp-red-soft);font-weight:600}
+    .ap-note{font-size:12px;color:var(--erp-muted);margin:-4px 2px 8px}
     .ap-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(185px,1fr));gap:8px;margin:0 0 10px}
     .ap-card{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:2px 8px;text-align:left;background:#fff;border:1px solid var(--erp-line);border-left:4px solid #e0a100;border-radius:8px;padding:8px 10px;font:inherit;color:var(--erp-ink);cursor:pointer;min-width:0}
     .ap-card:hover{background:#fffaeb}
@@ -58,6 +63,7 @@
     @media(max-width:700px){
       .ap-cards{grid-template-columns:1fr 1fr;gap:6px}
       .ap-card{padding:6px 8px;gap:1px 6px}
+      .erp-pagehead .ap-filt{order:5;flex:1 1 100%}.ap-filt select{flex:1;max-width:none}
       .ap-card .ic{font-size:17px}.ap-card .t{font-size:12.5px}.ap-card .n{font-size:19px;min-width:20px}
       .ap-card .s{font-size:11px}
       .ap-ph{top:var(--erp-top,52px)}
@@ -75,14 +81,39 @@
   <div id="loading" class="status">Checking account access...</div>
   <main id="page" class="erp-main" hidden>
     <div class="erp-pagehead"><h1>✅ Approvals</h1><span class="ap-total" id="total"></span><span class="grow"></span>
+      <span class="ap-filt"><select id="fBrand" aria-label="Brand" data-nosearch><option value="">All brands</option></select>
+      <select id="fBy" aria-label="Order by"><option value="">Everyone</option></select></span>
       <button type="button" class="sl-btn ghost small" id="refresh">Refresh</button>
       <button type="button" class="erp-i" aria-label="Info" title="Info" data-tip="Everything waiting for your OK, in one place. Tap a card to see its list and approve there. The same counts show on the Dashboard. Market order checks no longer pop up again and again: they wait here.">i</button></div>
+    <div class="ap-note" id="fNote" hidden></div>
     <div class="ap-cards" id="cards"></div>
     <section class="ap-panel" id="panel" hidden></section>
   </main>
   <script>
     const S=LWBSales,{client,el}=S,A=LWBApprovals,{esc,inr,short,dmy,errText}=A;
-    let me=null,secs=[],cur="",bankPick="",busy=false;
+    let me=null,all=[],secs=[],cur="",bankPick="",busy=false,team={manager:new Set(),sales:new Set()};
+    const FKEY="lwbApprFilter";
+    // Brand / By filters (Mohit, 7 Nov 2026): Rajnigandha only, one salesman, all Sales Heads ... kept per device.
+    function applyFilter(){
+      const b=el("fBrand").value,p=el("fBy").value;
+      try{localStorage.setItem(FKEY,JSON.stringify({b,p}))}catch(e){}
+      el("fBrand").classList.toggle("on",!!b);el("fBy").classList.toggle("on",!!p);
+      secs=A.filter(all,{brand:b,person:p&&p[0]!=="@"?p:"",group:p==="@manager"?team.manager:p==="@sales"?team.sales:null});
+      const n=el("fNote");
+      n.hidden=!(b||p);n.textContent=b&&!p?"Brand filter: bank, trip rent and new party are not brand-wise, so they always show.":
+        p?"Showing only the work brought / entered by "+el("fBy").selectedOptions[0].textContent.replace(/ \(\d+\)$/,"")+".":"";
+      drawCards();drawPanel();
+    }
+    function fillBy(){
+      const keep=el("fBy").value,cnt=new Map();
+      all.forEach(s=>s.items.forEach(i=>{if(i.person)cnt.set(i.person,(cnt.get(i.person)||0)+1)}));
+      const opt=n=>'<option value="'+esc(n)+'">'+esc(n)+' ('+cnt.get(n)+')</option>';
+      const names=[...cnt.keys()].sort(),heads=names.filter(n=>team.manager.has(n)),men=names.filter(n=>team.sales.has(n)),rest=names.filter(n=>!team.manager.has(n)&&!team.sales.has(n));
+      el("fBy").innerHTML='<option value="">Everyone</option><optgroup label="Team"><option value="@manager">All Sales Heads</option><option value="@sales">All Salesmen</option></optgroup>'+
+        (heads.length?'<optgroup label="Sales Head">'+heads.map(opt).join("")+'</optgroup>':"")+(men.length?'<optgroup label="Salesman">'+men.map(opt).join("")+'</optgroup>':"")+
+        (rest.length?'<optgroup label="Others (accounts, godown, driver)">'+rest.map(opt).join("")+'</optgroup>':"");
+      el("fBy").value=[...el("fBy").options].some(o=>o.value===keep)?keep:"";
+    }
     const ago=v=>{if(!v)return "";const s=(Date.now()-new Date(v))/1000;if(s<3600)return Math.max(1,Math.floor(s/60))+" min";if(s<86400)return Math.floor(s/3600)+" hr";if(s<7*86400)return Math.floor(s/86400)+" d";return dmy(v)};
 
     function drawCards(){
@@ -142,11 +173,10 @@
     }
     async function load(){
       el("refresh").disabled=true;
-      try{secs=await A.load(client,{uid:me.user.id,role:me.role})}
+      try{all=await A.load(client,{uid:me.user.id,role:me.role});fillBy();applyFilter()}
       catch(e){el("cards").innerHTML='<div class="ap-msg">'+esc(errText(e))+'</div>';return}
       finally{el("refresh").disabled=false}
-      if(!secs.some(s=>s.key===cur))cur=(secs.find(s=>s.count)||secs[0]||{}).key||"";
-      drawCards();drawPanel();
+      if(!secs.some(s=>s.key===cur)){cur=(secs.find(s=>s.count)||secs[0]||{}).key||"";drawCards();drawPanel()}
     }
     (async()=>{
       me=await S.start(["admin","manager"]);if(!me)return;
@@ -159,6 +189,14 @@
         const b=e.target.closest("button[data-a]");if(b)act(b);
       });
       el("refresh").onclick=load;
+      el("fBrand").onchange=applyFilter;el("fBy").onchange=applyFilter;
+      let f={};try{f=JSON.parse(localStorage.getItem(FKEY)||"{}")||{}}catch(e){}
+      try{const B=await LWBBrand.load(client);const list=(B.companies||[]).filter(c=>!B.mine||B.mine.includes(c.id));
+        el("fBrand").innerHTML='<option value="">All brands</option>'+list.map(c=>'<option value="'+esc(c.id)+'">'+esc(c.name)+'</option>').join("");
+        if(list.length<2)el("fBrand").hidden=true}catch(e){el("fBrand").hidden=true}
+      if(f.b&&[...el("fBrand").options].some(o=>o.value===String(f.b)))el("fBrand").value=f.b;
+      try{const {data}=await client.rpc("lwb_sales_team");(data||[]).forEach(u=>{const n=String(u.full_name||"").replace(/\s+/g," ").trim().toUpperCase();if(!n)return;(u.role==="manager"?team.manager:team.sales).add(n)})}catch(e){}
+      if(f.p){const o=document.createElement("option");o.value=f.p;el("fBy").append(o);el("fBy").value=f.p}
       document.addEventListener("visibilitychange",()=>{if(!document.hidden&&!busy&&!document.querySelector(".erp-dlg-back"))load()});
       el("loading").hidden=true;el("page").hidden=false;
       await load();
