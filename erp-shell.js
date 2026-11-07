@@ -81,7 +81,9 @@
       {t:"Tasks",h:"tasks.html",i:"check",r:"*"},
       {t:"Complaint Box",h:"complaint-box.html",i:"chat",r:"*"},
       // Keyboard Shortcuts (Mohit, 5 Nov 2026): every role sees the keys of the pages it can open.
-      {t:"Keyboard Shortcuts",h:"keyboard-shortcuts.html",i:"keyboard",r:"*",k:"keyboard shortcut keys help hotkey"}]},
+      {t:"Keyboard Shortcuts",h:"keyboard-shortcuts.html",i:"keyboard",r:"*",k:"keyboard shortcut keys help hotkey",
+       // Not in the side menu (Mohit, 7 Nov 2026): the keyboard button in the top bar opens it; still in Module Search.
+       nm:"admin manager sales warehouse transport accounts driver"}]},
     {group:"Sales",items:[
       // One "PO / Sales" item (Mohit, 4 Nov 2026): the list, with "+ New PO" on top of it. New PO itself
       // (order-entry.html) is not drawn in the side menu (nm) but stays in search, Manage Users and the
@@ -369,7 +371,7 @@
       groups.forEach(g=>{
         if(g.so)return;
         if(g.group)html+='<div class="erp-group">'+esc(g.group)+'</div>';
-        g.items.forEach(i=>{html+='<a class="erp-link'+(current&&(i.h===current.h||String(current.par||"").split(" ").includes(i.h))?' active':'')+'" href="'+esc(i.h)+'">'+svg(i.i)+'<span>'+esc(i.t)+'</span></a>'});
+        g.items.forEach(i=>{html+='<a class="erp-link'+(current&&(i.h===current.h||String(current.par||"").split(" ").includes(i.h))?' active':'')+'" href="'+esc(i.h)+'" data-k="'+esc((i.t+" "+g.group+" "+(i.pt||"")+" "+(i.k||"")).toLowerCase())+'">'+svg(i.i)+'<span>'+esc(i.t)+'</span></a>'});
       });
       side.innerHTML=html;
     }
@@ -379,7 +381,9 @@
       if(!e.target.matches(".erp-menu-find input")) return;
       const q=e.target.value.trim().toLowerCase();
       const links=[...side.querySelectorAll(".erp-link")];
-      links.forEach(a => {a.hidden=!a.textContent.toLowerCase().includes(q)});
+      links.forEach(a => {a.hidden=!!q&&!(a.dataset.k||a.textContent.toLowerCase()).includes(q);a.classList.remove("kb")});
+      // Like Module Search: the first match is picked, ↑ / ↓ move, Enter opens (Mohit, 7 Nov 2026).
+      const first=q&&links.find(a=>!a.hidden);if(first)first.classList.add("kb");
       side.querySelectorAll(".erp-group").forEach(g => {
         let next=g.nextElementSibling, visible=false;
         while(next && !next.classList.contains("erp-group")){
@@ -389,6 +393,17 @@
         g.hidden=!visible;
       });
       side.querySelector(".erp-menu-empty").hidden=links.some(a => !a.hidden);
+    });
+    side.addEventListener("keydown", e => {
+      if(!e.target.matches(".erp-menu-find input")) return;
+      const vis=[...side.querySelectorAll(".erp-link")].filter(a=>!a.hidden);
+      let i=vis.findIndex(a=>a.classList.contains("kb"));
+      if(e.key==="ArrowDown"||e.key==="ArrowUp"){
+        if(!vis.length)return;e.preventDefault();
+        i=i<0?(e.key==="ArrowDown"?0:vis.length-1):(i+(e.key==="ArrowDown"?1:vis.length-1))%vis.length;
+        vis.forEach((a,n)=>a.classList.toggle("kb",n===i));vis[i].scrollIntoView({block:"nearest"});
+      }else if(e.key==="Enter"&&e.target.value.trim()&&vis.length){e.preventDefault();location.href=(vis[i<0?0:i]).getAttribute("href")}
+      else if(e.key==="Escape"&&e.target.value){e.preventDefault();e.stopPropagation();e.target.value="";e.target.dispatchEvent(new Event("input",{bubbles:true}))}
     });
     const shade=document.createElement("div");shade.className="erp-shade";
     document.body.prepend(top,side,shade);

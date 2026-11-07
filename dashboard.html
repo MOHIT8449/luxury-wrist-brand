@@ -45,18 +45,12 @@
     .hero-results a:hover,.hero-results a.active{background:var(--erp-red-soft)}
     .acc-dash{display:flex;align-items:center;gap:12px;margin:0 0 16px;padding:14px 16px;border-radius:10px;background:#13283f;color:#fff;text-decoration:none}
     .acc-dash[hidden]{display:none}
-    /* Approvals waiting (approvals.js, Mohit 7 Nov 2026): one compact line, each chip opens its list. */
-    .ap-strip{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin:0 0 12px;padding:7px 10px;border-radius:10px;background:#fff8e1;border:1px solid #f3d27a;border-left:4px solid #e0a100}
-    .ap-strip[hidden]{display:none}
-    .ap-strip.none{background:#fff;border-color:var(--erp-line);border-left-color:var(--erp-green)}
-    .ap-strip .h{display:inline-flex;align-items:center;gap:6px;font-weight:700;font-size:14px;color:#3d2c00;text-decoration:none;margin-right:2px}
-    .ap-strip.none .h{color:var(--erp-green);font-weight:600}
-    .ap-strip .h b{min-width:22px;height:22px;border-radius:11px;background:var(--erp-danger,#c62828);color:#fff;font-size:12.5px;line-height:22px;text-align:center;padding:0 6px}
-    .ap-strip a.c{display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:999px;background:#fff;border:1px solid #f0d58a;color:var(--erp-ink);font-size:12.5px;text-decoration:none;white-space:nowrap}
-    .ap-strip a.c b{color:#b26b00}
-    .ap-strip a.c small{color:var(--erp-muted);font-size:11.5px}
-    .ap-strip .go{margin-left:auto;font-size:12.5px;font-weight:600;color:var(--erp-red);text-decoration:none;white-space:nowrap}
-    @media(max-width:700px){.ap-strip{gap:5px;padding:6px 8px}.ap-strip .h{flex-basis:100%}.ap-strip .go{display:none}}
+    /* Approvals waiting (approvals.js, Mohit 7 Nov 2026): only "Waiting approval N" next to the Admin view dropdown; tap = Approvals. */
+    .ap-pill{display:inline-flex;align-items:center;gap:6px;height:34px;padding:0 10px;border-radius:6px;border:1px solid #f0c36a;background:#fff8e1;color:#3d2c00;font-size:13px;font-weight:600;text-decoration:none;white-space:nowrap}
+    .ap-pill b{min-width:22px;height:22px;border-radius:11px;background:var(--erp-danger,#c62828);color:#fff;font-size:12.5px;line-height:22px;text-align:center;padding:0 6px;animation:apBlink 1.6s ease-in-out 3}
+    .ap-pill.zero{border-color:var(--erp-line);background:#fff;color:var(--erp-muted)}.ap-pill.zero b{background:#c9d3d6;animation:none}
+    .ap-pill[hidden]{display:none}
+    @keyframes apBlink{50%{box-shadow:0 0 0 4px rgba(198,40,40,.25)}}
     .acc-dash .acc-ic{width:40px;height:40px;border-radius:50%;background:#13824a;display:flex;align-items:center;justify-content:center;font-size:20px;font-weight:800;flex:0 0 auto}
     .acc-dash b{display:block;font-size:16px}.acc-dash small{display:block;color:#c8d6e6;font-size:13px;margin-top:2px}
     .acc-dash .acc-go{margin-left:auto;font-weight:700;white-space:nowrap}
@@ -201,7 +195,6 @@
       <div class="focus-post" id="focusPost" hidden><button type="button" id="focusOpen" class="hero-btn">+ Post banner</button></div>
       </div>
     </div>
-    <div class="ap-strip" id="apStrip" hidden></div>
     <div class="kpis" id="kpis"></div>
     <a class="acc-dash" id="accDash" href="accounts-dashboard.html" hidden><span class="acc-ic">₹</span><span><b>Accounts Dashboard</b><small>Today's cash in / cash out, bank deposit, cash handover, bank check</small></span><span class="acc-go">Open →</span></a>
     <div class="banners" id="banners" hidden></div>
@@ -291,17 +284,20 @@
       if(!due.length){const n=document.createElement("div");n.className="none";n.textContent="✓ Nothing waiting for you to verify.";list.appendChild(n)}
       card.hidden=false;
     }
-    // Approvals waiting (approvals.js): total + one chip per kind; bank shows its ₹ total. Opens approvals.html.
+    // Approvals waiting (approvals.js): "Waiting approval N" next to the Admin view dropdown, opens approvals.html.
     async function loadApprovals(uid){
-      const box=document.getElementById("apStrip");
-      let secs;try{secs=await LWBApprovals.load(client,{uid,role:currentRole})}catch(e){box.hidden=true;return}
-      const A=LWBApprovals,t=A.total(secs),on=secs.filter(s=>s.count);
-      box.classList.toggle("none",!t);
-      box.innerHTML=t?'<a class="h" href="approvals.html">✅ Approvals waiting <b>'+t+'</b></a>'+
-        on.map(s=>'<a class="c" href="approvals.html#'+s.key+'">'+A.esc(s.icon)+' '+A.esc(s.title)+' <b>'+s.count+'</b>'+(s.key==="bank"&&s.amount?' <small>'+A.short(s.amount)+'</small>':"")+'</a>').join("")+
-        '<a class="go" href="approvals.html">Open all →</a>'
-        :'<a class="h" href="approvals.html">✓ Nothing waiting for your approval</a>';
-      box.hidden=false;
+      let pill=document.getElementById("apPill");
+      if(!pill){
+        pill=document.createElement("a");pill.id="apPill";pill.className="ap-pill";pill.href="approvals.html";pill.hidden=true;
+        pill.innerHTML='Waiting approval <b>0</b>';
+        const head=document.querySelector("#dashboard .erp-pagehead"),view=head&&head.querySelector(".rd-view"),grow=head&&head.querySelector(".grow");
+        if(view)view.before(pill);else if(grow)grow.after(pill);else return;
+      }
+      let secs;try{secs=await LWBApprovals.load(client,{uid,role:currentRole})}catch(e){pill.hidden=true;return}
+      const t=LWBApprovals.total(secs);
+      pill.querySelector("b").textContent=t>99?"99+":String(t);pill.classList.toggle("zero",!t);
+      pill.title=t?secs.filter(s=>s.count).map(s=>s.title+": "+s.count).join("\n"):"Nothing waiting for your approval";
+      pill.hidden=false;
     }
     // Complaint Box (lwb_complaint_box_setup.sql): Admin / Sales Head = complaints waiting for a reply;
     // everyone else = his complaints the office has answered.
