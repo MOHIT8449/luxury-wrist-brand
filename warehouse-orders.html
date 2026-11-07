@@ -1129,9 +1129,25 @@
       .fill-b.full {background:#e6f4ec;color:#13824a}
       .fill-b.mid {background:#fff4e0;color:#b26b00}
       .fill-b.low {background:#fdecec;color:#c62828}
+
+    /* Trip suggestion in the Approved tab (trip-suggest.js + lwb_trip_suggest_setup.sql) */
+    .po-sugbar{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:0 0 8px;font-size:13px}.po-sugbar[hidden]{display:none}
+    .po-sugbar .chip{border:1.5px solid #cfd6de;border-radius:99px;padding:5px 10px;font-weight:700;font-size:12.5px;background:#fff;color:#182230;cursor:pointer}
+    .po-sugbar .chip.on{background:#0d2230;color:#fff;border-color:#0d2230}.po-sugbar input{width:76px;padding:5px 7px;font-size:13px;border:1px solid #cfd5df;border-radius:7px}
+    .po-sugbar .err{color:#a11320}.po-sugbar .mu{color:#667085}
+    tr.sgh td{background:#eef4ff;border-top:2px solid #b9cdf3;padding:7px 10px}tr.sgh.unk td{background:#fff6dc;border-top-color:#f1d199}
+    .sgh-in{display:flex;flex-wrap:wrap;align-items:center;gap:5px 10px;font-size:13px}.sgh-in b{font-size:14px}.sgh-in .m{color:#667085}
+    .sgh-in .kg{font-weight:800;white-space:nowrap}.sgh-in .kg.w{color:#9a5a00}
+    .sgh-in .bar{width:90px;height:7px;border-radius:5px;background:#dfe5ee;overflow:hidden;display:inline-block}.sgh-in .bar i{display:block;height:100%;background:#13824a}.sgh-in .bar.w i{background:#d08a00}
+    .sgh-in .why{color:#1a47a8}.sgh-in .why.w{color:#7b5200}.sgh-in .bt{margin-left:auto;display:flex;gap:6px}.sgh-in .btn{padding:6px 10px;font-size:12.5px}
+    .po-sughint{background:#eef4ff;border:1px solid #c7d7ea;border-radius:8px;padding:8px 10px;font-size:13px;margin:6px 0 8px}.po-sughint[hidden]{display:none}
+    .po-sughint b{display:block;margin-bottom:4px}.po-sughint label{display:flex;gap:7px;align-items:center;padding:3px 0;cursor:pointer}.po-sughint label input{width:17px;height:17px;margin:0;flex:none}
+    .po-sughint small{color:#667085}
+    @media(max-width:640px){.sgh-in .bt{margin-left:0;width:100%}.sgh-in .bt .btn{flex:1}.sgh-in .bar{width:60px}tr.sgh td{padding:7px 6px}#ordersArea tbody tr.sgh{display:block;padding:9px 10px;margin:14px 0 6px;background:#eef4ff;border:1px solid #b9cdf3;border-left:4px solid #1769df}#ordersArea tbody tr.sgh.unk{background:#fff6dc;border-color:#f1d199;border-left-color:#d08a00}#ordersArea tbody tr.sgh td{display:block;padding:0;background:none}}
 </style>
 <link rel="stylesheet" href="erp-shell.css">
 <script src="trip-rent.js" defer></script>
+<script src="trip-suggest.js" defer></script>
 <script src="erp-shell.js" data-auto defer></script>
 <script src="erp-list.js"></script>
 <script src="po-share.js"></script>
@@ -1363,6 +1379,7 @@
     </div>
 
     <section class="table-card">
+      <div class="po-sugbar" id="poSugBar" hidden></div>
       <div id="ordersArea" class="loading">
         Loading orders...
       </div>
@@ -1550,7 +1567,7 @@
 
         <section id="postApprovalPanel" hidden>
           <h4>Transport details</h4>
-          <div id="poQuickInfo"></div>
+          <div id="poQuickInfo"></div><div class="po-sughint" id="poSugHint" hidden></div>
           <div class="po-grid">
             <div class="po-field"><label for="poDriverName">Driver *</label><input id="poDriverName" maxlength="150" placeholder="Select driver" autocomplete="off" aria-autocomplete="list"><small class="po-field-info" id="poDriverInfo"></small></div>
             <div class="po-field" id="poMobileField" hidden><label for="poDriverMobile">Driver Mobile *</label><input id="poDriverMobile" type="tel" inputmode="numeric" maxlength="10" autocomplete="off" placeholder="10-digit mobile" oninput="this.value=this.value.replace(/\D/g,'').slice(0,10);poMobileTyped()"><small class="po-field-info" id="poMobileInfo"></small></div>
@@ -3304,6 +3321,94 @@ function pickStatusFilter(value) {
   renderOrders();
 }
 
+/* -----------------------------
+   TRIP SUGGESTION in the Approved tab (Mohit, 7 Nov 2026; trip-suggest.js + lwb_trip_suggest_setup.sql)
+   Approved POs are listed trip-wise: parties of one area (or near by GPS) packed up to the vehicle size. Each trip has a
+   header with Select and 🚚 Transport: one Transport popup, and the same driver / vehicle is saved on the ticked
+   same-side POs too (one trip, one rent). The Transport popup of a single PO also offers its same-side POs.
+----------------------------- */
+const poSug={on:true,mode:"area",cap:0,items:null,key:"",err:null,trips:[],head:new Map(),busy:false};
+try{const p=JSON.parse(localStorage.getItem("lwbSugPref")||"null");if(p){poSug.on=p.on!==false;poSug.mode=p.mode==="salesman"?"salesman":"area";poSug.cap=Number(p.cap)||0;}}catch(e){}
+function poSugKeep(){try{localStorage.setItem("lwbSugPref",JSON.stringify({on:poSug.on,mode:poSug.mode,cap:poSug.cap}));}catch(e){}}
+const poSugVehicles=()=>typeof poMasterVehicles!=="undefined"&&Array.isArray(poMasterVehicles)?poMasterVehicles:[];
+const poSugCaps=()=>[...new Set(poSugVehicles().map(v=>Number(v.capacity_kg)).filter(c=>c>0))].sort((a,b)=>a-b);
+const poSugCap=()=>poSug.cap||poSugCaps().slice(-1)[0]||1700;
+const poSugUsable=()=>!!window.LWBSuggest&&!VIEW_ONLY&&poSug.err!=="denied";
+function sugReady(){return orders.filter(o=>matchesTab(o,"approved")&&eligibleForPoPrint(o));}
+async function sugLoad(){const list=sugReady(),key=list.map(o=>o.id+":"+(o.total_weight||0)).sort().join(",");
+  if(key===poSug.key&&poSug.items)return false;poSug.key=key;poSug.busy=true;
+  try{const r=await LWBSuggest.items(db,list);
+    if(r.error){poSug.items=null;poSug.err=/Only Admin/.test(r.error.message||"")?"denied":(r.error.message||"error");}else{poSug.items=r.items;poSug.err=null;}}
+  finally{poSug.busy=false;}return true;}
+function sugGroup(list){if(!poSug.items)return null;const ids=new Set(list.map(o=>o.id));
+  const its=poSug.items.filter(x=>ids.has(x.id)).map(x=>{const o=orders.find(y=>y.id===x.id);return o?{...x,kg:Number(o.total_weight)||0,party:o.customer_name||x.party}:x;});
+  const g=LWBSuggest.group(its,{mode:poSug.mode,cap:poSugCap(),vehicles:poSugVehicles()});
+  const rank=t=>Math.min(...t.items.map(x=>priorityRank(orders.find(o=>o.id===x.id)||{})));
+  g.trips.sort((a,b)=>rank(a)-rank(b)||b.kg-a.kg);return g;}
+// Approved tab: order the list trip by trip and remember which row starts a trip
+function sugArrange(filtered,filter){
+  poSug.head=new Map();poSug.trips=[];
+  const show=filter==="approved"&&poSugUsable();sugPaintBar(show);
+  if(!show||!poSug.on)return filtered;
+  if(!poSug.items||poSug.key!==sugReady().map(o=>o.id+":"+(o.total_weight||0)).sort().join(",")){
+    if(!poSug.busy)sugLoad().then(ch=>{if(ch&&document.getElementById("statusFilter").value==="approved")renderOrders();});return filtered;}
+  const g=sugGroup(filtered);if(!g)return filtered;poSug.trips=g.trips;
+  const byId=new Map(filtered.map(o=>[o.id,o])),out=[],done=new Set();
+  g.trips.forEach((t,i)=>t.items.forEach((x,j)=>{const o=byId.get(x.id);if(!o)return;if(j===0)poSug.head.set(o.id,i);out.push(o);done.add(o.id);}));
+  if(g.unknown.length){let first=true;g.unknown.forEach(x=>{const o=byId.get(x.id);if(!o)return;if(first){poSug.head.set(o.id,-1);first=false;}out.push(o);done.add(o.id);});poSug.unknownN=g.unknown.length;}
+  filtered.forEach(o=>{if(!done.has(o.id))out.push(o);});
+  return out;}
+function sugHeadFor(order){if(!poSug.head.has(order.id))return "";const i=poSug.head.get(order.id),k=LWBSuggest.kgf;
+  if(i===-1)return `<tr class="sgh unk"><td colspan="11"><div class="sgh-in"><b>Area not known (${poSug.unknownN||0})</b><span class="m">No area in party name, no GPS, no salesman area</span><span class="bt"><button type="button" class="btn btn-light" onclick="sugAreas()">📍 Set area</button></span></div></td></tr>`;
+  const t=poSug.trips[i],cap=poSugCap(),kg=t.kg,over=kg>cap,pa=new Set(t.items.map(x=>String(x.party).trim().toUpperCase())).size,zero=t.items.filter(x=>!x.kg).length;
+  const m=[t.items.length+" PO",pa+" part"+(pa===1?"y":"ies")];if(t.areas.length>1)m.push(t.areas.join(", "));if(t.spread>0.05)m.push("within "+Math.max(1,Math.round(t.spread))+" km");if(t.items.length===1&&t.near!=null)m.push("nearest other party "+Math.round(t.near)+" km");
+  const why=over?`<span class="why w">⚠ ${k(kg-cap)} kg over</span>`:zero?`<span class="why w">⚠ ${zero} PO with 0 kg</span>`:t.vehicle?`<span class="why">✓ ${escapeHtml(t.vehicle.vehicle_no)} free (${k(t.vehicle.capacity_kg)} kg)</span>`:kg<cap*0.6?`<span class="why">Room for ${k(cap-kg)} kg more</span>`:"";
+  const bt=t.items.length>1?`<span class="bt"><button type="button" class="btn btn-light" onclick="sugSelect(${i})">☑ Select</button><button type="button" class="btn btn-green" onclick="sugTransport(${i})">🚚 Transport (${t.items.length} PO)</button></span>`:"";
+  return `<tr class="sgh"><td colspan="11"><div class="sgh-in"><b>💡 Trip ${i+1} · ${escapeHtml(t.name)}${t.part?" ("+t.part+")":""}</b><span class="m">${escapeHtml(m.join(" · "))}</span><span class="kg ${over?"w":""}">${k(kg)} / ${k(cap)} kg</span><span class="bar ${over?"w":""}"><i style="width:${Math.min(100,Math.round(kg/cap*100))}%"></i></span>${why}${bt}</div></td></tr>`;}
+function sugPaintBar(show){const b=document.getElementById("poSugBar");b.hidden=!show;if(!show)return;const caps=poSugCaps(),cap=poSugCap(),k=LWBSuggest.kgf;
+  b.innerHTML=`<b>💡 Trip suggestion</b><button type="button" class="chip ${poSug.on?"on":""}" onclick="sugSet('on')">${poSug.on?"On":"Off"}</button>`+(poSug.on?
+    `<button type="button" class="chip ${poSug.mode==="area"?"on":""}" onclick="sugSet('mode','area')">By area</button><button type="button" class="chip ${poSug.mode==="salesman"?"on":""}" onclick="sugSet('mode','salesman')">By salesman</button>`+
+    caps.map(c=>`<button type="button" class="chip ${c===cap?"on":""}" onclick="sugSet('cap',${c})">${k(c)} kg</button>`).join("")+
+    `<label style="display:flex;align-items:center;gap:4px">Vehicle <input type="number" min="100" step="50" value="${cap}" onchange="sugSet('cap',this.value)"> kg</label><button type="button" class="chip" onclick="sugAreas()">📍 Party area</button>`+
+    (poSug.err?`<span class="err">${/lwb_trip_suggest_data/.test(poSug.err)?"Suggestion not ready yet":escapeHtml(poSug.err)}</span>`:!poSug.items?'<span class="mu">Finding areas…</span>':""):"");}
+function sugSet(what,v){if(what==="on")poSug.on=!poSug.on;else if(what==="mode")poSug.mode=v;else if(what==="cap"&&Number(v)>0)poSug.cap=Number(v);poSugKeep();renderOrders();}
+function sugSelect(i){const t=poSug.trips[i];if(!t)return;const all=t.items.every(x=>pickedIds.has(x.id));t.items.forEach(x=>all?pickedIds.delete(x.id):pickedIds.add(x.id));renderOrders();}
+function sugAreas(){if(window.LWBSuggest)LWBSuggest.areas({db,onSaved:async()=>{poSug.key="";await sugLoad();renderOrders();}});}
+let poSugPlan=null; // {lead, ids:Set ticked, vno}
+async function sugTransport(i){const t=poSug.trips[i];if(!t)return;const ids=t.items.map(x=>x.id);
+  poSugPlan={lead:ids[0],ids:new Set(ids.slice(1)),vno:t.vehicle?t.vehicle.vehicle_no:""};
+  await openTransportAllocation(ids[0]);}
+// Transport popup: same-side Approved POs, ticked = saved with the same driver / vehicle
+function sugHintFor(order){const box=document.getElementById("poSugHint");box.hidden=true;box.innerHTML="";
+  if(!poSugUsable()||!poSug.items||!order||!matchesTab(order,"approved")){if(!order||!poSugPlan||poSugPlan.lead!==order.id)poSugPlan=null;return;}
+  const g=sugGroup(sugReady());const t=g&&g.trips.find(x=>x.items.some(y=>y.id===order.id));
+  if(!poSugPlan||poSugPlan.lead!==order.id)poSugPlan={lead:order.id,ids:new Set(),vno:t&&t.vehicle?t.vehicle.vehicle_no:""};
+  if(!t||t.items.length<2)return;
+  const k=LWBSuggest.kgf,others=t.items.filter(x=>x.id!==order.id);
+  box.innerHTML=`<b>💡 Same side (${escapeHtml(t.name)}) · together ${k(t.kg)} / ${k(poSugCap())} kg${t.vehicle?" · "+escapeHtml(t.vehicle.vehicle_no)+" free":""}</b>`+
+    others.map(x=>{const o=orders.find(y=>y.id===x.id)||{};return `<label><input type="checkbox" data-sugid="${x.id}" ${poSugPlan.ids.has(x.id)?"checked":""} onchange="sugTick(this)"><span>${escapeHtml(o.order_no||"")} · ${escapeHtml(o.customer_name||"")} <small>${k(x.kg)} kg</small></span></label>`;}).join("")+
+    `<small>Ticked POs get the same driver &amp; vehicle when you save: one trip, one rent.</small>`;
+  box.hidden=false;
+  setTimeout(()=>{const v=document.getElementById("poVehicleNo");if(poSugPlan&&poSugPlan.ids.size&&poSugPlan.vno&&v&&!v.value.trim()&&!v.disabled){v.value=poSugPlan.vno;v.dispatchEvent(new Event("input"));v.dispatchEvent(new Event("change"));}},900);}
+function sugTick(box){if(!poSugPlan)return;box.checked?poSugPlan.ids.add(box.dataset.sugid):poSugPlan.ids.delete(box.dataset.sugid);
+  const v=document.getElementById("poVehicleNo");if(box.checked&&poSugPlan.vno&&v&&!v.value.trim()){v.value=poSugPlan.vno;v.dispatchEvent(new Event("input"));v.dispatchEvent(new Event("change"));}}
+// after the lead PO is saved: the same transport on the ticked same-side POs (same trip)
+async function sugApplyRest(payload,trip,leadId){
+  if(!poSugPlan||poSugPlan.lead!==leadId||!poSugPlan.ids.size)return "";
+  const ids=[...poSugPlan.ids];poSugPlan=null;let ok=[],bad=[];
+  const canTransition=["approved","approved_next","manager_approved","warehouse_approved","transport_allocated","allocated"];
+  for(const oid of ids){const o=orders.find(x=>x.id===oid);
+    try{if(!o||isSelfPickup(o))throw Error("skip");
+      const latest=await db.from("orders").select("status").eq("id",oid).single();if(latest.error)throw latest.error;
+      if(!eligibleForPoPrint(latest.data)||poAllocationLocked(latest.data))throw Error("not open");
+      const found=await db.from("dispatch_assignments").select("id").eq("order_id",oid).maybeSingle();if(found.error)throw found.error;
+      const p={...payload,order_id:oid};if(trip)p.trip_id=trip.id;
+      const r=found.data?await db.from("dispatch_assignments").update(p).eq("id",found.data.id).select("id").single():await db.from("dispatch_assignments").insert(p).select("id").single();
+      if(r.error)throw r.error;
+      if(canTransition.includes(normalizedStatus(latest.data))){const u=await db.from("orders").update({status:"transport_allocated"}).eq("id",oid).in("status",canTransition).select("id");if(u.error)throw u.error;}
+      ok.push(o.order_no);}catch(e){bad.push((o&&o.order_no)||oid);}}
+  return (ok.length?"Same transport also saved on "+ok.join(", ")+".":"")+(bad.length?" Not saved on "+bad.join(", ")+": open it and save.":"");}
+
 function renderOrders() {
 
   const area = document.getElementById("ordersArea");
@@ -3344,6 +3449,7 @@ function renderOrders() {
     .sort((a, b) => priorityRank(a[0]) - priorityRank(b[0]) || a[1] - b[1])
     .map(pair => pair[0]);
 
+  filtered = sugArrange(filtered, filter);
   lastFiltered = filtered;
   const pages = Math.max(1, Math.ceil(filtered.length / LIST_PAGE_SIZE));
   if (listPage > pages) listPage = pages;
@@ -3388,7 +3494,7 @@ function renderOrders() {
 
       <tbody>
 
-        ${pageOrders.map(order => `
+        ${pageOrders.map(order => sugHeadFor(order) + `
 
           <tr class="po-row ${isLateApproval(order) || isLateDelivery(order) ? "row-late" : orderPriority(order) === "URGENT" ? "row-urgent" : ""}${pickedIds.has(order.id) ? " row-picked" : ""}"
             onclick="openRow(event, '${order.id}')" title="Click to open ${VIEW_ONLY ? "" : "and edit "}this PO">
@@ -4038,6 +4144,7 @@ async function revealApprovalActions(){
   const panel=document.getElementById("postApprovalPanel");
   panel.hidden=!eligibleForPoPrint(order);
   if(panel.hidden)return;
+  sugHintFor(order);
   const id=order.id;
   approvedTransport=null;
   const locked=poAllocationLocked(order);
@@ -4181,6 +4288,8 @@ async function saveApprovedTransport(){
       document.getElementById("dStatus").textContent=selectedOrder.status;
     }
     allocationStatus("Saved! Driver: "+payload.driver_name+", Vehicle: "+payload.vehicle_no+", Godown Manager: "+payload.loading_person+"."+(trip?" Trip "+trip.trip_no+(trip.kind==="PORTER"&&!trip.rent?" (Porter: rent is asked later)":"")+".":"")+" Both are notified.");
+    const more=await sugApplyRest(payload,trip,id);
+    if(more)allocationStatus(document.getElementById("poAllocationStatus").textContent+" "+more);
     // Small Transport popup: close by itself once saved.
     await loadOrders();
     return true;
