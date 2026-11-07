@@ -4,6 +4,16 @@
 **Purpose:** Continue the same ERP project from a new ChatGPT conversation without restarting or losing the agreed requirements.
 **Status:** Active development / verification. Do not assume all modules are completed or fully tested.
 
+## Approvals: one Admin dashboard for every permission (7 Nov 2026)
+
+- Mohit: the "Market order — please check once" popup kept coming again and again. Wanted one small dashboard where every kind of permission is its own card with its pending count, tap = the list, approve right there, and the count on the main Dashboard.
+- New `approvals.html` + `approvals.js` (LWBApprovals), menu item "Approvals" (Admin / Sales Head). No SQL: every list uses an RPC / table that already exists; a list the login can not read is left out.
+- Cards (full names, Mohit 7 Nov 2026): Low rate approval (`lwb_rate_waiting` / `lwb_rate_approve`), Market check (unread ORDER_RATE_CHECK bells; "✓ Checked OK" / "✓ All checked" mark them read), New PO (pending orders, not the ones waiting for rate OK; opens the PO review), PO change (`lwb_bill_change_list` / `lwb_bill_change_decide`), Trip rent (`lwb_hired_rate_list` WAITING / `lwb_hired_rate_verify`, rate editable), Bank check (`lwb_acc_dashboard` pending, chips per bank with count + ₹, `lwb_acc_verify_line`), Stock move (`lwb_stx_moves` / `lwb_stx_decide`, full qty), Driver return (opens Returns), Sales return (opens page), New party (PARTY_CREATED bells).
+- `erp-operations-notifications.js`: the Market order popup is removed; the bell row opens Approvals #market.
+- `dashboard.html` (Admin / Sales Head, Mohit's change same day): no strip on the page, only "Waiting approval N" (red number) next to the Admin view dropdown; tap = `approvals.html`.
+- Side menu (same day): Keyboard Shortcuts left out of the side menu (top bar keyboard button + Module Search open it). "Find a page" works like Module Search: searches keywords too, first match picked, ↑ / ↓ move, Enter opens, Esc clears.
+- Checked with a mocked database at 1366 / 390 px: no side scroll, no JS errors. Not yet checked on live data. Screenshots: project files `admin-approvals/`.
+
 ## Edit / Delete an old purchase bill (6 Nov 2026)
 
 - Mohit: no way to change or remove an old purchase bill (the "Edit" on Purchase List was only the vehicle check; now labelled "Check").

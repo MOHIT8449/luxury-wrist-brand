@@ -13,6 +13,7 @@
   <script src="role-dashboard.js"></script>
   <script src="admin-business.js"></script>
   <script src="erp-list.js"></script>
+  <script src="approvals.js"></script>
   <link rel="stylesheet" href="role-dashboard.css">
   <style>
     .status{text-align:center;padding:80px 20px;font-size:15px;color:#555}
@@ -44,6 +45,12 @@
     .hero-results a:hover,.hero-results a.active{background:var(--erp-red-soft)}
     .acc-dash{display:flex;align-items:center;gap:12px;margin:0 0 16px;padding:14px 16px;border-radius:10px;background:#13283f;color:#fff;text-decoration:none}
     .acc-dash[hidden]{display:none}
+    /* Approvals waiting (approvals.js, Mohit 7 Nov 2026): only "Waiting approval N" next to the Admin view dropdown; tap = Approvals. */
+    .ap-pill{display:inline-flex;align-items:center;gap:6px;height:34px;padding:0 10px;border-radius:6px;border:1px solid #f0c36a;background:#fff8e1;color:#3d2c00;font-size:13px;font-weight:600;text-decoration:none;white-space:nowrap}
+    .ap-pill b{min-width:22px;height:22px;border-radius:11px;background:var(--erp-danger,#c62828);color:#fff;font-size:12.5px;line-height:22px;text-align:center;padding:0 6px;animation:apBlink 1.6s ease-in-out 3}
+    .ap-pill.zero{border-color:var(--erp-line);background:#fff;color:var(--erp-muted)}.ap-pill.zero b{background:#c9d3d6;animation:none}
+    .ap-pill[hidden]{display:none}
+    @keyframes apBlink{50%{box-shadow:0 0 0 4px rgba(198,40,40,.25)}}
     .acc-dash .acc-ic{width:40px;height:40px;border-radius:50%;background:#13824a;display:flex;align-items:center;justify-content:center;font-size:20px;font-weight:800;flex:0 0 auto}
     .acc-dash b{display:block;font-size:16px}.acc-dash small{display:block;color:#c8d6e6;font-size:13px;margin-top:2px}
     .acc-dash .acc-go{margin-left:auto;font-weight:700;white-space:nowrap}
@@ -276,6 +283,21 @@
       });
       if(!due.length){const n=document.createElement("div");n.className="none";n.textContent="✓ Nothing waiting for you to verify.";list.appendChild(n)}
       card.hidden=false;
+    }
+    // Approvals waiting (approvals.js): "Waiting approval N" next to the Admin view dropdown, opens approvals.html.
+    async function loadApprovals(uid){
+      let pill=document.getElementById("apPill");
+      if(!pill){
+        pill=document.createElement("a");pill.id="apPill";pill.className="ap-pill";pill.href="approvals.html";pill.hidden=true;
+        pill.innerHTML='Waiting approval <b>0</b>';
+        const head=document.querySelector("#dashboard .erp-pagehead"),view=head&&head.querySelector(".rd-view"),grow=head&&head.querySelector(".grow");
+        if(view)view.before(pill);else if(grow)grow.after(pill);else return;
+      }
+      let secs;try{secs=await LWBApprovals.load(client,{uid,role:currentRole})}catch(e){pill.hidden=true;return}
+      const t=LWBApprovals.total(secs);
+      pill.querySelector("b").textContent=t>99?"99+":String(t);pill.classList.toggle("zero",!t);
+      pill.title=t?secs.filter(s=>s.count).map(s=>s.title+": "+s.count).join("\n"):"Nothing waiting for your approval";
+      pill.hidden=false;
     }
     // Complaint Box (lwb_complaint_box_setup.sql): Admin / Sales Head = complaints waiting for a reply;
     // everyone else = his complaints the office has answered.
@@ -724,6 +746,7 @@
         roleDashboard(role,profile.full_name,user.id,plan);
         loadSummary();
         loadVerify();setInterval(()=>{if(!document.hidden)loadVerify()},60000);
+        if(["admin","manager"].includes(role)&&!ERPShell.hiddenPages().includes("approvals.html")){loadApprovals(user.id);setInterval(()=>{if(!document.hidden)loadApprovals(user.id)},60000)}
         loadFocus();focusSetup();
         taskUid=user.id;
         client.rpc("lwb_task_due_bells").then(()=>{},()=>{});
