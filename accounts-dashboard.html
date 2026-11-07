@@ -303,7 +303,7 @@
     const MODE_NAME={CASH:"Cash",UPI:"UPI",BANK:"Bank / NEFT",RTGS:"RTGS",CHEQUE:"Cheque"};
     const SRC_NAME={ENTRY:"Entered here",PAYMENT:"Party payment (Billing & Outstanding)",DRIVER_CASH:"Driver money",DRIVER_ONLINE:"Driver money",OLD:"Old payment entry"};
     const NOTE_KEYS=["500","200","100","50","20","10"];
-    let HV=[],hvSub="own",hvPosted=false;
+    let HV=[],hvSub="own",hvPosted=false,PR=[];  // PR = Porter / one-time trips (lwb_trip_rent_setup.sql)
     let X={entries:{},staff_heads:[],payees:[]},S=[],V=[],VR={vehicles:[],entries:{}},C=[],piErr=false,D=null,PI=null,per="today",from=todayISO(),to=todayISO(),tab="book",bookF="all",outRows=null,me={id:"",role:""};
 
     function say(t,bad){el("msg").hidden=!t;el("msg").textContent=t||"";el("msg").className="acx-msg"+(bad?" bad":"")}
@@ -331,9 +331,9 @@
         D=data;D.lines=D.lines||[];D.pending=D.pending||[];
         // monthly rent of hired vehicles is added on the 1st of every month (once per page open)
         if(!hvPosted){hvPosted=true;await client.rpc("lwb_hired_post_months")}
-        const [ex,st,vl,vr,cq,hv]=await Promise.all([client.rpc("lwb_acc_extras",{p_from:from,p_to:to}),client.rpc("lwb_acc_staff_list",{p_month:to}),
-          client.rpc("lwb_acc_vehicles"),client.rpc("lwb_acc_vehicle_report",{p_from:from,p_to:to}),client.rpc("lwb_acc_cheque_list"),client.rpc("lwb_hired_list",{p_from:from,p_to:to})]);
-        HV=hv.error?[]:(hv.data||[]);if(!HV.length)hvSub="own";
+        const [ex,st,vl,vr,cq,hv,pr]=await Promise.all([client.rpc("lwb_acc_extras",{p_from:from,p_to:to}),client.rpc("lwb_acc_staff_list",{p_month:to}),
+          client.rpc("lwb_acc_vehicles"),client.rpc("lwb_acc_vehicle_report",{p_from:from,p_to:to}),client.rpc("lwb_acc_cheque_list"),client.rpc("lwb_hired_list",{p_from:from,p_to:to}),client.rpc("lwb_trip_rent_list",{p_from:from,p_to:to})]);
+        HV=hv.error?[]:(hv.data||[]);PR=pr.error?[]:(pr.data||[]);if(hvSub==="hired"&&!HV.length||hvSub==="porter"&&!PR.length)hvSub="own";
         C=cq.error?[]:(cq.data||[]);
         X=ex.error?{entries:{},staff_heads:[],payees:[]}:ex.data;S=st.error?[]:(st.data||[]);
         V=vl.error?[]:(vl.data||[]);VR=vr.error||!vr.data?{vehicles:[],entries:{}}:vr.data;
@@ -707,8 +707,9 @@
     // Vehicles: every vehicle's expenses for the dates at the top, head-wise; ledger per vehicle.
     function renderVehicles(){
       if(hvSub==="hired"&&HV.length){renderHired();return}
+      if(hvSub==="porter"&&PR.length){renderPorter();return}
       renderOwnVehicles();
-      if(HV.length){el("tabBody").insertAdjacentHTML("afterbegin",hvTabs());bindHvTabs()}
+      if(HV.length||PR.length){el("tabBody").insertAdjacentHTML("afterbegin",hvTabs());bindHvTabs()}
     }
     function renderOwnVehicles(){
       const R=VR.vehicles||[],tot=R.reduce((a,v)=>a+Number(v.total),0),idle=V.filter(v=>!R.some(r=>r.id===v.id));
@@ -733,7 +734,10 @@
     const hvRate=v=>v.rent_type==="MONTHLY"?rs(v.monthly_rent)+" / month":v.rent_type==="TRIP"?rs(v.trip_rate)+" / trip":v.rent_type==="PARTY"?"Per party · "+(v.party_rates||[]).length+" rate"+((v.party_rates||[]).length===1?"":"s"):(v.routes||[]).map(r=>r.name+" "+rs(r.rate)).join(" · ");
     const hvBal=b=>Number(b)<-0.5?'<span class="plus">'+rs(-b)+'</span><small>advance with him</small>':'<span class="minus">'+rs(b)+'</span><small>to pay</small>';
     const rentCat=()=>(D.categories||[]).find(c=>c.kind==="OUT"&&c.active!==false&&String(c.name).trim().toLowerCase()==="vehicle rent");
-    function hvTabs(){return '<div class="hv-sub" id="hvSub"><button type="button" data-hv="own" aria-pressed="'+(hvSub==="own")+'">Own vehicle expenses</button><button type="button" data-hv="hired" aria-pressed="'+(hvSub==="hired")+'">Hired vehicle rent ('+HV.length+')</button></div>'}
+    function hvTabs(){const due=PR.filter(t=>t.status==="TO_BOOK"||t.status==="NO_RENT").length;
+      return '<div class="hv-sub" id="hvSub"><button type="button" data-hv="own" aria-pressed="'+(hvSub==="own")+'">Own vehicle expenses</button>'+
+        (HV.length?'<button type="button" data-hv="hired" aria-pressed="'+(hvSub==="hired")+'">Hired vehicle rent ('+HV.length+')</button>':"")+
+        (PR.length?'<button type="button" data-hv="porter" aria-pressed="'+(hvSub==="porter")+'">Porter rent'+(due?' ('+due+' to pay)':'')+'</button>':"")+'</div>'}
     function bindHvTabs(){el("tabBody").querySelectorAll("[data-hv]").forEach(b=>b.onclick=()=>{hvSub=b.dataset.hv;renderVehicles()})}
     function payRent(id){const c=rentCat();newEntry("OUT",{vehicle:id,cat:c?c.id:null})}
     function renderHired(){
@@ -757,12 +761,59 @@
       el("tabBody").querySelectorAll("[data-htrip]").forEach(b=>b.onclick=()=>hiredAdd(b.dataset.htrip));
       el("tabBody").querySelectorAll("[data-hpay]").forEach(b=>b.onclick=()=>payRent(b.dataset.hpay));
     }
+    // Porter / one-time vehicles: rent given at Transport Assignment (or filled later). Book = one Cash Out "Vehicle rent".
+    const PR_ST={TO_BOOK:["To pay / book","t-amb"],NO_RENT:["Rent not filled","t-red"],BOOKED:["Booked","t-grn"],CANCELLED:["No rent","t-gry"]};
+    const PR_PAY={CASH:"Cash given",ONLINE:"Online / UPI",ACCOUNTS:"Accounts to pay"};
+    function renderPorter(){
+      const book=PR.filter(t=>t.status==="TO_BOOK"),none=PR.filter(t=>t.status==="NO_RENT"),done=PR.filter(t=>t.status==="BOOKED");
+      const dates=from===to?dmy(from):dmy(from)+" to "+dmy(to);
+      el("tabBody").innerHTML=hvTabs()+
+        '<div class="stf-head"><b>'+PR.length+' Porter trip'+(PR.length===1?"":"s")+' · '+dates+'</b><button type="button" class="acx-btn" id="prXl">⬇ Excel</button></div>'+
+        '<div class="hv-sum"><div><small>To pay / book</small><b class="minus">'+rs(book.reduce((a,t)=>a+Number(t.rent||0),0))+'</b></div><div><small>Rent not filled</small><b>'+none.length+' trip'+(none.length===1?"":"s")+'</b></div><div><small>Booked</small><b class="plus">'+rs(done.reduce((a,t)=>a+Number(t.entry?t.entry.amount:t.rent||0),0))+'</b></div></div>'+
+        '<div class="stf">'+PR.map(t=>{const st=PR_ST[t.status]||["",""],os=t.orders||[];
+          return '<div'+(t.status==="CANCELLED"?' style="opacity:.6"':"")+'><div class="nm"><span><b>🚚 '+esc(t.vehicle_no)+'</b> <span class="tag '+st[1]+'">'+st[0]+'</span>'+
+            '<small>'+esc([t.trip_no+" · "+dmy(t.date),t.owner,t.driver,t.mobile].filter(Boolean).join(" · "))+'</small>'+
+            '<small>'+esc(os.map(o=>o.order_no+" "+(o.party||"")).join(", ")||"—")+(os.length>1?" · "+os.length+" PO, one rent":"")+'</small>'+
+            '<small>'+esc([t.pay_mode?PR_PAY[t.pay_mode]:"",t.paid_by?"paid by "+t.paid_by:"",t.by_name?"assigned by "+t.by_name:"",t.entry?"booked "+dmy(t.entry.date)+" · "+(MODE_NAME[t.entry.mode]||t.entry.mode):"",t.cancel_note||""].filter(Boolean).join(" · "))+'</small></span>'+
+            '<span class="bal">'+(t.rent?'<span class="'+(t.status==="BOOKED"?"plus":"minus")+'">'+rs(t.rent)+'</span>':'<span>—</span>')+'<small>rent</small></span></div>'+
+            (t.status==="TO_BOOK"||t.status==="NO_RENT"?'<div class="ac"><button type="button" class="acx-btn'+(t.status==="TO_BOOK"?" redf":"")+'" data-prb="'+t.id+'">'+(t.status==="TO_BOOK"?"✓ Book":"Enter rent & book")+'</button><button type="button" class="acx-btn" data-prc="'+t.id+'">No rent</button></div>':"")+'</div>'}).join("")+'</div>'+
+        '<p class="acx-note">Porter / one-time vehicles from Transport Assignment. The rent is optional there; when left empty the person who assigned gets a popup after 2 hours and at day close. Book = Cash Out with head "Vehicle rent" (party = owner · vehicle no.). 2-3 POs in one trip = one rent.</p>';
+      bindHvTabs();
+      el("prXl").onclick=()=>LWBExcel.write("porter-rent-"+from+"-to-"+to,[{name:"Porter rent",rows:[["Trip","Date","Vehicle","Owner","Driver","POs","Rent","Paid","Paid by","Status"],
+        ...PR.map(t=>[t.trip_no,dmy(t.date),t.vehicle_no,t.owner||"",t.driver||"",(t.orders||[]).map(o=>o.order_no+" "+(o.party||"")).join(", "),t.rent?r2(t.rent):"",t.pay_mode?PR_PAY[t.pay_mode]:"",t.paid_by||"",(PR_ST[t.status]||[""])[0]])]}]).catch(e=>say(e.message,true));
+      el("tabBody").querySelectorAll("[data-prb]").forEach(b=>b.onclick=()=>porterBook(PR.find(t=>String(t.id)===b.dataset.prb)));
+      el("tabBody").querySelectorAll("[data-prc]").forEach(b=>b.onclick=async()=>{
+        const why=await ERPShell.prompt("No rent for this trip? It stays in the list as \"No rent\".","",{title:"No rent",placeholder:"Why (e.g. party paid the Porter)"});
+        if(why==null)return;
+        try{await rpc("lwb_trip_rent_cancel",{p_trip:Number(b.dataset.prc),p_note:why})}catch(e){await ERPShell.alert(errText(e));return}
+        load()});
+    }
+    function porterBook(t){
+      if(!t)return;
+      const banks=(D.banks||[]).filter(b=>b.active),mode=t.pay_mode==="ONLINE"?"UPI":"CASH";
+      const box=sheet("Book Porter rent · "+t.trip_no,
+        '<div class="kv"><span>Vehicle</span><b>'+esc([t.vehicle_no,t.owner,t.driver].filter(Boolean).join(" · "))+'</b><span>POs</span><b>'+esc((t.orders||[]).map(o=>o.order_no+" "+(o.party||"")).join(", "))+'</b>'+
+          (t.paid_by||t.pay_mode?'<span>Paid</span><b>'+esc([t.pay_mode?PR_PAY[t.pay_mode]:"",t.paid_by?"by "+t.paid_by:""].filter(Boolean).join(" "))+'</b>':"")+'</div>'+
+        '<div class="f2"><div class="f"><label for="prAmt">Rent ₹</label><input id="prAmt" inputmode="decimal" value="'+(t.rent?Number(t.rent):"")+'" placeholder="₹"></div>'+
+        '<div class="f"><label>Date</label>'+dateBox("prDate",D.today,{max:D.today})+'</div></div>'+
+        '<div class="f2"><div class="f"><label for="prMode">Paid in</label><select id="prMode">'+Object.keys(MODE_NAME).map(m=>'<option value="'+m+'"'+(m===mode?" selected":"")+'>'+MODE_NAME[m]+'</option>').join("")+'</select></div>'+
+        '<div class="f"><label for="prBank">Bank</label><select id="prBank">'+bankOptions(banks.length===1?banks[0].id:"",true)+'</select></div></div>'+
+        '<div class="f"><label for="prRef">Ref / UTR (optional)</label><input id="prRef" maxlength="100"></div>',
+        "✓ Book Cash Out",async b=>{
+          const amt=num(b.querySelector("#prAmt").value),m=b.querySelector("#prMode").value,bk=b.querySelector("#prBank").value;
+          if(!(amt>0)){await ERPShell.alert("Enter the rent");return false}
+          try{await rpc("lwb_trip_rent_book",{p_trip:t.id,p:{amount:amt,date:dval("prDate"),mode:m,bank_id:m==="CASH"?null:(bk||null),ref:b.querySelector("#prRef").value.trim()||null}})}
+          catch(e){await ERPShell.alert(errText(e));return false}
+          ERPShell.toast(t.trip_no+": "+rs(amt)+" booked as Cash Out (Vehicle rent).");load()},"grn");
+      const sync=()=>{box.querySelector("#prBank").closest(".f").hidden=box.querySelector("#prMode").value==="CASH"};
+      box.querySelector("#prMode").onchange=sync;sync();
+    }
     function hvLine(l){
       const a=Number(l.amount),sub=[];let t;
-      if(l.src==="PENDING"){t="1 trip"+(l.route?" · "+l.route:"")+" · ⏳";sub.push(l.remark,(l.order_nos||[]).join(", "))}
+      if(l.src==="PENDING"){t=(l.trip_no?"Trip "+l.trip_no:"1 trip")+(l.route?" · "+l.route:"")+" · ⏳";sub.push(l.remark,(l.order_nos||[]).join(", "))}
       else if(l.src==="MONEY"){t=l.kind==="PAID"?"Rent paid":(l.head||"Expense")+" (cut)";sub.push(MODE_NAME[l.mode]||l.mode,l.ref?"ref "+l.ref:"",l.remark)}
       else if(l.kind==="MONTH"){t="Monthly rent";sub.push(l.remark)}
-      else if(l.kind==="TRIP"){t=l.trips+" trip"+(l.trips===1?"":"s")+(l.route?" · "+l.route:"")+(l.auto?" · Auto":"");if(l.auto&&l.remark==="Auto · Transport Assignment")l={...l,remark:"From Transport Assignment"};sub.push(l.trips+" × "+rs(l.rate)+(Number(l.extra)?" + "+rs(l.extra)+" extra":""),(l.order_nos||[]).join(", "),l.remark)}
+      else if(l.kind==="TRIP"){t=(l.trip_no?"Trip "+l.trip_no:l.trips+" trip"+(l.trips===1?"":"s"))+(l.route?" · "+l.route:"")+(l.auto?" · Auto":"");if(l.auto&&(l.remark==="Auto · Transport Assignment"||/^Auto · Trip /.test(l.remark||"")))l={...l,remark:"From Transport Assignment"+(l.trip_no&&(l.order_nos||[]).length>1?" · "+l.order_nos.length+" PO, one rent":"")};sub.push(l.trips+" × "+rs(l.rate)+(Number(l.extra)?" + "+rs(l.extra)+" extra":""),(l.order_nos||[]).join(", "),l.remark)}
       else{t=a<0?"Cut from rent":"Extra";sub.push(l.remark)}
       return {t,sub:sub.filter(Boolean).join(" · "),a};
     }
