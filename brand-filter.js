@@ -10,6 +10,8 @@
    LWBBrand.packNum(pcs, perUnit) -> 12.5 (full units, decimal, for Excel / totals)
    LWBBrand.packSum(list)    -> "120 IC · 45 CS" from [{pcs, per, unit}] (totals never mix units)
    LWBBrand.units(client)    -> resolver(sku name | {sku_name, company_id, pack_unit}) -> "BOX" | "CASE"
+   LWBBrand.aliases(client)  -> loads old SKU names (lwb_sku_aliases, lwb_sku_alias_setup.sql); after it
+   LWBBrand.nowKey(name)     -> key of the SKU's CURRENT name (old name after a rename -> new name). Rows are never changed.
    A brand-limited Sales Head / Salesman only gets his companies back from the database. */
 (function(){
   if(window.LWBBrand)return;
@@ -18,6 +20,16 @@
   // Same words in any order = same SKU ("250ML THUMS UP ZERO MRP 10" = "ZERO 250ML THUMS UP MRP 10").
   // Old PO lines keep the name they were saved with, so a SKU renamed in SKU Master still finds its brand (Mohit, 6 Nov 2026).
   const wordKey=v=>skuKey(v).split(" ").sort().join(" ");
+  // Old name -> current name, from lwb_sku_alias (filled when SKU Master renames an SKU). Empty until aliases() ran.
+  let ALIAS=new Map(),aliasCache=null;
+  function aliases(client){
+    if(aliasCache)return aliasCache;
+    aliasCache=Promise.resolve(client&&client.rpc?client.rpc("lwb_sku_aliases"):null)
+      .then(r=>{const m=new Map();for(const x of (r&&!r.error&&r.data)||[])m.set(skuKey(x.alias_key),skuKey(x.sku_name));ALIAS=m;return m})
+      .catch(()=>ALIAS);
+    return aliasCache;
+  }
+  const nowKey=v=>{const k=skuKey(v);return ALIAS.get(k)||k};
   const esc=v=>String(v==null?"":v).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
   let cache=null,skuCache=null,units=new Map();
   function read(){try{return localStorage.getItem(KEY)||""}catch(e){return ""}}
@@ -34,7 +46,7 @@
   async function skuMap(client){
     if(skuCache)return skuCache;
     skuCache=(async()=>{
-      const out=new Map();units=new Map();
+      const out=new Map();units=new Map();await aliases(client);
       for(let p=0;p<10;p++){
         let r=await client.from("sku_master").select("sku_name,company_id,pack_unit").range(p*1000,p*1000+999);
         if(r.error)r=await client.from("sku_master").select("sku_name,company_id").range(p*1000,p*1000+999);
@@ -44,7 +56,8 @@
       }
       const byWords=new Map();for(const [k,c] of out){const w=wordKey(k);if(!byWords.has(w)||(c&&!byWords.get(w)))byWords.set(w,c)}
       const get=out.get.bind(out),has=out.has.bind(out);
-      out.get=k=>has(k)?get(k):byWords.get(wordKey(k));out.has=k=>has(k)||byWords.has(wordKey(k));
+      // Exact name, else the SKU's current name (renamed), else the same words in another order.
+      out.get=k=>has(k)?get(k):has(nowKey(k))?get(nowKey(k)):byWords.get(wordKey(k));out.has=k=>has(k)||has(nowKey(k))||byWords.has(wordKey(k));
       return out;
     })().catch(()=>null);
     return skuCache;
@@ -79,7 +92,7 @@
   }
   // Unit of an SKU by name, after skuMap() and load(): its own unit, else its company's.
   function unitByName(name,map,list){
-    const k=skuKey(name),own=units.get(k);if(own)return own;
+    const k=skuKey(name),own=units.get(k)||units.get(nowKey(k));if(own)return own;
     const c=(list||[]).find(x=>x.id===(map&&map.get(k)));return c&&c.pack_unit?c.pack_unit:"CASE";
   }
   // One brand bar for a page: All brands / each company chips, saved choice shared with every page.
@@ -131,5 +144,5 @@
       return unitByName(s,map,list);
     };
   }
-  window.LWBBrand={load,get,set,chips,skuMap,skuKey,unitOf,unitByName,word,qty,mount,orderBrands,has,short,pack,packNum,packSum,units:unitsFor};
+  window.LWBBrand={load,get,set,chips,skuMap,skuKey,aliases,nowKey,unitOf,unitByName,word,qty,mount,orderBrands,has,short,pack,packNum,packSum,units:unitsFor};
 })();

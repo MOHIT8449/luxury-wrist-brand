@@ -54,10 +54,10 @@
         const tm=await client.rpc("lwb_sales_team");
         if(tm.error)throw Error(/lwb_sales_team/.test(tm.error.message)?"Run lwb_sales_team_setup.sql in Supabase first.":tm.error.message);
         team=tm.data||[];
-        const [pa,ta,sk]=await Promise.all([client.rpc("lwb_party_activity"),client.from("lwb_sales_targets").select("*"),client.from("sku_master").select("*")]);
+        const [pa,ta,sk]=await Promise.all([client.rpc("lwb_party_activity"),client.from("lwb_sales_targets").select("*"),client.from("sku_master").select("*"),window.LWBBrand&&LWBBrand.aliases?LWBBrand.aliases(client):null]);
         if(pa.error)throw pa.error;
         parties=pa.data||[];targets=ta.data||[];
-        skuCat=new Map((sk.data||[]).map(s=>[key(s.sku_name),s.category]));skuCo=new Map((sk.data||[]).map(s=>[key(s.sku_name),s.company_id||""]));
+        skuCat=new Map((sk.data||[]).map(s=>[S.skuKey(s.sku_name),s.category]));skuCo=new Map((sk.data||[]).map(s=>[S.skuKey(s.sku_name),s.company_id||""]));
         orders=await S.orders(from,to);
         const items=await S.inChunks("order_items","order_id",orders.map(o=>o.id),"order_id,sku_name,ordered_qty,approved_qty,loaded_qty,rate");
         if(!cost)cost=await S.loadLanding();
@@ -84,9 +84,9 @@
       for(const it of items){
         const o=byOrder.get(it.order_id);if(!o)continue;
         o.hasItems=true;
-        if(BB.get()&&skuCo.get(key(it.sku_name))!==BB.get())continue;
+        if(BB.get()&&skuCo.get(S.skuKey(it.sku_name))!==BB.get())continue;
         const q=S.lineQty(it,o,basis);if(!q)continue;
-        const amt=q*num(it.rate),c=cost?cost.cost(it.sku_name,skuCat.get(key(it.sku_name)),o.day):null;
+        const amt=q*num(it.rate),c=cost?cost.cost(it.sku_name,skuCat.get(S.skuKey(it.sku_name)),o.day):null;
         const l={o,sku:String(it.sku_name||"Unknown SKU").trim(),q,amt,cost:c==null?null:q*c};
         o.cases+=q;o.value+=amt;lines.push(l);
       }

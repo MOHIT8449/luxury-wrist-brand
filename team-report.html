@@ -82,6 +82,8 @@
     const istDay=v=>{if(!v)return "";const d=new Date(v);return isNaN(d)?String(v).slice(0,10):isoDay(d)};
     const shortDate=v=>LWBDate.d(v,"—");
     const nameKey=v=>String(v||"").toUpperCase().replace(/\s+/g," ").trim();
+    // SKU key = current name (an old PO line of a renamed SKU still finds its weight / brand; the line is not changed).
+    const skuNow=v=>window.LWBBrand&&LWBBrand.nowKey?LWBBrand.nowKey(v):nameKey(v);
     const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
     // Drivers are matched by Indian mobile number; the name is only a label.
     const mobile10=v=>{let d=String(v||"").replace(/\D/g,"");if(d.length===12&&d.startsWith("91"))d=d.slice(2);if(d.length===11&&d.startsWith("0"))d=d.slice(1);return /^[6-9]\d{9}$/.test(d)?d:""};
@@ -103,7 +105,7 @@
 
     // Brand filter (All / Rajnigandha / Coca-Cola): dispatch work counts only that brand's SKU lines; sales count POs with an SKU of it.
     let BB={get:()=>""},skuCo=new Map();
-    const lineIn=it=>!BB.get()||(skuCo.get(String(it.sku_id))||skuCo.get(nameKey(it.sku_name)))===BB.get();
+    const lineIn=it=>!BB.get()||(skuCo.get(String(it.sku_id))||skuCo.get(skuNow(it.sku_name)))===BB.get();
     async function loadAll(){
       const from=el("from").value,to=el("to").value;
       if(!from||!to||from>to){await ERPShell.alert("Select a valid From and To date.");return}
@@ -111,9 +113,9 @@
       el("refresh").disabled=true;el("tableBox").innerHTML='<div class="erp-empty">Loading report...</div>';
       errors={};
       try{
-        const s=await client.from("sku_master").select("*");
+        const [s]=await Promise.all([client.from("sku_master").select("*"),window.LWBBrand&&LWBBrand.aliases?LWBBrand.aliases(client):null]);
         skuWeight=new Map();skuCo=new Map();
-        for(const x of s.data||[]){const w=num(x.unit_weight_kg);skuWeight.set(String(x.id),w);skuWeight.set(nameKey(x.sku_name),w);skuCo.set(String(x.id),x.company_id||"");skuCo.set(nameKey(x.sku_name),x.company_id||"")}
+        for(const x of s.data||[]){const w=num(x.unit_weight_kg);skuWeight.set(String(x.id),w);skuWeight.set(skuNow(x.sku_name),w);skuCo.set(String(x.id),x.company_id||"");skuCo.set(skuNow(x.sku_name),x.company_id||"")}
       }catch(e){}
       await Promise.all([loadDispatch(start,end),loadSales(from,to)]);
       el("refresh").disabled=false;
@@ -145,7 +147,7 @@
         for(const it of items){
           const po=byOrder.get(it.order_id);if(!po||!lineIn(it))continue;
           const cases=num(it.loaded_qty);if(!cases)continue;
-          const w=num(it.unit_weight)||skuWeight.get(String(it.sku_id))||skuWeight.get(nameKey(it.sku_name))||0;
+          const w=num(it.unit_weight)||skuWeight.get(String(it.sku_id))||skuWeight.get(skuNow(it.sku_name))||0;
           const line={po,sku:it.sku_name||"Unknown SKU",cases,kg:cases*w,amount:cases*num(it.rate)};
           po.cases+=line.cases;po.kg+=line.kg;po.amount+=line.amount;lines.push(line);
         }

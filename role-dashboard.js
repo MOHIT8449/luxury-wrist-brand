@@ -204,20 +204,24 @@
      with the MEPD scheme of the SKU category on the order date. Rate packs are readable only by
      Admin / Manager (RLS), so for anyone else this returns null and the card is left out. */
   let LAND=null,TEAM=[];
+  const skuK=v=>String(v==null?"":v).toUpperCase().replace(/\s+/g," ").trim();
+  const nowK=v=>window.LWBBrand&&LWBBrand.nowKey?LWBBrand.nowKey(v):skuK(v);
   async function landingData(){
     if(LAND&&Date.now()-LAND.at<3e5)return LAND;
+    if(window.LWBBrand&&LWBBrand.aliases)await LWBBrand.aliases(C);
     const [s,p,l,m,k]=await Promise.all([safe(C.from("lwb_rate_settings").select("mepd_pct,roi_main,roi_landing").eq("id",1).maybeSingle()),
       safe(C.from("lwb_rate_packs").select("*")),safe(C.from("lwb_rate_pack_skus").select("sku_key,pack_id")),
       safe(C.from("lwb_mepd_schemes").select("categories,mepd_pct,valid_from,valid_to,created_at")),safe(C.from("sku_master").select("sku_name,category"))]);
     if(!s||!p||!p.length||!l)return null;
     const packs=new Map(p.filter(x=>x.active!==false).map(x=>[x.id,x])),bySku=new Map(),cat=new Map();
-    for(const x of l){const q=packs.get(x.pack_id);if(q)bySku.set(String(x.sku_key||"").trim().toUpperCase(),q)}
-    for(const x of k||[])cat.set(String(x.sku_name||"").trim().toUpperCase(),x.category);
+    // Keys = the SKU's current name, so a link / line saved under an old name (SKU renamed) still finds it.
+    for(const x of l){const q=packs.get(x.pack_id);if(q){const kk=nowK(x.sku_key);if(!bySku.has(kk)||skuK(x.sku_key)===kk)bySku.set(kk,q)}}
+    for(const x of k||[])cat.set(nowK(x.sku_name),x.category);
     LAND={at:Date.now(),S:{mepd_pct:num(s.mepd_pct),roi_main:num(s.roi_main)},bySku,cat,schemes:m||[]};
     return LAND;
   }
   function landingOf(R,sku,day){
-    const u=String(sku||"").trim().toUpperCase(),r=R.bySku.get(u);if(!r)return null;
+    const u=nowK(sku),r=R.bySku.get(u);if(!r)return null;
     const c=R.cat.get(u);let sc=null;
     if(c)for(const x of R.schemes)if(x.valid_from<=day&&day<=x.valid_to&&(x.categories||[]).some(y=>String(y||"").replace(/\s+/g," ").trim().toUpperCase()===String(c).replace(/\s+/g," ").trim().toUpperCase())&&(!sc||String(x.created_at)>String(sc.created_at)))sc=x;
     const S=R.S,C2=num(r.case_config),D=num(r.gr),F=num(r.free_bottle),H=num(r.qps),I=S.roi_main;

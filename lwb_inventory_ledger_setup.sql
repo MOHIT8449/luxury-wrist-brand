@@ -1,6 +1,7 @@
 -- LUXURY WRIST BRAND ERP — INVENTORY: OPENING + IN − OUT = CLOSING, AND A STOCK CHECK (6 Nov 2026)
 --
--- Runs by itself when merged to main. Safe to run again. READ ONLY: no table is created, changed or deleted.
+-- Runs by itself when merged to main (after lwb_sku_alias_setup.sql). Safe to run again.
+-- 6 Nov 2026: a PO line with an SKU's old name (renamed in SKU Master) still counts for that SKU (lwb_sku_id_of). READ ONLY: no table is created, changed or deleted.
 --
 -- Mohit asked (6 Nov 2026): Inventory (Rajnigandha) looks wrong. Stock In, Stock Out and opening do not
 -- add up: Stock Out showed 0 POs although POs were loaded, and the page never showed the opening of the
@@ -132,7 +133,7 @@ BEGIN
   CROSS JOIN LATERAL to_jsonb(i) j
   LEFT JOIN LATERAL (
     SELECT x.id, x.sku_name, x.pcs_per_case FROM public.sku_master x
-    WHERE x.id::text = j->>'sku_id' OR upper(btrim(x.sku_name)) = upper(btrim(coalesce(j->>'sku_name','')))
+    WHERE x.id::text = j->>'sku_id' OR upper(btrim(x.sku_name)) = upper(btrim(coalesce(j->>'sku_name',''))) OR x.id = public.lwb_sku_id_of(j->>'sku_name')
     ORDER BY coalesce(x.id::text = j->>'sku_id', false) DESC, coalesce(x.is_active, true) DESC LIMIT 1) s ON true
   WHERE w.at IS NOT NULL AND w.at >= v_from
     AND lower(btrim(coalesce(o.status::text,''))) NOT IN ('cancelled','canceled','rejected','draft','deleted')
@@ -150,7 +151,7 @@ BEGIN
   CROSS JOIN LATERAL to_jsonb(i) j
   JOIN LATERAL (
     SELECT x.id, x.pcs_per_case FROM public.sku_master x
-    WHERE x.id::text = j->>'sku_id' OR upper(btrim(x.sku_name)) = upper(btrim(coalesce(j->>'sku_name','')))
+    WHERE x.id::text = j->>'sku_id' OR upper(btrim(x.sku_name)) = upper(btrim(coalesce(j->>'sku_name',''))) OR x.id = public.lwb_sku_id_of(j->>'sku_name')
     ORDER BY coalesce(x.id::text = j->>'sku_id', false) DESC, coalesce(x.is_active, true) DESC LIMIT 1) s ON true
   WHERE lower(btrim(coalesce(o.status::text,''))) NOT IN ('cancelled','canceled','rejected','draft','deleted',
           'loaded','invoiced','dispatched','delivered','partially_delivered','partial','closed','completed','returned')
