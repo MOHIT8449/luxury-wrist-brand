@@ -13,7 +13,7 @@
     return"#c6e0b4";
   }
   function draw(o){
-    const W=[46,424,152,152,152].slice(0,2+o.heads.length),TW=W.reduce((a,b)=>a+b,0);
+    const W=[46,424].concat(o.heads.map(()=>152)),TW=W.reduce((a,b)=>a+b,0);
     const H1=46,H2=46,H3=48,RH=46,TH=H1+H2+H3+RH*o.rows.length,S=2;
     const cv=document.createElement("canvas");cv.width=(TW+1)*S;cv.height=(TH+1)*S;
     const g=cv.getContext("2d");g.scale(S,S);
