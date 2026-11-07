@@ -655,6 +655,16 @@
     }catch(e){}
     profitSwitch(top,role);
     liveLocation();
+    tripRent(role);
+  }
+
+  // ⏳ Porter rent left empty at transport assignment: popup after 2 hours / at day close (trip-rent.js).
+  async function tripRent(role){
+    try{
+      const c=window.__lwbBellClient;if(!c||!["admin","manager","transport"].includes(String(role||"").toLowerCase()))return;
+      if(!window.LWBTrip)await new Promise((ok,bad)=>{const s=document.createElement("script");s.src="trip-rent.js";s.onload=ok;s.onerror=bad;document.head.appendChild(s)});
+      window.LWBTrip.remind(c);
+    }catch(e){}
   }
 
   // 💜 "Profit ON/OFF" in the top bar: Admin always, others only when Admin allowed them (profit-view.js).

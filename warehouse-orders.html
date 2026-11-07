@@ -1131,6 +1131,7 @@
       .fill-b.low {background:#fdecec;color:#c62828}
 </style>
 <link rel="stylesheet" href="erp-shell.css">
+<script src="trip-rent.js" defer></script>
 <script src="erp-shell.js" data-auto defer></script>
 <script src="erp-list.js"></script>
 <script src="po-share.js"></script>
@@ -4148,6 +4149,13 @@ async function saveApprovedTransport(){
       throw Error("Order is no longer available for Driver/Vehicle allocation.");
     const found=await db.from("dispatch_assignments").select("id").eq("order_id",id).maybeSingle();
     if(found.error)throw found.error;
+    // Trip (trip-rent.js): same vehicle today with POs not loaded yet = same trip, one rent. Porter rent is asked later.
+    let trip=null;
+    if(window.LWBTrip){
+      try{trip=await LWBTrip.open(db,{vehicle_no:payload.vehicle_no,driver_name:payload.driver_name,driver_mobile:payload.driver_mobile,owner:payload.transporter_name,order_id:String(id),join:true})}
+      catch(e){console.warn("Trip not saved:",e.message||e)}
+      if(trip)payload.trip_id=trip.id;
+    }
     const result=found.data
       ? await db.from("dispatch_assignments").update(payload).eq("id",found.data.id).select("id").single()
       : await db.from("dispatch_assignments").insert(payload).select("id").single();
@@ -4172,7 +4180,7 @@ async function saveApprovedTransport(){
       selectedOrder.status="transport_allocated";
       document.getElementById("dStatus").textContent=selectedOrder.status;
     }
-    allocationStatus("Saved! Driver: "+payload.driver_name+", Vehicle: "+payload.vehicle_no+", Godown Manager: "+payload.loading_person+". Both are notified.");
+    allocationStatus("Saved! Driver: "+payload.driver_name+", Vehicle: "+payload.vehicle_no+", Godown Manager: "+payload.loading_person+"."+(trip?" Trip "+trip.trip_no+(trip.kind==="PORTER"&&!trip.rent?" (Porter: rent is asked later)":"")+".":"")+" Both are notified.");
     // Small Transport popup: close by itself once saved.
     await loadOrders();
     return true;
