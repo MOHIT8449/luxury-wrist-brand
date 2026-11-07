@@ -97,7 +97,8 @@ let html='';
 if(list.length&&f==='ready'&&sug.on&&sug.items){const g=sugGroup(list);sug.trips=g.trips;const byId=new Map(list.map(o=>[o.id,o])),done=new Set();
   g.trips.forEach((t,i)=>{html+=sugHead(t,i);t.items.forEach(x=>{const o=byId.get(x.id);if(o){done.add(o.id);html+=rowHtml(o);}});});
   if(g.unknown.length){html+=`<tr class="sgh unk"><td colspan="10"><div class="sgh-in"><b>Area not known (${g.unknown.length})</b><span class="m">No area in name, no GPS, no salesman area</span><span class="bt"><button type="button" class="secondary" data-sgarea>📍 Set area</button></span></div></td></tr>`;g.unknown.forEach(x=>{const o=byId.get(x.id);if(o){done.add(o.id);html+=rowHtml(o);}});}
-  list.forEach(o=>{if(!done.has(o.id))html+=rowHtml(o);});}
+  const rest=list.filter(o=>!done.has(o.id));if(rest.some(isSelfPickupTA))html+=`<tr class="sgh unk"><td colspan="10"><div class="sgh-in"><b>🏬 Self Pickup (${rest.filter(isSelfPickupTA).length})</b><span class="m">Party takes it from the godown: not in delivery trips</span></div></td></tr>`;
+  rest.sort((a,b)=>isSelfPickupTA(b)-isSelfPickupTA(a)).forEach(o=>{html+=rowHtml(o);});}
 else html=list.map(rowHtml).join('');
 $('rows').innerHTML=list.length?html:'<tr><td colspan="10" class="empty">No orders found for this filter.</td></tr>';selPaint();}
 // 💡 Trip suggestion inside the list (trip-suggest.js + lwb_trip_suggest_setup.sql): ready POs grouped by area
@@ -108,7 +109,9 @@ const sugKeep=()=>{try{localStorage.setItem('lwbSugPref',JSON.stringify({on:sug.
 const sugCaps=()=>[...new Set(fleetVehicles.map(v=>Number(v.capacity_kg)).filter(c=>c>0))].sort((a,b)=>a-b);
 const sugCap=()=>sug.cap||sugCaps().slice(-1)[0]||1700;
 async function sugLoad(){if(!window.LWBSuggest)return;const r=await LWBSuggest.items(db,orders.filter(o=>stage(o)==='ready'));sug.err=r.error?r.error.message:null;sug.items=r.error?null:r.items;}
-function sugGroup(list){const ids=new Set(list.map(o=>o.id)),its=sug.items.filter(x=>ids.has(x.id)).map(x=>{const o=orders.find(y=>y.id===x.id);return o?{...x,kg:Number(o.total_weight)||0}:x;});
+// Self Pickup (party takes it from the godown) is never put in a delivery trip: listed after the trips, no suggestion.
+const isSelfPickupTA=o=>String(o&&o.transportation||'').split('|')[0].trim().toUpperCase()==='SELF PICKUP';
+function sugGroup(list){const ids=new Set(list.filter(o=>!isSelfPickupTA(o)).map(o=>o.id)),its=sug.items.filter(x=>ids.has(x.id)).map(x=>{const o=orders.find(y=>y.id===x.id);return o?{...x,kg:Number(o.total_weight)||0}:x;});
   // Full load (same kg as the PO list, default 3,000): one PO = one vehicle, never merged
   let full=3000;try{full=Number(localStorage.getItem('lwbFullLoadKg'))||3000;}catch(_){}
   const big=its.filter(x=>x.kg>=full);
