@@ -7,6 +7,7 @@
      LWBProfit.on()                 true when allowed and the switch is ON
      LWBProfit.landing(sku)         landing per case / box, or null
      LWBProfit.tag(sku, rate, qty)  small coloured tag HTML ("" when off / no landing)
+     LWBProfit.loss(sku, rate)      true when rate ≤ landing (the page turns the whole line red)
      LWBProfit.total(lines)         {profit, known} for [{sku, rate, qty}]
      document "lwb:profit" event    fired when loaded and on every ON/OFF tap */
 (function(){
@@ -26,6 +27,12 @@
     const per=num(rate)-l,q=num(qty),cls=per>0?"":" neg";
     return '<span class="lwb-pf'+cls+'" title="Landing '+rs(l)+' · Profit '+rs(per)+' per case'+(q?' · '+rs(per*q)+' for '+q:'')+'">'+
       (per>0?"+":"")+rs(per)+(q?'<small> · '+rs(per*q)+'</small>':'')+'</span>';
+  }
+  // true when the switch is ON and the rate is at or below landing (no profit).
+  function loss(sku,rate){
+    if(!on())return false;
+    const l=landing(sku);if(l==null||rate===""||rate==null||!Number.isFinite(Number(rate)))return false;
+    return num(rate)-l<=0;
   }
   function total(lines){
     let profit=0,known=0,missing=0;
@@ -55,7 +62,10 @@
       ".lwb-pf.neg{background:#fde4e4;color:#b3261e;border-color:#f3a5a5}"+
       ".lwb-pf-sum{color:#6b21a8!important}.lwb-pf-sum.neg{color:#b3261e!important}"+
       "body:not(.lwb-profit-on) .lwb-pf-only,.lwb-pf-only[hidden]{display:none!important}"+
-      ".pf-slot{display:block;line-height:1}.pf-slot:empty{display:none}";
+      ".pf-slot{display:inline-block;vertical-align:middle;margin-left:6px;line-height:1}.pf-slot:empty{display:none}.pf-slot .lwb-pf{margin-top:0}"+
+      /* Rate at or below landing: the whole SKU line turns red (Mohit, 7 Nov 2026). */
+      "tr.pf-loss,tr.pf-loss>td{background:#fde4e4!important}tr.pf-loss>td:first-child{box-shadow:inset 4px 0 0 #c8102e}"+
+      "tr.pf-loss input{border-color:#e89a9a!important;background:#fff7f7!important}tr.pf-loss input.rate,tr.pf-loss input[data-field=rate]{border-color:#c8102e!important;color:#c8102e;font-weight:700}";
     (document.head||document.documentElement).appendChild(s);
   }
   async function load(){
@@ -85,6 +95,6 @@
     yes?viewers.add(user):viewers.delete(user);
     return !!yes;
   }
-  window.LWBProfit={init,ready,on,landing,tag,total,allow,money:rs,
+  window.LWBProfit={init,ready,on,landing,tag,loss,total,allow,money:rs,
     get allowed(){return allowed},get admin(){return admin},get viewers(){return viewers}};
 })();
