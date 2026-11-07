@@ -955,3 +955,8 @@
 - The ERP is the company's own record book (like Tally), so a cash receipt of ₹2,00,000 or more must save in full.
 - `lwb_allow_large_cash_entries.sql` removes the old "Income Tax 269ST / compliance review" hard stop from every live function that had it (party payment, brand money, group billing, accounts Cash In, driver payment / delivery, office receive). It edits the live definition with `pg_get_functiondef`, so the newest version of each function stays.
 - Party payment popup (`party-pay.js`) shows only a soft yellow note when cash is ₹2 lakh or more; Driver Delivery no longer blocks it.
+
+## Suggest trips by area + vehicle size (Nov 2026)
+- `lwb_trip_suggest_setup.sql`: `lwb_customer_master.area` (one-time party area). Guess when empty: name in brackets > GPS (nearest party with an area within 3 km) > same pincode > city (not Surat) > salesman area. RPCs `lwb_trip_suggest_data(order ids)`, `lwb_party_area_list(only_missing)`, `lwb_party_area_save(rows)` (Admin / Manager / Transport).
+- `trip-suggest.js` (`LWBSuggest`): Transport Allocation "💡 Suggest trips" groups ready POs by area (or salesman area), joins a no-area party to a party within 3 km, merges neighbouring areas while the total fits, packs first-fit up to the chosen vehicle kg (chips from Vehicle Master capacity_kg), suggests a free vehicle that fits. "Make this trip" opens the normal One trip popup. "📍 Party area" screen also on Party Master (📍 Area button).
+- Tests: `tests/trip-suggest`.
