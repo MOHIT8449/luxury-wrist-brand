@@ -43,20 +43,21 @@
   function paint(){
     if(!btn)return;
     const v=switchOn();
-    btn.setAttribute("aria-pressed",String(v));
-    btn.title=v?"Profit is shown on PO screens. Tap to hide.":"Profit is hidden. Tap to show.";
-    btn.innerHTML='<i aria-hidden="true"></i><span>Profit</span><b>'+(v?"ON":"OFF")+'</b>';
+    // Just an ON / OFF switch, no "Profit" word (Mohit, 7 Nov 2026); the tooltip says what it does.
+    btn.setAttribute("aria-checked",String(v));
+    btn.title=v?"Profit ON: shown on PO screens. Tap to hide.":"Profit OFF: hidden. Tap to show.";
+    btn.innerHTML='<b>'+(v?"ON":"OFF")+'</b><i aria-hidden="true"></i>';
   }
   function css(){
     if(document.getElementById("lwb-pf-css"))return;
     const s=document.createElement("style");s.id="lwb-pf-css";
     s.textContent=
-      ".lwb-pf-btn{display:inline-flex;align-items:center;gap:5px;height:32px;padding:0 10px;margin:0;border-radius:16px;border:1px solid rgba(201,178,106,.55);background:rgba(255,255,255,.08);color:#e8efee;font:600 12px 'Segoe UI',Roboto,Arial,sans-serif;cursor:pointer;white-space:nowrap;flex:none;box-shadow:none;width:auto}"+
-      ".lwb-pf-btn i{width:8px;height:8px;border-radius:50%;background:#8a9aa0}"+
-      ".lwb-pf-btn b{font-size:10.5px;letter-spacing:.4px;padding:1px 5px;border-radius:8px;background:rgba(255,255,255,.12)}"+
-      ".lwb-pf-btn[aria-pressed=true]{border-color:#c4a5f5;background:rgba(124,58,237,.28)}"+
-      ".lwb-pf-btn[aria-pressed=true] i{background:#c4f5a5}.lwb-pf-btn[aria-pressed=true] b{background:#7c3aed;color:#fff}"+
-      "@media(max-width:560px){.lwb-pf-btn{height:28px;padding:0 7px;gap:4px}.lwb-pf-btn span{display:none}.lwb-pf-btn::before{content:'₹';font-weight:700}}"+
+      ".lwb-pf-btn{position:relative;display:inline-flex;align-items:center;width:58px;height:26px;padding:0;margin:0;border-radius:13px;border:1px solid rgba(201,178,106,.55);background:rgba(255,255,255,.1);cursor:pointer;flex:none;box-shadow:none;transition:background .15s}"+
+      ".lwb-pf-btn b{position:absolute;right:8px;font:700 10px 'Segoe UI',Roboto,Arial,sans-serif;letter-spacing:.3px;color:#b9c6c8}"+
+      ".lwb-pf-btn i{position:absolute;left:3px;width:20px;height:20px;border-radius:50%;background:#e8efee;box-shadow:0 1px 2px rgba(0,0,0,.3);transition:left .15s}"+
+      ".lwb-pf-btn[aria-checked=true]{background:#7c3aed;border-color:#c4a5f5}"+
+      ".lwb-pf-btn[aria-checked=true] b{right:auto;left:8px;color:#fff}.lwb-pf-btn[aria-checked=true] i{left:33px}"+
+      ".lwb-pf-btn:focus-visible{outline:2px solid #e4d08f;outline-offset:2px}"+
       ".lwb-pf{display:inline-block;margin-top:3px;padding:1px 7px;border-radius:10px;background:#f3e8ff;color:#6b21a8;border:1px solid #d8b4fe;font:700 11.5px 'Segoe UI',Roboto,Arial,sans-serif;white-space:nowrap;line-height:1.5}"+
       ".lwb-pf small{font-weight:600;font-size:10.5px;opacity:.85}"+
       ".lwb-pf.neg{background:#fde4e4;color:#b3261e;border-color:#f3a5a5}"+
@@ -82,7 +83,7 @@
     await load();
     const mount=opts.mount;
     if(allowed&&mount&&!mount.querySelector(".lwb-pf-btn")){
-      btn=document.createElement("button");btn.type="button";btn.className="lwb-pf-btn";
+      btn=document.createElement("button");btn.type="button";btn.className="lwb-pf-btn";btn.setAttribute("role","switch");btn.setAttribute("aria-label","Show profit");
       btn.onclick=()=>{const v=!switchOn();try{localStorage.setItem(KEY,v?"1":"0")}catch(e){}paint();fire()};
       paint();mount.prepend(btn);
     }
