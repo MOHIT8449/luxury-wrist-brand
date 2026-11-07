@@ -16,6 +16,12 @@
 --     and Billing & Outstanding (Bills to make).
 --   * lwb_po_delivered_orders: also counts an Admin "Delivered" mark (same signature, same roles).
 -- No stock, bill amount, payment, ledger or Tally row is changed by this file.
+--
+-- Sales Head too (7 Nov 2026, Mohit): an active Sales Head (MANAGER) may mark Loaded / Delivered the same
+-- way (one PO or many selected), until Admin turns it off for him in Manage Users > Pages > "Mark PO
+-- Loaded / Delivered" (unticked = 'warehouse-orders.html#mark' in lwb_user_page_access.hidden).
+--   * lwb_can_mark_po(): Admin, or a Sales Head who has not been turned off.
+--   * marks keep the role of who marked (marked_by_role: ADMIN / MANAGER) for the log line.
 
 BEGIN;
 
@@ -30,12 +36,38 @@ CREATE TABLE IF NOT EXISTS public.lwb_admin_order_marks (
   marked_by_name text,
   marked_at timestamptz NOT NULL DEFAULT now()
 );
+ALTER TABLE public.lwb_admin_order_marks ADD COLUMN IF NOT EXISTS marked_by_role text;
 CREATE UNIQUE INDEX IF NOT EXISTS lwb_admin_order_marks_one ON public.lwb_admin_order_marks(order_id, kind);
 ALTER TABLE public.lwb_admin_order_marks ENABLE ROW LEVEL SECURITY;  -- read / write through the functions only
 REVOKE ALL ON public.lwb_admin_order_marks FROM PUBLIC, anon, authenticated;
 
+-- Page-access table (same as lwb_user_extra_pages_setup.sql), created here if missing.
+CREATE TABLE IF NOT EXISTS public.lwb_user_page_access (
+  user_id    uuid PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+  hidden     text[] NOT NULL DEFAULT '{}',
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  updated_by uuid
+);
+
 -- ---------------------------------------------------------------------------
--- Admin: mark Loaded and / or Delivered
+-- Who may mark: Admin always; Sales Head unless Admin unticked "Mark PO Loaded / Delivered"
+-- ---------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.lwb_can_mark_po()
+RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER SET search_path = ''
+AS $fn$
+  SELECT EXISTS (
+    SELECT 1 FROM public.user_profiles p
+    WHERE p.id = auth.uid() AND p.active = true
+      AND (lower(btrim(p.role)) = 'admin'
+           OR (lower(btrim(p.role)) = 'manager' AND NOT EXISTS (
+                 SELECT 1 FROM public.lwb_user_page_access a
+                 WHERE a.user_id = p.id AND 'warehouse-orders.html#mark' = ANY(a.hidden)))));
+$fn$;
+REVOKE ALL ON FUNCTION public.lwb_can_mark_po() FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.lwb_can_mark_po() TO authenticated;
+
+-- ---------------------------------------------------------------------------
+-- Admin / Sales Head: mark Loaded and / or Delivered
 -- ---------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.lwb_admin_mark_order(
   p_order_id uuid, p_loaded boolean, p_delivered boolean, p_date date, p_note text DEFAULT NULL)
@@ -44,6 +76,8 @@ LANGUAGE plpgsql SECURITY DEFINER SET search_path = ''
 AS $fn$
 DECLARE
   v_me text;
+  v_role text;
+  v_who text;
   v_o public.orders%ROWTYPE;
   v_st text;
   v_old text;
@@ -53,9 +87,11 @@ DECLARE
   v_done text[] := '{}';
   v_set text;
 BEGIN
-  SELECT p.full_name INTO v_me FROM public.user_profiles p
-  WHERE p.id = auth.uid() AND p.active = true AND lower(btrim(p.role)) = 'admin';
-  IF NOT FOUND THEN RAISE EXCEPTION 'Only an active Admin can mark a PO loaded / delivered'; END IF;
+  IF NOT public.lwb_can_mark_po() THEN
+    RAISE EXCEPTION 'Only Admin (or a Sales Head allowed by Admin) can mark a PO loaded / delivered';
+  END IF;
+  SELECT p.full_name, upper(btrim(p.role)) INTO v_me, v_role FROM public.user_profiles p WHERE p.id = auth.uid();
+  v_who := CASE WHEN v_role = 'MANAGER' THEN 'Sales Head' ELSE 'Admin' END;
   IF NOT coalesce(p_loaded,false) AND NOT coalesce(p_delivered,false) THEN
     RAISE EXCEPTION 'Choose Loaded or Delivered';
   END IF;
@@ -81,10 +117,11 @@ BEGIN
         loading_completed_at = coalesce(a.loading_completed_at, v_at)
     WHERE a.order_id = v_o.id;
     UPDATE public.orders SET status = 'loaded' WHERE id = v_o.id;
-    INSERT INTO public.lwb_admin_order_marks(order_id, kind, mark_date, old_status, note, marked_by, marked_by_name)
-    VALUES (v_o.id, 'LOADED', p_date, v_old, v_note, auth.uid(), v_me)
+    INSERT INTO public.lwb_admin_order_marks(order_id, kind, mark_date, old_status, note, marked_by, marked_by_name, marked_by_role)
+    VALUES (v_o.id, 'LOADED', p_date, v_old, v_note, auth.uid(), v_me, v_role)
     ON CONFLICT (order_id, kind) DO UPDATE SET mark_date = excluded.mark_date, old_status = excluded.old_status,
-      note = excluded.note, marked_by = excluded.marked_by, marked_by_name = excluded.marked_by_name, marked_at = now();
+      note = excluded.note, marked_by = excluded.marked_by, marked_by_name = excluded.marked_by_name,
+      marked_by_role = excluded.marked_by_role, marked_at = now();
     -- the Godown Manager's "load this vehicle" bells are done
     UPDATE public.erp_notifications SET is_read = true
     WHERE order_id = v_o.id AND is_read = false
@@ -113,19 +150,20 @@ BEGIN
     EXCEPTION WHEN check_violation THEN
       v_set := v_st;  -- the live status list has no 'delivered': keep it loaded, the mark still counts
     END;
-    INSERT INTO public.lwb_admin_order_marks(order_id, kind, mark_date, old_status, note, marked_by, marked_by_name)
-    VALUES (v_o.id, 'DELIVERED', p_date, v_st, v_note, auth.uid(), v_me)
+    INSERT INTO public.lwb_admin_order_marks(order_id, kind, mark_date, old_status, note, marked_by, marked_by_name, marked_by_role)
+    VALUES (v_o.id, 'DELIVERED', p_date, v_st, v_note, auth.uid(), v_me, v_role)
     ON CONFLICT (order_id, kind) DO UPDATE SET mark_date = excluded.mark_date, old_status = excluded.old_status,
-      note = excluded.note, marked_by = excluded.marked_by, marked_by_name = excluded.marked_by_name, marked_at = now();
+      note = excluded.note, marked_by = excluded.marked_by, marked_by_name = excluded.marked_by_name,
+      marked_by_role = excluded.marked_by_role, marked_at = now();
     v_done := array_append(v_done, 'DELIVERED'); v_st := v_set;
   END IF;
 
   -- Accounts: the PO is ready for its bill
   IF NOT EXISTS (SELECT 1 FROM public.lwb_tally_invoices t WHERE t.order_id = v_o.id) THEN
     INSERT INTO public.erp_notifications (user_id, title, message, notification_type, order_id)
-    SELECT p.id, 'Admin marked ' || lower(array_to_string(v_done, ' + ')) || ' — Make Tally bill',
+    SELECT p.id, v_who || ' marked ' || lower(array_to_string(v_done, ' + ')) || ' — Make Tally bill',
       coalesce(v_o.order_no,'PO') || ' · ' || coalesce(btrim(v_o.customer_name),'') || ': ' ||
-      coalesce(v_me,'Admin') || ' marked it ' || lower(array_to_string(v_done, ' and ')) || ' on ' ||
+      coalesce(v_me, v_who) || ' (' || v_who || ') marked it ' || lower(array_to_string(v_done, ' and ')) || ' on ' ||
       to_char(p_date,'DD/MM/YYYY') || '. Make the bill (Billing & Outstanding > Bills to make).',
       'TALLY_BILL_PENDING', v_o.id
     FROM public.user_profiles p
@@ -142,8 +180,11 @@ GRANT EXECUTE ON FUNCTION public.lwb_admin_mark_order(uuid,boolean,boolean,date,
 -- ---------------------------------------------------------------------------
 -- Marks of some POs (or of the last 90 days when p_ids is NULL)
 -- ---------------------------------------------------------------------------
+-- (marked_by_role added 7 Nov 2026: the result changes shape, so the old one goes first)
+DROP FUNCTION IF EXISTS public.lwb_admin_order_marks(uuid[]);
 CREATE OR REPLACE FUNCTION public.lwb_admin_order_marks(p_ids uuid[] DEFAULT NULL)
-RETURNS TABLE(order_id uuid, kind text, mark_date date, old_status text, note text, marked_by_name text, marked_at timestamptz)
+RETURNS TABLE(order_id uuid, kind text, mark_date date, old_status text, note text, marked_by_name text, marked_at timestamptz,
+              marked_by_role text)
 LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = ''
 AS $fn$
 BEGIN
@@ -152,7 +193,8 @@ BEGIN
     RAISE EXCEPTION 'Not allowed.';
   END IF;
   RETURN QUERY
-    SELECT m.order_id, m.kind, m.mark_date, m.old_status, m.note, m.marked_by_name, m.marked_at
+    SELECT m.order_id, m.kind, m.mark_date, m.old_status, m.note, m.marked_by_name, m.marked_at,
+           coalesce(m.marked_by_role, 'ADMIN')
     FROM public.lwb_admin_order_marks m
     WHERE (p_ids IS NULL AND m.marked_at >= now() - interval '90 days') OR m.order_id = ANY(p_ids)
     ORDER BY m.marked_at DESC

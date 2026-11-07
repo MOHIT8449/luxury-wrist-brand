@@ -117,6 +117,8 @@
     const setupHint=e=>/lwb_admin_set_page_access|lwb_user_page_access/.test(e.message||"")?"Run lwb_user_page_access_setup.sql in Supabase first.":/lwb_admin_users|lwb_admin_create_user|lwb_admin_set_login|function/.test(e.message||"")?"Run lwb_user_login_setup.sql in Supabase first.":e.message;
     let pageAccess={},pageExtra={},extraReady=false;
     const PROFIT_KEY="dashboard.html#profit",PROFIT_ROLES=["admin","manager"];
+    // Sales Head may mark a PO Loaded / Delivered (one or many selected) on PO / Sales. ON unless unticked here.
+    const MARK_KEY="warehouse-orders.html#mark",MARK_ROLES=["manager"];
     let roleAdminUserId=null,roleAdminReady=false,nuDocs=null,userDocs=null,userPhotos=new Map();
     // New login: photo is compulsory (lwb_documents_setup.sql). Files wait until the login is created.
     async function mountNewDocs(){
@@ -181,7 +183,7 @@
           save.onclick=()=>saveUser(u,{name,role,mob,mail,pass,active},save);
           const pages=document.createElement("button");pages.type="button";pages.className="pg-btn";
           const count=()=>{const mine=ERPShell.menuFor(role.value).flatMap(g=>g.items),off=pageAccess[u.user_id]||[],plus=(pageExtra[u.user_id]||[]).filter(h=>!mine.some(i=>i.h===h));
-            pages.textContent="Pages "+mine.filter(i=>!off.includes(i.h)).length+"/"+mine.length+(plus.length?" +"+plus.length:"")+(PROFIT_ROLES.includes(role.value)&&off.includes(PROFIT_KEY)?" · Profit off":"")};
+            pages.textContent="Pages "+mine.filter(i=>!off.includes(i.h)).length+"/"+mine.length+(plus.length?" +"+plus.length:"")+(PROFIT_ROLES.includes(role.value)&&off.includes(PROFIT_KEY)?" · Profit off":"")+(MARK_ROLES.includes(role.value)&&off.includes(MARK_KEY)?" · Mark off":"")};
           count();role.addEventListener("change",count);
           pages.onclick=()=>togglePages(row,u,role,count);
           const acts=document.createElement("div");acts.className="role-actions";acts.append(save,pages);
@@ -251,6 +253,16 @@
         cb.checked=!off.includes(PROFIT_KEY);boxes.push(cb);
         const sm=document.createElement("small");sm.textContent="Today's Profit card, order-wise profit";
         lab.style.gridColumn="1/-1";lab.append(cb,document.createTextNode("See profit"),sm);grid.prepend(gl,lab);
+      }
+      // Not a page: Sales Head marks PO Loaded / Delivered by hand (lwb_can_mark_po). Unticked = stored in hidden.
+      if(MARK_ROLES.includes(role)){
+        const lab=document.createElement("label"),cb=document.createElement("input");cb.type="checkbox";cb.value=MARK_KEY;cb.dataset.own="1";
+        cb.checked=!off.includes(MARK_KEY);boxes.push(cb);
+        const sm=document.createElement("small");sm.textContent="PO / Sales: one PO or many selected together";
+        lab.style.gridColumn="1/-1";lab.append(cb,document.createTextNode("Mark PO Loaded / Delivered"),sm);
+        const gl=grid.querySelector(".pg-group");
+        if(gl&&gl.textContent==="Dashboard rights")(gl.nextElementSibling||gl).after(lab);
+        else{const g2=document.createElement("div");g2.className="pg-group";g2.textContent="Dashboard rights";grid.prepend(g2,lab)}
       }
       all.onclick=()=>boxes.forEach(b=>{b.checked=!!b.dataset.own});
       every.onclick=()=>boxes.forEach(b=>{if(!b.disabled)b.checked=true});

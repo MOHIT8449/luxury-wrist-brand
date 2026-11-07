@@ -4,7 +4,7 @@ import {readFile} from 'node:fs/promises';
 import {PGlite} from '@electric-sql/pglite';
 
 // lwb_admin_mark_load_deliver_setup.sql on an empty PGlite database (no live data).
-const ids={admin:'00000000-0000-4000-8000-000000000001',head:'00000000-0000-4000-8000-000000000002',accounts:'00000000-0000-4000-8000-000000000003'};
+const ids={admin:'00000000-0000-4000-8000-000000000001',head:'00000000-0000-4000-8000-000000000002',accounts:'00000000-0000-4000-8000-000000000003',sales:'00000000-0000-4000-8000-000000000004',head2:'00000000-0000-4000-8000-000000000005'};
 const db=new PGlite();
 await db.exec(`
 CREATE ROLE anon; CREATE ROLE authenticated;
@@ -16,10 +16,11 @@ CREATE TABLE public.order_items(id bigserial primary key,order_id uuid,sku_name 
 CREATE TABLE public.dispatch_assignments(id uuid default gen_random_uuid() primary key,order_id uuid,loading_started_at timestamptz,loading_completed_at timestamptz);
 CREATE TABLE public.lwb_delivery_reports(order_id uuid,delivery_status text,reported_at timestamptz default now());
 CREATE TABLE public.lwb_tally_invoices(order_id uuid);
+CREATE TABLE public.lwb_user_page_access(user_id uuid primary key,hidden text[] not null default '{}',updated_at timestamptz,updated_by uuid);
 CREATE TABLE public.erp_notifications(id bigserial primary key,user_id uuid,title text,message text,notification_type text,order_id uuid,is_read boolean default false);
 GRANT USAGE ON SCHEMA public, auth TO authenticated;
 `);
-await db.query(`insert into user_profiles values($1,'Mohit','admin',true),($2,'Vinesh','manager',true),($3,'Yogesh','accounts',true)`,[ids.admin,ids.head,ids.accounts]);
+await db.query(`insert into user_profiles values($1,'Mohit','admin',true),($2,'Vinesh','manager',true),($3,'Yogesh','accounts',true),($4,'Ravi','sales',true),($5,'Old Head','manager',true)`,[ids.admin,ids.head,ids.accounts,ids.sales,ids.head2]);
 await db.exec(await readFile(new URL('../../lwb_admin_mark_load_deliver_setup.sql',import.meta.url),'utf8'));
 async function order(no,status,{assign=false,days=0}={}){
   const id=(await db.query(`insert into orders(order_no,customer_name,status,order_date) values($1,'SHREE KRISHNA',$2,now()-make_interval(days=>$3)) returning id`,[no,status,days])).rows[0].id;
@@ -34,10 +35,29 @@ async function as(who,q,params){
 const today=(await db.query(`select (now() at time zone 'Asia/Kolkata')::date::text d`)).rows[0].d;
 const mark=(who,id,l,d,date=today,note=null)=>as(who,'select lwb_admin_mark_order($1,$2,$3,$4::date,$5) r',[id,l,d,date,note]).then(x=>x.rows[0].r);
 
-test('only Admin can mark',async()=>{
+test('only Admin or an allowed Sales Head can mark',async()=>{
   const o=await order('P-1','approved');
-  await assert.rejects(mark('head',o,true,false),/Only an active Admin/);
-  await assert.rejects(mark('accounts',o,true,false),/Only an active Admin/);
+  await assert.rejects(mark('accounts',o,true,false),/Only Admin/);
+  await assert.rejects(mark('sales',o,true,false),/Only Admin/);
+  // Admin turned it off for this Sales Head (Manage Users > Pages)
+  await db.query(`insert into lwb_user_page_access(user_id,hidden) values($1,'{warehouse-orders.html#mark}')`,[ids.head2]);
+  await assert.rejects(mark('head2',o,true,false),/Only Admin/);
+  assert.equal((await as('head2','select lwb_can_mark_po() ok')).rows[0].ok,false);
+  assert.equal((await as('head','select lwb_can_mark_po() ok')).rows[0].ok,true);
+});
+
+test('Sales Head marks Loaded + Delivered; log keeps his role',async()=>{
+  const o=await order('P-11','approved');
+  const r=await mark('head',o,true,true);
+  assert.deepEqual(r.marked,['LOADED','DELIVERED']);
+  const m=(await as('admin','select * from lwb_admin_order_marks($1) order by kind',[[o]])).rows;
+  assert.deepEqual(m.map(x=>[x.kind,x.marked_by_name,x.marked_by_role]),[['DELIVERED','Vinesh','MANAGER'],['LOADED','Vinesh','MANAGER']]);
+  const b=(await db.query(`select title from erp_notifications where order_id=$1 and user_id=$2`,[o,ids.accounts])).rows[0];
+  assert.match(b.title,/^Sales Head marked/);
+  // a re-mark by Admin later shows ADMIN
+  const o2=await order('P-12','approved');
+  await mark('admin',o2,true,false);
+  assert.equal((await as('head','select * from lwb_admin_order_marks($1)',[[o2]])).rows[0].marked_by_role,'ADMIN');
 });
 
 test('Loaded: status, loaded qty, transport times, log, Accounts bell',async()=>{
