@@ -26,12 +26,19 @@ CREATE FUNCTION public.lwb_po_entry_user() RETURNS boolean LANGUAGE sql AS $$ SE
 CREATE FUNCTION public.lwb_is_sales_user() RETURNS boolean LANGUAGE sql AS $$ SELECT EXISTS (SELECT 1 FROM public.user_profiles WHERE id=auth.uid() AND role='salesman') $$;
 CREATE FUNCTION public.lwb_party_visible(uuid) RETURNS boolean LANGUAGE sql AS $$ SELECT true $$;
 CREATE FUNCTION public.lwb_sales_head() RETURNS boolean LANGUAGE sql AS $$ SELECT true $$;
+CREATE TABLE public.lwb_tracking_settings(id int primary key,godown_lat float8,godown_lng float8);
+INSERT INTO public.lwb_tracking_settings(id) VALUES (1);
+CREATE FUNCTION public.lwb_geo_m(lat1 float8,lng1 float8,lat2 float8,lng2 float8) RETURNS float8 LANGUAGE sql IMMUTABLE AS $$
+  SELECT CASE WHEN lat1 IS NULL OR lng1 IS NULL OR lat2 IS NULL OR lng2 IS NULL THEN NULL ELSE
+    2*6371000*asin(least(1,sqrt(power(sin(radians(lat2-lat1)/2),2)+cos(radians(lat1))*cos(radians(lat2))*power(sin(radians(lng2-lng1)/2),2)))) END $$;
 INSERT INTO public.user_profiles VALUES ('${ids.admin}','admin',true,'Admin'),('${ids.sales}','salesman',true,'Ravi');
 `);
 await db.exec(await sql('lwb_party_details_rule_setup.sql'));
 const migration=await sql('lwb_party_pan_optional_location_setup.sql');
 await db.exec(migration);
 await db.exec(migration); // safe to run again
+const godownSql=await sql('lwb_party_godown_distance_setup.sql');
+await db.exec(godownSql); await db.exec(godownSql);
 const as=u=>db.exec(`SELECT set_config('request.jwt.claim.sub','${u}',false)`);
 const one=async(q,p=[])=>(await db.query(q,p)).rows[0];
 const create=(name,pan,gstin,lat,lng)=>one(`SELECT public.lwb_sales_create_party($1,'9548742236','TATITHAIYA','BARDOLI','394305',$2,$3,$4,$5) r`,[name,pan,gstin,lat,lng]);
@@ -86,4 +93,17 @@ test('missing PAN never stops or counts a salesman order; missing address still 
   await db.query(`UPDATE public.lwb_customer_master SET billing_address='' WHERE id=$1`,[r.id]);
   for (let i=0;i<3;i++) await db.query(`INSERT INTO public.orders(customer_name) VALUES ('NO PAN SHOP')`);
   await assert.rejects(db.query(`INSERT INTO public.orders(customer_name) VALUES ('NO PAN SHOP')`),/has no Address\./);
+});
+
+test('godown distance: none until Admin sets the godown, then km on the party', async()=>{
+  await as(ids.sales);
+  const id=(await one(`SELECT id FROM public.lwb_customer_master WHERE customer_name='MANISH SINGH GOUR'`)).id;
+  assert.equal((await one(`SELECT public.lwb_godown_point() g`)).g,null);
+  assert.equal((await one(`SELECT public.lwb_party_kyc($1) k`,[id])).k.godown_km,null);
+  await db.query(`UPDATE public.lwb_tracking_settings SET godown_lat=21.1702,godown_lng=72.8311`);
+  assert.deepEqual((await one(`SELECT public.lwb_godown_point() g`)).g,{lat:21.1702,lng:72.8311});
+  const km=(await one(`SELECT public.lwb_party_kyc($1) k`,[id])).k.godown_km;
+  assert.ok(km>29 && km<31, 'Bardoli shop to Surat godown ~29.6 km, got '+km);
+  await as('');
+  await assert.rejects(one(`SELECT public.lwb_godown_point()`),/Only Admin/);
 });
