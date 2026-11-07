@@ -21,6 +21,7 @@
 - `erp-operations-notifications.js`: the Market order popup is removed; the bell row opens Approvals #market.
 - `dashboard.html` (Admin / Sales Head, Mohit's change same day): no strip on the page, only "Waiting approval N" (red number) next to the Admin view dropdown; tap = `approvals.html`.
 - Side menu (same day): Keyboard Shortcuts left out of the side menu (top bar keyboard button + Module Search open it). "Find a page" works like Module Search: searches keywords too, first match picked, ↑ / ↓ move, Enter opens, Esc clears.
+- Filters (same day): Brand (companies of the PO's SKU lines, `LWBBrand.orderBrands`; stock move = its SKU; bank / trip rent / new party are not brand-wise and always show) and By (person who brought / entered it: All Sales Heads, All Salesmen from `lwb_sales_team`, or one person). Kept per device (`localStorage lwbApprFilter`); card counts follow. There is no "Sales Head team" link in the data yet, so team = role groups.
 - Checked with a mocked database at 1366 / 390 px: no side scroll, no JS errors. Not yet checked on live data. Screenshots: project files `admin-approvals/`.
 
 ## Edit / Delete an old purchase bill (6 Nov 2026)
