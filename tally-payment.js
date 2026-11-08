@@ -12,7 +12,7 @@
   const REF={UPI:"UPI ref / UTR (optional)",BANK:"Bank UTR / ref (optional)",CHEQUE:"Cheque no."};
   const CSS=`.lwbp-ov{position:fixed;inset:0;background:#101827aa;display:flex;align-items:center;justify-content:center;padding:16px;z-index:4800}
 .lwbp{background:#fff;color:#182a42;width:min(560px,100%);max-height:94vh;overflow:auto;border-radius:12px;font:14px/1.5 Arial,sans-serif;box-shadow:0 18px 50px #0005}
-.lwbp h3{margin:0;padding:15px 18px;background:#14253f;color:#fff;font-size:16px}
+.lwbp h3{margin:0;padding:15px 18px;background:#002f37;color:#fff;font-size:16px}
 .lwbp .b{padding:16px 18px;display:grid;gap:12px}
 .lwbp p{margin:0;color:#4c5f76;font-size:13px}
 .lwbp label{display:block;font-size:11px;color:#657992;text-transform:uppercase;margin-bottom:4px}
@@ -25,7 +25,7 @@
 .lwbp .nt{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:7px}
 .lwbp .nt input{padding:7px;text-align:right}
 .lwbp .ct{font-size:13px;color:#16603b;font-weight:bold;text-align:right}
-.lwbp .add{background:none;border:0;color:#1769d8;font-weight:bold;cursor:pointer;padding:2px 0;justify-self:start}
+.lwbp .add{background:none;border:0;color:#00434d;font-weight:bold;cursor:pointer;padding:2px 0;justify-self:start}
 .lwbp .sum{display:grid;grid-template-columns:1fr auto;gap:3px 12px;background:#eef3fa;border-radius:9px;padding:11px 13px;font-size:14px}
 .lwbp .sum b{text-align:right;font-variant-numeric:tabular-nums}
 .lwbp .sum .left{color:#a02c2c}.lwbp .sum .ok{color:#16603b}

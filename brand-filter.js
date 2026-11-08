@@ -67,7 +67,7 @@
   function set(v){write(v||"")}
   function chips(list,current,onPick){
     const box=document.createElement("div");box.className="lwb-brands";box.setAttribute("role","group");box.setAttribute("aria-label","Company / brand");
-    const opts=[{id:"",name:"All brands",color:"#14253f"}].concat(list||[]);
+    const opts=[{id:"",name:"All brands",color:"#002f37"}].concat(list||[]);
     box.innerHTML=opts.map(c=>'<button type="button" data-b="'+esc(c.id)+'" aria-pressed="'+(c.id===current)+'" style="--bc:'+esc(c.color||"#2362a4")+'">'+(c.id?'<i></i>':"")+esc(c.name)+"</button>").join("");
     box.onclick=e=>{const b=e.target.closest("button[data-b]");if(!b)return;const v=b.dataset.b;set(v);
       box.querySelectorAll("button").forEach(x=>x.setAttribute("aria-pressed",String(x===b)));onPick&&onPick(v)};

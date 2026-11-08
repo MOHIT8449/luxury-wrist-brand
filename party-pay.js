@@ -101,11 +101,11 @@
 .lpp .mode b{font-size:14px}
 .lpp .notes{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;margin:4px 0 0 100px}
 .lpp .notes span{display:flex;align-items:center;gap:4px;font-size:13px}.lpp .notes input{height:34px;font-size:15px;padding:0 6px}
-.lpp .lnk{border:0;background:none;color:#1769d8;font:inherit;font-weight:600;cursor:pointer;padding:0;font-size:13px}
+.lpp .lnk{border:0;background:none;color:#00434d;font:inherit;font-weight:600;cursor:pointer;padding:0;font-size:13px}
 .lpp .tot{font-size:15px;text-align:right}.lpp .tot b{font-size:18px}
 .lpp .seg{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));border:1.5px solid #d5dbe3;border-radius:9px;overflow:hidden}
 .lpp .seg button{border:0;border-right:1px solid #d5dbe3;background:#fff;padding:9px 6px;font:inherit;font-size:13px;font-weight:600;cursor:pointer;color:#33404d}
-.lpp .seg button:last-child{border-right:0}.lpp .seg button[aria-pressed=true]{background:#14253f;color:#fff}
+.lpp .seg button:last-child{border-right:0}.lpp .seg button[aria-pressed=true]{background:#002f37;color:#fff}
 .lpp .seg.two{grid-template-columns:1fr 1fr}
 .lpp table{width:100%;border-collapse:collapse;font-size:13px}
 .lpp th,.lpp td{padding:7px 6px;border-bottom:1px solid #eef0f3;text-align:left;vertical-align:top}

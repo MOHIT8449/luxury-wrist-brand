@@ -963,3 +963,11 @@
 - Approved is split into two tabs: 🚛 Full load (PO weight ≥ FULL_LOAD_KG, default 3,000, set in the tab bar, localStorage lwbFullLoadKg) = one PO one vehicle, straight to Transport; 🧩 Merge (below it) = the trip suggestion. Transport Assignment page shows full loads as their own "🚛 Full load" trips (never merged).
 - One place (Nov 2026): Transport Assignment (transport-allocation.html) has tabs 🧩 Merge / 🚛 Full load / ✓ Assigned / 🏬 Self Pickup / All (lwbTaTab). Merge = grouped trips with one "🚚 Assign N PO" button and "✕ trip से हटाएँ" per PO; bar has only the vehicle kg select + "⚙ Settings" (Group by Area/Salesman, Full load kg, 📍 Set area). Assigned = allocated POs until loading starts, grouped by trip, with Edit. Phone hides the stat cards and status column.
 - Tests: `tests/trip-suggest`.
+
+## UI/UX polish pass across the whole site (8 Nov 2026)
+
+- Mohit asked for a "UI UX Pro" pass on the whole website. Checked all 61 pages with a mocked database at 1366 / 390 px: no page had side scroll before or after, no new JS errors.
+- One brand action colour: page-level bright blue (#1769d8 / #1769df / #1769e0 / #1f6feb) primary buttons, links and chips -> brand teal #00434d; navy pressed tabs / bars (#13283f / #14253f / #0d2230) -> #002f37. Bank Deposit blue (#1d5fbf) and light info tags kept (they mean "bank" / "info"). PO share image colours (po-share.js) untouched.
+- Top bar "ON" profit toggle: purple -> gold with teal text. Cashbook: brand blue -> teal, background ivory (dark mode brand = gold).
+- `erp-shell.css` end, "UI/UX polish pass": two+ buttons in a table cell stay on one line; phone tool / filter bars let buttons share one line; Stock Audit sticky bar = note text line, note field, then Save draft + Submit audit in one row.
+- Screenshots: project files `ui-ux-pro-polish/`.
