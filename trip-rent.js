@@ -32,7 +32,7 @@
 .tr-lab{font-size:12px;font-weight:700;color:#4b5763;text-transform:uppercase;letter-spacing:.3px}
 .tr-row{display:flex;gap:6px;min-width:0}
 .tr-row button{flex:1 1 0;min-width:0;height:36px;border:1.5px solid #cfd6de;border-radius:8px;background:#fff;font:inherit;font-size:13.5px;font-weight:700;color:#1f2a37;cursor:pointer;padding:0 4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.tr-row button[aria-pressed=true]{background:#0d2230;border-color:#0d2230;color:#fff}
+.tr-row button[aria-pressed=true]{background:#002f37;border-color:#002f37;color:#fff}
 .tr-pay button[aria-pressed=true]{background:#e4f6e9;border-color:#13824a;color:#0d6b36}
 .tr-porter{display:flex;flex-direction:column;gap:6px;border:1px dashed #c9d2dc;border-radius:8px;padding:8px;background:#fafbfc}
 .tr-porter[hidden]{display:none}
@@ -54,7 +54,7 @@
 .tr-card{border:1px solid #e3e7ec;border-radius:10px;padding:8px;margin-bottom:8px;display:flex;flex-direction:column;gap:6px}
 .tr-card>b{font-size:14.5px}.tr-card>small{color:#5b6773;font-size:12.5px;overflow-wrap:anywhere}
 .tr-foot{display:flex;gap:6px}.tr-foot button,.tr-card .tr-save{flex:1;height:38px;border-radius:8px;border:0;font:inherit;font-weight:700;font-size:14px;cursor:pointer;background:#eef0f3;color:#1f2a37}
-.tr-card .tr-save,.tr-foot .go{background:#1769df;color:#fff}
+.tr-card .tr-save,.tr-foot .go{background:#00434d;color:#fff}
 .tr-tag{display:inline-block;border-radius:99px;padding:1px 7px;font-size:11px;font-weight:700;background:#e4edff;color:#1a47a8;white-space:nowrap}
 .tr-tag.p{background:#fff1c9;color:#7b5200}
 `;

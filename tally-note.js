@@ -9,7 +9,7 @@
   const rs=n=>"₹"+Number(n||0).toLocaleString("en-IN",{maximumFractionDigits:2});
   const CSS=`.lwbn-ov{position:fixed;inset:0;background:#101827aa;display:flex;align-items:center;justify-content:center;padding:16px;z-index:9999}
 .lwbn{background:#fff;color:#182a42;width:min(460px,100%);max-height:92vh;overflow:auto;border-radius:12px;font:14px/1.5 Arial,sans-serif;box-shadow:0 18px 50px #0005}
-.lwbn h3{margin:0;padding:15px 18px;background:#14253f;color:#fff;font-size:16px}
+.lwbn h3{margin:0;padding:15px 18px;background:#002f37;color:#fff;font-size:16px}
 .lwbn .b{padding:16px 18px;display:grid;gap:11px}
 .lwbn p{margin:0;color:#4c5f76;font-size:13px}
 .lwbn label{display:block;font-size:11px;color:#657992;text-transform:uppercase;margin-bottom:4px}
@@ -18,7 +18,7 @@
 .lwbn .two{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .lwbn .f{display:flex;gap:9px;justify-content:flex-end;padding:0 18px 16px}
 .lwbn .f button{padding:10px 16px;border:0;border-radius:7px;font-weight:bold;cursor:pointer;background:#e7edf5;color:#23384f}
-.lwbn .f .go{background:#1769d8;color:#fff}
+.lwbn .f .go{background:#00434d;color:#fff}
 .lwbn .f button:disabled{opacity:.55;cursor:not-allowed}
 .lwbn .e{color:#a02c2c;font-size:13px;min-height:1px}`;
   function open(o){

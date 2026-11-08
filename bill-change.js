@@ -41,7 +41,7 @@
  .bc-btn{height:36px;border-radius:8px;padding:0 14px;font:inherit;font-weight:700;cursor:pointer;border:1px solid #cfd6d4;background:#fff;white-space:nowrap}
  .bc-btn.pri{background:#00434d;border-color:#00434d;color:#fff}.bc-btn.ok{background:#13824a;border-color:#13824a;color:#fff}.bc-btn.bad{color:#b3122b;border-color:#f0b9b9}
  .bc-btn:disabled{opacity:.55;cursor:default}
- .bc-lnk{border:0;background:none;color:#1769d8;font:inherit;font-weight:600;cursor:pointer;padding:0}
+ .bc-lnk{border:0;background:none;color:#00434d;font:inherit;font-weight:600;cursor:pointer;padding:0}
  .bc-sum{font-weight:700}
  .bc-diff{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;margin:6px 0 8px}
  .bc-diff div{border-radius:8px;padding:6px 8px;background:#f4f6f5;font-size:12.5px}.bc-diff b{display:block;font-size:17px}
