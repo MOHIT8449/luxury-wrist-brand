@@ -4,6 +4,14 @@
 **Purpose:** Continue the same ERP project from a new ChatGPT conversation without restarting or losing the agreed requirements.
 **Status:** Active development / verification. Do not assume all modules are completed or fully tested.
 
+## Instagram bio page: Business Enquiry + login visitor links (8 Nov 2026)
+
+- Mohit: wants a new link for the Instagram bio with a query / enquiry form, and the login page made a little better.
+- New public page `enquiry.html` (`/enquiry`, indexable in `_headers`, in `sitemap.xml`): teal + gold like login, logo now a file `assets/brand/lwb-logo.webp`. Quick row WhatsApp · Call · Location · Website, enquiry form (Name*, Mobile*, Shop, City, I am a, Interested in, Message) -> "Send on WhatsApp" opens wa.me/919274382694 with the details typed in. Nothing is saved in the database (no SQL). Brands, team phone numbers, office / warehouse address.
+- `login.html`: one row "← Website" / "Business Enquiry" under the security note, empty message line hidden, tighter phone spacing. Login logic unchanged.
+- `index.html`: "Enquire Now" and the hero "Business Enquiry" buttons open `enquiry.html`.
+- Checked at 390 / 1366 px: no side scroll, no JS errors on the enquiry page. Screenshots: project files `instagram-enquiry/`.
+
 ## Trips: Porter / one-time vehicle rent, many parties in one trip = one rent (7 Nov 2026)
 
 - Mohit: (1) a Porter / one-day vehicle is paid at once and Sales knows the rent; at driver assignment the vehicle is Own / Transport / Porter, and for Porter the rent, paid how and paid by are OPTIONAL then; if left empty a popup must ask later (after 1-2 hours / day close). (2) 2-3 parties' POs in one vehicle at a time = one trip, one rent (hired vehicles too). Per party vehicle: trip rent = highest verified party rate (Mohit picked this on the card).
