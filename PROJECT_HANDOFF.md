@@ -10,6 +10,7 @@
 - New public page `enquiry.html` (`/enquiry`, indexable in `_headers`, in `sitemap.xml`): teal + gold like login, logo now a file `assets/brand/lwb-logo.webp`. Quick row WhatsApp · Call · Location · Website, enquiry form (Name*, Mobile*, Shop, City, I am a, Interested in, Message) -> "Send on WhatsApp" opens wa.me/919274382694 with the details typed in. Nothing is saved in the database (no SQL). Brands, team phone numbers, office / warehouse address.
 - `login.html`: one row "← Website" / "Business Enquiry" under the security note, empty message line hidden, tighter phone spacing. Login logic unchanged.
 - `index.html`: "Enquire Now" and the hero "Business Enquiry" buttons open `enquiry.html`.
+- Same day, Mohit sent the company profile PDF (LWB.pdf): `enquiry.html` now also has About Us (founder photo, Times of India / Flipkart mention), Our Brands (Super Stockist / beauty online / own brand Estrelo), Our Journey (4 steps), Why Work With Us, Office & Warehouse (photos), Our Partners (4 meeting photos), Vision & Mission, GSTIN in footer, full addresses. Photos cut from the PDF in `assets/about/`. Brand-wise crore figures from the PDF are NOT on the page (left out on purpose; only the Rs 100 Cr+ stat). Login: 21+ brands, full addresses.
 - Checked at 390 / 1366 px: no side scroll, no JS errors on the enquiry page. Screenshots: project files `instagram-enquiry/`.
 
 ## Trips: Porter / one-time vehicle rent, many parties in one trip = one rent (7 Nov 2026)
