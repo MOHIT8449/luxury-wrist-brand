@@ -127,6 +127,9 @@
       {t:"Accounts Dashboard",h:"accounts-dashboard.html",i:"cash",r:"admin accounts"},
       {t:"Bank Statement",h:"bank-statement.html",i:"book",r:"admin accounts"},
       {t:"Billing & Outstanding",h:"party-billing.html",i:"bill",r:"admin accounts",k:"bills to make tally bill sales bill outstanding collect payment rajnigandha bill pending party ledger statement khata",pt:"Billing & Outstanding (Bills to make)"},
+      // Tax invoice in the Tally layout (Mohit, 11 Nov 2026): off until Admin turns it on (today only / till off)
+      // for the ticked roles; others find it in search, Accounts also from Bills to make.
+      {t:"Tax Invoice Print",h:"tax-invoice.html",i:"bill",r:"admin accounts manager warehouse",k:"tax invoice gst bill print tally format cgst sgst hsn accounts absent",nm:"accounts manager warehouse"},
       {t:"Money Overview",h:"money-overview.html",i:"cash",r:"admin accounts",hide:1},
       {t:"Tally Bill & Invoice No.",h:"accounts-invoice.html",i:"bill",r:"admin accounts",hide:1},
       {t:"Tally Bill Check",h:"tally-check.html",i:"bill",r:"admin accounts",hide:1},

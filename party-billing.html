@@ -165,7 +165,7 @@
       return isNaN(d)||d.toISOString().slice(0,10)!==iso?"":iso};
     const MODE={CASH:"Cash",UPI:"UPI",BANK:"Bank",CHEQUE:"Cheque"};
     const DELIVERY={DELIVERED:["t-grn","Delivered"],PARTIAL:["t-amb","Part delivered"],NOT_DELIVERED:["t-red","Not delivered"]};
-    let marks=new Map(),fb="",info=null,tab="make",open=new Set(),want=new URLSearchParams(location.search).get("order"),sheet=[],admin=false,changes=[],wantChg=new URLSearchParams(location.search).get("change");
+    let taxBill=false,marks=new Map(),fb="",info=null,tab="make",open=new Set(),want=new URLSearchParams(location.search).get("order"),sheet=[],admin=false,changes=[],wantChg=new URLSearchParams(location.search).get("change");
     let led=null,ledParty=new URLSearchParams(location.search).get("party")||"",ledFrom="",ledTo="";
     const toast=t=>ERPShell.toast?ERPShell.toast(t):say(t,false,true);
     function say(t,bad,ok){el("msg").hidden=!t;el("msg").textContent=t||"";el("msg").className="pb-msg"+(bad?" bad":ok?" ok":"")}
@@ -173,7 +173,9 @@
     async function load(){
       el("reload").disabled=true;
       try{
-        const [x,early,chg,mk]=await Promise.all([LWBPartyPay.load(client),client.rpc("lwb_bills_before_loading"),client.rpc("lwb_bill_change_list",{p_days:30}),client.rpc("lwb_admin_order_marks",{p_ids:null})]);
+        const [x,early,chg,mk,tb]=await Promise.all([LWBPartyPay.load(client),client.rpc("lwb_bills_before_loading"),client.rpc("lwb_bill_change_list",{p_days:30}),client.rpc("lwb_admin_order_marks",{p_ids:null}),client.rpc("lwb_tax_bill_access")]);
+        // Tax invoice print in the Tally layout (lwb_tax_bill_print_setup.sql): button only while Admin has it on for me.
+        taxBill=!tb.error&&!!(tb.data&&tb.data.can);
         // Admin marked Loaded / Delivered by hand (lwb_admin_mark_load_deliver_setup.sql); missing function = none.
         marks=new Map();for(const m of (mk.error?[]:(mk.data||[]))){const a=marks.get(m.order_id)||{};a[m.kind]=m;marks.set(m.order_id,a)}
         // PO item changes for Admin (lwb_bill_change_setup.sql); missing function = no list.
@@ -273,7 +275,7 @@
           <div class="who">${esc(o.party)}${grp?` <span class="tag t-blu">under ${esc(o.parent)}</span>`:""}${names.length>1?`<small style="color:var(--erp-muted)"> · bill names: ${esc(names.filter(n=>key(n)!==key(o.party)).join(", "))}</small>`:""}</div>
           <datalist id="dl-${esc(o.order_id)}">${names.concat(used).map(n=>`<option value="${esc(n)}">`).join("")}</datalist>
           <div class="pb-lines"></div>
-          <div class="pb-foot mk"><button type="button" class="lnk" data-add>+ <span class="lg">Another </span>bill</button>${dateBox(info.today)}<button type="button" class="pb-btn sm" data-it="${esc(o.order_id)}" title="See items, change qty / rate / SKU (goes to Admin)">ⓘ Items<span class="lg"> / Edit</span></button><span class="tot"></span><button type="button" class="pb-btn pri" data-save>Save<span class="lg"> bill</span></button></div></div>`}).join("")+'</div>';
+          <div class="pb-foot mk"><button type="button" class="lnk" data-add>+ <span class="lg">Another </span>bill</button>${dateBox(info.today)}<button type="button" class="pb-btn sm" data-it="${esc(o.order_id)}" title="See items, change qty / rate / SKU (goes to Admin)">ⓘ Items<span class="lg"> / Edit</span></button>${taxBill?`<a class="pb-btn sm" href="tax-invoice.html?order=${encodeURIComponent(o.order_id)}" title="Make and print the tax invoice (Tally layout)">🧾<span class="lg"> Tax bill</span></a>`:""}<span class="tot"></span><button type="button" class="pb-btn pri" data-save>Save<span class="lg"> bill</span></button></div></div>`}).join("")+'</div>';
       el("body").querySelectorAll(".pb-bill").forEach(card=>{
         const o=list.find(x=>x.order_id===card.dataset.o),lines=card.querySelector(".pb-lines"),tot=card.querySelector(".tot");
         const total=()=>{const l=[...lines.children],s=l.reduce((a,r)=>a+num(r.querySelector(".am").value),0);

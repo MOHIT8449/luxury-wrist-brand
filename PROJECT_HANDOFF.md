@@ -4,6 +4,12 @@
 **Purpose:** Continue the same ERP project from a new ChatGPT conversation without restarting or losing the agreed requirements.
 **Status:** Active development / verification. Do not assume all modules are completed or fully tested.
 
+## Tax invoice print in the Tally layout, off until Admin turns it on (11 Nov 2026)
+
+- Mohit: when Accounts is away someone else makes the Tally bill and a mistake there cannot be changed; the ERP must print the same bill as the Tally print, without the sales invoice no., hidden until Admin turns it on. This is the new approval for an ERP tax invoice print (see the Tally rule below).
+- SQL `lwb_tax_bill_print_setup.sql` (test `tests/tax-bill-print`, PGlite, 5 tests). `lwb_tax_bill_settings` (one row: enabled, until_date = today only / NULL = till off, roles accounts / manager / warehouse, seller jsonb = header, bank, UPI, jurisdiction, declaration; contact, e-mail, A/c no., IFSC, UPI start empty, Admin fills them) and `lwb_tax_bills` (one per PO: lines / addresses as printed, total, saves). RPC only: `lwb_tax_bill_access()`, `lwb_tax_bill_access_set(on, until, roles, seller)` Admin, `lwb_tax_bill_orders(days)`, `lwb_tax_bill_data(order)` (qty = loaded, else approved; HSN / GST / cess from SKU Master; party from Party Master by customer_id or name), `lwb_tax_bill_save(order, date, data, total)`. Admin can always use it.
+- `tax-invoice.html` (menu Accounts > Tax Invoice Print; side menu for Admin, search only for others): PO list, editor (date, copy, rate incl. / without GST, billed / shipped to, editable lines) with a live A5 preview; Save / Save & Print. Taxable = amount / (1 + GST%) per HSN + rate, CGST / SGST half each, IGST when the party state code differs, round off to the rupee, amount in words (lakh / crore), Scan and Pay UPI QR with the amount (qrcode-generator from cdnjs). Bills to make (party-billing) shows "🧾 Tax bill" on each PO while it is on for the user.
+
 ## Trips: Porter / one-time vehicle rent, many parties in one trip = one rent (7 Nov 2026)
 
 - Mohit: (1) a Porter / one-day vehicle is paid at once and Sales knows the rent; at driver assignment the vehicle is Own / Transport / Porter, and for Porter the rent, paid how and paid by are OPTIONAL then; if left empty a popup must ask later (after 1-2 hours / day close). (2) 2-3 parties' POs in one vehicle at a time = one trip, one rent (hired vehicles too). Per party vehicle: trip rent = highest verified party rate (Mohit picked this on the card).
@@ -445,7 +451,7 @@
 ## Non-negotiable user requirements
 
 - Explain in **Hindi/Hinglish**, with **one or two exact steps at a time**; user generally sends screenshots after each step.
-- **Tally remains a separate, independent accounting system.** Do not import or paste Tally data into this ERP, do not generate an official GST/Tally invoice in this ERP and do not sync Tally without explicit new approval.
+- **Tally remains a separate, independent accounting system.** Do not import or paste Tally data into this ERP, do not generate an official GST/Tally invoice in this ERP and do not sync Tally without explicit new approval. (11 Nov 2026: Mohit approved the Tax Invoice Print page, `tax-invoice.html`, off until Admin turns it on.)
 - ERP serves office staff according to Admin-assigned permissions. Accounts role is **view-only for core operational records**, while any existing internal ERP bill interface is **not a statutory invoice**. Validate actual RLS/RPC access before expanding any editing rights.
 - Never create fake sales, delivery, stock, return or cash/payment entries in production merely for testing.
 - Every staff member uses their own ERP login. Auth users are created by Admin; no public self-signup.
