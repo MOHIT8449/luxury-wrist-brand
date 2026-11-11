@@ -129,6 +129,8 @@
       {t:"Billing & Outstanding",h:"party-billing.html",i:"bill",r:"admin accounts",k:"bills to make tally bill sales bill outstanding collect payment rajnigandha bill pending party ledger statement khata",pt:"Billing & Outstanding (Bills to make)"},
       // Tax invoice in the Tally layout (Mohit, 11 Nov 2026): off until Admin turns it on (today only / till off)
       // for the ticked roles; others find it in search, Accounts also from Bills to make.
+      // Company documents (Mohit, 11 Nov 2026): GST / PAN / Aadhaar / licences, renewal reminders, share to a party.
+      {t:"Documents",h:"documents.html",i:"note",r:"admin accounts",k:"documents company kyc gst certificate pan aadhaar licence license renewal expiry reminder gstr-1 gstr-3b fssai gumasta share whatsapp party"},
       {t:"Tax Invoice Print",h:"tax-invoice.html",i:"bill",r:"admin accounts manager warehouse",k:"tax invoice gst bill print tally format cgst sgst hsn accounts absent",nm:"accounts manager warehouse"},
       {t:"Money Overview",h:"money-overview.html",i:"cash",r:"admin accounts",hide:1},
       {t:"Tally Bill & Invoice No.",h:"accounts-invoice.html",i:"bill",r:"admin accounts",hide:1},

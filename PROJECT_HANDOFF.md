@@ -4,6 +4,17 @@
 **Purpose:** Continue the same ERP project from a new ChatGPT conversation without restarting or losing the agreed requirements.
 **Status:** Active development / verification. Do not assume all modules are completed or fully tested.
 
+## Company documents: KYC, licences, GST returns, renewal reminders, share link (11 Nov 2026)
+
+- Mohit: one list of the company's documents (GSTR-1 / 3B, PAN, Aadhaar, GST certificate, licences), licence renewal reminders, and sending Aadhaar / PAN / GST certificate to a market party straight from there. He approved the preview (project files `documents-vault/`).
+- SQL `lwb_company_docs_setup.sql` (test `tests/company-docs`, PGlite, 6 tests). `lwb_company_docs` (grp COMPANY / OWNER / LICENSE / GST / BANK / OTHER, name, no., whose, issue / expiry, remind_days, remind_roles, gst_type + gst_period + filed_on, fees, CA / contact, shareable, admin_only; Remove = removed_at), `lwb_company_doc_packs` (KYC Pack ...), `lwb_company_doc_shares` (32-hex token, files = watermarked copies, party, mobile, valid till 1 / 7 / 30 days, opened count, stop), `lwb_company_doc_reminders`. RPCs `lwb_cdoc_list / save / remove / pack_save / share_create / share_revoke / remind_now`; `lwb_cdoc_share_open(token)` is service role only.
+- Files: `lwb_documents` entity COMPANY (FILE = originals, SHARE = watermarked copies). `lwb_documents_setup.sql` now allows COMPANY for admin / accounts (+ ticked `documents.html`) and checks `lwb_cdoc_file_ok(id)` in the storage policies and RPCs, so an "Only Admin" document's files are Admin only.
+- Reminders: `lwb_cdoc_remind_internal()` 9:00 IST (pg_cron `lwb_company_doc_reminder`): DOC_RENEWAL at the chosen days before expiry, on the day, then every 7 days; DOC_GST_DUE for last month's GSTR-1 (11th) / GSTR-3B (20th) not saved as Filed: 3 days, 1 day before, on the day, then every 2 days. Bell + phone alert (route documents.html). WhatsApp Business API is still not live, so no automatic WhatsApp to staff.
+- `documents.html` (menu Accounts > Documents, Admin / Accounts): KPIs, group tabs, list (phone = cards), Renew, add / edit popup with ERPDocs files, renewal list, GST tracker (FY grid, tap a month), recent shares (Stop). Share popup: packs, party from Party Master (mobile filled), valid 1 / 7 / 30 days, watermark "FOR <PARTY> ONLY · date" drawn in the browser (photos: canvas; PDF: pdf-lib 1.17.1 from cdnjs), then WhatsApp (wa.me with the link), Copy link, Email, or Send files (phone share sheet).
+- `share.html` + Edge Function `supabase/functions/lwb-doc-share` (verify_jwt off; token only): party opens without login, 15-minute signed links, Open / Download. First open sends DOC_SHARE_OPENED to the sender.
+- Aadhaar numbers on a photo can not be hidden automatically: save the masked Aadhaar from UIDAI.
+- Checked with a mocked database at 1440 / 390 px: no side scroll, no JS errors; watermark on a photo checked in the browser, PDF watermark code checked with pdf-lib in Node. Not yet on live data.
+
 ## Tax invoice print in the Tally layout, off until Admin turns it on (11 Nov 2026)
 
 - Mohit: when Accounts is away someone else makes the Tally bill and a mistake there cannot be changed; the ERP must print the same bill as the Tally print, without the sales invoice no., hidden until Admin turns it on. This is the new approval for an ERP tax invoice print (see the Tally rule below).

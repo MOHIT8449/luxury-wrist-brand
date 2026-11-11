@@ -35,7 +35,9 @@
     PURCHASE_BILL:[{k:'BILL',l:'Purchase bill (PDF / scan / photo)',s:'Bill',doc:1,max:10,want:1},{k:'DAMAGE',l:'Damage / leakage / breakage photos',s:'Damage photos',img:1,cam:'environment',max:10},{k:'OTHER',l:'LR / other',max:6}],
     ASSET:[{k:'PHOTO',l:'Asset photo',img:1,cam:'environment',req:1,max:6},{k:'BILL',l:'Purchase bill (PDF / scan / photo)',doc:1,max:6},{k:'WARRANTY',l:'Warranty card',max:4},{k:'OTHER',l:'Other document',max:6}],
     STOCK_MOVE:[{k:'DAMAGE',l:'Damage / leakage / breakage photos',img:1,cam:'environment',req:1,max:6}],
-    ORDER:[{k:'LOADED',l:'Loaded vehicle photo',img:1,cam:'environment',max:4},{k:'DAMAGE',l:'Damage / leakage / breakage at loading',img:1,cam:'environment',max:6}]
+    ORDER:[{k:'LOADED',l:'Loaded vehicle photo',img:1,cam:'environment',max:4},{k:'DAMAGE',l:'Damage / leakage / breakage at loading',img:1,cam:'environment',max:6}],
+    // Company documents (documents.html): one record = one document; SHARE = watermarked copies, made by the share popup.
+    COMPANY:[{k:'FILE',l:'Document file (PDF / scan / photo, front + back)',doc:1,max:10}]
   };
   const INFO={ // KYC numbers kept with the documents (lwb_doc_info)
     STAFF:['aadhaar_no','pan_no','bank_holder','bank_name','bank_account','bank_ifsc','upi_id'],
