@@ -18,6 +18,7 @@ export function safeRoute(type, order, role) {
  if(type==='SALES_RETURN_NEW')return '/sales-return.html';
  if(type.startsWith('COMPLAINT'))return '/complaint-box.html';
  if(type.startsWith('TASK_'))return '/tasks.html';
+ if(type==='CHAT_MSG')return '/dashboard.html#chat';
  if(type.startsWith('GODOWN'))return '/godown-report.html';
  if(type.startsWith('MARKET'))return '/market-report.html';
  if(type==='ACC_CHEQUE_REMINDER'&&(role==='admin'||role==='accounts'))return '/accounts-dashboard.html#cheques';
