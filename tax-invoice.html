@@ -1,0 +1,508 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Tax Invoice Print | Luxury Wrist Brand ERP</title>
+  <script src="erp-date.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>
+  <link rel="stylesheet" href="erp-shell.css">
+  <link rel="stylesheet" href="sales.css">
+  <script src="erp-shell.js"></script>
+  <script src="sales-common.js"></script>
+  <style>
+    /* Tax invoice in the same layout as the Tally print (Mohit, 11 Nov 2026), without the sales invoice no.
+       Hidden until Admin turns it on (lwb_tax_bill_print_setup.sql). Paper: A5 portrait. */
+    [hidden]{display:none!important}
+    .status{text-align:center;padding:80px 20px;font-size:15px;color:#555}
+    .ti-card{background:#fff;border:1px solid var(--erp-line,#dfe4ea);border-radius:8px;padding:10px 12px;min-width:0}
+    .ti-tools{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:8px}
+    .ti-tools input[type=search]{flex:1 1 180px;min-width:0;height:34px;border:1px solid #d6dde6;border-radius:6px;padding:0 8px;font:inherit;font-size:14px}
+    .ti-tools select{height:34px;border:1px solid #d6dde6;border-radius:6px;padding:0 6px;font:inherit;font-size:13px}
+    .ti-off{padding:12px 14px;border-radius:8px;background:#fdf0dc;color:#7a4700;font-size:14px;margin:0 0 10px}
+    .ti-on{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:700;padding:3px 10px;border-radius:14px;background:#e6f4ec;color:#13824a;white-space:nowrap}
+    .ti-on.off{background:#f1f2f4;color:#5b6670}
+    .ti-list{width:100%;border-collapse:collapse;font-size:13px}
+    .ti-list th{font-size:11.5px;text-align:left;color:#556;font-weight:600;padding:5px 6px;border-bottom:1px solid #e3e7ec;white-space:nowrap}
+    .ti-list td{padding:6px;border-bottom:1px solid #eef1f4;vertical-align:middle}
+    .ti-list .n{text-align:right;white-space:nowrap}
+    .ti-list .party{font-weight:600;overflow-wrap:anywhere}
+    .ti-list .sub{display:block;color:#667;font-size:11.5px}
+    .ti-tag{display:inline-block;font-size:11px;font-weight:700;padding:1px 7px;border-radius:10px;background:#e6f4ec;color:#13824a;white-space:nowrap}
+    .ti-empty{color:#667;font-size:13px;padding:8px 2px}
+    @media(max-width:640px){.ti-list .hide-m{display:none}}
+    /* editor */
+    .ti-dlg{border:0;border-radius:10px;padding:0;width:min(1180px,calc(100vw - 16px));max-height:calc(100dvh - 16px);box-sizing:border-box}
+    .ti-dlg::backdrop{background:#10182799}
+    .ti-dh{display:flex;align-items:center;gap:8px;padding:8px 12px;border-bottom:1px solid #e3e7ec;position:sticky;top:0;background:#fff;z-index:2}
+    .ti-dh h3{margin:0;font-size:15px;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .ti-x{border:0;background:#f1f2f4;border-radius:6px;width:32px;height:32px;font-size:18px;cursor:pointer;flex:none}
+    .ti-body{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,430px);gap:12px;padding:10px 12px;align-items:start}
+    .ti-form{min-width:0;display:grid;gap:8px}
+    .ti-row{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+    .ti-f{display:block;font-size:11.5px;font-weight:600;color:#556;min-width:0}
+    .ti-f input,.ti-f select,.ti-f textarea{display:block;width:100%;box-sizing:border-box;margin-top:2px;border:1px solid #cfd6de;border-radius:6px;padding:0 8px;height:34px;font:inherit;font-size:14px;color:#1f2a37;background:#fff}
+    .ti-f textarea{height:auto;min-height:50px;padding:6px 8px;resize:vertical}
+    .ti-box{border:1px solid #e3e7ec;border-radius:8px;padding:8px}
+    .ti-box h4{margin:0 0 6px;font-size:12.5px;display:flex;gap:8px;align-items:center;justify-content:space-between}
+    .ti-box h4 label{font-weight:500;font-size:12.5px;display:inline-flex;gap:5px;align-items:center}
+    .ti-two{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+    .ti-lines{width:100%;border-collapse:collapse;font-size:13px;table-layout:fixed}
+    .ti-lines th{font-size:11px;color:#556;text-align:left;padding:3px 4px;font-weight:600}
+    .ti-lines td{padding:2px 3px}
+    .ti-lines input{width:100%;box-sizing:border-box;height:32px;border:1px solid #cfd6de;border-radius:5px;padding:0 5px;font:inherit;font-size:13px}
+    .ti-lines .n,.ti-lines .n input{text-align:right}
+    .ti-lines td.amt{text-align:right;font-weight:700;white-space:nowrap;font-size:12.5px}
+    .ti-lines .rm{border:0;background:#fdecec;color:#b3263f;border-radius:5px;width:28px;height:30px;cursor:pointer}
+    .ti-lines col.c-sku{width:auto}.ti-lines col.c-hsn{width:84px}.ti-lines col.c-q{width:58px}.ti-lines col.c-r{width:76px}.ti-lines col.c-g{width:50px}.ti-lines col.c-a{width:86px}.ti-lines col.c-x{width:32px}
+    .ti-sum{font-size:13px;color:#445;display:flex;gap:12px;flex-wrap:wrap;justify-content:flex-end}.ti-sum b{color:#1f2a37}
+    .ti-act{display:flex;gap:6px;flex-wrap:nowrap;justify-content:flex-end;align-items:center;padding:8px 12px;border-top:1px solid #e3e7ec;position:sticky;bottom:0;background:#fff}
+    .ti-act .grow{flex:1;min-width:0;font-size:12px;color:#667;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .ti-err{color:#b3263f;font-weight:600;font-size:12.5px;min-height:0}
+    .ti-prev{position:sticky;top:56px;min-width:0}
+    .ti-prev .lbl{font-size:11.5px;color:#667;margin:0 0 4px}
+    .ti-pw{background:#e9ecef;border-radius:8px;padding:6px;overflow:hidden}
+    .ti-pw .sheet{box-shadow:0 1px 6px rgba(0,0,0,.2)}
+    @media(max-width:900px){
+      .ti-body{grid-template-columns:minmax(0,1fr)}
+      .ti-prev{position:static}
+    }
+    .ti-list td:first-child b{white-space:nowrap}
+    .ti-list .ph{display:none}
+    @media(max-width:640px){.ti-list .ph{display:block;font-size:12.5px;margin-top:1px}}
+    @media(max-width:600px){
+      .erp-pagehead h1{display:none}
+      .ti-row{gap:6px}.ti-f input,.ti-f select{font-size:13px;padding:0 5px}
+      .ti-list td{padding:6px 4px}
+      .ti-two{grid-template-columns:1fr}
+      .ti-body{padding:8px}
+      /* phone: item name on its own line, HSN · Qty · Rate · GST% · Amount · × under it */
+      .ti-lines thead{display:none}.ti-lines,.ti-lines tbody{display:block}
+      .ti-lines tr{display:grid;grid-template-columns:1.3fr .8fr 1fr .7fr 1.1fr 28px;gap:4px;align-items:center;padding:4px 0;border-bottom:1px solid #eef1f4}
+      .ti-lines td{padding:0;min-width:0}.ti-lines td.sku{grid-column:1/-1}.ti-lines input{padding:0 4px}
+      .ti-act{padding:8px}.ti-act .sl-btn{padding:0 10px}
+    }
+    /* settings (Admin) */
+    .ts-dlg{border:0;border-radius:10px;padding:0;width:min(620px,calc(100vw - 16px));max-height:calc(100dvh - 16px);box-sizing:border-box}
+    .ts-dlg .ti-form{padding:10px 12px}
+    .ts-mode{display:flex;gap:6px;flex-wrap:wrap}
+    .ts-mode label,.ts-who label{display:inline-flex;align-items:center;gap:5px;border:1px solid #cfd6de;border-radius:18px;padding:5px 11px;font-size:13px;cursor:pointer}
+    .ts-mode label:has(input:checked){border-color:#13824a;background:#e6f4ec;color:#13824a;font-weight:700}
+    .ts-who{display:flex;gap:6px;flex-wrap:wrap}
+    .ts-who label:has(input:checked){border-color:#00434d;background:#e6f0f0;font-weight:700}
+
+    /* ---------- the invoice sheet: A5 portrait, same boxes as the Tally print ---------- */
+    .sheet{width:136mm;min-height:197mm;background:#fff;color:#000;font-family:Arial,Helvetica,sans-serif;font-size:7.4pt;line-height:1.22;display:flex;flex-direction:column;box-sizing:border-box}
+    .sheet *{box-sizing:border-box}
+    .sheet .top{display:grid;grid-template-columns:1fr auto 1fr;align-items:end;padding:0 0 1mm}
+    .sheet .top .t{font-weight:700;font-size:8.6pt;text-align:center}
+    .sheet .top .cp{text-align:right;font-size:6.4pt;font-weight:700}
+    .sheet .frame{border:.8px solid #000;display:flex;flex-direction:column;flex:1}
+    .sheet .co{text-align:center;padding:1.2mm 2mm 1mm;border-bottom:.8px solid #000}
+    .sheet .co h1{margin:0 0 .6mm;font-size:15pt;font-weight:700;line-height:1.05}
+    .sheet .co div{font-size:6.8pt}
+    .sheet .co .g{font-weight:700;font-size:7.6pt;margin-top:.4mm}
+    .sheet .co .g span+span{margin-left:6mm}
+    .sheet .ref{display:grid;grid-template-columns:1fr 1fr;border-bottom:.8px solid #000}
+    .sheet .ref div{padding:.8mm 1.5mm;display:flex;gap:2mm}
+    .sheet .ref div+div{border-left:.8px solid #000}
+    .sheet .ref .k{min-width:20mm}
+    .sheet .ad{display:grid;grid-template-columns:1fr 1fr;border-bottom:.8px solid #000}
+    .sheet .ad>div{padding:.6mm 1.5mm 1mm;min-width:0;overflow-wrap:anywhere}
+    .sheet .ad>div+div{border-left:.8px solid #000}
+    .sheet .ad .h{text-align:center;font-size:7pt;border-bottom:.5px solid #000;margin:0 -1.5mm .7mm;padding-bottom:.4mm}
+    .sheet .ad .nm{font-weight:700;font-size:8.6pt;line-height:1.15}
+    .sheet .ad .ln{display:grid;grid-template-columns:10mm 2mm 1fr;font-size:7pt}
+    .sheet .ad .adr{font-size:6.8pt;white-space:pre-line}
+    .sheet .items{flex:1;display:flex;flex-direction:column;border-bottom:.8px solid #000;min-height:40mm}
+    .sheet table{border-collapse:collapse;width:100%;table-layout:fixed}
+    .sheet .it th{font-weight:400;font-size:7pt;border-bottom:.8px solid #000;padding:.6mm .8mm;vertical-align:bottom;line-height:1.15}
+    .sheet .it th+th,.sheet .it td+td{border-left:.8px solid #000}
+    .sheet .it td{padding:.5mm .8mm;vertical-align:top;font-size:7.2pt}
+    .sheet .it .r{text-align:right}
+    .sheet .it .c{text-align:center}
+    .sheet .items .fill{flex:1;min-height:6mm;background:linear-gradient(#000,#000) 6% 0/.8px 100% no-repeat,linear-gradient(#000,#000) 39% 0/.8px 100% no-repeat,linear-gradient(#000,#000) 51% 0/.8px 100% no-repeat,linear-gradient(#000,#000) 65% 0/.8px 100% no-repeat,linear-gradient(#000,#000) 76% 0/.8px 100% no-repeat,linear-gradient(#000,#000) 85% 0/.8px 100% no-repeat}
+    .sheet .it tr.tx td{font-style:italic}
+    .sheet .it tfoot td{border-top:.8px solid #000;font-weight:700;padding:.7mm .8mm}
+    .sheet .words{display:grid;grid-template-columns:1fr auto;border-bottom:.8px solid #000}
+    .sheet .words .w{padding:.6mm 1.5mm}
+    .sheet .words .w small{display:block;font-size:6.6pt}
+    .sheet .words .w b{font-size:7.6pt}
+    .sheet .words .gt{display:flex;align-items:center;gap:6mm;padding:0 1.5mm;border-left:.8px solid #000;font-weight:700;font-size:9pt}
+    .sheet .hs th,.sheet .hs td{border:.6px solid #000;padding:.5mm .8mm;font-size:6.8pt;text-align:right}
+    .sheet .hs th{font-weight:700;text-align:center}
+    .sheet .hs td:first-child{text-align:left}
+    .sheet .hs tr.t td{font-weight:700}
+    .sheet .hs{border-left:hidden;border-right:hidden}
+    .sheet .tw{padding:.7mm 1.5mm;border-bottom:.8px solid #000;font-size:7.2pt}
+    .sheet .bt{display:grid;grid-template-columns:1.25fr auto 1fr;border-bottom:.8px solid #000;min-height:22mm}
+    .sheet .bt>div{padding:.8mm 1.5mm;min-width:0}
+    .sheet .bt .bk b{display:block;font-size:7.4pt;margin-bottom:.4mm}
+    .sheet .bt .bk .ln{display:grid;grid-template-columns:15mm 2mm 1fr;font-size:6.9pt;overflow-wrap:anywhere}
+    .sheet .bt .qr{text-align:center;font-size:6.8pt;font-weight:700;padding:.6mm 1mm}
+    .sheet .bt .qr img,.sheet .bt .qr svg{display:block;width:19mm;height:19mm;margin:.4mm auto 0}
+    .sheet .bt .sg{border-left:.8px solid #000;display:flex;flex-direction:column;justify-content:space-between;text-align:right;font-size:7.2pt}
+    .sheet .bt .sg b{font-weight:700}
+    .sheet .dc{padding:.8mm 1.5mm;font-size:6.9pt}
+    .sheet .dc b{display:block;font-size:7.2pt}
+    .sheet .ft{text-align:center;font-size:6.2pt;padding:.8mm 0 0}
+
+    #printArea{display:none}
+    @page{size:A5 portrait;margin:6mm}
+    @media print{
+      body>:not(#printArea){display:none!important}
+      html,body{margin:0!important;padding:0!important;background:#fff!important}
+      #printArea{display:block!important}
+      #printArea .sheet{width:100%;min-height:197mm;box-shadow:none}
+      .sheet *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+      .sheet .it tr{break-inside:avoid}
+    }
+  </style>
+</head>
+<body>
+  <div id="loading" class="status">Checking account access...</div>
+  <main id="page" class="erp-main" hidden>
+    <div class="erp-pagehead"><h1>Tax Invoice Print</h1><span id="state" class="ti-on off">Off</span><span class="grow"></span>
+      <button type="button" class="sl-btn ghost small" id="setBtn" hidden>⚙ On / Off &amp; details</button></div>
+    <div id="offMsg" class="ti-off" hidden></div>
+    <div id="msg" class="sl-msg" hidden></div>
+    <div class="ti-card" id="listCard" hidden>
+      <div class="ti-tools">
+        <input type="search" id="q" placeholder="Search PO / party" autocomplete="off" aria-label="Search PO or party">
+        <select id="days" aria-label="Days"><option value="3">3 days</option><option value="7" selected>7 days</option><option value="30">30 days</option><option value="90">90 days</option></select>
+        <button type="button" class="sl-btn ghost small" id="reload">↻</button>
+      </div>
+      <table class="ti-list"><thead><tr><th>PO / Date</th><th class="hide-m">Party</th><th class="n hide-m">Qty</th><th class="n">Amount</th><th class="n hide-m">Bill</th><th></th></tr></thead><tbody id="rows"></tbody></table>
+      <div id="empty" class="ti-empty" hidden>No approved PO in these days.</div>
+    </div>
+  </main>
+
+  <dialog id="dlg" class="ti-dlg" aria-labelledby="dlgT">
+    <div class="ti-dh"><h3 id="dlgT">Tax invoice</h3><button type="button" class="ti-x" data-close aria-label="Close">×</button></div>
+    <div class="ti-body">
+      <div class="ti-form">
+        <div class="ti-row">
+          <label class="ti-f">Invoice date<input type="date" id="bDate"></label>
+          <label class="ti-f">Copy<select id="bCopy"><option value="ORIGINAL FOR RECIPIENT">Original</option><option value="DUPLICATE FOR TRANSPORTER">Duplicate (transporter)</option><option value="TRIPLICATE FOR SUPPLIER">Triplicate (supplier)</option></select></label>
+          <label class="ti-f">Rate is<select id="bIncl"><option value="1">Incl. GST</option><option value="0">Without GST</option></select></label>
+        </div>
+        <div class="ti-two">
+          <div class="ti-box"><h4>Billed to</h4>
+            <label class="ti-f">Name<input id="bName" maxlength="200"></label>
+            <label class="ti-f">Address<textarea id="bAddr" rows="2" maxlength="400"></textarea></label>
+            <div class="ti-row"><label class="ti-f">State<input id="bState" maxlength="40"></label><label class="ti-f">GSTIN<input id="bGst" maxlength="15"></label><label class="ti-f">Mobile<input id="bMob" inputmode="tel" maxlength="20"></label></div>
+          </div>
+          <div class="ti-box"><h4>Shipped to <label><input type="checkbox" id="same" checked> Same as billed</label></h4>
+            <div id="shipBox" hidden>
+              <label class="ti-f">Name<input id="sName" maxlength="200"></label>
+              <label class="ti-f">Address<textarea id="sAddr" rows="2" maxlength="400"></textarea></label>
+              <div class="ti-row"><label class="ti-f">State<input id="sState" maxlength="40"></label><label class="ti-f">GSTIN<input id="sGst" maxlength="15"></label><label class="ti-f">Mobile<input id="sMob" inputmode="tel" maxlength="20"></label></div>
+            </div>
+          </div>
+        </div>
+        <div class="ti-box"><h4>Items <button type="button" class="sl-btn ghost small" id="addLine">+ Line</button></h4>
+          <table class="ti-lines"><colgroup><col class="c-sku"><col class="c-hsn"><col class="c-q"><col class="c-r"><col class="c-g"><col class="c-a"><col class="c-x"></colgroup>
+            <thead><tr><th>Item</th><th class="hsn">HSN</th><th class="n">Qty</th><th class="n" id="rateH">Rate</th><th class="n">GST%</th><th class="n">Amount</th><th></th></tr></thead><tbody id="lines"></tbody></table>
+          <div class="ti-sum" id="sum"></div>
+        </div>
+        <div class="ti-err" id="err"></div>
+      </div>
+      <div class="ti-prev"><p class="lbl">Print preview (A5)</p><div class="ti-pw" id="pw"></div></div>
+    </div>
+    <div class="ti-act"><span class="grow" id="saved"></span>
+      <button type="button" class="sl-btn ghost" data-close>Close</button>
+      <button type="button" class="sl-btn ghost" id="saveBtn">Save</button>
+      <button type="button" class="sl-btn" id="printBtn">🖨 Save &amp; Print</button></div>
+  </dialog>
+
+  <dialog id="setDlg" class="ts-dlg" aria-labelledby="setT">
+    <div class="ti-dh"><h3 id="setT">Tax invoice print — On / Off</h3><button type="button" class="ti-x" data-close aria-label="Close">×</button></div>
+    <div class="ti-form" data-nocaps>
+      <div class="ts-mode" role="radiogroup" aria-label="On or off">
+        <label><input type="radio" name="mode" value="off"> Off</label>
+        <label><input type="radio" name="mode" value="today"> On — today only</label>
+        <label><input type="radio" name="mode" value="always"> On — till I turn off</label>
+      </div>
+      <div><span class="ti-f">Who may make &amp; print (Admin always can)</span>
+        <div class="ts-who"><label><input type="checkbox" value="accounts"> Accounts</label><label><input type="checkbox" value="manager"> Sales Head</label><label><input type="checkbox" value="warehouse"> Godown</label></div></div>
+      <div class="ti-box"><h4>Company details on the bill</h4>
+        <div class="ti-row">
+          <label class="ti-f">Company name<input data-s="name"></label><label class="ti-f">GSTIN<input data-s="gstin"></label><label class="ti-f">PAN No.<input data-s="pan"></label>
+          <label class="ti-f">Udyam Reg. No.<input data-s="udyam"></label><label class="ti-f">FSSAI Lic. No.<input data-s="fssai"></label><label class="ti-f">Contact<input data-s="contact" inputmode="tel"></label>
+          <label class="ti-f">E-Mail<input data-s="email" type="email"></label><label class="ti-f">State<input data-s="state"></label><label class="ti-f">State code<input data-s="state_code" inputmode="numeric"></label>
+        </div>
+        <label class="ti-f">Address<textarea data-s="address" rows="2"></textarea></label>
+        <div class="ti-row">
+          <label class="ti-f">Bank name<input data-s="bank_name"></label><label class="ti-f">A/c name<input data-s="ac_name"></label><label class="ti-f">A/c No.<input data-s="ac_no" inputmode="numeric"></label>
+          <label class="ti-f">IFSC code<input data-s="ifsc"></label><label class="ti-f">UPI ID (for Scan and Pay QR)<input data-s="upi" placeholder="name@bank"></label><label class="ti-f">Jurisdiction<input data-s="jurisdiction"></label>
+        </div>
+        <label class="ti-f">Declaration<textarea data-s="declaration" rows="2"></textarea></label>
+      </div>
+      <div class="ti-err" id="setErr"></div>
+    </div>
+    <div class="ti-act"><span class="grow"></span><button type="button" class="sl-btn ghost" data-close>Close</button><button type="button" class="sl-btn" id="setSave">Save</button></div>
+  </dialog>
+
+  <div id="printArea" aria-hidden="true"></div>
+
+  <script>
+    'use strict';
+    const S=LWBSales,{client,el,esc}=S;
+    const qs=new URLSearchParams(location.search);
+    let me=null,acc=null,list=[],cur=null;
+    const num=v=>{const n=Number(String(v==null?"":v).replace(/[,₹\s]/g,""));return Number.isFinite(n)?n:0};
+    const r2=n=>Math.round((Number(n)+Number.EPSILON)*100)/100;
+    const money=n=>Number(n||0).toLocaleString("en-IN",{minimumFractionDigits:2,maximumFractionDigits:2});
+    const rs=n=>"₹"+Number(n||0).toLocaleString("en-IN",{maximumFractionDigits:2});
+    const errText=e=>String((e&&(e.message||e.details))||e||"Error").replace(/^.*?ERROR:\s*/,"");
+    const MON=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+    const tDate=iso=>{const m=String(iso||"").match(/^(\d{4})-(\d{2})-(\d{2})/);return m?Number(m[3])+"-"+MON[m[2]-1]+"-"+m[1].slice(2):""};
+    const dmy=iso=>{const m=String(iso||"").match(/^(\d{4})-(\d{2})-(\d{2})/);return m?m[3]+"/"+m[2]+"/"+m[1]:""};
+    function say(t,bad){el("msg").hidden=!t;el("msg").textContent=t||"";el("msg").style.color=bad?"":"#13824a"}
+
+    /* ---------- state codes (GST) ---------- */
+    const STATES={"JAMMU AND KASHMIR":"01","HIMACHAL PRADESH":"02","PUNJAB":"03","CHANDIGARH":"04","UTTARAKHAND":"05","HARYANA":"06","DELHI":"07","RAJASTHAN":"08","UTTAR PRADESH":"09","BIHAR":"10","SIKKIM":"11","ARUNACHAL PRADESH":"12","NAGALAND":"13","MANIPUR":"14","MIZORAM":"15","TRIPURA":"16","MEGHALAYA":"17","ASSAM":"18","WEST BENGAL":"19","JHARKHAND":"20","ODISHA":"21","CHHATTISGARH":"22","MADHYA PRADESH":"23","GUJARAT":"24","DADRA AND NAGAR HAVELI AND DAMAN AND DIU":"26","MAHARASHTRA":"27","KARNATAKA":"29","GOA":"30","LAKSHADWEEP":"31","KERALA":"32","TAMIL NADU":"33","PUDUCHERRY":"34","ANDAMAN AND NICOBAR ISLANDS":"35","TELANGANA":"36","ANDHRA PRADESH":"37","LADAKH":"38"};
+    const NAMES=Object.fromEntries(Object.entries(STATES).map(([n,c])=>[c,n]));
+    const title=s=>String(s||"").toLowerCase().replace(/\b[a-z]/g,c=>c.toUpperCase());
+    function stateOf(state,gstin){
+      const g=String(gstin||"").trim().slice(0,2),k=String(state||"").trim().toUpperCase().replace(/&/g,"AND").replace(/\s+/g," ");
+      const code=STATES[k]||(/^\d{2}$/.test(g)?g:"");
+      return {name:state?title(state):code&&NAMES[code]?title(NAMES[code]):"",code};
+    }
+
+    /* ---------- amount in words (Indian: lakh, crore) ---------- */
+    const ONES=["","One","Two","Three","Four","Five","Six","Seven","Eight","Nine","Ten","Eleven","Twelve","Thirteen","Fourteen","Fifteen","Sixteen","Seventeen","Eighteen","Nineteen"];
+    const TENS=["","","Twenty","Thirty","Forty","Fifty","Sixty","Seventy","Eighty","Ninety"];
+    function w99(n){return n<20?ONES[n]:TENS[Math.floor(n/10)]+(n%10?" "+ONES[n%10]:"")}
+    function w999(n){return (n>=100?ONES[Math.floor(n/100)]+" Hundred"+(n%100?" ":""):"")+(n%100?w99(n%100):"")}
+    function words(n){
+      n=Math.floor(n);if(!n)return "Zero";
+      const parts=[],cr=Math.floor(n/1e7),lk=Math.floor(n/1e5)%100,th=Math.floor(n/1e3)%100,rest=n%1000;
+      if(cr)parts.push((cr>999?words(cr):w999(cr))+" Crore");if(lk)parts.push(w99(lk)+" Lakh");if(th)parts.push(w99(th)+" Thousand");if(rest)parts.push(w999(rest));
+      return parts.join(" ");
+    }
+    function inr(v){const a=r2(v),p=Math.round((a-Math.floor(a))*100);return "INR "+words(a)+(p?" and "+w99(p)+" paise":"")}
+
+    /* ---------- tax maths (same as Tally: rate incl. tax -> taxable = amount / (1 + GST%)) ---------- */
+    function calc(b){
+      const incl=b.incl!==false,inter=b.inter;
+      const lines=b.lines.filter(l=>l.sku&&num(l.qty)>0).map(l=>{
+        const qty=num(l.qty),rate=num(l.rate),g=num(l.gst),c=num(l.cess),amt=r2(qty*rate);
+        const taxable=incl?amt/(1+(g+c)/100):amt;
+        return {...l,qty,rate,gst:g,cess:c,amt,taxable}});
+      const groups=new Map();
+      for(const l of lines){const k=(l.hsn||"")+"|"+l.gst+"|"+l.cess,x=groups.get(k)||{hsn:l.hsn||"",gst:l.gst,cess:l.cess,amt:0,taxable:0};x.amt+=l.amt;x.taxable+=l.taxable;groups.set(k,x)}
+      const hs=[...groups.values()].map(x=>{
+        const taxable=r2(x.taxable),tax=incl?r2(x.amt-taxable):r2(taxable*(x.gst+x.cess)/100);
+        const cess=x.gst+x.cess?r2(tax*x.cess/(x.gst+x.cess)):0,gst=r2(tax-cess),half=r2(gst/2);
+        return {...x,taxable,tax,cess,igst:inter?gst:0,cgst:inter?0:half,sgst:inter?0:r2(gst-half)}});
+      const S2=k=>r2(hs.reduce((a,x)=>a+x[k],0));
+      const taxable=S2("taxable"),tax=S2("tax"),cess=S2("cess"),exact=r2(taxable+tax),grand=Math.round(exact),round=r2(grand-exact);
+      return {lines,hs,taxable,tax,cess,cgst:S2("cgst"),sgst:S2("sgst"),igst:S2("igst"),qty:lines.reduce((a,l)=>a+l.qty,0),round,grand,incl,inter};
+    }
+
+    /* ---------- the sheet ---------- */
+    function qrSvg(text){
+      if(!text||!window.qrcode)return "";
+      try{const q=qrcode(0,"M");q.addData(text);q.make();return q.createSvgTag({cellSize:2,margin:0,scalable:true})}catch(e){return ""}
+    }
+    function partyHtml(p){
+      const st=stateOf(p.state,p.gstin);
+      return `<div class="nm">${esc(p.name||"")}</div>${p.address?`<div class="adr">${esc(p.address)}</div>`:""}
+        ${p.gstin?`<div class="ln"><span>GSTIN</span><span>:</span><span>${esc(p.gstin)}</span></div>`:""}
+        <div class="ln"><span>State</span><span>:</span><span>${esc(st.name)}${st.code?` (Code : ${Number(st.code)})`:""}</span></div>
+        <div class="ln"><span>Mobile</span><span>:</span><span>${esc(p.mobile||"")}</span></div>`;
+    }
+    // item columns; the empty space under the items keeps the same column lines (as in Tally)
+    const COLW=[6,33,12,14,11,9,15],COLS="<colgroup>"+COLW.map(w=>`<col style="width:${w}%">`).join("")+"</colgroup>";
+    function sheet(b,s){
+      const t=calc(b),q3=n=>Number(n).toLocaleString("en-IN",{minimumFractionDigits:4,maximumFractionDigits:4});
+      const pc=n=>(Number.isInteger(n)?n:Number(n).toFixed(2))+" %";
+      const upi=s.upi?`upi://pay?pa=${encodeURIComponent(s.upi)}&pn=${encodeURIComponent(s.ac_name||s.name||"")}&am=${t.grand.toFixed(2)}&cu=INR`:"";
+      const qr=qrSvg(upi);
+      const rows=t.lines.map((l,i)=>`<tr><td class="c">${i+1}</td><td>${esc(l.sku)}</td><td>${esc(l.hsn||"")}</td><td class="r">${q3(l.qty)} CS</td><td class="r">${money(l.rate)}</td><td class="r">${pc(l.gst+l.cess)}</td><td class="r">${money(l.amt)}</td></tr>`).join("");
+      // rate without GST: Tally lists the tax ledgers under the items
+      const taxRows=t.incl?"":(t.inter?[["IGST",t.igst]]:[["CGST",t.cgst],["SGST",t.sgst]]).concat(t.cess?[["Cess",t.cess]]:[]).map(([n,v])=>`<tr class="tx"><td></td><td class="r"><b>${n}</b></td><td></td><td></td><td></td><td></td><td class="r">${money(v)}</td></tr>`).join("");
+      const roundRow=t.round?`<tr class="tx"><td></td><td class="r"><b>Round Off</b></td><td></td><td></td><td></td><td></td><td class="r">${t.round>0?"":"(-)"}${money(Math.abs(t.round))}</td></tr>`:"";
+      const taxCols=t.inter?`<th colspan="2">IGST</th>`:`<th colspan="2">CGST</th><th colspan="2">SGST</th>`;
+      const cessH=t.cess?`<th rowspan="2">Cess<br>Amount</th>`:"";
+      const half=g=>pc(t.inter?g:g/2);
+      const hsRows=t.hs.map(x=>`<tr><td>${esc(x.hsn)}</td><td>${money(x.taxable)}</td>${t.inter?`<td>${half(x.gst)}</td><td>${money(x.igst)}</td>`:`<td>${half(x.gst)}</td><td>${money(x.cgst)}</td><td>${half(x.gst)}</td><td>${money(x.sgst)}</td>`}${t.cess?`<td>${money(x.cess)}</td>`:""}<td>${money(x.tax)}</td></tr>`).join("");
+      const hsTot=`<tr class="t"><td style="text-align:right">Total</td><td>${money(t.taxable)}</td>${t.inter?`<td></td><td>${money(t.igst)}</td>`:`<td></td><td>${money(t.cgst)}</td><td></td><td>${money(t.sgst)}</td>`}${t.cess?`<td>${money(t.cess)}</td>`:""}<td>${money(t.tax)}</td></tr>`;
+      const ship=b.same?b.bill:b.ship;
+      const line1=[s.udyam?"Udyam Reg. No. : "+s.udyam:"",s.fssai?"FSSAI Lic. No. : "+s.fssai:""].filter(Boolean).join("  |  ");
+      const line2=[s.contact?"Contact : "+s.contact:"",s.email?"E-Mail : "+s.email:""].filter(Boolean).join("   ");
+      return `<div class="sheet">
+        <div class="top"><span></span><span class="t">TAX INVOICE</span><span class="cp">(${esc(b.copy||"ORIGINAL FOR RECIPIENT")})</span></div>
+        <div class="frame">
+          <div class="co"><h1>${esc(s.name||"")}</h1>${line1?`<div>${esc(line1)}</div>`:""}${s.address?`<div style="white-space:pre-line">${esc(s.address)}</div>`:""}${line2?`<div>${esc(line2)}</div>`:""}
+            <div class="g">${s.gstin?`<span>GSTIN : ${esc(s.gstin)}</span>`:""}${s.pan?`<span>PAN No.: ${esc(s.pan)}</span>`:""}</div></div>
+          <div class="ref"><div></div><div><span class="k">Invoice Date</span><span>:</span><b>${esc(tDate(b.date))}</b></div></div>
+          <div class="ad"><div><div class="h">Billed To</div>${partyHtml(b.bill)}</div><div><div class="h">Shipped To</div>${partyHtml(ship)}</div></div>
+          <div class="items"><table class="it">${COLS}
+            <thead><tr><th>Sl.<br>No.</th><th>Description of Goods</th><th>HSN Code</th><th class="c">Qty</th><th class="c">${t.incl?"Rate Incl.<br>Tax":"Rate"}</th><th class="c">GST %</th><th class="c">${t.incl?"Total Amount":"Amount"}</th></tr></thead>
+            <tbody>${rows}${taxRows}${roundRow}</tbody></table>
+            <div class="fill"></div>
+            <table class="it">${COLS}<tfoot><tr><td></td><td class="r">Total</td><td></td><td class="r">${q3(t.qty)} CS</td><td></td><td></td><td class="r">${money(t.grand)}</td></tr></tfoot></table></div>
+          <div class="words"><div class="w"><small>Amount Chargeable (in words)</small><b>${esc(inr(t.grand))}</b></div><div class="gt"><span>Grand Total</span><span>${money(t.grand)}</span></div></div>
+          <table class="hs"><thead><tr><th rowspan="2">HSN/SAC</th><th rowspan="2">Taxable<br>Value</th>${taxCols}${cessH}<th rowspan="2">Total<br>Tax Amount</th></tr>
+            <tr>${t.inter?"<th>Rate</th><th>Amount</th>":"<th>Rate</th><th>Amount</th><th>Rate</th><th>Amount</th>"}</tr></thead><tbody>${hsRows}${hsTot}</tbody></table>
+          <div class="tw">Tax Amount (in words) : <b>${esc(inr(t.tax))}</b></div>
+          <div class="bt">
+            <div class="bk"><b>Bank Details</b>
+              <div class="ln"><span>Bank Name</span><span>:</span><span>${esc(s.bank_name||"")}</span></div>
+              <div class="ln"><span>A/c Name</span><span>:</span><span>${esc(s.ac_name||"")}</span></div>
+              <div class="ln"><span>A/c No.</span><span>:</span><span>${esc(s.ac_no||"")}</span></div>
+              <div class="ln"><span>IFSC Code</span><span>:</span><span>${esc(s.ifsc||"")}</span></div></div>
+            <div class="qr">${qr?"Scan and Pay"+qr:""}</div>
+            <div class="sg"><b>For ${esc(s.name||"")}</b><span>Authorised Signatory</span></div>
+          </div>
+          <div class="dc"><b>Declaration</b>${esc(s.declaration||"")}</div>
+        </div>
+        <div class="ft">${s.jurisdiction?"SUBJECT TO "+esc(String(s.jurisdiction).toUpperCase())+" JURISDICTION  |  ":""}This is a Computer Generated Document</div>
+      </div>`;
+    }
+
+    /* ---------- access + list ---------- */
+    async function loadAccess(){
+      const r=await client.rpc("lwb_tax_bill_access");
+      if(r.error){acc={can:false,admin:me.realRole==="admin",setup:false};return}
+      acc=r.data||{can:false};
+    }
+    function drawState(){
+      const on=!!acc.on;el("state").className="ti-on"+(on?"":" off");
+      const who=(acc.roles||[]).map(r=>({accounts:"Accounts",manager:"Sales Head",warehouse:"Godown"})[r]||r).join(", ");
+      el("state").textContent=on?"On"+(acc.until?" · today only":"")+(who?" · "+who:""):"Off";
+      el("setBtn").hidden=!acc.admin||acc.setup===false;
+      el("offMsg").hidden=acc.can;
+      el("offMsg").textContent=acc.setup===false?"Setup not run yet (lwb_tax_bill_print_setup.sql).":"Tax invoice print is off. Admin turns it on when Accounts is not in the office.";
+      el("listCard").hidden=!acc.can;
+    }
+    async function loadList(){
+      if(!acc.can)return;
+      el("reload").disabled=true;
+      const r=await client.rpc("lwb_tax_bill_orders",{p_days:Number(el("days").value)||7});
+      el("reload").disabled=false;
+      if(r.error){say(errText(r.error),true);list=[]}else list=r.data||[];
+      drawList();
+    }
+    function drawList(){
+      const q=el("q").value.trim().toLowerCase();
+      const rows=list.filter(o=>!q||[o.order_no,o.party].some(v=>String(v||"").toLowerCase().includes(q)));
+      el("empty").hidden=!!rows.length;
+      el("rows").innerHTML=rows.map(o=>`<tr><td><b>${esc(o.order_no)}</b><span class="sub">${esc(dmy(o.order_date))} · ${esc(o.status||"")}</span><span class="party ph">${esc(o.party)}</span></td>
+        <td class="party hide-m">${esc(o.party)}</td><td class="n hide-m">${Number(o.qty||0).toLocaleString("en-IN")}</td><td class="n">${rs(o.amount)}</td>
+        <td class="n hide-m">${o.bill_total!=null?`<span class="ti-tag">${rs(o.bill_total)}</span>`:"—"}</td>
+        <td class="n"><button type="button" class="sl-btn small${o.bill_total!=null?" ghost":""}" data-open="${esc(o.order_id)}">${o.bill_total!=null?"Open":"Make bill"}</button></td></tr>`).join("");
+    }
+
+    /* ---------- editor ---------- */
+    function linesHtml(){
+      el("lines").innerHTML=cur.b.lines.map((l,i)=>`<tr data-i="${i}">
+        <td class="sku"><input data-k="sku" value="${esc(l.sku)}" placeholder="Item" aria-label="Item"></td><td class="hsn"><input data-k="hsn" value="${esc(l.hsn)}" placeholder="HSN" inputmode="numeric" aria-label="HSN"></td>
+        <td class="n"><input data-k="qty" value="${esc(l.qty)}" placeholder="Qty" inputmode="decimal" aria-label="Qty"></td><td class="n"><input data-k="rate" value="${esc(l.rate)}" placeholder="Rate" inputmode="decimal" aria-label="Rate"></td>
+        <td class="n"><input data-k="gst" value="${esc(l.gst)}" placeholder="GST%" inputmode="decimal" aria-label="GST %"></td><td class="amt"></td>
+        <td><button type="button" class="rm" data-rm="${i}" aria-label="Remove line">×</button></td></tr>`).join("");
+    }
+    function readForm(){
+      const b=cur.b,v=id=>el(id).value.trim();
+      b.date=el("bDate").value;b.copy=el("bCopy").value;b.incl=el("bIncl").value==="1";b.same=el("same").checked;
+      b.bill={name:v("bName"),address:v("bAddr"),state:v("bState"),gstin:v("bGst").toUpperCase(),mobile:v("bMob")};
+      b.ship={name:v("sName"),address:v("sAddr"),state:v("sState"),gstin:v("sGst").toUpperCase(),mobile:v("sMob")};
+      el("lines").querySelectorAll("tr").forEach(tr=>{const l=b.lines[tr.dataset.i];if(!l)return;tr.querySelectorAll("input").forEach(i=>{l[i.dataset.k]=i.value.trim()})});
+      const sel=stateOf(acc.seller&&acc.seller.state,acc.seller&&acc.seller.gstin),pt=stateOf(b.bill.state,b.bill.gstin);
+      b.inter=!!(pt.code&&(acc.seller.state_code||sel.code)&&pt.code!==String(acc.seller.state_code||sel.code).padStart(2,"0"));
+      return b;
+    }
+    function refresh(){
+      const b=readForm(),t=calc(b);
+      el("lines").querySelectorAll("tr").forEach(tr=>{const l=b.lines[tr.dataset.i],q=num(l.qty),r=num(l.rate);tr.querySelector(".amt").textContent=q&&r?money(q*r):""});
+      el("rateH").textContent=b.incl?"Rate+GST":"Rate";
+      el("sum").innerHTML=`<span>Taxable <b>${money(t.taxable)}</b></span><span>${t.inter?"IGST":"CGST + SGST"} <b>${money(t.tax-t.cess)}</b></span>${t.cess?`<span>Cess <b>${money(t.cess)}</b></span>`:""}${t.round?`<span>Round off <b>${money(t.round)}</b></span>`:""}<span>Grand total <b>${money(t.grand)}</b></span>`;
+      el("pw").innerHTML=sheet(b,acc.seller||{});fit();
+    }
+    function fit(){const pw=el("pw"),s=pw.querySelector(".sheet");if(!s)return;s.style.zoom="";const z=(pw.clientWidth-12)/s.offsetWidth;s.style.zoom=String(Math.min(1.25,Math.max(.3,z)))}
+    window.addEventListener("resize",()=>{if(el("dlg").open)fit()});
+    async function openBill(id){
+      say("");
+      const r=await client.rpc("lwb_tax_bill_data",{p_order_id:id});
+      if(r.error)return ERPShell.alert(errText(r.error));
+      const d=r.data;if(d.seller)acc.seller=d.seller;
+      const p=d.party||{},addr=[p.address,[p.city,p.pincode].filter(Boolean).join(" - ")].filter(Boolean).join("\n");
+      const fresh={date:d.today,copy:"ORIGINAL FOR RECIPIENT",incl:true,same:true,
+        bill:{name:p.name||d.order.party,address:addr,state:p.state||"",gstin:p.gstin||"",mobile:p.mobile||""},ship:{name:"",address:"",state:"",gstin:"",mobile:""},
+        lines:(d.items||[]).map(i=>({sku:i.sku,hsn:i.hsn||"",qty:String(i.qty),rate:String(i.rate),gst:String(i.gst),cess:i.cess||0}))};
+      const b=d.saved&&d.saved.data?{...fresh,...d.saved.data,date:d.saved.bill_date||d.saved.data.date||d.today}:fresh;
+      if(!b.lines.length)b.lines=[{sku:"",hsn:"",qty:"",rate:"",gst:"",cess:0}];
+      cur={id,order:d.order,b,saved:d.saved};
+      el("dlgT").textContent="Tax invoice · "+(d.order.order_no||"")+" · "+(d.order.party||"");
+      el("bDate").value=b.date;el("bCopy").value=b.copy||"ORIGINAL FOR RECIPIENT";el("bIncl").value=b.incl===false?"0":"1";el("same").checked=b.same!==false;el("shipBox").hidden=el("same").checked;
+      const put=(px,o)=>{el(px+"Name").value=o.name||"";el(px+"Addr").value=o.address||"";el(px+"State").value=o.state||"";el(px+"Gst").value=o.gstin||"";el(px+"Mob").value=o.mobile||""};
+      put("b",b.bill);put("s",b.ship||{});
+      el("saved").textContent=d.saved?"Saved "+dmy(String(d.saved.updated_at||"").slice(0,10))+(d.saved.by?" by "+d.saved.by:"")+(d.saved.saves>1?" · changed "+(d.saved.saves-1)+"×":""):"Not saved yet · no invoice no. on this bill";
+      el("err").textContent="";linesHtml();
+      el("dlg").showModal();refresh();
+    }
+    function check(b,t){
+      if(!b.date)return "Enter the invoice date.";
+      if(!b.bill.name)return "Enter the Billed to name.";
+      if(!t.lines.length)return "Add at least one item with qty.";
+      const bad=t.lines.find(l=>!(l.rate>0));if(bad)return "Enter the rate of "+bad.sku+".";
+      const nogst=t.lines.find(l=>!(l.gst>0));if(nogst&&!cur.warned){cur.warned=1;return "GST % is 0 for "+nogst.sku+". Fix it, or press again to keep 0."}
+      return "";
+    }
+    async function save(print){
+      const b=readForm(),t=calc(b),e=check(b,t);el("err").textContent=e;if(e)return;
+      const btn=print?el("printBtn"):el("saveBtn");btn.disabled=true;
+      const data={...b,lines:b.lines.filter(l=>l.sku&&num(l.qty)>0)};
+      const r=await client.rpc("lwb_tax_bill_save",{p_order_id:cur.id,p_bill_date:b.date,p_data:data,p_total:t.grand});
+      btn.disabled=false;
+      if(r.error){el("err").textContent=errText(r.error);return}
+      el("saved").textContent="Saved just now · "+rs(t.grand);
+      const o=list.find(x=>x.order_id===cur.id);if(o){o.bill_total=t.grand;drawList()}
+      if(print){el("printArea").innerHTML=sheet(b,acc.seller||{});setTimeout(()=>window.print(),60)}
+      else ERPShell.toast&&ERPShell.toast("Bill saved");
+    }
+    el("dlg").addEventListener("input",e=>{if(e.target.closest(".ti-form"))refresh()});
+    el("dlg").addEventListener("change",e=>{if(e.target.id==="same"){el("shipBox").hidden=e.target.checked;if(!e.target.checked&&!el("sName").value){["Name","Addr","State","Gst","Mob"].forEach(k=>el("s"+k).value=el("b"+k).value)}}refresh()});
+    el("addLine").onclick=()=>{readForm();cur.b.lines.push({sku:"",hsn:cur.b.lines[0]?cur.b.lines[0].hsn:"",qty:"",rate:"",gst:cur.b.lines[0]?cur.b.lines[0].gst:"",cess:0});linesHtml();refresh();el("lines").lastElementChild.querySelector("input").focus()};
+    el("lines").addEventListener("click",e=>{const b=e.target.closest("[data-rm]");if(!b)return;readForm();cur.b.lines.splice(Number(b.dataset.rm),1);if(!cur.b.lines.length)cur.b.lines.push({sku:"",hsn:"",qty:"",rate:"",gst:"",cess:0});linesHtml();refresh()});
+    el("saveBtn").onclick=()=>save(false);
+    el("printBtn").onclick=()=>save(true);
+    document.querySelectorAll("dialog [data-close]").forEach(b=>b.onclick=()=>b.closest("dialog").close());
+
+    /* ---------- Admin: on / off, who, company details ---------- */
+    function openSet(){
+      const s=acc.seller||{},mode=!acc.on?"off":acc.until?"today":"always";
+      el("setDlg").querySelectorAll("[name=mode]").forEach(r=>r.checked=r.value===mode);
+      el("setDlg").querySelectorAll(".ts-who input").forEach(c=>c.checked=(acc.roles||[]).includes(c.value));
+      el("setDlg").querySelectorAll("[data-s]").forEach(i=>i.value=s[i.dataset.s]||"");
+      el("setErr").textContent="";el("setDlg").showModal();
+    }
+    el("setBtn").onclick=openSet;
+    el("setSave").onclick=async()=>{
+      const mode=(el("setDlg").querySelector("[name=mode]:checked")||{}).value||"off";
+      const roles=[...el("setDlg").querySelectorAll(".ts-who input:checked")].map(c=>c.value);
+      const seller={};el("setDlg").querySelectorAll("[data-s]").forEach(i=>seller[i.dataset.s]=i.value.trim());
+      el("setSave").disabled=true;
+      const r=await client.rpc("lwb_tax_bill_access_set",{p_enabled:mode!=="off",p_until:mode==="today"?acc.today:null,p_roles:roles,p_seller:seller});
+      el("setSave").disabled=false;
+      if(r.error){el("setErr").textContent=errText(r.error);return}
+      acc=r.data;el("setDlg").close();drawState();
+      ERPShell.toast&&ERPShell.toast(mode==="off"?"Tax invoice print is off":"Tax invoice print is on");
+    };
+
+    el("rows").addEventListener("click",e=>{const b=e.target.closest("[data-open]");if(b)openBill(b.dataset.open)});
+    el("q").oninput=drawList;el("days").onchange=loadList;el("reload").onclick=loadList;
+
+    (async()=>{
+      me=await S.start(["admin","accounts","manager","warehouse"]);if(!me)return;
+      el("loading").hidden=true;el("page").hidden=false;
+      await loadAccess();drawState();
+      await loadList();
+      const id=qs.get("order");if(id&&acc.can)openBill(id);
+    })();
+  </script>
+</body>
+</html>

@@ -25,6 +25,7 @@
 --   ASSET (Fixed Assets)         upload admin, manager, accounts; view + warehouse
 --   STOCK_MOVE / ORDER (godown damage, loading photos)
 --                                upload admin, manager, warehouse; view + accounts (+ transport for ORDER)
+--   COMPANY (Documents page)     admin, accounts (+ ticked page); "Only Admin" documents: admin only
 -- Nothing here changes stock, orders, ledgers, Tally or payments.
 
 BEGIN;
@@ -75,6 +76,7 @@ AS $fn$
     WHEN 'ASSET' THEN ARRAY['PHOTO','BILL','WARRANTY','OTHER']
     WHEN 'STOCK_MOVE' THEN ARRAY['DAMAGE','OTHER']
     WHEN 'ORDER' THEN ARRAY['LOADED','DAMAGE','OTHER']
+    WHEN 'COMPANY' THEN ARRAY['FILE','SHARE']
     ELSE NULL END;
 $fn$;
 
@@ -105,6 +107,8 @@ BEGIN
     WHEN 'ASSET' THEN v_edit := ARRAY['admin','manager','accounts']; v_view := ARRAY['admin','manager','accounts','warehouse']; v_page := 'fixed-assets.html';
     WHEN 'STOCK_MOVE' THEN v_edit := ARRAY['admin','manager','warehouse']; v_view := ARRAY['admin','manager','warehouse','accounts']; v_page := 'stock-transfer.html';
     WHEN 'ORDER' THEN v_edit := ARRAY['admin','manager','warehouse']; v_view := ARRAY['admin','manager','warehouse','accounts','transport']; v_page := 'loading-dispatch.html';
+    -- Company documents (GST, PAN, licences: lwb_company_docs_setup.sql). One record = one lwb_company_docs row.
+    WHEN 'COMPANY' THEN v_edit := ARRAY['admin','accounts']; v_view := v_edit; v_page := 'documents.html';
   END CASE;
   IF v_role = ANY(CASE WHEN p_mode = 'edit' THEN v_edit ELSE v_view || v_edit END) THEN RETURN true; END IF;
   -- A login given the page by Admin may upload and view there (not the private driver numbers).
@@ -114,6 +118,24 @@ END;
 $fn$;
 REVOKE ALL ON FUNCTION public.lwb_doc_access(text,text,text) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.lwb_doc_access(text,text,text) TO authenticated;
+
+-- COMPANY files: the lwb_company_docs row must exist (not removed); an "Only Admin" document only for Admin.
+-- Dynamic SQL, so this file still runs before lwb_company_docs_setup.sql has made the table.
+CREATE OR REPLACE FUNCTION public.lwb_cdoc_file_ok(p_id text, p_mode text)
+RETURNS boolean LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = ''
+AS $fn$
+DECLARE v_admin_only boolean;
+BEGIN
+  IF to_regclass('public.lwb_company_docs') IS NULL OR coalesce(p_id, '') !~ '^[0-9]{1,18}$' THEN RETURN false; END IF;
+  EXECUTE 'SELECT d.admin_only FROM public.lwb_company_docs d WHERE d.id = $1 AND d.removed_at IS NULL'
+    INTO v_admin_only USING p_id::bigint;
+  IF v_admin_only IS NULL THEN RETURN false; END IF;
+  RETURN NOT v_admin_only OR EXISTS (SELECT 1 FROM public.user_profiles p
+    WHERE p.id = auth.uid() AND p.active = true AND lower(btrim(p.role)) = 'admin');
+END;
+$fn$;
+REVOKE ALL ON FUNCTION public.lwb_cdoc_file_ok(text,text) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.lwb_cdoc_file_ok(text,text) TO authenticated;
 
 -- ---------------------------------------------------------------------------
 -- Private bucket. Upload only into a folder the login may use, under his own user id.
@@ -128,11 +150,13 @@ CREATE POLICY lwb_documents_upload ON storage.objects FOR INSERT TO authenticate
     AND array_length(storage.foldername(name), 1) = 3
     AND (storage.foldername(name))[2] ~ '^[A-Za-z0-9-]{1,64}$'
     AND split_part(storage.filename(name), '-', 1) = replace(auth.uid()::text, '-', '')
-    AND public.lwb_doc_access((storage.foldername(name))[1], (storage.foldername(name))[3], 'edit'));
+    AND public.lwb_doc_access((storage.foldername(name))[1], (storage.foldername(name))[3], 'edit')
+    AND ((storage.foldername(name))[1] <> 'COMPANY' OR public.lwb_cdoc_file_ok((storage.foldername(name))[2], 'edit')));
 DROP POLICY IF EXISTS lwb_documents_read ON storage.objects;
 CREATE POLICY lwb_documents_read ON storage.objects FOR SELECT TO authenticated
   USING (bucket_id = 'lwb-documents'
-    AND public.lwb_doc_access((storage.foldername(name))[1], (storage.foldername(name))[3], 'view'));
+    AND public.lwb_doc_access((storage.foldername(name))[1], (storage.foldername(name))[3], 'view')
+    AND ((storage.foldername(name))[1] <> 'COMPANY' OR public.lwb_cdoc_file_ok((storage.foldername(name))[2], 'view')));
 
 -- ---------------------------------------------------------------------------
 -- Register an uploaded file on its record.
@@ -151,6 +175,7 @@ BEGIN
     RAISE EXCEPTION 'You can not upload % for this record', coalesce(p_doc_type, 'documents');
   END IF;
   IF coalesce(p_entity_id, '') !~ '^[A-Za-z0-9-]{1,64}$' THEN RAISE EXCEPTION 'Save the record first, then add documents'; END IF;
+  IF p_entity = 'COMPANY' AND NOT public.lwb_cdoc_file_ok(p_entity_id, 'edit') THEN RAISE EXCEPTION 'You can not upload files for this document'; END IF;
   v_prefix := p_entity || '/' || p_entity_id || '/' || p_doc_type || '/' || replace(auth.uid()::text, '-', '') || '-';
   IF left(coalesce(p_path, ''), length(v_prefix)) <> v_prefix OR position('..' IN p_path) > 0 OR position('/' IN substr(p_path, length(v_prefix) + 1)) > 0 THEN
     RAISE EXCEPTION 'Wrong file path';
@@ -193,6 +218,7 @@ BEGIN
     LEFT JOIN public.user_profiles p ON p.id = d.uploaded_by
     WHERE d.entity_type = p_entity AND d.entity_id = ANY(coalesce(p_entity_ids, '{}')) AND d.removed_at IS NULL
       AND public.lwb_doc_access(p_entity, d.doc_type, 'view')
+      AND (p_entity <> 'COMPANY' OR public.lwb_cdoc_file_ok(d.entity_id, 'view'))
     ORDER BY d.entity_id, d.doc_type, d.created_at;
 END;
 $fn$;
@@ -211,6 +237,7 @@ BEGIN
     SELECT d.entity_id, array_agg(DISTINCT d.doc_type ORDER BY d.doc_type), count(*)::int
     FROM public.lwb_documents d
     WHERE d.entity_type = p_entity AND d.removed_at IS NULL
+      AND (p_entity <> 'COMPANY' OR public.lwb_cdoc_file_ok(d.entity_id, 'view'))
     GROUP BY d.entity_id;
 END;
 $fn$;
@@ -223,7 +250,8 @@ DECLARE r public.lwb_documents;
 BEGIN
   SELECT * INTO r FROM public.lwb_documents d WHERE d.id = p_id AND d.removed_at IS NULL FOR UPDATE;
   IF NOT FOUND THEN RAISE EXCEPTION 'File not found'; END IF;
-  IF NOT public.lwb_doc_access(r.entity_type, r.doc_type, 'edit') THEN RAISE EXCEPTION 'You can not remove this file'; END IF;
+  IF NOT public.lwb_doc_access(r.entity_type, r.doc_type, 'edit')
+     OR (r.entity_type = 'COMPANY' AND NOT public.lwb_cdoc_file_ok(r.entity_id, 'edit')) THEN RAISE EXCEPTION 'You can not remove this file'; END IF;
   UPDATE public.lwb_documents SET removed_at = now(), removed_by = auth.uid() WHERE id = p_id;
   RETURN true;
 END;

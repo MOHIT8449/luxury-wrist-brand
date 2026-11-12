@@ -22,6 +22,7 @@ export function safeRoute(type, order, role) {
  if(type.startsWith('MARKET'))return '/market-report.html';
  if(type==='ACC_CHEQUE_REMINDER'&&(role==='admin'||role==='accounts'))return '/accounts-dashboard.html#cheques';
  if(type.startsWith('ACC_')&&(role==='admin'||role==='accounts'))return '/accounts-dashboard.html';
+ if(type.startsWith('DOC_')&&(role==='admin'||role==='accounts'))return '/documents.html';
  return '/dashboard.html';
 }
 export function messageFor(n,role) {

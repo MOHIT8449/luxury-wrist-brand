@@ -1951,6 +1951,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     setupPoAutofill();
     pickSummaryRange("today", false);
     await loadBrands();
+    try{const tb=await db.rpc("lwb_tax_bill_access");TAX_BILL=!tb.error&&!!(tb.data&&tb.data.can);}catch(e){TAX_BILL=false;}
     await Promise.all([loadOrders(), loadWarehouseSkuMaster(), VIEW_ONLY ? null : loadPoSavedDirectory()]);
     if (CAN_HEAD) loadRajniWaiting();
     const rateId=new URLSearchParams(location.search).get('rate');
@@ -3643,7 +3644,8 @@ function renderOrders() {
               ${!isCancelled(order) ? `<button class="btn btn-light btn-track" title="Copy order image for WhatsApp (no order no.). Phone: downloads it." aria-label="Copy order image" onclick="LWBPoShare.quick(db,'${order.id}')">${LWBPoShare.ICON}</button>` : ""}
               ${CAN_BILL && VIEW_ONLY && eligibleForPoPrint(order) ? `<button class="btn btn-green" title="Enter the Tally bill no." onclick="openBill('${order.id}')">🧾 Bill</button>` : ""}
               ${IS_ADMIN && rateWait.has(order.id) ? `<button class="btn btn-green" title="Rate below min: check and approve" onclick="openRateOk('${order.id}')">₹ Rate OK</button>` : ""}
-              ${!isCancelled(order) ? `<button class="btn btn-light" title="Print PO" onclick="printPoFromList('${order.id}')">Print</button>` : ""}
+              ${!isCancelled(order) ? `<button class="btn btn-light" title="Print PO" onclick="printPoFromList('${order.id}')">🖨 PO</button>` : ""}
+              ${TAX_BILL && !isCancelled(order) && !["pending","rejected"].includes(String(order.status||"").toLowerCase()) ? `<button class="btn btn-light" title="Print tax invoice (Tally layout)" onclick="location.href='tax-invoice.html?order='+encodeURIComponent('${order.id}')">🖨 Bill</button>` : ""}
               ${eligibleForPoPrint(order) && !VIEW_ONLY ? `<button class="btn btn-green" title="Driver / Vehicle / Godown Manager"
                 onclick="openTransportAllocation('${order.id}')">🚚<span class="lbl-long"> Transport</span></button>` : ""}
             </div></td>
@@ -4791,6 +4793,8 @@ async function saveManagerNote(){
 // lwb_head_modify_order (Godown Manager, Driver and Accounts get a bell).
 let VIEW_ONLY=false;
 let CAN_BILL=false; // Accounts / Admin: enter the Tally bill no. from the list
+// Tax invoice in the Tally layout (lwb_tax_bill_print_setup.sql): Admin always, others while Admin has it on.
+let TAX_BILL=false;
 let IS_ADMIN=false; // Admin: delete orders for ever (dummy / duplicate data)
 let CAN_HEAD=false; // Admin / Sales Head: cancel or modify at any stage before delivery
 let CAN_MARK=false; // Admin, and Sales Head unless Admin turned it off: mark Loaded / Delivered by hand
