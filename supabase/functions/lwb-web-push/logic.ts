@@ -3,6 +3,7 @@ export const PUSH_HOSTS = new Set(['fcm.googleapis.com','updates.push.services.m
 export function validEndpoint(raw) {
  try {const u=new URL(String(raw));return u.protocol==='https:' && !u.username && !u.password && !u.port && !u.hash && u.pathname!=='/' && PUSH_HOSTS.has(u.hostname);} catch {return false;}
 }
+// Page a phone alert opens; rate approvals open their Approve popup.
 export function safeRoute(type, order, role) {
  const id=order ? '?order='+encodeURIComponent(String(order)) : '';
  if(type==='ORDER_NEW')return '/warehouse-orders.html'+id;
