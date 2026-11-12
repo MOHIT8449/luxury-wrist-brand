@@ -149,6 +149,9 @@
     .sheet .ft{text-align:center;font-size:6.2pt;padding:.8mm 0 0}
 
     #printArea{display:none}
+    .ti-direct :is(#page,#loading){visibility:hidden}
+    .ti-direct :is(.erp-top,.erp-side,.erp-shade,.erp-ptabs,.erp-bnav){display:none!important}
+    .ti-direct body{background:transparent!important}
     @page{size:A5 portrait;margin:6mm}
     @media print{
       body>:not(#printArea){display:none!important}
@@ -427,7 +430,7 @@
     async function openBill(id){
       say("");
       const r=await client.rpc("lwb_tax_bill_data",{p_order_id:id});
-      if(r.error)return ERPShell.alert(errText(r.error));
+      if(r.error){toParent("edit");await ERPShell.alert(errText(r.error));toParent("closed");return false}
       const d=r.data;if(d.seller)acc.seller=d.seller;
       const p=d.party||{},addr=[p.address,[p.city,p.pincode].filter(Boolean).join(" - ")].filter(Boolean).join("\n");
       const fresh={date:d.today,copy:"ORIGINAL FOR RECIPIENT",incl:true,same:true,
@@ -453,15 +456,15 @@
       return "";
     }
     async function save(print){
-      const b=readForm(),t=calc(b),e=check(b,t);el("err").textContent=e;if(e)return;
+      const b=readForm(),t=calc(b),e=check(b,t);el("err").textContent=e;if(e){toParent("edit");return}
       const btn=print?el("printBtn"):el("saveBtn");btn.disabled=true;
       const data={...b,lines:b.lines.filter(l=>l.sku&&num(l.qty)>0)};
       const r=await client.rpc("lwb_tax_bill_save",{p_order_id:cur.id,p_bill_date:b.date,p_data:data,p_total:t.grand});
       btn.disabled=false;
-      if(r.error){el("err").textContent=errText(r.error);return}
+      if(r.error){el("err").textContent=errText(r.error);toParent("edit");return}
       el("saved").textContent="Saved just now · "+rs(t.grand);
       const o=list.find(x=>x.order_id===cur.id);if(o){o.bill_total=t.grand;drawList()}
-      if(print){el("printArea").innerHTML=sheet(b,acc.seller||{});setTimeout(()=>window.print(),60)}
+      if(print){el("printArea").innerHTML=sheet(b,acc.seller||{});setTimeout(()=>{window.print();toParent("done")},60)}
       else ERPShell.toast&&ERPShell.toast("Bill saved");
     }
     el("dlg").addEventListener("input",e=>{if(e.target.closest(".ti-form"))refresh()});
@@ -471,6 +474,11 @@
     el("saveBtn").onclick=()=>save(false);
     el("printBtn").onclick=()=>save(true);
     document.querySelectorAll("dialog [data-close]").forEach(b=>b.onclick=()=>b.closest("dialog").close());
+    // PO List "🖨 Bill" (Mohit, 12 Nov 2026): this page opens hidden inside the PO list (?order=..&direct=1),
+    // saves the bill and opens the printer at once. Anything to fix = the PO list shows this editor as a popup.
+    const DIRECT=qs.get("direct")==="1"&&window.parent!==window;
+    function toParent(what){if(DIRECT)try{window.parent.postMessage({lwbTaxBill:what},location.origin)}catch(e){}}
+    if(DIRECT){document.documentElement.classList.add("ti-direct");el("dlg").addEventListener("close",()=>toParent("closed"))}
 
     /* ---------- Admin: on / off, who, company details ---------- */
     function openSet(){
@@ -501,7 +509,10 @@
       el("loading").hidden=true;el("page").hidden=false;
       await loadAccess();drawState();
       await loadList();
-      const id=qs.get("order");if(id&&acc.can)openBill(id);
+      const id=qs.get("order");
+      if(DIRECT){if(!id||!acc.can){toParent("edit");return ERPShell.alert(acc.can?"PO not found.":"Tax invoice print is off for you.").then(()=>toParent("closed"))}
+        const ok=await openBill(id);if(ok===false){toParent("edit");return}save(true);return}
+      if(id&&acc.can)openBill(id);
     })();
   </script>
 </body>

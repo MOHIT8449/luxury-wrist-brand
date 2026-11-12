@@ -738,6 +738,8 @@
     .po-tab.on b {background:var(--lwb-gold,#fff);color:var(--lwb-teal,#1f2a37)}
     .po-tab:focus-visible {outline:2px solid var(--lwb-gold,#c9b26a);outline-offset:2px}
     .po-warns {display:flex;gap:5px;margin-left:auto}
+    .tax-bill-frame {position:fixed;right:0;bottom:0;width:2px;height:2px;border:0;opacity:0;pointer-events:none;z-index:9999}
+    .tax-bill-frame.open {inset:0;width:100%;height:100%;opacity:1;pointer-events:auto;background:rgba(0,0,0,.35)}
     .po-tab.warn {background:#fff8ec;border-color:#f3d39b;color:#8a4b00}
     .po-subs {display:flex;gap:5px;flex-wrap:wrap;margin:-4px 0 8px}
     .po-subs[hidden] {display:none}
@@ -3645,7 +3647,7 @@ function renderOrders() {
               ${CAN_BILL && VIEW_ONLY && eligibleForPoPrint(order) ? `<button class="btn btn-green" title="Enter the Tally bill no." onclick="openBill('${order.id}')">🧾 Bill</button>` : ""}
               ${IS_ADMIN && rateWait.has(order.id) ? `<button class="btn btn-green" title="Rate below min: check and approve" onclick="openRateOk('${order.id}')">₹ Rate OK</button>` : ""}
               ${!isCancelled(order) ? `<button class="btn btn-light" title="Print PO" onclick="printPoFromList('${order.id}')">🖨 PO</button>` : ""}
-              ${TAX_BILL && !isCancelled(order) && !["pending","rejected"].includes(String(order.status||"").toLowerCase()) ? `<button class="btn btn-light" title="Print tax invoice (Tally layout)" onclick="location.href='tax-invoice.html?order='+encodeURIComponent('${order.id}')">🖨 Bill</button>` : ""}
+              ${TAX_BILL && !isCancelled(order) && !["pending","rejected"].includes(String(order.status||"").toLowerCase()) ? `<button class="btn btn-light" title="Print tax invoice (Tally layout)" onclick="taxBillPrint('${order.id}', this)">🖨 Bill</button>` : ""}
               ${eligibleForPoPrint(order) && !VIEW_ONLY ? `<button class="btn btn-green" title="Driver / Vehicle / Godown Manager"
                 onclick="openTransportAllocation('${order.id}')">🚚<span class="lbl-long"> Transport</span></button>` : ""}
             </div></td>
@@ -4795,6 +4797,23 @@ let VIEW_ONLY=false;
 let CAN_BILL=false; // Accounts / Admin: enter the Tally bill no. from the list
 // Tax invoice in the Tally layout (lwb_tax_bill_print_setup.sql): Admin always, others while Admin has it on.
 let TAX_BILL=false;
+/* 🖨 Bill (Mohit, 12 Nov 2026): no new page. tax-invoice.html loads hidden on this page, saves the bill and
+   opens the printer. If something must be fixed first (rate, GST, party) its editor shows here as a popup. */
+let taxBillFrame=null;
+function taxBillPrint(id, btn){
+  if(taxBillFrame)taxBillFrame.remove();
+  if(btn){btn.disabled=true;setTimeout(()=>{btn.disabled=false},4000);}
+  const f=document.createElement("iframe");
+  f.title="Tax invoice";f.className="tax-bill-frame";
+  f.src="tax-invoice.html?direct=1&order="+encodeURIComponent(id);
+  document.body.appendChild(f);taxBillFrame=f;
+}
+window.addEventListener("message",e=>{
+  if(e.origin!==location.origin||!taxBillFrame||e.source!==taxBillFrame.contentWindow||!e.data)return;
+  const w=e.data.lwbTaxBill;
+  if(w==="edit")taxBillFrame.classList.add("open");
+  if(w==="done"||w==="closed"){const f=taxBillFrame;taxBillFrame=null;setTimeout(()=>f.remove(),300);}
+});
 let IS_ADMIN=false; // Admin: delete orders for ever (dummy / duplicate data)
 let CAN_HEAD=false; // Admin / Sales Head: cancel or modify at any stage before delivery
 let CAN_MARK=false; // Admin, and Sales Head unless Admin turned it off: mark Loaded / Delivered by hand
