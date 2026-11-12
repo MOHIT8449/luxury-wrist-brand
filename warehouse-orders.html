@@ -747,14 +747,28 @@
     .po-sub.on {background:var(--lwb-gold,#c9b26a);border-color:var(--lwb-gold,#c9b26a);color:var(--lwb-teal,#002f37)}
     .po-trk {display:flex;align-items:flex-start;gap:3px;width:300px;max-width:100%;margin:2px 0}
     .po-trk span {flex:1;display:flex;flex-direction:column;align-items:center;position:relative;font-size:9.5px;line-height:1.1;color:#9aa4ae;text-align:center}
-    .po-trk i {width:10px;height:10px;border-radius:50%;background:#dfe5e3;border:2px solid #dfe5e3;margin-bottom:2px;z-index:1}
-    .po-trk span+span::before {content:"";position:absolute;top:6px;right:50%;width:100%;height:2px;background:#dfe5e3}
+    .po-trk i {width:16px;height:16px;border-radius:50%;background:#e8edeb;border:1.5px solid #cfd8d5;margin-bottom:2px;z-index:1;
+      font-style:normal;font-size:9.5px;font-weight:800;line-height:13px;color:#7b8794;text-align:center;box-sizing:border-box}
+    .po-trk .ok i,.po-trk .x i {color:#fff}
+    .po-trk span {cursor:help}
+    .po-trk span+span::before {content:"";position:absolute;top:7px;right:50%;width:100%;height:2px;background:#dfe5e3}
+    /* 1280-1400 px screens: action buttons a bit tighter so the table has no side scroll (12 Nov 2026) */
+    @media (min-width:641px) and (max-width:1400px){
+      #ordersArea .act-row {gap:4px}
+      #ordersArea thead th:nth-child(4), #ordersArea td.c-lines {display:none}
+      #ordersArea .po-trk.sm {width:126px}
+      #ordersArea .trk-now {font-size:10.5px}
+      #ordersArea table th, #ordersArea table td {padding-left:6px;padding-right:6px}
+    }
+    .prn-w {display:block;line-height:1}
+    .prn-w:empty {display:none}
+    .prn-b {display:inline-block;margin:2px 0 0 26px;padding:0 5px;border-radius:5px;background:#eef3f2;color:#33504c;font-size:10.5px;font-weight:700;vertical-align:middle;white-space:nowrap;cursor:help}
+    .prn-b.chg {background:#fdecec;color:#b42318}
     .po-trk .ok {color:#1b6b3a}.po-trk .ok i {background:#1b8a4b;border-color:#1b8a4b}
     .po-trk :is(.ok,.now,.x)::before {background:#1b8a4b!important}
     .po-trk .now {color:#7a5a00;font-weight:700}.po-trk .now i {background:#fff;border-color:#c9a34a;box-shadow:0 0 0 2px #f3e6c4}
     .po-trk .x {color:#b42318;font-weight:700}.po-trk .x i {background:#d92d20;border-color:#d92d20}
-    .po-trk.sm {width:130px;gap:0}
-    .po-trk.sm span::before {top:5px}
+    .po-trk.sm {width:140px;gap:0}
     .trk-now {display:block;font-size:11px;font-weight:700;margin:1px 0 3px}
     .trk-now.now {color:#7a5a00}.trk-now.ok {color:#1b6b3a}.trk-now.x {color:#b42318}
     #ordersArea td.c-trk {display:none}
@@ -2782,21 +2796,90 @@ function renderTabs(base, current) {
 
 /* Where is the order (Mohit, 11 Nov 2026): one step line per PO.
    Green = done, gold ring = where the PO is now, red = cancelled. */
-const PO_STEPS = ["PO Created", "Approved", "Transport", "Loading", "Out for delivery", "Delivered"];
+/* Numbered steps (Mohit, 12 Nov 2026): 1 PO List → 2 Approved → 3 Transport → 4 Loading → 5 Delivered → 6 Settled.
+   Hover a number = when / who of that step (lwb_po_journey). 6 Settled = the bill is fully received (due 0). */
+const PO_STEPS = ["PO List", "Approved", "Transport", "Loading", "Delivered", "Settled"];
+const listJourney = new Map(); // order id -> lwb_po_journey row (orders on screen)
+const listPrints = new Map();  // order id -> lwb_po_print_info row
+let listPrintsOn = true;
+function isSettled(order) {
+  const j = listJourney.get(order.id);
+  return !!j && isDeliveredOrder(order) && (Number(j.bill_amount) > 0 || Number(j.collected) > 0) && Number(j.due) <= 0.5;
+}
+function stepAt(order) {
+  const stage = orderStage(order);
+  if (stage === "delivered") return isSettled(order) ? 6 : 5;
+  return { pending: 1, approved: 2, transport: 3, loading: 3, loaded: 4, cancelled: 1 }[stage] ?? 1;
+}
+function stepInfo(order, i) {
+  const j = listJourney.get(order.id) || {};
+  const t = v => v ? formatDateTime(v) : "";
+  const bits = [];
+  if (i === 0) bits.push("PO made " + t(order.created_at || order.order_date), order.sales_person || "");
+  if (i === 1) bits.push(order.approved_at ? "Approved " + t(order.approved_at) : isPending(order) ? "Waiting for approval" : "");
+  if (i === 2) bits.push(j.assigned_at ? "Assigned " + t(j.assigned_at) : "", [j.vehicle_no, j.driver_name].filter(Boolean).join(" · "));
+  if (i === 3) bits.push(j.loading_started_at ? "Loading " + t(j.loading_started_at) : "", j.loading_completed_at ? "Loaded " + t(j.loading_completed_at) : "", j.loading_person || "");
+  if (i === 4) bits.push(j.reported_at ? String(j.delivery_status || "Reported").replace(/_/g, " ").toLowerCase() + " " + t(j.reported_at) : "");
+  if (i === 5 && (j.bill_amount != null || j.collected != null))
+    bits.push("Bill " + formatMoney(j.bill_amount || 0), "received " + formatMoney(j.collected || 0), "due " + formatMoney(j.due || 0));
+  return bits.filter(Boolean).join(" · ");
+}
 function stepTrack(order, small) {
   const stage = orderStage(order);
-  const now = { pending: 1, approved: 2, transport: 3, loading: 3, loaded: 4, delivered: 6, cancelled: 1 }[stage];
-  const at = now == null ? 1 : now;
-  const name = (label, i) => stage === "cancelled" && i === at ? "Cancelled" : stage === "pending" && i === at ? "Approval pending" : stage === "approved" && i === at ? "Transport pending" : label;
+  const at = stepAt(order);
+  const name = (label, i) => stage === "cancelled" && i === at ? "Cancelled" : stage === "pending" && i === at ? "Approval pending"
+    : stage === "approved" && i === at ? "Transport pending" : stage === "loaded" && i === at ? "Out for delivery"
+    : stage === "delivered" && i === at ? "Settlement pending" : label;
   const dots = PO_STEPS.map((label, i) => {
     const css = stage === "cancelled" && i === at ? "x" : i < at ? "ok" : i === at ? "now" : "";
-    return `<span class="${css}" title="${name(label, i)}"><i></i>${small ? "" : name(label, i)}</span>`;
+    const tip = (i + 1) + ". " + name(label, i) + (i <= at ? (stepInfo(order, i) ? " — " + stepInfo(order, i) : "") : "");
+    return `<span class="${css}" title="${escapeHtml(tip)}"><i>${i + 1}</i>${small ? "" : name(label, i)}</span>`;
   }).join("");
-  // Computer list: dots only + where the PO is now, so the table needs no side scroll
-  const here = at >= PO_STEPS.length ? "Delivered" : name(PO_STEPS[at], at);
+  // Computer list: numbers only + where the PO is now, so the table needs no side scroll
+  const here = at >= PO_STEPS.length ? "Settled" : (at + 1) + ". " + name(PO_STEPS[at], at);
   const css = stage === "cancelled" ? "x" : at >= PO_STEPS.length ? "ok" : "now";
-  return `<div class="po-trk${small ? " sm" : ""}" aria-label="Order stage: ${here}">${dots}</div>` +
-    (small ? `<small class="trk-now ${css}">${here}</small>` : "");
+  return `<div class="po-trk${small ? " sm" : ""}" data-trk="${order.id}" aria-label="Order stage: ${here}">${dots}</div>` +
+    (small ? `<small class="trk-now ${css}" data-trk-now="${order.id}">${here}</small>` : "");
+}
+// 🖨 badge next to the PO no.: printed N times; red when the PO lines changed after the last print.
+function printBadge(id) {
+  const p = listPrints.get(id);
+  if (!p || !p.prints) return "";
+  const tip = "Printed " + p.prints + (p.prints === 1 ? " time" : " times") + (p.last_at ? " · last " + formatDateTime(p.last_at) : "") +
+    (p.last_by ? " by " + p.last_by : "") + (p.changed ? " · PO changed after the last print: print again" : "");
+  return `<span class="prn-b${p.changed ? " chg" : ""}" title="${escapeHtml(tip)}">🖨 ${p.prints}${p.changed ? " · changed" : ""}</span>`;
+}
+// Journey + prints of the orders on screen; the step line / badge are redrawn in place.
+async function loadListExtras(pageOrders) {
+  const ids = pageOrders.map(o => o.id);
+  if (!ids.length) return;
+  const [j, p] = await Promise.all([
+    db.rpc("lwb_po_journey", { p_ids: ids }).then(r => r, () => ({ error: true })),
+    listPrintsOn ? db.rpc("lwb_po_print_info", { p_ids: ids }).then(r => r, () => ({ error: true })) : { error: true }
+  ]);
+  if (!j.error) (j.data || []).forEach(r => listJourney.set(r.order_id, r));
+  if (!p.error) { ids.forEach(id => listPrints.delete(id)); (p.data || []).forEach(r => listPrints.set(r.order_id, r)); }
+  else if (listPrintsOn && /lwb_po_print_info/.test((p.error && p.error.message) || "")) listPrintsOn = false; // SQL not run yet
+  pageOrders.forEach(order => {
+    document.querySelectorAll(`#ordersArea [data-trk="${order.id}"]`).forEach(el => {
+      const small = el.classList.contains("sm");
+      const tmp = document.createElement("div"); tmp.innerHTML = stepTrack(order, small);
+      const now = el.parentElement.querySelector(`[data-trk-now="${order.id}"]`);
+      el.replaceWith(tmp.firstElementChild);
+      if (now && tmp.firstElementChild) now.replaceWith(tmp.firstElementChild);
+    });
+    const b = document.querySelector(`#ordersArea [data-prn="${order.id}"]`);
+    if (b) b.innerHTML = printBadge(order.id);
+  });
+}
+async function markPoPrinted(id, kind) {
+  if (!listPrintsOn) return;
+  try {
+    const r = await db.rpc("lwb_po_print_mark", { p_order_id: id, p_kind: kind });
+    if (r.error) { if (/lwb_po_print_mark/.test(r.error.message || "")) listPrintsOn = false; return; }
+    const o = orders.find(x => x.id === id);
+    if (o) loadListExtras([o]);
+  } catch (e) {}
 }
 
 function renderListFoot(filtered, pages) {
@@ -3596,7 +3679,7 @@ function renderOrders() {
             <td class="order-no c-no">
               <input type="checkbox" class="po-sel" data-id="${order.id}" ${pickedIds.has(order.id) ? "checked" : ""}
                 onclick="event.stopPropagation()" onchange="togglePick('${order.id}', this.checked)"
-                aria-label="Select ${escapeHtml(order.order_no || "")}">${escapeHtml(order.order_no || "-")}${priorityBadge(order)}
+                aria-label="Select ${escapeHtml(order.order_no || "")}">${escapeHtml(order.order_no || "-")}${priorityBadge(order)}<span class="prn-w" data-prn="${order.id}">${printBadge(order.id)}</span>
             </td>
 
             <td class="c-date">
@@ -3662,6 +3745,7 @@ function renderOrders() {
   `;
 
   loadOrderLines(pageOrders);
+  loadListExtras(pageOrders);
   renderSelBar();
 
 }
@@ -4601,9 +4685,10 @@ async function printApprovedPO(documentType="challan",collect=null){
         : "")+
       "<p class='po-print-footer'>"+(isPo?"PO copy from saved records. Printed "+safe(formatDateTime(new Date().toISOString()))+". Reprint after any changes.":"Internal delivery challan.")+" Not a GST invoice; the Tally bill is separate.</p>";
     // The ERP shell wraps the page in .erp-main; print CSS shows only direct body children, so lift the print area out.
-    if(collect){collect.push(printArea.innerHTML);return true;}
+    if(collect){collect.push(printArea.innerHTML);markPoPrinted(order.id,isPo?"PO":"CHALLAN");return true;}
     document.body.appendChild(document.getElementById("poPrintArea"));
     window.print();
+    markPoPrinted(order.id,isPo?"PO":"CHALLAN");
   }catch(e){
     alert("Could not print "+(isPo?"PO":"challan")+": "+e.message+". Please retry.");
   }finally{
