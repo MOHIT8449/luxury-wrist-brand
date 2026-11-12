@@ -265,7 +265,8 @@
     .eq("user_id",user.id).order("created_at",{ascending:false}).limit(70);
    if(error){list.replaceChildren(el("p","lwb-op-error","Notification error: "+error.message));return}
    // Driver sees no history: only the last 12 hours.
-   const rows=(data||[]).filter(n=>String(role||"").toLowerCase()!=="driver"||Date.now()-new Date(n.created_at)<12*36e5),unread=rows.filter(n=>!n.is_read).length;
+   // Team chat bells (CHAT_MSG, lwb_team_chat_setup.sql) are only for the phone push: the chat button shows them.
+   const rows=(data||[]).filter(n=>baseType(n)!=="CHAT_MSG").filter(n=>String(role||"").toLowerCase()!=="driver"||Date.now()-new Date(n.created_at)<12*36e5),unread=rows.filter(n=>!n.is_read).length;
    bell.setAttribute("aria-label", "Notifications" + (unread ? ", " + unread + " unread" : ""));
    newTxt.textContent=unread?unread+" new":"";
    count.textContent=unread>99?"99+":String(unread);count.style.display=unread?"inline-block":"none";

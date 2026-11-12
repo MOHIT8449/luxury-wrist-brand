@@ -661,6 +661,18 @@
     profitSwitch(top,role);
     liveLocation();
     tripRent(role);
+    teamChat(role);
+  }
+
+  // 💬 Team Chat: round chat button in the corner of every page, popups for new messages (team-chat.js,
+  // lwb_team_chat_setup.sql). Until the SQL is run the button does not show.
+  async function teamChat(role){
+    try{
+      const c=window.__lwbBellClient;if(!c||!role)return;
+      const {data}=await c.auth.getSession();const user=data&&data.session&&data.session.user;if(!user)return;
+      if(!window.LWBChat)await new Promise((ok,bad)=>{const s=document.createElement("script");s.src="team-chat.js";s.onload=ok;s.onerror=bad;document.head.appendChild(s)});
+      await window.LWBChat.init({db:c,user,role});
+    }catch(e){}
   }
 
   // ⏳ Porter rent left empty at transport assignment: popup after 2 hours / at day close (trip-rent.js).

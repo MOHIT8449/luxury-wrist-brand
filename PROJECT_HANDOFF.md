@@ -4,6 +4,14 @@
 **Purpose:** Continue the same ERP project from a new ChatGPT conversation without restarting or losing the agreed requirements.
 **Status:** Active development / verification. Do not assume all modules are completed or fully tested.
 
+## Team Chat: round chat button on every page, personal chats + @All groups (12 Nov 2026)
+
+- Mohit: live chat for every login (Admin, Sales Head, Salesman, Godown, Accounts, Driver, Transport), like a WhatsApp group, from a round button in the bottom-right corner of every ERP page and the phone app (Jio-style). Tag one person = a personal chat only between the two; @All groups = everyone in it sees and replies; @name highlights the message for that person. Admin sees every chat (only looks, cannot write in others' chats). Chats are never deleted by themselves; only Admin deletes (one message or a whole chat).
+- SQL `lwb_team_chat_setup.sql` (test `tests/team-chat`, PGlite, 6 tests). Tables `lwb_chat_rooms` (DIRECT pair user_a < user_b, or GROUP with gkey ALL / SALES / DRIVERS / GODOWN / ACCOUNTS and member roles; Admin and Sales Head are in every group), `lwb_chat_messages` (body up to 2000, mentions uuid[]), `lwb_chat_reads` (last read id per person). RLS read = member or Admin; no direct writes. RPCs `lwb_chat_people()`, `lwb_chat_open_direct(user)`, `lwb_chat_send(room, body, mentions)` (members only; non-member tags dropped), `lwb_chat_read(room)`, `lwb_chat_rooms_list(all)` (unread, @ flag; all = Admin's "Everyone's chats"), `lwb_chat_delete(room, message)` Admin. `lwb_chat_messages` is added to Supabase Realtime.
+- Phone push: a message makes ONE unread `CHAT_MSG` bell row per chat per person (ref_type CHAT, ref_id = chat id); no more rows for that chat until it is read (tagged people always get one). The bell panel hides CHAT_MSG rows. `lwb-web-push` logic opens `/dashboard.html#chat` for CHAT_MSG (needs the function redeployed; before that it opens the Dashboard).
+- `team-chat.js` (loaded by `erp-shell.js` for every logged-in role). New message = card above the button for 5 seconds with a shrinking bar (stays while the mouse / finger is on it), at most 3 at once; yellow = personal or @me, green = group. The button keeps the unread count (gold when an @ is waiting). Web: small window in the corner; phone: full screen under the top bar. Sits above the Salesman quick bar / Driver menu. Until the SQL is run the button does not show.
+- Checked with a mocked client whose chat RPCs ran this SQL on PGlite at 1366 / 390 px (Admin, Salesman, Driver pages): no side scroll, no JS errors. Not yet checked on live data / real phones. Screenshots: project files `team-chat-preview/built/`.
+
 ## PO / Sales List: numbered steps 1-6 with hover details, PO print count (12 Nov 2026)
 
 - Mohit: give each step a number (1 PO List, 2 Approved, 3 Transport, 4 Loading, 5 Delivered, 6 Settled), show on hover what happened at that step, and show whether a PO was already printed / changed and printed again.
