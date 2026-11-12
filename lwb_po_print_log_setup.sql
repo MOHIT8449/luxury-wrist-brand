@@ -11,6 +11,11 @@
 --   * lwb_po_print_info(order ids): per order the number of prints, the last print time / person and
 --     changed = the PO lines are not the same as at the last print (reprint needed).
 -- Admin, Sales Head (MANAGER), Godown Manager (WAREHOUSE) and Accounts; max 500 orders per call.
+-- 12 Nov 2026 (Mohit): tap the 🖨 badge = the full history of that PO: every print and every change
+--   (who, role, when, which field old -> new) from the Change History log (lwb_change_log) of the order,
+--   its lines, transport and other rows that carry its order_id.
+--   * lwb_po_history(order): prints for the four roles above; the changes only for Admin (the Change
+--     History log is Admin only).
 
 BEGIN;
 
@@ -94,5 +99,43 @@ END
 $fn$;
 REVOKE ALL ON FUNCTION public.lwb_po_print_info(uuid[]) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.lwb_po_print_info(uuid[]) TO authenticated;
+
+CREATE OR REPLACE FUNCTION public.lwb_po_history(p_order_id uuid)
+RETURNS TABLE(at timestamptz, kind text, who text, who_role text, tbl text, label text, changes jsonb)
+LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = ''
+AS $fn$
+DECLARE
+  v_admin boolean;
+  v_id text := p_order_id::text;
+BEGIN
+  IF NOT public.lwb_po_print_ok() THEN RAISE EXCEPTION 'Only Admin, Sales Head, Godown Manager and Accounts can see PO history.'; END IF;
+  SELECT lower(trim(coalesce(p.role, ''))) = 'admin' INTO v_admin FROM public.user_profiles p WHERE p.id = auth.uid();
+
+  RETURN QUERY
+  SELECT x.printed_at, 'PRINT'::text, coalesce(nullif(x.printed_by_name, ''), 'Unknown'), up.role,
+    'lwb_po_prints'::text, x.kind, '{}'::jsonb
+  FROM public.lwb_po_prints x LEFT JOIN public.user_profiles up ON up.id = x.printed_by
+  WHERE x.order_id = p_order_id;
+
+  IF NOT coalesce(v_admin, false) OR to_regclass('public.lwb_change_log') IS NULL THEN RETURN; END IF;
+
+  RETURN QUERY EXECUTE $q$
+    WITH rows AS (
+      SELECT 'orders'::text AS t, $1 AS r
+      UNION SELECT 'order_items', i.id::text FROM public.order_items i WHERE i.order_id::text = $1
+      UNION SELECT l.table_name, l.row_id FROM public.lwb_change_log l
+        WHERE l.table_name <> 'lwb_po_prints' AND l.row_id IS NOT NULL
+          AND (l.changes->>'order_id' = $1 OR l.changes->'order_id'->>1 = $1)
+    )
+    SELECT l.changed_at, l.action, coalesce(nullif(trim(u.full_name), ''), 'Unknown'), l.user_role,
+      l.table_name, l.row_label, l.changes
+    FROM public.lwb_change_log l
+    JOIN rows ON rows.t = l.table_name AND rows.r = l.row_id
+    LEFT JOIN public.user_profiles u ON u.id = l.user_id
+    ORDER BY l.changed_at DESC LIMIT 300 $q$ USING v_id;
+END
+$fn$;
+REVOKE ALL ON FUNCTION public.lwb_po_history(uuid) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.lwb_po_history(uuid) TO authenticated;
 
 COMMIT;

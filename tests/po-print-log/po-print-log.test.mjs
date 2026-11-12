@@ -53,3 +53,29 @@ test('line order does not matter; a salesman can not print or read', async()=>{
   await assert.rejects(q('select * from lwb_po_print_info($1::uuid[])',[[a]]),/Only Admin/);
   await assert.rejects(q('select * from lwb_po_prints'),/permission denied/);
 });
+
+test('history: prints for the office roles, changes (who, field old -> new) only for Admin', async()=>{
+  await db.exec(`CREATE TABLE IF NOT EXISTS public.lwb_change_log(id bigserial primary key,changed_at timestamptz default now(),user_id uuid,user_role text,
+    table_name text,action text,row_id text,row_label text,changes jsonb default '{}')`);
+  const item=(await db.query("select id from order_items where order_id=$1 and sku_name='Thums Up'",[a])).rows[0].id;
+  await db.query(`insert into lwb_change_log(user_id,user_role,table_name,action,row_id,row_label,changes) values
+    ($1,'manager','order_items','UPDATE',$2,'Thums Up','{"approved_qty":[4,3]}'),
+    ($3,'accounts','orders','UPDATE',$4,'LXY-1','{"status":["approved","loading"]}'),
+    ($3,'accounts','dispatch_assignments','INSERT','d1','GJ01','{"order_id":"${a}","vehicle_no":"GJ01"}'),
+    ($3,'accounts','dispatch_assignments','UPDATE','d1','GJ01','{"vehicle_no":["GJ01","GJ02"]}'),
+    ($3,'accounts','orders','UPDATE',$5,'LXY-2','{"status":["approved","loading"]}'),
+    ($3,'accounts','lwb_po_prints','INSERT','p1','', '{"order_id":"${a}"}')`,[ids.warehouse,item,ids.admin,a,b]);
+  await as('admin');
+  const h=await q('select * from lwb_po_history($1)',[a]);
+  assert.equal(h.filter(r=>r.kind==='PRINT').length,2);
+  const ch=h.filter(r=>r.kind!=='PRINT');
+  assert.equal(ch.length,4);
+  const qty=ch.find(r=>r.tbl==='order_items');
+  assert.equal(qty.who,'WAREHOUSE USER');assert.deepEqual(qty.changes.approved_qty,[4,3]);
+  assert.ok(ch.some(r=>r.tbl==='dispatch_assignments'&&r.kind==='UPDATE'));
+  await as('warehouse');
+  const w=await q('select * from lwb_po_history($1)',[a]);
+  assert.ok(w.length===2&&w.every(r=>r.kind==='PRINT'));
+  await as('sales');
+  await assert.rejects(q('select * from lwb_po_history($1)',[a]),/Only Admin/);
+});

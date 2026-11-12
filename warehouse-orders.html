@@ -764,6 +764,22 @@
     .prn-w:empty {display:none}
     .prn-b {display:inline-block;margin:2px 0 0 26px;padding:0 5px;border-radius:5px;background:#eef3f2;color:#33504c;font-size:10.5px;font-weight:700;vertical-align:middle;white-space:nowrap;cursor:help}
     .prn-b.chg {background:#fdecec;color:#b42318}
+    button.prn-b {border:0;font-family:inherit;line-height:1.5}
+    button.prn-b:hover {text-decoration:underline}
+    .hist-open {margin-top:10px;width:100%}
+    .po-hist .h-sum {font-weight:800;font-size:13px;margin-bottom:8px;color:#1f2a37}
+    .po-hist .h-list {list-style:none;margin:0;padding:0;max-height:60vh;overflow:auto}
+    .po-hist .h-list li {display:grid;grid-template-columns:118px minmax(0,1fr);gap:2px 10px;padding:7px 4px 7px 10px;border-left:3px solid #c9d3d0;border-bottom:1px solid #eef1f0;font-size:12.5px}
+    .po-hist .h-list li.h-prn {border-left-color:#2563eb}
+    .po-hist .h-list li.h-update {border-left-color:#c9a34a}
+    .po-hist .h-list li.h-insert {border-left-color:#1b8a4b}
+    .po-hist .h-list li.h-delete {border-left-color:#d92d20}
+    .po-hist .hw {color:#6b7785;font-size:11.5px;grid-row:span 2}
+    .po-hist .hb {overflow-wrap:anywhere;color:#1f2a37}
+    .po-hist .hu {font-weight:700;font-size:12px}
+    .po-hist .hu span {font-weight:600;color:#6b7785}
+    .po-hist .h-empty,.po-hist .h-note {color:#6b7785;font-size:12.5px;padding:8px 0}
+    @media (max-width:640px){.po-hist .h-list li {grid-template-columns:1fr}.po-hist .hw {grid-row:auto}}
     .po-trk .ok {color:#1b6b3a}.po-trk .ok i {background:#1b8a4b;border-color:#1b8a4b}
     .po-trk :is(.ok,.now,.x)::before {background:#1b8a4b!important}
     .po-trk .now {color:#7a5a00;font-weight:700}.po-trk .now i {background:#fff;border-color:#c9a34a;box-shadow:0 0 0 2px #f3e6c4}
@@ -1447,8 +1463,19 @@
       <div class="modal-body">
         <ol class="po-journey" id="trackJourney" aria-label="Where this PO is now"></ol>
         <div class="adm-mark" id="trackAdmMark" hidden></div>
+        <button type="button" class="btn btn-light hist-open" id="trackHistBtn">📜 Full history: prints &amp; changes</button>
       </div>
       <div class="modal-footer" id="trackFoot" hidden></div>
+    </div>
+  </div>
+
+  <div class="modal track-modal" id="histModal" onclick="if(event.target===this)closeHist()">
+    <div class="modal-card track-card">
+      <div class="modal-header">
+        <h3 id="histTitle">PO history</h3>
+        <button class="close-btn" onclick="closeHist()" aria-label="Close">&times;</button>
+      </div>
+      <div class="modal-body"><div class="po-hist" id="histBody"></div></div>
     </div>
   </div>
 
@@ -2847,7 +2874,8 @@ function printBadge(id) {
   if (!p || !p.prints) return "";
   const tip = "Printed " + p.prints + (p.prints === 1 ? " time" : " times") + (p.last_at ? " · last " + formatDateTime(p.last_at) : "") +
     (p.last_by ? " by " + p.last_by : "") + (p.changed ? " · PO changed after the last print: print again" : "");
-  return `<span class="prn-b${p.changed ? " chg" : ""}" title="${escapeHtml(tip)}">🖨 ${p.prints}${p.changed ? " · changed" : ""}</span>`;
+  return `<button type="button" class="prn-b${p.changed ? " chg" : ""}" title="${escapeHtml(tip + " · tap for full history")}"
+    onclick="event.stopPropagation();openPoHistory('${id}')">🖨 ${p.prints}${p.changed ? " · changed" : ""}</button>`;
 }
 // Journey + prints of the orders on screen; the step line / badge are redrawn in place.
 async function loadListExtras(pageOrders) {
@@ -2872,6 +2900,57 @@ async function loadListExtras(pageOrders) {
     if (b) b.innerHTML = printBadge(order.id);
   });
 }
+/* PO history (Mohit, 12 Nov 2026): tap the 🖨 badge (or Track > Full history) = every print and every change of this
+   PO: who (name + role), when, what (field old → new). lwb_po_history; the changes part is for Admin only. */
+const HIST_TABLES = { orders: "PO", order_items: "Item", dispatch_assignments: "Transport", lwb_tally_invoices: "Tally bill",
+  lwb_tax_bills: "Tax invoice", lwb_order_pickup: "Self pickup", lwb_delivery_reports: "Delivery", lwb_bill_changes: "PO change request" };
+const HIST_FIELDS = { approved_qty: "Approved qty", ordered_qty: "Ordered qty", rate: "Rate", sku_name: "SKU", status: "Status",
+  manager_note: "Manager note", transportation: "Transport", customer_name: "Party", total_qty: "Total qty", total_amount: "Amount",
+  total_weight: "Weight", priority: "Priority", vehicle_no: "Vehicle", driver_name: "Driver", driver_mobile: "Driver mobile",
+  loading_person: "Godown manager", invoice_no: "Bill no.", amount: "Amount", unit_weight: "Unit weight" };
+const HIST_ROLES = { admin: "Admin", manager: "Sales Head", sales: "Sales", salesman: "Sales", warehouse: "Godown Manager", accounts: "Accounts", driver: "Driver" };
+const HIST_SKIP = /(^id$|_id$|_at$|^created|^updated|^approved_by|_by$|^sig$|photo|^lines$|^data$)/;
+function histVal(v) {
+  if (v == null || v === "") return "—";
+  if (typeof v === "object") return "…";
+  const t = String(v);
+  return /^\d{4}-\d\d-\d\dT/.test(t) ? formatDateTime(t) : t.replace(/_/g, " ");
+}
+function histLine(r) {
+  const what = HIST_TABLES[r.tbl] || String(r.tbl || "").replace(/^lwb_/, "").replace(/_/g, " ");
+  const c = r.changes || {};
+  let body = "";
+  if (r.kind === "PRINT") body = (r.label === "CHALLAN" ? "Delivery challan" : "PO") + " printed";
+  else if (r.kind === "UPDATE") {
+    const parts = Object.entries(c).filter(([k]) => !HIST_SKIP.test(k)).map(([k, v]) =>
+      `<b>${escapeHtml(HIST_FIELDS[k] || k.replace(/_/g, " "))}</b> ${escapeHtml(histVal(Array.isArray(v) ? v[0] : ""))} → ${escapeHtml(histVal(Array.isArray(v) ? v[1] : v))}`);
+    if (!parts.length) return "";
+    body = `${escapeHtml(what)}${r.label ? " " + escapeHtml(r.label) : ""}: ${parts.join(", ")}`;
+  } else {
+    const q = c.approved_qty ?? c.ordered_qty;
+    body = `${escapeHtml(what)} ${r.kind === "INSERT" ? "added" : "removed"}${r.label ? ": " + escapeHtml(r.label) : ""}${q != null && r.tbl === "order_items" ? " · qty " + escapeHtml(String(q)) : ""}`;
+  }
+  const role = HIST_ROLES[String(r.who_role || "").toLowerCase()] || r.who_role || "";
+  return `<li class="h-${r.kind === "PRINT" ? "prn" : r.kind.toLowerCase()}"><div class="hw">${escapeHtml(formatDateTime(r.at))}</div>
+    <div class="hb">${body}</div><div class="hu">${escapeHtml(r.who || "Unknown")}${role ? ` <span>${escapeHtml(role)}</span>` : ""}</div></li>`;
+}
+async function openPoHistory(id) {
+  const order = orders.find(o => o.id === id) || {};
+  document.getElementById("histTitle").textContent = "History · " + (order.order_no || "PO") + (order.customer_name ? " · " + order.customer_name : "");
+  const box = document.getElementById("histBody");
+  box.innerHTML = '<div class="h-empty">Loading…</div>';
+  document.getElementById("histModal").classList.add("show");
+  const { data, error } = await db.rpc("lwb_po_history", { p_order_id: id });
+  if (error) { box.innerHTML = `<div class="h-empty">${/lwb_po_history/.test(error.message || "") ? "History is not ready yet (database update pending)." : escapeHtml(error.message || "Could not load")}</div>`; return; }
+  const rows = (data || []).slice().sort((a, b) => new Date(b.at) - new Date(a.at));
+  const prints = rows.filter(r => r.kind === "PRINT").length, changes = rows.length - prints;
+  const items = rows.map(histLine).filter(Boolean);
+  box.innerHTML = `<div class="h-sum">🖨 ${prints} print${prints === 1 ? "" : "s"}${IS_ADMIN ? ` · ✏️ ${changes} change${changes === 1 ? "" : "s"}` : ""}</div>` +
+    (items.length ? `<ol class="h-list">${items.join("")}</ol>` : '<div class="h-empty">Nothing saved yet for this PO.</div>') +
+    (IS_ADMIN ? "" : '<div class="h-note">Changes (who changed what) are shown to Admin.</div>');
+}
+function closeHist() { document.getElementById("histModal").classList.remove("show"); }
+
 async function markPoPrinted(id, kind) {
   if (!listPrintsOn) return;
   try {
@@ -3089,6 +3168,8 @@ async function bulkApprove() {
 async function bulkPrint() {
   const list = pickedOrders();
   if (!list.length || bulkBusy) return;
+  const notYet = list.filter(o => !printAllowed(o));
+  if (notYet.length) { alert("Print opens after transport is assigned. No transport yet: " + notYet.map(o => o.order_no).join(", ") + ". Untick them or assign transport first."); return; }
   bulkBusy = true;
   renderSelBar();
   const parts = [];
@@ -3211,6 +3292,7 @@ function trackOrder(id) {
   const foot = document.getElementById("trackFoot");
   foot.hidden = true;
   renderAdminMark(order, "trackAdmMark");
+  document.getElementById("trackHistBtn").onclick = () => openPoHistory(order.id);
   renderJourney(order, document.getElementById("trackJourney")).then(data => {
     if (!CAN_BILL || !eligibleForPoPrint(order) || document.getElementById("trackJourney").dataset.oid !== String(id)) return;
     foot.innerHTML = data?.bill_no
@@ -3729,8 +3811,8 @@ function renderOrders() {
               ${!isCancelled(order) ? `<button class="btn btn-light btn-track" title="Copy order image for WhatsApp (no order no.). Phone: downloads it." aria-label="Copy order image" onclick="LWBPoShare.quick(db,'${order.id}')">${LWBPoShare.ICON}</button>` : ""}
               ${CAN_BILL && VIEW_ONLY && eligibleForPoPrint(order) ? `<button class="btn btn-green" title="Enter the Tally bill no." onclick="openBill('${order.id}')">🧾 Bill</button>` : ""}
               ${IS_ADMIN && rateWait.has(order.id) ? `<button class="btn btn-green" title="Rate below min: check and approve" onclick="openRateOk('${order.id}')">₹ Rate OK</button>` : ""}
-              ${!isCancelled(order) ? `<button class="btn btn-light" title="Print PO" onclick="printPoFromList('${order.id}')">🖨 PO</button>` : ""}
-              ${TAX_BILL && !isCancelled(order) && !["pending","rejected"].includes(String(order.status||"").toLowerCase()) ? `<button class="btn btn-light" title="Print tax invoice (Tally layout)" onclick="taxBillPrint('${order.id}', this)">🖨 Bill</button>` : ""}
+              ${printAllowed(order) ? `<button class="btn btn-light" title="Print PO" onclick="printPoFromList('${order.id}')">🖨 PO</button>` : ""}
+              ${TAX_BILL && printAllowed(order) ? `<button class="btn btn-light" title="Print tax invoice (Tally layout)" onclick="taxBillPrint('${order.id}', this)">🖨 Bill</button>` : ""}
               ${eligibleForPoPrint(order) && !VIEW_ONLY ? `<button class="btn btn-green" title="Driver / Vehicle / Godown Manager"
                 onclick="openTransportAllocation('${order.id}')">🚚<span class="lbl-long"> Transport</span></button>` : ""}
             </div></td>
@@ -4492,7 +4574,20 @@ function poItemsSignature(items){
   return JSON.stringify(items.map(i=>[i.id||null,String(i.sku_name||""),number(i.ordered_qty),number(i.approved_qty==null?i.ordered_qty:i.approved_qty),number(i.rate),number(i.unit_weight)]));
 }
 // Print straight from the list: the printer dialog opens directly, the review popup stays closed.
+/* Print only after transport is assigned (Mohit, 12 Nov 2026): PO, challan and bill print open from step 3
+   Transport (also loading / loaded / delivered). A Self Pickup PO counts once it is approved (its driver is typed on it). */
+function printAllowed(order){
+  if(!order||isCancelled(order))return false;
+  const st=orderStage(order);
+  return ["transport","loading","loaded","delivered"].includes(st)||(st==="approved"&&isSelfPickup(order));
+}
+function printBlocked(order){
+  if(printAllowed(order))return false;
+  alert((order&&order.order_no?order.order_no+": ":"")+"Print opens after transport is assigned. Assign driver / vehicle first (🚚 Transport).");
+  return true;
+}
 async function printPoFromList(id){
+  if(printBlocked(orders.find(o=>o.id===id)))return;
   if(await printSlipIfAny(id))return;
   await printQuietly(id,"po");
 }
@@ -4564,6 +4659,7 @@ async function printQuietly(id,type,onReady){
 }
 async function printApprovedPO(documentType="challan",collect=null){
   const isPo=documentType==="po";
+  if(selectedOrder&&!printAllowed(orders.find(o=>o.id===selectedOrder.id)||selectedOrder)){if(collect)return false;printBlocked(selectedOrder);return;}
   if(!reviewReady||!selectedOrder||isCancelled(selectedOrder)||(!isPo&&!eligibleForPoPrint(selectedOrder))){
     alert(isPo?"Open a saved PO before printing.":"Approve the PO before printing.");
     return;
@@ -4886,6 +4982,7 @@ let TAX_BILL=false;
    opens the printer. If something must be fixed first (rate, GST, party) its editor shows here as a popup. */
 let taxBillFrame=null;
 function taxBillPrint(id, btn){
+  if(printBlocked(orders.find(o=>o.id===id)))return;
   if(taxBillFrame)taxBillFrame.remove();
   if(btn){btn.disabled=true;setTimeout(()=>{btn.disabled=false},4000);}
   const f=document.createElement("iframe");
