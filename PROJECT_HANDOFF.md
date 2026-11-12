@@ -4,6 +4,12 @@
 **Purpose:** Continue the same ERP project from a new ChatGPT conversation without restarting or losing the agreed requirements.
 **Status:** Active development / verification. Do not assume all modules are completed or fully tested.
 
+## PO List "🖨 Bill": printer opens on the same page (12 Nov 2026)
+
+- Mohit: the Bill button on the PO list moved to Tax Invoice Print and opened another tab; wanted the printer to open right there.
+- `warehouse-orders.html` `taxBillPrint(id)`: loads `tax-invoice.html?direct=1&order=<id>` in a hidden iframe. Direct mode (`tax-invoice.html`, only inside a frame) opens the bill, Save & Print at once (same save / invoice no. rules), then tells the PO list (`postMessage {lwbTaxBill: done|edit|closed}`, same origin only). Rate / GST / party missing or a save error = the editor shows on the PO list as a full popup; Close or print removes it. Tax Invoice Print page itself is unchanged.
+- Checked with a mocked database at 1366 / 390 px: good bill = print called, no page change; rate 0 = popup with "Enter the rate". Real printer dialog not checked here. Screenshots: project files `po-status-tabs/bill-print/`.
+
 ## PO / Sales List: 6 main tabs + "where is the order" steps (11 Nov 2026)
 
 - Mohit: too many stage tabs on the PO list; wanted a compact page with Draft · PO List · Cancelled · Transport assigned · Delivery, an All view for every role, and each order showing the step it has reached.
