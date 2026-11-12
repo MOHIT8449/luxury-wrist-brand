@@ -11,7 +11,8 @@
 # - Every applied file is logged in public.lwb_sql_apply_log.
 # - Pull requests only get the safety check, nothing touches the database.
 # - "Run workflow" (Actions tab) can re-apply one named SQL file by hand, or
-#   check the database login with the name  connection-test  (changes nothing).
+#   check the database login with the name  connection-test  (changes nothing),
+#   or deploy one Edge Function again with  fn:<name>  (e.g. fn:lwb-doc-share).
 #
 # Secrets (Settings > Secrets and variables > Actions):
 #   SUPABASE_DB_PASSWORD   the database password (or SUPABASE_DB_URL, a full
@@ -33,7 +34,7 @@ on:
   workflow_dispatch:
     inputs:
       sql_file:
-        description: "Root SQL file to apply now (e.g. lwb_party_ledger_setup.sql), or connection-test"
+        description: "Root SQL file to apply now (e.g. lwb_party_ledger_setup.sql), connection-test, or fn:<function name> to deploy one Edge Function"
         required: true
 
 concurrency:
@@ -78,6 +79,13 @@ jobs:
               echo "connection-test" > "$RUNNER_TEMP/sql.txt"; : > "$RUNNER_TEMP/functions.txt"
               echo "sql=true" >> "$GITHUB_OUTPUT"; echo "functions=false" >> "$GITHUB_OUTPUT"; exit 0
             fi
+            case "$MANUAL_FILE" in fn:*)
+              fn="${MANUAL_FILE#fn:}"
+              case "$fn" in *[!a-z0-9-]*|"") echo "::error::Function name: letters, numbers, -"; exit 1;; esac
+              [ -f "supabase/functions/$fn/index.ts" ] || { echo "::error::supabase/functions/$fn not found"; exit 1; }
+              : > "$RUNNER_TEMP/sql.txt"; echo "$fn" > "$RUNNER_TEMP/functions.txt"
+              echo "sql=false" >> "$GITHUB_OUTPUT"; echo "functions=true" >> "$GITHUB_OUTPUT"; exit 0;;
+            esac
             case "$MANUAL_FILE" in */*|*..*|"") echo "::error::Give a root .sql file name"; exit 1;; esac
             [ -f "$MANUAL_FILE" ] || { echo "::error::$MANUAL_FILE not found on this branch"; exit 1; }
             printf '%s\n' "$MANUAL_FILE" > "$RUNNER_TEMP/sql.txt"
@@ -177,6 +185,7 @@ jobs:
           while read -r fn; do
             [ -z "$fn" ] && continue
             echo "Deploying $fn"
-            supabase functions deploy "$fn" --project-ref "$SUPABASE_PROJECT_REF" --use-api
+            # --yes: newer Supabase CLI asks to confirm and stops in CI without it (11 Nov 2026).
+            supabase functions deploy "$fn" --project-ref "$SUPABASE_PROJECT_REF" --use-api --yes
             echo "- Deployed function \`$fn\`" >> "$GITHUB_STEP_SUMMARY"
           done < "$RUNNER_TEMP/functions.txt"
