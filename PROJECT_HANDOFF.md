@@ -13,6 +13,7 @@
 ## PO / Sales List: 6 main tabs + "where is the order" steps (11 Nov 2026)
 
 - Mohit: too many stage tabs on the PO list; wanted a compact page with Draft · PO List · Cancelled · Transport assigned · Delivery, an All view for every role, and each order showing the step it has reached.
+- 12 Nov 2026: page opens on PO List > Pending approval (Mohit).
 - `warehouse-orders.html` only (no SQL). Main tabs: Draft · PO List (pending + approved, no transport) · Transport Assigned (transport / loading / loaded) · Delivered · Cancelled · All. The old stages are small chips under their main tab (PO List: Pending approval, Full load, Merge, Self pickup; Transport Assigned: Transport assigned, Loading, Loaded / Billed; All: Urgent / High). Approval late / Delivery late stay at the right of the same row, only when the count is above 0. Default tab = PO List. All is open to every role that has this page (Admin, Sales Head, Godown Manager, Accounts); salesmen still use My Sales.
 - Step line per PO: PO Created → Approved → Transport → Loading → Out for delivery → Delivered (green done, gold = now, red = cancelled). Computer: dots + "now" text in the Status column (no side scroll at 1280 / 1366); phone: full labelled line in the card. Phone tabs = 3 per row.
 - Checked with a mocked database at 1366 / 390 px: no side scroll, no JS errors. Screenshots: project files `po-status-tabs/built/`.
