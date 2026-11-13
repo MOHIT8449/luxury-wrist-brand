@@ -124,7 +124,10 @@ public final class DriverTrackingActivity extends Activity {
         dialog.show();
     }
     private void openErp(){
-        startActivity(new Intent(this,com.google.androidbrowserhelper.trusted.LauncherActivity.class));
+        // NEW_TASK is required: without it LauncherActivity restarts itself in a new task, the second
+        // copy sees the first still alive, thinks the ERP is already open, and closes (app goes back to home).
+        startActivity(new Intent(this,com.google.androidbrowserhelper.trusted.LauncherActivity.class)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
         finish();
     }
 
