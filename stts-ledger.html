@@ -46,6 +46,7 @@
     .st-r .q{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
     .st-r .q small{display:block;color:var(--erp-muted);font-size:11px}
     .st-r .df{text-align:right;font-weight:800;white-space:nowrap;font-variant-numeric:tabular-nums}
+    .st-r .df small{display:block;font-size:12px;font-weight:700}
     .bad{color:#b3122b}.good{color:#13824a}
     .st-r .tags{grid-column:2/-1;display:flex;gap:4px;flex-wrap:wrap}
     .st-r .tags:empty{display:none}
@@ -209,6 +210,11 @@
         '<select id="kind" aria-label="Scheme type"><option value="all">Free bottle + ₹ off</option><option value="FREE"'+(kind==="FREE"?" selected":"")+'>Free bottle</option><option value="OFF"'+(kind==="OFF"?" selected":"")+'>₹ off per case</option></select>'+
         '<select id="flag" aria-label="Problem"><option value="all">Every status</option><option value="BILL"'+(flagF==="BILL"?" selected":"")+'>Bill ≠ Rate List</option>'+fl.map(f=>'<option value="'+f+'"'+(flagF===f?" selected":"")+">"+LWBStts.FLAG[f]+"</option>").join("")+"</select>"+(extra||"")+"</div>";
     }
+    // Difference: free bottle packs in bottles with the ₹ value under it; ₹ off packs in ₹.
+    function diffCell(r){const d=r.diffRs,cls=d<-1?"bad":d>1?"good":"";
+      if(r.kind==="FREE"){const b=r.stts-(r.exp!=null?r.exp:r.given);
+        return '<span class="df '+cls+'">'+(Math.abs(b)<1&&Math.abs(d)<1?"✓":(b>0?"+":"")+nf(b)+" btl")+(Math.abs(b)<1&&Math.abs(d)<1?"":'<small>'+(d>0?"+":"")+rs(d)+"</small>")+"</span>"}
+      return '<span class="df '+cls+'">'+(Math.abs(d)<1?"✓":(d>0?"+":"")+rs(d))+"</span>"}
     function renderBills(){
       const list=filtered(),vis=list.slice(0,shown);
       let h=filterBar()+'<div class="st-note">'+(tab==="PROB"?"Only bills where the bill, the Rate List and STTS do not agree. Tap a bill to see its lines and copy a query for the company.":"Every bill with a scheme this month.")+"</div>";
@@ -218,10 +224,10 @@
         return '<div class="st-r" data-k="'+esc(r.key)+'" data-kd="'+r.kind+'"><span class="d">'+dmy(r.day)+'</span>'+
           '<span class="n"><b>'+esc(r.doc)+'</b><small>'+esc(r.outlet)+(r.salesman?" · "+esc(r.salesman):"")+'</small></span>'+
           '<span class="n">'+esc(shortItem(r.kind==="FREE"?(r.freeItem||r.items[0]||r.pack):(r.items[0]||r.pack)))+'<small>'+esc(r.pack)+' · '+nf(r.paidPc)+' cases · '+schemeTxt(r)+'</small></span>'+
-          '<span class="q c4"><span class="lbl">Rate List</span>'+val(r,r.exp)+'<small>'+(r.kind==="FREE"?"btl":"")+'</small></span>'+
-          '<span class="q"><span class="lbl">Given</span>'+val(r,r.given)+'<small>'+(r.kind==="FREE"?r.perCaseGiven+" / case":"")+'</small></span>'+
-          '<span class="q"><span class="lbl">STTS</span>'+val(r,r.stts)+'<small>'+(r.kind==="FREE"?r.perCaseStts+" / case":"")+'</small></span>'+
-          '<span class="df '+(d<-1?"bad":d>1?"good":"")+'">'+(Math.abs(d)<1?"✓":(d>0?"+":"")+rs(d))+'</span>'+
+          '<span class="q c4"><span class="lbl">Rate List</span>'+val(r,r.exp)+'<small>'+(r.kind==="FREE"&&r.expRs!=null?rs(r.expRs):"")+'</small></span>'+
+          '<span class="q"><span class="lbl">Given</span>'+val(r,r.given)+'<small>'+(r.kind==="FREE"?rs(r.givenRs):"")+'</small></span>'+
+          '<span class="q"><span class="lbl">STTS</span>'+val(r,r.stts)+'<small>'+(r.kind==="FREE"?rs(r.sttsRs):"")+'</small></span>'+
+          diffCell(r)+
           '<span class="tags">'+r.flags.map(f=>'<span class="tag '+TAGC[f]+'">'+LWBStts.FLAG[f]+(f==="STTS_SHORT"&&r.kind==="FREE"?" "+(r.given-r.stts)+" btl":"")+(f==="GIVEN_LESS"&&r.kind==="FREE"&&r.exp!=null?" "+(r.exp-r.given)+" btl":"")+"</span>").join("")+"</span></div>"}).join("");
       if(list.length>shown)h+='<div style="text-align:center;padding:8px"><button type="button" class="st-btn sm" id="more">Show '+Math.min(150,list.length-shown)+" more of "+(list.length-shown)+"</button></div>";
       el("body").innerHTML=h;bind();
