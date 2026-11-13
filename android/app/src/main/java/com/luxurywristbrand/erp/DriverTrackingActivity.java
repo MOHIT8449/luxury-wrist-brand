@@ -51,7 +51,7 @@ public final class DriverTrackingActivity extends Activity {
             +"यह कंपनी ऐप काम के समय में आपकी लोकेशन Admin को भेजता है, ऐप बंद हो या स्क्रीन बंद हो तब भी। लोकेशन बंद करने पर ऐप हर बार खुलते समय फिर से पूछेगा।");
         form.addView(notice);
         tick=new CheckBox(this);tick.setText("I agree / मैं सहमत हूँ");form.addView(tick);
-        email=new EditText(this);email.setHint("ERP email");email.setInputType(InputType.TYPE_CLASS_TEXT|InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS);form.addView(email);
+        email=new EditText(this);email.setHint("Mobile number or email");email.setInputType(InputType.TYPE_CLASS_TEXT|InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS);form.addView(email);
         password=new EditText(this);password.setHint("ERP password");password.setInputType(InputType.TYPE_CLASS_TEXT|InputType.TYPE_TEXT_VARIATION_PASSWORD);form.addView(password);
         agree=new Button(this);agree.setText("Agree and continue");form.addView(agree);agree.setOnClickListener(v->signIn());
 
@@ -68,7 +68,7 @@ public final class DriverTrackingActivity extends Activity {
         if(dialog!=null&&dialog.isShowing())dialog.dismiss();
         if(!api.hasSession()||!api.agreed()&&api.tracked()){
             form.setVisibility(LinearLayout.VISIBLE);
-            status.setText("Sign in once with your ERP login and agree to location sharing.");
+            status.setText("Sign in once with your ERP mobile number (or email) and password, and agree to location sharing.");
             return;
         }
         form.setVisibility(LinearLayout.GONE);
@@ -131,7 +131,7 @@ public final class DriverTrackingActivity extends Activity {
     private void signIn() {
         if(!tick.isChecked()){status.setText("Tick \"I agree\" to continue.");return;}
         String e=email.getText().toString().trim(),p=password.getText().toString();
-        if(e.isEmpty()||p.isEmpty()){status.setText("Enter your ERP email and password.");return;}
+        if(e.isEmpty()||p.isEmpty()){status.setText("Enter your mobile number (or email) and password.");return;}
         final int attempt=++attemptId;
         agree.setEnabled(false);status.setText("Checking login…");
         worker.execute(()->{

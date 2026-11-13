@@ -41,6 +41,22 @@ final class TrackingApi {
             }
         } finally { c.disconnect(); }
     }
+    /** Anonymous RPC whose answer is a plain JSON value (e.g. a text). */
+    private String requestText(String path, JSONObject body) throws Exception {
+        HttpURLConnection c=(HttpURLConnection)new URL(HOST+path).openConnection();
+        try {
+            c.setConnectTimeout(15000); c.setReadTimeout(15000); c.setRequestMethod("POST");
+            c.setRequestProperty("apikey",KEY);
+            c.setRequestProperty("Content-Type","application/json"); c.setDoOutput(true);
+            try(java.io.OutputStream out=c.getOutputStream()){out.write(body.toString().getBytes(StandardCharsets.UTF_8));}
+            int code=c.getResponseCode();
+            if(code<200||code>=300)throw new HttpError(code);
+            try(java.io.InputStream in=c.getInputStream(); java.io.ByteArrayOutputStream out=new java.io.ByteArrayOutputStream()) {
+                byte[] b=new byte[4096]; int n; while((n=in.read(b))!=-1)out.write(b,0,n);
+                return out.toString("UTF-8");
+            }
+        } finally { c.disconnect(); }
+    }
     private SecretKey key() throws Exception {
         KeyStore ks=KeyStore.getInstance("AndroidKeyStore"); ks.load(null);
         if(!ks.containsAlias("lwb-driver-session")) {
@@ -69,8 +85,30 @@ final class TrackingApi {
         session=new JSONObject(new String(c.doFinal(Base64.decode(parts[1],Base64.NO_WRAP)),StandardCharsets.UTF_8));
     }
     /** Any active staff login. Returns lwb_track_me: tracked=false for Admin (never tracked). */
-    synchronized JSONObject login(String email,String password) throws Exception {
-        JSONObject next=request("/auth/v1/token?grant_type=password",new JSONObject().put("email",email).put("password",password),null);
+    /** 10-digit Indian mobile (with or without +91 / 0), else null. Same rule as login.html. */
+    static String mobile(String raw) {
+        String d=raw.replaceAll("[^0-9]","");
+        if(d.length()==12&&d.startsWith("91"))d=d.substring(2);
+        if(d.length()==11&&d.startsWith("0"))d=d.substring(1);
+        return d.matches("[6-9][0-9]{9}")?d:null;
+    }
+    synchronized JSONObject login(String login,String password) throws Exception {
+        String email=login.trim();
+        if(!email.contains("@")) {
+            // Mobile login, as on the ERP website: the database gives the login email only for the right password.
+            String m=mobile(email);
+            if(m==null)throw new Exception("Enter a valid 10-digit mobile number or your email");
+            String found;
+            try { found=requestText("/rest/v1/rpc/lwb_login_email",new JSONObject().put("p_login",m).put("p_password",password)); }
+            catch(HttpError ex){ throw new Exception("Mobile login is not set up for this user. Use your email, or ask Admin."); }
+            found=found==null?"":found.trim();
+            if(found.startsWith("\"")&&found.endsWith("\""))found=found.substring(1,found.length()-1);
+            if(found.isEmpty()||"null".equals(found))throw new Exception("Wrong mobile number or password");
+            email=found;
+        }
+        JSONObject next;
+        try { next=request("/auth/v1/token?grant_type=password",new JSONObject().put("email",email).put("password",password),null); }
+        catch(HttpError ex){ if(ex.status==400)throw new Exception("Wrong login or password"); throw ex; }
         JSONObject me=request("/rest/v1/rpc/lwb_track_me",new JSONObject(),next.getString("access_token"));
         if(me.optString("role").isEmpty())throw new Exception("This login is not an active ERP staff login");
         clear();
