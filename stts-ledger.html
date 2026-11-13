@@ -327,6 +327,8 @@
       catch(err){ERPShell.alert(err.message)}});
 
     /* Bill popup: the three numbers, the bill lines and the STTS lines, copy a query for the company. */
+    /* DMS "Promotion Total" = Discount Amount + Tax on Discount (GST + cess). */
+    const discT=x=>x.disc?(x.promo>=x.disc?x.promo:x.disc):0,gstOf=x=>Math.max(0,discT(x)-x.disc);
     function openBill(key,kd){
       const r=M.rows.find(x=>x.key===key&&x.kind===kd);if(!r)return;
       const ls=D.sales.filter(x=>x.doc===r.doc&&LWBStts.packOf(x.item)===r.pack),st=D.claims.filter(x=>x.doc===r.doc&&LWBStts.packOf(x.item)===r.pack);
@@ -342,8 +344,8 @@
           '<div class="'+(r.flags.some(f=>/STTS|NOT_IN/.test(f))?"bd":"")+'"><small>STTS accepted</small><b>'+v(r.stts)+'</b>'+(F?'<i>'+rs(r.sttsRs)+' payment</i>':'')+'</div>'+
           '<div class="'+(bad?"bd":"ok")+'"><small>Difference</small><b>'+(bad?(F?sg(dB):sr(dR)):"✓ Same")+'</b>'+(F&&bad?'<i>'+sr(dR)+'</i>':'')+'</div></div>'+(F&&bad&&Math.abs(dR+r.shortRs)>=1&&r.shortRs>0?'<div class="st-note">₹ difference '+rs(Math.abs(dR))+' = '+nf(Math.abs(dB))+' btl short '+rs(r.shortRs)+' + per-bottle rate difference '+rs(Math.abs(dR)-r.shortRs)+' (bill value '+'₹'+(r.given?r.givenRs/r.given:0).toFixed(2)+'/btl, STTS pays ₹'+(r.stts?r.sttsRs/r.stts:0).toFixed(2)+'/btl)</div>':'')})()+
         '<div class="tags" style="display:flex;gap:4px;flex-wrap:wrap">'+(r.flags.map(f=>'<span class="tag '+TAGC[f]+'">'+LWBStts.FLAG[f]+"</span>").join("")||'<span class="tag t-grn">All agree</span>')+(r.shortRs>0?'<span class="tag t-red">Money short '+rs(r.shortRs)+"</span>":"")+"</div>"+
-        '<div class="st-cap">Sales Register lines · '+esc(r.pack)+'</div><table class="st-tb"><thead><tr><th class="l">Item</th><th>Cases</th><th>Bottles</th><th>Discount</th><th>Net</th></tr></thead><tbody>'+
-        ls.map(x=>'<tr><td class="l">'+esc(shortItem(x.item))+(x.free?' <span class="tag t-grn">free</span>':"")+"</td><td>"+nf(x.pc)+"</td><td>"+nf(x.ea)+"</td><td>"+rs(x.disc)+"</td><td>"+rs(x.net)+"</td></tr>").join("")+"</tbody></table>"+
+        '<div class="st-cap">Sales Register lines · '+esc(r.pack)+'</div><table class="st-tb"><thead><tr><th class="l">Item</th><th>Cases</th><th class="hp">Bottles</th><th>Discount</th><th>GST</th><th>Disc + GST</th><th class="hp">Net</th></tr></thead><tbody>'+
+        ls.map(x=>'<tr><td class="l">'+esc(shortItem(x.item))+(x.free?' <span class="tag t-grn">free</span>':"")+"</td><td>"+nf(x.pc)+"</td><td class=\"hp\">"+nf(x.ea)+"</td><td>"+rs(x.disc)+"</td><td>"+rs(gstOf(x))+"</td><td><b>"+rs(discT(x))+"</b></td><td class=\"hp\">"+rs(x.net)+"</td></tr>").join("")+(ls.filter(x=>x.disc).length>1?"<tr class=\"sub\"><td class=\"l\">Total</td><td></td><td class=\"hp\"></td><td>"+rs(ls.reduce((a,x)=>a+x.disc,0))+"</td><td>"+rs(ls.reduce((a,x)=>a+gstOf(x),0))+"</td><td><b>"+rs(ls.reduce((a,x)=>a+discT(x),0))+"</b></td><td class=\"hp\"></td></tr>":"")+"</tbody></table>"+
         '<div class="st-cap">STTS Ledger lines</div>'+(st.length?'<table class="st-tb"><thead><tr><th class="l">Scheme</th><th class="l">Item</th><th>Cases</th><th>Claim ₹</th></tr></thead><tbody>'+
         st.map(x=>'<tr><td class="l">'+esc(x.sale_type||"—")+"<br><small>MER "+esc(x.mer)+'</small></td><td class="l">'+esc(shortItem(x.item))+"</td><td>"+nf(x.pc)+"</td><td>"+rs(x.amt)+"</td></tr>").join("")+"</tbody></table>":'<div class="st-empty">This bill is not in the STTS Ledger.</div>')+
         '</div><div class="acts"><button type="button" class="st-btn" data-copy>📋 Copy query</button><a class="st-btn grn" target="_blank" rel="noopener" href="https://wa.me/?text='+encodeURIComponent(qtxt)+'">WhatsApp</a><button type="button" class="st-btn" data-x>Close</button></div></div>';
