@@ -14,7 +14,7 @@ import javax.crypto.KeyGenerator;
 import javax.crypto.SecretKey;
 import javax.crypto.spec.GCMParameterSpec;
 
-/** Independent native driver session. Never takes credentials from an intent or WebView. */
+/** Independent native staff session for location sharing. Never takes credentials from an intent or WebView. */
 final class TrackingApi {
     private static final String HOST="https://txkbhadzdbxpieunfvox.supabase.co";
     private static final String KEY="sb_publishable_W4I3Q5ODf0g17sq5uDml2Q_sLolXYEk";
@@ -68,12 +68,21 @@ final class TrackingApi {
         c.init(Cipher.DECRYPT_MODE,key(),new GCMParameterSpec(128,Base64.decode(parts[0],Base64.NO_WRAP)));
         session=new JSONObject(new String(c.doFinal(Base64.decode(parts[1],Base64.NO_WRAP)),StandardCharsets.UTF_8));
     }
-    synchronized void login(String email,String password) throws Exception {
+    /** Any active staff login. Returns lwb_track_me: tracked=false for Admin (never tracked). */
+    synchronized JSONObject login(String email,String password) throws Exception {
         JSONObject next=request("/auth/v1/token?grant_type=password",new JSONObject().put("email",email).put("password",password),null);
         JSONObject me=request("/rest/v1/rpc/lwb_track_me",new JSONObject(),next.getString("access_token"));
-        if(!"driver".equals(me.optString("role"))||!me.optBoolean("tracked"))throw new Exception("An active, tracking-enabled driver login is required");
+        if(me.optString("role").isEmpty())throw new Exception("This login is not an active ERP staff login");
+        clear();
         save(next);
+        context.getSharedPreferences("driver-gps",0).edit().putBoolean("tracked",me.optBoolean("tracked")).commit();
+        return me;
     }
+    boolean hasSession() { return !context.getSharedPreferences("driver-gps",0).getString("session","").isEmpty(); }
+    boolean tracked() { return context.getSharedPreferences("driver-gps",0).getBoolean("tracked",true); }
+    boolean agreed() { return context.getSharedPreferences("driver-gps",0).getBoolean("agreed",false); }
+    void setTracked(boolean v) { context.getSharedPreferences("driver-gps",0).edit().putBoolean("tracked",v).commit(); }
+    void setAgreed() { context.getSharedPreferences("driver-gps",0).edit().putBoolean("agreed",true).commit(); }
     synchronized JSONObject rpc(String name,JSONObject body) throws Exception {
         load();
         if(session.optLong("expires_at")*1000L<System.currentTimeMillis()+60000L)

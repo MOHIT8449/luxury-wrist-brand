@@ -119,7 +119,7 @@
     {group:"Delivery",items:[
       {t:"Driver Delivery / POD",h:"driver-delivery.html",i:"pin",r:"admin manager driver accounts",nm:"accounts"},
       {t:"Driver Collections",h:"driver-collections.html",i:"cash",r:"admin manager accounts",nm:"accounts"},
-      {t:"Live Tracking",h:"live-tracking.html",i:"pin",r:"admin manager warehouse accounts",vo:"warehouse accounts"}]},
+      {t:"Live Tracking",h:"live-tracking.html",i:"pin",r:"admin"}]},
     {group:"Reports",items:[
       {t:"Daily Summary",h:"daily-report.html",i:"stock",r:"admin manager accounts",nm:"accounts"},
       {t:"Team Work Report",h:"team-report.html",i:"users",r:"admin manager"}]},
@@ -284,7 +284,7 @@
   function menuFor(role,hidden,extra){
     const off=new Set(hidden||[]),plus=new Set(extra||[]),vo=[],nm=[];
     const out=MENU.map(g=>({group:g.group,items:g.items.filter(i=>{
-      if(["sales","salesman"].includes(role)&&["live-tracking.html","my-sales.html#orders"].includes(i.h))return false;
+      if((role!=="admin"&&i.h==="live-tracking.html")||(["sales","salesman"].includes(role)&&i.h==="my-sales.html#orders"))return false;
       const ok=(allowed(i,role)&&!off.has(i.h))||plus.has(i.h);
       if(ok&&noMenuItem(i,role)){nm.push({...i,g:g.group});return false}
       if(ok&&viewOnlyItem(i,role)){vo.push(i);return false}
@@ -321,7 +321,7 @@
   // when Admin ticked this page of another role for him, that page's role.
   function pageRole(role,page){
     page=withHtml(page||herePage());
-    if(["sales","salesman"].includes(role)&&page==="live-tracking.html")return role;
+    if(role!=="admin"&&page==="live-tracking.html")return role;
     const items=MENU.flatMap(g=>g.items).filter(i=>i.h.split("#")[0]===page);
     if(!items.length||items.some(i=>allowed(i,role)))return role;
     if(!extraPages().some(h=>h.split("#")[0]===page))return role;
