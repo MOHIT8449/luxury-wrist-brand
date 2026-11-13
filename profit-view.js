@@ -48,11 +48,11 @@
   function parts(sku){
     const p=partMap.get(k(sku));if(!p)return null;
     const C=num(p.case_config),D=num(p.gr),F=num(p.free_bottle),H=num(p.qps),I=num(p.roi),pct=num(p.mepd_pct),E=D*pct/100;
-    let G,gLabel;
-    if(F>0&&C){const base=D-E-H-I-((D/C)-1)*F,O=r2((num(p.slab3_rate)-base)/(1+F/C));G=(((D/C)-1)*F)-((O/C)*F);gLabel="Free bottle ("+nf(F)+")"}
-    else{G=num(p.oms);gLabel="OMS"}
+    let G,gLabel,gTag;
+    if(F>0&&C){const base=D-E-H-I-((D/C)-1)*F,O=r2((num(p.slab3_rate)-base)/(1+F/C));G=(((D/C)-1)*F)-((O/C)*F);gLabel="Free bottle";gTag=nf(F)+" free bottle"}
+    else{G=num(p.oms);gLabel="Cash off";gTag=G?"cash off":""}
     return {pack:p.pack,category:p.category,gr:D,mepdPct:pct,mepd:E,mepdFrom:p.mepd_from,schemeTo:p.scheme_to,schemeNote:p.scheme_note,
-      oms:G,omsLabel:gLabel,qps:H,roi:I,landing:D-E-G-H-I};
+      oms:G,omsLabel:gLabel,omsTag:gTag,qps:H,roi:I,landing:D-E-G-H-I};
   }
   // Popup: per SKU, what was taken off the GR to reach the landing, then sale − landing = profit.
   function breakdown(title,lines){
@@ -72,7 +72,7 @@
       const warn=pt&&l!=null&&Math.abs(pt.landing-l)>0.5?' <b class="pfw" title="Rate &amp; Scheme today gives ₹'+nf(pt.landing)+'. Save Rate &amp; Scheme to update the landing.">!</b>':"";
       const cells=[
         ["GR",pt?nf(pt.gr):"—"],["MEPD",pt?d(pt.mepd)+' <small>'+nf(pt.mepdPct)+'%</small>':"—"],
-        [pt?esc(pt.omsLabel):"OMS",d(pt?pt.oms:0)],["QPS",d(pt?pt.qps:0)],["ROI",d(pt?pt.roi:0)],
+        [pt?esc(pt.omsLabel):"OMS",d(pt?pt.oms:0)+(pt&&pt.omsTag?' <small class="pf-gt">'+esc(pt.omsTag)+'</small>':'')],["QPS",d(pt?pt.qps:0)],["ROI",d(pt?pt.roi:0)],
         ["Landing",l==null?"—":nf(l)+warn],["Sale",nf(rate)],["Profit/CS",per==null?"—":(per>0?"+":"")+nf(per)],["Profit",per==null?"—":rs(per*q)]];
       return '<tr class="'+(per!=null&&per<=0?"pfl":"")+'"><td class="sku">'+esc(x.sku)+(pt?'<small>'+esc(pt.pack)+'</small>':l!=null?'<small>Rate List landing</small>':'<small>No landing</small>')+'</td><td class="n q" data-l="Qty">'+nf(q)+'</td>'+
         cells.map(([h,v],i)=>'<td class="n'+(i>=7?' pf'+cls:'')+(i===5?' land':'')+'" data-l="'+h.replace(/<[^>]+>/g,"")+'">'+v+'</td>').join("")+'</tr>';
@@ -134,7 +134,7 @@
       ".lwb-pf-dlg tr{background:none}.lwb-pf-dlg th{background:#f3f5f7;color:#5b6672;font-size:11px;text-transform:uppercase;letter-spacing:.3px;padding:7px 6px;text-align:left;white-space:nowrap}"+
       ".lwb-pf-dlg td{padding:7px 6px;border-bottom:1px solid #edf0f3;white-space:nowrap}.lwb-pf-dlg .n{text-align:right}"+
       ".lwb-pf-dlg td.sku{white-space:normal;font-weight:600}.lwb-pf-dlg td.sku small{display:block;font-weight:400;color:#8a94a0;font-size:11px}"+
-      ".lwb-pf-dlg td small{color:#8a94a0;font-size:11px}.lwb-pf-dlg td.land{font-weight:700}"+
+      ".lwb-pf-dlg td small{color:#8a94a0;font-size:11px}.lwb-pf-dlg td small.pf-gt{color:#0e7490;font-weight:600;white-space:nowrap}.lwb-pf-dlg td.land{font-weight:700}"+
       ".lwb-pf-dlg td.pf{color:#6b21a8;font-weight:700}.lwb-pf-dlg td.pf.neg{color:#b3261e}.lwb-pf-dlg tr.pfl td{background:#fde4e4}"+
       ".lwb-pf-dlg tfoot td{font-weight:700;background:#faf7ee;border-top:2px solid #e4d08f}"+
       ".lwb-pf-dlg .pfw{display:inline-grid;place-items:center;width:15px;height:15px;border-radius:50%;background:#fde68a;color:#7a4b00;font-size:10px;cursor:help}"+
