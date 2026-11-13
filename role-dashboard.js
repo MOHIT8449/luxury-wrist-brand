@@ -226,7 +226,7 @@
     if(c)for(const x of R.schemes)if(x.valid_from<=day&&day<=x.valid_to&&(x.categories||[]).some(y=>String(y||"").replace(/\s+/g," ").trim().toUpperCase()===String(c).replace(/\s+/g," ").trim().toUpperCase())&&(!sc||String(x.created_at)>String(sc.created_at)))sc=x;
     const S=R.S,C2=num(r.case_config),D=num(r.gr),F=num(r.free_bottle),H=num(r.qps),I=S.roi_main;
     const E=D*(sc?num(sc.mepd_pct):r.mepd_pct===""||r.mepd_pct==null?S.mepd_pct:num(r.mepd_pct))/100;
-    if(F>0&&C2){const base=D-E-H-I-((D/C2)-1)*F,O=Math.round(((num(r.slab3_rate)-base)/(1+F/C2))*100)/100;return D-E-((((D/C2)-1)*F)-((O/C2)*F))-H-I}
+    if(F>0&&C2){const base=D-E-H-I-(D/C2)*F,O=Math.round(((num(r.slab3_rate)-base)/(1+F/C2))*100)/100;return D-E-(((D/C2)*F)-((O/C2)*F))-H-I}
     return D-E-num(r.oms)-H-I;
   }
   async function profitOf(list){

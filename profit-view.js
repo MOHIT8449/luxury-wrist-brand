@@ -49,7 +49,7 @@
     const p=partMap.get(k(sku));if(!p)return null;
     const C=num(p.case_config),D=num(p.gr),F=num(p.free_bottle),H=num(p.qps),I=num(p.roi),pct=num(p.mepd_pct),E=D*pct/100;
     let G,gLabel,gTag;
-    if(F>0&&C){const base=D-E-H-I-((D/C)-1)*F,O=r2((num(p.slab3_rate)-base)/(1+F/C));G=(((D/C)-1)*F)-((O/C)*F);gLabel="Free bottle";gTag=nf(F)+" free bottle"}
+    if(F>0&&C){const base=D-E-H-I-(D/C)*F,O=r2((num(p.slab3_rate)-base)/(1+F/C));G=((D/C)*F)-((O/C)*F);gLabel="Free bottle";gTag=nf(F)+" free bottle"}
     else{G=num(p.oms);gLabel="Cash off";gTag=G?"cash off":""}
     return {pack:p.pack,category:p.category,gr:D,mepdPct:pct,mepd:E,mepdFrom:p.mepd_from,schemeTo:p.scheme_to,schemeNote:p.scheme_note,
       oms:G,omsLabel:gLabel,omsTag:gTag,qps:H,roi:I,landing:D-E-G-H-I};
