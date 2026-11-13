@@ -82,6 +82,10 @@
     return {rows:keep.concat(add),from,to,removed:old.length-keep.length,added:add.length};
   }
 
+  /* STTS "Sale Type": "Free goods (Exclusive)" = free bottles, "Amount off line item" = cash (₹) off.
+     Other types (QPS etc.) are not counted here. */
+  const isFreeT=t=>/free\s*goods|free/i.test(t||""),isOffT=t=>!isFreeT(t)&&/amount\s*off|cash\s*off/i.test(t||"");
+
   /* rateFor(pack, day) -> {fb, oms, name, from} from the Rate List ledger valid on that day (or null).
      fb = free bottles per paid case, oms = ₹ off per case incl. GST. */
   function match(sales,stts,rateFor,opt){
@@ -97,7 +101,7 @@
       const paidPc=r2(paid.reduce((a,x)=>a+x.pc,0)),items=[...new Set(paid.map(x=>x.item))];
       const base={key:k,doc:f.doc,day:f.day,outlet:f.outlet,outlet_code:f.outlet_code,salesman:f.salesman,pack,items,paidPc,bpc,rate,
         value:r2(paid.reduce((a,x)=>a+x.net,0))};
-      const stFree=st.filter(x=>/free/i.test(x.sale_type)),stOff=st.filter(x=>!/free/i.test(x.sale_type));
+      const stFree=st.filter(x=>isFreeT(x.sale_type)),stOff=st.filter(x=>isOffT(x.sale_type));
       // Free bottles
       const fbRate=rate&&rate.fb>0?rate.fb:0;
       if(fbRate||freeL.length||stFree.length){
