@@ -36,6 +36,8 @@
     .st-filter{display:flex;gap:6px;align-items:center;margin:0 0 6px;flex-wrap:wrap}
     .st-filter input[type=search]{flex:1 1 160px;min-width:0;height:32px;border:1.5px solid var(--erp-line);border-radius:8px;padding:0 9px;font:inherit;font-size:14px}
     .st-filter select{height:34px;box-sizing:border-box;border:1.5px solid var(--erp-line);border-radius:8px;padding:0 24px 0 6px;line-height:28px;font:inherit;font-size:13px;background:#fff;min-width:0}
+    .st-cp{border:1px solid var(--erp-line);background:#fff;border-radius:6px;font-size:11.5px;font-weight:700;padding:1px 6px;cursor:pointer;vertical-align:middle;color:var(--erp-muted)}
+    .st-cp:hover{background:#f6f8fb}
     .st-note{font-size:12.5px;color:var(--erp-muted);margin:0 0 6px}
     .st-r{display:grid;grid-template-columns:76px minmax(0,1.5fr) minmax(0,1.2fr) 82px 82px 82px 96px;gap:2px 8px;align-items:center;padding:6px 2px;border-bottom:1px solid var(--erp-line);font-size:13px;cursor:pointer}
     .st-r:hover{background:#f6f9fc}
@@ -76,7 +78,7 @@
     .st-3 .bd{background:#fff1f1;border-color:#f3b8b8}
     .st-3 .ok{background:#eefaf1;border-color:#b6e3c2}
     .st-3 i{display:block;font-style:normal;font-size:12px;font-weight:700;color:var(--erp-muted);font-variant-numeric:tabular-nums}
-    .st-3 .bd i{color:#b42318}
+    .st-3 .bd i,.st-3 i.red,.st-3 b.red{color:#b42318}
     .st-note{font-size:12px;color:var(--erp-muted);margin-top:4px}
     .st-4{grid-template-columns:repeat(4,minmax(0,1fr))}
     @media (max-width:560px){.st-4{grid-template-columns:repeat(2,minmax(0,1fr))}}
@@ -333,16 +335,16 @@
       const r=M.rows.find(x=>x.key===key&&x.kind===kd);if(!r)return;
       const ls=D.sales.filter(x=>x.doc===r.doc&&LWBStts.packOf(x.item)===r.pack),st=D.claims.filter(x=>x.doc===r.doc&&LWBStts.packOf(x.item)===r.pack);
       const F=r.kind==="FREE",v=n=>n==null?"—":F?nf(n)+" btl":rs(n);
-      const qtxt="STTS query · Bill "+r.doc+" ("+dmy(r.day)+") · "+r.outlet+"\n"+(F?(r.freeItem||r.pack)+": "+nf(r.paidPc)+" cases × "+(r.rate&&r.rate.fb||r.perCaseGiven)+" = "+r.given+" free bottles given on the bill (value "+rs(r.givenRs)+"), STTS shows "+r.stts+" bottles (paid "+rs(r.sttsRs)+"). Short "+(r.given-r.stts)+" bottles, "+rs(Math.max(0,r.givenRs-r.sttsRs))+".":
+      const qtxt="STTS query · Bill "+r.doc+" ("+dmy(r.day)+") · "+r.outlet+"\n"+(F?(r.freeItem||r.pack)+": "+nf(r.paidPc)+" cases × "+(r.rate&&r.rate.fb||r.perCaseGiven)+" = "+r.given+" free bottles given on the bill (value "+rs(r.givenRs)+"), STTS shows "+r.stts+" bottles (paid "+rs(r.sttsRs)+"). Short "+(r.given-r.stts)+" bottles, "+rs(r.shortRs)+".":
         (r.items[0]||r.pack)+": "+rs(r.given)+" off given on the bill, STTS shows "+rs(r.stts)+".")+"\nPlease check and pass the difference.";
       const w=document.createElement("div");w.className="st-back";
-      w.innerHTML='<div class="st-sheet" role="dialog" aria-modal="true"><header><h3>'+esc(r.doc)+" · "+dmy(r.day)+"<small>"+esc(r.outlet)+(r.salesman?" · "+esc(r.salesman):"")+(r.mer?" · MER "+esc(r.mer):"")+'</small></h3><button type="button" class="st-btn sm" data-x>✕</button></header><div class="body">'+
+      w.innerHTML='<div class="st-sheet" role="dialog" aria-modal="true"><header><h3>'+esc(r.doc)+' <button type="button" class="st-cp" data-cpdoc title="Copy invoice no." aria-label="Copy invoice no.">📋 Copy</button> · '+dmy(r.day)+"<small>"+esc(r.outlet)+(r.salesman?" · "+esc(r.salesman):"")+(r.mer?" · MER "+esc(r.mer):"")+'</small></h3><button type="button" class="st-btn sm" data-x>✕</button></header><div class="body">'+
         (()=>{const sg=n=>(n>0?"+":n<0?"−":"")+(F?nf(Math.abs(n))+" btl":rs(Math.abs(n))),sr=n=>(n>0?"+":n<0?"−":"")+rs(Math.abs(n)),
-          dB=F?r.stts-r.given:null,dR=r2(r.sttsRs-r.givenRs),bad=Math.abs(dR)>=1||(F&&dB!==0);
+          dB=F?r.stts-r.given:null,dR=F?r2(dB*(r.stts?r.sttsRs/r.stts:(r.given?r.givenRs/r.given:0))):r2(r.sttsRs-r.givenRs),bad=Math.abs(dR)>=1||(F&&dB!==0);
           return '<div class="st-3 st-4"><div><small>Rate List ('+esc(schemeTxt(r))+')</small><b>'+v(r.exp)+'</b>'+(F&&r.expRs!=null?'<i>'+rs(r.expRs)+'</i>':'')+'</div>'+
           '<div class="'+(r.flags.some(f=>/^(NOT_GIVEN|GIVEN_)/.test(f))?"bd":"")+'"><small>Given on bill</small><b>'+v(r.given)+'</b>'+(F?'<i>'+rs(r.givenRs)+' value</i>':'')+'</div>'+
           '<div class="'+(r.flags.some(f=>/STTS|NOT_IN/.test(f))?"bd":"")+'"><small>STTS accepted</small><b>'+v(r.stts)+'</b>'+(F?'<i>'+rs(r.sttsRs)+' payment</i>':'')+'</div>'+
-          '<div class="'+(bad?"bd":"ok")+'"><small>Difference</small><b>'+(bad?(F?sg(dB):sr(dR)):"✓ Same")+'</b>'+(F&&bad?'<i>'+sr(dR)+'</i>':'')+'</div></div>'+(F&&bad&&Math.abs(dR+r.shortRs)>=1&&r.shortRs>0?'<div class="st-note">₹ difference '+rs(Math.abs(dR))+' = '+nf(Math.abs(dB))+' btl short '+rs(r.shortRs)+' + per-bottle rate difference '+rs(Math.abs(dR)-r.shortRs)+' (bill value '+'₹'+(r.given?r.givenRs/r.given:0).toFixed(2)+'/btl, STTS pays ₹'+(r.stts?r.sttsRs/r.stts:0).toFixed(2)+'/btl)</div>':'')})()+
+          '<div class="'+(bad?"bd":"ok")+'"><small>Difference</small><b'+(bad?' class="red"':'')+'>'+(bad?sr(dR):"✓ Same")+'</b></div></div>'})()+
         '<div class="tags" style="display:flex;gap:4px;flex-wrap:wrap">'+(r.flags.map(f=>'<span class="tag '+TAGC[f]+'">'+LWBStts.FLAG[f]+"</span>").join("")||'<span class="tag t-grn">All agree</span>')+(r.shortRs>0?'<span class="tag t-red">Money short '+rs(r.shortRs)+"</span>":"")+"</div>"+
         '<div class="st-cap">Sales Register lines · '+esc(r.pack)+'</div><table class="st-tb"><thead><tr><th class="l">Item</th><th>Cases</th><th class="hp">Bottles</th><th>Discount + GST</th><th class="hp">Net</th></tr></thead><tbody>'+
         ls.map(x=>'<tr><td class="l">'+esc(shortItem(x.item))+(x.free?' <span class="tag t-grn">free</span>':"")+"</td><td>"+nf(x.pc)+"</td><td class=\"hp\">"+nf(x.ea)+"</td><td><b>"+rs(discT(x))+"</b></td><td class=\"hp\">"+rs(x.net)+"</td></tr>").join("")+(ls.filter(x=>x.disc).length>1?"<tr class=\"sub\"><td class=\"l\">Total</td><td></td><td class=\"hp\"></td><td><b>"+rs(ls.reduce((a,x)=>a+discT(x),0))+"</b></td><td class=\"hp\"></td></tr>":"")+"</tbody></table>"+
@@ -351,6 +353,7 @@
         '</div><div class="acts"><button type="button" class="st-btn" data-copy>📋 Copy query</button><a class="st-btn grn" target="_blank" rel="noopener" href="https://wa.me/?text='+encodeURIComponent(qtxt)+'">WhatsApp</a><button type="button" class="st-btn" data-x>Close</button></div></div>';
       document.body.append(w);
       w.addEventListener("click",async e=>{if(e.target===w||e.target.closest("[data-x]"))w.remove();
+        if(e.target.closest("[data-cpdoc]")){try{await navigator.clipboard.writeText(r.doc);ERPShell.toast("Invoice no. copied: "+r.doc,"success")}catch(_){ERPShell.alert(r.doc)}return}
         if(e.target.closest("[data-copy]")){try{await navigator.clipboard.writeText(qtxt);ERPShell.toast("Query copied.","success")}catch(_){ERPShell.alert(qtxt)}}});
     }
 
