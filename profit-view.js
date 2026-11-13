@@ -54,6 +54,18 @@
     return {pack:p.pack,category:p.category,gr:D,mepdPct:pct,mepd:E,mepdFrom:p.mepd_from,schemeTo:p.scheme_to,schemeNote:p.scheme_note,
       oms:G,omsLabel:gLabel,omsTag:gTag,qps:H,roi:I,landing:D-E-G-H-I};
   }
+  // One short line under the SKU in the PO list: what made the landing (no popup, Mohit 13 Nov 2026).
+  function line(sku){
+    if(!on()||!k(sku))return "";
+    const l=landing(sku),pt=parts(sku);
+    if(!pt)return l==null?"":'<span class="lwb-pf-line">Landing <b>'+nf(l)+'</b> (Rate List)</span>';
+    const it=[["GR",nf(pt.gr)],["MEPD",nf(pt.mepd)+' <i title="'+(pt.mepdFrom==="scheme"?'MEPD scheme'+(pt.schemeTo?' till '+esc(String(pt.schemeTo).split("-").reverse().join("/")):''):pt.mepdFrom==="pack"?'Pack %':'Default %')+'">('+nf(pt.mepdPct)+'%)</i>']];
+    if(pt.oms)it.push([pt.omsTag?esc(pt.omsTag.replace(/^cash off$/,"Cash off")):esc(pt.omsLabel),nf(pt.oms)]);
+    if(pt.qps)it.push(["QPS",nf(pt.qps)]);
+    if(pt.roi)it.push(["ROI",nf(pt.roi)]);
+    const lv=l==null?pt.landing:l,warn=l!=null&&Math.abs(pt.landing-l)>0.5?' <b class="pfw" title="Rate &amp; Scheme today gives ₹'+nf(pt.landing)+'. Save Rate &amp; Scheme to update the landing.">!</b>':"";
+    return '<span class="lwb-pf-line">'+it.map(([a,b])=>a+' <b>'+b+'</b>').join(' · ')+' · Landing <b>'+nf(lv)+'</b>'+warn+'</span>';
+  }
   // Popup: per SKU, what was taken off the GR to reach the landing, then sale − landing = profit.
   function breakdown(title,lines){
     if(!on())return;
@@ -68,7 +80,7 @@
       if(pt){T.gr+=q*pt.gr;T.mepd+=q*pt.mepd;T.oms+=q*pt.oms;T.qps+=q*pt.qps;T.roi+=q*pt.roi;
         if(l!=null&&Math.abs(pt.landing-l)>0.5)gap++;
         if(pt.category)schemes.set(pt.category,pt)}else noParts++;
-      const cls=per==null?"":per>0?"":" neg",d=v=>pt?"−"+nf(v):"—";
+      const cls=per==null?"":per>0?"":" neg",d=v=>pt?nf(v):"—";
       const warn=pt&&l!=null&&Math.abs(pt.landing-l)>0.5?' <b class="pfw" title="Rate &amp; Scheme today gives ₹'+nf(pt.landing)+'. Save Rate &amp; Scheme to update the landing.">!</b>':"";
       const cells=[
         ["GR",pt?nf(pt.gr):"—"],["MEPD",pt?d(pt.mepd)+' <small>'+nf(pt.mepdPct)+'%</small>':"—"],
@@ -84,7 +96,7 @@
       '<p class="pf-how">Landing = GR − MEPD − OMS / free bottle − QPS − ROI (per case, from Rate &amp; Scheme). Profit = Sale − Landing.</p>'+
       (sch?'<div class="pf-sch">'+sch+'</div>':'')+
       '<div class="pf-wrap"><table><thead><tr><th>SKU</th><th class="n">Qty</th><th class="n">GR</th><th class="n">MEPD</th><th class="n">OMS / Free</th><th class="n">QPS</th><th class="n">ROI</th><th class="n">Landing</th><th class="n">Sale</th><th class="n">Profit/CS</th><th class="n">Profit</th></tr></thead><tbody>'+rows+'</tbody>'+
-      '<tfoot><tr><td>Total</td><td class="n" data-l="Qty">'+nf(T.qty)+'</td><td class="n" data-l="GR">'+rs(T.gr)+'</td><td class="n" data-l="MEPD">−'+rs(T.mepd)+'</td><td class="n" data-l="OMS / Free">−'+rs(T.oms)+'</td><td class="n" data-l="QPS">−'+rs(T.qps)+'</td><td class="n" data-l="ROI">−'+rs(T.roi)+'</td><td class="n" data-l="Landing">'+rs(T.land)+'</td><td class="n" data-l="Sale">'+rs(T.sale)+'</td><td class="n" data-l="Profit %">'+nf(pctOf)+'%</td><td class="n pf'+(T.profit>0?"":" neg")+'" data-l="Profit">'+rs(T.profit)+'</td></tr></tfoot></table></div>'+
+      '<tfoot><tr><td>Total</td><td class="n" data-l="Qty">'+nf(T.qty)+'</td><td class="n" data-l="GR">'+rs(T.gr)+'</td><td class="n" data-l="MEPD">'+rs(T.mepd)+'</td><td class="n" data-l="OMS / Free">'+rs(T.oms)+'</td><td class="n" data-l="QPS">'+rs(T.qps)+'</td><td class="n" data-l="ROI">'+rs(T.roi)+'</td><td class="n" data-l="Landing">'+rs(T.land)+'</td><td class="n" data-l="Sale">'+rs(T.sale)+'</td><td class="n" data-l="Profit %">'+nf(pctOf)+'%</td><td class="n pf'+(T.profit>0?"":" neg")+'" data-l="Profit">'+rs(T.profit)+'</td></tr></tfoot></table></div>'+
       ((gap||noLand||noParts)?'<p class="pf-note">'+[gap?gap+' SKU: "!" = landing in Rate List is old, save Rate &amp; Scheme once.':'',noLand?noLand+' SKU has no landing, so no profit is counted for it.':'',noParts?noParts+' SKU is not linked to a Rate &amp; Scheme pack (flat landing, no breakdown).':''].filter(Boolean).join(' ')+'</p>':'')+
       '<div class="pf-foot"><button type="button" data-pf-close>Close</button></div></div>';
     dlg.open?null:dlg.showModal();
@@ -118,6 +130,8 @@
       "tr.pf-loss,tr.pf-loss>td{background:#fde4e4!important}tr.pf-loss>td:first-child{box-shadow:inset 4px 0 0 #c8102e}"+
       "tr.pf-loss input{border-color:#e89a9a!important;background:#fff7f7!important}tr.pf-loss input.rate,tr.pf-loss input[data-field=rate]{border-color:#c8102e!important;color:#c8102e;font-weight:700}"+
       ".pf-slot .lwb-pf,.lwb-pf-open{cursor:pointer}"+
+      ".lwb-pf-line{display:block;margin-top:2px;color:#6b21a8;font:400 11px/1.35 'Segoe UI',Roboto,Arial,sans-serif;white-space:normal}.lwb-pf-line b{font-weight:700}.lwb-pf-line i{font-style:normal;color:#8a94a0}.lwb-pf-line:empty{display:none}"+
+      ".lwb-pf-line .pfw{display:inline-grid;place-items:center;width:14px;height:14px;border-radius:50%;background:#fde68a;color:#7a4b00;font-size:10px;cursor:help}"+
       /* Profit breakdown popup */
       ".lwb-pf-dlg{position:fixed;inset:0;margin:auto;height:fit-content;border:0;padding:0;border-radius:12px;width:min(1180px,calc(100vw - 24px));max-height:calc(100vh - 24px);box-shadow:0 20px 50px rgba(0,0,0,.35);font:13px 'Segoe UI',Roboto,Arial,sans-serif;color:#1f2a37}"+
       ".lwb-pf-dlg::backdrop{background:rgba(15,23,42,.45)}"+
@@ -176,6 +190,6 @@
     yes?viewers.add(user):viewers.delete(user);
     return !!yes;
   }
-  window.LWBProfit={init,ready,on,landing,tag,loss,total,parts,breakdown,allow,money:rs,
+  window.LWBProfit={init,ready,on,landing,tag,loss,total,parts,line,breakdown,allow,money:rs,
     get allowed(){return allowed},get admin(){return admin},get viewers(){return viewers}};
 })();
