@@ -24,6 +24,26 @@
     .rt-led-day input{height:32px;border:1.5px solid var(--erp-line);border-radius:6px;padding:0 8px;font:inherit}
     .rt-led-from{font-size:13px;color:var(--erp-muted)}
     .rt-table td.nt{white-space:normal;min-width:150px}
+.rt-fix,.rt-fixed{border:1px solid var(--erp-line);background:#fff;border-radius:5px;padding:1px 7px;cursor:pointer;font:inherit;font-size:12px;margin:0 2px;color:#1d4f9a;font-weight:600}
+    .rt-fixed{background:#fff3c4;border-color:#f0d277;color:#7a5600}
+    .rt-back{position:fixed;inset:0;background:rgba(15,23,35,.5);z-index:4500;display:flex;align-items:center;justify-content:center;padding:12px}
+    .rt-sheet{background:#fff;border-radius:14px;width:min(520px,100%);max-height:calc(100dvh - 24px);display:flex;flex-direction:column;box-shadow:0 20px 50px rgba(0,0,0,.25)}
+    .rt-sheet header{display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid var(--erp-line)}
+    .rt-sheet header h3{margin:0;font-size:15.5px;flex:1;min-width:0;overflow-wrap:anywhere}
+    .rt-sheet header button{border:0;background:#f1f3f6;border-radius:8px;width:32px;height:32px;font-size:16px;cursor:pointer}
+    .rt-sheet .body{padding:10px 14px;overflow:auto;display:flex;flex-direction:column;gap:8px}
+    .rt-sheet .acts{display:flex;gap:6px;justify-content:flex-end;padding:8px 14px;border-top:1px solid var(--erp-line)}
+    .rt-sheet .acts .rt-add{margin:0;border-style:solid}
+    .rt-sheet .acts .rt-fixsave{background:var(--erp-red);border-color:var(--erp-red);color:#fff}
+    .rt-fixhd{font-size:13px;color:#3b4652}
+    .rt-fixgrid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px 8px}
+    .rt-fixgrid label{display:flex;flex-direction:column;gap:3px;font-size:11.5px;font-weight:700;color:#3b4652;min-width:0}
+    .rt-fixgrid label.wide{grid-column:span 2}.rt-fixgrid label.full{grid-column:1/-1}
+    .rt-fixgrid input{height:34px;border:1.5px solid var(--erp-line);border-radius:7px;padding:0 7px;font:inherit;font-size:15px;font-weight:400;min-width:0;width:100%;box-sizing:border-box}
+    .rt-fixnote{font-size:12px;color:var(--erp-muted)}
+    .rt-fixlog{border:1px solid var(--erp-line);border-radius:8px;padding:6px 8px;font-size:13px;display:flex;flex-direction:column;gap:2px}
+    .rt-fixlog small{color:var(--erp-muted)}
+    @media(max-width:760px){.rt-fixgrid{grid-template-columns:repeat(3,minmax(0,1fr))}.rt-fixgrid input{font-size:16px}}
     .rt-clip{border:1px solid var(--erp-line);background:#fff;border-radius:5px;padding:1px 6px;cursor:pointer;font:inherit;font-size:12.5px;margin:0 2px}
     .rt-bar .grow{flex:1;min-width:200px}.rt-bar .grow input{width:100%}
     .rt-bar button,.rt-file{height:34px;border-radius:6px;padding:0 14px;font-weight:600;cursor:pointer;border:1px solid var(--erp-red);background:var(--erp-red);color:#fff;display:inline-flex;align-items:center;font-size:14px;white-space:nowrap}
@@ -559,6 +579,57 @@
     const byTxt=e=>e.created_by?(people[e.created_by]||"—"):"";
     const clips=e=>(e.files||[]).map((f,i)=>'<button type="button" class="rt-clip" data-circ="'+esc(f)+'" title="'+esc(f.split("/").pop())+'">📎'+(e.files.length>1?i+1:"")+"</button>").join("");
     const fromTxt=e=>e.valid_from?LWBDate.d(new Date(e.valid_from+"T00:00:00")):"";
+    /* Fix a wrong old entry (Mohit, 13 Nov 2026): Admin only, with a reason; old values stay in the fix log. */
+    const canFix=()=>me&&me.realRole==="admin";
+    const fixBtn=(e,name)=>canFix()&&e&&e.id!=null?'<button type="button" class="rt-fix" data-fix="'+esc(e.id)+'" data-fixp="'+esc(name)+'" title="Fix a wrong number or the valid from date of this entry">✏ Fix</button>':"";
+    const fixedTag=e=>e&&e.fix_count>0?'<button type="button" class="rt-fixed" data-fixlog="'+esc(e.id)+'" title="Corrected '+esc(e.fix_count)+' time(s), last '+esc(dtTxt(e.fixed_at))+'. Tap to see what changed.">✏ fixed</button>':"";
+    const FIX_LBL={gr:"GR",mepd:"MEPD",fb:"Free bottle",oms:"OMS",qps:"QPS",roi:"ROI",land:"Landing"};
+    function fixPop(title,body,acts){
+      const w=document.createElement("div");w.className="rt-back";
+      w.innerHTML='<div class="rt-sheet" role="dialog" aria-modal="true"><header><h3>'+title+'</h3><button type="button" data-x aria-label="Close">✕</button></header><div class="body">'+body+'</div><div class="acts">'+acts+'<button type="button" class="rt-add" data-x>Close</button></div></div>';
+      document.body.append(w);w.addEventListener("click",e=>{if(e.target===w||e.target.closest("[data-x]"))w.remove()});return w;
+    }
+    async function fixLog(id){
+      const {data,error}=await client.from("lwb_rate_history_fixes").select("*").eq("history_id",id).order("created_at",{ascending:false});
+      if(error){await ERPShell.alert("Fix log not loaded: "+error.message);return []}
+      return data||[];
+    }
+    const fixLines=L=>L.map(f=>{const o=f.old_row||{},nw=f.new_row||{},ks=Object.keys(nw).filter(k=>k!=="name"&&o[k]!==nw[k]);
+      const ch=ks.map(k=>(FIX_LBL[k]||slabLbl(k))+" "+fmt(o[k],2)+" → "+fmt(nw[k],2));
+      if(f.old_valid_from!==f.new_valid_from)ch.push("Valid from "+(f.old_valid_from||"—")+" → "+(f.new_valid_from||"—"));
+      return '<div class="rt-fixlog"><b>'+esc(dtTxt(f.created_at))+(f.pack_name?" · "+esc(f.pack_name):"")+(people[f.created_by]?" · "+esc(people[f.created_by]):"")+"</b><span>"+esc(ch.join(", ")||"—")+"</span><small>"+esc(f.reason)+"</small></div>"}).join("");
+    async function openFixLog(id){const L=await fixLog(id);fixPop("Fix log",L.length?fixLines(L):'<div class="erp-empty">No fixes.</div>',"")}
+    async function openFix(id,name){
+      const e=history.find(x=>String(x.id)===String(id));if(!e)return;
+      const r=(e.rows||[]).find(x=>x.name===name);if(!r)return;
+      const ks=snapKeys().filter(k=>r[k]!==undefined);
+      const body='<div class="rt-fixhd">Entry of <b>'+esc(dtTxt(e.created_at))+'</b>'+(byTxt(e)?" · by "+esc(byTxt(e)):"")+(e.note?" · "+esc(e.note):"")+'</div>'+
+        '<div class="rt-fixgrid">'+ks.map(k=>'<label>'+esc(FIX_LBL[k]||slabLbl(k))+'<input data-fk="'+k+'" inputmode="decimal" value="'+esc(r[k])+'" data-old="'+esc(r[k])+'"></label>').join("")+
+        '<label class="wide">Valid from<input type="date" id="fxVf" value="'+esc(e.valid_from||ymd(new Date(e.created_at)))+'"></label>'+
+        '<label class="full">Why (required)<input id="fxWhy" placeholder="e.g. typed 2.5, circular says 2.8" autocomplete="off"></label></div>'+
+        '<div class="rt-fixnote">Only this entry changes. Today\'s Rate List is not changed (use Save for that). The old numbers stay in the fix log.</div><div id="fxLog"></div>';
+      const w=fixPop("✏ Fix · "+esc(name),body,'<button type="button" class="rt-add rt-fixsave" id="fxSave">Save fix</button>');
+      fixLog(e.id).then(L=>{const b=w.querySelector("#fxLog");if(b&&L.length)b.innerHTML='<div class="rt-fixhd"><b>Earlier fixes</b></div>'+fixLines(L)});
+      w.querySelector("[data-fk]")?.focus();
+      // Free bottle packs: OMS and landing follow GR / MEPD / free bottle / QPS / ROI (same formula as Landing, case config + Slab 3 rate of the pack today).
+      const pk=packs.find(x=>skuKey(x.pack_name)===skuKey(name)),fv=k=>{const i=w.querySelector('[data-fk="'+k+'"]');return i?n(i.value):0},setv=(k,v)=>{const i=w.querySelector('[data-fk="'+k+'"]');if(i)i.value=r2(v)};
+      w.addEventListener("input",ev=>{const k=ev.target.dataset&&ev.target.dataset.fk;if(!k||!pk||!["gr","mepd","fb","qps","roi"].includes(k))return;
+        const C=n(pk.case_config),D=fv("gr"),E=fv("mepd"),F=fv("fb"),H=fv("qps"),I=fv("roi");if(!(F>0&&C))return;
+        const base=D-E-H-I-(D/C)*F,O=r2((n(pk.slab3_rate)-base)/(1+F/C)),G=((D/C)*F)-((O/C)*F);setv("oms",G);setv("land",D-E-G-H-I)});
+      w.querySelector("#fxSave").onclick=async()=>{
+        const vals={},bad=[];w.querySelectorAll("[data-fk]").forEach(i=>{const v=i.value.trim();if(v===""||isNaN(+v)||+v<0){bad.push(i.parentNode.firstChild.textContent);return}if(+v!==+i.dataset.old)vals[i.dataset.fk]=+v});
+        if(bad.length){await ERPShell.alert("Enter a number 0 or more: "+bad.join(", "));return}
+        const why=w.querySelector("#fxWhy").value.trim(),vf=w.querySelector("#fxVf").value||null,oldVf=e.valid_from||ymd(new Date(e.created_at));
+        if(!Object.keys(vals).length&&vf===oldVf){await ERPShell.alert("Nothing changed.");return}
+        if(!why){await ERPShell.alert("Write why this entry is being fixed.");w.querySelector("#fxWhy").focus();return}
+        const btn=w.querySelector("#fxSave");btn.disabled=true;
+        const {data,error}=await client.rpc("lwb_rate_history_fix",{p_id:e.id,p_pack:Object.keys(vals).length?name:null,p_values:Object.keys(vals).length?vals:null,p_valid_from:vf,p_reason:why});
+        if(error){btn.disabled=false;await ERPShell.alert("Fix not saved: "+String(error.message).replace(/^.*?ERROR:\s*/,""));return}
+        if(data&&data.row)e.rows=(e.rows||[]).map(x=>x.name===name?data.row:x);
+        e.valid_from=vf;e.fix_count=(e.fix_count||0)+1;e.fixed_at=new Date().toISOString();
+        w.remove();render();ERPShell.toast("Rate Ledger entry fixed.","success");
+      };
+    }
     function renderLedger(){
       el("tabTitle").textContent="Rate Ledger";
       el("tabInfo").textContent=history.length+" entries";
@@ -571,9 +642,9 @@
       // 1. Rates on a day: which scheme was running that day (to check the POs punched that day)
       const day=ledDay||LWBMepd.day(),on=entryOn(day);
       let h='<div class="erp-card-body rt-led-day"><b>Rates on date</b><input type="date" id="ledDay" value="'+esc(day)+'">'+
-        (on?'<span class="rt-led-from">Entry of '+esc(dtTxt(on.created_at))+(on.valid_from?" · valid from "+esc(fromTxt(on)):"")+(byTxt(on)?" · by "+esc(byTxt(on)):"")+(on.note?" · "+esc(on.note):"")+"</span>"+clips(on):'<span class="rt-led-from">No ledger entry on or before this date.</span>')+"</div>";
+        (on?'<span class="rt-led-from">Entry of '+esc(dtTxt(on.created_at))+(on.valid_from?" · valid from "+esc(fromTxt(on)):"")+(byTxt(on)?" · by "+esc(byTxt(on)):"")+(on.note?" · "+esc(on.note):"")+"</span>"+fixedTag(on)+clips(on):'<span class="rt-led-from">No ledger entry on or before this date.</span>')+"</div>";
       if(on){h+='<table class="rt-table rt-grid"><thead><tr><th class="l">PACK</th>'+head+"</tr></thead><tbody>"+
-        (on.rows||[]).filter(r=>packShownName(r.name)).map(r=>'<tr><td class="l pk"><b>'+esc(r.name)+"</b></td>"+vals(r)+"</tr>").join("")+"</tbody></table>"}
+        (on.rows||[]).filter(r=>packShownName(r.name)).map(r=>'<tr><td class="l pk"><b>'+esc(r.name)+"</b>"+fixBtn(on,r.name)+"</td>"+vals(r)+"</tr>").join("")+"</tbody></table>"}
       // 2. One pack, entry by entry
       const names=[...new Set(history.flatMap(e=>(e.rows||[]).map(r=>r.name)).concat(packs.map(p=>p.pack_name)))];
       if(ledSku>=names.length)ledSku=0;
@@ -582,14 +653,14 @@
       h+='<table class="rt-table rt-grid"><thead><tr><th class="l">SAVED</th><th class="l">VALID FROM</th><th class="l">BY</th><th class="l">NOTE</th>'+head+"<th></th></tr></thead><tbody>";
       const asc=history.slice().reverse();let prev=null;const lines=[];
       asc.forEach(e=>{const r=(e.rows||[]).find(x=>x.name===sku);if(!r)return;
-        lines.unshift('<tr><td class="l pk"><b>'+esc(dtTxt(e.created_at))+"</b>"+clips(e)+"</td>"+td("Valid from",esc(fromTxt(e)),"l")+td("By",esc(byTxt(e)),"l")+td("Note",esc(e.note||""),"l nt full")+vals(r,prev)+'<td class="idx"></td></tr>');
+        lines.unshift('<tr><td class="l pk"><b>'+esc(dtTxt(e.created_at))+"</b>"+fixedTag(e)+clips(e)+fixBtn(e,sku)+"</td>"+td("Valid from",esc(fromTxt(e)),"l")+td("By",esc(byTxt(e)),"l")+td("Note",esc(e.note||""),"l nt full")+vals(r,prev)+'<td class="idx"></td></tr>');
         prev=r;});
       h+=(lines.join("")||'<tr><td class="l" colspan="16">No entries for this pack.</td></tr>')+"</tbody></table>";
       // 3. All entries
       h+='<div class="erp-card-body"><b>Ledger entries (date wise)</b></div><table class="rt-table rt-grid"><thead><tr><th>#</th><th class="l">SAVED</th><th class="l">VALID FROM</th><th class="l">BY</th><th class="l">NOTE</th><th class="l">CHANGES (vs previous entry)</th></tr></thead><tbody>';
       history.forEach((e,idx)=>{const P=history[idx+1];
         const ch=P?(e.rows||[]).map(r=>{const o=(P.rows||[]).find(x=>x.name===r.name);if(!o)return r.name+": new";const ks=SNAP_KEYS.filter(k=>o[k]!==r[k]);return ks.length?r.name+": "+ks.map(k=>String(LBL[k]).toUpperCase()+" "+fmt(o[k],2)+"→"+fmt(r[k],2)).join(", "):""}).filter(Boolean):["First entry"];
-        h+='<tr><td class="idx">'+(history.length-idx)+'</td><td class="l pk"><b>'+esc(dtTxt(e.created_at))+"</b>"+clips(e)+"</td>"+td("Valid from",esc(fromTxt(e)),"l")+td("By",esc(byTxt(e)),"l")+td("Note",esc(e.note||""),"l nt")+
+        h+='<tr><td class="idx">'+(history.length-idx)+'</td><td class="l pk"><b>'+esc(dtTxt(e.created_at))+"</b>"+fixedTag(e)+clips(e)+"</td>"+td("Valid from",esc(fromTxt(e)),"l")+td("By",esc(byTxt(e)),"l")+td("Note",esc(e.note||""),"l nt")+
           td("Changes",esc(ch.slice(0,8).join(" | ")+(ch.length>8?" | +"+(ch.length-8)+" more":"")),"wrap full")+"</tr>";});
       if(!history.length)h+='<tr><td colspan="6" class="l">No entries yet.</td></tr>';
       el("box").innerHTML=h+"</tbody></table>";
@@ -656,6 +727,8 @@
     }
     document.addEventListener("click",e=>{
       const cb=e.target.closest("[data-circ]");if(cb){openCircular(cb.dataset.circ);return}
+      const fx=e.target.closest("[data-fix]");if(fx){openFix(fx.dataset.fix,fx.dataset.fixp);return}
+      const fl=e.target.closest("[data-fixlog]");if(fl){openFixLog(fl.dataset.fixlog);return}
       const b=e.target.closest("[data-tab]");if(b){tab=b.dataset.tab;render();return}
       const ch=e.target.closest("[data-chip]");if(ch){if(ch.dataset.chip==="cat")catF=ch.dataset.v;else sizeF=ch.dataset.v;render();return}
       if(e.target.id==="linkSave"){saveLinks();return}
