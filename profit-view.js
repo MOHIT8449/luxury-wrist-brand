@@ -66,6 +66,27 @@
     const lv=l==null?pt.landing:l,warn=l!=null&&Math.abs(pt.landing-l)>0.5?' <b class="pfw" title="Rate &amp; Scheme today gives ₹'+nf(pt.landing)+'. Save Rate &amp; Scheme to update the landing.">!</b>':"";
     return '<span class="lwb-pf-line">'+it.map(([a,b])=>a+' <b>'+b+'</b>').join(' · ')+' · Landing <b>'+nf(lv)+'</b>'+warn+'</span>';
   }
+  // Columns for a PO SKU table, same as the popup (Mohit 13 Nov 2026): GR, MEPD, OMS / Free, QPS, ROI, Landing, Profit/CS, Profit.
+  const COLS=["GR","MEPD","OMS / Free","QPS","ROI","Landing","Profit/CS","Profit"];
+  function cols(sku,rate,qty){
+    const q=num(qty),l=on()?landing(sku):null,pt=on()?parts(sku):null,has=rate!==""&&rate!=null&&Number.isFinite(Number(rate));
+    const per=l==null||!has?null:num(rate)-l,cls=per==null?"":per>0?"pf":"pf neg";
+    const warn=pt&&l!=null&&Math.abs(pt.landing-l)>0.5?' <b class="pfw" title="Rate &amp; Scheme today gives ₹'+nf(pt.landing)+'. Save Rate &amp; Scheme to update the landing.">!</b>':"";
+    const sm=v=>'<small>'+v+'</small>';
+    const html=[pt?nf(pt.gr):"—",
+      pt?nf(pt.mepd)+' '+sm(nf(pt.mepdPct)+'%'):"—",
+      pt?nf(pt.oms)+(pt.omsTag?' <small class="pf-gt">'+esc(pt.omsTag)+'</small>':''):"—",
+      pt?nf(pt.qps):"—",pt?nf(pt.roi):"—",
+      l==null?"—":'<b>'+nf(l)+'</b>'+warn,
+      per==null?"—":(per>0?"+":"")+nf(per),per==null?"—":rs(per*q)];
+    return {html,cls:["","","","","","",cls,cls],sum:{gr:pt?q*pt.gr:0,mepd:pt?q*pt.mepd:0,oms:pt?q*pt.oms:0,qps:pt?q*pt.qps:0,roi:pt?q*pt.roi:0,land:l==null?0:q*l,profit:per==null?0:q*per,sale:l==null||!has?0:q*num(rate)},loss:per!=null&&per<=0,pack:pt?pt.pack:l!=null?"Rate List landing":""};
+  }
+  // Scheme chips (MEPD % per category) for the SKUs given.
+  function schemes(skus){
+    if(!on())return "";
+    const m=new Map();for(const s of skus||[]){const pt=parts(s);if(pt&&pt.category)m.set(pt.category,pt)}
+    return [...m.values()].map(p=>'<span>'+esc(p.category)+': MEPD '+nf(p.mepdPct)+'% '+(p.mepdFrom==="scheme"?'scheme'+(p.schemeTo?' till '+esc(String(p.schemeTo).split("-").reverse().join("/")):'')+(p.schemeNote?' · '+esc(p.schemeNote):''):p.mepdFrom==="pack"?'(pack %)':'(default %)')+'</span>').join("");
+  }
   // Popup: per SKU, what was taken off the GR to reach the landing, then sale − landing = profit.
   function breakdown(title,lines){
     if(!on())return;
@@ -132,6 +153,8 @@
       ".pf-slot .lwb-pf,.lwb-pf-open{cursor:pointer}"+
       ".lwb-pf-line{display:block;margin-top:2px;color:#6b21a8;font:400 11px/1.35 'Segoe UI',Roboto,Arial,sans-serif;white-space:normal}.lwb-pf-line b{font-weight:700}.lwb-pf-line i{font-style:normal;color:#8a94a0}.lwb-pf-line:empty{display:none}"+
       ".lwb-pf-line .pfw{display:inline-grid;place-items:center;width:14px;height:14px;border-radius:50%;background:#fde68a;color:#7a4b00;font-size:10px;cursor:help}"+
+      ".lwb-pf-sch{display:flex;flex-wrap:wrap;gap:4px 6px;margin:0 0 6px}.lwb-pf-sch:empty{display:none}.lwb-pf-sch span{background:#f7f1de;color:#7a6420;border:1px solid #e4d08f;border-radius:10px;padding:1px 8px;font-size:11.5px;font-weight:600}"+
+      "td.lwb-pf-c{white-space:nowrap;text-align:right}td.lwb-pf-c small{color:#8a94a0;font-size:10.5px}td.lwb-pf-c small.pf-gt{color:#0e7490;font-weight:600}td.lwb-pf-c.pf{color:#6b21a8;font-weight:700}td.lwb-pf-c.pf.neg{color:#b3261e}td.lwb-pf-c .pfw{display:inline-grid;place-items:center;width:14px;height:14px;border-radius:50%;background:#fde68a;color:#7a4b00;font-size:10px;cursor:help}"+
       /* Profit breakdown popup */
       ".lwb-pf-dlg{position:fixed;inset:0;margin:auto;height:fit-content;border:0;padding:0;border-radius:12px;width:min(1180px,calc(100vw - 24px));max-height:calc(100vh - 24px);box-shadow:0 20px 50px rgba(0,0,0,.35);font:13px 'Segoe UI',Roboto,Arial,sans-serif;color:#1f2a37}"+
       ".lwb-pf-dlg::backdrop{background:rgba(15,23,42,.45)}"+
@@ -190,6 +213,6 @@
     yes?viewers.add(user):viewers.delete(user);
     return !!yes;
   }
-  window.LWBProfit={init,ready,on,landing,tag,loss,total,parts,line,breakdown,allow,money:rs,
+  window.LWBProfit={init,ready,on,landing,tag,loss,total,parts,line,cols,COLS,schemes,breakdown,allow,money:rs,
     get allowed(){return allowed},get admin(){return admin},get viewers(){return viewers}};
 })();
