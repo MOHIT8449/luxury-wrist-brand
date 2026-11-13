@@ -168,6 +168,8 @@
       // Brand Data Reset (Mohit, 4 Nov 2026): Admin removes one brand's data till today for a fresh start.
       // Not in the side menu (nm); opens from the Settings card and Module Search.
       {t:"Brand Data Reset",h:"brand-reset.html",i:"lock",r:"admin",k:"reset delete clear brand rajnigandha fresh start opening data",nm:"admin",par:"settings.html"},
+      // Order History Days (Mohit, 13 Nov 2026): per role, days after delivery an order stays in its lists.
+      {t:"Order History Days",h:"order-history-days.html",i:"note",r:"admin",k:"order history days delivered visible hide old orders salesman driver sales head accounts role",nm:"admin",par:"settings.html"},
       {t:"Accounts Fresh Start",h:"accounts-reset.html",i:"lock",r:"admin",k:"reset delete clear accounts cash book entries opening cash bank balance fresh start",nm:"admin",par:"settings.html"},
       {t:"Rate List",h:"rates.html",i:"tag",r:"admin manager",k:"rate scheme mepd landing slab rajnigandha coca-cola brand",pt:"Rate List (Coca-Cola Rate & Scheme)"}]}
   ];

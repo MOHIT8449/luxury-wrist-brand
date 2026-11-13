@@ -4,6 +4,14 @@
 **Purpose:** Continue the same ERP project from a new ChatGPT conversation without restarting or losing the agreed requirements.
 **Status:** Active development / verification. Do not assume all modules are completed or fully tested.
 
+## Order History Days: per role, how long a delivered PO stays in its lists (13 Nov 2026)
+
+- Mohit: Admin sets, per role (Salesman, Sales Head, Driver, Accounts, Godown Manager, Transport), for how many days after delivery an order and its history stay visible to that role.
+- SQL `lwb_order_visibility_setup.sql` (test `tests/order-visibility`, PGlite, 4 tests): table `lwb_order_visibility(role, days)`; empty = no limit, 0 = gone once delivered; Admin never limited. Delivered time = driver report DELIVERED / PARTIAL or Admin "Delivered" mark (same as `lwb_po_delivered_orders`). RPCs `lwb_order_visibility_list()` / `lwb_order_visibility_save(rows)` (Admin), `lwb_order_visibility_mine()`, `lwb_order_hidden_ids(ids)`.
+- Driver: replaces `lwb_driver_my_delivery_orders` and policy `lwb_delivery_report_driver_12h` of `lwb_loading_workflow_setup.sql` part 4: Driver days when set, else 12 hours as before. If that file is edited and re-run, copy the `lwb_driver_keep()` change there too.
+- Page `order-history-days.html` (Settings card + Module Search, Admin only). `erp-order-days.js` `ERPOrderDays.filter(client, rows, key)` drops hidden POs on: PO / Sales List (`warehouse-orders.html`, list only, not the trend graph), My Orders (`my-sales.html`, reads up to days+15 back), Accounts Billing (`accounts-invoice.html`), Transport Assignment, Driver Delivery (non-driver roles). Dashboards, ledgers, outstanding, stock and reports are not filtered. Page-side only (except driver): the data is not removed.
+- Checked with a mocked client at 1366 / 390 px: no side scroll, no JS errors. Screenshots: project files `order-history-days/`.
+
 ## Team Chat: round chat button on every page, personal chats + @All groups (12 Nov 2026)
 
 - Mohit: live chat for every login (Admin, Sales Head, Salesman, Godown, Accounts, Driver, Transport), like a WhatsApp group, from a round button in the bottom-right corner of every ERP page and the phone app (Jio-style). Tag one person = a personal chat only between the two; @All groups = everyone in it sees and replies; @name highlights the message for that person. Admin sees every chat (only looks, cannot write in others' chats). Chats are never deleted by themselves; only Admin deletes (one message or a whole chat).

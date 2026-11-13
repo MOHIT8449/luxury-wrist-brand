@@ -6,7 +6,7 @@
   <title>My Sales | Luxury Wrist Brand ERP</title>
   <script src="erp-date.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="brand-filter.js"></script>
+<script src="brand-filter.js"></script><script src="erp-order-days.js"></script>
   <link rel="stylesheet" href="erp-shell.css">
   <link rel="stylesheet" href="sales.css">
   <script src="erp-shell.js"></script>
@@ -149,9 +149,12 @@
 
     // ---- My Orders: stage, delivery, edit / cancel before approval ----
     async function loadMyOrders(){
-      const r=await client.rpc("lwb_my_orders",{p_days:45});
+      // Order History Days: when Admin allows more than 45 days after delivery, read older orders too.
+      const lim=window.ERPOrderDays?await ERPOrderDays.days(client):null;
+      const r=await client.rpc("lwb_my_orders",{p_days:lim!=null&&lim+15>45?Math.min(lim+15,400):45});
       if(r.error){myOrders=null;moErr=/lwb_my_orders/.test(r.error.message)?"Order follow-up setup is not installed yet. Ask Admin to run lwb_sales_order_followup_setup.sql":r.error.message;return}
       moErr="";myOrders=Array.isArray(r.data)?r.data:[];
+      if(window.ERPOrderDays)myOrders=await ERPOrderDays.filter(client,myOrders);
       if(BB.get()&&SM)myOrders=myOrders.filter(o=>(o.items||[]).some(i=>SM.get(LWBBrand.skuKey(i.sku_name))===BB.get()));
     }
     const isCancelled=o=>["cancelled","canceled","rejected"].includes(S.status(o));
