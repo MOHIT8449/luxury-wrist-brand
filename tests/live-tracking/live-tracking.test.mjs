@@ -48,7 +48,7 @@ await db.exec(setup);
 await db.exec(setup); // safe to run again
 const upgrade=await readFile(new URL('../../lwb_driver_background_tracking_setup.sql',import.meta.url),'utf8');
 await db.exec(upgrade);await db.exec(upgrade);
-// Old standalone restriction must not remove Accounts access on rerun.
+// Old standalone restriction keeps the map Admin only on rerun.
 await db.exec(await readFile(new URL('../../lwb_salesman_live_tracking_restriction.sql',import.meta.url),'utf8'));
 
 async function as(who){await db.query("select set_config('request.jwt.claim.sub',$1,false)",[ids[who]||''])}
@@ -56,12 +56,11 @@ async function call(q,args=[]){await db.exec('SET ROLE authenticated');try{retur
 const one=async(q,args)=>Object.values((await call(q,args))[0])[0];
 const ping=async(who,[lat,lng],acc=10)=>{await as(who);return one('select lwb_track_ping($1,$2,$3,20,0) r',[lat,lng,acc])};
 const events=async(order)=>(await db.query('select event,source from lwb_trip_events where order_id=$1 order by id',[order])).rows.map(r=>r.event);
-const map=async(who='head')=>{await as(who);return one('select lwb_live_map() m')};
+const map=async(who='admin')=>{await as(who);return one('select lwb_live_map() m')};
 
-test('only Admin / Sales Head change settings; work hours and godown are saved', async()=>{
-  await as('sales');
-  await assert.rejects(call('select lwb_tracking_save_settings($1)',[{work_start:'00:00'}]),/Only Admin or Sales Head/);
-  await as('head');
+test('only Admin changes settings; work hours and godown are saved', async()=>{
+  for(const who of ['sales','head']){await as(who);await assert.rejects(call('select lwb_tracking_save_settings($1)',[{work_start:'00:00'}]),/Only Admin/)}
+  await as('admin');
   await call('select lwb_tracking_save_settings($1)',[{work_start:'00:00',work_end:'23:59:59',godown_lat:G[0],godown_lng:G[1],godown_radius_m:200}]);
   await assert.rejects(call('select lwb_tracking_save_settings($1)',[{tracked_roles:['party']}]),/Unknown role/);
   const s=(await map()).settings;
@@ -69,14 +68,14 @@ test('only Admin / Sales Head change settings; work hours and godown are saved',
   assert.deepEqual(s.tracked_roles,['driver','sales','accounts','warehouse','transport']);
 });
 
-test('map is only for Admin, Sales Head, Godown Manager and Accounts', async()=>{
-  for(const who of ['sales','driver']){await as(who);await assert.rejects(call('select lwb_live_map()'),/only for Admin/)}
-  for(const who of ['admin','head','godown','acc'])assert.ok(Array.isArray((await map(who)).people));
+test('map is only for Admin', async()=>{
+  for(const who of ['sales','driver','head','godown','acc']){await as(who);await assert.rejects(call('select lwb_live_map()'),/only for Admin/)}
+  assert.ok(Array.isArray((await map('admin')).people));
   await as('sales');await assert.rejects(call('select lwb_location_trail($1,null)',[ids.driver]),/only for/);
 });
 
 test('tables cannot be read directly by staff', async()=>{
-  await as('head');
+  await as('admin');
   await assert.rejects(call('select * from lwb_staff_location'),/permission denied/);
   await assert.rejects(call('select * from lwb_location_history'),/permission denied/);
 });
@@ -95,7 +94,7 @@ test('a salesman sends location; Admin is not tracked by default', async()=>{
 test('history keeps one point a minute or every 40 m', async()=>{
   await ping('acc',[21.1,72.1]);await ping('acc',[21.1,72.1]);await ping('acc',[21.1001,72.1]); // 11 m: skipped
   await ping('acc',[21.105,72.1]); // 550 m: kept
-  await as('head');
+  await as('admin');
   const t=await one('select lwb_location_trail($1,null) t',[ids.acc]);
   assert.equal(t.points.length,2);
 });
@@ -119,7 +118,7 @@ test('inside the godown nothing happens; leaving marks LEFT_GODOWN on every orde
 });
 
 test('a bad GPS fix (accuracy 900 m) does not mark steps', async()=>{
-  await as('head');await call('select lwb_set_party_location($1,$2,$3)',['Party A',A[0],A[1]]);
+  await as('admin');await call('select lwb_set_party_location($1,$2,$3)',['Party A',A[0],A[1]]);
   await ping('driver',A,900);
   assert.deepEqual(await events(O1),['LEFT_GODOWN']);
 });
@@ -185,12 +184,34 @@ test('outside work hours the phone is told to stop and nothing is saved', async(
 });
 
 
-test('Accounts and Godown read tracking but cannot edit settings or pins', async()=>{
- for(const who of ['acc','godown']){
-  await as(who);assert.equal((await map(who)).can_edit,false);
+test('Sales Head, Accounts and Godown cannot see the map, trail, settings or pins', async()=>{
+ for(const who of ['head','acc','godown']){
+  await as(who);
+  await assert.rejects(call('select lwb_live_map()'),/only for Admin/);
+  await assert.rejects(call('select lwb_location_trail($1,null)',[ids.driver]),/only for Admin/);
   await assert.rejects(call('select lwb_tracking_save_settings($1)',[{work_start:'01:00'}]),/Only Admin/);
-  await assert.rejects(call('select lwb_set_party_location($1,$2,$3)',['Party A',21,72]),/Only Admin or Sales Head/);
+  await assert.rejects(call('select lwb_set_party_location($1,$2,$3)',['Party A',21,72]),/Only Admin/);
  }
+ assert.equal((await map('admin')).can_edit,true);
+});
+test('every active login except Admin is tracked, and all of them are on the Admin map', async()=>{
+ for(const who of ['head','godown','acc','sales','driver']){await as(who);assert.equal((await one('select lwb_track_me() r')).tracked,true,who)}
+ await as('admin');assert.equal((await one('select lwb_track_me() r')).tracked,false);
+ const people=(await map('admin')).people.map(p=>p.user_id);
+ for(const who of ['head','godown','acc','sales','driver','driver2'])assert.ok(people.includes(ids[who]),who);
+ assert.ok(!people.includes(ids.admin));
+ // A new role added later is tracked too.
+ await db.query("update user_profiles set role='COLLECTOR' where id=$1",[ids.godown]);
+ await as('godown');assert.equal((await one('select lwb_track_me() r')).tracked,true);
+ await db.query("update user_profiles set role='WAREHOUSE' where id=$1",[ids.godown]);
+});
+test('one-time I agree is saved and shown to Admin; location off is shown as OFF', async()=>{
+ await as('acc');assert.equal((await one("select lwb_gps_agree('Test phone') r")).saved,true);
+ await assert.rejects(call('select * from lwb_gps_consent'),/permission denied/);
+ const p=(await map('admin')).people.find(x=>x.user_id===ids.acc);
+ assert.ok(p.agreed_at);
+ await as('acc');await call("select lwb_driver_track_ping(null,null,null,null,null,'OFF')");
+ assert.equal((await map('admin')).people.find(x=>x.user_id===ids.acc).status,'OFF');
 });
 test('sales page override cannot grant map/trail access or trip internals',async()=>{
  await as('sales');
@@ -216,19 +237,22 @@ test('no new salesman order alerts; old alerts hidden, other alerts and roles pr
 });
 test('inactive profiles cannot view or provide GPS even with an old login token',async()=>{
  await db.query('update user_profiles set active=false where id=$1',[ids.acc]);
- await as('acc');await assert.rejects(call('select lwb_live_map()'),/only for/);
+ await db.query('update user_profiles set active=false where id=$1',[ids.admin]);
+ await as('admin');await assert.rejects(call('select lwb_live_map()'),/only for/);
+ await db.query('update user_profiles set active=true where id=$1',[ids.admin]);
  await db.query('update user_profiles set active=true where id=$1',[ids.acc]);
  await db.query('update user_profiles set active=false where id=$1',[ids.driver]);
  assert.equal((await ping('driver',G)).tracked,false);
  await db.query('update user_profiles set active=true where id=$1',[ids.driver]);
 });
 
-test('native endpoint accepts only the current active driver role, never another login or an override',async()=>{
- for(const who of ['sales','head','acc','godown','admin']){
-  await as(who);assert.equal((await one('select lwb_driver_track_ping(21,72)')).tracked,false);
+test('native endpoint accepts every active non-Admin login; Admin and role change to Admin are refused',async()=>{
+ for(const who of ['sales','head','acc','godown','driver']){
+  await as(who);assert.equal((await one('select lwb_driver_track_ping(21,72)')).saved,true,who);
  }
- await as('driver');assert.equal((await one('select lwb_driver_track_ping(21,72)')).saved,true);
- await db.query("update user_profiles set role='ACCOUNTS' where id=$1",[ids.driver]);
+ await as('admin');assert.equal((await one('select lwb_driver_track_ping(21,72)')).tracked,false);
+ await as('driver');
+ await db.query("update user_profiles set role='ADMIN' where id=$1",[ids.driver]);
  assert.equal((await one('select lwb_driver_track_ping(21,72)')).tracked,false);
  await db.query("update user_profiles set role='DRIVER' where id=$1",[ids.driver]);
 });

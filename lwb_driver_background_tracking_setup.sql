@@ -88,7 +88,7 @@ $fn$;
 CREATE OR REPLACE FUNCTION public.lwb_track_viewer()
 RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER SET search_path = '' AS $fn$
   SELECT EXISTS (SELECT 1 FROM public.user_profiles p WHERE p.id = auth.uid()
-    AND p.active = true AND lower(btrim(p.role)) IN ('admin','manager','warehouse','accounts'));
+    AND p.active = true AND lower(btrim(p.role)) = 'admin');
 $fn$;
 
 -- A driver's orders on the road now (loaded, not reported yet) and the ones
@@ -129,7 +129,7 @@ BEGIN
   SELECT lower(btrim(p.role)) INTO v_role FROM public.user_profiles p WHERE p.id = auth.uid() AND p.active = true;
   SELECT * INTO s FROM public.lwb_tracking_settings WHERE id = 1;
   RETURN jsonb_build_object(
-    'tracked', v_role IS NOT NULL AND v_role = ANY(s.tracked_roles),
+    'tracked', v_role IS NOT NULL AND v_role <> 'admin',
     'in_hours', v_now BETWEEN s.work_start AND s.work_end,
     'work_start', to_char(s.work_start,'HH24:MI'), 'work_end', to_char(s.work_end,'HH24:MI'),
     'role', v_role);
@@ -151,7 +151,7 @@ DECLARE
 BEGIN
   SELECT lower(btrim(p.role)) INTO v_role FROM public.user_profiles p WHERE p.id = v_uid AND p.active = true;
   SELECT * INTO s FROM public.lwb_tracking_settings WHERE id = 1;
-  IF v_role IS NULL OR NOT (v_role = ANY(s.tracked_roles)) THEN RETURN jsonb_build_object('tracked', false); END IF;
+  IF v_role IS NULL OR v_role = 'admin' THEN RETURN jsonb_build_object('tracked', false); END IF;
   IF NOT (v_now BETWEEN s.work_start AND s.work_end) THEN RETURN jsonb_build_object('tracked', true, 'in_hours', false); END IF;
   IF v_status NOT IN ('ON','DENIED','OFF') THEN RAISE EXCEPTION 'Invalid location status'; END IF;
 
@@ -301,7 +301,7 @@ CREATE OR REPLACE FUNCTION public.lwb_live_map()
 RETURNS jsonb LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = '' AS $fn$
 DECLARE s public.lwb_tracking_settings%ROWTYPE; v_people jsonb; v_trips jsonb;
 BEGIN
-  IF NOT public.lwb_track_viewer() THEN RAISE EXCEPTION 'Live Tracking is only for Admin, Sales Head, Godown Manager and Accounts'; END IF;
+  IF NOT public.lwb_track_viewer() THEN RAISE EXCEPTION 'Live Tracking is only for Admin'; END IF;
   SELECT * INTO s FROM public.lwb_tracking_settings WHERE id = 1;
 
   SELECT coalesce(jsonb_agg(jsonb_build_object(
@@ -310,7 +310,7 @@ BEGIN
       'status', l.status, 'updated_at', l.updated_at) ORDER BY lower(btrim(p.role)), p.full_name), '[]'::jsonb)
   INTO v_people
   FROM public.user_profiles p LEFT JOIN public.lwb_staff_location l ON l.user_id = p.id
-  WHERE p.active = true AND (lower(btrim(p.role)) = ANY(s.tracked_roles) OR l.user_id IS NOT NULL);
+  WHERE p.active = true AND lower(btrim(p.role)) <> 'admin';
 
   SELECT coalesce(jsonb_agg(x ORDER BY x->>'driver_name', x->>'order_no'), '[]'::jsonb) INTO v_trips FROM (
     SELECT DISTINCT ON (o.id) jsonb_build_object(
@@ -343,7 +343,7 @@ BEGIN
       'work_start', to_char(s.work_start,'HH24:MI'), 'work_end', to_char(s.work_end,'HH24:MI'),
       'godown_lat', s.godown_lat, 'godown_lng', s.godown_lng, 'godown_radius_m', s.godown_radius_m,
       'avg_speed_kmph', s.avg_speed_kmph),
-    'can_edit', EXISTS (SELECT 1 FROM public.user_profiles p WHERE p.id = auth.uid() AND p.active = true AND lower(btrim(p.role)) IN ('admin','manager')),
+    'can_edit', EXISTS (SELECT 1 FROM public.user_profiles p WHERE p.id = auth.uid() AND p.active = true AND lower(btrim(p.role)) = 'admin'),
     'people', v_people, 'trips', v_trips,
     'back_godown', coalesce((SELECT jsonb_object_agg(b.driver_user_id, b.at) FROM (
         SELECT e.driver_user_id, max(e.at) at FROM public.lwb_trip_events e
@@ -357,7 +357,7 @@ CREATE OR REPLACE FUNCTION public.lwb_location_trail(p_user_id uuid, p_day date 
 RETURNS jsonb LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = '' AS $fn$
 DECLARE v_day date := coalesce(p_day, (now() AT TIME ZONE 'Asia/Kolkata')::date);
 BEGIN
-  IF NOT public.lwb_track_viewer() THEN RAISE EXCEPTION 'Live Tracking is only for Admin, Sales Head, Godown Manager and Accounts'; END IF;
+  IF NOT public.lwb_track_viewer() THEN RAISE EXCEPTION 'Live Tracking is only for Admin'; END IF;
   RETURN jsonb_build_object(
     'points', coalesce((SELECT jsonb_agg(jsonb_build_array(h.lat, h.lng, h.at, h.speed_kmph) ORDER BY h.at)
       FROM public.lwb_location_history h
@@ -369,13 +369,13 @@ BEGIN
 END;
 $fn$;
 
--- Settings: Admin or Sales Head. Keys left out stay as they are.
+-- Settings: Admin only. Keys left out stay as they are.
 CREATE OR REPLACE FUNCTION public.lwb_tracking_save_settings(p jsonb)
 RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path = '' AS $fn$
 DECLARE v_roles text[];
 BEGIN
-  IF NOT EXISTS (SELECT 1 FROM public.user_profiles x WHERE x.id = auth.uid() AND x.active = true AND lower(btrim(x.role)) IN ('admin','manager')) THEN
-    RAISE EXCEPTION 'Only Admin or Sales Head can change tracking settings';
+  IF NOT EXISTS (SELECT 1 FROM public.user_profiles x WHERE x.id = auth.uid() AND x.active = true AND lower(btrim(x.role)) = 'admin') THEN
+    RAISE EXCEPTION 'Only Admin can change tracking settings';
   END IF;
   IF p ? 'tracked_roles' THEN
     SELECT coalesce(array_agg(DISTINCT lower(btrim(r))), '{}') INTO v_roles FROM jsonb_array_elements_text(p->'tracked_roles') r;
@@ -399,13 +399,13 @@ BEGIN
 END;
 $fn$;
 
--- Pin (or clear) a party's location by hand: Admin / Sales Head only.
+-- Pin (or clear) a party's location by hand: Admin only.
 CREATE OR REPLACE FUNCTION public.lwb_set_party_location(p_party text, p_lat double precision, p_lng double precision)
 RETURNS int LANGUAGE plpgsql SECURITY DEFINER SET search_path = '' AS $fn$
 DECLARE n int;
 BEGIN
-  IF NOT EXISTS (SELECT 1 FROM public.user_profiles x WHERE x.id = auth.uid() AND x.active = true AND lower(btrim(x.role)) IN ('admin','manager')) THEN
-    RAISE EXCEPTION 'Only Admin or Sales Head can pin a party';
+  IF NOT EXISTS (SELECT 1 FROM public.user_profiles x WHERE x.id = auth.uid() AND x.active = true AND lower(btrim(x.role)) = 'admin') THEN
+    RAISE EXCEPTION 'Only Admin can pin a party';
   END IF;
   IF p_lat IS NOT NULL AND (p_lat NOT BETWEEN -90 AND 90 OR p_lng NOT BETWEEN -180 AND 180) THEN RAISE EXCEPTION 'Invalid location'; END IF;
   UPDATE public.lwb_customer_master c SET geo_lat = p_lat, geo_lng = CASE WHEN p_lat IS NULL THEN NULL ELSE p_lng END, geo_set_at = now()
@@ -433,23 +433,24 @@ GRANT EXECUTE ON FUNCTION public.lwb_track_me(), public.lwb_track_ping(double pr
 CREATE OR REPLACE FUNCTION public.lwb_track_viewer()
 RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER SET search_path = '' AS $fn$
   SELECT EXISTS (SELECT 1 FROM public.user_profiles p WHERE p.id = auth.uid()
-    AND p.active = true AND lower(btrim(p.role)) IN ('admin','manager','warehouse','accounts'));
+    AND p.active = true AND lower(btrim(p.role)) = 'admin');
 $fn$;
 
 CREATE OR REPLACE FUNCTION public.lwb_live_map()
 RETURNS jsonb LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = '' AS $fn$
 DECLARE s public.lwb_tracking_settings%ROWTYPE; v_people jsonb; v_trips jsonb;
 BEGIN
-  IF NOT public.lwb_track_viewer() THEN RAISE EXCEPTION 'Live Tracking is only for Admin, Sales Head, Godown Manager and Accounts'; END IF;
+  IF NOT public.lwb_track_viewer() THEN RAISE EXCEPTION 'Live Tracking is only for Admin'; END IF;
   SELECT * INTO s FROM public.lwb_tracking_settings WHERE id = 1;
 
   SELECT coalesce(jsonb_agg(jsonb_build_object(
       'user_id', p.id, 'name', coalesce(nullif(btrim(p.full_name),''), 'User'), 'role', lower(btrim(p.role)), 'mobile', p.mobile,
       'lat', l.lat, 'lng', l.lng, 'accuracy', l.accuracy_m, 'speed', l.speed_kmph, 'heading', l.heading,
-      'status', l.status, 'updated_at', l.updated_at) ORDER BY lower(btrim(p.role)), p.full_name), '[]'::jsonb)
+      'status', l.status, 'updated_at', l.updated_at,
+      'agreed_at', (SELECT c.agreed_at FROM public.lwb_gps_consent c WHERE c.user_id = p.id)) ORDER BY lower(btrim(p.role)), p.full_name), '[]'::jsonb)
   INTO v_people
   FROM public.user_profiles p LEFT JOIN public.lwb_staff_location l ON l.user_id = p.id
-  WHERE p.active = true AND (lower(btrim(p.role)) = ANY(s.tracked_roles) OR l.user_id IS NOT NULL);
+  WHERE p.active = true AND lower(btrim(p.role)) <> 'admin';
 
   SELECT coalesce(jsonb_agg(x ORDER BY x->>'driver_name', x->>'order_no'), '[]'::jsonb) INTO v_trips FROM (
     SELECT DISTINCT ON (o.id) jsonb_build_object(
@@ -482,7 +483,7 @@ BEGIN
       'work_start', to_char(s.work_start,'HH24:MI'), 'work_end', to_char(s.work_end,'HH24:MI'),
       'godown_lat', s.godown_lat, 'godown_lng', s.godown_lng, 'godown_radius_m', s.godown_radius_m,
       'avg_speed_kmph', s.avg_speed_kmph),
-    'can_edit', EXISTS (SELECT 1 FROM public.user_profiles p WHERE p.id = auth.uid() AND p.active = true AND lower(btrim(p.role)) IN ('admin','manager')),
+    'can_edit', EXISTS (SELECT 1 FROM public.user_profiles p WHERE p.id = auth.uid() AND p.active = true AND lower(btrim(p.role)) = 'admin'),
     'people', v_people, 'trips', v_trips,
     'back_godown', coalesce((SELECT jsonb_object_agg(b.driver_user_id, b.at) FROM (
         SELECT e.driver_user_id, max(e.at) at FROM public.lwb_trip_events e
@@ -495,7 +496,7 @@ CREATE OR REPLACE FUNCTION public.lwb_location_trail(p_user_id uuid, p_day date 
 RETURNS jsonb LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = '' AS $fn$
 DECLARE v_day date := coalesce(p_day, (now() AT TIME ZONE 'Asia/Kolkata')::date);
 BEGIN
-  IF NOT public.lwb_track_viewer() THEN RAISE EXCEPTION 'Live Tracking is only for Admin, Sales Head, Godown Manager and Accounts'; END IF;
+  IF NOT public.lwb_track_viewer() THEN RAISE EXCEPTION 'Live Tracking is only for Admin'; END IF;
   RETURN jsonb_build_object(
     'points', coalesce((SELECT jsonb_agg(jsonb_build_array(h.lat, h.lng, h.at, h.speed_kmph) ORDER BY h.at)
       FROM public.lwb_location_history h
@@ -511,8 +512,8 @@ CREATE OR REPLACE FUNCTION public.lwb_set_party_location(p_party text, p_lat dou
 RETURNS int LANGUAGE plpgsql SECURITY DEFINER SET search_path = '' AS $fn$
 DECLARE n int;
 BEGIN
-  IF NOT EXISTS (SELECT 1 FROM public.user_profiles x WHERE x.id = auth.uid() AND x.active = true AND lower(btrim(x.role)) IN ('admin','manager')) THEN
-    RAISE EXCEPTION 'Only Admin or Sales Head can pin a party';
+  IF NOT EXISTS (SELECT 1 FROM public.user_profiles x WHERE x.id = auth.uid() AND x.active = true AND lower(btrim(x.role)) = 'admin') THEN
+    RAISE EXCEPTION 'Only Admin can pin a party';
   END IF;
   IF p_lat IS NOT NULL AND (p_lat NOT BETWEEN -90 AND 90 OR p_lng NOT BETWEEN -180 AND 180) THEN RAISE EXCEPTION 'Invalid location'; END IF;
   UPDATE public.lwb_customer_master c SET geo_lat = p_lat, geo_lng = CASE WHEN p_lat IS NULL THEN NULL ELSE p_lng END, geo_set_at = now()
@@ -522,18 +523,38 @@ BEGIN
 END;
 $fn$;
 REVOKE ALL ON FUNCTION public.lwb_track_viewer() FROM PUBLIC, anon, authenticated;
--- Native endpoint rejects role changes immediately, independently of the phone's periodic check.
+-- Native endpoint: every active login except Admin sends GPS. Role changes apply immediately.
 CREATE OR REPLACE FUNCTION public.lwb_driver_track_ping(
  p_lat double precision, p_lng double precision, p_accuracy real DEFAULT NULL,
  p_speed_kmph real DEFAULT NULL, p_heading real DEFAULT NULL, p_status text DEFAULT 'ON')
 RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path = '' AS $fn$
 BEGIN
- IF NOT EXISTS(SELECT 1 FROM public.user_profiles WHERE id=auth.uid() AND active=true AND lower(btrim(role))='driver')
+ IF NOT EXISTS(SELECT 1 FROM public.user_profiles WHERE id=auth.uid() AND active=true AND lower(btrim(role))<>'admin')
  THEN RETURN jsonb_build_object('tracked',false); END IF;
  RETURN public.lwb_track_ping(p_lat,p_lng,p_accuracy,p_speed_kmph,p_heading,p_status);
 END;
 $fn$;
 REVOKE ALL ON FUNCTION public.lwb_driver_track_ping(double precision,double precision,real,real,real,text) FROM PUBLIC, anon;
+
+-- One-time "I agree" on the phone: time saved so Admin can see who agreed.
+CREATE TABLE IF NOT EXISTS public.lwb_gps_consent(
+  user_id uuid PRIMARY KEY,
+  agreed_at timestamptz NOT NULL DEFAULT now(),
+  device text
+);
+ALTER TABLE public.lwb_gps_consent ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON public.lwb_gps_consent FROM PUBLIC, anon, authenticated;
+CREATE OR REPLACE FUNCTION public.lwb_gps_agree(p_device text DEFAULT NULL)
+RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path = '' AS $fn$
+BEGIN
+ IF NOT EXISTS(SELECT 1 FROM public.user_profiles WHERE id=auth.uid() AND active=true) THEN RAISE EXCEPTION 'Active login required'; END IF;
+ INSERT INTO public.lwb_gps_consent(user_id, agreed_at, device) VALUES (auth.uid(), now(), left(p_device, 120))
+ ON CONFLICT (user_id) DO UPDATE SET agreed_at = now(), device = excluded.device;
+ RETURN jsonb_build_object('saved', true);
+END;
+$fn$;
+REVOKE ALL ON FUNCTION public.lwb_gps_agree(text) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.lwb_gps_agree(text) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.lwb_driver_track_ping(double precision,double precision,real,real,real,text) TO authenticated;
 
 -- Block every order-related notification for sales, including legacy unread rows.

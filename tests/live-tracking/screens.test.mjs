@@ -12,7 +12,7 @@ function mapStub(){
  return {map:()=>chain,tileLayer:()=>chain,layerGroup:()=>chain,marker:()=>chain,circleMarker:()=>chain,polyline:()=>chain,divIcon:()=>chain,circle:()=>chain,latLngBounds:()=>chain};
 }
 for(const role of ['admin','manager','warehouse','accounts','sales']){
- test(`tracking DOM ${role}: role access, settings, pins and stale GPS`,async()=>{
+ test(`tracking DOM ${role}: Admin-only access, settings, pins and stale GPS`,async()=>{
   const dom=new JSDOM(html,{url:'https://erp.test/live-tracking.html',runScripts:'outside-only'}),w=dom.window;
   const calls=[],now=new Date().toISOString(),old=new Date(Date.now()-3600e3).toISOString();
   w.L=mapStub();w.ERPShell={toast(){}};
@@ -28,17 +28,17 @@ for(const role of ['admin','manager','warehouse','accounts','sales']){
    }}};
   try{
    w.eval(inline);await new Promise(ok=>setTimeout(ok,30));
-   if(role==='sales'){
+   if(role!=='admin'){
     assert.deepEqual(calls,[]);assert.equal(w.document.getElementById('page').hidden,true);
    }else{
     assert.equal(w.document.getElementById('page').hidden,false);
     assert.match(w.document.getElementById('side').textContent,/Driver One/);
-    assert.equal(w.document.getElementById('setBtn').hidden,!['admin','manager'].includes(role));
-    assert.equal(w.document.querySelectorAll('[data-pin]').length,['admin','manager'].includes(role)?1:0);
+    assert.equal(w.document.getElementById('setBtn').hidden,false);
+    assert.equal(w.document.querySelectorAll('[data-pin]').length,1);
     w.document.querySelector('[data-tab="staff"]').click();
     assert.match(w.document.getElementById('side').textContent,/Driver Offline/);
     assert.match(w.document.getElementById('side').textContent,/ago|old|offline|stale/i);
-    if(['admin','manager'].includes(role)){
+    {
      w.document.getElementById('setBtn').click();assert.equal(w.document.getElementById('setCard').hidden,false);
      w.document.getElementById('setClose').click();assert.equal(w.document.getElementById('setCard').hidden,true);
     }
@@ -48,13 +48,14 @@ for(const role of ['admin','manager','warehouse','accounts','sales']){
   }finally{w.close();}
  });
 }
-test('shell denies salesman tracking overrides and exposes Accounts tracking',async()=>{
+test('shell shows Live Tracking to Admin only, even with page overrides',async()=>{
  const source=await readFile(new URL('erp-shell.js',root),'utf8');
  const dom=new JSDOM('<html><body></body></html>',{url:'https://erp.test/live-tracking.html',runScripts:'outside-only'}),w=dom.window;
  try{
   w.eval(source);const shell=w.ERPShell;
   const flat=(role,extra=[])=>shell.menuFor(role,[],extra).flatMap(g=>g.items).map(i=>i.h);
-  assert.ok(flat('accounts').includes('live-tracking.html'));
+  assert.ok(flat('admin').includes('live-tracking.html'));
+  for(const r of ['manager','warehouse','accounts','driver'])assert.ok(!flat(r,['live-tracking.html']).includes('live-tracking.html'),r);
   assert.ok(!flat('sales',['live-tracking.html','my-sales.html#orders']).includes('live-tracking.html'));
   assert.ok(!flat('sales',['my-sales.html#orders']).includes('my-sales.html#orders'));
  }finally{w.close();}
