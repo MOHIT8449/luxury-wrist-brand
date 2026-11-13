@@ -69,8 +69,8 @@
     const n=num,C=n(pack.case_config),D=n(pack.gr),F=n(pack.free_bottle),H=n(pack.qps),I=n(settings.roi_main);
     const blank=v=>v===""||v==null;
     const E=D*(scheme?n(scheme.mepd_pct):blank(pack.mepd_pct)?n(settings.mepd_pct):n(pack.mepd_pct))/100;
-    const base=D-E-H-I-((C?D/C:0)-1)*F,P=n(pack.slab3_rate);
-    if(F>0&&C){const O=Math.round((P-base)/(1+F/C)*100)/100,G=(((D/C)-1)*F)-((O/C)*F);return D-E-G-H-I}
+    const base=D-E-H-I-(C?D/C:0)*F,P=n(pack.slab3_rate);
+    if(F>0&&C){const O=Math.round((P-base)/(1+F/C)*100)/100,G=((D/C)*F)-((O/C)*F);return D-E-G-H-I}
     return D-E-n(pack.oms)-H-I;
   }
   // Landing per SKU for Admin / Sales Head (rate tables are readable only by them).
