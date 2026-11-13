@@ -80,9 +80,10 @@
       .st-kpis{grid-template-columns:1fr 1fr}
       .st-kpis .st-kpi:last-child{grid-column:1/-1}
       .st-kpi{padding:6px 9px}.st-kpi .v{font-size:16px}.st-kpi small{font-size:11px}
-      .st-filter select{flex:1 1 0}
+      .st-filter select{flex:1 1 0}.st-filter input[type=search]{flex:1 1 100%}
       .st-top h1{flex:1 1 100%}
-      .st-top select{flex:1 1 0}
+      .st-top select{flex:1 1 100%}
+      .st-top .st-btn{flex:1 1 0;padding:0 8px;font-size:13px}
       .st-r{grid-template-columns:repeat(3,minmax(0,1fr)) auto;gap:3px 8px;padding:8px 2px}
       .st-r.head{display:none}
       .st-r .d{grid-column:1/3;grid-row:1;font-size:12px;color:var(--erp-muted)}
@@ -103,7 +104,8 @@
     <div class="st-top">
       <h1>STTS Ledger</h1>
       <select id="month" aria-label="Month"></select>
-      <label class="st-btn pri" id="upBtn">⬆ Upload file<input type="file" id="file" accept=".xls,.xlsx,.csv" hidden></label>
+      <label class="st-btn pri" title="DMS Sales Register (CSV)">⬆ Sales Register<input type="file" id="fileS" data-want="SALES" accept=".csv,.xls,.xlsx" hidden></label>
+      <label class="st-btn pri" title="Company STTS Ledger (XLS)">⬆ STTS Ledger<input type="file" id="fileC" data-want="STTS" accept=".xls,.xlsx,.csv" hidden></label>
       <button type="button" class="st-btn" id="xls">⬇ Excel</button>
     </div>
     <div id="msg" class="st-msg" hidden></div>
@@ -292,7 +294,7 @@
       let h='<div class="st-note">Sales Register: a bill line uploaded again replaces the old one, nothing is doubled. STTS Ledger: the portal gives the whole month each time, so the newest upload replaces the STTS lines of the dates it covers.</div>';
       h+='<div style="overflow-x:auto"><table class="st-tb"><thead><tr><th class="l">Uploaded</th><th class="l">File</th><th class="l">Dates</th><th>Lines</th><th class="l hp">Result</th></tr></thead><tbody>'+
         D.uploads.map(u=>'<tr><td class="l">'+dmy(String(u.created_at).slice(0,10))+'<br><small style="color:var(--erp-muted)">'+esc(u.by_name||"")+'</small></td><td class="l"><span class="tag '+(u.kind==="STTS"?"t-blu":"t-grn")+'">'+(u.kind==="STTS"?"STTS Ledger":"Sales Register")+"</span><br><small>"+esc(u.file_name||"")+'</small></td><td class="l">'+dm(u.from_day)+"–"+dmy(u.to_day)+"</td><td>"+u.lines+'</td><td class="l hp">'+esc(u.note||"")+"</td></tr>").join("")+
-        (D.uploads.length?"":'<tr><td class="l" colspan="5">Nothing uploaded yet. Use ⬆ Upload file.</td></tr>')+"</tbody></table></div>";
+        (D.uploads.length?"":'<tr><td class="l" colspan="5">Nothing uploaded yet. Use ⬆ Sales Register and ⬆ STTS Ledger.</td></tr>')+"</tbody></table></div>";
       el("body").innerHTML=h;
     }
     function bind(){
@@ -334,7 +336,7 @@
     }
 
     /* Upload: one button, the file tells which report it is. Nothing is saved before Save. */
-    async function onFile(f){
+    async function onFile(f,want){
       say("");el("preview").hidden=true;
       try{
         await LWBExcel.lib();
@@ -347,6 +349,7 @@
         else if(/DOC TYPE/.test(head)&&/SALE TYPE/.test(head)){const rows=LWBStts.parseStts(aoa),m=LWBStts.mergeStts(D.claims,rows);
           p={kind:"STTS",rows,file:f.name,from:m.from,to:m.to,txt:"STTS Ledger "+dmy(m.from)+" – "+dmy(m.to)+": "+rows.length+" lines (PI "+rows.filter(r=>r.doc_type==="PI").length+", SI "+rows.filter(r=>r.doc_type==="SI").length+"). It replaces "+m.removed+" saved STTS lines of these dates."}}
         else throw Error("This file is not a Sales Register (CSV) or an STTS Ledger (XLS) from the company portal.");
+        if(want&&p.kind!==want)throw Error(want==="SALES"?"This file is the STTS Ledger. Use ⬆ STTS Ledger for it, or pick the Sales Register (CSV) here.":"This file is the Sales Register. Use ⬆ Sales Register for it, or pick the STTS Ledger (XLS) here.");
         if(!p.rows.length)throw Error("No lines found in this file.");
         pending=p;
         el("preview").innerHTML='<div class="st-pv"><b>'+esc(p.txt)+'</b><div class="row"><button type="button" class="st-btn grn" id="pvSave">Save</button><button type="button" class="st-btn" id="pvNo">Cancel</button><small style="color:var(--erp-muted)">'+esc(f.name)+"</small></div></div>";
@@ -370,7 +373,7 @@
     el("tabs").querySelectorAll("[data-t]").forEach(b=>b.onclick=()=>{tab=b.dataset.t;shown=150;if(tab!=="DATE")itemF="";renderTab()});
     el("kpis").addEventListener("click",e=>{const b=e.target.closest("[data-go]");if(!b)return;tab=b.dataset.go;flagF=b.dataset.f||"all";itemF="";renderTab();el("tabs").scrollIntoView({behavior:"smooth",block:"start"})});
     el("month").onchange=e=>{month=e.target.value;compute()};
-    el("file").onchange=e=>{const f=e.target.files[0];e.target.value="";if(f)onFile(f)};
+    ["fileS","fileC"].forEach(id=>el(id).onchange=e=>{const f=e.target.files[0],w=e.target.dataset.want;e.target.value="";if(f)onFile(f,w)});
     el("xls").onclick=()=>exportXls().catch(e=>ERPShell.alert(e.message));
 
     (async()=>{
