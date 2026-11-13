@@ -266,7 +266,7 @@
    if(error){list.replaceChildren(el("p","lwb-op-error","Notification error: "+error.message));return}
    // Driver sees no history: only the last 12 hours.
    // Team chat bells (CHAT_MSG, lwb_team_chat_setup.sql) are only for the phone push: the chat button shows them.
-   const rows=(data||[]).filter(n=>baseType(n)!=="CHAT_MSG").filter(n=>String(role||"").toLowerCase()!=="driver"||Date.now()-new Date(n.created_at)<12*36e5),unread=rows.filter(n=>!n.is_read).length;
+   const rows=(data||[]).filter(n=>baseType(n)!=="CHAT_MSG").filter(n=>!["sales","salesman"].includes(String(role||"").trim().toLowerCase())||!(n.order_id||/^(ORDER_|PO_|TALLY_|VEHICLE_|LOADING_|DELIVERY_|SALES_RETURN|LIVE_|GPS_|TRACK)/.test(baseType(n)))).filter(n=>String(role||"").toLowerCase()!=="driver"||Date.now()-new Date(n.created_at)<12*36e5),unread=rows.filter(n=>!n.is_read).length;
    bell.setAttribute("aria-label", "Notifications" + (unread ? ", " + unread + " unread" : ""));
    newTxt.textContent=unread?unread+" new":"";
    count.textContent=unread>99?"99+":String(unread);count.style.display=unread?"inline-block":"none";

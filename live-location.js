@@ -50,7 +50,7 @@
   function fix(){
     return new Promise(ok=>{
       if(!navigator.geolocation)return ok(st.last);
-      navigator.geolocation.getCurrentPosition(p=>{onPos(p);ok(st.last)},e=>{onErr(e);ok(st.last)},{enableHighAccuracy:true,maximumAge:20e3,timeout:15e3});
+      navigator.geolocation.getCurrentPosition(p=>{onPos(p);ok(st.last)},e=>{onErr(e);ok(null)},{enableHighAccuracy:true,maximumAge:20e3,timeout:15e3});
     });
   }
   function stop(){

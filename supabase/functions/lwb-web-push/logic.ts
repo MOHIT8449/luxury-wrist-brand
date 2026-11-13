@@ -32,3 +32,8 @@ export function messageFor(n,role) {
  body:String(n.message||'Open the app to view this update.').replace(/[\r\n]+/g,' ').slice(0,240),
  url:safeRoute(type,n.order_id,role),tag:'lwb-'+String(n.id),user_id:n.user_id};
 }
+
+export function suppressSalesOrderAlert(n, role) {
+ return ['sales','salesman'].includes(String(role||'').trim().toLowerCase()) &&
+  (!!n.order_id || /^(CC_)?(ORDER_|PO_|TALLY_|VEHICLE_|LOADING_|DELIVERY_|SALES_RETURN|LIVE_|GPS_|TRACK)/i.test(String(n.notification_type||'')));
+}

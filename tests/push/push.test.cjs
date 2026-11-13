@@ -111,3 +111,15 @@ test('15-minute idle logout / expired session keeps phone alerts; only a Logout 
  p.signOut();await new Promise(r=>setImmediate(r));
  assert.equal(p.calls.includes('LWB_PUSH_CLEAR'),false);assert.equal(p.calls.includes('unsubscribe'),false);
 });
+
+test('salesmen never get order/tracking push, including jobs queued before role changes',async()=>{
+ const {suppressSalesOrderAlert}=await logic();
+ for(const role of ['sales','SALESMAN',' sales ']){
+  for(const type of ['ORDER_DELIVERED','CC_DELIVERY_RETURN_INFO','LOADING_ASSIGNMENT_DRIVER','PO_RATE_APPROVED','GPS_ON'])
+   assert.equal(suppressSalesOrderAlert({notification_type:type},role),true);
+  assert.equal(suppressSalesOrderAlert({notification_type:'OTHER',order_id:'po'},role),true);
+  assert.equal(suppressSalesOrderAlert({notification_type:'TASK_NEW'},role),false);
+ }
+ for(const role of ['admin','manager','warehouse','accounts','driver'])
+  assert.equal(suppressSalesOrderAlert({notification_type:'ORDER_DELIVERED',order_id:'po'},role),false);
+});

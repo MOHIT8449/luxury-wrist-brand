@@ -1,6 +1,6 @@
 import { createClient } from 'npm:@supabase/supabase-js@2.118.0';
 import webpush from 'npm:web-push@3.6.7';
-import { validEndpoint, messageFor } from './logic.ts';
+import { validEndpoint, messageFor, suppressSalesOrderAlert } from './logic.ts';
 
 const ORIGIN='https://luxury-wrist-brand.pages.dev';
 const cors={'Access-Control-Allow-Origin':ORIGIN,'Access-Control-Allow-Headers':'authorization,apikey,x-client-info,content-type',
@@ -31,6 +31,7 @@ async function dispatch(id,c){
   if(!n||n.is_read||Date.now()-Date.parse(n.created_at)>15*60e3){await finish('sent');return reply(200,{status:'skipped'});}
   const {data:p,error:pe}=await db.from('user_profiles').select('active,role').eq('id',n.user_id).maybeSingle();
   if(pe)throw Error('Cannot read recipient');
+  if(p?.active&&suppressSalesOrderAlert(n,p.role)){await finish('sent');return reply(200,{status:'sales_order_updates_disabled'});}
   if(!p?.active){await finish('sent');return reply(200,{status:'inactive_recipient'});}
   const subs=await db.from('lwb_push_subscriptions').select('*').eq('user_id',n.user_id);
   if(subs.error)throw Error('Cannot read subscriptions');

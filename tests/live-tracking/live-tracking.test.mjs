@@ -26,7 +26,14 @@ CREATE TABLE public.lwb_delivery_reports(id uuid primary key default gen_random_
 CREATE TABLE public.lwb_customer_master(customer_code text,customer_name text,billing_address text,city text);
 CREATE FUNCTION public.lwb_driver_phone_matches(a text,b text) RETURNS boolean LANGUAGE sql IMMUTABLE AS $$
   SELECT coalesce(right(regexp_replace(a,'[^0-9]','','g'),10)=right(regexp_replace(b,'[^0-9]','','g'),10) AND length(regexp_replace(a,'[^0-9]','','g'))>=10,false) $$;
-CREATE FUNCTION public.lwb_has_page(p text) RETURNS boolean LANGUAGE sql AS $$ SELECT false $$;
+CREATE FUNCTION public.lwb_has_page(p text) RETURNS boolean LANGUAGE sql AS $$ SELECT true $$;
+CREATE FUNCTION public.lwb_is_field_salesman() RETURNS boolean LANGUAGE sql AS $$ SELECT false $$;
+CREATE TABLE public.erp_notifications(id uuid PRIMARY KEY DEFAULT gen_random_uuid(),user_id uuid,title text,message text,notification_type text,order_id uuid,is_read boolean DEFAULT false);
+ALTER TABLE public.erp_notifications ENABLE ROW LEVEL SECURITY;
+CREATE POLICY own_alert ON public.erp_notifications FOR SELECT TO authenticated USING(user_id=auth.uid());
+GRANT SELECT ON public.erp_notifications,public.dispatch_assignments,public.lwb_delivery_reports TO authenticated;
+CREATE POLICY dispatch_allow ON public.dispatch_assignments FOR SELECT TO authenticated USING(true);
+CREATE POLICY delivery_allow ON public.lwb_delivery_reports FOR SELECT TO authenticated USING(true);
 GRANT USAGE ON SCHEMA public, auth TO authenticated;
 `);
 for(const [k,id] of Object.entries(ids))await db.query('insert into user_profiles values($1,$2,true,$3,$4)',[id,roles[k].toUpperCase(),'Name '+k,mob[k]||null]);
@@ -39,6 +46,10 @@ insert into dispatch_assignments(order_id,driver_name,driver_mobile,vehicle_no) 
 const setup=await readFile(new URL('../../lwb_live_tracking_setup.sql',import.meta.url),'utf8');
 await db.exec(setup);
 await db.exec(setup); // safe to run again
+const upgrade=await readFile(new URL('../../lwb_driver_background_tracking_setup.sql',import.meta.url),'utf8');
+await db.exec(upgrade);await db.exec(upgrade);
+// Old standalone restriction must not remove Accounts access on rerun.
+await db.exec(await readFile(new URL('../../lwb_salesman_live_tracking_restriction.sql',import.meta.url),'utf8'));
 
 async function as(who){await db.query("select set_config('request.jwt.claim.sub',$1,false)",[ids[who]||''])}
 async function call(q,args=[]){await db.exec('SET ROLE authenticated');try{return (await db.query(q,args)).rows}finally{await db.exec('RESET ROLE')}}
@@ -58,9 +69,9 @@ test('only Admin / Sales Head change settings; work hours and godown are saved',
   assert.deepEqual(s.tracked_roles,['driver','sales','accounts','warehouse','transport']);
 });
 
-test('map is only for Admin, Sales Head and Godown Manager', async()=>{
-  for(const who of ['sales','acc','driver']){await as(who);await assert.rejects(call('select lwb_live_map()'),/only for Admin, Sales Head and Godown Manager/)}
-  for(const who of ['admin','head','godown'])assert.ok(Array.isArray((await map(who)).people));
+test('map is only for Admin, Sales Head, Godown Manager and Accounts', async()=>{
+  for(const who of ['sales','driver']){await as(who);await assert.rejects(call('select lwb_live_map()'),/only for Admin/)}
+  for(const who of ['admin','head','godown','acc'])assert.ok(Array.isArray((await map(who)).people));
   await as('sales');await assert.rejects(call('select lwb_location_trail($1,null)',[ids.driver]),/only for/);
 });
 
@@ -171,4 +182,53 @@ test('outside work hours the phone is told to stop and nothing is saved', async(
   await as('admin');await call('select lwb_tracking_save_settings($1)',[{work_end:'23:59:59'}]);
   const p=(await map()).people.find(x=>x.user_id===ids.sales);
   assert.notEqual(p.lat,22);
+});
+
+
+test('Accounts and Godown read tracking but cannot edit settings or pins', async()=>{
+ for(const who of ['acc','godown']){
+  await as(who);assert.equal((await map(who)).can_edit,false);
+  await assert.rejects(call('select lwb_tracking_save_settings($1)',[{work_start:'01:00'}]),/Only Admin/);
+  await assert.rejects(call('select lwb_set_party_location($1,$2,$3)',['Party A',21,72]),/Only Admin or Sales Head/);
+ }
+});
+test('sales page override cannot grant map/trail access or trip internals',async()=>{
+ await as('sales');
+ await assert.rejects(call('select lwb_live_map()'),/only for/);
+ await assert.rejects(call('select lwb_location_trail($1,null)',[ids.driver]),/only for/);
+ await assert.rejects(call('select * from lwb_trip_orders($1)',[ids.driver]),/permission denied/);
+ assert.deepEqual(await one('select lwb_my_orders(45)'),[]);
+ assert.deepEqual(await call('select * from dispatch_assignments'),[]);
+ assert.deepEqual(await call('select * from lwb_delivery_reports'),[]);
+});
+test('no new salesman order alerts; old alerts hidden, other alerts and roles preserved',async()=>{
+ // A historical row exists when someone changes from a tracking viewer to sales.
+ await db.query("update user_profiles set role='ACCOUNTS' where id=$1",[ids.sales]);
+ await db.query("insert into erp_notifications(user_id,title,notification_type,order_id) values($1,'legacy','ORDER_DELIVERED',$2)",[ids.sales,O1]);
+ await db.query("update user_profiles set role='SALES' where id=$1",[ids.sales]);
+ for(const type of ['ORDER_DELIVERED','CC_DELIVERY_RETURN_INFO','LIVE_GPS','TALLY_BILL_DONE'])
+  await db.query("insert into erp_notifications(user_id,title,notification_type) values($1,'blocked',$2)",[ids.sales,type]);
+ await db.query("insert into erp_notifications(user_id,title,notification_type) values($1,'task','TASK_NEW')",[ids.sales]);
+ await db.query("insert into erp_notifications(user_id,title,notification_type,order_id) values($1,'allowed','ORDER_DELIVERED',$2)",[ids.acc,O1]);
+ assert.equal((await db.query("select count(*)::int n from erp_notifications where title='blocked'")).rows[0].n,0);
+ await as('sales');assert.deepEqual((await call('select title from erp_notifications')).map(x=>x.title),['task']);
+ await as('acc');assert.equal((await call('select title from erp_notifications'))[0].title,'allowed');
+});
+test('inactive profiles cannot view or provide GPS even with an old login token',async()=>{
+ await db.query('update user_profiles set active=false where id=$1',[ids.acc]);
+ await as('acc');await assert.rejects(call('select lwb_live_map()'),/only for/);
+ await db.query('update user_profiles set active=true where id=$1',[ids.acc]);
+ await db.query('update user_profiles set active=false where id=$1',[ids.driver]);
+ assert.equal((await ping('driver',G)).tracked,false);
+ await db.query('update user_profiles set active=true where id=$1',[ids.driver]);
+});
+
+test('native endpoint accepts only the current active driver role, never another login or an override',async()=>{
+ for(const who of ['sales','head','acc','godown','admin']){
+  await as(who);assert.equal((await one('select lwb_driver_track_ping(21,72)')).tracked,false);
+ }
+ await as('driver');assert.equal((await one('select lwb_driver_track_ping(21,72)')).saved,true);
+ await db.query("update user_profiles set role='ACCOUNTS' where id=$1",[ids.driver]);
+ assert.equal((await one('select lwb_driver_track_ping(21,72)')).tracked,false);
+ await db.query("update user_profiles set role='DRIVER' where id=$1",[ids.driver]);
 });
