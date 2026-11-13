@@ -4,6 +4,15 @@
 **Purpose:** Continue the same ERP project from a new ChatGPT conversation without restarting or losing the agreed requirements.
 **Status:** Active development / verification. Do not assume all modules are completed or fully tested.
 
+## SKU product photo: thumbnail next to the SKU name, upload in SKU Master (13 Nov 2026)
+
+- Mohit: every SKU gets a product photo, shown small next to the SKU name like the Flipkart Seller Hub listing. He approved the preview (project files `sku-photos/preview/`), then asked for the upload option.
+- SQL `lwb_sku_photo_setup.sql` (test `tests/sku-photo`, PGlite, 5 tests): `sku_master.image_url` (https link only, max 500), public bucket `lwb-sku-photos` (1 MB, JPEG / PNG / WebP; files `<sku id>/<time>.jpg`). Upload / change / remove: active Admin and Sales Head (`lwb_sku_photo_editor()`), only into the folder of a SKU that exists (`lwb_sku_photo_path_ok`). Read is public so thumbnails load fast everywhere.
+- `sku-image.js` (`LWBSkuImg.load(rows)`, `.html(name, "sm")`, `.url(name)`): square thumbnail; no photo = dashed box with the first letters; tap = big photo. Loaded by `warehouse-orders.html` and `sku-master.html`.
+- `warehouse-orders.html`: Order Review / Edit PO SKU table (40 px web, 44 px phone card) and the SKU search dropdown (30 px).
+- `sku-master.html`: thumbnail in the SKU Name cell, "+ Photo" / "Photo" button next to Edit (tap a "+" box too). Popup: big photo, Add / Change photo (phone camera or gallery), Remove, Close in one row. The photo is shrunk in the browser to max 640 px JPEG before upload; the old file is removed after a change.
+- Not yet: thumbnails on PO list cards, My Orders, Order Entry. Checked with a mocked client at 1366 / 390 px: no side scroll; upload flow called storage upload + `sku_master.image_url` update. Not yet checked on live data. Screenshots: project files `sku-photos/built/`.
+
 ## Order History Days: per role, how long a delivered PO stays in its lists (13 Nov 2026)
 
 - Mohit: Admin sets, per role (Salesman, Sales Head, Driver, Accounts, Godown Manager, Transport), for how many days after delivery an order and its history stay visible to that role.
