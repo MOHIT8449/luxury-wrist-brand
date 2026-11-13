@@ -32,6 +32,18 @@ await db.exec(await read('lwb_quick_slip_setup.sql'));
 await db.exec(await read('lwb_rajni_rate_limit_setup.sql'));
 const sql=await read('lwb_profit_view_setup.sql');
 await db.exec(sql);await db.exec(sql); // safe to run again
+// Rate & Scheme tables (only the columns lwb_profit_breakdown_setup.sql reads).
+await db.exec(`
+ALTER TABLE public.sku_master ADD COLUMN category text;
+CREATE TABLE public.lwb_rate_settings(id int primary key,mepd_pct numeric,roi_main numeric,roi_landing numeric);
+INSERT INTO public.lwb_rate_settings VALUES (1,1.25,3,5);
+CREATE TABLE public.lwb_rate_packs(id uuid default gen_random_uuid() primary key,pack_name text,case_config numeric,gr numeric,
+  mepd_pct numeric,free_bottle numeric default 0,oms numeric,qps numeric default 0,slab3_rate numeric default 0,active boolean default true);
+CREATE TABLE public.lwb_rate_pack_skus(sku_key text primary key,pack_id uuid);
+CREATE TABLE public.lwb_mepd_schemes(categories text[],mepd_pct numeric,valid_from date,valid_to date,note text,created_at timestamptz default now());
+`);
+const sql2=await read('lwb_profit_breakdown_setup.sql');
+await db.exec(sql2);await db.exec(sql2); // safe to run again
 
 async function run(who,q,params){
   await db.query("select set_config('request.jwt.claim.sub',$1,false)",[ids[who]]);
@@ -65,4 +77,19 @@ test('an inactive allowed person gets nothing', async()=>{
   await run('admin','select public.lwb_price_viewer_set($1,true)',[ids.sales]);
   await db.query('update user_profiles set active=false where id=$1',[ids.sales]);
   assert.equal((await run('sales','select public.lwb_profit_landing() v')).rows[0].v,null);
+});
+
+test('breakdown parts: pack GR, OMS, QPS, ROI and the MEPD % used today', async()=>{
+  const [pa]=(await db.query(`insert into lwb_rate_packs(pack_name,case_config,gr,mepd_pct,oms,qps) values('2.25L',9,700,null,40,5) returning id`)).rows;
+  const [pb]=(await db.query(`insert into lwb_rate_packs(pack_name,case_config,gr,mepd_pct,oms,qps) values('250ML',24,520,2,null,4) returning id`)).rows;
+  await db.query(`insert into lwb_rate_pack_skus values('2.25L THUMS UP MRP 90',$1),('250ML SPRITE MRP 20',$2)`,[pa.id,pb.id]);
+  await db.query(`insert into sku_master(sku_name,category) values('2.25L THUMS UP MRP 90','PET CSD'),('250ML SPRITE MRP 20','  250ml  csd ')`);
+  await db.query(`insert into lwb_mepd_schemes values('{250ML CSD}',3.5,current_date-1,current_date+5,'Nov scheme'),('{250ML CSD}',9,current_date-30,current_date-10,'old')`);
+  const v=(await run('admin','select public.lwb_profit_landing() v')).rows[0].v;
+  const a=v.parts['2.25L THUMS UP MRP 90'],b=v.parts['250ML SPRITE MRP 20'];
+  assert.equal(a.pack,'2.25L');assert.equal(Number(a.gr),700);assert.equal(Number(a.oms),40);assert.equal(Number(a.qps),5);assert.equal(Number(a.roi),3);
+  assert.equal(Number(a.mepd_pct),1.25);assert.equal(a.mepd_from,'default');
+  assert.equal(Number(b.mepd_pct),3.5);assert.equal(b.mepd_from,'scheme');assert.equal(b.scheme_note,'Nov scheme');
+  assert.equal(v.landing['2.25L THUMS UP MRP 90'],640); // landing list still there
+  assert.equal((await run('head','select public.lwb_profit_landing() v')).rows[0].v,null);
 });

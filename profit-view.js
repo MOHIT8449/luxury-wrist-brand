@@ -9,11 +9,13 @@
      LWBProfit.tag(sku, rate, qty)  small coloured tag HTML ("" when off / no landing)
      LWBProfit.loss(sku, rate)      true when rate ≤ landing (the page turns the whole line red)
      LWBProfit.total(lines)         {profit, known} for [{sku, rate, qty}]
+     LWBProfit.parts(sku)           what makes up the landing (GR, MEPD, OMS / free bottle, QPS, ROI), or null
+     LWBProfit.breakdown(title, lines)  popup with that for every SKU of a PO (Mohit, 13 Nov 2026)
      document "lwb:profit" event    fired when loaded and on every ON/OFF tap */
 (function(){
   if(window.LWBProfit)return;
   const KEY="lwbProfitOn";
-  let allowed=false,admin=false,land=new Map(),viewers=new Set(),btn=null,client=null,readyOk;
+  let allowed=false,admin=false,land=new Map(),partMap=new Map(),viewers=new Set(),btn=null,client=null,readyOk;
   const ready=new Promise(ok=>{readyOk=ok});
   const k=s=>String(s==null?"":s).trim().toUpperCase();
   const num=v=>{const n=Number(v);return Number.isFinite(n)?n:0};
@@ -38,6 +40,54 @@
     let profit=0,known=0,missing=0;
     for(const x of lines||[]){const l=landing(x.sku),q=num(x.qty);if(!q||!k(x.sku))continue;if(l==null){missing++;continue}profit+=(num(x.rate)-l)*q;known++}
     return {profit,known,missing,text:rs(profit)};
+  }
+  const r2=v=>Math.round(v*100)/100;
+  const esc=v=>String(v==null?"":v).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+  const nf=v=>(Math.round(v*100)/100).toLocaleString("en-IN",{maximumFractionDigits:2});
+  // Same formula as Rate & Scheme LANDING (excl. ROI is landing − ROI): per case.
+  function parts(sku){
+    const p=partMap.get(k(sku));if(!p)return null;
+    const C=num(p.case_config),D=num(p.gr),F=num(p.free_bottle),H=num(p.qps),I=num(p.roi),pct=num(p.mepd_pct),E=D*pct/100;
+    let G,gLabel;
+    if(F>0&&C){const base=D-E-H-I-((D/C)-1)*F,O=r2((num(p.slab3_rate)-base)/(1+F/C));G=(((D/C)-1)*F)-((O/C)*F);gLabel="Free bottle ("+nf(F)+")"}
+    else{G=num(p.oms);gLabel="OMS"}
+    return {pack:p.pack,category:p.category,gr:D,mepdPct:pct,mepd:E,mepdFrom:p.mepd_from,schemeTo:p.scheme_to,schemeNote:p.scheme_note,
+      oms:G,omsLabel:gLabel,qps:H,roi:I,landing:D-E-G-H-I};
+  }
+  // Popup: per SKU, what was taken off the GR to reach the landing, then sale − landing = profit.
+  function breakdown(title,lines){
+    if(!on())return;
+    let dlg=document.getElementById("lwbPfDlg");
+    if(!dlg){dlg=document.createElement("dialog");dlg.id="lwbPfDlg";dlg.className="lwb-pf-dlg";document.body.appendChild(dlg);
+      dlg.addEventListener("click",e=>{if(e.target===dlg||e.target.closest("[data-pf-close]"))dlg.close()})}
+    const T={qty:0,gr:0,mepd:0,oms:0,qps:0,roi:0,land:0,sale:0,profit:0},schemes=new Map();let gap=0,noLand=0,noParts=0;
+    const rows=(lines||[]).filter(x=>k(x.sku)&&num(x.qty)>0).map(x=>{
+      const q=num(x.qty),rate=num(x.rate),l=landing(x.sku),pt=parts(x.sku),per=l==null?null:rate-l;
+      T.qty+=q;T.sale+=q*rate;
+      if(l==null)noLand++;else{T.land+=q*l;T.profit+=q*per}
+      if(pt){T.gr+=q*pt.gr;T.mepd+=q*pt.mepd;T.oms+=q*pt.oms;T.qps+=q*pt.qps;T.roi+=q*pt.roi;
+        if(l!=null&&Math.abs(pt.landing-l)>0.5)gap++;
+        if(pt.category)schemes.set(pt.category,pt)}else noParts++;
+      const cls=per==null?"":per>0?"":" neg",d=v=>pt?"−"+nf(v):"—";
+      const warn=pt&&l!=null&&Math.abs(pt.landing-l)>0.5?' <b class="pfw" title="Rate &amp; Scheme today gives ₹'+nf(pt.landing)+'. Save Rate &amp; Scheme to update the landing.">!</b>':"";
+      const cells=[
+        ["GR",pt?nf(pt.gr):"—"],["MEPD",pt?d(pt.mepd)+' <small>'+nf(pt.mepdPct)+'%</small>':"—"],
+        [pt?esc(pt.omsLabel):"OMS",d(pt?pt.oms:0)],["QPS",d(pt?pt.qps:0)],["ROI",d(pt?pt.roi:0)],
+        ["Landing",l==null?"—":nf(l)+warn],["Sale",nf(rate)],["Profit/CS",per==null?"—":(per>0?"+":"")+nf(per)],["Profit",per==null?"—":rs(per*q)]];
+      return '<tr class="'+(per!=null&&per<=0?"pfl":"")+'"><td class="sku">'+esc(x.sku)+(pt?'<small>'+esc(pt.pack)+'</small>':l!=null?'<small>Rate List landing</small>':'<small>No landing</small>')+'</td><td class="n q" data-l="Qty">'+nf(q)+'</td>'+
+        cells.map(([h,v],i)=>'<td class="n'+(i>=7?' pf'+cls:'')+(i===5?' land':'')+'" data-l="'+h.replace(/<[^>]+>/g,"")+'">'+v+'</td>').join("")+'</tr>';
+    }).join("");
+    const pctOf=T.sale?r2(T.profit/T.sale*100):0;
+    const sch=[...schemes.values()].map(p=>'<span>'+esc(p.category)+': MEPD '+nf(p.mepdPct)+'% '+(p.mepdFrom==="scheme"?'scheme'+(p.schemeTo?' till '+esc(String(p.schemeTo).split("-").reverse().join("/")):'')+(p.schemeNote?' · '+esc(p.schemeNote):''):p.mepdFrom==="pack"?'(pack %)':'(default %)')+'</span>').join("");
+    dlg.innerHTML='<div class="pf-card"><div class="pf-head"><b>Profit breakdown'+(title?' · '+esc(title):'')+'</b><button type="button" data-pf-close aria-label="Close">✕</button></div>'+
+      '<div class="pf-sum"><span>Sale <b>'+rs(T.sale)+'</b></span><span>Landing <b>'+rs(T.land)+'</b></span><span class="'+(T.profit>0?"":"neg")+'">Profit <b>'+rs(T.profit)+'</b> ('+nf(pctOf)+'%)</span></div>'+
+      '<p class="pf-how">Landing = GR − MEPD − OMS / free bottle − QPS − ROI (per case, from Rate &amp; Scheme). Profit = Sale − Landing.</p>'+
+      (sch?'<div class="pf-sch">'+sch+'</div>':'')+
+      '<div class="pf-wrap"><table><thead><tr><th>SKU</th><th class="n">Qty</th><th class="n">GR</th><th class="n">MEPD</th><th class="n">OMS / Free</th><th class="n">QPS</th><th class="n">ROI</th><th class="n">Landing</th><th class="n">Sale</th><th class="n">Profit/CS</th><th class="n">Profit</th></tr></thead><tbody>'+rows+'</tbody>'+
+      '<tfoot><tr><td>Total</td><td class="n" data-l="Qty">'+nf(T.qty)+'</td><td class="n" data-l="GR">'+rs(T.gr)+'</td><td class="n" data-l="MEPD">−'+rs(T.mepd)+'</td><td class="n" data-l="OMS / Free">−'+rs(T.oms)+'</td><td class="n" data-l="QPS">−'+rs(T.qps)+'</td><td class="n" data-l="ROI">−'+rs(T.roi)+'</td><td class="n" data-l="Landing">'+rs(T.land)+'</td><td class="n" data-l="Sale">'+rs(T.sale)+'</td><td class="n" data-l="Profit %">'+nf(pctOf)+'%</td><td class="n pf'+(T.profit>0?"":" neg")+'" data-l="Profit">'+rs(T.profit)+'</td></tr></tfoot></table></div>'+
+      ((gap||noLand||noParts)?'<p class="pf-note">'+[gap?gap+' SKU: "!" = landing in Rate List is old, save Rate &amp; Scheme once.':'',noLand?noLand+' SKU has no landing, so no profit is counted for it.':'',noParts?noParts+' SKU is not linked to a Rate &amp; Scheme pack (flat landing, no breakdown).':''].filter(Boolean).join(' ')+'</p>':'')+
+      '<div class="pf-foot"><button type="button" data-pf-close>Close</button></div></div>';
+    dlg.open?null:dlg.showModal();
   }
   function fire(){document.body.classList.toggle("lwb-profit-on",on());document.dispatchEvent(new CustomEvent("lwb:profit",{detail:{on:on()}}))}
   function paint(){
@@ -66,14 +116,44 @@
       ".pf-slot{display:inline-block;vertical-align:middle;margin-left:6px;line-height:1}.pf-slot:empty{display:none}.pf-slot .lwb-pf{margin-top:0}"+
       /* Rate at or below landing: the whole SKU line turns red (Mohit, 7 Nov 2026). */
       "tr.pf-loss,tr.pf-loss>td{background:#fde4e4!important}tr.pf-loss>td:first-child{box-shadow:inset 4px 0 0 #c8102e}"+
-      "tr.pf-loss input{border-color:#e89a9a!important;background:#fff7f7!important}tr.pf-loss input.rate,tr.pf-loss input[data-field=rate]{border-color:#c8102e!important;color:#c8102e;font-weight:700}";
+      "tr.pf-loss input{border-color:#e89a9a!important;background:#fff7f7!important}tr.pf-loss input.rate,tr.pf-loss input[data-field=rate]{border-color:#c8102e!important;color:#c8102e;font-weight:700}"+
+      ".pf-slot .lwb-pf,.lwb-pf-open{cursor:pointer}"+
+      /* Profit breakdown popup */
+      ".lwb-pf-dlg{position:fixed;inset:0;margin:auto;height:fit-content;border:0;padding:0;border-radius:12px;width:min(1180px,calc(100vw - 24px));max-height:calc(100vh - 24px);box-shadow:0 20px 50px rgba(0,0,0,.35);font:13px 'Segoe UI',Roboto,Arial,sans-serif;color:#1f2a37}"+
+      ".lwb-pf-dlg::backdrop{background:rgba(15,23,42,.45)}"+
+      ".lwb-pf-dlg .pf-card{display:flex;flex-direction:column;max-height:calc(100vh - 24px)}"+
+      ".lwb-pf-dlg .pf-head{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:10px 14px;border-bottom:2px solid #c9b26a}"+
+      ".lwb-pf-dlg .pf-head b{font-size:16px}.lwb-pf-dlg button{border:1px solid #d6dbe1;background:#fff;border-radius:8px;padding:7px 14px;font-weight:600;font-size:13px;font-family:inherit;cursor:pointer;color:#1f2a37;width:auto;margin:0;box-shadow:none}"+
+      ".lwb-pf-dlg .pf-head button{padding:4px 10px}"+
+      ".lwb-pf-dlg .pf-sum{display:flex;flex-wrap:wrap;gap:6px 16px;padding:8px 14px 0;font-size:13px}.lwb-pf-dlg .pf-sum b{font-size:15px}"+
+      ".lwb-pf-dlg .pf-sum span:last-child b{color:#6b21a8}.lwb-pf-dlg .pf-sum .neg b{color:#b3261e}"+
+      ".lwb-pf-dlg .pf-how{margin:4px 14px 0;color:#6b7785;font-size:11.5px}"+
+      ".lwb-pf-dlg .pf-sch{display:flex;flex-wrap:wrap;gap:4px 6px;padding:6px 14px 0}.lwb-pf-dlg .pf-sch span{background:#f7f1de;color:#7a6420;border:1px solid #e4d08f;border-radius:10px;padding:1px 8px;font-size:11.5px;font-weight:600}"+
+      ".lwb-pf-dlg .pf-wrap{overflow:auto;padding:8px 14px;min-height:0}"+
+      ".lwb-pf-dlg table{width:100%;min-width:0!important;border-collapse:collapse;margin:0}"+
+      ".lwb-pf-dlg tr{background:none}.lwb-pf-dlg th{background:#f3f5f7;color:#5b6672;font-size:11px;text-transform:uppercase;letter-spacing:.3px;padding:7px 6px;text-align:left;white-space:nowrap}"+
+      ".lwb-pf-dlg td{padding:7px 6px;border-bottom:1px solid #edf0f3;white-space:nowrap}.lwb-pf-dlg .n{text-align:right}"+
+      ".lwb-pf-dlg td.sku{white-space:normal;font-weight:600}.lwb-pf-dlg td.sku small{display:block;font-weight:400;color:#8a94a0;font-size:11px}"+
+      ".lwb-pf-dlg td small{color:#8a94a0;font-size:11px}.lwb-pf-dlg td.land{font-weight:700}"+
+      ".lwb-pf-dlg td.pf{color:#6b21a8;font-weight:700}.lwb-pf-dlg td.pf.neg{color:#b3261e}.lwb-pf-dlg tr.pfl td{background:#fde4e4}"+
+      ".lwb-pf-dlg tfoot td{font-weight:700;background:#faf7ee;border-top:2px solid #e4d08f}"+
+      ".lwb-pf-dlg .pfw{display:inline-grid;place-items:center;width:15px;height:15px;border-radius:50%;background:#fde68a;color:#7a4b00;font-size:10px;cursor:help}"+
+      ".lwb-pf-dlg .pf-note{margin:0 14px;color:#9a6700;font-size:12px}"+
+      ".lwb-pf-dlg .pf-foot{display:flex;justify-content:flex-end;gap:8px;padding:8px 14px 12px;border-top:1px solid #edf0f3}"+
+      "@media(max-width:760px){.lwb-pf-dlg{width:calc(100vw - 16px)}.lwb-pf-dlg .pf-wrap{padding:6px 8px}"+
+        ".lwb-pf-dlg thead{display:none}.lwb-pf-dlg table,.lwb-pf-dlg tbody,.lwb-pf-dlg tfoot{display:block;width:100%}.lwb-pf-dlg tr{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:4px 6px;border:1px solid #e3e7ec;border-radius:8px;padding:7px 8px;margin-bottom:6px}"+
+        ".lwb-pf-dlg td{border:0;padding:0;white-space:normal;text-align:left!important;font-size:12.5px}"+
+        ".lwb-pf-dlg td[data-l]::before{content:attr(data-l);display:block;font-size:10px;font-weight:600;color:#8a94a0;text-transform:uppercase}"+
+        ".lwb-pf-dlg td.sku{grid-column:1/4}.lwb-pf-dlg td.q{grid-column:4;text-align:right!important}"+
+        ".lwb-pf-dlg tr.pfl{background:#fde4e4;border-color:#f3a5a5}.lwb-pf-dlg tr.pfl td{background:none}"+
+        ".lwb-pf-dlg tfoot td:first-child{grid-column:1/-1}.lwb-pf-dlg tfoot tr{background:#faf7ee}.lwb-pf-dlg tfoot td{background:none;border:0}}";
     (document.head||document.documentElement).appendChild(s);
   }
   async function load(){
     try{
       const {data,error}=await client.rpc("lwb_profit_landing");
       if(error||!data){allowed=false;land=new Map();viewers=new Set()}
-      else{allowed=true;admin=data.admin===true;land=new Map(Object.entries(data.landing||{}).map(([s,v])=>[k(s),num(v)]));viewers=new Set(data.viewers||[])}
+      else{allowed=true;admin=data.admin===true;land=new Map(Object.entries(data.landing||{}).map(([s,v])=>[k(s),num(v)]));partMap=new Map(Object.entries(data.parts||{}).map(([s,v])=>[k(s),v]));viewers=new Set(data.viewers||[])}
     }catch(e){allowed=false}
   }
   async function init(opts){
@@ -96,6 +176,6 @@
     yes?viewers.add(user):viewers.delete(user);
     return !!yes;
   }
-  window.LWBProfit={init,ready,on,landing,tag,loss,total,allow,money:rs,
+  window.LWBProfit={init,ready,on,landing,tag,loss,total,parts,breakdown,allow,money:rs,
     get allowed(){return allowed},get admin(){return admin},get viewers(){return viewers}};
 })();
