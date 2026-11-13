@@ -1,0 +1,177 @@
+# Test database: make (or refresh) the TEST Supabase project as a copy of live.
+# Run it by hand: Actions > "Test DB copy from live" > Run workflow.
+#
+# What it does, on the TEST database only (the live one is only read):
+#   1. Wipes the test public schema and copies the live tables, functions,
+#      rules (RLS), storage buckets + their rules.
+#   2. copy_data = yes: also copies the live rows and logins. Every copied
+#      login gets a random password, so real staff can NOT log in to the test
+#      site. Phone push, saved phones and cron jobs are switched off.
+#   3. Adds the dummy test logins (test.admin@lwb.test ... test.driver@lwb.test)
+#      with the password from the secret STAGING_TEST_PASSWORD.
+#   4. Deploys the Edge Functions to the test project (no WhatsApp / push keys
+#      are copied, so they can not message anyone).
+#
+# Secrets: STAGING_SUPABASE_DB_URL (test Session pooler link with password),
+#          STAGING_TEST_PASSWORD, SUPABASE_DB_PASSWORD (live, read only here),
+#          SUPABASE_ACCESS_TOKEN (Edge Functions, optional).
+# This repo is public, so no query output is printed.
+name: Test DB copy from live
+
+on:
+  workflow_dispatch:
+    inputs:
+      copy_data:
+        description: "Copy live rows too (parties, SKUs, orders...)? yes / no"
+        required: true
+        default: "yes"
+      confirm:
+        description: "Type WIPE-TEST to wipe and refill the TEST database"
+        required: true
+
+concurrency:
+  group: test-site
+  cancel-in-progress: false
+
+env:
+  SUPABASE_PROJECT_REF: txkbhadzdbxpieunfvox
+  SUPABASE_DB_HOST: aws-0-ap-northeast-2.pooler.supabase.com
+
+jobs:
+  copy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check inputs and links
+        env:
+          CONFIRM: ${{ inputs.confirm }}
+          TEST_DB_URL: ${{ secrets.STAGING_SUPABASE_DB_URL }}
+          TEST_PW: ${{ secrets.STAGING_TEST_PASSWORD }}
+        run: |
+          [ "$CONFIRM" = "WIPE-TEST" ] || { echo "::error::Type WIPE-TEST in confirm"; exit 1; }
+          [ -n "$TEST_DB_URL" ] || { echo "::error::Secret STAGING_SUPABASE_DB_URL is not set"; exit 1; }
+          [ -n "$TEST_PW" ] || { echo "::error::Secret STAGING_TEST_PASSWORD is not set"; exit 1; }
+          case "$TEST_DB_URL" in *"$SUPABASE_PROJECT_REF"*) echo "::error::STAGING_SUPABASE_DB_URL points to the LIVE project. Stopped."; exit 1;; esac
+          . .github/test-site/config.env
+          [ -n "$TEST_SUPABASE_URL" ] || { echo "::error::TEST_SUPABASE_URL is empty in .github/test-site/config.env"; exit 1; }
+          ref=${TEST_SUPABASE_URL#https://}; ref=${ref%%.supabase.co}
+          case "$TEST_DB_URL" in *"$ref"*) ;; *) echo "::error::STAGING_SUPABASE_DB_URL is not for $ref (config.env)"; exit 1;; esac
+          echo "TEST_REF=$ref" >> "$GITHUB_ENV"
+
+      - name: Install Postgres 17 client
+        run: |
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl -fsSo /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" | sudo tee /etc/apt/sources.list.d/pgdg.list >/dev/null
+          sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client-17
+          echo "/usr/lib/postgresql/17/bin" >> "$GITHUB_PATH"
+
+      - name: Copy live to test
+        env:
+          LIVE_PW: ${{ secrets.SUPABASE_DB_PASSWORD }}
+          LIVE_URL_SECRET: ${{ secrets.SUPABASE_DB_URL }}
+          TEST_DB_URL: ${{ secrets.STAGING_SUPABASE_DB_URL }}
+          TEST_PW: ${{ secrets.STAGING_TEST_PASSWORD }}
+          COPY_DATA: ${{ inputs.copy_data }}
+        run: |
+          set -euo pipefail
+          . .github/test-site/config.env
+          LIVE="$LIVE_URL_SECRET"
+          if [ -n "$LIVE_PW" ]; then
+            LIVE="postgresql://postgres.$SUPABASE_PROJECT_REF:$(python3 -c 'import os,urllib.parse;print(urllib.parse.quote(os.environ["LIVE_PW"].strip(),safe=""))')@$SUPABASE_DB_HOST:5432/postgres"
+          fi
+          echo "::add-mask::$LIVE"; echo "::add-mask::$TEST_DB_URL"; echo "::add-mask::$TEST_PW"
+          [ -n "$LIVE" ] || { echo "::error::Live SUPABASE_DB_PASSWORD secret is not set"; exit 1; }
+          export PGCONNECT_TIMEOUT=20
+          T=$RUNNER_TEMP
+          q(){ psql "$TEST_DB_URL" -q -X -v ON_ERROR_STOP=1 -o /dev/null "$@"; }
+          # Log = number of errors + the error lines with every quoted value
+          # blanked, so no row data ever reaches the public log.
+          run_loose(){ psql "$TEST_DB_URL" -q -X -o /dev/null -f "$1" > "$T/log.txt" 2>&1 || true
+            n=$(grep -c 'ERROR' "$T/log.txt" || true); echo "$2: $n errors"
+            if [ -n "${3:-}" ]; then   # rows: hide every quoted value
+              grep -E 'ERROR' "$T/log.txt" | sed -E "s/^psql:[^ ]* //; s/\"[^\"]*\"/\"…\"/g; s/'[^']*'/'…'/g; s/(at or near |Key ).*/\1…/" \
+                | cut -c1-120 | sort | uniq -c | sort -rn | head -10 || true
+            else
+              grep -E 'ERROR' "$T/log.txt" | sed -E "s/^psql:[^ ]* //" | cut -c1-200 | head -40 || true
+            fi
+            rm -f "$T/log.txt"; }
+
+          echo "::group::Extensions"
+          psql "$LIVE" -X -At -c "select format('create extension if not exists %I with schema %I;', e.extname, n.nspname)
+            from pg_extension e join pg_namespace n on n.oid=e.extnamespace where e.extname not in ('plpgsql')" > "$T/ext.sql"
+          run_loose "$T/ext.sql" "Extensions"
+          echo "::endgroup::"
+
+          echo "::group::Tables, functions and rules"
+          pg_dump "$LIVE" --schema=public --schema-only --no-owner --no-comments \
+            --exclude-table=public.lwb_sql_apply_log > "$T/schema.sql"
+          q -c "drop schema if exists public cascade; create schema public;
+                grant usage on schema public to anon, authenticated, service_role;
+                alter default privileges in schema public grant all on tables to anon, authenticated, service_role;
+                alter default privileges in schema public grant all on functions to anon, authenticated, service_role;
+                alter default privileges in schema public grant all on sequences to anon, authenticated, service_role;"
+          run_loose "$T/schema.sql" "Schema"
+          echo "::endgroup::"
+
+          echo "::group::Storage buckets and rules"
+          pg_dump "$LIVE" --data-only --inserts --on-conflict-do-nothing -t storage.buckets > "$T/buckets.sql"
+          run_loose "$T/buckets.sql" "Buckets"
+          psql "$LIVE" -X -At -c "select format('drop policy if exists %I on storage.objects; create policy %I on storage.objects as %s for %s to %s%s%s;',
+              policyname, policyname, permissive, cmd, array_to_string(roles, ', '),
+              coalesce(' using (' || qual || ')', ''), coalesce(' with check (' || with_check || ')', ''))
+            from pg_policies where schemaname='storage' and tablename='objects'" > "$T/storage_rules.sql"
+          run_loose "$T/storage_rules.sql" "Storage rules"
+          echo "::endgroup::"
+
+          if [ "$COPY_DATA" = "yes" ]; then
+            echo "::group::Logins (random passwords) and rows"
+            q -c "delete from auth.identities; delete from auth.users;"
+            pg_dump "$LIVE" --data-only -t auth.users -t auth.identities > "$T/auth.sql"
+            { echo "SET session_replication_role = replica;"; cat "$T/auth.sql"; } > "$T/auth2.sql"
+            run_loose "$T/auth2.sql" "Logins" hide
+            rm -f "$T/auth.sql" "$T/auth2.sql"
+            q -c "update auth.users set encrypted_password = extensions.crypt(gen_random_uuid()::text, extensions.gen_salt('bf')),
+                    phone = null, phone_confirmed_at = null;
+                  delete from auth.mfa_factors; delete from auth.sessions; delete from auth.refresh_tokens;"
+            pg_dump "$LIVE" --data-only --schema=public \
+              --exclude-table-data=public.lwb_push_subscriptions --exclude-table-data=public.lwb_push_deliveries \
+              --exclude-table-data=public.lwb_push_jobs --exclude-table-data='public.lwb_login_otp_*' \
+              --exclude-table=public.lwb_sql_apply_log > "$T/data.sql"
+            { echo "SET session_replication_role = replica;"; cat "$T/data.sql"; } > "$T/data2.sql"
+            run_loose "$T/data2.sql" "Rows" hide
+            rm -f "$T/data.sql" "$T/data2.sql"
+            echo "::endgroup::"
+          fi
+
+          echo "::group::Live updates (Realtime) tables"
+          psql "$LIVE" -X -At -c "select format('alter publication supabase_realtime add table %I.%I;', schemaname, tablename)
+            from pg_publication_tables where pubname='supabase_realtime' and schemaname='public'" > "$T/rt.sql"
+          run_loose "$T/rt.sql" "Realtime"
+          echo "::endgroup::"
+
+          echo "::group::Safety and test logins"
+          { echo "set lwb.test_url = :'tu'; set lwb.test_site = :'ts';"; cat .github/test-site/safety.sql; } | q -v tu="$TEST_SUPABASE_URL" -v ts="$TEST_SITE_URL"
+          { echo "set lwb.test_pw = :'pw';"; cat .github/test-site/seed-test-users.sql; } | q -v pw="$TEST_PW"
+          q -c "create table if not exists public.lwb_sql_apply_log (id bigserial primary key, file_name text not null,
+                  git_sha text not null, applied_at timestamptz not null default now(), run_url text);
+                alter table public.lwb_sql_apply_log enable row level security;
+                revoke all on public.lwb_sql_apply_log from anon, authenticated;
+                notify pgrst, 'reload schema';"
+          echo "::endgroup::"
+          echo "- Test database copied from live (rows: $COPY_DATA), test logins ready" >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Deploy Edge Functions to test
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          [ -n "$SUPABASE_ACCESS_TOKEN" ] || { echo "::warning::SUPABASE_ACCESS_TOKEN not set, Edge Functions skipped"; exit 0; }
+          for d in supabase/functions/*/; do
+            fn=$(basename "$d"); [ -f "$d/index.ts" ] || continue
+            supabase functions deploy "$fn" --project-ref "$TEST_REF" --use-api --yes || echo "::warning::$fn not deployed"
+          done
