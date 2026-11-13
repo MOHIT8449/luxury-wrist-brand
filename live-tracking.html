@@ -64,7 +64,7 @@
 <body>
   <div id="loading" class="status">Checking account access...</div>
   <main id="page" class="erp-main" hidden>
-    <div class="erp-pagehead"><h1>Live Tracking</h1><span class="grow"></span><span class="erp-badge blue">Admin · Sales Head · Godown Manager</span></div>
+    <div class="erp-pagehead"><h1>Live Tracking</h1><span class="grow"></span><span class="erp-badge blue">Admin · Sales Head · Godown Manager · Accounts</span></div>
 
     <div id="banner"></div>
     <div class="sl-kpis" id="kpis" style="grid-template-columns:repeat(auto-fit,minmax(140px,1fr))"></div>
@@ -99,7 +99,7 @@
       <div class="lt-side" id="side"></div>
       <div class="lt-map" id="map"></div>
     </div>
-    <button type="button" class="erp-i" aria-label="Info" title="Info" data-tip="ETA is an estimate: straight-line distance × 1.3 for roads, at the average speed set above. A party gets its map pin the first time a driver delivers there with GPS on (or pin it by hand). Location comes only while the staff member&#x27;s ERP app is open on the phone.">i</button>
+    <button type="button" class="erp-i" aria-label="Info" title="Info" data-tip="ETA is an estimate: straight-line distance × 1.3 for roads, at the average speed set above. A party gets its map pin the first time a driver delivers there with GPS on (or pin it by hand). Driver GPS continues in the background after Start shift GPS in the updated Android APK. Browser GPS requires the ERP to remain open.">i</button>
   </main>
   <script>
     const S=LWBSales,{client,el,esc,fmt}=S;
@@ -313,8 +313,8 @@
       el("refresh").disabled=true;
       try{
         const r=await client.rpc("lwb_live_map");
-        if(r.error)throw Error(/lwb_live_map|schema cache|function/i.test(r.error.message)?"Live Tracking database setup (lwb_live_tracking_setup.sql) is not on Supabase yet. It is applied automatically after this PR is merged.":r.error.message);
-        data=r.data;me.canPin=true;
+        if(r.error)throw Error(/lwb_live_map|schema cache|function/i.test(r.error.message)?"Live Tracking database setup (lwb_live_tracking_setup.sql) is not on Supabase yet. Ask Admin to apply the reviewed tracking SQL.":r.error.message);
+        data=r.data;me.canPin=["admin","manager"].includes(me.realRole);
         el("setBtn").hidden=!data.can_edit;
         const b=[];
         if(data.settings.godown_lat==null)b.push('<div class="lt-banner">🏭 Godown location is not set, so "Left godown" and "Back at godown" can\'t be detected. Deliveries and "Reached party" still work. '+(data.can_edit?"Open ⚙ Settings and set the godown.":"Ask Admin or the Sales Head to set it.")+"</div>");
@@ -367,7 +367,8 @@
 
     (async()=>{
       try{
-        me=await S.start(["admin","manager","warehouse"]);if(!me)return;
+        me=await S.start(["admin","manager","warehouse","accounts"]);if(!me)return;
+        if(!["admin","manager","warehouse","accounts"].includes(me.realRole)){location.replace("dashboard.html");return;}
         el("loading").hidden=true;el("page").hidden=false;
         initMap();await load();
         timer=setInterval(()=>{if(!document.hidden&&!pinMode)load()},20e3);

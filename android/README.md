@@ -35,3 +35,39 @@ This app declares Android POST_NOTIFICATIONS, the `NotificationPermissionRequest
 ## Fingerprint unlock
 After 15 minutes idle the ERP locks and opens with the phone's fingerprint / face / PIN
 (`quick-unlock.js`, WebAuthn in Chrome). It is part of the website, so no new APK is needed.
+
+## Driver shift GPS (new APK required)
+
+The TWA still handles the ERP, uploads, calls, payments and login. A separate native
+`DriverTrackingActivity` and non-exported location foreground service handle GPS.
+On the Android Driver Delivery page choose **Open driver GPS setup**, sign in with
+an active, tracking-enabled driver's email/password, grant precise location and
+notification permissions, then **Start shift GPS** while the activity is visible.
+Return to ERP; the location foreground service remains active when Chrome is
+backgrounded or the screen is locked. A persistent notification shows the last
+successful upload and has a Stop action. This follows Android's requirement to
+start a location foreground service from a visible activity:
+https://developer.android.com/develop/background-work/services/fgs/restrictions-bg-start
+
+The native login is intentionally separate from Chrome's cookie/localStorage
+session. **Stop GPS before switching drivers or signing out of the ERP.** Website
+logout alone does not revoke this separate native session. Stop clears the native
+session. No password is saved; tokens are AES-GCM encrypted with an AndroidKeyStore
+key, and Android backup is disabled. No service-role key or token-bearing deep link
+is used. Only the native driver session's `auth.uid()` supplies location.
+
+The service samples GPS/network location and attempts fresh uploads about every
+30 seconds. No fix older than 90 seconds is resent; offline points are not queued
+or later presented as live. Supabase validates driver activation, tracked roles and
+work hours; the service checks work hours periodically and pauses provider
+subscriptions outside them. Expired tokens refresh using Supabase Auth, and invalid
+sessions stop tracking. Permission/provider/network failures are visible in the
+notification. OS force-stop, reboot and OEM battery restrictions can stop GPS:
+reopen GPS setup and start again. No background/reboot auto-start is attempted.
+Browser-only GPS retains its foreground limitation.
+
+After approval, apply `lwb_driver_background_tracking_setup.sql` to an ERP that
+already has live tracking and sales order follow-up installed, update the web
+assets and `lwb-web-push` function, build/install a newly signed APK, and perform
+the device validation in `LIVE_GPS_REVIEW.md`. Merging source alone is not an APK
+installation or database migration.

@@ -1,3 +1,5 @@
+-- lwb:no-auto-run
+-- Superseded for automatic deployment by lwb_driver_background_tracking_setup.sql.
 -- LUXURY WRIST BRAND ERP — Live Tracking (drivers + staff on a map)
 -- Safe to run again.
 --
@@ -95,17 +97,11 @@ RETURNS double precision LANGUAGE sql IMMUTABLE SET search_path = '' AS $fn$
       cos(radians(lat1)) * cos(radians(lat2)) * power(sin(radians(lng2 - lng1) / 2), 2)))) END
 $fn$;
 
--- Admin, Sales Head, Godown Manager (or a user Admin ticked the page for).
+-- Strict viewer allowlist. Page overrides never grant tracking access.
 CREATE OR REPLACE FUNCTION public.lwb_track_viewer()
-RETURNS boolean LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = '' AS $fn$
-BEGIN
-  IF EXISTS (SELECT 1 FROM public.user_profiles p WHERE p.id = auth.uid() AND p.active = true
-             AND lower(btrim(p.role)) IN ('admin','manager','warehouse')) THEN RETURN true; END IF;
-  IF to_regprocedure('public.lwb_has_page(text)') IS NOT NULL THEN
-    RETURN public.lwb_has_page('live-tracking.html');
-  END IF;
-  RETURN false;
-END;
+RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER SET search_path = '' AS $fn$
+  SELECT EXISTS (SELECT 1 FROM public.user_profiles p WHERE p.id = auth.uid()
+    AND p.active = true AND lower(btrim(p.role)) IN ('admin','manager','warehouse','accounts'));
 $fn$;
 
 -- A driver's orders on the road now (loaded, not reported yet) and the ones
@@ -312,13 +308,13 @@ CREATE TRIGGER trg_lwb_trip_delivery_report AFTER INSERT ON public.lwb_delivery_
   FOR EACH ROW EXECUTE FUNCTION public.lwb_trip_on_delivery_report();
 
 -- ---------------------------------------------------------------------------
--- Office side (Admin / Sales Head / Godown Manager)
+-- Office side (Admin / Sales Head / Godown Manager / Accounts)
 -- ---------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.lwb_live_map()
 RETURNS jsonb LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = '' AS $fn$
 DECLARE s public.lwb_tracking_settings%ROWTYPE; v_people jsonb; v_trips jsonb;
 BEGIN
-  IF NOT public.lwb_track_viewer() THEN RAISE EXCEPTION 'Live Tracking is only for Admin, Sales Head and Godown Manager'; END IF;
+  IF NOT public.lwb_track_viewer() THEN RAISE EXCEPTION 'Live Tracking is only for Admin, Sales Head, Godown Manager and Accounts'; END IF;
   SELECT * INTO s FROM public.lwb_tracking_settings WHERE id = 1;
 
   SELECT coalesce(jsonb_agg(jsonb_build_object(
@@ -374,7 +370,7 @@ CREATE OR REPLACE FUNCTION public.lwb_location_trail(p_user_id uuid, p_day date 
 RETURNS jsonb LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = '' AS $fn$
 DECLARE v_day date := coalesce(p_day, (now() AT TIME ZONE 'Asia/Kolkata')::date);
 BEGIN
-  IF NOT public.lwb_track_viewer() THEN RAISE EXCEPTION 'Live Tracking is only for Admin, Sales Head and Godown Manager'; END IF;
+  IF NOT public.lwb_track_viewer() THEN RAISE EXCEPTION 'Live Tracking is only for Admin, Sales Head, Godown Manager and Accounts'; END IF;
   RETURN jsonb_build_object(
     'points', coalesce((SELECT jsonb_agg(jsonb_build_array(h.lat, h.lng, h.at, h.speed_kmph) ORDER BY h.at)
       FROM public.lwb_location_history h
@@ -416,13 +412,13 @@ BEGIN
 END;
 $fn$;
 
--- Pin (or clear) a party's location by hand from the map.
+-- Pin (or clear) a party's location by hand: Admin / Sales Head only.
 CREATE OR REPLACE FUNCTION public.lwb_set_party_location(p_party text, p_lat double precision, p_lng double precision)
 RETURNS int LANGUAGE plpgsql SECURITY DEFINER SET search_path = '' AS $fn$
 DECLARE n int;
 BEGIN
-  IF NOT EXISTS (SELECT 1 FROM public.user_profiles x WHERE x.id = auth.uid() AND x.active = true AND lower(btrim(x.role)) IN ('admin','manager','warehouse')) THEN
-    RAISE EXCEPTION 'Only Admin, Sales Head or Godown Manager can pin a party';
+  IF NOT EXISTS (SELECT 1 FROM public.user_profiles x WHERE x.id = auth.uid() AND x.active = true AND lower(btrim(x.role)) IN ('admin','manager')) THEN
+    RAISE EXCEPTION 'Only Admin or Sales Head can pin a party';
   END IF;
   IF p_lat IS NOT NULL AND (p_lat NOT BETWEEN -90 AND 90 OR p_lng NOT BETWEEN -180 AND 180) THEN RAISE EXCEPTION 'Invalid location'; END IF;
   UPDATE public.lwb_customer_master c SET geo_lat = p_lat, geo_lng = CASE WHEN p_lat IS NULL THEN NULL ELSE p_lng END, geo_set_at = now()

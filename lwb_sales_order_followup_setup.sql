@@ -1,3 +1,5 @@
+-- lwb:no-auto-run
+-- Superseded for automatic deployment by lwb_driver_background_tracking_setup.sql.
 -- LUXURY WRIST BRAND ERP — SALESMAN ORDER FOLLOW-UP: STATUS, DELIVERY BELL, EDIT, CANCEL
 --
 -- RUN ONCE in Supabase SQL Editor, after lwb_sales_team_setup.sql. Safe to run again.
@@ -45,6 +47,7 @@ DECLARE
   v_field boolean := public.lwb_is_field_salesman();
 BEGIN
   IF auth.uid() IS NULL THEN RAISE EXCEPTION 'Login required.'; END IF;
+  IF EXISTS(SELECT 1 FROM public.user_profiles WHERE id=auth.uid() AND lower(btrim(role)) IN ('sales','salesman')) THEN RETURN '[]'::jsonb; END IF;
   RETURN coalesce((
     SELECT jsonb_agg(x.j ORDER BY x.d DESC)
     FROM (
