@@ -4,6 +4,14 @@
 **Purpose:** Continue the same ERP project from a new ChatGPT conversation without restarting or losing the agreed requirements.
 **Status:** Active development / verification. Do not assume all modules are completed or fully tested.
 
+## STTS Ledger: company Sales Register + STTS checked bill by bill against the Rate List (13 Nov 2026)
+
+- Mohit: the DMS Sales Register (CSV) and the company STTS Ledger (XLS) must be checked by invoice no. and item: is the scheme on each bill (free bottles / ₹ off per case) the Rate List scheme of that day, and did the company accept the same in STTS. Kept apart from Rate & Scheme. ROI support (on purchase, top sheet bill) and QPS are the next parts (waiting for a sample top sheet / QPS STTS file).
+- SQL `lwb_stts_ledger_setup.sql` (test `tests/stts-ledger`, PGlite, 4 tests): `lwb_stts_sales` (bill + line no.; upload again = replaced), `lwb_stts_claims` (PI / SI; newest upload replaces the dates it covers, since the portal gives the whole month), `lwb_stts_uploads`, `lwb_stts_pack_links` (company pack code -> Rate List pack). RPCs `lwb_stts_data(months)` (also Rate Ledger name / fb / oms per entry), `lwb_stts_sales_upload`, `lwb_stts_claims_upload` (Admin / Sales Head / Accounts), `lwb_stts_pack_link` (Admin / Sales Head). No direct table access.
+- `stts-match.js` (`LWBStts`): parse both files, group by bill + pack code (first word of the item name), free bottles expected = floor(paid cases × Rate List free bottle), given = free line (discount ≥ 85% of the line), STTS = Quantity PC × bottles. ₹ off: given = Promotion Total, STTS = Discount; a bill without ₹ off is not flagged (only big bills get it; question open to Mohit).
+- `stts-ledger.html` (Accounts > STTS Ledger): one Upload button (file type found by its columns), KPIs, Problem bills / All / Item-wise / Date-wise / Month-wise / Purchase margin (PI) / Pack link / Uploads, bill popup with Copy query / WhatsApp, Excel of problem bills. The 1-11 Nov 2026 files: 83 bills STTS short (₹16,284, 2.8 given, STTS 2.5-2.7), 1 bill with no free bottles. Screenshots: project files `stts-ledger/preview/`.
+- Same day: Rate List free bottle OMS = GR / bottles × free bottles (the −₹1 removed, #354); Admin can fix an old Rate Ledger entry with a reason and fix log (`lwb_rate_ledger_fix_setup.sql`, #355).
+
 ## SKU photos: suggested photos for existing SKUs, approve + save in one go (13 Nov 2026)
 
 - Mohit: find photos for every SKU in the system, show them to him to approve, then save them automatically.
