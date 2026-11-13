@@ -1,0 +1,388 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>STTS Ledger | Luxury Wrist Brand ERP</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="erp-date.js"></script>
+  <link rel="stylesheet" href="erp-shell.css">
+  <script src="erp-shell.js"></script>
+  <script src="excel-io.js"></script>
+  <script src="stts-match.js"></script>
+  <style>
+    .status{text-align:center;padding:80px 20px;font-size:15px;color:#555}
+    [hidden]{display:none!important}
+    .st-top{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:0 0 8px}
+    .st-top h1{margin:0;font-size:20px;flex:1 1 auto}
+    .st-top select{height:36px;border:1.5px solid var(--erp-line);border-radius:8px;padding:0 8px;font:inherit;font-size:14px;background:#fff;min-width:0}
+    .st-btn{height:36px;border-radius:8px;padding:0 12px;font:inherit;font-weight:700;font-size:14px;cursor:pointer;border:1px solid var(--erp-line);background:#fff;color:var(--erp-ink);display:inline-flex;align-items:center;justify-content:center;gap:6px;white-space:nowrap;text-decoration:none}
+    .st-btn.pri{background:#00434d;border-color:#00434d;color:#fff}.st-btn.grn{background:#13824a;border-color:#13824a;color:#fff}
+    .st-btn.sm{height:30px;padding:0 9px;font-size:13px}
+    .st-msg{padding:8px 12px;border-radius:8px;margin:0 0 8px;background:#fdf0dc;color:#7a4700;font-size:13.5px}
+    .st-msg.ok{background:#e3f5ec;color:#0f5f37}.st-msg.bad{background:#ffebeb;color:#9b2020}
+    .st-kpis{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px;margin:0 0 8px}
+    .st-kpi{background:#fff;border:1px solid var(--erp-line);border-radius:10px;padding:8px 11px;min-width:0;text-align:left;font:inherit;color:inherit;cursor:pointer}
+    .st-kpi h3{margin:0 0 2px;font-size:12px;color:#4b5763;font-weight:600}
+    .st-kpi .v{font-size:18px;font-weight:800;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+    .st-kpi small{display:block;color:var(--erp-muted);font-size:11.5px}
+    .st-kpi.red{background:#fff1f1;border-color:#f3b8b8}.st-kpi.red .v{color:#b3122b}
+    .st-kpi.amb{background:#fff7e8;border-color:#f3d79c}
+    .st-card{background:#fff;border:1px solid var(--erp-line);border-radius:10px;padding:8px 10px;min-width:0;margin:0 0 8px}
+    .st-tabs{display:flex;gap:6px;overflow-x:auto;margin:0 0 6px;scrollbar-width:none}
+    .st-tabs button{height:32px;border-radius:8px;border:1.5px solid var(--erp-line);background:#fff;font:inherit;font-size:13.5px;padding:0 10px;cursor:pointer;white-space:nowrap;color:var(--erp-ink);flex:0 0 auto}
+    .st-tabs button[aria-pressed=true]{background:#002f37;border-color:#002f37;color:#fff;font-weight:700}
+    .st-tabs .cnt{display:inline-block;margin-left:5px;background:#c8102e;color:#fff;border-radius:99px;font-size:11px;padding:0 6px;line-height:17px}
+    .st-filter{display:flex;gap:6px;align-items:center;margin:0 0 6px;flex-wrap:wrap}
+    .st-filter input[type=search]{flex:1 1 160px;min-width:0;height:32px;border:1.5px solid var(--erp-line);border-radius:8px;padding:0 9px;font:inherit;font-size:14px}
+    .st-filter select{height:34px;box-sizing:border-box;border:1.5px solid var(--erp-line);border-radius:8px;padding:0 24px 0 6px;line-height:28px;font:inherit;font-size:13px;background:#fff;min-width:0}
+    .st-note{font-size:12.5px;color:var(--erp-muted);margin:0 0 6px}
+    .st-r{display:grid;grid-template-columns:76px minmax(0,1.5fr) minmax(0,1.2fr) 82px 82px 82px 96px;gap:2px 8px;align-items:center;padding:6px 2px;border-bottom:1px solid var(--erp-line);font-size:13px;cursor:pointer}
+    .st-r:hover{background:#f6f9fc}
+    .st-r.head{font-size:11.5px;font-weight:700;color:#4b5763;padding:4px 2px;background:#f6f8fb;border-radius:6px;cursor:default}
+    .st-r .d{white-space:nowrap;font-variant-numeric:tabular-nums}
+    .st-r .n{min-width:0;overflow-wrap:anywhere;line-height:1.3}
+    .st-r .n small{display:block;color:var(--erp-muted);font-size:11.5px}
+    .st-r .q{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+    .st-r .q small{display:block;color:var(--erp-muted);font-size:11px}
+    .st-r .df{text-align:right;font-weight:800;white-space:nowrap;font-variant-numeric:tabular-nums}
+    .bad{color:#b3122b}.good{color:#13824a}
+    .st-r .tags{grid-column:2/-1;display:flex;gap:4px;flex-wrap:wrap}
+    .st-r .tags:empty{display:none}
+    .st-r .lbl{display:none}
+    .tag{display:inline-block;border-radius:99px;padding:0 7px;font-size:11px;font-weight:700;line-height:18px;white-space:nowrap}
+    .t-red{background:#ffe3e3;color:#a1121f}.t-amb{background:#fff1d6;color:#8a5300}.t-grn{background:#e3f5ec;color:#13824a}.t-gry{background:#eef0f3;color:#4b5763}.t-blu{background:#e8f0fd;color:#1d4f9a}
+    .st-tb{width:100%;border-collapse:collapse;font-size:13px}
+    .st-tb th{font-size:11.5px;color:#4b5763;text-align:right;padding:5px 6px;background:#f6f8fb;white-space:nowrap}
+    .st-tb td{padding:5px 6px;border-bottom:1px solid var(--erp-line);text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+    .st-tb th.l,.st-tb td.l{text-align:left;white-space:normal;overflow-wrap:anywhere}
+    .st-tb tr.sub td{color:var(--erp-muted);font-size:12px;border-bottom:1px dashed var(--erp-line)}
+    .st-tb tfoot td{font-weight:800;background:#f6f8fb}
+    .st-empty{color:var(--erp-muted);font-size:14px;padding:12px 2px}
+    .st-pv{display:flex;flex-direction:column;gap:6px}
+    .st-pv .row{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+    .st-back{position:fixed;inset:0;background:rgba(15,23,35,.5);z-index:4500;display:flex;align-items:center;justify-content:center;padding:12px}
+    .st-sheet{background:#fff;border-radius:14px;width:min(640px,100%);max-height:calc(100dvh - 24px);display:flex;flex-direction:column;box-shadow:0 20px 50px rgba(0,0,0,.25)}
+    .st-sheet header{display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid var(--erp-line)}
+    .st-sheet header h3{margin:0;font-size:15.5px;flex:1;min-width:0;overflow-wrap:anywhere}
+    .st-sheet header h3 small{display:block;font-weight:400;color:var(--erp-muted);font-size:12px}
+    .st-sheet .body{padding:10px 14px;overflow:auto;display:flex;flex-direction:column;gap:8px}
+    .st-sheet .acts{display:flex;gap:6px;justify-content:flex-end;padding:8px 14px;border-top:1px solid var(--erp-line)}
+    .st-3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
+    .st-3 div{border:1px solid var(--erp-line);border-radius:8px;padding:6px 8px;min-width:0}
+    .st-3 b{display:block;font-size:17px;font-variant-numeric:tabular-nums}
+    .st-3 small{color:var(--erp-muted);font-size:11.5px}
+    .st-3 .bd{background:#fff1f1;border-color:#f3b8b8}
+    .st-cap{font-size:12.5px;font-weight:700;color:#3b4652;margin:2px 0 0}
+    .st-link select{height:30px;border:1.5px solid var(--erp-line);border-radius:7px;font:inherit;font-size:13px;max-width:100%;min-width:0}
+    @media(max-width:1100px){.st-kpis{grid-template-columns:repeat(3,minmax(0,1fr))}}
+    @media(max-width:760px){
+      .st-kpis{grid-template-columns:1fr 1fr}
+      .st-kpis .st-kpi:last-child{grid-column:1/-1}
+      .st-kpi{padding:6px 9px}.st-kpi .v{font-size:16px}.st-kpi small{font-size:11px}
+      .st-filter select{flex:1 1 0}
+      .st-top h1{flex:1 1 100%}
+      .st-top select{flex:1 1 0}
+      .st-r{grid-template-columns:repeat(3,minmax(0,1fr)) auto;gap:3px 8px;padding:8px 2px}
+      .st-r.head{display:none}
+      .st-r .d{grid-column:1/3;grid-row:1;font-size:12px;color:var(--erp-muted)}
+      .st-r .df{grid-column:3/-1;grid-row:1}
+      .st-r .n{grid-column:1/-1}
+      .st-r .q{text-align:left}
+      .st-r .q.c4{display:none}
+      .st-r .lbl{display:block;font-size:10.5px;color:var(--erp-muted);font-weight:700}
+      .st-r .tags{grid-column:1/-1}
+      .st-tb .hp{display:none}
+      .st-3 b{font-size:15px}
+    }
+  </style>
+</head>
+<body>
+  <div id="loading" class="status">Loading…</div>
+  <main id="page" class="erp-main" hidden>
+    <div class="st-top">
+      <h1>STTS Ledger</h1>
+      <select id="month" aria-label="Month"></select>
+      <label class="st-btn pri" id="upBtn">⬆ Upload file<input type="file" id="file" accept=".xls,.xlsx,.csv" hidden></label>
+      <button type="button" class="st-btn" id="xls">⬇ Excel</button>
+    </div>
+    <div id="msg" class="st-msg" hidden></div>
+    <section id="preview" class="st-card" hidden></section>
+    <div class="st-kpis" id="kpis"></div>
+    <section class="st-card">
+      <div class="st-tabs" id="tabs">
+        <button type="button" data-t="PROB">Problem bills<span class="cnt" id="cProb" hidden></span></button>
+        <button type="button" data-t="ALL">All bills</button>
+        <button type="button" data-t="ITEM">Item-wise</button>
+        <button type="button" data-t="DATE">Date-wise</button>
+        <button type="button" data-t="MONTH">Month-wise</button>
+        <button type="button" data-t="PI">Purchase margin</button>
+        <button type="button" data-t="LINK">Pack link</button>
+        <button type="button" data-t="UP">Uploads</button>
+      </div>
+      <div id="body"></div>
+    </section>
+  </main>
+  <script>
+    'use strict';
+    const client=supabase.createClient("https://txkbhadzdbxpieunfvox.supabase.co","sb_publishable_W4I3Q5ODf0g17sq5uDml2Q_sLolXYEk");
+    const el=id=>document.getElementById(id);
+    const esc=v=>String(v==null?"":v).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+    const r2=n=>Math.round((Number(n)||0)*100)/100;
+    const rs=v=>(r2(v)<0?"−":"")+"₹"+Math.abs(Math.round(v)).toLocaleString("en-IN");
+    const nf=v=>(+v||0).toLocaleString("en-IN",{maximumFractionDigits:2});
+    const dmy=d=>d?String(d).slice(8,10)+"/"+String(d).slice(5,7)+"/"+String(d).slice(0,4):"";
+    const dm=d=>d?String(d).slice(8,10)+"/"+String(d).slice(5,7):"";
+    // "300MLPLBTN1X28 Thums Up APLH 20.00" -> "Thums Up APLH 20.00" (pack code shown apart)
+    const shortItem=s=>{const t=String(s||"").split(" ");return t.length>1?t.slice(1).join(" "):String(s||"")};
+    const MN=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+    const monTxt=m=>MN[+m.slice(5,7)-1]+" "+m.slice(0,4);
+    const errText=e=>{const m=String(e&&e.message||e||"Something went wrong");
+      if(/lwb_stts|schema cache|does not exist/i.test(m))return "STTS Ledger database is not set up yet. It sets itself up when this change is merged (lwb_stts_ledger_setup.sql).";
+      return m.replace(/^.*?ERROR:\s*/,"")};
+    // Problem = needs a look. "No Rate List scheme" alone is only information.
+    const PROB=["NOT_GIVEN","GIVEN_LESS","GIVEN_MORE","NOT_IN_STTS","STTS_SHORT","STTS_MORE"];
+    const TAGC={NOT_GIVEN:"t-red",GIVEN_LESS:"t-red",GIVEN_MORE:"t-amb",NOT_IN_STTS:"t-red",STTS_SHORT:"t-red",STTS_MORE:"t-blu",NO_RATE:"t-gry"};
+    let D=null,M=null,month="",tab="PROB",q="",kind="all",flagF="all",itemF="",pending=null,shown=150;
+
+    function say(t,k){el("msg").hidden=!t;el("msg").textContent=t||"";el("msg").className="st-msg"+(k?" "+k:"")}
+    async function rpc(name,args){const {data,error}=await client.rpc(name,args);if(error)throw Error(errText(error));return data}
+
+    /* Rate List on a day: newest Rate Ledger entry valid on or before that day; pack via Pack link. */
+    function rateFor(pack,day){
+      const name=(D.links||{})[pack];if(!name)return null;
+      for(const e of D.rates){if((e.valid_from||String(e.created_at).slice(0,10))>day)continue;
+        const r=(e.rows||[]).find(x=>String(x.name).toUpperCase()===String(name).toUpperCase());
+        return r?{fb:+r.fb||0,oms:+r.oms||0,name,from:e.valid_from||String(e.created_at).slice(0,10)}:null}
+      return null;
+    }
+    const isProb=r=>r.flags.some(f=>PROB.includes(f));
+
+    async function load(){
+      try{D=await rpc("lwb_stts_data",{p_months:6})}catch(e){say(errText(e),"bad");D={sales:[],claims:[],uploads:[],links:{},packs:[],rates:[]}}
+      D.rates=(D.rates||[]).slice().sort((a,b)=>String(b.valid_from||b.created_at).localeCompare(String(a.valid_from||a.created_at))||String(b.created_at).localeCompare(String(a.created_at)));
+      const ms=[...new Set(D.sales.map(r=>r.day.slice(0,7)).concat(D.claims.map(r=>r.day.slice(0,7))))].filter(Boolean).sort().reverse();
+      if(!ms.includes(month))month=ms[0]||"";
+      el("month").innerHTML=ms.length?ms.map(m=>'<option value="'+m+'"'+(m===month?" selected":"")+">"+monTxt(m)+"</option>").join(""):"<option>No data</option>";
+      compute();
+    }
+    function compute(){
+      const all=LWBStts.match(D.sales,D.claims,rateFor);
+      M={all:all.rows,rows:all.rows.filter(r=>r.day.slice(0,7)===month),orphan:all.orphan.filter(r=>r.day.slice(0,7)===month),pi:all.pi.filter(r=>r.day.slice(0,7)===month)};
+      render();
+    }
+    function render(){
+      const R=M.rows,P=R.filter(isProb),sum=(a,k)=>a.reduce((s,r)=>s+(+r[k]||0),0);
+      const free=R.filter(r=>r.kind==="FREE"),short=sum(R,"shortRs"),notIn=R.filter(r=>r.flags.includes("NOT_IN_STTS")),wrong=R.filter(r=>r.flags.some(f=>/^(NOT_GIVEN|GIVEN_)/.test(f)));
+      const sUp=D.uploads.find(u=>u.kind==="SALES"),cUp=D.uploads.find(u=>u.kind==="STTS");
+      el("kpis").innerHTML=
+        '<button type="button" class="st-kpi" data-go="ALL"><h3>Scheme given on bills</h3><div class="v">'+rs(sum(R,"givenRs"))+'</div><small>'+nf(sum(free,"given"))+' free bottles · '+new Set(R.map(r=>r.doc)).size+' bills</small></button>'+
+        '<button type="button" class="st-kpi" data-go="ALL"><h3>Accepted in STTS</h3><div class="v">'+rs(sum(R,"sttsRs"))+'</div><small>'+nf(sum(free,"stts"))+' free bottles</small></button>'+
+        '<button type="button" class="st-kpi'+(short>0?" red":"")+'" data-go="PROB" data-f="STTS_SHORT"><h3>STTS short (money lost)</h3><div class="v">'+rs(short)+'</div><small>'+R.filter(r=>r.flags.includes("STTS_SHORT")).length+' bills · '+notIn.length+' not in STTS</small></button>'+
+        '<button type="button" class="st-kpi'+(wrong.length?" amb":"")+'" data-go="PROB" data-f="BILL"><h3>Bill ≠ Rate List</h3><div class="v">'+wrong.length+'</div><small>scheme not given / less / more</small></button>'+
+        '<button type="button" class="st-kpi" data-go="UP"><h3>Data up to</h3><div class="v" style="font-size:14px;line-height:1.5">Sales '+(sUp?dm(sUp.to_day):"—")+' · STTS '+(cUp?dm(cUp.to_day):"—")+'</div><small>'+(cUp?"STTS uploaded "+dmy(String(cUp.created_at).slice(0,10)):"Nothing uploaded yet")+'</small></button>';
+      el("cProb").hidden=!P.length;el("cProb").textContent=P.length;
+      renderTab();
+    }
+    function renderTab(){
+      el("tabs").querySelectorAll("[data-t]").forEach(b=>b.setAttribute("aria-pressed",String(b.dataset.t===tab)));
+      ({PROB:renderBills,ALL:renderBills,ITEM:renderItems,DATE:renderDates,MONTH:renderMonths,PI:renderPI,LINK:renderLinks,UP:renderUploads})[tab]();
+    }
+    const unit=r=>r.kind==="FREE"?" btl":"";
+    const val=(r,v)=>v==null?"—":r.kind==="FREE"?nf(v):rs(v);
+    function schemeTxt(r){
+      if(r.kind==="FREE")return r.rate&&r.rate.fb?r.rate.fb+" btl / case":"no scheme";
+      return r.rate&&r.rate.oms?"₹"+nf(r.rate.oms)+" / case":"no scheme";
+    }
+    function filtered(){
+      const words=q.trim().toUpperCase().split(/\s+/).filter(Boolean);
+      return M.rows.filter(r=>(tab!=="PROB"||isProb(r))&&(kind==="all"||r.kind===kind)&&
+        (flagF==="all"||(flagF==="BILL"?r.flags.some(f=>/^(NOT_GIVEN|GIVEN_)/.test(f)):r.flags.includes(flagF)))&&
+        (!itemF||r.pack===itemF)&&
+        (!words.length||words.every(w=>(r.doc+" "+r.outlet+" "+r.salesman+" "+r.pack+" "+r.items.join(" ")+" "+(r.freeItem||"")).toUpperCase().includes(w))));
+    }
+    function filterBar(extra){
+      const fl=tab==="PROB"?PROB:PROB.concat("NO_RATE");
+      return '<div class="st-filter"><input type="search" id="q" placeholder="Search bill no., party, item, salesman" value="'+esc(q)+'" autocomplete="off">'+
+        '<select id="kind" aria-label="Scheme type"><option value="all">Free bottle + ₹ off</option><option value="FREE"'+(kind==="FREE"?" selected":"")+'>Free bottle</option><option value="OFF"'+(kind==="OFF"?" selected":"")+'>₹ off per case</option></select>'+
+        '<select id="flag" aria-label="Problem"><option value="all">Every status</option><option value="BILL"'+(flagF==="BILL"?" selected":"")+'>Bill ≠ Rate List</option>'+fl.map(f=>'<option value="'+f+'"'+(flagF===f?" selected":"")+">"+LWBStts.FLAG[f]+"</option>").join("")+"</select>"+(extra||"")+"</div>";
+    }
+    function renderBills(){
+      const list=filtered(),vis=list.slice(0,shown);
+      let h=filterBar()+'<div class="st-note">'+(tab==="PROB"?"Only bills where the bill, the Rate List and STTS do not agree. Tap a bill to see its lines and copy a query for the company.":"Every bill with a scheme this month.")+"</div>";
+      if(!list.length){el("body").innerHTML=h+'<div class="st-empty">'+(tab==="PROB"?"No problem bills. Bill, Rate List and STTS all agree.":"No bills.")+"</div>";bind();return}
+      h+='<div class="st-r head"><span>Date</span><span>Bill · Party</span><span>Item · Rate List</span><span class="q">Rate List</span><span class="q">Given</span><span class="q">STTS</span><span class="df">Difference</span></div>';
+      h+=vis.map(r=>{const d=r.diffRs;
+        return '<div class="st-r" data-k="'+esc(r.key)+'" data-kd="'+r.kind+'"><span class="d">'+dmy(r.day)+'</span>'+
+          '<span class="n"><b>'+esc(r.doc)+'</b><small>'+esc(r.outlet)+(r.salesman?" · "+esc(r.salesman):"")+'</small></span>'+
+          '<span class="n">'+esc(shortItem(r.kind==="FREE"?(r.freeItem||r.items[0]||r.pack):(r.items[0]||r.pack)))+'<small>'+esc(r.pack)+' · '+nf(r.paidPc)+' cases · '+schemeTxt(r)+'</small></span>'+
+          '<span class="q c4"><span class="lbl">Rate List</span>'+val(r,r.exp)+'<small>'+(r.kind==="FREE"?"btl":"")+'</small></span>'+
+          '<span class="q"><span class="lbl">Given</span>'+val(r,r.given)+'<small>'+(r.kind==="FREE"?r.perCaseGiven+" / case":"")+'</small></span>'+
+          '<span class="q"><span class="lbl">STTS</span>'+val(r,r.stts)+'<small>'+(r.kind==="FREE"?r.perCaseStts+" / case":"")+'</small></span>'+
+          '<span class="df '+(d<-1?"bad":d>1?"good":"")+'">'+(Math.abs(d)<1?"✓":(d>0?"+":"")+rs(d))+'</span>'+
+          '<span class="tags">'+r.flags.map(f=>'<span class="tag '+TAGC[f]+'">'+LWBStts.FLAG[f]+(f==="STTS_SHORT"&&r.kind==="FREE"?" "+(r.given-r.stts)+" btl":"")+(f==="GIVEN_LESS"&&r.kind==="FREE"&&r.exp!=null?" "+(r.exp-r.given)+" btl":"")+"</span>").join("")+"</span></div>"}).join("");
+      if(list.length>shown)h+='<div style="text-align:center;padding:8px"><button type="button" class="st-btn sm" id="more">Show '+Math.min(150,list.length-shown)+" more of "+(list.length-shown)+"</button></div>";
+      el("body").innerHTML=h;bind();
+    }
+    /* Item-wise: one row per pack (+ one sub row per Rate List scheme period). */
+    function renderItems(){
+      const g=new Map();
+      for(const r of M.rows){if(kind!=="all"&&r.kind!==kind)continue;const k=r.pack+"|"+r.kind;
+        if(!g.has(k))g.set(k,{pack:r.pack,kind:r.kind,name:r.kind==="FREE"?(r.freeItem||r.items[0]):r.items[0],bills:0,prob:0,cases:0,exp:0,given:0,stts:0,givenRs:0,sttsRs:0,short:0,per:new Map()});
+        const x=g.get(k);x.bills++;if(isProb(r))x.prob++;x.cases+=r.paidPc;x.exp+=r.exp||0;x.given+=r.given;x.stts+=r.stts;x.givenRs+=r.givenRs;x.sttsRs+=r.sttsRs;x.short+=r.shortRs;
+        const sc=schemeTxt(r);if(!x.per.has(sc))x.per.set(sc,{from:r.day,to:r.day,bills:0,cases:0,given:0,stts:0});const p=x.per.get(sc);p.bills++;p.cases+=r.paidPc;p.given+=r.given;p.stts+=r.stts;if(r.day<p.from)p.from=r.day;if(r.day>p.to)p.to=r.day}
+      const L=[...g.values()].sort((a,b)=>b.givenRs-a.givenRs);
+      let h='<div class="st-filter"><select id="kind" aria-label="Scheme type"><option value="all">Free bottle + ₹ off</option><option value="FREE"'+(kind==="FREE"?" selected":"")+'>Free bottle</option><option value="OFF"'+(kind==="OFF"?" selected":"")+'>₹ off per case</option></select></div>'+
+        '<div class="st-note">Free bottle packs in bottles, ₹ off packs in rupees. Grey rows = Rate List scheme and the dates it ran. Tap an item to see its bills.</div>';
+      h+='<div style="overflow-x:auto"><table class="st-tb"><thead><tr><th class="l">Item</th><th class="hp">Bills</th><th>Cases</th><th class="hp">Rate List</th><th>Given</th><th>STTS</th><th>Short ₹</th></tr></thead><tbody>';
+      for(const x of L){const F=x.kind==="FREE",v=n=>F?nf(Math.round(n)):rs(n);
+        h+='<tr data-item="'+esc(x.pack)+'" style="cursor:pointer"><td class="l"><b>'+esc(x.name)+'</b>'+(x.prob?' <span class="tag t-red">'+x.prob+' problem</span>':"")+'</td><td class="hp">'+x.bills+"</td><td>"+nf(Math.round(x.cases))+'</td><td class="hp">'+(x.exp?v(x.exp):"—")+"</td><td>"+v(x.given)+"</td><td>"+v(x.stts)+'</td><td class="'+(x.short>0?"bad":"")+'">'+rs(x.short)+"</td></tr>";
+        for(const [sc,p] of x.per)h+='<tr class="sub"><td class="l">'+esc(sc)+" · "+dm(p.from)+"–"+dm(p.to)+'</td><td class="hp">'+p.bills+"</td><td>"+nf(Math.round(p.cases))+'</td><td class="hp"></td><td>'+(F?nf(p.given):"")+"</td><td>"+(F?nf(p.stts):"")+"</td><td></td></tr>"}
+      if(!L.length)h+='<tr><td class="l" colspan="7">No scheme bills this month.</td></tr>';
+      el("body").innerHTML=h+"</tbody></table></div>";bind();
+    }
+    /* Date-wise: day by day for one pack (or all), with the Rate List scheme of that day. */
+    function renderDates(){
+      const packs=[...new Set(M.rows.map(r=>r.pack))].sort();if(itemF&&!packs.includes(itemF))itemF="";
+      const pk=itemF||packs.find(p=>M.rows.some(r=>r.pack===p&&r.kind==="FREE"))||packs[0]||"";
+      const rows=M.rows.filter(r=>r.pack===pk),days=new Map();
+      for(const r of rows){if(!days.has(r.day))days.set(r.day,{bills:0,cases:0,exp:0,given:0,stts:0,short:0,prob:0,sc:new Set(),F:r.kind==="FREE"});const x=days.get(r.day);
+        x.bills++;x.cases+=r.paidPc;x.exp+=r.exp||0;x.given+=r.kind==="FREE"?r.given:r.givenRs;x.stts+=r.kind==="FREE"?r.stts:r.sttsRs;x.short+=r.shortRs;if(isProb(r))x.prob++;x.sc.add(schemeTxt(r))}
+      let h='<div class="st-filter"><select id="pk" aria-label="Item">'+packs.map(p=>'<option value="'+esc(p)+'"'+(p===pk?" selected":"")+">"+esc(p)+"</option>").join("")+'</select></div>'+
+        '<div class="st-note">Rate List column = the scheme that was running that day (Rate Ledger "valid from"). A change mid-month shows here day by day.</div>';
+      h+='<div style="overflow-x:auto"><table class="st-tb"><thead><tr><th class="l">Date</th><th class="l">Rate List</th><th class="hp">Bills</th><th>Cases</th><th>Given</th><th>STTS</th><th>Short ₹</th></tr></thead><tbody>';
+      const T={cases:0,given:0,stts:0,short:0,bills:0};
+      for(const [d,x] of [...days].sort((a,b)=>a[0].localeCompare(b[0]))){const v=n=>x.F?nf(Math.round(n)):rs(n);
+        T.cases+=x.cases;T.given+=x.given;T.stts+=x.stts;T.short+=x.short;T.bills+=x.bills;
+        h+='<tr><td class="l">'+dm(d)+(x.prob?' <span class="tag t-red">'+x.prob+"</span>":"")+'</td><td class="l">'+esc([...x.sc].join(", "))+'</td><td class="hp">'+x.bills+"</td><td>"+nf(Math.round(x.cases))+"</td><td>"+v(x.given)+"</td><td>"+v(x.stts)+'</td><td class="'+(x.short>0?"bad":"")+'">'+rs(x.short)+"</td></tr>"}
+      const F=rows[0]&&rows[0].kind==="FREE",v=n=>F?nf(Math.round(n)):rs(n);
+      h+='</tbody><tfoot><tr><td class="l">Total</td><td></td><td class="hp">'+T.bills+"</td><td>"+nf(Math.round(T.cases))+"</td><td>"+v(T.given)+"</td><td>"+v(T.stts)+"</td><td>"+rs(T.short)+"</td></tr></tfoot></table></div>";
+      el("body").innerHTML=h;bind();
+    }
+    function renderMonths(){
+      const g=new Map();
+      for(const r of M.all){const m=r.day.slice(0,7);if(!g.has(m))g.set(m,{bills:new Set(),given:0,stts:0,short:0,prob:0,btl:0,sbtl:0});const x=g.get(m);
+        x.bills.add(r.doc);x.given+=r.givenRs;x.stts+=r.sttsRs;x.short+=r.shortRs;if(isProb(r))x.prob++;if(r.kind==="FREE"){x.btl+=r.given;x.sbtl+=r.stts}}
+      let h='<div class="st-note">Every month saved (last 6). Tap a month to open it.</div><div style="overflow-x:auto"><table class="st-tb"><thead><tr><th class="l">Month</th><th class="hp">Bills</th><th class="hp">Free btl given / STTS</th><th>Given ₹</th><th>STTS ₹</th><th>Short ₹</th><th>Problems</th></tr></thead><tbody>';
+      for(const [m,x] of [...g].sort((a,b)=>b[0].localeCompare(a[0])))h+='<tr data-mon="'+m+'" style="cursor:pointer"><td class="l"><b>'+monTxt(m)+'</b></td><td class="hp">'+x.bills.size+'</td><td class="hp">'+nf(x.btl)+" / "+nf(x.sbtl)+"</td><td>"+rs(x.given)+"</td><td>"+rs(x.stts)+'</td><td class="'+(x.short>0?"bad":"")+'">'+rs(x.short)+"</td><td>"+x.prob+"</td></tr>";
+      if(!g.size)h+='<tr><td class="l" colspan="7">Nothing uploaded yet.</td></tr>';
+      el("body").innerHTML=h+"</tbody></table></div>";bind();
+    }
+    function renderPI(){
+      const g=new Map();for(const r of M.pi){if(!g.has(r.doc))g.set(r.doc,{day:r.day,items:[],pc:0,amt:0});const x=g.get(r.doc);x.items.push(r.item);x.pc+=r.pc;x.amt+=r.amt}
+      const L=[...g].sort((a,b)=>a[1].day.localeCompare(b[1].day)),tot=L.reduce((s,[,x])=>s+x.amt,0);
+      let h='<div class="st-note">Purchase invoices from the company (PI) with the margin in STTS: '+L.length+" invoices · "+rs(tot)+". Next step: match them with Purchase (Goods Inward) by invoice no.</div>";
+      h+='<div style="overflow-x:auto"><table class="st-tb"><thead><tr><th class="l">Date</th><th class="l">Invoice</th><th class="l hp">Items</th><th>Cases</th><th>Margin ₹</th></tr></thead><tbody>'+
+        L.map(([d,x])=>'<tr><td class="l">'+dm(x.day)+'</td><td class="l"><b>'+esc(d)+'</b></td><td class="l hp">'+esc([...new Set(x.items)].join(", "))+"</td><td>"+nf(x.pc)+"</td><td>"+rs(x.amt)+"</td></tr>").join("")+
+        '</tbody><tfoot><tr><td class="l" colspan="2">Total</td><td class="hp"></td><td>'+nf(L.reduce((s,[,x])=>s+x.pc,0))+"</td><td>"+rs(tot)+"</td></tr></tfoot></table></div>";
+      el("body").innerHTML=h;bind();
+    }
+    // Company pack code (first word of the item name) -> Rate List pack. Guess by size the first time.
+    const sizeOf=s=>{const m=String(s).toUpperCase().match(/(\d+(?:\.\d+)?)\s*(ML|L)/);return m?(m[2]==="L"?+m[1]*1000:+m[1]):0};
+    function renderLinks(){
+      const packs=[...new Set(D.sales.map(r=>LWBStts.packOf(r.item)))].sort((a,b)=>sizeOf(a)-sizeOf(b));
+      const names=D.packs||[];
+      let h='<div class="st-note">Which Rate List pack is each company item? The scheme of that pack (free bottles / ₹ off per case, date-wise from the Rate Ledger) is checked on every bill.</div>';
+      h+='<div style="overflow-x:auto"><table class="st-tb st-link"><thead><tr><th class="l">Company item</th><th class="l">Rate List pack</th><th class="hp">Scheme today</th></tr></thead><tbody>';
+      for(const p of packs){const cur=(D.links||{})[p]||"",ex=D.sales.find(r=>LWBStts.packOf(r.item)===p),rt=rateFor(p,"9999-12-31");
+        h+='<tr><td class="l"><b>'+esc(p)+'</b><br><small style="color:var(--erp-muted)">'+esc(ex?ex.item:"")+'</small></td><td class="l"><select data-link="'+esc(p)+'"><option value="">— not linked —</option>'+names.map(n=>'<option'+(n===cur?" selected":"")+">"+esc(n)+"</option>").join("")+'</select></td><td class="hp">'+(rt?(rt.fb?rt.fb+" btl / case":rt.oms?"₹"+nf(rt.oms)+" / case":"—"):"—")+"</td></tr>"}
+      el("body").innerHTML=h+"</tbody></table></div>";bind();
+    }
+    function renderUploads(){
+      let h='<div class="st-note">Sales Register: a bill line uploaded again replaces the old one, nothing is doubled. STTS Ledger: the portal gives the whole month each time, so the newest upload replaces the STTS lines of the dates it covers.</div>';
+      h+='<div style="overflow-x:auto"><table class="st-tb"><thead><tr><th class="l">Uploaded</th><th class="l">File</th><th class="l">Dates</th><th>Lines</th><th class="l hp">Result</th></tr></thead><tbody>'+
+        D.uploads.map(u=>'<tr><td class="l">'+dmy(String(u.created_at).slice(0,10))+'<br><small style="color:var(--erp-muted)">'+esc(u.by_name||"")+'</small></td><td class="l"><span class="tag '+(u.kind==="STTS"?"t-blu":"t-grn")+'">'+(u.kind==="STTS"?"STTS Ledger":"Sales Register")+"</span><br><small>"+esc(u.file_name||"")+'</small></td><td class="l">'+dm(u.from_day)+"–"+dmy(u.to_day)+"</td><td>"+u.lines+'</td><td class="l hp">'+esc(u.note||"")+"</td></tr>").join("")+
+        (D.uploads.length?"":'<tr><td class="l" colspan="5">Nothing uploaded yet. Use ⬆ Upload file.</td></tr>')+"</tbody></table></div>";
+      el("body").innerHTML=h;
+    }
+    function bind(){
+      const b=el("body");
+      const qi=b.querySelector("#q");if(qi)qi.oninput=e=>{q=e.target.value;shown=150;const p=e.target.selectionStart;renderTab();const n=el("q");n.focus();n.setSelectionRange(p,p)};
+      const k=b.querySelector("#kind");if(k)k.onchange=e=>{kind=e.target.value;renderTab()};
+      const f=b.querySelector("#flag");if(f)f.onchange=e=>{flagF=e.target.value;renderTab()};
+      const pk=b.querySelector("#pk");if(pk)pk.onchange=e=>{itemF=e.target.value;renderTab()};
+      const mo=b.querySelector("#more");if(mo)mo.onclick=()=>{shown+=150;renderTab()};
+    }
+    el("body").addEventListener("click",e=>{
+      const r=e.target.closest(".st-r[data-k]");if(r){openBill(r.dataset.k,r.dataset.kd);return}
+      const it=e.target.closest("[data-item]");if(it){itemF=it.dataset.item;tab="DATE";renderTab();return}
+      const mo=e.target.closest("[data-mon]");if(mo){month=mo.dataset.mon;el("month").value=month;tab="PROB";compute()}
+    });
+    el("body").addEventListener("change",async e=>{const s=e.target.closest("[data-link]");if(!s)return;
+      try{await rpc("lwb_stts_pack_link",{p_pack:s.dataset.link,p_rate_pack:s.value||null});D.links[s.dataset.link]=s.value||undefined;if(!s.value)delete D.links[s.dataset.link];compute();ERPShell.toast("Pack link saved.","success")}
+      catch(err){ERPShell.alert(err.message)}});
+
+    /* Bill popup: the three numbers, the bill lines and the STTS lines, copy a query for the company. */
+    function openBill(key,kd){
+      const r=M.rows.find(x=>x.key===key&&x.kind===kd);if(!r)return;
+      const ls=D.sales.filter(x=>x.doc===r.doc&&LWBStts.packOf(x.item)===r.pack),st=D.claims.filter(x=>x.doc===r.doc&&LWBStts.packOf(x.item)===r.pack);
+      const F=r.kind==="FREE",v=n=>n==null?"—":F?nf(n)+" btl":rs(n);
+      const qtxt="STTS query · Bill "+r.doc+" ("+dmy(r.day)+") · "+r.outlet+"\n"+(F?(r.freeItem||r.pack)+": "+nf(r.paidPc)+" cases × "+(r.rate&&r.rate.fb||r.perCaseGiven)+" = "+r.given+" free bottles given on the bill, STTS shows "+r.stts+" bottles. Short "+(r.given-r.stts)+" bottles ("+rs(r.shortRs)+").":
+        (r.items[0]||r.pack)+": "+rs(r.given)+" off given on the bill, STTS shows "+rs(r.stts)+".")+"\nPlease check and pass the difference.";
+      const w=document.createElement("div");w.className="st-back";
+      w.innerHTML='<div class="st-sheet" role="dialog" aria-modal="true"><header><h3>'+esc(r.doc)+" · "+dmy(r.day)+"<small>"+esc(r.outlet)+(r.salesman?" · "+esc(r.salesman):"")+(r.mer?" · MER "+esc(r.mer):"")+'</small></h3><button type="button" class="st-btn sm" data-x>✕</button></header><div class="body">'+
+        '<div class="st-3"><div><small>Rate List ('+esc(schemeTxt(r))+')</small><b>'+v(r.exp)+'</b></div><div class="'+(r.flags.some(f=>/^(NOT_GIVEN|GIVEN_)/.test(f))?"bd":"")+'"><small>Given on bill</small><b>'+v(r.given)+'</b></div><div class="'+(r.flags.some(f=>/STTS|NOT_IN/.test(f))?"bd":"")+'"><small>STTS accepted</small><b>'+v(r.stts)+"</b></div></div>"+
+        '<div class="tags" style="display:flex;gap:4px;flex-wrap:wrap">'+(r.flags.map(f=>'<span class="tag '+TAGC[f]+'">'+LWBStts.FLAG[f]+"</span>").join("")||'<span class="tag t-grn">All agree</span>')+(r.shortRs>0?'<span class="tag t-red">Money short '+rs(r.shortRs)+"</span>":"")+"</div>"+
+        '<div class="st-cap">Sales Register lines · '+esc(r.pack)+'</div><table class="st-tb"><thead><tr><th class="l">Item</th><th>Cases</th><th>Bottles</th><th>Discount</th><th>Net</th></tr></thead><tbody>'+
+        ls.map(x=>'<tr><td class="l">'+esc(shortItem(x.item))+(x.free?' <span class="tag t-grn">free</span>':"")+"</td><td>"+nf(x.pc)+"</td><td>"+nf(x.ea)+"</td><td>"+rs(x.disc)+"</td><td>"+rs(x.net)+"</td></tr>").join("")+"</tbody></table>"+
+        '<div class="st-cap">STTS Ledger lines</div>'+(st.length?'<table class="st-tb"><thead><tr><th class="l">Scheme</th><th class="l">Item</th><th>Cases</th><th>Claim ₹</th></tr></thead><tbody>'+
+        st.map(x=>'<tr><td class="l">'+esc(/free/i.test(x.sale_type)?"Free goods":"₹ off")+"<br><small>MER "+esc(x.mer)+'</small></td><td class="l">'+esc(shortItem(x.item))+"</td><td>"+nf(x.pc)+"</td><td>"+rs(x.amt)+"</td></tr>").join("")+"</tbody></table>":'<div class="st-empty">This bill is not in the STTS Ledger.</div>')+
+        '</div><div class="acts"><button type="button" class="st-btn" data-copy>📋 Copy query</button><a class="st-btn grn" target="_blank" rel="noopener" href="https://wa.me/?text='+encodeURIComponent(qtxt)+'">WhatsApp</a><button type="button" class="st-btn" data-x>Close</button></div></div>';
+      document.body.append(w);
+      w.addEventListener("click",async e=>{if(e.target===w||e.target.closest("[data-x]"))w.remove();
+        if(e.target.closest("[data-copy]")){try{await navigator.clipboard.writeText(qtxt);ERPShell.toast("Query copied.","success")}catch(_){ERPShell.alert(qtxt)}}});
+    }
+
+    /* Upload: one button, the file tells which report it is. Nothing is saved before Save. */
+    async function onFile(f){
+      say("");el("preview").hidden=true;
+      try{
+        await LWBExcel.lib();
+        const book=XLSX.read(await f.arrayBuffer(),{raw:/\.csv$/i.test(f.name),cellDates:false});
+        const aoa=XLSX.utils.sheet_to_json(book.Sheets[book.SheetNames[0]],{header:1,defval:"",raw:true});
+        const head=aoa.slice(0,15).map(r=>r.join("|").toUpperCase()).join("\n");
+        let p;
+        if(/DOCUMENT NUMBER/.test(head)&&/QTY \(PC\)/.test(head)){const rows=LWBStts.parseSales(aoa),m=LWBStts.mergeSales(D.sales,rows),ds=rows.map(r=>r.day).filter(Boolean).sort();
+          p={kind:"SALES",rows,file:f.name,from:ds[0],to:ds[ds.length-1],txt:"Sales Register "+dmy(ds[0])+" – "+dmy(ds[ds.length-1])+": "+rows.length+" lines, "+new Set(rows.map(r=>r.doc)).size+" bills. "+m.added+" new, "+m.changed+" changed, "+m.same+" already there."}}
+        else if(/DOC TYPE/.test(head)&&/SALE TYPE/.test(head)){const rows=LWBStts.parseStts(aoa),m=LWBStts.mergeStts(D.claims,rows);
+          p={kind:"STTS",rows,file:f.name,from:m.from,to:m.to,txt:"STTS Ledger "+dmy(m.from)+" – "+dmy(m.to)+": "+rows.length+" lines (PI "+rows.filter(r=>r.doc_type==="PI").length+", SI "+rows.filter(r=>r.doc_type==="SI").length+"). It replaces "+m.removed+" saved STTS lines of these dates."}}
+        else throw Error("This file is not a Sales Register (CSV) or an STTS Ledger (XLS) from the company portal.");
+        if(!p.rows.length)throw Error("No lines found in this file.");
+        pending=p;
+        el("preview").innerHTML='<div class="st-pv"><b>'+esc(p.txt)+'</b><div class="row"><button type="button" class="st-btn grn" id="pvSave">Save</button><button type="button" class="st-btn" id="pvNo">Cancel</button><small style="color:var(--erp-muted)">'+esc(f.name)+"</small></div></div>";
+        el("preview").hidden=false;
+        el("pvNo").onclick=()=>{pending=null;el("preview").hidden=true};
+        el("pvSave").onclick=save;
+      }catch(e){say(errText(e),"bad")}
+    }
+    async function save(){
+      const p=pending;if(!p)return;el("pvSave").disabled=true;
+      try{const r=await rpc(p.kind==="SALES"?"lwb_stts_sales_upload":"lwb_stts_claims_upload",{p_rows:p.rows,p_file:p.file});
+        pending=null;el("preview").hidden=true;say((r&&r.note)||"Saved.","ok");month=p.to.slice(0,7);await load()}
+      catch(e){say(errText(e),"bad");el("pvSave").disabled=false}
+    }
+    async function exportXls(){
+      const L=filtered().length&&(tab==="PROB"||tab==="ALL")?filtered():M.rows.filter(isProb);
+      await LWBExcel.write("STTS "+monTxt(month)+" problem bills",[{name:"Problem bills",rows:[["Date","Bill","Party","Salesman","Item","Cases","Scheme (Rate List)","Rate List","Given","STTS","Short ₹","Problem","MER"]].concat(
+        L.map(r=>[dmy(r.day),r.doc,r.outlet,r.salesman,r.kind==="FREE"?(r.freeItem||r.pack):(r.items[0]||r.pack),r.paidPc,schemeTxt(r),r.exp==null?"":r.exp,r.given,r.stts,r.shortRs,r.flags.map(f=>LWBStts.FLAG[f]).join(", "),r.mer]))}]);
+    }
+
+    el("tabs").querySelectorAll("[data-t]").forEach(b=>b.onclick=()=>{tab=b.dataset.t;shown=150;if(tab!=="DATE")itemF="";renderTab()});
+    el("kpis").addEventListener("click",e=>{const b=e.target.closest("[data-go]");if(!b)return;tab=b.dataset.go;flagF=b.dataset.f||"all";itemF="";renderTab();el("tabs").scrollIntoView({behavior:"smooth",block:"start"})});
+    el("month").onchange=e=>{month=e.target.value;compute()};
+    el("file").onchange=e=>{const f=e.target.files[0];e.target.value="";if(f)onFile(f)};
+    el("xls").onclick=()=>exportXls().catch(e=>ERPShell.alert(e.message));
+
+    (async()=>{
+      const {data:{session}}=await client.auth.getSession();
+      if(!session){location.replace("login.html");return}
+      const {data:p}=await client.from("user_profiles").select("full_name,role,active").eq("id",session.user.id).single();
+      const realRole=String((p&&p.role)||"").toLowerCase().trim(),role=p?await ERPShell.pageRoleFresh(realRole):realRole;
+      if(!p||p.active!==true||!["admin","accounts","manager"].includes(role)){location.replace("dashboard.html");return}
+      ERPShell.mount({role:realRole||role,name:p.full_name||session.user.email,onLogout:async()=>{await client.auth.signOut();location.replace("login.html")}});
+      el("loading").hidden=true;el("page").hidden=false;
+      await load();
+    })();
+  </script>
+</body>
+</html>

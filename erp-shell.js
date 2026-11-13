@@ -126,6 +126,8 @@
     {group:"Accounts",items:[
       {t:"Accounts Dashboard",h:"accounts-dashboard.html",i:"cash",r:"admin accounts"},
       {t:"Bank Statement",h:"bank-statement.html",i:"book",r:"admin accounts"},
+      // STTS Ledger (Mohit, 13 Nov 2026): company Sales Register + STTS Ledger checked bill by bill against the Rate List scheme.
+      {t:"STTS Ledger",h:"stts-ledger.html",i:"note",r:"admin accounts manager",k:"stts ledger scheme claim free bottle oms sales register dms hccb mer company claim short"},
       {t:"Billing & Outstanding",h:"party-billing.html",i:"bill",r:"admin accounts",k:"bills to make tally bill sales bill outstanding collect payment rajnigandha bill pending party ledger statement khata",pt:"Billing & Outstanding (Bills to make)"},
       // Tax invoice in the Tally layout (Mohit, 11 Nov 2026): off until Admin turns it on (today only / till off)
       // for the ticked roles; others find it in search, Accounts also from Bills to make.
