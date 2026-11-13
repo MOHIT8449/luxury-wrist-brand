@@ -4,6 +4,13 @@
 **Purpose:** Continue the same ERP project from a new ChatGPT conversation without restarting or losing the agreed requirements.
 **Status:** Active development / verification. Do not assume all modules are completed or fully tested.
 
+## Test site: changes go to a test site first, live after Mohit's OK (13 Nov 2026)
+
+- Mohit: every update went straight live. He wants each change (Driver, Sales Head, Salesman, Accounts ...) first on a test site with a dummy login per role, check what each role sees, and only after his OK put it live for everyone. He chose a separate free TEST Supabase project (option A).
+- Flow (see `CLAUDE.md`): PR -> branch `next` -> `.github/workflows/test-site.yml` runs the new SQL on the TEST database, deploys changed Edge Functions to the TEST project, builds the site with the TEST URL / key (`.github/scripts/test-site-build.sh`, red "TEST SITE" tag on every page) and pushes it to branch `test-site` = https://test-site.luxury-wrist-brand.pages.dev. Mohit OK -> PR `next` -> `main` = live (supabase-apply.yml as before). A push to `main` is merged into `next` automatically.
+- `.github/workflows/test-db-setup.yml` ("Test DB copy from live", type WIPE-TEST): copies the live schema, RLS, storage buckets + rules, Realtime tables and (copy_data = yes) all rows and logins. Copied logins get random passwords, phones / MFA cleared; `.github/test-site/safety.sql` turns phone push off, removes saved phones and cron jobs. `.github/test-site/seed-test-users.sql`: 7 test logins `test.<role>@lwb.test` with the password of secret `STAGING_TEST_PASSWORD`.
+- Needs from Mohit: new Supabase project, secrets `STAGING_SUPABASE_DB_URL` + `STAGING_TEST_PASSWORD`, and the test project URL + publishable key in `.github/test-site/config.env`.
+
 ## STTS Ledger: company Sales Register + STTS checked bill by bill against the Rate List (13 Nov 2026)
 
 - Mohit: the DMS Sales Register (CSV) and the company STTS Ledger (XLS) must be checked by invoice no. and item: is the scheme on each bill (free bottles / ₹ off per case) the Rate List scheme of that day, and did the company accept the same in STTS. Kept apart from Rate & Scheme. ROI support (on purchase, top sheet bill) and QPS are the next parts (waiting for a sample top sheet / QPS STTS file).

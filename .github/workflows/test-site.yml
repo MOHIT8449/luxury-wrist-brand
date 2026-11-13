@@ -1,0 +1,169 @@
+# TEST SITE: every change goes here first, the live site only after the
+# owner says OK.
+#
+#   pull request -> branch "next"   (test first)
+#   push to next: new SQL runs on the TEST database, Edge Functions go to the
+#                 TEST project, and the site is rebuilt with the TEST Supabase
+#                 keys and pushed to the branch "test-site", which Cloudflare
+#                 Pages serves at https://test-site.luxury-wrist-brand.pages.dev
+#   owner says OK: pull request next -> main (supabase-apply.yml then runs the
+#                 same SQL on live, as before).
+#   push to main: main is merged into next, so the test site never misses a
+#                 live change (and its SQL runs on the test database too).
+#
+# Secrets: STAGING_SUPABASE_DB_URL (test database, Session pooler link with
+#          password), SUPABASE_ACCESS_TOKEN (Edge Functions, optional).
+# Public test project URL / key: .github/test-site/config.env.
+# First time: run "Test DB copy from live" once (test-db-setup.yml).
+name: Test site
+
+on:
+  push:
+    branches: [next, main]
+  workflow_dispatch:
+
+concurrency:
+  group: test-site
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  test-site:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Bring next up to date
+        id: sync
+        env:
+          EVENT_BEFORE: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git ls-remote --exit-code --heads origin next >/dev/null; then
+            git fetch -q origin next main
+            git checkout -q -B next origin/next
+            before=$(git rev-parse HEAD)
+          else
+            # First run: next starts as a copy of main.
+            git fetch -q origin main
+            git checkout -q -B next origin/main
+            git push -q origin next
+            before=$(git rev-parse HEAD)
+          fi
+          if [ "${{ github.ref_name }}" = "next" ] && [ -n "$EVENT_BEFORE" ] && git cat-file -e "$EVENT_BEFORE^{commit}" 2>/dev/null \
+             && [ "$EVENT_BEFORE" != "0000000000000000000000000000000000000000" ]; then
+            before=$EVENT_BEFORE
+          fi
+          if ! git merge-base --is-ancestor origin/main HEAD; then
+            if git merge -q --no-edit origin/main -m "Merge main (live) into next (test site)"; then
+              git push -q origin next
+            else
+              git merge --abort
+              echo "::error::main and next both changed the same lines. Merge main into next by hand, then re-run."
+              exit 1
+            fi
+          fi
+          echo "before=$before" >> "$GITHUB_OUTPUT"
+          echo "after=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Work out what changed
+        id: changes
+        env:
+          BEFORE: ${{ steps.sync.outputs.before }}
+          AFTER: ${{ steps.sync.outputs.after }}
+        run: |
+          git log --reverse --format= --name-only --diff-filter=AM "$BEFORE..$AFTER" -- '*.sql' \
+            | grep -v / | awk 'NF && !seen[$0]++' | while read -r f; do [ -f "$f" ] && echo "$f"; done > "$RUNNER_TEMP/sql.txt" || true
+          git diff --name-only "$BEFORE" "$AFTER" -- supabase/functions \
+            | cut -d/ -f3 | awk 'NF && !seen[$0]++' | while read -r fn; do [ -f "supabase/functions/$fn/index.ts" ] && echo "$fn"; done > "$RUNNER_TEMP/functions.txt" || true
+          echo "SQL files:"; cat "$RUNNER_TEMP/sql.txt"
+          echo "Functions:"; cat "$RUNNER_TEMP/functions.txt"
+          . .github/test-site/config.env
+          ref=${TEST_SUPABASE_URL#https://}; ref=${ref%%.supabase.co}
+          echo "TEST_REF=$ref" >> "$GITHUB_ENV"
+
+      - name: Apply SQL to TEST database
+        env:
+          TEST_DB_URL: ${{ secrets.STAGING_SUPABASE_DB_URL }}
+        run: |
+          set -euo pipefail
+          [ -s "$RUNNER_TEMP/sql.txt" ] || { echo "No SQL changes"; exit 0; }
+          if [ -z "$TEST_DB_URL" ]; then echo "::warning::STAGING_SUPABASE_DB_URL not set, SQL not applied to test"; exit 0; fi
+          case "$TEST_DB_URL" in *txkbhadzdbxpieunfvox*) echo "::error::STAGING_SUPABASE_DB_URL points to the LIVE project. Stopped."; exit 1;; esac
+          [ -n "$TEST_REF" ] && case "$TEST_DB_URL" in *"$TEST_REF"*) ;; *) echo "::error::STAGING_SUPABASE_DB_URL is not for $TEST_REF"; exit 1;; esac
+          echo "::add-mask::$TEST_DB_URL"
+          command -v psql >/dev/null || { sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client; }
+          export PGCONNECT_TIMEOUT=20
+          ready=$(psql "$TEST_DB_URL" -X -At -c "select to_regclass('public.lwb_sql_apply_log') is not null")
+          [ "$ready" = "t" ] || { echo "::warning::Test database not set up yet. Run 'Test DB copy from live' once."; exit 0; }
+          mapfile -t files < <(grep -v '^$' "$RUNNER_TEMP/sql.txt")
+          run=()
+          for f in "${files[@]}"; do
+            grep -qi '^[[:space:]]*--[[:space:]]*lwb:no-auto-run' "$f" && { echo "Skipping $f (lwb:no-auto-run)"; continue; }
+            run+=("$f")
+          done
+          [ ${#run[@]} -eq 0 ] && { echo "Nothing to apply"; exit 0; }
+          .github/scripts/supabase-sql-check.sh "${run[@]}"
+          for f in "${run[@]}"; do
+            echo "::group::Applying $f to TEST"
+            if ! psql "$TEST_DB_URL" -q -X -v ON_ERROR_STOP=1 -o /dev/null -f "$f" > "$RUNNER_TEMP/psql.log" 2>&1; then
+              grep -E 'ERROR|DETAIL|HINT|LINE|psql:' "$RUNNER_TEMP/psql.log" | head -20
+              echo "::error file=$f::Failed on the TEST database. Later files were NOT applied. Fix it before it goes live."
+              exit 1
+            fi
+            echo "insert into public.lwb_sql_apply_log(file_name, git_sha, run_url) values (:'file', :'sha', :'url');" \
+              | psql "$TEST_DB_URL" -q -X -v ON_ERROR_STOP=1 -o /dev/null \
+                  -v file="$f" -v sha="${{ steps.sync.outputs.after }}" -v url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+            echo "Applied $f"; echo "::endgroup::"
+            echo "- TEST: applied \`$f\`" >> "$GITHUB_STEP_SUMMARY"
+          done
+          psql "$TEST_DB_URL" -q -X -v ON_ERROR_STOP=1 -o /dev/null -c "
+            do \$\$ begin
+              if to_regprocedure('public.lwb_change_log_attach()') is not null then perform public.lwb_change_log_attach(); end if;
+            end \$\$;"
+          . .github/test-site/config.env
+          { echo "set lwb.test_url = :'tu'; set lwb.test_site = :'ts';"; cat .github/test-site/safety.sql; } \
+            | psql "$TEST_DB_URL" -q -X -v ON_ERROR_STOP=1 -o /dev/null -v tu="$TEST_SUPABASE_URL" -v ts="$TEST_SITE_URL"
+
+      - uses: supabase/setup-cli@v1
+        if: hashFiles('supabase/functions/**') != ''
+        with:
+          version: latest
+
+      - name: Deploy changed Edge Functions to TEST
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          [ -s "$RUNNER_TEMP/functions.txt" ] || { echo "No function changes"; exit 0; }
+          [ -n "$SUPABASE_ACCESS_TOKEN" ] && [ -n "$TEST_REF" ] || { echo "::warning::Functions not deployed to test"; exit 0; }
+          while read -r fn; do
+            [ -z "$fn" ] && continue
+            supabase functions deploy "$fn" --project-ref "$TEST_REF" --use-api --yes
+            echo "- TEST: deployed function \`$fn\`" >> "$GITHUB_STEP_SUMMARY"
+          done < "$RUNNER_TEMP/functions.txt"
+
+      - name: Build and publish the test site
+        env:
+          AFTER: ${{ steps.sync.outputs.after }}
+        run: |
+          set -euo pipefail
+          . .github/test-site/config.env
+          [ -n "$TEST_SUPABASE_URL" ] || { echo "::warning::Test Supabase URL / key not filled in .github/test-site/config.env yet, test site not built"; exit 0; }
+          out="$RUNNER_TEMP/site"
+          .github/scripts/test-site-build.sh "$out"
+          cd "$out"
+          git init -q -b test-site
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -q -m "Test site from next ${AFTER:0:7}"
+          auth=$(git -C "$GITHUB_WORKSPACE" config --get http.https://github.com/.extraheader)
+          git -c http.https://github.com/.extraheader="$auth" push -q -f \
+            "$(git -C "$GITHUB_WORKSPACE" remote get-url origin)" test-site
+          echo "- Test site: https://test-site.luxury-wrist-brand.pages.dev (next ${AFTER:0:7})" >> "$GITHUB_STEP_SUMMARY"
