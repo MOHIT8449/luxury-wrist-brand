@@ -4,6 +4,14 @@
 **Purpose:** Continue the same ERP project from a new ChatGPT conversation without restarting or losing the agreed requirements.
 **Status:** Active development / verification. Do not assume all modules are completed or fully tested.
 
+## SKU photos: suggested photos for existing SKUs, approve + save in one go (13 Nov 2026)
+
+- Mohit: find photos for every SKU in the system, show them to him to approve, then save them automatically.
+- From the SKU Master export of 13 Nov 2026 (67 SKUs), 47 have a suggested photo: `sku-photo-suggest.js` (`LWB_SKU_PHOTO_SUGGEST`, SKU name -> [file, "same" / "close"]) + `assets/sku-photos/*.jpg` (19 photos, 480 px). One photo per brand + pack type (e.g. Thums Up PET for 250 ml to 2.25 L). Sources: official packshots from coca-cola.com/in and dsgroup.com, plus BigBasket product photos (cans, Thums Up / Coke PET, Monster). The repo is public, so these files are public too.
+- No photo found (take with the phone): Zero Coke / Thums Up / Sprite, Thums Up cans, Predator, Gin Tonic, Pulpy Orange, Tulsi 00 tobacco, Rajnigandha sachets (17 g, 2.2 g, 4 g), Tulsi Khajoor, Senses.
+- `sku-master.html`: green bar "Photos ready for N SKUs" (Admin / Sales Head, only SKUs with no photo) > Review photos popup: grid with tick boxes ("same" ticked, "close match" not), Tick all / Save ticked (N) / Close in one row. Save uploads each file to `lwb-sku-photos` and sets `image_url`. A renamed SKU no longer matches (by exact name).
+- Checked with a mocked client and the real 67 SKU names at 1366 / 390 px: no side scroll, 43 saved in the flow. Screenshots: project files `sku-photos/suggest/`.
+
 ## SKU product photo: thumbnail next to the SKU name, upload in SKU Master (13 Nov 2026)
 
 - Mohit: every SKU gets a product photo, shown small next to the SKU name like the Flipkart Seller Hub listing. He approved the preview (project files `sku-photos/preview/`), then asked for the upload option.

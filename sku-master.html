@@ -4,7 +4,7 @@
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>SKU Master | Luxury Wrist Brand ERP</title>
 <script src="erp-date.js"></script><script src="erp-recent.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script><script src="page-role.js"></script><script src="pack-match.js"></script><script src="excel-io.js"></script><script src="brand-filter.js"></script><script src="sku-image.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script><script src="page-role.js"></script><script src="pack-match.js"></script><script src="excel-io.js"></script><script src="brand-filter.js"></script><script src="sku-image.js"></script><script src="sku-photo-suggest.js"></script>
 <style>
 :root{font-family:Arial,Helvetica,sans-serif;color:#16243b;background:#f2f5fa}*{box-sizing:border-box}body{margin:0}header{background:#142640;color:#fff;padding:19px max(22px,5%);display:flex;align-items:center;justify-content:space-between;gap:15px}header h1{font-size:23px;margin:0}header small{color:#c4d3e7}header a{color:white}main{max-width:1300px;margin:28px auto;padding:0 20px}.panel{background:white;border-radius:16px;padding:24px;margin-bottom:22px;box-shadow:0 4px 20px #1d32510b}h2{font-size:20px;margin:0 0 18px}.fields{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:15px}label{display:block;font-weight:600;font-size:13px;margin-bottom:7px}input,select{width:100%;border:1px solid #ced8e7;border-radius:8px;padding:12px;font-size:14px;background:#fff;color:#142640}input:focus,select:focus{outline:2px solid #85b5ed}.actions{display:flex;gap:10px;margin-top:18px;flex-wrap:wrap}button{cursor:pointer;border:0;border-radius:8px;padding:12px 18px;font-weight:700;background:#1261b5;color:#fff}button.secondary{background:#e9eef5;color:#183451}button:disabled{opacity:.6;cursor:not-allowed}.message{padding:13px;border-radius:8px;margin-bottom:15px;display:none}.message.error{display:block;background:#fff0ee;color:#9c211b}.message.success{display:block;background:#eaf8ee;color:#196c39}.toolbar{display:flex;justify-content:space-between;gap:12px;align-items:center;margin-bottom:14px}.toolbar input{max-width:360px}.table-wrap{overflow-x:auto}table{border-collapse:collapse;width:100%;font-size:14px}th{background:#eef3f9;text-align:left}td,th{padding:13px 12px;border-bottom:1px solid #e8edf3}td button{padding:8px 12px}small.hint{display:block;color:#68778d;margin-top:12px}#status{font-size:13px;color:#60738e}@media(max-width:950px){.fields{grid-template-columns:repeat(2,1fr)}}@media(max-width:520px){.fields{grid-template-columns:1fr}.toolbar{flex-direction:column;align-items:stretch}.toolbar input{max-width:none}header h1{font-size:19px}}
 .sku-bulk{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:0 0 12px}.sku-bulk select{width:auto;min-width:180px}.sku-bulk span{font-size:13px;color:#4b5b72;font-weight:700}#brandBar{margin-top:6px}</style>
@@ -41,9 +41,15 @@
 <textarea id="bulkText" rows="8" style="width:100%;margin-top:8px;font:13px monospace" placeholder="250ML CSD&#9;300ML TH MRP.20&#10;&#9;250ML SP MRP.20"></textarea>
 <div class="actions"><button type="button" class="secondary" id="bulkCheck">Check List</button><button type="button" id="bulkSave" disabled>Add / Update SKUs</button><span id="bulkInfo" class="hint"></span></div></section>
 <section class="panel"><div class="toolbar"><div><h2 style="margin-bottom:5px">SKU List</h2><span id="status">Loading...</span></div><input id="search" placeholder="Search SKU name or HSN..."><div class="sku-btns" id="skuBtns"><button type="button" class="secondary" id="bulkBtn" data-sx="bulkPanel" hidden>Bulk add</button><button type="button" class="secondary" data-sx="xlBox">⬇⬆ Excel</button></div></div>
-<div id="brandBar" hidden><div id="brandChips"></div><div class="sku-bulk"><select id="unitFilter" aria-label="Unit"><option value="">All units</option><option value="CASE">Cases only</option><option value="BOX">IC only</option></select></div><div class="sku-bulk" id="bulkCo" hidden><span id="bulkCnt">0 selected</span><select id="bulkCoSel"><option value="">— No company —</option></select><button type="button" id="bulkCoBtn" disabled>Set company of selected SKUs</button></div></div>
+<div class="sg-bar" id="sgBar" hidden><span id="sgText"></span><button type="button" id="sgOpen" onclick="openSuggest()">Review photos</button></div><div id="brandBar" hidden><div id="brandChips"></div><div class="sku-bulk"><select id="unitFilter" aria-label="Unit"><option value="">All units</option><option value="CASE">Cases only</option><option value="BOX">IC only</option></select></div><div class="sku-bulk" id="bulkCo" hidden><span id="bulkCnt">0 selected</span><select id="bulkCoSel"><option value="">— No company —</option></select><button type="button" id="bulkCoBtn" disabled>Set company of selected SKUs</button></div></div>
 <div class="table-wrap"><table><thead><tr><th class="co-col" hidden><input type="checkbox" id="pickAll" aria-label="Select all shown"></th><th class="co-col" hidden>Company</th><th class="co-col" hidden>Unit</th><th>Category</th><th>SKU Name</th><th>HSN</th><th>PCS/Case</th><th>Unit Wt/Case KG</th><th>CS/Pallet · IC/Carton</th><th>GST %</th><th>MRP ₹</th><th>Status</th><th>Action</th></tr></thead><tbody id="rows"><tr><td colspan="10">Loading...</td></tr></tbody></table></div></section>
 </main>
+<div class="ph-modal" id="sgBox" hidden role="dialog" aria-modal="true" aria-labelledby="sgTitle"><div class="ph-card sg-box">
+<button type="button" class="ph-x" aria-label="Close" onclick="$('sgBox').hidden=true">✕</button>
+<h3 id="sgTitle">Suggested photos</h3><small class="ph-tip">Tick the photos that match your SKU. "Close match" ones are not ticked: check them first.</small>
+<div class="sg-grid" id="sgGrid"></div>
+<div class="ph-btns"><button type="button" class="secondary" onclick="sgAll()">Tick all</button><button type="button" id="sgSave" onclick="saveSuggest()">Save ticked</button><button type="button" class="secondary" onclick="$('sgBox').hidden=true">Close</button></div>
+<div class="ph-msg" id="sgMsg" role="status"></div></div></div>
 <div class="ph-modal" id="phBox" hidden role="dialog" aria-modal="true" aria-labelledby="phName"><div class="ph-card">
 <button type="button" class="ph-x" aria-label="Close" onclick="closePhoto()">✕</button>
 <h3 id="phName"></h3><div class="ph-view" id="phView"></div>
@@ -135,6 +141,32 @@ async function removePhoto(){const x=photoSku;if(!x||!x.image_url)return;if(!(aw
   if(error){$('phMsg').className='ph-msg error';$('phMsg').textContent='Not removed: '+error.message;return;}
   const old=photoPath(x.image_url);if(old)db.storage.from('lwb-sku-photos').remove([old]).catch(()=>{});
   await loadSkus();closePhoto();notice('Photo removed.');}
+// Suggested photos (sku-photo-suggest.js): Admin / Sales Head tick the right ones, then all are saved at once.
+const SG=window.LWB_SKU_PHOTO_SUGGEST||{};
+const sgList=()=>photoOn&&canEdit?skus.filter(x=>!x.image_url&&SG[x.sku_name]):[];
+function sgBar(){const n=sgList().length;$('sgBar').hidden=!n;$('sgText').textContent='Photos ready for '+n+' SKU'+(n===1?'':'s')+' without a photo.';}
+function openSuggest(){const box=$('sgGrid');box.replaceChildren();
+  for(const x of sgList()){const [f,m]=SG[x.sku_name];const l=document.createElement('label');l.className='sg-card'+(m==='close'?' close':'');
+    const cb=document.createElement('input');cb.type='checkbox';cb.checked=m!=='close';cb.dataset.id=x.id;cb.dataset.file=f;cb.onchange=sgCount;
+    const img=document.createElement('img');img.src='assets/sku-photos/'+f+'.jpg';img.alt='';img.loading='lazy';
+    const t=document.createElement('span');t.className='sg-name';t.textContent=x.sku_name;
+    const tag=document.createElement('small');tag.textContent=m==='close'?'Close match: other pack':'Same product';
+    l.append(cb,img,t,tag);box.appendChild(l);}
+  $('sgMsg').textContent='';$('sgMsg').className='ph-msg';$('sgBox').hidden=false;sgCount();}
+function sgCount(){const n=$('sgGrid').querySelectorAll('input:checked').length;$('sgSave').textContent='Save ticked ('+n+')';$('sgSave').disabled=!n;
+  document.querySelectorAll('#sgGrid .sg-card').forEach(c=>c.classList.toggle('on',c.querySelector('input').checked));}
+function sgAll(){const cbs=[...$('sgGrid').querySelectorAll('input')],on=!cbs.every(c=>c.checked);cbs.forEach(c=>c.checked=on);sgCount();}
+async function saveSuggest(){const picks=[...$('sgGrid').querySelectorAll('input:checked')];if(!picks.length)return;
+  const msg=$('sgMsg');msg.className='ph-msg';$('sgSave').disabled=true;let done=0;const failed=[];
+  for(const cb of picks){const x=skus.find(s=>s.id===cb.dataset.id);if(!x)continue;msg.textContent='Saving '+(done+failed.length+1)+' / '+picks.length+'...';
+    try{const r=await fetch('assets/sku-photos/'+cb.dataset.file+'.jpg');if(!r.ok)throw Error('photo file missing');const blob=await r.blob();
+      const path=x.id+'/'+Date.now()+'.jpg';const up=await db.storage.from('lwb-sku-photos').upload(path,blob,{contentType:'image/jpeg',upsert:false,cacheControl:'31536000'});if(up.error)throw up.error;
+      const url=db.storage.from('lwb-sku-photos').getPublicUrl(path).data.publicUrl;
+      const {error}=await db.from('sku_master').update({image_url:url}).eq('id',x.id);if(error){await db.storage.from('lwb-sku-photos').remove([path]);throw error;}
+      done++;}catch(e){failed.push(x.sku_name+' — '+(e.message||e));}}
+  await loadSkus();
+  if(failed.length){const t=done+' saved. Not saved ('+failed.length+'): '+failed.join('; ');openSuggest();msg.className='ph-msg error';msg.textContent=t;}
+  else{$('sgBox').hidden=true;notice(done+' SKU photos saved.');}}
 function editSku(id){const x=skus.find(item=>item.id===id);if(!x)return;editingId=id;$('skuName').value=x.sku_name||'';$('category').value=x.category||'';$('hsn').value=x.hsn_code||'';$('pcs').value=x.pcs_per_case??'';$('weight').value=x.unit_weight_kg??'';$('palletCases').value=x.cases_per_pallet??'';$('gst').value=x.gst_rate??'';$('mrp').value=x.mrp_per_case??'';$('active').value=String(x.is_active!==false);$('company').value=x.company_id||'';$('packUnit').value=x.pack_unit||'';unitLabels();$('formTitle').textContent='Edit SKU';$('saveBtn').textContent='Update SKU';window.MP&&MP.open();}
 // SKU -> Rate & Scheme rate group, so slab rate on PO Entry comes from this one SKU Master.
 async function loadRateGroups(){
@@ -160,7 +192,7 @@ palletColumnAvailable=await hasCol('cases_per_pallet');
 mrpColumnAvailable=await hasCol('mrp_per_case');$('mrp').disabled=!mrpColumnAvailable||!canEdit;
 categoryColumnAvailable=await hasCol('category');
 unitOn=await hasCol('pack_unit');
-photoOn=await hasCol('image_url');if(window.LWBSkuImg)LWBSkuImg.load(skus);
+photoOn=await hasCol('image_url');if(window.LWBSkuImg)LWBSkuImg.load(skus);sgBar();
 await loadCompanies(await hasCol('company_id'));
 $('category').disabled=!categoryColumnAvailable||!canEdit;$('category').placeholder=categoryColumnAvailable?'e.g. 250ML CSD':'Run lwb_sku_category_setup.sql';
 $('categoryList').replaceChildren(...[...new Set(skus.map(x=>x.category).filter(Boolean))].sort().map(c=>new Option(c)));
@@ -318,10 +350,17 @@ document.querySelectorAll('[data-sx]').forEach(b=>b.addEventListener('click',()=
   document.querySelectorAll('.sku-extra').forEach(x=>x.hidden=true);document.querySelectorAll('[data-sx]').forEach(x=>x.classList.remove('on'));
   if(show){p.hidden=false;b.classList.add('on');p.scrollIntoView({behavior:'smooth',block:'start'})}}));
 </script>
-<style>td button+button{margin-left:6px}.mp-act button+button{margin-left:0}
-.sku-namebox{display:flex;align-items:center;gap:8px;min-width:0}.sku-namebox span{min-width:0;overflow-wrap:anywhere}
+<style>.sg-bar{display:flex;align-items:center;gap:10px;justify-content:space-between;background:#f1faf6;border:1px solid #b9dccd;border-radius:8px;padding:7px 10px;margin:8px 0;font-size:13px;color:#0b5a46;font-weight:700}.sg-bar[hidden]{display:none}.sg-bar button{padding:7px 12px;font-size:13px;white-space:nowrap}
+.sg-box{width:min(760px,100%);max-height:calc(100vh - 32px);display:flex;flex-direction:column}
+.sg-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:8px;overflow:auto;margin:6px 0 10px;padding:2px}
+.sg-card{position:relative;display:flex;flex-direction:column;align-items:center;gap:3px;border:2px solid #e1e6ec;border-radius:9px;padding:6px;cursor:pointer;text-align:center;background:#fff}
+.sg-card.on{border-color:#0b6b54;background:#f4fbf8}.sg-card input{position:absolute;top:6px;left:6px;width:18px;height:18px;margin:0}
+.sg-card img{width:84px;height:84px;object-fit:contain}.sg-name{font-size:11.5px;font-weight:700;line-height:1.25;overflow-wrap:anywhere}.sg-card small{font-size:10.5px;color:#0b6b54}.sg-card.close small{color:#a15c07}
+@media(max-width:520px){.sg-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.sg-card img{width:72px;height:72px}}
+td button+button{margin-left:6px}.mp-act button+button{margin-left:0}
+.sku-namebox{display:flex;align-items:center;gap:8px;min-width:0}@media(min-width:701px){.sku-namebox{min-width:140px}}.sku-namebox span{min-width:0;overflow-wrap:anywhere}
 .sku-th.add{cursor:pointer;color:#0b6b54;border-color:#9cc9b9;background:#f1faf6}.sku-th.add::after{content:"+";margin-left:1px}
-.ph-modal{position:fixed;inset:0;z-index:4000;background:#0b1320a8;display:flex;align-items:center;justify-content:center;padding:16px}.ph-modal[hidden]{display:none}
+.ph-modal{position:fixed;inset:0;z-index:4500;background:#0b1320a8;display:flex;align-items:center;justify-content:center;padding:16px}.ph-modal[hidden]{display:none}
 .ph-card{position:relative;background:#fff;border-radius:12px;padding:16px;width:min(380px,100%)}.ph-card h3{margin:0 34px 10px 0;font-size:15px}
 .ph-x{position:absolute;top:8px;right:8px;width:32px;height:32px;border:0;border-radius:50%;background:#eef1f5;color:#16243b;padding:0;cursor:pointer}
 .ph-view{height:min(220px,32vh);border:1px solid #dfe5ec;border-radius:10px;display:flex;align-items:center;justify-content:center;background:#fafbfc;overflow:hidden}.ph-view img{max-width:100%;max-height:100%;object-fit:contain}.ph-view span{color:#8995a3;font-weight:700}
