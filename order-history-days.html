@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Order History Days | Luxury Wrist Brand ERP</title>
+  <script src="erp-date.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <link rel="stylesheet" href="erp-shell.css">
+  <link rel="stylesheet" href="sales.css">
+  <script src="erp-shell.js"></script>
+  <script src="sales-common.js"></script>
+  <style>
+    /* Order History Days (lwb_order_visibility_setup.sql): Admin sets per role for how many days after
+       delivery an order stays in that role's lists. Empty = no limit. */
+    .od-card{background:#fff;border:1px solid var(--erp-line,#dfe4ea);border-radius:8px;padding:10px 12px;max-width:760px;min-width:0}
+    .od-t{width:100%;border-collapse:collapse;font-size:13.5px}
+    .od-t th{font-size:11.5px;text-align:left;color:#556;font-weight:600;padding:5px 6px;border-bottom:1px solid #e3e7ec;background:#f7f8fa}
+    .od-t td{padding:6px;border-bottom:1px solid #eef1f4;vertical-align:middle}
+    .od-t td b{font-weight:600}
+    .od-t td small{display:block;color:#6b7785;font-size:11.5px}
+    .od-in{display:flex;align-items:center;gap:6px;flex-wrap:nowrap;white-space:nowrap}
+    .od-in input{width:76px;height:34px;border:1.5px solid #e3e7ec;border-radius:6px;padding:0 8px;font:inherit;font-size:14px;text-align:right}
+    .od-in input:focus{border-color:var(--erp-red,#c8102e);outline:none}
+    .od-in span{font-size:12.5px;color:#556}
+    .od-now{font-size:12.5px;color:#334}
+    .od-now.off{color:#6b7785}
+    .od-quick{display:flex;gap:4px;flex-wrap:nowrap;margin-left:6px}
+    .od-quick button{height:24px;border:1px solid #e3e7ec;background:#f7f8fa;border-radius:12px;padding:0 8px;font:inherit;font-size:11.5px;cursor:pointer;color:#334}
+    .od-quick button:hover{border-color:var(--erp-red,#c8102e);color:var(--erp-red,#c8102e)}
+    .od-row{display:flex;gap:6px;align-items:center;margin-top:10px;flex-wrap:nowrap}
+    .od-row .mut{margin-left:auto;text-align:right}
+    .od-help{font-size:12.5px;color:#445;margin:8px 0 0;padding-left:18px}
+    .od-help li{margin:2px 0}
+    .mut{color:#6b7785;font-size:12px}
+    @media(max-width:640px){
+      .od-card{padding:8px}
+      .od-t thead{display:none}
+      .od-t,.od-t tbody,.od-t tr,.od-t td{display:block;width:100%}
+      .od-t tr{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:0 8px;align-items:center;padding:6px 2px!important;border-bottom:1px solid #eef1f4;min-height:0!important}
+      .od-t td{border:0!important;padding:0!important;min-height:0!important;background:none!important}
+      .od-t td.od-c3{grid-column:1;grid-row:2;line-height:1.2}
+      .od-t td:nth-child(2){grid-row:1 / span 2;grid-column:2}
+      .od-t td small{display:inline;margin-left:4px}
+      .od-now{font-size:12px}
+      .od-quick{display:none}
+      .od-row .mut{display:none}
+    }
+  </style>
+</head>
+<body>
+  <div id="loading" class="status">Checking account access...</div>
+  <main id="page" class="erp-main" hidden>
+    <div class="erp-pagehead"><h1>Order History Days<button type="button" class="erp-i" aria-label="Info" title="Info" data-tip="For each role, how many days after delivery a PO (with its delivery and history) stays in that role's order lists. Empty = no limit. Admin always sees everything. Ledgers, outstanding and stock do not change.">i</button></h1></div>
+    <div id="status" class="sl-msg" hidden></div>
+    <div class="od-card">
+      <table class="od-t">
+        <thead><tr><th>Role</th><th>Days after delivery</th><th>What the role sees</th></tr></thead>
+        <tbody id="rows"><tr><td colspan="3" class="mut">Loading…</td></tr></tbody>
+      </table>
+      <div class="od-row">
+        <button type="button" class="sl-btn" id="save" disabled>Save</button>
+        <button type="button" class="sl-btn ghost" id="reset" disabled>Undo changes</button>
+        <span class="mut" id="when"></span>
+      </div>
+      <ul class="od-help">
+        <li>Type the days and press <b>Save</b>. Example: Salesman 30 = he sees a PO till 30 days after it was delivered.</li>
+        <li>Empty = no limit. 0 = gone from the list as soon as it is delivered. Orders not delivered yet always stay.</li>
+        <li>Driver empty = 12 hours after delivery, as now.</li>
+      </ul>
+    </div>
+  </main>
+  <script>
+    const S=LWBSales,{client,el,esc}=S;
+    const setupMsg="Run lwb_order_visibility_setup.sql first (it runs by itself when the PR is merged).";
+    const errText=e=>/lwb_order_visibility/.test(e.message||"")&&/function|schema cache/.test(e.message||"")?setupMsg:(e.message||String(e));
+    const NAME={sales:["Salesman","PO / Sales (My Orders)"],manager:["Sales Head","PO / Sales List"],driver:["Driver","Delivery list"],
+      accounts:["Accounts","PO / Sales List, bills"],warehouse:["Godown Manager","PO / Sales List"],transport:["Transport","Transport Assignment"]};
+    const QUICK=[7,15,30,60,90];
+    let saved=[];
+    function msg(t,bad){el("status").hidden=!t;el("status").textContent=t||"";el("status").className="sl-msg"+(bad?" error":"")}
+    const val=r=>{const v=el("d_"+r).value.trim();return v===""?null:v};
+    function nowText(role,v){
+      if(v==null||v==="")return role==="driver"?"12 hours after delivery (as now)":"All delivered orders (no limit)";
+      const n=Number(v);
+      if(!/^\d{1,4}$/.test(String(v))||n>3650)return "Enter 0 to 3650";
+      return n===0?"Only orders not delivered yet":"Delivered orders of the last "+n+(n===1?" day":" days");
+    }
+    function check(){
+      let changed=false,bad=false;
+      saved.forEach(r=>{
+        const v=val(r.role),t=el("n_"+r.role);
+        t.textContent=nowText(r.role,v);t.className="od-now"+(v==null?" off":"");
+        if(v!=null&&(!/^\d{1,4}$/.test(v)||Number(v)>3650))bad=true;
+        if(String(v??"")!==String(r.days??""))changed=true;
+      });
+      el("save").disabled=!changed||bad;el("reset").disabled=!changed;
+    }
+    function render(){
+      el("rows").innerHTML=saved.map(r=>{
+        const [n,where]=NAME[r.role]||[r.role,""];
+        return '<tr><td><b>'+esc(n)+'</b><small>'+esc(where)+'</small></td>'+
+          '<td><div class="od-in"><input id="d_'+r.role+'" inputmode="numeric" maxlength="4" placeholder="—" aria-label="'+esc(n)+' days" value="'+(r.days==null?"":r.days)+'"><span>days</span></div>'+
+          '<div class="od-quick">'+QUICK.map(q=>'<button type="button" data-r="'+r.role+'" data-q="'+q+'">'+q+'</button>').join("")+'<button type="button" data-r="'+r.role+'" data-q="">No limit</button></div></td>'+
+          '<td class="od-c3"><span class="od-now" id="n_'+r.role+'"></span></td></tr>';
+      }).join("");
+      const last=saved.filter(r=>r.updated_at).sort((a,b)=>String(b.updated_at).localeCompare(String(a.updated_at)))[0];
+      el("when").textContent=last?"Last change "+LWBDate.d(last.updated_at)+(last.updated_by_name?" by "+last.updated_by_name:""):"";
+      check();
+    }
+    async function load(){
+      const r=await client.rpc("lwb_order_visibility_list");
+      if(r.error){msg(errText(r.error),true);el("rows").innerHTML='<tr><td colspan="3" class="mut">—</td></tr>';return}
+      saved=r.data||[];render();
+    }
+    el("rows").addEventListener("input",check);
+    el("rows").addEventListener("click",e=>{
+      const b=e.target.closest("button[data-r]");if(!b)return;
+      el("d_"+b.dataset.r).value=b.dataset.q;check();
+    });
+    el("reset").onclick=()=>{msg("");render()};
+    el("save").onclick=async()=>{
+      el("save").disabled=true;msg("");
+      const rows=saved.map(r=>({role:r.role,days:val(r.role)}));
+      const r=await client.rpc("lwb_order_visibility_save",{p_rows:rows});
+      if(r.error){msg(errText(r.error),true);check();return}
+      await load();msg("Saved. Each role sees the new days the next time a page opens.");
+    };
+    (async()=>{
+      const me=await S.start(["admin"]);if(!me)return;
+      el("loading").hidden=true;el("page").hidden=false;
+      load();
+    })();
+  </script>
+</body>
+</html>
