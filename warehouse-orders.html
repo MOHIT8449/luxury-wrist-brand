@@ -11,6 +11,7 @@
   <script src="party-list.js" defer></script>
   <script src="brand-filter.js"></script>
   <script src="party-credit.js"></script>
+  <script src="sku-image.js"></script>
   <script src="erp-operations-notifications.js"></script>
 
   <style>
@@ -562,6 +563,11 @@
     .warehouse-sku-choice{display:block;width:100%;text-align:left;padding:10px 12px;background:white;border:0;border-bottom:1px solid #e9edf4;font-size:12px;color:#14253a;cursor:pointer}
     .warehouse-sku-choice:hover,.warehouse-sku-choice.selected{background:#e7f2ff}
     .warehouse-sku-choice small{display:block;margin-top:4px;color:#60758e}
+    .warehouse-sku-choice{display:flex;align-items:center;gap:9px;padding:7px 10px}
+    .warehouse-sku-choice .sku-th{pointer-events:none}
+    .wsc-tx{min-width:0;flex:1}
+    #itemsBody .i-skubox{display:flex;align-items:center;gap:8px}
+    #itemsBody .i-skutx{min-width:0;flex:1}
     .warehouse-sku-empty{padding:12px;font-size:12px;color:#697b90}
     .warehouse-sku-input{width:205px;max-width:100%;padding:8px;border:1px solid #aebbd0;border-radius:5px;font-size:12px}
     .warehouse-sku-input:focus{outline:2px solid #8fbbee}
@@ -1125,6 +1131,7 @@
       #itemsBody .i-no {display:none}
       #itemsBody .i-sku {grid-area:sku;margin-right:42px}
       #itemsBody .i-sku::before {display:none!important}
+      #itemsBody .i-sku .sku-th {width:44px;height:44px}
       #itemsBody .i-act {position:absolute;top:8px;right:10px}
       #itemsBody .i-act .btn {width:34px;height:34px;padding:0;font-size:0;line-height:34px;text-align:center}
       #itemsBody .i-act .btn::after {content:"✕";font-size:15px}
@@ -1809,6 +1816,7 @@ async function loadWarehouseSkuMaster(){
       .eq("is_active",true).order("sku_name").limit(1000);
     if(error)throw error;
     warehouseSkuMaster=(data||[]).filter(x=>String(x.sku_name||"").trim());
+    if(window.LWBSkuImg)LWBSkuImg.load(warehouseSkuMaster);
     warehouseSkuLoadError="";
   }catch(e){
     warehouseSkuMaster=[];
@@ -1866,10 +1874,11 @@ function openWarehouseSkuPicker(input){
     option.className="warehouse-sku-choice"+(index===warehouseSkuActive?" selected":"");
     option.setAttribute("role","option");
     option.setAttribute("aria-selected",String(index===warehouseSkuActive));
-    option.textContent=String(sku.sku_name);
     const extra=document.createElement("small");
     extra.textContent=sku.unit_weight_kg==null?"Weight: Manager enter manually":"Master Weight: "+sku.unit_weight_kg+" KG/CS";
-    option.appendChild(extra);
+    const tx=document.createElement("span");tx.className="wsc-tx";tx.textContent=String(sku.sku_name);tx.appendChild(extra);
+    if(window.LWBSkuImg)option.insertAdjacentHTML("beforeend",LWBSkuImg.html(sku.sku_name,"sm"));
+    option.appendChild(tx);
     option.addEventListener("mousedown",event=>{event.preventDefault();chooseWarehouseSku(sku,input);});
     option.addEventListener("click",event=>{event.preventDefault();chooseWarehouseSku(sku,input);});
     picker.appendChild(option);
@@ -1888,6 +1897,8 @@ function chooseWarehouseSku(sku,input){
   item.unit_weight=sku.unit_weight_kg!=null&&Number.isFinite(w)&&w>=0?w:0;
   item._selected_from_master=true;
   input.value=item.sku_name;
+  const th=input.closest('.i-skubox')?.querySelector('.sku-th');
+  if(th&&window.LWBSkuImg)th.outerHTML=LWBSkuImg.html(item.sku_name);
   const weightField=document.querySelector('[data-field="unit_weight"][data-index="'+index+'"]');
   if(weightField){weightField.value=item.unit_weight;weightField.closest('.i-wt')?.toggleAttribute('hidden',item.unit_weight>0);}
   const qty=Number(item.approved_qty)||0,rate=Number(item.rate)||0;
@@ -4838,7 +4849,7 @@ function renderItems() {
     const ord = Number(item.ordered_qty) || 0, qd = qty - ord;
     return `<tr class="${low?'rate-low':''}" id="itemRow${i}">
       <td class="i-no">${i+1}</td>
-      <td class="i-sku" data-label="SKU / Product">${warehouseSkuInputMarkup(item, i, editable)}<small class="i-pack" id="itemPack${i}"></small><label class="i-wt" ${unit>0||!editable?'hidden':''}>Weight KG/CS ${input('unit_weight', unit, 'number')}</label></td>
+      <td class="i-sku" data-label="SKU / Product"><div class="i-skubox">${window.LWBSkuImg?LWBSkuImg.html(item.sku_name):''}<div class="i-skutx">${warehouseSkuInputMarkup(item, i, editable)}<small class="i-pack" id="itemPack${i}"></small><label class="i-wt" ${unit>0||!editable?'hidden':''}>Weight KG/CS ${input('unit_weight', unit, 'number')}</label></div></div></td>
       <td class="i-qty" data-label="Qty" style="text-align:right">${input('approved_qty', qty, 'number')}<small class="q-diff" id="itemQd${i}">${qdText(qd, ord)}</small></td>
       <td class="i-rate" data-label="Rate ₹" style="text-align:right">${input('rate', rate, 'number')}<span class="min-tag" id="itemMin${i}">${low?'Below min ₹'+formatNumber(minR):''}</span></td>
       <td class="i-amt" data-label="Amount" id="itemAmount${i}" style="text-align:right">${formatMoney(qty*rate)}</td>
