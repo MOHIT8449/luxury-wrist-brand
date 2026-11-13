@@ -1852,6 +1852,15 @@ function positionWarehouseSkuPicker(){
   picker.style.top=(below>180?rect.bottom+3:Math.max(8,rect.top-250))+"px";
 }
 
+// The SKU list opens only when the person clicks / tabs into the SKU box or types, not when the popup
+// puts the cursor in the first box by itself (it covered the next line's photo, Mohit 13 Nov 2026).
+let warehouseSkuIntent=null;
+document.addEventListener("pointerdown",e=>{warehouseSkuIntent=e.target.closest&&e.target.closest(".warehouse-sku-input")||null;},true);
+document.addEventListener("keydown",e=>{warehouseSkuIntent=(e.key==="Tab"||e.key==="Enter")&&e.target.closest&&e.target.closest("#itemsBody")?"key":null;},true);
+function warehouseSkuFocused(input){
+  const ok=warehouseSkuIntent===input||warehouseSkuIntent==="key";warehouseSkuIntent=null;
+  if(ok)openWarehouseSkuPicker(input);
+}
 function openWarehouseSkuPicker(input){
   if(!input||input.disabled)return;
   warehouseSkuInput=input;
@@ -4832,7 +4841,7 @@ function warehouseSkuInputMarkup(item, index, editable) {
     + 'placeholder="Type to search SKU..." autocomplete="off" '
     + 'role="combobox" aria-autocomplete="list" aria-expanded="false" '
     + 'aria-controls="warehouseSkuOptions" '
-    + 'onfocus="openWarehouseSkuPicker(this)" '
+    + 'onfocus="warehouseSkuFocused(this)" '
     + 'oninput="warehouseSkuTyped(this)" '
     + 'onkeydown="warehouseSkuKeydown(event,this)">';
 }
@@ -4893,7 +4902,8 @@ function addSku() {
   selectedItems.push({id:null, order_id:selectedOrder.id, sku_name:'', ordered_qty:0, approved_qty:0, loaded_qty:0, rate:0, unit_weight:0, _selected_from_master:false});
   renderItems();
   const inputs = document.querySelectorAll('.warehouse-sku-input');
-  inputs[inputs.length-1]?.focus();
+  const last = inputs[inputs.length-1];
+  if (last) { last.focus(); openWarehouseSkuPicker(last); }
 }
 
 async function removeSku(index) {
