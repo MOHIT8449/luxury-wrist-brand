@@ -116,7 +116,7 @@ BEGIN
   IF jsonb_typeof(coalesce(p_rows,'null'::jsonb)) <> 'array' OR jsonb_array_length(p_rows) = 0 THEN RAISE EXCEPTION 'No lines to save.'; END IF;
   IF jsonb_array_length(p_rows) > 20000 THEN RAISE EXCEPTION 'Too many lines in one file (max 20000).'; END IF;
   CREATE TEMP TABLE IF NOT EXISTS lwb_stts_tmp_s (LIKE public.lwb_stts_sales) ON COMMIT DROP;
-  DELETE FROM lwb_stts_tmp_s;
+  DELETE FROM lwb_stts_tmp_s WHERE true;  -- live DB needs a WHERE (pg_safeupdate)
   INSERT INTO lwb_stts_tmp_s(doc,line_no,day,type,outlet_code,outlet,item_code,item,brand,bpc,pc,ea,line,disc,net,promo,landed,salesman,free,updated_at)
   SELECT DISTINCT ON (btrim(r.doc), r.line_no) btrim(r.doc), r.line_no, r.day, r.type, r.outlet_code, r.outlet, r.item_code, r.item, r.brand,
          coalesce(r.bpc,0), coalesce(r.pc,0), coalesce(r.ea,0), coalesce(r.line,0), coalesce(r.disc,0), coalesce(r.net,0),
@@ -160,7 +160,7 @@ BEGIN
   IF jsonb_typeof(coalesce(p_rows,'null'::jsonb)) <> 'array' OR jsonb_array_length(p_rows) = 0 THEN RAISE EXCEPTION 'No lines to save.'; END IF;
   IF jsonb_array_length(p_rows) > 20000 THEN RAISE EXCEPTION 'Too many lines in one file (max 20000).'; END IF;
   CREATE TEMP TABLE IF NOT EXISTS lwb_stts_tmp_c (LIKE public.lwb_stts_claims) ON COMMIT DROP;
-  DELETE FROM lwb_stts_tmp_c;
+  DELETE FROM lwb_stts_tmp_c WHERE true;  -- live DB needs a WHERE (pg_safeupdate)
   INSERT INTO lwb_stts_tmp_c(id,doc_type,mer,sale_type,outlet_code,outlet,doc,day,item_code,item,pc,uc,amt,paid)
   SELECT 0, upper(btrim(r.doc_type)), r.mer, r.sale_type, r.outlet_code, r.outlet, btrim(r.doc), r.day, r.item_code, r.item,
          coalesce(r.pc,0), coalesce(r.uc,0), coalesce(r.amt,0), nullif(btrim(coalesce(r.paid,'')),'')
