@@ -44,6 +44,7 @@ button.del{background:#e74c3c!important;color:#fff!important}
 .ec-row .x{background:none!important;color:var(--erp-muted)!important;border:0!important;padding:0 4px;font-size:14px;cursor:pointer}
 .ec-add{display:flex;gap:6px;margin-top:8px;max-width:980px}
 .ec-add input{flex:1;min-width:0}
+.ec-add #addCs{flex:0 0 130px;text-align:right}
 .ec-add button{height:38px;padding:0 12px}
 .ec-plan .ec-row{grid-template-columns:minmax(0,1.6fr) repeat(2,minmax(0,1fr))}
 .ec-trucks{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,250px),1fr));gap:8px}
@@ -78,7 +79,8 @@ button.del{background:#e74c3c!important;color:#fff!important}
 .ec-tbl .x{background:none!important;color:var(--erp-muted)!important;border:0!important;padding:0 4px;cursor:pointer}
 .ec-scroll{overflow-x:auto}
 @media(min-width:1000px){
-  .ec-list,.ec-add{max-width:none}
+  .ec-list{max-width:none}
+  .ec-add{max-width:820px}
   .ec-tbl td.sku{min-width:230px}
   .ec-top{display:flex;gap:10px;align-items:end}
   .ec-top .ec-bar{flex:0 0 380px}
@@ -108,16 +110,17 @@ button.del{background:#e74c3c!important;color:#fff!important}
       <label>RTGS paid ₹<input id="rtgs" type="number" min="0" inputmode="decimal" placeholder="0"></label>
     </div>
     <div class="ec-btns">
-      <button onclick="pasteECRS()">Paste ECRS</button>
+      <button onclick="pasteECRS()">Paste list</button>
       <button class="dark" onclick="openPlan()">Make trucks</button>
       <button class="ghost" onclick="copyText(dayText())">Copy msg</button>
     </div>
   </div>
   <div class="ec-card"><div id="stats" class="ec-stats"></div>
     <p class="hint">Ordered = trucks saved on this date. Pay = GR − disc %. Balance = Pay − RTGS paid.</p></div>
-  <div class="ec-card"><h3>ECRS from company (cases)</h3>
+  <div class="ec-card"><h3 id="listTitle">ECRS from company (cases)</h3>
+    <div class="ec-add"><input id="addSku" list="skuDL" placeholder="SKU (type to search SKU Master)" autocomplete="off"><input id="addCs" type="number" min="0" step="1" inputmode="numeric" placeholder="ECRS cases"><button onclick="addSku()">+ Add</button></div>
+    <p class="hint" style="margin:4px 0 8px">Pick the date on top, then add each SKU of the ECRS plan with its cases. Enter = add, then the next SKU.</p>
     <div id="list" class="ec-list"></div>
-    <div class="ec-add"><input id="addSku" list="skuDL" placeholder="Type SKU from SKU Master to add"><button class="ghost" onclick="addSku()">+ Add</button></div>
     <datalist id="skuDL"></datalist>
     <p id="miss" class="hint"></p></div>
   <div class="ec-card ec-plan" id="plan" hidden><h3>Make trucks: pallets to take now</h3>
@@ -233,9 +236,9 @@ function render(){
     st('Pending (not ordered)','₹'+fmt(T.pN),`${fmt(T.p)} cs · ${plt(T.pP)} plt · GR ₹${fmt(T.pG)}`)+
     st('Payment to make','₹'+fmt(T.oN),`GR ₹${fmt(T.oG)} − disc ₹${fmt(T.oG-T.oN)}`,'pay')+
     st('RTGS paid','₹'+fmt(rtgs),'')+
-    st(bal>0?'Balance to pay':'Extra paid',`<span class="${bal>0?'neg':'pos'}">₹${fmt(Math.abs(bal))}</span>`,'Payment − RTGS');
+    st(bal>=0?'Balance to pay':'Extra paid',`<span class="${bal>0?'neg':'pos'}">₹${fmt(Math.abs(bal))}</span>`,'Payment − RTGS');
   let h=`<div class="ec-row hd"><div>SKU · GR · Disc %</div><div>ECRS cs</div><div>Ordered</div><div>Pending</div></div>`;
-  if(!R.length) h+=`<p class="muted" style="padding:8px 4px">No ECRS for ${dIN(DAY.day)}. Tap <b>Paste ECRS</b> and paste the company list (e.g. "740 Sprite 2688"), or add SKUs below.</p>`;
+  if(!R.length) h+=`<p class="muted" style="padding:8px 4px">No ECRS for ${dIN(DAY.day)}. Add each SKU of the ECRS plan above with its cases, or tap <b>Paste list</b>.</p>`;
   R.forEach(x=>{ const pp=x.ppp||1;
     h+=`<div class="ec-row ${x.p<0?'over':''}">
       <div><span class="nm">${esc(x.name)}</span> <button class="x" title="Remove" onclick="delLine('${x.id}')">✕</button>
@@ -251,16 +254,20 @@ function render(){
     if(!l){ const s=byId.get(id)||{}; l={sku_id:id,name:s.name,cs:0,disc:0}; DAY.lines.push(l); }
     const v=e.target.value; l[f]= f==='disc'? Math.min(100,Math.max(0,n(v))) : (v===''?(f==='cs'?0:null):Math.max(0,n(v)));
     if(f==='cs') l.cs=Math.round(n(l.cs)); saveDay(); render(); }));
+  $('listTitle').textContent=`ECRS plan for ${dIN(DAY.day)} (cases)`;
   $('miss').innerHTML=DAY.miss&&DAY.miss.length?`<span class="neg">Not found in SKU Master:</span> ${DAY.miss.map(esc).join(', ')}. Add them above.`:'';
   renderTrucks(); if(PLAN) renderPlan();
 }
 function delLine(id){ ask('Remove this SKU from the ECRS list?').then(ok=>{ if(!ok) return; DAY.lines=DAY.lines.filter(l=>l.sku_id!==id); saveDay(); render(); }); }
 function addSku(){
-  const v=$('addSku').value.trim().toUpperCase(); if(!v) return;
+  const v=$('addSku').value.trim().toUpperCase(); if(!v){ $('addSku').focus(); return; }
   const s=SKUS.find(x=>String(x.name).trim().toUpperCase()===v)||matchSku(v);
   if(!s){ say('SKU not found in SKU Master.'); return; }
-  if(!lineOf(s.id)){ DAY.lines.push({sku_id:s.id,name:s.name,cs:0,disc:0}); saveDay(); }
-  $('addSku').value=''; render(); const el=document.querySelector(`input[data-f="cs"][data-id="${s.id}"]`); if(el) el.focus();
+  const cs=$('addCs').value;
+  let l=lineOf(s.id); if(!l){ l={sku_id:s.id,name:s.name,cs:0,disc:0}; DAY.lines.push(l); }
+  if(cs!=='') l.cs=Math.max(0,Math.round(n(cs)));
+  saveDay(); $('addSku').value=''; $('addCs').value=''; render(); $('addSku').focus();
+  toast(`${s.name}: ${fmt(l.cs)} cs`);
 }
 async function pasteECRS(){
   if(!await modal('Paste the ECRS list from the company. One SKU per line, last number = cases.',{yes:'Fill',text:''})) return;
@@ -435,6 +442,8 @@ function dayText(){
   $('day').addEventListener('change',()=>{ closePlan(); loadDay(); });
   $('rtgs').addEventListener('change',e=>{ DAY.rtgs=e.target.value===''?null:n(e.target.value); saveDay(); render(); });
   $('cap').addEventListener('change',()=>PLAN&&renderPlan());
+  $('addSku').addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); $('addCs').focus(); } });
+  $('addCs').addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); addSku(); } });
   try{ await loadMasters(); }catch(e){ say('SKU Master load failed: '+e.message); }
   await loadDay();
 })();
