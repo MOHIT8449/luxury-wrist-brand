@@ -26,7 +26,8 @@
     .pr-lines th{font-size:11.5px;text-align:left;color:#556;font-weight:600;padding:5px 4px;border-bottom:1px solid #e3e7ec;background:#f7f8fa;white-space:nowrap}
     .pr-lines td{padding:3px 4px;border-bottom:1px solid #eef1f4;vertical-align:middle}
     .pr-lines td.no{color:#6b7785;width:22px;text-align:center}
-    .pr-lines td.rt{width:110px}.pr-lines td.rt input{text-align:right}
+    .pr-lines td.rt{width:110px}.pr-lines td.rt input,.pr-lines td.mg input{text-align:right}
+    .pr-lines td.mg{width:90px}.pr-lines td.mg input.neg{border-color:#c8102e;color:#c8102e}
     .pr-lines td.last{width:250px;font-size:12px;color:#4b5563;white-space:nowrap}
     .pr-lines td.act{width:62px;white-space:nowrap;text-align:right}
     .pr-lines small{display:block;font-size:10.5px;color:#6b7785}
@@ -66,9 +67,9 @@
     @media(max-width:640px){
       .pr-top{grid-template-columns:minmax(0,1fr) 60px 128px}
       .pr-lines thead{display:none}
-      .pr-lines tr{display:grid;grid-template-columns:22px minmax(0,1fr) 92px auto;gap:3px 6px;align-items:center;padding:6px 0;border-bottom:1px solid #eef1f4}
+      .pr-lines tr{display:grid;grid-template-columns:22px minmax(0,1fr) 70px 64px auto;gap:3px 6px;align-items:center;padding:6px 0;border-bottom:1px solid #eef1f4}
       .pr-lines td{border:0;padding:0!important;width:auto!important;background:none!important}
-      .pr-lines td.act{grid-row:1;grid-column:4}
+      .pr-lines td.act{grid-row:1;grid-column:5}
       .pr-lines td.last{grid-row:2;grid-column:2/-1;white-space:normal;line-height:1.3}
       .pr-lines td.last small{display:inline;margin-left:4px}
       .pr-row .sl-btn{font-size:12.5px;padding:0 4px}
@@ -88,7 +89,7 @@
           <div><label for="roi" title="ROI ₹ per case, taken off the landing (e.g. 5: landing 650 = 645)">ROI ₹</label><input id="roi" class="pr-in" type="number" min="0" step="0.5" inputmode="decimal" placeholder="0"></div>
           <div><label for="odate">Date</label><input id="odate" class="pr-in" type="date"></div>
         </div>
-        <table class="pr-lines"><thead><tr><th>#</th><th>Category / pack</th><th>Rate ₹ / case</th><th>Last given</th><th></th></tr></thead><tbody id="lines"></tbody></table>
+        <table class="pr-lines"><thead><tr><th>#</th><th>Category / pack</th><th>Rate ₹ / case</th><th>Margin ₹</th><th>Last given</th><th></th></tr></thead><tbody id="lines"></tbody></table>
         <div class="pr-add">
           <button type="button" class="sl-btn ghost small" id="addLine">+ Add item</button>
           <button type="button" class="sl-btn ghost small" id="useLast" disabled>↺ Last rates of this party</button>
@@ -137,12 +138,14 @@
       const tr=document.createElement("tr");
       tr.innerHTML='<td class="no"></td><td><input class="pr-in" data-f="item" list="itemList" maxlength="120" placeholder="e.g. 2.25L" aria-label="Category / pack"></td>'+
         '<td class="rt"><input class="pr-in" data-f="rate" type="number" min="0" step="0.01" inputmode="decimal" placeholder="₹" aria-label="Rate per case"></td>'+
+        '<td class="mg"><input class="pr-in" data-f="mg" type="number" step="0.5" inputmode="decimal" placeholder="+" aria-label="Margin over landing" title="Margin over landing: rate = landing + margin"></td>'+
         '<td class="last"></td><td class="act"><button type="button" class="pr-ib" data-act="hist" aria-label="Past rates" title="Past rates of this party">i</button> <button type="button" class="pr-x" data-act="del" aria-label="Remove line">✕</button></td>';
       tr.querySelector('[data-f=item]').value=it&&it.item||"";
       tr.querySelector('[data-f=rate]').value=it&&it.rate!=null?it.rate:"";
       return tr;
     }
     function addLine(it,focus){const tr=lineRow(it);el("lines").appendChild(tr);refresh();if(focus)tr.querySelector('[data-f=item]').focus();return tr}
+    const ldOf=item=>{const v=land.get(key(item));return v==null?null:v-roi()};
     function lines(){return [...el("lines").querySelectorAll("tr")].map(tr=>({tr,item:tr.querySelector('[data-f=item]').value.trim(),rate:tr.querySelector('[data-f=rate]').value.trim()}))}
     function refresh(){
       const ls=lines();let n=0;
@@ -152,10 +155,13 @@
         if(l.item&&l.rate!=="")n++;
         if(!l.item){cell.innerHTML="";return}
         const pk=packs.find(x=>key(x.pack_name)===key(l.item));
-        const ld0=pk?land.get(key(pk.pack_name)):null,ld=ld0==null?null:ld0-roi(),mg=ld!=null&&l.rate!==""?Number(l.rate)-ld:null;
+        const ld=pk?ldOf(pk.pack_name):null,mg=ld!=null&&l.rate!==""?Number(l.rate)-ld:null;
         // Landing + margin on screen only (Mohit, 16 Nov 2026); never on the image / WhatsApp.
-        const list=pk?'<small>'+(Number(pk.slab3_rate)>0?'List ₹'+money(pk.slab3_rate):"")+(ld!=null?(Number(pk.slab3_rate)>0?" · ":"")+'Landing ₹'+money(ld)+
-          (mg!=null?' · <span class="'+(mg<0?"dn":"up")+'">Margin '+(mg>0?"+":"")+money(mg)+'</span>':""):"")+'</small>':"";
+        const list=pk?'<small>'+(Number(pk.slab3_rate)>0?'List ₹'+money(pk.slab3_rate):"")+(ld!=null?(Number(pk.slab3_rate)>0?" · ":"")+'Landing ₹'+money(ld):"")+'</small>':"";
+        // Margin box (Mohit, 16 Nov 2026): shows rate − landing; typing in it sets the rate (see "input" below).
+        const mb=l.tr.querySelector('[data-f=mg]');mb.disabled=ld==null;mb.title=ld==null?"No landing for this item (not a Rate List pack)":"Margin over landing: rate = landing + margin";
+        if(document.activeElement!==mb)mb.value=mg==null?"":String(Math.round(mg*10)/10);
+        mb.classList.toggle("neg",mg!=null&&mg<0);
         if(!p){cell.innerHTML='<span class="mut">First time</span>'+list;return}
         const d=l.rate===""?0:Number(l.rate)-Number(p.rate);
         cell.innerHTML='₹'+money(p.rate)+' <span class="mut">· '+esc(dshort(p.offer_date))+'</span>'+
@@ -257,13 +263,16 @@
     }
 
     function viewOffer(o){
-      const rows=o.lines.map((l,i)=>'<tr><td class="mut">'+(i+1)+'</td><td><b>'+esc(String(l.item).toUpperCase())+'</b></td><td class="n"><b>₹'+money(l.rate)+'</b></td></tr>').join("");
+      // Saved offer popup (Mohit, 16 Nov 2026): Category · Rate · Landing · Margin (rate − landing, less ROI). Screen only.
+      const rows=o.lines.map((l,i)=>{const ld=ldOf(l.item),mg=ld==null?null:Number(l.rate)-ld;
+        return '<tr><td class="mut">'+(i+1)+'</td><td><b>'+esc(String(l.item).toUpperCase())+'</b></td><td class="n"><b>₹'+money(l.rate)+'</b></td><td class="n">'+(ld==null?'<span class="mut">—</span>':'₹'+money(ld))+'</td><td class="n">'+
+          (mg==null?'<span class="mut">—</span>':'<span class="'+(mg<0?"dn":"up")+'">'+(mg>0?"+":"")+money(mg)+'</span>')+'</td></tr>'}).join("");
       const cx=o.status==="CANCELLED";
       const btns=[["🖼 Image",async()=>{const t=await shareImage(o);if(t)dlgMsg(t)}],["WhatsApp",()=>openWa(o),"ghost"],
         ["↺ Use again",()=>{closeDlg();useAgain(o)},"ghost"]];
       if(!cx&&(me.role==="admin"||o.mine))btns.push(["Cancel",()=>cancelOffer(o),"ghost"]);
       openDlg(o.offer_no+" · "+o.party_name,'<p class="mut" style="margin:0 0 6px">'+esc(dshort(o.offer_date))+' · by '+esc(o.by||"")+(cx?' <span class="tag">Cancelled</span> '+esc(o.cancel_note||""):"")+'</p>'+
-        '<table class="pr-hist"><thead><tr><th>#</th><th>Category / pack</th><th class="n">Rate ₹ / case</th></tr></thead><tbody>'+rows+'</tbody></table>'+(o.note?'<p class="mut">'+esc(o.note)+'</p>':""),btns);
+        '<table class="pr-hist"><thead><tr><th>#</th><th>Category</th><th class="n">Rate ₹</th><th class="n">Landing ₹</th><th class="n">Margin ₹</th></tr></thead><tbody>'+rows+'</tbody></table>'+(roi()?'<p class="mut">Landing less ROI ₹'+money(roi())+' · today\'s landing</p>':'<p class="mut">Today\'s landing</p>')+(o.note?'<p class="mut">'+esc(o.note)+'</p>':""),btns);
     }
     async function cancelOffer(o){
       const why=prompt("Why cancel "+o.offer_no+"?");if(!why||!why.trim())return;
@@ -290,7 +299,12 @@
         '<span class="s">'+esc(o.offer_no)+' · '+o.lines.length+' item'+(o.lines.length===1?"":"s")+' · '+esc(o.by||"")+' · '+esc(o.lines.slice(0,3).map(l=>l.item+" ₹"+money(l.rate)).join(", "))+(o.lines.length>3?"…":"")+'</span></li>').join("")||'<li class="mut">No rate given in these days.</li>';
     }
 
-    el("lines").addEventListener("input",refresh);
+    el("lines").addEventListener("input",e=>{
+      const t=e.target;
+      if(t.dataset.f==="mg"){const tr=t.closest("tr"),ld=ldOf(tr.querySelector('[data-f=item]').value),r=tr.querySelector('[data-f=rate]');
+        if(ld!=null)r.value=t.value.trim()===""?"":String(Math.round(ld+Number(t.value)))}
+      refresh();
+    });
     try{el("roi").value=localStorage.getItem("lwbPartyRateRoi")||""}catch(e){}
     el("roi").addEventListener("input",()=>{try{localStorage.setItem("lwbPartyRateRoi",el("roi").value)}catch(e){}refresh()});
     el("lines").addEventListener("click",e=>{
