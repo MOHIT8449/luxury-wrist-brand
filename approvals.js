@@ -79,7 +79,7 @@
          acts:[{t:"Open & approve",kind:"go",href:orderLink(o.id)}]}));
        return {items,amount:sum(items,i=>i.amount)};
      }},
-    {key:"change",icon:"✏",title:"Order change approval",sub:"Qty / rate / SKU change",roles:["admin"],page:"party-billing.html?tab=chg",
+    {key:"change",icon:"✏",title:"Order change approval",sub:"Qty / rate / SKU change",roles:["admin","manager"],page:"party-billing.html?tab=chg",
      async load(c){
        const rows=((await rpc(c,"lwb_bill_change_list",{p_days:1}))||[]).filter(r=>r.status==="WAITING");
        const K={QTY:"Qty",RATE:"Rate",SKU:"SKU",ADD:"Added",REMOVE:"Removed"};

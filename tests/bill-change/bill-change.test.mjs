@@ -75,6 +75,8 @@ CREATE FUNCTION public.lwb_stx_base() RETURNS TABLE(sku_id uuid,saleable_pcs num
 `);
 await db.exec(await sql('lwb_bill_change_stock_setup.sql'));
 await db.exec(await sql('lwb_bill_change_stock_setup.sql'));  // safe to run again
+await db.exec(await sql('lwb_bill_change_sales_head_setup.sql'));
+await db.exec(await sql('lwb_bill_change_sales_head_setup.sql'));  // safe to run again
 await db.exec('GRANT USAGE ON SCHEMA public,auth TO authenticated; GRANT SELECT,UPDATE ON orders TO authenticated');
 
 const today=(await db.query("select (now() at time zone 'Asia/Kolkata')::date::text d")).rows[0].d;
@@ -125,15 +127,18 @@ test('Accounts change -> waits for Admin, bell with the difference, nothing chan
  assert.equal(Number(r.diff),1650);ch=r.id;
  assert.deepEqual((await items(o)).map(i=>i.l),[40,10]);
  const bell=(await notes(o,'BILL_CHANGE_APPROVAL'));
- assert.deepEqual(bell.map(n=>n.role),['admin']);
+ assert.deepEqual(bell.map(n=>n.role).sort(),['admin','manager']);
  assert.match(bell[0].message,/PO-2001 · SHREE JAGDISH TRADERS · Rs 22000\.00 -> Rs 23650\.00 \(\+Rs 1650\.00\)/);
  const l=(await call('select public.lwb_bill_change_list(30) j'))[0].j;
  assert.equal(l.length,1);assert.equal(l[0].order_no,'PO-2001');
  assert.deepEqual(l[0].lines.map(x=>x.kind),[['QTY','RATE'],['QTY'],['ADD']]);
 });
 
-test('Only Admin decides; warehouse cannot even read',async()=>{
- await assert.rejects(decide(ch,true),/Only Admin/);
+test('Only Admin or Sales Head decides; warehouse cannot even read',async()=>{
+ await assert.rejects(decide(ch,true),/Only Admin or Sales Head/);
+ await as('manager');
+ assert.equal((await call('select public.lwb_bill_change_list(30) j'))[0].j.length,1);
+ assert.equal((await its(o)).order_no,'PO-2001');
  await as('warehouse');
  await assert.rejects(call('select public.lwb_bill_change_list(30)'),/Admin \/ Accounts/);
  await assert.rejects(req(o,[{sku_name:'MAAZA 600',qty:1,rate:1}]),/Only active Accounts or Admin/);
@@ -162,7 +167,7 @@ test('SKU replaced on a line; send back changes nothing',async()=>{
  // THUMS UP 250 line left out = removed; Maaza line becomes THUMS UP 250
  const c=(await call('select public.lwb_bill_change_list(30) j'))[0].j.find(x=>x.id===r.id);
  assert.deepEqual(c.lines.map(x=>[x.sku_old,x.sku,x.kind]).sort(),[['MAAZA 600','THUMS UP 250',['SKU']],['THUMS UP 250','THUMS UP 250',['REMOVE']]]);
- await as('admin');
+ await as('manager');  // Sales Head can send back too (16 Nov 2026)
  await decide(r.id,false,'talk to me');
  assert.deepEqual((await items(o)).map(i=>i.sku_name),['THUMS UP 250','THUMS UP 740','MAAZA 600']);
  assert.equal(Number((await inv(o)).a),23650);
