@@ -78,6 +78,14 @@
     .cv-hd span{font-weight:600;text-transform:uppercase}
     .cv-x{border:0;background:none;font-size:24px;line-height:1;cursor:pointer;color:var(--erp-muted);padding:0 4px}
     .cv-bd{overflow-y:auto;overflow-x:hidden;padding:8px 12px;display:grid;gap:8px}
+    .cv-hd small{display:block;font-size:11px;color:var(--erp-muted);font-weight:600;line-height:1.2}
+    .cv-tot.one{grid-template-columns:repeat(auto-fill,minmax(150px,1fr))}
+    .cv-why{background:#fff6e5;border:1px solid #f3d9a6;border-radius:6px;padding:5px 8px;font-size:12.5px;color:#6b3a00}
+    .cv-why ul{margin:2px 0 0;padding-left:16px}.cv-why li{overflow-wrap:anywhere}
+    .cv-t tfoot td{font-weight:700;border-top:2px solid var(--erp-line);border-bottom:0}
+    .cv-t col.c3{width:34%}
+    .cv-ft select,.cv-ft input{height:34px;border:1.5px solid var(--erp-line);border-radius:6px;padding:0 6px;font:inherit;font-size:13px;min-width:0;max-width:200px;background:#fff}
+    .cv-ft input{width:100px}
     .cv-load,.cv-note{color:var(--erp-muted);font-size:12px}
     .cv-info{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:2px 12px}
     .cv-info div{display:flex;gap:6px;min-width:0;font-size:12.5px}
@@ -107,15 +115,16 @@
     .cv-ft .sl-btn{height:34px;padding:0 14px;font-size:13px;display:inline-flex;align-items:center;justify-content:center;text-decoration:none}
     .cv-ft .ok{background:var(--erp-green);border-color:var(--erp-green)}
     .cv-ft .no{background:#fff;color:var(--erp-danger,#c62828);border-color:#f0c4c4}
-    .cv-ft a{margin-left:auto}
+    .cv-ft a:first-of-type{margin-left:auto}
     @media(max-width:700px){
       .cv-back{padding:0;align-items:end}
       .cv{max-height:94dvh;border-radius:12px 12px 0 0}
       .cv-bd{padding:8px 10px}
       .cv-tot b{font-size:13px}
+      .cv-info{grid-template-columns:repeat(2,minmax(0,1fr));gap:4px 10px}.cv-info div{display:grid;gap:0;line-height:1.25}.cv-info span{font-size:11px}.cv-info span:after{content:none}
       .cv-t col.c{width:44px}.cv-t col.c2{width:62px}
       .cv-t th,.cv-t td{padding:3px 3px;font-size:12px}
-      .cv-ft{padding:8px 10px}.cv-ft .sl-btn{flex:1 1 0;min-width:0;padding:0 6px}.cv-ft a{margin-left:0}
+      .cv-ft{padding:8px 10px}.cv-ft .sl-btn{flex:1 1 0;min-width:0;padding:0 6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.cv-ft a:first-of-type{margin-left:0}.cv-ft select,.cv-ft input{flex:1.2 1 0;max-width:none;width:auto}
     }
     @media(max-width:700px){
       .ap-cards{grid-template-columns:1fr 1fr;gap:6px}
@@ -185,7 +194,7 @@
       const field=!f?"":f.type==="select"?'<select data-f aria-label="'+esc(f.label)+'">'+f.options.map(o=>'<option value="'+esc(o.v)+'"'+(String(o.v)===String(f.value)?" selected":"")+'>'+esc(o.t)+'</option>').join("")+'</select>'
         :'<input data-f type="number" min="1" step="0.01" inputmode="decimal" value="'+esc(f.value)+'" aria-label="'+esc(f.label)+'" title="'+esc(f.label)+'">';
       const amt=i.amount==null?"":'<span class="ap-amt'+(i.signed&&i.amount<0?" neg":"")+'">'+(i.signed&&i.amount>0?"+":"")+inr(i.amount)+'</span>';
-      return '<div class="ap-row'+(i.view?" ap-click":"")+'" data-id="'+esc(i.id)+'"'+(i.view?' title="Tap to see the full change"':"")+'>'+
+      return '<div class="ap-row'+(i.detail?" ap-click":"")+'" data-id="'+esc(i.id)+'"'+(i.detail?' title="Tap to see all details"':"")+'>'+
         '<div class="ap-l1"><span class="ap-ref">'+esc(i.ref)+'</span><span class="ap-party">'+esc(i.party||"")+'</span>'+amt+'<span class="ap-when">'+esc(ago(i.when))+'</span></div>'+
         (i.lines&&i.lines.length?'<ul class="ap-lines">'+i.lines.map(l=>'<li>'+esc(l)+'</li>').join("")+'</ul>':"")+
         (i.meta&&i.meta.length?'<div class="ap-meta">'+i.meta.map(esc).join(" · ")+'</div>':"")+
@@ -216,7 +225,7 @@
       const s=secs.find(x=>x.key===cur);if(!s)return;
       const row=btn.closest(".ap-row"),i=s.items.find(x=>String(x.id)===row.dataset.id);if(!i)return;
       const a=i.acts[Number(btn.dataset.a)];if(!a)return;
-      if(a.view&&i.view){openChange(i);return}
+      if(a.view&&i.detail){openDetail(i);return}
       if(!a.run)return;
       const fv=row.querySelector("[data-f]")?row.querySelector("[data-f]").value:null;
       let why=null;
@@ -225,37 +234,48 @@
       if(a.confirm&&!await confirm(a.confirm,{ok:a.t.replace(/^\W+\s*/,"")}))return;
       run(btn,()=>a.run(client,i,fv,why));
     }
-    // Order change popup (Mohit, 16 Nov 2026): the whole change before Approve — who sent it, why, every item
-    // given -> now with + / −, removed, added, replaced, rate change, and the amount before -> after.
-    async function openChange(i){
+    // Details popup for every approval (Mohit, 16 Nov 2026): tap a row (or Approve on PO / stock items) to see
+    // everything before the OK — order change: item-wise before -> after; PO approvals: all PO items with qty,
+    // rate, amount and the items that need a check; bank / rent / stock / party: every field. Buttons in one row.
+    async function openDetail(i){
       if(document.querySelector(".cv-back"))return;
-      const r=i.view,s=secs.find(x=>x.key==="change");
-      const ok=i.acts.find(a=>a.kind==="ok"),no=i.acts.find(a=>a.kind==="no");
+      const s=secs.find(x=>x.key===cur)||{},d=i.detail||{},r=i.view;
+      const f=i.field;
+      const field=!f?"":f.type==="select"?'<select data-f aria-label="'+esc(f.label)+'">'+f.options.map(o=>'<option value="'+esc(o.v)+'"'+(String(o.v)===String(f.value)?" selected":"")+'>'+esc(o.t)+'</option>').join("")+'</select>'
+        :'<input data-f type="number" min="1" step="0.01" inputmode="decimal" value="'+esc(f.value)+'" aria-label="'+esc(f.label)+'" title="'+esc(f.label)+'">';
+      const acts=i.acts.filter(a=>!(a.kind==="view")),link=i.page||(i.orderId&&s.key!=="bank"&&s.key!=="rent"?"warehouse-orders.html?order="+encodeURIComponent(i.orderId):"");
       const back=document.createElement("div");back.className="cv-back";
-      back.innerHTML='<div class="cv" role="dialog" aria-modal="true" aria-label="Order change '+esc(r.order_no)+'">'+
-        '<div class="cv-hd"><div><b>'+esc(r.order_no)+'</b> <span>'+esc(r.party||"")+'</span></div><button type="button" class="cv-x" aria-label="Close">×</button></div>'+
-        '<div class="cv-bd"><div class="cv-load">Loading the PO items…</div></div>'+
-        '<div class="cv-ft"><button type="button" class="sl-btn ok" data-cv="ok">✓ Approve</button><button type="button" class="sl-btn no" data-cv="no">↩ Send back</button>'+
-        '<a class="sl-btn ghost" href="'+esc(i.page||s&&s.page||"party-billing.html?tab=chg")+'">Full PO</a></div></div>';
+      back.innerHTML='<div class="cv" role="dialog" aria-modal="true" aria-label="'+esc(i.ref)+'">'+
+        '<div class="cv-hd"><div><small>'+esc(s.title||"")+'</small><b>'+esc(i.ref)+'</b> <span>'+esc(i.party||"")+'</span></div><button type="button" class="cv-x" aria-label="Close">×</button></div>'+
+        '<div class="cv-bd"><div class="cv-load">Loading the details…</div></div>'+
+        '<div class="cv-ft">'+field+acts.map((a,n)=>a.href?'<a class="sl-btn ghost" href="'+esc(a.href)+'">'+esc(a.t)+'</a>':'<button type="button" class="sl-btn '+a.kind+'" data-cv="'+i.acts.indexOf(a)+'">'+esc(a.t)+'</button>').join("")+
+        (link&&!acts.some(a=>a.href)?'<a class="sl-btn ghost cv-go" href="'+esc(link)+'">'+(d.kind==="change"?"Full PO":"Open PO")+'</a>':"")+'</div></div>';
       document.body.append(back);document.body.classList.add("cv-open");
       const close=()=>{back.remove();document.body.classList.remove("cv-open");document.removeEventListener("keydown",key,true)};
       const key=e=>{if(e.key==="Escape"&&!document.querySelector(".erp-dlg-back")){e.preventDefault();e.stopPropagation();close()}};
       document.addEventListener("keydown",key,true);
       back.addEventListener("click",e=>{if(e.target===back||e.target.closest(".cv-x"))close()});
       const bd=back.querySelector(".cv-bd");
-      let po=null;
-      try{const {data,error}=await client.rpc("lwb_bill_change_items",{p_order_id:r.order_id});if(!error)po=data}catch(e){}
-      bd.innerHTML=A.changeView(r,po)+(po?"":'<div class="cv-note">Only the changed items are shown (the full PO could not be read).</div>');
-      const btns=back.querySelectorAll(".cv-ft button");
+      if(d.kind==="change"){
+        let po=null;
+        try{const {data,error}=await client.rpc("lwb_bill_change_items",{p_order_id:r.order_id});if(!error)po=data}catch(e){}
+        bd.innerHTML=A.changeView(r,po)+(po?"":'<div class="cv-note">Only the changed items are shown (the full PO could not be read).</div>');
+      }else{
+        let po=null;
+        if(d.po&&!d.rows){try{po=await A.poData(client,d.po)}catch(e){}}
+        bd.innerHTML=A.detailView(i,po)+(d.po&&!d.rows&&!po?'<div class="cv-note">The PO items could not be read. Open the PO to see them.</div>':"");
+      }
+      const btns=back.querySelectorAll(".cv-ft button,.cv-ft select,.cv-ft input");
       const go=async(fn,msg)=>{if(busy)return;busy=true;btns.forEach(b=>b.disabled=true);
         try{await fn();close();ERPShell.toast(msg);await load()}
         catch(e){await alert(errText(e));btns.forEach(b=>b.disabled=false)}finally{busy=false}};
-      back.querySelector('[data-cv="ok"]').onclick=()=>go(()=>ok.run(client,i,null,null),"Approved. PO and bill amount changed.");
-      back.querySelector('[data-cv="no"]').onclick=async()=>{
-        let why=await prompt(no.ask,"",{title:"Send back",placeholder:"Write the reason"});if(why==null)return;
-        if(!why.trim()){await alert("Write the reason first.");return}
-        go(()=>no.run(client,i,null,why.trim()),"Sent back to "+(r.by||"Accounts")+".");
-      };
+      back.querySelectorAll(".cv-ft button[data-cv]").forEach(b=>b.onclick=async()=>{
+        const a=i.acts[Number(b.dataset.cv)],fv=back.querySelector(".cv-ft [data-f]")?back.querySelector(".cv-ft [data-f]").value:null;
+        let why=null;
+        if(a.ask){why=await prompt(a.ask,"",{title:a.t.replace(/^\W+\s*/,""),placeholder:"Write the reason"});if(why==null)return;
+          if(!why.trim()){await alert("Write the reason first.");return}why=why.trim()}
+        go(()=>a.run(client,i,fv,why),a.kind==="ok"?"Done.":"Sent back.");
+      });
     }
     function pick(k,scroll){
       cur=k;bankPick="";try{history.replaceState(null,"","#"+k)}catch(e){}
@@ -279,7 +299,7 @@
           if(s.bulk.confirm&&!await confirm(s.bulk.confirm,{ok:"Yes"}))return;run(e.target,()=>s.bulk.run(client));return}
         const b=e.target.closest("button[data-a]");if(b){act(b);return}
         const r=e.target.closest(".ap-click");
-        if(r&&!e.target.closest("a,button,select,input")){const s=secs.find(x=>x.key===cur),i=s&&s.items.find(x=>String(x.id)===r.dataset.id);if(i&&i.view)openChange(i)}
+        if(r&&!e.target.closest("a,button,select,input")){const s=secs.find(x=>x.key===cur),i=s&&s.items.find(x=>String(x.id)===r.dataset.id);if(i&&i.detail)openDetail(i)}
       });
       el("refresh").onclick=load;
       el("fBrand").onchange=applyFilter;el("fBy").onchange=applyFilter;
