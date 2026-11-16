@@ -75,6 +75,33 @@
     .pb-dbx button{width:40px;height:40px;border:1.5px solid var(--erp-line);background:#fff;border-radius:8px;cursor:pointer;font-size:17px}
     .pb-dbx input[type=date]{position:absolute;opacity:0;pointer-events:none;width:1px;height:1px;right:0;bottom:0}
     .pb-t td small.ph-only{display:none}
+    /* Bills to make as a list, like the PO List: date chips + from/to, one row per PO, tap a row to make its bill (16 Nov 2026) */
+    .mk-bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:0 0 8px}
+    .mk-chips{display:inline-flex;background:#fff;border:1px solid var(--erp-line);border-radius:9px;padding:3px;gap:2px}
+    .mk-chips button{border:0;background:transparent;color:#5d6976;font:inherit;font-size:13px;font-weight:700;padding:5px 10px;border-radius:7px;cursor:pointer;white-space:nowrap}
+    .mk-chips button:hover{background:#f4f5f7;color:var(--erp-ink)}.mk-chips button.on{background:#c8102e;color:#fff}
+    .mk-chips button i{font-style:normal;font-weight:600;opacity:.75;margin-left:3px;font-size:12px}
+    .mk-dates{display:inline-flex;align-items:center;gap:4px;background:#fff;border:1px solid var(--erp-line);border-radius:9px;padding:2px 6px}
+    .mk-dates.on{border-color:#c8102e}.mk-dates span{font-size:12px;color:#6b7785}
+    .mk-dates input{border:0;font:inherit;font-size:13px;padding:4px 2px;background:transparent;color:var(--erp-ink);min-width:0}
+    .mk-sum{margin-left:auto;font-size:13px;color:#4b5763;white-space:nowrap}.mk-sum b{color:var(--erp-ink)}
+    .pb-t.mk td,.pb-t.mk th{padding:7px 8px;vertical-align:middle}
+    .pb-t.mk td .tag{font-size:11px;padding:1px 7px;margin-left:2px}
+    .pb-t.mk td.w{max-width:0;width:44%}.pb-t.mk td.w small{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .pb-t.mk tr.sub>td{padding:6px 8px 10px}.pb-t.mk tr.sub .pb-bill{padding:8px 10px}
+    .pb-t.mk .go{min-width:86px}
+    @media(max-width:600px){
+      .mk-chips{display:flex;width:100%}.mk-chips button{flex:1 1 0;padding:7px 2px;font-size:12px}.mk-chips button i{display:none}
+      .mk-dates{flex:1 1 auto;justify-content:space-between}.mk-dates input{flex:1 1 0;font-size:14px}
+      .mk-sum{margin-left:0;flex:0 0 auto}
+      .pb-t.mk,.pb-t.mk tbody{display:block}.pb-t.mk thead{display:none}
+      .pb-t.mk tfoot{display:block}.pb-t.mk tfoot tr{display:flex;justify-content:space-between}.pb-t.mk tfoot td{border:0}.pb-t.mk tfoot td.hide-ph{display:none}
+      .pb-t.mk tr.pr{display:grid;grid-template-columns:minmax(0,1fr) auto;column-gap:8px;border-bottom:1px solid var(--erp-line);padding:6px 0}
+      .pb-t.mk tr.pr td{border:0;padding:1px 4px}.pb-t.mk tr.pr td.hide-ph{display:none}
+      .pb-t.mk tr.pr td.c1{grid-column:1;grid-row:1}.pb-t.mk tr.pr td.c4{grid-column:2;grid-row:1}
+      .pb-t.mk tr.pr td.w{grid-column:1;grid-row:2;max-width:none;width:auto}.pb-t.mk tr.pr td.c5{grid-column:2;grid-row:2}
+      .pb-t.mk td small.ph-only{display:inline;margin-left:4px}
+      .pb-t.mk .go{height:30px;min-width:78px;padding:0 8px}.pb-t.mk tr.sub,.pb-t.mk tr.sub>td{display:block}.pb-t.mk tr.sub>td{padding:0 0 8px}}
     .lnk{border:0;background:none;color:#00434d;font:inherit;font-weight:600;cursor:pointer;padding:0;font-size:13px}
     /* groups */
     .pb-gform{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.4fr) auto;gap:8px;align-items:end;margin:0 0 12px;padding:12px;background:#f6f8fa;border-radius:10px}
@@ -168,6 +195,8 @@
     const MODE={CASH:"Cash",UPI:"UPI",BANK:"Bank",CHEQUE:"Cheque"};
     const DELIVERY={DELIVERED:["t-grn","Delivered"],PARTIAL:["t-amb","Part delivered"],NOT_DELIVERED:["t-red","Not delivered"]};
     let taxBill=false,marks=new Map(),fb="",info=null,tab="make",open=new Set(),want=new URLSearchParams(location.search).get("order"),sheet=[],admin=false,changes=[],wantChg=new URLSearchParams(location.search).get("change");
+    // Bills to make filter: date range on the loaded date (approved date for POs not loaded yet), rows opened to make the bill
+    let mkRange="all",mkFrom="",mkTo="",mkOpen=new Set();
     let led=null,ledParty=new URLSearchParams(location.search).get("party")||"",ledFrom="",ledTo="";
     const toast=t=>ERPShell.toast?ERPShell.toast(t):say(t,false,true);
     function say(t,bad,ok){el("msg").hidden=!t;el("msg").textContent=t||"";el("msg").className="pb-msg"+(bad?" bad":ok?" ok":"")}
@@ -204,8 +233,10 @@
     }
     const orders=()=>(info.raw.orders||[]).filter(o=>inB(o.company_id));
     // no Tally bill yet: loaded (loading signed) first, then approved POs not loaded yet (quantity is final from
-    // approval, so the bill can be made while the party waits). Old delivered POs from before this screen are left out.
-    const toMake=()=>orders().filter(o=>!o.invoice_no&&(["loaded","invoiced"].includes(String(o.status).toLowerCase())||marks.has(o.order_id)||days(o.dispatch_date||o.order_date)<=30)).concat((info.early||[]).filter(o=>!fb));
+    // approval, so the bill can be made while the party waits). Old delivered POs from before this screen are left out:
+    // a fixed start date, not "last 30 days", so a delivered PO without bill never drops off the list (16 Nov 2026, Accounts).
+    const MAKE_FROM="2026-09-30";
+    const toMake=()=>orders().filter(o=>!o.invoice_no&&(["loaded","invoiced"].includes(String(o.status).toLowerCase())||marks.has(o.order_id)||String(o.dispatch_date||o.order_date||"").slice(0,10)>=MAKE_FROM)).concat((info.early||[]).filter(o=>!fb));
     const membersOf=p=>{const x=info.parties.get(key(p));return x?x.members:[]};
     const match=(q,...v)=>!q||v.some(x=>String(x==null?"":x).toLowerCase().includes(q));
 
@@ -251,10 +282,10 @@
       el("cMake").hidden=!make.length;el("cMake").textContent=make.length;
       const nw=changes.filter(c=>c.status==="WAITING").length;el("cChg").hidden=!nw;el("cChg").textContent=nw;
       el("tabs").querySelectorAll("[data-t]").forEach(b=>b.setAttribute("aria-pressed",String(b.dataset.t===tab)));
-      el("xl").hidden=tab==="make";el("q").hidden=tab==="led";
+      el("xl").hidden=false;el("q").hidden=tab==="led";
       ({make:renderMake,due:renderDue,led:renderLed,pay:renderPay,ret:renderRet,grp:renderGroups,chg:renderChg})[tab]();
       wireChg(el("body"));
-      el("note").textContent=tab==="make"?"Every approved PO comes here at once (its quantity is final), so the bill can be made before loading; loaded ones show their loaded value. Enter one line per Tally bill: the name the bill is made in, its invoice no. and amount. Saved bills go to To collect on the main party at once, and show in the Accounts Dashboard Cash In.":
+      el("note").textContent=tab==="make"?"Pick dates (loaded date; approved date if not loaded yet) or search a party to see its full list; tap a row or Make bill to enter its Tally bill. Every approved PO comes here at once (its quantity is final), so the bill can be made before loading; loaded ones show their loaded value. Enter one line per Tally bill: the name the bill is made in, its invoice no. and amount. Saved bills go to To collect on the main party at once, and show in the Accounts Dashboard Cash In.":
         tab==="due"&&!fb&&BR().length?"All brands: every brand in its own column. Money of one brand never goes to another brand's bill; Total is only to look at. Choose a brand above to see its bills, advance and opening, and to adjust.":
         tab==="due"?"To collect = Tally bill − credit notes (a return on a bill saves one) − driver money − payments split to it, on the main party (all its bill names together), minus money paid earlier and not yet set against a bill, minus goods returned without a bill. One balance per party: red = to collect, green = advance. Party Ledger shows the same on the main party.":
         tab==="led"?"Party ledger on the main party (all its bill names together): opening balance as on the From date, then every bill, credit note, return and payment with the running balance. Tap a row to see that bill or payment in detail.":
@@ -269,38 +300,74 @@
     function wireDate(box){const t=box.querySelector(".dt"),p=box.querySelector("input[type=date]");
       box.querySelector("button").onclick=()=>{try{p.showPicker()}catch(_){p.click()}};p.onchange=()=>{t.value=dmy(p.value)};
       t.oninput=()=>{const d=t.value.replace(/\D/g,"");if(/^\d{8}$/.test(d)&&!t.value.includes("/"))t.value=d.slice(0,2)+"/"+d.slice(2,4)+"/"+d.slice(4)}}
+    // the date a bill waits from: loaded date, or the approved date while not loaded yet
+    const mkDate=o=>String((o.early?(o.approved_at||o.order_date):(o.dispatch_date||o.order_date))||"").slice(0,10);
+    const addDays=(iso,n)=>new Date(Date.parse(iso+"T12:00:00Z")+n*864e5).toISOString().slice(0,10);
+    const MK_R=[["all","All"],["today","Today"],["yest","Yesterday"],["7","7 days"],["month","This month"]];
+    function mkSpan(r){const t=info.today;
+      return r==="today"?[t,t]:r==="yest"?[addDays(t,-1),addDays(t,-1)]:r==="7"?[addDays(t,-6),t]:r==="month"?[t.slice(0,8)+"01",t]:
+        r==="custom"?[mkFrom||"",mkTo||"9999-12-31"]:["","9999-12-31"]}
+    const inSpan=(o,[f,t])=>{const d=mkDate(o);return d>=f&&d<=t};
+    function billForm(o){
+      const names=[...new Set([o.party,o.parent,...membersOf(o.parent)])];
+      // bill names used before on this main party (kept on the bills only, not as parties)
+      const used=[...new Set(orders().filter(x=>key(x.parent)===key(o.parent)).flatMap(x=>(x.bills||[]).map(b=>String(b.firm||"").trim())).filter(Boolean))].filter(n=>!names.some(m=>key(m)===key(n)));
+      return `<datalist id="dl-${esc(o.order_id)}">${names.concat(used).map(n=>`<option value="${esc(n)}">`).join("")}</datalist>
+          <div class="pb-lines"></div>
+          <div class="pb-foot mk"><button type="button" class="lnk" data-add>+ <span class="lg">Another </span>bill</button>${dateBox(info.today)}<button type="button" class="pb-btn sm" data-it="${esc(o.order_id)}" title="See items, change qty / rate / SKU (goes to Admin)">ⓘ Items<span class="lg"> / Edit</span></button>${taxBill?`<a class="pb-btn sm" href="tax-invoice.html?order=${encodeURIComponent(o.order_id)}" title="Make and print the tax invoice (Tally layout)">🧾<span class="lg"> Tax bill</span></a>`:""}<span class="tot"></span><button type="button" class="pb-btn pri" data-save>Save<span class="lg"> bill</span></button></div>`}
+    function wireBill(card,o){
+      const lines=card.querySelector(".pb-lines"),tot=card.querySelector(".tot");
+      const total=()=>{const l=[...lines.children],s=l.reduce((a,r)=>a+num(r.querySelector(".am").value),0);
+        tot.innerHTML=s?(l.length>1?l.length+" bills · ":"")+"total <b>"+rs(s)+"</b>"+(o.erp_amount&&Math.abs(s-(o.erp_amount-retOn(o.order_id)))>1?` <small>(${o.early?"PO":"loaded"} ${rs(r2(o.erp_amount-retOn(o.order_id)))}${retOn(o.order_id)>0.5?" after return":""})</small>`:""):""};
+      const add=(firm)=>{const r=document.createElement("div");r.className="pb-line";
+        r.innerHTML=`<input class="fm" list="dl-${esc(o.order_id)}" maxlength="200" placeholder="Bill in name" aria-label="Bill made in name"><input class="no" maxlength="100" placeholder="Invoice no." aria-label="Tally invoice no."><input class="am" inputmode="decimal" placeholder="Amount ₹" aria-label="Bill amount"><button type="button" class="x" aria-label="Remove">×</button>`;
+        r.querySelector(".fm").value=firm==null?o.party:firm;
+        r.querySelector(".am").oninput=total;
+        r.querySelector(".x").onclick=()=>{if(lines.children.length>1)r.remove();else r.querySelectorAll(".no,.am").forEach(i=>i.value="");total()};
+        r.querySelectorAll("input").forEach(i=>i.onkeydown=e=>{if(e.key==="Enter"){e.preventDefault();card.querySelector("[data-save]").click()}});
+        lines.appendChild(r);return r};
+      add(null);
+      card.querySelector("[data-add]").onclick=()=>add("").querySelector(".fm").focus();
+      wireDate(card.querySelector(".pb-dbx"));
+      card.querySelector("[data-save]").onclick=e=>saveBill(o,card,e.currentTarget);
+      wireChg(card);
+    }
     function renderMake(){
       const q=el("q").value.trim().toLowerCase();
-      const list=toMake().filter(o=>match(q,o.order_no,o.party,o.parent,...membersOf(o.parent)));
-      if(!list.length){el("body").innerHTML='<div class="pb-empty">✓ No approved PO is waiting for a Tally bill.</div>';return}
-      el("body").innerHTML='<datalist id="dlAll"></datalist><div class="pb-bills">'+list.map(o=>{
-        const d=DELIVERY[String(o.delivery||"").toUpperCase()],grp=key(o.parent)!==key(o.party);
-        const names=[...new Set([o.party,o.parent,...membersOf(o.parent)])];
-        // bill names used before on this main party (kept on the bills only, not as parties)
-        const used=[...new Set(orders().filter(x=>key(x.parent)===key(o.parent)).flatMap(x=>(x.bills||[]).map(b=>String(b.firm||"").trim())).filter(Boolean))].filter(n=>!names.some(m=>key(m)===key(n)));
-        return `<div class="pb-bill${o.order_id===want?" hl":""}" data-o="${esc(o.order_id)}">
-          <div class="hd"><span><b class="pb-po" data-drill-order="${esc(o.order_id)}" data-drill-no="${esc(o.order_no)}">${esc(o.order_no)}</b> ${o.early?`<small>approved ${dmy(String(o.approved_at||o.order_date||"").slice(0,10))}</small> <span class="tag t-amb">${o.vehicle_no?"Vehicle "+esc(o.vehicle_no)+" · not loaded yet":"Not loaded yet"}</span>`:`<small>loaded ${dmy(o.dispatch_date||o.order_date)}</small>`} ${d?`<span class="tag ${d[0]}">${d[1]}</span>`:""}${markTag(o.order_id,!!d)}${waitTag(o.order_id)}</span><span>${o.early?"PO value ("+esc(Number(o.qty||0).toLocaleString("en-IN"))+" CS)":"Loaded value"} <b>${rs(o.erp_amount)}</b>${retOn(o.order_id)>0.5?`<small> · return <b class="due">− ${rs(retOn(o.order_id))}</b> = bill <b>${rs(r2(o.erp_amount-retOn(o.order_id)))}</b></small>`:""}</span></div>
-          <div class="who">${esc(o.party)}${grp?` <span class="tag t-blu">under ${esc(o.parent)}</span>`:""}${names.length>1?`<small style="color:var(--erp-muted)"> · bill names: ${esc(names.filter(n=>key(n)!==key(o.party)).join(", "))}</small>`:""}</div>
-          <datalist id="dl-${esc(o.order_id)}">${names.concat(used).map(n=>`<option value="${esc(n)}">`).join("")}</datalist>
-          <div class="pb-lines"></div>
-          <div class="pb-foot mk"><button type="button" class="lnk" data-add>+ <span class="lg">Another </span>bill</button>${dateBox(info.today)}<button type="button" class="pb-btn sm" data-it="${esc(o.order_id)}" title="See items, change qty / rate / SKU (goes to Admin)">ⓘ Items<span class="lg"> / Edit</span></button>${taxBill?`<a class="pb-btn sm" href="tax-invoice.html?order=${encodeURIComponent(o.order_id)}" title="Make and print the tax invoice (Tally layout)">🧾<span class="lg"> Tax bill</span></a>`:""}<span class="tot"></span><button type="button" class="pb-btn pri" data-save>Save<span class="lg"> bill</span></button></div></div>`}).join("")+'</div>';
-      el("body").querySelectorAll(".pb-bill").forEach(card=>{
-        const o=list.find(x=>x.order_id===card.dataset.o),lines=card.querySelector(".pb-lines"),tot=card.querySelector(".tot");
-        const total=()=>{const l=[...lines.children],s=l.reduce((a,r)=>a+num(r.querySelector(".am").value),0);
-          tot.innerHTML=s?(l.length>1?l.length+" bills · ":"")+"total <b>"+rs(s)+"</b>"+(o.erp_amount&&Math.abs(s-(o.erp_amount-retOn(o.order_id)))>1?` <small>(${o.early?"PO":"loaded"} ${rs(r2(o.erp_amount-retOn(o.order_id)))}${retOn(o.order_id)>0.5?" after return":""})</small>`:""):""};
-        const add=(firm)=>{const r=document.createElement("div");r.className="pb-line";
-          r.innerHTML=`<input class="fm" list="dl-${esc(o.order_id)}" maxlength="200" placeholder="Bill in name" aria-label="Bill made in name"><input class="no" maxlength="100" placeholder="Invoice no." aria-label="Tally invoice no."><input class="am" inputmode="decimal" placeholder="Amount ₹" aria-label="Bill amount"><button type="button" class="x" aria-label="Remove">×</button>`;
-          r.querySelector(".fm").value=firm==null?o.party:firm;
-          r.querySelector(".am").oninput=total;
-          r.querySelector(".x").onclick=()=>{if(lines.children.length>1)r.remove();else r.querySelectorAll(".no,.am").forEach(i=>i.value="");total()};
-          r.querySelectorAll("input").forEach(i=>i.onkeydown=e=>{if(e.key==="Enter"){e.preventDefault();card.querySelector("[data-save]").click()}});
-          lines.appendChild(r);return r};
-        add(null);
-        card.querySelector("[data-add]").onclick=()=>add("").querySelector(".fm").focus();
-        wireDate(card.querySelector(".pb-dbx"));
-        card.querySelector("[data-save]").onclick=e=>saveBill(o,card,e.currentTarget);
-      });
-      if(want){const c=el("body").querySelector('[data-o="'+CSS.escape(want)+'"]');if(c){c.scrollIntoView({block:"center"});c.querySelector(".no").focus()}want=null}
+      if(want){mkRange="all";mkOpen.add(want)}
+      const all=toMake().filter(o=>match(q,o.order_no,o.party,o.parent,...membersOf(o.parent)));
+      const span=mkSpan(mkRange),list=all.filter(o=>inSpan(o,span));
+      const sum=list.reduce((a,o)=>a+Number(o.erp_amount||0),0);
+      sheet=[["PO No.","Date","Stage","Party","Main party","Value ₹"],...list.map(o=>[o.order_no,dmy(mkDate(o)),o.early?"Approved, not loaded":"Loaded",o.party,o.parent,r2(o.erp_amount)])];
+      const bar=`<div class="mk-bar"><div class="mk-chips" role="group" aria-label="Date">${MK_R.map(([k,t])=>`<button type="button" data-mr="${k}"${mkRange===k?' class="on"':""}>${t}<i>${k==="all"?all.length:all.filter(o=>inSpan(o,mkSpan(k))).length}</i></button>`).join("")}</div>
+        <label class="mk-dates${mkRange==="custom"?" on":""}" title="Custom dates (loaded date)"><input type="date" id="mkF" value="${mkRange==="custom"?mkFrom:span[0]}" max="${info.today}" aria-label="From date"><span>to</span><input type="date" id="mkT" value="${mkRange==="custom"?mkTo:span[1]==="9999-12-31"?"":span[1]}" max="${info.today}" aria-label="To date"></label>
+        <span class="mk-sum"><b>${list.length}</b> bill${list.length===1?"":"s"} · <b>${rs(sum)}</b></span></div>`;
+      const rows=list.map(o=>{
+        const d=DELIVERY[String(o.delivery||"").toUpperCase()],grp=key(o.parent)!==key(o.party),isOpen=mkOpen.has(o.order_id),ret=retOn(o.order_id);
+        const names=[...new Set([o.parent,...membersOf(o.parent)])].filter(n=>key(n)!==key(o.party));
+        return `<tr class="pr${isOpen?" open":""}" data-o="${esc(o.order_id)}">
+          <td class="c1"><b class="pb-po" data-drill-order="${esc(o.order_id)}" data-drill-no="${esc(o.order_no)}">${esc(o.order_no)}</b><small class="ph-only">${dmy(mkDate(o))}</small>${o.early?` <span class="tag t-amb">${o.vehicle_no?"Vehicle "+esc(o.vehicle_no)+" · not loaded":"Not loaded yet"}</span>`:""}${d?` <span class="tag ${d[0]}">${d[1]}</span>`:""}${markTag(o.order_id,!!d)}${waitTag(o.order_id)}</td>
+          <td class="hide-ph" style="white-space:nowrap" title="${o.early?"Approved date":"Loaded date"}">${dmy(mkDate(o))}</td>
+          <td class="w"><b>${esc(o.party)}</b>${grp?` <span class="tag t-blu">under ${esc(o.parent)}</span>`:""}${names.length?`<small title="${esc(names.join(", "))}">bill names: ${esc(names.join(", "))}</small>`:""}</td>
+          <td class="n c4"><b>${rs(o.erp_amount)}</b>${o.early?`<small>PO ${esc(Number(o.qty||0).toLocaleString("en-IN"))} CS</small>`:""}${ret>0.5?`<small>return <b class="due">− ${rs(ret)}</b> = ${rs(r2(o.erp_amount-ret))}</small>`:""}</td>
+          <td class="n c5"><button type="button" class="pb-btn sm ${isOpen?"":"pri "}go" data-go>${isOpen?"Close":"Make bill"}</button></td></tr>`}).join("");
+      el("body").innerHTML=bar+(list.length?`<div class="pb-scroll"><table class="pb-t mk"><thead><tr><th>PO No.</th><th class="hide-ph">Loaded</th><th>Party</th><th class="n">Value</th><th></th></tr></thead><tbody>${rows}</tbody>
+          <tfoot><tr><td>${list.length} bill${list.length===1?"":"s"} to make</td><td class="hide-ph"></td><td class="hide-ph"></td><td class="n">${rs(sum)}</td><td class="hide-ph"></td></tr></tfoot></table></div>`:
+        all.length?`<div class="pb-empty">No bill to make in these dates. <button type="button" class="lnk" data-mr="all">Show all ${all.length}</button></div>`:
+        `<div class="pb-empty">${q?"No bill to make for “"+esc(el("q").value.trim())+"”.":"✓ No approved PO is waiting for a Tally bill."}</div>`);
+      el("body").querySelectorAll("[data-mr]").forEach(b=>b.onclick=()=>{mkRange=b.dataset.mr;renderMake()});
+      const dates=()=>{let f=el("mkF").value,t=el("mkT").value;if(f&&t&&f>t)[f,t]=[t,f];mkFrom=f;mkTo=t;mkRange=f||t?"custom":"all";renderMake()};
+      el("mkF").onchange=dates;el("mkT").onchange=dates;
+      // tap a row (or Make bill) to open the bill entry under it; others stay as typed
+      const toggle=tr=>{const id=tr.dataset.o,o=list.find(x=>x.order_id===id),btn=tr.querySelector("[data-go]"),nx=tr.nextElementSibling;
+        if(nx&&nx.classList.contains("sub")){nx.remove();mkOpen.delete(id);tr.classList.remove("open");btn.textContent="Make bill";btn.classList.add("pri");return null}
+        const sub=document.createElement("tr");sub.className="sub";sub.innerHTML=`<td colspan="5"><div class="pb-bill" data-o="${esc(id)}">${billForm(o)}</div></td>`;
+        tr.after(sub);mkOpen.add(id);tr.classList.add("open");btn.textContent="Close";btn.classList.remove("pri");
+        const card=sub.querySelector(".pb-bill");wireBill(card,o);return card};
+      el("body").querySelectorAll("tr.pr").forEach(tr=>{
+        tr.onclick=e=>{if(e.target.closest("[data-drill-order],button:not([data-go]),a,input"))return;const c=toggle(tr);if(c)c.querySelector(".no").focus()};
+        if(mkOpen.has(tr.dataset.o)){tr.classList.remove("open");toggle(tr)}});
+      if(want){const tr=el("body").querySelector('tr.pr[data-o="'+CSS.escape(want)+'"]');if(tr){tr.scrollIntoView({block:"center"});const n=tr.nextElementSibling&&tr.nextElementSibling.querySelector(".no");if(n)n.focus()}want=null}
     }
     async function saveBill(o,card,btn){
       const lines=[...card.querySelectorAll(".pb-line")].map(r=>({firm:r.querySelector(".fm").value.trim()||o.party,no:r.querySelector(".no").value.trim(),amount:num(r.querySelector(".am").value)})).filter(l=>l.no||l.amount);
@@ -583,7 +650,7 @@
     el("reload").onclick=load;
     el("payBtn").onclick=()=>{if(info)payNow("")};
     el("retBtn").onclick=()=>{if(info)newReturn(null,"")};
-    el("xl").onclick=()=>LWBExcel.write("billing-"+tab+"-"+info.today,[{name:{due:"To collect",led:"Ledger",pay:"Payments",ret:"Returns",grp:"Party groups",chg:"PO changes"}[tab]||"Sheet",rows:sheet.length?sheet:[["Nothing"]]}]).catch(e=>say(e.message,true));
+    el("xl").onclick=()=>LWBExcel.write("billing-"+tab+"-"+info.today,[{name:{make:"Bills to make",due:"To collect",led:"Ledger",pay:"Payments",ret:"Returns",grp:"Party groups",chg:"PO changes"}[tab]||"Sheet",rows:sheet.length?sheet:[["Nothing"]]}]).catch(e=>say(e.message,true));
 
     (async()=>{
       const {data:{session}}=await client.auth.getSession();
