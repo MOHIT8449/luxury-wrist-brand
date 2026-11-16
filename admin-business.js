@@ -10,7 +10,9 @@
                   and GST / Tax paid (tax collected from parties, passed on). NOT_EXPENSE below.
    Every number opens a popup list of what makes it (tap / Enter; erp-list.js), Mohit 4 Nov 2026.
      Stock      = lwb_po_stock godown cases × landing.  Cash + Bank = closing cash + bank balances.
-   Range switch Today / 7 Days / 30 Days / This Month is kept per browser (localStorage lwbBizRange). */
+   Range switch Today / Yesterday / 7 Days / 30 Days / This Month / Custom is kept per browser (localStorage lwbBizRange;
+   Custom From–To in lwbBizFrom / lwbBizTo). Custom: picking From shows that one day (To = From), then pick To for a range
+   (Mohit, 16 Nov 2026). */
 (function(){
   if(window.LWBBizDash)return;
   const esc=v=>String(v==null?"":v).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -31,9 +33,22 @@
   const safe=p=>Promise.resolve(p).then(r=>r&&r.error?null:r?("data" in r?r.data:r):null).catch(()=>null);
   const sum=(a,f)=>a.reduce((n,x)=>n+num(f(x)),0);
   const pctTxt=(a,b)=>b>0?(Math.round(a/b*1000)/10)+"%":"—";
-  const RANGES=[["today","Today"],["7","7 Days"],["30","30 Days"],["month","This Month"]];
+  // [key, label, short label for phone]
+  const RANGES=[["today","Today","Today"],["yday","Yesterday","Yday"],["7","7 Days","7D"],["30","30 Days","30D"],["month","This Month","Month"],["custom","Custom","Custom"]];
   const getRange=()=>{try{const v=localStorage.getItem("lwbBizRange");if(RANGES.some(r=>r[0]===v))return v}catch(e){}return "month"};
   const setRange=v=>{try{localStorage.setItem("lwbBizRange",v)}catch(e){}};
+  const isDay=v=>/^\d{4}-\d{2}-\d{2}$/.test(String(v||""))&&v>="2020-01-01";
+  const MAXDAYS=366;
+  function getCustom(){
+    const t=today();let f="",to="";
+    try{f=localStorage.getItem("lwbBizFrom")||"";to=localStorage.getItem("lwbBizTo")||""}catch(e){}
+    if(!isDay(f)||f>t)f=shift(t,-1);
+    if(!isDay(to)||to>t)to=f;
+    if(to<f)to=f;
+    if(span(f,to)>MAXDAYS)f=shift(to,-(MAXDAYS-1));
+    return {from:f,to};
+  }
+  const setCustom=(f,to)=>{try{localStorage.setItem("lwbBizFrom",f);localStorage.setItem("lwbBizTo",to)}catch(e){}};
   const COL={sales:"#00434d",purch:"#c9b26a",gp:"#13824a"};
   const EXC=["#00434d","#c9b26a","#1d5fbf","#b26b00","#13824a","#9aa5a8"];
   // Money-out heads that are not an expense of the business (Mohit, 4 Nov 2026: contra was cutting net profit).
@@ -42,9 +57,11 @@
   let CTX=null,EL=null,seq=0,cache=null;
 
   function rangeOf(r){
-    const t=today();
-    const from=r==="today"?t:r==="7"?shift(t,-6):r==="30"?shift(t,-29):t.slice(0,8)+"01";
-    return {from,to:t,chartFrom:[from,shift(t,-6)].sort()[0]};
+    const t=today();let from,to=t;
+    if(r==="custom")({from,to}=getCustom());
+    else if(r==="yday")from=to=shift(t,-1);
+    else from=r==="today"?t:r==="7"?shift(t,-6):r==="30"?shift(t,-29):t.slice(0,8)+"01";
+    return {from,to,chartFrom:[from,shift(to,-6)].sort()[0]};
   }
   async function pages(q){
     const out=[];
@@ -240,7 +257,7 @@
   function paint(M,R){
     const {S,P,E,SV}=M,gpPct=pctTxt(S.gp,S.known),net=S.gp-E.total,ch=M.prev?Math.round((M.curTot-M.prev)/M.prev*100):null;
     const rangeTxt=R.from===R.to?dmy(R.from):dm(R.from)+" – "+dm(R.to);
-    const out=CTX.out,short=CTX.short;
+    const out=CTX.out,short=CTX.short,pend=CTX.pending;
     DET=new Map();
     // Popup makers (each returns ERPList.open options)
     const rt=" · "+rangeTxt,known=M.L.filter(l=>l.land!=null),gp=gpOk();
@@ -266,13 +283,14 @@
       rows:[{name:"Cash in hand",acct:M.cash==null?"Opening cash not set":"",v:M.cash}].concat((M.acc.banks||[]).filter(b=>b.active!==false).map(b=>({name:b.name,acct:b.account_no||"",v:num(b.balance)}))),
       cols:[{t:"Cash / Bank",v:"name"},{t:"Account",v:"acct"},{t:"Balance ₹",v:"v",money:true,sum:true}]}):null;
     const k=[
-      kpi(COL.sales,"Sales",lakh(S.sales),ch==null?esc(rangeTxt):'<em class="'+(ch>=0?"up":"dn")+'">'+(ch>=0?"▲ ":"▼ ")+Math.abs(ch)+"%</em> vs "+(span(R.from,R.to)==1?"yesterday":"prev "+span(R.from,R.to)+" days"),salesD),
+      kpi(COL.sales,"Sales",lakh(S.sales),ch==null?esc(rangeTxt):'<em class="'+(ch>=0?"up":"dn")+'">'+(ch>=0?"▲ ":"▼ ")+Math.abs(ch)+"%</em> vs "+(span(R.from,R.to)==1?(R.to===today()?"yesterday":"day before"):"prev "+span(R.from,R.to)+" days"),salesD),
       kpi(COL.purch,"Purchase",P.ok?lakh(P.total):"—",P.ok?fmt(P.bills.size)+" inward bill"+(P.bills.size==1?"":"s"):"Purchase Register",purchD),
       kpi(COL.gp,"Gross Profit",lakh(S.gp),gpPct+" margin"+(S.missing?" · "+fmt(S.missing)+" lines no landing":""),gpD),
       kpi("#c62828","Expenses",E.ok?lakh(E.total):"—",E.ok?(CTX.allBrands?"":"All brands · ")+(M.ec[0]?esc(M.ec[0][0])+" "+lakh(M.ec[0][1]):"No expense entered"):"Accounts",expD()),
       kpi(net>=0?COL.gp:"#c62828","Net Profit",E.ok?lakh(net):"—",E.ok?'<em class="'+(net>=0?"up":"dn")+'">'+pctTxt(net,S.known)+"</em> of sales":"Needs Accounts",netD),
       kpi("#b26b00","Outstanding",out?lakh(out.total):"—",out?'<em class="dn">'+lakh(out.over)+"</em> "+(out.brand?"past credit days":"over 30 days"):"Billing & Outstanding",outD),
       kpi("#1d5fbf","Stock Value",SV.ok?lakh(SV.total):"—",short?fmt(short)+" SKU"+(short==1?"":"s")+" short":"Godown stock × landing",stockD),
+      kpi("#7a3fb0","Pending Delivery",pend?fmt(pend.count)+" PO"+(pend.count==1?"":"s"):"—",pend?'<em class="dn">'+lakh(pend.amount)+"</em>"+(pend.oldest?" · since "+dm(pend.oldest):" to deliver"):"PO / Sales",pend&&pend.list),
       kpi(COL.sales,"Cash + Bank",M.acc?lakh(num(M.cash)+M.bank):"—",M.acc?"Cash "+(M.cash==null?"not set":lakh(M.cash))+" · Bank "+lakh(M.bank):"Accounts",cashD)];
     // P&L (every row opens its list)
     const restCats=new Set(M.cats.slice(5).map(x=>x[0]));
@@ -298,8 +316,10 @@
     const skH=top.length?'<table class="bz-t bz-sk"><thead><tr><th>SKU</th><th class="n bz-hm">Qty</th><th class="n">Sales</th><th>Margin</th><th class="n">Stock</th></tr></thead><tbody>'+top.map(s=>{const m=s.known>0?s.gp/s.known*100:null;
       return '<tr'+da(()=>lineList(s.name,"PO lines"+rt,M.L.filter(l=>key(l.sku)===key(s.name)),"sales-tracking.html"),s.name+" · tap to see PO lines")+'><td><span class="bz-dot" style="background:'+esc(CTX.colorOf(s.name))+'"></span>'+esc(s.name)+'</td><td class="n bz-hm">'+fmt(s.qty)+" "+esc(s.unit)+'</td><td class="n">'+lakh(s.sales)+'</td><td class="bz-mg">'+(m==null?'<small>no landing</small>':'<div class="bz-bar"><i style="width:'+Math.max(2,Math.min(100,m/mx*100))+"%;background:"+(m<0?"#c62828":m<4?"#b26b00":"#13824a")+'"></i></div><small>'+(Math.round(m*10)/10)+"%</small>")+'</td><td class="n">'+(s.stock==null?"—":s.stock<=0?'<span class="bz-pill r">0 · out</span>':s.days==null?fmt(s.stock)+" "+esc(s.unit):s.days<1?'<span class="bz-pill a">&lt;1 d</span>':s.days<3?'<span class="bz-pill a">'+s.days+" d</span>":s.days+" d")+"</td></tr>"}).join("")+"</tbody></table>"
       :'<div class="bz-empty">No sale in '+esc(rangeTxt)+".</div>";
-    const seg='<div class="bz-seg" role="group" aria-label="Period">'+RANGES.map(r=>'<button type="button" data-bz="'+r[0]+'"'+(r[0]===R.key?' class="on" aria-pressed="true"':' aria-pressed="false"')+">"+r[1]+"</button>").join("")+"</div>";
-    EL.innerHTML='<div class="bz-hd"><h2>Business Overview</h2>'+seg+'<span class="bz-rg">'+esc(rangeTxt)+'</span><button type="button" class="erp-i" aria-label="Info" title="Info" data-tip="Sales = SKU qty × PO rate by order date (cancelled not counted). Gross profit = (rate − landing) × qty; landing from Rate &amp; Scheme (Coca-Cola) or Rajnigandha Rate List. Purchase = Goods Inward invoice total by received date. Expenses = Accounts money-out entries, without Supplier payment, Contra (bank transfer), Asset purchase and GST / Tax paid. Stock value = godown stock × landing.">i</button></div>'+
+    const seg='<div class="bz-seg" role="group" aria-label="Period">'+RANGES.map(r=>'<button type="button" data-bz="'+r[0]+'" title="'+r[1]+'"'+(r[0]===R.key?' class="on" aria-pressed="true"':' aria-pressed="false"')+'><span class="bz-fl">'+r[1]+'</span><span class="bz-sh">'+r[2]+"</span></button>").join("")+"</div>";
+    const tday=today();
+    const cus=R.key==="custom"?'<span class="bz-cus"><label>From <input type="date" id="bzFrom" value="'+R.from+'" max="'+tday+'" min="2020-01-01"></label><label>To <input type="date" id="bzTo" value="'+R.to+'" min="'+R.from+'" max="'+tday+'"></label></span>':"";
+    EL.innerHTML='<div class="bz-hd"><h2>Business Overview</h2>'+seg+(cus||'<span class="bz-rg">'+esc(rangeTxt)+"</span>")+'<button type="button" class="erp-i" aria-label="Info" title="Info" data-tip="Sales = SKU qty × PO rate by order date (cancelled not counted). Gross profit = (rate − landing) × qty; landing from Rate &amp; Scheme (Coca-Cola) or Rajnigandha Rate List. Purchase = Goods Inward invoice total by received date. Expenses = Accounts money-out entries, without Supplier payment, Contra (bank transfer), Asset purchase and GST / Tax paid. Stock value = godown stock × landing.">i</button></div>'+
       '<div class="bz-kpis">'+k.join("")+"</div>"+
       '<div class="bz-g bz-r2"><section class="bz-c"><h3>Sales · Purchase · Gross Profit<span class="bz-leg"><span><i style="background:'+COL.sales+'"></i>Sales</span><span><i style="background:'+COL.purch+'"></i>Purchase</span><span><i style="background:'+COL.gp+'"></i>Gross profit ×10</span></span></h3><div class="bz-chart" id="bzChart"></div></section>'+
       '<section class="bz-c"><h3>Profit &amp; Loss<span class="bz-r">'+esc(rangeTxt)+"</span></h3>"+plH+"</section></div>"+
@@ -320,11 +340,13 @@
     if(!EL.querySelector(".bz-kpis"))EL.innerHTML='<div class="bz-empty">Loading business overview…</div>';
     else EL.classList.add("bz-busy");
     try{
-      const ck=rk+"|"+R.to+"|"+(CTX.brandKey||"");if(CTX.fresh){cache=null;CTX.fresh=false}
+      const ck=rk+"|"+R.from+"|"+R.to+"|"+(CTX.brandKey||"");if(CTX.fresh){cache=null;CTX.fresh=false}
       let D=cache&&cache.k===ck&&Date.now()-cache.at<6e4?cache.D:null;
       if(!D){D=await load(R);cache={k:ck,D,at:Date.now()}}
       if(my!==seq)return;
+      const fid=document.activeElement&&EL.contains(document.activeElement)?document.activeElement.id:"";
       paint(build(D,R),R);
+      if(fid==="bzFrom"||fid==="bzTo"){const f=EL.querySelector("#"+fid);if(f)f.focus()}
     }catch(e){console.error(e);if(my===seq)EL.innerHTML='<div class="bz-empty">Business overview could not load. Tap refresh.</div>'}
     finally{if(my===seq)EL.classList.remove("bz-busy")}
   }
@@ -339,6 +361,19 @@
           const b=e.target.closest("button[data-bz]");if(b&&el.contains(b)){setRange(b.dataset.bz);run();return}
           const d=e.target.closest("[data-bzd]");if(d&&el.contains(d)&&!e.target.closest("a[href]")){e.preventDefault();openD(d);return}
           const r=e.target.closest("rect[data-day]");if(r&&el._M&&window.ERPList){const day=r.dataset.day;ERPList.open(poList("Sales "+dmy(day),"PO-wise",el._M.CL.filter(l=>l.day===day),"sales-tracking.html"))}
+        });
+        // Custom dates: From picks one day (To = From); To then makes it a range. Short wait so typing a date is not cut.
+        let ct=0;
+        el.addEventListener("change",e=>{
+          const t=e.target;if(t.id!=="bzFrom"&&t.id!=="bzTo")return;
+          clearTimeout(ct);ct=setTimeout(()=>{
+            const fi=el.querySelector("#bzFrom"),ti=el.querySelector("#bzTo");if(!fi||!ti)return;
+            let f=fi.value,to=ti.value;const td=today();
+            if(!isDay(f)||f>td)return;
+            if(t.id==="bzFrom"||!isDay(to)||to<f)to=f;
+            if(to>td)to=td;
+            setCustom(f,to);run();
+          },500);
         });
         el.addEventListener("keydown",e=>{if(e.key!=="Enter"&&e.key!==" ")return;const d=e.target.closest("[data-bzd]");if(!d||d.tagName==="BUTTON"||d!==e.target)return;e.preventDefault();openD(d)});
       }

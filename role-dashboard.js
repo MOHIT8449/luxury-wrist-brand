@@ -369,7 +369,13 @@
         if(!BR.map&&window.LWBBrand)BR.map=await LWBBrand.skuMap(C).catch(()=>null);
         BIZ={C,can,landingData:()=>landingData(),landingOf,brandOf,inBrand,uOf,companies:BR.list.length?BR.list:BR.all,allow:BR.allow,allBrands:!BR.allow,brandKey:BR.id,
           colorOf:s=>{const c=BR.all.find(x=>x.id===brandOf(s));return (c&&c.color)||"#9aa5a8"},out:out?{total:out.total,over:out.brand?out.over:out.over30,brand:out.brand,parties:out.parties||null}:ov&&ov.outstanding?{total:Object.values(ov.outstanding).reduce((a,x)=>a+num(x&&x.due),0),over:Object.values(ov.outstanding).reduce((a,x)=>a+num(x&&x.overdue),0),brand:1}:null,
-          short:short?short.length:null,ov,alerts:al.join(""),profitOk:profitOk(),fresh:BIZFRESH};
+          short:short?short.length:null,ov,alerts:al.join(""),profitOk:profitOk(),fresh:BIZFRESH,
+          // Total pending delivery (all dates, all brands): every PO not cancelled and not delivered yet (Mohit, 16 Nov 2026).
+          pending:sumy&&sumy.pending?{count:num(sumy.pending.count),amount:num(sumy.pending.amount),oldest:sumy.pending.oldest||null,
+            list:()=>({title:"Total Pending Delivery",sub:"All POs not delivered yet (cancelled not counted)",cols:OCOLS,
+              load:async()=>{const r=await C.rpc("lwb_po_summary_orders",{p_bucket:"pending",p_from:null,p_to:null});if(r.error)throw r.error;return r.data||[]},
+              page:can("warehouse-orders.html")?"warehouse-orders.html":undefined,pageText:"Open PO / Sales →",
+              onRow:o=>{if(o&&o.id&&can("warehouse-orders.html"))location.href="warehouse-orders.html?order="+encodeURIComponent(o.id)}})}:null};
         BIZFRESH=false;
         return '<section class="bz" id="bzDash"></section><div class="rd-grid"><div class="rd-col">'+[flow,board].filter(Boolean).join("")+'</div><div class="rd-col" id="rdSide">'+brandCard(ov)+"</div></div>";
       }
