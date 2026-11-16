@@ -284,7 +284,7 @@
   function menuFor(role,hidden,extra){
     const off=new Set(hidden||[]),plus=new Set(extra||[]),vo=[],nm=[];
     const out=MENU.map(g=>({group:g.group,items:g.items.filter(i=>{
-      if((role!=="admin"&&i.h==="live-tracking.html")||(["sales","salesman"].includes(role)&&i.h==="my-sales.html#orders"))return false;
+      if(role!=="admin"&&i.h==="live-tracking.html")return false;
       const ok=(allowed(i,role)&&!off.has(i.h))||plus.has(i.h);
       if(ok&&noMenuItem(i,role)){nm.push({...i,g:g.group});return false}
       if(ok&&viewOnlyItem(i,role)){vo.push(i);return false}
@@ -504,7 +504,7 @@
     document.body.classList.remove("has-bnav");
     if(page==="dashboard.html")return; // Dashboard uses its menu and search, without a fixed shortcut bar.
     const presets={
-      sales:[["Home","dashboard.html","home"],["New Order","order-entry.html","cart"],["My Sales","my-sales.html","chart"]],
+      sales:[["Home","dashboard.html","home"],["New Order","order-entry.html","cart"],["PO List","my-sales.html#orders","note"],["My Sales","my-sales.html","chart"]],
       admin:[["Home","dashboard.html","home"],["New Order","order-entry.html","cart"],["PO List","warehouse-orders.html","note"],["Stock","inventory.html","stock"]],
       manager:[["Home","dashboard.html","home"],["New Order","order-entry.html","cart"],["PO List","warehouse-orders.html","note"],["Dispatch","loading-dispatch.html","truck"]],
       accounts:[["Home","dashboard.html","home"],["Bills","party-billing.html","bill"],["PO List","warehouse-orders.html","note"],["Cash","accounts-dashboard.html","cash"],["Bank","bank-statement.html","book"]],

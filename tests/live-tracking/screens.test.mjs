@@ -57,6 +57,6 @@ test('shell shows Live Tracking to Admin only, even with page overrides',async()
   assert.ok(flat('admin').includes('live-tracking.html'));
   for(const r of ['manager','warehouse','accounts','driver'])assert.ok(!flat(r,['live-tracking.html']).includes('live-tracking.html'),r);
   assert.ok(!flat('sales',['live-tracking.html','my-sales.html#orders']).includes('live-tracking.html'));
-  assert.ok(!flat('sales',['my-sales.html#orders']).includes('my-sales.html#orders'));
+  assert.ok(flat('sales').includes('my-sales.html#orders'));
  }finally{w.close();}
 });
