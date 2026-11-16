@@ -51,11 +51,16 @@ button.del{background:#e74c3c!important;color:#fff!important}
 .ec-plan .ec-row{grid-template-columns:minmax(0,1.6fr) repeat(3,minmax(0,1fr));align-items:center}
 .ec-plan .ec-row input{max-width:64px;display:inline-block}
 .ec-plan .ec-row .mx{font-size:11px;text-decoration:underline}
+.ec-plan .pm{display:flex;align-items:center;justify-content:flex-end;gap:3px}
+.ec-plan .pmb{width:28px;height:30px;min-height:30px!important;padding:0!important;font-size:16px;font-weight:700;background:#eef0f3!important;color:#00434d!important;border:1px solid var(--erp-line)!important;border-radius:6px}
+.ec-plan.pop{position:fixed;inset:16px;z-index:95;margin:0;overflow:auto;box-shadow:0 0 0 100vmax rgba(0,0,0,.55)}
+.ec-plan.pop #planTrucks{top:0}
+body.noscroll{overflow:hidden}
 .ec-row.pend{background:#fff6dd}
 .ec-row.done{background:#eaf7ee}
 .ec-plan .ec-row.in{box-shadow:inset 4px 0 0 #00434d;padding-left:10px}
 .ec-plan .ec-row.in input{border-color:#00434d!important;font-weight:700}
-@media(max-width:600px){.ec-plan .ec-row .nw{white-space:normal;display:flex;flex-direction:column;align-items:flex-end}.ec-plan .ec-row input{max-width:56px}}
+@media(max-width:600px){.ec-plan .pm{flex-wrap:wrap}.ec-plan .ec-row input{max-width:48px}.ec-plan .pmb{width:24px}.ec-plan.pop{inset:6px}}
 .pl{color:#a86a00;font-weight:600}
 .ec-trk.big{border:2px solid #00434d;font-size:14px}
 .ec-bar2{height:8px;background:#eef0f3;border-radius:5px;overflow:hidden;margin:2px 0 6px}
@@ -328,13 +333,23 @@ function pendPal(){ // pending pallets per SKU, not counting the truck being edi
 function openPlan(editId=null){
   const put={}; let cap=n($('cap').value)||24;
   if(editId){ const t=TRUCKS.find(x=>x.id===editId); t.rows.forEach(r=>put[r.sku_id]=(put[r.sku_id]||0)+n(r.pal)); cap=t.cap; $('cap').value=String(cap); }
-  PLAN={edit:editId,put};
+  PLAN={edit:editId,put,force:{}};
   if(!pendPal().length){ PLAN=null; say('Enter ECRS cases first.'); return; }
-  $('plan').hidden=false; renderPlan(); $('plan').scrollIntoView({behavior:'smooth'});
+  $('plan').hidden=false; $('plan').classList.toggle('pop',!!editId); document.body.classList.toggle('noscroll',!!editId); renderPlan();
+  if(editId) $('plan').scrollTop=0; else $('plan').scrollIntoView({behavior:'smooth'});
 }
-function closePlan(){ PLAN=null; $('plan').hidden=true; }
+function closePlan(){ PLAN=null; $('plan').hidden=true; $('plan').classList.remove('pop'); document.body.classList.remove('noscroll'); }
 const capNow=()=>n($('cap').value)||24;
 const usedNow=()=>Object.values(PLAN.put).reduce((a,b)=>a+n(b),0);
+async function setPut(id,v){
+  v=Math.max(0,Math.round(n(v))); const x=pendPal().find(y=>y.id===id); if(!x) return;
+  if(v-x.pend>0.05&&!(PLAN.force||{})[id]){
+    const ok=await modal(`${x.name}\nECRS pending is only ${plt(x.pend)} pallet, you entered ${v}.\nForce add ${v} pallet anyway?`,{yes:'Force add',no:`No, keep ${Math.floor(x.pend+1e-9)}`});
+    if(ok) (PLAN.force=PLAN.force||{})[id]=true; else v=Math.max(0,Math.floor(x.pend+1e-9));
+  }
+  if(v) PLAN.put[id]=v; else delete PLAN.put[id]; renderPlan();
+}
+const stepPut=(id,d)=>setPut(id,n(PLAN.put[id])+d);
 function maxPut(id){ const x=pendPal().find(y=>y.id===id); if(!x) return;
   const room=capNow()-usedNow()+n(PLAN.put[id]), v=Math.max(0,Math.min(room,Math.floor(x.pend+1e-9)));
   if(v) PLAN.put[id]=v; else delete PLAN.put[id]; renderPlan(); }
@@ -346,12 +361,12 @@ function renderPlan(){
   P.forEach(x=>{ const v=n(PLAN.put[x.id]), aft=x.pend-v, c=aft<-1e-9?'over':aft>=0.95?'pend':'done';
     h+=`<div class="ec-row ${c}${v?' in':''}"><div><span class="nm">${esc(x.name)}</span><span class="sub">${fmt(x.ppp)} cs / pallet</span></div>
       <div>${plt(x.pend)}</div>
-      <div class="nw"><input type="number" min="0" step="1" inputmode="numeric" data-put="${x.id}" value="${v||''}" placeholder="0"><button class="x mx" title="Fill as much as fits" onclick="maxPut('${x.id}')">max</button></div>
+      <div class="nw pm"><button class="pmb" title="Minus 1" onclick="stepPut('${x.id}',-1)">−</button><input type="number" min="0" step="1" inputmode="numeric" data-put="${x.id}" value="${v||''}" placeholder="0"><button class="pmb" title="Plus 1" onclick="stepPut('${x.id}',1)">+</button><button class="x mx" title="Fill as much as fits" onclick="maxPut('${x.id}')">max</button></div>
       <div class="${aft<-1e-9?'neg':aft>=0.95?'pl':'pos'}">${aft<-1e-9?'Over '+plt(-aft):aft>=0.95?plt(aft)+' pending':'✓ done'}</div></div>`; });
   const tp=P.reduce((a,x)=>a+Math.max(0,x.pend),0), ta=P.reduce((a,x)=>a+Math.max(0,x.pend-n(PLAN.put[x.id])),0);
   h+=`<div class="ec-row tot"><div>TOTAL</div><div>${plt(tp)}</div><div>${fmt(used)}</div><div>${plt(ta)}</div></div>`;
   $('planList').innerHTML=h;
-  $('planList').querySelectorAll('[data-put]').forEach(el=>el.addEventListener('change',e=>{ const v=Math.max(0,Math.round(n(e.target.value))); if(v) PLAN.put[e.target.dataset.put]=v; else delete PLAN.put[e.target.dataset.put]; renderPlan(); }));
+  $('planList').querySelectorAll('[data-put]').forEach(el=>el.addEventListener('change',e=>setPut(e.target.dataset.put,e.target.value)));
   const rs=P.filter(x=>n(PLAN.put[x.id])>0);
   $('planTrucks').innerHTML=`<div class="ec-trk big"><div class="th"><span>Order ${no}</span><span class="${used>cap?'neg':used<cap?'pl':'pos'}">${fmt(used)}/${cap} plt</span></div>
     <div class="ec-bar2"><i style="width:${Math.min(100,used/cap*100)}%" class="${used>cap?'ov':''}"></i></div>
@@ -365,9 +380,9 @@ async function savePlan(){
   const cap=capNow(), used=usedNow();
   const rws=pendPal().filter(x=>n(PLAN.put[x.id])>0).map(x=>({sku_id:x.id,name:x.name,pal:n(PLAN.put[x.id])}));
   if(!rws.length){ say('Enter pallets for at least one SKU.'); return; }
-  if(used>cap&&!await ask(`This truck has ${used} pallets, more than ${cap}. Save anyway?`)) return;
-  const over=pendPal().filter(x=>n(PLAN.put[x.id])-x.pend>0.05);
-  if(over.length&&!await ask(`More than ECRS pending for: ${over.map(x=>x.name).join(', ')}. Save anyway?`)) return;
+  if(used>cap&&!await modal(`This truck has ${used} pallets, more than ${cap}. Force save?`,{yes:'Force save',no:'Cancel'})) return;
+  const over=pendPal().filter(x=>n(PLAN.put[x.id])-x.pend>0.05&&!(PLAN.force||{})[x.id]);
+  if(over.length&&!await modal(`More than ECRS pending for: ${over.map(x=>x.name).join(', ')}. Force save?`,{yes:'Force save',no:'Cancel'})) return;
   const q=PLAN.edit?db.from('lwb_ecrs_trucks').update({cap,rows:rws,updated_at:new Date().toISOString()}).eq('id',PLAN.edit)
                    :db.from('lwb_ecrs_trucks').insert({day:DAY.day,cap,rows:rws});
   const {error}=await q; if(error){ say('Save failed: '+error.message); return; }
