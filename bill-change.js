@@ -15,7 +15,8 @@
  const r2=n=>Math.round((Number(n)||0)*100)/100;
  const dmy=v=>{const d=String(v||"").slice(0,10).split("-");return d.length===3?d[2]+"/"+d[1]+"/"+d[0]:""};
  const errText=e=>String((e&&(e.message||e.details))||e||"Error").replace(/^STALE: /,"");
- const REASONS=["Wrong item loaded","Less qty reached","Extra qty reached","Item not on PO but reached","Rate change","Other"];
+ // Loading-time words: the bill is made when the vehicle is loaded, before the goods reach the party (Mohit, 16 Nov 2026)
+ const REASONS=["Less qty loaded","Extra qty loaded","Wrong item loaded","Item not on PO but loaded","Qty change before loading","Rate change","Other"];
  const KIND={QTY:"Qty",RATE:"Rate",SKU:"SKU replaced",ADD:"Added",REMOVE:"Removed"};
  const ST={WAITING:["bc-amb","Waiting Admin"],APPROVED:["bc-grn","Approved"],SENT_BACK:["bc-red","Sent back"]};
 
@@ -101,7 +102,7 @@
   const rows=d.items.map(i=>({id:i.item_id,sku0:i.sku_name,sku:i.sku_name,q0:Number(i.qty),q:Number(i.qty),r0:Number(i.rate),r:Number(i.rate),h:i,swap:false}));
   const wait=(d.changes||[]).find(c=>c.status==="WAITING");
   const bills=(d.bill&&d.bill.bills)||[];
-  const {b,close}=shell(`<div class="bc-hd"><div><h3>${esc(d.order_no)} · ${esc(d.party)}</h3><small>${loaded?"Loaded qty (what reached the party)":"Approved qty (not loaded yet)"} · rate per case${d.bill&&d.bill.invoice_no?" · Tally bill "+esc(d.bill.invoice_no)+" "+rs(d.bill.amount):""}</small></div><button type="button" class="bc-x" aria-label="Close">✕</button></div>
+  const {b,close}=shell(`<div class="bc-hd"><div><h3>${esc(d.order_no)} · ${esc(d.party)}</h3><small>${loaded?"Loaded qty (on the vehicle)":"Approved qty (not loaded yet)"} · rate per case${d.bill&&d.bill.invoice_no?" · Tally bill "+esc(d.bill.invoice_no)+" "+rs(d.bill.amount):""}</small></div><button type="button" class="bc-x" aria-label="Close">✕</button></div>
    ${wait?`<div class="bc-ban">⏳ A change of <b>${sg(wait.diff)}</b> by ${esc(wait.by||"")} is waiting for Admin.<button type="button" class="bc-lnk" data-wv>View</button>${admin?"":"<small>Sending again replaces it.</small>"}</div>`:""}
    <datalist id="bc-skus">${(d.skus||[]).map(s=>`<option value="${esc(s)}">`).join("")}</datalist>
    <div style="overflow:auto"><table class="bc-t ed"><thead><tr><th>Item</th><th>Qty (CS)</th><th class="n">Rate</th><th class="n">Amount</th><th></th></tr></thead><tbody></tbody></table></div>
@@ -111,7 +112,7 @@
     <input class="bc-in" data-note maxlength="500" placeholder="Note for Admin" style="flex:2 1 200px">
     ${bills.length>1?`<select class="bc-in" data-bill title="Bill that takes the difference" style="flex:1 1 150px">${bills.map(x=>`<option value="${esc(x.no)}">Bill ${esc(x.no)} · ${esc(x.firm||"")}</option>`).join("")}</select>`:""}
     <button type="button" class="bc-btn pri" data-send>${admin?"Save change":"Send to Admin"}</button></div>
-   <div class="bc-note">${loaded?"Party got fewer cases? Press − here and choose “Less qty reached” (no Return needed): on approve the bill goes down and those cases come back to godown stock. ":""}${admin?"Your change is saved at once.":"Nothing changes until Admin or Sales Head approves."} ${d.bill&&d.bill.amount?"After approval the Tally bill amount moves by the same difference, so To collect follows.":"The bill amount to make follows the new value."}</div>
+   <div class="bc-note">${loaded?"Fewer cases loaded on the vehicle? Press − here and choose “Less qty loaded” (no Return needed): on approve the bill goes down and those cases stay in godown stock. ":""}${admin?"Your change is saved at once.":"Nothing changes until Admin or Sales Head approves."} ${d.bill&&d.bill.amount?"After approval the Tally bill amount moves by the same difference, so To collect follows.":"The bill amount to make follows the new value."}</div>
    ${(d.changes||[]).length?`<details class="bc-hist"><summary>History (${d.changes.length})</summary>${d.changes.map(c=>`<div class="h"><span class="bc-tag ${(ST[c.status]||[])[0]||""}">${(ST[c.status]||[])[1]||c.status}</span> ${dmy(c.requested_at)} · ${esc(c.by||"")} · ${rs(c.old_value)} → ${rs(c.new_value)} <b class="${c.diff>=0?"bc-pos":"bc-neg"}">${sg(c.diff)}</b>${c.reason?" · "+esc(c.reason):""}${c.reply?` · Admin: ${esc(c.reply)}`:""} <button type="button" class="bc-lnk" data-hv="${esc(c.id)}">View</button></div>`).join("")}</details>`:""}`);
   const tb=b.querySelector("tbody"),sum=b.querySelector("[data-sum]");
   const oldV=rows.reduce((a,x)=>a+x.q0*x.r0,0);
