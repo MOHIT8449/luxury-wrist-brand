@@ -4,6 +4,8 @@
  *   Accounts -> "Send to Admin" (WAITING); Admin -> "Save change" (applied at once).
  * LWBBillChange.review({client, change, admin, onDone})
  *   Old value / new value / difference + every changed line; Admin: Approve / Send back.
+ * LWBBillChange.ret({client, order:{order_id}|null, party, parties, onSaved})   (lwb_party_return_setup.sql)
+ *   Goods return in CS + PCS: lines of the bill (PO rate) + any other SKU; no order = New return of a party.
  */
 (function(){
  'use strict';
@@ -52,7 +54,14 @@
  .bc-note{color:var(--erp-muted,#55686c);font-size:12.5px;margin-top:6px}
  .bc-stk{display:flex;gap:4px 6px;flex-wrap:wrap;align-items:center;margin-top:6px;font-size:12.5px}.bc-stk small{color:var(--erp-muted,#55686c);width:100%}
  del{color:#8a969a}ins{text-decoration:none;font-weight:700}
+ .bc-pcs{width:46px;text-align:center}.bc-pcs:disabled{background:#f4f6f5}
+ .bc-t.rt td{white-space:nowrap}.bc-t.rt td.it{white-space:normal}
+ .bc-pty{width:100%;margin:0 0 6px}
  @media(max-width:600px){.bc-back{padding:8px}.bc-box{padding:10px}
+  .bc-t.rt thead{display:none}.bc-t.rt tr{display:grid;grid-template-columns:auto auto minmax(0,1fr) auto auto;gap:4px 6px;align-items:center;border-bottom:1px solid var(--erp-line,#e3e6e2);padding:6px 0}
+  .bc-t.rt td{border:0;padding:0}.bc-t.rt td.it{grid-column:1 / -1}.bc-t.rt td.am{text-align:right}.bc-t.rt td.rr{text-align:left}
+  .bc-t.rt tr.ch td{background:none}.bc-t.rt tr.ch{background:#fffbea}.bc-t.rt td:last-child:empty{display:none}.bc-t.rt .bc-step input{width:38px}.bc-t.rt .bc-rate{width:64px}
+  .bc-row.ra{display:grid;grid-template-columns:auto minmax(0,1fr)}.bc-row.ra .bc-btn{grid-column:1 / -1}
   .bc-t.ed thead{display:none}.bc-t.ed tr{display:grid;grid-template-columns:auto auto 1fr auto;gap:4px 6px;align-items:center;border-bottom:1px solid var(--erp-line,#e3e6e2);padding:6px 0}
   .bc-t.ed td{border:0;padding:0}.bc-t.ed td.it{grid-column:1 / -1}.bc-t.ed td.am{text-align:right}
   .bc-diff b{font-size:14px}.bc-row .sp{margin-left:0;width:100%}
@@ -96,7 +105,7 @@
    ${wait?`<div class="bc-ban">⏳ A change of <b>${sg(wait.diff)}</b> by ${esc(wait.by||"")} is waiting for Admin.<button type="button" class="bc-lnk" data-wv>View</button>${admin?"":"<small>Sending again replaces it.</small>"}</div>`:""}
    <datalist id="bc-skus">${(d.skus||[]).map(s=>`<option value="${esc(s)}">`).join("")}</datalist>
    <div style="overflow:auto"><table class="bc-t ed"><thead><tr><th>Item</th><th>Qty (CS)</th><th class="n">Rate</th><th class="n">Amount</th><th></th></tr></thead><tbody></tbody></table></div>
-   <div class="bc-row"><button type="button" class="bc-lnk" data-add>+ Add SKU</button><span class="sp bc-sum" data-sum></span></div>
+   <div class="bc-row"><button type="button" class="bc-lnk" data-add>+ Add SKU</button>${loaded?`<button type="button" class="bc-lnk" data-ret title="Goods came back from the party (cases and pieces)">↩ Return goods</button>`:""}<span class="sp bc-sum" data-sum></span></div>
    ${loaded?`<div class="bc-stk" data-stk hidden></div>`:""}
    <div class="bc-row"><select class="bc-in" data-reason style="flex:1 1 170px"><option value="">Reason…</option>${REASONS.map(r=>`<option>${r}</option>`).join("")}</select>
     <input class="bc-in" data-note maxlength="500" placeholder="Note for Admin" style="flex:2 1 200px">
@@ -128,6 +137,7 @@
   }
   draw();
   b.querySelector("[data-add]").onclick=()=>{rows.push({id:null,sku0:"",sku:"",q0:0,q:1,r0:0,r:0,h:null,swap:true});draw();const s=tb.querySelectorAll(".bc-sk");s[s.length-1].focus()};
+  const rb=b.querySelector("[data-ret]");if(rb)rb.onclick=()=>{close();ret({client,order:{order_id:d.order_id},onSaved:o.onSaved})};
   const wv=b.querySelector("[data-wv]");if(wv)wv.onclick=()=>review({client,admin,change:{...wait,order_no:d.order_no,party:d.party},onDone:()=>{close();o.onSaved&&o.onSaved()}});
   b.querySelectorAll("[data-hv]").forEach(x=>x.onclick=()=>{const c=d.changes.find(y=>y.id===x.dataset.hv);review({client,admin,change:{...c,order_no:d.order_no,party:d.party},onDone:()=>{close();o.onSaved&&o.onSaved()}})});
   b.querySelector("[data-send]").onclick=async e=>{
@@ -149,6 +159,74 @@
    const stock=loaded?stockText(rows.filter(x=>x.id||x.q>0).map(x=>({sku_old:x.id?x.sku0:null,qty_old:x.id?x.q0:0,sku:x.sku,qty:x.q}))):"";
    done(r.status==="APPROVED"?"Change saved":"Sent to Admin",
     `${d.order_no} · Old ${rs(oldV)} → New ${rs(nv)} (${sg(df)})`+(r.status==="APPROVED"?(stock?"\n\nStock: "+stock:""):"\n\nAdmin will approve it. Until then nothing changes."+(stock?"\nOn approve, stock: "+stock:"")))};
+ }
+
+ /* ---------- Goods return (CS + PCS) ---------- */
+ const today=()=>new Date(Date.now()+330*60000).toISOString().slice(0,10);
+ const cspc=(c,p)=>[c?c+" CS":"",p?p+" PCS":""].filter(Boolean).join(" + ")||"0";
+ async function ret(o){
+  const {client,order}=o,oid=order&&order.order_id||null;
+  const {data:d,error}=await client.rpc("lwb_party_return_form",{p_order_id:oid,p_party:oid?null:(o.party||null)});
+  if(error)return say(/lwb_party_return_form|schema cache/i.test(error.message)?"Run lwb_party_return_setup.sql first (merge the update).":errText(error));
+  const sk=new Map((d.skus||[]).map(x=>[x.sku.toUpperCase(),x]));
+  const rows=(d.items||[]).map(i=>({id:i.item_id,sku:i.sku_name,cs:0,pc:0,r:Number(i.rate)||0,ppc:i.ppc||null,max:r2(Number(i.cases)-Number(i.returned)),cases:Number(i.cases),back:Number(i.returned)||0}));
+  if(!rows.length)rows.push({id:null,sku:"",cs:0,pc:0,r:0,ppc:null});
+  const bill=d.bill,parties=o.parties||[];
+  const {b,close}=shell(`<div class="bc-hd"><div><h3>↩ ${oid?"Return · "+esc(d.order_no)+" · "+esc(d.party):"New return"}</h3><small>${oid?(bill?"Tally bill "+esc(bill.invoice_no)+" "+rs(bill.amount):"No Tally bill yet")+" · ":"Goods back from a party, not against a bill · "}rate per case · PCS = pieces</small></div><button type="button" class="bc-x" aria-label="Close">✕</button></div>
+   ${oid?"":`<input class="bc-in bc-pty" data-party list="bc-pl" maxlength="200" placeholder="Party (who gave the goods back)" aria-label="Party" value="${esc(o.party||"")}"><datalist id="bc-pl">${parties.map(n=>`<option value="${esc(n)}">`).join("")}</datalist>`}
+   <datalist id="bc-rskus">${(d.skus||[]).map(s=>`<option value="${esc(s.sku)}">`).join("")}</datalist>
+   <div style="overflow:auto"><table class="bc-t rt"><thead><tr><th>Item</th><th>CS</th><th>PCS</th><th class="n">Rate</th><th class="n">Return ₹</th><th></th></tr></thead><tbody></tbody></table></div>
+   <div class="bc-row"><button type="button" class="bc-lnk" data-add>+ ${oid?"Other SKU (not on this bill)":"Add SKU"}</button><span class="sp bc-sum" data-sum></span></div>
+   <div class="bc-row ra"><input type="date" class="bc-in" data-date value="${today()}" max="${today()}" aria-label="Return date" style="flex:0 0 auto">
+    <input class="bc-in" data-note maxlength="300" placeholder="Note (why it came back)" style="flex:2 1 160px">
+    ${bill?`<input class="bc-in" data-cn maxlength="100" placeholder="Tally credit note no. (optional)" style="flex:1 1 150px">`:""}
+    <button type="button" class="bc-btn pri" data-save>Save return</button></div>
+   <div class="bc-note">${!oid?"The value comes off this party's balance at once (return credit).":bill?"A credit note is saved on bill "+esc(bill.invoice_no)+" at once, so its Due and To collect go down.":"Make the Tally bill for the value after this return."} Godown stock does not change here.</div>`);
+  const tb=b.querySelector("tbody"),sum=b.querySelector("[data-sum]");
+  const val=x=>x.r>0?r2((x.cs+(x.ppc&&x.pc?x.pc/x.ppc:0))*x.r):0;
+  function draw(){
+   tb.innerHTML=rows.map((x,i)=>{const on=x.cs>0||x.pc>0;
+    return `<tr data-i="${i}" class="${on?"ch":""}"><td class="it">${x.id?`<span class="bc-sku">${esc(x.sku)}</span><small>${x.cases} CS on bill${x.back?" · "+r2(x.back)+" back before":""}${x.ppc?" · 1 CS = "+x.ppc+" PCS":""}</small>`:`<input class="bc-in bc-sk" list="bc-rskus" value="${esc(x.sku)}" placeholder="Type SKU" aria-label="SKU">${x.sku&&x.ppc?`<small>1 CS = ${x.ppc} PCS</small>`:""}`}</td>
+     <td><span class="bc-step"><button type="button" data-m aria-label="Less">−</button><input inputmode="numeric" data-cs value="${x.cs}" aria-label="Cases"><button type="button" data-p aria-label="More">+</button></span></td>
+     <td><input class="bc-in bc-pcs" inputmode="numeric" data-pc value="${x.pc||""}" placeholder="${x.ppc?"PCS":"—"}" aria-label="Pieces"${x.ppc?"":` disabled title="No PCS per case in SKU Master"`}></td>
+     <td class="n rr">${x.id?`<span title="PO rate">${rs(x.r)}</span>`:`<input class="bc-in bc-rate" inputmode="decimal" data-r value="${x.r||""}" placeholder="Rate" aria-label="Rate per case">`}</td>
+     <td class="n am">${on?`<b>${rs(val(x))}</b>`:"—"}</td>
+     <td class="n">${x.id?"":`<button type="button" class="bc-ic r" data-rm title="Remove">✕</button>`}</td></tr>`}).join("");
+   tb.querySelectorAll("tr").forEach(tr=>{const x=rows[tr.dataset.i],ci=tr.querySelector("[data-cs]"),pi=tr.querySelector("[data-pc]"),ri=tr.querySelector("[data-r]"),si=tr.querySelector(".bc-sk");
+    tr.querySelector("[data-m]").onclick=()=>{x.cs=Math.max(0,x.cs-1);draw()};tr.querySelector("[data-p]").onclick=()=>{x.cs++;draw()};
+    ci.onchange=()=>{x.cs=Math.max(0,parseInt(ci.value,10)||0);draw()};
+    pi.onchange=()=>{let p=Math.max(0,parseInt(pi.value,10)||0);if(x.ppc&&p>=x.ppc){x.cs+=Math.floor(p/x.ppc);p=p%x.ppc}x.pc=p;draw()};
+    if(ri)ri.onchange=()=>{x.r=r2(String(ri.value).replace(/[,₹\s]/g,""));draw()};
+    if(si)si.onchange=()=>{const m=sk.get(si.value.trim().toUpperCase());x.sku=m?m.sku:si.value.trim();x.ppc=m&&m.ppc||null;if(!x.ppc)x.pc=0;if(m&&m.rate&&!x.r)x.r=Number(m.rate);draw()};
+    const rm=tr.querySelector("[data-rm]");if(rm)rm.onclick=()=>{rows.splice(rows.indexOf(x),1);if(!rows.length)rows.push({id:null,sku:"",cs:0,pc:0,r:0,ppc:null});draw()}});
+   const on=rows.filter(x=>x.cs>0||x.pc>0),t=r2(on.reduce((a,x)=>a+val(x),0));
+   sum.innerHTML=on.length?`${on.length} SKU · Return <span class="bc-tag bc-red">− ${rs(t)}</span>`:"Enter CS / PCS that came back";
+  }
+  draw();
+  b.querySelector("[data-add]").onclick=()=>{rows.push({id:null,sku:"",cs:0,pc:0,r:0,ppc:null});draw();const s=tb.querySelectorAll(".bc-sk");s[s.length-1].focus()};
+  b.querySelector("[data-save]").onclick=async e=>{
+   const btn=e.currentTarget;if(btn.disabled)return;
+   const on=rows.filter(x=>x.cs>0||x.pc>0);
+   if(!on.length)return say("Enter the cases or pieces that came back.");
+   if(on.some(x=>!x.id&&!x.sku))return say("Type the SKU of every new line.");
+   if(on.some(x=>!x.id&&!sk.has(x.sku.toUpperCase())))return say("Pick the SKU from the list (SKU Master).");
+   if(on.some(x=>!(x.r>0)))return say("Enter the rate per case of every line.");
+   const over=on.find(x=>x.id&&(x.cs+(x.ppc?x.pc/x.ppc:0))>x.max+0.0001);if(over)return say(over.sku+": only "+r2(over.max)+" CS is left to return on this bill.");
+   const pin=b.querySelector("[data-party]"),party=pin?pin.value.trim():"";
+   if(!oid&&!party)return say("Choose the party the goods came back from.");
+   const date=b.querySelector("[data-date]").value,note=b.querySelector("[data-note]").value.trim(),cn=b.querySelector("[data-cn]");
+   if(!date)return say("Enter the return date.");
+   const t=r2(on.reduce((a,x)=>a+val(x),0));
+   if(!await ask(`Save return of ${rs(t)}${oid?" on "+d.order_no:""} from ${oid?d.party:party}?\n\n`+on.map(x=>x.sku+" · "+cspc(x.cs,x.pc)+" · "+rs(val(x))).join("\n")))return;
+   btn.disabled=true;btn.textContent="Saving…";
+   let r,err;
+   try{({data:r,error:err}=await client.rpc("lwb_party_return_save",{p_order_id:oid,p_party:oid?null:party,p_return_date:date,
+     p_items:on.map(x=>({item_id:x.id||null,sku_name:x.sku,cases:x.cs,pcs:x.pc,rate:x.r})),p_note:note||null,p_note_no:cn&&cn.value.trim()||null}))}
+   catch(x){err=x}
+   if(err){btn.disabled=false;btn.textContent="Save return";return say(errText(err))}
+   close();o.onSaved&&o.onSaved(r);
+   done("Return saved",`${r.return_no} · ${r.party} · − ${rs(r.amount)}`+(r.credit_note?`\n\nCredit note ${r.credit_note} saved on bill ${bill.invoice_no}: Due goes down by ${rs(r.amount)}.`:oid?"\n\nNo Tally bill yet: make the bill for the value after this return.":"\n\nThe party's balance goes down by "+rs(r.amount)+"."));
+  };
  }
 
  /* ---------- Admin review ---------- */
@@ -183,5 +261,5 @@
   b.querySelector("[data-ok]").onclick=e=>go(true,e.currentTarget);
   b.querySelector("[data-no]").onclick=e=>go(false,e.currentTarget);
  }
- window.LWBBillChange={open,review,sg};
+ window.LWBBillChange={open,review,ret,sg,cspc};
 })();

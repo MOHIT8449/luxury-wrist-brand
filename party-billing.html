@@ -133,6 +133,7 @@
   <main id="page" class="erp-main" hidden>
     <div class="pb-top"><h1>Billing &amp; Outstanding</h1><div id="brandBox"></div><span class="sp"></span>
       <button type="button" class="pb-btn grn" id="payBtn">+ Party payment</button>
+      <button type="button" class="pb-btn" id="retBtn" title="Goods came back from a party (cases and pieces), with or without a bill">↩ Return</button>
       <button type="button" class="pb-btn" id="reload">↻ Refresh</button></div>
     <div id="msg" class="pb-msg" hidden></div>
     <div class="pb-kpis" id="kpis"></div>
@@ -142,6 +143,7 @@
         <button type="button" data-t="due">To collect</button>
         <button type="button" data-t="led">Ledger</button>
         <button type="button" data-t="pay">Payments</button>
+        <button type="button" data-t="ret">Returns</button>
         <button type="button" data-t="grp">Party groups</button>
         <button type="button" data-t="chg" id="tChg">PO changes<span class="cnt" id="cChg" hidden></span></button>
         <input class="q" id="q" type="search" placeholder="Search party, bill name, PO, bill no." autocomplete="off">
@@ -212,6 +214,11 @@
       if(m.DELIVERED&&hasReport)return "";return ` <span class="tag ${m.DELIVERED?"t-grn":"t-amb"}" title="${esc("Marked by "+(x.marked_by_name||who)+" on "+dmy(x.mark_date)+(x.note?" · "+x.note:""))}">${t} · by ${who}</span>`};
     const waitOf=id=>changes.find(c=>c.order_id===id&&c.status==="WAITING");
     const waitTag=id=>{const c=waitOf(id);return c?` <button type="button" class="tag t-amb" data-wv="${esc(c.id)}" style="border:0;cursor:pointer">⏳ Waiting Admin ${LWBBillChange.sg(Number(c.diff))}</button>`:""};
+    // Goods returns (lwb_party_return_setup.sql): on a PO, and its value
+    const RT=()=>(info&&info.returns||[]).filter(r=>!r.cancelled&&inB(r.company_id));
+    const retOn=id=>r2(RT().filter(r=>r.order_id===id).reduce((a,r)=>a+Number(r.amount),0));
+    const partyNames=()=>[...new Set([...info.parties.values()].map(p=>p.party).concat(info.raw.parties||[]))].sort();
+    function newReturn(order,party){LWBBillChange.ret({client,order:order?{order_id:order}:null,party,parties:partyNames(),onSaved:load})}
     function editItems(id){const o=orders().find(x=>x.order_id===id)||(info.early||[]).find(x=>x.order_id===id);
       LWBBillChange.open({client,admin,order:{order_id:id,order_no:o&&o.order_no,party:o&&o.party},onSaved:load})}
     function viewChange(id){const c=changes.find(x=>x.id===id);if(c)LWBBillChange.review({client,admin,change:c,onDone:load})}
@@ -221,7 +228,7 @@
     function openWanted(){if(!wantChg)return;const c=changes.find(x=>x.order_id===wantChg&&x.status==="WAITING")||changes.find(x=>x.id===wantChg);wantChg=null;
       if(c){tab="chg";render();LWBBillChange.review({client,admin,change:c,onDone:load})}}
     function render(){
-      const make=toMake(),parties=[...info.parties.values()].map(V),dueP=parties.filter(p=>p.due>0.5||p.advance>0.5||p.opening);
+      const make=toMake(),parties=[...info.parties.values()].map(V),dueP=parties.filter(p=>p.due>0.5||p.advance>0.5||p.ret>0.5||p.opening);
       const per=sign=>!fb&&BR().length?BR().map(c=>{const v=[...info.parties.values()].reduce((a,p)=>a+Math.max(0,sign*LWBPartyPay.slice(p,c.id).net),0);return c.name+" "+rs(v)}).join(" · "):"";
       // one balance per party: positive = to collect, negative = advance
       const totDue=parties.reduce((a,p)=>a+Math.max(0,p.net),0),totAdv=parties.reduce((a,p)=>a+Math.max(0,-p.net),0);
@@ -245,12 +252,13 @@
       const nw=changes.filter(c=>c.status==="WAITING").length;el("cChg").hidden=!nw;el("cChg").textContent=nw;
       el("tabs").querySelectorAll("[data-t]").forEach(b=>b.setAttribute("aria-pressed",String(b.dataset.t===tab)));
       el("xl").hidden=tab==="make";el("q").hidden=tab==="led";
-      ({make:renderMake,due:renderDue,led:renderLed,pay:renderPay,grp:renderGroups,chg:renderChg})[tab]();
+      ({make:renderMake,due:renderDue,led:renderLed,pay:renderPay,ret:renderRet,grp:renderGroups,chg:renderChg})[tab]();
       wireChg(el("body"));
       el("note").textContent=tab==="make"?"Every approved PO comes here at once (its quantity is final), so the bill can be made before loading; loaded ones show their loaded value. Enter one line per Tally bill: the name the bill is made in, its invoice no. and amount. Saved bills go to To collect on the main party at once, and show in the Accounts Dashboard Cash In.":
         tab==="due"&&!fb&&BR().length?"All brands: every brand in its own column. Money of one brand never goes to another brand's bill; Total is only to look at. Choose a brand above to see its bills, advance and opening, and to adjust.":
-        tab==="due"?"To collect = Tally bill − credit notes − driver money − payments split to it, on the main party (all its bill names together), minus money paid earlier and not yet set against a bill. One balance per party: red = to collect, green = advance. Party Ledger shows the same on the main party.":
+        tab==="due"?"To collect = Tally bill − credit notes (a return on a bill saves one) − driver money − payments split to it, on the main party (all its bill names together), minus money paid earlier and not yet set against a bill, minus goods returned without a bill. One balance per party: red = to collect, green = advance. Party Ledger shows the same on the main party.":
         tab==="led"?"Party ledger on the main party (all its bill names together): opening balance as on the From date, then every bill, credit note, return and payment with the running balance. Tap a row to see that bill or payment in detail.":
+        tab==="ret"?"Goods back from a party, in cases and pieces (value = CS + PCS ÷ PCS per case, × rate per case). On a billed PO a credit note is saved at once, so Due goes down; on a PO without Tally bill, make the bill for the value after the return; a New return (no bill) comes off the party's balance. Cancel (×) undoes it. Godown stock does not change here.":
         tab==="pay"?"A party payment is entered once on the main party and split over its bills; the rest is advance. Undo (×) puts a split back to advance; Cancel removes a wrong payment.":
         tab==="chg"?"Any change of PO items (qty + / −, rate, SKU replaced, added or removed) goes to Admin with the value difference. Approved: the PO lines change and the Tally bill amount moves by the same difference, so To collect follows. Use ⓘ Items on a bill to start one.":
         "A main party (Party Master) and the names its Tally bills are made in. Outstanding, ledger and payments of all these names are on the main party. A name can be under one main party only.";
@@ -271,7 +279,7 @@
         // bill names used before on this main party (kept on the bills only, not as parties)
         const used=[...new Set(orders().filter(x=>key(x.parent)===key(o.parent)).flatMap(x=>(x.bills||[]).map(b=>String(b.firm||"").trim())).filter(Boolean))].filter(n=>!names.some(m=>key(m)===key(n)));
         return `<div class="pb-bill${o.order_id===want?" hl":""}" data-o="${esc(o.order_id)}">
-          <div class="hd"><span><b class="pb-po" data-drill-order="${esc(o.order_id)}" data-drill-no="${esc(o.order_no)}">${esc(o.order_no)}</b> ${o.early?`<small>approved ${dmy(String(o.approved_at||o.order_date||"").slice(0,10))}</small> <span class="tag t-amb">${o.vehicle_no?"Vehicle "+esc(o.vehicle_no)+" · not loaded yet":"Not loaded yet"}</span>`:`<small>loaded ${dmy(o.dispatch_date||o.order_date)}</small>`} ${d?`<span class="tag ${d[0]}">${d[1]}</span>`:""}${markTag(o.order_id,!!d)}${waitTag(o.order_id)}</span><span>${o.early?"PO value ("+esc(Number(o.qty||0).toLocaleString("en-IN"))+" CS)":"Loaded value"} <b>${rs(o.erp_amount)}</b></span></div>
+          <div class="hd"><span><b class="pb-po" data-drill-order="${esc(o.order_id)}" data-drill-no="${esc(o.order_no)}">${esc(o.order_no)}</b> ${o.early?`<small>approved ${dmy(String(o.approved_at||o.order_date||"").slice(0,10))}</small> <span class="tag t-amb">${o.vehicle_no?"Vehicle "+esc(o.vehicle_no)+" · not loaded yet":"Not loaded yet"}</span>`:`<small>loaded ${dmy(o.dispatch_date||o.order_date)}</small>`} ${d?`<span class="tag ${d[0]}">${d[1]}</span>`:""}${markTag(o.order_id,!!d)}${waitTag(o.order_id)}</span><span>${o.early?"PO value ("+esc(Number(o.qty||0).toLocaleString("en-IN"))+" CS)":"Loaded value"} <b>${rs(o.erp_amount)}</b>${retOn(o.order_id)>0.5?`<small> · return <b class="due">− ${rs(retOn(o.order_id))}</b> = bill <b>${rs(r2(o.erp_amount-retOn(o.order_id)))}</b></small>`:""}</span></div>
           <div class="who">${esc(o.party)}${grp?` <span class="tag t-blu">under ${esc(o.parent)}</span>`:""}${names.length>1?`<small style="color:var(--erp-muted)"> · bill names: ${esc(names.filter(n=>key(n)!==key(o.party)).join(", "))}</small>`:""}</div>
           <datalist id="dl-${esc(o.order_id)}">${names.concat(used).map(n=>`<option value="${esc(n)}">`).join("")}</datalist>
           <div class="pb-lines"></div>
@@ -279,7 +287,7 @@
       el("body").querySelectorAll(".pb-bill").forEach(card=>{
         const o=list.find(x=>x.order_id===card.dataset.o),lines=card.querySelector(".pb-lines"),tot=card.querySelector(".tot");
         const total=()=>{const l=[...lines.children],s=l.reduce((a,r)=>a+num(r.querySelector(".am").value),0);
-          tot.innerHTML=s?(l.length>1?l.length+" bills · ":"")+"total <b>"+rs(s)+"</b>"+(o.erp_amount&&Math.abs(s-o.erp_amount)>1?` <small>(${o.early?"PO":"loaded"} ${rs(o.erp_amount)})</small>`:""):""};
+          tot.innerHTML=s?(l.length>1?l.length+" bills · ":"")+"total <b>"+rs(s)+"</b>"+(o.erp_amount&&Math.abs(s-(o.erp_amount-retOn(o.order_id)))>1?` <small>(${o.early?"PO":"loaded"} ${rs(r2(o.erp_amount-retOn(o.order_id)))}${retOn(o.order_id)>0.5?" after return":""})</small>`:""):""};
         const add=(firm)=>{const r=document.createElement("div");r.className="pb-line";
           r.innerHTML=`<input class="fm" list="dl-${esc(o.order_id)}" maxlength="200" placeholder="Bill in name" aria-label="Bill made in name"><input class="no" maxlength="100" placeholder="Invoice no." aria-label="Tally invoice no."><input class="am" inputmode="decimal" placeholder="Amount ₹" aria-label="Bill amount"><button type="button" class="x" aria-label="Remove">×</button>`;
           r.querySelector(".fm").value=firm==null?o.party:firm;
@@ -316,17 +324,17 @@
     /* ---------- To collect (main party wise) ---------- */
     function renderDue(){
       const q=el("q").value.trim().toLowerCase();
-      const list=[...info.parties.values()].map(V).filter(p=>(p.due>0.5||Math.abs(p.advance)>0.5||Math.abs(p.opening)>0.5)&&match(q,p.party,...p.members,...p.bills.flatMap(b=>[b.order_no,b.invoice_no])))
+      const list=[...info.parties.values()].map(V).filter(p=>(p.due>0.5||Math.abs(p.advance)>0.5||p.ret>0.5||Math.abs(p.opening)>0.5)&&match(q,p.party,...p.members,...p.bills.flatMap(b=>[b.order_no,b.invoice_no])))
         .sort((a,b)=>b.net-a.net);
       if(!fb&&BR().length)return renderDueAll(list);
-      sheet=[["Main party","Bill names","Bills due","Oldest bill","Days","Bills due ₹","Opening ₹","Paid, not adjusted ₹","Balance ₹ (+ to collect, − advance)"],...list.map(p=>[p.party,p.members.join(", "),p.bills.length,dmy(p.oldest),p.oldest?days(p.oldest):"",r2(p.due),r2(p.opening),r2(p.advance),r2(p.net)])];
+      sheet=[["Main party","Bill names","Bills due","Oldest bill","Days","Bills due ₹","Opening ₹","Paid, not adjusted ₹","Goods returned (no bill) ₹","Balance ₹ (+ to collect, − advance)"],...list.map(p=>[p.party,p.members.join(", "),p.bills.length,dmy(p.oldest),p.oldest?days(p.oldest):"",r2(p.due),r2(p.opening),r2(p.advance),r2(p.ret),r2(p.net)])];
       if(!list.length){el("body").innerHTML='<div class="pb-empty">No party owes money.</div>';return}
       const T=k=>list.reduce((a,p)=>a+p[k],0);
       el("body").innerHTML=`<div class="pb-scroll"><table class="pb-t resp"><thead><tr><th>Main party</th><th class="n">Bills</th><th class="n">Oldest</th><th class="n">Bills due</th><th class="n">Paid, not adjusted</th><th class="n">Balance</th><th></th></tr></thead><tbody>${list.map(p=>{
         const a=days(p.oldest),k=key(p.party),isOpen=open.has(k);
         return `<tr class="pr${isOpen?" open":""}" data-p="${esc(k)}"><td><b>${esc(p.party)}</b>${advTag(p)}${p.members.length?`<div class="chips">${p.members.map(m=>`<span class="chip">${esc(m)}</span>`).join("")}</div>`:""}</td>
           <td class="n hide-ph">${p.bills.length}</td><td class="n hide-ph">${p.oldest?dmy(p.oldest)+`<small class="${a>30?"due":""}">${a} days</small>`:"—"}</td>
-          <td class="n hide-ph">${rs(p.due)}${p.opening?`<small>opening ${rs(p.opening)}</small>`:""}</td><td class="n hide-ph">${p.advance>0.5?rs(p.advance)+(p.bills.length?`<br><button type="button" class="lnk" data-adj="${esc(p.party)}">Adjust now</button>`:""):"—"}</td>
+          <td class="n hide-ph">${rs(p.due)}${p.opening?`<small>opening ${rs(p.opening)}</small>`:""}</td><td class="n hide-ph">${p.advance>0.5?rs(p.advance)+(p.bills.length?`<br><button type="button" class="lnk" data-adj="${esc(p.party)}">Adjust now</button>`:""):p.ret>0.5?"":"—"}${p.ret>0.5?`<small>return ${rs(p.ret)}</small>`:""}</td>
           <td class="n"><span class="${p.net>0.5?"due":"adv"}">${rs(Math.abs(p.net))}</span><small>${p.net>0.5?"to collect":p.net<-0.5?"advance":"settled"}</small><small class="ph-only">${p.bills.length} bill${p.bills.length===1?"":"s"}</small></td>
           <td class="n"><button type="button" class="pb-btn sm grn" data-pay="${esc(p.party)}">Receive</button></td></tr>${isOpen?`<tr class="sub"><td colspan="7">${partyBills(p)}</td></tr>`:""}`}).join("")}</tbody>
           <tfoot><tr><td>${list.length} parties</td><td class="n hide-ph"></td><td class="hide-ph"></td><td class="n hide-ph">${rs(T("due"))}</td><td class="n hide-ph">${rs(T("advance"))}</td><td class="n">${rs(T("net"))}</td><td></td></tr></tfoot></table></div>`;
@@ -354,14 +362,16 @@
       const rows=p.bills.map(b=>{const d=DELIVERY[String(b.delivery||"").toUpperCase()],a=days(b.invoice_date),cn=Number(b.credit_notes)||0,got=(Number(b.driver)||0)+(Number(b.office)||0);
         return `<tr data-drill-order="${esc(b.order_id)}" data-drill-no="${esc(b.order_no)}" data-drill-bill="${esc(b.invoice_no||"bill")}"><td><b>${esc(b.order_no)}</b>${!fb&&BR().length?" "+btag(b.company_id):""}${key(b.party)!==key(p.party)?`<small>PO party ${esc(b.party)}</small>`:""}${d?` <span class="tag ${d[0]}">${d[1]}</span>`:""}</td><td>${dmy(b.invoice_date)}<small class="${a>30?"due":""}">${a} days</small></td>
           <td>${(b.bills||[]).length?(b.bills||[]).map(x=>`<span class="bline"><b>${esc(x.firm||b.party)}</b> · ${esc(x.no)} · ${rs(x.amount)}</span>`).join(""):esc(b.invoice_no)}</td>
-          <td class="n">${rs(b.bill_amount)}</td><td class="n">${cn?"− "+rs(cn):"—"}${Number(b.credit_pending)>0.5?`<small class="due">CN pending ${rs(b.credit_pending)}</small>`:""}</td><td class="n">${got?rs(got):"—"}</td><td class="n due">${rs(b.due)}</td>
-          <td class="n"><button type="button" class="lnk" data-it="${esc(b.order_id)}">ⓘ Items</button>${waitTag(b.order_id)}<br><button type="button" class="lnk" data-cn="${esc(b.order_id)}">Credit note</button><br><a class="lnk" href="accounts-invoice.html?order=${encodeURIComponent(b.order_id)}">Details</a></td></tr>`}).join("");
-      return `${p.bills.length?`<div class="pb-scroll"><table class="pb-t"><thead><tr><th>PO</th><th>Bill date</th><th>Bill in name · no. · amount</th><th class="n">Bill</th><th class="n">Credit note</th><th class="n">Received</th><th class="n">Due</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`:'<p class="pb-note" style="margin:0 0 8px">No bill due.</p>'}
-        <div class="pb-foot"><button type="button" class="pb-btn sm grn" data-pay="${esc(p.party)}">Receive payment</button>${fb&&p.advance>0.5&&p.bills.length?`<button type="button" class="pb-btn sm" data-adj="${esc(p.party)}">Adjust ${rs(p.advance)} paid earlier</button>`:""}<button type="button" class="pb-btn sm" data-led="${esc(p.party)}">Ledger →</button></div>`;
+          <td class="n">${rs(b.bill_amount)}</td><td class="n">${cn?"− "+rs(cn):"—"}${retOn(b.order_id)>0.5?`<small>return ${rs(retOn(b.order_id))}</small>`:""}${Number(b.credit_pending)>0.5?`<small class="due">CN pending ${rs(b.credit_pending)}</small>`:""}</td><td class="n">${got?rs(got):"—"}</td><td class="n due">${rs(b.due)}</td>
+          <td class="n"><button type="button" class="lnk" data-it="${esc(b.order_id)}">ⓘ Items</button>${waitTag(b.order_id)}<br><button type="button" class="lnk" data-rt="${esc(b.order_id)}">↩ Return</button><br><button type="button" class="lnk" data-cn="${esc(b.order_id)}">Credit note</button><br><a class="lnk" href="accounts-invoice.html?order=${encodeURIComponent(b.order_id)}">Details</a></td></tr>`}).join("");
+      return `${p.bills.length?`<div class="pb-scroll"><table class="pb-t"><thead><tr><th>PO</th><th>Bill date</th><th>Bill in name · no. · amount</th><th class="n">Bill</th><th class="n">Credit note / return</th><th class="n">Received</th><th class="n">Due</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`:'<p class="pb-note" style="margin:0 0 8px">No bill due.</p>'}
+        <div class="pb-foot"><button type="button" class="pb-btn sm grn" data-pay="${esc(p.party)}">Receive payment</button>${fb&&p.advance>0.5&&p.bills.length?`<button type="button" class="pb-btn sm" data-adj="${esc(p.party)}">Adjust ${rs(p.advance)} paid earlier</button>`:""}<button type="button" class="pb-btn sm" data-rtp="${esc(p.party)}">↩ Return</button><button type="button" class="pb-btn sm" data-led="${esc(p.party)}">Ledger →</button></div>`;
     }
     function wireParty(root){
       root.querySelectorAll("[data-pay]").forEach(b=>b.onclick=()=>payNow(b.dataset.pay));
       root.querySelectorAll("[data-led]").forEach(b=>b.onclick=()=>openLedger(b.dataset.led));
+      root.querySelectorAll("[data-rt]").forEach(b=>b.onclick=e=>{e.stopPropagation();newReturn(b.dataset.rt)});
+      root.querySelectorAll("[data-rtp]").forEach(b=>b.onclick=()=>newReturn(null,b.dataset.rtp));
       root.querySelectorAll("[data-adj]").forEach(b=>b.onclick=()=>LWBPartyPay.open({client,info,party:b.dataset.adj,brand:fb||undefined,adjust:true,onSaved:r=>{toast("Adjusted "+rs(r.split)+" · advance left "+rs(r.advance));load()}}));
       root.querySelectorAll("[data-cn]").forEach(b=>b.onclick=()=>{const o=orders().find(x=>x.order_id===b.dataset.cn);if(!o||!window.LWBNote)return;
         LWBNote.open({db:client,order:{id:o.order_id,order_no:o.order_no,party:o.party,invoice_no:o.invoice_no},amount:Number(o.credit_pending)>0.5?r2(o.credit_pending):undefined,reason:Number(o.credit_pending)>0.5?"Return approved":undefined,
@@ -374,7 +384,7 @@
     /* ---------- Party ledger (main party, date range) ---------- */
     const LK={OPENING:["Opening","dr"],ERP_BILL:["ERP bill","dr"],OLD_INVOICE:["Old invoice","dr"],TALLY_BILL:["Tally bill","dr"],DEBIT_NOTE:["Debit note","dr"],
       PAYMENT:["Payment","cr"],DRIVER_PAYMENT:["Driver money","cr"],OFFICE_PAYMENT:["Payment collection","cr"],PARTY_PAYMENT:["Party payment","cr"],
-      DRIVER_RETURN:["Driver return","rt"],SALES_RETURN:["Sales return","rt"],CREDIT_NOTE:["Credit note","rt"]};
+      DRIVER_RETURN:["Driver return","rt"],SALES_RETURN:["Sales return","rt"],CREDIT_NOTE:["Credit note","rt"],PARTY_RETURN:["Goods return","rt"]};
     const kName=k=>(LK[k]||[k])[0];
     const fyStart=t=>{const y=Number(t.slice(0,4)),m=Number(t.slice(5,7));return (m>=4?y:y-1)+"-04-01"};
     const ledNames=()=>{const m=new Map();for(const p of info.parties.values())m.set(key(p.party),p.party);
@@ -385,7 +395,10 @@
       let a=await client.rpc("lwb_party_ledger_b");
       if(a.error)a=await client.rpc("lwb_party_ledger"); // brand SQL not run yet
       if(a.error)throw a.error;
-      led=(a.data||[]).map(x=>({...x,pk:key(info.parentOf(x.customer_name)),debit:Number(x.debit)||0,credit:Number(x.credit)||0}))
+      // New returns (no bill) are not in the ledger SQL; ones on a billed PO are there as their credit note.
+      const nr=(info.returns||[]).filter(r=>!r.cancelled&&!r.order_id).map(r=>({entry_date:r.return_date,entry_kind:"PARTY_RETURN",customer_name:r.parent||r.party,ref_no:r.return_no,order_no:null,
+        debit:0,credit:Number(r.amount),note:(r.items||[]).map(i=>i.sku+" "+LWBBillChange.cspc(i.cases,i.pcs)).join(", ")+(r.note?" · "+r.note:""),created_at:r.created_at,company_id:r.company_id}));
+      led=(a.data||[]).concat(nr).map(x=>({...x,pk:key(info.parentOf(x.customer_name)),debit:Number(x.debit)||0,credit:Number(x.credit)||0}))
         .sort((x,y)=>String(x.entry_date).localeCompare(String(y.entry_date))||(x.entry_kind==="OPENING"?-1:y.entry_kind==="OPENING"?1:0)||String(x.created_at||"").localeCompare(String(y.created_at||"")));
     }
     function openLedger(party){ledParty=party||"";tab="led";el("q").value="";render();window.scrollTo(0,0)}
@@ -506,6 +519,23 @@
     }
 
     /* ---------- PO changes (Admin approval) ---------- */
+    /* ---------- Goods returns ---------- */
+    function renderRet(){
+      const q=el("q").value.trim().toLowerCase();
+      const list=(info.returns||[]).filter(r=>inB(r.company_id)&&match(q,r.return_no,r.party,r.parent,r.order_no,r.invoice_no,r.credit_note,...(r.items||[]).map(i=>i.sku)));
+      const it=r=>(r.items||[]).map(i=>i.sku+" · "+LWBBillChange.cspc(i.cases,i.pcs)).join(", ");
+      sheet=[["Date","Return no.","Party","PO","Tally bill","Credit note","Items (CS + PCS)","Amount ₹","By","Status","Note"],...list.map(r=>[dmy(r.return_date),r.return_no,r.party,r.order_no||"",r.invoice_no||"",r.credit_note||"",it(r),r2(r.amount),r.by||"",r.cancelled?"Cancelled":"Saved",r.note||""])];
+      if(!list.length){el("body").innerHTML='<div class="pb-empty">No return yet. Use ↩ Return above (any party, any SKU) or ↩ Return on a bill.</div>';return}
+      el("body").innerHTML=`<div class="pb-scroll"><table class="pb-t resp chg"><thead><tr><th>Return / party</th><th class="hide-ph">Against</th><th class="n">Amount</th><th></th></tr></thead><tbody>${list.map(r=>
+        `<tr class="pr"${r.cancelled?' style="opacity:.55"':""}><td><b>${esc(r.return_no)}</b> · ${esc(r.party)}${!fb&&BR().length&&r.company_id?" "+btag(r.company_id):""}<small>${dmy(r.return_date)}${r.by?" · "+esc(r.by):""} · ${esc(it(r))}${r.note?" · "+esc(r.note):""}</small><small class="ph-only">${r.order_no?esc(r.order_no)+(r.invoice_no?" · bill "+esc(r.invoice_no):" · no Tally bill yet"):"Not against a bill"}</small></td>
+          <td class="hide-ph">${r.order_no?`<b>${esc(r.order_no)}</b><small>${r.invoice_no?"Bill "+esc(r.invoice_no)+(r.credit_note?" · CN "+esc(r.credit_note):""):"No Tally bill yet"}</small>`:'<span class="tag t-blu">New return</span><small>off the party balance</small>'}</td>
+          <td class="n"><b class="${r.cancelled?"":"adv"}">− ${rs(r.amount)}</b>${r.cancelled?'<small><span class="tag t-gry">Cancelled</span></small>':""}</td>
+          <td class="n">${r.cancelled?"":`<button type="button" class="pb-btn sm" data-rx="${esc(r.id)}" title="Cancel this return" aria-label="Cancel ${esc(r.return_no)}">×</button>`}</td></tr>`).join("")}</tbody>
+        <tfoot><tr><td>${list.filter(r=>!r.cancelled).length} returns</td><td class="hide-ph"></td><td class="n">− ${rs(list.filter(r=>!r.cancelled).reduce((a,r)=>a+Number(r.amount),0))}</td><td></td></tr></tfoot></table></div>`;
+      el("body").querySelectorAll("[data-rx]").forEach(b=>b.onclick=async()=>{const r=list.find(x=>x.id===b.dataset.rx);
+        if(!await ERPShell.confirm("Cancel return "+r.return_no+" of "+rs(r.amount)+" from "+r.party+"?"+(r.credit_note?"\n\nIts credit note "+r.credit_note+" is cancelled too, so Due goes up again.":"")))return;
+        b.disabled=true;const {error}=await client.rpc("lwb_party_return_cancel",{p_id:r.id});if(error){b.disabled=false;return ERPShell.alert(errText(error))}toast(r.return_no+" cancelled");load()});
+    }
     function renderChg(){
       const q=el("q").value.trim().toLowerCase(),ST={WAITING:["t-amb","Waiting Admin"],APPROVED:["t-grn","Approved"],SENT_BACK:["t-red","Sent back"]};
       const list=changes.filter(c=>match(q,c.order_no,c.party,c.by,c.reason,c.note));
@@ -552,7 +582,8 @@
     el("q").oninput=()=>{const k=el("q").value;render();el("q").value=k};
     el("reload").onclick=load;
     el("payBtn").onclick=()=>{if(info)payNow("")};
-    el("xl").onclick=()=>LWBExcel.write("billing-"+tab+"-"+info.today,[{name:{due:"To collect",led:"Ledger",pay:"Payments",grp:"Party groups",chg:"PO changes"}[tab]||"Sheet",rows:sheet.length?sheet:[["Nothing"]]}]).catch(e=>say(e.message,true));
+    el("retBtn").onclick=()=>{if(info)newReturn(null,"")};
+    el("xl").onclick=()=>LWBExcel.write("billing-"+tab+"-"+info.today,[{name:{due:"To collect",led:"Ledger",pay:"Payments",ret:"Returns",grp:"Party groups",chg:"PO changes"}[tab]||"Sheet",rows:sheet.length?sheet:[["Nothing"]]}]).catch(e=>say(e.message,true));
 
     (async()=>{
       const {data:{session}}=await client.auth.getSession();
@@ -563,7 +594,7 @@
       admin=realRole==="admin";
       ERPShell.mount({role:realRole||role,name:p.full_name||session.user.email,onLogout:async()=>{await client.auth.signOut();location.replace("login.html")}});
       el("loading").hidden=true;el("page").hidden=false;
-      const t=new URLSearchParams(location.search).get("tab");if(["make","due","led","pay","grp","chg"].includes(t))tab=t;else if(ledParty)tab="led";
+      const t=new URLSearchParams(location.search).get("tab");if(["make","due","led","pay","ret","grp","chg"].includes(t))tab=t;else if(ledParty)tab="led";
       await load();
     })();
   </script>
