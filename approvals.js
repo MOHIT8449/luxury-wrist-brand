@@ -77,7 +77,7 @@
      async load(c){
        const rows=((await rpc(c,"lwb_bill_change_list",{p_days:1}))||[]).filter(r=>r.status==="WAITING");
        const K={QTY:"Qty",RATE:"Rate",SKU:"SKU",ADD:"Added",REMOVE:"Removed"};
-       const items=rows.map(r=>({id:r.id,orderId:r.order_id,ref:r.order_no,party:r.party,amount:num(r.diff),signed:true,when:r.requested_at,
+       const items=rows.map(r=>({id:r.id,orderId:r.order_id,ref:r.order_no,party:r.party,amount:num(r.diff),signed:true,when:r.requested_at,person:r.by,view:r,
          lines:(r.lines||[]).filter(l=>l.kind).map(l=>{
            const k=String(l.kind).toUpperCase(),sku=l.sku||l.sku_old||"";
            if(k==="ADD")return "Added "+sku+" · "+num(l.qty)+" × ₹"+num(l.rate);
@@ -88,10 +88,13 @@
            return (K[k]?K[k]+": ":"")+p.join(" · ");
          }),
          meta:[inr(r.old_value)+" → "+inr(r.new_value),r.bill_no&&"Bill "+r.bill_no,r.reason,r.note,r.by&&"By "+r.by].filter(Boolean),
-         acts:[{t:"✓ Approve",kind:"ok",confirm:"Approve the change of "+r.order_no+"?\n\nPO lines and the bill amount change now.",
+         // Approve / Open first show the full change (Mohit, 16 Nov 2026): who sent it, why, item by item
+         // before -> after, amount before -> after. Approve is given from that popup.
+         acts:[{t:"✓ Approve",kind:"ok",view:true,
                 run:c2=>rpc(c2,"lwb_bill_change_decide",{p_id:r.id,p_approve:true,p_reply:null})},
                {t:"↩ Send back",kind:"no",ask:"Why is it sent back?",run:(c2,i,f,why)=>rpc(c2,"lwb_bill_change_decide",{p_id:r.id,p_approve:false,p_reply:why})},
-               {t:"Open",kind:"go",href:"party-billing.html?tab=chg&change="+encodeURIComponent(r.order_id)}]}));
+               {t:"Open",kind:"view",view:true}],
+         page:"party-billing.html?tab=chg&change="+encodeURIComponent(r.order_id)}));
        return {items,amount:sum(items,i=>i.amount)};
      }},
     {key:"rent",icon:"🚚",title:"Driver trip rent",sub:"Fixed rent to verify",roles:["admin"],page:"fleet-master.html#rates",
@@ -221,5 +224,67 @@
   }
   const total=secs=>secs.reduce((t,s)=>t+s.count,0);
 
-  window.LWBApprovals={load,filter,total,SECTIONS,esc,inr,short,dmy,errText};
+  // Order change popup (Mohit, 16 Nov 2026). r = lwb_bill_change_list row, po = lwb_bill_change_items (or null).
+  // Every PO line is listed: what was given, what it is now, + / −, removed, added, SKU replaced, rate change.
+  const qn=v=>num(v).toLocaleString("en-IN",{maximumFractionDigits:2});
+  const sg=v=>(v>0?"+":v<0?"−":"")+qn(Math.abs(v));
+  const when=v=>{try{return new Date(v).toLocaleString("en-IN",{timeZone:"Asia/Kolkata",day:"numeric",month:"short",hour:"numeric",minute:"2-digit"})}catch(e){return dmy(v)}};
+  function changeRows(r,po){
+    const lines=(r.lines||[]).filter(l=>l&&l.kind),byId=new Map(),out=[];
+    lines.forEach(l=>{if(l.item_id)byId.set(String(l.item_id),l)});
+    const fromLine=l=>{
+      const k=[].concat(l.kind).map(x=>String(x).toUpperCase());
+      const q0=num(l.qty_old),q1=num(l.qty),r0=l.rate_old==null?num(l.rate):num(l.rate_old),r1=num(l.rate);
+      const tags=[];
+      if(k.includes("ADD"))tags.push(["add","Added"]);
+      else if(k.includes("REMOVE"))tags.push(["rem","Removed"]);
+      else{if(k.includes("SKU"))tags.push(["sku","Item changed"]);if(q1<q0)tags.push(["less","Less"]);if(q1>q0)tags.push(["more","Extra"])}
+      if(!k.includes("ADD")&&r0!==r1)tags.push(["rate","Rate"]);
+      return {sku:l.sku||l.sku_old||"",old:l.sku_old&&l.sku&&String(l.sku_old).toUpperCase()!==String(l.sku).toUpperCase()?l.sku_old:"",
+        q0,q1,r0,r1,diff:l.diff!=null?num(l.diff):q1*r1-q0*r0,tags,changed:true};
+    };
+    if(po&&Array.isArray(po.items))po.items.forEach(it=>{
+      const l=byId.get(String(it.item_id));
+      if(l){out.push(fromLine(l));byId.delete(String(it.item_id));return}
+      if(!(num(it.qty)>0))return;
+      out.push({sku:it.sku_name,old:"",q0:num(it.qty),q1:num(it.qty),r0:num(it.rate),r1:num(it.rate),diff:0,tags:[],changed:false});
+    });
+    lines.forEach(l=>{if(!l.item_id||byId.has(String(l.item_id))){out.push(fromLine(l));if(l.item_id)byId.delete(String(l.item_id))}});
+    return out;
+  }
+  function changeView(r,po){
+    const rows=changeRows(r,po),after=r.qty_col==="loaded_qty"||(po&&po.qty_col==="loaded_qty");
+    const nChanged=rows.filter(x=>x.changed).length;
+    const row=x=>{
+      const dq=x.old?0:x.q1-x.q0;
+      return '<tr class="'+(x.changed?"chg":"same")+'"><td class="it"><b>'+esc(x.sku)+'</b>'+
+        (x.old?'<small class="was">was '+esc(x.old)+'</small>':"")+
+        (x.r0!==x.r1?'<small class="rt">Rate ₹'+qn(x.r0)+' → ₹'+qn(x.r1)+'</small>':(x.changed?'<small>Rate ₹'+qn(x.r1)+'</small>':""))+
+        (x.tags.length?'<span class="tg">'+x.tags.map(t=>'<i class="'+t[0]+'">'+esc(t[1])+'</i>').join("")+'</span>':"")+'</td>'+
+        '<td class="n">'+(x.old||x.tags.some(t=>t[0]==="add")?(x.old?qn(x.q0):"—"):qn(x.q0))+'</td>'+
+        '<td class="n'+(x.changed?" b":"")+'">'+(x.tags.some(t=>t[0]==="rem")?"0":qn(x.q1))+'</td>'+
+        '<td class="n '+(dq<0?"neg":dq>0?"pos":"")+'">'+(dq?sg(dq):"")+'</td>'+
+        '<td class="n '+(x.diff<0?"neg":x.diff>0?"pos":"")+'">'+(x.diff?sg(Math.round(x.diff)):"")+'</td></tr>';
+    };
+    // Goods back to / out of the godown (only after loading: lwb_bill_change_stock_setup.sql)
+    const back=[],out=[];
+    if(after)rows.filter(x=>x.changed).forEach(x=>{
+      if(x.old){if(x.q0)back.push(x.old+" · "+qn(x.q0)+" CS");if(x.q1)out.push(x.sku+" · "+qn(x.q1)+" CS");return}
+      const d=x.q1-x.q0;if(d<0)back.push(x.sku+" · "+qn(-d)+" CS");if(d>0)out.push(x.sku+" · "+qn(d)+" CS");
+    });
+    const d=num(r.diff);
+    const info=[["Sent by",(r.by||"—")+" · "+when(r.requested_at)],["Reason",r.reason],["Note",r.note],["Bill no.",r.bill_no],
+      ["Qty counted",after?"Loaded qty (PO already loaded)":"Approved qty (before loading)"]].filter(x=>x[1]);
+    return '<div class="cv-info">'+info.map(x=>'<div><span>'+esc(x[0])+'</span><b>'+esc(x[1])+'</b></div>').join("")+'</div>'+
+      '<div class="cv-tot"><div><span>Before</span><b>'+inr(r.old_value)+'</b></div><div><span>After</span><b>'+inr(r.new_value)+'</b></div>'+
+        '<div class="'+(d<0?"neg":"pos")+'"><span>Change</span><b>'+(d>0?"+":"")+inr(d)+'</b></div></div>'+
+      '<div class="cv-h">Items · '+nChanged+' changed'+(rows.length>nChanged?" · "+(rows.length-nChanged)+" same":"")+'</div>'+
+      '<table class="cv-t"><colgroup><col><col class="c"><col class="c"><col class="c"><col class="c2"></colgroup>'+
+        '<thead><tr><th>Item</th><th class="n">Given</th><th class="n">Now</th><th class="n">+ / −</th><th class="n">₹ change</th></tr></thead>'+
+        '<tbody>'+rows.map(row).join("")+'</tbody></table>'+
+      (back.length||out.length?'<div class="cv-stock">'+(back.length?'<div>📦 <b>Back to godown:</b> '+esc(back.join(", "))+'</div>':"")+
+        (out.length?'<div>🚚 <b>Out of godown:</b> '+esc(out.join(", "))+'</div>':"")+'</div>':"");
+  }
+
+  window.LWBApprovals={load,filter,total,changeView,SECTIONS,esc,inr,short,dmy,errText};
 })();
