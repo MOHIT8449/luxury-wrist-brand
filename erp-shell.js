@@ -74,6 +74,9 @@
   const svg=(name)=>'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">'+(ICON[name]||ICON.box)+'</svg>';
 
   // Same role lists as the dashboard cards and each page's own role check.
+  // Side menu (Mohit, 16 Nov 2026): Dashboard, Approvals, Tasks and Complaint Box stay on top; every other
+  // group is one row that opens and closes (one open at a time, the open page's group opens by itself).
+  const GROUP_ICON={"Sales":"chart","Purchase":"inbox","Stock & Dispatch":"truck","Accounts":"cash","Masters":"users","Admin":"gear","View only":"note"};
   const MENU=[
     {group:"",items:[{t:"Dashboard",h:"dashboard.html",i:"home",r:"*"},
       // Approvals (Mohit, 7 Nov 2026): everything waiting for Admin / Sales Head OK, one card each (approvals.js).
@@ -101,9 +104,14 @@
       {t:"Party Call List",h:"party-calls.html",i:"phone",r:"admin manager sales"},
       {t:"Outside Market Stock",h:"market-report.html",i:"pin",r:"admin manager sales"},
       {t:"Sales Tracking",h:"sales-tracking.html",i:"chart",r:"admin manager"},
-      {t:"Sales Team Setup",h:"sales-team.html",i:"users",r:"admin manager"}]},
+      {t:"Sales Team Setup",h:"sales-team.html",i:"users",r:"admin manager"},
+      // One "Returns" item (Mohit, 4 Nov 2026): Sales Return and Credit Note are tabs on top of it (PAGE_TABS);
+      // they leave the side menu only for roles that also have Driver Returns (Salesman keeps Sales Return).
+      {t:"Returns",h:"driver-returns.html",i:"undo",r:"admin accounts manager warehouse",pt:"Driver Returns Approval"},
+      {t:"Sales Return",h:"sales-return.html",i:"undo",r:"admin sales warehouse",nm:"admin warehouse",par:"driver-returns.html"},
+      {t:"Credit Note Preview",h:"credit-note.html",i:"note",r:"admin accounts",nm:"admin accounts",par:"driver-returns.html"}]},
     // Purchase in one place (Mohit, 2 Nov 2026): entry, the list of every purchase bill (like the PO list),
-    // damage claims, and the scanned sales bill PDFs uploaded every night.
+    // ECRS and damage claims. (The scanned sales bill PDFs moved to Accounts, 16 Nov 2026.)
     {group:"Purchase",items:[
       // One "Purchase" item (Mohit, 4 Nov 2026): the list, with "+ New Purchase" on top. Purchase Entry is
       // not drawn in the side menu (nm) but stays in search and Manage Users; its list item is lit (par).
@@ -111,20 +119,21 @@
       {t:"Purchase",h:"purchase-register.html",i:"note",r:"admin manager warehouse accounts",k:"purchase register bills verify damage photo",pt:"Purchase List / Register",vo:"accounts"},
       // ECRS (Mohit, 16 Nov 2026): company's daily allowed quantity, our truck orders (Order 1, 2, 3), payment.
       {t:"ECRS Order",h:"ecrs.html",i:"note",r:"admin manager",k:"ecrs acrs company order truck pallet gr discount rtgs coca cola"},
-      {t:"Purchase Claims",h:"purchase-claims.html",i:"inbox",r:"admin manager",k:"damage leakage shortage claim"},
-      {t:"Sales Bill PDFs",h:"sales-bill-scans.html",i:"bill",r:"admin accounts manager",k:"scan pdf sales bill invoice register upload",vo:"accounts"}]},
-    {group:"Dispatch",items:[
+      {t:"Purchase Claims",h:"purchase-claims.html",i:"inbox",r:"admin manager",k:"damage leakage shortage claim"}]},
+    // Collapsible groups (Mohit, 16 Nov 2026): Inventory, Dispatch and Delivery in one group.
+    {group:"Stock & Dispatch",items:[
+      // One "Inventory" item (Mohit, 4 Nov 2026): the other stock pages are tabs on top of it (PAGE_TABS),
+      // still found by Module Search and ticked in Manage Users.
+      {t:"Inventory",h:"inventory.html",i:"stock",r:"admin manager warehouse accounts",vo:"accounts",pt:"Inventory / Stock Report"},
+      {t:"Goods in Transit",h:"stock-transit.html",i:"truck",r:"admin manager warehouse",nm:"admin manager warehouse",par:"inventory.html"},
+      {t:"Stock Transfer / Damage",h:"stock-transfer.html",i:"undo",r:"admin manager warehouse accounts",vo:"accounts",nm:"admin manager warehouse accounts",par:"inventory.html"},
+      {t:"Night Stock Audit",h:"stock-audit.html",i:"stock",r:"admin manager warehouse accounts",vo:"accounts",nm:"admin manager warehouse accounts",par:"inventory.html"},
+      {t:"Opening Stock",h:"opening-stock.html",i:"box",r:"admin",nm:"admin",par:"inventory.html"},
       {t:"Godown Report",h:"godown-report.html",i:"note",r:"admin manager warehouse"},
       {t:"Loading & Dispatch",h:"loading-dispatch.html",i:"box",r:"admin manager warehouse"},
       {t:"Transport Assignment",h:"transport-allocation.html",i:"truck",r:"admin manager transport"},
-      {t:"Sheet & Pallet Ledger",h:"sheet-pallet.html",i:"layers",r:"admin manager accounts warehouse",vo:"accounts"}]},
-    {group:"Delivery",items:[
       {t:"Driver Delivery / POD",h:"driver-delivery.html",i:"pin",r:"admin manager driver accounts",nm:"accounts"},
-      {t:"Driver Collections",h:"driver-collections.html",i:"cash",r:"admin manager accounts",nm:"accounts"},
       {t:"Live Tracking",h:"live-tracking.html",i:"pin",r:"admin"}]},
-    {group:"Reports",items:[
-      {t:"Daily Summary",h:"daily-report.html",i:"stock",r:"admin manager accounts",nm:"accounts"},
-      {t:"Team Work Report",h:"team-report.html",i:"users",r:"admin manager"}]},
     {group:"Accounts",items:[
       {t:"Accounts Dashboard",h:"accounts-dashboard.html",i:"cash",r:"admin accounts"},
       {t:"Bank Statement",h:"bank-statement.html",i:"book",r:"admin accounts"},
@@ -136,37 +145,30 @@
       // Company documents (Mohit, 11 Nov 2026): GST / PAN / Aadhaar / licences, renewal reminders, share to a party.
       {t:"Documents",h:"documents.html",i:"note",r:"admin accounts",k:"documents company kyc gst certificate pan aadhaar licence license renewal expiry reminder gstr-1 gstr-3b fssai gumasta share whatsapp party"},
       {t:"Tax Invoice Print",h:"tax-invoice.html",i:"bill",r:"admin accounts manager warehouse",k:"tax invoice gst bill print tally format cgst sgst hsn accounts absent",nm:"accounts manager warehouse"},
+      // Every accounts page in one group (Mohit, 16 Nov 2026).
+      {t:"Driver Collections",h:"driver-collections.html",i:"cash",r:"admin manager accounts",nm:"accounts"},
+      {t:"Sheet & Pallet Ledger",h:"sheet-pallet.html",i:"layers",r:"admin manager accounts warehouse",vo:"accounts"},
+      {t:"Sales Bill PDFs",h:"sales-bill-scans.html",i:"bill",r:"admin accounts manager",k:"scan pdf sales bill invoice register upload",vo:"accounts"},
+      {t:"Daily Summary",h:"daily-report.html",i:"stock",r:"admin manager accounts",nm:"accounts"},
       {t:"Money Overview",h:"money-overview.html",i:"cash",r:"admin accounts",hide:1},
       {t:"Tally Bill & Invoice No.",h:"accounts-invoice.html",i:"bill",r:"admin accounts",hide:1},
       {t:"Tally Bill Check",h:"tally-check.html",i:"bill",r:"admin accounts",hide:1},
       {t:"Tally Party Mapping",h:"party-mapping.html",i:"users",r:"admin accounts",hide:1},
       {t:"Cashbook",h:"cashbook.html",i:"cash",r:"admin",hide:1}]},
-    {group:"Returns",items:[
-      // One "Returns" item (Mohit, 4 Nov 2026): Sales Return and Credit Note are tabs on top of it (PAGE_TABS);
-      // they leave the side menu only for roles that also have Driver Returns (Salesman keeps Sales Return).
-      {t:"Returns",h:"driver-returns.html",i:"undo",r:"admin accounts manager warehouse",pt:"Driver Returns Approval"},
-      {t:"Sales Return",h:"sales-return.html",i:"undo",r:"admin sales warehouse",nm:"admin warehouse",par:"driver-returns.html"},
-      {t:"Credit Note Preview",h:"credit-note.html",i:"note",r:"admin accounts",nm:"admin accounts",par:"driver-returns.html"}]},
-    {group:"Inventory",items:[
-      // One "Inventory" item (Mohit, 4 Nov 2026): the other stock pages are tabs on top of it (PAGE_TABS),
-      // still found by Module Search and ticked in Manage Users.
-      {t:"Inventory",h:"inventory.html",i:"stock",r:"admin manager warehouse accounts",vo:"accounts",pt:"Inventory / Stock Report"},
-      {t:"Goods in Transit",h:"stock-transit.html",i:"truck",r:"admin manager warehouse",nm:"admin manager warehouse",par:"inventory.html"},
-      {t:"Stock Transfer / Damage",h:"stock-transfer.html",i:"undo",r:"admin manager warehouse accounts",vo:"accounts",nm:"admin manager warehouse accounts",par:"inventory.html"},
-      {t:"Night Stock Audit",h:"stock-audit.html",i:"stock",r:"admin manager warehouse accounts",vo:"accounts",nm:"admin manager warehouse accounts",par:"inventory.html"},
-      {t:"Opening Stock",h:"opening-stock.html",i:"box",r:"admin",nm:"admin",par:"inventory.html"}]},
     {group:"Masters",items:[
       {t:"Customer / Party Master",h:"customer-master.html",i:"users",r:"admin manager"},
       {t:"SKU Master",h:"sku-master.html",i:"tag",r:"admin manager"},
+      {t:"Rate List",h:"rates.html",i:"tag",r:"admin manager",k:"rate scheme mepd landing slab rajnigandha coca-cola brand",pt:"Rate List (Coca-Cola Rate & Scheme)"},
       {t:"Company / Brand",h:"companies.html",i:"factory",r:"admin manager accounts",vo:"accounts"},
       {t:"Supplier Master",h:"supplier-master.html",i:"factory",r:"admin manager"},
       {t:"Vehicle Master",h:"fleet-master.html#vehicles",i:"truck",r:"admin manager transport warehouse"},
       {t:"Drivers",h:"fleet-master.html#drivers",i:"users",r:"transport"},
       {t:"Employee Master",h:"fleet-master.html#employees",i:"users",r:"admin manager warehouse"},
       {t:"Fixed Assets",h:"fixed-assets.html",i:"box",r:"admin manager accounts warehouse",vo:"accounts"}]},
-    {group:"Settings",items:[
+    {group:"Admin",items:[
       {t:"Settings",h:"settings.html",i:"gear",r:"admin manager"},
       {t:"Manage Users",h:"users.html",i:"lock",r:"admin"},
+      {t:"Team Work Report",h:"team-report.html",i:"users",r:"admin manager"},
       // Change History (Mohit, 5 Nov 2026): who added / edited / deleted what. Admin only.
       {t:"Change History",h:"change-history.html",i:"undo",r:"admin",k:"history audit log who edited changed deleted added employee activity"},
       // Brand Data Reset (Mohit, 4 Nov 2026): Admin removes one brand's data till today for a fresh start.
@@ -174,8 +176,7 @@
       {t:"Brand Data Reset",h:"brand-reset.html",i:"lock",r:"admin",k:"reset delete clear brand rajnigandha fresh start opening data",nm:"admin",par:"settings.html"},
       // Order History Days (Mohit, 13 Nov 2026): per role, days after delivery an order stays in its lists.
       {t:"Order History Days",h:"order-history-days.html",i:"note",r:"admin",k:"order history days delivered visible hide old orders salesman driver sales head accounts role",nm:"admin",par:"settings.html"},
-      {t:"Accounts Fresh Start",h:"accounts-reset.html",i:"lock",r:"admin",k:"reset delete clear accounts cash book entries opening cash bank balance fresh start",nm:"admin",par:"settings.html"},
-      {t:"Rate List",h:"rates.html",i:"tag",r:"admin manager",k:"rate scheme mepd landing slab rajnigandha coca-cola brand",pt:"Rate List (Coca-Cola Rate & Scheme)"}]}
+      {t:"Accounts Fresh Start",h:"accounts-reset.html",i:"lock",r:"admin",k:"reset delete clear accounts cash book entries opening cash bank balance fresh start",nm:"admin",par:"settings.html"}]}
   ];
 
 
@@ -378,38 +379,53 @@
 
     const side=document.createElement("aside");
     side.className="erp-side";
+    const OPEN_KEY="erpSideGroup";
+    const isActive=i=>!!current&&(i.h===current.h||String(current.par||"").split(" ").includes(i.h));
     function drawSide(){
       let html='<div class="erp-brand"><span class="erp-mark" aria-hidden="true">lwb</span><div><b>LUXURY WRIST BRAND</b><small>BUSINESS ERP</small></div></div>'+
         '<div class="erp-menu-find"><input type="search" aria-label="Find a page" placeholder="Find a page…"></div><p class="erp-menu-empty" hidden>No page found</p>';
+      const link=(i,g)=>'<a class="erp-link'+(isActive(i)?' active':'')+'" href="'+esc(i.h)+'" data-k="'+esc((i.t+" "+g.group+" "+(i.pt||"")+" "+(i.k||"")).toLowerCase())+'">'+svg(i.i)+'<span>'+esc(i.t)+'</span></a>';
+      const secs=groups.filter(g=>!g.so&&g.group);
+      // Which group is open: the open page's group, else the one opened last, else the first.
+      let open=(secs.find(g=>g.items.some(isActive))||{}).group;
+      if(!open){try{open=localStorage.getItem(OPEN_KEY)||""}catch(e){}}
+      if(!secs.some(g=>g.group===open))open=secs.length===1?secs[0].group:"";
       groups.forEach(g=>{
         if(g.so)return;
-        if(g.group)html+='<div class="erp-group">'+esc(g.group)+'</div>';
-        g.items.forEach(i=>{html+='<a class="erp-link'+(current&&(i.h===current.h||String(current.par||"").split(" ").includes(i.h))?' active':'')+'" href="'+esc(i.h)+'" data-k="'+esc((i.t+" "+g.group+" "+(i.pt||"")+" "+(i.k||"")).toLowerCase())+'">'+svg(i.i)+'<span>'+esc(i.t)+'</span></a>'});
+        if(!g.group){html+=g.items.map(i=>link(i,g)).join("");return}
+        const on=g.group===open,id="erp-sec-"+g.group.toLowerCase().replace(/[^a-z]+/g,"-");
+        html+='<div class="erp-sec'+(on?' open':'')+'" data-g="'+esc(g.group)+'">'+
+          '<button type="button" class="erp-group" aria-expanded="'+on+'" aria-controls="'+id+'">'+svg(GROUP_ICON[g.group]||"note")+
+          '<span>'+esc(g.group)+'</span><em>'+g.items.length+'</em><svg class="erp-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></button>'+
+          '<div class="erp-sec-body" id="'+id+'">'+g.items.map(i=>link(i,g)).join("")+'</div></div>';
       });
       side.innerHTML=html;
     }
     drawSide();
     side.setAttribute("aria-label", "Main menu");
+    side.addEventListener("click", e => {
+      const b=e.target.closest(".erp-group");if(!b)return;
+      const sec=b.parentElement,on=!sec.classList.contains("open");
+      side.querySelectorAll(".erp-sec.open").forEach(x=>{x.classList.remove("open");x.querySelector(".erp-group").setAttribute("aria-expanded","false")});
+      sec.classList.toggle("open",on);b.setAttribute("aria-expanded",String(on));
+      try{localStorage.setItem(OPEN_KEY,on?sec.dataset.g:"")}catch(err){}
+      if(on)requestAnimationFrame(()=>sec.scrollIntoView({block:"nearest"}));
+    });
     side.addEventListener("input", e => {
       if(!e.target.matches(".erp-menu-find input")) return;
       const q=e.target.value.trim().toLowerCase();
       const links=[...side.querySelectorAll(".erp-link")];
       links.forEach(a => {a.hidden=!!q&&!(a.dataset.k||a.textContent.toLowerCase()).includes(q);a.classList.remove("kb")});
+      // While finding, every group with a match is shown open; clearing the box brings back the open / closed groups.
+      side.classList.toggle("finding",!!q);
+      side.querySelectorAll(".erp-sec").forEach(sec => {sec.hidden=!!q&&![...sec.querySelectorAll(".erp-link")].some(a=>!a.hidden)});
       // Like Module Search: the first match is picked, ↑ / ↓ move, Enter opens (Mohit, 7 Nov 2026).
       const first=q&&links.find(a=>!a.hidden);if(first)first.classList.add("kb");
-      side.querySelectorAll(".erp-group").forEach(g => {
-        let next=g.nextElementSibling, visible=false;
-        while(next && !next.classList.contains("erp-group")){
-          if(next.classList.contains("erp-link") && !next.hidden) visible=true;
-          next=next.nextElementSibling;
-        }
-        g.hidden=!visible;
-      });
       side.querySelector(".erp-menu-empty").hidden=links.some(a => !a.hidden);
     });
     side.addEventListener("keydown", e => {
       if(!e.target.matches(".erp-menu-find input")) return;
-      const vis=[...side.querySelectorAll(".erp-link")].filter(a=>!a.hidden);
+      const vis=[...side.querySelectorAll(".erp-link")].filter(a=>!a.hidden&&a.offsetParent);
       let i=vis.findIndex(a=>a.classList.contains("kb"));
       if(e.key==="ArrowDown"||e.key==="ArrowUp"){
         if(!vis.length)return;e.preventDefault();
