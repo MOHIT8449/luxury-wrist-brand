@@ -265,12 +265,21 @@
     const VERIFY_ICON={ORDER_APPROVAL:"check",LOADING:"box",RETURN_APPROVE:"undo",RETURN_RECEIVE:"inbox",TALLY_BILL:"bill",
       DRIVER_PAYMENT:"cash",OFFICE_PAYMENT:"cash",CREDIT_NOTE:"note",SALES_RETURN:"undo",COMPLAINT:"chat",PARTY_CALL:"phone"};
     async function loadVerify(){
-      const card=document.getElementById("verifyCard"),list=document.getElementById("verifyList");
       const queue=["admin","manager","accounts","warehouse"].includes(currentRole);
       const [q,cmp,calls]=await Promise.all([queue?client.rpc("lwb_my_verify_queue"):Promise.resolve(null),complaintsDue(),partyCallsDue()]);
+      VQ={q,cmp,calls,queue};drawVerify();
+    }
+    // "Make Tally bill" counted only status 'loaded' (last 45 days), so it showed 124 while Bills to make showed
+    // another number. The role Dashboard (role-dashboard.js) counts Bills to make with the page's own rule and puts
+    // it in window.LWBMakeBills, then calls drawVerify again (Mohit, 16 Nov 2026).
+    let VQ=null;
+    function drawVerify(){
+      if(!VQ)return;
+      const {q,cmp,calls,queue}=VQ,card=document.getElementById("verifyCard"),list=document.getElementById("verifyList");
       if((!q||q.error)&&!cmp&&!calls){card.hidden=true;return}
-      const LABEL={DRIVER_PAYMENT:"Money on the way — receive from driver"};
-      const hidden=ERPShell.hiddenPages(),due=(calls?[calls]:[]).concat((q&&!q.error&&q.data)||[]).concat(cmp?[cmp]:[]).filter(r=>Number(r.cnt)>0&&!hidden.includes(r.page));
+      const LABEL={DRIVER_PAYMENT:"Money on the way — receive from driver"},MB=window.LWBMakeBills;
+      const fix=r=>r.item==="TALLY_BILL"&&MB?{...r,label:"Bills to make (Tally bill)",cnt:MB.cnt,amount:MB.amount,page:"party-billing.html"}:r;
+      const hidden=ERPShell.hiddenPages(),due=(calls?[calls]:[]).concat(((q&&!q.error&&q.data)||[]).map(fix)).concat(cmp?[cmp]:[]).filter(r=>Number(r.cnt)>0&&!hidden.includes(r.page));
       if(!queue&&!due.length){card.hidden=true;return}
       list.replaceChildren();
       due.forEach(r=>{
@@ -284,6 +293,7 @@
       if(!due.length){const n=document.createElement("div");n.className="none";n.textContent="✓ Nothing waiting for you to verify.";list.appendChild(n)}
       card.hidden=false;
     }
+    window.LWBVerifyRedraw=drawVerify;
     // Approvals waiting (approvals.js): "Waiting approval N" next to the Admin view dropdown, opens approvals.html.
     async function loadApprovals(uid){
       let pill=document.getElementById("apPill");

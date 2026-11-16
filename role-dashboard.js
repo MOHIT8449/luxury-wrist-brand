@@ -175,6 +175,28 @@
     return sum(targets.filter(x=>x.salesman_id),x=>x.target_amount);
   }
   async function verifyQueue(){return safe(C.rpc("lwb_my_verify_queue"))}
+  // Pending Work "Make Tally bill" counted only status 'loaded' of the last 45 days (124 while Bills to make showed
+  // another number). Count it with the Bills to make rule (LWBPartyPay.needsBill + approved, not loaded yet) and let
+  // dashboard.html redraw the row as "Bills to make" (Mohit, 16 Nov 2026).
+  const makeBillsData=()=>Promise.all([safe(C.rpc("lwb_admin_order_marks",{p_ids:null})),safe(C.rpc("lwb_bills_before_loading"))]);
+  function setMakeBills(PI,md){
+    if(!PI||!PI.raw||!md||!window.LWBPartyPay||!LWBPartyPay.needsBill)return;
+    const marks=new Map((md[0]||[]).map(m=>[m.order_id,1]));
+    const L=(PI.raw.orders||[]).filter(o=>LWBPartyPay.needsBill(o,marks)).concat(md[1]||[]);
+    window.LWBMakeBills={cnt:L.length,amount:sum(L,o=>o.erp_amount)};
+    if(window.LWBVerifyRedraw)LWBVerifyRedraw();
+  }
+  // POs that are delivered: a driver report Delivered / Partial (any day) or an Admin / Sales Head "Mark delivered".
+  // Same two sources as PO List > Delivered and Admin's Total pending delivery (lwb_pending_delivery_marks_fix.sql).
+  async function deliveredSet(ids){
+    const done=new Set();
+    for(let i=0;i<ids.length;i+=150){const part=ids.slice(i,i+150);
+      const [r,m]=await Promise.all([safe(C.from("lwb_delivery_reports").select("order_id").in("order_id",part).in("delivery_status",["DELIVERED","PARTIAL"])),
+        safe(C.rpc("lwb_admin_order_marks",{p_ids:part}))]);
+      for(const x of r||[])done.add(x.order_id);
+      for(const x of m||[])if(x.kind==="DELIVERED")done.add(x.order_id)}
+    return done;
+  }
   const queueItem=(q,item)=>(q||[]).find(r=>r.item===item)||null;
   function outstanding(PI){
     if(!PI)return null;
@@ -334,6 +356,7 @@
       const t=today(),y=shift(t,-1);
       const [orders,sumy,acc,PI,cq,team,ov]=await Promise.all([loadOrdersB(),safe(C.rpc("lwb_po_approval_summary",{p_from:t,p_to:t})),
         safe(C.rpc("lwb_acc_dashboard",{p_from:t,p_to:t})),window.LWBPartyPay?LWBPartyPay.load(C).catch(()=>null):null,safe(C.rpc("lwb_acc_cheque_list")),salesTeam(),overview()]);
+      makeBillsData().then(md=>setMakeBills(PI,md));
       const O=orders||[],L=O.filter(live),td=L.filter(o=>o.day===t),yd=L.filter(o=>o.day===y),mo=L.filter(o=>o.day>=t.slice(0,8)+"01");
       TEAM=team.team;
       const [stock,PR]=await Promise.all([stockCheck(orders),orders&&profitOk()?profitOf(td).catch(()=>null):null]);
@@ -450,10 +473,13 @@
        Quick row (5 Nov 2026): Bills to make, PO List, Cash In, Cash Out. Bank and Returns stay in the menu; the full outstanding list stays on Billing & Outstanding. */
     async accounts(){
       const t=today();
-      const [acc,PI,cq,vq,ov,bk,orders,dl,rp,ra]=await Promise.all([safe(C.rpc("lwb_acc_dashboard",{p_from:t,p_to:t})),window.LWBPartyPay?LWBPartyPay.load(C).catch(()=>null):null,
+      const [acc,PI,cq,vq,ov,bk,orders,dl,rp,ra,billed,md]=await Promise.all([safe(C.rpc("lwb_acc_dashboard",{p_from:t,p_to:t})),window.LWBPartyPay?LWBPartyPay.load(C).catch(()=>null):null,
         safe(C.rpc("lwb_acc_cheque_list")),verifyQueue(),overview(),safe(C.rpc("lwb_bank_stmt_open_count")),loadOrders(),
         safe(C.from("lwb_delivery_reports").select("order_id,delivery_status,reported_at,delivery_note").gte("reported_at",t+"T00:00:00+05:30")),
-        safe(C.rpc("lwb_office_list_driver_returns",{p_status:"PENDING_OFFICE"})),safe(C.rpc("lwb_office_list_driver_returns",{p_status:"APPROVED"}))]);
+        safe(C.rpc("lwb_office_list_driver_returns",{p_status:"PENDING_OFFICE"})),safe(C.rpc("lwb_office_list_driver_returns",{p_status:"APPROVED"})),
+        // billed / dispatched POs of any month (loadOrders has this month + open ones only)
+        safe(C.from("orders").select(ORDER_COLS).in("status",["invoiced","dispatched"]).limit(3000)),makeBillsData()]);
+      setMakeBills(PI,md);
       const A=acc?accTotals(acc):null,out=outstanding(PI),drv=queueItem(vq,"DRIVER_PAYMENT"),cn=queueItem(vq,"CREDIT_NOTE");
       const qa='<div class="rd-qa rd-qa-row">'+[["party-billing.html","🧾","Bills to make"],["warehouse-orders.html","📋","PO List"],["accounts-dashboard.html?new=IN","+","Cash In"],["accounts-dashboard.html?new=OUT","−","Cash Out"]]
         .filter(x=>can(x[0])).map(x=>'<a href="'+x[0]+'"><span>'+x[1]+"</span>"+x[2]+"</a>").join("")+"</div>";
@@ -465,14 +491,25 @@
         kpi("amber","Bank to match",bk?fmt(bk.cnt):"—",bk?(num(bk.cnt)?"In "+rs(bk.credit)+" · Out "+rs(bk.debit)+(bk.oldest?" · from "+dmy(bk.oldest):""):"✓ All matched"):"Bank Statement","bank-statement.html")];
       // Where each order is: on the vehicle (not delivered yet) and today's driver reports.
       let where="";
-      if(orders){const O=orders.filter(live),byId=new Map(orders.map(o=>[o.id,o])),R=dl||[];
-        const way=O.filter(o=>["loading","loaded","invoiced","dispatched"].includes(st(o)));
-        const rOf=s=>R.filter(r=>r.delivery_status===s).map(r=>({...(byId.get(r.order_id)||{order_no:"PO"}),delivery_note:r.delivery_note,reported_at:r.reported_at}));
+      // On vehicle (16 Nov 2026, Mohit: it showed 231): loading / loaded / billed POs leave out the ones already
+      // delivered by a driver report or an Admin "Mark delivered" (those kept the status 'loaded'), and older billed POs
+      // are counted too. Delivered today also counts today's "Mark delivered" (it showed 0 when only Admin marked).
+      if(orders){const all=new Map();for(const o of orders.concat(billed||[]))all.set(o.id,o.day?o:{...o,day:istDay(o.order_date||o.created_at)});
+        const AO=[...all.values()],O=AO.filter(live),byId=new Map(AO.map(o=>[o.id,o])),R=dl||[];
+        const onIt=O.filter(o=>["loading","loaded","invoiced","dispatched"].includes(st(o))),done=await deliveredSet(onIt.map(o=>o.id));
+        const way=onIt.filter(o=>!done.has(o.id));
+        const rep=new Set(R.filter(r=>r.delivery_status==="DELIVERED"||r.delivery_status==="PARTIAL").map(r=>r.order_id));
+        const mt=((md&&md[0])||[]).filter(m=>m.kind==="DELIVERED"&&String(m.mark_date)===t&&!rep.has(m.order_id));
+        const miss=[...new Set(mt.map(m=>m.order_id).filter(id=>!byId.has(id)))];
+        for(let i=0;i<miss.length;i+=150){for(const o of (await safe(C.from("orders").select(ORDER_COLS).in("id",miss.slice(i,i+150))))||[])byId.set(o.id,o)}
+        const who=m=>m.marked_by_name||(m.marked_by_role==="MANAGER"?"Sales Head":"Admin");
+        const rOf=s=>R.filter(r=>r.delivery_status===s).map(r=>({...(byId.get(r.order_id)||{order_no:"PO"}),delivery_note:r.delivery_note,reported_at:r.reported_at}))
+          .concat(s==="DELIVERED"?mt.map(m=>({...(byId.get(m.order_id)||{order_no:"PO"}),delivery_note:"Marked delivered by "+who(m)+(m.note?" · "+m.note:""),reported_at:m.marked_at})):[]);
         const DC=[{t:"PO No.",v:"order_no"},{t:"Party",v:"customer_name"},{t:"Cases",v:"total_qty",num:true,sum:true,dec:0},{t:"Amount",v:"total_amount",money:true,sum:true},{t:"Reported",v:r=>r.reported_at?new Date(r.reported_at).toLocaleTimeString("en-IN",{hour:"2-digit",minute:"2-digit"}):""},{t:"Note",v:"delivery_note"}];
         const bad=R.filter(r=>r.delivery_status==="NOT_DELIVERED"||r.delivery_status==="PARTIAL").slice(0,4);
         where=card("🚚 Orders — where are they",go("driver-delivery.html","Delivery / POD →"),'<div class="rd-bd"><div class="rd-flow rd-flow4">'+
-          step(way.length,"On vehicle","",0,"",lst("On vehicle","Loaded / dispatched, not delivered yet",way,null,"warehouse-orders.html"))+
-          step('<span class="g">'+rOf("DELIVERED").length+"</span>","Delivered today","",0,"",lst("Delivered today","Driver reports today",rOf("DELIVERED"),DC))+
+          step(way.length,"On vehicle","",0,"",lst("On vehicle","Loaded / billed, not delivered yet (no driver report, no Mark delivered)",way,null,"warehouse-orders.html"))+
+          step('<span class="g">'+rOf("DELIVERED").length+"</span>","Delivered today","",0,"",lst("Delivered today","Driver reports and Mark delivered today",rOf("DELIVERED"),DC))+
           step('<span class="a">'+rOf("PARTIAL").length+"</span>","Part delivered","",rOf("PARTIAL").length>0,"",lst("Part delivered","Driver reports today",rOf("PARTIAL"),DC))+
           step('<span class="r">'+rOf("NOT_DELIVERED").length+"</span>","Not delivered","",rOf("NOT_DELIVERED").length>0,"",lst("Not delivered","Driver reports today",rOf("NOT_DELIVERED"),DC))+"</div></div>"+
           bad.map(r=>{const o=byId.get(r.order_id)||{};return dot(r.delivery_status==="PARTIAL"?"amb":"red","<b>"+esc(o.order_no||"PO")+"</b> "+esc(o.customer_name||"")+" · "+(r.delivery_status==="PARTIAL"?"part delivered":"not delivered")+(r.delivery_note?" — "+esc(r.delivery_note):""))}).join(""))}
