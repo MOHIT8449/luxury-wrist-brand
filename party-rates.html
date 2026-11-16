@@ -11,13 +11,14 @@
   <script src="erp-shell.js"></script>
   <script src="sales-common.js"></script>
   <script src="party-list.js"></script>
+  <script src="mepd-scheme.js"></script>
   <style>
     /* Party Rate Offer (lwb_party_rate_offer_setup.sql, Mohit 16 Nov 2026): like a PO, party + category / pack + rate per case,
        saved as the rate given to that party, shared as an image; (i) = the rates this party got before. */
     .pr-wrap{display:grid;grid-template-columns:minmax(0,1fr) 360px;gap:10px;align-items:start}
     .pr-card{background:#fff;border:1px solid var(--erp-line,#dfe4ea);border-radius:8px;padding:10px 12px;min-width:0}
     .pr-card h2{font-size:14px;margin:0 0 8px;display:flex;align-items:center;gap:6px}
-    .pr-top{display:grid;grid-template-columns:minmax(0,1fr) 140px;gap:6px;margin-bottom:8px}
+    .pr-top{display:grid;grid-template-columns:minmax(0,1fr) 72px 140px;gap:6px;margin-bottom:8px}
     .pr-top label,.pr-note label{display:block;font-size:11px;color:#556;font-weight:600;margin-bottom:2px}
     .pr-in{width:100%;height:34px;border:1.5px solid #e3e7ec;border-radius:6px;padding:0 8px;font:inherit;font-size:13.5px;box-sizing:border-box;background:#fff}
     .pr-in:focus{border-color:var(--erp-red,#c8102e);outline:none}
@@ -26,7 +27,7 @@
     .pr-lines td{padding:3px 4px;border-bottom:1px solid #eef1f4;vertical-align:middle}
     .pr-lines td.no{color:#6b7785;width:22px;text-align:center}
     .pr-lines td.rt{width:110px}.pr-lines td.rt input{text-align:right}
-    .pr-lines td.last{width:150px;font-size:12px;color:#4b5563;white-space:nowrap}
+    .pr-lines td.last{width:250px;font-size:12px;color:#4b5563;white-space:nowrap}
     .pr-lines td.act{width:62px;white-space:nowrap;text-align:right}
     .pr-lines small{display:block;font-size:10.5px;color:#6b7785}
     .up{color:#13824a;font-weight:700}.dn{color:#c8102e;font-weight:700}.mut{color:#6b7785;font-size:12px}
@@ -63,7 +64,7 @@
     .pr-img{max-width:100%;border:1px solid #e3e7ec;border-radius:6px;display:block;margin:0 auto}
     @media(max-width:900px){.pr-wrap{grid-template-columns:minmax(0,1fr)}.pr-list{max-height:none}}
     @media(max-width:640px){
-      .pr-top{grid-template-columns:minmax(0,1fr) 136px}
+      .pr-top{grid-template-columns:minmax(0,1fr) 60px 128px}
       .pr-lines thead{display:none}
       .pr-lines tr{display:grid;grid-template-columns:22px minmax(0,1fr) 92px auto;gap:3px 6px;align-items:center;padding:6px 0;border-bottom:1px solid #eef1f4}
       .pr-lines td{border:0;padding:0!important;width:auto!important;background:none!important}
@@ -77,13 +78,14 @@
 <body>
   <div id="loading" class="status">Checking account access...</div>
   <main id="page" class="erp-main" hidden>
-    <div class="erp-pagehead"><h1>Party Rate Offer<button type="button" class="erp-i" aria-label="Info" title="Info" data-tip="Like making a PO: pick the party, add each category / pack with the rate per case, Save. The rate is kept as given to that party. Tap (i) on a line to see what rate this party got before. Image / WhatsApp sends it to the party.">i</button></h1></div>
+    <div class="erp-pagehead"><h1>Party Rate Offer<button type="button" class="erp-i" aria-label="Info" title="Info" data-tip="Like making a PO: pick the party, add each category / pack with the rate per case, Save. The rate is kept as given to that party. Tap (i) on a line to see what rate this party got before. ROI ₹ is taken off the landing shown. Image / WhatsApp sends only party name, category and rate.">i</button></h1></div>
     <div id="status" class="sl-msg" hidden></div>
     <div class="pr-wrap">
       <section class="pr-card" aria-labelledby="newT">
         <h2 id="newT"><span id="formTitle">New rate offer</span><span id="lastInfo" class="mut"></span></h2>
         <div class="pr-top">
           <div><label for="party">Party</label><input id="party" class="pr-in" data-party-list autocomplete="off" placeholder="Type party name"></div>
+          <div><label for="roi" title="ROI ₹ per case, taken off the landing (e.g. 5: landing 650 = 645)">ROI ₹</label><input id="roi" class="pr-in" type="number" min="0" step="0.5" inputmode="decimal" placeholder="0"></div>
           <div><label for="odate">Date</label><input id="odate" class="pr-in" type="date"></div>
         </div>
         <table class="pr-lines"><thead><tr><th>#</th><th>Category / pack</th><th>Rate ₹ / case</th><th>Last given</th><th></th></tr></thead><tbody id="lines"></tbody></table>
@@ -92,7 +94,6 @@
           <button type="button" class="sl-btn ghost small" id="useLast" disabled>↺ Last rates of this party</button>
           <span id="cnt" class="mut"></span>
         </div>
-        <div class="pr-note"><label for="note">Note (optional, goes on the image)</label><input id="note" class="pr-in" maxlength="200" placeholder="e.g. Rate per case, valid this week"></div>
         <div class="pr-row">
           <button type="button" class="sl-btn" id="save">💾 Save</button>
           <button type="button" class="sl-btn ghost" id="img">🖼 Image</button>
@@ -127,8 +128,10 @@
     const money=n=>Number(n||0).toLocaleString("en-IN",{maximumFractionDigits:2});
     const today=()=>LWBDate&&LWBDate.today?LWBDate.today():new Date(Date.now()+19800000).toISOString().slice(0,10);
     const dshort=d=>{if(!d)return"";const [y,m,dd]=String(d).slice(0,10).split("-");return dd+" "+["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][+m-1]+" "+y.slice(2)};
-    let me=null,packs=[],offers=[],last=new Map(),lastParty="",saved=null;
+    let me=null,land=new Map(),packs=[],offers=[],last=new Map(),lastParty="",saved=null;
 
+    // ROI ₹ / case typed on top (Mohit, 16 Nov 2026): landing shown = landing − ROI. Kept on this device only.
+    const roi=()=>Math.max(0,Number(el("roi").value)||0);
     function msg(t,kind){const m=el("msg");m.textContent=t||"";m.className="pr-msg"+(kind?" "+kind:"")}
     function lineRow(it){
       const tr=document.createElement("tr");
@@ -149,7 +152,10 @@
         if(l.item&&l.rate!=="")n++;
         if(!l.item){cell.innerHTML="";return}
         const pk=packs.find(x=>key(x.pack_name)===key(l.item));
-        const list=pk&&Number(pk.slab3_rate)>0?'<small>List ₹'+money(pk.slab3_rate)+'</small>':"";
+        const ld0=pk?land.get(key(pk.pack_name)):null,ld=ld0==null?null:ld0-roi(),mg=ld!=null&&l.rate!==""?Number(l.rate)-ld:null;
+        // Landing + margin on screen only (Mohit, 16 Nov 2026); never on the image / WhatsApp.
+        const list=pk?'<small>'+(Number(pk.slab3_rate)>0?'List ₹'+money(pk.slab3_rate):"")+(ld!=null?(Number(pk.slab3_rate)>0?" · ":"")+'Landing ₹'+money(ld)+
+          (mg!=null?' · <span class="'+(mg<0?"dn":"up")+'">Margin '+(mg>0?"+":"")+money(mg)+'</span>':""):"")+'</small>':"";
         if(!p){cell.innerHTML='<span class="mut">First time</span>'+list;return}
         const d=l.rate===""?0:Number(l.rate)-Number(p.rate);
         cell.innerHTML='₹'+money(p.rate)+' <span class="mut">· '+esc(dshort(p.offer_date))+'</span>'+
@@ -177,34 +183,29 @@
       const bad=ls.find(l=>!l.item||l.rate===""||!(Number(l.rate)>=0));
       if(bad)throw Error(bad.item?"Enter the rate for "+bad.item+".":"Write the category / pack on line "+(lines().indexOf(bad)+1)+".");
       const seen=new Set();for(const l of ls){if(seen.has(key(l.item)))throw Error(l.item+" is added twice.");seen.add(key(l.item))}
-      return {party_name:party,offer_date:el("odate").value||today(),note:el("note").value.trim(),lines:ls.map(l=>({item:l.item,rate:Number(l.rate)}))};
+      return {party_name:party,offer_date:el("odate").value||today(),note:"",lines:ls.map(l=>({item:l.item,rate:Number(l.rate)}))};
     }
     function resetForm(){
-      el("lines").innerHTML="";saved=null;el("party").value="";el("note").value="";el("odate").value=today();lastParty="x";
+      el("lines").innerHTML="";saved=null;el("party").value="";el("odate").value=today();lastParty="x";
       el("formTitle").textContent="New rate offer";
       for(let i=0;i<3;i++)addLine();loadLast();msg("");
     }
 
     // ---------- image ----------
+    // Image = party name, category and rate only (Mohit, 16 Nov 2026): no number, date, note or footer.
     function draw(o){
-      const sc=2,W=560,rowH=40,FONT=(b,s)=>(b?"bold ":"")+s+'px "Segoe UI",Arial,sans-serif';
-      const ls=o.lines,H=64+2*34+rowH+ls.length*rowH+(o.note?44:12)+30;
+      const sc=2,W=520,rowH=42,FONT=(b,s)=>(b?"bold ":"")+s+'px "Segoe UI",Arial,sans-serif';
+      const ls=o.lines,H=56+rowH+ls.length*rowH;
       const cv=document.createElement("canvas");cv.width=W*sc;cv.height=H*sc;
       const g=cv.getContext("2d");g.scale(sc,sc);g.fillStyle="#fff";g.fillRect(0,0,W,H);
       const txt=(t,x,y,size,color,bold,align,maxW)=>{g.fillStyle=color;g.textAlign=align||"left";g.textBaseline="middle";let s=size;g.font=FONT(bold,s);while(maxW&&g.measureText(t).width>maxW&&s>10){s--;g.font=FONT(bold,s)}g.fillText(t,x,y)};
-      g.fillStyle="#0b3d91";g.fillRect(0,0,W,64);
-      txt("RATE OFFER",20,24,22,"#fff",true);txt("LUXURY WRIST BRAND",20,48,12.5,"#c9d7f2",true);
-      txt(o.offer_no||"",W-20,32,14,"#fff",true,"right");
-      let y=64;
-      [["PARTY",o.party_name],["DATE",dshort(o.offer_date)]].forEach(([a,b],i)=>{g.fillStyle=i?"#f2f6fd":"#e8effb";g.fillRect(0,y,W,34);
-        txt(a,20,y+17,12,"#0f2347",true);txt(String(b||""),110,y+17,15,"#0f2347",true,"left",W-130);y+=34});
-      g.fillStyle="#ffde59";g.fillRect(0,y,W,rowH);
-      txt("#",30,y+rowH/2,13,"#000",true,"center");txt("CATEGORY / PACK",60,y+rowH/2,13,"#000",true);txt("RATE ₹ / CASE",W-20,y+rowH/2,13,"#000",true,"right");y+=rowH;
+      g.fillStyle="#0b3d91";g.fillRect(0,0,W,56);txt(String(o.party_name).toUpperCase(),W/2,28,21,"#fff",true,"center",W-30);
+      let y=56;g.fillStyle="#ffde59";g.fillRect(0,y,W,rowH);
+      txt("CATEGORY",20,y+rowH/2,14,"#000",true);txt("RATE",W-20,y+rowH/2,14,"#000",true,"right");y+=rowH;
       ls.forEach((l,i)=>{g.fillStyle=i%2?"#f7f9fc":"#fff";g.fillRect(0,y,W,rowH);g.strokeStyle="#dfe4ea";g.beginPath();g.moveTo(0,y+rowH-.5);g.lineTo(W,y+rowH-.5);g.stroke();
-        txt(String(i+1),30,y+rowH/2,14,"#6b7785",false,"center");txt(String(l.item).toUpperCase(),60,y+rowH/2,17,"#111",true,"left",W-220);
-        txt("₹ "+money(l.rate),W-20,y+rowH/2,19,"#0b3d91",true,"right");y+=rowH});
-      if(o.note){txt(o.note,20,y+24,13.5,"#374151",false,"left",W-40);y+=44}else y+=12;
-      txt("Rates per case · subject to stock · "+dshort(o.offer_date),W/2,y+12,11,"#6b7785",false,"center");
+        txt(String(l.item).toUpperCase(),20,y+rowH/2,18,"#111",true,"left",W-170);
+        txt("₹ "+money(l.rate),W-20,y+rowH/2,20,"#0b3d91",true,"right");y+=rowH});
+      g.strokeStyle="#0b3d91";g.lineWidth=2;g.strokeRect(1,1,W-2,H-2);
       return cv;
     }
     const toBlob=cv=>new Promise(ok=>cv.toBlob(ok,"image/png"));
@@ -223,8 +224,7 @@
         ["Close",closeDlg,"ghost"]]);
     }
     function waText(o){
-      return "*RATE OFFER*"+(o.offer_no?" ("+o.offer_no+")":"")+"\nParty: "+o.party_name+"\nDate: "+dshort(o.offer_date)+"\n\n"+
-        o.lines.map((l,i)=>(i+1)+". "+String(l.item).toUpperCase()+" - ₹"+money(l.rate)).join("\n")+"\n\nRate per case"+(o.note?"\n"+o.note:"")+"\n- Luxury Wrist Brand";
+      return "*"+String(o.party_name).toUpperCase()+"*\n\n"+o.lines.map(l=>String(l.item).toUpperCase()+" - ₹"+money(l.rate)).join("\n");
     }
     const openWa=o=>window.open("https://wa.me/?text="+encodeURIComponent(waText(o)),"_blank","noopener");
 
@@ -272,7 +272,7 @@
       closeDlg();await loadList();lastParty="x";loadLast();msg(o.offer_no+" cancelled.","ok");
     }
     function useAgain(o){
-      el("lines").innerHTML="";el("party").value=o.party_name;el("note").value=o.note||"";el("odate").value=today();saved=null;
+      el("lines").innerHTML="";el("party").value=o.party_name;el("odate").value=today();saved=null;
       el("formTitle").textContent="New rate offer";o.lines.forEach(l=>addLine(l));loadLast();msg("Filled from "+o.offer_no+". Change the rates and Save.");
       window.scrollTo({top:0,behavior:"smooth"});
     }
@@ -291,6 +291,8 @@
     }
 
     el("lines").addEventListener("input",refresh);
+    try{el("roi").value=localStorage.getItem("lwbPartyRateRoi")||""}catch(e){}
+    el("roi").addEventListener("input",()=>{try{localStorage.setItem("lwbPartyRateRoi",el("roi").value)}catch(e){}refresh()});
     el("lines").addEventListener("click",e=>{
       const b=e.target.closest("button[data-act]");if(!b)return;const tr=b.closest("tr");
       if(b.dataset.act==="del"){tr.remove();if(!el("lines").children.length)addLine();refresh()}
@@ -333,11 +335,22 @@
       el("loading").hidden=true;el("page").hidden=false;
       el("odate").value=today();for(let i=0;i<3;i++)addLine();
       try{
-        const [pk,sk]=await Promise.all([client.from("lwb_rate_packs").select("pack_name,slab3_rate,sort_no,active").eq("active",true).order("sort_no"),
-          client.from("sku_master").select("category").not("category","is",null)]);
+        // Only Rate List packs in the list (Mohit, 16 Nov 2026: SKU Master categories showed the same pack twice).
+        const [pk,st,ln,cm,sc]=await Promise.all([client.from("lwb_rate_packs").select("*").eq("active",true).order("sort_no"),
+          client.from("lwb_rate_settings").select("mepd_pct,roi_main").eq("id",1).maybeSingle(),
+          client.from("lwb_rate_pack_skus").select("sku_key,pack_id"),
+          client.from("sku_master").select("sku_name,category"),
+          client.from("lwb_mepd_schemes").select("categories,mepd_pct,valid_from,valid_to,created_at")]);
         packs=pk.error?[]:(pk.data||[]);
+        // Landing (excl. ROI) per pack, same formula as Rate & Scheme: today's MEPD scheme of the linked SKUs' category.
+        if(!st.error&&st.data){
+          const cat=new Map((cm.error?[]:cm.data||[]).filter(x=>x.category).map(x=>[key(x.sku_name),x.category]));
+          const schemes=sc.error?[]:(sc.data||[]),links=ln.error?[]:(ln.data||[]);
+          packs.forEach(p=>{let best=null;
+            if(window.LWBMepd)links.filter(l=>l.pack_id===p.id).forEach(l=>{const x=LWBMepd.find(schemes,cat.get(key(l.sku_key)));if(x&&(!best||String(x.created_at)>String(best.created_at)))best=x});
+            if(Number(p.gr)>0)land.set(key(p.pack_name),Math.round(S.landing(p,st.data,best)*100)/100)});
+        }
         const names=new Map();packs.forEach(p=>names.set(key(p.pack_name),[p.pack_name,Number(p.slab3_rate)>0?"List ₹"+money(p.slab3_rate):"Rate List pack"]));
-        (sk.error?[]:sk.data||[]).forEach(s=>{const c=String(s.category||"").trim();if(c&&!names.has(key(c)))names.set(key(c),[c,"SKU category"])});
         el("itemList").replaceChildren(...[...names.values()].map(([v,l])=>{const o=document.createElement("option");o.value=v;o.label=l;return o}));
       }catch(e){}
       refresh();loadList();
