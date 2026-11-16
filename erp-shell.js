@@ -396,7 +396,7 @@
         const on=g.group===open,id="erp-sec-"+g.group.toLowerCase().replace(/[^a-z]+/g,"-");
         html+='<div class="erp-sec'+(on?' open':'')+'" data-g="'+esc(g.group)+'">'+
           '<button type="button" class="erp-group" aria-expanded="'+on+'" aria-controls="'+id+'">'+svg(GROUP_ICON[g.group]||"note")+
-          '<span>'+esc(g.group)+'</span><em>'+g.items.length+'</em><svg class="erp-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></button>'+
+          '<span>'+esc(g.group)+'</span><svg class="erp-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></button>'+
           '<div class="erp-sec-body" id="'+id+'">'+g.items.map(i=>link(i,g)).join("")+'</div></div>';
       });
       side.innerHTML=html;
