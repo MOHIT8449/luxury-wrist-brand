@@ -142,6 +142,7 @@ body.noscroll{overflow:hidden}
     <div class="ec-btns">
       <button onclick="pasteECRS()">Paste list</button>
       <button class="dark" onclick="openPlan()">+ New truck</button>
+      <button onclick="showEcrsImg()">ECRS image</button>
       <button class="ghost" onclick="copyText(dayText())">Copy msg</button>
     </div>
   </div>
@@ -186,7 +187,7 @@ const db=supabase.createClient("https://txkbhadzdbxpieunfvox.supabase.co","sb_pu
 const $=id=>document.getElementById(id);
 const n=v=>(v===''||v==null||isNaN(+v))?0:+v;
 const fmt=(v,d=0)=>Number(v||0).toLocaleString('en-IN',{minimumFractionDigits:d,maximumFractionDigits:d});
-const plt=v=>{const r=Math.round(v*10)/10;return fmt(r,Number.isInteger(r)?0:1)};
+const plt=v=>fmt(Math.floor(n(v)+1e-9)); // full pallets only, no point
 const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const today=()=>new Date().toLocaleDateString('en-CA',{timeZone:'Asia/Kolkata'});
 const dIN=d=>LWBDate.d(d);
@@ -258,7 +259,7 @@ function rows(){
   const R=ids.map(id=>{ const f=info(id), q=n((lineOf(id)||{}).cs), o=n(op.get(id))*f.ppp, p=q-o, k=1-f.disc/100;
     return {id,...f,q,o,p,qG:q*f.gr,oG:o*f.gr,pG:Math.max(0,p)*f.gr,qN:q*f.gr*k,oN:o*f.gr*k,pN:Math.max(0,p)*f.gr*k}; });
   const T={q:0,o:0,p:0,qG:0,oG:0,pG:0,qN:0,oN:0,pN:0,qP:0,oP:0,pP:0};
-  R.forEach(x=>{ ['q','o','qG','oG','pG','qN','oN','pN'].forEach(f=>T[f]+=x[f]); T.p+=Math.max(0,x.p); const pp=x.ppp||1; T.qP+=x.q/pp; T.oP+=x.o/pp; T.pP+=Math.max(0,x.p)/pp; });
+  R.forEach(x=>{ ['q','o','qG','oG','pG','qN','oN','pN'].forEach(f=>T[f]+=x[f]); T.p+=Math.max(0,x.p); const pp=x.ppp||1; T.qP+=Math.floor(x.q/pp+1e-9); T.oP+=Math.floor(x.o/pp+1e-9); T.pP+=Math.floor(Math.max(0,x.p)/pp+1e-9); });
   return {R,T};
 }
 
@@ -362,8 +363,8 @@ function renderPlan(){
     h+=`<div class="ec-row ${c}${v?' in':''}"><div><span class="nm">${esc(x.name)}</span><span class="sub">${fmt(x.ppp)} cs / pallet</span></div>
       <div>${plt(x.pend)}</div>
       <div class="nw pm"><button class="pmb" title="Minus 1" onclick="stepPut('${x.id}',-1)">−</button><input type="number" min="0" step="1" inputmode="numeric" data-put="${x.id}" value="${v||''}" placeholder="0"><button class="pmb" title="Plus 1" onclick="stepPut('${x.id}',1)">+</button><button class="x mx" title="Fill as much as fits" onclick="maxPut('${x.id}')">max</button></div>
-      <div class="${aft<-1e-9?'neg':aft>=0.95?'pl':'pos'}">${aft<-1e-9?'Over '+plt(-aft):aft>=0.95?plt(aft)+' pending':'✓ done'}</div></div>`; });
-  const tp=P.reduce((a,x)=>a+Math.max(0,x.pend),0), ta=P.reduce((a,x)=>a+Math.max(0,x.pend-n(PLAN.put[x.id])),0);
+      <div class="${aft<-1e-9?'neg':aft>=0.95?'pl':'pos'}">${aft<-1e-9?'Over '+fmt(Math.ceil(-aft-1e-9)):aft>=0.95?plt(aft)+' pending':'✓ done'}</div></div>`; });
+  const fl=v=>Math.floor(Math.max(0,v)+1e-9), tp=P.reduce((a,x)=>a+fl(x.pend),0), ta=P.reduce((a,x)=>a+fl(x.pend-n(PLAN.put[x.id])),0);
   h+=`<div class="ec-row tot"><div>TOTAL</div><div>${plt(tp)}</div><div>${fmt(used)}</div><div>${plt(ta)}</div></div>`;
   $('planList').innerHTML=h;
   $('planList').querySelectorAll('[data-put]').forEach(el=>el.addEventListener('change',e=>setPut(e.target.dataset.put,e.target.value)));
@@ -470,6 +471,34 @@ function truckCanvas(t){
   cell(0,y,colA,DARK,'PRODUCT NAME','#fff',true,'c'); cell(colA,y,W-colA,DARK,'PALLET','#fff',true,'c'); y+=rowH;
   items.forEach(r=>{ cell(0,y,colA,'#fff',info(r.sku_id).name||r.name,'#262626',false,'l'); cell(colA,y,W-colA,'#fff',fmt(r.pal),'#262626',false,'c'); y+=rowH; });
   return cv;
+}
+function ecrsCanvas(){
+  const {R}=rows(), items=R.map(r=>({name:r.name,pal:Math.floor((r.q/(r.ppp||1))+1e-9)})).filter(r=>r.pal>0), tot=items.reduce((a,r)=>a+r.pal,0);
+  const t={no:'',rows:[]}, W=380, rowH=40, sc=3, colA=270, rowsN=1+2+1+items.length+1;
+  const cv=document.createElement('canvas'); cv.width=W*sc; cv.height=(rowsN*rowH+2)*sc;
+  const x=cv.getContext('2d'); x.scale(sc,sc);
+  const DARK='#4f6228', LIGHT='#d8e4bc', LIGHT2='#ebf1de', LINE='#7f8f5a';
+  const font=(b,sz)=>`${b?'bold ':''}${sz}px "Bahnschrift","Segoe UI","Arial Narrow",Arial,sans-serif`;
+  x.fillStyle='#fff'; x.fillRect(0,0,W,rowsN*rowH+2);
+  const cell=(cx,cy,w,bg,txt,color,bold,align,ul)=>{ txt=String(txt);
+    x.fillStyle=bg; x.fillRect(cx,cy,w,rowH); x.strokeStyle=LINE; x.lineWidth=1; x.strokeRect(cx+.5,cy+.5,w-1,rowH-1);
+    let sz=17; x.font=font(bold,sz); while(x.measureText(txt).width>w-16&&sz>9){ sz--; x.font=font(bold,sz); }
+    x.fillStyle=color; x.textBaseline='middle'; const tx=align==='l'?cx+10:cx+w/2; x.textAlign=align==='l'?'left':'center';
+    x.fillText(txt,tx,cy+rowH/2+1); if(ul){ const m=x.measureText(txt).width; x.fillRect(tx-m/2,cy+rowH/2+11,m,1.5); } };
+  let y=1; cell(0,y,W,DARK,BRAND,'#fff',true,'c',true); y+=rowH;
+  [['DATE',dIN(DAY.day)],['TOTAL ECRS PLAN',fmt(tot)+' PLT']].forEach(([a,b],k)=>{ cell(0,y,colA,LIGHT,a,'#1f2d0a',true,'c'); cell(colA,y,W-colA,LIGHT2,b,'#1f2d0a',true,'c'); y+=rowH; });
+  cell(0,y,colA,DARK,'SKU','#fff',true,'c'); cell(colA,y,W-colA,DARK,'ECRS PLT','#fff',true,'c'); y+=rowH;
+  items.forEach(r=>{ cell(0,y,colA,'#fff',r.name,'#262626',false,'l'); cell(colA,y,W-colA,'#fff',fmt(r.pal),'#262626',false,'c'); y+=rowH; });
+  cell(0,y,colA,LIGHT,'TOTAL','#1f2d0a',true,'c'); cell(colA,y,W-colA,LIGHT,fmt(tot),'#1f2d0a',true,'c');
+  return {cv,tot,count:items.length};
+}
+function showEcrsImg(){
+  const {cv,tot,count}=ecrsCanvas(); if(!count){ say('Enter ECRS cases first.'); return; }
+  $('dMsg').textContent=`ECRS ${dIN(DAY.day)} · ${count} SKU · ${fmt(tot)} full pallet. Copy the image and paste in WhatsApp.`;
+  $('dImg').src=cv.toDataURL('image/png');
+  $('dCopy').onclick=()=>copyCanvas(cv);
+  $('dShare').onclick=async()=>shareFiles([new File([await blobOf(cv)],`ECRS ${DAY.day}.png`,{type:'image/png'})]);
+  $('dNext').hidden=true; $('done').style.display='flex';
 }
 function joinCanvases(cvs){
   const gap=40, cols=Math.min(3,cvs.length), rws=Math.ceil(cvs.length/cols), cw=Math.max(...cvs.map(c=>c.width)), rh=[];
