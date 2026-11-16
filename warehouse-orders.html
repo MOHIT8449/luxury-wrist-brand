@@ -934,6 +934,7 @@
     .po-pend-pill b {color:var(--erp-red,#c8102e)}
     .po-pend-pill span {color:#6b7785;font-weight:600}
     .po-pend-pill:hover {background:#ffe9ec}
+    .erp-ls-back .status {white-space:nowrap}
     body.po-view-dash .po-pend-pill {display:none}
 
     /* Select many POs: approve / print together (2 Nov 2026) */
@@ -5654,9 +5655,48 @@ function summaryList(bucket, title, sub, dated) {
   };
 }
 
+/* Total Pending Delivery = every PO of all dates that is not cancelled and has no Delivered mark
+   (driver report Delivered / Partial, or Admin / Sales Head "Mark delivered"). The popup says where
+   those POs are stuck and how many are older than 7 days, oldest first (Mohit, 16 Nov 2026: "235 pending,
+   we don't have that many"). */
+function pendingSplit(rows) {
+  const WAITS = ["", "pending", "submitted", "pending_manager", "pending_approval", "pending_review", "new"];
+  const groups = [
+    ["waiting approval", st => WAITS.includes(st)],
+    ["approved, no driver", st => st === "approved"],
+    ["driver assigned", st => st === "transport_allocated" || st === "allocated"],
+    ["loading / loaded", st => st === "loading" || st === "loaded"],
+    ["billed, not marked delivered", st => st === "invoiced" || st === "dispatched"]
+  ];
+  const n = new Map(), week = istDate(-6);
+  let old = 0, other = 0;
+  for (const o of rows) {
+    const st = normalizedStatus(o), g = groups.find(x => x[1](st));
+    if (g) n.set(g[0], (n.get(g[0]) || 0) + 1); else other++;
+    const day = String(o.order_date || o.created_at || "").slice(0, 10);
+    if (day && day < week) old++;
+  }
+  const parts = groups.filter(g => n.get(g[0])).map(g => n.get(g[0]) + " " + g[0]);
+  if (other) parts.push(other + " other");
+  return formatNumber(rows.length) + " POs: " + parts.join(" · ") +
+    (old ? " | " + formatNumber(old) + " are older than 7 days (oldest on top)" : "");
+}
+
+function pendingList() {
+  const base = summaryList("pending", "Total Pending Delivery", "All POs not delivered yet (cancelled not counted)");
+  base.load = async ui => {
+    const { data, error } = await db.rpc("lwb_po_summary_orders", { p_bucket: "pending", p_from: null, p_to: null });
+    if (error) throw error;
+    const rows = (data || []).slice().sort((a, b) => String(a.order_date || a.created_at || "").localeCompare(String(b.order_date || b.created_at || "")));
+    if (ui && ui.sub) ui.sub(pendingSplit(rows));
+    return rows;
+  };
+  return base;
+}
+
 function wireCountCards() {
   if (!window.ERPList) return;
-  const pend = () => summaryList("pending", "Total Pending Delivery", "All orders not delivered yet (cancelled not counted)");
+  const pend = pendingList;
   const pendBox = document.querySelector(".ps-pend");
   ERPList.card(pendBox, pend, false);
   const pill = document.getElementById("poPendPill");

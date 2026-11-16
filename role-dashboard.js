@@ -74,6 +74,16 @@
   const ACOLS=[{t:"Date",v:"date",date:true},{t:"Head",v:"category"},{t:"Party",v:"party"},{t:"Mode",v:"mode"},{t:"PO / Ref",v:l=>[l.order_no,l.ref].filter(Boolean).join(" · ")},{t:"Remark",v:"remark"},{t:"Amount",v:"amount",money:true,sum:true}];
   const delivered=(from,to)=>async()=>{const r=await C.rpc("lwb_po_summary_orders",{p_bucket:"delivered",p_from:from,p_to:to});if(r.error)throw r.error;return r.data||[]};
   const live=o=>!OFF.includes(st(o));
+  // Where the pending-delivery POs are stuck, and how many are older than 7 days (Mohit, 16 Nov 2026).
+  function pendSplit(rows){
+    const G=[["waiting approval",x=>WAIT.includes(x)],["approved, no driver",x=>x==="approved"],["driver assigned",x=>x==="transport_allocated"||x==="allocated"],
+      ["loading / loaded",x=>x==="loading"||x==="loaded"],["billed, not marked delivered",x=>x==="invoiced"||x==="dispatched"]];
+    const n=new Map(),wk=shift(today(),-6);let old=0,other=0;
+    for(const o of rows){const s2=st(o),g=G.find(x=>x[1](s2));if(g)n.set(g[0],(n.get(g[0])||0)+1);else other++;
+      const d=String(o.order_date||o.created_at||"").slice(0,10);if(d&&d<wk)old++}
+    const parts=G.filter(g=>n.get(g[0])).map(g=>n.get(g[0])+" "+g[0]);if(other)parts.push(other+" other");
+    return fmt(rows.length)+" POs: "+parts.join(" · ")+(old?" | "+fmt(old)+" are older than 7 days (oldest on top)":"");
+  }
 
   async function ordersFrom(from){
     const out=[];
@@ -373,7 +383,9 @@
           // Total pending delivery (all dates, all brands): every PO not cancelled and not delivered yet (Mohit, 16 Nov 2026).
           pending:sumy&&sumy.pending?{count:num(sumy.pending.count),amount:num(sumy.pending.amount),oldest:sumy.pending.oldest||null,
             list:()=>({title:"Total Pending Delivery",sub:"All POs not delivered yet (cancelled not counted)",cols:OCOLS,
-              load:async()=>{const r=await C.rpc("lwb_po_summary_orders",{p_bucket:"pending",p_from:null,p_to:null});if(r.error)throw r.error;return r.data||[]},
+              load:async ui=>{const r=await C.rpc("lwb_po_summary_orders",{p_bucket:"pending",p_from:null,p_to:null});if(r.error)throw r.error;
+                const rows=(r.data||[]).slice().sort((a,b)=>String(a.order_date||a.created_at||"").localeCompare(String(b.order_date||b.created_at||"")));
+                if(ui&&ui.sub)ui.sub(pendSplit(rows));return rows},
               page:can("warehouse-orders.html")?"warehouse-orders.html":undefined,pageText:"Open PO / Sales →",
               onRow:o=>{if(o&&o.id&&can("warehouse-orders.html"))location.href="warehouse-orders.html?order="+encodeURIComponent(o.id)}})}:null};
         BIZFRESH=false;
