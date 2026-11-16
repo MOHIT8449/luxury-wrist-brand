@@ -63,13 +63,46 @@ button.del{background:#e74c3c!important;color:#fff!important}
 .ec-modal .ec-card{max-width:460px;width:100%;margin:0}
 .ec-modal textarea{width:100%;font:13px/1.4 ui-monospace,monospace;border:1px solid var(--erp-line);border-radius:6px;padding:6px}
 .ec-toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#12805c;color:#fff;padding:10px 18px;border-radius:10px;font-weight:600;display:none;z-index:98;max-width:90vw}
+/* web: one-line table like the Excel sheet */
+.ec-tbl{width:100%;border-collapse:collapse;font-size:13px}
+.ec-tbl th,.ec-tbl td{border:1px solid var(--erp-line);padding:4px 6px;text-align:right;white-space:nowrap}
+.ec-tbl th{background:#f0f2f5;font-size:12px;font-weight:600;color:#3b4652}
+.ec-tbl th.grp{font-size:11px;letter-spacing:.3px}
+.ec-tbl td.l,.ec-tbl th.l{text-align:left}
+.ec-tbl td.sku{white-space:normal;font-weight:600;min-width:180px}
+.ec-tbl td input{width:72px;height:28px;min-height:28px!important;text-align:right;padding:1px 6px!important;font-size:13px}
+.ec-tbl td input.sm{width:56px}
+.ec-tbl tr.over td{background:#fdecea}
+.ec-tbl tr.tot td{font-weight:700;background:#f0f2f5}
+.ec-tbl .c-ecrs{background:#fffbe6}.ec-tbl .c-ord{background:#eef7f0}.ec-tbl .c-pen{background:#fdf3ec}
+.ec-tbl .x{background:none!important;color:var(--erp-muted)!important;border:0!important;padding:0 4px;cursor:pointer}
+.ec-scroll{overflow-x:auto}
+@media(min-width:1000px){
+  .ec-list,.ec-add{max-width:none}
+  .ec-tbl td.sku{min-width:230px}
+  .ec-top{display:flex;gap:10px;align-items:end}
+  .ec-top .ec-bar{flex:0 0 380px}
+  .ec-top .ec-btns{flex:1;margin-top:0}
+  .ec-stats{grid-template-columns:repeat(6,minmax(0,1fr))}
+  .ec-trucks{grid-template-columns:repeat(auto-fill,minmax(270px,1fr))}
+  .ec-plan-wrap{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.3fr);gap:12px;align-items:start}
+  .ec-plan-wrap #planTrucks{margin-top:0!important;grid-template-columns:repeat(auto-fill,minmax(240px,1fr))}
+}
+@media(min-width:1000px) and (max-width:1500px){
+  .ec-tbl{font-size:12px}
+  .ec-tbl th,.ec-tbl td{padding:3px 4px}
+  .ec-tbl th{font-size:11px}
+  .ec-tbl td.sku{min-width:150px;font-size:12px}
+  .ec-tbl td input{width:58px;font-size:12px;padding:1px 4px!important}
+  .ec-tbl td input.sm{width:52px}
+}
 @media(max-width:600px){.ec-list{font-size:12px}.ec-row{gap:4px}.ec-st b{font-size:15px}}
 </style>
 </head>
 <body>
 <div id="gate" class="ec-gate">Checking account access...</div>
 <div id="page" class="erp-main" hidden>
-  <div class="ec-card">
+  <div class="ec-card ec-top">
     <div class="ec-bar">
       <label>Date<input id="day" type="date"></label>
       <label>RTGS paid ₹<input id="rtgs" type="number" min="0" inputmode="decimal" placeholder="0"></label>
@@ -89,8 +122,8 @@ button.del{background:#e74c3c!important;color:#fff!important}
     <p id="miss" class="hint"></p></div>
   <div class="ec-card ec-plan" id="plan" hidden><h3>Make trucks: pallets to take now</h3>
     <div class="ec-bar" style="margin-bottom:8px"><label>Truck size<select id="cap"><option value="24">24 pallet</option><option value="23">23 pallet</option><option value="22">22 pallet</option></select></label></div>
-    <div id="planList" class="ec-list"></div>
-    <div id="planTrucks" class="ec-trucks" style="margin-top:10px"></div>
+    <div class="ec-plan-wrap"><div id="planList" class="ec-list"></div>
+    <div id="planTrucks" class="ec-trucks" style="margin-top:10px"></div></div>
     <div class="ec-btns"><button onclick="savePlan()">Save trucks</button><button class="ghost" onclick="closePlan()">Cancel</button></div></div>
   <div class="ec-card"><h3 id="trkTitle">Trucks</h3>
     <div class="ec-btns" style="margin:0 0 10px">
@@ -99,7 +132,7 @@ button.del{background:#e74c3c!important;color:#fff!important}
       <button class="ghost" onclick="copyText(trucksText())">Copy list</button>
     </div>
     <div id="trucks" class="ec-trucks"></div></div>
-  <div class="ec-card"><h3>SKU summary (which SKU in which truck)</h3><div id="skuSum"></div></div>
+  <div class="ec-card"><h3>SKU summary (which SKU in which truck)</h3><div id="skuSum" class="ec-scroll"></div></div>
 </div>
 <div id="modal" class="ec-modal"><div class="ec-card">
   <p id="mMsg" style="margin:0 0 10px;font-weight:600;white-space:pre-wrap"></p>
@@ -212,7 +245,7 @@ function render(){
       <div>${fmt(x.o)}<span class="sub">${plt(x.o/pp)} plt</span><span class="sub">₹${fmt(x.oN)}</span></div>
       <div class="${x.p<0?'neg':''}">${x.p<0?'Over '+fmt(-x.p):fmt(x.p)}<span class="sub">${plt(Math.abs(x.p)/pp)} plt</span><span class="sub">₹${fmt(x.pN)}</span></div></div>`; });
   if(R.length) h+=`<div class="ec-row tot"><div>TOTAL</div><div>${fmt(T.q)}<span class="sub">${plt(T.qP)} plt</span><span class="sub">₹${fmt(T.qN)}</span></div><div>${fmt(T.o)}<span class="sub">${plt(T.oP)} plt</span><span class="sub">₹${fmt(T.oN)}</span></div><div>${fmt(T.p)}<span class="sub">${plt(T.pP)} plt</span><span class="sub">₹${fmt(T.pN)}</span></div></div>`;
-  $('list').innerHTML=h;
+  $('list').innerHTML=WEB()&&R.length?webTable(R,T):h;
   $('list').querySelectorAll('input[data-f]').forEach(el=>el.addEventListener('change',e=>{
     const id=e.target.dataset.id, f=e.target.dataset.f; let l=lineOf(id);
     if(!l){ const s=byId.get(id)||{}; l={sku_id:id,name:s.name,cs:0,disc:0}; DAY.lines.push(l); }
@@ -283,7 +316,7 @@ function renderTrucks(){
   $('trucks').innerHTML=!TRUCKS.length?'<p class="muted">No truck yet. Tap "Make trucks".</p>':TRUCKS.map(t=>{ const pal=t.rows.reduce((a,r)=>a+n(r.pal),0);
     return `<div class="ec-trk"><div class="th"><span>Order ${t.no}</span><span class="${pal!==t.cap?'neg':''}">${fmt(pal)}/${t.cap} plt</span></div>
     ${t.rows.map((r,j)=>`<div class="tl"><span>${esc(info(r.sku_id).name||r.name)}</span><input type="number" min="0" step="1" data-t="${t.id}" data-j="${j}" value="${n(r.pal)}"></div>`).join('')}
-    <div class="tb"><button class="dark" onclick="copyOne(${t.id})">Copy image</button><button class="ghost" onclick="shareOne(${t.id})">Share</button><button class="del" onclick="delTruck(${t.id})">Delete</button></div></div>`; }).join('');
+    <div class="tb"><button class="dark" onclick="copyOne(${t.id})">Copy</button><button class="ghost" onclick="shareOne(${t.id})">Share</button><button class="del" onclick="delTruck(${t.id})">Delete</button></div></div>`; }).join('');
   $('trucks').querySelectorAll('input[data-t]').forEach(el=>el.addEventListener('change',async e=>{
     const t=TRUCKS.find(x=>x.id==e.target.dataset.t), j=+e.target.dataset.j, v=Math.max(0,Math.round(n(e.target.value)));
     const rows=t.rows.map((r,k)=>k===j?{...r,pal:v}:r).filter(r=>n(r.pal)>0);
@@ -292,6 +325,7 @@ function renderTrucks(){
   // SKU summary
   const m=new Map(); TRUCKS.forEach(t=>t.rows.forEach(r=>{ const x=m.get(r.sku_id)||{id:r.sku_id,pal:0,parts:[]}; x.pal+=n(r.pal); x.parts.push([t.no,n(r.pal)]); m.set(r.sku_id,x); }));
   const sk=[...m.values()];
+  if(WEB()&&sk.length){ $('skuSum').innerHTML=skuMatrix(sk,P); return; }
   $('skuSum').innerHTML=!sk.length?'<p class="muted">Nothing ordered on this date.</p>':
     sk.map(x=>{ const f=info(x.id); return `<div class="ec-sku"><span class="nm">${esc(f.name)}</span><span class="r">${fmt(x.pal)} plt <span class="muted">(${fmt(x.pal*f.ppp)} cs)</span></span>
       <span class="sub">${x.parts.map(([no,p])=>`Order ${no}: ${fmt(p)}`).join(' · ')}</span></div>`; }).join('')+
@@ -299,6 +333,32 @@ function renderTrucks(){
 }
 async function delTruck(id){ const t=TRUCKS.find(x=>x.id===id); if(!await ask(`Delete Order ${t.no}?`)) return;
   const {error}=await db.from('lwb_ecrs_trucks').delete().eq('id',id); if(error){ say('Delete failed: '+error.message); return; } await loadDay(); }
+
+/* ---------- web layout (wide screen): Excel-like tables ---------- */
+const WEB=()=>window.matchMedia('(min-width:1000px)').matches;
+function webTable(R,T){
+  const inp=(f,id,v,c='',ph='')=>`<input class="${c}" type="number" min="0" step="any" data-f="${f}" data-id="${id}" value="${v??''}" placeholder="${ph}">`;
+  let h=`<div class="ec-scroll"><table class="ec-tbl"><tr><th rowspan="2">#</th><th rowspan="2" class="l">SKU</th><th rowspan="2">CS / PLT</th><th rowspan="2">GR</th><th rowspan="2">DISC %</th>
+    <th colspan="3" class="grp c-ecrs">ECRS (COMPANY)</th><th colspan="3" class="grp c-ord">ORDERED</th><th colspan="3" class="grp c-pen">PENDING</th><th rowspan="2"></th></tr>
+    <tr><th class="c-ecrs">CASE</th><th class="c-ecrs">PLT</th><th class="c-ecrs">₹</th><th class="c-ord">CASE</th><th class="c-ord">PLT</th><th class="c-ord">PAY ₹</th><th class="c-pen">CASE</th><th class="c-pen">PLT</th><th class="c-pen">₹</th></tr>`;
+  R.forEach((x,k)=>{ const pp=x.ppp||1;
+    h+=`<tr class="${x.p<0?'over':''}"><td>${k+1}</td><td class="l sku">${esc(x.name)}</td>
+      <td>${x.ppp?fmt(x.ppp):inp('ppp',x.id,'','sm','?')}</td><td>${inp('gr',x.id,x.gr||'','sm','GR')}</td><td>${inp('disc',x.id,x.disc,'sm')}</td>
+      <td class="c-ecrs">${inp('cs',x.id,(lineOf(x.id)||{}).cs)}</td><td class="c-ecrs">${plt(x.q/pp)}</td><td class="c-ecrs">${fmt(x.qN)}</td>
+      <td class="c-ord">${fmt(x.o)}</td><td class="c-ord">${plt(x.o/pp)}</td><td class="c-ord">${fmt(x.oN)}</td>
+      <td class="c-pen ${x.p<0?'neg':''}">${x.p<0?'Over '+fmt(-x.p):fmt(x.p)}</td><td class="c-pen">${plt(Math.max(0,x.p)/pp)}</td><td class="c-pen">${fmt(x.pN)}</td>
+      <td><button class="x" title="Remove" onclick="delLine('${x.id}')">✕</button></td></tr>`; });
+  h+=`<tr class="tot"><td></td><td class="l">TOTAL</td><td></td><td></td><td></td><td>${fmt(T.q)}</td><td>${plt(T.qP)}</td><td>${fmt(T.qN)}</td><td>${fmt(T.o)}</td><td>${plt(T.oP)}</td><td>${fmt(T.oN)}</td><td>${fmt(T.p)}</td><td>${plt(T.pP)}</td><td>${fmt(T.pN)}</td><td></td></tr></table></div>`;
+  return h;
+}
+function skuMatrix(sk,P){
+  let h=`<table class="ec-tbl"><tr><th class="l">SKU</th>${TRUCKS.map(t=>`<th>ORDER ${t.no}</th>`).join('')}<th>TOTAL PLT</th><th>CASE</th></tr>`;
+  sk.forEach(x=>{ const f=info(x.id), by=new Map(); x.parts.forEach(([no,p])=>by.set(no,(by.get(no)||0)+p));
+    h+=`<tr><td class="l sku">${esc(f.name)}</td>${TRUCKS.map(t=>`<td>${by.has(t.no)?fmt(by.get(t.no)):''}</td>`).join('')}<td><b>${fmt(x.pal)}</b></td><td>${fmt(x.pal*f.ppp)}</td></tr>`; });
+  h+=`<tr class="tot"><td class="l">TOTAL · ${TRUCKS.length} truck</td>${TRUCKS.map(t=>`<td>${fmt(t.rows.reduce((a,r)=>a+n(r.pal),0))}</td>`).join('')}<td>${fmt(P)}</td><td>${fmt(sk.reduce((a,x)=>a+x.pal*info(x.id).ppp,0))}</td></tr></table>`;
+  return h;
+}
+let wasWeb=null; window.addEventListener('resize',()=>{ if(DAY&&WEB()!==wasWeb){ wasWeb=WEB(); render(); } });
 
 /* ---------- images (same green card as the Excel) ---------- */
 function truckCanvas(t){
