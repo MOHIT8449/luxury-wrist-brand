@@ -4252,13 +4252,26 @@ async function loadGodownManagers(){
   const sel=document.getElementById("poLoadingManager"),txt=document.getElementById("poLoadingPerson");
   sel.hidden=!poGodownManagers;txt.hidden=!!poGodownManagers;
   if(!poGodownManagers)return;
-  sel.replaceChildren(new Option("Select Godown Manager",""),...poGodownManagers.map(m=>new Option(m.full_name+(m.mobile?" · "+m.mobile:""),m.user_id)));
+  const opts=poGodownManagers.map(m=>new Option(m.full_name+(m.mobile?" · "+m.mobile:""),m.user_id));
+  // Self: Sales Head / Admin sometimes load the vehicle themselves (16 Nov 2026).
+  const me=poSelfLoader();
+  if(me&&!poGodownManagers.some(m=>m.user_id===me.id))opts.unshift(new Option("Self ("+me.role+")",me.id));
+  sel.replaceChildren(new Option("Select Godown Manager",""),...opts);
+}
+// Logged-in Sales Head / Admin / Transport as the loader. Saved with their own id, and the name
+// carries the role, so tracking, PO and logs show e.g. "SAHAS (Sales Head)" to everyone else.
+const SELF_LOADER_ROLES={admin:"Admin",manager:"Sales Head",transport:"Transport"};
+function poSelfLoader(){
+  const role=String(currentProfile?.role||"").trim().toLowerCase();
+  if(!currentUser||!SELF_LOADER_ROLES[role])return null;
+  return{id:currentUser.id,role:SELF_LOADER_ROLES[role],name:String(currentProfile.full_name||currentUser.email||"").trim()+" ("+SELF_LOADER_ROLES[role]+")"};
 }
 function setPoGodownManager(a){
   const sel=document.getElementById("poLoadingManager");
   if(!poGodownManagers)return;
   const id=a.loading_manager_id||"";
-  if(id&&![...sel.options].some(o=>o.value===id))sel.append(new Option((a.loading_person||"Godown Manager")+" (inactive)",id));
+  // Not in the list: another Sales Head / Admin who loaded it (name already ends with the role), or an inactive login.
+  if(id&&![...sel.options].some(o=>o.value===id))sel.append(new Option(/\)$/.test(a.loading_person||"")?a.loading_person:(a.loading_person||"Godown Manager")+" (inactive)",id));
   sel.value=id;
 }
 function poAddSavedAssignment(a){
@@ -4528,7 +4541,8 @@ function poTransportPayload(){
   if(poGodownManagers){
     const sel=document.getElementById("poLoadingManager"),m=poGodownManagers.find(x=>x.user_id===sel.value);
     payload.loading_manager_id=sel.value||null;
-    payload.loading_person=m?m.full_name:(sel.value?sel.selectedOptions[0].text.replace(/ \(inactive\)$/,""):"");
+    const me=poSelfLoader();
+    payload.loading_person=m?m.full_name:me&&sel.value===me.id?me.name:(sel.value?sel.selectedOptions[0].text.replace(/ \(inactive\)$/,""):"");
   }
   if(!payload.driver_name||!payload.vehicle_no||!payload.loading_person){
     allocationStatus("Driver Name, Vehicle Number and "+(poGodownManagers?"Godown Manager":"Loading Person")+" are required.",true);return null;
