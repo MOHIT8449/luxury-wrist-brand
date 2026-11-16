@@ -93,7 +93,10 @@ body.noscroll{overflow:hidden}
 .ec-modal{position:fixed;inset:0;background:rgba(0,0,0,.55);display:none;z-index:99;align-items:center;justify-content:center;padding:16px}
 .ec-modal .ec-card{max-width:460px;width:100%;margin:0}
 .ec-modal textarea{width:100%;font:13px/1.4 ui-monospace,monospace;border:1px solid var(--erp-line);border-radius:6px;padding:6px}
-.ec-done{max-width:520px!important}
+.ec-done{max-width:min(1100px,96vw)!important}
+.ec-sumh{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:6px}
+.ec-sumh h3{margin:0}
+.ec-sumh button{height:34px;padding:0 14px}
 .ec-trk .tbtn{margin-top:10px}
 .ec-trk .tbtn button{height:40px}
 .ec-done img{display:block;width:100%;max-height:60vh;object-fit:contain;border:1px solid var(--erp-line);border-radius:8px;margin-bottom:8px}
@@ -175,7 +178,7 @@ body.noscroll{overflow:hidden}
       <button class="ghost" onclick="copyText(trucksText())">Copy list</button>
     </div>
     <div id="trucks" class="ec-trucks"></div></div>
-  <div class="ec-card"><h3>SKU summary (which SKU in which truck)</h3><div id="skuSum" class="ec-scroll"></div></div>
+  <div class="ec-card"><div class="ec-sumh"><h3>SKU summary (which SKU in which truck)</h3><button class="dark" onclick="showSumImg()">Summary image</button></div><div id="skuSum" class="ec-scroll"></div></div>
 </div>
 <div id="modal" class="ec-modal"><div class="ec-card">
   <p id="mMsg" style="margin:0 0 10px;font-weight:600;white-space:pre-wrap"></p>
@@ -515,6 +518,40 @@ function showEcrsImg(){
   $('dImg').src=cv.toDataURL('image/png');
   $('dCopy').onclick=()=>copyCanvas(cv);
   $('dShare').onclick=async()=>shareFiles([new File([await blobOf(cv)],`ECRS ${DAY.day}.png`,{type:'image/png'})]);
+  $('dNext').hidden=true; $('done').style.display='flex';
+}
+function summaryCanvas(){
+  const m=new Map(); TRUCKS.forEach(t=>t.rows.forEach(r=>{ const x=m.get(r.sku_id)||{id:r.sku_id,pal:0,by:new Map()}; x.pal+=n(r.pal); x.by.set(t.no,(x.by.get(t.no)||0)+n(r.pal)); m.set(r.sku_id,x); }));
+  const sk=[...m.values()]; if(!sk.length) return null;
+  const P=sk.reduce((a,x)=>a+x.pal,0), C=sk.reduce((a,x)=>a+x.pal*info(x.id).ppp,0);
+  const nameW=260, oW=TRUCKS.length>6?82:96, tW=96, cW=96, rowH=34, sc=2;
+  const W=nameW+TRUCKS.length*oW+tW+cW, rowsN=2+1+sk.length+3;
+  const cv=document.createElement('canvas'); cv.width=W*sc; cv.height=(rowsN*rowH+2)*sc;
+  const x=cv.getContext('2d'); x.scale(sc,sc);
+  const DARK='#4f6228', LIGHT='#d8e4bc', LIGHT2='#ebf1de', LINE='#7f8f5a';
+  const font=(b,sz)=>`${b?'bold ':''}${sz}px "Bahnschrift","Segoe UI","Arial Narrow",Arial,sans-serif`;
+  x.fillStyle='#fff'; x.fillRect(0,0,W,rowsN*rowH+2);
+  const cell=(cx,cy,w,bg,txt,color,bold,align)=>{ txt=String(txt);
+    x.fillStyle=bg; x.fillRect(cx,cy,w,rowH); x.strokeStyle=LINE; x.lineWidth=1; x.strokeRect(cx+.5,cy+.5,w-1,rowH-1);
+    let sz=15; x.font=font(bold,sz); while(x.measureText(txt).width>w-12&&sz>8){ sz--; x.font=font(bold,sz); }
+    x.fillStyle=color; x.textBaseline='middle'; x.textAlign=align==='l'?'left':'center'; x.fillText(txt,align==='l'?cx+8:cx+w/2,cy+rowH/2+1); };
+  const row=(cells,bg,color,bold)=>{ let cx=0; cells.forEach(([w,t,al])=>{ cell(cx,y,w,bg,t,color,bold,al||'c'); cx+=w; }); y+=rowH; };
+  let y=1;
+  row([[W,BRAND]],DARK,'#fff',true);
+  row([[nameW,'DATE '+dIN(DAY.day)],[W-nameW,`${TRUCKS.length} TRUCK · ${fmt(P)} PALLET · GR ₹${fmt(TRUCKS.reduce((a,t)=>a+trkGR(t).g,0))}`]],LIGHT,'#1f2d0a',true);
+  row([[nameW,'SKU'],...TRUCKS.map(t=>[oW,'ORDER '+t.no]),[tW,'TOTAL PLT'],[cW,'CASE']],DARK,'#fff',true);
+  sk.forEach(s=>{ const f=info(s.id); row([[nameW,f.name,'l'],...TRUCKS.map(t=>[oW,s.by.has(t.no)?fmt(s.by.get(t.no)):'']),[tW,fmt(s.pal)],[cW,fmt(s.pal*f.ppp)]],'#fff','#262626',false); });
+  row([[nameW,`TOTAL · ${TRUCKS.length} truck`,'l'],...TRUCKS.map(t=>[oW,fmt(t.rows.reduce((a,r)=>a+n(r.pal),0))]),[tW,fmt(P)],[cW,fmt(C)]],LIGHT,'#1f2d0a',true);
+  row([[nameW,'GR ₹ (before disc)','l'],...TRUCKS.map(t=>[oW,fmt(trkGR(t).g)]),[tW+cW,fmt(TRUCKS.reduce((a,t)=>a+trkGR(t).g,0))]],LIGHT2,'#1f2d0a',true);
+  row([[nameW,'Pay ₹ (after disc)','l'],...TRUCKS.map(t=>[oW,fmt(trkGR(t).pay)]),[tW+cW,fmt(TRUCKS.reduce((a,t)=>a+trkGR(t).pay,0))]],LIGHT2,'#1f2d0a',true);
+  return cv;
+}
+function showSumImg(){
+  const cv=summaryCanvas(); if(!cv){ say('No truck yet.'); return; }
+  $('dMsg').textContent=`SKU summary ${dIN(DAY.day)} · ${TRUCKS.length} truck. Copy the image and paste in WhatsApp.`;
+  $('dImg').src=cv.toDataURL('image/png');
+  $('dCopy').onclick=()=>copyCanvas(cv);
+  $('dShare').onclick=async()=>shareFiles([new File([await blobOf(cv)],`ECRS summary ${DAY.day}.png`,{type:'image/png'})]);
   $('dNext').hidden=true; $('done').style.display='flex';
 }
 function joinCanvases(cvs){
