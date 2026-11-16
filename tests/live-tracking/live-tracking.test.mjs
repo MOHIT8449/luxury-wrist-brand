@@ -218,7 +218,7 @@ test('sales page override cannot grant map/trail access or trip internals',async
  await assert.rejects(call('select lwb_live_map()'),/only for/);
  await assert.rejects(call('select lwb_location_trail($1,null)',[ids.driver]),/only for/);
  await assert.rejects(call('select * from lwb_trip_orders($1)',[ids.driver]),/permission denied/);
- assert.deepEqual(await one('select lwb_my_orders(45)'),[]);
+ // lwb_my_orders is open to salesman again (PO List, his own POs); this test DB has no full orders table.
  assert.deepEqual(await call('select * from dispatch_assignments'),[]);
  assert.deepEqual(await call('select * from lwb_delivery_reports'),[]);
 });

@@ -598,7 +598,7 @@ DECLARE
   v_field boolean := public.lwb_is_field_salesman();
 BEGIN
   IF auth.uid() IS NULL THEN RAISE EXCEPTION 'Login required.'; END IF;
-  IF EXISTS(SELECT 1 FROM public.user_profiles WHERE id=auth.uid() AND lower(btrim(role)) IN ('sales','salesman')) THEN RETURN '[]'::jsonb; END IF;
+  -- Salesman sees his own POs again (PO List): status, delivery and edit/cancel before approval.
   RETURN coalesce((
     SELECT jsonb_agg(x.j ORDER BY x.d DESC)
     FROM (
