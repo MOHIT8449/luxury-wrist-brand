@@ -11,6 +11,7 @@
   <script src="erp-shell.js"></script>
   <script src="sales-common.js"></script>
   <script src="party-list.js"></script>
+  <script src="mepd-scheme.js"></script>
   <style>
     /* Party Rate Offer (lwb_party_rate_offer_setup.sql, Mohit 16 Nov 2026): like a PO, party + category / pack + rate per case,
        saved as the rate given to that party, shared as an image; (i) = the rates this party got before. */
@@ -26,7 +27,7 @@
     .pr-lines td{padding:3px 4px;border-bottom:1px solid #eef1f4;vertical-align:middle}
     .pr-lines td.no{color:#6b7785;width:22px;text-align:center}
     .pr-lines td.rt{width:110px}.pr-lines td.rt input{text-align:right}
-    .pr-lines td.last{width:150px;font-size:12px;color:#4b5563;white-space:nowrap}
+    .pr-lines td.last{width:250px;font-size:12px;color:#4b5563;white-space:nowrap}
     .pr-lines td.act{width:62px;white-space:nowrap;text-align:right}
     .pr-lines small{display:block;font-size:10.5px;color:#6b7785}
     .up{color:#13824a;font-weight:700}.dn{color:#c8102e;font-weight:700}.mut{color:#6b7785;font-size:12px}
@@ -127,7 +128,7 @@
     const money=n=>Number(n||0).toLocaleString("en-IN",{maximumFractionDigits:2});
     const today=()=>LWBDate&&LWBDate.today?LWBDate.today():new Date(Date.now()+19800000).toISOString().slice(0,10);
     const dshort=d=>{if(!d)return"";const [y,m,dd]=String(d).slice(0,10).split("-");return dd+" "+["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][+m-1]+" "+y.slice(2)};
-    let me=null,packs=[],offers=[],last=new Map(),lastParty="",saved=null;
+    let me=null,land=new Map(),packs=[],offers=[],last=new Map(),lastParty="",saved=null;
 
     function msg(t,kind){const m=el("msg");m.textContent=t||"";m.className="pr-msg"+(kind?" "+kind:"")}
     function lineRow(it){
@@ -149,7 +150,10 @@
         if(l.item&&l.rate!=="")n++;
         if(!l.item){cell.innerHTML="";return}
         const pk=packs.find(x=>key(x.pack_name)===key(l.item));
-        const list=pk&&Number(pk.slab3_rate)>0?'<small>List ₹'+money(pk.slab3_rate)+'</small>':"";
+        const ld=pk?land.get(key(pk.pack_name)):null,mg=ld!=null&&l.rate!==""?Number(l.rate)-ld:null;
+        // Landing + margin on screen only (Mohit, 16 Nov 2026); never on the image / WhatsApp.
+        const list=pk?'<small>'+(Number(pk.slab3_rate)>0?'List ₹'+money(pk.slab3_rate):"")+(ld!=null?(Number(pk.slab3_rate)>0?" · ":"")+'Landing ₹'+money(ld)+
+          (mg!=null?' · <span class="'+(mg<0?"dn":"up")+'">Margin '+(mg>0?"+":"")+money(mg)+'</span>':""):"")+'</small>':"";
         if(!p){cell.innerHTML='<span class="mut">First time</span>'+list;return}
         const d=l.rate===""?0:Number(l.rate)-Number(p.rate);
         cell.innerHTML='₹'+money(p.rate)+' <span class="mut">· '+esc(dshort(p.offer_date))+'</span>'+
@@ -333,11 +337,22 @@
       el("loading").hidden=true;el("page").hidden=false;
       el("odate").value=today();for(let i=0;i<3;i++)addLine();
       try{
-        const [pk,sk]=await Promise.all([client.from("lwb_rate_packs").select("pack_name,slab3_rate,sort_no,active").eq("active",true).order("sort_no"),
-          client.from("sku_master").select("category").not("category","is",null)]);
+        // Only Rate List packs in the list (Mohit, 16 Nov 2026: SKU Master categories showed the same pack twice).
+        const [pk,st,ln,cm,sc]=await Promise.all([client.from("lwb_rate_packs").select("*").eq("active",true).order("sort_no"),
+          client.from("lwb_rate_settings").select("mepd_pct,roi_main").eq("id",1).maybeSingle(),
+          client.from("lwb_rate_pack_skus").select("sku_key,pack_id"),
+          client.from("sku_master").select("sku_name,category"),
+          client.from("lwb_mepd_schemes").select("categories,mepd_pct,valid_from,valid_to,created_at")]);
         packs=pk.error?[]:(pk.data||[]);
+        // Landing (excl. ROI) per pack, same formula as Rate & Scheme: today's MEPD scheme of the linked SKUs' category.
+        if(!st.error&&st.data){
+          const cat=new Map((cm.error?[]:cm.data||[]).filter(x=>x.category).map(x=>[key(x.sku_name),x.category]));
+          const schemes=sc.error?[]:(sc.data||[]),links=ln.error?[]:(ln.data||[]);
+          packs.forEach(p=>{let best=null;
+            if(window.LWBMepd)links.filter(l=>l.pack_id===p.id).forEach(l=>{const x=LWBMepd.find(schemes,cat.get(key(l.sku_key)));if(x&&(!best||String(x.created_at)>String(best.created_at)))best=x});
+            if(Number(p.gr)>0)land.set(key(p.pack_name),Math.round(S.landing(p,st.data,best)*100)/100)});
+        }
         const names=new Map();packs.forEach(p=>names.set(key(p.pack_name),[p.pack_name,Number(p.slab3_rate)>0?"List ₹"+money(p.slab3_rate):"Rate List pack"]));
-        (sk.error?[]:sk.data||[]).forEach(s=>{const c=String(s.category||"").trim();if(c&&!names.has(key(c)))names.set(key(c),[c,"SKU category"])});
         el("itemList").replaceChildren(...[...names.values()].map(([v,l])=>{const o=document.createElement("option");o.value=v;o.label=l;return o}));
       }catch(e){}
       refresh();loadList();
