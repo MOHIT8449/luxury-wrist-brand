@@ -2082,12 +2082,35 @@ document.addEventListener("DOMContentLoaded", async () => {
    LOAD ORDERS
 ----------------------------- */
 
-async function loadOrders() {
+/* AUTO REFRESH (Mohit, 16 Nov 2026): the list, tabs and Pending delivery reload by themselves every
+   15 seconds, quietly (no "Loading…", same tab / filters / page / ticked POs / scroll). It waits while a
+   popup is open, while you type in a box, while the browser tab is hidden, or while a load is running;
+   coming back to the tab reloads at once. */
+const AUTO_REFRESH_SEC = 15;
+function autoRefreshBusy() {
+  if (document.hidden || ordersLoading || !listLoadedAt) return true;
+  if (document.querySelector(".modal.show, .erp-ls-back")) return true;
+  const a = document.activeElement;
+  return !!(a && a !== document.body && a.matches("input, textarea, select, [contenteditable='true']"));
+}
+setInterval(() => { if (!autoRefreshBusy()) loadOrders({ quiet: true }); }, AUTO_REFRESH_SEC * 1000);
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden && listLoadedAt && Date.now() - listLoadedAt.getTime() > AUTO_REFRESH_SEC * 1000 && !autoRefreshBusy())
+    loadOrders({ quiet: true });
+});
 
+let ordersLoading = false;
+async function loadOrders(opts) {
+
+  const quiet = !!(opts && opts.quiet);
   const area = document.getElementById("ordersArea");
 
-  area.className = "loading";
-  area.innerHTML = "Loading orders...";
+  if (!quiet) {
+    area.className = "loading";
+    area.innerHTML = "Loading orders...";
+  }
+  ordersLoading = true;
+  const scrollY = window.scrollY;
 
   try {
 
@@ -2117,7 +2140,9 @@ async function loadOrders() {
     loadTrend();
     listLoadedAt = new Date();
     document.getElementById("listUpdated").textContent =
-      "⟳ Updated " + listLoadedAt.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "Asia/Kolkata" });
+      "⟳ Updated " + listLoadedAt.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false, timeZone: "Asia/Kolkata" }) +
+      " · auto " + AUTO_REFRESH_SEC + "s";
+    if (quiet) window.scrollTo(0, scrollY);
     const capped = inRange.length >= LIST_MAX_ROWS;
     // Shown only when the range has too many orders; the open-PO rule is the date box's tooltip.
     document.getElementById("listRangeNote").textContent =
@@ -2126,12 +2151,15 @@ async function loadOrders() {
   } catch (error) {
 
     console.error(error);
+    if (quiet) return; // auto refresh: keep the list on screen, try again next time
 
     area.className = "empty";
     area.innerHTML =
       "Unable to load orders.<br><br>" +
       escapeHtml(error.message || "Unknown database error");
 
+  } finally {
+    ordersLoading = false;
   }
 
 }
