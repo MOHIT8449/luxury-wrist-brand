@@ -111,13 +111,14 @@
     <input class="bc-in" data-note maxlength="500" placeholder="Note for Admin" style="flex:2 1 200px">
     ${bills.length>1?`<select class="bc-in" data-bill title="Bill that takes the difference" style="flex:1 1 150px">${bills.map(x=>`<option value="${esc(x.no)}">Bill ${esc(x.no)} · ${esc(x.firm||"")}</option>`).join("")}</select>`:""}
     <button type="button" class="bc-btn pri" data-send>${admin?"Save change":"Send to Admin"}</button></div>
-   <div class="bc-note">${admin?"Your change is saved at once.":"Nothing changes until Admin approves."} ${d.bill&&d.bill.amount?"After approval the Tally bill amount moves by the same difference, so To collect follows.":"The bill amount to make follows the new value."}</div>
+   <div class="bc-note">${loaded?"Party got fewer cases? Press − here and choose “Less qty reached” (no Return needed): on approve the bill goes down and those cases come back to godown stock. ":""}${admin?"Your change is saved at once.":"Nothing changes until Admin approves."} ${d.bill&&d.bill.amount?"After approval the Tally bill amount moves by the same difference, so To collect follows.":"The bill amount to make follows the new value."}</div>
    ${(d.changes||[]).length?`<details class="bc-hist"><summary>History (${d.changes.length})</summary>${d.changes.map(c=>`<div class="h"><span class="bc-tag ${(ST[c.status]||[])[0]||""}">${(ST[c.status]||[])[1]||c.status}</span> ${dmy(c.requested_at)} · ${esc(c.by||"")} · ${rs(c.old_value)} → ${rs(c.new_value)} <b class="${c.diff>=0?"bc-pos":"bc-neg"}">${sg(c.diff)}</b>${c.reason?" · "+esc(c.reason):""}${c.reply?` · Admin: ${esc(c.reply)}`:""} <button type="button" class="bc-lnk" data-hv="${esc(c.id)}">View</button></div>`).join("")}</details>`:""}`);
   const tb=b.querySelector("tbody"),sum=b.querySelector("[data-sum]");
   const oldV=rows.reduce((a,x)=>a+x.q0*x.r0,0);
   function draw(){
    tb.innerHTML=rows.map((x,i)=>{const ch=x.id&&(x.q!==x.q0||x.r!==x.r0||x.sku.toUpperCase()!==x.sku0.toUpperCase()),rm=x.q===0,dv=x.q*x.r-(x.id?x.q0*x.r0:0);
-    const hist=x.id?`PO ${Number(x.h.ordered)} · OK ${Number(x.h.approved)}${x.h.loaded!=null?" · Loaded "+Number(x.h.loaded):""}`:"new";
+    const sh=x.id&&x.h.loaded!=null?Number(x.h.approved)-Number(x.h.loaded):0;
+    const hist=x.id?`PO ${Number(x.h.ordered)} · OK ${Number(x.h.approved)}${x.h.loaded!=null?" · Loaded "+Number(x.h.loaded):""}${sh>0?` <span class="bc-tag bc-red">Short at loading ${sh} CS</span>`:""}`:"new";
     return `<tr data-i="${i}" class="${rm?"rm":ch||!x.id?"ch":""}"><td class="it">${x.swap||!x.id?`<input class="bc-in bc-sk" list="bc-skus" value="${esc(x.sku)}" placeholder="Type SKU" aria-label="SKU">${x.id?`<small>was ${esc(x.sku0)}</small>`:""}`:`<span class="bc-sku">${esc(x.sku)}</span><small>${hist}</small>`}</td>
      <td><span class="bc-step"><button type="button" data-m aria-label="Less">−</button><input inputmode="numeric" value="${x.q}" aria-label="Qty"><button type="button" data-p aria-label="More">+</button></span></td>
      <td class="n"><input class="bc-in bc-rate" inputmode="decimal" value="${x.r||""}" placeholder="Rate" aria-label="Rate"></td>

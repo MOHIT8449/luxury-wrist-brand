@@ -196,7 +196,7 @@
     const DELIVERY={DELIVERED:["t-grn","Delivered"],PARTIAL:["t-amb","Part delivered"],NOT_DELIVERED:["t-red","Not delivered"]};
     let taxBill=false,marks=new Map(),fb="",info=null,tab="make",open=new Set(),want=new URLSearchParams(location.search).get("order"),sheet=[],admin=false,changes=[],wantChg=new URLSearchParams(location.search).get("change");
     // Bills to make filter: date range on the loaded date (approved date for POs not loaded yet), rows opened to make the bill
-    let mkRange="all",mkFrom="",mkTo="",mkOpen=new Set();
+    let mkRange="all",mkFrom="",mkTo="",mkOpen=new Set(),shortMap=new Map();
     let led=null,ledParty=new URLSearchParams(location.search).get("party")||"",ledFrom="",ledTo="";
     const toast=t=>ERPShell.toast?ERPShell.toast(t):say(t,false,true);
     function say(t,bad,ok){el("msg").hidden=!t;el("msg").textContent=t||"";el("msg").className="pb-msg"+(bad?" bad":ok?" ok":"")}
@@ -213,10 +213,20 @@
         changes=chg.error?[]:(chg.data||[]);
         // Approved POs not loaded yet (lwb_bill_before_loading_setup.sql); missing function = only loaded ones, as before.
         x.early=early.error?[]:(early.data||[]).map(o=>({...o,early:true,parent:x.parentOf(o.party)}));
-        info=x;led=null;brandChips();say("");render();openWanted()}
+        info=x;led=null;brandChips();say("");render();openWanted();loadShort()}
       catch(e){say(e.message,true);if(!info)el("body").innerHTML='<div class="pb-empty">Nothing to show yet.</div>'}
       finally{el("reload").disabled=false}
     }
+    // Short at loading (Mohit, 16 Nov 2026): approved qty − loaded qty per PO, shown on Bills to make so Accounts
+    // sees it before the bill; fix it with ± Qty (goes to Admin), not with a Return. Read-only; missing = no tag.
+    async function loadShort(){
+      try{const ids=toMake().filter(o=>!o.early).map(o=>o.order_id),m=new Map();
+        for(let i=0;i<ids.length;i+=150){const r=await client.from("order_items").select("order_id,sku_name,ordered_qty,approved_qty,loaded_qty").in("order_id",ids.slice(i,i+150));
+          if(r.error)return;
+          for(const it of r.data||[]){if(it.loaded_qty==null)continue;const a=Number(it.approved_qty!=null?it.approved_qty:it.ordered_qty)||0,l=Number(it.loaded_qty)||0;
+            if(a-l>0.0001){const x=m.get(it.order_id)||{cs:0,lines:[]};x.cs+=a-l;x.lines.push(String(it.sku_name||"").trim()+" "+(a-l)+" CS");m.set(it.order_id,x)}}}
+        shortMap=m;if(tab==="make"&&m.size)render()}catch(_){}}
+    const shortTag=id=>{const x=shortMap.get(id);return x?` <span class="tag t-red" title="${esc("Less loaded than approved: "+x.lines.join(", ")+". Use ± Qty if the party got less again.")}">Short ${Math.round(x.cs*100)/100} CS</span>`:""};
     /* ---------- brand (All / Rajnigandha / Coca-Cola) ---------- */
     const BR=()=>info&&info.branded?info.companies:[];
     const V=p=>fb?LWBPartyPay.slice(p,fb):p;      // the party as seen in the chosen brand
@@ -314,7 +324,7 @@
       const used=[...new Set(orders().filter(x=>key(x.parent)===key(o.parent)).flatMap(x=>(x.bills||[]).map(b=>String(b.firm||"").trim())).filter(Boolean))].filter(n=>!names.some(m=>key(m)===key(n)));
       return `<datalist id="dl-${esc(o.order_id)}">${names.concat(used).map(n=>`<option value="${esc(n)}">`).join("")}</datalist>
           <div class="pb-lines"></div>
-          <div class="pb-foot mk"><button type="button" class="lnk" data-add>+ <span class="lg">Another </span>bill</button>${dateBox(info.today)}<button type="button" class="pb-btn sm" data-it="${esc(o.order_id)}" title="See items, change qty / rate / SKU (goes to Admin)">ⓘ Items<span class="lg"> / Edit</span></button>${taxBill?`<a class="pb-btn sm" href="tax-invoice.html?order=${encodeURIComponent(o.order_id)}" title="Make and print the tax invoice (Tally layout)">🧾<span class="lg"> Tax bill</span></a>`:""}<span class="tot"></span><button type="button" class="pb-btn pri" data-save>Save<span class="lg"> bill</span></button></div>`}
+          <div class="pb-foot mk"><button type="button" class="lnk" data-add>+ <span class="lg">Another </span>bill</button>${dateBox(info.today)}<button type="button" class="pb-btn sm" data-it="${esc(o.order_id)}" title="Less / more cases reached? Change qty here (not Return), also rate / SKU. Goes to Admin.">± Qty<span class="lg"> / Items</span></button>${taxBill?`<a class="pb-btn sm" href="tax-invoice.html?order=${encodeURIComponent(o.order_id)}" title="Make and print the tax invoice (Tally layout)">🧾<span class="lg"> Tax bill</span></a>`:""}<span class="tot"></span><button type="button" class="pb-btn pri" data-save>Save<span class="lg"> bill</span></button></div>`}
     function wireBill(card,o){
       const lines=card.querySelector(".pb-lines"),tot=card.querySelector(".tot");
       const total=()=>{const l=[...lines.children],s=l.reduce((a,r)=>a+num(r.querySelector(".am").value),0);
@@ -346,7 +356,7 @@
         const d=DELIVERY[String(o.delivery||"").toUpperCase()],grp=key(o.parent)!==key(o.party),isOpen=mkOpen.has(o.order_id),ret=retOn(o.order_id);
         const names=[...new Set([o.parent,...membersOf(o.parent)])].filter(n=>key(n)!==key(o.party));
         return `<tr class="pr${isOpen?" open":""}" data-o="${esc(o.order_id)}">
-          <td class="c1"><b class="pb-po" data-drill-order="${esc(o.order_id)}" data-drill-no="${esc(o.order_no)}">${esc(o.order_no)}</b><small class="ph-only">${dmy(mkDate(o))}</small>${o.early?` <span class="tag t-amb">${o.vehicle_no?"Vehicle "+esc(o.vehicle_no)+" · not loaded":"Not loaded yet"}</span>`:""}${d?` <span class="tag ${d[0]}">${d[1]}</span>`:""}${markTag(o.order_id,!!d)}${waitTag(o.order_id)}</td>
+          <td class="c1"><b class="pb-po" data-drill-order="${esc(o.order_id)}" data-drill-no="${esc(o.order_no)}">${esc(o.order_no)}</b><small class="ph-only">${dmy(mkDate(o))}</small>${o.early?` <span class="tag t-amb">${o.vehicle_no?"Vehicle "+esc(o.vehicle_no)+" · not loaded":"Not loaded yet"}</span>`:""}${d?` <span class="tag ${d[0]}">${d[1]}</span>`:""}${shortTag(o.order_id)}${markTag(o.order_id,!!d)}${waitTag(o.order_id)}</td>
           <td class="hide-ph" style="white-space:nowrap" title="${o.early?"Approved date":"Loaded date"}">${dmy(mkDate(o))}</td>
           <td class="w"><b>${esc(o.party)}</b>${grp?` <span class="tag t-blu">under ${esc(o.parent)}</span>`:""}${names.length?`<small title="${esc(names.join(", "))}">bill names: ${esc(names.join(", "))}</small>`:""}</td>
           <td class="n c4"><b>${rs(o.erp_amount)}</b>${o.early?`<small>PO ${esc(Number(o.qty||0).toLocaleString("en-IN"))} CS</small>`:""}${ret>0.5?`<small>return <b class="due">− ${rs(ret)}</b> = ${rs(r2(o.erp_amount-ret))}</small>`:""}</td>
