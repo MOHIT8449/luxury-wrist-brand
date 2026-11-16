@@ -462,6 +462,18 @@
     shade.onclick=closeSide;
     document.addEventListener("keydown",e=>{if(e.key==="Escape" && document.body.classList.contains("side-open")){closeSide();top.querySelector(".erp-burger").focus()}});
     side.addEventListener("click",e=>{if(e.target.closest("a"))closeSide()});
+    // Auto hide (Mohit, 16 Nov 2026): an open side menu hides by itself 12 seconds after it was opened,
+    // counted again from when the mouse leaves it / you stop typing in it. ☰ opens it again.
+    const AUTO_HIDE_MS=12000;let hideT=0;
+    const sideOpen=()=>narrow()?document.body.classList.contains("side-open"):!document.body.classList.contains("side-closed");
+    const inSide=()=>side.matches(":hover")||side.contains(document.activeElement);
+    const armHide=()=>{clearTimeout(hideT);if(!sideOpen())return;hideT=setTimeout(()=>{
+      if(!sideOpen())return;if(inSide()){armHide();return}
+      if(narrow())closeSide();else{document.body.classList.add("side-closed");try{localStorage.setItem("erpSideClosed","1")}catch(e){}}
+    },AUTO_HIDE_MS)};
+    top.querySelector(".erp-burger").addEventListener("click",armHide);
+    side.addEventListener("mouseleave",armHide);side.addEventListener("focusout",armHide);side.addEventListener("input",armHide);
+    armHide();
     top.querySelector(".erp-keys-btn").onclick=()=>{if(window.LWBKeys&&LWBKeys.help)LWBKeys.help();else location.href="keyboard-shortcuts.html"};
     top.querySelector(".erp-logout").onclick=opts.onLogout||(()=>{location.href="login.html"});
     if(role)unlockSetting(top.querySelector(".erp-avatar"));
