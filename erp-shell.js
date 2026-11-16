@@ -69,6 +69,8 @@
     chat:'<path d="M4 5h16v11H9l-5 4z"/><path d="M8 9h8M8 12h5"/>',
     megaphone:'<path d="M3 11v2a1 1 0 0 0 1 1h2l5 4V6L6 10H4a1 1 0 0 0-1 1z"/><path d="M15 9a4 4 0 0 1 0 6M18 6a8 8 0 0 1 0 12"/>',
     keyboard:'<rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M6 14h.01M18 14h.01M9 14h6"/>',
+    tasks:'<path d="M9 6h11M9 12h11M9 18h11"/><path d="M3.5 6l1.5 1.5L7.5 5M3.5 12l1.5 1.5 2.5-2.5M3.5 18l1.5 1.5 2.5-2.5"/>',
+    shield:'<path d="M12 3l8 3v6c0 4.5-3.4 8-8 9-4.6-1-8-4.5-8-9V6z"/><path d="M8.5 12l2.5 2.5 4.5-4.5"/>',
     lock:'<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>'
   };
   const svg=(name)=>'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">'+(ICON[name]||ICON.box)+'</svg>';
@@ -80,9 +82,9 @@
   const MENU=[
     {group:"",items:[{t:"Dashboard",h:"dashboard.html",i:"home",r:"*"},
       // Approvals (Mohit, 7 Nov 2026): everything waiting for Admin / Sales Head OK, one card each (approvals.js).
-      {t:"Approvals",h:"approvals.html",i:"check",r:"admin manager",k:"approval approve permission pending verify check bank payment trip rent rate market order po change stock"},
-      {t:"Tasks",h:"tasks.html",i:"check",r:"*"},
-      {t:"Complaint Box",h:"complaint-box.html",i:"chat",r:"*"},
+      {t:"Approvals",h:"approvals.html",i:"shield",top:1,r:"admin manager",k:"approval approve permission pending verify check bank payment trip rent rate market order po change stock"},
+      {t:"Tasks",h:"tasks.html",i:"tasks",r:"*",top:1},
+      {t:"Complaint Box",h:"complaint-box.html",i:"megaphone",r:"*",top:1},
       // Keyboard Shortcuts (Mohit, 5 Nov 2026): every role sees the keys of the pages it can open.
       {t:"Keyboard Shortcuts",h:"keyboard-shortcuts.html",i:"keyboard",r:"*",k:"keyboard shortcut keys help hotkey",
        // Not in the side menu (Mohit, 7 Nov 2026): the keyboard button in the top bar opens it; still in Module Search.
@@ -384,7 +386,7 @@
     function drawSide(){
       let html='<div class="erp-brand"><span class="erp-mark" aria-hidden="true">lwb</span><div><b>LUXURY WRIST BRAND</b><small>BUSINESS ERP</small></div></div>'+
         '<div class="erp-menu-find"><input type="search" aria-label="Find a page" placeholder="Find a page…"></div><p class="erp-menu-empty" hidden>No page found</p>';
-      const link=(i,g)=>'<a class="erp-link'+(isActive(i)?' active':'')+'" href="'+esc(i.h)+'" data-k="'+esc((i.t+" "+g.group+" "+(i.pt||"")+" "+(i.k||"")).toLowerCase())+'">'+svg(i.i)+'<span>'+esc(i.t)+'</span></a>';
+      const link=(i,g)=>'<a class="erp-link'+(i.top?' erp-side-top':'')+(isActive(i)?' active':'')+'" href="'+esc(i.h)+'" data-k="'+esc((i.t+" "+g.group+" "+(i.pt||"")+" "+(i.k||"")).toLowerCase())+'">'+svg(i.i)+'<span>'+esc(i.t)+'</span></a>';
       const secs=groups.filter(g=>!g.so&&g.group);
       // Which group is open: the open page's group, else the one opened last, else the first.
       let open=(secs.find(g=>g.items.some(isActive))||{}).group;
@@ -403,6 +405,14 @@
     }
     drawSide();
     side.setAttribute("aria-label", "Main menu");
+    // Approvals, Tasks, Complaint Box (Mohit, 16 Nov 2026): small icons in the top bar on a computer; on a phone
+    // the top bar has no room, so they stay at the top of the side menu.
+    function drawQuick(){
+      const user=top.querySelector(".erp-user");let q=user.querySelector(".erp-quick");
+      if(!q){q=document.createElement("div");q.className="erp-quick";user.prepend(q)}
+      q.innerHTML=groups.filter(g=>!g.so).flatMap(g=>g.items).filter(i=>i.top).map(i=>
+        '<a class="erp-quick-btn'+(isActive(i)?' active':'')+'" href="'+esc(i.h)+'" title="'+esc(i.t)+'" aria-label="'+esc(i.t)+'">'+svg(i.i)+'</a>').join("");
+    }
     side.addEventListener("click", e => {
       const b=e.target.closest(".erp-group");if(!b)return;
       const sec=b.parentElement,on=!sec.classList.contains("open");
@@ -436,6 +446,7 @@
     });
     const shade=document.createElement("div");shade.className="erp-shade";
     document.body.prepend(top,side,shade);
+    drawQuick();
 
     const narrow=()=>window.matchMedia("(max-width:980px)").matches;
     let closed=false;
@@ -490,7 +501,7 @@
     refreshAccess().then(changed=>{
       if(!changed)return;
       if(blocked(role,page,hiddenPages()))return;
-      groups=menuForMe(role);flat=groups.flatMap(g=>g.items.map(i=>({...i,g:g.group})));drawSide();
+      groups=menuForMe(role);flat=groups.flatMap(g=>g.items.map(i=>({...i,g:g.group})));drawSide();drawQuick();
       if(role!=="driver")bottomNav(page,role);
       pageTabs(page,role);
       document.dispatchEvent(new CustomEvent("erp:access"));
