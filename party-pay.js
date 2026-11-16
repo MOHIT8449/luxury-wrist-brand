@@ -29,15 +29,17 @@
 
   /* ---------- data ---------- */
   async function load(client){
-    const {data,error}=await client.rpc("lwb_party_billing",{p_days:400});
+    // Goods returns (lwb_party_return_setup.sql); missing function = none, as before.
+    const [{data,error},rt]=await Promise.all([client.rpc("lwb_party_billing",{p_days:400}),client.rpc("lwb_party_return_list",{p_days:400}).then(r=>r,()=>({error:1}))]);
     if(error)throw Error(errText(error));
+    const returns=rt&&!rt.error&&Array.isArray(rt.data)?rt.data:[];
     const d=data||{},groups=d.groups||[],adv=d.advance||{},open=d.openings||{},companies=d.companies||[];
     const hasB=Array.isArray(d.advance_b);
     const parentByKey=new Map(groups.map(g=>[key(g.member),g.parent]));
     const parentOf=n=>{let v=String(n||"").trim();for(let i=0;i<4;i++){const p=parentByKey.get(key(v));if(!p||key(p)===key(v))break;v=p}return v};
     const parties=new Map();
-    const get=p=>{const k=key(p);if(!parties.has(k))parties.set(k,{party:p,bills:[],due:0,advance:0,opening:0,members:[],billed:0,oldest:"",brands:{}});return parties.get(k)};
-    const slot=(x,c)=>{c=c||"";return x.brands[c]||(x.brands[c]={company_id:c,bills:[],due:0,advance:0,opening:0,net:0,oldest:""})};
+    const get=p=>{const k=key(p);if(!parties.has(k))parties.set(k,{party:p,bills:[],due:0,advance:0,opening:0,ret:0,members:[],billed:0,oldest:"",brands:{}});return parties.get(k)};
+    const slot=(x,c)=>{c=c||"";return x.brands[c]||(x.brands[c]={company_id:c,bills:[],due:0,advance:0,opening:0,ret:0,net:0,oldest:""})};
     for(const o of d.orders||[]){
       o.parent=o.parent||parentOf(o.party);
       if(!o.invoice_no)continue;
@@ -53,25 +55,27 @@
       for(const [p,a] of Object.entries(adv))get(parentOf(p)).advance+=Number(a)||0;
       for(const [p,a] of Object.entries(open))get(parentOf(p)).opening+=Number(a)||0;
     }
+    // New return (not against a bill) = return credit on the main party; one against a bill is in that bill's Due.
+    for(const r of returns){if(r.cancelled||r.order_id)continue;const x=get(parentOf(r.parent||r.party)),v=Number(r.amount)||0;x.ret+=v;slot(x,hasB?r.company_id:"").ret+=v}
     for(const g of groups)get(g.parent).members.push(g.member);
     for(const x of parties.values()){
       x.bills.sort((a,b)=>String(a.invoice_date).localeCompare(String(b.invoice_date))||String(a.entered_at).localeCompare(String(b.entered_at))||String(a.order_no).localeCompare(String(b.order_no)));
-      x.due=r2(x.due);x.advance=r2(x.advance);x.net=r2(x.due+x.opening-x.advance);
+      x.due=r2(x.due);x.advance=r2(x.advance);x.ret=r2(x.ret);x.net=r2(x.due+x.opening-x.advance-x.ret);
       for(const b of Object.values(x.brands)){b.bills.sort((a,c)=>String(a.invoice_date).localeCompare(String(c.invoice_date))||String(a.order_no).localeCompare(String(c.order_no)));
-        b.due=r2(b.due);b.advance=r2(b.advance);b.opening=r2(b.opening);b.net=r2(b.due+b.opening-b.advance)}
+        b.due=r2(b.due);b.advance=r2(b.advance);b.opening=r2(b.opening);b.ret=r2(b.ret);b.net=r2(b.due+b.opening-b.advance-b.ret)}
     }
     const brandOf=id=>companies.find(c=>c.id===id)||null;
-    return {raw:d,parties,parentOf,today:d.today||today(),companies,brandOf,branded:hasB&&companies.length>1};
+    return {raw:d,parties,parentOf,today:d.today||today(),companies,brandOf,branded:hasB&&companies.length>1,returns};
   }
   // One brand of a party (id "" = money / bills with no brand). Same shape as a party, with its name and bill names.
-  const EMPTY={bills:[],due:0,advance:0,opening:0,net:0,oldest:""};
+  const EMPTY={bills:[],due:0,advance:0,opening:0,ret:0,net:0,oldest:""};
   function slice(x,c){if(!x)return null;const b=x.brands&&x.brands[c||""]||EMPTY;return {...b,company_id:c||"",party:x.party,members:x.members,brands:x.brands}}
   // Brands this party has something in (bills due, advance or opening), real brands only.
   const activeBrands=x=>x&&x.brands?Object.values(x.brands).filter(b=>b.company_id&&(b.due>0.5||Math.abs(b.advance)>0.5||Math.abs(b.opening)>0.5)).map(b=>b.company_id):[];
   const savedBrand=()=>{try{return localStorage.getItem("lwbBrand")||""}catch(e){return ""}};
   // One balance per party: bills due + opening − money not yet set against bills.
   // > 0 = still to collect, < 0 = advance (we hold the party's money).
-  const balText=p=>{if(!p)return "";const n=r2(p.net!=null?p.net:p.due+(p.opening||0)-p.advance);return n>0.5?"due "+rs(n):n<-0.5?"advance "+rs(-n):"settled"};
+  const balText=p=>{if(!p)return "";const n=r2(p.net!=null?p.net:p.due+(p.opening||0)-p.advance-(p.ret||0));return n>0.5?"due "+rs(n):n<-0.5?"advance "+rs(-n):"settled"};
   const billNames=o=>(o.bills||[]).length?(o.bills||[]).map(b=>(b.firm||o.party)+" · "+b.no+((o.bills||[]).length>1?" · "+rs(b.amount):"")).join("\n"):(o.invoice_no||"");
 
   /* ---------- styles (once) ---------- */
@@ -216,9 +220,9 @@
     }
     function drawSum(){
       const p=P();
-      const n=r2(p.due+(p.opening||0)-p.advance),both=p.advance>0.5&&p.bills.length>0;
+      const n=r2(p.due+(p.opening||0)-p.advance-(p.ret||0)),both=p.advance>0.5&&p.bills.length>0;
       q("[data-sum]").innerHTML=party&&(!BR.length||brand)?`<div class="${n>0.5?"due":"adv"}"><small>${bname()?esc(bname())+" · ":""}${n>0.5?"to collect":n<-0.5?"advance with us":"balance"}</small><b>${rs(Math.abs(n))}</b></div><div><small>Bills due (${p.bills.length})</small><b>${rs(p.due)}</b></div>`+
-        (both?`<div><small>Paid earlier, not set against bills</small><b>${rs(p.advance)}</b>${adjust?"":`<button type="button" class="lnk" data-adjnow style="display:block;margin-top:2px">Adjust now</button>`}</div>`:p.opening?`<div><small>Opening balance</small><b>${rs(p.opening)}</b></div>`:""):"";
+        (both?`<div><small>Paid earlier, not set against bills</small><b>${rs(p.advance)}</b>${adjust?"":`<button type="button" class="lnk" data-adjnow style="display:block;margin-top:2px">Adjust now</button>`}</div>`:p.opening?`<div><small>Opening balance</small><b>${rs(p.opening)}</b></div>`:p.ret>0.5?`<div><small>Goods returned</small><b>${rs(p.ret)}</b></div>`:""):"";
       const a=q("[data-adjnow]");if(a)a.onclick=()=>{close();open({...o,party,brand,adjust:true})};
       q("[data-sum]").hidden=!party||(BR.length&&!brand);
     }
