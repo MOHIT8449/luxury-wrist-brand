@@ -48,7 +48,22 @@ button.del{background:#e74c3c!important;color:#fff!important}
 .ec-add #discAll{flex:0 0 110px;text-align:right}
 .ec-add .ec-sep{flex:0 0 14px}
 .ec-add button{height:38px;padding:0 12px}
-.ec-plan .ec-row{grid-template-columns:minmax(0,1.6fr) repeat(2,minmax(0,1fr))}
+.ec-plan .ec-row{grid-template-columns:minmax(0,1.6fr) repeat(3,minmax(0,1fr));align-items:center}
+.ec-plan .ec-row input{max-width:64px;display:inline-block}
+.ec-plan .ec-row .mx{font-size:11px;text-decoration:underline}
+.ec-row.pend{background:#fff6dd}
+.ec-row.done{background:#eaf7ee}
+.ec-plan .ec-row.in{box-shadow:inset 4px 0 0 #00434d;padding-left:10px}
+.ec-plan .ec-row.in input{border-color:#00434d!important;font-weight:700}
+@media(max-width:600px){.ec-plan .ec-row .nw{white-space:normal;display:flex;flex-direction:column;align-items:flex-end}.ec-plan .ec-row input{max-width:56px}}
+.pl{color:#a86a00;font-weight:600}
+.ec-trk.big{border:2px solid #00434d;font-size:14px}
+.ec-bar2{height:8px;background:#eef0f3;border-radius:5px;overflow:hidden;margin:2px 0 6px}
+.ec-bar2 i{display:block;height:100%;background:var(--erp-green)}
+.ec-bar2 i.ov{background:var(--erp-danger)}
+.ec-pend{margin-top:8px;border:1px solid #f1d58a;background:#fff9e8;border-radius:10px;padding:8px 10px;font-size:13px;display:flex;flex-wrap:wrap;gap:4px 10px}
+.ec-pend>b{flex-basis:100%}
+.ec-pend span{white-space:nowrap}
 .ec-trucks{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,250px),1fr));gap:8px}
 .ec-trk{border:1px solid var(--erp-line);border-radius:10px;padding:8px 10px;min-width:0}
 .ec-trk .th{display:flex;justify-content:space-between;gap:6px;font-weight:700;margin-bottom:4px}
@@ -89,8 +104,9 @@ button.del{background:#e74c3c!important;color:#fff!important}
   .ec-top .ec-btns{flex:1;margin-top:0}
   .ec-stats{grid-template-columns:repeat(6,minmax(0,1fr))}
   .ec-trucks{grid-template-columns:repeat(auto-fill,minmax(270px,1fr))}
-  .ec-plan-wrap{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.3fr);gap:12px;align-items:start}
-  .ec-plan-wrap #planTrucks{margin-top:0!important;grid-template-columns:repeat(auto-fill,minmax(240px,1fr))}
+  .ec-plan-wrap{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(300px,1fr);gap:12px;align-items:start}
+  .ec-plan-wrap #planTrucks{margin-top:0!important;position:sticky;top:70px}
+  .ec-plan .ec-list{max-width:none}
 }
 @media(min-width:1000px) and (max-width:1500px){
   .ec-tbl{font-size:12px}
@@ -114,7 +130,7 @@ button.del{background:#e74c3c!important;color:#fff!important}
     </div>
     <div class="ec-btns">
       <button onclick="pasteECRS()">Paste list</button>
-      <button class="dark" onclick="openPlan()">Make trucks</button>
+      <button class="dark" onclick="openPlan()">+ New truck</button>
       <button class="ghost" onclick="copyText(dayText())">Copy msg</button>
     </div>
   </div>
@@ -126,11 +142,12 @@ button.del{background:#e74c3c!important;color:#fff!important}
     <div id="list" class="ec-list"></div>
     <datalist id="skuDL"></datalist>
     <p id="miss" class="hint"></p></div>
-  <div class="ec-card ec-plan" id="plan" hidden><h3>Make trucks: pallets to take now</h3>
+  <div class="ec-card ec-plan" id="plan" hidden><h3 id="planTitle">Make truck</h3>
     <div class="ec-bar" style="margin-bottom:8px"><label>Truck size<select id="cap"><option value="24">24 pallet</option><option value="23">23 pallet</option><option value="22">22 pallet</option></select></label></div>
+    <p class="hint" style="margin:0 0 6px">Type how many pallets of each SKU go in this truck. Yellow = still pending, green = done, red = more than ECRS.</p>
     <div class="ec-plan-wrap"><div id="planList" class="ec-list"></div>
-    <div id="planTrucks" class="ec-trucks" style="margin-top:10px"></div></div>
-    <div class="ec-btns"><button onclick="savePlan()">Save trucks</button><button class="ghost" onclick="closePlan()">Cancel</button></div></div>
+    <div id="planTrucks" style="margin-top:10px"></div></div>
+    <div class="ec-btns"><button id="saveTrk" onclick="savePlan()">Save truck</button><button id="saveNext" class="dark" onclick="savePlan(true)">Save &amp; make next truck</button><button class="ghost" onclick="closePlan()">Cancel</button></div></div>
   <div class="ec-card"><h3 id="trkTitle">Trucks</h3>
     <div class="ec-btns" style="margin:0 0 10px">
       <button class="dark" onclick="copyAll()">Copy images</button>
@@ -290,50 +307,72 @@ async function pasteECRS(){
   DAY.miss=miss; saveDay(); render(); toast(`${c} SKU filled`+(miss.length?`, ${miss.length} not found`:''));
 }
 
-/* ---------- plan trucks: take pallets, auto split ---------- */
-function openPlan(){
-  const {R}=rows(); const take={};
-  R.forEach(x=>{ if(x.ppp&&x.p>0){ const pl=Math.floor(x.p/x.ppp); if(pl>0) take[x.id]=pl; } });
-  if(!Object.keys(take).length){ say('No full pallet is pending. Enter ECRS cases first.'); return; }
-  PLAN={take}; $('plan').hidden=false; renderPlan(); $('plan').scrollIntoView({behavior:'smooth'});
+/* ---------- build one truck by hand ---------- */
+function pendPal(){ // pending pallets per SKU, not counting the truck being edited
+  const {R}=rows(), back=new Map(); const et=PLAN&&PLAN.edit?TRUCKS.find(t=>t.id===PLAN.edit):null;
+  if(et) et.rows.forEach(r=>back.set(r.sku_id,(back.get(r.sku_id)||0)+n(r.pal)));
+  return R.filter(x=>x.ppp).map(x=>({id:x.id,name:x.name,ppp:x.ppp,pend:x.p/x.ppp+n(back.get(x.id))}));
+}
+function openPlan(editId=null){
+  const put={}; let cap=n($('cap').value)||24;
+  if(editId){ const t=TRUCKS.find(x=>x.id===editId); t.rows.forEach(r=>put[r.sku_id]=(put[r.sku_id]||0)+n(r.pal)); cap=t.cap; $('cap').value=String(cap); }
+  PLAN={edit:editId,put};
+  if(!pendPal().length){ PLAN=null; say('Enter ECRS cases first.'); return; }
+  $('plan').hidden=false; renderPlan(); $('plan').scrollIntoView({behavior:'smooth'});
 }
 function closePlan(){ PLAN=null; $('plan').hidden=true; }
-function split(take,cap){
-  const out=[]; let cur={rows:[],pal:0};
-  Object.entries(take).forEach(([id,pal])=>{ let left=n(pal);
-    while(left>0){ if(cur.pal>=cap){ out.push(cur); cur={rows:[],pal:0}; }
-      const put=Math.min(left,cap-cur.pal); cur.rows.push({sku_id:id,name:info(id).name,pal:put}); cur.pal+=put; left-=put; } });
-  if(cur.pal>0) out.push(cur); return out;
-}
+const capNow=()=>n($('cap').value)||24;
+const usedNow=()=>Object.values(PLAN.put).reduce((a,b)=>a+n(b),0);
+function maxPut(id){ const x=pendPal().find(y=>y.id===id); if(!x) return;
+  const room=capNow()-usedNow()+n(PLAN.put[id]), v=Math.max(0,Math.min(room,Math.floor(x.pend+1e-9)));
+  if(v) PLAN.put[id]=v; else delete PLAN.put[id]; renderPlan(); }
 function renderPlan(){
-  const {R}=rows(), cap=n($('cap').value)||24;
-  let h=`<div class="ec-row hd"><div>SKU</div><div>Pending plt</div><div>Take plt</div></div>`;
-  R.filter(x=>x.ppp&&x.p>0).forEach(x=>{ h+=`<div class="ec-row"><div><span class="nm">${esc(x.name)}</span></div><div>${plt(x.p/x.ppp)}</div>
-    <div><input type="number" min="0" step="1" inputmode="numeric" data-take="${x.id}" value="${PLAN.take[x.id]??''}"></div></div>`; });
-  const tot=Object.values(PLAN.take).reduce((a,b)=>a+n(b),0);
-  h+=`<div class="ec-row tot"><div>TOTAL</div><div></div><div>${fmt(tot)}</div></div>`;
+  const P=pendPal(), cap=capNow(), used=usedNow(), left=cap-used;
+  const no=PLAN.edit?TRUCKS.find(t=>t.id===PLAN.edit).no:TRUCKS.length+1;
+  $('planTitle').textContent=PLAN.edit?`Edit Order ${no}`:`Make Order ${no} (your own pallets)`;
+  $('saveTrk').textContent=`Save Order ${no}`;
+  $('saveNext').hidden=!!PLAN.edit;
+  let h=`<div class="ec-row hd"><div>SKU</div><div>Pending plt</div><div>In this truck</div><div>Left after</div></div>`;
+  P.forEach(x=>{ const v=n(PLAN.put[x.id]), aft=x.pend-v, c=aft<-1e-9?'over':aft>=0.95?'pend':'done';
+    h+=`<div class="ec-row ${c}${v?' in':''}"><div><span class="nm">${esc(x.name)}</span><span class="sub">${fmt(x.ppp)} cs / pallet</span></div>
+      <div>${plt(x.pend)}</div>
+      <div class="nw"><input type="number" min="0" step="1" inputmode="numeric" data-put="${x.id}" value="${v||''}" placeholder="0"><button class="x mx" title="Fill as much as fits" onclick="maxPut('${x.id}')">max</button></div>
+      <div class="${aft<-1e-9?'neg':aft>=0.95?'pl':'pos'}">${aft<-1e-9?'Over '+plt(-aft):aft>=0.95?plt(aft)+' pending':'✓ done'}</div></div>`; });
+  const tp=P.reduce((a,x)=>a+Math.max(0,x.pend),0), ta=P.reduce((a,x)=>a+Math.max(0,x.pend-n(PLAN.put[x.id])),0);
+  h+=`<div class="ec-row tot"><div>TOTAL</div><div>${plt(tp)}</div><div>${fmt(used)}</div><div>${plt(ta)}</div></div>`;
   $('planList').innerHTML=h;
-  $('planList').querySelectorAll('[data-take]').forEach(el=>el.addEventListener('change',e=>{ const v=Math.max(0,Math.round(n(e.target.value))); if(v) PLAN.take[e.target.dataset.take]=v; else delete PLAN.take[e.target.dataset.take]; renderPlan(); }));
-  const ts=split(PLAN.take,cap), off=TRUCKS.length;
-  $('planTrucks').innerHTML=ts.map((t,k)=>`<div class="ec-trk"><div class="th"><span>Order ${off+k+1}</span><span class="${t.pal<cap?'neg':''}">${t.pal}/${cap} plt</span></div>
-    ${t.rows.map(r=>`<div class="tl"><span>${esc(r.name)}</span><b>${r.pal}</b></div>`).join('')}</div>`).join('');
+  $('planList').querySelectorAll('[data-put]').forEach(el=>el.addEventListener('change',e=>{ const v=Math.max(0,Math.round(n(e.target.value))); if(v) PLAN.put[e.target.dataset.put]=v; else delete PLAN.put[e.target.dataset.put]; renderPlan(); }));
+  const rs=P.filter(x=>n(PLAN.put[x.id])>0);
+  const pend=P.filter(x=>x.pend-n(PLAN.put[x.id])>=0.95);
+  $('planTrucks').innerHTML=`<div class="ec-trk big"><div class="th"><span>Order ${no}</span><span class="${used>cap?'neg':used<cap?'pl':'pos'}">${fmt(used)}/${cap} plt</span></div>
+    <div class="ec-bar2"><i style="width:${Math.min(100,used/cap*100)}%" class="${used>cap?'ov':''}"></i></div>
+    ${rs.length?rs.map(x=>`<div class="tl"><span>${esc(x.name)}</span><b>${fmt(PLAN.put[x.id])}</b></div>`).join(''):'<p class="muted">Type pallets for each SKU on the left.</p>'}
+    <p class="${used>cap?'neg':used<cap?'pl':'pos'}" style="margin:6px 0 0;font-size:13px">${used>cap?`${fmt(used-cap)} pallet too many`:used<cap?`${fmt(left)} pallet space left`:'Truck full ✓'}</p></div>
+    <div class="ec-pend"><b>Still pending after this truck</b>${pend.length?pend.map(x=>`<span>${esc(x.name)} <b>${plt(x.pend-n(PLAN.put[x.id]))}</b></span>`).join(''):'<span class="pos">Nothing pending ✓</span>'}</div>`;
 }
-async function savePlan(){
-  const cap=n($('cap').value)||24, ts=split(PLAN.take,cap);
-  if(!ts.length){ say('Enter pallets to take.'); return; }
-  const {error}=await db.from('lwb_ecrs_trucks').insert(ts.map(t=>({day:DAY.day,cap,rows:t.rows})));
-  if(error){ say('Save failed: '+error.message); return; }
-  closePlan(); await loadDay(); toast(ts.length+' truck saved');
+async function savePlan(next=false){
+  const cap=capNow(), used=usedNow();
+  const rws=pendPal().filter(x=>n(PLAN.put[x.id])>0).map(x=>({sku_id:x.id,name:x.name,pal:n(PLAN.put[x.id])}));
+  if(!rws.length){ say('Enter pallets for at least one SKU.'); return; }
+  if(used>cap&&!await ask(`This truck has ${used} pallets, more than ${cap}. Save anyway?`)) return;
+  const over=pendPal().filter(x=>n(PLAN.put[x.id])-x.pend>0.05);
+  if(over.length&&!await ask(`More than ECRS pending for: ${over.map(x=>x.name).join(', ')}. Save anyway?`)) return;
+  const q=PLAN.edit?db.from('lwb_ecrs_trucks').update({cap,rows:rws,updated_at:new Date().toISOString()}).eq('id',PLAN.edit)
+                   :db.from('lwb_ecrs_trucks').insert({day:DAY.day,cap,rows:rws});
+  const {error}=await q; if(error){ say('Save failed: '+error.message); return; }
+  const msg=PLAN.edit?'Order saved':`Order ${TRUCKS.length+1} saved`;
+  closePlan(); await loadDay(); toast(msg);
+  if(next&&rows().R.some(x=>x.ppp&&x.p/x.ppp>=0.95)) openPlan();
 }
 
 /* ---------- saved trucks ---------- */
 function renderTrucks(){
   const P=TRUCKS.reduce((a,t)=>a+t.rows.reduce((s,r)=>s+n(r.pal),0),0);
   $('trkTitle').textContent=`Trucks on ${dIN(DAY.day)}: ${TRUCKS.length} truck · ${fmt(P)} pallet`;
-  $('trucks').innerHTML=!TRUCKS.length?'<p class="muted">No truck yet. Tap "Make trucks".</p>':TRUCKS.map(t=>{ const pal=t.rows.reduce((a,r)=>a+n(r.pal),0);
+  $('trucks').innerHTML=!TRUCKS.length?'<p class="muted">No truck yet. Tap "+ New truck".</p>':TRUCKS.map(t=>{ const pal=t.rows.reduce((a,r)=>a+n(r.pal),0);
     return `<div class="ec-trk"><div class="th"><span>Order ${t.no}</span><span class="${pal!==t.cap?'neg':''}">${fmt(pal)}/${t.cap} plt</span></div>
     ${t.rows.map((r,j)=>`<div class="tl"><span>${esc(info(r.sku_id).name||r.name)}</span><input type="number" min="0" step="1" data-t="${t.id}" data-j="${j}" value="${n(r.pal)}"></div>`).join('')}
-    <div class="tb"><button class="dark" onclick="copyOne(${t.id})">Copy</button><button class="ghost" onclick="shareOne(${t.id})">Share</button><button class="del" onclick="delTruck(${t.id})">Delete</button></div></div>`; }).join('');
+    <div class="tb"><button onclick="openPlan(${t.id})">Edit</button><button class="dark" onclick="copyOne(${t.id})">Copy</button><button class="ghost" onclick="shareOne(${t.id})">Share</button><button class="del" onclick="delTruck(${t.id})">Delete</button></div></div>`; }).join('');
   $('trucks').querySelectorAll('input[data-t]').forEach(el=>el.addEventListener('change',async e=>{
     const t=TRUCKS.find(x=>x.id==e.target.dataset.t), j=+e.target.dataset.j, v=Math.max(0,Math.round(n(e.target.value)));
     const rows=t.rows.map((r,k)=>k===j?{...r,pal:v}:r).filter(r=>n(r.pal)>0);
