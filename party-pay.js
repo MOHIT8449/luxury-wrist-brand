@@ -320,5 +320,10 @@
       if(!(x.bills.length||Math.abs(x.opening)>0.5||x.due>0.5))continue;
       if(!best||x.bills.length+Math.abs(x.net)>best.bills.length+Math.abs(best.net))best=x}
     return best}
-  window.LWBPartyPay={load,open,billNames,balText,key,rs,dmy,errText,slice,activeBrands,lookalike,core};
+  // Bills to make (Billing & Outstanding > Bills to make, and the Dashboard count): no Tally bill yet and
+  // loaded / invoiced, marked Loaded / Delivered by Admin, or dated on / after MAKE_FROM (old delivered POs from
+  // before this screen are left out). One rule for the page and the Dashboard (Mohit, 16 Nov 2026).
+  const MAKE_FROM="2026-09-30";
+  const needsBill=(o,marks)=>!o.invoice_no&&(["loaded","invoiced"].includes(String(o.status).toLowerCase())||!!(marks&&marks.has(o.order_id))||String(o.dispatch_date||o.order_date||"").slice(0,10)>=MAKE_FROM);
+  window.LWBPartyPay={load,open,needsBill,billNames,balText,key,rs,dmy,errText,slice,activeBrands,lookalike,core};
 })();
