@@ -103,6 +103,8 @@
       {t:"Rajnigandha Slips",h:"quick-slip.html",i:"note",r:"admin manager accounts warehouse sales",k:"rajnigandha slip parchi thermal print kachcha",vo:"accounts",nm:"admin manager accounts warehouse sales",par:"warehouse-orders.html my-sales.html#orders"},
       {t:"Rajnigandha Rate List",h:"rajni-rates.html",i:"bill",r:"admin",k:"rajnigandha rate landing min max profit margin approval",nm:"admin",par:"rates.html"},
       {t:"My Sales",h:"my-sales.html",i:"chart",r:"sales"},
+      // Party Rate Offer (Mohit, 16 Nov 2026): rate per case given to one party, category-wise, with (i) past rates.
+      {t:"Party Rate Offer",h:"party-rates.html",i:"tag",r:"admin manager",k:"party rate offer quotation category pack per case given history whatsapp"},
       {t:"Party Call List",h:"party-calls.html",i:"phone",r:"admin manager sales"},
       {t:"Outside Market Stock",h:"market-report.html",i:"pin",r:"admin manager sales"},
       {t:"Sales Tracking",h:"sales-tracking.html",i:"chart",r:"admin manager"},
