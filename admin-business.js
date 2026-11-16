@@ -257,7 +257,7 @@
   function paint(M,R){
     const {S,P,E,SV}=M,gpPct=pctTxt(S.gp,S.known),net=S.gp-E.total,ch=M.prev?Math.round((M.curTot-M.prev)/M.prev*100):null;
     const rangeTxt=R.from===R.to?dmy(R.from):dm(R.from)+" – "+dm(R.to);
-    const out=CTX.out,short=CTX.short;
+    const out=CTX.out,short=CTX.short,pend=CTX.pending;
     DET=new Map();
     // Popup makers (each returns ERPList.open options)
     const rt=" · "+rangeTxt,known=M.L.filter(l=>l.land!=null),gp=gpOk();
@@ -290,6 +290,7 @@
       kpi(net>=0?COL.gp:"#c62828","Net Profit",E.ok?lakh(net):"—",E.ok?'<em class="'+(net>=0?"up":"dn")+'">'+pctTxt(net,S.known)+"</em> of sales":"Needs Accounts",netD),
       kpi("#b26b00","Outstanding",out?lakh(out.total):"—",out?'<em class="dn">'+lakh(out.over)+"</em> "+(out.brand?"past credit days":"over 30 days"):"Billing & Outstanding",outD),
       kpi("#1d5fbf","Stock Value",SV.ok?lakh(SV.total):"—",short?fmt(short)+" SKU"+(short==1?"":"s")+" short":"Godown stock × landing",stockD),
+      kpi("#7a3fb0","Pending Delivery",pend?fmt(pend.count)+" PO"+(pend.count==1?"":"s"):"—",pend?'<em class="dn">'+lakh(pend.amount)+"</em>"+(pend.oldest?" · since "+dm(pend.oldest):" to deliver"):"PO / Sales",pend&&pend.list),
       kpi(COL.sales,"Cash + Bank",M.acc?lakh(num(M.cash)+M.bank):"—",M.acc?"Cash "+(M.cash==null?"not set":lakh(M.cash))+" · Bank "+lakh(M.bank):"Accounts",cashD)];
     // P&L (every row opens its list)
     const restCats=new Set(M.cats.slice(5).map(x=>x[0]));

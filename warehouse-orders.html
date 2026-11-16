@@ -930,6 +930,11 @@
     .po-view button.on {background:var(--erp-red,#c8102e);color:#fff}
     body.po-view-dash #poListView {display:none}
     body.po-view-list #poSummary {display:none}
+    .po-pend-pill {display:inline-flex;align-items:center;gap:6px;border:1px solid #f1c9cf;background:#fff5f6;color:#1f2a37;font:inherit;font-size:13px;font-weight:600;padding:6px 12px;border-radius:999px;cursor:pointer;white-space:nowrap}
+    .po-pend-pill b {color:var(--erp-red,#c8102e)}
+    .po-pend-pill span {color:#6b7785;font-weight:600}
+    .po-pend-pill:hover {background:#ffe9ec}
+    body.po-view-dash .po-pend-pill {display:none}
 
     /* Select many POs: approve / print together (2 Nov 2026) */
     .po-sel {width:18px;height:18px;margin:0 8px 0 0;vertical-align:-3px;accent-color:var(--erp-red,#c8102e);cursor:pointer}
@@ -1266,6 +1271,8 @@
           <button type="button" role="tab" data-view="list" onclick="setPoView('list')">📋 PO List</button>
           <button type="button" role="tab" data-view="dash" onclick="setPoView('dash')">📊 Dashboard</button>
         </div>
+        <!-- Total pending delivery on the PO List too (Mohit, 16 Nov 2026); the Dashboard view has the full card. -->
+        <button type="button" class="po-pend-pill" id="poPendPill" hidden title="All POs not delivered yet · tap to see the list">🚚 Pending delivery <b id="poPendN">-</b> <span id="poPendAmt"></span></button>
       </div>
 
       <div class="po-refresh">
@@ -2218,6 +2225,13 @@ async function loadSummary() {
   setAlert(".a-urgent", "sumUrgent", urg, "No urgent order pending",
     formatNumber(urg.urgent) + " urgent, " + formatNumber(number(urg.count) - number(urg.urgent)) + " high · deliver first");
   document.getElementById("sumPendAmount").textContent = rupees(pend.amount);
+  const pill = document.getElementById("poPendPill");
+  if (pill) {
+    const n = number(pend.count);
+    document.getElementById("poPendN").textContent = formatNumber(n) + " PO" + (n === 1 ? "" : "s");
+    document.getElementById("poPendAmt").textContent = "· " + rupees(pend.amount);
+    pill.hidden = false;
+  }
   document.getElementById("sumPendNote").textContent =
     (pend.oldest ? "Oldest: " + new Date(pend.oldest + "T00:00:00").toLocaleDateString("en-IN") : "");
 }
@@ -5645,6 +5659,8 @@ function wireCountCards() {
   const pend = () => summaryList("pending", "Total Pending Delivery", "All orders not delivered yet (cancelled not counted)");
   const pendBox = document.querySelector(".ps-pend");
   ERPList.card(pendBox, pend, false);
+  const pill = document.getElementById("poPendPill");
+  if (pill) pill.addEventListener("click", () => ERPList.open(pend()));
   pendBox.querySelector(".ps-pend-head > div:last-child")
     .insertAdjacentHTML("beforeend", '<small class="erp-drill-hint">View pending list ›</small>');
   ERPList.cards({
