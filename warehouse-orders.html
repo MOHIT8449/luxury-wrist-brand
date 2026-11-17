@@ -1146,6 +1146,9 @@
       #itemsBody .i-rate::before {flex-basis:100%}
       #itemsBody .i-rate .min-tag {flex-basis:100%}
       #itemsBody .i-rate input {flex:1 1 0;width:auto!important;min-width:0}
+      #itemsBody .i-inbox {display:flex;width:100%}
+      #itemsBody .i-inbox input {flex:1 1 0;width:auto!important;min-width:0}
+      #itemsBody .i-inbox .lh-btn {flex:0 0 26px;width:26px;height:26px}
       #itemsBody td.lwb-pf-c {white-space:normal;font-size:12px;border-top:1px dashed #eee;padding-top:3px}
       #itemsFoot {display:none!important}
       .warehouse-sku-hint:not(.error) {display:none}
@@ -1207,6 +1210,30 @@
     .bc-q {display:block;font-size:11px;font-weight:800;color:#b45309;white-space:nowrap}
     .bc-b {display:inline-block;margin:2px 0 0 4px;padding:0 5px;border-radius:5px;background:#fff1d6;color:#92400e;font-size:10.5px;font-weight:800;vertical-align:middle;white-space:nowrap}
     #markModal {z-index:1010}
+    /* ⓘ next to Qty / Rate: last 5 earlier POs of this item for this party (lwb_po_review_line_history_setup.sql). Admin only. */
+    #itemsBody .i-inbox {display:inline-flex;align-items:center;gap:4px;vertical-align:middle}
+    .lh-btn {flex:0 0 22px;width:22px;height:22px;border-radius:50%;border:1px solid #1d5fa8;background:#eef4fc;color:#1d5fa8;font:italic 700 12px/1 Georgia,serif;cursor:pointer;padding:0}
+    .lh-btn:hover {background:#dbe8f8}
+    #lineHistDlg {width:min(400px,calc(100vw - 24px));margin:auto;inset:0;height:fit-content;max-height:calc(100vh - 24px);padding:0;border:0;border-radius:12px;box-shadow:0 18px 50px #0f1f3340}
+    #lineHistDlg::backdrop {background:#0f1f3366}
+    #lineHistDlg .lh-wrap {padding:12px 14px;display:grid;gap:8px}
+    #lineHistDlg .lh-head {display:flex;align-items:flex-start;gap:8px}
+    #lineHistDlg .lh-head h3 {margin:0;font-size:15px;line-height:1.25;flex:1;min-width:0;overflow-wrap:anywhere}
+    #lineHistDlg .lh-head small {display:block;font-size:11.5px;color:#6b7686;font-weight:600;margin-top:2px}
+    #lineHistDlg .lh-x {flex:none;width:30px;height:30px;border-radius:50%;border:1px solid #d5dae2;background:#fff;font-size:15px;line-height:1;cursor:pointer;color:#3c4654}
+    #lineHistDlg .lh-now {font-size:12px;color:#55606d;background:#f6f8fb;border:1px solid #e3e7ee;border-radius:8px;padding:5px 8px}
+    #lineHistDlg .lh-now b {color:#1c2836}
+    #lineHistDlg table {width:100%;min-width:0;border-collapse:collapse;font-size:12.5px}
+    #lineHistDlg th {font-size:10.5px;font-weight:700;color:#6b7686;text-transform:uppercase;text-align:left;padding:4px 6px;border-bottom:1px solid #e3e7ee;background:none}
+    #lineHistDlg td {padding:6px;border-bottom:1px solid #eef1f5;color:#55606d;white-space:nowrap}
+    #lineHistDlg :is(th,td).n {text-align:right}
+    #lineHistDlg td.on {font-weight:800;color:#1c2836;font-size:13.5px}
+    #lineHistDlg th.on {color:#1d5fa8}
+    #lineHistDlg tr.first td {background:#f2faf4}
+    #lineHistDlg tr.first td.on {color:#12632f}
+    #lineHistDlg .lh-po {font-size:11px;color:#8a93a0}
+    #lineHistDlg .lh-empty {font-size:13px;color:#6b7686;padding:8px 0;margin:0}
+    #lineHistDlg .lh-note {font-size:11px;color:#8a93a0;margin:0}
     .track-modal .mark-card {width:min(440px,100%)}
     .mark-card .mark-sub {margin:0 0 10px;color:#55606d;font-size:12.5px;line-height:1.4}
     .mark-card .mark-form {display:grid;grid-template-columns:150px minmax(0,1fr);gap:8px}
@@ -1492,6 +1519,14 @@
 
   </main>
 
+
+  <dialog id="lineHistDlg" aria-labelledby="lhTitle" onclick="if(event.target===this)this.close()">
+    <div class="lh-wrap">
+      <div class="lh-head"><div style="flex:1;min-width:0"><h3 id="lhTitle">Last orders</h3><small id="lhSub"></small></div>
+        <button type="button" class="lh-x" aria-label="Close" onclick="document.getElementById('lineHistDlg').close()">✕</button></div>
+      <div id="lhBody"></div>
+    </div>
+  </dialog>
 
   <div class="modal track-modal" id="trackModal" onclick="if(event.target===this)closeTrack()">
     <div class="modal-card track-card">
@@ -4953,13 +4988,17 @@ function renderItems() {
     const rate = Number(item.rate) || 0;
     const unit = Number(item.unit_weight) || 0;
     const input = (field, value, type="text") => `<input ${editable ? "" : "disabled"} type="${type}" class="${field==='unit_weight'&&editable?'manager-weight-input':''}" style="width:${field==='sku_name'?'190':'95'}px;max-width:100%;padding:7px;border:1px solid #bbb;border-radius:5px" data-index="${i}" data-field="${field}" value="${escapeHtml(value)}" oninput="itemChanged(this)" ${type==='number'?'min="0" step="any"':''}>`;
+    // ⓘ last 5 orders of this item for this party, Admin only (Mohit 17 Nov 2026)
+    const lh = (field, focus) => IS_ADMIN && selectedOrder && selectedOrder.id && String(item.sku_name||'').trim()
+      ? `<span class="i-inbox">${input(field, field==='rate'?rate:qty, 'number')}<button type="button" class="lh-btn" tabindex="-1" title="Last 5 orders of this item" aria-label="Last 5 orders of this item" onclick="showLineHistory(${i},'${focus}')">i</button></span>`
+      : input(field, field==='rate'?rate:qty, 'number');
     const minR = saleMin && saleMin.get(rateKey(item.sku_name)), low = minR != null && rate < minR;
     const ord = Number(item.ordered_qty) || 0, qd = qty - ord;
     return `<tr class="${low?'rate-low':''}" id="itemRow${i}">
       <td class="i-no">${i+1}</td>
       <td class="i-sku" data-label="SKU / Product"><div class="i-skubox">${window.LWBSkuImg?LWBSkuImg.html(item.sku_name):''}<div class="i-skutx">${warehouseSkuInputMarkup(item, i, editable)}<small class="i-pack" id="itemPack${i}"></small><label class="i-wt" ${unit>0||!editable?'hidden':''}>Weight KG/CS ${input('unit_weight', unit, 'number')}</label></div></div></td>
-      <td class="i-qty" data-label="Qty" style="text-align:right">${input('approved_qty', qty, 'number')}${(()=>{const x=bm.get(String(item.id));return x&&(x.q!==x.q0||x.r!==x.r0)?`<span class="bc-q" title="Changed from Billing (approved)">✎ Bill ${x.q!==x.q0?formatNumber(x.q0)+' → '+formatNumber(x.q):''}${x.r!==x.r0?' ₹'+formatNumber(x.r0)+' → '+formatNumber(x.r):''}</span>`:''})()}<small class="q-diff" id="itemQd${i}">${lv&&item.loaded_qty!=null?(qty!==okQ?`<b class="${qty>okQ?'up':'down'}">Loaded</b> OK ${formatNumber(okQ)}`:'Loaded'):qdText(qd, ord)}</small></td>
-      <td class="i-rate" data-label="Rate ₹" style="text-align:right">${input('rate', rate, 'number')}<span class="min-tag" id="itemMin${i}">${low?'Below min ₹'+formatNumber(minR):''}</span></td>
+      <td class="i-qty" data-label="Qty" style="text-align:right">${lh('approved_qty','qty')}${(()=>{const x=bm.get(String(item.id));return x&&(x.q!==x.q0||x.r!==x.r0)?`<span class="bc-q" title="Changed from Billing (approved)">✎ Bill ${x.q!==x.q0?formatNumber(x.q0)+' → '+formatNumber(x.q):''}${x.r!==x.r0?' ₹'+formatNumber(x.r0)+' → '+formatNumber(x.r):''}</span>`:''})()}<small class="q-diff" id="itemQd${i}">${lv&&item.loaded_qty!=null?(qty!==okQ?`<b class="${qty>okQ?'up':'down'}">Loaded</b> OK ${formatNumber(okQ)}`:'Loaded'):qdText(qd, ord)}</small></td>
+      <td class="i-rate" data-label="Rate ₹" style="text-align:right">${lh('rate','rate')}<span class="min-tag" id="itemMin${i}">${low?'Below min ₹'+formatNumber(minR):''}</span></td>
       <td class="i-amt" data-label="Amount" id="itemAmount${i}" style="text-align:right">${formatMoney(qty*rate)}</td>
       ${PF_COLS.map((h,j)=>`<td class="lwb-pf-c lwb-pf-only" data-label="${h}" id="itemPc${i}_${j}"></td>`).join('')}
       <td class="i-act">${editable?`<button class="btn btn-red" title="Remove SKU" aria-label="Remove SKU" onclick="removeSku(${i})">Remove</button>`:''}</td>
@@ -4975,6 +5014,37 @@ function renderItems() {
   renderManagerNoteControls();
   document.getElementById("postApprovalPanel").hidden=!eligibleForPoPrint(selectedOrder);
   calculateApprovalTotals();
+}
+
+/* ⓘ next to Qty / Rate in Order Review: the last 5 earlier POs of this item for this PO's party
+   (date, qty, rate), newest first (lwb_po_review_line_history_setup.sql). Only to look at. Admin only. */
+const lhCache = new Map();
+async function showLineHistory(i, focus){
+  const item = selectedItems[i]; if(!item || !selectedOrder) return;
+  const sku = String(item.sku_name||'').trim(), party = String(selectedOrder.customer_name||'').trim();
+  const dlg = document.getElementById("lineHistDlg"), body = document.getElementById("lhBody");
+  document.getElementById("lhTitle").textContent = sku.toUpperCase();
+  document.getElementById("lhSub").textContent = party.toUpperCase() + " · last 5 orders";
+  body.innerHTML = '<p class="lh-empty">Loading…</p>';
+  try { dlg.showModal(); } catch(e) { dlg.setAttribute("open", ""); }
+  const key = selectedOrder.id + "|" + sku.toUpperCase();
+  let list = lhCache.get(key);
+  if(!list){
+    try{
+      const {data,error} = await db.rpc("lwb_po_line_history",{p_order_id:String(selectedOrder.id), p_sku:sku});
+      if(error) throw error;
+      list = Array.isArray(data) ? data : [];
+      lhCache.set(key, list);
+    }catch(e){ body.innerHTML = '<p class="lh-empty">Could not load the history. Try again.</p>'; return; }
+  }
+  const day = v => { const d = new Date(v); return isNaN(d) ? "" : d.toLocaleDateString("en-IN",{day:"2-digit",month:"short",year:"2-digit",timeZone:"Asia/Kolkata"}); };
+  const q = focus === "qty" ? " on" : "", r = focus === "rate" ? " on" : "";
+  const now = `<div class="lh-now">This PO: <b>${formatNumber(Number(item.approved_qty)||0)} CS</b> · <b>₹${formatNumber(Number(item.rate)||0)}</b></div>`;
+  if(!list.length){ body.innerHTML = now + '<p class="lh-empty">No earlier PO of this item for this party.</p>'; return; }
+  body.innerHTML = now + `<table><thead><tr><th>Date</th><th>PO</th><th class="n${q}">Qty</th><th class="n${r}">Rate</th></tr></thead><tbody>`
+    + list.map((x,k) => `<tr class="${k?'':'first'}"><td>${escapeHtml(day(x.order_date))}</td><td class="lh-po">${escapeHtml(x.order_no||'')}</td>`
+      + `<td class="n${q}">${escapeHtml(formatNumber(x.qty))}</td><td class="n${r}">₹${escapeHtml(formatNumber(x.rate))}</td></tr>`).join("")
+    + '</tbody></table><p class="lh-note">Newest on top · this PO not counted</p>';
 }
 
 // Approved qty vs what the party ordered: +5 green / −5 red under the qty (Mohit 13 Nov 2026).
