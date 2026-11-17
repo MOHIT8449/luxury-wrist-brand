@@ -108,6 +108,8 @@
       {t:"Party Call List",h:"party-calls.html",i:"phone",r:"admin manager sales"},
       {t:"Outside Market Stock",h:"market-report.html",i:"pin",r:"admin manager sales"},
       {t:"Sales Tracking",h:"sales-tracking.html",i:"chart",r:"admin manager"},
+      // Party Buying (Mohit, 17 Nov 2026): party / SKU / category-wise buying, never bought, not in N days, stopped. Tab of Sales Tracking.
+      {t:"Party Buying",h:"party-buying.html",i:"chart",r:"admin manager",k:"party sku item category wise sale not buying never bought non selling stopped days since last",nm:"admin manager",par:"sales-tracking.html"},
       {t:"Sales Team Setup",h:"sales-team.html",i:"users",r:"admin manager"},
       // One "Returns" item (Mohit, 4 Nov 2026): Sales Return and Credit Note are tabs on top of it (PAGE_TABS);
       // they leave the side menu only for roles that also have Driver Returns (Salesman keeps Sales Return).
@@ -528,6 +530,7 @@
   const PAGE_TABS=[
     [["Driver Returns","driver-returns.html"],["Sales Return","sales-return.html"],["Credit Note","credit-note.html"]],
     [["Coca-Cola","rates.html"],["Rajnigandha","rajni-rates.html"]],
+    [["Sales Tracking","sales-tracking.html"],["Party Buying","party-buying.html"]],
     [["Stock","inventory.html"],["Transit","stock-transit.html"],["Transfer","stock-transfer.html"],["Audit","stock-audit.html"],["Opening","opening-stock.html"]]
   ];
   function pageTabs(page,role){

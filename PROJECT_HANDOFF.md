@@ -4,6 +4,13 @@
 **Purpose:** Continue the same ERP project from a new ChatGPT conversation without restarting or losing the agreed requirements.
 **Status:** Active development / verification. Do not assume all modules are completed or fully tested.
 
+## Party Buying: party / SKU / category-wise buying, never bought, not in N days, stopped (17 Nov 2026)
+
+- Mohit: see how many times and how much each party bought, party-wise / SKU-wise / category-wise, with dates; a "non-selling" filter (SKUs a party never bought, or not in N days), and regular parties that stopped an item.
+- New page `party-buying.html` (Sales, Admin / Sales Head), a tab next to Sales Tracking (PAGE_TABS; not drawn in the side menu, found by Module Search). No SQL: reads `lwb_party_activity`, `sku_master` (category, brand), orders + order_items (Booked / Loaded like Sales Tracking). Default dates: last 90 days.
+- Filters in one row: From, To, Count as, Category, Salesman, Party, Search, Refresh, Excel (+ brand bar). Tabs: Party-wise, SKU-wise (with "Parties Not Bought"), Category-wise, Party × SKU (times, first / last buy, days ago, usual gap), Not Buying (red never / orange not in N+ days; per party or one party's SKU list, most-sold SKUs first), Stopped Buying (party bought an SKU 3+ times, now 2× its usual gap late). Excel = every tab.
+- Checked with a mocked client at 1366 / 390 px: no side scroll, no JS errors. Not yet on live data. Screenshots: project files `party-buying/`.
+
 ## Party Rate Offer: rate per case given to one party, category-wise, with (i) past rates (16 Nov 2026)
 
 - Mohit: like making a PO, pick a party, add categories / packs with the rate per case (e.g. 2.25L 650, 150ml Tetra 265, 250ml Maaza 465, 850ml Maaza 580, 1L Kinley 165), keep it as the rate given to that party, send it on WhatsApp; an (i) per line shows what rate this party got before vs now.
