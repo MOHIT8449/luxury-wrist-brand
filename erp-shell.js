@@ -668,31 +668,90 @@
     setInterval(check,30e3);
   }
 
-  // Tap the round initial (avatar) in the top bar: turn fingerprint / face / PIN unlock on or off
-  // for this phone. Only shown as a button where the phone or laptop supports it.
+  // Profile > Login & Security (tap the round initial in the top bar, or Settings > Login & Security):
+  // set / change / turn off the MPIN and turn fingerprint unlock on / off for this phone (quick-unlock.js,
+  // lwb_mpin_setup.sql). Every role can open it.
   function loadUnlock(){
     if(window.LWBUnlock)return Promise.resolve(window.LWBUnlock);
     return new Promise((ok,bad)=>{const s=document.createElement("script");s.src="quick-unlock.js";s.onload=()=>ok(window.LWBUnlock);s.onerror=bad;document.head.appendChild(s)});
   }
-  async function unlockSetting(av){
+  function unlockSetting(av){
+    if(!av)return;
+    av.setAttribute("role","button");av.tabIndex=0;av.title="Login & Security (MPIN, fingerprint)";av.style.cursor="pointer";
+    av.addEventListener("click",()=>openSecurity());
+    av.addEventListener("keydown",e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();openSecurity()}});
+  }
+  let secOpen=false;
+  async function openSecurity(){
+    if(secOpen||!window.supabase)return;secOpen=true;
+    let U,user,c;
     try{
-      if(!av||!window.supabase)return;
-      const U=await loadUnlock();if(!(await U.supported()))return;
-      const c=window.__lwbBellClient||(window.__lwbBellClient=window.supabase.createClient(URL_,KEY_));
-      av.setAttribute("role","button");av.tabIndex=0;av.title="Fingerprint unlock";av.style.cursor="pointer";
-      const tap=async()=>{
-        const {data}=await c.auth.getSession();const user=data&&data.session&&data.session.user;if(!user)return;
-        if(U.isOn(user.id)){
-          if(await erpConfirm("Fingerprint unlock is ON on this phone.\n\nAfter 15 minutes without work the ERP locks, and opens again with your fingerprint, face or phone PIN.",{title:"Fingerprint unlock",ok:"Turn off",cancel:"Keep on"})){U.disable();toast("Fingerprint unlock turned off. After 15 minutes the password is needed again.")}
-          return;
-        }
-        if(!(await erpConfirm("Turn on fingerprint unlock on this phone?\n\nAfter 15 minutes without work the ERP will lock instead of logging out. Open it again with your fingerprint, face or phone PIN / pattern. No password needed.",{title:"Fingerprint unlock",ok:"Turn on",cancel:"Not now"})))return;
-        try{await U.enable(user);toast("Fingerprint unlock is on for this phone.")}
-        catch(e){if(e&&e.name!=="NotAllowedError")erpAlert("Fingerprint unlock could not be turned on.\n\n"+(e&&e.message||e),{kind:"error"})}
-      };
-      av.addEventListener("click",tap);
-      av.addEventListener("keydown",e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();tap()}});
+      U=await loadUnlock();
+      c=window.__lwbBellClient||(window.__lwbBellClient=window.supabase.createClient(URL_,KEY_));
+      const {data}=await c.auth.getSession();user=data&&data.session&&data.session.user;
     }catch(e){}
+    if(!U||!user){secOpen=false;return}
+    const back=document.createElement("div");back.className="erp-dlg-back";
+    const box=document.createElement("div");box.className="erp-dlg erp-sec";box.setAttribute("role","dialog");box.setAttribute("aria-modal","true");
+    back.append(box);document.body.append(back);requestAnimationFrame(()=>back.classList.add("show"));
+    const close=()=>{back.classList.remove("show");document.removeEventListener("keydown",esc_,true);setTimeout(()=>back.remove(),160);secOpen=false};
+    const esc_=e=>{if(e.key==="Escape"){e.preventDefault();close()}};
+    document.addEventListener("keydown",esc_,true);
+    back.addEventListener("click",e=>{if(e.target===back)close()});
+    const fpOk=await U.supported();
+    let pinOn=null,busy=false;
+    async function readPin(){
+      try{const r=await c.rpc("lwb_mpin_status",{p_device:U.device()});
+        if(r.error){pinOn=null;return}
+        pinOn=r.data===true;
+        try{pinOn?localStorage.setItem("lwbMpin",JSON.stringify({uid:user.id,at:Date.now()})):localStorage.removeItem("lwbMpin")}catch(e){}
+      }catch(e){pinOn=null}
+    }
+    const badge=on=>'<span class="erp-sec-badge '+(on?"on":"off")+'">'+(on?"ON":"OFF")+'</span>';
+    function main(){
+      const fpOn=U.isOn(user.id);
+      box.innerHTML='<h3>Login &amp; Security</h3><p class="erp-sec-sub">This phone · '+esc(user.email&&!/@staff\.lwb-erp\.in$/i.test(user.email)?user.email:"your login")+'</p>'+
+        '<div class="erp-sec-row"><div><b>MPIN</b>'+(pinOn===null?'<small>Not set up yet. Ask Admin.</small>':badge(pinOn)+'<small>4 digits instead of password + OTP</small>')+'</div>'+
+        '<div class="erp-sec-btns">'+(pinOn===null?"":pinOn?'<button type="button" data-a="pin" class="erp-sec-main">Change</button><button type="button" data-a="pinoff">Turn off</button>':'<button type="button" data-a="pin" class="erp-sec-main">Set MPIN</button>')+'</div></div>'+
+        '<div class="erp-sec-row"><div><b>Fingerprint</b>'+(fpOk?badge(fpOn)+'<small>Fingerprint, face or phone lock</small>':'<small>Not available on this device</small>')+'</div>'+
+        '<div class="erp-sec-btns">'+(fpOk?(fpOn?'<button type="button" data-a="fpoff">Turn off</button>':'<button type="button" data-a="fpon" class="erp-sec-main">Turn on</button>'):"")+'</div></div>'+
+        '<p class="erp-sec-note">With MPIN or fingerprint ON, Logout or 15 minutes without work only <b>locks</b> the ERP. Open it again without password and OTP.</p>'+
+        '<div class="erp-dlg-actions"><button type="button" class="erp-dlg-no" data-a="close">Close</button></div>';
+      box.querySelectorAll("button[data-a]").forEach(b=>b.onclick=()=>act(b.dataset.a,b));
+    }
+    async function act(a,b){
+      if(busy)return;
+      if(a==="close")return close();
+      if(a==="pin")return pinView();
+      busy=true;b.disabled=true;
+      try{
+        if(a==="pinoff"){await U.mpinOff(c);pinOn=false;toast("MPIN turned off on this phone.")}
+        if(a==="fpoff"){U.disable();toast("Fingerprint unlock turned off on this phone.")}
+        if(a==="fpon"){try{await U.enable(user);toast("Fingerprint unlock is on for this phone.")}catch(e){if(e&&e.name!=="NotAllowedError")toast("Fingerprint could not be turned on: "+(e&&e.message||e),"error")}}
+      }finally{busy=false;main()}
+    }
+    function pinView(){
+      let first="";
+      box.innerHTML='<h3 class="erp-sec-h"></h3><p class="erp-sec-sub erp-sec-msg"></p><div class="erp-sec-pin"></div>'+
+        '<div class="erp-dlg-actions"><button type="button" class="erp-dlg-no" data-a="back">Back</button></div>';
+      const h=box.querySelector(".erp-sec-h"),msg=box.querySelector(".erp-sec-msg");
+      const say=(t,bad)=>{msg.textContent=t;msg.classList.toggle("bad",!!bad)};
+      const step=n=>{h.textContent=n===1?(pinOn?"Enter new MPIN":"Set a 4-digit MPIN"):"Enter the same MPIN again";if(n===1)say("Avoid easy MPINs like 1111 or 1234.");else say("To confirm.")};
+      const P=U.pad(box.querySelector(".erp-sec-pin"),{busy:()=>busy,onDone:async pin=>{
+        if(!first){
+          if(U.mpinWeak(pin)){P.clear(true);say("This MPIN is too easy (like 1111 or 1234). Choose another.",true);return}
+          first=pin;P.clear();step(2);return;
+        }
+        if(pin!==first){first="";P.clear(true);step(1);say("Both MPINs did not match. Set it again.",true);return}
+        busy=true;say("Saving...");
+        try{await U.mpinSet(c,user.id,pin);pinOn=true;busy=false;toast("MPIN is set for this phone.");main()}
+        catch(e){busy=false;first="";P.clear(true);step(1);say(e.message||String(e),true)}
+      }});
+      P.fingerprint(null);step(1);
+      box.querySelector('[data-a="back"]').onclick=()=>{if(!busy)main()};
+    }
+    box.innerHTML='<h3>Login &amp; Security</h3><p class="erp-sec-sub">Loading...</p>';
+    await readPin();main();
   }
 
   // A login that passed the password but no OTP (Authenticator aal2, or WhatsApp OTP saved
@@ -794,7 +853,7 @@
   if(!window.LWBKeys&&!document.querySelector('script[src*="erp-keys.js"]')){const s=document.createElement("script");s.src="erp-keys.js";document.head.appendChild(s)}
   // Every drop-down searches like the SKU box in New PO (erp-select.js).
   if(!window.LWBSelect&&!document.querySelector('script[src*="erp-select.js"]')){const s=document.createElement("script");s.src="erp-select.js";document.head.appendChild(s)}
-  window.ERPShell={mount,menuFor,viewOnly,menuForMe,hiddenPages,extraPages,pageRole,pageRoleFresh,allPages,icon:svg,alert:erpAlert,confirm:erpConfirm,prompt:erpPrompt,toast,done:erpDone};
+  window.ERPShell={mount,security:openSecurity,menuFor,viewOnly,menuForMe,hiddenPages,extraPages,pageRole,pageRoleFresh,allPages,icon:svg,alert:erpAlert,confirm:erpConfirm,prompt:erpPrompt,toast,done:erpDone};
   const me=document.currentScript;
   if(me&&me.hasAttribute("data-auto")){
     if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",auto);else auto();

@@ -126,6 +126,66 @@
     del(PIN);
   }
 
-  window.LWBUnlock={supported,isOn,anyOn,declined,enable,disable,notNow,verify,lock,locked,unlock,safeBack,
+  // ---- MPIN entry: 4 square boxes + 3 x 4 number pad (login page and ERP "Login & Security") ----
+  // The typed digit shows in its box for a moment, then turns into a dot. Phone / laptop keys 0-9
+  // and Backspace work too. opts: {onDone(pin), busy()}. Returns {clear(bad), fingerprint(fn|null)}.
+  const FP='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><path d="M12 11v3a8 8 0 0 1-1.5 4.7"/><path d="M8.5 10.5a3.5 3.5 0 0 1 7 0V13a12 12 0 0 1-.6 3.8"/><path d="M5.6 15.5A11 11 0 0 0 6 13v-2.5a6 6 0 0 1 9.6-4.8"/><path d="M18 9a6 6 0 0 1 .1 1.5V13c0 2.2-.4 4.2-1.2 6"/><path d="M8.8 20a14 14 0 0 0 .7-2.4"/><path d="M4 12.5v-2a8 8 0 0 1 1.3-4.4"/></svg>';
+  let padCss=false;
+  function addPadCss(){
+    if(padCss)return;padCss=true;
+    const st=document.createElement("style");
+    st.textContent=
+      ".lwb-pin{--pin:#002e36;--pin-hi:#c9a24a;--pin-key:#f6f3ea;--pin-key-hi:#ecdcb0}"+
+      ".lwb-pin-boxes{display:flex;justify-content:center;gap:10px;margin:2px 0 14px}"+
+      ".lwb-pin-boxes span{width:50px;height:54px;border:2px solid #d5d9dc;border-radius:10px;background:#fff;display:grid;place-items:center;font:700 24px/1 Montserrat,'Segoe UI',Arial,sans-serif;color:var(--pin);transition:border-color .12s,background .12s}"+
+      ".lwb-pin-boxes span.on{border-color:var(--pin);background:#f4f7f7}"+
+      ".lwb-pin-boxes span.next{border-color:var(--pin-hi);box-shadow:0 0 0 3px rgba(201,162,74,.18)}"+
+      ".lwb-pin-boxes.bad span{border-color:#c62828;color:#c62828;background:#fdecec}"+
+      ".lwb-pin-boxes.bad{animation:lwbPinShake .35s}"+
+      "@keyframes lwbPinShake{25%{transform:translateX(-8px)}75%{transform:translateX(8px)}}"+
+      ".lwb-pin-keys{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;max-width:260px;margin:0 auto}"+
+      ".lwb-pin-keys button{width:100%;height:48px;margin:0;padding:0;border:0;border-radius:10px;background:var(--pin-key);color:var(--pin);font:600 21px Montserrat,'Segoe UI',Arial,sans-serif;letter-spacing:0;box-shadow:none;cursor:pointer}"+
+      ".lwb-pin-keys button:hover{background:var(--pin-key-hi);color:var(--pin)}"+
+      ".lwb-pin-keys button.ic{display:flex;align-items:center;justify-content:center;background:none}"+
+      ".lwb-pin-keys button.ic svg{width:28px;height:28px;color:#a8842f}"+
+      ".lwb-pin-keys button.ic:hover{background:#f7efda}";
+    document.head.appendChild(st);
+  }
+  function pad(host,opts){
+    addPadCss();
+    const busy=()=>!!(opts.busy&&opts.busy());
+    host.classList.add("lwb-pin");
+    host.innerHTML='<div class="lwb-pin-boxes" aria-live="polite"><span></span><span></span><span></span><span></span></div><div class="lwb-pin-keys"></div>';
+    const wrap=host.firstChild,boxes=[...wrap.children],keys=host.lastChild;
+    let pin="",peek=false,t=0,fpFn=null;
+    const draw=()=>boxes.forEach((b,k)=>{
+      b.textContent=k<pin.length?(peek&&k===pin.length-1?pin[k]:"●"):"";
+      b.classList.toggle("on",k<pin.length);b.classList.toggle("next",k===pin.length);
+    });
+    const key=(label,fn,cls,aria)=>{const b=document.createElement("button");b.type="button";if(cls)b.className=cls;b.innerHTML=label;if(aria)b.setAttribute("aria-label",aria);b.onclick=fn;keys.appendChild(b);return b};
+    const press=d=>{
+      if(busy()||pin.length>=4)return;
+      wrap.classList.remove("bad");pin+=d;peek=true;draw();
+      clearTimeout(t);t=setTimeout(()=>{peek=false;draw()},700);
+      if(pin.length===4){const p=pin;setTimeout(()=>{peek=false;draw();opts.onDone(p)},250)}
+    };
+    const back=()=>{if(busy())return;pin=pin.slice(0,-1);peek=false;draw()};
+    for(const d of "123456789")key(d,()=>press(d));
+    const fp=key(FP,()=>fpFn&&fpFn(),"ic","Fingerprint");
+    key("0",()=>press("0"));
+    key("&#9003;",back,"ic","Delete");
+    document.addEventListener("keydown",e=>{
+      if(!host.isConnected||!host.offsetParent||/^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName))return;
+      if(/^[0-9]$/.test(e.key)){e.preventDefault();press(e.key)}
+      else if(e.key==="Backspace"){e.preventDefault();back()}
+    });
+    draw();
+    return {
+      clear(bad){pin="";peek=false;draw();if(bad){wrap.classList.remove("bad");void wrap.offsetWidth;wrap.classList.add("bad")}},
+      fingerprint(fn){fpFn=fn;fp.style.visibility=fn?"visible":"hidden"}
+    };
+  }
+
+  window.LWBUnlock={pad,supported,isOn,anyOn,declined,enable,disable,notNow,verify,lock,locked,unlock,safeBack,
     device,mpinOn,canLock,mpinDeclined,mpinNotNow,mpinWeak,mpinSet,mpinVerify,mpinOff};
 })();

@@ -114,19 +114,6 @@
     /* Fingerprint / face / phone PIN unlock (quick-unlock.js) */
     .unlock-ic{display:block;width:74px;height:74px;margin:2px auto 14px;padding:16px;border-radius:50%;background:#f7efda;color:var(--gold-dk)}
     #lockNote,#offerNote,#mpinNote{text-align:center}
-    /* MPIN pad (bank-app style) */
-    .pin-dots{display:flex;justify-content:center;gap:16px;margin:4px 0 16px}
-    .pin-dots i{width:15px;height:15px;border-radius:50%;border:2px solid var(--teal);transition:background .12s}
-    .pin-dots i.on{background:var(--teal)}
-    .pin-dots.bad i{border-color:#c62828}.pin-dots.bad i.on{background:#c62828}
-    .pin-dots.bad{animation:pinShake .35s}
-    @keyframes pinShake{25%{transform:translateX(-8px)}75%{transform:translateX(8px)}}
-    .pin-pad{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;max-width:270px;margin:0 auto}
-    .pin-pad button{height:50px;border-radius:12px;background:#f6f3ea;color:var(--teal);font:600 22px Montserrat,"Segoe UI",Arial,sans-serif;letter-spacing:0;box-shadow:none}
-    .pin-pad button:hover{background:#ecdcb0}
-    .pin-pad button.ic{display:flex;align-items:center;justify-content:center;background:none;font-size:20px}
-    .pin-pad button.ic svg{width:30px;height:30px;color:var(--gold-dk)}
-    .pin-pad button.ic:hover{background:#f7efda}
     .login-box:has(#lockForm:not([hidden])) .subtitle,.login-box:has(#mpinForm:not([hidden])) .subtitle{display:none}
     .login-box:has(#lockForm:not([hidden])) h2,.login-box:has(#mpinForm:not([hidden])) h2{margin-bottom:14px}
     #unlockButton,#offerOn{background:linear-gradient(135deg,var(--teal),var(--teal-2));box-shadow:0 10px 22px rgba(0,46,54,.22)}
@@ -277,8 +264,7 @@
     <span id="lockFpIc"><svg class="unlock-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><path d="M12 11v3a8 8 0 0 1-1.5 4.7"/><path d="M8.5 10.5a3.5 3.5 0 0 1 7 0V13a12 12 0 0 1-.6 3.8"/><path d="M5.6 15.5A11 11 0 0 0 6 13v-2.5a6 6 0 0 1 9.6-4.8"/><path d="M18 9a6 6 0 0 1 .1 1.5V13c0 2.2-.4 4.2-1.2 6"/><path d="M8.8 20a14 14 0 0 0 .7-2.4"/><path d="M4 12.5v-2a8 8 0 0 1 1.3-4.4"/></svg></span>
     <p class="form-note" id="lockNote">ERP is locked. Open it with your MPIN or fingerprint.</p>
     <div id="lockPinBox" hidden>
-      <div class="pin-dots" id="lockDots" aria-live="polite"><i></i><i></i><i></i><i></i></div>
-      <div class="pin-pad" id="lockPad"></div>
+      <div id="lockPin"></div>
     </div>
     <button type="submit" id="unlockButton">Unlock</button>
     <button type="button" class="link-btn" id="lockPassword">Login with password instead</button>
@@ -286,8 +272,7 @@
   <!-- After a full login: set a 4-digit MPIN for this phone (lwb_mpin_setup.sql). -->
   <form id="mpinForm" hidden>
     <p class="form-note" id="mpinNote"><b>Set a 4-digit MPIN</b><br>Next time open the ERP with this MPIN, without password and OTP.</p>
-    <div class="pin-dots" id="setDots" aria-live="polite"><i></i><i></i><i></i><i></i></div>
-    <div class="pin-pad" id="setPad"></div>
+    <div id="setPin"></div>
     <button type="button" class="link-btn" id="mpinSkip">Skip for now</button>
   </form>
   <!-- After a full login: offer fingerprint unlock on this phone. -->
@@ -407,30 +392,9 @@ async function goToErp(user){
 
 // ---- Quick unlock: MPIN (lwb_mpin_setup.sql) and fingerprint / face / phone PIN (quick-unlock.js) ----
 let unlockBack=null,lockUser=null;
-const FP_SVG='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><path d="M12 11v3a8 8 0 0 1-1.5 4.7"/><path d="M8.5 10.5a3.5 3.5 0 0 1 7 0V13a12 12 0 0 1-.6 3.8"/><path d="M5.6 15.5A11 11 0 0 0 6 13v-2.5a6 6 0 0 1 9.6-4.8"/><path d="M18 9a6 6 0 0 1 .1 1.5V13c0 2.2-.4 4.2-1.2 6"/><path d="M8.8 20a14 14 0 0 0 .7-2.4"/><path d="M4 12.5v-2a8 8 0 0 1 1.3-4.4"/></svg>';
-// 3 x 4 number pad: 1-9, [fingerprint], 0, [delete]. onDone gets the 4 digits.
-function makePad(padId,dotsId,form,onDone){
-  const pad=el(padId),dots=[...el(dotsId).children];let pin="",fpFn=null;
-  const draw=()=>dots.forEach((d,k)=>d.classList.toggle("on",k<pin.length));
-  const key=(label,fn,cls,aria)=>{const b=document.createElement("button");b.type="button";if(cls)b.className=cls;b.innerHTML=label;if(aria)b.setAttribute("aria-label",aria);b.onclick=fn;pad.appendChild(b);return b};
-  const press=d=>{if(busy||pin.length>=4)return;el(dotsId).classList.remove("bad");pin+=d;draw();if(pin.length===4){const p=pin;setTimeout(()=>onDone(p),120)}};
-  const back=()=>{if(busy)return;pin=pin.slice(0,-1);draw()};
-  for(const d of "123456789")key(d,()=>press(d));
-  const fp=key(FP_SVG,()=>fpFn&&fpFn(),"ic","Fingerprint");
-  key("0",()=>press("0"));
-  key("&#9003;",back,"ic","Delete");
-  document.addEventListener("keydown",e=>{
-    if(el(form).hidden||e.target.tagName==="INPUT")return;
-    if(/^[0-9]$/.test(e.key)){e.preventDefault();press(e.key)}
-    else if(e.key==="Backspace"){e.preventDefault();back()}
-  });
-  return {
-    clear(bad){pin="";draw();if(bad){const b=el(dotsId);b.classList.remove("bad");void b.offsetWidth;b.classList.add("bad")}},
-    fingerprint(fn){fpFn=fn;fp.style.visibility=fn?"visible":"hidden"}
-  };
-}
-const lockPad=makePad("lockPad","lockDots","lockForm",pin=>mpinUnlock(pin));
-const setPad=makePad("setPad","setDots","mpinForm",pin=>mpinStep(pin));
+// MPIN entry: 4 square boxes + number pad (quick-unlock.js).
+const lockPad=LWBUnlock.pad(el("lockPin"),{busy:()=>busy,onDone:pin=>mpinUnlock(pin)});
+const setPad=LWBUnlock.pad(el("setPin"),{busy:()=>busy,onDone:pin=>mpinStep(pin)});
 setPad.fingerprint(null);
 
 // After a full login: first the MPIN, then the fingerprint (each only once, "Skip" asks again after 30 days).
