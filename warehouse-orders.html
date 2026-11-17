@@ -681,6 +681,14 @@
     .sla-ok {background:#e6f5ec;color:#13824a}
     .sla-warn {background:#fdf3e2;color:#9a5a00}
     .sla-late {background:#fdecec;color:#b42318}
+    /* Delivered in N hours: round badge (green fast, amber, red slow) */
+    .dlv-h {display:inline-flex;align-items:center;justify-content:center;min-width:24px;height:20px;padding:0 6px;border-radius:999px;
+      font-size:10.5px;font-weight:800;line-height:1;vertical-align:middle;margin-left:5px;white-space:nowrap;cursor:help;border:1.5px solid}
+    .dlv-h.g {background:#e3f6ea;color:#11743f;border-color:#3fb26f}
+    .dlv-h.a {background:#fff4dc;color:#8a5200;border-color:#e0a23a}
+    .dlv-h.r {background:#fde8e8;color:#b42318;border-color:#e5645a}
+    #ordersArea .c-st .dlv-h {float:right;margin:0 0 0 4px}
+    @media (max-width:640px){#ordersArea .c-st .dlv-h {float:none;margin:0 5px 0 0}}
     tr.row-late td {background:#fff7f7}
     tr.row-late td:first-child {box-shadow:inset 4px 0 0 #b42318}
     tr.row-urgent td:first-child {box-shadow:inset 4px 0 0 #c8102e}
@@ -2335,6 +2343,26 @@ function slaState(order) {
   return { css: h >= DELIVER_HOURS - 12 ? "sla-warn" : "sla-ok", text: "Deliver in " + hrs(DELIVER_HOURS - h) };
 }
 
+/* Delivered in how many hours (Mohit, 17 Nov 2026): round badge on a delivered PO = PO made → delivered.
+   Delivered time = driver report Delivered / Partial or the "Mark delivered" date (lwb_po_delivered_orders).
+   Green up to 24 hrs, amber up to the 36 hr limit, red after that. */
+function deliveredHours(order) {
+  if (isCancelled(order)) return null;
+  const end = new Date(deliveredOrders.get(order.id) || (isDeliveredOrder(order) ? order.delivered_at : null) || NaN).getTime();
+  const start = new Date(order.created_at || order.order_date).getTime();
+  if (!Number.isFinite(end) || !Number.isFinite(start)) return null;
+  return Math.max(0, (end - start) / 3600000);
+}
+function dlvBadge(order) {
+  const h = deliveredHours(order);
+  if (h == null) return "";
+  const css = h <= 24 ? "g" : h <= DELIVER_HOURS ? "a" : "r";
+  const txt = h < 1 ? "<1h" : Math.round(h) + "h";
+  const tip = "Delivered in " + (h < 1 ? "less than 1 hr" : Math.round(h) + " hrs") + " · PO made " +
+    formatDateTime(order.created_at || order.order_date) + " → delivered " + formatDateTime(deliveredOrders.get(order.id) || order.delivered_at);
+  return `<span class="dlv-h ${css}" title="${escapeHtml(tip)}" aria-label="${escapeHtml(tip)}">${txt}</span>`;
+}
+
 function slaBadge(order) {
   const s = slaState(order);
   return s ? `<span class="sla ${s.css}">${s.text}</span>` : "";
@@ -3949,7 +3977,7 @@ function renderOrders() {
             </td>
 
             <td class="c-st">
-              <span class="st-badge">${statusBadge(order)}</span>
+              ${dlvBadge(order)}<span class="st-badge">${statusBadge(order)}</span>
               ${stepTrack(order, true)}
               ${slaBadge(order)}
             </td>
