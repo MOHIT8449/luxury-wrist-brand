@@ -14,10 +14,16 @@
   // on the lock screen still ends the session fully.
   function unlockUid(){
     try{
-      const on=JSON.parse(localStorage.getItem("lwbUnlock")||"null");if(!on||!on.uid||!on.cred)return "";
       const t=JSON.parse(localStorage.getItem("sb-txkbhadzdbxpieunfvox-auth-token")||"null");
-      const uid=t&&t.user&&t.user.id;return uid===on.uid?uid:"";
+      const uid=t&&t.user&&t.user.id;return uid&&lockOn(uid)?uid:"";
     }catch(e){return ""}
+  }
+  // Fingerprint (lwbUnlock) or MPIN (lwbMpin) on for this login on this phone.
+  function lockOn(uid){
+    try{
+      const on=JSON.parse(localStorage.getItem("lwbUnlock")||"null"),pin=JSON.parse(localStorage.getItem("lwbMpin")||"null");
+      return !!(uid&&((on&&on.uid===uid&&on.cred)||(pin&&pin.uid===uid)));
+    }catch(e){return false}
   }
   function lockNow(uid,why){
     try{localStorage.setItem("lwbLocked",JSON.stringify({uid,why,back:why==="logout"?"dashboard.html":location.pathname.replace(/^\//,"")+location.search+location.hash,at:Date.now()}))}catch(e){}
@@ -647,10 +653,9 @@
       out=true;
       const c=window.__lwbBellClient||(window.__lwbBellClient=window.supabase.createClient(URL_,KEY_));
       try{localStorage.removeItem(IDLE_KEY)}catch(e){}
-      // Fingerprint unlock on for this login on this phone: lock (session kept) instead of logout.
+      // Fingerprint or MPIN on for this login on this phone: lock (session kept) instead of logout.
       let uid="";try{const {data}=await c.auth.getSession();uid=(data&&data.session&&data.session.user&&data.session.user.id)||""}catch(e){}
-      let on=null;try{on=JSON.parse(localStorage.getItem("lwbUnlock")||"null")}catch(e){}
-      if(uid&&on&&on.uid===uid&&on.cred){lockNow(uid,"idle");return true}
+      if(lockOn(uid)){lockNow(uid,"idle");return true}
       try{await c.auth.signOut({scope:"local"})}catch(e){}
       location.replace("login.html?idle=1");
       return true;
