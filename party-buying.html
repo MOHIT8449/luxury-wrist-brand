@@ -12,6 +12,7 @@
   <script src="erp-shell.js"></script>
   <script src="sales-common.js"></script>
   <script src="erp-multi.js"></script>
+  <script src="erp-colfilter.js"></script>
   <style>
     /* Party Buying (Mohit, 17 Nov 2026): who bought what, how many times, and who stopped / never bought. */
     .pb-chip{display:inline-block;border-radius:10px;padding:1px 7px;margin:1px 3px 1px 0;font-size:11.5px;font-weight:600;white-space:nowrap}
@@ -225,22 +226,26 @@
     // Table: header labels repeat on phone cards (sl-stack), no side scroll.
     function table(v){
       const c=i=>[(v.num||[]).includes(i)?"num":"",i===0?"sl-first":"",(v.wide||[]).includes(i)?"sl-wide":""].filter(Boolean).join(" ");
-      let h='<table class="erp-table sl-stack"><thead><tr>'+v.head.map((x,i)=>'<th class="'+c(i)+'">'+esc(x)+"</th>").join("")+"</tr></thead><tbody>";
+      let h=CF.chips(tab,v.head)+'<table class="erp-table sl-stack"><thead><tr>'+v.head.map((x,i)=>'<th class="'+c(i)+'">'+esc(x)+CF.th(tab,v.head,i)+"</th>").join("")+"</tr></thead><tbody>";
       for(const r of v.rows)h+="<tr"+(r.attr||"")+">"+r.show.map((x,i)=>'<td class="'+c(i)+'" data-label="'+esc(v.head[i])+'">'+x+"</td>").join("")+"</tr>";
       h+="</tbody>";
       if(v.sum&&v.rows.length)h+="<tfoot><tr>"+v.head.map((x,i)=>'<td class="'+c(i)+'" data-label="'+esc(x)+'">'+(i===0?"Total":v.sum.includes(i)?(/Amount/.test(x)?short:fmt)(v.rows.reduce((a,r)=>a+num(r.data[i]),0)):"")+"</td>").join("")+"</tr></tfoot>";
       return h+"</table>";
     }
     let current=null;
+    // Excel-style ▾ filter / sort on every column (erp-colfilter.js), per tab.
+    const CF=LWBCol.create({onChange:()=>render()});
+    const colFilter=v=>{const all=v.rows.length;v.rows=CF.apply(tab,v.head,v.rows,{split:v.wide});v.all=all;return v};
     function render(){
       el("tabs").innerHTML=TABS.map(([id,l])=>'<button type="button" class="erp-pill'+(id===tab?" active":"")+'" data-tab="'+id+'">'+esc(l)+"</button>").join("");
       if(err){el("kpis").innerHTML="";el("box").innerHTML='<div class="sl-msg">Could not load: '+esc(err)+"</div>";el("tabTitle").textContent="";el("tabTools").innerHTML="";return}
       renderKpis();
-      const v=view();current=v;
+      const v=colFilter(view());current=v;
       el("tabTitle").textContent=v.title;
-      el("tabTools").innerHTML=(partySet().size?'<span class="pb-party">'+esc(MS.party.label())+'<button type="button" id="clearParty" aria-label="Clear party">×</button></span>':"")+(v.tools||"");
+      const nc=CF.count(tab);
+      el("tabTools").innerHTML=(nc?'<span class="pb-party">'+fmt(v.rows.length)+" of "+fmt(v.all)+" rows · "+nc+' column filter'+(nc>1?"s":"")+'<button type="button" data-cf="x" data-cfk="'+esc(tab)+'" aria-label="Clear column filters">×</button></span>':"")+(partySet().size?'<span class="pb-party">'+esc(MS.party.label())+'<button type="button" id="clearParty" aria-label="Clear party">×</button></span>':"")+(v.tools||"");
       el("note").textContent=v.note||"";
-      el("box").innerHTML=v.rows.length?table(v):'<div class="erp-empty">Nothing to show for these filters.</div>';
+      el("box").innerHTML=v.rows.length||!v.all?(v.rows.length?table(v):'<div class="erp-empty">Nothing to show for these filters.</div>'):CF.chips(tab,v.head)+'<div class="erp-empty">No rows match the column filters. <button type="button" class="erp-pill" data-cf="x" data-cfk="'+esc(tab)+'">Clear column filters</button></div>';
     }
     function renderKpis(){
       const ls=L(),pk=new Set(ls.map(l=>l.pk)),sk=new Set(ls.map(l=>l.sk)),ords=new Set(ls.map(l=>l.o.id)),nP=P().length;
@@ -255,7 +260,7 @@
       try{
         if(err)return;
         const keep=tab,sheets=[];
-        for(const [id,l] of TABS){tab=id;const v=view();sheets.push({name:l.replace("×","x"),title:"LUXURY WRIST BRAND — "+v.title+" — "+el("from").value+" to "+el("to").value,head:v.head,rows:v.rows.map(r=>r.data)})}
+        for(const [id,l] of TABS){tab=id;const v=colFilter(view());sheets.push({name:l.replace("×","x"),title:"LUXURY WRIST BRAND — "+v.title+" — "+el("from").value+" to "+el("to").value,head:v.head,rows:v.rows.map(r=>r.data)})}
         tab=keep;
         await S.excel("Party-Buying-"+el("from").value+"-to-"+el("to").value,sheets);
       }catch(e){await alert("Excel export failed: "+e.message)}
