@@ -4,6 +4,13 @@
 **Purpose:** Continue the same ERP project from a new ChatGPT conversation without restarting or losing the agreed requirements.
 **Status:** Active development / verification. Do not assume all modules are completed or fully tested.
 
+## Total Pending Delivery: SKU-wise total (17 Nov 2026)
+
+- Mohit: in the Total Pending Delivery popup, show for each SKU the total qty of all pending orders together, and which parties need it.
+- `warehouse-orders.html`: gold "▦ SKU-wise total" button next to the search box of the popup opens "Pending Delivery · SKU-wise": SKU (brand tag when 2+ brands), Total Qty (bold, CS / Box, "N not approved" in amber), POs, Parties (2 names + "+N more"; search finds a party), Weight, Amount; biggest qty first, totals row. Tap an SKU = the pending POs needing it (party, qty of that SKU, PO no., date, salesman, status, oldest first); tap a PO = open it. ‹ Back goes up one step. Line qty = loaded (once loaded), else approved, else ordered. Same pending rule as the popup (`lwb_po_summary_orders` bucket pending) + `order_items`. No SQL.
+- `erp-list.js`: a link can have `cls` (e.g. "hi" = gold) and `top: true` (button in the search row instead of the footer).
+- Checked with a mocked database at 1366 / 390 px: no side scroll, no JS errors. Screenshots: project files `pending-sku-wise/`.
+
 ## Tally bill: one invoice no. per line, no invoice no. twice (17 Nov 2026)
 
 - Mohit: Accounts typed 3 invoice nos. in one bill line ("3673,3674,3675") with one merged amount; also a number entered twice must be refused at once.

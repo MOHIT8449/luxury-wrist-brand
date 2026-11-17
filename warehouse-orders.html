@@ -6075,7 +6075,85 @@ function pendingList() {
     if (ui && ui.sub) ui.sub(pendingSplit(rows));
     return rows;
   };
+  base.links = [{ t: "▦ SKU-wise total", cls: "hi", top: true, keep: true, go: () => ERPList.open(pendingSkuList()) }];
   return base;
+}
+
+/* SKU-wise total of Total Pending Delivery (Mohit, 17 Nov 2026): for each SKU, the cases needed by all
+   pending POs together, how many POs / which parties. Qty of a line = loaded (once loaded), else approved,
+   else ordered. Tap an SKU = the POs that need it (tap a PO = open it). Read only, no SQL. */
+async function loadPendingSkus() {
+  const { data, error } = await db.rpc("lwb_po_summary_orders", { p_bucket: "pending", p_from: null, p_to: null });
+  if (error) throw error;
+  const pos = new Map((data || []).map(o => [o.id, o]));
+  const ids = [...pos.keys()], lines = [];
+  for (let i = 0; i < ids.length; i += 150) {
+    const r = await db.from("order_items").select("order_id,sku_name,ordered_qty,approved_qty,loaded_qty,rate,unit_weight").in("order_id", ids.slice(i, i + 150)).limit(10000);
+    if (r.error) throw r.error;
+    lines.push(...(r.data || []));
+  }
+  const qtyOf = i => number(i.loaded_qty) > 0 ? number(i.loaded_qty) : i.approved_qty != null && i.approved_qty !== "" ? number(i.approved_qty) : number(i.ordered_qty);
+  const skus = new Map();
+  for (const it of lines) {
+    const o = pos.get(it.order_id), q = qtyOf(it), name = String(it.sku_name || "").trim();
+    if (!o || !name || q <= 0) continue;
+    const k = name.toUpperCase();
+    let s = skus.get(k);
+    if (!s) skus.set(k, s = { sku: name, qty: 0, weight: 0, amount: 0, wait: 0, pos: new Map() });
+    s.qty += q; s.weight += q * number(it.unit_weight); s.amount += q * number(it.rate);
+    if (isPending(o)) s.wait += q;
+    const p = s.pos.get(o.id) || Object.assign({}, o, { sku_qty: 0 });
+    p.sku_qty += q; s.pos.set(o.id, p);
+  }
+  const multi = brandCompanies.length > 1 && skuBrandMap;
+  return { orders: pos.size, list: [...skus.values()].map(s => {
+    const list = [...s.pos.values()].sort((a, b) => String(a.order_date || a.created_at || "").localeCompare(String(b.order_date || b.created_at || "")));
+    const unit = window.LWBBrand && skuBrandMap ? LWBBrand.unitByName(s.sku, skuBrandMap, brandCompanies) : "CASE";
+    const bid = multi ? itemBrand({ sku_name: s.sku }) : "";
+    return Object.assign(s, { list, count: list.length, unit: unit === "BOX" ? "Box" : "CS",
+      brand: bid ? ((brandCompanies.find(c => c.id === bid) || {}).name || "") : "",
+      parties: [...new Set(list.map(o => o.customer_name || "-"))] });
+  }).sort((a, b) => b.qty - a.qty || a.sku.localeCompare(b.sku)) };
+}
+
+function pendingSkuList() {
+  return {
+    title: "Pending Delivery · SKU-wise",
+    sub: "Loading...",
+    drill: false,
+    empty: "No SKU in pending POs.",
+    cols: [
+      { t: "SKU", v: s => s.sku + (s.brand ? " " + s.brand : ""), html: s => `<span><b>${escapeHtml(s.sku)}</b>${s.brand ? ` <small class="sku-br">${escapeHtml(s.brand)}</small>` : ""}</span>` },
+      { t: "Total Qty", v: s => s.qty, num: true, sum: true, dec: 0,
+        html: s => `<span><b class="sku-qty">${formatNumber(s.qty)} ${s.unit}</b>${s.wait ? `<small class="sku-wait">${formatNumber(s.wait)} not approved</small>` : ""}</span>` },
+      { t: "POs", v: s => s.count, num: true, dec: 0, html: s => `<span class="sku-pos">${s.count}</span>` },
+      { t: "Parties", v: s => s.parties.join(", "),
+        html: s => `<span class="sku-pt">${escapeHtml(s.parties.slice(0, 2).join(", "))}${s.parties.length > 2 ? ` <i>+${s.parties.length - 2} more</i>` : ""}</span>` },
+      { t: "Weight (KG)", v: s => s.weight, num: true, sum: true, dec: 0 },
+      { t: "Amount", v: s => s.amount, money: true, sum: true }
+    ],
+    onRow: s => ERPList.open({
+      title: s.sku,
+      sub: formatNumber(s.qty) + " " + s.unit + " in " + s.count + " pending PO" + (s.count === 1 ? "" : "s") + " · oldest first · tap a PO to open it",
+      rows: s.list,
+      empty: "No PO.",
+      onRow: openOrderFromList,
+      cols: [
+        { t: "Party", v: o => o.customer_name || "-", html: o => `<b>${escapeHtml(o.customer_name || "-")}</b>` },
+        { t: "Qty", v: o => o.sku_qty, num: true, sum: true, dec: 0, html: o => `<b class="sku-qty">${formatNumber(o.sku_qty)} ${s.unit}</b>` },
+        { t: "Order No", v: o => o.order_no || "-", html: o => escapeHtml(o.order_no || "-") + priorityBadge(o) },
+        { t: "Date", v: o => o.order_date || o.created_at, date: true },
+        { t: "Sales Person", v: o => o.sales_person || "-" },
+        { t: "Status", v: o => normalizedStatus(o).replace(/_/g, " "), html: o => statusBadge(o) + slaBadge(o) }
+      ]
+    }),
+    load: async ui => {
+      const r = await loadPendingSkus();
+      const qty = r.list.reduce((a, s) => a + s.qty, 0);
+      ui.sub(r.list.length + " SKUs · " + formatNumber(qty) + " cases in " + r.orders + " pending POs · biggest first · tap an SKU to see the parties");
+      return r.list;
+    }
+  };
 }
 
 function wireCountCards() {
