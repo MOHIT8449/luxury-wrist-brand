@@ -1,5 +1,6 @@
 -- LUXURY WRIST BRAND ERP — database speed fix (Mohit, 17 Nov 2026).
--- Run once in Supabase → SQL Editor. Safe to run again. Nothing about who can see or change what is changed.
+-- Runs by itself on merge (Supabase apply workflow). Safe to run again. Who can see or change what stays exactly the same.
+-- If anything fails, the whole file is rolled back and nothing changes.
 --
 -- 1. Indexes for the reads every page does all day: orders by date / status / newest first,
 --    the items of an order, the bell list of a user, and the vehicle of an order.
