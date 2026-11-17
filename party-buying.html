@@ -73,7 +73,7 @@
   <script>
     const S=LWBSales,{client,el,esc,fmt,short,num,key}=S;
     const TABS=[["party","Party-wise"],["sku","SKU-wise"],["cat","Category-wise"],["psku","Party × SKU"],["gap","Not Buying"],["stop","Stopped Buying"]];
-    let parties=[],skus=[],orders=[],lines=[],err="",tab="party",gapMode="all",gapDays=30,BB={get:()=>""};
+    let setBrands=new Map(),parties=[],skus=[],orders=[],lines=[],err="",tab="party",gapMode="all",gapDays=30,BB={get:()=>""};
     const today=()=>S.isoDay(new Date());
     const since=d=>d?S.daysBetween(d,today()):null;
     const UNCAT="No category";
@@ -86,6 +86,9 @@
         const [pa,sk]=await Promise.all([client.rpc("lwb_party_activity"),client.from("sku_master").select("*"),window.LWBBrand&&LWBBrand.aliases?LWBBrand.aliases(client):null]);
         if(pa.error)throw Error(/lwb_party_activity/.test(pa.error.message)?"Run lwb_sales_team_setup.sql in Supabase first.":pa.error.message);
         parties=pa.data||[];
+        // Brands ticked in Party Master (lwb_party_brands_setup.sql); a party with none goes by what it bought.
+        const pb=await client.from("lwb_customer_master").select("customer_name,brand_ids");
+        setBrands=new Map(pb.error?[]:(pb.data||[]).filter(x=>x.brand_ids&&x.brand_ids.length).map(x=>[key(x.customer_name),new Set(x.brand_ids)]));
         skus=(sk.data||[]).map(s=>({name:String(s.sku_name||"").trim(),k:S.skuKey(s.sku_name),cat:String(s.category||"").trim()||UNCAT,co:s.company_id||"",active:s.is_active!==false}));
         orders=await S.orders(from,to);
         const items=await S.inChunks("order_items","order_id",orders.map(o=>o.id),"order_id,sku_name,ordered_qty,approved_qty,loaded_qty,rate");
@@ -123,10 +126,11 @@
     const L=()=>lines.filter(l=>skuOk(l)&&smOk(l.o.smId)&&(!partyPick()||l.pk===partyPick()));
     // Brand buyers (Mohit, 17 Nov 2026): a Rajnigandha-only party is not "not buying" Coca-Cola. With "Brand buyers",
     // only parties that bought any SKU of the chosen brand (all brands = anything) in these dates are counted.
-    const buyers=()=>new Set(lines.filter(l=>!BB.get()||l.co===BB.get()).map(l=>l.pk));
+    const buyers=()=>{const b=new Set(lines.filter(l=>!setBrands.has(l.pk)&&(!BB.get()||l.co===BB.get())).map(l=>l.pk));
+      for(const [k,v] of setBrands)if(!BB.get()||v.has(BB.get()))b.add(k);return b};
     const P=()=>{const b=el("scope").value==="all"?null:buyers();return parties.filter(p=>smOk(p.salesman_id)&&(!partyPick()||key(p.customer_name)===partyPick())&&(!b||b.has(key(p.customer_name))))};
     // Brands each party buys: with "Brand buyers", a party is only checked against SKUs of brands it buys.
-    const brandsOf=()=>{const m=new Map();for(const l of lines){if(!m.has(l.pk))m.set(l.pk,new Set());m.get(l.pk).add(l.co)}return m};
+    const brandsOf=()=>{const m=new Map(setBrands);for(const l of lines){if(setBrands.has(l.pk))continue;if(!m.has(l.pk))m.set(l.pk,new Set());m.get(l.pk).add(l.co)}return m};
     const skuFor=(bm,pk,co)=>el("scope").value==="all"||!!(bm.get(pk)&&bm.get(pk).has(co));
     const scopeWord=()=>el("scope").value==="all"?"active parties":(BB.get()&&BB.name?BB.name(BB.get())+" ":"")+"buyers";
     function group(list,keyOf,init,add){const m=new Map();for(const x of list){const k=keyOf(x);if(!m.has(k))m.set(k,init(x));add(m.get(k),x)}return [...m.values()]}
@@ -209,7 +213,7 @@
       }
       rows.sort((a,b)=>b.miss-a.miss);
       return {title:"SKUs each party is not buying",tools,head:["Party","Salesman","Last Order","SKUs Bought","Never","Not in "+gapDays+"+ d","Not buying (most-sold first)"],num:[4,5],rows,wide:[6],
-        note:"Parties: "+scopeWord()+" (change in the Parties filter). Red = never bought in these dates, orange = bought before but not in "+gapDays+"+ days. Only SKUs that sold to someone in these dates, of the brands this party buys. Tap a party for its full list."};
+        note:"Parties: "+scopeWord()+" (change in the Parties filter). Brands come from Party Master when ticked there, else from what the party bought. Red = never bought in these dates, orange = bought before but not in "+gapDays+"+ days. Only SKUs that sold to someone in these dates, of the brands this party buys. Tap a party for its full list."};
     }
 
     // Table: header labels repeat on phone cards (sl-stack), no side scroll.
