@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Party Buying | Luxury Wrist Brand ERP</title>
+  <script src="erp-date.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="brand-filter.js"></script>
+  <link rel="stylesheet" href="erp-shell.css">
+  <link rel="stylesheet" href="sales.css">
+  <script src="erp-shell.js"></script>
+  <script src="sales-common.js"></script>
+  <style>
+    /* Party Buying (Mohit, 17 Nov 2026): who bought what, how many times, and who stopped / never bought. */
+    .pb-chip{display:inline-block;border-radius:10px;padding:1px 7px;margin:1px 3px 1px 0;font-size:11.5px;font-weight:600;white-space:nowrap}
+    .pb-chip.never{background:#fdecec;color:var(--erp-red)}.pb-chip.gap{background:#fff4e0;color:#a35a00}
+    .pb-chip.ok{background:#e8f6ee;color:var(--erp-green)}
+    .pb-party{display:inline-flex;align-items:center;gap:6px;background:var(--erp-red-soft);border:1px solid var(--erp-red);border-radius:14px;padding:2px 4px 2px 10px;font-size:12.5px;font-weight:600}
+    .pb-party button{border:0;background:transparent;font-size:15px;line-height:1;cursor:pointer;color:var(--erp-red);padding:0 4px}
+    .pb-tools{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+    .pb-tools .erp-pill{padding:4px 6px 4px 10px;font-size:13px}
+    .pb-tools .sl-in{height:30px;width:64px}
+    #box tr[data-party]{cursor:pointer}
+    .sl-filters{gap:8px;margin-bottom:10px}
+    .sl-filters .grow{min-width:150px}
+    .sl-kpis{gap:8px;margin-bottom:10px;grid-template-columns:repeat(auto-fit,minmax(150px,1fr))}
+    .sl-kpi{padding:9px 12px}
+    @media(max-width:640px){
+      .sl-filters{gap:6px}
+      .sl-filters>div{flex:1 1 30%}.sl-filters>div.grow{flex:1 1 45%;min-width:0}
+      .sl-filters label{font-size:11px;margin-bottom:2px}
+      .sl-filters select,.sl-filters input{font-size:13px;padding:0 6px!important;height:34px}
+      .sl-filters .sl-btn{flex:1 1 0}
+      .sl-kpis{grid-template-columns:1fr 1fr}
+      .sl-kpi{padding:7px 10px}
+      .erp-card-head{flex-wrap:wrap;gap:6px}
+      .erp-card-head h2{width:100%}
+      .pb-tools{width:100%}
+      .pb-party{font-size:12px!important;padding:1px 2px 1px 8px!important}
+      .pb-tools .sl-in{height:28px!important;width:56px!important;font-size:13px}
+      .pb-tools .erp-pill{width:auto!important;flex:0 0 auto!important;min-height:0!important;padding:4px 10px!important;font-size:12.5px!important}
+    }
+  </style>
+</head>
+<body>
+  <div id="loading" class="status">Checking account access...</div>
+  <main id="page" class="erp-main" hidden>
+    <div class="erp-pagehead"><h1>Party Buying</h1><span class="grow"></span><span class="erp-badge blue">Admin &amp; Sales Head</span></div>
+
+    <div class="sl-filters">
+      <div><label for="from">From</label><input id="from" type="date"></div>
+      <div><label for="to">To</label><input id="to" type="date"></div>
+      <div><label for="basis">Count as</label><select id="basis"><option value="booked">Booked</option><option value="loaded">Loaded</option></select></div>
+      <div><label for="cat">Category</label><select id="cat"><option value="">All</option></select></div>
+      <div><label for="sm">Salesman</label><select id="sm"><option value="">All</option></select></div>
+      <div class="grow"><label for="party">Party</label><input id="party" list="partyList" type="search" autocomplete="off" placeholder="All parties"><datalist id="partyList"></datalist></div>
+      <div class="grow"><label for="q">Search SKU / party</label><input id="q" type="search" autocomplete="off" placeholder="Type to filter..."></div>
+      <button id="refresh" type="button" class="sl-btn">Refresh</button>
+      <button id="excel" type="button" class="sl-btn ghost">Excel</button>
+    </div>
+
+    <div class="sl-kpis" id="kpis"></div>
+    <div class="erp-pills" id="tabs"></div>
+    <section class="erp-card">
+      <div class="erp-card-head"><h2 id="tabTitle"></h2><div id="tabTools" class="pb-tools"></div></div>
+      <div class="sl-scroll" id="box"></div>
+    </section>
+    <p class="sl-note" id="note"></p>
+  </main>
+  <script>
+    const S=LWBSales,{client,el,esc,fmt,short,num,key}=S;
+    const TABS=[["party","Party-wise"],["sku","SKU-wise"],["cat","Category-wise"],["psku","Party × SKU"],["gap","Not Buying"],["stop","Stopped Buying"]];
+    let parties=[],skus=[],orders=[],lines=[],err="",tab="party",gapMode="all",gapDays=30,BB={get:()=>""};
+    const today=()=>S.isoDay(new Date());
+    const since=d=>d?S.daysBetween(d,today()):null;
+    const UNCAT="No category";
+
+    async function loadAll(){
+      const from=el("from").value,to=el("to").value;
+      if(!from||!to||from>to){await alert("Select a valid From and To date.");return}
+      el("refresh").disabled=true;el("box").innerHTML='<div class="erp-empty">Loading...</div>';err="";
+      try{
+        const [pa,sk]=await Promise.all([client.rpc("lwb_party_activity"),client.from("sku_master").select("*"),window.LWBBrand&&LWBBrand.aliases?LWBBrand.aliases(client):null]);
+        if(pa.error)throw Error(/lwb_party_activity/.test(pa.error.message)?"Run lwb_sales_team_setup.sql in Supabase first.":pa.error.message);
+        parties=pa.data||[];
+        skus=(sk.data||[]).map(s=>({name:String(s.sku_name||"").trim(),k:S.skuKey(s.sku_name),cat:String(s.category||"").trim()||UNCAT,co:s.company_id||"",active:s.is_active!==false}));
+        orders=await S.orders(from,to);
+        const items=await S.inChunks("order_items","order_id",orders.map(o=>o.id),"order_id,sku_name,ordered_qty,approved_qty,loaded_qty,rate");
+        build(items);fillLists();
+      }catch(e){err=e.message||String(e)}
+      el("refresh").disabled=false;render();
+    }
+
+    // One line per SKU per PO: party, SKU (current name), category, qty, amount, day.
+    function build(items){
+      const basis=el("basis").value,bySku=new Map(skus.map(s=>[s.k,s])),pBy=new Map(parties.map(p=>[key(p.customer_name),p])),oBy=new Map();
+      for(const o of orders){const p=pBy.get(key(o.customer_name));o.day=S.istDay(o.order_date||o.created_at);o.pk=key(o.customer_name);o.sm=p&&p.salesman_name||"Office";o.smId=p&&p.salesman_id||"";oBy.set(o.id,o)}
+      lines=[];
+      for(const it of items){
+        const o=oBy.get(it.order_id);if(!o)continue;
+        const q=S.lineQty(it,o,basis);if(!q)continue;
+        const k=S.skuKey(it.sku_name),s=bySku.get(k);
+        lines.push({o,pk:o.pk,party:String(o.customer_name||"").trim(),sk:k,sku:s?s.name:String(it.sku_name||"Unknown SKU").trim(),cat:s?s.cat:UNCAT,co:s?s.co:"",q,amt:q*num(it.rate),day:o.day});
+      }
+    }
+    function fillLists(){
+      const cats=[...new Set(skus.map(s=>s.cat))].sort(),cv=el("cat").value;
+      el("cat").innerHTML='<option value="">All</option>'+cats.map(c=>'<option'+(c===cv?" selected":"")+">"+esc(c)+"</option>").join("");
+      const sms=new Map();for(const p of parties)if(p.salesman_id)sms.set(p.salesman_id,p.salesman_name);
+      const sv=el("sm").value;
+      el("sm").innerHTML='<option value="">All</option><option value="none"'+(sv==="none"?" selected":"")+'>Office (no salesman)</option>'+[...sms].sort((a,b)=>String(a[1]).localeCompare(b[1])).map(([id,n])=>'<option value="'+id+'"'+(id===sv?" selected":"")+">"+esc(n)+"</option>").join("");
+      el("partyList").innerHTML=parties.map(p=>'<option value="'+esc(p.customer_name)+'">').join("");
+    }
+
+    // Filters shared by every tab.
+    const match=s=>{const q=key(el("q").value);return !q||key(s).includes(q)};
+    const partyPick=()=>key(el("party").value);
+    const smOk=id=>{const v=el("sm").value;return !v||(v==="none"?!id:id===v)};
+    const skuOk=s=>(!BB.get()||s.co===BB.get())&&(!el("cat").value||s.cat===el("cat").value);
+    const L=()=>lines.filter(l=>skuOk(l)&&smOk(l.o.smId)&&(!partyPick()||l.pk===partyPick()));
+    const P=()=>parties.filter(p=>smOk(p.salesman_id)&&(!partyPick()||key(p.customer_name)===partyPick()));
+    function group(list,keyOf,init,add){const m=new Map();for(const x of list){const k=keyOf(x);if(!m.has(k))m.set(k,init(x));add(m.get(k),x)}return [...m.values()]}
+    const ageTag=d=>d==null?'<span class="sl-age never">Never</span>':'<span class="sl-age '+(d>=30?"a10":d>=15?"a5":d>=7?"a2":"")+'">'+d+" d</span>";
+    // Party × SKU stats: times (POs), qty, amount, first / last day, usual gap.
+    function pairs(list){
+      return group(list,l=>l.pk+"|"+l.sk,l=>({pk:l.pk,party:l.party,sm:l.o.sm,sk:l.sk,sku:l.sku,cat:l.cat,ords:new Set(),days:new Set(),q:0,amt:0,first:l.day,last:l.day}),
+        (x,l)=>{x.ords.add(l.o.id);x.days.add(l.day);x.q+=l.q;x.amt+=l.amt;if(l.day<x.first)x.first=l.day;if(l.day>x.last)x.last=l.day})
+        .map(x=>({...x,times:x.ords.size,gap:x.days.size>1?Math.round(S.daysBetween(x.first,x.last)/(x.days.size-1)):null,ago:since(x.last)}));
+    }
+
+    function view(){
+      const ls=L(),range=S.shortDate(el("from").value)+" – "+S.shortDate(el("to").value);
+      if(tab==="party"){
+        const g=group(ls,l=>l.pk,l=>({pk:l.pk,name:l.party,sm:l.o.sm,ords:new Set(),q:0,amt:0,sk:new Set(),cat:new Set(),last:""}),(x,l)=>{x.ords.add(l.o.id);x.q+=l.q;x.amt+=l.amt;x.sk.add(l.sk);x.cat.add(l.cat);if(l.day>x.last)x.last=l.day});
+        const city=new Map(parties.map(p=>[key(p.customer_name),p.city||""]));
+        const rows=g.filter(x=>match(x.name+" "+x.sm)).sort((a,b)=>b.amt-a.amt).map(x=>({attr:' data-party="'+esc(x.name)+'"',
+          data:[x.name,city.get(x.pk)||"",x.sm,x.ords.size,x.q,x.amt,x.sk.size,x.cat.size,x.last,since(x.last)],
+          show:[esc(x.name),esc(city.get(x.pk)||"—"),esc(x.sm),fmt(x.ords.size),fmt(x.q),short(x.amt),fmt(x.sk.size),fmt(x.cat.size),S.shortDate(x.last),ageTag(since(x.last))]}));
+        return {title:"Party-wise buying · "+range,head:["Party","City","Salesman","Times (POs)","Qty","Amount","SKUs","Categories","Last Buy","Days Ago"],num:[3,4,5,6,7],rows,sum:[3,4,5],
+          note:"Tap a party to see each SKU it bought (Party × SKU). Times = POs in these dates."};
+      }
+      if(tab==="sku"){
+        const nP=P().length;
+        const g=group(ls,l=>l.sk,l=>({name:l.sku,cat:l.cat,ords:new Set(),pk:new Set(),q:0,amt:0,last:""}),(x,l)=>{x.ords.add(l.o.id);x.pk.add(l.pk);x.q+=l.q;x.amt+=l.amt;if(l.day>x.last)x.last=l.day});
+        const rows=g.filter(x=>match(x.name+" "+x.cat)).sort((a,b)=>b.q-a.q).map(x=>({data:[x.name,x.cat,x.ords.size,x.pk.size,Math.max(0,nP-x.pk.size),x.q,x.amt,x.last,since(x.last)],
+          show:[esc(x.name),esc(x.cat),fmt(x.ords.size),fmt(x.pk.size),'<b style="color:var(--erp-red)">'+fmt(Math.max(0,nP-x.pk.size))+"</b>",fmt(x.q),short(x.amt),S.shortDate(x.last),ageTag(since(x.last))]}));
+        return {title:"SKU-wise sales · "+range,head:["SKU","Category","Times (POs)","Parties Bought","Parties Not Bought","Qty","Amount","Last Sold","Days Ago"],num:[2,3,4,5,6],rows,sum:[2,5,6],
+          note:"Parties Not Bought = active parties ("+fmt(nP)+" with these filters) that did not buy this SKU in these dates. Open Not Buying to see who."};
+      }
+      if(tab==="cat"){
+        const tot=ls.reduce((a,l)=>a+l.amt,0);
+        const g=group(ls,l=>l.cat,l=>({name:l.cat,ords:new Set(),pk:new Set(),sk:new Set(),q:0,amt:0}),(x,l)=>{x.ords.add(l.o.id);x.pk.add(l.pk);x.sk.add(l.sk);x.q+=l.q;x.amt+=l.amt});
+        const rows=g.filter(x=>match(x.name)).sort((a,b)=>b.amt-a.amt).map(x=>({data:[x.name,x.ords.size,x.pk.size,x.sk.size,x.q,x.amt,tot?Math.round(x.amt/tot*1000)/10:0],
+          show:[esc(x.name),fmt(x.ords.size),fmt(x.pk.size),fmt(x.sk.size),fmt(x.q),short(x.amt),(tot?(x.amt/tot*100).toFixed(1):"0")+"%"+S.bar(tot?x.amt/tot*100:0)]}));
+        return {title:"Category-wise sales · "+range,head:["Category","Times (POs)","Parties","SKUs","Qty","Amount","Share"],num:[1,2,3,4,5],rows,sum:[4,5],note:"Category comes from SKU Master."};
+      }
+      if(tab==="psku"){
+        const rows=pairs(ls).filter(x=>match(x.party+" "+x.sku+" "+x.cat)).sort((a,b)=>a.party.localeCompare(b.party)||b.q-a.q).map(x=>({
+          data:[x.party,x.sku,x.cat,x.times,x.q,x.amt,x.first,x.last,x.ago,x.gap==null?"":x.gap],
+          show:[esc(x.party),esc(x.sku),esc(x.cat),fmt(x.times),fmt(x.q),short(x.amt),S.shortDate(x.first),S.shortDate(x.last),ageTag(x.ago),x.gap==null?"—":"every "+x.gap+" d"]}));
+        return {title:(partyPick()?el("party").value.trim():"Party × SKU")+" · "+range,head:["Party","SKU","Category","Times","Qty","Amount","First Buy","Last Buy","Days Ago","Usual Gap"],num:[3,4,5],rows,sum:[3,4,5],
+          note:"Usual gap = on average how many days between two buys of this SKU by this party."};
+      }
+      const tools=[["all","All"],["never","Never bought"],["days","Not in "+gapDays+"+ days"]].map(([k,l])=>'<button type="button" class="erp-pill'+(gapMode===k?" active":"")+'" data-gap="'+k+'">'+esc(l)+"</button>").join("")+
+        '<label for="gapDays" style="font-size:12px;font-weight:600">Days</label><input id="gapDays" class="sl-in" type="number" min="1" max="365" value="'+gapDays+'">';
+      if(tab==="stop"){
+        const rows=pairs(ls).filter(x=>x.times>=3&&x.gap!=null&&x.ago>=Math.max(7,x.gap*2)&&x.ago>=Math.min(gapDays,x.gap*2)&&match(x.party+" "+x.sku+" "+x.sm)).sort((a,b)=>b.amt-a.amt).map(x=>({attr:' data-party="'+esc(x.party)+'"',
+          data:[x.party,x.sm,x.sku,x.times,x.gap,x.last,x.ago,Math.round(x.ago/Math.max(1,x.gap)*10)/10,x.amt],
+          show:[esc(x.party),esc(x.sm),esc(x.sku),fmt(x.times),"every "+x.gap+" d",S.shortDate(x.last),ageTag(x.ago),'<b style="color:var(--erp-red)">'+(x.ago/Math.max(1,x.gap)).toFixed(1)+"× late</b>",short(x.amt)]}));
+        return {title:"Regular parties that stopped an SKU",tools:'<label for="gapDays" style="font-size:12px;font-weight:600">At least</label><input id="gapDays" class="sl-in" type="number" min="1" max="365" value="'+gapDays+'"><span style="font-size:12px">days</span>',
+          head:["Party","Salesman","SKU","Times Bought","Usual Gap","Last Buy","Days Ago","Late","Amount Before"],num:[3,8],rows,
+          note:"Regular = bought this SKU 3+ times in these dates. Shown when the days since the last buy are at least 2× its usual gap (and the days above). Use a longer From date (90–180 days) for a better picture."};
+      }
+      // Not Buying: active parties × SKUs that sold to anyone in these dates.
+      const sold=group(lines.filter(l=>skuOk(l)),l=>l.sk,l=>({sk:l.sk,sku:l.sku,cat:l.cat,pk:new Set()}),(x,l)=>x.pk.add(l.pk)).sort((a,b)=>b.pk.size-a.pk.size);
+      const last=new Map(),times=new Map();
+      for(const x of pairs(lines.filter(l=>skuOk(l)))){last.set(x.pk+"|"+x.sk,x.last);times.set(x.pk+"|"+x.sk,x.times)}
+      const st=(pk,sk)=>{const d=last.get(pk+"|"+sk);if(!d)return "never";return since(d)>=gapDays?"days":"ok"};
+      const want=s=>gapMode==="all"?s!=="ok":s===gapMode;
+      if(partyPick()){
+        const pk=partyPick();
+        const rows=sold.map(s=>({s,st:st(pk,s.sk),d:last.get(pk+"|"+s.sk)})).filter(x=>want(x.st)&&match(x.s.sku+" "+x.s.cat)).map(({s,st:t,d})=>({
+          data:[s.sku,s.cat,t==="never"?"Never bought":"Not in "+gapDays+"+ days",d||"",d?since(d):"",times.get(pk+"|"+s.sk)||0,s.pk.size],
+          show:[esc(s.sku),esc(s.cat),t==="never"?'<span class="pb-chip never">Never bought</span>':'<span class="pb-chip gap">Not in '+gapDays+'+ days</span>',S.shortDate(d),d?ageTag(since(d)):"—",fmt(times.get(pk+"|"+s.sk)||0),fmt(s.pk.size)]}));
+        return {title:"Not buying · "+el("party").value.trim(),tools,head:["SKU","Category","Status","Last Buy","Days Ago","Times Bought","Other Parties Buying"],num:[5,6],rows,
+          note:"SKUs that sold to at least one party in these dates. Top rows are bought by the most parties, so they are the easiest to push to this party."};
+      }
+      const rows=[];
+      for(const p of P()){
+        const pk=key(p.customer_name);if(!match(p.customer_name+" "+(p.salesman_name||"")))continue;
+        const miss=sold.map(s=>({s,t:st(pk,s.sk)})).filter(x=>want(x.t));if(!miss.length)continue;
+        const nev=miss.filter(x=>x.t==="never").length,gp=miss.length-nev,bought=sold.length-sold.filter(s=>st(pk,s.sk)==="never").length;
+        const chips=miss.slice(0,8).map(x=>'<span class="pb-chip '+(x.t==="never"?"never":"gap")+'">'+esc(x.s.sku)+"</span>").join("")+(miss.length>8?'<span class="pb-chip">+'+(miss.length-8)+" more</span>":"");
+        rows.push({attr:' data-party="'+esc(p.customer_name)+'"',miss:miss.length,
+          data:[p.customer_name,p.salesman_name||"Office",p.last_order_date||"",bought,nev,gp,miss.map(x=>x.s.sku).join(", ")],
+          show:[esc(p.customer_name),esc(p.salesman_name||"Office"),ageTag(since(p.last_order_date)),fmt(bought)+" / "+fmt(sold.length),fmt(nev),fmt(gp),chips]});
+      }
+      rows.sort((a,b)=>b.miss-a.miss);
+      return {title:"SKUs each party is not buying",tools,head:["Party","Salesman","Last Order","SKUs Bought","Never","Not in "+gapDays+"+ d","Not buying (most-sold first)"],num:[4,5],rows,wide:[6],
+        note:"Red = never bought in these dates, orange = bought before but not in "+gapDays+"+ days. Only SKUs that sold to someone in these dates. Tap a party for its full list."};
+    }
+
+    // Table: header labels repeat on phone cards (sl-stack), no side scroll.
+    function table(v){
+      const c=i=>[(v.num||[]).includes(i)?"num":"",i===0?"sl-first":"",(v.wide||[]).includes(i)?"sl-wide":""].filter(Boolean).join(" ");
+      let h='<table class="erp-table sl-stack"><thead><tr>'+v.head.map((x,i)=>'<th class="'+c(i)+'">'+esc(x)+"</th>").join("")+"</tr></thead><tbody>";
+      for(const r of v.rows)h+="<tr"+(r.attr||"")+">"+r.show.map((x,i)=>'<td class="'+c(i)+'" data-label="'+esc(v.head[i])+'">'+x+"</td>").join("")+"</tr>";
+      h+="</tbody>";
+      if(v.sum&&v.rows.length)h+="<tfoot><tr>"+v.head.map((x,i)=>'<td class="'+c(i)+'" data-label="'+esc(x)+'">'+(i===0?"Total":v.sum.includes(i)?(/Amount/.test(x)?short:fmt)(v.rows.reduce((a,r)=>a+num(r.data[i]),0)):"")+"</td>").join("")+"</tr></tfoot>";
+      return h+"</table>";
+    }
+    let current=null;
+    function render(){
+      el("tabs").innerHTML=TABS.map(([id,l])=>'<button type="button" class="erp-pill'+(id===tab?" active":"")+'" data-tab="'+id+'">'+esc(l)+"</button>").join("");
+      if(err){el("kpis").innerHTML="";el("box").innerHTML='<div class="sl-msg">Could not load: '+esc(err)+"</div>";el("tabTitle").textContent="";el("tabTools").innerHTML="";return}
+      renderKpis();
+      const v=view();current=v;
+      el("tabTitle").textContent=v.title;
+      el("tabTools").innerHTML=(partyPick()?'<span class="pb-party">'+esc(el("party").value.trim())+'<button type="button" id="clearParty" aria-label="Clear party">×</button></span>':"")+(v.tools||"");
+      el("note").textContent=v.note||"";
+      el("box").innerHTML=v.rows.length?table(v):'<div class="erp-empty">Nothing to show for these filters.</div>';
+    }
+    function renderKpis(){
+      const ls=L(),pk=new Set(ls.map(l=>l.pk)),sk=new Set(ls.map(l=>l.sk)),ords=new Set(ls.map(l=>l.o.id)),nP=P().length;
+      const stop=pairs(ls).filter(x=>x.times>=3&&x.gap!=null&&x.ago>=Math.max(7,x.gap*2)&&x.ago>=Math.min(gapDays,x.gap*2)).length;
+      const k=[["green","Parties Bought",fmt(pk.size),"of "+fmt(nP)+" active · "+fmt(Math.max(0,nP-pk.size))+" bought nothing"],
+        ["blue","SKUs Sold",fmt(sk.size),fmt(ords.size)+" POs"],
+        ["","Qty · Amount",fmt(ls.reduce((a,l)=>a+l.q,0)),short(ls.reduce((a,l)=>a+l.amt,0))],
+        [stop?"red":"","Stopped Buying",fmt(stop),"regular party + SKU, 2× late"]];
+      el("kpis").innerHTML=k.map(x=>'<div class="sl-kpi '+x[0]+'"><span>'+esc(x[1])+"</span><b>"+x[2]+"</b><small>"+x[3]+"</small></div>").join("");
+    }
+    async function exportExcel(){
+      try{
+        if(err)return;
+        const keep=tab,sheets=[];
+        for(const [id,l] of TABS){tab=id;const v=view();sheets.push({name:l.replace("×","x"),title:"LUXURY WRIST BRAND — "+v.title+" — "+el("from").value+" to "+el("to").value,head:v.head,rows:v.rows.map(r=>r.data)})}
+        tab=keep;
+        await S.excel("Party-Buying-"+el("from").value+"-to-"+el("to").value,sheets);
+      }catch(e){await alert("Excel export failed: "+e.message)}
+    }
+    function setParty(name){el("party").value=name;if(tab==="party"||tab==="stop")tab="psku";render()}
+
+    (async()=>{
+      const me=await S.start(["admin","manager"]);if(!me)return;
+      const t=today();el("to").value=t;el("from").value=S.isoDay(new Date(Date.now()-89*864e5));
+      try{const x=localStorage.getItem("lwb_party_buying_tab");if(TABS.some(y=>y[0]===x))tab=x}catch(e){}
+      const qs=new URLSearchParams(location.search);if(TABS.some(y=>y[0]===qs.get("tab")))tab=qs.get("tab");if(qs.get("party"))el("party").value=qs.get("party");
+      document.addEventListener("click",e=>{
+        const b=e.target.closest("[data-tab]");if(b){tab=b.dataset.tab;try{localStorage.setItem("lwb_party_buying_tab",tab)}catch(x){}render();return}
+        const g=e.target.closest("[data-gap]");if(g){gapMode=g.dataset.gap;render();return}
+        if(e.target.id==="clearParty"){el("party").value="";render();return}
+        const r=e.target.closest("tr[data-party]");if(r&&!partyPick())setParty(r.dataset.party);
+      });
+      document.addEventListener("change",e=>{if(e.target.id==="gapDays"){gapDays=Math.max(1,Math.min(365,Math.round(num(e.target.value))||30));render()}});
+      el("q").addEventListener("input",render);el("party").addEventListener("change",render);el("party").addEventListener("search",render);
+      el("cat").addEventListener("change",render);el("sm").addEventListener("change",render);
+      el("refresh").onclick=loadAll;el("excel").onclick=exportExcel;
+      el("from").addEventListener("change",loadAll);el("to").addEventListener("change",loadAll);el("basis").addEventListener("change",loadAll);
+      el("loading").hidden=true;el("page").hidden=false;
+      if(window.LWBBrand)try{BB=await LWBBrand.mount(client,{into:"#page .erp-pagehead",after:true,onChange:render})}catch(e){}
+      await loadAll();
+    })();
+  </script>
+</body>
+</html>
