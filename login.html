@@ -113,7 +113,22 @@
     .link-btn:hover{background:none;color:var(--teal)}
     /* Fingerprint / face / phone PIN unlock (quick-unlock.js) */
     .unlock-ic{display:block;width:74px;height:74px;margin:2px auto 14px;padding:16px;border-radius:50%;background:#f7efda;color:var(--gold-dk)}
-    #lockNote,#offerNote{text-align:center}
+    #lockNote,#offerNote,#mpinNote{text-align:center}
+    /* MPIN pad (bank-app style) */
+    .pin-dots{display:flex;justify-content:center;gap:16px;margin:4px 0 16px}
+    .pin-dots i{width:15px;height:15px;border-radius:50%;border:2px solid var(--teal);transition:background .12s}
+    .pin-dots i.on{background:var(--teal)}
+    .pin-dots.bad i{border-color:#c62828}.pin-dots.bad i.on{background:#c62828}
+    .pin-dots.bad{animation:pinShake .35s}
+    @keyframes pinShake{25%{transform:translateX(-8px)}75%{transform:translateX(8px)}}
+    .pin-pad{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;max-width:270px;margin:0 auto}
+    .pin-pad button{height:50px;border-radius:12px;background:#f6f3ea;color:var(--teal);font:600 22px Montserrat,"Segoe UI",Arial,sans-serif;letter-spacing:0;box-shadow:none}
+    .pin-pad button:hover{background:#ecdcb0}
+    .pin-pad button.ic{display:flex;align-items:center;justify-content:center;background:none;font-size:20px}
+    .pin-pad button.ic svg{width:30px;height:30px;color:var(--gold-dk)}
+    .pin-pad button.ic:hover{background:#f7efda}
+    .login-box:has(#lockForm:not([hidden])) .subtitle,.login-box:has(#mpinForm:not([hidden])) .subtitle{display:none}
+    .login-box:has(#lockForm:not([hidden])) h2,.login-box:has(#mpinForm:not([hidden])) h2{margin-bottom:14px}
     #unlockButton,#offerOn{background:linear-gradient(135deg,var(--teal),var(--teal-2));box-shadow:0 10px 22px rgba(0,46,54,.22)}
     #unlockButton:hover,#offerOn:hover{background:var(--gold);color:var(--teal)}
     .footer{text-align:center;margin-top:14px;font-size:11px;letter-spacing:.4px;color:#9aa1a3}
@@ -257,12 +272,23 @@
     <button type="submit" id="otpButton">Verify OTP</button>
     <button type="button" class="secondary" id="otpBack">Back to Login</button>
   </form>
-  <!-- ERP locked after 15 idle minutes (quick-unlock.js): open with fingerprint / face / phone PIN. -->
+  <!-- ERP locked (Logout or 15 idle minutes, quick-unlock.js): open with MPIN and / or fingerprint. -->
   <form id="lockForm" hidden>
-    <svg class="unlock-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><path d="M12 11v3a8 8 0 0 1-1.5 4.7"/><path d="M8.5 10.5a3.5 3.5 0 0 1 7 0V13a12 12 0 0 1-.6 3.8"/><path d="M5.6 15.5A11 11 0 0 0 6 13v-2.5a6 6 0 0 1 9.6-4.8"/><path d="M18 9a6 6 0 0 1 .1 1.5V13c0 2.2-.4 4.2-1.2 6"/><path d="M8.8 20a14 14 0 0 0 .7-2.4"/><path d="M4 12.5v-2a8 8 0 0 1 1.3-4.4"/></svg>
-    <p class="form-note" id="lockNote">ERP is locked after 15 minutes without work. Open it with your fingerprint, face or phone PIN.</p>
+    <span id="lockFpIc"><svg class="unlock-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><path d="M12 11v3a8 8 0 0 1-1.5 4.7"/><path d="M8.5 10.5a3.5 3.5 0 0 1 7 0V13a12 12 0 0 1-.6 3.8"/><path d="M5.6 15.5A11 11 0 0 0 6 13v-2.5a6 6 0 0 1 9.6-4.8"/><path d="M18 9a6 6 0 0 1 .1 1.5V13c0 2.2-.4 4.2-1.2 6"/><path d="M8.8 20a14 14 0 0 0 .7-2.4"/><path d="M4 12.5v-2a8 8 0 0 1 1.3-4.4"/></svg></span>
+    <p class="form-note" id="lockNote">ERP is locked. Open it with your MPIN or fingerprint.</p>
+    <div id="lockPinBox" hidden>
+      <div class="pin-dots" id="lockDots" aria-live="polite"><i></i><i></i><i></i><i></i></div>
+      <div class="pin-pad" id="lockPad"></div>
+    </div>
     <button type="submit" id="unlockButton">Unlock</button>
-    <button type="button" class="secondary" id="lockPassword">Login with password instead</button>
+    <button type="button" class="link-btn" id="lockPassword">Login with password instead</button>
+  </form>
+  <!-- After a full login: set a 4-digit MPIN for this phone (lwb_mpin_setup.sql). -->
+  <form id="mpinForm" hidden>
+    <p class="form-note" id="mpinNote"><b>Set a 4-digit MPIN</b><br>Next time open the ERP with this MPIN, without password and OTP.</p>
+    <div class="pin-dots" id="setDots" aria-live="polite"><i></i><i></i><i></i><i></i></div>
+    <div class="pin-pad" id="setPad"></div>
+    <button type="button" class="link-btn" id="mpinSkip">Skip for now</button>
   </form>
   <!-- After a full login: offer fingerprint unlock on this phone. -->
   <form id="offerForm" hidden>
@@ -341,7 +367,7 @@ async function checkProfile(user){
 // Authenticator app (Supabase MFA, "aal2"). The first time, the user scans a QR.
 let otpFactorId=null,otpUser=null;
 function showOtpForm(setup){
-  el("loginForm").hidden=el("lockForm").hidden=el("offerForm").hidden=true;el("otpForm").hidden=false;
+  el("loginForm").hidden=el("lockForm").hidden=el("offerForm").hidden=el("mpinForm").hidden=true;el("otpForm").hidden=false;
   el("otpSetup").hidden=!setup;
   el("otpNote").textContent=setup?"First time: scan the QR code to set up OTP. From next time, only the app code is needed."
     :"Open the Google Authenticator app and enter the 6-digit code for LWB ERP.";
@@ -379,9 +405,69 @@ async function goToErp(user){
   window.location.assign(back);
 }
 
-// ---- Fingerprint / face / phone PIN unlock (quick-unlock.js) ----
+// ---- Quick unlock: MPIN (lwb_mpin_setup.sql) and fingerprint / face / phone PIN (quick-unlock.js) ----
 let unlockBack=null,lockUser=null;
+const FP_SVG='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><path d="M12 11v3a8 8 0 0 1-1.5 4.7"/><path d="M8.5 10.5a3.5 3.5 0 0 1 7 0V13a12 12 0 0 1-.6 3.8"/><path d="M5.6 15.5A11 11 0 0 0 6 13v-2.5a6 6 0 0 1 9.6-4.8"/><path d="M18 9a6 6 0 0 1 .1 1.5V13c0 2.2-.4 4.2-1.2 6"/><path d="M8.8 20a14 14 0 0 0 .7-2.4"/><path d="M4 12.5v-2a8 8 0 0 1 1.3-4.4"/></svg>';
+// 3 x 4 number pad: 1-9, [fingerprint], 0, [delete]. onDone gets the 4 digits.
+function makePad(padId,dotsId,form,onDone){
+  const pad=el(padId),dots=[...el(dotsId).children];let pin="",fpFn=null;
+  const draw=()=>dots.forEach((d,k)=>d.classList.toggle("on",k<pin.length));
+  const key=(label,fn,cls,aria)=>{const b=document.createElement("button");b.type="button";if(cls)b.className=cls;b.innerHTML=label;if(aria)b.setAttribute("aria-label",aria);b.onclick=fn;pad.appendChild(b);return b};
+  const press=d=>{if(busy||pin.length>=4)return;el(dotsId).classList.remove("bad");pin+=d;draw();if(pin.length===4){const p=pin;setTimeout(()=>onDone(p),120)}};
+  const back=()=>{if(busy)return;pin=pin.slice(0,-1);draw()};
+  for(const d of "123456789")key(d,()=>press(d));
+  const fp=key(FP_SVG,()=>fpFn&&fpFn(),"ic","Fingerprint");
+  key("0",()=>press("0"));
+  key("&#9003;",back,"ic","Delete");
+  document.addEventListener("keydown",e=>{
+    if(el(form).hidden||e.target.tagName==="INPUT")return;
+    if(/^[0-9]$/.test(e.key)){e.preventDefault();press(e.key)}
+    else if(e.key==="Backspace"){e.preventDefault();back()}
+  });
+  return {
+    clear(bad){pin="";draw();if(bad){const b=el(dotsId);b.classList.remove("bad");void b.offsetWidth;b.classList.add("bad")}},
+    fingerprint(fn){fpFn=fn;fp.style.visibility=fn?"visible":"hidden"}
+  };
+}
+const lockPad=makePad("lockPad","lockDots","lockForm",pin=>mpinUnlock(pin));
+const setPad=makePad("setPad","setDots","mpinForm",pin=>mpinStep(pin));
+setPad.fingerprint(null);
+
+// After a full login: first the MPIN, then the fingerprint (each only once, "Skip" asks again after 30 days).
 async function offerUnlock(user){
+  await offerMpin(user);
+  await offerFingerprint(user);
+}
+let mpinFirst="",mpinDone=null,mpinUser=null;
+async function offerMpin(user){
+  // The database answers whether this phone still has an MPIN (Admin may have reset it). No answer
+  // means lwb_mpin_setup.sql is not run yet: then no MPIN offer at all.
+  let has;try{const r=await client.rpc("lwb_mpin_status",{p_device:LWBUnlock.device()});if(r.error)return;has=r.data===true}catch(e){return}
+  if(has){if(!LWBUnlock.mpinOn(user.id))localStorage.setItem("lwbMpin",JSON.stringify({uid:user.id,at:Date.now()}));return}
+  if(LWBUnlock.mpinOn(user.id))localStorage.removeItem("lwbMpin");
+  if(LWBUnlock.mpinDeclined(user.id))return;
+  mpinUser=user;mpinFirst="";setPad.clear();mpinText(1);showOnly("mpinForm");showMessage("");
+  return new Promise(done=>{mpinDone=done;el("mpinSkip").onclick=()=>{LWBUnlock.mpinNotNow(user.id);mpinDone=null;done()}});
+}
+function mpinText(step){
+  el("mpinNote").innerHTML=step===1?"<b>Set a 4-digit MPIN</b><br>Next time open the ERP with this MPIN, without password and OTP."
+    :"<b>Enter the same MPIN again</b><br>To confirm your new MPIN.";
+}
+async function mpinStep(pin){
+  if(!mpinFirst){
+    if(LWBUnlock.mpinWeak(pin)){setPad.clear(true);showMessage("This MPIN is too easy (like 1111 or 1234). Choose another.",true);return}
+    mpinFirst=pin;setPad.clear();mpinText(2);showMessage("");return;
+  }
+  if(pin!==mpinFirst){mpinFirst="";setPad.clear(true);mpinText(1);showMessage("Both MPINs did not match. Set it again.",true);return}
+  busy=true;showMessage("Saving MPIN...");
+  try{
+    await LWBUnlock.mpinSet(client,mpinUser.id,pin);
+    showMessage("MPIN is set for this phone.");
+    const d=mpinDone;mpinDone=null;d&&d();
+  }catch(e){mpinFirst="";setPad.clear(true);mpinText(1);showMessage(e.message||String(e),true)}
+  finally{busy=false}
+}
+async function offerFingerprint(user){
   try{if(LWBUnlock.isOn(user.id)||LWBUnlock.declined(user.id)||!(await LWBUnlock.supported()))return;}catch(e){return}
   showOnly("offerForm");showMessage("");
   return new Promise(done=>{
@@ -397,32 +483,64 @@ async function offerUnlock(user){
     el("offerNo").onclick=()=>{LWBUnlock.notNow(user.id);done();};
   });
 }
+
 function showLock(user,why){
   lockUser=user;showOnly("lockForm");showMessage("");
+  const pin=LWBUnlock.mpinOn(user.id),fp=LWBUnlock.isOn(user.id);
   const who=user.email&&!/@staff\.lwb-erp\.in$/i.test(user.email)?user.email:"";
-  el("lockNote").textContent=(why==="logout"?"Logged out on this phone.":"ERP is locked after 15 minutes without work.")+" Open it with your fingerprint, face or phone PIN."+(who?" Login: "+who:"");
-  tryUnlock(true);
+  const how=pin&&fp?"Enter your MPIN or use fingerprint.":pin?"Enter your 4-digit MPIN.":"Open it with your fingerprint, face or phone PIN.";
+  el("lockNote").innerHTML=(why==="logout"?"Logged out on this phone. ":"ERP is locked. ")+"<b>"+how+"</b>"+(who?"<br>Login: "+who.replace(/[<>&"]/g,""):"");
+  el("lockPinBox").hidden=!pin;
+  el("lockFpIc").hidden=pin;
+  el("unlockButton").hidden=pin;
+  el("lockPassword").textContent=pin?"Forgot MPIN? Login with password":"Login with password instead";
+  lockPad.clear();lockPad.fingerprint(fp?()=>tryUnlock(false):null);
+  if(fp)tryUnlock(true);
+}
+// The phone or the MPIN said yes: check the login is still valid, then the usual role / OTP checks.
+async function openAfterUnlock(){
+  const r=await client.auth.getUser();
+  if(r.error||!r.data?.user||r.data.user.id!==lockUser.id){
+    try{await client.auth.signOut({scope:"local"})}catch(e){}
+    LWBUnlock.unlock();unlockBack=lockUser=null;showOnly("loginForm");
+    throw Error("Your login has ended. Please log in again with your password.");
+  }
+  await finishAuthorizedLogin(r.data.user);
 }
 async function tryUnlock(auto){
   if(busy||!lockUser)return;
   busy=true;el("unlockButton").disabled=true;el("unlockButton").textContent="Checking...";
   try{
     await LWBUnlock.verify(lockUser.id);
-    // The phone said yes: check the login is still valid, then the usual role / OTP checks.
-    const r=await client.auth.getUser();
-    if(r.error||!r.data?.user||r.data.user.id!==lockUser.id){
-      try{await client.auth.signOut({scope:"local"})}catch(e){}
-      LWBUnlock.unlock();unlockBack=lockUser=null;showOnly("loginForm");
-      throw Error("Your login has ended. Please log in again with your password.");
-    }
-    await finishAuthorizedLogin(r.data.user);
+    await openAfterUnlock();
   }catch(e){
     if(!(auto&&e&&e.name==="NotAllowedError"))
       showMessage(e&&e.name==="NotAllowedError"?"Fingerprint was cancelled. Tap Unlock to try again.":(e&&e.message)||String(e),true);
   }finally{busy=false;el("unlockButton").disabled=false;el("unlockButton").textContent="Unlock";}
 }
+async function mpinUnlock(pin){
+  if(busy||!lockUser)return;
+  busy=true;showMessage("Checking MPIN...");
+  try{
+    const r=await LWBUnlock.mpinVerify(client,lockUser.id,pin);
+    if(r.ok){showMessage("");await openAfterUnlock();return}
+    lockPad.clear(true);
+    if(r.blocked){
+      try{await client.auth.signOut({scope:"local"})}catch(e){}
+      LWBUnlock.unlock();unlockBack=lockUser=null;showOnly("loginForm");
+      showMessage("MPIN is blocked (5 wrong tries, or reset by Admin). Please log in with your password and set a new MPIN.",true);
+      return;
+    }
+    showMessage("Wrong MPIN. "+r.left+(r.left===1?" try":" tries")+" left.",true);
+  }catch(e){lockPad.clear(true);showMessage(e.message||String(e),true)}
+  finally{busy=false}
+}
 el("lockForm").addEventListener("submit",event=>{event.preventDefault();tryUnlock(false)});
-el("lockPassword").addEventListener("click",()=>{LWBUnlock.unlock();unlockBack=lockUser=null;el("otpBack").click()});
+// "Forgot MPIN?": the MPIN of this phone is removed; after the password + OTP login a new one is set.
+el("lockPassword").addEventListener("click",async()=>{
+  if(lockUser&&LWBUnlock.mpinOn(lockUser.id))await LWBUnlock.mpinOff(client);
+  LWBUnlock.unlock();unlockBack=lockUser=null;el("otpBack").click();
+});
 async function finishAuthorizedLogin(user){
   await checkProfile(user);
   const aal=await client.auth.mfa.getAuthenticatorAssuranceLevel();
@@ -467,7 +585,7 @@ function resendCountdown(seconds){
   tick();waTimer=setInterval(tick,1000);
 }
 function showWaForm(r){
-  el("loginForm").hidden=el("lockForm").hidden=el("offerForm").hidden=true;el("otpForm").hidden=true;el("waForm").hidden=false;
+  el("loginForm").hidden=el("lockForm").hidden=el("offerForm").hidden=el("mpinForm").hidden=true;el("otpForm").hidden=true;el("waForm").hidden=false;
   if(r.error){showMessage(r.error,true);el("waNote").textContent="WhatsApp OTP could not be sent. Tap Resend, or verify with the Authenticator app.";}
   else{
     el("waNote").textContent=(r.sent?"OTP sent on WhatsApp to ":"OTP already sent to ")+(r.to||"your Login Mobile")+". Enter the code within 5 minutes.";
@@ -513,7 +631,7 @@ async function checkExistingLogin(){
   const uid=data.session.user.id;
   let last=0;try{last=Number(localStorage.getItem("lwbLastActive"))||0}catch(e){}
   const idle=!!(last&&Date.now()-last>15*60e3);
-  if((lk||idle)&&LWBUnlock.isOn(uid)){
+  if((lk||idle)&&LWBUnlock.canLock(uid)){
     unlockBack=lk&&lk.uid===uid?LWBUnlock.safeBack(lk.back):"dashboard.html";
     if(!lk||lk.uid!==uid)LWBUnlock.lock(uid,unlockBack);
     try{localStorage.removeItem("lwbLastActive")}catch(e){}
@@ -577,7 +695,7 @@ el("otpForm").addEventListener("submit",async event=>{
 el("otpBack").addEventListener("click",async()=>{
   try{await client.auth.signOut({scope:"local"})}catch(e){}
   otpFactorId=otpUser=fpVerified=unlockBack=lockUser=null;clearInterval(waTimer);clearInterval(fpTimer);LWBUnlock.unlock();
-  ["otpForm","waForm","fpForm","fpCodeForm","lockForm","offerForm"].forEach(id=>el(id).hidden=true);
+  ["otpForm","waForm","fpForm","fpCodeForm","lockForm","offerForm","mpinForm"].forEach(id=>el(id).hidden=true);
   el("loginForm").hidden=false;el("password").value="";showMessage("");
 });
 
@@ -594,7 +712,7 @@ function fpCountdown(seconds){
   tick();fpTimer=setInterval(tick,1000);
 }
 function showOnly(id){
-  ["loginForm","otpForm","waForm","fpForm","fpCodeForm","lockForm","offerForm"].forEach(f=>el(f).hidden=f!==id);
+  ["loginForm","otpForm","waForm","fpForm","fpCodeForm","lockForm","offerForm","mpinForm"].forEach(f=>el(f).hidden=f!==id);
 }
 async function sendResetCode(email){
   const {error}=await client.auth.resetPasswordForEmail(email);

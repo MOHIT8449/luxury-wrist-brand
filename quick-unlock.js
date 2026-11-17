@@ -19,10 +19,17 @@
      lwbUnlock  {uid, cred, at}   quick unlock is on for this user on this phone
      lwbUnlockNo {uid, at}        user said "Not now" (asked again after 30 days)
      lwbLocked  {uid, back, at}   ERP is locked; back = page to reopen after unlock
+     lwbDevice  "random id"       this phone's id for the MPIN (lwb_mpin_setup.sql)
+     lwbMpin    {uid, at}         a 4-digit MPIN is set for this user on this phone
+     lwbMpinNo  {uid, at}         user said "Skip" to the MPIN (asked again after 30 days)
+
+   MPIN (like a bank app): the MPIN itself is checked by the database (bcrypt hash, 5 wrong
+   tries remove it), never kept on the phone. Either MPIN or fingerprint keeps the ERP locked
+   instead of logged out.
 */
 (function(){
   "use strict";
-  const ON="lwbUnlock",NO="lwbUnlockNo",LOCK="lwbLocked";
+  const ON="lwbUnlock",NO="lwbUnlockNo",LOCK="lwbLocked",DEV="lwbDevice",PIN="lwbMpin",PINNO="lwbMpinNo";
   const get=k=>{try{return JSON.parse(localStorage.getItem(k)||"null")}catch(e){return null}};
   const put=(k,v)=>{try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}};
   const del=k=>{try{localStorage.removeItem(k)}catch(e){}};
@@ -46,7 +53,7 @@
     }catch(e){return false}
   }
   const isOn=uid=>{const s=get(ON);return !!(uid&&s&&s.uid===uid&&s.cred)};
-  const anyOn=()=>{const s=get(ON);return !!(s&&s.uid&&s.cred)};
+  const anyOn=()=>{const s=get(ON),p=get(PIN);return !!(s&&s.uid&&s.cred)||!!(p&&p.uid)};
   function declined(uid){const s=get(NO);return !!(s&&s.uid===uid&&Date.now()-s.at<30*864e5)}
 
   // Make the key on this phone. The phone asks for fingerprint / face / PIN once.
@@ -88,5 +95,37 @@
   const locked=()=>get(LOCK);
   function unlock(){del(LOCK)}
 
-  window.LWBUnlock={supported,isOn,anyOn,declined,enable,disable,notNow,verify,lock,locked,unlock,safeBack};
+  // ---- MPIN (lwb_mpin_setup.sql) ----
+  function device(){
+    let d="";try{d=localStorage.getItem(DEV)||""}catch(e){}
+    if(!/^[A-Za-z0-9_-]{16,64}$/.test(d)){d=b64(rand(18));try{localStorage.setItem(DEV,d)}catch(e){}}
+    return d;
+  }
+  const mpinOn=uid=>{const s=get(PIN);return !!(uid&&s&&s.uid===uid)};
+  const canLock=uid=>isOn(uid)||mpinOn(uid);
+  function mpinDeclined(uid){const s=get(PINNO);return !!(s&&s.uid===uid&&Date.now()-s.at<30*864e5)}
+  function mpinNotNow(uid){put(PINNO,{uid,at:Date.now()})}
+  // Same easy-MPIN rule as the database (all digits same, or 4 in a row up / down).
+  const mpinWeak=p=>/^(\d)\1{3}$/.test(p)||"0123456789".includes(p)||"9876543210".includes(p);
+  async function mpinSet(client,uid,pin){
+    const {error}=await client.rpc("lwb_mpin_set",{p_device:device(),p_pin:pin});
+    if(error)throw Error(/Could not find the function|does not exist/i.test(error.message)?"MPIN is not set up yet. Ask Admin to run lwb_mpin_setup.sql.":error.message);
+    put(PIN,{uid,at:Date.now()});del(PINNO);
+    return true;
+  }
+  // {ok:true} | {ok:false,left:n} | {ok:false,blocked:true}. Blocked removes the MPIN flag here too.
+  async function mpinVerify(client,uid,pin){
+    const {data,error}=await client.rpc("lwb_mpin_verify",{p_device:device(),p_pin:pin});
+    if(error)throw Error("MPIN could not be checked: "+error.message);
+    const r=data||{ok:false,blocked:true};
+    if(r.blocked)del(PIN);
+    return r;
+  }
+  async function mpinOff(client){
+    try{await client.rpc("lwb_mpin_remove",{p_device:device()})}catch(e){}
+    del(PIN);
+  }
+
+  window.LWBUnlock={supported,isOn,anyOn,declined,enable,disable,notNow,verify,lock,locked,unlock,safeBack,
+    device,mpinOn,canLock,mpinDeclined,mpinNotNow,mpinWeak,mpinSet,mpinVerify,mpinOff};
 })();
