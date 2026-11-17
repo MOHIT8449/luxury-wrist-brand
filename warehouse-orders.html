@@ -1046,6 +1046,29 @@
     .bill-info {background:#f6f7f9;border-radius:8px;padding:10px 12px;font-size:13px;line-height:1.5;margin-bottom:12px}
     .bill-form {display:grid;gap:10px}
     .bill-form[hidden] {display:none}
+    /* Pallet / Sheet given + returned on a PO (lwb_order_sp_return_setup.sql) */
+    .sp-b {display:inline-block;margin:2px 0 0 4px;padding:0 5px;border-radius:5px;background:#e6f0ff;color:#1d4ed8;font-size:10.5px;font-weight:800;vertical-align:middle;white-space:nowrap}
+    .sp-b.due {background:#fde8e8;color:#b91c1c}
+    .sp-b.ok {background:#dcfce7;color:#166534}
+    .track-modal .sp-card {width:min(440px,100%)}
+    .sp-card .modal-body {padding:12px 14px}
+    .sp-grid {display:grid;grid-template-columns:auto 1fr 1fr;gap:6px 8px;align-items:center}
+    .sp-grid .hd {font-size:11px;font-weight:700;color:#6b7a80;text-transform:uppercase;text-align:center}
+    .sp-grid .rl {font-size:13px;font-weight:700;color:#24363a;white-space:nowrap}
+    .sp-grid .rl small {display:block;font-weight:500;color:#7b8a8f;font-size:11px}
+    .sp-grid input {font:inherit;font-size:16px;font-weight:700;text-align:center;padding:7px 4px;border:1px solid #cfd6dc;border-radius:8px;width:100%;box-sizing:border-box;min-width:0}
+    .sp-grid input:disabled {background:#f3f4f6;color:#6b7280}
+    .sp-grid input::-webkit-outer-spin-button,.sp-grid input::-webkit-inner-spin-button {-webkit-appearance:none;margin:0}
+    .sp-grid input[type=number] {-moz-appearance:textfield}
+    .sp-left {margin-top:10px;padding:8px 10px;border-radius:8px;background:#f6f7f9;font-size:13px;display:grid;grid-template-columns:1fr auto auto;gap:4px 12px;align-items:center}
+    .sp-left b.n {font-size:15px;text-align:right;white-space:nowrap}
+    .sp-left .due {color:#b91c1c} .sp-left .ok {color:#166534}
+    .sp-left small {color:#6b7a80}
+    .sp-card .modal-footer {display:flex;gap:8px;justify-content:flex-end;flex-wrap:nowrap}
+    .sp-card .modal-footer .sp-link {margin-right:auto}
+    .sp-po {display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:8px 0;padding:7px 10px;border:1px solid #cfe0ff;background:#f3f7ff;border-radius:8px;font-size:13px}
+    .sp-po[hidden] {display:none}
+    .sp-po .btn {margin-left:auto;padding:5px 10px;font-size:12px}
     .bill-form label {display:grid;gap:4px;font-size:12px;font-weight:600;color:#55686c}
     .bill-form input {font:inherit;font-size:15px;padding:9px 10px;border:1px solid #cfd6dc;border-radius:8px;width:100%;box-sizing:border-box}
 
@@ -1607,6 +1630,33 @@
     </div>
   </div>
 
+  <!-- Pallet / Sheet given to the party and returned by the party, after delivery (lwb_order_sp_return_setup.sql) -->
+  <div class="modal track-modal" id="spModal" onclick="if(event.target===this)closeSp()">
+    <div class="modal-card track-card sp-card">
+      <div class="modal-header">
+        <h3 id="spTitle">Pallet / Sheet</h3>
+        <button class="close-btn" onclick="closeSp()" aria-label="Close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="sp-grid">
+          <span></span><span class="hd">Pallet</span><span class="hd">Sheet</span>
+          <span class="rl">Given to party<small>went with this PO</small></span>
+          <input id="spGP" type="number" inputmode="numeric" min="0" max="999" placeholder="0" aria-label="Pallets given">
+          <input id="spGS" type="number" inputmode="numeric" min="0" max="9999" placeholder="0" aria-label="Sheets given">
+          <span class="rl">Returned by party<small>got back from party</small></span>
+          <input id="spRP" type="number" inputmode="numeric" min="0" max="999" placeholder="0" aria-label="Pallets returned">
+          <input id="spRS" type="number" inputmode="numeric" min="0" max="9999" placeholder="0" aria-label="Sheets returned">
+        </div>
+        <div class="sp-left" id="spLeft"></div>
+      </div>
+      <div class="modal-footer">
+        <a class="btn btn-light sp-link" href="sheet-pallet.html">Ledger</a>
+        <button class="btn btn-light" onclick="closeSp()">Cancel</button>
+        <button class="btn btn-green" id="spSave" onclick="saveSp()">Save</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Coca-Cola PO with a rate below the minimum: Admin only presses Approve (lwb_cc_rate_limit_setup.sql) -->
   <div class="modal track-modal" id="rateModal" onclick="if(event.target===this)closeRateOk()">
     <div class="modal-card track-card rate-card">
@@ -1696,6 +1746,7 @@
         <ol class="po-journey" id="poJourney" aria-label="PO journey"></ol>
         <div class="adm-mark" id="poAdmMark" hidden></div>
         <div class="bc-po" id="poBillChg" hidden></div>
+        <div class="sp-po" id="poSp" hidden></div>
 
         <h4 class="section-title">SKU Verification & Modification</h4>
         <small class="warehouse-sku-hint" id="warehouseSkuHint"></small>
@@ -2098,6 +2149,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     CAN_BILL = ["accounts", "admin"].includes(role);
     IS_ADMIN = role === "admin";
     CAN_HEAD = ["admin", "manager"].includes(role);
+    CAN_SP = ["admin", "manager", "accounts", "warehouse"].includes(role);
     // Sales Head marks Loaded / Delivered too, until Admin unticks it in Manage Users > Pages (7 Nov 2026)
     CAN_MARK = IS_ADMIN || (role === "manager" && !(window.ERPShell && ERPShell.hiddenPages().includes(MARK_KEY)));
     if (VIEW_ONLY) {
@@ -3826,6 +3878,104 @@ async function saveMark() {
   finally { btn.disabled = false; }
 }
 
+/* Pallet / Sheet on a PO (Mohit, 17 Nov 2026): after delivery, write how many pallets / sheets went to the
+   party and how many the party gave back. Count only, no money. Saved on the PO and in the Sheet & Pallet
+   Ledger (lwb_set_order_sp, lwb_order_sp_return_setup.sql). Party left = all PARTY_OUT − PARTY_IN of the party. */
+const spN = v => Math.max(0, Math.round(Number(v) || 0));
+const spGiven = o => ({ p: spN(o && o.sp_pallets), s: spN(o && o.sp_sheets) });
+const spBack = o => ({ p: spN(o && o.sp_ret_pallets), s: spN(o && o.sp_ret_sheets) });
+const spText = (p, s) => [p ? p + " Pallet" : "", s ? s + " Sheet" : ""].filter(Boolean).join(" · ") || "0";
+function spButtonFor(o) {
+  return CAN_SP && !isCancelled(o) && ["loaded", "delivered"].includes(orderStage(o));
+}
+function spBadge(o) {
+  const g = spGiven(o), r = spBack(o);
+  if (!g.p && !g.s && !r.p && !r.s) return "";
+  const lp = g.p - r.p, ls = g.s - r.s;
+  const css = lp > 0 || ls > 0 ? "due" : r.p || r.s ? "ok" : "";
+  const tip = "Pallet / Sheet · given " + spText(g.p, g.s) + " · returned " + spText(r.p, r.s);
+  const txt = (g.p ? g.p + "P" : "") + (g.p && g.s ? " " : "") + (g.s ? g.s + "S" : "") + (r.p || r.s ? " ↩" + (r.p ? r.p + "P" : "") + (r.p && r.s ? " " : "") + (r.s ? r.s + "S" : "") : "");
+  return `<span class="sp-b ${css}" title="${escapeHtml(tip)}" aria-label="${escapeHtml(tip)}">▦ ${escapeHtml(txt || "0")}</span>`;
+}
+function renderSpBox(o) {
+  const box = document.getElementById("poSp");
+  if (!box) return;
+  const g = spGiven(o), r = spBack(o), any = g.p || g.s || r.p || r.s;
+  const can = o && spButtonFor(o);
+  box.hidden = !any && !can;
+  if (box.hidden) { box.innerHTML = ""; return; }
+  box.innerHTML = `<b>▦ Pallet / Sheet</b> <span>Given <b>${escapeHtml(spText(g.p, g.s))}</b></span> <span>Returned <b>${escapeHtml(spText(r.p, r.s))}</b></span>` +
+    (can ? `<button type="button" class="btn btn-light" onclick="openSp('${o.id}')">✎ ${any ? "Edit" : "Add"}</button>` : "");
+}
+let spOrder = null;
+async function openSp(id) {
+  const order = orders.find(o => String(o.id) === String(id)) || (selectedOrder && String(selectedOrder.id) === String(id) ? selectedOrder : null);
+  if (!order || !CAN_SP) return;
+  spOrder = order;
+  const g = spGiven(order), r = spBack(order), v = n => n ? String(n) : "";
+  document.getElementById("spTitle").textContent = "▦ Pallet / Sheet · " + (order.order_no || "") + " · " + (order.customer_name || "");
+  document.getElementById("spGP").value = v(g.p); document.getElementById("spGS").value = v(g.s);
+  document.getElementById("spRP").value = v(r.p); document.getElementById("spRS").value = v(r.s);
+  document.getElementById("spSave").disabled = false;
+  document.getElementById("spModal").classList.add("show");
+  ["spGP", "spGS", "spRP", "spRS"].forEach(k => { document.getElementById(k).oninput = spShowLeft; });
+  spParty = null; spShowLeft();
+  document.getElementById(g.p || g.s ? "spRP" : "spGP").focus();
+  try {
+    const { data, error } = await db.from("lwb_sp_entries").select("entry_type,pallets,sheets,order_id,source")
+      .eq("party_name", String(order.customer_name || "").trim()).in("entry_type", ["PARTY_OUT", "PARTY_IN"]);
+    if (error) throw error;
+    if (spOrder !== order) return;
+    // the rows of this PO are left out, the boxes above take their place
+    spParty = (data || []).filter(x => !(String(x.order_id) === String(order.id) && ["ORDER", "ORDER_RETURN"].includes(x.source)))
+      .reduce((t, x) => { const k = x.entry_type === "PARTY_OUT" ? 1 : -1; t.p += k * spN(x.pallets); t.s += k * spN(x.sheets); return t; }, { p: 0, s: 0 });
+  } catch (e) { spParty = false; }
+  spShowLeft();
+}
+let spParty = null;
+function spVals() {
+  const n = k => spN(document.getElementById(k).value);
+  return { gp: n("spGP"), gs: n("spGS"), rp: n("spRP"), rs: n("spRS") };
+}
+function spShowLeft() {
+  const x = spVals(), lp = x.gp - x.rp, ls = x.gs - x.rs;
+  const cls = n => n > 0 ? "due" : "ok";
+  let h = `<span>Left with party · this PO</span><b class="n ${cls(lp)}">${lp} Pallet</b><b class="n ${cls(ls)}">${ls} Sheet</b>`;
+  if (spParty) {
+    const tp = spParty.p + lp, ts = spParty.s + ls;
+    h += `<span><b>Party total left</b></span><b class="n ${cls(tp)}">${tp} Pallet</b><b class="n ${cls(ts)}">${ts} Sheet</b>`;
+  }
+  h += `<small style="grid-column:1/-1">${spParty === null ? "Loading party total…" : spParty === false ? "Party total could not load." : "Count only. Party total = all POs + Ledger entries."}</small>`;
+  document.getElementById("spLeft").innerHTML = h;
+}
+function closeSp() {
+  document.getElementById("spModal").classList.remove("show");
+  spOrder = null;
+}
+async function saveSp() {
+  const order = spOrder;
+  if (!order) return;
+  const x = spVals();
+  if (x.gp > 999 || x.rp > 999 || x.gs > 9999 || x.rs > 9999) return alert("Pallet must be 0 to 999 and Sheet 0 to 9999.");
+  const btn = document.getElementById("spSave");
+  btn.disabled = true;
+  try {
+    const { data, error } = await db.rpc("lwb_set_order_sp", { p_order_id: order.id, p_pallets: x.gp, p_sheets: x.gs, p_ret_pallets: x.rp, p_ret_sheets: x.rs });
+    if (error) throw error;
+    const nv = { sp_pallets: x.gp || null, sp_sheets: x.gs || null, sp_ret_pallets: x.rp || null, sp_ret_sheets: x.rs || null };
+    [order, orders.find(o => String(o.id) === String(order.id)), selectedOrder && String(selectedOrder.id) === String(order.id) ? selectedOrder : null]
+      .forEach(o => { if (o) Object.assign(o, nv); });
+    closeSp();
+    showMessage(order.order_no + " · Pallet / Sheet saved: given " + spText(x.gp, x.gs) + ", returned " + spText(x.rp, x.rs) + ".", "success");
+    renderOrders();
+    if (selectedOrder && String(selectedOrder.id) === String(order.id)) renderSpBox(selectedOrder);
+  } catch (e) {
+    btn.disabled = false;
+    const m = String(e.message || e);
+    alert("Could not save: " + (/lwb_set_order_sp/.test(m) ? "ask Admin, the database update is not live yet." : m));
+  }
+}
+
 /* Accounts / Admin: Tally bill no. straight from the PO list (same save as Billing & Outstanding). */
 let billOrder = null;
 async function openBill(id) {
@@ -4155,7 +4305,7 @@ function renderOrders() {
             <td class="order-no c-no">
               <input type="checkbox" class="po-sel" data-id="${order.id}" ${pickedIds.has(order.id) ? "checked" : ""}
                 onclick="event.stopPropagation()" onchange="togglePick('${order.id}', this.checked)"
-                aria-label="Select ${escapeHtml(order.order_no || "")}">${escapeHtml(order.order_no || "-")}${priorityBadge(order)}${billBadge(order)}<span class="prn-w" data-prn="${order.id}">${printBadge(order.id)}</span>
+                aria-label="Select ${escapeHtml(order.order_no || "")}">${escapeHtml(order.order_no || "-")}${priorityBadge(order)}${billBadge(order)}${spBadge(order)}<span class="prn-w" data-prn="${order.id}">${printBadge(order.id)}</span>
             </td>
 
             <td class="c-date">
@@ -4203,6 +4353,7 @@ function renderOrders() {
             <td class="c-act"><div class="act-row">
               <button class="btn btn-light btn-track" title="Track: where is this PO now" onclick="trackOrder('${order.id}')">📍<span class="lbl-long"> Track</span></button>
               ${!isCancelled(order) ? `<button class="btn btn-light btn-track" title="Copy order image for WhatsApp (no order no.). Phone: downloads it." aria-label="Copy order image" onclick="LWBPoShare.quick(db,'${order.id}')">${LWBPoShare.ICON}</button>` : ""}
+              ${spButtonFor(order) ? `<button class="btn btn-light" title="Pallet / Sheet given to party and returned" onclick="openSp('${order.id}')">▦<span class="lbl-long"> Pallet</span></button>` : ""}
               ${CAN_BILL && VIEW_ONLY && eligibleForPoPrint(order) ? `<button class="btn btn-green" title="Enter the Tally bill no." onclick="openBill('${order.id}')">🧾 Bill</button>` : ""}
               ${IS_ADMIN && rateWait.has(order.id) ? `<button class="btn btn-green" title="Rate below min: check and approve" onclick="openRateOk('${order.id}')">₹ Rate OK</button>` : ""}
               ${printAllowed(order) ? `<button class="btn btn-light" title="Print PO" onclick="printPoFromList('${order.id}')">🖨 PO</button>` : ""}
@@ -4375,6 +4526,7 @@ async function reviewOrder(orderId, transportOnly=false, quiet=false) {
   renderJourney(selectedOrder);
   renderAdminMark(selectedOrder, "poAdmMark");
   renderBillChange(selectedOrder);
+  renderSpBox(selectedOrder);
 
   renderPriorityPick();
 
@@ -5469,6 +5621,7 @@ window.addEventListener("message",e=>{
 });
 let IS_ADMIN=false; // Admin: delete orders for ever (dummy / duplicate data)
 let CAN_HEAD=false; // Admin / Sales Head: cancel or modify at any stage before delivery
+let CAN_SP=false; // Admin / Sales Head / Accounts / Godown: pallet / sheet given + returned on a PO
 let CAN_MARK=false; // Admin, and Sales Head unless Admin turned it off: mark Loaded / Delivered by hand
 const MARK_KEY="warehouse-orders.html#mark"; // in the user's hidden list = turned off (Manage Users > Pages)
 // Rate below the minimum (lwb_cc_rate_limit_setup.sql): POs waiting for Admin's rate OK, and the min rate by SKU.

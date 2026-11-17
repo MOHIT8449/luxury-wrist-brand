@@ -4,6 +4,13 @@
 **Purpose:** Continue the same ERP project from a new ChatGPT conversation without restarting or losing the agreed requirements.
 **Status:** Active development / verification. Do not assume all modules are completed or fully tested.
 
+## Pallet / Sheet after delivery: given + returned on the PO (17 Nov 2026)
+
+- Mohit: after a PO is delivered, write the pallets / sheets the party got (and gave back) from the PO list, so each party's pallet / sheet account is kept. Count only, no money.
+- SQL `lwb_order_sp_return_setup.sql` (test `tests/order-sp-return`, PGlite, 4 tests): `orders.sp_ret_pallets / sp_ret_sheets`; RPC `lwb_set_order_sp(order, pallets, sheets, ret_pallets, ret_sheets)` for Admin / Sales Head / Accounts / Godown (`lwb_sp_user`), any stage except cancelled. Given = the same `sp_pallets / sp_sheets` + ledger PARTY_OUT row (source ORDER); Returned = ledger PARTY_IN row (source ORDER_RETURN, dated the day first written). `lwb_sp_order_changed` now also keeps / removes the returned row on rename, cancel, delete.
+- `warehouse-orders.html`: "▦ Pallet" button on loaded / delivered POs (same roles) opens a small popup: Given to party / Returned by party (Pallet, Sheet), "Left with party · this PO" and "Party total left" (all ledger PARTY_OUT − PARTY_IN of the party), Ledger link, Save. Badge next to the PO no. "▦ 11P 40S ↩5P 10S" (red = some still with party, green = all back). PO popup: "▦ Pallet / Sheet · Given … Returned …" strip with Edit.
+- Checked with a mocked database at 1366 / 390 px: no side scroll, no new JS errors. Screenshots: project files `pallet-sheet-after-delivery/`.
+
 ## Total Pending Delivery: SKU-wise total (17 Nov 2026)
 
 - Mohit: in the Total Pending Delivery popup, show for each SKU the total qty of all pending orders together, and which parties need it.
