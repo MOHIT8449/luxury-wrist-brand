@@ -20,6 +20,8 @@
  // tone: act = needs you · move = dispatch · money = cash · ok = done · bad = cancel/reject · info = update
  const KIND=[
   [/^ORDER_NEW$/,"🛒","act","New order","Approve"],
+  [/^ORDER_APPROVED$/,"✅","ok","PO approved",""],
+  [/^ORDER_DISPATCHED$/,"🚚","move","Out for delivery",""],
   [/^TALLY_BILL_PENDING$/,"🧾","act","Vehicle loaded","Make bill"],
   [/^PO_APPROVED_BILL$/,"🧾","act","PO approved","Make bill"],
   [/^PO_APPROVED_LOADING$/,"📦","act","PO approved","Get ready"],
@@ -264,9 +266,10 @@
     .select("*")
     .eq("user_id",user.id).order("created_at",{ascending:false}).limit(70);
    if(error){list.replaceChildren(el("p","lwb-op-error","Notification error: "+error.message));return}
+   // Salesman: his order updates show again (17 Nov 2026); live GPS / loading-assignment bells stay hidden.
    // Driver sees no history: only the last 12 hours.
    // Team chat bells (CHAT_MSG, lwb_team_chat_setup.sql) are only for the phone push: the chat button shows them.
-   const rows=(data||[]).filter(n=>baseType(n)!=="CHAT_MSG").filter(n=>!["sales","salesman"].includes(String(role||"").trim().toLowerCase())||!(n.order_id||/^(ORDER_|PO_|TALLY_|VEHICLE_|LOADING_|DELIVERY_|SALES_RETURN|LIVE_|GPS_|TRACK)/.test(baseType(n)))).filter(n=>String(role||"").toLowerCase()!=="driver"||Date.now()-new Date(n.created_at)<12*36e5),unread=rows.filter(n=>!n.is_read).length;
+   const rows=(data||[]).filter(n=>baseType(n)!=="CHAT_MSG").filter(n=>!["sales","salesman"].includes(String(role||"").trim().toLowerCase())||!/^(LIVE_|GPS_|TRACK|LOADING_ASSIGNMENT)/.test(baseType(n))).filter(n=>String(role||"").toLowerCase()!=="driver"||Date.now()-new Date(n.created_at)<12*36e5),unread=rows.filter(n=>!n.is_read).length;
    bell.setAttribute("aria-label", "Notifications" + (unread ? ", " + unread + " unread" : ""));
    newTxt.textContent=unread?unread+" new":"";
    count.textContent=unread>99?"99+":String(unread);count.style.display=unread?"inline-block":"none";

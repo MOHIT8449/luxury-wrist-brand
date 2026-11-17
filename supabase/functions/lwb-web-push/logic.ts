@@ -33,7 +33,9 @@ export function messageFor(n,role) {
  url:safeRoute(type,n.order_id,role),tag:'lwb-'+String(n.id),user_id:n.user_id};
 }
 
+// Salesmen get their order updates (approved, out for delivery, bill, delivered, payment) since 17 Nov 2026;
+// live GPS / tracking and vehicle-loading assignment alerts stay off for them (lwb_order_updates_everyone_setup.sql).
 export function suppressSalesOrderAlert(n, role) {
  return ['sales','salesman'].includes(String(role||'').trim().toLowerCase()) &&
-  (!!n.order_id || /^(CC_)?(ORDER_|PO_|TALLY_|VEHICLE_|LOADING_|DELIVERY_|SALES_RETURN|LIVE_|GPS_|TRACK)/i.test(String(n.notification_type||'')));
+  /^(CC_)?(LIVE_|GPS_|TRACK|LOADING_ASSIGNMENT)/i.test(String(n.notification_type||''));
 }

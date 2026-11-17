@@ -4,6 +4,14 @@
 **Purpose:** Continue the same ERP project from a new ChatGPT conversation without restarting or losing the agreed requirements.
 **Status:** Active development / verification. Do not assume all modules are completed or fully tested.
 
+## Order updates for Salesman, Sales Head and Admin; "Mark delivered" counted on dashboards (17 Nov 2026)
+
+- Mohit (order-to-payment audit): the salesman, Sales Head and Admin must all hear what happens to an order, delivery too. Deliveries are marked by hand by Admin / Sales Head for now (drivers and Godown Managers not trained yet), so every screen must count "Mark delivered".
+- SQL `lwb_order_updates_everyone_setup.sql` (test `tests/order-updates`, PGlite, 5 tests): `lwb_sales_order_alert` now blocks only LIVE_ / GPS_ / TRACK / LOADING_ASSIGNMENT for salesmen (13 Nov GPS patch had dropped every order bell for them). New bells: ORDER_APPROVED and ORDER_DISPATCHED (loaded = out for delivery) to the salesman who took the PO + the party's field salesman; ORDER_DELIVERED / _PARTIAL / _NOT_DELIVERED (driver report) and ORDER_DELIVERED ("Mark delivered", trigger on `lwb_admin_order_marks`) to salesmen + Sales Head + Admin (not the person doing it). One bell per person / PO / kind (`lwb_order_tell`). Sales Head copy (CC_) skips ORDER_APPROVED / ORDER_DISPATCHED. Old unread salesman order bells from before 17 Nov marked read once. Daily Report functions (`lwb_daily_summary`, `_b`, `_list`, `_list_b`) patched in place to read `lwb_day_delivery_rows(d)` = driver reports + marks of that date; pending delivery leaves marked POs out.
+- `supabase/functions/lwb-web-push/logic.ts` + `erp-operations-notifications.js`: same salesman rule for phone push and the bell list; bell kinds "PO approved" / "Out for delivery".
+- `role-dashboard.js` Sales Head "Today's delivery" and `team-report.html` count "Mark delivered" (Accounts home and salesman My Orders already did).
+- Checked with a mocked database at 1366 / 390 px: no side scroll, no JS errors. Screenshots: project files `order-updates-everyone/`.
+
 ## PO change from Billing: note on the PO, approved qty follows, Edit while waiting (17 Nov 2026)
 
 - Mohit: the PO must say what was changed (qty less / plus per SKU, old -> new amount) and the change must show everywhere (ledger, accounts, sales, sales team); also an Edit option for a change already sent.
