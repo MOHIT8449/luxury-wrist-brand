@@ -167,14 +167,13 @@ body.show-landing table{min-width:1420px}
 .rh-dlg .rh-head{display:flex;align-items:flex-start;gap:8px}
 .rh-dlg .rh-head h3{font-size:15px;line-height:1.25;flex:1;min-width:0;overflow-wrap:anywhere}
 .rh-dlg .rh-head small{display:block;font-size:11.5px;color:#6b7686;font-weight:600;margin-top:2px}
-#rateHistDlg table{width:100%;min-width:0;border-collapse:collapse;font-size:13px}
-#rateHistDlg th{background:none;font-size:10.5px;text-transform:uppercase;color:#6b7686;text-align:left;padding:4px 6px;border-bottom:1px solid #e3e7ee}
-#rateHistDlg td{padding:6px;border-bottom:1px solid #f0f2f5;color:#5b6573;white-space:nowrap;font-size:13px}
-.rh-dlg td.r,.rh-dlg th.r{text-align:right}
-.rh-dlg td.rt b{font-size:15px;color:#12632f}
-.rh-dlg tr.first td{background:#f2faf4}
-.rh-dlg .rh-ch{font-size:11px;font-weight:700;margin-left:4px}
-.rh-dlg .rh-ch.up{color:#12632f}.rh-dlg .rh-ch.dn{color:#b3261e}
+#rateHistDlg .rh-line{display:flex;gap:6px}
+#rateHistDlg .rh-r{flex:1 1 0;min-width:0;display:grid;justify-items:center;gap:1px;padding:7px 2px;border:1px solid #e3e7ee;border-radius:8px;background:#fff}
+#rateHistDlg .rh-r b{font-size:15px;color:#1c2836;white-space:nowrap}
+#rateHistDlg .rh-r small{font-size:10.5px;color:#6b7686;white-space:nowrap}
+#rateHistDlg .rh-r.first{border-color:#12632f;background:#f2faf4}
+#rateHistDlg .rh-r.first b{color:#12632f}
+#rateHistDlg .rh-note{font-size:11px;color:#8a93a0;margin:0}
 .rh-dlg .rh-empty{font-size:13px;color:#6b7686;padding:8px 0}
 .rh-dlg .rh-x{flex:none;width:30px;height:30px;border-radius:50%;border:1px solid #d5dae2;background:#fff;font-size:15px;line-height:1;cursor:pointer;color:#3c4654}
 .rate-box input{min-width:78px}
@@ -3102,13 +3101,10 @@ async function showRateHistory(btn){
     list = Array.isArray(data) ? data : [];
   }catch(e){ body.innerHTML = '<p class="rh-empty">Could not load the rates. Try again.</p>'; return; }
   if(!list.length){ body.innerHTML = '<p class="rh-empty">No earlier PO of this item for this party.</p>'; return; }
-  body.innerHTML = '<table><thead><tr><th>Date</th><th>PO</th><th class="r">Cases</th><th class="r">Rate</th></tr></thead><tbody>' +
-    list.map((x,i) => {
-      const prev = list[i+1], ch = prev ? r2(number(x.rate) - number(prev.rate)) : 0;
-      return '<tr' + (i ? '' : ' class="first"') + '><td>' + esc(rhDay(x.order_date)) + '</td><td>' + esc(x.order_no || "") + '</td>' +
-        '<td class="r">' + esc(formatNumber(x.qty)) + '</td><td class="r rt"><b>₹' + esc(formatNumber(x.rate)) + '</b>' +
-        (ch ? '<span class="rh-ch ' + (ch > 0 ? 'up' : 'dn') + '">' + (ch > 0 ? '▲' : '▼') + formatNumber(Math.abs(ch)) + '</span>' : '') + '</td></tr>';
-    }).join("") + '</tbody></table>';
+  // 17 Nov 2026 (Mohit): all rates in one straight line, newest first, no up / down marks.
+  body.innerHTML = '<div class="rh-line">' + list.map((x,i) =>
+    '<span class="rh-r' + (i ? '' : ' first') + '" title="' + esc((x.order_no || "") + " · " + formatNumber(x.qty) + " cases") + '"><b>₹' + esc(formatNumber(x.rate)) + '</b><small>' + esc(rhDay(x.order_date)) + '</small></span>'
+  ).join("") + '</div><p class="rh-note">Newest on the left</p>';
 }
 
 async function loadPartyRates(name){
@@ -3243,7 +3239,7 @@ function applyRates(){
     const rateInput = row.querySelector(".rate");
     if(!key || !skuMasterByName.has(key)){ hint.textContent = ""; hint.className = "rate-hint"; const rh = row.querySelector(".rh-btn"); if(rh) rh.hidden = true; return; }
     const last = partyRates.get(key);
-    const rh = row.querySelector(".rh-btn"); if(rh) rh.hidden = !last;
+    const rh = row.querySelector(".rh-btn"); if(rh) rh.hidden = !last || !isAdminLogin();  // Admin only for now (Mohit, 17 Nov 2026)
     const slabRate = slabRateFor(key, slab);
     const lastRate = last ? partyRateNow(last, key) : null;
     const lim = saleLimits.get(key);
