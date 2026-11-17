@@ -4,6 +4,12 @@
 **Purpose:** Continue the same ERP project from a new ChatGPT conversation without restarting or losing the agreed requirements.
 **Status:** Active development / verification. Do not assume all modules are completed or fully tested.
 
+## Tally bill: one invoice no. per line, no invoice no. twice (17 Nov 2026)
+
+- Mohit: Accounts typed 3 invoice nos. in one bill line ("3673,3674,3675") with one merged amount; also a number entered twice must be refused at once.
+- SQL `lwb_tally_invoice_no_rules_setup.sql` (test `tests/tally-invoice-no`, PGlite, 4 tests): trigger `lwb_tally_invoice_no_guard` on `lwb_tally_invoices` refuses a line with several numbers (, ; & + | "3673 3674" "3673-3675") and a number already on another PO of the same brand (`lwb_order_company`, unknown brand = every brand) in the same financial year (April start). Only numbers new on the row are checked, so old bills still save other fields. `lwb_save_tally_bills` re-made with the same rules (old same-bill-name / 400-day check moved to the trigger). RPCs `lwb_tally_no_check(order, date, nos[])` (live check) and `lwb_tally_no_problems()` (merged lines + numbers on 2 POs), Accounts / Admin.
+- `party-billing.html`: while typing, red "One bill = one invoice no." with "Split into N bills" (same bill name, amounts typed again, "was ₹" shown), "Duplicate: already exists in LXY-… (party, date)"; Save blocked. Bills made: red "N bills to fix" bar with Show these, row tags "Merged bill nos." / "Duplicate no. X". Old rows are not split by the system. Screenshots: project files `invoice-no-rules/`.
+
 ## Order updates for Salesman, Sales Head and Admin; "Mark delivered" counted on dashboards (17 Nov 2026)
 
 - Mohit (order-to-payment audit): the salesman, Sales Head and Admin must all hear what happens to an order, delivery too. Deliveries are marked by hand by Admin / Sales Head for now (drivers and Godown Managers not trained yet), so every screen must count "Mark delivered".

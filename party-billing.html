@@ -70,6 +70,12 @@
     .pb-line{display:grid;grid-template-columns:minmax(0,2fr) minmax(0,1fr) minmax(0,1fr) 36px;gap:6px}
     .pb-line input,.pb-foot input{height:40px;border:1.5px solid var(--erp-line);border-radius:8px;padding:0 10px;font:inherit;font-size:16px;min-width:0;width:100%;box-sizing:border-box}
     .pb-line button.x{border:1px solid var(--erp-line);background:#fff;border-radius:8px;color:#b3122b;font-size:18px;cursor:pointer}
+    /* one invoice no. per line, no number twice (17 Nov 2026) */
+    .pb-line input.bad{border-color:#d0213f;background:#fff5f6}
+    .pb-line .ner{grid-column:1 / -1;margin:-2px 0 2px;font-size:12.5px;font-weight:700;color:#b3122b;display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+    .pb-line .ner button{border:1px solid #d0213f;background:#fff;color:#b3122b;border-radius:6px;padding:2px 8px;font:inherit;font-size:12px;cursor:pointer}
+    .pb-fix{display:flex;gap:8px;flex-wrap:wrap;align-items:center;padding:7px 10px;margin:0 0 8px;border:1px solid #f3b9c3;background:#fff5f6;border-radius:8px;font-size:13.5px;color:#7d0c1e}
+    .pb-fix b{color:#b3122b}.pb-fix .pb-btn{margin-left:auto}
     .pb-foot{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:8px}
     .pb-foot .tot{margin-left:auto;font-size:14px;color:#4b5763}
     .pb-dbx{display:inline-flex;gap:4px;position:relative}.pb-dbx input.dt{width:132px}
@@ -203,6 +209,14 @@
     let mkRange="all",mkFrom="",mkTo="",mkOpen=new Set(),shortMap=new Map();
     // Bills made (Mohit, 17 Nov 2026): every PO with its Tally bill, newest first, same date chips; Edit opens the bill under the row
     let mdRange="all",mdFrom="",mdTo="",mdEdit=null;
+    // Old bills to fix (lwb_tally_invoice_no_rules_setup.sql): merged lines + numbers used twice; mdFix = show only those
+    let probs={merged:[],dupes:[]},probMap=new Map(),mdFix=false;
+    // one box = one invoice no. ("3673,3674", "3661 & 3662", "3673 3674", "3673-3675" are several)
+    const isMerged=v=>{v=String(v||"").trim();return /[,;&+|]/.test(v)||/\d\s+\d/.test(v)||/\d\s*(and|to)\s*\d/i.test(v)||/^\d+\s*-\s*\d+$/.test(v)};
+    const noKey=v=>{const x=String(v||"").replace(/\s+/g,"").toUpperCase();return /^\d+$/.test(x)?(x.replace(/^0+/,"")||"0"):x};
+    const splitNos=v=>{v=String(v||"").trim();const m=v.match(/^(\d+)\s*(?:-|to)\s*(\d+)$/i);
+      if(m&&+m[2]>+m[1]&&+m[2]-+m[1]<20)return Array.from({length:+m[2]-+m[1]+1},(_,i)=>String(+m[1]+i));
+      return v.split(/\s*(?:[,;&+|]|\band\b|\s)\s*/i).map(x=>x.trim()).filter(Boolean)};
     let led=null,ledParty=new URLSearchParams(location.search).get("party")||"",ledFrom="",ledTo="";
     const toast=t=>ERPShell.toast?ERPShell.toast(t):say(t,false,true);
     function say(t,bad,ok){el("msg").hidden=!t;el("msg").textContent=t||"";el("msg").className="pb-msg"+(bad?" bad":ok?" ok":"")}
@@ -210,13 +224,18 @@
     async function load(){
       el("reload").disabled=true;
       try{
-        const [x,early,chg,mk,tb]=await Promise.all([LWBPartyPay.load(client),client.rpc("lwb_bills_before_loading"),client.rpc("lwb_bill_change_list",{p_days:30}),client.rpc("lwb_admin_order_marks",{p_ids:null}),client.rpc("lwb_tax_bill_access")]);
+        const [x,early,chg,mk,tb,pr]=await Promise.all([LWBPartyPay.load(client),client.rpc("lwb_bills_before_loading"),client.rpc("lwb_bill_change_list",{p_days:30}),client.rpc("lwb_admin_order_marks",{p_ids:null}),client.rpc("lwb_tax_bill_access"),client.rpc("lwb_tally_no_problems")]);
         // Tax invoice print in the Tally layout (lwb_tax_bill_print_setup.sql): button only while Admin has it on for me.
         taxBill=!tb.error&&!!(tb.data&&tb.data.can);
         // Admin marked Loaded / Delivered by hand (lwb_admin_mark_load_deliver_setup.sql); missing function = none.
         marks=new Map();for(const m of (mk.error?[]:(mk.data||[]))){const a=marks.get(m.order_id)||{};a[m.kind]=m;marks.set(m.order_id,a)}
         // PO item changes for Admin (lwb_bill_change_setup.sql); missing function = no list.
         changes=chg.error?[]:(chg.data||[]);
+        // Bills to fix (lwb_tally_invoice_no_rules_setup.sql); missing function = no banner.
+        probs=pr.error||!pr.data?{merged:[],dupes:[]}:pr.data;probMap=new Map();
+        for(const m of probs.merged||[])probMap.set(m.order_id,{t:"Merged bill nos.",tip:"Bill "+m.no+" has more than one invoice no. Edit > Split, enter each bill's amount."});
+        for(const d of probs.dupes||[])for(const r of d.rows)if(!probMap.has(r.order_id))probMap.set(r.order_id,{t:"Duplicate no. "+d.no,tip:"Invoice no. "+d.no+" is on "+d.rows.map(x=>x.order_no).join(", ")+". Fix the wrong one with Edit."});
+        if(!probMap.size)mdFix=false;
         // Approved POs not loaded yet (lwb_bill_before_loading_setup.sql); missing function = only loaded ones, as before.
         x.early=early.error?[]:(early.data||[]).map(o=>({...o,early:true,parent:x.parentOf(o.party)}));
         info=x;led=null;brandChips();say("");render();openWanted();loadShort()}
@@ -333,17 +352,36 @@
           <div class="pb-lines"></div>
           <div class="pb-foot mk"><button type="button" class="lnk" data-add>+ <span class="lg">Another </span>bill</button>${dateBox(edit&&o.invoice_date?String(o.invoice_date).slice(0,10):info.today)}<button type="button" class="pb-btn sm" data-it="${esc(o.order_id)}" title="Less / more cases reached? Change qty here (not Return), also rate / SKU. Goes to Admin.">± Qty<span class="lg"> / Items</span></button>${taxBill?`<a class="pb-btn sm" href="tax-invoice.html?order=${encodeURIComponent(o.order_id)}" title="Make and print the tax invoice (Tally layout)">🧾<span class="lg"> Tax bill</span></a>`:""}<span class="tot"></span><button type="button" class="pb-btn pri" data-save>${edit?'Save<span class="lg"> changes</span>':'Save<span class="lg"> bill</span>'}</button></div>`}
     function wireBill(card,o,edit){
-      const lines=card.querySelector(".pb-lines"),tot=card.querySelector(".tot");
+      const lines=card.querySelector(".pb-lines"),tot=card.querySelector(".tot"),was=edit?r2(Number(o.bill_amount)||0):0;
       const total=()=>{const l=[...lines.children],s=l.reduce((a,r)=>a+num(r.querySelector(".am").value),0);
-        tot.innerHTML=s?(l.length>1?l.length+" bills · ":"")+"total <b>"+rs(s)+"</b>"+(o.erp_amount&&Math.abs(s-(o.erp_amount-retOn(o.order_id)))>1?` <small>(${o.early?"PO":"loaded"} ${rs(r2(o.erp_amount-retOn(o.order_id)))}${retOn(o.order_id)>0.5?" after return":""})</small>`:""):""};
+        tot.innerHTML=s?(l.length>1?l.length+" bills · ":"")+"total <b>"+rs(s)+"</b>"+(edit&&Math.abs(s-was)>1?` <small class="due">(was ${rs(was)})</small>`:o.erp_amount&&Math.abs(s-(o.erp_amount-retOn(o.order_id)))>1?` <small>(${o.early?"PO":"loaded"} ${rs(r2(o.erp_amount-retOn(o.order_id)))}${retOn(o.order_id)>0.5?" after return":""})</small>`:""):""};
+      // Invoice no. check while typing: one no. per line, not twice here, not already on another bill (server)
+      let used=new Map(),seq=0,tmr=0;
+      const check=()=>{const rows=[...lines.children],cnt=new Map();
+        rows.forEach(r=>{const k=noKey(r.querySelector(".no").value);if(k&&!isMerged(r.querySelector(".no").value))cnt.set(k,(cnt.get(k)||0)+1)});
+        rows.forEach(r=>{const inp=r.querySelector(".no"),v=inp.value.trim(),k=noKey(v),ner=r.querySelector(".ner");let h="";
+          if(v&&isMerged(v)){const n=splitNos(v);h=`One bill = one invoice no. Use + Another bill for each.${n.length>1?` <button type="button" data-split>Split into ${n.length} bills</button>`:""}`}
+          else if(k&&cnt.get(k)>1)h="Entered twice in this PO.";
+          else if(k&&used.has(k)){const u=used.get(k);h=`Duplicate: already exists in ${esc(u.order_no)} (${esc(u.party)}, ${dmy(u.date)})`}
+          r.dataset.err=h?"1":"";inp.classList.toggle("bad",!!h);ner.hidden=!h;ner.innerHTML=h;
+          const sp=ner.querySelector("[data-split]");if(sp)sp.onclick=()=>splitLine(r)})};
+      const ask=()=>{clearTimeout(tmr);tmr=setTimeout(async()=>{const my=++seq,keys=[...new Set([...lines.children].map(r=>r.querySelector(".no").value).filter(v=>v.trim()&&!isMerged(v)).map(noKey))];
+        if(!keys.length){used=new Map();return check()}
+        const d=card.querySelector(".dt"),{data,error}=await client.rpc("lwb_tally_no_check",{p_order_id:o.order_id,p_date:(d&&parseDmy(d.value))||info.today,p_nos:keys});
+        if(my!==seq||error)return; // SQL not run yet = only the checks on this screen
+        used=new Map((data||[]).map(x=>[x.key,x]));check()},300)};
+      // "3673,3674,3675" -> three lines with the same bill name; each bill's own amount to be typed
+      const splitLine=r=>{const n=splitNos(r.querySelector(".no").value),firm=r.querySelector(".fm").value;let at=r;
+        n.forEach((no,i)=>{if(!i){r.querySelector(".no").value=no;r.querySelector(".am").value="";return}const x=add(firm,no);at.after(x);at=x});
+        total();check();ask();const a=r.querySelector(".am");a.placeholder="Amount of "+n[0];a.focus()};
       const add=(firm,no,amt)=>{const r=document.createElement("div");r.className="pb-line";
-        r.innerHTML=`<input class="fm" list="dl-${esc(o.order_id)}" maxlength="200" placeholder="Bill in name" aria-label="Bill made in name"><input class="no" maxlength="100" placeholder="Invoice no." aria-label="Tally invoice no."><input class="am" inputmode="decimal" placeholder="Amount ₹" aria-label="Bill amount"><button type="button" class="x" aria-label="Remove">×</button>`;
+        r.innerHTML=`<input class="fm" list="dl-${esc(o.order_id)}" maxlength="200" placeholder="Bill in name" aria-label="Bill made in name"><input class="no" maxlength="100" placeholder="Invoice no. (one)" aria-label="Tally invoice no." title="One invoice no. only. Several bills: + Another bill"><input class="am" inputmode="decimal" placeholder="Amount ₹" aria-label="Bill amount"><button type="button" class="x" aria-label="Remove">×</button><div class="ner" role="alert" hidden></div>`;
         r.querySelector(".fm").value=firm==null?o.party:firm;if(no)r.querySelector(".no").value=no;if(amt)r.querySelector(".am").value=r2(amt);
-        r.querySelector(".am").oninput=total;
-        r.querySelector(".x").onclick=()=>{if(lines.children.length>1)r.remove();else r.querySelectorAll(".no,.am").forEach(i=>i.value="");total()};
+        r.querySelector(".am").oninput=total;r.querySelector(".no").oninput=()=>{check();ask()};
+        r.querySelector(".x").onclick=()=>{if(lines.children.length>1)r.remove();else r.querySelectorAll(".no,.am").forEach(i=>i.value="");total();check();ask()};
         r.querySelectorAll("input").forEach(i=>i.onkeydown=e=>{if(e.key==="Enter"){e.preventDefault();card.querySelector("[data-save]").click()}});
         lines.appendChild(r);return r};
-      if(edit){const b=(o.bills||[]).length?o.bills:[{firm:o.party,no:o.invoice_no,amount:o.bill_amount}];b.forEach(x=>add(x.firm||o.party,x.no,Number(x.amount)));total()}else add(null);
+      if(edit){const b=(o.bills||[]).length?o.bills:[{firm:o.party,no:o.invoice_no,amount:o.bill_amount}];b.forEach(x=>add(x.firm||o.party,x.no,Number(x.amount)));total();check();ask()}else add(null);
       card.querySelector("[data-add]").onclick=()=>add("").querySelector(".fm").focus();
       wireDate(card.querySelector(".pb-dbx"));
       card.querySelector("[data-save]").onclick=e=>saveBill(o,card,e.currentTarget,edit);
@@ -393,26 +431,28 @@
     function renderMade(){
       const q=el("q").value.trim().toLowerCase();
       const all=made().filter(o=>match(q,o.order_no,o.party,o.parent,o.invoice_no,...billsOf(o).flatMap(b=>[b.firm,b.no])));
-      const span=mkSpan(mdRange,mdFrom,mdTo),inS=(o,[f,t])=>{const d=mdDate(o);return d>=f&&d<=t},list=all.filter(o=>inS(o,span));
+      const span=mkSpan(mdRange,mdFrom,mdTo),inS=(o,[f,t])=>{const d=mdDate(o);return d>=f&&d<=t},list=mdFix?all.filter(o=>probMap.has(o.order_id)):all.filter(o=>inS(o,span));
       const sum=r2(list.reduce((a,o)=>a+Number(o.bill_amount||0),0)),dueSum=r2(list.reduce((a,o)=>a+Math.max(0,Number(o.due)||0),0));
       sheet=[["Bill date","PO No.","Party","Main party","Bill in name","Invoice no.","Bill amount ₹","Due now ₹","Delivery"],...list.flatMap(o=>billsOf(o).map((b,i)=>[dmy(mdDate(o)),o.order_no,o.party,o.parent,b.firm||o.party,b.no,r2(b.amount),i?"":r2(Math.max(0,Number(o.due)||0)),i?"":((DELIVERY[String(o.delivery||"").toUpperCase()]||[,""])[1])]))];
       const bar=`<div class="mk-bar"><div class="mk-chips md" role="group" aria-label="Bill date">${MK_R.map(([k,t])=>`<button type="button" data-dr="${k}"${mdRange===k?' class="on"':""}>${t}<i>${k==="all"?all.length:all.filter(o=>inS(o,mkSpan(k))).length}</i></button>`).join("")}</div>
         <label class="mk-dates${mdRange==="custom"?" on":""}" title="Custom dates (bill date)"><input type="date" id="mdF" value="${mdRange==="custom"?mdFrom:span[0]}" max="${info.today}" aria-label="From date"><span>to</span><input type="date" id="mdT" value="${mdRange==="custom"?mdTo:span[1]==="9999-12-31"?"":span[1]}" max="${info.today}" aria-label="To date"></label>
-        <span class="mk-sum"><b>${list.length}</b> bill${list.length===1?"":"s"} · <b>${rs(sum)}</b>${dueSum>0.5?` · <b class="due">${rs(dueSum)}</b> due`:""}</span></div>`;
+        <span class="mk-sum"><b>${list.length}</b> bill${list.length===1?"":"s"} · <b>${rs(sum)}</b>${dueSum>0.5?` · <b class="due">${rs(dueSum)}</b> due`:""}</span></div>`+
+        (probMap.size?`<div class="pb-fix" role="status">⚠ <span><b>${probMap.size} bill${probMap.size===1?"":"s"} to fix</b>${(probs.merged||[]).length?` · ${probs.merged.length} with many invoice nos. in one line`:""}${(probs.dupes||[]).length?` · ${probs.dupes.length} invoice no.${probs.dupes.length===1?"":"s"} used twice`:""}. Tap ✏️ Edit, Split, enter each bill's amount.</span><button type="button" class="pb-btn sm${mdFix?"":" pri"}" data-fix>${mdFix?"Show all bills":"Show these"}</button></div>`:"");
       const rows=list.map(o=>{
         const d=DELIVERY[String(o.delivery||"").toUpperCase()],due=r2(Number(o.due)||0),bl=billsOf(o),isOpen=mdEdit===o.order_id;
         const st=due>0.5?`<small><span class="tag t-red">Due ${rs(due)}</span></small>`:`<small><span class="tag t-grn">Paid</span></small>`;
         return `<tr class="pr${isOpen?" open":""}" data-o="${esc(o.order_id)}">
-          <td class="c1"><b class="pb-po" data-drill-order="${esc(o.order_id)}" data-drill-no="${esc(o.order_no)}" data-drill-bill="${esc(o.invoice_no)}">${esc(o.order_no)}</b><small class="ph-only">${dmy(mdDate(o))}</small>${!fb&&BR().length?" "+btag(o.company_id):""}${d?` <span class="tag ${d[0]}">${d[1]}</span>`:""}${waitTag(o.order_id)}</td>
+          <td class="c1"><b class="pb-po" data-drill-order="${esc(o.order_id)}" data-drill-no="${esc(o.order_no)}" data-drill-bill="${esc(o.invoice_no)}">${esc(o.order_no)}</b><small class="ph-only">${dmy(mdDate(o))}</small>${!fb&&BR().length?" "+btag(o.company_id):""}${d?` <span class="tag ${d[0]}">${d[1]}</span>`:""}${waitTag(o.order_id)}${probMap.has(o.order_id)?` <span class="tag t-red" title="${esc(probMap.get(o.order_id).tip)}">⚠ ${esc(probMap.get(o.order_id).t)}</span>`:""}</td>
           <td class="hide-ph" style="white-space:nowrap" title="Bill date">${dmy(mdDate(o))}</td>
-          <td class="w"><b>${esc(o.party)}</b>${key(o.parent)!==key(o.party)?` <span class="tag t-blu">under ${esc(o.parent)}</span>`:""}<small title="${esc(bl.map(b=>(b.firm||o.party)+" · "+b.no+" · "+rs(b.amount)).join("\n"))}">${bl.map(b=>(key(b.firm||o.party)!==key(o.party)?esc(b.firm)+" · ":"")+"Bill <b>"+esc(b.no)+"</b>"+(bl.length>1?" · "+rs(b.amount):"")).join(" | ")}</small></td>
+          <td class="w"><b>${esc(o.party)}</b>${key(o.parent)!==key(o.party)?` <span class="tag t-blu">under ${esc(o.parent)}</span>`:""}<small title="${esc(bl.map(b=>(b.firm||o.party)+" · "+b.no+" · "+rs(b.amount)).join("\n"))}">${bl.map(b=>(key(b.firm||o.party)!==key(o.party)?esc(b.firm)+" · ":"")+"Bill <b"+(isMerged(b.no)?' class="due"':"")+">"+esc(b.no)+"</b>"+(bl.length>1?" · "+rs(b.amount):"")).join(" | ")}</small></td>
           <td class="n c4"><b>${rs(o.bill_amount)}</b>${st}</td>
           <td class="n c5"><span class="md-act"><button type="button" class="pb-btn sm go" data-ed>${isOpen?"Close":"✏️ Edit"}</button><a class="pb-btn sm hide-ph" href="accounts-invoice.html?order=${encodeURIComponent(o.order_id)}" title="PO and bill details">Details</a></span></td></tr>`}).join("");
       el("body").innerHTML=bar+(list.length?`<div class="pb-scroll"><table class="pb-t mk"><thead><tr><th>PO No.</th><th class="hide-ph">Bill date</th><th>Party · bill no.</th><th class="n">Bill</th><th></th></tr></thead><tbody>${rows}</tbody>
           <tfoot><tr><td>${list.length} bill${list.length===1?"":"s"} made</td><td class="hide-ph"></td><td class="hide-ph"></td><td class="n">${rs(sum)}</td><td class="hide-ph"></td></tr></tfoot></table></div>`:
         all.length?`<div class="pb-empty">No bill made in these dates. <button type="button" class="lnk" data-dr="all">Show all ${all.length}</button></div>`:
         `<div class="pb-empty">${q?"No bill made for “"+esc(el("q").value.trim())+"”.":"No Tally bill entered yet. Bills you make in Bills to make come here."}</div>`);
-      el("body").querySelectorAll("[data-dr]").forEach(b=>b.onclick=()=>{mdRange=b.dataset.dr;renderMade()});
+      el("body").querySelectorAll("[data-dr]").forEach(b=>b.onclick=()=>{mdRange=b.dataset.dr;mdFix=false;renderMade()});
+      const fx=el("body").querySelector("[data-fix]");if(fx)fx.onclick=()=>{mdFix=!mdFix;renderMade()};
       const dates=()=>{let f=el("mdF").value,t=el("mdT").value;if(f&&t&&f>t)[f,t]=[t,f];mdFrom=f;mdTo=t;mdRange=f||t?"custom":"all";renderMade()};
       el("mdF").onchange=dates;el("mdT").onchange=dates;
       // Edit: one bill open at a time, under its row, filled with the saved bill lines and date
@@ -427,6 +467,10 @@
       const lines=[...card.querySelectorAll(".pb-line")].map(r=>({firm:r.querySelector(".fm").value.trim()||o.party,no:r.querySelector(".no").value.trim(),amount:num(r.querySelector(".am").value)})).filter(l=>l.no||l.amount);
       const date=parseDmy(card.querySelector(".dt").value);
       if(!lines.length)return ERPShell.alert("Enter the Tally invoice no. and amount.");
+      const badLine=[...card.querySelectorAll(".pb-line")].find(r=>r.dataset.err==="1");
+      if(badLine)return ERPShell.alert("Fix the invoice no. "+badLine.querySelector(".no").value.trim()+": "+badLine.querySelector(".ner").textContent.replace(/Split into \d+ bills$/,"").trim());
+      const seenNo=new Set();for(const l of lines){if(isMerged(l.no))return ERPShell.alert("Bill "+l.no+" has more than one invoice no. One bill = one invoice no. with its own amount (use + Another bill).");
+        if(seenNo.has(noKey(l.no)))return ERPShell.alert("Invoice no. "+l.no+" is entered twice.");seenNo.add(noKey(l.no))}
       for(const l of lines){if(!l.no)return ERPShell.alert("Enter the invoice no. of the bill in "+l.firm+".");if(!(l.amount>0))return ERPShell.alert("Enter the amount of bill "+l.no+".")}
       if(!date)return ERPShell.alert("Enter the invoice date as DD/MM/YYYY.");
       if(date>info.today)return ERPShell.alert("The invoice date can not be after today.");
