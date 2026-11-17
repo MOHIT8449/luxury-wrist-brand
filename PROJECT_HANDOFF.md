@@ -4,6 +4,10 @@
 **Purpose:** Continue the same ERP project from a new ChatGPT conversation without restarting or losing the agreed requirements.
 **Status:** Active development / verification. Do not assume all modules are completed or fully tested.
 
+## Tally bill save: permission fix (17 Nov 2026)
+
+- Accounts (Yogesh Patel) splitting a bill into 2 on Bills made got "permission denied for function lwb_save_tally_bills" (the `authenticated` role had no EXECUTE on live). SQL `lwb_tally_bills_grant_fix.sql`: EXECUTE to authenticated (not anon) on every version of `lwb_save_tally_bills`, `lwb_save_tally_bill`, `lwb_save_tally_invoice`, `lwb_tally_staff`, `lwb_tally_no_check`, `lwb_tally_no_problems`; then, as role authenticated with a live active Accounts login, calls the save with a PO id that does not exist and fails the file if permission is still denied (expected "Order not found", nothing written). Who may save is still checked inside (Accounts / Admin). Any future `CREATE OR REPLACE` of an RPC should keep its own GRANT line.
+
 ## Tally bill: one invoice no. per line, no invoice no. twice (17 Nov 2026)
 
 - Mohit: Accounts typed 3 invoice nos. in one bill line ("3673,3674,3675") with one merged amount; also a number entered twice must be refused at once.
