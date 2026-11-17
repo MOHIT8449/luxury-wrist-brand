@@ -692,7 +692,7 @@
     }catch(e){}
     if(!U||!user){secOpen=false;return}
     const back=document.createElement("div");back.className="erp-dlg-back";
-    const box=document.createElement("div");box.className="erp-dlg erp-sec";box.setAttribute("role","dialog");box.setAttribute("aria-modal","true");
+    const box=document.createElement("div");box.className="erp-dlg erp-lsec";box.setAttribute("role","dialog");box.setAttribute("aria-modal","true");
     back.append(box);document.body.append(back);requestAnimationFrame(()=>back.classList.add("show"));
     const close=()=>{back.classList.remove("show");document.removeEventListener("keydown",esc_,true);setTimeout(()=>back.remove(),160);secOpen=false};
     const esc_=e=>{if(e.key==="Escape"){e.preventDefault();close()}};
