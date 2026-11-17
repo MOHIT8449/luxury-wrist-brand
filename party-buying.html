@@ -110,11 +110,14 @@
         lines.push({o,pk:o.pk,party:String(o.customer_name||"").trim(),sk:k,sku:s?s.name:String(it.sku_name||"Unknown SKU").trim(),cat:s?s.cat:UNCAT,co:s?s.co:"",q,amt:q*num(it.rate),day:o.day});
       }
     }
+    // Lists follow the brand on top (Mohit, 17 Nov 2026): Coca-Cola shows only Coca-Cola categories, and
+    // (with "Brand buyers") only that brand's parties and their salesmen.
     function fillLists(){
-      MS.cat.items([...new Set(skus.map(s=>s.cat))].sort().map(c=>({v:c,t:c})));
-      const sms=new Map();for(const p of parties)if(p.salesman_id)sms.set(p.salesman_id,p.salesman_name);
+      MS.cat.items([...new Set(skus.filter(s=>!BB.get()||s.co===BB.get()).map(s=>s.cat))].sort().map(c=>({v:c,t:c})));
+      const b=el("scope").value==="all"?null:buyers(),ps=parties.filter(p=>!b||b.has(key(p.customer_name)));
+      const sms=new Map();for(const p of ps)if(p.salesman_id)sms.set(p.salesman_id,p.salesman_name);
       MS.sm.items([{v:"none",t:"Office (no salesman)"},...[...sms].sort((a,b)=>String(a[1]).localeCompare(b[1])).map(([id,n])=>({v:id,t:n}))]);
-      MS.party.items(parties.map(p=>({v:key(p.customer_name),t:String(p.customer_name||"").trim()})));
+      MS.party.items(ps.map(p=>({v:key(p.customer_name),t:String(p.customer_name||"").trim()})));
     }
 
     // Filters shared by every tab.
@@ -272,11 +275,11 @@
         const r=e.target.closest("tr[data-party]");if(r&&partySet().size!==1)setParty(r.dataset.party);
       });
       document.addEventListener("change",e=>{if(e.target.id==="gapDays"){gapDays=Math.max(1,Math.min(365,Math.round(num(e.target.value))||30));render()}});
-      el("q").addEventListener("input",render);el("scope").addEventListener("change",render);
+      el("q").addEventListener("input",render);el("scope").addEventListener("change",()=>{fillLists();render()});
       el("refresh").onclick=loadAll;el("excel").onclick=exportExcel;
       el("from").addEventListener("change",loadAll);el("to").addEventListener("change",loadAll);el("basis").addEventListener("change",loadAll);
       el("loading").hidden=true;el("page").hidden=false;
-      if(window.LWBBrand)try{BB=await LWBBrand.mount(client,{into:"#page .erp-pagehead",after:true,onChange:render})}catch(e){}
+      if(window.LWBBrand)try{BB=await LWBBrand.mount(client,{into:"#page .erp-pagehead",after:true,onChange:()=>{fillLists();render()}})}catch(e){}
       await loadAll();
     })();
   </script>
