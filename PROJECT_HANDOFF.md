@@ -4,6 +4,13 @@
 **Purpose:** Continue the same ERP project from a new ChatGPT conversation without restarting or losing the agreed requirements.
 **Status:** Active development / verification. Do not assume all modules are completed or fully tested.
 
+## Total Pending Delivery: SKU-wise total (17 Nov 2026)
+
+- Mohit: in the Total Pending Delivery popup, show for each SKU the total qty of all pending orders together, and which parties need it.
+- `warehouse-orders.html`: gold "▦ SKU-wise total" button next to the search box of the popup opens "Pending Delivery · SKU-wise": SKU (brand tag when 2+ brands), Total Qty (bold, CS / Box, "N not approved" in amber), POs, Parties (2 names + "+N more"; search finds a party), Weight, Amount; biggest qty first, totals row. Tap an SKU = the pending POs needing it (party, qty of that SKU, PO no., date, salesman, status, oldest first); tap a PO = open it. ‹ Back goes up one step. Line qty = loaded (once loaded), else approved, else ordered. Same pending rule as the popup (`lwb_po_summary_orders` bucket pending) + `order_items`. No SQL.
+- `erp-list.js`: a link can have `cls` (e.g. "hi" = gold) and `top: true` (button in the search row instead of the footer).
+- Checked with a mocked database at 1366 / 390 px: no side scroll, no JS errors. Screenshots: project files `pending-sku-wise/`.
+
 ## Tally bill save: permission fix (17 Nov 2026)
 
 - Accounts (Yogesh Patel) splitting a bill into 2 on Bills made got "permission denied for function lwb_save_tally_bills" (the `authenticated` role had no EXECUTE on live). SQL `lwb_tally_bills_grant_fix.sql`: EXECUTE to authenticated (not anon) on every version of `lwb_save_tally_bills`, `lwb_save_tally_bill`, `lwb_save_tally_invoice`, `lwb_tally_staff`, `lwb_tally_no_check`, `lwb_tally_no_problems`; then, as role authenticated with a live active Accounts login, calls the save with a PO id that does not exist and fails the file if permission is still denied (expected "Order not found", nothing written). Who may save is still checked inside (Accounts / Admin). Any future `CREATE OR REPLACE` of an RPC should keep its own GRANT line.

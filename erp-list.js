@@ -67,6 +67,15 @@
 .erp-ls-foot button{border-radius:8px;padding:8px 16px;font:600 13px "Fira Sans","Segoe UI",Arial,sans-serif;cursor:pointer;border:1px solid #cfd6de;background:#fff;color:#002f37}
 .erp-ls-foot button.ic{padding:8px 12px;margin-right:auto;line-height:1}
 .erp-ls-foot button.main{background:#002f37;border-color:#002f37;color:#fff}
+.erp-ls-tools button{flex:none;height:36px;padding:0 14px;border-radius:8px;border:1px solid #cfd6de;background:#fff;color:#002f37;font:700 13px "Fira Sans","Segoe UI",Arial,sans-serif;cursor:pointer;white-space:nowrap}
+.erp-ls-tools button.hi,.erp-ls-foot button.hi{background:#c9b26a;border-color:#c9b26a;color:#002f37}
+.erp-ls .sku-br{display:inline-block;margin-left:4px;padding:0 6px;border-radius:10px;background:#eef2f1;color:#5d6f72;font-size:11px;font-weight:600}
+.erp-ls .sku-qty{color:#002f37;font-size:14.5px}
+.erp-ls .sku-wait{display:block;color:#a15c00;font-size:11px;font-weight:600}
+.erp-ls .sku-pos{display:inline-block;min-width:24px;padding:1px 7px;border-radius:10px;background:#f7f1de;color:#7a6420;font-weight:700;text-align:center}
+.erp-ls .sku-pt{color:#5d6f72;font-size:12.5px}
+.erp-ls .sku-pt i{font-style:normal;color:#7a6420;font-weight:600;white-space:nowrap}
+@media (max-width:700px){.erp-ls td:has(>.sku-pt){grid-column:1/-1}.erp-ls .sku-pt{font-size:12px;text-align:right}.erp-ls .sku-pos{align-self:flex-start}}
 @media (max-width:700px){
   .erp-ls-back{padding:0;place-items:end stretch}
   .erp-ls{max-height:92dvh;border-radius:14px 14px 0 0}
@@ -140,9 +149,9 @@
     back.innerHTML=`<div class="erp-ls" role="dialog" aria-modal="true">
       <div class="erp-ls-head">${parent?`<button type="button" class="erp-ls-bk" aria-label="Back to ${esc(parent.opts.title||"list")}">‹ Back</button>`:""}<div>${trail.length?`<p class="erp-ls-trail">${esc(trail.join(" › "))}</p>`:""}<h3><i class="erp-ls-tt">${esc(opts.title||"List")}</i><span>…</span></h3><p class="erp-ls-sub"${opts.sub?"":" hidden"}>${esc(opts.sub||"")}</p></div>
         <button type="button" class="erp-ls-x" aria-label="Close">&times;</button></div>
-      <div class="erp-ls-tools"><input type="search" placeholder="Search in this list..." aria-label="Search in this list"><small></small></div>
+      <div class="erp-ls-tools"><input type="search" placeholder="Search in this list..." aria-label="Search in this list"><small></small>${(opts.links||[]).map((l,i)=>l.top?`<button type="button" data-lk="${i}" class="${esc(l.cls||"")}">${esc(l.t)}</button>`:"").join("")}</div>
       <div class="erp-ls-body"><div class="erp-ls-msg">Loading list...</div></div>
-      <div class="erp-ls-foot">${(opts.links||[]).map((l,i)=>`<button type="button" data-lk="${i}"${l.icon?` class="ic" data-share title="${esc(l.title||l.t)}" aria-label="${esc(l.t)}"`:""}>${l.icon||esc(l.t)}</button>`).join("")}${opts.page?`<button type="button" class="pg">${esc(opts.pageText||"Open full page")}</button>`:""}<button type="button" class="main">Close</button></div>
+      <div class="erp-ls-foot">${(opts.links||[]).map((l,i)=>l.top?"":`<button type="button" data-lk="${i}"${l.icon?` class="ic" data-share title="${esc(l.title||l.t)}" aria-label="${esc(l.t)}"`:l.cls?` class="${esc(l.cls)}"`:""}>${l.icon||esc(l.t)}</button>`).join("")}${opts.page?`<button type="button" class="pg">${esc(opts.pageText||"Open full page")}</button>`:""}<button type="button" class="main">Close</button></div>
     </div>`;
     const box=back.firstElementChild,body=box.querySelector(".erp-ls-body"),badge=box.querySelector("h3 span"),
       search=box.querySelector("input"),info=box.querySelector(".erp-ls-tools small");
