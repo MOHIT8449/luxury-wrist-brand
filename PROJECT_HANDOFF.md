@@ -4,6 +4,13 @@
 **Purpose:** Continue the same ERP project from a new ChatGPT conversation without restarting or losing the agreed requirements.
 **Status:** Active development / verification. Do not assume all modules are completed or fully tested.
 
+## PO change from Billing now updates the PO itself (17 Nov 2026)
+
+- Mohit: a bill change made by Accounts in Billing "± Qty / Items" was not showing in the PO. Cause: on approve (or Admin's own Save change) only `order_items` lines and the Tally bill moved; the PO header `orders.total_qty / total_amount / total_weight` (PO list, PO popup "Order Amount", reports) never changed, and after loading the PO popup / print showed approved qty, not the loaded qty that the change moves.
+- SQL `lwb_bill_change_po_sync_setup.sql` (tests in `tests/bill-change`, now 13): trigger on `lwb_bill_changes.bill_applied` (written by every `lwb_bill_change_apply`) runs `lwb_bill_change_po_sync(order, qty_col)`: new line weight from `sku_master.unit_weight_kg`, line amount / weight = approved x rate / weight, PO header = billed qty (loaded after loading, approved before). Old approved changes synced once.
+- `warehouse-orders.html`: a loaded / delivered PO (view only) shows loaded qty ("Loaded · OK 15" under the qty), summary "Loaded Quantity (bill)" / "Bill Amount"; PO / challan print after loading uses loaded qty.
+- A change from Accounts still waits for Admin / Sales Head approval before anything moves (by design).
+
 ## Party Buying: party / SKU / category-wise buying, never bought, not in N days, stopped (17 Nov 2026)
 
 - Mohit: see how many times and how much each party bought, party-wise / SKU-wise / category-wise, with dates; a "non-selling" filter (SKUs a party never bought, or not in N days), and regular parties that stopped an item.

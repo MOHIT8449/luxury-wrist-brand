@@ -77,6 +77,9 @@ await db.exec(await sql('lwb_bill_change_stock_setup.sql'));
 await db.exec(await sql('lwb_bill_change_stock_setup.sql'));  // safe to run again
 await db.exec(await sql('lwb_bill_change_sales_head_setup.sql'));
 await db.exec(await sql('lwb_bill_change_sales_head_setup.sql'));  // safe to run again
+await db.exec('ALTER TABLE public.orders ADD COLUMN total_weight numeric; ALTER TABLE public.sku_master ADD COLUMN unit_weight_kg numeric');
+await db.exec(await sql('lwb_bill_change_po_sync_setup.sql'));
+await db.exec(await sql('lwb_bill_change_po_sync_setup.sql'));  // safe to run again
 await db.exec('GRANT USAGE ON SCHEMA public,auth TO authenticated; GRANT SELECT,UPDATE ON orders TO authenticated');
 
 const today=(await db.query("select (now() at time zone 'Asia/Kolkata')::date::text d")).rows[0].d;
@@ -87,7 +90,8 @@ const early=async()=>(await call('select public.lwb_bills_before_loading() j'))[
 const billing=async()=>(await call('select public.lwb_party_billing(400) j'))[0].j;
 const saveBill=(id,no,amount)=>call('select public.lwb_save_tally_bills($1,$2,$3::jsonb,null) r',[id,today,JSON.stringify([{no,amount}])]);
 
-await db.exec("insert into sku_master values ('THUMS UP 250',true),('THUMS UP 740',true),('MAAZA 600',true),('OLD SKU',false)");
+await db.exec("insert into sku_master(sku_name,is_active,unit_weight_kg) values ('THUMS UP 250',true,6),('THUMS UP 740',true,9),('MAAZA 600',true,12),('OLD SKU',false,null)");
+const head=async id=>{const r=(await db.query('select total_qty::numeric q,total_amount::numeric a,total_weight::numeric w from orders where id=$1',[id])).rows[0];return [Number(r.q),Number(r.a),Number(r.w)]};
 const items=async id=>(await db.query('select sku_name,approved_qty::int a,loaded_qty::int l,rate::numeric r from order_items where order_id=$1 order by id',[id])).rows;
 const its=async id=>(await call('select public.lwb_bill_change_items($1) j',[id]))[0].j;
 const req=(id,lines,reason='Wrong item loaded',bill=null)=>call('select public.lwb_bill_change_request($1,$2::jsonb,$3,$4,$5) j',[id,JSON.stringify(lines),reason,'note',bill]).then(r=>r[0].j);
@@ -153,6 +157,9 @@ test('Admin approves -> PO lines change, chosen Tally bill line takes the differ
  const t=await inv(o);
  assert.equal(Number(t.a),23650);
  assert.deepEqual(t.bills.map(b=>Number(b.amount)),[14000,9650]);
+ // the PO header follows the billed (loaded) qty: 35+15+2 CS, 23650, new Maaza line weight from SKU Master
+ const [q,a]=await head(o);assert.deepEqual([q,a],[52,23650]);
+ assert.equal(Number((await db.query("select unit_weight from order_items where order_id=$1 and sku_name='MAAZA 600'",[o])).rows[0].unit_weight),12);
  const row=(await call('select public.lwb_party_billing(400) j'))[0].j.orders.find(x=>x.order_id===o);
  assert.equal(Number(row.due),23650);
  assert.equal((await db.query("select count(*)::int c from erp_notifications where order_id=$1 and notification_type='BILL_CHANGE_APPROVAL' and not is_read",[o])).rows[0].c,0);
@@ -204,6 +211,11 @@ test('Before loading the approved qty changes',async()=>{
  const j=await its(p);assert.equal(j.qty_col,'approved_qty');
  await req(p,[{item_id:j.items[0].item_id,sku_name:'THUMS UP 250',qty:12,rate:400}]);
  const it=await items(p);assert.equal(it[0].a,12);assert.equal(it[0].l,null);
+ await db.query("update order_items set unit_weight=6 where order_id=$1",[p]);
+ const j2=await its(p);
+ await req(p,[{item_id:j2.items[0].item_id,sku_name:'THUMS UP 250',qty:11,rate:410}]);
+ assert.deepEqual(await head(p),[11,4510,66]);
+ assert.equal(Number((await db.query("select amount from order_items where order_id=$1",[p])).rows[0].amount),4510);
  const q=(await db.query("insert into orders(order_no,customer_name,status) values('PO-2003','RAM STORES','pending') returning id")).rows[0].id;
  await assert.rejects(req(q,[{sku_name:'MAAZA 600',qty:1,rate:1}]),/Only an approved PO/);
 });
