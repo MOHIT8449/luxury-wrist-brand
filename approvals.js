@@ -48,7 +48,7 @@
            lines:lines.filter(l=>l.min_rate!=null&&num(l.rate)<num(l.min_rate)).map(l=>{const dm=r2(num(l.rate)-num(l.min_rate));
              return l.sku+" · Rate ₹"+num(l.rate)+" · Min ₹"+num(l.min_rate)+" · Diff "+pu(dm)+" × "+num(l.qty)+" = "+(dm<0?"−":"")+inr(Math.round(Math.abs(dm)*num(l.qty)))}),
            // The same, as parts the list shows as highlighted badges (Mohit, 17 Nov 2026: highlight what I act on).
-           rl:lines.filter(l=>l.min_rate!=null&&num(l.rate)<num(l.min_rate)).map(l=>({sku:l.sku,qty:num(l.qty),rate:num(l.rate),min:num(l.min_rate),diff:r2(num(l.rate)-num(l.min_rate)),loss:Math.round((num(l.min_rate)-num(l.rate))*num(l.qty))})),
+           rl:lines.filter(l=>l.min_rate!=null&&num(l.rate)<num(l.min_rate)).map(l=>({sku:l.sku,qty:num(l.qty),landing:l.landing==null?null:num(l.landing),rate:num(l.rate),min:num(l.min_rate),diff:r2(num(l.rate)-num(l.min_rate)),loss:Math.round((num(l.min_rate)-num(l.rate))*num(l.qty))})),
            meta:[r.brand,r.sales_person&&"By "+r.sales_person,r.slip?"Rajnigandha slip":"",r.note].filter(Boolean),
            detail:{info:[["Sales person",r.sales_person],["PO date",dmy(r.order_date)],["Brand",r.brand],["Type",r.slip?"Rajnigandha slip":"PO"],["Transport",r.transportation],["Driver",r.driver_name],["Vehicle",r.vehicle_no],["Note",r.note]],
              why:"Rate is below the minimum on "+lines.filter(l=>l.min_rate!=null&&num(l.rate)<num(l.min_rate)).length+" of "+lines.length+" items",
@@ -333,18 +333,18 @@
     if(!rows&&po&&po.items)rows=po.items.map(it=>{const q=it.approved_qty!=null?num(it.approved_qty):num(it.ordered_qty);const k=String(it.sku_name||"").trim().toUpperCase();
       return {sku:it.sku_name,qty:q,ordered:num(it.ordered_qty),loaded:it.loaded_qty==null?null:num(it.loaded_qty),rate:num(it.rate),wt:it.total_weight==null?null:num(it.total_weight),flag:(d.flags||[]).some(f=>f===k||k.startsWith(f))}});
     if(rows&&rows.length){
-      const minCol=rows.some(r=>r.min!=null),tq=rows.reduce((t,r)=>t+r.qty,0),ta=rows.reduce((t,r)=>t+r.qty*r.rate,0);
+      const minCol=rows.some(r=>r.min!=null),landCol=minCol&&rows.some(r=>r.landing!=null),tq=rows.reduce((t,r)=>t+r.qty,0),ta=rows.reduce((t,r)=>t+r.qty*r.rate,0);
       // Low rate (Mohit, 17 Nov 2026): Qty · Rate · Min · Diff in their own columns, Diff highlighted. No extra lines under the item.
       const dcell=r=>{if(r.min==null)return '<td></td>';const df=r2(r.rate-r.min);return '<td class="n"><i class="dpill '+(df<0?"neg":df>0?"pos":"zero")+'">'+(df>0?"+":df<0?"−":"")+"₹"+qn(Math.abs(df))+'</i></td>'};
       h+='<div class="cv-h">PO items · '+rows.length+(rows.some(r=>r.flag)?' · '+rows.filter(r=>r.flag).length+' need your check':"")+'</div>'+
-        '<table class="cv-t'+(minCol?" mincol":"")+'"><colgroup><col><col class="c"><col class="c">'+(minCol?'<col class="c"><col class="c">':"")+'<col class="c2"></colgroup><thead><tr><th>Item</th><th class="n">Qty</th><th class="n">Rate</th>'+(minCol?'<th class="n">Min</th><th class="n">Diff</th>':"")+'<th class="n">Amount</th></tr></thead><tbody>'+
+        '<table class="cv-t'+(minCol?" mincol":"")+'"><colgroup><col><col class="c"><col class="c">'+(minCol?'<col class="c">'+(landCol?'<col class="c">':"")+'<col class="c">':"")+'<col class="c2"></colgroup><thead><tr><th>Item</th><th class="n">Qty</th><th class="n">Rate</th>'+(minCol?'<th class="n">Min</th>'+(landCol?'<th class="n">Land<span class="lx">ing</span></th>':"")+'<th class="n">Diff</th>':"")+'<th class="n">Amount</th></tr></thead><tbody>'+
         rows.map(r=>'<tr class="'+(r.flag?"chg":"")+'"><td class="it"><b>'+esc(r.sku)+'</b>'+
           (r.loaded!=null&&r.loaded!==r.qty?'<small>Loaded '+qn(r.loaded)+'</small>':"")+(r.ordered&&r.ordered!==r.qty?'<small>Ordered '+qn(r.ordered)+'</small>':"")+
           (r.flag&&!minCol?'<span class="tg"><i class="less">Check</i></span>':"")+'</td>'+
           '<td class="n">'+qn(r.qty)+'</td><td class="n'+(r.flag?" neg":"")+'">₹'+qn(r.rate)+'</td>'+
-          (minCol?'<td class="n">'+(r.min!=null?"₹"+qn(r.min):"")+'</td>'+dcell(r):"")+
+          (minCol?'<td class="n">'+(r.min!=null?'<i class="rs">₹</i>'+qn(r.min):"")+'</td>'+(landCol?'<td class="n land">'+(r.landing!=null?'<i class="rs">₹</i>'+qn(r.landing):"")+'</td>':"")+dcell(r):"")+
           '<td class="n">'+qn(Math.round(r.qty*r.rate))+'</td></tr>').join("")+
-        '</tbody><tfoot><tr><td>Total</td><td class="n">'+qn(tq)+'</td><td></td>'+(minCol?'<td></td><td></td>':"")+'<td class="n">'+qn(Math.round(ta))+'</td></tr></tfoot></table>';
+        '</tbody><tfoot><tr><td>Total</td><td class="n">'+qn(tq)+'</td><td></td>'+(minCol?'<td></td><td></td>'+(landCol?'<td></td>':""):"")+'<td class="n">'+qn(Math.round(ta))+'</td></tr></tfoot></table>';
     }
     return h||'<div class="cv-note">No more details for this one.</div>';
   }
