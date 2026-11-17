@@ -421,9 +421,9 @@
     /* ===== Sales Head: approvals, team target, delivery ===== */
     async manager(){
       const t=today();
-      const [orders,team0,acts,dl,ov,cm]=await Promise.all([loadOrdersB(),salesTeam(),safe(C.rpc("lwb_party_activity")),
+      const [orders,team0,acts,dl,ov,cm,mk]=await Promise.all([loadOrdersB(),salesTeam(),safe(C.rpc("lwb_party_activity")),
         safe(C.from("lwb_delivery_reports").select("order_id,delivery_status,reported_at,delivery_note").gte("reported_at",t+"T00:00:00+05:30")),overview(),
-        BR.allow?safe(C.rpc("lwb_company_month",{p_month:t.slice(0,8)+"01"})):null]);
+        BR.allow?safe(C.rpc("lwb_company_month",{p_month:t.slice(0,8)+"01"})):null,safe(C.rpc("lwb_admin_order_marks",{p_ids:null}))]);
       // With a brand chosen (or a brand-wise Sales Head) the targets are those companies' targets.
       const team=BR.allow&&cm?{team:team0.team,targets:brandTargets(cm.targets)}:team0;
       const O=orders||[],L=O.filter(live),td=L.filter(o=>o.day===t),mo=L.filter(o=>o.day>=t.slice(0,8)+"01");
@@ -457,11 +457,20 @@
         (people.length?people.slice(0,10).map(p=>{const v=pct(p.v,p.t);return '<div class="rd-rowp"><span>'+esc(p.n)+"</span>"+bar(v==null?0:v,v==null?"":v<50?"red":v<75?"amb":"")+'<b class="sm">'+lakh(p.v)+(p.t?" / "+lakh(p.t):"")+"</b></div>"}).join(""):'<div class="rd-empty">No sale this month yet.</div>')+"</div>",
         left+" day"+(left==1?"":"s")+" left"+(need?" · need "+lakh(need)+" per day to reach "+lakh(tgt):tgt&&mv>=tgt?" · target reached 🎉":"")):"";
       let delivery="";
-      if(dl){const byId=new Map(O.map(o=>[o.id,o])),n=s=>dl.filter(r=>r.delivery_status===s).length,bad=dl.filter(r=>r.delivery_status==="NOT_DELIVERED").slice(0,4);
-        const dOf=s=>lst("Today's delivery · "+s.replace("_"," ").toLowerCase(),"Driver reports today",dl.filter(r=>r.delivery_status===s).map(r=>({...(byId.get(r.order_id)||{order_no:"PO"}),delivery_note:r.delivery_note,reported_at:r.reported_at})),
+      // Today's delivery = driver reports today + Admin / Sales Head "Mark delivered" with today's date (17 Nov 2026, Mohit:
+      // deliveries are marked by hand for now, so driver reports alone showed 0). Same rule as the Accounts home.
+      if(dl||mk){const R=dl||[],byId=new Map(O.map(o=>[o.id,o])),rep=new Set(R.filter(r=>r.delivery_status==="DELIVERED"||r.delivery_status==="PARTIAL").map(r=>r.order_id));
+        const mt=(mk||[]).filter(m=>m.kind==="DELIVERED"&&String(m.mark_date)===t&&!rep.has(m.order_id)),mset=new Set(mt.map(m=>m.order_id));
+        const miss=[...mset].filter(id=>!byId.has(id));
+        for(let i=0;i<miss.length;i+=150){for(const o of (await safe(C.from("orders").select(ORDER_COLS).in("id",miss.slice(i,i+150))))||[])byId.set(o.id,o)}
+        const who=m=>m.marked_by_name||(m.marked_by_role==="MANAGER"?"Sales Head":"Admin");
+        const rows=R.filter(r=>!(r.delivery_status==="NOT_DELIVERED"&&mset.has(r.order_id))).map(r=>({...(byId.get(r.order_id)||{order_no:"PO"}),delivery_status:r.delivery_status,delivery_note:r.delivery_note,reported_at:r.reported_at}))
+          .concat(mt.map(m=>({...(byId.get(m.order_id)||{order_no:"PO"}),delivery_status:"DELIVERED",delivery_note:"Marked delivered by "+who(m)+(m.note?" · "+m.note:""),reported_at:m.marked_at})));
+        const n=s=>rows.filter(r=>r.delivery_status===s).length,bad=rows.filter(r=>r.delivery_status==="NOT_DELIVERED").slice(0,4);
+        const dOf=s=>lst("Today's delivery · "+s.replace("_"," ").toLowerCase(),s==="DELIVERED"?"Driver reports and Mark delivered today":"Driver reports today",rows.filter(r=>r.delivery_status===s),
           [{t:"PO No.",v:"order_no"},{t:"Party",v:"customer_name"},{t:"Cases",v:"total_qty",num:true,sum:true,dec:0},{t:"Amount",v:"total_amount",money:true,sum:true},{t:"Reported",v:r=>r.reported_at?new Date(r.reported_at).toLocaleTimeString("en-IN",{hour:"2-digit",minute:"2-digit"}):""},{t:"Note",v:"delivery_note"}]);
         delivery=card("📦 Today's delivery","",'<div class="rd-bd"><div class="rd-flow rd-flow3">'+step('<span class="g">'+n("DELIVERED")+"</span>","Delivered","",0,"",dOf("DELIVERED"))+step('<span class="a">'+n("PARTIAL")+"</span>","Part delivered","",0,"",dOf("PARTIAL"))+step('<span class="r">'+n("NOT_DELIVERED")+"</span>","Not delivered","",0,"",dOf("NOT_DELIVERED"))+"</div></div>"+
-          bad.map(r=>{const o=byId.get(r.order_id);return dot("red","<b>"+esc(o?o.order_no:"PO")+"</b> "+esc(o?o.customer_name:"")+(r.delivery_note?" — "+esc(r.delivery_note):""))}).join(""))}
+          bad.map(r=>dot("red","<b>"+esc(r.order_no||"PO")+"</b> "+esc(r.customer_name||"")+(r.delivery_note?" — "+esc(r.delivery_note):""))).join(""))}
       let skus="";
       const it=td.length?await itemsOf(td.map(o=>o.id)):[];
       if(it&&it.length){const m=new Map();for(const x of it){if(!inBrand(x.sku_name))continue;const k=key(x.sku_name);const v=m.get(k)||{n:x.sku_name,q:0};v.q+=qtyOf(x);m.set(k,v)}
