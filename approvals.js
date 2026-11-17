@@ -20,6 +20,9 @@
   const dmy=v=>v?(window.LWBDate?LWBDate.d(v):String(v).slice(0,10)):"";
   const errText=e=>String((e&&e.message)||e||"Something went wrong").replace(/^.*?ERROR:\s*/,"");
   const sum=(a,f)=>a.reduce((t,x)=>t+num(f(x)),0);
+  const r2=n=>Math.round(num(n)*100)/100;
+  // per-unit difference with sign: +₹3.27/pc, −₹2/pc
+  const pu=d=>(d>0?"+":d<0?"−":"")+"₹"+Math.abs(r2(d)).toLocaleString("en-IN",{maximumFractionDigits:2})+"/pc";
   const PO_PENDING=["pending","submitted","pending_manager","pending_approval","pending_review","new"];
   const MODE={CASH:"Cash",UPI:"UPI",BANK:"Bank / NEFT",RTGS:"RTGS",NEFT:"NEFT",CHEQUE:"Cheque",CARD:"Card",ONLINE:"Online"};
   async function rpc(c,name,args){const {data,error}=await c.rpc(name,args);if(error)throw Error(errText(error));return data}
@@ -41,7 +44,9 @@
        const items=rows.filter(r=>r.can_approve).map(r=>{
          const lines=(r.lines||[]),val=sum(lines,l=>num(l.qty)*num(l.rate));
          return {id:r.order_id,orderId:r.order_id,person:r.sales_person,ref:r.order_no,party:r.party,amount:val,when:r.requested_at,
-           lines:lines.filter(l=>l.min_rate!=null&&num(l.rate)<num(l.min_rate)).map(l=>l.sku+" · ₹"+num(l.rate)+" (min ₹"+num(l.min_rate)+")"+(l.landing!=null?" · landing ₹"+num(l.landing):"")),
+           // Mohit (17 Nov 2026): show the difference too, per unit and in ₹ for the qty, so a low rate is easy to track.
+           lines:lines.filter(l=>l.min_rate!=null&&num(l.rate)<num(l.min_rate)).map(l=>{const dm=r2(num(l.rate)-num(l.min_rate));
+             return l.sku+" · Rate ₹"+num(l.rate)+" · Min ₹"+num(l.min_rate)+" · Diff "+pu(dm)+" × "+num(l.qty)+" = "+(dm<0?"−":"")+inr(Math.round(Math.abs(dm)*num(l.qty)))}),
            meta:[r.brand,r.sales_person&&"By "+r.sales_person,r.slip?"Rajnigandha slip":"",r.note].filter(Boolean),
            detail:{info:[["Sales person",r.sales_person],["PO date",dmy(r.order_date)],["Brand",r.brand],["Type",r.slip?"Rajnigandha slip":"PO"],["Transport",r.transportation],["Driver",r.driver_name],["Vehicle",r.vehicle_no],["Note",r.note]],
              why:"Rate is below the minimum on "+lines.filter(l=>l.min_rate!=null&&num(l.rate)<num(l.min_rate)).length+" of "+lines.length+" items",
@@ -310,7 +315,13 @@
       .forEach(([k,v])=>{if(v&&!info.some(x=>x[0]===k))info.push([k,v])})}
     const inf=info.filter(x=>x[1]!=null&&String(x[1]).trim()!=="");
     let h=inf.length?'<div class="cv-info">'+inf.map(x=>'<div><span>'+esc(x[0])+'</span><b>'+esc(x[1])+'</b></div>').join("")+'</div>':"";
-    if(i.amount!=null)h+='<div class="cv-tot one"><div><span>Amount</span><b>'+inr(i.amount)+'</b></div>'+(o&&o.total_amount!=null&&num(o.total_amount)!==num(i.amount)?'<div><span>PO total</span><b>'+inr(o.total_amount)+'</b></div>':"")+'</div>';
+    // Low rate: total ₹ lost against Min for the whole PO (Diff × Qty of the items below Min).
+    let gap="";
+    if(d.rows&&d.rows.some(r=>r.min!=null)){
+      const loss=Math.round(d.rows.reduce((t,r)=>t+(r.flag?(r.min-r.rate)*r.qty:0),0));
+      gap='<div class="neg"><span>Loss vs min</span><b>'+(loss?"−":"")+inr(loss)+'</b></div>';
+    }
+    if(i.amount!=null)h+='<div class="cv-tot one'+(gap?" g2":"")+'"><div><span>Amount</span><b>'+inr(i.amount)+'</b></div>'+(o&&o.total_amount!=null&&num(o.total_amount)!==num(i.amount)?'<div><span>PO total</span><b>'+inr(o.total_amount)+'</b></div>':"")+gap+'</div>';
     const why=d.whyList||(d.rows||(d.info&&d.info.length)?null:i.lines);
     if(d.why||why&&why.length)h+='<div class="cv-why">'+(d.why?'<b>'+esc(d.why)+'</b>':"")+(why&&why.length?'<ul>'+why.map(w=>'<li>'+esc(w)+'</li>').join("")+'</ul>':"")+'</div>';
     if(d.back&&d.back.length)h+='<div class="cv-h">Goods back from party</div><table class="cv-t"><colgroup><col><col class="c2"><col class="c3"></colgroup><thead><tr><th>Item</th><th class="n">Qty</th><th>Reason</th></tr></thead><tbody>'+
@@ -320,14 +331,17 @@
       return {sku:it.sku_name,qty:q,ordered:num(it.ordered_qty),loaded:it.loaded_qty==null?null:num(it.loaded_qty),rate:num(it.rate),wt:it.total_weight==null?null:num(it.total_weight),flag:(d.flags||[]).some(f=>f===k||k.startsWith(f))}});
     if(rows&&rows.length){
       const minCol=rows.some(r=>r.min!=null),tq=rows.reduce((t,r)=>t+r.qty,0),ta=rows.reduce((t,r)=>t+r.qty*r.rate,0);
+      // Low rate (Mohit, 17 Nov 2026): Qty · Rate · Min · Diff in their own columns, Diff highlighted. No extra lines under the item.
+      const dcell=r=>{if(r.min==null)return '<td></td>';const df=r2(r.rate-r.min);return '<td class="n"><i class="dpill '+(df<0?"neg":df>0?"pos":"zero")+'">'+(df>0?"+":df<0?"−":"")+"₹"+qn(Math.abs(df))+'</i></td>'};
       h+='<div class="cv-h">PO items · '+rows.length+(rows.some(r=>r.flag)?' · '+rows.filter(r=>r.flag).length+' need your check':"")+'</div>'+
-        '<table class="cv-t"><colgroup><col><col class="c"><col class="c"><col class="c2"></colgroup><thead><tr><th>Item</th><th class="n">Qty</th><th class="n">Rate</th><th class="n">Amount</th></tr></thead><tbody>'+
+        '<table class="cv-t'+(minCol?" mincol":"")+'"><colgroup><col><col class="c"><col class="c">'+(minCol?'<col class="c"><col class="c">':"")+'<col class="c2"></colgroup><thead><tr><th>Item</th><th class="n">Qty</th><th class="n">Rate</th>'+(minCol?'<th class="n">Min</th><th class="n">Diff</th>':"")+'<th class="n">Amount</th></tr></thead><tbody>'+
         rows.map(r=>'<tr class="'+(r.flag?"chg":"")+'"><td class="it"><b>'+esc(r.sku)+'</b>'+
-          (minCol&&r.min!=null?'<small class="'+(r.flag?"rt":"")+'">Min ₹'+qn(r.min)+(r.landing!=null?' · landing ₹'+qn(r.landing):"")+'</small>':"")+
           (r.loaded!=null&&r.loaded!==r.qty?'<small>Loaded '+qn(r.loaded)+'</small>':"")+(r.ordered&&r.ordered!==r.qty?'<small>Ordered '+qn(r.ordered)+'</small>':"")+
-          (r.flag?'<span class="tg"><i class="less">'+(minCol?"Below min":"Check")+'</i></span>':"")+'</td>'+
-          '<td class="n">'+qn(r.qty)+'</td><td class="n'+(r.flag?" neg":"")+'">₹'+qn(r.rate)+'</td><td class="n">'+qn(Math.round(r.qty*r.rate))+'</td></tr>').join("")+
-        '</tbody><tfoot><tr><td>Total</td><td class="n">'+qn(tq)+'</td><td></td><td class="n">'+qn(Math.round(ta))+'</td></tr></tfoot></table>';
+          (r.flag&&!minCol?'<span class="tg"><i class="less">Check</i></span>':"")+'</td>'+
+          '<td class="n">'+qn(r.qty)+'</td><td class="n'+(r.flag?" neg":"")+'">₹'+qn(r.rate)+'</td>'+
+          (minCol?'<td class="n">'+(r.min!=null?"₹"+qn(r.min):"")+'</td>'+dcell(r):"")+
+          '<td class="n">'+qn(Math.round(r.qty*r.rate))+'</td></tr>').join("")+
+        '</tbody><tfoot><tr><td>Total</td><td class="n">'+qn(tq)+'</td><td></td>'+(minCol?'<td></td><td></td>':"")+'<td class="n">'+qn(Math.round(ta))+'</td></tr></tfoot></table>';
     }
     return h||'<div class="cv-note">No more details for this one.</div>';
   }
