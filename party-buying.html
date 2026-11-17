@@ -23,7 +23,10 @@
     .pb-tools{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
     .pb-tools .erp-pill{padding:4px 6px 4px 10px;font-size:13px}
     .pb-tools .sl-in{height:30px;width:64px}
-    #box tr[data-party]{cursor:pointer}
+    #box tr[data-party],#box tr[data-sku]{cursor:pointer}
+    .pb-rlink{display:inline-block;font-size:11px;font-weight:700;color:#7a4a00;background:#fff3c4;border-radius:8px;padding:0 6px;margin-left:4px;white-space:nowrap}
+    .pb-rng{white-space:nowrap;font-size:12.5px;color:var(--erp-muted)}
+    #box tr.pb-low td{background:#fff5f5}#box tr.pb-low td:first-child{box-shadow:inset 3px 0 0 #c0392b}
     .sl-filters{gap:8px;margin-bottom:10px}
     .sl-filters .grow{min-width:130px}
     @media(max-width:640px){.sl-filters .grow{max-width:none!important}}
@@ -121,8 +124,8 @@
   </form></div></div>
   <script>
     const S=LWBSales,{client,el,esc,fmt,short,num,key}=S;
-    const TABS=[["party","Party-wise"],["sku","SKU-wise"],["cat","Category-wise"],["psku","Party × SKU"],["gap","Not Buying"],["stop","Stopped Buying"]];
-    let setBrands=new Map(),parties=[],skus=[],orders=[],lines=[],err="",tab="party",gapMode="all",gapDays=30,BB={get:()=>""};
+    const TABS=[["party","Party-wise"],["sku","SKU-wise"],["cat","Category-wise"],["psku","Party × SKU"],["rate","Rate Check"],["gap","Not Buying"],["stop","Stopped Buying"]];
+    let rateSku="",rateMode="all",setBrands=new Map(),parties=[],skus=[],orders=[],lines=[],err="",tab="party",gapMode="all",gapDays=30,BB={get:()=>""};
     const today=()=>S.isoDay(new Date());
     const since=d=>d?S.daysBetween(d,today()):null;
     const UNCAT="No category";
@@ -155,7 +158,7 @@
         const o=oBy.get(it.order_id);if(!o)continue;
         const q=S.lineQty(it,o,basis);if(!q)continue;
         const k=S.skuKey(it.sku_name),s=bySku.get(k);
-        lines.push({o,pk:o.pk,party:String(o.customer_name||"").trim(),sk:k,sku:s?s.name:String(it.sku_name||"Unknown SKU").trim(),cat:s?s.cat:UNCAT,co:s?s.co:"",q,amt:q*num(it.rate),day:o.day});
+        lines.push({o,pk:o.pk,party:String(o.customer_name||"").trim(),sk:k,sku:s?s.name:String(it.sku_name||"Unknown SKU").trim(),cat:s?s.cat:UNCAT,co:s?s.co:"",q,amt:q*num(it.rate),rate:num(it.rate),day:o.day});
       }
     }
     // Lists follow the brand on top (Mohit, 17 Nov 2026): Coca-Cola shows only Coca-Cola categories, and
@@ -189,11 +192,16 @@
     const scopeWord=()=>el("scope").value==="all"?"active parties":(BB.get()&&BB.name?BB.name(BB.get())+" ":"")+"buyers";
     function group(list,keyOf,init,add){const m=new Map();for(const x of list){const k=keyOf(x);if(!m.has(k))m.set(k,init(x));add(m.get(k),x)}return [...m.values()]}
     const ageTag=d=>d==null?'<span class="sl-age never">Never</span>':'<span class="sl-age '+(d>=30?"a10":d>=15?"a5":d>=7?"a2":"")+'">'+d+" d</span>";
+    // Selling rate (Mohit, 17 Nov 2026): average = amount ÷ qty of lines with a rate (free / zero-rate lines left out).
+    function rateOf(list){let q=0,a=0,mn=Infinity,mx=0,ld="",lr=0;for(const l of list){if(!(l.rate>0))continue;q+=l.q;a+=l.q*l.rate;if(l.rate<mn)mn=l.rate;if(l.rate>mx)mx=l.rate;if(l.day>=ld){ld=l.day;lr=l.rate}}
+      return q?{avg:Math.round(a/q*100)/100,min:mn,max:mx,last:lr}:null}
+    const rs=n=>n==null?"—":"₹"+Number(n).toLocaleString("en-IN",{maximumFractionDigits:2});
+    const rangeTxt=r=>!r?"—":r.min===r.max?rs(r.min):rs(r.min)+" – "+rs(r.max);
     // Party × SKU stats: times (POs), qty, amount, first / last day, usual gap.
     function pairs(list){
-      return group(list,l=>l.pk+"|"+l.sk,l=>({pk:l.pk,party:l.party,sm:l.o.sm,sk:l.sk,sku:l.sku,cat:l.cat,ords:new Set(),days:new Set(),q:0,amt:0,first:l.day,last:l.day}),
-        (x,l)=>{x.ords.add(l.o.id);x.days.add(l.day);x.q+=l.q;x.amt+=l.amt;if(l.day<x.first)x.first=l.day;if(l.day>x.last)x.last=l.day})
-        .map(x=>({...x,times:x.ords.size,gap:x.days.size>1?Math.round(S.daysBetween(x.first,x.last)/(x.days.size-1)):null,ago:since(x.last)}));
+      return group(list,l=>l.pk+"|"+l.sk,l=>({pk:l.pk,party:l.party,sm:l.o.sm,sk:l.sk,sku:l.sku,cat:l.cat,ords:new Set(),days:new Set(),q:0,amt:0,first:l.day,last:l.day,ls:[]}),
+        (x,l)=>{x.ls.push(l);x.ords.add(l.o.id);x.days.add(l.day);x.q+=l.q;x.amt+=l.amt;if(l.day<x.first)x.first=l.day;if(l.day>x.last)x.last=l.day})
+        .map(x=>({...x,r:rateOf(x.ls),times:x.ords.size,gap:x.days.size>1?Math.round(S.daysBetween(x.first,x.last)/(x.days.size-1)):null,ago:since(x.last)}));
     }
 
     function view(){
@@ -209,12 +217,13 @@
       }
       if(tab==="sku"){
         const nP=P().length,bm=brandsOf(),pl=P().map(p=>key(p.customer_name));
-        const g=group(ls,l=>l.sk,l=>({name:l.sku,cat:l.cat,co:l.co,ords:new Set(),pk:new Set(),q:0,amt:0,last:""}),(x,l)=>{x.ords.add(l.o.id);x.pk.add(l.pk);x.q+=l.q;x.amt+=l.amt;if(l.day>x.last)x.last=l.day});
+        const g=group(ls,l=>l.sk,l=>({sk:l.sk,name:l.sku,cat:l.cat,co:l.co,ords:new Set(),pk:new Set(),q:0,amt:0,last:"",ls:[]}),(x,l)=>{x.ls.push(l);x.ords.add(l.o.id);x.pk.add(l.pk);x.q+=l.q;x.amt+=l.amt;if(l.day>x.last)x.last=l.day});
+        for(const x of g){x.r=rateOf(x.ls);x.below=x.r?pairs(x.ls).filter(p=>p.r&&p.r.avg<x.r.avg*0.995).length:0}
         for(const x of g)x.notB=pl.filter(k=>skuFor(bm,k,x.co)&&!x.pk.has(k)).length;
-        const rows=g.filter(x=>match(x.name+" "+x.cat)).sort((a,b)=>b.q-a.q).map(x=>({data:[x.name,x.cat,x.ords.size,x.pk.size,x.notB,x.q,x.amt,x.last,since(x.last)],
-          show:[esc(x.name),esc(x.cat),fmt(x.ords.size),fmt(x.pk.size),'<b style="color:var(--erp-red)">'+fmt(x.notB)+"</b>",fmt(x.q),short(x.amt),S.shortDate(x.last),ageTag(since(x.last))]}));
-        return {title:"SKU-wise sales · "+range,head:["SKU","Category","Times (POs)","Parties Bought","Parties Not Bought","Qty","Amount","Last Sold","Days Ago"],num:[2,3,4,5,6],rows,sum:[2,5,6],
-          note:"Parties Not Bought = "+scopeWord()+" ("+fmt(nP)+" with these filters) that did not buy this SKU in these dates. Open Not Buying to see who."};
+        const rows=g.filter(x=>match(x.name+" "+x.cat)).sort((a,b)=>b.q-a.q).map(x=>({attr:' data-sku="'+esc(x.sk)+'"',data:[x.name,x.cat,x.ords.size,x.pk.size,x.notB,x.q,x.amt,x.r?x.r.avg:"",rangeTxt(x.r),x.below,x.last,since(x.last)],
+          show:[esc(x.name)+' <span class="pb-rlink">₹ rates ›</span>',esc(x.cat),fmt(x.ords.size),fmt(x.pk.size),'<b style="color:var(--erp-red)">'+fmt(x.notB)+"</b>",fmt(x.q),short(x.amt),"<b>"+rs(x.r&&x.r.avg)+"</b>",'<span class="pb-rng">'+rangeTxt(x.r)+"</span>",x.below?'<span class="pb-chip never">'+fmt(x.below)+"</span>":"0",S.shortDate(x.last),ageTag(since(x.last))]}));
+        return {title:"SKU-wise sales · "+range,head:["SKU","Category","Times (POs)","Parties Bought","Parties Not Bought","Qty","Amount","Avg Rate","Low – High","Below Avg","Last Sold","Days Ago"],num:[2,3,4,5,6,7,9],rows,sum:[2,5,6],
+          note:"Parties Not Bought = "+scopeWord()+" ("+fmt(nP)+" with these filters) that did not buy this SKU in these dates. Avg Rate = amount ÷ qty (selling rate on the PO; free / zero-rate lines left out). Below Avg = parties whose own average rate is under the SKU average. Tap an SKU to see every party's rate (Rate Check)."};
       }
       if(tab==="cat"){
         const tot=ls.reduce((a,l)=>a+l.amt,0);
@@ -225,10 +234,29 @@
       }
       if(tab==="psku"){
         const rows=pairs(ls).filter(x=>match(x.party+" "+x.sku+" "+x.cat)).sort((a,b)=>a.party.localeCompare(b.party)||b.q-a.q).map(x=>({tk:{pk:x.pk,name:x.party,miss:[]},
-          data:[x.party,x.sku,x.cat,x.times,x.q,x.amt,x.first,x.last,x.ago,x.gap==null?"":x.gap],
-          show:[esc(x.party),esc(x.sku),esc(x.cat),fmt(x.times),fmt(x.q),short(x.amt),S.shortDate(x.first),S.shortDate(x.last),ageTag(x.ago),x.gap==null?"—":"every "+x.gap+" d"]}));
-        return {title:(partyPick()?partyName():"Party × SKU")+" · "+range,head:["Party","SKU","Category","Times","Qty","Amount","First Buy","Last Buy","Days Ago","Usual Gap"],num:[3,4,5],rows,sum:[3,4,5],
+          data:[x.party,x.sku,x.cat,x.times,x.q,x.amt,x.r?x.r.avg:"",x.first,x.last,x.ago,x.gap==null?"":x.gap],
+          show:[esc(x.party),esc(x.sku),esc(x.cat),fmt(x.times),fmt(x.q),short(x.amt),rs(x.r&&x.r.avg),S.shortDate(x.first),S.shortDate(x.last),ageTag(x.ago),x.gap==null?"—":"every "+x.gap+" d"]}));
+        return {title:(partyPick()?partyName():"Party × SKU")+" · "+range,head:["Party","SKU","Category","Times","Qty","Amount","Avg Rate","First Buy","Last Buy","Days Ago","Usual Gap"],num:[3,4,5,6],rows,sum:[3,4,5],
           note:"Usual gap = on average how many days between two buys of this SKU by this party."};
+      }
+      if(tab==="rate"){
+        // Rate Check: each party's average selling rate for an SKU vs the SKU's average (all parties, these filters).
+        const skuAvg=new Map();for(const x of group(ls,l=>l.sk,l=>({sk:l.sk,ls:[]}),(x,l)=>x.ls.push(l)))skuAvg.set(x.sk,rateOf(x.ls));
+        const rName=rateSku?(ls.find(l=>l.sk===rateSku)||lines.find(l=>l.sk===rateSku)||{}).sku||"":"";
+        let ps=pairs(rateSku?ls.filter(l=>l.sk===rateSku):ls).filter(x=>x.r&&skuAvg.get(x.sk)&&match(x.party+" "+x.sku+" "+x.sm));
+        for(const x of ps){const a=skuAvg.get(x.sk).avg;x.avgAll=a;x.diff=Math.round((x.r.avg-a)*100)/100;x.pct=a?Math.round((x.r.avg-a)/a*1000)/10:0}
+        if(rateMode==="below")ps=ps.filter(x=>x.pct<=-0.5);else if(rateMode==="above")ps=ps.filter(x=>x.pct>=0.5);
+        ps.sort((a,b)=>a.pct-b.pct||b.q-a.q);
+        const tag=x=>x.pct<=-0.5?'<span class="pb-chip never">'+rs(-x.diff)+" below · "+x.pct+"%</span>":x.pct>=0.5?'<span class="pb-chip ok">'+rs(x.diff)+" above · +"+x.pct+"%</span>":'<span class="pb-chip">At avg</span>';
+        const one=!!rateSku,cut=a=>one?a.filter((_,i)=>i!==2):a;
+        const rows=ps.map(x=>({attr:' data-party="'+esc(x.party)+'"',tk:{pk:x.pk,name:x.party,miss:[]},cls:x.pct<=-0.5?"pb-low":"",
+          data:cut([x.party,x.sm,x.sku,x.times,x.q,x.amt,x.r.avg,x.avgAll,x.pct,rangeTxt(x.r),x.r.last,x.last]),
+          show:cut([esc(x.party),esc(x.sm),esc(x.sku),fmt(x.times),fmt(x.q),short(x.amt),"<b>"+rs(x.r.avg)+"</b>",rs(x.avgAll),tag(x),'<span class="pb-rng">'+rangeTxt(x.r)+"</span>",rs(x.r.last),S.shortDate(x.last)])}));
+        const all=skuAvg.get(rateSku);
+        return {title:"Rate check · "+(rateSku?rName+" · avg "+rs(all&&all.avg)+" · "+rangeTxt(all):"every SKU")+" · "+range,
+          tools:(rateSku?'<span class="pb-party">'+esc(rName)+'<button type="button" id="clearSku" aria-label="All SKUs">×</button></span>':"")+[["all","All"],["below","Below avg"],["above","Above avg"]].map(([k,l])=>'<button type="button" class="erp-pill'+(rateMode===k?" active":"")+'" data-rate="'+k+'">'+esc(l)+"</button>").join(""),
+          head:cut(["Party","Salesman","SKU","Times","Qty","Amount","Party Avg","SKU Avg","Gap vs Avg %","Low – High","Last Rate","Last Buy"]),num:one?[2,3,4,5,6,9]:[3,4,5,6,7,10],rows,sum:one?[2,3,4]:[3,4,5],
+          note:"Party Avg Rate = this party's amount ÷ qty for the SKU. SKU Avg Rate = all parties in these filters. Red = party pays less than average (rate gap), lowest first. Rate is the selling rate on the PO; free / zero-rate lines are left out."};
       }
       const tools=[["all","All"],["never","Never bought"],["days","Not in "+gapDays+"+ days"]].map(([k,l])=>'<button type="button" class="erp-pill'+(gapMode===k?" active":"")+'" data-gap="'+k+'">'+esc(l)+"</button>").join("")+
         '<label for="gapDays" style="font-size:12px;font-weight:600">Days</label><input id="gapDays" class="sl-in" type="number" min="1" max="365" value="'+gapDays+'">';
@@ -274,7 +302,7 @@
     function table(v){
       const c=i=>[(v.num||[]).includes(i)?"num":"",i===0?"sl-first":"",(v.wide||[]).includes(i)?"sl-wide":""].filter(Boolean).join(" ");
       let h=CF.chips(tab,v.head)+'<table class="erp-table sl-stack"><thead><tr>'+v.head.map((x,i)=>'<th class="'+c(i)+'">'+esc(x)+CF.th(tab,v.head,i)+"</th>").join("")+"</tr></thead><tbody>";
-      for(const r of v.rows)h+="<tr"+(r.attr||"")+">"+r.show.map((x,i)=>'<td class="'+c(i)+'" data-label="'+esc(v.head[i])+'">'+x+"</td>").join("")+"</tr>";
+      for(const r of v.rows)h+="<tr"+(r.attr||"")+(r.cls?' class="'+r.cls+'"':"")+">"+r.show.map((x,i)=>'<td class="'+c(i)+'" data-label="'+esc(v.head[i])+'">'+x+"</td>").join("")+"</tr>";
       h+="</tbody>";
       if(v.sum&&v.rows.length)h+="<tfoot><tr>"+v.head.map((x,i)=>'<td class="'+c(i)+'" data-label="'+esc(x)+'">'+(i===0?"Total":v.sum.includes(i)?(/Amount/.test(x)?short:fmt)(v.rows.reduce((a,r)=>a+num(r.data[i]),0)):"")+"</td>").join("")+"</tr></tfoot>";
       return h+"</table>";
@@ -317,7 +345,7 @@
     // From the parties on screen (after every filter): one task per person via lwb_task_add
     // (lwb_task_management_setup.sql). The salesman sees it as a popup on his Dashboard.
     const TK={parties:[],people:null,pick:null,push:null,sel:new Set()};
-    const tkTabs=["party","psku","gap","stop"];
+    const tkTabs=["party","psku","rate","gap","stop"];
     function tkCollect(){
       const pBy=new Map(parties.map(p=>[key(p.customer_name),p])),m=new Map();
       for(const r of (current&&current.rows)||[]){const t=r.tk;if(!t)continue;
@@ -428,6 +456,9 @@
         const g=e.target.closest("[data-gap]");if(g){gapMode=g.dataset.gap;render();return}
         if(e.target.id==="clearParty"){MS.party.set([]);render();return}
         if(e.target.id==="giveTask"){tkOpen();return}
+        const rg=e.target.closest("[data-rate]");if(rg){rateMode=rg.dataset.rate;render();return}
+        if(e.target.id==="clearSku"){rateSku="";render();return}
+        const sr=e.target.closest("tr[data-sku]");if(sr){rateSku=sr.dataset.sku;rateMode="all";tab="rate";render();window.scrollTo({top:el("tabs").offsetTop-70,behavior:"smooth"});return}
         const r=e.target.closest("tr[data-party]");if(r&&partySet().size!==1)setParty(r.dataset.party);
       });
       document.addEventListener("change",e=>{if(e.target.id==="gapDays"){gapDays=Math.max(1,Math.min(365,Math.round(num(e.target.value))||30));render()}});
