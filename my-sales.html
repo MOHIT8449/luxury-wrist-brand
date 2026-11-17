@@ -172,13 +172,14 @@
       return '<span class="erp-badge amber" title="Changed by Accounts, approved">✎ Bill '+(d<0?"−":"+")+short(Math.abs(d))+"</span>"+(ls?'<span class="bcn">'+ls+"</span>":"")}
     const isCancelled=o=>["cancelled","canceled","rejected"].includes(S.status(o));
     const isWaiting=o=>["","pending","submitted","pending_manager","pending_approval","pending_review","new"].includes(S.status(o));
-    const isDelivered=o=>o.delivery_status==="DELIVERED"||o.delivery_status==="PARTIAL";
+    // Delivered = driver report, or Admin / Sales Head "Mark delivered" (lwb_my_orders_delivered_marks_fix.sql), or status delivered.
+    const isDelivered=o=>o.delivery_status==="DELIVERED"||o.delivery_status==="PARTIAL"||["delivered","closed","completed"].includes(S.status(o));
     const isPendingDelivery=o=>!isCancelled(o)&&!isDelivered(o);
     function stage(o){
       const when=v=>LWBDate.dt(v);
       const veh=[o.driver_name,o.vehicle_no].filter(Boolean).map(esc).join(" · ");
       if(isCancelled(o))return ["red","Cancelled",o.cancel_reason?'<span class="why">Reason: '+esc(o.cancel_reason)+"</span>":""];
-      if(o.delivery_status==="DELIVERED")return ["green","Delivered",esc(when(o.delivered_at))+(o.received_by?" · Received by "+esc(o.received_by):"")];
+      if(o.delivery_status==="DELIVERED"||(isDelivered(o)&&o.delivery_status!=="PARTIAL"))return ["green","Delivered",[o.delivered_at?esc(when(o.delivered_at)):"",o.received_by?"Received by "+esc(o.received_by):o.delivery_marked?"Marked by office":""].filter(Boolean).join(" · ")];
       if(o.delivery_status==="PARTIAL")return ["amber","Part delivered",esc(when(o.delivered_at))+(o.delivery_note?" · "+esc(o.delivery_note):"")];
       if(o.delivery_status==="NOT_DELIVERED")return ["red","Not delivered",esc(o.delivery_note||"Driver could not deliver")];
       const st=S.status(o);
