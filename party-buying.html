@@ -11,6 +11,7 @@
   <link rel="stylesheet" href="sales.css">
   <script src="erp-shell.js"></script>
   <script src="sales-common.js"></script>
+  <script src="erp-multi.js"></script>
   <style>
     /* Party Buying (Mohit, 17 Nov 2026): who bought what, how many times, and who stopped / never bought. */
     .pb-chip{display:inline-block;border-radius:10px;padding:1px 7px;margin:1px 3px 1px 0;font-size:11.5px;font-weight:600;white-space:nowrap}
@@ -53,10 +54,10 @@
       <div><label for="from">From</label><input id="from" type="date"></div>
       <div><label for="to">To</label><input id="to" type="date"></div>
       <div><label for="basis">Count as</label><select id="basis"><option value="booked">Booked</option><option value="loaded">Loaded</option></select></div>
-      <div><label for="cat">Category</label><select id="cat"><option value="">All</option></select></div>
+      <div><label for="catBtn">Category</label><div id="cat"></div></div>
       <div><label for="scope">Parties</label><select id="scope"><option value="buyers">Brand buyers</option><option value="all">All active</option></select></div>
-      <div><label for="sm">Salesman</label><select id="sm"><option value="">All</option></select></div>
-      <div class="grow" style="max-width:220px"><label for="party">Party</label><input id="party" list="partyList" type="search" autocomplete="off" placeholder="All parties"><datalist id="partyList"></datalist></div>
+      <div><label for="smBtn">Salesman</label><div id="sm"></div></div>
+      <div class="grow" style="max-width:240px"><label for="partyBtn">Party</label><div id="party"></div></div>
       <div class="grow"><label for="q">Search SKU / party</label><input id="q" type="search" autocomplete="off" placeholder="Type to filter..."></div>
       <button id="refresh" type="button" class="sl-btn">Refresh</button>
       <button id="excel" type="button" class="sl-btn ghost">Excel</button>
@@ -110,25 +111,27 @@
       }
     }
     function fillLists(){
-      const cats=[...new Set(skus.map(s=>s.cat))].sort(),cv=el("cat").value;
-      el("cat").innerHTML='<option value="">All</option>'+cats.map(c=>'<option'+(c===cv?" selected":"")+">"+esc(c)+"</option>").join("");
+      MS.cat.items([...new Set(skus.map(s=>s.cat))].sort().map(c=>({v:c,t:c})));
       const sms=new Map();for(const p of parties)if(p.salesman_id)sms.set(p.salesman_id,p.salesman_name);
-      const sv=el("sm").value;
-      el("sm").innerHTML='<option value="">All</option><option value="none"'+(sv==="none"?" selected":"")+'>Office (no salesman)</option>'+[...sms].sort((a,b)=>String(a[1]).localeCompare(b[1])).map(([id,n])=>'<option value="'+id+'"'+(id===sv?" selected":"")+">"+esc(n)+"</option>").join("");
-      el("partyList").innerHTML=parties.map(p=>'<option value="'+esc(p.customer_name)+'">').join("");
+      MS.sm.items([{v:"none",t:"Office (no salesman)"},...[...sms].sort((a,b)=>String(a[1]).localeCompare(b[1])).map(([id,n])=>({v:id,t:n}))]);
+      MS.party.items(parties.map(p=>({v:key(p.customer_name),t:String(p.customer_name||"").trim()})));
     }
 
     // Filters shared by every tab.
     const match=s=>{const q=key(el("q").value);return !q||key(s).includes(q)};
-    const partyPick=()=>key(el("party").value);
-    const smOk=id=>{const v=el("sm").value;return !v||(v==="none"?!id:id===v)};
-    const skuOk=s=>(!BB.get()||s.co===BB.get())&&(!el("cat").value||s.cat===el("cat").value);
-    const L=()=>lines.filter(l=>skuOk(l)&&smOk(l.o.smId)&&(!partyPick()||l.pk===partyPick()));
+    // Tick-box filters (Mohit, 17 Nov 2026): nothing ticked = All; several salesmen / parties / categories at once.
+    const MS={};
+    const partySet=()=>MS.party.get(),partyOk=k=>{const s=partySet();return !s.size||s.has(k)};
+    const partyPick=()=>{const s=partySet();return s.size===1?[...s][0]:""};
+    const partyName=()=>MS.party.names()[0]||"";
+    const smOk=id=>{const s=MS.sm.get();return !s.size||s.has(id||"none")};
+    const skuOk=s=>{const c=MS.cat.get();return (!BB.get()||s.co===BB.get())&&(!c.size||c.has(s.cat))};
+    const L=()=>lines.filter(l=>skuOk(l)&&smOk(l.o.smId)&&partyOk(l.pk));
     // Brand buyers (Mohit, 17 Nov 2026): a Rajnigandha-only party is not "not buying" Coca-Cola. With "Brand buyers",
     // only parties that bought any SKU of the chosen brand (all brands = anything) in these dates are counted.
     const buyers=()=>{const b=new Set(lines.filter(l=>!setBrands.has(l.pk)&&(!BB.get()||l.co===BB.get())).map(l=>l.pk));
       for(const [k,v] of setBrands)if(!BB.get()||v.has(BB.get()))b.add(k);return b};
-    const P=()=>{const b=el("scope").value==="all"?null:buyers();return parties.filter(p=>smOk(p.salesman_id)&&(!partyPick()||key(p.customer_name)===partyPick())&&(!b||b.has(key(p.customer_name))))};
+    const P=()=>{const b=el("scope").value==="all"?null:buyers();return parties.filter(p=>smOk(p.salesman_id)&&partyOk(key(p.customer_name))&&(!b||b.has(key(p.customer_name))))};
     // Brands each party buys: with "Brand buyers", a party is only checked against SKUs of brands it buys.
     const brandsOf=()=>{const m=new Map(setBrands);for(const l of lines){if(setBrands.has(l.pk))continue;if(!m.has(l.pk))m.set(l.pk,new Set());m.get(l.pk).add(l.co)}return m};
     const skuFor=(bm,pk,co)=>el("scope").value==="all"||!!(bm.get(pk)&&bm.get(pk).has(co));
@@ -173,7 +176,7 @@
         const rows=pairs(ls).filter(x=>match(x.party+" "+x.sku+" "+x.cat)).sort((a,b)=>a.party.localeCompare(b.party)||b.q-a.q).map(x=>({
           data:[x.party,x.sku,x.cat,x.times,x.q,x.amt,x.first,x.last,x.ago,x.gap==null?"":x.gap],
           show:[esc(x.party),esc(x.sku),esc(x.cat),fmt(x.times),fmt(x.q),short(x.amt),S.shortDate(x.first),S.shortDate(x.last),ageTag(x.ago),x.gap==null?"—":"every "+x.gap+" d"]}));
-        return {title:(partyPick()?el("party").value.trim():"Party × SKU")+" · "+range,head:["Party","SKU","Category","Times","Qty","Amount","First Buy","Last Buy","Days Ago","Usual Gap"],num:[3,4,5],rows,sum:[3,4,5],
+        return {title:(partyPick()?partyName():"Party × SKU")+" · "+range,head:["Party","SKU","Category","Times","Qty","Amount","First Buy","Last Buy","Days Ago","Usual Gap"],num:[3,4,5],rows,sum:[3,4,5],
           note:"Usual gap = on average how many days between two buys of this SKU by this party."};
       }
       const tools=[["all","All"],["never","Never bought"],["days","Not in "+gapDays+"+ days"]].map(([k,l])=>'<button type="button" class="erp-pill'+(gapMode===k?" active":"")+'" data-gap="'+k+'">'+esc(l)+"</button>").join("")+
@@ -198,7 +201,7 @@
         const rows=mine(pk).map(s=>({s,st:st(pk,s.sk),d:last.get(pk+"|"+s.sk)})).filter(x=>want(x.st)&&match(x.s.sku+" "+x.s.cat)).map(({s,st:t,d})=>({
           data:[s.sku,s.cat,t==="never"?"Never bought":"Not in "+gapDays+"+ days",d||"",d?since(d):"",times.get(pk+"|"+s.sk)||0,s.pk.size],
           show:[esc(s.sku),esc(s.cat),t==="never"?'<span class="pb-chip never">Never bought</span>':'<span class="pb-chip gap">Not in '+gapDays+'+ days</span>',S.shortDate(d),d?ageTag(since(d)):"—",fmt(times.get(pk+"|"+s.sk)||0),fmt(s.pk.size)]}));
-        return {title:"Not buying · "+el("party").value.trim(),tools,head:["SKU","Category","Status","Last Buy","Days Ago","Times Bought","Other Parties Buying"],num:[5,6],rows,
+        return {title:"Not buying · "+partyName(),tools,head:["SKU","Category","Status","Last Buy","Days Ago","Times Bought","Other Parties Buying"],num:[5,6],rows,
           note:"SKUs that sold to at least one party in these dates. Top rows are bought by the most parties, so they are the easiest to push to this party."};
       }
       const rows=[];
@@ -232,7 +235,7 @@
       renderKpis();
       const v=view();current=v;
       el("tabTitle").textContent=v.title;
-      el("tabTools").innerHTML=(partyPick()?'<span class="pb-party">'+esc(el("party").value.trim())+'<button type="button" id="clearParty" aria-label="Clear party">×</button></span>':"")+(v.tools||"");
+      el("tabTools").innerHTML=(partySet().size?'<span class="pb-party">'+esc(MS.party.label())+'<button type="button" id="clearParty" aria-label="Clear party">×</button></span>':"")+(v.tools||"");
       el("note").textContent=v.note||"";
       el("box").innerHTML=v.rows.length?table(v):'<div class="erp-empty">Nothing to show for these filters.</div>';
     }
@@ -254,22 +257,22 @@
         await S.excel("Party-Buying-"+el("from").value+"-to-"+el("to").value,sheets);
       }catch(e){await alert("Excel export failed: "+e.message)}
     }
-    function setParty(name){el("party").value=name;if(tab==="party"||tab==="stop")tab="psku";render()}
+    function setParty(name){MS.party.set([key(name)]);if(tab==="party"||tab==="stop")tab="psku";render()}
 
     (async()=>{
       const me=await S.start(["admin","manager"]);if(!me)return;
       const t=today();el("to").value=t;el("from").value=S.isoDay(new Date(Date.now()-89*864e5));
       try{const x=localStorage.getItem("lwb_party_buying_tab");if(TABS.some(y=>y[0]===x))tab=x}catch(e){}
-      const qs=new URLSearchParams(location.search);if(TABS.some(y=>y[0]===qs.get("tab")))tab=qs.get("tab");if(qs.get("party"))el("party").value=qs.get("party");
+      for(const [id,all] of [["cat","All categories"],["sm","All salesmen"],["party","All parties"]])MS[id]=LWBMulti.mount(el(id),{all,onChange:render});
+      const qs=new URLSearchParams(location.search);if(TABS.some(y=>y[0]===qs.get("tab")))tab=qs.get("tab");if(qs.get("party"))MS.party.set([key(qs.get("party"))]);
       document.addEventListener("click",e=>{
         const b=e.target.closest("[data-tab]");if(b){tab=b.dataset.tab;try{localStorage.setItem("lwb_party_buying_tab",tab)}catch(x){}render();return}
         const g=e.target.closest("[data-gap]");if(g){gapMode=g.dataset.gap;render();return}
-        if(e.target.id==="clearParty"){el("party").value="";render();return}
-        const r=e.target.closest("tr[data-party]");if(r&&!partyPick())setParty(r.dataset.party);
+        if(e.target.id==="clearParty"){MS.party.set([]);render();return}
+        const r=e.target.closest("tr[data-party]");if(r&&partySet().size!==1)setParty(r.dataset.party);
       });
       document.addEventListener("change",e=>{if(e.target.id==="gapDays"){gapDays=Math.max(1,Math.min(365,Math.round(num(e.target.value))||30));render()}});
-      el("q").addEventListener("input",render);el("party").addEventListener("change",render);el("party").addEventListener("search",render);
-      el("cat").addEventListener("change",render);el("sm").addEventListener("change",render);el("scope").addEventListener("change",render);
+      el("q").addEventListener("input",render);el("scope").addEventListener("change",render);
       el("refresh").onclick=loadAll;el("excel").onclick=exportExcel;
       el("from").addEventListener("change",loadAll);el("to").addEventListener("change",loadAll);el("basis").addEventListener("change",loadAll);
       el("loading").hidden=true;el("page").hidden=false;
