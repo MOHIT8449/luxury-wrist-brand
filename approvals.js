@@ -52,6 +52,7 @@
              why:"Rate is below the minimum on "+lines.filter(l=>l.min_rate!=null&&num(l.rate)<num(l.min_rate)).length+" of "+lines.length+" items",
              rows:lines.map(l=>({sku:l.sku,qty:num(l.qty),rate:num(l.rate),min:l.min_rate==null?null:num(l.min_rate),landing:l.landing==null?null:num(l.landing),flag:l.min_rate!=null&&num(l.rate)<num(l.min_rate)}))},
            acts:[{t:"✓ Approve rate",kind:"ok",view:true,confirm:"Approve the rate of "+r.order_no+"?\n\n"+(r.slip?"The slip is made and goes to Accounts.":"The PO is approved and goes on for transport."),
+                  done:"Rate approved.",doneNote:r.slip?"Slip is made and sent to Accounts.":"PO is approved and goes on for transport.",
                   run:c2=>rpc(c2,"lwb_rate_approve",{p_order_id:r.order_id})},
                  {t:"Open PO",kind:"go",href:"warehouse-orders.html?rate="+encodeURIComponent(r.order_id)}]};
        });
