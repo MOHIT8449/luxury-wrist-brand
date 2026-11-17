@@ -22,7 +22,7 @@
     .inv-filters .grow{flex:1;min-width:200px}.inv-filters .grow input{width:100%}
     .inv-filters button{height:38px;border-radius:6px;padding:0 16px;font-weight:600;cursor:pointer;border:1px solid var(--erp-red);background:var(--erp-red);color:#fff}
     .inv-filters button.ghost{background:#fff;color:var(--erp-ink);border-color:var(--erp-line)}
-    .inv-kpis{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px;margin-bottom:14px}
+    .inv-kpis{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:12px;margin-bottom:14px}
     .inv-kpi{background:#fff;border:1px solid var(--erp-line);border-radius:8px;padding:14px 16px;cursor:pointer;text-align:left;font:inherit;color:inherit}
     .inv-kpi:hover{border-color:var(--erp-red)}
     .inv-kpi span{display:block;font-size:12.5px;color:var(--erp-muted)}
@@ -30,6 +30,10 @@
     .inv-kpi b .nw{display:inline;white-space:nowrap;font-size:inherit;color:inherit;margin:0}
     .inv-sku small{display:block;color:var(--erp-muted);font-size:11.5px;margin-top:1px}
     .inv-kpi small{display:block;font-size:12px;color:var(--erp-muted);margin-top:2px}
+    .inv-kpi.amber b{color:#b45309}.inv-kpi.on{border-color:#b45309;box-shadow:0 0 0 2px #fde68a}
+    .inv-ls{display:block;font-size:11.5px;margin-top:2px;color:var(--erp-muted)}.inv-ls.w{color:#b45309;font-weight:600}.inv-ls.r{color:#c0392b;font-weight:700}
+    tr.inv-idle td:first-child{box-shadow:inset 3px 0 0 #d97706}tr.inv-idle td{background:#fffbeb}
+    .inv-idlef{height:34px;line-height:normal;padding-top:0!important;padding-bottom:0!important;width:auto;flex:0 0 auto;border:1.5px solid var(--erp-line);border-radius:6px;padding:0 8px;font:inherit;font-size:13px;background:#fff;color:var(--erp-ink);margin-left:auto;cursor:pointer}.inv-idlef.on{border-color:#b45309;color:#b45309;font-weight:600}
     .inv-kpi.green b{color:var(--erp-green)}.inv-kpi.red b{color:var(--erp-red)}.inv-kpi.blue b{color:var(--erp-blue)}
     .inv-scroll{overflow:auto}
     .inv-scroll .erp-table{min-width:760px}
@@ -79,7 +83,7 @@
     <div class="erp-pills" id="tabs"></div>
 
     <section class="erp-card">
-      <div class="erp-card-head"><h2 id="tabTitle">Saleable Stock</h2><small id="tabCount" style="color:var(--erp-muted)"></small></div>
+      <div class="erp-card-head"><h2 id="tabTitle">Saleable Stock</h2><small id="tabCount" style="color:var(--erp-muted)"></small><select id="idle" class="inv-idlef" title="Items in stock that have not sold for these many days" hidden><option value="0">All items</option><option value="15">No sale 15+ days</option><option value="30">No sale 30+ days</option><option value="60">No sale 60+ days</option><option value="90">No sale 90+ days</option></select></div>
       <div class="inv-scroll" id="tableBox"></div>
     </section>
     <p class="inv-note" id="tabNote"></p>
@@ -112,6 +116,20 @@
     const LOW_CASES=5;
     let skus=new Map(),skuByName=new Map(),live=[],inLines=[],outLines=[],moves=[];
     let errors={},tab="stock",ledger=null,ledgerBy=new Map();
+    // lwb_sku_last_sale_setup.sql: last PO date per SKU name. null = SQL not run yet (no highlight shown).
+    let lastSale=null,idle=0;
+    const IDLE_WARN=15,IDLE_BAD=30;
+    function saleAge(name){
+      if(!lastSale)return null;const x=lastSale.get(nameKey(name));
+      if(!x||!x.last_date)return {days:Infinity,last:"",q30:0};
+      return {days:Math.max(0,Math.round((Date.parse(isoDay(new Date()))-Date.parse(String(x.last_date).slice(0,10)))/864e5)),last:String(x.last_date).slice(0,10),q30:num(x.qty_30)};
+    }
+    function saleLine(a){
+      if(!a)return "";
+      const c=a.days>=IDLE_BAD?" r":a.days>=IDLE_WARN?" w":"";
+      const t=a.days===Infinity?"⚠ Never sold":a.days>=IDLE_WARN?"⚠ No sale "+a.days+" days (last "+shortDate(a.last)+")":a.days===0?"Last sale today":"Last sale "+a.days+" d ago";
+      return '<span class="inv-ls'+c+'">'+esc(t)+"</span>";
+    }
     let all={live:[],inLines:[],outLines:[],moves:[]},brands=[],brand="";
 
     function skuInfo(id,name){
@@ -128,7 +146,8 @@
       try{
         const [skuRes,liveRes]=await Promise.all([
           client.from("sku_master").select("id,sku_name,pcs_per_case,company_id,pack_unit").order("sku_name").then(r=>r.error?client.from("sku_master").select("id,sku_name,pcs_per_case,company_id").order("sku_name"):r).then(r=>r.error?client.from("sku_master").select("id,sku_name,pcs_per_case").order("sku_name"):r),
-          client.from("lwb_live_stock").select("sku_id,sku_name,pcs_per_case,saleable_pcs,damaged_pcs").order("sku_name")
+          client.from("lwb_live_stock").select("sku_id,sku_name,pcs_per_case,saleable_pcs,damaged_pcs").order("sku_name"),
+          client.rpc("lwb_sku_last_sale").then(r=>{lastSale=r.error?null:new Map((r.data||[]).map(x=>[nameKey(x.sku_key),x]));if(r.error)console.warn("Last sale not available:",r.error.message)},()=>{lastSale=null})
         ]);
         skus=new Map();skuByName=new Map();
         for(const s of (skuRes.data||[])){const x={id:String(s.id),name:s.sku_name,pack:Math.max(1,num(s.pcs_per_case)),company:s.company_id||"",unit:LWBBrand.unitOf(s,allCompanies)};skus.set(x.id,x);skuByName.set(nameKey(s.sku_name),x)}
@@ -263,11 +282,12 @@
           const s0=skuInfo(b.sku_id,b.sku_name),s={...s0,pack:Math.max(1,num(b.pcs_per_case)||s0.pack)},sale=Math.max(0,num(b.saleable_pcs)),full=Math.floor(sale/s.pack);
           const state=num(b.saleable_pcs)<=0?["Out of stock","red"]:full<LOW_CASES?["Low","amber"]:["In stock","green"];
           const L=ledgerBy.get(String(b.sku_id))||null;cur=s;
-          const sku='<span class="inv-sku">'+esc(b.sku_name)+"<small>"+fmt(s.pack)+" pcs / "+unitOf(s)+"</small></span>",badge=' <span class="erp-badge inv-st '+state[1]+'">'+state[0]+"</span>";
+          const age=saleAge(b.sku_name),idleOn=!!age&&sale>0&&age.days>=IDLE_BAD,ax=age?[age.last?shortDate(age.last):"Never",age.days===Infinity?"Never sold":age.days]:["",""];
+          const sku='<span class="inv-sku">'+esc(b.sku_name)+"<small>"+fmt(s.pack)+" pcs / "+unitOf(s)+"</small>"+(sale>0?saleLine(age):"")+"</span>",badge=' <span class="erp-badge inv-st '+state[1]+'">'+state[0]+"</span>";
           if(!ledger){
             const inP=inBy.get(s.id)||0,outP=outBy.get(s.id)||0;
-            return {key:b.sku_name,pk:{1:[0,s],2:[inP,s],3:[0,s],4:[outP,s],7:[sale,s]},
-              data:[b.sku_name,fmt(s.pack)+" pcs / "+unitOf(s),unitOf(s),"",LWBBrand.packNum(inP,s.pack),"",LWBBrand.packNum(outP,s.pack),LWBBrand.packNum(sale,s.pack),"","","","",state[0]],
+            return {key:b.sku_name,age:age&&age.days,stock:sale,cls:idleOn?"inv-idle":"",pk:{1:[0,s],2:[inP,s],3:[0,s],4:[outP,s],7:[sale,s]},
+              data:[b.sku_name,fmt(s.pack)+" pcs / "+unitOf(s),unitOf(s),"",LWBBrand.packNum(inP,s.pack),"",LWBBrand.packNum(outP,s.pack),LWBBrand.packNum(sale,s.pack),"","",state[0],...ax],
               show:[sku+badge,"—",T(inP),"—",T(outP),"—","—","<b>"+esc(packText(sale,s))+"</b>"],html:[0,1,2,3,4,5,6,7]};
           }
           const open=num(L&&L.opening_pcs)+num(L&&L.opening_entry),inP=num(L&&L.in_pcs),oth=num(L&&L.return_pcs)+num(L&&L.other_pcs),outP=num(L&&L.out_pcs);
@@ -275,15 +295,16 @@
           const openCell=T(open)+(L&&num(L.opening_entry)?"<small class=\"inv-sub2\">Opening entry "+esc(packText(num(L.opening_entry),s))+"</small>":"");
           const closeCell="<b>"+esc(packText(book,s))+"</b>"; // Mohit 6 Nov 2026: no "System" line, Closing only
           const bkd=num(L&&L.booked_pcs),free=book-bkd;
-          return {key:b.sku_name,diff,pk:{1:[open,s],2:[inP,s],3:[oth,s],4:[outP,s],5:[bkd,s],6:[free,s],7:[book,s]},
-            data:[b.sku_name,fmt(s.pack)+" pcs / "+unitOf(s),unitOf(s),LWBBrand.packNum(open,s.pack),LWBBrand.packNum(inP,s.pack),LWBBrand.packNum(oth,s.pack),LWBBrand.packNum(outP,s.pack),LWBBrand.packNum(book,s.pack),LWBBrand.packNum(bkd,s.pack),LWBBrand.packNum(free,s.pack),state[0]],
+          return {key:b.sku_name,diff,age:age&&age.days,stock:sale,cls:idleOn?"inv-idle":"",pk:{1:[open,s],2:[inP,s],3:[oth,s],4:[outP,s],5:[bkd,s],6:[free,s],7:[book,s]},
+            data:[b.sku_name,fmt(s.pack)+" pcs / "+unitOf(s),unitOf(s),LWBBrand.packNum(open,s.pack),LWBBrand.packNum(inP,s.pack),LWBBrand.packNum(oth,s.pack),LWBBrand.packNum(outP,s.pack),LWBBrand.packNum(book,s.pack),LWBBrand.packNum(bkd,s.pack),LWBBrand.packNum(free,s.pack),state[0],...ax],
             show:[sku+badge,openCell,T(inP),oth?esc(LWBBrand.pack(oth,s.pack,s.unit,{plus:true})):"—",T(outP),bkd?'<span class="inv-bk">'+esc(packText(bkd,s))+"</span>":"—",'<b'+(free<0?' class="inv-neg"':"")+">"+esc(packText(free,s))+"</b>",closeCell],html:[0,1,2,3,4,5,6,7]};
         });
         const head=["SKU","Opening","+ Stock In","± Return / Other","− Stock Out","Booked","Free","= Closing Stock"];
         return {title:"Saleable Stock",head,
-          xhead:["SKU","Pack","Unit","Opening (IC / CS)","Stock In (IC / CS)","Return / Other (IC / CS)","Stock Out (IC / CS)","Closing (IC / CS)","Booked (IC / CS)","Free (IC / CS)","Status"],num:[1,2,3,4,5,6,7],rows,
+          xhead:["SKU","Pack","Unit","Opening (IC / CS)","Stock In (IC / CS)","Return / Other (IC / CS)","Stock Out (IC / CS)","Closing (IC / CS)","Booked (IC / CS)","Free (IC / CS)","Status",...(lastSale?["Last Sale","Days Since Sale"]:[])],num:[1,2,3,4,5,6,7],rows,
           err:errors.stock,note:ledger
             ?"Opening = stock on the morning of From (plus Opening Stock entries made in the dates). Closing = Opening + Stock In ± Return / Other − Stock Out, at the end of To. Stock Out = every PO loaded on a vehicle (or marked Loaded by Admin). Return / Other = approved Driver Return to saleable, Stock Transfer / Damage / Loss. Booked = POs given (pending approval, approved, loading) but not loaded yet; drafts do not count. Free = Closing − Booked, what can still be sold. In IC (Rajnigandha) or CS (Coca-Cola)."
+            +(lastSale?" Last sale = last PO the SKU was on (cancelled / draft not counted). Yellow rows = in stock but no sale for "+IDLE_BAD+"+ days.":"")
             :"Closing = saleable stock now. Opening is shown after lwb_inventory_ledger_setup.sql runs. Stock In and Stock Out are for the selected dates."};
       }
       if(tab==="in"){
@@ -309,19 +330,22 @@
     function render(){
       renderKpis();renderTabs();renderWarn();
       const v=view(),q=nameKey(el("q").value);
-      const rows=q?v.rows.filter(r=>nameKey(r.key).includes(q)):v.rows;
+      const idleSel=el("idle"),idleUse=tab==="stock"&&!!lastSale&&idle>0;
+      idleSel.hidden=!(tab==="stock"&&lastSale);idleSel.value=String(idle);idleSel.classList.toggle("on",idleUse);
+      let rows=q?v.rows.filter(r=>nameKey(r.key).includes(q)):v.rows;
+      if(idleUse)rows=rows.filter(r=>r.stock>0&&r.age>=idle).sort((a,b)=>b.age-a.age);
       current={...v,rows};
-      el("tabTitle").textContent=v.title+(brand?" · "+brandName():"");
+      el("tabTitle").textContent=(idleUse?"Not Selling "+idle+"+ Days":v.title)+(brand?" · "+brandName():"");
       el("tabCount").textContent=v.err?"":rows.length+" rows";
       el("tabNote").textContent=v.note;
       const box=el("tableBox");
       if(v.err){box.innerHTML='<div class="inv-msg">Could not load this report: '+esc(v.err)+"</div>";return}
-      if(!rows.length){box.innerHTML='<div class="erp-empty">'+(q?"No rows match your search.":brand?"No entries for "+brandName()+" in the selected dates.":"No entries for the selected dates.")+"</div>";return}
+      if(!rows.length){box.innerHTML='<div class="erp-empty">'+(idleUse?"Every SKU in stock sold in the last "+idle+" days.":q?"No rows match your search.":brand?"No entries for "+brandName()+" in the selected dates.":"No entries for the selected dates.")+"</div>";return}
       const numCls=i=>v.num.includes(i)?' class="num"':"";
       let h="<table class=\"erp-table inv-t-"+tab+"\"><thead><tr>"+v.head.map((x,i)=>"<th"+numCls(i)+">"+esc(x)+"</th>").join("")+"</tr></thead><tbody>";
       const isHtml=(r,i)=>Array.isArray(r.html)?r.html.includes(i):r.html===i;
       const lab=i=>' data-l="'+esc(String(v.head[i]).replace(/^[+−±=] /,"").replace("Return / Other","Other"))+'"';
-      for(const r of rows)h+="<tr>"+r.show.map((c,i)=>"<td"+numCls(i)+lab(i)+">"+(isHtml(r,i)?c:esc(c))+"</td>").join("")+"</tr>";
+      for(const r of rows)h+="<tr"+(r.cls?' class="'+r.cls+'"':"")+">"+r.show.map((c,i)=>"<td"+numCls(i)+lab(i)+">"+(isHtml(r,i)?c:esc(c))+"</td>").join("")+"</tr>";
       h+="</tbody>";
       const pkCols=rows.length&&rows[0].pk?Object.keys(rows[0].pk).map(Number):[];
       if(v.sum||pkCols.length){
@@ -361,8 +385,12 @@
         ["in","blue","Stock In (period)",inTxt,fmt(invoices)+" purchase invoices"],
         ["out","","Stock Out (period)",outTxt,fmt(pos)+" POs loaded"]
       ];
+      if(lastSale){
+        let n30=0,n60=0;for(const b of live){if(num(b.saleable_pcs)<=0)continue;const a=saleAge(b.sku_name);if(a&&a.days>=IDLE_BAD)n30++;if(a&&a.days>=60)n60++}
+        k.push(["stock","amber","Not Selling "+IDLE_BAD+"+ Days",fmt(n30),n60?fmt(n60)+" not sold 60+ days · tap to see":"In stock, no PO in "+IDLE_BAD+" days",IDLE_BAD]);
+      }
       if(dmgL.length)k[2][4]+=" · "+LWBBrand.packSum(dmgL)+" damaged";
-      el("kpis").innerHTML=k.map(x=>'<button type="button" class="inv-kpi '+x[1]+'" data-tab="'+x[0]+'"><span>'+esc(x[2])+"</span><b>"+String(x[3]).split(" · ").map(t=>'<span class="nw">'+esc(t)+"</span>").join(" · ")+"</b><small>"+esc(x[4])+"</small></button>").join("");
+      el("kpis").innerHTML=k.map(x=>'<button type="button" class="inv-kpi '+x[1]+(x[5]&&idle===x[5]&&tab==="stock"?" on":"")+'" data-tab="'+x[0]+'" data-idle="'+(x[5]||0)+'"><span>'+esc(x[2])+"</span><b>"+String(x[3]).split(" · ").map(t=>'<span class="nw">'+esc(t)+"</span>").join(" · ")+"</b><small>"+esc(x[4])+"</small></button>").join("");
     }
 
     const TABS=[["stock","Saleable Stock",()=>live.length],["in","Stock In (Purchase)",()=>inLines.length],["out","Stock Out (Dispatch)",()=>outLines.length],["moves","Stock Movements",()=>moves.length]];
@@ -380,7 +408,7 @@
         const sheet=XLSX.utils.aoa_to_sheet(LWBDate.rows([["LUXURY WRIST BRAND — "+current.title+(brand?" — "+brandName():"")],[range],[],current.xhead||current.head,...current.rows.map(r=>r.data)]));
         sheet["!cols"]=(current.xhead||current.head).map(h=>({wch:/SKU|Supplier|Party|Reference/.test(h)?30:15}));
         const book=XLSX.utils.book_new();XLSX.utils.book_append_sheet(book,sheet,"Inventory");
-        XLSX.writeFile(book,"Inventory-"+tab+(brand?"-"+brandName().replace(/[^A-Za-z0-9]+/g,"_"):"")+"-"+el("to").value+".xlsx");
+        XLSX.writeFile(book,"Inventory-"+tab+(tab==="stock"&&idle?"-no-sale-"+idle+"d":"")+(brand?"-"+brandName().replace(/[^A-Za-z0-9]+/g,"_"):"")+"-"+el("to").value+".xlsx");
       }catch(e){await ERPShell.alert("Excel export failed: "+e.message)}
     }
 
@@ -391,7 +419,8 @@
       el("to").value=isoDay(now);el("from").value=isoDay(past);
       try{const t=localStorage.getItem("lwb_inventory_tab");if(TABS.some(x=>x[0]===t))tab=t}catch(e){}
       const p=new URLSearchParams(location.search).get("tab");if(TABS.some(x=>x[0]===p))tab=p;
-      document.addEventListener("click",e=>{const b=e.target.closest("[data-tab]");if(b)setTab(b.dataset.tab)});
+      document.addEventListener("click",e=>{const b=e.target.closest("[data-tab]");if(!b)return;if(b.dataset.idle!=null){const n=Number(b.dataset.idle)||0;idle=n&&idle===n&&tab==="stock"?0:n}setTab(b.dataset.tab)});
+      el("idle").addEventListener("change",e=>{idle=Number(e.target.value)||0;render()});
       el("q").addEventListener("input",render);
       el("refresh").onclick=loadAll;
       el("excel").onclick=exportExcel;
