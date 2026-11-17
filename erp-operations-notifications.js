@@ -355,16 +355,20 @@
     await window.LWBPhonePush.init({db,user,role:actualRole,mount:foot});
    }catch(e){}
   })();
-  reloadData();
-  setInterval(()=>{if(!document.hidden)reloadData()},30000);
+  let lastLoad=Date.now(),liveOk=false;
+  const load=()=>{lastLoad=Date.now();return reloadData()};
+  load();
+  // Backup check: every 30 s while the instant (Realtime) link is down, every 2 min while it works
+  // (speed fix, 17 Nov 2026: each open tab of every user used to read 70 bells every 30 s).
+  setInterval(()=>{if(!document.hidden&&Date.now()-lastLoad>=(liveOk?120000:29000))load()},30000);
   // Instant: a new row updates the bell count without interrupting the current task.
-  // Needs erp_notifications in Supabase Realtime (lwb_order_flow_popups_setup.sql); the 30 s check stays as backup.
+  // Needs erp_notifications in Supabase Realtime (lwb_order_flow_popups_setup.sql).
   let soon=0;
   try{
    db.channel("lwb-bell-"+user.id).on("postgres_changes",{event:"INSERT",schema:"public",table:"erp_notifications",filter:"user_id=eq."+user.id},
-    ()=>{clearTimeout(soon);soon=setTimeout(reloadData,400)}).subscribe();
+    ()=>{clearTimeout(soon);soon=setTimeout(load,400)}).subscribe(st=>{liveOk=st==="SUBSCRIBED"});
   }catch(e){}
-  document.addEventListener("visibilitychange",()=>{if(!document.hidden)reloadData()});
+  document.addEventListener("visibilitychange",()=>{if(!document.hidden&&Date.now()-lastLoad>15000)load()});
  }
  window.LWBOperationsNotifications={init};
 })();

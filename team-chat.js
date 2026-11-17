@@ -137,8 +137,9 @@ body.lc-top-on .lc-pops{top:calc(var(--erp-top,58px) + 8px);bottom:auto}
     applyRooms(first.data||[],true);
     loadPeople();
     live();
-    setInterval(()=>{if(!document.hidden)refresh(true)},30000);
-    document.addEventListener("visibilitychange",()=>{if(!document.hidden)refresh(true)});
+    // Backup check: every 30 s while the instant (Realtime) link is down, every 2 min while it works (speed fix, 17 Nov 2026).
+    setInterval(()=>{if(!document.hidden&&Date.now()-lastRefresh>=(liveOk?120000:29000))refresh(true)},30000);
+    document.addEventListener("visibilitychange",()=>{if(!document.hidden&&Date.now()-lastRefresh>15000)refresh(true)});
     if(/^#chat\b/.test(location.hash))openPanel();
   }
 
@@ -188,7 +189,9 @@ body.lc-top-on .lc-pops{top:calc(var(--erp-top,58px) + 8px);bottom:auto}
     fab.querySelector(".lc-btn").setAttribute("aria-label","Team Chat"+(n?", "+n+" unread":""));
     if(!panel.hidden&&view.mode==="list"&&view.tab==="mine")drawList();
   }
+  let lastRefresh=Date.now(),liveOk=false;
   async function refresh(popNew){
+    lastRefresh=Date.now();
     const r=await db.rpc("lwb_chat_rooms_list",{p_all:false});
     if(!r.error)applyRooms(r.data||[],!popNew);
     lift();
@@ -199,7 +202,7 @@ body.lc-top-on .lc-pops{top:calc(var(--erp-top,58px) + 8px);bottom:auto}
   let soon=0;
   function live(){
     try{
-      db.channel("lwb-chat-"+me.id).on("postgres_changes",{event:"INSERT",schema:"public",table:"lwb_chat_messages"},p=>onNew(p.new)).subscribe();
+      db.channel("lwb-chat-"+me.id).on("postgres_changes",{event:"INSERT",schema:"public",table:"lwb_chat_messages"},p=>onNew(p.new)).subscribe(st=>{liveOk=st==="SUBSCRIBED"});
     }catch(e){}
   }
   function onNew(m){

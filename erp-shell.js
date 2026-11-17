@@ -802,7 +802,8 @@
    - Other tabs, phones and users: the save sends a small "changed" note (Supabase Realtime broadcast, plus
      BroadcastChannel for tabs of this browser); every open ERP page gets it and refreshes within ~2-5 s.
    - Tab in the background: refreshes when it comes back. Waits while you type, scroll, select text or
-     have a popup open, and runs at most once in 6 s.
+     have a popup open, and runs at most once in 6 s (own save) / once in 20 s (other users' saves, so a
+     busy office does not keep every open page reloading its whole list: speed fix, 17 Nov 2026).
    The page's own Refresh is used: window.ERPLiveRefresh(), [data-live-refresh], #refresh, #reload or
    #refreshBtn. A page without any of these is left as it is. ERPLive.quiet is true during an auto refresh
    so a page can skip its "Loading..." placeholder. Only the table / function name is sent, no data. */
@@ -817,7 +818,9 @@
   const READ_END=/_(preview|list|queue|get|status|options|info)$/;
   const tabId=Math.random().toString(36).slice(2);
   const live={quiet:false,on:!OFF.test(PAGE),last:0,refreshing:false};
-  let gesture=0,touch=0,inflight=0,lastRead=0,pending=false,timer=0,seenIds=new Set();
+  const SELF_GAP=6000,OTHER_GAP=20000;
+  let gesture=0,touch=0,inflight=0,lastRead=0,pending=false,pendingSelf=false,timer=0,seenIds=new Set();
+  const gap=()=>pendingSelf?SELF_GAP:OTHER_GAP;
 
   // A write counts only right after a real tap / key (so an automatic reload never starts a refresh chain).
   ["pointerdown","keydown","touchstart"].forEach(ev=>document.addEventListener(ev,e=>{if(e.isTrusted){gesture=touch=Date.now()}},{capture:true,passive:true}));
@@ -906,21 +909,21 @@
     try{if(String(getSelection()||"").trim())return "selecting"}catch(e){}
     if(popupOpen())return "popup";
     if(inflight>0)return "loading";
-    if(Date.now()-live.last<6000)return "soon";
+    if(Date.now()-live.last<gap())return "soon";
     return "";
   }
   function want(why){
     if(!live.on)return;
-    pending=true;clearTimeout(timer);timer=setTimeout(tryRun,why==="self"?0:800+Math.random()*1200);
+    pending=true;if(why!=="other")pendingSelf=true;clearTimeout(timer);timer=setTimeout(tryRun,why==="self"?0:800+Math.random()*1200);
   }
   function tryRun(){
     clearTimeout(timer);
     if(!pending)return;
     const b=busyNow();
     if(b==="hidden")return; // visibilitychange runs it
-    if(b){timer=setTimeout(tryRun,b==="soon"?6000-(Date.now()-live.last)+50:1500);return}
-    const fn=refresher();if(!fn){pending=false;return}
-    pending=false;run(fn);
+    if(b){timer=setTimeout(tryRun,b==="soon"?gap()-(Date.now()-live.last)+50:1500);return}
+    const fn=refresher();if(!fn){pending=pendingSelf=false;return}
+    pending=pendingSelf=false;run(fn);
   }
   async function run(fn){
     const keep=[[window,scrollX,scrollY]];
