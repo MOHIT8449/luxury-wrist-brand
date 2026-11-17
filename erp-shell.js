@@ -252,6 +252,8 @@
     queue=run.then(()=>{},()=>{});
     return run;
   }
+  // A clear "it is done" popup with a green tick and OK (Mohit, 17 Nov 2026: after Approve there was no sign).
+  function erpDone(text,opts){return show("success",text,Object.assign({ok:"OK"},opts||{}))}
   const DANGER=/(cancel|reject|remove|delete|clear)/i;
   function erpAlert(text,opts){
     const kind=(opts&&opts.kind)||kindOf(text);
@@ -787,7 +789,7 @@
   if(!window.LWBKeys&&!document.querySelector('script[src*="erp-keys.js"]')){const s=document.createElement("script");s.src="erp-keys.js";document.head.appendChild(s)}
   // Every drop-down searches like the SKU box in New PO (erp-select.js).
   if(!window.LWBSelect&&!document.querySelector('script[src*="erp-select.js"]')){const s=document.createElement("script");s.src="erp-select.js";document.head.appendChild(s)}
-  window.ERPShell={mount,menuFor,viewOnly,menuForMe,hiddenPages,extraPages,pageRole,pageRoleFresh,allPages,icon:svg,alert:erpAlert,confirm:erpConfirm,prompt:erpPrompt,toast};
+  window.ERPShell={mount,menuFor,viewOnly,menuForMe,hiddenPages,extraPages,pageRole,pageRoleFresh,allPages,icon:svg,alert:erpAlert,confirm:erpConfirm,prompt:erpPrompt,toast,done:erpDone};
   const me=document.currentScript;
   if(me&&me.hasAttribute("data-auto")){
     if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",auto);else auto();

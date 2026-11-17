@@ -216,10 +216,18 @@
         (items.length?items.map(i=>item(i,s)).join(""):'<div class="ap-empty">✓ Nothing waiting here.</div>');
       p.hidden=false;
     }
-    async function run(btn,fn){
+    // After every approval / send back: a popup that says what was done, for which PO (Mohit, 17 Nov 2026).
+    function doneMsg(a,i){
+      const head=a&&a.done||(a?String(a.t||"").replace(/^\W+\s*/,"")+" — done.":"Done.");
+      return head+"\n\n"+[i&&i.ref,i&&i.party].filter(Boolean).join(" · ")+(a&&a.doneNote?"\n"+a.doneNote:"");
+    }
+    async function showDone(a,i){
+      if(ERPShell.done)await ERPShell.done(doneMsg(a,i),{title:a&&a.kind==="no"?"Sent back":"Approved"});else ERPShell.toast("Done.");
+    }
+    async function run(btn,fn,a,i){
       if(busy)return;busy=true;
       const row=btn.closest(".ap-row")||el("panel");row.querySelectorAll("button,select,input").forEach(b=>b.disabled=true);
-      try{await fn();ERPShell.toast("Done.");await load()}
+      try{await fn();load();if(a)await showDone(a,i);else ERPShell.toast("Done.")}
       catch(e){await alert(errText(e));row.querySelectorAll("button,select,input").forEach(b=>b.disabled=false)}
       finally{busy=false}
     }
@@ -234,7 +242,7 @@
       if(a.ask){why=await prompt(a.ask,"",{title:a.t.replace(/^\W+\s*/,""),placeholder:"Write the reason"});if(why==null)return;
         if(!why.trim()){await alert("Write the reason first.");return}why=why.trim()}
       if(a.confirm&&!await confirm(a.confirm,{ok:a.t.replace(/^\W+\s*/,"")}))return;
-      run(btn,()=>a.run(client,i,fv,why));
+      run(btn,()=>a.run(client,i,fv,why),a,i);
     }
     // Details popup for every approval (Mohit, 16 Nov 2026): tap a row (or Approve on PO / stock items) to see
     // everything before the OK — order change: item-wise before -> after; PO approvals: all PO items with qty,
@@ -268,15 +276,15 @@
         bd.innerHTML=A.detailView(i,po)+(d.po&&!d.rows&&!po?'<div class="cv-note">The PO items could not be read. Open the PO to see them.</div>':"");
       }
       const btns=back.querySelectorAll(".cv-ft button,.cv-ft select,.cv-ft input");
-      const go=async(fn,msg)=>{if(busy)return;busy=true;btns.forEach(b=>b.disabled=true);
-        try{await fn();close();ERPShell.toast(msg);await load()}
+      const go=async(fn,a)=>{if(busy)return;busy=true;btns.forEach(b=>b.disabled=true);
+        try{await fn();close();load();await showDone(a,i)}
         catch(e){await alert(errText(e));btns.forEach(b=>b.disabled=false)}finally{busy=false}};
       back.querySelectorAll(".cv-ft button[data-cv]").forEach(b=>b.onclick=async()=>{
         const a=i.acts[Number(b.dataset.cv)],fv=back.querySelector(".cv-ft [data-f]")?back.querySelector(".cv-ft [data-f]").value:null;
         let why=null;
         if(a.ask){why=await prompt(a.ask,"",{title:a.t.replace(/^\W+\s*/,""),placeholder:"Write the reason"});if(why==null)return;
           if(!why.trim()){await alert("Write the reason first.");return}why=why.trim()}
-        go(()=>a.run(client,i,fv,why),a.kind==="ok"?"Done.":"Sent back.");
+        go(()=>a.run(client,i,fv,why),a);
       });
     }
     function pick(k,scroll){
