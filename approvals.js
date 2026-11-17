@@ -47,6 +47,8 @@
            // Mohit (17 Nov 2026): show the difference too, per unit and in ₹ for the qty, so a low rate is easy to track.
            lines:lines.filter(l=>l.min_rate!=null&&num(l.rate)<num(l.min_rate)).map(l=>{const dm=r2(num(l.rate)-num(l.min_rate));
              return l.sku+" · Rate ₹"+num(l.rate)+" · Min ₹"+num(l.min_rate)+" · Diff "+pu(dm)+" × "+num(l.qty)+" = "+(dm<0?"−":"")+inr(Math.round(Math.abs(dm)*num(l.qty)))}),
+           // The same, as parts the list shows as highlighted badges (Mohit, 17 Nov 2026: highlight what I act on).
+           rl:lines.filter(l=>l.min_rate!=null&&num(l.rate)<num(l.min_rate)).map(l=>({sku:l.sku,qty:num(l.qty),rate:num(l.rate),min:num(l.min_rate),diff:r2(num(l.rate)-num(l.min_rate)),loss:Math.round((num(l.min_rate)-num(l.rate))*num(l.qty))})),
            meta:[r.brand,r.sales_person&&"By "+r.sales_person,r.slip?"Rajnigandha slip":"",r.note].filter(Boolean),
            detail:{info:[["Sales person",r.sales_person],["PO date",dmy(r.order_date)],["Brand",r.brand],["Type",r.slip?"Rajnigandha slip":"PO"],["Transport",r.transportation],["Driver",r.driver_name],["Vehicle",r.vehicle_no],["Note",r.note]],
              why:"Rate is below the minimum on "+lines.filter(l=>l.min_rate!=null&&num(l.rate)<num(l.min_rate)).length+" of "+lines.length+" items",
