@@ -76,6 +76,7 @@
     .pb-line .ner button{border:1px solid #d0213f;background:#fff;color:#b3122b;border-radius:6px;padding:2px 8px;font:inherit;font-size:12px;cursor:pointer}
     .pb-fix{display:flex;gap:8px;flex-wrap:wrap;align-items:center;padding:7px 10px;margin:0 0 8px;border:1px solid #f3b9c3;background:#fff5f6;border-radius:8px;font-size:13.5px;color:#7d0c1e}
     .pb-fix b{color:#b3122b}.pb-fix .pb-btn{margin-left:auto}
+    .pb-fix.lite{border-color:#e6dcc0;background:#fffbef;color:#6b5a2a}
     .pb-foot{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:8px}
     .pb-foot .tot{margin-left:auto;font-size:14px;color:#4b5763}
     .pb-dbx{display:inline-flex;gap:4px;position:relative}.pb-dbx input.dt{width:132px}
@@ -396,7 +397,7 @@
       sheet=[["PO No.","Date","Stage","Party","Main party","Value ₹"],...list.map(o=>[o.order_no,dmy(mkDate(o)),o.early?"Approved, not loaded":"Loaded",o.party,o.parent,r2(o.erp_amount)])];
       const bar=`<div class="mk-bar"><div class="mk-chips" role="group" aria-label="Date">${MK_R.map(([k,t])=>`<button type="button" data-mr="${k}"${mkRange===k?' class="on"':""}>${t}<i>${k==="all"?all.length:all.filter(o=>inSpan(o,mkSpan(k))).length}</i></button>`).join("")}</div>
         <label class="mk-dates${mkRange==="custom"?" on":""}" title="Custom dates (loaded date)"><input type="date" id="mkF" value="${mkRange==="custom"?mkFrom:span[0]}" max="${info.today}" aria-label="From date"><span>to</span><input type="date" id="mkT" value="${mkRange==="custom"?mkTo:span[1]==="9999-12-31"?"":span[1]}" max="${info.today}" aria-label="To date"></label>
-        <span class="mk-sum"><b>${list.length}</b> bill${list.length===1?"":"s"} · <b>${rs(sum)}</b></span></div>`;
+        <span class="mk-sum">${mdFix?'<span class="tag t-red">To fix</span> ':""}<b>${list.length}</b> bill${list.length===1?"":"s"} · <b>${rs(sum)}</b></span></div>`;
       const rows=list.map(o=>{
         const d=DELIVERY[String(o.delivery||"").toUpperCase()],grp=key(o.parent)!==key(o.party),isOpen=mkOpen.has(o.order_id),ret=retOn(o.order_id);
         const names=[...new Set([o.parent,...membersOf(o.parent)])].filter(n=>key(n)!==key(o.party));
@@ -431,13 +432,18 @@
     function renderMade(){
       const q=el("q").value.trim().toLowerCase();
       const all=made().filter(o=>match(q,o.order_no,o.party,o.parent,o.invoice_no,...billsOf(o).flatMap(b=>[b.firm,b.no])));
+      // Bills to fix of the chosen brand only (17 Nov 2026: Accounts on COCA-COLA saw "4 bills to fix" of RAJNIGANDHA and an empty list)
+      const vis=new Set(orders().map(o=>o.order_id)),fixIds=[...probMap.keys()].filter(id=>vis.has(id)),fixElse=probMap.size-fixIds.length;
+      const nMerged=(probs.merged||[]).filter(m=>vis.has(m.order_id)).length,nDupes=(probs.dupes||[]).filter(d=>d.rows.some(r=>vis.has(r.order_id))).length;
+      if(!fixIds.length)mdFix=false;
       const span=mkSpan(mdRange,mdFrom,mdTo),inS=(o,[f,t])=>{const d=mdDate(o);return d>=f&&d<=t},list=mdFix?all.filter(o=>probMap.has(o.order_id)):all.filter(o=>inS(o,span));
       const sum=r2(list.reduce((a,o)=>a+Number(o.bill_amount||0),0)),dueSum=r2(list.reduce((a,o)=>a+Math.max(0,Number(o.due)||0),0));
       sheet=[["Bill date","PO No.","Party","Main party","Bill in name","Invoice no.","Bill amount ₹","Due now ₹","Delivery"],...list.flatMap(o=>billsOf(o).map((b,i)=>[dmy(mdDate(o)),o.order_no,o.party,o.parent,b.firm||o.party,b.no,r2(b.amount),i?"":r2(Math.max(0,Number(o.due)||0)),i?"":((DELIVERY[String(o.delivery||"").toUpperCase()]||[,""])[1])]))];
-      const bar=`<div class="mk-bar"><div class="mk-chips md" role="group" aria-label="Bill date">${MK_R.map(([k,t])=>`<button type="button" data-dr="${k}"${mdRange===k?' class="on"':""}>${t}<i>${k==="all"?all.length:all.filter(o=>inS(o,mkSpan(k))).length}</i></button>`).join("")}</div>
+      const bar=`<div class="mk-bar"><div class="mk-chips md" role="group" aria-label="Bill date">${MK_R.map(([k,t])=>`<button type="button" data-dr="${k}"${!mdFix&&mdRange===k?' class="on"':""}>${t}<i>${k==="all"?all.length:all.filter(o=>inS(o,mkSpan(k))).length}</i></button>`).join("")}</div>
         <label class="mk-dates${mdRange==="custom"?" on":""}" title="Custom dates (bill date)"><input type="date" id="mdF" value="${mdRange==="custom"?mdFrom:span[0]}" max="${info.today}" aria-label="From date"><span>to</span><input type="date" id="mdT" value="${mdRange==="custom"?mdTo:span[1]==="9999-12-31"?"":span[1]}" max="${info.today}" aria-label="To date"></label>
-        <span class="mk-sum"><b>${list.length}</b> bill${list.length===1?"":"s"} · <b>${rs(sum)}</b>${dueSum>0.5?` · <b class="due">${rs(dueSum)}</b> due`:""}</span></div>`+
-        (probMap.size?`<div class="pb-fix" role="status">⚠ <span><b>${probMap.size} bill${probMap.size===1?"":"s"} to fix</b>${(probs.merged||[]).length?` · ${probs.merged.length} with many invoice nos. in one line`:""}${(probs.dupes||[]).length?` · ${probs.dupes.length} invoice no.${probs.dupes.length===1?"":"s"} used twice`:""}. Tap ✏️ Edit, Split, enter each bill's amount.</span><button type="button" class="pb-btn sm${mdFix?"":" pri"}" data-fix>${mdFix?"Show all bills":"Show these"}</button></div>`:"");
+        <span class="mk-sum">${mdFix?'<span class="tag t-red">To fix</span> ':""}<b>${list.length}</b> bill${list.length===1?"":"s"} · <b>${rs(sum)}</b>${dueSum>0.5?` · <b class="due">${rs(dueSum)}</b> due`:""}</span></div>`+
+        (fixIds.length?`<div class="pb-fix" role="status">⚠ <span><b>${fixIds.length} bill${fixIds.length===1?"":"s"} to fix</b>${nMerged?` · ${nMerged} with many invoice nos. in one line`:""}${nDupes?` · ${nDupes} invoice no.${nDupes===1?"":"s"} used twice`:""}${fixElse?` · <small>+${fixElse} in other brands</small>`:""}. Tap ✏️ Edit, Split, enter each bill's amount.</span><button type="button" class="pb-btn sm${mdFix?"":" pri"}" data-fix>${mdFix?"Show all bills":"Show these"}</button></div>`:
+         fixElse&&fb?`<div class="pb-fix lite" role="status">⚠ <span>${fixElse} bill${fixElse===1?"":"s"} to fix in other brands.</span><button type="button" class="pb-btn sm" data-allb>See in All brands</button></div>`:"");
       const rows=list.map(o=>{
         const d=DELIVERY[String(o.delivery||"").toUpperCase()],due=r2(Number(o.due)||0),bl=billsOf(o),isOpen=mdEdit===o.order_id;
         const st=due>0.5?`<small><span class="tag t-red">Due ${rs(due)}</span></small>`:`<small><span class="tag t-grn">Paid</span></small>`;
@@ -453,6 +459,7 @@
         `<div class="pb-empty">${q?"No bill made for “"+esc(el("q").value.trim())+"”.":"No Tally bill entered yet. Bills you make in Bills to make come here."}</div>`);
       el("body").querySelectorAll("[data-dr]").forEach(b=>b.onclick=()=>{mdRange=b.dataset.dr;mdFix=false;renderMade()});
       const fx=el("body").querySelector("[data-fix]");if(fx)fx.onclick=()=>{mdFix=!mdFix;renderMade()};
+      const ab=el("body").querySelector("[data-allb]");if(ab)ab.onclick=()=>{LWBBrand.set("");mdFix=true;brandChips();render()};
       const dates=()=>{let f=el("mdF").value,t=el("mdT").value;if(f&&t&&f>t)[f,t]=[t,f];mdFrom=f;mdTo=t;mdRange=f||t?"custom":"all";renderMade()};
       el("mdF").onchange=dates;el("mdT").onchange=dates;
       // Edit: one bill open at a time, under its row, filled with the saved bill lines and date
