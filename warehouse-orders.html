@@ -1195,6 +1195,17 @@
     .adm-mark .am-btns {display:flex;gap:6px;margin-left:auto}
     .adm-mark .btn {padding:6px 10px!important;min-height:32px!important;font-size:12px!important;flex:0 0 auto!important;white-space:nowrap}
     .track-card .adm-mark {margin:10px 0 0}
+    /* Bill change from Accounts (Billing ± Qty / Items), approved: what changed on this PO */
+    .bc-po {margin:-4px 0 12px;padding:7px 10px;border:1px solid #f0c36d;border-left:4px solid #d97706;border-radius:8px;background:#fff8eb;font-size:12.5px;color:#5b4a1a}
+    .bc-po .h {display:flex;flex-wrap:wrap;gap:4px 10px;align-items:baseline}
+    .bc-po .h b.t {color:#92400e}
+    .bc-po .amt {font-weight:800;color:#10262b}
+    .bc-po .up {color:#15803d;font-weight:800} .bc-po .down {color:#b42318;font-weight:800}
+    .bc-po .who {color:#7a6a45;font-size:11.5px}
+    .bc-po ul {margin:4px 0 0;padding:0;list-style:none;display:flex;flex-wrap:wrap;gap:4px}
+    .bc-po li {background:#fff;border:1px solid #f3dca8;border-radius:6px;padding:1px 7px;white-space:nowrap}
+    .bc-q {display:block;font-size:11px;font-weight:800;color:#b45309;white-space:nowrap}
+    .bc-b {display:inline-block;margin:2px 0 0 4px;padding:0 5px;border-radius:5px;background:#fff1d6;color:#92400e;font-size:10.5px;font-weight:800;vertical-align:middle;white-space:nowrap}
     #markModal {z-index:1010}
     .track-modal .mark-card {width:min(440px,100%)}
     .mark-card .mark-sub {margin:0 0 10px;color:#55606d;font-size:12.5px;line-height:1.4}
@@ -1616,6 +1627,7 @@
 
         <ol class="po-journey" id="poJourney" aria-label="PO journey"></ol>
         <div class="adm-mark" id="poAdmMark" hidden></div>
+        <div class="bc-po" id="poBillChg" hidden></div>
 
         <h4 class="section-title">SKU Verification & Modification</h4>
         <small class="warehouse-sku-hint" id="warehouseSkuHint"></small>
@@ -3386,6 +3398,50 @@ async function renderAdminMark(order, boxId) {
   box.innerHTML = `<span class="am-log">${log || "Driver / Godown did not mark it in the app? Mark it here."}</span>${btns ? `<span class="am-btns">${btns}</span>` : ""}`;
   box.hidden = false;
 }
+// Approved bill changes from Accounts (orders.bill_changes, lwb_bill_change_po_note_setup.sql): Mohit 17 Nov 2026,
+// "PO update ho to vahan likhna chahiye kya update hua, qty less / plus, amount change".
+const billChanges = o => Array.isArray(o && o.bill_changes) ? o.bill_changes : [];
+const sgn = v => (Number(v) > 0 ? "+" : Number(v) < 0 ? "−" : "") + formatMoney(Math.abs(Number(v) || 0));
+function billBadge(o) {
+  const c = billChanges(o);
+  if (!c.length) return "";
+  const d = c.reduce((a, x) => a + (Number(x.diff) || 0), 0);
+  return `<span class="bc-b" title="Bill changed by Accounts ${c.length}× (approved): ${escapeHtml(sgn(d))}">✎ Bill ${escapeHtml(sgn(d))}</span>`;
+}
+// item id -> qty / rate before the first change and after the last one
+function billLineMap(o) {
+  const m = new Map();
+  for (const c of billChanges(o)) for (const l of c.lines || []) {
+    if (!l.item_id) continue;
+    const x = m.get(String(l.item_id)) || { q0: Number(l.qty_old) || 0, r0: Number(l.rate_old) || 0, s0: l.sku_old };
+    x.q = Number(l.qty) || 0; x.r = Number(l.rate) || 0; x.s = l.sku;
+    m.set(String(l.item_id), x);
+  }
+  return m;
+}
+function renderBillChange(order) {
+  const box = document.getElementById("poBillChg");
+  if (!box) return;
+  const list = billChanges(order);
+  box.hidden = !list.length;
+  if (!list.length) { box.innerHTML = ""; return; }
+  const f = n => formatNumber(Number(n) || 0);
+  box.innerHTML = list.map(c => {
+    const lines = (c.lines || []).map(l => {
+      const q0 = Number(l.qty_old) || 0, q = Number(l.qty) || 0, dq = q - q0;
+      const sku = l.sku_old && l.sku && String(l.sku_old).toUpperCase() !== String(l.sku).toUpperCase()
+        ? `${escapeHtml(l.sku_old)} → <b>${escapeHtml(l.sku)}</b>` : `<b>${escapeHtml(l.sku || l.sku_old || "")}</b>`;
+      const qt = !l.item_id ? `<span class="up">added ${f(q)} CS</span>` : q === 0 ? `<span class="down">removed (${f(q0)} CS)</span>`
+        : dq ? `${f(q0)} → ${f(q)} CS <span class="${dq > 0 ? "up" : "down"}">(${dq > 0 ? "+" : "−"}${f(Math.abs(dq))})</span>` : "";
+      const rt = l.item_id && Number(l.rate_old) !== Number(l.rate) && q ? ` · rate ${f(l.rate_old)} → <b>${f(l.rate)}</b>` : "";
+      return `<li>${sku} ${qt}${rt}</li>`;
+    }).join("");
+    const d = Number(c.diff) || 0;
+    return `<div class="h"><b class="t">✎ Bill changed${c.col === "loaded_qty" ? " after loading" : ""}</b>
+      <span class="amt">${formatMoney(c.old)} → ${formatMoney(c.new)}</span> <span class="${d > 0 ? "up" : "down"}">${sgn(d)}</span>
+      <span class="who">${escapeHtml(c.reason || "")}${c.reason ? " · " : ""}by ${escapeHtml(c.by || "Accounts")}${c.ok_by ? ", OK " + escapeHtml(c.ok_by) : ""} · ${dmy(c.at)}</span></div><ul>${lines}</ul>`;
+  }).join("");
+}
 function openMark(id, kind) {
   const order = orders.find(o => String(o.id) === String(id)) || (selectedOrder && String(selectedOrder.id) === String(id) ? selectedOrder : null);
   if (!order || !CAN_MARK) return;
@@ -3820,7 +3876,7 @@ function renderOrders() {
             <td class="order-no c-no">
               <input type="checkbox" class="po-sel" data-id="${order.id}" ${pickedIds.has(order.id) ? "checked" : ""}
                 onclick="event.stopPropagation()" onchange="togglePick('${order.id}', this.checked)"
-                aria-label="Select ${escapeHtml(order.order_no || "")}">${escapeHtml(order.order_no || "-")}${priorityBadge(order)}<span class="prn-w" data-prn="${order.id}">${printBadge(order.id)}</span>
+                aria-label="Select ${escapeHtml(order.order_no || "")}">${escapeHtml(order.order_no || "-")}${priorityBadge(order)}${billBadge(order)}<span class="prn-w" data-prn="${order.id}">${printBadge(order.id)}</span>
             </td>
 
             <td class="c-date">
@@ -4039,6 +4095,7 @@ async function reviewOrder(orderId, transportOnly=false, quiet=false) {
 
   renderJourney(selectedOrder);
   renderAdminMark(selectedOrder, "poAdmMark");
+  renderBillChange(selectedOrder);
 
   renderPriorityPick();
 
@@ -4886,7 +4943,7 @@ function viewQty(item){return loadedView()&&item.loaded_qty!=null?Number(item.lo
 function renderItems() {
   const editable = canEditItems(selectedOrder);
   const body = document.getElementById("itemsBody");
-  const lv = loadedView();
+  const lv = loadedView(), bm = billLineMap(selectedOrder);
   const ql=document.getElementById('summaryQtyLbl'),al=document.getElementById('summaryAmtLbl');
   if(ql) ql.textContent=lv?'Loaded Quantity (bill)':'Approved Quantity';
   if(al) al.textContent=lv?'Bill Amount':'Approved Amount';
@@ -4901,7 +4958,7 @@ function renderItems() {
     return `<tr class="${low?'rate-low':''}" id="itemRow${i}">
       <td class="i-no">${i+1}</td>
       <td class="i-sku" data-label="SKU / Product"><div class="i-skubox">${window.LWBSkuImg?LWBSkuImg.html(item.sku_name):''}<div class="i-skutx">${warehouseSkuInputMarkup(item, i, editable)}<small class="i-pack" id="itemPack${i}"></small><label class="i-wt" ${unit>0||!editable?'hidden':''}>Weight KG/CS ${input('unit_weight', unit, 'number')}</label></div></div></td>
-      <td class="i-qty" data-label="Qty" style="text-align:right">${input('approved_qty', qty, 'number')}<small class="q-diff" id="itemQd${i}">${lv&&item.loaded_qty!=null?(qty!==okQ?`<b class="${qty>okQ?'up':'down'}">Loaded</b> OK ${formatNumber(okQ)}`:'Loaded'):qdText(qd, ord)}</small></td>
+      <td class="i-qty" data-label="Qty" style="text-align:right">${input('approved_qty', qty, 'number')}${(()=>{const x=bm.get(String(item.id));return x&&(x.q!==x.q0||x.r!==x.r0)?`<span class="bc-q" title="Changed from Billing (approved)">✎ Bill ${x.q!==x.q0?formatNumber(x.q0)+' → '+formatNumber(x.q):''}${x.r!==x.r0?' ₹'+formatNumber(x.r0)+' → '+formatNumber(x.r):''}</span>`:''})()}<small class="q-diff" id="itemQd${i}">${lv&&item.loaded_qty!=null?(qty!==okQ?`<b class="${qty>okQ?'up':'down'}">Loaded</b> OK ${formatNumber(okQ)}`:'Loaded'):qdText(qd, ord)}</small></td>
       <td class="i-rate" data-label="Rate ₹" style="text-align:right">${input('rate', rate, 'number')}<span class="min-tag" id="itemMin${i}">${low?'Below min ₹'+formatNumber(minR):''}</span></td>
       <td class="i-amt" data-label="Amount" id="itemAmount${i}" style="text-align:right">${formatMoney(qty*rate)}</td>
       ${PF_COLS.map((h,j)=>`<td class="lwb-pf-c lwb-pf-only" data-label="${h}" id="itemPc${i}_${j}"></td>`).join('')}

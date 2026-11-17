@@ -25,6 +25,7 @@
     .mo-amt b{display:block;font-size:14px}
     .mo-stage{margin-top:7px;font-size:12.5px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
     .mo-stage .why{color:var(--erp-red)}
+    .mo-stage .bcn{color:#92400e;font-size:12px;font-weight:600}
     .mo-acts{display:flex;gap:6px;margin-top:9px;flex-wrap:wrap}
     /* Phone: Modify / Cancel / View SKUs / image stay in one neat row. */
     @media(max-width:560px){.mo-acts{flex-wrap:nowrap;gap:5px}.mo-acts>*{flex:1 1 auto;min-width:0;white-space:nowrap}.mo-acts .sl-btn.small{padding:0 6px}.mo-acts>:last-child{flex:0 0 auto}}
@@ -159,7 +160,16 @@
       moErr="";myOrders=Array.isArray(r.data)?r.data:[];
       if(window.ERPOrderDays)myOrders=await ERPOrderDays.filter(client,myOrders);
       if(BB.get()&&SM)myOrders=myOrders.filter(o=>(o.items||[]).some(i=>SM.get(LWBBrand.skuKey(i.sku_name))===BB.get()));
+      // Bill changed by Accounts and approved (orders.bill_changes): show what changed on the card
+      try{const ids=myOrders.map(o=>o.id);for(let i=0;i<ids.length;i+=150){const b=await client.from("orders").select("id,bill_changes").in("id",ids.slice(i,i+150)).not("bill_changes","is",null);
+        if(b.error)break;const m=new Map((b.data||[]).map(x=>[x.id,x.bill_changes]));myOrders.forEach(o=>{if(m.has(o.id))o.bill_changes=m.get(o.id)})}}catch(e){}
     }
+    // "✎ Bill −₹1,800 · 1L KINLEY 20 → 10" (approved bill changes of this PO)
+    function billNote(o){const c=Array.isArray(o.bill_changes)?o.bill_changes:[];if(!c.length)return "";
+      const d=c.reduce((a,x)=>a+num(x.diff),0),m=new Map();
+      for(const x of c)for(const l of x.lines||[]){const k=l.item_id||("+"+l.sku);const y=m.get(k)||{s:l.sku||l.sku_old,q0:num(l.qty_old)};y.q=num(l.qty);y.s=l.sku||y.s;m.set(k,y)}
+      const ls=[...m.values()].filter(y=>y.q!==y.q0).map(y=>esc(y.s)+" "+fmt(y.q0)+" → "+fmt(y.q)).join(", ");
+      return '<span class="erp-badge amber" title="Changed by Accounts, approved">✎ Bill '+(d<0?"−":"+")+short(Math.abs(d))+"</span>"+(ls?'<span class="bcn">'+ls+"</span>":"")}
     const isCancelled=o=>["cancelled","canceled","rejected"].includes(S.status(o));
     const isWaiting=o=>["","pending","submitted","pending_manager","pending_approval","pending_review","new"].includes(S.status(o));
     const isDelivered=o=>o.delivery_status==="DELIVERED"||o.delivery_status==="PARTIAL";
@@ -208,7 +218,7 @@
         const [c,label,extra]=stage(o),open=openId===o.id;
         h+='<div class="mo-card" data-id="'+esc(o.id)+'" data-drill-order="'+esc(o.id)+'" data-drill-no="'+esc(o.order_no||"")+'"><div class="mo-top"><div class="who"><b>'+esc(o.order_no||"—")+"</b> · "+esc(o.customer_name||"")+
           "<small>"+S.shortDate(o.order_date)+(o.mine?"":" · taken by office")+'</small></div><div class="mo-amt"><b>'+short(o.total_amount)+"</b>"+fmt(o.total_qty)+" cases</div></div>"+
-          '<div class="mo-stage"><span class="erp-badge '+c+'">'+label+"</span>"+(extra?"<span>"+extra+"</span>":"")+"</div>"+
+          '<div class="mo-stage"><span class="erp-badge '+c+'">'+label+"</span>"+(extra?"<span>"+extra+"</span>":"")+billNote(o)+"</div>"+
           (isCancelled(o)?"":track(o));
         h+='<div class="mo-acts">'+(o.can_edit?'<button type="button" class="sl-btn small" data-act="edit">Modify Order</button><button type="button" class="sl-btn small ghost" data-act="cancel">Cancel Order</button>':"")+
           '<button type="button" class="sl-btn small ghost" data-act="view">'+(open?"Hide SKUs":"View SKUs")+"</button>"+

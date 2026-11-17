@@ -4,6 +4,13 @@
 **Purpose:** Continue the same ERP project from a new ChatGPT conversation without restarting or losing the agreed requirements.
 **Status:** Active development / verification. Do not assume all modules are completed or fully tested.
 
+## PO change from Billing: note on the PO, approved qty follows, Edit while waiting (17 Nov 2026)
+
+- Mohit: the PO must say what was changed (qty less / plus per SKU, old -> new amount) and the change must show everywhere (ledger, accounts, sales, sales team); also an Edit option for a change already sent.
+- SQL `lwb_bill_change_po_note_setup.sql` (tests in `tests/bill-change`, 13): after loading, an applied change also moves `approved_qty` by the same +/- (once per change, `lwb_bill_changes.ok_synced`; short at loading kept), so every approved / booked screen (My Orders, dashboards, Sales Tracking Booked, Party Buying, targets) follows. `orders.bill_changes` jsonb = approved changes (lines, old / new, by, OK by, reason) kept by a trigger on status; old changes back-filled once. Booked stock only counts POs not loaded, so stock does not move from this.
+- `warehouse-orders.html`: amber "✎ Bill changed" box above the SKU table, "✎ Bill 15 -> 13" under the line qty, "✎ Bill −₹" badge next to the PO no. in the list. `my-sales.html`: same badge + changed lines on the order card (reads `orders.bill_changes` separately).
+- `bill-change.js`: a WAITING change has "✎ Edit change" (review popup) / "✎ Edit it" (items popup banner): the popup opens filled with what was sent (qty, rate, SKU, reason, note); sending again replaces the waiting one. An approved change cannot be edited: make a new change on top.
+
 ## PO change from Billing now updates the PO itself (17 Nov 2026)
 
 - Mohit: a bill change made by Accounts in Billing "± Qty / Items" was not showing in the PO. Cause: on approve (or Admin's own Save change) only `order_items` lines and the Tally bill moved; the PO header `orders.total_qty / total_amount / total_weight` (PO list, PO popup "Order Amount", reports) never changed, and after loading the PO popup / print showed approved qty, not the loaded qty that the change moves.
