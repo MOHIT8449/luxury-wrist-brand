@@ -18,13 +18,21 @@
 .lwb-cf:hover{opacity:1;background:rgba(0,0,0,.07)}
 .lwb-cf.on{opacity:1;background:var(--erp-red,#002f37);color:#fff}
 th .lwb-cf{font-weight:700}
-.lwb-cf-chips{display:none}
+.lwb-cf-btn{display:flex;align-items:center;gap:4px;width:100%;min-width:0;height:28px;border:1.5px solid var(--erp-line,#d5dde8);border-radius:6px;padding:0 6px 0 8px;background:#fff;color:var(--erp-ink,#172b48);font:inherit;font-size:12.5px;font-weight:500;text-transform:none;letter-spacing:0;cursor:pointer;text-align:left}
+.lwb-cf-btn span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.lwb-cf-btn::after{content:"▾";flex:0 0 auto;font-size:11px;color:#6b7280}
+.lwb-cf-btn.on{border-color:var(--erp-red,#002f37);background:#e6f0f1;font-weight:700}
+.lwb-cf-x{color:#b91c1c;border-color:#fca5a5}.lwb-cf-x::after{content:none}
+tr.lwb-cf-tr th{padding-top:0!important;padding-bottom:6px!important;background:inherit}
+.lwb-cf-grid{display:none}
 @media(max-width:640px){
- .lwb-cf-chips{display:flex;gap:5px;overflow-x:auto;padding:6px 10px;border-bottom:1px solid var(--erp-line,#e5e7eb);scrollbar-width:none}
- .lwb-cf-chips::-webkit-scrollbar{display:none}
- .lwb-cf-chips .lwb-cf{flex:0 0 auto;opacity:1;border:1px solid var(--erp-line,#d5dde8);background:#fff;font-size:12px;padding:4px 9px;border-radius:14px;font-weight:600;color:var(--erp-ink,#172b48);white-space:nowrap}
- .lwb-cf-chips .lwb-cf.on{background:var(--erp-red,#002f37);border-color:var(--erp-red,#002f37);color:#fff}
- .lwb-cf-chips .lwb-cf-x{color:#b91c1c;border-color:#fca5a5}
+ .lwb-cf-grid{display:block;border-bottom:1px solid var(--erp-line,#e5e7eb)}
+ .lwb-cf-grid summary{padding:8px 12px;font-size:13px;font-weight:700;cursor:pointer;color:var(--erp-ink,#172b48)}
+ .lwb-cf-grid summary b{background:var(--erp-red,#002f37);color:#fff;border-radius:9px;padding:0 7px;font-size:11.5px;margin-left:4px}
+ .lwb-cf-grid>div{display:grid;grid-template-columns:1fr 1fr;gap:6px 8px;padding:0 12px 10px}
+ .lwb-cf-grid label{display:block;min-width:0;font-size:10.5px;font-weight:600;color:var(--erp-muted,#6b7280);text-transform:uppercase;letter-spacing:.3px}
+ .lwb-cf-grid .lwb-cf-btn{height:32px;font-size:13px;margin-top:2px}
+ .lwb-cf-grid .lwb-cf-x{align-self:end}
 }
 .lwb-cf-pop{position:fixed;z-index:2147483000;display:flex;flex-direction:column;background:#fff;color:#111827;border:1px solid #c9a227;border-radius:10px;box-shadow:0 10px 30px rgba(0,0,0,.22);overflow:hidden;font:14px/1.3 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;text-transform:none;letter-spacing:0;font-weight:400}
 .lwb-cf-pop h4{margin:0;padding:8px 10px 6px;font-size:13px;font-weight:700;color:#172b48;border-bottom:1px solid #e5e7eb}
@@ -88,10 +96,22 @@ th .lwb-cf{font-weight:700}
       const h=head[i],s=state[key],ar=s&&s.sort&&s.sort.col===h?(s.sort.dir>0?"▲":"▼"):"▾";
       return '<button type="button" class="lwb-cf'+(on(key,h)?" on":"")+'" data-cf="'+i+'" data-cfk="'+esc(key)+'" title="Filter / sort '+esc(h)+'" aria-label="Filter / sort '+esc(h)+'">'+ar+"</button>";
     }
+    // What a column's filter box says, like the Category filter on top: All / one value / "3 selected" / ≥ 30.
+    const nf=v=>typeof v==="number"?v.toLocaleString("en-IN"):/^\d{4}-\d{2}-\d{2}$/.test(v)?v.slice(8,10)+"/"+v.slice(5,7):String(v);
+    function label(key,h){
+      const s=state[key],f=s&&s.f[h],ar=s&&s.sort&&s.sort.col===h?(s.sort.dir>0?" ↑":" ↓"):"";
+      if(!f)return "All"+ar;
+      if(f.set){const a=[...f.set];return (a.length===1?a[0]:a.length+" selected")+ar}
+      return (f.min!=null&&f.max!=null?nf(f.min)+" – "+nf(f.max):f.min!=null?"≥ "+nf(f.min):"≤ "+nf(f.max))+ar;
+    }
+    const box=(key,head,i)=>'<button type="button" class="lwb-cf-btn'+(on(key,head[i])?" on":"")+'" data-cf="'+i+'" data-cfk="'+esc(key)+'" title="Filter / sort '+esc(head[i])+'"><span>'+esc(label(key,head[i]))+"</span></button>";
+    // Desktop: a row of filter boxes under the table head, one per column.
+    function row(key,head,cls){return '<tr class="lwb-cf-tr">'+head.map((h,i)=>'<th class="'+(cls?cls(i):"")+'">'+box(key,head,i)+"</th>").join("")+"</tr>"}
+    // Phone (no table head): the same boxes with the column name on top, in a grid that opens with one tap.
     function chips(key,head){
       const n=count(key);
-      return '<div class="lwb-cf-chips">'+head.map((h,i)=>'<button type="button" class="lwb-cf'+(on(key,h)?" on":"")+'" data-cf="'+i+'" data-cfk="'+esc(key)+'">'+esc(h)+" ▾</button>").join("")+
-        (n?'<button type="button" class="lwb-cf lwb-cf-x" data-cf="x" data-cfk="'+esc(key)+'">✕ Clear '+n+"</button>":"")+"</div>";
+      return '<details class="lwb-cf-grid"'+(n?" open":"")+'><summary>⚙ Filter columns'+(n?' <b>'+n+" on</b>":"")+"</summary><div>"+head.map((h,i)=>'<label>'+esc(h)+box(key,head,i)+"</label>").join("")+
+        (n?'<button type="button" class="lwb-cf-btn lwb-cf-x" data-cf="x" data-cfk="'+esc(key)+'"><span>✕ Clear all</span></button>':"")+"</div></details>";
     }
     const count=key=>{const s=state[key];return s?Object.keys(s.f).length+(s.sort?1:0):0};
     function clear(key){delete state[key];close();o.onChange&&o.onChange()}
@@ -143,7 +163,7 @@ th .lwb-cf{font-weight:700}
       if(open&&open.btn===b){close();return}
       show(b,b.dataset.cfk,Number(b.dataset.cf));
     },true);
-    return {apply,th,chips,count,clear,close};
+    return {apply,th,row,chips,count,clear,close};
   }
   window.LWBCol={create};
 })();
