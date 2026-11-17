@@ -60,7 +60,7 @@
        });
        return {items,amount:sum(items,i=>i.amount)};
      }},
-    {key:"market",icon:"⚠",title:"Market order check",sub:"Low margin / wrong slab",roles:["admin","manager"],page:"warehouse-orders.html",
+    {key:"market",icon:"⚠",title:"Market order check",sub:"Low margin",roles:["admin","manager"],page:"warehouse-orders.html",
      async load(c,ctx){
        if(!ctx.bells)return null;
        const seen=new Set(),items=[];
