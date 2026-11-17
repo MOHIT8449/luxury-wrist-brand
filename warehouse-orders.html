@@ -1652,12 +1652,12 @@
           <div class="summary-box">
 
             <div class="summary-row">
-              <span>Approved Quantity</span>
+              <span id="summaryQtyLbl">Approved Quantity</span>
               <strong id="summaryQty">0</strong>
             </div>
 
             <div class="summary-row">
-              <span>Approved Amount</span>
+              <span id="summaryAmtLbl">Approved Amount</span>
               <strong id="summaryAmount">₹0.00</strong>
             </div>
 
@@ -4787,7 +4787,8 @@ async function printApprovedPO(documentType="challan",collect=null){
     const approvedLines=(itemResult.data||[])
       .map(item=>({
         sku:item.sku_name,
-        qty:number(item.approved_qty==null?item.ordered_qty:item.approved_qty),
+        // after loading the PO / challan prints the loaded qty (a Billing "± Qty" change moves it)
+        qty:["loaded","delivered"].includes(orderStage(order))&&item.loaded_qty!=null?number(item.loaded_qty):number(item.approved_qty==null?item.ordered_qty:item.approved_qty),
         rate:number(item.rate),
         weight:number(item.unit_weight)
       }))
@@ -4878,11 +4879,20 @@ function warehouseSkuInputMarkup(item, index, editable) {
     + 'onkeydown="warehouseSkuKeydown(event,this)">';
 }
 
+// After loading (view only) the PO shows what is billed: the loaded qty, which Accounts' "± Qty / Items"
+// change moves on approve (Mohit 17 Nov 2026: bill change not showing in the PO).
+function loadedView(){return !!selectedOrder&&!canEditItems(selectedOrder)&&["loaded","delivered"].includes(orderStage(selectedOrder))&&selectedItems.some(x=>x.loaded_qty!=null);}
+function viewQty(item){return loadedView()&&item.loaded_qty!=null?Number(item.loaded_qty)||0:Number(item.approved_qty)||0;}
 function renderItems() {
   const editable = canEditItems(selectedOrder);
   const body = document.getElementById("itemsBody");
+  const lv = loadedView();
+  const ql=document.getElementById('summaryQtyLbl'),al=document.getElementById('summaryAmtLbl');
+  if(ql) ql.textContent=lv?'Loaded Quantity (bill)':'Approved Quantity';
+  if(al) al.textContent=lv?'Bill Amount':'Approved Amount';
   body.innerHTML = selectedItems.map((item, i) => {
-    const qty = Number(item.approved_qty) || 0;
+    const qty = viewQty(item);
+    const okQ = Number(item.approved_qty) || 0;
     const rate = Number(item.rate) || 0;
     const unit = Number(item.unit_weight) || 0;
     const input = (field, value, type="text") => `<input ${editable ? "" : "disabled"} type="${type}" class="${field==='unit_weight'&&editable?'manager-weight-input':''}" style="width:${field==='sku_name'?'190':'95'}px;max-width:100%;padding:7px;border:1px solid #bbb;border-radius:5px" data-index="${i}" data-field="${field}" value="${escapeHtml(value)}" oninput="itemChanged(this)" ${type==='number'?'min="0" step="any"':''}>`;
@@ -4891,7 +4901,7 @@ function renderItems() {
     return `<tr class="${low?'rate-low':''}" id="itemRow${i}">
       <td class="i-no">${i+1}</td>
       <td class="i-sku" data-label="SKU / Product"><div class="i-skubox">${window.LWBSkuImg?LWBSkuImg.html(item.sku_name):''}<div class="i-skutx">${warehouseSkuInputMarkup(item, i, editable)}<small class="i-pack" id="itemPack${i}"></small><label class="i-wt" ${unit>0||!editable?'hidden':''}>Weight KG/CS ${input('unit_weight', unit, 'number')}</label></div></div></td>
-      <td class="i-qty" data-label="Qty" style="text-align:right">${input('approved_qty', qty, 'number')}<small class="q-diff" id="itemQd${i}">${qdText(qd, ord)}</small></td>
+      <td class="i-qty" data-label="Qty" style="text-align:right">${input('approved_qty', qty, 'number')}<small class="q-diff" id="itemQd${i}">${lv&&item.loaded_qty!=null?(qty!==okQ?`<b class="${qty>okQ?'up':'down'}">Loaded</b> OK ${formatNumber(okQ)}`:'Loaded'):qdText(qd, ord)}</small></td>
       <td class="i-rate" data-label="Rate ₹" style="text-align:right">${input('rate', rate, 'number')}<span class="min-tag" id="itemMin${i}">${low?'Below min ₹'+formatNumber(minR):''}</span></td>
       <td class="i-amt" data-label="Amount" id="itemAmount${i}" style="text-align:right">${formatMoney(qty*rate)}</td>
       ${PF_COLS.map((h,j)=>`<td class="lwb-pf-c lwb-pf-only" data-label="${h}" id="itemPc${i}_${j}"></td>`).join('')}
@@ -4946,7 +4956,7 @@ async function removeSku(index) {
 
 function calculateApprovalTotals() {
   const totals = selectedItems.reduce((t,item) => {
-    const q = Number(item.approved_qty)||0, r=Number(item.rate)||0, w=Number(item.unit_weight)||0;
+    const q = viewQty(item), r=Number(item.rate)||0, w=Number(item.unit_weight)||0;
     t.qty += q; t.amount += q*r; t.weight += q*w;
     return t;
   }, {qty:0,amount:0,weight:0});
@@ -4964,7 +4974,7 @@ function paintProfit(){
   const P=window.LWBProfit, on=!!(P&&P.on()&&P.cols);
   const T={qty:0,amt:0,gr:0,mepd:0,oms:0,qps:0,roi:0,land:0,profit:0,sale:0};
   selectedItems.forEach((item,i)=>{
-    const q=Number(item.approved_qty)||0, c=on?P.cols(item.sku_name,item.rate,q):null;
+    const q=viewQty(item), c=on?P.cols(item.sku_name,item.rate,q):null;
     PF_COLS.forEach((h,j)=>{const td=document.getElementById('itemPc'+i+'_'+j); if(!td) return;
       td.innerHTML=c?c.html[j]:''; td.className='lwb-pf-c lwb-pf-only'+(c&&c.cls[j]?' '+c.cls[j]:'');});
     const pk=document.getElementById('itemPack'+i); if(pk) pk.textContent=c?c.pack:'';
@@ -4978,7 +4988,7 @@ function paintProfit(){
       foot.innerHTML=`<tr><td></td><td>Total</td><td style="text-align:right">${formatNumber(T.qty)}</td><td></td><td style="text-align:right">${formatMoney(T.amt)}</td>`+
         [f(T.gr),f(T.mepd),f(T.oms),f(T.qps),f(T.roi),f(T.land),pct+'%',f(T.profit)].map((v,j)=>`<td class="lwb-pf-c${j>=6?(T.profit>0?' pf':' pf neg'):''}">${v}</td>`).join('')+'<td></td></tr>';}}
   const row=document.getElementById('summaryProfitRow'); if(!row) return;
-  const t=on?P.total(selectedItems.map(it=>({sku:it.sku_name,rate:it.rate,qty:Number(it.approved_qty)||0}))):null;
+  const t=on?P.total(selectedItems.map(it=>({sku:it.sku_name,rate:it.rate,qty:viewQty(it)}))):null;
   row.hidden=!t||!t.known;
   if(t&&t.known){
     const el=document.getElementById('summaryProfit');
