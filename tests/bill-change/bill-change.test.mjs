@@ -80,6 +80,8 @@ await db.exec(await sql('lwb_bill_change_sales_head_setup.sql'));  // safe to ru
 await db.exec('ALTER TABLE public.orders ADD COLUMN total_weight numeric; ALTER TABLE public.sku_master ADD COLUMN unit_weight_kg numeric');
 await db.exec(await sql('lwb_bill_change_po_sync_setup.sql'));
 await db.exec(await sql('lwb_bill_change_po_sync_setup.sql'));  // safe to run again
+await db.exec(await sql('lwb_bill_change_po_note_setup.sql'));
+await db.exec(await sql('lwb_bill_change_po_note_setup.sql'));  // safe to run again
 await db.exec('GRANT USAGE ON SCHEMA public,auth TO authenticated; GRANT SELECT,UPDATE ON orders TO authenticated');
 
 const today=(await db.query("select (now() at time zone 'Asia/Kolkata')::date::text d")).rows[0].d;
@@ -159,6 +161,11 @@ test('Admin approves -> PO lines change, chosen Tally bill line takes the differ
  assert.deepEqual(t.bills.map(b=>Number(b.amount)),[14000,9650]);
  // the PO header follows the billed (loaded) qty: 35+15+2 CS, 23650, new Maaza line weight from SKU Master
  const [q,a]=await head(o);assert.deepEqual([q,a],[52,23650]);
+ // approved qty follows the loaded change (sales screens count approved), the PO keeps a note of the change
+ assert.deepEqual(it.map(i=>i.a),[35,15,2]);
+ const bc=(await db.query('select bill_changes from orders where id=$1',[o])).rows[0].bill_changes;
+ assert.equal(bc.length,1);assert.equal(Number(bc[0].diff),1650);assert.equal(bc[0].ok_by,'admin user');assert.equal(bc[0].by,'accounts user');
+ assert.deepEqual(bc[0].lines.map(l=>[l.sku_old,l.qty_old,l.qty]),[['THUMS UP 250',40,35],['THUMS UP 740',10,15],[null,0,2]]);
  assert.equal(Number((await db.query("select unit_weight from order_items where order_id=$1 and sku_name='MAAZA 600'",[o])).rows[0].unit_weight),12);
  const row=(await call('select public.lwb_party_billing(400) j'))[0].j.orders.find(x=>x.order_id===o);
  assert.equal(Number(row.due),23650);
@@ -179,6 +186,7 @@ test('SKU replaced on a line; send back changes nothing',async()=>{
  assert.deepEqual((await items(o)).map(i=>i.sku_name),['THUMS UP 250','THUMS UP 740','MAAZA 600']);
  assert.equal(Number((await inv(o)).a),23650);
  assert.match((await notes(o,'BILL_CHANGE_SENT_BACK'))[0].message,/talk to me/);
+ assert.equal((await db.query('select jsonb_array_length(bill_changes) n from orders where id=$1',[o])).rows[0].n,1);
 });
 
 test('Stale request refused; Admin own change applied at once; checks',async()=>{

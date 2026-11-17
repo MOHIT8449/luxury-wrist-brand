@@ -103,7 +103,7 @@
   const wait=(d.changes||[]).find(c=>c.status==="WAITING");
   const bills=(d.bill&&d.bill.bills)||[];
   const {b,close}=shell(`<div class="bc-hd"><div><h3>${esc(d.order_no)} · ${esc(d.party)}</h3><small>${loaded?"Loaded qty (on the vehicle)":"Approved qty (not loaded yet)"} · rate per case${d.bill&&d.bill.invoice_no?" · Tally bill "+esc(d.bill.invoice_no)+" "+rs(d.bill.amount):""}</small></div><button type="button" class="bc-x" aria-label="Close">✕</button></div>
-   ${wait?`<div class="bc-ban">⏳ A change of <b>${sg(wait.diff)}</b> by ${esc(wait.by||"")} is waiting for Admin.<button type="button" class="bc-lnk" data-wv>View</button>${admin?"":"<small>Sending again replaces it.</small>"}</div>`:""}
+   ${wait?`<div class="bc-ban">⏳ A change of <b>${sg(wait.diff)}</b> by ${esc(wait.by||"")} is waiting for Admin.<button type="button" class="bc-lnk" data-wv>View</button>${o.edit?"<small>Editing it: change and send again, it replaces the one waiting.</small>":`<button type="button" class="bc-lnk" data-we>✎ Edit it</button>`}</div>`:""}
    <datalist id="bc-skus">${(d.skus||[]).map(s=>`<option value="${esc(s)}">`).join("")}</datalist>
    <div style="overflow:auto"><table class="bc-t ed"><thead><tr><th>Item</th><th>Qty (CS)</th><th class="n">Rate</th><th class="n">Amount</th><th></th></tr></thead><tbody></tbody></table></div>
    <div class="bc-row"><button type="button" class="bc-lnk" data-add>+ Add SKU</button>${loaded?`<button type="button" class="bc-lnk" data-ret title="Goods came back from the party (cases and pieces)">↩ Return goods</button>`:""}<span class="sp bc-sum" data-sum></span></div>
@@ -137,7 +137,18 @@
     stk.hidden=!m.length;stk.innerHTML=`<b>${admin?"Godown stock":"On approve, godown stock"}</b>`+m.map(x=>`<span class="bc-tag ${x.c>0?"bc-grn":"bc-red"}">${esc(x.sku)} ${x.c>0?"+":"−"}${Math.abs(x.c)} CS</span>`).join("")}
    sum.innerHTML=`Old ${rs(oldV)} → New ${rs(nv)} <span class="bc-tag ${df>0.004?"bc-grn":df<-0.004?"bc-red":"bc-amb"}">${Math.abs(df)>0.004?sg(df):"no change"}</span>`;
   }
+  // ✎ Edit a change still waiting (Mohit 17 Nov 2026): start from what was sent, not from the PO
+  function fill(){
+   for(const l of wait.lines||[]){
+    if(l.item_id){const x=rows.find(r=>String(r.id)===String(l.item_id));if(!x)continue;
+     x.q=Number(l.qty)||0;x.r=Number(l.rate)||0;if(l.sku&&String(l.sku).toUpperCase()!==x.sku0.toUpperCase()){x.sku=l.sku;x.swap=true}}
+    else if(Number(l.qty)>0)rows.push({id:null,sku0:"",sku:l.sku||"",q0:0,q:Number(l.qty)||0,r0:0,r:Number(l.rate)||0,h:null,swap:true})}
+   const rs_=b.querySelector("[data-reason]");if(wait.reason){if(![...rs_.options].some(x=>x.value===wait.reason))rs_.add(new Option(wait.reason,wait.reason));rs_.value=wait.reason}
+   if(wait.note)b.querySelector("[data-note]").value=wait.note;
+  }
+  if(o.edit&&wait)fill();
   draw();
+  const we=b.querySelector("[data-we]");if(we)we.onclick=()=>{close();open({...o,edit:true})};
   b.querySelector("[data-add]").onclick=()=>{rows.push({id:null,sku0:"",sku:"",q0:0,q:1,r0:0,r:0,h:null,swap:true});draw();const s=tb.querySelectorAll(".bc-sk");s[s.length-1].focus()};
   const rb=b.querySelector("[data-ret]");if(rb)rb.onclick=()=>{close();ret({client,order:{order_id:d.order_id},onSaved:o.onSaved})};
   const wv=b.querySelector("[data-wv]");if(wv)wv.onclick=()=>review({client,admin,change:{...wait,order_no:d.order_no,party:d.party},onDone:()=>{close();o.onSaved&&o.onSaved()}});
@@ -250,6 +261,12 @@
    ${c.bill_applied?`<div class="bc-note">Tally bill${c.bill_applied.no?" "+esc(c.bill_applied.no):""}: ${rs(c.bill_applied.from)} → ${rs(c.bill_applied.to)}</div>`:c.bill_no&&can?`<div class="bc-note">On approve, Tally bill ${esc(c.bill_no)} moves by ${sg(c.diff)}.</div>`:""}
    ${c.reply?`<div class="bc-note">Admin: ${esc(c.reply)}${c.decided?" ("+esc(c.decided)+")":""}</div>`:""}
    ${can?`<div class="bc-row act"><input class="bc-in" data-reply maxlength="500" placeholder="Reply to Accounts (optional)" style="flex:1 1 200px"><button type="button" class="bc-btn bad" data-no>Send back</button><button type="button" class="bc-btn ok" data-ok>Approve ${sg(c.diff)}</button></div>`:""}`,true);
+  if(c.status==="WAITING"&&c.order_id){
+   const row=document.createElement("div");row.className="bc-row";
+   row.innerHTML=`<span class="bc-note" style="margin:0">Waiting for approval: it can still be changed.</span><button type="button" class="bc-btn sp" data-ed>✎ Edit change</button>`;
+   const acts=b.querySelector(".bc-row.act");acts?acts.before(row):b.querySelector(".bc-box").appendChild(row);
+   row.querySelector("[data-ed]").onclick=()=>{close();open({client,admin,order:{order_id:c.order_id,order_no:c.order_no,party:c.party},onSaved:o.onDone,edit:true})};
+  }
   if(!can)return;
   const go=async(ok,btn)=>{
    if(btn.disabled)return;
