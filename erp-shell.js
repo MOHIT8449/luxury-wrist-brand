@@ -795,3 +795,168 @@
     if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",auto);else auto();
   }
 })();
+
+/* Auto refresh on every ERP page (Mohit, 17 Nov 2026): after anything is saved / approved, the open page
+   shows the new data by itself, without the browser Refresh, keeping filters, tab, scroll and popups.
+   - This tab: a save that the page did not follow with its own reload -> the page's Refresh runs ~1 s later.
+   - Other tabs, phones and users: the save sends a small "changed" note (Supabase Realtime broadcast, plus
+     BroadcastChannel for tabs of this browser); every open ERP page gets it and refreshes within ~2-5 s.
+   - Tab in the background: refreshes when it comes back. Waits while you type, scroll, select text or
+     have a popup open, and runs at most once in 6 s.
+   The page's own Refresh is used: window.ERPLiveRefresh(), [data-live-refresh], #refresh, #reload or
+   #refreshBtn. A page without any of these is left as it is. ERPLive.quiet is true during an auto refresh
+   so a page can skip its "Loading..." placeholder. Only the table / function name is sent, no data. */
+(function(){
+  if(window.ERPLive||!window.fetch)return;
+  const PAGE=(location.pathname.split("/").pop()||"index.html");
+  // Pages with a form being filled, or no list to refresh.
+  const OFF=/^(login|index|order-entry|po-maker|sales-invoice-test|keyboard-shortcuts|offline|privacy|terms|share|404)(\.html)?$/;
+  // Writes that are not business data (bells read, chat, GPS, phone alerts, PO drafts while typing, page access).
+  const QUIET=/^(erp_notifications|lwb_po_drafts|lwb_sales_invoice_test_drafts|lwb_user_page_access)$|(^|_)(chat|track|tracking_ping|push|login|otp|location|ping|password|draft|drafts|recent)(_|$)/;
+  const WRITE_RPC=/(^|_)(save\d*|set|add|approve|request|decide|delete|remove|cancel|create|mark|submit|send|post|receive|review|update|merge|run|start|step|resolve|assign|dispatch|printed|verify|fill|link|import|fix|unadjust|revoke|reply|close|sync|entry\d*|pay|arrived|upsert|edit|reset|returned|deposit|undeposit|reopen|unverify|undo|restore|modify|book)(_|$)/;
+  const READ_END=/_(preview|list|queue|get|status|options|info)$/;
+  const tabId=Math.random().toString(36).slice(2);
+  const live={quiet:false,on:!OFF.test(PAGE),last:0,refreshing:false};
+  let gesture=0,touch=0,inflight=0,lastRead=0,pending=false,timer=0,seenIds=new Set();
+
+  // A write counts only right after a real tap / key (so an automatic reload never starts a refresh chain).
+  ["pointerdown","keydown","touchstart"].forEach(ev=>document.addEventListener(ev,e=>{if(e.isTrusted){gesture=touch=Date.now()}},{capture:true,passive:true}));
+  ["wheel","touchmove","scroll"].forEach(ev=>document.addEventListener(ev,()=>{touch=Date.now()},{capture:true,passive:true}));
+
+  function classify(url,method){
+    const m=/\/rest\/v1\/(rpc\/)?([a-z0-9_]+)/i.exec(url);if(!m)return null;
+    const name=m[2].toLowerCase(),rpc=!!m[1];
+    if(rpc?(method==="GET"||!WRITE_RPC.test(name.replace(/^lwb_/,""))||READ_END.test(name)):(method==="GET"||method==="HEAD"))return {read:true,name};
+    return {write:true,name,quiet:QUIET.test(name)};
+  }
+  const nativeFetch=window.fetch.bind(window);
+  window.fetch=function(input,init){
+    let info=null;
+    try{
+      const url=typeof input==="string"?input:(input&&input.url)||"";
+      const method=String((init&&init.method)||(input&&input.method)||"GET").toUpperCase();
+      if(url.indexOf("/rest/v1/")>0)info=classify(url,method);
+    }catch(e){}
+    if(!info)return nativeFetch(input,init);
+    inflight++;
+    if(info.read)lastRead=Date.now();
+    const userWrite=info.write&&!live.refreshing&&Date.now()-gesture<60e3;
+    return nativeFetch(input,init).then(res=>{
+      inflight--;
+      if(userWrite&&res&&res.ok)wrote(info);
+      return res;
+    },err=>{inflight--;throw err});
+  };
+
+  // ---- after a save ----
+  let sendTimer=0,sendNames=new Set();
+  function wrote(info){
+    const at=Date.now();
+    // This tab: if the page itself reads again within 1.2 s it has reloaded; otherwise run its Refresh.
+    setTimeout(()=>{if(lastRead<at)want("self")},1200);
+    if(info.quiet)return;
+    sendNames.add(info.name);
+    clearTimeout(sendTimer);sendTimer=setTimeout(()=>{const t=[...sendNames];sendNames.clear();announce(t)},400);
+  }
+  let bc=null;try{bc=new BroadcastChannel("lwb-live")}catch(e){}
+  let chan=null,chanReady=false;
+  function announce(tables){
+    const msg={id:tabId+"-"+Date.now(),from:tabId,page:PAGE,t:tables.slice(0,8),at:Date.now()};
+    try{bc&&bc.postMessage(msg)}catch(e){}
+    try{if(chan&&chanReady)chan.send({type:"broadcast",event:"changed",payload:msg})}catch(e){}
+  }
+  function heard(msg){
+    if(!msg||msg.from===tabId||!msg.id||seenIds.has(msg.id))return;
+    seenIds.add(msg.id);if(seenIds.size>200)seenIds=new Set([...seenIds].slice(-100));
+    want("other");
+  }
+  if(bc)bc.onmessage=e=>heard(e.data);
+  function connect(){
+    if(chan||!live.on||!window.supabase)return;
+    try{
+      const c=window.__lwbBellClient||(window.__lwbBellClient=window.supabase.createClient("https://txkbhadzdbxpieunfvox.supabase.co","sb_publishable_W4I3Q5ODf0g17sq5uDml2Q_sLolXYEk"));
+      chan=c.channel("lwb-live",{config:{broadcast:{self:false}}});
+      chan.on("broadcast",{event:"changed"},p=>heard(p&&p.payload));
+      chan.subscribe(s=>{chanReady=s==="SUBSCRIBED";dot()});
+    }catch(e){chan=null}
+  }
+
+  // ---- refresh the page when it is free ----
+  function refresher(){
+    if(typeof window.ERPLiveRefresh==="function")return window.ERPLiveRefresh;
+    const b=document.querySelector("[data-live-refresh],#refresh,#reload,#refreshBtn");
+    if(!b||b.disabled||b.offsetParent===null)return null;
+    return ()=>b.click();
+  }
+  function popupOpen(){
+    if(document.querySelector(".erp-dlg-back,.cv-back,.erp-ls-back,dialog[open],body.cv-open"))return true;
+    // Any other popup: whatever is in the middle of the screen sits in a fixed layer (not the top bar).
+    const x=innerWidth/2,y=innerHeight/2;let n=document.elementFromPoint(x,y);
+    for(;n&&n!==document.body;n=n.parentElement){
+      const cs=getComputedStyle(n);
+      if(cs.position==="fixed"&&!n.classList.contains("erp-top"))return n.offsetWidth>innerWidth*.5||n.offsetHeight>innerHeight*.5;
+    }
+    return false;
+  }
+  function busyNow(){
+    if(document.hidden)return "hidden";
+    const a=document.activeElement;
+    if(a&&(a.isContentEditable||a.tagName==="TEXTAREA"||(a.tagName==="INPUT"&&!/^(button|submit|checkbox|radio|range|color|file|reset)$/i.test(a.type))))return "typing";
+    if(Date.now()-touch<4000)return "using";
+    try{if(String(getSelection()||"").trim())return "selecting"}catch(e){}
+    if(popupOpen())return "popup";
+    if(inflight>0)return "loading";
+    if(Date.now()-live.last<6000)return "soon";
+    return "";
+  }
+  function want(why){
+    if(!live.on)return;
+    pending=true;clearTimeout(timer);timer=setTimeout(tryRun,why==="self"?0:800+Math.random()*1200);
+  }
+  function tryRun(){
+    clearTimeout(timer);
+    if(!pending)return;
+    const b=busyNow();
+    if(b==="hidden")return; // visibilitychange runs it
+    if(b){timer=setTimeout(tryRun,b==="soon"?6000-(Date.now()-live.last)+50:1500);return}
+    const fn=refresher();if(!fn){pending=false;return}
+    pending=false;run(fn);
+  }
+  async function run(fn){
+    const keep=[[window,scrollX,scrollY]];
+    document.querySelectorAll("[id]").forEach(el=>{if(el.scrollTop>0||el.scrollLeft>0)keep.push([el.id,el.scrollLeft,el.scrollTop])});
+    live.refreshing=live.quiet=true;live.last=Date.now();dot("busy");
+    try{const r=fn();if(r&&typeof r.then==="function")await r}catch(e){}
+    // Wait until the page's reads are done (max 15 s), then put the scroll back.
+    const t0=Date.now();while(inflight>0&&Date.now()-t0<15e3)await new Promise(ok=>setTimeout(ok,120));
+    await new Promise(ok=>requestAnimationFrame(()=>setTimeout(ok,30)));
+    keep.forEach(([el,x,y])=>{
+      if(el===window){if(Math.abs(scrollY-y)>2&&Date.now()-touch>1500)scrollTo(x,y);return}
+      const n=document.getElementById(el);if(n&&Math.abs(n.scrollTop-y)>2){n.scrollLeft=x;n.scrollTop=y}
+    });
+    live.refreshing=live.quiet=false;live.last=Date.now();dot("done");
+  }
+  document.addEventListener("visibilitychange",()=>{if(!document.hidden&&pending)timer=setTimeout(tryRun,600)});
+
+  // ---- small "Live" dot in the top bar ----
+  let dotEl=null,dotT=0;
+  function dot(state){
+    if(!live.on)return;
+    if(!dotEl){
+      const u=document.querySelector(".erp-top .erp-user");if(!u)return;
+      dotEl=document.createElement("span");dotEl.className="erp-live";dotEl.setAttribute("role","status");
+      dotEl.innerHTML='<i aria-hidden="true"></i><span>Live</span>';u.prepend(dotEl);
+    }
+    const at=live.last?new Date(live.last).toLocaleTimeString("en-IN",{hour:"2-digit",minute:"2-digit",hour12:false,timeZone:"Asia/Kolkata"}):"";
+    dotEl.classList.toggle("off",!chanReady&&!bc);
+    dotEl.title="Auto refresh is on: changes saved by anyone show here by themselves."+(at?"\nLast auto update: "+at:"");
+    if(state==="busy"){dotEl.classList.add("busy");dotEl.lastChild.textContent="Updating"}
+    if(state==="done"){clearTimeout(dotT);dotEl.classList.remove("busy");dotEl.classList.add("done");dotEl.lastChild.textContent="Updated";
+      dotT=setTimeout(()=>{dotEl.classList.remove("done");dotEl.lastChild.textContent="Live"},2500)}
+  }
+  function boot(){connect();dot();if(!dotEl){let n=0;const iv=setInterval(()=>{dot();if(dotEl||++n>20)clearInterval(iv)},500)}}
+  if(live.on){if(document.readyState==="complete")setTimeout(boot,800);else addEventListener("load",()=>setTimeout(boot,800))}
+
+  window.ERPLive={get quiet(){return live.quiet},get on(){return live.on},set on(v){live.on=!!v;if(!v&&dotEl)dotEl.remove()},
+    refresh:()=>want("api"),changed:t=>announce([].concat(t||"manual")),_classify:classify};
+})();
