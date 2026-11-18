@@ -13,6 +13,10 @@
  *   ERPDocs.summary(client, entity) -> Map(record id -> Set of doc types it has).
  *   ERPDocs.badge(entity, types)    -> HTML: "Photo missing" / "📎 3".
  *   ERPDocs.avatars(client, entity, ids) -> Map(record id -> signed photo URL).
+ *   ERPDocs.zip(client, entity, ids, {types, name, label}) -> downloads the files of those records as one ZIP.
+ *
+ * Slots with vid:1 (purchase damage) also take short videos (MP4 / MOV / WEBM, up to 50 MB, as they are;
+ * lwb_doc_video_setup.sql).
  *
  * Images are resized on the phone (photos 1600px, bills / documents 2200px) before upload.
  * PDF files up to 10 MB are uploaded as they are. A browser can not start a printer's
@@ -20,7 +24,9 @@
  */
 (function(){
   'use strict';
-  const BUCKET='lwb-documents',MAX_MB=10;
+  const BUCKET='lwb-documents',MAX_MB=10,VID_MB=50;
+  const VID={mp4:'video/mp4',m4v:'video/mp4',mov:'video/quicktime',webm:'video/webm','3gp':'video/3gpp'};
+  const isVid=d=>/^video\//.test(d.mime||(d.prep&&d.prep.mime)||'');
   // Record types whose required slots are enforced. Mohit (31 Oct 2026): everything optional for now,
   // made compulsory one by one later: add e.g. STAFF:1, DRIVER:1, USER:1, ASSET:1, STOCK_MOVE:1 here.
   const STRICT={};
@@ -32,7 +38,7 @@
     VEHICLE:[{k:'PHOTO',l:'Vehicle photo (number plate visible)',img:1,cam:'environment',max:4,want:1},{k:'RC',l:'RC book',max:4},{k:'INSURANCE',l:'Insurance',max:4},{k:'PUC',l:'PUC',max:2},{k:'FITNESS',l:'Fitness',max:2},{k:'PERMIT',l:'Permit',max:4},{k:'OTHER',l:'Other document',max:6}],
     PARTY:[{k:'SHOP',l:'Shop photo',img:1,cam:'environment',max:4,want:1},{k:'PAN',l:'PAN card',max:2},{k:'GST',l:'GST certificate',max:4},{k:'OWNER',l:'Owner photo',img:1,cam:'environment',max:2},{k:'CHEQUE',l:'Cancelled cheque',max:2},{k:'OTHER',l:'Other document',max:6}],
     SUPPLIER:[{k:'GST',l:'GST certificate',max:4},{k:'PAN',l:'PAN card',max:2},{k:'CHEQUE',l:'Cancelled cheque',max:2},{k:'OTHER',l:'Other document',max:6}],
-    PURCHASE_BILL:[{k:'BILL',l:'Purchase bill (PDF / scan / photo)',s:'Bill',doc:1,max:10,want:1},{k:'DAMAGE',l:'Damage / leakage / breakage photos',s:'Damage photos',img:1,cam:'environment',max:10},{k:'OTHER',l:'LR / other',max:6}],
+    PURCHASE_BILL:[{k:'BILL',l:'Purchase bill (PDF / scan / photo)',s:'Bill',doc:1,max:10,want:1},{k:'DAMAGE',l:'Damage / gasless photos & videos',s:'Damage photos / videos',img:1,vid:1,cam:'environment',max:10},{k:'OTHER',l:'LR / other',max:6}],
     ASSET:[{k:'PHOTO',l:'Asset photo',img:1,cam:'environment',req:1,max:6},{k:'BILL',l:'Purchase bill (PDF / scan / photo)',doc:1,max:6},{k:'WARRANTY',l:'Warranty card',max:4},{k:'OTHER',l:'Other document',max:6}],
     STOCK_MOVE:[{k:'DAMAGE',l:'Damage / leakage / breakage photos',img:1,cam:'environment',req:1,max:6}],
     ORDER:[{k:'LOADED',l:'Loaded vehicle photo',img:1,cam:'environment',max:4},{k:'DAMAGE',l:'Damage / leakage / breakage at loading',img:1,cam:'environment',max:6}],
@@ -83,7 +89,7 @@
 .ed-pop{width:min(860px,100%);max-height:92vh;overflow:auto;background:#fff;border-radius:12px;box-shadow:0 24px 60px rgba(15,23,42,.3);padding:16px}
 .ed-pop-h{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:10px}.ed-pop-h h3{margin:0;font-size:17px}
 .ed-view{position:fixed;inset:0;z-index:4900;background:rgba(0,0,0,.85);display:grid;place-items:center;padding:12px}
-.ed-view img{max-width:96vw;max-height:84vh;border-radius:6px}.ed-view .bar{position:fixed;top:10px;right:10px;display:flex;gap:8px}
+.ed-view img,.ed-view video{max-width:96vw;max-height:84vh;border-radius:6px;background:#000}.ed-view .bar{position:fixed;top:10px;right:10px;display:flex;gap:8px}
 .ed-tag{display:inline-block;font-size:11.5px;font-weight:700;border-radius:999px;padding:2px 8px;margin:2px 2px 0 0;white-space:nowrap}
 .ed-tag.bad{background:#fdecec;color:#b42318}.ed-tag.ok{background:#e3f7e9;color:#18613c}.ed-tag.warn{background:#fff4e0;color:#8a5300}
 .ed-av{width:36px;height:36px;border-radius:50%;object-fit:cover;border:1px solid #dfe3e8;vertical-align:middle;margin-right:8px;background:#eef1f4;display:inline-block}
@@ -111,7 +117,14 @@
   async function prepare(file,slot){
     const pdf=file.type==='application/pdf'||/\.pdf$/i.test(file.name||'');
     if(pdf){if(slot.img)throw Error(slot.l+': choose a photo, not a PDF.');if(file.size>MAX_MB*1048576)throw Error('PDF is bigger than '+MAX_MB+' MB. Scan at 150–200 DPI or split it.');return {blob:file,mime:'application/pdf',ext:'pdf'}}
-    if(!/^image\//.test(file.type||'')&&!/\.(jpe?g|png|webp|heic|heif)$/i.test(file.name||''))throw Error('Only photos (JPG / PNG) and PDF files can be uploaded.');
+    const vx=(String(file.name||'').match(/\.([a-z0-9]+)$/i)||[])[1];
+    if(/^video\//.test(file.type||'')||(vx&&VID[vx.toLowerCase()])){
+      if(!slot.vid)throw Error(slot.l+': videos can not be added here. Choose a photo.');
+      const ext=vx&&VID[vx.toLowerCase()]?vx.toLowerCase().replace('m4v','mp4'):({'video/quicktime':'mov','video/webm':'webm','video/3gpp':'3gp'}[file.type]||'mp4');
+      if(file.size>VID_MB*1048576)throw Error('Video is bigger than '+VID_MB+' MB. Record a shorter video (about 1 minute).');
+      return {blob:file,mime:VID[ext],ext};
+    }
+    if(!/^image\//.test(file.type||'')&&!/\.(jpe?g|png|webp|heic|heif)$/i.test(file.name||''))throw Error(slot.vid?'Only photos (JPG / PNG) and videos (MP4 / MOV) can be uploaded.':'Only photos (JPG / PNG) and PDF files can be uploaded.');
     const blob=await shrink(file,slot.doc?2200:1600);
     return {blob,mime:'image/jpeg',ext:'jpg'};
   }
@@ -135,11 +148,11 @@
     const r=await client.rpc('lwb_doc_list',{p_entity:entity,p_entity_ids:ids.map(String)});
     if(r.error)throw r.error;return r.data||[];
   }
-  function viewer(url,isPdf){
+  function viewer(url,isPdf,video){
     if(isPdf){window.open(url,'_blank','noopener');return}
     const v=document.createElement('div');v.className='ed-view';
-    v.innerHTML='<div class="bar"><a class="ed-btn" target="_blank" rel="noopener">Open full</a><button type="button" class="ed-btn">Close ✕</button></div><img alt="Document">';
-    v.querySelector('img').src=url;v.querySelector('a').href=url;
+    v.innerHTML='<div class="bar"><a class="ed-btn" target="_blank" rel="noopener">Open full</a><button type="button" class="ed-btn">Close ✕</button></div>'+(video?'<video controls playsinline autoplay></video>':'<img alt="Document">');
+    v.querySelector(video?'video':'img').src=url;v.querySelector('a').href=url;
     v.onclick=e=>{if(e.target===v||e.target.tagName==='BUTTON')v.remove()};document.body.append(v);
   }
 
@@ -150,9 +163,9 @@
     const root=document.createElement('div');root.className='ed-root'+(o.compact?' ed-compact':'');
     if(o.mount){o.mount.replaceChildren(root)}
     const pickers={};
-    function picker(slot,cam){
+    function picker(slot,cam,video){
       const i=document.createElement('input');i.type='file';i.hidden=true;
-      i.accept=slot.img?'image/*':'image/*,application/pdf';if(cam)i.setAttribute('capture',slot.cam||'environment');
+      i.accept=video?'video/*':slot.img?(slot.vid?'image/*,video/*':'image/*'):'image/*,application/pdf';if(cam)i.setAttribute('capture',slot.cam||'environment');
       if((slot.max||1)>1)i.multiple=true;
       i.onchange=()=>{const fl=[...i.files];i.value='';add(slot,fl)};root.append(i);return i;
     }
@@ -164,7 +177,7 @@
       else if(room<=0){toast(slot.l+': maximum '+(slot.max||1)+' file(s). Remove one first.','error');return}
       for(const f of fl.slice(0,Math.max(1,room))){
         let prep;try{prep=await prepare(f,slot)}catch(e){toast(e.message,'error');continue}
-        const p={slot,file:f,prep,url:prep.mime==='application/pdf'?'':URL.createObjectURL(prep.blob),key:rnd()};
+        const p={slot,file:f,prep,url:prep.mime==='application/pdf'||/^video\//.test(prep.mime)?'':URL.createObjectURL(prep.blob),key:rnd()};
         pending.push(p);
         if(id!=null){render();await send(p)}
       }
@@ -181,7 +194,7 @@
       if(id==null){render();return}
       try{
         const rows=await list(client,entity,[id]);
-        const urls=await signed(client,rows.filter(r=>r.mime!=='application/pdf').map(r=>r.path));
+        const urls=await signed(client,rows.filter(r=>r.mime!=='application/pdf'&&!isVid(r)).map(r=>r.path));
         files=rows.map(r=>({...r,url:urls.get(r.path)||''}));
         if(infoKeys.length&&!infoLoaded){const r=await client.rpc('lwb_doc_info_get',{p_entity:entity,p_entity_ids:[id]});if(!r.error){info=(r.data&&r.data[0]&&r.data[0].info)||{};infoLoaded=true}}
       }catch(e){err=setupMsg(e)}
@@ -207,7 +220,7 @@
       const fileTile=(d,canX)=>{
         const pdf=d.mime==='application/pdf'||(d.prep&&d.prep.mime==='application/pdf');
         return '<div class="ed-f'+(d.prep&&id!=null?' wait':'')+'" data-k="'+esc(d.key||d.id)+'" title="'+esc(d.file_name||(d.file&&d.file.name)||'')+'">'+
-          (pdf?'📄 PDF':d.url?'<img alt="" src="'+esc(d.url)+'">':'🖼')+(canX?'<button type="button" class="x" data-x="'+esc(d.key||d.id)+'" aria-label="Remove">✕</button>':'')+'</div>';
+          (pdf?'📄 PDF':isVid(d)?'🎥 Video':d.url?'<img alt="" src="'+esc(d.url)+'">':'🖼')+(canX?'<button type="button" class="x" data-x="'+esc(d.key||d.id)+'" aria-label="Remove">✕</button>':'')+'</div>';
       };
       root.innerHTML=(err?'<div class="ed-hint" style="color:#b42318">'+esc(err)+'</div>':'')+
         '<div class="ed-wrap">'+slots.map(s=>{
@@ -218,11 +231,12 @@
             return '<div class="'+cls+'" title="'+esc(s.l)+'"><div class="ed-h"><span>'+esc(sl)+(s.req?' <span class="r">*</span>':'')+'</span>'+(n?'<small>✓ '+n+'</small>':'')+'</div>'+
               (n?'<div class="ed-files">'+mine.map(d=>fileTile(d,canEdit)).join('')+wait.map(p=>fileTile(p,canEdit)).join('')+'</div>':'')+
               (canEdit?'<button type="button" class="ed-btn" data-pick="'+s.k+'" title="'+pickT+'" aria-label="'+esc(sl)+': '+pickT+'">'+(s.img?'🖼':'📄')+'</button>'+
-                '<button type="button" class="ed-btn" data-cam="'+s.k+'" title="'+camT+'" aria-label="'+esc(sl)+': '+camT+'">📷</button>':'')+
+                '<button type="button" class="ed-btn" data-cam="'+s.k+'" title="'+camT+'" aria-label="'+esc(sl)+': '+camT+'">📷</button>'+
+                (s.vid?'<button type="button" class="ed-btn" data-vid="'+s.k+'" title="Record a video" aria-label="'+esc(sl)+': Record a video">🎥</button>':''):'')+
               (wait.some(p=>p.fail)?'<span class="ed-hint" style="color:#b42318">Not uploaded</span>':'')+'</div>';}
           return '<div class="'+cls+'"><div class="ed-h"><span>'+esc(s.l)+(s.req?' <span class="r">*</span>':'')+'</span><small>'+(n?'✓ '+n:s.req?'Required':s.want?'Recommended':'Optional')+'</small></div>'+
             (n?'<div class="ed-files">'+mine.map(d=>fileTile(d,canEdit)).join('')+wait.map(p=>fileTile(p,canEdit)).join('')+'</div>':'')+
-            (canEdit?'<div class="ed-btns">'+(s.doc?'':'<button type="button" class="ed-btn" data-cam="'+s.k+'">📷 Camera</button>')+
+            (canEdit?'<div class="ed-btns">'+(s.doc?'':'<button type="button" class="ed-btn" data-cam="'+s.k+'">📷 Camera</button>')+(s.vid?'<button type="button" class="ed-btn" data-vid="'+s.k+'">🎥 Video</button>':'')+
               '<button type="button" class="ed-btn" data-pick="'+s.k+'">'+(s.img?'🖼 Gallery':s.doc?'📄 PDF / Scan / Photo':'📎 Photo / PDF')+'</button>'+
               (s.doc?'<button type="button" class="ed-btn" data-cam="'+s.k+'">📷 Phone camera</button>':'')+'</div>':'')+
             (wait.some(p=>p.fail)?'<div class="ed-hint" style="color:#b42318">Not uploaded. Remove and try again.</div>':'')+
@@ -230,17 +244,19 @@
         }).join('')+'</div>'+
         (infoKeys.length?'<div class="ed-info">'+infoKeys.map(k=>'<div><label>'+esc(INFO_L[k][0])+'</label><input data-info="'+k+'" maxlength="60" placeholder="'+esc(INFO_L[k][1])+'" value="'+esc(info[k]||'')+'"'+(canEdit?'':' disabled')+(k==='aadhaar_no'||k==='bank_account'?' inputmode="numeric"':'')+'></div>').join('')+'</div>':'')+
         (busy?'<div class="ed-hint">Uploading…</div>':'');
-      for(const s of slots){if(!pickers[s.k]){pickers[s.k]={cam:picker(s,true),pick:picker(s,false)}}else{root.append(pickers[s.k].cam,pickers[s.k].pick)}}
+      for(const s of slots){if(!pickers[s.k]){pickers[s.k]={cam:picker(s,true),pick:picker(s,false),...(s.vid?{vid:picker(s,true,true)}:{})}}else{root.append(...Object.values(pickers[s.k]))}}
     }
     root.addEventListener('click',e=>{
       const b=e.target.closest('button,.ed-f');if(!b||!root.contains(b))return;
       if(b.dataset.cam){pickers[b.dataset.cam].cam.click();return}
       if(b.dataset.pick){pickers[b.dataset.pick].pick.click();return}
+      if(b.dataset.vid){pickers[b.dataset.vid].vid.click();return}
       if(b.dataset.x){e.stopPropagation();const k=b.dataset.x,p=pending.find(x=>x.key===k);
         if(p){pending=pending.filter(x=>x!==p);render();o.onChange&&o.onChange();return}
         const d=files.find(x=>String(x.id)===k);if(d)remove(d);return}
       if(b.classList.contains('ed-f')){const k=b.dataset.k,d=files.find(x=>String(x.id)===k)||pending.find(x=>x.key===k);if(!d)return;
         const pdf=d.mime==='application/pdf'||(d.prep&&d.prep.mime==='application/pdf');
+        if(isVid(d)){if(d.path)client.storage.from(BUCKET).createSignedUrl(d.path,3600).then(r=>{if(r.data)viewer(r.data.signedUrl,false,true)});else if(d.prep)viewer(URL.createObjectURL(d.prep.blob),false,true);return}
         if(d.url){viewer(d.url,false);return}
         if(pdf&&d.path){client.storage.from(BUCKET).createSignedUrl(d.path,3600).then(r=>{if(r.data)viewer(r.data.signedUrl,true)});return}
         if(pdf&&d.prep){viewer(URL.createObjectURL(d.prep.blob),true)}}
@@ -310,5 +326,45 @@
     }catch(e){}
     return out;
   }
-  window.ERPDocs={panel,open,summary,badge,missingOf,avatars,slots:slotsOf,strict:e=>!!STRICT[e],BUCKET,css};
+  /* ---------- ZIP download (no compression: photos / videos / PDF are compressed already) ---------- */
+  const CRC=(()=>{const t=new Uint32Array(256);for(let n=0;n<256;n++){let c=n;for(let k=0;k<8;k++)c=c&1?0xEDB88320^(c>>>1):c>>>1;t[n]=c>>>0}return t})();
+  const crc32=u=>{let c=0xFFFFFFFF;for(let i=0;i<u.length;i++)c=CRC[(c^u[i])&255]^(c>>>8);return (c^0xFFFFFFFF)>>>0};
+  function zipBlob(entries){ // entries: [{name, data: Uint8Array}]
+    const enc=new TextEncoder(),parts=[],dir=[];let off=0;
+    const d=new Date(),dt=((d.getHours()<<11)|(d.getMinutes()<<5)|(d.getSeconds()>>1))&0xFFFF,dd=(((d.getFullYear()-1980)<<9)|((d.getMonth()+1)<<5)|d.getDate())&0xFFFF;
+    for(const e of entries){
+      const nm=enc.encode(e.name),crc=crc32(e.data),sz=e.data.length;
+      const h=new DataView(new ArrayBuffer(30));
+      h.setUint32(0,0x04034b50,true);h.setUint16(4,20,true);h.setUint16(6,0x0800,true);h.setUint16(8,0,true);h.setUint16(10,dt,true);h.setUint16(12,dd,true);
+      h.setUint32(14,crc,true);h.setUint32(18,sz,true);h.setUint32(22,sz,true);h.setUint16(26,nm.length,true);h.setUint16(28,0,true);
+      parts.push(h.buffer,nm,e.data);
+      const c=new DataView(new ArrayBuffer(46));
+      c.setUint32(0,0x02014b50,true);c.setUint16(4,20,true);c.setUint16(6,20,true);c.setUint16(8,0x0800,true);c.setUint16(10,0,true);c.setUint16(12,dt,true);c.setUint16(14,dd,true);
+      c.setUint32(16,crc,true);c.setUint32(20,sz,true);c.setUint32(24,sz,true);c.setUint16(28,nm.length,true);c.setUint32(42,off,true);
+      dir.push(c.buffer,nm);off+=30+nm.length+sz;
+    }
+    const dsz=dir.reduce((a,x)=>a+x.byteLength,0),end=new DataView(new ArrayBuffer(22));
+    end.setUint32(0,0x06054b50,true);end.setUint16(8,entries.length,true);end.setUint16(10,entries.length,true);end.setUint32(12,dsz,true);end.setUint32(16,off,true);
+    return new Blob([...parts,...dir,end.buffer],{type:'application/zip'});
+  }
+  // Files of some records in one ZIP. o.types: doc types to take (default all), o.label(row, n): file name without extension.
+  // Returns the number of files (0 = nothing found, nothing downloaded).
+  async function zip(client,entity,ids,o={}){
+    const rows=(await list(client,entity,ids.map(String))).filter(r=>!o.types||o.types.includes(r.doc_type));
+    if(!rows.length)return 0;
+    const urls=await signed(client,rows.map(r=>r.path)),seen=new Map(),entries=[];
+    for(const r of rows){
+      const u=urls.get(r.path);if(!u)continue;
+      const res=await fetch(u);if(!res.ok)throw Error('Could not download '+(r.file_name||r.path));
+      const ext=(r.path.match(/\.([a-z0-9]+)$/i)||[,'bin'])[1];
+      let base=String(o.label?o.label(r):r.doc_type).replace(/[\\/:*?"<>|]+/g,'-').slice(0,80)||'file';
+      const n=(seen.get(base)||0)+1;seen.set(base,n);
+      entries.push({name:base+'-'+n+'.'+ext,data:new Uint8Array(await res.arrayBuffer())});
+    }
+    if(!entries.length)return 0;
+    const a=document.createElement('a');a.href=URL.createObjectURL(zipBlob(entries));a.download=(o.name||'files')+'.zip';
+    document.body.append(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},4000);
+    return entries.length;
+  }
+  window.ERPDocs={panel,open,summary,badge,missingOf,avatars,zip,zipBlob,slots:slotsOf,strict:e=>!!STRICT[e],BUCKET,css};
 })();
