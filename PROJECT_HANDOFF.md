@@ -7,6 +7,7 @@
 ## Bell notifications by type (18 Nov 2026)
 - Mohit: order, approval, task notifications look the same; the type must be clear at a glance and the bell pleasant to use.
 - `erp-operations-notifications.js`: every notification gets a type (Order / Delivery / Payment / Stock / Task / Update, `CATS` + `CAT_OF`) with its own colour, a line icon tile (SVG, in place of emoji) and a type tag. Filter tabs: All · To do (unread with an action: Approve / Verify / Make bill…) · one tab per type present, with unread counts. Cards grouped Today / Yesterday / Earlier; the action is a real button (opens the page, marks read) next to ✓. Same summary text and routes as before. No SQL.
+- Date filter (same day): select at the end of the tabs row: All dates / Today / Yesterday / Last 7 days / Pick a date (date box; that day is read from the database, not cut by the latest-70 limit). Tab counts follow the date. Older day groups show the date (DD/MM/YYYY) instead of "Earlier".
 - `erp-shell.css`: compact bell panel padding 0, max height min(620px, 78dvh).
 - Checked with a mocked database at 1366 / 390 px: no side scroll, no JS errors. Screenshots: project files `notifications-by-type/`.
 

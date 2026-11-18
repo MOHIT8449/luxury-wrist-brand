@@ -138,7 +138,7 @@
   const d=new Date(v),t=new Date();t.setHours(0,0,0,0);
   if(d>=t)return "Today";
   if(d>=new Date(t-864e5))return "Yesterday";
-  return "Earlier";
+  return window.LWBDate?LWBDate.d(v):d.toLocaleDateString("en-IN");
  }
  // ord = this notification's order row (party, value), when this login can read it.
  function summary(n,ord){
@@ -283,6 +283,10 @@
    ".lwb-op-tab i{font-style:normal;font-size:10.5px;font-weight:700;min-width:17px;text-align:center;padding:0 5px;border-radius:999px;background:#eef1f5;color:#4a5a6b}",
    ".lwb-op-tab.on i{background:rgba(255,255,255,.2);color:#fff}.lwb-op-tab.todo i{background:#c8102e;color:#fff}",
    ".lwb-op-tab .sw{width:8px;height:8px;border-radius:50%;flex:0 0 8px}",
+   ".lwb-op-dates{display:inline-flex;gap:5px;margin-left:auto}",
+   ".lwb-op-dates select,.lwb-op-dates input{height:27px;padding:0 8px;border:1px solid #dfe5ec;background:#fff;color:#4a5a6b;border-radius:999px;font:600 12px 'Segoe UI',Roboto,Arial,sans-serif;min-height:0;max-width:150px;cursor:pointer}",
+   ".lwb-op-dates select.on{background:#e8f0fc;border-color:#9dbbe8;color:#1d5fbf}",
+   ".lwb-op-dates [hidden]{display:none}",
    ".lwb-op-list{padding:2px 8px 6px}",
    ".lwb-op-day{font-size:10.5px;font-weight:700;letter-spacing:.7px;text-transform:uppercase;color:#8592a1;margin:9px 4px 5px}",
    ".lwb-op-empty{color:#6b7785;text-align:center;padding:22px 8px;margin:0}",
@@ -337,10 +341,31 @@
   const list=el("div","lwb-op-list"),foot=el("div","lwb-op-foot");panel.append(head,list,foot);wrap.append(bell,panel);mount.prepend(wrap);
   const orders=new Map();
   // Filter tabs: All · To do (needs your action) · one tab per type that has notifications.
-  let tab="all",items=[];
+  let tab="all",allItems=[];
+  // Date filter (Mohit, 18 Nov 2026): All dates · Today · Yesterday · Last 7 days · Pick a date.
+  let when="all",pick="";
+  const ymd=d=>d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
+  function inDate(it){
+   if(when==="all")return true;
+   const d=new Date(it.n.created_at),t=new Date();t.setHours(0,0,0,0);
+   if(when==="today")return d>=t;
+   if(when==="yesterday")return d>=new Date(t-864e5)&&d<t;
+   if(when==="week")return d>=new Date(t-6*864e5);
+   if(when==="date")return !pick||ymd(d)===pick;
+   return true;
+  }
+  const dates=el("span","lwb-op-dates"),dSel=el("select"),dPick=el("input");
+  dSel.setAttribute("aria-label","Filter by date");dSel.title="Filter by date";
+  for(const [v,t] of [["all","All dates"],["today","Today"],["yesterday","Yesterday"],["week","Last 7 days"],["date","Pick a date…"]]){const o=el("option",null,t);o.value=v;dSel.append(o)}
+  dPick.type="date";dPick.hidden=true;dPick.max=ymd(new Date());dPick.setAttribute("aria-label","Date");
+  dates.append(dSel,dPick);
+  dSel.addEventListener("change",()=>{when=dSel.value;dPick.hidden=when!=="date";if(when==="date"){if(!pick){pick=ymd(new Date());dPick.value=pick}reloadData()}else render();panel.scrollTop=0});
+  dPick.addEventListener("change",()=>{pick=dPick.value;reloadData();panel.scrollTop=0});
+  dates.addEventListener("click",e=>e.stopPropagation());
   const todo=it=>!it.n.is_read&&!!it.sum.action&&it.sum.tone!=="ok";
   async function markRead(n){return db.from("erp_notifications").update({is_read:true}).eq("id",n.id).eq("user_id",user.id)}
   function render(){
+   const items=allItems.filter(inDate);
    const unreadIn=f=>items.filter(it=>!it.n.is_read&&f(it)).length;
    const defs=[["all","All",()=>true],["todo","To do",todo]];
    for(const [k,c] of Object.entries(CATS))if(items.some(it=>it.sum.cat===k))defs.push([k,c.tab,it=>it.sum.cat===k]);
@@ -356,10 +381,11 @@
     b.addEventListener("click",e=>{e.stopPropagation();tab=k;render();panel.scrollTop=0});
     tabs.append(b);
    }
-   tabs.hidden=items.length===0;
+   tabs.append(dates);
+   dSel.classList.toggle("on",when!=="all");
    list.replaceChildren();
    const f=(defs.find(d=>d[0]===tab)||defs[0])[2],show=items.filter(f);
-   if(!show.length){list.append(el("p","lwb-op-empty",items.length?"Nothing here right now.":"No notifications yet."));return}
+   if(!show.length){list.append(el("p","lwb-op-empty",allItems.length?(when==="all"?"Nothing here right now.":"No notifications on this date."):"No notifications yet."));return}
    let day="";
    for(const {n,sum,href} of show){
     const d=dayOf(n.created_at);
@@ -408,9 +434,10 @@
    }
   }
   async function reloadData(){
-   const {data,error}=await db.from("erp_notifications")
-    .select("*")
-    .eq("user_id",user.id).order("created_at",{ascending:false}).limit(70);
+   let qy=db.from("erp_notifications").select("*").eq("user_id",user.id);
+   // A picked older date reads that day only, so it is not cut by the latest-70 limit.
+   if(when==="date"&&pick){const a=new Date(pick+"T00:00:00");qy=qy.gte("created_at",a.toISOString()).lt("created_at",new Date(+a+864e5).toISOString())}
+   const {data,error}=await qy.order("created_at",{ascending:false}).limit(70);
    if(error){list.replaceChildren(el("p","lwb-op-error","Notification error: "+error.message));return}
    // Salesman: his order updates show again (17 Nov 2026); live GPS / loading-assignment bells stay hidden.
    // Driver sees no history: only the last 12 hours.
@@ -428,7 +455,7 @@
    arrived(rows);
    // Market order checks no longer pop up (Mohit, 7 Nov 2026): they wait in the bell and on Approvals.
    allRead.hidden=!unread;
-   items=rows.map(n=>({n,sum:summary(n,orders.get(n.order_id)),href:route(n,pages)}));
+   allItems=rows.map(n=>({n,sum:summary(n,orders.get(n.order_id)),href:route(n,pages)}));
    render();
   }
   // "Market order — please check once" (lwb_rate_check_setup.sql) used to pop up here for every PO, again and
