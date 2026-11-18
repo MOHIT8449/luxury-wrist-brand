@@ -2198,6 +2198,11 @@ function headCreatesApprovedPo(){
 }
 // Where a submitted PO is listed: Sales Head / Admin see the approval list, a Salesman his own orders.
 function poListUrl(){return headCreatesApprovedPo()?"warehouse-orders.html":"my-sales.html#orders";}
+/* After Save PO (Mohit, 18 Nov 2026): go straight to the PO List with the new / changed PO on top, highlighted. */
+function savedPoListUrl(id){
+  const q = "?saved=" + encodeURIComponent(id);
+  return headCreatesApprovedPo() ? "warehouse-orders.html" + q : "my-sales.html" + q + "#orders";
+}
 // Every login except Admin types the rate by hand: no last bill / slab / std rate is filled in the box.
 function manualRateLogin(){ return !isAdminLogin(); }
 function isAdminLogin(){ return String(currentProfile?.loginRole||currentProfile?.role||"").trim().toLowerCase() === "admin"; }
@@ -2713,7 +2718,7 @@ async function saveOrder(){
       await alert("Order " + (editOrder.order_no || "") + (data && data.changed
         ? " saved. Sales Head is informed of the changes."
         : ": nothing changed.") + priorityNote);
-      location.href = "my-sales.html#orders";
+      location.href = "my-sales.html?saved=" + encodeURIComponent(editOrder.id) + "#orders";
     }catch(error){
       alert("Order could not be saved:\n" + (/lwb_sales_modify_order/.test(error.message || "") ? "Modify is not set up yet. Ask Admin to run lwb_sales_modify_order_setup.sql." : (error.message || "Unknown error")));
       saveBtn.disabled=false;
@@ -2799,11 +2804,18 @@ async function saveOrder(){
       (poRateWait ? "\nRate is below the allowed min, so this PO is sent to Admin for rate OK. Assign transport after Admin approves."
         : poRateLow ? "\nRate is below the allowed min, so Admin is informed for rate OK."
         : headCreatesApprovedPo() ? "\nReady for transport assignment." : "\nSent to Warehouse Manager for approval.") : "";
-    alert(
+    await alert(
       (made.length > 1 ? "2 POs saved.\n\n" : createdOrder && poRateWait ? "PO saved. Sent to Admin for rate OK.\n\n" : createdOrder && headCreatesApprovedPo() ? "PO saved and approved successfully.\n\n" : createdOrder ? "Order submitted successfully.\n\n" : "PO saved.\n\n") +
       made.map(m => sum(m) + (m.slip ? (slipDone ? "\nDriver: " + slipDetails.driver_name + "\nVehicle: " + slipDetails.vehicle_no + "\nSlip ready to print. Sent to Accounts for the Tally bill." : "") : normalTail)).join("\n\n") +
       priorityNote + spNote
     );
+
+    // Normal PO (no slip to print here): open the PO List with this PO on top.
+    if(createdOrder?.id && !slipOrder){
+      saveBtn.textContent = "Opening PO List...";
+      location.href = savedPoListUrl(createdOrder.id);
+      return;
+    }
 
     saveBtn.textContent = (rateWaiting && !createdOrder) || poRateWait ? "Sent to Admin" : slipDone && !createdOrder ? "Slip Made" : headCreatesApprovedPo() ? "PO Approved" : "Order Submitted";
     const list = document.getElementById("savedPoList");
