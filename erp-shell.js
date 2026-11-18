@@ -488,6 +488,7 @@
     armHide();
     top.querySelector(".erp-keys-btn").onclick=()=>{if(window.LWBKeys&&LWBKeys.help)LWBKeys.help();else location.href="keyboard-shortcuts.html"};
     top.querySelector(".erp-logout").onclick=opts.onLogout||(()=>{location.href="login.html"});
+    mountedRole=role||"";
     if(role)unlockSetting(top.querySelector(".erp-avatar"),role);
 
     // Module search: type, then click or press Enter.
@@ -684,11 +685,12 @@
   function unlockSetting(av,role){
     if(!av)return;
     av.setAttribute("role","button");av.tabIndex=0;av.title="Login & Security (MPIN, fingerprint)";av.style.cursor="pointer";
-    av.addEventListener("click",()=>openSecurity());
-    av.addEventListener("keydown",e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();openSecurity()}});
+    av.addEventListener("click",()=>openSecurity(role));
+    av.addEventListener("keydown",e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();openSecurity(role)}});
   }
-  let secOpen=false;
-  async function openSecurity(){
+  let secOpen=false,mountedRole="";
+  async function openSecurity(role){
+    role=typeof role==="string"?role:mountedRole;
     if(secOpen||!window.supabase)return;secOpen=true;
     let U,user,c;
     try{
