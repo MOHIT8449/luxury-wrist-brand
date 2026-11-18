@@ -676,6 +676,7 @@
   // Profile > Login & Security (tap the round initial in the top bar, or Settings > Login & Security):
   // set / change / turn off the MPIN and turn fingerprint unlock on / off for this phone (quick-unlock.js,
   // lwb_mpin_setup.sql). Every role can open it.
+  const mpinWho=u=>u&&u.email&&!/@staff\.lwb-erp\.in$/i.test(u.email)?u.email:"";
   function loadUnlock(){
     if(window.LWBUnlock)return Promise.resolve(window.LWBUnlock);
     return new Promise((ok,bad)=>{const s=document.createElement("script");s.src="quick-unlock.js";s.onload=()=>ok(window.LWBUnlock);s.onerror=bad;document.head.appendChild(s)});
@@ -709,7 +710,7 @@
       try{const r=await c.rpc("lwb_mpin_status",{p_device:U.device()});
         if(r.error){pinOn=null;return}
         pinOn=r.data===true;
-        try{pinOn?localStorage.setItem("lwbMpin",JSON.stringify({uid:user.id,at:Date.now()})):localStorage.removeItem("lwbMpin")}catch(e){}
+        try{if(!pinOn)localStorage.removeItem("lwbMpin");else{const o=JSON.parse(localStorage.getItem("lwbMpin")||"null");localStorage.setItem("lwbMpin",JSON.stringify({uid:user.id,at:Date.now(),who:o&&o.uid===user.id&&o.who||mpinWho(user)}))}}catch(e){}
       }catch(e){pinOn=null}
     }
     const badge=on=>'<span class="erp-sec-badge '+(on?"on":"off")+'">'+(on?"ON":"OFF")+'</span>';
@@ -779,6 +780,8 @@
       if(!window.supabase)return;
       const c=window.__lwbBellClient||(window.__lwbBellClient=window.supabase.createClient(URL_,KEY_));
       const {data}=await c.auth.getSession();const user=data&&data.session&&data.session.user;if(!user)return;
+      // Login page "type your email, MPIN pad opens" needs the login name next to this phone's MPIN flag.
+      try{const o=JSON.parse(localStorage.getItem("lwbMpin")||"null");if(o&&o.uid===user.id&&!o.who&&mpinWho(user)){o.who=mpinWho(user);localStorage.setItem("lwbMpin",JSON.stringify(o))}}catch(e){}
       if(!window.LWBOperationsNotifications)await new Promise((ok,bad)=>{const s=document.createElement("script");s.src="erp-operations-notifications.js";s.onload=ok;s.onerror=bad;document.head.appendChild(s)});
       window.LWBOperationsNotifications.init({db:c,user,role,mount:top.querySelector(".erp-user"),pages:menuForMe(role).flatMap(g=>g.items.map(i=>i.h.split("#")[0]))});
     }catch(e){}

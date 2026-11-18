@@ -110,7 +110,7 @@
   async function mpinSet(client,uid,pin){
     const {error}=await client.rpc("lwb_mpin_set",{p_device:device(),p_pin:pin});
     if(error)throw Error(/Could not find the function|does not exist/i.test(error.message)?"MPIN is not set up yet. Ask Admin to run lwb_mpin_setup.sql.":error.message);
-    put(PIN,{uid,at:Date.now()});del(PINNO);
+    const old=get(PIN);put(PIN,{uid,at:Date.now(),who:old&&old.uid===uid&&old.who||""});del(PINNO);
     return true;
   }
   // {ok:true} | {ok:false,left:n} | {ok:false,blocked:true}. Blocked removes the MPIN flag here too.

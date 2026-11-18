@@ -465,6 +465,15 @@ function showMpinLogin(){
   mpinLogin=true;showLock({id:s.uid,who:s.who||""},"ended");return true;
 }
 el("useMpin").addEventListener("click",()=>{showMpinLogin()});
+// Type the Mobile Number or Email: when this phone / browser has an MPIN for that login, the MPIN pad
+// opens at once (no password). "Login with password instead" there stops this for the rest of the visit.
+const loginKey=v=>{v=String(v||"").trim();return v.includes("@")?v.toLowerCase():(validIndianMobile(v)||"")};
+let mpinAutoOff=false;
+el("login").addEventListener("input",()=>{
+  const s=savedMpin(),k=loginKey(el("login").value);
+  if(mpinAutoOff||busy||!s||!s.who||!k||k!==loginKey(s.who))return;
+  showMpinLogin();
+});
 function showLock(user,why){
   lockUser=user;showOnly("lockForm");showMessage("");
   const pin=LWBUnlock.mpinOn(user.id),fp=!mpinLogin&&LWBUnlock.isOn(user.id);
@@ -546,7 +555,7 @@ el("lockForm").addEventListener("submit",event=>{event.preventDefault();tryUnloc
 // "Forgot MPIN?": the MPIN of this phone is removed; after the password + OTP login a new one is set.
 el("lockPassword").addEventListener("click",async()=>{
   if(mpinLogin){
-    const who=lockUser&&lockUser.who||"";mpinLogin=false;lockUser=null;showOnly("loginForm");showMessage("");
+    const who=lockUser&&lockUser.who||"";mpinLogin=false;mpinAutoOff=true;lockUser=null;showOnly("loginForm");showMessage("");
     if(who&&!el("login").value)el("login").value=who;
     el("useMpin").hidden=!savedMpin();(el("login").value?el("password"):el("login")).focus();
     return;
