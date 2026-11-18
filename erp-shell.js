@@ -488,7 +488,7 @@
     armHide();
     top.querySelector(".erp-keys-btn").onclick=()=>{if(window.LWBKeys&&LWBKeys.help)LWBKeys.help();else location.href="keyboard-shortcuts.html"};
     top.querySelector(".erp-logout").onclick=opts.onLogout||(()=>{location.href="login.html"});
-    if(role)unlockSetting(top.querySelector(".erp-avatar"));
+    if(role)unlockSetting(top.querySelector(".erp-avatar"),role);
 
     // Module search: type, then click or press Enter.
     const input=top.querySelector(".erp-search input"),box=top.querySelector(".erp-results");
@@ -520,7 +520,7 @@
     watchKeyboard();
     // Inline success messages already confirm saves; avoid a second toast for the same event.
     compactTables();
-    if(role){idleLogout();otpGuard();}
+    if(role){if(!stayLoggedIn(role))idleLogout();otpGuard();}
     bell(top,role);
     refreshAccess().then(changed=>{
       if(!changed)return;
@@ -638,6 +638,11 @@
     }catch(e){return false}
   }
 
+  // Driver, Salesman and Godown Manager (Mohit, 18 Nov 2026): these roles see no profit or sales reports,
+  // so they stay logged in until they tap Logout themselves. Every other role keeps the 15-minute rule.
+  // login.html uses the same role list (NO_IDLE_ROLES there).
+  const NO_IDLE_ROLES=["driver","sales","warehouse"];
+  function stayLoggedIn(role){return NO_IDLE_ROLES.includes(String(role||"").trim().toLowerCase())}
   // Auto logout after 15 minutes with no tap, key or scroll. The time is shared by every ERP tab of
   // this browser, and is checked again when a phone comes back to the app. login.html sets it on login.
   const IDLE_MS=15*60e3,IDLE_KEY="lwbLastActive";
@@ -675,7 +680,7 @@
     if(window.LWBUnlock)return Promise.resolve(window.LWBUnlock);
     return new Promise((ok,bad)=>{const s=document.createElement("script");s.src="quick-unlock.js";s.onload=()=>ok(window.LWBUnlock);s.onerror=bad;document.head.appendChild(s)});
   }
-  function unlockSetting(av){
+  function unlockSetting(av,role){
     if(!av)return;
     av.setAttribute("role","button");av.tabIndex=0;av.title="Login & Security (MPIN, fingerprint)";av.style.cursor="pointer";
     av.addEventListener("click",()=>openSecurity());
@@ -715,7 +720,8 @@
         '<div class="erp-sec-btns">'+(pinOn===null?"":pinOn?'<button type="button" data-a="pin" class="erp-sec-main">Change</button><button type="button" data-a="pinoff">Turn off</button>':'<button type="button" data-a="pin" class="erp-sec-main">Set MPIN</button>')+'</div></div>'+
         '<div class="erp-sec-row"><div><b>Fingerprint</b>'+(fpOk?badge(fpOn)+'<small>Fingerprint, face or phone lock</small>':'<small>Not available on this device</small>')+'</div>'+
         '<div class="erp-sec-btns">'+(fpOk?(fpOn?'<button type="button" data-a="fpoff">Turn off</button>':'<button type="button" data-a="fpon" class="erp-sec-main">Turn on</button>'):"")+'</div></div>'+
-        '<p class="erp-sec-note">With MPIN or fingerprint ON, Logout or 15 minutes without work only <b>locks</b> the ERP. Open it again without password and OTP.</p>'+
+        (stayLoggedIn(role)?'<p class="erp-sec-note">You stay logged in until you tap Logout. With MPIN or fingerprint ON, Logout only <b>locks</b> the ERP. Open it again without password and OTP.</p>'
+          :'<p class="erp-sec-note">With MPIN or fingerprint ON, Logout or 15 minutes without work only <b>locks</b> the ERP. Open it again without password and OTP.</p>')+
         '<div class="erp-dlg-actions"><button type="button" class="erp-dlg-no" data-a="close">Close</button></div>';
       box.querySelectorAll("button[data-a]").forEach(b=>b.onclick=()=>act(b.dataset.a,b));
     }

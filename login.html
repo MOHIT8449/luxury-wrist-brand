@@ -338,6 +338,7 @@ function validIndianMobile(raw){
   return /^[6-9]\d{9}$/.test(d)?d:null;
 }
 const ERP_ROLES=["admin","manager","sales","warehouse","transport","accounts","driver"];
+const NO_IDLE_ROLES=["driver","sales","warehouse"];
 async function checkProfile(user){
   if(!user?.id)throw Error("Login session could not be verified.");
   const {data:profile,error}=await client.from("user_profiles")
@@ -594,7 +595,12 @@ async function checkExistingLogin(){
   // or, with fingerprint unlock on for this login on this phone, the fingerprint / face / phone PIN.
   const uid=data.session.user.id;
   let last=0;try{last=Number(localStorage.getItem("lwbLastActive"))||0}catch(e){}
-  const idle=!!(last&&Date.now()-last>15*60e3);
+  let idle=!!(last&&Date.now()-last>15*60e3);
+  // Driver, Salesman and Godown Manager stay logged in until they tap Logout (same list as erp-shell.js).
+  if(idle&&!lk){
+    try{const r=await client.from("user_profiles").select("role").eq("id",uid).maybeSingle();
+      if(!r.error&&NO_IDLE_ROLES.includes(String(r.data?.role||"").trim().toLowerCase()))idle=false;}catch(e){}
+  }
   if((lk||idle)&&LWBUnlock.canLock(uid)){
     unlockBack=lk&&lk.uid===uid?LWBUnlock.safeBack(lk.back):"dashboard.html";
     if(!lk||lk.uid!==uid)LWBUnlock.lock(uid,unlockBack);
