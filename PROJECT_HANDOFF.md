@@ -4,6 +4,12 @@
 **Purpose:** Continue the same ERP project from a new ChatGPT conversation without restarting or losing the agreed requirements.
 **Status:** Active development / verification. Do not assume all modules are completed or fully tested.
 
+## Bell notifications by type (18 Nov 2026)
+- Mohit: order, approval, task notifications look the same; the type must be clear at a glance and the bell pleasant to use.
+- `erp-operations-notifications.js`: every notification gets a type (Order / Delivery / Payment / Stock / Task / Update, `CATS` + `CAT_OF`) with its own colour, a line icon tile (SVG, in place of emoji) and a type tag. Filter tabs: All · To do (unread with an action: Approve / Verify / Make bill…) · one tab per type present, with unread counts. Cards grouped Today / Yesterday / Earlier; the action is a real button (opens the page, marks read) next to ✓. Same summary text and routes as before. No SQL.
+- `erp-shell.css`: compact bell panel padding 0, max height min(620px, 78dvh).
+- Checked with a mocked database at 1366 / 390 px: no side scroll, no JS errors. Screenshots: project files `notifications-by-type/`.
+
 ## Trip rent: 2+ parties on one trip ask their own rent + popup after Transport Assignment (18 Nov 2026)
 - Mohit: a rent set once for a vehicle + party is used again with no question. A trip that goes to two parties together (e.g. Shree Jagdish + Devnarayan) asks its own rent, once per set of parties. Vishal enters it the same day from a popup.
 - SQL `lwb_trip_party_set_rent_setup.sql` (run after `lwb_trip_rent_setup.sql`; re-running that older file would bring back the old "highest party rate" sync): `lwb_trip_sync` now uses the key "A + B" (party keys in name order) when a trip has 2+ parties; waiting rows use that key. party_key length limit raised to 1000 on party rates. `lwb_trip_rent_todo()` (admin/manager/transport) lists NEED_RATE trips with no WAITING rate; `lwb_trip_rent_set(pending, rate)`: Admin = VERIFIED + posted, others = WAITING + notify Admin.
