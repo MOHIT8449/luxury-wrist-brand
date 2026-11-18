@@ -4,6 +4,11 @@
 **Purpose:** Continue the same ERP project from a new ChatGPT conversation without restarting or losing the agreed requirements.
 **Status:** Active development / verification. Do not assume all modules are completed or fully tested.
 
+## Trip rent: 2+ parties on one trip ask their own rent + popup after Transport Assignment (18 Nov 2026)
+- Mohit: a rent set once for a vehicle + party is used again with no question. A trip that goes to two parties together (e.g. Shree Jagdish + Devnarayan) asks its own rent, once per set of parties. Vishal enters it the same day from a popup.
+- SQL `lwb_trip_party_set_rent_setup.sql` (run after `lwb_trip_rent_setup.sql`; re-running that older file would bring back the old "highest party rate" sync): `lwb_trip_sync` now uses the key "A + B" (party keys in name order) when a trip has 2+ parties; waiting rows use that key. party_key length limit raised to 1000 on party rates. `lwb_trip_rent_todo()` (admin/manager/transport) lists NEED_RATE trips with no WAITING rate; `lwb_trip_rent_set(pending, rate)`: Admin = VERIFIED + posted, others = WAITING + notify Admin.
+- UI: `trip-rent-ask.js` popup (LWBRentAsk.check(db)) on `transport-allocation.html` after load and after each save. Test: `tests/trip-party-set`. The km chart test still tests the old farthest-party rule (km file alone).
+
 ## Trip rent by distance (km) x vehicle size: rent chart (18 Nov 2026)
 - Mohit: rent of a per party hired vehicle goes by the party's km from the godown and the vehicle's ton. Parties at the same place (e.g. Shree Jagdish and Shree Devnarayan Marketing) have the same km, so the same rent.
 - SQL `lwb_rent_km_chart_setup.sql` (after `lwb_rent_rate_card_setup.sql`): tables `lwb_rent_km_rates` (km_upto x size_ton -> rate), `lwb_rent_km_perkm` (beyond the last slab: rupees per km per size), `lwb_rent_party_km` (road km one way, set by hand). km of a party = road km if set, else straight-line map km (Party Master geo_lat/lng to Live Tracking godown).
