@@ -48,6 +48,8 @@
     .mo-track li.stop .dot{background:#c62828}
     .mo-track b{display:block;color:#1f2a37;font-size:12px}
     .mo-track small{display:block;overflow-wrap:anywhere}
+    .mo-card.just-saved{border-color:#138a45!important;box-shadow:inset 4px 0 0 #138a45;background:#f0faf4}
+    .js-tag{display:inline-block;margin-left:6px;padding:1px 7px;border-radius:99px;background:#138a45;color:#fff;font-size:10.5px;font-weight:700;vertical-align:middle}
   </style>
 </head>
 <body>
@@ -71,6 +73,9 @@
     const S=LWBSales,{client,el,esc,fmt,short,num,key,pct}=S;
     let me=null,plan=null,parties=[],orders=[],lines=[],target=null,tab=location.hash==="#orders"?"orders":"parties",err="";
     let myOrders=null,moErr="",moFilter="pending",openId=null,busy=false;
+    // Just saved on PO Entry (?saved=<id>): that PO first, highlighted (Mohit, 18 Nov 2026).
+    let justSaved=new URLSearchParams(location.search).get("saved"),savedShown=false;
+    if(justSaved)history.replaceState(null,"",location.pathname+location.hash);
     const TABS=[["parties","My Parties"],["orders","My Orders"],["skus","My SKUs"]];
 
     // Brand filter (salesman selling both brands): sales count only that brand's SKU lines; order list shows POs with an SKU of it.
@@ -212,12 +217,15 @@
       const groups={pending:myOrders.filter(isPendingDelivery),delivered:myOrders.filter(o=>!isCancelled(o)&&isDelivered(o)),cancelled:myOrders.filter(isCancelled),all:myOrders};
       const F=[["pending","Not delivered yet"],["delivered","Delivered"],["cancelled","Cancelled"],["all","All"]];
       let h='<div class="mo-filter">'+F.map(([k,l])=>'<button type="button" class="erp-pill'+(k===moFilter?" active":"")+'" data-mof="'+k+'">'+esc(l)+' <span class="n">'+groups[k].length+"</span></button>").join("")+"</div>";
-      const list=groups[moFilter].filter(o=>hit(o.order_no+" "+o.customer_name));
+      if(justSaved&&!savedShown){const so=myOrders.find(o=>String(o.id)===justSaved);if(so){savedShown=true;if(!groups[moFilter].includes(so)){moFilter="all";return renderOrders(hit)}
+        setTimeout(()=>{document.querySelector(".mo-card.just-saved")?.scrollIntoView({block:"center"});window.ERPShell&&ERPShell.toast&&ERPShell.toast("PO "+(so.order_no||"")+" saved. It is at the top of the list.","success")},50)}}
+      let list=groups[moFilter].filter(o=>hit(o.order_no+" "+o.customer_name));
+      if(justSaved){const i=list.findIndex(o=>String(o.id)===justSaved);if(i>0)list=[list[i],...list.slice(0,i),...list.slice(i+1)]}
       if(!list.length)return h+'<div class="erp-empty">'+(moFilter==="pending"?"No pending orders. Everything is delivered.":"Nothing to show.")+"</div>";
       h+='<div class="mo-list">';
       for(const o of list.slice(0,200)){
         const [c,label,extra]=stage(o),open=openId===o.id;
-        h+='<div class="mo-card" data-id="'+esc(o.id)+'" data-drill-order="'+esc(o.id)+'" data-drill-no="'+esc(o.order_no||"")+'"><div class="mo-top"><div class="who"><b>'+esc(o.order_no||"—")+"</b> · "+esc(o.customer_name||"")+
+        h+='<div class="mo-card'+(String(o.id)===justSaved?" just-saved":"")+'" data-id="'+esc(o.id)+'" data-drill-order="'+esc(o.id)+'" data-drill-no="'+esc(o.order_no||"")+'"><div class="mo-top"><div class="who"><b>'+esc(o.order_no||"—")+"</b>"+(String(o.id)===justSaved?'<span class="js-tag">Just saved</span>':"")+" · "+esc(o.customer_name||"")+
           "<small>"+S.shortDate(o.order_date)+(o.mine?"":" · taken by office")+'</small></div><div class="mo-amt"><b>'+short(o.total_amount)+"</b>"+fmt(o.total_qty)+" cases</div></div>"+
           '<div class="mo-stage"><span class="erp-badge '+c+'">'+label+"</span>"+(extra?"<span>"+extra+"</span>":"")+billNote(o)+"</div>"+
           (isCancelled(o)?"":track(o));

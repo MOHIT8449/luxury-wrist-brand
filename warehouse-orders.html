@@ -1322,6 +1322,9 @@
     .po-sughint b{display:block;margin-bottom:4px}.po-sughint label{display:flex;gap:7px;align-items:center;padding:3px 0;cursor:pointer}.po-sughint label input{width:17px;height:17px;margin:0;flex:none}
     .po-sughint small{color:#667085}
     @media(max-width:640px){.sgh-in .bt{margin-left:0;width:100%}.sgh-in .bt .btn{flex:1}.sgh-in .bar{width:60px}tr.sgh td{padding:7px 6px}#ordersArea tbody tr.sgh{display:block;padding:9px 10px;margin:14px 0 6px;background:#eef4ff;border:1px solid #b9cdf3;border-left:4px solid #00434d}#ordersArea tbody tr.sgh.unk{background:#fff6dc;border-color:#f1d199;border-left-color:#d08a00}#ordersArea tbody tr.sgh td{display:block;padding:0;background:none}}
+#ordersArea tr.row-just-saved td{background:#e8f6ee!important}
+#ordersArea tr.row-just-saved td:first-child{box-shadow:inset 4px 0 0 #138a45}
+.just-saved{display:inline-block;margin-left:6px;padding:1px 7px;border-radius:99px;background:#138a45;color:#fff;font-size:10.5px;font-weight:700;vertical-align:middle;white-space:nowrap}
 </style>
 <link rel="stylesheet" href="erp-shell.css">
 <script src="trip-rent.js" defer></script>
@@ -2178,6 +2181,24 @@ document.addEventListener("DOMContentLoaded", async () => {
     if (CAN_HEAD) loadRajniWaiting();
     const rateId=new URLSearchParams(location.search).get('rate');
     if(rateId){if(rateWait.has(rateId))openRateOk(rateId);else showMessage('This PO is not waiting for a rate OK any more.','success');}
+    // Just saved on PO Entry (?saved=<id>): this PO first in the list, highlighted (Mohit, 18 Nov 2026).
+    const savedParam=new URLSearchParams(location.search).get('saved');
+    if(savedParam){
+      if(!orders.some(o=>o.id===savedParam)){
+        const found=await db.from('orders').select('*').eq('id',savedParam).maybeSingle();
+        if(!found.error&&found.data)orders.unshift(found.data);
+      }
+      const so=orders.find(o=>o.id===savedParam);
+      if(so){
+        justSavedId=savedParam;
+        const sf=document.getElementById('statusFilter');
+        if(sf&&!matchesTab(so,sf.value))sf.value=matchesTab(so,'polist')?'polist':'all';
+        listPage=1;renderOrders();
+        showMessage('PO '+(so.order_no||'')+' saved. It is at the top of the list.','success');
+        requestAnimationFrame(()=>document.querySelector('tr.row-just-saved')?.scrollIntoView({block:'center'}));
+      }
+      history.replaceState(null,'',location.pathname+location.hash);
+    }
     const pushOrder=new URLSearchParams(location.search).get('order');
     if(pushOrder){
       if(!orders.some(o=>o.id===pushOrder)){
@@ -4212,6 +4233,7 @@ async function sugApplyRest(payload,trip,leadId){
       ok.push(o.order_no);}catch(e){bad.push((o&&o.order_no)||oid);}}
   return (ok.length?"Same transport also saved on "+ok.join(", ")+".":"")+(bad.length?" Not saved on "+bad.join(", ")+": open it and save.":"");}
 
+let justSavedId = null;
 function renderOrders() {
 
   const area = document.getElementById("ordersArea");
@@ -4253,6 +4275,10 @@ function renderOrders() {
     .map(pair => pair[0]);
 
   filtered = sugArrange(filtered, filter);
+  if (justSavedId) {
+    const i = filtered.findIndex(o => o.id === justSavedId);
+    if (i > 0) filtered = [filtered[i], ...filtered.slice(0, i), ...filtered.slice(i + 1)];
+  }
   lastFiltered = filtered;
   const pages = Math.max(1, Math.ceil(filtered.length / LIST_PAGE_SIZE));
   if (listPage > pages) listPage = pages;
@@ -4299,13 +4325,13 @@ function renderOrders() {
 
         ${pageOrders.map(order => sugHeadFor(order) + `
 
-          <tr class="po-row ${isLateApproval(order) || isLateDelivery(order) ? "row-late" : orderPriority(order) === "URGENT" ? "row-urgent" : ""}${pickedIds.has(order.id) ? " row-picked" : ""}"
+          <tr class="po-row ${isLateApproval(order) || isLateDelivery(order) ? "row-late" : orderPriority(order) === "URGENT" ? "row-urgent" : ""}${pickedIds.has(order.id) ? " row-picked" : ""}${order.id === justSavedId ? " row-just-saved" : ""}"
             onclick="openRow(event, '${order.id}')" title="Click to open ${VIEW_ONLY ? "" : "and edit "}this PO">
 
             <td class="order-no c-no">
               <input type="checkbox" class="po-sel" data-id="${order.id}" ${pickedIds.has(order.id) ? "checked" : ""}
                 onclick="event.stopPropagation()" onchange="togglePick('${order.id}', this.checked)"
-                aria-label="Select ${escapeHtml(order.order_no || "")}">${escapeHtml(order.order_no || "-")}${priorityBadge(order)}${billBadge(order)}${spBadge(order)}<span class="prn-w" data-prn="${order.id}">${printBadge(order.id)}</span>
+                aria-label="Select ${escapeHtml(order.order_no || "")}">${escapeHtml(order.order_no || "-")}${order.id === justSavedId ? '<span class="just-saved">Just saved</span>' : ""}${priorityBadge(order)}${billBadge(order)}${spBadge(order)}<span class="prn-w" data-prn="${order.id}">${printBadge(order.id)}</span>
             </td>
 
             <td class="c-date">
