@@ -48,6 +48,7 @@ for(const f of ['lwb_task_management_setup.sql','lwb_documents_setup.sql','lwb_p
 await db.exec('GRANT SELECT ON public.lwb_live_stock TO authenticated');
 const mine=await file('lwb_purchase_damage_report_setup.sql');
 await db.exec(mine);await db.exec(mine); // safe to run again
+const opt=await file('lwb_purchase_time_optional_setup.sql');await db.exec(opt);await db.exec(opt);
 
 async function as(who){await db.query("select set_config('request.jwt.claim.sub',$1,false)",[ids[who]||''])}
 async function call(q,args=[]){await db.exec('SET ROLE authenticated');try{return (await db.query(q,args)).rows}finally{await db.exec('RESET ROLE')}}
@@ -166,4 +167,16 @@ test('vehicle Time In / Time Out: saved by Godown Manager; out before in or futu
   const m=(await bells('admin','PURCHASE_CHECK_OK')).filter(n=>n.ref_id===b)[0].message;
   assert.match(m,/· In \d\d:\d\d · Out \d\d:\d\d \(1h 30m\)\./);
   await as('acc');await assert.rejects(call("select lwb_purchase_vehicle_time($1,now(),null)",[b]),/Only Admin/);
+});
+
+test('vehicle Time In / Out optional: both empty keeps saved times; Out alone refused', async()=>{
+  const b=await bill('INV-T9');
+  await as('godown');
+  await call("select lwb_purchase_vehicle_time($1,null,null)",[b]);
+  assert.equal((await db.query("select time_in from lwb_goods_inward where id=$1",[b])).rows[0].time_in,null);
+  await call("select lwb_purchase_vehicle_time($1,now()-interval '1 hour',null)",[b]);
+  await call("select lwb_purchase_vehicle_time($1,null,null)",[b]);
+  assert.notEqual((await db.query("select time_in from lwb_goods_inward where id=$1",[b])).rows[0].time_in,null);
+  await assert.rejects(call("select lwb_purchase_vehicle_time($1,null,now())",[b]),/Time In too/);
+  await report('godown',b,[]);
 });

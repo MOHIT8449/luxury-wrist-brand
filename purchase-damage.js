@@ -55,6 +55,7 @@
 .pd-pick button.on.bad{background:#fdecef;border-color:#c8102e;color:#9e1528}
 .pd-time{display:flex;gap:6px;align-items:flex-end;margin-bottom:8px;flex-wrap:wrap}
 .pd-time label{display:flex;flex-direction:column;font-size:12.5px;font-weight:700;color:#4b5763;gap:3px;flex:1 1 90px;min-width:0}
+.pd-time .pd-opt{font-weight:500;color:#8a949e}
 .pd-time input{height:36px;border:1.5px solid #e3e7ec;border-radius:6px;padding:0 6px;font:inherit;font-size:14px;min-width:0;width:100%}
 .pd-time button{height:36px;border:1px solid #cfd6de;border-radius:6px;background:#fff;font:inherit;font-size:13px;font-weight:600;cursor:pointer;padding:0 8px;flex:none}
 .pd-dur{flex:1 1 100%;font-size:12.5px;font-weight:700;color:#0d6b36}.pd-dur:empty{display:none}
@@ -143,7 +144,7 @@
     const back=shell('<div class="pd-h"><span class="ic">🚛</span><div><h3>'+esc(vehOf(d.bill))+' · Vehicle check</h3><small>'+esc(subOf(d))+'</small></div><button type="button" class="x" data-a="close" aria-label="Close">✕</button></div>'+
       '<div class="pd-skus">'+d.skus.map(s=>'<b>'+esc(s.name)+'</b> '+qtyTxt(s.cs,s.pc,s.unit)).join(' · ')+'</div>'+
       '<div class="pd-pick"><button type="button" class="ok" data-m="ok">✓ All OK</button><button type="button" class="bad" data-m="dmg">⚠ Damage / Gasless</button></div>'+
-      '<div class="pd-time"><label>Time In<input type="time" class="tin"></label><button type="button" data-now="tin">Now</button><label>Time Out<input type="time" class="tout"></label><button type="button" data-now="tout">Now</button><span class="pd-dur"></span></div>'+
+      '<div class="pd-time"><label><span>Time In <small class="pd-opt">(optional)</small></span><input type="time" class="tin"></label><button type="button" data-now="tin">Now</button><label><span>Time Out <small class="pd-opt">(optional)</small></span><input type="time" class="tout"></label><button type="button" data-now="tout">Now</button><span class="pd-dur"></span></div>'+
       '<div class="pd-dmg" hidden><div class="pd-hd"><span>SKU</span><span>Type</span><span>IC / CS</span><span>PCS</span><span></span></div><div class="pd-lines"></div><button type="button" class="pd-add" data-a="add">+ Add line</button><div class="pd-err" hidden></div>'+
       '<div class="pd-lab">Photos / videos of damaged / gasless cases</div><div class="pd-photos"></div></div>'+
       '<div class="pd-lab">Note</div><input class="pd-note" maxlength="300" placeholder="e.g. 2 cases wet near the door">'+
@@ -205,13 +206,14 @@
         if(mode==='dmg'){const r=collect();const er=$('.pd-err');er.hidden=!r.err.length;er.textContent=r.err.join(' ');if(r.err.length)return;items=r.items}
         if(docs&&docs.busy())return toast('Photo upload in progress, please wait.','error');
         const [tIn,tOut]=times();
-        if(!tIn){toast('Enter the vehicle Time In (press Now when it came).','error');$('.tin').focus();return}
+        // Time In / Out optional (Mohit, 18 Nov 2026). Out alone is not saved without In.
+        if(!tIn&&tOut){toast('Enter Time In too, or leave both times empty.','error');$('.tin').focus();return}
         const photos=docs?docs.has('DAMAGE'):0;
         const txt=mode==='ok'?'All goods OK: no damage, gasless or shortage.':items.map(x=>x.sku_name+' · '+issueTxt(x.issue)+': '+qtyTxt(x.cases,x.pcs,unitOfSku(d,x.sku_id))).join('\n')+'\nPhotos: '+photos;
         if(mode==='dmg'&&docs&&!photos&&!await confirm('NO PHOTO ADDED\n\nA photo helps the company accept the claim. Submit without a photo?'))return;
-        if(!await confirm((mode==='ok'?'SUBMIT: ALL OK?':'SUBMIT DAMAGE REPORT?')+'\n\n'+vehOf(d.bill)+' · Inv '+d.bill.invoice_no+'\n'+txt+'\nTime In '+hhmm(tIn)+(tOut?' · Out '+hhmm(tOut)+' ('+durTxt(tIn,tOut)+')':' · Out not entered')+'\n\nAdmin and Sales Head will get this report.'))return;
+        if(!await confirm((mode==='ok'?'SUBMIT: ALL OK?':'SUBMIT DAMAGE REPORT?')+'\n\n'+vehOf(d.bill)+' · Inv '+d.bill.invoice_no+'\n'+txt+(tIn?'\nTime In '+hhmm(tIn)+(tOut?' · Out '+hhmm(tOut)+' ('+durTxt(tIn,tOut)+')':' · Out not entered'):'\nVehicle time not entered')+'\n\nAdmin and Sales Head will get this report.'))return;
         busy=true;b.disabled=true;
-        const tm=await client.rpc('lwb_purchase_vehicle_time',{p_inward:o.id,p_in:tIn,p_out:tOut});
+        const tm=tIn?await client.rpc('lwb_purchase_vehicle_time',{p_inward:o.id,p_in:tIn,p_out:tOut}):{};
         if(tm.error){busy=false;b.disabled=false;return toast('Vehicle time not saved: '+tm.error.message,'error')}
         const r=await client.rpc('lwb_purchase_damage_report',{p_inward_id:o.id,p_verified_on:ck&&ck.verified_on||today(),p_note:$('.pd-note').value.trim(),p_items:items});
         busy=false;b.disabled=false;
