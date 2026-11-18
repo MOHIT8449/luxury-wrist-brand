@@ -205,6 +205,7 @@
     <input type="password" id="password" placeholder="Enter your password"
       autocomplete="current-password" required>
     <button type="submit" id="loginButton">Sign In</button>
+    <button type="button" class="secondary" id="useMpin" hidden>Login with MPIN</button>
     <button type="button" class="link-btn" id="forgotLink">Forgot password?</button>
   </form>
   <!-- Forgot password: a code goes to the user's Login Email (Supabase "Reset Password" email). -->
@@ -338,6 +339,7 @@ function validIndianMobile(raw){
   return /^[6-9]\d{9}$/.test(d)?d:null;
 }
 const ERP_ROLES=["admin","manager","sales","warehouse","transport","accounts","driver"];
+const NO_IDLE_ROLES=["driver","sales","warehouse"];
 async function checkProfile(user){
   if(!user?.id)throw Error("Login session could not be verified.");
   const {data:profile,error}=await client.from("user_profiles")
@@ -385,6 +387,7 @@ async function goToErp(user){
   try{localStorage.setItem("lwbLastActive",String(Date.now()))}catch(e){}
   const back=unlockBack||"dashboard.html";
   await offerUnlock(user);
+  rememberMpinLogin(user);
   LWBUnlock.unlock();
   showMessage(unlockBack?"Unlocked. Opening the ERP...":"Login successful. Opening your ERP Dashboard...");
   window.location.assign(back);
@@ -448,16 +451,30 @@ async function offerFingerprint(user){
   });
 }
 
+// Login with MPIN when this phone has no login session any more (lwb-mpin-login Edge Function,
+// lwb_mpin_login_setup.sql). lwbMpin keeps the user id and the login name typed at the last full login.
+let mpinLogin=false;
+function savedMpin(){try{const s=JSON.parse(localStorage.getItem("lwbMpin")||"null");return s&&/^[0-9a-f-]{36}$/i.test(s.uid||"")?s:null}catch(e){return null}}
+function rememberMpinLogin(user){
+  const s=savedMpin();if(!s||s.uid!==user.id)return;
+  const typed=el("login").value.trim(),mail=user.email&&!/@staff\.lwb-erp\.in$/i.test(user.email)?user.email:"";
+  s.who=typed||mail||s.who||"";try{localStorage.setItem("lwbMpin",JSON.stringify(s))}catch(e){}
+}
+function showMpinLogin(){
+  const s=savedMpin();if(!s)return false;
+  mpinLogin=true;showLock({id:s.uid,who:s.who||""},"ended");return true;
+}
+el("useMpin").addEventListener("click",()=>{showMpinLogin()});
 function showLock(user,why){
   lockUser=user;showOnly("lockForm");showMessage("");
-  const pin=LWBUnlock.mpinOn(user.id),fp=LWBUnlock.isOn(user.id);
-  const who=user.email&&!/@staff\.lwb-erp\.in$/i.test(user.email)?user.email:"";
+  const pin=LWBUnlock.mpinOn(user.id),fp=!mpinLogin&&LWBUnlock.isOn(user.id);
+  const who=user.who||(user.email&&!/@staff\.lwb-erp\.in$/i.test(user.email)?user.email:"");
   const how=pin&&fp?"Enter your MPIN or use fingerprint.":pin?"Enter your 4-digit MPIN.":"Open it with your fingerprint, face or phone PIN.";
-  el("lockNote").innerHTML=(why==="logout"?"Logged out on this phone. ":"ERP is locked. ")+"<b>"+how+"</b>"+(who?"<br>Login: "+who.replace(/[<>&"]/g,""):"");
+  el("lockNote").innerHTML=(why==="ended"?"":why==="logout"?"Logged out on this phone. ":"ERP is locked. ")+"<b>"+how+"</b>"+(who?"<br>Login: "+who.replace(/[<>&"]/g,""):"");
   el("lockPinBox").hidden=!pin;
   el("lockFpIc").hidden=pin;
   el("unlockButton").hidden=pin;
-  el("lockPassword").textContent=pin?"Forgot MPIN? Login with password":"Login with password instead";
+  el("lockPassword").textContent=mpinLogin?"Login with password instead":pin?"Forgot MPIN? Login with password":"Login with password instead";
   lockPad.clear();lockPad.fingerprint(fp?()=>tryUnlock(false):null);
   if(fp)tryUnlock(true);
 }
@@ -485,6 +502,7 @@ async function tryUnlock(auto){
 async function mpinUnlock(pin){
   if(busy||!lockUser)return;
   busy=true;showMessage("Checking MPIN...");
+  if(mpinLogin){try{await mpinLoginWith(pin)}finally{busy=false}return}
   try{
     const r=await LWBUnlock.mpinVerify(client,lockUser.id,pin);
     if(r.ok){showMessage("");await openAfterUnlock();return}
@@ -499,9 +517,40 @@ async function mpinUnlock(pin){
   }catch(e){lockPad.clear(true);showMessage(e.message||String(e),true)}
   finally{busy=false}
 }
+async function mpinLoginWith(pin){
+  try{
+    const {data,error}=await client.functions.invoke("lwb-mpin-login",{body:{uid:lockUser.id,device:LWBUnlock.device(),pin}});
+    let r=data;
+    if(error){try{r=await error.context.json()}catch(e){r=null}}
+    if(r&&r.ok&&r.access_token){
+      const set=await client.auth.setSession({access_token:r.access_token,refresh_token:r.refresh_token});
+      if(set.error||!set.data?.user||set.data.user.id!==lockUser.id)throw Error("Login could not be opened. Please log in with your password.");
+      showMessage("");mpinLogin=false;unlockBack=null;
+      await finishAuthorizedLogin(set.data.user);
+      return;
+    }
+    lockPad.clear(true);
+    if(r&&(r.blocked||r.inactive)){
+      if(r.blocked)try{localStorage.removeItem("lwbMpin")}catch(e){}
+      const who=lockUser.who||"";mpinLogin=false;lockUser=null;showOnly("loginForm");el("useMpin").hidden=true;
+      if(who&&!el("login").value)el("login").value=who;
+      showMessage(r.inactive?"This login is not active. Please ask Admin."
+        :"MPIN is blocked (5 wrong tries, or reset by Admin). Please log in with your password and set a new MPIN.",true);
+      return;
+    }
+    if(r&&r.left){showMessage("Wrong MPIN. "+r.left+(r.left===1?" try":" tries")+" left.",true);return}
+    showMessage((r&&r.error)||"MPIN could not be checked. Please log in with your password.",true);
+  }catch(e){lockPad.clear(true);showMessage(e.message||String(e),true)}
+}
 el("lockForm").addEventListener("submit",event=>{event.preventDefault();tryUnlock(false)});
 // "Forgot MPIN?": the MPIN of this phone is removed; after the password + OTP login a new one is set.
 el("lockPassword").addEventListener("click",async()=>{
+  if(mpinLogin){
+    const who=lockUser&&lockUser.who||"";mpinLogin=false;lockUser=null;showOnly("loginForm");showMessage("");
+    if(who&&!el("login").value)el("login").value=who;
+    el("useMpin").hidden=!savedMpin();(el("login").value?el("password"):el("login")).focus();
+    return;
+  }
   if(lockUser&&LWBUnlock.mpinOn(lockUser.id))await LWBUnlock.mpinOff(client);
   LWBUnlock.unlock();unlockBack=lockUser=null;el("otpBack").click();
 });
@@ -587,14 +636,22 @@ async function checkExistingLogin(){
   const {data,error}=await client.auth.getSession();
   const lk=LWBUnlock.locked();
   if(error||!data?.session){
-    if(lk){LWBUnlock.unlock();showMessage("Your login has ended. Please log in again with your password.",true);}
+    if(lk)LWBUnlock.unlock();
+    // This phone has an MPIN: open with the MPIN instead of the password + OTP.
+    if(showMpinLogin())return;
+    if(lk)showMessage("Your login has ended. Please log in again with your password.",true);
     return;
   }
   // Same 15-minute rule as the ERP pages (erp-shell.js): an old idle session needs the password again,
   // or, with fingerprint unlock on for this login on this phone, the fingerprint / face / phone PIN.
   const uid=data.session.user.id;
   let last=0;try{last=Number(localStorage.getItem("lwbLastActive"))||0}catch(e){}
-  const idle=!!(last&&Date.now()-last>15*60e3);
+  let idle=!!(last&&Date.now()-last>15*60e3);
+  // Driver, Salesman and Godown Manager stay logged in until they tap Logout (same list as erp-shell.js).
+  if(idle&&!lk){
+    try{const r=await client.from("user_profiles").select("role").eq("id",uid).maybeSingle();
+      if(!r.error&&NO_IDLE_ROLES.includes(String(r.data?.role||"").trim().toLowerCase()))idle=false;}catch(e){}
+  }
   if((lk||idle)&&LWBUnlock.canLock(uid)){
     unlockBack=lk&&lk.uid===uid?LWBUnlock.safeBack(lk.back):"dashboard.html";
     if(!lk||lk.uid!==uid)LWBUnlock.lock(uid,unlockBack);
@@ -605,6 +662,7 @@ async function checkExistingLogin(){
   if(lk||idle){
     LWBUnlock.unlock();
     await client.auth.signOut({scope:"local"});try{localStorage.removeItem("lwbLastActive")}catch(e){}
+    if(showMpinLogin())return;
     showMessage("Logged out after 15 minutes without any activity. Please log in again.",true);
     return;
   }
@@ -659,6 +717,7 @@ el("otpForm").addEventListener("submit",async event=>{
 el("otpBack").addEventListener("click",async()=>{
   try{await client.auth.signOut({scope:"local"})}catch(e){}
   otpFactorId=otpUser=fpVerified=unlockBack=lockUser=null;clearInterval(waTimer);clearInterval(fpTimer);LWBUnlock.unlock();
+  mpinLogin=false;el("useMpin").hidden=!savedMpin();
   ["otpForm","waForm","fpForm","fpCodeForm","lockForm","offerForm","mpinForm"].forEach(id=>el(id).hidden=true);
   el("loginForm").hidden=false;el("password").value="";showMessage("");
 });
@@ -751,6 +810,7 @@ el("fpCodeForm").addEventListener("submit",async event=>{
 });
 el("fpBack").addEventListener("click",()=>el("otpBack").click());
 el("fpBack2").addEventListener("click",()=>el("otpBack").click());
+el("useMpin").hidden=!savedMpin();
 checkExistingLogin();
 
 </script>
