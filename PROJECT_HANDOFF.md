@@ -4,6 +4,14 @@
 **Purpose:** Continue the same ERP project from a new ChatGPT conversation without restarting or losing the agreed requirements.
 **Status:** Active development / verification. Do not assume all modules are completed or fully tested.
 
+## Third-party drivers in Employee Master (18 Nov 2026)
+
+- Mohit: Umesh Pawar (LWB0146) and Kuldip Kumar (LWB0147) are drivers of third-party transport, added as employees by mistake. They must not get salary / advance; their rent comes from the trips in the system.
+- SQL `lwb_third_party_driver_setup.sql` (test `tests/third-party-driver`, PGlite, 4 tests): `lwb_acc_staff.third_party`; `lwb_emp_save2` takes `third_party` (Driver only; left out = unchanged; true = salary 0 and this month's salary rows removed); `lwb_emp_list2` adds `third_party`, `vehicle_ownership`, `hired` (rent setup of the default vehicle, `lwb_tp_hired`) and `month_trips` {trips, pos} (`lwb_tp_trips`: Transport Assignment this month by driver mobile or default vehicle; one trip = one vehicle on one day; cancelled POs left out); `lwb_acc_staff_list` adds `third_party`. Marks LWB0146 / LWB0147 third-party.
+- They stay Working in Employee Master (driver pick list + Driver Portal login unchanged). Rent is paid on the vehicle: Vehicle Master > Ownership "Hired · fixed rent" (per trip / route / party / month) pulls the Transport Assignment trips from the start date into the hired rent ledger (Accounts > Vehicles > Hired vehicle rent).
+- UI: `fleet-master.html` Employee type select (Company staff / Third-party driver, drivers only; salary locked at 0), chips All / Company staff / Third-party drivers; the third-party view shows Trips in <month> and Vehicle rent (Hired rate or "Rent not set"). Fixed the edit popup title showing the vehicle no. for drivers. `accounts-dashboard.html` leaves third-party drivers out of Staff, Salary and the Cash Out staff list.
+- Checked with a mocked database at 1366 / 390 px: no side scroll, no JS errors. Screenshots: project files `third-party-drivers/built/`.
+
 ## Pallet / Sheet after delivery: given + returned on the PO (17 Nov 2026)
 
 - Mohit: after a PO is delivered, write the pallets / sheets the party got (and gave back) from the PO list, so each party's pallet / sheet account is kept. Count only, no money.
