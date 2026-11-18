@@ -4674,6 +4674,9 @@ function isSelfPickup(o){
   return String(o&&o.transportation||"").split("|")[0].trim().toUpperCase()==="SELF PICKUP";
 }
 let poPickupDrivers=[],poTripSaved=null;
+// "SELF" / "SELF PICKUP" / "-" typed as a driver or vehicle on older orders is not a name: it is dropped,
+// so the real driver name and vehicle number are typed (Mohit, 18 Nov 2026).
+function poRealName(v){const t=String(v||"").trim();return /^(self|self\s*pick\s*up|pickup|party|na|n\/a|nil|none|-+|\.+)$/i.test(t)?"":t;}
 /* Delivery type at the top of the 🚚 Transport popup (Mohit, 18 Nov 2026):
    SELF = party's own driver / vehicle (no trip), OWN = our vehicle + driver from the masters,
    TRANSPORT = third-party hired vehicle (trip; its rent popup asks the rent), PORTER = porter (rent optional, asked later). */
@@ -4773,20 +4776,20 @@ function rebuildPoDirectory(){
   }
   // Outside drivers of earlier Self Pickup orders (lwb_self_pickup_driver_search.sql), with the vehicle used last.
   for(const p of poPickupDrivers){
-    const name=String(p.driver_name||"").trim(),phone=poNormalPhone(p.driver_mobile);
+    const name=poRealName(p.driver_name),phone=poNormalPhone(p.driver_mobile);
     if(!name||!(/^[6-9]\d{9}$/.test(phone))||erpDriverPhones.has(phone))continue;
     const key=name.toLowerCase()+"|"+phone;
     if(driverSeen.has(key))continue;
     driverSeen.add(key);erpDriverPhones.add(phone);
-    poSavedDrivers.push({name,mobile:phone,phone,source:"Self pickup before",src:"pickup",vehicle:String(p.vehicle_no||"").toUpperCase(),transporter:""});
+    poSavedDrivers.push({name,mobile:phone,phone,source:"Self pickup before",src:"pickup",vehicle:poRealName(p.vehicle_no).toUpperCase(),transporter:""});
   }
   // Keep historic drivers and vehicles. Skip obsolete names when their
   // number is now owned by an active, registered ERP DRIVER user.
   for(const a of poRawAssignments){
-    const name=String(a.driver_name||"").trim();
+    const name=poRealName(a.driver_name);
     const mobile=String(a.driver_mobile||"").trim();
     const phone=poNormalPhone(mobile);
-    const vehicle=String(a.vehicle_no||"").trim().toUpperCase();
+    const vehicle=poRealName(a.vehicle_no).toUpperCase();
     if(name && !(phone && erpDriverPhones.has(phone))){
       const key=name.toLowerCase()+"|"+phone;
       if(!driverSeen.has(key)){
@@ -5128,7 +5131,7 @@ async function revealApprovalActions(){
       :a.id&&(selfPk||(!a.trip_id&&String(a.transporter_name||"").toUpperCase()==="SELF PICKUP"))?"SELF"
       :a.id&&a.vehicle_no&&window.LWBTrip?(LWBTrip.guess(a.vehicle_no,poMasterVehicles)||""):"";
     for(const pair of [
-      ["poDriverName",a.driver_name],["poVehicleNo",a.vehicle_no],
+      ["poDriverName",poRealName(a.driver_name)],["poVehicleNo",poRealName(a.vehicle_no)],
       ["poLoadingPerson",a.loading_person],["poDriverMobile",a.driver_mobile],
       ["poTransportName",a.transporter_name],["poTripNote",a.remarks],
       ["poPorterRent",poTripSaved&&poTripSaved.rent?Number(poTripSaved.rent):""]
@@ -5136,9 +5139,9 @@ async function revealApprovalActions(){
     setPoDType(poDTypeSaved);
     setPoGodownManager(a);
     if(fill){
-      document.getElementById("poDriverName").value=fill.driver_name||"";
+      document.getElementById("poDriverName").value=poRealName(fill.driver_name);
       document.getElementById("poDriverMobile").value=fill.driver_mobile||"";
-      document.getElementById("poVehicleNo").value=fill.vehicle_no||"";
+      document.getElementById("poVehicleNo").value=poRealName(fill.vehicle_no);
       const sel=document.getElementById("poLoadingManager");
       if(fill.godown_user_id&&[...sel.options].some(o=>o.value===fill.godown_user_id))sel.value=fill.godown_user_id;
       else if(fill.godown_manager_name&&!sel.hidden){const m=[...sel.options].find(o=>o.value&&o.text.split(" · ")[0].trim().toLowerCase()===String(fill.godown_manager_name).trim().toLowerCase());if(m)sel.value=m.value;}
@@ -5191,6 +5194,9 @@ function poTransportPayload(){
     payload.loading_manager_id=sel.value||null;
     const me=poSelfLoader();
     payload.loading_person=m?m.full_name:me&&sel.value===me.id?me.name:(sel.value?sel.selectedOptions[0].text.replace(/ \(inactive\)$/,""):"");
+  }
+  if(payload.driver_name&&!poRealName(payload.driver_name)||payload.vehicle_no&&!poRealName(payload.vehicle_no)){
+    allocationStatus("Enter the real driver name and vehicle number, not \"SELF\".",true);return null;
   }
   if(!payload.driver_name||!payload.vehicle_no||!payload.loading_person){
     allocationStatus("Driver Name, Vehicle Number and "+(poGodownManagers?"Godown Manager":"Loading Person")+" are required.",true);return null;
