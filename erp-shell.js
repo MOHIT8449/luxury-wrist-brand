@@ -45,6 +45,13 @@
     const s=document.createElement("script");s.src=base+"erp-info.js";
     (document.head||document.documentElement).appendChild(s);
   }
+  // Maintenance mode (erp-maintenance.js): Admin's top bar switch; everyone else sees
+  // "System under maintenance" while it is ON (the database refuses them anyway).
+  if(!window.LWBMaintenance&&!document.querySelector('script[src*="erp-maintenance.js"]')){
+    const cur=document.currentScript,base=cur&&cur.src?cur.src.replace(/[^/]*$/,""):"";
+    const s=document.createElement("script");s.src=base+"erp-maintenance.js";
+    (document.head||document.documentElement).appendChild(s);
+  }
   // Typed text in CAPITAL letters on every page (erp-caps.js).
   if(!window.ERPCaps&&!document.querySelector('script[src*="erp-caps.js"]')){
     const cur=document.currentScript,base=cur&&cur.src?cur.src.replace(/[^/]*$/,""):"";
