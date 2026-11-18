@@ -38,7 +38,7 @@
     VEHICLE:[{k:'PHOTO',l:'Vehicle photo (number plate visible)',img:1,cam:'environment',max:4,want:1},{k:'RC',l:'RC book',max:4},{k:'INSURANCE',l:'Insurance',max:4},{k:'PUC',l:'PUC',max:2},{k:'FITNESS',l:'Fitness',max:2},{k:'PERMIT',l:'Permit',max:4},{k:'OTHER',l:'Other document',max:6}],
     PARTY:[{k:'SHOP',l:'Shop photo',img:1,cam:'environment',max:4,want:1},{k:'PAN',l:'PAN card',max:2},{k:'GST',l:'GST certificate',max:4},{k:'OWNER',l:'Owner photo',img:1,cam:'environment',max:2},{k:'CHEQUE',l:'Cancelled cheque',max:2},{k:'OTHER',l:'Other document',max:6}],
     SUPPLIER:[{k:'GST',l:'GST certificate',max:4},{k:'PAN',l:'PAN card',max:2},{k:'CHEQUE',l:'Cancelled cheque',max:2},{k:'OTHER',l:'Other document',max:6}],
-    PURCHASE_BILL:[{k:'BILL',l:'Purchase bill (PDF / scan / photo)',s:'Bill',doc:1,max:10,want:1},{k:'DAMAGE',l:'Damage / gasless photos & videos',s:'Damage photos / videos',img:1,vid:1,cam:'environment',max:10},{k:'OTHER',l:'LR / other',max:6}],
+    PURCHASE_BILL:[{k:'BILL',l:'Purchase bill',s:'Bill',u:'⬆ Upload document',doc:1,max:10,want:1},{k:'DAMAGE',l:'Damage / gasless photos & videos',s:'Damage photos / videos',u:'⬆ Upload photo / video',img:1,vid:1,cam:'environment',max:10},{k:'OTHER',l:'LR / other',max:6}],
     ASSET:[{k:'PHOTO',l:'Asset photo',img:1,cam:'environment',req:1,max:6},{k:'BILL',l:'Purchase bill (PDF / scan / photo)',doc:1,max:6},{k:'WARRANTY',l:'Warranty card',max:4},{k:'OTHER',l:'Other document',max:6}],
     STOCK_MOVE:[{k:'DAMAGE',l:'Damage / leakage / breakage photos',img:1,cam:'environment',req:1,max:6}],
     ORDER:[{k:'LOADED',l:'Loaded vehicle photo',img:1,cam:'environment',max:4},{k:'DAMAGE',l:'Damage / leakage / breakage at loading',img:1,cam:'environment',max:6}],
@@ -98,6 +98,8 @@
 .ed-compact .ed-slot{border:0;background:none;padding:0;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
 .ed-compact .ed-slot.ok{background:none}.ed-compact .ed-h{margin:0;font-size:13px;gap:4px}.ed-compact .ed-h small{font-size:11.5px;color:#18613c}
 .ed-compact .ed-files{margin:0;gap:4px}.ed-compact .ed-f{width:34px;height:34px;font-size:9px}.ed-compact .ed-f .x{width:16px;height:16px;line-height:16px;font-size:10px}
+.ed-pop:has(.ed-simple){width:min(600px,100%)}.ed-simple .ed-wrap{grid-template-columns:repeat(auto-fit,minmax(220px,1fr))}
+.ed-btn.up{background:#0f3b4c;border-color:#0f3b4c;color:#fff}.ed-btn.up:hover{background:#15546b}
 .ed-compact .ed-btn{width:36px;height:34px;padding:0;justify-content:center;font-size:17px}
 .ed-compact .ed-hint{margin:0;font-size:11px}`;
     document.head.append(s);
@@ -158,9 +160,11 @@
 
   function panel(o){
     css();
-    const client=o.client,entity=o.entity,slots=slotsOf(entity,o.slots),canEdit=o.canEdit!==false,infoKeys=o.info?(INFO[entity]||[]):[];
+    const client=o.client,entity=o.entity,slots=slotsOf(entity,o.slots),canEdit=o.canEdit!==false,
+      // Simple: one Upload button per slot (the phone's file chooser still offers the camera). Purchase bills (Mohit, 18 Nov 2026).
+      simple=o.simple!=null?!!o.simple:entity==='PURCHASE_BILL',infoKeys=o.info?(INFO[entity]||[]):[];
     let id=o.id==null||o.id===''?null:String(o.id),files=[],pending=[],info={},infoLoaded=false,busy=0,err='';
-    const root=document.createElement('div');root.className='ed-root'+(o.compact?' ed-compact':'');
+    const root=document.createElement('div');root.className='ed-root'+(o.compact?' ed-compact':simple?' ed-simple':'');
     if(o.mount){o.mount.replaceChildren(root)}
     const pickers={};
     function picker(slot,cam,video){
@@ -234,6 +238,11 @@
                 '<button type="button" class="ed-btn" data-cam="'+s.k+'" title="'+camT+'" aria-label="'+esc(sl)+': '+camT+'">📷</button>'+
                 (s.vid?'<button type="button" class="ed-btn" data-vid="'+s.k+'" title="Record a video" aria-label="'+esc(sl)+': Record a video">🎥</button>':''):'')+
               (wait.some(p=>p.fail)?'<span class="ed-hint" style="color:#b42318">Not uploaded</span>':'')+'</div>';}
+          if(simple)return '<div class="'+cls+'"><div class="ed-h"><span>'+esc(s.s||s.l)+'</span>'+(n?'<small>✓ '+n+'</small>':'')+'</div>'+
+            (n?'<div class="ed-files">'+mine.map(d=>fileTile(d,canEdit)).join('')+wait.map(p=>fileTile(p,canEdit)).join('')+'</div>':'')+
+            (canEdit?'<div class="ed-btns"><button type="button" class="ed-btn up" data-pick="'+s.k+'">'+esc(s.u||'⬆ Upload')+'</button></div>':'')+
+            (wait.some(p=>p.fail)?'<div class="ed-hint" style="color:#b42318">Not uploaded. Remove and try again.</div>':'')+
+            (id==null&&wait.length?'<div class="ed-hint">Will upload when you Save.</div>':'')+'</div>';
           return '<div class="'+cls+'"><div class="ed-h"><span>'+esc(s.l)+(s.req?' <span class="r">*</span>':'')+'</span><small>'+(n?'✓ '+n:s.req?'Required':s.want?'Recommended':'Optional')+'</small></div>'+
             (n?'<div class="ed-files">'+mine.map(d=>fileTile(d,canEdit)).join('')+wait.map(p=>fileTile(p,canEdit)).join('')+'</div>':'')+
             (canEdit?'<div class="ed-btns">'+(s.doc?'':'<button type="button" class="ed-btn" data-cam="'+s.k+'">📷 Camera</button>')+(s.vid?'<button type="button" class="ed-btn" data-vid="'+s.k+'">🎥 Video</button>':'')+
