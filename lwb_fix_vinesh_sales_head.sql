@@ -7,7 +7,7 @@ DO $do$
 DECLARE v_id uuid; v_n int; v_co uuid;
 BEGIN
   SELECT count(*), min(p.id::text)::uuid INTO v_n, v_id FROM public.user_profiles p
-   WHERE p.full_name ILIKE 'vinesh%' AND p.full_name ILIKE '%chalavadiya%';
+   WHERE p.full_name ILIKE 'vin%' AND p.full_name ILIKE '% c%' AND lower(btrim(p.role)) = 'warehouse' AND p.active = true;
   IF v_n <> 1 THEN RAISE EXCEPTION 'Expected 1 Vinesh Chalavadiya login, found %', v_n; END IF;
   SELECT c.id INTO v_co FROM public.lwb_companies c WHERE upper(btrim(c.name)) = 'RAJNIGANDHA';
   IF v_co IS NULL THEN RAISE EXCEPTION 'RAJNIGANDHA company not found'; END IF;

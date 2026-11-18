@@ -13,7 +13,7 @@ BEGIN
            coalesce((SELECT a.extra FROM public.lwb_user_page_access a WHERE a.user_id = p.id), '{}') AS ext,
            (SELECT count(*) FROM public.lwb_user_companies c WHERE c.user_id = p.id) AS cos
     FROM public.user_profiles p
-    WHERE lower(btrim(p.role)) = 'manager' AND p.full_name ILIKE '%vinesh%'
+    WHERE lower(btrim(p.role)) = 'manager' AND p.full_name ILIKE 'vin%'
     ORDER BY p.full_name
   LOOP
     rep := rep || ' || ' || regexp_replace(coalesce(u.full_name,'?'), '(\w)\w*\s*', '\1', 'g')
