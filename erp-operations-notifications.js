@@ -38,6 +38,7 @@
   [/^DELIVERY_COLLECTION_RECEIVED$/,"✅","money","Payment received",""],
   [/^DELIVERY_COLLECTION_VERIFIED$/,"✅","money","Payment verified",""],
   [/^DELIVERY_COLLECTION_/,"❌","bad","Payment rejected",""],
+  [/^RETURN_CHECKED$/,"📦","info","Return checked",""],
   [/^DELIVERY_RETURN_INFO$/,"↩","info","Return taken",""],
   [/^DELIVERY_RETURN_RECEIVE$/,"📦","act","Return goods","Receive"],
   [/^DELIVERY_RETURN_DEDUCTED$/,"↩","info","Return cut",""],
@@ -100,7 +101,7 @@
  const CAT_OF=[
   [/^(TASK_|COMPLAINT_|SALES_PLAN$|ANNOUNCEMENT$)/,"task"],
   [/^(DELIVERY_COLLECTION|ACC_|HIRED_RATE_|TALLY_NOTE_)/,"money"],
-  [/^(ORDER_DISPATCHED|ORDER_DELIVERED|ORDER_PARTIAL|ORDER_NOT_DELIVERED|VEHICLE_LOADED|LOADING_ASSIGNMENT|TALLY_BILL_PENDING|PO_APPROVED_LOADING|DELIVERY_RETURN)/,"delivery"],
+  [/^(ORDER_DISPATCHED|ORDER_DELIVERED|ORDER_PARTIAL|ORDER_NOT_DELIVERED|VEHICLE_LOADED|LOADING_ASSIGNMENT|TALLY_BILL_PENDING|PO_APPROVED_LOADING|DELIVERY_RETURN|RETURN_CHECKED)/,"delivery"],
   [/^(STOCK_|GODOWN_|PURCHASE_|MARKET_)/,"stock"],
   [/^(ORDER_|PO_|RATE_|BILL_CHANGE_|TALLY_BILL_|SALES_RETURN)/,"order"]
  ];
@@ -221,6 +222,7 @@
   [/^ORDER_RATE_CHECK$/,["approvals.html#market","warehouse-orders.html?order={o}"]],
   [/^PO_RATE_APPROVED$/,["warehouse-orders.html?order={o}","my-sales.html#orders"]],
   [/^DELIVERY_COLLECTION_(INFO|RECEIVED)$/,["driver-collections.html?order={o}","my-sales.html#orders","loading-dispatch.html"]],
+  [/^RETURN_CHECKED$/,["driver-returns.html?order={o}","my-sales.html#orders"]],
   [/^DELIVERY_RETURN_INFO$/,["driver-returns.html?order={o}","my-sales.html#orders"]],
   [/^TALLY_NOTE_/,["accounts-invoice.html?order={o}"]],
   [/^SALES_RETURN_NEW$/,["sales-return.html","accounts-invoice.html?order={o}","credit-note.html"]],
