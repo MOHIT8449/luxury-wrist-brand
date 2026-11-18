@@ -76,6 +76,15 @@
     .rt-row button{height:38px;border-radius:6px;padding:0 12px;font:inherit;font-size:14px;font-weight:700;cursor:pointer;border:1px solid var(--erp-line);background:#fff;color:var(--erp-ink);white-space:nowrap}
     .rt-row button.go{background:#13824a;border-color:#13824a;color:#fff}.rt-row button.bk{color:#b3122b;border-color:#e7b3bd}
     .rt-v{display:flex;justify-content:space-between;gap:8px;font-size:14px;padding:6px 0;border-bottom:1px solid var(--erp-line)}.rt-v:last-child{border:0}.rt-v small{color:var(--erp-muted);font-size:12px}
+    .rc-add{display:grid;grid-template-columns:minmax(0,2fr) minmax(0,1fr) minmax(0,1fr) auto;gap:6px;margin-bottom:8px}
+    .rc-add input,.rc-add select{height:38px;border:1.5px solid var(--erp-line);border-radius:6px;padding:0 10px;font:inherit;font-size:15px;min-width:0}
+    .rc-add .go{height:38px;border-radius:6px;padding:0 12px;font:inherit;font-size:14px;font-weight:700;cursor:pointer;border:1px solid #13824a;background:#13824a;color:#fff;white-space:nowrap}
+    .rc-t th,.rc-t td{padding:6px 10px}.rc-t .n{text-align:right}
+    .rc-cell{min-width:72px;height:30px!important;border-radius:6px;font-weight:800!important;margin:0!important}
+    .rc-cell.ok{background:#e4f6e9!important;color:#0d6b36!important;border-color:#bfe5cb!important}
+    .rc-cell.wait{background:#fff3d6!important;color:#8a5a00!important;border-color:#f1d391!important}
+    .rc-cell.bk{background:#fee8e8!important;color:#9e2525!important}
+    @media(max-width:640px){.rc-add{grid-template-columns:1fr 1fr}.rc-add #rcParty{grid-column:1/-1}.rc-t{font-size:13px}.rc-t th,.rc-t td{padding:5px 6px;white-space:normal}.rc-t td:first-child{min-width:120px}.rc-cell{min-width:56px;padding:0 6px!important;font-size:13px!important}}
     .rent-chk{display:flex;gap:8px;align-items:flex-start;font-size:14px;margin-top:8px}.rent-chk input{width:18px;height:18px;margin:1px 0 0;flex:none}
     @media(max-width:640px){
       .fm-sub{display:none}
@@ -148,6 +157,9 @@
     }
     const status=v=>{if(blank(v))return null;const s=String(v).trim().toLowerCase();return /^(active|yes|haan|y|1|true)$/.test(s)?true:/^(inactive|no|nahi|n|0|false)$/.test(s)?false:undefined};
 
+    // Vehicle size: per party trip rent comes from the rate card (party x size), lwb_rent_rate_card_setup.sql
+    const SIZES=[1,1.5,2,2.5,3,4,5,6,7,8,9,10,11,12,14,16,18,20,25];
+    const tonText=t=>Number(t)?Number(t)+" Ton":"";
     const VTYPES=["Tempo","Pickup","Mini truck","407","Eicher","Truck","Container","Other"];
     // Work / Post of an employee. PO Approval & Driver and Transport Assignment list the "Driver" ones by themselves.
     const WORKS=["Driver","Loader","Godown Manager","Manager","Supervisor","Godown helper","Packer","Picker","Salesman","Transport","Office","Accounts","Security","Other"];
@@ -164,6 +176,7 @@
           {k:"vehicle_no",l:"Vehicle Number *",ph:"GJ05FW9821"},
           {k:"vehicle_type",l:"Vehicle Type",list:VTYPES},
           {k:"capacity_kg",l:"Capacity (KG)",type:"number"},
+          {k:"size_ton",l:"Size (for trip rent)",opts:[["","— Not set —"],...SIZES.map(t=>[String(t),t+" Ton"])]},
           {k:"ownership",l:"Ownership",opts:[["OWN","Own"],["TRANSPORTER","Transporter"]]},
           {k:"transporter_name",l:"Transporter / Owner Name"},
           {k:"owner_mobile",l:"Owner Mobile",type:"tel",ph:"10 digit"},
@@ -171,7 +184,7 @@
           {k:"is_active",l:"Status",opts:[["true","Active"],["false","Inactive"]]},
           {k:"note",l:"Note",wide:1}]},
       // Read-only list for Transport: drivers come from Employee Master (Work / Post = Driver).
-      rates:{ro:1,title:"Trip rent to set",one:"Trip rent",fields:[],sub:"Per party vehicles: the first trip to a new party waits here. Manager enters the rent, Admin verifies; next trips to that party add by themselves."},
+      rates:{ro:1,title:"Trip rent to set",one:"Trip rent",fields:[],sub:"Per party hired vehicles: rent comes from the rate card (party × vehicle size). A trip to a party with no rate waits here. Manager enters the rent, Admin verifies."},
       drivers:{ro:1,title:"Drivers",one:"Driver",fields:[],
         sub:"Drivers come from Employee Master (Work / Post = Driver)."},
       employees:{rpc:1,title:"Employee Master",one:"Employee",
@@ -227,7 +240,7 @@
       // Rent setups of hired vehicles: Admin / Manager only (money)
       const hs=head()?await client.rpc("lwb_hired_setups"):{error:true};
       hiredOk=!hs.error;hiredOf=new Map(hiredOk?(hs.data||[]).map(x=>[x.vehicle_id,x]):[]);
-      const rl=hiredOk?await client.rpc("lwb_hired_rate_list"):{error:true};RL=rl.error?null:rl.data;
+      let rl=hiredOk?await client.rpc("lwb_hired_rate_list2"):{error:true};if(hiredOk&&rl.error)rl=await client.rpc("lwb_hired_rate_list");RL=rl.error?null:rl.data;
       loginErr=!!lk.error;loginOf=new Map(((lk&&lk.data)||[]).map(x=>[x.id,x]));
       tripOf=new Map(((vp&&vp.data)||[]).filter(x=>x.on_trip&&x.on_trip.length).map(x=>[x.id,x.on_trip]));
       empErr=e.error?"Employee Master is not set up in Supabase yet ("+(e.error.message||"")+").":"";
@@ -481,7 +494,7 @@
       if(tab==="vehicles"){
         el("head").innerHTML="<tr><th>#</th><th>Vehicle No</th><th>Type / Capacity</th><th>Ownership</th><th>Documents</th><th>Driver</th><th>Status</th><th>Action</th></tr>";
         el("list").innerHTML=rows.map((r,i)=>{const drv=data.drivers.filter(d=>d.default_vehicle_id===r.id).map(d=>esc(d.name)).join(", ");
-          return '<tr class="'+(r.is_active?"":"off")+'"><td>'+(i+1)+"</td><td>"+avatar(r)+"<b>"+esc(r.vehicle_no)+"</b>"+(r.note?"<small>"+esc(r.note)+"</small>":"")+"<div>"+docTags(r)+"</div></td><td>"+esc(r.vehicle_type||"-")+(r.capacity_kg!=null?"<small>"+esc(r.capacity_kg)+" KG</small>":"")+"</td><td>"+((hiredOf.get(r.id)||{}).active?'<span class="tagx info">Hired</span><small>'+esc(rentText(hiredOf.get(r.id)))+"</small>":r.ownership==="TRANSPORTER"?"Transporter":"Own")+(r.transporter_name?"<small>"+esc(r.transporter_name)+(r.owner_mobile?" · "+esc(r.owner_mobile):"")+"</small>":"")+"</td><td style='white-space:normal;min-width:180px'>"+expiryTags(DOCS.map(([k,l])=>[r[k],l]))+"</td><td>"+(drv||"-")+"</td><td>"+(r.is_active?(tripOf.has(r.id)?'<span class="tagx warn">On trip</span><small>'+esc(tripOf.get(r.id).join(", "))+"</small>":'<span class="tagx ok">Free</span>'):'<span class="tagx bad">Inactive</span>')+"</td><td>"+act(r)+"</td></tr>"}).join("")||'<tr><td colspan="8" class="erp-empty">No vehicles yet. Add one using the form above or Excel.</td></tr>';
+          return '<tr class="'+(r.is_active?"":"off")+'"><td>'+(i+1)+"</td><td>"+avatar(r)+"<b>"+esc(r.vehicle_no)+"</b>"+(r.note?"<small>"+esc(r.note)+"</small>":"")+"<div>"+docTags(r)+"</div></td><td>"+esc(r.vehicle_type||"-")+(Number(r.size_ton)?' <span class="tagx info">'+esc(tonText(r.size_ton))+"</span>":"")+(r.capacity_kg!=null?"<small>"+esc(r.capacity_kg)+" KG</small>":"")+"</td><td>"+((hiredOf.get(r.id)||{}).active?'<span class="tagx info">Hired</span><small>'+esc(rentText(hiredOf.get(r.id)))+"</small>":r.ownership==="TRANSPORTER"?"Transporter":"Own")+(r.transporter_name?"<small>"+esc(r.transporter_name)+(r.owner_mobile?" · "+esc(r.owner_mobile):"")+"</small>":"")+"</td><td style='white-space:normal;min-width:180px'>"+expiryTags(DOCS.map(([k,l])=>[r[k],l]))+"</td><td>"+(drv||"-")+"</td><td>"+(r.is_active?(tripOf.has(r.id)?'<span class="tagx warn">On trip</span><small>'+esc(tripOf.get(r.id).join(", "))+"</small>":'<span class="tagx ok">Free</span>'):'<span class="tagx bad">Inactive</span>')+"</td><td>"+act(r)+"</td></tr>"}).join("")||'<tr><td colspan="8" class="erp-empty">No vehicles yet. Add one using the form above or Excel.</td></tr>';
       }else if(tab==="employees"){
         const mo=empMonth?new Date(empMonth+"T12:00:00Z").toLocaleDateString("en-IN",{month:"short",timeZone:"UTC"}):"This month";
         el("head").innerHTML="<tr><th>Employee ID</th><th>Name</th><th>Work / Post</th><th>ERP Login</th><th>Mobile</th>"+(tpF==="tp"?"<th>Salary</th><th>Trips in "+esc(mo)+"</th><th>Vehicle rent</th>":"<th>Salary / month</th><th>Advance in "+esc(mo)+"</th><th>Salary paid in "+esc(mo)+"</th>")+"<th>Joined</th><th>Status</th><th>Action</th></tr>";
@@ -495,26 +508,56 @@
       const sum=docSum[tab],noPhoto=sum&&tab!=="vehicles"?data[tab].filter(r=>r.is_active&&ERPDocs.missingOf(DOC_ENTITY[tab],sum.get(String(r.id))||new Set()).length).length:0;
       el("listTitle").textContent=KIND[tab].one+" List ("+rows.length+" / "+data[tab].length+")"+(noPhoto?" · "+noPhoto+" with documents missing":"");
     }
-    // Trip rent to set: per party vehicles' first trips to a new party (lwb_hired_party_rate_setup.sql).
+    // Trip rent to set (lwb_hired_party_rate_setup.sql + lwb_rent_rate_card_setup.sql):
+    // rate card = one rent per party per vehicle size, used by every per party vehicle of that size;
+    // trips with no rate wait here; a rate for one vehicle only stays as its special rate.
     function renderRates(){
-      const G=RL.groups||[],need=G.filter(g=>g.status!=="WAITING"),wait=G.filter(g=>g.status==="WAITING"),ver=(RL.rates||[]).filter(r=>r.status==="VERIFIED"),adm=RL.is_admin;
+      const G=RL.groups||[],adm=RL.is_admin,CARD=RL.card||null,hasCard=!!CARD;
+      const cardWait=g=>g.card&&g.card.status==="WAITING";
+      const need=G.filter(g=>g.status!=="WAITING"&&!cardWait(g)),wait=G.filter(g=>g.status==="WAITING"),cw=(CARD||[]).filter(c=>c.status==="WAITING");
+      const own=(RL.rates||[]).filter(r=>r.status==="VERIFIED"&&!r.from_card);
+      const kg=v=>Number(v)?(Number(v)/1000).toFixed(2).replace(/\.?0+$/,"")+" T":"";
       const days=g=>g.days+" trip day"+(Number(g.days)===1?"":"s")+" · "+(g.first_date===g.last_date?showDate(g.first_date):showDate(g.first_date)+" – "+showDate(g.last_date));
-      const head=(g,cls)=>'<div class="rt-c '+cls+'"><div><b>🚚 '+esc(g.no)+'</b>'+(g.owner?' · '+esc(g.owner):"")+'<div class="p">'+esc(g.party)+'</div><small>'+days(g)+(g.orders&&g.orders.length?' · '+esc(g.orders.join(", ")):"")+'</small>';
-      el("rateBody").innerHTML=
+      const head=(g,cls)=>'<div class="rt-c '+cls+'"><div><b>🚚 '+esc(g.no)+'</b>'+(Number(g.size_ton)?' <span class="tagx info">'+esc(tonText(g.size_ton))+'</span>':' <span class="tagx warn">Size not set</span>')+(g.owner?' · '+esc(g.owner):"")+'<div class="p">'+esc(g.party)+'</div><small>'+days(g)+(g.orders&&g.orders.length?' · '+esc(g.orders.join(", ")):"")+(kg(g.load_kg)?' · <b>Load '+kg(g.load_kg)+'</b>':"")+'</small>';
+      // rate card grid: parties x sizes
+      let grid="";
+      if(hasCard){
+        const sizes=(RL.sizes||[]).map(Number).filter(Boolean),parties=[...new Map(CARD.map(c=>[c.party_key,c.party])).entries()];
+        const cell=(pk,t)=>{const c=CARD.find(x=>x.party_key===pk&&Number(x.size_ton)===t);if(!c)return '<td class="n"><button type="button" class="rc-cell" data-ce="'+esc(pk)+'|'+t+'">+</button></td>';
+          return '<td class="n"><button type="button" class="rc-cell '+(c.status==="VERIFIED"?"ok":c.status==="WAITING"?"wait":"bk")+'" data-ce="'+esc(pk)+'|'+t+'" title="'+esc(c.status==="VERIFIED"?"Verified by "+(c.verified_by_name||"-")+" · "+c.vehicles+" vehicle(s)":c.status==="WAITING"?"Waiting for Admin":"Sent back: "+(c.note||""))+'">'+rs(c.rate)+(c.status==="WAITING"?" ⏳":c.status==="SENT_BACK"?" ↩":"")+'</button></td>'};
+        grid='<div class="rt-h"><b>Rate card · Party × Vehicle size</b><span class="rt-cnt" style="background:#e8f1ff;color:#194c85">'+parties.length+'</span></div>'+
+          '<p class="fm-hint" style="margin:0 0 6px">One rent per party for each vehicle size. Every per party hired vehicle of that size uses it. A new or changed rate is used after Admin verifies.</p>'+
+          '<div class="rc-add"><input id="rcParty" list="rcParties" placeholder="Party name" maxlength="150"><datalist id="rcParties">'+[...new Set([...parties.map(p=>p[1]),...G.map(g=>g.party)])].map(p=>'<option value="'+esc(p)+'">').join("")+'</datalist>'+
+          '<select id="rcSize" aria-label="Vehicle size"><option value="">Size</option>'+[...new Set([...sizes,...SIZES])].sort((a,b)=>a-b).map(t=>'<option value="'+t+'">'+t+' Ton</option>').join("")+'</select>'+
+          '<input id="rcRate" type="number" min="0" step="any" inputmode="decimal" placeholder="₹ per trip"><button type="button" class="go" id="rcSave">'+(adm?"Save &amp; verify":"Send to Admin")+'</button></div>'+
+          (parties.length&&sizes.length?'<div class="erp-scroll" style="overflow:auto"><table class="fm-table rc-t"><thead><tr><th>Party</th>'+sizes.map(t=>'<th class="n">'+t+' Ton</th>').join("")+'</tr></thead><tbody>'+
+            parties.map(([pk,name])=>'<tr><td><b>'+esc(name)+'</b></td>'+sizes.map(t=>cell(pk,t)).join("")+'</tr>').join("")+'</tbody></table></div>':'<p class="fm-hint">No card rates yet. Add one above, or set a rate below for a waiting trip.</p>');
+      }
+      el("rateBody").innerHTML=grid+
         '<div class="rt-h"><b>Rate needed</b><span class="rt-cnt">'+need.length+'</span></div>'+
-        (need.length?'<div class="rt-list">'+need.map((g,i)=>head(g,"need")+(g.status==="SENT_BACK"?'<div class="bk">Sent back by Admin: '+esc(g.note||"")+'</div>':"")+'</div>'+
-          '<div class="rt-row"><input type="number" min="0" step="any" inputmode="decimal" placeholder="₹ rent for one trip" data-rin="n'+i+'" value="'+(g.rate?Number(g.rate):"")+'"><button type="button" class="go" data-rset="'+i+'">'+(adm?"Save &amp; verify":"Send to Admin")+'</button></div></div>').join("")+'</div>'
-          :'<p class="fm-hint">Nothing waiting. A per party vehicle\'s first trip to a new party comes here.</p>')+
-        '<div class="rt-h"><b>Waiting for Admin</b><span class="rt-cnt">'+wait.length+'</span></div>'+
-        (wait.length?'<div class="rt-list">'+wait.map((g,i)=>head(g,"")+'<small>'+rs(g.rate)+' per trip · by '+esc(g.set_by_name||"-")+'</small></div>'+
+        (need.length?'<div class="rt-list">'+need.map((g,i)=>{const sz=hasCard&&Number(g.size_ton);
+          return head(g,"need")+(g.status==="SENT_BACK"?'<div class="bk">Sent back by Admin: '+esc(g.note||"")+'</div>':"")+(g.card&&g.card.status==="SENT_BACK"?'<div class="bk">Card rate sent back: '+esc(g.card.note||"")+'</div>':"")+'</div>'+
+          '<div class="rt-row"><input type="number" min="0" step="any" inputmode="decimal" placeholder="'+(sz?"₹ rent for "+esc(tonText(g.size_ton))+" to this party":"₹ rent for one trip")+'" data-rin="n'+i+'" value="'+(g.rate?Number(g.rate):"")+'"><button type="button" class="go" data-rset="'+i+'">'+(adm?"Save &amp; verify":"Send to Admin")+'</button></div>'+
+          (hasCard?'<small>'+(sz?"Saved in the rate card: every "+esc(tonText(g.size_ton))+" vehicle to this party uses it.":"Set the vehicle size in Vehicle Master to use the rate card. This rate is for this vehicle only.")+'</small>':"")+'</div>'}).join("")+'</div>'
+          :'<p class="fm-hint">Nothing waiting. A per party vehicle\'s trip to a party with no rate comes here.</p>')+
+        '<div class="rt-h"><b>Waiting for Admin</b><span class="rt-cnt">'+(wait.length+cw.length)+'</span></div>'+
+        (wait.length||cw.length?'<div class="rt-list">'+
+          cw.map((c,i)=>'<div class="rt-c"><div><b>Rate card</b> <span class="tagx info">'+esc(tonText(c.size_ton))+'</span><div class="p">'+esc(c.party)+'</div><small>'+rs(c.rate)+' per trip · by '+esc(c.set_by_name||"-")+' · '+c.vehicles+' vehicle(s) of this size</small></div>'+
+            (adm?'<div class="rt-row"><input type="number" min="0" step="any" inputmode="decimal" data-rin="c'+i+'" value="'+Number(c.rate)+'" aria-label="Rent"><button type="button" class="bk" data-cback="'+i+'">Send back</button><button type="button" class="go" data-cok="'+i+'">✓ Verify</button></div>'
+              :'<span class="tagx warn" style="align-self:flex-start">Waiting for Admin</span>')+'</div>').join("")+
+          wait.map((g,i)=>head(g,"")+'<small>'+rs(g.rate)+' per trip · this vehicle only · by '+esc(g.set_by_name||"-")+'</small></div>'+
           (adm?'<div class="rt-row"><input type="number" min="0" step="any" inputmode="decimal" data-rin="w'+i+'" value="'+Number(g.rate)+'" aria-label="Rent"><button type="button" class="bk" data-rback="'+i+'">Send back</button><button type="button" class="go" data-rok="'+i+'">✓ Verify</button></div>'
             :'<span class="tagx warn" style="align-self:flex-start">Waiting for Admin</span>')+'</div>').join("")+'</div>':'<p class="fm-hint">None.</p>')+
-        '<div class="rt-h"><b>Verified party rates</b><span class="rt-cnt" style="background:#e4f6e9;color:#0d6b36">'+ver.length+'</span></div>'+
-        (ver.length?'<div>'+ver.map(r=>'<div class="rt-v"><span><b>'+esc(r.no)+'</b> → '+esc(r.party)+'<small> · '+esc(r.verified_by_name||"")+(r.verified_at?" "+showDate(String(r.verified_at).slice(0,10)):"")+'</small></span><b>'+rs(r.rate)+'</b></div>').join("")+'</div>':'<p class="fm-hint">None yet.</p>');
+        '<div class="rt-h"><b>'+(hasCard?"Special rates · one vehicle only":"Verified party rates")+'</b><span class="rt-cnt" style="background:#e4f6e9;color:#0d6b36">'+own.length+'</span></div>'+
+        (own.length?'<div>'+own.map(r=>'<div class="rt-v"><span><b>'+esc(r.no)+'</b>'+(Number(r.size_ton)?' <small style="display:inline">'+esc(tonText(r.size_ton))+'</small>':"")+' → '+esc(r.party)+'<small> · '+esc(r.verified_by_name||"")+(r.verified_at?" "+showDate(String(r.verified_at).slice(0,10)):"")+'</small></span><b>'+rs(r.rate)+'</b></div>').join("")+'</div>':'<p class="fm-hint">None.</p>');
       const val=k=>{const x=el("rateBody").querySelector('[data-rin="'+k+'"]');return x?Number(x.value):NaN};
-      const run=async(b,fn,ok)=>{b.disabled=true;try{const r=await fn();if(r.error)throw r.error;ERPShell.toast(ok,"success");await load();render()}catch(e){ERPShell.toast(String(e.message||e).replace(/^.*?ERROR:\s*/,""),"error");b.disabled=false}};
+      const msg=e=>String(e.message||e).replace(/^.*?ERROR:\s*/,"");
+      const run=async(b,fn,ok)=>{b.disabled=true;try{const r=await fn();if(r.error)throw r.error;ERPShell.toast(typeof ok==="function"?ok(r.data):ok,"success");await load();render()}catch(e){ERPShell.toast(msg(e),"error");b.disabled=false}};
+      const cardSet=(b,size,party,r)=>run(b,()=>client.rpc("lwb_rate_card_set",{p_size:size,p_party:party,p_rate:r,p_note:null}),
+        d=>(d&&d.status==="VERIFIED"?"Verified: ":"Sent to Admin: ")+party+" · "+tonText(size)+" "+rs(r)+(d&&d.posted?" · "+d.posted+" waiting trip(s) added":""));
       el("rateBody").querySelectorAll("[data-rset]").forEach(b=>b.onclick=()=>{const g=need[+b.dataset.rset],r=val("n"+b.dataset.rset);
         if(!(r>0)){ERPShell.toast("Enter the rent for one trip.","error");return}
+        if(hasCard&&Number(g.size_ton))return cardSet(b,Number(g.size_ton),g.party,r);
         run(b,()=>client.rpc("lwb_hired_rate_set",{p_vehicle:g.vehicle_id,p_party:g.party,p_rate:r,p_note:null}),adm?"Verified: "+g.party+" "+rs(r):"Sent to Admin: "+g.party+" "+rs(r))});
       el("rateBody").querySelectorAll("[data-rok]").forEach(b=>b.onclick=()=>{const g=wait[+b.dataset.rok],r=val("w"+b.dataset.rok);
         if(!(r>0)){ERPShell.toast("Check the rent.","error");return}
@@ -522,6 +565,20 @@
       el("rateBody").querySelectorAll("[data-rback]").forEach(b=>b.onclick=async()=>{const g=wait[+b.dataset.rback];
         const why=await prompt("Send back "+g.no+" → "+g.party+" ("+rs(g.rate)+")? Write why:","");if(why==null)return;
         run(b,()=>client.rpc("lwb_hired_rate_verify",{p_rate_id:g.rate_id,p_ok:false,p_rate:null,p_note:why}),"Sent back")});
+      el("rateBody").querySelectorAll("[data-cok]").forEach(b=>b.onclick=()=>{const c=cw[+b.dataset.cok],r=val("c"+b.dataset.cok);
+        if(!(r>0)){ERPShell.toast("Check the rent.","error");return}
+        run(b,()=>client.rpc("lwb_rate_card_verify",{p_id:c.id,p_ok:true,p_rate:r,p_note:null}),n=>"Verified: "+c.party+" · "+tonText(c.size_ton)+" "+rs(r)+(n?" · "+n+" waiting trip(s) added":""))});
+      el("rateBody").querySelectorAll("[data-cback]").forEach(b=>b.onclick=async()=>{const c=cw[+b.dataset.cback];
+        const why=await prompt("Send back "+tonText(c.size_ton)+" → "+c.party+" ("+rs(c.rate)+")? Write why:","");if(why==null)return;
+        run(b,()=>client.rpc("lwb_rate_card_verify",{p_id:c.id,p_ok:false,p_rate:null,p_note:why}),"Sent back")});
+      if(hasCard){
+        el("rateBody").querySelectorAll("[data-ce]").forEach(b=>b.onclick=()=>{const [pk,t]=b.dataset.ce.split("|"),c=CARD.find(x=>x.party_key===pk&&String(Number(x.size_ton))===t),p=CARD.find(x=>x.party_key===pk);
+          el("rcParty").value=p?p.party:"";el("rcSize").value=t;el("rcRate").value=c?Number(c.rate):"";el("rcRate").focus()});
+        el("rcSave").onclick=()=>{const party=el("rcParty").value.trim(),t=Number(el("rcSize").value),r=Number(el("rcRate").value);
+          if(party.length<2){ERPShell.toast("Enter the party name.","error");return}if(!t){ERPShell.toast("Choose the vehicle size.","error");return}
+          if(!(r>0)){ERPShell.toast("Enter the rent for one trip.","error");return}
+          cardSet(el("rcSave"),t,party,r)};
+      }
     }
     function render(){
       const K=KIND[tab];
@@ -531,7 +588,7 @@
       el("formCard").hidden=!!K.ro;el("xlCard").hidden=!!K.ro||!xlOpen;el("xlBtn").hidden=!!K.ro;const nb=document.querySelector("#listTools .mp-new");if(nb)nb.textContent="+ New "+K.one;el("roleFilter").hidden=tab!=="employees";el("setupMsg").hidden=tab==="employees"?!empErr:!missing;if(tab==="employees"&&empErr)el("setupMsg").textContent=empErr;
       const crumb=document.querySelector(".erp-crumb b");if(crumb)crumb.textContent=K.title;
       el("ratePill").hidden=!RL;el("listCard").hidden=tab==="rates";el("rateCard").hidden=tab!=="rates";
-      const rn=RL?RL.groups.filter(g=>RL.is_admin||g.status!=="WAITING").length:0;el("rateCnt").hidden=!rn;el("rateCnt").textContent=rn;
+      const rn=RL?RL.groups.filter(g=>RL.is_admin||(g.status!=="WAITING"&&!(g.card&&g.card.status==="WAITING"))).length+(RL.is_admin?(RL.card||[]).filter(c=>c.status==="WAITING"&&!RL.groups.some(g=>g.card&&g.card.id===c.id)).length:0):0;el("rateCnt").hidden=!rn;el("rateCnt").textContent=rn;
       if(tab==="rates")renderRates();
       document.querySelectorAll(".erp-link").forEach(a=>a.classList.toggle("active",a.getAttribute("href")==="fleet-master.html#"+tab));
       fillForm();renderList();
