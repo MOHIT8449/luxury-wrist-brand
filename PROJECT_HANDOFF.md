@@ -4,6 +4,13 @@
 **Purpose:** Continue the same ERP project from a new ChatGPT conversation without restarting or losing the agreed requirements.
 **Status:** Active development / verification. Do not assume all modules are completed or fully tested.
 
+## Trip rent by distance (km) x vehicle size: rent chart (18 Nov 2026)
+- Mohit: rent of a per party hired vehicle goes by the party's km from the godown and the vehicle's ton. Parties at the same place (e.g. Shree Jagdish and Shree Devnarayan Marketing) have the same km, so the same rent.
+- SQL `lwb_rent_km_chart_setup.sql` (after `lwb_rent_rate_card_setup.sql`): tables `lwb_rent_km_rates` (km_upto x size_ton -> rate), `lwb_rent_km_perkm` (beyond the last slab: rupees per km per size), `lwb_rent_party_km` (road km one way, set by hand). km of a party = road km if set, else straight-line map km (Party Master geo_lat/lng to Live Tracking godown).
+- `lwb_rent_km_apply(vehicle, party)` writes the chart rent as a vehicle + party rate (note 'KM chart', from_card=true, VERIFIED) and posts waiting trips. Priority: vehicle's own rate > rate card > km chart. A trip with many parties takes the highest rate = farthest party. Trigger `trg_lwb_hired_a_km` on dispatch_assignments runs before the trip trigger. Already posted trip lines are not repriced when the chart or km changes.
+- RPCs: `lwb_rent_km_get`, `lwb_rent_km_save(p)` (Admin, replaces the chart), `lwb_rent_party_km_set(party, km|null)`; `lwb_hired_rate_list2` groups and `lwb_hired_ledger2` lines carry `km`.
+- UI: Trip rent to set has the Rent chart (Admin edits, + km row, + size, Save chart), Party distance from godown (map km, road km, Save), km chip + "Set km" on Rate needed cards; the rate card is folded. Accounts hired ledger lines show "x km". Test: `tests/rent-km-chart`.
+
 ## Trip rent by vehicle size x party: rate card (18 Nov 2026)
 
 - Mohit: hired vehicle rent is not one rate for all; it depends on the vehicle size (2 / 3 / 4 / 11 ton) and the party. Before, a per party rate was kept per vehicle + party, so each new vehicle needed every party's rate again. Mohit OK'd the plan without answering two points; built with: rent = size x party (load only shown), many parties in one trip = highest rate (no extra per drop yet).
