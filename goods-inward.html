@@ -473,7 +473,7 @@ async function mountGiDocs(){
   if(!db)return;
   if(giDocsOn===null)giDocsOn=!!(await ERPDocs.summary(db,'PURCHASE_BILL'));
   $('giDocsBox').hidden=!giDocsOn;if(!giDocsOn){giDocs=null;return}
-  giDocs=ERPDocs.panel({client:db,mount:$('giDocs'),entity:'PURCHASE_BILL',id:null,slots:['BILL','DAMAGE'],compact:true});
+  giDocs=ERPDocs.panel({client:db,mount:$('giDocs'),entity:'PURCHASE_BILL',id:null,slots:isGodown()?['DAMAGE']:['BILL','DAMAGE'],compact:true}); // Godown Manager: damage photos / videos only
 }
 function syncDamage(rows){
   const yes=$('dmgMode').value==='yes';$('dmgWrap').hidden=!yes;if(!yes)return;
@@ -784,20 +784,20 @@ async function save(){
     if(dmgMode!=='no'&&!isGodown()){
       let inwardId=data?.id||data?.inward_id||null;
       if(!inwardId){const f=await db.from('lwb_goods_inward').select('id').eq('invoice_no',invoice).eq('supplier_name',supplier).order('created_at',{ascending:false}).limit(1);inwardId=f.data?.[0]?.id||null;}
-      const t=inwardId?await db.rpc('lwb_purchase_photo_task',godownId?{p_inward:inwardId,p_assignees:[godownId]}:{p_inward:inwardId}):{error:{message:'saved bill not found'}};
+      const t=inwardId?await db.rpc('lwb_purchase_photo_task',{p_inward:inwardId}) /* all Godown Managers for now (Mohit, 18 Nov 2026) */:{error:{message:'saved bill not found'}};
       taskMsg=t.error?(/function|schema cache/i.test(t.error.message)?'':`\nGodown Manager task was not given (${t.error.message}). Use Purchase List → 📷 Task.`)
         :(t.data||[]).length?`\nGodown Manager task given (${dmgVerify?'verify damage quantity + photos':dmgMode==='yes'?'upload damage photos':'check vehicle + photos'}).`:'';
     }
     // "Vehicle arrived" popup to the chosen Godown Manager (skipped by the server when the vehicle is already checked).
     let arrMsg='';
-    // Brands with no Godown Manager step (Rajnigandha): no popup when nobody is chosen.
-    if(!isGodown()&&(godownId||tdStrict())){
+    // Every purchase entry: all Godown Managers get the popup to check + upload damage / gasless photos (Mohit, 18 Nov 2026).
+    if(!isGodown()){
       let inwardId=data?.id||data?.inward_id||null;
       if(!inwardId){const f=await db.from('lwb_goods_inward').select('id').eq('invoice_no',invoice).eq('supplier_name',supplier).order('created_at',{ascending:false}).limit(1);inwardId=f.data?.[0]?.id||null;}
       const a=inwardId?await db.rpc('lwb_purchase_arrived',{p_inward:inwardId,p_godown:godownId}):{error:{message:'saved bill not found'}};
       const gm=godownList&&godownList.find(m=>m.user_id===godownId);
       arrMsg=a.error?(/function|schema cache/i.test(a.error.message)?'':`\nGodown Manager popup was not sent (${a.error.message}).`)
-        :a.data>0?`\nGodown Manager popup sent to ${gm?gm.full_name:'all Godown Managers'}.`:'';
+        :a.data>0?`\nGodown Manager popup sent to all Godown Managers${gm?' (assigned: '+gm.full_name+')':''}: they can check and upload damage / gasless photos.`:'';
     }
     taskMsg+=arrMsg;
     resetForm();

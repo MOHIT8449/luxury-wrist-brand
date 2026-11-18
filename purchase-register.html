@@ -51,6 +51,7 @@
     .pr-acts button{height:30px;padding:0 9px;border-radius:5px;border:1px solid var(--erp-line);background:#fff;color:var(--erp-ink);font:inherit;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap}
     .pr-acts button.go{background:#13824a;border-color:#13824a;color:#fff}
     .pr-acts button.del{border-color:#f0c2c2;color:#b42318;padding:0 8px}
+    .pr-acts button.pdf{border-color:#e8c98a;background:#fff8ea;color:#8a5a00}.pr-acts button.pdf.ok{border-color:#9fd3b4;background:#e4f6e9;color:#0d6b36}
     .pr-acts button.task{border-color:#e8c98a;background:#fff8ea;color:#8a5a00}
     .chk{display:inline-block;padding:2px 7px;border-radius:5px;font-size:12px;font-weight:700;white-space:nowrap}
     .chk.none{background:#fff2dc;color:#b26b00}.chk.ok{background:#e4f6e9;color:#0d6b36}.chk.claim{background:#fee8e8;color:#9e2525}
@@ -216,7 +217,7 @@ Verify: All OK, or damage / leakage / breakage / gasless / shortage lines (SKU �
     }
     function tags(b){
       const d=docs(b),t=tasks.get(String(b.id));let h="";
-      if(d)h+=d.has("BILL")?'<span class="tg ok">📄 Bill</span>':'<span class="tg warn">No bill copy</span>';
+      if(d&&can.billDoc)h+=d.has("BILL")?'<span class="tg ok">📄 Bill</span>':'<span class="tg warn">No bill copy</span>';
       if(d&&d.has("DAMAGE"))h+='<span class="tg bad">📷 Photos</span>';
       else if(todo(b)==="PHOTO")h+='<span class="tg bad">Photo pending</span>';
       if(t)h+='<span class="tg task" title="'+esc(t.people)+'">📷 Task: '+esc(String(t.people||"").split(",")[0])+(t.tasks>1?" +"+(t.tasks-1):"")+"</span>";
@@ -224,7 +225,7 @@ Verify: All OK, or damage / leakage / breakage / gasless / shortage lines (SKU �
     }
     function render(){
       const base=filtered(),list=shown(),amt=can.amounts;
-      el("tabs").innerHTML=TABS.map(([k,l,f,cls])=>{const n=base.filter(f).length;if(k==="nobill"&&!docSum||(["check","photo","claim","ok"].includes(k)&&checksMissing))return "";
+      el("tabs").innerHTML=TABS.map(([k,l,f,cls])=>{const n=base.filter(f).length;if(k==="nobill"&&(!docSum||!can.billDoc)||(["check","photo","claim","ok"].includes(k)&&checksMissing))return "";
         return '<button type="button" role="tab" class="pr-tab'+(k===tab?" on":"")+(n?(k!=="all"&&k!=="ok"?" "+cls:""):" zero")+'" data-tab="'+k+'" aria-selected="'+(k===tab)+'">'+l+"<b>"+fmt(n)+"</b></button>"}).join("");
       const tot={ls:[],tax:0,gross:0};for(const b of list){tot.ls.push(...lines(b));tot.tax+=sum(b,"taxable_amount");tot.gross+=sum(b,"total_amount")}
       const K=[["Bills",fmt(list.length)],["Total Qty",qtySum(tot.ls)]];
@@ -242,7 +243,12 @@ Verify: All OK, or damage / leakage / breakage / gasless / shortage lines (SKU �
         if(can.check&&!checksMissing)acts+='<button type="button" class="'+(t==="CHECK"?"go":"")+'" data-verify="'+b.id+'" title="Vehicle check (damage / leakage / breakage / gasless / shortage)">'+(checks.has(b.id)?"Check":"Verify")+"</button>";
         // Admin: change or remove the bill itself (lwb_purchase_bill_edit_delete_setup.sql).
         if(can.bill)acts+='<button type="button" class="bill" data-billedit="'+b.id+'" title="Edit this purchase bill (qty, SKU, amount, invoice)" aria-label="Edit bill">✏️ Bill</button><button type="button" class="del" data-billdel="'+b.id+'" title="Delete this purchase bill" aria-label="Delete bill">🗑</button>';
-        if(docSum)acts+='<button type="button" data-docs="'+b.id+'" title="Bill copy / photos" aria-label="Bill copy / photos">📎</button>';
+        // Bill PDF next to Edit Bill (Mohit, 18 Nov 2026): upload, open / download, or replace the bill copy.
+        // Godown Manager sees only damage / gasless photos & videos, no bill copy (Mohit, 18 Nov 2026).
+        if(docSum&&!can.billDoc)acts+='<button type="button" data-docs="'+b.id+'" title="Damage / gasless photos and videos" aria-label="Damage photos">📷</button>';
+        else if(docSum){const hasPdf=(docSum.get(String(b.id))||new Set()).has("BILL");
+          acts+='<button type="button" class="pdf'+(hasPdf?" ok":"")+'" data-billpdf="'+b.id+'" title="'+(hasPdf?"Bill PDF: open, download or replace":"Upload the bill PDF / scan")+'">'+(hasPdf?"📄 PDF":"⬆ PDF")+"</button>"+
+            '<button type="button" data-docs="'+b.id+'" title="All files: bill copy, damage photos / videos, LR" aria-label="All files">📎</button>'}
         if(can.task&&t&&!hasTask)acts+='<button type="button" class="task" data-task="'+b.id+'" title="Give the Godown Manager a task to check / upload photos">📷 Task</button>';
         h+='<tr class="bill'+(b.id===openId?" open":"")+'"><td class="c-rec">'+dmy(b.received_date)+'</td><td class="c-inv"><button type="button" class="pr-inv" data-view="'+b.id+'" title="Show / hide the SKU lines">'+esc(b.invoice_no)+(b.id===openId?" ▴":" ▾")+"</button><small>Recd "+dmy(b.received_date)+" · Inv "+dmy(b.invoice_date)+"</small><div>"+tags(b)+'</div></td><td class="c-sup">'+esc(b.supplier_name)+
           '</td><td class="c-veh">'+esc(b.vehicle_no||"—")+"<small>"+esc([b.driver_name,b.lr_no?"LR "+b.lr_no:""].filter(Boolean).join(" · "))+"</small>"+(b.time_in?"<small>🕘 "+esc(vTime(b))+"</small>":"")+'</td><td class="n c-pcs">'+esc(qtySum(ls))+"</td>"+
@@ -268,8 +274,11 @@ Verify: All OK, or damage / leakage / breakage / gasless / shortage lines (SKU �
       ERPShell.toast((r.data||[]).length?"Task given to "+(r.data.length)+" Godown Manager"+(r.data.length>1?"s":"")+".":"Nothing to give: no active Godown Manager login, or a task is already open.",(r.data||[]).length?"success":"error");
       await loadTasks();
     }
+    async function openBillPdf(id){const b=bills.find(x=>x.id===id);if(!b||!can.billDoc)return;
+      await ERPDocs.open({client,entity:"PURCHASE_BILL",id:b.id,title:"Bill PDF · "+b.invoice_no+" · "+b.supplier_name,slots:["BILL"],download:"Bill-"+String(b.invoice_no||"").replace(/[^A-Za-z0-9-]/g,"")});
+      docSum=await ERPDocs.summary(client,"PURCHASE_BILL")||docSum;render()}
     async function openDocs(id){const b=bills.find(x=>x.id===id);if(!b)return;
-      await ERPDocs.open({client,entity:"PURCHASE_BILL",id:b.id,title:"Bill "+b.invoice_no+" · "+b.supplier_name});
+      await ERPDocs.open({client,entity:"PURCHASE_BILL",id:b.id,title:(can.billDoc?"Bill ":"Damage photos · ")+b.invoice_no+" · "+b.supplier_name,slots:can.billDoc?undefined:["DAMAGE"]});
       docSum=await ERPDocs.summary(client,"PURCHASE_BILL")||docSum;await loadTasks()}
     // Edit / delete an old purchase bill (Admin). The server checks the stock rows of the bill first.
     const missingSql=e=>/function|schema cache/i.test((e&&e.message)||"");
@@ -334,6 +343,7 @@ Verify: All OK, or damage / leakage / breakage / gasless / shortage lines (SKU �
       if(t.dataset.verify)return openCheck(t.dataset.verify);
       if(t.dataset.report)return openReport(t.dataset.report);
       if(t.dataset.docs)return openDocs(t.dataset.docs);
+      if(t.dataset.billpdf)return openBillPdf(t.dataset.billpdf);
       if(t.dataset.task)return giveTask(t.dataset.task);
       if(t.dataset.billedit)return editBill(t.dataset.billedit);
       if(t.dataset.billdel)return deleteBill(t.dataset.billdel);
@@ -345,7 +355,7 @@ Verify: All OK, or damage / leakage / breakage / gasless / shortage lines (SKU �
     (async()=>{
       me=await start();if(!me)return;
       const r=me.role;
-      Object.assign(can,{amounts:r!=="warehouse",check:["admin","manager","warehouse"].includes(r),task:["admin","manager"].includes(r),bill:r==="admin"&&me.realRole==="admin"});
+      Object.assign(can,{amounts:r!=="warehouse",check:["admin","manager","warehouse"].includes(r),task:["admin","manager"].includes(r),billDoc:r!=="warehouse",bill:r==="admin"&&me.realRole==="admin"});
       el("newLink").hidden=!["admin","manager"].includes(r);el("sbsLink").hidden=!["admin","manager","accounts"].includes(r);
       ERPShell.mount({role:me.realRole||me.role,name:me.name,onLogout:async()=>{await client.auth.signOut();location.replace("login.html")},group:"Purchase"});
       el("loading").hidden=true;el("page").hidden=false;

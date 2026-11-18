@@ -50,6 +50,8 @@ const mine=await file('lwb_purchase_damage_report_setup.sql');
 await db.exec(mine);
 const gas=await file('lwb_purchase_gasless_setup.sql');
 await db.exec(gas);await db.exec(gas); // safe to run again
+const all=await file('lwb_purchase_arrived_all_setup.sql');
+await db.exec(all);await db.exec(all);
 
 async function as(who){await db.query("select set_config('request.jwt.claim.sub',$1,false)",[ids[who]||''])}
 async function call(q,args=[]){await db.exec('SET ROLE authenticated');try{return (await db.query(q,args)).rows}finally{await db.exec('RESET ROLE')}}
@@ -92,4 +94,20 @@ test('old Leakage lines still save; unknown types and more than the bill are ref
   await assert.rejects(report('head',b,[L(sku.pp,'EXPIRY',1)]),/a type/);
   await assert.rejects(report('head',b,[L(sku.pp,'GASLESS',4),L(sku.pp,'DAMAGE',1,1)]),/more than the bill/);
   await assert.rejects(db.query("insert into lwb_purchase_check_items(check_id,sku_name,issue,cases) select id,'X','OTHER',1 from lwb_purchase_checks limit 1"),/issue_check/);
+});
+
+test('purchase entry: the arrived popup goes to every Godown Manager; the chosen one is still saved', async()=>{
+  const arrived=async(b,who=null,as_='head')=>{await as(as_);return (await call('select lwb_purchase_arrived($1,$2) n',[b,who?ids[who]:null]))[0].n};
+  const open=async b=>(await db.query("select user_id from erp_notifications where notification_type='PURCHASE_ARRIVED' and ref_id=$1 and not is_read order by user_id",[b])).rows.map(r=>r.user_id);
+  const b=await bill('ARR-1');
+  assert.equal(await arrived(b,'godown2'),2);
+  assert.deepEqual(await open(b),[ids.godown,ids.godown2].sort());
+  assert.equal((await db.query('select godown_user_id from lwb_goods_inward where id=$1',[b])).rows[0].godown_user_id,ids.godown2);
+  assert.equal(await arrived(b,'godown'),0); // no second popup
+  const b2=await bill('ARR-2');assert.equal(await arrived(b2,null),2);
+  await assert.rejects(arrived(b,'acc'),/active Godown Manager/);
+  await assert.rejects(arrived(b,'godown','godown'),/Only Admin \/ Sales Head/);
+  await report('godown2',b,[]); // one manager checks: everybody's popup closes, no new one
+  assert.deepEqual(await open(b),[]);
+  assert.equal(await arrived(b,'godown'),0);
 });
