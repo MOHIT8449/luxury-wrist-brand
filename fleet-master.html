@@ -198,7 +198,7 @@
           {k:"is_active",l:"Status",opts:[["true","Active"],["false","Inactive"]]},
           {k:"note",l:"Note",wide:1}]},
       // Read-only list for Transport: drivers come from Employee Master (Work / Post = Driver).
-      rates:{ro:1,title:"Trip rent to set",one:"Trip rent",fields:[],sub:"Per party hired vehicles: rent comes from the chart (party km from the godown × vehicle size), or a fixed party rate. A trip with no rent waits here."},
+      rates:{ro:1,title:"Trip rent to set",one:"Trip rent",fields:[],sub:"Per party hired vehicles: enter the rent once per party for each vehicle size (check it on Porter). Every vehicle of that size uses it. A trip with no rent waits here."},
       drivers:{ro:1,title:"Drivers",one:"Driver",fields:[],
         sub:"Drivers come from Employee Master (Work / Post = Driver)."},
       employees:{rpc:1,title:"Employee Master",one:"Employee",
@@ -255,7 +255,7 @@
       const hs=head()?await client.rpc("lwb_hired_setups"):{error:true};
       hiredOk=!hs.error;hiredOf=new Map(hiredOk?(hs.data||[]).map(x=>[x.vehicle_id,x]):[]);
       let rl=hiredOk?await client.rpc("lwb_hired_rate_list2"):{error:true};if(hiredOk&&rl.error)rl=await client.rpc("lwb_hired_rate_list");RL=rl.error?null:rl.data;
-      const km=hiredOk?await client.rpc("lwb_rent_km_get"):{error:true};KM=km.error?null:km.data;kmDraft=null;
+      const km=hiredOk?await client.rpc("lwb_rent_km_get"):{error:true};KM=km.error||!((km.data&&km.data.rates)||[]).length?null:km.data; // distance chart shows only once it has rateskmDraft=null;
       loginErr=!!lk.error;loginOf=new Map(((lk&&lk.data)||[]).map(x=>[x.id,x]));
       tripOf=new Map(((vp&&vp.data)||[]).filter(x=>x.on_trip&&x.on_trip.length).map(x=>[x.id,x.on_trip]));
       empErr=e.error?"Employee Master is not set up in Supabase yet ("+(e.error.message||"")+").":"";
@@ -573,11 +573,11 @@
       }
       if(grid&&KM){const i=grid.indexOf('</div>')+6,open=cw.length||!(KM.rates||[]).length;
         grid='<details class="rc-d"'+(open?" open":"")+'><summary>'+grid.slice(0,i-6)+'<span class="fm-hint" style="font-size:13px">Fixed rent for a party, used before the chart ▾</span></div></summary>'+grid.slice(i)+'</details>'}
-      el("rateBody").innerHTML=
+      el("rateBody").innerHTML=(KM?"":grid)+
         '<div class="rt-h"><b>Rate needed</b><span class="rt-cnt">'+need.length+'</span></div>'+
         (need.length?'<div class="rt-list">'+need.map((g,i)=>{const sz=hasCard&&Number(g.size_ton);
           return head(g,"need")+(g.status==="SENT_BACK"?'<div class="bk">Sent back by Admin: '+esc(g.note||"")+'</div>':"")+(g.card&&g.card.status==="SENT_BACK"?'<div class="bk">Card rate sent back: '+esc(g.card.note||"")+'</div>':"")+'</div>'+
-          '<div class="rt-row"><input type="number" min="0" step="any" inputmode="decimal" placeholder="'+(KM&&sz?"₹ fixed rent per trip":sz?"₹ rent for "+esc(tonText(g.size_ton))+" to this party":"₹ rent for one trip")+'" data-rin="n'+i+'" value="'+(g.rate?Number(g.rate):"")+'"><button type="button" class="go" data-rset="'+i+'">'+(adm?"Save &amp; verify":"Send to Admin")+'</button></div>'+
+          '<div class="rt-row"><input type="number" min="0" step="any" inputmode="decimal" placeholder="'+(KM&&sz?"₹ fixed rent per trip":sz?"₹ "+esc(tonText(g.size_ton))+" rent per trip":"₹ rent for one trip")+'" data-rin="n'+i+'" value="'+(g.rate?Number(g.rate):"")+'"><button type="button" class="go" data-rset="'+i+'">'+(adm?"Save &amp; verify":"Send to Admin")+'</button></div>'+
           (KM&&Number(g.size_ton)?'<div class="rt-row"><input type="number" min="0" step="any" inputmode="decimal" placeholder="Road km (one way)" data-kin="'+i+'" value="'+(g.km&&g.km.src==="ROAD"?Number(g.km.km):"")+'"><button type="button" data-kset="'+i+'">Set km</button></div>'+
             '<small>'+(g.km?"No chart rent for "+esc(kmT(g.km))+" in "+esc(tonText(g.size_ton))+". Fill the chart below, or enter a fixed rent.":"No km for this party. Enter the road km, or set its location in Party Master.")+'</small>':"")+
           (hasCard&&!(KM&&sz)?'<small>'+(sz?"Saved in the rate card: every "+esc(tonText(g.size_ton))+" vehicle to this party uses it.":"Set the vehicle size in Vehicle Master to use the rate card. This rate is for this vehicle only.")+'</small>':"")+'</div>'}).join("")+'</div>'
@@ -590,7 +590,7 @@
           wait.map((g,i)=>head(g,"")+'<small>'+rs(g.rate)+' per trip · this vehicle only · by '+esc(g.set_by_name||"-")+'</small></div>'+
           (adm?'<div class="rt-row"><input type="number" min="0" step="any" inputmode="decimal" data-rin="w'+i+'" value="'+Number(g.rate)+'" aria-label="Rent"><button type="button" class="bk" data-rback="'+i+'">Send back</button><button type="button" class="go" data-rok="'+i+'">✓ Verify</button></div>'
             :'<span class="tagx warn" style="align-self:flex-start">Waiting for Admin</span>')+'</div>').join("")+'</div>':'<p class="fm-hint">None.</p>')+
-        kmHtml+grid+
+        kmHtml+(KM?grid:"")+
         '<div class="rt-h"><b>'+(hasCard?"Special rates · one vehicle only":"Verified party rates")+'</b><span class="rt-cnt" style="background:#e4f6e9;color:#0d6b36">'+own.length+'</span></div>'+
         (own.length?'<div>'+own.map(r=>'<div class="rt-v"><span><b>'+esc(r.no)+'</b>'+(Number(r.size_ton)?' <small style="display:inline">'+esc(tonText(r.size_ton))+'</small>':"")+' → '+esc(r.party)+'<small> · '+esc(r.verified_by_name||"")+(r.verified_at?" "+showDate(String(r.verified_at).slice(0,10)):"")+'</small></span><b>'+rs(r.rate)+'</b></div>').join("")+'</div>':'<p class="fm-hint">None.</p>');
       const val=k=>{const x=el("rateBody").querySelector('[data-rin="'+k+'"]');return x?Number(x.value):NaN};
