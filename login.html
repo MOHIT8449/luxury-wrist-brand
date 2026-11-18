@@ -7,6 +7,7 @@
 
   <script src="vendor/supabase-js-2.119.0.js"></script>
   <script src="quick-unlock.js"></script>
+  <script src="erp-maintenance.js" defer></script>
 
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -344,6 +345,11 @@ async function checkProfile(user){
   if(!user?.id)throw Error("Login session could not be verified.");
   const {data:profile,error}=await client.from("user_profiles")
     .select("role,active").eq("id",user.id).maybeSingle();
+  // Maintenance ON (Admin's switch): the database refuses every login except Admin.
+  if(error&&(error.code==="PT423"||/maintenance/i.test(error.message||""))){
+    await client.auth.signOut();
+    throw Error("System under maintenance. Only Admin can log in right now. Please try again later.");
+  }
   if(error||!profile||profile.active!==true||
      !ERP_ROLES.includes(String(profile.role||"").trim().toLowerCase())){
     await client.auth.signOut();
