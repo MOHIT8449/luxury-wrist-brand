@@ -1234,6 +1234,17 @@
     #reviewModal #poSaveBtn{display:none}
     #reviewModal .po-actions{margin-top:8px}
     #reviewModal #poAllocationStatus{font-size:11px;margin-top:6px;line-height:1.4}
+    /* Transport is assigned only in the 🚚 Transport popup (Mohit, 18 Nov 2026): not inside Edit PO. */
+    #reviewModal:not(.transport-only) #postApprovalPanel{display:none!important}
+    .po-dtype{display:flex;gap:6px;margin:0 0 4px;min-width:0}
+    .po-dtype button{flex:1 1 0;min-width:0;height:38px;border:1.5px solid #cfd6de;border-radius:8px;background:#fff;font:700 13px Arial;color:#1f2a37;cursor:pointer;padding:0 4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .po-dtype button[aria-pressed=true]{background:#00434d;border-color:#00434d;color:#fff}
+    .po-dtype button:disabled{opacity:.6;cursor:default}
+    .po-dtype-hint{display:block;font-size:12px;color:#5b6773;margin:0 0 8px;line-height:1.35;min-height:0}
+    .po-dtype-hint b{color:#1f2a37}
+    @media(max-width:560px){.po-dtype .dt-long{display:none}.po-dtype button{font-size:12.5px}}
+    #reviewModal .po-note-field{grid-column:1/-1}
+    .po-opt{font-weight:400;color:#6b7785}
     #reviewModal .modal-footer{gap:6px;padding:8px 10px calc(8px + env(safe-area-inset-bottom))}
     #reviewModal .modal-footer .btn{padding:8px 10px;min-height:40px;font-size:12px;line-height:1.2}
     @media(max-width:760px){
@@ -1328,6 +1339,7 @@
 </style>
 <link rel="stylesheet" href="erp-shell.css">
 <script src="trip-rent.js" defer></script>
+<script src="trip-rent-ask.js" defer></script>
 <script src="trip-suggest.js" defer></script>
 <script src="erp-shell.js" data-auto defer></script>
 <script src="erp-list.js"></script>
@@ -1812,11 +1824,20 @@
         <section id="postApprovalPanel" hidden>
           <h4>Transport details</h4>
           <div id="poQuickInfo"></div><div class="po-sughint" id="poSugHint" hidden></div>
+          <div class="po-dtype" id="poDeliveryType" role="group" aria-label="Delivery type">
+            <button type="button" data-dt="SELF" aria-pressed="false">Self pickup</button>
+            <button type="button" data-dt="OWN" aria-pressed="false">Own vehicle</button>
+            <button type="button" data-dt="TRANSPORT" aria-pressed="false" title="Third-party transport (hired vehicle)">Third-party<span class="dt-long"> transport</span></button>
+            <button type="button" data-dt="PORTER" aria-pressed="false">Porter</button>
+          </div>
+          <small class="po-dtype-hint" id="poDtHint"></small>
           <div class="po-grid">
-            <div class="po-field"><label for="poDriverName">Driver *</label><input id="poDriverName" maxlength="150" placeholder="Select driver" autocomplete="off" aria-autocomplete="list"><small class="po-field-info" id="poDriverInfo"></small></div>
+            <div class="po-field"><label for="poDriverName" id="poDriverLbl">Driver *</label><input id="poDriverName" maxlength="150" placeholder="Select driver" autocomplete="off" aria-autocomplete="list"><small class="po-field-info" id="poDriverInfo"></small></div>
             <div class="po-field" id="poMobileField" hidden><label for="poDriverMobile">Driver Mobile *</label><input id="poDriverMobile" type="tel" inputmode="numeric" maxlength="10" autocomplete="off" placeholder="10-digit mobile" oninput="this.value=this.value.replace(/\D/g,'').slice(0,10);poMobileTyped()"><small class="po-field-info" id="poMobileInfo"></small></div>
-            <div class="po-field"><label for="poVehicleNo">Vehicle *</label><input id="poVehicleNo" maxlength="40" placeholder="Select vehicle" autocomplete="off" aria-autocomplete="list"><small class="po-field-info" id="poVehicleInfo"></small><input id="poTransportName" type="hidden"></div>
+            <div class="po-field"><label for="poVehicleNo" id="poVehicleLbl">Vehicle *</label><input id="poVehicleNo" maxlength="40" placeholder="Select vehicle" autocomplete="off" aria-autocomplete="list"><small class="po-field-info" id="poVehicleInfo"></small><input id="poTransportName" type="hidden"></div>
             <div class="po-field"><label for="poLoadingManager">Godown Manager *</label><select id="poLoadingManager" hidden><option value="">Select manager</option></select><input id="poLoadingPerson" maxlength="150" placeholder="Godown staff"></div>
+            <div class="po-field" id="poRentField" hidden><label for="poPorterRent">Porter rent ₹ <span class="po-opt">(optional)</span></label><input id="poPorterRent" type="number" inputmode="decimal" min="1" max="100000" step="1" placeholder="Fill later"></div>
+            <div class="po-field po-note-field"><label for="poTripNote">Note</label><input id="poTripNote" maxlength="300" placeholder="e.g. Call the party before delivery"></div>
           </div>
           <p id="poSavedDirectoryHint" class="po-directory-hint"></p>
 
@@ -4639,7 +4660,42 @@ async function reviewOrder(orderId, transportOnly=false, quiet=false) {
 function isSelfPickup(o){
   return String(o&&o.transportation||"").split("|")[0].trim().toUpperCase()==="SELF PICKUP";
 }
-let poPickupDrivers=[];
+let poPickupDrivers=[],poTripSaved=null;
+/* Delivery type at the top of the 🚚 Transport popup (Mohit, 18 Nov 2026):
+   SELF = party's own driver / vehicle (no trip), OWN = our vehicle + driver from the masters,
+   TRANSPORT = third-party hired vehicle (trip; its rent popup asks the rent), PORTER = porter (rent optional, asked later). */
+const PO_DTYPES={
+  SELF:{driver:"Party's driver *",vehicle:"Party's vehicle *",dph:"Driver name",vph:"Vehicle number",hint:"Party collects the goods from the godown. Type their driver, mobile and vehicle."},
+  OWN:{driver:"Driver *",vehicle:"Vehicle *",dph:"Select driver",vph:"Select vehicle",hint:"Our vehicle and driver from Employee / Vehicle Master."},
+  TRANSPORT:{driver:"Driver *",vehicle:"Hired vehicle *",dph:"Driver name",vph:"Select hired vehicle",hint:"Hired vehicle. Same vehicle, 2-3 parties at a time = <b>one trip, one rent</b>. The rent popup asks for it after saving."},
+  PORTER:{driver:"Driver *",vehicle:"Porter vehicle *",dph:"Driver name",vph:"Vehicle number",hint:"Rent can be filled later: a reminder asks after 2 hours. It goes to <b>Accounts → Porter rent</b>."}
+};
+let poDType="",poDTypeSaved="";
+// Self pickup / Third-party / Porter: outside driver, so the mobile is typed (box shown).
+function poTypedMobile(){return !!poDType&&poDType!=="OWN";}
+function setPoDType(k){
+  poDType=PO_DTYPES[k]?k:"";
+  const t=PO_DTYPES[poDType]||PO_DTYPES.OWN;
+  document.querySelectorAll("#poDeliveryType [data-dt]").forEach(b=>b.setAttribute("aria-pressed",String(b.dataset.dt===poDType)));
+  document.getElementById("poDriverLbl").textContent=t.driver;
+  document.getElementById("poVehicleLbl").textContent=t.vehicle;
+  document.getElementById("poDriverName").placeholder=t.dph;
+  document.getElementById("poVehicleNo").placeholder=t.vph;
+  document.getElementById("poMobileField").hidden=!poTypedMobile();
+  document.getElementById("poRentField").hidden=poDType!=="PORTER";
+  const booked=selectedOrder&&(isSelfPickup(selectedOrder)!==(poDType==="SELF"))
+    ?" <b>Order was booked as "+(isSelfPickup(selectedOrder)?"Self pickup":"Delivery")+"</b>: the rate does not change.":"";
+  document.getElementById("poDtHint").innerHTML=poDType?t.hint+booked:"Choose how this order goes.";
+  showPoFieldInfo();
+}
+document.addEventListener("click",e=>{
+  const b=e.target.closest("#poDeliveryType [data-dt]");
+  if(!b||b.disabled)return;
+  setPoDType(b.dataset.dt);
+  closePoPicker();
+  const first=poDType==="OWN"||poDType==="SELF"?"poDriverName":"poVehicleNo";
+  const el=document.getElementById(first);if(el&&!el.value.trim())el.focus();
+});
 // Typed mobile of a driver used before (Self Pickup / earlier dispatch): fill the name and vehicle too.
 function poMobileTyped(){
   const phone=poNormalPhone(document.getElementById("poDriverMobile").value);
@@ -4666,21 +4722,23 @@ function rebuildPoDirectory(){
   const driverSeen=new Set(),erpDriverPhones=new Set(),vehicleSeen=new Set();
   poSavedDrivers=[];poSavedVehicles=[];
   // Employee Master drivers / Vehicle Master come first; one driver per mobile number.
-  const trip=x=>x.on_trip&&x.on_trip.length?"🚚 On trip: "+x.on_trip.join(", "):"✅ Free";
   for(const d of poMasterDrivers){
     const phone=poNormalPhone(d.mobile);
     if(!d.driver_name||!(/^[6-9]\d{9}$/.test(phone))||erpDriverPhones.has(phone))continue;
     driverSeen.add(String(d.driver_name).trim().toLowerCase()+"|"+phone);
     erpDriverPhones.add(phone);
-    poSavedDrivers.push({name:String(d.driver_name).trim(),mobile:phone,phone,source:(d.emp_code?d.emp_code+" · ":"")+trip(d),
+    poSavedDrivers.push({name:String(d.driver_name).trim(),mobile:phone,phone,source:d.emp_code||"Employee Master",
+      code:d.emp_code||"",trips:d.on_trip||[],src:"master",
       vehicle:d.vehicle_no||"",transporter:String(d.transporter_name||"").trim()});
   }
   for(const v of poMasterVehicles){
     const key=poNormalPlate(v.vehicle_no);
     if(!key||vehicleSeen.has(key))continue;
     vehicleSeen.add(key);
-    poSavedVehicles.push({vehicle:v.vehicle_no,transporter:String(v.transporter_name||"").trim(),
-      detail:["on_trip" in v?trip(v):"",v.vehicle_type,v.capacity_kg!=null?v.capacity_kg+" KG":"",v.transporter_name].filter(Boolean).join(" · ")});
+    poSavedVehicles.push({vehicle:v.vehicle_no,transporter:String(v.transporter_name||"").trim(),own:String(v.ownership||"OWN").toUpperCase(),
+      trips:v.on_trip||[],hasTrip:"on_trip" in v,
+      spec:[v.vehicle_type,v.capacity_kg!=null?v.capacity_kg+" KG":"",v.transporter_name].filter(Boolean).join(" · "),
+      detail:[v.vehicle_type,v.capacity_kg!=null?v.capacity_kg+" KG":"",v.transporter_name].filter(Boolean).join(" · ")});
   }
   // Active ERP driver logins FIRST. They need no previous dispatch history.
   for(const p of poActiveErpDrivers){
@@ -4692,7 +4750,7 @@ function rebuildPoDirectory(){
     if(!driverSeen.has(key)){
       driverSeen.add(key);
       erpDriverPhones.add(phone);
-      poSavedDrivers.push({name,mobile:phone,phone,source:"ERP Driver User"});
+      poSavedDrivers.push({name,mobile:phone,phone,source:"ERP Driver User",src:"erp"});
     }
   }
   // Outside drivers of earlier Self Pickup orders (lwb_self_pickup_driver_search.sql), with the vehicle used last.
@@ -4702,7 +4760,7 @@ function rebuildPoDirectory(){
     const key=name.toLowerCase()+"|"+phone;
     if(driverSeen.has(key))continue;
     driverSeen.add(key);erpDriverPhones.add(phone);
-    poSavedDrivers.push({name,mobile:phone,phone,source:"Self pickup before",vehicle:String(p.vehicle_no||"").toUpperCase(),transporter:""});
+    poSavedDrivers.push({name,mobile:phone,phone,source:"Self pickup before",src:"pickup",vehicle:String(p.vehicle_no||"").toUpperCase(),transporter:""});
   }
   // Keep historic drivers and vehicles. Skip obsolete names when their
   // number is now owned by an active, registered ERP DRIVER user.
@@ -4715,7 +4773,7 @@ function rebuildPoDirectory(){
       const key=name.toLowerCase()+"|"+phone;
       if(!driverSeen.has(key)){
         driverSeen.add(key);
-        poSavedDrivers.push({name,mobile,phone,source:"Previous Dispatch"});
+        poSavedDrivers.push({name,mobile,phone,source:"Previous Dispatch",src:"history"});
       }
     }
     if(vehicle){
@@ -4784,7 +4842,7 @@ async function loadGodownManagers(){
   const sel=document.getElementById("poLoadingManager"),txt=document.getElementById("poLoadingPerson");
   sel.hidden=!poGodownManagers;txt.hidden=!!poGodownManagers;
   if(!poGodownManagers)return;
-  const opts=poGodownManagers.map(m=>new Option(m.full_name+(m.mobile?" · "+m.mobile:""),m.user_id));
+  const opts=poGodownManagers.map(m=>new Option(m.full_name,m.user_id));
   // Self: Sales Head / Admin sometimes load the vehicle themselves (16 Nov 2026).
   const me=poSelfLoader();
   if(me&&!poGodownManagers.some(m=>m.user_id===me.id))opts.unshift(new Option("Self",me.id));
@@ -4815,13 +4873,16 @@ function poDirectoryMatches(kind,term){
   const q=String(term||"").trim().toLowerCase();
   if(kind==="vehicle"){
     const words=q.split(/\s+/).filter(Boolean);
-    return poSavedVehicles.filter(x=>words.every(w=>
+    // Delivery type: Own = our Vehicle Master, Third-party = hired (Transporter) vehicles, Porter / Self pickup = typed before.
+    const byType=poSavedVehicles.filter(x=>poDType==="OWN"?x.own&&x.own!=="TRANSPORTER":poDType==="TRANSPORT"?x.own==="TRANSPORTER"||!x.own:poDType?!x.own:true);
+    return byType.filter(x=>words.every(w=>
       (x.vehicle+" "+x.transporter).toLowerCase().includes(w)
     )).slice(0,30);
   }
   const words=q.split(/\s+/).filter(Boolean);
   const digitTerm=poNormalPhone(q);
-  return poSavedDrivers.filter(x=>
+  const byType=poSavedDrivers.filter(x=>poDType==="OWN"?x.src!=="pickup":poDType==="SELF"?x.src==="pickup"||x.src==="history":true);
+  return byType.filter(x=>
     words.every(w=>x.name.toLowerCase().includes(w)||x.mobile.toLowerCase().includes(w)
       ||(digitTerm.length>=2&&x.phone.includes(digitTerm)))
   ).slice(0,30);
@@ -4849,12 +4910,18 @@ function poChooseSaved(kind,item){
 function showPoFieldInfo(){
   const mob=poNormalPhone(document.getElementById("poDriverMobile").value);
   const d=poSavedDrivers.find(x=>x.phone&&x.phone===mob);
-  const selfPk=isSelfPickup(selectedOrder);
-  document.getElementById("poDriverInfo").textContent=selfPk?(d&&d.source?d.source:""):mob?"📞 "+mob+(d&&d.source?" · "+d.source:""):(document.getElementById("poDriverName").value.trim()?"Select the driver from the list":"");
+  const typed=poTypedMobile();
+  const dInfo=document.getElementById("poDriverInfo");
+  if(d&&d.src==="master")poTripInfo(dInfo,[typed?"":"📞 "+mob,d.code],d.trips,true);
+  else dInfo.textContent=typed?(d&&d.source?d.source:""):mob?"📞 "+mob+(d&&d.source?" · "+d.source:""):(document.getElementById("poDriverName").value.trim()?"Select the driver from the list":"");
   const plate=poNormalPlate(document.getElementById("poVehicleNo").value);
   const v=poSavedVehicles.find(x=>poNormalPlate(x.vehicle)===plate);
-  document.getElementById("poVehicleInfo").textContent=plate?(v?(v.detail||v.transporter||""):selfPk?"Outside vehicle":"Not in Vehicle Master"):"";
+  const vInfo=document.getElementById("poVehicleInfo");
+  if(plate&&v&&v.hasTrip)poTripInfo(vInfo,[v.spec],v.trips,true);
+  else vInfo.textContent=plate?(v?(v.detail||v.transporter||""):poDType==="OWN"?"Not in Vehicle Master":"Outside vehicle"):"";
 }
+// Line under Driver / Vehicle: mobile, Employee ID / type, KG only. No "On trip" line (Mohit, 18 Nov 2026).
+function poTripInfo(el,parts){el.textContent=parts.filter(Boolean).join(" · ");}
 function showPoPicker(input,kind){
   if(input.disabled||document.getElementById("postApprovalPanel").hidden)return;
   closePoPicker();
@@ -4924,7 +4991,7 @@ function setupPoAutofill(){
     input.addEventListener("input",()=>{
       // Exact historical match auto-fills. Partial typing only filters results.
       const term=input.value;
-      if(kind==="name"&&!isSelfPickup(selectedOrder))document.getElementById("poDriverMobile").value="";
+      if(kind==="name"&&!poTypedMobile())document.getElementById("poDriverMobile").value="";
       if(kind==="vehicle")document.getElementById("poTransportName").value="";
       showPoFieldInfo();
       const exact=kind==="vehicle"
@@ -4999,14 +5066,16 @@ async function revealApprovalActions(){
   approvedTransport=null;
   const locked=poAllocationLocked(order);
   const selfPk=isSelfPickup(order);
-  document.getElementById("poMobileField").hidden=!selfPk;
   document.getElementById("poMobileInfo").textContent="";
   document.getElementById("poSaveBtn").hidden=locked;
   document.getElementById("poSaveBtn").disabled=true;
-  ["poDriverName","poVehicleNo","poLoadingPerson","poLoadingManager","poDriverMobile","poTransportName"].forEach(field=>{
+  ["poDriverName","poVehicleNo","poLoadingPerson","poLoadingManager","poDriverMobile","poTransportName","poTripNote","poPorterRent"].forEach(field=>{
     document.getElementById(field).value="";
     document.getElementById(field).disabled=locked;
   });
+  document.querySelectorAll("#poDeliveryType [data-dt]").forEach(b=>b.disabled=locked);
+  poTripSaved=null;
+  poDTypeSaved=selfPk?"SELF":"OWN";setPoDType(poDTypeSaved);
   allocationStatus("Loading assigned transport...");
   try{
     const result=await db.from("dispatch_assignments")
@@ -5020,11 +5089,21 @@ async function revealApprovalActions(){
     let filledFrom="";
     const fill=selfPk&&!a.id?await poPickupPrefill(order):null;
     if(!selectedOrder||selectedOrder.id!==id)return;
+    // Delivery type: the saved trip's kind, else Self pickup, else from Vehicle Master (number not in it = Porter).
+    if(a.trip_id&&window.LWBTrip){const m=await LWBTrip.ofOrders(db,[id]);poTripSaved=m.get(String(id))||null;}
+    if(!selectedOrder||selectedOrder.id!==id)return;
+    // (Older Self pickup orders got a Porter trip by itself from the outside vehicle: they stay Self pickup.)
+    const tk=poTripSaved&&poTripSaved.kind||"";
+    poDTypeSaved=tk&&!(selfPk&&tk==="PORTER")?tk
+      :selfPk||(a.id&&!a.trip_id&&String(a.transporter_name||"").toUpperCase()==="SELF PICKUP")?"SELF"
+      :a.vehicle_no&&window.LWBTrip?(LWBTrip.guess(a.vehicle_no,poMasterVehicles)||"OWN"):"OWN";
     for(const pair of [
       ["poDriverName",a.driver_name],["poVehicleNo",a.vehicle_no],
       ["poLoadingPerson",a.loading_person],["poDriverMobile",a.driver_mobile],
-      ["poTransportName",a.transporter_name]
+      ["poTransportName",a.transporter_name],["poTripNote",a.remarks],
+      ["poPorterRent",poTripSaved&&poTripSaved.rent?Number(poTripSaved.rent):""]
     ])document.getElementById(pair[0]).value=pair[1]||"";
+    setPoDType(poDTypeSaved);
     setPoGodownManager(a);
     if(fill){
       document.getElementById("poDriverName").value=fill.driver_name||"";
@@ -5052,8 +5131,10 @@ async function revealApprovalActions(){
 function poTransportDirty(){
   if(document.getElementById("postApprovalPanel").hidden||document.getElementById("poSaveBtn").disabled)return false;
   const a=approvedTransport||{};
-  const dirty=[["poDriverName",a.driver_name],["poDriverMobile",a.driver_mobile],["poVehicleNo",a.vehicle_no],["poTransportName",a.transporter_name]]
-    .some(([id,value])=>poValue(id)!==String(value||"").trim());
+  const dirty=[["poDriverName",a.driver_name],["poDriverMobile",a.driver_mobile],["poVehicleNo",a.vehicle_no],["poTransportName",a.transporter_name],["poTripNote",a.remarks]]
+    .some(([id,value])=>poValue(id)!==String(value||"").trim())
+    ||poDType!==poDTypeSaved
+    ||poDType==="PORTER"&&Number(poValue("poPorterRent")||0)!==Number(poTripSaved&&poTripSaved.rent||0);
   const managerDirty=document.getElementById("poLoadingManager").hidden
     ?poValue("poLoadingPerson")!==String(a.loading_person||"").trim()
     :poValue("poLoadingManager")!==String(a.loading_manager_id||"");
@@ -5067,9 +5148,13 @@ function poTransportPayload(){
     vehicle_no:poValue("poVehicleNo").toUpperCase(),
     loading_person:poValue("poLoadingPerson"),
     driver_mobile:poValue("poDriverMobile")||null,
-    transporter_name:poValue("poTransportName")||null,
+    transporter_name:poDType==="SELF"?"SELF PICKUP":(poValue("poTransportName").toUpperCase()==="SELF PICKUP"?null:poValue("poTransportName")||null),
+    remarks:poValue("poTripNote")||null,
     assigned_by:currentUser.id
   };
+  if(!poDType){allocationStatus("Choose the delivery type: Self pickup, Own vehicle, Third-party or Porter.",true);return null;}
+  const rent=poValue("poPorterRent");
+  if(poDType==="PORTER"&&rent&&!(Number(rent)>0&&Number(rent)<=100000)){allocationStatus("Porter rent: 1 to 1,00,000, or leave it empty.",true);return null;}
   if(poGodownManagers){
     const sel=document.getElementById("poLoadingManager"),m=poGodownManagers.find(x=>x.user_id===sel.value);
     payload.loading_manager_id=sel.value||null;
@@ -5080,7 +5165,7 @@ function poTransportPayload(){
     allocationStatus("Driver Name, Vehicle Number and "+(poGodownManagers?"Godown Manager":"Loading Person")+" are required.",true);return null;
   }
   if(!payload.driver_mobile){
-    allocationStatus(isSelfPickup(selectedOrder)?"Enter the driver's 10-digit mobile number.":"Select the driver from the list, so the mobile number comes with it. Driver Portal matches orders by this number.",true);return null;
+    allocationStatus(poTypedMobile()?"Enter the driver's 10-digit mobile number.":"Select the driver from the list, so the mobile number comes with it. Driver Portal matches orders by this number.",true);return null;
   }
   if(payload.driver_mobile){
     // Driver Portal matches orders by this exact mobile, so reject typos.
@@ -5108,9 +5193,13 @@ async function saveApprovedTransport(){
     const found=await db.from("dispatch_assignments").select("id").eq("order_id",id).maybeSingle();
     if(found.error)throw found.error;
     // Trip (trip-rent.js): same vehicle today with POs not loaded yet = same trip, one rent. Porter rent is asked later.
-    let trip=null;
-    if(window.LWBTrip){
-      try{trip=await LWBTrip.open(db,{vehicle_no:payload.vehicle_no,driver_name:payload.driver_name,driver_mobile:payload.driver_mobile,owner:payload.transporter_name,order_id:String(id),join:true})}
+    // Self pickup is never one of our delivery trips: no trip (and off an old one).
+    let trip=null;const dtype=poDType;
+    if(dtype==="SELF")payload.trip_id=null;
+    else if(window.LWBTrip){
+      const tp={vehicle_no:payload.vehicle_no,kind:dtype,driver_name:payload.driver_name,driver_mobile:payload.driver_mobile,owner:payload.transporter_name,order_id:String(id),join:true};
+      if(dtype==="PORTER"){const r=poValue("poPorterRent");tp.rent=r?Number(r):null;}
+      try{trip=await LWBTrip.open(db,tp)}
       catch(e){console.warn("Trip not saved:",e.message||e)}
       if(trip)payload.trip_id=trip.id;
     }
@@ -5119,6 +5208,7 @@ async function saveApprovedTransport(){
       : await db.from("dispatch_assignments").insert(payload).select("id").single();
     if(result.error)throw result.error;
     approvedTransport={...payload,id:result.data.id};
+    poDTypeSaved=dtype;poTripSaved=trip;
     // Self Pickup: keep the same driver / mobile / vehicle on the order, so the party's next pickup fills them.
     if(isSelfPickup(selectedOrder)){
       const pkSave=key=>db.rpc("lwb_set_order_pickup",{p_order_id:id,p:{driver_name:payload.driver_name,driver_mobile:payload.driver_mobile,
@@ -5141,6 +5231,8 @@ async function saveApprovedTransport(){
     allocationStatus("Saved! Driver: "+payload.driver_name+", Vehicle: "+payload.vehicle_no+", Godown Manager: "+payload.loading_person+"."+(trip?" Trip "+trip.trip_no+(trip.kind==="PORTER"&&!trip.rent?" (Porter: rent is asked later)":"")+".":"")+" Both are notified.");
     const more=await sugApplyRest(payload,trip,id);
     if(more)allocationStatus(document.getElementById("poAllocationStatus").textContent+" "+more);
+    // Third-party hired vehicle: the trip rent popup (trip-rent-ask.js) asks the rent of a new vehicle + party.
+    if(dtype==="TRANSPORT"&&window.LWBRentAsk)setTimeout(()=>LWBRentAsk.check(db),1600);
     // Small Transport popup: close by itself once saved.
     await loadOrders();
     return true;
@@ -5736,12 +5828,13 @@ async function submitPo() {
   const noteDirty=document.getElementById('managerNote').value.trim()!==managerNoteOriginal.trim();
   const transportDirty=poTransportDirty();
   if (!itemsDirty && !noteDirty && !transportDirty) {
-    allocationStatus(approvedTransport?.id?'Nothing changed. Everything is saved.':'Nothing to save yet. Select driver, vehicle and Godown Manager, then press Submit.');
+    if (!document.getElementById('reviewModal').classList.contains('transport-only')) { showMessage('Nothing changed. Everything is saved.','success'); return; }
+    allocationStatus(approvedTransport?.id?'Nothing changed. Everything is saved.':'Nothing to save yet. Choose the delivery type, driver, vehicle and Godown Manager, then press Submit.');
     return;
   }
   if (transportDirty && !poTransportPayload()) return;
   if (itemsDirty && !poItemsValid()) return;
-  const what=[itemsDirty&&'SKU / Qty / Rate',transportDirty&&'Driver / Vehicle / Godown Manager',noteDirty&&'Manager Note'].filter(Boolean);
+  const what=[itemsDirty&&'SKU / Qty / Rate',transportDirty&&'Transport',noteDirty&&'Manager Note'].filter(Boolean);
   if (!await confirm('Save '+what.join(', ')+' for PO '+order.order_no+'?')) return;
   const btn=document.getElementById('approveOrderBtn');
   poSubmitting=true; btn.disabled=true; btn.textContent='Saving...';
