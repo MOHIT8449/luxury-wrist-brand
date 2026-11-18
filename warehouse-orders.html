@@ -3091,7 +3091,8 @@ function renderTabs(base, current) {
    Green = done, gold ring = where the PO is now, red = cancelled. */
 /* Numbered steps (Mohit, 12 Nov 2026): 1 PO List → 2 Approved → 3 Transport → 4 Loading → 5 Delivered → 6 Settled.
    Hover a number = when / who of that step (lwb_po_journey). 6 Settled = the bill is fully received (due 0). */
-const PO_STEPS = ["PO List", "Approved", "Transport", "Loading", "Delivered", "Settled"];
+// 18 Nov 2026 (Mohit): Transport → Loaded (Godown) → Out for delivery (Accounts made the bill) → Delivered.
+const PO_STEPS = ["PO List", "Approved", "Transport", "Loaded", "Out for delivery", "Delivered", "Settled"];
 const listJourney = new Map(); // order id -> lwb_po_journey row (orders on screen)
 const listPrints = new Map();  // order id -> lwb_po_print_info row
 let listPrintsOn = true;
@@ -3101,8 +3102,9 @@ function isSettled(order) {
 }
 function stepAt(order) {
   const stage = orderStage(order);
-  if (stage === "delivered") return isSettled(order) ? 6 : 5;
-  return { pending: 1, approved: 2, transport: 3, loading: 3, loaded: 4, cancelled: 1 }[stage] ?? 1;
+  if (stage === "delivered") return isSettled(order) ? 7 : 6;
+  if (stage === "loaded") return (listJourney.get(order.id) || {}).bill_no ? 5 : 4;
+  return { pending: 1, approved: 2, transport: 3, loading: 3, cancelled: 1 }[stage] ?? 1;
 }
 function stepInfo(order, i) {
   const j = listJourney.get(order.id) || {};
@@ -3112,8 +3114,9 @@ function stepInfo(order, i) {
   if (i === 1) bits.push(order.approved_at ? "Approved " + t(order.approved_at) : isPending(order) ? "Waiting for approval" : "");
   if (i === 2) bits.push(j.assigned_at ? "Assigned " + t(j.assigned_at) : "", [j.vehicle_no, j.driver_name].filter(Boolean).join(" · "));
   if (i === 3) bits.push(j.loading_started_at ? "Loading " + t(j.loading_started_at) : "", j.loading_completed_at ? "Loaded " + t(j.loading_completed_at) : "", j.loading_person || "");
-  if (i === 4) bits.push(j.reported_at ? String(j.delivery_status || "Reported").replace(/_/g, " ").toLowerCase() + " " + t(j.reported_at) : "");
-  if (i === 5 && (j.bill_amount != null || j.collected != null))
+  if (i === 4) bits.push(j.bill_no ? "Bill " + j.bill_no + (j.bill_at ? " · " + t(j.bill_at) : "") : "");
+  if (i === 5) bits.push(j.reported_at ? String(j.delivery_status || "Reported").replace(/_/g, " ").toLowerCase() + " " + t(j.reported_at) : "");
+  if (i === 6 && (j.bill_amount != null || j.collected != null))
     bits.push("Bill " + formatMoney(j.bill_amount || 0), "received " + formatMoney(j.collected || 0), "due " + formatMoney(j.due || 0));
   return bits.filter(Boolean).join(" · ");
 }
@@ -3121,8 +3124,9 @@ function stepTrack(order, small) {
   const stage = orderStage(order);
   const at = stepAt(order);
   const name = (label, i) => stage === "cancelled" && i === at ? "Cancelled" : stage === "pending" && i === at ? "Approval pending"
-    : stage === "approved" && i === at ? "Transport pending" : stage === "loaded" && i === at ? "Out for delivery"
-    : stage === "delivered" && i === at ? "Settlement pending" : label;
+    : stage === "approved" && i === at ? "Transport pending" : stage === "loading" && i === at ? "Loading in progress"
+    : stage === "transport" && i === at ? "Loading pending" : stage === "loaded" && i === at && i === 4 ? "Bill pending (Accounts)"
+    : stage === "loaded" && i === at ? "On the way" : stage === "delivered" && i === at ? "Settlement pending" : label;
   const dots = PO_STEPS.map((label, i) => {
     const css = stage === "cancelled" && i === at ? "x" : i < at ? "ok" : i === at ? "now" : "";
     const tip = (i + 1) + ". " + name(label, i) + (i <= at ? (stepInfo(order, i) ? " — " + stepInfo(order, i) : "") : "");
@@ -3655,8 +3659,8 @@ async function bulkPrint() {
 
 
 /* -----------------------------
-   PO JOURNEY: PO made → approved → transport → loading start → out for delivery → delivered
-   Out for delivery = loading started AND Accounts entered the Tally bill no.
+   PO JOURNEY: PO made → approved → transport → loaded → out for delivery → delivered
+   Out for delivery = loaded AND Accounts entered the Tally bill no.
 ----------------------------- */
 
 async function loadJourneyData(order) {
@@ -3687,19 +3691,21 @@ function drawJourney(order, box, a) {
     (isDeliveredOrder(order) ? order.delivered_at || order.updated_at : null);
   const loadStart = a.loading_started_at || null;
   const loadingOn = !!(loadStart || a.loading_completed_at) || ["loading", "loaded", "invoiced", "dispatched"].includes(status);
+  const loadedOn = !!a.loading_completed_at || ["loaded", "invoiced", "dispatched"].includes(status);
   const billNo = a.bill_no || "";
-  const outOn = !!billNo && loadingOn || ["invoiced", "dispatched"].includes(status);
-  const outAt = billNo ? later(a.bill_at, loadStart) : null;
+  const outOn = !!billNo && loadedOn || ["invoiced", "dispatched"].includes(status);
+  const outAt = billNo ? later(a.bill_at, a.loading_completed_at || loadStart) : null;
   const steps = [
     { t: "PO made", s: when(made) + (order.sales_person ? " · " + escapeHtml(order.sales_person) : ""), on: true },
     { t: "Approved", s: when(order.approved_at) + took(made, order.approved_at),
       on: !isPending(order) && !isCancelled(order) || !!order.approved_at },
     { t: "Transport assigned", s: [when(a.assigned_at), a.vehicle_no, a.driver_name, a.driver_mobile && "📞 " + a.driver_mobile, a.loading_person && "Godown: " + a.loading_person]
         .filter(Boolean).map(v => escapeHtml(String(v))).join(" · "), on: !!(a.assigned_at || a.driver_name || a.vehicle_no) },
-    { t: "Loading start", s: when(loadStart) + (a.loading_completed_at ? " · Loaded " + when(a.loading_completed_at) : ""), on: loadingOn },
+    { t: "Loaded", s: (a.loading_completed_at ? when(a.loading_completed_at) : "") + (loadStart ? " · loading started " + when(loadStart) : "") + (a.loading_person ? " · " + escapeHtml(a.loading_person) : ""),
+      on: loadedOn, wait: loadStart || status === "loading" ? "Loading in progress" + (loadStart ? " · " + when(loadStart) : "") : "" },
     { t: "Out for delivery", s: billNo ? "Bill " + escapeHtml(billNo) + (outAt ? " · " + when(outAt) : "") : "", on: outOn,
       wait: billNo ? "Bill " + escapeHtml(billNo) + " made · waiting for loading"
-        : a.loading_completed_at ? "Vehicle loaded · Tally bill pending" : loadingOn ? "Tally bill pending (Accounts)" : "" },
+        : loadedOn ? "Loaded · Tally bill pending (Accounts)" : "" },
     { t: "Delivered", s: when(delivered) + took(made, delivered) + (report === "PARTIAL" ? " · Partial" : ""), on: !!delivered,
       wait: report === "NOT_DELIVERED" ? "Driver: not delivered · " + when(a.reported_at) : "" },
     collectionStep(a)
