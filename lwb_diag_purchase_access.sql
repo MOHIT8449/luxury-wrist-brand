@@ -4,7 +4,7 @@
 DO $do$
 DECLARE
   u record; rep text := ''; t text; v_ids text[]; n bigint; st text; msg text;
-  tests text[] := ARRAY['inward','items','checks','open_tasks','doc_list','doc_view_bill','doc_edit_damage','sku','profile','sp_settings','notif','my_cos','claims_page','gi_page','pr_page'];
+  tests text[] := ARRAY['inward','items','checks','open_tasks','doc_list','doc_view_bill','doc_edit_damage','sku','profile','sp_settings','notif','my_cos','claims_page','gi_page','pr_page','pc_user'];
 BEGIN
   SELECT array_agg(id::text) INTO v_ids FROM (SELECT g.id FROM public.lwb_goods_inward g ORDER BY g.created_at DESC NULLS LAST LIMIT 5) x;
   FOR u IN
@@ -13,7 +13,7 @@ BEGIN
            coalesce((SELECT a.extra FROM public.lwb_user_page_access a WHERE a.user_id = p.id), '{}') AS ext,
            (SELECT count(*) FROM public.lwb_user_companies c WHERE c.user_id = p.id) AS cos
     FROM public.user_profiles p
-    WHERE lower(btrim(p.role)) = 'manager' OR p.full_name ILIKE '%vin%' OR p.full_name ILIKE '%vish%'
+    WHERE lower(btrim(p.role)) = 'manager' AND p.full_name ILIKE '%vinesh%'
     ORDER BY p.full_name
   LOOP
     rep := rep || ' || ' || regexp_replace(coalesce(u.full_name,'?'), '(\w)\w*\s*', '\1', 'g')
@@ -43,6 +43,7 @@ BEGIN
           WHEN 'claims_page' THEN SELECT CASE WHEN public.lwb_has_page('purchase-claims.html') THEN 1 ELSE 0 END INTO n;
           WHEN 'gi_page' THEN SELECT CASE WHEN public.lwb_has_page('goods-inward.html') THEN 1 ELSE 0 END INTO n;
           WHEN 'pr_page' THEN SELECT CASE WHEN public.lwb_has_page('purchase-register.html') THEN 1 ELSE 0 END INTO n;
+          WHEN 'pc_user' THEN SELECT CASE WHEN public.lwb_pc_user() THEN 1 ELSE 0 END INTO n;
         END CASE;
         RESET ROLE;
         rep := rep || ' ' || t || '=' || coalesce(n::text,'null');
