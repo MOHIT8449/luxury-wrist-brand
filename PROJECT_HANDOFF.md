@@ -4,6 +4,10 @@
 **Purpose:** Continue the same ERP project from a new ChatGPT conversation without restarting or losing the agreed requirements.
 **Status:** Active development / verification. Do not assume all modules are completed or fully tested.
 
+## Vehicle Time In / Out optional (18 Nov 2026)
+- Mohit: Time In / Time Out on the purchase vehicle check is optional, not mandatory. `purchase-damage.js`: labels say "(optional)"; Submit works with both empty ("Vehicle time not entered" in the confirm, no time call, times already saved stay); Time Out alone is refused ("Enter Time In too").
+- SQL `lwb_purchase_time_optional_setup.sql` (after `lwb_purchase_damage_report_setup.sql`; test in `tests/purchase-damage`, now 7): `lwb_purchase_vehicle_time` returns without change when both are empty; Out without In refused; other checks as before.
+
 ## Bell notifications by type (18 Nov 2026)
 - Mohit: order, approval, task notifications look the same; the type must be clear at a glance and the bell pleasant to use.
 - `erp-operations-notifications.js`: every notification gets a type (Order / Delivery / Payment / Stock / Task / Update, `CATS` + `CAT_OF`) with its own colour, a line icon tile (SVG, in place of emoji) and a type tag. Filter tabs: All · To do (unread with an action: Approve / Verify / Make bill…) · one tab per type present, with unread counts. Cards grouped Today / Yesterday / Earlier; the action is a real button (opens the page, marks read) next to ✓. Same summary text and routes as before. No SQL.
