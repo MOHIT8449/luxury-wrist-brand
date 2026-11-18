@@ -9,7 +9,7 @@
 <script src="vendor/supabase-js-2.119.0.js"></script>
 <script src="brand-filter.js"></script><script src="page-role.js"></script>
 <script src="party-list.js" defer></script>
-<script src="erp-docs.js"></script>
+<script src="erp-docs.js"></script><script src="purchase-damage.js"></script>
 <script src="erp-operations-notifications.js"></script>
 <style>
 *{box-sizing:border-box}
@@ -67,6 +67,26 @@ header,main,.overlay{display:none!important}
 body.erp-compact .modalbody .actions{position:sticky;bottom:-12px;margin:12px -12px -12px;padding:10px 12px;background:#fff;border-top:1px solid #e3e6ea;box-shadow:0 -4px 12px #0000000f;z-index:3}
 body.erp-compact .modalbody .actions button{flex:1 1 auto}
 #fromBox{margin-top:12px}
+
+/* Godown Manager: Sales (loading) / Purchase (unloading) tabs. */
+.ld-tabs{display:flex;gap:6px;margin:10px 0 12px;background:#eef1f4;padding:4px;border-radius:12px}
+.ld-tabs[hidden]{display:none}
+.ld-tabs button{flex:1 1 0;background:transparent;color:#334;border:0;border-radius:9px;padding:10px 6px;font-weight:700;font-size:14px;box-shadow:none;min-width:0}
+.ld-tabs button.on{background:#fff;color:#0b3b47;box-shadow:0 1px 4px #0002}
+.ld-tabs b{display:inline-block;min-width:20px;padding:1px 6px;border-radius:999px;background:#c8102e;color:#fff;font-size:11.5px;margin-left:4px}
+.ld-tabs b:empty{display:none}
+body.tab-pur .stats,body.tab-pur #salesPanel{display:none!important}
+.pur-h{font-size:12.5px;color:#667;padding:12px 14px 4px}
+.pur-row{display:flex;align-items:center;gap:10px;padding:12px 14px;border-top:1px solid #edf0f3}
+.pur-row:first-child{border-top:0}
+.pur-main{flex:1 1 auto;min-width:0}
+.pur-main b{display:block;font-size:14.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pur-main small{display:block;color:#667;font-size:12px;margin-top:2px}
+.pur-veh{font-weight:800;color:#0b3b47;letter-spacing:.3px}
+.pur-row button{flex:0 0 auto;padding:9px 12px;font-size:13px}
+.pur-ok{color:#13794a;font-weight:700;font-size:12px}
+.pur-empty{padding:18px 14px;color:#667;text-align:center}
+.pur-sep{padding:10px 14px 4px;font-size:11.5px;font-weight:800;letter-spacing:.4px;color:#889;text-transform:uppercase;border-top:1px solid #edf0f3}
 </style>
 <link rel="stylesheet" href="erp-shell.css">
 <script src="erp-shell.js" data-auto defer></script>
@@ -86,13 +106,21 @@ body.erp-compact .modalbody .actions button{flex:1 1 auto}
 <button id="refresh">Refresh Orders</button>
 </div>
 <div id="message" class="message"></div>
+<div class="ld-tabs" id="ldTabs" hidden role="tablist">
+<button type="button" role="tab" data-tab="sales" class="on">🚚 Sales · Loading <b id="tabSalesN"></b></button>
+<button type="button" role="tab" data-tab="purchase">📦 Purchase · Unloading <b id="tabPurN"></b></button>
+</div>
+<div class="panel" id="purBox" hidden>
+<div class="pur-h">Purchase vehicles given to you. Open one, add the vehicle photo and any damage / gasless / shortage, then Submit (or All OK).</div>
+<div id="purRows"><div class="pur-empty">Loading...</div></div>
+</div>
 <div class="stats">
 <div class="stat">Approved, no vehicle yet<strong id="approvedCount">0</strong></div>
 <div class="stat">Awaiting Loading<strong id="pendingCount">0</strong></div>
 <div class="stat">Loading in Progress<strong id="loadingCount">0</strong></div>
 <div class="stat">Loaded Orders<strong id="loadedCount">0</strong></div>
 </div>
-<div class="panel">
+<div class="panel" id="salesPanel">
 <div class="toolbar">
 <input id="search" data-party-list placeholder="Search order no, customer, driver...">
 <select id="filter" style="max-width:220px">
@@ -200,12 +228,38 @@ $('username').textContent=profile.data.full_name||user.email;
 role=String(profile.data.role||'').trim().toLowerCase();
 document.body.classList.toggle('gm',role==='warehouse');
 // Godown Manager sees the vehicles assigned to him first.
-if(role==='warehouse'){$('mineOption').hidden=false;$('filter').value='mine';}
+if(role==='warehouse'){$('mineOption').hidden=false;$('filter').value='mine';$('ldTabs').hidden=false;}
 window.LWBOperationsNotifications?.init({db,user,mount:document.querySelector("header > div:last-child")});
 if(window.LWBBrand)try{BB=await LWBBrand.mount(db,{into:'main > div',after:true,onChange:render})}catch(e){}
 await load();
+if(role==='warehouse'){await loadPurchase();if(new URLSearchParams(location.search).get('tab')==='purchase')showTab('purchase');}
 }catch(e){message(e.message,true);}
 }
+
+// ===== Purchase (unloading): bills the Sales Head / Admin gave to this Godown Manager =====
+function showTab(t){
+document.body.classList.toggle('tab-pur',t==='purchase');$('purBox').hidden=t!=='purchase';
+document.querySelectorAll('#ldTabs button').forEach(b=>{const on=b.dataset.tab===t;b.classList.toggle('on',on);b.setAttribute('aria-selected',on)});
+}
+document.getElementById('ldTabs').addEventListener('click',e=>{const b=e.target.closest('button[data-tab]');if(b)showTab(b.dataset.tab)});
+async function loadPurchase(){
+try{
+const from=new Date(Date.now()-30*864e5).toISOString().slice(0,10);
+const g=await db.from('lwb_goods_inward').select('id,invoice_no,supplier_name,vehicle_no,received_date,created_at,godown_user_id').eq('godown_user_id',user.id).gte('received_date',from).order('received_date',{ascending:false}).limit(200);
+if(g.error)throw g.error;
+const bills=g.data||[],ids=bills.map(b=>b.id),done=new Set();
+for(let i=0;i<ids.length;i+=100){const c=await db.from('lwb_purchase_checks').select('inward_id').in('inward_id',ids.slice(i,i+100));if(!c.error)(c.data||[]).forEach(x=>done.add(x.inward_id))}
+const open=bills.filter(b=>!done.has(b.id)),checked=bills.filter(b=>done.has(b.id)).slice(0,10);
+$('tabPurN').textContent=open.length||'';
+const row=(b,ok)=>`<div class="pur-row"><div class="pur-main"><b>${safe(b.supplier_name||'Supplier')}</b><small><span class="pur-veh">${safe(String(b.vehicle_no||'No vehicle no.').toUpperCase())}</span> · Inv ${safe(b.invoice_no||'-')} · ${safe(LWBDate.d?LWBDate.d(b.received_date):b.received_date)}</small>${ok?'<small class="pur-ok">✓ Checked</small>':''}</div>${ok?`<button class="secondary" data-view="${safe(b.id)}">View</button>`:`<button class="green" data-check="${safe(b.id)}">📷 Photos &amp; Submit</button>`}</div>`;
+$('purRows').innerHTML=(open.length?open.map(b=>row(b,false)).join(''):'<div class="pur-empty">No purchase vehicle given to you right now.</div>')+(checked.length?'<div class="pur-sep">Checked (last 30 days)</div>'+checked.map(b=>row(b,true)).join(''):'');
+}catch(e){$('purRows').innerHTML='<div class="pur-empty">Could not load purchase vehicles: '+safe(e.message||e)+'</div>';}
+}
+document.getElementById('purRows').addEventListener('click',e=>{
+const c=e.target.closest('[data-check]'),v=e.target.closest('[data-view]');
+if(c&&window.LWBPurchaseDamage)LWBPurchaseDamage.form({client:db,id:c.dataset.check,role,onDone:loadPurchase});
+if(v&&window.LWBPurchaseDamage)LWBPurchaseDamage.view({client:db,id:v.dataset.view,role,onEdit:loadPurchase});
+});
 
 async function load(){
 try{
@@ -258,6 +312,7 @@ $('approvedCount').textContent=orders.filter(inB).filter(waiting).length;
 $('pendingCount').textContent=orders.filter(inB).filter(o=>o.status==='transport_allocated').length;
 $('loadingCount').textContent=orders.filter(inB).filter(o=>o.status==='loading').length;
 $('loadedCount').textContent=orders.filter(inB).filter(o=>o.status==='loaded').length;
+if(role==='warehouse')$('tabSalesN').textContent=orders.filter(o=>['transport_allocated','loading'].includes(o.status)).length||'';
 const q=$('search').value.toLowerCase().trim();
 const filter=$('filter').value;
 const visible=orders.filter(inB).filter(o=>{
@@ -473,7 +528,7 @@ $('rows').addEventListener('click',e=>{
 const btn=e.target.closest('button[data-id]');
 if(btn)openOrder(btn.dataset.id);
 });
-$('refresh').onclick=load;
+$('refresh').onclick=()=>{load();if(role==='warehouse')loadPurchase();};
 $('search').oninput=render;
 $('filter').onchange=render;
 $('closeModal').onclick=()=>$('overlay').style.display='none';

@@ -145,8 +145,9 @@
       '<div class="pd-skus">'+d.skus.map(s=>'<b>'+esc(s.name)+'</b> '+qtyTxt(s.cs,s.pc,s.unit)).join(' · ')+'</div>'+
       '<div class="pd-pick"><button type="button" class="ok" data-m="ok">✓ All OK</button><button type="button" class="bad" data-m="dmg">⚠ Damage / Gasless</button></div>'+
       '<div class="pd-time"><label><span>Time In <small class="pd-opt">(optional)</small></span><input type="time" class="tin"></label><button type="button" data-now="tin">Now</button><label><span>Time Out <small class="pd-opt">(optional)</small></span><input type="time" class="tout"></label><button type="button" data-now="tout">Now</button><span class="pd-dur"></span></div>'+
-      '<div class="pd-dmg" hidden><div class="pd-hd"><span>SKU</span><span>Type</span><span>IC / CS</span><span>PCS</span><span></span></div><div class="pd-lines"></div><button type="button" class="pd-add" data-a="add">+ Add line</button><div class="pd-err" hidden></div>'+
-      '<div class="pd-lab">Photos: vehicle (number plate) and damaged / gasless cases</div><div class="pd-photos"></div></div>'+
+      '<div class="pd-dmg" hidden><div class="pd-hd"><span>SKU</span><span>Type</span><span>IC / CS</span><span>PCS</span><span></span></div><div class="pd-lines"></div><button type="button" class="pd-add" data-a="add">+ Add line</button><div class="pd-err" hidden></div></div>'+
+      // Photos show for All OK too: the vehicle photo is taken at every unloading (Mohit, 18 Nov 2026).
+      '<div class="pd-lab">Photos: vehicle (number plate) and any damaged / gasless cases</div><div class="pd-photos"></div>'+
       '<div class="pd-lab">Note</div><input class="pd-note" maxlength="300" placeholder="e.g. 2 cases wet near the door">'+
       '<div class="pd-foot"><button type="button" class="go" data-a="save" disabled>Submit</button><button type="button" data-a="close">Later</button></div>');
     const $=s=>back.querySelector(s);
