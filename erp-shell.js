@@ -109,11 +109,11 @@
       // (Sales Head / Admin: the approval + driver list; Godown Manager / Accounts: same list, view only;
       // Salesman: his own orders with PO given > Approved > Dispatched > Delivered).
       {t:"New PO / Sales Order",h:"order-entry.html",i:"cart",r:"admin manager sales",k:"new order entry po",pt:"PO / Sales Order (new PO)",nm:"admin manager sales",par:"warehouse-orders.html my-sales.html#orders"},
-      {t:"PO / Sales",h:"warehouse-orders.html",i:"note",r:"admin manager warehouse accounts",k:"po approval driver warehouse orders",pt:"PO / Sales List (all POs; approve for Admin / Sales Head)"},
+      {t:"PO / Sales",h:"warehouse-orders.html",i:"note",r:"admin manager accounts",k:"po approval driver warehouse orders",pt:"PO / Sales List (all POs; approve for Admin / Sales Head)"},
       {t:"PO / Sales",h:"my-sales.html#orders",i:"note",r:"sales",k:"my orders modify",pt:"PO / Sales List (Salesman's own orders)"},
       // Rajnigandha (Mohit, 4 Nov 2026): no own menu items. A Rajnigandha PO prints its slip from PO / Sales
       // (Print), its waiting POs show on top of that list; the rate list is the Rajnigandha tab of Rate List.
-      {t:"Rajnigandha Slips",h:"quick-slip.html",i:"note",r:"admin manager accounts warehouse sales",k:"rajnigandha slip parchi thermal print kachcha",vo:"accounts",nm:"admin manager accounts warehouse sales",par:"warehouse-orders.html my-sales.html#orders"},
+      {t:"Rajnigandha Slips",h:"quick-slip.html",i:"note",r:"admin manager accounts sales",k:"rajnigandha slip parchi thermal print kachcha",vo:"accounts",nm:"admin manager accounts sales",par:"warehouse-orders.html my-sales.html#orders"},
       {t:"Rajnigandha Rate List",h:"rajni-rates.html",i:"bill",r:"admin",k:"rajnigandha rate landing min max profit margin approval",nm:"admin",par:"rates.html"},
       {t:"My Sales",h:"my-sales.html",i:"chart",r:"sales"},
       // Party Rate Offer (Mohit, 16 Nov 2026): rate per case given to one party, category-wise, with (i) past rates.
@@ -127,14 +127,14 @@
       // One "Returns" item (Mohit, 4 Nov 2026): Sales Return and Credit Note are tabs on top of it (PAGE_TABS);
       // they leave the side menu only for roles that also have Driver Returns (Salesman keeps Sales Return).
       {t:"Returns",h:"driver-returns.html",i:"undo",r:"admin accounts manager warehouse",pt:"Driver Returns Approval"},
-      {t:"Sales Return",h:"sales-return.html",i:"undo",r:"admin sales warehouse",nm:"admin warehouse",par:"driver-returns.html"},
+      {t:"Sales Return",h:"sales-return.html",i:"undo",r:"admin sales",nm:"admin",par:"driver-returns.html"},
       {t:"Credit Note Preview",h:"credit-note.html",i:"note",r:"admin accounts",nm:"admin accounts",par:"driver-returns.html"}]},
     // Purchase in one place (Mohit, 2 Nov 2026): entry, the list of every purchase bill (like the PO list),
     // ECRS and damage claims. (The scanned sales bill PDFs moved to Accounts, 16 Nov 2026.)
     {group:"Purchase",items:[
       // One "Purchase" item (Mohit, 4 Nov 2026): the list, with "+ New Purchase" on top. Purchase Entry is
       // not drawn in the side menu (nm) but stays in search and Manage Users; its list item is lit (par).
-      {t:"New Purchase (Goods Inward)",h:"goods-inward.html",i:"inbox",r:"admin manager warehouse",k:"goods inward purchase bill new entry",pt:"Purchase Entry (Goods Inward)",nm:"admin manager warehouse",par:"purchase-register.html"},
+      {t:"New Purchase (Goods Inward)",h:"goods-inward.html",i:"inbox",r:"admin manager",k:"goods inward purchase bill new entry",pt:"Purchase Entry (Goods Inward)",nm:"admin manager",par:"purchase-register.html"},
       {t:"Purchase",h:"purchase-register.html",i:"note",r:"admin manager warehouse accounts",k:"purchase register bills verify damage photo",pt:"Purchase List / Register",vo:"accounts"},
       // ECRS (Mohit, 16 Nov 2026): company's daily allowed quantity, our truck orders (Order 1, 2, 3), payment.
       {t:"ECRS Order",h:"ecrs.html",i:"note",r:"admin manager",k:"ecrs acrs company order truck pallet gr discount rtgs coca cola"},
@@ -163,7 +163,7 @@
       // for the ticked roles; others find it in search, Accounts also from Bills to make.
       // Company documents (Mohit, 11 Nov 2026): GST / PAN / Aadhaar / licences, renewal reminders, share to a party.
       {t:"Documents",h:"documents.html",i:"note",r:"admin accounts",k:"documents company kyc gst certificate pan aadhaar licence license renewal expiry reminder gstr-1 gstr-3b fssai gumasta share whatsapp party"},
-      {t:"Tax Invoice Print",h:"tax-invoice.html",i:"bill",r:"admin accounts manager warehouse",k:"tax invoice gst bill print tally format cgst sgst hsn accounts absent",nm:"accounts manager warehouse"},
+      {t:"Tax Invoice Print",h:"tax-invoice.html",i:"bill",r:"admin accounts manager",k:"tax invoice gst bill print tally format cgst sgst hsn accounts absent",nm:"accounts manager"},
       // Every accounts page in one group (Mohit, 16 Nov 2026).
       {t:"Driver Collections",h:"driver-collections.html",i:"cash",r:"admin manager accounts",nm:"accounts"},
       {t:"Sheet & Pallet Ledger",h:"sheet-pallet.html",i:"layers",r:"admin manager accounts warehouse",vo:"accounts"},
@@ -180,10 +180,10 @@
       {t:"Rate List",h:"rates.html",i:"tag",r:"admin manager",k:"rate scheme mepd landing slab rajnigandha coca-cola brand",pt:"Rate List (Coca-Cola Rate & Scheme)"},
       {t:"Company / Brand",h:"companies.html",i:"factory",r:"admin manager accounts",vo:"accounts"},
       {t:"Supplier Master",h:"supplier-master.html",i:"factory",r:"admin manager"},
-      {t:"Vehicle Master",h:"fleet-master.html#vehicles",i:"truck",r:"admin manager transport warehouse"},
+      {t:"Vehicle Master",h:"fleet-master.html#vehicles",i:"truck",r:"admin manager transport"},
       {t:"Drivers",h:"fleet-master.html#drivers",i:"users",r:"transport"},
-      {t:"Employee Master",h:"fleet-master.html#employees",i:"users",r:"admin manager warehouse"},
-      {t:"Fixed Assets",h:"fixed-assets.html",i:"box",r:"admin manager accounts warehouse",vo:"accounts"}]},
+      {t:"Employee Master",h:"fleet-master.html#employees",i:"users",r:"admin manager"},
+      {t:"Fixed Assets",h:"fixed-assets.html",i:"box",r:"admin manager accounts",vo:"accounts"}]},
     {group:"Admin",items:[
       {t:"Settings",h:"settings.html",i:"gear",r:"admin manager"},
       {t:"Manage Users",h:"users.html",i:"lock",r:"admin"},
@@ -370,11 +370,15 @@
     add("meta",{name:"apple-mobile-web-app-capable",content:"yes"});
   }
 
+  const GM_OFF=["goods-inward.html","warehouse-orders.html","quick-slip.html","sales-return.html","tax-invoice.html","fleet-master.html","fixed-assets.html"];
   function mount(opts){
     appMeta();
     const role=String(opts.role||"").toLowerCase();
     const page=(location.pathname.split("/").pop()||"dashboard.html").replace(/^$/,"dashboard.html");
     if(blocked(role,page,hiddenPages()))return {menu:[]};
+    // Godown Manager: loading, stock, returns and purchase photos only (Mohit, 18 Nov 2026). Sales pages
+    // (PO / Sales list, slips, sales return, tax invoice) and Masters do not open, unless Admin ticked the page.
+    if(role==="warehouse"&&GM_OFF.includes(page)&&!extraPages().some(h=>h.split("#")[0]===page)){location.replace("dashboard.html");return {menu:[]}}
     let groups=menuForMe(role);
     let current=null,currentGroup="";
     // Exact link (with #tab) first, so my-sales.html and my-sales.html#orders each light their own item.
@@ -570,7 +574,7 @@
       admin:[["Home","dashboard.html","home"],["New Order","order-entry.html","cart"],["PO List","warehouse-orders.html","note"],["Stock","inventory.html","stock"]],
       manager:[["Home","dashboard.html","home"],["New Order","order-entry.html","cart"],["PO List","warehouse-orders.html","note"],["Dispatch","loading-dispatch.html","truck"]],
       accounts:[["Home","dashboard.html","home"],["Bills","party-billing.html","bill"],["PO List","warehouse-orders.html","note"],["Cash","accounts-dashboard.html","cash"],["Bank","bank-statement.html","book"]],
-      warehouse:[["Home","dashboard.html","home"],["PO List","warehouse-orders.html","note"],["Loading","loading-dispatch.html","truck"],["Stock","inventory.html","stock"]],
+      warehouse:[["Home","dashboard.html","home"],["Loading","loading-dispatch.html","truck"],["Purchase","purchase-register.html","note"],["Stock","inventory.html","stock"]],
       transport:[["Home","dashboard.html","home"],["Assign","transport-allocation.html","truck"],["Vehicles","fleet-master.html#vehicles","box"],["Drivers","fleet-master.html#drivers","users"]]
     };
     const permitted=new Set(menuForMe(role).flatMap(g=>g.items.map(i=>i.h.split("#")[0])));

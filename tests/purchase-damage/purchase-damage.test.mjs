@@ -49,6 +49,8 @@ await db.exec('GRANT SELECT ON public.lwb_live_stock TO authenticated');
 const mine=await file('lwb_purchase_damage_report_setup.sql');
 await db.exec(mine);await db.exec(mine); // safe to run again
 const opt=await file('lwb_purchase_time_optional_setup.sql');await db.exec(opt);await db.exec(opt);
+await db.exec(await file('lwb_purchase_arrived_all_setup.sql'));
+const gms=await file('lwb_godown_manager_scope_setup.sql');await db.exec(gms);await db.exec(gms);
 
 async function as(who){await db.query("select set_config('request.jwt.claim.sub',$1,false)",[ids[who]||''])}
 async function call(q,args=[]){await db.exec('SET ROLE authenticated');try{return (await db.query(q,args)).rows}finally{await db.exec('RESET ROLE')}}
@@ -84,8 +86,8 @@ test('vehicle arrived goes only to the Godown Manager chosen on Purchase Entry; 
   assert.equal((await db.query('select godown_user_id from lwb_goods_inward where id=$1',[b])).rows[0].godown_user_id,ids.godown);
   await assert.rejects(arrived(b,'acc'),/active Godown Manager/);
   await assert.rejects(arrived(b,'godown','godown'),/Only Admin \/ Sales Head/);
-  // none chosen: every Godown Manager
-  const b2=await bill('INV-1B');assert.equal(await arrived(b2,null),2);
+  // none chosen: no popup (only the chosen Godown Manager, 18 Nov 2026)
+  const b2=await bill('INV-1B');assert.equal(await arrived(b2,null),0);
   assert.equal((await bells('admin','PURCHASE_ARRIVED')).length,0);
 });
 
@@ -179,4 +181,20 @@ test('vehicle Time In / Out optional: both empty keeps saved times; Out alone re
   assert.notEqual((await db.query("select time_in from lwb_goods_inward where id=$1",[b])).rows[0].time_in,null);
   await assert.rejects(call("select lwb_purchase_vehicle_time($1,null,now())",[b]),/Time In too/);
   await report('godown',b,[]);
+});
+
+test('Godown Manager scope: photo task only to the chosen manager; tasks of others hidden; vehicle photo type', async()=>{
+  const b=await bill('INV-G1');
+  assert.equal(await arrived(b,'godown'),1);
+  assert.equal((await bells('godown2','PURCHASE_ARRIVED')).filter(n=>n.ref_id===b).length,0);
+  const b2=await bill('INV-G2');assert.equal(await arrived(b2,null),0); // nobody chosen: no popup
+  await as('head');await call("select lwb_purchase_photo_task($1,null)",[b]);
+  const t=(await db.query("select assigned_to from lwb_tasks where ref_id=$1",[b])).rows.map(r=>r.assigned_to);
+  assert.deepEqual(t,[ids.godown]);
+  await as('head');await call("select lwb_task_add($1)",[JSON.stringify({title:'Bring 5 orders',due_date:new Date().toISOString().slice(0,10),assignees:[ids.acc]})]);
+  await as('godown');assert.equal((await call("select id from lwb_tasks where title='Bring 5 orders'")).length,0);
+  await as('godown2');assert.equal((await call("select id from lwb_tasks where ref_id=$1",[b])).length,0);
+  await as('godown');assert.equal((await call("select id from lwb_tasks where ref_id=$1",[b])).length,1);
+  await as('head');assert.equal((await call("select id from lwb_tasks where title='Bring 5 orders'")).length,1);
+  assert.ok((await db.query("select lwb_doc_types('PURCHASE_BILL') t")).rows[0].t.includes('VEHICLE'));
 });

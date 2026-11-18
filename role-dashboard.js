@@ -548,9 +548,16 @@
       const t=today();
       const [orders,veh,gr,tr,vq]=await Promise.all([loadOrders(),safe(C.from("lwb_vehicles").select("vehicle_no,vehicle_type,capacity_kg")),
         safe(C.from("lwb_godown_reports").select("*").eq("report_date",t).order("created_at",{ascending:false})),safe(C.from("lwb_stock_transit").select("sku_name,cases,status").eq("status","OPEN")),verifyQueue()]);
-      const O=orders||[],load=O.filter(o=>["transport_allocated","loading","loaded"].includes(st(o)));
-      const ids=load.map(o=>o.id),asg=[];
-      for(let i=0;i<ids.length;i+=100){const r=await safe(C.from("dispatch_assignments").select("order_id,vehicle_no,driver_name,id").in("order_id",ids.slice(i,i+100)));if(r)asg.push(...r)}
+      const O=orders||[],all=O.filter(o=>["transport_allocated","loading","loaded"].includes(st(o)));
+      const ids=all.map(o=>o.id),asg=[],pick=[];
+      for(let i=0;i<ids.length;i+=100){const part=ids.slice(i,i+100);
+        const [r,p]=await Promise.all([safe(C.from("dispatch_assignments").select("order_id,vehicle_no,driver_name,id,loading_manager_id").in("order_id",part)),
+          safe(C.from("lwb_order_pickup").select("order_id,godown_user_id").in("order_id",part))]);
+        if(r)asg.push(...r);if(p)pick.push(...p)}
+      // Only the orders the Sales Head / Admin gave to this Godown Manager; a loaded order leaves once delivered (Mohit, 18 Nov 2026).
+      const mine=new Set(asg.filter(a=>a.loading_manager_id===UID).map(a=>a.order_id).concat(pick.filter(p=>p.godown_user_id===UID).map(p=>p.order_id)));
+      const gone=await deliveredSet(all.filter(o=>st(o)==="loaded"&&mine.has(o.id)).map(o=>o.id));
+      const load=all.filter(o=>mine.has(o.id)&&!gone.has(o.id));
       const stock=await stockCheck(orders),short=stock?stock.filter(x=>x.short>0):null;
       const aOf=new Map();for(const a of asg.sort((x,y)=>String(x.id).localeCompare(String(y.id))))aOf.set(a.order_id,a);
       const toLoad=load.filter(o=>st(o)==="transport_allocated"),loading=load.filter(o=>st(o)==="loading");
@@ -564,7 +571,7 @@
           [{t:"Vehicle",v:"vehicle"},{t:"PO No.",v:"order_no"},{t:"Party",v:"customer_name"},{t:"Cases",v:"total_qty",num:true,sum:true,dec:0},{t:"Weight kg",v:"total_weight",num:true,sum:true,dec:0}],"loading-dispatch.html")),
         kpi("teal","Vehicles at godown",inside?fmt(inside.length):"—",inside&&inside.length?esc(inside.slice(0,2).map(x=>x.vehicle_no).filter(Boolean).join(" · ")):"From Godown Report","godown-report.html",inside&&lst("Vehicles at godown","Arrived / working today",inside,
           [{t:"Vehicle",v:"vehicle_no"},{t:"Status",v:"vehicle_status"},{t:"Person",v:"person_name"},{t:"Note",v:"note"}],"godown-report.html")),
-        kpi("red","Returns to receive",ret?fmt(ret.cnt):"0",ret&&num(ret.amount)?"Value "+rs(ret.amount):"From drivers","driver-returns.html"),
+        kpi("red","Returns to receive",ret?fmt(ret.cnt):"0","From drivers","driver-returns.html"),
         kpi("violet","Short stock SKUs",short?fmt(short.length):"—",short?(short.length?"Less than open orders":"All open orders covered"):"Stock not available","inventory.html",short&&lst("Short stock SKUs","Godown stock less than open orders",short,SCOLS,"inventory.html"))];
       const vm=new Map((veh||[]).map(v=>[String(v.vehicle_no||"").toUpperCase(),v])),g=new Map();
       for(const o of load){const n=vehNo(o),a=aOf.get(o.id);const x=g.get(n)||{n,driver:a&&a.driver_name||"",orders:[]};x.orders.push(o);g.set(n,x)}
