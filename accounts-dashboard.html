@@ -810,21 +810,23 @@
     }
     function hvLine(l){
       const a=Number(l.amount),sub=[];let t;
-      if(l.src==="PENDING"){t=(l.trip_no?"Trip "+l.trip_no:"1 trip")+(l.route?" · "+l.route:"")+" · ⏳";sub.push(l.remark,(l.order_nos||[]).join(", "))}
+      if(l.src==="PENDING"){t=(l.trip_no?"Trip "+l.trip_no:"1 trip")+(l.route?" · "+l.route:"")+" · ⏳";sub.push(l.remark,(l.order_nos||[]).join(", "));if(Number(l.load_kg))sub.push("Load "+(Number(l.load_kg)/1000).toFixed(2).replace(/\.?0+$/,"")+" T")}
       else if(l.src==="MONEY"){t=l.kind==="PAID"?"Rent paid":(l.head||"Expense")+" (cut)";sub.push(MODE_NAME[l.mode]||l.mode,l.ref?"ref "+l.ref:"",l.remark)}
       else if(l.kind==="MONTH"){t="Monthly rent";sub.push(l.remark)}
-      else if(l.kind==="TRIP"){t=(l.trip_no?"Trip "+l.trip_no:l.trips+" trip"+(l.trips===1?"":"s"))+(l.route?" · "+l.route:"")+(l.auto?" · Auto":"");if(l.auto&&(l.remark==="Auto · Transport Assignment"||/^Auto · Trip /.test(l.remark||"")))l={...l,remark:"From Transport Assignment"+(l.trip_no&&(l.order_nos||[]).length>1?" · "+l.order_nos.length+" PO, one rent":"")};sub.push(l.trips+" × "+rs(l.rate)+(Number(l.extra)?" + "+rs(l.extra)+" extra":""),(l.order_nos||[]).join(", "),l.remark)}
+      else if(l.kind==="TRIP"){t=(l.trip_no?"Trip "+l.trip_no:l.trips+" trip"+(l.trips===1?"":"s"))+(l.route?" · "+l.route:"")+(l.auto?" · Auto":"");if(Number(l.load_kg))sub.push("Load "+(Number(l.load_kg)/1000).toFixed(2).replace(/\.?0+$/,"")+" T");if(l.auto&&(l.remark==="Auto · Transport Assignment"||/^Auto · Trip /.test(l.remark||"")))l={...l,remark:"From Transport Assignment"+(l.trip_no&&(l.order_nos||[]).length>1?" · "+l.order_nos.length+" PO, one rent":"")};sub.push(l.trips+" × "+rs(l.rate)+(Number(l.extra)?" + "+rs(l.extra)+" extra":""),(l.order_nos||[]).join(", "),l.remark)}
       else{t=a<0?"Cut from rent":"Extra";sub.push(l.remark)}
       return {t,sub:sub.filter(Boolean).join(" · "),a};
     }
     async function hiredLedger(id){
-      let d;try{d=await rpc("lwb_hired_ledger",{p_vehicle:id,p_from:from,p_to:to})}catch(e){await ERPShell.alert(errText(e));return}
+      let d;const lp={p_vehicle:id,p_from:from,p_to:to};
+      // ledger2 (lwb_rent_rate_card_setup.sql) adds the vehicle size and the load of each trip; old one as fallback
+      try{d=await rpc("lwb_hired_ledger2",lp)}catch(e){try{d=await rpc("lwb_hired_ledger",lp)}catch(e2){await ERPShell.alert(errText(e2));return}}
       const v=d.vehicle||{},L=d.lines||[];let bal=Number(d.opening)||0;
       const sd=x=>from.slice(0,4)===to.slice(0,4)?dmy(x).slice(0,5):dmy(x);  // year is in the Dates line
       const rows=L.map(l=>{const x=hvLine(l);bal+=x.a;return {...x,l,bal}});
       const plusT=rows.filter(r=>r.a>0).reduce((s,r)=>s+r.a,0),minusT=rows.filter(r=>r.a<0).reduce((s,r)=>s-r.a,0);
       const box=sheet("🚚 "+(v.no||"Vehicle")+" · rent ledger",
-        '<div class="hv-kv"><span>Owner</span><b>'+esc(v.owner||"-")+'</b><span>Rate</span><b>'+esc(hvRate({...v,routes:(HV.find(x=>x.id===id)||{}).routes,party_rates:(HV.find(x=>x.id===id)||{}).party_rates}))+'</b>'+
+        '<div class="hv-kv"><span>Owner</span><b>'+esc(v.owner||"-")+'</b><span>Rate</span><b>'+(Number(v.size_ton)?esc(Number(v.size_ton))+" Ton · ":"")+esc(hvRate({...v,routes:(HV.find(x=>x.id===id)||{}).routes,party_rates:(HV.find(x=>x.id===id)||{}).party_rates}))+'</b>'+
           '<span>Dates</span><b>'+(from===to?dmy(from):dmy(from)+" – "+dmy(to))+'</b><span>Balance</span><b>'+(bal<-0.5?'<span class="plus">Advance '+rs(-bal)+'</span>':'<span class="minus">To pay '+rs(bal)+'</span>')+'</b></div>'+
         '<table class="acx-t acx-sl hv-led"><thead><tr><th>Date</th><th>Particulars</th><th class="n">Amount</th><th class="n">Balance</th></tr></thead><tbody>'+
         '<tr><td>'+sd(from)+'</td><td>Old balance</td><td></td><td class="n">'+rs(d.opening)+'</td></tr>'+

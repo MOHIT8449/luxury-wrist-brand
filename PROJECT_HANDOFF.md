@@ -4,6 +4,14 @@
 **Purpose:** Continue the same ERP project from a new ChatGPT conversation without restarting or losing the agreed requirements.
 **Status:** Active development / verification. Do not assume all modules are completed or fully tested.
 
+## Trip rent by vehicle size x party: rate card (18 Nov 2026)
+
+- Mohit: hired vehicle rent is not one rate for all; it depends on the vehicle size (2 / 3 / 4 / 11 ton) and the party. Before, a per party rate was kept per vehicle + party, so each new vehicle needed every party's rate again. Mohit OK'd the plan without answering two points; built with: rent = size x party (load only shown), many parties in one trip = highest rate (no extra per drop yet).
+- SQL `lwb_rent_rate_card_setup.sql` (test `tests/rent-rate-card`, PGlite, 3 tests): `lwb_vehicles.size_ton`; `lwb_hired_party_rates.from_card` (BEFORE trigger: any rate not written by the card = the vehicle's own rate); table `lwb_hired_rate_card` (size_ton + party_key, WAITING / VERIFIED / SENT_BACK). `lwb_rate_card_set(size, party, rate, note)` (Manager -> WAITING + HIRED_RATE_VERIFY bell, Admin -> VERIFIED), `lwb_rate_card_verify(id, ok, rate, note)`; `lwb_rate_card_apply(card, vehicle)` copies VERIFIED card rates into every active PARTY hired vehicle of that size (not over a vehicle's own VERIFIED rate) and posts the waiting trips (`lwb_hired_post_pending`). Triggers: vehicle size change (old card copies go) and vehicle put on PARTY rent. `lwb_hired_rate_list2` (+ size, load_kg, card per group, card list, sizes) and `lwb_hired_ledger2` (+ vehicle size, load_kg per line from `orders.total_weight`).
+- UI: `fleet-master.html` Vehicle popup "Size (for trip rent)", size tag in the list; Trip rent to set: Rate card grid (party x size, tap a cell to edit, add row), Rate needed cards show size + load and save into the card when the vehicle has a size (else the old per vehicle rate), Waiting for Admin has card rates (Verify / Send back), "Special rates · one vehicle only". `accounts-dashboard.html` hired ledger uses ledger2 (fallback ledger): size in the header, "Load x T" on trip lines.
+- Live sizes are empty until set in Vehicle Master; the card applies only to vehicles with a size and Ownership Hired · Per party.
+- Checked with a mocked database at 1366 / 390 px: no page side scroll, no JS errors. Screenshots: project files `third-party-drivers/rate-card/`.
+
 ## Third-party drivers in Employee Master (18 Nov 2026)
 
 - Mohit: Umesh Pawar (LWB0146) and Kuldip Kumar (LWB0147) are drivers of third-party transport, added as employees by mistake. They must not get salary / advance; their rent comes from the trips in the system.
