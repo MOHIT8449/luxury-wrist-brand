@@ -1245,14 +1245,6 @@
     @media(max-width:560px){.po-dtype .dt-long{display:none}.po-dtype button{font-size:12.5px}}
     #reviewModal .po-note-field{grid-column:1/-1}
     .po-opt{font-weight:400;color:#6b7785}
-    .po-field-info .po-free{color:#13824a;font-weight:700}
-    .po-field-info details{display:inline}
-    .po-field-info summary{display:inline;cursor:pointer;color:#9a6a1c;font-weight:600;list-style:none}
-    .po-field-info summary::-webkit-details-marker{display:none}
-    .po-field-info summary::after{content:" ▾";font-weight:400;color:#8a97a5}
-    .po-field-info details[open] summary::after{content:" ▴"}
-    .po-field-info details[open] .po-trip-list{display:block;margin-top:2px;color:#6b7785;font-size:11px;line-height:1.4;overflow-wrap:anywhere}
-    .po-trip-list{display:none}
     #reviewModal .modal-footer{gap:6px;padding:8px 10px calc(8px + env(safe-area-inset-bottom))}
     #reviewModal .modal-footer .btn{padding:8px 10px;min-height:40px;font-size:12px;line-height:1.2}
     @media(max-width:760px){
@@ -4730,14 +4722,12 @@ function rebuildPoDirectory(){
   const driverSeen=new Set(),erpDriverPhones=new Set(),vehicleSeen=new Set();
   poSavedDrivers=[];poSavedVehicles=[];
   // Employee Master drivers / Vehicle Master come first; one driver per mobile number.
-  // Short trip line (Mohit, 18 Nov 2026): "On trip · 21 POs", the PO numbers only when opened.
-  const trip=x=>x.on_trip&&x.on_trip.length?"On trip · "+x.on_trip.length+" PO"+(x.on_trip.length>1?"s":""):"Free";
   for(const d of poMasterDrivers){
     const phone=poNormalPhone(d.mobile);
     if(!d.driver_name||!(/^[6-9]\d{9}$/.test(phone))||erpDriverPhones.has(phone))continue;
     driverSeen.add(String(d.driver_name).trim().toLowerCase()+"|"+phone);
     erpDriverPhones.add(phone);
-    poSavedDrivers.push({name:String(d.driver_name).trim(),mobile:phone,phone,source:(d.emp_code?d.emp_code+" · ":"")+trip(d),
+    poSavedDrivers.push({name:String(d.driver_name).trim(),mobile:phone,phone,source:d.emp_code||"Employee Master",
       code:d.emp_code||"",trips:d.on_trip||[],src:"master",
       vehicle:d.vehicle_no||"",transporter:String(d.transporter_name||"").trim()});
   }
@@ -4748,7 +4738,7 @@ function rebuildPoDirectory(){
     poSavedVehicles.push({vehicle:v.vehicle_no,transporter:String(v.transporter_name||"").trim(),own:String(v.ownership||"OWN").toUpperCase(),
       trips:v.on_trip||[],hasTrip:"on_trip" in v,
       spec:[v.vehicle_type,v.capacity_kg!=null?v.capacity_kg+" KG":"",v.transporter_name].filter(Boolean).join(" · "),
-      detail:["on_trip" in v?trip(v):"",v.vehicle_type,v.capacity_kg!=null?v.capacity_kg+" KG":"",v.transporter_name].filter(Boolean).join(" · ")});
+      detail:[v.vehicle_type,v.capacity_kg!=null?v.capacity_kg+" KG":"",v.transporter_name].filter(Boolean).join(" · ")});
   }
   // Active ERP driver logins FIRST. They need no previous dispatch history.
   for(const p of poActiveErpDrivers){
@@ -4852,7 +4842,7 @@ async function loadGodownManagers(){
   const sel=document.getElementById("poLoadingManager"),txt=document.getElementById("poLoadingPerson");
   sel.hidden=!poGodownManagers;txt.hidden=!!poGodownManagers;
   if(!poGodownManagers)return;
-  const opts=poGodownManagers.map(m=>new Option(m.full_name+(m.mobile?" · "+m.mobile:""),m.user_id));
+  const opts=poGodownManagers.map(m=>new Option(m.full_name,m.user_id));
   // Self: Sales Head / Admin sometimes load the vehicle themselves (16 Nov 2026).
   const me=poSelfLoader();
   if(me&&!poGodownManagers.some(m=>m.user_id===me.id))opts.unshift(new Option("Self",me.id));
@@ -4930,18 +4920,8 @@ function showPoFieldInfo(){
   if(plate&&v&&v.hasTrip)poTripInfo(vInfo,[v.spec],v.trips,true);
   else vInfo.textContent=plate?(v?(v.detail||v.transporter||""):poDType==="OWN"?"Not in Vehicle Master":"Outside vehicle"):"";
 }
-// "📞 mobile · LWB0145 · On trip · 21 POs ▾": the PO numbers open on a tap, so the popup stays short.
-function poTripInfo(el,parts,trips,showFree){
-  el.replaceChildren();
-  const head=parts.filter(Boolean).join(" · ");
-  if(head)el.append(head+" · ");
-  if(trips&&trips.length){
-    const det=document.createElement("details"),sum=document.createElement("summary"),list=document.createElement("span");
-    sum.textContent="🚚 On trip · "+trips.length+" PO"+(trips.length>1?"s":"");
-    list.className="po-trip-list";list.textContent=trips.join(", ");
-    det.append(sum,list);el.append(det);
-  }else if(showFree){const f=document.createElement("span");f.className="po-free";f.textContent="✅ Free";el.append(f);}
-}
+// Line under Driver / Vehicle: mobile, Employee ID / type, KG only. No "On trip" line (Mohit, 18 Nov 2026).
+function poTripInfo(el,parts){el.textContent=parts.filter(Boolean).join(" · ");}
 function showPoPicker(input,kind){
   if(input.disabled||document.getElementById("postApprovalPanel").hidden)return;
   closePoPicker();
