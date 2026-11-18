@@ -157,7 +157,8 @@ Verify: All OK, or damage / leakage / breakage / gasless / shortage lines (SKU �
         if(el("to").value)q=q.lte("received_date",el("to").value);
         const [h,s]=await Promise.all([q,client.from("sku_master").select("*")]);
         if(h.error)throw h.error;
-        bills=ERPRecent.sort(h.data||[]);skuName=new Map((s.data||[]).map(x=>[String(x.id),x]));items=new Map();
+        // Godown Manager: only the purchase vehicles given to him (Mohit, 18 Nov 2026).
+        bills=ERPRecent.sort(h.data||[]).filter(b=>me.role!=="warehouse"||b.godown_user_id===me.id||b.created_by===me.id);skuName=new Map((s.data||[]).map(x=>[String(x.id),x]));items=new Map();
         // A bill opened from a task (?bill=) is shown even when it is older than the dates.
         const want=new URLSearchParams(location.search).get("bill")||new URLSearchParams(location.search).get("report");
         if(want&&!bills.some(b=>b.id===want)){const x=await client.from("lwb_goods_inward").select("*").eq("id",want).maybeSingle();if(x.data)bills.unshift(x.data)}
@@ -278,7 +279,7 @@ Verify: All OK, or damage / leakage / breakage / gasless / shortage lines (SKU �
       await ERPDocs.open({client,entity:"PURCHASE_BILL",id:b.id,title:"Bill PDF · "+b.invoice_no+" · "+b.supplier_name,slots:["BILL"],download:"Bill-"+String(b.invoice_no||"").replace(/[^A-Za-z0-9-]/g,"")});
       docSum=await ERPDocs.summary(client,"PURCHASE_BILL")||docSum;render()}
     async function openDocs(id){const b=bills.find(x=>x.id===id);if(!b)return;
-      await ERPDocs.open({client,entity:"PURCHASE_BILL",id:b.id,title:(can.billDoc?"Bill ":"Damage photos · ")+b.invoice_no+" · "+b.supplier_name,slots:can.billDoc?["BILL","DAMAGE"]:["DAMAGE"]});
+      await ERPDocs.open({client,entity:"PURCHASE_BILL",id:b.id,title:(can.billDoc?"Bill ":"Vehicle & damage photos · ")+b.invoice_no+" · "+b.supplier_name,slots:can.billDoc?["BILL","VEHICLE","DAMAGE"]:["VEHICLE","DAMAGE"]});
       docSum=await ERPDocs.summary(client,"PURCHASE_BILL")||docSum;await loadTasks()}
     // Edit / delete an old purchase bill (Admin). The server checks the stock rows of the bill first.
     const missingSql=e=>/function|schema cache/i.test((e&&e.message)||"");

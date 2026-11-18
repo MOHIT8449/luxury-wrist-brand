@@ -4,6 +4,13 @@
 **Purpose:** Continue the same ERP project from a new ChatGPT conversation without restarting or losing the agreed requirements.
 **Status:** Active development / verification. Do not assume all modules are completed or fully tested.
 
+## Godown Manager scope (18 Nov 2026)
+- Godown (warehouse) login: no PO / Sales, Quick Slip, Sales Return, Tax Invoice, Goods Inward, Vehicle / Employee Master, Fixed Assets (menu + `GM_OFF` redirect in erp-shell.js). Returns (from drivers) kept.
+- Sees only orders assigned to them (dispatch_assignments.loading_manager_id or lwb_order_pickup.godown_user_id); delivered orders drop off. Scoping is in the UI + lwb_my_verify_queue, not RLS on orders.
+- Tasks: lwb_task_visible = assignee, giver, Admin, Sales Head. Old-task popup off (`TASK_POPUP=false` in dashboard.html).
+- Purchase: PURCHASE_ARRIVED popup + photo task only to the GM chosen on the bill (none chosen = nobody). GM sees only those bills in Purchase List, photo slots VEHICLE + DAMAGE.
+- Loading: "Loaded from" (Shutter A-D / Main Entry Gate / Other) required -> dispatch_assignments.loaded_from; vehicle photo (LOADED) always required; Self Pickup orders let GM enter vehicle no, driver, mobile. SQL: lwb_godown_manager_scope_setup.sql.
+
 ## Vehicle Time In / Out optional (18 Nov 2026)
 - Mohit: Time In / Time Out on the purchase vehicle check is optional, not mandatory. `purchase-damage.js`: labels say "(optional)"; Submit works with both empty ("Vehicle time not entered" in the confirm, no time call, times already saved stay); Time Out alone is refused ("Enter Time In too").
 - SQL `lwb_purchase_time_optional_setup.sql` (after `lwb_purchase_damage_report_setup.sql`; test in `tests/purchase-damage`, now 7): `lwb_purchase_vehicle_time` returns without change when both are empty; Out without In refused; other checks as before.

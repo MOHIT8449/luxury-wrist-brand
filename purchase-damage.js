@@ -146,7 +146,7 @@
       '<div class="pd-pick"><button type="button" class="ok" data-m="ok">✓ All OK</button><button type="button" class="bad" data-m="dmg">⚠ Damage / Gasless</button></div>'+
       '<div class="pd-time"><label><span>Time In <small class="pd-opt">(optional)</small></span><input type="time" class="tin"></label><button type="button" data-now="tin">Now</button><label><span>Time Out <small class="pd-opt">(optional)</small></span><input type="time" class="tout"></label><button type="button" data-now="tout">Now</button><span class="pd-dur"></span></div>'+
       '<div class="pd-dmg" hidden><div class="pd-hd"><span>SKU</span><span>Type</span><span>IC / CS</span><span>PCS</span><span></span></div><div class="pd-lines"></div><button type="button" class="pd-add" data-a="add">+ Add line</button><div class="pd-err" hidden></div>'+
-      '<div class="pd-lab">Photos / videos of damaged / gasless cases</div><div class="pd-photos"></div></div>'+
+      '<div class="pd-lab">Photos: vehicle (number plate) and damaged / gasless cases</div><div class="pd-photos"></div></div>'+
       '<div class="pd-lab">Note</div><input class="pd-note" maxlength="300" placeholder="e.g. 2 cases wet near the door">'+
       '<div class="pd-foot"><button type="button" class="go" data-a="save" disabled>Submit</button><button type="button" data-a="close">Later</button></div>');
     const $=s=>back.querySelector(s);
@@ -157,7 +157,7 @@
     const showDur=()=>{const [a,b]=times();$('.pd-dur').textContent=a&&b?'⏱ '+durTxt(a,b):''};
     back.querySelectorAll('.pd-time input').forEach(i=>i.addEventListener('input',showDur));showDur();
     let docs=null;
-    if(await needDocs()){docs=ERPDocs.panel({client,mount:$('.pd-photos'),entity:'PURCHASE_BILL',id:o.id,slots:['DAMAGE']})}else $('.pd-photos').textContent='Photos: not available on this page.';
+    if(await needDocs()){docs=ERPDocs.panel({client,mount:$('.pd-photos'),entity:'PURCHASE_BILL',id:o.id,slots:['VEHICLE','DAMAGE']})}else $('.pd-photos').textContent='Photos: not available on this page.';
     const skuOpts=v=>'<option value="">Choose SKU</option>'+d.skus.map(s=>'<option value="'+esc(s.id)+'"'+(s.id===v?' selected':'')+'>'+esc(s.name)+' ('+qtyTxt(s.cs,s.pc,s.unit)+')</option>').join('');
     function readLines(){back.querySelectorAll('.pd-line').forEach((r,i)=>{const L=lines[i];if(!L)return;L.sku=r.querySelector('.sku').value;L.issue=r.querySelector('.ty').value;L.cs=r.querySelector('.cs').value;L.pc=r.querySelector('.pc').value})}
     function drawLines(){
@@ -245,7 +245,7 @@
       (ck&&ck.note?'<div class="pd-meta"><b>Note:</b> '+esc(ck.note)+'</div>':'')+
       '<div class="pd-lab">Photos</div><div class="pd-photos"></div>'+
       '<div class="pd-foot">'+(canEdit?'<button type="button" class="go" data-a="edit">'+(ck?'✏ Change':'Check now')+'</button>':'')+(ck&&ck.has_damage&&['admin','manager'].includes(o.role)?'<button type="button" data-a="claim">Claims →</button>':'')+'<button type="button" data-a="close">Close</button></div>');
-    if(await needDocs())ERPDocs.panel({client,mount:back.querySelector('.pd-photos'),entity:'PURCHASE_BILL',id:o.id,slots:['DAMAGE'],canEdit:false});
+    if(await needDocs())ERPDocs.panel({client,mount:back.querySelector('.pd-photos'),entity:'PURCHASE_BILL',id:o.id,slots:['VEHICLE','DAMAGE'],canEdit:false});
     back.addEventListener('click',e=>{
       if(e.target===back)return back.remove();
       const b=e.target.closest('button');if(!b||b.closest('.ed-root'))return;
