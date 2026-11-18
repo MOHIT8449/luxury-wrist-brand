@@ -29,7 +29,7 @@
   const isVid=d=>/^video\//.test(d.mime||(d.prep&&d.prep.mime)||'');
   // Record types whose required slots are enforced. Mohit (31 Oct 2026): everything optional for now,
   // made compulsory one by one later: add e.g. STAFF:1, DRIVER:1, USER:1, ASSET:1, STOCK_MOVE:1 here.
-  const STRICT={};
+  const STRICT={ORDER:1}; // ORDER: loaded vehicle photo is required at every loading (Mohit, 18 Nov 2026)
   const PHOTO={k:'PHOTO',l:'Photo',img:1,cam:'user',max:1};
   const S={ // slots per record type; req = must be there before Save
     STAFF:[{...PHOTO,l:'Employee photo',req:1},{k:'AADHAAR',l:'Aadhaar card (front + back)',req:1,max:4},{k:'DL',l:'Driving licence (drivers)',max:4},{k:'BANK',l:'Bank passbook / cheque',max:2},{k:'PAN',l:'PAN card',max:2},{k:'OTHER',l:'Other document',max:6}],
@@ -41,7 +41,7 @@
     PURCHASE_BILL:[{k:'BILL',l:'Purchase bill',s:'Bill',u:'⬆ Upload document',doc:1,max:10,want:1},{k:'DAMAGE',l:'Damage / gasless photos & videos',s:'Damage photos / videos',u:'⬆ Upload photo / video',img:1,vid:1,cam:'environment',max:10},{k:'VEHICLE',l:'Vehicle photo (number plate visible)',s:'Vehicle photo',u:'⬆ Upload photo',img:1,cam:'environment',max:4},{k:'OTHER',l:'LR / other',max:6}],
     ASSET:[{k:'PHOTO',l:'Asset photo',img:1,cam:'environment',req:1,max:6},{k:'BILL',l:'Purchase bill (PDF / scan / photo)',doc:1,max:6},{k:'WARRANTY',l:'Warranty card',max:4},{k:'OTHER',l:'Other document',max:6}],
     STOCK_MOVE:[{k:'DAMAGE',l:'Damage / leakage / breakage photos',img:1,cam:'environment',req:1,max:6}],
-    ORDER:[{k:'LOADED',l:'Loaded vehicle photo',img:1,cam:'environment',max:4},{k:'DAMAGE',l:'Damage / leakage / breakage at loading',img:1,cam:'environment',max:6}],
+    ORDER:[{k:'LOADED',l:'Loaded vehicle photo (number plate)',req:1,img:1,cam:'environment',max:4},{k:'DAMAGE',l:'Damage / leakage / breakage at loading',img:1,cam:'environment',max:6}],
     // Company documents (documents.html): one record = one document; SHARE = watermarked copies, made by the share popup.
     COMPANY:[{k:'FILE',l:'Document file (PDF / scan / photo, front + back)',doc:1,max:10}]
   };

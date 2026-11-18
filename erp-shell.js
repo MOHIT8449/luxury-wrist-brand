@@ -378,6 +378,8 @@
     if(blocked(role,page,hiddenPages()))return {menu:[]};
     // Godown Manager: loading, stock, returns and purchase photos only (Mohit, 18 Nov 2026). Sales pages
     // (PO / Sales list, slips, sales return, tax invoice) and Masters do not open, unless Admin ticked the page.
+    // Godown Manager works only on what is assigned: no brand (company) chips, no brand filter.
+    if(role==="warehouse"){try{localStorage.removeItem("lwbBrand")}catch(e){}if(!document.getElementById("gmNoBrand")){const st=document.createElement("style");st.id="gmNoBrand";st.textContent=".lwb-brands{display:none!important}";document.head.appendChild(st)}}
     if(role==="warehouse"&&GM_OFF.includes(page)&&!extraPages().some(h=>h.split("#")[0]===page)){location.replace("dashboard.html");return {menu:[]}}
     let groups=menuForMe(role);
     let current=null,currentGroup="";

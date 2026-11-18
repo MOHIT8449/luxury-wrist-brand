@@ -543,51 +543,50 @@
       return qa+shell(k,[where,rets,ost],[night,cheques,brandCard(ov)]);
     },
 
-    /* ===== Godown Manager: loading, vehicles, stock, returns ===== */
+    /* ===== Godown Manager: only the orders the Sales Head / Admin gave to this login (Mohit, 18 Nov 2026) ===== */
     async warehouse(){
       const t=today();
-      const [orders,veh,gr,tr,vq]=await Promise.all([loadOrders(),safe(C.from("lwb_vehicles").select("vehicle_no,vehicle_type,capacity_kg")),
-        safe(C.from("lwb_godown_reports").select("*").eq("report_date",t).order("created_at",{ascending:false})),safe(C.from("lwb_stock_transit").select("sku_name,cases,status").eq("status","OPEN")),verifyQueue()]);
+      const [orders,gr,vq]=await Promise.all([loadOrders(),
+        safe(C.from("lwb_godown_reports").select("*").eq("report_date",t).order("created_at",{ascending:false})),verifyQueue()]);
       const O=orders||[],all=O.filter(o=>["transport_allocated","loading","loaded"].includes(st(o)));
       const ids=all.map(o=>o.id),asg=[],pick=[];
       for(let i=0;i<ids.length;i+=100){const part=ids.slice(i,i+100);
         const [r,p]=await Promise.all([safe(C.from("dispatch_assignments").select("order_id,vehicle_no,driver_name,id,loading_manager_id").in("order_id",part)),
-          safe(C.from("lwb_order_pickup").select("order_id,godown_user_id").in("order_id",part))]);
+          safe(C.from("lwb_order_pickup").select("order_id,godown_user_id,vehicle_no,driver_name").in("order_id",part))]);
         if(r)asg.push(...r);if(p)pick.push(...p)}
-      // Only the orders the Sales Head / Admin gave to this Godown Manager; a loaded order leaves once delivered (Mohit, 18 Nov 2026).
       const mine=new Set(asg.filter(a=>a.loading_manager_id===UID).map(a=>a.order_id).concat(pick.filter(p=>p.godown_user_id===UID).map(p=>p.order_id)));
       const gone=await deliveredSet(all.filter(o=>st(o)==="loaded"&&mine.has(o.id)).map(o=>o.id));
       const load=all.filter(o=>mine.has(o.id)&&!gone.has(o.id));
-      const stock=await stockCheck(orders),short=stock?stock.filter(x=>x.short>0):null;
       const aOf=new Map();for(const a of asg.sort((x,y)=>String(x.id).localeCompare(String(y.id))))aOf.set(a.order_id,a);
-      const toLoad=load.filter(o=>st(o)==="transport_allocated"),loading=load.filter(o=>st(o)==="loading");
-      const vehNo=o=>{const a=aOf.get(o.id);return a&&a.vehicle_no?String(a.vehicle_no).toUpperCase():"No vehicle"};
-      const inside=gr?gr.filter(x=>x.kind==="VEHICLE"&&["ARRIVED","WORKING"].includes(x.vehicle_status)):null;
-      const ret=queueItem(vq,"RETURN_RECEIVE"),loadingVeh=[...new Set(loading.map(vehNo))];
+      const pOf=new Map(pick.map(p=>[p.order_id,p]));
+      const veh=o=>{const a=aOf.get(o.id)||{},p=pOf.get(o.id)||{};return String(a.vehicle_no||p.vehicle_no||"").toUpperCase()||"No vehicle"};
+      const drv=o=>{const a=aOf.get(o.id)||{},p=pOf.get(o.id)||{};return a.driver_name||p.driver_name||""};
+      const pend=load.filter(o=>st(o)!=="loaded"),done=load.filter(o=>st(o)==="loaded");
+      // Approved cases still to load, order-wise and SKU-wise.
+      const it=pend.length?await itemsOf(pend.map(o=>o.id),"order_id,sku_name,ordered_qty,approved_qty"):[];
+      const cs=x=>num(x.approved_qty??x.ordered_qty),byO=new Map(),byS=new Map();
+      for(const x of it||[]){byO.set(x.order_id,(byO.get(x.order_id)||0)+cs(x));const k=key(x.sku_name),y=byS.get(k)||{sku:x.sku_name,cases:0,orders:new Set()};y.cases+=cs(x);y.orders.add(x.order_id);byS.set(k,y)}
+      const qOf=o=>it?byO.get(o.id)||0:num(o.total_qty),pendQ=pend.reduce((n,o)=>n+qOf(o),0);
+      const rows=pend.map(o=>({...o,vehicle:veh(o),driver:drv(o),cases:qOf(o)}));
+      const ret=queueItem(vq,"RETURN_RECEIVE");
+      const OC=[{t:"Party",v:"customer_name"},{t:"Date",v:"order_date",date:true},{t:"Vehicle",v:"vehicle"},{t:"Driver",v:"driver"},{t:"Cases",v:"cases",num:true,sum:true,dec:0}];
       const k=[
-        kpi("amber","To load today",fmt(toLoad.length)+" order"+(toLoad.length==1?"":"s"),fmt(sum(toLoad,o=>o.total_qty))+" "+qWord()+" · "+fmt(sum(toLoad,o=>o.total_weight))+" kg","loading-dispatch.html",orders&&lst("To load","Driver assigned, waiting for loading",toLoad.map(o=>({...o,vehicle:vehNo(o)})),
-          [{t:"PO No.",v:"order_no"},{t:"Party",v:"customer_name"},{t:"Vehicle",v:"vehicle"},{t:"Cases",v:"total_qty",num:true,sum:true,dec:0},{t:"Weight kg",v:"total_weight",num:true,sum:true,dec:0}],"loading-dispatch.html")),
-        kpi("blue","Loading now",fmt(loadingVeh.length)+" vehicle"+(loadingVeh.length==1?"":"s"),esc(loadingVeh.slice(0,3).join(" · "))||"No vehicle loading","loading-dispatch.html",orders&&lst("Loading now","Orders on the vehicle now",loading.map(o=>({...o,vehicle:vehNo(o)})),
-          [{t:"Vehicle",v:"vehicle"},{t:"PO No.",v:"order_no"},{t:"Party",v:"customer_name"},{t:"Cases",v:"total_qty",num:true,sum:true,dec:0},{t:"Weight kg",v:"total_weight",num:true,sum:true,dec:0}],"loading-dispatch.html")),
-        kpi("teal","Vehicles at godown",inside?fmt(inside.length):"—",inside&&inside.length?esc(inside.slice(0,2).map(x=>x.vehicle_no).filter(Boolean).join(" · ")):"From Godown Report","godown-report.html",inside&&lst("Vehicles at godown","Arrived / working today",inside,
-          [{t:"Vehicle",v:"vehicle_no"},{t:"Status",v:"vehicle_status"},{t:"Person",v:"person_name"},{t:"Note",v:"note"}],"godown-report.html")),
-        kpi("red","Returns to receive",ret?fmt(ret.cnt):"0","From drivers","driver-returns.html"),
-        kpi("violet","Short stock SKUs",short?fmt(short.length):"—",short?(short.length?"Less than open orders":"All open orders covered"):"Stock not available","inventory.html",short&&lst("Short stock SKUs","Godown stock less than open orders",short,SCOLS,"inventory.html"))];
-      const vm=new Map((veh||[]).map(v=>[String(v.vehicle_no||"").toUpperCase(),v])),g=new Map();
-      for(const o of load){const n=vehNo(o),a=aOf.get(o.id);const x=g.get(n)||{n,driver:a&&a.driver_name||"",orders:[]};x.orders.push(o);g.set(n,x)}
-      const vs=[...g.values()].map(x=>{const s=x.orders.map(st),state=s.includes("loading")?"Loading":s.every(v=>v==="loaded")?"Loaded":"Waiting";return {...x,state,cases:sum(x.orders,o=>o.total_qty),kg:sum(x.orders,o=>o.total_weight),cap:num((vm.get(x.n)||{}).capacity_kg),type:(vm.get(x.n)||{}).vehicle_type||""}})
-        .sort((a,b)=>({Loading:0,Waiting:1,Loaded:2})[a.state]-({Loading:0,Waiting:1,Loaded:2})[b.state]);
-      const queue=orders?card("🚛 Loading queue — vehicle wise",go("loading-dispatch.html","Loading & Dispatch →"),vs.length?'<div class="rd-bd"><div class="rd-vehs">'+vs.slice(0,10).map(v=>{const p=v.cap?pct(v.kg,v.cap):null;
-        return '<div class="rd-veh"><div class="h"><b>'+esc(v.n)+"</b>"+badge(v.state==="Loading"?"a":v.state==="Loaded"?"g":"r",v.state)+"</div><small>"+esc([v.driver,v.type].filter(Boolean).join(" · ")||"—")+" · "+v.orders.length+" PO"+(v.orders.length==1?"":"s")+"</small>"+
-          (p!=null?bar(p,p>100?"red":p>85?"amb":"blu")+"<small>"+fmt(v.kg)+" / "+fmt(v.cap)+" kg filled ("+p+"%) · "+fmt(v.cases)+" cs</small>":"<small>"+fmt(v.cases)+" cs · "+fmt(v.kg)+" kg</small>")+"</div>"}).join("")+"</div></div>":'<div class="rd-empty">No vehicle to load right now.</div>'):"";
-      const sc=stock?card("📦 Stock check for open orders",go("inventory.html","Inventory →"),stock.length?'<div class="rd-scroll"><table><thead><tr><th>SKU</th><th class="n">In godown</th><th class="n">Ordered</th><th class="n">Status</th></tr></thead><tbody>'+
-        stock.slice(0,8).map(x=>"<tr><td>"+esc(x.sku)+'</td><td class="n">'+fmt(x.have)+" "+uOf(x.sku)+'</td><td class="n">'+fmt(x.need)+" "+uOf(x.sku)+'</td><td class="n">'+(x.short?badge("r","Short "+fmt(x.short)):x.have-x.need<x.need*0.2?badge("a","Low after"):badge("g","OK"))+(x.transit?" "+badge("b","+"+fmt(x.transit)+" coming"):"")+"</td></tr>").join("")+"</tbody></table></div>":'<div class="rd-empty">No approved order waiting.</div>',"Ordered = approved, not yet loaded orders."):"";
-      const trans=tr&&tr.length?card("🚚 Goods coming (in transit)",go("stock-transit.html","Stock in Transit →"),'<div class="rd-bd">'+fmt(tr.length)+" line"+(tr.length==1?"":"s")+" · "+fmt(sum(tr,x=>x.cases))+" cases on the way</div>"):"";
+        kpi("amber","Pending orders",fmt(pend.length),pend.length?"Assigned to me for loading":"Nothing assigned","loading-dispatch.html",orders&&lst("Pending orders","Assigned to me, not loaded yet",rows,OC,"loading-dispatch.html")),
+        kpi("blue","Pending loading qty",fmt(pendQ)+" "+qWord(),fmt(byS.size)+" SKU"+(byS.size==1?"":"s")+" · approved qty","loading-dispatch.html"),
+        kpi("teal","Loaded, on the way",fmt(done.length),"Leaves after delivery","loading-dispatch.html"),
+        kpi("red","Returns to receive",ret?fmt(ret.cnt):"0","From drivers","driver-returns.html")];
+      const SB={transport_allocated:["r","To load"],loading:["a","Loading"]};
+      const my=orders?card("🚛 My orders to load",go("loading-dispatch.html","Loading & Dispatch →"),rows.length?'<div class="rd-scroll"><table><thead><tr><th>Party</th><th class="hide-sm">Date</th><th>Vehicle / Driver</th><th class="n">Cases</th><th></th></tr></thead><tbody>'+
+        rows.slice(0,30).map(o=>{const b=SB[st(o)]||["r","To load"];return '<tr class="rd-click" onclick="location.href=\'loading-dispatch.html?order='+encodeURIComponent(o.id)+'\'"><td><b>'+esc(o.customer_name||"—")+"</b><br><small>"+esc(o.order_no||"")+'<span class="show-sm"> · '+esc(dmy(o.order_date))+'</span></small></td><td class="hide-sm">'+esc(dmy(o.order_date))+"</td><td>"+esc(o.vehicle)+"<br><small>"+esc(o.driver||"—")+'</small></td><td class="n"><b>'+fmt(o.cases)+'</b></td><td>'+badge(b[0],b[1])+"</td></tr>"}).join("")+
+        "</tbody></table></div>":'<div class="rd-empty">No order assigned to you right now.</div>',"Only orders the Sales Head / Admin gave you. Tap an order to load it."):"";
+      const sk=[...byS.values()].sort((a,b)=>b.cases-a.cases);
+      const skc=pend.length&&it?card("📦 Pending loading qty — SKU wise",go("loading-dispatch.html","Load →"),'<div class="rd-scroll"><table><thead><tr><th>SKU</th><th class="n">Orders</th><th class="n">Approved qty</th></tr></thead><tbody>'+
+        sk.map(x=>"<tr><td>"+esc(x.sku)+'</td><td class="n">'+x.orders.size+'</td><td class="n"><b>'+fmt(x.cases)+" "+uOf(x.sku)+"</b></td></tr>").join("")+'</tbody><tfoot><tr><td>Total</td><td></td><td class="n"><b>'+fmt(pendQ)+"</b></td></tr></tfoot></table></div>"):"";
       const KIND={VEHICLE:["blu","Vehicle"],DAMAGE:["red","Damage"],ABSENT:["amb","Staff absent"],ISSUE:["amb","Issue"]};
       const rep=gr?card("📝 Godown report — today",go("godown-report.html","Godown Report →"),(gr.length?gr.slice(0,5).map(x=>{const k2=KIND[x.kind]||["blu",x.kind];
-        return dot(k2[0],"<b>"+k2[1]+":</b> "+esc([x.vehicle_no,x.sku_name,x.cases?x.cases+" cs":"",x.pcs?x.pcs+" pcs":"",x.person_name,x.note].filter(Boolean).join(" · ")||"—")+(x.review_status&&x.review_status!=="OPEN"?" "+badge("g",esc(String(x.review_status).replace(/_/g," ").toLowerCase())):""))}).join(""):'<div class="rd-empty">No report today.</div>')+
+        return dot(k2[0],"<b>"+k2[1]+":</b> "+esc([x.vehicle_no,x.sku_name,x.cases?x.cases+" cs":"",x.pcs?x.pcs+" pcs":"",x.person_name,x.note].filter(Boolean).join(" · ")||"—"))}).join(""):'<div class="rd-empty">No report today.</div>')+
         (can("godown-report.html")?'<div class="rd-bd rd-line"><a class="rd-btn" href="godown-report.html">+ New report</a></div>':"")):"";
-      return shell(k,[queue,sc],[trans,rep]);
+      return shell(k,[my],[skc,rep]);
     },
 
     /* ===== Salesman: plan, target, my orders (phone first) ===== */
