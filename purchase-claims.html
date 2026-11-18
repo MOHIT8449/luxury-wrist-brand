@@ -67,7 +67,7 @@
 <body>
   <div id="loading" class="status">Checking account access...</div>
   <main id="page" class="erp-main" hidden>
-    <div class="erp-pagehead"><h1>Purchase Claims<button type="button" class="erp-i" aria-label="Info" title="Info" data-tip="Damage, leakage and shortage from purchase vehicles. Enter it in Goods Inward when you submit the bill, or later in Purchase Register → Verify. Chain: mail to company → company approval → return goods (if asked) → claim amount received. Live stock is not changed here.">i</button></h1></div>
+    <div class="erp-pagehead"><h1>Purchase Claims<button type="button" class="erp-i" aria-label="Info" title="Info" data-tip="Damage / leakage / breakage, gasless and shortage from purchase vehicles. Enter it in Goods Inward when you submit the bill, or later in Purchase Register → Verify. Chain: mail to company → company approval → return goods (if asked) → claim amount received. Live stock is not changed here.">i</button></h1></div>
     <div id="err" class="pc-err" hidden></div>
     <div class="pc-kpis" id="kpis"></div>
     <div class="erp-pills" id="tabs">
@@ -94,7 +94,8 @@
     const fmt=v=>num(v).toLocaleString("en-IN",{maximumFractionDigits:1});
     const dmy=(d,sep="/")=>d?String(d).slice(8,10)+sep+String(d).slice(5,7)+sep+String(d).slice(0,4):"—";
     const today=()=>new Date().toLocaleDateString("en-CA",{timeZone:"Asia/Kolkata"});
-    const ISSUE={DAMAGE:"Damage / Breakage",LEAKAGE:"Leakage",SHORTAGE:"Shortage"};
+    // Damage / Leakage / Breakage is one type; old LEAKAGE lines are counted in it. Gasless is separate (18 Nov 2026).
+    const ISSUE={DAMAGE:"Damage / Leakage / Breakage",LEAKAGE:"Leakage",GASLESS:"Gasless",SHORTAGE:"Shortage"};
     // Where a claim is in the chain.
     const STAGE={mail:"Mail not sent",approval:"Awaiting company approval",return:"Return goods pending",due:"Claim amount due",RECEIVED:"Amount received",REJECTED:"Rejected"};
     const stage=ch=>ch.claim_status==="PENDING"?"mail":ch.claim_status==="SENT"?"approval":ch.claim_status==="APPROVED"?(ch.return_required&&!ch.returned_on?"return":"due"):ch.claim_status;
@@ -141,8 +142,8 @@
       allClaims=claims;pickBrand();
     }
     function tot(ch){
-      const t={DAMAGE:[0,0],LEAKAGE:[0,0],SHORTAGE:[0,0],cases:0,list:[],u:""};
-      for(const i of ch.lwb_purchase_check_items||[]){const per=Math.max(1,i.pcs_per_case),u=U(i.sku_name);t[i.issue][0]+=i.cases;t[i.issue][1]+=i.pcs;t.cases+=i.cases+i.pcs/per;
+      const t={DAMAGE:[0,0],GASLESS:[0,0],SHORTAGE:[0,0],cases:0,list:[],u:""};
+      for(const i of ch.lwb_purchase_check_items||[]){const per=Math.max(1,i.pcs_per_case),u=U(i.sku_name),k=t[i.issue]?i.issue:"DAMAGE";t[k][0]+=i.cases;t[k][1]+=i.pcs;t.cases+=i.cases+i.pcs/per;
         t.list.push({pcs:i.cases*per+i.pcs,per,unit:u});t.u=!t.u||t.u===u?u:"MIX"}
       t.txt=sumTxt(t.list);
       return t;
@@ -187,11 +188,11 @@
       el("bulk").innerHTML=mails.length?"<span>"+mails.length+" claim"+(mails.length>1?"s":"")+" not mailed yet:</span>"+
         '<button type="button" class="pri" data-act="mailall">Today\'s Mail (all '+mails.length+')</button>':"";
       const list=claims.filter(x=>filter==="all"||(filter==="open"?OPEN.includes(stage(x)):stage(x)===filter));
-      let h='<table class="pc-table"><thead><tr><th>Checked</th><th>Invoice</th><th>Supplier</th><th>Vehicle</th><th>Damage</th><th>Leakage</th><th>Shortage</th><th class="n">Total</th><th>Status</th><th></th></tr></thead><tbody>';
+      let h='<table class="pc-table"><thead><tr><th>Checked</th><th>Invoice</th><th>Supplier</th><th>Vehicle</th><th>Damage / Leakage / Breakage</th><th>Gasless</th><th>Shortage</th><th class="n">Total</th><th>Status</th><th></th></tr></thead><tbody>';
       for(const ch of list){
         const b=billOf(ch),t=tot(ch),lo=t.cases<NORM_CASES,g=stage(ch),id=ch.id,B=(a,l,c)=>'<button type="button"'+(c?' class="pri"':"")+' data-act="'+a+'" data-id="'+id+'">'+l+"</button>";
         h+='<tr'+(act&&act.id===id?' class="sel"':"")+"><td>"+dmy(ch.verified_on)+"</td><td><b>"+esc(b.invoice_no||"—")+"</b><small>"+dmy(b.invoice_date)+"</small></td><td style='white-space:normal;min-width:180px'>"+esc(b.supplier_name||"")+"</td><td>"+esc(b.vehicle_no||"—")+"<small>"+esc(b.lr_no?"LR "+b.lr_no:"")+"</small></td>"+
-          ["DAMAGE","LEAKAGE","SHORTAGE"].map(x=>"<td>"+qtyTxt(t[x][0],t[x][1],t.u)+"</td>").join("")+
+          ["DAMAGE","GASLESS","SHORTAGE"].map(x=>"<td>"+qtyTxt(t[x][0],t[x][1],t.u)+"</td>").join("")+
           '<td class="n"><b>'+esc(t.txt)+'</b><small class="norm '+(lo?"lo":"hi")+'">'+(lo?"Below "+NORM_CASES+": no return":NORM_CASES+"+ cases: return may be asked")+"</small></td>"+
           '<td style="white-space:normal;min-width:190px"><span class="st '+g+'">'+esc(STAGE[g]||g)+"</span>"+chainTxt(ch).map(x=>"<small>"+esc(x)+"</small>").join("")+(ch.note?"<small>Note: "+esc(ch.note)+"</small>":"")+"</td><td>"+
           (g==="mail"?B("mail","Copy Mail",1)+B("print","Print Letter"):"")+
@@ -307,11 +308,11 @@
       const S=settings,b=bills.get(ch.inward_id)||{},t=tot(ch);
       return '<div class="doc"><h1 class="lh">'+esc(S.distributor_name||"LUXURY WRIST BRAND")+'</h1><div class="rule"></div>'+
         '<div class="row"><div><b>To,</b><br>'+(lines(S.to_address)||"[Company address: fill Letter Settings on the Sheet &amp; Pallet page]")+'</div><div style="white-space:nowrap"><b>Date :</b> '+dmy(today(),"/")+"</div></div>"+
-        '<div class="subj">Subject : Claim for Damage / Leakage / Shortage in Purchase Invoice No. '+esc(b.invoice_no||"")+"</div>"+
+        '<div class="subj">Subject : Claim for Damage / Gasless / Shortage in Purchase Invoice No. '+esc(b.invoice_no||"")+"</div>"+
         '<table class="kv"><tr><td>Distributor Code</td><td>: <b>'+esc(S.distributor_code||"")+'</b></td></tr><tr><td>Distributor Name</td><td>: <b>'+esc(S.distributor_name||"")+'</b></td></tr>'+
         "<tr><td>Invoice No. / Date</td><td>: <b>"+esc(b.invoice_no||"")+"</b> dated <b>"+dmy(b.invoice_date,"/")+"</b></td></tr><tr><td>Received On</td><td>: <b>"+dmy(b.received_date,"/")+"</b></td></tr>"+
         "<tr><td>Vehicle No.</td><td>: <b>"+esc(b.vehicle_no||"")+"</b>"+(b.lr_no?" &nbsp; LR No. : <b>"+esc(b.lr_no)+"</b>":"")+"</td></tr>"+(ch.claim_no?"<tr><td>Claim Ref.</td><td>: <b>"+esc(ch.claim_no)+"</b></td></tr>":"")+"</table>"+
-        '<p style="margin:2mm 0">Dear Sir/Madam,</p><p style="margin:0 0 2mm;text-indent:12mm">We have received the goods against the above invoice. On unloading and checking the vehicle on '+dmy(ch.verified_on,"/")+", the following damage / leakage / shortage was found:</p>"+
+        '<p style="margin:2mm 0">Dear Sir/Madam,</p><p style="margin:0 0 2mm;text-indent:12mm">We have received the goods against the above invoice. On unloading and checking the vehicle on '+dmy(ch.verified_on,"/")+", the following damage / leakage / breakage / gasless / shortage was found:</p>"+
         '<table class="grid"><thead><tr><th>#</th><th>SKU</th><th>Type</th><th class="n">IC / CS</th><th class="n">PCS</th></tr></thead><tbody>'+
         itemRows(ch).map((i,n)=>"<tr><td>"+(n+1)+"</td><td>"+esc(i.sku_name)+"</td><td>"+ISSUE[i.issue]+'</td><td class="n">'+num(i.cases)+" "+sh(U(i.sku_name))+'</td><td class="n">'+num(i.pcs)+"</td></tr>").join("")+
         '</tbody><tfoot><tr><td></td><td colspan="2">Total</td><td class="n" colspan="2">'+esc(t.txt)+"</td></tr></tfoot></table>"+
@@ -331,15 +332,15 @@
     function sign(){const S=settings;return "\n\nThanks & Regards,\n"+(S.distributor_name||"")+(S.distributor_code?"\nDistributor Code: "+S.distributor_code:"")}
     function mailText(ch){
       const b=billOf(ch);
-      const subject="Claim for Damage / Leakage / Shortage - Invoice No. "+(b.invoice_no||"")+" dt. "+dmy(b.invoice_date,"/")+(settings.distributor_code?" - Dist. Code "+settings.distributor_code:"");
-      const body="Dear Sir/Madam,\n\nWe have received the goods against the invoice below. On unloading and checking the vehicle, we found the following damage / leakage / shortage:\n\n"+
+      const subject="Claim for Damage / Gasless / Shortage - Invoice No. "+(b.invoice_no||"")+" dt. "+dmy(b.invoice_date,"/")+(settings.distributor_code?" - Dist. Code "+settings.distributor_code:"");
+      const body="Dear Sir/Madam,\n\nWe have received the goods against the invoice below. On unloading and checking the vehicle, we found the following damage / leakage / breakage / gasless / shortage:\n\n"+
         mailBlock(ch,0)+"\n\nThe invoice copy is attached. Kindly approve our claim and share the claim reference number. Please let us know if the goods are to be returned."+sign();
       return {subject,body};
     }
     function mailAll(list){
       const cases=sumTxt(list.flatMap(x=>tot(x).list));
-      const subject="Claim for Damage / Leakage / Shortage - "+list.length+" Invoice"+(list.length>1?"s":"")+" - "+dmy(today(),"/")+(settings.distributor_code?" - Dist. Code "+settings.distributor_code:"");
-      const body="Dear Sir/Madam,\n\nOn unloading and checking the vehicles, we found the following damage / leakage / shortage:\n\n"+
+      const subject="Claim for Damage / Gasless / Shortage - "+list.length+" Invoice"+(list.length>1?"s":"")+" - "+dmy(today(),"/")+(settings.distributor_code?" - Dist. Code "+settings.distributor_code:"");
+      const body="Dear Sir/Madam,\n\nOn unloading and checking the vehicles, we found the following damage / leakage / breakage / gasless / shortage:\n\n"+
         list.map((x,i)=>mailBlock(x,i+1)).join("\n\n")+"\n\nGrand Total: "+cases+" in "+list.length+" invoice"+(list.length>1?"s":"")+
         ".\n\nThe invoice copies are attached. Kindly approve our claims and share the claim reference numbers. Please let us know if any goods are to be returned."+sign();
       return {subject,body};
