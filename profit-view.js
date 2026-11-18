@@ -128,7 +128,7 @@
     const v=switchOn();
     // Just an ON / OFF switch, no "Profit" word (Mohit, 7 Nov 2026); the tooltip says what it does.
     btn.setAttribute("aria-checked",String(v));
-    btn.title=v?"Profit ON: shown on PO screens. Tap to hide.":"Profit OFF: hidden. Tap to show.";
+    btn.title=v?"Profit ON: shown on PO screens and the Dashboard. Tap to hide.":"Profit OFF: hidden. Tap to show.";
     btn.innerHTML='<b>'+(v?"ON":"OFF")+'</b><i aria-hidden="true"></i>';
   }
   function css(){
