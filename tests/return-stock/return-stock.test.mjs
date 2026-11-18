@@ -108,3 +108,45 @@ test('users still cannot ask a move from PARTY, and manual moves still work', as
   const r=(await call('select lwb_stx_request($1) r',[JSON.stringify({from_bucket:'SALEABLE',to_bucket:'DAMAGE',move_date:today,reason:'Damaged in vehicle',lines:[{sku_id:sku.thums,cases:1}]})]))[0].r;
   assert.ok(r);
 });
+
+// lwb_gm_return_check_setup.sql: market return checked by the assigned Godown Manager (18 Nov 2026).
+test('GM return check: own vehicle only, good / damage / short in cases + pcs, sales notified', async()=>{
+  const gm2='00000000-0000-4000-8000-000000000009';
+  await db.exec(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS customer_name text; ALTER TABLE orders ADD COLUMN IF NOT EXISTS created_by uuid;
+    ALTER TABLE dispatch_assignments ADD COLUMN IF NOT EXISTS loading_manager_id uuid;`);
+  await db.query("insert into user_profiles values($1,'warehouse',true,'Other GM'),('00000000-0000-4000-8000-000000000006','manager',true,'Head') on conflict do nothing",[gm2]);
+  await db.query("update orders set customer_name='N K TRADERS',created_by=$2 where id=$1",[ord,ids.sales]);
+  const gc=await readFile(new URL('../../lwb_gm_return_check_setup.sql',import.meta.url),'utf8');
+  await db.exec(gc);await db.exec(gc);
+  await db.query('delete from dispatch_assignments');
+  await db.query('insert into dispatch_assignments(order_id,loading_manager_id) values($1,$2)',[ord,ids.godown]);
+  const r=await newReturn();
+  await as('godown');
+  const l=await call('select * from lwb_return_receive_lines($1)',[r]);
+  const th=l.find(x=>x.sku_name.trim()==='250ml thumsup'),sp=l.find(x=>x.sku_name==='600ML SPRITE');
+  // another Godown Manager cannot check this vehicle
+  await db.query("select set_config('request.jwt.claim.sub',$1,false)",[gm2]);
+  await assert.rejects(call('select lwb_receive_return_goods3($1,null,null)',[r]),/another Godown Manager/);
+  await as('godown');
+  // more than the driver returned is refused (6 case returned)
+  await assert.rejects(call('select lwb_receive_return_goods3($1,$2,null)',[r,JSON.stringify([{item_id:th.item_id,good_cs:5,bad_cs:2}])]),/driver returned only/);
+  await assert.rejects(call('select lwb_receive_return_goods3($1,$2,null)',[r,JSON.stringify([{item_id:th.item_id,good_cs:'x'}])]),/whole cases/);
+  const before=await live();
+  await db.query('delete from erp_notifications');
+  await as('godown');
+  const res=(await call('select lwb_receive_return_goods3($1,$2,$3) r',[r,JSON.stringify([
+    {item_id:th.item_id,good_cs:4,good_pcs:0,bad_cs:1,bad_pcs:12,bad_bucket:'leakage'},   // 4 case good, 1.5 case leakage, 12 pcs short
+    {item_id:sp.item_id,good_cs:0,good_pcs:0,bad_cs:0,bad_pcs:4,bad_bucket:'GASLESS'}]),'counted']))[0].r;
+  assert.equal(res.saleable_pcs,96);assert.equal(res.held_pcs,36+4+12);assert.equal(res.short_pcs,12);
+  const after=await live();
+  assert.equal(after[sku.thums].s-before[sku.thums].s,96);
+  assert.equal(after[sku.thums].d-before[sku.thums].d,36);
+  const n=(await db.query("select user_id,title,message from erp_notifications where notification_type='RETURN_CHECKED'")).rows;
+  const to=new Set(n.map(x=>x.user_id));
+  assert.ok(to.has(ids.sales)&&to.has(ids.admin)&&to.has('00000000-0000-4000-8000-000000000006'));
+  assert.ok(!to.has(ids.godown)&&!to.has(gm2));
+  assert.match(n[0].title,/SHORT/);
+  assert.match(n[0].message,/250ml thumsup: good 4 case, Leakage 1 case \+ 12 pcs, SHORT 12 pcs/);
+  await as('godown');await assert.rejects(call('select lwb_receive_return_goods3($1,null,null)',[r]),/already received/);
+  assert.equal(await (async()=>{await as('godown');return (await call('select public.lwb_return_gm($1) g',[ord]))[0].g})(),ids.godown);
+});

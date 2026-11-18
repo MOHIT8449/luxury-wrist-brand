@@ -4,6 +4,11 @@
 **Purpose:** Continue the same ERP project from a new ChatGPT conversation without restarting or losing the agreed requirements.
 **Status:** Active development / verification. Do not assume all modules are completed or fully tested.
 
+## Market return checked by the assigned Godown Manager (18 Nov 2026)
+- lwb_gm_return_check_setup.sql: lwb_return_gm(order) = loading GM; "Receive Return Goods" bell + Pending Work only for that GM (all GMs when nobody given).
+- driver-returns.html: GM sees only own returns; "Check return goods" popup = per SKU Good + Damaged (cases + pcs) + damage type, rest = Short. lwb_receive_return_goods3 moves stock (good -> saleable, damaged -> its place) and sends RETURN_CHECKED to salesman, Sales Head, Admin. Falls back to goods2 if SQL missing.
+- Loading page (GM): tabs Sales · Loading / Purchase · Unloading (purchase bills with godown_user_id = me).
+
 ## Godown Manager scope (18 Nov 2026)
 - Godown (warehouse) login: no PO / Sales, Quick Slip, Sales Return, Tax Invoice, Goods Inward, Vehicle / Employee Master, Fixed Assets (menu + `GM_OFF` redirect in erp-shell.js). Returns (from drivers) kept.
 - Sees only orders assigned to them (dispatch_assignments.loading_manager_id or lwb_order_pickup.godown_user_id); delivered orders drop off. Scoping is in the UI + lwb_my_verify_queue, not RLS on orders.
