@@ -289,7 +289,7 @@
     css();
     return new Promise(done=>{
       const back=document.createElement('div');back.className='ed-back';
-      back.innerHTML='<div class="ed-pop" role="dialog" aria-modal="true"><div class="ed-pop-h"><h3></h3><div class="ed-btns">'+(o.info&&o.canEdit!==false?'<button type="button" class="ed-btn main" data-a="save">Save details</button>':'')+'<button type="button" class="ed-btn" data-a="close">Close ✕</button></div></div><div class="ed-body"></div></div>';
+      back.innerHTML='<div class="ed-pop" role="dialog" aria-modal="true"><div class="ed-pop-h"><h3></h3><div class="ed-btns">'+(o.download?'<button type="button" class="ed-btn" data-a="dl">⬇ Download</button>':'')+(o.info&&o.canEdit!==false?'<button type="button" class="ed-btn main" data-a="save">Save details</button>':'')+'<button type="button" class="ed-btn" data-a="close">Close ✕</button></div></div><div class="ed-body"></div></div>';
       back.querySelector('h3').textContent=o.title||'Documents & photos';
       document.body.append(back);
       const p=panel({...o,mount:back.querySelector('.ed-body')});
@@ -297,6 +297,12 @@
       back.addEventListener('click',async e=>{
         const a=e.target.dataset&&e.target.dataset.a;
         if(e.target===back||a==='close'){if(p.busy()){toast('Upload in progress, please wait.','error');return}close();return}
+        // Download: one file as it is, more files as one ZIP (o.download = file name without extension).
+        if(a==='dl'){const b=e.target;b.disabled=true;
+          try{const keys=new Set(slotsOf(o.entity,o.slots).map(s=>s.k));const n=await zip(o.client,o.entity,[o.id],{types:[...keys],name:String(o.download===true?'files':o.download),single:true,
+              label:r=>String(o.download===true?'file':o.download)+'-'+r.doc_type.toLowerCase()});
+            toast(n?(n===1?'File downloaded.':n+' files downloaded in one ZIP.'):'Nothing uploaded yet.',n?'success':'error')}
+          catch(er){toast('Download failed: '+(er.message||er),'error')}finally{b.disabled=false}return}
         if(a==='save'){e.target.disabled=true;const bad=await p.flush();e.target.disabled=false;toast(bad||'Details saved.',bad?'error':'success')}
       });
     });
@@ -362,7 +368,9 @@
       entries.push({name:base+'-'+n+'.'+ext,data:new Uint8Array(await res.arrayBuffer())});
     }
     if(!entries.length)return 0;
-    const a=document.createElement('a');a.href=URL.createObjectURL(zipBlob(entries));a.download=(o.name||'files')+'.zip';
+    // o.single: one file is downloaded as it is (no ZIP).
+    const one=o.single&&entries.length===1,a=document.createElement('a');
+    a.href=URL.createObjectURL(one?new Blob([entries[0].data]):zipBlob(entries));a.download=one?(o.name||'file')+'.'+entries[0].name.split('.').pop():(o.name||'files')+'.zip';
     document.body.append(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},4000);
     return entries.length;
   }

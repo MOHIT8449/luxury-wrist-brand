@@ -27,6 +27,8 @@
     .pc-table tr.sel td{background:#fff8e6}
     .pc-table button,.act button,.bulk button{height:32px;padding:0 11px;border-radius:5px;border:1px solid var(--erp-line);background:#fff;color:var(--erp-ink);font:inherit;font-size:14px;font-weight:600;cursor:pointer;margin:0 4px 4px 0}
     .pc-table button.pri,.act button.pri,.bulk button.pri{background:var(--erp-red);border-color:var(--erp-red);color:#fff}
+    .pc-table td small.next{color:#8a5300;font-weight:600;white-space:normal}
+    .pc-table .files{margin-top:2px}.pc-table .files button{height:30px;font-size:13px;padding:0 9px}
     .st{display:inline-block;padding:3px 9px;border-radius:5px;font-size:13px;font-weight:700}
     .st.mail{background:#fff3d6;color:#8a5a00}.st.approval{background:#e8f1ff;color:#194c85}.st.return{background:#f3e8ff;color:#5b2a86}.st.due{background:#ffe9d6;color:#8a3b00}.st.RECEIVED{background:#e4f6e9;color:#0d6b36}.st.REJECTED{background:#fee8e8;color:#9e2525}
     .norm{font-size:12.5px;font-weight:700}.norm.lo{color:#0d6b36}.norm.hi{color:#9e2525}
@@ -101,6 +103,8 @@
     const ISSUE={DAMAGE:"Damage / Leakage / Breakage",LEAKAGE:"Leakage",GASLESS:"Gasless",SHORTAGE:"Shortage"};
     // Where a claim is in the chain.
     const STAGE={mail:"Mail not sent",approval:"Awaiting company approval",return:"Return goods pending",due:"Claim amount due",RECEIVED:"Amount received",REJECTED:"Rejected"};
+    // What to press next, shown under the status (Mohit, 18 Nov 2026: "update kaise karein").
+    const NEXT={mail:"Next: Copy Mail, then Mark Mail Sent",approval:"Next: press Approved or Rejected",return:"Next: press Goods Returned",due:"Next: press Amount Received"};
     const stage=ch=>ch.claim_status==="PENDING"?"mail":ch.claim_status==="SENT"?"approval":ch.claim_status==="APPROVED"?(ch.return_required&&!ch.returned_on?"return":"due"):ch.claim_status;
     const OPEN=["mail","approval","return","due"];
     // Company norm: claims below this many cases are passed without returning the goods.
@@ -197,12 +201,14 @@
         h+='<tr'+(act&&act.id===id?' class="sel"':"")+"><td>"+dmy(ch.verified_on)+"</td><td><b>"+esc(b.invoice_no||"—")+"</b><small>"+dmy(b.invoice_date)+"</small></td><td style='white-space:normal;min-width:180px'>"+esc(b.supplier_name||"")+"</td><td>"+esc(b.vehicle_no||"—")+"<small>"+esc(b.lr_no?"LR "+b.lr_no:"")+"</small></td>"+
           ["DAMAGE","GASLESS","SHORTAGE"].map(x=>"<td>"+qtyTxt(t[x][0],t[x][1],t.u)+"</td>").join("")+
           '<td class="n"><b>'+esc(t.txt)+'</b><small class="norm '+(lo?"lo":"hi")+'">'+(lo?"Below "+NORM_CASES+": no return":NORM_CASES+"+ cases: return may be asked")+"</small></td>"+
-          '<td style="white-space:normal;min-width:190px"><span class="st '+g+'">'+esc(STAGE[g]||g)+"</span>"+chainTxt(ch).map(x=>"<small>"+esc(x)+"</small>").join("")+(ch.note?"<small>Note: "+esc(ch.note)+"</small>":"")+"</td><td>"+
-          (g==="mail"?B("mail","Copy Mail",1)+B("print","Print Letter"):"")+
-          (g==="approval"?B("approve","Approved",1)+B("reject","Rejected")+"<br>"+B("mail","Copy Mail")+B("print","Print Letter"):"")+
+          '<td style="white-space:normal;min-width:190px"><span class="st '+g+'">'+esc(STAGE[g]||g)+"</span>"+chainTxt(ch).map(x=>"<small>"+esc(x)+"</small>").join("")+(ch.note?"<small>Note: "+esc(ch.note)+"</small>":"")+(NEXT[g]?'<small class="next">'+esc(NEXT[g])+"</small>":"")+"</td><td>"+
+          (g==="mail"?B("mail","Copy Mail",1)+B("print","Letter PDF"):"")+
+          (g==="approval"?B("approve","✓ Approved",1)+B("reject","✕ Rejected")+"<br>"+B("mail","Copy Mail")+B("print","Letter PDF"):"")+
           (g==="return"?B("return","Goods Returned",1)+B("approve","Edit Approval"):"")+
           (g==="due"?B("receive","Amount Received",1)+B("approve","Edit Approval")+(ch.return_required?B("return","Edit Return"):""):"")+
-          (g==="RECEIVED"||g==="REJECTED"?B("reopen","Reopen")+B("print","Print Letter"):"")+"</td></tr>";
+          (g==="RECEIVED"||g==="REJECTED"?B("reopen","Reopen")+B("print","Letter PDF"):"")+
+          // Photos / bill / company approval PDF of this claim (erp-docs.js).
+          (window.ERPDocs?'<div class="files">'+B("files","📎 Photos & PDF")+B("dlzip","⬇ Download all")+"</div>":"")+"</td></tr>";
       }
       if(!list.length)h+='<tr><td colspan="10" class="erp-empty">No claims here.</td></tr>';
       el("box").innerHTML=h+"</tbody></table>";
@@ -262,7 +268,23 @@
       if(a==="close"){act=null;render();return}
       if(["mail","approve","return","receive"].includes(a))return openAct(a,id);
       if(a==="mailall")return openAct("mailall",null);
-      if(a==="print"){if(ch)printDoc(letterHtml(ch));return}
+      // Letter PDF: the print window opens; choose "Save as PDF" there (file name = Claim-<invoice>).
+      if(a==="print"){if(ch)printDoc(letterHtml(ch),"Claim-"+String(billOf(ch).invoice_no||"letter").replace(/[^A-Za-z0-9-]/g,""));return}
+      if(a==="files"&&ch){
+        ERPDocs.open({client,entity:"PURCHASE_BILL",id:ch.inward_id,title:"Invoice "+(billOf(ch).invoice_no||"")+" · Photos & documents",download:"Claim-"+String(billOf(ch).invoice_no||"").replace(/[^A-Za-z0-9-]/g,""),
+          slots:["DAMAGE","BILL",{k:"OTHER",l:"Claim documents (company approval / credit note PDF)",doc:1,max:10}]});
+        return;
+      }
+      if(a==="dlzip"&&ch){
+        const inv=String(billOf(ch).invoice_no||"bill").replace(/[^A-Za-z0-9-]/g,""),btn=document.querySelector('[data-act="dlzip"][data-id="'+ch.id+'"]');
+        if(btn){btn.disabled=true;btn.textContent="⏳ Preparing…"}
+        try{const n=await ERPDocs.zip(client,"PURCHASE_BILL",[ch.inward_id],{name:"Claim-"+inv+"-files",
+            label:r=>"Inv"+inv+"-"+(r.doc_type==="BILL"?"bill":r.doc_type==="OTHER"?"claim-doc":/^video\//.test(r.mime||"")?"video":"photo")});
+          ERPShell.toast(n?n+" file"+(n>1?"s":"")+" downloaded in one ZIP.":"No photos or PDF uploaded for this invoice yet. Use 📎 Photos & PDF to add them.",n?"success":"error")}
+        catch(e){ERPShell.toast("Download failed: "+(e.message||e),"error")}
+        finally{if(btn){btn.disabled=false;btn.textContent="⬇ Download all"}}
+        return;
+      }
       if(a==="copysub"||a==="copybody"){
         const t=el(a==="copysub"?"mSub":"mBody");t.select();
         try{await navigator.clipboard.writeText(t.value);ERPShell.toast((a==="copysub"?"Subject":"Body")+" copied.","success")}catch(_){document.execCommand("copy");ERPShell.toast("Copied.","success")}
@@ -375,7 +397,7 @@
         ".\n\nThe invoice copies"+(kindsOf(list).some(k=>k!=="Shortage")?" and photos are":" are")+" attached. Kindly approve our claims and share the claim reference numbers."+(onlyShort(list)?"":" Please let us know if any goods are to be returned.")+sign();
       return {subject,body};
     }
-    function printDoc(html){el("printArea").innerHTML=html;setTimeout(()=>window.print(),50)}
+    function printDoc(html,name){el("printArea").innerHTML=html;const t=document.title;if(name)document.title=name;setTimeout(()=>{window.print();document.title=t},50)}
     document.addEventListener("click",e=>{const t=e.target.closest("[data-act]");if(t)doAct(t.dataset.act,t.dataset.id)});
     function setTab(){const f=location.hash.replace("#","");filter=["open","mail","approval","return","due","RECEIVED","REJECTED","all"].includes(f)?f:"open";render()}
     window.addEventListener("hashchange",setTab);
