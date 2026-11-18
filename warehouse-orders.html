@@ -4858,8 +4858,20 @@ async function loadPoSavedDirectory(){
 // Before that SQL is run the old free-text Loading Person box stays.
 let poGodownManagers=null;
 async function loadGodownManagers(){
-  const r=await db.rpc("lwb_godown_managers");
+  const [r,staff]=await Promise.all([db.rpc("lwb_godown_managers"),
+    db.rpc("lwb_pickup_godown_managers").then(x=>x,()=>({data:null}))]);
   poGodownManagers=r.error?null:(r.data||[]);
+  // Employee Master: Work / Post = Godown Manager shows here too, so a role change there shows at once
+  // (Mohit, 18 Nov 2026). With an ERP login it is saved by that login; without one by name ("S:<id>").
+  if(poGodownManagers&&Array.isArray(staff&&staff.data)){
+    const mob=v=>String(v||"").replace(/\D/g,"").slice(-10),nm=v=>String(v||"").trim().toLowerCase();
+    for(const x of staff.data){
+      if(x.user_id&&poGodownManagers.some(m=>m.user_id===x.user_id))continue;
+      if(poGodownManagers.some(m=>nm(m.full_name)===nm(x.name)||(mob(x.mobile)&&mob(m.mobile)===mob(x.mobile))))continue;
+      poGodownManagers.push({user_id:x.user_id||x.key,full_name:x.name,mobile:x.mobile,staff_key:x.key});
+    }
+    poGodownManagers.sort((a,b)=>nm(a.full_name).localeCompare(nm(b.full_name)));
+  }
   const sel=document.getElementById("poLoadingManager"),txt=document.getElementById("poLoadingPerson");
   sel.hidden=!poGodownManagers;txt.hidden=!!poGodownManagers;
   if(!poGodownManagers)return;
@@ -4877,10 +4889,16 @@ function poSelfLoader(){
   if(!currentUser||!SELF_LOADER_ROLES[role])return null;
   return{id:currentUser.id,name:String(currentProfile.full_name||currentUser.email||"").trim()};
 }
+// Saved Godown Manager as a dropdown value. Without a login (Employee Master Godown Manager) it is found by name.
+function poGmId(a){
+  let id=a.loading_manager_id||"";
+  if(!id&&a.loading_person&&poGodownManagers){const m=poGodownManagers.find(x=>String(x.user_id).startsWith("S:")&&x.full_name.trim().toLowerCase()===String(a.loading_person).trim().toLowerCase());if(m)id=m.user_id;}
+  return String(id);
+}
 function setPoGodownManager(a){
   const sel=document.getElementById("poLoadingManager");
   if(!poGodownManagers)return;
-  const id=a.loading_manager_id||"";
+  const id=poGmId(a);
   // Not in the list: another Sales Head / Admin who picked Self, or an inactive login. Show the saved name.
   if(id&&![...sel.options].some(o=>o.value===id))sel.append(new Option(a.loading_person||"Godown Manager",id));
   sel.value=id;
@@ -5171,7 +5189,7 @@ function poTransportDirty(){
     ||poDType==="TRANSPORT"&&!!poValue("poPorterRent");
   const managerDirty=document.getElementById("poLoadingManager").hidden
     ?poValue("poLoadingPerson")!==String(a.loading_person||"").trim()
-    :poValue("poLoadingManager")!==String(a.loading_manager_id||"");
+    :poValue("poLoadingManager")!==poGmId(a);
   return dirty||managerDirty;
 }
 // Checks the transport fields; returns what to save, or null (message shown).
@@ -5191,7 +5209,7 @@ function poTransportPayload(){
   if(rent&&(poDType==="PORTER"||poDType==="TRANSPORT")&&!(Number(rent)>0&&Number(rent)<=100000)){allocationStatus("Rent: 1 to 1,00,000, or leave it empty.",true);return null;}
   if(poGodownManagers){
     const sel=document.getElementById("poLoadingManager"),m=poGodownManagers.find(x=>x.user_id===sel.value);
-    payload.loading_manager_id=sel.value||null;
+    payload.loading_manager_id=sel.value&&!sel.value.startsWith("S:")?sel.value:null;
     const me=poSelfLoader();
     payload.loading_person=m?m.full_name:me&&sel.value===me.id?me.name:(sel.value?sel.selectedOptions[0].text.replace(/ \(inactive\)$/,""):"");
   }
@@ -5250,7 +5268,8 @@ async function saveApprovedTransport(){
     if(isSelfPickup(selectedOrder)){
       const pkSave=key=>db.rpc("lwb_set_order_pickup",{p_order_id:id,p:{driver_name:payload.driver_name,driver_mobile:payload.driver_mobile,
         vehicle_no:payload.vehicle_no,godown_key:key}}).then(r=>r,e=>({error:e}));
-      let pk=await pkSave(payload.loading_manager_id?"U:"+payload.loading_manager_id:"");
+      const gmSel=document.getElementById("poLoadingManager").value||"";
+      let pk=await pkSave(gmSel.startsWith("S:")?gmSel:payload.loading_manager_id?"U:"+payload.loading_manager_id:"");
       if(pk.error&&/Godown Manager/i.test(pk.error.message||""))pk=await pkSave("");
       if(pk.error)console.warn("Self pickup details not copied to the order:",pk.error.message||pk.error);
     }
