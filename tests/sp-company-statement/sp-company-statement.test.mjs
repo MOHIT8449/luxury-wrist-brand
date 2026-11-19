@@ -21,6 +21,8 @@ const file=f=>readFile(new URL('../../'+f,import.meta.url),'utf8');
 await db.exec(await file('lwb_sheet_pallet_setup.sql'));
 const sql=await file('lwb_sp_company_statement_setup.sql');
 await db.exec(sql);await db.exec(sql); // safe to run again
+const sql2=await file('lwb_sp_query_remarks_setup.sql');
+await db.exec(sql2);await db.exec(sql2);
 
 async function run(who,q,params){
   await db.query("select set_config('request.jwt.claim.sub',$1,false)",[ids[who]]);
@@ -73,4 +75,19 @@ test('query tick by admin is not logged as an edit; accounts cannot set it', asy
   assert.equal((await db.query("select count(*)::int n from lwb_sp_history where action='EDIT'")).rows[0].n,0);
   const r=await run('acc',"update lwb_sp_entries set query_note='x' where id=$1",[id]);
   assert.equal(r.affectedRows,0);
+});
+
+test('query remark: admin saves / updates / marks mailed; accounts only reads', async()=>{
+  await assert.rejects(run('acc','select lwb_sp_remark_save($1)',[{item_key:'IN:7012785465',kind:'SHORT',sheets:115}]),/Only Admin/);
+  await run('admin','select lwb_sp_remark_save($1)',[{item_key:'IN:7012785465',kind:'SHORT',pallets:0,sheets:115,note:'written on bill'}]);
+  await run('admin','select lwb_sp_remark_save($1)',[{item_key:'IN:7012785465',kind:'SHORT',pallets:1,sheets:115,note:'written on bill'}]);
+  let r=(await run('acc','select kind,pallets,sheets,status,updated_by_name from lwb_sp_stmt_remarks')).rows;
+  assert.deepEqual(r,[{kind:'SHORT',pallets:1,sheets:115,status:'OPEN',updated_by_name:'Admin'}]);
+  assert.equal((await run('admin','select lwb_sp_remark_status($1,$2) n',[['IN:7012785465','IN:x'],'MAILED'])).rows[0].n,1);
+  r=(await db.query('select status,mailed_at is not null m from lwb_sp_stmt_remarks')).rows[0];
+  assert.deepEqual(r,{status:'MAILED',m:true});
+  await assert.rejects(run('admin','select lwb_sp_remark_save($1)',[{item_key:'IN:1',kind:'BAD'}]),/check/);
+  await run('admin','select lwb_sp_remark_save($1)',[{item_key:'IN:7012785465',kind:''}]);
+  assert.equal((await db.query('select count(*)::int n from lwb_sp_stmt_remarks')).rows[0].n,0);
+  await assert.rejects(run('acc',"insert into lwb_sp_stmt_remarks(item_key,kind) values('IN:9','SHORT')"),/permission/);
 });
