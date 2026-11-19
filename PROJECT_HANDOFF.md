@@ -4,6 +4,11 @@
 **Purpose:** Continue the same ERP project from a new ChatGPT conversation without restarting or losing the agreed requirements.
 **Status:** Active development / verification. Do not assume all modules are completed or fully tested.
 
+## Late POs: highlight + bell only, never blocked (19 Nov 2026)
+- Mohit: a PO past 36 hrs still has to be delivered; the Sales Head keeps full rights (transport, loading, bill, Mark delivered). Nothing in the UI or SQL blocks a late PO.
+- `warehouse-orders.html`: the empty yellow bar under the header was `#rjWait` (`.rj-wait{display:flex}` beat `hidden`); fixed with `.rj-wait[hidden]{display:none}`. New red strip `#lateStrip` above the tabs: Delivery late 36h+ / Approval late 12h+ chips (moved out of the tab row), oldest PO + hours, "Work as usual · Admin & Sales Head alerted". `?late=delivery|approval` opens that list.
+- `lwb_order_delay_alert_setup.sql`: table `lwb_order_delay_alerts` (order, kind) so each PO gets one bell per limit; `lwb_order_delay_notify_internal()` sends ORDER_DELAY_APPROVAL / ORDER_DELAY_DELIVERY to Admin + Sales Head (more than 3 new in one run = one combined bell). pg_cron every 30 min; PO / Sales also calls `lwb_order_delay_notify()` on open. Test: tests/order-delay-alert.
+
 ## Market return checked by the assigned Godown Manager (18 Nov 2026)
 - lwb_gm_return_check_setup.sql: lwb_return_gm(order) = loading GM; "Receive Return Goods" bell + Pending Work only for that GM (all GMs when nobody given).
 - driver-returns.html: GM sees only own returns; "Check return goods" popup = per SKU Good + Damaged (cases + pcs) + damage type, rest = Short. lwb_receive_return_goods3 moves stock (good -> saleable, damaged -> its place) and sends RETURN_CHECKED to salesman, Sales Head, Admin. Falls back to goods2 if SQL missing.
