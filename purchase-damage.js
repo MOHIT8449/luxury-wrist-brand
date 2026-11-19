@@ -60,11 +60,11 @@
 .pd-time button{height:36px;border:1px solid #cfd6de;border-radius:6px;background:#fff;font:inherit;font-size:13px;font-weight:600;cursor:pointer;padding:0 8px;flex:none}
 .pd-dur{flex:1 1 100%;font-size:12.5px;font-weight:700;color:#0d6b36}.pd-dur:empty{display:none}
 .pd-lab{font-size:12.5px;font-weight:700;color:#4b5763;margin:8px 0 4px}
-.pd-line{display:grid;grid-template-columns:minmax(0,1fr) 190px 58px 58px 32px;gap:5px;align-items:center;margin-bottom:5px}
+.pd-line{display:grid;grid-template-columns:minmax(0,1fr) 170px 58px 58px 88px 32px;gap:5px;align-items:center;margin-bottom:5px}
 .pd-line select,.pd-line input,.pd-note{height:36px;border:1.5px solid #e3e7ec;border-radius:6px;padding:0 6px;font:inherit;font-size:14px;background:#fff;min-width:0;width:100%}
-.pd-line input{text-align:right}
+.pd-line input{text-align:right}.pd-line input.bt{text-align:left;text-transform:uppercase}
 .pd-line .rm{height:36px;border:1px solid #e3e7ec;border-radius:6px;background:#fff;cursor:pointer;color:#9e1528;font-size:14px;padding:0}
-.pd-hd{display:grid;grid-template-columns:minmax(0,1fr) 190px 58px 58px 32px;gap:5px;font-size:11.5px;font-weight:700;color:#6b7785;text-transform:uppercase;letter-spacing:.2px}
+.pd-hd{display:grid;grid-template-columns:minmax(0,1fr) 170px 58px 58px 88px 32px;gap:5px;font-size:11.5px;font-weight:700;color:#6b7785;text-transform:uppercase;letter-spacing:.2px}
 .pd-hd span:nth-child(3),.pd-hd span:nth-child(4){text-align:right}
 .pd-add{height:32px;border:1px dashed #9aa6b2;border-radius:6px;background:#fbfcfd;font:inherit;font-size:13px;font-weight:600;cursor:pointer;padding:0 10px;color:#1f2a37}
 .pd-err{color:#b42318;font-size:12.5px;margin-top:4px}
@@ -89,7 +89,7 @@
 @media(max-width:560px){
   .pd-back{padding:0;place-items:end stretch}
   .pd-pop{width:100%;max-height:96vh;border-radius:12px 12px 0 0;padding:12px}
-  .pd-line,.pd-hd{grid-template-columns:minmax(0,1fr) 58px 58px 32px}
+  .pd-line,.pd-hd{grid-template-columns:minmax(0,1fr) 50px 50px 76px 32px}
   .pd-line select.sku{grid-column:1/-1}
   .pd-hd span:first-child{display:none}
   .pd-hd span:nth-child(2){grid-column:1}
@@ -139,13 +139,13 @@
     const ck=d.check;
     if(ck&&o.role==='warehouse'&&!['NONE','PENDING'].includes(ck.claim_status)){toast('The claim is already with the company. Ask Admin / Sales Head to change it.','error');return view(o)}
     let mode=o.mode||(ck?(ck.has_damage?'dmg':'ok'):'');
-    let lines=(ck&&ck.lwb_purchase_check_items||[]).map(i=>({sku:String(i.sku_id||''),name:i.sku_name,issue:i.issue,cs:i.cases||'',pc:i.pcs||''}));
-    const first=()=>({sku:d.skus.length===1?d.skus[0].id:'',issue:'DAMAGE',cs:'',pc:''});
+    let lines=(ck&&ck.lwb_purchase_check_items||[]).map(i=>({sku:String(i.sku_id||''),name:i.sku_name,issue:i.issue,cs:i.cases||'',pc:i.pcs||'',bt:i.batch_no||''}));
+    const first=()=>({sku:d.skus.length===1?d.skus[0].id:'',issue:'DAMAGE',cs:'',pc:'',bt:''});
     const back=shell('<div class="pd-h"><span class="ic">🚛</span><div><h3>'+esc(vehOf(d.bill))+' · Vehicle check</h3><small>'+esc(subOf(d))+'</small></div><button type="button" class="x" data-a="close" aria-label="Close">✕</button></div>'+
       '<div class="pd-skus">'+d.skus.map(s=>'<b>'+esc(s.name)+'</b> '+qtyTxt(s.cs,s.pc,s.unit)).join(' · ')+'</div>'+
       '<div class="pd-pick"><button type="button" class="ok" data-m="ok">✓ All OK</button><button type="button" class="bad" data-m="dmg">⚠ Damage / Gasless</button></div>'+
       '<div class="pd-time"><label><span>Time In <small class="pd-opt">(optional)</small></span><input type="time" class="tin"></label><button type="button" data-now="tin">Now</button><label><span>Time Out <small class="pd-opt">(optional)</small></span><input type="time" class="tout"></label><button type="button" data-now="tout">Now</button><span class="pd-dur"></span></div>'+
-      '<div class="pd-dmg" hidden><div class="pd-hd"><span>SKU</span><span>Type</span><span>IC / CS</span><span>PCS</span><span></span></div><div class="pd-lines"></div><button type="button" class="pd-add" data-a="add">+ Add line</button><div class="pd-err" hidden></div></div>'+
+      '<div class="pd-dmg" hidden><div class="pd-hd"><span>SKU</span><span>Type</span><span>IC / CS</span><span>PCS</span><span>Batch no.</span><span></span></div><div class="pd-lines"></div><button type="button" class="pd-add" data-a="add">+ Add line</button><div class="pd-err" hidden></div></div>'+
       // Photos show for All OK too: the vehicle photo is taken at every unloading (Mohit, 18 Nov 2026).
       '<div class="pd-lab">Photos: vehicle (number plate) and any damaged / gasless cases</div><div class="pd-photos"></div>'+
       '<div class="pd-lab">Note</div><input class="pd-note" maxlength="300" placeholder="e.g. 2 cases wet near the door">'+
@@ -160,10 +160,10 @@
     let docs=null;
     if(await needDocs()){docs=ERPDocs.panel({client,mount:$('.pd-photos'),entity:'PURCHASE_BILL',id:o.id,slots:['VEHICLE','DAMAGE']})}else $('.pd-photos').textContent='Photos: not available on this page.';
     const skuOpts=v=>'<option value="">Choose SKU</option>'+d.skus.map(s=>'<option value="'+esc(s.id)+'"'+(s.id===v?' selected':'')+'>'+esc(s.name)+' ('+qtyTxt(s.cs,s.pc,s.unit)+')</option>').join('');
-    function readLines(){back.querySelectorAll('.pd-line').forEach((r,i)=>{const L=lines[i];if(!L)return;L.sku=r.querySelector('.sku').value;L.issue=r.querySelector('.ty').value;L.cs=r.querySelector('.cs').value;L.pc=r.querySelector('.pc').value})}
+    function readLines(){back.querySelectorAll('.pd-line').forEach((r,i)=>{const L=lines[i];if(!L)return;L.sku=r.querySelector('.sku').value;L.issue=r.querySelector('.ty').value;L.cs=r.querySelector('.cs').value;L.pc=r.querySelector('.pc').value;L.bt=r.querySelector('.bt').value})}
     function drawLines(){
       $('.pd-lines').innerHTML=lines.map((L,i)=>'<div class="pd-line"><select class="sku" aria-label="SKU">'+skuOpts(L.sku)+'</select><select class="ty" aria-label="Type">'+(L.issue==='LEAKAGE'?[...ISSUES,['LEAKAGE','Leakage']]:ISSUES).map(([k,l])=>'<option value="'+k+'"'+(k===L.issue?' selected':'')+'>'+l+'</option>').join('')+'</select>'+
-        '<input class="cs" type="number" min="0" step="1" inputmode="numeric" placeholder="'+(L.sku?sh(unitOfSku(d,L.sku)):'IC / CS')+'" aria-label="IC / CS" value="'+esc(L.cs)+'"><input class="pc" type="number" min="0" step="1" inputmode="numeric" placeholder="PCS" aria-label="PCS" value="'+esc(L.pc)+'">'+
+        '<input class="cs" type="number" min="0" step="1" inputmode="numeric" placeholder="'+(L.sku?sh(unitOfSku(d,L.sku)):'IC / CS')+'" aria-label="IC / CS" value="'+esc(L.cs)+'"><input class="pc" type="number" min="0" step="1" inputmode="numeric" placeholder="PCS" aria-label="PCS" value="'+esc(L.pc)+'"><input class="bt" maxlength="30" placeholder="Batch" aria-label="Batch no. (for the claim mail)" title="Batch no. printed on the case: needed in the claim mail" value="'+esc(L.bt||'')+'">'+
         '<button type="button" class="rm" data-rm="'+i+'" aria-label="Remove line" title="Remove line">✕</button></div>').join('');
     }
     function draw(){
@@ -183,8 +183,8 @@
         if(![c,p].every(n=>Number.isInteger(n)&&n>=0)){err.push('Cases and PCS must be whole numbers.');continue}
         if(c+p===0){err.push('Enter cases or PCS on every line.');continue}
         const s=d.skus.find(x=>x.id===L.sku)||{name:L.name||'SKU',pack:1,billed:0};
-        const k=L.sku+'|'+L.issue,old=out.find(x=>x.k===k);
-        if(old){old.cases+=c;old.pcs+=p}else out.push({k,sku_id:L.sku,sku_name:s.name,pcs_per_case:s.pack,issue:L.issue,cases:c,pcs:p});
+        const bt=String(L.bt||'').trim().toUpperCase(),k=L.sku+'|'+L.issue+'|'+bt,old=out.find(x=>x.k===k);
+        if(old){old.cases+=c;old.pcs+=p}else out.push({k,sku_id:L.sku,sku_name:s.name,pcs_per_case:s.pack,issue:L.issue,cases:c,pcs:p,batch_no:bt});
         per.set(L.sku,(per.get(L.sku)||0)+c*s.pack+p);
         if(s.billed&&per.get(L.sku)>s.billed)err.push(s.name+': more than the bill ('+qtyTxt(s.cs,s.pc,s.unit)+').');
       }
@@ -219,6 +219,9 @@
         const r=await client.rpc('lwb_purchase_damage_report',{p_inward_id:o.id,p_verified_on:ck&&ck.verified_on||today(),p_note:$('.pd-note').value.trim(),p_items:items});
         busy=false;b.disabled=false;
         if(r.error)return toast('Not submitted: '+r.error.message,'error');
+        // Batch no. of each line (lwb_purchase_claim_batch_setup.sql): written on the fresh lines.
+        const bts=items.filter(x=>x.batch_no);
+        if(bts.length){const w=await client.rpc('lwb_purchase_check_batches',{p_inward:o.id,p_items:bts});if(w.error)toast('Report saved, but batch no. not saved: '+w.error.message,'error')}
         let msg=mode==='ok'?'Vehicle checked: all OK. Admin and Sales Head informed.':'Damage report sent to Admin and Sales Head. Damaged goods are kept out of saleable stock.';
         // Admin / Sales Head saved damage without a photo: the Godown Manager gets the photo task (as before).
         if(r.data&&r.data.damage&&!r.data.photos&&['admin','manager'].includes(o.role)){const t=await client.rpc('lwb_purchase_photo_task',{p_inward:o.id});if(!t.error&&(t.data||[]).length)msg+=' Godown Manager got a photo task.'}
@@ -241,7 +244,7 @@
     const canEdit=['admin','manager','accounts'].includes(o.role)||(o.role==='warehouse'&&(!ck||['NONE','PENDING'].includes(ck.claim_status)));
     const back=shell('<div class="pd-h"><span class="ic">'+(ck&&ck.has_damage?'⚠':'🚛')+'</span><div><h3>'+esc(vehOf(d.bill))+' · Damage report</h3><small>'+esc(subOf(d))+'</small></div><button type="button" class="x" data-a="close" aria-label="Close">✕</button></div>'+
       '<div class="pd-meta">'+chip+(claim&&ck.has_damage?' <span class="pd-chip warn">'+esc(claim)+'</span>':'')+'<br>'+(ck?'Checked '+dmy(ck.verified_on)+(who?' by '+esc(who):''):'The Godown Manager has not checked this vehicle yet.')+(timeTxt(d.bill)?'<br>🕘 '+esc(timeTxt(d.bill)):'')+'</div>'+
-      (it.length?'<table class="pd-t"><thead><tr><th>SKU</th><th class="ty">Type</th><th class="n">Qty</th></tr></thead><tbody>'+it.map(i=>'<tr><td>'+esc(i.sku_name)+'</td><td class="ty">'+esc(issueTxt(i.issue))+'</td><td class="n">'+qtyTxt(i.cases,i.pcs,unitOfSku(d,i.sku_id))+'</td></tr>').join('')+
+      (it.length?'<table class="pd-t"><thead><tr><th>SKU</th><th class="ty">Type</th><th class="n">Qty</th></tr></thead><tbody>'+it.map(i=>'<tr><td>'+esc(i.sku_name)+(i.batch_no?'<br><small>Batch '+esc(i.batch_no)+'</small>':'')+'</td><td class="ty">'+esc(issueTxt(i.issue))+'</td><td class="n">'+qtyTxt(i.cases,i.pcs,unitOfSku(d,i.sku_id))+'</td></tr>').join('')+
         '<tr><td colspan="2"><b>Total</b></td><td class="n"><b>'+esc(cs)+'</b></td></tr></tbody></table><div class="pd-meta">Stock: damage / leakage / breakage moved out of saleable to Damage, gasless to Gasless; shortage taken off saleable (Loss).</div>':'')+
       (ck&&ck.note?'<div class="pd-meta"><b>Note:</b> '+esc(ck.note)+'</div>':'')+
       '<div class="pd-lab">Photos</div><div class="pd-photos"></div>'+

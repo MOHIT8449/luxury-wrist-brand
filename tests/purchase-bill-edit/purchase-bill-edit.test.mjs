@@ -217,3 +217,23 @@ test('team edit (19 Nov 2026): Sales Head + Accounts edit a bill, Accounts canno
   const log=(await db.query("select done_by_name from lwb_purchase_bill_log order by done_at")).rows.map(x=>x.done_by_name);
   assert.deepEqual(log,['accounts','manager']);
 });
+
+test('batch no. (19 Nov 2026): written on fresh check lines by match, or by line id', async()=>{
+  const {db,sku,call,postCoke,tax}=await makeDb('reference_id');
+  await db.exec(`CREATE FUNCTION public.lwb_pr_role() RETURNS text LANGUAGE sql STABLE AS $$
+    SELECT coalesce((SELECT lower(btrim(p.role)) FROM public.user_profiles p WHERE p.id = auth.uid() AND p.active = true), '') $$;`);
+  for(const f of ['lwb_purchase_bill_team_edit_setup.sql','lwb_purchase_claim_batch_setup.sql']){
+    const t=await readFile(new URL('../../'+f,import.meta.url),'utf8');await db.exec(t);await db.exec(t);}
+  const id=await postCoke('HC-600',[tax(sku.THUMSUP,10,1000),tax(sku.SPRITE,10,1000)]);
+  const ck=(await db.query("insert into lwb_purchase_checks(inward_id,has_damage) values($1,true) returning id",[id])).rows[0].id;
+  await db.query("insert into lwb_purchase_check_items(check_id,sku_id,sku_name,issue,cases,pcs) values($1,$2,'THUMSUP','GASLESS',2,0),($1,$2,'THUMSUP','GASLESS',2,0),($1,$3,'SPRITE','DAMAGE',1,0)",[ck,sku.THUMSUP,sku.SPRITE]);
+  const n=(await call('warehouse','select public.lwb_purchase_check_batches($1,$2::jsonb) r',[id,JSON.stringify([
+    {sku_name:'THUMSUP',issue:'GASLESS',cases:2,pcs:0,batch_no:'trl2102'},{sku_name:'THUMSUP',issue:'GASLESS',cases:2,pcs:0,batch_no:'TRL2103'},{sku_name:'SPRITE',issue:'damage',cases:1,pcs:0,batch_no:''}])])).r;
+  assert.equal(n,3);
+  const b=(await db.query("select sku_name,batch_no from lwb_purchase_check_items order by sku_name,batch_no")).rows.map(x=>x.sku_name+':'+x.batch_no);
+  assert.deepEqual(b,['SPRITE:null','THUMSUP:TRL2102','THUMSUP:TRL2103']);
+  const sp=(await db.query("select id from lwb_purchase_check_items where sku_name='SPRITE'")).rows[0].id;
+  await call('manager','select public.lwb_purchase_check_batches($1,$2::jsonb) r',[id,JSON.stringify([{id:sp,batch_no:' b77 '}])]);
+  assert.equal((await db.query("select batch_no from lwb_purchase_check_items where id=$1",[sp])).rows[0].batch_no,'B77');
+  await assert.rejects(call('admin','select public.lwb_purchase_check_batches($1,$2::jsonb) r',[id,JSON.stringify([{id:sp,batch_no:'X'.repeat(31)}])]),/too long/);
+});

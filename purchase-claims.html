@@ -50,6 +50,16 @@
       .act .btns>span:empty{display:none}.act .btns>button.dl{flex-basis:100%}.act .btns>label{flex:0 0 auto}.act .btns>input[type=date]{flex:1 1 calc(100% - 90px);width:auto!important;min-width:0}}
     @media(max-width:900px){.act .g{grid-template-columns:1fr 1fr}}
     #printArea{display:none}
+    /* Claim mail in Mohit's Gmail format (19 Nov 2026) */
+    .mh{border:1px solid var(--erp-line);border-radius:8px;padding:10px 12px;background:#fff;overflow-x:auto;font-family:Arial,Helvetica,sans-serif;font-size:14px;color:#111;max-height:520px;overflow-y:auto}
+    .mh table{border-collapse:collapse}.mh td{border:1px solid #111;padding:6px 8px;text-align:center;white-space:nowrap}.mh td.k{text-align:left}
+    .mh td.y{background:#ffff00;font-weight:700}.mh input.bt{width:96px;height:28px;border:1.5px solid #e9a5b0;background:#fff4f5;border-radius:4px;text-align:center;font:inherit;font-size:13px;text-transform:uppercase}
+    .mh input.bt.ok{border-color:#9fd3b4;background:#f1fbf4}
+    .dchk{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 8px}.dchk span{display:inline-flex;align-items:center;gap:4px;padding:3px 9px;border-radius:999px;font-size:12.5px;font-weight:700}
+    .dchk .ok{background:#e4f6e9;color:#0d6b36}.dchk .bad{background:#fdecef;color:#9e1528}.dchk .warn{background:#fff2dc;color:#8a5300}
+    .seg{display:inline-flex;border:1px solid var(--erp-line);border-radius:999px;overflow:hidden;margin:0 0 10px;background:#fff}
+    .seg a{padding:6px 14px;font-size:13.5px;font-weight:700;color:var(--erp-ink);text-decoration:none;white-space:nowrap}.seg a.on{background:#002f37;color:#fff}
+    .seg a b{display:inline-block;min-width:20px;margin-left:5px;padding:0 6px;border-radius:999px;background:#fdecef;color:#c8102e;font-size:12px;text-align:center}
     .doc{box-sizing:border-box;width:210mm;min-height:295mm;padding:12mm 18mm 10mm;font-family:Arial,Helvetica,sans-serif;color:#111;font-size:11.5pt;line-height:1.35;display:flex;flex-direction:column}
     .doc h1.lh{font-family:Anton,Impact,"Arial Narrow Bold","Arial Narrow",Arial,sans-serif;font-size:44pt;letter-spacing:.5px;text-align:center;margin:4mm 0 3mm;font-weight:400;color:#222}
     .doc .rule{border-top:2.5px solid #555;margin:0 0 5mm}
@@ -73,6 +83,7 @@
   <div id="loading" class="status">Checking account access...</div>
   <main id="page" class="erp-main" hidden>
     <div class="erp-pagehead"><h1>Purchase Claims<button type="button" class="erp-i" aria-label="Info" title="Info" data-tip="Damage / leakage / breakage, gasless and shortage from purchase vehicles. Enter it in Goods Inward when you submit the bill, or later in Purchase Register → Verify. Chain: mail to company → company approval → return goods (if asked) → claim amount received. Live stock is not changed here.">i</button></h1></div>
+    <nav class="seg" aria-label="Purchase"><a href="purchase-register.html">📋 Purchase List</a><a href="purchase-claims.html" class="on" aria-current="page">⚠ Claims<b id="segN"></b></a></nav>
     <div id="err" class="pc-err" hidden></div>
     <div class="pc-kpis" id="kpis"></div>
     <div class="erp-pills" id="tabs">
@@ -121,7 +132,7 @@
     let BB={get:()=>""},SM=null,allClaims=[];
     const inB=x=>{const c=BB.get();if(!c||!SM)return true;return (x.lwb_purchase_check_items||[]).some(i=>SM.get(LWBBrand.skuKey(i.sku_name))===c)||(billItems.get(x.inward_id)||[]).some(i=>SM.get(LWBBrand.skuKey(i.sku_name))===c)};
     const pickBrand=()=>{claims=allClaims.filter(inB)};
-    let me=null,claims=[],bills=new Map(),billItems=new Map(),settings={},filter="open",busy=false,act=null;
+    let me=null,claims=[],bills=new Map(),billItems=new Map(),settings={},filter="open",busy=false,act=null,docSum=null;
 
     async function start(){
       const {data:{session}}=await client.auth.getSession();
@@ -146,6 +157,7 @@
         for(const b of r.data||[])bills.set(b.id,b);
         for(const x of it.data||[]){if(!billItems.has(x.inward_id))billItems.set(x.inward_id,[]);billItems.get(x.inward_id).push(x)}
       }
+      if(window.ERPDocs)try{docSum=await ERPDocs.summary(client,"PURCHASE_BILL")}catch(e){}
       allClaims=claims;pickBrand();
     }
     function tot(ch){
@@ -191,6 +203,7 @@
         const CC=[{t:"Checked",v:"verified_on",date:true},{t:"Invoice",v:ch=>billOf(ch).invoice_no||""},{t:"Supplier",v:ch=>billOf(ch).supplier_name||""},{t:"Vehicle",v:ch=>billOf(ch).vehicle_no||""},
           {t:"Qty",v:ch=>tot(ch).txt,num:true},{t:"Claim no.",v:"claim_no"},{t:"Claim amount",v:"claim_amount",money:true,sum:true},{t:"Received",v:"received_amount",money:true,sum:true},{t:"Status",v:ch=>STAGE[stage(ch)]||stage(ch)}];
         el("kpis").querySelectorAll(".pc-kpi").forEach((c,i)=>ERPList.card(c,()=>({title:KL[i][1],sub:"Purchase claims",rows:by(KL[i][0]),cols:CC})))}
+      el("segN").textContent=claims.filter(x=>OPEN.includes(stage(x))).length||"";
       const mails=by("mail");
       el("bulk").innerHTML=mails.length?"<span>"+mails.length+" claim"+(mails.length>1?"s":"")+" not mailed yet:</span>"+
         '<button type="button" class="pri" data-act="mailall">Today\'s Mail (all '+mails.length+')</button>':"";
@@ -225,13 +238,19 @@
       const ch=list[0],b=billOf(ch),head="Invoice "+esc(b.invoice_no||"")+" · "+esc(b.supplier_name||"")+" · "+esc(tot(ch).txt);
       let h="";
       if(act.kind==="mail"||act.kind==="mailall"){
-        const m=act.kind==="mailall"?mailAll(list):mailText(ch),canMark=list.some(x=>stage(x)==="mail");
+        const m=mailHtml(list,true),canMark=list.some(x=>stage(x)==="mail");
+        // Documents to attach for each invoice: bill PDF + damage photos (highlighted when missing).
+        const dk=list.map(x=>{const t=docSum&&docSum.get(String(x.inward_id)),inv=esc(billOf(x).invoice_no||"");
+          return !t?"":'<span class="'+(t.has("BILL")?"ok":"bad")+'">'+(t.has("BILL")?"✓":"✗")+" Inv "+inv+" PDF</span>"+
+            (kindsOf([x]).some(k=>k!=="Shortage")?'<span class="'+(t.has("DAMAGE")?"ok":"bad")+'">'+(t.has("DAMAGE")?"✓":"✗")+" Photos</span>":"")}).join("");
+        const noBatch=list.flatMap(x=>itemRows(x)).filter(i=>!i.batch_no).length;
         h='<h2>'+(act.kind==="mailall"?"Today's claim mail: "+list.length+" invoice"+(list.length>1?"s":""):"Claim mail")+"</h2><p class=\"sub\">"+(act.kind==="mailall"?list.map(x=>esc(billOf(x).invoice_no||"")).join(", "):head)+
-          ". Copy the subject and body into your email, attach the invoice PDF"+(list.length>1?"s":"")+" and the photos (<b>Download Photos</b> gives one ZIP), and send. Then press <b>Mark Mail Sent</b>.</p>"+
+          ". Press <b>Copy Mail</b> and paste in Gmail (the table comes as it is), attach the files (<b>Download Photos</b>: bill PDF + photos in one ZIP), send, then press <b>Mark Mail Sent</b>.</p>"+
+          '<div class="dchk">'+dk+(noBatch?'<span class="warn">⚠ Batch no. missing on '+noBatch+' line'+(noBatch>1?"s":"")+': type it in the table</span>':'<span class="ok">✓ Batch no. on all lines</span>')+"</div>"+
           '<label for="mSub">Subject</label><div class="cp"><input id="mSub" readonly value="'+esc(m.subject)+'"><button type="button" data-act="copysub">Copy Subject</button></div>'+
-          '<label for="mBody" style="margin-top:10px">Body</label><textarea id="mBody" readonly>'+esc(m.body)+'</textarea>'+
-          '<div class="btns" style="margin-top:8px"><button type="button" data-act="copybody">Copy Body</button><a class="mb" href="mailto:?subject='+esc(encodeURIComponent(m.subject))+"&amp;body="+esc(encodeURIComponent(m.body))+'">Open in Mail App</a>'+
-          (window.ERPDocs?'<button type="button" class="dl" data-act="dlphotos" title="Damage photos, videos and bill copy of '+(list.length>1?"these invoices":"this invoice")+' in one ZIP">⬇ Download Photos</button>':"")+
+          '<label style="margin-top:10px">Mail</label><div class="mh" id="mBody">'+m.html+"</div>"+
+          '<div class="btns" style="margin-top:8px"><button type="button" class="pri" data-act="copyhtml">📋 Copy Mail</button><a class="mb" href="mailto:?subject='+esc(encodeURIComponent(m.subject))+"&amp;body="+esc(encodeURIComponent(m.text))+'">Open in Mail App</a>'+
+          (window.ERPDocs?'<button type="button" class="dl" data-act="dlphotos" title="Bill PDF, damage photos and videos of '+(list.length>1?"these invoices":"this invoice")+' in one ZIP">⬇ Download Photos</button>':"")+
           (canMark?'<span style="margin-left:12px"></span><label for="mDate" style="margin:0 6px 0 0">Sent on</label><input id="mDate" type="date" value="'+today()+'" style="width:160px;margin-right:8px"><button type="button" class="pri" data-act="marksent">Mark Mail Sent'+(list.length>1?" (all "+list.length+")":"")+"</button>":"")+
           '<button type="button" data-act="close">Close</button></div>';
       }else if(act.kind==="approve"){
@@ -283,6 +302,12 @@
           ERPShell.toast(n?n+" file"+(n>1?"s":"")+" downloaded in one ZIP.":"No photos or PDF uploaded for this invoice yet. Use 📎 Photos & PDF to add them.",n?"success":"error")}
         catch(e){ERPShell.toast("Download failed: "+(e.message||e),"error")}
         finally{if(btn){btn.disabled=false;btn.textContent="⬇ Download all"}}
+        return;
+      }
+      if(a==="copyhtml"){
+        const l=act.kind==="mailall"?claims.filter(x=>stage(x)==="mail"):[ch].filter(Boolean),m=mailHtml(l,false);
+        try{await navigator.clipboard.write([new ClipboardItem({"text/html":new Blob([m.html],{type:"text/html"}),"text/plain":new Blob([m.text],{type:"text/plain"})})]);ERPShell.toast("Mail copied. Paste it in Gmail (Ctrl+V).","success")}
+        catch(_){const d=document.createElement("div");d.innerHTML=m.html;d.style.cssText="position:fixed;left:-9999px";document.body.append(d);const r=document.createRange();r.selectNodeContents(d);const sl=getSelection();sl.removeAllRanges();sl.addRange(r);document.execCommand("copy");sl.removeAllRanges();d.remove();ERPShell.toast("Mail copied.","success")}
         return;
       }
       if(a==="copysub"||a==="copybody"){
@@ -397,6 +422,46 @@
         ".\n\nThe invoice copies"+(kindsOf(list).some(k=>k!=="Shortage")?" and photos are":" are")+" attached. Kindly approve our claims and share the claim reference numbers."+(onlyShort(list)?"":" Please let us know if any goods are to be returned.")+sign();
       return {subject,body};
     }
+    // Claim mail in Mohit's own Gmail format (19 Nov 2026): one table, a column per SKU line of every invoice:
+    // DISTRIBUTOR NAME · SAP CODE · LOCATION · SKU · QTY (yellow) · INVOICE DATE · INVOICE NO. · BATCH NO · type (yellow), then TOTAL QTY.
+    const TYPE_T={DAMAGE:"DAMAGE - LEAKAGE / BREAKAGE",LEAKAGE:"LEAKAGE / BREAKAGE",GASLESS:"GASLESS - LEAKAGE",SHORTAGE:"SHORTAGE"};
+    const casesTxt=(c,p,u)=>{const w=sh(u)==="IC"?"IC":"CASES";return (c?fmt(c)+" "+w:"")+(c&&p?" + ":"")+(p?fmt(p)+" PCS":"")||"0"};
+    function mailHtml(list,edit){
+      const S=settings,cols=list.flatMap(ch=>itemRows(ch).map(i=>({ch,i,b:billOf(ch)})));
+      const name=String(S.distributor_name||"LUXURY WRIST BRAND").toUpperCase(),sap=String(S.distributor_code||"505668255").replace(/^0+/,""),loc="SURAT";
+      const k=kindsOf(list),nonS=[...new Set(list.flatMap(ch=>(ch.lwb_purchase_check_items||[]).map(i=>i.issue)).filter(x=>x!=="SHORTAGE"))];
+      const what=nonS.length?"Leakage & Breakage ("+nonS.map(x=>x==="GASLESS"?"Gasless / Leakage":"Damage / Leakage / Breakage").join(", ")+")"+(k.includes("Shortage")?" and Shortage":""):"Shortage";
+      const invs=[...new Set(list.map(ch=>billOf(ch).invoice_no||""))];
+      const subject=(nonS.length?"L&B Claim":"Shortage Claim")+" | "+(S.distributor_name||"Luxury Wrist Brand")+" | Inv "+invs.join(", ");
+      const N=cols.length,T='style="border:1px solid #000;padding:6px 8px;text-align:center;white-space:nowrap"',TK='style="border:1px solid #000;padding:6px 8px;text-align:left;white-space:nowrap"',TY='style="border:1px solid #000;padding:6px 8px;text-align:center;white-space:nowrap;background:#ffff00;font-weight:bold"';
+      const row=(label,cells,y)=>"<tr><td "+TK+' class="k">'+label+"</td>"+cells.map(c=>"<td "+(y?TY+' class="y"':T)+">"+c+"</td>").join("")+"</tr>";
+      const one=(label,v,b)=>"<tr><td "+TK+' class="k">'+label+"</td><td "+T+' colspan="'+N+'">'+(b?"<b>"+v+"</b>":v)+"</td></tr>";
+      const types=cols.map(c=>TYPE_T[c.i.issue]||c.i.issue),same=types.every(t=>t===types[0]);
+      const total=sumTxt(list.flatMap(x=>tot(x).list)).replace(/\bCS\b/g,"CASES");
+      const html='<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;color:#111">'+
+        "<p>Dear Sir / Team,</p><p>Greetings from "+esc(S.distributor_name?S.distributor_name.replace(/\b\w+/g,w=>w[0]+w.slice(1).toLowerCase()):"Luxury Wrist Brand")+", Surat.</p>"+
+        "<p>This is to inform you that we have found "+esc(what)+" in the stock received against the below invoice"+(invs.length>1?"s":"")+". Details are as under:</p>"+
+        '<table style="border-collapse:collapse" cellpadding="0" cellspacing="0">'+one("DISTRIBUTOR NAME",esc(name),1)+one("SAP CODE",esc(sap),1)+one("LOCATION",esc(loc))+
+        row("SKU",cols.map(c=>esc(c.i.sku_name)))+row("QTY",cols.map(c=>casesTxt(c.i.cases,c.i.pcs,U(c.i.sku_name))),1)+
+        row("INVOICE DATE",cols.map(c=>dmy(c.b.invoice_date,".")))+row("INVOICE NO.",cols.map(c=>esc(c.b.invoice_no||"")))+
+        row("BATCH NO",cols.map(c=>edit?'<input class="bt'+(c.i.batch_no?" ok":"")+'" data-bid="'+esc(c.i.id)+'" data-inw="'+esc(c.ch.inward_id)+'" maxlength="30" placeholder="Batch" value="'+esc(c.i.batch_no||"")+'">':esc(c.i.batch_no||"")))+
+        (same?"<tr><td "+TK+"></td><td "+TY+' class="y" colspan="'+N+'">'+esc(types[0]||"")+"</td></tr>":row("",types.map(esc),1))+
+        "</table><p>TOTAL QTY : <b>"+esc(total)+"</b></p>"+
+        "<p>The invoice copy"+(invs.length>1?"s":"")+(nonS.length?" and photos are":" is")+" attached. Kindly approve our claim and share the claim reference number.</p></div>";
+      const text="Dear Sir / Team,\n\nGreetings from Luxury Wrist Brand, Surat.\n\nThis is to inform you that we have found "+what+" in the stock received against the below invoices. Details are as under:\n\n"+
+        "DISTRIBUTOR NAME: "+name+"\nSAP CODE: "+sap+"\nLOCATION: "+loc+"\n\n"+
+        cols.map(c=>c.i.sku_name+" | "+casesTxt(c.i.cases,c.i.pcs,U(c.i.sku_name))+" | Inv "+(c.b.invoice_no||"")+" dt. "+dmy(c.b.invoice_date,".")+" | Batch "+(c.i.batch_no||"-")+" | "+(TYPE_T[c.i.issue]||c.i.issue)).join("\n")+
+        "\n\nTOTAL QTY : "+total+"\n\nThe invoice copies and photos are attached. Kindly approve our claim and share the claim reference number.";
+      return {subject,html,text};
+    }
+    // Batch no. typed in the mail table: saved at once on that line (lwb_purchase_claim_batch_setup.sql).
+    document.addEventListener("change",async e=>{const t=e.target;if(!t.matches||!t.matches("input.bt[data-bid]"))return;
+      const v=t.value.trim().toUpperCase();t.value=v;
+      const r=await client.rpc("lwb_purchase_check_batches",{p_inward:t.dataset.inw,p_items:[{id:t.dataset.bid,batch_no:v}]});
+      if(r.error)return ERPShell.toast("Batch no. not saved: "+r.error.message,"error");
+      for(const ch of claims)for(const i of ch.lwb_purchase_check_items||[])if(String(i.id)===t.dataset.bid)i.batch_no=v||null;
+      t.classList.toggle("ok",!!v);ERPShell.toast("Batch no. saved.","success");
+      const sc=el("mBody").scrollLeft;renderAct();el("mBody").scrollLeft=sc});
     function printDoc(html,name){el("printArea").innerHTML=html;const t=document.title;if(name)document.title=name;setTimeout(()=>{window.print();document.title=t},50)}
     document.addEventListener("click",e=>{const t=e.target.closest("[data-act]");if(t)doAct(t.dataset.act,t.dataset.id)});
     function setTab(){const f=location.hash.replace("#","");filter=["open","mail","approval","return","due","RECEIVED","REJECTED","all"].includes(f)?f:"open";render()}
@@ -409,6 +474,8 @@
       if(window.LWBBrand)try{BB=await LWBBrand.mount(client,{into:"#page .erp-pagehead",after:true,onChange:()=>{pickBrand();render()}});if(BB.companies.length>1)SM=await LWBBrand.skuMap(client)}catch(e){}
       if(window.LWBBrand)try{U=await LWBBrand.units(client)}catch(e){}
       await load();setTab();
+      const cq=new URLSearchParams(location.search).get("claim");
+      if(cq){history.replaceState(null,"",location.pathname+location.hash);const c=claims.find(x=>x.id===cq||x.inward_id===cq);if(c)openAct(stage(c)==="mail"||stage(c)==="approval"?"mail":"approve",c.id)}
     })();
   </script>
 </body>
