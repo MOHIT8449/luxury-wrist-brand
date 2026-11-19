@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Dashboard | Luxury Wrist Brand ERP</title>
   <script src="erp-date.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="vendor/supabase-js-2.119.0.js"></script>
   <link rel="stylesheet" href="erp-shell.css">
   <script src="erp-shell.js"></script>
   <script src="party-pay.js"></script>
@@ -175,7 +175,19 @@
       body.erp-compact[data-erp-page=dashboard] .focus-item .tx{flex:1 1 180px}
       body.erp-compact[data-erp-page=dashboard] .focus-item .x{margin-left:auto}
     }
-  </style>
+      .tkp-back{position:fixed;inset:0;z-index:3000;background:rgba(10,20,30,.5);display:grid;place-items:center;padding:8px}
+    .tkp{background:#fff;border-radius:12px;width:min(560px,100%);max-height:calc(100dvh - 16px);display:flex;flex-direction:column;box-shadow:0 20px 50px rgba(0,0,0,.3);overflow:hidden;color:var(--erp-ink,#172b48)}
+    .tkp-h{display:flex;align-items:baseline;gap:8px;padding:12px 14px;background:#002f37;color:#fff}.tkp-h b{font-size:17px;flex:1}.tkp-h small{color:#c9a227;font-weight:700}
+    .tkp-b{overflow:auto;padding:8px 10px;display:flex;flex-direction:column;gap:8px}
+    .tkp-t{border:1px solid var(--erp-line,#d5dde8);border-left:4px solid #d97706;border-radius:8px;padding:8px 10px}.tkp-t.late{border-left-color:#c0392b}
+    .tkp-tt{display:flex;gap:6px;align-items:center;flex-wrap:wrap}.tkp-tt b{flex:1 1 200px;font-size:14.5px}
+    .tkp-t>small{display:block;color:var(--erp-muted,#6b7280);font-size:12px;margin-top:2px}
+    .tkp-d{white-space:pre-wrap;overflow-wrap:anywhere;font-size:13px;margin-top:6px;line-height:1.45}
+    .tkp-push{display:block;background:#fff3c4;color:#7a4a00;font-weight:700;border-radius:6px;padding:3px 6px;margin:2px 0}
+    .tkp-f{display:flex;gap:8px;padding:10px 12px;border-top:1px solid var(--erp-line,#d5dde8)}
+    .tkp-f>*{flex:1;height:40px;border-radius:6px;font:inherit;font-weight:700;cursor:pointer;border:1px solid var(--erp-line,#d5dde8);background:#fff;display:grid;place-items:center;text-decoration:none;color:inherit}
+    .tkp-f .go{background:#002f37;border-color:#002f37;color:#fff}
+</style>
 </head>
 <body>
   <div id="loading" class="status">Checking account access...</div>
@@ -265,25 +277,35 @@
     const VERIFY_ICON={ORDER_APPROVAL:"check",LOADING:"box",RETURN_APPROVE:"undo",RETURN_RECEIVE:"inbox",TALLY_BILL:"bill",
       DRIVER_PAYMENT:"cash",OFFICE_PAYMENT:"cash",CREDIT_NOTE:"note",SALES_RETURN:"undo",COMPLAINT:"chat",PARTY_CALL:"phone"};
     async function loadVerify(){
-      const card=document.getElementById("verifyCard"),list=document.getElementById("verifyList");
       const queue=["admin","manager","accounts","warehouse"].includes(currentRole);
       const [q,cmp,calls]=await Promise.all([queue?client.rpc("lwb_my_verify_queue"):Promise.resolve(null),complaintsDue(),partyCallsDue()]);
+      VQ={q,cmp,calls,queue};drawVerify();
+    }
+    // "Make Tally bill" counted only status 'loaded' (last 45 days), so it showed 124 while Bills to make showed
+    // another number. The role Dashboard (role-dashboard.js) counts Bills to make with the page's own rule and puts
+    // it in window.LWBMakeBills, then calls drawVerify again (Mohit, 16 Nov 2026).
+    let VQ=null;
+    function drawVerify(){
+      if(!VQ)return;
+      const {q,cmp,calls,queue}=VQ,card=document.getElementById("verifyCard"),list=document.getElementById("verifyList");
       if((!q||q.error)&&!cmp&&!calls){card.hidden=true;return}
-      const LABEL={DRIVER_PAYMENT:"Money on the way — receive from driver"};
-      const hidden=ERPShell.hiddenPages(),due=(calls?[calls]:[]).concat((q&&!q.error&&q.data)||[]).concat(cmp?[cmp]:[]).filter(r=>Number(r.cnt)>0&&!hidden.includes(r.page));
+      const LABEL={DRIVER_PAYMENT:"Money on the way — receive from driver"},MB=window.LWBMakeBills;
+      const fix=r=>r.item==="TALLY_BILL"&&MB?{...r,label:"Bills to make (Tally bill)",cnt:MB.cnt,amount:MB.amount,page:"party-billing.html"}:r;
+      const hidden=ERPShell.hiddenPages(),due=(calls?[calls]:[]).concat(((q&&!q.error&&q.data)||[]).map(fix)).concat(cmp?[cmp]:[]).filter(r=>Number(r.cnt)>0&&!hidden.includes(r.page));
       if(!queue&&!due.length){card.hidden=true;return}
       list.replaceChildren();
       due.forEach(r=>{
         const a=document.createElement("a");a.href=r.page;
         const ic=document.createElement("span");ic.className="ic";ic.innerHTML=ERPShell.icon(VERIFY_ICON[r.item]||"check");
         const t=document.createElement("span");t.textContent=LABEL[r.item]||r.label;
-        if(Number(r.amount)>0){const s=document.createElement("small");s.textContent="₹"+fmtINR(r.amount);t.appendChild(s)}
+        if(Number(r.amount)>0&&currentRole!=="warehouse"){const s=document.createElement("small");s.textContent="₹"+fmtINR(r.amount);t.appendChild(s)}
         const c=document.createElement("span");c.className="cnt";c.textContent=r.cnt;
         a.append(ic,t,c);list.appendChild(a);
       });
       if(!due.length){const n=document.createElement("div");n.className="none";n.textContent="✓ Nothing waiting for you to verify.";list.appendChild(n)}
       card.hidden=false;
     }
+    window.LWBVerifyRedraw=drawVerify;
     // Approvals waiting (approvals.js): "Waiting approval N" next to the Admin view dropdown, opens approvals.html.
     async function loadApprovals(uid){
       let pill=document.getElementById("apPill");
@@ -326,7 +348,7 @@
       const tb=document.getElementById("taskBtn"),gb=document.getElementById("giveBtn"),tn=document.getElementById("taskN");
       if(ERPShell.hiddenPages().includes("tasks.html")){card.hidden=true;tb.hidden=true;gb.hidden=true;return}
       const [mine,given]=await Promise.all([
-        client.from("lwb_tasks").select("id,title,due_date,priority,status,assigned_by_name").eq("assigned_to",taskUid).in("status",["OPEN","IN_PROGRESS"]).order("due_date").limit(50),
+        client.from("lwb_tasks").select("id,title,details,due_date,priority,status,assigned_by_name").eq("assigned_to",taskUid).in("status",["OPEN","IN_PROGRESS"]).order("due_date").limit(50),
         client.from("lwb_tasks").select("id,due_date,status").eq("assigned_by",taskUid).neq("assigned_to",taskUid).in("status",["OPEN","IN_PROGRESS"]).limit(1000)]);
       if(mine.error){card.hidden=true;tb.hidden=true;gb.hidden=true;return}
       const today=new Date().toLocaleDateString("en-CA",{timeZone:"Asia/Kolkata"});
@@ -363,6 +385,28 @@
       tb.hidden=false;gb.hidden=currentRole==="accounts";
       if(!tb.dataset.on){tb.dataset.on="1";tb.onclick=()=>{const open=card.hidden;card.hidden=!open;tb.setAttribute("aria-expanded",String(open))}}
       card.hidden=tb.getAttribute("aria-expanded")!=="true";
+      taskPopup(rows.filter(x=>late(x)>=0),late,today);
+    }
+    // Today's tasks popup (Mohit, 17 Nov 2026): when the salesman opens the ERP, tasks due today / overdue
+    // (e.g. "Follow up 8 parties · bring 5 orders" from Party Buying) pop up once. A new task pops up again.
+    // Lines starting with ⭐ (items to push) are highlighted.
+    // Off for now (Mohit, 18 Nov 2026): old tasks must not pop up; he will say when to turn it on again (TASK_POPUP=true).
+    const TASK_POPUP=false;
+    function taskPopup(due,late,today){
+      if(!TASK_POPUP||!due.length||document.getElementById("tkPop"))return;
+      const k="lwb_task_pop_"+taskUid+"_"+today;let seen=[];
+      try{seen=JSON.parse(localStorage.getItem(k)||"[]")}catch(e){}
+      if(due.every(x=>seen.includes(x.id)))return;
+      const e=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+      const det=t=>e(t).replace(/^(⭐.*)$/gm,'<mark class="tkp-push">$1</mark>');
+      const w=document.createElement("div");w.id="tkPop";w.className="tkp-back";
+      w.innerHTML='<div class="tkp" role="dialog" aria-modal="true" aria-labelledby="tkpH"><div class="tkp-h"><b id="tkpH">📋 Today\'s tasks for you</b><small>'+due.length+(due.length>1?" tasks":" task")+'</small></div><div class="tkp-b">'+
+        due.map(x=>{const d=late(x);return '<div class="tkp-t'+(d>0?" late":"")+'"><div class="tkp-tt"><b>'+e(x.title)+'</b><span class="erp-badge'+(d>0?" red":" amber")+'">'+(d>0?"Overdue "+d+(d===1?" day":" days"):"Due today")+"</span>"+(x.priority==="URGENT"?'<span class="erp-badge red">Urgent</span>':"")+'</div><small>TSK-'+x.id+(x.assigned_by_name?" · from "+e(x.assigned_by_name):"")+"</small>"+(x.details?'<div class="tkp-d">'+det(x.details)+"</div>":"")+"</div>"}).join("")+
+        '</div><div class="tkp-f"><button type="button" data-k="ok">OK, later</button><a class="go" href="tasks.html" data-k="open">Open my tasks</a></div></div>';
+      const shut=()=>{try{localStorage.setItem(k,JSON.stringify([...new Set([...seen,...due.map(x=>x.id)])]))}catch(er){}w.remove()};
+      w.addEventListener("click",ev=>{const b=ev.target.closest("[data-k]");if(b)shut()});
+      document.addEventListener("keydown",function esc(ev){if(ev.key==="Escape"&&w.isConnected){shut();document.removeEventListener("keydown",esc)}});
+      document.body.append(w);
     }
     const STATUS={
       pending_approval:["Pending Approval","amber","warehouse-orders.html"],approved:["Approved","blue","warehouse-orders.html"],
@@ -644,7 +688,7 @@
     // Role-wise home (role-dashboard.js): Admin, Sales Head, Accounts, Godown Manager, Salesman.
     // Driver / Transport keep the order-status Dashboard below. Admin can look at another role's view.
     const ROLE_NOTE={admin:"Whole business at one place: sales, money, stock, team.",manager:"PO approval, team target, delivery follow-up.",
-      accounts:"Cash in / out, bank match, orders on the way, returns.",warehouse:"Loading, vehicles, stock, returns, damage.",sales:"Today's plan, my target, my orders, my parties."};
+      accounts:"Cash in / out, bank match, orders on the way, returns.",warehouse:"Orders assigned to me for loading, returns, damage.",sales:"Today's plan, my target, my orders, my parties."};
     function roleDashboard(role,name,uid,plan){
       if(!window.LWBRoleDash||!LWBRoleDash.has(role))return false;
       const main=document.getElementById("dashboard"),head=main.querySelector(".erp-pagehead"),welcome=document.getElementById("welcomeText");

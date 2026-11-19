@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Party Rate Offer | Luxury Wrist Brand ERP</title>
+  <script src="erp-date.js"></script>
+  <script src="vendor/supabase-js-2.119.0.js"></script>
+  <link rel="stylesheet" href="erp-shell.css">
+  <link rel="stylesheet" href="sales.css">
+  <script src="erp-shell.js"></script>
+  <script src="sales-common.js"></script>
+  <script src="party-list.js"></script>
+  <script src="mepd-scheme.js"></script>
+  <style>
+    /* Party Rate Offer (lwb_party_rate_offer_setup.sql, Mohit 16 Nov 2026): like a PO, party + category / pack + rate per case,
+       saved as the rate given to that party, shared as an image; (i) = the rates this party got before. */
+    .pr-wrap{display:grid;grid-template-columns:minmax(0,1fr) 360px;gap:10px;align-items:start}
+    .pr-card{background:#fff;border:1px solid var(--erp-line,#dfe4ea);border-radius:8px;padding:10px 12px;min-width:0}
+    .pr-card h2{font-size:14px;margin:0 0 8px;display:flex;align-items:center;gap:6px}
+    .pr-top{display:grid;grid-template-columns:minmax(0,1fr) 72px 140px;gap:6px;margin-bottom:8px}
+    .pr-top label,.pr-note label{display:block;font-size:11px;color:#556;font-weight:600;margin-bottom:2px}
+    .pr-in{width:100%;height:34px;border:1.5px solid #e3e7ec;border-radius:6px;padding:0 8px;font:inherit;font-size:13.5px;box-sizing:border-box;background:#fff}
+    .pr-in:focus{border-color:var(--erp-red,#c8102e);outline:none}
+    .pr-lines{width:100%;border-collapse:collapse;font-size:13px}
+    .pr-lines th{font-size:11.5px;text-align:left;color:#556;font-weight:600;padding:5px 4px;border-bottom:1px solid #e3e7ec;background:#f7f8fa;white-space:nowrap}
+    .pr-lines td{padding:3px 4px;border-bottom:1px solid #eef1f4;vertical-align:middle}
+    .pr-lines td.no{color:#6b7785;width:22px;text-align:center}
+    .pr-lines td.rt{width:110px}.pr-lines td.rt input,.pr-lines td.mg input{text-align:right}
+    .pr-lines td.mg{width:90px}.pr-lines td.mg input.neg{border-color:#c8102e;color:#c8102e}
+    .pr-lines td.last{width:250px;font-size:12px;color:#4b5563;white-space:nowrap}
+    .pr-lines td.act{width:62px;white-space:nowrap;text-align:right}
+    .pr-lines small{display:block;font-size:10.5px;color:#6b7785}
+    .up{color:#13824a;font-weight:700}.dn{color:#c8102e;font-weight:700}.mut{color:#6b7785;font-size:12px}
+    .pr-ib{width:22px;height:22px;border-radius:50%;border:1.5px solid #94a3b8;background:#fff;color:#475569;font:italic 700 12px/1 Georgia,serif;cursor:pointer;padding:0;vertical-align:middle}
+    .pr-ib:hover{border-color:#0f766e;color:#0f766e;background:#f0fdfa}
+    .pr-x{width:24px;height:24px;border:0;background:none;color:#9aa4b2;font-size:16px;cursor:pointer;padding:0;vertical-align:middle}
+    .pr-x:hover{color:#c8102e}
+    .pr-add{display:flex;gap:6px;align-items:center;margin:8px 0;flex-wrap:wrap}
+    .pr-note{margin:6px 0 8px}
+    .pr-row{display:flex;gap:6px;flex-wrap:nowrap;align-items:center}
+    .pr-row .sl-btn{flex:1 1 0;min-width:0;padding:0 8px;overflow:hidden;text-overflow:ellipsis}
+    .pr-msg{font-size:12.5px;margin:6px 0 0;min-height:16px}
+    .pr-msg.bad{color:#c8102e;font-weight:600}.pr-msg.ok{color:#13824a;font-weight:600}
+    .pr-list{list-style:none;margin:0;padding:0;max-height:calc(100vh - 230px);overflow:auto}
+    .pr-list li{padding:7px 4px;border-bottom:1px solid #eef1f4;cursor:pointer;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px 8px}
+    .pr-list li:hover{background:#f7f8fa}
+    .pr-list b{font-size:13px;overflow-wrap:anywhere}.pr-list .r{text-align:right;font-size:12px;color:#4b5563;white-space:nowrap}
+    .pr-list .s{font-size:11.5px;color:#6b7785;grid-column:1/-1}
+    .pr-list li.cx b{text-decoration:line-through;color:#9aa4b2}
+    .tag{display:inline-block;font-size:10.5px;font-weight:700;padding:1px 7px;border-radius:9px;background:#fdecef;color:#b3263f;margin-left:4px}
+    dialog.pr-dlg{border:0;border-radius:10px;padding:0;width:min(520px,calc(100vw - 24px));max-height:calc(100vh - 40px);box-shadow:0 12px 40px rgba(0,0,0,.25)}
+    dialog.pr-dlg::backdrop{background:rgba(15,23,42,.45)}
+    .pr-dh{display:flex;align-items:center;gap:8px;padding:10px 12px;border-bottom:1px solid #eef1f4}
+    .pr-dh h3{font-size:14.5px;margin:0;flex:1;min-width:0;overflow-wrap:anywhere}
+    .pr-db{padding:10px 12px;overflow:auto;max-height:calc(100vh - 180px)}
+    .pr-df{padding:8px 12px;border-top:1px solid #eef1f4}
+    .pr-hist{width:100%;border-collapse:collapse;font-size:13px}
+    .pr-hist th{font-size:11px;text-align:left;color:#556;padding:4px;border-bottom:1px solid #e3e7ec}
+    .pr-hist td{padding:5px 4px;border-bottom:1px solid #eef1f4}
+    .pr-hist .n{text-align:right;white-space:nowrap}
+    .pr-hist td:first-child,.pr-hist td.mut{white-space:nowrap}
+    .pr-hist tr.cx td{color:#9aa4b2;text-decoration:line-through}
+    .pr-now{background:#fff8e6;border:1px solid #f3d48a;border-radius:6px;padding:6px 8px;font-size:13px;margin-bottom:8px}
+    .pr-img{max-width:100%;border:1px solid #e3e7ec;border-radius:6px;display:block;margin:0 auto}
+    @media(max-width:900px){.pr-wrap{grid-template-columns:minmax(0,1fr)}.pr-list{max-height:none}}
+    @media(max-width:640px){
+      .pr-top{grid-template-columns:minmax(0,1fr) 60px 128px}
+      .pr-lines thead{display:none}
+      .pr-lines tr{display:grid;grid-template-columns:22px minmax(0,1fr) 70px 64px auto;gap:3px 6px;align-items:center;padding:6px 0;border-bottom:1px solid #eef1f4}
+      .pr-lines td{border:0;padding:0!important;width:auto!important;background:none!important}
+      .pr-lines td.act{grid-row:1;grid-column:5}
+      .pr-lines td.last{grid-row:2;grid-column:2/-1;white-space:normal;line-height:1.3}
+      .pr-lines td.last small{display:inline;margin-left:4px}
+      .pr-row .sl-btn{font-size:12.5px;padding:0 4px}
+    }
+  </style>
+</head>
+<body>
+  <div id="loading" class="status">Checking account access...</div>
+  <main id="page" class="erp-main" hidden>
+    <div class="erp-pagehead"><h1>Party Rate Offer<button type="button" class="erp-i" aria-label="Info" title="Info" data-tip="Like making a PO: pick the party, add each category / pack with the rate per case, Save. The rate is kept as given to that party. Tap (i) on a line to see what rate this party got before. ROI ₹ is taken off the landing shown. Image / WhatsApp sends only party name, category and rate.">i</button></h1></div>
+    <div id="status" class="sl-msg" hidden></div>
+    <div class="pr-wrap">
+      <section class="pr-card" aria-labelledby="newT">
+        <h2 id="newT"><span id="formTitle">New rate offer</span><span id="lastInfo" class="mut"></span></h2>
+        <div class="pr-top">
+          <div><label for="party">Party</label><input id="party" class="pr-in" data-party-list autocomplete="off" placeholder="Type party name"></div>
+          <div><label for="roi" title="ROI ₹ per case, taken off the landing (e.g. 5: landing 650 = 645)">ROI ₹</label><input id="roi" class="pr-in" type="number" min="0" step="0.5" inputmode="decimal" placeholder="0"></div>
+          <div><label for="odate">Date</label><input id="odate" class="pr-in" type="date"></div>
+        </div>
+        <table class="pr-lines"><thead><tr><th>#</th><th>Category / pack</th><th>Rate ₹ / case</th><th>Margin ₹</th><th>Last given</th><th></th></tr></thead><tbody id="lines"></tbody></table>
+        <div class="pr-add">
+          <button type="button" class="sl-btn ghost small" id="addLine">+ Add item</button>
+          <button type="button" class="sl-btn ghost small" id="useLast" disabled>↺ Last rates of this party</button>
+          <span id="cnt" class="mut"></span>
+        </div>
+        <div class="pr-row">
+          <button type="button" class="sl-btn" id="save">💾 Save</button>
+          <button type="button" class="sl-btn ghost" id="img">🖼 Image</button>
+          <button type="button" class="sl-btn ghost" id="wa">WhatsApp</button>
+          <button type="button" class="sl-btn ghost" id="clear">New</button>
+        </div>
+        <p id="msg" class="pr-msg" role="status"></p>
+      </section>
+      <section class="pr-card" aria-labelledby="listT">
+        <h2 id="listT">Rates given<span id="listN" class="mut"></span></h2>
+        <div class="pr-top" style="grid-template-columns:minmax(0,1fr) 96px">
+          <input id="q" class="pr-in" type="search" placeholder="Search party / item / RO no." aria-label="Search">
+          <select id="days" class="pr-in" aria-label="Days"><option value="30">30 days</option><option value="90" selected>90 days</option><option value="365">1 year</option><option value="3650">All</option></select>
+        </div>
+        <ul id="list" class="pr-list"></ul>
+      </section>
+    </div>
+  </main>
+
+  <datalist id="itemList"></datalist>
+  <dialog id="dlg" class="pr-dlg" aria-labelledby="dlgT">
+    <div class="pr-dh"><h3 id="dlgT"></h3><button type="button" class="pr-x" id="dlgX" aria-label="Close">✕</button></div>
+    <div class="pr-db" id="dlgB"></div>
+    <div class="pr-df pr-row" id="dlgF"></div>
+  </dialog>
+
+  <script>
+    const S=LWBSales,{client,el,esc}=S;
+    const setupMsg="Run lwb_party_rate_offer_setup.sql first (it runs by itself when the PR is merged).";
+    const errText=e=>/lwb_party_rate/.test(e.message||"")&&/function|schema cache/.test(e.message||"")?setupMsg:(e.message||String(e));
+    const key=v=>String(v||"").trim().replace(/\s+/g," ").toUpperCase();
+    const money=n=>Number(n||0).toLocaleString("en-IN",{maximumFractionDigits:2});
+    const today=()=>LWBDate&&LWBDate.today?LWBDate.today():new Date(Date.now()+19800000).toISOString().slice(0,10);
+    const dshort=d=>{if(!d)return"";const [y,m,dd]=String(d).slice(0,10).split("-");return dd+" "+["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][+m-1]+" "+y.slice(2)};
+    let me=null,land=new Map(),packs=[],offers=[],last=new Map(),lastParty="",saved=null;
+
+    // ROI ₹ / case typed on top (Mohit, 16 Nov 2026): landing shown = landing − ROI. Kept on this device only.
+    const roi=()=>Math.max(0,Number(el("roi").value)||0);
+    function msg(t,kind){const m=el("msg");m.textContent=t||"";m.className="pr-msg"+(kind?" "+kind:"")}
+    function lineRow(it){
+      const tr=document.createElement("tr");
+      tr.innerHTML='<td class="no"></td><td><input class="pr-in" data-f="item" list="itemList" maxlength="120" placeholder="e.g. 2.25L" aria-label="Category / pack"></td>'+
+        '<td class="rt"><input class="pr-in" data-f="rate" type="number" min="0" step="0.01" inputmode="decimal" placeholder="₹" aria-label="Rate per case"></td>'+
+        '<td class="mg"><input class="pr-in" data-f="mg" type="number" step="0.5" inputmode="decimal" placeholder="+" aria-label="Margin over landing" title="Margin over landing: rate = landing + margin"></td>'+
+        '<td class="last"></td><td class="act"><button type="button" class="pr-ib" data-act="hist" aria-label="Past rates" title="Past rates of this party">i</button> <button type="button" class="pr-x" data-act="del" aria-label="Remove line">✕</button></td>';
+      tr.querySelector('[data-f=item]').value=it&&it.item||"";
+      tr.querySelector('[data-f=rate]').value=it&&it.rate!=null?it.rate:"";
+      return tr;
+    }
+    function addLine(it,focus){const tr=lineRow(it);el("lines").appendChild(tr);refresh();if(focus)tr.querySelector('[data-f=item]').focus();return tr}
+    const ldOf=item=>{const v=land.get(key(item));return v==null?null:v-roi()};
+    function lines(){return [...el("lines").querySelectorAll("tr")].map(tr=>({tr,item:tr.querySelector('[data-f=item]').value.trim(),rate:tr.querySelector('[data-f=rate]').value.trim()}))}
+    function refresh(){
+      const ls=lines();let n=0;
+      ls.forEach((l,i)=>{
+        l.tr.querySelector(".no").textContent=i+1;
+        const p=last.get(key(l.item)),cell=l.tr.querySelector(".last");
+        if(l.item&&l.rate!=="")n++;
+        if(!l.item){cell.innerHTML="";return}
+        const pk=packs.find(x=>key(x.pack_name)===key(l.item));
+        const ld=pk?ldOf(pk.pack_name):null,mg=ld!=null&&l.rate!==""?Number(l.rate)-ld:null;
+        // Landing + margin on screen only (Mohit, 16 Nov 2026); never on the image / WhatsApp.
+        const list=pk?'<small>'+(Number(pk.slab3_rate)>0?'List ₹'+money(pk.slab3_rate):"")+(ld!=null?(Number(pk.slab3_rate)>0?" · ":"")+'Landing ₹'+money(ld):"")+'</small>':"";
+        // Margin box (Mohit, 16 Nov 2026): shows rate − landing; typing in it sets the rate (see "input" below).
+        const mb=l.tr.querySelector('[data-f=mg]');mb.disabled=ld==null;mb.title=ld==null?"No landing for this item (not a Rate List pack)":"Margin over landing: rate = landing + margin";
+        if(document.activeElement!==mb)mb.value=mg==null?"":String(Math.round(mg*10)/10);
+        mb.classList.toggle("neg",mg!=null&&mg<0);
+        if(!p){cell.innerHTML='<span class="mut">First time</span>'+list;return}
+        const d=l.rate===""?0:Number(l.rate)-Number(p.rate);
+        cell.innerHTML='₹'+money(p.rate)+' <span class="mut">· '+esc(dshort(p.offer_date))+'</span>'+
+          (l.rate!==""&&d?' <span class="'+(d>0?"up":"dn")+'">'+(d>0?"▲ +":"▼ ")+money(d)+'</span>':l.rate!==""?' <span class="mut">same</span>':"")+list;
+      });
+      el("cnt").textContent=n?n+" item"+(n===1?"":"s"):"";
+    }
+    async function loadLast(){
+      const party=el("party").value.trim();
+      if(key(party)===key(lastParty))return;lastParty=party;last=new Map();el("useLast").disabled=true;el("lastInfo").textContent="";
+      if(party){
+        const {data,error}=await client.rpc("lwb_party_rate_last",{p_party:party});
+        if(key(party)!==key(lastParty))return;
+        if(error){msg(errText(error),"bad");return}
+        (data||[]).forEach(r=>last.set(r.item_key,r));
+        el("useLast").disabled=!last.size;
+        el("lastInfo").textContent=last.size?"· "+last.size+" rate"+(last.size===1?"":"s")+" given before":"· new party for rates";
+      }
+      refresh();
+    }
+    function collect(){
+      const party=el("party").value.trim(),ls=lines().filter(l=>l.item||l.rate!=="");
+      if(!party)throw Error("Pick the party.");
+      if(!ls.length)throw Error("Add at least one item with its rate.");
+      const bad=ls.find(l=>!l.item||l.rate===""||!(Number(l.rate)>=0));
+      if(bad)throw Error(bad.item?"Enter the rate for "+bad.item+".":"Write the category / pack on line "+(lines().indexOf(bad)+1)+".");
+      const seen=new Set();for(const l of ls){if(seen.has(key(l.item)))throw Error(l.item+" is added twice.");seen.add(key(l.item))}
+      return {party_name:party,offer_date:el("odate").value||today(),note:"",lines:ls.map(l=>({item:l.item,rate:Number(l.rate)}))};
+    }
+    function resetForm(){
+      el("lines").innerHTML="";saved=null;el("party").value="";el("odate").value=today();lastParty="x";
+      el("formTitle").textContent="New rate offer";
+      for(let i=0;i<3;i++)addLine();loadLast();msg("");
+    }
+
+    // ---------- image ----------
+    // Image = party name, category and rate only (Mohit, 16 Nov 2026): no number, date, note or footer.
+    function draw(o){
+      const sc=2,W=520,rowH=42,FONT=(b,s)=>(b?"bold ":"")+s+'px "Segoe UI",Arial,sans-serif';
+      const ls=o.lines,H=56+rowH+ls.length*rowH;
+      const cv=document.createElement("canvas");cv.width=W*sc;cv.height=H*sc;
+      const g=cv.getContext("2d");g.scale(sc,sc);g.fillStyle="#fff";g.fillRect(0,0,W,H);
+      const txt=(t,x,y,size,color,bold,align,maxW)=>{g.fillStyle=color;g.textAlign=align||"left";g.textBaseline="middle";let s=size;g.font=FONT(bold,s);while(maxW&&g.measureText(t).width>maxW&&s>10){s--;g.font=FONT(bold,s)}g.fillText(t,x,y)};
+      g.fillStyle="#0b3d91";g.fillRect(0,0,W,56);txt(String(o.party_name).toUpperCase(),W/2,28,21,"#fff",true,"center",W-30);
+      let y=56;g.fillStyle="#ffde59";g.fillRect(0,y,W,rowH);
+      txt("CATEGORY",20,y+rowH/2,14,"#000",true);txt("RATE",W-20,y+rowH/2,14,"#000",true,"right");y+=rowH;
+      ls.forEach((l,i)=>{g.fillStyle=i%2?"#f7f9fc":"#fff";g.fillRect(0,y,W,rowH);g.strokeStyle="#dfe4ea";g.beginPath();g.moveTo(0,y+rowH-.5);g.lineTo(W,y+rowH-.5);g.stroke();
+        txt(String(l.item).toUpperCase(),20,y+rowH/2,18,"#111",true,"left",W-170);
+        txt("₹ "+money(l.rate),W-20,y+rowH/2,20,"#0b3d91",true,"right");y+=rowH});
+      g.strokeStyle="#0b3d91";g.lineWidth=2;g.strokeRect(1,1,W-2,H-2);
+      return cv;
+    }
+    const toBlob=cv=>new Promise(ok=>cv.toBlob(ok,"image/png"));
+    const fileName=o=>("Rate "+o.party_name+" "+(o.offer_date||"")).replace(/[^\w .-]+/g,"").trim();
+    async function shareImage(o){
+      const cv=draw(o),b=await toBlob(cv),f=new File([b],fileName(o)+".png",{type:"image/png"});
+      if(navigator.canShare&&navigator.canShare({files:[f]})&&/Android|iPhone|iPad/i.test(navigator.userAgent)){
+        try{await navigator.share({files:[f],title:"Rate offer"});return "Shared."}catch(e){if(e.name==="AbortError")return ""}
+      }
+      showImage(o,cv,b);return "";
+    }
+    function showImage(o,cv,b){
+      openDlg("Rate image · "+o.party_name,'<img class="pr-img" alt="Rate offer image" src="'+cv.toDataURL("image/png")+'">',[
+        ["📋 Copy",async()=>{try{await navigator.clipboard.write([new ClipboardItem({"image/png":b})]);dlgMsg("Copied. Paste it in WhatsApp.")}catch(e){dlgMsg("This browser cannot copy images. Use Download.")}}],
+        ["⬇ Download",()=>{const u=URL.createObjectURL(b),a=document.createElement("a");a.href=u;a.download=fileName(o)+".png";document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),2000)}],
+        ["Close",closeDlg,"ghost"]]);
+    }
+    function waText(o){
+      return "*"+String(o.party_name).toUpperCase()+"*\n\n"+o.lines.map(l=>String(l.item).toUpperCase()+" - ₹"+money(l.rate)).join("\n");
+    }
+    const openWa=o=>window.open("https://wa.me/?text="+encodeURIComponent(waText(o)),"_blank","noopener");
+
+    // ---------- popup ----------
+    function openDlg(title,body,buttons){
+      el("dlgT").textContent=title;el("dlgB").innerHTML=body+'<p id="dlgM" class="pr-msg"></p>';
+      el("dlgF").innerHTML="";(buttons||[["Close",closeDlg,"ghost"]]).forEach(([t,fn,cls])=>{const b=document.createElement("button");b.type="button";b.className="sl-btn"+(cls?" "+cls:"");b.textContent=t;b.onclick=fn;el("dlgF").appendChild(b)});
+      if(!el("dlg").open)el("dlg").showModal();
+    }
+    const closeDlg=()=>el("dlg").close();
+    const dlgMsg=(t,bad)=>{const m=document.getElementById("dlgM");if(m){m.textContent=t;m.className="pr-msg "+(bad?"bad":"ok")}};
+    el("dlgX").onclick=closeDlg;
+    el("dlg").addEventListener("click",e=>{if(e.target===el("dlg"))closeDlg()});
+
+    async function history(item){
+      const party=el("party").value.trim();
+      if(!party){msg("Pick the party first.","bad");return}
+      if(!item){msg("Write the category / pack first.","bad");return}
+      openDlg(item.toUpperCase()+" · "+party,'<p class="mut">Loading...</p>');
+      const {data,error}=await client.rpc("lwb_party_rate_history",{p_party:party,p_item:item});
+      if(error){openDlg(item,'<p class="pr-msg bad">'+esc(errText(error))+'</p>');return}
+      const now=lines().find(l=>key(l.item)===key(item));
+      const h=data||[],act=h.find(x=>x.status==="ACTIVE");
+      const nowRate=now&&now.rate!==""?Number(now.rate):null,diff=act&&nowRate!=null?nowRate-Number(act.rate):null;
+      const head='<div class="pr-now">Now giving: <b>'+(nowRate==null?"—":"₹"+money(nowRate))+'</b>'+
+        (act?' · Last: <b>₹'+money(act.rate)+'</b> on '+esc(dshort(act.offer_date))+(diff?' <span class="'+(diff>0?"up":"dn")+'">'+(diff>0?"▲ +":"▼ ")+money(diff)+'</span>':diff===0?' <span class="mut">same</span>':""):' · <span class="mut">never given before</span>')+'</div>';
+      const rows=h.map(x=>'<tr'+(x.status==="CANCELLED"?' class="cx" title="Cancelled"':"")+'><td>'+esc(dshort(x.offer_date))+'</td><td class="n"><b>₹'+money(x.rate)+'</b></td><td class="n">'+
+        (x.change==null?"":x.change>0?'<span class="up">+'+money(x.change)+'</span>':x.change<0?'<span class="dn">'+money(x.change)+'</span>':'<span class="mut">0</span>')+'</td><td>'+esc(x.by||"")+'</td><td class="mut">'+esc(x.offer_no)+'</td></tr>').join("");
+      openDlg(item.toUpperCase()+" · "+party,head+(h.length?'<table class="pr-hist"><thead><tr><th>Date</th><th class="n">Rate</th><th class="n">Change</th><th>Given by</th><th>No.</th></tr></thead><tbody>'+rows+'</tbody></table>':'<p class="mut">No rate given to this party for this item yet.</p>'));
+    }
+
+    function viewOffer(o){
+      // Saved offer popup (Mohit, 16 Nov 2026): Category · Rate · Landing · Margin (rate − landing, less ROI). Screen only.
+      const rows=o.lines.map((l,i)=>{const ld=ldOf(l.item),mg=ld==null?null:Number(l.rate)-ld;
+        return '<tr><td class="mut">'+(i+1)+'</td><td><b>'+esc(String(l.item).toUpperCase())+'</b></td><td class="n"><b>₹'+money(l.rate)+'</b></td><td class="n">'+(ld==null?'<span class="mut">—</span>':'₹'+money(ld))+'</td><td class="n">'+
+          (mg==null?'<span class="mut">—</span>':'<span class="'+(mg<0?"dn":"up")+'">'+(mg>0?"+":"")+money(mg)+'</span>')+'</td></tr>'}).join("");
+      const cx=o.status==="CANCELLED";
+      const btns=[["🖼 Image",async()=>{const t=await shareImage(o);if(t)dlgMsg(t)}],["WhatsApp",()=>openWa(o),"ghost"],
+        ["↺ Use again",()=>{closeDlg();useAgain(o)},"ghost"]];
+      if(!cx&&(me.role==="admin"||o.mine))btns.push(["Cancel",()=>cancelOffer(o),"ghost"]);
+      openDlg(o.offer_no+" · "+o.party_name,'<p class="mut" style="margin:0 0 6px">'+esc(dshort(o.offer_date))+' · by '+esc(o.by||"")+(cx?' <span class="tag">Cancelled</span> '+esc(o.cancel_note||""):"")+'</p>'+
+        '<table class="pr-hist"><thead><tr><th>#</th><th>Category</th><th class="n">Rate ₹</th><th class="n">Landing ₹</th><th class="n">Margin ₹</th></tr></thead><tbody>'+rows+'</tbody></table>'+(roi()?'<p class="mut">Landing less ROI ₹'+money(roi())+' · today\'s landing</p>':'<p class="mut">Today\'s landing</p>')+(o.note?'<p class="mut">'+esc(o.note)+'</p>':""),btns);
+    }
+    async function cancelOffer(o){
+      const why=prompt("Why cancel "+o.offer_no+"?");if(!why||!why.trim())return;
+      const {error}=await client.rpc("lwb_party_rate_offer_cancel",{p_id:o.id,p_note:why.trim()});
+      if(error){dlgMsg(errText(error),true);return}
+      closeDlg();await loadList();lastParty="x";loadLast();msg(o.offer_no+" cancelled.","ok");
+    }
+    function useAgain(o){
+      el("lines").innerHTML="";el("party").value=o.party_name;el("odate").value=today();saved=null;
+      el("formTitle").textContent="New rate offer";o.lines.forEach(l=>addLine(l));loadLast();msg("Filled from "+o.offer_no+". Change the rates and Save.");
+      window.scrollTo({top:0,behavior:"smooth"});
+    }
+
+    async function loadList(){
+      const {data,error}=await client.rpc("lwb_party_rate_offer_list",{p_days:Number(el("days").value),p_party:null});
+      if(error){el("list").innerHTML='<li class="mut">'+esc(errText(error))+'</li>';return}
+      offers=data||[];drawList();
+    }
+    function drawList(){
+      const q=key(el("q").value);
+      const ls=offers.filter(o=>!q||key(o.party_name+" "+o.offer_no+" "+o.lines.map(l=>l.item).join(" ")).includes(q));
+      el("listN").textContent=" · "+ls.length;
+      el("list").innerHTML=ls.map(o=>'<li data-id="'+o.id+'"'+(o.status==="CANCELLED"?' class="cx"':"")+'><b>'+esc(o.party_name)+(o.status==="CANCELLED"?'<span class="tag">Cancelled</span>':"")+'</b><span class="r">'+esc(dshort(o.offer_date))+'</span>'+
+        '<span class="s">'+esc(o.offer_no)+' · '+o.lines.length+' item'+(o.lines.length===1?"":"s")+' · '+esc(o.by||"")+' · '+esc(o.lines.slice(0,3).map(l=>l.item+" ₹"+money(l.rate)).join(", "))+(o.lines.length>3?"…":"")+'</span></li>').join("")||'<li class="mut">No rate given in these days.</li>';
+    }
+
+    el("lines").addEventListener("input",e=>{
+      const t=e.target;
+      if(t.dataset.f==="mg"){const tr=t.closest("tr"),ld=ldOf(tr.querySelector('[data-f=item]').value),r=tr.querySelector('[data-f=rate]');
+        if(ld!=null)r.value=t.value.trim()===""?"":String(Math.round(ld+Number(t.value)))}
+      refresh();
+    });
+    try{el("roi").value=localStorage.getItem("lwbPartyRateRoi")||""}catch(e){}
+    el("roi").addEventListener("input",()=>{try{localStorage.setItem("lwbPartyRateRoi",el("roi").value)}catch(e){}refresh()});
+    el("lines").addEventListener("click",e=>{
+      const b=e.target.closest("button[data-act]");if(!b)return;const tr=b.closest("tr");
+      if(b.dataset.act==="del"){tr.remove();if(!el("lines").children.length)addLine();refresh()}
+      else history(tr.querySelector('[data-f=item]').value.trim());
+    });
+    el("lines").addEventListener("keydown",e=>{
+      if(e.key!=="Enter"||e.target.dataset.f!=="rate")return;e.preventDefault();
+      const tr=e.target.closest("tr");(tr.nextElementSibling||addLine()).querySelector('[data-f=item]').focus();
+    });
+    el("addLine").onclick=()=>addLine(null,true);
+    el("useLast").onclick=()=>{
+      const have=new Set(lines().filter(l=>l.item).map(l=>key(l.item)));
+      lines().filter(l=>!l.item&&l.rate==="").forEach(l=>l.tr.remove());
+      [...last.values()].filter(r=>!have.has(r.item_key)).forEach(r=>addLine({item:r.item,rate:r.rate}));
+      if(!el("lines").children.length)addLine();refresh();msg("Last rates filled. Change what is new and Save.");
+    };
+    el("party").addEventListener("change",loadLast);
+    el("party").addEventListener("blur",loadLast);
+    el("clear").onclick=resetForm;
+    el("save").onclick=async()=>{
+      let o;try{o=collect()}catch(e){msg(e.message,"bad");return}
+      el("save").disabled=true;el("save").textContent="Saving...";
+      const {data,error}=await client.rpc("lwb_party_rate_offer_save",{p:o});
+      el("save").disabled=false;el("save").textContent="💾 Save";
+      if(error){msg(errText(error),"bad");return}
+      saved={...o,offer_no:data.offer_no,id:data.id};
+      el("formTitle").textContent="Saved "+data.offer_no;
+      msg(data.offer_no+" saved for "+o.party_name+". Send it with Image or WhatsApp.","ok");
+      lastParty="x";await Promise.all([loadLast(),loadList()]);
+    };
+    const current=()=>{try{const o=collect();return saved&&JSON.stringify(saved.lines)===JSON.stringify(o.lines)&&saved.party_name===o.party_name?saved:o}catch(e){msg(e.message,"bad");return null}};
+    el("img").onclick=async()=>{const o=current();if(!o)return;const t=await shareImage(o);if(t)msg(t,"ok")};
+    el("wa").onclick=()=>{const o=current();if(o)openWa(o)};
+    el("q").addEventListener("input",drawList);
+    el("days").addEventListener("change",loadList);
+    el("list").addEventListener("click",e=>{const li=e.target.closest("li[data-id]");if(!li)return;const o=offers.find(x=>String(x.id)===li.dataset.id);if(o)viewOffer(o)});
+
+    (async()=>{
+      me=await S.start(["admin","manager"]);if(!me)return;
+      el("loading").hidden=true;el("page").hidden=false;
+      el("odate").value=today();for(let i=0;i<3;i++)addLine();
+      try{
+        // Only Rate List packs in the list (Mohit, 16 Nov 2026: SKU Master categories showed the same pack twice).
+        const [pk,st,ln,cm,sc]=await Promise.all([client.from("lwb_rate_packs").select("*").eq("active",true).order("sort_no"),
+          client.from("lwb_rate_settings").select("mepd_pct,roi_main").eq("id",1).maybeSingle(),
+          client.from("lwb_rate_pack_skus").select("sku_key,pack_id"),
+          client.from("sku_master").select("sku_name,category"),
+          client.from("lwb_mepd_schemes").select("categories,mepd_pct,valid_from,valid_to,created_at")]);
+        packs=pk.error?[]:(pk.data||[]);
+        // Landing (excl. ROI) per pack, same formula as Rate & Scheme: today's MEPD scheme of the linked SKUs' category.
+        if(!st.error&&st.data){
+          const cat=new Map((cm.error?[]:cm.data||[]).filter(x=>x.category).map(x=>[key(x.sku_name),x.category]));
+          const schemes=sc.error?[]:(sc.data||[]),links=ln.error?[]:(ln.data||[]);
+          packs.forEach(p=>{let best=null;
+            if(window.LWBMepd)links.filter(l=>l.pack_id===p.id).forEach(l=>{const x=LWBMepd.find(schemes,cat.get(key(l.sku_key)));if(x&&(!best||String(x.created_at)>String(best.created_at)))best=x});
+            if(Number(p.gr)>0)land.set(key(p.pack_name),Math.round(S.landing(p,st.data,best)*100)/100)});
+        }
+        const names=new Map();packs.forEach(p=>names.set(key(p.pack_name),[p.pack_name,Number(p.slab3_rate)>0?"List ₹"+money(p.slab3_rate):"Rate List pack"]));
+        el("itemList").replaceChildren(...[...names.values()].map(([v,l])=>{const o=document.createElement("option");o.value=v;o.label=l;return o}));
+      }catch(e){}
+      refresh();loadList();
+    })();
+  </script>
+</body>
+</html>

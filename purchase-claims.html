@@ -5,8 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Purchase Claims | Luxury Wrist Brand ERP</title>
   <script src="erp-date.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="brand-filter.js"></script>
+  <script src="vendor/supabase-js-2.119.0.js"></script>
+<script src="brand-filter.js"></script><script src="erp-docs.js"></script>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Anton&display=swap">
   <link rel="stylesheet" href="erp-shell.css">
   <script src="erp-shell.js"></script>
@@ -27,6 +27,8 @@
     .pc-table tr.sel td{background:#fff8e6}
     .pc-table button,.act button,.bulk button{height:32px;padding:0 11px;border-radius:5px;border:1px solid var(--erp-line);background:#fff;color:var(--erp-ink);font:inherit;font-size:14px;font-weight:600;cursor:pointer;margin:0 4px 4px 0}
     .pc-table button.pri,.act button.pri,.bulk button.pri{background:var(--erp-red);border-color:var(--erp-red);color:#fff}
+    .pc-table td small.next{color:#8a5300;font-weight:600;white-space:normal}
+    .pc-table .files{margin-top:2px}.pc-table .files button{height:30px;font-size:13px;padding:0 9px}
     .st{display:inline-block;padding:3px 9px;border-radius:5px;font-size:13px;font-weight:700}
     .st.mail{background:#fff3d6;color:#8a5a00}.st.approval{background:#e8f1ff;color:#194c85}.st.return{background:#f3e8ff;color:#5b2a86}.st.due{background:#ffe9d6;color:#8a3b00}.st.RECEIVED{background:#e4f6e9;color:#0d6b36}.st.REJECTED{background:#fee8e8;color:#9e2525}
     .norm{font-size:12.5px;font-weight:700}.norm.lo{color:#0d6b36}.norm.hi{color:#9e2525}
@@ -43,6 +45,9 @@
     .act .cp{display:flex;gap:8px;align-items:center}.act .cp input{flex:1}.act .cp button{margin:0;flex:none}
     .act .hint{font-size:13px;color:var(--erp-muted);margin-top:4px}
     .act .btns{display:flex;flex-wrap:wrap;gap:4px;align-items:center}
+    .act button.dl{border-color:#13824a;color:#0d6b36;background:#e4f6e9}.act button.dl:disabled{opacity:.6;cursor:wait}
+    @media(max-width:600px){.act .btns{gap:6px}.act .btns>*{flex:1 1 calc(50% - 6px);justify-content:center;margin:0!important}
+      .act .btns>span:empty{display:none}.act .btns>button.dl{flex-basis:100%}.act .btns>label{flex:0 0 auto}.act .btns>input[type=date]{flex:1 1 calc(100% - 90px);width:auto!important;min-width:0}}
     @media(max-width:900px){.act .g{grid-template-columns:1fr 1fr}}
     #printArea{display:none}
     .doc{box-sizing:border-box;width:210mm;min-height:295mm;padding:12mm 18mm 10mm;font-family:Arial,Helvetica,sans-serif;color:#111;font-size:11.5pt;line-height:1.35;display:flex;flex-direction:column}
@@ -67,7 +72,7 @@
 <body>
   <div id="loading" class="status">Checking account access...</div>
   <main id="page" class="erp-main" hidden>
-    <div class="erp-pagehead"><h1>Purchase Claims<button type="button" class="erp-i" aria-label="Info" title="Info" data-tip="Damage, leakage and shortage from purchase vehicles. Enter it in Goods Inward when you submit the bill, or later in Purchase Register → Verify. Chain: mail to company → company approval → return goods (if asked) → claim amount received. Live stock is not changed here.">i</button></h1></div>
+    <div class="erp-pagehead"><h1>Purchase Claims<button type="button" class="erp-i" aria-label="Info" title="Info" data-tip="Damage / leakage / breakage, gasless and shortage from purchase vehicles. Enter it in Goods Inward when you submit the bill, or later in Purchase Register → Verify. Chain: mail to company → company approval → return goods (if asked) → claim amount received. Live stock is not changed here.">i</button></h1></div>
     <div id="err" class="pc-err" hidden></div>
     <div class="pc-kpis" id="kpis"></div>
     <div class="erp-pills" id="tabs">
@@ -94,9 +99,12 @@
     const fmt=v=>num(v).toLocaleString("en-IN",{maximumFractionDigits:1});
     const dmy=(d,sep="/")=>d?String(d).slice(8,10)+sep+String(d).slice(5,7)+sep+String(d).slice(0,4):"—";
     const today=()=>new Date().toLocaleDateString("en-CA",{timeZone:"Asia/Kolkata"});
-    const ISSUE={DAMAGE:"Damage / Breakage",LEAKAGE:"Leakage",SHORTAGE:"Shortage"};
+    // Damage / Leakage / Breakage is one type; old LEAKAGE lines are counted in it. Gasless is separate (18 Nov 2026).
+    const ISSUE={DAMAGE:"Damage / Leakage / Breakage",LEAKAGE:"Leakage",GASLESS:"Gasless",SHORTAGE:"Shortage"};
     // Where a claim is in the chain.
     const STAGE={mail:"Mail not sent",approval:"Awaiting company approval",return:"Return goods pending",due:"Claim amount due",RECEIVED:"Amount received",REJECTED:"Rejected"};
+    // What to press next, shown under the status (Mohit, 18 Nov 2026: "update kaise karein").
+    const NEXT={mail:"Next: Copy Mail, then Mark Mail Sent",approval:"Next: press Approved or Rejected",return:"Next: press Goods Returned",due:"Next: press Amount Received"};
     const stage=ch=>ch.claim_status==="PENDING"?"mail":ch.claim_status==="SENT"?"approval":ch.claim_status==="APPROVED"?(ch.return_required&&!ch.returned_on?"return":"due"):ch.claim_status;
     const OPEN=["mail","approval","return","due"];
     // Company norm: claims below this many cases are passed without returning the goods.
@@ -141,8 +149,8 @@
       allClaims=claims;pickBrand();
     }
     function tot(ch){
-      const t={DAMAGE:[0,0],LEAKAGE:[0,0],SHORTAGE:[0,0],cases:0,list:[],u:""};
-      for(const i of ch.lwb_purchase_check_items||[]){const per=Math.max(1,i.pcs_per_case),u=U(i.sku_name);t[i.issue][0]+=i.cases;t[i.issue][1]+=i.pcs;t.cases+=i.cases+i.pcs/per;
+      const t={DAMAGE:[0,0],GASLESS:[0,0],SHORTAGE:[0,0],cases:0,list:[],u:""};
+      for(const i of ch.lwb_purchase_check_items||[]){const per=Math.max(1,i.pcs_per_case),u=U(i.sku_name),k=t[i.issue]?i.issue:"DAMAGE";t[k][0]+=i.cases;t[k][1]+=i.pcs;t.cases+=i.cases+i.pcs/per;
         t.list.push({pcs:i.cases*per+i.pcs,per,unit:u});t.u=!t.u||t.u===u?u:"MIX"}
       t.txt=sumTxt(t.list);
       return t;
@@ -187,18 +195,20 @@
       el("bulk").innerHTML=mails.length?"<span>"+mails.length+" claim"+(mails.length>1?"s":"")+" not mailed yet:</span>"+
         '<button type="button" class="pri" data-act="mailall">Today\'s Mail (all '+mails.length+')</button>':"";
       const list=claims.filter(x=>filter==="all"||(filter==="open"?OPEN.includes(stage(x)):stage(x)===filter));
-      let h='<table class="pc-table"><thead><tr><th>Checked</th><th>Invoice</th><th>Supplier</th><th>Vehicle</th><th>Damage</th><th>Leakage</th><th>Shortage</th><th class="n">Total</th><th>Status</th><th></th></tr></thead><tbody>';
+      let h='<table class="pc-table"><thead><tr><th>Checked</th><th>Invoice</th><th>Supplier</th><th>Vehicle</th><th>Damage / Leakage / Breakage</th><th>Gasless</th><th>Shortage</th><th class="n">Total</th><th>Status</th><th></th></tr></thead><tbody>';
       for(const ch of list){
         const b=billOf(ch),t=tot(ch),lo=t.cases<NORM_CASES,g=stage(ch),id=ch.id,B=(a,l,c)=>'<button type="button"'+(c?' class="pri"':"")+' data-act="'+a+'" data-id="'+id+'">'+l+"</button>";
         h+='<tr'+(act&&act.id===id?' class="sel"':"")+"><td>"+dmy(ch.verified_on)+"</td><td><b>"+esc(b.invoice_no||"—")+"</b><small>"+dmy(b.invoice_date)+"</small></td><td style='white-space:normal;min-width:180px'>"+esc(b.supplier_name||"")+"</td><td>"+esc(b.vehicle_no||"—")+"<small>"+esc(b.lr_no?"LR "+b.lr_no:"")+"</small></td>"+
-          ["DAMAGE","LEAKAGE","SHORTAGE"].map(x=>"<td>"+qtyTxt(t[x][0],t[x][1],t.u)+"</td>").join("")+
+          ["DAMAGE","GASLESS","SHORTAGE"].map(x=>"<td>"+qtyTxt(t[x][0],t[x][1],t.u)+"</td>").join("")+
           '<td class="n"><b>'+esc(t.txt)+'</b><small class="norm '+(lo?"lo":"hi")+'">'+(lo?"Below "+NORM_CASES+": no return":NORM_CASES+"+ cases: return may be asked")+"</small></td>"+
-          '<td style="white-space:normal;min-width:190px"><span class="st '+g+'">'+esc(STAGE[g]||g)+"</span>"+chainTxt(ch).map(x=>"<small>"+esc(x)+"</small>").join("")+(ch.note?"<small>Note: "+esc(ch.note)+"</small>":"")+"</td><td>"+
-          (g==="mail"?B("mail","Copy Mail",1)+B("print","Print Letter"):"")+
-          (g==="approval"?B("approve","Approved",1)+B("reject","Rejected")+"<br>"+B("mail","Copy Mail")+B("print","Print Letter"):"")+
+          '<td style="white-space:normal;min-width:190px"><span class="st '+g+'">'+esc(STAGE[g]||g)+"</span>"+chainTxt(ch).map(x=>"<small>"+esc(x)+"</small>").join("")+(ch.note?"<small>Note: "+esc(ch.note)+"</small>":"")+(NEXT[g]?'<small class="next">'+esc(NEXT[g])+"</small>":"")+"</td><td>"+
+          (g==="mail"?B("mail","Copy Mail",1)+B("print","Letter PDF"):"")+
+          (g==="approval"?B("approve","✓ Approved",1)+B("reject","✕ Rejected")+"<br>"+B("mail","Copy Mail")+B("print","Letter PDF"):"")+
           (g==="return"?B("return","Goods Returned",1)+B("approve","Edit Approval"):"")+
           (g==="due"?B("receive","Amount Received",1)+B("approve","Edit Approval")+(ch.return_required?B("return","Edit Return"):""):"")+
-          (g==="RECEIVED"||g==="REJECTED"?B("reopen","Reopen")+B("print","Print Letter"):"")+"</td></tr>";
+          (g==="RECEIVED"||g==="REJECTED"?B("reopen","Reopen")+B("print","Letter PDF"):"")+
+          // Photos / bill / company approval PDF of this claim (erp-docs.js).
+          (window.ERPDocs?'<div class="files">'+B("files","📎 Photos & PDF")+B("dlzip","⬇ Download all")+"</div>":"")+"</td></tr>";
       }
       if(!list.length)h+='<tr><td colspan="10" class="erp-empty">No claims here.</td></tr>';
       el("box").innerHTML=h+"</tbody></table>";
@@ -217,10 +227,11 @@
       if(act.kind==="mail"||act.kind==="mailall"){
         const m=act.kind==="mailall"?mailAll(list):mailText(ch),canMark=list.some(x=>stage(x)==="mail");
         h='<h2>'+(act.kind==="mailall"?"Today's claim mail: "+list.length+" invoice"+(list.length>1?"s":""):"Claim mail")+"</h2><p class=\"sub\">"+(act.kind==="mailall"?list.map(x=>esc(billOf(x).invoice_no||"")).join(", "):head)+
-          ". Copy the subject and body into your email, attach the invoice PDF"+(list.length>1?"s":"")+", and send. Then press <b>Mark Mail Sent</b>.</p>"+
+          ". Copy the subject and body into your email, attach the invoice PDF"+(list.length>1?"s":"")+" and the photos (<b>Download Photos</b> gives one ZIP), and send. Then press <b>Mark Mail Sent</b>.</p>"+
           '<label for="mSub">Subject</label><div class="cp"><input id="mSub" readonly value="'+esc(m.subject)+'"><button type="button" data-act="copysub">Copy Subject</button></div>'+
           '<label for="mBody" style="margin-top:10px">Body</label><textarea id="mBody" readonly>'+esc(m.body)+'</textarea>'+
           '<div class="btns" style="margin-top:8px"><button type="button" data-act="copybody">Copy Body</button><a class="mb" href="mailto:?subject='+esc(encodeURIComponent(m.subject))+"&amp;body="+esc(encodeURIComponent(m.body))+'">Open in Mail App</a>'+
+          (window.ERPDocs?'<button type="button" class="dl" data-act="dlphotos" title="Damage photos, videos and bill copy of '+(list.length>1?"these invoices":"this invoice")+' in one ZIP">⬇ Download Photos</button>':"")+
           (canMark?'<span style="margin-left:12px"></span><label for="mDate" style="margin:0 6px 0 0">Sent on</label><input id="mDate" type="date" value="'+today()+'" style="width:160px;margin-right:8px"><button type="button" class="pri" data-act="marksent">Mark Mail Sent'+(list.length>1?" (all "+list.length+")":"")+"</button>":"")+
           '<button type="button" data-act="close">Close</button></div>';
       }else if(act.kind==="approve"){
@@ -257,10 +268,41 @@
       if(a==="close"){act=null;render();return}
       if(["mail","approve","return","receive"].includes(a))return openAct(a,id);
       if(a==="mailall")return openAct("mailall",null);
-      if(a==="print"){if(ch)printDoc(letterHtml(ch));return}
+      // Letter PDF: the print window opens; choose "Save as PDF" there (file name = Claim-<invoice>).
+      if(a==="print"){if(ch)printDoc(letterHtml(ch),"Claim-"+String(billOf(ch).invoice_no||"letter").replace(/[^A-Za-z0-9-]/g,""));return}
+      if(a==="files"&&ch){
+        ERPDocs.open({client,entity:"PURCHASE_BILL",id:ch.inward_id,title:"Invoice "+(billOf(ch).invoice_no||"")+" · Photos & documents",download:"Claim-"+String(billOf(ch).invoice_no||"").replace(/[^A-Za-z0-9-]/g,""),
+          slots:["DAMAGE","BILL",{k:"OTHER",l:"Claim documents (company approval / credit note PDF)",doc:1,max:10}]});
+        return;
+      }
+      if(a==="dlzip"&&ch){
+        const inv=String(billOf(ch).invoice_no||"bill").replace(/[^A-Za-z0-9-]/g,""),btn=document.querySelector('[data-act="dlzip"][data-id="'+ch.id+'"]');
+        if(btn){btn.disabled=true;btn.textContent="⏳ Preparing…"}
+        try{const n=await ERPDocs.zip(client,"PURCHASE_BILL",[ch.inward_id],{name:"Claim-"+inv+"-files",
+            label:r=>"Inv"+inv+"-"+(r.doc_type==="BILL"?"bill":r.doc_type==="OTHER"?"claim-doc":/^video\//.test(r.mime||"")?"video":"photo")});
+          ERPShell.toast(n?n+" file"+(n>1?"s":"")+" downloaded in one ZIP.":"No photos or PDF uploaded for this invoice yet. Use 📎 Photos & PDF to add them.",n?"success":"error")}
+        catch(e){ERPShell.toast("Download failed: "+(e.message||e),"error")}
+        finally{if(btn){btn.disabled=false;btn.textContent="⬇ Download all"}}
+        return;
+      }
       if(a==="copysub"||a==="copybody"){
         const t=el(a==="copysub"?"mSub":"mBody");t.select();
         try{await navigator.clipboard.writeText(t.value);ERPShell.toast((a==="copysub"?"Subject":"Body")+" copied.","success")}catch(_){document.execCommand("copy");ERPShell.toast("Copied.","success")}
+        return;
+      }
+      // Damage photos / videos + bill copy of the claim(s) in the mail, as one ZIP for Gmail.
+      if(a==="dlphotos"){
+        const list=act.kind==="mailall"?claims.filter(x=>stage(x)==="mail"):[ch].filter(Boolean);
+        const btn=document.querySelector('[data-act="dlphotos"]');if(!list.length||!btn||btn.disabled)return;
+        const inv=new Map(list.map(x=>[String(x.inward_id),String(billOf(x).invoice_no||"bill").replace(/[^A-Za-z0-9-]/g,"")]));
+        btn.disabled=true;const old=btn.textContent;btn.textContent="⏳ Preparing ZIP…";
+        try{
+          const n=await ERPDocs.zip(client,"PURCHASE_BILL",[...inv.keys()],{types:["DAMAGE","BILL"],
+            name:list.length>1?"Claim-photos-"+dmy(today(),"-"):"Claim-"+inv.get(String(list[0].inward_id))+"-photos",
+            label:r=>"Inv"+(inv.get(String(r.entity_id))||"")+"-"+(r.doc_type==="BILL"?"bill":/^video\//.test(r.mime||"")?"video":"photo")});
+          ERPShell.toast(n?n+" file"+(n>1?"s":"")+" downloaded in one ZIP. Attach it in Gmail.":"No photos or bill copy uploaded for "+(list.length>1?"these invoices":"this invoice")+" yet.",n?"success":"error");
+        }catch(e){ERPShell.toast("Download failed: "+(e.message||e),"error")}
+        finally{btn.disabled=false;btn.textContent=old}
         return;
       }
       if(a==="marksent"){
@@ -302,18 +344,28 @@
     }
 
     /* ---------- claim letter / email ---------- */
+    // Mail / letter wording follows only the types in the claim (Mohit, 18 Nov 2026): "Damage", "Damage and Gasless",
+    // "Damage, Gasless and Shortage". Damage / Leakage / Breakage (and old Leakage lines) are written as just "Damage".
+    const MAIL_T={DAMAGE:"Damage",LEAKAGE:"Damage",GASLESS:"Gasless",SHORTAGE:"Shortage"};
+    function kindsOf(list){const has=new Set(list.flatMap(ch=>(ch.lwb_purchase_check_items||[]).map(i=>MAIL_T[i.issue]||"Damage")));return ["Damage","Gasless","Shortage"].filter(k=>has.has(k))}
+    const andList=a=>a.length<2?(a[0]||""):a.slice(0,-1).join(", ")+" and "+a[a.length-1];
+    const kindTitle=list=>andList(kindsOf(list))||"Damage";
+    // "damaged goods", "damaged and gasless goods", "damaged and gasless goods, and a shortage", "shortage"
+    const kindWords=list=>{const k=kindsOf(list),adj=k.filter(x=>x!=="Shortage").map(x=>x==="Damage"?"damaged":"gasless"),sh=k.includes("Shortage");
+      return !adj.length?"shortage":andList(adj)+" goods"+(sh?(adj.length>1?",":"")+" and a shortage":"")};
+    const onlyShort=list=>kindsOf(list).join()==="Shortage";
     function itemRows(ch){return (ch.lwb_purchase_check_items||[]).slice().sort((a,b)=>a.sku_name.localeCompare(b.sku_name)||a.issue.localeCompare(b.issue))}
     function letterHtml(ch){
       const S=settings,b=bills.get(ch.inward_id)||{},t=tot(ch);
       return '<div class="doc"><h1 class="lh">'+esc(S.distributor_name||"LUXURY WRIST BRAND")+'</h1><div class="rule"></div>'+
         '<div class="row"><div><b>To,</b><br>'+(lines(S.to_address)||"[Company address: fill Letter Settings on the Sheet &amp; Pallet page]")+'</div><div style="white-space:nowrap"><b>Date :</b> '+dmy(today(),"/")+"</div></div>"+
-        '<div class="subj">Subject : Claim for Damage / Leakage / Shortage in Purchase Invoice No. '+esc(b.invoice_no||"")+"</div>"+
+        '<div class="subj">Subject : Claim for '+esc(kindTitle([ch]))+' in Purchase Invoice No. '+esc(b.invoice_no||"")+"</div>"+
         '<table class="kv"><tr><td>Distributor Code</td><td>: <b>'+esc(S.distributor_code||"")+'</b></td></tr><tr><td>Distributor Name</td><td>: <b>'+esc(S.distributor_name||"")+'</b></td></tr>'+
         "<tr><td>Invoice No. / Date</td><td>: <b>"+esc(b.invoice_no||"")+"</b> dated <b>"+dmy(b.invoice_date,"/")+"</b></td></tr><tr><td>Received On</td><td>: <b>"+dmy(b.received_date,"/")+"</b></td></tr>"+
         "<tr><td>Vehicle No.</td><td>: <b>"+esc(b.vehicle_no||"")+"</b>"+(b.lr_no?" &nbsp; LR No. : <b>"+esc(b.lr_no)+"</b>":"")+"</td></tr>"+(ch.claim_no?"<tr><td>Claim Ref.</td><td>: <b>"+esc(ch.claim_no)+"</b></td></tr>":"")+"</table>"+
-        '<p style="margin:2mm 0">Dear Sir/Madam,</p><p style="margin:0 0 2mm;text-indent:12mm">We have received the goods against the above invoice. On unloading and checking the vehicle on '+dmy(ch.verified_on,"/")+", the following damage / leakage / shortage was found:</p>"+
+        '<p style="margin:2mm 0">Dear Sir,</p><p style="margin:0 0 2mm;text-indent:12mm">We have received the goods against the above invoice. On unloading and checking the vehicle on '+dmy(ch.verified_on,"/")+", we found the following "+esc(kindWords([ch]))+":</p>"+
         '<table class="grid"><thead><tr><th>#</th><th>SKU</th><th>Type</th><th class="n">IC / CS</th><th class="n">PCS</th></tr></thead><tbody>'+
-        itemRows(ch).map((i,n)=>"<tr><td>"+(n+1)+"</td><td>"+esc(i.sku_name)+"</td><td>"+ISSUE[i.issue]+'</td><td class="n">'+num(i.cases)+" "+sh(U(i.sku_name))+'</td><td class="n">'+num(i.pcs)+"</td></tr>").join("")+
+        itemRows(ch).map((i,n)=>"<tr><td>"+(n+1)+"</td><td>"+esc(i.sku_name)+"</td><td>"+(MAIL_T[i.issue]||ISSUE[i.issue])+'</td><td class="n">'+num(i.cases)+" "+sh(U(i.sku_name))+'</td><td class="n">'+num(i.pcs)+"</td></tr>").join("")+
         '</tbody><tfoot><tr><td></td><td colspan="2">Total</td><td class="n" colspan="2">'+esc(t.txt)+"</td></tr></tfoot></table>"+
         (ch.note?'<p style="margin:0 0 2mm"><b>Remarks :</b> '+esc(ch.note)+"</p>":"")+
         '<p style="margin:2mm 0">We request you to kindly pass the claim for the above quantity. A copy of the invoice is attached for your reference.</p><p style="margin:2mm 0">Thank you for your cooperation.</p>'+
@@ -325,26 +377,27 @@
       const b=billOf(ch),t=tot(ch);
       return (n?n+". ":"")+"Invoice No. "+(b.invoice_no||"")+" dated "+dmy(b.invoice_date,"/")+"\n"+
         "   Vehicle: "+(b.vehicle_no||"-")+(b.lr_no?" | LR: "+b.lr_no:"")+" | Received: "+dmy(b.received_date,"/")+" | Checked: "+dmy(ch.verified_on,"/")+"\n"+
-        itemRows(ch).map(i=>"   - "+i.sku_name+" | "+ISSUE[i.issue]+" | "+qtyTxt(i.cases,i.pcs,U(i.sku_name))).join("\n")+"\n"+
+        itemRows(ch).map(i=>"   - "+i.sku_name+" | "+(MAIL_T[i.issue]||ISSUE[i.issue])+" | "+qtyTxt(i.cases,i.pcs,U(i.sku_name))).join("\n")+"\n"+
         "   Total: "+t.txt+(ch.note?"\n   Remarks: "+ch.note:"");
     }
-    function sign(){const S=settings;return "\n\nThanks & Regards,\n"+(S.distributor_name||"")+(S.distributor_code?"\nDistributor Code: "+S.distributor_code:"")}
+    // No sign-off in the mail body (Mohit, 18 Nov 2026): Gmail adds the signature.
+    function sign(){return ""}
     function mailText(ch){
       const b=billOf(ch);
-      const subject="Claim for Damage / Leakage / Shortage - Invoice No. "+(b.invoice_no||"")+" dt. "+dmy(b.invoice_date,"/")+(settings.distributor_code?" - Dist. Code "+settings.distributor_code:"");
-      const body="Dear Sir/Madam,\n\nWe have received the goods against the invoice below. On unloading and checking the vehicle, we found the following damage / leakage / shortage:\n\n"+
-        mailBlock(ch,0)+"\n\nThe invoice copy is attached. Kindly approve our claim and share the claim reference number. Please let us know if the goods are to be returned."+sign();
+      const subject="Claim for "+kindTitle([ch])+" - Invoice No. "+(b.invoice_no||"")+" dt. "+dmy(b.invoice_date,"/")+(settings.distributor_code?" - Dist. Code "+settings.distributor_code:"");
+      const body="Dear Sir,\n\nWe have received the goods against the invoice below. On unloading and checking the vehicle, we found the following "+kindWords([ch])+":\n\n"+
+        mailBlock(ch,0)+"\n\nThe invoice copy"+(kindsOf([ch]).some(k=>k!=="Shortage")?" and photos are":" is")+" attached. Kindly approve our claim and share the claim reference number."+(onlyShort([ch])?"":" Please let us know if the goods are to be returned.")+sign();
       return {subject,body};
     }
     function mailAll(list){
       const cases=sumTxt(list.flatMap(x=>tot(x).list));
-      const subject="Claim for Damage / Leakage / Shortage - "+list.length+" Invoice"+(list.length>1?"s":"")+" - "+dmy(today(),"/")+(settings.distributor_code?" - Dist. Code "+settings.distributor_code:"");
-      const body="Dear Sir/Madam,\n\nOn unloading and checking the vehicles, we found the following damage / leakage / shortage:\n\n"+
+      const subject="Claim for "+kindTitle(list)+" - "+list.length+" Invoice"+(list.length>1?"s":"")+" - "+dmy(today(),"/")+(settings.distributor_code?" - Dist. Code "+settings.distributor_code:"");
+      const body="Dear Sir,\n\nOn unloading and checking the vehicles, we found the following "+kindWords(list)+":\n\n"+
         list.map((x,i)=>mailBlock(x,i+1)).join("\n\n")+"\n\nGrand Total: "+cases+" in "+list.length+" invoice"+(list.length>1?"s":"")+
-        ".\n\nThe invoice copies are attached. Kindly approve our claims and share the claim reference numbers. Please let us know if any goods are to be returned."+sign();
+        ".\n\nThe invoice copies"+(kindsOf(list).some(k=>k!=="Shortage")?" and photos are":" are")+" attached. Kindly approve our claims and share the claim reference numbers."+(onlyShort(list)?"":" Please let us know if any goods are to be returned.")+sign();
       return {subject,body};
     }
-    function printDoc(html){el("printArea").innerHTML=html;setTimeout(()=>window.print(),50)}
+    function printDoc(html,name){el("printArea").innerHTML=html;const t=document.title;if(name)document.title=name;setTimeout(()=>{window.print();document.title=t},50)}
     document.addEventListener("click",e=>{const t=e.target.closest("[data-act]");if(t)doAct(t.dataset.act,t.dataset.id)});
     function setTab(){const f=location.hash.replace("#","");filter=["open","mail","approval","return","due","RECEIVED","REJECTED","all"].includes(f)?f:"open";render()}
     window.addEventListener("hashchange",setTab);

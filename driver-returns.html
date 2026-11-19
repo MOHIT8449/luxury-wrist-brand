@@ -4,7 +4,7 @@
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Driver Returns Approval | Luxury Wrist Brand ERP</title>
 <script src="erp-date.js"></script><script src="erp-recent.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="vendor/supabase-js-2.119.0.js"></script>
 <script src="brand-filter.js"></script><script src="page-role.js"></script>
 <script src="party-list.js" defer></script>
 <script src="tally-note.js" defer></script>
@@ -57,6 +57,11 @@ button:disabled{opacity:.5;cursor:not-allowed}
 .rcv-chip.on{background:#e6f0f0;border-color:#00434d;color:#00434d}
 .rcv-warn{color:#a05a00;font-size:12px}
 .rcv-sum{background:#f6f8fb;border-radius:8px;padding:8px;font-size:13px;line-height:1.6}.rcv-sum .g{color:#13824a;font-weight:700}.rcv-sum .a{color:#b26b00;font-weight:700}
+.rcv-qrow{display:flex;align-items:center;gap:6px;margin:5px 0}.rcv-ql{flex:0 0 82px;font-weight:700;font-size:13px}
+.rcv-q{width:64px;padding:8px 6px;border:1px solid #bbcbdd;border-radius:7px;font:15px Arial;text-align:center}.rcv-qrow small{color:#58708b;font-size:11.5px}
+.rcv-type{flex:1;min-width:0;padding:8px;border:1px solid #bbcbdd;border-radius:7px;font:13px Arial;background:#fff}
+.rcv-left{font-size:12.5px;font-weight:700;color:#13824a;margin-top:4px}.rcv-left.short{color:#b26b00}.rcv-left.over{color:#b62e2e}
+.rcv-sum .r{color:#b62e2e;font-weight:700}
 .rcv-note{width:100%;margin:8px 0;padding:9px;border:1px solid #bbcbdd;border-radius:8px;font:14px Arial}
 .rcv-btns{display:flex;gap:8px}.rcv-btns button{flex:1;padding:10px 8px}
 @media(min-width:600px){.rcv-chips{grid-template-columns:1fr 2fr 1fr 1fr}}
@@ -87,10 +92,10 @@ button:disabled{opacity:.5;cursor:not-allowed}
 <div id="list"></div>
 <div class="rcv-bg" id="rcvDlg" hidden role="dialog" aria-modal="true" aria-labelledby="rcvTitle"><div class="rcv-box">
 <div class="rcv-head"><b id="rcvTitle">Receive goods</b><button type="button" class="secondary" id="rcvX" aria-label="Close">✕</button></div>
-<div class="muted" style="margin:0 0 8px">Where does each SKU go in the godown?</div>
+<div class="muted" style="margin:0 0 8px">Count each SKU: good and damaged, in cases + pcs. The rest is short.</div>
 <div id="rcvBody"></div>
 <input id="rcvNote" maxlength="300" placeholder="Note (optional)" class="rcv-note">
-<div class="rcv-btns"><button type="button" class="secondary" id="rcvCancel">Cancel</button><button type="button" class="approve" id="rcvOk">📦 Receive &amp; update stock</button></div>
+<div class="rcv-btns"><button type="button" class="secondary" id="rcvCancel">Cancel</button><button type="button" class="approve" id="rcvOk">✅ Submit check</button></div>
 </div></div>
 <div class="viewer" id="viewer" hidden><img id="viewerImg" alt="Return photo"><button type="button" class="secondary" id="viewerClose">✕ Close</button></div>
 <button type="button" class="erp-i" aria-label="Info" title="Info" data-tip="Approve only after checking the damaged goods. Approved amount reduces the party&#x27;s ERP outstanding. Rejected return frees the quantity so the driver can record it again. When the godown receives the goods, each SKU goes into Saleable, Damage / Leakage / Breakage (OLN), Gasless or Expiry stock. GST and Tally are not changed here.">i</button>
@@ -103,7 +108,7 @@ const el=id=>document.getElementById(id);
 const fmt=n=>"₹"+Number(n||0).toLocaleString("en-IN",{minimumFractionDigits:2,maximumFractionDigits:2});
 const REASON={LEAKAGE:"Damage / Leakage / Breakage",BREAKAGE:"Damage / Leakage / Breakage",DAMAGE:"Damage / Leakage / Breakage",GASLESS:"Gasless",LOW_FILL:"Low Fill"};
 const STATUSES=["PENDING_OFFICE","APPROVED","REJECTED"];
-let role="",status="PENDING_OFFICE",lists={},busy=false,photos=new Map(),photoUrls=new Map(),receipts=new Map();
+let UID="",role="",status="PENDING_OFFICE",lists={},busy=false,photos=new Map(),photoUrls=new Map(),receipts=new Map();
 let BB={get:()=>""},OB=new Map();
 const inBrand=r=>!BB.get()||LWBBrand.has(OB.get(r.order_id),BB.get());
 const canReceive=()=>role==="warehouse"||role==="manager"||role==="admin";
@@ -118,6 +123,7 @@ async function init(){
  try{
   const {data,error}=await db.auth.getUser();
   if(error||!data.user){location.href="login.html";return}
+  UID=data.user.id;
   const p=await db.from("user_profiles").select("role,active").eq("id",data.user.id).single();
   if(p.error)throw p.error;
   role=await lwbPageRole(String(p.data.role||"").toLowerCase().trim());
@@ -132,6 +138,11 @@ async function load(){
   message("Loading driver returns...");
   const results=await Promise.all(STATUSES.map(s=>db.rpc("lwb_office_list_driver_returns",{p_status:s})));
   results.forEach((r,i)=>{if(r.error)throw r.error;lists[STATUSES[i]]=ERPRecent.sort(Array.isArray(r.data)?r.data:[])});
+  // Godown Manager: only the returns of vehicles given to him (or to nobody) (18 Nov 2026).
+  if(role==="warehouse"){const oids=[...new Set(STATUSES.flatMap(s=>lists[s]).map(r=>r.order_id))],gm=new Map();
+   for(let i=0;i<oids.length;i+=100){const a=await db.from("dispatch_assignments").select("order_id,loading_manager_id,id").in("order_id",oids.slice(i,i+100)).order("id");
+    if(!a.error)for(const x of a.data||[])if(x.loading_manager_id)gm.set(x.order_id,x.loading_manager_id)}
+   for(const s of STATUSES)lists[s]=lists[s].filter(r=>!gm.has(r.order_id)||gm.get(r.order_id)===UID)}
   if(BB.companies&&BB.companies.length>1)OB=await LWBBrand.orderBrands(db,STATUSES.flatMap(s=>lists[s]).map(r=>r.order_id));
   await Promise.all([loadPhotos(),loadReceipts()]);
   let note=canReview()?"":"View only. Godown Manager, Sales Head or Admin approve / reject returns.";
@@ -170,39 +181,54 @@ async function receive(r){
   if(note===null)return;
   return doReceive(r,null,note,"lwb_receive_return_goods");
  }
+ // Godown Manager counts each SKU (18 Nov 2026, lwb_gm_return_check_setup.sql): Good and Damaged in cases + pcs,
+ // damage type; what is not entered is Short. Sales Head, Admin and the salesman get the result.
  const oln=b=>b==="LEAKAGE"||b==="BREAKAGE"?"DAMAGE":b;
- const pick=new Map(lines.map(l=>[l.item_id,oln(l.default_bucket)]));
+ const BAD=[["DAMAGE","Damage / Leakage / Breakage"],["GASLESS","Gasless"],["EXPIRY","Expiry"]];
+ const st=new Map(lines.map(l=>{const per=Math.max(1,Number(l.pcs_per_case)||1),q=Number(l.qty_pcs)||0,good=oln(l.default_bucket)==="SALEABLE";
+  return [l.item_id,{per,q,g:good?q:0,b:good?0:q,t:good?"DAMAGE":oln(l.default_bucket)}]}));
+ const uw=l=>U(l.sku_name)==="BOX"?"IC":"CS";
  const dlg=el("rcvDlg"),body=el("rcvBody");
- el("rcvTitle").textContent="Receive goods · "+(r.order_no||"")+" · "+(r.party_name||"");
- const draw=()=>{
-  body.replaceChildren();
-  for(const l of lines){
-   const box=node("div",null,"rcv-line");
-   const top=node("div",null,"rcv-top");top.append(node("b",l.sku_name),node("span",csTxt(l.qty_pcs,l.pcs_per_case,l.sku_name)+" · "+(REASON[l.reason]||l.reason),"muted"));
-   box.append(top);
-   if(!l.sku_id){box.append(node("div","Not in SKU Master: stock will not change for this line.","rcv-warn"));body.append(box);continue}
-   const ch=node("div",null,"rcv-chips");
-   for(const [k,t] of PLACES){const b=node("button",(pick.get(l.item_id)===k?"✓ ":"")+t,"rcv-chip"+(pick.get(l.item_id)===k?" on":""));b.type="button";b.onclick=()=>{pick.set(l.item_id,k);draw()};ch.append(b)}
-   box.append(ch);body.append(box);
-  }
-  const sale=lines.filter(l=>l.sku_id&&pick.get(l.item_id)==="SALEABLE"),held=lines.filter(l=>l.sku_id&&pick.get(l.item_id)!=="SALEABLE");
-  const sum=node("div",null,"rcv-sum");
-  sum.append(node("div","Saleable stock: "+(sale.length?sale.map(l=>"+"+csTxt(l.qty_pcs,l.pcs_per_case,l.sku_name)).join(", "):"—"),"g"),
-   node("div","Damage / Leakage / Breakage etc.: "+(held.length?held.map(l=>csTxt(l.qty_pcs,l.pcs_per_case,l.sku_name)).join(", "):"—"),"a"));
-  body.append(sum);
- };
- draw();el("rcvNote").value="";dlg.hidden=false;setTimeout(()=>{const f=body.querySelector(".rcv-chip.on");if(f)f.focus()},30);
- el("rcvOk").onclick=()=>{dlg.hidden=true;doReceive(r,[...pick].map(([item_id,bucket])=>({item_id,bucket})),el("rcvNote").value,"lwb_receive_return_goods2")};
+ el("rcvTitle").textContent="Check return · "+(r.order_no||"")+" · "+(r.party_name||"");
+ const qin=(v,ph,on)=>{const i=document.createElement("input");i.type="number";i.min="0";i.step="1";i.inputMode="numeric";i.placeholder=ph;i.className="rcv-q";i.value=v||"";i.oninput=on;return i};
+ const sumBox=node("div",null,"rcv-sum");
+ const total=()=>{let g=[],b=[],sh=[],over=false;
+  for(const l of lines){const x=st.get(l.item_id),left=x.q-x.g-x.b;if(left<0)over=true;
+   if(x.g)g.push(csTxt(x.g,x.per,l.sku_name));if(x.b)b.push(csTxt(x.b,x.per,l.sku_name));if(left>0)sh.push(l.sku_name+" "+csTxt(left,x.per,l.sku_name))}
+  sumBox.replaceChildren(node("div","Good (saleable stock): "+(g.join(", ")||"—"),"g"),node("div","Damaged: "+(b.join(", ")||"—"),"a"),node("div","Short: "+(sh.join(", ")||"—"),sh.length?"r":"muted"));
+  el("rcvOk").disabled=over;return over};
+ body.replaceChildren();
+ for(const l of lines){
+  const x=st.get(l.item_id),box=node("div",null,"rcv-line");
+  const top=node("div",null,"rcv-top");top.append(node("b",l.sku_name),node("span","Driver: "+csTxt(x.q,x.per,l.sku_name)+" · "+(REASON[l.reason]||l.reason),"muted"));box.append(top);
+  if(!l.sku_id)box.append(node("div","Not in SKU Master: stock will not change for this line.","rcv-warn"));
+  const left=node("div",null,"rcv-left");
+  const show=()=>{const d=x.q-x.g-x.b;left.className="rcv-left"+(d<0?" over":d>0?" short":"");left.textContent=d<0?"More than the driver returned ("+csTxt(x.q,x.per,l.sku_name)+")":d>0?"Short: "+csTxt(d,x.per,l.sku_name):"✓ Matches the driver";total()};
+  const pair=(lab,key)=>{const w=node("div",null,"rcv-qrow"),c=qin(Math.floor(x[key]/x.per),uw(l),()=>{x[key]=(Number(c.value)||0)*x.per+(Number(p.value)||0);show()}),p=qin(x[key]%x.per,"PCS",()=>{x[key]=(Number(c.value)||0)*x.per+(Number(p.value)||0);show()});
+   w.append(node("span",lab,"rcv-ql"),c,node("small",uw(l)),p,node("small","pcs"));return w};
+  box.append(pair("✅ Good","g"),pair("⚠ Damaged","b"));
+  const sel=document.createElement("select");sel.className="rcv-type";sel.setAttribute("aria-label","Damage type");
+  for(const [k,t] of BAD)sel.add(new Option(t,k,false,x.t===k));sel.onchange=()=>{x.t=sel.value};
+  const tr=node("div",null,"rcv-qrow");tr.append(node("span","Type","rcv-ql"),sel);box.append(tr,left);body.append(box);show();
+ }
+ body.append(sumBox);total();
+ el("rcvNote").value="";dlg.hidden=false;
+ el("rcvOk").onclick=()=>{if(total())return;dlg.hidden=true;
+  doReceive(r,lines.map(l=>{const x=st.get(l.item_id);return {item_id:l.item_id,good_cs:Math.floor(x.g/x.per),good_pcs:x.g%x.per,bad_cs:Math.floor(x.b/x.per),bad_pcs:x.b%x.per,bad_bucket:x.t}}),el("rcvNote").value,"lwb_receive_return_goods3")};
 }
 async function doReceive(r,lines,note,fn){
  busy=true;document.querySelectorAll(".actions button").forEach(b=>b.disabled=true);
  try{
-  const args=fn==="lwb_receive_return_goods2"?{p_return_id:r.id,p_lines:lines,p_note:String(note||"").trim()||null}:{p_return_id:r.id,p_note:String(note||"").trim()||null};
-  const {data,error}=await db.rpc(fn,args);
+  const args=fn!=="lwb_receive_return_goods"?{p_return_id:r.id,p_lines:lines,p_note:String(note||"").trim()||null}:{p_return_id:r.id,p_note:String(note||"").trim()||null};
+  let {data,error}=await db.rpc(fn,args);
+  // Return-check SQL not run yet: old receive with one place per line.
+  if(error&&fn==="lwb_receive_return_goods3"&&/lwb_receive_return_goods3|schema cache|does not exist/i.test(error.message||"")){
+   ({data,error}=await db.rpc("lwb_receive_return_goods2",{...args,p_lines:lines.map(x=>({item_id:x.item_id,bucket:x.bad_cs||x.bad_pcs?x.bad_bucket:"SALEABLE"}))}))}
   if(error)throw error;
   await load();
+  const short=data&&data.short_pcs>0?" Short goods reported to Sales Head and salesman.":data&&data.short_pcs===0?" Sales Head and salesman informed.":"";
   const sk=data&&data.skipped&&data.skipped.length?" Not in SKU Master (stock not changed): "+data.skipped.join(", ")+".":"";
-  message("Goods received for "+r.order_no+(data&&data.lines?". Stock updated ("+data.lines+" line"+(data.lines>1?"s":"")+").":".")+sk,sk?"error":"success");
+  message("Goods received for "+r.order_no+(data&&data.lines?". Stock updated ("+data.lines+" line"+(data.lines>1?"s":"")+").":".")+short+sk,sk?"error":"success");
  }catch(e){message("Failed: "+e.message,"error");render()}
  finally{busy=false}
 }
@@ -268,7 +294,7 @@ function render(){
   if(status==="APPROVED"&&receipts){
    const got=receipts.get(r.id);
    if(got)info.append(node("div","📦 Goods received by "+(got.received_by_name||"—")+" · "+when(got.received_at)+(got.received_note?" · "+got.received_note:""),"meta"));
-   else if(canReceive()){const act=node("div",null,"actions"),b=node("button","📦 Receive goods → stock","approve");b.type="button";b.onclick=()=>receive(r);act.append(b);card.append(act)}
+   else if(canReceive()){const act=node("div",null,"actions"),b=node("button","📦 Check return goods (case + pcs)","approve");b.type="button";b.onclick=()=>receive(r);act.append(b);card.append(act)}
    else info.append(node("div","📦 Godown has not received the goods yet","meta"));
   }
   if(status==="PENDING_OFFICE"&&canReview()){

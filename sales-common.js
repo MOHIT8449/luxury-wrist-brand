@@ -109,5 +109,5 @@
     return h+"</table>";
   }
   function bar(p){const v=p==null?0:Math.max(0,Math.min(100,p));return '<span class="sl-bar"><i style="width:'+v+'%" class="'+(p==null?"":p>=100?"ok":p>=60?"mid":"low")+'"></i></span>'}
-  window.LWBSales={client,el,esc,num,fmt,rupees,short,pct,isoDay,istDay,shortDate,key,skuKey,daysBetween,SKIP,DONE,status,start,inChunks,orders,monthRange,lineQty,loadLanding,excel,table,bar};
+  window.LWBSales={client,el,esc,num,fmt,rupees,short,pct,isoDay,istDay,shortDate,key,skuKey,daysBetween,SKIP,DONE,status,start,inChunks,orders,monthRange,lineQty,loadLanding,landing,excel,table,bar};
 })();

@@ -108,6 +108,21 @@ body.kb-open .lc-fab,body.kb-open .lc-pops{display:none}
  body.lc-open .lc-fab{display:none}
  body.lc-open{overflow:hidden}
 }
+body.lc-top-on .lwbk-tip{right:18px!important}
+.lc-fab.lc-top{position:static;z-index:auto;flex:none}
+.lc-fab.lc-top .lc-lbl{display:none}
+.lc-fab.lc-top .lc-btn{width:38px;height:38px;border-radius:var(--erp-r,8px);border:1px solid var(--lwb-teal-line,rgba(255,255,255,.2));background:rgba(255,255,255,.07);color:var(--lwb-gold-hi,#c9b26a);box-shadow:none}
+.lc-fab.lc-top .lc-btn:hover{background:rgba(255,255,255,.14)}
+.lc-fab.lc-top .lc-btn svg{width:19px;height:19px}
+.lc-fab.lc-top .lc-btn.open{background:var(--lc-gold);color:var(--lc-teal)}
+.lc-fab.lc-top .lc-btn.open span{font-size:16px!important}
+.lc-fab.lc-top .lc-badge{top:-6px;right:-6px;font-size:10px;min-width:17px;padding:0 4px;border-color:var(--lc-teal)}
+body.lc-top-on .lc-panel{top:calc(var(--erp-top,58px) + 8px);bottom:auto;height:min(560px,calc(100vh - var(--erp-top,58px) - 24px))}
+body.lc-top-on .lc-pops{top:calc(var(--erp-top,58px) + 8px);bottom:auto}
+@media(max-width:600px){
+ body.lc-top-on .lc-panel{top:var(--erp-top,58px);bottom:0;height:auto}
+ body.lc-top-on.lc-open .lc-fab.lc-top{display:flex}
+}
 @media print{.lc-root{display:none!important}}`;
 
   let db,me,myRole,isAdmin=false,root,fab,badge,pops,panel;
@@ -122,8 +137,9 @@ body.kb-open .lc-fab,body.kb-open .lc-pops{display:none}
     applyRooms(first.data||[],true);
     loadPeople();
     live();
-    setInterval(()=>{if(!document.hidden)refresh(true)},30000);
-    document.addEventListener("visibilitychange",()=>{if(!document.hidden)refresh(true)});
+    // Backup check: every 30 s while the instant (Realtime) link is down, every 2 min while it works (speed fix, 17 Nov 2026).
+    setInterval(()=>{if(!document.hidden&&Date.now()-lastRefresh>=(liveOk?120000:29000))refresh(true)},30000);
+    document.addEventListener("visibilitychange",()=>{if(!document.hidden&&Date.now()-lastRefresh>15000)refresh(true)});
     if(/^#chat\b/.test(location.hash))openPanel();
   }
 
@@ -135,7 +151,12 @@ body.kb-open .lc-fab,body.kb-open .lc-pops{display:none}
       '<div class="lc-fab"><span class="lc-lbl">Team Chat</span><button class="lc-btn" type="button" aria-label="Team Chat" title="Team Chat">'+ICON+'<span class="lc-badge" hidden></span></button></div>';
     document.body.appendChild(root);
     lift();addEventListener("resize",lift);setTimeout(lift,1500);
-    fab=root.querySelector(".lc-fab");badge=root.querySelector(".lc-badge");pops=root.querySelector(".lc-pops");panel=root.querySelector(".lc-panel");
+    fab=root.querySelector(".lc-fab");
+    // In the ERP top bar (Mohit, 16 Nov 2026): the round button at the bottom right sat on top of each page's
+    // last-row Save / Submit button, so on ERP pages it is a small icon next to the bell and the chat opens from the top.
+    const bar=document.querySelector(".erp-top .erp-user");
+    if(bar){fab.classList.add("lc-top");document.body.classList.add("lc-top-on");const q=bar.querySelector(".erp-quick");q?q.after(fab):bar.prepend(fab)}
+    badge=fab.querySelector(".lc-badge");pops=root.querySelector(".lc-pops");panel=root.querySelector(".lc-panel");
     fab.addEventListener("click",()=>panel.hidden?openPanel():closePanel());
     document.addEventListener("keydown",e=>{if(e.key==="Escape"&&!panel.hidden&&!e.defaultPrevented){e.preventDefault();e.stopPropagation();if(view.mode!=="list")showList();else closePanel()}},true);
   }
@@ -168,7 +189,9 @@ body.kb-open .lc-fab,body.kb-open .lc-pops{display:none}
     fab.querySelector(".lc-btn").setAttribute("aria-label","Team Chat"+(n?", "+n+" unread":""));
     if(!panel.hidden&&view.mode==="list"&&view.tab==="mine")drawList();
   }
+  let lastRefresh=Date.now(),liveOk=false;
   async function refresh(popNew){
+    lastRefresh=Date.now();
     const r=await db.rpc("lwb_chat_rooms_list",{p_all:false});
     if(!r.error)applyRooms(r.data||[],!popNew);
     lift();
@@ -179,7 +202,7 @@ body.kb-open .lc-fab,body.kb-open .lc-pops{display:none}
   let soon=0;
   function live(){
     try{
-      db.channel("lwb-chat-"+me.id).on("postgres_changes",{event:"INSERT",schema:"public",table:"lwb_chat_messages"},p=>onNew(p.new)).subscribe();
+      db.channel("lwb-chat-"+me.id).on("postgres_changes",{event:"INSERT",schema:"public",table:"lwb_chat_messages"},p=>onNew(p.new)).subscribe(st=>{liveOk=st==="SUBSCRIBED"});
     }catch(e){}
   }
   function onNew(m){

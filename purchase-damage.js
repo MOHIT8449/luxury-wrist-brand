@@ -12,7 +12,11 @@
  */
 (function(){
   'use strict';
-  const ISSUES=[['DAMAGE','Damage'],['LEAKAGE','Leakage'],['SHORTAGE','Shortage']];
+  // Damage, Leakage and Breakage are one type (DAMAGE); Gasless is separate (18 Nov 2026, lwb_purchase_gasless_setup.sql).
+  // LEAKAGE is only shown for old reports that already have it.
+  const ISSUES=[['DAMAGE','Damage / Leakage / Breakage'],['GASLESS','Gasless'],['SHORTAGE','Shortage']];
+  const ISSUE_LABEL={DAMAGE:'Damage / Leakage / Breakage',LEAKAGE:'Leakage',GASLESS:'Gasless',SHORTAGE:'Shortage'};
+  const issueTxt=k=>ISSUE_LABEL[k]||String(k||'');
   const esc=v=>String(v==null?'':v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const num=v=>Number(v||0);
   const fmt=v=>num(v).toLocaleString('en-IN');
@@ -51,15 +55,16 @@
 .pd-pick button.on.bad{background:#fdecef;border-color:#c8102e;color:#9e1528}
 .pd-time{display:flex;gap:6px;align-items:flex-end;margin-bottom:8px;flex-wrap:wrap}
 .pd-time label{display:flex;flex-direction:column;font-size:12.5px;font-weight:700;color:#4b5763;gap:3px;flex:1 1 90px;min-width:0}
+.pd-time .pd-opt{font-weight:500;color:#8a949e}
 .pd-time input{height:36px;border:1.5px solid #e3e7ec;border-radius:6px;padding:0 6px;font:inherit;font-size:14px;min-width:0;width:100%}
 .pd-time button{height:36px;border:1px solid #cfd6de;border-radius:6px;background:#fff;font:inherit;font-size:13px;font-weight:600;cursor:pointer;padding:0 8px;flex:none}
 .pd-dur{flex:1 1 100%;font-size:12.5px;font-weight:700;color:#0d6b36}.pd-dur:empty{display:none}
 .pd-lab{font-size:12.5px;font-weight:700;color:#4b5763;margin:8px 0 4px}
-.pd-line{display:grid;grid-template-columns:minmax(0,1fr) 104px 58px 58px 32px;gap:5px;align-items:center;margin-bottom:5px}
+.pd-line{display:grid;grid-template-columns:minmax(0,1fr) 190px 58px 58px 32px;gap:5px;align-items:center;margin-bottom:5px}
 .pd-line select,.pd-line input,.pd-note{height:36px;border:1.5px solid #e3e7ec;border-radius:6px;padding:0 6px;font:inherit;font-size:14px;background:#fff;min-width:0;width:100%}
 .pd-line input{text-align:right}
 .pd-line .rm{height:36px;border:1px solid #e3e7ec;border-radius:6px;background:#fff;cursor:pointer;color:#9e1528;font-size:14px;padding:0}
-.pd-hd{display:grid;grid-template-columns:minmax(0,1fr) 104px 58px 58px 32px;gap:5px;font-size:11.5px;font-weight:700;color:#6b7785;text-transform:uppercase;letter-spacing:.2px}
+.pd-hd{display:grid;grid-template-columns:minmax(0,1fr) 190px 58px 58px 32px;gap:5px;font-size:11.5px;font-weight:700;color:#6b7785;text-transform:uppercase;letter-spacing:.2px}
 .pd-hd span:nth-child(3),.pd-hd span:nth-child(4){text-align:right}
 .pd-add{height:32px;border:1px dashed #9aa6b2;border-radius:6px;background:#fbfcfd;font:inherit;font-size:13px;font-weight:600;cursor:pointer;padding:0 10px;color:#1f2a37}
 .pd-err{color:#b42318;font-size:12.5px;margin-top:4px}
@@ -77,7 +82,7 @@
 .pd-t{width:100%;border-collapse:collapse;font-size:13.5px;margin:4px 0 8px;table-layout:fixed}
 .pd-t th,.pd-t td{border-bottom:1px solid #e3e7ec;padding:5px 6px;text-align:left;overflow-wrap:anywhere}
 .pd-t th{font-size:11.5px;color:#6b7785;text-transform:uppercase;background:#f6f7f9}
-.pd-t .n{text-align:right;width:96px}.pd-t .ty{width:86px}
+.pd-t .n{text-align:right;width:96px}.pd-t .ty{width:150px}
 .pd-chip{display:inline-block;padding:2px 8px;border-radius:999px;font-size:12px;font-weight:700}
 .pd-chip.ok{background:#e4f6e9;color:#0d6b36}.pd-chip.bad{background:#fdecef;color:#9e1528}.pd-chip.warn{background:#fff2dc;color:#8a5300}
 .pd-meta{font-size:12.5px;color:#4b5763;margin:2px 0 8px}
@@ -89,7 +94,7 @@
   .pd-hd span:first-child{display:none}
   .pd-hd span:nth-child(2){grid-column:1}
   .pd-line{padding-bottom:6px;border-bottom:1px solid #eef0f3;margin-bottom:6px}
-  .pd-t .n{width:82px}.pd-t .ty{width:74px}
+  .pd-t .n{width:82px}.pd-t .ty{width:104px}
 }`;
     document.head.append(s);
   }
@@ -138,10 +143,11 @@
     const first=()=>({sku:d.skus.length===1?d.skus[0].id:'',issue:'DAMAGE',cs:'',pc:''});
     const back=shell('<div class="pd-h"><span class="ic">🚛</span><div><h3>'+esc(vehOf(d.bill))+' · Vehicle check</h3><small>'+esc(subOf(d))+'</small></div><button type="button" class="x" data-a="close" aria-label="Close">✕</button></div>'+
       '<div class="pd-skus">'+d.skus.map(s=>'<b>'+esc(s.name)+'</b> '+qtyTxt(s.cs,s.pc,s.unit)).join(' · ')+'</div>'+
-      '<div class="pd-pick"><button type="button" class="ok" data-m="ok">✓ All OK</button><button type="button" class="bad" data-m="dmg">⚠ Damage / Leak / Short</button></div>'+
-      '<div class="pd-time"><label>Time In<input type="time" class="tin"></label><button type="button" data-now="tin">Now</button><label>Time Out<input type="time" class="tout"></label><button type="button" data-now="tout">Now</button><span class="pd-dur"></span></div>'+
-      '<div class="pd-dmg" hidden><div class="pd-hd"><span>SKU</span><span>Type</span><span>IC / CS</span><span>PCS</span><span></span></div><div class="pd-lines"></div><button type="button" class="pd-add" data-a="add">+ Add line</button><div class="pd-err" hidden></div>'+
-      '<div class="pd-lab">Photos of damaged / leaking cases</div><div class="pd-photos"></div></div>'+
+      '<div class="pd-pick"><button type="button" class="ok" data-m="ok">✓ All OK</button><button type="button" class="bad" data-m="dmg">⚠ Damage / Gasless</button></div>'+
+      '<div class="pd-time"><label><span>Time In <small class="pd-opt">(optional)</small></span><input type="time" class="tin"></label><button type="button" data-now="tin">Now</button><label><span>Time Out <small class="pd-opt">(optional)</small></span><input type="time" class="tout"></label><button type="button" data-now="tout">Now</button><span class="pd-dur"></span></div>'+
+      '<div class="pd-dmg" hidden><div class="pd-hd"><span>SKU</span><span>Type</span><span>IC / CS</span><span>PCS</span><span></span></div><div class="pd-lines"></div><button type="button" class="pd-add" data-a="add">+ Add line</button><div class="pd-err" hidden></div></div>'+
+      // Photos show for All OK too: the vehicle photo is taken at every unloading (Mohit, 18 Nov 2026).
+      '<div class="pd-lab">Photos: vehicle (number plate) and any damaged / gasless cases</div><div class="pd-photos"></div>'+
       '<div class="pd-lab">Note</div><input class="pd-note" maxlength="300" placeholder="e.g. 2 cases wet near the door">'+
       '<div class="pd-foot"><button type="button" class="go" data-a="save" disabled>Submit</button><button type="button" data-a="close">Later</button></div>');
     const $=s=>back.querySelector(s);
@@ -152,11 +158,11 @@
     const showDur=()=>{const [a,b]=times();$('.pd-dur').textContent=a&&b?'⏱ '+durTxt(a,b):''};
     back.querySelectorAll('.pd-time input').forEach(i=>i.addEventListener('input',showDur));showDur();
     let docs=null;
-    if(await needDocs()){docs=ERPDocs.panel({client,mount:$('.pd-photos'),entity:'PURCHASE_BILL',id:o.id,slots:['DAMAGE']})}else $('.pd-photos').textContent='Photos: not available on this page.';
+    if(await needDocs()){docs=ERPDocs.panel({client,mount:$('.pd-photos'),entity:'PURCHASE_BILL',id:o.id,slots:['VEHICLE','DAMAGE']})}else $('.pd-photos').textContent='Photos: not available on this page.';
     const skuOpts=v=>'<option value="">Choose SKU</option>'+d.skus.map(s=>'<option value="'+esc(s.id)+'"'+(s.id===v?' selected':'')+'>'+esc(s.name)+' ('+qtyTxt(s.cs,s.pc,s.unit)+')</option>').join('');
     function readLines(){back.querySelectorAll('.pd-line').forEach((r,i)=>{const L=lines[i];if(!L)return;L.sku=r.querySelector('.sku').value;L.issue=r.querySelector('.ty').value;L.cs=r.querySelector('.cs').value;L.pc=r.querySelector('.pc').value})}
     function drawLines(){
-      $('.pd-lines').innerHTML=lines.map((L,i)=>'<div class="pd-line"><select class="sku" aria-label="SKU">'+skuOpts(L.sku)+'</select><select class="ty" aria-label="Type">'+ISSUES.map(([k,l])=>'<option value="'+k+'"'+(k===L.issue?' selected':'')+'>'+l+'</option>').join('')+'</select>'+
+      $('.pd-lines').innerHTML=lines.map((L,i)=>'<div class="pd-line"><select class="sku" aria-label="SKU">'+skuOpts(L.sku)+'</select><select class="ty" aria-label="Type">'+(L.issue==='LEAKAGE'?[...ISSUES,['LEAKAGE','Leakage']]:ISSUES).map(([k,l])=>'<option value="'+k+'"'+(k===L.issue?' selected':'')+'>'+l+'</option>').join('')+'</select>'+
         '<input class="cs" type="number" min="0" step="1" inputmode="numeric" placeholder="'+(L.sku?sh(unitOfSku(d,L.sku)):'IC / CS')+'" aria-label="IC / CS" value="'+esc(L.cs)+'"><input class="pc" type="number" min="0" step="1" inputmode="numeric" placeholder="PCS" aria-label="PCS" value="'+esc(L.pc)+'">'+
         '<button type="button" class="rm" data-rm="'+i+'" aria-label="Remove line" title="Remove line">✕</button></div>').join('');
     }
@@ -201,13 +207,14 @@
         if(mode==='dmg'){const r=collect();const er=$('.pd-err');er.hidden=!r.err.length;er.textContent=r.err.join(' ');if(r.err.length)return;items=r.items}
         if(docs&&docs.busy())return toast('Photo upload in progress, please wait.','error');
         const [tIn,tOut]=times();
-        if(!tIn){toast('Enter the vehicle Time In (press Now when it came).','error');$('.tin').focus();return}
+        // Time In / Out optional (Mohit, 18 Nov 2026). Out alone is not saved without In.
+        if(!tIn&&tOut){toast('Enter Time In too, or leave both times empty.','error');$('.tin').focus();return}
         const photos=docs?docs.has('DAMAGE'):0;
-        const txt=mode==='ok'?'All goods OK: no damage, leakage or shortage.':items.map(x=>x.sku_name+' · '+x.issue.charAt(0)+x.issue.slice(1).toLowerCase()+': '+qtyTxt(x.cases,x.pcs,unitOfSku(d,x.sku_id))).join('\n')+'\nPhotos: '+photos;
+        const txt=mode==='ok'?'All goods OK: no damage, gasless or shortage.':items.map(x=>x.sku_name+' · '+issueTxt(x.issue)+': '+qtyTxt(x.cases,x.pcs,unitOfSku(d,x.sku_id))).join('\n')+'\nPhotos: '+photos;
         if(mode==='dmg'&&docs&&!photos&&!await confirm('NO PHOTO ADDED\n\nA photo helps the company accept the claim. Submit without a photo?'))return;
-        if(!await confirm((mode==='ok'?'SUBMIT: ALL OK?':'SUBMIT DAMAGE REPORT?')+'\n\n'+vehOf(d.bill)+' · Inv '+d.bill.invoice_no+'\n'+txt+'\nTime In '+hhmm(tIn)+(tOut?' · Out '+hhmm(tOut)+' ('+durTxt(tIn,tOut)+')':' · Out not entered')+'\n\nAdmin and Sales Head will get this report.'))return;
+        if(!await confirm((mode==='ok'?'SUBMIT: ALL OK?':'SUBMIT DAMAGE REPORT?')+'\n\n'+vehOf(d.bill)+' · Inv '+d.bill.invoice_no+'\n'+txt+(tIn?'\nTime In '+hhmm(tIn)+(tOut?' · Out '+hhmm(tOut)+' ('+durTxt(tIn,tOut)+')':' · Out not entered'):'\nVehicle time not entered')+'\n\nAdmin and Sales Head will get this report.'))return;
         busy=true;b.disabled=true;
-        const tm=await client.rpc('lwb_purchase_vehicle_time',{p_inward:o.id,p_in:tIn,p_out:tOut});
+        const tm=tIn?await client.rpc('lwb_purchase_vehicle_time',{p_inward:o.id,p_in:tIn,p_out:tOut}):{};
         if(tm.error){busy=false;b.disabled=false;return toast('Vehicle time not saved: '+tm.error.message,'error')}
         const r=await client.rpc('lwb_purchase_damage_report',{p_inward_id:o.id,p_verified_on:ck&&ck.verified_on||today(),p_note:$('.pd-note').value.trim(),p_items:items});
         busy=false;b.disabled=false;
@@ -234,12 +241,12 @@
     const canEdit=['admin','manager'].includes(o.role)||(o.role==='warehouse'&&(!ck||['NONE','PENDING'].includes(ck.claim_status)));
     const back=shell('<div class="pd-h"><span class="ic">'+(ck&&ck.has_damage?'⚠':'🚛')+'</span><div><h3>'+esc(vehOf(d.bill))+' · Damage report</h3><small>'+esc(subOf(d))+'</small></div><button type="button" class="x" data-a="close" aria-label="Close">✕</button></div>'+
       '<div class="pd-meta">'+chip+(claim&&ck.has_damage?' <span class="pd-chip warn">'+esc(claim)+'</span>':'')+'<br>'+(ck?'Checked '+dmy(ck.verified_on)+(who?' by '+esc(who):''):'The Godown Manager has not checked this vehicle yet.')+(timeTxt(d.bill)?'<br>🕘 '+esc(timeTxt(d.bill)):'')+'</div>'+
-      (it.length?'<table class="pd-t"><thead><tr><th>SKU</th><th class="ty">Type</th><th class="n">Qty</th></tr></thead><tbody>'+it.map(i=>'<tr><td>'+esc(i.sku_name)+'</td><td class="ty">'+esc(i.issue.charAt(0)+i.issue.slice(1).toLowerCase())+'</td><td class="n">'+qtyTxt(i.cases,i.pcs,unitOfSku(d,i.sku_id))+'</td></tr>').join('')+
-        '<tr><td colspan="2"><b>Total</b></td><td class="n"><b>'+esc(cs)+'</b></td></tr></tbody></table><div class="pd-meta">Stock: damage and leakage moved out of saleable to Damage / Leakage; shortage taken off saleable (Loss).</div>':'')+
+      (it.length?'<table class="pd-t"><thead><tr><th>SKU</th><th class="ty">Type</th><th class="n">Qty</th></tr></thead><tbody>'+it.map(i=>'<tr><td>'+esc(i.sku_name)+'</td><td class="ty">'+esc(issueTxt(i.issue))+'</td><td class="n">'+qtyTxt(i.cases,i.pcs,unitOfSku(d,i.sku_id))+'</td></tr>').join('')+
+        '<tr><td colspan="2"><b>Total</b></td><td class="n"><b>'+esc(cs)+'</b></td></tr></tbody></table><div class="pd-meta">Stock: damage / leakage / breakage moved out of saleable to Damage, gasless to Gasless; shortage taken off saleable (Loss).</div>':'')+
       (ck&&ck.note?'<div class="pd-meta"><b>Note:</b> '+esc(ck.note)+'</div>':'')+
       '<div class="pd-lab">Photos</div><div class="pd-photos"></div>'+
       '<div class="pd-foot">'+(canEdit?'<button type="button" class="go" data-a="edit">'+(ck?'✏ Change':'Check now')+'</button>':'')+(ck&&ck.has_damage&&['admin','manager'].includes(o.role)?'<button type="button" data-a="claim">Claims →</button>':'')+'<button type="button" data-a="close">Close</button></div>');
-    if(await needDocs())ERPDocs.panel({client,mount:back.querySelector('.pd-photos'),entity:'PURCHASE_BILL',id:o.id,slots:['DAMAGE'],canEdit:false});
+    if(await needDocs())ERPDocs.panel({client,mount:back.querySelector('.pd-photos'),entity:'PURCHASE_BILL',id:o.id,slots:['VEHICLE','DAMAGE'],canEdit:false});
     back.addEventListener('click',e=>{
       if(e.target===back)return back.remove();
       const b=e.target.closest('button');if(!b||b.closest('.ed-root'))return;
@@ -270,7 +277,7 @@
     if(!bills.length){o.onDone&&o.onDone();return}
     open=true;
     const msgOf=b=>String(byBill.get(b.id).message||'');
-    const back=shell('<div class="pd-h"><span class="ic">🚛</span><div><h3>Purchase vehicle arrived'+(bills.length>1?' ('+bills.length+')':'')+'</h3><small>Check the goods. Any damage, leakage or shortage? Report it with photos.</small></div></div>'+
+    const back=shell('<div class="pd-h"><span class="ic">🚛</span><div><h3>Purchase vehicle arrived'+(bills.length>1?' ('+bills.length+')':'')+'</h3><small>Check the goods. Any damage, gasless or shortage? Verify the quantity and add photos.</small></div></div>'+
       bills.map(b=>'<div class="pd-card"><b>'+esc(vehOf(b))+'</b><small>'+esc([b.supplier_name,'Inv '+b.invoice_no,(msgOf(b).match(/\b[\d,]+ CS\b/)||[''])[0],'Recd '+dmy(b.received_date)].filter(Boolean).join(' · '))+'</small>'+
         '<div class="row"><button type="button" class="bad" data-dmg="'+esc(b.id)+'">⚠ Report damage</button><button type="button" class="ok" data-ok="'+esc(b.id)+'">✓ All OK</button></div></div>').join('')+
       '<div class="pd-foot"><button type="button" data-a="later">Later (15 min)</button></div>');

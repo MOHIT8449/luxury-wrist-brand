@@ -20,6 +20,9 @@
   const dmy=v=>v?(window.LWBDate?LWBDate.d(v):String(v).slice(0,10)):"";
   const errText=e=>String((e&&e.message)||e||"Something went wrong").replace(/^.*?ERROR:\s*/,"");
   const sum=(a,f)=>a.reduce((t,x)=>t+num(f(x)),0);
+  const r2=n=>Math.round(num(n)*100)/100;
+  // per-unit difference with sign: +₹3.27/pc, −₹2/pc
+  const pu=d=>(d>0?"+":d<0?"−":"")+"₹"+Math.abs(r2(d)).toLocaleString("en-IN",{maximumFractionDigits:2})+"/pc";
   const PO_PENDING=["pending","submitted","pending_manager","pending_approval","pending_review","new"];
   const MODE={CASH:"Cash",UPI:"UPI",BANK:"Bank / NEFT",RTGS:"RTGS",NEFT:"NEFT",CHEQUE:"Cheque",CARD:"Card",ONLINE:"Online"};
   async function rpc(c,name,args){const {data,error}=await c.rpc(name,args);if(error)throw Error(errText(error));return data}
@@ -41,15 +44,23 @@
        const items=rows.filter(r=>r.can_approve).map(r=>{
          const lines=(r.lines||[]),val=sum(lines,l=>num(l.qty)*num(l.rate));
          return {id:r.order_id,orderId:r.order_id,person:r.sales_person,ref:r.order_no,party:r.party,amount:val,when:r.requested_at,
-           lines:lines.filter(l=>l.min_rate!=null&&num(l.rate)<num(l.min_rate)).map(l=>l.sku+" · ₹"+num(l.rate)+" (min ₹"+num(l.min_rate)+")"+(l.landing!=null?" · landing ₹"+num(l.landing):"")),
+           // Mohit (17 Nov 2026): show the difference too, per unit and in ₹ for the qty, so a low rate is easy to track.
+           lines:lines.filter(l=>l.min_rate!=null&&num(l.rate)<num(l.min_rate)).map(l=>{const dm=r2(num(l.rate)-num(l.min_rate));
+             return l.sku+" · Rate ₹"+num(l.rate)+" · Min ₹"+num(l.min_rate)+" · Diff "+pu(dm)+" × "+num(l.qty)+" = "+(dm<0?"−":"")+inr(Math.round(Math.abs(dm)*num(l.qty)))}),
+           // The same, as parts the list shows as highlighted badges (Mohit, 17 Nov 2026: highlight what I act on).
+           rl:lines.filter(l=>l.min_rate!=null&&num(l.rate)<num(l.min_rate)).map(l=>({sku:l.sku,qty:num(l.qty),rate:num(l.rate),min:num(l.min_rate),diff:r2(num(l.rate)-num(l.min_rate)),loss:Math.round((num(l.min_rate)-num(l.rate))*num(l.qty))})),
            meta:[r.brand,r.sales_person&&"By "+r.sales_person,r.slip?"Rajnigandha slip":"",r.note].filter(Boolean),
-           acts:[{t:"✓ Approve rate",kind:"ok",confirm:"Approve the rate of "+r.order_no+"?\n\n"+(r.slip?"The slip is made and goes to Accounts.":"The PO is approved and goes on for transport."),
+           detail:{info:[["Sales person",r.sales_person],["PO date",dmy(r.order_date)],["Brand",r.brand],["Type",r.slip?"Rajnigandha slip":"PO"],["Transport",r.transportation],["Driver",r.driver_name],["Vehicle",r.vehicle_no],["Note",r.note]],
+             why:"Rate is below the minimum on "+lines.filter(l=>l.min_rate!=null&&num(l.rate)<num(l.min_rate)).length+" of "+lines.length+" items",
+             rows:lines.map(l=>({sku:l.sku,qty:num(l.qty),rate:num(l.rate),min:l.min_rate==null?null:num(l.min_rate),landing:l.landing==null?null:num(l.landing),flag:l.min_rate!=null&&num(l.rate)<num(l.min_rate)}))},
+           acts:[{t:"✓ Approve rate",kind:"ok",view:true,confirm:"Approve the rate of "+r.order_no+"?\n\n"+(r.slip?"The slip is made and goes to Accounts.":"The PO is approved and goes on for transport."),
+                  done:"Rate approved.",doneNote:v=>v&&v.already?"PO was already "+(v.status||"loaded")+", so only the rate OK is saved.":r.slip?"Slip is made and sent to Accounts.":"PO is approved and goes on for transport.",
                   run:c2=>rpc(c2,"lwb_rate_approve",{p_order_id:r.order_id})},
                  {t:"Open PO",kind:"go",href:"warehouse-orders.html?rate="+encodeURIComponent(r.order_id)}]};
        });
        return {items,amount:sum(items,i=>i.amount)};
      }},
-    {key:"market",icon:"⚠",title:"Market order check",sub:"Low margin / wrong slab",roles:["admin","manager"],page:"warehouse-orders.html",
+    {key:"market",icon:"⚠",title:"Market order check",sub:"Low margin",roles:["admin","manager"],page:"warehouse-orders.html",
      async load(c,ctx){
        if(!ctx.bells)return null;
        const seen=new Set(),items=[];
@@ -59,7 +70,9 @@
          const o=ctx.orders.get(n.order_id);
          items.push({id:n.order_id,orderId:n.order_id,person:seg[2]||(o&&o.sales_person),ref:seg[0]||(o&&o.order_no)||"PO",party:seg[1]||(o&&o.customer_name)||"",amount:o?num(o.total_amount):null,when:n.created_at,
            lines:why,meta:[seg[2]&&"By "+seg[2]].filter(Boolean),
-           acts:[{t:"✓ Checked OK",kind:"ok",run:c2=>readBells(c2,ctx.uid,"ORDER_RATE_CHECK",[n.order_id])},
+           detail:{info:[["Sales person",seg[2]||(o&&o.sales_person)]],why:"Why it needs a check",whyList:why,po:n.order_id,
+             flags:why.map(w=>String(w).split(/ ₹| — /)[0].trim().toUpperCase()).filter(Boolean)},
+           acts:[{t:"✓ Checked OK",kind:"ok",view:true,run:c2=>readBells(c2,ctx.uid,"ORDER_RATE_CHECK",[n.order_id])},
                  {t:"Open PO",kind:"go",href:orderLink(n.order_id)}]});
        }
        return {items,amount:sum(items,i=>i.amount),
@@ -70,14 +83,15 @@
        if(!ctx.pending)return null;
        const items=ctx.pending.map(o=>({id:o.id,orderId:o.id,person:o.sales_person,ref:o.order_no,party:o.customer_name,amount:num(o.total_amount),when:o.created_at||o.order_date,
          lines:[],meta:[dmy(o.order_date),o.sales_person&&"By "+o.sales_person,o.transportation].filter(Boolean),
+         detail:{info:[["Sales person",o.sales_person],["PO date",dmy(o.order_date)],["Transport",o.transportation],["Status",o.status||"New"]],po:o.id},
          acts:[{t:"Open & approve",kind:"go",href:orderLink(o.id)}]}));
        return {items,amount:sum(items,i=>i.amount)};
      }},
-    {key:"change",icon:"✏",title:"Order change approval",sub:"Qty / rate / SKU change",roles:["admin"],page:"party-billing.html?tab=chg",
+    {key:"change",icon:"✏",title:"Order change approval",sub:"Qty / rate / SKU change",roles:["admin","manager"],page:"party-billing.html?tab=chg",
      async load(c){
        const rows=((await rpc(c,"lwb_bill_change_list",{p_days:1}))||[]).filter(r=>r.status==="WAITING");
        const K={QTY:"Qty",RATE:"Rate",SKU:"SKU",ADD:"Added",REMOVE:"Removed"};
-       const items=rows.map(r=>({id:r.id,orderId:r.order_id,ref:r.order_no,party:r.party,amount:num(r.diff),signed:true,when:r.requested_at,
+       const items=rows.map(r=>({id:r.id,orderId:r.order_id,ref:r.order_no,party:r.party,amount:num(r.diff),signed:true,when:r.requested_at,person:r.by,view:r,detail:{kind:"change"},
          lines:(r.lines||[]).filter(l=>l.kind).map(l=>{
            const k=String(l.kind).toUpperCase(),sku=l.sku||l.sku_old||"";
            if(k==="ADD")return "Added "+sku+" · "+num(l.qty)+" × ₹"+num(l.rate);
@@ -88,10 +102,13 @@
            return (K[k]?K[k]+": ":"")+p.join(" · ");
          }),
          meta:[inr(r.old_value)+" → "+inr(r.new_value),r.bill_no&&"Bill "+r.bill_no,r.reason,r.note,r.by&&"By "+r.by].filter(Boolean),
-         acts:[{t:"✓ Approve",kind:"ok",confirm:"Approve the change of "+r.order_no+"?\n\nPO lines and the bill amount change now.",
+         // Approve / Open first show the full change (Mohit, 16 Nov 2026): who sent it, why, item by item
+         // before -> after, amount before -> after. Approve is given from that popup.
+         acts:[{t:"✓ Approve",kind:"ok",view:true,
                 run:c2=>rpc(c2,"lwb_bill_change_decide",{p_id:r.id,p_approve:true,p_reply:null})},
                {t:"↩ Send back",kind:"no",ask:"Why is it sent back?",run:(c2,i,f,why)=>rpc(c2,"lwb_bill_change_decide",{p_id:r.id,p_approve:false,p_reply:why})},
-               {t:"Open",kind:"go",href:"party-billing.html?tab=chg&change="+encodeURIComponent(r.order_id)}]}));
+               {t:"Open",kind:"view",view:true}],
+         page:"party-billing.html?tab=chg&change="+encodeURIComponent(r.order_id)}));
        return {items,amount:sum(items,i=>i.amount)};
      }},
     {key:"rent",icon:"🚚",title:"Driver trip rent",sub:"Fixed rent to verify",roles:["admin"],page:"fleet-master.html#rates",
@@ -103,6 +120,8 @@
                 (g.orders||[]).length?"PO "+(g.orders||[]).join(", "):""].filter(Boolean),
          meta:[g.owner,g.set_by_name&&"Set by "+g.set_by_name,g.note].filter(Boolean),
          field:{type:"number",label:"₹ per trip",value:num(g.rate)},
+         detail:{info:[["Vehicle / driver",g.no],["Party",g.party],["Owner",g.owner],["Trip days",num(g.days)],["From",dmy(g.first_date)],["To",g.last_date?dmy(g.last_date):""],
+           ["Rent per trip","₹"+num(g.rate).toLocaleString("en-IN")],["Total","₹"+(num(g.rate)*num(g.days)).toLocaleString("en-IN")],["Set by",g.set_by_name],["Set on",dmy(g.set_at)],["POs",(g.orders||[]).join(", ")],["Note",g.note]]},
          acts:[{t:"✓ Verify",kind:"ok",run:(c2,i,rate)=>{const v=num(rate);if(!(v>0))throw Error("Enter the rent per trip");return rpc(c2,"lwb_hired_rate_verify",{p_rate_id:g.rate_id,p_ok:true,p_rate:v,p_note:null})}},
                {t:"↩ Send back",kind:"no",ask:"Why is it sent back?",run:(c2,i,f,why)=>rpc(c2,"lwb_hired_rate_verify",{p_rate_id:g.rate_id,p_ok:false,p_rate:null,p_note:why})}]}));
        return {items,amount:sum(items,i=>i.amount)};
@@ -118,6 +137,8 @@
          amount:num(p.amount),when:p.at||p.date,group:p.bank_id?String(p.bank_id):"",groupName:name(p.bank_id)||"Bank not chosen yet",
          lines:[],meta:[dmy(p.date),p.ref&&"Ref "+p.ref,p.order_no,p.category&&p.party?p.category:"",p.by&&"By "+p.by,p.remark].filter(Boolean),
          field:{type:"select",label:"Bank",value:p.bank_id?String(p.bank_id):"",options:opts},
+         detail:{info:[["Type",p.kind==="DEPOSIT"?"Cash deposit":"Payment received"],["Mode",MODE[p.mode]||p.mode],["Date",dmy(p.date)],["Party",p.party],["Category",p.category],["Ref / UTR",p.ref],["PO",p.order_no],
+           ["Bank",name(p.bank_id)||"Not chosen yet"],["Entered by",p.by],["Remark",p.remark]]},
          acts:[{t:"✓ In bank",kind:"ok",run:(c2,i,b)=>{if(!b)throw Error("Choose the bank where this money came");return rpc(c2,"lwb_acc_verify_line",{p_src:p.src,p_id:p.id,p_ok:true,p_bank_id:Number(b),p_note:null})}},
                {t:"✗ Not in bank",kind:"no",ask:"Why is it not in the bank?",run:(c2,i,f,why)=>rpc(c2,"lwb_acc_verify_line",{p_src:p.src,p_id:p.id,p_ok:false,p_bank_id:null,p_note:why})}]}));
        // per bank: count + total (bank not chosen last)
@@ -133,7 +154,8 @@
        const items=rows.map(m=>({id:String(m.id),sku:m.sku_name,person:m.requested_by_name,ref:"STM-"+m.id,party:m.sku_name,amount:null,when:m.requested_at,
          lines:[lab(m.from_bucket)+" → "+lab(m.to_bucket)+" · "+cs(m)],
          meta:[dmy(m.move_date),m.reason,m.note,m.requested_by_name&&"By "+m.requested_by_name].filter(Boolean),
-         acts:[{t:"✓ Approve",kind:"ok",confirm:"Approve STM-"+m.id+"?\n\n"+m.sku_name+" · "+cs(m)+"\nStock moves now.",run:c2=>rpc(c2,"lwb_stx_decide",{p_ids:[m.id],p_action:"APPROVE",p_note:null,p_qty:null})},
+         detail:{info:[["SKU",m.sku_name],["From",lab(m.from_bucket)],["To",lab(m.to_bucket)],["Qty",cs(m)+" ("+num(m.qty_pcs)+" pcs)"],["Date",dmy(m.move_date)],["Reason",m.reason],["Note",m.note],["Asked by",m.requested_by_name]]},
+         acts:[{t:"✓ Approve",kind:"ok",view:true,confirm:"Approve STM-"+m.id+"?\n\n"+m.sku_name+" · "+cs(m)+"\nStock moves now.",run:c2=>rpc(c2,"lwb_stx_decide",{p_ids:[m.id],p_action:"APPROVE",p_note:null,p_qty:null})},
                {t:"✗ Reject",kind:"no",ask:"Reason for rejecting (the godown will see it)",run:(c2,i,f,why)=>rpc(c2,"lwb_stx_decide",{p_ids:[m.id],p_action:"REJECT",p_note:why,p_qty:null})},
                {t:"Open",kind:"go",href:"stock-transfer.html#approvals"}]}));
        return {items};
@@ -144,6 +166,8 @@
        const items=rows.map(r=>({id:String(r.id||r.return_id||r.order_id),orderId:r.order_id,person:r.driver_name,ref:r.order_no||"Return",party:r.party_name||r.customer_name||"",amount:num(r.total_return_amount||r.amount),when:r.created_at,
          lines:(r.items||[]).map(li=>li.sku+" · "+num(li.qty_cases||li.qty)+" "+(li.qty_cases!=null?"CS":(li.uom||""))+(li.reason?" · "+li.reason:"")),
          meta:[r.driver_name&&"Driver "+r.driver_name,r.vehicle_no,r.note].filter(Boolean),
+         detail:{info:[["Driver",r.driver_name],["Vehicle",r.vehicle_no],["Note",r.note]],po:r.order_id,
+           back:(r.items||[]).map(li=>({sku:li.sku,qty:num(li.qty_cases||li.qty),uom:li.qty_cases!=null?"CS":(li.uom||""),reason:li.reason}))},
          acts:[{t:"Open & verify",kind:"go",href:"driver-returns.html"+(r.order_id?"?order="+encodeURIComponent(r.order_id):"")}]}));
        return {items,amount:sum(items,i=>i.amount)};
      }},
@@ -152,6 +176,7 @@
        const {data,error}=await c.from("sales_returns").select("id,order_id,return_no,return_date,total_amount,approval_status,created_at").ilike("approval_status","pending").order("created_at",{ascending:false}).limit(200);
        if(error)return null;
        const items=(data||[]).map(r=>({id:String(r.id),orderId:r.order_id,ref:r.return_no||"Return",party:"",amount:num(r.total_amount),when:r.created_at,lines:[],meta:[dmy(r.return_date)].filter(Boolean),
+         detail:{info:[["Return no.",r.return_no],["Return date",dmy(r.return_date)]],po:r.order_id},
          acts:[{t:"Open & approve",kind:"go",href:"sales-return.html"}]}));
        return {items,amount:sum(items,i=>i.amount)};
      }},
@@ -162,6 +187,7 @@
          const m=String(n.message||""),head=m.split(". ")[0].split(" · ");
          return {id:String(n.id),person:(m.match(/Added by ([^.]+?) from/)||[])[1]||"",ref:"Party",party:head[0]||"",amount:null,when:n.created_at,lines:[],
            meta:head.slice(1).concat(((m.match(/Added by ([^.]+?) from/)||[])[1]||"")?["By "+(m.match(/Added by ([^.]+?) from/)||[])[1]]:[]),
+           detail:{info:head.slice(1).map((x,k)=>[k?"Detail":"Area / city",x]).concat([["Added by",(m.match(/Added by ([^.]+?) from/)||[])[1]||""],["Message",m]])},
            acts:[{t:"✓ Checked OK",kind:"ok",run:async c2=>{const {error}=await c2.from("erp_notifications").update({is_read:true}).eq("id",n.id).eq("user_id",ctx.uid);if(error)throw Error(errText(error))}},
                  {t:"Open Party Master",kind:"go",href:"customer-master.html"}]};
        });
@@ -221,5 +247,112 @@
   }
   const total=secs=>secs.reduce((t,s)=>t+s.count,0);
 
-  window.LWBApprovals={load,filter,total,SECTIONS,esc,inr,short,dmy,errText};
+  // Order change popup (Mohit, 16 Nov 2026). r = lwb_bill_change_list row, po = lwb_bill_change_items (or null).
+  // Every PO line is listed: what was given, what it is now, + / −, removed, added, SKU replaced, rate change.
+  const qn=v=>num(v).toLocaleString("en-IN",{maximumFractionDigits:2});
+  const sg=v=>(v>0?"+":v<0?"−":"")+qn(Math.abs(v));
+  const when=v=>{try{return new Date(v).toLocaleString("en-IN",{timeZone:"Asia/Kolkata",day:"numeric",month:"short",hour:"numeric",minute:"2-digit"})}catch(e){return dmy(v)}};
+  function changeRows(r,po){
+    const lines=(r.lines||[]).filter(l=>l&&l.kind),byId=new Map(),out=[];
+    lines.forEach(l=>{if(l.item_id)byId.set(String(l.item_id),l)});
+    const fromLine=l=>{
+      const k=[].concat(l.kind).map(x=>String(x).toUpperCase());
+      const q0=num(l.qty_old),q1=num(l.qty),r0=l.rate_old==null?num(l.rate):num(l.rate_old),r1=num(l.rate);
+      const tags=[];
+      if(k.includes("ADD"))tags.push(["add","Added"]);
+      else if(k.includes("REMOVE"))tags.push(["rem","Removed"]);
+      else{if(k.includes("SKU"))tags.push(["sku","Item changed"]);if(q1<q0)tags.push(["less","Less"]);if(q1>q0)tags.push(["more","Extra"])}
+      if(!k.includes("ADD")&&r0!==r1)tags.push(["rate","Rate"]);
+      return {sku:l.sku||l.sku_old||"",old:l.sku_old&&l.sku&&String(l.sku_old).toUpperCase()!==String(l.sku).toUpperCase()?l.sku_old:"",
+        q0,q1,r0,r1,diff:l.diff!=null?num(l.diff):q1*r1-q0*r0,tags,changed:true};
+    };
+    if(po&&Array.isArray(po.items))po.items.forEach(it=>{
+      const l=byId.get(String(it.item_id));
+      if(l){out.push(fromLine(l));byId.delete(String(it.item_id));return}
+      if(!(num(it.qty)>0))return;
+      out.push({sku:it.sku_name,old:"",q0:num(it.qty),q1:num(it.qty),r0:num(it.rate),r1:num(it.rate),diff:0,tags:[],changed:false});
+    });
+    lines.forEach(l=>{if(!l.item_id||byId.has(String(l.item_id))){out.push(fromLine(l));if(l.item_id)byId.delete(String(l.item_id))}});
+    return out;
+  }
+  function changeView(r,po){
+    const rows=changeRows(r,po),after=r.qty_col==="loaded_qty"||(po&&po.qty_col==="loaded_qty");
+    const nChanged=rows.filter(x=>x.changed).length;
+    const row=x=>{
+      const dq=x.old?0:x.q1-x.q0;
+      return '<tr class="'+(x.changed?"chg":"same")+'"><td class="it"><b>'+esc(x.sku)+'</b>'+
+        (x.old?'<small class="was">was '+esc(x.old)+'</small>':"")+
+        (x.r0!==x.r1?'<small class="rt">Rate ₹'+qn(x.r0)+' → ₹'+qn(x.r1)+'</small>':(x.changed?'<small>Rate ₹'+qn(x.r1)+'</small>':""))+
+        (x.tags.length?'<span class="tg">'+x.tags.map(t=>'<i class="'+t[0]+'">'+esc(t[1])+'</i>').join("")+'</span>':"")+'</td>'+
+        '<td class="n">'+(x.old||x.tags.some(t=>t[0]==="add")?(x.old?qn(x.q0):"—"):qn(x.q0))+'</td>'+
+        '<td class="n'+(x.changed?" b":"")+'">'+(x.tags.some(t=>t[0]==="rem")?"0":qn(x.q1))+'</td>'+
+        '<td class="n '+(dq<0?"neg":dq>0?"pos":"")+'">'+(dq?sg(dq):"")+'</td>'+
+        '<td class="n '+(x.diff<0?"neg":x.diff>0?"pos":"")+'">'+(x.diff?sg(Math.round(x.diff)):"")+'</td></tr>';
+    };
+    // Goods back to / out of the godown (only after loading: lwb_bill_change_stock_setup.sql)
+    const back=[],out=[];
+    if(after)rows.filter(x=>x.changed).forEach(x=>{
+      if(x.old){if(x.q0)back.push(x.old+" · "+qn(x.q0)+" CS");if(x.q1)out.push(x.sku+" · "+qn(x.q1)+" CS");return}
+      const d=x.q1-x.q0;if(d<0)back.push(x.sku+" · "+qn(-d)+" CS");if(d>0)out.push(x.sku+" · "+qn(d)+" CS");
+    });
+    const d=num(r.diff);
+    const info=[["Sent by",(r.by||"—")+" · "+when(r.requested_at)],["Reason",r.reason],["Note",r.note],["Bill no.",r.bill_no],
+      ["Qty counted",after?"Loaded qty (PO already loaded)":"Approved qty (before loading)"]].filter(x=>x[1]);
+    return '<div class="cv-info">'+info.map(x=>'<div><span>'+esc(x[0])+'</span><b>'+esc(x[1])+'</b></div>').join("")+'</div>'+
+      '<div class="cv-tot"><div><span>Before</span><b>'+inr(r.old_value)+'</b></div><div><span>After</span><b>'+inr(r.new_value)+'</b></div>'+
+        '<div class="'+(d<0?"neg":"pos")+'"><span>Change</span><b>'+(d>0?"+":"")+inr(d)+'</b></div></div>'+
+      '<div class="cv-h">Items · '+nChanged+' changed'+(rows.length>nChanged?" · "+(rows.length-nChanged)+" same":"")+'</div>'+
+      '<table class="cv-t"><colgroup><col><col class="c"><col class="c"><col class="c"><col class="c2"></colgroup>'+
+        '<thead><tr><th>Item</th><th class="n">Given</th><th class="n">Now</th><th class="n">+ / −</th><th class="n">₹ change</th></tr></thead>'+
+        '<tbody>'+rows.map(row).join("")+'</tbody></table>'+
+      (back.length||out.length?'<div class="cv-stock">'+(back.length?'<div>📦 <b>Back to godown:</b> '+esc(back.join(", "))+'</div>':"")+
+        (out.length?'<div>🚚 <b>Out of godown:</b> '+esc(out.join(", "))+'</div>':"")+'</div>':"");
+  }
+
+  // Details popup of any approval (Mohit, 16 Nov 2026: "har approval me details chahiye").
+  // po = {order, items} read from orders / order_items when the item has a PO, else null.
+  function detailView(i,po){
+    const d=i.detail||{},o=po&&po.order;
+    const info=(d.info||[]).slice();
+    if(o){[["PO date",dmy(o.order_date)],["Sales person",o.sales_person],["Transport",o.transportation],["Status",o.status],["Weight",o.total_weight?qn(o.total_weight)+" kg":""],["Priority",o.priority]]
+      .forEach(([k,v])=>{if(v&&!info.some(x=>x[0]===k))info.push([k,v])})}
+    const inf=info.filter(x=>x[1]!=null&&String(x[1]).trim()!=="");
+    let h=inf.length?'<div class="cv-info">'+inf.map(x=>'<div><span>'+esc(x[0])+'</span><b>'+esc(x[1])+'</b></div>').join("")+'</div>':"";
+    // Low rate: total ₹ lost against Min for the whole PO (Diff × Qty of the items below Min).
+    let gap="";
+    if(d.rows&&d.rows.some(r=>r.min!=null)){
+      const loss=Math.round(d.rows.reduce((t,r)=>t+(r.flag?(r.min-r.rate)*r.qty:0),0));
+      gap='<div class="neg"><span>Loss vs min</span><b>'+(loss?"−":"")+inr(loss)+'</b></div>';
+    }
+    if(i.amount!=null)h+='<div class="cv-tot one'+(gap?" g2":"")+'"><div><span>Amount</span><b>'+inr(i.amount)+'</b></div>'+(o&&o.total_amount!=null&&num(o.total_amount)!==num(i.amount)?'<div><span>PO total</span><b>'+inr(o.total_amount)+'</b></div>':"")+gap+'</div>';
+    const why=d.whyList||(d.rows||(d.info&&d.info.length)?null:i.lines);
+    if(d.why||why&&why.length)h+='<div class="cv-why">'+(d.why?'<b>'+esc(d.why)+'</b>':"")+(why&&why.length?'<ul>'+why.map(w=>'<li>'+esc(w)+'</li>').join("")+'</ul>':"")+'</div>';
+    if(d.back&&d.back.length)h+='<div class="cv-h">Goods back from party</div><table class="cv-t"><colgroup><col><col class="c2"><col class="c3"></colgroup><thead><tr><th>Item</th><th class="n">Qty</th><th>Reason</th></tr></thead><tbody>'+
+      d.back.map(b=>'<tr class="chg"><td class="it"><b>'+esc(b.sku)+'</b></td><td class="n b">'+qn(b.qty)+' '+esc(b.uom)+'</td><td>'+esc(b.reason||"")+'</td></tr>').join("")+'</tbody></table>';
+    let rows=d.rows;
+    if(!rows&&po&&po.items)rows=po.items.map(it=>{const q=it.approved_qty!=null?num(it.approved_qty):num(it.ordered_qty);const k=String(it.sku_name||"").trim().toUpperCase();
+      return {sku:it.sku_name,qty:q,ordered:num(it.ordered_qty),loaded:it.loaded_qty==null?null:num(it.loaded_qty),rate:num(it.rate),wt:it.total_weight==null?null:num(it.total_weight),flag:(d.flags||[]).some(f=>f===k||k.startsWith(f))}});
+    if(rows&&rows.length){
+      const minCol=rows.some(r=>r.min!=null),tq=rows.reduce((t,r)=>t+r.qty,0),ta=rows.reduce((t,r)=>t+r.qty*r.rate,0);
+      // Low rate (Mohit, 17 Nov 2026): Qty · Rate · Min · Diff in their own columns, Diff highlighted. No extra lines under the item.
+      const dcell=r=>{if(r.min==null)return '<td></td>';const df=r2(r.rate-r.min);return '<td class="n"><i class="dpill '+(df<0?"neg":df>0?"pos":"zero")+'">'+(df>0?"+":df<0?"−":"")+"₹"+qn(Math.abs(df))+'</i></td>'};
+      h+='<div class="cv-h">PO items · '+rows.length+(rows.some(r=>r.flag)?' · '+rows.filter(r=>r.flag).length+' need your check':"")+'</div>'+
+        '<table class="cv-t'+(minCol?" mincol":"")+'"><colgroup><col><col class="c"><col class="c">'+(minCol?'<col class="c"><col class="c">':"")+'<col class="c2"></colgroup><thead><tr><th>Item</th><th class="n">Qty</th><th class="n">Rate</th>'+(minCol?'<th class="n">Min</th><th class="n">Diff</th>':"")+'<th class="n">Amount</th></tr></thead><tbody>'+
+        rows.map(r=>'<tr class="'+(r.flag?"chg":"")+'"><td class="it"><b>'+esc(r.sku)+'</b>'+
+          (r.loaded!=null&&r.loaded!==r.qty?'<small>Loaded '+qn(r.loaded)+'</small>':"")+(r.ordered&&r.ordered!==r.qty?'<small>Ordered '+qn(r.ordered)+'</small>':"")+
+          (r.flag&&!minCol?'<span class="tg"><i class="less">Check</i></span>':"")+'</td>'+
+          '<td class="n">'+qn(r.qty)+'</td><td class="n'+(r.flag?" neg":"")+'">₹'+qn(r.rate)+'</td>'+
+          (minCol?'<td class="n">'+(r.min!=null?"₹"+qn(r.min):"")+'</td>'+dcell(r):"")+
+          '<td class="n">'+qn(Math.round(r.qty*r.rate))+'</td></tr>').join("")+
+        '</tbody><tfoot><tr><td>Total</td><td class="n">'+qn(tq)+'</td><td></td>'+(minCol?'<td></td><td></td>':"")+'<td class="n">'+qn(Math.round(ta))+'</td></tr></tfoot></table>';
+    }
+    return h||'<div class="cv-note">No more details for this one.</div>';
+  }
+  async function poData(c,orderId){
+    if(!orderId)return null;
+    const [o,it]=await Promise.all([c.from("orders").select("*").eq("id",orderId).maybeSingle(),c.from("order_items").select("*").eq("order_id",orderId)]);
+    if(o.error&&it.error)return null;
+    return {order:o.data||null,items:it.error?null:(it.data||[]).sort((a,b)=>String(a.sku_name).localeCompare(String(b.sku_name)))};
+  }
+  window.LWBApprovals={load,filter,total,changeView,detailView,poData,SECTIONS,esc,inr,short,dmy,errText};
 })();

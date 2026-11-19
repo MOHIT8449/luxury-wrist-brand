@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Team Work Report | Luxury Wrist Brand ERP</title>
   <script src="erp-date.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="vendor/supabase-js-2.119.0.js"></script>
 <script src="brand-filter.js"></script>
   <script src="party-list.js" defer></script>
   <link rel="stylesheet" href="erp-shell.css">
@@ -133,6 +133,9 @@
         const [orders,items]=await Promise.all([inChunks("orders","id",ids),inChunks("order_items","order_id",ids)]);
         let reports=new Map();
         try{for(const r of await inChunks("lwb_delivery_reports","order_id",ids,"order_id,delivery_status"))reports.set(r.order_id,r.delivery_status)}catch(e){}
+        // Admin / Sales Head "Mark delivered" counts as Delivered when the driver did not report Delivered / Partial (17 Nov 2026).
+        try{for(let i=0;i<ids.length;i+=150){const m=await client.rpc("lwb_admin_order_marks",{p_ids:ids.slice(i,i+150)});if(m.error)break;
+          for(const x of m.data||[])if(x.kind==="DELIVERED"&&!["DELIVERED","PARTIAL"].includes(reports.get(x.order_id)))reports.set(x.order_id,"DELIVERED")}}catch(e){}
         const byOrder=new Map();
         for(const o of orders){
           if(!DONE.includes(String(o.status||"").toLowerCase().trim()))continue;
@@ -141,7 +144,7 @@
             day:istDay(x.loading_completed_at),driver:String(x.driver_name||"").trim()||"—",mobile:mob,
             driverKey:mob||"name:"+nameKey(x.driver_name),vehicle:String(x.vehicle_no||"").toUpperCase().replace(/\s+/g,"")||"—",
             transporter:String(x.transporter_name||"").trim(),loaders:people(x.loading_person),
-            delivery:reports.get(o.id)||"",cases:0,kg:0,amount:0};
+            delivery:reports.get(o.id)||(String(o.status||"").toLowerCase().trim()==="delivered"?"DELIVERED":""),cases:0,kg:0,amount:0};
           byOrder.set(o.id,po);pos.push(po);
         }
         for(const it of items){

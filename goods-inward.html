@@ -4,7 +4,7 @@
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Goods Inward | Luxury Wrist Brand</title>
 <script src="erp-date.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="vendor/supabase-js-2.119.0.js"></script>
 <script src="brand-filter.js"></script><script src="page-role.js"></script><script src="erp-docs.js"></script>
 <style>
 :root{font-family:Arial,Helvetica,sans-serif;color:#172844;background:#f3f6fb}*{box-sizing:border-box}body{margin:0}
@@ -87,8 +87,18 @@ html,body{max-width:100%;overflow-x:hidden}main,.panel,.form-grid,.field{min-wid
 .dmg-table{width:100%;border-collapse:collapse;margin:10px 0 8px;font-size:13px}
 .dmg-table th,.dmg-table td{border:1px solid #e3e7ec;padding:5px 7px;text-align:left;background:#fff}.dmg-table th{background:#f3f5f8;text-align:center}
 .dmg-table td input{width:70px;height:32px;border:1px solid #cbd5e1;border-radius:5px;padding:0 6px;text-align:right;font:inherit}
+.dmg-table td.q{text-align:center;white-space:nowrap}.dmg-table td.q input+input{margin-left:6px}
+.dmg-table th small{display:block;font-weight:400;color:#64748b;font-size:11px;text-transform:none}
+.dmg-table th.gas,.dmg-table td.gas{background:#f2f8ff}.dmg-table th.gas{color:#194c85}
+.dmg-hint{font-size:12.5px;color:#64748b;margin:0 0 8px}.dmg-hint b{color:#8a5300}
 #dmgNote{width:100%;height:36px;border:1px solid #cbd5e1;border-radius:6px;padding:0 9px;font:inherit;font-size:14px}
-@media(max-width:700px){.dmg-wrap-scroll{overflow:auto}.dmg-head select{min-width:0;width:100%}}
+@media(max-width:700px){.dmg-head select{min-width:0;width:100%}
+ .dmg-table,.dmg-table tbody{display:block}.dmg-table thead{display:none}
+ .dmg-table tr{display:grid;grid-template-columns:minmax(0,1fr);gap:5px;padding:8px 0;border-bottom:1px solid #e3e7ec}
+ .dmg-table td{border:0;padding:0;background:none}.dmg-table td.gas{background:none}.dmg-table td.sku{font-weight:700}
+ .dmg-table td.q{display:grid;grid-template-columns:minmax(0,1fr) 76px 76px;gap:6px;align-items:center;white-space:normal}
+ .dmg-table td.q::before{content:attr(data-l);font-size:13px;font-weight:600;color:#4b5763;text-align:left}
+ .dmg-table td.gas::before{color:#194c85;font-weight:700}.dmg-table td.q input{width:100%;min-width:0}.dmg-table td.q input+input{margin-left:0}}
 .gi-mrp{display:grid;gap:4px}.gi-mrp[hidden],.gi-table input[hidden]{display:none}.gi-mrp label{display:flex;align-items:center;gap:6px;font-size:11px;color:#6b7785;font-weight:600;white-space:nowrap}
 .gi-mrp label span{width:52px;flex:none}.gi-mrp input{text-align:right}
 .gi-mode{display:table;margin:3px 0 0 auto;font-size:10.5px;font-weight:700;border-radius:4px;padding:1px 5px;background:#fff1d6;color:#8a5300;vertical-align:1px}
@@ -191,10 +201,11 @@ Cess is not included: an SKU with Cess cannot be saved yet.">i</button></h2></di
     </div>
     <div class="gi-editnote" id="editNote" hidden></div>
     <div class="dmg-box" id="dmgBox">
-      <div class="dmg-head gi-check"><label for="dmgMode">Damage / Leakage?</label>
-        <select id="dmgMode" title="Damage / Leakage / Shortage in this vehicle"><option value="later">Check later (Godown Manager task)</option><option value="no">No: all received OK</option><option value="yes">Yes: damage / leakage / shortage</option></select>
+      <div class="dmg-head gi-check"><label for="dmgMode">Damage / Gasless?</label>
+        <select id="dmgMode" title="Damage / Leakage / Breakage, Gasless or Shortage in this vehicle"><option value="later">Check later (Godown Manager task)</option><option value="no">No: all received OK</option><option value="yes">Yes: damage / gasless / shortage</option></select>
         <div id="giDocsBox" hidden><div id="giDocs"></div></div></div>
-      <div id="dmgWrap" hidden><table class="dmg-table"><thead><tr><th rowspan="2">SKU</th><th colspan="2">Damage</th><th colspan="2">Leakage</th><th colspan="2">Shortage</th></tr><tr><th>IC/CS</th><th>PCS</th><th>IC/CS</th><th>PCS</th><th>IC/CS</th><th>PCS</th></tr></thead><tbody id="dmgBody"></tbody></table>
+      <div id="dmgWrap" hidden><table class="dmg-table"><thead><tr><th>SKU</th><th>Damage / Leakage / Breakage<small>IC/CS · PCS</small></th><th class="gas">Gasless<small>IC/CS · PCS</small></th><th>Shortage<small>IC/CS · PCS</small></th></tr></thead><tbody id="dmgBody"></tbody></table>
+        <div class="dmg-hint"><b>Quantity is optional.</b> If the exact count is not known now, leave it blank: the Godown Manager will verify the quantity and upload photos.</div>
         <input id="dmgNote" maxlength="300" placeholder="Note (optional)"></div>
     </div>
     <div class="actions"><button id="save" type="button" disabled>Save Goods Inward & Update Stock</button><button id="reset" type="button" class="secondary">Clear Form</button><span class="small" id="hint">Connect to Supabase and enter invoice details.</span></div>
@@ -453,7 +464,8 @@ const fmtD=d=>d?String(d).slice(8,10)+'/'+String(d).slice(5,7)+'/'+String(d).sli
 $('invoice').addEventListener('input',()=>{clearTimeout(dupTimer);dupTimer=setTimeout(()=>checkDuplicate(false),450);});
 $('invoice').addEventListener('change',()=>{clearTimeout(dupTimer);checkDuplicate(true);});
 // Damage / leakage / shortage entered with the bill (saved as a vehicle check after the bill posts).
-const DMG_ISSUES=['DAMAGE','LEAKAGE','SHORTAGE'];
+// Damage, Leakage and Breakage are one column (saved as DAMAGE); Gasless is separate (18 Nov 2026, lwb_purchase_gasless_setup.sql).
+const DMG_ISSUES=['DAMAGE','GASLESS','SHORTAGE'],DMG_LABEL={DAMAGE:'Damage / Leakage / Breakage',GASLESS:'Gasless',SHORTAGE:'Shortage'};
 let dmgKey='';
 // Purchase bill PDF / scan / photo + damage photos (lwb_documents_setup.sql). Files wait until the bill is posted.
 let giDocs=null,giDocsOn=null;
@@ -461,7 +473,7 @@ async function mountGiDocs(){
   if(!db)return;
   if(giDocsOn===null)giDocsOn=!!(await ERPDocs.summary(db,'PURCHASE_BILL'));
   $('giDocsBox').hidden=!giDocsOn;if(!giDocsOn){giDocs=null;return}
-  giDocs=ERPDocs.panel({client:db,mount:$('giDocs'),entity:'PURCHASE_BILL',id:null,slots:['BILL','DAMAGE'],compact:true});
+  giDocs=ERPDocs.panel({client:db,mount:$('giDocs'),entity:'PURCHASE_BILL',id:null,slots:isGodown()?['DAMAGE']:['BILL','DAMAGE'],compact:true}); // Godown Manager: damage photos / videos only
 }
 function syncDamage(rows){
   const yes=$('dmgMode').value==='yes';$('dmgWrap').hidden=!yes;if(!yes)return;
@@ -469,13 +481,18 @@ function syncDamage(rows){
   if(key===dmgKey&&$('dmgBody').children.length)return;
   const old={};for(const inp of $('dmgBody').querySelectorAll('input'))old[inp.dataset.k]=inp.value;
   dmgKey=key;$('dmgBody').replaceChildren();
-  if(!list.length){const tr=$('dmgBody').insertRow(),td=tr.insertCell();td.colSpan=7;td.textContent='Add SKU lines above first.';return;}
+  if(!list.length){const tr=$('dmgBody').insertRow(),td=tr.insertCell();td.colSpan=4;td.className='sku';td.textContent='Add SKU lines above first.';return;}
   for(const r of list){
     const tr=$('dmgBody').insertRow();tr.dataset.sku=r.sku.id;tr.dataset.name=r.sku.sku_name;tr.dataset.pack=r.sku.pcs_per_case||1;
-    tr.insertCell().textContent=r.sku.sku_name;
-    for(const issue of DMG_ISSUES)for(const f of ['cases','pcs']){
-      const inp=document.createElement('input');inp.type='number';inp.min='0';inp.step='1';inp.inputMode='numeric';inp.placeholder='0';
-      inp.dataset.issue=issue;inp.dataset.f=f;inp.dataset.k=r.sku.id+'|'+issue+'|'+f;inp.value=old[inp.dataset.k]||'';tr.insertCell().appendChild(inp);
+    const nm=tr.insertCell();nm.className='sku';nm.textContent=r.sku.sku_name;
+    const unit=r.unit==='BOX'?'IC':'CS';
+    for(const issue of DMG_ISSUES){
+      const td=tr.insertCell();td.className='q'+(issue==='GASLESS'?' gas':'');td.dataset.l=DMG_LABEL[issue];
+      for(const f of ['cases','pcs']){
+        const inp=document.createElement('input');inp.type='number';inp.min='0';inp.step='1';inp.inputMode='numeric';inp.placeholder=f==='cases'?unit:'PCS';
+        inp.setAttribute('aria-label',DMG_LABEL[issue]+' '+(f==='cases'?unit:'PCS'));
+        inp.dataset.issue=issue;inp.dataset.f=f;inp.dataset.k=r.sku.id+'|'+issue+'|'+f;inp.value=old[inp.dataset.k]||'';td.appendChild(inp);
+      }
     }
   }
 }
@@ -701,10 +718,12 @@ async function save(){
   const driverName=$('driverName').value.trim(),driverMobile=driverMobileClean($('driverMobile').value);
   const spInt=id=>$(id).value.trim()===''?0:Number($(id).value),spP=spInt('spPallets'),spS=spInt('spSheets');
   if(![spP,spS].every(n=>Number.isInteger(n)&&n>=0)){show('Pallets and sheets must be whole numbers (0 or more).');return;}
-  const dmgMode=$('dmgMode').value,dmgItems=dmgMode==='yes'?readDamage():[];
-  if(dmgItems===null){show('Damage / leakage / shortage: cases and PCS must be whole numbers.');return;}
-  if(dmgMode==='yes'&&!dmgItems.length){show('You chose "Yes" for damage / leakage / shortage. Enter the quantities, or change it to "No" or "Check later".');return;}
-  if(dmgMode==='yes'&&giDocs&&!giDocs.has('DAMAGE')&&!await confirm('No photo of the damage / leakage is added.\n\nA photo helps the company accept the claim. Save without a photo?'))return;
+  const dmgPick=$('dmgMode').value,dmgItems=dmgPick==='yes'?readDamage():[];
+  if(dmgItems===null){show('Damage / gasless / shortage: cases and PCS must be whole numbers.');return;}
+  // Quantity is optional (18 Nov 2026): "Yes" with no quantity = the Godown Manager verifies the quantity and uploads photos.
+  if(dmgPick==='yes'&&!dmgItems.length&&isGodown()){show('Enter the damage / gasless / shortage quantity, or change it to "No".');return;}
+  const dmgVerify=dmgPick==='yes'&&!dmgItems.length,dmgMode=dmgVerify?'later':dmgPick;
+  if(dmgPick==='yes'&&dmgItems.length&&giDocs&&!giDocs.has('DAMAGE')&&!await confirm('No photo of the damage / gasless goods is added.\n\nA photo helps the company accept the claim. Save without a photo?'))return;
   const dmgNote=$('dmgNote').value.trim();
   const godownId=isGodown()?null:($('godownMgr').value||null);
   if(!editBill&&tdStrict()&&!isGodown()&&godownList&&godownList.length&&!godownId){tdOpen();show('Choose the Godown Manager who will check this vehicle. Only that person gets the "vehicle arrived" popup.');$('godownMgr').focus();return;}
@@ -720,13 +739,15 @@ async function save(){
     ?`Net Sale ${rupees(r.net/100)} + GST ${r.sku.gst_rate}% on Deemed ${rupees(r.deemed/100)} (${rupees(r.gst/100)}) = Total ${rupees(r.gross/100)}`
     :`Taxable ${rupees(r.taxable/100)} + GST ${r.sku.gst_rate}% (${rupees(r.gst/100)}) = Total ${rupees(r.gross/100)}`)).join('\n');
   if(editBill)return saveEdit(header0(supplier,invoice,driverName,driverMobile,selectedSupplier),items,preview,rupees(invoiceGross/100));
-  if(!await confirm(`POST GOODS INWARD TO MAIN GODOWN?\n\nSupplier: ${supplier}\nInvoice: ${invoice}\nDriver: ${driverName||'—'}${driverMobile?' ('+driverMobile+')':''}\nSKU Lines: ${rows.length}\n${mrpBill?'Deemed / Taxable Value':'Invoice Taxable'}: ${rupees(invoiceTaxable/100)}\nGST (${ $('taxMode').value==='intrastate'?'CGST+SGST':'IGST' }): ${rupees(invoiceGst/100)}\nInvoice Total: ${rupees(invoiceGross/100)}\nPallets / Sheets: ${format(spP)} / ${format(spS)}\nVehicle check: ${dmgMode==='later'?'Check later':dmgMode==='no'?'No damage':dmgItems.map(d=>d.sku_name+' '+d.issue+' '+d.cases+' CS + '+d.pcs+' PCS').join('; ')}\n\n${preview}\n\nAll quantities will increase live stock immediately. Continue only for physically received goods.`))return;
+  if(!await confirm(`POST GOODS INWARD TO MAIN GODOWN?\n\nSupplier: ${supplier}\nInvoice: ${invoice}\nDriver: ${driverName||'—'}${driverMobile?' ('+driverMobile+')':''}\nSKU Lines: ${rows.length}\n${mrpBill?'Deemed / Taxable Value':'Invoice Taxable'}: ${rupees(invoiceTaxable/100)}\nGST (${ $('taxMode').value==='intrastate'?'CGST+SGST':'IGST' }): ${rupees(invoiceGst/100)}\nInvoice Total: ${rupees(invoiceGross/100)}\nPallets / Sheets: ${format(spP)} / ${format(spS)}\nVehicle check: ${dmgVerify?'Damage reported, quantity not known: Godown Manager will verify and add photos':dmgMode==='later'?'Check later':dmgMode==='no'?'No damage':dmgItems.map(d=>d.sku_name+' '+DMG_LABEL[d.issue]+' '+d.cases+' CS + '+d.pcs+' PCS').join('; ')}\n\n${preview}\n\nAll quantities will increase live stock immediately. Continue only for physically received goods.`))return;
   busy=true;recalc();
   try{
     const header={
       p_supplier_name:supplier,p_invoice_no:invoice,p_invoice_date:$('invoiceDate').value,
       p_received_date:$('receivedDate').value,p_transport_name:$('transport').value.trim(),
-      p_vehicle_no:$('vehicle').value.trim(),p_lr_no:$('lr').value.trim(),p_remarks:$('remarks').value.trim(),
+      p_vehicle_no:$('vehicle').value.trim(),p_lr_no:$('lr').value.trim(),
+      // Damage reported without quantity: keep its note on the bill for the Godown Manager.
+      p_remarks:dmgVerify&&dmgNote?[$('remarks').value.trim(),'Damage note: '+dmgNote].filter(Boolean).join(' · ').slice(0,500):$('remarks').value.trim(),
       p_driver_name:driverName,p_driver_mobile:driverMobile,p_supplier_id:selectedSupplier.id
     };
     // MRP bills (Rajnigandha) post through lwb_post_goods_inward_mrp, which recomputes GST on the deemed value.
@@ -747,7 +768,7 @@ async function save(){
       if(!inwardId){const f=await db.from('lwb_goods_inward').select('id').eq('invoice_no',invoice).eq('supplier_name',supplier).order('created_at',{ascending:false}).limit(1);inwardId=f.data?.[0]?.id||null;}
       const ck=inwardId?await db.rpc('lwb_save_purchase_check',{p_inward_id:inwardId,p_verified_on:$('receivedDate').value,p_note:dmgNote,p_items:dmgItems}):{error:{message:'saved bill not found'}};
       ckMsg=ck.error?`\n\nWARNING: Vehicle check was NOT saved (${ck.error.message}). Use Purchase Register → Verify for this bill.`
-        :dmgItems.length?`\nDamage / leakage / shortage saved: claim is pending in Purchase Claims.`:`\nVehicle check: no damage.`;
+        :dmgItems.length?`\nDamage / gasless / shortage saved: claim is pending in Purchase Claims.`:`\nVehicle check: no damage.`;
       if(ck.error)spMsg+=ckMsg.replace(/^\n\nWARNING/,'\n\nWARNING');
     }
     let docMsg='';
@@ -763,20 +784,20 @@ async function save(){
     if(dmgMode!=='no'&&!isGodown()){
       let inwardId=data?.id||data?.inward_id||null;
       if(!inwardId){const f=await db.from('lwb_goods_inward').select('id').eq('invoice_no',invoice).eq('supplier_name',supplier).order('created_at',{ascending:false}).limit(1);inwardId=f.data?.[0]?.id||null;}
-      const t=inwardId?await db.rpc('lwb_purchase_photo_task',godownId?{p_inward:inwardId,p_assignees:[godownId]}:{p_inward:inwardId}):{error:{message:'saved bill not found'}};
+      const t=inwardId?await db.rpc('lwb_purchase_photo_task',{p_inward:inwardId,p_assignees:godownId?[godownId]:null}) /* only the chosen Godown Manager (Mohit, 18 Nov 2026) */:{error:{message:'saved bill not found'}};
       taskMsg=t.error?(/function|schema cache/i.test(t.error.message)?'':`\nGodown Manager task was not given (${t.error.message}). Use Purchase List → 📷 Task.`)
-        :(t.data||[]).length?`\nGodown Manager task given (${dmgMode==='yes'?'upload damage photos':'check vehicle + photos'}).`:'';
+        :(t.data||[]).length?`\nGodown Manager task given (${dmgVerify?'verify damage quantity + photos':dmgMode==='yes'?'upload damage photos':'check vehicle + photos'}).`:'';
     }
     // "Vehicle arrived" popup to the chosen Godown Manager (skipped by the server when the vehicle is already checked).
     let arrMsg='';
-    // Brands with no Godown Manager step (Rajnigandha): no popup when nobody is chosen.
-    if(!isGodown()&&(godownId||tdStrict())){
+    // Only the Godown Manager chosen on this entry gets the popup (Mohit, 18 Nov 2026: not every Godown Manager).
+    if(!isGodown()){
       let inwardId=data?.id||data?.inward_id||null;
       if(!inwardId){const f=await db.from('lwb_goods_inward').select('id').eq('invoice_no',invoice).eq('supplier_name',supplier).order('created_at',{ascending:false}).limit(1);inwardId=f.data?.[0]?.id||null;}
       const a=inwardId?await db.rpc('lwb_purchase_arrived',{p_inward:inwardId,p_godown:godownId}):{error:{message:'saved bill not found'}};
       const gm=godownList&&godownList.find(m=>m.user_id===godownId);
       arrMsg=a.error?(/function|schema cache/i.test(a.error.message)?'':`\nGodown Manager popup was not sent (${a.error.message}).`)
-        :a.data>0?`\nGodown Manager popup sent to ${gm?gm.full_name:'all Godown Managers'}.`:'';
+        :a.data>0?`\nGodown Manager popup sent to ${gm?gm.full_name:'the chosen Godown Manager'}: check and upload damage / gasless photos.`:!godownId?'\nNo Godown Manager chosen: no popup sent.':'';
     }
     taskMsg+=arrMsg;
     resetForm();

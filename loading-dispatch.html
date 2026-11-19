@@ -6,10 +6,10 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Loading & Dispatch | Luxury Wrist Brand</title>
 <script src="erp-date.js"></script><script src="erp-recent.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="vendor/supabase-js-2.119.0.js"></script>
 <script src="brand-filter.js"></script><script src="page-role.js"></script>
 <script src="party-list.js" defer></script>
-<script src="erp-docs.js"></script>
+<script src="erp-docs.js"></script><script src="purchase-damage.js"></script>
 <script src="erp-operations-notifications.js"></script>
 <style>
 *{box-sizing:border-box}
@@ -30,6 +30,8 @@ button:disabled{opacity:.5;cursor:not-allowed}
 .green{background:#07884e}
 input,textarea,select{width:100%;padding:12px;border:1px solid #ccd5e0;border-radius:7px;font:inherit}
 textarea{min-height:70px}
+.ld-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px;padding:14px 16px}.ld-grid[hidden]{display:none}.ld-grid label{font-size:13px;font-weight:700;color:#4b5763;display:flex;flex-direction:column;gap:4px}.ld-h{grid-column:1/-1;font-weight:700;color:#002f37}.ld-h small,.ld-hint{font-weight:500;color:#6b7785;font-size:12.5px}.ld-hint{grid-column:1/-1;margin:0}.ld-from{display:inline-block;background:#eef6ff;color:#1d4f91;border-radius:999px;padding:1px 8px;font-size:12px;font-weight:700;margin-left:4px}
+body.gm .rate-col,body.gm .gm-off{display:none!important}body.gm .details{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}body.gm .detail{padding:8px 10px}body.gm .qty{max-width:96px}.ld-one{grid-template-columns:minmax(0,340px)}
 label{display:block;font-weight:bold;margin-bottom:6px}
 .toolbar{display:flex;gap:10px;margin-bottom:16px}
 .tablewrap{overflow:auto}
@@ -59,6 +61,32 @@ header,main,.overlay{display:none!important}
 }
 #printArea{display:none}
 .prio{display:inline-block;font-size:10.5px;font-weight:800;letter-spacing:.4px;border-radius:999px;padding:2px 8px;margin-left:6px;vertical-align:middle}.prio-URGENT{background:#c8102e;color:#fff}.prio-HIGH{background:#fdf3e2;color:#9a5a00;border:1px solid #f1d199}
+
+/* Phone: the popup has a fixed height (erp-shell compact), so its body scrolls and the buttons stay at the bottom. */
+.modal{display:flex;flex-direction:column}.modalbody{overflow-y:auto;-webkit-overflow-scrolling:touch;min-height:0;overscroll-behavior:contain}
+body.erp-compact .modalbody .actions{position:sticky;bottom:-12px;margin:12px -12px -12px;padding:10px 12px;background:#fff;border-top:1px solid #e3e6ea;box-shadow:0 -4px 12px #0000000f;z-index:3}
+body.erp-compact .modalbody .actions button{flex:1 1 auto}
+#fromBox{margin-top:12px}
+
+/* Godown Manager: Sales (loading) / Purchase (unloading) tabs. */
+.ld-tabs{display:flex;gap:6px;margin:10px 0 12px;background:#eef1f4;padding:4px;border-radius:12px}
+.ld-tabs[hidden]{display:none}
+.ld-tabs button{flex:1 1 0;background:transparent;color:#334;border:0;border-radius:9px;padding:10px 6px;font-weight:700;font-size:14px;box-shadow:none;min-width:0}
+.ld-tabs button.on{background:#fff;color:#0b3b47;box-shadow:0 1px 4px #0002}
+.ld-tabs b{display:inline-block;min-width:20px;padding:1px 6px;border-radius:999px;background:#c8102e;color:#fff;font-size:11.5px;margin-left:4px}
+.ld-tabs b:empty{display:none}
+body.tab-pur .stats,body.tab-pur #salesPanel{display:none!important}
+.pur-h{font-size:12.5px;color:#667;padding:12px 14px 4px}
+.pur-row{display:flex;align-items:center;gap:10px;padding:12px 14px;border-top:1px solid #edf0f3}
+.pur-row:first-child{border-top:0}
+.pur-main{flex:1 1 auto;min-width:0}
+.pur-main b{display:block;font-size:14.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pur-main small{display:block;color:#667;font-size:12px;margin-top:2px}
+.pur-veh{font-weight:800;color:#0b3b47;letter-spacing:.3px}
+.pur-row button{flex:0 0 auto;padding:9px 12px;font-size:13px}
+.pur-ok{color:#13794a;font-weight:700;font-size:12px}
+.pur-empty{padding:18px 14px;color:#667;text-align:center}
+.pur-sep{padding:10px 14px 4px;font-size:11.5px;font-weight:800;letter-spacing:.4px;color:#889;text-transform:uppercase;border-top:1px solid #edf0f3}
 </style>
 <link rel="stylesheet" href="erp-shell.css">
 <script src="erp-shell.js" data-auto defer></script>
@@ -78,13 +106,21 @@ header,main,.overlay{display:none!important}
 <button id="refresh">Refresh Orders</button>
 </div>
 <div id="message" class="message"></div>
+<div class="ld-tabs" id="ldTabs" hidden role="tablist">
+<button type="button" role="tab" data-tab="sales" class="on">🚚 Sales · Loading <b id="tabSalesN"></b></button>
+<button type="button" role="tab" data-tab="purchase">📦 Purchase · Unloading <b id="tabPurN"></b></button>
+</div>
+<div class="panel" id="purBox" hidden>
+<div class="pur-h">Purchase vehicles given to you. Open one, add the vehicle photo and any damage / gasless / shortage, then Submit (or All OK).</div>
+<div id="purRows"><div class="pur-empty">Loading...</div></div>
+</div>
 <div class="stats">
 <div class="stat">Approved, no vehicle yet<strong id="approvedCount">0</strong></div>
 <div class="stat">Awaiting Loading<strong id="pendingCount">0</strong></div>
 <div class="stat">Loading in Progress<strong id="loadingCount">0</strong></div>
 <div class="stat">Loaded Orders<strong id="loadedCount">0</strong></div>
 </div>
-<div class="panel">
+<div class="panel" id="salesPanel">
 <div class="toolbar">
 <input id="search" data-party-list placeholder="Search order no, customer, driver...">
 <select id="filter" style="max-width:220px">
@@ -111,10 +147,19 @@ header,main,.overlay{display:none!important}
 </div>
 <div class="modalbody">
 <div id="details" class="details"></div>
+<div class="panel ld-grid" id="pickupBox" hidden>
+<div class="ld-h">🏬 Self pickup: party's vehicle <small>(Godown Manager fills at loading)</small></div>
+<label>Vehicle No. *<input id="pkVehicle" maxlength="20" placeholder="GJ05AB1234" autocomplete="off"></label>
+<label>Driver Name *<input id="pkDriver" maxlength="80" autocomplete="off"></label>
+<label>Driver Mobile<input id="pkMobile" inputmode="tel" maxlength="14" placeholder="10 digits" autocomplete="off"></label>
+</div>
+<div class="panel ld-grid ld-one" id="fromBox">
+<label for="loadedFrom">Loaded from (shutter / gate) *<select id="loadedFrom"><option value="">Select shutter / gate</option><option>Shutter A</option><option>Shutter B</option><option>Shutter C</option><option>Shutter D</option><option>Main Entry Gate</option><option>Other</option></select></label>
+</div>
 <h3>SKU-wise Loading Verification</h3>
 <div class="tablewrap">
 <table>
-<thead><tr><th>SKU NAME</th><th>ORDERED</th><th>APPROVED</th><th>LOADED QTY</th><th>RATE</th><th>WEIGHT / UNIT</th></tr></thead>
+<thead><tr><th>SKU NAME</th><th class="gm-off">ORDERED</th><th>APPROVED</th><th>LOADED QTY</th><th class="rate-col gm-off">RATE</th><th class="gm-off">WEIGHT / UNIT</th></tr></thead>
 <tbody id="itemRows"></tbody>
 </table>
 </div>
@@ -124,9 +169,9 @@ header,main,.overlay{display:none!important}
 <label for="loadingRemarks">Loading Remarks</label>
 <textarea id="loadingRemarks" placeholder="Shortage, damage, or other loading remarks"></textarea>
 </div>
-<div class="panel" id="loadDocsBox" hidden><label>Photos: loaded vehicle and any damage / leakage / breakage</label><div id="loadDocs"></div></div>
+<div class="panel" id="loadDocsBox" hidden><label>Photos: loaded vehicle (required, number plate visible) and any damage / leakage / breakage</label><div id="loadDocs"></div></div>
 <div class="actions">
-<button class="secondary" id="printBtn">Print Delivery Challan</button>
+<button class="secondary gm-off" id="printBtn">Print Delivery Challan</button>
 <button id="startBtn">Start Loading</button>
 <button class="green" id="completeBtn">✅ Confirm Vehicle Loaded</button>
 </div>
@@ -146,7 +191,8 @@ const db=supabase.createClient(SUPABASE_URL,SUPABASE_PUBLISHABLE_KEY);
 // Brand filter (All / Rajnigandha / Coca-Cola): a PO counts in a brand when it has an SKU of it.
 let BB={get:()=>''},OB=new Map();
 const inB=o=>!BB.get()||LWBBrand.has(OB.get(o.id),BB.get());
-let user=null,role='',orders=[],assignments=[],selected=null,items=[],saving=false;
+let user=null,role='',orders=[],assignments=[],selected=null,items=[],saving=false,pickups=new Map();
+const isPickup=o=>String(o&&o.transportation||'').split(' |')[0].trim().toUpperCase()==='SELF PICKUP';
 
 const $=id=>document.getElementById(id);
 const safe=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -180,13 +226,40 @@ return;
 }
 $('username').textContent=profile.data.full_name||user.email;
 role=String(profile.data.role||'').trim().toLowerCase();
+document.body.classList.toggle('gm',role==='warehouse');
 // Godown Manager sees the vehicles assigned to him first.
-if(role==='warehouse'){$('mineOption').hidden=false;$('filter').value='mine';}
+if(role==='warehouse'){$('mineOption').hidden=false;$('filter').value='mine';$('ldTabs').hidden=false;}
 window.LWBOperationsNotifications?.init({db,user,mount:document.querySelector("header > div:last-child")});
 if(window.LWBBrand)try{BB=await LWBBrand.mount(db,{into:'main > div',after:true,onChange:render})}catch(e){}
 await load();
+if(role==='warehouse'){await loadPurchase();if(new URLSearchParams(location.search).get('tab')==='purchase')showTab('purchase');}
 }catch(e){message(e.message,true);}
 }
+
+// ===== Purchase (unloading): bills the Sales Head / Admin gave to this Godown Manager =====
+function showTab(t){
+document.body.classList.toggle('tab-pur',t==='purchase');$('purBox').hidden=t!=='purchase';
+document.querySelectorAll('#ldTabs button').forEach(b=>{const on=b.dataset.tab===t;b.classList.toggle('on',on);b.setAttribute('aria-selected',on)});
+}
+document.getElementById('ldTabs').addEventListener('click',e=>{const b=e.target.closest('button[data-tab]');if(b)showTab(b.dataset.tab)});
+async function loadPurchase(){
+try{
+const from=new Date(Date.now()-30*864e5).toISOString().slice(0,10);
+const g=await db.from('lwb_goods_inward').select('id,invoice_no,supplier_name,vehicle_no,received_date,created_at,godown_user_id').eq('godown_user_id',user.id).gte('received_date',from).order('received_date',{ascending:false}).limit(200);
+if(g.error)throw g.error;
+const bills=g.data||[],ids=bills.map(b=>b.id),done=new Set();
+for(let i=0;i<ids.length;i+=100){const c=await db.from('lwb_purchase_checks').select('inward_id').in('inward_id',ids.slice(i,i+100));if(!c.error)(c.data||[]).forEach(x=>done.add(x.inward_id))}
+const open=bills.filter(b=>!done.has(b.id)),checked=bills.filter(b=>done.has(b.id)).slice(0,10);
+$('tabPurN').textContent=open.length||'';
+const row=(b,ok)=>`<div class="pur-row"><div class="pur-main"><b>${safe(b.supplier_name||'Supplier')}</b><small><span class="pur-veh">${safe(String(b.vehicle_no||'No vehicle no.').toUpperCase())}</span> · Inv ${safe(b.invoice_no||'-')} · ${safe(LWBDate.d?LWBDate.d(b.received_date):b.received_date)}</small>${ok?'<small class="pur-ok">✓ Checked</small>':''}</div>${ok?`<button class="secondary" data-view="${safe(b.id)}">View</button>`:`<button class="green" data-check="${safe(b.id)}">📷 Photos &amp; Submit</button>`}</div>`;
+$('purRows').innerHTML=(open.length?open.map(b=>row(b,false)).join(''):'<div class="pur-empty">No purchase vehicle given to you right now.</div>')+(checked.length?'<div class="pur-sep">Checked (last 30 days)</div>'+checked.map(b=>row(b,true)).join(''):'');
+}catch(e){$('purRows').innerHTML='<div class="pur-empty">Could not load purchase vehicles: '+safe(e.message||e)+'</div>';}
+}
+document.getElementById('purRows').addEventListener('click',e=>{
+const c=e.target.closest('[data-check]'),v=e.target.closest('[data-view]');
+if(c&&window.LWBPurchaseDamage)LWBPurchaseDamage.form({client:db,id:c.dataset.check,role,onDone:loadPurchase});
+if(v&&window.LWBPurchaseDamage)LWBPurchaseDamage.view({client:db,id:v.dataset.view,role,onEdit:loadPurchase});
+});
 
 async function load(){
 try{
@@ -202,6 +275,19 @@ if(a.error)throw a.error;
 found.push(...(a.data||[]));
 }
 assignments=found;
+// Godown Manager: only the orders the Sales Head / Admin gave to him (vehicle or self pickup), nothing before the vehicle
+// is given, and a loaded order leaves his list once it is delivered (Mohit, 18 Nov 2026).
+pickups=new Map();
+for(let i=0;i<ids.length;i+=100){const p=await db.from('lwb_order_pickup').select('*').in('order_id',ids.slice(i,i+100));if(!p.error)for(const x of p.data||[])pickups.set(x.order_id,x);}
+if(role==='warehouse'){
+const mine=o=>assignment(o.id).loading_manager_id===user.id||(pickups.get(o.id)||{}).godown_user_id===user.id;
+orders=orders.filter(o=>!waiting(o)&&mine(o));
+const done=new Set(),lid=orders.filter(o=>o.status==='loaded').map(o=>o.id);
+for(let i=0;i<lid.length;i+=150){const part=lid.slice(i,i+150);
+const [r,m]=await Promise.all([db.from('lwb_delivery_reports').select('order_id').in('order_id',part).in('delivery_status',['DELIVERED','PARTIAL']),db.rpc('lwb_admin_order_marks',{p_ids:part})]);
+for(const x of (r.data||[]))done.add(x.order_id);for(const x of (m.data||[]))if(x.kind==='DELIVERED')done.add(x.order_id);}
+orders=orders.filter(o=>!done.has(o.id));
+}
 if(BB.companies&&BB.companies.length>1)OB=await LWBBrand.orderBrands(db,ids);
 render();
 // Opened from a loading-assignment notification
@@ -219,13 +305,14 @@ const APPROVED=['approved','approved_next','manager_approved','warehouse_approve
 const waiting=o=>APPROVED.includes(String(o.status||'').toLowerCase());
 function assignment(id){return assignments.find(a=>a.order_id===id)||{};}
 // Only the Godown Manager chosen by the Sales Head loads the vehicle (Sales Head / Admin always can).
-function notMine(a){return role==='warehouse'&&a.loading_manager_id&&a.loading_manager_id!==user.id;}
+function notMine(a){return role==='warehouse'&&a.loading_manager_id!==user.id&&(pickups.get(a.order_id)||{}).godown_user_id!==user.id;}
 
 function render(){
 $('approvedCount').textContent=orders.filter(inB).filter(waiting).length;
 $('pendingCount').textContent=orders.filter(inB).filter(o=>o.status==='transport_allocated').length;
 $('loadingCount').textContent=orders.filter(inB).filter(o=>o.status==='loading').length;
 $('loadedCount').textContent=orders.filter(inB).filter(o=>o.status==='loaded').length;
+if(role==='warehouse')$('tabSalesN').textContent=orders.filter(o=>['transport_allocated','loading'].includes(o.status)).length||'';
 const q=$('search').value.toLowerCase().trim();
 const filter=$('filter').value;
 const visible=orders.filter(inB).filter(o=>{
@@ -242,7 +329,7 @@ return `<tr>
 <td>${safe(date(o.order_date))}</td>
 <td>${safe(o.customer_name)}</td>
 <td>${safe(a.driver_name||'-')}</td>
-<td>${safe(a.vehicle_no||'-')}</td>
+<td>${safe(a.vehicle_no||(pickups.get(o.id)||{}).vehicle_no||'-')}${a.loaded_from?`<span class="ld-from">${safe(a.loaded_from)}</span>`:''}</td>
 <td>${safe(a.loading_person||'-')}</td>
 <td>${fmt(o.total_qty)}</td>
 <td><span class="badge">${safe(o.status==='loaded'?'VEHICLE LOADED':waiting(o)?'APPROVED · NO VEHICLE YET':o.status.replaceAll('_',' ').toUpperCase())}</span></td>
@@ -267,7 +354,12 @@ if(error)throw error;
 items=data||[];
 const a=assignment(id);
 $('modalTitle').textContent='Loading - '+selected.order_no;
-const details=[
+const details=role==='warehouse'?[
+['PARTY',selected.customer_name],
+['ORDER DATE',date(selected.order_date)],
+['VEHICLE',a.vehicle_no],
+['DRIVER',a.driver_name]
+]:[
 ['ORDER NO',selected.order_no],
 ['CUSTOMER',selected.customer_name],
 ['DATE',date(selected.order_date)],
@@ -280,17 +372,23 @@ const details=[
 $('details').innerHTML=details.map(([k,v])=>`<div class="detail"><small>${safe(k)}</small><strong>${safe(v||'-')}</strong></div>`).join('');
 $('itemRows').innerHTML=items.map((item,i)=>{
 const approved=number(item.approved_qty??item.ordered_qty);
-const loaded=item.loaded_qty==null?approved:number(item.loaded_qty);
+// Before loading the Loaded qty starts equal to Approved (the Godown Manager edits it only if less is loaded).
+const loaded=selected.status==='loaded'&&item.loaded_qty!=null?number(item.loaded_qty):approved;
 return `<tr>
 <td>${safe(item.sku_name)}</td>
-<td>${fmt(item.ordered_qty)}</td>
+<td class="gm-off">${fmt(item.ordered_qty)}</td>
 <td>${fmt(approved)}</td>
 <td><input class="qty" type="number" min="0" max="${approved}" step="1" data-index="${i}" value="${loaded}" ${selected.status==='loaded'||waiting(selected)?'disabled':''}></td>
-<td>${money(item.rate)}</td>
-<td>${fmt(item.unit_weight)} KG</td>
+<td class="rate-col gm-off">${money(item.rate)}</td>
+<td class="gm-off">${fmt(item.unit_weight)} KG</td>
 </tr>`;
 }).join('');
 $('loadingRemarks').value=a.remarks||'';
+const pk=pickups.get(id)||{},lock=selected.status==='loaded'||waiting(selected);
+$('pickupBox').hidden=!isPickup(selected);
+$('pkVehicle').value=pk.vehicle_no||a.vehicle_no||'';$('pkDriver').value=pk.driver_name||a.driver_name||'';$('pkMobile').value=pk.driver_mobile||a.driver_mobile||'';
+['pkVehicle','pkDriver','pkMobile'].forEach(k=>$(k).disabled=lock);
+$('loadedFrom').value=a.loaded_from||'';$('loadedFrom').disabled=lock;$('fromBox').hidden=waiting(selected);
 $('loadingRemarks').disabled=selected.status==='loaded'||waiting(selected);
 const blocked=notMine(a),early=waiting(selected);
 $('startBtn').style.display=selected.status==='transport_allocated'&&!blocked?'':'none';
@@ -345,6 +443,15 @@ if(!items.length)throw Error('No order items found.');
 if(!quantitiesToSave.some(x=>x.qty>0))throw Error('At least one item must have loaded quantity.');
 }catch(e){alert(e.message);return;}
 if(notMine(assignment(selected.id))){alert('This vehicle is assigned to another Godown Manager.');return;}
+const from=$('loadedFrom').value;
+if(!from){alert('Select the shutter / gate the goods were loaded from.');$('loadedFrom').focus();return;}
+const pick=isPickup(selected)?{vehicle_no:$('pkVehicle').value.trim().toUpperCase().replace(/[^A-Z0-9]/g,''),driver_name:$('pkDriver').value.trim(),driver_mobile:$('pkMobile').value.replace(/\D/g,'').slice(-10)}:null;
+if(pick){
+if(!pick.vehicle_no){alert('Self pickup: enter the party vehicle number.');$('pkVehicle').focus();return;}
+if(!pick.driver_name){alert('Self pickup: enter the driver name.');$('pkDriver').focus();return;}
+if(pick.driver_mobile&&!/^[6-9]\d{9}$/.test(pick.driver_mobile)){alert('Driver mobile must be a 10-digit mobile number.');$('pkMobile').focus();return;}
+}
+if(loadDocs&&!loadDocs.has('LOADED')){alert('Add the loaded vehicle photo (number plate visible) under "Loaded vehicle photo".');return;}
 if(loadDocs&&/damage|leak|break|toot|tut|phat|short|gasless/i.test($('loadingRemarks').value)&&!loadDocs.has('DAMAGE')&&!await confirm('Remarks mention damage / leakage, but no photo is added.\n\nTake a photo with 📷 Camera under "Damage / leakage / breakage at loading". Confirm loading without a photo?'))return;
 if(!await confirm('Vehicle Loaded: confirm that the quantities above are loaded in vehicle '+(assignment(selected.id).vehicle_no||'')+' for '+selected.order_no+'?\n\nAccounts and the Sales Head will be notified to make the Tally bill.'))return;
 saving=true;
@@ -356,9 +463,14 @@ for(const {item,qty} of quantitiesToSave){
 const {error}=await db.from('order_items').update({loaded_qty:qty}).eq('id',item.id).eq('order_id',selected.id);
 if(error)throw error;
 }
+if(pick){const pk=pickups.get(selected.id)||{};
+const key=pk.godown_user_id?'U:'+pk.godown_user_id:pk.godown_staff_id?'S:'+pk.godown_staff_id:'';
+const r=await db.rpc('lwb_set_order_pickup',{p_order_id:selected.id,p:{...pick,godown_key:key}});if(r.error)throw r.error;}
 const {error:assignmentError}=await db.from('dispatch_assignments').update({
 loading_completed_at:new Date().toISOString(),
-remarks:$('loadingRemarks').value.trim()
+remarks:$('loadingRemarks').value.trim(),
+loaded_from:from,
+...(pick?{vehicle_no:pick.vehicle_no,driver_name:pick.driver_name,driver_mobile:pick.driver_mobile||null}:{})
 }).eq('id',a.id);
 if(assignmentError)throw assignmentError;
 const {data,error:orderError}=await db.from('orders')
@@ -416,7 +528,7 @@ $('rows').addEventListener('click',e=>{
 const btn=e.target.closest('button[data-id]');
 if(btn)openOrder(btn.dataset.id);
 });
-$('refresh').onclick=load;
+$('refresh').onclick=()=>{load();if(role==='warehouse')loadPurchase();};
 $('search').oninput=render;
 $('filter').onchange=render;
 $('closeModal').onclick=()=>$('overlay').style.display='none';

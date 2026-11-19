@@ -32,3 +32,10 @@ export function messageFor(n,role) {
  body:String(n.message||'Open the app to view this update.').replace(/[\r\n]+/g,' ').slice(0,240),
  url:safeRoute(type,n.order_id,role),tag:'lwb-'+String(n.id),user_id:n.user_id};
 }
+
+// Salesmen get their order updates (approved, out for delivery, bill, delivered, payment) since 17 Nov 2026;
+// live GPS / tracking and vehicle-loading assignment alerts stay off for them (lwb_order_updates_everyone_setup.sql).
+export function suppressSalesOrderAlert(n, role) {
+ return ['sales','salesman'].includes(String(role||'').trim().toLowerCase()) &&
+  /^(CC_)?(LIVE_|GPS_|TRACK|LOADING_ASSIGNMENT)/i.test(String(n.notification_type||''));
+}

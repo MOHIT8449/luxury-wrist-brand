@@ -35,3 +35,34 @@ This app declares Android POST_NOTIFICATIONS, the `NotificationPermissionRequest
 ## Fingerprint unlock
 After 15 minutes idle the ERP locks and opens with the phone's fingerprint / face / PIN
 (`quick-unlock.js`, WebAuthn in Chrome). It is part of the website, so no new APK is needed.
+
+## Staff location sharing (new APK required)
+
+Every active ERP login except Admin shares location with Admin. Only Admin sees
+Live Tracking. The app icon now opens `DriverTrackingActivity` (the location gate)
+before the ERP:
+
+1. First open: the person reads the notice, ticks **I agree**, and signs in with
+   their ERP email/password. The agreement time is saved (`lwb_gps_agree`) and
+   shown to Admin on Live Tracking. Admin logins skip all of this.
+2. Every open: the app checks precise location, **Allow all the time**
+   (background location), notifications and phone location (GPS) switch. Anything
+   missing shows a popup with one button and no Skip. Back closes the app; the
+   popup comes again on the next open.
+3. When everything is fine the location foreground service starts and the ERP opens.
+
+Staff have no Stop button. The service stops only when the server says the login is
+not tracked (Admin, inactive or deleted user). It is sticky and starts again after a
+phone restart or app update (`BootReceiver`). If location is turned off or permission
+is removed, the server gets `OFF`/`DENIED` (Admin sees **Location off**) and a
+reminder notification opens the popup. Android always lets a person force-stop the
+app or revoke permission in phone settings; that cannot be blocked, but it shows on
+the Admin map and the popup returns on the next open.
+
+Location is sent about every 30 seconds in the work hours set by Admin. No fix older
+than 90 seconds is sent. Tokens are AES-GCM encrypted with an AndroidKeyStore key; no
+password is saved. **Change login** on the gate screen switches tracking to another
+staff login on a shared phone.
+
+Google Play: background location needs the Play Console location declaration and a
+short video of the notice screen before review. Direct APK installs are not affected.

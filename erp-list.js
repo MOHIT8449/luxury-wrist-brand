@@ -41,7 +41,8 @@
 .erp-ls-trail{margin:0 0 2px;color:#c9b26a;font-size:11.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
 .erp-ls-head>div{min-width:0}
 .erp-ls-tt{font-style:normal}
-.erp-ls-foot{flex-wrap:nowrap;overflow-x:auto}
+.erp-ls-foot{flex-wrap:nowrap;overflow-x:auto;flex:none}
+.erp-ls-head,.erp-ls-tools{flex:none}
 .erp-ls-foot button{white-space:nowrap}
 .erp-ls td .erp-go{color:#7a6420;font-size:16px;font-weight:700}
 .erp-ls-tools{display:flex;gap:10px;align-items:center;padding:10px 18px;border-bottom:1px solid #e3e7ec;background:#f7f8f6}
@@ -64,13 +65,24 @@
 .erp-ls-msg.err{color:#a00d25}
 .erp-ls-foot{display:flex;gap:10px;justify-content:flex-end;padding:10px 18px;border-top:1px solid #e3e7ec}
 .erp-ls-foot button{border-radius:8px;padding:8px 16px;font:600 13px "Fira Sans","Segoe UI",Arial,sans-serif;cursor:pointer;border:1px solid #cfd6de;background:#fff;color:#002f37}
+.erp-ls-foot button.ic{padding:8px 12px;margin-right:auto;line-height:1}
 .erp-ls-foot button.main{background:#002f37;border-color:#002f37;color:#fff}
+.erp-ls-tools button{flex:none;height:36px;padding:0 14px;border-radius:8px;border:1px solid #cfd6de;background:#fff;color:#002f37;font:700 13px "Fira Sans","Segoe UI",Arial,sans-serif;cursor:pointer;white-space:nowrap}
+.erp-ls-tools button.hi,.erp-ls-foot button.hi{background:#c9b26a;border-color:#c9b26a;color:#002f37}
+.erp-ls .sku-br{display:inline-block;margin-left:4px;padding:0 6px;border-radius:10px;background:#eef2f1;color:#5d6f72;font-size:11px;font-weight:600}
+.erp-ls .sku-qty{color:#002f37;font-size:14.5px}
+.erp-ls .sku-wait{display:block;color:#a15c00;font-size:11px;font-weight:600}
+.erp-ls .sku-pos{display:inline-block;min-width:24px;padding:1px 7px;border-radius:10px;background:#f7f1de;color:#7a6420;font-weight:700;text-align:center}
+.erp-ls .sku-pt{color:#5d6f72;font-size:12.5px}
+.erp-ls .sku-pt i{font-style:normal;color:#7a6420;font-weight:600;white-space:nowrap}
+@media (max-width:700px){.erp-ls td:has(>.sku-pt){grid-column:1/-1}.erp-ls .sku-pt{font-size:12px;text-align:right}.erp-ls .sku-pos{align-self:flex-start}}
 @media (max-width:700px){
   .erp-ls-back{padding:0;place-items:end stretch}
   .erp-ls{max-height:92dvh;border-radius:14px 14px 0 0}
   .erp-ls-head{padding:12px 14px}
   .erp-ls-head h3{font-size:16px}
   .erp-ls-tools,.erp-ls-foot{padding:8px 12px}
+  .erp-ls-foot{padding-bottom:calc(8px + env(safe-area-inset-bottom,0px))}
   .erp-ls thead{display:none}
   .erp-ls table,.erp-ls tbody,.erp-ls tfoot,.erp-ls tr,.erp-ls td{display:block;width:100%}
   .erp-ls tbody tr{margin:8px 10px;width:auto;border:1px solid #e3e7ec;border-radius:10px;padding:6px 10px;background:#fff}
@@ -137,9 +149,9 @@
     back.innerHTML=`<div class="erp-ls" role="dialog" aria-modal="true">
       <div class="erp-ls-head">${parent?`<button type="button" class="erp-ls-bk" aria-label="Back to ${esc(parent.opts.title||"list")}">‹ Back</button>`:""}<div>${trail.length?`<p class="erp-ls-trail">${esc(trail.join(" › "))}</p>`:""}<h3><i class="erp-ls-tt">${esc(opts.title||"List")}</i><span>…</span></h3><p class="erp-ls-sub"${opts.sub?"":" hidden"}>${esc(opts.sub||"")}</p></div>
         <button type="button" class="erp-ls-x" aria-label="Close">&times;</button></div>
-      <div class="erp-ls-tools"><input type="search" placeholder="Search in this list..." aria-label="Search in this list"><small></small></div>
+      <div class="erp-ls-tools"><input type="search" placeholder="Search in this list..." aria-label="Search in this list"><small></small>${(opts.links||[]).map((l,i)=>l.top?`<button type="button" data-lk="${i}" class="${esc(l.cls||"")}">${esc(l.t)}</button>`:"").join("")}</div>
       <div class="erp-ls-body"><div class="erp-ls-msg">Loading list...</div></div>
-      <div class="erp-ls-foot">${(opts.links||[]).map((l,i)=>`<button type="button" data-lk="${i}">${esc(l.t)}</button>`).join("")}${opts.page?`<button type="button" class="pg">${esc(opts.pageText||"Open full page")}</button>`:""}<button type="button" class="main">Close</button></div>
+      <div class="erp-ls-foot">${(opts.links||[]).map((l,i)=>l.top?"":`<button type="button" data-lk="${i}"${l.icon?` class="ic" data-share title="${esc(l.title||l.t)}" aria-label="${esc(l.t)}"`:l.cls?` class="${esc(l.cls)}"`:""}>${l.icon||esc(l.t)}</button>`).join("")}${opts.page?`<button type="button" class="pg">${esc(opts.pageText||"Open full page")}</button>`:""}<button type="button" class="main">Close</button></div>
     </div>`;
     const box=back.firstElementChild,body=box.querySelector(".erp-ls-body"),badge=box.querySelector("h3 span"),
       search=box.querySelector("input"),info=box.querySelector(".erp-ls-tools small");
@@ -150,6 +162,7 @@
     current={back,key,last:parent?parent.last:last};
     const bk=box.querySelector(".erp-ls-bk");if(bk)bk.onclick=goBack;
     box.querySelectorAll("[data-lk]").forEach(b=>b.onclick=()=>{const l=opts.links[Number(b.dataset.lk)];if(!l)return;
+      if(l.stay){l.go();return}
       if(l.keep){markBack({opts,q:search.value,last:current&&current.last});l.go()}else{close();if(l.go)l.go();else location.href=l.href}});
     document.addEventListener("keydown",key,true);
     back.addEventListener("click",e=>{if(e.target===back)close()});
@@ -270,7 +283,14 @@
   const qtyOf=i=>n(i.loaded_qty)>0?n(i.loaded_qty):i.approved_qty!=null&&i.approved_qty!==""?n(i.approved_qty):n(i.ordered_qty);
   const pretty=ERPList.pretty;
   const poT=no=>/^PO\b/i.test(String(no||""))?String(no):"PO "+(no||"");
-  let payLoading=null,billInfo=null;
+  let payLoading=null,billInfo=null,shareLoading=null;
+  // PO image for WhatsApp (po-share.js), loaded only when the image icon is tapped.
+  function shareJs(){
+    if(window.LWBPoShare)return Promise.resolve(window.LWBPoShare);
+    return shareLoading||(shareLoading=new Promise((ok,bad)=>{const s=document.createElement("script");s.src="po-share.js";s.onload=()=>ok(window.LWBPoShare);s.onerror=()=>{shareLoading=null;bad(Error("po-share.js not loaded"))};document.head.appendChild(s)}));
+  }
+  const IMG_ICON='<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-3px"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="M21 16l-5-5-9 9"/></svg>';
+  const cancelled=s=>/cancel/i.test(String(s||""));
   function payJs(){
     if(window.LWBPartyPay)return Promise.resolve(window.LWBPartyPay);
     return payLoading||(payLoading=new Promise((ok,bad)=>{const s=document.createElement("script");s.src="party-pay.js";s.onload=()=>ok(window.LWBPartyPay);s.onerror=()=>{payLoading=null;bad(Error("party-pay.js not loaded"))};document.head.appendChild(s)}));
@@ -298,6 +318,7 @@
         if((!q.data||q.error)&&row.order_no)q=await C.from("orders").select("*").eq("order_no",row.order_no).limit(1).maybeSingle();
         if(q.error)throw q.error;o=q.data;
         if(!o)throw Error("This PO is not open for your login.");
+        if(cancelled(o.status)){const b=document.querySelector(".erp-ls [data-share]");if(b)b.hidden=true}
         ui.title(poT(o.order_no||row.order_no));ui.sub(head());
         const it=await C.from("order_items").select("*").eq("order_id",o.id);
         if(it.error)throw it.error;
@@ -306,7 +327,11 @@
       cols:[{t:"SKU",v:i=>i.sku_name||i.sku||""},{t:"Ordered",v:"ordered_qty",num:true,sum:true,dec:0},
         {t:"Approved",v:"approved_qty",num:true,sum:true,dec:0},{t:"Loaded",v:"loaded_qty",num:true,sum:true,dec:0},
         {t:"Rate",v:"rate",money:true,dec:2},{t:"Amount",v:"__amt",money:true,sum:true}],
-      links:[{t:"Bill details",go:()=>{location.href="accounts-invoice.html?order="+encodeURIComponent((o&&o.id)||id)}}].filter(()=>!!(row.invoice_no||row.bill_amount!=null||row.__bill)),
+      links:[
+        // Same one-tap PO image as the PO list cards (Mohit, 16 Nov): computer copies it, phone downloads it.
+        cancelled(row.status)?null:{t:"Copy order image",title:"Copy order image for WhatsApp (no order no.). Phone: downloads it.",icon:IMG_ICON,stay:true,
+          go:()=>{const oid=(o&&o.id)||id;if(!oid)return;shareJs().then(S=>S.quick(db(),oid)).catch(e=>alert("Could not make the image: "+(e.message||e)))}},
+        (row.invoice_no||row.bill_amount!=null||row.__bill)?{t:"Bill details",go:()=>{location.href="accounts-invoice.html?order="+encodeURIComponent((o&&o.id)||id)}}:null].filter(Boolean),
       page:()=>{location.href="warehouse-orders.html?order="+encodeURIComponent((o&&o.id)||id)},pageText:"Open PO →"
     });
   }

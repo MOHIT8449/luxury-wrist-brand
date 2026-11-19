@@ -42,6 +42,8 @@ await db.exec(await read('lwb_order_rates_setup.sql'));
 await db.exec(await read('lwb_rajni_rate_limit_setup.sql'));
 const sql=await read('lwb_cc_rate_limit_setup.sql');
 await db.exec(sql);await db.exec(sql); // safe to run again
+const fix=await read('lwb_rate_approve_loaded_fix.sql');
+await db.exec(fix);await db.exec(fix);
 
 async function run(who,q,params){
   await db.query("select set_config('request.jwt.claim.sub',$1,false)",[ids[who]]);
@@ -136,4 +138,15 @@ test('Rajnigandha slip flow is untouched by the Coca-Cola route', async()=>{
   await run('head','select public.lwb_rate_request($1,$2,null)',[o,P]);
   const s=(await run('admin','select public.lwb_rate_approve($1) v',[o])).rows[0].v;assert.equal(s.driver_name,'Ramesh');
   assert.equal(await st(o),'loaded');
+});
+
+test('Rate OK on a slip PO that is already loaded: only the rate OK, PO leaves the list', async()=>{
+  const o=await headPo('RG-2',[['RG POUCH 10',4,320]]);
+  await run('head','select public.lwb_rate_request($1,$2,null)',[o,P]);
+  await db.query(`update orders set status='loaded' where id=$1`,[o]); // loaded another way before Admin's OK
+  const v=(await run('admin','select public.lwb_rate_approve($1) v',[o])).rows[0].v;
+  assert.equal(v.already,true);assert.equal(await st(o),'loaded');
+  assert.equal((await db.query('select count(*)::int n from lwb_quick_slips where order_id=$1',[o])).rows[0].n,0);
+  assert.equal((await db.query('select status from lwb_rate_approvals where order_id=$1',[o])).rows[0].status,'APPROVED');
+  assert.equal((await run('admin','select public.lwb_rate_waiting() v')).rows[0].v.some(x=>x.order_id===o),false);
 });

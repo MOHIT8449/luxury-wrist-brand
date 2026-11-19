@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>User Permissions | Luxury Wrist Brand ERP</title>
   <script src="erp-date.js"></script><script src="erp-recent.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="vendor/supabase-js-2.119.0.js"></script>
   <link rel="stylesheet" href="erp-shell.css">
   <script src="erp-shell.js"></script>
   <script src="master-popup.js"></script>
@@ -156,6 +156,8 @@
         pageAccess={};pageExtra={};for(const r of (pa.error?[]:pa.data||[])){pageAccess[r.user_id]=r.hidden||[];pageExtra[r.user_id]=r.extra||[]}
         // Users with a working Authenticator OTP; empty until lwb_login_otp_setup.sql is run.
         const otp=await client.rpc("lwb_admin_otp_users"),otpSet=new Set(otp.error?[]:(otp.data||[]).map(r=>typeof r==="string"?r:r.lwb_admin_otp_users));
+        // MPIN quick login (lwb_mpin_setup.sql): users with an MPIN on at least one phone.
+        const mp=await client.rpc("lwb_admin_mpin_users"),mpinSet=new Set(mp.error?[]:(mp.data||[]).map(r=>typeof r==="string"?r:r.lwb_admin_mpin_users));
         // Who may see Profit on PO screens (lwb_profit_view_setup.sql); Admin always sees it.
         const pv=await client.rpc("lwb_profit_landing"),pfReady=!pv.error&&pv.data&&pv.data.admin===true,pfSet=new Set(pfReady?pv.data.viewers||[]:[]);
         for(const u of users){
@@ -164,7 +166,7 @@
           login.textContent=u.mobile||u.email||"—";
           const sub=document.createElement("small");
           const em=empOf.get(u.user_id);
-          sub.textContent=[em?"Employee "+em.emp_code+" · "+(em.designation||"-"):"",u.mobile&&u.email?u.email:"",otp.error?"":otpSet.has(u.user_id)?"OTP set":"OTP not set",u.last_sign_in_at?"Last sign-in "+LWBDate.d(u.last_sign_in_at):"Never signed in"].filter(Boolean).join(" · ");
+          sub.textContent=[em?"Employee "+em.emp_code+" · "+(em.designation||"-"):"",u.mobile&&u.email?u.email:"",otp.error?"":otpSet.has(u.user_id)?"OTP set":"OTP not set",mp.error?"":mpinSet.has(u.user_id)?"MPIN set":"",u.last_sign_in_at?"Last sign-in "+LWBDate.d(u.last_sign_in_at):"Never signed in"].filter(Boolean).join(" · ");
           login.append(sub);
           if(userDocs){
             const ph=userPhotos.get(u.user_id);
@@ -204,6 +206,10 @@
           if(!otp.error&&otpSet.has(u.user_id)){
             const reset=document.createElement("button");reset.type="button";reset.className="pg-btn";reset.textContent="Reset OTP";
             reset.onclick=()=>resetOtp(u,reset);acts.append(reset);
+          }
+          if(!mp.error&&mpinSet.has(u.user_id)){
+            const rm=document.createElement("button");rm.type="button";rm.className="pg-btn";rm.textContent="Reset MPIN";
+            rm.onclick=()=>resetMpin(u,rm);acts.append(rm);
           }
           cell(row,acts);
         }
@@ -291,6 +297,18 @@
     }
 
     // Lost or new phone: the user scans a fresh QR on the Login page next time.
+    async function resetMpin(u,btn){
+      const who=u.full_name||u.mobile||u.email||"this user";
+      if(!await ERPShell.confirm("Reset MPIN for "+who+" on all phones? Use this for a lost phone or a forgotten MPIN. Next time they log in with password + OTP and set a new MPIN."))return;
+      btn.disabled=true;
+      try{
+        const {error}=await client.rpc("lwb_admin_reset_mpin",{p_user_id:u.user_id});
+        if(error)throw error;
+        await loadRoleManager();
+        roleMessage("MPIN reset for "+who+". They will set a new one at next login.");
+      }catch(err){roleMessage("Could not reset MPIN: "+err.message,true)}
+      finally{btn.disabled=false}
+    }
     async function resetOtp(u,btn){
       const who=u.full_name||u.mobile||u.email||"this user";
       if(!await ERPShell.confirm("Reset OTP for "+who+"? They will be logged out and must scan a new QR in Google Authenticator at next login."))return;

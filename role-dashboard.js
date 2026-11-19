@@ -74,6 +74,16 @@
   const ACOLS=[{t:"Date",v:"date",date:true},{t:"Head",v:"category"},{t:"Party",v:"party"},{t:"Mode",v:"mode"},{t:"PO / Ref",v:l=>[l.order_no,l.ref].filter(Boolean).join(" · ")},{t:"Remark",v:"remark"},{t:"Amount",v:"amount",money:true,sum:true}];
   const delivered=(from,to)=>async()=>{const r=await C.rpc("lwb_po_summary_orders",{p_bucket:"delivered",p_from:from,p_to:to});if(r.error)throw r.error;return r.data||[]};
   const live=o=>!OFF.includes(st(o));
+  // Where the pending-delivery POs are stuck, and how many are older than 7 days (Mohit, 16 Nov 2026).
+  function pendSplit(rows){
+    const G=[["waiting approval",x=>WAIT.includes(x)],["approved, no driver",x=>x==="approved"],["driver assigned",x=>x==="transport_allocated"||x==="allocated"],
+      ["loading / loaded",x=>x==="loading"||x==="loaded"],["billed, not marked delivered",x=>x==="invoiced"||x==="dispatched"]];
+    const n=new Map(),wk=shift(today(),-6);let old=0,other=0;
+    for(const o of rows){const s2=st(o),g=G.find(x=>x[1](s2));if(g)n.set(g[0],(n.get(g[0])||0)+1);else other++;
+      const d=String(o.order_date||o.created_at||"").slice(0,10);if(d&&d<wk)old++}
+    const parts=G.filter(g=>n.get(g[0])).map(g=>n.get(g[0])+" "+g[0]);if(other)parts.push(other+" other");
+    return fmt(rows.length)+" POs: "+parts.join(" · ")+(old?" | "+fmt(old)+" are older than 7 days (oldest on top)":"");
+  }
 
   async function ordersFrom(from){
     const out=[];
@@ -165,6 +175,28 @@
     return sum(targets.filter(x=>x.salesman_id),x=>x.target_amount);
   }
   async function verifyQueue(){return safe(C.rpc("lwb_my_verify_queue"))}
+  // Pending Work "Make Tally bill" counted only status 'loaded' of the last 45 days (124 while Bills to make showed
+  // another number). Count it with the Bills to make rule (LWBPartyPay.needsBill + approved, not loaded yet) and let
+  // dashboard.html redraw the row as "Bills to make" (Mohit, 16 Nov 2026).
+  const makeBillsData=()=>Promise.all([safe(C.rpc("lwb_admin_order_marks",{p_ids:null})),safe(C.rpc("lwb_bills_before_loading"))]);
+  function setMakeBills(PI,md){
+    if(!PI||!PI.raw||!md||!window.LWBPartyPay||!LWBPartyPay.needsBill)return;
+    const marks=new Map((md[0]||[]).map(m=>[m.order_id,1]));
+    const L=(PI.raw.orders||[]).filter(o=>LWBPartyPay.needsBill(o,marks)).concat(md[1]||[]);
+    window.LWBMakeBills={cnt:L.length,amount:sum(L,o=>o.erp_amount)};
+    if(window.LWBVerifyRedraw)LWBVerifyRedraw();
+  }
+  // POs that are delivered: a driver report Delivered / Partial (any day) or an Admin / Sales Head "Mark delivered".
+  // Same two sources as PO List > Delivered and Admin's Total pending delivery (lwb_pending_delivery_marks_fix.sql).
+  async function deliveredSet(ids){
+    const done=new Set();
+    for(let i=0;i<ids.length;i+=150){const part=ids.slice(i,i+150);
+      const [r,m]=await Promise.all([safe(C.from("lwb_delivery_reports").select("order_id").in("order_id",part).in("delivery_status",["DELIVERED","PARTIAL"])),
+        safe(C.rpc("lwb_admin_order_marks",{p_ids:part}))]);
+      for(const x of r||[])done.add(x.order_id);
+      for(const x of m||[])if(x.kind==="DELIVERED")done.add(x.order_id)}
+    return done;
+  }
   const queueItem=(q,item)=>(q||[]).find(r=>r.item===item)||null;
   function outstanding(PI){
     if(!PI)return null;
@@ -324,6 +356,7 @@
       const t=today(),y=shift(t,-1);
       const [orders,sumy,acc,PI,cq,team,ov]=await Promise.all([loadOrdersB(),safe(C.rpc("lwb_po_approval_summary",{p_from:t,p_to:t})),
         safe(C.rpc("lwb_acc_dashboard",{p_from:t,p_to:t})),window.LWBPartyPay?LWBPartyPay.load(C).catch(()=>null):null,safe(C.rpc("lwb_acc_cheque_list")),salesTeam(),overview()]);
+      makeBillsData().then(md=>setMakeBills(PI,md));
       const O=orders||[],L=O.filter(live),td=L.filter(o=>o.day===t),yd=L.filter(o=>o.day===y),mo=L.filter(o=>o.day>=t.slice(0,8)+"01");
       TEAM=team.team;
       const [stock,PR]=await Promise.all([stockCheck(orders),orders&&profitOk()?profitOf(td).catch(()=>null):null]);
@@ -369,7 +402,15 @@
         if(!BR.map&&window.LWBBrand)BR.map=await LWBBrand.skuMap(C).catch(()=>null);
         BIZ={C,can,landingData:()=>landingData(),landingOf,brandOf,inBrand,uOf,companies:BR.list.length?BR.list:BR.all,allow:BR.allow,allBrands:!BR.allow,brandKey:BR.id,
           colorOf:s=>{const c=BR.all.find(x=>x.id===brandOf(s));return (c&&c.color)||"#9aa5a8"},out:out?{total:out.total,over:out.brand?out.over:out.over30,brand:out.brand,parties:out.parties||null}:ov&&ov.outstanding?{total:Object.values(ov.outstanding).reduce((a,x)=>a+num(x&&x.due),0),over:Object.values(ov.outstanding).reduce((a,x)=>a+num(x&&x.overdue),0),brand:1}:null,
-          short:short?short.length:null,ov,alerts:al.join(""),profitOk:profitOk(),fresh:BIZFRESH};
+          short:short?short.length:null,ov,alerts:al.join(""),profitOk:profitOk(),fresh:BIZFRESH,
+          // Total pending delivery (all dates, all brands): every PO not cancelled and not delivered yet (Mohit, 16 Nov 2026).
+          pending:sumy&&sumy.pending?{count:num(sumy.pending.count),amount:num(sumy.pending.amount),oldest:sumy.pending.oldest||null,
+            list:()=>({title:"Total Pending Delivery",sub:"All POs not delivered yet (cancelled not counted)",cols:OCOLS,
+              load:async ui=>{const r=await C.rpc("lwb_po_summary_orders",{p_bucket:"pending",p_from:null,p_to:null});if(r.error)throw r.error;
+                const rows=(r.data||[]).slice().sort((a,b)=>String(a.order_date||a.created_at||"").localeCompare(String(b.order_date||b.created_at||"")));
+                if(ui&&ui.sub)ui.sub(pendSplit(rows));return rows},
+              page:can("warehouse-orders.html")?"warehouse-orders.html":undefined,pageText:"Open PO / Sales →",
+              onRow:o=>{if(o&&o.id&&can("warehouse-orders.html"))location.href="warehouse-orders.html?order="+encodeURIComponent(o.id)}})}:null};
         BIZFRESH=false;
         return '<section class="bz" id="bzDash"></section><div class="rd-grid"><div class="rd-col">'+[flow,board].filter(Boolean).join("")+'</div><div class="rd-col" id="rdSide">'+brandCard(ov)+"</div></div>";
       }
@@ -380,9 +421,9 @@
     /* ===== Sales Head: approvals, team target, delivery ===== */
     async manager(){
       const t=today();
-      const [orders,team0,acts,dl,ov,cm]=await Promise.all([loadOrdersB(),salesTeam(),safe(C.rpc("lwb_party_activity")),
+      const [orders,team0,acts,dl,ov,cm,mk]=await Promise.all([loadOrdersB(),salesTeam(),safe(C.rpc("lwb_party_activity")),
         safe(C.from("lwb_delivery_reports").select("order_id,delivery_status,reported_at,delivery_note").gte("reported_at",t+"T00:00:00+05:30")),overview(),
-        BR.allow?safe(C.rpc("lwb_company_month",{p_month:t.slice(0,8)+"01"})):null]);
+        BR.allow?safe(C.rpc("lwb_company_month",{p_month:t.slice(0,8)+"01"})):null,safe(C.rpc("lwb_admin_order_marks",{p_ids:null}))]);
       // With a brand chosen (or a brand-wise Sales Head) the targets are those companies' targets.
       const team=BR.allow&&cm?{team:team0.team,targets:brandTargets(cm.targets)}:team0;
       const O=orders||[],L=O.filter(live),td=L.filter(o=>o.day===t),mo=L.filter(o=>o.day>=t.slice(0,8)+"01");
@@ -416,11 +457,20 @@
         (people.length?people.slice(0,10).map(p=>{const v=pct(p.v,p.t);return '<div class="rd-rowp"><span>'+esc(p.n)+"</span>"+bar(v==null?0:v,v==null?"":v<50?"red":v<75?"amb":"")+'<b class="sm">'+lakh(p.v)+(p.t?" / "+lakh(p.t):"")+"</b></div>"}).join(""):'<div class="rd-empty">No sale this month yet.</div>')+"</div>",
         left+" day"+(left==1?"":"s")+" left"+(need?" · need "+lakh(need)+" per day to reach "+lakh(tgt):tgt&&mv>=tgt?" · target reached 🎉":"")):"";
       let delivery="";
-      if(dl){const byId=new Map(O.map(o=>[o.id,o])),n=s=>dl.filter(r=>r.delivery_status===s).length,bad=dl.filter(r=>r.delivery_status==="NOT_DELIVERED").slice(0,4);
-        const dOf=s=>lst("Today's delivery · "+s.replace("_"," ").toLowerCase(),"Driver reports today",dl.filter(r=>r.delivery_status===s).map(r=>({...(byId.get(r.order_id)||{order_no:"PO"}),delivery_note:r.delivery_note,reported_at:r.reported_at})),
+      // Today's delivery = driver reports today + Admin / Sales Head "Mark delivered" with today's date (17 Nov 2026, Mohit:
+      // deliveries are marked by hand for now, so driver reports alone showed 0). Same rule as the Accounts home.
+      if(dl||mk){const R=dl||[],byId=new Map(O.map(o=>[o.id,o])),rep=new Set(R.filter(r=>r.delivery_status==="DELIVERED"||r.delivery_status==="PARTIAL").map(r=>r.order_id));
+        const mt=(mk||[]).filter(m=>m.kind==="DELIVERED"&&String(m.mark_date)===t&&!rep.has(m.order_id)),mset=new Set(mt.map(m=>m.order_id));
+        const miss=[...mset].filter(id=>!byId.has(id));
+        for(let i=0;i<miss.length;i+=150){for(const o of (await safe(C.from("orders").select(ORDER_COLS).in("id",miss.slice(i,i+150))))||[])byId.set(o.id,o)}
+        const who=m=>m.marked_by_name||(m.marked_by_role==="MANAGER"?"Sales Head":"Admin");
+        const rows=R.filter(r=>!(r.delivery_status==="NOT_DELIVERED"&&mset.has(r.order_id))).map(r=>({...(byId.get(r.order_id)||{order_no:"PO"}),delivery_status:r.delivery_status,delivery_note:r.delivery_note,reported_at:r.reported_at}))
+          .concat(mt.map(m=>({...(byId.get(m.order_id)||{order_no:"PO"}),delivery_status:"DELIVERED",delivery_note:"Marked delivered by "+who(m)+(m.note?" · "+m.note:""),reported_at:m.marked_at})));
+        const n=s=>rows.filter(r=>r.delivery_status===s).length,bad=rows.filter(r=>r.delivery_status==="NOT_DELIVERED").slice(0,4);
+        const dOf=s=>lst("Today's delivery · "+s.replace("_"," ").toLowerCase(),s==="DELIVERED"?"Driver reports and Mark delivered today":"Driver reports today",rows.filter(r=>r.delivery_status===s),
           [{t:"PO No.",v:"order_no"},{t:"Party",v:"customer_name"},{t:"Cases",v:"total_qty",num:true,sum:true,dec:0},{t:"Amount",v:"total_amount",money:true,sum:true},{t:"Reported",v:r=>r.reported_at?new Date(r.reported_at).toLocaleTimeString("en-IN",{hour:"2-digit",minute:"2-digit"}):""},{t:"Note",v:"delivery_note"}]);
         delivery=card("📦 Today's delivery","",'<div class="rd-bd"><div class="rd-flow rd-flow3">'+step('<span class="g">'+n("DELIVERED")+"</span>","Delivered","",0,"",dOf("DELIVERED"))+step('<span class="a">'+n("PARTIAL")+"</span>","Part delivered","",0,"",dOf("PARTIAL"))+step('<span class="r">'+n("NOT_DELIVERED")+"</span>","Not delivered","",0,"",dOf("NOT_DELIVERED"))+"</div></div>"+
-          bad.map(r=>{const o=byId.get(r.order_id);return dot("red","<b>"+esc(o?o.order_no:"PO")+"</b> "+esc(o?o.customer_name:"")+(r.delivery_note?" — "+esc(r.delivery_note):""))}).join(""))}
+          bad.map(r=>dot("red","<b>"+esc(r.order_no||"PO")+"</b> "+esc(r.customer_name||"")+(r.delivery_note?" — "+esc(r.delivery_note):""))).join(""))}
       let skus="";
       const it=td.length?await itemsOf(td.map(o=>o.id)):[];
       if(it&&it.length){const m=new Map();for(const x of it){if(!inBrand(x.sku_name))continue;const k=key(x.sku_name);const v=m.get(k)||{n:x.sku_name,q:0};v.q+=qtyOf(x);m.set(k,v)}
@@ -432,10 +482,13 @@
        Quick row (5 Nov 2026): Bills to make, PO List, Cash In, Cash Out. Bank and Returns stay in the menu; the full outstanding list stays on Billing & Outstanding. */
     async accounts(){
       const t=today();
-      const [acc,PI,cq,vq,ov,bk,orders,dl,rp,ra]=await Promise.all([safe(C.rpc("lwb_acc_dashboard",{p_from:t,p_to:t})),window.LWBPartyPay?LWBPartyPay.load(C).catch(()=>null):null,
+      const [acc,PI,cq,vq,ov,bk,orders,dl,rp,ra,billed,md]=await Promise.all([safe(C.rpc("lwb_acc_dashboard",{p_from:t,p_to:t})),window.LWBPartyPay?LWBPartyPay.load(C).catch(()=>null):null,
         safe(C.rpc("lwb_acc_cheque_list")),verifyQueue(),overview(),safe(C.rpc("lwb_bank_stmt_open_count")),loadOrders(),
         safe(C.from("lwb_delivery_reports").select("order_id,delivery_status,reported_at,delivery_note").gte("reported_at",t+"T00:00:00+05:30")),
-        safe(C.rpc("lwb_office_list_driver_returns",{p_status:"PENDING_OFFICE"})),safe(C.rpc("lwb_office_list_driver_returns",{p_status:"APPROVED"}))]);
+        safe(C.rpc("lwb_office_list_driver_returns",{p_status:"PENDING_OFFICE"})),safe(C.rpc("lwb_office_list_driver_returns",{p_status:"APPROVED"})),
+        // billed / dispatched POs of any month (loadOrders has this month + open ones only)
+        safe(C.from("orders").select(ORDER_COLS).in("status",["invoiced","dispatched"]).limit(3000)),makeBillsData()]);
+      setMakeBills(PI,md);
       const A=acc?accTotals(acc):null,out=outstanding(PI),drv=queueItem(vq,"DRIVER_PAYMENT"),cn=queueItem(vq,"CREDIT_NOTE");
       const qa='<div class="rd-qa rd-qa-row">'+[["party-billing.html","🧾","Bills to make"],["warehouse-orders.html","📋","PO List"],["accounts-dashboard.html?new=IN","+","Cash In"],["accounts-dashboard.html?new=OUT","−","Cash Out"]]
         .filter(x=>can(x[0])).map(x=>'<a href="'+x[0]+'"><span>'+x[1]+"</span>"+x[2]+"</a>").join("")+"</div>";
@@ -447,14 +500,25 @@
         kpi("amber","Bank to match",bk?fmt(bk.cnt):"—",bk?(num(bk.cnt)?"In "+rs(bk.credit)+" · Out "+rs(bk.debit)+(bk.oldest?" · from "+dmy(bk.oldest):""):"✓ All matched"):"Bank Statement","bank-statement.html")];
       // Where each order is: on the vehicle (not delivered yet) and today's driver reports.
       let where="";
-      if(orders){const O=orders.filter(live),byId=new Map(orders.map(o=>[o.id,o])),R=dl||[];
-        const way=O.filter(o=>["loading","loaded","invoiced","dispatched"].includes(st(o)));
-        const rOf=s=>R.filter(r=>r.delivery_status===s).map(r=>({...(byId.get(r.order_id)||{order_no:"PO"}),delivery_note:r.delivery_note,reported_at:r.reported_at}));
+      // On vehicle (16 Nov 2026, Mohit: it showed 231): loading / loaded / billed POs leave out the ones already
+      // delivered by a driver report or an Admin "Mark delivered" (those kept the status 'loaded'), and older billed POs
+      // are counted too. Delivered today also counts today's "Mark delivered" (it showed 0 when only Admin marked).
+      if(orders){const all=new Map();for(const o of orders.concat(billed||[]))all.set(o.id,o.day?o:{...o,day:istDay(o.order_date||o.created_at)});
+        const AO=[...all.values()],O=AO.filter(live),byId=new Map(AO.map(o=>[o.id,o])),R=dl||[];
+        const onIt=O.filter(o=>["loading","loaded","invoiced","dispatched"].includes(st(o))),done=await deliveredSet(onIt.map(o=>o.id));
+        const way=onIt.filter(o=>!done.has(o.id));
+        const rep=new Set(R.filter(r=>r.delivery_status==="DELIVERED"||r.delivery_status==="PARTIAL").map(r=>r.order_id));
+        const mt=((md&&md[0])||[]).filter(m=>m.kind==="DELIVERED"&&String(m.mark_date)===t&&!rep.has(m.order_id));
+        const miss=[...new Set(mt.map(m=>m.order_id).filter(id=>!byId.has(id)))];
+        for(let i=0;i<miss.length;i+=150){for(const o of (await safe(C.from("orders").select(ORDER_COLS).in("id",miss.slice(i,i+150))))||[])byId.set(o.id,o)}
+        const who=m=>m.marked_by_name||(m.marked_by_role==="MANAGER"?"Sales Head":"Admin");
+        const rOf=s=>R.filter(r=>r.delivery_status===s).map(r=>({...(byId.get(r.order_id)||{order_no:"PO"}),delivery_note:r.delivery_note,reported_at:r.reported_at}))
+          .concat(s==="DELIVERED"?mt.map(m=>({...(byId.get(m.order_id)||{order_no:"PO"}),delivery_note:"Marked delivered by "+who(m)+(m.note?" · "+m.note:""),reported_at:m.marked_at})):[]);
         const DC=[{t:"PO No.",v:"order_no"},{t:"Party",v:"customer_name"},{t:"Cases",v:"total_qty",num:true,sum:true,dec:0},{t:"Amount",v:"total_amount",money:true,sum:true},{t:"Reported",v:r=>r.reported_at?new Date(r.reported_at).toLocaleTimeString("en-IN",{hour:"2-digit",minute:"2-digit"}):""},{t:"Note",v:"delivery_note"}];
         const bad=R.filter(r=>r.delivery_status==="NOT_DELIVERED"||r.delivery_status==="PARTIAL").slice(0,4);
         where=card("🚚 Orders — where are they",go("driver-delivery.html","Delivery / POD →"),'<div class="rd-bd"><div class="rd-flow rd-flow4">'+
-          step(way.length,"On vehicle","",0,"",lst("On vehicle","Loaded / dispatched, not delivered yet",way,null,"warehouse-orders.html"))+
-          step('<span class="g">'+rOf("DELIVERED").length+"</span>","Delivered today","",0,"",lst("Delivered today","Driver reports today",rOf("DELIVERED"),DC))+
+          step(way.length,"On vehicle","",0,"",lst("On vehicle","Loaded / billed, not delivered yet (no driver report, no Mark delivered)",way,null,"warehouse-orders.html"))+
+          step('<span class="g">'+rOf("DELIVERED").length+"</span>","Delivered today","",0,"",lst("Delivered today","Driver reports and Mark delivered today",rOf("DELIVERED"),DC))+
           step('<span class="a">'+rOf("PARTIAL").length+"</span>","Part delivered","",rOf("PARTIAL").length>0,"",lst("Part delivered","Driver reports today",rOf("PARTIAL"),DC))+
           step('<span class="r">'+rOf("NOT_DELIVERED").length+"</span>","Not delivered","",rOf("NOT_DELIVERED").length>0,"",lst("Not delivered","Driver reports today",rOf("NOT_DELIVERED"),DC))+"</div></div>"+
           bad.map(r=>{const o=byId.get(r.order_id)||{};return dot(r.delivery_status==="PARTIAL"?"amb":"red","<b>"+esc(o.order_no||"PO")+"</b> "+esc(o.customer_name||"")+" · "+(r.delivery_status==="PARTIAL"?"part delivered":"not delivered")+(r.delivery_note?" — "+esc(r.delivery_note):""))}).join(""))}
@@ -479,44 +543,50 @@
       return qa+shell(k,[where,rets,ost],[night,cheques,brandCard(ov)]);
     },
 
-    /* ===== Godown Manager: loading, vehicles, stock, returns ===== */
+    /* ===== Godown Manager: only the orders the Sales Head / Admin gave to this login (Mohit, 18 Nov 2026) ===== */
     async warehouse(){
       const t=today();
-      const [orders,veh,gr,tr,vq]=await Promise.all([loadOrders(),safe(C.from("lwb_vehicles").select("vehicle_no,vehicle_type,capacity_kg")),
-        safe(C.from("lwb_godown_reports").select("*").eq("report_date",t).order("created_at",{ascending:false})),safe(C.from("lwb_stock_transit").select("sku_name,cases,status").eq("status","OPEN")),verifyQueue()]);
-      const O=orders||[],load=O.filter(o=>["transport_allocated","loading","loaded"].includes(st(o)));
-      const ids=load.map(o=>o.id),asg=[];
-      for(let i=0;i<ids.length;i+=100){const r=await safe(C.from("dispatch_assignments").select("order_id,vehicle_no,driver_name,id").in("order_id",ids.slice(i,i+100)));if(r)asg.push(...r)}
-      const stock=await stockCheck(orders),short=stock?stock.filter(x=>x.short>0):null;
+      const [orders,gr,vq]=await Promise.all([loadOrders(),
+        safe(C.from("lwb_godown_reports").select("*").eq("report_date",t).order("created_at",{ascending:false})),verifyQueue()]);
+      const O=orders||[],all=O.filter(o=>["transport_allocated","loading","loaded"].includes(st(o)));
+      const ids=all.map(o=>o.id),asg=[],pick=[];
+      for(let i=0;i<ids.length;i+=100){const part=ids.slice(i,i+100);
+        const [r,p]=await Promise.all([safe(C.from("dispatch_assignments").select("order_id,vehicle_no,driver_name,id,loading_manager_id").in("order_id",part)),
+          safe(C.from("lwb_order_pickup").select("order_id,godown_user_id,vehicle_no,driver_name").in("order_id",part))]);
+        if(r)asg.push(...r);if(p)pick.push(...p)}
+      const mine=new Set(asg.filter(a=>a.loading_manager_id===UID).map(a=>a.order_id).concat(pick.filter(p=>p.godown_user_id===UID).map(p=>p.order_id)));
+      const gone=await deliveredSet(all.filter(o=>st(o)==="loaded"&&mine.has(o.id)).map(o=>o.id));
+      const load=all.filter(o=>mine.has(o.id)&&!gone.has(o.id));
       const aOf=new Map();for(const a of asg.sort((x,y)=>String(x.id).localeCompare(String(y.id))))aOf.set(a.order_id,a);
-      const toLoad=load.filter(o=>st(o)==="transport_allocated"),loading=load.filter(o=>st(o)==="loading");
-      const vehNo=o=>{const a=aOf.get(o.id);return a&&a.vehicle_no?String(a.vehicle_no).toUpperCase():"No vehicle"};
-      const inside=gr?gr.filter(x=>x.kind==="VEHICLE"&&["ARRIVED","WORKING"].includes(x.vehicle_status)):null;
-      const ret=queueItem(vq,"RETURN_RECEIVE"),loadingVeh=[...new Set(loading.map(vehNo))];
+      const pOf=new Map(pick.map(p=>[p.order_id,p]));
+      const veh=o=>{const a=aOf.get(o.id)||{},p=pOf.get(o.id)||{};return String(a.vehicle_no||p.vehicle_no||"").toUpperCase()||"No vehicle"};
+      const drv=o=>{const a=aOf.get(o.id)||{},p=pOf.get(o.id)||{};return a.driver_name||p.driver_name||""};
+      const pend=load.filter(o=>st(o)!=="loaded"),done=load.filter(o=>st(o)==="loaded");
+      // Approved cases still to load, order-wise and SKU-wise.
+      const it=pend.length?await itemsOf(pend.map(o=>o.id),"order_id,sku_name,ordered_qty,approved_qty"):[];
+      const cs=x=>num(x.approved_qty??x.ordered_qty),byO=new Map(),byS=new Map();
+      for(const x of it||[]){byO.set(x.order_id,(byO.get(x.order_id)||0)+cs(x));const k=key(x.sku_name),y=byS.get(k)||{sku:x.sku_name,cases:0,orders:new Set()};y.cases+=cs(x);y.orders.add(x.order_id);byS.set(k,y)}
+      const qOf=o=>it?byO.get(o.id)||0:num(o.total_qty),pendQ=pend.reduce((n,o)=>n+qOf(o),0);
+      const rows=pend.map(o=>({...o,vehicle:veh(o),driver:drv(o),cases:qOf(o)}));
+      const ret=queueItem(vq,"RETURN_RECEIVE");
+      const OC=[{t:"Party",v:"customer_name"},{t:"Date",v:"order_date",date:true},{t:"Vehicle",v:"vehicle"},{t:"Driver",v:"driver"},{t:"Cases",v:"cases",num:true,sum:true,dec:0}];
       const k=[
-        kpi("amber","To load today",fmt(toLoad.length)+" order"+(toLoad.length==1?"":"s"),fmt(sum(toLoad,o=>o.total_qty))+" "+qWord()+" · "+fmt(sum(toLoad,o=>o.total_weight))+" kg","loading-dispatch.html",orders&&lst("To load","Driver assigned, waiting for loading",toLoad.map(o=>({...o,vehicle:vehNo(o)})),
-          [{t:"PO No.",v:"order_no"},{t:"Party",v:"customer_name"},{t:"Vehicle",v:"vehicle"},{t:"Cases",v:"total_qty",num:true,sum:true,dec:0},{t:"Weight kg",v:"total_weight",num:true,sum:true,dec:0}],"loading-dispatch.html")),
-        kpi("blue","Loading now",fmt(loadingVeh.length)+" vehicle"+(loadingVeh.length==1?"":"s"),esc(loadingVeh.slice(0,3).join(" · "))||"No vehicle loading","loading-dispatch.html",orders&&lst("Loading now","Orders on the vehicle now",loading.map(o=>({...o,vehicle:vehNo(o)})),
-          [{t:"Vehicle",v:"vehicle"},{t:"PO No.",v:"order_no"},{t:"Party",v:"customer_name"},{t:"Cases",v:"total_qty",num:true,sum:true,dec:0},{t:"Weight kg",v:"total_weight",num:true,sum:true,dec:0}],"loading-dispatch.html")),
-        kpi("teal","Vehicles at godown",inside?fmt(inside.length):"—",inside&&inside.length?esc(inside.slice(0,2).map(x=>x.vehicle_no).filter(Boolean).join(" · ")):"From Godown Report","godown-report.html",inside&&lst("Vehicles at godown","Arrived / working today",inside,
-          [{t:"Vehicle",v:"vehicle_no"},{t:"Status",v:"vehicle_status"},{t:"Person",v:"person_name"},{t:"Note",v:"note"}],"godown-report.html")),
-        kpi("red","Returns to receive",ret?fmt(ret.cnt):"0",ret&&num(ret.amount)?"Value "+rs(ret.amount):"From drivers","driver-returns.html"),
-        kpi("violet","Short stock SKUs",short?fmt(short.length):"—",short?(short.length?"Less than open orders":"All open orders covered"):"Stock not available","inventory.html",short&&lst("Short stock SKUs","Godown stock less than open orders",short,SCOLS,"inventory.html"))];
-      const vm=new Map((veh||[]).map(v=>[String(v.vehicle_no||"").toUpperCase(),v])),g=new Map();
-      for(const o of load){const n=vehNo(o),a=aOf.get(o.id);const x=g.get(n)||{n,driver:a&&a.driver_name||"",orders:[]};x.orders.push(o);g.set(n,x)}
-      const vs=[...g.values()].map(x=>{const s=x.orders.map(st),state=s.includes("loading")?"Loading":s.every(v=>v==="loaded")?"Loaded":"Waiting";return {...x,state,cases:sum(x.orders,o=>o.total_qty),kg:sum(x.orders,o=>o.total_weight),cap:num((vm.get(x.n)||{}).capacity_kg),type:(vm.get(x.n)||{}).vehicle_type||""}})
-        .sort((a,b)=>({Loading:0,Waiting:1,Loaded:2})[a.state]-({Loading:0,Waiting:1,Loaded:2})[b.state]);
-      const queue=orders?card("🚛 Loading queue — vehicle wise",go("loading-dispatch.html","Loading & Dispatch →"),vs.length?'<div class="rd-bd"><div class="rd-vehs">'+vs.slice(0,10).map(v=>{const p=v.cap?pct(v.kg,v.cap):null;
-        return '<div class="rd-veh"><div class="h"><b>'+esc(v.n)+"</b>"+badge(v.state==="Loading"?"a":v.state==="Loaded"?"g":"r",v.state)+"</div><small>"+esc([v.driver,v.type].filter(Boolean).join(" · ")||"—")+" · "+v.orders.length+" PO"+(v.orders.length==1?"":"s")+"</small>"+
-          (p!=null?bar(p,p>100?"red":p>85?"amb":"blu")+"<small>"+fmt(v.kg)+" / "+fmt(v.cap)+" kg filled ("+p+"%) · "+fmt(v.cases)+" cs</small>":"<small>"+fmt(v.cases)+" cs · "+fmt(v.kg)+" kg</small>")+"</div>"}).join("")+"</div></div>":'<div class="rd-empty">No vehicle to load right now.</div>'):"";
-      const sc=stock?card("📦 Stock check for open orders",go("inventory.html","Inventory →"),stock.length?'<div class="rd-scroll"><table><thead><tr><th>SKU</th><th class="n">In godown</th><th class="n">Ordered</th><th class="n">Status</th></tr></thead><tbody>'+
-        stock.slice(0,8).map(x=>"<tr><td>"+esc(x.sku)+'</td><td class="n">'+fmt(x.have)+" "+uOf(x.sku)+'</td><td class="n">'+fmt(x.need)+" "+uOf(x.sku)+'</td><td class="n">'+(x.short?badge("r","Short "+fmt(x.short)):x.have-x.need<x.need*0.2?badge("a","Low after"):badge("g","OK"))+(x.transit?" "+badge("b","+"+fmt(x.transit)+" coming"):"")+"</td></tr>").join("")+"</tbody></table></div>":'<div class="rd-empty">No approved order waiting.</div>',"Ordered = approved, not yet loaded orders."):"";
-      const trans=tr&&tr.length?card("🚚 Goods coming (in transit)",go("stock-transit.html","Stock in Transit →"),'<div class="rd-bd">'+fmt(tr.length)+" line"+(tr.length==1?"":"s")+" · "+fmt(sum(tr,x=>x.cases))+" cases on the way</div>"):"";
+        kpi("amber","Pending orders",fmt(pend.length),pend.length?"Assigned to me for loading":"Nothing assigned","loading-dispatch.html",orders&&lst("Pending orders","Assigned to me, not loaded yet",rows,OC,"loading-dispatch.html")),
+        kpi("blue","Pending loading qty",fmt(pendQ)+" "+qWord(),fmt(byS.size)+" SKU"+(byS.size==1?"":"s")+" · approved qty","loading-dispatch.html"),
+        kpi("teal","Loaded, on the way",fmt(done.length),"Leaves after delivery","loading-dispatch.html"),
+        kpi("red","Returns to receive",ret?fmt(ret.cnt):"0","From drivers","driver-returns.html")];
+      const SB={transport_allocated:["r","To load"],loading:["a","Loading"]};
+      const my=orders?card("🚛 My orders to load",go("loading-dispatch.html","Loading & Dispatch →"),rows.length?'<div class="rd-scroll"><table><thead><tr><th>Party</th><th class="hide-sm">Date</th><th>Vehicle / Driver</th><th class="n">Cases</th><th></th></tr></thead><tbody>'+
+        rows.slice(0,30).map(o=>{const b=SB[st(o)]||["r","To load"];return '<tr class="rd-click" onclick="location.href=\'loading-dispatch.html?order='+encodeURIComponent(o.id)+'\'"><td><b>'+esc(o.customer_name||"—")+"</b><br><small>"+esc(o.order_no||"")+'<span class="show-sm"> · '+esc(dmy(o.order_date))+'</span></small></td><td class="hide-sm">'+esc(dmy(o.order_date))+"</td><td>"+esc(o.vehicle)+"<br><small>"+esc(o.driver||"—")+'</small></td><td class="n"><b>'+fmt(o.cases)+'</b></td><td>'+badge(b[0],b[1])+"</td></tr>"}).join("")+
+        "</tbody></table></div>":'<div class="rd-empty">No order assigned to you right now.</div>',"Only orders the Sales Head / Admin gave you. Tap an order to load it."):"";
+      const sk=[...byS.values()].sort((a,b)=>b.cases-a.cases);
+      const skc=pend.length&&it?card("📦 Pending loading qty — SKU wise",go("loading-dispatch.html","Load →"),'<div class="rd-scroll"><table><thead><tr><th>SKU</th><th class="n">Orders</th><th class="n">Approved qty</th></tr></thead><tbody>'+
+        sk.map(x=>"<tr><td>"+esc(x.sku)+'</td><td class="n">'+x.orders.size+'</td><td class="n"><b>'+fmt(x.cases)+" "+uOf(x.sku)+"</b></td></tr>").join("")+'</tbody><tfoot><tr><td>Total</td><td></td><td class="n"><b>'+fmt(pendQ)+"</b></td></tr></tfoot></table></div>"):"";
       const KIND={VEHICLE:["blu","Vehicle"],DAMAGE:["red","Damage"],ABSENT:["amb","Staff absent"],ISSUE:["amb","Issue"]};
       const rep=gr?card("📝 Godown report — today",go("godown-report.html","Godown Report →"),(gr.length?gr.slice(0,5).map(x=>{const k2=KIND[x.kind]||["blu",x.kind];
-        return dot(k2[0],"<b>"+k2[1]+":</b> "+esc([x.vehicle_no,x.sku_name,x.cases?x.cases+" cs":"",x.pcs?x.pcs+" pcs":"",x.person_name,x.note].filter(Boolean).join(" · ")||"—")+(x.review_status&&x.review_status!=="OPEN"?" "+badge("g",esc(String(x.review_status).replace(/_/g," ").toLowerCase())):""))}).join(""):'<div class="rd-empty">No report today.</div>')+
+        return dot(k2[0],"<b>"+k2[1]+":</b> "+esc([x.vehicle_no,x.sku_name,x.cases?x.cases+" cs":"",x.pcs?x.pcs+" pcs":"",x.person_name,x.note].filter(Boolean).join(" · ")||"—"))}).join(""):'<div class="rd-empty">No report today.</div>')+
         (can("godown-report.html")?'<div class="rd-bd rd-line"><a class="rd-btn" href="godown-report.html">+ New report</a></div>':"")):"";
-      return shell(k,[queue,sc],[trans,rep]);
+      return shell(k,[my],[skc,rep]);
     },
 
     /* ===== Salesman: plan, target, my orders (phone first) ===== */
