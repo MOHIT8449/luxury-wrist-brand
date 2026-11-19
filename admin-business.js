@@ -275,11 +275,11 @@
       cols:[{t:"Type",v:"type"},{t:"Date",v:"day",date:true},{t:"PO / Head",v:"ref"},{t:"Detail",v:"detail"},{t:"Amount ₹",v:"v",money:true,sum:true}],
       onRow:x=>{if(x.r)ERPList.open(poLines(x.r))}}):null;
     const outD=out?()=>{
-      if(out.parties)return {title:"Outstanding",sub:"Party-wise due after advance",rows:out.parties,page:okPage("party-billing.html"),pageText:"Open Billing & Outstanding →",
+      if(out.parties)return {title:"Outstanding",sub:"Party-wise due after advance",rows:out.parties,page:okPage("party-billing.html"),pageText:"Open Accounts →",
         cols:[{t:"Party",v:"party"},{t:"Due ₹",v:"due",money:true,sum:true},{t:"Oldest bill (days)",v:"oldest",num:true,dec:0}]};
       const o=(CTX.ov&&CTX.ov.outstanding)||{};
-      return {title:"Outstanding",sub:"Brand-wise due · party list is on Billing & Outstanding",rows:(CTX.companies||[]).filter(c=>o[c.id]).map(c=>({brand:c.name,due:num(o[c.id].due),over:num(o[c.id].overdue)})),
-        page:okPage("party-billing.html"),pageText:"Open Billing & Outstanding →",cols:[{t:"Brand",v:"brand"},{t:"Due ₹",v:"due",money:true,sum:true},{t:"Past credit days ₹",v:"over",money:true,sum:true}]};
+      return {title:"Outstanding",sub:"Brand-wise due · party list is on Accounts",rows:(CTX.companies||[]).filter(c=>o[c.id]).map(c=>({brand:c.name,due:num(o[c.id].due),over:num(o[c.id].overdue)})),
+        page:okPage("party-billing.html"),pageText:"Open Accounts →",cols:[{t:"Brand",v:"brand"},{t:"Due ₹",v:"due",money:true,sum:true},{t:"Past credit days ₹",v:"over",money:true,sum:true}]};
     }:null;
     const stockD=SV.ok?()=>stockList("Stock value","Godown stock × landing (today)",SV.rows):null;
     const cashD=M.acc?()=>({title:"Cash + Bank",sub:"Closing cash in hand and bank balances",page:okPage("accounts-dashboard.html"),pageText:"Open Accounts →",

@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0"><script src="erp-fit.js"></script>
-  <title>Billing &amp; Outstanding | Luxury Wrist Brand ERP</title>
+  <title>Accounts | Luxury Wrist Brand ERP</title>
   <script src="vendor/supabase-js-2.119.0.js"></script>
   <script src="erp-date.js"></script>
   <link rel="stylesheet" href="erp-shell.css">
@@ -14,6 +14,7 @@
   <script src="brand-filter.js"></script>
   <script src="party-pay.js"></script>
   <script src="bill-change.js"></script>
+  <script src="acc-hub.js"></script>
   <style>
     .status{text-align:center;padding:80px 20px;font-size:15px;color:#555}
     [hidden]{display:none!important}
@@ -21,8 +22,6 @@
     .pb-msg.bad{background:#ffebeb;color:#9b2020}.pb-msg.ok{background:#e3f5ec;color:#13824a}
     .pb-top{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:0 0 12px}
     .pb-top h1{margin:0;font-size:20px}.pb-top .sp{flex:1 1 auto}.pb-top .lwb-brands{margin:0}
-    /* phone: the top bar already shows the page name, so Party payment + Refresh sit in one row */
-    @media(max-width:600px){.pb-top h1,.pb-top .sp{display:none}.pb-top #brandBox{flex:1 1 100%}.pb-top #brandBox:empty{display:none}.pb-top .pb-btn{flex:1 1 0}}
     .btag{display:inline-flex;align-items:center;gap:4px;font-size:12px;font-weight:700;color:var(--bc);white-space:nowrap}.btag i{width:8px;height:8px;border-radius:50%;background:var(--bc)}
     .pb-t td.bc small{white-space:nowrap}.bsel{height:34px;padding:0 6px;border:1.5px solid #e0a1a1;border-radius:7px;font:inherit;font-size:13px;max-width:160px;display:block;margin-top:4px}
     .pb-btn{height:38px;border-radius:8px;padding:0 14px;font:inherit;font-weight:700;font-size:14px;cursor:pointer;border:1px solid var(--erp-line);background:#fff;color:var(--erp-ink);display:inline-flex;align-items:center;justify-content:center;gap:6px;text-decoration:none;white-space:nowrap}
@@ -168,25 +167,15 @@
 <body>
   <div id="loading" class="status">Checking account access...</div>
   <main id="page" class="erp-main" hidden>
-    <div class="pb-top"><h1>Billing &amp; Outstanding</h1><div id="brandBox"></div><span class="sp"></span>
-      <button type="button" class="pb-btn grn" id="payBtn">+ Party payment</button>
-      <button type="button" class="pb-btn" id="retBtn" title="Goods came back from a party (cases and pieces), with or without a bill">↩ Return</button>
-      <button type="button" class="pb-btn" id="reload">↻ Refresh</button></div>
+    <!-- Accounts in one place (19 Nov 2026): same header as accounts-dashboard.html, see acc-hub.js -->
+    <div class="hub-top"><h1>Accounts</h1><div id="brandBox"></div><span class="sp"></span><button type="button" class="hub-ico" id="reload" title="Refresh">↻</button></div>
+    <div class="hub-acts" id="hubActs"></div>
     <div id="msg" class="pb-msg" hidden></div>
-    <div class="pb-kpis" id="kpis"></div>
+    <div class="hub-als" id="hubAls"></div>
+    <div class="hub-kpis" id="hubKpis"></div>
     <section class="pb-card">
-      <div class="pb-tabs" id="tabs">
-        <button type="button" data-t="make">Bills to make<span class="cnt" id="cMake" hidden></span></button>
-        <button type="button" data-t="made">Bills made</button>
-        <button type="button" data-t="due">To collect</button>
-        <button type="button" data-t="led">Ledger</button>
-        <button type="button" data-t="pay">Payments</button>
-        <button type="button" data-t="ret">Returns</button>
-        <button type="button" data-t="grp">Party groups</button>
-        <button type="button" data-t="chg" id="tChg">PO changes<span class="cnt" id="cChg" hidden></span></button>
-        <input class="q" id="q" type="search" placeholder="Search party, bill name, PO, bill no." autocomplete="off">
-        <button type="button" class="pb-btn sm" id="xl">⬇ Excel</button>
-      </div>
+      <div class="hub-tabs" id="hubTabs"></div>
+      <div class="hub-q"><input id="q" type="search" placeholder="Search party, bill name, PO, bill no." autocomplete="off"><button type="button" id="xl">⬇ Excel</button></div>
       <div id="body"></div>
     </section>
     <p class="pb-note" id="note"></p>
@@ -223,7 +212,7 @@
     function say(t,bad,ok){el("msg").hidden=!t;el("msg").textContent=t||"";el("msg").className="pb-msg"+(bad?" bad":ok?" ok":"")}
 
     async function load(){
-      el("reload").disabled=true;
+      el("reload").disabled=true;LWBAccHub.loadCash(client);
       try{
         const [x,early,chg,mk,tb,pr,mm]=await Promise.all([LWBPartyPay.load(client),client.rpc("lwb_bills_before_loading"),client.rpc("lwb_bill_change_list",{p_days:30}),client.rpc("lwb_admin_order_marks",{p_ids:null}),client.rpc("lwb_tax_bill_access"),client.rpc("lwb_tally_no_problems"),client.rpc("lwb_bill_mismatch_list",{p_days:400})]);
         // Tax invoice print in the Tally layout (lwb_tax_bill_print_setup.sql): button only while Admin has it on for me.
@@ -309,25 +298,11 @@
       const per=sign=>!fb&&BR().length?BR().map(c=>{const v=[...info.parties.values()].reduce((a,p)=>a+Math.max(0,sign*LWBPartyPay.slice(p,c.id).net),0);return c.name+" "+rs(v)}).join(" · "):"";
       // one balance per party: positive = to collect, negative = advance
       const totDue=parties.reduce((a,p)=>a+Math.max(0,p.net),0),totAdv=parties.reduce((a,p)=>a+Math.max(0,-p.net),0);
-      const rec=(info.raw.receipts||[]).filter(r=>!r.cancelled&&r.pay_date===info.today&&inB(r.company_id)).reduce((a,r)=>a+Number(r.total),0);
-      el("kpis").innerHTML=[
-        ["make","#c8102e","Bills to make",make.length,rs(make.reduce((a,o)=>a+Number(o.erp_amount||0),0))+(make.some(o=>o.early)?" · "+make.filter(o=>o.early).length+" not loaded yet":"")],
-        ["due","#b3122b","To collect",rs(totDue),per(1)||parties.filter(p=>p.net>0.5).length+" parties"],
-        ["due","#13824a","Advance with us",rs(totAdv),per(-1)||parties.filter(p=>p.net<-0.5).length+" parties"],
-        ["pay","#00434d","Received today",rs(rec),"party payments"]].map(([t,c,h,v,s])=>`<button type="button" class="pb-kpi" style="--c:${c}" data-go="${t}"><h3>${h}</h3><b>${v}</b><small>${s}</small></button>`).join("");
-      el("kpis").querySelectorAll("[data-go]").forEach(b=>b.onclick=()=>{tab=b.dataset.go;render()});
-      // Count card → list popup as well (erp-list.js); the tab below also switches.
-      if(window.ERPList){const kc=el("kpis").querySelectorAll(".pb-kpi"),PC=[{t:"Party",v:"party"},{t:"Balance",v:p=>Math.abs(p.net),money:true,sum:true},{t:"Bills",v:p=>(p.bills||[]).length,num:true,dec:0},{t:"Oldest bill",v:"oldest",date:true}];
-        const PA=[...PC,{t:"Check",v:p=>advNote(p)}];
-        const L=(i,o)=>kc[i]&&ERPList.card(kc[i],()=>o());
-        L(0,()=>({title:"Bills to make",sub:"Approved and loaded POs without a Tally bill",rows:toMake(),cols:[{t:"PO No.",v:"order_no"},{t:"Party",v:"party"},{t:"Stage",v:o=>o.early?"Approved, not loaded":"Loaded"},{t:"Date",v:o=>o.dispatch_date||o.order_date,date:true},{t:"ERP amount",v:"erp_amount",money:true,sum:true}]}));
-        L(1,()=>({title:"To collect",sub:"Parties with money due",rows:parties.filter(p=>p.net>0.5).sort((a,b)=>b.net-a.net),cols:PC}));
-        L(2,()=>({title:"Advance with us",sub:"Parties who paid in advance",rows:parties.filter(p=>p.net<-0.5).sort((a,b)=>a.net-b.net),cols:PA}));
-        L(3,()=>({title:"Received today",sub:"Party payments today",rows:(info.raw.receipts||[]).filter(r=>!r.cancelled&&r.pay_date===info.today&&inB(r.company_id)),
-          cols:[{t:"Party",v:"party"},{t:"Mode",v:r=>(r.modes||[]).map(m=>m.mode).join(", ")},{t:"Ref",v:r=>(r.modes||[]).map(m=>m.ref).filter(Boolean).join(", ")},{t:"By",v:"by"},{t:"Amount",v:"total",money:true,sum:true}]}))}
-      el("cMake").hidden=!make.length;el("cMake").textContent=make.length;
-      const nw=changes.filter(c=>c.status==="WAITING").length;el("cChg").hidden=!nw;el("cChg").textContent=nw;
-      el("tabs").querySelectorAll("[data-t]").forEach(b=>b.setAttribute("aria-pressed",String(b.dataset.t===tab)));
+      // six cards of the Accounts header (acc-hub.js); the cash cards come from LWBAccHub.loadCash
+      LWBAccHub.kpis(LWBAccHub.billKpis({make:make.length,makeAmt:make.reduce((a,o)=>a+Number(o.erp_amount||0),0),early:make.filter(o=>o.early).length,
+        due:totDue,dueN:parties.filter(p=>p.net>0.5).length,dueSub:per(1),adv:totAdv,advN:parties.filter(p=>p.net<-0.5).length,advSub:per(-1),
+        brand:fb&&info.brandOf?(info.brandOf(fb)||{}).name:""}));
+      LWBAccHub.counts({make:make.length,chg:changes.filter(c=>c.status==="WAITING").length});LWBAccHub.setTab(tab);
       el("xl").hidden=false;el("q").hidden=tab==="led";
       ({make:renderMake,made:renderMade,due:renderDue,led:renderLed,pay:renderPay,ret:renderRet,grp:renderGroups,chg:renderChg})[tab]();
       wireChg(el("body"));
@@ -770,11 +745,11 @@
       if(bad.length<names.length){toast((names.length-bad.length)+" name(s) saved under "+parent);el("gM").value="";await load()}
     }
 
-    el("tabs").querySelectorAll("[data-t]").forEach(b=>b.onclick=()=>{tab=b.dataset.t;el("q").value="";render()});
     el("q").oninput=()=>{const k=el("q").value;render();el("q").value=k};
     el("reload").onclick=load;
-    el("payBtn").onclick=()=>{if(info)payNow("")};
-    el("retBtn").onclick=()=>{if(info)newReturn(null,"")};
+    // Accounts header (acc-hub.js): Billing tabs open here, Cash & Bank tabs open accounts-dashboard.html
+    LWBAccHub.mount({page:"bill",tab,onTab:t=>{tab=t;el("q").value="";if(info)render()},
+      onAct:a=>{if(!info)return;if(a==="pay")payNow("");else if(a==="ret")newReturn(null,"")}});
     el("xl").onclick=()=>LWBExcel.write("billing-"+tab+"-"+info.today,[{name:{make:"Bills to make",made:"Bills made",due:"To collect",led:"Ledger",pay:"Payments",ret:"Returns",grp:"Party groups",chg:"PO changes"}[tab]||"Sheet",rows:sheet.length?sheet:[["Nothing"]]}]).catch(e=>say(e.message,true));
 
     (async()=>{
@@ -787,7 +762,10 @@
       ERPShell.mount({role:realRole||role,name:p.full_name||session.user.email,onLogout:async()=>{await client.auth.signOut();location.replace("login.html")}});
       el("loading").hidden=true;el("page").hidden=false;
       const t=new URLSearchParams(location.search).get("tab");if(["make","made","due","led","pay","ret","grp","chg"].includes(t))tab=t;else if(ledParty)tab="led";
+      LWBAccHub.setTab(tab);
       await load();
+      // Return button of the cash half: ?tab=ret&new=ret opens the Return form here
+      if(info&&new URLSearchParams(location.search).get("new")==="ret"){history.replaceState(null,"",location.pathname+"?tab=ret");newReturn(null,"")}
     })();
   </script>
 </body>
