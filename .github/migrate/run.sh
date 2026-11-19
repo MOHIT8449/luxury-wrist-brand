@@ -57,6 +57,13 @@ do $$ begin
 end $$;
 SQL
   grep -E '^m[0-9]' "$W/w.log" | tr '\n' ' '; echo
+  # Skip data for tables the new project does not let postgres write (Supabase-managed, e.g. storage.buckets_vectors).
+  psql "$NEW_URL" -Atq -c "select n.nspname||'.'||c.relname from pg_class c join pg_namespace n on n.oid=c.relnamespace where c.relkind in ('r','p') and n.nspname not in ('pg_catalog','information_schema','public') and not has_table_privilege(c.oid,'INSERT')" > "$W/skip.txt"
+  awk -v SK="$W/skip.txt" 'BEGIN{while((getline l<SK)>0)sk[l]=1}
+    /^COPY /{t=$2; gsub(/"/,"",t); if(t in sk){skip=1; print "skipped "t > "/dev/stderr"; next}}
+    skip{ if($0=="\\.") skip=0; next } {print}' "$W/data.sql" > "$W/data2.sql" 2>"$W/skip.log"
+  mv "$W/data2.sql" "$W/data.sql"; sort -u "$W/skip.log" | tr '\n' ' '; echo
+  echo "data tables: $(grep -c '^COPY ' "$W/data.sql")"
   echo "$(date +%T) restore"
   # 3. Restore into the new project.
   psql "$NEW_URL" -q -o /dev/null -f "$W/roles.sql" > "$W/r1.log" 2>&1; errs "$W/r1.log" 5
