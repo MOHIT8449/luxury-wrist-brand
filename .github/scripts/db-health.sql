@@ -76,3 +76,4 @@ select tablename, policyname, cmd, length(qual) qual_len, left(regexp_replace(co
 
 \echo == Disk / WAL ==
 select pg_size_pretty(sum(size)) wal_size from pg_ls_waldir();
+# rerun 1539
