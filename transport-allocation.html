@@ -115,7 +115,8 @@ let taTab='merge';try{const t=localStorage.getItem('lwbTaTab');if(TA_TABS.some(x
 const isSelfPickupTA=o=>String(o&&o.transportation||'').split('|')[0].trim().toUpperCase()==='SELF PICKUP';
 const fullKg=()=>{try{return Number(localStorage.getItem('lwbFullLoadKg'))||3000;}catch(_){return 3000;}};
 const isFullTA=o=>(Number(o.total_weight)||0)>=fullKg();
-const loadingStarted=o=>['loading','loaded','invoiced'].includes(status(o.status));
+// Change allowed until loading is CONFIRMED (Mohit, 19 Nov 2026); after that only Admin, from the PO page.
+const loadingStarted=o=>['loaded','invoiced'].includes(status(o.status));
 function taLists(){const ready=orders.filter(o=>stage(o)==='ready'),alloc=orders.filter(o=>stage(o)==='allocated');
   return {merge:ready.filter(o=>!isSelfPickupTA(o)&&!isFullTA(o)),full:ready.filter(o=>!isSelfPickupTA(o)&&isFullTA(o)),assigned:alloc.filter(o=>!loadingStarted(o)),pickup:ready.filter(isSelfPickupTA),all:[...ready,...alloc]};}
 function render(){const available=orders.filter(o=>stage(o)==='ready'||stage(o)==='allocated');$('approvedCount').textContent=available.filter(o=>stage(o)==='ready').length;$('allocatedCount').textContent=available.filter(o=>stage(o)==='allocated').length;$('totalCount').textContent=available.length;
@@ -247,8 +248,8 @@ async function saveAllocation(e){
         const latest=await db.from('orders').select('status').eq('id',current.id).single();
         if(latest.error)throw latest.error;
         const latestStatus=status(latest.data.status);
-        if(!['approved','approved_next','manager_approved','warehouse_approved','transport_allocated','allocated'].includes(latestStatus))
-          throw Error('no longer available for transport assignment. Loading or billing may have started.');
+        if(!['approved','approved_next','manager_approved','warehouse_approved','transport_allocated','allocated','loading'].includes(latestStatus))
+          throw Error('no longer available for transport assignment. Loading is confirmed.');
         let result;
         if(existing){
           result=await db.from('dispatch_assignments').update(payload).eq('id',existing.id).select('id').single();
@@ -256,7 +257,7 @@ async function saveAllocation(e){
           result=await db.from('dispatch_assignments').insert(payload).select('id').single();
         }
         if(result.error)throw result.error;
-        if(latestStatus!=='transport_allocated'){
+        if(latestStatus!=='transport_allocated'&&latestStatus!=='loading'){
           const {data:updated,error:orderError}=await db.from('orders')
             .update({status:'transport_allocated'}).eq('id',current.id)
             .eq('status',latest.data.status).select('id');
