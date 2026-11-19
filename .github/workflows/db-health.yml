@@ -1,0 +1,33 @@
+# Read-only database health check (speed). Changes nothing.
+# Prints only counts / timings / table and function names (no row data), because this repo is public.
+name: DB health check
+
+on:
+  push:
+    branches: [claude/db-health-check]
+  workflow_dispatch:
+
+env:
+  SUPABASE_PROJECT_REF: txkbhadzdbxpieunfvox
+  SUPABASE_DB_HOST: aws-0-ap-northeast-2.pooler.supabase.com
+
+jobs:
+  health:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Health check
+        env:
+          DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+        run: |
+          if [ -n "$DB_PASSWORD" ]; then
+            DB_URL="postgresql://postgres.$SUPABASE_PROJECT_REF:$(python3 -c 'import os,urllib.parse;print(urllib.parse.quote(os.environ["DB_PASSWORD"].strip(),safe=""))')@$SUPABASE_DB_HOST:5432/postgres"
+            echo "::add-mask::$DB_URL"
+          fi
+          command -v psql >/dev/null || { sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client; }
+          export PGCONNECT_TIMEOUT=20
+          echo "== API latency from runner =="
+          for i in 1 2 3; do curl -s -o /dev/null -w "auth health %{http_code} %{time_total}s\n" -H "apikey: sb_publishable_W4I3Q5ODf0g17sq5uDml2Q_sLolXYEk" https://$SUPABASE_PROJECT_REF.supabase.co/auth/v1/health; done
+          for i in 1 2 3; do curl -s -o /dev/null -w "site %{http_code} %{time_total}s\n" https://luxury-wrist-brand.pages.dev/dashboard.html; done
+          psql "$DB_URL" -X -v ON_ERROR_STOP=0 -P pager=off -f .github/scripts/db-health.sql
