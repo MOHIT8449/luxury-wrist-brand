@@ -538,6 +538,7 @@
     compactTables();
     if(role){if(!stayLoggedIn(role))idleLogout();otpGuard();}
     bell(top,role);
+    brandTop(top,role);
     refreshAccess().then(changed=>{
       if(!changed)return;
       if(blocked(role,page,hiddenPages()))return;
@@ -806,6 +807,41 @@
     liveLocation();
     tripRent(role);
     teamChat(role);
+  }
+
+  // 🏷 ONE brand picker for the whole site, next to the page name (Mohit, 19 Nov 2026):
+  // All brands / Coca-Cola / Rajnigandha / any company added later in Companies (lwb_companies).
+  // The choice is kept on this device and every page (dashboard, Accounts, stock, PO list ...) shows
+  // only that brand; All = every brand together. A Sales Head / Salesman tied to brands in Companies >
+  // Team brands gets only those (the database already returns only his SKUs / POs), so one brand = a
+  // fixed label, nothing to change. Godown Manager and Driver work on what is assigned: no picker.
+  // Page brand chips / drop-downs are hidden and follow this one (brand-filter.js LWBBrand.pick).
+  async function brandTop(top,role){
+    try{
+      if(!window.supabase||!role||role==="warehouse"||role==="driver"||top.querySelector(".erp-brandpick"))return;
+      const c=window.__lwbBellClient||(window.__lwbBellClient=window.supabase.createClient(URL_,KEY_));
+      const {data}=await c.auth.getSession();if(!data||!data.session)return;
+      if(!window.LWBBrand)await new Promise((ok,bad)=>{const s=document.createElement("script");s.src="brand-filter.js";s.onload=ok;s.onerror=bad;document.head.appendChild(s)});
+      const info=await window.LWBBrand.load(c);
+      const list=(info.companies||[]).filter(x=>!info.mine||info.mine.includes(x.id));
+      if(!list.length)return;
+      const box=document.createElement("div");box.className="erp-brandpick";box.setAttribute("data-nosearch","");
+      const crumb=top.querySelector(".erp-crumb");crumb.after(box);top.classList.add("has-brand");
+      // Phone: the top bar has no room for a full name, so a short word shows (All / COCA / RAJNI);
+      // tapping opens the normal list with the full names.
+      const short=n=>String(n||"").trim().split(/[\s\-_/.]+/)[0].slice(0,5)||String(n||"").slice(0,5);
+      const paint=id=>{const b=list.find(x=>x.id===id);box.style.setProperty("--bc",b?b.color||"#c9b26a":"#c9b26a");box.classList.toggle("on",!!b);
+        const l=box.querySelector(".bp-l");if(l)l.textContent=b?short(b.name):"All"};
+      if(list.length===1){
+        box.classList.add("one");box.title="Your brand";box.innerHTML='<i></i><span class="bp-l">'+esc(short(list[0].name))+'</span><b>'+esc(list[0].name)+'</b>';box.querySelector(".bp-l").className="bp-s";paint(list[0].id);return;
+      }
+      const v=window.LWBBrand.get(list);
+      const sel=document.createElement("select");sel.setAttribute("aria-label","Brand (whole site)");sel.title="Brand for every page";
+      sel.innerHTML='<option value="">All brands</option>'+list.map(x=>'<option value="'+esc(x.id)+'">'+esc(x.name)+'</option>').join("");
+      sel.value=v;box.innerHTML='<i></i><span class="bp-l"></span>';box.appendChild(sel);paint(v);
+      sel.onchange=()=>{paint(sel.value);window.LWBBrand.pick(sel.value)};
+      document.addEventListener("lwb:brand",e=>{const id=e.detail.id;if(sel.value!==id&&[...sel.options].some(o=>o.value===id)){sel.value=id;paint(id)}});
+    }catch(e){}
   }
 
   // 💬 Team Chat: round chat button in the corner of every page, popups for new messages (team-chat.js,

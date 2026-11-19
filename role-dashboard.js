@@ -330,7 +330,8 @@
     if(v&&home&&box.contains(v))home.prepend(v);
     box.innerHTML=html;
     if(window.ERPList)box.querySelectorAll("[data-list]").forEach(el=>ERPList.card(el,()=>{const m=LISTS.get(el.dataset.list);return m&&m()},el.classList.contains("rd-step")?false:undefined));
-    brandPick(BRAND_ROLES.includes(ROLE)&&BR.list.length>1&&!!window.LWBBrand&&!!box.querySelector(".rd-kpis,#bzDash"));
+    // Brand: only the picker in the top bar now (Mohit, 19 Nov 2026); the dashboard follows it.
+    brandPick(false);
     const s=document.getElementById("rdSide");if(v&&s)s.prepend(v);
   }
   // Brand pick: a dropdown right next to the "Admin view" dropdown in the page head (Mohit, 2 Nov 2026; was chips).
@@ -656,6 +657,7 @@
     if(BR.id)BR.allow=new Set([BR.id]);else if(b&&b.mine&&b.mine.length&&ROLE!=="accounts")BR.allow=new Set(b.mine);
     if(BR.allow)BR.map=await LWBBrand.skuMap(C);
   }
+  document.addEventListener("lwb:brand",()=>{if(ROLE&&box)render()});
   async function render(){
     const my=++seq;
     LISTS=new Map();
