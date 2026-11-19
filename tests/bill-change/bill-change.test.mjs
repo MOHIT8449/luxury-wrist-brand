@@ -82,6 +82,8 @@ await db.exec(await sql('lwb_bill_change_po_sync_setup.sql'));
 await db.exec(await sql('lwb_bill_change_po_sync_setup.sql'));  // safe to run again
 await db.exec(await sql('lwb_bill_change_po_note_setup.sql'));
 await db.exec(await sql('lwb_bill_change_po_note_setup.sql'));  // safe to run again
+await db.exec(await sql('lwb_bill_change_loaded_later_fix.sql'));
+await db.exec(await sql('lwb_bill_change_loaded_later_fix.sql'));  // safe to run again
 await db.exec('GRANT USAGE ON SCHEMA public,auth TO authenticated; GRANT SELECT,UPDATE ON orders TO authenticated');
 
 const today=(await db.query("select (now() at time zone 'Asia/Kolkata')::date::text d")).rows[0].d;
@@ -283,4 +285,42 @@ test('Before loading no stock moves',async()=>{
  const j=await its(p);
  await req(p,[{item_id:j.items[0].item_id,sku_name:'THUMS UP 250',qty:5,rate:400}]);
  assert.deepEqual(await moves(p),[]);
+});
+
+// ---- 19 Nov 2026 (LXY-00441): asked before loading, PO loaded + Tally bill entered at the new value since ----
+test('Asked before loading, loaded + billed at new value since: Admin approve works, stock back, bill untouched',async()=>{
+ await db.exec(`CREATE OR REPLACE FUNCTION public.lwb_stx_base() RETURNS TABLE(sku_id uuid,saleable_pcs numeric,damaged_pcs numeric) LANGUAGE sql STABLE AS $$
+  SELECT s.id,coalesce(n.saleable_pcs,0),0::numeric FROM public.sku_master s LEFT JOIN public.stock_now n ON n.sku_id=s.id $$`);
+ const p=(await db.query("insert into orders(order_no,customer_name,status) values('LXY-00441','AMBALAL TOBECO','approved') returning id")).rows[0].id;
+ await db.query("insert into order_items(order_id,sku_name,ordered_qty,approved_qty,rate) values ($1,'MAAZA 600',10,10,665),($1,'THUMS UP 250',5,5,455)",[p]);
+ await as('accounts');
+ const j=await its(p);assert.equal(j.qty_col,'approved_qty');
+ const t=j.items.find(i=>i.sku_name==='THUMS UP 250');
+ const r=await req(p,[{item_id:t.item_id,sku_name:'THUMS UP 250',qty:5,rate:455}],'Qty change before loading');
+ assert.equal(Number(r.diff),-6650);
+ // loaded with the old qty, then the Tally bill entered at the new value 2275
+ await db.query("update orders set status='loaded' where id=$1",[p]);
+ await db.query("update order_items set loaded_qty=approved_qty where order_id=$1",[p]);
+ await saveBill(p,'T441',2275);
+ await as('admin');
+ const d=await decide(r.id,true);
+ assert.equal(d.status,'APPROVED');assert.equal(d.bill.already,true);
+ assert.equal(Number((await inv(p)).a),2275);
+ assert.deepEqual((await items(p)).map(i=>[i.sku_name,i.a,i.l]),[['MAAZA 600',0,0],['THUMS UP 250',5,5]]);
+ assert.deepEqual((await head(p)).slice(0,2),[5,2275]);
+ assert.deepEqual(await moves(p),[{sku_name:'MAAZA 600',f:'PARTY',t:'SALEABLE',q:240,kind:'BILL_CHANGE',source:'BILL_CHANGE'}]);
+ assert.equal((await db.query('select qty_col from lwb_bill_changes where id=$1',[r.id])).rows[0].qty_col,'loaded_qty');
+});
+
+test('Asked before loading, loaded with another qty since: clear send-back message',async()=>{
+ const p=(await db.query("insert into orders(order_no,customer_name,status) values('LXY-00442','RAM STORES','approved') returning id")).rows[0].id;
+ await db.query("insert into order_items(order_id,sku_name,ordered_qty,approved_qty,rate) values ($1,'MAAZA 600',10,10,500)",[p]);
+ await as('accounts');
+ const j=await its(p);
+ const r=await req(p,[{item_id:j.items[0].item_id,sku_name:'MAAZA 600',qty:6,rate:500}],'Qty change before loading');
+ await db.query("update orders set status='loaded' where id=$1",[p]);
+ await db.query("update order_items set loaded_qty=8 where order_id=$1",[p]);
+ await as('admin');
+ await assert.rejects(decide(r.id,true),/asked before loading, and MAAZA 600 was loaded 8 \(not 10\)/);
+ assert.equal((await db.query('select status,qty_col from lwb_bill_changes where id=$1',[r.id])).rows[0].qty_col,'approved_qty');
 });
