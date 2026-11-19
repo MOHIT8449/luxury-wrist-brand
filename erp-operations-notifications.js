@@ -441,6 +441,9 @@
     list.append(box);
    }
   }
+  // Godown Manager: only his own work (loading given to him, purchase vehicle to unload, tasks, his returns).
+  // The database already sends / shows only these (lwb_gm_notify_scope_setup.sql); this is the same rule by type.
+  const GM_BELL=/^(LOADING_ASSIGNMENT_DISPATCH|PURCHASE_ARRIVED|TASK_|DELIVERY_RETURN_RECEIVE|ANNOUNCEMENT)/;
   async function reloadData(){
    let qy=db.from("erp_notifications").select("*").eq("user_id",user.id);
    // A picked older date reads that day only, so it is not cut by the latest-70 limit.
@@ -450,7 +453,7 @@
    // Salesman: his order updates show again (17 Nov 2026); live GPS / loading-assignment bells stay hidden.
    // Driver sees no history: only the last 12 hours.
    // Team chat bells (CHAT_MSG, lwb_team_chat_setup.sql) are only for the phone push: the chat button shows them.
-   const rows=(data||[]).filter(n=>baseType(n)!=="CHAT_MSG").filter(n=>!["sales","salesman"].includes(String(role||"").trim().toLowerCase())||!/^(LIVE_|GPS_|TRACK|LOADING_ASSIGNMENT)/.test(baseType(n))).filter(n=>String(role||"").toLowerCase()!=="driver"||Date.now()-new Date(n.created_at)<12*36e5),unread=rows.filter(n=>!n.is_read).length;
+   const rows=(data||[]).filter(n=>baseType(n)!=="CHAT_MSG").filter(n=>!["sales","salesman"].includes(String(role||"").trim().toLowerCase())||!/^(LIVE_|GPS_|TRACK|LOADING_ASSIGNMENT)/.test(baseType(n))).filter(n=>String(role||"").toLowerCase()!=="driver"||Date.now()-new Date(n.created_at)<12*36e5).filter(n=>String(role||"").trim().toLowerCase()!=="warehouse"||GM_BELL.test(baseType(n))),unread=rows.filter(n=>!n.is_read).length;
    bell.setAttribute("aria-label", "Notifications" + (unread ? ", " + unread + " unread" : ""));
    newTxt.textContent=unread?unread+" new":"";newTxt.hidden=!unread;
    count.textContent=unread>99?"99+":String(unread);count.style.display=unread?"inline-block":"none";
