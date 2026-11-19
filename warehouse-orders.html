@@ -3664,8 +3664,8 @@ async function bulkApprove() {
 async function bulkPrint() {
   const list = pickedOrders();
   if (!list.length || bulkBusy) return;
-  const notYet = list.filter(o => !printAllowed(o));
-  if (notYet.length) { alert("Print opens after transport is assigned. No transport yet: " + notYet.map(o => o.order_no).join(", ") + ". Untick them or assign transport first."); return; }
+  const notYet = list.filter(o => !poPrintAllowed(o));
+  if (notYet.length) { alert("Print PO opens once the PO is approved. Not approved yet: " + notYet.map(o => o.order_no).join(", ") + ". Untick them or approve first."); return; }
   bulkBusy = true;
   renderSelBar();
   const parts = [];
@@ -4455,7 +4455,7 @@ function renderOrders() {
               ${spButtonFor(order) ? `<button class="btn btn-light" title="Pallet / Sheet given to party and returned" onclick="openSp('${order.id}')">▦<span class="lbl-long"> Pallet</span></button>` : ""}
               ${CAN_BILL && VIEW_ONLY && eligibleForPoPrint(order) ? `<button class="btn btn-green" title="Enter the Tally bill no." onclick="openBill('${order.id}')">🧾 Bill</button>` : ""}
               ${IS_ADMIN && rateWait.has(order.id) ? `<button class="btn btn-green" title="Rate below min: check and approve" onclick="openRateOk('${order.id}')">₹ Rate OK</button>` : ""}
-              ${printAllowed(order) ? `<button class="btn btn-light" title="Print PO" onclick="printPoFromList('${order.id}')">🖨 PO</button>` : ""}
+              ${poPrintAllowed(order) ? `<button class="btn btn-light" title="Print PO" onclick="printPoFromList('${order.id}')">🖨 PO</button>` : ""}
               ${TAX_BILL && printAllowed(order) ? `<button class="btn btn-light" title="Print tax invoice (Tally layout)" onclick="taxBillPrint('${order.id}', this)">🖨 Bill</button>` : ""}
               ${eligibleForPoPrint(order) && !VIEW_ONLY ? `<button class="btn btn-green" title="Driver / Vehicle / Godown Manager"
                 onclick="openTransportAllocation('${order.id}')">🚚<span class="lbl-long"> Transport</span></button>` : ""}
@@ -5379,13 +5379,24 @@ function printAllowed(order){
   const st=orderStage(order);
   return ["transport","loading","loaded","delivered"].includes(st)||(st==="approved"&&isSelfPickup(order));
 }
+/* Print PO (Mohit, 19 Nov 2026): opens as soon as the PO is approved; no transport or loading needed, because the
+   printed PO goes to the Godown Manager before transport is decided. Challan and Bill keep the transport rule above. */
+function poPrintAllowed(order){
+  if(!order||isCancelled(order))return false;
+  return ["approved","transport","loading","loaded","delivered"].includes(orderStage(order));
+}
+function poPrintBlocked(order){
+  if(poPrintAllowed(order))return false;
+  alert((order&&order.order_no?order.order_no+": ":"")+"Print PO opens once the PO is approved.");
+  return true;
+}
 function printBlocked(order){
   if(printAllowed(order))return false;
   alert((order&&order.order_no?order.order_no+": ":"")+"Print opens after transport is assigned. Assign driver / vehicle first (🚚 Transport).");
   return true;
 }
 async function printPoFromList(id){
-  if(printBlocked(orders.find(o=>o.id===id)))return;
+  if(poPrintBlocked(orders.find(o=>o.id===id)))return;
   if(await printSlipIfAny(id))return;
   await printQuietly(id,"po");
 }
@@ -5419,6 +5430,7 @@ async function printSlipIfAny(id){
   return true;
 }
 async function printPoFromModal(){
+  if(selectedOrder&&poPrintBlocked(orders.find(o=>o.id===selectedOrder.id)||selectedOrder))return;
   if(selectedOrder&&await printSlipIfAny(selectedOrder.id))return;
   printApprovedPO("po");
 }
@@ -5457,7 +5469,8 @@ async function printQuietly(id,type,onReady){
 }
 async function printApprovedPO(documentType="challan",collect=null){
   const isPo=documentType==="po";
-  if(selectedOrder&&!printAllowed(orders.find(o=>o.id===selectedOrder.id)||selectedOrder)){if(collect)return false;printBlocked(selectedOrder);return;}
+  const gateOrder=selectedOrder&&(orders.find(o=>o.id===selectedOrder.id)||selectedOrder);
+  if(selectedOrder&&!(isPo?poPrintAllowed(gateOrder):printAllowed(gateOrder))){if(collect)return false;isPo?poPrintBlocked(gateOrder):printBlocked(gateOrder);return;}
   if(!reviewReady||!selectedOrder||isCancelled(selectedOrder)||(!isPo&&!eligibleForPoPrint(selectedOrder))){
     alert(isPo?"Open a saved PO before printing.":"Approve the PO before printing.");
     return;
