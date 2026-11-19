@@ -21,6 +21,8 @@ const file=f=>readFile(new URL('../../'+f,import.meta.url),'utf8');
 await db.exec(await file('lwb_sheet_pallet_setup.sql'));
 const sql=await file('lwb_sp_company_statement_setup.sql');
 await db.exec(sql);await db.exec(sql); // safe to run again
+const sql2=await file('lwb_sp_query_remarks_setup.sql');
+await db.exec(sql2);await db.exec(sql2);
 
 async function run(who,q,params){
   await db.query("select set_config('request.jwt.claim.sub',$1,false)",[ids[who]]);
@@ -73,4 +75,41 @@ test('query tick by admin is not logged as an edit; accounts cannot set it', asy
   assert.equal((await db.query("select count(*)::int n from lwb_sp_history where action='EDIT'")).rows[0].n,0);
   const r=await run('acc',"update lwb_sp_entries set query_note='x' where id=$1",[id]);
   assert.equal(r.affectedRows,0);
+});
+
+test('query remark: admin saves / updates / marks mailed; accounts only reads', async()=>{
+  await assert.rejects(run('acc','select lwb_sp_remark_save($1)',[{item_key:'IN:7012785465',kind:'SHORT',sheets:115}]),/Only Admin/);
+  await run('admin','select lwb_sp_remark_save($1)',[{item_key:'IN:7012785465',kind:'SHORT',pallets:0,sheets:115,note:'written on bill'}]);
+  await run('admin','select lwb_sp_remark_save($1)',[{item_key:'IN:7012785465',kind:'SHORT',pallets:1,sheets:115,note:'written on bill'}]);
+  let r=(await run('acc','select kind,pallets,sheets,status,updated_by_name from lwb_sp_stmt_remarks')).rows;
+  assert.deepEqual(r,[{kind:'SHORT',pallets:1,sheets:115,status:'OPEN',updated_by_name:'Admin'}]);
+  assert.equal((await run('admin','select lwb_sp_remark_status($1,$2) n',[['IN:7012785465','IN:x'],'MAILED'])).rows[0].n,1);
+  r=(await db.query('select status,mailed_at is not null m from lwb_sp_stmt_remarks')).rows[0];
+  assert.deepEqual(r,{status:'MAILED',m:true});
+  await assert.rejects(run('admin','select lwb_sp_remark_save($1)',[{item_key:'IN:1',kind:'BAD'}]),/check/);
+  await run('admin','select lwb_sp_remark_save($1)',[{item_key:'IN:7012785465',kind:''}]);
+  assert.equal((await db.query('select count(*)::int n from lwb_sp_stmt_remarks')).rows[0].n,0);
+  await assert.rejects(run('acc',"insert into lwb_sp_stmt_remarks(item_key,kind) values('IN:9','SHORT')"),/permission/);
+});
+
+test('one invoice once: exact repeats removed on setup, new repeat refused, edit of own row ok', async()=>{
+  const d2=new PGlite();
+  await d2.exec(`CREATE ROLE anon; CREATE ROLE authenticated; CREATE SCHEMA auth;
+   CREATE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql AS $$ SELECT NULL::uuid $$;
+   CREATE TABLE auth.users(id uuid primary key,email text); CREATE TABLE public.user_profiles(id uuid primary key,role text,active boolean,full_name text);
+   CREATE TABLE public.orders(id uuid default gen_random_uuid() primary key);`);
+  await d2.exec(await file('lwb_sheet_pallet_setup.sql'));
+  await d2.exec(`insert into lwb_sp_entries(entry_date,entry_type,pallets,sheets,ref_no,created_at) values
+   ('2026-11-03','COMPANY_IN',24,10,'7012785601','2026-11-03 10:00'),('2026-11-03','COMPANY_IN',24,10,' 7012785601','2026-11-03 11:00'),
+   ('2026-11-05','COMPANY_IN',24,0,'7012786338','2026-11-05 10:00'),('2026-11-05','COMPANY_IN',18,6,'7012786338','2026-11-05 11:00'),
+   ('2026-11-01','COMPANY_IN',1474,3953,'OPENING BALANCE','2026-11-01'),('2026-11-01','COMPANY_IN',1,1,'OPENING BALANCE','2026-11-02')`);
+  const s=await file('lwb_sp_invoice_once_setup.sql');await d2.exec(s);await d2.exec(s);
+  const rows=(await d2.query("select ref_no,created_at::text c from lwb_sp_entries where ref_no like '%601' order by 2")).rows;
+  assert.equal(rows.length,1);assert.equal(rows[0].ref_no,'7012785601');
+  assert.equal((await d2.query("select count(*)::int n from lwb_sp_entries where ref_no='7012786338'")).rows[0].n,2); // different counts kept
+  assert.equal((await d2.query("select count(*)::int n from lwb_sp_history where action='DELETE'")).rows[0].n,1);
+  await assert.rejects(d2.query("insert into lwb_sp_entries(entry_date,entry_type,pallets,sheets,ref_no) values ('2026-11-09','COMPANY_IN',24,0,'7012-785601')"),/already in the Sheet/);
+  await d2.query("insert into lwb_sp_entries(entry_date,entry_type,pallets,sheets,ref_no) values ('2026-11-09','COMPANY_OUT',24,0,'7012785601')");
+  await d2.query("update lwb_sp_entries set sheets=11 where ref_no='7012785601' and entry_type='COMPANY_IN'");
+  await d2.query("insert into lwb_sp_entries(entry_date,entry_type,pallets,sheets,ref_no) values ('2026-11-09','COMPANY_IN',5,0,'OPENING BALANCE')");
 });
