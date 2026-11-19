@@ -30,18 +30,25 @@ copy)
   psql "$OLD_URL" -Atq -c "select format('alter publication supabase_realtime add table %I.%I;', schemaname, tablename) from pg_publication_tables where pubname='supabase_realtime'" > "$W/rt.sql"
   echo "cron jobs: $(wc -l < "$W/cron.sql"), realtime tables: $(wc -l < "$W/rt.sql")"
   # 2. New project: empty its public schema and auth / storage rows, so this step can run again.
-  psql "$NEW_URL" -q -v ON_ERROR_STOP=1 -o /dev/null > "$W/w.log" 2>&1 <<'SQL' || { errs "$W/w.log"; exit 1; }
+  echo "$(date +%T) wipe new"
+  psql "$NEW_URL" -v ON_ERROR_STOP=1 -o /dev/null > "$W/w.log" 2>&1 <<'SQL' || { errs "$W/w.log"; exit 1; }
+set lock_timeout = '30s';
+\echo m1
 do $$ declare r record; begin
   for r in select jobname from cron.job loop perform cron.unschedule(r.jobname); end loop;
 exception when others then null; end $$;
+\echo m2
 drop schema if exists public cascade;
+\echo m3
 create schema public;
 grant usage on schema public to postgres, anon, authenticated, service_role;
 grant all on schema public to postgres, service_role;
 alter default privileges in schema public grant all on tables to postgres, anon, authenticated, service_role;
 alter default privileges in schema public grant all on functions to postgres, anon, authenticated, service_role;
 alter default privileges in schema public grant all on sequences to postgres, anon, authenticated, service_role;
+\echo m4
 truncate auth.users cascade;
+\echo m5
 do $$ begin
   if exists (select 1 from storage.objects) or exists (select 1 from storage.buckets) then
     perform set_config('storage.allow_delete_query','true',true);
@@ -49,6 +56,8 @@ do $$ begin
   end if;
 end $$;
 SQL
+  grep -E '^m[0-9]' "$W/w.log" | tr '\n' ' '; echo
+  echo "$(date +%T) restore"
   # 3. Restore into the new project.
   psql "$NEW_URL" -q -o /dev/null -f "$W/roles.sql" > "$W/r1.log" 2>&1; errs "$W/r1.log" 5
   psql "$NEW_URL" -q -v ON_ERROR_STOP=1 -o /dev/null --single-transaction \
@@ -56,6 +65,7 @@ SQL
     -f "$W/schema.sql" -c "set session_replication_role = replica" -f "$W/data.sql" > "$W/r2.log" 2>&1 \
     || { echo "::error::Restore failed"; errs "$W/r2.log"; exit 1; }
   errs "$W/r2.log" 10
+  echo "$(date +%T) restored"
   psql "$NEW_URL" -q -o /dev/null -f "$W/rt.sql" > "$W/r3.log" 2>&1; errs "$W/r3.log" 5
   psql "$NEW_URL" -q -o /dev/null -f "$W/cron.sql" > "$W/r4.log" 2>&1; errs "$W/r4.log" 5
   # 4. Point the push webhook at the new project.
