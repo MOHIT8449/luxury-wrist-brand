@@ -458,7 +458,7 @@
     #poAllocationStatus {font-size:12px;color:#1a613a;margin-top:12px;line-height:1.6}
     #poAllocationStatus.error {color:#bb2929}
     .rj-wait{display:flex;gap:8px;align-items:center;flex-wrap:wrap;background:#fff4e0;border:1px solid #f0c987;color:#7a4b00;border-radius:8px;padding:7px 10px;margin:0 0 8px;font-size:13px;font-weight:600;text-decoration:none}
-    .rj-wait b{color:#5c3800}.rj-wait span.go{margin-left:auto;font-weight:700;white-space:nowrap}
+    .rj-wait[hidden]{display:none}.rj-wait b{color:#5c3800}.rj-wait span.go{margin-left:auto;font-weight:700;white-space:nowrap}
     #poPrintArea {display:none}
     #poPrintArea .po-bulk-page {break-after:page;page-break-after:always}
     #poPrintArea .po-bulk-page:last-child {break-after:auto;page-break-after:auto}
@@ -752,6 +752,15 @@
     .po-tab.on b {background:var(--lwb-gold,#fff);color:var(--lwb-teal,#1f2a37)}
     .po-tab:focus-visible {outline:2px solid var(--lwb-gold,#c9b26a);outline-offset:2px}
     .po-warns {display:flex;gap:5px;margin-left:auto}
+    /* Late orders strip (Mohit, 19 Nov 2026): only a highlight + bell, never a block */
+    .late-strip {display:flex;flex-wrap:wrap;align-items:center;gap:6px 8px;margin:0 0 8px;padding:6px 8px;border:1px solid #f3c2c2;border-left:4px solid #b42318;border-radius:9px;background:#fff6f6;font-size:12.5px}
+    .late-strip[hidden] {display:none}
+    .ls-chip {display:inline-flex;align-items:center;gap:6px;border:1px solid #f0b4b4;background:#fff;color:#8f1d14;border-radius:999px;padding:3px 4px 3px 10px;font:inherit;font-weight:800;cursor:pointer;white-space:nowrap}
+    .ls-chip b {min-width:22px;text-align:center;border-radius:999px;padding:1px 7px;background:#b42318;color:#fff}
+    .ls-chip.appr {border-color:#f1d199;color:#8a4b00}.ls-chip.appr b {background:#d08a00}
+    .ls-chip.on {box-shadow:0 0 0 2px #b42318 inset;background:#fdecec}.ls-chip.appr.on {box-shadow:0 0 0 2px #d08a00 inset;background:#fff4e0}
+    .ls-note {color:#5b6573;font-weight:600}.ls-note b {color:#8f1d14}
+    .ls-ok {margin-left:auto;color:#13824a;font-weight:700;white-space:nowrap}
     .tax-bill-frame {position:fixed;right:0;bottom:0;width:2px;height:2px;border:0;opacity:0;pointer-events:none;z-index:9999}
     .tax-bill-frame.open {inset:0;width:100%;height:100%;opacity:1;pointer-events:auto;background:rgba(0,0,0,.35)}
     .po-tab.warn {background:#fff8ec;border-color:#f3d39b;color:#8a4b00}
@@ -1514,6 +1523,8 @@
     <!-- PO list: one tab per stage with counts, date range, column filters, Excel (2 Nov 2026, like the company DMS) -->
     <!-- Rajnigandha POs still waiting (rate OK by Admin, driver & vehicle): Mohit, 4 Nov 2026 -->
     <a class="rj-wait" id="rjWait" href="quick-slip.html" hidden></a>
+    <!-- Late POs: highlight only, Admin + Sales Head get a bell (lwb_order_delay_alert_setup.sql). Nothing is blocked. -->
+    <div class="late-strip" id="lateStrip" role="group" aria-label="Late orders" hidden></div>
     <section class="po-tabs" id="poTabs" role="tablist" aria-label="PO stage"></section>
     <div class="po-subs" id="poSubTabs" role="group" hidden></div>
 
@@ -2213,6 +2224,9 @@ document.addEventListener("DOMContentLoaded", async () => {
     try{const tb=await db.rpc("lwb_tax_bill_access");TAX_BILL=!tb.error&&!!(tb.data&&tb.data.can);}catch(e){TAX_BILL=false;}
     await Promise.all([loadOrders(), loadWarehouseSkuMaster(), VIEW_ONLY ? null : loadPoSavedDirectory()]);
     if (CAN_HEAD) loadRajniWaiting();
+    sendDelayAlerts();
+    const lateParam = new URLSearchParams(location.search).get('late');
+    if (lateParam === 'delivery' || lateParam === 'approval') pickStatusFilter('late_' + lateParam);
     const rateId=new URLSearchParams(location.search).get('rate');
     if(rateId){if(rateWait.has(rateId))openRateOk(rateId);else showMessage('This PO is not waiting for a rate OK any more.','success');}
     // Just saved on PO Entry (?saved=<id>): this PO first in the list, highlighted (Mohit, 18 Nov 2026).
@@ -2468,10 +2482,10 @@ function slaState(order) {
   if (isCancelled(order) || isDeliveredOrder(order)) return null;
   const h = hoursSinceTaken(order);
   if (isPending(order)) {
-    if (h >= APPROVE_HOURS) return { css: "sla-late", late: "approval", text: "Approval late · " + hrs(h) };
+    if (h >= APPROVE_HOURS) return { css: "sla-late", late: "approval", text: "⏳ Approval late · " + hrs(h) };
     return { css: h >= APPROVE_HOURS / 2 ? "sla-warn" : "sla-ok", text: "Approve in " + hrs(APPROVE_HOURS - h) };
   }
-  if (h >= DELIVER_HOURS) return { css: "sla-late", late: "delivery", text: "Delayed · waiting " + hrs(h) };
+  if (h >= DELIVER_HOURS) return { css: "sla-late", late: "delivery", text: "⏰ Delivery late · " + hrs(h) };
   return { css: h >= DELIVER_HOURS - 12 ? "sla-warn" : "sla-ok", text: "Deliver in " + hrs(DELIVER_HOURS - h) };
 }
 
@@ -3065,7 +3079,6 @@ function matchesColumnFilters(order) {
 function renderTabs(base, current) {
   const count = k => base.filter(order => matchesTab(order, k)).length;
   const main = mainTabOf(current);
-  const warns = [];
   document.getElementById("poTabs").innerHTML = PO_TABS.map(tab => {
     if (tab.sep) return "";
     if (tab.draft && !draftsOn) return "";
@@ -3074,9 +3087,10 @@ function renderTabs(base, current) {
     const css = ["po-tab", tab.warn ? "warn" : "", tab.k === main ? "on" : "", n ? "" : "zero"].join(" ");
     const html = `<button type="button" role="tab" aria-selected="${tab.k === main}" class="${css}"
       onclick="pickStatusFilter('${tab.k}')">${tab.warn ? "⚠ " : ""}${tab.t} <b>${n}</b></button>`;
-    if (tab.warn) { warns.push(html); return ""; }
+    if (tab.warn) return "";
     return html;
-  }).join("") + (warns.length ? `<span class="po-warns">${warns.join("")}</span>` : "");
+  }).join("");
+  renderLateStrip(base, current);
   const box = document.getElementById("poSubTabs");
   const subs = (PO_TABS.find(t => t.k === main) || {}).subs;
   box.hidden = !subs;
@@ -3085,6 +3099,29 @@ function renderTabs(base, current) {
   box.innerHTML = `<button type="button" class="po-sub ${current === main ? "on" : ""}" onclick="pickStatusFilter('${main}')">All ${count(main)}</button>` +
     subs.map(x => `<button type="button" class="po-sub ${x.k === current ? "on" : ""}" onclick="pickStatusFilter('${x.k}')">${x.t} ${count(x.k)}</button>`).join("");
   box.setAttribute("aria-label", head.t.replace(/<[^>]+>/g, "") + " stages");
+}
+
+/* Late POs strip (Mohit, 19 Nov 2026): a late PO still has to be delivered, so it is only highlighted here,
+   red on its row, and Admin + Sales Head get one bell (lwb_order_delay_notify). Transport, loading, bill and
+   Mark delivered keep working for the Sales Head exactly as for any other PO. */
+function renderLateStrip(base, current) {
+  const box = document.getElementById("lateStrip");
+  if (!box) return;
+  const dl = base.filter(isLateDelivery), ap = base.filter(isLateApproval);
+  if (!dl.length && !ap.length) { box.hidden = true; box.innerHTML = ""; return; }
+  const oldest = [...dl, ...ap].sort((a, b) => hoursSinceTaken(b) - hoursSinceTaken(a))[0];
+  const amt = dl.reduce((t, o) => t + number(o.total_amount), 0);
+  const chip = (k, cls, txt, n) => n ? `<button type="button" class="ls-chip ${cls}${current === k ? " on" : ""}" onclick="pickStatusFilter('${current === k ? "polist" : k}')" title="${current === k ? "Show PO List again" : "Show only these POs"}">${txt} <b>${n}</b></button>` : "";
+  box.innerHTML = chip("late_delivery", "", "⏰ Delivery late 36h+", dl.length) +
+    chip("late_approval", "appr", "⏳ Approval late 12h+", ap.length) +
+    `<span class="ls-note">Oldest <b>${escapeHtml(oldest.order_no || "")} · ${hrs(hoursSinceTaken(oldest))}</b>` +
+    (dl.length ? ` · ₹${Math.round(amt).toLocaleString("en-IN")} not delivered` : "") + `</span>` +
+    `<span class="ls-ok" title="Late POs are only highlighted. Transport, loading, bill and delivery work as usual.">✓ Work as usual · 🔔 Admin &amp; Sales Head alerted</span>`;
+  box.hidden = false;
+}
+function sendDelayAlerts() {
+  // Bell for POs that just crossed 12 / 36 hrs (once per PO). pg_cron also runs it every 30 min.
+  try { db.rpc("lwb_order_delay_notify").then(() => {}, () => {}); } catch (e) {}
 }
 
 /* Where is the order (Mohit, 11 Nov 2026): one step line per PO.

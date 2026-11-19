@@ -20,6 +20,8 @@
  // tone: act = needs you · move = dispatch · money = cash · ok = done · bad = cancel/reject · info = update
  const KIND=[
   [/^ORDER_NEW$/,"🛒","act","New order","Approve"],
+  [/^ORDER_DELAY_DELIVERY$/,"⚠","bad","Delivery late 36h+","Deliver"],
+  [/^ORDER_DELAY_APPROVAL$/,"⚠","act","Approval late 12h+","Approve"],
   [/^ORDER_APPROVED$/,"✅","ok","PO approved",""],
   [/^ORDER_DISPATCHED$/,"🚚","move","Out for delivery",""],
   [/^TALLY_BILL_PENDING$/,"🧾","act","Vehicle loaded","Make bill"],
@@ -215,6 +217,8 @@
   [/^PO_APPROVED_LOADING$/,["loading-dispatch.html?order={o}","warehouse-orders.html"]],
   [/^(VEHICLE_LOADED|TALLY_BILL_DONE)$/,["loading-dispatch.html","party-billing.html?order={o}","warehouse-orders.html","driver-delivery.html?order={o}","my-sales.html#orders"]],
   [/^ORDER_NEW$/,["warehouse-orders.html"]],
+  [/^ORDER_DELAY_DELIVERY$/,["warehouse-orders.html?late=delivery"]],
+  [/^ORDER_DELAY_APPROVAL$/,["warehouse-orders.html?late=approval"]],
   [/^RATE_APPROVAL$/,["quick-slip.html?review={o}"]],
   [/^BILL_CHANGE_/,["party-billing.html?tab=chg&change={o}"]],
   [/^RATE_APPROVED$/,["quick-slip.html?order={o}"]],
