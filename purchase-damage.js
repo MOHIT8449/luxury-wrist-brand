@@ -238,7 +238,7 @@
     const claim={PENDING:'Claim: mail not sent',SENT:'Claim: awaiting company',APPROVED:'Claim approved',RECEIVED:'Claim amount received',REJECTED:'Claim rejected'}[ck&&ck.claim_status]||'';
     const chip=!ck?'<span class="pd-chip warn">Not checked yet</span>':ck.has_damage?'<span class="pd-chip bad">⚠ Damage reported</span>':'<span class="pd-chip ok">✓ All OK</span>';
     const cs=unitSum(it.map(i=>({pcs:i.cases*Math.max(1,i.pcs_per_case)+i.pcs,per:Math.max(1,i.pcs_per_case),unit:unitOfSku(d,i.sku_id)})));
-    const canEdit=['admin','manager'].includes(o.role)||(o.role==='warehouse'&&(!ck||['NONE','PENDING'].includes(ck.claim_status)));
+    const canEdit=['admin','manager','accounts'].includes(o.role)||(o.role==='warehouse'&&(!ck||['NONE','PENDING'].includes(ck.claim_status)));
     const back=shell('<div class="pd-h"><span class="ic">'+(ck&&ck.has_damage?'⚠':'🚛')+'</span><div><h3>'+esc(vehOf(d.bill))+' · Damage report</h3><small>'+esc(subOf(d))+'</small></div><button type="button" class="x" data-a="close" aria-label="Close">✕</button></div>'+
       '<div class="pd-meta">'+chip+(claim&&ck.has_damage?' <span class="pd-chip warn">'+esc(claim)+'</span>':'')+'<br>'+(ck?'Checked '+dmy(ck.verified_on)+(who?' by '+esc(who):''):'The Godown Manager has not checked this vehicle yet.')+(timeTxt(d.bill)?'<br>🕘 '+esc(timeTxt(d.bill)):'')+'</div>'+
       (it.length?'<table class="pd-t"><thead><tr><th>SKU</th><th class="ty">Type</th><th class="n">Qty</th></tr></thead><tbody>'+it.map(i=>'<tr><td>'+esc(i.sku_name)+'</td><td class="ty">'+esc(issueTxt(i.issue))+'</td><td class="n">'+qtyTxt(i.cases,i.pcs,unitOfSku(d,i.sku_id))+'</td></tr>').join('')+
