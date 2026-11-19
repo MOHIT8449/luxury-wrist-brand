@@ -65,16 +65,32 @@
   // A saved choice that is no longer one of my companies counts as "all".
   function get(list){const v=read();return list&&!list.some(c=>c.id===v)?"":v}
   function set(v){write(v||"")}
-  function chips(list,current,onPick){
-    const box=document.createElement("div");box.className="lwb-brands";box.setAttribute("role","group");box.setAttribute("aria-label","Company / brand");
+  // ONE brand choice for the whole site (Mohit, 19 Nov 2026): the top bar (erp-shell.js) has the only
+  // All / Coca-Cola / Rajnigandha picker. Page chips / brand bars are no longer shown; they only follow
+  // the top bar (their onPick / onChange runs when it changes). o.local = a form field that stays on the
+  // page (New PO brand, SKU Master "No company"); it starts from the top bar choice but does not change it.
+  const MOUNTS=[];
+  function chips(list,current,onPick,o){
+    o=o||{};const box=document.createElement("div");box.className="lwb-brands";box.setAttribute("role","group");box.setAttribute("aria-label","Company / brand");
     const opts=[{id:"",name:"All brands",color:"#002f37"}].concat(list||[]);
     box.innerHTML=opts.map(c=>'<button type="button" data-b="'+esc(c.id)+'" aria-pressed="'+(c.id===current)+'" style="--bc:'+esc(c.color||"#2362a4")+'">'+(c.id?'<i></i>':"")+esc(c.name)+"</button>").join("");
-    box.onclick=e=>{const b=e.target.closest("button[data-b]");if(!b)return;const v=b.dataset.b;set(v);
-      box.querySelectorAll("button").forEach(x=>x.setAttribute("aria-pressed",String(x===b)));onPick&&onPick(v)};
+    const press=v=>box.querySelectorAll("button").forEach(x=>x.setAttribute("aria-pressed",String(x.dataset.b===v)));
+    box.onclick=e=>{const b=e.target.closest("button[data-b]");if(!b)return;const v=b.dataset.b;if(!o.local)pick(v);else{press(v);onPick&&onPick(v)}};
+    if(!o.local){box.hidden=true;box.dataset.global="1";box._ids=opts.map(c=>c.id);box._pick=v=>{press(v);onPick&&onPick(v)}}
     return box;
   }
+  // Top bar picked v: save it, then every page chip / brand bar still on the page follows it.
+  let lastPick=null;
+  function pick(v){
+    v=v||"";set(v);if(v===lastPick)return;lastPick=v;
+    [...document.querySelectorAll(".lwb-brands[data-global]")].forEach(b=>{if(b.isConnected&&b._pick)b._pick(b._ids.includes(v)?v:"")});
+    MOUNTS.forEach(st=>{const n=st.companies.some(c=>c.id===v)?v:"";if(n===st.value)return;st.value=n;st.onChange&&st.onChange(n)});
+    try{document.dispatchEvent(new CustomEvent("lwb:brand",{detail:{id:v}}))}catch(e){}
+  }
+  // Another tab changed the brand: this tab follows.
+  window.addEventListener("storage",e=>{if(e.key===KEY)pick(e.newValue||"")});
   const css=document.createElement("style");
-  css.textContent='.lwb-brands{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin:0 0 12px}'+
+  css.textContent='.lwb-brands[hidden]{display:none!important}.lwb-brands{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin:0 0 12px}'+
     '.lwb-brands button{height:32px;border-radius:99px;border:1.5px solid #d6dde6;background:#fff;color:#22303f;padding:0 12px;font:inherit;font-size:13px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:6px;white-space:nowrap}'+
     '.lwb-brands button i{width:9px;height:9px;border-radius:50%;background:var(--bc)}'+
     '.lwb-brandbar{margin:0 0 12px}.lwb-brandbar .lwb-brands{margin:0}'+
@@ -95,17 +111,13 @@
     const k=skuKey(name),own=units.get(k)||units.get(nowKey(k));if(own)return own;
     const c=(list||[]).find(x=>x.id===(map&&map.get(k)));return c&&c.pack_unit?c.pack_unit:"CASE";
   }
-  // One brand bar for a page: All brands / each company chips, saved choice shared with every page.
-  // LWBBrand.mount(client,{into, onChange}) -> {get(), companies, name(id), color(id)}; nothing shown with < 2 brands.
+  // Brand of a page: follows the top bar choice (nothing is drawn on the page any more).
+  // LWBBrand.mount(client,{onChange}) -> {get(), companies, name(id), color(id)}; onChange(id) when the top bar changes.
   async function mount(client,o){
     o=o||{};const info=await load(client),list=(info.companies||[]).filter(c=>!info.mine||info.mine.includes(c.id));
     const st={companies:list,value:"",get(){return st.value},name:id=>(list.find(c=>c.id===id)||{}).name||"",color:id=>(list.find(c=>c.id===id)||{}).color||"#8a94a3"};
     if(list.length<2)return st;
-    st.value=get(list);
-    const bar=document.createElement("div");bar.className="lwb-brandbar";
-    bar.appendChild(chips(list,st.value,v=>{st.value=v;o.onChange&&o.onChange(v)}));
-    const into=typeof o.into==="string"?document.querySelector(o.into):o.into||document.querySelector("main");
-    if(into){if(o.after)into.after(bar);else into.prepend(bar)}
+    st.value=get(list);st.onChange=o.onChange;MOUNTS.push(st);
     return st;
   }
   // Brands of POs: Map(order id -> Set of company ids), from their SKU lines (chunks of 150 ids).
@@ -144,5 +156,5 @@
       return unitByName(s,map,list);
     };
   }
-  window.LWBBrand={load,get,set,chips,skuMap,skuKey,aliases,nowKey,unitOf,unitByName,word,qty,mount,orderBrands,has,short,pack,packNum,packSum,units:unitsFor};
+  window.LWBBrand={load,get,set,pick,chips,skuMap,skuKey,aliases,nowKey,unitOf,unitByName,word,qty,mount,orderBrands,has,short,pack,packNum,packSum,units:unitsFor};
 })();
