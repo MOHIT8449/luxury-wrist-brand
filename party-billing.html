@@ -77,7 +77,8 @@
     .pb-fix{display:flex;gap:8px;flex-wrap:wrap;align-items:center;padding:7px 10px;margin:0 0 8px;border:1px solid #f3b9c3;background:#fff5f6;border-radius:8px;font-size:13.5px;color:#7d0c1e}
     .pb-fix b{color:#b3122b}.pb-fix .pb-btn{margin-left:auto}
     .pb-foot{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:8px}
-    .pb-foot .tot{margin-left:auto;font-size:14px;color:#4b5763}
+    .pb-foot .tot{margin-left:auto;font-size:14px;color:#4b5763;text-align:right}.pb-foot .tot .tag{font-size:11.5px;padding:1px 7px}
+    .pb-foot .tot .exp{display:block;font-size:12px;color:#6b7682}.pb-foot .tot .exp b{color:#1d2733}s.was{color:#8a94a0;font-weight:600;font-size:12px}
     .pb-dbx{display:inline-flex;gap:4px;position:relative}.pb-dbx input.dt{width:132px}
     .pb-dbx button{width:40px;height:40px;border:1.5px solid var(--erp-line);background:#fff;border-radius:8px;cursor:pointer;font-size:17px}
     .pb-dbx input[type=date]{position:absolute;opacity:0;pointer-events:none;width:1px;height:1px;right:0;bottom:0}
@@ -206,7 +207,7 @@
     const DELIVERY={DELIVERED:["t-grn","Delivered"],PARTIAL:["t-amb","Part delivered"],NOT_DELIVERED:["t-red","Not delivered"]};
     let taxBill=false,marks=new Map(),fb="",info=null,tab="make",open=new Set(),want=new URLSearchParams(location.search).get("order"),sheet=[],admin=false,changes=[],wantChg=new URLSearchParams(location.search).get("change");
     // Bills to make filter: date range on the loaded date (approved date for POs not loaded yet), rows opened to make the bill
-    let mkRange="all",mkFrom="",mkTo="",mkOpen=new Set(),shortMap=new Map();
+    let mkRange="all",mkFrom="",mkTo="",mkOpen=new Set(),shortMap=new Map(),mism=new Map();
     // Bills made (Mohit, 17 Nov 2026): every PO with its Tally bill, newest first, same date chips; Edit opens the bill under the row
     let mdRange="all",mdFrom="",mdTo="",mdEdit=null;
     // Old bills to fix (lwb_tally_invoice_no_rules_setup.sql): merged lines + numbers used twice; mdFix = show only those
@@ -224,13 +225,15 @@
     async function load(){
       el("reload").disabled=true;
       try{
-        const [x,early,chg,mk,tb,pr]=await Promise.all([LWBPartyPay.load(client),client.rpc("lwb_bills_before_loading"),client.rpc("lwb_bill_change_list",{p_days:30}),client.rpc("lwb_admin_order_marks",{p_ids:null}),client.rpc("lwb_tax_bill_access"),client.rpc("lwb_tally_no_problems")]);
+        const [x,early,chg,mk,tb,pr,mm]=await Promise.all([LWBPartyPay.load(client),client.rpc("lwb_bills_before_loading"),client.rpc("lwb_bill_change_list",{p_days:30}),client.rpc("lwb_admin_order_marks",{p_ids:null}),client.rpc("lwb_tax_bill_access"),client.rpc("lwb_tally_no_problems"),client.rpc("lwb_bill_mismatch_list",{p_days:400})]);
         // Tax invoice print in the Tally layout (lwb_tax_bill_print_setup.sql): button only while Admin has it on for me.
         taxBill=!tb.error&&!!(tb.data&&tb.data.can);
         // Admin marked Loaded / Delivered by hand (lwb_admin_mark_load_deliver_setup.sql); missing function = none.
         marks=new Map();for(const m of (mk.error?[]:(mk.data||[]))){const a=marks.get(m.order_id)||{};a[m.kind]=m;marks.set(m.order_id,a)}
         // PO item changes for Admin (lwb_bill_change_setup.sql); missing function = no list.
         changes=chg.error?[]:(chg.data||[]);
+        // Amount mismatches OK'd by Accounts (lwb_bill_amount_mismatch_setup.sql); missing function = no tag.
+        mism=new Map((mm.error?[]:(mm.data||[])).map(m=>[m.order_id,m]));
         // Bills to fix (lwb_tally_invoice_no_rules_setup.sql); missing function = no banner.
         probs=pr.error||!pr.data?{merged:[],dupes:[]}:pr.data;probMap=new Map();
         for(const m of probs.merged||[])probMap.set(m.order_id,{t:"Merged bill nos.",tip:"Bill "+m.no+" has more than one invoice no. Edit > Split, enter each bill's amount."});
@@ -280,6 +283,14 @@
       if(m.DELIVERED&&hasReport)return "";return ` <span class="tag ${m.DELIVERED?"t-grn":"t-amb"}" title="${esc("Marked by "+(x.marked_by_name||who)+" on "+dmy(x.mark_date)+(x.note?" · "+x.note:""))}">${t} · by ${who}</span>`};
     const waitOf=id=>changes.find(c=>c.order_id===id&&c.status==="WAITING");
     const waitTag=id=>{const c=waitOf(id);return c?` <button type="button" class="tag t-amb" data-wv="${esc(c.id)}" style="border:0;cursor:pointer">⏳ Waiting Admin ${LWBBillChange.sg(Number(c.diff))}</button>`:""};
+    // Value the Tally bill should be (Mohit, 19 Nov 2026): PO change waiting with Admin = the new value (the bill follows it),
+    // else the loaded value (PO value before loading); goods returned on the PO come off. Returns the latest approved change too.
+    const sg=v=>(v<0?"−":"+")+rs(Math.abs(v));
+    function valOf(o){const w=waitOf(o.order_id),a=w?null:changes.find(c=>c.order_id===o.order_id&&c.status==="APPROVED"),erp=r2(Number(o.erp_amount)||0),ret=retOn(o.order_id);
+      const val=w?r2(erp+Number(w.diff||0)):erp;
+      return {w,a,erp,ret,val,exp:r2(val-ret),old:r2(erp-ret),basis:w?"CHANGE":o.early?"PO":"LOADED"}}
+    // "₹5,000 short" red / "₹500 extra" amber / "✓ matches" green: bill total against the value
+    const misTag=(bill,exp)=>{const d=r2(bill-exp);return Math.abs(d)<=1?'<span class="tag t-grn">✓ matches</span>':`<span class="tag ${d<0?"t-red":"t-amb"}">${rs(Math.abs(d))} ${d<0?"short":"extra"}</span>`};
     // Goods returns (lwb_party_return_setup.sql): on a PO, and its value
     const RT=()=>(info&&info.returns||[]).filter(r=>!r.cancelled&&inB(r.company_id));
     const retOn=id=>r2(RT().filter(r=>r.order_id===id).reduce((a,r)=>a+Number(r.amount),0));
@@ -353,8 +364,10 @@
           <div class="pb-foot mk"><button type="button" class="lnk" data-add>+ <span class="lg">Another </span>bill</button>${dateBox(edit&&o.invoice_date?String(o.invoice_date).slice(0,10):info.today)}<button type="button" class="pb-btn sm" data-it="${esc(o.order_id)}" title="Less / more cases reached? Change qty here (not Return), also rate / SKU. Goes to Admin.">± Qty<span class="lg"> / Items</span></button>${taxBill?`<a class="pb-btn sm" href="tax-invoice.html?order=${encodeURIComponent(o.order_id)}" title="Make and print the tax invoice (Tally layout)">🧾<span class="lg"> Tax bill</span></a>`:""}<span class="tot"></span><button type="button" class="pb-btn pri" data-save>${edit?'Save<span class="lg"> changes</span>':'Save<span class="lg"> bill</span>'}</button></div>`}
     function wireBill(card,o,edit){
       const lines=card.querySelector(".pb-lines"),tot=card.querySelector(".tot"),was=edit?r2(Number(o.bill_amount)||0):0;
-      const total=()=>{const l=[...lines.children],s=l.reduce((a,r)=>a+num(r.querySelector(".am").value),0);
-        tot.innerHTML=s?(l.length>1?l.length+" bills · ":"")+"total <b>"+rs(s)+"</b>"+(edit&&Math.abs(s-was)>1?` <small class="due">(was ${rs(was)})</small>`:o.erp_amount&&Math.abs(s-(o.erp_amount-retOn(o.order_id)))>1?` <small>(${o.early?"PO":"loaded"} ${rs(r2(o.erp_amount-retOn(o.order_id)))}${retOn(o.order_id)>0.5?" after return":""})</small>`:""):""};
+      // Bill value always on view (PO change waiting = new value, old struck through); typed total gets short / extra / matches
+      const total=()=>{const l=[...lines.children],s=r2(l.reduce((a,r)=>a+num(r.querySelector(".am").value),0)),v=valOf(o);
+        const lbl=v.w?"new value":o.early?"PO value":"loaded value",ex=v.erp?`<small class="exp">${v.w?`<s class="was">${rs(v.old)}</s> → `:""}${lbl} <b>${rs(v.exp)}</b>${v.ret>0.5?" after return":""}${v.w?` <span class="tag t-amb">⏳ ${sg(Number(v.w.diff))} Admin</span>`:""}</small>`:"";
+        tot.innerHTML=s?(l.length>1?l.length+" bills · ":"")+"total <b>"+rs(s)+"</b>"+(v.erp?" "+misTag(s,v.exp):"")+(edit&&Math.abs(s-was)>1?` <small class="due">(was ${rs(was)})</small>`:"")+ex:ex};
       // Invoice no. check while typing: one no. per line, not twice here, not already on another bill (server)
       let used=new Map(),seq=0,tmr=0;
       const check=()=>{const rows=[...lines.children],cnt=new Map();
@@ -381,7 +394,7 @@
         r.querySelector(".x").onclick=()=>{if(lines.children.length>1)r.remove();else r.querySelectorAll(".no,.am").forEach(i=>i.value="");total();check();ask()};
         r.querySelectorAll("input").forEach(i=>i.onkeydown=e=>{if(e.key==="Enter"){e.preventDefault();card.querySelector("[data-save]").click()}});
         lines.appendChild(r);return r};
-      if(edit){const b=(o.bills||[]).length?o.bills:[{firm:o.party,no:o.invoice_no,amount:o.bill_amount}];b.forEach(x=>add(x.firm||o.party,x.no,Number(x.amount)));total();check();ask()}else add(null);
+      if(edit){const b=(o.bills||[]).length?o.bills:[{firm:o.party,no:o.invoice_no,amount:o.bill_amount}];b.forEach(x=>add(x.firm||o.party,x.no,Number(x.amount)));total();check();ask()}else{add(null);total()}
       card.querySelector("[data-add]").onclick=()=>add("").querySelector(".fm").focus();
       wireDate(card.querySelector(".pb-dbx"));
       card.querySelector("[data-save]").onclick=e=>saveBill(o,card,e.currentTarget,edit);
@@ -392,19 +405,20 @@
       if(want){mkRange="all";mkOpen.add(want)}
       const all=toMake().filter(o=>match(q,o.order_no,o.party,o.parent,...membersOf(o.parent)));
       const span=mkSpan(mkRange),list=all.filter(o=>inSpan(o,span));
-      const sum=list.reduce((a,o)=>a+Number(o.erp_amount||0),0);
+      const sum=list.reduce((a,o)=>a+valOf(o).val,0);
       sheet=[["PO No.","Date","Stage","Party","Main party","Value ₹"],...list.map(o=>[o.order_no,dmy(mkDate(o)),o.early?"Approved, not loaded":"Loaded",o.party,o.parent,r2(o.erp_amount)])];
       const bar=`<div class="mk-bar"><div class="mk-chips" role="group" aria-label="Date">${MK_R.map(([k,t])=>`<button type="button" data-mr="${k}"${mkRange===k?' class="on"':""}>${t}<i>${k==="all"?all.length:all.filter(o=>inSpan(o,mkSpan(k))).length}</i></button>`).join("")}</div>
         <label class="mk-dates${mkRange==="custom"?" on":""}" title="Custom dates (loaded date)"><input type="date" id="mkF" value="${mkRange==="custom"?mkFrom:span[0]}" max="${info.today}" aria-label="From date"><span>to</span><input type="date" id="mkT" value="${mkRange==="custom"?mkTo:span[1]==="9999-12-31"?"":span[1]}" max="${info.today}" aria-label="To date"></label>
         <span class="mk-sum"><b>${list.length}</b> bill${list.length===1?"":"s"} · <b>${rs(sum)}</b></span></div>`;
       const rows=list.map(o=>{
         const d=DELIVERY[String(o.delivery||"").toUpperCase()],grp=key(o.parent)!==key(o.party),isOpen=mkOpen.has(o.order_id),ret=retOn(o.order_id);
-        const names=[...new Set([o.parent,...membersOf(o.parent)])].filter(n=>key(n)!==key(o.party));
+        const names=[...new Set([o.parent,...membersOf(o.parent)])].filter(n=>key(n)!==key(o.party)),v=valOf(o);
         return `<tr class="pr${isOpen?" open":""}" data-o="${esc(o.order_id)}">
-          <td class="c1"><b class="pb-po" data-drill-order="${esc(o.order_id)}" data-drill-no="${esc(o.order_no)}">${esc(o.order_no)}</b><small class="ph-only">${dmy(mkDate(o))}</small>${o.early?` <span class="tag t-amb">${o.vehicle_no?"Vehicle "+esc(o.vehicle_no)+" · not loaded":"Not loaded yet"}</span>`:""}${d?` <span class="tag ${d[0]}">${d[1]}</span>`:""}${shortTag(o.order_id)}${markTag(o.order_id,!!d)}${waitTag(o.order_id)}</td>
+          <td class="c1"><b class="pb-po" data-drill-order="${esc(o.order_id)}" data-drill-no="${esc(o.order_no)}">${esc(o.order_no)}</b><small class="ph-only">${dmy(mkDate(o))}</small>${o.early?` <span class="tag t-amb">${o.vehicle_no?"Vehicle "+esc(o.vehicle_no)+" · not loaded":"Not loaded yet"}</span>`:""}${d?` <span class="tag ${d[0]}">${d[1]}</span>`:""}${shortTag(o.order_id)}${markTag(o.order_id,!!d)}</td>
           <td class="hide-ph" style="white-space:nowrap" title="${o.early?"Approved date":"Loaded date"}">${dmy(mkDate(o))}</td>
           <td class="w"><b>${esc(o.party)}</b>${grp?` <span class="tag t-blu">under ${esc(o.parent)}</span>`:""}${names.length?`<small title="${esc(names.join(", "))}">bill names: ${esc(names.join(", "))}</small>`:""}</td>
-          <td class="n c4"><b>${rs(o.erp_amount)}</b>${o.early?`<small>PO ${esc(Number(o.qty||0).toLocaleString("en-IN"))} CS</small>`:""}${ret>0.5?`<small>return <b class="due">− ${rs(ret)}</b> = ${rs(r2(o.erp_amount-ret))}</small>`:""}</td>
+          <td class="n c4">${v.w?`<s class="was">${rs(v.erp)}</s> <b>${rs(v.val)}</b><small><button type="button" class="tag t-amb" data-wv="${esc(v.w.id)}" style="border:0;cursor:pointer" title="PO change waiting for Admin. Tap to see it.">⏳ ${sg(Number(v.w.diff))} Admin</button></small>`:
+            `<b>${rs(o.erp_amount)}</b>${v.a?`<small title="${esc("PO change approved"+(v.a.reason?": "+v.a.reason:""))}"><span class="tag t-grn">Changed</span> was ${rs(v.a.old_value)}</small>`:""}`}${o.early?`<small>PO ${esc(Number(o.qty||0).toLocaleString("en-IN"))} CS</small>`:""}${ret>0.5?`<small>return <b class="due">− ${rs(ret)}</b> = ${rs(v.exp)}</small>`:""}</td>
           <td class="n c5"><button type="button" class="pb-btn sm ${isOpen?"":"pri "}go" data-go>${isOpen?"Close":"Make bill"}</button></td></tr>`}).join("");
       el("body").innerHTML=bar+(list.length?`<div class="pb-scroll"><table class="pb-t mk"><thead><tr><th>PO No.</th><th class="hide-ph">Loaded</th><th>Party</th><th class="n">Value</th><th></th></tr></thead><tbody>${rows}</tbody>
           <tfoot><tr><td>${list.length} bill${list.length===1?"":"s"} to make</td><td class="hide-ph"></td><td class="hide-ph"></td><td class="n">${rs(sum)}</td><td class="hide-ph"></td></tr></tfoot></table></div>`:
@@ -427,6 +441,9 @@
     /* ---------- Bills made (Tally bill entered) ---------- */
     const mdDate=o=>String(o.invoice_date||"").slice(0,10);
     const made=()=>orders().filter(o=>o.invoice_no).sort((a,b)=>mdDate(b).localeCompare(mdDate(a))||String(b.entered_at||"").localeCompare(String(a.entered_at||""))||String(b.order_no).localeCompare(String(a.order_no)));
+    // mismatch OK'd when the bill was saved, shown while the bill is still that amount
+    const misMade=o=>{const m=mism.get(o.order_id);if(!m||Math.abs(Number(o.bill_amount)-Number(m.bill_amount))>0.5)return "";const d=Number(m.diff);
+      return ` <span class="tag ${d<0?"t-red":"t-amb"}" title="${esc("Bill "+rs(m.bill_amount)+", value "+rs(m.expected)+". Saved anyway by "+(m.noted_by||"Accounts")+" on "+dmy(String(m.noted_at).slice(0,10)))}">⚠ ${rs(Math.abs(d))} ${d<0?"short":"extra"}</span>`};
     const billsOf=o=>(o.bills||[]).length?o.bills:[{firm:o.party,no:o.invoice_no,amount:o.bill_amount}];
     function renderMade(){
       const q=el("q").value.trim().toLowerCase();
@@ -442,7 +459,7 @@
         const d=DELIVERY[String(o.delivery||"").toUpperCase()],due=r2(Number(o.due)||0),bl=billsOf(o),isOpen=mdEdit===o.order_id;
         const st=due>0.5?`<small><span class="tag t-red">Due ${rs(due)}</span></small>`:`<small><span class="tag t-grn">Paid</span></small>`;
         return `<tr class="pr${isOpen?" open":""}" data-o="${esc(o.order_id)}">
-          <td class="c1"><b class="pb-po" data-drill-order="${esc(o.order_id)}" data-drill-no="${esc(o.order_no)}" data-drill-bill="${esc(o.invoice_no)}">${esc(o.order_no)}</b><small class="ph-only">${dmy(mdDate(o))}</small>${!fb&&BR().length?" "+btag(o.company_id):""}${d?` <span class="tag ${d[0]}">${d[1]}</span>`:""}${waitTag(o.order_id)}${probMap.has(o.order_id)?` <span class="tag t-red" title="${esc(probMap.get(o.order_id).tip)}">⚠ ${esc(probMap.get(o.order_id).t)}</span>`:""}</td>
+          <td class="c1"><b class="pb-po" data-drill-order="${esc(o.order_id)}" data-drill-no="${esc(o.order_no)}" data-drill-bill="${esc(o.invoice_no)}">${esc(o.order_no)}</b><small class="ph-only">${dmy(mdDate(o))}</small>${!fb&&BR().length?" "+btag(o.company_id):""}${d?` <span class="tag ${d[0]}">${d[1]}</span>`:""}${waitTag(o.order_id)}${misMade(o)}${probMap.has(o.order_id)?` <span class="tag t-red" title="${esc(probMap.get(o.order_id).tip)}">⚠ ${esc(probMap.get(o.order_id).t)}</span>`:""}</td>
           <td class="hide-ph" style="white-space:nowrap" title="Bill date">${dmy(mdDate(o))}</td>
           <td class="w"><b>${esc(o.party)}</b>${key(o.parent)!==key(o.party)?` <span class="tag t-blu">under ${esc(o.parent)}</span>`:""}<small title="${esc(bl.map(b=>(b.firm||o.party)+" · "+b.no+" · "+rs(b.amount)).join("\n"))}">${bl.map(b=>(key(b.firm||o.party)!==key(o.party)?esc(b.firm)+" · ":"")+"Bill <b"+(isMerged(b.no)?' class="due"':"")+">"+esc(b.no)+"</b>"+(bl.length>1?" · "+rs(b.amount):"")).join(" | ")}</small></td>
           <td class="n c4"><b>${rs(o.bill_amount)}</b>${st}</td>
@@ -476,14 +493,22 @@
       if(date>info.today)return ERPShell.alert("The invoice date can not be after today.");
       const total=r2(lines.reduce((a,l)=>a+l.amount,0));
       const was=edit?r2(Number(o.bill_amount)||0):0;
-      if(!await ERPShell.confirm((edit?"Change the Tally bill of ":"Save Tally bill for ")+o.order_no+"?\n\n"+(edit?"Was: "+((o.bills||[]).length?o.bills.map(b=>(b.firm||o.party)+" · bill "+b.no+" · "+rs(b.amount)).join("\n"):o.invoice_no+" · "+rs(was))+"\nDate "+dmy(o.invoice_date)+"\n\nNow: ":"")+lines.map(l=>l.firm+" · bill "+l.no+" · "+rs(l.amount)).join("\n")+"\nDate "+dmy(date)+(lines.length>1?"\nTotal "+rs(total):"")+
+      // Amount mismatch (Mohit, 19 Nov 2026): typed total not the bill value (and, on Edit, changed) = ask first, then keep it on record.
+      // With a PO change waiting, the old value is fine too (Admin's approve moves the bill by the difference).
+      const v=valOf(o),d=r2(total-v.exp),mis=v.erp>0&&Math.abs(d)>1&&!(v.w&&Math.abs(total-v.old)<=1)&&(!edit||Math.abs(total-was)>0.005);
+      const bl=lines.map(l=>l.firm+" · bill "+l.no+" · "+rs(l.amount)).join("\n")+"\nDate "+dmy(date)+(lines.length>1?"\nTotal "+rs(total):"");
+      if(mis){if(!await ERPShell.confirm(rs(Math.abs(d))+" "+(d<0?"short":"extra")+" in bill amount. Save anyway?\n\nBill typed "+rs(total)+"\n"+(v.w?"New value (PO change waiting Admin) ":o.early?"PO value ":"Loaded value ")+rs(v.exp)+(v.ret>0.5?" (after return "+rs(v.ret)+")":"")+
+          "\nDifference "+(d<0?"− ":"+ ")+rs(Math.abs(d))+"\n\n"+bl+"\n\nYes = save "+rs(total)+" as typed (mismatch kept on record). Go back = fix the amount.",{title:"Amount mismatch",danger:true,ok:"Yes, save "+rs(total),cancel:"Go back"})){
+          const a=card.querySelector(".pb-line .am");if(a)a.focus();return}}
+      else if(!await ERPShell.confirm((edit?"Change the Tally bill of ":"Save Tally bill for ")+o.order_no+"?\n\n"+(edit?"Was: "+((o.bills||[]).length?o.bills.map(b=>(b.firm||o.party)+" · bill "+b.no+" · "+rs(b.amount)).join("\n"):o.invoice_no+" · "+rs(was))+"\nDate "+dmy(o.invoice_date)+"\n\nNow: ":"")+bl+(v.w&&!mis&&Math.abs(total-v.old)<=1&&Math.abs(v.old-v.exp)>1?"\n\nPO change waiting with Admin ("+sg(Number(v.w.diff))+"): on approve this bill moves to "+rs(v.exp)+".":"")+
         "\n\n"+(edit?(Math.abs(total-was)>0.005?"To collect on "+o.parent+" "+(total>was?"goes up":"goes down")+" by "+rs(Math.abs(r2(total-was)))+".":"Amount same, To collect does not change."):rs(total)+" goes to To collect on "+o.parent+".")))return;
       btn.disabled=true;
       try{
         const {error}=await client.rpc("lwb_save_tally_bills",{p_order_id:o.order_id,p_invoice_date:date,p_bills:lines,p_note:null});
         if(error)throw error;
+        if(mis){const r=await client.rpc("lwb_bill_mismatch_note",{p_order_id:o.order_id,p_expected:v.exp,p_basis:v.basis,p_change_id:v.w?v.w.id:null});if(r.error)console.warn("mismatch not recorded",r.error)}
         if(edit)mdEdit=null;
-        toast("Bill "+lines.map(l=>l.no).join(", ")+(edit?" changed · "+rs(total):" saved · "+rs(total)+" to collect from "+o.parent+" · see Bills made"));
+        toast("Bill "+lines.map(l=>l.no).join(", ")+(edit?" changed · "+rs(total):" saved · "+rs(total)+" to collect from "+o.parent+" · see Bills made")+(mis?" · "+rs(Math.abs(d))+(d<0?" short":" extra")+" noted":""));
         await load();
       }catch(e){btn.disabled=false;ERPShell.alert("Could not save the bill: "+errText(e))}
     }
