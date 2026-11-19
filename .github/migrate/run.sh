@@ -133,4 +133,17 @@ JS
   node "$W/shot.js"
   ;;
 
+check)
+  for f in "OLD_URL:old" "NEW_URL:new"; do u=${f%%:*}; echo "== ${f##*:}"
+    psql "${!u}" -Atq -F' ' <<'SQL'
+select 'storage policies', count(*) from pg_policies where schemaname='storage';
+select 'auth triggers', string_agg(t.tgname, ',' order by t.tgname) from pg_trigger t join pg_class c on c.oid=t.tgrelid join pg_namespace n on n.oid=c.relnamespace where n.nspname in ('auth','storage') and not t.tgisinternal;
+select 'role settings', r.rolname, array_to_string(s.setconfig, ' | ') from pg_db_role_setting s join pg_roles r on r.oid=s.setrole where r.rolname in ('authenticator','anon','authenticated','service_role','postgres');
+select 'maintenance on', is_on from public.lwb_maintenance;
+select 'publication', string_agg(tablename, ',') from pg_publication_tables where pubname='supabase_realtime';
+select 'extensions', string_agg(extname, ',' order by extname) from pg_extension;
+SQL
+  done
+  ;;
+
 esac
