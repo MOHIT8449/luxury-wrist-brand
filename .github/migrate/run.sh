@@ -186,7 +186,7 @@ with open(sys.argv[2],'w') as f:
       f.write(k+"="+json.dumps(v)+"\n")
 print("values found: "+" ".join(k for k,v in d.items() if v))
 PY
-  supabase secrets set --env-file "$W/sec.env" --project-ref "$NEW_REF" > "$W/ss.log" 2>&1 && echo "set on new project" || { echo "set failed"; tail -3 "$W/ss.log" | cut -c1-200; }
+  supabase secrets set --env-file "$W/sec.env" --project-ref "$NEW_REF" --yes > "$W/ss.log" 2>&1 && echo "set on new project" || { echo "set failed"; tail -3 "$W/ss.log" | cut -c1-200; }
   rm -f "$W/sec.json" "$W/sec.env"
   echo "new secret names: $(supabase secrets list --project-ref "$NEW_REF" -o json 2>/dev/null | python3 -c 'import sys,json;print(" ".join(x["name"] for x in json.load(sys.stdin) if not x["name"].startswith("SUPABASE_")))')"
   ;;
