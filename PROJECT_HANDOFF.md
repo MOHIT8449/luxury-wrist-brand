@@ -4,12 +4,11 @@
 **Purpose:** Continue the same ERP project from a new ChatGPT conversation without restarting or losing the agreed requirements.
 **Status:** Active development / verification. Do not assume all modules are completed or fully tested.
 
-## Test site: changes go to a test site first, live after Mohit's OK (13 Nov 2026)
-
-- Mohit: every update went straight live. He wants each change (Driver, Sales Head, Salesman, Accounts ...) first on a test site with a dummy login per role, check what each role sees, and only after his OK put it live for everyone. He chose a separate free TEST Supabase project (option A).
-- Flow (see `CLAUDE.md`): PR -> branch `next` -> `.github/workflows/test-site.yml` runs the new SQL on the TEST database, deploys changed Edge Functions to the TEST project, builds the site with the TEST URL / key (`.github/scripts/test-site-build.sh`, red "TEST SITE" tag on every page) and pushes it to branch `test-site` = https://test-site.luxury-wrist-brand.pages.dev. Mohit OK -> PR `next` -> `main` = live (supabase-apply.yml as before). A push to `main` is merged into `next` automatically.
-- `.github/workflows/test-db-setup.yml` ("Test DB copy from live", type WIPE-TEST): copies the live schema, RLS, storage buckets + rules, Realtime tables and (copy_data = yes) all rows and logins. Copied logins get random passwords, phones / MFA cleared; `.github/test-site/safety.sql` turns phone push off, removes saved phones and cron jobs. `.github/test-site/seed-test-users.sql`: 7 test logins `test.<role>@lwb.test` with the password of secret `STAGING_TEST_PASSWORD`.
-- Needs from Mohit: new Supabase project, secrets `STAGING_SUPABASE_DB_URL` + `STAGING_TEST_PASSWORD`, and the test project URL + publishable key in `.github/test-site/config.env`.
+## Auto-fit to screen (19 Nov 2026)
+- Mohit kept zooming the browser out to 80% to fit pages. `erp-fit.js` (in `<head>` of every ERP page, before the title) now draws the page at 90% (screen 1100px+), 85% (1280px+), 80% (1700px+) with CSS `zoom` on `<html>`; phones / small tablets (under 1100px) unchanged; print unchanged. Page bodies use the full width on these screens (old 1200-1450px caps lifted).
+- CSS zoom draws vh / vw short, so erp-fit.js rewrites vh / vw in stylesheets (and added `<style>` / inline styles) to `calc(N vh * var(--lwb-vz))`.
+- Popups placed from `getBoundingClientRect()` must convert: use `LWBFit.rect(el)`, `LWBFit.vw()`, `LWBFit.vh()`, `LWBFit.z()` (done in erp-select, erp-multi, erp-colfilter, erp-info, PO SKU picker, PO trend tooltip). New pages: add `<script src="erp-fit.js"></script>` after the viewport meta. Opt out: `<html data-nofit>` (Live Tracking map).
+- Users who still have browser zoom at 80% should press Ctrl+0 once.
 
 ## Late POs: highlight + bell only, never blocked (19 Nov 2026)
 - Mohit: a PO past 36 hrs still has to be delivered; the Sales Head keeps full rights (transport, loading, bill, Mark delivered). Nothing in the UI or SQL blocks a late PO.
@@ -1187,3 +1186,10 @@
 - Top bar "ON" profit toggle: purple -> gold with teal text. Cashbook: brand blue -> teal, background ivory (dark mode brand = gold).
 - `erp-shell.css` end, "UI/UX polish pass": two+ buttons in a table cell stay on one line; phone tool / filter bars let buttons share one line; Stock Audit sticky bar = note text line, note field, then Save draft + Submit audit in one row.
 - Screenshots: project files `ui-ux-pro-polish/`.
+
+## Test site: changes go to a test site first, live after Mohit's OK (13 Nov 2026)
+
+- Mohit: every update went straight live. He wants each change (Driver, Sales Head, Salesman, Accounts ...) first on a test site with a dummy login per role, check what each role sees, and only after his OK put it live for everyone. He chose a separate free TEST Supabase project (option A).
+- Flow (see `CLAUDE.md`): PR -> branch `next` -> `.github/workflows/test-site.yml` runs the new SQL on the TEST database, deploys changed Edge Functions to the TEST project, builds the site with the TEST URL / key (`.github/scripts/test-site-build.sh`, red "TEST SITE" tag on every page) and pushes it to branch `test-site` = https://test-site.luxury-wrist-brand.pages.dev. Mohit OK -> PR `next` -> `main` = live (supabase-apply.yml as before). A push to `main` is merged into `next` automatically.
+- `.github/workflows/test-db-setup.yml` ("Test DB copy from live", type WIPE-TEST): copies the live schema, RLS, storage buckets + rules, Realtime tables and (copy_data = yes) all rows and logins. Copied logins get random passwords, phones / MFA cleared; `.github/test-site/safety.sql` turns phone push off, removes saved phones and cron jobs. `.github/test-site/seed-test-users.sql`: 7 test logins `test.<role>@lwb.test` with the password of secret `STAGING_TEST_PASSWORD`.
+- Needs from Mohit: new Supabase project, secrets `STAGING_SUPABASE_DB_URL` + `STAGING_TEST_PASSWORD`, and the test project URL + publishable key in `.github/test-site/config.env`.

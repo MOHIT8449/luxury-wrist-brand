@@ -55,7 +55,7 @@
       q.addEventListener("input",draw);
       q.addEventListener("keydown",e=>{if(e.key==="Enter"){e.preventDefault();const s=shown();if(s.length===1){sel.has(s[0].v)?sel.delete(s[0].v):sel.add(s[0].v);draw();fire()}}});
       draw();
-      const r=btn.getBoundingClientRect(),vw=innerWidth,vh=innerHeight,w=Math.min(vw-16,Math.max(r.width,280));
+      const F=window.LWBFit,r=F?F.rect(btn):btn.getBoundingClientRect(),vw=F?F.vw():innerWidth,vh=F?F.vh():innerHeight,w=Math.min(vw-16,Math.max(r.width,280));
       const left=Math.max(8,Math.min(r.left,vw-w-8)),below=vh-r.bottom-8,above=r.top-8,up=below<260&&above>below;
       pop.style.width=w+"px";pop.style.left=left+"px";
       const h=Math.min(380,up?above:below);pop.style.maxHeight=h+"px";
