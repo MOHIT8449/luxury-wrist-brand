@@ -8,7 +8,7 @@
 --     The party is taken from the PO itself, and that same PO is left out, so only earlier history shows.
 --     Qty is the approved qty (ordered qty if not approved yet). Cancelled / rejected POs are left out.
 --     Same rights as lwb_party_sku_rate_history (PO Entry ⓘ): Admin, Sales Head, Salesman; a field
---     salesman only for his own parties. The page shows the ⓘ to Admin only for now.
+--     salesman only for his own parties. The page shows the ⓘ to Admin and Sales Head (19 Nov 2026).
 -- Read only. No order, rate, stock, bill, ledger or Tally change.
 
 BEGIN;
