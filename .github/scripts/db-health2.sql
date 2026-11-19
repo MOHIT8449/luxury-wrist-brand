@@ -1,4 +1,4 @@
-set default_transaction_read_only = on;
+-- temp tables only below; nothing real is written
 set statement_timeout = '120s';
 \echo == System statements (text start) ==
 select r.rolname, s.calls, round(s.total_exec_time/1000) total_s, round(s.mean_exec_time::numeric,1) mean_ms, round(s.max_exec_time::numeric) max_ms,
