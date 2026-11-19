@@ -111,4 +111,26 @@ functions)
     supabase functions deploy "$fn" --project-ref "$NEW_REF" --use-api --yes > "$W/fn.log" 2>&1 && echo "deployed $fn" || { echo "failed $fn"; tail -3 "$W/fn.log" | cut -c1-200; }
   done
   ;;
+preview)
+  # Open the Mumbai preview site's login page, check it talks to the new project. Login page only (no data).
+  curl -s -o /dev/null -w "new auth health: %{http_code}\n" -H "apikey: sb_publishable_YA2Pow327REqgrWPzVCZiA_nw1F32_o" "$NEW_API/auth/v1/health"
+  cd "$W" && npm i -s playwright@1.49.1 >/dev/null 2>&1 && npx -y playwright@1.49.1 install --with-deps chromium >/dev/null 2>&1
+  mkdir -p "$GITHUB_WORKSPACE/shots"
+  cat > "$W/shot.js" <<'JS'
+const { chromium } = require('playwright');
+(async () => {
+  const b = await chromium.launch(); const ctx = await b.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true });
+  const p = await ctx.newPage(); const hits = {};
+  p.on('response', r => { const u = new URL(r.url()); if (u.host.includes('supabase')) hits[u.host + ' ' + r.status()] = (hits[u.host + ' ' + r.status()] || 0) + 1; });
+  for (const pg of ['login.html']) {
+    await p.goto('https://claude-mumbai-switch.luxury-wrist-brand.pages.dev/' + pg, { waitUntil: 'networkidle', timeout: 60000 });
+    await p.waitForTimeout(3000);
+    await p.screenshot({ path: process.env.GITHUB_WORKSPACE + '/shots/' + pg.replace('.html', '') + '.png' });
+  }
+  console.log('supabase calls:', JSON.stringify(hits)); await b.close();
+})();
+JS
+  node "$W/shot.js"
+  ;;
+
 esac
