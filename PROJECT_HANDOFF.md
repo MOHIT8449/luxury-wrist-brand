@@ -4,6 +4,10 @@
 **Purpose:** Continue the same ERP project from a new ChatGPT conversation without restarting or losing the agreed requirements.
 **Status:** Active development / verification. Do not assume all modules are completed or fully tested.
 
+## Order change approve: PO loaded / billed after the ask (19 Nov 2026)
+- Mohit: Admin could not approve the PO change of LXY-00441 (AMBALAL TOBECO, 2.25L FANTA 10 CS removed, Rs 8,925 -> 2,275). It was asked before loading; the PO was loaded (10 CS) and the Tally bill entered at Rs 2,275 afterwards, so approve cut Rs 6,650 off the bill again and stopped with "The Tally bill 2275.00 would go to zero or below".
+- SQL `lwb_bill_change_loaded_later_fix.sql` (test `tests/bill-change`, now 15): `lwb_bill_change_apply` switches a change asked before loading to the loaded qty when the PO is loaded now (loaded + approved qty, godown stock back, PO total follow; a line loaded with another qty stops with a clear send-back message); a Tally bill already at the new value (within Rs 1) is left as it is (`bill_applied.already = true`). Dry run on live data rolled back: approve worked.
+
 ## Godown Manager: only his own work bells + dashboard (19 Nov 2026)
 - Mohit: GM gets bells only for work given to him (loading assigned, purchase vehicle to unload / photos, tasks). No bill made, PO change, approvals, delivery etc.
 - SQL `lwb_gm_notify_scope_setup.sql` (test `tests/gm-notify-scope`, PGlite, 4 tests): `lwb_gm_bell_ok(user,type,order,ref_type,ref_id,title)`; BEFORE INSERT trigger `trg_lwb_gm_bell_filter` drops other bells for role warehouse (so no phone push); RESTRICTIVE SELECT policy `lwb_gm_own_work_bells` hides old ones; old unread ones marked read. Allowed: LOADING_ASSIGNMENT_DISPATCH (dispatch loading_manager_id or self-pickup godown_user_id = him, or "Loading Moved"), PURCHASE_ARRIVED (bill godown_user_id = him), TASK_*, DELIVERY_RETURN_RECEIVE (lwb_return_gm = him), CHAT_MSG, ANNOUNCEMENT. Loading bell with no GM chosen no longer goes to every GM.
