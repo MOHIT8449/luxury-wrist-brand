@@ -12,6 +12,10 @@ counts(){ # $1 url -> "schema.table rows" for public, auth, storage
     where c.relkind='r' and n.nspname in ('public','auth','storage') order by 1" | psql "$1" -Atq 2>/dev/null | sort
 }
 
+storage_policies(){ # old storage policies -> $W/sp.sql
+  psql "$OLD_URL" -Atq -c "select format('drop policy if exists %I on %I.%I; create policy %I on %I.%I as %s for %s to %s%s%s;', policyname, schemaname, tablename, policyname, schemaname, tablename, permissive, cmd, (select string_agg(case when r='public' then 'public' else quote_ident(r) end, ', ') from unnest(roles) r), coalesce(' using ('||qual||')',''), coalesce(' with check ('||with_check||')','')) from pg_policies where schemaname='storage' order by tablename, policyname" > "$W/sp.sql"
+}
+
 case "$step" in
 test)
   echo "Old tables / rows:"; counts "$OLD_URL" | awk '{t++; r+=$2} END{print t" tables, "r" rows"}'
@@ -28,7 +32,8 @@ copy)
   # cron jobs and realtime tables of the old project, to make again on the new one
   psql "$OLD_URL" -Atq -c "select format('select cron.schedule(%L,%L,%L);', jobname, schedule, command) from cron.job where active" > "$W/cron.sql"
   psql "$OLD_URL" -Atq -c "select format('alter publication supabase_realtime add table %I.%I;', schemaname, tablename) from pg_publication_tables where pubname='supabase_realtime'" > "$W/rt.sql"
-  echo "cron jobs: $(wc -l < "$W/cron.sql"), realtime tables: $(wc -l < "$W/rt.sql")"
+  storage_policies
+  echo "cron jobs: $(wc -l < "$W/cron.sql"), realtime tables: $(wc -l < "$W/rt.sql"), storage policies: $(wc -l < "$W/sp.sql")"
   # 2. New project: empty its public schema and auth / storage rows, so this step can run again.
   echo "$(date +%T) wipe new"
   psql "$NEW_URL" -v ON_ERROR_STOP=1 -o /dev/null > "$W/w.log" 2>&1 <<'SQL' || { errs "$W/w.log"; exit 1; }
@@ -75,6 +80,7 @@ SQL
   echo "$(date +%T) restored"
   psql "$NEW_URL" -q -o /dev/null -f "$W/rt.sql" > "$W/r3.log" 2>&1; errs "$W/r3.log" 5
   psql "$NEW_URL" -q -o /dev/null -f "$W/cron.sql" > "$W/r4.log" 2>&1; errs "$W/r4.log" 5
+  psql "$NEW_URL" -q -o /dev/null -v ON_ERROR_STOP=1 --single-transaction -f "$W/sp.sql" > "$W/r5.log" 2>&1 && echo "storage policies applied" || { echo "::error::storage policies failed"; errs "$W/r5.log" 5; }
   # 4. Point the push webhook at the new project.
   psql "$NEW_URL" -q -o /dev/null -c "update public.lwb_push_config set project_url='$NEW_API' where id=1" 2>&1 | head -3
   psql "$NEW_URL" -q -o /dev/null -c "notify pgrst, 'reload schema'"
@@ -133,6 +139,12 @@ JS
   node "$W/shot.js"
   ;;
 
+policies)
+  storage_policies; echo "storage policies: $(wc -l < "$W/sp.sql")"
+  psql "$NEW_URL" -q -o /dev/null -v ON_ERROR_STOP=1 --single-transaction -f "$W/sp.sql" > "$W/r5.log" 2>&1 && echo "applied" || { echo "::error::failed"; errs "$W/r5.log" 5; }
+  bash "$0" check
+  ;;
+
 check)
   for f in "OLD_URL:old" "NEW_URL:new"; do u=${f%%:*}; echo "== ${f##*:}"
     psql "${!u}" -Atq -F' ' <<'SQL'
@@ -141,6 +153,7 @@ select 'auth triggers', string_agg(t.tgname, ',' order by t.tgname) from pg_trig
 select 'role settings', r.rolname, array_to_string(s.setconfig, ' | ') from pg_db_role_setting s join pg_roles r on r.oid=s.setrole where r.rolname in ('authenticator','anon','authenticated','service_role','postgres');
 select 'maintenance on', is_on from public.lwb_maintenance;
 select 'publication', string_agg(tablename, ',') from pg_publication_tables where pubname='supabase_realtime';
+select 'vault secrets', count(*) from vault.secrets;
 select 'extensions', string_agg(extname, ',' order by extname) from pg_extension;
 SQL
   done
