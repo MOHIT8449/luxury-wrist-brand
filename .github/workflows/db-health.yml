@@ -30,12 +30,14 @@ jobs:
           echo "== API latency from runner =="
           for i in 1 2 3; do curl -s -o /dev/null -w "auth health %{http_code} %{time_total}s\n" -H "apikey: sb_publishable_W4I3Q5ODf0g17sq5uDml2Q_sLolXYEk" https://$SUPABASE_PROJECT_REF.supabase.co/auth/v1/health; done
           for i in 1 2 3; do curl -s -o /dev/null -w "site %{http_code} %{time_total}s\n" https://luxury-wrist-brand.pages.dev/dashboard.html; done
-          psql "$DB_URL" -X -v ON_ERROR_STOP=0 -P pager=off -f .github/scripts/db-health2.sql
+          psql "$DB_URL" -X -v ON_ERROR_STOP=0 -P pager=off -c "show max_connections" -c "show shared_buffers"
       - name: Plan and compute (Management API)
         env:
           T: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
         run: |
           [ -z "$T" ] && { echo "no token"; exit 0; }
           A="https://api.supabase.com/v1"
-          ORG=$(curl -s -H "Authorization: Bearer $T" "$A/projects/$SUPABASE_PROJECT_REF" | jq -r '.organization_slug // .organization_id')
-          curl -s -H "Authorization: Bearer $T" "$A/organizations/$ORG" | jq -c '{plan, keys: keys}'
+          curl -s -H "Authorization: Bearer $T" "$A/organizations" | jq -c '[.[]|{slug:(.id|.[0:4]), plan}]'
+          for o in $(curl -s -H "Authorization: Bearer $T" "$A/organizations" | jq -r '.[].id'); do curl -s -H "Authorization: Bearer $T" "$A/organizations/$o" | jq -c '{plan, allowed_release_channels}'; done
+          curl -s -H "Authorization: Bearer $T" "$A/projects/$SUPABASE_PROJECT_REF/database/backups" | jq -c '{region, pitr_enabled, walg_enabled, backups:[.backups[]?|{status,inserted_at,is_physical_backup}]}'
+          curl -s -H "Authorization: Bearer $T" "$A/projects/$SUPABASE_PROJECT_REF/billing/addons" | jq -c '{selected:[.selected_addons[]?|{type,v:.variant.id}]}'
