@@ -4,6 +4,11 @@
 **Purpose:** Continue the same ERP project from a new ChatGPT conversation without restarting or losing the agreed requirements.
 **Status:** Active development / verification. Do not assume all modules are completed or fully tested.
 
+## Godown Manager: only his own work bells + dashboard (19 Nov 2026)
+- Mohit: GM gets bells only for work given to him (loading assigned, purchase vehicle to unload / photos, tasks). No bill made, PO change, approvals, delivery etc.
+- SQL `lwb_gm_notify_scope_setup.sql` (test `tests/gm-notify-scope`, PGlite, 4 tests): `lwb_gm_bell_ok(user,type,order,ref_type,ref_id,title)`; BEFORE INSERT trigger `trg_lwb_gm_bell_filter` drops other bells for role warehouse (so no phone push); RESTRICTIVE SELECT policy `lwb_gm_own_work_bells` hides old ones; old unread ones marked read. Allowed: LOADING_ASSIGNMENT_DISPATCH (dispatch loading_manager_id or self-pickup godown_user_id = him, or "Loading Moved"), PURCHASE_ARRIVED (bill godown_user_id = him), TASK_*, DELIVERY_RETURN_RECEIVE (lwb_return_gm = him), CHAT_MSG, ANNOUNCEMENT. Loading bell with no GM chosen no longer goes to every GM.
+- `erp-operations-notifications.js`: same rule by type (GM_BELL). `role-dashboard.js` warehouse: KPIs To load · To unload (purchase) · My tasks · Returns to check; cards My orders to load, Purchase to unload, My tasks, SKU-wise. Godown report card and "Loaded, on the way" removed.
+
 ## Pending tasks for every staff member + Admin "All staff" task list (19 Nov 2026)
 - Mohit: every login (godown, driver, salesman, Sales Head, Accounts) must see "you have N pending tasks, complete them"; Admin must see one list of every person's tasks (who gave, to whom, done / pending, since when).
 - `dashboard.html`: strip `#taskAlert` under the KPIs: "You have N pending tasks · M overdue" (amber, red when overdue, oldest late days) -> tasks.html. Admin also gets "Staff tasks: N pending · M overdue · X people" -> `tasks.html?tab=ALL`. My Tasks query limit 50 -> 300.

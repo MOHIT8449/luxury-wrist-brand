@@ -546,8 +546,8 @@
     /* ===== Godown Manager: only the orders the Sales Head / Admin gave to this login (Mohit, 18 Nov 2026) ===== */
     async warehouse(){
       const t=today();
-      const [orders,gr,vq]=await Promise.all([loadOrders(),
-        safe(C.from("lwb_godown_reports").select("*").eq("report_date",t).order("created_at",{ascending:false})),verifyQueue()]);
+      // Godown Manager: only work given to him (loading, purchase unloading / photos, tasks, his returns).
+      const [orders,vq]=await Promise.all([loadOrders(),verifyQueue()]);
       const O=orders||[],all=O.filter(o=>["transport_allocated","loading","loaded"].includes(st(o)));
       const ids=all.map(o=>o.id),asg=[],pick=[];
       for(let i=0;i<ids.length;i+=100){const part=ids.slice(i,i+100);
@@ -570,11 +570,21 @@
       const rows=pend.map(o=>({...o,vehicle:veh(o),driver:drv(o),cases:qOf(o)}));
       const ret=queueItem(vq,"RETURN_RECEIVE");
       const OC=[{t:"Party",v:"customer_name"},{t:"Date",v:"order_date",date:true},{t:"Vehicle",v:"vehicle"},{t:"Driver",v:"driver"},{t:"Cases",v:"cases",num:true,sum:true,dec:0}];
+      // Purchase vehicles given to me to unload / check / add photos (not checked yet, last 30 days).
+      const from30=shift(t,-30);
+      const gb=await safe(C.from("lwb_goods_inward").select("id,invoice_no,supplier_name,vehicle_no,received_date").eq("godown_user_id",UID).gte("received_date",from30).order("received_date",{ascending:false}).limit(200));
+      let pur=[];
+      if(gb&&gb.length){const chk=new Set(),gi=gb.map(x=>x.id);
+        for(let i=0;i<gi.length;i+=100){const c=await safe(C.from("lwb_purchase_checks").select("inward_id").in("inward_id",gi.slice(i,i+100)));(c||[]).forEach(x=>chk.add(x.inward_id))}
+        pur=gb.filter(x=>!chk.has(x.id))}
+      // Tasks given to me (the purchase photo task is one of them).
+      const tk=(await safe(C.from("lwb_tasks").select("id,title,due_date,priority,status,assigned_by_name").eq("assigned_to",UID).in("status",["OPEN","IN_PROGRESS"]).order("due_date").limit(300)))||[];
+      const lateD=x=>days(String(x.due_date||t).slice(0,10),t),tkLate=tk.filter(x=>lateD(x)>0).length;
       const k=[
-        kpi("amber","Pending orders",fmt(pend.length),pend.length?"Assigned to me for loading":"Nothing assigned","loading-dispatch.html",orders&&lst("Pending orders","Assigned to me, not loaded yet",rows,OC,"loading-dispatch.html")),
-        kpi("blue","Pending loading qty",fmt(pendQ)+" "+qWord(),fmt(byS.size)+" SKU"+(byS.size==1?"":"s")+" · approved qty","loading-dispatch.html"),
-        kpi("teal","Loaded, on the way",fmt(done.length),"Leaves after delivery","loading-dispatch.html"),
-        kpi("red","Returns to receive",ret?fmt(ret.cnt):"0","From drivers","driver-returns.html")];
+        kpi("amber","To load",fmt(pend.length),pend.length?fmt(pendQ)+" "+qWord()+" · "+fmt(byS.size)+" SKU"+(byS.size==1?"":"s"):"Nothing assigned","loading-dispatch.html",orders&&lst("To load","Assigned to me, not loaded yet",rows,OC,"loading-dispatch.html")),
+        kpi("blue","To unload (purchase)",fmt(pur.length),pur.length?"Check goods + photos":"No purchase vehicle","loading-dispatch.html?tab=purchase"),
+        kpi(tkLate?"red":"teal","My tasks",fmt(tk.length),tk.length?(tkLate?'<span class="dn">'+tkLate+" overdue</span>":"Given to me"):"No pending task","tasks.html")];
+      k.push(kpi("red","Returns to check",ret?fmt(ret.cnt):"0","Goods back from my vehicles","driver-returns.html"));
       const SB={transport_allocated:["r","To load"],loading:["a","Loading"]};
       const my=orders?card("🚛 My orders to load",go("loading-dispatch.html","Loading & Dispatch →"),rows.length?'<div class="rd-scroll"><table><thead><tr><th>Party</th><th class="hide-sm">Date</th><th>Vehicle / Driver</th><th class="n">Cases</th><th></th></tr></thead><tbody>'+
         rows.slice(0,30).map(o=>{const b=SB[st(o)]||["r","To load"];return '<tr class="rd-click" onclick="location.href=\'loading-dispatch.html?order='+encodeURIComponent(o.id)+'\'"><td><b>'+esc(o.customer_name||"—")+"</b><br><small>"+esc(o.order_no||"")+'<span class="show-sm"> · '+esc(dmy(o.order_date))+'</span></small></td><td class="hide-sm">'+esc(dmy(o.order_date))+"</td><td>"+esc(o.vehicle)+"<br><small>"+esc(o.driver||"—")+'</small></td><td class="n"><b>'+fmt(o.cases)+'</b></td><td>'+badge(b[0],b[1])+"</td></tr>"}).join("")+
@@ -582,11 +592,12 @@
       const sk=[...byS.values()].sort((a,b)=>b.cases-a.cases);
       const skc=pend.length&&it?card("📦 Pending loading qty — SKU wise",go("loading-dispatch.html","Load →"),'<div class="rd-scroll"><table><thead><tr><th>SKU</th><th class="n">Orders</th><th class="n">Approved qty</th></tr></thead><tbody>'+
         sk.map(x=>"<tr><td>"+esc(x.sku)+'</td><td class="n">'+x.orders.size+'</td><td class="n"><b>'+fmt(x.cases)+" "+uOf(x.sku)+"</b></td></tr>").join("")+'</tbody><tfoot><tr><td>Total</td><td></td><td class="n"><b>'+fmt(pendQ)+"</b></td></tr></tfoot></table></div>"):"";
-      const KIND={VEHICLE:["blu","Vehicle"],DAMAGE:["red","Damage"],ABSENT:["amb","Staff absent"],ISSUE:["amb","Issue"]};
-      const rep=gr?card("📝 Godown report — today",go("godown-report.html","Godown Report →"),(gr.length?gr.slice(0,5).map(x=>{const k2=KIND[x.kind]||["blu",x.kind];
-        return dot(k2[0],"<b>"+k2[1]+":</b> "+esc([x.vehicle_no,x.sku_name,x.cases?x.cases+" cs":"",x.pcs?x.pcs+" pcs":"",x.person_name,x.note].filter(Boolean).join(" · ")||"—"))}).join(""):'<div class="rd-empty">No report today.</div>')+
-        (can("godown-report.html")?'<div class="rd-bd rd-line"><a class="rd-btn" href="godown-report.html">+ New report</a></div>':"")):"";
-      return shell(k,[my],[skc,rep]);
+      const purC=card("📦 Purchase to unload",go("loading-dispatch.html?tab=purchase","Unloading →"),pur.length?'<div class="rd-scroll"><table><thead><tr><th>Supplier</th><th>Vehicle</th><th class="hide-sm">Date</th><th></th></tr></thead><tbody>'+
+        pur.slice(0,10).map(x=>'<tr class="rd-click" onclick="location.href=\'loading-dispatch.html?tab=purchase\'"><td><b>'+esc(x.supplier_name||"Supplier")+"</b><br><small>Inv "+esc(x.invoice_no||"-")+'<span class="show-sm"> · '+esc(dmy(x.received_date))+'</span></small></td><td><b>'+esc(String(x.vehicle_no||"—").toUpperCase())+'</b></td><td class="hide-sm">'+esc(dmy(x.received_date))+"</td><td>"+badge("a","Unload")+"</td></tr>").join("")+
+        "</tbody></table></div>":'<div class="rd-empty">No purchase vehicle given to you right now.</div>',"Check goods, add vehicle / damage photos, submit.");
+      const tkC=card("📝 My tasks",go("tasks.html","All tasks →"),tk.length?"<table><tbody>"+tk.slice(0,6).map(x=>{const d=lateD(x);
+        return '<tr class="rd-click" onclick="location.href=\'tasks.html?id='+encodeURIComponent(x.id)+'\'"><td><b>'+esc(x.title||"Task")+"</b><br><small>TSK-"+esc(x.id)+(x.assigned_by_name?" · from "+esc(x.assigned_by_name):"")+'</small></td><td class="n">'+(x.priority==="URGENT"?badge("r","Urgent")+" ":"")+(d>0?badge("r","Overdue "+d+"d"):d===0?badge("a","Today"):badge("b",esc(dmy(x.due_date))))+"</td></tr>"}).join("")+"</tbody></table>":'<div class="rd-empty">✓ No pending task for you.</div>');
+      return shell(k,[my,purC],[tkC,skc]);
     },
 
     /* ===== Salesman: plan, target, my orders (phone first) ===== */
