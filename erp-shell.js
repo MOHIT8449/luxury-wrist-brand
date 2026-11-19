@@ -135,7 +135,7 @@
       // One "Purchase" item (Mohit, 4 Nov 2026): the list, with "+ New Purchase" on top. Purchase Entry is
       // not drawn in the side menu (nm) but stays in search and Manage Users; its list item is lit (par).
       {t:"New Purchase (Goods Inward)",h:"goods-inward.html",i:"inbox",r:"admin manager",k:"goods inward purchase bill new entry",pt:"Purchase Entry (Goods Inward)",nm:"admin manager",par:"purchase-register.html"},
-      {t:"Purchase",h:"purchase-register.html",i:"note",r:"admin manager warehouse accounts",k:"purchase register bills verify damage photo",pt:"Purchase List / Register",vo:"accounts"},
+      {t:"Purchase",h:"purchase-register.html",i:"note",r:"admin manager warehouse accounts",k:"purchase register bills verify damage photo",pt:"Purchase List / Register"},
       // ECRS (Mohit, 16 Nov 2026): company's daily allowed quantity, our truck orders (Order 1, 2, 3), payment.
       {t:"ECRS Order",h:"ecrs.html",i:"note",r:"admin manager",k:"ecrs acrs company order truck pallet gr discount rtgs coca cola"},
       {t:"Purchase Claims",h:"purchase-claims.html",i:"inbox",r:"admin manager",k:"damage leakage shortage claim"}]},

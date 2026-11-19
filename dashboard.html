@@ -134,6 +134,18 @@
     .tk-dash-row.late{box-shadow:inset 3px 0 0 var(--erp-danger,#c62828)}
     .tk-dash-row.today{box-shadow:inset 3px 0 0 var(--erp-amber)}
     .tk-dash-none{padding:10px 14px;color:var(--erp-muted);font-size:13px}
+    /* Pending-task strip (Mohit, 19 Nov 2026): every login sees "you have N pending tasks"; Admin also sees the team total. */
+    .tk-alert{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 12px}
+    .tk-al{flex:1 1 300px;display:flex;align-items:center;gap:8px;padding:8px 12px;border-radius:8px;border:1px solid #f1d29a;background:#fff8e8;color:#7a4a00;text-decoration:none;font-size:13.5px;min-width:0}
+    .tk-al.late{border-color:#f0b4ae;background:#fdecea;color:#9b1c1c}
+    .tk-al.team{border-color:var(--erp-line);background:#fff;color:var(--erp-ink)}
+    .tk-al .ic{font-size:17px;flex:none}
+    .tk-al .tx{flex:1;min-width:0}
+    .tk-al .tx b{font-size:15px}
+    .tk-al .tx small{display:block;font-size:12px;opacity:.85}
+    .tk-al .n-late{color:#c62828;font-weight:700}
+    .tk-al .go{flex:none;font-weight:700;font-size:12.5px;white-space:nowrap;border-radius:6px;padding:5px 10px;background:#7a4a00;color:#fff}
+    .tk-al.late .go{background:#c62828}.tk-al.team .go{background:var(--erp-red)}
     [hidden]{display:none!important}
     @media(max-width:1100px){.dash-grid{grid-template-columns:1fr}.side-col{display:contents}#verifyCard{order:-1}}
     @media(max-width:980px){.hero{margin:-14px -12px 0;padding:18px 12px 60px}.hero h2{font-size:18px}
@@ -208,6 +220,7 @@
       </div>
     </div>
     <div class="kpis" id="kpis"></div>
+    <div class="tk-alert" id="taskAlert" hidden></div>
     <a class="acc-dash" id="accDash" href="accounts-dashboard.html" hidden><span class="acc-ic">₹</span><span><b>Accounts Dashboard</b><small>Today's cash in / cash out, bank deposit, cash handover, bank check</small></span><span class="acc-go">Open →</span></a>
     <div class="banners" id="banners" hidden></div>
     <div class="focus" id="focus"></div>
@@ -346,9 +359,9 @@
     async function loadTasks(){
       const card=document.getElementById("taskCard");
       const tb=document.getElementById("taskBtn"),gb=document.getElementById("giveBtn"),tn=document.getElementById("taskN");
-      if(ERPShell.hiddenPages().includes("tasks.html")){card.hidden=true;tb.hidden=true;gb.hidden=true;return}
+      if(ERPShell.hiddenPages().includes("tasks.html")){card.hidden=true;tb.hidden=true;gb.hidden=true;document.getElementById("taskAlert").hidden=true;return}
       const [mine,given]=await Promise.all([
-        client.from("lwb_tasks").select("id,title,details,due_date,priority,status,assigned_by_name").eq("assigned_to",taskUid).in("status",["OPEN","IN_PROGRESS"]).order("due_date").limit(50),
+        client.from("lwb_tasks").select("id,title,details,due_date,priority,status,assigned_by_name").eq("assigned_to",taskUid).in("status",["OPEN","IN_PROGRESS"]).order("due_date").limit(300),
         client.from("lwb_tasks").select("id,due_date,status").eq("assigned_by",taskUid).neq("assigned_to",taskUid).in("status",["OPEN","IN_PROGRESS"]).limit(1000)]);
       if(mine.error){card.hidden=true;tb.hidden=true;gb.hidden=true;return}
       const today=new Date().toLocaleDateString("en-CA",{timeZone:"Asia/Kolkata"});
@@ -386,6 +399,29 @@
       if(!tb.dataset.on){tb.dataset.on="1";tb.onclick=()=>{const open=card.hidden;card.hidden=!open;tb.setAttribute("aria-expanded",String(open))}}
       card.hidden=tb.getAttribute("aria-expanded")!=="true";
       taskPopup(rows.filter(x=>late(x)>=0),late,today);
+      taskAlert(rows,lateN,late);
+    }
+    // Strip under the KPIs: "You have N pending tasks, please complete them" (red when one is overdue).
+    // Admin: one more box with every person's pending tasks -> tasks.html?tab=ALL (all staff list).
+    async function taskAlert(rows,lateN,late){
+      const box=document.getElementById("taskAlert");
+      let h="";
+      if(rows.length){
+        const oldest=rows.reduce((m,x)=>Math.max(m,late(x)),-1e9);
+        h+='<a class="tk-al'+(lateN?" late":"")+'" href="tasks.html"><span class="ic">'+(lateN?"⚠️":"📋")+'</span><span class="tx">You have <b>'+rows.length+" pending task"+(rows.length>1?"s":"")+"</b>"+
+          (lateN?' · <span class="n-late">'+lateN+" overdue</span>":"")+"<small>"+(lateN?"Oldest is "+oldest+" day"+(oldest>1?"s":"")+" late. ":"")+"Please complete them and press ✅ Mark done.</small></span>"+
+          '<span class="go">Complete now →</span></a>';
+      }
+      if(currentRole==="admin"){
+        const r=await client.from("lwb_tasks").select("assigned_to,due_date").in("status",["OPEN","IN_PROGRESS"]).limit(5000);
+        const all=r.error?[]:r.data||[];
+        if(all.length){
+          const tl=all.filter(x=>late(x)>0),ppl=new Set(all.map(x=>x.assigned_to)).size,lp=new Set(tl.map(x=>x.assigned_to)).size;
+          h+='<a class="tk-al team" href="tasks.html?tab=ALL"><span class="ic">👥</span><span class="tx">Staff tasks: <b>'+all.length+" pending</b>"+(tl.length?' · <span class="n-late">'+tl.length+" overdue</span>":"")+
+            "<small>"+ppl+" "+(ppl>1?"people":"person")+" have pending work"+(lp?" · "+lp+" late":"")+"</small></span>"+'<span class="go">See all tasks →</span></a>';
+        }
+      }
+      box.innerHTML=h;box.hidden=!h;
     }
     // Today's tasks popup (Mohit, 17 Nov 2026): when the salesman opens the ERP, tasks due today / overdue
     // (e.g. "Follow up 8 parties · bring 5 orders" from Party Buying) pop up once. A new task pops up again.

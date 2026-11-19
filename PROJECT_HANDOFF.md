@@ -4,6 +4,12 @@
 **Purpose:** Continue the same ERP project from a new ChatGPT conversation without restarting or losing the agreed requirements.
 **Status:** Active development / verification. Do not assume all modules are completed or fully tested.
 
+## Pending tasks for every staff member + Admin "All staff" task list (19 Nov 2026)
+- Mohit: every login (godown, driver, salesman, Sales Head, Accounts) must see "you have N pending tasks, complete them"; Admin must see one list of every person's tasks (who gave, to whom, done / pending, since when).
+- `dashboard.html`: strip `#taskAlert` under the KPIs: "You have N pending tasks · M overdue" (amber, red when overdue, oldest late days) -> tasks.html. Admin also gets "Staff tasks: N pending · M overdue · X people" -> `tasks.html?tab=ALL`. My Tasks query limit 50 -> 300.
+- `tasks.html`: Admin-only tab "All staff": KPI tiles (Pending / Overdue / Due today / Done in 7 days, click to filter), one chip per person with pending + late counts (click = filter), filters Given to / Given by / Type (staff / System = ref_type tasks like purchase photo) / Status / Search, table Task · Given to · Given by · Due · Pending since (days since given, red when overdue) · Status; phone shows cards. Row click opens the same details / notes / buttons. Pending tasks now load in full (closed ones latest 1000).
+- No SQL: Admin already reads every lwb_tasks row (lwb_task_visible). Non-admin visibility unchanged. Screenshots (mocked data): project files `staff-pending-tasks/`.
+
 ## Auto-fit to screen (19 Nov 2026)
 - Mohit kept zooming the browser out to 80% to fit pages. `erp-fit.js` (in `<head>` of every ERP page, before the title) now draws the page at 90% (screen 1100px+), 85% (1280px+), 80% (1700px+) with CSS `zoom` on `<html>`; phones / small tablets (under 1100px) unchanged; print unchanged. Page bodies use the full width on these screens (old 1200-1450px caps lifted).
 - CSS zoom draws vh / vw short, so erp-fit.js rewrites vh / vw in stylesheets (and added `<style>` / inline styles) to `calc(N vh * var(--lwb-vz))`.
@@ -1187,9 +1193,9 @@
 - `erp-shell.css` end, "UI/UX polish pass": two+ buttons in a table cell stay on one line; phone tool / filter bars let buttons share one line; Stock Audit sticky bar = note text line, note field, then Save draft + Submit audit in one row.
 - Screenshots: project files `ui-ux-pro-polish/`.
 
-## Test site: changes go to a test site first, live after Mohit's OK (13 Nov 2026)
-
-- Mohit: every update went straight live. He wants each change (Driver, Sales Head, Salesman, Accounts ...) first on a test site with a dummy login per role, check what each role sees, and only after his OK put it live for everyone. He chose a separate free TEST Supabase project (option A).
-- Flow (see `CLAUDE.md`): PR -> branch `next` -> `.github/workflows/test-site.yml` runs the new SQL on the TEST database, deploys changed Edge Functions to the TEST project, builds the site with the TEST URL / key (`.github/scripts/test-site-build.sh`, red "TEST SITE" tag on every page) and pushes it to branch `test-site` = https://test-site.luxury-wrist-brand.pages.dev. Mohit OK -> PR `next` -> `main` = live (supabase-apply.yml as before). A push to `main` is merged into `next` automatically.
-- `.github/workflows/test-db-setup.yml` ("Test DB copy from live", type WIPE-TEST): copies the live schema, RLS, storage buckets + rules, Realtime tables and (copy_data = yes) all rows and logins. Copied logins get random passwords, phones / MFA cleared; `.github/test-site/safety.sql` turns phone push off, removes saved phones and cron jobs. `.github/test-site/seed-test-users.sql`: 7 test logins `test.<role>@lwb.test` with the password of secret `STAGING_TEST_PASSWORD`.
-- Needs from Mohit: new Supabase project, secrets `STAGING_SUPABASE_DB_URL` + `STAGING_TEST_PASSWORD`, and the test project URL + publishable key in `.github/test-site/config.env`.
+## Sheet & Pallet: company ILS statement match + ledger start 1 Nov (19 Nov 2026)
+- Mohit: check our Sheet & Pallet company ledger against the company ILS statement (opening + per vehicle / invoice Issue and Receipt), start the ledger from 1 Nov 2026 with the statement opening (older company and party entries cleared from the ledger), and mark purchase entries that do not match with a Query.
+- SQL `lwb_sp_company_statement_setup.sql` (test `tests/sp-company-statement`, PGlite, 4 tests): `lwb_sp_stmt` + `lwb_sp_stmt_uploads` (read = `lwb_sp_user`), `lwb_sp_stmt_upload(p)` (Admin / Manager; same dates replaced), `lwb_sp_settings.start_date`, `lwb_sp_start_from(date, pallets, sheets)` (entries before the date hidden on the page, not deleted; company OPENING rows on / after the date replaced; NULL = show all), `lwb_sp_entries.query_note / query_at / query_by` (manual ⚑ Query, not logged as edit). No statement data is stored in the repo; it is uploaded on the page.
+- `sheet-pallet.html`: new tab Company Match: upload the ILS Excel (SheetJS 0.18.5), company vs ours (opening, sent, got back, balance, difference), list per invoice / receipt with status (Match, difference, pallets not entered on purchase bill, purchase bill not entered, not in statement, receipt pending). Company pallets = Leap + Chep + Own. Our COMPANY_IN matched by invoice no. (else vehicle ±4 days); returns by vehicle (else same count) within 15 days. Company Ledger rows show the Query badge + ⚑ button; KPI shows company balance and diff. Opening Balance tab: Ledger Start Date card. History: old hidden entries.
+- First upload asks to start the ledger from the statement's from-date with its opening.
+- Checked with a mocked database at 1366 / 390 px: no side scroll, no JS errors. Screenshots: project files `sheet-pallet-company-match/`.
