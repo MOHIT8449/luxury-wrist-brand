@@ -4,6 +4,12 @@
 **Purpose:** Continue the same ERP project from a new ChatGPT conversation without restarting or losing the agreed requirements.
 **Status:** Active development / verification. Do not assume all modules are completed or fully tested.
 
+## Auto-fit to screen (19 Nov 2026)
+- Mohit kept zooming the browser out to 80% to fit pages. `erp-fit.js` (in `<head>` of every ERP page, before the title) now draws the page at 90% (screen 1100px+), 85% (1280px+), 80% (1700px+) with CSS `zoom` on `<html>`; phones / small tablets (under 1100px) unchanged; print unchanged. Page bodies use the full width on these screens (old 1200-1450px caps lifted).
+- CSS zoom draws vh / vw short, so erp-fit.js rewrites vh / vw in stylesheets (and added `<style>` / inline styles) to `calc(N vh * var(--lwb-vz))`.
+- Popups placed from `getBoundingClientRect()` must convert: use `LWBFit.rect(el)`, `LWBFit.vw()`, `LWBFit.vh()`, `LWBFit.z()` (done in erp-select, erp-multi, erp-colfilter, erp-info, PO SKU picker, PO trend tooltip). New pages: add `<script src="erp-fit.js"></script>` after the viewport meta. Opt out: `<html data-nofit>` (Live Tracking map).
+- Users who still have browser zoom at 80% should press Ctrl+0 once.
+
 ## Late POs: highlight + bell only, never blocked (19 Nov 2026)
 - Mohit: a PO past 36 hrs still has to be delivered; the Sales Head keeps full rights (transport, loading, bill, Mark delivered). Nothing in the UI or SQL blocks a late PO.
 - `warehouse-orders.html`: the empty yellow bar under the header was `#rjWait` (`.rj-wait{display:flex}` beat `hidden`); fixed with `.rj-wait[hidden]{display:none}`. New red strip `#lateStrip` above the tabs: Delivery late 36h+ / Approval late 12h+ chips (moved out of the tab row), oldest PO + hours, "Work as usual · Admin & Sales Head alerted". `?late=delivery|approval` opens that list.

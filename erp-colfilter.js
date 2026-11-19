@@ -150,7 +150,7 @@ tr.lwb-cf-tr th{padding-top:0!important;padding-bottom:6px!important;background:
         const rd=()=>{const g=n=>{const x=pop.querySelector('[data-r="'+n+'"]').value;return x===""?null:t==="date"?x:Number(x)};const mn=g("min"),mx=g("max");if(mn==null&&mx==null)delete s.f[h];else s.f[h]={t,min:mn,max:mx};fire()};
         pop.querySelectorAll("[data-r]").forEach(x=>x.addEventListener("change",rd));
       }
-      const r=btn.getBoundingClientRect(),vw=innerWidth,vh=innerHeight,w=Math.min(vw-16,280);
+      const F=window.LWBFit,r=F?F.rect(btn):btn.getBoundingClientRect(),vw=F?F.vw():innerWidth,vh=F?F.vh():innerHeight,w=Math.min(vw-16,280);
       const left=Math.max(8,Math.min(r.left,vw-w-8)),below=vh-r.bottom-8,above=r.top-8,up=below<240&&above>below;
       pop.style.width=w+"px";pop.style.left=left+"px";pop.style.maxHeight=Math.min(400,up?above:below)+"px";
       if(up)pop.style.bottom=(vh-r.top+4)+"px";else pop.style.top=(r.bottom+4)+"px";
