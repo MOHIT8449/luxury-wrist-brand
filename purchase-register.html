@@ -378,19 +378,21 @@ Verify: All OK, or damage / leakage / breakage / gasless / shortage lines (SKU ¬
     const xlsxLib=()=>window.XLSX?Promise.resolve():new Promise((ok,bad)=>{const sc=document.createElement("script");sc.src=XLSX_LIB;sc.onload=ok;sc.onerror=()=>bad(Error("Could not load the Excel reader. Check the internet."));document.head.appendChild(sc)});
     const invKey=v=>String(v==null?"":v).toUpperCase().replace(/[^A-Z0-9]/g,"");
     const cellTxt=v=>v instanceof Date?v.toISOString().slice(0,10):typeof v==="number"&&Number.isInteger(v)?String(v):String(v==null?"":v).trim();
-    let MB={aoa:null,head:-1,col:-1,dcol:-1,acol:-1,res:null,view:"miss",all:null};
+    let MB={aoa:null,head:-1,col:-1,dcol:-1,acol:-1,ccol:-1,res:null,view:"miss",all:null};
     function mbGuess(aoa){
       // header row = first row (of the first 15) with an "invoice" / "bill" cell
       let head=-1,col=-1;
       for(let i=0;i<Math.min(15,aoa.length)&&head<0;i++){const r=aoa[i]||[];
-        let j=r.findIndex(v=>/invoice\s*(no|num|#)|bill\s*(no|num|#)|^invoice$|^bill$|inv\.?\s*no|document\s*no/i.test(String(v||"").trim()));
+        let j=r.findIndex(v=>/invoice\s*(no|num|#)|bill\s*(no|num|#)|^invoice$|^bill$|inv\.?\s*no|document\s*(no|num)/i.test(String(v||"").trim()));
         if(j<0)j=r.findIndex(v=>/invoice|bill/i.test(String(v||""))&&!/date|amount|value|total/i.test(String(v||"")));
         if(j>=0){head=i;col=j}}
       if(col<0){// no header: the column with the most number-like values
         const n=Math.max(0,...aoa.map(r=>(r||[]).length));let best=-1;
         for(let j=0;j<n;j++){const c=aoa.filter(r=>/\d{4,}/.test(cellTxt((r||[])[j]))).length;if(c>best){best=c;col=j}}}
       const hr=head>=0?aoa[head]:[];
-      return {head,col,dcol:hr.findIndex(v=>/date/i.test(String(v||""))),acol:hr.findIndex(v=>/total|amount|value/i.test(String(v||"")))};
+      // Statement Excel (AR Statement): a Category / Type column keeps only the "Invoice" rows (no payments / credit notes).
+      return {head,col,dcol:hr.findIndex(v=>/date/i.test(String(v||""))),acol:hr.findIndex(v=>/total|amount|value/i.test(String(v||""))),
+        ccol:hr.findIndex(v=>/^(category|doc(ument)?\s*type|type)$/i.test(String(v||"").trim()))};
     }
     async function mbAll(){
       if(MB.all)return MB.all;const all=[];
@@ -404,6 +406,7 @@ Verify: All OK, or damage / leakage / breakage / gasless / shortage lines (SKU ¬
       const pasted=el("mbPaste").value.split(/[\n,;\t]+/).map(x=>x.trim()).filter(Boolean).map(x=>({inv:x}));
       if(!MB.aoa)return pasted;
       const out=[];MB.aoa.slice(MB.head+1).forEach(r=>{r=r||[];const inv=cellTxt(r[MB.col]);if(!invKey(inv))return;
+        if(MB.ccol>=0&&!/invoice/i.test(cellTxt(r[MB.ccol])))return;
         out.push({inv,date:MB.dcol>=0?cellTxt(r[MB.dcol]):"",amt:MB.acol>=0?r[MB.acol]:""})});
       return out.concat(pasted);
     }
@@ -452,7 +455,7 @@ Verify: All OK, or damage / leakage / breakage / gasless / shortage lines (SKU ¬
       }catch(e){ERPShell.toast("Could not read the file: "+(e.message||e),"error")}
     }
     function openMatch(){
-      MB={aoa:null,head:-1,col:-1,dcol:-1,acol:-1,res:null,view:"miss",all:null};
+      MB={aoa:null,head:-1,col:-1,dcol:-1,acol:-1,ccol:-1,res:null,view:"miss",all:null};
       const back=document.createElement("div");back.className="mb-back";back.id="mbBack";
       back.innerHTML='<div class="mb-pop" role="dialog" aria-modal="true" aria-labelledby="mbT"><div class="mb-h"><h3 id="mbT">üîç Match company bills</h3><button type="button" class="mb-btn" id="mbXls" hidden>‚¨á Missing Excel</button><button type="button" class="mb-btn" data-mbclose="1">Close ‚úï</button></div>'+
         '<div class="mb-b"><div class="mb-in"><label class="mb-btn main" for="mbFile" style="display:inline-flex;align-items:center">‚¨Ü Upload PDF / Excel</label><input type="file" id="mbFile" accept=".pdf,.xlsx,.xls,.csv" hidden>'+
