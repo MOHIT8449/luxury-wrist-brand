@@ -37,7 +37,8 @@ jobs:
         run: |
           [ -z "$T" ] && { echo "no token"; exit 0; }
           A="https://api.supabase.com/v1"
-          curl -s -H "Authorization: Bearer $T" "$A/organizations" | jq -c '[.[]|{slug:(.id|.[0:4]), plan}]'
-          for o in $(curl -s -H "Authorization: Bearer $T" "$A/organizations" | jq -r '.[].id'); do curl -s -H "Authorization: Bearer $T" "$A/organizations/$o" | jq -c '{plan, allowed_release_channels}'; done
-          curl -s -H "Authorization: Bearer $T" "$A/projects/$SUPABASE_PROJECT_REF/database/backups" | jq -c '{region, pitr_enabled, walg_enabled, backups:[.backups[]?|{status,inserted_at,is_physical_backup}]}'
-          curl -s -H "Authorization: Bearer $T" "$A/projects/$SUPABASE_PROJECT_REF/billing/addons" | jq -c '{selected:[.selected_addons[]?|{type,v:.variant.id}]}'
+          set +e
+          echo "orgs:"; curl -s -o o.json -w "%{http_code}\n" -H "Authorization: Bearer $T" "$A/organizations"; jq -c 'if type=="array" then [.[]|{plan}] else {message} end' o.json
+          echo "backups:"; curl -s -o b.json -w "%{http_code}\n" -H "Authorization: Bearer $T" "$A/projects/$SUPABASE_PROJECT_REF/database/backups"; jq -c '{region, pitr_enabled, walg_enabled, message, backups:[.backups[]?|{status,inserted_at,is_physical_backup}]}' b.json
+          echo "project:"; curl -s -H "Authorization: Bearer $T" "$A/projects/$SUPABASE_PROJECT_REF" | jq -c '{status, region, org:(.organization_id|tostring|.[0:3])}'
+          echo "subscription via org slug:"; S=$(curl -s -H "Authorization: Bearer $T" "$A/projects/$SUPABASE_PROJECT_REF" | jq -r .organization_id); curl -s -H "Authorization: Bearer $T" "$A/organizations/$S" | jq -c '{plan, message}'
