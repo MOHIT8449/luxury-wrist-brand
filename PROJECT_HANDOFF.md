@@ -4,6 +4,12 @@
 **Purpose:** Continue the same ERP project from a new ChatGPT conversation without restarting or losing the agreed requirements.
 **Status:** Active development / verification. Do not assume all modules are completed or fully tested.
 
+## Pending tasks for every staff member + Admin "All staff" task list (19 Nov 2026)
+- Mohit: every login (godown, driver, salesman, Sales Head, Accounts) must see "you have N pending tasks, complete them"; Admin must see one list of every person's tasks (who gave, to whom, done / pending, since when).
+- `dashboard.html`: strip `#taskAlert` under the KPIs: "You have N pending tasks · M overdue" (amber, red when overdue, oldest late days) -> tasks.html. Admin also gets "Staff tasks: N pending · M overdue · X people" -> `tasks.html?tab=ALL`. My Tasks query limit 50 -> 300.
+- `tasks.html`: Admin-only tab "All staff": KPI tiles (Pending / Overdue / Due today / Done in 7 days, click to filter), one chip per person with pending + late counts (click = filter), filters Given to / Given by / Type (staff / System = ref_type tasks like purchase photo) / Status / Search, table Task · Given to · Given by · Due · Pending since (days since given, red when overdue) · Status; phone shows cards. Row click opens the same details / notes / buttons. Pending tasks now load in full (closed ones latest 1000).
+- No SQL: Admin already reads every lwb_tasks row (lwb_task_visible). Non-admin visibility unchanged. Screenshots (mocked data): project files `staff-pending-tasks/`.
+
 ## Auto-fit to screen (19 Nov 2026)
 - Mohit kept zooming the browser out to 80% to fit pages. `erp-fit.js` (in `<head>` of every ERP page, before the title) now draws the page at 90% (screen 1100px+), 85% (1280px+), 80% (1700px+) with CSS `zoom` on `<html>`; phones / small tablets (under 1100px) unchanged; print unchanged. Page bodies use the full width on these screens (old 1200-1450px caps lifted).
 - CSS zoom draws vh / vw short, so erp-fit.js rewrites vh / vw in stylesheets (and added `<style>` / inline styles) to `calc(N vh * var(--lwb-vz))`.
