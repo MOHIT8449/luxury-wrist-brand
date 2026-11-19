@@ -10,7 +10,7 @@
    Loaded by erp-shell.js on every ERP page (cashbook.html and login.html load it themselves). */
 (function(){
   if(window.LWBMaintenance)return;
-  const URL_="https://txkbhadzdbxpieunfvox.supabase.co",KEY_="sb_publishable_W4I3Q5ODf0g17sq5uDml2Q_sLolXYEk";
+  const URL_="https://qstgwhbgbznxemajtave.supabase.co",KEY_="sb_publishable_YA2Pow327REqgrWPzVCZiA_nw1F32_o";
   const PAGE=(location.pathname.split("/").pop()||"index.html").replace(/\.html$/,"");
   if(/^(index|privacy|terms|404|offline|share)$/.test(PAGE))return;
   const LOGIN=PAGE==="login";

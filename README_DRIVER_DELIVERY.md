@@ -19,7 +19,7 @@ login has been created and mapped to the matching Driver Mobile.
 ## Step 1 — Supabase setup
 
 Open:
-https://supabase.com/dashboard/project/txkbhadzdbxpieunfvox/sql/new
+https://supabase.com/dashboard/project/qstgwhbgbznxemajtave/sql/new
 
 Copy the entire \`lwb_driver_delivery_setup.sql\` and press **Run**.
 

@@ -7,7 +7,7 @@ CREATE EXTENSION IF NOT EXISTS pg_cron WITH SCHEMA pg_catalog;
 
 CREATE TABLE IF NOT EXISTS public.lwb_push_config (
  id integer PRIMARY KEY CHECK (id=1), enabled boolean NOT NULL DEFAULT false,
- project_url text NOT NULL DEFAULT 'https://txkbhadzdbxpieunfvox.supabase.co',
+ project_url text NOT NULL DEFAULT 'https://qstgwhbgbznxemajtave.supabase.co',
  site_url text NOT NULL DEFAULT 'https://luxury-wrist-brand.pages.dev',
  webhook_secret text NOT NULL DEFAULT encode(extensions.gen_random_bytes(32),'hex'),
  vapid_public text, vapid_private text,
