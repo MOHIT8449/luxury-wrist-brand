@@ -145,6 +145,16 @@ policies)
   bash "$0" check
   ;;
 
+cutover)
+  # Final move: freeze the old project (maintenance ON), copy everything, open the new one.
+  psql "$OLD_URL" -v ON_ERROR_STOP=1 -Atq -c "update public.lwb_maintenance set is_on=true, message='Server Mumbai shift ho raha hai. 30-40 minute mein wapas.', changed_at=now(), changed_by_name='Mumbai shift' where id=1 returning 'old maintenance on: '||is_on" || exit 1
+  sleep 20
+  bash "$0" copy || { echo "::error::copy failed; old project is still in maintenance"; exit 1; }
+  psql "$NEW_URL" -v ON_ERROR_STOP=1 -Atq -c "update public.lwb_maintenance set is_on=false, message='', changed_at=now(), changed_by_name='Mumbai shift' where id=1 returning 'new maintenance on: '||is_on"
+  bash "$0" storage
+  bash "$0" check
+  ;;
+
 check)
   for f in "OLD_URL:old" "NEW_URL:new"; do u=${f%%:*}; echo "== ${f##*:}"
     psql "${!u}" -Atq -F' ' <<'SQL'
