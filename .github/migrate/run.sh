@@ -7,7 +7,7 @@ OLD_API="https://$OLD_REF.supabase.co"; NEW_API="https://$NEW_REF.supabase.co"
 errs(){ grep -E 'ERROR|FATAL|psql:' "$1" | grep -v DETAIL | cut -c1-220 | head -${2:-30}; }
 
 counts(){ # $1 url -> "schema.table rows" for public, auth, storage
-  psql "$1" -Atq -F' ' -c "select format('select %L||'' ''||count(*) from %I.%I', n.nspname||'.'||c.relname, n.nspname, c.relname)
+  psql "$1" -Atq -F' ' -c "select format('select %L||'' ''||count(*) from %I.%I;', n.nspname||'.'||c.relname, n.nspname, c.relname)
     from pg_class c join pg_namespace n on n.oid=c.relnamespace
     where c.relkind='r' and n.nspname in ('public','auth','storage') order by 1" | psql "$1" -Atq 2>/dev/null | sort
 }
