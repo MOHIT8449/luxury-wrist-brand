@@ -155,6 +155,42 @@ cutover)
   bash "$0" check
   ;;
 
+secrets)
+  # Copy edge-function secrets (WA_* etc.) old -> new without printing values (approved by the owner).
+  # A temporary function on the old project returns its own env to a one-time random token, then is deleted.
+  [ -n "${SUPABASE_ACCESS_TOKEN:-}" ] || { echo "::error::SUPABASE_ACCESS_TOKEN missing"; exit 1; }
+  supabase secrets list --project-ref "$OLD_REF" -o json 2>"$W/s.log" | python3 -c 'import sys,json;[print(x["name"]) for x in json.load(sys.stdin) if not x["name"].startswith("SUPABASE_")]' > "$W/names.txt" || { tail -3 "$W/s.log" | cut -c1-200; exit 1; }
+  echo "old secret names: $(tr '\n' ' ' < "$W/names.txt")"
+  [ -s "$W/names.txt" ] || { echo "nothing to copy"; exit 0; }
+  T="$W/exp"; mkdir -p "$T/supabase/functions/lwb-mig-export"; (cd "$T" && supabase init --force >/dev/null 2>&1 || true)
+  N=$(openssl rand -hex 24); echo "::add-mask::$N"
+  NAMES=$(python3 -c 'import json,sys;print(json.dumps(open(sys.argv[1]).read().split()))' "$W/names.txt")
+  cat > "$T/supabase/functions/lwb-mig-export/index.ts" <<TS
+const N = "$N"; const K: string[] = $NAMES;
+Deno.serve((r) => r.headers.get("x-mig") === N ? Response.json(Object.fromEntries(K.map((k) => [k, Deno.env.get(k) ?? ""]))) : new Response("no", { status: 404 }));
+TS
+  (cd "$T" && supabase functions deploy lwb-mig-export --project-ref "$OLD_REF" --use-api --no-verify-jwt --yes) > "$W/e.log" 2>&1 || { echo "export deploy failed"; tail -3 "$W/e.log" | cut -c1-200; exit 1; }
+  sleep 5; ok=0
+  for i in 1 2 3 4 5 6; do curl -sf -H "x-mig: $N" "$OLD_API/functions/v1/lwb-mig-export" -o "$W/sec.json" && { ok=1; break; }; sleep 5; done
+  (cd "$T" && supabase functions delete lwb-mig-export --project-ref "$OLD_REF" --yes) > "$W/del.log" 2>&1 || (cd "$T" && supabase functions delete lwb-mig-export --project-ref "$OLD_REF") >> "$W/del.log" 2>&1
+  echo "temp function delete: $(tail -1 "$W/del.log" | cut -c1-120)"
+  [ "$ok" = 1 ] || { echo "::error::could not read secrets"; exit 1; }
+  python3 - "$W/sec.json" "$W/sec.env" <<'PY'
+import json,sys
+d=json.load(open(sys.argv[1]))
+with open(sys.argv[2],'w') as f:
+  for k,v in d.items():
+    if v:
+      for line in v.splitlines():
+        if line.strip(): print("::add-mask::"+line.strip())
+      f.write(k+"="+json.dumps(v)+"\n")
+print("values found: "+" ".join(k for k,v in d.items() if v))
+PY
+  supabase secrets set --env-file "$W/sec.env" --project-ref "$NEW_REF" > "$W/ss.log" 2>&1 && echo "set on new project" || { echo "set failed"; tail -3 "$W/ss.log" | cut -c1-200; }
+  rm -f "$W/sec.json" "$W/sec.env"
+  echo "new secret names: $(supabase secrets list --project-ref "$NEW_REF" -o json 2>/dev/null | python3 -c 'import sys,json;print(" ".join(x["name"] for x in json.load(sys.stdin) if not x["name"].startswith("SUPABASE_")))')"
+  ;;
+
 check)
   for f in "OLD_URL:old" "NEW_URL:new"; do u=${f%%:*}; echo "== ${f##*:}"
     psql "${!u}" -Atq -F' ' <<'SQL'
