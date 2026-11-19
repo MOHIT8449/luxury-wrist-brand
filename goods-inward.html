@@ -135,6 +135,7 @@ main{margin:14px auto}.panel{padding:14px 16px;margin-bottom:12px}
 .field input.bad{border-color:#d97706;background:#fffaf0}
 body.td-open{overflow:hidden}
 .gi-check{gap:8px 14px}.gi-check select#dmgMode{min-width:0;width:auto;max-width:100%}
+.gi-editdocs{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:0 0 10px;font-size:13.5px}.gi-editdocs>div{flex:1;min-width:0}
 .gi-editnote{border:1px solid #f0c36a;background:#fff8e8;color:#6b4500;border-radius:8px;padding:8px 12px;font-size:13px;margin-top:4px}.gi-editnote[hidden]{display:none}
 #giDocsBox{margin-left:auto}#giDocsBox[hidden]{display:none}
 @media(max-width:540px){main .statrow{grid-template-columns:repeat(3,minmax(0,1fr))!important;gap:6px!important;margin:8px 0!important}main .statrow .stat{padding:6px 8px!important}main .statrow .stat span{font-size:10.5px!important;margin-bottom:1px!important}main .statrow .stat strong{font-size:13.5px!important}}
@@ -226,6 +227,8 @@ const skuSearchControls=new WeakMap();
 // (Mohit, 6 Nov 2026; database: lwb_goods_inward_godown_setup.sql). He is the checker, so no Godown Manager pick,
 // no "vehicle arrived" popup and no photo task: he adds the photos on this page.
 const CAN_POST=['admin','manager','warehouse'];
+// Edit an old bill: Admin, Sales Head and Accounts (Mohit, 19 Nov 2026; lwb_purchase_bill_team_edit_setup.sql).
+const CAN_EDIT=['admin','manager','accounts'],IS_EDIT=!!new URLSearchParams(location.search).get('edit');
 const isGodown=()=>profile?.role==='warehouse';
 function godownMode(){
   const later=$('dmgMode').querySelector('option[value="later"]');
@@ -411,7 +414,7 @@ function recalc(){
   $('taxableLabel').textContent=rows.some(r=>r.sku&&r.mode==='MRP')?(rows.some(r=>r.sku&&r.mode!=='MRP')?'Taxable + Deemed Value':'Deemed Taxable Value'):'Taxable Amount';
   $('totalGst').textContent=rupees(sumGst/100);
   $('totalAmount').textContent=rupees(sumGross/100);
-  const rolesOkay=profile?.active===true&&CAN_POST.includes(profile.role);
+  const rolesOkay=profile?.active===true&&(IS_EDIT?CAN_EDIT:CAN_POST).includes(profile.role);
   const supplierSelected=suppliers.find(s=>s.id===$('supplier').value);
   const detailsValid=!!supplierSelected&&!!$('invoice').value.trim()&&!!$('invoiceDate').value&&!!$('receivedDate').value;
   const strict=tdStrict(),dName=$('driverName').value.trim(),dMob=$('driverMobile').value.trim();
@@ -521,7 +524,7 @@ async function start(key){
     if(!user){show('Please log in to your ERP first.','info');return;}
     const {data:prof,error:profileError}=await db.from('user_profiles').select('role,active,full_name').eq('id',user.id).maybeSingle();
     if(profileError)throw profileError;if(!prof||prof.active!==true)throw new Error('Active ERP profile required.');
-    prof.role=await lwbPageRole(prof.role);profile=prof;$('access').textContent=prof.role==='warehouse'?'GODOWN MANAGER — GOODS INWARD':CAN_POST.includes(prof.role)?prof.role.toUpperCase()+' — GOODS INWARD':'VIEW ONLY';
+    prof.role=await lwbPageRole(prof.role);profile=prof;$('access').textContent=prof.role==='warehouse'?'GODOWN MANAGER — GOODS INWARD':(CAN_POST.includes(prof.role)||(IS_EDIT&&CAN_EDIT.includes(prof.role)))?prof.role.toUpperCase()+' — GOODS INWARD':'VIEW ONLY';
     godownMode();
     $('keybox').style.display='none';clearNotice();await loadData();await mountGiDocs();await loadEdit();
   }catch(e){$('access').textContent='Not connected';$('keybox').style.display='block';show('Connection failed: '+(e.message||String(e)));}
@@ -819,7 +822,7 @@ const EDIT_ID=new URLSearchParams(location.search).get('edit')||'';
 let editBill=null;
 async function loadEdit(){
   if(!EDIT_ID||!db||editBill)return;
-  if(profile?.role!=='admin'){show('Only Admin can edit a purchase bill.');return;}
+  if(!CAN_EDIT.includes(profile?.role)){show('Only Admin, Sales Head or Accounts can edit a purchase bill.');return;}
   const [h,it]=await Promise.all([db.from('lwb_goods_inward').select('*').eq('id',EDIT_ID).maybeSingle(),
     db.from('lwb_goods_inward_items').select('*').eq('inward_id',EDIT_ID).order('id')]);
   if(h.error||!h.data){show('Bill to edit not found: '+(h.error?h.error.message:'it may be deleted or changed already.')+'\nOpen it again from the Purchase List.');return;}
@@ -846,6 +849,11 @@ async function loadEdit(){
   $('giTitle').textContent='Edit Purchase Bill · '+b.invoice_no;$('save').textContent='Save changes';$('reset').hidden=true;
   $('editNote').hidden=false;$('giTitle').closest('.sectionhead').after($('editNote'));$('editNote').style.margin='0 0 10px';
   $('editNote').textContent='Editing an old bill. Change qty, SKU, amount, invoice or vehicle and press Save changes: the old stock of this bill is taken out and the new qty goes in. Vehicle check / claim, photos and pallets stay as they are.'+(missing.length?' ⚠ Not active in SKU Master, so not shown: '+missing.join(', ')+'.':'');
+  // Bill PDF of this bill: upload / replace / download right here (Mohit, 19 Nov 2026). Saved at once on this bill;
+  // on Save changes it moves to the corrected bill with the other photos.
+  if(giDocsOn){let box=$('editDocs');if(!box){box=document.createElement('div');box.id='editDocs';box.className='gi-editdocs';$('editNote').after(box);}
+    box.innerHTML='<span style="color:var(--muted,#5b6773)">📎 Bill PDF (upload / replace / open):</span><div id="editDocsPanel"></div>';
+    ERPDocs.panel({client:db,mount:$('editDocsPanel'),entity:'PURCHASE_BILL',id:EDIT_ID,slots:['BILL'],compact:true});}
   document.title='Edit Purchase Bill | Luxury Wrist Brand';
   dupFor='';await checkDuplicate(false);recalc();tdRender();
   // the supplier list is already chosen: do not leave its dropdown open over the form

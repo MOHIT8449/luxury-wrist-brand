@@ -6,7 +6,7 @@ import {PGlite} from '@electric-sql/pglite';
 // lwb_purchase_bill_edit_delete_setup.sql on a small copy of the tables it touches (no live database).
 // lwb_post_goods_inward is a stand-in that writes one stock row per line, linked by `link`
 // ('reference_id' = bill id, 'reference_no' = invoice no., 'none' = no link at all).
-const ids={admin:'00000000-0000-4000-8000-000000000001',manager:'00000000-0000-4000-8000-000000000002'};
+const ids={admin:'00000000-0000-4000-8000-000000000001',manager:'00000000-0000-4000-8000-000000000002',accounts:'00000000-0000-4000-8000-000000000003',warehouse:'00000000-0000-4000-8000-000000000004'};
 const files=async()=>Promise.all(['lwb_purchase_mrp_billing_setup.sql','lwb_purchase_bill_edit_delete_setup.sql']
   .map(f=>readFile(new URL('../../'+f,import.meta.url),'utf8')));
 
@@ -187,4 +187,53 @@ test('no link column: stock rows found by invoice no.; none found = refused', as
   assert.equal(p4.can,false);assert.match(p4.why,/not found/);assert.match(p4.why,/Stock columns: id, sku_id/);
   await assert.rejects(b.call('admin','select public.lwb_purchase_bill_delete($1,$2) r',[id4,'test delete']),/not found/);
   assert.equal((await b.db.query('select count(*)::int n from lwb_goods_inward')).rows[0].n,1);
+});
+
+test('team edit (19 Nov 2026): Sales Head + Accounts edit a bill, Accounts cannot post a new one, delete stays Admin', async()=>{
+  const {db,sku,call,stock,postCoke,tax,header,HC}=await makeDb('reference_id');
+  await db.exec(`CREATE FUNCTION public.lwb_pr_role() RETURNS text LANGUAGE sql STABLE AS $$
+    SELECT coalesce((SELECT lower(btrim(p.role)) FROM public.user_profiles p WHERE p.id = auth.uid() AND p.active = true), '') $$;`);
+  const team=await readFile(new URL('../../lwb_purchase_bill_team_edit_setup.sql',import.meta.url),'utf8');
+  await db.exec(team);await db.exec(team); // safe to run again
+  const def=(await db.query("select pg_get_functiondef('public.lwb_post_goods_inward'::regproc) d")).rows[0].d;
+  assert.equal(def.match(/lwb\.pbe_edit/g).length,1); // patched once only
+  const id=await postCoke('HC-500',[tax(sku.THUMSUP,10,1000)]);
+  const items=t=>JSON.stringify([{...tax(sku.THUMSUP,t,t*100),billing_mode:'TAXABLE'}]);
+  // Accounts: preview + edit OK, stock follows
+  assert.equal((await call('accounts','select public.lwb_purchase_bill_preview($1) r',[id])).r.can,true);
+  const r=(await call('accounts','select public.lwb_purchase_bill_edit($1,$2,$3::jsonb,$4::jsonb) r',[id,'Qty typed wrong',JSON.stringify(header(HC,'HC-500')),items(11)])).r;
+  assert.equal(await stock(sku.THUMSUP),10000+11*24);
+  // Sales Head edits it again
+  const r2=(await call('manager','select public.lwb_purchase_bill_edit($1,$2,$3::jsonb,$4::jsonb) r',[r.id,'Qty again',JSON.stringify(header(HC,'HC-500')),items(12)])).r;
+  assert.equal(await stock(sku.THUMSUP),10000+12*24);
+  // flag does not leak: Accounts cannot post a new bill directly
+  await assert.rejects(call('accounts','select public.lwb_post_goods_inward_mrp($1::jsonb,$2::jsonb) r',[JSON.stringify(header(HC,'HC-501')),items(1)]),/Only active Admin|not allowed/);
+  // Godown Manager still cannot edit; delete is still Admin only
+  await assert.rejects(call('warehouse','select public.lwb_purchase_bill_preview($1) r',[r2.id]),/Only Admin, Sales Head or Accounts/);
+  await assert.rejects(call('accounts','select public.lwb_purchase_bill_delete($1,$2) r',[r2.id,'wrong bill']),/Only Admin/);
+  // vehicle check right: Accounts too
+  assert.equal((await call('accounts','select public.lwb_pc_checker() r')).r,true);
+  assert.equal((await call('warehouse','select public.lwb_pc_checker() r')).r,true);
+  const log=(await db.query("select done_by_name from lwb_purchase_bill_log order by done_at")).rows.map(x=>x.done_by_name);
+  assert.deepEqual(log,['accounts','manager']);
+});
+
+test('batch no. (19 Nov 2026): written on fresh check lines by match, or by line id', async()=>{
+  const {db,sku,call,postCoke,tax}=await makeDb('reference_id');
+  await db.exec(`CREATE FUNCTION public.lwb_pr_role() RETURNS text LANGUAGE sql STABLE AS $$
+    SELECT coalesce((SELECT lower(btrim(p.role)) FROM public.user_profiles p WHERE p.id = auth.uid() AND p.active = true), '') $$;`);
+  for(const f of ['lwb_purchase_bill_team_edit_setup.sql','lwb_purchase_claim_batch_setup.sql']){
+    const t=await readFile(new URL('../../'+f,import.meta.url),'utf8');await db.exec(t);await db.exec(t);}
+  const id=await postCoke('HC-600',[tax(sku.THUMSUP,10,1000),tax(sku.SPRITE,10,1000)]);
+  const ck=(await db.query("insert into lwb_purchase_checks(inward_id,has_damage) values($1,true) returning id",[id])).rows[0].id;
+  await db.query("insert into lwb_purchase_check_items(check_id,sku_id,sku_name,issue,cases,pcs) values($1,$2,'THUMSUP','GASLESS',2,0),($1,$2,'THUMSUP','GASLESS',2,0),($1,$3,'SPRITE','DAMAGE',1,0)",[ck,sku.THUMSUP,sku.SPRITE]);
+  const n=(await call('warehouse','select public.lwb_purchase_check_batches($1,$2::jsonb) r',[id,JSON.stringify([
+    {sku_name:'THUMSUP',issue:'GASLESS',cases:2,pcs:0,batch_no:'trl2102'},{sku_name:'THUMSUP',issue:'GASLESS',cases:2,pcs:0,batch_no:'TRL2103'},{sku_name:'SPRITE',issue:'damage',cases:1,pcs:0,batch_no:''}])])).r;
+  assert.equal(n,3);
+  const b=(await db.query("select sku_name,batch_no from lwb_purchase_check_items order by sku_name,batch_no")).rows.map(x=>x.sku_name+':'+x.batch_no);
+  assert.deepEqual(b,['SPRITE:null','THUMSUP:TRL2102','THUMSUP:TRL2103']);
+  const sp=(await db.query("select id from lwb_purchase_check_items where sku_name='SPRITE'")).rows[0].id;
+  await call('manager','select public.lwb_purchase_check_batches($1,$2::jsonb) r',[id,JSON.stringify([{id:sp,batch_no:' b77 '}])]);
+  assert.equal((await db.query("select batch_no from lwb_purchase_check_items where id=$1",[sp])).rows[0].batch_no,'B77');
+  await assert.rejects(call('admin','select public.lwb_purchase_check_batches($1,$2::jsonb) r',[id,JSON.stringify([{id:sp,batch_no:'X'.repeat(31)}])]),/too long/);
 });
