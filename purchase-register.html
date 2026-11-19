@@ -126,7 +126,7 @@
     <div class="erp-pagehead"><h1>Purchase List<button type="button" class="erp-i" aria-label="Info" title="Info" data-tip="Every purchase bill saved in Purchase Entry (Goods Inward).
 Check pending: vehicle not checked yet. Photo pending: damage entered but no damage photo.
 Verify: All OK, or damage / leakage / breakage / gasless / shortage lines (SKU · type · qty) with photos. Admin and Sales Head get the report; damaged goods leave saleable stock. 📷 Task gives the Godown Manager a photo task; it closes by itself when the photos are added.">i</button></h1>
-      <div class="pr-head-btns"><a href="#" id="matchLink" role="button" hidden title="Upload the company bill list (Excel / CSV) and see which invoices are not entered yet">🔍 Match Bills</a><a href="sales-bill-scans.html" id="sbsLink" hidden>📄 Sales Bill PDFs</a><a href="goods-inward.html" class="main" id="newLink" hidden>+ New Purchase</a></div></div>
+      <div class="pr-head-btns"><a href="#" id="matchLink" role="button" hidden title="Upload the company statement PDF or bill list (Excel / CSV) and see which invoices are not entered yet">🔍 Match Bills</a><a href="sales-bill-scans.html" id="sbsLink" hidden>📄 Sales Bill PDFs</a><a href="goods-inward.html" class="main" id="newLink" hidden>+ New Purchase</a></div></div>
     <nav class="seg" id="seg" aria-label="Purchase" hidden><a href="purchase-register.html" class="on" aria-current="page">📋 Purchase List</a><a href="purchase-claims.html">⚠ Claims<b id="segN"></b></a></nav>
     <div id="err" class="pr-err" hidden></div>
     <div class="pr-tabs" id="tabs" role="tablist" aria-label="Bill status"></div>
@@ -429,9 +429,22 @@ Verify: All OK, or damage / leakage / breakage / gasless / shortage lines (SKU �
           :'<div class="erp-empty">'+(MB.view==="miss"?"All invoices of the list are entered. ✓":"None of these invoices is entered yet.")+"</div>");
       el("mbXls").hidden=!res.miss.length;
     }
+    // Company statement PDF (e.g. HCCB "AR Statement of Accounts"): the lines with category "Invoice" are read
+    // as invoice no. · date · debit amount. Payments and credit notes are left out (Mohit, 19 Nov 2026).
+    const PDFJS="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/";
+    const pdfLib=()=>window.pdfjsLib?Promise.resolve():new Promise((ok,bad)=>{const sc=document.createElement("script");sc.src=PDFJS+"pdf.min.js";sc.onload=()=>{pdfjsLib.GlobalWorkerOptions.workerSrc=PDFJS+"pdf.worker.min.js";ok()};sc.onerror=()=>bad(Error("Could not load the PDF reader. Check the internet."));document.head.appendChild(sc)});
+    async function pdfRows(f){
+      await pdfLib();const doc=await pdfjsLib.getDocument({data:await f.arrayBuffer()}).promise;let txt="";
+      for(let i=1;i<=doc.numPages;i++){const c=await (await doc.getPage(i)).getTextContent();txt+=" "+c.items.map(x=>x.str).join(" ")}
+      txt=txt.replace(/\s+/g," ");const rows=[["Invoice No","Invoice Date","Amount"]],re=/(\d{2}\/\d{2}\/\d{4}) \d{2}\/\d{2}\/\d{4} (\d{6,}) Invoice ([\d.,]+)/g;let m;
+      while((m=re.exec(txt)))rows.push([m[2],m[1],Number(m[3].replace(/,/g,""))]);
+      if(rows.length<2)throw Error("No invoice lines found in this PDF. Upload the Excel / CSV, or paste the invoice numbers.");
+      return rows;
+    }
     async function mbFile(f){
-      try{await xlsxLib();const book=XLSX.read(await f.arrayBuffer(),{cellDates:true});
-        const aoa=XLSX.utils.sheet_to_json(book.Sheets[book.SheetNames[0]],{header:1,defval:"",raw:true});
+      try{let aoa;
+        if(/\.pdf$/i.test(f.name)||f.type==="application/pdf")aoa=await pdfRows(f);
+        else{await xlsxLib();const book=XLSX.read(await f.arrayBuffer(),{cellDates:true});aoa=XLSX.utils.sheet_to_json(book.Sheets[book.SheetNames[0]],{header:1,defval:"",raw:true})}
         Object.assign(MB,mbGuess(aoa),{aoa});
         const hr=MB.head>=0?aoa[MB.head]:aoa[0]||[],n=Math.max(0,...aoa.slice(0,50).map(r=>(r||[]).length));
         el("mbCol").innerHTML=Array.from({length:n},(_,j)=>'<option value="'+j+'"'+(j===MB.col?" selected":"")+">Invoice column: "+esc(MB.head>=0&&hr[j]!==""?hr[j]:"Column "+String.fromCharCode(65+(j%26)))+"</option>").join("");
@@ -442,10 +455,10 @@ Verify: All OK, or damage / leakage / breakage / gasless / shortage lines (SKU �
       MB={aoa:null,head:-1,col:-1,dcol:-1,acol:-1,res:null,view:"miss",all:null};
       const back=document.createElement("div");back.className="mb-back";back.id="mbBack";
       back.innerHTML='<div class="mb-pop" role="dialog" aria-modal="true" aria-labelledby="mbT"><div class="mb-h"><h3 id="mbT">🔍 Match company bills</h3><button type="button" class="mb-btn" id="mbXls" hidden>⬇ Missing Excel</button><button type="button" class="mb-btn" data-mbclose="1">Close ✕</button></div>'+
-        '<div class="mb-b"><div class="mb-in"><label class="mb-btn main" for="mbFile" style="display:inline-flex;align-items:center">⬆ Upload Excel / CSV</label><input type="file" id="mbFile" accept=".xlsx,.xls,.csv" hidden>'+
+        '<div class="mb-b"><div class="mb-in"><label class="mb-btn main" for="mbFile" style="display:inline-flex;align-items:center">⬆ Upload PDF / Excel</label><input type="file" id="mbFile" accept=".pdf,.xlsx,.xls,.csv" hidden>'+
         '<span id="mbFileName" class="mb-hint" style="margin:0"></span><select id="mbCol" hidden aria-label="Invoice column"></select>'+
         '<textarea id="mbPaste" placeholder="Or paste invoice numbers here (one per line, or from Excel)"></textarea><button type="button" class="mb-btn main" id="mbGo">Check</button></div>'+
-        '<p class="mb-hint">Company bill list (e.g. from the company portal). The invoice number column is found by itself. Nothing is saved: it only shows which bills are not entered in Purchase yet.</p><div id="mbOut"></div></div></div>';
+        '<p class="mb-hint">Company statement PDF (AR Statement) or bill list Excel / CSV. The invoice number column is found by itself. Nothing is saved: it only shows which bills are not entered in Purchase yet.</p><div id="mbOut"></div></div></div>';
       document.body.append(back);
       const close=()=>{back.remove();document.removeEventListener("keydown",onKey)};const onKey=e=>{if(e.key==="Escape")close()};document.addEventListener("keydown",onKey);
       back.addEventListener("click",e=>{const t=e.target;if(t===back||t.closest("[data-mbclose]"))return close();
