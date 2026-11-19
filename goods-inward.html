@@ -526,9 +526,17 @@ async function start(key){
     if(profileError)throw profileError;if(!prof||prof.active!==true)throw new Error('Active ERP profile required.');
     prof.role=await lwbPageRole(prof.role);profile=prof;$('access').textContent=prof.role==='warehouse'?'GODOWN MANAGER — GOODS INWARD':(CAN_POST.includes(prof.role)||(IS_EDIT&&CAN_EDIT.includes(prof.role)))?prof.role.toUpperCase()+' — GOODS INWARD':'VIEW ONLY';
     godownMode();
-    $('keybox').style.display='none';clearNotice();await loadData();await mountGiDocs();await loadEdit();
+    $('keybox').style.display='none';clearNotice();await loadData();await mountGiDocs();await loadEdit();prefillMissing();
   }catch(e){$('access').textContent='Not connected';$('keybox').style.display='block';show('Connection failed: '+(e.message||String(e)));}
   recalc();
+}
+// From the Missing bills list (?inv=&date=): fill the invoice no. and date of the company bill (Mohit, 19 Nov 2026).
+function prefillMissing(){
+  if(IS_EDIT)return;const q=new URLSearchParams(location.search),inv=(q.get('inv')||'').trim().slice(0,60);if(!inv)return;
+  if(!$('invoice').value)$('invoice').value=inv;
+  const d=(q.get('date')||'').trim(),m=d.match(/^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{4})$/),iso=m?m[3]+'-'+m[2].padStart(2,'0')+'-'+m[1].padStart(2,'0'):/^\d{4}-\d{2}-\d{2}/.test(d)?d.slice(0,10):'';
+  if(iso)$('invoiceDate').value=iso;
+  $('invoice').dispatchEvent(new Event('input',{bubbles:true}));
 }
 // Godown Manager who checks this purchase vehicle: only that person gets the popup (lwb_purchase_damage_report_setup.sql).
 let godownList=null;

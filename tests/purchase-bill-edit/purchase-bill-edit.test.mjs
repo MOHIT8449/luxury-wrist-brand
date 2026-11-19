@@ -237,3 +237,28 @@ test('batch no. (19 Nov 2026): written on fresh check lines by match, or by line
   assert.equal((await db.query("select batch_no from lwb_purchase_check_items where id=$1",[sp])).rows[0].batch_no,'B77');
   await assert.rejects(call('admin','select public.lwb_purchase_check_batches($1,$2::jsonb) r',[id,JSON.stringify([{id:sp,batch_no:'X'.repeat(31)}])]),/too long/);
 });
+
+test('missing bills (19 Nov 2026): submit from company statement, bell to Admin / Sales Head / Accounts, gone once entered', async()=>{
+  const {db,sku,call,postCoke,tax}=await makeDb('reference_id');
+  await db.exec(`CREATE FUNCTION public.lwb_pr_role() RETURNS text LANGUAGE sql STABLE AS $$
+    SELECT coalesce((SELECT lower(btrim(p.role)) FROM public.user_profiles p WHERE p.id = auth.uid() AND p.active = true), '') $$;
+    ALTER TABLE public.erp_notifications ADD COLUMN user_id uuid, ADD COLUMN title text, ADD COLUMN message text, ADD COLUMN notification_type text;`);
+  const t=await readFile(new URL('../../lwb_purchase_missing_bills_setup.sql',import.meta.url),'utf8');await db.exec(t);await db.exec(t);
+  await postCoke('6012345678',[tax(sku.THUMSUP,1,100)]);
+  const items=JSON.stringify([{invoice_no:'6012345678',invoice_date:'01/11/2026',amount:'500'},{invoice_no:'6012345679',invoice_date:'02/11/2026',amount:'1234.50'},
+    {invoice_no:' 6012-345680 ',invoice_date:'',amount:'abc'},{invoice_no:'---',amount:'1'}]);
+  await assert.rejects(call('warehouse','select public.lwb_purchase_missing_submit($1::jsonb,$2) r',[items,'ar.pdf']),/Only Admin/);
+  const r=(await call('accounts','select public.lwb_purchase_missing_submit($1::jsonb,$2) r',[items,'ar.pdf'])).r;
+  assert.deepEqual(r,{saved:3,open:2});
+  const open=async who=>{await db.query("select set_config('request.jwt.claim.sub',$1,false)",[ids[who]]);await db.exec('SET ROLE authenticated');
+    try{return (await db.query('select inv_key,amount from public.lwb_purchase_missing_list()')).rows}finally{await db.exec('RESET ROLE')}};
+  assert.deepEqual((await open('manager')).map(x=>x.inv_key+':'+x.amount),['6012345679:1234.50','6012345680:null']);
+  const bell=(await db.query("select user_id from erp_notifications where notification_type='PURCHASE_MISSING' order by user_id")).rows.map(x=>x.user_id);
+  assert.deepEqual(bell,[ids.admin,ids.manager]); // not the sender, not the Godown Manager
+  await postCoke('6012345679',[tax(sku.SPRITE,1,100)]);
+  assert.deepEqual((await open('admin')).map(x=>x.inv_key),['6012345680']);
+  await assert.rejects(call('manager','select public.lwb_purchase_missing_remove($1,$2)',['6012345680','x']),/reason/);
+  await call('manager','select public.lwb_purchase_missing_remove($1,$2)',['6012-345680','cancelled by company']);
+  assert.equal((await open('accounts')).length,0);
+  await assert.rejects(call('warehouse','select 1 from public.lwb_purchase_missing'),/permission/);
+});
