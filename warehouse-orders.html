@@ -457,6 +457,7 @@
     .po-actions {display:flex;gap:10px;margin-top:15px;flex-wrap:wrap}
     #poAllocationStatus {font-size:12px;color:#1a613a;margin-top:12px;line-height:1.6}
     #poAllocationStatus.error {color:#bb2929}
+    #poAllocationStatus.lock {color:#8a5a00;font-weight:700}
     .rj-wait{display:flex;gap:8px;align-items:center;flex-wrap:wrap;background:#fff4e0;border:1px solid #f0c987;color:#7a4b00;border-radius:8px;padding:7px 10px;margin:0 0 8px;font-size:13px;font-weight:600;text-decoration:none}
     .rj-wait[hidden]{display:none}.rj-wait b{color:#5c3800}.rj-wait span.go{margin-left:auto;font-weight:700;white-space:nowrap}
     #poPrintArea {display:none}
@@ -4296,7 +4297,7 @@ async function sugApplyRest(payload,trip,leadId){
   for(const oid of ids){const o=orders.find(x=>x.id===oid);
     try{if(!o||isSelfPickup(o))throw Error("skip");
       const latest=await db.from("orders").select("status").eq("id",oid).single();if(latest.error)throw latest.error;
-      if(!eligibleForPoPrint(latest.data)||poAllocationLocked(latest.data))throw Error("not open");
+      if(!eligibleForPoPrint(latest.data)||poTransportLocked(latest.data))throw Error("not open");
       const found=await db.from("dispatch_assignments").select("id").eq("order_id",oid).maybeSingle();if(found.error)throw found.error;
       const p={...payload,order_id:oid};if(trip)p.trip_id=trip.id;
       const r=found.data?await db.from("dispatch_assignments").update(p).eq("id",found.data.id).select("id").single():await db.from("dispatch_assignments").insert(p).select("id").single();
@@ -5128,10 +5129,15 @@ const eligibleForPoPrint=o=>o&&[
   "transport_allocated","allocated","loading","loaded","invoiced"
 ].includes(normalizedStatus(o));
 const poAllocationLocked=o=>o&&["loading","loaded","invoiced"].includes(normalizedStatus(o));
+// Transport (driver / vehicle / delivery type / Godown Manager): Sales Head / Manager can change it until loading is
+// CONFIRMED (also while loading has started). After that only Admin (DB: lwb_transport_change_lock_setup.sql);
+// every change is logged in PO History (lwb_change_log).
+const poLoadConfirmed=o=>o&&["loaded","invoiced"].includes(normalizedStatus(o));
+const poTransportLocked=o=>poLoadConfirmed(o)&&!IS_ADMIN;
 const poValue=id=>document.getElementById(id).value.trim();
 function allocationStatus(message,error=false){
   const el=document.getElementById("poAllocationStatus");
-  el.textContent=message;el.classList.toggle("error",error);
+  el.textContent=message;el.classList.toggle("error",error);el.classList.remove("lock");
 }
 // poSaveBtn is never shown: its disabled flag says whether Driver / Vehicle / Godown Manager can be
 // saved now. The one Submit button in the footer saves them with the PO and the note (submitPo).
@@ -5153,7 +5159,7 @@ async function revealApprovalActions(){
   sugHintFor(order);
   const id=order.id;
   approvedTransport=null;
-  const locked=poAllocationLocked(order);
+  const locked=poTransportLocked(order);
   const selfPk=isSelfPickup(order);
   document.getElementById("poMobileInfo").textContent="";
   document.getElementById("poSaveBtn").hidden=locked;
@@ -5206,9 +5212,10 @@ async function revealApprovalActions(){
     }
     showPoFieldInfo();
     if(filledFrom)document.getElementById("poMobileInfo").textContent=filledFrom;
-    allocationStatus(locked?"Loading has started. Allocation is locked.":filledFrom?"Self pickup details filled. Check them, then press Submit.":a.id
+    allocationStatus(locked?"🔒 Loading confirmed. Only Admin can change the transport now.":poLoadConfirmed(order)?"✏️ Loading confirmed. Admin can still change it; every change is logged in PO History.":normalizedStatus(order)==="loading"?"🔓 Loading has started. You can still change it until loading is confirmed.":filledFrom?"Self pickup details filled. Check them, then press Submit.":a.id
       ?"Transport saved. You can update it before loading."
       :"");
+    document.getElementById("poAllocationStatus").classList.toggle("lock",poLoadConfirmed(order)||normalizedStatus(order)==="loading");
   }catch(e){allocationStatus("Could not load transport assignment: "+e.message,true);}
   finally{
     if(selectedOrder&&selectedOrder.id===id){
@@ -5272,7 +5279,7 @@ function poTransportPayload(){
 }
 // Saves Driver / Vehicle / Godown Manager (called by Submit, after its one confirm). true = saved.
 async function saveApprovedTransport(){
-  if(transportSaving||!eligibleForPoPrint(selectedOrder)||poAllocationLocked(selectedOrder))return false;
+  if(transportSaving||!eligibleForPoPrint(selectedOrder)||poTransportLocked(selectedOrder))return false;
   const id=selectedOrder.id;
   const payload=poTransportPayload();
   if(!payload)return false;
@@ -5281,8 +5288,8 @@ async function saveApprovedTransport(){
   try{
     const latest=await db.from("orders").select("status").eq("id",id).single();
     if(latest.error)throw latest.error;
-    if(!eligibleForPoPrint(latest.data)||poAllocationLocked(latest.data))
-      throw Error("Order is no longer available for Driver/Vehicle allocation.");
+    if(!eligibleForPoPrint(latest.data)||poTransportLocked(latest.data))
+      throw Error("Loading is confirmed on this PO. Only Admin can change the transport now.");
     const found=await db.from("dispatch_assignments").select("id").eq("order_id",id).maybeSingle();
     if(found.error)throw found.error;
     // Trip (trip-rent.js): same vehicle today with POs not loaded yet = same trip, one rent. Porter rent is asked later.
@@ -5331,7 +5338,7 @@ async function saveApprovedTransport(){
     await loadOrders();
     return true;
   }catch(e){allocationStatus("Assignment failed: "+e.message,true);return false;}
-  finally{transportSaving=false;if(selectedOrder&&selectedOrder.id===id)btn.disabled=poAllocationLocked(selectedOrder);}
+  finally{transportSaving=false;if(selectedOrder&&selectedOrder.id===id)btn.disabled=poTransportLocked(selectedOrder);}
 }
 // Third-party trip rent typed in the popup (optional): saved on the trip that waits for a rent
 // (lwb_trip_rent_todo / lwb_trip_rent_set, same as the rent popup). Empty = the popup asks before day close.
