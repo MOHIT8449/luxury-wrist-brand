@@ -343,15 +343,36 @@
     if(!EL.querySelector(".bz-kpis"))EL.innerHTML='<div class="bz-empty">Loading business overview…</div>';
     else EL.classList.add("bz-busy");
     try{
-      const ck=rk+"|"+R.from+"|"+R.to+"|"+(CTX.brandKey||"");if(CTX.fresh){cache=null;CTX.fresh=false}
-      let D=cache&&cache.k===ck&&Date.now()-cache.at<6e4?cache.D:null;
-      if(!D){D=await load(R);cache={k:ck,D,at:Date.now()}}
+      // Speed (19 Nov 2026): the rows read do not depend on the brand (build() filters by brand), so a brand
+      // change draws again from what is already loaded. Each date chip is kept for 2 minutes, and the other
+      // chips are read quietly after the first draw, so tapping Today / Yday / 7D / 30D / Month is instant.
+      if(CTX.fresh){cache=null;CTX.fresh=false}
+      const D=await loadCached(R);
       if(my!==seq)return;
       const fid=document.activeElement&&EL.contains(document.activeElement)?document.activeElement.id:"";
       paint(build(D,R),R);
       if(fid==="bzFrom"||fid==="bzTo"){const f=EL.querySelector("#"+fid);if(f)f.focus()}
     }catch(e){console.error(e);if(my===seq)EL.innerHTML='<div class="bz-empty">Business overview could not load. Tap refresh.</div>'}
     finally{if(my===seq)EL.classList.remove("bz-busy")}
+    if(my===seq)prefetch();
+  }
+  const CACHE_MS=12e4;
+  function loadCached(R){
+    if(!cache)cache=new Map();
+    const ck=R.from+"|"+R.to,h=cache.get(ck);
+    if(h&&Date.now()-h.at<CACHE_MS)return h.p;
+    const p=load(R);cache.set(ck,{p,at:Date.now()});p.catch(()=>{if(cache&&cache.get(ck)&&cache.get(ck).p===p)cache.delete(ck)});
+    return p;
+  }
+  let pre=0;
+  function prefetch(){
+    clearTimeout(pre);
+    pre=setTimeout(async()=>{
+      for(const k of ["today","yday","7","30","month"]){
+        if(!EL||!document.body.contains(EL)||document.hidden)return;
+        try{await loadCached({...rangeOf(k),key:k})}catch(e){}
+      }
+    },1500);
   }
   // Top-bar profit ON/OFF tapped: paint again from the numbers already loaded (no new reads).
   document.addEventListener("lwb:profit",()=>{if(EL&&EL._M&&EL._R&&document.body.contains(EL))paint(EL._M,EL._R)});
