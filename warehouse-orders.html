@@ -2662,6 +2662,17 @@ function matchesBrand(order, brand) {
   return items.some(item => itemBrand(item) === brand);
 }
 
+/* Rajnigandha (quick-slip brand) PO, Mohit 20 Nov 2026: the list shows no Pallet and no Bill buttons for it
+   (Track, image, PO print and Transport stay). True when the Rajnigandha brand is picked in the top bar,
+   or when every SKU line of the PO is of a quick-slip brand. */
+function isSlipBrandOrder(order) {
+  const slipCos = new Set(brandCompanies.filter(c => c.quick_slip === true).map(c => c.id));
+  if (!slipCos.size) return false;
+  if (slipCos.has(brandPick())) return true;
+  const items = skuBrandMap && orderItemsCache.get(order.id);
+  return !!(items && items.length && items.every(item => slipCos.has(itemBrand(item))));
+}
+
 /* SKU lines of many orders, 150 ids per call, kept for the session. Also fills the Lines column. */
 async function loadItemsFor(ids) {
   const need = [...new Set(ids)].filter(id => id && !orderItemsCache.has(id));
@@ -4429,11 +4440,11 @@ function renderOrders() {
             <td class="c-act"><div class="act-row">
               <button class="btn btn-light btn-track" title="Track: where is this PO now" onclick="trackOrder('${order.id}')">📍<span class="lbl-long"> Track</span></button>
               ${!isCancelled(order) ? `<button class="btn btn-light btn-track" title="Copy order image for WhatsApp (no order no.). Phone: downloads it." aria-label="Copy order image" onclick="LWBPoShare.quick(db,'${order.id}')">${LWBPoShare.ICON}</button>` : ""}
-              ${spButtonFor(order) ? `<button class="btn btn-light" title="Pallet / Sheet given to party and returned" onclick="openSp('${order.id}')">▦<span class="lbl-long"> Pallet</span></button>` : ""}
-              ${CAN_BILL && VIEW_ONLY && eligibleForPoPrint(order) ? `<button class="btn btn-green" title="Enter the Tally bill no." onclick="openBill('${order.id}')">🧾 Bill</button>` : ""}
+              ${spButtonFor(order) && !isSlipBrandOrder(order) ? `<button class="btn btn-light" title="Pallet / Sheet given to party and returned" onclick="openSp('${order.id}')">▦<span class="lbl-long"> Pallet</span></button>` : ""}
+              ${CAN_BILL && VIEW_ONLY && eligibleForPoPrint(order) && !isSlipBrandOrder(order) ? `<button class="btn btn-green" title="Enter the Tally bill no." onclick="openBill('${order.id}')">🧾 Bill</button>` : ""}
               ${IS_ADMIN && rateWait.has(order.id) ? `<button class="btn btn-green" title="Rate below min: check and approve" onclick="openRateOk('${order.id}')">₹ Rate OK</button>` : ""}
               ${poPrintAllowed(order) ? `<button class="btn btn-light" title="Print PO" onclick="printPoFromList('${order.id}')">🖨 PO</button>` : ""}
-              ${TAX_BILL && printAllowed(order) ? `<button class="btn btn-light" title="Print tax invoice (Tally layout)" onclick="taxBillPrint('${order.id}', this)">🖨 Bill</button>` : ""}
+              ${TAX_BILL && printAllowed(order) && !isSlipBrandOrder(order) ? `<button class="btn btn-light" title="Print tax invoice (Tally layout)" onclick="taxBillPrint('${order.id}', this)">🖨 Bill</button>` : ""}
               ${eligibleForPoPrint(order) && !VIEW_ONLY ? `<button class="btn btn-green" title="Driver / Vehicle / Godown Manager"
                 onclick="openTransportAllocation('${order.id}')">🚚<span class="lbl-long"> Transport</span></button>` : ""}
             </div></td>
