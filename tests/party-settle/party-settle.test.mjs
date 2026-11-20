@@ -137,3 +137,42 @@ test('new payment with "Choose bills": money left goes to the oldest due bill of
  await receive(P,[{mode:'UPI',amount:2500,ref:'U3'}],C,[]);
  assert.equal(await due(c1),3500);
 });
+
+test('overpaid fix SQL: a bill holding more party money than its bill gives the extra to the due bill (Ravi Sales, 2nd)',async()=>{
+ const S='RAVI TWO',X=await po('X-1',S,317520,'RAJNI 4G',dayAdd(today,-4)),Y=await po('X-2',S,268501,'RAJNI 4G');
+ await db.query("insert into lwb_customer_master values($1)",[S]);
+ await as('accounts');
+ const r=await receive(S,[{mode:'BANK',amount:317520+264900,ref:'UX'}],R,[{order_id:X,amount:317520},{order_id:Y,amount:264900}]);
+ // old state: the first bill came down to 3,10,328 after the money was set (as on live before this fix)
+ await db.exec('ALTER TABLE lwb_tally_invoices DISABLE TRIGGER trg_lwb_party_auto_adjust');
+ await db.query('update lwb_tally_invoices set amount=310328 where order_id=$1',[X]);
+ await db.exec('ALTER TABLE lwb_tally_invoices ENABLE TRIGGER trg_lwb_party_auto_adjust');
+ assert.equal(await due(X),-7192);assert.equal(await due(Y),3601);
+ await as('');
+ await db.exec(await sql('lwb_party_overpaid_fix_setup.sql'));
+ await as('accounts');
+ assert.equal(await due(X),0);
+ assert.equal(await due(Y),0);
+ assert.equal(await advB(S,R),3591);
+ const lg=(await db.query('select old_amount::float8 o,new_amount::float8 n from lwb_party_trim_log where order_id=$1',[X])).rows;
+ assert.deepEqual(lg,[{o:317520,n:310328}]);
+ // run again: safe
+ await as('');await db.exec(await sql('lwb_party_overpaid_fix_setup.sql'));await as('accounts');
+ assert.equal(await due(Y),0);
+});
+
+test('bill amount lowered later: the extra moves by itself to the next due bill of the brand',async()=>{
+ const S='RAVI THREE',X=await po('Z-1',S,50000,'RAJNI 4G',dayAdd(today,-2)),Y=await po('Z-2',S,9000,'RAJNI 4G');
+ await db.query("insert into lwb_customer_master values($1)",[S]);
+ await as('accounts');
+ await receive(S,[{mode:'BANK',amount:50000,ref:'UZ'}],R,[{order_id:X,amount:50000}]);
+ assert.equal(await due(Y),9000);
+ await db.query("select set_config('request.jwt.claim.sub',$1,false)",[ids.accounts]);
+ await db.query('update lwb_tally_invoices set amount=45000 where order_id=$1',[X]);
+ assert.equal(await due(X),0);
+ assert.equal(await due(Y),4000);
+ // credit note on Z-2 brings it under its money: extra becomes advance
+ await db.query("insert into lwb_tally_notes(order_id,kind,amount) values($1,'CREDIT',5000)",[Y]);
+ assert.equal(await due(Y),0);
+ assert.equal(await advB(S,R),1000);
+});
