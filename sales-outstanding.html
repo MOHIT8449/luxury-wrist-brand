@@ -46,6 +46,8 @@
     .so-bd{display:inline-flex;align-items:center;gap:3px;border-radius:99px;padding:2px 8px;font-size:12px;font-weight:700;white-space:nowrap}
     .so-pen{background:#fdecec;color:#c62828}.so-part{background:#fff4e0;color:#9a5b00}.so-paid{background:#e7f5ec;color:#13824a}
     .so-chq{background:#e8f0fc;color:#1d5fbf}.so-drv{background:#f3eefc;color:#6b3fb5}
+    .so-btag{display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:700;color:var(--bc);white-space:nowrap}.so-btag i{width:8px;height:8px;border-radius:50%;background:var(--bc)}
+    .so-bsum{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 8px}.so-bsum div{flex:1 1 180px;border:1px solid var(--erp-line);border-left:4px solid var(--bc);border-radius:9px;padding:5px 9px;min-width:0;font-size:12.5px;color:var(--erp-muted)}.so-bsum b{color:var(--erp-ink)}
     .so-mode{display:inline-block;font-size:11px;font-weight:600;border:1px solid var(--erp-line);border-radius:6px;padding:0 5px;margin:1px 2px 0 0;background:#fafbf9;white-space:nowrap}
     .so-acts{display:flex;gap:6px;justify-content:flex-end;flex-wrap:nowrap}
     .so-b{height:32px;border:1px solid var(--erp-line);border-radius:8px;background:#fff;font:inherit;font-size:13px;font-weight:600;padding:0 10px;cursor:pointer;color:var(--erp-ink);white-space:nowrap;display:inline-flex;align-items:center;gap:4px}
@@ -88,7 +90,10 @@
       .so-card{padding:8px}
       .so-dlg{width:100%}.so-ov{align-items:flex-end;padding:0}.so-dlg{border-radius:14px 14px 0 0;max-height:92dvh}
       .so-sum b{font-size:15px}
-      .so-dlg .so-t th:nth-child(2),.so-dlg .so-t td:nth-child(2){max-width:150px}
+      .so-dlg .so-t{table-layout:fixed;width:100%}
+      .so-dlg .so-t th,.so-dlg .so-t td{padding:6px 3px;font-size:12px;overflow-wrap:anywhere}
+      .so-dlg .so-t th:nth-child(1){width:54px}.so-dlg .so-t th:nth-child(3),.so-dlg .so-t th:nth-child(4){width:66px}.so-dlg .so-t th:nth-child(5){width:76px}
+      .so-dlg .so-t td:nth-child(2) .so-mut{display:none}.so-bsum div{flex-basis:100%}
     }
   </style>
 </head>
@@ -126,6 +131,7 @@
     const MODE={CASH:"💵 Cash",UPI:"📱 GPay/UPI",BANK:"🏦 Bank",CHEQUE:"🧾 Cheque"};
     const modeChip=m=>String(m||"").split("+").filter(Boolean).map(x=>'<span class="so-mode">'+(MODE[x]||esc(x))+"</span>").join("");
     const CHQ={CHEQUE_IN_HAND:"cheque not deposited",CHEQUE_DEPOSITED:"cheque not cleared",CHEQUE_BOUNCED:"cheque bounced"};
+    let brand="",ledParty="";
     let me=null,raw=null,info=null,bills=[],pays=new Map(),payRows=[],tab="bills",shown=150,ledger=null,canTell=false,today="";
 
     function daysOld(d){return d?Math.max(0,Math.round((Date.parse(today+"T00:00:00Z")-Date.parse(String(d).slice(0,10)+"T00:00:00Z"))/864e5)):0}
@@ -160,9 +166,8 @@
       const cur=el("fSm").value;
       el("fSm").innerHTML='<option value="">All salesmen</option>'+sms.map(s=>'<option>'+esc(s)+"</option>").join("")+'<option value="-">No salesman</option>';
       el("fSm").value=[...el("fSm").options].some(o=>o.value===cur)?cur:"";
-      const cos=raw.companies||[];
-      el("fBr").hidden=cos.length<2;
-      if(cos.length>1){const c=el("fBr").value;el("fBr").innerHTML='<option value="">All brands</option>'+cos.map(x=>'<option value="'+esc(x.id)+'">'+esc(x.name)+"</option>").join("");el("fBr").value=c}
+      // Brand = the ONE picker in the top bar (All / Coca-Cola / Rajnigandha), no picker inside the page.
+      brand=curBrand();
       el("upd").textContent="Updated "+new Date().toLocaleTimeString("en-IN",{hour:"2-digit",minute:"2-digit"});
       render();
     }
@@ -181,13 +186,18 @@
       if(s.drv)h+=' <span class="so-bd so-drv">🚚 with driver</span>';
       return h;
     }
+    // Top bar brand (erp-shell.js / brand-filter.js keep it in localStorage lwbBrand). Unknown id = All.
+    function curBrand(){let v="";try{v=localStorage.getItem("lwbBrand")||""}catch(e){}return (raw&&raw.companies||[]).some(c=>c.id===v)?v:""}
+    const coOf=id=>(raw&&raw.companies||[]).find(c=>c.id===id);
+    const multi=()=>(raw&&raw.companies||[]).length>1;
+    const btag=id=>{const c=coOf(id);return c?'<span class="so-btag" style="--bc:'+esc(c.color||"#2362a4")+'"><i></i>'+esc(c.name)+"</span>":'<span class="so-btag" style="--bc:#8a94a3"><i></i>No brand</span>'};
     function inPeriod(d){
       const v=el("fPer").value;if(!v)return true;
       if(v==="m")return String(d||"").slice(0,7)===today.slice(0,7);
       return daysOld(d)<=Number(v);
     }
     function base(){
-      const sm=el("fSm").value,br=el("fBr").value,q=el("q").value.trim().toLowerCase();
+      const sm=el("fSm").value,br=brand,q=el("q").value.trim().toLowerCase();
       return bills.filter(b=>(!sm||(sm==="-"?!b.sales_person:b.sales_person===sm))&&(!br||b.company_id===br)&&inPeriod(b.invoice_date)&&
         (!q||[b.party,b.parent,b.invoice_no,b.order_no,b.sales_person].join(" ").toLowerCase().includes(q)));
     }
@@ -230,12 +240,12 @@
       const recv=(b,s)=>b.got>0?'<span class="so-ok">'+rs(b.got)+"</span><div>"+modeChip(s.modes.join("+"))+"</div>":'<span class="so-mut">—</span>';
       const tr=page.map(b=>{const s=payState(b);return '<tr><td><b>'+esc(b.invoice_no)+'</b><div class="so-mut">'+esc(b.order_no)+'</div></td>'+
         '<td style="white-space:nowrap">'+dmy(b.invoice_date)+'<div class="so-days '+dcls(b.days)+'">'+b.days+' days</div></td>'+
-        '<td class="p">'+esc(b.party)+'<div class="so-mut">'+esc(b.sales_person||"No salesman")+(b.parent!==b.party?" · "+esc(b.parent):"")+'</div></td>'+
+        '<td class="p">'+esc(b.party)+'<div class="so-mut">'+(!brand&&multi()?btag(b.company_id)+" · ":"")+esc(b.sales_person||"No salesman")+(b.parent!==b.party?" · "+esc(b.parent):"")+'</div></td>'+
         '<td class="n">'+rs(b.bill)+'</td><td class="n">'+recv(b,s)+'</td>'+
         '<td class="n">'+(b.due>0.5?'<span class="so-due">'+rs(b.due)+"</span>":b.due<-0.5?'<span class="so-adv">'+rs(-b.due)+" extra</span>":'<span class="so-ok">₹0</span>')+'</td>'+
         '<td>'+badge(b,s)+told(b.told)+'</td><td><div class="so-acts">'+acts(b)+"</div></td></tr>"}).join("");
       const sum=k=>rows.reduce((a,b)=>a+b[k],0);
-      const cards=page.map(b=>{const s=payState(b);return '<div class="so-c"><div class="l1"><div><b>'+esc(b.party)+'</b><div class="so-mut">'+esc(b.invoice_no)+" · "+esc(b.order_no)+" · "+dmy(b.invoice_date)+
+      const cards=page.map(b=>{const s=payState(b);return '<div class="so-c"><div class="l1"><div><b>'+esc(b.party)+'</b><div class="so-mut">'+(!brand&&multi()?btag(b.company_id)+" · ":"")+esc(b.invoice_no)+" · "+esc(b.order_no)+" · "+dmy(b.invoice_date)+
         ' · <span class="so-days '+dcls(b.days)+'">'+b.days+"d</span> · "+esc(b.sales_person||"No salesman")+'</div></div><div class="r">'+
         (b.due>0.5?'<span class="so-due">'+rs(b.due)+"</span>":'<span class="so-ok">Paid</span>')+'<div class="so-mut">of '+rs(b.bill)+'</div></div></div>'+
         '<div class="l2"><div>'+badge(b,s)+(b.got>0?' <span class="so-mut">got '+rs(b.got)+"</span> "+modeChip(s.modes.join("+")):"")+told(b.told)+'</div><div class="so-acts">'+acts(b)+"</div></div></div>"}).join("");
@@ -245,7 +255,7 @@
     }
 
     function partyRows(list){
-      const sm=el("fSm").value||el("fBr").value||el("fPer").value||el("q").value.trim();
+      const sm=el("fSm").value||el("fPer").value||el("q").value.trim();
       const by=new Map();
       for(const b of list){
         const k=S.key(b.parent);if(!by.has(k))by.set(k,{party:b.parent,bills:0,unpaid:0,billed:0,got:0,due:0,oldest:0,sp:{}});
@@ -253,7 +263,8 @@
         if(b.sales_person)x.sp[b.sales_person]=(x.sp[b.sales_person]||0)+1;
       }
       const rows=[...by.values()].map(x=>{
-        const P=info.parties.get(pkey(x.party));
+        // Brand chosen: only that brand's advance / opening / return (Coca-Cola money never lowers a Rajnigandha due).
+        const W=info.parties.get(pkey(x.party)),P=W&&brand?LWBPartyPay.slice(W,brand):W;
         const adv=P?r2(P.advance+(P.ret||0)-(P.opening||0)):0;
         return {...x,adv,net:sm?r2(x.due-adv):(P?P.net:r2(x.due-adv)),sp:Object.entries(x.sp).sort((a,b)=>b[1]-a[1]).map(e=>e[0])[0]||"",told:(raw.told||{})[x.party]};
       }).filter(x=>x.due>0.5||x.net>0.5).sort((a,b)=>b.net-a.net);
@@ -301,22 +312,34 @@
         if(a.error){el("pop").querySelector(".bd").innerHTML='<div class="so-err">'+esc(a.error.message)+"</div>";return}
         ledger=a.data||[];
       }
+      ledParty=party;
       const k=S.key(party);
-      const rows=ledger.filter(r=>S.key(r.customer_name)===k).sort((a,b)=>String(a.entry_date).localeCompare(String(b.entry_date))||String(a.created_at||"").localeCompare(String(b.created_at||"")));
+      // Top bar brand: only that brand's bills and payments (each payment is for one brand). All = both, with a box per brand.
+      const all=ledger.filter(r=>S.key(r.customer_name)===k);
+      const rows=all.filter(r=>!brand||(r.company_id||"")===brand).sort((a,b)=>String(a.entry_date).localeCompare(String(b.entry_date))||String(a.created_at||"").localeCompare(String(b.created_at||"")));
       let bal=0;const L=rows.map(r=>{bal+=Number(r.debit||0)-Number(r.credit||0);return {...r,bal}});
       const dr=rows.reduce((a,r)=>a+Number(r.debit||0),0),cr=rows.reduce((a,r)=>a+Number(r.credit||0),0);
       const kind=r=>{const m=String(r.ref_no||"").split(" ")[0];return MODE[m]&&/PAYMENT/.test(r.entry_kind)?modeChip(m)+" ":""};
       const label=r=>({TALLY_BILL:"Bill",ERP_BILL:"Bill",OLD_INVOICE:"Bill",OPENING:"Opening balance",PARTY_PAYMENT:"Payment",OFFICE_PAYMENT:"Payment",DRIVER_PAYMENT:"Payment (driver)",PAYMENT:"Payment",CREDIT_NOTE:"Credit note",DEBIT_NOTE:"Debit note",DRIVER_RETURN:"Return",SALES_RETURN:"Return"}[r.entry_kind]||r.entry_kind);
-      const body=L.slice(-80).map(r=>'<tr><td class="so-mut" style="white-space:nowrap">'+dmy(r.entry_date)+'</td><td>'+kind(r)+'<b>'+esc(label(r))+"</b> "+esc([/PAYMENT|OPENING/.test(r.entry_kind)?"":r.ref_no,r.order_no].filter(Boolean).join(" · "))+'<div class="so-mut">'+esc(r.note||"")+'</div></td>'+
+      const per=[];
+      if(!brand&&multi()){
+        const ids=[...new Set(all.map(r=>r.company_id||""))].sort((a,b)=>(coOf(a)?0:1)-(coOf(b)?0:1));
+        for(const id of ids){const R=all.filter(r=>(r.company_id||"")===id),d=R.reduce((a,r)=>a+Number(r.debit||0),0),c=R.reduce((a,r)=>a+Number(r.credit||0),0),n=d-c,co=coOf(id);
+          per.push('<div style="--bc:'+esc(co?co.color||"#2362a4":"#8a94a3")+'">'+btag(id)+'<br>Bills <b>'+rs(d)+'</b> · Paid <b class="so-ok">'+rs(c)+'</b> · '+(n>0.5?'Due <b class="so-due">'+rs(n)+"</b>":n<-0.5?'Advance <b class="so-ok">'+rs(-n)+"</b>":"<b>Settled</b>")+"</div>")}
+      }
+      const body=L.slice(-80).map(r=>'<tr><td class="so-mut" style="white-space:nowrap">'+dmy(r.entry_date).replace(/\/20(\d\d)$/,"/$1")+'</td><td>'+kind(r)+'<b>'+esc(label(r))+"</b> "+(per.length>1?btag(r.company_id)+" ":"")+esc([/PAYMENT|OPENING/.test(r.entry_kind)?"":r.ref_no,r.order_no].filter(Boolean).join(" · "))+'<div class="so-mut">'+esc(r.note||"")+'</div></td>'+
         '<td class="n">'+(Number(r.debit)?rs(r.debit):"")+'</td><td class="n so-ok">'+(Number(r.credit)?rs(r.credit):"")+'</td><td class="n"><b class="'+(r.bal>0.5?"so-due":"so-ok")+'">'+rs(r.bal)+"</b></td></tr>").join("");
       const p=el("pop");
-      p.querySelector(".bd").innerHTML='<div class="so-sum"><div><small>Total billed</small><b>'+rs(dr)+'</b></div><div><small>Received</small><b class="so-ok">'+rs(cr)+'</b></div><div><small>'+(bal>=0?"Outstanding":"Advance")+'</small><b class="'+(bal>0.5?"so-due":"so-ok")+'">'+rs(Math.abs(bal))+"</b></div></div>"+
+      const bn=brand&&coOf(brand)?coOf(brand).name+" · ":"";
+      p.querySelector("h3").textContent="📒 "+party+(bn?" · "+bn.slice(0,-3):"");
+      p.querySelector(".bd").innerHTML=(per.length>1?'<div class="so-bsum">'+per.join("")+"</div>":"")+'<div class="so-sum"><div><small>'+(per.length>1?"All brands · ":bn)+'Total billed</small><b>'+rs(dr)+'</b></div><div><small>Received</small><b class="so-ok">'+rs(cr)+'</b></div><div><small>'+(bal>=0?"Outstanding":"Advance")+'</small><b class="'+(bal>0.5?"so-due":"so-ok")+'">'+rs(Math.abs(bal))+"</b></div></div>"+
         (rows.length?(L.length>80?'<div class="so-mut">Last 80 entries. Full ledger: Open full ledger.</div>':"")+'<table class="so-t" data-cf-off><thead><tr><th>Date</th><th>Details</th><th class="n">Bill</th><th class="n">Paid</th><th class="n">Balance</th></tr></thead><tbody>'+body+"</tbody></table>":'<div class="so-empty">No ledger entries.</div>');
       p.querySelector(".so-dlg").insertAdjacentHTML("beforeend",'<footer><a class="so-b" href="party-ledger.html?party='+encodeURIComponent(party)+'">Open full ledger ↗</a><span class="sp"></span>'+(canTell?'<button type="button" class="so-b g" data-tellp="'+esc(party)+'">📣 Tell Accounts</button>':"")+"</footer>");
     }
 
     /* ---------- tell Accounts / Cashier ---------- */
     function openTell(orderId,party){
+      ledParty="";
       const b=orderId?bills.find(x=>x.order_id===orderId):null;
       const what=b?esc(b.party)+" · Bill "+esc(b.invoice_no)+" · "+esc(b.order_no)+' · due <b class="so-due">'+rs(b.due)+"</b>":esc(party);
       pop('<header><h3>📣 Tell Accounts / Cashier</h3><button type="button" class="so-b" data-x>✕</button></header><div class="bd"><p style="margin:2px 0 8px">'+what+'</p>'+
@@ -335,7 +358,7 @@
     }
 
     function pop(html){el("pop").innerHTML='<div class="so-ov"><div class="so-dlg" role="dialog" aria-modal="true">'+html+"</div></div>"}
-    function close(){el("pop").innerHTML=""}
+    function close(){el("pop").innerHTML="";ledParty=""}
 
     async function excel(){
       const list=base();
@@ -367,6 +390,8 @@
         if(t.dataset.tell)return openTell(t.dataset.tell,null);
         if(t.dataset.tellp)return openTell(null,t.dataset.tellp);
       });
+      // Top bar brand changed: the list and an open ledger follow it.
+      document.addEventListener("lwb:brand",()=>{if(!raw)return;brand=curBrand();shown=150;render();if(ledParty)openLedger(ledParty)});
       el("pop").addEventListener("click",e=>{if(e.target.classList.contains("so-ov"))close()});
       document.addEventListener("keydown",e=>{if(e.key==="Escape"&&el("pop").innerHTML)close()});
       await load();
