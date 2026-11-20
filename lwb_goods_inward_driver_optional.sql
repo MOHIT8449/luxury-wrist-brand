@@ -136,7 +136,7 @@ BEGIN
   END IF;
   -- the live message must have been found (and guarded) in a Goods Inward function
   IF NOT EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace s ON s.oid = p.pronamespace
-                 WHERE s.nspname = 'public' AND pg_get_functiondef(p.oid) LIKE '%lwb:driver-optional%') THEN
+                 WHERE s.nspname = 'public' AND p.prokind = 'f' AND pg_get_functiondef(p.oid) LIKE '%lwb:driver-optional%') THEN
     SELECT string_agg(p.oid::regprocedure::text, ', ') INTO bad
     FROM pg_proc p JOIN pg_namespace s ON s.oid = p.pronamespace
     WHERE s.nspname = 'public' AND p.prokind = 'f' AND pg_get_functiondef(p.oid) ~* 'Driver\s+Name\s*\(1\s+to\s+100';
