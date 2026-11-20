@@ -795,7 +795,6 @@
     /* 1280-1400 px screens: action buttons a bit tighter so the table has no side scroll (12 Nov 2026) */
     @media (min-width:641px) and (max-width:1400px){
       #ordersArea .act-row {gap:4px}
-      #ordersArea thead th:nth-child(4), #ordersArea td.c-lines {display:none}
       #ordersArea .po-trk.sm {width:126px}
       #ordersArea .trk-now {font-size:10.5px}
       #ordersArea table th, #ordersArea table td {padding-left:6px;padding-right:6px}
@@ -913,6 +912,8 @@
     .po-range .ps-dates input {min-width:0;flex:none;padding:5px 2px;border:0}
     .po-range-note {font-size:12px;color:#6b7785;margin:-8px 2px 10px}
     td.c-lines {text-align:right}
+    .tp-b {display:inline-block;font-size:11px;font-weight:700;border-radius:6px;padding:2px 7px;white-space:nowrap;background:#eef1ef;color:#3d4a57}
+    .tp-b.dl {background:#e8f0fc;color:#1d5fbf}.tp-b.sp {background:#fff4e0;color:#8a5200}.tp-b.dv {background:#f3eefc;color:#6b3fb5}
     .po-foot {display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:10px 13px;border-top:1px solid #eee;font-size:13px;color:#4b5866}
     .po-foot .tot {font-weight:700;color:#1f2a37}
     .po-foot .sp {flex:1}
@@ -952,7 +953,6 @@
       #ordersArea .status {padding:3px 8px;font-size:10.5px}
       #ordersArea .sla {margin-top:3px;padding:1px 6px;font-size:10.5px}
       #ordersArea .act-row {display:flex;gap:4px;flex-wrap:nowrap}
-      #ordersArea :is(.h-tp,.c-tp) {display:none}
       @media (max-width: 1500px) {#ordersArea .lbl-long {display:none}}
       #ordersArea .sp-tp {display:block;font-size:11px;color:#6b7785;margin-top:1px;white-space:nowrap}
       #ordersArea th .sp-tp {display:block;font-size:inherit;color:inherit;margin:0}
@@ -1237,7 +1237,7 @@
       #ordersArea table {min-width:0}
       #ordersArea thead {display:none}
       #ordersArea tbody tr {display:grid;grid-template-columns:1fr 1fr 1fr;grid-template-areas:
-        "no no st" "date date lines" "cust cust cust" "sp sp tp" "qty amt wt" "pay pay pay" "act act act";
+        "no no st" "date date date" "cust cust cust" "sp sp tp" "qty amt wt" "pay pay pay" "act act act";
         gap:6px 10px;background:#fff;border:1px solid #e4e4e4;border-radius:10px;padding:12px;margin-bottom:10px}
       #ordersArea tbody tr:hover td {background:none}
       #ordersArea td {padding:0;border:0;min-width:0;text-align:left!important;font-size:13px}
@@ -1245,9 +1245,6 @@
       #ordersArea .c-no {grid-area:no;font-size:15px;align-self:center}
       #ordersArea .c-st {grid-area:st;text-align:right!important;align-self:center}
       #ordersArea .c-date {grid-area:date;font-size:12px;color:#6b7785}
-      #ordersArea .c-lines {grid-area:lines;font-size:12px;color:#6b7785;text-align:right!important}
-      #ordersArea .c-lines::before {display:none!important}
-      #ordersArea .c-lines::after {content:" lines"}
       #ordersArea .sp-tp {display:none}
       #ordersArea .act-row {display:flex;gap:8px;width:100%}
       #ordersArea .act-row .btn {flex:1;padding:11px 6px;font-size:13px;white-space:nowrap}
@@ -3221,13 +3218,21 @@ function pageSearchText(order) {
 /* Excel-style filter on every column head of the PO list (erp-colfilter.js, Mohit 20 Nov 2026):
    ▾ on each head: sort, search, tick one or many values. Phone: "Filter columns" grid above the cards. */
 const PO_CF = LWBCol.create({ onChange: () => resetPageAndRender() });
-const PO_CF_HEAD = ["Order No", "Date", "Customer", "Lines", "Sales Person", "Transport", "Qty", "Amount", "Weight", "Status"];
+// 20 Nov 2026 (Mohit): no Lines column; Sales Person and Transport are separate, Transport next to Qty.
+const PO_CF_HEAD = ["Order No", "Date", "Customer", "Sales Person", "Qty", "Transport", "Amount", "Weight", "Status"];
+const tpLabel = t => ({ "DELIVERY": "Delivery", "SELF PICKUP": "Self pickup", "SELF_PICKUP": "Self pickup", "DIRECT VEHICLE": "Direct vehicle", "DIRECT_VEHICLE": "Direct vehicle" })[String(t || "").trim().toUpperCase()] || String(t || "").trim();
+function tpBadge(t) {
+  const l = tpLabel(t);
+  if (!l) return `<span class="pay-na">-</span>`;
+  const c = l === "Delivery" ? "dl" : l === "Self pickup" ? "sp" : l === "Direct vehicle" ? "dv" : "";
+  return `<span class="tp-b ${c}">${escapeHtml(l)}</span>`;
+}
 function poCfRow(o) {
   const d = o.order_date || o.created_at;
   return { o, data: [o.order_no || "", d ? new Date(new Date(d).getTime() + 5.5 * 3600000).toISOString().slice(0, 10) : "",
-    o.customer_name || "", orderLines.has(o.id) ? Number(orderLines.get(o.id)) : null, o.sales_person || "",
-    o.transportation || "", Number(o.total_qty) || 0, Number(o.total_amount) || 0, Number(o.total_weight) || 0, stageLabel(o),
-    CAN_PAY ? payLabel(o) : ""], num: CAN_PAY ? { 10: partyDue(o).net || 0 } : null };
+    o.customer_name || "", o.sales_person || "", Number(o.total_qty) || 0, tpLabel(o.transportation),
+    Number(o.total_amount) || 0, Number(o.total_weight) || 0, stageLabel(o),
+    CAN_PAY ? payLabel(o) : ""], num: CAN_PAY ? { 9: partyDue(o).net || 0 } : null };
 }
 const poTh = (i, label) => PO_CF.th("po", PO_CF_HEAD, i, label == null ? PO_CF_HEAD[i] : label);
 
@@ -4668,7 +4673,7 @@ function renderOrders() {
     .map(pair => pair[0]);
 
   filtered = sugArrange(filtered, filter);
-  filtered = PO_CF.apply("po", PO_CF_HEAD, filtered.map(poCfRow), { list: [1], split: CAN_PAY ? [10] : [], sortNum: CAN_PAY ? [10] : [] }).map(r => r.o);
+  filtered = PO_CF.apply("po", PO_CF_HEAD, filtered.map(poCfRow), { list: [1, 5], split: CAN_PAY ? [9] : [], sortNum: CAN_PAY ? [9] : [] }).map(r => r.o);
   renderDueTotal(filtered);
   if (justSavedId) {
     const i = filtered.findIndex(o => o.id === justSavedId);
@@ -4705,14 +4710,13 @@ function renderOrders() {
             ${pageOrders.every(o => pickedIds.has(o.id)) ? "checked" : ""} aria-label="Select all on this page">${poTh(0)}</th>
           <th>${poTh(1)}</th>
           <th>${poTh(2)}</th>
-          <th style="text-align:right">${poTh(3)}</th>
-          <th class="h-sp">${poTh(4)}<small class="sp-tp">/ ${poTh(5)}</small></th>
-          <th class="h-tp">${poTh(5, "Transportation")}</th>
+          <th class="h-sp">${poTh(3)}</th>
+          <th style="text-align:right">${poTh(4)}</th>
+          <th class="h-tp">${poTh(5)}</th>
           <th style="text-align:right">${poTh(6)}</th>
           <th style="text-align:right">${poTh(7)}</th>
-          <th style="text-align:right">${poTh(8)}</th>
-          <th>${poTh(9)}</th>
-          ${CAN_PAY ? `<th class="h-pay">${poTh(10)}</th>` : ""}
+          <th>${poTh(8)}</th>
+          ${CAN_PAY ? `<th class="h-pay">${poTh(9)}</th>` : ""}
           <th>Action</th>
         </tr>
       </thead>
@@ -4738,19 +4742,15 @@ function renderOrders() {
               ${escapeHtml(order.customer_name || "-")}
             </td>
 
-            <td class="c-lines" data-id="${order.id}">${orderLines.has(order.id) ? orderLines.get(order.id) : "…"}</td>
-
             <td class="c-sp" data-label="Sales person">
-              ${escapeHtml(order.sales_person || "-")}<small class="sp-tp">${escapeHtml(order.transportation || "-")}</small>
-            </td>
-
-            <td class="c-tp" data-label="Transport">
-              ${escapeHtml(order.transportation || "-")}
+              ${escapeHtml(order.sales_person || "-")}
             </td>
 
             <td class="c-qty" data-label="Qty" style="text-align:right">
               ${formatNumber(order.total_qty)}${fillStage(order) ? `<span class="fill-w" data-fill="${order.id}">${fillBadge(order.id)}</span>` : ""}
             </td>
+
+            <td class="c-tp" data-label="Transport">${tpBadge(order.transportation)}</td>
 
             <td
               class="money c-amt"
@@ -4855,9 +4855,9 @@ function renderDrafts(area) {
   area.innerHTML = `
     <table class="draft-table">
       <thead><tr>
-        <th>Draft</th><th>Saved</th><th>Customer</th><th style="text-align:right">Lines</th>
-        <th class="h-sp">Sales Person<small class="sp-tp">/ Transport</small></th><th class="h-tp">Transportation</th>
-        <th style="text-align:right">Qty</th><th style="text-align:right">Amount</th><th style="text-align:right">Weight</th>
+        <th>Draft</th><th>Saved</th><th>Customer</th>
+        <th class="h-sp">Sales Person</th>
+        <th style="text-align:right">Qty</th><th class="h-tp">Transport</th><th style="text-align:right">Amount</th><th style="text-align:right">Weight</th>
         <th>Saved by</th><th>Action</th>
       </tr></thead>
       <tbody>${list.map(d => `
@@ -4865,10 +4865,9 @@ function renderDrafts(area) {
           <td class="order-no c-no"><span class="draft-badge">DRAFT</span></td>
           <td class="c-date">${formatDate(d.updated_at || d.created_at)}</td>
           <td class="c-cust">${escapeHtml(d.customer_name || "(No party yet)")}</td>
-          <td class="c-lines">${Number(d.line_count) || 0}</td>
-          <td class="c-sp" data-label="Sales person">${escapeHtml(d.sales_person || "-")}<small class="sp-tp">${escapeHtml(d.transportation || "-")}</small></td>
-          <td class="c-tp" data-label="Transport">${escapeHtml(d.transportation || "-")}</td>
+          <td class="c-sp" data-label="Sales person">${escapeHtml(d.sales_person || "-")}</td>
           <td class="c-qty" data-label="Qty" style="text-align:right">${formatNumber(d.total_qty)}</td>
+          <td class="c-tp" data-label="Transport">${tpBadge(d.transportation)}</td>
           <td class="money c-amt" data-label="Amount" style="text-align:right">${formatMoney(d.total_amount)}</td>
           <td class="c-wt" data-label="Weight" style="text-align:right">${formatNumber(d.total_weight)} KG</td>
           <td class="c-st" data-label="Saved by">${ageBadge(d)}${escapeHtml(d.updated_by_name || d.created_by_name || "-")}</td>
