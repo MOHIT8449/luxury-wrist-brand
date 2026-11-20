@@ -1028,6 +1028,7 @@
 ## Website launch checklist (29 Oct 2026)
 
 - Public pages: `index.html`, `privacy.html`, `terms.html` (style `assets/legal.css`), branded `404.html` (Cloudflare Pages serves it for any missing page).
+- Homepage YouTube video (20 Nov 2026): "Watch our story" card in Awards & press, video id MdLvoDhWPn8, click-to-load youtube-nocookie embed (poster from i.ytimg.com). To change: edit data-id + links.
 - Homepage awards (20 Nov 2026): `assets/home/awards-wall*.jpg` photo of the certificates wall + list (Flipkart Platinum/Gold Seller, Times of India, Flipkart Stories) under the Flipkart card; Times of India card uses `assets/home/times-of-india*.jpg` (clipping from the 22 Dec 2023 PDF Mohit shared).
 - Homepage "Featured on Flipkart Stories" section (20 Nov 2026): banner image `assets/home/flipkart-story.jpg`, links to the Mar 2023 Flipkart Stories article; figures are as reported there.
 - Homepage redesign (20 Nov 2026): `index.html` rebuilt mobile-first in the login page's teal + gold theme (Cormorant Garamond + Montserrat), sections Hero+stats, About, Brands, Business, Gallery (filter chips, first photos + "View all", tap-to-enlarge viewer), Contact. Logo file `assets/home/lwb-logo.webp` (same image as the login page).
