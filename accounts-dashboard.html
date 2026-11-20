@@ -283,6 +283,8 @@
     let HV=[],hvSub="own",hvPosted=false,PR=[];  // PR = Porter / one-time trips (lwb_trip_rent_setup.sql)
     let X={entries:{},staff_heads:[],payees:[]},S=[],V=[],VR={vehicles:[],entries:{}},C=[],piErr=false,D=null,PI=null,per="today",from=todayISO(),to=todayISO(),tab="book",bookF="all",outRows=null,me={id:"",role:""};
 
+    // bank check: Admin and Accounts (lwb_cashier_role_setup.sql adds can_check); not the Cashier
+    const canCheck=()=>D&&(D.can_check!=null?D.can_check:D.is_admin);
     function say(t,bad){el("msg").hidden=!t;el("msg").textContent=t||"";el("msg").className="acx-msg"+(bad?" bad":"")}
     const errText=e=>{const m=String(e&&e.message||e||"Something went wrong");
       if(/function .*lwb_acc|schema cache|does not exist/i.test(m))return "Accounts Dashboard database is not set up yet. It sets itself up when this change is merged (lwb_accounts_dashboard_setup.sql).";
@@ -317,7 +319,9 @@
         D.lines.forEach(l=>{l.x=l.src==="ENTRY"&&X.entries[l.id]||null;l.veh=l.src==="ENTRY"&&VR.entries[l.id]||null});
         say("");render();
         // bills due / advance per main party (Billing & Outstanding); the dashboard works without it
-        LWBPartyPay.load(client).then(i=>{PI=i;piErr=false;LWBAccHub.loadBill(client,PI);if(tab==="out")renderOutstanding()}).catch(()=>{PI=null;piErr=true;LWBAccHub.loadBill(client,null)});
+        // (Cashier view: only for the Party payment popup; no bill cards)
+        const bills=LWBAccHub.view!=="cash";if(bills)LWBAccHub.loadGst(client);
+        LWBPartyPay.load(client).then(i=>{PI=i;piErr=false;if(bills)LWBAccHub.loadBill(client,PI);if(tab==="out")renderOutstanding()}).catch(()=>{PI=null;piErr=true;if(bills)LWBAccHub.loadBill(client,null)});
       }catch(e){say(errText(e),true)}
       finally{el("reload").disabled=false}
     }
@@ -363,7 +367,7 @@
     // Cash cards of the Accounts header; Bills to make / To collect / Advance come from LWBAccHub.loadBill
     function renderKpis(){
       const f=LWBAccHub.cashFrom(D,C,from,to);
-      LWBAccHub.kpis({coll:f.coll,chq:f.chq,hand:f.hand});LWBAccHub.counts(f.counts);
+      LWBAccHub.kpis({coll:f.coll,chq:f.chq,hand:f.hand,verify:f.verify,open:f.open,cin:f.cin,cout:f.cout,dep:f.dep});LWBAccHub.counts(f.counts);
     }
 
     // Summary tab (19 Nov 2026): Mode wise, Expenses by head and Bank wise were always on screen; now one tab
@@ -457,11 +461,12 @@
       if(!P.length){el("tabBody").innerHTML='<div class="acx-empty">✓ Nothing is waiting for the bank check.</div>';return}
       const total=P.reduce((a,p)=>a+Number(p.amount),0);
       const noBank=!(D.banks||[]).some(b=>b.active);
-      el("tabBody").innerHTML='<p style="margin:0 0 10px;font-size:14px"><b>'+P.length+' entries · '+rs(total)+'</b> '+(D.is_admin?'— <a href="bank-statement.html">upload the bank statement</a> to match them by themselves, or verify each one here.':"— Admin verifies these after checking the bank.")+'</p>'+
-        (D.is_admin&&noBank?'<div class="acx-msg">Add your bank accounts first in <a href="#" data-tab="setup">Heads &amp; Banks</a>.</div>':"")+
+      const chk=canCheck();
+      el("tabBody").innerHTML='<p style="margin:0 0 10px;font-size:14px"><b>'+P.length+' entries · '+rs(total)+'</b> '+(chk?'— <a href="bank-statement.html">upload the bank statement</a> to match them by themselves, or verify each one here.':"— Accounts verifies these after checking the bank.")+'</p>'+
+        (chk&&noBank?'<div class="acx-msg">Add your bank accounts first in <a href="#" data-tab="setup">Heads &amp; Banks</a>.</div>':"")+
         P.map(p=>'<div class="acx-ver" data-v="'+p.src+'|'+p.id+'"><div><div class="amt">'+rs(p.amount)+' <span class="tag t-blu">'+(p.kind==="DEPOSIT"?"Cash deposit":MODE_NAME[p.mode])+'</span></div></div><div style="text-align:right;font-size:13px">'+dmy(p.date)+'<br>'+hm(p.at)+'</div>'+
           '<div class="meta">'+esc(p.kind==="DEPOSIT"?"Cash deposited in "+(bankName(p.bank_id)||"bank"):(p.party||p.category||""))+(p.ref?' · Ref <b>'+esc(p.ref)+'</b>':"")+(p.order_no?" · "+esc(p.order_no):"")+' · '+esc(SRC_NAME[p.src]||"")+(p.by?" · by "+esc(p.by):"")+(p.remark?'<br><small>'+esc(p.remark)+'</small>':"")+'</div>'+
-          (D.is_admin?'<div class="act"><select aria-label="Bank">'+bankOptions(p.bank_id,!p.bank_id)+'</select><button type="button" class="acx-btn grn" data-ok>✓ In bank</button><button type="button" class="acx-btn red" data-no>✗ Not in bank</button></div>':"")+'</div>').join("");
+          (chk?'<div class="act"><select aria-label="Bank">'+bankOptions(p.bank_id,!p.bank_id)+'</select><button type="button" class="acx-btn grn" data-ok>✓ In bank</button><button type="button" class="acx-btn red" data-no>✗ Not in bank</button></div>':"")+'</div>').join("");
       el("tabBody").querySelectorAll(".acx-ver").forEach(box=>{
         const [src,id]=box.dataset.v.split("|");
         const ok=box.querySelector("[data-ok]"),no=box.querySelector("[data-no]");
@@ -473,7 +478,7 @@
 
     // Party outstanding on the MAIN party (all its bill names), advance taken off (Billing & Outstanding)
     // Brand = the one picker in the top bar (19 Nov 2026): bill cards and Party outstanding follow it.
-    document.addEventListener("lwb:brand",()=>{if(!PI)return;LWBAccHub.loadBill(client,PI);if(tab==="out")renderOutstanding()});
+    document.addEventListener("lwb:brand",()=>{if(!PI||LWBAccHub.view==="cash")return;LWBAccHub.loadBill(client,PI);if(tab==="out")renderOutstanding()});
     async function renderOutstanding(){
       if(!PI){
         el("tabBody").innerHTML='<div class="acx-empty">Loading party outstanding…</div>';
@@ -577,7 +582,7 @@
             '<div class="ac">'+(c.status!=="CLEARED"||D.is_admin?'<button type="button" class="acx-btn'+(miss?" pri":"")+'" data-cdet="'+esc(k)+'">'+(miss?"📷 Add photo / details":"Edit details")+'</button>':"")+
               (c.status==="IN_HAND"?'<button type="button" class="acx-btn grn" data-cdep="'+esc(k)+'">🏦 Deposited</button>':"")+
               (c.status==="DEPOSITED"?'<button type="button" class="acx-btn" data-cund="'+esc(k)+'">Undo deposit</button>':"")+
-              (D.is_admin&&c.status==="DEPOSITED"?'<button type="button" class="acx-btn grn" data-cclr="'+esc(k)+'">✓ Cleared</button><button type="button" class="acx-btn red" data-cbnc="'+esc(k)+'">✗ Bounced</button>':"")+'</div></div>'}).join("")+'</div>'
+              (canCheck()&&c.status==="DEPOSITED"?'<button type="button" class="acx-btn grn" data-cclr="'+esc(k)+'">✓ Cleared</button><button type="button" class="acx-btn red" data-cbnc="'+esc(k)+'">✗ Bounced</button>':"")+'</div></div>'}).join("")+'</div>'
           :'<div class="acx-empty">'+(chqF==="open"?"No cheque waiting. Every cheque (Cash In, Party payment, Payment Collection, driver) shows here until it is in the bank.":"Nothing here.")+'</div>')+
         "";
       const find=k=>C.find(c=>c.src+"|"+c.id===k);
@@ -949,7 +954,7 @@
     // Add entry: same layout as the Cashbook (Cash In / Cash Out, Date + Time, Party, Amount + Count notes, Remark, Category + Payment mode).
     function newEntry(kind,pre){pre=pre||{};
       const banks=(D.banks||[]).filter(b=>b.active);
-      if((kind==="DEPOSIT"||kind==="WITHDRAW")&&!banks.length){ERPShell.alert("Add your bank account first (Heads & Banks).");tab="setup";renderTab();return}
+      if((kind==="DEPOSIT"||kind==="WITHDRAW")&&!banks.length){if(!LWBAccHub.has("setup")){ERPShell.alert("No bank account yet. Ask Accounts / Admin to add it (Heads & Banks).");return}ERPShell.alert("Add your bank account first (Heads & Banks).");tab="setup";renderTab();return}
       const io=kind==="IN"||kind==="OUT";
       const supCat=(D.categories||[]).find(c=>c.kind==="OUT"&&c.active&&String(c.name).trim().toLowerCase()==="supplier payment");
       let st={kind,mode:"CASH",cat:pre.cat||(pre.company&&supCat?supCat.id:null)},files=[],cqFiles=[],pick=null;
@@ -1246,13 +1251,11 @@
     /* ---------- wiring ---------- */
     document.addEventListener("click",e=>{
       const t=e.target.closest("[data-tab],[data-return],[data-reopen]");if(!t)return;
-      if(t.dataset.tab){e.preventDefault();tab=t.dataset.tab;renderTab();el("hubTabs").scrollIntoView({behavior:"smooth",block:"start"})}
+      if(t.dataset.tab){e.preventDefault();if(!LWBAccHub.has(t.dataset.tab))return;tab=t.dataset.tab;renderTab();el("hubTabs").scrollIntoView({behavior:"smooth",block:"start"})}
       else if(t.dataset.return)cashBack(t.dataset.return);
       else if(t.dataset.reopen)(async()=>{const why=await ERPShell.prompt("Reopen this day? Cash count and handover are cancelled (kept in record). Write why.","",{title:"Reopen day"});if(why==null)return;act(t,()=>rpc("lwb_acc_reopen_day",{p_close_id:Number(t.dataset.reopen),p_reason:why}))})();
     });
     // Accounts header (acc-hub.js): Cash & Bank tabs open here, Billing tabs open party-billing.html
-    LWBAccHub.mount({page:"cash",tab,onTab:t=>{tab=t;if(D)renderTab()},
-      onAct:a=>{if(!D)return;if(a==="pay")partyPay("");else if(a==="close")closeDay();else newEntry(a)}});
     el("period").querySelectorAll("[data-p]").forEach(b=>b.onclick=()=>{setPeriod(b.dataset.p);load()});
     el("pDates").innerHTML=dateBox("pFrom",from,{label:"From date"})+dateBox("pTo",to,{label:"To date"});
     ["pFrom","pTo"].forEach(id=>el(id).addEventListener("change",()=>{
@@ -1275,13 +1278,21 @@
       if(!session){location.replace("login.html");return}
       const {data:p}=await client.from("user_profiles").select("full_name,role,active").eq("id",session.user.id).single();
       const realRole=String((p&&p.role)||"").toLowerCase().trim(),role=p?await ERPShell.pageRoleFresh(realRole):realRole;
-      if(!p||p.active!==true||!["admin","accounts"].includes(role)){location.replace("dashboard.html");return}
+      if(!p||p.active!==true||!["admin","accounts","cashier"].includes(role)){location.replace("dashboard.html");return}
       me={id:session.user.id,role:realRole};
       ERPShell.mount({role:realRole||role,name:p.full_name||session.user.email,onLogout:async()=>{await client.auth.signOut();location.replace("login.html")}});
+      // Accounts header (acc-hub.js): view from the URL hash (#cash Cashier, #tally Accounts); Cash & Bank tabs open here,
+      // Billing / GST tabs open party-billing.html. Old links #verify / #cheques still open those tabs.
+      let qt=new URLSearchParams(location.search).get("tab");if(location.hash==="#verify"||location.hash==="#cheques")qt=location.hash.slice(1);
+      if(qt==="out"){location.replace("party-billing.html?tab=due");return}
+      const mine=h=>ERPShell.menuForMe(realRole).some(g=>g.items.some(i=>i.h===h));
+      const hv=LWBAccHub.mount({page:"cash",role:realRole==="admin"?"admin":role,canParty:mine("party-billing.html#party"),acrs:mine("ecrs.html"),
+        tab:["book","cheques","verify","sum","close","staff","veh","setup"].includes(qt)?qt:"",
+        onTab:t=>{tab=t;if(D)renderTab()},
+        onAct:a=>{if(!D)return;if(a==="pay")partyPay("");else if(a==="close")closeDay();else newEntry(a)}});
+      if(hv.away)return;
+      tab=hv.tab;
       el("loading").hidden=true;el("page").hidden=false;
-      if(location.hash==="#verify")tab="verify";if(location.hash==="#cheques")tab="cheques";
-      const qt=new URLSearchParams(location.search).get("tab");if(["book","cheques","verify","sum","close","staff","veh","setup"].includes(qt))tab=qt;else if(qt==="out"){location.replace("party-billing.html?tab=due");return}
-      LWBAccHub.setTab(tab);
       setPeriod("today");
       await Promise.all([load(),loadCompanies().catch(()=>{COS=[]})]);
       // Dashboard buttons: ?new=IN / ?new=OUT opens Add entry; &company=<id> = pay that company.
