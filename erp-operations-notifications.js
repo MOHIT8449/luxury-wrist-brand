@@ -89,7 +89,8 @@
   [/^TASK_(OVERDUE|CANCELLED)$/,"⚠","bad","",""],
   [/^TASK_/,"📋","act","",""],
   [/^ANNOUNCEMENT$/,"📢","info","",""],
-  [/^SALES_PLAN$/,"📋","info","Today's plan",""]
+  [/^SALES_PLAN$/,"📋","info","Today's plan",""],
+  [/^PAYMENT_FOLLOWUP$/,"₹","act","Payment follow-up","Collect"]
  ];
  // Type of every notification (Mohit, 18 Nov 2026: "which notification is this?" must be clear at a glance).
  // Each type has its own colour, icon tile and filter tab in the bell.
@@ -103,7 +104,7 @@
  };
  const CAT_OF=[
   [/^(TASK_|COMPLAINT_|SALES_PLAN$|ANNOUNCEMENT$)/,"task"],
-  [/^(DELIVERY_COLLECTION|ACC_|HIRED_RATE_|TALLY_NOTE_)/,"money"],
+  [/^(DELIVERY_COLLECTION|ACC_|HIRED_RATE_|TALLY_NOTE_|PAYMENT_FOLLOWUP)/,"money"],
   [/^(ORDER_DISPATCHED|ORDER_DELIVERED|ORDER_PARTIAL|ORDER_NOT_DELIVERED|VEHICLE_LOADED|LOADING_ASSIGNMENT|TALLY_BILL_PENDING|PO_APPROVED_LOADING|DELIVERY_RETURN|RETURN_CHECKED)/,"delivery"],
   [/^(STOCK_|GODOWN_|PURCHASE_|MARKET_)/,"stock"],
   [/^(ORDER_|PO_|RATE_|BILL_CHANGE_|TALLY_BILL_|SALES_RETURN)/,"order"]
@@ -215,6 +216,8 @@
  // Page each notification opens. {o} = the notification's order id. The first page this login can open wins.
  const ROUTES=[
   [/^(TALLY_BILL_PENDING|PO_APPROVED_BILL)$/,["party-billing.html?order={o}"]],
+  // Sales Head "Tell Accounts" (lwb_sales_head_outstanding_setup.sql): Party & Collections > To collect; Cashier: Cashier view.
+  [/^PAYMENT_FOLLOWUP$/,["party-billing.html#party","accounts-dashboard.html#cash","sales-outstanding.html"]],
   [/^PO_APPROVED_LOADING$/,["loading-dispatch.html?order={o}","warehouse-orders.html"]],
   [/^(VEHICLE_LOADED|TALLY_BILL_DONE)$/,["loading-dispatch.html","party-billing.html?order={o}","warehouse-orders.html","driver-delivery.html?order={o}","my-sales.html#orders"]],
   [/^ORDER_NEW$/,["warehouse-orders.html"]],
