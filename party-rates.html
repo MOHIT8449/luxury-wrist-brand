@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0"><script src="erp-fit.js"></script>
   <title>Party Rate Offer | Luxury Wrist Brand ERP</title>
-  <script src="erp-date.js"></script>
+  <script src="erp-date.js"></script><script src="erp-period.js"></script>
   <script src="vendor/supabase-js-2.119.0.js"></script>
   <link rel="stylesheet" href="erp-shell.css">
   <link rel="stylesheet" href="sales.css">
@@ -287,9 +287,11 @@
     }
 
     async function loadList(){
-      const {data,error}=await client.rpc("lwb_party_rate_offer_list",{p_days:Number(el("days").value),p_party:null});
+      // Dates = the ONE date filter in the top bar (erp-period.js, Mohit 20 Nov 2026): offers dated in its range.
+      const P=window.LWBPeriod?LWBPeriod.get():null;
+      const {data,error}=await client.rpc("lwb_party_rate_offer_list",{p_days:P?LWBPeriod.span(P.from,P.today):Number(el("days").value),p_party:null});
       if(error){el("list").innerHTML='<li class="mut">'+esc(errText(error))+'</li>';return}
-      offers=data||[];drawList();
+      offers=(data||[]).filter(o=>!P||!o.offer_date||String(o.offer_date).slice(0,10)>=P.from&&String(o.offer_date).slice(0,10)<=P.to);drawList();
     }
     function drawList(){
       const q=key(el("q").value);
@@ -342,6 +344,7 @@
     el("wa").onclick=()=>{const o=current();if(o)openWa(o)};
     el("q").addEventListener("input",drawList);
     el("days").addEventListener("change",loadList);
+    if(window.LWBPeriod){LWBPeriod.hide(el("days"));el("days").parentElement.style.gridTemplateColumns="minmax(0,1fr)";LWBPeriod.on(loadList)}
     el("list").addEventListener("click",e=>{const li=e.target.closest("li[data-id]");if(!li)return;const o=offers.find(x=>String(x.id)===li.dataset.id);if(o)viewOffer(o)});
 
     (async()=>{
