@@ -21,19 +21,19 @@
   "use strict";
   const T={make:"Bills to make",made:"Bills made",due:"To collect",led:"Ledger",pay:"Payments",ret:"Returns",
     book:"Day book",cheques:"Cheques",verify:"Bank check",sum:"Summary",chg:"PO changes",
-    grp:"Party groups",close:"Cash handover",staff:"Staff ledger",veh:"Vehicles",setup:"Heads & Banks",gst:"GST",acrs:"ACRS orders ↗"};
+    grp:"Party groups",books:"📒 Ledger & Outstanding ↗",close:"Cash handover",staff:"Staff ledger",veh:"Vehicles",setup:"Heads & Banks",gst:"GST",acrs:"ACRS orders ↗"};
   const BILL=["make","made","due","led","pay","ret","chg","grp","gst"];
   const VIEWS={
     tally:{name:"Accounts · Tally",chip:"Tally",acts:["pay","IN","OUT","DEPOSIT","close","ret"],
-      row:[["Tally",["make","made","chg","ret"]],["Party",["led"]],["Bank & GST",["verify","cheques","gst"]],["Cash",["book","sum"]]],more:["grp","close","staff","veh","setup"],
+      row:[["Tally",["make","made","chg","ret"]],["Party",["books"]],["Bank & GST",["verify","cheques","gst"]],["Cash",["book","sum"]]],more:["grp","close","staff","veh","setup"],
       kpis:["make","verify","gst","chq","coll","hand"],first:"make"},
     cash:{name:"Cashier",chip:"Cashier",acts:["pay","IN","OUT","DEPOSIT","close"],
       row:[["",["book","cheques","close","staff","veh"]]],more:[],kpis:["open","cin","cout","dep","chq","hand"],first:"book"},
     party:{name:"Party & Collections",chip:"Party",acts:["pay","ret"],
-      row:[["",["due","pay","led","ret","grp"]],["",["acrs"]]],more:[],kpis:["due","adv","coll","chq"],first:"due"}};
+      row:[["",["due","pay","ret","grp"]],["",["books","acrs"]]],more:[],kpis:["due","adv","coll","chq"],first:"due"}};
   const FILE={bill:"party-billing.html",cash:"accounts-dashboard.html"};
   const pageOf=t=>BILL.includes(t)?"bill":"cash";
-  const tabsOf=v=>VIEWS[v].row.flatMap(r=>r[1]).concat(VIEWS[v].more).filter(t=>t!=="acrs");   // acrs = link to ecrs.html
+  const tabsOf=v=>VIEWS[v].row.flatMap(r=>r[1]).concat(VIEWS[v].more).filter(t=>t!=="acrs"&&t!=="books");   // acrs = link to ecrs.html, books = accounts-books.html
   // views a login may open: Cashier only cash; Accounts tally (+ party when Admin ticked it); Admin all three
   const viewsFor=(role,canParty)=>role==="cashier"?["cash"]:role==="admin"?["tally","cash","party"]:canParty?["tally","party"]:["tally"];
   const esc=v=>String(v==null?"":v).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -119,7 +119,7 @@
 
   /* ---------- tabs ---------- */
   const badge=t=>{const n={make:cnt.make,chg:cnt.chg,cheques:cnt.chq,verify:cnt.verify}[t];return n?'<span class="n">'+n+'</span>':""};
-  const tb=t=>t==="acrs"?'<a class="x" href="ecrs.html">'+esc(T[t])+'</a>':'<button type="button" data-hub-t="'+t+'" aria-pressed="'+(t===tab)+'">'+esc(T[t])+badge(t)+'</button>';
+  const tb=t=>t==="acrs"?'<a class="x" href="ecrs.html">'+esc(T[t])+'</a>':t==="books"?'<a class="x" href="accounts-books.html" title="Ledger, Outstanding, Receipts, Day book (Ctrl+Alt+L)">'+esc(T[t])+'</a>':'<button type="button" data-hub-t="'+t+'" aria-pressed="'+(t===tab)+'">'+esc(T[t])+badge(t)+'</button>';
   function drawTabs(){const b=el("hubTabs");if(!b)return;
     const V=VIEWS[view],MORE=V.more,inMore=MORE.includes(tab),retMore=V.acts.includes("ret")&&V.acts.length>=3;
     const row=V.row.map(([g,l])=>[g,l.filter(t=>t!=="acrs"||o.acrs)]).filter(r=>r[1].length);
@@ -128,6 +128,7 @@
       (moreOpen?'<div class="hub-more" role="menu">'+MORE.map(tb).join("")+(retMore?'<button type="button" class="ph" data-hub-a="ret">↩ Return (goods back)</button>':"")+'</div>':""):"")}
   function go(t){
     if(t==="out")t="due";   // old "Party outstanding" tab = To collect
+    if(t==="led"||t==="books"){location.href="accounts-books.html?v=led";return}   // Ledger lives in Ledger & Outstanding now
     moreOpen=false;
     if(!tabsOf(view).includes(t)){const v=views.find(x=>tabsOf(x).includes(t));if(!v){drawTabs();return}view=v}
     if(pageOf(t)!==o.page||location.hash.slice(1)!==view){location.href=FILE[pageOf(t)]+"?tab="+t+"#"+view;return}
