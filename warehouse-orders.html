@@ -462,6 +462,20 @@
     .rj-wait[hidden]{display:none}.rj-wait b{color:#5c3800}.rj-wait span.go{margin-left:auto;font-weight:700;white-space:nowrap}
     #poPrintArea {display:none}
     #poPrintArea .po-bulk-page {break-after:page;page-break-after:always}
+    /* Print PO = the Rajnigandha quick slip look (Mohit, 20 Nov 2026): 3 inch strip, black on white. */
+    #poPrintArea.po-slip {width:3in;box-sizing:border-box;padding:.08in .1in;background:#fff;color:#000;font:11px/1.25 Arial,Helvetica,sans-serif}
+    #poPrintArea.po-slip .row {display:flex;justify-content:space-between;gap:6px}
+    #poPrintArea.po-slip .party {font-weight:800;font-size:1.12em;overflow-wrap:anywhere}
+    #poPrintArea.po-slip .addr {overflow-wrap:anywhere}
+    #poPrintArea.po-slip .dash {border-top:1px dashed #000;margin:4px 0}
+    #poPrintArea.po-slip table {width:100%;min-width:0;border-collapse:collapse}
+    #poPrintArea.po-slip th {background:none!important;color:#000!important;font-size:.88em;font-weight:700;text-align:left;border-bottom:1px solid #000;padding:1px 0;text-transform:none;letter-spacing:0}
+    #poPrintArea.po-slip td {padding:2px 0;vertical-align:top;border:0;overflow-wrap:anywhere}
+    #poPrintArea.po-slip td.r,#poPrintArea.po-slip th.r {text-align:right;padding-left:4px;white-space:nowrap}
+    #poPrintArea.po-slip .tot {display:flex;justify-content:space-between;font-weight:800;font-size:1.3em;border-top:2px solid #000;border-bottom:2px solid #000;padding:3px 0;margin-top:4px}
+    #poPrintArea.po-slip .note {margin-top:4px;font-weight:700;white-space:pre-wrap;overflow-wrap:anywhere}
+    #poPrintArea.po-slip .sign {display:flex;justify-content:flex-end;margin-top:.28in;font-size:.82em}
+    #poPrintArea.po-slip .sign span {border-top:1px solid #000;padding-top:2px;width:55%;text-align:center}
     #poPrintArea .po-bulk-page:last-child {break-after:auto;page-break-after:auto}
     @media(max-width:760px){.po-grid{grid-template-columns:1fr 1fr}}
     @media(max-width:480px){.po-grid{grid-template-columns:1fr}}
@@ -3647,9 +3661,10 @@ async function bulkPrint() {
     return;
   }
   const area = document.getElementById("poPrintArea");
-  area.className = "";
+  area.className = "po-slip";
   area.innerHTML = parts.map(html => '<div class="po-bulk-page">' + html + "</div>").join("");
   document.body.appendChild(area);
+  fitSlipPage();
   showMessage(list.length + " PO sent to print.", "success");
   window.print();
 }
@@ -5451,7 +5466,7 @@ async function printApprovedPO(documentType="challan",collect=null){
   try {
     // Use the saved assignment of this exact PO, not another vehicle or
     // uncommitted form inputs. This is the same source as Accounts print.
-    const [result,noteResult,itemResult,pickupResult]=await Promise.all([
+    const [result,noteResult,itemResult,pickupResult,partyResult]=await Promise.all([
       db.from("dispatch_assignments")
         .select("driver_name,driver_mobile,vehicle_no,loading_person,transporter_name")
         .eq("order_id",order.id).maybeSingle(),
@@ -5459,7 +5474,10 @@ async function printApprovedPO(documentType="challan",collect=null){
       db.from("order_items").select("*").eq("order_id",order.id).order("created_at",{ascending:true}),
       // Self Pickup: driver / vehicle / Godown Manager typed on the order (lwb_self_pickup_driver_setup.sql).
       db.from("lwb_order_pickup").select("driver_name,driver_mobile,vehicle_no,godown_manager_name").eq("order_id",order.id).maybeSingle()
-        .then(r=>r,()=>({data:null}))
+        .then(r=>r,()=>({data:null})),
+      // Party mobile + address for the PO slip, like the Rajnigandha slip (Party Master, same name). Best effort.
+      isPo?db.from("lwb_customer_master").select("mobile,billing_address,city,pincode,is_active").ilike("customer_name",String(order.customer_name||"").trim().replace(/[%_\\]/g,"\\$&"))
+        .order("is_active",{ascending:false}).limit(1).then(r=>r,()=>({data:null})):null
     ]);
     if(result.error)throw result.error;
     if(noteResult.error)throw noteResult.error;
@@ -5511,7 +5529,26 @@ async function printApprovedPO(documentType="challan",collect=null){
     const spText=Number(order.sp_pallets)||Number(order.sp_sheets)?"Pallet: "+(Number(order.sp_pallets)||0)+" · Sheet: "+(Number(order.sp_sheets)||0):"";
     const info=pairs=>"<table>"+pairs.map(p=>"<tr><td>"+p[0]+"</td><td>"+p[1]+"</td></tr>").join("")+"</table>";
     const printArea=document.getElementById("poPrintArea");
-    // Print PO uses the same layout as the Delivery Challan (Mohit, 20 Nov 2026; the A5 "Proforma Invoice" is gone).
+    if(isPo){
+      // Print PO = the Rajnigandha quick slip (Mohit, 20 Nov 2026): PO no + date, party, SKU / Qty / Rate / Amount, total, receiver sign.
+      const pm=partyResult&&!partyResult.error&&Array.isArray(partyResult.data)?partyResult.data[0]||{}:{};
+      const addr=[pm.billing_address,pm.city,pm.pincode].map(x=>String(x||"").trim()).filter(Boolean).join(", ");
+      const money=v=>safe(number(v).toLocaleString("en-IN",{maximumFractionDigits:2}));
+      printArea.className="po-slip";
+      printArea.innerHTML=
+        "<div class='row'><span>PO <b>"+safe(order.order_no)+"</b></span><span>"+safe(formatDateTime(order.order_date||order.created_at))+"</span></div>"+
+        "<div class='party'>"+safe(order.customer_name)+"</div>"+
+        (String(pm.mobile||"").trim()?"<div>Mobile: <b>"+safe(String(pm.mobile).trim())+"</b></div>":"")+
+        (addr?"<div class='addr'>"+safe(addr)+"</div>":"")+
+        (spText?"<div>"+safe(spText)+"</div>":"")+
+        "<div class='dash'></div>"+
+        "<table><thead><tr><th>SKU</th><th class='r'>Qty</th><th class='r'>Rate</th><th class='r'>Amount</th></tr></thead><tbody>"+
+        approvedLines.map(l=>"<tr><td>"+safe(l.sku)+"</td><td class='r'>"+money(l.qty)+"</td><td class='r'>"+money(l.rate)+"</td><td class='r'>"+money(l.qty*l.rate)+"</td></tr>").join("")+
+        "</tbody></table>"+
+        "<div class='tot'><span>TOTAL · "+money(total.qty)+" "+(total.qty===1?"case":"cases")+"</span><span>₹"+money(total.amount)+"</span></div>"+
+        (printNote?"<div class='note'>Note: "+safe(printNote)+"</div>":"")+
+        "<div class='sign'><span>Receiver sign</span></div>";
+    } else {
     printArea.className="";
     printArea.innerHTML=
       "<div class='dc-head'><h1>"+(isPo?"SALES ORDER (PO)":"DELIVERY CHALLAN")+"</h1><div class='dc-sub'>Luxury Wrist Brand · "+safe(order.status)+"</div></div>"+
@@ -5530,9 +5567,11 @@ async function printApprovedPO(documentType="challan",collect=null){
           "<div class='print-note-text'>"+safe(printNote)+"</div></div>"
         : "")+
       "<p class='po-print-footer'>"+(isPo?"PO copy from saved records. Printed "+safe(formatDateTime(new Date().toISOString()))+". Reprint after any changes.":"Internal delivery challan.")+" Not a GST invoice; the Tally bill is separate.</p>";
+    }
     // The ERP shell wraps the page in .erp-main; print CSS shows only direct body children, so lift the print area out.
     if(collect){collect.push(printArea.innerHTML);markPoPrinted(order.id,isPo?"PO":"CHALLAN");return true;}
     document.body.appendChild(document.getElementById("poPrintArea"));
+    fitSlipPage();
     window.print();
     markPoPrinted(order.id,isPo?"PO":"CHALLAN");
   }catch(e){
@@ -5540,6 +5579,21 @@ async function printApprovedPO(documentType="challan",collect=null){
   }finally{
     printButton.disabled=false;
   }
+}
+
+// PO slip page: 3 inch wide, as tall as the longest slip (a long SKU list still prints as one strip). Challan keeps A4.
+function fitSlipPage(){
+  const area=document.getElementById("poPrintArea");
+  let st=document.getElementById("poSlipPage");
+  if(!st){st=document.createElement("style");st.id="poSlipPage";document.head.appendChild(st);}
+  if(!area.classList||!area.classList.contains("po-slip")){st.textContent="";return;}
+  const old=area.style.cssText;
+  area.style.cssText="display:block;position:absolute;left:-10000px;top:0;visibility:hidden";
+  const pages=area.querySelectorAll(".po-bulk-page");
+  const hs=(pages.length?[...pages]:[area]).map(x=>x.getBoundingClientRect().height);
+  area.style.cssText=old;
+  const h=Math.max(4,Math.ceil(Math.max(...hs)/96*10)/10+.1);
+  st.textContent="@media print{@page{size:3in "+h+"in;margin:0}}";
 }
 
 function warehouseSkuInputMarkup(item, index, editable) {
