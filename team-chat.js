@@ -435,12 +435,12 @@ body.lc-top-on .lc-pops{top:calc(var(--erp-top,58px) + 8px);bottom:auto}
     const more=box.querySelector(".lc-more");if(more)more.onclick=loadMore;
     if(toEnd)box.scrollTop=box.scrollHeight;
   }
-  const roleLabel=r=>({admin:"Admin",manager:"Sales Head",warehouse:"Godown Manager",accounts:"Accounts",sales:"Salesman",driver:"Driver",transport:"Transport"}[String(r||"").toLowerCase()]||"");
+  const roleLabel=r=>({admin:"Admin",manager:"Sales Head",warehouse:"Godown Manager",accounts:"Accounts",cashier:"Cashier",sales:"Salesman",driver:"Driver",transport:"Transport"}[String(r||"").toLowerCase()]||"");
 
   function members(group){
     if(!group)return people.filter(p=>p.id===openRoom.other_id);
     const g=String(openRoom.name||"");
-    const roles={"@All Sales Team":["sales"],"@All Drivers":["driver","transport"],"@All Godown":["warehouse"],"@All Accounts":["accounts"]}[g];
+    const roles={"@All Sales Team":["sales"],"@All Drivers":["driver","transport"],"@All Godown":["warehouse"],"@All Accounts":["accounts","cashier"]}[g];
     return people.filter(p=>!roles||["admin","manager"].includes(p.role)||roles.includes(p.role));
   }
   function bindComposer(group){
