@@ -10,6 +10,7 @@
   <script src="vendor/supabase-js-2.119.0.js"></script><script src="page-role.js"></script>
   <script src="party-list.js" defer></script>
   <script src="brand-filter.js"></script>
+  <script src="erp-period.js"></script>
   <script src="party-credit.js"></script>
   <script src="sku-image.js"></script>
   <script src="erp-operations-notifications.js"></script>
@@ -2236,6 +2237,9 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     setupPoAutofill();
     pickSummaryRange("today", false);
+    pickListRange(7, false);
+    LWBPeriod.hide("#sumChips", "#sumDates", "#listChips", "#listDates");
+    LWBPeriod.on(() => { pickSummaryRange(summaryRange, false); pickListRange(7, true); });
     await loadBrands();
     try{const tb=await db.rpc("lwb_tax_bill_access");TAX_BILL=!tb.error&&!!(tb.data&&tb.data.can);}catch(e){TAX_BILL=false;}
     await Promise.all([loadOrders(), loadWarehouseSkuMaster(), VIEW_ONLY ? null : loadPoSavedDirectory()]);
@@ -2368,14 +2372,13 @@ function istDate(offsetDays = 0) {
 
 let summaryRange = "today";
 
+// Dates come from the ONE date filter in the top bar (erp-period.js, Mohit 20 Nov 2026);
+// the page's own chips / From–To boxes are hidden.
 function pickSummaryRange(range = summaryRange, load = true) {
-  summaryRange = range;
-  const today = istDate();
-  document.getElementById("sumFrom").value = range === "yesterday" ? istDate(-1)
-    : range === "week" ? istDate(-6)
-    : range === "month" ? today.slice(0, 8) + "01"
-    : today;
-  document.getElementById("sumTo").value = range === "yesterday" ? istDate(-1) : today;
+  const r = LWBPeriod.get();
+  summaryRange = r.key;
+  document.getElementById("sumFrom").value = r.from;
+  document.getElementById("sumTo").value = r.to;
   markSummaryRange();
   if (load) loadSummary();
 }
@@ -2609,9 +2612,9 @@ async function fetchAllOrders(scope) {
 }
 
 function pickListRange(days, reload = true) {
-  const today = istDate();
-  document.getElementById("listFrom").value = days ? istDate(-(days - 1)) : today;
-  document.getElementById("listTo").value = today;
+  const r = LWBPeriod.get();
+  document.getElementById("listFrom").value = r.from;
+  document.getElementById("listTo").value = r.to;
   document.querySelectorAll("#listChips button").forEach(btn =>
     btn.classList.toggle("on", Number(btn.dataset.days) === days));
   document.getElementById("listDates").classList.remove("on");

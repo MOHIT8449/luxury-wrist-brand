@@ -543,6 +543,7 @@
     if(role){if(!stayLoggedIn(role))idleLogout();otpGuard();}
     bell(top,role);
     brandTop(top,role);
+    dateTop(top,role);
     refreshAccess().then(changed=>{
       if(!changed)return;
       if(blocked(role,page,hiddenPages()))return;
@@ -847,6 +848,11 @@
       document.addEventListener("lwb:brand",e=>{const id=e.detail.id;if(sel.value!==id&&[...sel.options].some(o=>o.value===id)){sel.value=id;paint(id)}});
     }catch(e){}
   }
+
+  // 📅 ONE date filter for the whole site, next to the brand picker (Mohit, 20 Nov 2026): Today / Yesterday /
+  // 7 Days / 30 Days / This Month / Custom. Pages with dates load erp-period.js and follow it; their own date
+  // filters are gone. Pages without dates (no erp-period.js) show no picker.
+  function dateTop(top,role){try{if(window.LWBPeriod)window.LWBPeriod.mountTop(top,role)}catch(e){}}
 
   // 💬 Team Chat: round chat button in the corner of every page, popups for new messages (team-chat.js,
   // lwb_team_chat_setup.sql). Until the SQL is run the button does not show.

@@ -6,7 +6,7 @@
   <title>Outside Market Stock | Luxury Wrist Brand ERP</title>
   <script src="erp-date.js"></script><script src="erp-recent.js"></script>
   <script src="vendor/supabase-js-2.119.0.js"></script>
-<script src="brand-filter.js"></script><script src="sku-rank.js"></script>
+<script src="brand-filter.js"></script><script src="erp-period.js"></script><script src="sku-rank.js"></script>
   <link rel="stylesheet" href="erp-shell.css">
   <link rel="stylesheet" href="sales.css">
   <script src="erp-shell.js"></script><script src="master-popup.js"></script>
@@ -136,8 +136,11 @@
     let BB={get:()=>""},SM=null;
     const inB=x=>!BB.get()||!SM||!x.sku_name||SM.get(LWBBrand.skuKey(x.sku_name))===BB.get();
     async function load(){
+      // Dates = the ONE date filter in the top bar (erp-period.js, Mohit 20 Nov 2026).
+      const P=window.LWBPeriod?LWBPeriod.get():null;
       const from=new Date(Date.now()-(Number(el("days").value)-1)*864e5);
-      const r=await client.from("lwb_market_reports").select("*").gte("report_date",S.isoDay(from)).order("created_at",{ascending:false}).limit(500);
+      let qr=client.from("lwb_market_reports").select("*").gte("report_date",P?P.from:S.isoDay(from));if(P)qr=qr.lte("report_date",P.to);
+      const r=await qr.order("created_at",{ascending:false}).limit(500);
       if(r.error){el("list").innerHTML='<div class="sl-msg">'+esc(/lwb_market_reports/.test(r.error.message)?setupMsg:r.error.message)+"</div>";el("kpis").innerHTML="";return}
       rows=ERPRecent.sort((r.data||[]).filter(inB));
       const ids=[...new Set(rows.flatMap(x=>[x.created_by,x.reviewed_by]).filter(id=>id&&!names.has(id)))];
@@ -156,7 +159,7 @@
       if(window.ERPList){const KL=[["Reports",()=>true],["Cases Reported",x=>Number(x.cases||0)>0],["Not Seen Yet",x=>x.review_status==="OPEN"]];
         const MC=[{t:"Date",v:"report_date",date:true},{t:"Outlet",v:"outlet_name"},{t:"SKU",v:"sku_name"},{t:"Cases",v:"cases",num:true,sum:true,dec:0},{t:"Outside rate",v:"outside_rate",money:true,dec:2},
           {t:"By",v:x=>names.get(x.created_by)||""},{t:"Status",v:x=>(RSTATE[x.review_status]||[x.review_status])[0]},{t:"Note",v:"note"}];
-        el("kpis").querySelectorAll(".sl-kpi").forEach((c,i)=>ERPList.card(c,()=>({title:KL[i][0],sub:"Last "+el("days").value+" days",rows:rows.filter(KL[i][1]),cols:MC})))}
+        el("kpis").querySelectorAll(".sl-kpi").forEach((c,i)=>ERPList.card(c,()=>({title:KL[i][0],sub:window.LWBPeriod?LWBPeriod.get().label:"Last "+el("days").value+" days",rows:rows.filter(KL[i][1]),cols:MC})))}
       if(!list.length){el("list").innerHTML='<div class="erp-empty">No report in this period.</div>';return}
       el("list").innerHTML=list.map(x=>{
         const rs=RSTATE[x.review_status]||["",""];
@@ -208,6 +211,7 @@
       el("cancel").onclick=()=>{clearForm();showForm(false)};
       el("form").addEventListener("submit",send);
       el("days").addEventListener("change",load);
+      if(window.LWBPeriod){LWBPeriod.hide(el("days").parentElement);LWBPeriod.on(load)}
       ["state","q"].forEach(id=>el(id).addEventListener("input",render));
       el("loading").hidden=true;el("page").hidden=false;
       if(window.LWBBrand)try{BB=await LWBBrand.mount(client,{into:"#page .erp-pagehead",after:true,onChange:load});if(BB.companies.length>1)SM=await LWBBrand.skuMap(client)}catch(e){}

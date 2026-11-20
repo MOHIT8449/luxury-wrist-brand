@@ -12,6 +12,7 @@
   <script src="excel-io.js"></script>
   <script src="tally-note.js" defer></script>
   <script src="brand-filter.js"></script>
+  <script src="erp-period.js"></script>
   <script src="party-pay.js"></script>
   <script src="bill-change.js"></script>
   <script src="acc-hub.js"></script>
@@ -320,7 +321,7 @@
       el("xl").hidden=false;el("q").hidden=tab==="led";
       ({make:renderMake,made:renderMade,due:renderDue,led:renderLed,pay:renderPay,ret:renderRet,grp:renderGroups,chg:renderChg,gst:renderGst})[tab]();
       wireChg(el("body"));
-      el("note").textContent=tab==="make"?"Pick dates (loaded date; approved date if not loaded yet) or search a party to see its full list; tap a row or Make bill to enter its Tally bill. Every approved PO comes here at once (its quantity is final), so the bill can be made before loading; loaded ones show their loaded value. Enter one line per Tally bill: the name the bill is made in, its invoice no. and amount. Saved bills go to To collect on the main party at once, and show in the Accounts Dashboard Cash In.":
+      el("note").textContent=tab==="make"?"Every PO still waiting for its Tally bill shows here, of any date; search a party to see its list; tap a row or Make bill to enter its Tally bill. Every approved PO comes here at once (its quantity is final), so the bill can be made before loading; loaded ones show their loaded value. Enter one line per Tally bill: the name the bill is made in, its invoice no. and amount. Saved bills go to To collect on the main party at once, and show in the Accounts Dashboard Cash In.":
         tab==="made"?"Every PO whose Tally bill is entered, newest bill first. Dates = bill (invoice) date. Green Paid = nothing left to collect; red = still due. ✏️ Edit fixes the bill name, invoice no., amount or date (To collect follows at once). ± Qty / Items changes the PO lines (goes to Admin).":
         tab==="due"&&!fb&&BR().length?"All brands: every brand in its own column. Money of one brand never goes to another brand's bill; Total is only to look at. Choose a brand above to see its bills, advance and opening, and to adjust.":
         tab==="due"?"To collect = Tally bill − credit notes (a return on a bill saves one) − driver money − payments split to it, on the main party (all its bill names together), minus money paid earlier and not yet set against a bill, minus goods returned without a bill. One balance per party: red = to collect, green = advance. Party Ledger shows the same on the main party.":
@@ -390,7 +391,16 @@
       card.querySelector("[data-save]").onclick=e=>saveBill(o,card,e.currentTarget,edit);
       wireChg(card);
     }
+    // ONE date filter in the top bar (erp-period.js, Mohit 20 Nov 2026): page date chips / boxes are hidden.
+    // Bills to make is a to-do list, so it keeps every PO still waiting (like the open PO tabs); Bills made and
+    // the Party ledger follow the top bar dates.
+    const GPER=!!window.LWBPeriod;
+    if(GPER){document.documentElement.classList.add("lwb-gper");
+      const st=document.createElement("style");st.textContent=".lwb-gper .mk-chips,.lwb-gper .mk-dates,.lwb-gper .pb-lf .dt2{display:none!important}";document.head.appendChild(st)}
+    if(GPER)LWBPeriod.on(()=>{if(info&&["make","made","led"].includes(tab))render()});
+    function gper(){if(!GPER)return;const r=LWBPeriod.get();mkRange="all";mdRange="custom";mdFrom=r.from;mdTo=r.to;ledFrom=r.from;ledTo=r.to}
     function renderMake(){
+      gper();
       const q=el("q").value.trim().toLowerCase();
       if(want){mkRange="all";mkOpen.add(want)}
       const all=toMake().filter(o=>match(q,o.order_no,o.party,o.parent,...membersOf(o.parent)));
@@ -436,6 +446,7 @@
       return ` <span class="tag ${d<0?"t-red":"t-amb"}" title="${esc("Bill "+rs(m.bill_amount)+", value "+rs(m.expected)+". Saved anyway by "+(m.noted_by||"Accounts")+" on "+dmy(String(m.noted_at).slice(0,10)))}">⚠ ${rs(Math.abs(d))} ${d<0?"short":"extra"}</span>`};
     const billsOf=o=>(o.bills||[]).length?o.bills:[{firm:o.party,no:o.invoice_no,amount:o.bill_amount}];
     function renderMade(){
+      gper();
       const q=el("q").value.trim().toLowerCase();
       const all=made().filter(o=>match(q,o.order_no,o.party,o.parent,o.invoice_no,...billsOf(o).flatMap(b=>[b.firm,b.no])));
       const span=mkSpan(mdRange,mdFrom,mdTo),inS=(o,[f,t])=>{const d=mdDate(o);return d>=f&&d<=t},list=mdFix?all.filter(o=>probMap.has(o.order_id)):all.filter(o=>inS(o,span));
@@ -456,7 +467,7 @@
           <td class="n c5"><span class="md-act"><button type="button" class="pb-btn sm go" data-ed>${isOpen?"Close":"✏️ Edit"}</button><a class="pb-btn sm hide-ph" href="accounts-invoice.html?order=${encodeURIComponent(o.order_id)}" title="PO and bill details">Details</a></span></td></tr>`}).join("");
       el("body").innerHTML=bar+(list.length?`<div class="pb-scroll"><table class="pb-t mk"><thead><tr><th>PO No.</th><th class="hide-ph">Bill date</th><th>Party · bill no.</th><th class="n">Bill</th><th></th></tr></thead><tbody>${rows}</tbody>
           <tfoot><tr><td>${list.length} bill${list.length===1?"":"s"} made</td><td class="hide-ph"></td><td class="hide-ph"></td><td class="n">${rs(sum)}</td><td class="hide-ph"></td></tr></tfoot></table></div>`:
-        all.length?`<div class="pb-empty">No bill made in these dates. <button type="button" class="lnk" data-dr="all">Show all ${all.length}</button></div>`:
+        all.length?`<div class="pb-empty">No bill made in these dates.${GPER?" Change the date at the top.":` <button type="button" class="lnk" data-dr="all">Show all ${all.length}</button>`}</div>`:
         `<div class="pb-empty">${q?"No bill made for “"+esc(el("q").value.trim())+"”.":"No Tally bill entered yet. Bills you make in Bills to make come here."}</div>`);
       el("body").querySelectorAll("[data-dr]").forEach(b=>b.onclick=()=>{mdRange=b.dataset.dr;mdFix=false;renderMade()});
       const fx=el("body").querySelector("[data-fix]");if(fx)fx.onclick=()=>{mdFix=!mdFix;renderMade()};
@@ -593,6 +604,7 @@
     const bal=v=>`<span class="${v>0.5?"due":v<-0.5?"adv":""}">${rs(Math.abs(v))}</span><i class="dc">${v>0.5?"Dr":v<-0.5?"Cr":""}</i>`;
     const poTxt=n=>/^po/i.test(String(n))?n:"PO "+n;
     async function renderLed(){
+      gper();
       if(!ledFrom)ledFrom=fyStart(info.today);if(!ledTo)ledTo=info.today;
       if(!led){el("body").innerHTML='<div class="pb-empty">Loading ledger...</div>';
         try{await ensureLed()}catch(e){el("body").innerHTML='<div class="pb-empty">Could not load the ledger: '+esc(errText(e))+'</div>';return}

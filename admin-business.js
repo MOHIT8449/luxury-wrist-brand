@@ -35,7 +35,8 @@
   const pctTxt=(a,b)=>b>0?(Math.round(a/b*1000)/10)+"%":"—";
   // [key, label, short label for phone]
   const RANGES=[["today","Today","Today"],["yday","Yesterday","Yday"],["7","7 Days","7D"],["30","30 Days","30D"],["month","This Month","Month"],["custom","Custom","Custom"]];
-  const getRange=()=>{try{const v=localStorage.getItem("lwbBizRange");if(RANGES.some(r=>r[0]===v))return v}catch(e){}return "month"};
+  // Range = the ONE date filter in the top bar (erp-period.js, Mohit 20 Nov 2026); old lwbBizRange only when it is missing.
+  const getRange=()=>{if(window.LWBPeriod)return LWBPeriod.get().key;try{const v=localStorage.getItem("lwbBizRange");if(RANGES.some(r=>r[0]===v))return v}catch(e){}return "month"};
   const setRange=v=>{try{localStorage.setItem("lwbBizRange",v)}catch(e){}};
   const isDay=v=>/^\d{4}-\d{2}-\d{2}$/.test(String(v||""))&&v>="2020-01-01";
   const MAXDAYS=366;
@@ -58,7 +59,7 @@
 
   function rangeOf(r){
     const t=today();let from,to=t;
-    if(r==="custom")({from,to}=getCustom());
+    if(r==="custom")({from,to}=window.LWBPeriod?LWBPeriod.get():getCustom());
     else if(r==="yday")from=to=shift(t,-1);
     else from=r==="today"?t:r==="7"?shift(t,-6):r==="30"?shift(t,-29):t.slice(0,8)+"01";
     return {from,to,chartFrom:[from,shift(to,-6)].sort()[0]};
@@ -322,7 +323,7 @@
     const seg='<div class="bz-seg" role="group" aria-label="Period">'+RANGES.map(r=>'<button type="button" data-bz="'+r[0]+'" title="'+r[1]+'"'+(r[0]===R.key?' class="on" aria-pressed="true"':' aria-pressed="false"')+'><span class="bz-fl">'+r[1]+'</span><span class="bz-sh">'+r[2]+"</span></button>").join("")+"</div>";
     const tday=today();
     const cus=R.key==="custom"?'<span class="bz-cus"><label>From <input type="date" id="bzFrom" value="'+R.from+'" max="'+tday+'" min="2020-01-01"></label><label>To <input type="date" id="bzTo" value="'+R.to+'" min="'+R.from+'" max="'+tday+'"></label></span>':"";
-    EL.innerHTML='<div class="bz-hd"><h2>Business Overview</h2>'+seg+(cus||'<span class="bz-rg">'+esc(rangeTxt)+"</span>")+'<button type="button" class="erp-i" aria-label="Info" title="Info" data-tip="Sales = SKU qty × PO rate by order date (cancelled not counted). Gross profit = (rate − landing) × qty; landing from Rate &amp; Scheme (Coca-Cola) or Rajnigandha Rate List. Purchase = Goods Inward invoice total by received date. Expenses = Accounts money-out entries, without Supplier payment, Contra (bank transfer), Asset purchase and GST / Tax paid. Stock value = godown stock × landing.">i</button></div>'+
+    EL.innerHTML='<div class="bz-hd"><h2>Business Overview</h2>'+(window.LWBPeriod?"":seg+cus)+(window.LWBPeriod||!cus?'<span class="bz-rg">'+esc(rangeTxt)+"</span>":"")+'<button type="button" class="erp-i" aria-label="Info" title="Info" data-tip="Sales = SKU qty × PO rate by order date (cancelled not counted). Gross profit = (rate − landing) × qty; landing from Rate &amp; Scheme (Coca-Cola) or Rajnigandha Rate List. Purchase = Goods Inward invoice total by received date. Expenses = Accounts money-out entries, without Supplier payment, Contra (bank transfer), Asset purchase and GST / Tax paid. Stock value = godown stock × landing.">i</button></div>'+
       '<div class="bz-kpis'+(gp?"":" bz-k7")+'">'+k.join("")+"</div>"+
       '<div class="bz-g '+(gp?"bz-r2":"bz-r1")+'"><section class="bz-c"><h3>Sales · Purchase'+(gp?" · Gross Profit":"")+'<span class="bz-leg"><span><i style="background:'+COL.sales+'"></i>Sales</span><span><i style="background:'+COL.purch+'"></i>Purchase</span>'+(gp?'<span><i style="background:'+COL.gp+'"></i>Gross profit ×10</span>':"")+'</span></h3><div class="bz-chart" id="bzChart"></div></section>'+
       (gp?'<section class="bz-c"><h3>Profit &amp; Loss<span class="bz-r">'+esc(rangeTxt)+"</span></h3>"+plH+"</section>":"")+"</div>"+
@@ -382,6 +383,7 @@
     mount(el,ctx){
       if(!el)return;EL=el;CTX=ctx;
       if(!el.dataset.bzOn){el.dataset.bzOn="1";
+        if(window.LWBPeriod&&!window.__bzPer){window.__bzPer=1;LWBPeriod.on(()=>{if(EL&&document.body.contains(EL))run()})}
         const openD=t=>{const f=DET.get(t.dataset.bzd);if(f&&window.ERPList){const o=f();if(o)ERPList.open(o)}};
         el.addEventListener("click",e=>{
           const b=e.target.closest("button[data-bz]");if(b&&el.contains(b)){setRange(b.dataset.bz);run();return}
