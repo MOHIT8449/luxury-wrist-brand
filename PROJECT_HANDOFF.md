@@ -711,7 +711,7 @@
 ## Source and infrastructure
 
 - GitHub source: https://github.com/MOHIT8449/luxury-wrist-brand
-- Deployed website: https://erp.luxurybrand.com (own domain, GoDaddy DNS -> Cloudflare Pages). Old https://luxury-wrist-brand.pages.dev still works.
+- Deployed website: https://luxurywristbrand.com (own domain on Cloudflare Pages). Old https://luxury-wrist-brand.pages.dev still works.
 - Database and authentication: Supabase (project slug `qstgwhbgbznxemajtave`)
 - Static HTML + JavaScript frontend deployed from GitHub through Cloudflare Pages.
 - Check the latest code in GitHub and screenshots / real Supabase results before claiming anything is working.

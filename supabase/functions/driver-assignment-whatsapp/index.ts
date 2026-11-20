@@ -20,8 +20,8 @@
  */
 import { createClient } from "npm:@supabase/supabase-js@2";
 
-const allowedOrigin = "https://erp.luxurybrand.com";
-const allowedOrigins = ["https://erp.luxurybrand.com", "https://luxurybrand.com", "https://www.luxurybrand.com", "https://luxury-wrist-brand.pages.dev"];
+const allowedOrigin = "https://luxurywristbrand.com";
+const allowedOrigins = ["https://luxurywristbrand.com", "https://www.luxurywristbrand.com", "https://luxury-wrist-brand.pages.dev"];
 const pickOrigin = (o) => (allowedOrigins.includes(o) ? o : allowedOrigin);
 const cors = {
   "Access-Control-Allow-Origin": allowedOrigin,

@@ -10,9 +10,9 @@
  */
 import { createClient } from 'npm:@supabase/supabase-js@2.118.0';
 
-const OWN=['https://erp.luxurybrand.com','https://luxurybrand.com','https://www.luxurybrand.com'];
+const OWN=['https://luxurywristbrand.com','https://www.luxurywristbrand.com'];
 const ok=(o:string)=>OWN.includes(o)||o==='https://luxury-wrist-brand.pages.dev'||/^https:\/\/[a-z0-9-]+\.luxury-wrist-brand\.pages\.dev$/.test(o);
-const headers=(origin:string)=>({'Access-Control-Allow-Origin':ok(origin)?origin:'https://erp.luxurybrand.com',
+const headers=(origin:string)=>({'Access-Control-Allow-Origin':ok(origin)?origin:'https://luxurywristbrand.com',
   'Access-Control-Allow-Headers':'authorization,apikey,x-client-info,content-type','Access-Control-Allow-Methods':'POST, OPTIONS',
   'Content-Type':'application/json','Cache-Control':'no-store','Vary':'Origin','X-Robots-Tag':'noindex'});
 const db=createClient(Deno.env.get('SUPABASE_URL')!,Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,{auth:{persistSession:false,autoRefreshToken:false}});

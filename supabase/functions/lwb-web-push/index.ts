@@ -2,8 +2,8 @@ import { createClient } from 'npm:@supabase/supabase-js@2.118.0';
 import webpush from 'npm:web-push@3.6.7';
 import { validEndpoint, messageFor, suppressSalesOrderAlert } from './logic.ts';
 
-const ORIGIN='https://erp.luxurybrand.com';
-const ORIGINS=['https://erp.luxurybrand.com','https://luxurybrand.com','https://www.luxurybrand.com','https://luxury-wrist-brand.pages.dev'];
+const ORIGIN='https://luxurywristbrand.com';
+const ORIGINS=['https://luxurywristbrand.com','https://www.luxurywristbrand.com','https://luxury-wrist-brand.pages.dev'];
 const allowOrigin=(o)=>ORIGINS.includes(o)?o:ORIGIN;
 const cors={'Access-Control-Allow-Origin':ORIGIN,'Access-Control-Allow-Headers':'authorization,apikey,x-client-info,content-type',
  'Access-Control-Allow-Methods':'POST, OPTIONS','Content-Type':'application/json','Cache-Control':'no-store','Vary':'Origin'};
