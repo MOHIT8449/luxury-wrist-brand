@@ -78,6 +78,7 @@ async function po(no,party,amt,sku,billed=true,day=today){
  return id;
 }
 await db.exec(`ALTER TABLE lwb_tally_notes ADD COLUMN created_by uuid, ADD COLUMN cancelled_by uuid;
+CREATE FUNCTION public.lwb_acc_cashier() RETURNS boolean LANGUAGE sql STABLE AS $$ SELECT EXISTS (SELECT 1 FROM public.user_profiles p WHERE p.id=auth.uid() AND p.active AND p.role='cashier') $$;
 CREATE FUNCTION public.lwb_outstanding_viewer() RETURNS boolean LANGUAGE sql STABLE AS $$ SELECT EXISTS (SELECT 1 FROM public.user_profiles p WHERE p.id=auth.uid() AND p.active AND p.role IN ('accounts','admin','manager')) $$;
 CREATE FUNCTION public.lwb_flow_tally_note() RETURNS trigger LANGUAGE plpgsql AS $fn$
 DECLARE v_o public.orders%ROWTYPE;
@@ -103,7 +104,7 @@ test('kasar on a small due closes the bill; ledger shows it; no alert',async()=>
  await assert.rejects(kasar(b1,6),/more than its due/);
  await assert.rejects(kasar(b1,501,'EXTRA'),/at most Rs 500/);
  await as('manager');
- await assert.rejects(kasar(b1,5),/Only active Accounts or Admin/);
+ await assert.rejects(kasar(b1,5),/Only active Accounts, Cashier or Admin/);
  await as('accounts');
  await kasar(b1,5);
  assert.equal(await due(b1),0);

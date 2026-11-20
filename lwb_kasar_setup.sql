@@ -1,6 +1,6 @@
 -- LUXURY WRIST BRAND ERP — KASAR (SMALL DIFFERENCE WRITE-OFF ON A BILL)
 --
--- Runs by itself when merged to main (after lwb_tally_bill_flow_setup.sql, lwb_party_group_billing_setup.sql,
+-- Runs by itself when merged to main (after lwb_cashier_role_setup.sql, lwb_tally_bill_flow_setup.sql, lwb_party_group_billing_setup.sql,
 -- lwb_brand_money_setup.sql and lwb_sales_head_outstanding_setup.sql). Safe to run again. Nothing is dropped.
 --
 -- Mohit asked (20 Nov 2026): a party often pays Rs 5 / 10 / 20 less (or more) than the bill, e.g. Rs 1,09,985
@@ -10,7 +10,7 @@
 -- How it is kept: a kasar is a credit note (party paid LESS) or debit note (party paid EXTRA) on the bill,
 -- marked is_kasar = true, note no. KASAR. Every due / outstanding / ledger figure already counts credit and
 -- debit notes, so the bill closes everywhere at once (Outstanding, To collect, Party ledger, brand balance).
---   * lwb_kasar_save(order, amount, kind LESS|EXTRA, date, remark)   Accounts / Admin, max Rs 500 per entry
+--   * lwb_kasar_save(order, amount, kind LESS|EXTRA, date, remark)   Accounts / Admin / Cashier, max Rs 500 per entry
 --   * lwb_kasar_cancel(id)                                           Accounts / Admin (kept, marked cancelled)
 --   * lwb_kasar_list(days)                                           Kasar ledger rows (Admin, Accounts, Sales Head)
 --   * lwb_party_receive_kasar(... , p_kasar)                          party payment + kasar in one save
@@ -36,8 +36,8 @@ DECLARE
   v_remark text := nullif(btrim(coalesce(p_remark,'')),'');
   v_due numeric; v_no text; v_n int; v_id uuid; v_order text;
 BEGIN
-  IF NOT public.lwb_tally_staff() THEN
-    RAISE EXCEPTION 'Only active Accounts or Admin can enter kasar';
+  IF NOT (public.lwb_tally_staff() OR public.lwb_acc_cashier()) THEN
+    RAISE EXCEPTION 'Only active Accounts, Cashier or Admin can enter kasar';
   END IF;
   IF v_kind NOT IN ('LESS','EXTRA') THEN RAISE EXCEPTION 'Kasar is LESS (party paid less) or EXTRA (party paid more)'; END IF;
   IF v_amt <= 0 THEN RAISE EXCEPTION 'Enter the kasar amount'; END IF;
@@ -122,8 +122,8 @@ DECLARE
   v_parent text := public.lwb_party_parent(p_party);
   v_line jsonb; v_order uuid; v_party text; v_total numeric := 0; v_res jsonb;
 BEGIN
-  IF NOT public.lwb_tally_staff() THEN
-    RAISE EXCEPTION 'Only active Accounts or Admin can enter a party payment';
+  IF NOT (public.lwb_tally_staff() OR public.lwb_acc_cashier()) THEN
+    RAISE EXCEPTION 'Only active Accounts, Cashier or Admin can enter a party payment';
   END IF;
   IF p_kasar IS NOT NULL AND jsonb_typeof(p_kasar) <> 'array' THEN RAISE EXCEPTION 'Bad kasar list'; END IF;
   IF jsonb_array_length(coalesce(p_kasar,'[]'::jsonb)) > 50 THEN RAISE EXCEPTION 'Too many kasar lines'; END IF;
