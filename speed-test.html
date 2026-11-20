@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Server speed test</title>
+<meta name="robots" content="noindex">
+<style>
+:root{--bg:#f4f6f5;--card:#fff;--fg:#14262b;--mut:#5d6b70;--teal:#063f48;--gold:#b08a2e;--good:#15803d;--bad:#b3261e}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.45 "Segoe UI",Roboto,Arial,sans-serif}
+.w{max-width:520px;margin:0 auto;padding:18px 16px 40px;display:grid;gap:14px}
+h1{margin:0;font-size:20px;color:var(--teal)}p{margin:0;color:var(--mut)}
+button{background:var(--teal);color:#fff;border:0;border-radius:10px;padding:12px;font-size:16px;font-weight:700;cursor:pointer}
+button:disabled{opacity:.5}
+.c{background:var(--card);border:1px solid #dfe5e3;border-radius:12px;padding:12px 14px;display:grid;gap:4px}
+.c b{font-size:15px}.n{font-size:28px;font-weight:800;font-variant-numeric:tabular-nums}
+.good{color:var(--good)}.bad{color:var(--bad)}small{color:var(--mut)}
+</style></head><body><div class="w">
+<h1>Server speed test</h1>
+<p>Aapke phone/computer se dono servers tak ek request jaane aur wapas aane ka time (milliseconds). Kam = tez.</p>
+<button id="go">Test shuru karo</button>
+<div id="out" style="display:grid;gap:10px"></div>
+<small id="note"></small>
+</div>
+<script>
+const S=[{n:"Naya Mumbai server",u:"https://qstgwhbgbznxemajtave.supabase.co",k:"sb_publishable_YA2Pow327REqgrWPzVCZiA_nw1F32_o",ref:"qstgwhbgbznxemajtave"},
+         {n:"Purana Seoul server",u:"https://txkbhadzdbxpieunfvox.supabase.co",k:"sb_publishable_W4I3Q5ODf0g17sq5uDml2Q_sLolXYEk",ref:"txkbhadzdbxpieunfvox"}];
+const med=a=>{a=[...a].sort((x,y)=>x-y);return Math.round(a[Math.floor(a.length/2)])};
+async function t(url,h){const t0=performance.now();const r=await fetch(url+(url.includes("?")?"&":"?")+"_="+Math.random(),{headers:h,cache:"no-store"});await r.text();return {ms:performance.now()-t0,ok:r.ok}}
+function token(ref){try{return JSON.parse(localStorage.getItem("sb-"+ref+"-auth-token")||"null")?.access_token||""}catch(e){return ""}}
+document.getElementById("go").onclick=async e=>{
+  const b=e.target;b.disabled=true;b.textContent="Test chal raha hai...";const out=document.getElementById("out");out.innerHTML="";
+  const ping={},data={};
+  for(const s of S){ping[s.n]=[];data[s.n]=[]}
+  for(let i=0;i<8;i++)for(const s of S){try{ping[s.n].push((await t(s.u+"/auth/v1/health",{apikey:s.k})).ms)}catch(x){}}
+  const tk=token(S[0].ref);
+  if(tk)for(let i=0;i<5;i++){try{const r=await t(S[0].u+"/rest/v1/orders?select=id,order_no,status,total_amount&order=created_at.desc&limit=50",{apikey:S[0].k,Authorization:"Bearer "+tk});if(r.ok)data[S[0].n].push(r.ms)}catch(x){}}
+  const pm=S.map(s=>ping[s.n].length?med(ping[s.n]):null);
+  S.forEach((s,i)=>{const d=document.createElement("div");d.className="c";
+    d.innerHTML="<b>"+s.n+"</b><span class='n "+(pm[i]!=null&&pm[i]===Math.min(...pm.filter(x=>x!=null))?"good":"bad")+"'>"+(pm[i]==null?"jawab nahi":pm[i]+" ms")+"</span><small>Ek chakkar (8 baar ka beech wala)</small>";out.appendChild(d)});
+  if(data[S[0].n].length){const d=document.createElement("div");d.className="c";d.innerHTML="<b>Mumbai se 50 orders laane ka time</b><span class='n good'>"+med(data[S[0].n])+" ms</span><small>Aapke login se asli data (5 baar ka beech wala)</small>";out.appendChild(d)}
+  if(pm[0]&&pm[1])document.getElementById("note").textContent="Mumbai har request par lagbhag "+Math.max(0,pm[1]-pm[0])+" ms bachata hai. Ek page kai requests karta hai, isliye page par bachat isse kai guna hoti hai.";
+  b.disabled=false;b.textContent="Dobara test karo";
+};
+</script></body></html>
