@@ -2,7 +2,9 @@ import { createClient } from 'npm:@supabase/supabase-js@2.118.0';
 import webpush from 'npm:web-push@3.6.7';
 import { validEndpoint, messageFor, suppressSalesOrderAlert } from './logic.ts';
 
-const ORIGIN='https://luxury-wrist-brand.pages.dev';
+const ORIGIN='https://luxurywristbrand.com';
+const ORIGINS=['https://luxurywristbrand.com','https://www.luxurywristbrand.com','https://luxury-wrist-brand.pages.dev'];
+const allowOrigin=(o)=>ORIGINS.includes(o)?o:ORIGIN;
 const cors={'Access-Control-Allow-Origin':ORIGIN,'Access-Control-Allow-Headers':'authorization,apikey,x-client-info,content-type',
  'Access-Control-Allow-Methods':'POST, OPTIONS','Content-Type':'application/json','Cache-Control':'no-store','Vary':'Origin'};
 const reply=(status,value)=>new Response(JSON.stringify(value),{status,headers:cors});
@@ -66,7 +68,8 @@ async function activate(c){
  }else if(!c.enabled){const r=await db.from('lwb_push_config').update({enabled:true}).eq('id',1);if(r.error)throw Error('Cannot activate phone alerts');}
  const ready=await config();return reply(200,{enabled:ready.enabled,public_key:ready.vapid_public});
 }
-Deno.serve(async(req)=>{
+Deno.serve(async(req)=>{const res=await handle(req);res.headers.set('Access-Control-Allow-Origin',allowOrigin(req.headers.get('origin')||''));return res;});
+async function handle(req){
  if(req.method==='OPTIONS')return new Response(null,{status:204,headers:cors});
  if(req.method!=='POST')return reply(405,{error:'POST required'});
  try{
@@ -113,4 +116,4 @@ Deno.serve(async(req)=>{
   console.error('lwb-web-push failed:',String(e?.name||'Error'),why);
   return reply(500,{error:'Phone alert service error: '+why});
  }
-});
+}

@@ -129,8 +129,8 @@ Do not deploy with `--no-verify-jwt` for this authenticated-user function.
 ## 5. Test on a REAL, authorized approved PO
 
 Cloudflare Pages frontend URL:
-- Sales Head: https://luxury-wrist-brand.pages.dev/warehouse-orders.html
-- Transport Allocation: https://luxury-wrist-brand.pages.dev/transport-allocation.html
+- Sales Head: https://luxurywristbrand.com/warehouse-orders.html
+- Transport Allocation: https://luxurywristbrand.com/transport-allocation.html
 
 After Cloudflare deploy, use Ctrl+Shift+R.
 
