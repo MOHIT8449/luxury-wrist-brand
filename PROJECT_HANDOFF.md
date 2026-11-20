@@ -1028,6 +1028,7 @@
 ## Website launch checklist (29 Oct 2026)
 
 - Public pages: `index.html`, `privacy.html`, `terms.html` (style `assets/legal.css`), branded `404.html` (Cloudflare Pages serves it for any missing page).
+- Homepage "Featured on Flipkart Stories" section (20 Nov 2026): banner image `assets/home/flipkart-story.jpg`, links to the Mar 2023 Flipkart Stories article; figures are as reported there.
 - Homepage redesign (20 Nov 2026): `index.html` rebuilt mobile-first in the login page's teal + gold theme (Cormorant Garamond + Montserrat), sections Hero+stats, About, Brands, Business, Gallery (filter chips, first photos + "View all", tap-to-enlarge viewer), Contact. Logo file `assets/home/lwb-logo.webp` (same image as the login page).
 - Homepage Gallery (30 Oct 2026; 20 Nov 2026: added fleet, brand cabins, conference room, accounts desk and removed look-alike duplicates): 16 warehouse / office photos in `assets/gallery/` (1800px, metadata and GPS removed) with 720px copies in `assets/gallery/thumbs/`. `index.html` shows them in a `#gallery` section (Facility, Warehouse Floor, Office & Dispatch, Stock on Hand) with a tap-to-enlarge viewer (swipe / arrow keys); hero background uses `05-warehouse-floor-1.jpg`. To add a photo: put both sizes in those folders and add one `gallery-item` button.
 - `_headers`: every page gets `X-Robots-Tag: noindex` (ERP stays out of Google) except `/`, privacy, terms, robots, sitemap and `og-image.png`; plus HSTS, nosniff, SAMEORIGIN framing and referrer policy.
