@@ -162,6 +162,9 @@
       {t:"Driver Delivery / POD",h:"driver-delivery.html",i:"pin",r:"admin manager driver accounts",nm:"accounts"},
       {t:"Live Tracking",h:"live-tracking.html",i:"pin",r:"admin"}]},
     {group:"Accounts",items:[
+      // Finance home (Mohit, 20 Nov 2026): one money page for Admin / Accounts / Cashier: money now, work waiting,
+      // brand-wise and party-wise split, money in / out, rough P&L, expenses; every number opens what makes it.
+      {t:"Finance Home",h:"finance.html",i:"chart",r:"admin accounts cashier",k:"finance home money position cash flow cash in hand bank balance profit loss p&l expenses brand wise party wise to collect to pay company payable work waiting notifications alerts control centre center hisab",pt:"Finance Home (money, brand-wise, P&L)"},
       // Accounts in one place (Mohit, 19 Nov 2026): Billing & Outstanding + Accounts Dashboard = one "Accounts" page
       // (one header, one tab row, acc-hub.js). Billing tabs are party-billing.html, Cash & Bank tabs accounts-dashboard.html.
       // Split by work (Mohit, 20 Nov 2026), same two files, view in the hash (acc-hub.js):
@@ -593,7 +596,8 @@
       sales:[["Home","dashboard.html","home"],["New Order","order-entry.html","cart"],["PO List","my-sales.html#orders","note"],["My Sales","my-sales.html","chart"]],
       admin:[["Home","dashboard.html","home"],["New Order","order-entry.html","cart"],["PO List","warehouse-orders.html","note"],["Stock","inventory.html","stock"]],
       manager:[["Home","dashboard.html","home"],["New Order","order-entry.html","cart"],["PO List","warehouse-orders.html","note"],["Dispatch","loading-dispatch.html","truck"]],
-      accounts:[["Home","dashboard.html","home"],["Accounts","party-billing.html","bill"],["Ledger","accounts-books.html","book"],["Bank","bank-statement.html","book"]],
+      accounts:[["Home","dashboard.html","home"],["Finance","finance.html","chart"],["Accounts","party-billing.html","bill"],["Ledger","accounts-books.html","book"]],
+      cashier:[["Home","dashboard.html","home"],["Finance","finance.html","chart"],["Cashier","accounts-dashboard.html#cash","cash"]],
       warehouse:[["Home","dashboard.html","home"],["Loading","loading-dispatch.html","truck"],["Purchase","purchase-register.html","note"],["Stock","inventory.html","stock"]],
       transport:[["Home","dashboard.html","home"],["Assign","transport-allocation.html","truck"],["Vehicles","fleet-master.html#vehicles","box"],["Drivers","fleet-master.html#drivers","users"]]
     };
