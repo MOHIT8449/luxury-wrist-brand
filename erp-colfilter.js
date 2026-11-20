@@ -18,6 +18,10 @@
 .lwb-cf:hover{opacity:1;background:rgba(0,0,0,.07)}
 .lwb-cf.on{opacity:1;background:var(--erp-red,#002f37);color:#fff}
 th .lwb-cf{font-weight:700}
+.lwb-cf.lwb-cf-lab{font:inherit;font-weight:inherit;text-transform:inherit;letter-spacing:inherit;opacity:1;padding:3px 5px;margin:-3px 0 -3px -5px;border-radius:6px;white-space:nowrap;text-align:inherit}
+.lwb-cf.lwb-cf-lab i{font-style:normal;font-size:10px;opacity:.6;margin-left:1px}
+.lwb-cf.lwb-cf-lab:hover{background:rgba(0,47,55,.08)}
+.lwb-cf.lwb-cf-lab.on i{opacity:1}
 .lwb-cf-btn{display:flex;align-items:center;gap:4px;width:100%;min-width:0;height:28px;border:1.5px solid var(--erp-line,#d5dde8);border-radius:6px;padding:0 6px 0 8px;background:#fff;color:var(--erp-ink,#172b48);font:inherit;font-size:12.5px;font-weight:500;text-transform:none;letter-spacing:0;cursor:pointer;text-align:left}
 .lwb-cf-btn span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .lwb-cf-btn::after{content:"▾";flex:0 0 auto;font-size:11px;color:#6b7280}
@@ -97,9 +101,10 @@ mark.lwb-hit{background:#fde68a;color:inherit;border-radius:2px;padding:0 1px}
       return out;
     }
     const on=(key,h)=>!!(state[key]&&(state[key].f[h]||(state[key].sort&&state[key].sort.col===h)));
-    function th(key,head,i){
+    // label given: the whole head text is the button (click "Sales Person" itself to filter).
+    function th(key,head,i,label){
       const h=head[i],s=state[key],ar=s&&s.sort&&s.sort.col===h?(s.sort.dir>0?"▲":"▼"):"▾";
-      return '<button type="button" class="lwb-cf'+(on(key,h)?" on":"")+'" data-cf="'+i+'" data-cfk="'+esc(key)+'" title="Filter / sort '+esc(h)+'" aria-label="Filter / sort '+esc(h)+'">'+ar+"</button>";
+      return '<button type="button" class="lwb-cf'+(label!=null?" lwb-cf-lab":"")+(on(key,h)?" on":"")+'" data-cf="'+i+'" data-cfk="'+esc(key)+'" title="Filter / sort '+esc(h)+'" aria-label="Filter / sort '+esc(h)+'">'+(label!=null?esc(label)+" <i>"+ar+"</i>":ar)+"</button>";
     }
     // What a column's filter box says, like the Category filter on top: All / one value / "3 selected" / ≥ 30.
     const nf=v=>typeof v==="number"?v.toLocaleString("en-IN"):/^\d{4}-\d{2}-\d{2}$/.test(v)?v.slice(8,10)+"/"+v.slice(5,7):String(v);
