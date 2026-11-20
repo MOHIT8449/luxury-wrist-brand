@@ -124,6 +124,8 @@
       {t:"My Sales",h:"my-sales.html",i:"chart",r:"sales"},
       // Party Rate Offer (Mohit, 16 Nov 2026): rate per case given to one party, category-wise, with (i) past rates.
       {t:"Party Rate Offer",h:"party-rates.html",i:"tag",r:"admin manager",k:"party rate offer quotation category pack per case given history whatsapp"},
+      // Outstanding (Mohit, 20 Nov 2026): Sales Head sees unpaid / part-paid bills, party-wise dues, ledger; tells Accounts.
+      {t:"Outstanding",h:"sales-outstanding.html",i:"cash",r:"admin manager",k:"outstanding payment pending due unpaid part paid bills party wise ledger collection baki udhar tell accounts cashier"},
       {t:"Party Call List",h:"party-calls.html",i:"phone",r:"admin manager sales"},
       {t:"Outside Market Stock",h:"market-report.html",i:"pin",r:"admin manager sales"},
       {t:"Sales Tracking",h:"sales-tracking.html",i:"chart",r:"admin manager"},
