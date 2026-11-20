@@ -220,7 +220,7 @@
     const splitNos=v=>{v=String(v||"").trim();const m=v.match(/^(\d+)\s*(?:-|to)\s*(\d+)$/i);
       if(m&&+m[2]>+m[1]&&+m[2]-+m[1]<20)return Array.from({length:+m[2]-+m[1]+1},(_,i)=>String(+m[1]+i));
       return v.split(/\s*(?:[,;&+|]|\band\b|\s)\s*/i).map(x=>x.trim()).filter(Boolean)};
-    let gst=null,gstEdit="";   // GST tab: lwb_gst_summary rows, month being filled
+    let gst=null,gstEdit="",chgSpan=30;   // GST tab: lwb_gst_summary rows, month being filled
     let led=null,ledParty=new URLSearchParams(location.search).get("party")||"",ledFrom="",ledTo="";
     const toast=t=>ERPShell.toast?ERPShell.toast(t):say(t,false,true);
     function say(t,bad,ok){el("msg").hidden=!t;el("msg").textContent=t||"";el("msg").className="pb-msg"+(bad?" bad":ok?" ok":"")}
@@ -229,7 +229,7 @@
       el("reload").disabled=true;LWBAccHub.loadCash(client);
       LWBAccHub.loadGst(client).then(d=>{gst=d;if(tab==="gst"&&info)render()});
       try{
-        const [x,early,chg,mk,tb,pr,mm]=await Promise.all([LWBPartyPay.load(client),client.rpc("lwb_bills_before_loading"),client.rpc("lwb_bill_change_list",{p_days:30}),client.rpc("lwb_admin_order_marks",{p_ids:null}),client.rpc("lwb_tax_bill_access"),client.rpc("lwb_tally_no_problems"),client.rpc("lwb_bill_mismatch_list",{p_days:400})]);
+        const [x,early,chg,mk,tb,pr,mm]=await Promise.all([LWBPartyPay.load(client),client.rpc("lwb_bills_before_loading"),client.rpc("lwb_bill_change_list",{p_days:(chgSpan=chgDays())}),client.rpc("lwb_admin_order_marks",{p_ids:null}),client.rpc("lwb_tax_bill_access"),client.rpc("lwb_tally_no_problems"),client.rpc("lwb_bill_mismatch_list",{p_days:400})]);
         // Tax invoice print in the Tally layout (lwb_tax_bill_print_setup.sql): button only while Admin has it on for me.
         taxBill=!tb.error&&!!(tb.data&&tb.data.can);
         // Admin marked Loaded / Delivered by hand (lwb_admin_mark_load_deliver_setup.sql); missing function = none.
@@ -397,7 +397,14 @@
     const GPER=!!window.LWBPeriod;
     if(GPER){document.documentElement.classList.add("lwb-gper");
       const st=document.createElement("style");st.textContent=".lwb-gper .mk-chips,.lwb-gper .mk-dates,.lwb-gper .pb-lf .dt2{display:none!important}";document.head.appendChild(st)}
-    if(GPER)LWBPeriod.on(()=>{if(info&&["make","made","led"].includes(tab))render()});
+    // Every tab with dates follows the top bar (Mohit, 20 Nov 2026): Bills made, Ledger, Payments, Returns, PO changes
+    // (waiting ones always show), GST months; cash cards on top too. To collect / Advance are balances as on today.
+    const inPer=v=>!GPER||LWBPeriod.has(v);
+    function chgDays(){if(!GPER)return 30;const r=LWBPeriod.get();return Math.min(800,Math.max(30,LWBPeriod.span(r.from,r.today)+1))}
+    if(GPER)LWBPeriod.on(async()=>{
+      if(!info)return;LWBAccHub.loadCash(client);
+      if(chgDays()>chgSpan){chgSpan=chgDays();const c=await client.rpc("lwb_bill_change_list",{p_days:chgSpan});if(!c.error)changes=c.data||[]}
+      render()});
     function gper(){if(!GPER)return;const r=LWBPeriod.get();mkRange="all";mdRange="custom";mdFrom=r.from;mdTo=r.to;ledFrom=r.from;ledTo=r.to}
     function renderMake(){
       gper();
@@ -689,11 +696,12 @@
     /* ---------- Payments ---------- */
     function renderPay(){
       const q=el("q").value.trim().toLowerCase();
-      const list=(info.raw.receipts||[]).filter(r=>inB(r.company_id)&&match(q,r.party,r.remark,...(r.modes||[]).map(m=>m.ref),...(r.allocs||[]).flatMap(a=>[a.order_no,a.invoice_no])));
+      const list=(info.raw.receipts||[]).filter(r=>inB(r.company_id)&&inPer(r.pay_date)&&match(q,r.party,r.remark,...(r.modes||[]).map(m=>m.ref),...(r.allocs||[]).flatMap(a=>[a.order_no,a.invoice_no])));
       sheet=[["Date","Main party","Brand","Modes","Amount ₹","Against bills ₹","Advance ₹","Remark","Status"],...list.map(r=>{const s=(r.allocs||[]).reduce((a,x)=>a+Number(x.amount),0);
         return [dmy(r.pay_date),r.party,(info.brandOf(r.company_id)||{name:""}).name,(r.modes||[]).map(m=>MODE[m.mode]+" "+r2(m.amount)+(m.ref?" "+m.ref:"")).join(" + "),r2(r.total),r2(s),r2(r.total-s),r.remark||"",r.cancelled?"Cancelled":""]})];
-      if(!list.length){el("body").innerHTML='<div class="pb-empty">No party payment yet. Use “+ Party payment”.</div>';return}
-      el("body").innerHTML=`<div class="pb-scroll"><table class="pb-t"><thead><tr><th>Date</th><th>Main party</th><th>Received</th><th class="n">Amount</th><th>Against bills</th><th class="n">Advance</th><th></th></tr></thead><tbody>${list.map(r=>{
+      if(!list.length){el("body").innerHTML='<div class="pb-empty">'+(GPER?"No party payment in these dates. Change the date at the top, or use “+ Party payment”.":"No party payment yet. Use “+ Party payment”.")+'</div>';return}
+      const live=list.filter(r=>!r.cancelled),payT=live.reduce((a,r)=>a+Number(r.total||0),0),payA=live.reduce((a,r)=>a+Math.max(0,Number(r.total||0)-(r.allocs||[]).reduce((x,y)=>x+Number(y.amount),0)),0);
+      el("body").innerHTML=`<div class="mk-bar"><span class="mk-sum"><b>${live.length}</b> payment${live.length===1?"":"s"} · <b class="adv">${rs(payT)}</b>${payA>0.5?` · <b>${rs(payA)}</b> advance`:""}</span></div><div class="pb-scroll"><table class="pb-t"><thead><tr><th>Date</th><th>Main party</th><th>Received</th><th class="n">Amount</th><th>Against bills</th><th class="n">Advance</th><th></th></tr></thead><tbody>${list.map(r=>{
         const s=(r.allocs||[]).reduce((a,x)=>a+Number(x.amount),0),left=r2(r.total-s);
         return `<tr data-drill-party="${esc(r.party)}"${r.cancelled?' style="opacity:.55"':""}><td>${dmy(r.pay_date)}<small>${esc(r.by||"")}</small></td><td><b>${esc(r.party)}</b>${BR().length?(r.company_id||r.cancelled?" "+btag(r.company_id):` <select class="bsel" data-rb="${esc(r.receipt_id)}" aria-label="Brand of this payment"><option value="">Pick brand…</option>${BR().map(c=>`<option value="${esc(c.id)}">${esc(c.name)}</option>`).join("")}</select>`):""}${r.remark?`<small>${esc(r.remark)}</small>`:""}</td>
           <td>${(r.modes||[]).map(m=>`<span class="bline">${MODE[m.mode]||m.mode} ${rs(m.amount)}${m.ref?` <small style="display:inline">${esc(m.ref)}</small>`:""}</span>`).join("")}</td>
@@ -720,10 +728,10 @@
     /* ---------- Goods returns ---------- */
     function renderRet(){
       const q=el("q").value.trim().toLowerCase();
-      const list=(info.returns||[]).filter(r=>inB(r.company_id)&&match(q,r.return_no,r.party,r.parent,r.order_no,r.invoice_no,r.credit_note,...(r.items||[]).map(i=>i.sku)));
+      const list=(info.returns||[]).filter(r=>inB(r.company_id)&&inPer(r.return_date)&&match(q,r.return_no,r.party,r.parent,r.order_no,r.invoice_no,r.credit_note,...(r.items||[]).map(i=>i.sku)));
       const it=r=>(r.items||[]).map(i=>i.sku+" · "+LWBBillChange.cspc(i.cases,i.pcs)).join(", ");
       sheet=[["Date","Return no.","Party","PO","Tally bill","Credit note","Items (CS + PCS)","Amount ₹","By","Status","Note"],...list.map(r=>[dmy(r.return_date),r.return_no,r.party,r.order_no||"",r.invoice_no||"",r.credit_note||"",it(r),r2(r.amount),r.by||"",r.cancelled?"Cancelled":"Saved",r.note||""])];
-      if(!list.length){el("body").innerHTML='<div class="pb-empty">No return yet. Use ↩ Return above (any party, any SKU) or ↩ Return on a bill.</div>';return}
+      if(!list.length){el("body").innerHTML='<div class="pb-empty">No return '+(GPER?"in these dates":"yet")+'. Use ↩ Return above (any party, any SKU) or ↩ Return on a bill.</div>';return}
       el("body").innerHTML=`<div class="pb-scroll"><table class="pb-t resp chg"><thead><tr><th>Return / party</th><th class="hide-ph">Against</th><th class="n">Amount</th><th></th></tr></thead><tbody>${list.map(r=>
         `<tr class="pr"${r.cancelled?' style="opacity:.55"':""}><td><b>${esc(r.return_no)}</b> · ${esc(r.party)}${!fb&&BR().length&&r.company_id?" "+btag(r.company_id):""}<small>${dmy(r.return_date)}${r.by?" · "+esc(r.by):""} · ${esc(it(r))}${r.note?" · "+esc(r.note):""}</small><small class="ph-only">${r.order_no?esc(r.order_no)+(r.invoice_no?" · bill "+esc(r.invoice_no):" · no Tally bill yet"):"Not against a bill"}</small></td>
           <td class="hide-ph">${r.order_no?`<b>${esc(r.order_no)}</b><small>${r.invoice_no?"Bill "+esc(r.invoice_no)+(r.credit_note?" · CN "+esc(r.credit_note):""):"No Tally bill yet"}</small>`:'<span class="tag t-blu">New return</span><small>off the party balance</small>'}</td>
@@ -738,13 +746,14 @@
     function renderGst(){
       if(!gst){el("body").innerHTML='<div class="pb-empty">Loading GST… (needs lwb_gst_register_setup.sql)</div>';sheet=[];return}
       const rs=v=>LWBPartyPay.rs(Math.round(Number(v)||0)),R=gst.rows||[],q=el("q").value.trim().toLowerCase(),H=LWBAccHub,mn=H.monName;
-      const list=R.filter(r=>!q||mn(r.month).toLowerCase().includes(q)||String(r.challan||"").toLowerCase().includes(q));
+      const r0=GPER?LWBPeriod.get():null,inMon=m=>!r0||(String(m).slice(0,7)>=r0.from.slice(0,7)&&String(m).slice(0,7)<=r0.to.slice(0,7));
+      const list=R.filter(r=>inMon(r.month)).filter(r=>!q||mn(r.month).toLowerCase().includes(q)||String(r.challan||"").toLowerCase().includes(q));
       const net=r=>r2(Number(r.sales_gst)-Number(r.pur_gst));
       const fl=(t,d)=>d?'<span class="fl ok">✓ '+t+" "+dmy(d).slice(0,5)+"</span>":'<span class="fl no">'+t+" not filed</span>";
       sheet=[["Month","Tally bills","Sales ₹","Sales GST (ERP) ₹","Purchase ₹","Purchase GST (ERP) ₹","Net GST (ERP) ₹","GSTR-1 filed","GSTR-3B filed","Tax as per 3B ₹","ITC used ₹","Paid ₹","Paid on","Challan","Status","Note"],
         ...list.map(r=>{const st=H.gstState(r,gst.today);return [mn(r.month),r.sales_bills,r2(r.sales_amount),r2(r.sales_gst),r2(r.pur_amount),r2(r.pur_gst),net(r),r.gstr1_on?dmy(r.gstr1_on):"",r.gstr3b_on?dmy(r.gstr3b_on):"",
           r.tax_3b==null?"":r2(r.tax_3b),r.itc_used==null?"":r2(r.itc_used),r.paid==null?"":r2(r.paid),r.paid_on?dmy(r.paid_on):"",r.challan||"",st.t,r.note||""]})];
-      if(!list.length){el("body").innerHTML='<div class="pb-empty">No month found.</div>';return}
+      if(!list.length){el("body").innerHTML='<div class="pb-empty">No month found'+(GPER?" in these dates":"")+'.</div>';return}
       const form=r=>{const v=k=>r[k]==null?"":esc(r[k]);return `<tr class="sub"><td colspan="7"><div class="gst-f" data-gm="${esc(r.month)}">
         <div><label>GSTR-1 filed on</label><input type="date" data-k="gstr1_on" value="${v("gstr1_on")}" max="${gst.today}"></div>
         <div><label>GSTR-3B filed on</label><input type="date" data-k="gstr3b_on" value="${v("gstr3b_on")}" max="${gst.today}"></div>
@@ -781,9 +790,9 @@
       c.innerHTML=f.querySelector('[data-k="tax_3b"]').value.trim()?"Tax "+rs(g("tax_3b"))+" − ITC "+rs(g("itc_used"))+" − paid "+rs(g("paid"))+" = "+(left>1?'<b class="due">'+rs(left)+" still to pay</b>":'<b class="adv">nothing to pay ✓</b>'):"Fill Tax as per 3B from the GST portal / Tally; the ERP figures are shown as a guide."}
     function renderChg(){
       const q=el("q").value.trim().toLowerCase(),ST={WAITING:["t-amb","Waiting Admin"],APPROVED:["t-grn","Approved"],SENT_BACK:["t-red","Sent back"]};
-      const list=changes.filter(c=>match(q,c.order_no,c.party,c.by,c.reason,c.note));
+      const list=changes.filter(c=>(c.status==="WAITING"||inPer(c.requested_at))&&match(q,c.order_no,c.party,c.by,c.reason,c.note));
       sheet=[["Date","PO","Party","By","Reason","Old ₹","New ₹","Difference ₹","Status","Admin reply"],...list.map(c=>[dmy(String(c.requested_at).slice(0,10)),c.order_no,c.party,c.by||"",c.reason||"",r2(c.old_value),r2(c.new_value),r2(c.diff),(ST[c.status]||[,c.status])[1],c.reply||""])];
-      if(!list.length){el("body").innerHTML='<div class="pb-empty">No PO change in the last 30 days. Use ⓘ Items / Edit on a bill to change qty, rate or SKU.</div>';return}
+      if(!list.length){el("body").innerHTML='<div class="pb-empty">No PO change '+(GPER?"in these dates":"in the last 30 days")+'. Use ⓘ Items / Edit on a bill to change qty, rate or SKU.</div>';return}
       el("body").innerHTML=`<div class="pb-scroll"><table class="pb-t resp chg"><thead><tr><th>PO / party</th><th class="hide-ph">By</th><th class="n hide-ph">Old → New</th><th class="n">Difference</th><th>Status</th><th></th></tr></thead><tbody>${list.map(c=>{const st=ST[c.status]||["t-gry",c.status];
         return `<tr class="pr" data-wv="${esc(c.id)}"><td><b>${esc(c.order_no)}</b> · ${esc(c.party)}<small>${(c.lines||[]).length} line${(c.lines||[]).length===1?"":"s"}${c.reason?" · "+esc(c.reason):""}</small></td>
           <td class="hide-ph">${esc(c.by||"")}<small>${dmy(String(c.requested_at).slice(0,10))}</small></td><td class="n hide-ph">${rs(c.old_value)} → ${rs(c.new_value)}</td>

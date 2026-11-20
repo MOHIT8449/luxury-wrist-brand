@@ -508,10 +508,13 @@
     /* ===== Accounts: cash in / out, bank match, where each order is, returns (Mohit, 4 Nov 2026) =====
        Quick row (5 Nov 2026): Bills to make, PO List, Cash In, Cash Out. Bank and Returns stay in the menu; the full outstanding list stays on Billing & Outstanding. */
     async accounts(){
-      const t=today();
-      const [acc,PI,cq,vq,ov,bk,orders,dl,rp,ra,billed,md]=await Promise.all([safe(C.rpc("lwb_acc_dashboard",{p_from:t,p_to:t})),window.LWBPartyPay?LWBPartyPay.load(C).catch(()=>null):null,
+      // Dates = the ONE top bar date (erp-period.js, Mohit 20 Nov 2026): money cards, delivered, returns approved and
+      // the night handover follow it; pending work (on vehicle, returns to approve, bills to make, cheques) shows every date.
+      const t=today(),R=window.LWBPeriod?LWBPeriod.get():{key:"today",from:t,to:t,label:"Today"},F=R.from,T2=R.to;
+      const one=F===T2,pl=R.key==="today"?"today":R.key==="yday"?"yesterday":one?dm(T2):R.key==="custom"?dm(F)+"–"+dm(T2):R.label;
+      const [acc,PI,cq,vq,ov,bk,orders,dl,rp,ra,billed,md]=await Promise.all([safe(C.rpc("lwb_acc_dashboard",{p_from:F,p_to:T2})),window.LWBPartyPay?LWBPartyPay.load(C).catch(()=>null):null,
         safe(C.rpc("lwb_acc_cheque_list")),verifyQueue(),overview(),safe(C.rpc("lwb_bank_stmt_open_count")),loadOrders(),
-        safe(C.from("lwb_delivery_reports").select("order_id,delivery_status,reported_at,delivery_note").gte("reported_at",t+"T00:00:00+05:30")),
+        safe(C.from("lwb_delivery_reports").select("order_id,delivery_status,reported_at,delivery_note").gte("reported_at",F+"T00:00:00+05:30").lt("reported_at",shift(T2,1)+"T00:00:00+05:30")),
         safe(C.rpc("lwb_office_list_driver_returns",{p_status:"PENDING_OFFICE"})),safe(C.rpc("lwb_office_list_driver_returns",{p_status:"APPROVED"})),
         // billed / dispatched POs of any month (loadOrders has this month + open ones only)
         safe(C.from("orders").select(ORDER_COLS).in("status",["invoiced","dispatched"]).limit(3000)),makeBillsData()]);
@@ -520,9 +523,11 @@
       const qa='<div class="rd-qa rd-qa-row">'+[["party-billing.html","🧾","Bills to make"],["warehouse-orders.html","📋","PO List"],["accounts-dashboard.html?new=IN","+","Cash In"],["accounts-dashboard.html?new=OUT","−","Cash Out"]]
         .filter(x=>can(x[0])).map(x=>'<a href="'+x[0]+'"><span>'+x[1]+"</span>"+x[2]+"</a>").join("")+"</div>";
       const k=[
-        kpi("teal","Cash in Hand now",acc&&acc.closing_set?rs(acc.closing):"—",acc?(acc.opening_set?"Opening "+rs(acc.opening):"Set opening cash first"):"Accounts Dashboard","accounts-dashboard.html",acc&&lst("Today's cash book","All money entries today",acc.lines||[],ACOLS,"accounts-dashboard.html")),
-        kpi("green","Cash In today",A?rs(A.cashIn):"—",A?"UPI "+rs(A.upi)+" · Bank "+rs(A.bank)+(A.cheque?" · Cheque "+rs(A.cheque):""):"","accounts-dashboard.html",acc&&lst("Money In today","Cash, UPI, bank and cheque received today",(acc.lines||[]).filter(l=>l.kind==="IN"),ACOLS,"accounts-dashboard.html")),
-        kpi("red","Cash Out today",A?rs(A.cashOut):"—",A?"Bank deposit "+rs(A.dep):"","accounts-dashboard.html",acc&&lst("Money Out today","Expenses and bank deposits today",(acc.lines||[]).filter(l=>l.kind!=="IN"),ACOLS,"accounts-dashboard.html")),
+        // Cash in hand at the end of the chosen dates; no opening cash yet = the card says so and opens the box to set it
+        kpi("teal",T2===t?"Cash in Hand now":"Cash in hand "+dm(T2),acc&&acc.closing_set?rs(acc.closing):"—",acc?(acc.opening_set?"Opening "+rs(acc.opening)+" · "+(one?dm(F):dm(F)+"–"+dm(T2)):'<strong class="rd-warn">Opening cash not set</strong> · tap to set'):"Accounts Dashboard",acc&&!acc.opening_set?"accounts-dashboard.html?tab=book":"accounts-dashboard.html",acc&&acc.opening_set&&lst("Cash book · "+pl,"All money entries",acc.lines||[],ACOLS,"accounts-dashboard.html")),
+        // Money In = every mode (the list behind it was every mode too; the big figure was cash only)
+        kpi("green","Money In · "+pl,A?rs(A.cashIn+A.upi+A.bank+A.cheque):"—",A?"Cash "+rs(A.cashIn)+" · UPI "+rs(A.upi)+" · Bank "+rs(A.bank)+(A.cheque?" · Chq "+rs(A.cheque):""):"","accounts-dashboard.html",acc&&lst("Money In · "+pl,"Cash, UPI, bank and cheque received",(acc.lines||[]).filter(l=>l.kind==="IN"),ACOLS,"accounts-dashboard.html")),
+        kpi("red","Cash Out · "+pl,A?rs(A.cashOut):"—",A?"Bank deposit "+rs(A.dep):"","accounts-dashboard.html",acc&&lst("Money Out · "+pl,"Expenses and bank deposits",(acc.lines||[]).filter(l=>l.kind!=="IN"),ACOLS,"accounts-dashboard.html")),
         kpi("blue","With drivers",drv?rs(drv.amount):"₹0",drv?fmt(drv.cnt)+" to receive":"Nothing to receive",drv?drv.page:"driver-collections.html"),
         kpi("amber","Bank to match",bk?fmt(bk.cnt):"—",bk?(num(bk.cnt)?"In "+rs(bk.credit)+" · Out "+rs(bk.debit)+(bk.oldest?" · from "+dmy(bk.oldest):""):"✓ All matched"):"Bank Statement","bank-statement.html")];
       // Where each order is: on the vehicle (not delivered yet) and today's driver reports.
@@ -535,7 +540,7 @@
         const onIt=O.filter(o=>["loading","loaded","invoiced","dispatched"].includes(st(o))),done=await deliveredSet(onIt.map(o=>o.id));
         const way=onIt.filter(o=>!done.has(o.id));
         const rep=new Set(R.filter(r=>r.delivery_status==="DELIVERED"||r.delivery_status==="PARTIAL").map(r=>r.order_id));
-        const mt=((md&&md[0])||[]).filter(m=>m.kind==="DELIVERED"&&String(m.mark_date)===t&&!rep.has(m.order_id));
+        const mt=((md&&md[0])||[]).filter(m=>m.kind==="DELIVERED"&&String(m.mark_date)>=F&&String(m.mark_date)<=T2&&!rep.has(m.order_id));
         const miss=[...new Set(mt.map(m=>m.order_id).filter(id=>!byId.has(id)))];
         for(let i=0;i<miss.length;i+=150){for(const o of (await safe(C.from("orders").select(ORDER_COLS).in("id",miss.slice(i,i+150))))||[])byId.set(o.id,o)}
         const who=m=>m.marked_by_name||(m.marked_by_role==="MANAGER"?"Sales Head":"Admin");
@@ -545,17 +550,17 @@
         const bad=R.filter(r=>r.delivery_status==="NOT_DELIVERED"||r.delivery_status==="PARTIAL").slice(0,4);
         where=card("🚚 Orders — where are they",go("driver-delivery.html","Delivery / POD →"),'<div class="rd-bd"><div class="rd-flow rd-flow4">'+
           step(way.length,"On vehicle","",0,"",lst("On vehicle","Loaded / billed, not delivered yet (no driver report, no Mark delivered)",way,null,"warehouse-orders.html"))+
-          step('<span class="g">'+rOf("DELIVERED").length+"</span>","Delivered today","",0,"",lst("Delivered today","Driver reports and Mark delivered today",rOf("DELIVERED"),DC))+
-          step('<span class="a">'+rOf("PARTIAL").length+"</span>","Part delivered","",rOf("PARTIAL").length>0,"",lst("Part delivered","Driver reports today",rOf("PARTIAL"),DC))+
-          step('<span class="r">'+rOf("NOT_DELIVERED").length+"</span>","Not delivered","",rOf("NOT_DELIVERED").length>0,"",lst("Not delivered","Driver reports today",rOf("NOT_DELIVERED"),DC))+"</div></div>"+
+          step('<span class="g">'+rOf("DELIVERED").length+"</span>","Delivered "+pl,"",0,"",lst("Delivered · "+pl,"Driver reports and Mark delivered",rOf("DELIVERED"),DC))+
+          step('<span class="a">'+rOf("PARTIAL").length+"</span>","Part delivered","",rOf("PARTIAL").length>0,"",lst("Part delivered · "+pl,"Driver reports",rOf("PARTIAL"),DC))+
+          step('<span class="r">'+rOf("NOT_DELIVERED").length+"</span>","Not delivered","",rOf("NOT_DELIVERED").length>0,"",lst("Not delivered · "+pl,"Driver reports",rOf("NOT_DELIVERED"),DC))+"</div></div>"+
           bad.map(r=>{const o=byId.get(r.order_id)||{};return dot(r.delivery_status==="PARTIAL"?"amb":"red","<b>"+esc(o.order_no||"PO")+"</b> "+esc(o.customer_name||"")+" · "+(r.delivery_status==="PARTIAL"?"part delivered":"not delivered")+(r.delivery_note?" — "+esc(r.delivery_note):""))}).join(""))}
       // Returns: waiting for office approval, approved today, credit notes to make.
       let rets="";
-      if(rp||ra||cn){const P=rp||[],T=(ra||[]).filter(r=>istDay(r.reviewed_at||r.created_at)===t);
+      if(rp||ra||cn){const P=rp||[],T=(ra||[]).filter(r=>{const d=istDay(r.reviewed_at||r.created_at);return d>=F&&d<=T2});
         const RC=[{t:"PO No.",v:"order_no"},{t:"Party",v:"party_name"},{t:"Driver",v:"driver_name"},{t:"Return ₹",v:"total_return_amount",money:true,sum:true},{t:"Note",v:"note"}];
         rets=card("📦 Returns",go("driver-returns.html","Returns →"),'<div class="rd-bd"><div class="rd-flow rd-flow3">'+
           step(P.length,"To approve",P.length?rs(sum(P,r=>r.total_return_amount)):"",P.length>0,"driver-returns.html",lst("Returns to approve","Driver returns waiting for the office",P,RC,"driver-returns.html"))+
-          step(T.length,"Approved today",T.length?rs(sum(T,r=>r.total_return_amount)):"",0,"",lst("Returns approved today","Approved by the office today",T,RC,"driver-returns.html"))+
+          step(T.length,"Approved "+pl,T.length?rs(sum(T,r=>r.total_return_amount)):"",0,"",lst("Returns approved · "+pl,"Approved by the office",T,RC,"driver-returns.html"))+
           step(cn?fmt(cn.cnt):0,"Credit note to make",cn&&num(cn.amount)?rs(cn.amount):"",!!(cn&&num(cn.cnt)),cn?cn.page:"credit-note.html")+"</div></div>")}
       // Outstanding: age split + top 5 only; the full list is on Billing & Outstanding.
       const ageBox=out?'<div class="rd-bd"><div class="rd-age"><div class="g">0–15 days<b>'+rs(out.age.a)+'</b></div><div class="b">16–30 days<b>'+rs(out.age.b)+'</b></div><div class="a">31–60 days<b>'+rs(out.age.c)+'</b></div><div class="r">60+ days<b>'+rs(out.age.d)+"</b></div></div></div>":"";
@@ -565,8 +570,9 @@
       const cs=chequesSoon(cq);
       const cheques=cq&&cs.length?card("📅 Cheques to deposit",go("accounts-dashboard.html#cheques","Cheques →"),"<table><tbody>"+cs.slice(0,6).map(c=>"<tr><td>"+(String(c.cheque_date)<=t?badge("a",dmy(c.cheque_date)):dmy(c.cheque_date))+"</td><td>"+esc(c.party||"—")+'</td><td class="n">'+rs(c.amount)+"</td></tr>").join("")+"</tbody></table>"):"";
       let night="";
-      if(acc){const c=(acc.closes||[]).find(x=>x.date===t&&!x.is_start);
-        night=card("🌙 Night cash handover","",'<div class="rd-bd rd-line">'+(c?badge("g","Closed")+"<span>Counted "+rs(c.counted)+(c.handed_to_name?" · with "+esc(c.handed_to_name):"")+"</span>":badge("a","Not closed")+"<span>Close today after counting the notes</span>"+go("accounts-dashboard.html",'<span class="rd-btn">Close day</span>'))+"</div>")}
+      if(acc){const c=(acc.closes||[]).find(x=>x.date===T2&&!x.is_start),past=T2<t;
+        night=card("🌙 Night cash handover"+(T2===t?"":" · "+dm(T2)),"",'<div class="rd-bd rd-line">'+(c?badge("g","Closed")+"<span>Counted "+rs(c.counted)+(c.handed_to_name?" · with "+esc(c.handed_to_name):"")+"</span>":
+          past?badge("r","Not closed")+"<span>Day "+dm(T2)+" was not closed</span>":badge("a","Not closed")+"<span>Close today after counting the notes</span>"+go("accounts-dashboard.html?new=CLOSE",'<span class="rd-btn">Close day</span>'))+"</div>")}
       return qa+shell(k,[where,rets,ost],[night,cheques,brandCard(ov)]);
     },
 
@@ -684,6 +690,8 @@
     if(BR.allow)BR.map=await LWBBrand.skuMap(C);
   }
   document.addEventListener("lwb:brand",()=>{if(ROLE&&box)render()});
+  // Accounts home follows the top bar date (Admin's Business Overview has its own listener)
+  document.addEventListener("lwb:period",()=>{if(ROLE==="accounts"&&box)render()});
   async function render(){
     const my=++seq;
     LISTS=new Map();

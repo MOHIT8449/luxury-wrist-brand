@@ -181,7 +181,7 @@
       cin:{h:"Cash In"+day,v:rs(cin+wd),s:pl(cnt(l=>(l.kind==="IN"&&l.mode==="CASH")||l.kind==="WITHDRAW"),"entry").replace("entrys","entries")},
       cout:{h:"Cash Out"+day,v:rs(cout),s:pl(cnt(l=>l.kind==="OUT"&&l.mode==="CASH"),"entry").replace("entrys","entries")},
       dep:{h:"Bank deposit"+day,v:rs(dep),s:pl(cnt(l=>l.kind==="DEPOSIT"),"deposit")},
-      coll:{h:isToday?"Collected today":one?"Collected "+dmy(to):"Collected "+dmy(from)+" – "+dmy(to),v:rs(collT),
+      coll:{h:isToday?"Collected today":one?"Collected "+dmy(to):"Collected "+dmy(from).slice(0,5)+" – "+dmy(to).slice(0,5),v:rs(collT),
         s:"Cash "+md("CASH")+" · UPI "+md("UPI")+" · Bank "+md("BANK")+" · Chq "+md("CHEQUE"),tip:"Party money in every mode (cash, UPI, bank, cheque, driver money)"},
       chq:{v:rs(sum(ch)+sum(cd)),s:(ch.length+cd.length)+" cheque"+(ch.length+cd.length===1?"":"s")+" · "+cd.length+" deposited"},
       hand:{h:handH,v:D.closing_set?rs(D.closing):"—",s:(lastClose&&!lastClose.is_start?"Counted · ":"")+"In "+rs(cin+wd).replace("₹","")+" · Out "+rs(cout).replace("₹","")+" · Bank "+rs(dep).replace("₹",""),
@@ -224,10 +224,12 @@
 
   async function loadCash(client){
     try{
-      const [d,c]=await Promise.all([client.rpc("lwb_acc_dashboard",{p_from:null,p_to:null}),client.rpc("lwb_acc_cheque_list")]);
+      // cash cards on the billing half follow the ONE top bar date too (erp-period.js, Mohit 20 Nov 2026)
+      const r=window.LWBPeriod?LWBPeriod.get():null,pf=r?r.from:null,pt=r?r.to:null;
+      const [d,c]=await Promise.all([client.rpc("lwb_acc_dashboard",{p_from:pf,p_to:pt}),client.rpc("lwb_acc_cheque_list")]);
       if(d.error)throw d.error;
       const D=d.data||{};D.lines=D.lines||[];D.pending=D.pending||[];const C=c.error?[]:(c.data||[]);
-      const f=cashFrom(D,C);counts(f.counts);kpis({coll:f.coll,chq:f.chq,hand:f.hand,verify:f.verify});if(view!=="party")alerts(cashAlerts(D,C,false));
+      const f=cashFrom(D,C,pf,pt);counts(f.counts);kpis({coll:f.coll,chq:f.chq,hand:f.hand,verify:f.verify});if(view!=="party")alerts(cashAlerts(D,C,false));
     }catch(e){kpis({coll:{v:"—",s:"open Day book"},chq:{v:"—",s:""},hand:{v:"—",s:""},verify:{v:"—",s:""}})}
   }
   // GST card (Tally view): last month = the return due now (GSTR-3B by the 20th)
