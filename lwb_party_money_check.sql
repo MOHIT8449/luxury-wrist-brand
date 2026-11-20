@@ -1,6 +1,5 @@
--- lwb:no-auto-run
 -- LUXURY WRIST BRAND ERP — READ-ONLY CHECK of party money (changes nothing).
--- Run by hand from Actions > Supabase apply > Run workflow with this file name. It always stops with an
+-- (Not kept on main.) Run by hand from Actions > Supabase apply > Run workflow with this file name. It always stops with an
 -- ERROR line that shows only COUNTS (no party names, no amounts), because this repo's logs are public.
 --   over        bills holding more party money than their due
 --   both        party + brand with free money and a due bill of that brand
