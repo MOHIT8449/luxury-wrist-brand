@@ -178,7 +178,7 @@ section{padding:40px 0}
 .yt .play span{display:grid;place-items:center;width:72px;height:50px;border-radius:14px;background:#e62117;box-shadow:0 6px 20px rgba(0,0,0,.35);transition:transform .15s}
 .yt:hover .play span{transform:scale(1.06)}
 .yt .play svg{width:26px;height:26px;color:#fff;margin-left:3px}
-.yt iframe{position:absolute;inset:0;width:100%;height:100%;border:0}
+.yt iframe{position:absolute;inset:0;width:100%;height:100%;border:0;background:transparent}
 .awards{display:grid;gap:12px;margin-top:14px}
 .awards-photo{display:block;border-radius:var(--radius);overflow:hidden;border:1px solid var(--line);box-shadow:var(--shadow);background:#3a2a1c;aspect-ratio:4/3}
 .awards-photo img{width:100%;height:100%;object-fit:cover;object-position:center 40%}
@@ -502,10 +502,10 @@ footer strong{font-family:var(--serif);font-size:16px;letter-spacing:.06em;color
         <span><small>WATCH OUR STORY</small><b>Our story on YouTube</b></span>
         <a href="https://youtu.be/MdLvoDhWPn8" target="_blank" rel="noopener">YouTube ↗</a>
       </div>
-      <button type="button" class="yt" data-id="MdLvoDhWPn8" aria-label="Play video: our story">
+      <div class="yt" data-id="MdLvoDhWPn8" role="button" tabindex="0" aria-label="Play video: our story">
         <img src="https://i.ytimg.com/vi/MdLvoDhWPn8/hqdefault.jpg" alt="" loading="lazy" decoding="async" onerror="this.remove()">
         <span class="play" aria-hidden="true"><span><svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></span></span>
-      </button>
+      </div>
     </div>
     <article class="press-card toi rv">
       <a class="press-media" href="assets/home/times-of-india.jpg" target="_blank" rel="noopener" aria-label="Open the Times of India clipping">
@@ -709,18 +709,29 @@ footer strong{font-family:var(--serif);font-size:16px;letter-spacing:.06em;color
     startX = null;
   });
 
-  /* YouTube: load the player only on tap (keeps the page fast) */
-  document.querySelectorAll('.yt').forEach(function (b) {
-    b.addEventListener('click', function () {
+  /* YouTube: autoplay muted + loop once the video scrolls into view (keeps first load fast) */
+  document.querySelectorAll('.yt').forEach(function (box) {
+    var id = box.getAttribute('data-id'), started = false;
+    function start() {
+      if (started) return; started = true;
       var f = document.createElement('iframe');
-      f.src = 'https://www.youtube-nocookie.com/embed/' + b.getAttribute('data-id') + '?autoplay=1&rel=0&playsinline=1';
+      f.src = 'https://www.youtube-nocookie.com/embed/' + id +
+        '?autoplay=1&mute=1&loop=1&playlist=' + id + '&playsinline=1&rel=0&modestbranding=1';
       f.title = 'Our story on YouTube';
       f.allow = 'accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share';
       f.allowFullscreen = true;
       f.referrerPolicy = 'strict-origin-when-cross-origin';
-      b.replaceWith(Object.assign(document.createElement('div'), { className: 'yt' }));
-      document.querySelector('.video-card .yt').appendChild(f);
-    });
+      f.loading = 'lazy';
+      box.appendChild(f);
+      var p = box.querySelector('.play'); if (p) p.remove();
+    }
+    box.addEventListener('click', start);
+    if ('IntersectionObserver' in window) {
+      var vio = new IntersectionObserver(function (es) {
+        if (es[0].isIntersecting) { start(); vio.disconnect(); }
+      }, { rootMargin: '200px 0px' });
+      vio.observe(box);
+    } else { start(); }
   });
 
   /* Subtle scroll reveal; content stays visible without JS / with reduced motion */
