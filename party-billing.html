@@ -503,6 +503,10 @@
           const a=card.querySelector(".pb-line .am");if(a)a.focus();return}}
       else if(!await ERPShell.confirm((edit?"Change the Tally bill of ":"Save Tally bill for ")+o.order_no+"?\n\n"+(edit?"Was: "+((o.bills||[]).length?o.bills.map(b=>(b.firm||o.party)+" · bill "+b.no+" · "+rs(b.amount)).join("\n"):o.invoice_no+" · "+rs(was))+"\nDate "+dmy(o.invoice_date)+"\n\nNow: ":"")+bl+(v.w&&!mis&&Math.abs(total-v.old)<=1&&Math.abs(v.old-v.exp)>1?"\n\nPO change waiting with Admin ("+sg(Number(v.w.diff))+"): on approve this bill moves to "+rs(v.exp)+".":"")+
         "\n\n"+(edit?(Math.abs(total-was)>0.005?"To collect on "+o.parent+" "+(total>was?"goes up":"goes down")+" by "+rs(Math.abs(r2(total-was)))+".":"Amount same, To collect does not change."):rs(total)+" goes to To collect on "+o.parent+".")))return;
+      // Login run out on this tab (20 Nov 2026): the save went as a guest and the role check said "not Accounts".
+      // Check first; with no login, say so and open Login instead of a wrong role message.
+      const loginGone=async()=>{await ERPShell.alert("Your login has expired. Please log in again, then save the bill.",{title:"Login expired"});location.replace("login.html")};
+      try{const {data:{session:s}}=await client.auth.getSession();if(!s)return loginGone()}catch(e){}
       btn.disabled=true;
       try{
         const {error}=await client.rpc("lwb_save_tally_bills",{p_order_id:o.order_id,p_invoice_date:date,p_bills:lines,p_note:null});
@@ -511,7 +515,7 @@
         if(edit)mdEdit=null;
         toast("Bill "+lines.map(l=>l.no).join(", ")+(edit?" changed · "+rs(total):" saved · "+rs(total)+" to collect from "+o.parent+" · see Bills made")+(mis?" · "+rs(Math.abs(d))+(d<0?" short":" extra")+" noted":""));
         await load();
-      }catch(e){btn.disabled=false;ERPShell.alert("Could not save the bill: "+errText(e))}
+      }catch(e){btn.disabled=false;if(/Login expired/i.test(errText(e)))return loginGone();ERPShell.alert("Could not save the bill: "+errText(e))}
     }
 
     /* ---------- To collect (main party wise) ---------- */
