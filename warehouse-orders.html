@@ -993,6 +993,7 @@
     .po-pend-pill:hover {background:#ffe9ec}
     .erp-ls-back .status {white-space:nowrap}
     body.po-view-dash .po-pend-pill {display:none}
+    .po-tab .sm {display:none}
     /* Compact top (Mohit, 20 Nov 2026): one row = title, PO List / Dashboard, Pending delivery, search */
     .page-title {margin-bottom:8px!important}
     .po-title {gap:8px!important;flex:1 1 auto}
@@ -1140,6 +1141,7 @@
       .po-warns {grid-column:1/-1;justify-content:flex-end}
       .po-warns .po-tab {padding:4px 4px 4px 9px;font-size:12px;min-width:0}
       .po-tab .lg {display:none}
+      .po-tab .sm {display:inline}
       .po-subs {margin:0 0 8px}
       #ordersArea .c-st .st-badge {display:inline}
       #ordersArea .c-st :is(.po-trk,.trk-now) {display:none}
@@ -2269,7 +2271,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       if(so){
         justSavedId=savedParam;
         const sf=document.getElementById('statusFilter');
-        if(sf&&!matchesTab(so,sf.value))sf.value=matchesTab(so,'polist')?'polist':'all';
+        if(sf&&!matchesTab(so,sf.value))sf.value=matchesTab(so,'pending')?'pending':matchesTab(so,'approved')?'approved':'all';
         listPage=1;renderOrders();
         showMessage('PO '+(so.order_no||'')+' saved. It is at the top of the list.','success');
         requestAnimationFrame(()=>document.querySelector('tr.row-just-saved')?.scrollIntoView({block:'center'}));
@@ -3081,12 +3083,14 @@ function setFullLoadKg(v) { v = Number(v); if (!(v > 0)) return; FULL_LOAD_KG = 
 // The old stages stay as small chips under their main tab; late alerts sit on the right of the same row.
 const PO_TABS = [
   { k: "draft", t: "Draft", draft: true },
-  { k: "polist", t: "PO List", subs: [
-    { k: "pending", t: "Pending approval" },
+  // Mohit, 20 Nov 2026: one tab per step, in order. Approval Pending -> Transport Pending (approved, no
+  // transport yet: Full load / Merge / Self pickup) -> Transport Assigned -> Delivered.
+  { k: "pending", t: "Approval<span class=\"lg\"> Pending</span>" },
+  { k: "approved", t: "Transport<span class=\"lg\"> Pending</span>", subs: [
     { k: "approved_full", t: "Full load" },
     { k: "approved_merge", t: "Merge" },
     { k: "approved_pickup", t: "Self pickup" }] },
-  { k: "dispatch", t: "Transport<span class=\"lg\"> Assigned</span>", subs: [
+  { k: "dispatch", t: "<span class=\"lg\">Transport </span>Assigned", subs: [
     { k: "transport", t: "Transport assigned" },
     { k: "loading", t: "Loading" },
     { k: "loaded", t: "Loaded / Billed" }] },
@@ -3099,7 +3103,7 @@ const PO_TABS = [
   { k: "late_delivery", t: "Delivery late<span class=\"lg\"> 36h+</span>", warn: true }
 ];
 const PO_SUB_TABS = PO_TABS.flatMap(t => (t.subs || []).map(x => ({ ...x, main: t.k })));
-const mainTabOf = k => (PO_SUB_TABS.find(x => x.k === k) || {}).main || (k === "approved" ? "polist" : k);
+const mainTabOf = k => (PO_SUB_TABS.find(x => x.k === k) || {}).main || k;
 
 function matchesTab(order, tab) {
   if (tab === "all") return true;
@@ -3185,7 +3189,7 @@ function renderLateStrip(base, current) {
   if (!dl.length && !ap.length) { box.hidden = true; box.innerHTML = ""; return; }
   const oldest = [...dl, ...ap].sort((a, b) => hoursSinceTaken(b) - hoursSinceTaken(a))[0];
   const amt = dl.reduce((t, o) => t + number(o.total_amount), 0);
-  const chip = (k, cls, txt, n) => n ? `<button type="button" class="ls-chip ${cls}${current === k ? " on" : ""}" onclick="pickStatusFilter('${current === k ? "polist" : k}')" title="${current === k ? "Show PO List again" : "Show only these POs"}">${txt} <b>${n}</b></button>` : "";
+  const chip = (k, cls, txt, n) => n ? `<button type="button" class="ls-chip ${cls}${current === k ? " on" : ""}" onclick="pickStatusFilter('${current === k ? "pending" : k}')" title="${current === k ? "Show Approval Pending again" : "Show only these POs"}">${txt} <b>${n}</b></button>` : "";
   box.innerHTML = chip("late_delivery", "", "⏰ Delivery late 36h+", dl.length) +
     chip("late_approval", "appr", "⏳ Approval late 12h+", ap.length) +
     `<span class="ls-note">Oldest <b>${escapeHtml(oldest.order_no || "")} · ${hrs(hoursSinceTaken(oldest))}</b>` +
