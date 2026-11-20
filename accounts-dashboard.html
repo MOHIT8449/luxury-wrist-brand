@@ -146,6 +146,10 @@
     .acx-more .f+.f{margin-top:12px}
     .f2{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:10px}.f2>.f{min-width:0}
     .pills{display:flex;flex-wrap:wrap;gap:6px}
+    .sh-strip{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:0 0 8px;font-size:12.5px;color:#4b5763}
+    .sh-strip>span{background:#eef4ff;border:1px solid #c5d7f5;border-radius:99px;padding:2px 9px;white-space:nowrap}.sh-strip i{font-style:normal;font-weight:700}
+    .sh-head{display:flex;align-items:center;gap:8px;margin:0 0 8px}.sh-head .acx-btn{margin-left:auto}
+    .acx-h3{margin:0 0 8px;font-size:15px}
     .pills button{min-height:38px;border-radius:99px;border:1.5px solid #d5dce5;background:#fff;font:inherit;font-size:14px;padding:0 13px;cursor:pointer;color:var(--erp-ink)}
     .pills button[aria-pressed=true]{background:#002f37;border-color:#002f37;color:#fff;font-weight:700}
     .pills .add{border-style:dashed;color:#00434d}
@@ -224,6 +228,13 @@
       .acx-sheet{border-radius:16px 16px 0 0;max-height:94dvh;width:100%}
       .notes{grid-template-columns:1fr}
       .acx-top h1{font-size:18px;flex-basis:100%}
+      .sh-strip>span{white-space:normal}
+      .sh-t thead{display:none}.sh-t,.sh-t tbody,.sh-t td{display:block}
+      .sh-t tr{display:grid;grid-template-columns:1fr auto;grid-template-areas:"w h" "t r" "b r";gap:2px 10px;padding:8px 2px;border-bottom:1px solid #e6e9ee}
+      .sh-t td{padding:0!important;border:0!important;text-align:left!important}
+      .sh-t td:nth-child(1){grid-area:t}.sh-t td:nth-child(1) small{display:inline;margin-left:6px}
+      .sh-t td:nth-child(2){grid-area:w}.sh-t td:nth-child(3){grid-area:b;color:#6b7785;font-size:12px}.sh-t td:nth-child(3)::before{content:"Book "}
+      .sh-t td:nth-child(4){grid-area:h;text-align:right!important}.sh-t td:nth-child(5){grid-area:r;text-align:right!important}
     }
   </style>
 </head>
@@ -280,6 +291,7 @@
     const MODE_NAME={CASH:"Cash",UPI:"UPI",BANK:"Bank / NEFT",RTGS:"RTGS",CHEQUE:"Cheque"};
     const SRC_NAME={ENTRY:"Entered here",PAYMENT:"Party payment",DRIVER_CASH:"Driver money",DRIVER_ONLINE:"Driver money",OLD:"Old payment entry"};
     const NOTE_KEYS=["500","200","100","50","20","10"];
+    let SH=null;   // shift handover in the day (lwb_acc_shift_handover_setup.sql); null = not set up
     let HV=[],hvSub="own",hvPosted=false,PR=[];  // PR = Porter / one-time trips (lwb_trip_rent_setup.sql)
     let X={entries:{},staff_heads:[],payees:[]},S=[],V=[],VR={vehicles:[],entries:{}},C=[],piErr=false,D=null,PI=null,per="today",from=todayISO(),to=todayISO(),tab="book",bookF="all",outRows=null,me={id:"",role:""};
 
@@ -312,6 +324,7 @@
         if(!hvPosted){hvPosted=true;await client.rpc("lwb_hired_post_months")}
         const [ex,st,vl,vr,cq,hv,pr]=await Promise.all([client.rpc("lwb_acc_extras",{p_from:from,p_to:to}),client.rpc("lwb_acc_staff_list",{p_month:to}),
           client.rpc("lwb_acc_vehicles"),client.rpc("lwb_acc_vehicle_report",{p_from:from,p_to:to}),client.rpc("lwb_acc_cheque_list"),client.rpc("lwb_hired_list",{p_from:from,p_to:to}),client.rpc("lwb_trip_rent_list",{p_from:from,p_to:to})]);
+        const sh=await client.rpc("lwb_acc_shift_list",{p_from:from,p_to:to});SH=sh.error?null:sh.data;
         HV=hv.error?[]:(hv.data||[]);PR=pr.error?[]:(pr.data||[]);if(hvSub==="hired"&&!HV.length||hvSub==="porter"&&!PR.length)hvSub="own";
         C=cq.error?[]:(cq.data||[]);
         X=ex.error?{entries:{},staff_heads:[],payees:[]}:ex.data;S=st.error?[]:(st.data||[]).filter(x=>!x.third_party); // third-party drivers: no salary / advance (paid on the vehicle)
@@ -360,13 +373,14 @@
 
     // short alerts of the Accounts header (acc-hub.js): opening cash, cash with someone, bank check, cheques
     function renderBanners(){
-      LWBAccHub.alerts(LWBAccHub.cashAlerts(D,C,true));
+      LWBAccHub.alerts(shiftAlerts().concat(LWBAccHub.cashAlerts(D,C,true)));
       const sb=el("startBtn");if(sb)sb.onclick=setOpening;
     }
 
     // Cash cards of the Accounts header; Bills to make / To collect / Advance come from LWBAccHub.loadBill
     function renderKpis(){
       const f=LWBAccHub.cashFrom(D,C,from,to);
+      const H=SH&&SH.holder;if(H&&to===D.today)f.hand.s="With "+esc(H.name)+" · since "+hm(H.since);
       LWBAccHub.kpis({coll:f.coll,chq:f.chq,hand:f.hand,verify:f.verify,open:f.open,cin:f.cin,cout:f.cout,dep:f.dep});LWBAccHub.counts(f.counts);
     }
 
@@ -443,7 +457,7 @@
         (!q||[l.party,l.category,l.ref,l.remark,l.order_no,l.by,l.mode,String(l.amount)].join(" ").toLowerCase().includes(q)));
       const keep=el("bookQ")?el("bookQ").value:"";
       el("tabBody").innerHTML='<div class="acx-filter"><div class="acx-chips" id="bookF">'+Object.entries(F).map(([k,v])=>'<button type="button" data-f="'+k+'" aria-pressed="'+(bookF===k)+'">'+v+'</button>').join("")+'</div>'+
-        '<input type="search" id="bookQ" placeholder="Search party, head, ref, PO" autocomplete="off"><button type="button" class="acx-btn" id="bookXl">⬇ Excel</button></div>'+
+        '<input type="search" id="bookQ" placeholder="Search party, head, ref, PO" autocomplete="off"><button type="button" class="acx-btn" id="bookXl">⬇ Excel</button></div>'+shiftStrip()+
         (!list.length?'<div class="acx-empty">No money entry in these dates.</div>':wide()?ledger(list):'<div class="acx-rows">'+list.map(l=>'<button type="button" class="acx-row" data-line="'+l.src+'|'+l.id+'">'+lineIcon(l)+
           '<span class="t"><b>'+esc(lineTitle(l))+marks(l)+'</b><small>'+(from!==to?dmy(l.date)+" · ":"")+lt(l)+' · '+MODE_NAME[l.mode]+(l.ref?" · "+esc(l.ref):"")+(l.order_no?" · "+esc(l.order_no):"")+" · "+esc(SRC_NAME[l.src]||"")+(l.remark?" · "+esc(l.remark):"")+'</small></span>'+
           '<span class="a '+sign(l)+'">'+(sign(l)==="plus"?"+":sign(l)==="minus"?"−":"")+rs(l.amount).replace("−","")+'<small>'+statusTag(l)+'</small></span></button>').join("")+'</div>');
@@ -505,7 +519,7 @@
 
     function renderCloses(){
       const C=(D.closes||[]).filter(c=>c.date>=shift(from,-1));
-      el("tabBody").innerHTML=(C.length?'<div style="overflow:auto"><table class="acx-t"><thead><tr><th>Night of</th><th class="n">Book cash</th><th class="n">Counted</th><th>Handed to</th><th>Morning</th><th></th></tr></thead><tbody>'+
+      el("tabBody").innerHTML=shiftTable()+'<h3 class="acx-h3">Night close</h3>'+(C.length?'<div style="overflow:auto"><table class="acx-t"><thead><tr><th>Night of</th><th class="n">Book cash</th><th class="n">Counted</th><th>Handed to</th><th>Morning</th><th></th></tr></thead><tbody>'+
         C.map(c=>{const d=r2(c.counted-c.expected);
           return '<tr><td><b>'+dmy(c.date)+'</b><small>'+(c.is_start?"Opening cash set":"by "+esc(c.closed_by||"")+" · "+hm(c.closed_at))+'</small></td><td class="n">'+rs(c.expected)+'</td><td class="n"><b>'+rs(c.counted)+'</b>'+(Math.abs(d)>=1?'<small class="'+(d<0?"minus":"plus")+'">'+(d<0?"short ":"extra ")+rs(Math.abs(d))+'</small>':"")+'</td>'+
           '<td>'+(c.is_start?"":c.handed_to_name?esc(c.handed_to_name):'<span class="tag t-gry">Kept in office</span>')+(c.note?'<small>'+esc(c.note)+'</small>':"")+'</td>'+
@@ -516,6 +530,82 @@
         (D.is_admin?'<p style="margin:8px 0 0"><button type="button" class="acx-btn" id="resetOpen">Set opening cash again</button></p>':"");
       const ro=el("resetOpen");if(ro)ro.onclick=resetOpening;
     }
+
+    /* ---------- Shift handover in the day (Mohit, 20 Nov 2026) ----------
+       Whoever has the cash box counts it and hands it to the next person (Admin / Accounts / Cashier);
+       that person presses Received ✓ from his own login. Money in the book does not change. */
+    function shiftAlerts(){
+      if(!SH)return [];
+      const P=SH.pending,H=SH.holder,me=SH.me;
+      if(P&&P.to===me)return [{c:"grn",b:"💼 "+esc(P.by_name)+" is handing you "+rs(P.counted),s:"count it, then press Received",
+        html:'<button type="button" class="btn grn" data-shrecv="'+P.id+'">Received ✓</button>'}];
+      if(P)return [{c:"blue",b:"⏳ "+rs(P.counted)+" handed to "+esc(P.to_name),s:"by "+esc(P.by_name)+" · "+hm(P.at)+" · waiting for "+esc(P.to_name),
+        html:(SH.is_admin&&P.to_mobile&&P.to!==me?'<a class="btn" href="tel:'+esc(String(P.to_mobile).replace(/[^\d+]/g,""))+'">📞 Call</a> ':"")+(P.by===me||SH.is_admin?'<button type="button" class="btn" data-shcancel=""'+P.id+'">Cancel</button>':"")+(SH.is_admin&&P.to!==me?' <button type="button" class="btn grn" data-shrecv="'+P.id+'">Received ✓</button>':"")}];
+      return [{c:"blue",b:H?"💼 Cash with "+esc(H.name):"💼 Who has the cash?",s:H?"since "+hm(H.since)+(String(H.since).slice(0,10)!==D.today?" "+dmy(String(H.since).slice(0,10)):""):"hand over when the person changes",
+        html:(SH.is_admin&&H&&H.id!==me&&H.mobile?'<a class="btn" href="tel:'+esc(String(H.mobile).replace(/[^\d+]/g,""))+'">📞 Call</a> ':"")+'<button type="button" class="btn" data-shgive>⇄ Hand over</button>'}];
+    }
+    function shiftStrip(){
+      const R=SH?(SH.rows||[]).filter(r=>r.status!=="CANCELLED"):[];if(!R.length)return "";
+      return '<div class="sh-strip"><b>⇄ Cash box</b>'+R.slice().reverse().map(r=>'<span>'+hm(r.at)+(from!==to?" "+dmy(r.day).slice(0,5):"")+' · '+esc(r.by_name)+' → '+esc(r.to_name)+' <b>'+rs(r.counted)+'</b>'+
+        (r.status==="RECEIVED"?(Math.abs(r.received-r.counted)>=1?' <i class="minus">'+(r.received<r.counted?"short ":"extra ")+rs(Math.abs(r.received-r.counted))+'</i>':' ✓'):' <i>waiting</i>')+'</span>').join("")+'</div>';
+    }
+    function shiftTable(){
+      if(!SH)return "";
+      const R=SH.rows||[],ST={PENDING:'<span class="tag t-amb">Waiting</span>',CANCELLED:'<span class="tag t-gry">Cancelled</span>'};
+      return '<div class="sh-head"><h3 class="acx-h3">Shift handover · in the day</h3><button type="button" class="acx-btn pri" data-shgive'+(SH.pending?" disabled":"")+'>⇄ Hand over cash</button></div>'+
+        (R.length?'<div style="overflow:auto"><table class="acx-t sh-t"><thead><tr><th>Time</th><th>From → To</th><th class="n">Book cash</th><th class="n">Handed</th><th>Received</th></tr></thead><tbody>'+
+        R.map(r=>{const d=r2(r.counted-r.book),rd=r.status==="RECEIVED"?r2(r.received-r.counted):0;
+          return '<tr><td><b>'+hm(r.at)+'</b><small>'+dmy(r.day)+'</small></td><td><b>'+esc(r.by_name)+' → '+esc(r.to_name)+'</b>'+(r.note?'<small>'+esc(r.note)+'</small>':"")+'</td>'+
+            '<td class="n">'+rs(r.book)+'</td><td class="n"><b>'+rs(r.counted)+'</b>'+(Math.abs(d)>=1?'<small class="'+(d<0?"minus":"plus")+'">'+(d<0?"short ":"extra ")+rs(Math.abs(d))+'</small>':"")+'</td>'+
+            '<td>'+(r.status==="RECEIVED"?'<span class="tag '+(Math.abs(rd)>=1?"t-red":"t-grn")+'">'+(Math.abs(rd)>=1?(rd<0?"Short ":"Extra ")+rs(Math.abs(rd)):"✓ "+rs(r.received))+'</span><small>'+hm(r.received_at)+(r.receive_note?" · "+esc(r.receive_note):"")+'</small>':ST[r.status]||"")+'</td></tr>'}).join("")+'</tbody></table></div>'
+        :'<div class="acx-empty">No shift handover in these dates.</div>');
+    }
+    async function shiftGive(){
+      let people;try{people=(await rpc("lwb_acc_shift_people",{}))||[]}catch(e){await ERPShell.alert(e.message);return}
+      people=people.filter(p=>!p.me);
+      if(!people.length){await ERPShell.alert("No other Admin / Accounts / Cashier login to hand the cash to.");return}
+      const book=r2(D.today===to?Number(D.closing):0),RN={admin:"Admin",accounts:"Accounts",cashier:"Cashier"};
+      let who=null;
+      const body='<div class="calc"><div class="tot"><span>Cash should be now</span><span>'+rs(book)+'</span></div></div>'+
+        '<div class="f"><label>Count the notes</label><div class="notes">'+NOTE_KEYS.map(k=>'<div class="note"><b>₹'+k+'</b><button type="button" data-d="'+k+'" data-s="-1" aria-label="less">−</button><input type="text" inputmode="numeric" data-n="'+k+'" placeholder="0" aria-label="'+k+' notes"><button type="button" data-d="'+k+'" data-s="1" aria-label="more">+</button></div>').join("")+
+        '<div class="note" style="grid-template-columns:62px 1fr"><b>Coins</b><input type="text" inputmode="decimal" data-n="coins" placeholder="₹ 0" aria-label="coins amount"></div></div></div>'+
+        '<div class="diff ok" id="sDiff"></div>'+
+        '<div class="f"><label>Hand the cash box to</label><div class="pills">'+people.map(p=>'<button type="button" data-w="'+p.id+'">'+esc(p.name)+' · '+(RN[p.role]||p.role)+'</button>').join("")+'</div></div>'+
+        '<div class="f"><label for="sNote">Note</label><input id="sNote" type="text" maxlength="300" placeholder="Required if cash is short / extra"></div>';
+      const box=sheet("Hand over the cash box",body,"Hand over",async b=>{
+        const notes={};b.querySelectorAll("[data-n]").forEach(i=>{const v=num(i.value);if(v>0)notes[i.dataset.n]=i.dataset.n==="coins"?r2(v):Math.floor(v)});
+        const c=calc(),note=b.querySelector("#sNote").value.trim();
+        if(!who){await ERPShell.alert("Choose who takes the cash.");return false}
+        if(Math.abs(c-book)>=1&&!note){await ERPShell.alert("Cash is "+(c<book?"short":"extra")+" by "+rs(Math.abs(c-book))+". Write a note why.");return false}
+        const wn=(people.find(p=>p.id===who)||{}).name;
+        if(!await ERPShell.confirm("Hand "+rs(c)+" to "+wn+"?\n\n"+wn+" presses Received ✓ from his login after counting."))return false;
+        try{await rpc("lwb_acc_shift_give",{p_to:who,p_notes:notes,p_note:note||null})}catch(e){await ERPShell.alert(e.message);return false}
+        toastMsg("Handed to "+wn+" · waiting for Received");load();
+      },"pri");
+      function calc(){let t=0;box.querySelectorAll("[data-n]").forEach(i=>{const v=num(i.value);if(v>0)t+=i.dataset.n==="coins"?v:Number(i.dataset.n)*Math.floor(v)});
+        t=r2(t);const d=r2(t-book),c=box.querySelector("#sDiff");c.className="diff "+(Math.abs(d)<1?"ok":"bad");
+        c.textContent="Counted "+rs(t)+(Math.abs(d)<1?" ✓ matches":" · "+(d<0?"short ":"extra ")+rs(Math.abs(d)));return t}
+      box.querySelectorAll("[data-n]").forEach(i=>i.oninput=calc);
+      box.querySelectorAll("[data-d]").forEach(b=>b.onclick=()=>{const i=box.querySelector('[data-n="'+b.dataset.d+'"]');i.value=Math.max(0,(Math.floor(num(i.value))||0)+Number(b.dataset.s))||"";calc()});
+      box.querySelectorAll("[data-w]").forEach(b=>b.onclick=()=>{who=b.dataset.w;box.querySelectorAll("[data-w]").forEach(x=>x.setAttribute("aria-pressed",String(x===b)))});
+      calc();
+    }
+    function shiftReceive(id){
+      const P=SH&&SH.pending;if(!P||String(P.id)!==String(id))return;
+      sheet("Receive the cash box",'<p style="margin:0;font-size:15px">'+esc(P.by_name)+' is handing you <b>'+rs(P.counted)+'</b> ('+hm(P.at)+').'+(P.note?'<br><small>'+esc(P.note)+'</small>':"")+'</p>'+
+        '<div class="f"><label for="shAmt">Cash counted by you ₹</label><input id="shAmt" class="big" type="text" inputmode="decimal" value="'+r2(P.counted)+'"></div>'+
+        '<div class="f"><label for="shNote">Note</label><input id="shNote" type="text" maxlength="300" placeholder="Required if the amount is different"></div>',
+        "Received ✓",async b=>{
+          try{await rpc("lwb_acc_shift_receive",{p_id:P.id,p_amount:num(b.querySelector("#shAmt").value),p_note:b.querySelector("#shNote").value||null})}
+          catch(e){await ERPShell.alert(e.message);return false}
+          toastMsg("Cash box received");load();
+        },"grn");
+    }
+    async function shiftCancel(id){
+      if(!await ERPShell.confirm("Cancel this handover? The cash stays with the person who handed it."))return;
+      act(null,()=>rpc("lwb_acc_shift_cancel",{p_id:Number(id),p_note:null}));
+    }
+    const toastMsg=t=>ERPShell.toast?ERPShell.toast(t):say(t);
 
     function renderSetup(){
       const C=D.categories||[],B=D.banks||[];
@@ -1250,6 +1340,8 @@
 
     /* ---------- wiring ---------- */
     document.addEventListener("click",e=>{
+      const sg=e.target.closest("[data-shgive],[data-shrecv],[data-shcancel]");
+      if(sg){e.preventDefault();if(sg.hasAttribute("data-shgive"))shiftGive();else if(sg.dataset.shrecv)shiftReceive(sg.dataset.shrecv);else shiftCancel(sg.dataset.shcancel);return}
       const t=e.target.closest("[data-tab],[data-return],[data-reopen]");if(!t)return;
       if(t.dataset.tab){e.preventDefault();if(!LWBAccHub.has(t.dataset.tab))return;tab=t.dataset.tab;renderTab();el("hubTabs").scrollIntoView({behavior:"smooth",block:"start"})}
       else if(t.dataset.return)cashBack(t.dataset.return);

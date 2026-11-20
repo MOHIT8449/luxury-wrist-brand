@@ -45,6 +45,14 @@
     .hero-results a:hover,.hero-results a.active{background:var(--erp-red-soft)}
     .acc-dash{display:flex;align-items:center;gap:12px;margin:0 0 16px;padding:14px 16px;border-radius:10px;background:#002f37;color:#fff;text-decoration:none}
     .acc-dash[hidden]{display:none}
+    /* Admin: who runs the cash box right now (cash handover) */
+    .cashbox{display:flex;align-items:center;flex-wrap:wrap;gap:6px 12px;margin:0 0 14px;padding:10px 14px;border:1px solid #c5d7f5;border-left:4px solid #2362a4;border-radius:10px;background:#f4f8ff;font-size:14px}
+    .cashbox[hidden]{display:none}.cashbox .cb-ic{font-size:20px}.cashbox b.cb-who{font-size:16px;color:#123a6b}
+    .cashbox .cb-sub{color:#5b6775;font-size:12.5px}.cashbox .cb-amt{font-weight:800;color:#147d4c}
+    .cashbox .cb-tag{background:#fff6df;color:#956000;border-radius:99px;padding:1px 8px;font-size:12px;font-weight:700}
+    .cashbox .cb-act{margin-left:auto;display:flex;gap:6px}
+    .cashbox .cb-act a{display:inline-flex;align-items:center;gap:4px;padding:6px 12px;border-radius:8px;font-weight:700;font-size:13px;text-decoration:none;border:1px solid #c9d3df;background:#fff;color:#123a6b;white-space:nowrap}
+    .cashbox .cb-act a.call{background:#147d4c;border-color:#147d4c;color:#fff}
     /* Approvals waiting (approvals.js, Mohit 7 Nov 2026): only "Waiting approval N" next to the Admin view dropdown; tap = Approvals. */
     .ap-pill{display:inline-flex;align-items:center;gap:6px;height:34px;padding:0 10px;border-radius:6px;border:1px solid #f0c36a;background:#fff8e1;color:#3d2c00;font-size:13px;font-weight:600;text-decoration:none;white-space:nowrap}
     .ap-pill b{min-width:22px;height:22px;border-radius:11px;background:var(--erp-danger,#c62828);color:#fff;font-size:12.5px;line-height:22px;text-align:center;padding:0 6px;animation:apBlink 1.6s ease-in-out 3}
@@ -222,6 +230,7 @@
     <div class="kpis" id="kpis"></div>
     <div class="tk-alert" id="taskAlert" hidden></div>
     <a class="acc-dash" id="accDash" href="accounts-dashboard.html" hidden><span class="acc-ic">₹</span><span><b>Accounts</b><small>Today's cash in / cash out, bank deposit, cash handover, bank check</small></span><span class="acc-go">Open →</span></a>
+    <div class="cashbox" id="cashBox" hidden></div>
     <div class="banners" id="banners" hidden></div>
     <div class="focus" id="focus"></div>
     <form class="focus-form" id="focusForm" hidden autocomplete="off">
@@ -517,6 +526,35 @@
       });
       document.addEventListener("click",e=>{if(!e.target.closest(".hero-search"))box.classList.remove("open")});
     }
+    // Admin: who has the cash box now, so Admin can call that person (lwb_acc_shift_list).
+    async function loadCashBox(){
+      const box=document.getElementById("cashBox");
+      let r=null;try{r=await client.rpc("lwb_acc_shift_list",{p_from:null,p_to:null})}catch(e){}
+      if(!r||r.error||!r.data){box.hidden=true;return}
+      const S=r.data,H=S.holder,P=S.pending,L=S.last_entry,RN={admin:"Admin",accounts:"Accounts",cashier:"Cashier"};
+      const t=v=>v?new Date(v).toLocaleTimeString("en-IN",{hour:"2-digit",minute:"2-digit",hour12:true,timeZone:"Asia/Kolkata"}):"";
+      const d=v=>v?new Date(v).toLocaleDateString("en-GB",{day:"2-digit",month:"2-digit",timeZone:"Asia/Kolkata"}):"";
+      const rs=v=>"₹"+fmtINR(Math.round(Number(v)||0));
+      const who=H&&(H.today||!L)?{id:H.id,name:H.name,role:H.role,mobile:H.mobile,sub:"since "+t(H.since)+(H.today?"":" "+d(H.since))+" · got "+rs(H.amount)}
+        :L?{id:L.id,name:L.name,role:L.role,mobile:L.mobile,sub:"no handover today · last cash entry "+t(L.at)}:null;
+      const add=(tag,cls,text)=>{const e=document.createElement(tag);if(cls)e.className=cls;if(text!=null)e.textContent=text;box.appendChild(e);return e};
+      const call=(m,label)=>{const a=document.createElement("a");a.className="call";a.href="tel:"+String(m).replace(/[^\d+]/g,"");a.textContent="📞 "+label;return a};
+      box.replaceChildren();
+      add("span","cb-ic","💼");
+      const main=add("span");
+      main.append(document.createTextNode("Cash box now: "));
+      const b=document.createElement("b");b.className="cb-who";b.textContent=who?who.name:"Nobody yet today";main.appendChild(b);
+      if(who&&RN[who.role])main.append(document.createTextNode(" · "+RN[who.role]));
+      if(who)add("span","cb-sub",who.sub);
+      if(P){const p=add("span","cb-tag","Handing to "+P.to_name+" · "+rs(P.counted)+" · waiting");p.title="Handed at "+t(P.at)}
+      const act=add("span","cb-act");
+      if(who&&who.mobile&&who.id!==S.me)act.appendChild(call(who.mobile,"Call "+String(who.name).split(/\s+/)[0]));
+      else if(who&&who.id!==S.me){const n=document.createElement("span");n.className="cb-sub";n.textContent="No mobile saved (Users page)";act.appendChild(n)}
+      if(P&&P.to_mobile&&P.to!==S.me)act.appendChild(call(P.to_mobile,"Call "+String(P.to_name).split(/\s+/)[0]));
+      const o=document.createElement("a");o.href="accounts-dashboard.html?tab=close#cash";o.textContent="Open →";act.appendChild(o);
+      box.hidden=false;
+    }
+
     async function loadSummary(){
       const role=currentRole,pills=document.getElementById("pills");
       const jobs=[];
@@ -720,7 +758,7 @@
       document.getElementById("focus").addEventListener("click",onRemove);
       document.getElementById("banners").addEventListener("click",onRemove);
     }
-    document.getElementById("refreshBtn").onclick=()=>{loadSummary();loadFocus();loadVerify();loadTasks();if(window.LWBRoleDash)LWBRoleDash.refresh()};
+    document.getElementById("refreshBtn").onclick=()=>{loadSummary();if(currentRole==="admin")loadCashBox();loadFocus();loadVerify();loadTasks();if(window.LWBRoleDash)LWBRoleDash.refresh()};
     // Role-wise home (role-dashboard.js): Admin, Sales Head, Accounts, Godown Manager, Salesman.
     // Driver / Transport keep the order-status Dashboard below. Admin can look at another role's view.
     const ROLE_NOTE={admin:"Whole business at one place: sales, money, stock, team.",manager:"PO approval, team target, delivery follow-up.",
@@ -827,6 +865,7 @@
         heroSearch();
         roleDashboard(role,profile.full_name,user.id,plan);
         loadSummary();
+        if(role==="admin"){loadCashBox();setInterval(()=>{if(!document.hidden)loadCashBox()},60000)}
         loadVerify();setInterval(()=>{if(!document.hidden)loadVerify()},60000);
         if(["admin","manager"].includes(role)&&!ERPShell.hiddenPages().includes("approvals.html")){loadApprovals(user.id);setInterval(()=>{if(!document.hidden)loadApprovals(user.id)},60000)}
         loadFocus();focusSetup();

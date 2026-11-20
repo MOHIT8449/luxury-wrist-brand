@@ -79,6 +79,7 @@ $fn$;
 `);
 await db.exec(await sql('lwb_cashier_role_setup.sql'));
 await db.exec(await sql('lwb_gst_register_setup.sql'));
+await db.exec(await sql('lwb_acc_shift_handover_setup.sql'));
 await db.exec('GRANT USAGE ON SCHEMA public,auth TO authenticated');
 ids.cashier='00000000-0000-4000-8000-000000000007';
 await db.query('insert into auth.users values($1)',[ids.cashier]);
@@ -177,4 +178,42 @@ test('running the file again changes nothing more',async()=>{
  assert.equal(def.split('can_check').length-1,1);
  const c=(await db.query("select pg_get_constraintdef(oid) d from pg_constraint where conname='user_profiles_role_check'")).rows[0].d;
  assert.equal(c.split('cashier').length-1,1);
+});
+
+test('Shift handover in the day: count, hand to the next person, he accepts; short needs a note',async()=>{
+ await as('cashier');
+ const people=await one('select public.lwb_acc_shift_people()');
+ assert.deepEqual(people.map(p=>p.role).sort(),['accounts','admin','cashier']);
+ const book=Number((await dash()).closing);
+ // notes that do not match the book need a note
+ await assert.rejects(one('select public.lwb_acc_shift_give($1,$2::jsonb,null)',[ids.accounts,JSON.stringify({'500':1})]),/short by Rs/);
+ await assert.rejects(one('select public.lwb_acc_shift_give($1,$2::jsonb,null)',[ids.cashier,JSON.stringify({'500':1})]),/Choose the person/);
+ await assert.rejects(one('select public.lwb_acc_shift_give($1,$2::jsonb,null)',[ids.manager,JSON.stringify({'500':1})]),/only to an active/);
+ const notes={'500':Math.floor(book/500),'coins':book-500*Math.floor(book/500)};
+ const g=await one('select public.lwb_acc_shift_give($1,$2::jsonb,null)',[ids.accounts,JSON.stringify(notes)]);
+ assert.equal(Number(g.counted),book);
+ await assert.rejects(one('select public.lwb_acc_shift_give($1,$2::jsonb,$3)',[ids.admin,JSON.stringify(notes),'x']),/already waiting/);
+ assert.equal((await db.query("select count(*)::int n from erp_notifications where user_id=$1 and notification_type='ACC_SHIFT_HANDOVER' and not is_read",[ids.accounts])).rows[0].n,1);
+ let L=await one('select public.lwb_acc_shift_list(null,null)');
+ assert.equal(L.pending.to_name,'accounts user');assert.equal(L.holder,null);
+ // only the receiver (or Admin) accepts
+ await assert.rejects(one('select public.lwb_acc_shift_receive($1,null,null)',[g.id]),/Only accounts user/);
+ await as('accounts');
+ await assert.rejects(one('select public.lwb_acc_shift_receive($1,$2,null)',[g.id,book-100]),/Write a note/);
+ await one('select public.lwb_acc_shift_receive($1,$2,$3)',[g.id,book-100,'100 less']);
+ await db.query("alter table user_profiles add column if not exists mobile text");
+ await db.query("update user_profiles set mobile='98250 12345' where id=$1",[ids.accounts]);
+ L=await one('select public.lwb_acc_shift_list(null,null)');
+ assert.equal(L.holder.name,'accounts user');assert.equal(L.holder.mobile,'98250 12345');assert.equal(L.holder.role,'accounts');assert.equal(L.holder.today,true);
+ assert.ok(L.last_entry===null||typeof L.last_entry.name==='string');assert.equal(L.pending,null);assert.equal(L.rows[0].status,'RECEIVED');
+ // short goes to Admin + the giver as a bell
+ const bell=(await db.query("select distinct p.role from erp_notifications n join user_profiles p on p.id=n.user_id where n.notification_type='ACC_SHIFT_HANDOVER' and n.title like 'Cash handover short%'")).rows.map(r=>r.role).sort();
+ assert.deepEqual(bell,['admin','cashier']);
+ // cancel a waiting one: only the giver or Admin
+ const g2=await one('select public.lwb_acc_shift_give($1,$2::jsonb,$3)',[ids.cashier,JSON.stringify({'10':1}),'test']);
+ await as('cashier');await assert.rejects(one('select public.lwb_acc_shift_cancel($1,null)',[g2.id]),/Only the person/);
+ await as('accounts');await one('select public.lwb_acc_shift_cancel($1,null)',[g2.id]);
+ assert.equal((await one('select public.lwb_acc_shift_list(null,null)')).pending,null);
+ await as('manager');await assert.rejects(one('select public.lwb_acc_shift_list(null,null)'),/only/);
+ assert.equal((await db.query("select has_table_privilege('authenticated','public.lwb_acc_shift_handovers','SELECT') a")).rows[0].a,false);
 });
