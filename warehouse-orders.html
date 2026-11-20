@@ -1380,6 +1380,7 @@
 <script src="trip-suggest.js" defer></script>
 <script src="erp-shell.js" data-auto defer></script>
 <script src="erp-list.js"></script>
+<script src="erp-colfilter.js"></script>
 <script src="po-share.js"></script>
 <script src="excel-io.js"></script>
 </head>
@@ -1548,15 +1549,16 @@
         id="searchBox"
         data-party-list
         type="text"
-        placeholder="Search Order No, Customer, Sales Person..."
+        placeholder="🔍 Search anything on this page: PO no, party, salesman, amount, status..."
+        aria-label="Search this page"
         oninput="resetPageAndRender()"
       >
 
-      <select id="spFilter" onchange="syncFilter(this)" aria-label="Sales person">
+      <select id="spFilter" onchange="syncFilter(this)" aria-label="Sales person" hidden>
         <option value="">All sales persons</option>
       </select>
 
-      <select id="tpFilter" onchange="resetPageAndRender()" aria-label="Transportation">
+      <select id="tpFilter" onchange="resetPageAndRender()" aria-label="Transportation" hidden>
         <option value="">All transport</option>
       </select>
 
@@ -2663,7 +2665,8 @@ let brandList = [];
 let brandCompanies = [];
 let skuBrandMap = null;
 const orderItemsCache = new Map();
-const FILTER_PAIRS = { spFilter: "trSp", trSp: "spFilter", brFilter: "trBrand", trBrand: "brFilter" };
+// Sales person on the PO list is now the "Sales Person" column head filter, so the Dashboard pick no longer filters the list (20 Nov 2026).
+const FILTER_PAIRS = { brFilter: "trBrand", trBrand: "brFilter" };
 
 function brandPick() {
   return document.getElementById("brFilter").value;
@@ -3110,9 +3113,31 @@ function matchesColumnFilters(order) {
   if (sp && String(order.sales_person || "").trim() !== sp) return false;
   if (tp && String(order.transportation || "").trim() !== tp) return false;
   if (!search) return true;
-  return [order.order_no, order.customer_name, order.sales_person, order.transportation, order.status]
-    .join(" ").toLowerCase().includes(search);
+  const hay = pageSearchText(order);
+  return search.split(/\s+/).every(w => hay.includes(w));
 }
+
+// Main page search (Mohit, 20 Nov 2026): every word typed must be somewhere in the PO row, any column.
+function pageSearchText(order) {
+  const amt = Number(order.total_amount) || 0, qty = Number(order.total_qty) || 0, wt = Number(order.total_weight) || 0;
+  return [order.order_no, order.customer_name, order.sales_person, order.transportation, order.status, stageLabel(order),
+    formatDate(order.order_date || order.created_at), orderLines.get(order.id), orderPriority(order),
+    amt, amt.toLocaleString("en-IN"), qty, qty.toLocaleString("en-IN"), wt, wt.toLocaleString("en-IN"),
+    order.bill_no, order.invoice_no, order.remarks, order.notes]
+    .filter(v => v != null && v !== "").join(" ").toLowerCase();
+}
+
+/* Excel-style filter on every column head of the PO list (erp-colfilter.js, Mohit 20 Nov 2026):
+   ▾ on each head: sort, search, tick one or many values. Phone: "Filter columns" grid above the cards. */
+const PO_CF = LWBCol.create({ onChange: () => resetPageAndRender() });
+const PO_CF_HEAD = ["Order No", "Date", "Customer", "Lines", "Sales Person", "Transport", "Qty", "Amount", "Weight", "Status"];
+function poCfRow(o) {
+  const d = o.order_date || o.created_at;
+  return { o, data: [o.order_no || "", d ? new Date(new Date(d).getTime() + 5.5 * 3600000).toISOString().slice(0, 10) : "",
+    o.customer_name || "", orderLines.has(o.id) ? Number(orderLines.get(o.id)) : null, o.sales_person || "",
+    o.transportation || "", Number(o.total_qty) || 0, Number(o.total_amount) || 0, Number(o.total_weight) || 0, stageLabel(o)] };
+}
+const poTh = (i, label) => PO_CF.th("po", PO_CF_HEAD, i, label == null ? PO_CF_HEAD[i] : label);
 
 function renderTabs(base, current) {
   const count = k => base.filter(order => matchesTab(order, k)).length;
@@ -4388,6 +4413,7 @@ function renderOrders() {
     .map(pair => pair[0]);
 
   filtered = sugArrange(filtered, filter);
+  filtered = PO_CF.apply("po", PO_CF_HEAD, filtered.map(poCfRow), { list: [1] }).map(r => r.o);
   if (justSavedId) {
     const i = filtered.findIndex(o => o.id === justSavedId);
     if (i > 0) filtered = [filtered[i], ...filtered.slice(0, i), ...filtered.slice(i + 1)];
@@ -4403,8 +4429,8 @@ function renderOrders() {
 
     area.className = "empty";
 
-    area.innerHTML =
-      "No orders found for this filter.";
+    area.innerHTML = PO_CF.chips("po", PO_CF_HEAD) +
+      "No orders found for this filter." + (PO_CF.count("po") ? ` <button type="button" class="btn btn-light" onclick="PO_CF.clear('po')">✕ Clear column filters</button>` : "");
 
     return;
   }
@@ -4414,22 +4440,22 @@ function renderOrders() {
 
   area.className = "table-wrap";
 
-  area.innerHTML = `
+  area.innerHTML = PO_CF.chips("po", PO_CF_HEAD) + `
     <table>
 
       <thead>
         <tr>
           <th><input type="checkbox" class="po-sel" id="pickPage" onchange="pickPage(this.checked)"
-            ${pageOrders.every(o => pickedIds.has(o.id)) ? "checked" : ""} aria-label="Select all on this page">Order No</th>
-          <th>Date</th>
-          <th>Customer</th>
-          <th style="text-align:right">Lines</th>
-          <th class="h-sp">Sales Person<small class="sp-tp">/ Transport</small></th>
-          <th class="h-tp">Transportation</th>
-          <th style="text-align:right">Qty</th>
-          <th style="text-align:right">Amount</th>
-          <th style="text-align:right">Weight</th>
-          <th>Status</th>
+            ${pageOrders.every(o => pickedIds.has(o.id)) ? "checked" : ""} aria-label="Select all on this page">${poTh(0)}</th>
+          <th>${poTh(1)}</th>
+          <th>${poTh(2)}</th>
+          <th style="text-align:right">${poTh(3)}</th>
+          <th class="h-sp">${poTh(4)}<small class="sp-tp">/ ${poTh(5)}</small></th>
+          <th class="h-tp">${poTh(5, "Transportation")}</th>
+          <th style="text-align:right">${poTh(6)}</th>
+          <th style="text-align:right">${poTh(7)}</th>
+          <th style="text-align:right">${poTh(8)}</th>
+          <th>${poTh(9)}</th>
           <th>Action</th>
         </tr>
       </thead>
@@ -4510,6 +4536,7 @@ function renderOrders() {
     </table>
   `;
 
+  LWBCol.mark(area.querySelector("tbody"), document.getElementById("searchBox").value);
   loadOrderLines(pageOrders);
   loadListExtras(pageOrders);
   renderSelBar();
