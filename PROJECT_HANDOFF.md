@@ -671,7 +671,7 @@
 
 - GitHub source: https://github.com/MOHIT8449/luxury-wrist-brand
 - Deployed website: https://luxury-wrist-brand.pages.dev
-- Database and authentication: Supabase (project slug `txkbhadzdbxpieunfvox`)
+- Database and authentication: Supabase (project slug `qstgwhbgbznxemajtave`)
 - Static HTML + JavaScript frontend deployed from GitHub through Cloudflare Pages.
 - Check the latest code in GitHub and screenshots / real Supabase results before claiming anything is working.
 - **Never put Supabase service-role keys, Twilio Auth Tokens, Meta tokens, passwords or OTPs in GitHub or chats.**

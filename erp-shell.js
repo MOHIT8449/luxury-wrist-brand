@@ -14,7 +14,7 @@
   // on the lock screen still ends the session fully.
   function unlockUid(){
     try{
-      const t=JSON.parse(localStorage.getItem("sb-txkbhadzdbxpieunfvox-auth-token")||"null");
+      const t=JSON.parse(localStorage.getItem("sb-qstgwhbgbznxemajtave-auth-token")||"null");
       const uid=t&&t.user&&t.user.id;return uid&&lockOn(uid)?uid:"";
     }catch(e){return ""}
   }
@@ -330,7 +330,7 @@
   // then re-read from lwb_user_page_access on every page.
   const ACCESS_KEY="lwbHiddenPages";
   function sessionUid(){
-    try{const t=JSON.parse(localStorage.getItem("sb-txkbhadzdbxpieunfvox-auth-token")||"null");return(t&&t.user&&t.user.id)||""}catch(e){return""}
+    try{const t=JSON.parse(localStorage.getItem("sb-qstgwhbgbznxemajtave-auth-token")||"null");return(t&&t.user&&t.user.id)||""}catch(e){return""}
   }
   function access(){
     try{const c=JSON.parse(localStorage.getItem(ACCESS_KEY)||"null");const sid=sessionUid();if(c&&Array.isArray(c.hidden)&&(!sid||c.uid===sid))return c}catch(e){}
@@ -885,7 +885,7 @@
 
   // Older pages: <script src="erp-shell.js" data-auto defer>. Hides the page's
   // own header, wraps the page in the shell and reads the logged-in profile.
-  const URL_="https://txkbhadzdbxpieunfvox.supabase.co",KEY_="sb_publishable_W4I3Q5ODf0g17sq5uDml2Q_sLolXYEk";
+  const URL_="https://qstgwhbgbznxemajtave.supabase.co",KEY_="sb_publishable_YA2Pow327REqgrWPzVCZiA_nw1F32_o";
   async function auto(){
     const old=document.querySelector("body > header, body > .header");
     if(old)old.classList.add("erp-old-header");
@@ -1003,7 +1003,7 @@
   function connect(){
     if(chan||!live.on||!window.supabase)return;
     try{
-      const c=window.__lwbBellClient||(window.__lwbBellClient=window.supabase.createClient("https://txkbhadzdbxpieunfvox.supabase.co","sb_publishable_W4I3Q5ODf0g17sq5uDml2Q_sLolXYEk"));
+      const c=window.__lwbBellClient||(window.__lwbBellClient=window.supabase.createClient("https://qstgwhbgbznxemajtave.supabase.co","sb_publishable_YA2Pow327REqgrWPzVCZiA_nw1F32_o"));
       chan=c.channel("lwb-live",{config:{broadcast:{self:false}}});
       chan.on("broadcast",{event:"changed"},p=>heard(p&&p.payload));
       chan.subscribe(s=>{chanReady=s==="SUBSCRIBED";dot()});

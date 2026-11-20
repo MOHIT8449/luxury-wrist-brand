@@ -16,8 +16,8 @@ import javax.crypto.spec.GCMParameterSpec;
 
 /** Independent native staff session for location sharing. Never takes credentials from an intent or WebView. */
 final class TrackingApi {
-    private static final String HOST="https://txkbhadzdbxpieunfvox.supabase.co";
-    private static final String KEY="sb_publishable_W4I3Q5ODf0g17sq5uDml2Q_sLolXYEk";
+    private static final String HOST="https://qstgwhbgbznxemajtave.supabase.co";
+    private static final String KEY="sb_publishable_YA2Pow327REqgrWPzVCZiA_nw1F32_o";
     private final Context context;
     private JSONObject session;
     TrackingApi(Context c) { context=c.getApplicationContext(); }

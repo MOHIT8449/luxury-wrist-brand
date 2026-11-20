@@ -8,7 +8,7 @@
    the key from the link (#k=...). The key is remembered in this browser (so a refresh or a new tab
    still opens) and taken out of the address bar. */
 (function(){
-  const db=supabase.createClient("https://txkbhadzdbxpieunfvox.supabase.co","sb_publishable_W4I3Q5ODf0g17sq5uDml2Q_sLolXYEk");
+  const db=supabase.createClient("https://qstgwhbgbznxemajtave.supabase.co","sb_publishable_YA2Pow327REqgrWPzVCZiA_nw1F32_o");
   const CHECK_EVERY=20000;
   const CB={data:null,erpAdmin:false,onReplace:null,isBusy:()=>false};
   let version=0,latest=null,sending=false,again=false,base=null;
