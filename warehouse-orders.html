@@ -993,6 +993,8 @@
     .po-pend-pill:hover {background:#ffe9ec}
     .erp-ls-back .status {white-space:nowrap}
     body.po-view-dash .po-pend-pill {display:none}
+    .pulse-next {animation:pulseNext .8s ease-in-out 3;box-shadow:0 0 0 0 rgba(22,163,74,.6)}
+    @keyframes pulseNext {0%{box-shadow:0 0 0 0 rgba(22,163,74,.6)}70%{box-shadow:0 0 0 12px rgba(22,163,74,0)}100%{box-shadow:0 0 0 0 rgba(22,163,74,0)}}
     .po-tab .sm {display:none}
     /* Compact top (Mohit, 20 Nov 2026): one row = title, PO List / Dashboard, Pending delivery, search */
     .page-title {margin-bottom:8px!important}
@@ -5542,7 +5544,18 @@ async function loadRajniWaiting(){
 function openRow(event, id) {
   if (event.target.closest("button, a, input, select, label, textarea")) return;
   if (window.getSelection && String(window.getSelection()).trim()) return; // selecting text
-  reviewOrder(id);
+  // Mohit, 20 Nov 2026: a row click goes straight to the next step of that PO.
+  // Approval pending -> PO opens with Approve ready; Transport pending -> Transport (driver / vehicle) opens.
+  const o = orders.find(x => x.id === id);
+  if (o && !VIEW_ONLY && orderStage(o) === "approved" && eligibleForPoPrint(o)) { openTransportAllocation(id); return; }
+  reviewOrder(id).then(() => {
+    if (!o || VIEW_ONLY || orderStage(o) !== "pending") return;
+    const b = document.getElementById("approveOrderBtn");
+    if (!b || b.offsetParent === null || b.disabled) return;
+    b.scrollIntoView({ block: "center", behavior: "smooth" });
+    b.classList.add("pulse-next"); setTimeout(() => b.classList.remove("pulse-next"), 2600);
+    try { b.focus({ preventScroll: true }); } catch (e) {}
+  });
 }
 async function printFromList(id){
   await printQuietly(id,"challan");
