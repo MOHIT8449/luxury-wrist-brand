@@ -44,6 +44,7 @@ tr.pick{cursor:pointer}tr.pick:hover td{background:#f4f8fe}
 .grid{display:grid;grid-template-columns:2fr 1.2fr 1fr 1fr 1.6fr auto;gap:12px;align-items:end}
 #brandRow{margin:0 0 12px}#brandRow .lwb-brands{margin:0}
 .btag{display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:bold;color:var(--bc);white-space:nowrap}.btag i{width:8px;height:8px;border-radius:50%;background:var(--bc)}
+.bsplit{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 10px}.bsplit div{flex:1 1 220px;min-width:0;border:1px solid var(--line);border-left:4px solid var(--bc);border-radius:10px;padding:7px 11px;font-size:13px;color:#58708b}.bsplit b{color:#142841}.bsplit b.over{color:#ae3434}.bsplit b.tot{color:#006b3a}
 #obList table{min-width:0}#obList td,#obList th{padding:8px}#obList button{padding:6px 10px}
 #partyTitle small{font-weight:normal;color:#60758b}.over{font-weight:bold;color:#ae3434}.muted{color:#60758b;font-size:12px;line-height:1.5}
 @media(max-width:760px){.metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.grid{grid-template-columns:1fr}main{padding:14px}.panel{padding:13px}
@@ -79,6 +80,7 @@ tr.pick{cursor:pointer}tr.pick:hover td{background:#f4f8fe}
 <div class="wrap"><table><thead><tr><th>Party</th><th class="num">Debit ₹</th><th class="num">Credit ₹</th><th class="num">Balance ₹</th><th class="num">Pending Verification ₹</th><th>Last Entry</th></tr></thead><tbody id="summary"><tr><td colspan="6">Loading...</td></tr></tbody></table></div>
 </section>
 <section class="panel" id="ledgerPanel" hidden><h2 id="partyTitle">Party Ledger</h2>
+<div id="brandSplit" class="bsplit" hidden></div>
 <div class="wrap"><table><thead><tr><th>Date</th><th>Entry</th><th>Order No.</th><th class="num">Debit ₹</th><th class="num">Credit ₹</th><th class="num">Balance ₹</th><th>Note</th></tr></thead><tbody id="ledger"></tbody></table></div></section>
 <section class="panel"><h2>Bill-wise Outstanding</h2>
 <div class="wrap"><table><thead><tr><th>Bill Date</th><th>Bill No.</th><th>Order No.</th><th>Party</th><th class="num">Bill ₹</th><th class="num">Returns ₹</th><th class="num">Paid ₹</th><th class="num">Outstanding ₹</th></tr></thead><tbody id="bills"><tr><td colspan="8">Loading...</td></tr></tbody></table></div>
@@ -223,6 +225,12 @@ function render(){
  csvRows=[];
  if(party){
   el("partyTitle").textContent="Party Ledger — "+partyName(party)+(fb&&brandOf(fb)?" · "+brandOf(fb).name:"")+" ";
+  // All brands: one box per brand (bills, paid, balance) so Coca-Cola and Rajnigandha money is seen apart; total = cards above.
+  const bs=el("brandSplit"),mine=entries.filter(x=>x.party===party);
+  const bids=brands.length&&!fb?[...new Set(mine.map(x=>x.company_id||""))].sort((a,b)=>(brandOf(a)?0:1)-(brandOf(b)?0:1)):[];
+  bs.hidden=bids.length<2;
+  bs.innerHTML=bids.length<2?"":bids.map(id=>{const R=mine.filter(x=>(x.company_id||"")===id),d=R.reduce((a,x)=>a+x.debit,0),c=R.reduce((a,x)=>a+x.credit,0),n=d-c,b=brandOf(id);
+   return '<div style="--bc:'+(b?String(b.color||"#2362a4").replace(/[^#0-9a-zA-Z]/g,""):"#8a94a3")+'">'+btagHtml(id)+'<br>Bills <b>'+fmt(d)+'</b> · Paid <b class="tot">'+fmt(c)+'</b><br>'+(n>0.005?'Balance due <b class="over">'+fmt(n)+'</b>':n<-0.005?'Advance <b class="tot">'+fmt(-n)+'</b>':'<b>Settled</b>')+'</div>'}).join("");
   let bal=0;
   for(const x of ent){
    bal+=x.debit-x.credit;
