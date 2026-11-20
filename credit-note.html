@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1"><script src="erp-fit.js"></script>
 <title>Credit Note | Luxury Wrist Brand</title>
-<script src="erp-date.js"></script><script src="erp-recent.js"></script>
+<script src="erp-date.js"></script><script src="erp-period.js"></script><script src="erp-recent.js"></script>
 <script src="vendor/supabase-js-2.119.0.js"></script>
 <script src="brand-filter.js"></script><script src="page-role.js"></script>
 <style>
@@ -123,6 +123,7 @@ async function init(){
 
   if(window.LWBBrand)try{BB=await LWBBrand.mount(db,{into:"main",onChange:loadReturns})}catch(e){}
   await loadReturns();
+  if(window.LWBPeriod)LWBPeriod.on(()=>loadReturns());
 
  }catch(err){
   showMessage(err.message,true);
@@ -143,7 +144,8 @@ async function loadReturns(){
   return;
  }
 
- returns=ERPRecent.sort(data||[]);
+ // the ONE top bar date (erp-period.js): returns approved in those dates
+ returns=ERPRecent.sort(data||[]).filter(r=>!window.LWBPeriod||LWBPeriod.has(r.return_date||r.created_at));
  if(BB.companies&&BB.companies.length>1){OB=await LWBBrand.orderBrands(db,returns.map(r=>r.order_id||r.original_order_id));returns=returns.filter(r=>LWBBrand.has(OB.get(r.order_id||r.original_order_id),BB.get()))}
  const tbody=document.getElementById("returnsList");
  tbody.replaceChildren();
@@ -152,7 +154,7 @@ async function loadReturns(){
   const tr=document.createElement("tr");
   const td=document.createElement("td");
   td.colSpan=5;
-  td.textContent="No approved returns found.";
+  td.textContent=window.LWBPeriod?"No approved return in these dates.":"No approved returns found.";
   tr.appendChild(td);
   tbody.appendChild(tr);
  }else{
