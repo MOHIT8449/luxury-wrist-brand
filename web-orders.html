@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"><script src="erp-fit.js"></script>
+  <title>Website Orders | Luxury Wrist Brand ERP</title>
+  <script src="erp-date.js"></script>
+  <script src="vendor/supabase-js-2.119.0.js"></script>
+  <link rel="stylesheet" href="erp-shell.css">
+  <link rel="stylesheet" href="sales.css">
+  <script src="erp-shell.js"></script>
+  <script src="sales-common.js"></script>
+  <style>
+    /* Website Orders (Mohit, 20 Nov 2026): orders customers send from luxurywristbrand.com/order.html.
+       Known mobile = PO made by itself (Pending Review). New customer / number on 2+ parties / slip brand
+       = waits here: Make PO opens New PO filled in; Submit there marks it done. */
+    .wo-top{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px}
+    .wo-tabs{display:flex;gap:6px;flex-wrap:wrap}
+    .wo-tab{border:1px solid var(--erp-line);background:#fff;border-radius:18px;padding:6px 12px;font:inherit;font-size:13px;font-weight:600;cursor:pointer;color:var(--erp-ink)}
+    .wo-tab span{margin-left:5px;background:#eef0f3;border-radius:10px;padding:1px 7px;font-size:12px}
+    .wo-tab.on{border-color:var(--erp-blue);background:var(--erp-blue);color:#fff}.wo-tab.on span{background:#fff3;color:#fff}
+    .wo-tab.wait span{background:var(--erp-red);color:#fff}
+    .wo-top .grow{flex:1}
+    .wo-top input{height:36px;border:1.5px solid var(--erp-line);border-radius:6px;padding:0 10px;font:inherit;font-size:14px;min-width:0;width:220px}
+    .wo-list{display:grid;gap:8px}
+    .wo{display:grid;grid-template-columns:150px minmax(0,1.3fr) minmax(0,1.6fr) auto;gap:10px;align-items:center;background:#fff;border:1px solid var(--erp-line);border-radius:8px;padding:9px 12px}
+    .wo.waiting{border-left:4px solid var(--erp-red)}
+    .wo .ref b{display:block;font-size:14px}.wo small{color:var(--erp-muted);font-size:12px}
+    .wo .cust b{display:block;font-size:14px;overflow-wrap:anywhere}
+    .wo .cust a{color:var(--erp-blue);font-weight:600}
+    .wo .its{font-size:12.5px;color:#3c4a55;overflow-wrap:anywhere}
+    .wo .its b{color:var(--erp-ink)}
+    .wo .acts{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;align-items:center}
+    .wo .acts .sl-btn{height:34px;padding:0 12px;font-size:13px}
+    .wo .why{display:block;margin-top:3px}
+    .wo .note{display:block;font-size:12px;color:var(--erp-amber);margin-top:2px}
+    a.sl-btn{display:inline-flex;align-items:center;justify-content:center;text-decoration:none;color:#fff!important;box-sizing:border-box}
+    a.sl-btn.ghost{color:var(--erp-ink)!important}
+    .wo .acts a.sl-btn{font-weight:700}
+    .wo-share{display:flex;gap:6px;align-items:center;font-size:12.5px;color:var(--erp-muted)}
+    @media(max-width:900px){
+      .wo{grid-template-columns:1fr auto;gap:6px 10px}
+      .wo .ref{grid-column:1}.wo .acts{grid-column:2;grid-row:1}
+      .wo .cust,.wo .its{grid-column:1/-1}
+      .wo-top input{flex:1 1 160px;width:auto}
+      .wo-tabs{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;max-width:100%;flex:1 1 100%}
+      .wo-tab{flex:none;padding:6px 10px}
+      .wo-top .grow{display:none}
+    }
+  </style>
+</head>
+<body>
+  <div id="loading" class="status">Checking account access...</div>
+  <main id="page" class="erp-main" hidden>
+    <div class="erp-pagehead"><h1>🌐 Website Orders</h1><span class="grow"></span>
+      <span class="wo-share"><button type="button" class="sl-btn ghost small" id="copyLink">Copy order link</button><a class="sl-btn ghost small" id="waLink" target="_blank" rel="noopener">Send link on WhatsApp</a></span>
+    </div>
+    <div class="wo-top">
+      <div class="wo-tabs" id="tabs"></div><span class="grow"></span>
+      <input id="q" type="search" placeholder="W-no., mobile, shop, PO, SKU" aria-label="Search">
+      <button type="button" class="sl-btn ghost small" id="refresh">Refresh</button>
+    </div>
+    <div class="wo-list" id="list"></div>
+  </main>
+  <script>
+    const S=LWBSales,{client,el,esc}=S;
+    const LINK="https://luxurywristbrand.com/order.html";
+    const WHY={NEW_CUSTOMER:["New customer","red"],MANY_PARTIES:["Number on 2+ parties","amber"],SLIP_BRAND:["Slip brand","amber"]};
+    let rows=[],tab="WAITING";
+    const when=v=>{if(!v)return "";const s=(Date.now()-new Date(v))/1000;
+      if(s<60)return "just now";if(s<3600)return Math.floor(s/60)+" min ago";if(s<86400)return Math.floor(s/3600)+" hr ago";return LWBDate.dt(v)};
+    const setupMsg=m=>/lwb_web_orders/.test(m||"")?"Website orders are not set up yet (lwb_web_order_setup.sql).":m;
+
+    async function load(){
+      const r=await client.from("lwb_web_orders").select("*").order("created_at",{ascending:false}).limit(500);
+      if(r.error){el("list").innerHTML='<div class="sl-msg">'+esc(setupMsg(r.error.message))+"</div>";return}
+      rows=r.data||[];render();
+    }
+    function render(){
+      const TABS=[["WAITING","Waiting"],["PO_MADE","PO made"],["REJECTED","Rejected"],["","All"]];
+      const n=k=>rows.filter(x=>!k||x.status===k).length;
+      el("tabs").innerHTML=TABS.map(([k,t])=>'<button type="button" class="wo-tab'+(tab===k?" on":"")+(k==="WAITING"&&n(k)?" wait":"")+'" data-tab="'+k+'">'+t+"<span>"+n(k)+"</span></button>").join("");
+      const q=el("q").value.trim().toLowerCase();
+      const list=rows.filter(x=>(!tab||x.status===tab)&&(!q||["W-"+x.id,x.mobile,x.contact_name,x.shop_name,x.city,x.customer_name,x.order_no,x.brand_name,(x.items||[]).map(i=>i.sku).join(" ")].join(" ").toLowerCase().includes(q)));
+      el("list").innerHTML=list.length?list.map(item).join(""):'<div class="erp-empty">'+(tab==="WAITING"?"Nothing waiting. Orders from known parties become POs by themselves (PO / Sales > Pending Review).":"No website order here.")+"</div>";
+    }
+    function item(x){
+      const items=x.items||[],cases=items.reduce((a,i)=>a+Number(i.qty||0),0);
+      const wa="https://wa.me/91"+x.mobile+"?text="+encodeURIComponent("Hello "+x.contact_name+", Luxury Wrist Brand here about your order W-"+x.id+".");
+      let st;
+      if(x.status==="PO_MADE")st='<a class="erp-badge green" href="warehouse-orders.html?order='+encodeURIComponent(x.order_id||"")+'">PO '+esc(x.order_no||"")+" ›</a>";
+      else if(x.status==="REJECTED")st='<span class="erp-badge">Rejected</span>';
+      else{const w=WHY[x.wait_reason]||["Waiting","amber"];st='<span class="erp-badge '+w[1]+'">'+esc(w[0])+"</span>"}
+      const parties=(x.matched_parties||[]).map(p=>p.name).join(", ");
+      const acts=x.status==="WAITING"
+        ?'<a class="sl-btn" href="order-entry.html?web='+x.id+'">Make PO</a><button type="button" class="sl-btn ghost" data-reject="'+x.id+'">Reject</button>'
+        :"";
+      return '<div class="wo'+(x.status==="WAITING"?" waiting":"")+'">'+
+        '<div class="ref"><b>W-'+x.id+"</b><small>"+esc(when(x.created_at))+(x.channel==="WHATSAPP"?" · WhatsApp":"")+'</small><span class="why">'+st+"</span></div>"+
+        '<div class="cust"><b>'+esc(x.customer_name||x.shop_name||x.contact_name)+"</b><small>"+
+          esc([x.customer_name?x.shop_name:"",x.contact_name,x.city].filter(Boolean).join(" · "))+' · <a href="tel:+91'+esc(x.mobile)+'">'+esc(x.mobile)+'</a> · <a href="'+esc(wa)+'" target="_blank" rel="noopener">WhatsApp</a></small>'+
+          (parties&&x.status==="WAITING"?'<small class="why">Parties with this number: '+esc(parties)+"</small>":"")+"</div>"+
+        '<div class="its"><b>'+esc(x.brand_name||"")+" · "+cases+" CS · "+items.length+" SKU</b><br>"+items.map(i=>esc(i.sku)+" <b>"+Number(i.qty)+"</b>").join(" · ")+
+          (x.note?'<span class="note">📝 '+esc(x.note)+"</span>":"")+
+          (x.status==="REJECTED"&&x.reject_reason?'<span class="note">Reason: '+esc(x.reject_reason)+"</span>":"")+
+          (x.status!=="WAITING"&&x.handled_by_name?"<small> · "+esc(x.handled_by_name)+"</small>":"")+"</div>"+
+        '<div class="acts">'+acts+"</div></div>";
+    }
+    async function reject(id){
+      const why=prompt("Reject W-"+id+"? Reason (e.g. fake order, duplicate):","");
+      if(why===null)return;
+      const {error}=await client.rpc("lwb_web_order_reject",{p_id:id,p_reason:why});
+      if(error){await alert("Could not reject: "+setupMsg(error.message));return}
+      ERPShell.toast("W-"+id+" rejected.");load();
+    }
+
+    (async()=>{
+      const me=await S.start(["admin","manager"]);if(!me)return;
+      el("waLink").href="https://wa.me/?text="+encodeURIComponent("Order online from Luxury Wrist Brand: pick products and cases, tap Send. "+LINK);
+      el("copyLink").onclick=async()=>{try{await navigator.clipboard.writeText(LINK);ERPShell.toast("Link copied: "+LINK)}catch(e){prompt("Copy this link:",LINK)}};
+      document.addEventListener("click",e=>{
+        const t=e.target.closest("[data-tab]");if(t){tab=t.dataset.tab;render();return}
+        const r=e.target.closest("[data-reject]");if(r){reject(Number(r.dataset.reject));return}
+      });
+      el("q").addEventListener("input",render);el("refresh").onclick=load;
+      document.addEventListener("visibilitychange",()=>{if(!document.hidden)load()});
+      el("loading").hidden=true;el("page").hidden=false;
+      await load();
+      if(tab==="WAITING"&&!rows.some(x=>x.status==="WAITING")&&rows.length){tab="";render()}
+    })();
+  </script>
+</body>
+</html>

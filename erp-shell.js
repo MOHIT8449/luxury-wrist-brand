@@ -117,6 +117,8 @@
       {t:"New PO / Sales Order",h:"order-entry.html",i:"cart",r:"admin manager sales",k:"new order entry po",pt:"PO / Sales Order (new PO)",nm:"admin manager sales",par:"warehouse-orders.html my-sales.html#orders"},
       {t:"PO / Sales",h:"warehouse-orders.html",i:"note",r:"admin manager accounts",k:"po approval driver warehouse orders",pt:"PO / Sales List (all POs; approve for Admin / Sales Head)"},
       {t:"PO / Sales",h:"my-sales.html#orders",i:"note",r:"sales",k:"my orders modify",pt:"PO / Sales List (Salesman's own orders)"},
+      // Website Orders (Mohit, 20 Nov 2026): orders customers send from luxurywristbrand.com/order.html (lwb_web_order_setup.sql).
+      {t:"Website Orders",h:"web-orders.html",i:"cart",r:"admin manager",k:"website online customer order web shop retailer whatsapp link",pt:"Website Orders (customer orders from the website)"},
       // Rajnigandha (Mohit, 4 Nov 2026): no own menu items. A Rajnigandha PO prints its slip from PO / Sales
       // (Print), its waiting POs show on top of that list; the rate list is the Rajnigandha tab of Rate List.
       {t:"Rajnigandha Slips",h:"quick-slip.html",i:"note",r:"admin manager accounts sales",k:"rajnigandha slip parchi thermal print kachcha",vo:"accounts",nm:"admin manager accounts sales",par:"warehouse-orders.html my-sales.html#orders"},
