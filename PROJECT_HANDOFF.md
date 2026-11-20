@@ -1246,3 +1246,6 @@
 - PO / Sales Party due popup: Party ledger / Outstanding open in a new tab; each bill opens tax-invoice.html in a new tab.
 - Remarks (lwb_payment_remarks_setup.sql): Admin / Sales Head write a note on a party or one bill (quick chips + free text); Accounts reads; Accounts, Cashier, Admin, Sales Head get a PAYMENT_FOLLOWUP bell. Latest remark shows under the Party Due cell.
 - Party Due column sorts by amount (erp-colfilter.js `sortNum`); "💰 Outstanding" pill = total due of the parties in the list shown.
+
+### Party fix: Shree Dev Trading (Sachin) into Shree Bherunath (20 Nov 2026)
+- Mohit: SHREE DEV TRADING (SACHIN) and SHREE BHERUNATH TREDING-(SACHIN) are one shop. One-time `lwb_party_fix_shree_dev_trading.sql` (auto-applied on merge): backs up every affected row to `lwb_party_fix_backup` (JSON), writes before / after counts to `lwb_party_fix_log`, renames every customer_name / party / party_name / party_key of the old party to Shree Bherunath, runs `lwb_merge_party` (id links, Tally name link) and deletes the old party (`lwb_delete_customer`). Rolls back if any PO / bill / payment is left on the old name. SHREE DEV COLDRINK (SAYAN) is a different party, not touched. Test `tests/party-fix-shree-dev` (PGlite).
