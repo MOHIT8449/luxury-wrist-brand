@@ -51,6 +51,7 @@ LANGUAGE sql AS $$
 for(const [role,id] of Object.entries(ids))await db.query('insert into user_profiles values($1,$2,true,$3)',[id,role,role.toUpperCase()]);
 await db.exec(await readFile(new URL('../../lwb_sales_head_outstanding_setup.sql',import.meta.url),'utf8'));
 await db.exec(await readFile(new URL('../../lwb_payment_remarks_setup.sql',import.meta.url),'utf8'));
+await db.exec(await readFile(new URL('../../lwb_payment_remarks_accounts.sql',import.meta.url),'utf8'));
 await db.exec('GRANT USAGE ON SCHEMA public,auth TO authenticated');
 async function as(role){await db.query("select set_config('request.jwt.claim.sub',$1,false)",[ids[role]])}
 async function q(sql,args){await db.exec('SET ROLE authenticated');try{return (await db.query(sql,args)).rows}finally{await db.exec('RESET ROLE')}}
@@ -144,10 +145,11 @@ test('Payment remarks: Sales Head / Admin write on a party or a bill; Accounts r
   const list=await q('select * from lwb_payment_remark_list(120)');
   assert.deepEqual(list.map(x=>[x.party,x.order_no,x.note,x.by_role]),[
     ['RAM TRADERS','LXY-2','payment aa gaya, Tally kar lo','admin'],['RAM TRADERS',null,'payment kal aayega','manager']]);
-  await assert.rejects(q('select lwb_payment_remark_add($1,null,$2)',['RAM TRADERS','x']),/Only Sales Head or Admin/);
+  const r3=(await q('select lwb_payment_remark_add($1,null,$2) as j',['RAM TRADERS','payment aa gaya, Tally done']))[0].j;
+  assert.equal(r3.by_role,'accounts');
   for(const role of ['sales','cashier','warehouse']){
     await as(role);
-    await assert.rejects(q('select lwb_payment_remark_add($1,null,$2)',['RAM TRADERS','x']),/Only Sales Head or Admin/);
+    await assert.rejects(q('select lwb_payment_remark_add($1,null,$2)',['RAM TRADERS','x']),/Only Admin, Sales Head or Accounts/);
     await assert.rejects(q('select * from lwb_payment_remark_list(120)'),/Sales Head only/);
   }
 });

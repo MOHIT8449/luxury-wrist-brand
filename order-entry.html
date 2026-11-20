@@ -642,6 +642,9 @@ dialog.setup-dlg{position:fixed;inset:0;margin:auto;height:fit-content}
 .setup-dlg .su-body .tp-chips button,.setup-dlg .su-body .prio-chips button{min-height:42px}
 .setup-dlg .su-body .prio-tools{display:flex;margin-top:10px}
 .setup-dlg .su-go{width:100%;min-height:44px;font-size:15px}
+/* Transport not picked on Submit (Mohit, 20 Nov 2026): red outline until one is chosen. */
+#tpGroup.tp-missing{outline:2px solid #d93025;outline-offset:4px;border-radius:8px}
+#tpGroup.tp-missing>label{color:#d93025}
 @media(max-width:640px){
   #oeMain #brandPick,#oeMain #tpGroup,#oeMain #prioGroup{display:none!important}
   #oeMain .setup-sum:not([hidden]){display:flex;flex-wrap:wrap;align-items:center;gap:2px;width:100%;margin-top:6px;padding:7px 10px;border:1px solid #d6dde6;border-radius:7px;background:#f6f8fb;font:inherit;font-size:13px;color:#3b4654;text-align:left;cursor:pointer}
@@ -799,7 +802,7 @@ dialog.setup-dlg{position:fixed;inset:0;margin:auto;height:fit-content}
       </div>
 
       <div class="form-group" id="tpGroup">
-        <label for="transportation">Transportation (Optional)</label>
+        <label for="transportation">Transportation *</label>
         <select id="transportation" class="form-control" onchange="toggleVehicleField();syncSlabToTransport();calculateTotals()">
           <option value="">Select Transportation</option>
           <option value="SELF PICKUP">SELF PICKUP</option>
@@ -2300,6 +2303,7 @@ function setQuantityMode(mode, force=false, after=null) {
 
 /* TRANSPORTATION / VEHICLE */
 function toggleVehicleField(){
+  if(document.getElementById("transportation").value) document.getElementById("tpGroup").classList.remove("tp-missing");
   const select = document.getElementById("transportation");
   const mode = select.value;
   if(mode !== "DIRECT VEHICLE" && quantityMode === "PALLET" && !setQuantityMode("CS", false, () => {select.value = mode; toggleVehicleField();})){
@@ -2685,6 +2689,17 @@ async function saveOrder(){
     return;
   }
   const slipName = split.brands[0] || "";
+  // Transport is compulsory on every normal PO (Mohit, 20 Nov 2026). A quick slip PO alone needs none.
+  if(split.other.length && !transportationType){
+    const g = document.getElementById("tpGroup");
+    g.classList.add("tp-missing");
+    g.scrollIntoView({block:"center", behavior:"smooth"});
+    await alert("Select Transport first: Delivery, Self pickup or Direct vehicle.\n\nTransport is compulsory on every PO.");
+    if(isPhone()){ openOrderSetup(); return; } // phone: Transport sits in the setup popup
+    const chip = document.querySelector("#tpChips button");
+    (chip && chip.offsetParent ? chip : document.getElementById("transportation")).focus();
+    return;
+  }
   if(split.slip.length && split.other.length && !await confirm(
     "This order has " + slipName + " and other brand SKUs. 2 POs will be saved:\n\n" +
     "1. " + slipName + " (" + split.slip.length + " SKU): slip prints, goes straight to Accounts.\n" +
