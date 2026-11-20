@@ -129,7 +129,7 @@ const { chromium } = require('playwright');
   const p = await ctx.newPage(); const hits = {};
   p.on('response', r => { const u = new URL(r.url()); if (u.host.includes('supabase')) hits[u.host + ' ' + r.status()] = (hits[u.host + ' ' + r.status()] || 0) + 1; });
   for (const pg of ['login.html']) {
-    await p.goto('https://claude-mumbai-switch.luxury-wrist-brand.pages.dev/' + pg, { waitUntil: 'networkidle', timeout: 60000 });
+    await p.goto('https://luxury-wrist-brand.pages.dev/' + pg, { waitUntil: 'networkidle', timeout: 60000 });
     await p.waitForTimeout(3000);
     await p.screenshot({ path: process.env.GITHUB_WORKSPACE + '/shots/' + pg.replace('.html', '') + '.png' });
   }
