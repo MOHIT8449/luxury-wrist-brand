@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><script src="erp-fit.js"></script>
 <title>Transport Allocation | Luxury Wrist Brand</title>
 <script src="erp-date.js"></script><script src="erp-recent.js"></script><script src="erp-order-days.js"></script>
 <script src="vendor/supabase-js-2.119.0.js"></script><script src="page-role.js"></script>
@@ -59,9 +59,9 @@ tr.sgh.done td{background:#e9f8ef;border-top-color:#a6dfbd}
 <div class="field full"></div></div><div class="actions"><button type="button" class="secondary" id="closeBottom">Close</button><button type="submit" class="green" id="save">Save Allocation</button></div></form></div></section></div>
 <script>
 'use strict';
-const SUPABASE_URL='https://txkbhadzdbxpieunfvox.supabase.co';
+const SUPABASE_URL='https://qstgwhbgbznxemajtave.supabase.co';
 // Browser publishable key, matching the existing login.html configuration.
-const SUPABASE_PUBLISHABLE_KEY='sb_publishable_W4I3Q5ODf0g17sq5uDml2Q_sLolXYEk';
+const SUPABASE_PUBLISHABLE_KEY='sb_publishable_YA2Pow327REqgrWPzVCZiA_nw1F32_o';
 const db=supabase.createClient(SUPABASE_URL,SUPABASE_PUBLISHABLE_KEY);
 let user=null,orders=[],assignments=[],selected=null,busy=false;
 // Trips (trip-rent.js + lwb_trip_rent_setup.sql): picked POs go in one trip; Own / Transport / Porter + Porter rent.
@@ -115,7 +115,8 @@ let taTab='merge';try{const t=localStorage.getItem('lwbTaTab');if(TA_TABS.some(x
 const isSelfPickupTA=o=>String(o&&o.transportation||'').split('|')[0].trim().toUpperCase()==='SELF PICKUP';
 const fullKg=()=>{try{return Number(localStorage.getItem('lwbFullLoadKg'))||3000;}catch(_){return 3000;}};
 const isFullTA=o=>(Number(o.total_weight)||0)>=fullKg();
-const loadingStarted=o=>['loading','loaded','invoiced'].includes(status(o.status));
+// Change allowed until loading is CONFIRMED (Mohit, 19 Nov 2026); after that only Admin, from the PO page.
+const loadingStarted=o=>['loaded','invoiced'].includes(status(o.status));
 function taLists(){const ready=orders.filter(o=>stage(o)==='ready'),alloc=orders.filter(o=>stage(o)==='allocated');
   return {merge:ready.filter(o=>!isSelfPickupTA(o)&&!isFullTA(o)),full:ready.filter(o=>!isSelfPickupTA(o)&&isFullTA(o)),assigned:alloc.filter(o=>!loadingStarted(o)),pickup:ready.filter(isSelfPickupTA),all:[...ready,...alloc]};}
 function render(){const available=orders.filter(o=>stage(o)==='ready'||stage(o)==='allocated');$('approvedCount').textContent=available.filter(o=>stage(o)==='ready').length;$('allocatedCount').textContent=available.filter(o=>stage(o)==='allocated').length;$('totalCount').textContent=available.length;
@@ -247,8 +248,8 @@ async function saveAllocation(e){
         const latest=await db.from('orders').select('status').eq('id',current.id).single();
         if(latest.error)throw latest.error;
         const latestStatus=status(latest.data.status);
-        if(!['approved','approved_next','manager_approved','warehouse_approved','transport_allocated','allocated'].includes(latestStatus))
-          throw Error('no longer available for transport assignment. Loading or billing may have started.');
+        if(!['approved','approved_next','manager_approved','warehouse_approved','transport_allocated','allocated','loading'].includes(latestStatus))
+          throw Error('no longer available for transport assignment. Loading is confirmed.');
         let result;
         if(existing){
           result=await db.from('dispatch_assignments').update(payload).eq('id',existing.id).select('id').single();
@@ -256,7 +257,7 @@ async function saveAllocation(e){
           result=await db.from('dispatch_assignments').insert(payload).select('id').single();
         }
         if(result.error)throw result.error;
-        if(latestStatus!=='transport_allocated'){
+        if(latestStatus!=='transport_allocated'&&latestStatus!=='loading'){
           const {data:updated,error:orderError}=await db.from('orders')
             .update({status:'transport_allocated'}).eq('id',current.id)
             .eq('status',latest.data.status).select('id');

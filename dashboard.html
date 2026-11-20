@@ -2,14 +2,14 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"><script src="erp-fit.js"></script>
   <title>Dashboard | Luxury Wrist Brand ERP</title>
   <script src="erp-date.js"></script>
   <script src="vendor/supabase-js-2.119.0.js"></script>
   <link rel="stylesheet" href="erp-shell.css">
   <script src="erp-shell.js"></script>
   <script src="party-pay.js"></script>
-  <script src="brand-filter.js"></script><script src="sku-rank.js"></script>
+  <script src="brand-filter.js"></script><script src="erp-period.js" data-roles="admin"></script><script src="sku-rank.js"></script>
   <script src="role-dashboard.js"></script>
   <script src="admin-business.js"></script>
   <script src="erp-list.js"></script>
@@ -45,6 +45,14 @@
     .hero-results a:hover,.hero-results a.active{background:var(--erp-red-soft)}
     .acc-dash{display:flex;align-items:center;gap:12px;margin:0 0 16px;padding:14px 16px;border-radius:10px;background:#002f37;color:#fff;text-decoration:none}
     .acc-dash[hidden]{display:none}
+    /* Admin: who runs the cash box right now (cash handover) */
+    .cashbox{display:flex;align-items:center;flex-wrap:wrap;gap:6px 12px;margin:0 0 14px;padding:10px 14px;border:1px solid #c5d7f5;border-left:4px solid #2362a4;border-radius:10px;background:#f4f8ff;font-size:14px}
+    .cashbox[hidden]{display:none}.cashbox .cb-ic{font-size:20px}.cashbox b.cb-who{font-size:16px;color:#123a6b}
+    .cashbox .cb-sub{color:#5b6775;font-size:12.5px}.cashbox .cb-amt{font-weight:800;color:#147d4c}
+    .cashbox .cb-tag{background:#fff6df;color:#956000;border-radius:99px;padding:1px 8px;font-size:12px;font-weight:700}
+    .cashbox .cb-act{margin-left:auto;display:flex;gap:6px}
+    .cashbox .cb-act a{display:inline-flex;align-items:center;gap:4px;padding:6px 12px;border-radius:8px;font-weight:700;font-size:13px;text-decoration:none;border:1px solid #c9d3df;background:#fff;color:#123a6b;white-space:nowrap}
+    .cashbox .cb-act a.call{background:#147d4c;border-color:#147d4c;color:#fff}
     /* Approvals waiting (approvals.js, Mohit 7 Nov 2026): only "Waiting approval N" next to the Admin view dropdown; tap = Approvals. */
     .ap-pill{display:inline-flex;align-items:center;gap:6px;height:34px;padding:0 10px;border-radius:6px;border:1px solid #f0c36a;background:#fff8e1;color:#3d2c00;font-size:13px;font-weight:600;text-decoration:none;white-space:nowrap}
     .ap-pill b{min-width:22px;height:22px;border-radius:11px;background:var(--erp-danger,#c62828);color:#fff;font-size:12.5px;line-height:22px;text-align:center;padding:0 6px;animation:apBlink 1.6s ease-in-out 3}
@@ -134,6 +142,18 @@
     .tk-dash-row.late{box-shadow:inset 3px 0 0 var(--erp-danger,#c62828)}
     .tk-dash-row.today{box-shadow:inset 3px 0 0 var(--erp-amber)}
     .tk-dash-none{padding:10px 14px;color:var(--erp-muted);font-size:13px}
+    /* Pending-task strip (Mohit, 19 Nov 2026): every login sees "you have N pending tasks"; Admin also sees the team total. */
+    .tk-alert{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 12px}
+    .tk-al{flex:1 1 300px;display:flex;align-items:center;gap:8px;padding:8px 12px;border-radius:8px;border:1px solid #f1d29a;background:#fff8e8;color:#7a4a00;text-decoration:none;font-size:13.5px;min-width:0}
+    .tk-al.late{border-color:#f0b4ae;background:#fdecea;color:#9b1c1c}
+    .tk-al.team{border-color:var(--erp-line);background:#fff;color:var(--erp-ink)}
+    .tk-al .ic{font-size:17px;flex:none}
+    .tk-al .tx{flex:1;min-width:0}
+    .tk-al .tx b{font-size:15px}
+    .tk-al .tx small{display:block;font-size:12px;opacity:.85}
+    .tk-al .n-late{color:#c62828;font-weight:700}
+    .tk-al .go{flex:none;font-weight:700;font-size:12.5px;white-space:nowrap;border-radius:6px;padding:5px 10px;background:#7a4a00;color:#fff}
+    .tk-al.late .go{background:#c62828}.tk-al.team .go{background:var(--erp-red)}
     [hidden]{display:none!important}
     @media(max-width:1100px){.dash-grid{grid-template-columns:1fr}.side-col{display:contents}#verifyCard{order:-1}}
     @media(max-width:980px){.hero{margin:-14px -12px 0;padding:18px 12px 60px}.hero h2{font-size:18px}
@@ -208,7 +228,9 @@
       </div>
     </div>
     <div class="kpis" id="kpis"></div>
-    <a class="acc-dash" id="accDash" href="accounts-dashboard.html" hidden><span class="acc-ic">₹</span><span><b>Accounts Dashboard</b><small>Today's cash in / cash out, bank deposit, cash handover, bank check</small></span><span class="acc-go">Open →</span></a>
+    <div class="tk-alert" id="taskAlert" hidden></div>
+    <a class="acc-dash" id="accDash" href="accounts-dashboard.html" hidden><span class="acc-ic">₹</span><span><b>Accounts</b><small>Today's cash in / cash out, bank deposit, cash handover, bank check</small></span><span class="acc-go">Open →</span></a>
+    <div class="cashbox" id="cashBox" hidden></div>
     <div class="banners" id="banners" hidden></div>
     <div class="focus" id="focus"></div>
     <form class="focus-form" id="focusForm" hidden autocomplete="off">
@@ -255,10 +277,10 @@
   <script>
 
     const SUPABASE_URL =
-      "https://txkbhadzdbxpieunfvox.supabase.co";
+      "https://qstgwhbgbznxemajtave.supabase.co";
 
     const SUPABASE_PUBLISHABLE_KEY =
-      "sb_publishable_W4I3Q5ODf0g17sq5uDml2Q_sLolXYEk";
+      "sb_publishable_YA2Pow327REqgrWPzVCZiA_nw1F32_o";
 
     const client = supabase.createClient(
       SUPABASE_URL,
@@ -346,9 +368,9 @@
     async function loadTasks(){
       const card=document.getElementById("taskCard");
       const tb=document.getElementById("taskBtn"),gb=document.getElementById("giveBtn"),tn=document.getElementById("taskN");
-      if(ERPShell.hiddenPages().includes("tasks.html")){card.hidden=true;tb.hidden=true;gb.hidden=true;return}
+      if(ERPShell.hiddenPages().includes("tasks.html")){card.hidden=true;tb.hidden=true;gb.hidden=true;document.getElementById("taskAlert").hidden=true;return}
       const [mine,given]=await Promise.all([
-        client.from("lwb_tasks").select("id,title,details,due_date,priority,status,assigned_by_name").eq("assigned_to",taskUid).in("status",["OPEN","IN_PROGRESS"]).order("due_date").limit(50),
+        client.from("lwb_tasks").select("id,title,details,due_date,priority,status,assigned_by_name").eq("assigned_to",taskUid).in("status",["OPEN","IN_PROGRESS"]).order("due_date").limit(300),
         client.from("lwb_tasks").select("id,due_date,status").eq("assigned_by",taskUid).neq("assigned_to",taskUid).in("status",["OPEN","IN_PROGRESS"]).limit(1000)]);
       if(mine.error){card.hidden=true;tb.hidden=true;gb.hidden=true;return}
       const today=new Date().toLocaleDateString("en-CA",{timeZone:"Asia/Kolkata"});
@@ -386,6 +408,29 @@
       if(!tb.dataset.on){tb.dataset.on="1";tb.onclick=()=>{const open=card.hidden;card.hidden=!open;tb.setAttribute("aria-expanded",String(open))}}
       card.hidden=tb.getAttribute("aria-expanded")!=="true";
       taskPopup(rows.filter(x=>late(x)>=0),late,today);
+      taskAlert(rows,lateN,late);
+    }
+    // Strip under the KPIs: "You have N pending tasks, please complete them" (red when one is overdue).
+    // Admin: one more box with every person's pending tasks -> tasks.html?tab=ALL (all staff list).
+    async function taskAlert(rows,lateN,late){
+      const box=document.getElementById("taskAlert");
+      let h="";
+      if(rows.length){
+        const oldest=rows.reduce((m,x)=>Math.max(m,late(x)),-1e9);
+        h+='<a class="tk-al'+(lateN?" late":"")+'" href="tasks.html"><span class="ic">'+(lateN?"⚠️":"📋")+'</span><span class="tx">You have <b>'+rows.length+" pending task"+(rows.length>1?"s":"")+"</b>"+
+          (lateN?' · <span class="n-late">'+lateN+" overdue</span>":"")+"<small>"+(lateN?"Oldest is "+oldest+" day"+(oldest>1?"s":"")+" late. ":"")+"Please complete them and press ✅ Mark done.</small></span>"+
+          '<span class="go">Complete now →</span></a>';
+      }
+      if(currentRole==="admin"){
+        const r=await client.from("lwb_tasks").select("assigned_to,due_date").in("status",["OPEN","IN_PROGRESS"]).limit(5000);
+        const all=r.error?[]:r.data||[];
+        if(all.length){
+          const tl=all.filter(x=>late(x)>0),ppl=new Set(all.map(x=>x.assigned_to)).size,lp=new Set(tl.map(x=>x.assigned_to)).size;
+          h+='<a class="tk-al team" href="tasks.html?tab=ALL"><span class="ic">👥</span><span class="tx">Staff tasks: <b>'+all.length+" pending</b>"+(tl.length?' · <span class="n-late">'+tl.length+" overdue</span>":"")+
+            "<small>"+ppl+" "+(ppl>1?"people":"person")+" have pending work"+(lp?" · "+lp+" late":"")+"</small></span>"+'<span class="go">See all tasks →</span></a>';
+        }
+      }
+      box.innerHTML=h;box.hidden=!h;
     }
     // Today's tasks popup (Mohit, 17 Nov 2026): when the salesman opens the ERP, tasks due today / overdue
     // (e.g. "Follow up 8 parties · bring 5 orders" from Party Buying) pop up once. A new task pops up again.
@@ -481,6 +526,35 @@
       });
       document.addEventListener("click",e=>{if(!e.target.closest(".hero-search"))box.classList.remove("open")});
     }
+    // Admin: who has the cash box now, so Admin can call that person (lwb_acc_shift_list).
+    async function loadCashBox(){
+      const box=document.getElementById("cashBox");
+      let r=null;try{r=await client.rpc("lwb_acc_shift_list",{p_from:null,p_to:null})}catch(e){}
+      if(!r||r.error||!r.data){box.hidden=true;return}
+      const S=r.data,H=S.holder,P=S.pending,L=S.last_entry,RN={admin:"Admin",accounts:"Accounts",cashier:"Cashier"};
+      const t=v=>v?new Date(v).toLocaleTimeString("en-IN",{hour:"2-digit",minute:"2-digit",hour12:true,timeZone:"Asia/Kolkata"}):"";
+      const d=v=>v?new Date(v).toLocaleDateString("en-GB",{day:"2-digit",month:"2-digit",timeZone:"Asia/Kolkata"}):"";
+      const rs=v=>"₹"+fmtINR(Math.round(Number(v)||0));
+      const who=H&&(H.today||!L)?{id:H.id,name:H.name,role:H.role,mobile:H.mobile,sub:"since "+t(H.since)+(H.today?"":" "+d(H.since))+" · got "+rs(H.amount)}
+        :L?{id:L.id,name:L.name,role:L.role,mobile:L.mobile,sub:"no handover today · last cash entry "+t(L.at)}:null;
+      const add=(tag,cls,text)=>{const e=document.createElement(tag);if(cls)e.className=cls;if(text!=null)e.textContent=text;box.appendChild(e);return e};
+      const call=(m,label)=>{const a=document.createElement("a");a.className="call";a.href="tel:"+String(m).replace(/[^\d+]/g,"");a.textContent="📞 "+label;return a};
+      box.replaceChildren();
+      add("span","cb-ic","💼");
+      const main=add("span");
+      main.append(document.createTextNode("Cash box now: "));
+      const b=document.createElement("b");b.className="cb-who";b.textContent=who?who.name:"Nobody yet today";main.appendChild(b);
+      if(who&&RN[who.role])main.append(document.createTextNode(" · "+RN[who.role]));
+      if(who)add("span","cb-sub",who.sub);
+      if(P){const p=add("span","cb-tag","Handing to "+P.to_name+" · "+rs(P.counted)+" · waiting");p.title="Handed at "+t(P.at)}
+      const act=add("span","cb-act");
+      if(who&&who.mobile&&who.id!==S.me)act.appendChild(call(who.mobile,"Call "+String(who.name).split(/\s+/)[0]));
+      else if(who&&who.id!==S.me){const n=document.createElement("span");n.className="cb-sub";n.textContent="No mobile saved (Users page)";act.appendChild(n)}
+      if(P&&P.to_mobile&&P.to!==S.me)act.appendChild(call(P.to_mobile,"Call "+String(P.to_name).split(/\s+/)[0]));
+      const o=document.createElement("a");o.href="accounts-dashboard.html?tab=close#cash";o.textContent="Open →";act.appendChild(o);
+      box.hidden=false;
+    }
+
     async function loadSummary(){
       const role=currentRole,pills=document.getElementById("pills");
       const jobs=[];
@@ -684,11 +758,11 @@
       document.getElementById("focus").addEventListener("click",onRemove);
       document.getElementById("banners").addEventListener("click",onRemove);
     }
-    document.getElementById("refreshBtn").onclick=()=>{loadSummary();loadFocus();loadVerify();loadTasks();if(window.LWBRoleDash)LWBRoleDash.refresh()};
+    document.getElementById("refreshBtn").onclick=()=>{loadSummary();if(currentRole==="admin")loadCashBox();loadFocus();loadVerify();loadTasks();if(window.LWBRoleDash)LWBRoleDash.refresh()};
     // Role-wise home (role-dashboard.js): Admin, Sales Head, Accounts, Godown Manager, Salesman.
     // Driver / Transport keep the order-status Dashboard below. Admin can look at another role's view.
     const ROLE_NOTE={admin:"Whole business at one place: sales, money, stock, team.",manager:"PO approval, team target, delivery follow-up.",
-      accounts:"Cash in / out, bank match, orders on the way, returns.",warehouse:"Orders assigned to me for loading, returns, damage.",sales:"Today's plan, my target, my orders, my parties."};
+      accounts:"Cash in / out, bank match, orders on the way, returns.",warehouse:"Only my work: loading, purchase unloading and photos, my tasks.",sales:"Today's plan, my target, my orders, my parties."};
     function roleDashboard(role,name,uid,plan){
       if(!window.LWBRoleDash||!LWBRoleDash.has(role))return false;
       const main=document.getElementById("dashboard"),head=main.querySelector(".erp-pagehead"),welcome=document.getElementById("welcomeText");
@@ -759,6 +833,8 @@
         }
 
         const role = String(profile.role || "").toLowerCase();
+        // Cashier (20 Nov 2026): only the cash book, so Home = Cashier page
+        if (role === "cashier") { window.location.replace("accounts-dashboard.html#cash"); return; }
 
         if (!["admin", "manager", "accounts", "sales", "warehouse", "transport", "driver"].includes(role)) {
 
@@ -789,6 +865,7 @@
         heroSearch();
         roleDashboard(role,profile.full_name,user.id,plan);
         loadSummary();
+        if(role==="admin"){loadCashBox();setInterval(()=>{if(!document.hidden)loadCashBox()},60000)}
         loadVerify();setInterval(()=>{if(!document.hidden)loadVerify()},60000);
         if(["admin","manager"].includes(role)&&!ERPShell.hiddenPages().includes("approvals.html")){loadApprovals(user.id);setInterval(()=>{if(!document.hidden)loadApprovals(user.id)},60000)}
         loadFocus();focusSetup();

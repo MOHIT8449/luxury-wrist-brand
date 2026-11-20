@@ -14,7 +14,7 @@
   // on the lock screen still ends the session fully.
   function unlockUid(){
     try{
-      const t=JSON.parse(localStorage.getItem("sb-txkbhadzdbxpieunfvox-auth-token")||"null");
+      const t=JSON.parse(localStorage.getItem("sb-qstgwhbgbznxemajtave-auth-token")||"null");
       const uid=t&&t.user&&t.user.id;return uid&&lockOn(uid)?uid:"";
     }catch(e){return ""}
   }
@@ -56,6 +56,12 @@
   if(!window.ERPCaps&&!document.querySelector('script[src*="erp-caps.js"]')){
     const cur=document.currentScript,base=cur&&cur.src?cur.src.replace(/[^/]*$/,""):"";
     const s=document.createElement("script");s.src=base+"erp-caps.js";
+    (document.head||document.documentElement).appendChild(s);
+  }
+  // Excel-style filter on every list table + page search (erp-autofilter.js, 20 Nov 2026).
+  if(!window.LWBAuto&&!document.querySelector('script[src*="erp-autofilter.js"]')){
+    const cur=document.currentScript,base=cur&&cur.src?cur.src.replace(/[^/]*$/,""):"";
+    const s=document.createElement("script");s.src=base+"erp-autofilter.js";
     (document.head||document.documentElement).appendChild(s);
   }
   const ICON={
@@ -118,6 +124,8 @@
       {t:"My Sales",h:"my-sales.html",i:"chart",r:"sales"},
       // Party Rate Offer (Mohit, 16 Nov 2026): rate per case given to one party, category-wise, with (i) past rates.
       {t:"Party Rate Offer",h:"party-rates.html",i:"tag",r:"admin manager",k:"party rate offer quotation category pack per case given history whatsapp"},
+      // Outstanding (Mohit, 20 Nov 2026): Sales Head sees unpaid / part-paid bills, party-wise dues, ledger; tells Accounts.
+      {t:"Outstanding",h:"sales-outstanding.html",i:"cash",r:"admin manager",k:"outstanding payment pending due unpaid part paid bills party wise ledger collection baki udhar tell accounts cashier"},
       {t:"Party Call List",h:"party-calls.html",i:"phone",r:"admin manager sales"},
       {t:"Outside Market Stock",h:"market-report.html",i:"pin",r:"admin manager sales"},
       {t:"Sales Tracking",h:"sales-tracking.html",i:"chart",r:"admin manager"},
@@ -135,7 +143,7 @@
       // One "Purchase" item (Mohit, 4 Nov 2026): the list, with "+ New Purchase" on top. Purchase Entry is
       // not drawn in the side menu (nm) but stays in search and Manage Users; its list item is lit (par).
       {t:"New Purchase (Goods Inward)",h:"goods-inward.html",i:"inbox",r:"admin manager",k:"goods inward purchase bill new entry",pt:"Purchase Entry (Goods Inward)",nm:"admin manager",par:"purchase-register.html"},
-      {t:"Purchase",h:"purchase-register.html",i:"note",r:"admin manager warehouse accounts",k:"purchase register bills verify damage photo",pt:"Purchase List / Register",vo:"accounts"},
+      {t:"Purchase",h:"purchase-register.html",i:"note",r:"admin manager warehouse accounts",k:"purchase register bills verify damage photo",pt:"Purchase List / Register"},
       // ECRS (Mohit, 16 Nov 2026): company's daily allowed quantity, our truck orders (Order 1, 2, 3), payment.
       {t:"ECRS Order",h:"ecrs.html",i:"note",r:"admin manager",k:"ecrs acrs company order truck pallet gr discount rtgs coca cola"},
       {t:"Purchase Claims",h:"purchase-claims.html",i:"inbox",r:"admin manager",k:"damage leakage shortage claim"}]},
@@ -154,11 +162,17 @@
       {t:"Driver Delivery / POD",h:"driver-delivery.html",i:"pin",r:"admin manager driver accounts",nm:"accounts"},
       {t:"Live Tracking",h:"live-tracking.html",i:"pin",r:"admin"}]},
     {group:"Accounts",items:[
-      {t:"Accounts Dashboard",h:"accounts-dashboard.html",i:"cash",r:"admin accounts"},
+      // Accounts in one place (Mohit, 19 Nov 2026): Billing & Outstanding + Accounts Dashboard = one "Accounts" page
+      // (one header, one tab row, acc-hub.js). Billing tabs are party-billing.html, Cash & Bank tabs accounts-dashboard.html.
+      // Split by work (Mohit, 20 Nov 2026), same two files, view in the hash (acc-hub.js):
+      // Accounts · Tally (Yogesh bhai: Tally bills, bank check, GST + cash), Cashier (cash only), Party & Collections (Admin).
+      {t:"Accounts · Tally",h:"party-billing.html",i:"bill",r:"admin accounts",k:"accounts tally bills to make bills made tally bill merge sales bill gst gstr gstr-1 gstr-3b gst paid filed bank check verify bank entry cheque po change credit note return cash in cash out bank deposit close day day book",pt:"Accounts · Tally (Bills, Bank check, GST)"},
+      {t:"Cashier",h:"accounts-dashboard.html#cash",i:"cash",r:"admin cashier",k:"cashier cash in cash out bank deposit close day day book cash book cash ledger cash in hand cheque handover staff advance upad salary vehicle expense party payment received",pt:"Cashier (Cash In / Out, Day book)"},
+      {t:"Party & Collections",h:"party-billing.html#party",i:"users",r:"admin",k:"party payment received pending outstanding to collect collection party ledger statement khata advance returns party groups acrs ecrs",pt:"Party & Collections (To collect, Ledger, ACRS)"},
+      {t:"Accounts",h:"accounts-dashboard.html",i:"cash",r:"admin accounts",hide:1,par:"party-billing.html"},
       {t:"Bank Statement",h:"bank-statement.html",i:"book",r:"admin accounts"},
       // STTS Ledger (Mohit, 13 Nov 2026): company Sales Register + STTS Ledger checked bill by bill against the Rate List scheme.
       {t:"STTS Ledger",h:"stts-ledger.html",i:"note",r:"admin accounts manager",k:"stts ledger scheme claim free bottle oms sales register dms hccb mer company claim short"},
-      {t:"Billing & Outstanding",h:"party-billing.html",i:"bill",r:"admin accounts",k:"bills to make tally bill sales bill outstanding collect payment rajnigandha bill pending party ledger statement khata",pt:"Billing & Outstanding (Bills to make)"},
       // Tax invoice in the Tally layout (Mohit, 11 Nov 2026): off until Admin turns it on (today only / till off)
       // for the ticked roles; others find it in search, Accounts also from Bills to make.
       // Company documents (Mohit, 11 Nov 2026): GST / PAN / Aadhaar / licences, renewal reminders, share to a party.
@@ -328,7 +342,7 @@
   // then re-read from lwb_user_page_access on every page.
   const ACCESS_KEY="lwbHiddenPages";
   function sessionUid(){
-    try{const t=JSON.parse(localStorage.getItem("sb-txkbhadzdbxpieunfvox-auth-token")||"null");return(t&&t.user&&t.user.id)||""}catch(e){return""}
+    try{const t=JSON.parse(localStorage.getItem("sb-qstgwhbgbznxemajtave-auth-token")||"null");return(t&&t.user&&t.user.id)||""}catch(e){return""}
   }
   function access(){
     try{const c=JSON.parse(localStorage.getItem(ACCESS_KEY)||"null");const sid=sessionUid();if(c&&Array.isArray(c.hidden)&&(!sid||c.uid===sid))return c}catch(e){}
@@ -536,6 +550,8 @@
     compactTables();
     if(role){if(!stayLoggedIn(role))idleLogout();otpGuard();}
     bell(top,role);
+    brandTop(top,role);
+    dateTop(top,role);
     refreshAccess().then(changed=>{
       if(!changed)return;
       if(blocked(role,page,hiddenPages()))return;
@@ -575,14 +591,14 @@
       sales:[["Home","dashboard.html","home"],["New Order","order-entry.html","cart"],["PO List","my-sales.html#orders","note"],["My Sales","my-sales.html","chart"]],
       admin:[["Home","dashboard.html","home"],["New Order","order-entry.html","cart"],["PO List","warehouse-orders.html","note"],["Stock","inventory.html","stock"]],
       manager:[["Home","dashboard.html","home"],["New Order","order-entry.html","cart"],["PO List","warehouse-orders.html","note"],["Dispatch","loading-dispatch.html","truck"]],
-      accounts:[["Home","dashboard.html","home"],["Bills","party-billing.html","bill"],["PO List","warehouse-orders.html","note"],["Cash","accounts-dashboard.html","cash"],["Bank","bank-statement.html","book"]],
+      accounts:[["Home","dashboard.html","home"],["Accounts","party-billing.html","bill"],["PO List","warehouse-orders.html","note"],["Bank","bank-statement.html","book"]],
       warehouse:[["Home","dashboard.html","home"],["Loading","loading-dispatch.html","truck"],["Purchase","purchase-register.html","note"],["Stock","inventory.html","stock"]],
       transport:[["Home","dashboard.html","home"],["Assign","transport-allocation.html","truck"],["Vehicles","fleet-master.html#vehicles","box"],["Drivers","fleet-master.html#drivers","users"]]
     };
     const permitted=new Set(menuForMe(role).flatMap(g=>g.items.map(i=>i.h.split("#")[0])));
     const items=(presets[role]||[]).filter(i=>permitted.has(i[1].split("#")[0]));
     if(items.length<2)return;
-    const active=h=>h===(page+(location.hash||"")) || (!h.includes("#") && h===page && !items.some(i=>i[1]===(page+(location.hash||""))));
+    const active=h=>(page==="accounts-dashboard.html"&&h==="party-billing.html")||h===(page+(location.hash||"")) || (!h.includes("#") && h===page && !items.some(i=>i[1]===(page+(location.hash||""))));
     const nav=document.createElement("nav");nav.className="erp-bnav";nav.setAttribute("aria-label","Quick menu");
     nav.innerHTML=items.map(([t,h,i])=>'<a href="'+h+'" class="'+(h==="order-entry.html"?"new":"")+(active(h)?" active":"")+'"'+(active(h)?' aria-current="page"':'')+'>'+svg(i)+"<span>"+esc(t)+"</span></a>").join("");
     document.body.appendChild(nav);document.body.classList.add("has-bnav");
@@ -806,6 +822,46 @@
     teamChat(role);
   }
 
+  // 🏷 ONE brand picker for the whole site, next to the page name (Mohit, 19 Nov 2026):
+  // All brands / Coca-Cola / Rajnigandha / any company added later in Companies (lwb_companies).
+  // The choice is kept on this device and every page (dashboard, Accounts, stock, PO list ...) shows
+  // only that brand; All = every brand together. A Sales Head / Salesman tied to brands in Companies >
+  // Team brands gets only those (the database already returns only his SKUs / POs), so one brand = a
+  // fixed label, nothing to change. Godown Manager and Driver work on what is assigned: no picker.
+  // Page brand chips / drop-downs are hidden and follow this one (brand-filter.js LWBBrand.pick).
+  async function brandTop(top,role){
+    try{
+      if(!window.supabase||!role||role==="warehouse"||role==="driver"||top.querySelector(".erp-brandpick"))return;
+      const c=window.__lwbBellClient||(window.__lwbBellClient=window.supabase.createClient(URL_,KEY_));
+      const {data}=await c.auth.getSession();if(!data||!data.session)return;
+      if(!window.LWBBrand)await new Promise((ok,bad)=>{const s=document.createElement("script");s.src="brand-filter.js";s.onload=ok;s.onerror=bad;document.head.appendChild(s)});
+      const info=await window.LWBBrand.load(c);
+      const list=(info.companies||[]).filter(x=>!info.mine||info.mine.includes(x.id));
+      if(!list.length)return;
+      const box=document.createElement("div");box.className="erp-brandpick";box.setAttribute("data-nosearch","");
+      const crumb=top.querySelector(".erp-crumb");crumb.after(box);top.classList.add("has-brand");
+      // Phone: the top bar has no room for a full name, so a short word shows (All / COCA / RAJNI);
+      // tapping opens the normal list with the full names.
+      const short=n=>String(n||"").trim().split(/[\s\-_/.]+/)[0].slice(0,5)||String(n||"").slice(0,5);
+      const paint=id=>{const b=list.find(x=>x.id===id);box.style.setProperty("--bc",b?b.color||"#c9b26a":"#c9b26a");box.classList.toggle("on",!!b);
+        const l=box.querySelector(".bp-l");if(l)l.textContent=b?short(b.name):"All"};
+      if(list.length===1){
+        box.classList.add("one");box.title="Your brand";box.innerHTML='<i></i><span class="bp-l">'+esc(short(list[0].name))+'</span><b>'+esc(list[0].name)+'</b>';box.querySelector(".bp-l").className="bp-s";paint(list[0].id);return;
+      }
+      const v=window.LWBBrand.get(list);
+      const sel=document.createElement("select");sel.setAttribute("aria-label","Brand (whole site)");sel.title="Brand for every page";
+      sel.innerHTML='<option value="">All brands</option>'+list.map(x=>'<option value="'+esc(x.id)+'">'+esc(x.name)+'</option>').join("");
+      sel.value=v;box.innerHTML='<i></i><span class="bp-l"></span>';box.appendChild(sel);paint(v);
+      sel.onchange=()=>{paint(sel.value);window.LWBBrand.pick(sel.value)};
+      document.addEventListener("lwb:brand",e=>{const id=e.detail.id;if(sel.value!==id&&[...sel.options].some(o=>o.value===id)){sel.value=id;paint(id)}});
+    }catch(e){}
+  }
+
+  // 📅 ONE date filter for the whole site, next to the brand picker (Mohit, 20 Nov 2026): Today / Yesterday /
+  // 7 Days / 30 Days / This Month / Custom. Pages with dates load erp-period.js and follow it; their own date
+  // filters are gone. Pages without dates (no erp-period.js) show no picker.
+  function dateTop(top,role){try{if(window.LWBPeriod)window.LWBPeriod.mountTop(top,role)}catch(e){}}
+
   // 💬 Team Chat: round chat button in the corner of every page, popups for new messages (team-chat.js,
   // lwb_team_chat_setup.sql). Until the SQL is run the button does not show.
   async function teamChat(role){
@@ -847,7 +903,7 @@
 
   // Older pages: <script src="erp-shell.js" data-auto defer>. Hides the page's
   // own header, wraps the page in the shell and reads the logged-in profile.
-  const URL_="https://txkbhadzdbxpieunfvox.supabase.co",KEY_="sb_publishable_W4I3Q5ODf0g17sq5uDml2Q_sLolXYEk";
+  const URL_="https://qstgwhbgbznxemajtave.supabase.co",KEY_="sb_publishable_YA2Pow327REqgrWPzVCZiA_nw1F32_o";
   async function auto(){
     const old=document.querySelector("body > header, body > .header");
     if(old)old.classList.add("erp-old-header");
@@ -965,7 +1021,7 @@
   function connect(){
     if(chan||!live.on||!window.supabase)return;
     try{
-      const c=window.__lwbBellClient||(window.__lwbBellClient=window.supabase.createClient("https://txkbhadzdbxpieunfvox.supabase.co","sb_publishable_W4I3Q5ODf0g17sq5uDml2Q_sLolXYEk"));
+      const c=window.__lwbBellClient||(window.__lwbBellClient=window.supabase.createClient("https://qstgwhbgbznxemajtave.supabase.co","sb_publishable_YA2Pow327REqgrWPzVCZiA_nw1F32_o"));
       chan=c.channel("lwb-live",{config:{broadcast:{self:false}}});
       chan.on("broadcast",{event:"changed"},p=>heard(p&&p.payload));
       chan.subscribe(s=>{chanReady=s==="SUBSCRIBED";dot()});

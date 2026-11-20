@@ -2,11 +2,11 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"><script src="erp-fit.js"></script>
   <title>Godown Report | Luxury Wrist Brand ERP</title>
   <script src="erp-date.js"></script><script src="erp-recent.js"></script>
   <script src="vendor/supabase-js-2.119.0.js"></script>
-<script src="brand-filter.js"></script><script src="sku-rank.js"></script>
+<script src="brand-filter.js"></script><script src="erp-period.js"></script><script src="sku-rank.js"></script>
   <link rel="stylesheet" href="erp-shell.css">
   <link rel="stylesheet" href="sales.css">
   <script src="erp-shell.js"></script>
@@ -144,7 +144,9 @@
     let U=()=>"CASE";const sh=n=>U(n)==="BOX"?"IC":"cases"; // Rajnigandha sells in IC, Coca-Cola in cases
     const inB=x=>!BB.get()||!SM||!x.sku_name||SM.get(LWBBrand.skuKey(x.sku_name))===BB.get();
     async function load(){
-      const r=await client.from("lwb_godown_reports").select("*").eq("report_date",el("day").value).order("created_at",{ascending:false});
+      // Dates = the ONE date filter in the top bar (erp-period.js, Mohit 20 Nov 2026).
+      const P=window.LWBPeriod?LWBPeriod.get():null;
+      const r=await (P?client.from("lwb_godown_reports").select("*").gte("report_date",P.from).lte("report_date",P.to):client.from("lwb_godown_reports").select("*").eq("report_date",el("day").value)).order("created_at",{ascending:false});
       if(r.error){el("list").innerHTML='<div class="sl-msg">'+esc(/lwb_godown_reports/.test(r.error.message)?"Run lwb_godown_report_setup.sql in Supabase first.":r.error.message)+"</div>";el("kpis").innerHTML="";return}
       rows=ERPRecent.sort((r.data||[]).filter(inB));
       const ids=[...new Set(rows.flatMap(x=>[x.created_by,x.reviewed_by]).filter(id=>id&&!names.has(id)))];
@@ -161,7 +163,7 @@
       if(window.ERPList){const KL=[["Vehicles",x=>x.kind==="VEHICLE"],["Damage / Leakage",x=>x.kind==="DAMAGE"],["Staff Absent",x=>x.kind==="ABSENT"],["Not Seen by Office",x=>x.review_status==="OPEN"]];
         const GC=[{t:"Time",v:x=>time(x.created_at)},{t:"Type",v:x=>cap(x.kind)},{t:"Detail",v:x=>[x.vehicle_no,x.purpose&&cap(x.purpose),x.damage_type&&cap(x.damage_type),x.sku_name,x.person_name,x.driver_name].filter(Boolean).join(" · ")},
           {t:"IC / Cases",v:x=>fmt(x.cases||0)+" "+sh(x.sku_name),num:true},{t:"Pcs",v:"pcs",num:true,sum:true,dec:0},{t:"Vehicle status",v:x=>x.vehicle_status?cap(x.vehicle_status):""},{t:"Office",v:x=>cap(x.review_status||"")},{t:"By",v:x=>names.get(x.created_by)||""},{t:"Note",v:"note"}];
-        el("kpis").querySelectorAll(".sl-kpi").forEach((c,i)=>ERPList.card(c,()=>({title:KL[i][0],sub:"Godown report · "+el("day").value,rows:rows.filter(KL[i][1]),cols:GC})))}
+        el("kpis").querySelectorAll(".sl-kpi").forEach((c,i)=>ERPList.card(c,()=>({title:KL[i][0],sub:"Godown report · "+(window.LWBPeriod?LWBPeriod.get().label:el("day").value),rows:rows.filter(KL[i][1]),cols:GC})))}
       if(!list.length){el("list").innerHTML='<div class="erp-empty">No report for this date.</div>';return}
       el("list").innerHTML=list.map(x=>{
         let head="",body="";
@@ -197,6 +199,7 @@
       me=await S.start(["admin","manager","warehouse"]);if(!me)return;
       el("who").textContent=reviewer()?"Admin / Sales Head":"Godown team";
       el("day").value=S.isoDay(new Date());
+      if(window.LWBPeriod){LWBPeriod.hide(el("day").parentElement);LWBPeriod.on(()=>load())}
       const sk=await client.from("sku_master").select("sku_name").eq("is_active",true).order("sku_name");
       el("skuList").innerHTML=(window.LWBSkuRank?(await LWBSkuRank.load(client).catch(()=>null),LWBSkuRank.sort(sk.data||[],x=>x.sku_name)):(sk.data||[])).map(s=>'<option value="'+esc(s.sku_name)+'">').join("");
       if(reviewer())el("state").value="";

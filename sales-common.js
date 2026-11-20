@@ -1,7 +1,7 @@
 /* LUXURY WRIST BRAND ERP — shared helpers for Sales Team, Sales Tracking and My Sales.
    Database RLS / RPC checks stay the real permission check. */
 (function(){
-  const client=supabase.createClient("https://txkbhadzdbxpieunfvox.supabase.co","sb_publishable_W4I3Q5ODf0g17sq5uDml2Q_sLolXYEk");
+  const client=supabase.createClient("https://qstgwhbgbznxemajtave.supabase.co","sb_publishable_YA2Pow327REqgrWPzVCZiA_nw1F32_o");
   const el=id=>document.getElementById(id);
   const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
   const num=v=>{const n=Number(v);return Number.isFinite(n)?n:0};

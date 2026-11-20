@@ -269,7 +269,7 @@
    Every popup has "‹ Back" to the list it came from (Esc too). Read only. */
 (function(){
   if(window.LWBDrill||!window.ERPList)return;
-  const URL_="https://txkbhadzdbxpieunfvox.supabase.co",KEY_="sb_publishable_W4I3Q5ODf0g17sq5uDml2Q_sLolXYEk";
+  const URL_="https://qstgwhbgbznxemajtave.supabase.co",KEY_="sb_publishable_YA2Pow327REqgrWPzVCZiA_nw1F32_o";
   const db=()=>window.__lwbBellClient||(window.supabase&&(window.__lwbBellClient=window.supabase.createClient(URL_,KEY_)));
   const key=v=>String(v==null?"":v).toUpperCase().replace(/[^A-Z0-9]+/g," ").trim();
   const n=v=>{const x=Number(v);return Number.isFinite(x)?x:0};

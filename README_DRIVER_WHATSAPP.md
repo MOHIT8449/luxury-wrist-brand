@@ -14,7 +14,7 @@ assignment **and confirms driver WhatsApp opt-in**.
 
 ## 1. Database SQL — run once
 
-Open Supabase SQL Editor for project `txkbhadzdbxpieunfvox`.
+Open Supabase SQL Editor for project `qstgwhbgbznxemajtave`.
 
 Copy and run the full script:
 [`lwb_driver_whatsapp_setup.sql`](./lwb_driver_whatsapp_setup.sql)
@@ -81,7 +81,7 @@ Your business needs:
 Never paste or publish the Meta token in GitHub, HTML, JavaScript, or a chat.
 
 Open Supabase project -> **Edge Functions -> Secrets**:
-https://supabase.com/dashboard/project/txkbhadzdbxpieunfvox/functions/secrets
+https://supabase.com/dashboard/project/qstgwhbgbznxemajtave/functions/secrets
 
 Set:
 
@@ -106,7 +106,7 @@ If your hosted project has no injected server secret, create a separate
 ## 4. Deploy the Edge Function in Supabase
 
 Open:
-https://supabase.com/dashboard/project/txkbhadzdbxpieunfvox/functions
+https://supabase.com/dashboard/project/qstgwhbgbznxemajtave/functions
 
 Create/deploy a new Edge Function **named exactly**
 `driver-assignment-whatsapp`.
@@ -120,7 +120,7 @@ Our code additionally verifies the active ERP user role server-side.
 If deploying via Supabase CLI instead:
 ```bash
 supabase login
-supabase link --project-ref txkbhadzdbxpieunfvox
+supabase link --project-ref qstgwhbgbznxemajtave
 supabase functions deploy driver-assignment-whatsapp
 ```
 

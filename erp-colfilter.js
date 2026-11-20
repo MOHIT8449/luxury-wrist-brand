@@ -18,6 +18,11 @@
 .lwb-cf:hover{opacity:1;background:rgba(0,0,0,.07)}
 .lwb-cf.on{opacity:1;background:var(--erp-red,#002f37);color:#fff}
 th .lwb-cf{font-weight:700}
+.lwb-cf.lwb-cf-lab{font:inherit;font-weight:inherit;text-transform:inherit;letter-spacing:inherit;opacity:1;padding:3px 5px!important;margin:-3px 0 -3px -5px;border:0!important;border-radius:6px;background:transparent;box-shadow:none!important;height:auto!important;min-height:0!important;min-width:0!important;width:auto!important;color:inherit;white-space:nowrap;text-align:inherit;line-height:inherit}
+.lwb-cf.lwb-cf-lab i{font-style:normal;font-size:10px;opacity:.6;margin-left:1px}
+.lwb-cf.lwb-cf-lab:hover{background:rgba(0,47,55,.08)}
+.lwb-cf.lwb-cf-lab.on{background:var(--erp-red,#002f37)!important;color:#fff!important}
+.lwb-cf.lwb-cf-lab.on i{opacity:1}
 .lwb-cf-btn{display:flex;align-items:center;gap:4px;width:100%;min-width:0;height:28px;border:1.5px solid var(--erp-line,#d5dde8);border-radius:6px;padding:0 6px 0 8px;background:#fff;color:var(--erp-ink,#172b48);font:inherit;font-size:12.5px;font-weight:500;text-transform:none;letter-spacing:0;cursor:pointer;text-align:left}
 .lwb-cf-btn span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .lwb-cf-btn::after{content:"▾";flex:0 0 auto;font-size:11px;color:#6b7280}
@@ -48,6 +53,9 @@ tr.lwb-cf-tr th{padding-top:0!important;padding-bottom:6px!important;background:
 .lwb-cf-pop li label:hover{background:#fef3c7}
 .lwb-cf-pop li label small{margin-left:auto;color:#9ca3af;font-size:11.5px}
 .lwb-cf-pop li input{width:16px;height:16px;margin:0;flex:0 0 auto;accent-color:#002f37}
+.lwb-cf-ck{display:flex!important;flex-direction:row!important;align-items:center;gap:8px;font-size:12.5px!important;color:#172b48;cursor:pointer;flex:0 0 auto!important;padding-left:2px}
+.lwb-cf-ck input{width:16px!important;height:16px!important;margin:0;accent-color:#002f37}
+mark.lwb-hit{background:#fde68a;color:inherit;border-radius:2px;padding:0 1px}
 .lwb-cf-pop li.none{padding:8px 10px;color:#6b7280;font-style:italic}`;
   const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
   const norm=s=>String(s??"").toLowerCase().replace(/\s+/g," ").trim();
@@ -67,10 +75,12 @@ tr.lwb-cf-tr th{padding-top:0!important;padding-bottom:6px!important;background:
     const seen={};       // key -> {head, rows, split}
     const st=k=>state[k]||(state[k]={f:{},sort:null});
     const typeOf=(rows,i)=>{let n=0,d=0,t=0;for(const r of rows){const v=r.data[i];if(empty(v))continue;if(isNum(v))n++;else if(isDate(v))d++;else t++}return t?"text":d&&!n?"date":n?"num":"text"};
-    const vals=(v,split)=>split?String(v??"").split(", ").map(x=>x.trim()).filter(Boolean):[String(v??"").trim()||"(blank)"];
+    // One value -> the key(s) it is ticked by. Date: the day; number: the number; split: each part.
+    const vals=(v,split,t)=>split?String(v??"").split(", ").map(x=>x.trim()).filter(Boolean):
+      empty(v)?["(blank)"]:t==="date"?[String(v).slice(0,10)]:t==="num"?[String(Number(v))]:[String(v).trim()||"(blank)"];
     function pass(r,col,f,split){
       const v=r.data[col];
-      if(f.set){const vs=vals(v,split);return vs.some(x=>f.set.has(x))}
+      if(f.set&&!vals(v,split,f.t).some(x=>f.set.has(x)))return false;
       if(f.min!=null||f.max!=null){
         if(empty(v))return false;
         const x=f.t==="date"?String(v).slice(0,10):Number(v);
@@ -79,8 +89,8 @@ tr.lwb-cf-tr th{padding-top:0!important;padding-bottom:6px!important;background:
       return true;
     }
     function apply(key,head,rows,opt){
-      const s=st(key),split=new Set((opt&&opt.split)||[]);
-      seen[key]={head,rows,split};
+      const s=st(key),split=new Set((opt&&opt.split)||[]),list=new Set((opt&&opt.list)||[]);
+      seen[key]={head,rows,split,list};
       // drop filters for columns this view does not have (e.g. head changed)
       for(const c of Object.keys(s.f))if(!head.includes(c))delete s.f[c];
       if(s.sort&&!head.includes(s.sort.col))s.sort=null;
@@ -92,16 +102,18 @@ tr.lwb-cf-tr th{padding-top:0!important;padding-bottom:6px!important;background:
       return out;
     }
     const on=(key,h)=>!!(state[key]&&(state[key].f[h]||(state[key].sort&&state[key].sort.col===h)));
-    function th(key,head,i){
+    // label given: the whole head text is the button (click "Sales Person" itself to filter).
+    function th(key,head,i,label){
       const h=head[i],s=state[key],ar=s&&s.sort&&s.sort.col===h?(s.sort.dir>0?"▲":"▼"):"▾";
-      return '<button type="button" class="lwb-cf'+(on(key,h)?" on":"")+'" data-cf="'+i+'" data-cfk="'+esc(key)+'" title="Filter / sort '+esc(h)+'" aria-label="Filter / sort '+esc(h)+'">'+ar+"</button>";
+      return '<button type="button" class="lwb-cf'+(label!=null?" lwb-cf-lab":"")+(on(key,h)?" on":"")+'" data-cf="'+i+'" data-cfk="'+esc(key)+'" title="Filter / sort '+esc(h)+'" aria-label="Filter / sort '+esc(h)+'">'+(label!=null?esc(label)+" <i>"+ar+"</i>":ar)+"</button>";
     }
     // What a column's filter box says, like the Category filter on top: All / one value / "3 selected" / ≥ 30.
     const nf=v=>typeof v==="number"?v.toLocaleString("en-IN"):/^\d{4}-\d{2}-\d{2}$/.test(v)?v.slice(8,10)+"/"+v.slice(5,7):String(v);
+    const show1=(x,t)=>t==="num"&&x!=="(blank)"?Number(x).toLocaleString("en-IN"):t==="date"&&/^\d{4}-\d{2}-\d{2}$/.test(x)?x.slice(8,10)+"/"+x.slice(5,7)+"/"+x.slice(0,4):x;
     function label(key,h){
       const s=state[key],f=s&&s.f[h],ar=s&&s.sort&&s.sort.col===h?(s.sort.dir>0?" ↑":" ↓"):"";
       if(!f)return "All"+ar;
-      if(f.set){const a=[...f.set];return (a.length===1?a[0]:a.length+" selected")+ar}
+      if(f.set){const a=[...f.set];return (a.length===1?show1(a[0],f.t):a.length+" selected")+ar}
       return (f.min!=null&&f.max!=null?nf(f.min)+" – "+nf(f.max):f.min!=null?"≥ "+nf(f.min):"≤ "+nf(f.max))+ar;
     }
     const box=(key,head,i)=>'<button type="button" class="lwb-cf-btn'+(on(key,head[i])?" on":"")+'" data-cf="'+i+'" data-cfk="'+esc(key)+'" title="Filter / sort '+esc(head[i])+'"><span>'+esc(label(key,head[i]))+"</span></button>";
@@ -121,40 +133,45 @@ tr.lwb-cf-tr th{padding-top:0!important;padding-bottom:6px!important;background:
       close();
       const sv=seen[key];if(!sv)return;
       const h=sv.head[i],s=st(key),split=sv.split.has(i),t=split?"text":typeOf(sv.rows,i),f=s.f[h]||{};
+      const range=t!=="text"&&!sv.list.has(i);
       const pop=D.createElement("div");pop.className="lwb-cf-pop";
       const sortTxt=t==="num"?["↑ Low to high","↓ High to low"]:t==="date"?["↑ Oldest first","↓ Newest first"]:["↑ A to Z","↓ Z to A"];
       const sd=s.sort&&s.sort.col===h?s.sort.dir:0;
       let body='<h4>'+esc(h)+'</h4><div class="lwb-cf-row"><button type="button" data-s="1"'+(sd>0?' class="on"':"")+">"+sortTxt[0]+'</button><button type="button" data-s="-1"'+(sd<0?' class="on"':"")+">"+sortTxt[1]+'</button><button type="button" class="sp" data-c="1">Clear</button></div>';
-      if(t==="text")body+='<input type="search" placeholder="Type to search..." autocomplete="off"><div class="lwb-cf-row"><button type="button" data-a="all">Tick shown</button><button type="button" data-a="none">All (untick)</button><span class="sp"></span></div><ul></ul>';
-      else{const it=t==="date"?"date":"number",mv=x=>x==null?"":esc(x);
+      if(range){const it=t==="date"?"date":"number",mv=x=>x==null?"":esc(x);
         body+='<div class="lwb-cf-row"><label>'+(t==="date"?"From":"Min")+'<input type="'+it+'" data-r="min" value="'+mv(f.min)+'"'+(it==="number"?' inputmode="decimal"':"")+'></label><label>'+(t==="date"?"To":"Max")+'<input type="'+it+'" data-r="max" value="'+mv(f.max)+'"'+(it==="number"?' inputmode="decimal"':"")+"></label></div>"}
+      body+='<input type="search" placeholder="Search in '+esc(h)+'..." autocomplete="off"><div class="lwb-cf-row lwb-cf-all"><label class="lwb-cf-ck"><input type="checkbox" data-a="all"> Select all</label><span class="sp"></span></div><ul></ul>';
       pop.innerHTML=body;D.body.appendChild(pop);open={pop,btn};
       pop.addEventListener("click",e=>{
         const b=e.target.closest("button");if(!b)return;
         if(b.dataset.s){const d=Number(b.dataset.s);s.sort=sd===d?null:{col:h,dir:d};close();fire();return}
         if(b.dataset.c){delete s.f[h];if(s.sort&&s.sort.col===h)s.sort=null;close();fire();return}
       });
-      if(t==="text"){
-        const cnt=new Map();for(const r of sv.rows)for(const x of vals(r.data[i],split))cnt.set(x,(cnt.get(x)||0)+1);
-        const list=[...cnt].sort((a,b)=>split?b[1]-a[1]:a[0].localeCompare(b[0],undefined,{numeric:true}));
-        const sel=new Set(f.set||[]);
-        const q=pop.querySelector("input"),ul=pop.querySelector("ul"),lab=pop.querySelector(".lwb-cf-row:last-of-type .sp");
-        const shown=()=>{const w=norm(q.value).split(" ").filter(Boolean);return list.filter(([x])=>w.every(t=>norm(x).includes(t)))};
-        const save=()=>{if(sel.size)s.f[h]={set:new Set(sel)};else delete s.f[h];lab.textContent=sel.size?sel.size+" ticked":"All";fire()};
-        const draw=()=>{const sh=shown();ul.innerHTML=sh.length?sh.slice(0,400).map(([x,n])=>'<li><label><input type="checkbox" value="'+esc(x)+'"'+(sel.has(x)?" checked":"")+">"+esc(x)+"<small>"+n+"</small></label></li>").join(""):'<li class="none">Nothing found</li>';lab.textContent=sel.size?sel.size+" ticked":"All"};
-        ul.addEventListener("change",e=>{const c=e.target;if(c.type!=="checkbox")return;c.checked?sel.add(c.value):sel.delete(c.value);save()});
-        pop.querySelector("[data-a=all]").onclick=()=>{for(const [x] of shown())sel.add(x);draw();save()};
-        pop.querySelector("[data-a=none]").onclick=()=>{sel.clear();draw();save()};
-        q.addEventListener("input",draw);draw();
-      }else{
-        const rd=()=>{const g=n=>{const x=pop.querySelector('[data-r="'+n+'"]').value;return x===""?null:t==="date"?x:Number(x)};const mn=g("min"),mx=g("max");if(mn==null&&mx==null)delete s.f[h];else s.f[h]={t,min:mn,max:mx};fire()};
+      const cnt=new Map();for(const r of sv.rows)for(const x of vals(r.data[i],split,t))cnt.set(x,(cnt.get(x)||0)+1);
+      const list=[...cnt].sort(split?(a,b)=>b[1]-a[1]:t==="num"?(a,b)=>(a[0]==="(blank)")-(b[0]==="(blank)")||Number(a[0])-Number(b[0]):t==="date"?(a,b)=>b[0].localeCompare(a[0]):(a,b)=>a[0].localeCompare(b[0],undefined,{numeric:true}));
+      const sel=new Set(f.set||[]);
+      const q=pop.querySelector("input[type=search]"),ul=pop.querySelector("ul"),lab=pop.querySelector(".lwb-cf-all .sp"),all=pop.querySelector("[data-a=all]");
+      const shown=()=>{const w=norm(q.value).split(" ").filter(Boolean);return list.filter(([x])=>{const n=norm(show1(x,t))+" "+norm(x);return w.every(t=>n.includes(t))})};
+      const save=()=>{const cur=s.f[h]||{};const nf2={t};if(sel.size)nf2.set=new Set(sel);if(cur.min!=null)nf2.min=cur.min;if(cur.max!=null)nf2.max=cur.max;
+        if(nf2.set||nf2.min!=null||nf2.max!=null)s.f[h]=nf2;else delete s.f[h];fire()};
+      const draw=()=>{const sh=shown();
+        ul.innerHTML=sh.length?sh.slice(0,400).map(([x,n])=>'<li><label><input type="checkbox" value="'+esc(x)+'"'+(sel.has(x)?" checked":"")+">"+esc(show1(x,t))+"<small>"+n+"</small></label></li>").join(""):'<li class="none">Nothing found</li>';
+        const on=sh.filter(([x])=>sel.has(x)).length;all.checked=!!sh.length&&on===sh.length;all.indeterminate=on>0&&on<sh.length;
+        lab.textContent=sel.size?sel.size+" ticked":"Showing all"};
+      ul.addEventListener("change",e=>{const c=e.target;if(c.type!=="checkbox")return;c.checked?sel.add(c.value):sel.delete(c.value);draw();save()});
+      all.addEventListener("change",()=>{const sh=shown();if(all.checked)for(const [x] of sh)sel.add(x);else for(const [x] of sh)sel.delete(x);draw();save()});
+      q.addEventListener("input",draw);draw();
+      if(range){
+        const rd=()=>{const g=n=>{const x=pop.querySelector('[data-r="'+n+'"]').value;return x===""?null:t==="date"?x:Number(x)};
+          const nf2={t,min:g("min"),max:g("max")};if(sel.size)nf2.set=new Set(sel);
+          if(nf2.set||nf2.min!=null||nf2.max!=null)s.f[h]=nf2;else delete s.f[h];fire()};
         pop.querySelectorAll("[data-r]").forEach(x=>x.addEventListener("change",rd));
       }
-      const r=btn.getBoundingClientRect(),vw=innerWidth,vh=innerHeight,w=Math.min(vw-16,280);
+      const F=window.LWBFit,r=F?F.rect(btn):btn.getBoundingClientRect(),vw=F?F.vw():innerWidth,vh=F?F.vh():innerHeight,w=Math.min(vw-16,310);
       const left=Math.max(8,Math.min(r.left,vw-w-8)),below=vh-r.bottom-8,above=r.top-8,up=below<240&&above>below;
       pop.style.width=w+"px";pop.style.left=left+"px";pop.style.maxHeight=Math.min(400,up?above:below)+"px";
       if(up)pop.style.bottom=(vh-r.top+4)+"px";else pop.style.top=(r.bottom+4)+"px";
-      const fi=pop.querySelector("input");if(fi&&!("ontouchstart" in window))fi.focus({preventScroll:true});
+      const fi=pop.querySelector("input[type=search]");if(fi&&!("ontouchstart" in window))fi.focus({preventScroll:true});
     }
     D.addEventListener("click",e=>{
       const b=e.target.closest("[data-cf]");if(!b||!seen[b.dataset.cfk])return;
@@ -165,5 +182,13 @@ tr.lwb-cf-tr th{padding-top:0!important;padding-bottom:6px!important;background:
     },true);
     return {apply,th,row,chips,count,clear,close};
   }
-  window.LWBCol={create};
+  // Yellow-mark the words of a page search inside el (text only; buttons and inputs left alone).
+  function mark(el,q){
+    if(!el)return;const w=norm(q).split(" ").filter(x=>x.length>1);if(!w.length)return;
+    const re=new RegExp("("+w.map(x=>x.replace(/[.*+?^${}()|[\]\\]/g,"\\$&")).join("|")+")","gi");
+    const tw=D.createTreeWalker(el,NodeFilter.SHOW_TEXT,{acceptNode:n=>n.parentElement.closest("button,input,select,textarea,mark,script,style")?2:re.test(n.nodeValue)?(re.lastIndex=0,1):2});
+    const hits=[];while(tw.nextNode())hits.push(tw.currentNode);
+    for(const n of hits){const f=D.createDocumentFragment();String(n.nodeValue).split(re).forEach((p,k)=>{if(!p)return;if(k%2){const m=D.createElement("mark");m.className="lwb-hit";m.textContent=p;f.appendChild(m)}else f.appendChild(D.createTextNode(p))});n.replaceWith(f)}
+  }
+  window.LWBCol={create,mark};
 })();

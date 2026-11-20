@@ -2,9 +2,9 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"><script src="erp-fit.js"></script>
   <title>Sales Bill PDFs | Luxury Wrist Brand ERP</title>
-  <script src="erp-date.js"></script>
+  <script src="erp-date.js"></script><script src="erp-period.js"></script>
   <script src="vendor/supabase-js-2.119.0.js"></script>
   <link rel="stylesheet" href="erp-shell.css">
   <script src="erp-shell.js"></script>
@@ -37,7 +37,7 @@
     .sb-kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin-bottom:10px}
     .sb-kpi{background:#fff;border:1px solid var(--erp-line);border-radius:8px;padding:9px 12px}
     .sb-kpi span{display:block;font-size:12.5px;color:#4b5763}.sb-kpi b{font-size:19px}.sb-kpi.bad b{color:var(--erp-red)}
-    .sb-tools{display:flex;gap:8px;align-items:center;padding:10px 12px;border-bottom:1px solid var(--erp-line)}
+    .sb-tools{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:10px 12px;border-bottom:1px solid var(--erp-line)}
     .sb-tools .chips{display:flex;gap:4px}.sb-tools .chips button.on{background:#002f37;border-color:#002f37;color:#fff}
     .sb-tools .dates{display:flex;gap:4px;align-items:center}.sb-tools .dates input{width:135px}.sb-tools .dates span{color:var(--erp-muted);font-size:13px}
     .sb-table{border-collapse:collapse;width:100%;font-size:14px}
@@ -50,7 +50,7 @@
     @media(max-width:900px){.sb-up{grid-template-columns:1fr 1fr}.sb-up .w2{grid-column:1/-1}}
     @media(max-width:760px){
       .sb-kpis{grid-template-columns:1fr 1fr;gap:6px}.sb-kpi b{font-size:16px}
-      .sb-tools{flex-wrap:wrap;padding:8px}.sb-tools .chips{flex:1 1 100%}.sb-tools .chips button{flex:1}.sb-tools .dates{flex:1 1 100%}.sb-tools .dates input{flex:1;width:auto}
+      .sb-tools{flex-wrap:wrap;padding:8px}.sb-tools .chips{flex:1 1 100%}.sb-tools .chips button{flex:1}.sb-tools .dates{flex:1 1 100%}.sb-tools .dates{min-width:0}.sb-tools .dates input{flex:1 1 0;width:0;min-width:0;padding:9px 6px}
       .sb-up{grid-template-columns:1fr;padding:8px}.sb-up .w2{grid-column:auto}
       .sb-table thead{display:none}.sb-table,.sb-table tbody{display:block}
       .sb-table tr{display:grid;grid-template-columns:1fr auto;gap:2px 10px;padding:9px 10px;border-bottom:1px solid var(--erp-line)}
@@ -97,7 +97,7 @@ Later type any invoice number in Find to open its PDF.
   </main>
   <script>
     'use strict';
-    const client=supabase.createClient("https://txkbhadzdbxpieunfvox.supabase.co","sb_publishable_W4I3Q5ODf0g17sq5uDml2Q_sLolXYEk");
+    const client=supabase.createClient("https://qstgwhbgbznxemajtave.supabase.co","sb_publishable_YA2Pow327REqgrWPzVCZiA_nw1F32_o");
     const BUCKET="lwb-sales-bills",MAX_MB=30;
     const el=id=>document.getElementById(id);
     const esc=v=>String(v==null?"":v).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
@@ -213,7 +213,7 @@ Later type any invoice number in Find to open its PDF.
         if(r.error)throw r.error;
         ERPShell.toast("Uploaded: "+shortList(p.list),"success");
         el("upFile").value="";el("upInv").value="";updNote();if(window.MP)MP.close();
-        if(d<el("from").value||d>el("to").value)setRange("30");else await load();
+        if(!window.LWBPeriod&&(d<el("from").value||d>el("to").value))setRange("30");else await load();
       }catch(e){ERPShell.toast("Upload failed: "+(e.message||String(e)),"error")}
       busy=false;el("upBtn").disabled=false;el("upBtn").textContent="⬆ Upload";
     }
@@ -247,7 +247,10 @@ Later type any invoice number in Find to open its PDF.
       for(const m of missingList()||[])rows.push([dmy(m.invoice_date),m.invoice_no,"NOT IN ANY PDF",""]);
       try{await LWBExcel.write("Sales-Bill-PDFs-"+today(),[{name:"Sales Bill PDFs",rows:[["Bill date","Invoice No","PDF file","Uploaded by"],...rows]}])}catch(e){ERPShell.toast(e.message,"error")}
     }
+    // Dates = the ONE date filter in the top bar (erp-period.js, Mohit 20 Nov 2026).
+    if(window.LWBPeriod){LWBPeriod.hide("#chips",".dates");LWBPeriod.on(()=>setRange())}
     function setRange(k){
+      if(window.LWBPeriod){const r=LWBPeriod.get();el("from").value=r.from;el("to").value=r.to;load();return}
       const t=today();el("to").value=t;el("from").value=k==="month"?t.slice(0,8)+"01":addDays(t,-(Number(k)-1));
       document.querySelectorAll("#chips button").forEach(x=>x.classList.toggle("on",x.dataset.days===k));load();
     }

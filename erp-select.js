@@ -95,9 +95,9 @@
   function place(){
     const c=cur;if(!c)return;
     if(!c.sel.isConnected||!c.sel.getClientRects().length){close();return}
-    const vv=window.visualViewport,vw=D.documentElement.clientWidth||innerWidth;
-    const vTop=vv?vv.offsetTop:0,vH=vv?vv.height:innerHeight;
-    const r=c.sel.getBoundingClientRect();
+    const vv=window.visualViewport,F=window.LWBFit,k=F?F.z():1,vw=F?F.vw():(D.documentElement.clientWidth||innerWidth);
+    const vTop=vv?vv.offsetTop/k:0,vH=(vv?vv.height:innerHeight)/k;
+    const r=F?F.rect(c.sel):c.sel.getBoundingClientRect();
     const h=Math.max(38,Math.round(r.height));
     const w=Math.min(vw-16,Math.max(Math.round(r.width),240));
     const left=Math.max(8,Math.min(Math.round(r.left),vw-w-8));
@@ -108,7 +108,7 @@
     c.inp.style.height=h+"px";
     c.ul.style.maxHeight=room+"px";
     c.pop.style.width=w+"px";c.pop.style.left=left+"px";
-    if(up){c.pop.style.top="";c.pop.style.bottom=Math.round(innerHeight-r.bottom)+"px"}
+    if(up){c.pop.style.top="";c.pop.style.bottom=Math.round(innerHeight/k-r.bottom)+"px"}
     else{c.pop.style.bottom="";c.pop.style.top=Math.round(r.top)+"px"}
   }
   function open(sel,seed){

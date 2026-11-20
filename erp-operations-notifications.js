@@ -20,6 +20,8 @@
  // tone: act = needs you · move = dispatch · money = cash · ok = done · bad = cancel/reject · info = update
  const KIND=[
   [/^ORDER_NEW$/,"🛒","act","New order","Approve"],
+  [/^ORDER_DELAY_DELIVERY$/,"⚠","bad","Delivery late 36h+","Deliver"],
+  [/^ORDER_DELAY_APPROVAL$/,"⚠","act","Approval late 12h+","Approve"],
   [/^ORDER_APPROVED$/,"✅","ok","PO approved",""],
   [/^ORDER_LOADED$/,"📦","info","Loaded",""],
   [/^ORDER_DISPATCHED$/,"🚚","move","Out for delivery",""],
@@ -65,6 +67,7 @@
   [/^PURCHASE_ARRIVED$/,"🚛","act","Purchase vehicle arrived","Check"],
   [/^PURCHASE_DAMAGE$/,"⚠","bad","Purchase damage","View"],
   [/^PURCHASE_CHECK_OK$/,"✅","ok","Purchase vehicle OK",""],
+  [/^PURCHASE_MISSING$/,"🧾","bad","Purchase bills missing","Enter"],
   [/^HIRED_RATE_VERIFY$/,"🚚","act","Trip rent","Verify"],
   [/^HIRED_RATE_SENT_BACK$/,"↩","bad","Trip rent sent back","Set again"],
   [/^PARTY_CREATED$/,"👤","act","New party added","Check"],
@@ -87,7 +90,8 @@
   [/^TASK_(OVERDUE|CANCELLED)$/,"⚠","bad","",""],
   [/^TASK_/,"📋","act","",""],
   [/^ANNOUNCEMENT$/,"📢","info","",""],
-  [/^SALES_PLAN$/,"📋","info","Today's plan",""]
+  [/^SALES_PLAN$/,"📋","info","Today's plan",""],
+  [/^PAYMENT_FOLLOWUP$/,"₹","act","Payment follow-up","Collect"]
  ];
  // Type of every notification (Mohit, 18 Nov 2026: "which notification is this?" must be clear at a glance).
  // Each type has its own colour, icon tile and filter tab in the bell.
@@ -101,7 +105,7 @@
  };
  const CAT_OF=[
   [/^(TASK_|COMPLAINT_|SALES_PLAN$|ANNOUNCEMENT$)/,"task"],
-  [/^(DELIVERY_COLLECTION|ACC_|HIRED_RATE_|TALLY_NOTE_)/,"money"],
+  [/^(DELIVERY_COLLECTION|ACC_|HIRED_RATE_|TALLY_NOTE_|PAYMENT_FOLLOWUP)/,"money"],
   [/^(ORDER_LOADED|ORDER_DISPATCHED|ORDER_DELIVERED|ORDER_PARTIAL|ORDER_NOT_DELIVERED|VEHICLE_LOADED|LOADING_ASSIGNMENT|TALLY_BILL_PENDING|PO_APPROVED_LOADING|DELIVERY_RETURN|RETURN_CHECKED)/,"delivery"],
   [/^(STOCK_|GODOWN_|PURCHASE_|MARKET_)/,"stock"],
   [/^(ORDER_|PO_|RATE_|BILL_CHANGE_|TALLY_BILL_|SALES_RETURN)/,"order"]
@@ -213,9 +217,13 @@
  // Page each notification opens. {o} = the notification's order id. The first page this login can open wins.
  const ROUTES=[
   [/^(TALLY_BILL_PENDING|PO_APPROVED_BILL)$/,["party-billing.html?order={o}"]],
+  // Sales Head "Tell Accounts" (lwb_sales_head_outstanding_setup.sql): Party & Collections > To collect; Cashier: Cashier view.
+  [/^PAYMENT_FOLLOWUP$/,["party-billing.html#party","accounts-dashboard.html#cash","sales-outstanding.html"]],
   [/^PO_APPROVED_LOADING$/,["loading-dispatch.html?order={o}","warehouse-orders.html"]],
   [/^(VEHICLE_LOADED|TALLY_BILL_DONE)$/,["loading-dispatch.html","party-billing.html?order={o}","warehouse-orders.html","driver-delivery.html?order={o}","my-sales.html#orders"]],
   [/^ORDER_NEW$/,["warehouse-orders.html"]],
+  [/^ORDER_DELAY_DELIVERY$/,["warehouse-orders.html?late=delivery"]],
+  [/^ORDER_DELAY_APPROVAL$/,["warehouse-orders.html?late=approval"]],
   [/^RATE_APPROVAL$/,["quick-slip.html?review={o}"]],
   [/^BILL_CHANGE_/,["party-billing.html?tab=chg&change={o}"]],
   [/^RATE_APPROVED$/,["quick-slip.html?order={o}"]],
@@ -236,6 +244,7 @@
   [/^HIRED_RATE_/,["fleet-master.html#rates"]],
   [/^PARTY_CREATED$/,["customer-master.html"]],
   [/^GODOWN_/,["godown-report.html"]],
+  [/^PURCHASE_MISSING$/,["purchase-register.html?missing=1"]],
   [/^PURCHASE_ARRIVED$/,["purchase-register.html?bill={r}"]],
   [/^PURCHASE_/,["purchase-register.html?report={r}"]],
   [/^STOCK_AUDIT_/,["stock-audit.html"]],
@@ -436,6 +445,9 @@
     list.append(box);
    }
   }
+  // Godown Manager: only his own work (loading given to him, purchase vehicle to unload, tasks, his returns).
+  // The database already sends / shows only these (lwb_gm_notify_scope_setup.sql); this is the same rule by type.
+  const GM_BELL=/^(LOADING_ASSIGNMENT_DISPATCH|PURCHASE_ARRIVED|TASK_|DELIVERY_RETURN_RECEIVE|ANNOUNCEMENT)/;
   async function reloadData(){
    let qy=db.from("erp_notifications").select("*").eq("user_id",user.id);
    // A picked older date reads that day only, so it is not cut by the latest-70 limit.
@@ -445,7 +457,7 @@
    // Salesman: his order updates show again (17 Nov 2026); live GPS / loading-assignment bells stay hidden.
    // Driver sees no history: only the last 12 hours.
    // Team chat bells (CHAT_MSG, lwb_team_chat_setup.sql) are only for the phone push: the chat button shows them.
-   const rows=(data||[]).filter(n=>baseType(n)!=="CHAT_MSG").filter(n=>!["sales","salesman"].includes(String(role||"").trim().toLowerCase())||!/^(LIVE_|GPS_|TRACK|LOADING_ASSIGNMENT)/.test(baseType(n))).filter(n=>String(role||"").toLowerCase()!=="driver"||Date.now()-new Date(n.created_at)<12*36e5),unread=rows.filter(n=>!n.is_read).length;
+   const rows=(data||[]).filter(n=>baseType(n)!=="CHAT_MSG").filter(n=>!["sales","salesman"].includes(String(role||"").trim().toLowerCase())||!/^(LIVE_|GPS_|TRACK|LOADING_ASSIGNMENT)/.test(baseType(n))).filter(n=>String(role||"").toLowerCase()!=="driver"||Date.now()-new Date(n.created_at)<12*36e5).filter(n=>String(role||"").trim().toLowerCase()!=="warehouse"||GM_BELL.test(baseType(n))),unread=rows.filter(n=>!n.is_read).length;
    bell.setAttribute("aria-label", "Notifications" + (unread ? ", " + unread + " unread" : ""));
    newTxt.textContent=unread?unread+" new":"";newTxt.hidden=!unread;
    count.textContent=unread>99?"99+":String(unread);count.style.display=unread?"inline-block":"none";

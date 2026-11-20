@@ -6,7 +6,7 @@
   let cache=null;
   function client(){
     if(!window.supabase)return null;
-    if(!client.c)client.c=window.supabase.createClient("https://txkbhadzdbxpieunfvox.supabase.co","sb_publishable_W4I3Q5ODf0g17sq5uDml2Q_sLolXYEk");
+    if(!client.c)client.c=window.supabase.createClient("https://qstgwhbgbznxemajtave.supabase.co","sb_publishable_YA2Pow327REqgrWPzVCZiA_nw1F32_o");
     return client.c;
   }
   async function load(){

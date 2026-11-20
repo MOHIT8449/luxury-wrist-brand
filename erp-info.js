@@ -30,11 +30,11 @@
     pop.textContent=text;
     document.body.appendChild(pop);
     owner=btn;btn.setAttribute("aria-expanded","true");
-    const r=btn.getBoundingClientRect(),w=pop.offsetWidth,h=pop.offsetHeight;
-    let left=r.left+window.scrollX+r.width/2-w/2;
-    left=Math.max(window.scrollX+12,Math.min(left,window.scrollX+document.documentElement.clientWidth-w-12));
-    let top=r.bottom+window.scrollY+8;
-    if(r.bottom+h+16>window.innerHeight&&r.top>h+16)top=r.top+window.scrollY-h-8;
+    const F=window.LWBFit,r=F?F.rect(btn):btn.getBoundingClientRect(),w=pop.offsetWidth,h=pop.offsetHeight,ih=F?F.vh():window.innerHeight,k=F?F.z():1,sx=window.scrollX/k,sy=window.scrollY/k;
+    let left=r.left+sx+r.width/2-w/2;
+    left=Math.max(sx+12,Math.min(left,sx+(F?F.vw():document.documentElement.clientWidth)-w-12));
+    let top=r.bottom+sy+8;
+    if(r.bottom+h+16>ih&&r.top>h+16)top=r.top+sy-h-8;
     pop.style.left=left+"px";pop.style.top=top+"px";
   }
   document.addEventListener("click",e=>{

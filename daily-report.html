@@ -2,11 +2,11 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"><script src="erp-fit.js"></script>
   <title>Daily Summary | Luxury Wrist Brand ERP</title>
   <script src="erp-date.js"></script>
   <script src="vendor/supabase-js-2.119.0.js"></script>
-<script src="brand-filter.js"></script>
+<script src="brand-filter.js"></script><script src="erp-period.js"></script>
   <link rel="stylesheet" href="erp-shell.css">
   <script src="erp-shell.js"></script>
 <script src="erp-list.js"></script>
@@ -63,6 +63,7 @@
       <button type="button" class="main" id="reload">Refresh</button>
       <button type="button" id="print">Print</button>
     </div>
+    <div id="perNote" hidden></div>
     <div id="err" class="ds-err" hidden></div>
     <div id="out"></div>
   </main>
@@ -75,7 +76,7 @@
   </div></div>
   <script>
     'use strict';
-    const client=supabase.createClient("https://txkbhadzdbxpieunfvox.supabase.co","sb_publishable_W4I3Q5ODf0g17sq5uDml2Q_sLolXYEk");
+    const client=supabase.createClient("https://qstgwhbgbznxemajtave.supabase.co","sb_publishable_YA2Pow327REqgrWPzVCZiA_nw1F32_o");
     const el=id=>document.getElementById(id);
     const esc=v=>String(v==null?"":v).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
     const tipI=t=>'<button type="button" class="erp-i" aria-label="Info" title="Info" data-tip="'+esc(t)+'">i</button>';
@@ -141,6 +142,8 @@
       }
     }
     async function load(){
+      // Day = the ONE date filter in the top bar (erp-period.js, Mohit 20 Nov 2026): its last day.
+      if(window.LWBPeriod)el("day").value=LWBPeriod.oneDay("#perNote");
       const d=el("day").value||today();
       el("err").hidden=true;el("out").innerHTML='<p class="status" style="padding:30px">Loading...</p>';
       // Brand filter (All / Rajnigandha / Coca-Cola): lwb_brand_reports_setup.sql
@@ -168,12 +171,13 @@
     const when=v=>LWBDate.dt(v);
     async function openHistory(mobile,name,order){
       histFor={mobile,name,order};
-      el("histDays").hidden=!!order;
+      el("histDays").hidden=!!order||!!window.LWBPeriod;
       el("hist").hidden=false;el("histTitle").textContent=order?"Bill "+order:"Driver "+name;
       el("histBody").innerHTML='<p class="status" style="padding:30px">Loading...</p>';el("histTot").innerHTML="";
       if(!histReady){el("histBody").innerHTML='<div class="ds-err">Bill history is not set up yet. Run lwb_driver_bill_history_setup.sql once in Supabase, then Refresh.</div>';return}
-      const day=el("day").value||today(),n=order?60:Number(el("histDays").value);
-      const {data,error}=await client.rpc("lwb_driver_bill_history",{p_mobile:mobile||null,p_from:shift(day,-n),p_to:order?today():day});
+      const P=window.LWBPeriod&&!order?LWBPeriod.get():null;
+      const day=P?P.to:el("day").value||today(),n=order?60:P?P.days-1:Number(el("histDays").value);
+      const {data,error}=await client.rpc("lwb_driver_bill_history",{p_mobile:mobile||null,p_from:P?P.from:shift(day,-n),p_to:order?today():day});
       if(error){el("histBody").innerHTML='<div class="ds-err">'+esc(error.message)+"</div>";return}
       let rows=await brandRows(data||[]);
       if(order)rows=rows.filter(r=>r.order_no===order);else if(!mobile)rows=rows.filter(r=>r.driver===name);
@@ -207,7 +211,9 @@
       ERPShell.mount({role:me.realRole||me.role,name:me.name,onLogout:async()=>{await client.auth.signOut();location.replace("login.html")}});
       el("loading").hidden=true;el("page").hidden=false;
       if(window.LWBBrand)try{BB=await LWBBrand.mount(client,{into:"#page .erp-pagehead",after:true,onChange:load})}catch(e){}
-      el("day").value=today();load();
+      el("day").value=today();
+      if(window.LWBPeriod){LWBPeriod.hide("#prev","#day","#next","#today","#histDays");LWBPeriod.on(load)}
+      load();
     })();
   </script>
 </body>

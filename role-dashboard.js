@@ -24,6 +24,13 @@
   const APPROVAL_HOURS=12;
   const ORDER_COLS="id,order_no,order_date,created_at,customer_name,sales_person,status,total_qty,total_amount,total_weight,created_by,priority";
   let C=null,ROLE="",UID="",PLAN=null,box=null,seq=0,BIZ=null,BIZFRESH=false;
+  // Speed (19 Nov 2026): reads made in the last minute are used again, so changing the brand in the top bar
+  // (or the dashboard drawing again) does not ask the database for the same rows. Refresh clears it.
+  const MEMO=new Map(),MEMO_MS=60e3;
+  function memo(k,f){const h=MEMO.get(k);if(h&&Date.now()-h.at<MEMO_MS)return h.p;
+    const p=Promise.resolve().then(f);MEMO.set(k,{p,at:Date.now()});p.then(v=>{if(v==null)MEMO.delete(k)},()=>MEMO.delete(k));return p}
+  const rpcM=(name,args)=>memo("rpc:"+name+":"+JSON.stringify(args||{}),()=>safe(C.rpc(name,args)));
+  let ITEMS={at:0,by:new Map()};
   // Company / brand filter (brand-filter.js, lwb_company_brand_setup.sql): list = my companies,
   // id = chosen brand ("" = all), map = SKU -> company. Chips for Admin and Sales Head.
   const BR={list:[],id:"",map:null,allow:null,all:[]};
@@ -95,19 +102,32 @@
     return out;
   }
   // This month (and the last 7 days) plus every order still open, however old.
-  async function loadOrders(){
+  function loadOrders(){return memo("orders",loadOrders0)}
+  async function loadOrders0(){
     const t=today(),from=[t.slice(0,8)+"01",shift(t,-6)].sort()[0];
     const [a,b]=await Promise.all([ordersFrom(from).catch(()=>null),safe(C.from("orders").select(ORDER_COLS).in("status",OPEN).limit(3000))]);
     if(!a&&!b)return null;
     const m=new Map();for(const o of (a||[]).concat(b||[]))m.set(o.id,o);
     return [...m.values()].map(o=>({...o,day:istDay(o.order_date||o.created_at)}));
   }
+  // SKU lines of POs: lines read in the last minute are kept per PO; only missing POs are read,
+  // 150 POs a request, 4 requests at a time (was one after another).
+  const ITEM_COLS="order_id,sku_name,ordered_qty,approved_qty,loaded_qty,rate";
   async function itemsOf(ids,cols){
-    const out=[];
-    for(let i=0;i<ids.length;i+=150){
-      const r=await C.from("order_items").select(cols||"order_id,sku_name,ordered_qty,approved_qty,loaded_qty,rate").in("order_id",ids.slice(i,i+150));
-      if(r.error)return null;out.push(...(r.data||[]));
+    if(Date.now()-ITEMS.at>MEMO_MS)ITEMS={at:Date.now(),by:new Map()};
+    const by=ITEMS.by,want=[...new Set((ids||[]).filter(Boolean))],miss=want.filter(id=>!by.has(id));
+    const parts=[];for(let i=0;i<miss.length;i+=150)parts.push(miss.slice(i,i+150));
+    for(let i=0;i<parts.length;i+=4){
+      const rs=await Promise.all(parts.slice(i,i+4).map(part=>{const p=C.from("order_items").select(ITEM_COLS).in("order_id",part).then(r=>({r,part}));
+        for(const id of part)by.set(id,p);return p}));
+      for(const {r,part} of rs){if(r.error){for(const id of part)by.delete(id);return null}
+        const g=new Map(part.map(id=>[id,[]]));for(const x of r.data||[])if(g.has(x.order_id))g.get(x.order_id).push(x);
+        for(const [id,l] of g)by.set(id,l)}
     }
+    const out=[];
+    for(const id of want){let l=by.get(id);if(l&&typeof l.then==="function"){const {r,part}=await l;if(r.error)return null;
+      l=(r.data||[]).filter(x=>x.order_id===id);by.set(id,l)}
+      if(l)out.push(...l)}
     return out;
   }
   const qtyOf=it=>it.approved_qty!=null?num(it.approved_qty):num(it.ordered_qty);
@@ -136,7 +156,7 @@
   const loadOrdersB=()=>loadOrders().then(brandOrders);
   async function overview(){
     if(!BR.list.length)return null;
-    const t=today();return safe(C.rpc("lwb_company_overview",{p_from:t.slice(0,8)+"01",p_to:t}));
+    const t=today();return rpcM("lwb_company_overview",{p_from:t.slice(0,8)+"01",p_to:t});
   }
   // Brand-wise: this month's sales vs target, market outstanding, money to pay the company.
   function brandCard(ov){
@@ -154,7 +174,7 @@
   async function stockCheck(orders){
     if(!orders)return null;
     const open=orders.filter(o=>["approved","transport_allocated","loading"].includes(st(o)));
-    const [stock,items]=await Promise.all([safe(C.rpc("lwb_po_stock")),itemsOf(open.map(o=>o.id))]);
+    const [stock,items]=await Promise.all([rpcM("lwb_po_stock"),itemsOf(open.map(o=>o.id))]);
     if(!stock||!stock.length||!items)return null;
     const g=new Map(stock.map(s=>[key(s.sku_name),s])),need=new Map();
     for(const it of items){if(!inBrand(it.sku_name))continue;const k=key(it.sku_name);const x=need.get(k)||{sku:String(it.sku_name||"").trim(),cases:0};x.cases+=qtyOf(it);need.set(k,x)}
@@ -163,7 +183,7 @@
       .filter(x=>x.need>0).sort((a,b)=>b.short-a.short||(a.have-a.need)-(b.have-b.need));
   }
   async function salesTeam(){
-    const t=today(),[team,tg]=await Promise.all([safe(C.rpc("lwb_sales_team")),safe(C.from("lwb_sales_targets").select("*").eq("month",t.slice(0,8)+"01"))]);
+    const t=today(),[team,tg]=await Promise.all([rpcM("lwb_sales_team"),memo("targets:"+t.slice(0,8),()=>safe(C.from("lwb_sales_targets").select("*").eq("month",t.slice(0,8)+"01")))]);
     return {team:team||[],targets:tg||[]};
   }
   // Order is credited to the login that took it, else to its sales person text, else Office.
@@ -178,7 +198,7 @@
   // Pending Work "Make Tally bill" counted only status 'loaded' of the last 45 days (124 while Bills to make showed
   // another number). Count it with the Bills to make rule (LWBPartyPay.needsBill + approved, not loaded yet) and let
   // dashboard.html redraw the row as "Bills to make" (Mohit, 16 Nov 2026).
-  const makeBillsData=()=>Promise.all([safe(C.rpc("lwb_admin_order_marks",{p_ids:null})),safe(C.rpc("lwb_bills_before_loading"))]);
+  const makeBillsData=()=>Promise.all([rpcM("lwb_admin_order_marks",{p_ids:null}),rpcM("lwb_bills_before_loading")]);
   function setMakeBills(PI,md){
     if(!PI||!PI.raw||!md||!window.LWBPartyPay||!LWBPartyPay.needsBill)return;
     const marks=new Map((md[0]||[]).map(m=>[m.order_id,1]));
@@ -238,8 +258,14 @@
   let LAND=null,TEAM=[];
   const skuK=v=>String(v==null?"":v).toUpperCase().replace(/\s+/g," ").trim();
   const nowK=v=>window.LWBBrand&&LWBBrand.nowKey?LWBBrand.nowKey(v):skuK(v);
-  async function landingData(){
-    if(LAND&&Date.now()-LAND.at<3e5)return LAND;
+  // One read at a time: the dashboard and Business Overview ask together, so both wait for the same read.
+  let LANDP=null;
+  function landingData(){
+    if(LAND&&Date.now()-LAND.at<3e5)return Promise.resolve(LAND);
+    if(!LANDP)LANDP=landingData0().finally(()=>{LANDP=null});
+    return LANDP;
+  }
+  async function landingData0(){
     if(window.LWBBrand&&LWBBrand.aliases)await LWBBrand.aliases(C);
     const [s,p,l,m,k]=await Promise.all([safe(C.from("lwb_rate_settings").select("mepd_pct,roi_main,roi_landing").eq("id",1).maybeSingle()),
       safe(C.from("lwb_rate_packs").select("*")),safe(C.from("lwb_rate_pack_skus").select("sku_key,pack_id")),
@@ -330,7 +356,8 @@
     if(v&&home&&box.contains(v))home.prepend(v);
     box.innerHTML=html;
     if(window.ERPList)box.querySelectorAll("[data-list]").forEach(el=>ERPList.card(el,()=>{const m=LISTS.get(el.dataset.list);return m&&m()},el.classList.contains("rd-step")?false:undefined));
-    brandPick(BRAND_ROLES.includes(ROLE)&&BR.list.length>1&&!!window.LWBBrand&&!!box.querySelector(".rd-kpis,#bzDash"));
+    // Brand: only the picker in the top bar now (Mohit, 19 Nov 2026); the dashboard follows it.
+    brandPick(false);
     const s=document.getElementById("rdSide");if(v&&s)s.prepend(v);
   }
   // Brand pick: a dropdown right next to the "Admin view" dropdown in the page head (Mohit, 2 Nov 2026; was chips).
@@ -354,8 +381,8 @@
     /* ===== Admin: whole business ===== */
     async admin(){
       const t=today(),y=shift(t,-1);
-      const [orders,sumy,acc,PI,cq,team,ov]=await Promise.all([loadOrdersB(),safe(C.rpc("lwb_po_approval_summary",{p_from:t,p_to:t})),
-        safe(C.rpc("lwb_acc_dashboard",{p_from:t,p_to:t})),window.LWBPartyPay?LWBPartyPay.load(C).catch(()=>null):null,safe(C.rpc("lwb_acc_cheque_list")),salesTeam(),overview()]);
+      const [orders,sumy,acc,PI,cq,team,ov]=await Promise.all([loadOrdersB(),rpcM("lwb_po_approval_summary",{p_from:t,p_to:t}),
+        rpcM("lwb_acc_dashboard",{p_from:t,p_to:t}),window.LWBPartyPay?memo("partypay",()=>LWBPartyPay.load(C).catch(()=>null)):null,rpcM("lwb_acc_cheque_list"),salesTeam(),overview()]);
       makeBillsData().then(md=>setMakeBills(PI,md));
       const O=orders||[],L=O.filter(live),td=L.filter(o=>o.day===t),yd=L.filter(o=>o.day===y),mo=L.filter(o=>o.day>=t.slice(0,8)+"01");
       TEAM=team.team;
@@ -546,8 +573,8 @@
     /* ===== Godown Manager: only the orders the Sales Head / Admin gave to this login (Mohit, 18 Nov 2026) ===== */
     async warehouse(){
       const t=today();
-      const [orders,gr,vq]=await Promise.all([loadOrders(),
-        safe(C.from("lwb_godown_reports").select("*").eq("report_date",t).order("created_at",{ascending:false})),verifyQueue()]);
+      // Godown Manager: only work given to him (loading, purchase unloading / photos, tasks, his returns).
+      const [orders,vq]=await Promise.all([loadOrders(),verifyQueue()]);
       const O=orders||[],all=O.filter(o=>["transport_allocated","loading","loaded"].includes(st(o)));
       const ids=all.map(o=>o.id),asg=[],pick=[];
       for(let i=0;i<ids.length;i+=100){const part=ids.slice(i,i+100);
@@ -570,11 +597,21 @@
       const rows=pend.map(o=>({...o,vehicle:veh(o),driver:drv(o),cases:qOf(o)}));
       const ret=queueItem(vq,"RETURN_RECEIVE");
       const OC=[{t:"Party",v:"customer_name"},{t:"Date",v:"order_date",date:true},{t:"Vehicle",v:"vehicle"},{t:"Driver",v:"driver"},{t:"Cases",v:"cases",num:true,sum:true,dec:0}];
+      // Purchase vehicles given to me to unload / check / add photos (not checked yet, last 30 days).
+      const from30=shift(t,-30);
+      const gb=await safe(C.from("lwb_goods_inward").select("id,invoice_no,supplier_name,vehicle_no,received_date").eq("godown_user_id",UID).gte("received_date",from30).order("received_date",{ascending:false}).limit(200));
+      let pur=[];
+      if(gb&&gb.length){const chk=new Set(),gi=gb.map(x=>x.id);
+        for(let i=0;i<gi.length;i+=100){const c=await safe(C.from("lwb_purchase_checks").select("inward_id").in("inward_id",gi.slice(i,i+100)));(c||[]).forEach(x=>chk.add(x.inward_id))}
+        pur=gb.filter(x=>!chk.has(x.id))}
+      // Tasks given to me (the purchase photo task is one of them).
+      const tk=(await safe(C.from("lwb_tasks").select("id,title,due_date,priority,status,assigned_by_name").eq("assigned_to",UID).in("status",["OPEN","IN_PROGRESS"]).order("due_date").limit(300)))||[];
+      const lateD=x=>days(String(x.due_date||t).slice(0,10),t),tkLate=tk.filter(x=>lateD(x)>0).length;
       const k=[
-        kpi("amber","Pending orders",fmt(pend.length),pend.length?"Assigned to me for loading":"Nothing assigned","loading-dispatch.html",orders&&lst("Pending orders","Assigned to me, not loaded yet",rows,OC,"loading-dispatch.html")),
-        kpi("blue","Pending loading qty",fmt(pendQ)+" "+qWord(),fmt(byS.size)+" SKU"+(byS.size==1?"":"s")+" · approved qty","loading-dispatch.html"),
-        kpi("teal","Loaded, on the way",fmt(done.length),"Leaves after delivery","loading-dispatch.html"),
-        kpi("red","Returns to receive",ret?fmt(ret.cnt):"0","From drivers","driver-returns.html")];
+        kpi("amber","To load",fmt(pend.length),pend.length?fmt(pendQ)+" "+qWord()+" · "+fmt(byS.size)+" SKU"+(byS.size==1?"":"s"):"Nothing assigned","loading-dispatch.html",orders&&lst("To load","Assigned to me, not loaded yet",rows,OC,"loading-dispatch.html")),
+        kpi("blue","To unload (purchase)",fmt(pur.length),pur.length?"Check goods + photos":"No purchase vehicle","loading-dispatch.html?tab=purchase"),
+        kpi(tkLate?"red":"teal","My tasks",fmt(tk.length),tk.length?(tkLate?'<span class="dn">'+tkLate+" overdue</span>":"Given to me"):"No pending task","tasks.html")];
+      k.push(kpi("red","Returns to check",ret?fmt(ret.cnt):"0","Goods back from my vehicles","driver-returns.html"));
       const SB={transport_allocated:["r","To load"],loading:["a","Loading"]};
       const my=orders?card("🚛 My orders to load",go("loading-dispatch.html","Loading & Dispatch →"),rows.length?'<div class="rd-scroll"><table><thead><tr><th>Party</th><th class="hide-sm">Date</th><th>Vehicle / Driver</th><th class="n">Cases</th><th></th></tr></thead><tbody>'+
         rows.slice(0,30).map(o=>{const b=SB[st(o)]||["r","To load"];return '<tr class="rd-click" onclick="location.href=\'loading-dispatch.html?order='+encodeURIComponent(o.id)+'\'"><td><b>'+esc(o.customer_name||"—")+"</b><br><small>"+esc(o.order_no||"")+'<span class="show-sm"> · '+esc(dmy(o.order_date))+'</span></small></td><td class="hide-sm">'+esc(dmy(o.order_date))+"</td><td>"+esc(o.vehicle)+"<br><small>"+esc(o.driver||"—")+'</small></td><td class="n"><b>'+fmt(o.cases)+'</b></td><td>'+badge(b[0],b[1])+"</td></tr>"}).join("")+
@@ -582,11 +619,12 @@
       const sk=[...byS.values()].sort((a,b)=>b.cases-a.cases);
       const skc=pend.length&&it?card("📦 Pending loading qty — SKU wise",go("loading-dispatch.html","Load →"),'<div class="rd-scroll"><table><thead><tr><th>SKU</th><th class="n">Orders</th><th class="n">Approved qty</th></tr></thead><tbody>'+
         sk.map(x=>"<tr><td>"+esc(x.sku)+'</td><td class="n">'+x.orders.size+'</td><td class="n"><b>'+fmt(x.cases)+" "+uOf(x.sku)+"</b></td></tr>").join("")+'</tbody><tfoot><tr><td>Total</td><td></td><td class="n"><b>'+fmt(pendQ)+"</b></td></tr></tfoot></table></div>"):"";
-      const KIND={VEHICLE:["blu","Vehicle"],DAMAGE:["red","Damage"],ABSENT:["amb","Staff absent"],ISSUE:["amb","Issue"]};
-      const rep=gr?card("📝 Godown report — today",go("godown-report.html","Godown Report →"),(gr.length?gr.slice(0,5).map(x=>{const k2=KIND[x.kind]||["blu",x.kind];
-        return dot(k2[0],"<b>"+k2[1]+":</b> "+esc([x.vehicle_no,x.sku_name,x.cases?x.cases+" cs":"",x.pcs?x.pcs+" pcs":"",x.person_name,x.note].filter(Boolean).join(" · ")||"—"))}).join(""):'<div class="rd-empty">No report today.</div>')+
-        (can("godown-report.html")?'<div class="rd-bd rd-line"><a class="rd-btn" href="godown-report.html">+ New report</a></div>':"")):"";
-      return shell(k,[my],[skc,rep]);
+      const purC=card("📦 Purchase to unload",go("loading-dispatch.html?tab=purchase","Unloading →"),pur.length?'<div class="rd-scroll"><table><thead><tr><th>Supplier</th><th>Vehicle</th><th class="hide-sm">Date</th><th></th></tr></thead><tbody>'+
+        pur.slice(0,10).map(x=>'<tr class="rd-click" onclick="location.href=\'loading-dispatch.html?tab=purchase\'"><td><b>'+esc(x.supplier_name||"Supplier")+"</b><br><small>Inv "+esc(x.invoice_no||"-")+'<span class="show-sm"> · '+esc(dmy(x.received_date))+'</span></small></td><td><b>'+esc(String(x.vehicle_no||"—").toUpperCase())+'</b></td><td class="hide-sm">'+esc(dmy(x.received_date))+"</td><td>"+badge("a","Unload")+"</td></tr>").join("")+
+        "</tbody></table></div>":'<div class="rd-empty">No purchase vehicle given to you right now.</div>',"Check goods, add vehicle / damage photos, submit.");
+      const tkC=card("📝 My tasks",go("tasks.html","All tasks →"),tk.length?"<table><tbody>"+tk.slice(0,6).map(x=>{const d=lateD(x);
+        return '<tr class="rd-click" onclick="location.href=\'tasks.html?id='+encodeURIComponent(x.id)+'\'"><td><b>'+esc(x.title||"Task")+"</b><br><small>TSK-"+esc(x.id)+(x.assigned_by_name?" · from "+esc(x.assigned_by_name):"")+'</small></td><td class="n">'+(x.priority==="URGENT"?badge("r","Urgent")+" ":"")+(d>0?badge("r","Overdue "+d+"d"):d===0?badge("a","Today"):badge("b",esc(dmy(x.due_date))))+"</td></tr>"}).join("")+"</tbody></table>":'<div class="rd-empty">✓ No pending task for you.</div>');
+      return shell(k,[my,purC],[tkC,skc]);
     },
 
     /* ===== Salesman: plan, target, my orders (phone first) ===== */
@@ -645,6 +683,7 @@
     if(BR.id)BR.allow=new Set([BR.id]);else if(b&&b.mine&&b.mine.length&&ROLE!=="accounts")BR.allow=new Set(b.mine);
     if(BR.allow)BR.map=await LWBBrand.skuMap(C);
   }
+  document.addEventListener("lwb:brand",()=>{if(ROLE&&box)render()});
   async function render(){
     const my=++seq;
     LISTS=new Map();
@@ -656,6 +695,6 @@
     has:role=>Object.prototype.hasOwnProperty.call(ROLES,role),
     start(o){C=o.client;ROLE=o.role;UID=o.uid||"";PLAN=o.plan||null;box=o.box;
       if(!box.dataset.rdTap){box.dataset.rdTap="1";document.addEventListener("erp:access",()=>{if(ROLE)render()});box.addEventListener("click",e=>{if(e.target.closest("[data-profit]"))showProfit(today())})}if(!box.querySelector(".rd-card"))paint('<div class="rd-empty">Loading your dashboard…</div>');return render()},
-    refresh(){if(ROLE){BIZFRESH=true;return render()}}
+    refresh(){if(ROLE){BIZFRESH=true;MEMO.clear();ITEMS={at:0,by:new Map()};return render()}}
   };
 })();
