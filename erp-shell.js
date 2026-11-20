@@ -169,6 +169,8 @@
       {t:"Accounts · Tally",h:"party-billing.html",i:"bill",r:"admin accounts",k:"accounts tally bills to make bills made party ledger statement khata tally bill merge sales bill gst gstr gstr-1 gstr-3b gst paid filed bank check verify bank entry cheque po change credit note return cash in cash out bank deposit close day day book",pt:"Accounts · Tally (Bills, Ledger, Bank check, GST)"},
       {t:"Cashier",h:"accounts-dashboard.html#cash",i:"cash",r:"admin cashier",k:"cashier cash in cash out bank deposit close day day book cash book cash ledger cash in hand cheque handover staff advance upad salary vehicle expense party payment received",pt:"Cashier (Cash In / Out, Day book)"},
       {t:"Party & Collections",h:"party-billing.html#party",i:"users",r:"admin",k:"party payment received pending outstanding to collect collection party ledger statement khata advance returns party groups acrs ecrs",pt:"Party & Collections (To collect, Ledger, ACRS)"},
+      // Ledger & Outstanding (Mohit, 20 Nov 2026): Tally "Display" books in one page, Ctrl+Alt+L from anywhere.
+      {t:"Ledger & Outstanding",h:"accounts-books.html",i:"book",r:"admin accounts",k:"ledger outstanding receivable receivables bill wise party wise ageing overdue 30 60 90 days receipt register receipts payment received party payment summary day book voucher khata statement tally ctrl alt l kasar",pt:"Ledger & Outstanding (Ctrl+Alt+L)"},
       {t:"Accounts",h:"accounts-dashboard.html",i:"cash",r:"admin accounts",hide:1,par:"party-billing.html"},
       {t:"Bank Statement",h:"bank-statement.html",i:"book",r:"admin accounts"},
       // STTS Ledger (Mohit, 13 Nov 2026): company Sales Register + STTS Ledger checked bill by bill against the Rate List scheme.
@@ -591,7 +593,7 @@
       sales:[["Home","dashboard.html","home"],["New Order","order-entry.html","cart"],["PO List","my-sales.html#orders","note"],["My Sales","my-sales.html","chart"]],
       admin:[["Home","dashboard.html","home"],["New Order","order-entry.html","cart"],["PO List","warehouse-orders.html","note"],["Stock","inventory.html","stock"]],
       manager:[["Home","dashboard.html","home"],["New Order","order-entry.html","cart"],["PO List","warehouse-orders.html","note"],["Dispatch","loading-dispatch.html","truck"]],
-      accounts:[["Home","dashboard.html","home"],["Accounts","party-billing.html","bill"],["PO List","warehouse-orders.html","note"],["Bank","bank-statement.html","book"]],
+      accounts:[["Home","dashboard.html","home"],["Accounts","party-billing.html","bill"],["Ledger","accounts-books.html","book"],["Bank","bank-statement.html","book"]],
       warehouse:[["Home","dashboard.html","home"],["Loading","loading-dispatch.html","truck"],["Purchase","purchase-register.html","note"],["Stock","inventory.html","stock"]],
       transport:[["Home","dashboard.html","home"],["Assign","transport-allocation.html","truck"],["Vehicles","fleet-master.html#vehicles","box"],["Drivers","fleet-master.html#drivers","users"]]
     };
