@@ -12,6 +12,7 @@
   <script src="brand-filter.js"></script>
   <script src="erp-period.js"></script>
   <script src="party-credit.js"></script>
+  <script src="party-pay.js"></script>
   <script src="sku-image.js"></script>
   <script src="erp-operations-notifications.js"></script>
 
@@ -2265,7 +2266,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     IS_ADMIN = role === "admin";
     CAN_HEAD = ["admin", "manager"].includes(role);
     CAN_PAY = ["admin", "manager", "accounts"].includes(role);
-    if (CAN_PAY && !PO_CF_HEAD.includes("Payment")) PO_CF_HEAD.push("Payment");
+    if (CAN_PAY && !PO_CF_HEAD.includes("Party Due")) PO_CF_HEAD.push("Party Due");
     CAN_LH = ["admin", "manager", "accounts"].includes(role); // ⓘ qty / rate history in Order Review
     CAN_SP = ["admin", "manager", "accounts", "warehouse"].includes(role);
     // Sales Head marks Loaded / Delivered too, until Admin unticks it in Manage Users > Pages (7 Nov 2026)
@@ -3279,114 +3280,77 @@ function stepInfo(order, i) {
     bits.push("Bill " + formatMoney(j.bill_amount || 0), "received " + formatMoney(j.collected || 0), "due " + formatMoney(j.due || 0));
   return bits.filter(Boolean).join(" · ");
 }
-/* Payment column (Mohit, 20 Nov 2026): last column of the list = has the party paid this PO's bill?
-   ✓ Paid / ⚠ part (₹ due) / ● pending (₹, days since bill) / Bill not made, with the mode (Cash, GPay/UPI,
-   Bank, Cheque), a cheque not cleared yet and money still with the driver. Same due as Billing & Outstanding
-   (lwb_po_journey); modes from lwb_order_payments (lwb_sales_head_outstanding_setup.sql). Tap = popup with
-   every payment, Party ledger and (Sales Head / Admin) "Tell Accounts". Admin, Sales Head, Accounts. */
-const listPays = new Map();   // order id -> lwb_order_payments rows
-const payAsked = new Set();   // order ids whose payment is loaded / being loaded
-let paysOn = true;
-const PAY_MODE = { CASH: "💵 Cash", UPI: "📱 GPay/UPI", BANK: "🏦 Bank", CHEQUE: "🧾 Cheque" };
-const PAY_CHQ = { CHEQUE_IN_HAND: "Cheque not deposited", CHEQUE_DEPOSITED: "Cheque not cleared", CHEQUE_BOUNCED: "Cheque bounced" };
-const payStage = o => ["loaded", "delivered"].includes(orderStage(o));
+/* Party Due column (Mohit, 20 Nov 2026): last column of the list = how much this party still owes from
+   earlier bills (all bills due + opening − advance − returns, same as Billing & Outstanding / party-pay.js),
+   so the Sales Head sees it while approving any PO. No per-PO paid / pending badge (Mohit asked to drop it).
+   Data: lwb_sales_outstanding (lwb_sales_head_outstanding_setup.sql), one call per page load.
+   Tap = popup with the pending bills, Party ledger, Outstanding and (Sales Head / Admin) "Tell Accounts".
+   Admin, Sales Head, Accounts. */
+let PD = null, pdAsked = false;   // party summary (LWBPartyPay.load shape); false = could not load
 const payRs = v => "₹" + Math.round(Math.abs(Number(v) || 0)).toLocaleString("en-IN");
-function payInfo(order) {
-  if (!payStage(order)) return { k: "" };
-  const j = listJourney.get(order.id);
-  if (!j) return { k: payAsked.has(order.id) ? "nobill" : "wait" };
-  const bill = Number(j.bill_amount) || 0, got = Number(j.collected) || 0, due = j.due == null ? null : Number(j.due);
-  const P = listPays.get(order.id) || [];
-  const modes = [...new Set(P.flatMap(p => String(p.mode || "").split("+")).filter(Boolean))];
-  const chq = P.find(p => PAY_CHQ[p.status]), drv = P.some(p => p.status === "WITH_DRIVER");
-  const days = j.bill_at ? Math.max(0, Math.floor((Date.now() - new Date(j.bill_at)) / 864e5)) : null;
-  let k = !j.bill_no && got <= 0 ? "nobill" : due != null && due <= 0.5 && (bill > 0 || got > 0) ? "paid" : got > 0 ? "part" : due > 0.5 ? "pen" : "nobill";
-  return { k, j, bill, got, due, P, modes, chq, drv, days };
+async function ensurePartyDue() {
+  if (pdAsked || !window.LWBPartyPay) return;
+  pdAsked = true;
+  try {
+    const r = await db.rpc("lwb_sales_outstanding", { p_days: 400 });
+    if (r.error) throw r.error;
+    const raw = r.data || {};
+    const fake = { rpc: n => Promise.resolve(n === "lwb_party_return_list" ? { data: raw.returns || [] } : { data: raw }) };
+    PD = await LWBPartyPay.load(fake);
+  } catch (e) { console.warn("Party due not loaded", e); PD = false; }
+  // Draw the list again so the cells and the column filter (values read at draw time) get the amounts.
+  renderOrders();
 }
-// Column filter value: status first, then each mode / cheque / driver, joined by ", " (split column),
-// so "Pending", "Part paid", "Cash", "GPay/UPI", "Cheque not cleared" ... can each be ticked.
+function partyDue(order) {
+  if (PD === null) return { k: "wait" };
+  if (PD === false) return { k: "" };
+  const p = PD.parties.get(LWBPartyPay.key(PD.parentOf(order.customer_name || "")));
+  if (!p) return { k: "none", net: 0, bills: [] };
+  const days = p.oldest ? Math.max(0, Math.round((Date.parse(PD.today + "T00:00:00Z") - Date.parse(String(p.oldest).slice(0, 10) + "T00:00:00Z")) / 864e5)) : null;
+  return { k: p.net > 0.5 ? "due" : p.net < -0.5 ? "adv" : "none", p, net: p.net, bills: p.bills || [], days };
+}
+// Column filter value (split column): "Has due" / "No dues" / "Advance", plus "Bill over 30 days".
 function payLabel(order) {
-  const x = payInfo(order);
+  const x = partyDue(order);
   if (!x.k) return "";
   if (x.k === "wait") return "Loading…";
-  const out = [{ paid: "Paid", part: "Part paid", pen: "Pending", nobill: "Bill not made" }[x.k]];
-  (x.modes || []).forEach(m => out.push((PAY_MODE[m] || m).replace(/^\S+ /, "")));
-  if (x.chq) out.push(PAY_CHQ[x.chq.status]);
-  if (x.drv) out.push("Money with driver");
+  const out = [{ due: "Has due", adv: "Advance", none: "No dues" }[x.k]];
+  if (x.k === "due" && x.days > 30) out.push("Bill over 30 days");
   return out.join(", ");
 }
 function payCell(order) {
-  const x = payInfo(order);
+  const x = partyDue(order);
   if (!x.k) return `<span class="pay-na">—</span>`;
   if (x.k === "wait") return `<span class="pay-na">…</span>`;
-  if (x.k === "nobill") return `<span class="pb pb-nb">Bill not made</span>`;
-  const modes = x.modes.map(m => `<span class="pm">${PAY_MODE[m] || escapeHtml(m)}</span>`).join("");
-  const main = x.k === "paid" ? `<span class="pb pb-ok">✓ Paid${x.due < -0.5 ? " · " + payRs(x.due) + " extra" : ""}</span>`
-    : x.k === "part" ? `<span class="pb pb-part">⚠ ${payRs(x.due)} due</span>`
-    : `<span class="pb pb-pen">● ${payRs(x.due)} pending</span>`;
-  const sub = x.k === "pen" ? (x.days != null ? `<small class="pay-d${x.days > 30 ? " late" : ""}">no payment · ${x.days} day${x.days === 1 ? "" : "s"}</small>` : "")
-    : x.k === "part" ? `<small class="pay-d">got ${payRs(x.got)} of ${payRs(x.bill || x.got + x.due)}</small>` : "";
-  return `<div class="pay-c">${main}${modes ? `<span class="pms">${modes}</span>` : ""}${sub}` +
-    (x.chq ? `<span class="pb ${x.chq.status === "CHEQUE_BOUNCED" ? "pb-pen" : "pb-chq"}">🧾 ${PAY_CHQ[x.chq.status].replace(/^Cheque /, "")}</span>` : "") +
-    (x.drv ? `<span class="pb pb-drv">🚚 with driver</span>` : "") + `</div>`;
-}
-function refreshPayCells(list) {
-  list.forEach(o => {
-    const td = document.querySelector(`#ordersArea [data-pay="${o.id}"]`);
-    if (td) td.innerHTML = payCell(o);
-  });
-}
-// Journey + payment lines of every billed / delivered PO in the list (not only this page), so the
-// Payment column filter works on the whole list. Max 500 ids per journey call, 1000 per payments call.
-let payLoading = false;
-async function ensurePays(list) {
-  const need = list.filter(o => payStage(o) && !payAsked.has(o.id));
-  if (!need.length || payLoading) return;
-  payLoading = true;
-  need.forEach(o => payAsked.add(o.id));
-  try {
-    const miss = need.filter(o => !listJourney.has(o.id)).map(o => o.id);
-    for (let i = 0; i < miss.length; i += 500) {
-      const r = await db.rpc("lwb_po_journey", { p_ids: miss.slice(i, i + 500) });
-      if (r.error) { console.warn("Payment: journey not loaded", r.error); break; }
-      (r.data || []).forEach(x => listJourney.set(x.order_id, x));
-    }
-    const got = need.filter(o => Number((listJourney.get(o.id) || {}).collected) > 0).map(o => o.id);
-    if (paysOn) for (let i = 0; i < got.length; i += 1000) {
-      const r = await db.rpc("lwb_order_payments", { p_ids: got.slice(i, i + 1000) });
-      if (r.error) { console.warn("Payment modes not loaded", r.error); if (/lwb_order_payments|schema cache/.test(r.error.message || "")) paysOn = false; break; }
-      got.slice(i, i + 1000).forEach(id => listPays.set(id, []));
-      (r.data || []).forEach(x => listPays.get(x.order_id) && listPays.get(x.order_id).push(x));
-    }
-  } finally { payLoading = false; }
-  // Draw the list again so the Payment filter (values read at draw time) lists Paid / Pending / Cash ...
-  renderOrders();
-  if (list.some(o => payStage(o) && !payAsked.has(o.id))) ensurePays(list);
+  if (x.k === "none") return `<span class="pb pb-ok">✓ No dues</span>`;
+  if (x.k === "adv") return `<span class="pb pb-ok">${payRs(x.net)} advance</span>`;
+  const n = x.bills.length;
+  return `<div class="pay-c"><span class="pb pb-pen">${payRs(x.net)} due</span>` +
+    (n ? `<small class="pay-d${x.days > 30 ? " late" : ""}">${n} bill${n === 1 ? "" : "s"} · oldest ${x.days} day${x.days === 1 ? "" : "s"}</small>` : "") + `</div>`;
 }
 function openPay(id) {
   const order = orders.find(o => String(o.id) === String(id));
   if (!order) return;
-  const x = payInfo(order);
-  if (!x.k || x.k === "wait") return trackOrder(id);
-  const j = x.j || {};
-  const st = p => p.status === "WITH_DRIVER" ? `<span class="pb pb-drv">🚚 with driver</span>` : PAY_CHQ[p.status]
-    ? `<span class="pb ${p.status === "CHEQUE_BOUNCED" ? "pb-pen" : "pb-chq"}">🧾 ${PAY_CHQ[p.status]}</span>` : `<span class="pb pb-ok">✓ ${p.status === "CHEQUE_CLEARED" ? "cleared" : "received"}</span>`;
-  const who = p => (p.src === "DRIVER" ? "Driver " : p.src === "PARTY" ? "Party payment · " : "Office · ") + (p.by_name || "");
+  const x = partyDue(order);
+  if (!x.k || x.k === "wait") return;
+  const p = x.p || {}, party = p.party || order.customer_name || "";
   const dmyOnly = v => v ? String(v).slice(8, 10) + "/" + String(v).slice(5, 7) + "/" + String(v).slice(2, 4) : "";
-  const rows = (x.P || []).map(p => `<tr><td>${dmyOnly(p.pay_date)}</td><td><span class="pm">${String(p.mode || "").split("+").map(m => PAY_MODE[m] || escapeHtml(m)).join(" + ")}</span>${p.ref ? `<small>${escapeHtml(p.ref)}</small>` : ""}</td>` +
-    `<td>${escapeHtml(who(p))}<br>${st(p)}</td><td class="r ok">${payRs(p.amount)}</td></tr>`).join("");
+  const age = d => d ? Math.max(0, Math.round((Date.parse(PD.today + "T00:00:00Z") - Date.parse(String(d).slice(0, 10) + "T00:00:00Z")) / 864e5)) : "";
+  const rows = x.bills.map(b => { const d = age(b.invoice_date);
+    return `<tr><td><b>${escapeHtml(b.order_no || "")}</b><small>${escapeHtml(b.invoice_no || "")}${b.party && b.party !== party ? " · " + escapeHtml(b.party) : ""}</small></td>` +
+      `<td>${dmyOnly(b.invoice_date)}<small class="${d > 30 ? "due" : ""}">${d} day${d === 1 ? "" : "s"}</small></td><td class="r due">${payRs(b.due)}</td></tr>`; }).join("");
+  const less = () => (p.advance || 0) + (p.ret || 0);
   const box = document.createElement("div");
   box.className = "pay-ov";
-  box.innerHTML = `<div class="pay-dlg" role="dialog" aria-modal="true"><header><h3>💰 Payment · ${escapeHtml(order.order_no || "")}</h3><button type="button" class="btn btn-light" data-x>✕</button></header>
-    <div class="pay-bd"><p class="pay-who"><b>${escapeHtml(order.customer_name || "")}</b>${j.bill_no ? " · Bill " + escapeHtml(j.bill_no) : ""}${j.bill_at ? " · " + new Date(j.bill_at).toLocaleDateString("en-GB", { timeZone: "Asia/Kolkata" }) : ""}${order.sales_person ? " · " + escapeHtml(order.sales_person) : ""}</p>
-    ${x.k === "nobill" ? `<p class="pay-d">Tally bill not made yet, so nothing to collect yet.</p>` : `
-    <div class="pay-sum"><div><small>Bill</small><b>${payRs(x.bill || x.got + Math.max(0, x.due || 0))}</b></div><div><small>Received</small><b class="ok">${payRs(x.got)}</b></div>
-      <div><small>${x.due < -0.5 ? "Extra" : "Due"}</small><b class="${x.due > 0.5 ? "due" : "ok"}">${payRs(x.due)}</b></div></div>
-    ${rows ? `<table class="pay-t" data-cf-off><thead><tr><th>Date</th><th>How</th><th>By</th><th class="r">Amount</th></tr></thead><tbody>${rows}</tbody></table>` : `<p class="pay-d">No payment received yet${x.days != null ? " · bill " + x.days + " days old" : ""}.</p>`}
-    <div class="pay-st">${payCell(order)}</div>`}</div>
-    <footer><a class="btn btn-light" href="party-ledger.html?party=${encodeURIComponent(order.customer_name || "")}">📒 Party ledger</a>
-      ${CAN_HEAD ? `<a class="btn btn-light" href="sales-outstanding.html?q=${encodeURIComponent(order.customer_name || "")}">Outstanding</a>` : ""}<span class="sp"></span>
-      ${CAN_HEAD && x.due > 0.5 ? `<button type="button" class="btn btn-green" data-tell>📣 Tell Accounts / Cashier</button>` : ""}</footer></div>`;
+  box.innerHTML = `<div class="pay-dlg" role="dialog" aria-modal="true"><header><h3>💰 Party due</h3><button type="button" class="btn btn-light" data-x>✕</button></header>
+    <div class="pay-bd"><p class="pay-who"><b>${escapeHtml(party)}</b>${order.sales_person ? " · " + escapeHtml(order.sales_person) : ""}${Math.abs(p.opening || 0) > 0.5 ? " · Opening " + payRs(p.opening) : ""}</p>
+    <div class="pay-sum"><div><small>Bills due</small><b class="${p.due > 0.5 ? "due" : ""}">${payRs(p.due)}</b></div>
+      <div><small>Advance</small><b>${payRs(less())}</b></div>
+      <div><small>${x.net < -0.5 ? "Advance" : "Total due"}</small><b class="${x.net > 0.5 ? "due" : "ok"}">${payRs(x.net)}</b></div></div>
+    ${rows ? `<table class="pay-t" data-cf-off><thead><tr><th>PO / Bill</th><th>Bill date</th><th class="r">Due</th></tr></thead><tbody>${rows}</tbody></table>` : `<p class="pay-d">No bill pending for this party.</p>`}</div>
+    <footer><a class="btn btn-light" href="party-ledger.html?party=${encodeURIComponent(party)}">📒 Party ledger</a>
+      ${CAN_HEAD ? `<a class="btn btn-light" href="sales-outstanding.html?q=${encodeURIComponent(party)}">Outstanding</a>` : ""}<span class="sp"></span>
+      ${CAN_HEAD && x.net > 0.5 ? `<button type="button" class="btn btn-green" data-tell>📣 Tell Accounts / Cashier</button>` : ""}</footer></div>`;
   const close = () => { box.remove(); document.removeEventListener("keydown", esc); };
   const esc = e => { if (e.key === "Escape") close(); };
   document.addEventListener("keydown", esc);
@@ -3397,7 +3361,7 @@ function openPay(id) {
     const note = await ERPShell.prompt("Message to Accounts / Cashier (optional)", "", { placeholder: "e.g. party will pay Monday by cheque", ok: "📣 Send" });
     if (note === null || note === false) return;
     t.disabled = true;
-    const { data, error } = await db.rpc("lwb_payment_followup", { p_order_id: order.id, p_party: null, p_note: String(note || "").trim() || null });
+    const { data, error } = await db.rpc("lwb_payment_followup", { p_order_id: null, p_party: party, p_note: String(note || "").trim() || null });
     if (error) { t.disabled = false; return showMessage(String(error.message || error).replace(/^.*?ERROR:\s*/, ""), "error"); }
     close();
     showMessage("Sent to Accounts / Cashier (" + data + ").", "success");
@@ -3452,7 +3416,6 @@ async function loadListExtras(pageOrders) {
     const b = document.querySelector(`#ordersArea [data-prn="${order.id}"]`);
     if (b) b.innerHTML = printBadge(order.id);
   });
-  if (CAN_PAY) refreshPayCells(pageOrders);
 }
 /* PO history (Mohit, 12 Nov 2026): tap the 🖨 badge (or Track > Full history) = every print and every change of this
    PO: who (name + role), when, what. lwb_po_history; the changes part is for Admin only.
@@ -4603,7 +4566,6 @@ function renderOrders() {
     .map(pair => pair[0]);
 
   filtered = sugArrange(filtered, filter);
-  const payBase = filtered;
   filtered = PO_CF.apply("po", PO_CF_HEAD, filtered.map(poCfRow), { list: [1], split: CAN_PAY ? [10] : [] }).map(r => r.o);
   if (justSavedId) {
     const i = filtered.findIndex(o => o.id === justSavedId);
@@ -4706,7 +4668,7 @@ function renderOrders() {
             </td>
 
             <td class="c-trk">${stepTrack(order)}</td>
-${CAN_PAY ? `            <td class="c-pay" data-label="Payment" data-pay="${order.id}" onclick="event.stopPropagation();openPay('${order.id}')" title="Payment of this PO: tap for details">${payCell(order)}</td>` : ""}
+${CAN_PAY ? `            <td class="c-pay" data-label="Party Due" data-pay="${order.id}" onclick="event.stopPropagation();openPay('${order.id}')" title="How much this party owes from earlier bills: tap for the bills">${payCell(order)}</td>` : ""}
 
             <td class="c-act"><div class="act-row">
               <button class="btn btn-light btn-track" title="Track: where is this PO now" onclick="trackOrder('${order.id}')">📍<span class="lbl-long"> Track</span></button>
@@ -4732,7 +4694,7 @@ ${CAN_PAY ? `            <td class="c-pay" data-label="Payment" data-pay="${orde
   LWBCol.mark(area.querySelector("tbody"), document.getElementById("searchBox").value);
   loadOrderLines(pageOrders);
   loadListExtras(pageOrders);
-  if (CAN_PAY) ensurePays(payBase);
+  if (CAN_PAY) ensurePartyDue();
   renderSelBar();
 
 }
