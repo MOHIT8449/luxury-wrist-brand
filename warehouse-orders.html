@@ -3303,10 +3303,17 @@ function payInfo(order) {
   let k = !j.bill_no && got <= 0 ? "nobill" : due != null && due <= 0.5 && (bill > 0 || got > 0) ? "paid" : got > 0 ? "part" : due > 0.5 ? "pen" : "nobill";
   return { k, j, bill, got, due, P, modes, chq, drv, days };
 }
+// Column filter value: status first, then each mode / cheque / driver, joined by ", " (split column),
+// so "Pending", "Part paid", "Cash", "GPay/UPI", "Cheque not cleared" ... can each be ticked.
 function payLabel(order) {
   const x = payInfo(order);
-  if (x.chq) return PAY_CHQ[x.chq.status];
-  return { paid: "Paid", part: "Part paid", pen: "Pending", nobill: "Bill not made" }[x.k] || "";
+  if (!x.k) return "";
+  if (x.k === "wait") return "Loading…";
+  const out = [{ paid: "Paid", part: "Part paid", pen: "Pending", nobill: "Bill not made" }[x.k]];
+  (x.modes || []).forEach(m => out.push((PAY_MODE[m] || m).replace(/^\S+ /, "")));
+  if (x.chq) out.push(PAY_CHQ[x.chq.status]);
+  if (x.drv) out.push("Money with driver");
+  return out.join(", ");
 }
 function payCell(order) {
   const x = payInfo(order);
@@ -3352,8 +3359,8 @@ async function ensurePays(list) {
       (r.data || []).forEach(x => listPays.get(x.order_id) && listPays.get(x.order_id).push(x));
     }
   } finally { payLoading = false; }
-  // A Payment filter / sort may be on: draw the list again; otherwise only the cells.
-  if (PO_CF.count("po")) renderOrders(); else refreshPayCells(need);
+  // Draw the list again so the Payment filter (values read at draw time) lists Paid / Pending / Cash ...
+  renderOrders();
   if (list.some(o => payStage(o) && !payAsked.has(o.id))) ensurePays(list);
 }
 function openPay(id) {
@@ -4597,7 +4604,7 @@ function renderOrders() {
 
   filtered = sugArrange(filtered, filter);
   const payBase = filtered;
-  filtered = PO_CF.apply("po", PO_CF_HEAD, filtered.map(poCfRow), { list: [1] }).map(r => r.o);
+  filtered = PO_CF.apply("po", PO_CF_HEAD, filtered.map(poCfRow), { list: [1], split: CAN_PAY ? [10] : [] }).map(r => r.o);
   if (justSavedId) {
     const i = filtered.findIndex(o => o.id === justSavedId);
     if (i > 0) filtered = [filtered[i], ...filtered.slice(0, i), ...filtered.slice(i + 1)];
