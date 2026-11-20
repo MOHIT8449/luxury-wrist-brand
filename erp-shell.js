@@ -166,7 +166,7 @@
       // (one header, one tab row, acc-hub.js). Billing tabs are party-billing.html, Cash & Bank tabs accounts-dashboard.html.
       // Split by work (Mohit, 20 Nov 2026), same two files, view in the hash (acc-hub.js):
       // Accounts · Tally (Yogesh bhai: Tally bills, bank check, GST + cash), Cashier (cash only), Party & Collections (Admin).
-      {t:"Accounts · Tally",h:"party-billing.html",i:"bill",r:"admin accounts",k:"accounts tally bills to make bills made tally bill merge sales bill gst gstr gstr-1 gstr-3b gst paid filed bank check verify bank entry cheque po change credit note return cash in cash out bank deposit close day day book",pt:"Accounts · Tally (Bills, Bank check, GST)"},
+      {t:"Accounts · Tally",h:"party-billing.html",i:"bill",r:"admin accounts",k:"accounts tally bills to make bills made party ledger statement khata tally bill merge sales bill gst gstr gstr-1 gstr-3b gst paid filed bank check verify bank entry cheque po change credit note return cash in cash out bank deposit close day day book",pt:"Accounts · Tally (Bills, Ledger, Bank check, GST)"},
       {t:"Cashier",h:"accounts-dashboard.html#cash",i:"cash",r:"admin cashier",k:"cashier cash in cash out bank deposit close day day book cash book cash ledger cash in hand cheque handover staff advance upad salary vehicle expense party payment received",pt:"Cashier (Cash In / Out, Day book)"},
       {t:"Party & Collections",h:"party-billing.html#party",i:"users",r:"admin",k:"party payment received pending outstanding to collect collection party ledger statement khata advance returns party groups acrs ecrs",pt:"Party & Collections (To collect, Ledger, ACRS)"},
       {t:"Accounts",h:"accounts-dashboard.html",i:"cash",r:"admin accounts",hide:1,par:"party-billing.html"},

@@ -6,7 +6,7 @@
    loads the rest (cash figures on the billing half, bills on the cash half) with the same rules.
 
    Split by work (Mohit, 20 Nov 2026), three views of the same two files, the view in the URL hash:
-     #tally  Accounts (Tally) = role accounts (Yogesh bhai): Tally bills, bank check, GST, cash too
+     #tally  Accounts (Tally) = role accounts (Yogesh bhai): Tally bills, party Ledger (view only), bank check, GST, cash too
      #cash   Cashier          = role cashier: Cash In / Out, Deposit, Close Day, Day book, cheques, staff, vehicles
      #party  Party & Collections = Admin (or ticked in Manage Users): To collect, Payments, Ledger, Returns, ACRS
    Admin switches between the three with the chips in the header.
@@ -25,7 +25,7 @@
   const BILL=["make","made","due","led","pay","ret","chg","grp","gst"];
   const VIEWS={
     tally:{name:"Accounts · Tally",chip:"Tally",acts:["pay","IN","OUT","DEPOSIT","close","ret"],
-      row:[["Tally",["make","made","chg","ret"]],["Bank & GST",["verify","cheques","gst"]],["Cash",["book","sum"]]],more:["grp","close","staff","veh","setup"],
+      row:[["Tally",["make","made","chg","ret"]],["Party",["led"]],["Bank & GST",["verify","cheques","gst"]],["Cash",["book","sum"]]],more:["grp","close","staff","veh","setup"],
       kpis:["make","verify","gst","chq","coll","hand"],first:"make"},
     cash:{name:"Cashier",chip:"Cashier",acts:["pay","IN","OUT","DEPOSIT","close"],
       row:[["",["book","cheques","close","staff","veh"]]],more:[],kpis:["open","cin","cout","dep","chq","hand"],first:"book"},
