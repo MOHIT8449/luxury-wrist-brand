@@ -870,6 +870,7 @@
     .pay-t th {text-align:left;font-size:11px;text-transform:uppercase;color:#6b7785;padding:6px;background:#f7f8f6;border-bottom:1px solid #e3e7ec}
     .pay-t td {padding:6px;border-bottom:1px solid #eef1f0;vertical-align:top}.pay-t .r {text-align:right;white-space:nowrap}
     .pay-t small {display:block;color:#6b7785;font-size:11px}
+    .pay-bill {cursor:pointer}.pay-bill:hover td {background:#f3f8f6}.pay-bill b {color:#00434d;text-decoration:underline;text-underline-offset:2px}
     .pay-st {margin-top:8px}
     .pay-dlg footer {display:flex;gap:8px;padding:10px 14px;border-top:1px solid #e3e7ec;flex-wrap:wrap;align-items:center}
     .pay-dlg footer .sp {flex:1}
@@ -3355,7 +3356,7 @@ function openPay(id) {
   const dmyOnly = v => v ? String(v).slice(8, 10) + "/" + String(v).slice(5, 7) + "/" + String(v).slice(2, 4) : "";
   const age = d => d ? Math.max(0, Math.round((Date.parse(PD.today + "T00:00:00Z") - Date.parse(String(d).slice(0, 10) + "T00:00:00Z")) / 864e5)) : "";
   const rows = x.bills.map(b => { const d = age(b.invoice_date);
-    return `<tr><td><b>${escapeHtml(b.order_no || "")}</b><small>${escapeHtml(b.invoice_no || "")}${b.party && b.party !== party ? " · " + escapeHtml(b.party) : ""}</small></td>` +
+    return `<tr class="pay-bill" data-bill="${escapeHtml(b.order_id || "")}" title="Open this bill in a new tab"><td><b>🧾 ${escapeHtml(b.order_no || "")}</b><small>${escapeHtml(b.invoice_no || "")}${b.party && b.party !== party ? " · " + escapeHtml(b.party) : ""}</small></td>` +
       `<td>${dmyOnly(b.invoice_date)}<small class="${d > 30 ? "due" : ""}">${d} day${d === 1 ? "" : "s"}</small></td><td class="r due">${payRs(b.due)}</td></tr>`; }).join("");
   const less = () => (p.advance || 0) + (p.ret || 0);
   const box = document.createElement("div");
@@ -3374,6 +3375,9 @@ function openPay(id) {
   document.addEventListener("keydown", esc);
   box.addEventListener("click", async e => {
     if (e.target === box || e.target.closest("[data-x]")) return close();
+    // Tap a bill = that bill (tax invoice of the PO) in a new tab.
+    const bl = e.target.closest("[data-bill]");
+    if (bl && bl.dataset.bill) return window.open("tax-invoice.html?order=" + encodeURIComponent(bl.dataset.bill), "_blank", "noopener");
     const t = e.target.closest("[data-tell]");
     if (!t) return;
     const note = await ERPShell.prompt("Message to Accounts / Cashier (optional)", "", { placeholder: "e.g. party will pay Monday by cheque", ok: "📣 Send" });
