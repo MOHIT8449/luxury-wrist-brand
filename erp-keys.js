@@ -252,7 +252,7 @@
   // Tally keys for Accounts (Mohit, 20 Nov 2026): from any page straight into Ledger & Outstanding (accounts-books.html).
   const ACC_ROLES=["admin","accounts"];
   const ACC_KEYS={L:"led&find=1",O:"out",R:"rec",P:"sum",D:"day"};
-  const ACC_HELP=[[["Ctrl+Alt+L"],"Ledger of a party (Tally style)"],[["Ctrl+Alt+O"],"Outstanding"],[["Ctrl+Alt+R"],"Receipts"],[["Ctrl+Alt+P"],"Party payment summary"],[["Ctrl+Alt+D"],"Day book"]];
+  const ACC_HELP=[[["Ctrl+Alt+L"],"Ledger of a party (Tally style)"],[["Ctrl+Alt+O"],"Outstanding"],[["Ctrl+Alt+R"],"Receipts"],[["Ctrl+Alt+P"],"Party payment summary"],[["Ctrl+Alt+D"],"Day book"],[["Ctrl+Alt+F"],"Finance home"]];
   // Keys a page adds on top of COMMON (from the page's own code). r = only for these roles.
   const PAGES={
     "dashboard.html":[[["↑","↓","Enter"],"Top search: pick a page / party and open it"],[["Esc"],"Clear the search"]],
@@ -267,6 +267,7 @@
     "party-billing.html":[[["Enter"],"After bill no. / amount: Save"]],
     "accounts-books.html":[[["Ctrl+Alt+L"],"Ledger: type the party name"],[["Ctrl+Alt+O"],"Outstanding (party-wise / bill-wise)"],[["Ctrl+Alt+R"],"Receipts register"],
       [["Ctrl+Alt+P"],"Party payment summary"],[["Ctrl+Alt+D"],"Day book"],[["Enter"],"Open the row: party → bills → bill → items"],[["L"],"In a party's bills: its ledger"],[["Esc"],"One step back (popup, then party)"]],
+    "finance.html":[[["/","Ctrl+K"],"Find party, bill no, PO, cheque, amount"],[["↑","↓","Enter"],"Open a search result"],[["Esc"],"Close the popup"]],
     "complaint-box.html":[[["Enter","Space"],"Open / close a complaint"]],
     "tasks.html":[[["Enter","Space"],"Open / close a task"]]
   };
@@ -315,6 +316,7 @@
     if((e.ctrlKey||e.metaKey)&&!e.altKey&&(k==="k"||k==="K")){const s=pageSearch();if(s){e.preventDefault();focus(s,true)}return}
     if(e.altKey&&e.ctrlKey&&!e.metaKey){
       const c=(e.code||"").replace(/^Key/,""),go=ACC_KEYS[c];
+      if(c==="F"&&ACC_ROLES.includes(myRole())&&!/finance\.html$/.test(location.pathname)){e.preventDefault();location.href="finance.html";return}
       if(go&&ACC_ROLES.includes(myRole())&&!/accounts-books\.html$/.test(location.pathname)){e.preventDefault();location.href="accounts-books.html?v="+go}
       return;
     }

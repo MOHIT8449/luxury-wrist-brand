@@ -48,6 +48,7 @@
   .hub-top h1{margin:0 4px 0 0;font-size:19px}.hub-top .sp{flex:1 1 auto}.hub-top .lwb-brands{margin:0}
   .hub-ico{height:34px;min-width:34px;border:1.5px solid var(--erp-line);background:#fff;border-radius:99px;font:inherit;font-size:15px;cursor:pointer;color:var(--erp-ink)}
   .hub-ico:disabled{opacity:.5}
+  .hub-fin{display:inline-flex;align-items:center;height:30px;padding:0 10px;border-radius:99px;background:#e6f0f0;color:#00434d;font-size:13px;font-weight:700;text-decoration:none;white-space:nowrap}
   .hub-acts{display:flex;gap:6px;margin:0 0 8px}
   .hub-views{display:inline-flex;background:#fff;border:1px solid var(--erp-line);border-radius:99px;padding:2px;gap:2px}
   .hub-views a{display:inline-flex;align-items:center;height:28px;padding:0 11px;border-radius:99px;font-size:13px;font-weight:700;color:#4b5763;text-decoration:none;white-space:nowrap}
@@ -138,6 +139,8 @@
   function drawViews(){
     const top=document.querySelector(".hub-top");if(!top)return;
     const h=top.querySelector("h1");if(h)h.textContent=VIEWS[view].name;
+    // back to the Finance home (finance.html, Mohit 20 Nov 2026): money now, work waiting, brand-wise
+    if(!el("hubFin")){const a=document.createElement("a");a.id="hubFin";a.href="finance.html";a.className="hub-fin";a.title="Finance home (Ctrl+Alt+F)";a.textContent="‹ Finance";top.insertBefore(a,top.firstChild)}
     let b=el("hubViews");
     if(views.length<2){if(b)b.remove();return}
     if(!b){b=document.createElement("nav");b.id="hubViews";b.className="hub-views";b.setAttribute("aria-label","Accounts view");
