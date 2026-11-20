@@ -2586,6 +2586,21 @@ function dlvBadge(order) {
   return `<span class="dlv-h ${css}" title="${escapeHtml(tip)}" aria-label="${escapeHtml(tip)}">${txt}</span>`;
 }
 
+/* Hours since the PO was made (Mohit, 20 Nov 2026): same round badge as "Delivered in 24h", on every PO that is
+   not delivered yet (Draft, Approval pending, Transport ...), counting from PO made till now. Green / amber / red on
+   the approval limit (pending) or the delivery limit (after approval). Replaces "Approve in / Deliver in" on the list. */
+function ageBadge(order) {
+  if (isCancelled(order)) return "";
+  if (isDeliveredOrder(order)) return dlvBadge(order);
+  const t = new Date(order.created_at || order.order_date).getTime();
+  if (!Number.isFinite(t)) return "";
+  const h = hoursSinceTaken(order), lim = isPending(order) ? APPROVE_HOURS : DELIVER_HOURS;
+  const css = h >= lim ? "r" : h >= (lim === APPROVE_HOURS ? lim / 2 : lim - 12) ? "a" : "g";
+  const txt = h < 1 ? "<1h" : Math.floor(h) + "h";
+  const tip = "PO made " + formatDateTime(order.created_at || order.order_date) + " · " + (h < 1 ? "less than 1 hr" : Math.floor(h) + " hrs") + " ago · " +
+    (lim === APPROVE_HOURS ? "approve within " : "deliver within ") + lim + " hrs";
+  return `<span class="dlv-h ${css}" title="${escapeHtml(tip)}" aria-label="${escapeHtml(tip)}">${txt}</span>`;
+}
 function slaBadge(order) {
   const s = slaState(order);
   return s ? `<span class="sla ${s.css}">${s.text}</span>` : "";
@@ -4665,9 +4680,9 @@ function renderOrders() {
             </td>
 
             <td class="c-st">
-              ${dlvBadge(order)}<span class="st-badge">${statusBadge(order)}</span>
+              ${ageBadge(order)}<span class="st-badge">${statusBadge(order)}</span>
               ${stepTrack(order, true)}
-              ${slaBadge(order)}
+              
             </td>
 
             <td class="c-trk">${stepTrack(order)}</td>
@@ -4771,7 +4786,7 @@ function renderDrafts(area) {
           <td class="c-qty" data-label="Qty" style="text-align:right">${formatNumber(d.total_qty)}</td>
           <td class="money c-amt" data-label="Amount" style="text-align:right">${formatMoney(d.total_amount)}</td>
           <td class="c-wt" data-label="Weight" style="text-align:right">${formatNumber(d.total_weight)} KG</td>
-          <td class="c-st" data-label="Saved by">${escapeHtml(d.updated_by_name || d.created_by_name || "-")}</td>
+          <td class="c-st" data-label="Saved by">${ageBadge(d)}${escapeHtml(d.updated_by_name || d.created_by_name || "-")}</td>
           <td class="c-act"><div class="act-row">
             <button class="btn btn-green" title="Open, edit and submit as PO" onclick="openDraft('${d.id}')">✏️<span class="lbl-long"> Open</span></button>
             <button class="btn btn-light draft-del" title="Delete draft" onclick="deleteDraft('${d.id}')">🗑</button>
