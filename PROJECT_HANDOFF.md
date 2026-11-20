@@ -1241,3 +1241,8 @@
 - `erp-shell.js` `brandTop()`: picker after the page name (phone: short word, e.g. COCA, page name hidden). Kept per device (`lwbBrand`), follows in other tabs. Godown Manager and Driver: no picker. A Sales Head / Salesman tied to one brand (Companies > Team brands, `lwb_user_companies`) sees a fixed label; the database already limits his SKUs / POs (RLS `lwb_brand_sku_scope`, `lwb_brand_order_scope`). No SQL change.
 - `brand-filter.js`: `LWBBrand.pick(id)` saves and tells every page; `mount()` draws nothing now, its onChange runs on pick; `chips()` is hidden and follows the top bar, except `{local:true}` (New PO brand, SKU Master "No company"). Event `lwb:brand` for pages with their own drop-down (dashboard, inventory, approvals, PO list, accounts dashboard).
 - Expenses / cash entries have no brand, so they always show all brands.
+
+### Party Due remarks + new tabs (20 Nov 2026)
+- PO / Sales Party due popup: Party ledger / Outstanding open in a new tab; each bill opens tax-invoice.html in a new tab.
+- Remarks (lwb_payment_remarks_setup.sql): Admin / Sales Head write a note on a party or one bill (quick chips + free text); Accounts reads; Accounts, Cashier, Admin, Sales Head get a PAYMENT_FOLLOWUP bell. Latest remark shows under the Party Due cell.
+- Party Due column sorts by amount (erp-colfilter.js `sortNum`); "💰 Outstanding" pill = total due of the parties in the list shown.

@@ -2,6 +2,7 @@
    Each column head gets a ▾ button. It opens a small popup:
      text column  -> sort A-Z / Z-A, search + tick boxes of the values (nothing ticked = all)
      number       -> sort low / high, Min and Max
+     opt.sortNum:[i] -> text column (tick boxes) sorted low / high by row.num[i]
      date (ISO)   -> sort old / new, From and To
    On phone (table head hidden) the same buttons show as a row of column chips above the table.
    const cf=LWBCol.create({onChange})
@@ -89,15 +90,16 @@ mark.lwb-hit{background:#fde68a;color:inherit;border-radius:2px;padding:0 1px}
       return true;
     }
     function apply(key,head,rows,opt){
-      const s=st(key),split=new Set((opt&&opt.split)||[]),list=new Set((opt&&opt.list)||[]);
-      seen[key]={head,rows,split,list};
+      const s=st(key),split=new Set((opt&&opt.split)||[]),list=new Set((opt&&opt.list)||[]),byNum=new Set((opt&&opt.sortNum)||[]);
+      seen[key]={head,rows,split,list,byNum};
       // drop filters for columns this view does not have (e.g. head changed)
       for(const c of Object.keys(s.f))if(!head.includes(c))delete s.f[c];
       if(s.sort&&!head.includes(s.sort.col))s.sort=null;
       let out=rows;
       for(const [name,f] of Object.entries(s.f)){const i=head.indexOf(name);if(i<0)continue;out=out.filter(r=>pass(r,i,f,split.has(i)))}
       if(s.sort){const i=head.indexOf(s.sort.col);if(i>=0){const dir=s.sort.dir;out=out.slice().sort((a,b)=>{
-        const x=a.data[i],y=b.data[i];if(empty(x)&&empty(y))return 0;if(empty(x))return 1;if(empty(y))return -1;
+        // sortNum column: shown / filtered as text, sorted by the row's number (row.num[i]), e.g. Party Due ₹
+        const x=byNum.has(i)?(a.num||{})[i]:a.data[i],y=byNum.has(i)?(b.num||{})[i]:b.data[i];if(empty(x)&&empty(y))return 0;if(empty(x))return 1;if(empty(y))return -1;
         return (isNum(x)&&isNum(y)?x-y:String(x).localeCompare(String(y),undefined,{numeric:true}))*dir})}}
       return out;
     }
@@ -135,7 +137,7 @@ mark.lwb-hit{background:#fde68a;color:inherit;border-radius:2px;padding:0 1px}
       const h=sv.head[i],s=st(key),split=sv.split.has(i),t=split?"text":typeOf(sv.rows,i),f=s.f[h]||{};
       const range=t!=="text"&&!sv.list.has(i);
       const pop=D.createElement("div");pop.className="lwb-cf-pop";
-      const sortTxt=t==="num"?["↑ Low to high","↓ High to low"]:t==="date"?["↑ Oldest first","↓ Newest first"]:["↑ A to Z","↓ Z to A"];
+      const sortTxt=t==="num"||(sv.byNum&&sv.byNum.has(i))?["↑ Low to high","↓ High to low"]:t==="date"?["↑ Oldest first","↓ Newest first"]:["↑ A to Z","↓ Z to A"];
       const sd=s.sort&&s.sort.col===h?s.sort.dir:0;
       let body='<h4>'+esc(h)+'</h4><div class="lwb-cf-row"><button type="button" data-s="1"'+(sd>0?' class="on"':"")+">"+sortTxt[0]+'</button><button type="button" data-s="-1"'+(sd<0?' class="on"':"")+">"+sortTxt[1]+'</button><button type="button" class="sp" data-c="1">Clear</button></div>';
       if(range){const it=t==="date"?"date":"number",mv=x=>x==null?"":esc(x);

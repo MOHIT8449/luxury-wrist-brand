@@ -870,6 +870,19 @@
     .pay-t th {text-align:left;font-size:11px;text-transform:uppercase;color:#6b7785;padding:6px;background:#f7f8f6;border-bottom:1px solid #e3e7ec}
     .pay-t td {padding:6px;border-bottom:1px solid #eef1f0;vertical-align:top}.pay-t .r {text-align:right;white-space:nowrap}
     .pay-t small {display:block;color:#6b7785;font-size:11px}
+    .pay-bill {cursor:pointer}.pay-bill:hover td {background:#f3f8f6}.pay-bill b {color:#00434d;text-decoration:underline;text-underline-offset:2px}
+    .pay-rm {display:block;max-width:190px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px;color:#1d5fbf;font-weight:600}
+    .pay-rms {margin-top:10px;border-top:1px solid #eef1f0;padding-top:8px}
+    .pay-rms h4 {margin:0 0 6px;font-size:13px}.pay-rms h4 small {background:#e8f0fc;color:#1d5fbf;border-radius:999px;padding:0 6px;font-size:11px}
+    .rm-list {list-style:none;margin:0;padding:0;max-height:180px;overflow:auto}
+    .rm-list li {padding:5px 8px;border-left:3px solid #9cc0f0;background:#f6f9fe;border-radius:0 6px 6px 0;margin-bottom:5px;font-size:13px;overflow-wrap:anywhere}
+    .rm-list small {display:block;color:#6b7785;font-size:11px;margin-top:1px}
+    .rm-add {margin-top:6px}.rm-q {display:flex;flex-wrap:wrap;gap:4px;margin-bottom:5px}
+    .rm-q button {border:1px solid #d6dde6;background:#fff;border-radius:999px;padding:2px 9px;font-size:11.5px;cursor:pointer;color:#1f2a37}
+    .rm-q button:hover {background:#f1f5f9}
+    .rm-row {display:flex;gap:6px;min-width:0}.rm-row select {flex:0 0 auto;max-width:38%;padding:6px;border:1px solid #ccd5df;border-radius:7px;font:inherit;font-size:13px}
+    .rm-row input {flex:1;min-width:0;padding:6px 9px;border:1px solid #ccd5df;border-radius:7px;font:inherit;font-size:14px}
+    @media (max-width:640px){#ordersArea .pay-rm {max-width:100%}}
     .pay-st {margin-top:8px}
     .pay-dlg footer {display:flex;gap:8px;padding:10px 14px;border-top:1px solid #e3e7ec;flex-wrap:wrap;align-items:center}
     .pay-dlg footer .sp {flex:1}
@@ -1031,6 +1044,7 @@
     .po-pend-pill b {color:var(--erp-red,#c8102e)}
     .po-pend-pill span {color:#6b7785;font-weight:600}
     .po-pend-pill:hover {background:#ffe9ec}
+    .po-due-pill {text-decoration:none;border-color:#f3c4a8;background:#fff8f2}.po-due-pill:hover {background:#ffefe2}
     .erp-ls-back .status {white-space:nowrap}
     body.po-view-dash .po-pend-pill {display:none}
     .pulse-next {animation:pulseNext .8s ease-in-out 3;box-shadow:0 0 0 0 rgba(22,163,74,.6)}
@@ -1482,6 +1496,7 @@
         </div>
         <!-- Total pending delivery on the PO List too (Mohit, 16 Nov 2026); the Dashboard view has the full card. -->
         <button type="button" class="po-pend-pill" id="poPendPill" hidden title="All POs not delivered yet · tap to see the list">🚚 Pending delivery <b id="poPendN">-</b> <span id="poPendAmt"></span></button>
+        <a class="po-pend-pill po-due-pill" id="poDuePill" hidden href="sales-outstanding.html" title="Total still due from the parties of the POs in this list (each party once) · tap for Outstanding">💰 Outstanding <b id="poDueAmt">-</b> <span id="poDueN"></span></a>
         <!-- Main page search next to Pending delivery (Mohit, 20 Nov 2026); no party pop-up list here. -->
         <input id="searchBox" class="po-search" type="search" autocomplete="off"
           placeholder="🔍 Search anything: PO no, party, salesman, amount, status..."
@@ -3212,7 +3227,7 @@ function poCfRow(o) {
   return { o, data: [o.order_no || "", d ? new Date(new Date(d).getTime() + 5.5 * 3600000).toISOString().slice(0, 10) : "",
     o.customer_name || "", orderLines.has(o.id) ? Number(orderLines.get(o.id)) : null, o.sales_person || "",
     o.transportation || "", Number(o.total_qty) || 0, Number(o.total_amount) || 0, Number(o.total_weight) || 0, stageLabel(o),
-    CAN_PAY ? payLabel(o) : ""] };
+    CAN_PAY ? payLabel(o) : ""], num: CAN_PAY ? { 10: partyDue(o).net || 0 } : null };
 }
 const poTh = (i, label) => PO_CF.th("po", PO_CF_HEAD, i, label == null ? PO_CF_HEAD[i] : label);
 
@@ -3315,10 +3330,23 @@ async function ensurePartyDue() {
     const raw = r.data || {};
     const fake = { rpc: n => Promise.resolve(n === "lwb_party_return_list" ? { data: raw.returns || [] } : { data: raw }) };
     PD = await LWBPartyPay.load(fake);
+    await loadRemarks();
   } catch (e) { console.warn("Party due not loaded", e); PD = false; }
   // Draw the list again so the cells and the column filter (values read at draw time) get the amounts.
   renderOrders();
 }
+/* Payment remarks (Mohit, 20 Nov 2026): Admin / Sales Head write a note on a party or one of its bills
+   ("payment kal aayega", "payment aa gaya, Tally kar lo", any query); Accounts reads it here. lwb_payment_remarks_setup.sql.
+   RM: main party key -> remarks, newest first. null = not set up yet / not allowed. */
+let RM = null;
+const rmKey = party => LWBPartyPay.key(PD ? PD.parentOf(party || "") : party || "");
+async function loadRemarks() {
+  const r = await db.rpc("lwb_payment_remark_list", { p_days: 120 });
+  if (r.error) { console.warn("Payment remarks not loaded", r.error); RM = null; return; }
+  RM = new Map();
+  (r.data || []).forEach(x => { const k = rmKey(x.party); if (!RM.has(k)) RM.set(k, []); RM.get(k).push(x); });
+}
+const rmWhen = v => { const d = new Date(v); return isNaN(d) ? "" : d.toLocaleString("en-IN", { timeZone: "Asia/Kolkata", day: "2-digit", month: "short", hour: "numeric", minute: "2-digit" }); };
 function partyDue(order) {
   if (PD === null) return { k: "wait" };
   if (PD === false) return { k: "" };
@@ -3340,11 +3368,21 @@ function payCell(order) {
   const x = partyDue(order);
   if (!x.k) return `<span class="pay-na">—</span>`;
   if (x.k === "wait") return `<span class="pay-na">…</span>`;
-  if (x.k === "none") return `<span class="pb pb-ok">✓ No dues</span>`;
-  if (x.k === "adv") return `<span class="pb pb-ok">${payRs(x.net)} advance</span>`;
+  if (x.k === "none") return `<div class="pay-c"><span class="pb pb-ok">✓ No dues</span>${rmLine(order)}</div>`;
+  if (x.k === "adv") return `<div class="pay-c"><span class="pb pb-ok">${payRs(x.net)} advance</span>${rmLine(order)}</div>`;
   const n = x.bills.length;
   return `<div class="pay-c"><span class="pb pb-pen">${payRs(x.net)} due</span>` +
-    (n ? `<small class="pay-d${x.days > 30 ? " late" : ""}">${n} bill${n === 1 ? "" : "s"} · oldest ${x.days} day${x.days === 1 ? "" : "s"}</small>` : "") + `</div>`;
+    (n ? `<small class="pay-d${x.days > 30 ? " late" : ""}">${n} bill${n === 1 ? "" : "s"} · oldest ${x.days} day${x.days === 1 ? "" : "s"}</small>` : "") + rmLine(order) + `</div>`;
+}
+// Latest remark of the party, one line under the due (full list on tap).
+function rmLine(order) {
+  const l = RM && RM.get(rmKey(order.customer_name));
+  if (!l || !l.length) return "";
+  const r = l[0];
+  return `<small class="pay-rm" title="${escapeHtml(r.note + " · " + (r.by_name || "") + " · " + rmWhen(r.created_at))}">💬 ${escapeHtml(r.note)}</small>`;
+}
+function refreshPartyCells() {
+  document.querySelectorAll("#ordersArea [data-pay]").forEach(td => { const o = orders.find(x => String(x.id) === td.dataset.pay); if (o) td.innerHTML = payCell(o); });
 }
 function openPay(id) {
   const order = orders.find(o => String(o.id) === String(id));
@@ -3355,8 +3393,19 @@ function openPay(id) {
   const dmyOnly = v => v ? String(v).slice(8, 10) + "/" + String(v).slice(5, 7) + "/" + String(v).slice(2, 4) : "";
   const age = d => d ? Math.max(0, Math.round((Date.parse(PD.today + "T00:00:00Z") - Date.parse(String(d).slice(0, 10) + "T00:00:00Z")) / 864e5)) : "";
   const rows = x.bills.map(b => { const d = age(b.invoice_date);
-    return `<tr><td><b>${escapeHtml(b.order_no || "")}</b><small>${escapeHtml(b.invoice_no || "")}${b.party && b.party !== party ? " · " + escapeHtml(b.party) : ""}</small></td>` +
+    return `<tr class="pay-bill" data-bill="${escapeHtml(b.order_id || "")}" title="Open this bill in a new tab"><td><b>🧾 ${escapeHtml(b.order_no || "")}</b><small>${escapeHtml(b.invoice_no || "")}${b.party && b.party !== party ? " · " + escapeHtml(b.party) : ""}</small></td>` +
       `<td>${dmyOnly(b.invoice_date)}<small class="${d > 30 ? "due" : ""}">${d} day${d === 1 ? "" : "s"}</small></td><td class="r due">${payRs(b.due)}</td></tr>`; }).join("");
+  const rmList = () => RM ? (RM.get(rmKey(party)) || []) : [];
+  const rmHtml = () => {
+    const l = rmList();
+    const items = l.slice(0, 20).map(r => `<li><span class="rn">${escapeHtml(r.note)}</span>` +
+      `<small>${r.order_no ? `<b>🧾 ${escapeHtml(r.order_no)}</b> · ` : "<b>Party</b> · "}${escapeHtml(r.by_name || "")}${r.by_role === "manager" ? " (Sales Head)" : r.by_role === "admin" ? " (Admin)" : ""} · ${rmWhen(r.created_at)}</small></li>`).join("");
+    return `<h4>💬 Remarks${l.length ? ` <small>${l.length}</small>` : ""}</h4>` +
+      (RM === null ? `<p class="pay-d">Remarks start once this change is live.</p>` : items ? `<ul class="rm-list">${items}</ul>` : `<p class="pay-d">No remark yet.</p>`) +
+      (CAN_HEAD && RM !== null ? `<div class="rm-add"><div class="rm-q">${["Payment tomorrow", "Payment today", "Payment received, check in Tally", "Party will pay this week"].map(t => `<button type="button" data-rmq="${t}">${t}</button>`).join("")}</div>
+        <div class="rm-row"><select data-rmfor aria-label="Remark for"><option value="">Whole party</option>${x.bills.map(b => `<option value="${escapeHtml(b.order_id || "")}">Bill ${escapeHtml(b.order_no || "")}</option>`).join("")}</select>
+        <input data-rmtxt maxlength="300" placeholder="Write a remark for Accounts…" aria-label="Remark"><button type="button" class="btn btn-green" data-rmsave>Save</button></div></div>` : "");
+  };
   const less = () => (p.advance || 0) + (p.ret || 0);
   const box = document.createElement("div");
   box.className = "pay-ov";
@@ -3365,15 +3414,37 @@ function openPay(id) {
     <div class="pay-sum"><div><small>Bills due</small><b class="${p.due > 0.5 ? "due" : ""}">${payRs(p.due)}</b></div>
       <div><small>Advance</small><b>${payRs(less())}</b></div>
       <div><small>${x.net < -0.5 ? "Advance" : "Total due"}</small><b class="${x.net > 0.5 ? "due" : "ok"}">${payRs(x.net)}</b></div></div>
-    ${rows ? `<table class="pay-t" data-cf-off><thead><tr><th>PO / Bill</th><th>Bill date</th><th class="r">Due</th></tr></thead><tbody>${rows}</tbody></table>` : `<p class="pay-d">No bill pending for this party.</p>`}</div>
-    <footer><a class="btn btn-light" href="party-ledger.html?party=${encodeURIComponent(party)}">📒 Party ledger</a>
-      ${CAN_HEAD ? `<a class="btn btn-light" href="sales-outstanding.html?q=${encodeURIComponent(party)}">Outstanding</a>` : ""}<span class="sp"></span>
+    ${rows ? `<table class="pay-t" data-cf-off><thead><tr><th>PO / Bill</th><th>Bill date</th><th class="r">Due</th></tr></thead><tbody>${rows}</tbody></table>` : `<p class="pay-d">No bill pending for this party.</p>`}
+    <div class="pay-rms" data-rms>${rmHtml()}</div></div>
+    <footer><a class="btn btn-light" href="party-ledger.html?party=${encodeURIComponent(party)}" target="_blank" rel="noopener">📒 Party ledger ↗</a>
+      ${CAN_HEAD ? `<a class="btn btn-light" href="sales-outstanding.html?q=${encodeURIComponent(party)}" target="_blank" rel="noopener">Outstanding ↗</a>` : ""}<span class="sp"></span>
       ${CAN_HEAD && x.net > 0.5 ? `<button type="button" class="btn btn-green" data-tell>📣 Tell Accounts / Cashier</button>` : ""}</footer></div>`;
   const close = () => { box.remove(); document.removeEventListener("keydown", esc); };
   const esc = e => { if (e.key === "Escape") close(); };
   document.addEventListener("keydown", esc);
+  box.addEventListener("keydown", e => { if (e.key === "Enter" && e.target.matches("[data-rmtxt]")) { e.preventDefault(); box.querySelector("[data-rmsave]").click(); } });
   box.addEventListener("click", async e => {
     if (e.target === box || e.target.closest("[data-x]")) return close();
+    // Tap a bill = that bill (tax invoice of the PO) in a new tab.
+    const bl = e.target.closest("[data-bill]");
+    if (bl && bl.dataset.bill) return window.open("tax-invoice.html?order=" + encodeURIComponent(bl.dataset.bill), "_blank", "noopener");
+    const q = e.target.closest("[data-rmq]");
+    if (q) { const i = box.querySelector("[data-rmtxt]"); i.value = q.dataset.rmq; i.focus(); return; }
+    const sv = e.target.closest("[data-rmsave]");
+    if (sv) {
+      const i = box.querySelector("[data-rmtxt]"), note = i.value.trim(), oid = box.querySelector("[data-rmfor]").value || null;
+      if (!note) { i.focus(); return showMessage("Write the remark first.", "error"); }
+      sv.disabled = true;
+      const { data, error } = await db.rpc("lwb_payment_remark_add", { p_party: party, p_order_id: oid, p_note: note });
+      sv.disabled = false;
+      if (error) return showMessage(String(error.message || error).replace(/^.*?ERROR:\s*/, ""), "error");
+      const k = rmKey(party);
+      if (!RM.has(k)) RM.set(k, []);
+      RM.get(k).unshift(data);
+      box.querySelector("[data-rms]").innerHTML = rmHtml();
+      refreshPartyCells();
+      return showMessage("Remark saved. Accounts can see it.", "success");
+    }
     const t = e.target.closest("[data-tell]");
     if (!t) return;
     const note = await ERPShell.prompt("Message to Accounts / Cashier (optional)", "", { placeholder: "e.g. party will pay Monday by cheque", ok: "📣 Send" });
@@ -3687,6 +3758,19 @@ async function markPoPrinted(id, kind) {
   } catch (e) {}
 }
 
+// 💰 Outstanding (Mohit, 20 Nov 2026): one number on top = total due of the parties in the list shown now
+// (tab + search + column filters), each party once. Same party due as the Party Due column.
+function renderDueTotal(list) {
+  const pill = document.getElementById("poDuePill");
+  if (!pill) return;
+  if (!CAN_PAY || !PD || !list.length) { pill.hidden = true; return; }
+  const seen = new Map();
+  list.forEach(o => { const x = partyDue(o); if (x.k === "due" && x.p) seen.set(LWBPartyPay.key(x.p.party), x.net); });
+  const tot = [...seen.values()].reduce((t, v) => t + v, 0);
+  pill.hidden = false;
+  document.getElementById("poDueAmt").textContent = payRs(tot);
+  document.getElementById("poDueN").textContent = "· " + seen.size + " part" + (seen.size === 1 ? "y" : "ies");
+}
 function renderListFoot(filtered, pages) {
   const foot = document.getElementById("poFoot");
   if (!filtered.length) { foot.hidden = true; return; }
@@ -4555,7 +4639,7 @@ function renderOrders() {
 
   const base = orders.filter(matchesColumnFilters);
   renderTabs(base, filter);
-  if (filter === "draft") { renderDrafts(area); return; }
+  if (filter === "draft") { renderDueTotal([]); renderDrafts(area); return; }
 
   let filtered = base.filter(order => matchesTab(order, filter));
   const fillWant = document.getElementById("fillFilter").value;
@@ -4584,7 +4668,8 @@ function renderOrders() {
     .map(pair => pair[0]);
 
   filtered = sugArrange(filtered, filter);
-  filtered = PO_CF.apply("po", PO_CF_HEAD, filtered.map(poCfRow), { list: [1], split: CAN_PAY ? [10] : [] }).map(r => r.o);
+  filtered = PO_CF.apply("po", PO_CF_HEAD, filtered.map(poCfRow), { list: [1], split: CAN_PAY ? [10] : [], sortNum: CAN_PAY ? [10] : [] }).map(r => r.o);
+  renderDueTotal(filtered);
   if (justSavedId) {
     const i = filtered.findIndex(o => o.id === justSavedId);
     if (i > 0) filtered = [filtered[i], ...filtered.slice(0, i), ...filtered.slice(i + 1)];
