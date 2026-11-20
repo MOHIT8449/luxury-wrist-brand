@@ -1,13 +1,15 @@
 -- LUXURY WRIST BRAND ERP — GOODS INWARD: DRIVER NAME / MOBILE MAY BE LEFT BLANK.
 --
 -- Safe to run again. Applied by the "Supabase apply" workflow on merge.
+-- v2: first run stopped (nothing changed) because it also looked at other pages' functions
+-- (e.g. lwb_admin_set_driver_mobile); now only Goods Inward functions are touched.
 --
 -- Mohit (20 Nov 2026): the Rajnigandha "Vehicle & driver details" popup says every detail
 -- is optional, but Save failed with "Inward NOT saved: Enter Driver Name (1 to 100 characters)".
 -- That check lives in the live lwb_post_goods_inward (made outside this repo), so it is
 -- relaxed in place, the same way lwb_goods_inward_godown_setup.sql widened its role check:
 --
--- 1. Every public function whose body has
+-- 1. lwb_post_goods_inward(_mrp) and any trigger function on lwb_goods_inward, where the body has
 --      IF <condition> THEN RAISE EXCEPTION '...Driver Name...' / '...Driver Mobile...'
 --    gets a guard in front of the condition: the check now runs only when a value was typed.
 --    So a blank name / mobile saves, a typed name still has to be at most 100 characters and
@@ -38,6 +40,9 @@ BEGIN
     SELECT p.oid, p.oid::regprocedure AS sig, p.prorettype = 'trigger'::regtype AS is_trigger
     FROM pg_proc p JOIN pg_namespace s ON s.oid = p.pronamespace
     WHERE s.nspname = 'public' AND p.prokind = 'f' AND p.prolang = (SELECT oid FROM pg_language WHERE lanname = 'plpgsql')
+      -- only Goods Inward: its save functions and the triggers on lwb_goods_inward (other pages keep their rules)
+      AND (p.proname IN ('lwb_post_goods_inward','lwb_post_goods_inward_mrp')
+           OR p.oid IN (SELECT t.tgfoid FROM pg_trigger t WHERE t.tgrelid = to_regclass('public.lwb_goods_inward') AND NOT t.tgisinternal))
       AND pg_get_functiondef(p.oid) ~* 'RAISE\s+EXCEPTION[^;]*Driver\s+(Name|Mobile)'
   LOOP
     d := pg_get_functiondef(f.oid);
@@ -122,10 +127,20 @@ BEGIN
   SELECT string_agg(p.oid::regprocedure::text, ', ') INTO bad
   FROM pg_proc p JOIN pg_namespace s ON s.oid = p.pronamespace
   WHERE s.nspname = 'public' AND p.prokind = 'f'
+    AND (p.proname IN ('lwb_post_goods_inward','lwb_post_goods_inward_mrp')
+         OR p.oid IN (SELECT t.tgfoid FROM pg_trigger t WHERE t.tgrelid = to_regclass('public.lwb_goods_inward') AND NOT t.tgisinternal))
     AND regexp_replace(pg_get_functiondef(p.oid), '\m(ELS)?IF\M\s+/\*lwb:driver-optional\*/(?:(?!\mTHEN\M)[^;])*THEN\s+RAISE\s+EXCEPTION[^;]*;', '', 'gi')
         ~* 'RAISE\s+EXCEPTION[^;]*Driver\s+Name[^;]*\(1\s+to\s+100';
   IF bad IS NOT NULL THEN
     RAISE EXCEPTION 'Driver Name is still required in: %', bad;
+  END IF;
+  -- the live message must have been found (and guarded) in a Goods Inward function
+  IF NOT EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace s ON s.oid = p.pronamespace
+                 WHERE s.nspname = 'public' AND p.prokind = 'f' AND pg_get_functiondef(p.oid) LIKE '%lwb:driver-optional%') THEN
+    SELECT string_agg(p.oid::regprocedure::text, ', ') INTO bad
+    FROM pg_proc p JOIN pg_namespace s ON s.oid = p.pronamespace
+    WHERE s.nspname = 'public' AND p.prokind = 'f' AND pg_get_functiondef(p.oid) ~* 'Driver\s+Name\s*\(1\s+to\s+100';
+    RAISE EXCEPTION 'Driver Name check not found in Goods Inward functions; message is in: %', coalesce(bad, 'none');
   END IF;
   IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'lwb_goods_inward'
              AND column_name IN ('driver_name','driver_mobile') AND is_nullable = 'NO') THEN

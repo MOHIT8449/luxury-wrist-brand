@@ -21,6 +21,9 @@ BEGIN
   INSERT INTO public.lwb_goods_inward(invoice_no,driver_name,driver_mobile) VALUES (p_invoice_no,nullif(v_name,''),nullif(v_mob,'')) RETURNING id INTO v_id;
   RETURN v_id;
 END $$;
+-- another page's function with a driver check: must be left alone
+CREATE FUNCTION public.lwb_admin_set_driver_mobile(p_id uuid,p_mobile text) RETURNS void LANGUAGE plpgsql AS $$
+BEGIN IF p_mobile !~ '^[0-9]{10}$' THEN RAISE EXCEPTION 'Enter valid Driver Mobile'; END IF; END $$;
 `);
 const sql=await readFile(new URL('../../lwb_goods_inward_driver_optional.sql',import.meta.url),'utf8');
 await db.exec(sql);
@@ -41,4 +44,7 @@ test('table rules still apply to typed values',async()=>{
   await assert.rejects(db.query("insert into lwb_goods_inward(invoice_no,driver_name,driver_mobile) values('C1',$1,null)",['x'.repeat(101)]));
   await assert.rejects(db.query("insert into lwb_goods_inward(invoice_no,driver_name,driver_mobile) values('C2',null,'123')"));
   await db.query("insert into lwb_goods_inward(invoice_no,driver_name,driver_mobile) values('C3','',' ')");
+});
+test('other pages keep their driver rules',async()=>{
+  await assert.rejects(db.query("select public.lwb_admin_set_driver_mobile(gen_random_uuid(),'')"),/Driver Mobile/);
 });
