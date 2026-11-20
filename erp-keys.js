@@ -249,6 +249,10 @@
     [["←","→"],"Buttons in one row (Today, 7 Days, tabs)"],[["/","Ctrl+K"],"Page search"],[["Alt+M"],"Module Search (open any page)"],
     [["Alt+N"],"+ New"],[["Ctrl+S","Alt+S"],"Save / Submit"],[["Alt+1…9"],"Tab 1 … 9"],
     [["Alt+H"],"Dashboard"],[["Esc"],"Close the popup"],[["?","F1"],"List of shortcuts"]];
+  // Tally keys for Accounts (Mohit, 20 Nov 2026): from any page straight into Ledger & Outstanding (accounts-books.html).
+  const ACC_ROLES=["admin","accounts"];
+  const ACC_KEYS={L:"led&find=1",O:"out",R:"rec",P:"sum",D:"day"};
+  const ACC_HELP=[[["Ctrl+Alt+L"],"Ledger of a party (Tally style)"],[["Ctrl+Alt+O"],"Outstanding"],[["Ctrl+Alt+R"],"Receipts"],[["Ctrl+Alt+P"],"Party payment summary"],[["Ctrl+Alt+D"],"Day book"]];
   // Keys a page adds on top of COMMON (from the page's own code). r = only for these roles.
   const PAGES={
     "dashboard.html":[[["↑","↓","Enter"],"Top search: pick a page / party and open it"],[["Esc"],"Clear the search"]],
@@ -261,6 +265,8 @@
       [["Ctrl+A"],"Tick all entries",["admin"]],[["B"],"Ticked entries: choose Book type",["admin"]],[["M"],"See the matching party / bill",["admin"]]],
     "accounts-dashboard.html":[[["↑","↓","Enter"],"Pick the party in an entry"]],
     "party-billing.html":[[["Enter"],"After bill no. / amount: Save"]],
+    "accounts-books.html":[[["Ctrl+Alt+L"],"Ledger: type the party name"],[["Ctrl+Alt+O"],"Outstanding (party-wise / bill-wise)"],[["Ctrl+Alt+R"],"Receipts register"],
+      [["Ctrl+Alt+P"],"Party payment summary"],[["Ctrl+Alt+D"],"Day book"],[["Enter"],"Open the row: party → bills → bill → items"],[["L"],"In a party's bills: its ledger"],[["Esc"],"One step back (popup, then party)"]],
     "complaint-box.html":[[["Enter","Space"],"Open / close a complaint"]],
     "tasks.html":[[["Enter","Space"],"Open / close a task"]]
   };
@@ -275,7 +281,7 @@
     const pg=forRole(PAGES[herePage()],myRole());
     const b=D.createElement("div");b.id="lwbk-help";b.className="lwbk-back";b.setAttribute("role","dialog");b.setAttribute("aria-label","Keyboard shortcuts");
     b.innerHTML='<div class="lwbk-box"><div class="lwbk-hd"><b>⌨ Keyboard shortcuts</b><button type="button" class="lwbk-x" aria-label="Close">×</button></div>'+
-      (pg.length?'<div class="lwbk-sub">This page</div>'+table(pg)+'<div class="lwbk-sub">Every page</div>':'')+table(COMMON)+
+      (pg.length?'<div class="lwbk-sub">This page</div>'+table(pg)+'<div class="lwbk-sub">Every page</div>':'')+table(COMMON)+(ACC_ROLES.includes(myRole())&&herePage()!=="accounts-books.html"?'<div class="lwbk-sub">Accounts (Tally keys)</div>'+table(ACC_HELP):'')+
       (/keyboard-shortcuts\.html$/.test(location.pathname)?'':'<a class="lwbk-all" href="keyboard-shortcuts.html">See shortcuts for all your pages →</a>')+'</div>';
     const close=()=>b.remove();
     b.addEventListener("click",e=>{if(e.target===b||e.target.closest(".lwbk-x"))close()});
@@ -307,6 +313,11 @@
     // Shortcuts that work everywhere.
     if((e.ctrlKey||e.metaKey)&&!e.altKey&&(k==="s"||k==="S")){const b=saveButton();if(b){e.preventDefault();b.click()}return}
     if((e.ctrlKey||e.metaKey)&&!e.altKey&&(k==="k"||k==="K")){const s=pageSearch();if(s){e.preventDefault();focus(s,true)}return}
+    if(e.altKey&&e.ctrlKey&&!e.metaKey){
+      const c=(e.code||"").replace(/^Key/,""),go=ACC_KEYS[c];
+      if(go&&ACC_ROLES.includes(myRole())&&!/accounts-books\.html$/.test(location.pathname)){e.preventDefault();location.href="accounts-books.html?v="+go}
+      return;
+    }
     if(e.altKey&&!e.ctrlKey&&!e.metaKey){
       const c=(e.code||"").replace(/^Key|^Digit/,"");
       if(c==="M"){const s=D.querySelector(".erp-top .erp-search input");if(s&&usable(s)){e.preventDefault();focus(s,true)}}
