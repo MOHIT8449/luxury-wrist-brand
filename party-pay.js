@@ -24,6 +24,7 @@
   const NOTES=["500","200","100","50","20","10"];
   const MODES=[["CASH","Cash",""],["UPI","UPI","UTR / ref"],["BANK","Bank / RTGS","UTR / ref"],["CHEQUE","Cheque","Cheque no."]];
   const errText=e=>{const m=String((e&&e.message)||e||"");
+    if(/lwb_party_receive_kasar|lwb_kasar_/i.test(m)&&/schema cache|does not exist|Could not find/i.test(m))return "Kasar is being set up (lwb_kasar_setup.sql). Save without the kasar tick, or try again in a few minutes.";
     if(/lwb_party_|schema cache|does not exist/i.test(m))return "Party payment is not set up yet. It sets itself up when this change is merged (lwb_party_group_billing_setup.sql).";
     return m.replace(/^.*?ERROR:\s*/,"")};
 
@@ -120,6 +121,11 @@
 .lpp .left b.g{color:#13824a}.lpp .left b.r{color:#b3122b}
 .lpp .err{background:#ffebeb;color:#9b2020;border-radius:8px;padding:9px 11px;white-space:pre-wrap}
 .lpp .hint{color:#66788e;font-size:13px;margin:0}
+.lpp .ksr{display:flex;align-items:flex-start;gap:9px;background:#fff6d6;border:1.5px solid #e9c46a;border-radius:9px;padding:8px 11px;cursor:pointer;font-size:13.5px;color:#4d3800}
+.lpp .ksr input{width:20px;height:20px;flex:none;margin:1px 0 0;accent-color:#9a6b00}
+.lpp .ksr b.k{display:inline-block;background:#9a6b00;color:#fff;border-radius:99px;padding:0 8px;font-size:12.5px;margin-right:4px}
+.lpp .ksr small{display:block;color:#7a5f1f;font-size:12px;margin-top:1px}
+.lpp .ksr.on{background:#fdecb3;border-color:#9a6b00}
 .lpp .cwarn{background:#fff6d6;color:#7a5600;border-radius:8px;padding:6px 10px;font-size:13px;margin:6px 0 0}
 .lpp .bpk{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px}
 .lpp .bpk button{border:2px solid #d5dbe3;background:#fff;border-radius:10px;padding:7px 10px;text-align:left;font:inherit;cursor:pointer;color:var(--bc)}
@@ -173,6 +179,7 @@
  <div><label class="l">${adjust?"Adjust the advance against":"Use this money for"}</label>
   <div class="seg${adjust?" two":""}" data-how><button type="button" data-h="auto">Oldest bill first</button><button type="button" data-h="pick">Choose bills</button>${adjust?"":`<button type="button" data-h="adv">Keep as advance</button>`}</div></div>
  <div data-bills></div>
+ <label class="ksr" data-ksr hidden><input type="checkbox" data-kson><span data-kst></span></label>
  <div class="left" data-left></div>
  <div class="err" data-err hidden></div>
 </div>
@@ -237,14 +244,37 @@
       box.querySelectorAll("[data-o]").forEach(i=>i.oninput=()=>{manual.set(i.dataset.o,num(i.value));drawLeft()});
       box.querySelectorAll("[data-full]").forEach(b=>b.onclick=()=>{const x=p.bills.find(y=>y.order_id===b.dataset.full);manual.set(x.order_id,r2(x.due));drawBills()});
     }
+    // Kasar (lwb_kasar_setup.sql): party paid a little less / more than the bill. Tick = the difference is let go
+    // as kasar on that bill, so it closes and does not stay in Outstanding. At most KMAX per bill.
+    const KMAX=500;let kasarOn=false;
+    function kasarPlan(){
+      if(adjust||how==="adv")return [];
+      const p=P(),pl=plan(),out=[];
+      for(const b of p.bills){const v=pl.get(b.order_id)||0;if(v<=0)continue;const s=r2(b.due-v);if(s>=0.01&&s<=KMAX)out.push({order_id:b.order_id,amount:s,kind:"LESS",bill:b})}
+      if(!out.length&&how==="auto"&&pl.size){
+        const left=r2(money()-[...pl.values()].reduce((a,v)=>a+v,0)),last=p.bills.filter(b=>pl.get(b.order_id)>0).pop();
+        if(last&&left>=0.01&&left<=KMAX)out.push({order_id:last.order_id,amount:left,kind:"EXTRA",bill:last});
+      }
+      return out;
+    }
+    function drawKasar(){
+      const k=kasarPlan(),box=q("[data-ksr]");box.hidden=!k.length;if(!k.length)return k;
+      const t=r2(k.reduce((a,x)=>a+x.amount,0)),bn=x=>esc(x.bill.invoice_no||x.bill.order_no);
+      q("[data-kson]").checked=kasarOn;box.classList.toggle("on",kasarOn);
+      q("[data-kst]").innerHTML=k[0].kind==="EXTRA"?`<b class="k">Kasar ${rs(t)}</b><b>Party paid ${rs(t)} extra</b><small>Tick to put it in kasar on bill ${bn(k[0])} instead of advance.</small>`:
+        `<b class="k">Kasar ${rs(t)}</b><b>${k.length>1?k.length+" bills are":"Bill "+bn(k[0])+" is"} short by ${rs(t)}</b><small>Tick to let it go as kasar: the bill${k.length>1?"s close":" closes"} and will not stay in Outstanding.</small>`;
+      return k;
+    }
     function drawLeft(){
-      const m=money(),split=r2([...plan().values()].reduce((a,v)=>a+v,0)),left=r2(m-split);
+      const ks=drawKasar(),kt=kasarOn?r2(ks.reduce((a,x)=>a+(x.kind==="EXTRA"?x.amount:0),0)):0;
+      const m=money(),split=r2([...plan().values()].reduce((a,v)=>a+v,0)+kt),left=r2(m-split);
       q("[data-tot]").textContent=rs(m);
       q("[data-cwarn]").hidden=!(num(q('.amt[data-m="CASH"]').value)>=200000);
       q("[data-left]").innerHTML=adjust?`<span>Advance ${rs(m)}</span><span>Adjusted now <b>${rs(split)}</b></span><span>Advance left <b class="${left<-0.5?"r":"g"}">${rs(left)}</b></span>`:
-        `<span>Against bills <b>${rs(split)}</b></span><span>${left<-0.5?"More than received":"Stays as advance"} <b class="${left<-0.5?"r":"g"}">${rs(Math.abs(left))}</b></span>`;
+        `<span>Against bills <b>${rs(split)}</b></span>${kasarOn&&ks.length?`<span>Kasar <b style="color:#9a6b00">${rs(ks.reduce((a,x)=>a+x.amount,0))}</b></span>`:""}<span>${left<-0.5?"More than received":"Stays as advance"} <b class="${left<-0.5?"r":"g"}">${rs(Math.abs(left))}</b></span>`;
     }
     function drawAll(){drawBrand();drawSum();qa("[data-h]").forEach(b=>b.setAttribute("aria-pressed",String(b.dataset.h===how)));drawBills();drawLeft()}
+    q("[data-kson]").onchange=e=>{kasarOn=e.target.checked;drawLeft()};
     qa("[data-h]").forEach(b=>b.onclick=()=>{if(b.dataset.h==="pick"&&!manual.size){how="auto";manual=new Map(plan())}how=b.dataset.h;drawAll()});
     qa(".amt").forEach(i=>i.oninput=()=>{if(how==="auto")drawBills();drawLeft()});
     // cash note count
@@ -293,6 +323,13 @@
         const m=money();if(split>m+0.5)return fail("Bills "+rs(split)+" is more than the money received "+rs(m)+".");
         args=["lwb_party_receive",{p_party:party,p_pay_date:date,p_lines:lines,p_allocs:how==="auto"?null:how==="adv"?[]:allocs,p_remark:q("#lppR").value.trim()||null}];
         if(BR.length)args[1].p_company_id=brand;
+        const ks=kasarOn?kasarPlan():[];
+        if(ks.length){ // kasar first on the bills, then this exact split (extra kasar raises that bill, so it takes the extra)
+          const al=allocs.map(x=>({...x}));
+          for(const k of ks)if(k.kind==="EXTRA"){const a=al.find(x=>x.order_id===k.order_id);if(a)a.amount=r2(a.amount+k.amount)}
+          args=["lwb_party_receive_kasar",{...args[1],p_allocs:al,p_kasar:ks.map(k=>({order_id:k.order_id,amount:k.amount,kind:k.kind}))}];
+          if(!BR.length)args[1].p_company_id=null;
+        }
       }
       busy=true;q("[data-ok]").disabled=true;
       try{

@@ -52,6 +52,13 @@
     .so-b.t{background:#00434d;border-color:#00434d;color:#fff}
     .so-b.g{background:#13824a;border-color:#13824a;color:#fff}
     .so-b:disabled{opacity:.55;cursor:default}
+    .so-b.k{background:#fff6d6;border-color:#e9c46a;color:#7a5300}
+    .so-ksr{background:#fff1c9;color:#7a5300}
+    .so-kv{display:flex;gap:6px;margin:0 0 8px;flex-wrap:wrap;align-items:center}
+    .so-kv .grow{flex:1}
+    .so-kamt{color:#9a6b00;font-weight:700;white-space:nowrap}
+    .so-dlg input.kin{height:40px;border:1.5px solid #cfd6de;border-radius:8px;padding:0 10px;font:inherit;font-size:16px;width:100%;box-sizing:border-box}
+    .so-dlg .krow{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:6px 0}
     .so-told{display:block;font-size:11px;color:#6b7785;margin-top:2px;white-space:nowrap}
     .so-cards{display:none}
     .so-c .lg{display:none}
@@ -89,6 +96,7 @@
       .so-dlg{width:100%}.so-ov{align-items:flex-end;padding:0}.so-dlg{border-radius:14px 14px 0 0;max-height:92dvh}
       .so-sum b{font-size:15px}
       .so-dlg .so-t th:nth-child(2),.so-dlg .so-t td:nth-child(2){max-width:150px}
+      .so-dlg .so-t th,.so-dlg .so-t td{padding:6px 4px;font-size:12px}.so-dlg .so-t th{font-size:10px}
     }
   </style>
 </head>
@@ -115,7 +123,7 @@
       </div>
       <div id="box">Loading...</div>
     </div>
-    <p class="so-note">Due = Tally bill − credit note + debit note − driver money − office / party payment set to the bill. Same numbers as Accounts. Party balance also takes off money paid but not yet set to a bill (advance). Sales Head can only see; payments are entered by Accounts / Cashier.</p>
+    <p class="so-note">Due = Tally bill − credit note + debit note − driver money − office / party payment set to the bill. Same numbers as Accounts. Party balance also takes off money paid but not yet set to a bill (advance). Sales Head can only see; payments are entered by Accounts / Cashier. Kasar = small difference (up to ₹500 a bill) let go by Accounts / Admin; it closes the bill and shows as a Kasar line in the party ledger.</p>
   </main>
   <div id="pop"></div>
   <script>
@@ -127,6 +135,8 @@
     const modeChip=m=>String(m||"").split("+").filter(Boolean).map(x=>'<span class="so-mode">'+(MODE[x]||esc(x))+"</span>").join("");
     const CHQ={CHEQUE_IN_HAND:"cheque not deposited",CHEQUE_DEPOSITED:"cheque not cleared",CHEQUE_BOUNCED:"cheque bounced"};
     let me=null,raw=null,info=null,bills=[],pays=new Map(),payRows=[],tab="bills",shown=150,ledger=null,canTell=false,today="";
+    // Kasar (lwb_kasar_setup.sql): small difference let go on a bill. Admin / Accounts enter it, Sales Head sees it.
+    const KMAX=500;let kasar=[],kasarBy=new Map(),canKasar=false,kview="list";
 
     function daysOld(d){return d?Math.max(0,Math.round((Date.parse(today+"T00:00:00Z")-Date.parse(String(d).slice(0,10)+"T00:00:00Z"))/864e5)):0}
     const pkey=v=>String(v==null?"":v).toUpperCase().replace(/[^A-Z0-9]+/g," ").trim(); // same key as party-pay.js
@@ -156,6 +166,9 @@
         if(p.error){console.warn("payments",p.error);break}
         for(const x of p.data||[]){if(!pays.has(x.order_id))pays.set(x.order_id,[]);pays.get(x.order_id).push(x);payRows.push(x)}
       }
+      const k=await client.rpc("lwb_kasar_list",{p_days:400});
+      kasar=k.error?[]:(k.data||[]);kasarBy=new Map();
+      for(const x of kasar)kasarBy.set(x.order_id,r2((kasarBy.get(x.order_id)||0)+(x.kind==="EXTRA"?-1:1)*Number(x.amount||0)));
       const sms=[...new Set(bills.map(b=>b.sales_person||"").filter(Boolean))].sort();
       const cur=el("fSm").value;
       el("fSm").innerHTML='<option value="">All salesmen</option>'+sms.map(s=>'<option>'+esc(s)+"</option>").join("")+'<option value="-">No salesman</option>';
@@ -179,6 +192,7 @@
       let h=s.st==="paid"?'<span class="so-bd so-paid">✓ Paid</span>':s.st==="part"?'<span class="so-bd so-part">⚠ Part paid</span>':'<span class="so-bd so-pen">● Pending</span>';
       if(s.chq)h+=' <span class="so-bd '+(s.chq.status==="CHEQUE_BOUNCED"?"so-pen":"so-chq")+'">🧾 '+CHQ[s.chq.status]+"</span>";
       if(s.drv)h+=' <span class="so-bd so-drv">🚚 with driver</span>';
+      const kz=kasarBy.get(b.order_id);if(kz)h+=' <span class="so-bd so-ksr">✂ Kasar '+rs(Math.abs(kz))+(kz<0?" extra":"")+"</span>";
       return h;
     }
     function inPeriod(d){
@@ -214,7 +228,7 @@
 
     function tabsHtml(list){
       const due=list.filter(b=>b.due>0.5);
-      const T=[["bills","Unpaid bills","Unpaid",due.length],["party","Party-wise","Parties",new Set(due.map(b=>b.parent)).size],["pay","Payments received","Payments",""]];
+      const T=[["bills","Unpaid bills","Unpaid",due.length],["party","Party-wise","Parties",new Set(due.map(b=>b.parent)).size],["pay","Payments received","Payments",""],["kasar","Kasar","Kasar",kasarRows(list).length||""]];
       el("tabs").innerHTML=T.map(t=>'<button type="button" data-tab="'+t[0]+'" class="'+(t[0]===tab?"on":"")+'"><span class="tl">'+t[1]+'</span><span class="ts">'+t[2]+"</span>"+(t[3]!==""?" <i>"+t[3]+"</i>":"")+"</button>").join("");
       el("fSt").hidden=tab!=="bills";
     }
@@ -226,7 +240,8 @@
       if(!rows.length)return '<div class="so-empty">No bills for this filter.</div>';
       const page=rows.slice(0,shown);
       const acts=b=>'<button type="button" class="so-b" data-led="'+esc(b.parent)+'" title="Party ledger">📒<span class="lg"> Ledger</span></button>'+
-        (canTell&&b.due>0.5?'<button type="button" class="so-b" data-tell="'+esc(b.order_id)+'" title="Tell Accounts / Cashier">📣<span class="lg"> Tell Accounts</span></button>':"");
+        (canTell&&b.due>0.5?'<button type="button" class="so-b" data-tell="'+esc(b.order_id)+'" title="Tell Accounts / Cashier">📣<span class="lg"> Tell Accounts</span></button>':"")+
+        (canKasar&&b.due>0.5&&b.due<=KMAX?'<button type="button" class="so-b k" data-ksr="'+esc(b.order_id)+'" title="Let the small due go as kasar">✂ Kasar</button>':"");
       const recv=(b,s)=>b.got>0?'<span class="so-ok">'+rs(b.got)+"</span><div>"+modeChip(s.modes.join("+"))+"</div>":'<span class="so-mut">—</span>';
       const tr=page.map(b=>{const s=payState(b);return '<tr><td><b>'+esc(b.invoice_no)+'</b><div class="so-mut">'+esc(b.order_no)+'</div></td>'+
         '<td style="white-space:nowrap">'+dmy(b.invoice_date)+'<div class="so-days '+dcls(b.days)+'">'+b.days+' days</div></td>'+
@@ -285,11 +300,73 @@
         (rows.length>page.length?'<div class="so-more"><button type="button" class="so-b" id="more">Show more ('+(rows.length-page.length)+")</button></div>":"");
     }
 
+    function kasarRows(){
+      const sm=el("fSm").value,br=el("fBr").value,q=el("q").value.trim().toLowerCase(),byId=new Map(bills.map(b=>[b.order_id,b]));
+      return kasar.filter(x=>{const sp=(byId.get(x.order_id)||{}).sales_person||"";
+        return (!sm||(sm==="-"?!sp:sp===sm))&&(!br||x.company_id===br)&&inPeriod(x.date)&&(!q||[x.party,x.parent,x.invoice_no,x.order_no,sp].join(" ").toLowerCase().includes(q))});
+    }
+    function kasarList(list){
+      const rows=kasarRows(list);
+      const sgn=x=>x.kind==="EXTRA"?-1:1,tot=r2(rows.reduce((a,x)=>a+sgn(x)*Number(x.amount||0),0));
+      const less=r2(rows.filter(x=>x.kind!=="EXTRA").reduce((a,x)=>a+Number(x.amount||0),0)),extra=r2(less-tot);
+      const head='<div class="so-kv"><button type="button" class="so-b'+(kview==="list"?" t":"")+'" data-kv="list">Entries</button><button type="button" class="so-b'+(kview==="party"?" t":"")+'" data-kv="party">Party-wise</button><span class="grow"></span>'+
+        '<span class="so-mut">Short paid <b class="so-kamt">'+rs(less)+'</b>'+(extra?' · extra paid <b class="so-ok">'+rs(extra)+"</b>":"")+' · net kasar <b class="so-kamt">'+rs(tot)+"</b></span></div>";
+      if(!rows.length)return head+'<div class="so-empty">No kasar yet. On a bill with a small due use ✂ Kasar, or tick Kasar in Party payment.</div>';
+      if(kview==="party"){
+        const by=new Map();for(const x of rows){const k=S.key(x.parent);if(!by.has(k))by.set(k,{party:x.parent,n:0,amt:0,last:""});const y=by.get(k);y.n++;y.amt=r2(y.amt+sgn(x)*Number(x.amount||0));if(String(x.date)>y.last)y.last=String(x.date)}
+        const pr=[...by.values()].sort((a,b)=>b.amt-a.amt);
+        const tr=pr.map(x=>'<tr><td class="p">'+esc(x.party)+'</td><td class="n">'+x.n+'</td><td style="white-space:nowrap">'+dmy(x.last)+'</td><td class="n"><span class="so-kamt">'+rs(x.amt)+'</span></td><td><div class="so-acts"><button type="button" class="so-b" data-led="'+esc(x.party)+'">📒<span class="lg"> Ledger</span></button></div></td></tr>').join("");
+        const cards=pr.map(x=>'<div class="so-c"><div class="l1"><div><b>'+esc(x.party)+'</b><div class="so-mut">'+x.n+" entries · last "+dmy(x.last)+'</div></div><div class="r"><span class="so-kamt">'+rs(x.amt)+'</span></div></div></div>').join("");
+        return head+'<div class="so-tbl"><table class="so-t"><thead><tr><th>Party</th><th class="n">Entries</th><th>Last kasar</th><th class="n">Kasar</th><th></th></tr></thead><tbody>'+tr+'</tbody><tfoot><tr><td>'+pr.length+' parties</td><td class="n">'+rows.length+'</td><td></td><td class="n so-kamt">'+rs(tot)+'</td><td></td></tr></tfoot></table></div><div class="so-cards">'+cards+"</div>";
+      }
+      const page=rows.slice(0,shown);
+      const typ=x=>x.kind==="EXTRA"?'<span class="so-bd so-paid">paid extra</span>':'<span class="so-bd so-ksr">paid less</span>';
+      const cx=x=>canKasar?'<button type="button" class="so-b" data-kcan="'+esc(x.id)+'" title="Cancel this kasar (bill due comes back)">Undo</button>':"";
+      const tr=page.map(x=>'<tr><td style="white-space:nowrap">'+dmy(x.date)+'</td><td><b>'+esc(x.invoice_no||"")+'</b><div class="so-mut">'+esc(x.order_no)+'</div></td><td class="p">'+esc(x.party)+(x.parent!==x.party?'<div class="so-mut">'+esc(x.parent)+"</div>":"")+'</td><td>'+typ(x)+'</td><td class="so-mut">'+esc(x.by_name||"")+'</td><td class="n"><span class="so-kamt">'+rs(x.amount)+'</span></td><td><div class="so-acts">'+cx(x)+"</div></td></tr>").join("");
+      const cards=page.map(x=>'<div class="so-c"><div class="l1"><div><b>'+esc(x.party)+'</b><div class="so-mut">'+dmy(x.date)+" · "+esc(x.invoice_no||"")+" · "+esc(x.order_no)+(x.by_name?" · "+esc(x.by_name):"")+'</div></div><div class="r"><span class="so-kamt">'+rs(x.amount)+'</span></div></div><div class="l2"><div>'+typ(x)+'</div><div class="so-acts">'+cx(x)+"</div></div></div>").join("");
+      return head+'<div class="so-tbl"><table class="so-t"><thead><tr><th>Date</th><th>Bill / PO</th><th>Party</th><th>Type</th><th>By</th><th class="n">Kasar</th><th></th></tr></thead><tbody>'+tr+
+        '</tbody><tfoot><tr><td colspan="5">'+rows.length+' entries</td><td class="n so-kamt">'+rs(tot)+'</td><td></td></tr></tfoot></table></div><div class="so-cards">'+cards+"</div>"+
+        (rows.length>page.length?'<div class="so-more"><button type="button" class="so-b" id="more">Show more ('+(rows.length-page.length)+")</button></div>":"");
+    }
+
+    /* ---------- kasar on one bill ---------- */
+    function openKasar(orderId){
+      const b=bills.find(x=>x.order_id===orderId);if(!b)return;
+      pop('<header><h3>✂ Kasar · Bill '+esc(b.invoice_no)+'</h3><button type="button" class="so-b" data-x>✕</button></header><div class="bd">'+
+        '<p style="margin:2px 0 6px"><b>'+esc(b.party)+'</b> <span class="so-mut">· '+esc(b.order_no)+" · "+dmy(b.invoice_date)+'</span></p>'+
+        '<div class="so-sum"><div><small>Bill</small><b>'+rs(b.bill)+'</b></div><div><small>Received</small><b class="so-ok">'+rs(b.got)+'</b></div><div><small>Due</small><b class="so-due">'+rs(b.due)+"</b></div></div>"+
+        '<div class="krow"><div><label class="so-mut" for="kAmt">Kasar amount (max '+rs(Math.min(b.due,KMAX))+')</label><input id="kAmt" class="kin" inputmode="decimal" value="'+r2(b.due)+'"></div>'+
+        '<div><label class="so-mut" for="kRem">Remark</label><input id="kRem" class="kin" maxlength="200" placeholder="optional"></div></div>'+
+        '<p class="so-mut" id="kLeft"></p><div id="kErr"></div></div><footer><span class="sp"></span><button type="button" class="so-b" data-x>Cancel</button><button type="button" class="so-b g" id="kGo">✂ Save kasar</button></footer>');
+      const left=()=>{const v=r2(String(el("kAmt").value).replace(/[,₹\s]/g,""));const l=r2(b.due-v);el("kLeft").innerHTML=l>0.5?"Still due after kasar: <b class=\"so-due\">"+rs(l)+"</b>":"Bill will close: <b class=\"so-ok\">Paid</b>. It will show as a Kasar line in the party ledger."};
+      el("kAmt").oninput=left;left();
+      el("kGo").onclick=async()=>{
+        const v=r2(String(el("kAmt").value).replace(/[,₹\s]/g,""));
+        const bad=t=>{el("kErr").innerHTML='<div class="so-err">'+esc(t)+"</div>"};
+        if(!(v>0))return bad("Enter the kasar amount.");
+        if(v>b.due+0.01)return bad("Kasar can not be more than the due "+rs(b.due)+".");
+        if(v>KMAX)return bad("Kasar can be at most "+rs(KMAX)+" on one bill. Use a credit note for more.");
+        el("kGo").disabled=true;
+        const {error}=await client.rpc("lwb_kasar_save",{p_order_id:b.order_id,p_amount:v,p_kind:"LESS",p_date:null,p_remark:el("kRem").value.trim()||null});
+        if(error){el("kGo").disabled=false;const m=String(error.message||error);return bad(/lwb_kasar_save|schema cache|Could not find/i.test(m)?"Kasar is being set up (lwb_kasar_setup.sql). Try again in a few minutes.":m.replace(/^.*?ERROR:\s*/,""))}
+        close();ledger=null;ERPShell.toast("Kasar "+rs(v)+" saved · Bill "+b.invoice_no+(v>=b.due-0.5?" closed":""));await load();
+      };
+      setTimeout(()=>{const i=el("kAmt");if(i){i.focus();i.select()}},50);
+    }
+    async function cancelKasar(id){
+      const x=kasar.find(k=>k.id===id);if(!x)return;
+      const qn="Undo kasar "+rs(x.amount)+" on bill "+(x.invoice_no||x.order_no)+" of "+x.party+"? The bill due comes back.";
+      if(!(window.ERPShell&&ERPShell.confirm?await ERPShell.confirm(qn,{ok:"Undo",title:"Undo kasar"}):confirm(qn)))return;
+      const {error}=await client.rpc("lwb_kasar_cancel",{p_id:id});
+      if(error)return ERPShell.alert(String(error.message||error).replace(/^.*?ERROR:\s*/,""));
+      ledger=null;ERPShell.toast("Kasar undone");await load();
+    }
+
     function render(){
       if(!raw)return;
       const list=base();
       kpis(list);tabsHtml(list);
-      el("box").innerHTML=tab==="party"?partyRows(list):tab==="pay"?payList(list):billRows(list);
+      el("box").innerHTML=tab==="party"?partyRows(list):tab==="pay"?payList(list):tab==="kasar"?kasarList(list):billRows(list);
     }
 
     /* ---------- party ledger popup ---------- */
@@ -306,8 +383,8 @@
       let bal=0;const L=rows.map(r=>{bal+=Number(r.debit||0)-Number(r.credit||0);return {...r,bal}});
       const dr=rows.reduce((a,r)=>a+Number(r.debit||0),0),cr=rows.reduce((a,r)=>a+Number(r.credit||0),0);
       const kind=r=>{const m=String(r.ref_no||"").split(" ")[0];return MODE[m]&&/PAYMENT/.test(r.entry_kind)?modeChip(m)+" ":""};
-      const label=r=>({TALLY_BILL:"Bill",ERP_BILL:"Bill",OLD_INVOICE:"Bill",OPENING:"Opening balance",PARTY_PAYMENT:"Payment",OFFICE_PAYMENT:"Payment",DRIVER_PAYMENT:"Payment (driver)",PAYMENT:"Payment",CREDIT_NOTE:"Credit note",DEBIT_NOTE:"Debit note",DRIVER_RETURN:"Return",SALES_RETURN:"Return"}[r.entry_kind]||r.entry_kind);
-      const body=L.slice(-80).map(r=>'<tr><td class="so-mut" style="white-space:nowrap">'+dmy(r.entry_date)+'</td><td>'+kind(r)+'<b>'+esc(label(r))+"</b> "+esc([/PAYMENT|OPENING/.test(r.entry_kind)?"":r.ref_no,r.order_no].filter(Boolean).join(" · "))+'<div class="so-mut">'+esc(r.note||"")+'</div></td>'+
+      const label=r=>/_NOTE$/.test(r.entry_kind)&&/^KASAR/i.test(String(r.ref_no||""))?"✂ Kasar":({TALLY_BILL:"Bill",ERP_BILL:"Bill",OLD_INVOICE:"Bill",OPENING:"Opening balance",PARTY_PAYMENT:"Payment",OFFICE_PAYMENT:"Payment",DRIVER_PAYMENT:"Payment (driver)",PAYMENT:"Payment",CREDIT_NOTE:"Credit note",DEBIT_NOTE:"Debit note",DRIVER_RETURN:"Return",SALES_RETURN:"Return"}[r.entry_kind]||r.entry_kind);
+      const body=L.slice(-80).map(r=>'<tr><td class="so-mut" style="white-space:nowrap">'+dmy(r.entry_date)+'</td><td>'+kind(r)+'<b>'+esc(label(r))+"</b> "+esc([/PAYMENT|OPENING/.test(r.entry_kind)||/^KASAR/i.test(String(r.ref_no||""))?"":r.ref_no,r.order_no].filter(Boolean).join(" · "))+'<div class="so-mut">'+esc(r.note||"")+'</div></td>'+
         '<td class="n">'+(Number(r.debit)?rs(r.debit):"")+'</td><td class="n so-ok">'+(Number(r.credit)?rs(r.credit):"")+'</td><td class="n"><b class="'+(r.bal>0.5?"so-due":"so-ok")+'">'+rs(r.bal)+"</b></td></tr>").join("");
       const p=el("pop");
       p.querySelector(".bd").innerHTML='<div class="so-sum"><div><small>Total billed</small><b>'+rs(dr)+'</b></div><div><small>Received</small><b class="so-ok">'+rs(cr)+'</b></div><div><small>'+(bal>=0?"Outstanding":"Advance")+'</small><b class="'+(bal>0.5?"so-due":"so-ok")+'">'+rs(Math.abs(bal))+"</b></div></div>"+
@@ -344,14 +421,16 @@
          rows:list.filter(b=>b.due>0.5).sort((a,b)=>b.days-a.days).map(b=>{const s=payState(b);return [b.invoice_no,b.order_no,b.invoice_date,b.days,b.party,b.parent,b.sales_person||"",r2(b.bill),r2(b.got),r2(b.due),
            s.st==="part"?"Part paid":"Pending",s.modes.join(", ")]})},
         {name:"Payments",title:"Payments received · "+today,head:["Date","Party","Bill no","PO","Mode","Ref","By","Status","Amount ₹"],
-         rows:payRows.filter(p=>list.some(b=>b.order_id===p.order_id)).map(p=>{const b=bills.find(x=>x.order_id===p.order_id);return [p.pay_date,b.party,b.invoice_no,b.order_no,p.mode,p.ref||"",p.by_name||"",p.status,r2(p.amount)]})}
+         rows:payRows.filter(p=>list.some(b=>b.order_id===p.order_id)).map(p=>{const b=bills.find(x=>x.order_id===p.order_id);return [p.pay_date,b.party,b.invoice_no,b.order_no,p.mode,p.ref||"",p.by_name||"",p.status,r2(p.amount)]})},
+        {name:"Kasar",title:"Kasar · "+today,head:["Date","Party","Main party","Bill no","PO","Type","By","Remark","Kasar ₹"],
+         rows:kasarRows(list).map(x=>[x.date,x.party,x.parent,x.invoice_no||"",x.order_no,x.kind==="EXTRA"?"Party paid extra":"Party paid less",x.by_name||"",x.remark||"",r2((x.kind==="EXTRA"?-1:1)*Number(x.amount||0))])}
       ]);
     }
 
     (async()=>{
       me=await S.start(["admin","manager","accounts"]);
       if(!me)return;
-      canTell=["admin","manager"].includes(me.role);
+      canTell=["admin","manager"].includes(me.role);canKasar=["admin","accounts"].includes(me.role);
       el("loading").hidden=true;el("page").hidden=false;
       ["fSm","fBr","fPer","fSt"].forEach(id=>el(id).addEventListener("change",()=>{shown=150;render()}));
       const askQ=new URLSearchParams(location.search).get("q");if(askQ)el("q").value=askQ;
@@ -360,7 +439,10 @@
       el("excel").onclick=()=>excel().catch(e=>ERPShell.alert(e.message));
       el("tabs").addEventListener("click",e=>{const b=e.target.closest("[data-tab]");if(!b)return;tab=b.dataset.tab;shown=150;render()});
       document.addEventListener("click",e=>{
-        const t=e.target.closest("[data-led],[data-tell],[data-tellp],[data-x],#more");if(!t)return;
+        const t=e.target.closest("[data-led],[data-tell],[data-tellp],[data-x],[data-ksr],[data-kcan],[data-kv],#more");if(!t)return;
+        if(t.dataset.ksr)return openKasar(t.dataset.ksr);
+        if(t.dataset.kcan)return cancelKasar(t.dataset.kcan);
+        if(t.dataset.kv){kview=t.dataset.kv;render();return}
         if(t.id==="more"){shown+=150;render();return}
         if(t.hasAttribute("data-x"))return close();
         if(t.dataset.led)return openLedger(t.dataset.led);

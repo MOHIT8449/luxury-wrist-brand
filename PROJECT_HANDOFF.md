@@ -4,6 +4,12 @@
 **Purpose:** Continue the same ERP project from a new ChatGPT conversation without restarting or losing the agreed requirements.
 **Status:** Active development / verification. Do not assume all modules are completed or fully tested.
 
+## Kasar: small difference write-off (20 Nov 2026)
+- Mohit: party pays Rs 5 / 10 / 20 less (or more) than the bill; let it go as KASAR so the bill does not stay in Outstanding; show it in the ledger and keep a Kasar ledger.
+- SQL `lwb_kasar_setup.sql` (test `tests/kasar`, PGlite, 3 tests): kasar = `lwb_tally_notes` row with `is_kasar = true`, note no. `KASAR` (CREDIT = party paid less, DEBIT = party paid extra), so every due / outstanding / ledger figure counts it with no other SQL change. Max Rs 500 per entry, Accounts / Admin only. RPCs `lwb_kasar_save(order, amount, LESS|EXTRA, date, remark)`, `lwb_kasar_cancel(id)` (kasar rows only), `lwb_kasar_list(days)` (Admin, Accounts, Sales Head), `lwb_party_receive_kasar(... , p_kasar)` (kasar first, then `lwb_party_receive` with the exact split). The credit / debit note alert (`lwb_flow_tally_note`) skips kasar (patched in place).
+- `party-pay.js`: Party payment popup shows a yellow "Kasar Rs X" tick box when a bill would stay short by <= Rs 500 (or, Oldest bill first, the party paid <= Rs 500 extra); ticked = saved through `lwb_party_receive_kasar`.
+- `sales-outstanding.html`: "✂ Kasar" button on bills with due <= Rs 500 (Admin / Accounts), Kasar tab (Entries / Party-wise, totals, Undo), Kasar chip on the bill status, Excel sheet "Kasar". Ledger popup and `party-ledger.html` label KASAR notes as "Kasar".
+
 ## Sales Head Outstanding + Payment column on PO / Sales (20 Nov 2026)
 - Mohit: Sales Head sees every bill not fully paid: total billed, received, outstanding, unpaid / part-paid bill list, party-wise totals, party ledger; on PO / Sales the last column shows the payment of each PO (paid / part / pending, cash / GPay-UPI / bank / cheque) so he can tell Accounts / Cashier.
 - New page `sales-outstanding.html` (Sales > Outstanding, Admin + Sales Head; Accounts may open it, no Tell button): cards Total billed / Payment received (mode split) / Outstanding / Over 30 days; tabs Unpaid bills, Party-wise (bills due, advance, outstanding = same net as Party & Collections via `LWBPartyPay.load`), Payments received; filters salesman, brand, bill date, status (pending, part, cheque not cleared, money with driver, paid); 📒 Ledger popup (`lwb_party_ledger_b`, link to party-ledger.html), 📣 Tell Accounts, Excel. `?q=` prefills search.
