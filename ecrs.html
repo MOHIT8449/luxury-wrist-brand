@@ -493,8 +493,8 @@ function truckCanvas(t){
   return cv;
 }
 function ecrsCanvas(){
-  const {R}=rows(), items=R.map(r=>({name:r.name,pal:Math.floor((r.q/(r.ppp||1))+1e-9)})).filter(r=>r.pal>0), tot=items.reduce((a,r)=>a+r.pal,0);
-  const t={no:'',rows:[]}, W=380, rowH=40, sc=3, colA=270, rowsN=1+2+1+items.length+1;
+  const {R}=rows(), items=R.map(r=>({name:r.name,cs:r.q,pal:Math.floor((r.q/(r.ppp||1))+1e-9)})).filter(r=>r.cs>0), tot=items.reduce((a,r)=>a+r.pal,0), totC=items.reduce((a,r)=>a+r.cs,0);
+  const W=400, rowH=40, sc=3, colA=240, colP=70, colC=W-colA-colP, rowsN=1+2+1+items.length+1;
   const cv=document.createElement('canvas'); cv.width=W*sc; cv.height=(rowsN*rowH+2)*sc;
   const x=cv.getContext('2d'); x.scale(sc,sc);
   const DARK='#4f6228', LIGHT='#d8e4bc', LIGHT2='#ebf1de', LINE='#7f8f5a';
@@ -505,16 +505,18 @@ function ecrsCanvas(){
     let sz=17; x.font=font(bold,sz); while(x.measureText(txt).width>w-16&&sz>9){ sz--; x.font=font(bold,sz); }
     x.fillStyle=color; x.textBaseline='middle'; const tx=align==='l'?cx+10:cx+w/2; x.textAlign=align==='l'?'left':'center';
     x.fillText(txt,tx,cy+rowH/2+1); if(ul){ const m=x.measureText(txt).width; x.fillRect(tx-m/2,cy+rowH/2+11,m,1.5); } };
+  const row3=(a,b,c,bg,color,bold,al)=>{ cell(0,y,colA,bg,a,color,bold,al||'c'); cell(colA,y,colP,bg,b,color,bold,'c'); cell(colA+colP,y,colC,bg,c,color,bold,'c'); y+=rowH; };
   let y=1; cell(0,y,W,DARK,BRAND,'#fff',true,'c',true); y+=rowH;
-  [['DATE',dIN(DAY.day)],['TOTAL ECRS PLAN',fmt(tot)+' PLT']].forEach(([a,b],k)=>{ cell(0,y,colA,LIGHT,a,'#1f2d0a',true,'c'); cell(colA,y,W-colA,LIGHT2,b,'#1f2d0a',true,'c'); y+=rowH; });
-  cell(0,y,colA,DARK,'SKU','#fff',true,'c'); cell(colA,y,W-colA,DARK,'ECRS PLT','#fff',true,'c'); y+=rowH;
-  items.forEach(r=>{ cell(0,y,colA,'#fff',r.name,'#262626',false,'l'); cell(colA,y,W-colA,'#fff',fmt(r.pal),'#262626',false,'c'); y+=rowH; });
-  cell(0,y,colA,LIGHT,'TOTAL','#1f2d0a',true,'c'); cell(colA,y,W-colA,LIGHT,fmt(tot),'#1f2d0a',true,'c');
-  return {cv,tot,count:items.length};
+  cell(0,y,colA,LIGHT,'DATE','#1f2d0a',true,'c'); cell(colA,y,W-colA,LIGHT2,dIN(DAY.day),'#1f2d0a',true,'c'); y+=rowH;
+  row3('TOTAL ECRS PLAN',fmt(tot)+' PLT',fmt(totC)+' CS',LIGHT2,'#1f2d0a',true); cell(0,y-rowH,colA,LIGHT,'TOTAL ECRS PLAN','#1f2d0a',true,'c');
+  row3('SKU','PLT','CASE',DARK,'#fff',true);
+  items.forEach(r=>row3(r.name,fmt(r.pal),fmt(r.cs),'#fff','#262626',false,'l'));
+  row3('TOTAL',fmt(tot),fmt(totC),LIGHT,'#1f2d0a',true);
+  return {cv,tot,totC,count:items.length};
 }
 function showEcrsImg(){
-  const {cv,tot,count}=ecrsCanvas(); if(!count){ say('Enter ECRS cases first.'); return; }
-  $('dMsg').textContent=`ECRS ${dIN(DAY.day)} · ${count} SKU · ${fmt(tot)} full pallet. Copy the image and paste in WhatsApp.`;
+  const {cv,tot,totC,count}=ecrsCanvas(); if(!count){ say('Enter ECRS cases first.'); return; }
+  $('dMsg').textContent=`ECRS ${dIN(DAY.day)} · ${count} SKU · ${fmt(tot)} full pallet · ${fmt(totC)} cases. Copy the image and paste in WhatsApp.`;
   $('dImg').src=cv.toDataURL('image/png');
   $('dCopy').onclick=()=>copyCanvas(cv);
   $('dShare').onclick=async()=>shareFiles([new File([await blobOf(cv)],`ECRS ${DAY.day}.png`,{type:'image/png'})]);
