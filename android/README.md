@@ -1,6 +1,6 @@
 # LWB ERP Android app
 
-A Trusted Web Activity: the app opens https://luxury-wrist-brand.pages.dev
+A Trusted Web Activity: the app opens https://erp.luxurybrand.com
 full screen in Chrome. Everything (login + OTP, camera photos, call buttons,
 WhatsApp, popups) is the live website, so a merged PR reaches the app at once.
 A new APK is only needed when this `android/` folder changes.

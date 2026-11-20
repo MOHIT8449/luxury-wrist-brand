@@ -17,7 +17,7 @@
  */
 import { createClient } from "npm:@supabase/supabase-js@2";
 
-const allowedOrigins = ["https://luxury-wrist-brand.pages.dev"];
+const allowedOrigins = ["https://erp.luxurybrand.com", "https://luxurybrand.com", "https://www.luxurybrand.com", "https://luxury-wrist-brand.pages.dev"];
 // Newer supabase-js versions send extra headers, so the browser's requested list is allowed back.
 const corsFor = (origin, asked) => ({
   "Access-Control-Allow-Origin":
