@@ -201,8 +201,11 @@ test('Shift handover in the day: count, hand to the next person, he accepts; sho
  await as('accounts');
  await assert.rejects(one('select public.lwb_acc_shift_receive($1,$2,null)',[g.id,book-100]),/Write a note/);
  await one('select public.lwb_acc_shift_receive($1,$2,$3)',[g.id,book-100,'100 less']);
+ await db.query("alter table user_profiles add column if not exists mobile text");
+ await db.query("update user_profiles set mobile='98250 12345' where id=$1",[ids.accounts]);
  L=await one('select public.lwb_acc_shift_list(null,null)');
- assert.equal(L.holder.name,'accounts user');assert.equal(L.pending,null);assert.equal(L.rows[0].status,'RECEIVED');
+ assert.equal(L.holder.name,'accounts user');assert.equal(L.holder.mobile,'98250 12345');assert.equal(L.holder.role,'accounts');assert.equal(L.holder.today,true);
+ assert.ok(L.last_entry===null||typeof L.last_entry.name==='string');assert.equal(L.pending,null);assert.equal(L.rows[0].status,'RECEIVED');
  // short goes to Admin + the giver as a bell
  const bell=(await db.query("select distinct p.role from erp_notifications n join user_profiles p on p.id=n.user_id where n.notification_type='ACC_SHIFT_HANDOVER' and n.title like 'Cash handover short%'")).rows.map(r=>r.role).sort();
  assert.deepEqual(bell,['admin','cashier']);

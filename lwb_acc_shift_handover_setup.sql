@@ -52,6 +52,19 @@ AS $fn$
   SELECT coalesce(nullif(btrim(p.full_name),''), 'User') FROM public.user_profiles p WHERE p.id = p_user;
 $fn$;
 
+-- mobile / role of a staff login (to_jsonb: works even where user_profiles has no mobile column)
+CREATE OR REPLACE FUNCTION public.lwb_acc_shift_mobile(p_user uuid)
+RETURNS text LANGUAGE sql STABLE SECURITY DEFINER SET search_path = ''
+AS $fn$
+  SELECT nullif(btrim(to_jsonb(p)->>'mobile'), '') FROM public.user_profiles p WHERE p.id = p_user;
+$fn$;
+
+CREATE OR REPLACE FUNCTION public.lwb_acc_shift_role(p_user uuid)
+RETURNS text LANGUAGE sql STABLE SECURITY DEFINER SET search_path = ''
+AS $fn$
+  SELECT p.role FROM public.user_profiles p WHERE p.id = p_user;
+$fn$;
+
 CREATE OR REPLACE FUNCTION public.lwb_acc_shift_people()
 RETURNS jsonb LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = ''
 AS $fn$
@@ -155,11 +168,19 @@ BEGIN
   SELECT jsonb_build_object(
     'me', auth.uid(),
     'is_admin', public.lwb_acc_admin(),
-    'holder', (SELECT jsonb_build_object('id', x.given_to, 'name', x.to_name, 'since', x.received_at, 'amount', x.received_amount)
+    'holder', (SELECT jsonb_build_object('id', x.given_to, 'name', x.to_name, 'since', x.received_at, 'amount', x.received_amount,
+                  'mobile', public.lwb_acc_shift_mobile(x.given_to), 'role', public.lwb_acc_shift_role(x.given_to),
+                  'today', (x.received_at AT TIME ZONE 'Asia/Kolkata')::date = public.lwb_acc_today())
                FROM x WHERE x.status = 'RECEIVED' ORDER BY x.received_at DESC LIMIT 1),
     'pending', (SELECT jsonb_build_object('id', x.id, 'by', x.given_by, 'by_name', x.by_name, 'to', x.given_to, 'to_name', x.to_name,
+                  'to_mobile', public.lwb_acc_shift_mobile(x.given_to), 'by_mobile', public.lwb_acc_shift_mobile(x.given_by),
                   'at', x.given_at, 'counted', x.counted, 'book', x.book_cash, 'note', x.note)
                 FROM x WHERE x.status = 'PENDING' LIMIT 1),
+    'last_entry', (SELECT jsonb_build_object('id', l.created_by, 'name', public.lwb_acc_shift_name(l.created_by), 'at', l.at,
+                  'mobile', public.lwb_acc_shift_mobile(l.created_by), 'role', public.lwb_acc_shift_role(l.created_by))
+                FROM public.lwb_acc_lines() l
+                WHERE l.book_date = public.lwb_acc_today() AND l.cash_effect <> 0 AND l.created_by IS NOT NULL
+                ORDER BY l.at DESC LIMIT 1),
     'rows', coalesce((SELECT jsonb_agg(jsonb_build_object('id', x.id, 'day', x.day, 'at', x.given_at, 'by_name', x.by_name,
                   'to_name', x.to_name, 'book', x.book_cash, 'counted', x.counted, 'notes', x.counted_notes, 'note', x.note,
                   'status', x.status, 'received', x.received_amount, 'received_at', x.received_at, 'receive_note', x.receive_note,
@@ -170,7 +191,7 @@ BEGIN
 END
 $fn$;
 
-REVOKE ALL ON FUNCTION public.lwb_acc_shift_ok(uuid), public.lwb_acc_shift_name(uuid) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.lwb_acc_shift_ok(uuid), public.lwb_acc_shift_name(uuid), public.lwb_acc_shift_mobile(uuid), public.lwb_acc_shift_role(uuid) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.lwb_acc_shift_people(), public.lwb_acc_shift_give(uuid,jsonb,text),
   public.lwb_acc_shift_receive(bigint,numeric,text), public.lwb_acc_shift_cancel(bigint,text), public.lwb_acc_shift_list(date,date)
   FROM PUBLIC, anon;
