@@ -27,8 +27,8 @@ import java.util.concurrent.Executors;
 public final class DriverTrackingActivity extends Activity {
     private static final int REQ_FINE=11,REQ_BG=12,REQ_NOTIFY=13;
     private int attemptId=0;
-    private TextView status; private EditText email,password; private Button agree; private CheckBox tick;
-    private LinearLayout form;
+    private TextView status; private EditText email,password; private Button agree;
+    private LinearLayout form,row;
     private AlertDialog dialog;
     private final ExecutorService worker=Executors.newSingleThreadExecutor();
     private TrackingApi api;
@@ -44,14 +44,12 @@ public final class DriverTrackingActivity extends Activity {
         status=new TextView(this);status.setPadding(0,pad/2,0,pad/2);root.addView(status);
 
         form=new LinearLayout(this);form.setOrientation(LinearLayout.VERTICAL);root.addView(form);
-        // Long location notice removed on Mohit's ask (21 Nov 2026); the "I agree" tick still records consent.
-        tick=new CheckBox(this);tick.setText("I agree to share location / सहमत");form.addView(tick);
         email=new EditText(this);email.setHint("Mobile number or email");email.setInputType(InputType.TYPE_CLASS_TEXT|InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS);form.addView(email);
         password=new EditText(this);password.setHint("ERP password");password.setInputType(InputType.TYPE_CLASS_TEXT|InputType.TYPE_TEXT_VARIATION_PASSWORD);form.addView(password);
-        agree=new Button(this);agree.setText("Agree and continue");form.addView(agree);agree.setOnClickListener(v->signIn());
+        agree=new Button(this);agree.setText("Login");form.addView(agree);agree.setOnClickListener(v->signIn());
 
-        LinearLayout row=new LinearLayout(this);row.setOrientation(LinearLayout.HORIZONTAL);row.setGravity(Gravity.END);root.addView(row);
-        Button change=new Button(this);change.setText("Change login");change.setOnClickListener(v->{form.setVisibility(LinearLayout.VISIBLE);status.setText("Sign in with the new staff login. Location then goes with the new login.");});
+        row=new LinearLayout(this);row.setOrientation(LinearLayout.HORIZONTAL);row.setGravity(Gravity.END);root.addView(row);
+        Button change=new Button(this);change.setText("Change login");change.setOnClickListener(v->{form.setVisibility(LinearLayout.VISIBLE);row.setVisibility(LinearLayout.GONE);status.setText("Sign in with the new staff login. Location then goes with the new login.");});
         row.addView(change);
         setContentView(scroll);
     }
@@ -62,31 +60,30 @@ public final class DriverTrackingActivity extends Activity {
     private void check(){
         if(dialog!=null&&dialog.isShowing())dialog.dismiss();
         if(!api.hasSession()||!api.agreed()&&api.tracked()){
-            form.setVisibility(LinearLayout.VISIBLE);
-            status.setText("Sign in with your ERP mobile number (or email) and password.");
+            form.setVisibility(LinearLayout.VISIBLE);row.setVisibility(LinearLayout.GONE);
+            status.setText("");
             return;
         }
-        form.setVisibility(LinearLayout.GONE);
+        form.setVisibility(LinearLayout.GONE);row.setVisibility(LinearLayout.VISIBLE);
         if(!api.tracked()){openErp();return;} // Admin: never tracked
         if(checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION)!=PackageManager.PERMISSION_GRANTED){
-            popup("Allow location","Location permission is needed to use the app. Choose \"Precise\" and \"While using the app\".\n\nऐप चलाने के लिए लोकेशन की अनुमति दें।","Allow",
-                ()->{if(shouldShowRequestPermissionRationale(Manifest.permission.ACCESS_FINE_LOCATION)||!asked("fine"))
-                        requestPermissions(new String[]{Manifest.permission.ACCESS_COARSE_LOCATION,Manifest.permission.ACCESS_FINE_LOCATION},REQ_FINE);
-                     else appSettings();});
+            if(shouldShowRequestPermissionRationale(Manifest.permission.ACCESS_FINE_LOCATION)||!asked("fine"))
+                requestPermissions(new String[]{Manifest.permission.ACCESS_COARSE_LOCATION,Manifest.permission.ACCESS_FINE_LOCATION},REQ_FINE);
+            else popup("Allow location","Settings > Permissions > Location > Allow.","Open",this::appSettings);
             return;
         }
         if(Build.VERSION.SDK_INT>=29&&checkSelfPermission(Manifest.permission.ACCESS_BACKGROUND_LOCATION)!=PackageManager.PERMISSION_GRANTED){
-            popup("Allow all the time","On the next screen choose \"Allow all the time\" so location works when the app is closed.\n\nअगली स्क्रीन पर \"Allow all the time\" चुनें।","Open",
+            popup("Allow all the time","Choose \"Allow all the time\" on the next screen.","Open",
                 ()->{if(!asked("bg"))requestPermissions(new String[]{Manifest.permission.ACCESS_BACKGROUND_LOCATION},REQ_BG);else appSettings();});
             return;
         }
         if(Build.VERSION.SDK_INT>=33&&checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)!=PackageManager.PERMISSION_GRANTED){
-            popup("Allow notifications","Notifications are needed to show that location is being shared.\n\nनोटिफिकेशन की अनुमति दें।","Allow",
-                ()->{if(!asked("notify"))requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS},REQ_NOTIFY);else appSettings();});
+            if(!asked("notify"))requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS},REQ_NOTIFY);
+            else popup("Allow notifications","Settings > Notifications > Allow.","Open",this::appSettings);
             return;
         }
         if(!locationOn()){
-            popup("Turn on location","Phone location (GPS) is off. Turn it on to use the app.\n\nफ़ोन की लोकेशन (GPS) बंद है। ऐप चलाने के लिए चालू करें।","Turn on",
+            popup("Turn on location","Phone location (GPS) is off.","Turn on",
                 ()->startActivity(new Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS)));
             return;
         }
@@ -127,7 +124,6 @@ public final class DriverTrackingActivity extends Activity {
     }
 
     private void signIn() {
-        if(!tick.isChecked()){status.setText("Tick \"I agree\" to continue.");return;}
         String e=email.getText().toString().trim(),p=password.getText().toString();
         if(e.isEmpty()||p.isEmpty()){status.setText("Enter your mobile number (or email) and password.");return;}
         final int attempt=++attemptId;
