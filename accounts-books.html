@@ -26,6 +26,17 @@
     .ab-rd{display:flex;flex-wrap:wrap;align-items:center;gap:6px;background:#fff8e6;border:1.5px solid #e8c36a;border-radius:10px;padding:8px 10px;margin-bottom:10px}
     .ab-rd .ab-rd-now{color:#66788e;font-size:13px}.ab-rd input{height:32px;border:1.5px solid #d5dbe3;border-radius:8px;padding:0 8px;font:inherit;font-size:14px;background:#fff}
     .ab-rd .ab-rd-d{font-weight:700;color:#00434d;cursor:pointer}.ab-rd .ab-rd-r{flex:1 1 110px;min-width:0}
+    .ab-rd .ab-rd-h{flex-basis:100%}.ab-rd .ab-rd-row,.ab-rd .ab-rd-f{display:flex;flex-wrap:wrap;align-items:center;gap:6px;flex-basis:100%}
+    .ab-rd .ab-rd-row>span{font-size:13px;color:#4b5763;font-weight:600;min-width:62px}.ab-rd .ab-rd-row .rk{flex:1 1 160px;min-width:0}
+    .ab-rd .ab-rd-ls{display:grid;gap:6px;flex-basis:100%}.ab-rd .ab-rd-l{display:grid;grid-template-columns:96px minmax(0,1fr) minmax(0,1.3fr) auto;gap:6px;align-items:center}
+    .ab-rd .ab-rd-l.bill{grid-template-columns:minmax(0,1.4fr) minmax(0,1fr) minmax(0,1fr) auto}
+    .ab-rd select{height:32px;border:1.5px solid #d5dbe3;border-radius:8px;font:inherit;font-size:14px;background:#fff;padding:0 6px}
+    .ab-rd .ab-rd-l input{width:100%;box-sizing:border-box}.ab-rd .am{font-weight:700;text-align:right}
+    .ab-rd .ab-rd-tot{margin-left:auto;font-size:14px}.ab-rd .ab-rd-tot b{color:#13824a;font-size:16px}.ab-rd .ab-rd-tot small{color:#8a5a00}
+    .ab-rd .ab-rd-q{margin:0;flex-basis:100%;font-size:13.5px}.ab-rd.del{background:#fff1f1;border-color:#e6a1a1}
+    .ab-b.ab-del{color:#b3122b;border-color:#efc2c2}.ab-b.ab-delb{background:#b3122b;border-color:#b3122b;color:#fff}
+    .ab-hist{color:#8a5a00 !important}
+    @media(max-width:560px){.ab-rd .ab-rd-l{grid-template-columns:84px minmax(0,1fr)}.ab-rd .ab-rd-l .rf{grid-column:1/-1}.ab-rd .ab-rd-l.bill{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}.ab-rd .ab-rd-l [data-rm]{justify-self:start}}
     .ab-rd-err{flex-basis:100%;background:#ffebeb;color:#9b2020;border-radius:8px;padding:6px 9px;font-size:13px}
     .ab-b.sm{height:30px;font-size:12.5px;padding:0 9px}.ab-b:disabled{opacity:.5;cursor:default}
     .ab-kpis{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px;margin:0 0 8px}
@@ -182,7 +193,7 @@
         if(a.error)a=await client.rpc("lwb_party_ledger");
         if(a.error)throw a.error;
         // Goods returns without a bill are not in the ledger SQL (same as Party & Collections).
-        const nr=(info.returns||[]).filter(r=>!r.cancelled&&!r.order_id).map(r=>({entry_date:r.return_date,entry_kind:"PARTY_RETURN",customer_name:r.parent||r.party,ref_no:r.return_no,order_no:null,
+        const nr=(info.returns||[]).filter(r=>!r.cancelled&&!r.order_id).map(r=>({entry_date:r.return_date,entry_kind:"PARTY_RETURN",rid:r.id,customer_name:r.parent||r.party,ref_no:r.return_no,order_no:null,
           debit:0,credit:Number(r.amount)||0,note:(r.items||[]).map(i=>i.sku+" "+(i.cases||0)+" CS"+(Number(i.pcs)?" "+i.pcs+" PCS":"")).join(", ")+(r.note?" · "+r.note:""),created_at:r.created_at,company_id:r.company_id}));
         led=(a.data||[]).concat(nr).map((x,i)=>({...x,i,pk:key(info.parentOf(x.customer_name)),debit:Number(x.debit)||0,credit:Number(x.credit)||0,d:String(x.entry_date||"").slice(0,10)}))
           .sort((x,y)=>x.d.localeCompare(y.d)||(x.entry_kind==="OPENING"?-1:y.entry_kind==="OPENING"?1:0)||String(x.created_at||"").localeCompare(String(y.created_at||"")));
@@ -498,6 +509,7 @@
     function openVoucher(x){
       lastFocus=document.activeElement;
       if(x.entry_kind==="PARTY_PAYMENT"){const r=receiptOf(x);if(r)return openReceipt(r,x)}
+      if(x.entry_kind==="PARTY_RETURN"||x.entry_kind==="CREDIT_NOTE"){const rt=returnOf(x);if(rt)return openReturn(rt)}
       if(x.order_no)return openBill({order_no:x.order_no,pk:x.pk,hl:x});
       popOpen({title:vt(x)[0]+" · "+dmy(x.d),crumb:vt(x)[0],render:(b,f,s)=>{
         s.textContent=nameOf(x.pk);
@@ -514,7 +526,7 @@
     }
     function openReceipt(r,x){
       const pk=key(info.parentOf(r.party)),a=r.allocs||[],s=a.reduce((t,y)=>t+Number(y.amount),0);
-      popOpen({title:"Receipt · "+rs(r.total)+" · "+dmy(r.pay_date),crumb:"Receipt "+rs(r.total),render:(b,f,sub)=>{
+      popOpen({title:"Receipt · "+rs(r.total)+" · "+dmy(r.pay_date),crumb:"Receipt "+rs(r.total),again:()=>{const n=(info.raw.receipts||[]).find(z=>z.receipt_id===r.receipt_id&&!z.cancelled);if(n)openReceipt(n)},render:(b,f,sub)=>{
         sub.innerHTML=esc(nameOf(pk))+(r.company_id?" · "+btag(r.company_id):"");
         b.innerHTML='<div class="ab-sum" style="--n:3"><div class="big"><small>Received</small><b class="ab-adv">'+rs2(r.total)+'</b></div><div><small>Set to bills</small><b>'+rs2(s)+'</b></div><div><small>Kept as advance</small><b>'+rs2(Math.max(0,r.total-s))+"</b></div></div>"+
           '<table class="ab-t"><thead><tr><th>Mode</th><th>Ref / UTR / Cheque</th><th class="n">Amount</th></tr></thead><tbody>'+(r.modes||[]).map(m=>'<tr class="ob"><td>'+modeChips([String(m.mode||"").toUpperCase()])+"</td><td>"+esc(m.ref||"—")+'</td><td class="n">'+rs2(m.amount)+"</td></tr>").join("")+"</tbody></table>"+
@@ -523,43 +535,101 @@
           "<h4>Against bills · click a bill to open it</h4>"+
           (a.length?'<table class="ab-t"><thead><tr><th>PO</th><th>Bill no.</th><th class="n">Amount</th></tr></thead><tbody>'+a.map((y,i)=>'<tr tabindex="0" data-al="'+i+'"><td>'+esc(y.order_no)+"</td><td>"+esc(y.invoice_no||"")+'</td><td class="n">'+rs2(y.amount)+"</td></tr>").join("")+"</tbody></table>":'<div class="ab-empty">Kept as advance, not set to a bill yet.</div>');
         b.querySelectorAll("[data-al]").forEach(t=>t.onclick=()=>{const y=a[Number(t.dataset.al)];openBill({order_id:y.order_id,order_no:y.order_no,pk})});
-        f.innerHTML='<button type="button" class="ab-b t" data-led="'+esc(pk)+'">📒 Party ledger</button><a class="ab-b" href="party-billing.html?tab=pay#tally">Payments page ↗</a>'+(canDate()&&!r.cancelled?'<button type="button" class="ab-b" data-rdate>📅 Change date</button>':"")+'<span class="sp"></span><button type="button" class="ab-b" data-close>Close</button>';
-        const cd=f.querySelector("[data-rdate]");
-        if(cd)cd.onclick=()=>dateBox(b,r);
+        f.innerHTML='<button type="button" class="ab-b t" data-led="'+esc(pk)+'">📒 Party ledger</button><a class="ab-b" href="party-billing.html?tab=pay#tally">Payments page ↗</a>'+(canDate()&&!r.cancelled?'<button type="button" class="ab-b" data-redit>✏️ Edit</button><button type="button" class="ab-b ab-del" data-rdel>🗑 Delete</button>':"")+'<span class="sp"></span><button type="button" class="ab-b" data-close>Close</button>';
+        const ce=f.querySelector("[data-redit]"),cx=f.querySelector("[data-rdel]");
+        if(ce)ce.onclick=()=>receiptEdit(b,r);
+        if(cx)cx.onclick=()=>delBox(b,"Delete this payment of <b>"+rs2(r.total)+"</b>? It stays in the list as cancelled; bills it paid are due again.",
+          reason=>client.rpc("lwb_receipt_delete",{p_receipt_id:r.receipt_id,p_reason:reason}),"Payment deleted");
+        histInto(b,[r.receipt_id]);
       }});
     }
-    // Admin: change the receipt date right inside this popup (native date picker), lwb_receipt_set_date
-    function dateBox(b,r){
-      let box=b.querySelector(".ab-rd");
-      if(box){box.remove();return}
-      const t=today(),y=new Date(Date.parse(t+"T12:00:00Z")-864e5).toISOString().slice(0,10),now=String(r.pay_date).slice(0,10);
-      box=document.createElement("div");box.className="ab-rd";
-      box.innerHTML='<b>📅 Change date</b><span class="ab-rd-now">Now <b>'+dmy(now)+'</b></span>'+
-        '<input type="date" class="ab-rd-d" max="'+t+'" value="'+(now===t?y:now)+'" aria-label="New date">'+
-        '<button type="button" class="ab-b sm" data-dd="'+y+'">Yesterday</button>'+
-        '<input class="ab-rd-r" maxlength="300" placeholder="Reason (optional)" aria-label="Reason">'+
-        '<button type="button" class="ab-b g sm" data-dsave>Save date</button><button type="button" class="ab-b sm" data-dx>Cancel</button>'+
-        '<div class="ab-rd-err" hidden></div>';
-      b.prepend(box);
-      const d=box.querySelector(".ab-rd-d"),err=box.querySelector(".ab-rd-err"),sv=box.querySelector("[data-dsave]");
-      box.querySelector("[data-dd]").onclick=()=>{d.value=y};
+    // ---------- Admin: edit / delete any entry right inside its popup (lwb_ledger_admin_edit_setup.sql) ----------
+    const MODES=[["CASH","Cash"],["UPI","UPI"],["BANK","Bank"],["CHEQUE","Cheque"]];
+    function panel(b,title,inner,saveTxt,onSave,danger){
+      const old=b.querySelector(".ab-rd");if(old){const same=old.dataset.t===title;old.remove();if(same)return null}
+      const box=document.createElement("div");box.className="ab-rd"+(danger?" del":"");box.dataset.t=title;
+      box.innerHTML='<div class="ab-rd-h"><b>'+title+'</b></div>'+inner+
+        '<div class="ab-rd-f"><input class="ab-rd-r" maxlength="300" placeholder="Reason (optional)" aria-label="Reason"><button type="button" class="ab-b sm '+(danger?"ab-delb":"g")+'" data-dsave>'+saveTxt+'</button><button type="button" class="ab-b sm" data-dx>Cancel</button></div><div class="ab-rd-err" hidden></div>';
+      b.prepend(box);b.scrollTop=0;
+      const err=box.querySelector(".ab-rd-err"),sv=box.querySelector("[data-dsave]");
       box.querySelector("[data-dx]").onclick=()=>box.remove();
-      d.onclick=()=>{try{d.showPicker()}catch(_){}};
-      setTimeout(()=>{d.focus();try{d.showPicker()}catch(_){}},50);
+      box.querySelectorAll('input[type=date]').forEach(d=>d.onclick=()=>{try{d.showPicker()}catch(_){}});
       sv.onclick=async()=>{
-        err.hidden=true;const v=d.value;
-        const bad=!v?"Choose the new date":v>t?"The date cannot be in the future":v===now?"The payment is already on "+dmy(v):"";
-        if(bad){err.textContent=bad;err.hidden=false;return}
-        sv.disabled=true;sv.textContent="Saving...";
-        try{
-          const {error}=await client.rpc("lwb_receipt_set_date",{p_receipt_id:r.receipt_id,p_date:v,p_reason:box.querySelector(".ab-rd-r").value.trim()||null});
-          if(error)throw error;
-          stack.pop();paint();await load();
-          const nr=(info.raw.receipts||[]).find(z=>z.receipt_id===r.receipt_id);
-          if(nr)openReceipt(nr);
-          if(window.ERPShell&&ERPShell.toast)ERPShell.toast("Date changed to "+dmy(v),"success");
-        }catch(e){const m=String((e&&e.message)||e||"");err.textContent=/lwb_receipt_set_date|schema cache/i.test(m)?"Date change is not set up on the database yet.":m.replace(/^.*?ERROR:\s*/,"");err.hidden=false;sv.disabled=false;sv.textContent="Save date"}
+        err.hidden=true;sv.disabled=true;const t0=sv.textContent;sv.textContent="Saving...";
+        try{const msg=await onSave(box,box.querySelector(".ab-rd-r").value.trim()||null);
+          const top=stack[stack.length-1],again=top&&top.again;
+          stack.pop();paint();await load();if(again)again();
+          if(window.ERPShell&&ERPShell.toast)ERPShell.toast(msg||"Saved","success")}
+        catch(e){const m=String((e&&e.message)||e||"");err.textContent=/lwb_receipt_edit|lwb_tally_bill_|lwb_party_return_(edit|delete)|lwb_receipt_delete|schema cache/i.test(m)?"Edit is not set up on the database yet.":m.replace(/^.*?ERROR:\s*/,"");err.hidden=false;sv.disabled=false;sv.textContent=t0}
       };
+      return box;
+    }
+    const must=async p=>{const {error,data}=await p;if(error)throw error;return data};
+    function delBox(b,text,call,msg){panel(b,"🗑 Delete",'<p class="ab-rd-q">'+text+"</p>","Yes, delete",async(box,reason)=>{await must(call(reason));return msg},true)}
+    const dIn=(v,cls)=>'<input type="date" class="'+(cls||"ab-rd-d")+'" max="'+today()+'" value="'+esc(String(v||"").slice(0,10))+'" aria-label="Date">';
+    async function receiptEdit(b,r){
+      if(b.querySelector(".ab-rd")){b.querySelector(".ab-rd").remove();return}
+      let L;try{L=await must(client.rpc("lwb_receipt_lines",{p_receipt_id:r.receipt_id}))}catch(e){return ERPShell.alert(String(e.message||e).replace(/^.*?ERROR:\s*/,""))}
+      if(!L||!L.length)return ERPShell.alert("Payment lines not found. Reload the page.");
+      const t=today(),y=new Date(Date.parse(t+"T12:00:00Z")-864e5).toISOString().slice(0,10);
+      const row=m=>'<div class="ab-rd-l" data-lid="'+esc(m.id||"")+'"><select aria-label="Mode">'+MODES.map(([k,n])=>'<option value="'+k+'"'+(String(m.mode||"").toUpperCase()===k?" selected":"")+">"+n+"</option>").join("")+'</select>'+
+        '<input class="am" inputmode="decimal" placeholder="₹ Amount" value="'+(m.amount!=null?r2(m.amount):"")+'" aria-label="Amount"><input class="rf" maxlength="100" placeholder="UTR / cheque no." value="'+esc(m.ref||"")+'" aria-label="Reference">'+(m.id?"":'<button type="button" class="ab-b sm" data-rm aria-label="Remove line">×</button>')+"</div>";
+      const box=panel(b,"✏️ Edit payment",'<div class="ab-rd-row"><span>Date</span>'+dIn(r.pay_date)+'<button type="button" class="ab-b sm" data-dd="'+y+'">Yesterday</button></div>'+
+        '<div class="ab-rd-ls">'+L.map(row).join("")+'</div><div class="ab-rd-row"><button type="button" class="ab-b sm" data-add>+ Another mode</button><span class="ab-rd-tot"></span></div>'+
+        '<div class="ab-rd-row"><span>Remark</span><input class="rk" maxlength="300" value="'+esc(r.remark||"")+'" aria-label="Remark"></div>',"Save changes",async(bx,reason)=>{
+          const lines=[...bx.querySelectorAll(".ab-rd-l")].map(l=>({id:l.dataset.lid||null,mode:l.querySelector("select").value,amount:Number(String(l.querySelector(".am").value).replace(/[,₹\s]/g,"")),ref:l.querySelector(".rf").value.trim()||null}));
+          if(lines.some(l=>!(l.amount>0)))throw Error("Enter every amount (more than 0)");
+          await must(client.rpc("lwb_receipt_edit",{p_receipt_id:r.receipt_id,p_date:bx.querySelector(".ab-rd-d").value,p_lines:lines,p_remark:bx.querySelector(".rk").value.trim()||null,p_reason:reason}));
+          return "Payment saved"});
+      if(!box)return;
+      const tot=()=>{const n=[...box.querySelectorAll(".am")].reduce((a,i)=>a+(Number(String(i.value).replace(/[,₹\s]/g,""))||0),0);box.querySelector(".ab-rd-tot").innerHTML="Total <b>"+rs2(n)+"</b>"+(Math.abs(n-r.total)>0.005?' <small>(was '+rs2(r.total)+")</small>":"")};
+      const wire=()=>{box.querySelectorAll(".am").forEach(i=>i.oninput=tot);box.querySelectorAll("[data-rm]").forEach(x=>x.onclick=()=>{x.parentElement.remove();tot()});tot()};
+      box.querySelector("[data-dd]").onclick=()=>{box.querySelector(".ab-rd-d").value=y};
+      box.querySelector("[data-add]").onclick=()=>{box.querySelector(".ab-rd-ls").insertAdjacentHTML("beforeend",row({mode:"UPI"}));wire()};
+      wire();
+    }
+    function billEdit(b,o,id){
+      const bl=(o.bills||[]).length?o.bills:[{firm:o.party,no:o.invoice_no,amount:o.bill_amount}];
+      const row=x=>'<div class="ab-rd-l bill"><input class="fm" maxlength="200" placeholder="Bill in name" value="'+esc(x.firm||o.party||"")+'" aria-label="Bill in name"><input class="no" maxlength="100" placeholder="Invoice no." value="'+esc(x.no||"")+'" aria-label="Invoice no."><input class="am" inputmode="decimal" placeholder="₹ Amount" value="'+(x.amount!=null?r2(x.amount):"")+'" aria-label="Amount"><button type="button" class="ab-b sm" data-rm aria-label="Remove bill">×</button></div>';
+      const box=panel(b,"✏️ Edit Tally bill",'<div class="ab-rd-row"><span>Bill date</span>'+dIn(o.invoice_date)+'</div><div class="ab-rd-ls">'+bl.map(row).join("")+'</div><div class="ab-rd-row"><button type="button" class="ab-b sm" data-add>+ Another bill</button><span class="ab-rd-tot"></span></div>',"Save bill",async(bx,reason)=>{
+        const bills=[...bx.querySelectorAll(".ab-rd-l")].map(l=>({firm:l.querySelector(".fm").value.trim(),no:l.querySelector(".no").value.trim(),amount:Number(String(l.querySelector(".am").value).replace(/[,₹\s]/g,""))}));
+        if(!bills.length)throw Error("Keep at least one bill (to remove the bill use Delete bill)");
+        if(bills.some(x=>!x.no||!(x.amount>0)))throw Error("Enter invoice no. and amount of every bill");
+        await must(client.rpc("lwb_tally_bill_edit",{p_order_id:id,p_invoice_date:bx.querySelector(".ab-rd-d").value,p_bills:bills,p_reason:reason}));
+        return "Tally bill saved"});
+      if(!box)return;
+      const tot=()=>{const n=[...box.querySelectorAll(".am")].reduce((a,i)=>a+(Number(String(i.value).replace(/[,₹\s]/g,""))||0),0);box.querySelector(".ab-rd-tot").innerHTML="Total <b>"+rs2(n)+"</b>"};
+      const wire=()=>{box.querySelectorAll(".am").forEach(i=>i.oninput=tot);box.querySelectorAll("[data-rm]").forEach(x=>x.onclick=()=>{x.parentElement.remove();tot()});tot()};
+      box.querySelector("[data-add]").onclick=()=>{box.querySelector(".ab-rd-ls").insertAdjacentHTML("beforeend",row({firm:o.party}));wire()};
+      wire();
+    }
+    function returnOf(x){
+      const R=(info.returns||[]).filter(r=>!r.cancelled);
+      return (x.rid&&R.find(r=>r.id===x.rid))||(x.entry_kind==="CREDIT_NOTE"&&x.ref_no&&R.find(r=>String(r.credit_note||"")===String(x.ref_no)&&Math.abs(Number(r.amount)-x.credit)<0.01))||null;
+    }
+    function openReturn(rt){
+      const pk=key(info.parentOf(rt.parent||rt.party));
+      popOpen({title:"Goods return · "+rs(rt.amount)+" · "+dmy(rt.return_date),crumb:"Return "+(rt.return_no||""),again:()=>{const n=(info.returns||[]).find(z=>z.id===rt.id&&!z.cancelled);if(n)openReturn(n)},render:(b,f,sub)=>{
+        sub.innerHTML=esc(nameOf(pk))+(rt.company_id?" · "+btag(rt.company_id):"");
+        b.innerHTML='<div class="ab-sum" style="--n:3"><div class="big"><small>Return amount</small><b class="ab-adv">'+rs2(rt.amount)+'</b></div><div><small>Return no.</small><b style="font-size:14px">'+esc(rt.return_no||"—")+'</b></div><div><small>Against</small><b style="font-size:14px">'+(rt.order_no?esc(rt.order_no)+(rt.invoice_no?" · bill "+esc(rt.invoice_no):""):"Party balance")+"</b></div></div>"+
+          '<table class="ab-t"><thead><tr><th>SKU</th><th class="n">Cases</th><th class="n">Pcs</th></tr></thead><tbody>'+((rt.items||[]).map(i=>'<tr class="ob"><td>'+esc(i.sku||"")+'</td><td class="n">'+(Number(i.cases)||0)+'</td><td class="n">'+(Number(i.pcs)||0)+"</td></tr>").join("")||'<tr class="ob"><td colspan="3" class="ab-empty">No item line</td></tr>')+"</tbody></table>"+
+          '<p class="ab-note">'+[rt.by?"Entered by "+esc(rt.by):"",rt.credit_note?"Credit note "+esc(rt.credit_note):"",rt.note?"Note: "+esc(rt.note):""].filter(Boolean).join(" · ")+"</p>";
+        f.innerHTML='<button type="button" class="ab-b t" data-led="'+esc(pk)+'">📒 Party ledger</button><a class="ab-b" href="party-billing.html?tab=ret#tally">Returns page ↗</a>'+
+          (canDate()?'<button type="button" class="ab-b" data-tedit>✏️ Edit</button><button type="button" class="ab-b ab-del" data-tdel>🗑 Delete</button>':"")+'<span class="sp"></span><button type="button" class="ab-b" data-close>Close</button>';
+        const te=f.querySelector("[data-tedit]"),tx=f.querySelector("[data-tdel]");
+        if(te)te.onclick=()=>panel(b,"✏️ Edit return",'<div class="ab-rd-row"><span>Date</span>'+dIn(rt.return_date)+'</div><div class="ab-rd-row"><span>Note</span><input class="rk" maxlength="300" value="'+esc(rt.note||"")+'" aria-label="Note"></div><p class="ab-rd-q">Items and amount change from the Returns page (cancel and enter again).</p>',"Save",async(bx,reason)=>{
+          await must(client.rpc("lwb_party_return_edit",{p_id:rt.id,p_date:bx.querySelector(".ab-rd-d").value,p_note:bx.querySelector(".rk").value.trim()||null,p_reason:reason}));return "Return saved"});
+        if(tx)tx.onclick=()=>delBox(b,"Delete return <b>"+esc(rt.return_no||"")+"</b> of "+rs2(rt.amount)+"? Its credit note is cancelled too.",reason=>client.rpc("lwb_party_return_delete",{p_id:rt.id,p_reason:reason}),"Return deleted");
+        histInto(b,[rt.id]);
+      }});
+    }
+    // edit history line(s) on the entry
+    async function histInto(b,ids){
+      try{const {data,error}=await client.rpc("lwb_ledger_edit_log_for",{p_ids:ids});if(error||!Array.isArray(data)||!data.length)return;
+        const txt=x=>(x.action==="DELETE"?"🗑 Deleted":"✏️ Edited")+" by "+esc(x.by)+" on "+dmy(String(x.at).slice(0,10))+(x.before&&x.after&&x.before.total!=null&&Number(x.before.total)!==Number(x.after.total)?" · "+rs2(x.before.total)+" → "+rs2(x.after.total):"")+(x.before&&x.after&&(x.before.pay_date||x.before.invoice_date||x.before.return_date)!==(x.after.pay_date||x.after.invoice_date||x.after.return_date)?" · date "+dmy(x.before.pay_date||x.before.invoice_date||x.before.return_date)+" → "+dmy(x.after.pay_date||x.after.invoice_date||x.after.return_date):"")+(x.reason?" ("+esc(x.reason)+")":"");
+        const p=document.createElement("p");p.className="ab-note ab-hist";p.innerHTML=data.map(txt).join("<br>");
+        const sum=b.querySelector(".ab-sum");if(sum)sum.after(p);else b.append(p);
+      }catch(_){}
     }
     const canDate=()=>me&&String(me.realRole||me.role||"").toLowerCase()==="admin";
     const qtyOf=i=>Number(i.loaded_qty)>0?Number(i.loaded_qty):i.approved_qty!=null&&i.approved_qty!==""?Number(i.approved_qty):Number(i.ordered_qty)||0;
@@ -569,7 +639,7 @@
       if(!lastFocus)lastFocus=document.activeElement;
       const o0=(ref.order_id&&(info.raw.orders||[]).find(o=>o.order_id===ref.order_id))||(ref.order_no&&byNo.get(String(ref.order_no)))||null;
       const no=(o0&&o0.order_no)||ref.order_no||"";
-      popOpen({title:"Sales bill · "+(o0?billNo(o0)||"PO "+no:"PO "+no),crumb:"Bill "+(o0&&billNo(o0)||no),render:async(b,f,sub)=>{
+      popOpen({title:"Sales bill · "+(o0?billNo(o0)||"PO "+no:"PO "+no),crumb:"Bill "+(o0&&billNo(o0)||no),again:()=>openBill({order_id:ref.order_id||(o0&&o0.order_id),order_no:no,pk:ref.pk}),render:async(b,f,sub)=>{
         let id=(o0&&o0.order_id)||ref.order_id||null,O=null;
         let q=id?await client.from("orders").select("*").eq("id",id).maybeSingle():{data:null};
         if((!q.data||q.error)&&no)q=await client.from("orders").select("*").eq("order_no",no).limit(1).maybeSingle();
@@ -602,7 +672,13 @@
           const r=(info.raw.receipts||[]).find(r=>!r.cancelled&&(r.allocs||[]).some(a=>a.order_id===id&&Math.abs(Number(a.amount)-Number(y.amount))<0.01))||(info.raw.receipts||[]).find(r=>!r.cancelled&&(r.allocs||[]).some(a=>a.order_id===id));
           if(r&&/PARTY|OFFICE|ACC/i.test(String(y.src||"PARTY")))openReceipt(r);else if(window.ERPShell&&ERPShell.toast)ERPShell.toast(String(y.src||"Payment")+" · "+rs2(y.amount)+(y.by_name?" · "+y.by_name:""),"info")});
         f.innerHTML='<button type="button" class="ab-b t" data-led="'+esc(pk)+'">📒 Party ledger</button>'+(due>0.5?'<button type="button" class="ab-b g" data-pay="'+esc(pk)+'">💰 Receive</button>':"")+
-          (id?'<a class="ab-b" href="accounts-invoice.html?order='+encodeURIComponent(id)+'#tally">Bill page ↗</a><a class="ab-b" href="warehouse-orders.html?order='+encodeURIComponent(id)+'">Open PO ↗</a>':"")+'<span class="sp"></span><button type="button" class="ab-b" data-close>Close</button>';
+          (id?'<a class="ab-b" href="accounts-invoice.html?order='+encodeURIComponent(id)+'#tally">Bill page ↗</a><a class="ab-b" href="warehouse-orders.html?order='+encodeURIComponent(id)+'">Open PO ↗</a>':"")+
+          (canDate()&&id&&o.invoice_no?'<button type="button" class="ab-b" data-bedit>✏️ Edit bill</button><button type="button" class="ab-b ab-del" data-bdel>🗑 Delete bill</button>':"")+'<span class="sp"></span><button type="button" class="ab-b" data-close>Close</button>';
+        const be=f.querySelector("[data-bedit]"),bx=f.querySelector("[data-bdel]");
+        if(be)be.onclick=()=>billEdit(b,o,id);
+        if(bx)bx.onclick=()=>delBox(b,"Delete Tally bill <b>"+esc(billNo(o)||o.invoice_no)+"</b> ("+rs2(billAmt)+")? The PO goes back to Bills to make; party money set to it goes back to advance.",
+          reason=>client.rpc("lwb_tally_bill_delete",{p_order_id:id,p_reason:reason}),"Tally bill deleted");
+        if(id)histInto(b,[id]);
       }});
     }
 
