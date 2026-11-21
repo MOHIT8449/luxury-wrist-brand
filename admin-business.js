@@ -265,7 +265,7 @@
         if(gv>0)g+='<rect x="'+x0+'" y="'+y(gv)+'" width="'+bw+'" height="'+(base-y(gv))+'" fill="'+G.c+'"/>'}
       if(pv>0)g+='<rect x="'+(x0+bw+gap)+'" y="'+y(pv)+'" width="'+pw+'" height="'+(base-y(pv))+'" rx="1.5" fill="'+PU.c+'"/>';
       if(sv>0&&(n<=10||i===best))g+='<text x="'+(x0+bw/2)+'" y="'+(y(sv)-4)+'" font-size="9.5" font-weight="700" fill="#10262b" text-anchor="middle">'+lakh(sv).replace("₹","").replace(" ","")+"</text>";
-      if(i%step===0||i===n-1&&(n-1)%step>step/2)g+='<text x="'+cx(i)+'" y="'+(H-6)+'" font-size="9.5" fill="#55686c" text-anchor="middle">'+dm(d)+"</text>";
+      if(i%step===0||i===n-1&&(n-1)%step>step/2)g+='<text x="'+(i===n-1&&cx(i)+14>W?W-1:cx(i))+'" y="'+(H-6)+'" font-size="9.5" fill="#55686c" text-anchor="'+(i===n-1&&cx(i)+14>W?"end":"middle")+'">'+dm(d)+"</text>";
       g+='<rect data-day="'+d+'" style="cursor:pointer" x="'+(P.l+slot*i)+'" y="'+P.t+'" width="'+slot+'" height="'+(H-P.t-P.b)+'" fill="transparent"><title>'+dmy(d)+"\n"+series.map(s=>s.t+": "+rs(s.raw[i])).join("\n")+"\n(tap to see POs)</title></rect>";
     });
     g+='<line x1="'+P.l+'" x2="'+(W-P.r)+'" y1="'+base+'" y2="'+base+'" stroke="#c9d0cc"/>';
