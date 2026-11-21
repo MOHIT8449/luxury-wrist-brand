@@ -1,0 +1,58 @@
+# Temporary read-only check of the forgot-password email setup. Prints only yes/no facts and times
+# (no emails, no secrets). Branch is deleted after the check.
+name: Diag auth email
+on:
+  push:
+    branches: [diag-forgot-pw]
+jobs:
+  diag:
+    runs-on: ubuntu-latest
+    env:
+      REF: qstgwhbgbznxemajtave
+      TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      DB_PASSWORD: ${{ secrets.NEW_SUPABASE_DB_PASSWORD }}
+      DB_URL0: ${{ secrets.SUPABASE_DB_URL }}
+    steps:
+      - name: Auth config
+        run: |
+          [ -n "$TOKEN" ] || { echo "NO ACCESS TOKEN"; exit 0; }
+          curl -sf -H "Authorization: Bearer $TOKEN" "https://api.supabase.com/v1/projects/$REF/config/auth" > c.json || { echo "config fetch failed"; exit 0; }
+          jq -r '{
+            smtp_host_set: ((.smtp_host//"")!=""),
+            smtp_host_kind: ((.smtp_host//"") | if test("gmail") then "gmail" elif test("brevo|sendinblue") then "brevo" elif .=="" then "none" else "other" end),
+            smtp_port: .smtp_port, smtp_user_set: ((.smtp_user//"")!=""), smtp_pass_set: ((.smtp_pass//"")!=""),
+            smtp_sender_name: .smtp_sender_name, smtp_admin_email_set: ((.smtp_admin_email//"")!=""),
+            smtp_admin_email_domain: ((.smtp_admin_email//"") | split("@") | .[1]),
+            rate_limit_email_sent: .rate_limit_email_sent, smtp_max_frequency: .smtp_max_frequency,
+            mailer_otp_exp: .mailer_otp_exp, mailer_otp_length: .mailer_otp_length,
+            external_email_enabled: .external_email_enabled,
+            site_url: .site_url, uri_allow_list: .uri_allow_list,
+            recovery_subject: .mailer_subjects_recovery,
+            recovery_has_token: ((.mailer_templates_recovery_content//"") | test("\\.Token\\b")),
+            recovery_has_link: ((.mailer_templates_recovery_content//"") | test("ConfirmationURL")),
+            recovery_template_len: ((.mailer_templates_recovery_content//"")|length),
+            hook_send_email_enabled: .hook_send_email_enabled
+          }' c.json
+      - name: Recent recovery sends (times only)
+        run: |
+          if [ -n "$DB_PASSWORD" ]; then DB_URL="postgresql://postgres.$REF:$(python3 -c 'import os,urllib.parse;print(urllib.parse.quote(os.environ["DB_PASSWORD"].strip(),safe=""))')@aws-0-ap-south-1.pooler.supabase.com:5432/postgres"; else DB_URL="$DB_URL0"; fi
+          echo "::add-mask::$DB_URL"
+          command -v psql >/dev/null || { sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client; }
+          psql "$DB_URL" -At -c "select 'users_with_recovery_last_3d', count(*), max(recovery_sent_at) from auth.users where recovery_sent_at > now()-interval '3 days';" || true
+          psql "$DB_URL" -At -c "select created_at, payload->>'action', payload->>'log_type' from auth.audit_log_entries where created_at > now()-interval '3 days' and payload->>'action' ~ 'recover|reset|password' order by created_at desc limit 20;" || true
+      - name: Auth logs about mail (emails removed)
+        run: |
+          [ -n "$TOKEN" ] || exit 0
+          S=$(date -u -d '-2 days' +%Y-%m-%dT%H:%M:%SZ); E=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          Q="select timestamp, event_message from auth_logs where regexp_contains(lower(event_message), 'mail|smtp|recover|rate limit') order by timestamp desc limit 30"
+          curl -sG -H "Authorization: Bearer $TOKEN" "https://api.supabase.com/v1/projects/$REF/analytics/endpoints/logs.all" \
+            --data-urlencode "sql=$Q" --data-urlencode "iso_timestamp_start=$S" --data-urlencode "iso_timestamp_end=$E" > l.json || true
+          jq -r '.error // empty' l.json | head -5
+          jq -r '.result[]? | "\(.timestamp) \(.event_message)"' l.json \
+            | sed -E 's/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+/<email>/g; s/"(ip|remote_addr|referer|x_forwarded_for)":"[^"]*"/"\1":"-"/g' \
+            | python3 -c 'import sys,json
+for line in sys.stdin:
+  ts,_,msg=line.partition(" ")
+  try:
+    m=json.loads(msg); print(ts, m.get("level"), m.get("msg") or m.get("message"), m.get("error") or "", m.get("path") or "", m.get("status") or "")
+  except Exception: print(ts, msg[:300].strip())'
