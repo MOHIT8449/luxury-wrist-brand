@@ -19,7 +19,17 @@
     }catch(e){return ""}
   }
   // Fingerprint (lwbUnlock) or MPIN (lwbMpin) on for this login on this phone.
+  // Website in a browser: never locks (Logout and 15 idle minutes log out). Only the Android app
+  // (quick-unlock.js isApp) locks with MPIN / fingerprint.
+  function appMode(){
+    try{
+      if(/^android-app:\/\//i.test(document.referrer||""))sessionStorage.setItem("lwbApp","1");
+      if(sessionStorage.getItem("lwbApp")==="1")return true;
+      return /Android/i.test(navigator.userAgent)&&["standalone","fullscreen","minimal-ui"].some(m=>matchMedia("(display-mode: "+m+")").matches);
+    }catch(e){return false}
+  }
   function lockOn(uid){
+    if(!appMode())return false;
     try{
       const on=JSON.parse(localStorage.getItem("lwbUnlock")||"null"),pin=JSON.parse(localStorage.getItem("lwbMpin")||"null");
       return !!(uid&&((on&&on.uid===uid&&on.cred)||(pin&&pin.uid===uid)));
@@ -423,7 +433,7 @@
       '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg><div class="erp-results"></div></div>'+
       '<div class="erp-user"><button class="erp-keys-btn" type="button" aria-label="Keyboard shortcuts" title="Keyboard shortcuts (?)">'+svg("keyboard")+'</button><div class="who"><b>'+esc(opts.name||"User")+'</b><small>'+esc(role.toUpperCase())+'</small></div>'+
       '<div class="erp-avatar">'+esc((opts.name||"U").trim().charAt(0).toUpperCase())+'</div>'+
-      '<button class="erp-logout" type="button">Logout</button></div>';
+      '<button class="erp-logout" type="button" title="Logout" aria-label="Logout"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/></svg><span>Logout</span></button></div>';
 
     const side=document.createElement("aside");
     side.className="erp-side";
@@ -720,7 +730,7 @@
     return new Promise((ok,bad)=>{const s=document.createElement("script");s.src="quick-unlock.js";s.onload=()=>ok(window.LWBUnlock);s.onerror=bad;document.head.appendChild(s)});
   }
   function unlockSetting(av,role){
-    if(!av)return;
+    if(!av||!appMode())return;
     av.setAttribute("role","button");av.tabIndex=0;av.title="Login & Security (MPIN, fingerprint)";av.style.cursor="pointer";
     av.addEventListener("click",()=>openSecurity(role));
     av.addEventListener("keydown",e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();openSecurity(role)}});
@@ -728,7 +738,7 @@
   let secOpen=false,mountedRole="";
   async function openSecurity(role){
     role=typeof role==="string"?role:mountedRole;
-    if(secOpen||!window.supabase)return;secOpen=true;
+    if(secOpen||!window.supabase||!appMode())return;secOpen=true;
     let U,user,c;
     try{
       U=await loadUnlock();
@@ -773,7 +783,7 @@
       try{
         if(a==="pinoff"){await U.mpinOff(c);pinOn=false;toast("MPIN turned off on this phone.")}
         if(a==="fpoff"){U.disable();toast("Fingerprint unlock turned off on this phone.")}
-        if(a==="fpon"){try{await U.enable(user);toast("Fingerprint unlock is on for this phone.")}catch(e){if(e&&e.name!=="NotAllowedError")toast("Fingerprint could not be turned on: "+(e&&e.message||e),"error")}}
+        if(a==="fpon"){try{await U.enable(user);if(pinOn)await U.mpinOff(c),pinOn=false;toast("Fingerprint unlock is on for this phone. MPIN is off.")}catch(e){if(e&&e.name!=="NotAllowedError")toast("Fingerprint could not be turned on: "+(e&&e.message||e),"error")}}
       }finally{busy=false;main()}
     }
     function pinView(){
@@ -790,7 +800,7 @@
         }
         if(pin!==first){first="";P.clear(true);step(1);say("Both MPINs did not match. Set it again.",true);return}
         busy=true;say("Saving...");
-        try{await U.mpinSet(c,user.id,pin);pinOn=true;busy=false;toast("MPIN is set for this phone.");main()}
+        try{await U.mpinSet(c,user.id,pin);pinOn=true;U.disable();busy=false;toast("MPIN is set for this phone. Fingerprint is off.");main()}
         catch(e){busy=false;first="";P.clear(true);step(1);say(e.message||String(e),true)}
       }});
       P.fingerprint(null);step(1);
@@ -941,7 +951,7 @@
   if(!window.LWBKeys&&!document.querySelector('script[src*="erp-keys.js"]')){const s=document.createElement("script");s.src="erp-keys.js";document.head.appendChild(s)}
   // Every drop-down searches like the SKU box in New PO (erp-select.js).
   if(!window.LWBSelect&&!document.querySelector('script[src*="erp-select.js"]')){const s=document.createElement("script");s.src="erp-select.js";document.head.appendChild(s)}
-  window.ERPShell={mount,security:openSecurity,menuFor,viewOnly,menuForMe,hiddenPages,extraPages,pageRole,pageRoleFresh,allPages,icon:svg,alert:erpAlert,confirm:erpConfirm,prompt:erpPrompt,toast,done:erpDone};
+  window.ERPShell={mount,security:openSecurity,isApp:appMode,menuFor,viewOnly,menuForMe,hiddenPages,extraPages,pageRole,pageRoleFresh,allPages,icon:svg,alert:erpAlert,confirm:erpConfirm,prompt:erpPrompt,toast,done:erpDone};
   const me=document.currentScript;
   if(me&&me.hasAttribute("data-auto")){
     if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",auto);else auto();
