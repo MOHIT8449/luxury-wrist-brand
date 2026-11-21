@@ -18,13 +18,14 @@
 --      party money set to it goes back to advance.
 --  lwb_party_return_edit(id, date, note, reason) / lwb_party_return_delete(id, reason)
 --  lwb_ledger_edit_log_for(ref ids)                       history shown on the entry
+--  lwb_ledger_cancel / lwb_ledger_cancelled / lwb_receipt_duplicate   Tally style Cancel (₹0 row kept) and Duplicate
 
 BEGIN;
 
 CREATE TABLE IF NOT EXISTS public.lwb_ledger_edit_log (
   id          bigserial PRIMARY KEY,
   kind        text NOT NULL,          -- RECEIPT / TALLY_BILL / RETURN
-  action      text NOT NULL,          -- EDIT / DELETE
+  action      text NOT NULL,          -- EDIT / DELETE / CANCEL / DUPLICATE
   ref_id      uuid NOT NULL,          -- receipt_id / order_id / return id
   party       text,
   before      jsonb,
@@ -342,6 +343,98 @@ GRANT EXECUTE ON FUNCTION public.lwb_receipt_edit(uuid,date,jsonb,text,text), pu
   public.lwb_party_return_edit(uuid,date,text,text), public.lwb_party_return_delete(uuid,text),
   public.lwb_ledger_edit_log_for(uuid[]), public.lwb_receipt_lines(uuid) TO authenticated;
 
+
+-- ---------------------------------------------------------------------------
+-- Tally style CANCEL and DUPLICATE (Mohit, 21 Nov 2026: "plus minus, cancel, delete, alter, duplicate,
+-- anything, like Tally"). Admin only.
+--  lwb_ledger_cancel(kind, ref, reason)  kind RECEIPT / TALLY_BILL / RETURN. Same money effect as Delete,
+--      but the entry stays in the ledger as "Cancelled" with ₹0 (lwb_ledger_cancelled lists them).
+--  lwb_receipt_duplicate(receipt, date, lines, remark, reason)  a new party payment copied from a
+--      receipt (same party and brand), split to bills like any new payment.
+-- ---------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.lwb_ledger_cancel(p_kind text, p_ref uuid, p_reason text DEFAULT NULL)
+RETURNS text
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = ''
+AS $fn$
+DECLARE v_kind text := upper(btrim(coalesce(p_kind,''))); v_log bigint; v_info jsonb; v_co uuid;
+BEGIN
+  IF NOT public.lwb_ledger_admin() THEN RAISE EXCEPTION 'Only Admin can cancel an entry'; END IF;
+  IF p_ref IS NULL THEN RAISE EXCEPTION 'Entry not found'; END IF;
+  IF v_kind = 'RECEIPT' THEN
+    SELECT min(p.company_id::text)::uuid INTO v_co FROM public.lwb_tally_payments p
+    WHERE p.receipt_id = p_ref AND p.cancelled_at IS NULL;
+    PERFORM public.lwb_receipt_delete(p_ref, p_reason);
+  ELSIF v_kind = 'TALLY_BILL' THEN
+    SELECT CASE WHEN count(DISTINCT s.company_id) = 1 THEN min(s.company_id::text)::uuid END INTO v_co
+    FROM public.order_items i JOIN public.sku_master s ON upper(btrim(s.sku_name)) = upper(btrim(i.sku_name))
+    WHERE i.order_id = p_ref;
+    PERFORM public.lwb_tally_bill_delete(p_ref, p_reason);
+  ELSIF v_kind = 'RETURN' THEN
+    SELECT r.company_id INTO v_co FROM public.lwb_party_returns r WHERE r.id = p_ref;
+    PERFORM public.lwb_party_return_delete(p_ref, p_reason);
+  ELSE
+    RAISE EXCEPTION 'Unknown entry type';
+  END IF;
+  SELECT max(l.id) INTO v_log FROM public.lwb_ledger_edit_log l
+  WHERE l.ref_id = p_ref AND l.kind = v_kind AND l.action = 'DELETE';
+  UPDATE public.lwb_ledger_edit_log SET action = 'CANCEL', after = jsonb_build_object('company_id', v_co)
+  WHERE id = v_log;
+  RETURN 'CANCELLED';
+END;
+$fn$;
+
+-- cancelled entries, shown in the ledger with ₹0 (Admin / Accounts / Cashier)
+CREATE OR REPLACE FUNCTION public.lwb_ledger_cancelled(p_days integer DEFAULT 400)
+RETURNS jsonb
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path = ''
+AS $fn$
+  SELECT coalesce(jsonb_agg(jsonb_build_object(
+           'kind', l.kind, 'ref_id', l.ref_id, 'party', l.party,
+           'date', coalesce(l.before->>'pay_date', l.before->>'invoice_date', l.before->>'return_date'),
+           'amount', coalesce(l.before->>'total', l.before->>'amount'),
+           'no', coalesce(l.before->>'invoice_no', l.before->>'return_no'),
+           'lines', l.before->'lines', 'company_id', l.after->>'company_id', 'reason', l.reason,
+           'by', coalesce(u.full_name, 'Staff'), 'at', l.changed_at) ORDER BY l.changed_at), '[]'::jsonb)
+  FROM public.lwb_ledger_edit_log l
+  LEFT JOIN public.user_profiles u ON u.id = l.changed_by
+  WHERE l.action = 'CANCEL'
+    AND EXISTS (SELECT 1 FROM public.user_profiles p WHERE p.id = auth.uid() AND p.active = true
+                AND lower(btrim(p.role)) IN ('accounts','admin','cashier'))
+    AND l.changed_at >= now() - make_interval(days => greatest(1, least(coalesce(p_days, 400), 3000)));
+$fn$;
+
+CREATE OR REPLACE FUNCTION public.lwb_receipt_duplicate(p_receipt_id uuid, p_date date, p_lines jsonb,
+                                                        p_remark text DEFAULT NULL, p_reason text DEFAULT NULL)
+RETURNS jsonb
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = ''
+AS $fn$
+DECLARE
+  v_reason text := public.lwb_ledger_reason(p_reason);
+  v_src public.lwb_tally_payments%ROWTYPE; v_res jsonb; v_new uuid;
+BEGIN
+  IF NOT public.lwb_ledger_admin() THEN RAISE EXCEPTION 'Only Admin can duplicate a payment'; END IF;
+  IF p_date IS NULL THEN RAISE EXCEPTION 'Choose the date'; END IF;
+  IF p_date > (now() AT TIME ZONE 'Asia/Kolkata')::date THEN RAISE EXCEPTION 'The date cannot be in the future'; END IF;
+  SELECT * INTO v_src FROM public.lwb_tally_payments p WHERE p.receipt_id = p_receipt_id
+  ORDER BY p.created_at, p.id LIMIT 1;
+  IF NOT FOUND THEN RAISE EXCEPTION 'Payment not found'; END IF;
+  IF v_src.order_id IS NOT NULL OR v_src.party IS NULL THEN
+    RAISE EXCEPTION 'Only a party payment can be duplicated here';
+  END IF;
+  v_res := public.lwb_party_receive(v_src.party, p_date, p_lines, NULL, p_remark, v_src.company_id);
+  v_new := (v_res->>'receipt_id')::uuid;
+  INSERT INTO public.lwb_ledger_edit_log (kind, action, ref_id, party, before, after, reason, changed_by)
+  VALUES ('RECEIPT', 'DUPLICATE', v_new, v_src.party, jsonb_build_object('from_receipt', p_receipt_id),
+          public.lwb_receipt_snap(v_new), v_reason, auth.uid());
+  RETURN v_res;
+END;
+$fn$;
+
+REVOKE ALL ON FUNCTION public.lwb_ledger_cancel(text,uuid,text), public.lwb_ledger_cancelled(integer),
+  public.lwb_receipt_duplicate(uuid,date,jsonb,text,text) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.lwb_ledger_cancel(text,uuid,text), public.lwb_ledger_cancelled(integer),
+  public.lwb_receipt_duplicate(uuid,date,jsonb,text,text) TO authenticated;
+
 COMMIT;
 
 NOTIFY pgrst, 'reload schema';
@@ -349,4 +442,6 @@ NOTIFY pgrst, 'reload schema';
 SELECT 'ledger admin edit' AS item,
   (to_regclass('public.lwb_ledger_edit_log') IS NOT NULL
    AND to_regprocedure('public.lwb_receipt_edit(uuid,date,jsonb,text,text)') IS NOT NULL
-   AND to_regprocedure('public.lwb_tally_bill_delete(uuid,text)') IS NOT NULL)::text AS ok;
+   AND to_regprocedure('public.lwb_tally_bill_delete(uuid,text)') IS NOT NULL
+   AND to_regprocedure('public.lwb_ledger_cancel(text,uuid,text)') IS NOT NULL
+   AND to_regprocedure('public.lwb_receipt_duplicate(uuid,date,jsonb,text,text)') IS NOT NULL)::text AS ok;

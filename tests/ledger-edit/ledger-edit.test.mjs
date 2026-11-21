@@ -85,7 +85,7 @@ async function po(no,amt,sku='COKE 600'){
  await db.query('insert into lwb_tally_invoices(order_id,invoice_no,invoice_date,amount,bills,entered_by) values($1,$2,$3,$4,$5,$6)',[id,'T-'+no,today,amt,JSON.stringify([{firm:P,no:'T-'+no,amount:amt}]),ids.accounts]);
  return id;
 }
-const lines=async rid=>(await db.query('select id,mode,amount::float8 a,ref_no,pay_date::text d,remark from lwb_tally_payments where receipt_id=$1 and cancelled_at is null order by created_at,id',[rid])).rows;
+const lines=async rid=>(await db.query('select id,mode,amount::float8 a,ref_no,pay_date::text d,remark from lwb_tally_payments where receipt_id=$1 and cancelled_at is null order by amount desc,id',[rid])).rows;
 const allocs=async rid=>(await db.query('select order_id,amount::float8 a from lwb_party_allocs where receipt_id=$1 and cancelled_at is null',[rid])).rows;
 let b1,b2,dupe,keep;
 
@@ -153,4 +153,35 @@ test('receipt lines with ids: Admin only',async()=>{
  await as('admin');
  const l=(await call('select public.lwb_receipt_lines($1) j',[keep]))[0].j;
  assert.equal(l.length,3);assert.ok(l.every(x=>x.id));
+});
+test('Tally style: Duplicate a receipt (new date, splits like a new payment) and Cancel (₹0 row kept)',async()=>{
+ await as('accounts');
+ await assert.rejects(call('select public.lwb_receipt_duplicate($1,$2,$3::jsonb)',[keep,today,JSON.stringify([{mode:'CASH',amount:100}])]),/Only Admin/);
+ await assert.rejects(call('select public.lwb_ledger_cancel($1,$2)',['RECEIPT',keep]),/Only Admin/);
+ await as('admin');
+ await assert.rejects(call('select public.lwb_receipt_duplicate($1,$2,$3::jsonb)',[keep,dayAdd(today,1),JSON.stringify([{mode:'CASH',amount:100}])]),/future/);
+ await assert.rejects(call('select public.lwb_receipt_duplicate($1,$2,$3::jsonb)',[keep,today,JSON.stringify([{mode:'UPI',amount:100,ref:'U3'}])]),/already entered/);
+ const y=dayAdd(today,-1);
+ const r=(await call('select public.lwb_receipt_duplicate($1,$2,$3::jsonb,$4,$5) j',[keep,y,JSON.stringify([{mode:'CASH',amount:1000},{mode:'UPI',amount:200,ref:'U9'}]),'copy','same again']))[0].j;
+ assert.notEqual(r.receipt_id,keep);
+ const n=await lines(r.receipt_id);
+ assert.deepEqual(n.map(x=>[x.mode,x.a,x.ref_no,x.d,x.remark]),[['CASH',1000,null,y,'copy'],['UPI',200,'U9',y,'copy']]);
+ assert.equal((await db.query('select company_id::text c from lwb_tally_payments where receipt_id=$1 limit 1',[r.receipt_id])).rows[0].c,C);
+ assert.equal((await allocs(r.receipt_id)).reduce((a,x)=>a+x.a,0),1200);   // went to the due bill (b2)
+ // cancel it: lines and splits cancelled, shown in the cancelled list with ₹0 effect
+ await call('select public.lwb_ledger_cancel($1,$2,$3)',['RECEIPT',r.receipt_id,'not received']);
+ assert.equal((await lines(r.receipt_id)).length,0);assert.equal((await allocs(r.receipt_id)).length,0);
+ await assert.rejects(call('select public.lwb_ledger_cancel($1,$2)',['RECEIPT',r.receipt_id]),/already deleted/);
+ // cancel a bill and a return too
+ await call('select public.lwb_ledger_cancel($1,$2)',['TALLY_BILL',b2]);
+ const rid=(await db.query("insert into lwb_party_returns(return_no,party,company_id,return_date,amount,created_by) values('RET-2',$1,$2,$3,100,$4) returning id",[P,C,today,ids.accounts])).rows[0].id;
+ await call('select public.lwb_ledger_cancel($1,$2)',['RETURN',rid]);
+ await assert.rejects(call('select public.lwb_ledger_cancel($1,$2)',['OTHER',rid]),/Unknown/);
+ const cx=(await call('select public.lwb_ledger_cancelled(400) j'))[0].j;
+ assert.deepEqual(cx.map(x=>[x.kind,x.date,Number(x.amount),x.no,x.company_id]),[['RECEIPT',y,1200,null,C],['TALLY_BILL',dayAdd(today,-2),29000,'10462',C],['RETURN',today,100,'RET-2',C]]);
+ assert.equal(cx[0].lines.length,2);assert.equal(cx[0].reason,'not received');assert.equal(cx[0].party,P);
+ const log=(await call('select public.lwb_ledger_edit_log_for($1) j',[[r.receipt_id]]))[0].j;
+ assert.deepEqual(log.map(x=>x.action),['DUPLICATE','CANCEL']);
+ await as('manager');
+ assert.equal((await call('select public.lwb_ledger_cancelled(400) j'))[0].j.length,0);
 });

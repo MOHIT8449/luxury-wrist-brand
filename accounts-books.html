@@ -76,7 +76,8 @@
     .ab-d1{color:#13824a}.ab-d2{color:#b26b00}.ab-d3{color:#c62828}.ab-d4{color:#fff;background:#c62828;border-radius:5px;padding:0 5px}
     .ab-days{font-weight:700;font-size:12.5px;white-space:nowrap}
     .ab-vt{display:inline-block;font-size:11px;font-weight:700;border-radius:99px;padding:1px 7px;margin-right:5px;white-space:nowrap;vertical-align:1px}
-    .ab-vt.dr{background:#fde9d6;color:#7a3a00}.ab-vt.cr{background:#daf2e2;color:#125b30}.ab-vt.rt{background:#e3ecfb;color:#1a4f8f}.ab-vt.op{background:#eceff3;color:#4b5763}.ab-vt.ks{background:#fff4c2;color:#6b5200}
+    .ab-vt.dr{background:#fde9d6;color:#7a3a00}.ab-vt.cr{background:#daf2e2;color:#125b30}.ab-vt.rt{background:#e3ecfb;color:#1a4f8f}.ab-vt.op{background:#eceff3;color:#4b5763}.ab-vt.ks{background:#fff4c2;color:#6b5200}.ab-vt.cx{background:#fde2e2;color:#a01c1c}
+    .ab-t tr.cxr td{color:#8a94a3}.ab-t tr.cxr td .cxa{text-decoration:line-through}
     .ab-mode{display:inline-block;font-size:11px;font-weight:700;border:1px solid var(--erp-line);border-radius:6px;padding:0 5px;margin:1px 3px 0 0;background:#fafbf9;white-space:nowrap}
     .ab-btag{display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:700;color:var(--bc);white-space:nowrap}.ab-btag i{width:8px;height:8px;border-radius:50%;background:var(--bc)}
     .ab-bd{display:inline-flex;align-items:center;border-radius:99px;padding:1px 8px;font-size:12px;font-weight:700;white-space:nowrap}
@@ -172,7 +173,7 @@
       PAYMENT:["Receipt","cr","Payment collection"],OFFICE_PAYMENT:["Receipt","cr","Payment collection"],DRIVER_PAYMENT:["Receipt","cr","Driver money"],PARTY_PAYMENT:["Receipt","cr","Party payment"],
       DRIVER_RETURN:["Return","rt","Driver return"],SALES_RETURN:["Return","rt","Sales return"],PARTY_RETURN:["Return","rt","Goods return"],CREDIT_NOTE:["Credit Note","rt"]};
     const isKasar=x=>/^KASAR\b/i.test(String(x.ref_no||""))||/\bkasar\b/i.test(String(x.note||""));
-    const vt=x=>isKasar(x)?["Kasar","ks","Kasar"]:VT[x.entry_kind]||[x.entry_kind,"op"];
+    const vt=x=>x.entry_kind==="CANCELLED"?["Cancelled","cx",x.cx_label]:isKasar(x)?["Kasar","ks","Kasar"]:VT[x.entry_kind]||[x.entry_kind,"op"];
     const PAYK=new Set(["PAYMENT","OFFICE_PAYMENT","DRIVER_PAYMENT","PARTY_PAYMENT"]);
     const BILLK=new Set(["ERP_BILL","TALLY_BILL","OLD_INVOICE"]);
     const MODE={CASH:"💵 Cash",UPI:"📱 UPI",BANK:"🏦 Bank",RTGS:"🏦 Bank",NEFT:"🏦 Bank",CHEQUE:"🧾 Cheque",ONLINE:"📱 Online"};
@@ -189,13 +190,17 @@
       el("err").innerHTML="";
       try{
         info=await LWBPartyPay.load(client);
+        const cxq=client.rpc("lwb_ledger_cancelled",{p_days:400});
         let a=await client.rpc("lwb_party_ledger_b");
         if(a.error)a=await client.rpc("lwb_party_ledger");
         if(a.error)throw a.error;
         // Goods returns without a bill are not in the ledger SQL (same as Party & Collections).
         const nr=(info.returns||[]).filter(r=>!r.cancelled&&!r.order_id).map(r=>({entry_date:r.return_date,entry_kind:"PARTY_RETURN",rid:r.id,customer_name:r.parent||r.party,ref_no:r.return_no,order_no:null,
           debit:0,credit:Number(r.amount)||0,note:(r.items||[]).map(i=>i.sku+" "+(i.cases||0)+" CS"+(Number(i.pcs)?" "+i.pcs+" PCS":"")).join(", ")+(r.note?" · "+r.note:""),created_at:r.created_at,company_id:r.company_id}));
-        led=(a.data||[]).concat(nr).map((x,i)=>({...x,i,pk:key(info.parentOf(x.customer_name)),debit:Number(x.debit)||0,credit:Number(x.credit)||0,d:String(x.entry_date||"").slice(0,10)}))
+        // Tally style: a cancelled entry stays in the ledger with ₹0 (lwb_ledger_cancel)
+        let cxr=[];try{const c=await cxq;if(!c.error&&Array.isArray(c.data))cxr=c.data.filter(z=>z.date).map(z=>({entry_date:z.date,entry_kind:"CANCELLED",cx:z,customer_name:z.party,ref_no:z.no||"",order_no:null,debit:0,credit:0,
+          note:z.reason||"",created_at:z.at,company_id:z.company_id||null,cx_label:({RECEIPT:"Receipt",TALLY_BILL:"Tally bill",RETURN:"Goods return"}[z.kind]||z.kind)+" "+rs(z.amount)}))}catch(_){}
+        led=(a.data||[]).concat(nr,cxr).map((x,i)=>({...x,i,pk:key(info.parentOf(x.customer_name)),debit:Number(x.debit)||0,credit:Number(x.credit)||0,d:String(x.entry_date||"").slice(0,10)}))
           .sort((x,y)=>x.d.localeCompare(y.d)||(x.entry_kind==="OPENING"?-1:y.entry_kind==="OPENING"?1:0)||String(x.created_at||"").localeCompare(String(y.created_at||"")));
         led.forEach((x,i)=>x.i=i);
         byNo=new Map();for(const o of info.raw.orders||[])byNo.set(String(o.order_no),o);
@@ -383,8 +388,8 @@
         if(ids.length>1)split='<div class="ab-bsplit">'+ids.map(id=>{const R=led.filter(x=>x.pk===ledPk&&(x.company_id||"")===id),n=r2(R.reduce((a,x)=>a+x.debit-x.credit,0)),c=info.brandOf(id);
           return '<div style="--bc:'+(c?esc(c.color||"#2362a4"):"#8a94a3")+'">'+(c?btag(id):"No brand")+" · balance now <b>"+bal(n)+"</b></div>"}).join("")+"</div>"}
       const vrow=(x,i)=>{const t=vt(x),mo=PAYK.has(x.entry_kind)?modeOf(x):[];
-        return '<tr tabindex="0" data-r="'+i+'"><td class="hp">'+dmy(x.d)+'</td><td class="p"><small class="ab-ph">'+dmy(x.d)+'</small><span class="ab-vt '+t[1]+'">'+esc(t[0])+"</span>"+
-          esc(t[2]&&t[0]!=="Kasar"?t[2]:"")+(mo.length?" "+modeChips(mo):"")+
+        return '<tr tabindex="0" data-r="'+i+'"'+(x.entry_kind==="CANCELLED"?' class="cxr"':"")+'><td class="hp">'+dmy(x.d)+'</td><td class="p"><small class="ab-ph">'+dmy(x.d)+'</small><span class="ab-vt '+t[1]+'">'+esc(t[0])+"</span>"+
+          (x.entry_kind==="CANCELLED"?'<span class="cxa">'+esc(t[2])+"</span>":esc(t[2]&&t[0]!=="Kasar"?t[2]:""))+(mo.length?" "+modeChips(mo):"")+
           '<small>'+[BILLK.has(x.entry_kind)||x.entry_kind==="CREDIT_NOTE"||x.entry_kind==="DEBIT_NOTE"||x.entry_kind==="PARTY_RETURN"||x.entry_kind==="SALES_RETURN"?(x.ref_no?"No. "+esc(x.ref_no):""):esc(refOf(x)),x.order_no?"PO "+esc(String(x.order_no).replace(/^PO\s*/i,"")):"",key(x.customer_name)!==ledPk?esc(x.customer_name):"",!fb&&multi()&&x.company_id?btag(x.company_id):"",x.note&&!BILLK.has(x.entry_kind)?esc(x.note):""].filter(Boolean).join(" · ")+"</small></td>"+
           '<td class="n">'+(x.debit?rs2(x.debit):"")+'</td><td class="n ab-adv">'+(x.credit?rs2(x.credit):"")+'</td><td class="n">'+bal(x.bal)+"</td></tr>"};
       const q=qVal();
@@ -508,6 +513,7 @@
     // ledger row → the right voucher
     function openVoucher(x){
       lastFocus=document.activeElement;
+      if(x.entry_kind==="CANCELLED")return openCancelled(x);
       if(x.entry_kind==="PARTY_PAYMENT"){const r=receiptOf(x);if(r)return openReceipt(r,x)}
       if(x.entry_kind==="PARTY_RETURN"||x.entry_kind==="CREDIT_NOTE"){const rt=returnOf(x);if(rt)return openReturn(rt)}
       if(x.order_no)return openBill({order_no:x.order_no,pk:x.pk,hl:x});
@@ -516,6 +522,18 @@
         b.innerHTML='<div class="ab-sum" style="--n:3"><div><small>Date</small><b>'+dmy(x.d)+'</b></div><div><small>'+(x.debit?"Debit":"Credit")+'</small><b class="'+(x.debit?"ab-due":"ab-adv")+'">'+rs2(x.debit||x.credit)+'</b></div><div><small>Ref</small><b style="font-size:14px">'+esc(x.ref_no||"—")+"</b></div></div>"+
           (x.company_id?"<p>"+btag(x.company_id)+"</p>":"")+(x.note?'<div class="ab-this">'+esc(x.note)+"</div>":"")+
           (x.entry_kind==="PARTY_PAYMENT"?'<p class="ab-note">Receipt detail not found (older than 400 days or cancelled).</p>':"");
+        f.innerHTML='<button type="button" class="ab-b t" data-led="'+esc(x.pk)+'">📒 Party ledger</button><span class="sp"></span><button type="button" class="ab-b" data-close>Close</button>';
+      }});
+    }
+    // a cancelled entry (₹0 in the ledger): what it was, who cancelled it
+    function openCancelled(x){
+      const z=x.cx||{};
+      popOpen({title:"Cancelled · "+x.cx_label+" · "+dmy(x.d),crumb:"Cancelled",render:(b,f,s)=>{
+        s.innerHTML=esc(nameOf(x.pk))+(x.company_id?" · "+btag(x.company_id):"");
+        b.innerHTML='<div class="ab-sum" style="--n:3"><div><small>Date</small><b>'+dmy(x.d)+'</b></div><div class="big"><small>Was</small><b class="ab-due" style="text-decoration:line-through">'+rs2(z.amount)+'</b></div><div><small>Effect now</small><b>₹0</b></div></div>'+
+          (z.no?"<p>"+esc(z.kind==="RETURN"?"Return no. ":"Bill no. ")+"<b>"+esc(z.no)+"</b></p>":"")+
+          (Array.isArray(z.lines)&&z.lines.length?'<table class="ab-t"><thead><tr><th>Mode</th><th>Ref / UTR / Cheque</th><th class="n">Amount</th></tr></thead><tbody>'+z.lines.map(m=>'<tr class="ob"><td>'+modeChips([String(m.mode||"").toUpperCase()])+"</td><td>"+esc(m.ref||"—")+'</td><td class="n">'+rs2(m.amount)+"</td></tr>").join("")+"</tbody></table>":"")+
+          '<p class="ab-note" style="color:#a01c1c">⛔ Cancelled by '+esc(z.by||"Staff")+" on "+dmy(String(z.at||"").slice(0,10))+(z.reason?" · Reason: "+esc(z.reason):"")+"</p>";
         f.innerHTML='<button type="button" class="ab-b t" data-led="'+esc(x.pk)+'">📒 Party ledger</button><span class="sp"></span><button type="button" class="ab-b" data-close>Close</button>';
       }});
     }
@@ -535,10 +553,12 @@
           "<h4>Against bills · click a bill to open it</h4>"+
           (a.length?'<table class="ab-t"><thead><tr><th>PO</th><th>Bill no.</th><th class="n">Amount</th></tr></thead><tbody>'+a.map((y,i)=>'<tr tabindex="0" data-al="'+i+'"><td>'+esc(y.order_no)+"</td><td>"+esc(y.invoice_no||"")+'</td><td class="n">'+rs2(y.amount)+"</td></tr>").join("")+"</tbody></table>":'<div class="ab-empty">Kept as advance, not set to a bill yet.</div>');
         b.querySelectorAll("[data-al]").forEach(t=>t.onclick=()=>{const y=a[Number(t.dataset.al)];openBill({order_id:y.order_id,order_no:y.order_no,pk})});
-        f.innerHTML='<button type="button" class="ab-b t" data-led="'+esc(pk)+'">📒 Party ledger</button><a class="ab-b" href="party-billing.html?tab=pay#tally">Payments page ↗</a>'+(canDate()&&!r.cancelled?'<button type="button" class="ab-b" data-redit>✏️ Edit</button><button type="button" class="ab-b ab-del" data-rdel>🗑 Delete</button>':"")+'<span class="sp"></span><button type="button" class="ab-b" data-close>Close</button>';
-        const ce=f.querySelector("[data-redit]"),cx=f.querySelector("[data-rdel]");
+        f.innerHTML='<button type="button" class="ab-b t" data-led="'+esc(pk)+'">📒 Party ledger</button><a class="ab-b" href="party-billing.html?tab=pay#tally">Payments page ↗</a>'+(canDate()&&!r.cancelled?'<button type="button" class="ab-b" data-redit>✏️ Edit</button><button type="button" class="ab-b" data-rdup>⧉ Duplicate</button><button type="button" class="ab-b ab-del" data-rcx>⛔ Cancel</button><button type="button" class="ab-b ab-del" data-rdel>🗑 Delete</button>':"")+'<span class="sp"></span><button type="button" class="ab-b" data-close>Close</button>';
+        const ce=f.querySelector("[data-redit]"),cx=f.querySelector("[data-rdel]"),cd=f.querySelector("[data-rdup]"),cc=f.querySelector("[data-rcx]");
         if(ce)ce.onclick=()=>receiptEdit(b,r);
-        if(cx)cx.onclick=()=>delBox(b,"Delete this payment of <b>"+rs2(r.total)+"</b>? It stays in the list as cancelled; bills it paid are due again.",
+        if(cd)cd.onclick=()=>receiptEdit(b,r,true);
+        if(cc)cc.onclick=()=>cxBox(b,"Cancel this payment of <b>"+rs2(r.total)+"</b>? It stays in the ledger as <b>Cancelled</b> with ₹0; bills it paid are due again.","RECEIPT",r.receipt_id,"Payment cancelled");
+        if(cx)cx.onclick=()=>delBox(b,"Delete this payment of <b>"+rs2(r.total)+"</b>? It goes out of the ledger; bills it paid are due again.",
           reason=>client.rpc("lwb_receipt_delete",{p_receipt_id:r.receipt_id,p_reason:reason}),"Payment deleted");
         histInto(b,[r.receipt_id]);
       }});
@@ -549,7 +569,7 @@
       const old=b.querySelector(".ab-rd");if(old){const same=old.dataset.t===title;old.remove();if(same)return null}
       const box=document.createElement("div");box.className="ab-rd"+(danger?" del":"");box.dataset.t=title;
       box.innerHTML='<div class="ab-rd-h"><b>'+title+'</b></div>'+inner+
-        '<div class="ab-rd-f"><input class="ab-rd-r" maxlength="300" placeholder="Reason (optional)" aria-label="Reason"><button type="button" class="ab-b sm '+(danger?"ab-delb":"g")+'" data-dsave>'+saveTxt+'</button><button type="button" class="ab-b sm" data-dx>Cancel</button></div><div class="ab-rd-err" hidden></div>';
+        '<div class="ab-rd-f"><input class="ab-rd-r" maxlength="300" placeholder="Reason (optional)" aria-label="Reason"><button type="button" class="ab-b sm '+(danger?"ab-delb":"g")+'" data-dsave>'+saveTxt+'</button><button type="button" class="ab-b sm" data-dx>Close</button></div><div class="ab-rd-err" hidden></div>';
       b.prepend(box);b.scrollTop=0;
       const err=box.querySelector(".ab-rd-err"),sv=box.querySelector("[data-dsave]");
       box.querySelector("[data-dx]").onclick=()=>box.remove();
@@ -560,29 +580,37 @@
           const top=stack[stack.length-1],again=top&&top.again;
           stack.pop();paint();await load();if(again)again();
           if(window.ERPShell&&ERPShell.toast)ERPShell.toast(msg||"Saved","success")}
-        catch(e){const m=String((e&&e.message)||e||"");err.textContent=/lwb_receipt_edit|lwb_tally_bill_|lwb_party_return_(edit|delete)|lwb_receipt_delete|schema cache/i.test(m)?"Edit is not set up on the database yet.":m.replace(/^.*?ERROR:\s*/,"");err.hidden=false;sv.disabled=false;sv.textContent=t0}
+        catch(e){const m=String((e&&e.message)||e||"");err.textContent=/lwb_receipt_edit|lwb_tally_bill_|lwb_party_return_(edit|delete)|lwb_receipt_delete|lwb_ledger_cancel|lwb_receipt_duplicate|schema cache/i.test(m)?"Edit is not set up on the database yet.":m.replace(/^.*?ERROR:\s*/,"");err.hidden=false;sv.disabled=false;sv.textContent=t0}
       };
       return box;
     }
     const must=async p=>{const {error,data}=await p;if(error)throw error;return data};
     function delBox(b,text,call,msg){panel(b,"🗑 Delete",'<p class="ab-rd-q">'+text+"</p>","Yes, delete",async(box,reason)=>{await must(call(reason));return msg},true)}
+    // Tally style Cancel: same money effect as Delete, the entry stays in the ledger as Cancelled ₹0
+    function cxBox(b,text,kind,ref,msg){panel(b,"⛔ Cancel entry",'<p class="ab-rd-q">'+text+"</p>","Yes, cancel it",async(box,reason)=>{await must(client.rpc("lwb_ledger_cancel",{p_kind:kind,p_ref:ref,p_reason:reason}));return msg},true)}
     const dIn=(v,cls)=>'<input type="date" class="'+(cls||"ab-rd-d")+'" max="'+today()+'" value="'+esc(String(v||"").slice(0,10))+'" aria-label="Date">';
-    async function receiptEdit(b,r){
-      if(b.querySelector(".ab-rd")){b.querySelector(".ab-rd").remove();return}
+    // dup=true: Duplicate (Tally Alt+2): same party / brand / modes, new date (today), refs blank → a new payment
+    async function receiptEdit(b,r,dup){
+      const was=b.querySelector(".ab-rd");if(was){was.remove();if(was.dataset.t===(dup?"⧉ Duplicate payment":"✏️ Edit payment"))return}
       let L;try{L=await must(client.rpc("lwb_receipt_lines",{p_receipt_id:r.receipt_id}))}catch(e){return ERPShell.alert(String(e.message||e).replace(/^.*?ERROR:\s*/,""))}
       if(!L||!L.length)return ERPShell.alert("Payment lines not found. Reload the page.");
       const t=today(),y=new Date(Date.parse(t+"T12:00:00Z")-864e5).toISOString().slice(0,10);
+      if(dup)L=L.map(m=>({mode:m.mode,amount:m.amount}));
       const row=m=>'<div class="ab-rd-l" data-lid="'+esc(m.id||"")+'"><select aria-label="Mode">'+MODES.map(([k,n])=>'<option value="'+k+'"'+(String(m.mode||"").toUpperCase()===k?" selected":"")+">"+n+"</option>").join("")+'</select>'+
         '<input class="am" inputmode="decimal" placeholder="₹ Amount" value="'+(m.amount!=null?r2(m.amount):"")+'" aria-label="Amount"><input class="rf" maxlength="100" placeholder="UTR / cheque no." value="'+esc(m.ref||"")+'" aria-label="Reference">'+(m.id?"":'<button type="button" class="ab-b sm" data-rm aria-label="Remove line">×</button>')+"</div>";
-      const box=panel(b,"✏️ Edit payment",'<div class="ab-rd-row"><span>Date</span>'+dIn(r.pay_date)+'<button type="button" class="ab-b sm" data-dd="'+y+'">Yesterday</button></div>'+
+      const box=panel(b,dup?"⧉ Duplicate payment":"✏️ Edit payment",(dup?'<p class="ab-rd-q">A new payment of '+esc(nameOf(key(info.parentOf(r.party))))+' with the same modes. Change date / amount; enter the new UTR / cheque no.</p>':"")+'<div class="ab-rd-row"><span>Date</span>'+dIn(dup?t:r.pay_date)+'<button type="button" class="ab-b sm" data-dd="'+y+'">Yesterday</button></div>'+
         '<div class="ab-rd-ls">'+L.map(row).join("")+'</div><div class="ab-rd-row"><button type="button" class="ab-b sm" data-add>+ Another mode</button><span class="ab-rd-tot"></span></div>'+
-        '<div class="ab-rd-row"><span>Remark</span><input class="rk" maxlength="300" value="'+esc(r.remark||"")+'" aria-label="Remark"></div>',"Save changes",async(bx,reason)=>{
+        '<div class="ab-rd-row"><span>Remark</span><input class="rk" maxlength="300" value="'+esc(r.remark||"")+'" aria-label="Remark"></div>',dup?"Save new payment":"Save changes",async(bx,reason)=>{
           const lines=[...bx.querySelectorAll(".ab-rd-l")].map(l=>({id:l.dataset.lid||null,mode:l.querySelector("select").value,amount:Number(String(l.querySelector(".am").value).replace(/[,₹\s]/g,"")),ref:l.querySelector(".rf").value.trim()||null}));
           if(lines.some(l=>!(l.amount>0)))throw Error("Enter every amount (more than 0)");
+          if(dup){
+            const res=await must(client.rpc("lwb_receipt_duplicate",{p_receipt_id:r.receipt_id,p_date:bx.querySelector(".ab-rd-d").value,p_lines:lines.map(l=>({mode:l.mode,amount:l.amount,ref:l.ref})),p_remark:bx.querySelector(".rk").value.trim()||null,p_reason:reason}));
+            const top=stack[stack.length-1];if(top&&res&&res.receipt_id)top.again=()=>{const n=(info.raw.receipts||[]).find(z=>z.receipt_id===res.receipt_id&&!z.cancelled);if(n)openReceipt(n)};
+            return "New payment saved"}
           await must(client.rpc("lwb_receipt_edit",{p_receipt_id:r.receipt_id,p_date:bx.querySelector(".ab-rd-d").value,p_lines:lines,p_remark:bx.querySelector(".rk").value.trim()||null,p_reason:reason}));
           return "Payment saved"});
       if(!box)return;
-      const tot=()=>{const n=[...box.querySelectorAll(".am")].reduce((a,i)=>a+(Number(String(i.value).replace(/[,₹\s]/g,""))||0),0);box.querySelector(".ab-rd-tot").innerHTML="Total <b>"+rs2(n)+"</b>"+(Math.abs(n-r.total)>0.005?' <small>(was '+rs2(r.total)+")</small>":"")};
+      const tot=()=>{const n=[...box.querySelectorAll(".am")].reduce((a,i)=>a+(Number(String(i.value).replace(/[,₹\s]/g,""))||0),0);box.querySelector(".ab-rd-tot").innerHTML="Total <b>"+rs2(n)+"</b>"+(!dup&&Math.abs(n-r.total)>0.005?' <small>(was '+rs2(r.total)+")</small>":"")};
       const wire=()=>{box.querySelectorAll(".am").forEach(i=>i.oninput=tot);box.querySelectorAll("[data-rm]").forEach(x=>x.onclick=()=>{x.parentElement.remove();tot()});tot()};
       box.querySelector("[data-dd]").onclick=()=>{box.querySelector(".ab-rd-d").value=y};
       box.querySelector("[data-add]").onclick=()=>{box.querySelector(".ab-rd-ls").insertAdjacentHTML("beforeend",row({mode:"UPI"}));wire()};
@@ -615,10 +643,12 @@
           '<table class="ab-t"><thead><tr><th>SKU</th><th class="n">Cases</th><th class="n">Pcs</th></tr></thead><tbody>'+((rt.items||[]).map(i=>'<tr class="ob"><td>'+esc(i.sku||"")+'</td><td class="n">'+(Number(i.cases)||0)+'</td><td class="n">'+(Number(i.pcs)||0)+"</td></tr>").join("")||'<tr class="ob"><td colspan="3" class="ab-empty">No item line</td></tr>')+"</tbody></table>"+
           '<p class="ab-note">'+[rt.by?"Entered by "+esc(rt.by):"",rt.credit_note?"Credit note "+esc(rt.credit_note):"",rt.note?"Note: "+esc(rt.note):""].filter(Boolean).join(" · ")+"</p>";
         f.innerHTML='<button type="button" class="ab-b t" data-led="'+esc(pk)+'">📒 Party ledger</button><a class="ab-b" href="party-billing.html?tab=ret#tally">Returns page ↗</a>'+
-          (canDate()?'<button type="button" class="ab-b" data-tedit>✏️ Edit</button><button type="button" class="ab-b ab-del" data-tdel>🗑 Delete</button>':"")+'<span class="sp"></span><button type="button" class="ab-b" data-close>Close</button>';
+          (canDate()?'<button type="button" class="ab-b" data-tedit>✏️ Edit</button><button type="button" class="ab-b ab-del" data-tcx>⛔ Cancel</button><button type="button" class="ab-b ab-del" data-tdel>🗑 Delete</button>':"")+'<span class="sp"></span><button type="button" class="ab-b" data-close>Close</button>';
         const te=f.querySelector("[data-tedit]"),tx=f.querySelector("[data-tdel]");
         if(te)te.onclick=()=>panel(b,"✏️ Edit return",'<div class="ab-rd-row"><span>Date</span>'+dIn(rt.return_date)+'</div><div class="ab-rd-row"><span>Note</span><input class="rk" maxlength="300" value="'+esc(rt.note||"")+'" aria-label="Note"></div><p class="ab-rd-q">Items and amount change from the Returns page (cancel and enter again).</p>',"Save",async(bx,reason)=>{
           await must(client.rpc("lwb_party_return_edit",{p_id:rt.id,p_date:bx.querySelector(".ab-rd-d").value,p_note:bx.querySelector(".rk").value.trim()||null,p_reason:reason}));return "Return saved"});
+        const tc=f.querySelector("[data-tcx]");
+        if(tc)tc.onclick=()=>cxBox(b,"Cancel return <b>"+esc(rt.return_no||"")+"</b> of "+rs2(rt.amount)+"? It stays in the ledger as <b>Cancelled</b> with ₹0; its credit note is cancelled too.","RETURN",rt.id,"Return cancelled");
         if(tx)tx.onclick=()=>delBox(b,"Delete return <b>"+esc(rt.return_no||"")+"</b> of "+rs2(rt.amount)+"? Its credit note is cancelled too.",reason=>client.rpc("lwb_party_return_delete",{p_id:rt.id,p_reason:reason}),"Return deleted");
         histInto(b,[rt.id]);
       }});
@@ -626,7 +656,7 @@
     // edit history line(s) on the entry
     async function histInto(b,ids){
       try{const {data,error}=await client.rpc("lwb_ledger_edit_log_for",{p_ids:ids});if(error||!Array.isArray(data)||!data.length)return;
-        const txt=x=>(x.action==="DELETE"?"🗑 Deleted":"✏️ Edited")+" by "+esc(x.by)+" on "+dmy(String(x.at).slice(0,10))+(x.before&&x.after&&x.before.total!=null&&Number(x.before.total)!==Number(x.after.total)?" · "+rs2(x.before.total)+" → "+rs2(x.after.total):"")+(x.before&&x.after&&(x.before.pay_date||x.before.invoice_date||x.before.return_date)!==(x.after.pay_date||x.after.invoice_date||x.after.return_date)?" · date "+dmy(x.before.pay_date||x.before.invoice_date||x.before.return_date)+" → "+dmy(x.after.pay_date||x.after.invoice_date||x.after.return_date):"")+(x.reason?" ("+esc(x.reason)+")":"");
+        const txt=x=>x.action==="DUPLICATE"||x.action==="CANCEL"?(x.action==="CANCEL"?"⛔ Cancelled":"⧉ Duplicated from another payment")+" by "+esc(x.by)+" on "+dmy(String(x.at).slice(0,10))+(x.reason?" ("+esc(x.reason)+")":""):(x.action==="DELETE"?"🗑 Deleted":"✏️ Edited")+" by "+esc(x.by)+" on "+dmy(String(x.at).slice(0,10))+(x.before&&x.after&&x.before.total!=null&&Number(x.before.total)!==Number(x.after.total)?" · "+rs2(x.before.total)+" → "+rs2(x.after.total):"")+(x.before&&x.after&&(x.before.pay_date||x.before.invoice_date||x.before.return_date)!==(x.after.pay_date||x.after.invoice_date||x.after.return_date)?" · date "+dmy(x.before.pay_date||x.before.invoice_date||x.before.return_date)+" → "+dmy(x.after.pay_date||x.after.invoice_date||x.after.return_date):"")+(x.reason?" ("+esc(x.reason)+")":"");
         const p=document.createElement("p");p.className="ab-note ab-hist";p.innerHTML=data.map(txt).join("<br>");
         const sum=b.querySelector(".ab-sum");if(sum)sum.after(p);else b.append(p);
       }catch(_){}
@@ -673,9 +703,11 @@
           if(r&&/PARTY|OFFICE|ACC/i.test(String(y.src||"PARTY")))openReceipt(r);else if(window.ERPShell&&ERPShell.toast)ERPShell.toast(String(y.src||"Payment")+" · "+rs2(y.amount)+(y.by_name?" · "+y.by_name:""),"info")});
         f.innerHTML='<button type="button" class="ab-b t" data-led="'+esc(pk)+'">📒 Party ledger</button>'+(due>0.5?'<button type="button" class="ab-b g" data-pay="'+esc(pk)+'">💰 Receive</button>':"")+
           (id?'<a class="ab-b" href="accounts-invoice.html?order='+encodeURIComponent(id)+'#tally">Bill page ↗</a><a class="ab-b" href="warehouse-orders.html?order='+encodeURIComponent(id)+'">Open PO ↗</a>':"")+
-          (canDate()&&id&&o.invoice_no?'<button type="button" class="ab-b" data-bedit>✏️ Edit bill</button><button type="button" class="ab-b ab-del" data-bdel>🗑 Delete bill</button>':"")+'<span class="sp"></span><button type="button" class="ab-b" data-close>Close</button>';
+          (canDate()&&id&&o.invoice_no?'<button type="button" class="ab-b" data-bedit>✏️ Edit bill</button><button type="button" class="ab-b ab-del" data-bcx>⛔ Cancel bill</button><button type="button" class="ab-b ab-del" data-bdel>🗑 Delete bill</button>':"")+'<span class="sp"></span><button type="button" class="ab-b" data-close>Close</button>';
         const be=f.querySelector("[data-bedit]"),bx=f.querySelector("[data-bdel]");
         if(be)be.onclick=()=>billEdit(b,o,id);
+        const bc=f.querySelector("[data-bcx]");
+        if(bc)bc.onclick=()=>cxBox(b,"Cancel Tally bill <b>"+esc(billNo(o)||o.invoice_no)+"</b> ("+rs2(billAmt)+")? It stays in the ledger as <b>Cancelled</b> with ₹0; the PO goes back to Bills to make; party money set to it goes back to advance.","TALLY_BILL",id,"Tally bill cancelled");
         if(bx)bx.onclick=()=>delBox(b,"Delete Tally bill <b>"+esc(billNo(o)||o.invoice_no)+"</b> ("+rs2(billAmt)+")? The PO goes back to Bills to make; party money set to it goes back to advance.",
           reason=>client.rpc("lwb_tally_bill_delete",{p_order_id:id,p_reason:reason}),"Tally bill deleted");
         if(id)histInto(b,[id]);
