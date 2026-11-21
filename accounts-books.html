@@ -13,7 +13,7 @@
   <script src="brand-filter.js"></script>
   <script src="erp-period.js"></script>
   <script src="erp-colfilter.js"></script>
-  <script src="party-pay.js"></script>
+  <script src="party-pay.js?v=20261121b"></script>
   <style>
     /* Ledger & Outstanding (Mohit, 20 Nov 2026): the Accounts "Display" books in one place, like Tally.
        Outstanding → party → bill → items; Ledger row → voucher → bill → items; every row opens, Esc goes back. */
@@ -23,6 +23,10 @@
     .ab-kb{font-size:11.5px;color:var(--erp-muted);white-space:nowrap}.ab-kb kbd{font:inherit;font-weight:700;border:1px solid #cfd6de;border-bottom-width:2px;border-radius:4px;padding:0 4px;background:#fff;color:var(--erp-ink)}
     .ab-b{height:34px;border:1px solid var(--erp-line);border-radius:8px;background:#fff;font:inherit;font-size:13.5px;font-weight:600;padding:0 11px;cursor:pointer;color:var(--erp-ink);white-space:nowrap;display:inline-flex;align-items:center;gap:5px}
     .ab-b.g{background:#13824a;border-color:#13824a;color:#fff}.ab-b.t{background:#00434d;border-color:#00434d;color:#fff}
+    .ab-rd{display:flex;flex-wrap:wrap;align-items:center;gap:6px;background:#fff8e6;border:1.5px solid #e8c36a;border-radius:10px;padding:8px 10px;margin-bottom:10px}
+    .ab-rd .ab-rd-now{color:#66788e;font-size:13px}.ab-rd input{height:32px;border:1.5px solid #d5dbe3;border-radius:8px;padding:0 8px;font:inherit;font-size:14px;background:#fff}
+    .ab-rd .ab-rd-d{font-weight:700;color:#00434d;cursor:pointer}.ab-rd .ab-rd-r{flex:1 1 110px;min-width:0}
+    .ab-rd-err{flex-basis:100%;background:#ffebeb;color:#9b2020;border-radius:8px;padding:6px 9px;font-size:13px}
     .ab-b.sm{height:30px;font-size:12.5px;padding:0 9px}.ab-b:disabled{opacity:.5;cursor:default}
     .ab-kpis{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px;margin:0 0 8px}
     .ab-k{background:#fff;border:1px solid var(--erp-line);border-left:4px solid var(--c);border-radius:9px;padding:6px 10px;min-width:0;text-align:left;font:inherit;color:inherit;cursor:pointer}
@@ -521,14 +525,43 @@
         b.querySelectorAll("[data-al]").forEach(t=>t.onclick=()=>{const y=a[Number(t.dataset.al)];openBill({order_id:y.order_id,order_no:y.order_no,pk})});
         f.innerHTML='<button type="button" class="ab-b t" data-led="'+esc(pk)+'">📒 Party ledger</button><a class="ab-b" href="party-billing.html?tab=pay#tally">Payments page ↗</a>'+(canDate()&&!r.cancelled?'<button type="button" class="ab-b" data-rdate>📅 Change date</button>':"")+'<span class="sp"></span><button type="button" class="ab-b" data-close>Close</button>';
         const cd=f.querySelector("[data-rdate]");
-        if(cd)cd.onclick=()=>LWBPartyPay.changeDate({client,receipt:{...r,party:nameOf(pk)},today:today(),onSaved:async d=>{
-          stack.pop();paint();await load();
-          const nr=(info.raw.receipts||[]).find(y=>y.receipt_id===r.receipt_id);
-          if(nr)openReceipt(nr);
-          if(window.ERPShell&&ERPShell.toast)ERPShell.toast("Date changed to "+dmy(d),"success")}});
+        if(cd)cd.onclick=()=>dateBox(b,r);
       }});
     }
-    const canDate=()=>me&&["admin","accounts"].includes(String(me.role||"").toLowerCase());
+    // Admin: change the receipt date right inside this popup (native date picker), lwb_receipt_set_date
+    function dateBox(b,r){
+      let box=b.querySelector(".ab-rd");
+      if(box){box.remove();return}
+      const t=today(),y=new Date(Date.parse(t+"T12:00:00Z")-864e5).toISOString().slice(0,10),now=String(r.pay_date).slice(0,10);
+      box=document.createElement("div");box.className="ab-rd";
+      box.innerHTML='<b>📅 Change date</b><span class="ab-rd-now">Now <b>'+dmy(now)+'</b></span>'+
+        '<input type="date" class="ab-rd-d" max="'+t+'" value="'+(now===t?y:now)+'" aria-label="New date">'+
+        '<button type="button" class="ab-b sm" data-dd="'+y+'">Yesterday</button>'+
+        '<input class="ab-rd-r" maxlength="300" placeholder="Reason (optional)" aria-label="Reason">'+
+        '<button type="button" class="ab-b g sm" data-dsave>Save date</button><button type="button" class="ab-b sm" data-dx>Cancel</button>'+
+        '<div class="ab-rd-err" hidden></div>';
+      b.prepend(box);
+      const d=box.querySelector(".ab-rd-d"),err=box.querySelector(".ab-rd-err"),sv=box.querySelector("[data-dsave]");
+      box.querySelector("[data-dd]").onclick=()=>{d.value=y};
+      box.querySelector("[data-dx]").onclick=()=>box.remove();
+      d.onclick=()=>{try{d.showPicker()}catch(_){}};
+      setTimeout(()=>{d.focus();try{d.showPicker()}catch(_){}},50);
+      sv.onclick=async()=>{
+        err.hidden=true;const v=d.value;
+        const bad=!v?"Choose the new date":v>t?"The date cannot be in the future":v===now?"The payment is already on "+dmy(v):"";
+        if(bad){err.textContent=bad;err.hidden=false;return}
+        sv.disabled=true;sv.textContent="Saving...";
+        try{
+          const {error}=await client.rpc("lwb_receipt_set_date",{p_receipt_id:r.receipt_id,p_date:v,p_reason:box.querySelector(".ab-rd-r").value.trim()||null});
+          if(error)throw error;
+          stack.pop();paint();await load();
+          const nr=(info.raw.receipts||[]).find(z=>z.receipt_id===r.receipt_id);
+          if(nr)openReceipt(nr);
+          if(window.ERPShell&&ERPShell.toast)ERPShell.toast("Date changed to "+dmy(v),"success");
+        }catch(e){const m=String((e&&e.message)||e||"");err.textContent=/lwb_receipt_set_date|schema cache/i.test(m)?"Date change is not set up on the database yet.":m.replace(/^.*?ERROR:\s*/,"");err.hidden=false;sv.disabled=false;sv.textContent="Save date"}
+      };
+    }
+    const canDate=()=>me&&String(me.realRole||me.role||"").toLowerCase()==="admin";
     const qtyOf=i=>Number(i.loaded_qty)>0?Number(i.loaded_qty):i.approved_qty!=null&&i.approved_qty!==""?Number(i.approved_qty):Number(i.ordered_qty)||0;
     const PST={RECEIVED:["Received","paid"],WITH_DRIVER:["With driver","part"],CHEQUE_IN_HAND:["Cheque not deposited","chq"],CHEQUE_DEPOSITED:["Cheque not cleared","chq"],CHEQUE_BOUNCED:["Cheque bounced","pen"],CHEQUE_CLEARED:["Cheque cleared","paid"]};
     // one bill: header, money, every item, every payment, everything on this PO in the ledger

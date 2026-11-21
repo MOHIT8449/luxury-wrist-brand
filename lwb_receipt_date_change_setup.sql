@@ -7,9 +7,10 @@
 -- wrong day and the running balance was off for that day.
 --
 --  1. Table lwb_receipt_date_log: every date change (receipt, old date, new date, reason, who, when).
---  2. lwb_receipt_set_date(p_receipt_id, p_date, p_reason): Admin or Accounts only. Moves every mode
---     line of that receipt (lwb_tally_payments.pay_date) to the new date. Not for a cancelled receipt,
---     not a future date; Accounts can go back at most 90 days, Admin any date. Reason is optional.
+--  2. lwb_receipt_set_date(p_receipt_id, p_date, p_reason): Admin ONLY (Mohit, 21 Nov 2026: changes
+--     of this kind are for Admin, nobody else). Moves every mode line of that receipt
+--     (lwb_tally_payments.pay_date) to the new date. Not for a cancelled receipt, not a future date.
+--     Reason is optional.
 --     Amount, modes, refs, brand, splits to bills, bank check and the cash book (which counts by the
 --     entry time, not the receipt date) are NOT changed.
 --  3. lwb_receipt_date_log_list(p_days): date changes of the last p_days days for Admin / Accounts /
@@ -42,16 +43,13 @@ DECLARE
   v_old date; v_party text; v_amt numeric; v_cancel boolean;
   v_reason text := nullif(btrim(coalesce(p_reason,'')), '');
 BEGIN
-  IF NOT public.lwb_tally_staff() THEN
-    RAISE EXCEPTION 'Only active Accounts or Admin can change the date of a payment';
-  END IF;
   SELECT EXISTS (SELECT 1 FROM public.user_profiles p WHERE p.id = auth.uid() AND p.active = true
                  AND lower(btrim(p.role)) = 'admin') INTO v_admin;
+  IF NOT v_admin THEN
+    RAISE EXCEPTION 'Only Admin can change the date of a payment';
+  END IF;
   IF p_receipt_id IS NULL OR p_date IS NULL THEN RAISE EXCEPTION 'Choose the new date'; END IF;
   IF p_date > v_today THEN RAISE EXCEPTION 'The date cannot be in the future'; END IF;
-  IF NOT v_admin AND p_date < v_today - 90 THEN
-    RAISE EXCEPTION 'Accounts can move a payment back at most 90 days. Ask Admin for an older date.';
-  END IF;
   IF v_reason IS NOT NULL AND length(v_reason) > 300 THEN RAISE EXCEPTION 'Reason is too long (300 letters max)'; END IF;
 
   SELECT min(p.pay_date), min(coalesce(p.party, o.customer_name::text)), sum(p.amount), bool_and(p.cancelled_at IS NOT NULL)

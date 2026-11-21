@@ -78,35 +78,36 @@ await db.query("insert into lwb_customer_master values($1)",[P]);
 const ledgerDates=async()=>((await db.query("select p.pay_date::text d from lwb_tally_payments p where p.party=$1 order by 1",[P])).rows).map(x=>x.d);
 let rid;
 
-test('Accounts moves a receipt to yesterday; every mode line moves, log kept',async()=>{
+test('Admin moves a receipt to yesterday; every mode line moves, log kept',async()=>{
  await as('accounts');
  const r=await receive(P,[{mode:'UPI',amount:39000,ref:'U9'},{mode:'CASH',amount:1000}],C,[]);
  rid=r.receipt_id;
  const y=dayAdd(today,-1);
+ await assert.rejects(call('select public.lwb_receipt_set_date($1,$2)',[rid,y]),/Only Admin/);
+ await as('admin');
  const out=(await call('select public.lwb_receipt_set_date($1,$2,$3) j',[rid,y,'Money came yesterday']))[0].j;
  assert.equal(out.old_date,today);assert.equal(out.new_date,y);
  assert.deepEqual(await ledgerDates(),[y,y]);
  const log=(await call('select public.lwb_receipt_date_log_list(30) j'))[0].j;
  assert.equal(log.length,1);assert.equal(log[0].old_date,today);assert.equal(log[0].new_date,y);
- assert.equal(log[0].by,'accounts user');assert.equal(log[0].reason,'Money came yesterday');
+ assert.equal(log[0].by,'admin user');assert.equal(log[0].reason,'Money came yesterday');
  // ledger shows it on the new date
  const d=await data();
  assert.equal(d.receipts.find(x=>x.receipt_id===rid).pay_date,y);
 });
 
-test('rules: no future date, Accounts max 90 days back, Admin any, others refused, cancelled refused',async()=>{
- await as('accounts');
- await assert.rejects(call('select public.lwb_receipt_set_date($1,$2)',[rid,dayAdd(today,1)]),/future/);
- await assert.rejects(call('select public.lwb_receipt_set_date($1,$2)',[rid,dayAdd(today,-120)]),/90 days/);
+test('rules: no future date, Admin any past date, others refused, cancelled refused',async()=>{
  await as('admin');
+ await assert.rejects(call('select public.lwb_receipt_set_date($1,$2)',[rid,dayAdd(today,1)]),/future/);
  await call('select public.lwb_receipt_set_date($1,$2)',[rid,dayAdd(today,-120)]);
  assert.deepEqual(await ledgerDates(),[dayAdd(today,-120),dayAdd(today,-120)]);
  await assert.rejects(call('select public.lwb_receipt_set_date($1,$2)',[rid,dayAdd(today,-120)]),/already on/);
  await as('manager');
- await assert.rejects(call('select public.lwb_receipt_set_date($1,$2)',[rid,today]),/Only active Accounts or Admin/);
+ await assert.rejects(call('select public.lwb_receipt_set_date($1,$2)',[rid,today]),/Only Admin/);
  assert.equal((await call('select public.lwb_receipt_date_log_list(30) j'))[0].j.length,0);
  await as('accounts');
  await call('select public.lwb_cancel_tally_payment($1)',[rid]);
+ await as('admin');
  await assert.rejects(call('select public.lwb_receipt_set_date($1,$2)',[rid,today]),/cancelled/);
  // run the file again: safe
  await as('');await db.exec(await sql('lwb_receipt_date_change_setup.sql'));
