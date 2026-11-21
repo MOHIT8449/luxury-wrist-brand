@@ -17,6 +17,12 @@ A new APK is only needed when this `android/` folder changes.
 3. For the full-screen release APK, set `LWB_KEYSTORE_FILE` (path to the .jks)
    and `LWB_KEYSTORE_PASSWORD`, then run `./gradlew assembleRelease`.
 
+## Red bar on top after the domain change (21 Nov 2026)
+An app installed before 20 Nov 2026 still opens the old pages.dev address. That address now
+moves to luxurywristbrand.com, so Chrome sees a different site than the app was made for and
+shows its red address bar (X, share, menu). Install the newest APK over the old app (same key,
+no data lost) and it opens full screen again. The Play Store version needs the new `.aab` uploaded.
+
 ## Signing key
 The SHA-256 of the release key is in `/.well-known/assetlinks.json` on the
 website. That file is what lets the app hide the address bar. Keep the .jks
