@@ -1,12 +1,23 @@
 # LWB — Forgot password (email code)
 
-Login page -> **Forgot password?**
+Login page -> **Forgot password?** -> type the **Login Mobile** or the **Login Email**.
+
+## By Login Mobile (WhatsApp code)
+
+1. User types the 10-digit **Login Mobile**. A 6-digit code comes on **WhatsApp** (same Meta template `lwb_login_otp` as the login OTP).
+2. User types the code + new password (twice) -> **Save New Password** -> signs in with the new password.
+
+Edge Function `lwb-forgot-password-wa` (Verify JWT off, `supabase/config.toml`), SQL
+[`lwb_password_reset_whatsapp_setup.sql`](./lwb_password_reset_whatsapp_setup.sql). Both apply by themselves when merged.
+Code: hashed, 10 minutes, 5 tries, resend after 45 s, max 5 per hour. A number that is not a Login Mobile gets the same "code sent" answer and no message.
+
+## By Login Email (email code)
 
 1. User types the **Login Email** (Manage Users). Supabase sends a code to it (6-10 digits, per the project's OTP length).
 2. User types the code + new password (twice) -> **Save New Password**. Only the email code is needed.
 3. The page goes back to Sign In; the user signs in with the new password and the normal OTP.
 
-Mobile-only logins (no Login Email) cannot use this: Admin types a **New Password** in Manage Users.
+Mobile-only logins (no Login Email) use the WhatsApp code above.
 SQL: [`lwb_password_reset_setup.sql`](./lwb_password_reset_setup.sql) (`lwb_reset_own_password`) saves the password; it runs by itself when the PR is merged. Supabase's own `updateUser` would ask for the Authenticator code first, so it is not used.
 
 ## Setup in Supabase (one time)

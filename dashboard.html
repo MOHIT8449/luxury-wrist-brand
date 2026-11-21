@@ -146,6 +146,7 @@
     .tk-alert{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 12px}
     .tk-al{flex:1 1 300px;display:flex;align-items:center;gap:8px;padding:8px 12px;border-radius:8px;border:1px solid #f1d29a;background:#fff8e8;color:#7a4a00;text-decoration:none;font-size:13.5px;min-width:0}
     .tk-al.late{border-color:#f0b4ae;background:#fdecea;color:#9b1c1c}
+    .tk-al.mob{border-color:#b9d3f3;background:#eef5fd;color:#123f7a}.tk-al.mob .go{background:#1d5fbf}
     .tk-al.team{border-color:var(--erp-line);background:#fff;color:var(--erp-ink)}
     .tk-al .ic{font-size:17px;flex:none}
     .tk-al .tx{flex:1;min-width:0}
@@ -401,7 +402,7 @@
       card.append(h);
       if(!rows.length){const n=document.createElement("div");n.className="tk-dash-none";n.textContent="✓ No pending task for you.";card.append(n)}
       rows.slice(0,5).forEach(x=>{
-        const d=late(x),a=document.createElement("a");a.className="tk-dash-row"+(d>0?" late":d===0?" today":"");a.href="tasks.html?id="+x.id;
+        const d=late(x),a=document.createElement("a");a.className="tk-dash-row"+(d>0?" late":d===0?" today":"");a.href=/^📞 Fill mobile number/.test(x.title||"")?"party-mobile.html":"tasks.html?id="+x.id;
         const tx=document.createElement("span");tx.className="tx";
         const b=document.createElement("b");b.textContent=x.title;
         const sm=document.createElement("small");sm.textContent="TSK-"+x.id+(x.assigned_by_name?" · from "+x.assigned_by_name:"")+(x.status==="IN_PROGRESS"?" · started":"");
@@ -433,6 +434,12 @@
         h+='<a class="tk-al'+(lateN?" late":"")+'" href="tasks.html"><span class="ic">'+(lateN?"⚠️":"📋")+'</span><span class="tx">You have <b>'+rows.length+" pending task"+(rows.length>1?"s":"")+"</b>"+
           (lateN?' · <span class="n-late">'+lateN+" overdue</span>":"")+"<small>"+(lateN?"Oldest is "+oldest+" day"+(oldest>1?"s":"")+" late. ":"")+"Please complete them and press ✅ Mark done.</small></span>"+
           '<span class="go">Complete now →</span></a>';
+      }
+      // Party mobile numbers (lwb_party_mobile_task_setup.sql): salesman = his parties, Admin / Sales Head = all.
+      if(["admin","manager","sales"].includes(currentRole)){
+        const m=await client.rpc("lwb_party_mobile_pending_count");
+        if(!m.error&&m.data>0)h+='<a class="tk-al mob" href="party-mobile.html"><span class="ic">📞</span><span class="tx"><b>'+m.data+" part"+(m.data>1?"ies have":"y has")+" no mobile number</b>"+
+          "<small>"+(currentRole==="sales"?"Your parties. ":"")+"Type the number and Save. The party leaves the list.</small></span>"+'<span class="go">Fill now →</span></a>';
       }
       if(currentRole==="admin"){
         const r=await client.from("lwb_tasks").select("assigned_to,due_date").in("status",["OPEN","IN_PROGRESS"]).limit(5000);

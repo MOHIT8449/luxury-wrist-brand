@@ -324,7 +324,7 @@
 <header><h3 id="lpdT">Change payment date</h3><button type="button" data-x aria-label="Close">✕</button></header>
 <div class="bd">
  <div class="sum" style="grid-template-columns:1fr 1fr"><div><small>${esc(r.party||"")}</small><b class="lpd-amt" style="color:#13824a">${rs(r.total)}</b></div><div><small>Date now</small><b>${dmy(r.pay_date)}</b></div></div>
- <div><label class="l">New date</label><div class="dbx"><input class="dt" inputmode="numeric" maxlength="10" placeholder="DD/MM/YYYY" aria-label="New date"><button type="button" aria-label="Open calendar">📅</button><input type="date" tabindex="-1" aria-hidden="true"></div>
+ <div><label class="l">New date</label><input type="date" class="lpd-d" aria-label="New date" style="font-weight:700;color:#00434d;cursor:pointer">
   <div style="display:flex;gap:6px;margin-top:6px"><button type="button" class="b" data-d="${y}" style="height:32px;font-size:13px">Yesterday ${dmy(y).slice(0,5)}</button><button type="button" class="b" data-d="${t}" style="height:32px;font-size:13px">Today ${dmy(t).slice(0,5)}</button></div></div>
  <div><label class="l" for="lpdR">Reason</label><input id="lpdR" maxlength="300" autocomplete="off" placeholder="optional, e.g. money came yesterday"></div>
  <p style="margin:0;font-size:12.5px;color:#66788e">Only the date moves. Amount, modes, bills and cash book stay the same. The change is kept with your name.</p>
@@ -336,18 +336,16 @@
     const close=()=>{back.remove();document.body.style.overflow=""};
     back.querySelectorAll("[data-x]").forEach(b=>b.onclick=close);
     back.addEventListener("keydown",e=>{if(e.key==="Escape"){e.stopPropagation();close()}else if(e.key==="Enter"&&e.target.tagName==="INPUT")q("[data-ok]").click()});
-    const dt=q(".dt"),dp=q(".dbx input[type=date]"),err=q("[data-err]");
-    const set=d=>{dt.value=dmy(d);dp.value=d};
+    const dp=q(".lpd-d"),err=q("[data-err]");
+    const set=d=>{dp.value=d};
     set(String(r.pay_date).slice(0,10)===t?y:String(r.pay_date).slice(0,10));dp.max=t;
-    q(".dbx button").onclick=()=>{try{dp.showPicker()}catch(_){dp.click()}};
-    dp.onchange=()=>{dt.value=dmy(dp.value)};
-    dt.oninput=()=>{const d=dt.value.replace(/\D/g,"");if(/^\d{8}$/.test(d)&&!dt.value.includes("/"))dt.value=d.slice(0,2)+"/"+d.slice(2,4)+"/"+d.slice(4)};
+    dp.onclick=()=>{try{dp.showPicker()}catch(_){}};
     back.querySelectorAll("[data-d]").forEach(b=>b.onclick=()=>set(b.dataset.d));
     let busy=false;
     q("[data-ok]").onclick=async()=>{
       if(busy)return;err.hidden=true;
-      const d=parseDmy(dt.value);
-      if(!d){err.textContent="Enter the date as DD/MM/YYYY";err.hidden=false;return}
+      const d=dp.value;
+      if(!d){err.textContent="Choose the new date";err.hidden=false;return}
       if(d>t){err.textContent="The date cannot be in the future";err.hidden=false;return}
       if(d===String(r.pay_date).slice(0,10)){err.textContent="The payment is already on "+dmy(d);err.hidden=false;return}
       busy=true;q("[data-ok]").disabled=true;
@@ -356,7 +354,7 @@
       catch(e){const m=String((e&&e.message)||e||"");err.textContent=/lwb_receipt_set_date|schema cache|does not exist/i.test(m)?"Date change is not set up yet. It sets itself up when this change is merged.":m.replace(/^.*?ERROR:\s*/,"");err.hidden=false}
       finally{busy=false;q("[data-ok]").disabled=false}
     };
-    setTimeout(()=>dt.focus(),60);
+    setTimeout(()=>{dp.focus();try{dp.showPicker()}catch(_){}},60);
     return {close};
   }
   // Same party under another name? "RG. SHIV TOBECO (PARVAT PATIYA)" (Tally / old Party Master name) and
