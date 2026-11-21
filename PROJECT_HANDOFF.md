@@ -35,6 +35,7 @@
   - New number / number on 2+ parties / slip brand (Rajnigandha) -> WAITING + bell WEB_ORDER to Admin / Sales Head.
   - Spam: valid Indian mobile, honeypot field, no links, 1-60 lines, 1-5000 cases, per mobile 3/hour 6/day, site 40 per 10 min, same order within 10 min = same W-no. Customer never sees party names or rates.
 - `web-orders.html` (Sales > Website Orders, Admin / Sales Head): Waiting / PO made / Rejected tabs, call + WhatsApp links, Copy order link / Send link on WhatsApp, Make PO -> `order-entry.html?web=<id>` (brand + SKU cases filled, party filled when found) -> Submit marks it done (`lwb_web_order_done`); Reject (`lwb_web_order_reject`).
+- WhatsApp orders (21 Nov 2026, number 99926 99905): Edge Function `lwb-wa-order` (chat: brand > products > cases > Send, logic in `logic.js`), webhook https://luxurywristbrand.com/api/whatsapp (`functions/api/whatsapp.js` -> Edge Function), Meta signature checked with secret `WA_APP_SECRET`, `lwb_whatsapp_order_setup.sql` (sessions, seen message ids, `lwb_wa_party`). Orders use the same intake with channel WHATSAPP. Setup steps + invite template text: `README_WHATSAPP_ORDER.md`. Tests: `tests/whatsapp-order` (7).
 - Tests: `tests/web-order` (pglite, 9 tests). Screenshots: project files `website-order/`.
 
 ## Ledger & Outstanding: Tally-style Accounts books with full drill-down (20 Nov 2026)

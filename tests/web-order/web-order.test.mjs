@@ -8,7 +8,7 @@ const CC='10000000-0000-4000-8000-000000000001',RJ='10000000-0000-4000-8000-0000
 const P1='20000000-0000-4000-8000-000000000001',P2='20000000-0000-4000-8000-000000000002',P3='20000000-0000-4000-8000-000000000003';
 const db=new PGlite();
 await db.exec(`
-CREATE ROLE anon; CREATE ROLE authenticated;
+CREATE ROLE anon; CREATE ROLE authenticated; CREATE ROLE service_role BYPASSRLS; -- as in Supabase
 CREATE SCHEMA auth;
 CREATE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql AS $$ SELECT nullif(current_setting('request.jwt.claim.sub',true),'')::uuid $$;
 CREATE TABLE public.user_profiles(id uuid primary key,role text,active boolean,full_name text);
@@ -19,7 +19,7 @@ CREATE TABLE public.lwb_party_salesman(customer_id uuid primary key,salesman_id 
 CREATE TABLE public.orders(id uuid default gen_random_uuid() primary key,order_no text unique,order_date timestamptz,customer_name text,transportation text,sales_person text,status text,total_qty numeric,total_amount numeric,total_weight numeric,created_by uuid,created_at timestamptz default now());
 CREATE TABLE public.order_items(id bigserial primary key,order_id uuid,sku_name text,ordered_qty numeric,approved_qty numeric,loaded_qty numeric,rate numeric,unit_weight numeric,amount numeric,total_weight numeric);
 CREATE TABLE public.erp_notifications(id bigserial primary key,user_id uuid,title text,message text,notification_type text,order_id uuid,is_read boolean default false);
-GRANT USAGE ON SCHEMA public,auth TO anon,authenticated;
+GRANT USAGE ON SCHEMA public,auth TO anon,authenticated,service_role;
 `);
 for(const [k,id] of Object.entries(ids))await db.query('insert into user_profiles values($1,$2,true,$3)',[id,k,k.toUpperCase()]);
 await db.exec(`
@@ -37,6 +37,8 @@ insert into order_items(order_id,sku_name,ordered_qty,rate) values('30000000-000
 `);
 const sql=await readFile(new URL('../../lwb_web_order_setup.sql',import.meta.url),'utf8');
 await db.exec(sql);await db.exec(sql); // safe to run again
+const wa=await readFile(new URL('../../lwb_whatsapp_order_setup.sql',import.meta.url),'utf8');
+await db.exec(wa);await db.exec(wa);
 
 async function as(who,q,params=[]){
  await db.query("select set_config('request.jwt.claim.sub',$1,false)",[ids[who]||'']);
@@ -133,4 +135,20 @@ test('staff: done links the PO, reject closes it, others refused',async()=>{
 test('site-wide limit',async()=>{
  await db.exec("insert into lwb_web_orders(mobile,contact_name,items) select '9'||lpad(g::text,9,'0'),'Bot','[]' from generate_series(1,40) g");
  await assert.rejects(submit({...base,mobile:'7000000077'}),/Too many orders right now/);
+});
+
+test('WhatsApp: service role takes orders, finds the party; browser cannot',async()=>{
+ const svc=async(q,p=[])=>{await db.exec('SET ROLE service_role');try{return (await db.query(q,p)).rows}finally{await db.exec('RESET ROLE')}};
+ assert.deepEqual((await svc("select lwb_wa_party('919825011111') r"))[0].r,{count:1,name:'SHREE GANESH STORES'});
+ assert.deepEqual((await svc("select lwb_wa_party('9825022222') r"))[0].r,{count:2,name:null});
+ await svc("insert into lwb_wa_sessions(mobile,state) values('9825011111','{}')");
+ await svc("insert into lwb_wa_seen(msg_id) values('wamid.1')");
+ await assert.rejects(svc("insert into lwb_wa_seen(msg_id) values('wamid.1')"),/duplicate/);
+ await db.exec("delete from lwb_web_orders where contact_name='Bot'");
+ const r=(await svc("select lwb_web_order_intake($1::jsonb,'WHATSAPP') r",[JSON.stringify({mobile:'9825011111',name:'SHREE GANESH STORES',brand:CC,items:[{sku:'MAAZA 600ML',qty:1},{sku:'THUMS UP 2.25L',qty:4}]})]))[0].r;
+ const [w]=(await db.query('select channel,status from lwb_web_orders where id=$1',[Number(r.ref.slice(2))])).rows;
+ assert.deepEqual(w,{channel:'WHATSAPP',status:'PO_MADE'});
+ await assert.rejects(as('anon',"select lwb_wa_party('9825011111')"),/permission/);
+ await assert.rejects(as('anon','select * from lwb_wa_sessions'),/permission/);
+ await assert.rejects(as('manager','select * from lwb_wa_sessions'),/permission/);
 });
