@@ -182,13 +182,6 @@
     const tag=make?'button type="button" data-bzd="'+dk(make)+'" title="Tap or press Enter to see what makes this number"':"div";
     return "<"+tag+' class="bz-k bz-kx" style="--c:'+color+'"><small>'+esc(label)+"</small><b>"+value+"</b>"+(viz?'<div class="bz-viz">'+viz+"</div>":"")+"<span>"+foot+"</span></"+tag.split(" ")[0]+">";
   }
-  // Trend line of the chart window (no axes), area under it.
-  function spark(vals,color){
-    const n=vals.length;if(n<2)return "";
-    const mx=Math.max(1,...vals),x=i=>(i*100/(n-1)).toFixed(2),y=v=>(26-Math.max(0,v)/mx*23).toFixed(2);
-    const p=vals.map((v,i)=>x(i)+","+y(v)).join(" ");
-    return '<svg class="bz-spk" viewBox="0 0 100 28" preserveAspectRatio="none" aria-hidden="true"><polygon points="0,28 '+p+' 100,28" fill="'+color+'" opacity=".12"/><polyline points="'+p+'" fill="none" stroke="'+color+'" stroke-width="1.8" vector-effect="non-scaling-stroke" stroke-linejoin="round"/></svg>';
-  }
   // Split bar: [[value, colour, tooltip], ...]
   function stack(parts){
     const t=sum(parts,p=>p[0]);if(!(t>0))return "";
@@ -255,19 +248,34 @@
       cols:[{t:"SKU",v:"sku"},{t:"Brand",v:r=>brandName(r.brand)},{t:"In godown",v:"cases",num:true,sum:true,dec:0,html:r=>esc(fmt(r.cases)+" "+r.unit)},
         {t:"Landing ₹",v:"land",money:true,dec:2,html:r=>r.land==null?notSet:esc("₹"+r.land.toLocaleString("en-IN",{maximumFractionDigits:2}))},{t:"Value ₹",v:"v",money:true,sum:true}]};
   }
+  // Date-wise column chart (Mohit, 21 Nov 2026: no up-down line). Per day: Sales column (gross profit part
+  // in green at its foot) and a thin Purchase column beside it. Tap a day = that day's POs.
   function lineChart(el,days,series){
-    const W=Math.max(260,el.clientWidth||600),H=W<500?170:Math.max(200,Math.min(340,(el.parentNode.clientHeight||0)-40)),P={l:46,r:8,t:10,b:20},n=days.length;
-    const max=Math.max(1,...series.flatMap(s=>s.v))*1.08,x=i=>P.l+(n<2?0:i*(W-P.l-P.r)/(n-1)),y=v=>P.t+(H-P.t-P.b)*(1-Math.max(0,v)/max);
+    const W=Math.max(260,el.clientWidth||600),H=W<500?190:Math.max(210,Math.min(320,(el.parentNode.clientHeight||0)-40)),P={l:44,r:6,t:16,b:22},n=days.length;
+    const S=series.find(x=>x.t==="Sales"),PU=series.find(x=>x.t==="Purchase"),G=series.find(x=>x.t==="Gross profit");
+    const max=Math.max(1,...S.raw,...(PU?PU.raw:[0]))*1.1,y=v=>P.t+(H-P.t-P.b)*(1-Math.max(0,v)/max),base=H-P.b;
+    const slot=(W-P.l-P.r)/Math.max(1,n),bw=Math.max(3,Math.min(26,slot*(PU?.48:.62))),pw=PU?Math.max(2,Math.min(12,slot*.22)):0,gap=PU?Math.min(3,slot*.06):0;
+    const cx=i=>P.l+slot*i+slot/2;
     let g="";
-    for(let k=0;k<=3;k++){const v=max*k/3;g+='<line x1="'+P.l+'" x2="'+(W-P.r)+'" y1="'+y(v)+'" y2="'+y(v)+'" stroke="#eef0ec"/><text x="'+(P.l-5)+'" y="'+(y(v)+3)+'" font-size="9.5" fill="#55686c" text-anchor="end">'+lakh(v).replace("₹","")+"</text>"}
-    const step=Math.max(1,Math.ceil(n/(W<500?5:9)));
-    days.forEach((d,i)=>{if((i%step===0&&n-1-i>=step/2)||i===n-1)g+='<text x="'+x(i)+'" y="'+(H-5)+'" font-size="9.5" fill="#55686c" text-anchor="middle">'+dm(d)+"</text>"});
-    series.forEach((s,j)=>{const p=s.v.map((v,i)=>x(i)+","+y(v)).join(" ");
-      if(j===0)g+='<polygon points="'+x(0)+","+y(0)+" "+p+" "+x(n-1)+","+y(0)+'" fill="'+s.c+'" opacity=".07"/>';
-      g+='<polyline points="'+p+'" fill="none" stroke="'+s.c+'" stroke-width="2" stroke-linejoin="round"/><circle cx="'+x(n-1)+'" cy="'+y(s.v[n-1])+'" r="3" fill="'+s.c+'"/>'});
-    const bw=(W-P.l-P.r)/Math.max(1,n-1);
-    days.forEach((d,i)=>{g+='<rect data-day="'+d+'" style="cursor:pointer" x="'+(x(i)-bw/2)+'" y="'+P.t+'" width="'+bw+'" height="'+(H-P.t-P.b)+'" fill="transparent"><title>'+dmy(d)+"\n"+series.map(s=>s.t+": "+rs(s.raw[i])).join("\n")+"\n(tap to see POs)</title></rect>"});
+    for(let k=0;k<=3;k++){const v=max*k/3;g+='<line x1="'+P.l+'" x2="'+(W-P.r)+'" y1="'+y(v)+'" y2="'+y(v)+'" stroke="#eef0ec"'+(k?' stroke-dasharray="3 3"':"")+'/><text x="'+(P.l-5)+'" y="'+(y(v)+3)+'" font-size="9.5" fill="#55686c" text-anchor="end">'+lakh(v).replace("₹","")+"</text>"}
+    const step=Math.max(1,Math.ceil(n/(W<500?7:15))),best=S.raw.indexOf(Math.max(...S.raw));
+    days.forEach((d,i)=>{
+      const x0=cx(i)-(bw+gap+pw)/2,sv=S.raw[i],gv=G?Math.max(0,Math.min(sv,G.raw[i])):0,pv=PU?PU.raw[i]:0;
+      if(sv>0){g+='<rect x="'+x0+'" y="'+y(sv)+'" width="'+bw+'" height="'+(base-y(sv))+'" rx="2" fill="'+S.c+'"'+(i===best?"":' opacity=".85"')+"/>";
+        if(gv>0)g+='<rect x="'+x0+'" y="'+y(gv)+'" width="'+bw+'" height="'+(base-y(gv))+'" fill="'+G.c+'"/>'}
+      if(pv>0)g+='<rect x="'+(x0+bw+gap)+'" y="'+y(pv)+'" width="'+pw+'" height="'+(base-y(pv))+'" rx="1.5" fill="'+PU.c+'"/>';
+      if(sv>0&&(n<=10||i===best))g+='<text x="'+(x0+bw/2)+'" y="'+(y(sv)-4)+'" font-size="9.5" font-weight="700" fill="#10262b" text-anchor="middle">'+lakh(sv).replace("₹","").replace(" ","")+"</text>";
+      if(i%step===0||i===n-1&&(n-1)%step>step/2)g+='<text x="'+cx(i)+'" y="'+(H-6)+'" font-size="9.5" fill="#55686c" text-anchor="middle">'+dm(d)+"</text>";
+      g+='<rect data-day="'+d+'" style="cursor:pointer" x="'+(P.l+slot*i)+'" y="'+P.t+'" width="'+slot+'" height="'+(H-P.t-P.b)+'" fill="transparent"><title>'+dmy(d)+"\n"+series.map(s=>s.t+": "+rs(s.raw[i])).join("\n")+"\n(tap to see POs)</title></rect>";
+    });
+    g+='<line x1="'+P.l+'" x2="'+(W-P.r)+'" y1="'+base+'" y2="'+base+'" stroke="#c9d0cc"/>';
     el.innerHTML='<svg width="'+W+'" height="'+H+'" role="img" aria-label="Sales, purchase and gross profit by day">'+g+"</svg>";
+  }
+  // Mini columns for the key cards (same style as the big chart).
+  function spark(vals,color){
+    const n=vals.length;if(n<2)return "";
+    const mx=Math.max(1,...vals),w=100/n;
+    return '<svg class="bz-spk" viewBox="0 0 100 28" preserveAspectRatio="none" aria-hidden="true">'+vals.map((v,i)=>{const h=Math.max(v>0?1.5:0,v/mx*26);return h?'<rect x="'+(i*w+w*.15).toFixed(2)+'" y="'+(28-h).toFixed(2)+'" width="'+(w*.7).toFixed(2)+'" height="'+h.toFixed(2)+'" rx=".6" fill="'+color+'"'+(i===n-1?"":' opacity=".55"')+"/>":""}).join("")+"</svg>";
   }
   function donut(vals,colors,center){
     const r=46,c=2*Math.PI*r,t=Math.max(1,sum(vals,v=>v));let o=0,g="";
@@ -351,7 +359,7 @@
     EL.innerHTML='<div class="bz-hd"><h2>Business Overview</h2>'+(window.LWBPeriod?"":seg+cus)+(window.LWBPeriod||!cus?'<span class="bz-rg">'+esc(rangeTxt)+"</span>":"")+'<button type="button" class="erp-i" aria-label="Info" title="Info" data-tip="Sales = SKU qty × PO rate by order date (cancelled not counted). Gross profit = (rate − landing) × qty; landing from Rate &amp; Scheme (Coca-Cola) or Rajnigandha Rate List. Purchase = Goods Inward invoice total by received date. Expenses = Accounts money-out entries, without Supplier payment, Contra (bank transfer), Asset purchase and GST / Tax paid. Stock value = godown stock × landing.">i</button></div>'+
       '<div class="bz-kpis bz-k5">'+k.join("")+"</div>"+
       '<div class="bz-kpis bz-k4">'+k2.join("")+"</div>"+
-      '<div class="bz-g bz-r2"><section class="bz-c"><h3>Sales trend<span class="bz-leg"><span><i style="background:'+COL.sales+'"></i>Sales</span><span><i style="background:'+COL.purch+'"></i>Purchase</span>'+(gp?'<span><i style="background:'+COL.gp+'"></i>Gross profit ×10</span>':"")+'</span></h3><div class="bz-chart" id="bzChart"></div></section>'+
+      '<div class="bz-g bz-r2"><section class="bz-c"><h3>Day-wise Sales<span class="bz-leg"><span><i style="background:'+COL.sales+'"></i>Sales</span>'+(gp?'<span><i style="background:'+COL.gp+'"></i>Gross profit (in sales)</span>':"")+'<span><i style="background:'+COL.purch+'"></i>Purchase</span>'+'</span></h3><div class="bz-chart" id="bzChart"></div></section>'+
       '<section class="bz-c"><h3>Expenses<span class="bz-r">'+esc(rangeTxt)+(!CTX.can||CTX.can("accounts-dashboard.html")?' · <a href="accounts-dashboard.html">Accounts →</a>':"")+'</span></h3>'+exH+"</section></div>"+
       '<div class="bz-g bz-r3"><section class="bz-c"><h3>Brand-wise<span class="bz-r">sales share · qty in own unit</span></h3>'+brShare+brH+"</section>"+
       (gp?'<section class="bz-c"><h3>Profit &amp; Loss<span class="bz-r">'+esc(rangeTxt)+"</span></h3>"+plH+"</section>":'<section class="bz-c"><h3>Needs attention</h3><div class="bz-al">'+(CTX.alerts||'<div class="bz-empty">✓ No alerts right now.</div>')+"</div></section>")+"</div>"+
@@ -360,7 +368,7 @@
     const draw=()=>{const c=EL.querySelector("#bzChart");if(!c)return;
       lineChart(c,M.days,[{t:"Sales",c:COL.sales,v:M.days.map(d=>M.byDay.get(d).s),raw:M.days.map(d=>M.byDay.get(d).s)},
         {t:"Purchase",c:COL.purch,v:M.days.map(d=>M.byDay.get(d).p),raw:M.days.map(d=>M.byDay.get(d).p)},
-        gp&&{t:"Gross profit",c:COL.gp,v:M.days.map(d=>Math.max(0,M.byDay.get(d).g*10)),raw:M.days.map(d=>M.byDay.get(d).g)}].filter(Boolean))};
+        gp&&{t:"Gross profit",c:COL.gp,v:M.days.map(d=>Math.max(0,M.byDay.get(d).g)),raw:M.days.map(d=>M.byDay.get(d).g)}].filter(Boolean))};
     draw();EL._draw=draw;EL._M=M;EL._R=R;
   }
 
