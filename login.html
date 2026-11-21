@@ -121,10 +121,11 @@
     /* Fingerprint / face / phone PIN unlock (quick-unlock.js) */
     .unlock-ic{display:block;width:74px;height:74px;margin:2px auto 14px;padding:16px;border-radius:50%;background:#f7efda;color:var(--gold-dk)}
     #lockNote,#offerNote,#mpinNote{text-align:center}
-    .login-box:has(#lockForm:not([hidden])) .subtitle,.login-box:has(#mpinForm:not([hidden])) .subtitle{display:none}
+    .pick-row{display:flex;gap:10px}.pick-row button{flex:1;margin:0}
+    .login-box:has(#lockForm:not([hidden])) .subtitle,.login-box:has(#mpinForm:not([hidden])) .subtitle,.login-box:has(#offerForm:not([hidden])) .subtitle{display:none}
     .login-box:has(#lockForm:not([hidden])) h2,.login-box:has(#mpinForm:not([hidden])) h2{margin-bottom:14px}
-    #unlockButton,#offerOn{background:linear-gradient(135deg,var(--teal),var(--teal-2));box-shadow:0 10px 22px rgba(0,46,54,.22)}
-    #unlockButton:hover,#offerOn:hover{background:var(--gold);color:var(--teal)}
+    #unlockButton,#offerOn,#offerPin{background:linear-gradient(135deg,var(--teal),var(--teal-2));box-shadow:0 10px 22px rgba(0,46,54,.22)}
+    #unlockButton:hover,#offerOn:hover,#offerPin:hover{background:var(--gold);color:var(--teal)}
     .footer{text-align:center;margin-top:14px;font-size:11px;letter-spacing:.4px;color:#9aa1a3}
 
     /* Laptop with short screen */
@@ -285,12 +286,15 @@
     <div id="setPin"></div>
     <button type="button" class="link-btn" id="mpinSkip">Skip for now</button>
   </form>
-  <!-- After a full login: offer fingerprint unlock on this phone. -->
+  <!-- After a full login, only in the Android app: pick ONE way to open the ERP next time. -->
   <form id="offerForm" hidden>
     <svg class="unlock-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><path d="M12 11v3a8 8 0 0 1-1.5 4.7"/><path d="M8.5 10.5a3.5 3.5 0 0 1 7 0V13a12 12 0 0 1-.6 3.8"/><path d="M5.6 15.5A11 11 0 0 0 6 13v-2.5a6 6 0 0 1 9.6-4.8"/><path d="M18 9a6 6 0 0 1 .1 1.5V13c0 2.2-.4 4.2-1.2 6"/><path d="M8.8 20a14 14 0 0 0 .7-2.4"/><path d="M4 12.5v-2a8 8 0 0 1 1.3-4.4"/></svg>
-    <p class="form-note" id="offerNote"><b>Unlock with fingerprint next time?</b><br>After 15 minutes without work the ERP will lock instead of logging out. Open it again with your fingerprint, face or phone PIN / pattern, without the password and OTP.</p>
-    <button type="submit" id="offerOn">Yes, turn on</button>
-    <button type="button" class="secondary" id="offerNo">Not now</button>
+    <p class="form-note" id="offerNote"><b>Next time open the app with</b><br>Choose one. No password and OTP needed.</p>
+    <div class="pick-row">
+      <button type="submit" id="offerOn">Fingerprint</button>
+      <button type="button" id="offerPin">MPIN</button>
+    </div>
+    <button type="button" class="link-btn" id="offerNo">Skip for now</button>
   </form>
   <div id="message" role="status" aria-live="polite"></div>
   <p class="security-note">Only active users created by Admin may enter the ERP.
@@ -414,24 +418,49 @@ const lockPad=LWBUnlock.pad(el("lockPin"),{busy:()=>busy,onDone:pin=>mpinUnlock(
 const setPad=LWBUnlock.pad(el("setPin"),{busy:()=>busy,onDone:pin=>mpinStep(pin)});
 setPad.fingerprint(null);
 
-// After a full login: first the MPIN, then the fingerprint (each only once, "Skip" asks again after 30 days).
+// After a full login, only in the Android app: the user picks ONE way to open the app next time,
+// fingerprint or MPIN ("Skip" asks again after 30 days). The website in a browser is password + OTP only.
 async function offerUnlock(user){
-  await offerMpin(user);
-  await offerFingerprint(user);
+  if(!LWBUnlock.isApp())return;
+  // The database answers whether this phone still has an MPIN (Admin may have reset it). No answer
+  // means lwb_mpin_setup.sql is not run yet: then no MPIN choice.
+  let has=null;try{const r=await client.rpc("lwb_mpin_status",{p_device:LWBUnlock.device()});if(!r.error)has=r.data===true}catch(e){}
+  if(has===true&&!LWBUnlock.mpinOn(user.id))localStorage.setItem("lwbMpin",JSON.stringify({uid:user.id,at:Date.now()}));
+  if(has===false&&LWBUnlock.mpinOn(user.id))localStorage.removeItem("lwbMpin");
+  if(LWBUnlock.mpinOn(user.id)||LWBUnlock.isOn(user.id))return;
+  if(LWBUnlock.declined(user.id)||LWBUnlock.mpinDeclined(user.id))return;
+  let fpOk=false;try{fpOk=await LWBUnlock.supported()}catch(e){}
+  const pinOk=has!==null;
+  if(!fpOk&&!pinOk)return;
+  return new Promise(done=>{
+    const skip=()=>{LWBUnlock.notNow(user.id);LWBUnlock.mpinNotNow(user.id);mpinDone=null;done()};
+    const choose=()=>{
+      showOnly("offerForm");showMessage("");
+      el("offerOn").hidden=!fpOk;el("offerPin").hidden=!pinOk;
+      el("offerNote").innerHTML=fpOk&&pinOk?"<b>Next time open the app with</b><br>Choose one: fingerprint or a 4-digit MPIN. No password and OTP needed."
+        :fpOk?"<b>Open the app with fingerprint next time?</b><br>No password and OTP needed.":"<b>Set a 4-digit MPIN for this phone?</b><br>No password and OTP needed next time.";
+    };
+    el("offerForm").onsubmit=async event=>{
+      event.preventDefault();if(busy)return;
+      el("offerOn").disabled=true;el("offerOn").textContent="Waiting...";
+      try{await LWBUnlock.enable(user);showMessage("Fingerprint unlock is on for this phone.");done();}
+      catch(e){
+        showMessage(e&&e.name==="NotAllowedError"?"Fingerprint was cancelled. Tap Fingerprint to try again, or choose MPIN.":"Fingerprint unlock could not be turned on: "+(e&&e.message||e),true);
+      }finally{el("offerOn").disabled=false;el("offerOn").textContent="Fingerprint";}
+    };
+    el("offerPin").onclick=()=>{
+      mpinUser=user;mpinFirst="";setPad.clear();mpinText(1);showOnly("mpinForm");showMessage("");
+      mpinDone=done;
+      el("mpinSkip").textContent=fpOk?"Back":"Skip for now";
+      el("mpinSkip").onclick=()=>{mpinDone=null;if(fpOk)choose();else skip()};
+    };
+    el("offerNo").onclick=skip;
+    choose();
+  });
 }
 let mpinFirst="",mpinDone=null,mpinUser=null;
-async function offerMpin(user){
-  // The database answers whether this phone still has an MPIN (Admin may have reset it). No answer
-  // means lwb_mpin_setup.sql is not run yet: then no MPIN offer at all.
-  let has;try{const r=await client.rpc("lwb_mpin_status",{p_device:LWBUnlock.device()});if(r.error)return;has=r.data===true}catch(e){return}
-  if(has){if(!LWBUnlock.mpinOn(user.id))localStorage.setItem("lwbMpin",JSON.stringify({uid:user.id,at:Date.now()}));return}
-  if(LWBUnlock.mpinOn(user.id))localStorage.removeItem("lwbMpin");
-  if(LWBUnlock.mpinDeclined(user.id))return;
-  mpinUser=user;mpinFirst="";setPad.clear();mpinText(1);showOnly("mpinForm");showMessage("");
-  return new Promise(done=>{mpinDone=done;el("mpinSkip").onclick=()=>{LWBUnlock.mpinNotNow(user.id);mpinDone=null;done()}});
-}
 function mpinText(step){
-  el("mpinNote").innerHTML=step===1?"<b>Set a 4-digit MPIN</b><br>Next time open the ERP with this MPIN, without password and OTP."
+  el("mpinNote").innerHTML=step===1?"<b>Set a 4-digit MPIN</b><br>Next time open the app with this MPIN, without password and OTP."
     :"<b>Enter the same MPIN again</b><br>To confirm your new MPIN.";
 }
 async function mpinStep(pin){
@@ -443,26 +472,11 @@ async function mpinStep(pin){
   busy=true;showMessage("Saving MPIN...");
   try{
     await LWBUnlock.mpinSet(client,mpinUser.id,pin);
+    LWBUnlock.disable();
     showMessage("MPIN is set for this phone.");
     const d=mpinDone;mpinDone=null;d&&d();
   }catch(e){mpinFirst="";setPad.clear(true);mpinText(1);showMessage(e.message||String(e),true)}
   finally{busy=false}
-}
-async function offerFingerprint(user){
-  try{if(LWBUnlock.isOn(user.id)||LWBUnlock.declined(user.id)||!(await LWBUnlock.supported()))return;}catch(e){return}
-  showOnly("offerForm");showMessage("");
-  return new Promise(done=>{
-    el("offerForm").onsubmit=async event=>{
-      event.preventDefault();
-      el("offerOn").disabled=true;el("offerOn").textContent="Waiting for fingerprint...";
-      try{await LWBUnlock.enable(user);showMessage("Fingerprint unlock is on for this phone.");done();}
-      catch(e){
-        el("offerOn").disabled=false;el("offerOn").textContent="Yes, turn on";
-        showMessage(e&&e.name==="NotAllowedError"?"Fingerprint was cancelled. Tap \"Yes, turn on\" to try again, or \"Not now\".":"Fingerprint unlock could not be turned on: "+(e&&e.message||e),true);
-      }
-    };
-    el("offerNo").onclick=()=>{LWBUnlock.notNow(user.id);done();};
-  });
 }
 
 // Login with MPIN when this phone has no login session any more (lwb-mpin-login Edge Function,
@@ -475,7 +489,7 @@ function rememberMpinLogin(user){
   s.who=typed||mail||s.who||"";try{localStorage.setItem("lwbMpin",JSON.stringify(s))}catch(e){}
 }
 function showMpinLogin(){
-  const s=savedMpin();if(!s)return false;
+  const s=LWBUnlock.isApp()&&savedMpin();if(!s)return false;
   mpinLogin=true;showLock({id:s.uid,who:s.who||""},"ended");return true;
 }
 el("useMpin").addEventListener("click",()=>{showMpinLogin()});
@@ -571,7 +585,7 @@ el("lockPassword").addEventListener("click",async()=>{
   if(mpinLogin){
     const who=lockUser&&lockUser.who||"";mpinLogin=false;mpinAutoOff=true;lockUser=null;showOnly("loginForm");showMessage("");
     if(who&&!el("login").value)el("login").value=who;
-    el("useMpin").hidden=!savedMpin();(el("login").value?el("password"):el("login")).focus();
+    el("useMpin").hidden=!(LWBUnlock.isApp()&&savedMpin());(el("login").value?el("password"):el("login")).focus();
     return;
   }
   if(lockUser&&LWBUnlock.mpinOn(lockUser.id))await LWBUnlock.mpinOff(client);
@@ -740,7 +754,7 @@ el("otpForm").addEventListener("submit",async event=>{
 el("otpBack").addEventListener("click",async()=>{
   try{await client.auth.signOut({scope:"local"})}catch(e){}
   otpFactorId=otpUser=fpVerified=unlockBack=lockUser=null;clearInterval(waTimer);clearInterval(fpTimer);LWBUnlock.unlock();
-  mpinLogin=false;el("useMpin").hidden=!savedMpin();
+  mpinLogin=false;el("useMpin").hidden=!(LWBUnlock.isApp()&&savedMpin());
   ["otpForm","waForm","fpForm","fpCodeForm","lockForm","offerForm","mpinForm"].forEach(id=>el(id).hidden=true);
   el("loginForm").hidden=false;el("password").value="";showMessage("");
 });
@@ -833,7 +847,7 @@ el("fpCodeForm").addEventListener("submit",async event=>{
 });
 el("fpBack").addEventListener("click",()=>el("otpBack").click());
 el("fpBack2").addEventListener("click",()=>el("otpBack").click());
-el("useMpin").hidden=!savedMpin();
+el("useMpin").hidden=!(LWBUnlock.isApp()&&savedMpin());
 checkExistingLogin();
 
 </script>
