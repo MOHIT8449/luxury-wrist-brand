@@ -725,7 +725,7 @@
   const mpinWho=u=>u&&u.email&&!/@staff\.lwb-erp\.in$/i.test(u.email)?u.email:"";
   function loadUnlock(){
     if(window.LWBUnlock)return Promise.resolve(window.LWBUnlock);
-    return new Promise((ok,bad)=>{const s=document.createElement("script");s.src="quick-unlock.js";s.onload=()=>ok(window.LWBUnlock);s.onerror=bad;document.head.appendChild(s)});
+    return new Promise((ok,bad)=>{const s=document.createElement("script");s.src="quick-unlock.js?v=20261121b";s.onload=()=>ok(window.LWBUnlock);s.onerror=bad;document.head.appendChild(s)});
   }
   function unlockSetting(av,role){
     if(!av||!appMode())return;

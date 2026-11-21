@@ -6,7 +6,7 @@
   <title>Employee Login | Luxury Wrist Brand</title>
 
   <script src="vendor/supabase-js-2.119.0.js"></script>
-  <script src="quick-unlock.js"></script>
+  <script src="quick-unlock.js?v=20261121b"></script>
   <script src="erp-maintenance.js" defer></script>
 
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -334,6 +334,16 @@ const SUPABASE_PUBLISHABLE_KEY="sb_publishable_YA2Pow327REqgrWPzVCZiA_nw1F32_o";
 const client=supabase.createClient(SUPABASE_URL,SUPABASE_PUBLISHABLE_KEY);
 
 const el=id=>document.getElementById(id);
+// Android app or website (quick-unlock.js isApp). Kept here too, so an old cached quick-unlock.js
+// can never stop the login.
+function lwbIsApp(){
+  try{
+    if(typeof LWBUnlock.isApp==="function")return LWBUnlock.isApp();
+    if(/^android-app:\/\//i.test(document.referrer||""))sessionStorage.setItem("lwbApp","1");
+    if(sessionStorage.getItem("lwbApp")==="1")return true;
+    return /Android/i.test(navigator.userAgent)&&["standalone","fullscreen","minimal-ui"].some(m=>matchMedia("(display-mode: "+m+")").matches);
+  }catch(e){return false}
+}
 let busy=false;
 
 function showMessage(text,error=false){
@@ -421,7 +431,7 @@ setPad.fingerprint(null);
 // After a full login, only in the Android app: the user picks ONE way to open the app next time,
 // fingerprint or MPIN ("Skip" asks again after 30 days). The website in a browser is password + OTP only.
 async function offerUnlock(user){
-  if(!LWBUnlock.isApp())return;
+  if(!lwbIsApp())return;
   // The database answers whether this phone still has an MPIN (Admin may have reset it). No answer
   // means lwb_mpin_setup.sql is not run yet: then no MPIN choice.
   let has=null;try{const r=await client.rpc("lwb_mpin_status",{p_device:LWBUnlock.device()});if(!r.error)has=r.data===true}catch(e){}
@@ -489,7 +499,7 @@ function rememberMpinLogin(user){
   s.who=typed||mail||s.who||"";try{localStorage.setItem("lwbMpin",JSON.stringify(s))}catch(e){}
 }
 function showMpinLogin(){
-  const s=LWBUnlock.isApp()&&savedMpin();if(!s)return false;
+  const s=lwbIsApp()&&savedMpin();if(!s)return false;
   mpinLogin=true;showLock({id:s.uid,who:s.who||""},"ended");return true;
 }
 el("useMpin").addEventListener("click",()=>{showMpinLogin()});
@@ -585,7 +595,7 @@ el("lockPassword").addEventListener("click",async()=>{
   if(mpinLogin){
     const who=lockUser&&lockUser.who||"";mpinLogin=false;mpinAutoOff=true;lockUser=null;showOnly("loginForm");showMessage("");
     if(who&&!el("login").value)el("login").value=who;
-    el("useMpin").hidden=!(LWBUnlock.isApp()&&savedMpin());(el("login").value?el("password"):el("login")).focus();
+    el("useMpin").hidden=!(lwbIsApp()&&savedMpin());(el("login").value?el("password"):el("login")).focus();
     return;
   }
   if(lockUser&&LWBUnlock.mpinOn(lockUser.id))await LWBUnlock.mpinOff(client);
@@ -754,7 +764,7 @@ el("otpForm").addEventListener("submit",async event=>{
 el("otpBack").addEventListener("click",async()=>{
   try{await client.auth.signOut({scope:"local"})}catch(e){}
   otpFactorId=otpUser=fpVerified=unlockBack=lockUser=null;clearInterval(waTimer);clearInterval(fpTimer);LWBUnlock.unlock();
-  mpinLogin=false;el("useMpin").hidden=!(LWBUnlock.isApp()&&savedMpin());
+  mpinLogin=false;el("useMpin").hidden=!(lwbIsApp()&&savedMpin());
   ["otpForm","waForm","fpForm","fpCodeForm","lockForm","offerForm","mpinForm"].forEach(id=>el(id).hidden=true);
   el("loginForm").hidden=false;el("password").value="";showMessage("");
 });
@@ -847,7 +857,7 @@ el("fpCodeForm").addEventListener("submit",async event=>{
 });
 el("fpBack").addEventListener("click",()=>el("otpBack").click());
 el("fpBack2").addEventListener("click",()=>el("otpBack").click());
-el("useMpin").hidden=!(LWBUnlock.isApp()&&savedMpin());
+el("useMpin").hidden=!(lwbIsApp()&&savedMpin());
 checkExistingLogin();
 
 </script>
