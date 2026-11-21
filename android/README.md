@@ -44,6 +44,10 @@ After 15 minutes idle the ERP locks and opens with the phone's fingerprint / fac
 
 ## Staff location sharing (new APK required)
 
+21 Nov 2026: the first screen is only Login (mobile/email + password). No notice text or "I agree" tick;
+logging in records the agreement (`lwb_gps_agree`). Location and notification permission use Android's own
+dialog directly; a short popup shows only when Android needs Settings (denied twice, "Allow all the time", GPS off).
+
 Every active ERP login except Admin shares location with Admin. Only Admin sees
 Live Tracking. The app icon now opens `DriverTrackingActivity` (the location gate)
 before the ERP:
