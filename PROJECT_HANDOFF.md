@@ -4,6 +4,13 @@
 **Purpose:** Continue the same ERP project from a new ChatGPT conversation without restarting or losing the agreed requirements.
 **Status:** Active development / verification. Do not assume all modules are completed or fully tested.
 
+## "+ New Party" button on the PO form (21 Nov 2026)
+- Mohit: whoever makes a PO (sales, accounts, anyone with PO Entry) must add a missing party right from the PO form; a new party always needs name, address and mobile.
+- order-entry.html: "+ New Party" button next to the party box (web + phone, all roles; hidden while modifying an order) opens the existing quick popup (`#partyDlg`, now centred on phone); on Save the party is created and picked in the PO. Old small "+ New Party" link to Party Master (new tab) removed. "+ Add new party" in the dropdown stays.
+- SQL `lwb_party_new_required_setup.sql` (test `tests/party-new-required`, PGlite, 3 tests): replaces `lwb_sales_create_party` (same 9 args): name, address, 10-digit mobile (6-9, +91/0 allowed) required; same name (ignoring spaces/punctuation) OR same 10-digit mobile refused with the existing party's name. Who may call: unchanged (`lwb_po_entry_user`, includes anyone given order-entry.html in Manage Users).
+- customer-master.html (Party Master, Admin): new party needs Billing Address + valid mobile; duplicate name / mobile refused (checked in the page). Editing an old party does not force these. Excel import / bulk name add unchanged.
+- Screenshots (mocked data): project files `po-new-party/`.
+
 ## Party mobile numbers: task + pending list (21 Nov 2026)
 - Mohit: every party without a mobile number must be a task for the Sales Head and each salesman, with a bell and a pending list where they type the number.
 - SQL `lwb_party_mobile_task_setup.sql` (test `tests/party-mobile`, PGlite, 6 tests): missing = less than 10 digits, active, not merged. Owner = assigned salesman if his login is active, else Sales Head (office). `lwb_party_mobile_pending()` (salesman own, Admin / Sales Head all), `_pending_count()`, `lwb_party_mobile_set(id, mobile)` (only empty / short mobile; salesman own parties; log `lwb_party_mobile_fills`), `lwb_party_mobile_progress()` (Admin / Sales Head), `lwb_party_mobile_tasks_give(due)` (one task per salesman with pending + every active Sales Head; `lwb_tasks.auto_key = 'PARTY_MOBILE'`; skips people with an open one; run once in the file itself, giver = first active Admin). Statement triggers on `lwb_customer_master` (mobile / is_active) and `lwb_party_salesman` close a task as DONE when that person's list is empty (bell TASK_DONE to the giver).
