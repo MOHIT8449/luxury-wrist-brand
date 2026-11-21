@@ -137,6 +137,8 @@
       // Outstanding (Mohit, 20 Nov 2026): Sales Head sees unpaid / part-paid bills, party-wise dues, ledger; tells Accounts.
       {t:"Outstanding",h:"sales-outstanding.html",i:"cash",r:"admin manager",k:"outstanding payment pending due unpaid part paid bills party wise ledger collection baki udhar tell accounts cashier"},
       {t:"Party Call List",h:"party-calls.html",i:"phone",r:"admin manager sales"},
+      // Party Mobile Pending (Mohit, 21 Nov 2026): parties without a mobile number; fill here, task closes by itself.
+      {t:"Party Mobile Pending",h:"party-mobile.html",i:"phone",r:"admin manager sales",k:"mobile number missing phone party contact fill pending task"},
       {t:"Outside Market Stock",h:"market-report.html",i:"pin",r:"admin manager sales"},
       {t:"Sales Tracking",h:"sales-tracking.html",i:"chart",r:"admin manager"},
       // Party Buying (Mohit, 17 Nov 2026): party / SKU / category-wise buying, never bought, not in N days, stopped. Tab of Sales Tracking.

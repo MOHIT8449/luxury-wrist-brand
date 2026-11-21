@@ -218,18 +218,19 @@
     <button type="button" class="secondary" id="useMpin" hidden>Login with MPIN</button>
     <button type="button" class="link-btn" id="forgotLink">Forgot password?</button>
   </form>
-  <!-- Forgot password: a code goes to the user's Login Email (Supabase "Reset Password" email). -->
+  <!-- Forgot password: Login Mobile = code on WhatsApp (lwb-forgot-password-wa);
+       Login Email = code by email (Supabase "Reset Password" email). -->
   <form id="fpForm" hidden>
-    <p class="form-note">Enter your <b>Login Email</b>. A code will be sent to it.</p>
-    <label for="fpEmail">Login Email</label>
-    <input type="email" id="fpEmail" placeholder="name@example.com"
+    <p class="form-note">Enter your <b>Login Mobile</b> (code on <b>WhatsApp</b>) or <b>Login Email</b> (code by email).</p>
+    <label for="fpEmail">Mobile Number or Email</label>
+    <input type="text" id="fpEmail" placeholder="10-digit mobile or email"
       autocomplete="username" autocapitalize="none" spellcheck="false" required>
     <button type="submit" id="fpSendButton">Send Code</button>
     <button type="button" class="secondary" id="fpBack">Back to Login</button>
   </form>
   <form id="fpCodeForm" hidden>
     <p class="form-note" id="fpCodeNote">Enter the code from the email and your new password.</p>
-    <label for="fpCode">Email Code</label>
+    <label for="fpCode" id="fpCodeLabel">Email Code</label>
     <input type="text" id="fpCode" inputmode="numeric" pattern="[0-9]{6,10}" maxlength="10"
       autocomplete="one-time-code" placeholder="Code from email" required>
     <label for="fpPass">New Password</label>
@@ -774,7 +775,7 @@ el("otpBack").addEventListener("click",async()=>{
 // 2. The code opens a short recovery session; the new password is saved with it.
 // 3. The normal second step (WhatsApp / Authenticator OTP) is still needed to open the ERP.
 // Mobile-only logins (internal @staff.lwb-erp.in email) have no inbox: Admin resets those.
-let fpEmail="",fpTimer=null,fpVerified=null;
+let fpEmail="",fpTimer=null,fpVerified=null,fpMobile="";
 function fpCountdown(seconds){
   clearInterval(fpTimer);
   let left=Math.max(0,seconds|0);
@@ -792,22 +793,56 @@ async function sendResetCode(email){
     throw Error("Could not send the code: "+error.message);
   }
 }
+// Forgot password by WhatsApp: Edge Function lwb-forgot-password-wa (lwb_password_reset_whatsapp_setup.sql).
+async function callFpWa(body){
+  try{
+    const {data,error}=await client.functions.invoke("lwb-forgot-password-wa",{body});
+    if(!error)return data||{};
+    let info={};try{info=await error.context.json()}catch(e){}
+    const status=error.context?.status||0;
+    if(!status||status===404)return {error:"WhatsApp reset is not available right now. Please use your Login Email or ask Admin."};
+    return {error:info.error||error.message,...info};
+  }catch(e){return {error:e.message}}
+}
+async function sendResetWa(mobile){
+  const r=await callFpWa({action:"send",mobile});
+  if(r.error)throw Error(r.error);
+  return r;
+}
 el("forgotLink").addEventListener("click",()=>{
   const typed=el("login").value.trim();
-  el("fpEmail").value=typed.includes("@")?typed:"";
+  el("fpEmail").value=typed.includes("@")||validIndianMobile(typed)?typed:"";
   showOnly("fpForm");showMessage("");el("fpEmail").focus();
 });
 el("fpForm").addEventListener("submit",async event=>{
   event.preventDefault();
   if(busy)return;
-  const email=el("fpEmail").value.trim().toLowerCase();
-  if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)){showMessage("Enter a valid Login Email.",true);return;}
-  if(email.endsWith("@staff.lwb-erp.in")){showMessage("This login has no email. Please ask Admin to set a new password.",true);return;}
+  const typed=el("fpEmail").value.trim(),mobile=typed.includes("@")?null:validIndianMobile(typed);
+  if(mobile){
+    busy=true;el("fpSendButton").disabled=true;el("fpSendButton").textContent="Sending...";showMessage("");
+    try{
+      const r=await sendResetWa(mobile);
+      fpMobile=mobile;fpEmail="";
+      showOnly("fpCodeForm");
+      el("fpCodeLabel").textContent="WhatsApp Code";
+      el("fpCode").placeholder="6-digit code";el("fpCode").maxLength=6;
+      el("fpCodeNote").innerHTML="If <b>"+mobile+"</b> is a Login Mobile in the ERP, a <b>6-digit code</b> has been sent on <b>WhatsApp</b>. Valid for 10 minutes.";
+      ["fpCode","fpPass","fpPass2"].forEach(id=>el(id).value="");
+      fpCountdown(r.wait||45);el("fpCode").focus();
+    }catch(e){showMessage(e.message,true);}
+    finally{busy=false;el("fpSendButton").disabled=false;el("fpSendButton").textContent="Send Code";}
+    return;
+  }
+  const email=typed.toLowerCase();
+  if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)){showMessage("Enter a valid 10-digit mobile number or Login Email.",true);return;}
+  if(email.endsWith("@staff.lwb-erp.in")){showMessage("This login has no email. Please type your 10-digit Login Mobile instead.",true);return;}
   busy=true;el("fpSendButton").disabled=true;el("fpSendButton").textContent="Sending...";showMessage("");
   try{
     await sendResetCode(email);
-    fpEmail=email;
+    fpEmail=email;fpMobile="";
     showOnly("fpCodeForm");
+    el("fpCodeLabel").textContent="Email Code";
+    el("fpCode").placeholder="Code from email";el("fpCode").maxLength=10;
     el("fpCodeNote").textContent="If "+email+" is a Login Email in the ERP, a code has been sent to it. Please check your Inbox and Spam folder. The code is valid for 1 hour.";
     ["fpCode","fpPass","fpPass2"].forEach(id=>el(id).value="");
     fpCountdown(60);el("fpCode").focus();
@@ -816,7 +851,10 @@ el("fpForm").addEventListener("submit",async event=>{
 });
 el("fpResend").addEventListener("click",async()=>{
   el("fpResend").disabled=true;
-  try{await sendResetCode(fpEmail);showMessage("A new code has been sent.");fpCountdown(60);}
+  try{
+    if(fpMobile){const r=await sendResetWa(fpMobile);showMessage(r.sent===false?"Please wait a few seconds.":"A new code has been sent on WhatsApp.");fpCountdown(r.wait||45);}
+    else{await sendResetCode(fpEmail);showMessage("A new code has been sent.");fpCountdown(60);}
+  }
   catch(e){showMessage(e.message,true);fpCountdown(30);}
 });
 // The email code alone is enough: lwb_reset_own_password (lwb_password_reset_setup.sql) saves the
@@ -839,10 +877,22 @@ el("fpCodeForm").addEventListener("submit",async event=>{
   event.preventDefault();
   if(busy)return;
   const code=el("fpCode").value.replace(/\D/g,""),pass=el("fpPass").value,pass2=el("fpPass2").value;
-  if(code.length<6){showMessage("Enter the code from the email.",true);return;}
+  if(code.length<6){showMessage(fpMobile?"Enter the 6-digit code from WhatsApp.":"Enter the code from the email.",true);return;}
   if(pass.length<6){showMessage("New Password must be at least 6 characters.",true);return;}
   if(pass!==pass2){showMessage("Passwords do not match.",true);return;}
   busy=true;el("fpSaveButton").disabled=true;el("fpSaveButton").textContent="Saving...";showMessage("");
+  if(fpMobile){
+    try{
+      const r=await callFpWa({action:"reset",mobile:fpMobile,code,password:pass});
+      if(r.error)throw Error(r.error);
+      clearInterval(fpTimer);
+      showOnly("loginForm");
+      el("login").value=fpMobile;el("password").value="";el("password").focus();
+      showMessage("Password changed. Please sign in with your new password.");
+    }catch(e){showMessage(e.message,true);}
+    finally{busy=false;el("fpSaveButton").disabled=false;el("fpSaveButton").textContent="Save New Password";}
+    return;
+  }
   try{
     // The same code can be used once; after a weak-password error the session is already open.
     if(fpVerified!==fpEmail+"|"+code){
