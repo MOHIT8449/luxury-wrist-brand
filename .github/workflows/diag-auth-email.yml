@@ -13,6 +13,20 @@ jobs:
       DB_PASSWORD: ${{ secrets.NEW_SUPABASE_DB_PASSWORD }}
       DB_URL0: ${{ secrets.SUPABASE_DB_URL }}
     steps:
+      - name: Fix reset email (code + live domain)
+        run: |
+          cat > body.json <<'JSON'
+          {
+            "site_url": "https://luxurywristbrand.com",
+            "uri_allow_list": "https://luxurywristbrand.com/**,https://www.luxurywristbrand.com/**",
+            "mailer_subjects_recovery": "LWB ERP password reset code",
+            "mailer_templates_recovery_content": "<h2>LWB ERP</h2>\n<p>Your password reset code is:</p>\n<p style=\"font-size:28px;font-weight:bold;letter-spacing:6px\">{{ .Token }}</p>\n<p>Type this code on the login page (luxurywristbrand.com). Valid for 1 hour.</p>\n<p>If you did not ask for this, ignore this email.</p>"
+          }
+          JSON
+          jq -e . body.json >/dev/null
+          code=$(curl -s -o /dev/null -w '%{http_code}' -X PATCH -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+            --data @body.json "https://api.supabase.com/v1/projects/$REF/config/auth")
+          echo "PATCH status $code"
       - name: Auth config
         run: |
           [ -n "$TOKEN" ] || { echo "NO ACCESS TOKEN"; exit 0; }
