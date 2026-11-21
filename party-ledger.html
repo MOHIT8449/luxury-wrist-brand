@@ -41,6 +41,7 @@ tr.pick{cursor:pointer}tr.pick:hover td{background:#f4f8fe}
 .kind div,td>div{margin-top:5px}.kind{display:inline-block;font-size:11px;font-weight:bold;border-radius:12px;padding:4px 8px;background:#e8edf4;white-space:nowrap}
 .kind.ERP_BILL,.kind.OLD_INVOICE,.kind.OPENING,.kind.TALLY_BILL,.kind.DEBIT_NOTE{background:#fde9d6;color:#7a3a00}.kind.PAYMENT,.kind.DRIVER_PAYMENT,.kind.OFFICE_PAYMENT,.kind.PARTY_PAYMENT{background:#daf2e2;color:#125b30}
 .kind.DRIVER_RETURN,.kind.SALES_RETURN,.kind.CREDIT_NOTE{background:#e3ecfb;color:#1a4f8f}
+.kind.KASAR{background:#fff1c9;color:#7a5300}
 .grid{display:grid;grid-template-columns:2fr 1.2fr 1fr 1fr 1.6fr auto;gap:12px;align-items:end}
 #brandRow{margin:0 0 12px}#brandRow .lwb-brands{margin:0}
 .btag{display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:bold;color:var(--bc);white-space:nowrap}.btag i{width:8px;height:8px;border-radius:50%;background:var(--bc)}
@@ -103,7 +104,7 @@ const db=window.supabase.createClient(SUPABASE_URL,SUPABASE_PUBLISHABLE_KEY);
 const el=id=>document.getElementById(id);
 const fmt=n=>"₹"+Number(n||0).toLocaleString("en-IN",{minimumFractionDigits:2,maximumFractionDigits:2});
 const amt=n=>Number(n||0)?fmt(n):"";
-const KIND={OPENING:"Opening",ERP_BILL:"ERP Bill",OLD_INVOICE:"Old Invoice",PAYMENT:"Payment",DRIVER_PAYMENT:"Driver Payment",DRIVER_RETURN:"Driver Return",SALES_RETURN:"Sales Return",TALLY_BILL:"Tally Bill",CREDIT_NOTE:"Credit Note",DEBIT_NOTE:"Debit Note",OFFICE_PAYMENT:"Payment Collection",PARTY_PAYMENT:"Party Payment"};
+const KIND={OPENING:"Opening",ERP_BILL:"ERP Bill",OLD_INVOICE:"Old Invoice",PAYMENT:"Payment",DRIVER_PAYMENT:"Driver Payment",DRIVER_RETURN:"Driver Return",SALES_RETURN:"Sales Return",TALLY_BILL:"Tally Bill",CREDIT_NOTE:"Credit Note",DEBIT_NOTE:"Debit Note",OFFICE_PAYMENT:"Payment Collection",PARTY_PAYMENT:"Party Payment",KASAR:"Kasar"};
 // Party names are matched ignoring case and extra spaces.
 const key=name=>String(name||"").trim().replace(/\s+/g," ").toUpperCase();
 let role="",entries=[],bills=[],parties=new Map(),csvRows=[],busy=false,brands=[],fb="",openings=[];
@@ -153,7 +154,8 @@ async function reload(){
   if(a.error){brands=[];el("brandRow").hidden=true;el("obBrandF").hidden=true;a=await db.rpc("lwb_party_ledger")} // brand SQL not run yet
   if(a.error)throw a.error;if(b.error)throw b.error;
   openings=o.error?[]:(o.data||[]);
-  entries=(a.data||[]).map(x=>({...x,party:key(x.customer_name),debit:Number(x.debit||0),credit:Number(x.credit||0)}));
+  // Kasar (lwb_kasar_setup.sql) is a credit / debit note with note no. KASAR: shown as its own "Kasar" line.
+  entries=(a.data||[]).map(x=>({...x,entry_kind:/_NOTE$/.test(x.entry_kind)&&/^KASAR/i.test(String(x.ref_no||""))?"KASAR":x.entry_kind,party:key(x.customer_name),debit:Number(x.debit||0),credit:Number(x.credit||0)}));
   const coByNo=new Map();for(const x of entries)if(x.order_no&&x.company_id)coByNo.set(String(x.order_no),x.company_id);
   bills=(b.data||[]).map(x=>({...x,party:key(x.customer_name),company_id:coByNo.get(String(x.order_no))||""}));
   entries.sort((x,y)=>String(x.entry_date).localeCompare(String(y.entry_date))||(x.entry_kind==="OPENING"?-1:y.entry_kind==="OPENING"?1:0)||String(x.created_at||"").localeCompare(String(y.created_at||"")));
