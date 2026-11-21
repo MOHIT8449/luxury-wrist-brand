@@ -419,7 +419,8 @@ tr[data-lwbk]:focus-visible{outline-offset:-2px}
     // Desktop: the cursor starts in the page search, so typing works at once.
     if(matchMedia("(pointer:fine)").matches)setTimeout(()=>{
       if(D.activeElement&&D.activeElement!==D.body)return;
-      const s=pageSearch();if(s&&!chrome(s)&&!popup())focus(s);
+      // Only a search already on screen (Admin home has it below the numbers: no jump down), Mohit 21 Nov 2026.
+      const s=pageSearch();if(s&&!chrome(s)&&!popup()&&s.getBoundingClientRect().bottom<=innerHeight)focus(s);
     },900);
     // One-time tip on a computer.
     let seen="1";try{seen=localStorage.getItem("lwbk-tip")}catch(e){}
