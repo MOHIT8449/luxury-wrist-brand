@@ -9,6 +9,7 @@
   const css="button.erp-i.erp-i{display:inline-flex!important;align-items:center;justify-content:center;width:18px!important;height:18px!important;min-width:18px!important;max-width:18px!important;min-height:18px!important;max-height:18px!important;margin:0 0 0 6px!important;padding:0!important;border:1.5px solid #94a3b8!important;border-radius:50%!important;background:#fff!important;color:#475569!important;font:italic 700 11px/1 Georgia,serif!important;letter-spacing:0!important;text-transform:none!important;cursor:pointer;vertical-align:middle;box-shadow:none!important;flex:0 0 auto!important;transform:none!important;opacity:1!important}"+
     "button.erp-i.erp-i::before,button.erp-i.erp-i::after{content:none!important;display:none!important}"+
     "button.erp-i.erp-i:hover,button.erp-i.erp-i[aria-expanded=true]{border-color:#0f766e!important;color:#0f766e!important;background:#f0fdfa!important}"+
+    "button.erp-i.erp-i[hidden]{display:none!important}"+
     ".erp-i:focus-visible{outline:2px solid #0f766e;outline-offset:2px}"+
     ".erp-i-pop{position:absolute;z-index:100000;max-width:min(340px,calc(100vw - 24px));padding:10px 12px;border-radius:10px;background:#0f2a33;color:#f8fafc;font:500 13px/1.45 system-ui,-apple-system,Segoe UI,sans-serif;box-shadow:0 10px 30px rgba(0,20,24,.3);white-space:pre-line;text-align:left;text-transform:none;letter-spacing:normal}"+
     "@media print{.erp-i,.erp-i-pop{display:none!important}}";
