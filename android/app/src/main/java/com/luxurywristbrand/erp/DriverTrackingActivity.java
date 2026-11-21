@@ -40,17 +40,12 @@ public final class DriverTrackingActivity extends Activity {
         ScrollView scroll=new ScrollView(this);
         LinearLayout root=new LinearLayout(this);root.setOrientation(LinearLayout.VERTICAL);root.setPadding(pad,pad,pad,pad);
         scroll.addView(root);
-        TextView title=new TextView(this);title.setText("Luxury Wrist Brand · Location");title.setTextSize(20);root.addView(title);
+        TextView title=new TextView(this);title.setText("Luxury Wrist Brand");title.setTextSize(20);root.addView(title);
         status=new TextView(this);status.setPadding(0,pad/2,0,pad/2);root.addView(status);
 
         form=new LinearLayout(this);form.setOrientation(LinearLayout.VERTICAL);root.addView(form);
-        TextView notice=new TextView(this);
-        notice.setText("This company app shares your phone location with Admin during work hours, also when the app is closed or the screen is off. "
-            +"A notification stays visible while it is shared. It cannot be switched off from this phone. "
-            +"If location is turned off, the app will ask you again every time it opens.\n\n"
-            +"यह कंपनी ऐप काम के समय में आपकी लोकेशन Admin को भेजता है, ऐप बंद हो या स्क्रीन बंद हो तब भी। लोकेशन बंद करने पर ऐप हर बार खुलते समय फिर से पूछेगा।");
-        form.addView(notice);
-        tick=new CheckBox(this);tick.setText("I agree / मैं सहमत हूँ");form.addView(tick);
+        // Long location notice removed on Mohit's ask (21 Nov 2026); the "I agree" tick still records consent.
+        tick=new CheckBox(this);tick.setText("I agree to share location / सहमत");form.addView(tick);
         email=new EditText(this);email.setHint("Mobile number or email");email.setInputType(InputType.TYPE_CLASS_TEXT|InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS);form.addView(email);
         password=new EditText(this);password.setHint("ERP password");password.setInputType(InputType.TYPE_CLASS_TEXT|InputType.TYPE_TEXT_VARIATION_PASSWORD);form.addView(password);
         agree=new Button(this);agree.setText("Agree and continue");form.addView(agree);agree.setOnClickListener(v->signIn());
@@ -68,7 +63,7 @@ public final class DriverTrackingActivity extends Activity {
         if(dialog!=null&&dialog.isShowing())dialog.dismiss();
         if(!api.hasSession()||!api.agreed()&&api.tracked()){
             form.setVisibility(LinearLayout.VISIBLE);
-            status.setText("Sign in once with your ERP mobile number (or email) and password, and agree to location sharing.");
+            status.setText("Sign in with your ERP mobile number (or email) and password.");
             return;
         }
         form.setVisibility(LinearLayout.GONE);
