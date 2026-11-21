@@ -4,6 +4,13 @@
 **Purpose:** Continue the same ERP project from a new ChatGPT conversation without restarting or losing the agreed requirements.
 **Status:** Active development / verification. Do not assume all modules are completed or fully tested.
 
+## "+ New Party" button on the PO form (21 Nov 2026)
+- Mohit: whoever makes a PO (sales, accounts, anyone with PO Entry) must add a missing party right from the PO form; a new party always needs name, address and mobile.
+- order-entry.html: "+ New Party" button next to the party box (web + phone, all roles; hidden while modifying an order) opens the existing quick popup (`#partyDlg`, now centred on phone); on Save the party is created and picked in the PO. Old small "+ New Party" link to Party Master (new tab) removed. "+ Add new party" in the dropdown stays.
+- SQL `lwb_party_new_required_setup.sql` (test `tests/party-new-required`, PGlite, 3 tests): replaces `lwb_sales_create_party` (same 9 args): name, address, 10-digit mobile (6-9, +91/0 allowed) required; same name (ignoring spaces/punctuation) OR same 10-digit mobile refused with the existing party's name. Who may call: unchanged (`lwb_po_entry_user`, includes anyone given order-entry.html in Manage Users).
+- customer-master.html (Party Master, Admin): new party needs Billing Address + valid mobile; duplicate name / mobile refused (checked in the page). Editing an old party does not force these. Excel import / bulk name add unchanged.
+- Screenshots (mocked data): project files `po-new-party/`.
+
 ## Change the date of a receipt (21 Nov 2026)
 - Mohit: V S SALES (HARI NAGAR) ₹39,000 UPI was entered by Accounts on 21/11 but came on 20/11; no way to fix the date, so the ledger showed it on the wrong day.
 - SQL `lwb_receipt_date_change_setup.sql` (test `tests/receipt-date`, PGlite, 2 tests): table `lwb_receipt_date_log` (receipt, old / new date, reason, who, when); `lwb_receipt_set_date(p_receipt_id, p_date, p_reason)` ADMIN ONLY (Mohit: such changes are only for Admin, nobody else), moves every mode line of the receipt (`lwb_tally_payments.pay_date`); no future date, not cancelled. Amount, modes, splits, brand, bank check, cash book (counts by entry time) unchanged. `lwb_receipt_date_log_list(p_days)` for Admin / Accounts / Cashier.
