@@ -1200,6 +1200,8 @@ document.addEventListener("DOMContentLoaded", async () => {
     if(editId) await loadOrderForEdit(editId);
     const draftId = new URLSearchParams(location.search).get("draft");
     if(draftId && !editId){ await brandReady; await loadDraft(draftId); }
+    const webId = new URLSearchParams(location.search).get("web");
+    if(webId && /^\d+$/.test(webId) && !editId && !draftId){ await brandReady; await loadWebOrder(webId); }
     refreshDraftCount();
     document.getElementById("orderDate").addEventListener("change", updateLandingCells);
     calculateTotals();
@@ -2815,6 +2817,7 @@ async function saveOrder(){
 
     document.getElementById("orderNo").value = made.map(m => m.orderNo).join(" + ");
     await dropDraftAfterSubmit();
+    await markWebOrderDone((createdOrder || (made.find(m => m.order && m.order.id) || {}).order || {}).id);
     const priorityNote = slipNote + (!createdOrder ? "" : (orderPriority === "NORMAL" ? "" : await saveOrderPriority(createdOrder.id))
       + await saveOrderPickup(createdOrder.id, false));
 
@@ -3013,6 +3016,44 @@ async function loadDraft(id){
   const d = data.data || {};
   currentDraft = data;
   document.getElementById("pageHeading").textContent = "Draft Order";
+  await fillOrderForm(d);
+  showMessage("Draft opened" + (data.updated_by_name ? " (last saved by " + data.updated_by_name + ")" : "") +
+    ". Change what you need, then Submit to make the PO, or Esc to save the draft again.", "success");
+}
+
+/* WEBSITE ORDER (lwb_web_order_setup.sql, Mohit 20 Nov 2026): Website Orders > "Make PO" opens
+   order-entry.html?web=<id>. The customer's brand and SKU cases are filled in, and the party when the
+   mobile is on exactly one party (else the shop name to search). Submit makes the PO the normal way
+   and marks the website order done (lwb_web_order_done). */
+let currentWebOrder = null;
+async function loadWebOrder(id){
+  const {data:w, error} = await db.from("lwb_web_orders").select("*").eq("id", id).maybeSingle();
+  if(error || !w){ await alert("Website order W-" + id + " not found."); history.replaceState(null, "", "order-entry.html"); return; }
+  if(w.status !== "WAITING"){ await alert("Website order W-" + id + " is already " + (w.status === "PO_MADE" ? "made into PO " + (w.order_no || "") : "rejected") + "."); history.replaceState(null, "", "order-entry.html"); return; }
+  const matched = Array.isArray(w.matched_parties) ? w.matched_parties : [];
+  let party = null;
+  if(matched.length === 1){
+    const {data} = await db.from("lwb_customer_master").select("id,customer_code,customer_name").eq("id", matched[0].id).eq("is_active", true).maybeSingle();
+    party = data || null;
+  }
+  currentWebOrder = w;
+  document.getElementById("pageHeading").textContent = "Website Order W-" + w.id;
+  await fillOrderForm({brand: w.company_id || "", party, customer: party ? "" : (w.shop_name || ""),
+    items: (w.items || []).map(i => ({sku: i.sku, qty: String(i.qty), rate: ""}))});
+  const who = [w.shop_name, w.contact_name, w.city, w.mobile].filter(Boolean).join(" · ");
+  showMessage("Website order W-" + w.id + " from " + who + (w.note ? ". Note: " + w.note : "") + ". " +
+    (party ? "Party found by mobile. " : matched.length > 1 ? "This number is on " + matched.map(m => m.name).join(", ") + ": pick the right party. " : "New customer: pick the party or add it with + New Party. ") +
+    "Enter rates, then Submit.", "success");
+}
+async function markWebOrderDone(orderId){
+  if(!currentWebOrder || !orderId) return;
+  const id = currentWebOrder.id;
+  currentWebOrder = null;
+  const {error} = await db.rpc("lwb_web_order_done", {p_id: id, p_order_id: orderId});
+  if(error) console.warn("Website order not marked done", error);
+}
+
+async function fillOrderForm(d){
   const chip = document.querySelector(`#brandChips button[data-b="${CSS.escape(d.brand || "")}"]`);
   if(chip && chip.getAttribute("aria-pressed") !== "true") chip.click();
   if(d.orderDate) document.getElementById("orderDate").value = d.orderDate;
@@ -3049,8 +3090,6 @@ async function loadDraft(id){
   }
   if(!(d.items || []).length) addItem();
   calculateTotals();
-  showMessage("Draft opened" + (data.updated_by_name ? " (last saved by " + data.updated_by_name + ")" : "") +
-    ". Change what you need, then Submit to make the PO, or Esc to save the draft again.", "success");
 }
 
 // After the PO is made from a draft, the draft goes away.
@@ -3129,8 +3168,9 @@ async function resetOrder(){
   document.getElementById("savedPoList").innerHTML="Open in PO / Sales List &rarr;";
   ["qsDriverName","qsVehicle"].forEach(id=>document.getElementById(id).value="");
   currentDraft = null;
+  currentWebOrder = null;
   document.getElementById("draftBtn").hidden = false;
-  if(new URLSearchParams(location.search).get("draft")) history.replaceState(null, "", "order-entry.html");
+  if(new URLSearchParams(location.search).get("draft") || new URLSearchParams(location.search).get("web")) history.replaceState(null, "", "order-entry.html");
   if(editOrder){
     // Leave the order as it is and start a fresh one.
     editOrder = null;
