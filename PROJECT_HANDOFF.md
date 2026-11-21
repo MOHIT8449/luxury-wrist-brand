@@ -4,6 +4,10 @@
 **Purpose:** Continue the same ERP project from a new ChatGPT conversation without restarting or losing the agreed requirements.
 **Status:** Active development / verification. Do not assume all modules are completed or fully tested.
 
+## Tasks: Select all + bulk Mark Done (21 Nov 2026)
+- Mohit: on Tasks > All staff wanted a Select all button to mark many tasks done at once.
+- tasks.html (Admin, All staff tab only): checkbox on every pending row + header checkbox; bar above the list "Select all · N selected · Clear · ✅ Mark Done (N)". Select all = every pending task the list shows now (status / Given to / Given by / Type / search / person chip / KPI and the page column filter + "Search anything"). Confirm popup lists people (count each); then `lwb_task_update(id,'DONE', note 'Marked done together (bulk) by Admin')` per task, 5 at a time; each person gets the usual 🔔; failures listed. No SQL. Screenshots (sample data): project files `tasks-select-all/`.
+
 ## "+ New Party" button on the PO form (21 Nov 2026)
 - Mohit: whoever makes a PO (sales, accounts, anyone with PO Entry) must add a missing party right from the PO form; a new party always needs name, address and mobile.
 - order-entry.html: "+ New Party" button next to the party box (web + phone, all roles; hidden while modifying an order) opens the existing quick popup (`#partyDlg`, now centred on phone); on Save the party is created and picked in the PO. Old small "+ New Party" link to Party Master (new tab) removed. "+ Add new party" in the dropdown stays.
