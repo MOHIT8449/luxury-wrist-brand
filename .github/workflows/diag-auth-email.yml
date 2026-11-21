@@ -1,4 +1,4 @@
-# Temporary: send one test reset code to the user who last asked for one (address not printed).
+# Temporary read-only check (times and log messages only, emails removed).
 name: Diag auth email
 on:
   push:
@@ -8,14 +8,18 @@ jobs:
     runs-on: ubuntu-latest
     env:
       REF: qstgwhbgbznxemajtave
+      TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
       DB_PASSWORD: ${{ secrets.NEW_SUPABASE_DB_PASSWORD }}
     steps:
-      - name: Test send
+      - name: Check
         run: |
           DB_URL="postgresql://postgres.$REF:$(python3 -c 'import os,urllib.parse;print(urllib.parse.quote(os.environ["DB_PASSWORD"].strip(),safe=""))')@aws-0-ap-south-1.pooler.supabase.com:5432/postgres"
           echo "::add-mask::$DB_URL"
-          E=$(psql "$DB_URL" -At -c "select email from auth.users where recovery_sent_at is not null order by recovery_sent_at desc limit 1")
-          echo "::add-mask::$E"
-          jq -n --arg e "$E" '{email:$e}' > b.json
-          curl -s -o r.txt -w 'recover status %{http_code}\n' -X POST "https://$REF.supabase.co/auth/v1/recover" -H "apikey: sb_publishable_YA2Pow327REqgrWPzVCZiA_nw1F32_o" -H "Content-Type: application/json" --data @b.json
-          sed -E 's/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+/<email>/g' r.txt | cut -c1-200; echo
+          psql "$DB_URL" -At -c "select 'last_recovery', recovery_sent_at from auth.users where recovery_sent_at is not null order by recovery_sent_at desc limit 3"
+          S=$(date -u -d '-30 minutes' +%Y-%m-%dT%H:%M:%SZ); E=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          curl -sG -H "Authorization: Bearer $TOKEN" "https://api.supabase.com/v1/projects/$REF/analytics/endpoints/logs.all" \
+            --data-urlencode "sql=select timestamp, event_message from auth_logs order by timestamp desc limit 40" \
+            --data-urlencode "iso_timestamp_start=$S" --data-urlencode "iso_timestamp_end=$E" > l.json
+          echo "keys: $(jq -r 'keys|join(",")' l.json)"; jq -c '.error // empty' l.json | cut -c1-300
+          jq -r '.result[]? | .event_message' l.json | jq -rR 'fromjson? | [.time, .level, .msg, .error, .path, .status, .mail_type, .action] | map(tostring) | join(" | ")' \
+            | sed -E 's/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+/<email>/g' | grep -v -E '/(health|settings) ' | cut -c1-300
