@@ -23,6 +23,10 @@
      lwbMpin    {uid, at}         a 4-digit MPIN is set for this user on this phone
      lwbMpinNo  {uid, at}         user said "Skip" to the MPIN (asked again after 30 days)
 
+   Only in the Android app (21 Nov 2026): the website in a browser is password + OTP only, with
+   no MPIN, no fingerprint and no lock screen (isApp() below). In the app the user picks ONE of the
+   two: fingerprint or MPIN.
+
    MPIN (like a bank app): the MPIN itself is checked by the database (bcrypt hash, 5 wrong
    tries remove it), never kept on the phone. Either MPIN or fingerprint keeps the ERP locked
    instead of logged out.
@@ -46,14 +50,27 @@
     }catch(e){return "dashboard.html"}
   }
 
+  // The Android app (Chrome Trusted Web Activity) or the ERP installed on an Android phone's home
+  // screen: Android + full-screen display mode, or the app's "android-app://" referrer on its first
+  // page (kept for this tab only, so Chrome on the same phone stays "website").
+  function isApp(){
+    try{
+      if(/^android-app:\/\//i.test(document.referrer||""))sessionStorage.setItem("lwbApp","1");
+      if(sessionStorage.getItem("lwbApp")==="1")return true;
+      const full=["standalone","fullscreen","minimal-ui"].some(m=>matchMedia("(display-mode: "+m+")").matches);
+      return /Android/i.test(navigator.userAgent)&&full;
+    }catch(e){return false}
+  }
+
   async function supported(){
+    if(!isApp())return false;
     try{
       return !!(window.isSecureContext&&window.PublicKeyCredential&&navigator.credentials&&
         await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable());
     }catch(e){return false}
   }
-  const isOn=uid=>{const s=get(ON);return !!(uid&&s&&s.uid===uid&&s.cred)};
-  const anyOn=()=>{const s=get(ON),p=get(PIN);return !!(s&&s.uid&&s.cred)||!!(p&&p.uid)};
+  const isOn=uid=>{const s=get(ON);return !!(isApp()&&uid&&s&&s.uid===uid&&s.cred)};
+  const anyOn=()=>{const s=get(ON),p=get(PIN);return isApp()&&(!!(s&&s.uid&&s.cred)||!!(p&&p.uid))};
   function declined(uid){const s=get(NO);return !!(s&&s.uid===uid&&Date.now()-s.at<30*864e5)}
 
   // Make the key on this phone. The phone asks for fingerprint / face / PIN once.
@@ -101,7 +118,7 @@
     if(!/^[A-Za-z0-9_-]{16,64}$/.test(d)){d=b64(rand(18));try{localStorage.setItem(DEV,d)}catch(e){}}
     return d;
   }
-  const mpinOn=uid=>{const s=get(PIN);return !!(uid&&s&&s.uid===uid)};
+  const mpinOn=uid=>{const s=get(PIN);return !!(isApp()&&uid&&s&&s.uid===uid)};
   const canLock=uid=>isOn(uid)||mpinOn(uid);
   function mpinDeclined(uid){const s=get(PINNO);return !!(s&&s.uid===uid&&Date.now()-s.at<30*864e5)}
   function mpinNotNow(uid){put(PINNO,{uid,at:Date.now()})}
@@ -186,6 +203,6 @@
     };
   }
 
-  window.LWBUnlock={pad,supported,isOn,anyOn,declined,enable,disable,notNow,verify,lock,locked,unlock,safeBack,
+  window.LWBUnlock={isApp,pad,supported,isOn,anyOn,declined,enable,disable,notNow,verify,lock,locked,unlock,safeBack,
     device,mpinOn,canLock,mpinDeclined,mpinNotNow,mpinWeak,mpinSet,mpinVerify,mpinOff};
 })();
