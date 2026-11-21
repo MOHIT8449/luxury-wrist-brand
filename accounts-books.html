@@ -515,12 +515,20 @@
         b.innerHTML='<div class="ab-sum" style="--n:3"><div class="big"><small>Received</small><b class="ab-adv">'+rs2(r.total)+'</b></div><div><small>Set to bills</small><b>'+rs2(s)+'</b></div><div><small>Kept as advance</small><b>'+rs2(Math.max(0,r.total-s))+"</b></div></div>"+
           '<table class="ab-t"><thead><tr><th>Mode</th><th>Ref / UTR / Cheque</th><th class="n">Amount</th></tr></thead><tbody>'+(r.modes||[]).map(m=>'<tr class="ob"><td>'+modeChips([String(m.mode||"").toUpperCase()])+"</td><td>"+esc(m.ref||"—")+'</td><td class="n">'+rs2(m.amount)+"</td></tr>").join("")+"</tbody></table>"+
           '<p class="ab-note">'+[r.by?"Entered by "+esc(r.by):"",r.at?"on "+dmy(String(r.at).slice(0,10)):"",r.remark?"Remark: "+esc(r.remark):""].filter(Boolean).join(" · ")+"</p>"+
+          ((r.date_log||[]).length?'<p class="ab-note" style="color:#8a5a00">📅 '+esc(LWBPartyPay.dateLogText(r))+"</p>":"")+
           "<h4>Against bills · click a bill to open it</h4>"+
           (a.length?'<table class="ab-t"><thead><tr><th>PO</th><th>Bill no.</th><th class="n">Amount</th></tr></thead><tbody>'+a.map((y,i)=>'<tr tabindex="0" data-al="'+i+'"><td>'+esc(y.order_no)+"</td><td>"+esc(y.invoice_no||"")+'</td><td class="n">'+rs2(y.amount)+"</td></tr>").join("")+"</tbody></table>":'<div class="ab-empty">Kept as advance, not set to a bill yet.</div>');
         b.querySelectorAll("[data-al]").forEach(t=>t.onclick=()=>{const y=a[Number(t.dataset.al)];openBill({order_id:y.order_id,order_no:y.order_no,pk})});
-        f.innerHTML='<button type="button" class="ab-b t" data-led="'+esc(pk)+'">📒 Party ledger</button><a class="ab-b" href="party-billing.html?tab=pay#tally">Payments page ↗</a><span class="sp"></span><button type="button" class="ab-b" data-close>Close</button>';
+        f.innerHTML='<button type="button" class="ab-b t" data-led="'+esc(pk)+'">📒 Party ledger</button><a class="ab-b" href="party-billing.html?tab=pay#tally">Payments page ↗</a>'+(canDate()&&!r.cancelled?'<button type="button" class="ab-b" data-rdate>📅 Change date</button>':"")+'<span class="sp"></span><button type="button" class="ab-b" data-close>Close</button>';
+        const cd=f.querySelector("[data-rdate]");
+        if(cd)cd.onclick=()=>LWBPartyPay.changeDate({client,receipt:{...r,party:nameOf(pk)},today:today(),onSaved:async d=>{
+          stack.pop();paint();await load();
+          const nr=(info.raw.receipts||[]).find(y=>y.receipt_id===r.receipt_id);
+          if(nr)openReceipt(nr);
+          if(window.ERPShell&&ERPShell.toast)ERPShell.toast("Date changed to "+dmy(d),"success")}});
       }});
     }
+    const canDate=()=>me&&["admin","accounts"].includes(String(me.role||"").toLowerCase());
     const qtyOf=i=>Number(i.loaded_qty)>0?Number(i.loaded_qty):i.approved_qty!=null&&i.approved_qty!==""?Number(i.approved_qty):Number(i.ordered_qty)||0;
     const PST={RECEIVED:["Received","paid"],WITH_DRIVER:["With driver","part"],CHEQUE_IN_HAND:["Cheque not deposited","chq"],CHEQUE_DEPOSITED:["Cheque not cleared","chq"],CHEQUE_BOUNCED:["Cheque bounced","pen"],CHEQUE_CLEARED:["Cheque cleared","paid"]};
     // one bill: header, money, every item, every payment, everything on this PO in the ledger
@@ -619,7 +627,7 @@
           const m={L:()=>findLedger(),O:()=>goSec("out",()=>{outPk=""}),R:()=>goSec("rec"),P:()=>goSec("sum"),D:()=>goSec("day")}[k];
           if(m){e.preventDefault();e.stopPropagation();m();return}}
         if(e.key==="Escape"){
-          if(document.querySelector(".lwbk-back,.lwb-cf-pop"))return;
+          if(document.querySelector(".lwbk-back,.lwb-cf-pop,.lpp-back"))return;
           if(stack.length){e.preventDefault();e.stopPropagation();stack.length>1?popBack():popClose();return}
           const a=document.activeElement,typing=a&&/^(INPUT|SELECT|TEXTAREA)$/.test(a.tagName);
           if(typing&&a.value){return}
