@@ -77,6 +77,7 @@ ALTER TABLE public.lwb_tally_notes ADD COLUMN IF NOT EXISTS cancelled_by uuid;`)
 await db.exec(await sql('lwb_receipt_date_change_setup.sql'));
 await db.exec(await sql('lwb_ledger_admin_edit_setup.sql'));
 await db.exec(await sql('lwb_ledger_admin_edit_setup.sql'));  // safe to run again
+await db.exec(await sql('lwb_ledger_accounts_edit_setup.sql'));
 const P='SHREE DEV NARAYAN (BHAIYA NAGAR)';
 await db.query("insert into lwb_customer_master values($1)",[P]);
 async function po(no,amt,sku='COKE 600'){
@@ -95,7 +96,8 @@ test('Admin edits a receipt: date, amount, mode, ref; splits follow the new tota
  keep=(await receive(P,[{mode:'CASH',amount:12000},{mode:'UPI',amount:1650,ref:'U1'}],C,null)).receipt_id;
  dupe=(await receive(P,[{mode:'CASH',amount:12000},{mode:'UPI',amount:1650,ref:'U2'}],C,null)).receipt_id;
  assert.equal((await allocs(keep)).reduce((a,x)=>a+x.a,0),13650);
- // Accounts cannot edit
+ // Manager cannot edit (Admin and Accounts can)
+ await as('manager');
  const L=await lines(keep);
  await assert.rejects(call('select public.lwb_receipt_edit($1,$2,$3::jsonb)',[keep,today,JSON.stringify(L.map(l=>({id:l.id,mode:l.mode,amount:l.a,ref:l.ref_no})))]),/Only Admin/);
  await as('admin');
@@ -117,7 +119,7 @@ test('Admin edits a receipt: date, amount, mode, ref; splits follow the new tota
 });
 
 test('Admin deletes the duplicate receipt; Tally bill edit + delete; return edit + delete',async()=>{
- await as('accounts');
+ await as('manager');
  await assert.rejects(call('select public.lwb_receipt_delete($1)',[dupe]),/Only Admin/);
  await assert.rejects(call('select public.lwb_tally_bill_delete($1)',[b1]),/Only Admin/);
  await as('admin');
@@ -148,14 +150,14 @@ test('Admin deletes the duplicate receipt; Tally bill edit + delete; return edit
 });
 
 test('receipt lines with ids: Admin only',async()=>{
- await as('accounts');
+ await as('manager');
  await assert.rejects(call('select public.lwb_receipt_lines($1)',[keep]),/Only Admin/);
  await as('admin');
  const l=(await call('select public.lwb_receipt_lines($1) j',[keep]))[0].j;
  assert.equal(l.length,3);assert.ok(l.every(x=>x.id));
 });
 test('Tally style: Duplicate a receipt (new date, splits like a new payment) and Cancel (₹0 row kept)',async()=>{
- await as('accounts');
+ await as('manager');
  await assert.rejects(call('select public.lwb_receipt_duplicate($1,$2,$3::jsonb)',[keep,today,JSON.stringify([{mode:'CASH',amount:100}])]),/Only Admin/);
  await assert.rejects(call('select public.lwb_ledger_cancel($1,$2)',['RECEIPT',keep]),/Only Admin/);
  await as('admin');
@@ -184,4 +186,16 @@ test('Tally style: Duplicate a receipt (new date, splits like a new payment) and
  assert.deepEqual(log.map(x=>x.action),['DUPLICATE','CANCEL']);
  await as('manager');
  assert.equal((await call('select public.lwb_ledger_cancelled(400) j'))[0].j.length,0);
+});
+test('Accounts can also edit / duplicate / cancel (Mohit: Accounts all); Manager cannot',async()=>{
+ await as('accounts');
+ const L=(await call('select public.lwb_receipt_lines($1) j',[keep]))[0].j;
+ await call('select public.lwb_receipt_edit($1,$2,$3::jsonb,$4,$5)',[keep,today,JSON.stringify(L.map(l=>({id:l.id,mode:l.mode,amount:l.amount,ref:l.ref}))),'by accounts','date fix']);
+ assert.ok((await lines(keep)).every(x=>x.d===today));
+ const r=(await call('select public.lwb_receipt_duplicate($1,$2,$3::jsonb) j',[keep,today,JSON.stringify([{mode:'CASH',amount:50}])]))[0].j;
+ await call('select public.lwb_ledger_cancel($1,$2)',['RECEIPT',r.receipt_id]);
+ const log=(await call('select public.lwb_ledger_edit_log_for($1) j',[[keep,r.receipt_id]]))[0].j;
+ assert.ok(log.filter(x=>x.by==='accounts user').length>=3);
+ await as('manager');
+ await assert.rejects(call('select public.lwb_receipt_lines($1)',[keep]),/Only Admin/);
 });
