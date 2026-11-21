@@ -177,6 +177,24 @@
     const tag=make?'button type="button" data-bzd="'+dk(make)+'" title="Tap or press Enter to see what makes this number"':"div";
     return "<"+tag+' class="bz-k" style="--c:'+color+'"><small>'+esc(label)+"</small><b>"+value+"</b><span>"+foot+"</span></"+tag.split(" ")[0]+">";
   }
+  // Key card: label, big number, a small graphic, and one muted line.
+  function kpiX(color,label,value,foot,make,viz){
+    const tag=make?'button type="button" data-bzd="'+dk(make)+'" title="Tap or press Enter to see what makes this number"':"div";
+    return "<"+tag+' class="bz-k bz-kx" style="--c:'+color+'"><small>'+esc(label)+"</small><b>"+value+"</b>"+(viz?'<div class="bz-viz">'+viz+"</div>":"")+"<span>"+foot+"</span></"+tag.split(" ")[0]+">";
+  }
+  // Trend line of the chart window (no axes), area under it.
+  function spark(vals,color){
+    const n=vals.length;if(n<2)return "";
+    const mx=Math.max(1,...vals),x=i=>(i*100/(n-1)).toFixed(2),y=v=>(26-Math.max(0,v)/mx*23).toFixed(2);
+    const p=vals.map((v,i)=>x(i)+","+y(v)).join(" ");
+    return '<svg class="bz-spk" viewBox="0 0 100 28" preserveAspectRatio="none" aria-hidden="true"><polygon points="0,28 '+p+' 100,28" fill="'+color+'" opacity=".12"/><polyline points="'+p+'" fill="none" stroke="'+color+'" stroke-width="1.8" vector-effect="non-scaling-stroke" stroke-linejoin="round"/></svg>';
+  }
+  // Split bar: [[value, colour, tooltip], ...]
+  function stack(parts){
+    const t=sum(parts,p=>p[0]);if(!(t>0))return "";
+    return '<div class="bz-stk">'+parts.filter(p=>p[0]>0).map(p=>'<i style="width:'+(p[0]/t*100).toFixed(2)+"%;background:"+p[1]+'" title="'+esc(p[2]||"")+'"></i>').join("")+"</div>";
+  }
+  const brandColor=id=>{const c=(CTX.companies||[]).find(x=>x.id===id);return (c&&c.color)||"#9aa5a8"};
   // Column sets
   // Profit also follows the top-bar ON/OFF switch (profit-view.js, localStorage lwbProfitOn): OFF hides Gross / Net Profit,
   // the gross line in the chart, the Profit & Loss card and every margin column (Mohit, 18 Nov 2026).
@@ -286,14 +304,19 @@
     const cashD=M.acc?()=>({title:"Cash + Bank",sub:"Closing cash in hand and bank balances",page:okPage("accounts-dashboard.html"),pageText:"Open Accounts →",
       rows:[{name:"Cash in hand",acct:M.cash==null?"Opening cash not set":"",v:M.cash}].concat((M.acc.banks||[]).filter(b=>b.active!==false).map(b=>({name:b.name,acct:b.account_no||"",v:num(b.balance)}))),
       cols:[{t:"Cash / Bank",v:"name"},{t:"Account",v:"acct"},{t:"Balance ₹",v:"v",money:true,sum:true}]}):null;
+    // Key numbers first (Mohit, 21 Nov 2026): Sales, Purchase, Expenses, Outstanding, Stock Value, each with a small
+    // graphic (trend line / split bar). Gross, Net, Pending delivery and Cash + Bank sit in a slimmer row below.
+    const sv=M.days.map(d=>M.byDay.get(d).s),pv=M.days.map(d=>M.byDay.get(d).p);
+    const bShare=k=>[...M.brand].filter(([,b])=>b[k]>0).sort((a,b)=>b[1][k]-a[1][k]).map(([id,b])=>[b[k],brandColor(id),brandName(id)+" "+lakh(b[k])]);
     const k=[
-      kpi(COL.sales,"Sales",lakh(S.sales),ch==null?esc(rangeTxt):'<em class="'+(ch>=0?"up":"dn")+'">'+(ch>=0?"▲ ":"▼ ")+Math.abs(ch)+"%</em> vs "+(span(R.from,R.to)==1?(R.to===today()?"yesterday":"day before"):"prev "+span(R.from,R.to)+" days"),salesD),
-      kpi(COL.purch,"Purchase",P.ok?lakh(P.total):"—",P.ok?fmt(P.bills.size)+" inward bill"+(P.bills.size==1?"":"s"):"Purchase Register",purchD),
+      kpiX(COL.sales,"Sales",lakh(S.sales),ch==null?esc(rangeTxt):'<em class="'+(ch>=0?"up":"dn")+'">'+(ch>=0?"▲ ":"▼ ")+Math.abs(ch)+"%</em> vs "+(span(R.from,R.to)==1?(R.to===today()?"yesterday":"day before"):"prev "+span(R.from,R.to)+" days"),salesD,spark(sv,COL.sales)),
+      kpiX("#a8902f","Purchase",P.ok?lakh(P.total):"—",P.ok?fmt(P.bills.size)+" inward bill"+(P.bills.size==1?"":"s"):"Purchase Register",purchD,P.ok?spark(pv,"#a8902f"):""),
+      kpiX("#c62828","Expenses",E.ok?lakh(E.total):"—",E.ok?(CTX.allBrands?"":"All brands · ")+(M.ec[0]?esc(M.ec[0][0])+" "+lakh(M.ec[0][1]):"No expense entered"):"Accounts",expD(),E.ok&&E.total?stack(M.ec.map((x,i)=>[x[1],EXC[i],x[0]+" "+lakh(x[1])])):""),
+      kpiX("#b26b00","Outstanding",out?lakh(out.total):"—",out?'<em class="dn">'+lakh(out.over)+"</em> "+(out.brand?"past credit days":"over 30 days"):"Billing & Outstanding",outD,out&&out.total>0?stack([[out.over,"#c62828","Overdue "+lakh(out.over)],[Math.max(0,out.total-out.over),"#e9b949","In credit days "+lakh(Math.max(0,out.total-out.over))]]):""),
+      kpiX("#1d5fbf","Stock Value",SV.ok?lakh(SV.total):"—",short?'<em class="dn">'+fmt(short)+" SKU"+(short==1?"":"s")+" short</em>":"Godown stock × landing",stockD,SV.ok&&SV.total>0?stack(bShare("stock")):"")];
+    const k2=[
       gp&&kpi(COL.gp,"Gross Profit",lakh(S.gp),gpPct+" margin"+(S.missing?" · "+fmt(S.missing)+" lines no landing":""),gpD),
-      kpi("#c62828","Expenses",E.ok?lakh(E.total):"—",E.ok?(CTX.allBrands?"":"All brands · ")+(M.ec[0]?esc(M.ec[0][0])+" "+lakh(M.ec[0][1]):"No expense entered"):"Accounts",expD()),
       gp&&kpi(net>=0?COL.gp:"#c62828","Net Profit",E.ok?lakh(net):"—",E.ok?'<em class="'+(net>=0?"up":"dn")+'">'+pctTxt(net,S.known)+"</em> of sales":"Needs Accounts",netD),
-      kpi("#b26b00","Outstanding",out?lakh(out.total):"—",out?'<em class="dn">'+lakh(out.over)+"</em> "+(out.brand?"past credit days":"over 30 days"):"Billing & Outstanding",outD),
-      kpi("#1d5fbf","Stock Value",SV.ok?lakh(SV.total):"—",short?fmt(short)+" SKU"+(short==1?"":"s")+" short":"Godown stock × landing",stockD),
       kpi("#7a3fb0","Pending Delivery",pend?fmt(pend.count)+" PO"+(pend.count==1?"":"s"):"—",pend?'<em class="dn">'+lakh(pend.amount)+"</em>"+(pend.oldest?" · since "+dm(pend.oldest):" to deliver"):"PO / Sales",pend&&pend.list),
       kpi(COL.sales,"Cash + Bank",M.acc?lakh(num(M.cash)+M.bank):"—",M.acc?"Cash "+(M.cash==null?"not set":lakh(M.cash))+" · Bank "+lakh(M.bank):"Accounts",cashD)].filter(Boolean);
     // P&L (every row opens its list)
@@ -312,6 +335,8 @@
     const brH='<table class="bz-t"><thead><tr><th>Brand</th><th class="n">Sales</th><th class="n">Qty</th><th class="n bz-hm">Purchase</th>'+(gp?'<th class="n bz-hs">Gross</th><th class="n">Margin</th>':"")+''+(hasDue?'<th class="n bz-hm">To collect</th>':"")+'<th class="n bz-hm">Stock</th></tr></thead><tbody>'+
       rows.map(({c,b})=>{const m=b.known>0?b.gp/b.known*100:null;return '<tr'+da(()=>skuList(c.name,"SKU-wise"+rt+(due(c.id)?" · to collect "+lakh(due(c.id)):""),M,c.id))+'><td><span class="bz-dot" style="background:'+esc(c.color||"#2362a4")+'"></span><b>'+esc(c.name)+'</b></td><td class="n">'+lakh(b.sales)+'</td><td class="n">'+fmt(b.qty)+" "+esc(b.unit||(c.pack_unit==="BOX"?"IC":"cs"))+'</td><td class="n bz-hm">'+lakh(b.purch)+"</td>"+(gp?'<td class="n bz-hs">'+lakh(b.gp)+'</td><td class="n">'+(m==null?"—":'<span class="bz-pill '+(m<0?"r":m<4?"a":"g")+'">'+(Math.round(m*10)/10)+"%</span>")+"</td>":"")+(hasDue?'<td class="n bz-hm">'+(due(c.id)==null?"—":lakh(due(c.id)))+"</td>":"")+'<td class="n bz-hm">'+lakh(b.stock)+"</td></tr>"}).join("")+
       '</tbody><tfoot><tr'+da(()=>skuList("All brands","SKU-wise"+rt,M,undefined))+'><td>Total</td><td class="n">'+lakh(S.sales)+'</td><td class="n">—</td><td class="n bz-hm">'+lakh(P.total)+"</td>"+(gp?'<td class="n bz-hs">'+lakh(S.gp)+'</td><td class="n">'+gpPct+"</td>":"")+(hasDue?'<td class="n bz-hm">'+lakh(sum(rows,r=>due(r.c.id)))+"</td>":"")+'<td class="n bz-hm">'+lakh(SV.total)+"</td></tr></tfoot></table>";
+    const bs=bShare("sales"),bsT=sum(bs,x=>x[0]);
+    const brShare=bs.length?stack(bs)+'<div class="bz-stl">'+bs.map(x=>'<span><i style="background:'+x[1]+'"></i>'+esc(x[2].replace(/ ₹.*$/,""))+" <b>"+Math.round(x[0]/bsT*100)+"%</b></span>").join("")+"</div>":"";
     // Expenses
     const exH=E.ok?(E.total?'<div class="bz-ex">'+donut(M.ec.map(x=>x[1]),EXC,[lakh(E.total).replace(" L","L"),"total"])+'<div class="bz-exl">'+M.ec.map((x,i)=>'<div'+da(expD(x[0]==="Other"&&restCats.size?"Other heads":x[0],E.lines.filter(l=>x[0]==="Other"&&restCats.size?restCats.has(l.cat):l.cat===x[0])))+'><span><span class="bz-dot" style="background:'+EXC[i]+'"></span>'+esc(x[0])+"</span><b>"+rs(x[1])+"</b></div>").join("")+"</div></div>":'<div class="bz-empty">No expense entered in Accounts for '+esc(rangeTxt)+".</div>")
       :'<div class="bz-empty">Expenses are read from the Accounts Dashboard (Admin / Accounts).</div>';
@@ -324,13 +349,14 @@
     const tday=today();
     const cus=R.key==="custom"?'<span class="bz-cus"><label>From <input type="date" id="bzFrom" value="'+R.from+'" max="'+tday+'" min="2020-01-01"></label><label>To <input type="date" id="bzTo" value="'+R.to+'" min="'+R.from+'" max="'+tday+'"></label></span>':"";
     EL.innerHTML='<div class="bz-hd"><h2>Business Overview</h2>'+(window.LWBPeriod?"":seg+cus)+(window.LWBPeriod||!cus?'<span class="bz-rg">'+esc(rangeTxt)+"</span>":"")+'<button type="button" class="erp-i" aria-label="Info" title="Info" data-tip="Sales = SKU qty × PO rate by order date (cancelled not counted). Gross profit = (rate − landing) × qty; landing from Rate &amp; Scheme (Coca-Cola) or Rajnigandha Rate List. Purchase = Goods Inward invoice total by received date. Expenses = Accounts money-out entries, without Supplier payment, Contra (bank transfer), Asset purchase and GST / Tax paid. Stock value = godown stock × landing.">i</button></div>'+
-      '<div class="bz-kpis'+(gp?"":" bz-k7")+'">'+k.join("")+"</div>"+
-      '<div class="bz-g '+(gp?"bz-r2":"bz-r1")+'"><section class="bz-c"><h3>Sales · Purchase'+(gp?" · Gross Profit":"")+'<span class="bz-leg"><span><i style="background:'+COL.sales+'"></i>Sales</span><span><i style="background:'+COL.purch+'"></i>Purchase</span>'+(gp?'<span><i style="background:'+COL.gp+'"></i>Gross profit ×10</span>':"")+'</span></h3><div class="bz-chart" id="bzChart"></div></section>'+
-      (gp?'<section class="bz-c"><h3>Profit &amp; Loss<span class="bz-r">'+esc(rangeTxt)+"</span></h3>"+plH+"</section>":"")+"</div>"+
-      '<div class="bz-g bz-r3"><section class="bz-c"><h3>Brand-wise<span class="bz-r">qty in own unit</span></h3>'+brH+"</section>"+
-      '<section class="bz-c"><h3>Expenses<span class="bz-r">'+(!CTX.can||CTX.can("accounts-dashboard.html")?'<a href="accounts-dashboard.html">Accounts →</a>':"")+'</span></h3>'+exH+"</section></div>"+
+      '<div class="bz-kpis bz-k5">'+k.join("")+"</div>"+
+      '<div class="bz-kpis bz-k4">'+k2.join("")+"</div>"+
+      '<div class="bz-g bz-r2"><section class="bz-c"><h3>Sales trend<span class="bz-leg"><span><i style="background:'+COL.sales+'"></i>Sales</span><span><i style="background:'+COL.purch+'"></i>Purchase</span>'+(gp?'<span><i style="background:'+COL.gp+'"></i>Gross profit ×10</span>':"")+'</span></h3><div class="bz-chart" id="bzChart"></div></section>'+
+      '<section class="bz-c"><h3>Expenses<span class="bz-r">'+esc(rangeTxt)+(!CTX.can||CTX.can("accounts-dashboard.html")?' · <a href="accounts-dashboard.html">Accounts →</a>':"")+'</span></h3>'+exH+"</section></div>"+
+      '<div class="bz-g bz-r3"><section class="bz-c"><h3>Brand-wise<span class="bz-r">sales share · qty in own unit</span></h3>'+brShare+brH+"</section>"+
+      (gp?'<section class="bz-c"><h3>Profit &amp; Loss<span class="bz-r">'+esc(rangeTxt)+"</span></h3>"+plH+"</section>":'<section class="bz-c"><h3>Needs attention</h3><div class="bz-al">'+(CTX.alerts||'<div class="bz-empty">✓ No alerts right now.</div>')+"</div></section>")+"</div>"+
       '<div class="bz-g bz-r3"><section class="bz-c"><h3>Top SKUs<span class="bz-r">sales · '+(gp?"margin · ":"")+'stock days</span></h3>'+skH+"</section>"+
-      '<section class="bz-c"><h3>Needs attention</h3><div class="bz-al">'+(CTX.alerts||'<div class="bz-empty">✓ No alerts right now.</div>')+"</div></section></div>";
+      (gp?'<section class="bz-c"><h3>Needs attention</h3><div class="bz-al">'+(CTX.alerts||'<div class="bz-empty">✓ No alerts right now.</div>')+"</div></section>":"")+"</div>";
     const draw=()=>{const c=EL.querySelector("#bzChart");if(!c)return;
       lineChart(c,M.days,[{t:"Sales",c:COL.sales,v:M.days.map(d=>M.byDay.get(d).s),raw:M.days.map(d=>M.byDay.get(d).s)},
         {t:"Purchase",c:COL.purch,v:M.days.map(d=>M.byDay.get(d).p),raw:M.days.map(d=>M.byDay.get(d).p)},
