@@ -53,8 +53,8 @@ self.addEventListener('push',event=>{
   await self.registration.showNotification(String(p.title||'Luxury Wrist Brand').slice(0,120),{
    body:String(p.body||'Open the ERP app to view this update.').slice(0,260),
    icon:'/app-icon-192.png',badge:'/app-icon-192.png',tag:String(p.tag||'lwb-update'),
-   // Siren: long SOS-style buzz, stays on screen until tapped, buzzes again for every ring.
-   vibrate:siren?[900,250,900,250,900,250,900,250,900,250,900]:[200,100,200],
+   // Siren: strong SOS-style buzz (~12 s), stays on screen until tapped, buzzes again for every ring.
+   vibrate:siren?[1000,200,1000,200,1000,200,300,150,300,150,300,600,1000,200,1000,200,1000,200,300,150,300,150,300]:[200,100,200],
    requireInteraction:siren,silent:false,
    data:{url:routeAllowed(p.url),user_id:p.user_id},renotify:siren
   });
