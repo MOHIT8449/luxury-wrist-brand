@@ -10,7 +10,18 @@
 (function(){
   if(window.LWBSiren)return;
   const esc=s=>String(s==null?"":s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
-  let db=null,me=null,timer=0,box=null,cur=null,ctx=null,nodes=null,stopAt=0,buzz=0,skip=new Set();
+  let db=null,me=null,timer=0,box=null,cur=null,ctx=null,nodes=null,stopAt=0,buzz=0,vibeEnd=0,skip=new Set();
+  // 📳 Strong SOS-style buzz (Mohit 22 Nov: a muted phone must still be felt). Runs until Done / Later
+  // (max 5 min), also when the siren sound is muted. Android only: iPhone browsers have no vibration API.
+  const VIBE=[1000,200,1000,200,1000,200,300,150,300,150,300,600];
+  const VIBE_MS=VIBE.reduce((a,b)=>a+b,0);
+  function startVibe(){
+    if(!navigator.vibrate||!box)return;
+    vibeEnd=Date.now()+300000;
+    const v=()=>{if(!box||Date.now()>vibeEnd){stopVibe();return}try{navigator.vibrate(VIBE)}catch(e){}};
+    clearInterval(buzz);v();buzz=setInterval(v,VIBE_MS+100);
+  }
+  function stopVibe(){clearInterval(buzz);buzz=0;try{navigator.vibrate&&navigator.vibrate(0)}catch(e){}}
 
   const css=`
   .lsr{position:fixed;inset:0;z-index:2147483000;display:flex;align-items:center;justify-content:center;padding:16px;box-sizing:border-box;
@@ -68,12 +79,11 @@
       o1.connect(g);o2.connect(g2);g2.connect(g);g.connect(out);out.connect(ctx.destination);
       o1.start();o2.start();o1.stop(t0+60);o2.stop(t0+60);
       nodes={o1,o2,g};stopAt=Date.now()+60000;
-      if(navigator.vibrate){const v=()=>{try{navigator.vibrate([900,250,900,250,900])}catch(e){}};v();clearInterval(buzz);buzz=setInterval(()=>{if(Date.now()>stopAt)clearInterval(buzz);else v()},3500)}
+      if(!buzz)startVibe();
       setTimeout(()=>{if(box)box.classList.toggle("locked",ctx.state!=="running")},250);
     }catch(e){if(box)box.classList.add("locked")}
   }
   function stopSound(keepCtx){
-    clearInterval(buzz);try{navigator.vibrate&&navigator.vibrate(0)}catch(e){}
     if(nodes){try{nodes.g.gain.cancelScheduledValues(0);nodes.o1.stop();nodes.o2.stop()}catch(e){}nodes=null}
     if(!keepCtx&&box){const m=box.querySelector(".lsr-mute");if(m)m.textContent="🔊 Sound"}
   }
@@ -86,20 +96,20 @@
     box=document.createElement("div");box.className="lsr";box.setAttribute("role","alertdialog");box.setAttribute("aria-label","Urgent task");
     const by=esc(t.assigned_by_name||"Admin")+(t.assigned_by_role?" ("+esc(t.assigned_by_role)+")":"");
     const every=t.every_min||20;
-    box.innerHTML='<div class="lsr-card"><div class="lsr-top"><span class="lsr-ic">🚨</span><div><b>URGENT TASK</b><small>'+(opt.demo?"DEMO · how it rings on staff phones":"Ring "+(t.siren_count||1)+" · rings every "+every+" min till done")+'</small></div>'+
+    box.innerHTML='<div class="lsr-card"><div class="lsr-top"><span class="lsr-ic">🚨</span><div><b>URGENT TASK</b><small>'+(opt.demo?"DEMO · how it rings on staff phones":"Ring "+(t.siren_count||1)+" · siren + vibration every "+every+" min till done")+'</small></div>'+
       '<button type="button" class="lsr-mute" data-s="mute">🔇 Mute</button></div><div class="lsr-body">'+
       '<p class="lsr-t">'+esc(t.title)+"</p>"+(t.details?'<p class="lsr-d">'+esc(t.details)+"</p>":"")+
       '<div class="lsr-m"><span class="r">TSK-'+esc(t.id)+'</span><span>From '+by+"</span>"+(t.due_date?"<span>Due "+esc(window.LWBDate?LWBDate.d(t.due_date):t.due_date)+"</span>":"")+"</div>"+
-      '<div class="lsr-tap">🔊 Tap anywhere to sound the siren</div>'+
+      '<div class="lsr-tap">🔊📳 Tap anywhere to start the siren + vibration</div>'+
       '<div class="lsr-btns"><button type="button" class="lsr-done" data-s="done">✅ Done</button><button type="button" class="lsr-later" data-s="later" title="Hide now, ring again in '+every+' min">⏰ Later '+every+"m</button>"+
       (opt.demo?"":'<button type="button" class="lsr-open" data-s="open" title="Open task">Open</button>')+"</div>"+
-      '<div class="lsr-foot">'+(opt.demo?'Demo only, no task is changed. <button type="button" data-s="phone">📱 Send a demo siren to my phone</button>':"Rings only 9 AM - 8 PM. Stops when the task is Done.")+"</div></div></div>";
+      '<div class="lsr-foot">'+(opt.demo?'📳 Vibration keeps going even on Mute. Demo only, no task is changed. <button type="button" data-s="phone">📱 Send a demo siren to my phone</button>':"📳 Vibrates even when muted. Rings only 9 AM - 8 PM. Stops when Done.")+"</div></div></div>";
     document.body.appendChild(box);
-    box.addEventListener("pointerdown",()=>{if(ctx&&ctx.state!=="running"){ctx.resume().then(()=>{box&&box.classList.remove("locked")}).catch(()=>{})}},true);
+    box.addEventListener("pointerdown",()=>{if(!buzz)startVibe();if(ctx&&ctx.state!=="running"){ctx.resume().then(()=>{box&&box.classList.remove("locked")}).catch(()=>{})}},true);
     box.addEventListener("click",e=>{const b=e.target.closest("[data-s]");if(b)act(b,opt)});
     startSound();
   }
-  function hide(){stopSound();if(box){box.remove();box=null}cur=null}
+  function hide(){stopSound();stopVibe();if(box){box.remove();box=null}cur=null}
   async function act(b,opt){
     const s=b.dataset.s,t=cur;if(!t)return;
     if(s==="mute"){if(nodes){stopSound();b.textContent="🔊 Sound"}else{startSound();b.textContent="🔇 Mute"}return}
