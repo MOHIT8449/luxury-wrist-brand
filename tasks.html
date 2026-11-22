@@ -12,7 +12,12 @@
   <script src="master-popup.js"></script>
   <script src="sales-common.js"></script>
   <style>
-    .tk-new{margin-bottom:14px;height:44px;font-size:15px}
+    .tk-new{height:44px;font-size:15px}
+    .tk-top{display:flex;gap:8px;margin-bottom:14px}
+    .tk-demo{height:44px;font-size:14px;background:#fff;color:#c62828;border:1.5px solid #f3c2c2}
+    .tk-siren{display:inline-flex;align-items:center;gap:3px;background:#c62828;color:#fff;border-radius:10px;padding:1px 8px;font-size:11.5px;font-weight:800;white-space:nowrap}
+    .tk-siren.off{background:#eef0f3;color:#6b7480;font-weight:600}
+    .tk-urgent small{display:block;font-weight:500;color:var(--erp-muted);font-size:11.5px}
     .tk-form{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
     .tk-form label.lb{display:block;font-size:12px;font-weight:600;color:#4b5763;margin-bottom:4px}
     .tk-form input[type=text],.tk-form input[type=date],.tk-form input[type=search],.tk-form textarea{width:100%;box-sizing:border-box;height:42px;border:1.5px solid var(--erp-line);border-radius:6px;padding:0 10px;font:inherit;font-size:16px;background:#fff}
@@ -114,7 +119,7 @@
     }
     @media(max-width:560px){
       .tk-form{grid-template-columns:1fr}.tk-urgent{margin-top:0}
-      .tk-new{width:100%}
+      .tk-new{flex:1}
       .tk-head{grid-template-columns:auto 1fr}.tk-head .badges{grid-column:2;justify-content:flex-start}
       .tk-btns .sl-btn{flex:1 1 auto;height:40px}
       .tk-actions .sl-btn{flex:1}
@@ -127,7 +132,7 @@
     <div class="erp-pagehead"><h1>✅ Tasks</h1><span class="grow"></span><span class="erp-badge blue" id="who"></span></div>
     <p class="sl-sub" id="sub"></p>
 
-    <button type="button" class="sl-btn tk-new" id="newBtn">+ Give a Task</button>
+    <div class="tk-top"><button type="button" class="sl-btn tk-new" id="newBtn">+ Give a Task</button><button type="button" class="sl-btn tk-demo" id="sirenDemo" hidden>🚨 Siren demo</button></div>
 
     <section class="erp-card" id="formCard" hidden style="margin-bottom:14px">
       <div class="erp-card-head"><h2>Give a Task</h2><button type="button" class="sl-btn ghost small" id="cancel">Close</button></div>
@@ -138,7 +143,7 @@
           <label class="lb" for="f_due">Due date *</label><input type="date" id="f_due" required>
           <div class="tk-due" id="dueChips"></div>
         </div>
-        <div><label class="tk-urgent"><input type="checkbox" id="f_urgent"> Urgent</label></div>
+        <div><label class="tk-urgent"><input type="checkbox" id="f_urgent"><span>🚨 Urgent<small>Siren on the phone every 20 min (9 AM - 8 PM) till done</small></span></label></div>
         <div class="wide">
           <label class="lb" for="f_find">Give to * <small style="font-weight:400;color:var(--erp-muted)" id="chainNote"></small></label>
           <input type="search" id="f_find" placeholder="Search name" style="margin-bottom:8px">
@@ -188,6 +193,8 @@
       if(d===-1)return '<span class="erp-badge blue">Due tomorrow</span>';
       return '<span class="erp-badge">Due '+esc(LWBDate.d(x.due_date))+"</span>";
     }
+    // 🚨 Urgent task siren (lwb_task_siren_setup.sql): rings every 20 min till done.
+    const sirenBadge=x=>!pending(x)||(!x.siren&&!(x.siren_count>0))?"":x.siren?'<span class="tk-siren" title="Siren rings every 20 min (9 AM - 8 PM) till done">🚨 Siren'+(x.siren_count?" · rang "+x.siren_count+"×":"")+"</span>":'<span class="tk-siren off">🔕 Siren off</span>';
     const STATE={OPEN:["To do",""],IN_PROGRESS:["Started","blue"],DONE:["Done","green"],CANCELLED:["Cancelled",""]};
 
     // ---------- Give a task ----------
@@ -358,6 +365,7 @@
       let status=p?(d>0?'<span class="erp-badge red">Overdue '+d+"d</span>":d===0?'<span class="erp-badge amber">Due today</span>':'<span class="erp-badge blue">'+(x.status==="IN_PROGRESS"?"Started":"Pending")+"</span>"):'<span class="erp-badge '+st[1]+'">'+st[0]+"</span>";
       if(p&&x.status==="IN_PROGRESS"&&d>=0)status+="<small>Started</small>";
       if(p&&x.priority==="URGENT")status+=' <span class="erp-badge red">Urgent</span>';
+      if(p&&sirenBadge(x))status+="<small>"+sirenBadge(x)+(x.siren_seen_at?" seen "+esc(when(x.siren_seen_at)):"")+"</small>";
       const since=p?'<span class="age'+(d>0?" late":"")+'">'+age(x.created_at)+"</span><small>given "+esc(LWBDate.d(S.istDay(x.created_at)))+"</small>"
         :(x.status==="DONE"?"Done "+esc(LWBDate.d(S.istDay(x.done_at)))+"<small>took "+age(x.created_at).replace("Today","same day")+"</small>":"—");
       let h='<tr class="r'+cls+'" data-open="'+x.id+'" tabindex="0"><td class="c">'+(p?'<input type="checkbox" class="ck" data-sel="'+x.id+'" aria-label="Select TSK-'+x.id+'"'+(sel.has(x.id)?" checked":"")+">":"")+'</td><td class="t"><b>'+esc(x.title)+"</b>"+(isSys(x)?'<span class="ta-sys">'+sysName(x)+"</span>":"")+"<small>TSK-"+x.id+(x.update_count?" · 💬 "+x.update_count:"")+"</small></td>"+
@@ -375,7 +383,7 @@
       const by=byMe(x)?"you":esc(x.assigned_by_name||"Staff")+" ("+esc(roleName(x.assigned_by_role))+")";
       let h='<div class="tk-item'+cls+'" id="t'+x.id+'"><div class="tk-head" data-open="'+x.id+'" role="button" tabindex="0" aria-expanded="'+isOpen+'">'+
         '<span class="ic">'+(x.status==="DONE"?"✅":x.status==="CANCELLED"?"✖":x.status==="IN_PROGRESS"?"⏳":"📋")+"</span><b>"+esc(x.title)+'</b><span class="badges">'+
-        (x.priority==="URGENT"&&pending(x)?'<span class="erp-badge red">Urgent</span>':"")+dueBadge(x)+
+        (x.priority==="URGENT"&&pending(x)?'<span class="erp-badge red">Urgent</span>':"")+sirenBadge(x)+dueBadge(x)+
         (x.status!=="OPEN"?'<span class="erp-badge '+st[1]+'">'+st[0]+"</span>":"")+"</span>"+
         '<span class="tk-meta">TSK-'+x.id+" · "+(toMe(x)?"From "+by:"To "+to+(byMe(x)?"":" · from "+by))+" · Due "+esc(LWBDate.d(x.due_date))+" · "+when(x.created_at)+(x.update_count?" · 💬 "+x.update_count:"")+"</span></div>";
       if(isOpen)h+=body(x);
@@ -403,6 +411,7 @@
       if(giver(x)){
         if(pending(x)){
           h+='<input type="date" id="d'+x.id+'" value="'+esc(x.due_date)+'" min="'+today()+'" aria-label="New due date">'+B("DUE","Change due date",1)+B("CANCELLED","Cancel task",1);
+          if("siren" in x)h+=x.siren?B("SIREN_OFF","🔕 Siren off",1):B("SIREN_ON","🚨 Siren on",1);
         }else h+=B("OPEN","↺ Open again",1);
       }
       return h+"</div></div></div>";
@@ -410,6 +419,10 @@
     async function act(b){
       const id=Number(b.dataset.id),x=rows.find(r=>r.id===id),a=b.dataset.act,box=el("n"+id),note=box?box.value.trim():"";
       let status=a,due=null;
+      if(a==="SIREN_ON"||a==="SIREN_OFF"){
+        b.disabled=true;const r=await client.rpc("lwb_task_siren_set",{p_id:id,p_on:a==="SIREN_ON"});b.disabled=false;
+        if(r.error){await alert("Could not change the siren: "+(/lwb_task_siren/.test(r.error.message)?"Run lwb_task_siren_setup.sql in Supabase first.":r.error.message));return}
+        ERPShell.toast(a==="SIREN_ON"?"🚨 Siren on: rings every 20 min till done.":"🔕 Siren off for TSK-"+id+".");await load();return}
       if(a==="NOTE"){status=null;if(!note){await alert("Please write a note.");box&&box.focus();return}}
       if(a==="DUE"){status=null;due=el("d"+id).value;if(!due||due===x.due_date){await alert("Please pick a new due date.");return}}
       if(a==="DONE"&&!await confirm("Mark TSK-"+id+" as done?\n\n"+(note?"Your note is sent with it.":"Tip: write what was done, so "+(toMe(x)?(x.assigned_by_name||"the giver"):"everyone")+" knows."),{ok:"Yes, done"}))return;
@@ -434,7 +447,10 @@
       el("sub").textContent=rank===1?"Give a task to anyone. You see every task and its progress; the person gets a 🔔 at once."
         :rank<5?"Give a task to your level or below. You also see the tasks of everyone below you (Team).":"Your tasks with due date. Mark them done; the giver gets a 🔔. You can also give a task to your own level.";
       el("chainNote").textContent="Admin › Sales Head › Godown Manager › Accounts › Salesman / Driver / Transport. You can give to your level or below.";
-      const qs=new URLSearchParams(location.search),qid=Number(qs.get("id"));
+      const qs=new URLSearchParams(location.search),qid=Number(qs.get("id")||qs.get("siren"));
+      // Admin: hear and see the siren alarm (task-siren.js) with a sample task.
+      if(isAdmin()){el("sirenDemo").hidden=false;el("sirenDemo").onclick=()=>{if(window.LWBSiren)LWBSiren.demo();else ERPShell.toast("Siren is loading, try again.")}}
+      document.addEventListener("lwb:task-changed",()=>load());
       if(qs.get("tab")==="ALL"&&me.realRole==="admin")tab="ALL";
       document.addEventListener("click",e=>{
         const c=e.target.closest("[data-due]");if(c){el("f_due").value=addDays(Number(c.dataset.due));drawDue();return}

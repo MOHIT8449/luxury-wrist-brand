@@ -22,6 +22,14 @@ test('business updates link to their own order and preserve recipient identity',
  assert.equal(safeRoute('DELIVERY_RETURN_PENDING','order-3','accounts'),'/driver-returns.html?order=order-3');
  assert.equal(safeRoute('UNKNOWN',null,'admin'),'/dashboard.html');
 });
+test('urgent task siren push opens the alarm for that task and keeps one banner per task',async()=>{
+ const {messageFor}=await logic();
+ const p=messageFor({id:91,user_id:'owner',notification_type:'TASK_SIREN',title:'🚨 URGENT task · ring 2: Send truck',message:'TSK-42 · Send truck · by Admin'},'sales');
+ assert.equal(p.siren,true);assert.equal(p.url,'/tasks.html?siren=42');assert.equal(p.tag,'lwb-siren-42');assert.equal(p.title,'🚨 URGENT task · ring 2: Send truck');
+ const d=messageFor({id:92,user_id:'owner',notification_type:'TASK_SIREN',title:'🚨 URGENT task · DEMO siren',message:'TSK-DEMO · demo'},'admin');
+ assert.equal(d.url,'/tasks.html?siren=demo');
+ assert.equal(messageFor({id:93,user_id:'o',notification_type:'TASK_NEW',message:'TSK-1 · x'},'admin').siren,undefined);
+});
 test('actual Web Push encryption is decryptable by the subscribed browser key',()=>{
  const receiver=crypto.createECDH('prime256v1');receiver.generateKeys();const auth=crypto.randomBytes(16);
  const sub={endpoint:'https://fcm.googleapis.com/wp/test-only',keys:{p256dh:receiver.getPublicKey().toString('base64url'),auth:auth.toString('base64url')}};
