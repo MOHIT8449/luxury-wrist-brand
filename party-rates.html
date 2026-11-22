@@ -87,6 +87,7 @@
     .roi-all.on{background:#13824a;border-color:#13824a;color:#fff}
     .pr-card.roi-on{border-color:#13824a;box-shadow:inset 4px 0 0 #13824a}
     .pr-list li.roi{background:#effaf3;box-shadow:inset 4px 0 0 #13824a;padding-left:10px}.pr-list li.roi:hover{background:#e3f5ea}
+    .pr-in.dup,.pr-in.dupph{border-color:#c8102e;background:#fff5f5}.pr-in.dupph::placeholder{color:#c8102e;font-weight:600;font-size:12.5px}
     .pr-roi.no{border-style:dashed;cursor:default;color:#9aa4b2}
     .roi-btn{cursor:pointer;font-weight:700;color:#13824a;text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
     .st.ROI{background:#13824a;color:#fff}.st.RECHECK{background:#fff1e0;color:#b45309;border:1px solid #f5c48a}
@@ -109,10 +110,14 @@
     @media(max-width:640px){
       .pr-top{grid-template-columns:minmax(0,1fr) 60px 128px}
       .pr-lines thead{display:none}
-      .pr-lines tr{display:grid;grid-template-columns:22px minmax(0,1fr) 70px 64px auto;gap:3px 6px;align-items:center;padding:6px 0;border-bottom:1px solid #eef1f4}
+      /* Phone (Mohit, 22 Nov 2026: pack name was cut): row 1 = full-width pack name, row 2 = rate + margin, row 3 = ROI / last */
+      .pr-lines tr{display:grid;grid-template-columns:22px minmax(0,1fr) minmax(0,1fr) auto;gap:3px 6px;align-items:center;padding:6px 0;border-bottom:1px solid #eef1f4}
       .pr-lines td{border:0;padding:0!important;width:auto!important;background:none!important}
-      .pr-lines td.act{grid-row:1;grid-column:5}
-      .pr-lines td.last{grid-row:2;grid-column:2/-1;white-space:normal;line-height:1.3}
+      .pr-lines td.no{grid-row:1/3;align-self:start;padding-top:9px!important}
+      .pr-lines td.it{grid-row:1;grid-column:2/4}
+      .pr-lines td.act{grid-row:1;grid-column:4}
+      .pr-lines td.rt{grid-row:2;grid-column:2}.pr-lines td.mg{grid-row:2;grid-column:3}
+      .pr-lines td.last{grid-row:3;grid-column:2/-1;white-space:normal;line-height:1.3}
       .pr-lines td.last small{display:inline;margin-left:4px}
       .pr-row .sl-btn{font-size:12.5px;padding:0 4px}
       .pr-chips{gap:3px;margin-bottom:5px}.pr-chips button{font-size:11.5px;padding:2px 7px}
@@ -215,9 +220,9 @@
     function msg(t,kind){const m=el("msg");m.textContent=t||"";m.className="pr-msg"+(kind?" "+kind:"")}
     function lineRow(it){
       const tr=document.createElement("tr");
-      tr.innerHTML='<td class="no"></td><td><input class="pr-in" data-f="item" list="itemList" maxlength="120" placeholder="e.g. 2.25L" aria-label="Category / pack"></td>'+
-        '<td class="rt"><input class="pr-in" data-f="rate" type="number" min="0" step="0.01" inputmode="decimal" placeholder="₹" aria-label="Rate per case"></td>'+
-        '<td class="mg"><input class="pr-in" data-f="mg" type="number" step="0.5" inputmode="decimal" placeholder="+" aria-label="Margin over landing" title="Margin over landing: rate = landing + margin"></td>'+
+      tr.innerHTML='<td class="no"></td><td class="it"><input class="pr-in" data-f="item" list="itemList" maxlength="120" placeholder="e.g. 2.25L" aria-label="Category / pack"></td>'+
+        '<td class="rt"><input class="pr-in" data-f="rate" type="number" min="0" step="0.01" inputmode="decimal" placeholder="Rate ₹" aria-label="Rate per case"></td>'+
+        '<td class="mg"><input class="pr-in" data-f="mg" type="number" step="0.5" inputmode="decimal" placeholder="± ₹" aria-label="Margin over landing" title="Margin over landing: rate = landing + margin"></td>'+
         '<td class="last"></td><td class="act"><button type="button" class="pr-ib" data-act="hist" aria-label="Past rates" title="Past rates of this party">i</button> <button type="button" class="pr-x" data-act="del" aria-label="Remove line">✕</button></td>';
       tr.querySelector('[data-f=item]').value=it&&it.item||"";
       tr.querySelector('[data-f=rate]').value=it&&it.rate!=null?it.rate:"";
@@ -424,7 +429,23 @@
     el("otype").addEventListener("click",e=>{const b=e.target.closest("button[data-t]");if(b)setType(b.dataset.t)});
     el("odate").addEventListener("change",lockNote);el("vto").addEventListener("change",lockNote);
 
+    // One pack only once in an offer (Mohit, 22 Nov 2026): the list for a line leaves out packs already on other lines,
+    // and a typed / picked pack that is already there is cleared with a message.
+    let allItems=[];
+    function fillItems(tr){
+      const used=new Set(lines().filter(l=>l.tr!==tr&&l.item).map(l=>key(l.item)));
+      el("itemList").replaceChildren(...allItems.filter(([v])=>!used.has(key(v))).map(([v,l])=>{const o=document.createElement("option");o.value=v;o.label=l;return o}));
+    }
+    function dupOf(tr){const v=key(tr.querySelector('[data-f=item]').value);if(!v)return 0;
+      const i=lines().findIndex(l=>l.tr!==tr&&key(l.item)===v);return i<0?0:i+1}
+    el("lines").addEventListener("focusin",e=>{if(e.target.dataset.f==="item")fillItems(e.target.closest("tr"))});
+    el("lines").addEventListener("change",e=>{
+      if(e.target.dataset.f!=="item")return;const tr=e.target.closest("tr"),n=dupOf(tr);
+      if(n){msg(e.target.value.trim().toUpperCase()+" is already on line "+n+". Change its rate there.","bad");e.target.value="";e.target.classList.remove("dup");e.target.classList.add("dupph");e.target.placeholder="Already on line "+n+": pick another";refresh();e.target.focus()}
+    });
     el("lines").addEventListener("input",e=>{
+      if(e.target.dataset.f==="item"){e.target.classList.toggle("dup",!!dupOf(e.target.closest("tr")));
+        if(e.target.classList.contains("dupph")){e.target.classList.remove("dupph");e.target.placeholder="e.g. 2.25L"}}
       const t=e.target;
       if(t.dataset.f==="mg"){const tr=t.closest("tr"),ld=ldOf(tr.querySelector('[data-f=item]').value),r=tr.querySelector('[data-f=rate]');
         if(ld!=null)r.value=t.value.trim()===""?"":String(Math.round(ld+Number(t.value)))}
@@ -539,7 +560,7 @@
             if(Number(p.gr)>0)land.set(key(p.pack_name),Math.round(S.landing(p,st.data,best)*100)/100)});
         }
         const names=new Map();packs.forEach(p=>names.set(key(p.pack_name),[p.pack_name,Number(p.slab3_rate)>0?"List ₹"+money(p.slab3_rate):"Rate List pack"]));
-        el("itemList").replaceChildren(...[...names.values()].map(([v,l])=>{const o=document.createElement("option");o.value=v;o.label=l;return o}));
+        allItems=[...names.values()];fillItems(null);
       }catch(e){}
       refresh();loadList();loadRoi();
     })();
