@@ -20,6 +20,8 @@ const read=f=>readFile(new URL('../../'+f,import.meta.url),'utf8');
 await db.exec(await read('lwb_task_management_setup.sql'));
 const siren=await read('lwb_task_siren_setup.sql');
 await db.exec(siren);await db.exec(siren); // safe to run again
+const native=await read('lwb_task_siren_native_setup.sql');
+await db.exec(native);await db.exec(native);
 async function as(who){await db.query("select set_config('request.jwt.claim.sub',$1,false)",[ids[who]||''])}
 async function call(q,args=[]){await db.exec('SET ROLE authenticated');try{return (await db.query(q,args)).rows}finally{await db.exec('RESET ROLE')}}
 const today=async()=>(await db.query("select to_char(public.lwb_task_today(),'YYYY-MM-DD') d")).rows[0].d;
@@ -102,4 +104,16 @@ test('urgent task due later starts ringing at 9 AM on the due date; reopen resta
   await as('admin');await call("select lwb_task_update($1,'CANCELLED')",[u]);
   await call("select lwb_task_update($1,'OPEN')",[u]);
   assert.equal((await task(u)).siren_next_at.getTime(),(await ist(9,0,2)).getTime());
+});
+
+test('app demo: Admin demo leaves one DEMO ring (id 0) for the phone app; Later clears it', async()=>{
+  await as('admin');await call('select lwb_task_siren_test()');
+  let r=await call('select id,title,siren_count from lwb_task_my_sirens()');
+  const demo=r.find(x=>Number(x.id)===0);
+  assert.ok(demo);assert.match(demo.title,/^DEMO/);
+  await as('head');assert.equal((await call('select count(*)::int n from lwb_task_my_sirens() where id=0'))[0].n,0); // only for the Admin who asked
+  await as('admin');assert.equal((await call('select lwb_task_siren_seen(0) ok'))[0].ok,true);
+  assert.equal((await call('select count(*)::int n from lwb_task_my_sirens() where id=0'))[0].n,0);
+  await db.query("insert into lwb_task_siren_demo values($1, now() - interval '11 minutes')",[ids.admin]);
+  assert.equal((await call('select count(*)::int n from lwb_task_my_sirens() where id=0'))[0].n,0); // old demo: gone
 });
