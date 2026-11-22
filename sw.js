@@ -46,10 +46,17 @@ self.addEventListener('push',event=>{
   let p;try{p=event.data?.json()}catch(e){return}
   const device=await pushStore('get');
   if(!p||!device?.user_id||p.user_id!==device.user_id)return;
+  const siren=p.siren===true;
+  // 🚨 Urgent task siren: an open ERP window rings the siren + full-screen alarm at once (task-siren.js).
+  if(siren){const wins=await self.clients.matchAll({type:'window',includeUncontrolled:true});
+   wins.forEach(w=>{try{w.postMessage({type:'LWB_SIREN',url:routeAllowed(p.url)})}catch(e){}});}
   await self.registration.showNotification(String(p.title||'Luxury Wrist Brand').slice(0,120),{
    body:String(p.body||'Open the ERP app to view this update.').slice(0,260),
    icon:'/app-icon-192.png',badge:'/app-icon-192.png',tag:String(p.tag||'lwb-update'),
-   vibrate:[200,100,200],data:{url:routeAllowed(p.url),user_id:p.user_id},renotify:false
+   // Siren: long SOS-style buzz, stays on screen until tapped, buzzes again for every ring.
+   vibrate:siren?[900,250,900,250,900,250,900,250,900,250,900]:[200,100,200],
+   requireInteraction:siren,silent:false,
+   data:{url:routeAllowed(p.url),user_id:p.user_id},renotify:siren
   });
  })());
 });

@@ -838,6 +838,18 @@
     liveLocation();
     tripRent(role);
     teamChat(role);
+    taskSiren(role);
+  }
+
+  // 🚨 Urgent task siren: full-screen alarm + siren sound on any page when an urgent task rings
+  // (task-siren.js, lwb_task_siren_setup.sql). Until the SQL is run nothing shows.
+  async function taskSiren(role){
+    try{
+      const c=window.__lwbBellClient;if(!c||!role)return;
+      const {data}=await c.auth.getSession();const user=data&&data.session&&data.session.user;if(!user)return;
+      if(!window.LWBSiren)await new Promise((ok,bad)=>{const s=document.createElement("script");s.src="task-siren.js";s.onload=ok;s.onerror=bad;document.head.appendChild(s)});
+      window.LWBSiren.init({db:c,user,role});
+    }catch(e){}
   }
 
   // 🏷 ONE brand picker for the whole site, next to the page name (Mohit, 19 Nov 2026):
