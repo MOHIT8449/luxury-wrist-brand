@@ -706,6 +706,11 @@
     .dlv-h.r {background:#fde8e8;color:#b42318;border-color:#e5645a}
     #ordersArea .c-st .dlv-h {float:right;margin:0 0 0 4px}
     @media (max-width:640px){#ordersArea .c-st .dlv-h {float:none;margin:0 5px 0 0}}
+    /* ROI rate PO (lwb_party_rate_roi_setup.sql, Mohit 22 Nov 2026): a line is on a Party Rate Offer marked ROI */
+    tr.row-roi td {background:#effaf3}
+    tr.row-roi td:first-child {box-shadow:inset 4px 0 0 #13824a}
+    .roi-po {display:inline-block;margin-left:5px;padding:1px 7px;border-radius:9px;background:#13824a;color:#fff;font-size:10.5px;font-weight:700;vertical-align:1px;white-space:nowrap}
+    @media (max-width:640px){tr.row-roi td{background:transparent}tr.row-roi{background:#effaf3!important;box-shadow:inset 4px 0 0 #13824a}tr.row-roi td:first-child{box-shadow:none}}
     tr.row-late td {background:#fff7f7}
     tr.row-late td:first-child {box-shadow:inset 4px 0 0 #b42318}
     tr.row-urgent td:first-child {box-shadow:inset 4px 0 0 #c8102e}
@@ -3482,6 +3487,29 @@ function stepTrack(order, small) {
   return `<div class="po-trk${small ? " sm" : ""}" data-trk="${order.id}" aria-label="Order stage: ${here}">${dots}</div>` +
     (small ? `<small class="trk-now ${css}" data-trk-now="${order.id}">${here}</small>` : "");
 }
+// ROI badge next to the party (Mohit, 22 Nov 2026): this PO has a line on a Party Rate Offer marked ROI (landing − ROI).
+// Admin / Sales Head only (the RPC gives others nothing). roiPo: order id -> {cases, amount}; roiAsked: ids already checked.
+const roiPo = new Map(), roiAsked = new Set();
+function roiBadge(id) {
+  const r = roiPo.get(id);
+  return r ? `<span class="roi-po" title="ROI rate used: ${formatNumber(r.cases)} cs · ROI ₹${formatNumber(r.amount)}">ROI ₹${formatNumber(r.amount)}</span>` : "";
+}
+async function loadRoiPo(pageOrders) {
+  const ids = pageOrders.map(o => o.id).filter(id => id && !roiAsked.has(id));
+  if (!ids.length) return;
+  ids.forEach(id => roiAsked.add(id));
+  try {
+    for (let i = 0; i < ids.length; i += 400) {
+      const r = await db.rpc("lwb_party_roi_orders", { p_ids: ids.slice(i, i + 400) });
+      if (r.error) return;
+      (r.data || []).forEach(x => roiPo.set(x.id, x));
+    }
+  } catch (e) { return; }
+  document.querySelectorAll("#ordersArea [data-roi]").forEach(w => {
+    const id = w.dataset.roi; if (!roiPo.has(id)) return;
+    w.innerHTML = roiBadge(id); const tr = w.closest("tr"); if (tr) tr.classList.add("row-roi");
+  });
+}
 // 🖨 badge next to the PO no.: printed N times; red when the PO lines changed after the last print.
 function printBadge(id) {
   const p = listPrints.get(id);
@@ -4735,7 +4763,7 @@ function renderOrders() {
 
         ${pageOrders.map(order => sugHeadFor(order) + `
 
-          <tr class="po-row ${isLateApproval(order) || isLateDelivery(order) ? "row-late" : orderPriority(order) === "URGENT" ? "row-urgent" : ""}${pickedIds.has(order.id) ? " row-picked" : ""}${order.id === justSavedId ? " row-just-saved" : ""}"
+          <tr class="po-row${roiPo.has(order.id) ? " row-roi" : ""} ${isLateApproval(order) || isLateDelivery(order) ? "row-late" : orderPriority(order) === "URGENT" ? "row-urgent" : ""}${pickedIds.has(order.id) ? " row-picked" : ""}${order.id === justSavedId ? " row-just-saved" : ""}"
             onclick="openRow(event, '${order.id}')" title="Click to open ${VIEW_ONLY ? "" : "and edit "}this PO">
 
             <td class="order-no c-no">
@@ -4749,7 +4777,7 @@ function renderOrders() {
             </td>
 
             <td class="c-cust">
-              ${escapeHtml(order.customer_name || "-")}
+              ${escapeHtml(order.customer_name || "-")}<span class="roi-w" data-roi="${order.id}">${roiBadge(order.id)}</span>
             </td>
 
             <td class="c-sp" data-label="Sales person">
@@ -4807,6 +4835,7 @@ ${CAN_PAY ? `            <td class="c-pay" data-label="Party Due" data-pay="${or
   LWBCol.mark(area.querySelector("tbody"), document.getElementById("searchBox").value);
   loadOrderLines(pageOrders);
   loadListExtras(pageOrders);
+  loadRoiPo(pageOrders);
   if (CAN_PAY) ensurePartyDue();
   renderSelBar();
 

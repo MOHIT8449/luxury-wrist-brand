@@ -97,3 +97,11 @@ test('ROI report: earned on month purchase (no-ROI category left out) vs given t
   assert.equal(r.roi_parties,1);
   await assert.rejects(report('sales',m),/Only Admin or Sales Head/);
 });
+
+test('PO list: orders on an ROI offer line are found; others and non-editors get nothing', async()=>{
+  const a=await order('Kanha',[['Thums Up 250ml',12,395],['Kinley 1L',5,160]]);
+  const b=await order('Shiv',[['Thums Up 250ml',40,410]]);
+  const r=(await run('head','select public.lwb_party_roi_orders($1) r',[[a,b]])).rows[0].r;
+  assert.deepEqual(r.map(x=>[x.id,Number(x.cases),Number(x.amount)]),[[a,12,60]]);
+  assert.deepEqual((await run('sales','select public.lwb_party_roi_orders($1) r',[[a]])).rows[0].r,[]);
+});

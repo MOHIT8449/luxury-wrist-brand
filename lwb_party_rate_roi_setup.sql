@@ -15,6 +15,7 @@
 --   * lwb_party_rate_recheck_done(offer_id)          -> clears the recheck flag of one offer (Admin / Sales Head)
 --   * lwb_party_roi_report(month)  -> ROI earned (month's purchase cases, ROI categories × ₹ / case)
 --                                     against ROI given (cases sold that month on ROI offer lines × ₹ / case), per party
+--   * lwb_party_roi_orders(ids)    -> PO List: orders with a line on an ROI offer (marked green there)
 --   * Trigger on lwb_rate_packs: GR, MEPD %, free bottle, OMS, QPS, case config or list (Slab 3) rate changed
 --     -> every running / later offer line of that pack (pack name or one of its SKUs) is flagged for recheck.
 -- Admin and Sales Head only (lwb_rate_editor()). No order, rate list, stock, bill, ledger or Tally data is changed.
@@ -291,10 +292,42 @@ BEGIN
 END;
 $fn$;
 
+-- PO List (Mohit, 22 Nov 2026): which of these orders have a line on an ROI offer rate -> [{id, cases, amount}].
+-- Not Admin / Sales Head -> [] (no error, the PO list just shows no ROI mark).
+CREATE OR REPLACE FUNCTION public.lwb_party_roi_orders(p_ids uuid[])
+RETURNS jsonb LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = ''
+AS $fn$
+BEGIN
+  IF NOT public.lwb_rate_editor() OR p_ids IS NULL THEN RETURN '[]'::jsonb; END IF;
+  RETURN coalesce((
+    WITH lines AS (
+      SELECT i.id AS item_id, o.id AS order_id, public.lwb_party_rate_key(o.customer_name) AS party_key,
+             upper(btrim(coalesce(i.sku_name, ''))) AS sku_key,
+             timezone('Asia/Kolkata', o.order_date::timestamptz)::date AS d,
+             coalesce(nullif(i.loaded_qty, 0), i.approved_qty, i.ordered_qty, 0)::numeric AS cases
+      FROM public.orders o JOIN public.order_items i ON i.order_id = o.id
+      WHERE o.id = ANY(p_ids[1:500])
+    ), hit AS (
+      SELECT DISTINCT ON (x.item_id) x.order_id, x.cases, l.roi
+      FROM lines x
+      JOIN public.lwb_party_rate_offers ofr ON ofr.party_key = x.party_key AND ofr.status = 'ACTIVE'
+        AND ofr.valid_from <= x.d AND (ofr.offer_type <> 'DATED' OR ofr.valid_to >= x.d)
+        AND (ofr.offer_type <> 'ONE_TIME' OR ofr.used_order_id = x.order_id)
+      JOIN public.lwb_party_rate_offer_lines l ON l.offer_id = ofr.id AND l.roi > 0
+      WHERE l.item_key = x.sku_key
+         OR EXISTS (SELECT 1 FROM public.lwb_rate_pack_skus ps JOIN public.lwb_rate_packs pk ON pk.id = ps.pack_id
+                     WHERE public.lwb_party_rate_key(pk.pack_name) = l.item_key AND upper(btrim(ps.sku_key)) = x.sku_key)
+      ORDER BY x.item_id, ofr.valid_from DESC, ofr.id DESC
+    )
+    SELECT jsonb_agg(jsonb_build_object('id', g.order_id, 'cases', g.cases, 'amount', g.amount))
+    FROM (SELECT h.order_id, round(sum(h.cases), 2) AS cases, round(sum(h.cases * h.roi), 2) AS amount FROM hit h GROUP BY h.order_id) g), '[]'::jsonb);
+END;
+$fn$;
+
 REVOKE ALL ON FUNCTION public.lwb_party_roi_settings_save(numeric, text[]), public.lwb_party_rate_recheck_done(bigint),
-  public.lwb_party_roi_report(date) FROM PUBLIC, anon;
+  public.lwb_party_roi_report(date), public.lwb_party_roi_orders(uuid[]) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.lwb_party_roi_settings_save(numeric, text[]), public.lwb_party_rate_recheck_done(bigint),
-  public.lwb_party_roi_report(date), public.lwb_party_rate_offer_save(jsonb), public.lwb_party_rate_offer_list(integer, text),
+  public.lwb_party_roi_report(date), public.lwb_party_roi_orders(uuid[]), public.lwb_party_rate_offer_save(jsonb), public.lwb_party_rate_offer_list(integer, text),
   public.lwb_party_rate_last(text) TO authenticated;
 
 COMMIT;

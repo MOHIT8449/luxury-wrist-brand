@@ -84,6 +84,9 @@
     /* ROI per line + report + rate-changed recheck (lwb_party_rate_roi_setup.sql, Mohit 22 Nov 2026) */
     .pr-roi{height:22px;border:1.5px solid #cbd5e1;background:#fff;color:#64748b;border-radius:11px;font:inherit;font-size:11px;font-weight:700;padding:0 7px;cursor:pointer;vertical-align:middle;margin-right:4px;white-space:nowrap}
     .pr-roi.on{background:#13824a;border-color:#13824a;color:#fff}
+    .roi-all.on{background:#13824a;border-color:#13824a;color:#fff}
+    .pr-card.roi-on{border-color:#13824a;box-shadow:inset 4px 0 0 #13824a}
+    .pr-list li.roi{background:#effaf3;box-shadow:inset 4px 0 0 #13824a;padding-left:10px}.pr-list li.roi:hover{background:#e3f5ea}
     .pr-roi.no{border-style:dashed;cursor:default;color:#9aa4b2}
     .roi-btn{cursor:pointer;font-weight:700;color:#13824a;text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
     .st.ROI{background:#13824a;color:#fff}.st.RECHECK{background:#fff1e0;color:#b45309;border:1px solid #f5c48a}
@@ -121,7 +124,7 @@
 <body>
   <div id="loading" class="status">Checking account access...</div>
   <main id="page" class="erp-main" hidden>
-    <div class="erp-pagehead"><h1>Party Rate Offer<button type="button" class="erp-i" aria-label="Info" title="Info" data-tip="Like making a PO: pick the party, add each category / pack with the rate per case, Save. The rate is kept as given to that party. Tap (i) on a line to see what rate this party got before. ROI: tap ROI on a line when the rate uses the company ROI (landing − ₹5); it turns on by itself when the rate is below landing. ROI report = ROI earned on the month's purchase vs ROI given to parties. When a pack's rate changes in Rate & Scheme, its running offers show ⚠ Recheck. Image / WhatsApp sends only party name, category and rate. Offer type: One-time = only the party's next order; Continuous = every order from the start date till cancelled; Date range = every order from start to end date. On those orders the rate fills by itself and the salesman cannot change it; Admin / Sales Head can.">i</button></h1></div>
+    <div class="erp-pagehead"><h1>Party Rate Offer<button type="button" class="erp-i" aria-label="Info" title="Info" data-tip="Like making a PO: pick the party, add each category / pack with the rate per case, Save. The rate is kept as given to that party. Tap (i) on a line to see what rate this party got before. ROI: tap ROI on a line when the rate uses the company ROI (landing − ₹5); only marked lines count as ROI (normal rates are landing + margin). Offers and POs with ROI show in green. ROI report = ROI earned on the month's purchase vs ROI given to parties. When a pack's rate changes in Rate & Scheme, its running offers show ⚠ Recheck. Image / WhatsApp sends only party name, category and rate. Offer type: One-time = only the party's next order; Continuous = every order from the start date till cancelled; Date range = every order from start to end date. On those orders the rate fills by itself and the salesman cannot change it; Admin / Sales Head can.">i</button></h1></div>
     <div id="status" class="sl-msg" hidden></div>
     <div class="pr-wrap">
       <section class="pr-card" aria-labelledby="newT">
@@ -145,6 +148,7 @@
         <div class="pr-add">
           <button type="button" class="sl-btn ghost small" id="addLine">+ Add item</button>
           <button type="button" class="sl-btn ghost small" id="useLast" disabled>↺ Last rates of this party</button>
+          <button type="button" class="sl-btn ghost small roi-all" id="roiAll" title="Mark every item of this offer as ROI rate (landing − ROI)">ROI rate for this party</button>
           <span id="cnt" class="mut"></span>
         </div>
         <div class="pr-row">
@@ -201,14 +205,13 @@
     let me=null,land=new Map(),packs=[],offers=[],last=new Map(),lastParty="",saved=null;
 
     // ROI (Mohit, 22 Nov 2026): company ROI ₹ / case on every category except the "no ROI" ones (Admin sets them).
-    // A line is marked ROI when its rate uses that ROI (landing − ₹5); it turns on by itself when the rate is below landing.
+    // ROI is used only when marked by hand (Mohit, 22 Nov 2026: normal rates are landing + margin, no ROI): tap ROI on a
+    // line, or "ROI rate for this party" for every line.
     let roiSet={roi:5,skip:new Set()},skuCat=new Map(),packCats=new Map();
     const roi=()=>Number(roiSet.roi)||0;
     const itemCats=item=>packCats.get(key(item))||(skuCat.has(key(item))?[skuCat.get(key(item))]:[]);
     const roiOk=item=>roi()>0&&!itemCats(item).some(c=>roiSet.skip.has(c));
-    // "1" / "0" = set by hand; "" = automatic (on when the rate is below landing)
-    function roiOn(l,ld){if(!l.item||!roiOk(l.item))return false;const m=l.tr.dataset.roi;if(m==="1")return true;if(m==="0")return false;
-      return ld!=null&&l.rate!==""&&Number(l.rate)<ld}
+    function roiOn(l){return !!l.item&&roiOk(l.item)&&l.tr.dataset.roi==="1"}
     function msg(t,kind){const m=el("msg");m.textContent=t||"";m.className="pr-msg"+(kind?" "+kind:"")}
     function lineRow(it){
       const tr=document.createElement("tr");
@@ -238,7 +241,7 @@
         // Margin box (Mohit, 16 Nov 2026): shows rate − landing; typing in it sets the rate (see "input" below).
         const mb=l.tr.querySelector('[data-f=mg]');mb.disabled=ld==null;mb.title=ld==null?"No landing for this item (not a Rate List pack)":"Margin over landing: rate = landing + margin";
         if(document.activeElement!==mb)mb.value=mg==null?"":String(Math.round(mg*10)/10);
-        const on=roiOn(l,ld);l.on=on;
+        const on=roiOn(l);l.on=on;
         // Below landing is fine while the ROI covers it; red only when it goes past landing − ROI.
         mb.classList.toggle("neg",mg!=null&&mg<(on?-roi():0));
         const rb=!roiOk(l.item)?'<button type="button" class="pr-roi no" disabled title="No ROI on this category">No ROI</button>'
@@ -249,6 +252,9 @@
           (l.rate!==""&&d?' <span class="'+(d>0?"up":"dn")+'">'+(d>0?"▲ +":"▼ ")+money(d)+'</span>':l.rate!==""?' <span class="mut">same</span>':"")+list;
       });
       el("cnt").textContent=n?n+" item"+(n===1?"":"s"):"";
+      const ok=ls.filter(l=>l.item&&roiOk(l.item)),all=ok.length&&ok.every(l=>l.tr.dataset.roi==="1");
+      el("roiAll").classList.toggle("on",!!all);el("roiAll").textContent=(all?"✓ ":"")+"ROI rate for this party";
+      el("page").querySelector(".pr-card").classList.toggle("roi-on",ls.some(l=>roiOn(l)));
     }
     async function loadLast(){
       const party=el("party").value.trim();
@@ -274,7 +280,7 @@
       if(otype==="DATED"&&!to)throw Error("Pick the end date.");
       if(otype==="DATED"&&to<from)throw Error("End date is before the start date.");
       return {party_name:party,offer_date:from,valid_from:from,offer_type:otype,valid_to:otype==="DATED"?to:null,note:"",
-        lines:ls.map(l=>{const ld=ldOf(l.item);return {item:l.item,rate:Number(l.rate),roi:roiOn(l,ld)?roi():0,landing:ld}})};
+        lines:ls.map(l=>{const ld=ldOf(l.item);return {item:l.item,rate:Number(l.rate),roi:roiOn(l)?roi():0,landing:ld}})};
     }
     function resetForm(){
       el("lines").innerHTML="";saved=null;el("party").value="";el("odate").value=today();el("vto").value="";setType("CONTINUOUS");lastParty="x";
@@ -408,7 +414,7 @@
       const ls=byQ.filter(o=>tOk(o)&&sOk(o)&&fOk(o));
       el("listN").textContent=" · "+ls.length;
       el("list").innerHTML=ls.map(o=>{const st=stOf(o);
-        return '<li data-id="'+o.id+'"'+(o.status==="CANCELLED"?' class="cx"':"")+'><b>'+esc(o.party_name)+'<span class="st '+st+'">'+esc(STATES[st]||st)+'</span></b><span class="r">'+esc(o.offer_no)+'</span>'+(o.roi_lines>0||o.recheck_lines>0?'<span class="s" style="margin:1px 0">'+(o.roi_lines>0?'<span class="st ROI" style="margin:0 4px 0 0">ROI · '+o.roi_lines+' item'+(o.roi_lines===1?"":"s")+'</span>':"")+(o.recheck_lines>0?'<span class="st RECHECK" style="margin:0">⚠ Rate changed · recheck</span>':"")+'</span>':"")+
+        return '<li data-id="'+o.id+'"'+(o.status==="CANCELLED"?' class="cx"':o.roi_lines>0?' class="roi"':"")+'><b>'+esc(o.party_name)+'<span class="st '+st+'">'+esc(STATES[st]||st)+'</span></b><span class="r">'+esc(o.offer_no)+'</span>'+(o.roi_lines>0||o.recheck_lines>0?'<span class="s" style="margin:1px 0">'+(o.roi_lines>0?'<span class="st ROI" style="margin:0 4px 0 0">ROI · '+o.roi_lines+' item'+(o.roi_lines===1?"":"s")+'</span>':"")+(o.recheck_lines>0?'<span class="st RECHECK" style="margin:0">⚠ Rate changed · recheck</span>':"")+'</span>':"")+
         '<span class="s"><span class="ty">'+esc(typeLine(o))+'</span> · '+o.lines.length+' item'+(o.lines.length===1?"":"s")+' · '+esc(o.by||"")+' · '+esc(o.lines.slice(0,3).map(l=>l.item+" ₹"+money(l.rate)).join(", "))+(o.lines.length>3?"…":"")+'</span></li>'}).join("")||'<li class="mut">No rate offer here.</li>';
     }
     el("fType").addEventListener("click",e=>{const f=e.target.closest("button[data-f]");if(f){fFlag=fFlag===f.dataset.f?"":f.dataset.f;drawList();return}
@@ -435,6 +441,7 @@
       const tr=e.target.closest("tr");(tr.nextElementSibling||addLine()).querySelector('[data-f=item]').focus();
     });
     el("addLine").onclick=()=>addLine(null,true);
+    el("roiAll").onclick=()=>{const on=!el("roiAll").classList.contains("on");lines().forEach(l=>{if(l.item&&roiOk(l.item))l.tr.dataset.roi=on?"1":"0"});refresh()};
     el("useLast").onclick=()=>{
       const have=new Set(lines().filter(l=>l.item).map(l=>key(l.item)));
       lines().filter(l=>!l.item&&l.rate==="").forEach(l=>l.tr.remove());
