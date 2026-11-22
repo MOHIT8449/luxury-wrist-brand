@@ -195,6 +195,10 @@ tr.below-min .rate{border-color:#c8102e;color:#c8102e;font-weight:700}
 #itemsBody tr.below-min td:first-child{box-shadow:inset 4px 0 0 #c8102e}
 #itemsBody tr.below-min input,#itemsBody tr.below-min .sku-name{color:#b3261e;border-color:#e89a9a;background:#fff7f7}
 .rate-hint.need{color:#9a6700;font-weight:600}
+/* Party Rate Offer fixed rate (lwb_party_rate_offer_dates_setup.sql, Mohit 22 Nov 2026): green lock, always shown. */
+#itemsBody .rate-hint.offer{display:block!important;color:#0f5132;font-weight:700;font-size:11px;max-width:100%}
+#itemsBody tr.offer-lock input.rate{background:#e8f6ee!important;border-color:#86c99f!important;color:#0f5132!important;font-weight:700}
+#itemsBody tr.offer-lock .rate-box .step{visibility:hidden}
 @media(max-width:760px){#itemsBody tr.below-min{border-color:#c8102e!important;background:#fde4e4!important;box-shadow:inset 4px 0 0 #c8102e}}
 .mgr-col{display:none}
 body.show-landing .mgr-col{display:table-cell}
@@ -3189,6 +3193,8 @@ let pricingBusy = false;
 let slab3BySku = new Map();      // SKU key -> Slab 3 rate
 let partyRates = new Map();      // SKU key -> {rate, order_no, order_date}
 let partyRatesFor = "";
+let offerRates = new Map();      // SKU key -> {rate, offer_no, offer_type, valid_to}: Party Rate Offer running today
+let offerCanChange = false;      // Admin / Sales Head may change an offer rate; salesman may not
 let landingBySku = new Map();    // SKU key -> rate pack (Admin / Sales head only)
 let rateSettings = null;
 let mepdSchemes = [];
@@ -3274,15 +3280,18 @@ async function loadPartyRates(name){
   const key = skuKey(name);
   partyRatesFor = key;
   partyRates = new Map();
+  offerRates = new Map();
   if(key){
-    try{
-      const {data,error} = await db.rpc("lwb_party_last_rates",{p_customer:name});
-      if(error) throw error;
-      if(partyRatesFor !== key) return;
-      partyRates = new Map((data || []).map(x => [skuKey(x.sku), x]));
-    }catch(error){
-      console.warn("Party last rates not loaded", error);
-    }
+    const [lr, off] = await Promise.all([
+      db.rpc("lwb_party_last_rates",{p_customer:name}).then(r => r, e => ({error:e})),
+      db.rpc("lwb_party_offer_rates",{p_customer:name, p_order:editOrder ? editOrder.id : null}).then(r => r, e => ({error:e}))
+    ]);
+    if(partyRatesFor !== key) return;
+    if(lr.error) console.warn("Party last rates not loaded", lr.error);
+    else partyRates = new Map((lr.data || []).map(x => [skuKey(x.sku), x]));
+    // Party Rate Offer running today: rate fills by itself and is fixed for a salesman (Mohit, 22 Nov 2026).
+    if(off.error) console.warn("Party offer rates not loaded", off.error);
+    else { offerCanChange = !!(off.data && off.data.can_change); offerRates = new Map(((off.data && off.data.rates) || []).map(x => [skuKey(x.sku_key), x])); }
   }
   calculateTotals();
 }
@@ -3407,6 +3416,26 @@ function applyRates(){
     const lastRate = last ? partyRateNow(last, key) : null;
     const lim = saleLimits.get(key);
     const auto = last ? lastRate : (slabRate ?? lim?.std ?? null);
+    const offer = offerRates.get(key);
+    const locked = !!offer && !offerCanChange;
+    row.classList.toggle("offer-lock", locked);
+    rateInput.readOnly = locked;
+    if(offer){
+      // Party Rate Offer: fills for everyone; a salesman cannot change it, Admin / Sales Head can (Mohit, 22 Nov 2026).
+      const want = String(number(offer.rate));
+      if((locked || row.dataset.hand !== "1") && document.activeElement !== rateInput && rateInput.value !== want){
+        rateInput.value = want;
+        if(locked) row.dataset.hand = "";
+        refreshRowAmounts(row);
+      }
+      const till = offer.offer_type === "DATED" && offer.valid_to ? " · till " + rhDay(offer.valid_to + "T12:00:00+05:30") : offer.offer_type === "ONE_TIME" ? " · one-time" : "";
+      const changed = rateInput.value !== "" && number(rateInput.value) !== number(offer.rate);
+      hint.textContent = (locked ? "🔒 Fixed rate ₹" : "Offer rate ₹") + formatNumber(offer.rate) + " · " + (offer.offer_no || "") + till + (changed ? " · changed to ₹" + formatNumber(rateInput.value) : "");
+      hint.className = "rate-hint offer";
+      if(last) usedLast = true;
+      row.classList.toggle("below-min", !!(lim && lim.min != null && rateInput.value !== "" && number(rateInput.value) < lim.min));
+      return;
+    }
     // Salesman / Sales Head type the rate on every line (Mohit, 5 Nov 2026); only Admin gets it filled by itself.
     if(!manualRateLogin() && row.dataset.hand !== "1" && auto != null && document.activeElement !== rateInput && rateInput.value !== String(auto)){
       rateInput.value = String(auto);
@@ -3650,6 +3679,7 @@ function rateTyped(input){
 function rateStep(button, delta){
   const row = button.closest("tr");
   const input = row.querySelector(".rate");
+  if(input.readOnly) return;   // Party Rate Offer: fixed for this login
   if(!row.querySelector(".sku-name").value.trim()) return;
   input.value = String(Math.max(0, r2(number(input.value) + delta)));
   row.dataset.hand = "1";
