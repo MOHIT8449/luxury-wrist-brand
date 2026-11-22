@@ -116,7 +116,9 @@
     if(s==="phone"){
       b.disabled=true;const r=await db.rpc("lwb_task_siren_test");b.disabled=false;
       b.textContent=r.error?"Could not send: "+(/lwb_task_siren/.test(r.error.message)?"run lwb_task_siren_setup.sql":r.error.message):"✓ Sent. Check your phone in a few seconds.";return}
-    if(opt.demo){if(s==="done"&&!b.classList.contains("sure")){b.classList.add("sure");b.textContent="Tap again: Done";return}hide();return}
+    if(opt.demo){if(s==="done"&&!b.classList.contains("sure")){b.classList.add("sure");b.textContent="Tap again: Done";return}
+      if(String(t.id)==="0")db.rpc("lwb_task_siren_seen",{p_id:0}).then(()=>{}).catch(()=>{}); // demo sent to the phone app
+      hide();return}
     if(s==="done"){
       if(!b.classList.contains("sure")){b.classList.add("sure");b.textContent="Tap again: Done";return}
       b.disabled=true;b.textContent="Saving...";
@@ -136,7 +138,7 @@
     const r=await db.rpc("lwb_task_my_sirens");
     if(r.error){if(/lwb_task_my_sirens|function/i.test(r.error.message))clearInterval(timer);return}
     const t=(r.data||[]).find(x=>!skip.has(x.id+"@"+x.siren_count));
-    if(t){skip.add(t.id+"@"+t.siren_count);show(t)}
+    if(t){skip.add(t.id+"@"+t.siren_count);show(t,{demo:String(t.id)==="0"})}
   }
   function init(o){
     if(db)return;db=o.db;me=o.user;
