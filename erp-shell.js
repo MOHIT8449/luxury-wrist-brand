@@ -173,6 +173,8 @@
       {t:"Godown Report",h:"godown-report.html",i:"note",r:"admin manager warehouse"},
       {t:"Loading & Dispatch",h:"loading-dispatch.html",i:"box",r:"admin manager warehouse"},
       {t:"Transport Assignment",h:"transport-allocation.html",i:"truck",r:"admin manager transport"},
+      // Vehicle Report (Mohit, 23 Nov 2026): per vehicle / driver for the day: tons loaded, cases delivered, parties, fixed driver.
+      {t:"Vehicle Report",h:"vehicle-report.html",i:"truck",r:"admin manager transport accounts",k:"vehicle report driver dashboard ton tons cases delivered trip today gadi truck fixed driver",vo:"accounts"},
       {t:"Driver Delivery / POD",h:"driver-delivery.html",i:"pin",r:"admin manager driver accounts",nm:"accounts"},
       {t:"Live Tracking",h:"live-tracking.html",i:"pin",r:"admin"}]},
     {group:"Accounts",items:[
