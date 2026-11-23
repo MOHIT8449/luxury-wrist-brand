@@ -4,6 +4,13 @@
 **Purpose:** Continue the same ERP project from a new ChatGPT conversation without restarting or losing the agreed requirements.
 **Status:** Active development / verification. Do not assume all modules are completed or fully tested.
 
+## Vehicle Report: per vehicle / driver tons loaded, cases delivered (23 Nov 2026)
+- Mohit: a driver dashboard: which vehicle delivered how much today, which driver did what, vehicle-wise; driver is fixed to a vehicle; tons loaded, cases delivered.
+- Fixed driver = Employee Master driver's "Default vehicle" (`lwb_acc_staff.default_vehicle_id`, already there); no new table.
+- SQL `lwb_vehicle_day_setup.sql` (read only; test `tests/vehicle-day`, PGlite, 2 tests): `lwb_vehicle_day(from, to)` -> {vehicles (active Vehicle Master + fixed drivers), rows (one per PO given a vehicle; day = loading done else vehicle given, India time; cases = total_qty, kg = total_weight, driver report / Admin mark delivered, driver return cases not rejected, trip no.)}. Admin / Manager / Transport / Accounts or a login given the page.
+- `vehicle-report.html` (menu Stock & Dispatch > Vehicle Report; follows the top bar date): 4 count cards (Tons loaded, Cases delivered, Vehicles out, Pending delivery), Vehicle-wise / Driver-wise cards (Loaded T with % of capacity, Delivered cs, Parties, POs list), "Fixed driver not set" / "Drove: other driver" in amber, vehicles with no trip at the bottom.
+- Checked with a mocked database at 1366 / 390 px: no side scroll, no JS errors. Screenshots: project files `vehicle-report/`.
+
 ## Party ledger: newest entries were cut at 1000 rows (23 Nov 2026)
 - Mohit: MANSHI MARKETING (KATARGAM) ₹1,11,600 cash party payment (23/11, by Yogesh) was in the Day book but not in the party ledger; "these mistakes keep repeating".
 - Cause (checked on live data, counts only): `lwb_party_ledger_b()` returns one row per entry and the website API (PostgREST max rows) sends at most 1000 rows of a call. The ledger had 1039 rows, so the last rows of the SQL (party payments, credit notes, payment collection, driver money come after the Tally bills) were silently dropped: 12 of the 31 party payments of 23/11 were missing. The data was always saved right (`lwb_tally_payments`), so no backfill was needed.
