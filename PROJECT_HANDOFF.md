@@ -4,6 +4,13 @@
 **Purpose:** Continue the same ERP project from a new ChatGPT conversation without restarting or losing the agreed requirements.
 **Status:** Active development / verification. Do not assume all modules are completed or fully tested.
 
+## Party ledger: newest entries were cut at 1000 rows (23 Nov 2026)
+- Mohit: MANSHI MARKETING (KATARGAM) ₹1,11,600 cash party payment (23/11, by Yogesh) was in the Day book but not in the party ledger; "these mistakes keep repeating".
+- Cause (checked on live data, counts only): `lwb_party_ledger_b()` returns one row per entry and the website API (PostgREST max rows) sends at most 1000 rows of a call. The ledger had 1039 rows, so the last rows of the SQL (party payments, credit notes, payment collection, driver money come after the Tally bills) were silently dropped: 12 of the 31 party payments of 23/11 were missing. The data was always saved right (`lwb_tally_payments`), so no backfill was needed.
+- Fix: SQL `lwb_party_ledger_all_rows_fix.sql` (test `tests/ledger-all-rows`, PGlite, 2 tests): `lwb_party_ledger_bj()` = the same rows as ONE jsonb array (no row cap). New `ledger-rows.js` `LWBLedgerRows(client)` (bj first; before the SQL is in, the old calls 1000 rows at a time) used by accounts-books.html, party-billing.html, party-ledger.html (also `lwb_party_bills` paged), sales-outstanding.html.
+- RULE for new code: never read a growing list with one plain `rpc()` / `select()`; return jsonb or page with `.range()`.
+- Screenshots (mocked data): project files `ledger-all-rows/`.
+
 ## Day book: party payment on its "paid on" date (23 Nov 2026)
 - Mohit: MAA TRADERS (BOMBY MARKET) ₹32,000 cash entered 23/11 with "paid on 07/11/2026" showed in today's Day book, Collected today and cash. Old money entered late must count on the paid on day.
 - SQL `lwb_acc_paid_on_day_setup.sql` (test `tests/acc-paid-on`, PGlite, 3 tests): `lwb_acc_pay_day(pay_date, created_at)` = paid on date (not after the entry day); if that day was already closed (Close Day) before the entry, the first open day after the close (closed days stay locked). `lwb_acc_lines_all` patched in place (PAYMENT line only). `lwb_acc_lines()` also keeps party payments entered on / after the fresh start date even if paid on before it (bank check list). Driver money / old Payment Collection unchanged.
