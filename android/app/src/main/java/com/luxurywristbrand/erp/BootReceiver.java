@@ -13,7 +13,8 @@ public final class BootReceiver extends BroadcastReceiver {
         String a=intent.getAction();
         if(!Intent.ACTION_BOOT_COMPLETED.equals(a)&&!Intent.ACTION_MY_PACKAGE_REPLACED.equals(a))return;
         TrackingApi api=new TrackingApi(c);
-        if(!api.hasSession()||!api.tracked())return;
+        if(!api.hasSession())return;
+        if(!api.tracked()){TaskSirenService.start(c);return;} // Admin: urgent task alarm only
         if(c.checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION)!=PackageManager.PERMISSION_GRANTED)return;
         // Android allows a background location start only with "Allow all the time".
         if(Build.VERSION.SDK_INT>=29&&c.checkSelfPermission(Manifest.permission.ACCESS_BACKGROUND_LOCATION)!=PackageManager.PERMISSION_GRANTED)return;

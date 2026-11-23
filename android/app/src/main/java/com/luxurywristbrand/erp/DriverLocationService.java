@@ -60,6 +60,7 @@ public final class DriverLocationService extends Service implements LocationList
             nm.createNotificationChannel(new NotificationChannel("driver-gps","Location sharing",NotificationManager.IMPORTANCE_LOW));
             nm.createNotificationChannel(new NotificationChannel("gps-alert","Location off reminder",NotificationManager.IMPORTANCE_HIGH));
         }
+        SirenAlarm.channel(this);
         try{startForeground(NOTICE,notification("Checking login and work hours…"));}
         catch(RuntimeException ex){destroyed=true;stopSelf();return;} // Android refused a background start; the app starts it on next open.
         locations=(LocationManager)getSystemService(LOCATION_SERVICE);
@@ -93,6 +94,8 @@ public final class DriverLocationService extends Service implements LocationList
         if(destroyed)return;
         try {
             wake.acquire(25000);
+            // 🚨 Urgent task alarm: once a minute, also outside location hours (SirenAlarm).
+            try{SirenAlarm.poll(this,api);}catch(Exception ignored){}
             long now=SystemClock.elapsedRealtime();
             if(now-lastChecked>60000||lastChecked==0){
                 JSONObject me=api.rpc("lwb_track_me",new JSONObject());lastChecked=now;

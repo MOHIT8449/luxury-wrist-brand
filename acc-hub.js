@@ -64,6 +64,7 @@
   .hub-al b{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}.hub-al span{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:inherit;opacity:.85}
   .hub-al .go{border:0;background:none;padding:0;font:inherit;font-weight:700;color:#00434d;text-decoration:underline;cursor:pointer;white-space:nowrap;margin-left:auto}
   .hub-al input{height:30px;width:120px;border:1.5px solid #c9d4e2;border-radius:7px;padding:0 8px;font:inherit;font-size:14px;margin-left:auto}
+  .hub-al input+input{margin-left:0}.hub-al input[type=date]{width:138px;padding:0 6px;font-weight:700;color:#1d3f75}.hub-al.op{flex-basis:470px}
   .hub-al .btn{height:30px;border:0;border-radius:7px;background:#00434d;color:#fff;font:inherit;font-weight:700;font-size:13px;padding:0 10px;cursor:pointer;white-space:nowrap}
   .hub-al .btn.grn{background:#13824a}
   body.erp-compact .erp-main .hub-al .go{min-height:0;padding:4px 0}body.erp-compact .erp-main .hub-al .btn{min-height:0}
@@ -94,7 +95,7 @@
     .hub-acts{display:grid;grid-template-columns:repeat(var(--n,5),minmax(0,1fr));gap:5px}.hub-views a{padding:0 9px;font-size:12.5px}
     .hub-acts button{height:46px;flex-direction:column;gap:0;font-size:11.5px;line-height:1.15}.hub-acts em{font-size:16px}
     .hub-acts .l{display:none}.hub-acts .s{display:inline}.hub-acts.many [data-hub-a=ret]{display:none}
-    .hub-als{flex-direction:column;gap:4px}.hub-al{flex:none;width:100%;padding:5px 8px;font-size:12.5px}.hub-al span{display:none}.hub-al input{width:96px}
+    .hub-als{flex-direction:column;gap:4px}.hub-al{flex:none;width:100%;padding:5px 8px;font-size:12.5px}.hub-al span{display:none}.hub-al input{width:96px}.hub-al input[type=date]{width:132px}.hub-al.op{flex-basis:auto;flex-wrap:wrap;row-gap:4px}.hub-al.op b{flex:0 0 100%}.hub-al.op input{margin-left:0;min-width:0}.hub-al.op input[type=date]{flex:0 0 136px}.hub-al.op input+input{flex:1 1 60px;width:auto}
     .hub-kpis{grid-template-columns:repeat(3,minmax(0,1fr));gap:5px}.hub-kpis.n4{grid-template-columns:repeat(2,minmax(0,1fr))}.hub-k{padding:6px 7px;border-left-width:3px}
     .hub-k h3{font-size:11px}.hub-k b{font-size:15px}.hub-k small{font-size:10.5px}
     .hub-tabs{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:4px}.hub-tabs .g,.hub-tabs .bar{display:none}
@@ -194,10 +195,11 @@
     };
   }
   // short alerts; here = drawn on the cash half (opening box / cash back button work there)
+  const addDays=(iso,n)=>{const d=new Date(iso+"T00:00:00Z");d.setUTCDate(d.getUTCDate()+n);return d.toISOString().slice(0,10)};
   function cashAlerts(D,C,here){
     const A=[];C=C||[];
-    if(!D.opening_set&&!D.last_close)A.push(here?{c:"blue",b:"Set opening cash",s:"count the cash in hand once",
-      html:'<input id="startAmt" type="text" inputmode="decimal" placeholder="₹ cash"><button type="button" class="btn" id="startBtn">Set</button>'}
+    if(!D.opening_set&&!D.last_close)A.push(here?{c:"blue op",b:"Set opening cash",s:"cash in hand at the start of the day",
+      html:'<input id="startDate" type="date" value="'+D.today+'" max="'+D.today+'" min="'+addDays(D.today,-60)+'" aria-label="Opening cash date" title="Start of which day"><input id="startAmt" type="text" inputmode="decimal" placeholder="₹ cash" aria-label="Cash in hand"><button type="button" class="btn" id="startBtn">Set</button>'}
       :{c:"blue",b:"Opening cash not set",s:"count the cash in hand once",t:"book",go:"Set"});
     const ho=(D.closes||[]).find(c=>c.date===D.last_close&&c.handed_to&&!c.returned_at);
     if(ho)A.push(here?{b:"☀ "+rs(ho.counted)+" cash with "+esc(ho.handed_to_name),s:"handed over "+dmy(ho.date)+" night",html:'<button type="button" class="btn grn" data-return="'+ho.id+'">Received back</button>'}

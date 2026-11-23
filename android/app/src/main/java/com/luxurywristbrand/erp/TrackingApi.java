@@ -26,6 +26,10 @@ final class TrackingApi {
         HttpError(int s) { super("Server request failed ("+s+")"); status=s; }
     }
     private JSONObject request(String path, JSONObject body, String token) throws Exception {
+        String text=requestRaw(path,body,token);
+        return text.isEmpty()?new JSONObject():new JSONObject(text);
+    }
+    private String requestRaw(String path, JSONObject body, String token) throws Exception {
         HttpURLConnection c=(HttpURLConnection)new URL(HOST+path).openConnection();
         try {
             c.setConnectTimeout(15000); c.setReadTimeout(15000); c.setRequestMethod("POST");
@@ -37,7 +41,7 @@ final class TrackingApi {
             if(code<200||code>=300)throw new HttpError(code);
             try(java.io.InputStream in=c.getInputStream(); java.io.ByteArrayOutputStream out=new java.io.ByteArrayOutputStream()) {
                 byte[] b=new byte[4096]; int n; while((n=in.read(b))!=-1)out.write(b,0,n);
-                String text=out.toString("UTF-8"); return text.isEmpty()?new JSONObject():new JSONObject(text);
+                return out.toString("UTF-8").trim();
             }
         } finally { c.disconnect(); }
     }
@@ -126,6 +130,13 @@ final class TrackingApi {
         if(session.optLong("expires_at")*1000L<System.currentTimeMillis()+60000L)
             save(request("/auth/v1/token?grant_type=refresh_token",new JSONObject().put("refresh_token",session.getString("refresh_token")),null));
         return request("/rest/v1/rpc/"+name,body,session.getString("access_token"));
+    }
+    /** RPC whose answer is a list (JSON array text), e.g. lwb_task_my_sirens. */
+    synchronized String rpcRaw(String name,JSONObject body) throws Exception {
+        load();
+        if(session.optLong("expires_at")*1000L<System.currentTimeMillis()+60000L)
+            save(request("/auth/v1/token?grant_type=refresh_token",new JSONObject().put("refresh_token",session.getString("refresh_token")),null));
+        return requestRaw("/rest/v1/rpc/"+name,body,session.getString("access_token"));
     }
     synchronized void clear() { session=null; context.getSharedPreferences("driver-gps",0).edit().clear().commit(); }
 }

@@ -126,6 +126,8 @@
       // Salesman: his own orders with PO given > Approved > Dispatched > Delivered).
       {t:"New PO / Sales Order",h:"order-entry.html",i:"cart",r:"admin manager sales",k:"new order entry po",pt:"PO / Sales Order (new PO)",nm:"admin manager sales",par:"warehouse-orders.html my-sales.html#orders"},
       {t:"PO / Sales",h:"warehouse-orders.html",i:"note",r:"admin manager accounts",k:"po approval driver warehouse orders",pt:"PO / Sales List (all POs; approve for Admin / Sales Head)"},
+      // Direct Vehicle (Mohit, 23 Nov 2026): company truck straight to the party; party advance, final +/- qty, balance.
+      {t:"Direct Vehicle",h:"direct-vehicle.html",i:"truck",r:"admin manager accounts",k:"direct vehicle company truck party advance balance baki final qty plus minus ecrs"},
       {t:"PO / Sales",h:"my-sales.html#orders",i:"note",r:"sales",k:"my orders modify",pt:"PO / Sales List (Salesman's own orders)"},
       // Website Orders (Mohit, 20 Nov 2026): orders customers send from luxurywristbrand.com/order.html (lwb_web_order_setup.sql).
       {t:"Website Orders",h:"web-orders.html",i:"cart",r:"admin manager",k:"website online customer order web shop retailer whatsapp link",pt:"Website Orders (customer orders from the website)"},
@@ -837,9 +839,21 @@
       window.LWBOperationsNotifications.init({db:c,user,role,mount:top.querySelector(".erp-user"),pages:menuForMe(role).flatMap(g=>g.items.map(i=>i.h.split("#")[0]))});
     }catch(e){}
     profitSwitch(top,role);
-    liveLocation();
+    // liveLocation();  // 📍 Switched OFF by the owner 23 Nov 2026: no location is asked or sent. Remove // to bring back.
     tripRent(role);
     teamChat(role);
+    taskSiren(role);
+  }
+
+  // 🚨 Urgent task siren: full-screen alarm + siren sound on any page when an urgent task rings
+  // (task-siren.js, lwb_task_siren_setup.sql). Until the SQL is run nothing shows.
+  async function taskSiren(role){
+    try{
+      const c=window.__lwbBellClient;if(!c||!role)return;
+      const {data}=await c.auth.getSession();const user=data&&data.session&&data.session.user;if(!user)return;
+      if(!window.LWBSiren)await new Promise((ok,bad)=>{const s=document.createElement("script");s.src="task-siren.js";s.onload=ok;s.onerror=bad;document.head.appendChild(s)});
+      window.LWBSiren.init({db:c,user,role});
+    }catch(e){}
   }
 
   // 🏷 ONE brand picker for the whole site, next to the page name (Mohit, 19 Nov 2026):
@@ -916,7 +930,7 @@
   async function liveLocation(){
     try{
       const c=window.__lwbBellClient;if(!c)return;
-      if(!window.LWBLocation)await new Promise((ok,bad)=>{const s=document.createElement("script");s.src="live-location.js";s.onload=ok;s.onerror=bad;document.head.appendChild(s)});
+      if(!window.LWBLocation)await new Promise((ok,bad)=>{const s=document.createElement("script");s.src="live-location.js?v=20261123c";s.onload=ok;s.onerror=bad;document.head.appendChild(s)});
       window.LWBLocation.start(c);
     }catch(e){}
   }

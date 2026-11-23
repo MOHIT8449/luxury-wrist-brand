@@ -195,6 +195,10 @@ tr.below-min .rate{border-color:#c8102e;color:#c8102e;font-weight:700}
 #itemsBody tr.below-min td:first-child{box-shadow:inset 4px 0 0 #c8102e}
 #itemsBody tr.below-min input,#itemsBody tr.below-min .sku-name{color:#b3261e;border-color:#e89a9a;background:#fff7f7}
 .rate-hint.need{color:#9a6700;font-weight:600}
+/* Party Rate Offer fixed rate (lwb_party_rate_offer_dates_setup.sql, Mohit 22 Nov 2026): green lock, always shown. */
+#itemsBody .rate-hint.offer{display:block!important;color:#0f5132;font-weight:700;font-size:11px;max-width:100%}
+#itemsBody tr.offer-lock input.rate{background:#e8f6ee!important;border-color:#86c99f!important;color:#0f5132!important;font-weight:700}
+#itemsBody tr.offer-lock .rate-box .step{visibility:hidden}
 @media(max-width:760px){#itemsBody tr.below-min{border-color:#c8102e!important;background:#fde4e4!important;box-shadow:inset 4px 0 0 #c8102e}}
 .mgr-col{display:none}
 body.show-landing .mgr-col{display:table-cell}
@@ -1202,6 +1206,11 @@ document.addEventListener("DOMContentLoaded", async () => {
     if(draftId && !editId){ await brandReady; await loadDraft(draftId); }
     const webId = new URLSearchParams(location.search).get("web");
     if(webId && /^\d+$/.test(webId) && !editId && !draftId){ await brandReady; await loadWebOrder(webId); }
+    // "+ New Direct Vehicle PO" on the Direct Vehicle page (Mohit, 23 Nov 2026) opens with Direct vehicle picked.
+    if(!editId && !draftId && new URLSearchParams(location.search).get("tp") === "dv"){
+      const tpSel = document.getElementById("transportation");
+      if(tpSel && !tpSel.value){ tpSel.value = "DIRECT VEHICLE"; tpSel.dispatchEvent(new Event("change")); }
+    }
     refreshDraftCount();
     document.getElementById("orderDate").addEventListener("change", updateLandingCells);
     calculateTotals();
@@ -2206,15 +2215,18 @@ function calculateTotals(){
 
 
 // Approval is decided again by the database from the active login's role.
-function headCreatesApprovedPo(){
+function isHeadLogin(){
   return ["admin","manager"].includes(String(currentProfile?.loginRole||currentProfile?.role||"").trim().toLowerCase());
 }
+/* Every PO starts in Approval Pending (Mohit, 22 Nov 2026): Salesman, Sales Head and Admin alike.
+   No login saves a PO already approved any more; it is approved from the PO List like any other PO. */
+function headCreatesApprovedPo(){ return false; }
 // Where a submitted PO is listed: Sales Head / Admin see the approval list, a Salesman his own orders.
-function poListUrl(){return headCreatesApprovedPo()?"warehouse-orders.html":"my-sales.html#orders";}
+function poListUrl(){return isHeadLogin()?"warehouse-orders.html":"my-sales.html#orders";}
 /* After Save PO (Mohit, 18 Nov 2026): go straight to the PO List with the new / changed PO on top, highlighted. */
 function savedPoListUrl(id){
   const q = "?saved=" + encodeURIComponent(id);
-  return headCreatesApprovedPo() ? "warehouse-orders.html" + q : "my-sales.html" + q + "#orders";
+  return isHeadLogin() ? "warehouse-orders.html" + q : "my-sales.html" + q + "#orders";
 }
 // Every login except Admin types the rate by hand: no last bill / slab / std rate is filled in the box.
 function manualRateLogin(){ return !isAdminLogin(); }
@@ -2229,6 +2241,7 @@ function newOrderButtonLabel(){
   // Coca-Cola: a Sales Head PO below the min rate goes to Admin for rate OK (lwb_cc_rate_limit_setup.sql).
   if(headCreatesApprovedPo() && !isAdminLogin() && document.querySelector("#itemsBody tr.below-min")) return "Send to Admin for rate OK";
   // Phone: short label so the total ₹ · cases · kg stays readable in the bottom bar.
+  if(isHeadLogin()) return "Save PO for Approval";
   return headCreatesApprovedPo()?"Save & Approve PO":(matchMedia("(max-width:640px)").matches?"Submit Order":"Submit to Warehouse Manager");
 }
 
@@ -2718,8 +2731,8 @@ async function saveOrder(){
   // then waits for Sales Head approval instead of printing at once.
   const creditBad = editOrder || !window.LWBCredit ? [] : LWBCredit.bad(partyCredit);
   if(creditBad.length && !await confirm("⚠ This party has money due:\n\n" + LWBCredit.text(creditBad) +
-    (headCreatesApprovedPo() ? "\n\nMake the PO anyway?" : "\n\nThe PO will go to Sales Head / Admin for approval. Send?"))) return;
-  const slipHeld = creditBad.length > 0 && split.slip.length > 0 && !headCreatesApprovedPo();
+    (isHeadLogin() ? "\n\nThe PO will go to Approval Pending. Make it anyway?" : "\n\nThe PO will go to Sales Head / Admin for approval. Send?"))) return;
+  const slipHeld = creditBad.length > 0 && split.slip.length > 0 && !isHeadLogin();
   let slipDetails = null;
   if(split.slip.length && !slipHeld){
     slipDetails = await askSlipDetails();
@@ -2829,9 +2842,9 @@ async function saveOrder(){
       (pickupText() ? "\n" + pickupText().split(" | ").join("\n") : "") +
       (poRateWait ? "\nRate is below the allowed min, so this PO is sent to Admin for rate OK. Assign transport after Admin approves."
         : poRateLow ? "\nRate is below the allowed min, so Admin is informed for rate OK."
-        : headCreatesApprovedPo() ? "\nReady for transport assignment." : "\nSent to Warehouse Manager for approval.") : "";
+        : headCreatesApprovedPo() ? "\nReady for transport assignment." : isHeadLogin() ? "\nIn Approval Pending. Approve it from the PO List." : "\nSent to Warehouse Manager for approval.") : "";
     await alert(
-      (made.length > 1 ? "2 POs saved.\n\n" : createdOrder && poRateWait ? "PO saved. Sent to Admin for rate OK.\n\n" : createdOrder && headCreatesApprovedPo() ? "PO saved and approved successfully.\n\n" : createdOrder ? "Order submitted successfully.\n\n" : "PO saved.\n\n") +
+      (made.length > 1 ? "2 POs saved.\n\n" : createdOrder && poRateWait ? "PO saved. Sent to Admin for rate OK.\n\n" : createdOrder && headCreatesApprovedPo() ? "PO saved and approved successfully.\n\n" : createdOrder && isHeadLogin() ? "PO saved. Approval pending.\n\n" : createdOrder ? "Order submitted successfully.\n\n" : "PO saved.\n\n") +
       made.map(m => sum(m) + (m.slip ? (slipDone ? "\nDriver: " + slipDetails.driver_name + "\nVehicle: " + slipDetails.vehicle_no + "\nSlip ready to print. Sent to Accounts for the Tally bill." : "") : normalTail)).join("\n\n") +
       priorityNote + spNote
     );
@@ -3229,6 +3242,8 @@ let pricingBusy = false;
 let slab3BySku = new Map();      // SKU key -> Slab 3 rate
 let partyRates = new Map();      // SKU key -> {rate, order_no, order_date}
 let partyRatesFor = "";
+let offerRates = new Map();      // SKU key -> {rate, offer_no, offer_type, valid_to}: Party Rate Offer running today
+let offerCanChange = false;      // Admin / Sales Head may change an offer rate; salesman may not
 let landingBySku = new Map();    // SKU key -> rate pack (Admin / Sales head only)
 let rateSettings = null;
 let mepdSchemes = [];
@@ -3314,15 +3329,18 @@ async function loadPartyRates(name){
   const key = skuKey(name);
   partyRatesFor = key;
   partyRates = new Map();
+  offerRates = new Map();
   if(key){
-    try{
-      const {data,error} = await db.rpc("lwb_party_last_rates",{p_customer:name});
-      if(error) throw error;
-      if(partyRatesFor !== key) return;
-      partyRates = new Map((data || []).map(x => [skuKey(x.sku), x]));
-    }catch(error){
-      console.warn("Party last rates not loaded", error);
-    }
+    const [lr, off] = await Promise.all([
+      db.rpc("lwb_party_last_rates",{p_customer:name}).then(r => r, e => ({error:e})),
+      db.rpc("lwb_party_offer_rates",{p_customer:name, p_order:editOrder ? editOrder.id : null}).then(r => r, e => ({error:e}))
+    ]);
+    if(partyRatesFor !== key) return;
+    if(lr.error) console.warn("Party last rates not loaded", lr.error);
+    else partyRates = new Map((lr.data || []).map(x => [skuKey(x.sku), x]));
+    // Party Rate Offer running today: rate fills by itself and is fixed for a salesman (Mohit, 22 Nov 2026).
+    if(off.error) console.warn("Party offer rates not loaded", off.error);
+    else { offerCanChange = !!(off.data && off.data.can_change); offerRates = new Map(((off.data && off.data.rates) || []).map(x => [skuKey(x.sku_key), x])); }
   }
   calculateTotals();
 }
@@ -3447,6 +3465,26 @@ function applyRates(){
     const lastRate = last ? partyRateNow(last, key) : null;
     const lim = saleLimits.get(key);
     const auto = last ? lastRate : (slabRate ?? lim?.std ?? null);
+    const offer = offerRates.get(key);
+    const locked = !!offer && !offerCanChange;
+    row.classList.toggle("offer-lock", locked);
+    rateInput.readOnly = locked;
+    if(offer){
+      // Party Rate Offer: fills for everyone; a salesman cannot change it, Admin / Sales Head can (Mohit, 22 Nov 2026).
+      const want = String(number(offer.rate));
+      if((locked || row.dataset.hand !== "1") && document.activeElement !== rateInput && rateInput.value !== want){
+        rateInput.value = want;
+        if(locked) row.dataset.hand = "";
+        refreshRowAmounts(row);
+      }
+      const till = offer.offer_type === "DATED" && offer.valid_to ? " · till " + rhDay(offer.valid_to + "T12:00:00+05:30") : offer.offer_type === "ONE_TIME" ? " · one-time" : "";
+      const changed = rateInput.value !== "" && number(rateInput.value) !== number(offer.rate);
+      hint.textContent = (locked ? "🔒 Fixed rate ₹" : "Offer rate ₹") + formatNumber(offer.rate) + " · " + (offer.offer_no || "") + till + (changed ? " · changed to ₹" + formatNumber(rateInput.value) : "");
+      hint.className = "rate-hint offer";
+      if(last) usedLast = true;
+      row.classList.toggle("below-min", !!(lim && lim.min != null && rateInput.value !== "" && number(rateInput.value) < lim.min));
+      return;
+    }
     // Salesman / Sales Head type the rate on every line (Mohit, 5 Nov 2026); only Admin gets it filled by itself.
     if(!manualRateLogin() && row.dataset.hand !== "1" && auto != null && document.activeElement !== rateInput && rateInput.value !== String(auto)){
       rateInput.value = String(auto);
@@ -3690,6 +3728,7 @@ function rateTyped(input){
 function rateStep(button, delta){
   const row = button.closest("tr");
   const input = row.querySelector(".rate");
+  if(input.readOnly) return;   // Party Rate Offer: fixed for this login
   if(!row.querySelector(".sku-name").value.trim()) return;
   input.value = String(Math.max(0, r2(number(input.value) + delta)));
   row.dataset.hand = "1";

@@ -50,6 +50,7 @@
     .mo-track b{display:block;color:#1f2a37;font-size:12px}
     .mo-track small{display:block;overflow-wrap:anywhere}
     .mo-card.just-saved{border-color:#138a45!important;box-shadow:inset 4px 0 0 #138a45;background:#f0faf4}
+    .mo-off{display:inline-block;margin-left:4px;padding:0 6px;border-radius:99px;background:#eef1f5;color:#5b6675;font-size:10.5px;font-weight:600}
     .js-tag{display:inline-block;margin-left:6px;padding:1px 7px;border-radius:99px;background:#138a45;color:#fff;font-size:10.5px;font-weight:700;vertical-align:middle}
   </style>
 </head>
@@ -171,9 +172,10 @@
       if(r.error){myOrders=null;moErr=/lwb_my_orders/.test(r.error.message)?"Order follow-up setup is not installed yet. Ask Admin to run lwb_sales_order_followup_setup.sql":r.error.message;return}
       moErr="";myOrders=Array.isArray(r.data)?r.data:[];
       if(window.ERPOrderDays)myOrders=await ERPOrderDays.filter(client,myOrders);
-      if(BB.get()&&SM)myOrders=myOrders.filter(o=>(o.items||[]).some(i=>SM.get(LWBBrand.skuKey(i.sku_name))===BB.get()));
+      // Office PO of my party: no SKU lines are sent (lwb_salesman_office_order_hide_setup.sql), only its brand ids.
+      if(BB.get()&&SM)myOrders=myOrders.filter(o=>o.office?(o.brands||[]).includes(BB.get()):(o.items||[]).some(i=>SM.get(LWBBrand.skuKey(i.sku_name))===BB.get()));
       // Bill changed by Accounts and approved (orders.bill_changes): show what changed on the card
-      try{const ids=myOrders.map(o=>o.id);for(let i=0;i<ids.length;i+=150){const b=await client.from("orders").select("id,bill_changes").in("id",ids.slice(i,i+150)).not("bill_changes","is",null);
+      try{const ids=myOrders.filter(o=>!o.office).map(o=>o.id);for(let i=0;i<ids.length;i+=150){const b=await client.from("orders").select("id,bill_changes").in("id",ids.slice(i,i+150)).not("bill_changes","is",null);
         if(b.error)break;const m=new Map((b.data||[]).map(x=>[x.id,x.bill_changes]));myOrders.forEach(o=>{if(m.has(o.id))o.bill_changes=m.get(o.id)})}}catch(e){}
     }
     // "✎ Bill −₹1,800 · 1L KINLEY 20 → 10" (approved bill changes of this PO)
@@ -234,14 +236,15 @@
       h+='<div class="mo-list">';
       for(const o of list.slice(0,200)){
         const [c,label,extra]=stage(o),open=openId===o.id;
-        h+='<div class="mo-card'+(String(o.id)===justSaved?" just-saved":"")+'" data-id="'+esc(o.id)+'" data-drill-order="'+esc(o.id)+'" data-drill-no="'+esc(o.order_no||"")+'"><div class="mo-top"><div class="who"><b>'+esc(o.order_no||"—")+"</b>"+(String(o.id)===justSaved?'<span class="js-tag">Just saved</span>':"")+" · "+esc(o.customer_name||"")+
-          "<small>"+S.shortDate(o.order_date)+(o.mine?"":" · taken by office")+'</small></div><div class="mo-amt"><b>'+short(o.total_amount)+"</b>"+fmt(o.total_qty)+" cases</div></div>"+
+        h+='<div class="mo-card'+(String(o.id)===justSaved?" just-saved":"")+'" data-id="'+esc(o.id)+'"'+(o.office?"":' data-drill-order="'+esc(o.id)+'" data-drill-no="'+esc(o.order_no||"")+'"')+'><div class="mo-top"><div class="who"><b>'+esc(o.order_no||"—")+"</b>"+(String(o.id)===justSaved?'<span class="js-tag">Just saved</span>':"")+" · "+esc(o.customer_name||"")+
+          "<small>"+S.shortDate(o.order_date)+(o.office?' <span class="mo-off" title="Taken by office: only total quantity and amount are shown">Office order</span>':"")+'</small></div><div class="mo-amt"><b>'+short(o.total_amount)+"</b>"+fmt(o.total_qty)+" cases</div></div>"+
           '<div class="mo-stage"><span class="erp-badge '+c+'">'+label+"</span>"+(extra?"<span>"+extra+"</span>":"")+billNote(o)+"</div>"+
           (isCancelled(o)?"":track(o));
-        h+='<div class="mo-acts">'+(o.can_edit?'<button type="button" class="sl-btn small" data-act="edit">Modify Order</button><button type="button" class="sl-btn small ghost" data-act="cancel">Cancel Order</button>':"")+
-          '<button type="button" class="sl-btn small ghost" data-act="view">'+(open?"Hide SKUs":"View SKUs")+"</button>"+
-          (isCancelled(o)?"":'<button type="button" class="sl-btn small ghost" data-act="share" title="Copy order image for WhatsApp (no order no.). Phone: downloads it." aria-label="Copy order image">'+LWBPoShare.ICON+"</button>")+"</div>";
-        if(open){
+        const acts=(o.can_edit?'<button type="button" class="sl-btn small" data-act="edit">Modify Order</button><button type="button" class="sl-btn small ghost" data-act="cancel">Cancel Order</button>':"")+
+          (o.office?"":'<button type="button" class="sl-btn small ghost" data-act="view">'+(open?"Hide SKUs":"View SKUs")+"</button>")+
+          (isCancelled(o)||o.office?"":'<button type="button" class="sl-btn small ghost" data-act="share" title="Copy order image for WhatsApp (no order no.). Phone: downloads it." aria-label="Copy order image">'+LWBPoShare.ICON+"</button>");
+        if(acts)h+='<div class="mo-acts">'+acts+"</div>";
+        if(open&&!o.office){
           h+='<div class="mo-items">'+(o.items||[]).map(i=>{const q=i.approved_qty!=null?i.approved_qty:i.ordered_qty;
             return '<div class="mo-line"><span>'+esc(i.sku_name)+(i.entry_uom==="PALLET"&&i.ordered_pallet_qty?" ("+fmt(i.ordered_pallet_qty)+" pallet)":"")+"</span>"+
               '<b class="q">'+fmt(q)+" cs</b></div>"}).join("");

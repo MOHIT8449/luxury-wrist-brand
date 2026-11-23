@@ -311,7 +311,7 @@
         r.due!=null&&n(r.due)>0.5?"Due "+rs(r.due):""].filter(Boolean).join(" · ")};
     ERPList.open({
       title:poT(row.order_no),sub:head()||"Loading...",drill:false,
-      empty:"No SKU line in this PO.",
+      empty:"No SKU line to show. (A salesman sees only the total quantity and amount of a PO taken by the office.)",
       load:async ui=>{
         const C=db();if(!C)throw Error("Not connected");
         let q=id?await C.from("orders").select("*").eq("id",id).maybeSingle():{data:null};

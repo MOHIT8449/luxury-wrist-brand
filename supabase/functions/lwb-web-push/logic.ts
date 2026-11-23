@@ -23,14 +23,23 @@ export function safeRoute(type, order, role) {
  if(type.startsWith('MARKET'))return '/market-report.html';
  if(type==='ACC_CHEQUE_REMINDER'&&(role==='admin'||role==='accounts'))return '/accounts-dashboard.html#cheques';
  if(type.startsWith('ACC_')&&(role==='admin'||role==='accounts'))return '/accounts-dashboard.html';
+ if(type==='LOCATION_OFF'&&role==='admin')return '/live-tracking.html?show=off';
  if(type.startsWith('DOC_')&&(role==='admin'||role==='accounts'))return '/documents.html';
  return '/dashboard.html';
 }
 export function messageFor(n,role) {
  const type=String(n.notification_type||'').replace(/^CC_/,'');
- return {title:'Luxury Wrist Brand · '+String(n.title||'ERP update').slice(0,80),
+ const msg={title:'Luxury Wrist Brand · '+String(n.title||'ERP update').slice(0,80),
  body:String(n.message||'Open the app to view this update.').replace(/[\r\n]+/g,' ').slice(0,240),
  url:safeRoute(type,n.order_id,role),tag:'lwb-'+String(n.id),user_id:n.user_id};
+ // 🚨 Urgent task siren (lwb_task_siren_setup.sql): stays on screen, long vibration, one banner per task,
+ // opens the full-screen alarm in the app (task-siren.js).
+ if(type==='TASK_SIREN'){
+  const id=(/^TSK-(\d+|DEMO) /.exec(String(n.message||''))||[])[1]||'';
+  return {...msg,title:String(n.title||'🚨 URGENT task').slice(0,90),url:'/tasks.html'+(id?'?siren='+id.toLowerCase():''),
+   tag:'lwb-siren-'+(id||n.id),siren:true};
+ }
+ return msg;
 }
 
 // Salesmen get their order updates (approved, out for delivery, bill, delivered, payment) since 17 Nov 2026;
