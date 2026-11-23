@@ -4,6 +4,11 @@
 **Purpose:** Continue the same ERP project from a new ChatGPT conversation without restarting or losing the agreed requirements.
 **Status:** Active development / verification. Do not assume all modules are completed or fully tested.
 
+## Cash Sale party (23 Nov 2026)
+- Mohit: small walk-in sales (Rs 5-500) all go to ONE party "CASH SALE"; no ledger per buyer, only buyer name + mobile; no transport.
+- SQL `lwb_cash_sale_party_setup.sql` (test `tests/cash-sale`): `lwb_customer_master.is_cash_sale`, one CASH SALE party; `orders.cash_buyer_name / cash_buyer_mobile`; RPC `lwb_set_order_cash_buyer(order, name, mobile)` (maker or Admin); insert trigger makes every Cash Sale PO `SELF PICKUP`; party details guard skips the Cash Sale party.
+- `order-entry.html`: picking CASH SALE (`isCashParty`, also by name) shows the yellow buyer box, hides Transport / vehicle / pallet-sheet / credit / party details / min weight; no Self pickup driver popup. `warehouse-orders.html`: "Cash" badge with buyer under the party, in search and PO print.
+
 ## Direct Vehicle: party advance, final qty, balance (23 Nov 2026)
 - Mohit: a Direct Vehicle PO = company truck (ECRS order) goes straight to the party; party pays an advance (e.g. ₹50 L), company sends +/- cases (e.g. ₹55 L), balance (₹5 L) to collect. Needs its own place.
 - New page `direct-vehicle.html` (Admin / Manager / Accounts; side menu Sales > Direct Vehicle; "🚛 Direct Vehicle" button next to PO List / Dashboard on PO / Sales). Lists orders with transportation `DIRECT VEHICLE%` (not cancelled): PO qty/amount, final qty/amount with +/- badge, received, balance (red to collect / blue give back / green clear), status (Advance pending, Advance in, Vehicle ordered, Balance due, Give back, Settled, Closed). Popup: money entries (date, mode RTGS/CASH/UPI/CHEQUE/REFUND, ref) + Add, company truck (lwb_ecrs_trucks of last 40 days, label "dd/mm Order N"), note, final cases per PO line (blank = PO qty, "Same as PO"), Hisab closed.
