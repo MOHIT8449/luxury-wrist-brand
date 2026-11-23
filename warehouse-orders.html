@@ -1678,7 +1678,8 @@
         <option value="approved_pickup">Self Pickup</option>
         <option value="transport">Transport Assigned</option>
         <option value="loading">Loading</option>
-        <option value="loaded">Loaded / Billed</option>
+        <option value="loaded">Loaded (bill to make)</option>
+        <option value="billed">Billed</option>
         <option value="delivered">Delivered</option>
         <option value="cancelled">Cancelled</option>
         <option value="all">All Orders</option>
@@ -2422,6 +2423,7 @@ async function loadOrders() {
     fillColumnFilters();
     updateStats();
     renderOrders();
+    loadBillFlags();
     loadSummary();
     loadTrend();
     listLoadedAt = new Date();
@@ -3181,7 +3183,9 @@ const PO_TABS = [
   // Mohit, 20 Nov 2026: after Transport Assigned, Loading (godown started loading) and Loaded / Billed get own tabs.
   { k: "transport", t: "<span class=\"lg\">Transport </span>Assigned" },
   { k: "loading", t: "Loading" },
-  { k: "loaded", t: "Loaded<span class=\"lg\"> / Billed</span>" },
+  // Mohit, 23 Nov 2026: Loaded (Tally bill still to make) and Billed (Accounts saved the Tally bill) are separate tabs.
+  { k: "loaded", t: "Loaded" },
+  { k: "billed", t: "Billed" },
   { k: "delivered", t: "Delivered" },
   { k: "cancelled", t: "Cancelled" },
   { k: "all", t: "All", subs: [
@@ -3197,6 +3201,8 @@ function matchesTab(order, tab) {
   if (tab === "all") return true;
   if (tab === "polist") return ["pending", "approved"].includes(orderStage(order));
   if (tab === "dispatch") return ["transport", "loading", "loaded"].includes(orderStage(order));
+  if (tab === "loaded") return orderStage(order) === "loaded" && !isBilled(order);
+  if (tab === "billed") return orderStage(order) === "loaded" && isBilled(order);
   if (tab === "urgent") return orderPriority(order) !== "NORMAL" && !isCancelled(order) && !isDeliveredOrder(order);
   if (tab === "late_approval") return isLateApproval(order);
   if (tab === "late_delivery") return isLateDelivery(order);
@@ -3318,6 +3324,23 @@ const PO_STEPS = ["PO List", "Approved", "Transport", "Loading", "Delivered", "S
 const listJourney = new Map(); // order id -> lwb_po_journey row (orders on screen)
 const listPrints = new Map();  // order id -> lwb_po_print_info row
 let listPrintsOn = true;
+// Billed = Accounts saved the Tally bill of this PO (lwb_po_journey.bill_no). Loaded POs without it = bill to make.
+const isBilled = order => !!(listJourney.get(order.id) || {}).bill_no;
+let billFlagsBusy = false;
+async function loadBillFlags() {
+  if (billFlagsBusy) return;
+  const ids = orders.filter(o => orderStage(o) === "loaded").map(o => o.id);
+  if (!ids.length) return;
+  billFlagsBusy = true;
+  try {
+    for (let i = 0; i < ids.length; i += 500) {
+      const r = await db.rpc("lwb_po_journey", { p_ids: ids.slice(i, i + 500) });
+      if (r.error) return;
+      (r.data || []).forEach(x => listJourney.set(x.order_id, x));
+    }
+  } catch (e) { return; } finally { billFlagsBusy = false; }
+  renderOrders();
+}
 function isSettled(order) {
   const j = listJourney.get(order.id);
   return !!j && isDeliveredOrder(order) && (Number(j.bill_amount) > 0 || Number(j.collected) > 0) && Number(j.due) <= 0.5;
@@ -3898,7 +3921,7 @@ let fillLoading = false;
 
 function stageLabel(order) {
   const names = { pending: "Pending approval", approved: "Approved", transport: "Transport assigned", loading: "Loading",
-    loaded: "Loaded / Billed", delivered: "Delivered", cancelled: "Cancelled" };
+    loaded: isBilled(order) ? "Billed" : "Loaded", delivered: "Delivered", cancelled: "Cancelled" };
   return names[orderStage(order)] || normalizedStatus(order).replace(/_/g, " ");
 }
 
@@ -4528,6 +4551,7 @@ async function saveBill() {
     closeBill();
     listJourney.set(order.id, { ...(listJourney.get(order.id) || { order_id: order.id }), bill_no: no, bill_amount: amount });
     refreshMakeBill(order.id);
+    renderOrders();
     showMessage("Bill " + no + " saved for " + order.order_no + " · " + rs + " to collect.", "success");
     if (document.getElementById("trackModal").classList.contains("show") && document.getElementById("trackJourney").dataset.oid === String(order.id)) trackOrder(order.id);
   } catch (e) {
