@@ -1013,15 +1013,25 @@
     const num=v=>{const n=Number(String(v||"").replace(/[₹,\s]/g,""));return isFinite(n)?n:NaN};
 
     async function setOpening(){
-      const v=num(el("startAmt").value);
+      const v=num(el("startAmt").value),di=el("startDate"),day=(di&&di.value)||D.today;
       if(!(v>=0)||el("startAmt").value.trim()===""){await ERPShell.alert("Enter the cash in hand (0 if none)");return}
-      if(!await ERPShell.confirm("Opening cash "+rs(v)+" from today ("+dmy(D.today)+")?\n\nCount it once more. After this only Admin can change it."))return;
-      act(el("startBtn"),()=>rpc("lwb_acc_set_opening",{p_date:D.today,p_amount:v,p_note:"Opening cash"}));
+      if(day>D.today){await ERPShell.alert("Choose today or an earlier day");return}
+      const past=day<D.today;
+      if(!await ERPShell.confirm("Opening cash "+rs(v)+" at the start of "+(past?dmy(day):"today ("+dmy(day)+")")+"?"+
+        (past?"\n\nEntries from "+dmy(day)+" onwards will count in the cash.":"")+"\n\nCount it once more. After this only Admin can change it."))return;
+      act(el("startBtn"),()=>rpc("lwb_acc_set_opening",{p_date:day,p_amount:v,p_note:"Opening cash"}));
     }
-    async function resetOpening(){
-      const v=await ERPShell.prompt("Cash in hand at the start of today ("+dmy(D.today)+"). Only allowed when today and later days are not closed.","",{title:"Set opening cash again",placeholder:"₹ amount"});
-      if(v==null)return;const n=num(v);if(!(n>=0)){await ERPShell.alert("Enter the amount");return}
-      act(null,()=>rpc("lwb_acc_set_opening",{p_date:D.today,p_amount:n,p_note:"Opening cash set again by Admin"}));
+    function resetOpening(){
+      sheet("Set opening cash again",
+        '<div class="f2"><div class="f"><label>Start of day</label><input id="roDate" type="date" value="'+D.today+'" max="'+D.today+'"></div>'+
+        '<div class="f"><label>Cash in hand ₹</label><input id="roAmt" type="text" inputmode="decimal" placeholder="₹ amount"></div></div>'+
+        '<p class="acx-note" style="margin:0">'+tipI("Only allowed when that day and later days are not closed.")+'</p>',
+        "Set",async b=>{
+          const day=b.querySelector("#roDate").value||D.today,n=num(b.querySelector("#roAmt").value);
+          if(!(n>=0)||b.querySelector("#roAmt").value.trim()===""){await ERPShell.alert("Enter the amount");return false}
+          if(day>D.today){await ERPShell.alert("Choose today or an earlier day");return false}
+          return await act(null,()=>rpc("lwb_acc_set_opening",{p_date:day,p_amount:n,p_note:"Opening cash set again by Admin"}));
+        });
     }
 
     // Short code like the Cashbook: first letter of each word, a dash, first letters of the area. SHREE JAGDISH TRADERS (BARDOLI) -> SJT-B
