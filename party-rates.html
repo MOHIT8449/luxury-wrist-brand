@@ -89,7 +89,7 @@
     .pr-list li.roi{background:#effaf3;box-shadow:inset 4px 0 0 #13824a;padding-left:10px}.pr-list li.roi:hover{background:#e3f5ea}
     .pr-in.dup,.pr-in.dupph{border-color:#c8102e;background:#fff5f5}.pr-in.dupph::placeholder{color:#c8102e;font-weight:600;font-size:12.5px}
     .pr-lines td.roi{width:78px;white-space:nowrap}
-    .pr-noroi{font-size:11px;color:#9aa4b2;font-weight:600;white-space:nowrap}
+    .pr-noroi{font:inherit;font-size:11px;color:#9aa4b2;font-weight:600;white-space:nowrap;border:0;background:none;padding:0;cursor:pointer}
     .pr-lines b.ld{color:#0b3d91}
     .pr-add .sm{display:none}
     .pr-roi.no{border-style:dashed;cursor:default;color:#9aa4b2}
@@ -263,7 +263,8 @@
         const on=roiOn(l);l.on=on;
         // Below landing is fine while the ROI covers it; red only when it goes past landing − ROI.
         mb.classList.toggle("neg",mg!=null&&mg<(on?-roi():0));
-        const rb=!roiOk(l.item)?'<span class="pr-noroi" title="Company gives no ROI on this category">No ROI</span>'
+        const why=itemCats(l.item).filter(c=>roiSet.skip.has(c));
+        const rb=!roiOk(l.item)?'<button type="button" class="pr-noroi" data-act="noroi" title="'+esc(why.length?"No ROI category: "+why.join(", ")+" (change in ⚙ ROI setting)":"ROI ₹ is 0 in ⚙ ROI setting")+'">No ROI ⓘ</button>'
           :'<button type="button" class="pr-roi'+(on?" on":"")+'" data-act="roi" aria-pressed="'+on+'" title="Rate uses the company ROI ₹'+money(roi())+' / case">'+(on?"✓ ":"")+'ROI ₹'+money(roi())+'</button>';
         l.tr.querySelector(".roi").innerHTML=rb;
         if(!p){cell.innerHTML='<span class="mut">First time</span>'+list;return}
@@ -469,6 +470,7 @@
     el("lines").addEventListener("click",e=>{
       const b=e.target.closest("button[data-act]");if(!b)return;const tr=b.closest("tr");
       if(b.dataset.act==="del"){tr.remove();if(!el("lines").children.length)addLine();refresh()}
+      else if(b.dataset.act==="noroi")msg(b.title,"bad");
       else if(b.dataset.act==="roi"){tr.dataset.roi=b.getAttribute("aria-pressed")==="true"?"0":"1";refresh()}
       else history(tr.querySelector('[data-f=item]').value.trim());
     });
@@ -516,11 +518,11 @@
     function roiSettings(){
       const cats=[...new Set([...skuCat.values(),...roiSet.skip])].sort(),admin=me.role==="admin";
       openDlg("ROI setting",'<div class="pr-top" style="grid-template-columns:140px minmax(0,1fr);align-items:end"><div><label for="roiV">ROI ₹ per case</label><input id="roiV" class="pr-in" type="number" min="0" step="0.5" inputmode="decimal" value="'+roi()+'"'+(admin?"":" disabled")+'></div>'+
-        '<p class="mut" style="margin:0 0 6px">Company gives this on the month\'s purchase of every category except the ticked ones.</p></div>'+
-        '<b style="font-size:12.5px">Categories with NO ROI</b><div class="pr-cats">'+(cats.length?cats.map(c=>'<label><input type="checkbox" value="'+esc(c)+'"'+(roiSet.skip.has(c)?" checked":"")+(admin?"":" disabled")+'>'+esc(c)+'</label>').join(""):'<span class="mut">No category in SKU Master.</span>')+'</div>'+
+        '<p class="mut" style="margin:0 0 6px">Ticked = company gives ROI on this category. Untick the 1-2 categories with no ROI.</p></div>'+
+        '<b style="font-size:12.5px">✓ ROI given on</b> <span class="mut" style="font-size:12px">(untick = No ROI)</span><div class="pr-cats">'+(cats.length?cats.map(c=>'<label><input type="checkbox" value="'+esc(c)+'"'+(roiSet.skip.has(c)?"":" checked")+(admin?"":" disabled")+'>'+esc(c)+'</label>').join(""):'<span class="mut">No category in SKU Master.</span>')+'</div>'+
         (admin?"":'<p class="mut">Only Admin can change this.</p>'),
         admin?[["💾 Save",async()=>{
-          const v=Number(document.getElementById("roiV").value),c=[...el("dlgB").querySelectorAll(".pr-cats input:checked")].map(x=>x.value);
+          const v=Number(document.getElementById("roiV").value),c=[...el("dlgB").querySelectorAll(".pr-cats input:not(:checked)")].map(x=>x.value);
           if(!(v>=0)){dlgMsg("Enter ROI ₹ per case.",true);return}
           const {error}=await client.rpc("lwb_party_roi_settings_save",{p_roi:v,p_categories:c});
           if(error){dlgMsg(errText(error),true);return}
