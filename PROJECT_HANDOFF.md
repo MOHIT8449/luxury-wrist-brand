@@ -4,6 +4,11 @@
 **Purpose:** Continue the same ERP project from a new ChatGPT conversation without restarting or losing the agreed requirements.
 **Status:** Active development / verification. Do not assume all modules are completed or fully tested.
 
+## Friend swap: bank <-> cash with a friend (23 Nov 2026)
+- Mohit: in the friend circle someone sends money to our bank and we give the same cash (or gives cash and we send from bank). Not sales, not collection, not expense.
+- SQL `lwb_acc_friend_swap_setup.sql` (test `tests/friend-swap`, PGlite, 2 tests): table `lwb_acc_swaps(entry_id, person)`; RPC `lwb_acc_swap_add(p {date, dir B2C|C2B, bank_id, amount, person, ref, remark})` saves through `lwb_acc_add_entry` as DEPOSIT (B2C: cash -, bank + after bank check) or WITHDRAW (C2B: cash +, bank -), party = person (upper case); `lwb_acc_swap_names()` (last 120 days). `lwb_acc_lines_all` patched in place: head "Friend swap" for these entries. Cancel = normal Cancel this entry.
+- UI: Cashier / Accounts "🏦 Bank / Swap" button popup has a third choice "🔁 Friend swap" (direction, person + recent names, bank, amount, UTR, effect box). Day book: purple swap rows + tag, "🔁 Swap N" filter, strip with cash / bank net + Person-wise popup; Summary mode table rows. acc-hub.js `isSwap`: swaps are kept out of Cash In / Bank deposit cards (hand card shows "Swap ±X"); finance.html cash → bank excludes them. Screenshots (PGlite running the real SQL): project files `friend-swap/live/`.
+
 ## Party ledger: newest entries were cut at 1000 rows (23 Nov 2026)
 - Mohit: MANSHI MARKETING (KATARGAM) ₹1,11,600 cash party payment (23/11, by Yogesh) was in the Day book but not in the party ledger; "these mistakes keep repeating".
 - Cause (checked on live data, counts only): `lwb_party_ledger_b()` returns one row per entry and the website API (PostgREST max rows) sends at most 1000 rows of a call. The ledger had 1039 rows, so the last rows of the SQL (party payments, credit notes, payment collection, driver money come after the Tally bills) were silently dropped: 12 of the 31 party payments of 23/11 were missing. The data was always saved right (`lwb_tally_payments`), so no backfill was needed.
