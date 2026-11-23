@@ -926,7 +926,7 @@
   async function liveLocation(){
     try{
       const c=window.__lwbBellClient;if(!c)return;
-      if(!window.LWBLocation)await new Promise((ok,bad)=>{const s=document.createElement("script");s.src="live-location.js?v=20261123b";s.onload=ok;s.onerror=bad;document.head.appendChild(s)});
+      if(!window.LWBLocation)await new Promise((ok,bad)=>{const s=document.createElement("script");s.src="live-location.js?v=20261123c";s.onload=ok;s.onerror=bad;document.head.appendChild(s)});
       window.LWBLocation.start(c);
     }catch(e){}
   }

@@ -119,7 +119,10 @@
   }
 
   // ---------- Full-screen gate ----------
+  // 23 Nov 2026: lock switched OFF by the owner ("close it for now"). Set to true to bring it back.
+  const GATE_ON=false;
   function showGate(kind){
+    if(!GATE_ON)return;
     if(typeof document==="undefined"||!document.body||!document.createElement||!st.hours)return;
     if(!st.gate){
       const css=document.createElement("style");
