@@ -27,6 +27,7 @@ import java.util.concurrent.Executors;
 public final class DriverTrackingActivity extends Activity {
     private static final int REQ_FINE=11,REQ_BG=12,REQ_NOTIFY=13;
     private int attemptId=0;
+    private boolean refreshed=false;
     private TextView status; private EditText email,password; private Button agree;
     private LinearLayout form,row;
     private AlertDialog dialog;
@@ -65,6 +66,16 @@ public final class DriverTrackingActivity extends Activity {
             return;
         }
         form.setVisibility(LinearLayout.GONE);row.setVisibility(LinearLayout.VISIBLE);
+        // Ask the server once per open whether location is wanted at all (Admin can switch
+        // tracking off for everyone; then no location permission is asked).
+        if(!refreshed){
+            refreshed=true;status.setText("Opening…");
+            worker.execute(()->{
+                try{JSONObject me=api.rpc("lwb_track_me",new JSONObject());if(me.has("tracked"))api.setTracked(me.optBoolean("tracked"));}catch(Exception ignored){}
+                runOnUiThread(()->{if(!isDestroyed())check();});
+            });
+            return;
+        }
         if(!api.tracked()){ // Admin: never tracked. The urgent task alarm still runs (TaskSirenService).
             if(Build.VERSION.SDK_INT>=33&&checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)!=PackageManager.PERMISSION_GRANTED&&!asked("notify")){
                 requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS},REQ_NOTIFY);return;}
