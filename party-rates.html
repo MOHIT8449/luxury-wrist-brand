@@ -91,6 +91,9 @@
     .pr-lines td.roi{width:78px;white-space:nowrap}
     .pr-noroi{font:inherit;font-size:11px;color:#9aa4b2;font-weight:600;white-space:nowrap;border:0;background:none;padding:0;cursor:pointer}
     .pr-lines b.ld{color:#0b3d91}
+    .pr-lines .ldr{color:#15803d;font-weight:700}
+    .pr-lines .pr-li,.pr-li{box-sizing:border-box;min-width:0;min-height:0!important;display:inline-flex;align-items:center;justify-content:center;width:17px;height:17px;border-radius:50%;border:1.2px solid #0b3d91;background:#fff;color:#0b3d91;font:italic 700 10.5px/1 Georgia,serif;cursor:pointer;padding:0;vertical-align:1px;margin-left:2px}
+    .pr-ldt{width:100%;table-layout:fixed}.pr-ldt td,.pr-hist.pr-ldt td:first-child{padding:6px 8px;white-space:normal;overflow-wrap:anywhere}.pr-ldt td.n{width:96px;white-space:nowrap;text-align:right}.pr-ldt tr.tot td{border-top:1.5px solid #cbd5e1;color:#0b3d91}
     .pr-add .sm{display:none}
     .pr-roi.no{border-style:dashed;cursor:default;color:#9aa4b2}
     .roi-btn{cursor:pointer;font-weight:700;color:#13824a;text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -221,7 +224,7 @@
     // "One-time · till 30 Nov" etc. for the list and popup
     const typeLine=o=>{const t=o.offer_type||"CONTINUOUS",f=o.valid_from||o.offer_date;
       return TYPES[t]+(t==="DATED"?" · "+dshort(f)+" – "+dshort(o.valid_to):" · from "+dshort(f))+(t==="ONE_TIME"&&o.used_order_no?" · used in "+o.used_order_no:"")};
-    let me=null,land=new Map(),packs=[],offers=[],last=new Map(),lastParty="",saved=null;
+    let me=null,land=new Map(),brk=new Map(),packs=[],offers=[],last=new Map(),lastParty="",saved=null;
 
     // ROI (Mohit, 22 Nov 2026): company ROI ₹ / case on every category except the "no ROI" ones (Admin sets them).
     // ROI is used only when marked by hand (Mohit, 22 Nov 2026: normal rates are landing + margin, no ROI): tap ROI on a
@@ -245,6 +248,8 @@
     }
     function addLine(it,focus){const tr=lineRow(it);el("lines").appendChild(tr);refresh();if(focus)tr.querySelector('[data-f=item]').focus();return tr}
     const ldOf=item=>{const v=land.get(key(item));return v==null?null:v};
+    // Landing after ROI (Mohit, 23 Nov 2026): an ROI line lands ROI ₹ lower, so margin = rate − (landing − ROI).
+    const effLd=(item,on)=>{const v=ldOf(item);return v==null?null:Math.round((v-(on?roi():0))*100)/100};
     function lines(){return [...el("lines").querySelectorAll("tr")].map(tr=>({tr,item:tr.querySelector('[data-f=item]').value.trim(),rate:tr.querySelector('[data-f=rate]').value.trim()}))}
     function refresh(){
       const ls=lines();let n=0;
@@ -254,15 +259,17 @@
         if(l.item&&l.rate!=="")n++;
         if(!l.item){cell.innerHTML="";l.tr.querySelector(".roi").innerHTML="";return}
         const pk=packs.find(x=>key(x.pack_name)===key(l.item));
-        const ld=pk?ldOf(pk.pack_name):null,mg=ld!=null&&l.rate!==""?Number(l.rate)-ld:null;
+        const on=roiOn(l);l.on=on;
+        const ld0=pk?ldOf(pk.pack_name):null,ld=pk?effLd(pk.pack_name,on):null,mg=ld!=null&&l.rate!==""?Number(l.rate)-ld:null;
         // Landing + margin on screen only (Mohit, 16 Nov 2026); never on the image / WhatsApp.
-        const list=pk?'<small>'+(Number(pk.slab3_rate)>0?'List ₹'+money(pk.slab3_rate):"")+(ld!=null?(Number(pk.slab3_rate)>0?" · ":"")+'Landing <b class="ld">₹'+money(ld)+'</b>':"")+'</small>':"";
+        // ROI on: old landing struck, landing − ROI in blue. (i) = how the landing is made (scheme, MEPD, OMS, QPS, ROI).
+        const list=pk?'<small>'+(Number(pk.slab3_rate)>0?'List ₹'+money(pk.slab3_rate):"")+(ld!=null?(Number(pk.slab3_rate)>0?" · ":"")+'Landing '+(on?'<s class="mut">₹'+money(ld0)+'</s> ':"")+'<b class="ld">₹'+money(ld)+'</b>'+(on?'<span class="ldr"> −₹'+money(roi())+' ROI</span>':"")+
+          ' <button type="button" class="pr-li" data-act="ld" aria-label="How landing is made" title="How landing is made">i</button>':"")+'</small>':"";
         // Margin box (Mohit, 16 Nov 2026): shows rate − landing; typing in it sets the rate (see "input" below).
         const mb=l.tr.querySelector('[data-f=mg]');mb.disabled=ld==null;mb.title=ld==null?"No landing for this item (not a Rate List pack)":"Margin over landing: rate = landing + margin";
         if(document.activeElement!==mb)mb.value=mg==null?"":String(Math.round(mg*10)/10);
-        const on=roiOn(l);l.on=on;
-        // Below landing is fine while the ROI covers it; red only when it goes past landing − ROI.
-        mb.classList.toggle("neg",mg!=null&&mg<(on?-roi():0));
+        // Red when the rate is below landing (after ROI on an ROI line).
+        mb.classList.toggle("neg",mg!=null&&mg<0);
         const why=itemCats(l.item).filter(c=>roiSet.skip.has(c));
         const rb=!roiOk(l.item)?'<button type="button" class="pr-noroi" data-act="noroi" title="'+esc(why.length?"No ROI category: "+why.join(", ")+" (change in ⚙ ROI setting)":"ROI ₹ is 0 in ⚙ ROI setting")+'">No ROI ⓘ</button>'
           :'<button type="button" class="pr-roi'+(on?" on":"")+'" data-act="roi" aria-pressed="'+on+'" title="Rate uses the company ROI ₹'+money(roi())+' / case">'+(on?"✓ ":"")+'ROI ₹'+money(roi())+'</button>';
@@ -346,6 +353,24 @@
     }
     const openWa=o=>window.open("https://wa.me/?text="+encodeURIComponent(waText(o)),"_blank","noopener");
 
+    // Landing (i) (Mohit, 23 Nov 2026): which scheme, MEPD, OMS / free bottle, QPS and ROI make this landing, to answer any query.
+    function landInfo(item,on,rate){
+      const b=brk.get(key(item));if(!b){msg("No landing for this item (not a Rate List pack).","bad");return}
+      const r=(t,v,cls,sub)=>'<tr'+(cls?' class="'+cls+'"':"")+'><td>'+t+(sub?'<small class="mut" style="display:block">'+sub+'</small>':"")+'</td><td class="n">'+v+'</td></tr>';
+      const neg=v=>'− ₹'+money(v);
+      let rows=r("GR (company rate)",'₹'+money(b.gr))+
+        r("MEPD "+trim(b.mp)+"%",neg(b.e),"",esc(b.msrc));
+      rows+=b.fb?r("Free bottle "+trim(b.fb)+" on "+trim(b.c)+" pcs",neg(b.g),"","List ₹"+money(b.list)+" based"):r("OMS",b.oms?neg(b.oms):'<span class="mut">₹0</span>');
+      if(b.qps)rows+=r("QPS",neg(b.qps));
+      if(b.im)rows+=r("ROI in landing (Rate setting)",neg(b.im));
+      rows+=r("<b>Landing</b>",'<b>₹'+money(b.ld)+'</b>',"tot");
+      const ld=on?Math.round((b.ld-roi())*100)/100:b.ld;
+      if(on)rows+=r("ROI for this party",neg(roi()),"","Company ROI ₹"+money(roi())+" / case")+r("<b>Landing after ROI</b>",'<b>₹'+money(ld)+'</b>',"tot");
+      if(rate!==""&&!isNaN(Number(rate))){const m=Number(rate)-ld;rows+=r("Rate",'₹'+money(rate))+r("Margin",'<span class="'+(m<0?"dn":"up")+'">'+(m>0?"+":"")+money(m)+'</span>')}
+      openDlg(String(item).toUpperCase()+" · Landing",'<table class="pr-hist pr-ldt" data-cf-off><tbody>'+rows+'</tbody></table><p class="mut">Same as Rate &amp; Scheme, for today ('+esc(dshort(today()))+').</p>');
+    }
+    const trim=v=>String(Math.round(Number(v)*1000)/1000);
+
     // ---------- popup ----------
     function openDlg(title,body,buttons){
       el("dlgT").textContent=title;el("dlgB").innerHTML=body+'<p id="dlgM" class="pr-msg"></p>';
@@ -377,18 +402,18 @@
     function viewOffer(o){
       // Saved offer popup (Mohit, 16 Nov 2026): Category · Rate · Landing · Margin (rate − landing, less ROI). Screen only.
       const live=o.state==="RUNNING"||o.state==="UPCOMING";
-      const rows=o.lines.map((l,i)=>{const ld=ldOf(l.item),mg=ld==null?null:Number(l.rate)-ld,rc=live&&l.recheck_at;
+      const rows=o.lines.map((l,i)=>{const ld=ldOf(l.item)==null?null:Math.round((ldOf(l.item)-(l.roi>0?Number(l.roi):0))*100)/100,mg=ld==null?null:Number(l.rate)-ld,rc=live&&l.recheck_at;
         return '<tr'+(rc?' class="rc"':"")+'><td class="mut">'+(i+1)+'</td><td><b>'+esc(String(l.item).toUpperCase())+'</b>'+(l.roi>0?'<span class="st ROI">ROI ₹'+money(l.roi)+'</span>':"")+
           (rc?'<div class="rcn">⚠ '+esc(l.recheck_note||"Rate changed")+' · recheck</div>':"")+'</td><td class="n"><b>₹'+money(l.rate)+'</b></td><td class="n">'+(ld==null?'<span class="mut">—</span>':'₹'+money(ld))+
-          (l.landing!=null&&ld!=null&&Math.abs(Number(l.landing)-ld)>=0.01?'<small class="mut" style="display:block" title="Landing when the offer was saved">was ₹'+money(l.landing)+'</small>':"")+'</td><td class="n">'+
-          (mg==null?'<span class="mut">—</span>':'<span class="'+(mg<(l.roi>0?-Number(l.roi):0)?"dn":"up")+'">'+(mg>0?"+":"")+money(mg)+'</span>')+'</td></tr>'}).join("");
+          (l.landing!=null&&ld!=null&&Math.abs(Number(l.landing)-ldOf(l.item))>=0.01?'<small class="mut" style="display:block" title="Landing when the offer was saved">was ₹'+money(l.landing)+'</small>':"")+'</td><td class="n">'+
+          (mg==null?'<span class="mut">—</span>':'<span class="'+(mg<0?"dn":"up")+'">'+(mg>0?"+":"")+money(mg)+'</span>')+'</td></tr>'}).join("");
       const cx=o.status==="CANCELLED";
       const btns=[["🖼 Image",async()=>{const t=await shareImage(o);if(t)dlgMsg(t)}],["WhatsApp",()=>openWa(o),"ghost"],
         ["↺ Use again",()=>{closeDlg();useAgain(o)},"ghost"]];
       if(!cx&&(me.role==="admin"||o.mine))btns.push(["Cancel",()=>cancelOffer(o),"ghost"]);
       openDlg(o.offer_no+" · "+o.party_name,'<p class="mut" style="margin:0 0 6px"><span class="ty">'+esc(typeLine(o))+'</span>'+(o.state?'<span class="st '+esc(o.state)+'">'+esc(STATES[o.state]||o.state)+'</span>':"")+' · by '+esc(o.by||"")+(cx?' '+esc(o.cancel_note||""):"")+'</p>'+
         (o.recheck_lines>0?'<div class="pr-warn" style="cursor:default;display:flex;gap:8px;align-items:center"><span style="flex:1;min-width:0">⚠ Pack rate changed after this offer. Check the rate (give a new offer if needed), then tap Checked.</span><button type="button" class="sl-btn small" id="rcDone">✓ Checked</button></div>':"")+
-        '<table class="pr-hist" data-cf-off><thead><tr><th>#</th><th>Category</th><th class="n">Rate ₹</th><th class="n">Landing ₹</th><th class="n">Margin ₹</th></tr></thead><tbody>'+rows+'</tbody></table>'+'<p class="mut">Today\'s landing (before ROI)</p>'+(o.note?'<p class="mut">'+esc(o.note)+'</p>':""),btns);
+        '<table class="pr-hist" data-cf-off><thead><tr><th>#</th><th>Category</th><th class="n">Rate ₹</th><th class="n">Landing ₹</th><th class="n">Margin ₹</th></tr></thead><tbody>'+rows+'</tbody></table>'+'<p class="mut">Today\'s landing; ROI lines show landing − ROI</p>'+(o.note?'<p class="mut">'+esc(o.note)+'</p>':""),btns);
       const rd=document.getElementById("rcDone");if(rd)rd.onclick=()=>recheckDone(o);
     }
     async function cancelOffer(o){
@@ -463,7 +488,7 @@
       if(e.target.dataset.f==="item"){e.target.classList.toggle("dup",!!dupOf(e.target.closest("tr")));
         if(e.target.classList.contains("dupph")){e.target.classList.remove("dupph");e.target.placeholder="e.g. 2.25L"}}
       const t=e.target;
-      if(t.dataset.f==="mg"){const tr=t.closest("tr"),ld=ldOf(tr.querySelector('[data-f=item]').value),r=tr.querySelector('[data-f=rate]');
+      if(t.dataset.f==="mg"){const tr=t.closest("tr"),it=tr.querySelector('[data-f=item]').value.trim(),ld=effLd(it,!!it&&roiOk(it)&&tr.dataset.roi==="1"),r=tr.querySelector('[data-f=rate]');
         if(ld!=null)r.value=t.value.trim()===""?"":String(Math.round(ld+Number(t.value)))}
       refresh();
     });
@@ -472,6 +497,7 @@
       if(b.dataset.act==="del"){tr.remove();if(!el("lines").children.length)addLine();refresh()}
       else if(b.dataset.act==="noroi")msg(b.title,"bad");
       else if(b.dataset.act==="roi"){tr.dataset.roi=b.getAttribute("aria-pressed")==="true"?"0":"1";refresh()}
+      else if(b.dataset.act==="ld"){const it=tr.querySelector('[data-f=item]').value.trim();landInfo(it,roiOk(it)&&tr.dataset.roi==="1",tr.querySelector('[data-f=rate]').value.trim())}
       else history(tr.querySelector('[data-f=item]').value.trim());
     });
     el("lines").addEventListener("keydown",e=>{
@@ -553,6 +579,15 @@
     }
     el("roiRep").onclick=()=>roiReport();
 
+    // Parts of S.landing (sales-common.js), same formula, for the Landing (i) popup.
+    function parts(p,st,sc,ld){
+      const n=v=>Number(v)||0,C=n(p.case_config),D=n(p.gr),F=n(p.free_bottle),H=n(p.qps),I=n(st.roi_main),P=n(p.slab3_rate);
+      const blank=v=>v===""||v==null,mp=sc?n(sc.mepd_pct):blank(p.mepd_pct)?n(st.mepd_pct):n(p.mepd_pct);
+      const msrc=sc?"Scheme "+dshort(sc.valid_from)+" – "+dshort(sc.valid_to)+" ("+(sc.categories||[]).join(", ")+")"+(sc.note?" · "+sc.note:""):blank(p.mepd_pct)?"No scheme today: default MEPD of Rate setting":"No scheme today: MEPD of this pack";
+      const E=D*mp/100,o={gr:D,mp,e:E,msrc,qps:H,im:I,ld,list:P,c:C};
+      if(F>0&&C){const base=D-E-H-I-(D/C)*F,O=Math.round((P-base)/(1+F/C)*100)/100;o.fb=F;o.g=((D/C)*F)-((O/C)*F)}else o.oms=n(p.oms);
+      return o;
+    }
     (async()=>{
       me=await S.start(["admin","manager"]);if(!me)return;
       el("loading").hidden=true;el("page").hidden=false;
@@ -563,7 +598,7 @@
           client.from("lwb_rate_settings").select("mepd_pct,roi_main").eq("id",1).maybeSingle(),
           client.from("lwb_rate_pack_skus").select("sku_key,pack_id"),
           client.from("sku_master").select("sku_name,category"),
-          client.from("lwb_mepd_schemes").select("categories,mepd_pct,valid_from,valid_to,created_at")]);
+          client.from("lwb_mepd_schemes").select("categories,mepd_pct,valid_from,valid_to,created_at,note")]);
         packs=pk.error?[]:(pk.data||[]);
         // Landing (excl. ROI) per pack, same formula as Rate & Scheme: today's MEPD scheme of the linked SKUs' category.
         if(!st.error&&st.data){
@@ -574,7 +609,7 @@
           packs.forEach(p=>{const cs=[...new Set(links.filter(l=>l.pack_id===p.id).map(l=>cat.get(key(l.sku_key))).filter(Boolean).map(key))];if(cs.length)packCats.set(key(p.pack_name),cs)});
           packs.forEach(p=>{let best=null;
             if(window.LWBMepd)links.filter(l=>l.pack_id===p.id).forEach(l=>{const x=LWBMepd.find(schemes,cat.get(key(l.sku_key)));if(x&&(!best||String(x.created_at)>String(best.created_at)))best=x});
-            if(Number(p.gr)>0)land.set(key(p.pack_name),Math.round(S.landing(p,st.data,best)*100)/100)});
+            if(Number(p.gr)>0){const ld=Math.round(S.landing(p,st.data,best)*100)/100;land.set(key(p.pack_name),ld);brk.set(key(p.pack_name),parts(p,st.data,best,ld))}});
         }
         const names=new Map();packs.forEach(p=>names.set(key(p.pack_name),[p.pack_name,Number(p.slab3_rate)>0?"List ₹"+money(p.slab3_rate):"Rate List pack"]));
         allItems=[...names.values()];fillItems(null);
