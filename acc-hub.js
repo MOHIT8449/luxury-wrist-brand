@@ -216,7 +216,7 @@
   }
   function billFrom(PI,marks,early,brand){
     const LP=window.LWBPartyPay,V=p=>brand?LP.slice(p,brand):p,parties=[...PI.parties.values()].map(V);
-    const mk=(PI.raw.orders||[]).filter(x=>(!brand||(x.company_id||"")===brand)&&LP.needsBill(x,marks)).concat(brand?[]:(early||[]));
+    const mk=(PI.raw.orders||[]).filter(x=>LP.makeInBrand(x,brand)&&LP.needsBill(x,marks)).concat((early||[]).filter(x=>LP.makeInBrand(x,brand)));
     const bn=brand&&PI.brandOf?((PI.brandOf(brand)||{}).name||""):"";
     return billKpis({make:mk.length,makeAmt:mk.reduce((a,x)=>a+Number(x.erp_amount||0),0),early:mk.filter(x=>x.early).length,
       due:parties.reduce((a,p)=>a+Math.max(0,p.net),0),dueN:parties.filter(p=>p.net>0.5).length,
@@ -268,7 +268,7 @@
       const marks=new Map((mk.error?[]:(mk.data||[])).map(m=>[m.order_id,1]));
       const brand=PI.branded&&window.LWBBrand?LWBBrand.get(PI.companies):"";
       kpis(billFrom(PI,marks,early.error?[]:(early.data||[]).map(x=>({...x,early:true})),brand));
-      const L=(PI.raw.orders||[]).filter(x=>LP.needsBill(x,marks)).length+(brand?0:(early.error?0:(early.data||[]).length));
+      const L=(PI.raw.orders||[]).filter(x=>LP.makeInBrand(x,brand)&&LP.needsBill(x,marks)).length+(early.error?0:(early.data||[]).filter(x=>LP.makeInBrand(x,brand)).length);
       counts({make:L,chg:(chg.error?[]:(chg.data||[])).filter(c=>c.status==="WAITING").length});
     }catch(e){kpis({make:{v:"—",s:""},due:{v:"—",s:""},adv:{v:"—",s:""}})}
   }

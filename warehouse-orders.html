@@ -1393,6 +1393,8 @@
     .bc-q {display:block;font-size:11px;font-weight:800;color:#b45309;white-space:nowrap}
     .bc-b {display:inline-block;margin:2px 0 0 4px;padding:0 5px;border-radius:5px;background:#fff1d6;color:#92400e;font-size:10.5px;font-weight:800;vertical-align:middle;white-space:nowrap}
     #markModal {z-index:1010}
+    #billModal {z-index:1010} /* Make bill opens over the View PO popup too */
+    #makeBillBtn[hidden] {display:none!important}
     /* ⓘ next to Qty / Rate: last 5 earlier POs of this item for this party (lwb_po_review_line_history_setup.sql). Admin only. */
     #itemsBody .i-inbox {display:inline-flex;align-items:center;gap:4px;vertical-align:middle}
     .lh-btn {flex:0 0 22px;width:22px;height:22px;border-radius:50%;border:1px solid #1d5fa8;background:#eef4fc;color:#1d5fa8;font:italic 700 12px/1 Georgia,serif;cursor:pointer;padding:0}
@@ -1981,6 +1983,7 @@
       </div>
 
       <div class="modal-footer">
+        <button type="button" class="btn btn-green" id="makeBillBtn" onclick="selectedOrder&&openBill(selectedOrder.id)" title="Make the Tally bill of this PO" hidden>🧾 Make Bill</button>
         <button type="button" class="btn btn-light" id="printPoDocumentBtn" onclick="printPoFromModal()" disabled>Print PO</button>
         <button type="button" class="btn btn-light" id="sharePoBtn" onclick="selectedOrder&&LWBPoShare.quick(db,selectedOrder.id)" title="Copy order image for WhatsApp (no order no.). Phone: downloads it." aria-label="Copy order image"></button>
         <button type="button" class="btn btn-light" id="printChallanBtn" onclick="printApprovedPO('challan')" style="display:none">Challan</button>
@@ -3542,6 +3545,8 @@ async function loadListExtras(pageOrders) {
     listPrintsOn ? db.rpc("lwb_po_print_info", { p_ids: ids }).then(r => r, () => ({ error: true })) : { error: true }
   ]);
   if (!j.error) (j.data || []).forEach(r => listJourney.set(r.order_id, r));
+  listJourneyFailed = !!j.error;
+  if (CAN_BILL) ids.forEach(refreshMakeBill);
   if (!p.error) { ids.forEach(id => listPrints.delete(id)); (p.data || []).forEach(r => listPrints.set(r.order_id, r)); }
   else if (listPrintsOn && /lwb_po_print_info/.test((p.error && p.error.message) || "")) listPrintsOn = false; // SQL not run yet
   pageOrders.forEach(order => {
@@ -4165,7 +4170,7 @@ function trackOrder(id) {
   renderAdminMark(order, "trackAdmMark");
   document.getElementById("trackHistBtn").onclick = () => openPoHistory(order.id);
   renderJourney(order, document.getElementById("trackJourney")).then(data => {
-    if (!CAN_BILL || !eligibleForPoPrint(order) || document.getElementById("trackJourney").dataset.oid !== String(id)) return;
+    if (!canMakeBill(order) || document.getElementById("trackJourney").dataset.oid !== String(id)) return;
     foot.innerHTML = data?.bill_no
       ? `<a class="btn btn-light" href="party-billing.html?order=${encodeURIComponent(order.id)}">🧾 Bill ${escapeHtml(data.bill_no)} · Billing &amp; Outstanding</a>`
       : `<button class="btn btn-green" onclick="openBill('${order.id}')">🧾 Enter Tally bill no.</button>`;
@@ -4447,6 +4452,27 @@ async function saveSp() {
 
 /* Accounts / Admin: Tally bill no. straight from the PO list (same save as Billing & Outstanding). */
 let billOrder = null;
+/* Make bill from the PO list (Mohit, 23 Nov 2026): Accounts get "🧾 Make bill" on every approved / transport /
+   loading / loaded / delivered PO that has no Tally bill yet, every brand (Rajnigandha too). It shows once the PO
+   journey says there is no bill (lwb_po_journey.bill_no); if that read fails it still shows (the popup checks again).
+   Saving uses lwb_save_tally_bills, so the PO leaves Billing > Bills to make at once. */
+let listJourneyFailed = false;
+function canMakeBill(order) {
+  return CAN_BILL && !!order && !isCancelled(order) && ["approved", "transport", "loading", "loaded", "delivered"].includes(orderStage(order));
+}
+function makeBillBtn(order) {
+  if (!canMakeBill(order)) return "";
+  const j = listJourney.get(order.id);
+  if (j ? j.bill_no : !listJourneyFailed) return "";
+  return `<button class="btn btn-green" title="Make the Tally bill of this PO (bill no., amount, date)" onclick="event.stopPropagation();openBill('${order.id}')">🧾 Make Bill</button>`;
+}
+function refreshMakeBill(id) {
+  const order = orders.find(o => String(o.id) === String(id));
+  document.querySelectorAll(`#ordersArea [data-mkb="${id}"]`).forEach(el => { el.innerHTML = order ? makeBillBtn(order) : ""; });
+  const mb = document.getElementById("makeBillBtn");
+  if (mb && selectedOrder && String(selectedOrder.id) === String(id)) mb.hidden = !order || !CAN_BILL || !canMakeBill(order) || !!(listJourney.get(order.id) || {}).bill_no;
+}
+
 async function openBill(id) {
   const order = orders.find(o => String(o.id) === String(id));
   if (!order || !CAN_BILL) return;
@@ -4465,7 +4491,7 @@ async function openBill(id) {
       "<br>To change it or add a sub-firm bill, open Billing &amp; Outstanding.";
     return;
   }
-  info.innerHTML = "PO value " + rs(order.total_amount) + " · " + escapeHtml(order.status || "") +
+  info.innerHTML = "PO value <b>" + rs(order.total_amount) + "</b> · " + escapeHtml(order.status || "") +
     "<br>Enter the bill no. and amount exactly as in Tally. The amount goes to To collect for this party.";
   document.getElementById("billNo").value = "";
   document.getElementById("billAmt").value = "";
@@ -4500,6 +4526,8 @@ async function saveBill() {
       p_bills: [{ firm: order.customer_name || "", no, amount }], p_note: null });
     if (error) throw error;
     closeBill();
+    listJourney.set(order.id, { ...(listJourney.get(order.id) || { order_id: order.id }), bill_no: no, bill_amount: amount });
+    refreshMakeBill(order.id);
     showMessage("Bill " + no + " saved for " + order.order_no + " · " + rs + " to collect.", "success");
     if (document.getElementById("trackModal").classList.contains("show") && document.getElementById("trackJourney").dataset.oid === String(order.id)) trackOrder(order.id);
   } catch (e) {
@@ -4829,7 +4857,7 @@ ${CAN_PAY ? `            <td class="c-pay" data-label="Party Due" data-pay="${or
               <button class="btn btn-light btn-track" title="Track: where is this PO now" onclick="trackOrder('${order.id}')">📍<span class="lbl-long"> Track</span></button>
               ${!isCancelled(order) ? `<button class="btn btn-light btn-track" title="Copy order image for WhatsApp (no order no.). Phone: downloads it." aria-label="Copy order image" onclick="LWBPoShare.quick(db,'${order.id}')">${LWBPoShare.ICON}</button>` : ""}
               ${spButtonFor(order) && !isSlipBrandOrder(order) ? `<button class="btn btn-light" title="Pallet / Sheet given to party and returned" onclick="openSp('${order.id}')">▦<span class="lbl-long"> Pallet</span></button>` : ""}
-              ${CAN_BILL && VIEW_ONLY && eligibleForPoPrint(order) && !isSlipBrandOrder(order) ? `<button class="btn btn-green" title="Enter the Tally bill no." onclick="openBill('${order.id}')">🧾 Bill</button>` : ""}
+              ${CAN_BILL && VIEW_ONLY && canMakeBill(order) ? `<span class="mkb" data-mkb="${order.id}">${makeBillBtn(order)}</span>` : ""}
               ${IS_ADMIN && rateWait.has(order.id) ? `<button class="btn btn-green" title="Rate below min: check and approve" onclick="openRateOk('${order.id}')">₹ Rate OK</button>` : ""}
               ${poPrintAllowed(order) ? `<button class="btn btn-light" title="Print PO" onclick="printPoFromList('${order.id}')">🖨 PO</button>` : ""}
               ${TAX_BILL && printAllowed(order) && !isSlipBrandOrder(order) ? `<button class="btn btn-light" title="Print tax invoice (Tally layout)" onclick="taxBillPrint('${order.id}', this)">🖨 Bill</button>` : ""}
@@ -5019,6 +5047,7 @@ async function reviewOrder(orderId, transportOnly=false, quiet=false) {
 
   reviewReady = false;
   document.getElementById("printPoDocumentBtn").disabled=true;
+  document.getElementById("makeBillBtn").hidden=true;
   document.getElementById("postApprovalPanel").hidden=true;
   const shareBtn=document.getElementById("sharePoBtn");shareBtn.innerHTML=LWBPoShare.ICON;shareBtn.hidden=isCancelled(selectedOrder);
   approvedTransport=null;
@@ -5051,6 +5080,7 @@ async function reviewOrder(orderId, transportOnly=false, quiet=false) {
     originalItemIds = selectedItems.map(x => x.id);
     savedPoItemsSignature=poItemsSignature(selectedItems);
     document.getElementById("printPoDocumentBtn").disabled=isCancelled(selectedOrder);
+    if (CAN_BILL && VIEW_ONLY) refreshMakeBill(selectedOrder.id);
     reviewReady = true;
     document.getElementById("approveOrderBtn").disabled = false;
     updateWarehouseSkuHint();

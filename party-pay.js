@@ -471,5 +471,8 @@
   // before this screen are left out). One rule for the page and the Dashboard (Mohit, 16 Nov 2026).
   const MAKE_FROM="2026-09-30";
   const needsBill=(o,marks)=>!o.invoice_no&&(["loaded","invoiced"].includes(String(o.status).toLowerCase())||!!(marks&&marks.has(o.order_id))||String(o.dispatch_date||o.order_date||"").slice(0,10)>=MAKE_FROM);
-  window.LWBPartyPay={load,open,changeDate,dateLogText,needsBill,billNames,balText,key,rs,dmy,errText,slice,activeBrands,lookalike,core};
+  // Brand of a bill to make (Mohit, 23 Nov 2026, LXY-00560): a PO whose brand is not known (SKU not matched, or lines of
+  // two brands, company_id NULL) shows under every brand, so it never drops off the to-do list when a brand is picked.
+  const makeInBrand=(o,b)=>!b||!o.company_id||o.company_id===b;
+  window.LWBPartyPay={load,open,changeDate,dateLogText,needsBill,makeInBrand,billNames,balText,key,rs,dmy,errText,slice,activeBrands,lookalike,core};
 })();
