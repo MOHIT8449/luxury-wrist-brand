@@ -2,6 +2,7 @@
    Loaded by erp-shell.js on every page. Sends this login's GPS to
    lwb_track_ping while the ERP is open, for every login except Admin, in the
    work hours set on the Live Tracking page.
+   Phones only: on a desktop / laptop nothing runs (no location, no lock).
    Location gate (22 Nov 2026): in work hours, if location permission is
    blocked or the phone's location (GPS) is switched off, a full-screen
    "Turn on location" screen covers the ERP until location works again, and
@@ -12,6 +13,12 @@
    that (see android/README.md). */
 (function(){
   if(window.LWBLocation)return;
+  // Phones only (mobile browser + the Android app). Desktop / laptop ERP is office
+  // work: no location asked, no lock, nothing sent (23 Nov 2026, owner's rule).
+  const nav=typeof navigator!=="undefined"?navigator:{},ua=String(nav.userAgent||"");
+  const isPhone=nav.userAgentData&&typeof nav.userAgentData.mobile==="boolean"?nav.userAgentData.mobile
+    :/Android|iPhone|iPod|Mobi|Windows Phone/i.test(ua);
+  if(!isPhone){window.LWBLocation={last:null,status:"desktop",start(){},now:async()=>null,retry:async()=>null};return}
   const SEND_MS=25e3,MOVE_M=50,BEAT_MS=60e3,RECHECK_MS=10*60e3;
   const st={db:null,watch:null,last:null,sentAt:0,sentPos:null,beat:null,on:false,denied:false,busy:false,
     unavail:0,offSent:false,hours:null,gate:null,perm:null};
