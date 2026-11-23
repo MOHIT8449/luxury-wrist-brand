@@ -4,6 +4,11 @@
 **Purpose:** Continue the same ERP project from a new ChatGPT conversation without restarting or losing the agreed requirements.
 **Status:** Active development / verification. Do not assume all modules are completed or fully tested.
 
+## Cash Sale party (23 Nov 2026)
+- Mohit: small walk-in sales (Rs 5-500) all go to ONE party "CASH SALE"; no ledger per buyer, only buyer name + mobile; no transport.
+- SQL `lwb_cash_sale_party_setup.sql` (test `tests/cash-sale`): `lwb_customer_master.is_cash_sale`, one CASH SALE party; `orders.cash_buyer_name / cash_buyer_mobile`; RPC `lwb_set_order_cash_buyer(order, name, mobile)` (maker or Admin); insert trigger makes every Cash Sale PO `SELF PICKUP`; party details guard skips the Cash Sale party.
+- `order-entry.html`: picking CASH SALE (`isCashParty`, also by name) shows the yellow buyer box, hides Transport / vehicle / pallet-sheet / credit / party details / min weight; no Self pickup driver popup. `warehouse-orders.html`: "Cash" badge with buyer under the party, in search and PO print.
+
 ## Urgent task alarm in the Android app (22 Nov 2026)
 - Mohit wanted the siren to ring on a phone that is lying untouched (web push can only play the normal notification tone once).
 - Android app (new APK): `SirenAlarm.poll()` calls `lwb_task_my_sirens` once a minute from DriverLocationService (staff) or the new `TaskSirenService` (Admin / untracked logins, foreground type specialUse). A new ring (id@siren_count, remembered on the phone) posts an alarm notification on channel `task-siren-alarm` (ALARM sound `res/raw/task_siren.ogg`, insistent, bypass DND requested, SOS vibration) with a full-screen intent to `SirenActivity`: screen turns on over the lock screen, siren loops on the ALARM stream (rings on Silent; alarm volume raised to 70% while ringing, then restored), vibrates, ✅ Done (tap twice, `lwb_task_update` DONE) / ⏰ Later (`lwb_task_siren_seen`) / Open; stops after 3 min. Android 14+: the gate asks once for "Full screen notifications".
