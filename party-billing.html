@@ -6,14 +6,14 @@
   <title>Accounts | Luxury Wrist Brand ERP</title>
   <script src="vendor/supabase-js-2.119.0.js"></script>
   <script src="erp-date.js"></script>
-  <link rel="stylesheet" href="erp-shell.css?v=20261121">
-  <script src="erp-shell.js?v=20261121"></script>
+  <link rel="stylesheet" href="erp-shell.css?v=20261123">
+  <script src="erp-shell.js?v=20261123"></script>
 <script src="erp-list.js"></script>
   <script src="excel-io.js"></script>
   <script src="tally-note.js" defer></script>
   <script src="brand-filter.js"></script>
   <script src="erp-period.js"></script>
-  <script src="party-pay.js"></script>
+  <script src="party-pay.js?v=20261123a"></script>
   <script src="bill-change.js"></script>
   <script src="acc-hub.js"></script>
   <style>
@@ -704,12 +704,12 @@
       const live=list.filter(r=>!r.cancelled),payT=live.reduce((a,r)=>a+Number(r.total||0),0),payA=live.reduce((a,r)=>a+Math.max(0,Number(r.total||0)-(r.allocs||[]).reduce((x,y)=>x+Number(y.amount),0)),0);
       el("body").innerHTML=`<div class="mk-bar"><span class="mk-sum"><b>${live.length}</b> payment${live.length===1?"":"s"} · <b class="adv">${rs(payT)}</b>${payA>0.5?` · <b>${rs(payA)}</b> advance`:""}</span></div><div class="pb-scroll"><table class="pb-t"><thead><tr><th>Date</th><th>Main party</th><th>Received</th><th class="n">Amount</th><th>Against bills</th><th class="n">Advance</th><th></th></tr></thead><tbody>${list.map(r=>{
         const s=(r.allocs||[]).reduce((a,x)=>a+Number(x.amount),0),left=r2(r.total-s);
-        return `<tr data-drill-party="${esc(r.party)}"${r.cancelled?' style="opacity:.55"':""}><td>${dmy(r.pay_date)}<small>${esc(r.by||"")}</small></td><td><b>${esc(r.party)}</b>${BR().length?(r.company_id||r.cancelled?" "+btag(r.company_id):` <select class="bsel" data-rb="${esc(r.receipt_id)}" aria-label="Brand of this payment"><option value="">Pick brand…</option>${BR().map(c=>`<option value="${esc(c.id)}">${esc(c.name)}</option>`).join("")}</select>`):""}${r.remark?`<small>${esc(r.remark)}</small>`:""}</td>
+        return `<tr data-drill-party="${esc(r.party)}"${r.cancelled?' style="opacity:.55"':""}><td>${dmy(r.pay_date)}<small>${esc(r.by||"")}</small>${(r.date_log||[]).length?`<small style="color:#8a5a00" title="${esc(LWBPartyPay.dateLogText(r))}">📅 was ${dmy(r.date_log[0].old_date).slice(0,5)}</small>`:""}</td><td><b>${esc(r.party)}</b>${BR().length?(r.company_id||r.cancelled?" "+btag(r.company_id):` <select class="bsel" data-rb="${esc(r.receipt_id)}" aria-label="Brand of this payment"><option value="">Pick brand…</option>${BR().map(c=>`<option value="${esc(c.id)}">${esc(c.name)}</option>`).join("")}</select>`):""}${r.remark?`<small>${esc(r.remark)}</small>`:""}</td>
           <td>${(r.modes||[]).map(m=>`<span class="bline">${MODE[m.mode]||m.mode} ${rs(m.amount)}${m.ref?` <small style="display:inline">${esc(m.ref)}</small>`:""}</span>`).join("")}</td>
           <td class="n"><b>${rs(r.total)}</b></td>
           <td>${r.cancelled?'<span class="tag t-gry">Cancelled</span>':(r.allocs||[]).map(a=>`<span class="chip" data-drill-order="${esc(a.order_id||"")}" data-drill-no="${esc(a.order_no)}" data-drill-bill="${esc(a.invoice_no||"bill")}">${esc(a.order_no)}${a.invoice_no?" · "+esc(a.invoice_no):""} · ${rs(a.amount)}<button type="button" data-un="${esc(a.id)}" title="Undo: back to advance" aria-label="Undo">×</button></span>`).join(" ")||"—"}</td>
           <td class="n">${!r.cancelled&&left>0.005?`<span class="adv">${rs(left)}</span>`:"—"}</td>
-          <td class="n">${r.cancelled?"":`<button type="button" class="lnk" data-cx="${esc(r.receipt_id)}" style="color:#b3122b">Cancel</button>`}</td></tr>`}).join("")}</tbody></table></div>`;
+          <td class="n" style="white-space:nowrap">${r.cancelled?"":`${admin?`<button type="button" class="lnk" data-rd="${esc(r.receipt_id)}" title="Change the date of this payment (Admin)">📅 Date</button> · `:""}<button type="button" class="lnk" data-cx="${esc(r.receipt_id)}" style="color:#b3122b">Cancel</button>`}</td></tr>`}).join("")}</tbody></table></div>`;
       el("body").querySelectorAll("[data-rb]").forEach(s=>s.onchange=async()=>{
         const r=list.find(x=>x.receipt_id===s.dataset.rb),c=info.brandOf(s.value);if(!c)return;
         if(!await ERPShell.confirm(rs(r.total)+" of "+r.party+" is "+c.name+" money?\n\nIt then goes against "+c.name+" bills of this party, oldest first; the rest stays "+c.name+" advance.")){s.value="";return}
@@ -719,6 +719,9 @@
       el("body").querySelectorAll("[data-un]").forEach(b=>b.onclick=async()=>{
         if(!await ERPShell.confirm("Undo this split? The money goes back to the party's advance and the bill is due again."))return;
         const {error}=await client.rpc("lwb_party_unadjust",{p_alloc_id:b.dataset.un});if(error)return ERPShell.alert(errText(error));toast("Split undone");load()});
+      el("body").querySelectorAll("[data-rd]").forEach(b=>b.onclick=e=>{e.stopPropagation();
+        const r=list.find(x=>x.receipt_id===b.dataset.rd);
+        LWBPartyPay.changeDate({client,receipt:r,today:info.today,onSaved:d=>{toast("Date changed to "+dmy(d));load()}})});
       el("body").querySelectorAll("[data-cx]").forEach(b=>b.onclick=async()=>{
         const r=list.find(x=>x.receipt_id===b.dataset.cx);
         if(!await ERPShell.confirm("Cancel the payment of "+rs(r.total)+" from "+r.party+"?\n\nOnly when it was entered by mistake. It stays in the list as cancelled; its bills are due again."))return;

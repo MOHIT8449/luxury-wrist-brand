@@ -1,0 +1,379 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"><script src="erp-fit.js"></script>
+  <title>Direct Vehicle | Luxury Wrist Brand ERP</title>
+  <script src="erp-date.js"></script><script src="erp-recent.js"></script>
+  <script src="vendor/supabase-js-2.119.0.js"></script>
+  <link rel="stylesheet" href="erp-shell.css?v=20261123">
+  <link rel="stylesheet" href="sales.css">
+  <script src="erp-shell.js?v=20261123"></script>
+  <script src="sales-common.js"></script>
+  <style>
+    /* Direct Vehicle (Mohit, 23 Nov 2026): the company's truck goes straight to the party.
+       Party pays an advance, the company sends +/- cases, final value = final cases x PO rate,
+       balance = final value - money received (lwb_direct_vehicle_setup.sql). */
+    .dv-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px}
+    .dv-head h1{margin:0;font-size:20px;flex:1;min-width:0}
+    .dv-kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin-bottom:8px}
+    .dv-kpi{background:#fff;border:1px solid var(--erp-line);border-radius:8px;padding:7px 12px;min-width:0}
+    .dv-kpi span{display:block;font-size:12px;color:var(--erp-muted)}
+    .dv-kpi b{display:block;font-size:20px;line-height:1.25;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .dv-kpi small{display:block;font-size:11.5px;color:var(--erp-muted)}
+    .dv-kpi.red b{color:#c62828}.dv-kpi.green b{color:var(--erp-green)}
+    .dv-acts{display:flex;gap:8px;align-items:center;margin-bottom:8px}
+    .dv-acts input,.dv-acts select{height:36px;border:1.5px solid var(--erp-line);border-radius:6px;padding:0 10px;font:inherit;background:#fff;min-width:0}
+    .dv-acts input{flex:1}.dv-acts select{max-width:180px}
+    .dv-card{background:#fff;border:1px solid var(--erp-line);border-radius:8px;overflow:hidden}
+    table.dv{width:100%;border-collapse:collapse;font-size:13px}
+    table.dv th{text-align:left;font-size:11px;letter-spacing:.3px;text-transform:uppercase;color:var(--erp-muted);font-weight:700;padding:7px 10px;border-bottom:1px solid var(--erp-line);background:#fafbfc;white-space:nowrap}
+    table.dv td{padding:7px 10px;border-bottom:1px solid #f0f2f5;vertical-align:middle}
+    table.dv tr:last-child td{border-bottom:0}
+    table.dv .n{text-align:right;white-space:nowrap}
+    table.dv td small{display:block;color:var(--erp-muted);font-size:11.5px}
+    table.dv tbody tr{cursor:pointer}table.dv tbody tr:hover td{background:#fbf8f0}
+    .po-no{font-weight:700;color:var(--erp-ink)}
+    .amt{font-weight:700}
+    .diff{font-size:11px;font-weight:700;border-radius:9px;padding:1px 6px;margin-left:4px}
+    .diff.up{background:#fff1dc;color:#9a5b00}.diff.dn{background:#e8f0fe;color:#1a56b0}
+    .bal{font-weight:800;font-size:14px}
+    .bal.due{color:#c62828}.bal.back{color:#1a56b0}.bal.ok{color:var(--erp-green)}
+    .bdg{display:inline-block;font-size:11px;font-weight:700;border-radius:10px;padding:2px 8px;white-space:nowrap}
+    .bdg.red{background:#fdecea;color:#c62828}.bdg.amber{background:#fff1dc;color:#9a5b00}.bdg.blue{background:#e8f0fe;color:#1a56b0}
+    .bdg.green{background:#e6f5ec;color:var(--erp-green)}.bdg.grey{background:#f0f2f5;color:var(--erp-muted)}
+    .dv-none{padding:16px 12px;color:var(--erp-muted)}
+    .dv-note{font-size:12px;color:var(--erp-muted);margin:8px 2px}
+
+    /* Popup */
+    .dv-modal{position:fixed;inset:0;background:rgba(15,20,30,.45);display:flex;align-items:flex-start;justify-content:center;z-index:900;padding:24px 12px;overflow:auto}
+    .dv-modal[hidden]{display:none}
+    .dv-box{background:#fff;border-radius:10px;width:min(860px,100%);box-shadow:0 12px 40px rgba(0,0,0,.25)}
+    .dv-box header{display:flex;align-items:center;gap:8px;padding:10px 14px;border-bottom:1px solid var(--erp-line)}
+    .dv-box header h2{margin:0;font-size:16px;flex:1;min-width:0}
+    .dv-box header h2 small{display:block;font-size:12px;color:var(--erp-muted);font-weight:500}
+    .dv-x{border:0;background:none;font-size:22px;line-height:1;cursor:pointer;color:var(--erp-muted);padding:2px 6px}
+    .dv-body{padding:10px 14px}
+    .dv-sum{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-bottom:10px}
+    .dv-sum div{border:1px solid var(--erp-line);border-radius:8px;padding:6px 10px;min-width:0}
+    .dv-sum span{display:block;font-size:11.5px;color:var(--erp-muted)}
+    .dv-sum b{display:block;font-size:19px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .dv-sum .due b{color:#c62828}.dv-sum .back b{color:#1a56b0}.dv-sum .ok b{color:var(--erp-green)}.dv-sum .rcv b{color:var(--erp-green)}
+    .dv-sec{font-size:13px;font-weight:700;margin:10px 0 6px;display:flex;align-items:center;gap:8px}
+    .dv-sec .grow{flex:1}
+    .dv-sec small{font-weight:500;color:var(--erp-muted)}
+    table.dvp{width:100%;border-collapse:collapse;font-size:13px}
+    table.dvp th{font-size:11px;color:var(--erp-muted);text-align:left;padding:4px 6px;border-bottom:1px solid var(--erp-line);font-weight:700}
+    table.dvp td{padding:4px 6px;border-bottom:1px solid #f0f2f5}
+    table.dvp .n{text-align:right;white-space:nowrap}
+    table.dvp td small{display:block;color:var(--erp-muted);font-size:11px}
+    table.dvp input{width:90px;height:32px;border:1.5px solid var(--erp-line);border-radius:6px;padding:0 6px;font:inherit;text-align:right}
+    table.dvp input:focus,.dv-add :is(input,select):focus,.dv-row2 :is(input,select,textarea):focus{outline:none;border-color:var(--erp-red)}
+    table.dvp tr.chg td{background:#fffaf0}
+    table.dvp tfoot td{font-weight:800;border-top:1px solid var(--erp-line);border-bottom:0}
+    .refund{color:#1a56b0}
+    .dv-del{border:0;background:none;color:#c62828;cursor:pointer;font-size:15px;padding:0 4px}
+    .dv-add{display:flex;gap:6px;align-items:center;margin-top:6px}
+    .dv-add input,.dv-add select,.dv-row2 input,.dv-row2 select,.dv-row2 textarea{height:34px;border:1.5px solid var(--erp-line);border-radius:6px;padding:0 8px;font:inherit;background:#fff;min-width:0}
+    .dv-add input[type=date]{width:140px}.dv-add select{width:105px}.dv-add .amt-in{width:130px;font-weight:700}.dv-add .ref-in{flex:1}
+    .dv-row2{display:flex;gap:8px;align-items:center}
+    .dv-row2 select{flex:1}.dv-row2 textarea{flex:1;height:34px;padding:6px 8px;resize:vertical}
+    .dv-box footer{display:flex;gap:8px;align-items:center;justify-content:flex-end;padding:10px 14px;border-top:1px solid var(--erp-line);flex-wrap:nowrap}
+    .dv-box footer label{margin-right:auto;font-size:13px;display:flex;gap:6px;align-items:center;white-space:nowrap}
+    .dv-msg{font-size:12.5px;color:#c62828;min-height:0}
+
+    @media(max-width:760px){
+      .dv-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}
+      .dv-kpi b{font-size:18px}
+      .dv-acts{flex-wrap:wrap}.dv-acts input{flex:1 1 100%}.dv-acts select{flex:1;max-width:none}
+      table.dv thead{display:none}
+      table.dv,table.dv tbody,table.dv tr,table.dv td{display:block;width:100%}
+      table.dv tr{display:grid;grid-template-columns:1fr auto;gap:2px 10px;padding:8px 10px;border-bottom:1px solid var(--erp-line)}
+      table.dv td{padding:0!important;border:0!important;min-height:0!important;line-height:1.35}
+      table.dv tr{gap:1px 10px!important;padding:8px 10px!important;margin:0!important}
+      .dv-head h1{font-size:18px}
+      table.dv td.c-po{grid-column:1}table.dv td.c-bal{grid-column:2;grid-row:1 / span 2;text-align:right}
+      table.dv td.c-party{grid-column:1}
+      table.dv td.c-truck,table.dv td.c-po-amt,table.dv td.c-final,table.dv td.c-rcv{grid-column:1 / -1;text-align:left;font-size:12.5px}
+      table.dv td.c-truck:empty{display:none}
+      table.dv td[data-l]::before{content:attr(data-l) ": ";color:var(--erp-muted);font-size:11.5px}
+      table.dv td.c-po-amt small,table.dv td.c-final small,table.dv td.c-rcv small{display:inline;margin-left:4px}
+      table.dv td.c-st{grid-column:1 / -1}
+      .dv-modal{padding:0}
+      .dv-box{border-radius:0;min-height:100%}
+      .dv-sum b{font-size:16px}.dv-sum div{padding:5px 7px}
+      .dv-add{flex-wrap:wrap}.dv-add input[type=date]{width:auto;flex:1 1 45%}.dv-add select{flex:1 1 45%;width:auto}
+      .dv-add .amt-in{flex:1 1 45%;width:auto}.dv-add .ref-in{flex:1 1 45%}
+      .dv-row2{flex-wrap:wrap}.dv-row2 select,.dv-row2 textarea{flex:1 1 100%}
+      table.dvp .hide-m{display:none}
+      table.dvp input{width:72px}
+    }
+  </style>
+</head>
+<body>
+  <div id="loading" class="status">Checking account access...</div>
+  <main id="page" class="erp-main" hidden>
+    <div class="dv-head">
+      <h1>🚛 Direct Vehicle</h1>
+      <button type="button" class="sl-btn ghost" onclick="location.href='warehouse-orders.html'">📋 PO / Sales</button>
+      <button type="button" class="sl-btn" id="newBtn" onclick="location.href='order-entry.html?tp=dv'">+ New Direct Vehicle PO</button>
+    </div>
+    <div class="dv-kpis" id="kpis"></div>
+    <div class="dv-acts">
+      <input id="q" type="search" placeholder="Search PO no, party, truck, salesman" autocomplete="off" aria-label="Search">
+      <select id="st" aria-label="Status">
+        <option value="open">Open (not closed)</option>
+        <option value="due">Balance to collect</option>
+        <option value="back">Give back to party</option>
+        <option value="nofinal">Final qty not entered</option>
+        <option value="closed">Closed</option>
+        <option value="all">All</option>
+      </select>
+      <button type="button" class="sl-btn ghost" id="refresh">Refresh</button>
+    </div>
+    <section class="dv-card"><div id="list">Loading...</div></section>
+    <p class="dv-note">Tap a PO: add the party's money (advance / balance), pick the company truck, and type the final cases the company really sent. Final value = final cases × PO rate. Balance = final value − money received.</p>
+  </main>
+
+  <div class="dv-modal" id="modal" hidden role="dialog" aria-modal="true" aria-labelledby="mTitle">
+    <div class="dv-box">
+      <header><h2 id="mTitle"></h2><button type="button" class="dv-x" id="mClose" aria-label="Close">×</button></header>
+      <div class="dv-body">
+        <div class="dv-sum" id="mSum"></div>
+        <div class="dv-sec">💰 Money from party <small id="mPayCount"></small></div>
+        <table class="dvp" id="mPays" data-cf-off></table>
+        <div class="dv-add">
+          <input type="date" id="pDate" aria-label="Date">
+          <select id="pMode" aria-label="Mode"><option>RTGS</option><option>CASH</option><option>UPI</option><option>CHEQUE</option><option value="REFUND">REFUND (given back)</option></select>
+          <input type="number" class="amt-in" id="pAmt" inputmode="decimal" min="1" step="1" placeholder="Amount ₹" aria-label="Amount">
+          <input class="ref-in" id="pRef" maxlength="80" placeholder="UTR / cheque no / note" aria-label="Reference">
+          <button type="button" class="sl-btn" id="pAdd">+ Add</button>
+        </div>
+        <div class="dv-sec">🚛 Company truck &amp; note</div>
+        <div class="dv-row2">
+          <select id="mTruck" aria-label="Company truck"></select>
+          <textarea id="mNote" maxlength="500" rows="1" placeholder="Note (e.g. company sent 20 cs extra Coke 2L)" aria-label="Note"></textarea>
+        </div>
+        <div class="dv-sec"><span>📦 Final quantity</span><small>company sent (+/−)</small><span class="grow"></span><button type="button" class="sl-btn ghost small" id="mSame">Same as PO</button></div>
+        <table class="dvp" id="mLines" data-cf-off></table>
+        <div class="dv-msg" id="mMsg" role="status"></div>
+      </div>
+      <footer>
+        <label><input type="checkbox" id="mClosed"> Hisab closed</label>
+        <button type="button" class="sl-btn ghost" id="mCancel">Close</button>
+        <button type="button" class="sl-btn" id="mSave">Save</button>
+      </footer>
+    </div>
+  </div>
+
+  <script>
+    const S=LWBSales,{client,el,esc}=S;
+    let me=null,orders=[],items=new Map(),dvs=new Map(),pays=new Map(),trucks=[],cur=null,payDel=false,finalEdited=false;
+    const N=v=>{const x=Number(v);return Number.isFinite(x)?x:0};
+    const rs=v=>"₹"+Math.round(N(v)).toLocaleString("en-IN");
+    const cs=v=>N(v).toLocaleString("en-IN",{maximumFractionDigits:2});
+    const lakh=v=>{const a=Math.abs(N(v));return a>=1e5?(N(v)<0?"−":"")+"₹"+(a/1e5).toLocaleString("en-IN",{maximumFractionDigits:2})+" L":rs(v)};
+    const setupMsg=m=>/lwb_direct_vehicle|lwb_dv_/.test(m||"")?"Direct Vehicle is being set up. Please try again in a few minutes.":m;
+    const toast=(t,k)=>ERPShell.toast?ERPShell.toast(t,k):alert(t);
+    const today=()=>new Date(Date.now()+5.5*36e5).toISOString().slice(0,10);
+    const poQty=i=>N(i.approved_qty!=null?i.approved_qty:i.ordered_qty);
+
+    function calc(o){
+      const d=dvs.get(o.id)||{},P=pays.get(o.id)||[];
+      const rcv=P.reduce((s,p)=>s+(p.mode==="REFUND"?-1:1)*N(p.amount),0);
+      const hasFinal=d.final_amount!=null;
+      const goods=hasFinal?N(d.final_amount):N(o.total_amount);
+      const bal=Math.round(goods-rcv);
+      const L=items.get(o.id)||[];
+      const poCs=L.reduce((s,i)=>s+poQty(i),0);
+      let st;
+      if(d.closed)st=["Closed","grey"];
+      else if(hasFinal)st=Math.abs(bal)<1?["Settled","green"]:bal>0?["Balance due","red"]:["Give back","blue"];
+      else if(rcv>0)st=d.truck_label?["Vehicle ordered","amber"]:["Advance in","amber"];
+      else st=["Advance pending","red"];
+      return {d,P,rcv,hasFinal,goods,bal,poCs,st};
+    }
+    function balHtml(c){
+      if(!c.hasFinal&&!c.rcv)return '<span class="bal due">'+rs(c.bal)+'</span><small>to collect</small>';
+      if(Math.abs(c.bal)<1)return '<span class="bal ok">✓ ₹0</span><small>clear</small>';
+      return c.bal>0?'<span class="bal due">'+rs(c.bal)+'</span><small>to collect</small>':'<span class="bal back">'+rs(-c.bal)+'</span><small>give back</small>';
+    }
+    function kpis(L){
+      const open=L.filter(o=>!(dvs.get(o.id)||{}).closed),C=open.map(calc);
+      const goods=C.reduce((s,c)=>s+c.goods,0),rcv=C.reduce((s,c)=>s+c.rcv,0);
+      const due=C.filter(c=>c.bal>0).reduce((s,c)=>s+c.bal,0),back=C.filter(c=>c.bal<0).reduce((s,c)=>s-c.bal,0);
+      el("kpis").innerHTML=
+        '<div class="dv-kpi"><span>Open vehicles</span><b>'+open.length+'</b><small>'+C.filter(c=>!c.hasFinal).length+' final qty pending</small></div>'+
+        '<div class="dv-kpi"><span>Goods value</span><b>'+lakh(goods)+'</b><small>final, else PO</small></div>'+
+        '<div class="dv-kpi green"><span>Received</span><b>'+lakh(rcv)+'</b><small>advance + balance</small></div>'+
+        '<div class="dv-kpi red"><span>Balance to collect</span><b>'+lakh(due)+'</b><small>'+(back?"give back "+lakh(back):"&nbsp;")+'</small></div>';
+    }
+    function filtered(){
+      const q=el("q").value.trim().toLowerCase(),f=el("st").value;
+      return orders.filter(o=>{
+        const c=calc(o);
+        if(f==="open"&&c.d.closed)return false;
+        if(f==="closed"&&!c.d.closed)return false;
+        if(f==="due"&&(c.d.closed||c.bal<1))return false;
+        if(f==="back"&&(c.d.closed||c.bal>-1))return false;
+        if(f==="nofinal"&&(c.d.closed||c.hasFinal))return false;
+        return !q||[o.order_no,o.customer_name,o.sales_person,c.d.truck_label].some(v=>String(v||"").toLowerCase().includes(q));
+      });
+    }
+    function draw(){
+      kpis(orders);
+      const L=filtered();
+      if(!orders.length){el("list").innerHTML='<div class="dv-none">No Direct Vehicle PO yet. Tap <b>+ New Direct Vehicle PO</b>.</div>';return}
+      if(!L.length){el("list").innerHTML='<div class="dv-none">No PO in this list.</div>';return}
+      el("list").innerHTML='<table class="dv"'+(matchMedia("(max-width:760px)").matches?" data-cf-off":"")+'><thead><tr><th>PO</th><th>Party</th><th>Company truck</th><th class="n">PO qty / amount</th><th class="n">Final qty / amount</th><th class="n">Received</th><th class="n">Balance</th><th>Status</th></tr></thead><tbody>'+
+        L.map(o=>{const c=calc(o),fc=N(c.d.final_cases),df=c.hasFinal?fc-c.poCs:0;
+          return '<tr data-id="'+esc(o.id)+'"><td class="c-po"><span class="po-no">'+esc(o.order_no||"—")+'</span><small>'+esc(LWBDate.d?LWBDate.d(o.order_date):String(o.order_date||"").slice(0,10))+'</small></td>'+
+            '<td class="c-party"><b>'+esc(o.customer_name||"")+'</b><small>'+esc(o.sales_person||"")+'</small></td>'+
+            '<td class="c-truck">'+(c.d.truck_label?esc(c.d.truck_label):"")+'</td>'+
+            '<td class="n c-po-amt" data-l="PO">'+cs(c.poCs)+' cs<small>'+rs(o.total_amount)+'</small></td>'+
+            '<td class="n c-final" data-l="Final">'+(c.hasFinal?cs(fc)+' cs'+(df?'<span class="diff '+(df>0?"up":"dn")+'">'+(df>0?"+":"")+cs(df)+'</span>':"")+'<small class="amt">'+rs(c.d.final_amount)+'</small>':'<span class="bdg grey">Not entered</span>')+'</td>'+
+            '<td class="n c-rcv" data-l="Received"><span class="amt" style="color:var(--erp-green)">'+rs(c.rcv)+'</span><small>'+c.P.length+' entr'+(c.P.length===1?"y":"ies")+'</small></td>'+
+            '<td class="n c-bal">'+balHtml(c)+'</td>'+
+            '<td class="c-st"><span class="bdg '+c.st[1]+'">'+c.st[0]+'</span></td></tr>';}).join("")+'</tbody></table>';
+    }
+
+    async function load(){
+      const r=await client.from("orders").select("id,order_no,order_date,customer_name,sales_person,status,total_qty,total_amount,transportation")
+        .ilike("transportation","DIRECT VEHICLE%").order("order_date",{ascending:false}).limit(500);
+      if(r.error){el("list").innerHTML='<div class="dv-none" style="color:var(--erp-red)">'+esc(r.error.message)+'</div>';return}
+      orders=(r.data||[]).filter(o=>!["cancelled","canceled","rejected"].includes(String(o.status||"").toLowerCase()));
+      const ids=orders.map(o=>o.id);items=new Map();dvs=new Map();pays=new Map();
+      if(ids.length){
+        try{
+          const [it,dv,pv]=await Promise.all([
+            S.inChunks("order_items","order_id",ids,"id,order_id,sku_name,ordered_qty,approved_qty,rate,amount,created_at"),
+            S.inChunks("lwb_direct_vehicle","order_id",ids,"*"),
+            S.inChunks("lwb_direct_vehicle_pay","order_id",ids,"*")]);
+          it.sort((a,b)=>String(a.created_at||"").localeCompare(String(b.created_at||""))).forEach(i=>{if(!items.has(i.order_id))items.set(i.order_id,[]);items.get(i.order_id).push(i)});
+          dv.forEach(d=>dvs.set(d.order_id,d));
+          pv.sort((a,b)=>String(a.pay_date).localeCompare(b.pay_date)||a.id-b.id).forEach(p=>{if(!pays.has(p.order_id))pays.set(p.order_id,[]);pays.get(p.order_id).push(p)});
+        }catch(e){toast(setupMsg(e.message),"error")}
+      }
+      draw();
+    }
+    async function loadTrucks(){
+      const from=new Date(Date.now()-40*864e5).toISOString().slice(0,10);
+      const r=await client.from("lwb_ecrs_trucks").select("id,day,cap,rows").gte("day",from).order("day",{ascending:false}).order("id").limit(400);
+      if(r.error){trucks=[];return}
+      const byDay=new Map();(r.data||[]).slice().sort((a,b)=>a.id-b.id).forEach(t=>{const k=t.day;byDay.set(k,(byDay.get(k)||0)+1);t.no=byDay.get(k)});
+      trucks=(r.data||[]).map(t=>{const pal=(Array.isArray(t.rows)?t.rows:[]).reduce((s,x)=>s+N(x.pal),0);
+        return {id:t.id,label:String(t.day).slice(8,10)+"/"+String(t.day).slice(5,7)+" Order "+t.no+" · "+pal+" pallet"}});
+    }
+
+    /* Popup */
+    function sumHtml(){
+      const o=cur,c=calc(o),fin=finalNow();
+      const goods=fin?fin.amt:c.goods,bal=Math.round(goods-c.rcv);
+      const cls=Math.abs(bal)<1?"ok":bal>0?"due":"back";
+      el("mSum").innerHTML='<div><span>Goods value '+(fin?"(final)":"(PO)")+'</span><b>'+rs(goods)+'</b></div>'+
+        '<div class="rcv"><span>Received</span><b>'+rs(c.rcv)+'</b></div>'+
+        '<div class="'+cls+'"><span>'+(cls==="back"?"Give back":"Balance")+'</span><b>'+(cls==="ok"?"✓ ₹0":rs(Math.abs(bal)))+'</b></div>';
+    }
+    function finalNow(){
+      const ins=[...document.querySelectorAll("#mLines input[data-item]")];
+      const any=ins.some(i=>i.value!=="");
+      if(!any&&!finalEdited)return null;
+      const L=items.get(cur.id)||[];let amt=0,q=0;
+      L.forEach(i=>{const inp=ins.find(x=>x.dataset.item===String(i.id));const v=inp&&inp.value!==""?N(inp.value):poQty(i);amt+=v*N(i.rate);q+=v});
+      return {amt,q};
+    }
+    function drawPays(){
+      const P=pays.get(cur.id)||[];
+      el("mPayCount").textContent=P.length?"· "+P.length+" entr"+(P.length===1?"y":"ies"):"";
+      el("mPays").innerHTML=P.length?'<thead><tr><th>Date</th><th>Mode</th><th class="hide-m">Ref / note</th><th class="n">Amount</th><th></th></tr></thead><tbody>'+
+        P.map(p=>'<tr><td>'+esc(LWBDate.d?LWBDate.d(p.pay_date):p.pay_date)+'<small>'+esc(p.created_by_name||"")+'</small></td><td>'+esc(p.mode)+'</td><td class="hide-m">'+esc([p.ref,p.note].filter(Boolean).join(" · "))+'</td>'+
+          '<td class="n '+(p.mode==="REFUND"?"refund":"")+'"><b>'+(p.mode==="REFUND"?"−":"")+rs(p.amount)+'</b></td><td class="n">'+(payDel?'<button type="button" class="dv-del" data-del="'+p.id+'" title="Delete" aria-label="Delete">🗑</button>':"")+'</td></tr>').join("")+'</tbody>'
+        :'<tbody><tr><td style="color:var(--erp-muted)">No money yet. Add the party\'s advance below.</td></tr></tbody>';
+    }
+    function drawLines(){
+      const L=items.get(cur.id)||[],d=dvs.get(cur.id)||{},F=new Map((Array.isArray(d.final_lines)?d.final_lines:[]).map(x=>[String(x.item_id),x.cs]));
+      el("mLines").innerHTML='<thead><tr><th>SKU</th><th class="n">PO cs</th><th class="n">Final cs</th><th class="n">+/−</th><th class="n hide-m">Rate</th><th class="n">Amount</th></tr></thead><tbody>'+
+        L.map(i=>{const f=F.has(String(i.id))?F.get(String(i.id)):"";
+          return '<tr data-r="'+esc(i.id)+'"><td>'+esc(i.sku_name||"")+'</td><td class="n">'+cs(poQty(i))+'</td>'+
+            '<td class="n"><input type="number" inputmode="decimal" min="0" step="1" data-item="'+esc(i.id)+'" value="'+esc(f)+'" placeholder="'+esc(cs(poQty(i)))+'" aria-label="Final cases '+esc(i.sku_name||"")+'"></td>'+
+            '<td class="n" data-df></td><td class="n hide-m">'+rs(i.rate)+'</td><td class="n" data-amt></td></tr>'}).join("")+
+        '</tbody><tfoot><tr><td>Total</td><td class="n" id="tPo"></td><td class="n" id="tFin"></td><td class="n" id="tDf"></td><td class="hide-m"></td><td class="n" id="tAmt"></td></tr></tfoot>';
+      lineTotals();
+    }
+    function lineTotals(){
+      const L=items.get(cur.id)||[];let po=0,fin=0,amt=0;
+      L.forEach(i=>{const tr=document.querySelector('#mLines tr[data-r="'+CSS.escape(String(i.id))+'"]');if(!tr)return;
+        const inp=tr.querySelector("input"),v=inp.value!==""?N(inp.value):poQty(i),df=v-poQty(i);
+        tr.classList.toggle("chg",inp.value!==""&&df!==0);
+        tr.querySelector("[data-df]").innerHTML=df?'<span class="diff '+(df>0?"up":"dn")+'">'+(df>0?"+":"")+cs(df)+'</span>':"";
+        tr.querySelector("[data-amt]").textContent=rs(v*N(i.rate));
+        po+=poQty(i);fin+=v;amt+=v*N(i.rate)});
+      el("tPo").textContent=cs(po);el("tFin").textContent=cs(fin);
+      el("tDf").innerHTML=fin-po?'<span class="diff '+(fin-po>0?"up":"dn")+'">'+(fin-po>0?"+":"")+cs(fin-po)+'</span>':"";
+      el("tAmt").textContent=rs(amt);
+      sumHtml();
+    }
+    function open(id){
+      cur=orders.find(o=>o.id===id);if(!cur)return;finalEdited=false;
+      const d=dvs.get(id)||{};
+      el("mTitle").innerHTML=esc(cur.order_no||"PO")+" · "+esc(cur.customer_name||"")+'<small>'+esc(LWBDate.d?LWBDate.d(cur.order_date):"")+" · "+esc(cur.sales_person||"")+" · PO "+rs(cur.total_amount)+'</small>';
+      const opts=trucks.slice();if(d.truck_id&&!opts.some(t=>t.id===d.truck_id))opts.unshift({id:d.truck_id,label:d.truck_label||("Truck #"+d.truck_id)});
+      el("mTruck").innerHTML='<option value="">'+(trucks.length?"— Company truck (ECRS order) —":"— Company truck: none —")+'</option>'+opts.map(t=>'<option value="'+t.id+'">'+esc(t.label)+'</option>').join("");
+      el("mTruck").value=d.truck_id?String(d.truck_id):"";
+      el("mNote").value=d.note||"";el("mClosed").checked=!!d.closed;
+      el("pDate").value=today();el("pAmt").value="";el("pRef").value="";el("pMode").value="RTGS";el("mMsg").textContent="";
+      drawPays();drawLines();
+      el("modal").hidden=false;document.body.style.overflow="hidden";el("pAmt").focus();
+    }
+    function close(){el("modal").hidden=true;document.body.style.overflow="";cur=null}
+    async function addPay(){
+      const amt=N(el("pAmt").value);
+      if(!(amt>0)){el("pAmt").focus();el("mMsg").textContent="Enter the amount.";return}
+      const b=el("pAdd");b.disabled=true;
+      const {error}=await client.rpc("lwb_dv_pay_add",{p_order:cur.id,p_date:el("pDate").value||today(),p_mode:el("pMode").value,p_amount:amt,p_ref:el("pRef").value,p_note:null});
+      b.disabled=false;
+      if(error){el("mMsg").textContent=setupMsg(error.message);return}
+      el("mMsg").textContent="";toast((el("pMode").value==="REFUND"?"Refund ":"Money ")+rs(amt)+" saved","success");
+      const id=cur.id;await load();cur=orders.find(o=>o.id===id);el("pAmt").value="";el("pRef").value="";drawPays();sumHtml();
+    }
+    async function delPay(pid){
+      if(!await confirm("Delete this money entry?"))return;
+      const {error}=await client.rpc("lwb_dv_pay_delete",{p_id:Number(pid)});
+      if(error){el("mMsg").textContent=setupMsg(error.message);return}
+      const id=cur.id;await load();cur=orders.find(o=>o.id===id);drawPays();sumHtml();
+    }
+    async function save(){
+      const ins=[...document.querySelectorAll("#mLines input[data-item]")];
+      const bad=ins.find(i=>i.value!==""&&!(N(i.value)>=0));if(bad){bad.focus();el("mMsg").textContent="Final cases must be 0 or more.";return}
+      const any=ins.some(i=>i.value!=="");
+      const fin=any?ins.map(i=>({item_id:i.dataset.item,cs:i.value!==""?N(i.value):null})).filter(x=>x.cs!=null):[];
+      const tSel=el("mTruck"),tid=tSel.value?Number(tSel.value):null,tl=tid?tSel.options[tSel.selectedIndex].text.replace(/ · \d+ pallet$/,""):null;
+      const b=el("mSave");b.disabled=true;b.textContent="Saving...";
+      const {error}=await client.rpc("lwb_dv_save",{p_order:cur.id,p_truck_id:tid,p_truck_label:tl,p_final:fin,p_note:el("mNote").value,p_closed:el("mClosed").checked});
+      b.disabled=false;b.textContent="Save";
+      if(error){el("mMsg").textContent=setupMsg(error.message);return}
+      toast("Saved: "+(cur.order_no||"PO"),"success");close();await load();
+    }
+
+    (async()=>{
+      me=await S.start(["admin","manager","accounts"]);if(!me)return;
+      payDel=["admin","accounts"].includes(me.role);
+      el("newBtn").hidden=me.role==="accounts";
+      el("list").addEventListener("click",e=>{const tr=e.target.closest("tr[data-id]");if(tr)open(tr.dataset.id)});
+      el("q").addEventListener("input",draw);el("st").addEventListener("change",draw);el("refresh").onclick=load;
+      el("mClose").onclick=close;el("mCancel").onclick=close;
+      el("modal").addEventListener("click",e=>{if(e.target===el("modal"))close()});
+      document.addEventListener("keydown",e=>{if(e.key==="Escape"&&!el("modal").hidden)close()});
+      el("pAdd").onclick=addPay;
+      [el("pAmt"),el("pRef")].forEach(i=>i.addEventListener("keydown",e=>{if(e.key==="Enter"){e.preventDefault();addPay()}}));
+      el("mPays").addEventListener("click",e=>{const b=e.target.closest("[data-del]");if(b)delPay(b.dataset.del)});
+      el("mLines").addEventListener("input",()=>{finalEdited=true;lineTotals()});
+      el("mSame").onclick=()=>{const L=items.get(cur.id)||[];document.querySelectorAll("#mLines input[data-item]").forEach(inp=>{const i=L.find(x=>String(x.id)===inp.dataset.item);inp.value=i?poQty(i):""});finalEdited=true;lineTotals()};
+      el("mSave").onclick=save;
+      el("loading").hidden=true;el("page").hidden=false;
+      await Promise.all([loadTrucks(),load()]);
+      const q=new URLSearchParams(location.search).get("po");if(q){const o=orders.find(x=>x.id===q||x.order_no===q);if(o)open(o.id)}
+    })();
+  </script>
+</body>
+</html>

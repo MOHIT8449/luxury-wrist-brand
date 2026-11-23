@@ -12,7 +12,7 @@
   <script src="brand-filter.js"></script>
   <script src="erp-period.js"></script>
   <script src="party-credit.js"></script>
-  <script src="party-pay.js"></script>
+  <script src="party-pay.js?v=20261123a"></script>
   <script src="sku-image.js"></script>
   <script src="erp-operations-notifications.js"></script>
 
@@ -533,6 +533,8 @@
       #poPrintArea .pa-card dl {display:grid;grid-template-columns:auto 1fr;gap:.5mm 2mm;margin:0;padding:1.2mm 2mm 1.4mm}
       #poPrintArea .pa-card dt {font-size:7.5pt;color:#555;white-space:nowrap}
       #poPrintArea .pa-card dd {margin:0;font-size:8.8pt;font-weight:700;overflow-wrap:anywhere}
+      #poPrintArea .pa-card .pa-key {font-size:9.5pt;font-weight:800;color:var(--pa-ink);letter-spacing:.3pt}
+      #poPrintArea .pa-card .pa-miss {font-weight:600;color:#999;font-style:italic}
       #poPrintArea .pa-sp {margin-bottom:2.5mm;border:.8pt dashed var(--pa-gold);border-radius:1.5mm;padding:1.2mm 2.5mm;font-size:9pt;font-weight:700;break-inside:avoid}
       #poPrintArea .pa-sp small {color:var(--pa-ink);font-weight:800;text-transform:uppercase;font-size:7pt;letter-spacing:.4pt;margin-right:2mm}
       #poPrintArea .pa-items th {background:var(--pa-ink)!important;color:#fff!important;font-size:7.5pt;font-weight:800;text-transform:uppercase;letter-spacing:.3pt;padding:1.4mm 1.5mm;text-align:right;white-space:nowrap;border:0}
@@ -706,6 +708,11 @@
     .dlv-h.r {background:#fde8e8;color:#b42318;border-color:#e5645a}
     #ordersArea .c-st .dlv-h {float:right;margin:0 0 0 4px}
     @media (max-width:640px){#ordersArea .c-st .dlv-h {float:none;margin:0 5px 0 0}}
+    /* ROI rate PO (lwb_party_rate_roi_setup.sql, Mohit 22 Nov 2026): a line is on a Party Rate Offer marked ROI */
+    tr.row-roi td {background:#effaf3}
+    tr.row-roi td:first-child {box-shadow:inset 4px 0 0 #13824a}
+    .roi-po {display:inline-block;margin-left:5px;padding:1px 7px;border-radius:9px;background:#13824a;color:#fff;font-size:10.5px;font-weight:700;vertical-align:1px;white-space:nowrap}
+    @media (max-width:640px){tr.row-roi td{background:transparent}tr.row-roi{background:#effaf3!important;box-shadow:inset 4px 0 0 #13824a}tr.row-roi td:first-child{box-shadow:none}}
     tr.row-late td {background:#fff7f7}
     tr.row-late td:first-child {box-shadow:inset 4px 0 0 #b42318}
     tr.row-urgent td:first-child {box-shadow:inset 4px 0 0 #c8102e}
@@ -1445,12 +1452,15 @@
 #ordersArea tr.row-just-saved td{background:#e8f6ee!important}
 #ordersArea tr.row-just-saved td:first-child{box-shadow:inset 4px 0 0 #138a45}
 .just-saved{display:inline-block;margin-left:6px;padding:1px 7px;border-radius:99px;background:#138a45;color:#fff;font-size:10.5px;font-weight:700;vertical-align:middle;white-space:nowrap}
+/* Cash Sale PO: buyer name + mobile under the party. */
+.cash-buyer{display:block;margin-top:2px;font-size:12px;font-weight:600;color:#6b5a2e}
+.cash-buyer b{display:inline-block;margin-right:5px;padding:0 6px;border-radius:999px;background:#e0a106;color:#fff;font-size:10px;font-weight:800;letter-spacing:.3px;vertical-align:1px}
 </style>
-<link rel="stylesheet" href="erp-shell.css?v=20261121">
+<link rel="stylesheet" href="erp-shell.css?v=20261123">
 <script src="trip-rent.js" defer></script>
 <script src="trip-rent-ask.js" defer></script>
 <script src="trip-suggest.js" defer></script>
-<script src="erp-shell.js?v=20261121" data-auto defer></script>
+<script src="erp-shell.js?v=20261123" data-auto defer></script>
 <script src="erp-list.js"></script>
 <script src="erp-colfilter.js"></script>
 <script src="po-share.js"></script>
@@ -1490,6 +1500,8 @@
         <div class="po-view" role="tablist" aria-label="View">
           <button type="button" role="tab" data-view="list" onclick="setPoView('list')">📋 PO List</button>
           <button type="button" role="tab" data-view="dash" onclick="setPoView('dash')">📊 Dashboard</button>
+          <!-- Direct Vehicle (Mohit, 23 Nov 2026): company truck straight to the party; advance, final qty, balance. -->
+          <button type="button" data-view="dv" onclick="location.href='direct-vehicle.html'" title="Direct Vehicle POs: party advance, final qty, balance">🚛 Direct Vehicle</button>
         </div>
         <!-- Total pending delivery on the PO List too (Mohit, 16 Nov 2026); the Dashboard view has the full card. -->
         <button type="button" class="po-pend-pill" id="poPendPill" hidden title="All POs not delivered yet · tap to see the list">🚚 Pending delivery <b id="poPendN">-</b> <span id="poPendAmt"></span></button>
@@ -1629,7 +1641,7 @@
         <option value="">All transport</option>
       </select>
 
-      <select id="fillFilter" onchange="resetPageAndRender()" aria-label="Filled" title="Filled % = loaded qty ÷ ordered qty (only loaded / delivered POs)">
+      <select id="fillFilter" onchange="resetPageAndRender()" aria-label="Filled" title="Filled % = loaded qty ÷ ordered qty. Before loading every PO is 100%.">
         <option value="">All fill</option>
         <option value="full">Full 100%</option>
         <option value="short">Short (&lt;100%)</option>
@@ -3205,10 +3217,17 @@ function matchesColumnFilters(order) {
   return search.split(/\s+/).every(w => hay.includes(w));
 }
 
+// Cash Sale PO (lwb_cash_sale_party_setup.sql): walk-in buyer's name + mobile under the party.
+function cashBuyerText(o) { return [o && o.cash_buyer_name, o && o.cash_buyer_mobile].filter(Boolean).join(" · "); }
+function cashBuyerLine(o) {
+  const t = cashBuyerText(o);
+  return t ? `<span class="cash-buyer"><b>Cash</b>${escapeHtml(t)}</span>` : "";
+}
+
 // Main page search (Mohit, 20 Nov 2026): every word typed must be somewhere in the PO row, any column.
 function pageSearchText(order) {
   const amt = Number(order.total_amount) || 0, qty = Number(order.total_qty) || 0, wt = Number(order.total_weight) || 0;
-  return [order.order_no, order.customer_name, order.sales_person, order.transportation, order.status, stageLabel(order),
+  return [order.order_no, order.customer_name, order.cash_buyer_name, order.cash_buyer_mobile, order.sales_person, order.transportation, order.status, stageLabel(order),
     formatDate(order.order_date || order.created_at), orderLines.get(order.id), orderPriority(order),
     amt, amt.toLocaleString("en-IN"), qty, qty.toLocaleString("en-IN"), wt, wt.toLocaleString("en-IN"),
     order.bill_no, order.invoice_no, order.remarks, order.notes]
@@ -3481,6 +3500,29 @@ function stepTrack(order, small) {
   const css = stage === "cancelled" ? "x" : at >= PO_STEPS.length ? "ok" : "now";
   return `<div class="po-trk${small ? " sm" : ""}" data-trk="${order.id}" aria-label="Order stage: ${here}">${dots}</div>` +
     (small ? `<small class="trk-now ${css}" data-trk-now="${order.id}">${here}</small>` : "");
+}
+// ROI badge next to the party (Mohit, 22 Nov 2026): this PO has a line on a Party Rate Offer marked ROI (landing − ROI).
+// Admin / Sales Head only (the RPC gives others nothing). roiPo: order id -> {cases, amount}; roiAsked: ids already checked.
+const roiPo = new Map(), roiAsked = new Set();
+function roiBadge(id) {
+  const r = roiPo.get(id);
+  return r ? `<span class="roi-po" title="ROI rate used: ${formatNumber(r.cases)} cs · ROI ₹${formatNumber(r.amount)}">ROI ₹${formatNumber(r.amount)}</span>` : "";
+}
+async function loadRoiPo(pageOrders) {
+  const ids = pageOrders.map(o => o.id).filter(id => id && !roiAsked.has(id));
+  if (!ids.length) return;
+  ids.forEach(id => roiAsked.add(id));
+  try {
+    for (let i = 0; i < ids.length; i += 400) {
+      const r = await db.rpc("lwb_party_roi_orders", { p_ids: ids.slice(i, i + 400) });
+      if (r.error) return;
+      (r.data || []).forEach(x => roiPo.set(x.id, x));
+    }
+  } catch (e) { return; }
+  document.querySelectorAll("#ordersArea [data-roi]").forEach(w => {
+    const id = w.dataset.roi; if (!roiPo.has(id)) return;
+    w.innerHTML = roiBadge(id); const tr = w.closest("tr"); if (tr) tr.classList.add("row-roi");
+  });
 }
 // 🖨 badge next to the PO no.: printed N times; red when the PO lines changed after the last print.
 function printBadge(id) {
@@ -3827,6 +3869,12 @@ function setFill(id, items) {
   orderFill.set(id, { ordered, loaded, pct: ordered > 0 && loaded > 0 ? Math.round(loaded / ordered * 100) : null });
 }
 function fillStage(order) { return ["loaded", "delivered"].includes(orderStage(order)); }
+/* Before loading (Mohit, 22 Nov 2026): Approval Pending, Transport Pending and Transport Assigned POs have nothing
+   loaded or cut yet, so the whole PO is still to go: show 100%, not a blank. Loading / Loaded use the real loaded qty. */
+function preLoadStage(order) { return ["pending", "approved", "transport"].includes(orderStage(order)); }
+function fullBadge() {
+  return `<span class="fill-b full" title="Nothing loaded yet: the full PO is planned"><i style="--p:100%"></i>100% filled</span>`;
+}
 function fillBadge(id) {
   const f = orderFill.get(id);
   if (!f || f.pct == null) return "";
@@ -3835,6 +3883,7 @@ function fillBadge(id) {
 }
 function matchesFill(order, want) {
   if (!want) return true;
+  if (preLoadStage(order)) return want === "full";
   if (!fillStage(order)) return false;
   const f = orderFill.get(order.id);
   if (!f || f.pct == null) return false;
@@ -3862,7 +3911,7 @@ async function exportPoExcel() {
       o.transportation || "", orderPriority(o), orderLines.has(o.id) ? orderLines.get(o.id) : "",
       Number(o.total_qty) || 0,
       fillStage(o) && orderFill.has(o.id) ? orderFill.get(o.id).loaded : "",
-      fillStage(o) && orderFill.has(o.id) && orderFill.get(o.id).pct != null ? orderFill.get(o.id).pct : "",
+      preLoadStage(o) ? 100 : fillStage(o) && orderFill.has(o.id) && orderFill.get(o.id).pct != null ? orderFill.get(o.id).pct : "",
       Number(o.total_amount) || 0, Number(o.total_weight) || 0,
       stageLabel(o), o.status || "pending", Math.round(hoursSinceTaken(o))
     ]));
@@ -4728,7 +4777,7 @@ function renderOrders() {
 
         ${pageOrders.map(order => sugHeadFor(order) + `
 
-          <tr class="po-row ${isLateApproval(order) || isLateDelivery(order) ? "row-late" : orderPriority(order) === "URGENT" ? "row-urgent" : ""}${pickedIds.has(order.id) ? " row-picked" : ""}${order.id === justSavedId ? " row-just-saved" : ""}"
+          <tr class="po-row${roiPo.has(order.id) ? " row-roi" : ""} ${isLateApproval(order) || isLateDelivery(order) ? "row-late" : orderPriority(order) === "URGENT" ? "row-urgent" : ""}${pickedIds.has(order.id) ? " row-picked" : ""}${order.id === justSavedId ? " row-just-saved" : ""}"
             onclick="openRow(event, '${order.id}')" title="Click to open ${VIEW_ONLY ? "" : "and edit "}this PO">
 
             <td class="order-no c-no">
@@ -4742,7 +4791,7 @@ function renderOrders() {
             </td>
 
             <td class="c-cust">
-              ${escapeHtml(order.customer_name || "-")}
+              ${escapeHtml(order.customer_name || "-")}<span class="roi-w" data-roi="${order.id}">${roiBadge(order.id)}</span>${cashBuyerLine(order)}
             </td>
 
             <td class="c-sp" data-label="Sales person">
@@ -4750,7 +4799,7 @@ function renderOrders() {
             </td>
 
             <td class="c-qty" data-label="Qty" style="text-align:right">
-              ${formatNumber(order.total_qty)}${fillStage(order) ? `<span class="fill-w" data-fill="${order.id}">${fillBadge(order.id)}</span>` : ""}
+              ${formatNumber(order.total_qty)}${fillStage(order) ? `<span class="fill-w" data-fill="${order.id}">${fillBadge(order.id)}</span>` : preLoadStage(order) ? `<span class="fill-w">${fullBadge()}</span>` : ""}
             </td>
 
             <td class="c-tp" data-label="Transport">${tpBadge(order.transportation)}</td>
@@ -4800,6 +4849,7 @@ ${CAN_PAY ? `            <td class="c-pay" data-label="Party Due" data-pay="${or
   LWBCol.mark(area.querySelector("tbody"), document.getElementById("searchBox").value);
   loadOrderLines(pageOrders);
   loadListExtras(pageOrders);
+  loadRoiPo(pageOrders);
   if (CAN_PAY) ensurePartyDue();
   renderSelBar();
 
@@ -5838,7 +5888,7 @@ async function printApprovedPO(documentType="challan",collect=null){
       db.from("lwb_order_pickup").select("driver_name,driver_mobile,vehicle_no,godown_manager_name").eq("order_id",order.id).maybeSingle()
         .then(r=>r,()=>({data:null})),
       // Party mobile + address for the PO slip, like the Rajnigandha slip (Party Master, same name). Best effort.
-      isPo?db.from("lwb_customer_master").select("mobile,billing_address,city,pincode,is_active").ilike("customer_name",String(order.customer_name||"").trim().replace(/[%_\\]/g,"\\$&"))
+      isPo?db.from("lwb_customer_master").select("mobile,billing_address,city,pincode,is_active,gstin,pan,is_cash_sale").ilike("customer_name",String(order.customer_name||"").trim().replace(/[%_\\]/g,"\\$&"))
         .order("is_active",{ascending:false}).limit(1).then(r=>r,()=>({data:null})):null
     ]);
     if(result.error)throw result.error;
@@ -5894,6 +5944,11 @@ async function printApprovedPO(documentType="challan",collect=null){
     // Print PO by brand (Mohit, 20 Nov 2026): a Rajnigandha (quick-slip brand) PO prints the slip; every other brand
     // (Coca-Cola ...) keeps the A5 "Proforma Invoice" as before.
     const slipPo=isPo&&slipLines(itemResult.data||[]);
+    // Party GST / PAN + mobile on the PO print (Mohit, 23 Nov 2026): GSTIN first; no GSTIN -> PAN. Cash Sale: buyer name + mobile typed on the PO.
+    const pm=partyResult&&!partyResult.error&&Array.isArray(partyResult.data)?partyResult.data[0]||{}:{};
+    const pGst=String(pm.gstin||"").trim().toUpperCase(),pPan=String(pm.pan||"").trim().toUpperCase(),pMob=String(pm.mobile||"").trim();
+    const cashPo=pm.is_cash_sale===true||!!cashBuyerText(order);
+    const taxId=pGst?["GSTIN",pGst]:pPan?["PAN",pPan]:null;
     if(isPo&&!slipPo){
       printArea.className="po-a5";
       // A5 PO layout: no company name, dates shown without the year.
@@ -5906,7 +5961,12 @@ async function printApprovedPO(documentType="challan",collect=null){
         "<div class='pa-band'><div class='pa-title'><h1>PROFORMA INVOICE"+(eligibleForPoPrint(order)?"":" <small>("+safe(order.status)+")</small>")+"</h1><p>Sales Order / PO</p></div>"+
           "<div class='pa-no'><div><small>Order No.</small><b>"+safe(order.order_no)+"</b></div><div><small>Date &amp; Time</small><b>"+noYear(order.order_date||order.created_at)+"</b></div></div></div>"+
         "<div class='pa-parts'>"+
-          "<div class='pa-card'><h3>Bill To</h3><div class='pa-big'>"+safe(order.customer_name)+"</div><dl>"+row("Sales Person",dash(order.sales_person))+"</dl></div>"+
+          "<div class='pa-card'><h3>Bill To</h3><div class='pa-big'>"+safe(order.customer_name)+"</div><dl>"+
+            (cashPo
+              ? row("Buyer",dash(order.cash_buyer_name))+row("Mobile","<span class='pa-key'>"+dash(order.cash_buyer_mobile)+"</span>")
+              : row(taxId?taxId[0]:"GSTIN / PAN",taxId?"<span class='pa-key'>"+safe(taxId[1])+"</span>":"<span class='pa-miss'>Not given</span>")+
+                row("Mobile",pMob?"<span class='pa-key'>"+safe(pMob)+"</span>":"<span class='pa-miss'>Not given</span>"))+
+            row("Sales Person",dash(order.sales_person))+"</dl></div>"+
           "<div class='pa-card'><h3>Dispatch</h3><dl>"+row("Transport",dash(transportMode))+row("Vehicle No.",dash(a.vehicle_no))+
             row("Driver",dash(a.driver_name)+(a.driver_mobile?" · "+safe(a.driver_mobile):""))+row("Godown Manager",dash(a.loading_person))+"</dl></div>"+
         "</div>"+
@@ -5922,14 +5982,15 @@ async function printApprovedPO(documentType="challan",collect=null){
         "";
     } else if(isPo){
       // Print PO = the Rajnigandha quick slip (Mohit, 20 Nov 2026): PO no + date, party, SKU / Qty / Rate / Amount, total, receiver sign.
-      const pm=partyResult&&!partyResult.error&&Array.isArray(partyResult.data)?partyResult.data[0]||{}:{};
       const addr=[pm.billing_address,pm.city,pm.pincode].map(x=>String(x||"").trim()).filter(Boolean).join(", ");
       const money=v=>safe(number(v).toLocaleString("en-IN",{maximumFractionDigits:2}));
       printArea.className="po-slip";
       printArea.innerHTML=
         "<div class='row'><span>PO <b>"+safe(order.order_no)+"</b></span><span>"+safe(formatDateTime(order.order_date||order.created_at))+"</span></div>"+
         "<div class='party'>"+safe(order.customer_name)+"</div>"+
-        (String(pm.mobile||"").trim()?"<div>Mobile: <b>"+safe(String(pm.mobile).trim())+"</b></div>":"")+
+        (cashBuyerText(order)?"<div>Buyer: <b>"+safe(cashBuyerText(order))+"</b></div>":"")+
+        (!cashPo&&taxId?"<div>"+taxId[0]+": <b>"+safe(taxId[1])+"</b></div>":"")+
+        (!cashPo&&pMob?"<div>Mobile: <b>"+safe(pMob)+"</b></div>":"")+
         (addr?"<div class='addr'>"+safe(addr)+"</div>":"")+
         (spText?"<div>"+safe(spText)+"</div>":"")+
         "<div class='dash'></div>"+
@@ -5944,7 +6005,7 @@ async function printApprovedPO(documentType="challan",collect=null){
     printArea.innerHTML=
       "<div class='dc-head'><h1>"+(isPo?"SALES ORDER (PO)":"DELIVERY CHALLAN")+"</h1><div class='dc-sub'>Luxury Wrist Brand · "+safe(order.status)+"</div></div>"+
       "<div class='dc-info'>"+
-        info([["Order No.",safe(order.order_no)],["Customer Name",safe(order.customer_name)],["Transportation",dash(order.transportation)]].concat(spText?[["Pallet &amp; Sheet",safe(spText)]]:[]))+
+        info([["Order No.",safe(order.order_no)],["Customer Name",safe(order.customer_name)+(cashBuyerText(order)?"<br><small>Buyer: "+safe(cashBuyerText(order))+"</small>":"")],["Transportation",dash(order.transportation)]].concat(spText?[["Pallet &amp; Sheet",safe(spText)]]:[]))+
         info([["Date &amp; Time",safe(formatDateTime(order.order_date||order.created_at))],["Sales Person",dash(order.sales_person)],["Total Items",safe(approvedLines.length)]])+
       "</div>"+
       "<p class='dc-crew'>Godown Manager: <span>"+dash(a.loading_person)+"</span> &nbsp;|&nbsp; Driver: <span>"+dash(a.driver_name)+

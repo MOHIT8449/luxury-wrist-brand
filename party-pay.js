@@ -24,14 +24,21 @@
   const NOTES=["500","200","100","50","20","10"];
   const MODES=[["CASH","Cash",""],["UPI","UPI","UTR / ref"],["BANK","Bank / RTGS","UTR / ref"],["CHEQUE","Cheque","Cheque no."]];
   const errText=e=>{const m=String((e&&e.message)||e||"");
+    if(/lwb_party_receive_kasar|lwb_kasar_/i.test(m)&&/schema cache|does not exist|Could not find/i.test(m))return "Kasar is being set up (lwb_kasar_setup.sql). Save without the kasar tick, or try again in a few minutes.";
     if(/lwb_party_|schema cache|does not exist/i.test(m))return "Party payment is not set up yet. It sets itself up when this change is merged (lwb_party_group_billing_setup.sql).";
     return m.replace(/^.*?ERROR:\s*/,"")};
 
   /* ---------- data ---------- */
   async function load(client){
     // Goods returns (lwb_party_return_setup.sql); missing function = none, as before.
-    const [{data,error},rt]=await Promise.all([client.rpc("lwb_party_billing",{p_days:400}),client.rpc("lwb_party_return_list",{p_days:400}).then(r=>r,()=>({error:1}))]);
+    const [{data,error},rt,dl]=await Promise.all([client.rpc("lwb_party_billing",{p_days:400}),client.rpc("lwb_party_return_list",{p_days:400}).then(r=>r,()=>({error:1})),
+      client.rpc("lwb_receipt_date_log_list",{p_days:400}).then(r=>r,()=>({error:1}))]);
     if(error)throw Error(errText(error));
+    // date changes of receipts (lwb_receipt_date_change_setup.sql); missing function = none
+    if(dl&&!dl.error&&Array.isArray(dl.data)&&data&&Array.isArray(data.receipts)){
+      const m=new Map();for(const x of dl.data){if(!m.has(x.receipt_id))m.set(x.receipt_id,[]);m.get(x.receipt_id).push(x)}
+      for(const r of data.receipts)if(m.has(r.receipt_id))r.date_log=m.get(r.receipt_id);
+    }
     const returns=rt&&!rt.error&&Array.isArray(rt.data)?rt.data:[];
     const d=data||{},groups=d.groups||[],adv=d.advance||{},open=d.openings||{},companies=d.companies||[];
     const hasB=Array.isArray(d.advance_b);
@@ -120,6 +127,19 @@
 .lpp .left b.g{color:#13824a}.lpp .left b.r{color:#b3122b}
 .lpp .err{background:#ffebeb;color:#9b2020;border-radius:8px;padding:9px 11px;white-space:pre-wrap}
 .lpp .hint{color:#66788e;font-size:13px;margin:0}
+.lpp .ksr{display:flex;align-items:flex-start;gap:9px;background:#fff6d6;border:1.5px solid #e9c46a;border-radius:9px;padding:8px 11px;cursor:pointer;font-size:13.5px;color:#4d3800}
+.lpp .ksr.err{background:#ffebeb;border-color:#e0a1a1;color:#9b2020}.lpp .ksr .put{border:1.5px solid #9a6b00;background:#9a6b00;color:#fff;border-radius:8px;font:inherit;font-weight:700;font-size:13px;padding:5px 10px;cursor:pointer;margin-top:6px}
+.lpp .kline{background:#fff6d6;border-radius:8px;padding:6px 6px 6px 8px;margin-top:2px}.lpp .kline b{color:#7a5300}.lpp .kline input{border-color:#e9c46a;font-weight:700;color:#7a5300}
+.lpp .kseg{display:grid;grid-template-columns:1fr 1fr;border:1.5px solid #e9c46a;border-radius:8px;overflow:hidden;height:40px;box-sizing:border-box}
+.lpp .kseg button{border:0;background:#fff;font:inherit;font-size:12.5px;font-weight:600;color:#7a5300;cursor:pointer;padding:0 4px}.lpp .kseg button[aria-pressed=true]{background:#9a6b00;color:#fff}
+.lpp .tot span{display:block;font-size:13px;color:#7a5300}
+.lpp .ksr b.k{display:inline-block;background:#9a6b00;color:#fff;border-radius:99px;padding:0 8px;font-size:12.5px;margin-right:4px}
+.lpp .ksr small{display:block;color:#7a5f1f;font-size:12px;margin-top:1px}
+.lpp .ksr.on{background:#fdecb3;border-color:#9a6b00}
+.lpp tr.kzr td{background:#fff6d6}.lpp tr.kzr td:first-child{box-shadow:inset 3px 0 0 #9a6b00}
+.lpp .kz{display:inline-block;margin-top:3px;border:1px solid #9a6b00;color:#7a5300;background:#fff;border-radius:99px;padding:0 7px;font-size:12px;font-weight:700;white-space:nowrap}
+.lpp .kz.on{background:#9a6b00;color:#fff}
+.lpp .ksr .go{border:0;background:none;color:#7a5300;font:inherit;font-weight:700;text-decoration:underline;cursor:pointer;padding:0;font-size:12px}
 .lpp .cwarn{background:#fff6d6;color:#7a5600;border-radius:8px;padding:6px 10px;font-size:13px;margin:6px 0 0}
 .lpp .bpk{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px}
 .lpp .bpk button{border:2px solid #d5dbe3;background:#fff;border-radius:10px;padding:7px 10px;text-align:left;font:inherit;cursor:pointer;color:var(--bc)}
@@ -130,7 +150,7 @@
 .lpp .clist{position:absolute;left:0;right:0;top:100%;z-index:5;background:#fff;border:1px solid #d5dbe3;border-radius:8px;box-shadow:0 10px 24px rgba(0,0,0,.12);max-height:260px;overflow:auto;margin-top:2px}
 .lpp .clist button{display:flex;justify-content:space-between;gap:8px;width:100%;text-align:left;border:0;border-bottom:1px solid #f0f2f5;background:#fff;padding:9px 10px;font:inherit;cursor:pointer}
 .lpp .clist button.on,.lpp .clist button:hover{background:#eef4ff}.lpp .clist small{color:#66788e;white-space:nowrap}
-@media(max-width:560px){.lpp-back{padding:0;align-items:flex-end}.lpp{border-radius:14px 14px 0 0;max-height:96dvh}
+@media(max-width:560px){.lpp .kline .kseg{grid-column:2}.lpp-back{padding:0;align-items:flex-end}.lpp{border-radius:14px 14px 0 0;max-height:96dvh}
  .lpp .mode{grid-template-columns:72px minmax(0,1fr)}.lpp .mode input.ref{grid-column:2}.lpp .notes{margin-left:0}
  .lpp .sum b{font-size:14px}.lpp td input{width:92px}.lpp .seg button{font-size:12px}}`;
     document.head.appendChild(s);
@@ -167,12 +187,14 @@
    <div><label class="l" for="lppR">Remark</label><input id="lppR" maxlength="300" autocomplete="off" placeholder="optional"></div></div>
   <label class="l">Money received</label>
   <div class="modes">${MODES.map(([m,t,ph])=>`<div class="mode"><b>${t}</b><input class="amt" data-m="${m}" inputmode="decimal" autocomplete="off" placeholder="₹ 0" aria-label="${t} amount">${m==="CASH"?`<button type="button" class="lnk" data-cnt>Count notes</button>`:`<input class="ref" data-r="${m}" maxlength="100" autocomplete="off" placeholder="${ph}" aria-label="${t} ${ph}">`}</div>${m==="CASH"?`<div class="notes" data-notes hidden>${NOTES.map(n=>`<span>₹${n}×<input data-n="${n}" inputmode="numeric" placeholder="0" aria-label="${n} notes"></span>`).join("")}<span>coins<input data-n="coins" inputmode="decimal" placeholder="0" aria-label="coins"></span></div>`:""}`).join("")}</div>
-  <div class="tot" style="margin-top:8px">Total <b data-tot>₹0</b></div>
+  <div class="mode kline" data-kline><b>Kasar</b><input class="kin" data-kin inputmode="decimal" autocomplete="off" placeholder="₹ 0" aria-label="Kasar amount"><div class="kseg" data-kmode><button type="button" data-k="LESS" aria-pressed="true">Paid less</button><button type="button" data-k="EXTRA" aria-pressed="false">Paid extra</button></div></div>
+  <div class="tot" style="margin-top:8px">Total <b data-tot>₹0</b><span data-ktot></span></div>
   <p class="cwarn" data-cwarn hidden>Cash is ₹2 lakh or more (269ST). It will still save in full.</p>
  </div>
  <div><label class="l">${adjust?"Adjust the advance against":"Use this money for"}</label>
   <div class="seg${adjust?" two":""}" data-how><button type="button" data-h="auto">Oldest bill first</button><button type="button" data-h="pick">Choose bills</button>${adjust?"":`<button type="button" data-h="adv">Keep as advance</button>`}</div></div>
  <div data-bills></div>
+ <div class="ksr" data-ksr hidden><span data-kst></span></div>
  <div class="left" data-left></div>
  <div class="err" data-err hidden></div>
 </div>
@@ -209,15 +231,44 @@
       q("[data-ok]").textContent=(adjust?"Save adjustment":"Save "+(bname()?bname()+" ":"")+"payment");
     }
     const money=()=>adjust?P().advance:r2(qa(".amt").reduce((a,i)=>a+num(i.value),0));
-    let manual=new Map();
-    function plan(){
-      const p=P(),m=money(),out=new Map();
-      if(how==="adv")return out;
-      if(how==="pick"){for(const b of p.bills){const v=manual.get(b.order_id);if(v>0)out.set(b.order_id,v)}return out}
-      let left=adjust?p.advance:m+0;
-      for(const b of p.bills){if(left<0.01)break;const t=Math.min(r2(b.due),left);out.set(b.order_id,r2(t));left=r2(left-t)}
-      return out;
+    let manual=new Map(),kmode="LESS";
+    // Kasar typed by hand (lwb_kasar_setup.sql): Paid less = the party paid this much less, it closes the bill
+    // (oldest bill first: the last bill this money reaches; Choose bills: the last bill picked).
+    // Paid extra = the party paid this much more; it goes in kasar on that bill instead of advance. Max KMAX.
+    const KMAX=500;
+    const kas=()=>adjust||!q("[data-kin]")?0:r2(Math.max(0,num(q("[data-kin]").value)));
+    // -> {money: Map(order -> money set to it), kasar: [{order_id, amount, kind, bill}], err}
+    function split(){
+      const p=P(),m=money(),k=kas(),out=new Map(),ks=[];let err="";
+      if(how==="adv")return {money:out,kasar:ks,err:k?"Kasar is on a bill: choose Oldest bill first or Choose bills.":""};
+      if(how==="pick"){for(const b of p.bills){const v=manual.get(b.order_id);if(v>0)out.set(b.order_id,v)}}
+      else{let left=adjust?p.advance:m+(k&&kmode==="LESS"?k:0);
+        for(const b of p.bills){if(left<0.01)break;const t=Math.min(r2(b.due),left);out.set(b.order_id,r2(t));left=r2(left-t)}}
+      if(!k)return {money:out,kasar:ks,err};
+      const picked=p.bills.filter(b=>out.get(b.order_id)>0),last=picked[picked.length-1];
+      if(k>KMAX)err="Kasar can be at most "+rs(KMAX)+". Use a credit note for more.";
+      else if(!last)err="Enter the money first: kasar goes on the bill this money pays.";
+      else if(kmode==="LESS"){
+        if(how==="auto"){
+          const got=r2([...out.values()].reduce((a,v)=>a+v,0));
+          const lastShort=r2(last.due-out.get(last.order_id));
+          if(m+k-got>0.009)err=m>=got?"The money already pays all these bills. No kasar is needed.":"Kasar can be at most "+rs(r2(got-m))+" here (bills due "+rs(got)+").";
+          else if(lastShort>0.5)err="Money + kasar does not close bill "+(last.invoice_no||last.order_no)+" ("+last.order_no+"): it is still short by "+rs(lastShort)+". Kasar is only for a small difference that closes the bill.";
+          else{let r=k;for(const b of picked.slice().reverse()){if(r<0.005)break;const t=r2(Math.min(r,out.get(b.order_id)));out.set(b.order_id,r2(out.get(b.order_id)-t));ks.push({order_id:b.order_id,amount:t,kind:"LESS",bill:b});r=r2(r-t)}
+            for(const [id,v] of out)if(v<0.005)out.delete(id)}
+        }else{
+          const d=r2(last.due-out.get(last.order_id)-k);
+          if(Math.abs(d)>0.5)err="Bill "+(last.invoice_no||last.order_no)+" ("+last.order_no+"): money "+rs(out.get(last.order_id))+" + kasar "+rs(k)+" must equal its due "+rs(last.due)+(d>0?" (still short "+rs(d)+").":" (more by "+rs(-d)+").");
+          else ks.push({order_id:last.order_id,amount:k,kind:"LESS",bill:last});
+        }
+      }else{
+        const used=r2([...out.values()].reduce((a,v)=>a+v,0));
+        if(m-used<k-0.01)err="Paid extra "+rs(k)+" is more than the money left after the bills ("+rs(r2(m-used))+").";
+        else ks.push({order_id:last.order_id,amount:k,kind:"EXTRA",bill:last});
+      }
+      return {money:out,kasar:err?[]:ks,err};
     }
+    const plan=()=>split().money;
     function drawSum(){
       const p=P();
       const n=r2(p.due+(p.opening||0)-p.advance-(p.ret||0)),both=p.advance>0.5&&p.bills.length>0;
@@ -233,18 +284,59 @@
       if(!p.bills.length){box.innerHTML='<p class="hint">No '+(bname()?bname()+" ":"")+'bill is due for this party'+(adjust?".":" — the money stays as advance and is adjusted when the next bill is made.")+'</p>';return}
       box.innerHTML=`<div style="overflow:auto;max-height:300px"><table><thead><tr><th>${bname()?esc(bname())+" bill":"PO / bill"}</th><th class="n">Due</th><th class="n">${how==="pick"?"Take now":"Goes to bill"}</th></tr></thead><tbody>${p.bills.map(b=>{
         const v=pl.get(b.order_id)||0;
-        return `<tr><td><b>${esc(b.order_no)}</b> · ${dmy(b.invoice_date)}<small>${esc(billNames(b))}</small></td><td class="n">${rs(b.due)}</td><td class="n">${how==="pick"?`<input data-o="${esc(b.order_id)}" inputmode="decimal" value="${v?r2(v):""}" placeholder="0" aria-label="Amount for ${esc(b.order_no)}"><br><button type="button" class="lnk" data-full="${esc(b.order_id)}">full</button>`:(v?"<b>"+rs(v)+"</b>":"—")}</td></tr>`}).join("")}</tbody></table></div>`;
+        return `<tr data-row="${esc(b.order_id)}"><td><b>${esc(b.order_no)}</b> · ${dmy(b.invoice_date)}<small>${esc(billNames(b))}</small></td><td class="n">${rs(b.due)}</td><td class="n">${how==="pick"?`<input data-o="${esc(b.order_id)}" inputmode="decimal" value="${v?r2(v):""}" placeholder="0" aria-label="Amount for ${esc(b.order_no)}"><br><button type="button" class="lnk" data-full="${esc(b.order_id)}">full</button>`:(v?"<b>"+rs(v)+"</b>":"—")}<div class="kz" data-kz="${esc(b.order_id)}" hidden></div></td></tr>`}).join("")}</tbody></table></div>`;
       box.querySelectorAll("[data-o]").forEach(i=>i.oninput=()=>{manual.set(i.dataset.o,num(i.value));drawLeft()});
       box.querySelectorAll("[data-full]").forEach(b=>b.onclick=()=>{const x=p.bills.find(y=>y.order_id===b.dataset.full);manual.set(x.order_id,r2(x.due));drawBills()});
     }
+    // Suggestion when no kasar is typed: a bill this money leaves short by <= KMAX (or, Oldest bill first, a little extra).
+    function kasarHint(){
+      if(adjust||how==="adv"||kas())return [];
+      const p=P(),pl=plan(),out=[];
+      for(const b of p.bills){const v=pl.get(b.order_id)||0;if(v<=0)continue;const s=r2(b.due-v);if(s>=0.01&&s<=KMAX)out.push({order_id:b.order_id,amount:s,kind:"LESS",bill:b})}
+      if(!out.length&&how==="auto"&&pl.size){
+        const left=r2(money()-[...pl.values()].reduce((a,v)=>a+v,0)),last=p.bills.filter(b=>pl.get(b.order_id)>0).pop();
+        if(last&&left>=0.01&&left<=KMAX)out.push({order_id:last.order_id,amount:left,kind:"EXTRA",bill:last});
+      }
+      return how==="pick"?out.slice(-1):out.slice(-1);
+    }
+    let kasarSeen="";
+    function drawKasar(){
+      const S=split(),k=kas(),box=q("[data-ksr]"),pl=S.money;
+      const on=S.kasar.length?S.kasar:kasarHint(),typed=!!S.kasar.length;
+      // the bill the kasar is on: marked in the bill list above (yellow row + "Kasar ₹5")
+      qa("tr.kzr").forEach(r=>r.classList.remove("kzr"));qa("[data-kz]").forEach(d=>{d.hidden=true;d.textContent=""});
+      for(const x of on){const tr=back.querySelector('tr[data-row="'+x.order_id+'"]'),d=back.querySelector('[data-kz="'+x.order_id+'"]');
+        if(tr)tr.classList.add("kzr");
+        if(d){d.hidden=false;d.className="kz"+(typed?" on":"");d.textContent=x.kind==="EXTRA"?(typed?"✂ Kasar +"+rs(x.amount):"Extra "+rs(x.amount)):(typed?"✂ Kasar "+rs(x.amount):"Short "+rs(x.amount))}}
+      const key=on.map(x=>x.order_id+":"+x.amount).join("|");
+      if(on.length&&key!==kasarSeen){const tr=back.querySelector('tr[data-row="'+on[0].order_id+'"]');if(tr)tr.scrollIntoView({block:"nearest"})}
+      kasarSeen=key;
+      const kt=q("[data-ktot]");if(kt)kt.textContent=k&&!S.err?(kmode==="EXTRA"?"of which kasar (paid extra) "+rs(k):"+ kasar "+rs(k)+" = bills closed "+rs(r2(money()+k))):"";
+      box.className="ksr"+(S.err?" err":typed?" on":"");
+      if(S.err){box.hidden=false;q("[data-kst]").innerHTML="<b>Kasar: </b>"+esc(S.err);return S.kasar}
+      box.hidden=!on.length;if(!on.length)return S.kasar;
+      const one=x=>`<b>${esc(x.bill.order_no)}</b> · bill ${esc(x.bill.invoice_no||"")} · ${dmy(x.bill.invoice_date)} · due ${rs(x.bill.due)} · money ${rs(pl.get(x.order_id)||0)}`;
+      const t=r2(on.reduce((a,x)=>a+x.amount,0));
+      q("[data-kst]").innerHTML=typed?
+        `<b class="k">Kasar ${rs(t)}</b><b>${on[0].kind==="EXTRA"?"Party paid "+rs(t)+" extra: kept as kasar":on.length>1?on.length+" bills close with kasar":"This bill closes with kasar"}</b><small>${on.map(x=>one(x)+" · kasar "+rs(x.amount)).join("<br>")}</small> <button type="button" class="go" data-kgo>See bill ↑</button>`:
+        `<b class="k">${on[0].kind==="EXTRA"?"Extra":"Short"} ${rs(t)}</b><b>${on[0].kind==="EXTRA"?"Party paid "+rs(t)+" more than the bills":"This bill stays short by "+rs(t)}</b><small>${one(on[0])}</small><button type="button" class="put" data-kput>Put ${rs(t)} in Kasar</button> <button type="button" class="go" data-kgo>See bill ↑</button>`;
+      const g=q("[data-kgo]");if(g)g.onclick=e=>{e.preventDefault();const tr=back.querySelector('tr[data-row="'+on[0].order_id+'"]');if(tr)tr.scrollIntoView({block:"center",behavior:"smooth"})};
+      const pu=q("[data-kput]");if(pu)pu.onclick=()=>{q("[data-kin]").value=t;setKmode(on[0].kind);if(how==="auto")drawBills();drawLeft()};
+      return S.kasar;
+    }
+    function setKmode(m){kmode=m;qa("[data-k]").forEach(b=>b.setAttribute("aria-pressed",String(b.dataset.k===m)))}
     function drawLeft(){
-      const m=money(),split=r2([...plan().values()].reduce((a,v)=>a+v,0)),left=r2(m-split);
+      const ks=drawKasar(),kt=r2(ks.reduce((a,x)=>a+(x.kind==="EXTRA"?x.amount:0),0));
+      const m=money(),split=r2([...plan().values()].reduce((a,v)=>a+v,0)+kt),left=r2(m-split);
       q("[data-tot]").textContent=rs(m);
       q("[data-cwarn]").hidden=!(num(q('.amt[data-m="CASH"]').value)>=200000);
       q("[data-left]").innerHTML=adjust?`<span>Advance ${rs(m)}</span><span>Adjusted now <b>${rs(split)}</b></span><span>Advance left <b class="${left<-0.5?"r":"g"}">${rs(left)}</b></span>`:
-        `<span>Against bills <b>${rs(split)}</b></span><span>${left<-0.5?"More than received":"Stays as advance"} <b class="${left<-0.5?"r":"g"}">${rs(Math.abs(left))}</b></span>`;
+        `<span>Against bills <b>${rs(split)}</b></span>${ks.length?`<span>Kasar <b style="color:#9a6b00">${rs(ks.reduce((a,x)=>a+x.amount,0))}</b></span>`:""}<span>${left<-0.5?"More than received":"Stays as advance"} <b class="${left<-0.5?"r":"g"}">${rs(Math.abs(left))}</b></span>`;
     }
     function drawAll(){drawBrand();drawSum();qa("[data-h]").forEach(b=>b.setAttribute("aria-pressed",String(b.dataset.h===how)));drawBills();drawLeft()}
+    q("[data-kin]").oninput=()=>{if(how==="auto")drawBills();drawLeft()};
+    qa("[data-k]").forEach(b=>b.onclick=()=>{setKmode(b.dataset.k);if(how==="auto")drawBills();drawLeft()});
+    if(adjust)q("[data-kline]").hidden=true;
     qa("[data-h]").forEach(b=>b.onclick=()=>{if(b.dataset.h==="pick"&&!manual.size){how="auto";manual=new Map(plan())}how=b.dataset.h;drawAll()});
     qa(".amt").forEach(i=>i.oninput=()=>{if(how==="auto")drawBills();drawLeft()});
     // cash note count
@@ -267,17 +359,20 @@
       else if(e.key==="Enter"){e.preventDefault();if(shown[hi])pick(shown[hi])}else if(e.key==="Escape"){e.stopPropagation();list.hidden=true}};
     if(adjust)q("[data-pbox]").hidden=!!party;
 
-    q("[data-ok]").onclick=async()=>{
+    q("[data-ok]").onclick=()=>saveClick().catch(e=>{ // never a silent dead button: show any slip
+      busy=false;q("[data-ok]").disabled=false;const err=q("[data-err]");
+      err.textContent="Could not save: "+(e&&e.message||e)+". Please send this screen to Admin.";err.hidden=false;err.scrollIntoView({block:"nearest"})});
+    const saveClick=async()=>{
       if(busy)return;const err=q("[data-err]");err.hidden=true;
       const fail=t=>{err.textContent=t;err.hidden=false;err.scrollIntoView({block:"nearest"})};
       if(!party)return fail("Choose the party.");
       if(BR.length&&!brand)return fail("Pick the brand: is this payment for Rajnigandha or Coca-Cola?");
       const pl=plan(),allocs=[...pl].filter(([,v])=>v>0).map(([id,v])=>({order_id:id,amount:r2(v)}));
-      const split=allocs.reduce((a,x)=>a+x.amount,0);
+      const billSum=allocs.reduce((a,x)=>a+x.amount,0);
       let args;
       if(adjust){
         if(!allocs.length)return fail("Nothing to adjust.");
-        if(split>P().advance+0.5)return fail("Adjusted "+rs(split)+" is more than the advance "+rs(P().advance)+".");
+        if(billSum>P().advance+0.5)return fail("Adjusted "+rs(billSum)+" is more than the advance "+rs(P().advance)+".");
         args=["lwb_party_adjust",{p_party:party,p_allocs:how==="auto"?null:allocs}];
         if(BR.length)args[1].p_company_id=brand;
       }else{
@@ -290,9 +385,17 @@
           else{l.ref=q('[data-r="'+m+'"]').value.trim();if(m==="CHEQUE"&&!l.ref)return fail("Enter the cheque number.")}
           lines.push(l)}
         if(!lines.length)return fail("Enter the money received (Cash / UPI / Bank / Cheque).");
-        const m=money();if(split>m+0.5)return fail("Bills "+rs(split)+" is more than the money received "+rs(m)+".");
+        const m=money();if(billSum>m+0.5)return fail("Bills "+rs(billSum)+" is more than the money received "+rs(m)+".");
         args=["lwb_party_receive",{p_party:party,p_pay_date:date,p_lines:lines,p_allocs:how==="auto"?null:how==="adv"?[]:allocs,p_remark:q("#lppR").value.trim()||null}];
         if(BR.length)args[1].p_company_id=brand;
+        const S=split();if(S.err)return fail("Kasar: "+S.err);
+        const ks=S.kasar;
+        if(ks.length){ // kasar first on the bills, then this exact split (extra kasar raises that bill, so it takes the extra)
+          const al=allocs.map(x=>({...x}));
+          for(const k of ks)if(k.kind==="EXTRA"){const a=al.find(x=>x.order_id===k.order_id);if(a)a.amount=r2(a.amount+k.amount)}
+          args=["lwb_party_receive_kasar",{...args[1],p_allocs:al,p_kasar:ks.map(k=>({order_id:k.order_id,amount:k.amount,kind:k.kind}))}];
+          if(!BR.length)args[1].p_company_id=null;
+        }
       }
       busy=true;q("[data-ok]").disabled=true;
       try{
@@ -306,6 +409,49 @@
     pickDefaultBrand();
     drawAll();
     setTimeout(()=>{(party?(adjust?q("[data-ok]"):q('.amt[data-m="'+(o.mode||"CASH")+'"]')):pin).focus()},60);
+    return {close};
+  }
+  // Change the date of a receipt (wrong day entered). Admin / Accounts. lwb_receipt_date_change_setup.sql
+  // changeDate({client, receipt:{receipt_id,total,pay_date,party}, today, onSaved(newDate)})
+  const dateLogText=r=>(r&&r.date_log||[]).map(x=>"Date changed "+dmy(x.old_date)+" → "+dmy(x.new_date)+" by "+x.by+" on "+dmy(String(x.at).slice(0,10))+(x.reason?" ("+x.reason+")":"")).join(" · ");
+  function changeDate(o){
+    css();const r=o.receipt,t=o.today||today(),y=(()=>{const d=new Date(t+"T12:00:00Z");d.setUTCDate(d.getUTCDate()-1);return d.toISOString().slice(0,10)})();
+    const back=document.createElement("div");back.className="lpp-back";
+    back.innerHTML=`<div class="lpp" role="dialog" aria-modal="true" aria-labelledby="lpdT" style="width:min(440px,100%)">
+<header><h3 id="lpdT">Change payment date</h3><button type="button" data-x aria-label="Close">✕</button></header>
+<div class="bd">
+ <div class="sum" style="grid-template-columns:1fr 1fr"><div><small>${esc(r.party||"")}</small><b class="lpd-amt" style="color:#13824a">${rs(r.total)}</b></div><div><small>Date now</small><b>${dmy(r.pay_date)}</b></div></div>
+ <div><label class="l">New date</label><input type="date" class="lpd-d" aria-label="New date" style="font-weight:700;color:#00434d;cursor:pointer">
+  <div style="display:flex;gap:6px;margin-top:6px"><button type="button" class="b" data-d="${y}" style="height:32px;font-size:13px">Yesterday ${dmy(y).slice(0,5)}</button><button type="button" class="b" data-d="${t}" style="height:32px;font-size:13px">Today ${dmy(t).slice(0,5)}</button></div></div>
+ <div><label class="l" for="lpdR">Reason</label><input id="lpdR" maxlength="300" autocomplete="off" placeholder="optional, e.g. money came yesterday"></div>
+ <p style="margin:0;font-size:12.5px;color:#66788e">Only the date moves. Amount, modes, bills and cash book stay the same. The change is kept with your name.</p>
+ <div class="err" data-err hidden></div>
+</div>
+<footer><button type="button" class="b" data-x>Cancel</button><button type="button" class="b pri" data-ok>Save date</button></footer></div>`;
+    document.body.appendChild(back);document.body.style.overflow="hidden";
+    const q=s=>back.querySelector(s);
+    const close=()=>{back.remove();document.body.style.overflow=""};
+    back.querySelectorAll("[data-x]").forEach(b=>b.onclick=close);
+    back.addEventListener("keydown",e=>{if(e.key==="Escape"){e.stopPropagation();close()}else if(e.key==="Enter"&&e.target.tagName==="INPUT")q("[data-ok]").click()});
+    const dp=q(".lpd-d"),err=q("[data-err]");
+    const set=d=>{dp.value=d};
+    set(String(r.pay_date).slice(0,10)===t?y:String(r.pay_date).slice(0,10));dp.max=t;
+    dp.onclick=()=>{try{dp.showPicker()}catch(_){}};
+    back.querySelectorAll("[data-d]").forEach(b=>b.onclick=()=>set(b.dataset.d));
+    let busy=false;
+    q("[data-ok]").onclick=async()=>{
+      if(busy)return;err.hidden=true;
+      const d=dp.value;
+      if(!d){err.textContent="Choose the new date";err.hidden=false;return}
+      if(d>t){err.textContent="The date cannot be in the future";err.hidden=false;return}
+      if(d===String(r.pay_date).slice(0,10)){err.textContent="The payment is already on "+dmy(d);err.hidden=false;return}
+      busy=true;q("[data-ok]").disabled=true;
+      try{const {error}=await o.client.rpc("lwb_receipt_set_date",{p_receipt_id:r.receipt_id,p_date:d,p_reason:q("#lpdR").value.trim()||null});
+        if(error)throw error;close();if(o.onSaved)o.onSaved(d)}
+      catch(e){const m=String((e&&e.message)||e||"");err.textContent=/lwb_receipt_set_date|schema cache|does not exist/i.test(m)?"Date change is not set up yet. It sets itself up when this change is merged.":m.replace(/^.*?ERROR:\s*/,"");err.hidden=false}
+      finally{busy=false;q("[data-ok]").disabled=false}
+    };
+    setTimeout(()=>{dp.focus();try{dp.showPicker()}catch(_){}},60);
     return {close};
   }
   // Same party under another name? "RG. SHIV TOBECO (PARVAT PATIYA)" (Tally / old Party Master name) and
@@ -325,5 +471,5 @@
   // before this screen are left out). One rule for the page and the Dashboard (Mohit, 16 Nov 2026).
   const MAKE_FROM="2026-09-30";
   const needsBill=(o,marks)=>!o.invoice_no&&(["loaded","invoiced"].includes(String(o.status).toLowerCase())||!!(marks&&marks.has(o.order_id))||String(o.dispatch_date||o.order_date||"").slice(0,10)>=MAKE_FROM);
-  window.LWBPartyPay={load,open,needsBill,billNames,balText,key,rs,dmy,errText,slice,activeBrands,lookalike,core};
+  window.LWBPartyPay={load,open,changeDate,dateLogText,needsBill,billNames,balText,key,rs,dmy,errText,slice,activeBrands,lookalike,core};
 })();

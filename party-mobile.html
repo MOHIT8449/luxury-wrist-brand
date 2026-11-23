@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"><script src="erp-fit.js"></script>
+  <title>Party Mobile Pending | Luxury Wrist Brand ERP</title>
+  <script src="erp-date.js"></script><script src="erp-recent.js"></script>
+  <script src="vendor/supabase-js-2.119.0.js"></script>
+  <link rel="stylesheet" href="erp-shell.css?v=20261123">
+  <link rel="stylesheet" href="sales.css">
+  <script src="erp-shell.js?v=20261123"></script>
+  <script src="sales-common.js"></script>
+  <style>
+    /* Mohit (21 Nov 2026): every party without a mobile number = pending work for its salesman and the Sales Head.
+       Type the number, Save, the party leaves the list (lwb_party_mobile_task_setup.sql). */
+    .pm-kpis{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-bottom:10px}
+    .pm-kpi{background:#fff;border:1px solid var(--erp-line);border-radius:8px;padding:8px 12px}
+    .pm-kpi span{display:block;font-size:12px;color:var(--erp-muted)}
+    .pm-kpi b{display:block;font-size:22px;line-height:1.2}
+    .pm-kpi.red b{color:#c62828}.pm-kpi.green b{color:var(--erp-green)}
+    .pm-bar{height:6px;border-radius:3px;background:#eceff3;overflow:hidden;margin-top:4px}
+    .pm-bar i{display:block;height:100%;background:var(--erp-green)}
+    .pm-acts{display:flex;gap:8px;align-items:center;flex-wrap:nowrap;margin-bottom:10px}
+    .pm-acts input,.pm-acts select{height:36px;border:1.5px solid var(--erp-line);border-radius:6px;padding:0 10px;font:inherit;background:#fff;min-width:0}
+    .pm-acts input{flex:1}.pm-acts select{max-width:170px}
+    .pm-card{background:#fff;border:1px solid var(--erp-line);border-radius:8px;margin-bottom:10px}
+    .pm-card h2{font-size:14px;margin:0;padding:8px 12px;border-bottom:1px solid var(--erp-line);display:flex;gap:8px;align-items:center}
+    .pm-card h2 .grow{flex:1}
+    .pm-prog{width:100%;border-collapse:collapse;font-size:13px}
+    .pm-prog th{text-align:left;font-size:11.5px;color:var(--erp-muted);font-weight:600;padding:6px 10px;border-bottom:1px solid var(--erp-line)}
+    .pm-prog td{padding:6px 10px;border-bottom:1px solid #f0f2f5}
+    .pm-prog td.n,.pm-prog th.n{text-align:right;white-space:nowrap}
+    .pm-prog td small{display:block;color:var(--erp-muted);font-size:11.5px}
+    .pm-prog tr:last-child td{border-bottom:0}
+    .pm-pend{color:#c62828;font-weight:700}.pm-zero{color:var(--erp-green);font-weight:700}
+    .pm-row{display:flex;gap:8px;align-items:center;padding:7px 12px;border-bottom:1px solid #f0f2f5}
+    .pm-row:last-child{border-bottom:0}
+    .pm-row .who{flex:1;min-width:0}
+    .pm-row .who b{display:block;font-size:14px;overflow-wrap:anywhere}
+    .pm-row .who small{display:block;color:var(--erp-muted);font-size:12px}
+    .pm-row .bad{color:var(--erp-amber);font-weight:600}
+    .pm-row input{width:150px;height:36px;border:1.5px solid var(--erp-line);border-radius:6px;padding:0 10px;font:inherit;font-size:15px;letter-spacing:.5px}
+    .pm-row input:focus{outline:none;border-color:var(--erp-red)}
+    .pm-row input.err{border-color:var(--erp-red);background:var(--erp-red-soft)}
+    .pm-row .sl-btn{height:36px}
+    .pm-row.saved{background:#eaf7ef;transition:opacity .4s}
+    .pm-none{padding:16px 12px;color:var(--erp-green);font-weight:600}
+    .pm-group{font-size:12px;font-weight:700;color:#4b5763;background:#f6f7f9;padding:5px 12px;border-bottom:1px solid var(--erp-line)}
+    .pm-badge{font-size:11px;font-weight:700;border-radius:10px;padding:2px 8px;white-space:nowrap}
+    .pm-badge.open{background:#fdecea;color:#c62828}
+    .pm-badge.done{background:#e6f5ec;color:var(--erp-green)}
+    .pm-badge.none{background:#f0f2f5;color:var(--erp-muted)}
+    @media(max-width:560px){
+      .pm-kpi{padding:6px 8px}.pm-kpi b{font-size:19px}
+      .pm-row{flex-wrap:wrap;padding:8px 10px}
+      .pm-row .who{flex:1 1 100%}
+      .pm-row input{flex:1;width:auto}
+      .pm-acts{flex-wrap:wrap}.pm-acts input{flex:1 1 100%}.pm-acts select{flex:1;max-width:none}
+      .pm-prog th,.pm-prog td{padding:6px 7px}
+    }
+  </style>
+</head>
+<body>
+  <div id="loading" class="status">Checking account access...</div>
+  <main id="page" class="erp-main" hidden>
+    <div class="erp-pagehead"><h1>📞 Party Mobile Pending</h1></div>
+    <div class="pm-kpis" id="kpis"></div>
+    <section class="pm-card" id="progCard" hidden>
+      <h2><span>Progress, person-wise</span><span class="grow"></span><button type="button" class="sl-btn small" id="give">🔔 Give task</button></h2>
+      <div class="sl-scroll"><table class="pm-prog" id="prog"></table></div>
+    </section>
+    <div class="pm-acts">
+      <input id="q" type="search" placeholder="Search party, code, city" autocomplete="off" aria-label="Search">
+      <select id="sm" hidden aria-label="Salesman"></select>
+      <button type="button" class="sl-btn ghost" id="refresh">Refresh</button>
+    </div>
+    <section class="pm-card"><div id="list">Loading...</div></section>
+    <p class="sl-note">Type the 10 digit mobile and press Save (or Enter). The party leaves the list. A saved number is changed only in Party Master.</p>
+  </main>
+  <script>
+    const S=LWBSales,{client,el,esc,fmt}=S;
+    let me=null,head=false,rows=[],prog=[],filledNow=0;
+    const setupMsg=m=>/lwb_party_mobile/.test(m||"")?"Party mobile list is being set up. Please try again in a few minutes.":m;
+    const digits=v=>String(v||"").replace(/\D/g,"");
+    const okNo=v=>/^(91|0)?[6-9]\d{9}$/.test(digits(v));
+
+    function kpis(){
+      const pend=rows.length,filled=prog.reduce((s,x)=>s+(x.filled||0),0)||filledNow,today=prog.reduce((s,x)=>s+(x.filled_today||0),0)||filledNow;
+      const all=pend+filled,pc=all?Math.round(filled/all*100):100;
+      el("kpis").innerHTML=
+        '<div class="pm-kpi red"><span>'+(head?"Pending":"My pending")+"</span><b>"+fmt(pend)+"</b></div>"+
+        '<div class="pm-kpi green"><span>Filled</span><b>'+fmt(filled)+'</b><div class="pm-bar"><i style="width:'+pc+'%"></i></div></div>'+
+        '<div class="pm-kpi"><span>Filled today</span><b>'+fmt(today)+"</b></div>";
+    }
+    function drawProg(){
+      el("progCard").hidden=!head;if(!head)return;
+      const badge=x=>!x.task_id?'<span class="pm-badge none">No task</span>':x.task_status==="DONE"?'<span class="pm-badge done">✓ Done</span>':
+        x.task_status==="CANCELLED"?'<span class="pm-badge none">Cancelled</span>':'<span class="pm-badge open">Open · due '+esc(LWBDate.d(x.task_due))+"</span>";
+      el("prog").innerHTML='<tr><th>Person</th><th class="n">Pending</th><th class="n">Filled</th><th>Task</th></tr>'+
+        (prog.length?prog.map(x=>"<tr><td><b>"+esc(x.person_name)+"</b><small>"+esc(x.role_label)+(x.role_label==="Sales Head"?" · office parties":"")+"</small></td>"+
+          '<td class="n '+(x.pending?"pm-pend":"pm-zero")+'">'+fmt(x.pending)+'</td><td class="n">'+fmt(x.filled)+(x.filled_today?"<small>+"+fmt(x.filled_today)+" today</small>":"")+"</td><td>"+badge(x)+"</td></tr>").join("")
+          :'<tr><td colspan="4">No one has pending parties.</td></tr>');
+    }
+    function list(){
+      const q=el("q").value.trim().toLowerCase(),sm=el("sm").value;
+      return rows.filter(x=>(!q||[x.customer_name,x.customer_code,x.city,x.contact_person].some(v=>String(v||"").toLowerCase().includes(q)))&&
+        (!sm||(sm==="none"?!x.owner_id:x.owner_id===sm)));
+    }
+    function draw(){
+      kpis();
+      const L=list().sort((a,b)=>head?String(a.owner_name||"").localeCompare(String(b.owner_name||""))||String(a.customer_name).localeCompare(b.customer_name):0);
+      if(!rows.length){el("list").innerHTML='<div class="pm-none">✓ Every party has a mobile number. Nothing pending.</div>';return}
+      if(!L.length){el("list").innerHTML='<div class="pm-none" style="color:var(--erp-muted)">No party matches.</div>';return}
+      let h="",grp=null;
+      L.slice(0,400).forEach(x=>{
+        const g=x.owner_name||"Office (no salesman)";
+        if(head&&g!==grp){grp=g;h+='<div class="pm-group">'+esc(g)+" · "+L.filter(r=>(r.owner_name||"Office (no salesman)")===g).length+" pending</div>"}
+        const bad=digits(x.mobile);
+        h+='<div class="pm-row" data-id="'+esc(x.customer_id)+'"><div class="who"><b>'+esc(x.customer_name)+"</b><small>"+esc([x.customer_code,x.city,x.contact_person].filter(Boolean).join(" · "))+
+          (bad?' · <span class="bad">wrong no. '+esc(x.mobile)+"</span>":"")+"</small></div>"+
+          '<input type="tel" inputmode="numeric" maxlength="14" placeholder="10 digit mobile" aria-label="Mobile for '+esc(x.customer_name)+'">'+
+          '<button type="button" class="sl-btn" data-save>Save</button></div>';
+      });
+      if(L.length>400)h+='<div class="pm-group">Showing 400 of '+L.length+". Search to find others.</div>";
+      el("list").innerHTML=h;
+    }
+    async function load(){
+      const [r,p]=await Promise.all([client.rpc("lwb_party_mobile_pending"),head?client.rpc("lwb_party_mobile_progress"):Promise.resolve({data:[]})]);
+      if(r.error){el("list").innerHTML='<div class="pm-none" style="color:var(--erp-red)">'+esc(setupMsg(r.error.message))+"</div>";rows=[]}else rows=r.data||[];
+      prog=p.error?[]:p.data||[];
+      if(head){
+        const sms=new Map();rows.forEach(x=>{if(x.owner_id)sms.set(x.owner_id,x.owner_name)});
+        const cur=el("sm").value;
+        el("sm").innerHTML='<option value="">All salesmen</option><option value="none">Office (no salesman)</option>'+[...sms].sort((a,b)=>String(a[1]).localeCompare(b[1])).map(([id,n])=>'<option value="'+esc(id)+'">'+esc(n)+"</option>").join("");
+        el("sm").value=[...el("sm").options].some(o=>o.value===cur)?cur:"";
+      }
+      drawProg();if(!r.error)draw();else kpis();
+    }
+    async function save(row){
+      const inp=row.querySelector("input"),btn=row.querySelector("[data-save]"),v=inp.value;
+      if(!okNo(v)){inp.classList.add("err");inp.focus();ERPShell.toast&&ERPShell.toast("Enter a valid 10 digit mobile number.","error");return}
+      btn.disabled=true;btn.textContent="Saving...";
+      const {data,error}=await client.rpc("lwb_party_mobile_set",{p_customer_id:row.dataset.id,p_mobile:v});
+      if(error){btn.disabled=false;btn.textContent="Save";inp.classList.add("err");ERPShell.toast?ERPShell.toast(setupMsg(error.message),"error"):alert(error.message);return}
+      filledNow++;
+      const x=rows.find(r=>r.customer_id===row.dataset.id);
+      rows=rows.filter(r=>r.customer_id!==row.dataset.id);
+      const pv=prog.find(p=>x&&(x.owner_id?p.person_id===x.owner_id:p.role_label==="Sales Head"));if(pv)pv.pending=Math.max(0,pv.pending-1);
+      const mine=prog.find(p=>p.person_id===me.user.id);if(mine){mine.filled++;mine.filled_today++}
+      row.classList.add("saved");btn.textContent="✓ Saved";
+      ERPShell.toast&&ERPShell.toast("Saved: "+(x?x.customer_name:"party")+" · "+data.mobile,"success");
+      const nextId=row.nextElementSibling&&row.nextElementSibling.dataset.id;
+      setTimeout(()=>{draw();drawProg();const n=nextId&&[...document.querySelectorAll(".pm-row")].find(r=>r.dataset.id===nextId);if(n)n.querySelector("input").focus()},500);
+    }
+    (async()=>{
+      me=await S.start(["admin","manager","sales"]);if(!me)return;
+      head=["admin","manager"].includes(me.role);
+      el("sm").hidden=!head;
+      el("list").addEventListener("click",e=>{const b=e.target.closest("[data-save]");if(b)save(b.closest(".pm-row"))});
+      el("list").addEventListener("keydown",e=>{if(e.key==="Enter"&&e.target.matches("input")){e.preventDefault();save(e.target.closest(".pm-row"))}});
+      el("list").addEventListener("input",e=>{if(e.target.matches("input"))e.target.classList.remove("err")});
+      el("q").addEventListener("input",draw);el("sm").addEventListener("change",draw);
+      el("refresh").onclick=load;
+      el("give").onclick=async()=>{
+        if(!await confirm("Give the mobile number task to every salesman with pending parties and the Sales Head? People who already have an open task are skipped."))return;
+        const {data,error}=await client.rpc("lwb_party_mobile_tasks_give");
+        if(error){ERPShell.toast?ERPShell.toast(setupMsg(error.message),"error"):alert(error.message);return}
+        ERPShell.toast&&ERPShell.toast(data.given?"Task given to "+data.given+(data.given>1?" people":" person")+" 🔔":"Everyone already has an open task.","success");
+        load();
+      };
+      el("loading").hidden=true;el("page").hidden=false;
+      await load();
+    })();
+  </script>
+</body>
+</html>

@@ -19,7 +19,17 @@
     }catch(e){return ""}
   }
   // Fingerprint (lwbUnlock) or MPIN (lwbMpin) on for this login on this phone.
+  // Website in a browser: never locks (Logout and 15 idle minutes log out). Only the Android app
+  // (quick-unlock.js isApp) locks with MPIN / fingerprint.
+  function appMode(){
+    try{
+      if(/^android-app:\/\//i.test(document.referrer||""))sessionStorage.setItem("lwbApp","1");
+      if(sessionStorage.getItem("lwbApp")==="1")return true;
+      return /Android/i.test(navigator.userAgent)&&["standalone","fullscreen","minimal-ui"].some(m=>matchMedia("(display-mode: "+m+")").matches);
+    }catch(e){return false}
+  }
   function lockOn(uid){
+    if(!appMode())return false;
     try{
       const on=JSON.parse(localStorage.getItem("lwbUnlock")||"null"),pin=JSON.parse(localStorage.getItem("lwbMpin")||"null");
       return !!(uid&&((on&&on.uid===uid&&on.cred)||(pin&&pin.uid===uid)));
@@ -116,6 +126,8 @@
       // Salesman: his own orders with PO given > Approved > Dispatched > Delivered).
       {t:"New PO / Sales Order",h:"order-entry.html",i:"cart",r:"admin manager sales",k:"new order entry po",pt:"PO / Sales Order (new PO)",nm:"admin manager sales",par:"warehouse-orders.html my-sales.html#orders"},
       {t:"PO / Sales",h:"warehouse-orders.html",i:"note",r:"admin manager accounts",k:"po approval driver warehouse orders",pt:"PO / Sales List (all POs; approve for Admin / Sales Head)"},
+      // Direct Vehicle (Mohit, 23 Nov 2026): company truck straight to the party; party advance, final +/- qty, balance.
+      {t:"Direct Vehicle",h:"direct-vehicle.html",i:"truck",r:"admin manager accounts",k:"direct vehicle company truck party advance balance baki final qty plus minus ecrs"},
       {t:"PO / Sales",h:"my-sales.html#orders",i:"note",r:"sales",k:"my orders modify",pt:"PO / Sales List (Salesman's own orders)"},
       // Rajnigandha (Mohit, 4 Nov 2026): no own menu items. A Rajnigandha PO prints its slip from PO / Sales
       // (Print), its waiting POs show on top of that list; the rate list is the Rajnigandha tab of Rate List.
@@ -127,6 +139,8 @@
       // Outstanding (Mohit, 20 Nov 2026): Sales Head sees unpaid / part-paid bills, party-wise dues, ledger; tells Accounts.
       {t:"Outstanding",h:"sales-outstanding.html",i:"cash",r:"admin manager",k:"outstanding payment pending due unpaid part paid bills party wise ledger collection baki udhar tell accounts cashier"},
       {t:"Party Call List",h:"party-calls.html",i:"phone",r:"admin manager sales"},
+      // Party Mobile Pending (Mohit, 21 Nov 2026): parties without a mobile number; fill here, task closes by itself.
+      {t:"Party Mobile Pending",h:"party-mobile.html",i:"phone",r:"admin manager sales",k:"mobile number missing phone party contact fill pending task"},
       {t:"Outside Market Stock",h:"market-report.html",i:"pin",r:"admin manager sales"},
       {t:"Sales Tracking",h:"sales-tracking.html",i:"chart",r:"admin manager"},
       // Party Buying (Mohit, 17 Nov 2026): party / SKU / category-wise buying, never bought, not in N days, stopped. Tab of Sales Tracking.
@@ -715,10 +729,10 @@
   const mpinWho=u=>u&&u.email&&!/@staff\.lwb-erp\.in$/i.test(u.email)?u.email:"";
   function loadUnlock(){
     if(window.LWBUnlock)return Promise.resolve(window.LWBUnlock);
-    return new Promise((ok,bad)=>{const s=document.createElement("script");s.src="quick-unlock.js";s.onload=()=>ok(window.LWBUnlock);s.onerror=bad;document.head.appendChild(s)});
+    return new Promise((ok,bad)=>{const s=document.createElement("script");s.src="quick-unlock.js?v=20261121b";s.onload=()=>ok(window.LWBUnlock);s.onerror=bad;document.head.appendChild(s)});
   }
   function unlockSetting(av,role){
-    if(!av)return;
+    if(!av||!appMode())return;
     av.setAttribute("role","button");av.tabIndex=0;av.title="Login & Security (MPIN, fingerprint)";av.style.cursor="pointer";
     av.addEventListener("click",()=>openSecurity(role));
     av.addEventListener("keydown",e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();openSecurity(role)}});
@@ -726,7 +740,7 @@
   let secOpen=false,mountedRole="";
   async function openSecurity(role){
     role=typeof role==="string"?role:mountedRole;
-    if(secOpen||!window.supabase)return;secOpen=true;
+    if(secOpen||!window.supabase||!appMode())return;secOpen=true;
     let U,user,c;
     try{
       U=await loadUnlock();
@@ -771,7 +785,7 @@
       try{
         if(a==="pinoff"){await U.mpinOff(c);pinOn=false;toast("MPIN turned off on this phone.")}
         if(a==="fpoff"){U.disable();toast("Fingerprint unlock turned off on this phone.")}
-        if(a==="fpon"){try{await U.enable(user);toast("Fingerprint unlock is on for this phone.")}catch(e){if(e&&e.name!=="NotAllowedError")toast("Fingerprint could not be turned on: "+(e&&e.message||e),"error")}}
+        if(a==="fpon"){try{await U.enable(user);if(pinOn)await U.mpinOff(c),pinOn=false;toast("Fingerprint unlock is on for this phone. MPIN is off.")}catch(e){if(e&&e.name!=="NotAllowedError")toast("Fingerprint could not be turned on: "+(e&&e.message||e),"error")}}
       }finally{busy=false;main()}
     }
     function pinView(){
@@ -788,7 +802,7 @@
         }
         if(pin!==first){first="";P.clear(true);step(1);say("Both MPINs did not match. Set it again.",true);return}
         busy=true;say("Saving...");
-        try{await U.mpinSet(c,user.id,pin);pinOn=true;busy=false;toast("MPIN is set for this phone.");main()}
+        try{await U.mpinSet(c,user.id,pin);pinOn=true;U.disable();busy=false;toast("MPIN is set for this phone. Fingerprint is off.");main()}
         catch(e){busy=false;first="";P.clear(true);step(1);say(e.message||String(e),true)}
       }});
       P.fingerprint(null);step(1);
@@ -823,9 +837,21 @@
       window.LWBOperationsNotifications.init({db:c,user,role,mount:top.querySelector(".erp-user"),pages:menuForMe(role).flatMap(g=>g.items.map(i=>i.h.split("#")[0]))});
     }catch(e){}
     profitSwitch(top,role);
-    liveLocation();
+    // liveLocation();  // 📍 Switched OFF by the owner 23 Nov 2026: no location is asked or sent. Remove // to bring back.
     tripRent(role);
     teamChat(role);
+    taskSiren(role);
+  }
+
+  // 🚨 Urgent task siren: full-screen alarm + siren sound on any page when an urgent task rings
+  // (task-siren.js, lwb_task_siren_setup.sql). Until the SQL is run nothing shows.
+  async function taskSiren(role){
+    try{
+      const c=window.__lwbBellClient;if(!c||!role)return;
+      const {data}=await c.auth.getSession();const user=data&&data.session&&data.session.user;if(!user)return;
+      if(!window.LWBSiren)await new Promise((ok,bad)=>{const s=document.createElement("script");s.src="task-siren.js";s.onload=ok;s.onerror=bad;document.head.appendChild(s)});
+      window.LWBSiren.init({db:c,user,role});
+    }catch(e){}
   }
 
   // 🏷 ONE brand picker for the whole site, next to the page name (Mohit, 19 Nov 2026):
@@ -902,7 +928,7 @@
   async function liveLocation(){
     try{
       const c=window.__lwbBellClient;if(!c)return;
-      if(!window.LWBLocation)await new Promise((ok,bad)=>{const s=document.createElement("script");s.src="live-location.js";s.onload=ok;s.onerror=bad;document.head.appendChild(s)});
+      if(!window.LWBLocation)await new Promise((ok,bad)=>{const s=document.createElement("script");s.src="live-location.js?v=20261123c";s.onload=ok;s.onerror=bad;document.head.appendChild(s)});
       window.LWBLocation.start(c);
     }catch(e){}
   }
@@ -939,7 +965,7 @@
   if(!window.LWBKeys&&!document.querySelector('script[src*="erp-keys.js"]')){const s=document.createElement("script");s.src="erp-keys.js";document.head.appendChild(s)}
   // Every drop-down searches like the SKU box in New PO (erp-select.js).
   if(!window.LWBSelect&&!document.querySelector('script[src*="erp-select.js"]')){const s=document.createElement("script");s.src="erp-select.js";document.head.appendChild(s)}
-  window.ERPShell={mount,security:openSecurity,menuFor,viewOnly,menuForMe,hiddenPages,extraPages,pageRole,pageRoleFresh,allPages,icon:svg,alert:erpAlert,confirm:erpConfirm,prompt:erpPrompt,toast,done:erpDone};
+  window.ERPShell={mount,security:openSecurity,isApp:appMode,menuFor,viewOnly,menuForMe,hiddenPages,extraPages,pageRole,pageRoleFresh,allPages,icon:svg,alert:erpAlert,confirm:erpConfirm,prompt:erpPrompt,toast,done:erpDone};
   const me=document.currentScript;
   if(me&&me.hasAttribute("data-auto")){
     if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",auto);else auto();
