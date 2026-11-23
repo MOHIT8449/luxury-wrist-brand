@@ -278,7 +278,8 @@
     // approval, so the bill can be made while the party waits). Old delivered POs from before this screen are left out:
     // a fixed start date, not "last 30 days", so a delivered PO without bill never drops off the list (16 Nov 2026, Accounts).
     // (the rule is LWBPartyPay.needsBill, so the Dashboard counts the same POs)
-    const toMake=()=>orders().filter(o=>LWBPartyPay.needsBill(o,marks)).concat((info.early||[]).filter(o=>!fb));
+    // Brand picked: POs of that brand + POs with no known brand (tagged "No brand"), also the ones not loaded yet.
+    const toMake=()=>(info.raw.orders||[]).filter(o=>LWBPartyPay.makeInBrand(o,fb)&&LWBPartyPay.needsBill(o,marks)).concat((info.early||[]).filter(o=>LWBPartyPay.makeInBrand(o,fb)));
     const membersOf=p=>{const x=info.parties.get(key(p));return x?x.members:[]};
     const match=(q,...v)=>!q||v.some(x=>String(x==null?"":x).toLowerCase().includes(q));
 
@@ -421,7 +422,7 @@
         const d=DELIVERY[String(o.delivery||"").toUpperCase()],grp=key(o.parent)!==key(o.party),isOpen=mkOpen.has(o.order_id),ret=retOn(o.order_id);
         const names=[...new Set([o.parent,...membersOf(o.parent)])].filter(n=>key(n)!==key(o.party)),v=valOf(o);
         return `<tr class="pr${isOpen?" open":""}" data-o="${esc(o.order_id)}">
-          <td class="c1"><b class="pb-po" data-drill-order="${esc(o.order_id)}" data-drill-no="${esc(o.order_no)}">${esc(o.order_no)}</b><small class="ph-only">${dmy(mkDate(o))}</small>${o.early?` <span class="tag t-amb">${o.vehicle_no?"Vehicle "+esc(o.vehicle_no)+" · not loaded":"Not loaded yet"}</span>`:""}${d?` <span class="tag ${d[0]}">${d[1]}</span>`:""}${shortTag(o.order_id)}${markTag(o.order_id,!!d)}</td>
+          <td class="c1"><b class="pb-po" data-drill-order="${esc(o.order_id)}" data-drill-no="${esc(o.order_no)}">${esc(o.order_no)}</b><small class="ph-only">${dmy(mkDate(o))}</small>${o.early?` <span class="tag t-amb">${o.vehicle_no?"Vehicle "+esc(o.vehicle_no)+" · not loaded":"Not loaded yet"}</span>`:""}${d?` <span class="tag ${d[0]}">${d[1]}</span>`:""}${fb&&!o.company_id?` <span class="tag t-amb" title="SKU of this PO not found in SKU Master, or lines of two brands. Shown under every brand so the bill is not missed.">No brand</span>`:""}${shortTag(o.order_id)}${markTag(o.order_id,!!d)}</td>
           <td class="hide-ph" style="white-space:nowrap" title="${o.early?"Approved date":"Loaded date"}">${dmy(mkDate(o))}</td>
           <td class="w"><b>${esc(o.party)}</b>${grp?` <span class="tag t-blu">under ${esc(o.parent)}</span>`:""}${names.length?`<small title="${esc(names.join(", "))}">bill names: ${esc(names.join(", "))}</small>`:""}</td>
           <td class="n c4">${v.w?`<s class="was">${rs(v.erp)}</s> <b>${rs(v.val)}</b><small><button type="button" class="tag t-amb" data-wv="${esc(v.w.id)}" style="border:0;cursor:pointer" title="PO change waiting for Admin. Tap to see it.">⏳ ${sg(Number(v.w.diff))} Admin</button></small>`:
