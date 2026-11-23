@@ -8,6 +8,7 @@
 - Mohit: in the friend circle someone sends money to our bank and we give the same cash (or gives cash and we send from bank). Not sales, not collection, not expense.
 - SQL `lwb_acc_friend_swap_setup.sql` (test `tests/friend-swap`, PGlite, 2 tests): table `lwb_acc_swaps(entry_id, person)`; RPC `lwb_acc_swap_add(p {date, dir B2C|C2B, bank_id, amount, person, ref, remark})` saves through `lwb_acc_add_entry` as DEPOSIT (B2C: cash -, bank + after bank check) or WITHDRAW (C2B: cash +, bank -), party = person (upper case); `lwb_acc_swap_names()` (last 120 days). `lwb_acc_lines_all` patched in place: head "Friend swap" for these entries. Cancel = normal Cancel this entry.
 - UI: Cashier / Accounts "🏦 Bank / Swap" button popup has a third choice "🔁 Friend swap" (direction, person + recent names, bank, amount, UTR, effect box). Day book: purple swap rows + tag, "🔁 Swap N" filter, strip with cash / bank net + Person-wise popup; Summary mode table rows. acc-hub.js `isSwap`: swaps are kept out of Cash In / Bank deposit cards (hand card shows "Swap ±X"); finance.html cash → bank excludes them. Screenshots (PGlite running the real SQL): project files `friend-swap/live/`.
+
 ## Vehicle Report: per vehicle / driver tons loaded, cases delivered (23 Nov 2026)
 - Mohit: a driver dashboard: which vehicle delivered how much today, which driver did what, vehicle-wise; driver is fixed to a vehicle; tons loaded, cases delivered.
 - Fixed driver = Employee Master driver's "Default vehicle" (`lwb_acc_staff.default_vehicle_id`, already there); no new table.
