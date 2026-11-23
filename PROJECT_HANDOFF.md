@@ -8,6 +8,16 @@
 - Mohit: MAA TRADERS (BOMBY MARKET) ₹32,000 cash entered 23/11 with "paid on 07/11/2026" showed in today's Day book, Collected today and cash. Old money entered late must count on the paid on day.
 - SQL `lwb_acc_paid_on_day_setup.sql` (test `tests/acc-paid-on`, PGlite, 3 tests): `lwb_acc_pay_day(pay_date, created_at)` = paid on date (not after the entry day); if that day was already closed (Close Day) before the entry, the first open day after the close (closed days stay locked). `lwb_acc_lines_all` patched in place (PAYMENT line only). `lwb_acc_lines()` also keeps party payments entered on / after the fresh start date even if paid on before it (bank check list). Driver money / old Payment Collection unchanged.
 - accounts-dashboard.html Day book: a late-entered line shows "entered DD/MM hh:mm" under the date. Screenshots: project files `acc-paid-on-date/`.
+## Cash Sale party (23 Nov 2026)
+- Mohit: small walk-in sales (Rs 5-500) all go to ONE party "CASH SALE"; no ledger per buyer, only buyer name + mobile; no transport.
+- SQL `lwb_cash_sale_party_setup.sql` (test `tests/cash-sale`): `lwb_customer_master.is_cash_sale`, one CASH SALE party; `orders.cash_buyer_name / cash_buyer_mobile`; RPC `lwb_set_order_cash_buyer(order, name, mobile)` (maker or Admin); insert trigger makes every Cash Sale PO `SELF PICKUP`; party details guard skips the Cash Sale party.
+- `order-entry.html`: picking CASH SALE (`isCashParty`, also by name) shows the yellow buyer box, hides Transport / vehicle / pallet-sheet / credit / party details / min weight; no Self pickup driver popup. `warehouse-orders.html`: "Cash" badge with buyer under the party, in search and PO print.
+
+## Direct Vehicle: party advance, final qty, balance (23 Nov 2026)
+- Mohit: a Direct Vehicle PO = company truck (ECRS order) goes straight to the party; party pays an advance (e.g. ₹50 L), company sends +/- cases (e.g. ₹55 L), balance (₹5 L) to collect. Needs its own place.
+- New page `direct-vehicle.html` (Admin / Manager / Accounts; side menu Sales > Direct Vehicle; "🚛 Direct Vehicle" button next to PO List / Dashboard on PO / Sales). Lists orders with transportation `DIRECT VEHICLE%` (not cancelled): PO qty/amount, final qty/amount with +/- badge, received, balance (red to collect / blue give back / green clear), status (Advance pending, Advance in, Vehicle ordered, Balance due, Give back, Settled, Closed). Popup: money entries (date, mode RTGS/CASH/UPI/CHEQUE/REFUND, ref) + Add, company truck (lwb_ecrs_trucks of last 40 days, label "dd/mm Order N"), note, final cases per PO line (blank = PO qty, "Same as PO"), Hisab closed.
+- SQL `lwb_direct_vehicle_setup.sql` (test `tests/direct-vehicle`, PGlite): tables `lwb_direct_vehicle` (order_id PK, truck_id/label, final_lines [{item_id,cs}], final_amount = final cs x order_items.rate, closed) and `lwb_direct_vehicle_pay`; RPCs `lwb_dv_pay_add`, `lwb_dv_pay_delete` (Admin / Accounts), `lwb_dv_save`. Only these tables are written: the party ledger / Tally bill are NOT changed (advance here is a separate tracker).
+- `order-entry.html?tp=dv` opens New PO with Direct vehicle picked.
 
 ## Urgent task alarm in the Android app (22 Nov 2026)
 - Mohit wanted the siren to ring on a phone that is lying untouched (web push can only play the normal notification tone once).
