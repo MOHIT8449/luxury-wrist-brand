@@ -16,8 +16,10 @@
   // Phones only (mobile browser + the Android app). Desktop / laptop ERP is office
   // work: no location asked, no lock, nothing sent (23 Nov 2026, owner's rule).
   const nav=typeof navigator!=="undefined"?navigator:{},ua=String(nav.userAgent||"");
-  const isPhone=nav.userAgentData&&typeof nav.userAgentData.mobile==="boolean"?nav.userAgentData.mobile
-    :/Android|iPhone|iPod|Mobi|Windows Phone/i.test(ua);
+  // A Windows / Mac / Linux / ChromeOS computer is never a phone, even with a touch screen or a narrow window.
+  const isComputer=/Windows NT|Macintosh|CrOS|X11|Linux x86_64/i.test(ua)&&!/Android|iPhone|iPod|Mobi/i.test(ua);
+  const isPhone=!isComputer&&(nav.userAgentData&&typeof nav.userAgentData.mobile==="boolean"?nav.userAgentData.mobile
+    :/Android|iPhone|iPod|Mobi|Windows Phone/i.test(ua));
   if(!isPhone){window.LWBLocation={last:null,status:"desktop",start(){},now:async()=>null,retry:async()=>null};return}
   const SEND_MS=25e3,MOVE_M=50,BEAT_MS=60e3,RECHECK_MS=10*60e3;
   const st={db:null,watch:null,last:null,sentAt:0,sentPos:null,beat:null,on:false,denied:false,busy:false,
