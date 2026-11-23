@@ -533,6 +533,8 @@
       #poPrintArea .pa-card dl {display:grid;grid-template-columns:auto 1fr;gap:.5mm 2mm;margin:0;padding:1.2mm 2mm 1.4mm}
       #poPrintArea .pa-card dt {font-size:7.5pt;color:#555;white-space:nowrap}
       #poPrintArea .pa-card dd {margin:0;font-size:8.8pt;font-weight:700;overflow-wrap:anywhere}
+      #poPrintArea .pa-card .pa-key {font-size:9.5pt;font-weight:800;color:var(--pa-ink);letter-spacing:.3pt}
+      #poPrintArea .pa-card .pa-miss {font-weight:600;color:#999;font-style:italic}
       #poPrintArea .pa-sp {margin-bottom:2.5mm;border:.8pt dashed var(--pa-gold);border-radius:1.5mm;padding:1.2mm 2.5mm;font-size:9pt;font-weight:700;break-inside:avoid}
       #poPrintArea .pa-sp small {color:var(--pa-ink);font-weight:800;text-transform:uppercase;font-size:7pt;letter-spacing:.4pt;margin-right:2mm}
       #poPrintArea .pa-items th {background:var(--pa-ink)!important;color:#fff!important;font-size:7.5pt;font-weight:800;text-transform:uppercase;letter-spacing:.3pt;padding:1.4mm 1.5mm;text-align:right;white-space:nowrap;border:0}
@@ -5886,7 +5888,7 @@ async function printApprovedPO(documentType="challan",collect=null){
       db.from("lwb_order_pickup").select("driver_name,driver_mobile,vehicle_no,godown_manager_name").eq("order_id",order.id).maybeSingle()
         .then(r=>r,()=>({data:null})),
       // Party mobile + address for the PO slip, like the Rajnigandha slip (Party Master, same name). Best effort.
-      isPo?db.from("lwb_customer_master").select("mobile,billing_address,city,pincode,is_active").ilike("customer_name",String(order.customer_name||"").trim().replace(/[%_\\]/g,"\\$&"))
+      isPo?db.from("lwb_customer_master").select("mobile,billing_address,city,pincode,is_active,gstin,pan,is_cash_sale").ilike("customer_name",String(order.customer_name||"").trim().replace(/[%_\\]/g,"\\$&"))
         .order("is_active",{ascending:false}).limit(1).then(r=>r,()=>({data:null})):null
     ]);
     if(result.error)throw result.error;
@@ -5942,6 +5944,11 @@ async function printApprovedPO(documentType="challan",collect=null){
     // Print PO by brand (Mohit, 20 Nov 2026): a Rajnigandha (quick-slip brand) PO prints the slip; every other brand
     // (Coca-Cola ...) keeps the A5 "Proforma Invoice" as before.
     const slipPo=isPo&&slipLines(itemResult.data||[]);
+    // Party GST / PAN + mobile on the PO print (Mohit, 23 Nov 2026): GSTIN first; no GSTIN -> PAN. Cash Sale: buyer name + mobile typed on the PO.
+    const pm=partyResult&&!partyResult.error&&Array.isArray(partyResult.data)?partyResult.data[0]||{}:{};
+    const pGst=String(pm.gstin||"").trim().toUpperCase(),pPan=String(pm.pan||"").trim().toUpperCase(),pMob=String(pm.mobile||"").trim();
+    const cashPo=pm.is_cash_sale===true||!!cashBuyerText(order);
+    const taxId=pGst?["GSTIN",pGst]:pPan?["PAN",pPan]:null;
     if(isPo&&!slipPo){
       printArea.className="po-a5";
       // A5 PO layout: no company name, dates shown without the year.
@@ -5954,7 +5961,12 @@ async function printApprovedPO(documentType="challan",collect=null){
         "<div class='pa-band'><div class='pa-title'><h1>PROFORMA INVOICE"+(eligibleForPoPrint(order)?"":" <small>("+safe(order.status)+")</small>")+"</h1><p>Sales Order / PO</p></div>"+
           "<div class='pa-no'><div><small>Order No.</small><b>"+safe(order.order_no)+"</b></div><div><small>Date &amp; Time</small><b>"+noYear(order.order_date||order.created_at)+"</b></div></div></div>"+
         "<div class='pa-parts'>"+
-          "<div class='pa-card'><h3>Bill To</h3><div class='pa-big'>"+safe(order.customer_name)+"</div><dl>"+row("Sales Person",dash(order.sales_person))+"</dl></div>"+
+          "<div class='pa-card'><h3>Bill To</h3><div class='pa-big'>"+safe(order.customer_name)+"</div><dl>"+
+            (cashPo
+              ? row("Buyer",dash(order.cash_buyer_name))+row("Mobile","<span class='pa-key'>"+dash(order.cash_buyer_mobile)+"</span>")
+              : row(taxId?taxId[0]:"GSTIN / PAN",taxId?"<span class='pa-key'>"+safe(taxId[1])+"</span>":"<span class='pa-miss'>Not given</span>")+
+                row("Mobile",pMob?"<span class='pa-key'>"+safe(pMob)+"</span>":"<span class='pa-miss'>Not given</span>"))+
+            row("Sales Person",dash(order.sales_person))+"</dl></div>"+
           "<div class='pa-card'><h3>Dispatch</h3><dl>"+row("Transport",dash(transportMode))+row("Vehicle No.",dash(a.vehicle_no))+
             row("Driver",dash(a.driver_name)+(a.driver_mobile?" · "+safe(a.driver_mobile):""))+row("Godown Manager",dash(a.loading_person))+"</dl></div>"+
         "</div>"+
@@ -5970,7 +5982,6 @@ async function printApprovedPO(documentType="challan",collect=null){
         "";
     } else if(isPo){
       // Print PO = the Rajnigandha quick slip (Mohit, 20 Nov 2026): PO no + date, party, SKU / Qty / Rate / Amount, total, receiver sign.
-      const pm=partyResult&&!partyResult.error&&Array.isArray(partyResult.data)?partyResult.data[0]||{}:{};
       const addr=[pm.billing_address,pm.city,pm.pincode].map(x=>String(x||"").trim()).filter(Boolean).join(", ");
       const money=v=>safe(number(v).toLocaleString("en-IN",{maximumFractionDigits:2}));
       printArea.className="po-slip";
@@ -5978,7 +5989,8 @@ async function printApprovedPO(documentType="challan",collect=null){
         "<div class='row'><span>PO <b>"+safe(order.order_no)+"</b></span><span>"+safe(formatDateTime(order.order_date||order.created_at))+"</span></div>"+
         "<div class='party'>"+safe(order.customer_name)+"</div>"+
         (cashBuyerText(order)?"<div>Buyer: <b>"+safe(cashBuyerText(order))+"</b></div>":"")+
-        (String(pm.mobile||"").trim()?"<div>Mobile: <b>"+safe(String(pm.mobile).trim())+"</b></div>":"")+
+        (!cashPo&&taxId?"<div>"+taxId[0]+": <b>"+safe(taxId[1])+"</b></div>":"")+
+        (!cashPo&&pMob?"<div>Mobile: <b>"+safe(pMob)+"</b></div>":"")+
         (addr?"<div class='addr'>"+safe(addr)+"</div>":"")+
         (spText?"<div>"+safe(spText)+"</div>":"")+
         "<div class='dash'></div>"+
