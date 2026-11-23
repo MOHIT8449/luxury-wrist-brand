@@ -4,6 +4,11 @@
 **Purpose:** Continue the same ERP project from a new ChatGPT conversation without restarting or losing the agreed requirements.
 **Status:** Active development / verification. Do not assume all modules are completed or fully tested.
 
+## Day book: party payment on its "paid on" date (23 Nov 2026)
+- Mohit: MAA TRADERS (BOMBY MARKET) ₹32,000 cash entered 23/11 with "paid on 07/11/2026" showed in today's Day book, Collected today and cash. Old money entered late must count on the paid on day.
+- SQL `lwb_acc_paid_on_day_setup.sql` (test `tests/acc-paid-on`, PGlite, 3 tests): `lwb_acc_pay_day(pay_date, created_at)` = paid on date (not after the entry day); if that day was already closed (Close Day) before the entry, the first open day after the close (closed days stay locked). `lwb_acc_lines_all` patched in place (PAYMENT line only). `lwb_acc_lines()` also keeps party payments entered on / after the fresh start date even if paid on before it (bank check list). Driver money / old Payment Collection unchanged.
+- accounts-dashboard.html Day book: a late-entered line shows "entered DD/MM hh:mm" under the date. Screenshots: project files `acc-paid-on-date/`.
+
 ## Urgent task alarm in the Android app (22 Nov 2026)
 - Mohit wanted the siren to ring on a phone that is lying untouched (web push can only play the normal notification tone once).
 - Android app (new APK): `SirenAlarm.poll()` calls `lwb_task_my_sirens` once a minute from DriverLocationService (staff) or the new `TaskSirenService` (Admin / untracked logins, foreground type specialUse). A new ring (id@siren_count, remembered on the phone) posts an alarm notification on channel `task-siren-alarm` (ALARM sound `res/raw/task_siren.ogg`, insistent, bypass DND requested, SOS vibration) with a full-screen intent to `SirenActivity`: screen turns on over the lock screen, siren loops on the ALARM stream (rings on Silent; alarm volume raised to 70% while ringing, then restored), vibrates, ✅ Done (tap twice, `lwb_task_update` DONE) / ⏰ Later (`lwb_task_siren_seen`) / Open; stops after 3 min. Android 14+: the gate asks once for "Full screen notifications".
