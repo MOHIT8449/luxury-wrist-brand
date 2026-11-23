@@ -835,7 +835,7 @@
       window.LWBOperationsNotifications.init({db:c,user,role,mount:top.querySelector(".erp-user"),pages:menuForMe(role).flatMap(g=>g.items.map(i=>i.h.split("#")[0]))});
     }catch(e){}
     profitSwitch(top,role);
-    liveLocation();
+    // liveLocation();  // 📍 Switched OFF by the owner 23 Nov 2026: no location is asked or sent. Remove // to bring back.
     tripRent(role);
     teamChat(role);
     taskSiren(role);
