@@ -126,6 +126,8 @@
       // Salesman: his own orders with PO given > Approved > Dispatched > Delivered).
       {t:"New PO / Sales Order",h:"order-entry.html",i:"cart",r:"admin manager sales",k:"new order entry po",pt:"PO / Sales Order (new PO)",nm:"admin manager sales",par:"warehouse-orders.html my-sales.html#orders"},
       {t:"PO / Sales",h:"warehouse-orders.html",i:"note",r:"admin manager accounts",k:"po approval driver warehouse orders",pt:"PO / Sales List (all POs; approve for Admin / Sales Head)"},
+      // Direct Vehicle (Mohit, 23 Nov 2026): company truck straight to the party; party advance, final +/- qty, balance.
+      {t:"Direct Vehicle",h:"direct-vehicle.html",i:"truck",r:"admin manager accounts",k:"direct vehicle company truck party advance balance baki final qty plus minus ecrs"},
       {t:"PO / Sales",h:"my-sales.html#orders",i:"note",r:"sales",k:"my orders modify",pt:"PO / Sales List (Salesman's own orders)"},
       // Rajnigandha (Mohit, 4 Nov 2026): no own menu items. A Rajnigandha PO prints its slip from PO / Sales
       // (Print), its waiting POs show on top of that list; the rate list is the Rajnigandha tab of Rate List.
