@@ -551,7 +551,8 @@
       const box=document.getElementById("cashBox");
       let r=null;try{r=await client.rpc("lwb_acc_shift_list",{p_from:null,p_to:null})}catch(e){}
       if(!r||r.error||!r.data){box.hidden=true;return}
-      const S=r.data,H=S.holder,P=S.pending,L=S.last_entry,RN={admin:"Admin",accounts:"Accounts",cashier:"Cashier"};
+      const S=r.data,HS=S.holders&&S.holders.length?S.holders:S.holder?[S.holder]:[],P=S.pending,L=S.last_entry,RN={admin:"Admin",accounts:"Accounts",cashier:"Cashier",sales:"Sales",salesman:"Sales"};
+      const H=HS.length>1?Object.assign({},HS[0],{name:HS.map(h=>String(h.name).split(/\s+/)[0]).join(" + "),amount:HS.reduce((a,h)=>a+Number(h.amount||0),0),role:"",mobile:null}):HS[0];
       const t=v=>v?new Date(v).toLocaleTimeString("en-IN",{hour:"2-digit",minute:"2-digit",hour12:true,timeZone:"Asia/Kolkata"}):"";
       const d=v=>v?new Date(v).toLocaleDateString("en-GB",{day:"2-digit",month:"2-digit",timeZone:"Asia/Kolkata"}):"";
       const rs=v=>"₹"+fmtINR(Math.round(Number(v)||0));
@@ -573,6 +574,28 @@
       if(P&&P.to_mobile&&P.to!==S.me)act.appendChild(call(P.to_mobile,"Call "+String(P.to_name).split(/\s+/)[0]));
       const o=document.createElement("a");o.href="accounts-dashboard.html?tab=close#cash";o.textContent="Open →";act.appendChild(o);
       box.hidden=false;
+    }
+
+    // Cash handover (Mohit 23 Nov 2026): Sales / Vishal bhai may get a part of the cash box; they accept it here.
+    async function loadMyCash(){
+      const box=document.getElementById("cashBox");
+      let r=null;try{r=await client.rpc("lwb_acc_shift_list",{p_from:null,p_to:null})}catch(e){}
+      const S=r&&!r.error&&r.data,P=S&&S.pending,mine=P&&(P.parts||[]).find(x=>x.to===S.me&&x.status==="PENDING");
+      if(!mine){box.hidden=true;return}
+      const rs=v=>"₹"+fmtINR(Math.round(Number(v)||0));
+      box.replaceChildren();
+      const ic=document.createElement("span");ic.className="cb-ic";ic.textContent="💼";
+      const m=document.createElement("span");const b=document.createElement("b");b.className="cb-who";b.textContent=rs(mine.amount);
+      m.append(document.createTextNode((P.by_name||"")+" is handing you "),b);
+      const sub=document.createElement("span");sub.className="cb-sub";sub.textContent=(P.parts.length>1?"cash split: "+P.parts.map(x=>String(x.to_name).split(/\s+/)[0]+" "+rs(x.amount)).join(" · ")+" · ":"")+"count it, then press Received";
+      const act=document.createElement("span");act.className="cb-act";
+      const ok=document.createElement("a");ok.href="#";ok.className="call";ok.textContent="Received ✓";
+      ok.onclick=async e=>{e.preventDefault();
+        if(!await ERPShell.confirm("Received "+rs(mine.amount)+" from "+(P.by_name||"")+"?\n\nCount the cash first. If it is different, ask Accounts / Admin."))return;
+        const x=await client.rpc("lwb_acc_shift_receive",{p_id:Number(mine.id),p_amount:null,p_note:null});
+        if(x.error){await ERPShell.alert(x.error.message);return}
+        ERPShell.toast("Cash received");loadMyCash()};
+      act.appendChild(ok);box.append(ic,m,sub,act);box.hidden=false;
     }
 
     async function loadSummary(){
@@ -900,6 +923,7 @@
         roleDashboard(role,profile.full_name,user.id,plan);
         loadSummary();
         if(role==="admin"){loadCashBox();setInterval(()=>{if(!document.hidden)loadCashBox()},60000)}
+        else loadMyCash();
         loadVerify();setInterval(()=>{if(!document.hidden)loadVerify()},60000);
         if(["admin","manager"].includes(role)&&!ERPShell.hiddenPages().includes("approvals.html")){loadApprovals(user.id);setInterval(()=>{if(!document.hidden)loadApprovals(user.id)},60000)}
         loadFocus();focusSetup();
