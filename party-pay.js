@@ -359,7 +359,10 @@
       else if(e.key==="Enter"){e.preventDefault();if(shown[hi])pick(shown[hi])}else if(e.key==="Escape"){e.stopPropagation();list.hidden=true}};
     if(adjust)q("[data-pbox]").hidden=!!party;
 
-    q("[data-ok]").onclick=async()=>{
+    q("[data-ok]").onclick=()=>saveClick().catch(e=>{ // never a silent dead button: show any slip
+      busy=false;q("[data-ok]").disabled=false;const err=q("[data-err]");
+      err.textContent="Could not save: "+(e&&e.message||e)+". Please send this screen to Admin.";err.hidden=false;err.scrollIntoView({block:"nearest"})});
+    const saveClick=async()=>{
       if(busy)return;const err=q("[data-err]");err.hidden=true;
       const fail=t=>{err.textContent=t;err.hidden=false;err.scrollIntoView({block:"nearest"})};
       if(!party)return fail("Choose the party.");
