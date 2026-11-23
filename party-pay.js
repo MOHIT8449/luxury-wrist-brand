@@ -365,11 +365,11 @@
       if(!party)return fail("Choose the party.");
       if(BR.length&&!brand)return fail("Pick the brand: is this payment for Rajnigandha or Coca-Cola?");
       const pl=plan(),allocs=[...pl].filter(([,v])=>v>0).map(([id,v])=>({order_id:id,amount:r2(v)}));
-      const split=allocs.reduce((a,x)=>a+x.amount,0);
+      const billSum=allocs.reduce((a,x)=>a+x.amount,0);
       let args;
       if(adjust){
         if(!allocs.length)return fail("Nothing to adjust.");
-        if(split>P().advance+0.5)return fail("Adjusted "+rs(split)+" is more than the advance "+rs(P().advance)+".");
+        if(billSum>P().advance+0.5)return fail("Adjusted "+rs(billSum)+" is more than the advance "+rs(P().advance)+".");
         args=["lwb_party_adjust",{p_party:party,p_allocs:how==="auto"?null:allocs}];
         if(BR.length)args[1].p_company_id=brand;
       }else{
@@ -382,7 +382,7 @@
           else{l.ref=q('[data-r="'+m+'"]').value.trim();if(m==="CHEQUE"&&!l.ref)return fail("Enter the cheque number.")}
           lines.push(l)}
         if(!lines.length)return fail("Enter the money received (Cash / UPI / Bank / Cheque).");
-        const m=money();if(split>m+0.5)return fail("Bills "+rs(split)+" is more than the money received "+rs(m)+".");
+        const m=money();if(billSum>m+0.5)return fail("Bills "+rs(billSum)+" is more than the money received "+rs(m)+".");
         args=["lwb_party_receive",{p_party:party,p_pay_date:date,p_lines:lines,p_allocs:how==="auto"?null:how==="adv"?[]:allocs,p_remark:q("#lppR").value.trim()||null}];
         if(BR.length)args[1].p_company_id=brand;
         const S=split();if(S.err)return fail("Kasar: "+S.err);
