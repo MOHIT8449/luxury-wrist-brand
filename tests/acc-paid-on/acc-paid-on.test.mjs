@@ -47,6 +47,8 @@ async function call(q,args=[]){await db.exec('SET ROLE authenticated');try{retur
 const n=async t=>Number((await db.query(`select count(*)::int c from ${t}`)).rows[0].c);
 await db.exec(await sql('lwb_acc_paid_on_day_setup.sql'));
 await db.exec(await sql('lwb_acc_paid_on_day_setup.sql')); // safe to run again
+await db.exec(await sql('lwb_acc_paid_on_strict_setup.sql'));
+await db.exec(await sql('lwb_acc_paid_on_strict_setup.sql'));
 await as('admin');
 const pay=async(pd,mode,amt,ago='0 hours')=>(await db.query(`insert into lwb_tally_payments(party,pay_date,mode,amount,created_by,created_at) values('MAA TRADERS',$1,$2,$3,$4,now()-$5::interval) returning id`,[pd,mode,amt,ids.accounts,ago])).rows[0].id;
 const day=async(f,t)=>(await call('select public.lwb_acc_dashboard($1,$2) j',[f,t||f]))[0].j;
@@ -65,16 +67,22 @@ test('today payment stays today; a future paid on date is today',async()=>{
  const t=await day(today);assert.equal(has(t,a),true);assert.equal(has(t,b),true);
 });
 
-test('paid on a day closed before the entry = next open day; cash counts after the close',async()=>{
+test('old payment entered after the day was closed stays on its paid on date and does not add to cash',async()=>{
  const c=dayAdd(today,-2);
  await db.query(`insert into lwb_acc_day_close(close_date,opening,expected,counted,closed_by) values($1,0,0,1000,$2)`,[c,ids.accounts]);
+ const before=Number((await db.query('select amount from public.lwb_acc_cash_at($1)',[dayAdd(today,1)])).rows[0].amount);
  const id=await pay(dayAdd(today,-6),'CASH',700);
  const l=(await db.query('select book_date::text d from public.lwb_acc_lines_all() where id=$1',[id])).rows[0];
- assert.equal(l.d,dayAdd(today,-1));
- // entered BEFORE the close was done = stays on its paid on day
- const old=await pay(dayAdd(today,-3),'CASH',50,'3 days');
- const o=(await db.query('select book_date::text d from public.lwb_acc_lines_all() where id=$1',[old])).rows[0];
- assert.equal(o.d,dayAdd(today,-3));
- const t=(await db.query('select amount from public.lwb_acc_cash_at($1)',[dayAdd(today,1)])).rows[0];
- assert.ok(Number(t.amount)>=1000+700);
+ assert.equal(l.d,dayAdd(today,-6));
+ const after=Number((await db.query('select amount from public.lwb_acc_cash_at($1)',[dayAdd(today,1)])).rows[0].amount);
+ assert.equal(after,before);
+ assert.equal(has(await day(today),id),false);
+});
+
+test('late list: old payments entered today, cash or not',async()=>{
+ const id=await pay(dayAdd(today,-9),'CASH',18450);
+ const r=(await call('select public.lwb_acc_late_lines($1,$2) j',[today,today]))[0].j;
+ const x=r.find(z=>z.id===id);assert.ok(x);assert.equal(x.paid,dayAdd(today,-9));assert.equal(x.in_cash,false);
+ assert.equal(r.some(z=>z.paid===today),false);
+ await as('manager');await assert.rejects(call('select public.lwb_acc_late_lines($1,$2)',[today,today]),/Accounts/);await as('admin');
 });

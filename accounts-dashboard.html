@@ -147,6 +147,8 @@
     .acx-more .f+.f{margin-top:12px}
     .f2{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:10px}.f2>.f{min-width:0}
     .pills{display:flex;flex-wrap:wrap;gap:6px}
+    .late-strip{display:flex;flex-wrap:wrap;gap:4px 10px;align-items:center;margin:0 0 8px;padding:6px 10px;background:#fff8e6;border:1px solid #f1d58a;border-radius:10px;font-size:12.5px;color:#4b5763}
+    .late-strip>b{color:#7a4b00}.late-strip i{font-style:normal;font-weight:700}.late-strip .acx-btn{margin-left:auto;height:30px;padding:0 12px}
     .sh-strip{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:0 0 8px;font-size:12.5px;color:#4b5763}
     .sh-strip>span{background:#eef4ff;border:1px solid #c5d7f5;border-radius:99px;padding:2px 9px;white-space:nowrap}.sh-strip i{font-style:normal;font-weight:700}
     .sh-head{display:flex;align-items:center;gap:8px;margin:0 0 8px}.sh-head .acx-btn{margin-left:auto}
@@ -293,6 +295,7 @@
     const MODE_NAME={CASH:"Cash",UPI:"UPI",BANK:"Bank / NEFT",RTGS:"RTGS",CHEQUE:"Cheque"};
     const SRC_NAME={ENTRY:"Entered here",PAYMENT:"Party payment",DRIVER_CASH:"Driver money",DRIVER_ONLINE:"Driver money",OLD:"Old payment entry"};
     const NOTE_KEYS=["500","200","100","50","20","10"];
+    let LATE=[];   // party payments entered in these dates with an older paid on date (lwb_acc_paid_on_strict_setup.sql)
     let SH=null;   // shift handover in the day (lwb_acc_shift_handover_setup.sql); null = not set up
     let HV=[],hvSub="own",hvPosted=false,PR=[];  // PR = Porter / one-time trips (lwb_trip_rent_setup.sql)
     let X={entries:{},staff_heads:[],payees:[]},S=[],V=[],VR={vehicles:[],entries:{}},C=[],piErr=false,D=null,PI=null,per="today",from=todayISO(),to=todayISO(),tab="book",bookF="all",outRows=null,me={id:"",role:""};
@@ -329,6 +332,7 @@
         const [ex,st,vl,vr,cq,hv,pr]=await Promise.all([client.rpc("lwb_acc_extras",{p_from:from,p_to:to}),client.rpc("lwb_acc_staff_list",{p_month:to}),
           client.rpc("lwb_acc_vehicles"),client.rpc("lwb_acc_vehicle_report",{p_from:from,p_to:to}),client.rpc("lwb_acc_cheque_list"),client.rpc("lwb_hired_list",{p_from:from,p_to:to}),client.rpc("lwb_trip_rent_list",{p_from:from,p_to:to})]);
         const sh=await client.rpc("lwb_acc_shift_list",{p_from:from,p_to:to});SH=sh.error?null:sh.data;
+        const lt2=await client.rpc("lwb_acc_late_lines",{p_from:from,p_to:to});LATE=lt2.error?[]:(lt2.data||[]);
         HV=hv.error?[]:(hv.data||[]);PR=pr.error?[]:(pr.data||[]);if(hvSub==="hired"&&!HV.length||hvSub==="porter"&&!PR.length)hvSub="own";
         C=cq.error?[]:(cq.data||[]);
         X=ex.error?{entries:{},staff_heads:[],payees:[]}:ex.data;S=st.error?[]:(st.data||[]).filter(x=>!x.third_party); // third-party drivers: no salary / advance (paid on the vehicle)
@@ -461,12 +465,13 @@
         (!q||[l.party,l.category,l.ref,l.remark,l.order_no,l.by,l.mode,String(l.amount)].join(" ").toLowerCase().includes(q)));
       const keep=el("bookQ")?el("bookQ").value:"";
       el("tabBody").innerHTML='<div class="acx-filter"><div class="acx-chips" id="bookF">'+Object.entries(F).map(([k,v])=>'<button type="button" data-f="'+k+'" aria-pressed="'+(bookF===k)+'">'+v+'</button>').join("")+'</div>'+
-        '<input type="search" id="bookQ" placeholder="Search party, head, ref, PO" autocomplete="off"><button type="button" class="acx-btn" id="bookXl">⬇ Excel</button></div>'+shiftStrip()+
+        '<input type="search" id="bookQ" placeholder="Search party, head, ref, PO" autocomplete="off"><button type="button" class="acx-btn" id="bookXl">⬇ Excel</button></div>'+shiftStrip()+lateStrip()+
         (!list.length?'<div class="acx-empty">No money entry in these dates.</div>':wide()?ledger(list):'<div class="acx-rows">'+list.map(l=>'<button type="button" class="acx-row" data-line="'+l.src+'|'+l.id+'">'+lineIcon(l)+
           '<span class="t"><b>'+esc(lineTitle(l))+marks(l)+'</b><small>'+(from!==to?dmy(l.date)+" · ":"")+lt(l)+' · '+MODE_NAME[l.mode]+(l.ref?" · "+esc(l.ref):"")+(l.order_no?" · "+esc(l.order_no):"")+" · "+esc(SRC_NAME[l.src]||"")+(l.remark?" · "+esc(l.remark):"")+'</small></span>'+
           '<span class="a '+sign(l)+'">'+(sign(l)==="plus"?"+":sign(l)==="minus"?"−":"")+rs(l.amount).replace("−","")+'<small>'+statusTag(l)+'</small></span></button>').join("")+'</div>');
       el("bookQ").value=keep;if(keep){el("bookQ").focus()}
       el("bookQ").oninput=renderBook;
+      if(el("lateGo"))el("lateGo").onclick=lateSheet;
       el("bookF").querySelectorAll("[data-f]").forEach(b=>b.onclick=()=>{bookF=b.dataset.f;renderBook()});
       el("bookXl").onclick=()=>LWBExcel.write("accounts-daybook-"+from+"-to-"+to,[{name:"Day book",rows:[["Date","Time","Type","Head","Party","Mode","Amount","Ref","PO","Bank","Bank check","From","Remark","Entered by"],
         ...list.map(l=>[dmy(l.date),lt(l),{IN:"Cash In",OUT:"Cash Out",DEPOSIT:"Bank deposit",WITHDRAW:"Cash from bank"}[l.kind],l.category||"",l.party||"",MODE_NAME[l.mode],r2(l.amount),l.ref||"",l.order_no||"",bankName(l.bank_id),{PENDING:"Waiting",VERIFIED:"Verified",REJECTED:"Not in bank",NA:""}[l.status],SRC_NAME[l.src]||"",l.remark||"",l.by||""])]}]).catch(e=>say(e.message,true));
@@ -552,6 +557,23 @@
       const R=SH?(SH.rows||[]).filter(r=>r.status!=="CANCELLED"):[];if(!R.length)return "";
       return '<div class="sh-strip"><b>⇄ Cash box</b>'+R.slice().reverse().map(r=>'<span>'+hm(r.at)+(from!==to?" "+dmy(r.day).slice(0,5):"")+' · '+esc(r.by_name)+' → '+esc(r.to_name)+' <b>'+rs(r.counted)+'</b>'+
         (r.status==="RECEIVED"?(Math.abs(r.received-r.counted)>=1?' <i class="minus">'+(r.received<r.counted?"short ":"extra ")+rs(Math.abs(r.received-r.counted))+'</i>':' ✓'):' <i>waiting</i>')+'</span>').join("")+'</div>';
+    }
+    // Old payments typed in these dates: they stay on their paid on date (Mohit 23 Nov 2026)
+    function lateStrip(){
+      if(!LATE.length)return "";
+      const t=LATE.reduce((a,l)=>a+Number(l.amount),0),c=LATE.filter(l=>l.mode==="CASH").reduce((a,l)=>a+Number(l.amount),0),ic=LATE.filter(l=>l.in_cash).reduce((a,l)=>a+Number(l.amount),0);
+      return '<div class="late-strip"><b>⏪ '+LATE.length+' old-date payment'+(LATE.length===1?"":"s")+' entered '+(from===to?(from===D.today?"today":dmy(from).slice(0,5)):"in these dates")+' · '+rs(t)+'</b>'+
+        '<span>Cash <b>'+rs(c)+'</b> · '+(ic?'<i class="plus">'+rs(ic)+' adds to cash now</i>':'not in '+(from===to&&from===D.today?"today's ":"this ")+'cash')+' · shown on its paid on date</span><button type="button" class="acx-btn" id="lateGo">View</button></div>';
+    }
+    function lateSheet(){
+      const rows=LATE.map(l=>'<tr><td><b>'+esc(l.party||"")+'</b><small>'+[l.order_no?"PO "+esc(l.order_no):"",l.ref?"Ref "+esc(l.ref):"",l.by?"by "+esc(l.by):""].filter(Boolean).join(" · ")+'</small></td>'+
+        '<td><b>'+dmy(l.paid)+'</b><small>entered '+dmy(istDay(l.at)).slice(0,5)+' '+hm(l.at)+'</small></td><td class="n"><b>'+rs(l.amount)+'</b><small>'+(MODE_NAME[l.mode]||esc(l.mode))+'</small></td>'+
+        '<td>'+(l.mode!=="CASH"?'<span class="tag t-gry">Not cash</span>':l.in_cash?'<span class="tag t-amb">+ Cash now</span>':'<span class="tag t-grn">✓ In count</span>')+'</td></tr>').join("");
+      const box=sheet("⏪ Old-date payments entered "+(from===to?dmy(from):dmy(from)+" – "+dmy(to)),
+        '<div style="overflow:auto"><table class="acx-t"><thead><tr><th>Party</th><th>Paid on</th><th class="n">Amount</th><th>Cash</th></tr></thead><tbody>'+rows+'</tbody>'+
+        '<tfoot><tr><td colspan="2">Total ('+LATE.length+')</td><td class="n">'+rs(LATE.reduce((a,l)=>a+Number(l.amount),0))+'</td><td></td></tr></tfoot></table></div>'+
+        '<p class="acx-note" style="margin:0">Each payment sits in the Day book of its paid on date. ✓ In count = paid on before the opening / last Close Day: that money was already in the counted cash, so today\'s cash does not change. + Cash now = it adds to the cash now.</p>');
+      box.querySelector(".acx-sheet").style.width="min(760px,100%)";
     }
     function shiftTable(){
       if(!SH)return "";
