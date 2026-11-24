@@ -11,10 +11,13 @@ await db.exec(`
 CREATE ROLE anon; CREATE ROLE authenticated;
 CREATE SCHEMA auth;
 CREATE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql AS $$ SELECT nullif(current_setting('request.jwt.claim.sub',true),'')::uuid $$;
-CREATE TABLE public.user_profiles(id uuid primary key,role text,active boolean,full_name text);
+CREATE TABLE public.user_profiles(id uuid primary key,role text,active boolean,full_name text,mobile text);
+CREATE FUNCTION public.lwb_driver_phone_matches(a text,b text) RETURNS boolean LANGUAGE sql IMMUTABLE AS $$
+  SELECT CASE WHEN regexp_replace(coalesce(a,''),'[^0-9]','','g') ~ '^(91)?[6-9][0-9]{9}$' AND regexp_replace(coalesce(b,''),'[^0-9]','','g') ~ '^(91)?[6-9][0-9]{9}$'
+    THEN right(regexp_replace(a,'[^0-9]','','g'),10)=right(regexp_replace(b,'[^0-9]','','g'),10) ELSE false END $$;
 CREATE TABLE public.orders(id uuid default gen_random_uuid() primary key,order_no text,customer_name text,status text,total_qty numeric,total_weight numeric,total_amount numeric,transportation text);
 CREATE TABLE public.dispatch_assignments(id uuid default gen_random_uuid() primary key,order_id uuid,vehicle_no text,driver_name text,driver_mobile text,transporter_name text,loading_person text,remarks text,assigned_at timestamptz default now(),loading_completed_at timestamptz,trip_id bigint);
-CREATE TABLE public.erp_notifications(id bigserial primary key,order_id uuid,notification_type text,is_read boolean default false,created_at timestamptz default now());
+CREATE TABLE public.erp_notifications(id bigserial primary key,user_id uuid,title text,message text,order_id uuid,notification_type text,is_read boolean default false,created_at timestamptz default now());
 CREATE TABLE public.lwb_delivery_reports(id uuid default gen_random_uuid() primary key,order_id uuid unique,delivery_status text,reported_at timestamptz default now());
 CREATE TABLE public.lwb_admin_order_marks(order_id uuid,kind text,mark_date date);
 CREATE TABLE public.lwb_driver_delivery_returns(id uuid default gen_random_uuid() primary key,order_id uuid,status text);
@@ -29,6 +32,7 @@ CREATE FUNCTION public.lwb_has_page(p_page text) RETURNS boolean LANGUAGE sql ST
   SELECT EXISTS (SELECT 1 FROM public.lwb_user_page_access a WHERE a.user_id = auth.uid() AND p_page = ANY(a.extra)) $$;
 `);
 for(const [role,id] of Object.entries(ids))await db.query('insert into user_profiles values($1,$2,true,$3)',[id,role,role+' user']);
+await db.exec(await sql('lwb_vehicle_confirm_setup.sql'));await db.exec(await sql('lwb_vehicle_confirm_setup.sql'));
 const setup=await sql('lwb_vehicle_day_setup.sql');
 await db.exec(setup);await db.exec(setup); // safe to run again
 const fill=await sql('lwb_vehicle_day_fill_setup.sql');await db.exec(fill);await db.exec(fill);
@@ -117,4 +121,32 @@ test('give the vehicle to a PO delivered with none: it moves under that vehicle 
   assert.equal((await db.query('select count(*)::int n from erp_notifications where order_id=$1 and not is_read',[o8])).rows[0].n,0);
   const j=await day('2026-11-23','2026-11-23');const p8=j.rows.find(x=>x.order_no==='PO-8');
   assert.equal(p8.vehicle_key,'GJ05AB1234');assert.equal(p8.driver_name,'Ramesh');assert.equal(p8.day,'2026-11-23');
+});
+
+test('driver confirms his trips: list, yes / not me, report shows it; others refused', async()=>{
+  await db.query("update user_profiles set mobile='+91 98765 43210' where id=$1",[ids.driver]);
+  const mk=async(no,st)=>{const o=(await db.query("insert into orders(order_no,customer_name,status,total_qty) values($1,'Party '||$1,$2,10) returning id",[no,st])).rows[0].id;
+    await db.query("insert into dispatch_assignments(order_id,vehicle_no,driver_name,driver_mobile,assigned_at) values($1,'GJ05AB1234','Ramesh','9876543210',now())",[o]);return o};
+  const a=await mk('PO-21','delivered'),b=await mk('PO-22','loaded'),c=await mk('PO-23','transport_allocated');
+  const other=(await db.query("insert into orders(order_no,status) values('PO-24','delivered') returning id")).rows[0].id;
+  await db.query("insert into dispatch_assignments(order_id,vehicle_no,driver_mobile,assigned_at) values($1,'GJ05XY9999','9000000001',now())",[other]);
+  await as('driver');
+  const list=(await call('select public.lwb_driver_trip_confirm_list() j'))[0].j;
+  const nos=list.map(x=>x.order_no);
+  for(const n of ['PO-21','PO-22'])assert.ok(nos.includes(n),n);
+  for(const n of ['PO-23','PO-24','PO-1','PO-7','PO-9'])assert.ok(!nos.includes(n),n); // not loaded / other driver / own delivery report / self pickup
+  await assert.rejects(call('select public.lwb_driver_trip_confirm($1,true)',[other]),/not given to your mobile/);
+  await call('select public.lwb_driver_trip_confirm($1,true)',[a]);
+  await call('select public.lwb_driver_trip_confirm($1,false,$2)',[b,'went in Pickup']);
+  await assert.rejects(call('select public.lwb_driver_trip_confirm($1,true)',[a]),/already answered/);
+  const left=(await call('select public.lwb_driver_trip_confirm_list() j'))[0].j.map(x=>x.order_no);
+  assert.ok(!left.includes('PO-21')&&!left.includes('PO-22'));
+  const bell=(await db.query("select title from erp_notifications where order_id=$1 and user_id=$2",[b,ids.manager])).rows;
+  assert.equal(bell[0].title,'Driver says: not my vehicle');
+  await as('manager');await assert.rejects(call('select public.lwb_driver_trip_confirm($1,true)',[c]),/Only a driver/);
+  assert.equal((await call('select public.lwb_driver_trip_confirm_list() j'))[0].j.length,0);
+  const today=(await db.query("select (now() at time zone 'Asia/Kolkata')::date::text d")).rows[0].d;
+  const j=await day(today,today),k=n=>j.rows.find(x=>x.order_no===n);
+  assert.equal(k('PO-21').confirm,'YES');assert.equal(k('PO-22').confirm,'NO');
+  const old=await day('2026-11-23','2026-11-23');assert.equal(old.rows.find(x=>x.order_no==='PO-1').confirm,'REPORT');assert.equal(old.rows.find(x=>x.order_no==='PO-2').confirm,null);
 });

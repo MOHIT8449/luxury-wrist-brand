@@ -89,6 +89,12 @@
     .vr-dlg input,.vr-dlg select{font:inherit;font-size:14px;padding:8px 10px;border:1.5px solid var(--erp-line);border-radius:8px;width:100%;box-sizing:border-box}
     .vr-dlg .row{display:flex;gap:8px;justify-content:flex-end}
     .vr-dlg .err{color:var(--erp-red);font-size:12.5px;font-weight:600}
+    .vr-warn{display:block;margin-top:3px;font-size:11.5px;font-weight:600;color:#a14b00;white-space:normal}
+    .vr-warn.red{color:var(--erp-red)}
+    .vr-conf{display:block;font-size:11px;font-weight:600;margin-top:2px;white-space:nowrap}
+    .vr-conf.ok{color:var(--erp-green)}.vr-conf.no{color:var(--erp-red)}.vr-conf.wait{color:var(--erp-muted)}
+    .vr-alert{background:#fff8ec;border:1px solid #f1d4a6;border-radius:8px;padding:7px 12px;margin:0 0 10px;font-size:13px;color:#7a4300}
+    .vr-alert b{color:#a14b00}
     .vr-help{font-size:12px;color:var(--erp-muted);margin:8px 2px 0}
     @media(max-width:1000px){.vr-kpis{grid-template-columns:1fr 1fr}}
     @media(max-width:640px){.vr-list{grid-template-columns:1fr}.vr-num b{font-size:16px}.sl-kpi{padding:9px 11px}}
@@ -109,6 +115,7 @@
       <span class="vr-sub" id="subView"><button type="button" class="vr-tab sm on" data-view="veh">Vehicle-wise</button><button type="button" class="vr-tab sm" data-view="drv">Driver-wise</button></span>
       <button type="button" class="sl-btn ghost small" id="refresh">Refresh</button>
     </div>
+    <div class="vr-alert" id="alert" hidden></div>
     <div class="vr-wrap" id="list"></div>
     <p class="vr-help" id="help"></p>
   </main>
@@ -218,11 +225,20 @@
     }
     // One table: one line per vehicle (tap = its POs open below), Mohit 24 Nov 2026: the boxes were confusing.
     const HEAD='<thead><tr><th></th><th>Vehicle</th><th>Driver</th><th class="n">POs</th><th class="n">Loaded</th><th class="n">Delivered</th><th>Status</th><th></th></tr></thead>';
-    function vrow(title,sub,driverHtml,rows,cap,id){
+    // Vehicle check (Mohit, 24 Nov 2026): driver's own confirm per PO (lwb_vehicle_confirm_setup.sql) + automatic checks.
+    const needConf=r=>kindOf(r)==="GODOWN"&&!!r.vehicle_key&&loaded(r);
+    function confHtml(r){
+      if(!needConf(r))return "";
+      if(r.confirm==="REPORT"||r.confirm==="YES")return '<small class="vr-conf ok">✓ Driver confirmed</small>';
+      if(r.confirm==="NO")return '<small class="vr-conf no">✗ Driver: not my vehicle</small>';
+      return '<small class="vr-conf wait">Driver not confirmed</small>';
+    }
+    function vrow(title,sub,driverHtml,rows,cap,id,warn){
       const t=sum(rows),pct=cap>0?Math.round(t.kgLoaded/cap*100):null;
+      warn=warn||[];if(warn.length)driverHtml+='<span class="vr-warn'+(warn.some(w=>w.red)?" red":"")+'">⚠ '+warn.map(w=>esc(w.t)).join(" · ")+"</span>";
       const st=t.pend?'<span class="erp-badge amber">'+t.pend+" pending</span>":'<span class="erp-badge green">All delivered</span>';
       const loadSub=t.kgLoaded===0&&rows.some(r=>loaded(r))?'<small class="alt">weight not entered</small>':pct!=null?"<small>"+pct+"% of "+ton(cap)+" T</small>":"<small>"+fmt(t.kgLoaded)+" kg</small>";
-      let h='<tr class="vr-v '+(id==="none"?"bad":t.pend?"warn":"ok")+'" data-v="'+esc(id)+'"><td></td><td class="c-veh"><span class="veh">'+esc(title)+"</span>"+(sub?"<small>"+sub+"</small>":"")+"</td>"+
+      let h='<tr class="vr-v '+(id==="none"||warn.some(w=>w.red)?"bad":t.pend||warn.length?"warn":"ok")+'" data-v="'+esc(id)+'"><td></td><td class="c-veh"><span class="veh">'+esc(title)+"</span>"+(sub?"<small>"+sub+"</small>":"")+"</td>"+
         '<td class="c-drv">'+driverHtml+"</td>"+
         '<td class="n c-num" data-l="POs"><b>'+fmt(t.pos)+"</b><small>"+fmt(t.del)+" done · "+fmt(t.parties)+" parties</small></td>"+
         '<td class="n c-num" data-l="Loaded"><span class="ton">'+ton(t.kgLoaded)+" T</span>"+loadSub+"</td>"+
@@ -234,7 +250,7 @@
       for(const r of rows){const s2=state(r);
         h+='<tr class="vr-po'+(fill?" pickable":"")+'" data-of="'+esc(id)+'"><td class="hide-m"></td><td colspan="2" class="pp">'+(fill?'<input type="checkbox" class="vr-pick" data-o="'+esc(r.order_id)+'" aria-label="Select '+esc(r.order_no||"")+'">':"")+'<b>'+esc(r.order_no||"")+"</b> · "+esc(r.party||"-")+(drvView()?" <small>"+esc(r.vehicle_no||"No vehicle")+"</small>":"")+"</td>"+
           '<td class="n hide-m">'+esc(r.trip_no||"")+'</td><td class="n hide-m">'+ton(r.kg)+' T</td><td class="n"><b>'+fq(qOf(r,delivered(r)))+"</b></td>"+
-          '<td><span class="erp-badge '+s2[1]+'">'+s2[0]+'</span></td><td class="hide-m"></td></tr>'}
+          '<td><span class="erp-badge '+s2[1]+'">'+s2[0]+"</span>"+confHtml(r)+'</td><td class="hide-m"></td></tr>'}
       return h;
     }
     function offRow(v){const d=v.drivers||[];
@@ -279,6 +295,21 @@
       const gk=r=>drv?(phone(r.driver_mobile)||String(r.driver_name||"No driver").trim().toUpperCase()):r.vehicle_key;
       for(const r of rowsZ){const k=gk(r);if(!groups.has(k))groups.set(k,[]);groups.get(k).push(r)}
       const list=[...groups.entries()].sort((a,b)=>qTot(sum(b[1]).q)-qTot(sum(a[1]).q));
+      // Same driver in two vehicles on one day.
+      const dv=new Map();for(const r of zRows("GODOWN").filter(r=>r.vehicle_key)){const d=phone(r.driver_mobile)||String(r.driver_name||"").trim().toUpperCase();if(!d)continue;
+        const kk=d+"|"+r.day;if(!dv.has(kk))dv.set(kk,new Map());dv.get(kk).set(r.vehicle_key,r.vehicle_no)}
+      const checks=(rows,v,other,fixed,cap,t)=>{const w=[];
+        if(!v)w.push({t:"Not in Vehicle Master: check the number",red:true});
+        if(other.length&&fixed.length)w.push({t:"Not the fixed driver"});
+        if(cap&&t.kgLoaded>cap*1.05)w.push({t:"Over capacity"});
+        const two=new Set();for(const r of rows){const d=phone(r.driver_mobile)||String(r.driver_name||"").trim().toUpperCase(),m=dv.get(d+"|"+r.day);
+          if(m&&m.size>1)for(const [kk,no] of m)if(kk!==r.vehicle_key)two.add((r.driver_name||"Driver")+" also in "+no)}
+        for(const x of two)w.push({t:x});
+        const no=rows.filter(r=>needConf(r)&&r.confirm==="NO").length,wait=rows.filter(r=>needConf(r)&&!r.confirm).length;
+        if(no)w.push({t:no+" PO: driver said not my vehicle",red:true});
+        if(wait)w.push({t:wait+" PO not confirmed by driver"});
+        return w};
+      const A={veh:0,no:0,wait:0};
       let html="";
       for(const [k,rows] of list){
         const t=sum(rows),drove=[...t.drivers.values()];
@@ -293,14 +324,20 @@
         const sub=v?esc([v.vehicle_type,v.size_ton?v.size_ton+" T":"",v.ownership==="TRANSPORTER"?"Hired":""].filter(Boolean).join(" · ")):'<span class="alt">Not in Vehicle Master</span>';
         const line=(fixed.length?esc(fixed.map(d=>d.name).join(", ")):'<span class="alt">Fixed driver not set</span>')+
           (other.length?'<small class="alt">Drove: '+esc(other.join(", "))+"</small>":drove.length&&!fixed.length?"<small>Drove: "+esc(drove.join(", "))+"</small>":"");
-        html+=vrow(rows[0].vehicle_no||k,sub,line,rows,v?(n(v.capacity_kg)||n(v.size_ton)*1000):0,k);
+        const cap=v?(n(v.capacity_kg)||n(v.size_ton)*1000):0,w=checks(rows,v,other,fixed,cap,t);
+        if(w.some(x=>!/not confirmed|not my vehicle/.test(x.t)))A.veh++;
+        A.no+=rows.filter(r=>needConf(r)&&r.confirm==="NO").length;A.wait+=rows.filter(r=>needConf(r)&&!r.confirm).length;
+        html+=vrow(rows[0].vehicle_no||k,sub,line,rows,cap,k,w);
       }
       // Godown Delivery shows every Vehicle Master vehicle: the ones with no delivery in the range too.
       if(zone==="GODOWN"&&!drv){const used=new Set(rowsZ.map(r=>r.vehicle_key));for(const v of data.vehicles.filter(v=>!used.has(key(v.vehicle_no))))html+=offRow(v)}
+      const al=[A.veh?"<b>"+A.veh+" vehicle"+(A.veh>1?"s":"")+"</b> to check (number not in Vehicle Master / other driver / over capacity / driver in 2 vehicles)":"",
+        A.no?"<b>"+A.no+" PO</b>: driver said not my vehicle":"",A.wait?"<b>"+A.wait+" PO</b> not confirmed by the driver yet":""].filter(Boolean);
+      el("alert").hidden=!(zone==="GODOWN"&&!drv&&al.length);el("alert").innerHTML="⚠ "+al.join(" · ");
       const T=sum(rowsZ);
       el("list").innerHTML=html?'<table class="vr-t" data-cf-off>'+HEAD+"<tbody>"+html+'</tbody><tfoot><tr><td></td><td>Total</td><td></td><td class="n c-num" data-l="POs">'+fmt(T.pos)+'</td><td class="n c-num" data-l="Loaded">'+ton(T.kgLoaded)+' T</td><td class="n c-num" data-l="Delivered">'+fq(T.qDel)+'</td><td></td><td></td></tr></tfoot></table>':
         '<div class="erp-empty">No '+esc(ZONES[zone])+" PO on these days.</div>";
-      el("help").textContent=zone==="GODOWN"?"Godown Delivery = our own / hired vehicles from the godown (Transport Assignment). Grey lines = no delivery in these days. Tap a vehicle to see its POs. Day = delivered day, else loading done. Tons = PO weight.":
+      el("help").textContent=zone==="GODOWN"?"Godown Delivery = our own / hired vehicles from the godown (Transport Assignment). Grey lines = no delivery in these days. Tap a vehicle to see its POs. Day = delivered day, else loading done. Tons = PO weight. Driver confirmed = the driver sent the delivery report, or pressed \"Yes, my vehicle\" in his Driver & Delivery page.":
         zone==="SELF"?"Self Pickup = the party's own vehicle picks up at the godown (vehicle no. entered at loading).":"Direct Vehicle = company truck goes straight to the party (Direct Vehicle page).";
     }
     (async()=>{
