@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"><script src="erp-fit.js"></script>
+  <title>Vehicle Report | Luxury Wrist Brand ERP</title>
+  <script src="erp-date.js"></script><script src="erp-recent.js"></script>
+  <script src="vendor/supabase-js-2.119.0.js"></script>
+  <script src="brand-filter.js"></script><script src="erp-period.js"></script>
+  <link rel="stylesheet" href="erp-shell.css?v=20261124">
+  <link rel="stylesheet" href="sales.css">
+  <script src="erp-shell.js?v=20261124"></script>
+  <script src="erp-list.js"></script>
+  <script src="sales-common.js"></script>
+  <!-- Vehicle / Driver report (Mohit, 23 Nov 2026): per vehicle for the chosen day(s): fixed driver (Employee Master
+       default vehicle), who drove, tons loaded, cases delivered, parties. Data: lwb_vehicle_day (lwb_vehicle_day_setup.sql). -->
+  <style>
+    .vr-kpis{grid-template-columns:repeat(4,minmax(0,1fr))}
+    .vr-kpi-sub b{color:var(--erp-ink)}
+    .vr-bar{display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap}
+    .vr-bar .grow{flex:1}
+    .vr-tab{border:1.5px solid var(--erp-line);border-radius:99px;padding:4px 12px;font:inherit;font-size:13px;font-weight:600;background:#fff;color:var(--erp-ink);cursor:pointer}
+    .vr-tab.on{background:#002f37;border-color:#002f37;color:#fff}
+    .vr-tab span{font-weight:700;opacity:.75}
+    .vr-tab.sm{padding:3px 10px;font-size:12.5px}
+    .vr-sub{display:inline-flex;gap:4px}
+    .vr-kpis .sl-kpi.zone{cursor:pointer}
+    .vr-kpis .sl-kpi.zone.on{border-color:#002f37;box-shadow:inset 0 -3px 0 #002f37}
+    .vr-wrap{background:#fff;border:1px solid var(--erp-line);border-radius:8px;overflow:hidden}
+    .vr-t{width:100%;border-collapse:collapse;font-size:13.5px}
+    .vr-t th{background:#f4f6f8;text-align:left;font-size:11.5px;font-weight:700;color:#4b5763;text-transform:uppercase;letter-spacing:.3px;padding:7px 10px;white-space:nowrap}
+    .vr-t th.n,.vr-t td.n{text-align:right}
+    .vr-t td{padding:7px 10px;border-top:1px solid #edf0f3;vertical-align:middle}
+    .vr-t td small{display:block;font-size:11.5px;color:var(--erp-muted);font-weight:400;white-space:nowrap}
+    .vr-t tr.vr-v{cursor:pointer}.vr-t tr.vr-v:hover td{background:#f8fafc}
+    .vr-t tr.vr-v td:first-child{border-left:4px solid transparent}
+    .vr-t tr.vr-v.ok td:first-child{border-left-color:var(--erp-green)}.vr-t tr.vr-v.warn td:first-child{border-left-color:var(--erp-amber)}
+    .vr-t tr.vr-v.bad td:first-child{border-left-color:var(--erp-red)}
+    .vr-t .veh{font-weight:700;font-size:14.5px;letter-spacing:.3px;white-space:nowrap}
+    .vr-t .ton{font-weight:700;color:var(--erp-blue);font-size:15px;white-space:nowrap}
+    .vr-t .cs{font-weight:700;color:var(--erp-green);font-size:15px;white-space:nowrap}
+    .vr-t .alt{color:var(--erp-amber);font-weight:600}
+    .vr-t .arrow{width:28px;text-align:center;color:var(--erp-muted);font-size:12px}
+    .vr-t tr.vr-v.open .arrow{transform:rotate(90deg)}
+    .vr-t tr.vr-po{display:none;background:#fbfcfd}
+    .vr-t tr.vr-po.show{display:table-row}
+    .vr-t tr.vr-po td{font-size:13px;padding:5px 10px;border-top:1px dashed #e6e9ee}
+    .vr-t tr.vr-po .pp{padding-left:22px}
+    .vr-t tr.vr-po .pp b{font-weight:600}
+    .vr-t tr.vr-pohead{display:none}.vr-t tr.vr-pohead.show{display:table-row}
+    .vr-t tr.vr-pohead td{font-size:10.5px;text-transform:uppercase;letter-spacing:.3px;color:var(--erp-muted);font-weight:700;padding-top:6px;padding-bottom:3px}
+    .vr-t tr.vr-off td{color:#8a949e}.vr-t tr.vr-off .veh{color:#4b5763}
+    .vr-t tfoot td{font-weight:700;background:#f4f6f8;border-top:2px solid var(--erp-line)}
+    @media(max-width:640px){
+      .vr-t thead{display:none}
+      .vr-t,.vr-t tbody,.vr-t tfoot{display:block}
+      .vr-t tr.vr-v,.vr-t tfoot tr{display:grid;grid-template-columns:1fr 1fr 1fr;gap:2px 8px;padding:8px 10px 8px 12px;border-top:1px solid #edf0f3;position:relative}
+      .vr-t tr.vr-v td,.vr-t tfoot td{padding:0;border:0;text-align:left!important;background:none}
+      .vr-t tr.vr-v td:first-child{position:absolute;left:0;top:0;bottom:0;width:0;padding:0}
+      .vr-t tr.vr-v .c-veh{grid-column:1/3;grid-row:1}.vr-t tr.vr-v .c-st{grid-column:3;grid-row:1;text-align:right!important}
+      .vr-t tr.vr-v .c-drv{grid-column:1/-1;grid-row:2}.vr-t tr.vr-v .c-num{grid-row:3}
+      .vr-t tr.vr-v .arrow{display:none}
+      .vr-t tr.vr-v .c-num::before{content:attr(data-l);display:block;font-size:10.5px;color:var(--erp-muted);text-transform:uppercase;font-weight:700}
+      .vr-t tr.vr-po.show,.vr-t tr.vr-pohead.show{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:0 8px;padding:5px 10px 5px 16px}
+      .vr-t tr.vr-po td{padding:0;border:0}
+      .vr-t tr.vr-po td.hide-m,.vr-t tr.vr-pohead td.hide-m{display:none}
+      .vr-t tr.vr-po .pp{padding-left:0;min-width:0;overflow:hidden;text-overflow:ellipsis}
+      .vr-t tfoot tr{grid-template-columns:auto 1fr 1fr 1fr}.vr-t tfoot td:empty{display:none}
+    }
+    .vr-brands{display:flex;gap:8px;margin:0 0 10px;flex-wrap:wrap}
+    .vr-brand{flex:1 1 220px;min-width:0;display:flex;align-items:center;gap:10px;border:1px solid var(--erp-line);border-left:4px solid var(--bc);border-radius:8px;background:#fff;padding:7px 12px;cursor:pointer;font:inherit;text-align:left;color:var(--erp-ink)}
+    .vr-brand:hover{background:#f8fafc}
+    .vr-brand .nm{font-weight:700;font-size:13.5px;white-space:nowrap}
+    .vr-brand .q{font-weight:700;color:var(--erp-green);font-size:15px;white-space:nowrap}
+    .vr-brand small{color:var(--erp-muted);font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+    .vr-brand .grow{flex:1}
+    .vr-help{font-size:12px;color:var(--erp-muted);margin:8px 2px 0}
+    @media(max-width:1000px){.vr-kpis{grid-template-columns:1fr 1fr}}
+    @media(max-width:640px){.vr-list{grid-template-columns:1fr}.vr-num b{font-size:16px}.sl-kpi{padding:9px 11px}}
+  </style>
+</head>
+<body>
+  <div id="loading" class="status">Checking account access...</div>
+  <main id="page" class="erp-main" hidden>
+    <div class="erp-pagehead"><h1>Vehicle Report</h1><span class="erp-badge blue" id="range"></span><span class="grow"></span>
+      <a class="sl-btn ghost small" href="fleet-master.html" style="display:inline-flex;align-items:center;text-decoration:none">Set fixed driver</a></div>
+    <div class="vr-brands" id="brands" hidden></div>
+    <div class="sl-kpis vr-kpis" id="kpis"></div>
+    <div class="vr-bar">
+      <button type="button" class="vr-tab on" data-zone="GODOWN">Godown Delivery <span id="zG"></span></button>
+      <button type="button" class="vr-tab" data-zone="SELF">Self Pickup <span id="zS"></span></button>
+      <button type="button" class="vr-tab" data-zone="DIRECT">Direct Vehicle <span id="zD"></span></button>
+      <span class="grow"></span>
+      <span class="vr-sub" id="subView"><button type="button" class="vr-tab sm on" data-view="veh">Vehicle-wise</button><button type="button" class="vr-tab sm" data-view="drv">Driver-wise</button></span>
+      <button type="button" class="sl-btn ghost small" id="refresh">Refresh</button>
+    </div>
+    <div class="vr-wrap" id="list"></div>
+    <p class="vr-help" id="help"></p>
+  </main>
+  <script>
+    const S=LWBSales,{client,el,esc,fmt}=S;
+    let me=null,data={vehicles:[],rows:[]},ALL=[],view="veh";
+    // Brand (Mohit, 24 Nov 2026): the top bar All / Coca-Cola / Rajnigandha splits the report; Rajnigandha counts in IC,
+    // Coca-Cola in CS (brand-filter.js). INFO = order id -> {b: Set of companies, q: {BOX, CASE} qty from its SKU lines}.
+    let BB={get:()=>"",companies:[]},INFO=new Map();
+    const LOADED=["loaded","invoiced","dispatched","out_for_delivery","delivered","billed"];
+    const n=v=>Number(v)||0;
+    const ton=kg=>(n(kg)/1000).toLocaleString("en-IN",{minimumFractionDigits:2,maximumFractionDigits:2});
+    const cs=v=>n(v).toLocaleString("en-IN",{maximumFractionDigits:1});
+    const key=v=>String(v||"").toUpperCase().replace(/[^A-Z0-9]/g,"");
+    const phone=v=>{const d=String(v||"").replace(/\D/g,"");return d.length>10?d.slice(-10):d};
+    const delivered=r=>["DELIVERED","PARTIAL"].includes(r.report)||!!r.mark_delivered||r.status==="delivered";
+    const notDel=r=>r.report==="NOT_DELIVERED";
+    const loaded=r=>delivered(r)||!!r.loaded_at||LOADED.includes(r.status);
+    const delCases=r=>delivered(r)?Math.max(0,n(r.cases)-n(r.ret_cases)):0;
+    // Qty of a PO by unit: {BOX: IC, CASE: CS}. One unit = PO total qty in it; a PO with both = its lines.
+    function qOf(r,del){
+      const i=INFO.get(r.order_id),u=i&&i.q?Object.keys(i.q).filter(k=>i.q[k]>0):[],out={};
+      const tot=del?delCases(r):n(r.cases);
+      if(u.length<2){out[u[0]||brandUnit()]=tot;return out}
+      const all=u.reduce((t,k)=>t+i.q[k],0)||1;for(const k of u)out[k]=tot*i.q[k]/all;return out;
+    }
+    const addQ=(a,b)=>{for(const k in b)a[k]=(a[k]||0)+b[k];return a};
+    const brandUnit=()=>{const c=(BB.companies||[]).find(x=>x.id===BB.get());return c&&c.pack_unit==="BOX"?"BOX":"CASE"};
+    // "340 IC · 120 CS" (units never added together); nothing = "0 IC" / "0 CS" of the chosen brand.
+    function fq(q){const p=["BOX","CASE"].filter(k=>Math.round(n(q[k])*10)).map(k=>cs(q[k])+" "+(k==="BOX"?"IC":"CS"));return p.join(" · ")||(BB.get()?"0 "+(brandUnit()==="BOX"?"IC":"CS"):"0")}
+    const qTot=q=>n(q.BOX)+n(q.CASE);
+    function state(r){
+      if(delivered(r))return r.report==="PARTIAL"||n(r.ret_cases)>0?["Part delivered","amber"]:["Delivered","green"];
+      if(notDel(r))return ["Not delivered","red"];
+      if(loaded(r))return ["On the way","blue"];
+      return ["To load",""];
+    }
+    function sum(rows){
+      const o={pos:rows.length,parties:new Set(rows.map(r=>String(r.party||"").trim().toUpperCase())).size,
+        kgLoaded:0,kgAll:0,q:{},qDel:{},qRet:{},del:0,pend:0,drivers:new Map()};
+      for(const r of rows){o.kgAll+=n(r.kg);if(loaded(r))o.kgLoaded+=n(r.kg);addQ(o.q,qOf(r));addQ(o.qDel,qOf(r,true));
+        if(delivered(r)){o.del++;if(n(r.ret_cases)){const u=Object.keys(qOf(r))[0];addQ(o.qRet,{[u]:n(r.ret_cases)})}}else o.pend++;
+        const nm=String(r.driver_name||"").trim();if(nm)o.drivers.set(phone(r.driver_mobile)||nm.toUpperCase(),nm)}
+      return o;
+    }
+    async function load(){
+      const P=window.LWBPeriod?LWBPeriod.get():{from:S.isoDay(new Date()),to:S.isoDay(new Date()),label:"Today"};
+      el("range").textContent=P.label+(P.from===P.to?" · "+LWBDate.d(P.from):"");
+      const r=await client.rpc("lwb_vehicle_day",{p_from:P.from,p_to:P.to});
+      if(r.error){el("list").innerHTML='<div class="sl-msg">'+esc(/lwb_vehicle_day/.test(r.error.message)?"Vehicle report is being set up. Try again in a few minutes.":r.error.message)+"</div>";el("kpis").innerHTML="";return}
+      data=r.data||{vehicles:[],rows:[]};ALL=data.rows||[];
+      await brandInfo(ALL.map(x=>x.order_id));render();
+    }
+    // Brand + IC / CS of each PO from its SKU lines (SKU Master company / pack unit).
+    async function brandInfo(ids){
+      INFO=new Map();ids=[...new Set(ids.filter(Boolean))];if(!window.LWBBrand||!ids.length)return;
+      try{
+        const [map,U]=await Promise.all([LWBBrand.skuMap(client),LWBBrand.units(client)]);
+        for(let i=0;i<ids.length;i+=150){
+          const r=await client.from("order_items").select("order_id,sku_name,ordered_qty,approved_qty,loaded_qty").in("order_id",ids.slice(i,i+150));
+          if(r.error)break;
+          for(const x of r.data||[]){
+            if(!INFO.has(x.order_id))INFO.set(x.order_id,{b:new Set(),q:{}});
+            const o=INFO.get(x.order_id),c=map&&map.get(LWBBrand.skuKey(x.sku_name));if(c)o.b.add(c);
+            const u=U(x.sku_name)==="BOX"?"BOX":"CASE",q=n(x.loaded_qty)||n(x.approved_qty??x.ordered_qty);o.q[u]=(o.q[u]||0)+q;
+          }
+        }
+      }catch(e){}
+    }
+    const inBrand=r=>!BB.get()||LWBBrand.has((INFO.get(r.order_id)||{}).b,BB.get());
+    // All brands: one line per brand on top (tap = that brand only).
+    function brands(){
+      const box=el("brands"),list=BB.companies||[];
+      if(BB.get()||list.length<2){box.hidden=true;box.innerHTML="";return}
+      box.hidden=false;
+      box.innerHTML=list.map(c=>{const rs=ALL.filter(r=>LWBBrand.has((INFO.get(r.order_id)||{}).b,c.id)),t=sum(rs);
+        return '<button type="button" class="vr-brand" data-b="'+esc(c.id)+'" style="--bc:'+esc(c.color||"#2362a4")+'"><span class="nm">'+esc(c.name)+'</span><span class="q">'+esc(fq(t.qDel))+'</span><small>delivered · '+fmt(t.pos)+" PO · "+ton(t.kgLoaded)+" T loaded"+(t.pend?" · "+fmt(t.pend)+" pending":"")+'</small><span class="grow"></span></button>'}).join("");
+    }
+    const ZONES={GODOWN:"Godown Delivery",SELF:"Self Pickup",DIRECT:"Direct Vehicle"};
+    let zone="GODOWN";
+    const kindOf=r=>r.kind||"GODOWN";
+    const zRows=z=>data.rows.filter(r=>kindOf(r)===z);
+    function kpis(){
+      const g=sum(zRows("GODOWN")),sp=sum(zRows("SELF")),dv=sum(zRows("DIRECT")),all=sum(data.rows);
+      const used=new Set(zRows("GODOWN").map(r=>r.vehicle_key).filter(Boolean)).size;
+      const k=[["GODOWN","blue","Godown Delivery",ton(g.kgLoaded)+" T",fq(g.qDel)+" delivered · "+fmt(used)+" of "+fmt(data.vehicles.length)+" vehicles"],
+        ["SELF","green","Self Pickup",fq(qTot(sp.qDel)?sp.qDel:sp.q),fmt(sp.pos)+" PO · "+ton(sp.kgAll)+" T · party vehicle"],
+        ["DIRECT","green","Direct Vehicle",fq(qTot(dv.qDel)?dv.qDel:dv.q),fmt(dv.pos)+" PO · "+ton(dv.kgAll)+" T · company truck"],
+        ["",all.pend?"red":"green","Pending delivery",fmt(all.pend)+" PO",fmt(all.del)+" delivered · "+fmt(all.parties)+" parties"]];
+      el("kpis").innerHTML=k.map(x=>'<div class="sl-kpi '+x[1]+(x[0]?" zone"+(x[0]===zone?" on":""):"")+'"'+(x[0]?' data-z="'+x[0]+'"':"")+"><span>"+esc(x[2])+"</span><b>"+esc(x[3])+'</b><small class="vr-kpi-sub">'+esc(x[4])+"</small></div>").join("");
+      el("zG").textContent=g.pos;el("zS").textContent=sp.pos;el("zD").textContent=dv.pos;
+      if(window.ERPList){const c=el("kpis").querySelector(".sl-kpi:not(.zone)");
+        const cols=[{t:"Type",v:x=>ZONES[kindOf(x)]},{t:"Vehicle",v:x=>x.vehicle_no||"No vehicle"},{t:"Driver",v:"driver_name"},{t:"PO",v:"order_no"},{t:"Party",v:"party"},{t:"Brand",v:x=>[...((INFO.get(x.order_id)||{}).b||[])].map(BB.name||(()=>"")).filter(Boolean).join(", ")},{t:"Qty",v:x=>n(x.cases),num:true,dec:0},{t:"Unit",v:x=>Object.keys(qOf(x)).map(k=>k==="BOX"?"IC":"CS").join("+")},{t:"KG",v:x=>n(x.kg),num:true,sum:true,dec:0},{t:"Status",v:x=>state(x)[0]}];
+        ERPList.card(c,()=>({title:"Pending delivery",sub:"Vehicle report · "+el("range").textContent,rows:data.rows.filter(r=>!delivered(r)),cols}))}
+    }
+    // One table: one line per vehicle (tap = its POs open below), Mohit 24 Nov 2026: the boxes were confusing.
+    const HEAD='<thead><tr><th></th><th>Vehicle</th><th>Driver</th><th class="n">POs</th><th class="n">Loaded</th><th class="n">Delivered</th><th>Status</th><th></th></tr></thead>';
+    function vrow(title,sub,driverHtml,rows,cap,id){
+      const t=sum(rows),pct=cap>0?Math.round(t.kgLoaded/cap*100):null;
+      const st=t.pend?'<span class="erp-badge amber">'+t.pend+" pending</span>":'<span class="erp-badge green">All delivered</span>';
+      const loadSub=t.kgLoaded===0&&rows.some(r=>loaded(r))?'<small class="alt">weight not entered</small>':pct!=null?"<small>"+pct+"% of "+ton(cap)+" T</small>":"<small>"+fmt(t.kgLoaded)+" kg</small>";
+      let h='<tr class="vr-v '+(id==="none"?"bad":t.pend?"warn":"ok")+'" data-v="'+esc(id)+'"><td></td><td class="c-veh"><span class="veh">'+esc(title)+"</span>"+(sub?"<small>"+sub+"</small>":"")+"</td>"+
+        '<td class="c-drv">'+driverHtml+"</td>"+
+        '<td class="n c-num" data-l="POs"><b>'+fmt(t.pos)+"</b><small>"+fmt(t.del)+" done · "+fmt(t.parties)+" parties</small></td>"+
+        '<td class="n c-num" data-l="Loaded"><span class="ton">'+ton(t.kgLoaded)+" T</span>"+loadSub+"</td>"+
+        '<td class="n c-num" data-l="Delivered"><span class="cs">'+fq(t.qDel)+"</span><small>of "+fq(t.q)+(qTot(t.qRet)?" · "+fq(t.qRet)+" ret":"")+"</small></td>"+
+        '<td class="c-st">'+st+'</td><td class="arrow">▶</td></tr>';
+      h+='<tr class="vr-pohead" data-of="'+esc(id)+'"><td class="hide-m"></td><td colspan="2" class="pp">PO · Party</td><td class="n hide-m">Trip</td><td class="n hide-m">Tons</td><td class="n">Qty</td><td>Status</td><td class="hide-m"></td></tr>';
+      for(const r of rows){const s2=state(r);
+        h+='<tr class="vr-po" data-of="'+esc(id)+'"><td class="hide-m"></td><td colspan="2" class="pp"><b>'+esc(r.order_no||"")+"</b> · "+esc(r.party||"-")+(drvView()?" <small>"+esc(r.vehicle_no||"No vehicle")+"</small>":"")+"</td>"+
+          '<td class="n hide-m">'+esc(r.trip_no||"")+'</td><td class="n hide-m">'+ton(r.kg)+' T</td><td class="n"><b>'+fq(qOf(r,delivered(r)))+"</b></td>"+
+          '<td><span class="erp-badge '+s2[1]+'">'+s2[0]+'</span></td><td class="hide-m"></td></tr>'}
+      return h;
+    }
+    function offRow(v){const d=v.drivers||[];
+      return '<tr class="vr-v vr-off"><td></td><td class="c-veh"><span class="veh">'+esc(v.vehicle_no)+"</span><small>"+esc([v.vehicle_type,v.size_ton?v.size_ton+" T":"",v.ownership==="TRANSPORTER"?"Hired":""].filter(Boolean).join(" · "))+"</small></td>"+
+        '<td class="c-drv">'+(d.length?esc(d.map(x=>x.name).join(", ")):'<span class="alt">Fixed driver not set</span>')+'</td><td class="n c-num" data-l="POs">0</td><td class="n c-num" data-l="Loaded">—</td><td class="n c-num" data-l="Delivered">—</td><td class="c-st"><span class="erp-badge">No delivery</span></td><td class="arrow"></td></tr>'}
+    const drvView=()=>zone==="GODOWN"&&view==="drv";
+    function render(){
+      data.rows=ALL.filter(inBrand);
+      brands();kpis();
+      document.querySelectorAll("[data-zone]").forEach(x=>x.classList.toggle("on",x.dataset.zone===zone));
+      el("subView").hidden=zone!=="GODOWN";
+      const rowsZ=zRows(zone),drv=zone==="GODOWN"&&view==="drv";
+      const vmap=new Map(data.vehicles.map(v=>[key(v.vehicle_no),v])),groups=new Map();
+      const gk=r=>drv?(phone(r.driver_mobile)||String(r.driver_name||"No driver").trim().toUpperCase()):r.vehicle_key;
+      for(const r of rowsZ){const k=gk(r);if(!groups.has(k))groups.set(k,[]);groups.get(k).push(r)}
+      const list=[...groups.entries()].sort((a,b)=>qTot(sum(b[1]).q)-qTot(sum(a[1]).q));
+      let html="";
+      for(const [k,rows] of list){
+        const t=sum(rows),drove=[...t.drivers.values()];
+        if(drv){const vs=[...new Set(rows.map(r=>r.vehicle_no||"No vehicle"))];
+          html+=vrow(rows[0].driver_name||"No driver",rows[0].driver_mobile?esc(phone(rows[0].driver_mobile)):"",esc(vs.join(", ")),rows,0,k||"nodrv");continue}
+        if(zone!=="GODOWN"){
+          const who=zone==="SELF"?"Party vehicle":"Company truck";
+          html+=vrow(k?rows[0].vehicle_no:"Vehicle no. not entered",who,drove.length?esc(drove.join(", ")):zone==="DIRECT"?"Company to party":'<span class="alt">Not entered</span>',rows,0,k||"none");continue}
+        if(!k){html+=vrow("No vehicle given",'<span class="alt">Open the PO → 🚚 Transport to add it</span>','<span class="alt">Not entered</span>',rows,0,"none");continue}
+        const v=vmap.get(k),fixed=v?v.drivers||[]:[];
+        const fixedNames=fixed.map(d=>d.name.trim().toUpperCase()),other=drove.filter(d=>!fixedNames.includes(d.trim().toUpperCase()));
+        const sub=v?esc([v.vehicle_type,v.size_ton?v.size_ton+" T":"",v.ownership==="TRANSPORTER"?"Hired":""].filter(Boolean).join(" · ")):'<span class="alt">Not in Vehicle Master</span>';
+        const line=(fixed.length?esc(fixed.map(d=>d.name).join(", ")):'<span class="alt">Fixed driver not set</span>')+
+          (other.length?'<small class="alt">Drove: '+esc(other.join(", "))+"</small>":drove.length&&!fixed.length?"<small>Drove: "+esc(drove.join(", "))+"</small>":"");
+        html+=vrow(rows[0].vehicle_no||k,sub,line,rows,v?(n(v.capacity_kg)||n(v.size_ton)*1000):0,k);
+      }
+      // Godown Delivery shows every Vehicle Master vehicle: the ones with no delivery in the range too.
+      if(zone==="GODOWN"&&!drv){const used=new Set(rowsZ.map(r=>r.vehicle_key));for(const v of data.vehicles.filter(v=>!used.has(key(v.vehicle_no))))html+=offRow(v)}
+      const T=sum(rowsZ);
+      el("list").innerHTML=html?'<table class="vr-t" data-cf-off>'+HEAD+"<tbody>"+html+'</tbody><tfoot><tr><td></td><td>Total</td><td></td><td class="n c-num" data-l="POs">'+fmt(T.pos)+'</td><td class="n c-num" data-l="Loaded">'+ton(T.kgLoaded)+' T</td><td class="n c-num" data-l="Delivered">'+fq(T.qDel)+'</td><td></td><td></td></tr></tfoot></table>':
+        '<div class="erp-empty">No '+esc(ZONES[zone])+" PO on these days.</div>";
+      el("help").textContent=zone==="GODOWN"?"Godown Delivery = our own / hired vehicles from the godown (Transport Assignment). Grey lines = no delivery in these days. Tap a vehicle to see its POs. Day = delivered day, else loading done. Tons = PO weight.":
+        zone==="SELF"?"Self Pickup = the party's own vehicle picks up at the godown (vehicle no. entered at loading).":"Direct Vehicle = company truck goes straight to the party (Direct Vehicle page).";
+    }
+    (async()=>{
+      me=await S.start(["admin","manager","transport","accounts"]);if(!me)return;
+      el("loading").hidden=true;el("page").hidden=false;
+      if(window.LWBPeriod)LWBPeriod.on(()=>load());
+      if(window.LWBBrand)try{BB=await LWBBrand.mount(client,{onChange:render})}catch(e){}
+      el("brands").addEventListener("click",e=>{const b=e.target.closest("[data-b]");if(b)LWBBrand.pick(b.dataset.b)});
+      document.querySelectorAll("[data-view]").forEach(b=>b.onclick=()=>{view=b.dataset.view;document.querySelectorAll("[data-view]").forEach(x=>x.classList.toggle("on",x===b));render()});
+      document.querySelectorAll("[data-zone]").forEach(b=>b.onclick=()=>{zone=b.dataset.zone;render()});
+      el("kpis").addEventListener("click",e=>{const c=e.target.closest(".sl-kpi.zone");if(c){zone=c.dataset.z;render()}});
+      el("refresh").onclick=load;
+      el("list").addEventListener("click",e=>{const tr=e.target.closest("tr.vr-v[data-v]");if(!tr)return;const on=tr.classList.toggle("open");
+        el("list").querySelectorAll('tr[data-of="'+CSS.escape(tr.dataset.v)+'"]').forEach(x=>x.classList.toggle("show",on))});
+      await load();
+    })();
+  </script>
+</body>
+</html>

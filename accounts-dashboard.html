@@ -8,11 +8,11 @@
   <script src="vendor/supabase-js-2.119.0.js"></script>
 <script src="brand-filter.js"></script>
   <script src="erp-date.js"></script>
-  <link rel="stylesheet" href="erp-shell.css?v=20261123">
-  <script src="erp-shell.js?v=20261123"></script>
+  <link rel="stylesheet" href="erp-shell.css?v=20261124">
+  <script src="erp-shell.js?v=20261124"></script>
 <script src="erp-list.js"></script>
   <script src="excel-io.js"></script>
-  <script src="party-pay.js?v=20261123a"></script>
+  <script src="party-pay.js?v=20261124o"></script>
   <script src="acc-hub.js"></script>
   <style>
     .status{text-align:center;padding:80px 20px;font-size:15px;color:#555}
@@ -148,6 +148,21 @@
     .f2{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:10px}.f2>.f{min-width:0}
     .pills{display:flex;flex-wrap:wrap;gap:6px}
     .late-strip{display:flex;flex-wrap:wrap;gap:4px 10px;align-items:center;margin:0 0 8px;padding:6px 10px;background:#fff8e6;border:1px solid #f1d58a;border-radius:10px;font-size:12.5px;color:#4b5763}
+    .swp-strip{display:flex;flex-wrap:wrap;gap:4px 10px;align-items:center;margin:0 0 8px;padding:6px 10px;background:#f4eefc;border:1px solid #dccbf3;border-radius:10px;font-size:12.5px;color:#4a2384}
+    .swp-strip>b{font-size:13.5px}.swp-strip .acx-btn{margin-left:auto;height:30px;padding:0 12px}
+    .t-pur{background:#efe6fb;color:#5b2a99}.ic-swp{background:#efe6fb;color:#5b2a99}
+    .acx-ledger tr.swp td{background:#fbf8ff}
+    .seg.three{grid-template-columns:1fr 1fr 1fr;background:#f1f4f8;padding:4px;border-radius:11px;gap:4px}.seg.three button{border-color:transparent;background:transparent;font-size:14px}
+    .seg button[aria-pressed=true].swp{background:#7a3fc0;border-color:#7a3fc0;color:#fff}
+    .swp-dir{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+    .swp-dir button{border:1.5px solid #d5dce5;border-radius:10px;padding:8px 10px;font:inherit;font-weight:700;font-size:14px;background:#fff;color:var(--erp-ink);text-align:left;cursor:pointer}
+    .swp-dir button small{display:block;font-weight:500;color:var(--erp-muted);font-size:12px}
+    .swp-dir button[aria-pressed=true]{border-color:#7a3fc0;background:#f4eefc;color:#4a2384}
+    .swp-sug{display:flex;gap:6px;flex-wrap:wrap;margin-top:5px}.swp-sug button{font:inherit;font-size:12px;border:1px solid var(--erp-line);border-radius:99px;padding:2px 9px;background:#fafbfc;cursor:pointer}
+    .swp-eff{border:1px dashed #b9a2df;background:#faf7ff;border-radius:10px;padding:8px 12px;font-size:13.5px}
+    .swp-eff div{display:flex;justify-content:space-between;gap:8px;padding:1px 0}
+    .swp-box:not([hidden]){display:flex;flex-direction:column;gap:12px}
+    .acx-btn.pur{background:#7a3fc0;border-color:#7a3fc0;color:#fff}
     .late-strip>b{color:#7a4b00}.late-strip i{font-style:normal;font-weight:700}.late-strip .acx-btn{margin-left:auto;height:30px;padding:0 12px}
     .sh-strip{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:0 0 8px;font-size:12.5px;color:#4b5763}
     .sh-strip>span{background:#eef4ff;border:1px solid #c5d7f5;border-radius:99px;padding:2px 9px;white-space:nowrap}.sh-strip i{font-style:normal;font-weight:700}
@@ -313,6 +328,7 @@
     const SRC_NAME={ENTRY:"Entered here",PAYMENT:"Party payment",DRIVER_CASH:"Driver money",DRIVER_ONLINE:"Driver money",OLD:"Old payment entry"};
     const NOTE_KEYS=["500","200","100","50","20","10"];
     let LATE=[];   // party payments entered in these dates with an older paid on date (lwb_acc_paid_on_strict_setup.sql)
+    let SWN=null;  // friend swap names used before (lwb_acc_friend_swap_setup.sql)
     let SH=null;   // shift handover in the day (lwb_acc_shift_handover_setup.sql); null = not set up
     let HV=[],hvSub="own",hvPosted=false,PR=[];  // PR = Porter / one-time trips (lwb_trip_rent_setup.sql)
     let X={entries:{},staff_heads:[],payees:[]},S=[],V=[],VR={vehicles:[],entries:{}},C=[],piErr=false,D=null,PI=null,per="today",from=todayISO(),to=todayISO(),tab="book",bookF="all",outRows=null,me={id:"",role:""};
@@ -367,11 +383,12 @@
 
     /* ---------- figures ---------- */
     function totals(){
-      const L=D.lines,t={cashIn:0,cashOut:0,dep:0,wd:0,allIn:0,allOut:0,nonCashIn:0,pendIn:0,byMode:{},exp:new Map(),bank:new Map()};
+      const L=D.lines,t={swB2C:0,swC2B:0,cashIn:0,cashOut:0,dep:0,wd:0,allIn:0,allOut:0,nonCashIn:0,pendIn:0,byMode:{},exp:new Map(),bank:new Map()};
       MODES.forEach(m=>t.byMode[m]={in:0,out:0});
       for(const l of L){
         const a=Number(l.amount)||0,contra=/^contra\b/i.test(String(l.category||""));  // own bank to own bank
         if(contra){}  // not money in / out of the business: only the bank-wise rows below
+        else if(isSwap(l)){if(l.kind==="DEPOSIT")t.swB2C+=a;else t.swC2B+=a}  // friend swap: only cash / bank move
         else if(l.kind==="IN"){t.allIn+=a;t.byMode[l.mode]&&(t.byMode[l.mode].in+=a);if(l.mode==="CASH")t.cashIn+=a;else{t.nonCashIn+=a;if(l.status==="PENDING")t.pendIn+=a}}
         else if(l.kind==="OUT"){t.allOut+=a;t.byMode[l.mode]&&(t.byMode[l.mode].out+=a);if(l.mode==="CASH")t.cashOut+=a;
           const k=l.category||"Other";t.exp.set(k,(t.exp.get(k)||0)+a)}
@@ -423,6 +440,8 @@
       el("modes").innerHTML='<table class="acx-t"><thead><tr><th>Mode</th><th class="n">In</th><th class="n">Out</th></tr></thead><tbody>'+rows+
         (t.dep?'<tr><td>Cash → Bank deposit</td><td class="n"></td><td class="n neutral">'+rs(t.dep)+'</td></tr>':"")+
         (t.wd?'<tr><td>Bank → Cash</td><td class="n neutral">'+rs(t.wd)+'</td><td class="n"></td></tr>':"")+
+        (t.swB2C?'<tr><td>🔁 Friend swap: got in bank, gave cash</td><td class="n"></td><td class="n neutral">'+rs(t.swB2C)+'</td></tr>':"")+
+        (t.swC2B?'<tr><td>🔁 Friend swap: got cash, sent from bank</td><td class="n neutral">'+rs(t.swC2B)+'</td><td class="n"></td></tr>':"")+
         '</tbody><tfoot><tr><td>Total</td><td class="n">'+rs(ti)+'</td><td class="n">'+rs(to2)+'</td></tr></tfoot></table>';
       el("modeNote").textContent=from===to?dmy(from):dmy(from)+" – "+dmy(to);
     }
@@ -456,10 +475,12 @@
       if(l.status==="REJECTED")return '<span class="tag t-red">✗ Not in bank</span>';
       return "";
     }
-    function lineIcon(l){return l.kind==="IN"?'<span class="acx-ic ic-in">+</span>':l.kind==="OUT"?'<span class="acx-ic ic-out">−</span>':l.kind==="DEPOSIT"?'<span class="acx-ic ic-dep">🏦</span>':'<span class="acx-ic ic-dep">₹</span>'}
-    function lineTitle(l){return l.kind==="DEPOSIT"?"Bank deposit"+(bankName(l.bank_id)?" · "+bankName(l.bank_id):""):l.kind==="WITHDRAW"?"Cash from bank"+(bankName(l.bank_id)?" · "+bankName(l.bank_id):""):(l.party?l.party+" · ":"")+(l.category||"")}
-    function marks(l){const x=l.x,v=l.veh?' <span class="tag t-gry">🚚 '+esc(l.veh.vehicle)+'</span>':"";if(!x)return v;return v+(x.gst_bill?' <span class="tag t-blu">GST bill</span>':"")+(x.photos&&x.photos.length?' <span class="tag t-gry">📎 '+x.photos.length+'</span>':"")}
-    function sign(l){return l.kind==="IN"||l.kind==="WITHDRAW"?"plus":l.kind==="OUT"?"minus":"neutral"}
+    const isSwap=l=>l.src==="ENTRY"&&l.category==="Friend swap";
+    const swapDir=l=>l.kind==="DEPOSIT"?"Got in bank → Gave cash":"Got cash → Sent from bank";
+    function lineIcon(l){return isSwap(l)?'<span class="acx-ic ic-swp">🔁</span>':l.kind==="IN"?'<span class="acx-ic ic-in">+</span>':l.kind==="OUT"?'<span class="acx-ic ic-out">−</span>':l.kind==="DEPOSIT"?'<span class="acx-ic ic-dep">🏦</span>':'<span class="acx-ic ic-dep">₹</span>'}
+    function lineTitle(l){return isSwap(l)?(l.party||"Friend")+" · Friend swap":l.kind==="DEPOSIT"?"Bank deposit"+(bankName(l.bank_id)?" · "+bankName(l.bank_id):""):l.kind==="WITHDRAW"?"Cash from bank"+(bankName(l.bank_id)?" · "+bankName(l.bank_id):""):(l.party?l.party+" · ":"")+(l.category||"")}
+    function marks(l){if(isSwap(l))return ' <span class="tag t-pur">'+swapDir(l)+(bankName(l.bank_id)?" · "+esc(bankName(l.bank_id)):"")+'</span>';const x=l.x,v=l.veh?' <span class="tag t-gry">🚚 '+esc(l.veh.vehicle)+'</span>':"";if(!x)return v;return v+(x.gst_bill?' <span class="tag t-blu">GST bill</span>':"")+(x.photos&&x.photos.length?' <span class="tag t-gry">📎 '+x.photos.length+'</span>':"")}
+    function sign(l){if(isSwap(l))return l.kind==="WITHDRAW"?"plus":"minus";return l.kind==="IN"||l.kind==="WITHDRAW"?"plus":l.kind==="OUT"?"minus":"neutral"}
     const wide=()=>window.innerWidth>=760;
     // Ledger: oldest first, In / Out columns and the running cash balance (cash lines only move it).
     function ledger(list){
@@ -471,27 +492,29 @@
       return '<div style="overflow:auto"><table class="acx-t acx-ledger"><thead><tr><th>Date</th><th>Particulars</th><th>Mode</th><th class="n">In (Cr)</th><th class="n">Out (Dr)</th><th class="n">Cash balance</th><th></th></tr></thead><tbody>'+
         (D.opening_set?'<tr><td>'+dmy(from)+'</td><td><b>Opening cash</b></td><td>Cash</td><td class="n"></td><td class="n"></td><td class="n"><b>'+rs(D.opening)+'</b></td><td></td></tr>':"")+
         rows.map(l=>{const inn=l.kind==="IN"||l.kind==="WITHDRAW";
-          return '<tr data-line="'+l.src+'|'+l.id+'" style="cursor:pointer"><td>'+dmy(l.date)+'<small>'+lt(l)+'</small></td><td>'+part(l)+'</td><td>'+(l.kind==="DEPOSIT"?"Cash → Bank":l.kind==="WITHDRAW"?"Bank → Cash":MODE_NAME[l.mode])+'</td>'+
+          return '<tr data-line="'+l.src+'|'+l.id+'"'+(isSwap(l)?' class="swp"':"")+' style="cursor:pointer"><td>'+dmy(l.date)+'<small>'+lt(l)+'</small></td><td>'+part(l)+'</td><td>'+(isSwap(l)?(l.kind==="DEPOSIT"?"Bank in / Cash out":"Cash in / Bank out"):l.kind==="DEPOSIT"?"Cash → Bank":l.kind==="WITHDRAW"?"Bank → Cash":MODE_NAME[l.mode])+'</td>'+
           '<td class="n plus">'+(inn?rs(l.amount):"")+'</td><td class="n minus">'+(inn?"":rs(l.amount))+'</td><td class="n">'+(Number(l.cash)?rs(run.get(l.src+"|"+l.id)):'<small>no cash</small>')+'</td><td>'+statusTag(l)+'</td></tr>'}).join("")+
         '</tbody><tfoot><tr><td colspan="3">Total ('+rows.length+')</td><td class="n">'+rs(tin)+'</td><td class="n">'+rs(tout)+'</td><td class="n">'+(D.closing_set&&bookF==="all"&&!(el("bookQ")&&el("bookQ").value)?rs(D.closing):"")+'</td><td></td></tr></tfoot></table></div>';
     }
     function renderBook(){
       const q=(el("bookQ")&&el("bookQ").value||"").toLowerCase();
-      const F={all:"All",IN:"Cash In",OUT:"Cash Out",DEPOSIT:"Deposit",PENDING:"Waiting check"};
-      const list=D.lines.filter(l=>(bookF==="all"||(bookF==="PENDING"?l.status==="PENDING":bookF==="DEPOSIT"?(l.kind==="DEPOSIT"||l.kind==="WITHDRAW"):l.kind===bookF))&&
+      const nSw=D.lines.filter(isSwap).length,F={all:"All",IN:"Cash In",OUT:"Cash Out",DEPOSIT:"Deposit"};if(nSw)F.SWAP="🔁 Swap "+nSw;F.PENDING="Waiting check";
+      if(bookF==="SWAP"&&!nSw)bookF="all";
+      const list=D.lines.filter(l=>(bookF==="all"||(bookF==="PENDING"?l.status==="PENDING":bookF==="SWAP"?isSwap(l):bookF==="DEPOSIT"?(l.kind==="DEPOSIT"||l.kind==="WITHDRAW")&&!isSwap(l):l.kind===bookF))&&
         (!q||[l.party,l.category,l.ref,l.remark,l.order_no,l.by,l.mode,String(l.amount)].join(" ").toLowerCase().includes(q)));
       const keep=el("bookQ")?el("bookQ").value:"";
       el("tabBody").innerHTML='<div class="acx-filter"><div class="acx-chips" id="bookF">'+Object.entries(F).map(([k,v])=>'<button type="button" data-f="'+k+'" aria-pressed="'+(bookF===k)+'">'+v+'</button>').join("")+'</div>'+
-        '<input type="search" id="bookQ" placeholder="Search party, head, ref, PO" autocomplete="off"><button type="button" class="acx-btn" id="bookXl">⬇ Excel</button></div>'+shiftStrip()+lateStrip()+
+        '<input type="search" id="bookQ" placeholder="Search party, head, ref, PO" autocomplete="off"><button type="button" class="acx-btn" id="bookXl">⬇ Excel</button></div>'+shiftStrip()+lateStrip()+swapStrip()+
         (!list.length?'<div class="acx-empty">No money entry in these dates.</div>':wide()?ledger(list):'<div class="acx-rows">'+list.map(l=>'<button type="button" class="acx-row" data-line="'+l.src+'|'+l.id+'">'+lineIcon(l)+
-          '<span class="t"><b>'+esc(lineTitle(l))+marks(l)+'</b><small>'+(from!==to?dmy(l.date)+" · ":"")+lt(l)+' · '+MODE_NAME[l.mode]+(l.ref?" · "+esc(l.ref):"")+(l.order_no?" · "+esc(l.order_no):"")+" · "+esc(SRC_NAME[l.src]||"")+(l.remark?" · "+esc(l.remark):"")+'</small></span>'+
+          '<span class="t"><b>'+esc(lineTitle(l))+marks(l)+'</b><small>'+(from!==to?dmy(l.date)+" · ":"")+lt(l)+' · '+(isSwap(l)?(l.kind==="DEPOSIT"?"Bank in, cash out":"Cash in, bank out"):MODE_NAME[l.mode])+(l.ref?" · "+esc(l.ref):"")+(l.order_no?" · "+esc(l.order_no):"")+" · "+esc(SRC_NAME[l.src]||"")+(l.remark?" · "+esc(l.remark):"")+'</small></span>'+
           '<span class="a '+sign(l)+'">'+(sign(l)==="plus"?"+":sign(l)==="minus"?"−":"")+rs(l.amount).replace("−","")+'<small>'+statusTag(l)+'</small></span></button>').join("")+'</div>');
       el("bookQ").value=keep;if(keep){el("bookQ").focus()}
       el("bookQ").oninput=renderBook;
       if(el("lateGo"))el("lateGo").onclick=lateSheet;
+      if(el("swpGo"))el("swpGo").onclick=swapSheet;
       el("bookF").querySelectorAll("[data-f]").forEach(b=>b.onclick=()=>{bookF=b.dataset.f;renderBook()});
       el("bookXl").onclick=()=>LWBExcel.write("accounts-daybook-"+from+"-to-"+to,[{name:"Day book",rows:[["Date","Time","Type","Head","Party","Mode","Amount","Ref","PO","Bank","Bank check","From","Remark","Entered by"],
-        ...list.map(l=>[dmy(l.date),lt(l),{IN:"Cash In",OUT:"Cash Out",DEPOSIT:"Bank deposit",WITHDRAW:"Cash from bank"}[l.kind],l.category||"",l.party||"",MODE_NAME[l.mode],r2(l.amount),l.ref||"",l.order_no||"",bankName(l.bank_id),{PENDING:"Waiting",VERIFIED:"Verified",REJECTED:"Not in bank",NA:""}[l.status],SRC_NAME[l.src]||"",l.remark||"",l.by||""])]}]).catch(e=>say(e.message,true));
+        ...list.map(l=>[dmy(l.date),lt(l),isSwap(l)?"Friend swap: "+swapDir(l).replace("→","then"):{IN:"Cash In",OUT:"Cash Out",DEPOSIT:"Bank deposit",WITHDRAW:"Cash from bank"}[l.kind],l.category||"",l.party||"",MODE_NAME[l.mode],r2(l.amount),l.ref||"",l.order_no||"",bankName(l.bank_id),{PENDING:"Waiting",VERIFIED:"Verified",REJECTED:"Not in bank",NA:""}[l.status],SRC_NAME[l.src]||"",l.remark||"",l.by||""])]}]).catch(e=>say(e.message,true));
       el("tabBody").querySelectorAll("[data-line]").forEach(b=>b.onclick=()=>{const [s,i]=b.dataset.line.split("|");showLine(D.lines.find(l=>l.src===s&&l.id===i))});
     }
 
@@ -504,8 +527,8 @@
       const chk=canCheck();
       el("tabBody").innerHTML='<p style="margin:0 0 10px;font-size:14px"><b>'+P.length+' entries · '+rs(total)+'</b> '+(chk?'— <a href="bank-statement.html">upload the bank statement</a> to match them by themselves, or verify each one here.':"— Accounts verifies these after checking the bank.")+'</p>'+
         (chk&&noBank?'<div class="acx-msg">Add your bank accounts first in <a href="#" data-tab="setup">Heads &amp; Banks</a>.</div>':"")+
-        P.map(p=>'<div class="acx-ver" data-v="'+p.src+'|'+p.id+'"><div><div class="amt">'+rs(p.amount)+' <span class="tag t-blu">'+(p.kind==="DEPOSIT"?"Cash deposit":MODE_NAME[p.mode])+'</span></div></div><div style="text-align:right;font-size:13px">'+dmy(p.date)+'<br>'+hm(p.at)+'</div>'+
-          '<div class="meta">'+esc(p.kind==="DEPOSIT"?"Cash deposited in "+(bankName(p.bank_id)||"bank"):(p.party||p.category||""))+(p.ref?' · Ref <b>'+esc(p.ref)+'</b>':"")+(p.order_no?" · "+esc(p.order_no):"")+' · '+esc(SRC_NAME[p.src]||"")+(p.by?" · by "+esc(p.by):"")+(p.remark?'<br><small>'+esc(p.remark)+'</small>':"")+'</div>'+
+        P.map(p=>'<div class="acx-ver" data-v="'+p.src+'|'+p.id+'"><div><div class="amt">'+rs(p.amount)+' <span class="tag '+(isSwap(p)?"t-pur":"t-blu")+'">'+(isSwap(p)?"🔁 Friend swap":p.kind==="DEPOSIT"?"Cash deposit":MODE_NAME[p.mode])+'</span></div></div><div style="text-align:right;font-size:13px">'+dmy(p.date)+'<br>'+hm(p.at)+'</div>'+
+          '<div class="meta">'+esc(isSwap(p)?(p.party||"Friend")+" sent to "+(bankName(p.bank_id)||"our bank")+", we gave cash":p.kind==="DEPOSIT"?"Cash deposited in "+(bankName(p.bank_id)||"bank"):(p.party||p.category||""))+(p.ref?' · Ref <b>'+esc(p.ref)+'</b>':"")+(p.order_no?" · "+esc(p.order_no):"")+' · '+esc(SRC_NAME[p.src]||"")+(p.by?" · by "+esc(p.by):"")+(p.remark?'<br><small>'+esc(p.remark)+'</small>':"")+'</div>'+
           (chk?'<div class="act"><select aria-label="Bank">'+bankOptions(p.bank_id,!p.bank_id)+'</select><button type="button" class="acx-btn grn" data-ok>✓ In bank</button><button type="button" class="acx-btn red" data-no>✗ Not in bank</button></div>':"")+'</div>').join("");
       el("tabBody").querySelectorAll(".acx-ver").forEach(box=>{
         const [src,id]=box.dataset.v.split("|");
@@ -593,6 +616,23 @@
       const t=LATE.reduce((a,l)=>a+Number(l.amount),0),c=LATE.filter(l=>l.mode==="CASH").reduce((a,l)=>a+Number(l.amount),0),ic=LATE.filter(l=>l.in_cash).reduce((a,l)=>a+Number(l.amount),0);
       return '<div class="late-strip"><b>⏪ '+LATE.length+' old-date payment'+(LATE.length===1?"":"s")+' entered '+(from===to?(from===D.today?"today":dmy(from).slice(0,5)):"in these dates")+' · '+rs(t)+'</b>'+
         '<span>Cash <b>'+rs(c)+'</b> · '+(ic?'<i class="plus">'+rs(ic)+' adds to cash now</i>':'not in '+(from===to&&from===D.today?"today's ":"this ")+'cash')+' · shown on its paid on date</span><button type="button" class="acx-btn" id="lateGo">View</button></div>';
+    }
+    // Friend swap (bank <-> cash with a friend): not sales / collection / expense, only cash in hand and bank
+    function swapStrip(){
+      const S=D.lines.filter(isSwap);if(!S.length)return "";
+      const b2c=S.filter(l=>l.kind==="DEPOSIT").reduce((a,l)=>a+Number(l.amount),0),c2b=S.filter(l=>l.kind==="WITHDRAW").reduce((a,l)=>a+Number(l.amount),0),net=c2b-b2c;
+      const sg=v=>(v>0?"+":v<0?"−":"")+rs(Math.abs(v));
+      return '<div class="swp-strip"><b>🔁 '+S.length+' friend swap'+(S.length===1?"":"s")+' '+(from===to?(from===D.today?"today":dmy(from).slice(0,5)):"in these dates")+' · '+rs(b2c+c2b)+'</b>'+
+        '<span>Cash <b>'+sg(net)+'</b> · Bank <b>'+sg(-net)+'</b> · not sales, not collection</span><button type="button" class="acx-btn" id="swpGo">Person-wise</button></div>';
+    }
+    function swapSheet(){
+      const M=new Map();D.lines.filter(isSwap).forEach(l=>{const k=l.party||"—",x=M.get(k)||{n:0,bank:0,cash:0,last:""};x.n++;if(l.kind==="DEPOSIT")x.bank+=Number(l.amount);else x.cash+=Number(l.amount);if(l.date>x.last)x.last=l.date;M.set(k,x)});
+      const P=[...M.entries()].sort((a,b)=>(b[1].bank+b[1].cash)-(a[1].bank+a[1].cash)),T=P.reduce((a,[,x])=>({n:a.n+x.n,bank:a.bank+x.bank,cash:a.cash+x.cash}),{n:0,bank:0,cash:0});
+      sheet("🔁 Friend swaps · "+(from===to?dmy(from):dmy(from)+" – "+dmy(to)),
+        '<p class="acx-note" style="margin:0"><b>Got in bank</b> = friend sent to our bank, we gave cash. <b>Got cash</b> = friend gave cash, we sent from bank.</p>'+
+        '<table class="acx-t"><thead><tr><th>Person</th><th class="n">Swaps</th><th class="n">Got in bank</th><th class="n">Got cash</th><th class="n">Last</th></tr></thead><tbody>'+
+        P.map(([k,x])=>'<tr><td><b>'+esc(k)+'</b></td><td class="n">'+x.n+'</td><td class="n">'+rs(x.bank)+'</td><td class="n">'+rs(x.cash)+'</td><td class="n">'+dmy(x.last).slice(0,5)+'</td></tr>').join("")+
+        '</tbody><tfoot><tr><td>Total</td><td class="n">'+T.n+'</td><td class="n">'+rs(T.bank)+'</td><td class="n">'+rs(T.cash)+'</td><td></td></tr></tfoot></table>',"",null);
     }
     function lateSheet(){
       const rows=LATE.map(l=>'<tr><td><b>'+esc(l.party||"")+'</b><small>'+[l.order_no?"PO "+esc(l.order_no):"",l.ref?"Ref "+esc(l.ref):"",l.by?"by "+esc(l.by):""].filter(Boolean).join(" · ")+'</small></td>'+
@@ -1178,13 +1218,15 @@
       if((kind==="DEPOSIT"||kind==="WITHDRAW")&&!banks.length){if(!LWBAccHub.has("setup")){ERPShell.alert("No bank account yet. Ask Accounts / Admin to add it (Heads & Banks).");return}ERPShell.alert("Add your bank account first (Heads & Banks).");tab="setup";renderTab();return}
       const io=kind==="IN"||kind==="OUT";
       const supCat=(D.categories||[]).find(c=>c.kind==="OUT"&&c.active&&String(c.name).trim().toLowerCase()==="supplier payment");
-      let st={kind,mode:"CASH",cat:pre.cat||(pre.company&&supCat?supCat.id:null)},files=[],cqFiles=[],pick=null;
+      let st={dir:"B2C",kind,mode:"CASH",cat:pre.cat||(pre.company&&supCat?supCat.id:null)},files=[],cqFiles=[],pick=null;
       const PL=partyList();
       if(pre.staff){const x=PL.find(p=>p.t==="staff"&&String(p.id)===String(pre.staff));if(x)pick=x}
       if(pre.vehicle){const x=PL.find(p=>p.t==="vehicle"&&p.id===pre.vehicle);if(x)pick=x}
       const def=to<=D.today&&to>=from&&from===to?to:D.today;
       const body=(io?'<div class="seg two" id="eKind"><button type="button" class="in" data-k="IN">+ Cash In</button><button type="button" class="out" data-k="OUT">− Cash Out</button></div>':
-          '<div class="seg two" id="eKind"><button type="button" class="dep" data-k="DEPOSIT">🏦 Cash to bank</button><button type="button" class="dep" data-k="WITHDRAW">₹ Cash from bank</button></div>')+
+          '<div class="seg three" id="eKind"><button type="button" class="dep" data-k="DEPOSIT">🏦 To bank</button><button type="button" class="dep" data-k="WITHDRAW">₹ From bank</button><button type="button" class="swp" data-k="SWAP">🔁 Friend swap</button></div>'+
+          '<div id="eSwap" class="swp-box" hidden><div class="swp-dir" id="eSwDir"><button type="button" data-d="B2C">🏦→💵 Got in bank, gave cash<small>Friend sent to our bank, we gave cash</small></button><button type="button" data-d="C2B">💵→🏦 Got cash, sent from bank<small>Friend gave cash, we sent from bank</small></button></div>'+
+          '<div class="f"><label for="eSwName">Friend / person name</label><input id="eSwName" type="text" maxlength="80" autocomplete="off" placeholder="e.g. RAJU BHAI" style="text-transform:uppercase"><div class="swp-sug" id="eSwSug"></div></div></div>')+
         '<div class="f2"><div class="f"><label>Date</label>'+dateBox("eDate",def,{max:D.today})+'</div><div class="f"><label for="eTime">Time</label><input id="eTime" type="time" value="'+nowHM()+'"></div></div>'+
         '<div class="f acx-combo" id="ePartyBox"><label for="eParty" id="ePartyLab">Party</label><input id="eParty" type="text" maxlength="120" autocomplete="off" placeholder="Type party name or short code" value="'+esc(pick?pick.name:"")+'" role="combobox" aria-expanded="false" aria-controls="ePList"><div class="acx-clist" id="ePList" role="listbox" hidden></div><div class="acx-note" id="eStaffBal" style="margin:4px 0 0"></div><div id="eDue" hidden></div></div>'+
         '<div class="f" id="eCoBox" hidden><label for="eCo">Company paid (shows in Company / Brand &gt; Pay company)</label><select id="eCo"><option value="">Not a company payment</option>'+(COS||[]).map(c=>'<option value="'+esc(c.id)+'"'+(c.id===pre.company?" selected":"")+'>'+esc(c.name)+'</option>').join("")+'</select></div>'+
@@ -1220,7 +1262,20 @@
       const notesTotal=()=>NOTE_KEYS.reduce((a,k)=>a+(Math.floor(num(q('[data-en="'+k+'"]').value))||0)*Number(k),0);
       const readNotes=()=>{const n={};NOTE_KEYS.forEach(k=>{const v=Math.floor(num(q('[data-en="'+k+'"]').value));if(v>0)n[k]=v});return n};
 
+      async function saveSwap(){
+        const amt=num(q("#eAmt").value),person=q("#eSwName").value.trim(),date=dval("eDate"),bank=q("#eBank").value;
+        if(!date){await ERPShell.alert("Enter the date as DD/MM/YYYY");return false}
+        if(person.length<2){await ERPShell.alert("Enter the friend / person name");q("#eSwName").focus();return false}
+        if(!bank){await ERPShell.alert("Choose our bank");return false}
+        if(!(amt>0)){await ERPShell.alert("Enter the amount");return false}
+        if(st.dir==="B2C"&&D.closing_set&&date===D.today&&to===D.today&&amt>Number(D.closing)+0.5){
+          if(!await ERPShell.confirm("Cash in hand is only "+rs(D.closing)+". Give "+rs(amt)+" cash anyway?"))return false}
+        try{await rpc("lwb_acc_swap_add",{p:{date,dir:st.dir,bank_id:bank,amount:amt,person,ref:q("#eRef").value.trim(),remark:q("#eRemark").value}})}
+        catch(e){const m=errText(e);await ERPShell.alert(/lwb_acc_swap_add|schema cache|does not exist/i.test(m)?"Friend swap is being set up. Try again in a few minutes.":m);return false}
+        SWN=null;ERPShell.toast?ERPShell.toast("Swap saved "+rs(amt)):null;load();
+      }
       async function save(){
+        if(st.kind==="SWAP")return saveSwap();
         const amt=num(q("#eAmt").value),staffOn=io&&isStaffHead(st.cat),stf=staffOn?staffOf():null,veh=staffOn?null:vehOf(),gst=st.kind==="OUT"&&q("#eGst").checked;
         const nonCash=io&&st.mode!=="CASH",utr=nonCash||st.kind==="DEPOSIT"?q("#eRef").value.trim():"",bill=q("#eBill").value.trim();
         const p={date:dval("eDate"),time:q("#eTime").value||null,kind:st.kind,category_id:io?st.cat:null,mode:io?st.mode:"CASH",bank_id:st.kind==="IN"&&st.mode==="CHEQUE"?null:q("#eBank").value||null,amount:amt,
@@ -1260,7 +1315,7 @@
         ERPShell.toast?ERPShell.toast("Saved "+rs(amt)):null;load();
       }
       function reset(){
-        ["#eParty","#eAmt","#eRemark","#eRef","#eBill","#eGstAmt","#eGstin","#eCqBank"].forEach(s=>q(s).value="");cqFiles=[];drawCq();
+        ["#eParty","#eSwName","#eAmt","#eRemark","#eRef","#eBill","#eGstAmt","#eGstin","#eCqBank"].forEach(s=>q(s).value="");cqFiles=[];drawCq();
         box.querySelectorAll("[data-en]").forEach(i=>i.value="");q("#eNotes").hidden=true;q("#eCnt").textContent="Count notes";
         pick=null;files=[];drawPhotos();q("#eGst").checked=false;q("#eMore").open=false;q("#eTime").value=nowHM();paint();q("#eParty").focus();
       }
@@ -1270,10 +1325,12 @@
         q("#eCat").innerHTML='<option value="">Choose…</option>'+cats.map(c=>'<option value="'+c.id+'"'+(c.id===st.cat?" selected":"")+'>'+esc(c.name)+'</option>').join("")+'<option value="new">+ Add new…</option>';
       }
       function paint(){
-        const k=st.kind;
+        const k=st.kind,sw=k==="SWAP";
         q("#eKind").querySelectorAll("[data-k]").forEach(b=>b.setAttribute("aria-pressed",String(b.dataset.k===k)));
-        box.querySelector("h3").textContent=io?"Add entry":k==="DEPOSIT"?"Cash deposited in bank":"Cash taken from bank";
-        box.querySelector("[data-ok]").className="acx-btn "+(k==="IN"?"grn":k==="OUT"?"redf":"pri");
+        box.querySelector("h3").textContent=io?"Add entry":sw?"🔁 Friend swap (bank ↔ cash)":k==="DEPOSIT"?"Cash deposited in bank":"Cash taken from bank";
+        box.querySelector("[data-ok]").className="acx-btn "+(k==="IN"?"grn":k==="OUT"?"redf":sw?"pur":"pri");
+        box.querySelector("[data-ok]").textContent=sw?"Save swap":"Save";
+        if(!io){q("#eSwap").hidden=!sw;q("#eSwDir").querySelectorAll("[data-d]").forEach(b=>b.setAttribute("aria-pressed",String(b.dataset.d===st.dir)));if(sw)swapSug()}
         if(io)fillCats();
         // Paying a company (Coca-Cola, Rajnigandha): one Cash Out entry, also saved as the company payment.
         q("#eCoBox").hidden=!(k==="OUT"&&supCat&&st.cat===supCat.id&&(COS||[]).length);
@@ -1281,17 +1338,30 @@
         q("#eMode").value=st.mode;
         const nonCash=io&&st.mode!=="CASH";
         q("#eBankBox").hidden=io&&!nonCash||k==="IN"&&st.mode==="CHEQUE";   // a cheque's bank is chosen when it is deposited
-        q("#eBankLab").textContent=k==="DEPOSIT"?"Deposited in bank":k==="WITHDRAW"?"Taken from bank":k==="IN"?"Came in bank (Admin can change)":"Paid from bank";
-        q("#eRefBox").hidden=!(nonCash||k==="DEPOSIT");
-        q("#eRefLab").textContent=st.mode==="CHEQUE"?"Cheque no.":k==="DEPOSIT"?"Deposit slip no.":"UTR / Ref no.";
+        q("#eBankLab").textContent=sw?(st.dir==="B2C"?"Our bank (money came in)":"Our bank (money sent from)"):k==="DEPOSIT"?"Deposited in bank":k==="WITHDRAW"?"Taken from bank":k==="IN"?"Came in bank (Admin can change)":"Paid from bank";
+        q("#eRefBox").hidden=!(nonCash||k==="DEPOSIT"||sw);
+        q("#eRefLab").textContent=st.mode==="CHEQUE"?"Cheque no.":k==="DEPOSIT"?"Deposit slip no.":sw?"UTR / Ref no. (optional)":"UTR / Ref no.";
         q("#eCnt").hidden=io&&nonCash;if(io&&nonCash)q("#eNotes").hidden=true;
-        q("#eMore").hidden=k==="IN"||k==="WITHDRAW";q("#eChqBox").hidden=!(k==="IN"&&st.mode==="CHEQUE");q("#eGstWrap").hidden=k!=="OUT";q("#eGstBox").hidden=!q("#eGst").checked;
+        q("#eMore").hidden=k==="IN"||k==="WITHDRAW"||sw;q("#eChqBox").hidden=!(k==="IN"&&st.mode==="CHEQUE");q("#eGstWrap").hidden=k!=="OUT";q("#eGstBox").hidden=!q("#eGst").checked;
         q("#eAmtLab").textContent=(k==="IN"?"Amount received":k==="OUT"?"Amount paid":"Amount")+" (₹)";
         q("#ePartyLab").textContent=k==="IN"?"Received from":"Paid to";
         staffBal();
+        if(sw){swapEff();return}
         q("#eHint").textContent=k==="DEPOSIT"?"Cash leaves the cash in hand now; it shows in the bank after Admin checks the bank.":
           k==="IN"?"Money from a party with bills: pick the party and use “Receive against these bills” (or 💰 Party payment), so its bills and outstanding go down."+(nonCash?" Admin gets a bell to check this in the bank.":""):
           isStaffHead(st.cat)?"Pick the staff name in "+q("#ePartyLab").textContent+"; it goes in the staff ledger.":"";
+      }
+      // Friend swap: what it does to cash / bank, names used before
+      function swapEff(){
+        const a=num(q("#eAmt").value)||0,b=q("#eBank").selectedOptions[0],bn=b&&b.value?b.textContent.split(" · ")[0]:"Bank",v=a?rs(a):"₹0",b2c=st.dir==="B2C";
+        q("#eHint").innerHTML='<div class="swp-eff"><div><span>Cash in hand</span><b class="'+(b2c?"minus":"plus")+'">'+(b2c?"− ":"+ ")+v+'</b></div>'+
+          '<div><span>'+esc(bn)+'</span><b class="'+(b2c?"plus":"minus")+'">'+(b2c?"+ ":"− ")+v+(b2c?' <span class="tag t-amb">after bank check</span>':"")+'</b></div>'+
+          '<div><span>Sales / Collection / Expense</span><b>Not counted</b></div></div>';
+      }
+      async function swapSug(){
+        if(SWN==null){SWN=[];try{const r=await client.rpc("lwb_acc_swap_names");SWN=r.error?[]:(r.data||[])}catch(e){}}
+        const b=q("#eSwSug");b.innerHTML=SWN.length?'<span class="acx-note" style="margin:0">Recent:</span>'+SWN.map(n=>'<button type="button" data-n="'+esc(n)+'">'+esc(n)+'</button>').join(""):"";
+        b.querySelectorAll("[data-n]").forEach(x=>x.onclick=()=>{q("#eSwName").value=x.dataset.n;q("#eAmt").focus()});
       }
       // Cash In from a party with Tally bills: show what it owes and take the money against its bills
       function partyDue(){
@@ -1349,7 +1419,9 @@
         q("#eCqPhs").querySelectorAll("[data-rm]").forEach(b=>b.onclick=()=>{cqFiles.splice(Number(b.dataset.rm),1);drawCq()})}
       ["#eCqCam","#eCqGal"].forEach(id=>q(id).onchange=e=>{for(const f of e.target.files){if(cqFiles.length<5)cqFiles.push(f)}e.target.value="";drawCq()});
       ["#eCam","#eGal"].forEach(id=>q(id).onchange=e=>{for(const f of e.target.files){if(files.length<5)files.push(f)}e.target.value="";drawPhotos()});
-      q("#eKind").querySelectorAll("[data-k]").forEach(b=>b.onclick=()=>{st.kind=b.dataset.k;paint()});
+      q("#eKind").querySelectorAll("[data-k]").forEach(b=>b.onclick=()=>{st.kind=b.dataset.k;paint();if(st.kind==="SWAP")q("#eSwName").focus()});
+      if(!io){q("#eSwDir").querySelectorAll("[data-d]").forEach(b=>b.onclick=()=>{st.dir=b.dataset.d;paint()});
+        q("#eAmt").addEventListener("input",()=>{if(st.kind==="SWAP")swapEff()});q("#eBank").addEventListener("change",()=>{if(st.kind==="SWAP")swapEff()})}
       paint();if(pre.amount)q("#eAmt").value=r2(pre.amount);
       const preCo=pre.company&&!q("#eCoBox").hidden?(COS||[]).find(c=>c.id===pre.company):null;
       if(preCo){q("#eParty").value=preCo.name;pick=null}
@@ -1396,7 +1468,7 @@
     function showLine(l){
       if(!l)return;
       const canCancel=l.src==="ENTRY"&&(D.is_admin||(l.mine&&l.status!=="VERIFIED"))&&!(D.last_close&&l.date<=D.last_close);
-      const box=sheet({IN:"Cash In",OUT:"Cash Out",DEPOSIT:"Bank deposit",WITHDRAW:"Cash from bank"}[l.kind]+" · "+rs(l.amount),
+      const box=sheet((isSwap(l)?"🔁 Friend swap · "+swapDir(l):{IN:"Cash In",OUT:"Cash Out",DEPOSIT:"Bank deposit",WITHDRAW:"Cash from bank"}[l.kind])+" · "+rs(l.amount),
         '<div class="kv"><span>Date</span><b>'+dmy(l.date)+' · '+lt(l)+'</b><span>Head</span><b>'+esc(l.category||"")+'</b>'+(l.party?'<span>Party</span><b>'+esc(l.party)+'</b>':"")+
         '<span>Mode</span><b>'+MODE_NAME[l.mode]+'</b>'+(l.ref?'<span>Ref</span><b>'+esc(l.ref)+'</b>':"")+(l.order_no?'<span>PO</span><b>'+esc(l.order_no)+'</b>':"")+
         (bankName(l.bank_id)?'<span>Bank</span><b>'+esc(bankName(l.bank_id))+'</b>':"")+(l.needs_verify?'<span>Bank check</span><b>'+statusTag(l)+(l.v_by?' <small>'+esc(l.v_by)+' · '+dmy(istDay(l.v_at))+'</small>':"")+(l.v_note?'<br><small>'+esc(l.v_note)+'</small>':"")+'</b>':"")+

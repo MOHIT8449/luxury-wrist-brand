@@ -6,10 +6,10 @@
   <title>Company / Brand | Luxury Wrist Brand ERP</title>
   <script src="vendor/supabase-js-2.119.0.js"></script>
   <script src="erp-date.js"></script>
-  <link rel="stylesheet" href="erp-shell.css?v=20261123">
-  <script src="erp-shell.js?v=20261123"></script>
+  <link rel="stylesheet" href="erp-shell.css?v=20261124">
+  <script src="erp-shell.js?v=20261124"></script>
   <script src="excel-io.js"></script>
-  <script src="brand-filter.js"></script><script src="erp-period.js"></script>
+  <script src="brand-filter.js"></script><script src="party-pay.js?v=20261124o"></script><script src="erp-period.js"></script>
   <style>
     .status{text-align:center;padding:80px 20px;font-size:15px;color:#555}
     [hidden]{display:none!important}
@@ -136,8 +136,11 @@
         if(q==="today")from=to=t;else if(q==="month"){from=t.slice(0,8)+"01";to=t}
         else{const d=new Date(Date.parse(t.slice(0,8)+"01T12:00:00Z")-864e5).toISOString().slice(0,10);from=d.slice(0,8)+"01";to=d}
         renderSum()});
-      const {data:O,error}=await client.rpc("lwb_company_overview",{p_from:from,p_to:to});
+      const [{data:O,error},PI]=await Promise.all([client.rpc("lwb_company_overview",{p_from:from,p_to:to}),
+        window.LWBPartyPay?LWBPartyPay.load(client).catch(()=>null):null]);
       if(error)throw error;
+      // Outstanding = same as Ledger & Outstanding "To collect" (after advance / opening / returns), Mohit 24 Nov 2026.
+      if(PI&&O&&!O.limited){const cd=id=>{const c=(O.companies||[]).find(x=>x.id===id);return c?num(c.market_credit_days):30};O.outstanding=LWBPartyPay.byBrand(PI,cd)||O.outstanding}
       const ids=O.companies.map(c=>c.id),rows=[];
       if(O.sales&&O.sales.none||O.outstanding&&O.outstanding.none||(!O.limited&&num(O.skus_without_company)))ids.push("none");
       const m=new Date(O.month+"T12:00:00Z").toLocaleDateString("en-IN",{month:"long",year:"numeric",timeZone:"UTC"});
