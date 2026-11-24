@@ -13,7 +13,7 @@
 <script src="erp-list.js"></script>
   <script src="excel-io.js"></script>
   <script src="party-pay.js?v=20261124a"></script>
-  <script src="acc-hub.js"></script>
+  <script src="acc-hub.js?v=20261124d"></script>
   <style>
     .status{text-align:center;padding:80px 20px;font-size:15px;color:#555}
     [hidden]{display:none!important}
@@ -219,6 +219,30 @@
     .phs button{position:absolute;top:2px;right:2px;width:22px;height:22px;border-radius:50%;border:0;background:rgba(0,0,0,.6);color:#fff;font-size:13px;cursor:pointer;padding:0}
     .chk{display:flex;gap:8px;align-items:center;font-size:14px;font-weight:700;color:#3b4652}
     .chk input{width:20px;height:20px}
+    /* Bank deposits tab: cash deposited bank wise (Mohit, 24 Nov 2026) */
+    .dp-bar{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin:0 0 8px}.dp-bar .acx-chips button{height:32px;padding:0 11px;font-size:13.5px}
+    .dp-bar .acx-btn{height:32px;padding:0 10px;font-size:13.5px;margin-left:auto}
+    .dp-sum{display:flex;gap:4px 14px;flex-wrap:wrap;align-items:baseline;background:#eef5ff;border:1px solid #c7dbfa;border-radius:9px;padding:7px 12px;margin:0 0 8px;font-size:13px;color:#3b4652}
+    .dp-sum .big{font-size:20px;font-weight:800;color:#1d5fbf;font-variant-numeric:tabular-nums}
+    .dp-sum b{color:var(--erp-ink)}.dp-sum .none{color:#b3122b;font-weight:700}
+    .dp-list{border:1px solid var(--erp-line);border-radius:9px;background:#fff;overflow:hidden}
+    .dp-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px 10px;align-items:center;width:100%;padding:8px 12px;border:0;border-top:1px solid #edf0f3;border-left:4px solid #1d5fbf;background:#fff;font:inherit;color:inherit;text-align:left;cursor:pointer}
+    .dp-row:first-child{border-top:0}.dp-row:hover{background:#f8fafc}
+    .dp-row.zero{border-left-color:#e7b3bd;background:#fffafa;cursor:default}.dp-row.nob{border-left-color:#e7a33e}
+    .dp-row .nm{font-weight:700;font-size:14.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .dp-row .nm small,.dp-row .sub{font-weight:400;font-size:12px;color:var(--erp-muted)}
+    .dp-row .sub{grid-column:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .dp-row .amt{grid-row:1/3;grid-column:2;text-align:right;font-weight:800;font-size:16.5px;color:#1d5fbf;white-space:nowrap;font-variant-numeric:tabular-nums}
+    .dp-row.zero .amt{color:#9aa3ad;font-size:14px}
+    .dp-row .amt small{display:block;font-size:11.5px;font-weight:600;color:var(--erp-muted)}
+    .dp-row .trk{grid-column:1/-1;height:5px;background:#eef1f5;border-radius:3px;overflow:hidden}.dp-row .trk i{display:block;height:100%;background:#1d5fbf;border-radius:3px}
+    .dp-row:disabled{opacity:1}.dp-row.zero .nm{color:#4b5763}.dp-row.zero .tag{font-size:12.5px}
+    .dp-bar .acx-chips{flex-wrap:nowrap;min-width:0}
+    @media(max-width:600px){.dp-bar{flex-wrap:nowrap}.dp-bar .acx-chips button{padding:0 9px;font-size:12.5px}.dp-bar .xl-t{display:none}.dp-row .sub{white-space:normal}.dp-sum .big{font-size:19px}}
+    .dp-det{background:#fbfcfd;border-top:1px dashed #dfe5ec;padding:2px 12px 6px 16px}
+    .dp-det div{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:8px;align-items:baseline;padding:4px 0;border-bottom:1px dashed #edf0f3;font-size:13px}
+    .dp-det div:last-child{border-bottom:0}.dp-det .d{white-space:nowrap;font-weight:600}
+    .dp-det .m{color:var(--erp-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.dp-det .a{font-weight:700;white-space:nowrap;text-align:right;font-variant-numeric:tabular-nums}
     .stf-head{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:0 0 10px}
     .stf-head b{font-size:15px;margin-right:auto}
     .stf{display:grid;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:10px}
@@ -327,6 +351,7 @@
     const MODE_NAME={CASH:"Cash",UPI:"UPI",BANK:"Bank / NEFT",RTGS:"RTGS",CHEQUE:"Cheque"};
     const SRC_NAME={ENTRY:"Entered here",PAYMENT:"Party payment",DRIVER_CASH:"Driver money",DRIVER_ONLINE:"Driver money",OLD:"Old payment entry"};
     const NOTE_KEYS=["500","200","100","50","20","10"];
+    let DEP={},depP="month",depOpen="";   // Bank deposits tab
     let LATE=[];   // party payments entered in these dates with an older paid on date (lwb_acc_paid_on_strict_setup.sql)
     let SWN=null;  // friend swap names used before (lwb_acc_friend_swap_setup.sql)
     let SH=null;   // shift handover in the day (lwb_acc_shift_handover_setup.sql); null = not set up
@@ -359,7 +384,7 @@
       try{
         const {data,error}=await client.rpc("lwb_acc_dashboard",{p_from:from,p_to:to});
         if(error)throw error;
-        D=data;D.lines=D.lines||[];D.pending=D.pending||[];
+        D=data;D.lines=D.lines||[];D.pending=D.pending||[];DEP={};
         // monthly rent of hired vehicles is added on the 1st of every month (once per page open)
         if(!hvPosted){hvPosted=true;await client.rpc("lwb_hired_post_months")}
         const [ex,st,vl,vr,cq,hv,pr]=await Promise.all([client.rpc("lwb_acc_extras",{p_from:from,p_to:to}),client.rpc("lwb_acc_staff_list",{p_month:to}),
@@ -467,7 +492,7 @@
     function renderTab(){
       if(tab==="out"){location.href="party-billing.html?tab=due";return}   // Party outstanding = To collect of Billing
       LWBAccHub.setTab(tab);LWBAccHub.counts({verify:D.pending.length,chq:chequesDue().length});
-      if(tab==="sum")renderSummary();else if(tab==="book")renderBook();else if(tab==="verify")renderVerify();else if(tab==="out")renderOutstanding();else if(tab==="close")renderCloses();else if(tab==="staff")renderStaff();else if(tab==="veh")renderVehicles();else if(tab==="cheques")renderCheques();else renderSetup();
+      if(tab==="sum")renderSummary();else if(tab==="book")renderBook();else if(tab==="verify")renderVerify();else if(tab==="out")renderOutstanding();else if(tab==="close")renderCloses();else if(tab==="staff")renderStaff();else if(tab==="veh")renderVehicles();else if(tab==="cheques")renderCheques();else if(tab==="deps")renderDeposits();else renderSetup();
     }
     function statusTag(l){
       if(l.status==="PENDING")return '<span class="tag t-amb">Waiting bank check</span>';
@@ -894,6 +919,48 @@
           load()},"grn");
     }
     // Vehicles: every vehicle's expenses for the dates at the top, head-wise; ledger per vehicle.
+    // Bank deposits (Mohit, 24 Nov 2026): cash deposited (Bank/Swap → To bank) bank wise for a month or the
+    // top bar dates; banks with no deposit show too. Data: lwb_acc_dashboard lines (kind DEPOSIT), no new SQL.
+    function depRange(){const t=D.today||todayISO(),m1=t.slice(0,8)+"01",l1=shift(m1,-1);
+      return depP==="month"?[m1,t]:depP==="last"?[l1.slice(0,8)+"01",l1]:[from,to]}
+    const isDep=l=>l.kind==="DEPOSIT"&&!isSwap(l)&&!/^contra\b/i.test(String(l.category||""))&&l.status!=="REJECTED";
+    async function renderDeposits(){
+      const [f,t]=depRange(),k=f+"|"+t;
+      if(!DEP[k]){
+        if(f===from&&t===to)DEP[k]=D.lines;
+        else{el("tabBody").innerHTML='<div class="acx-empty">Loading deposits…</div>';
+          const r=await client.rpc("lwb_acc_dashboard",{p_from:f,p_to:t});
+          if(r.error){el("tabBody").innerHTML='<div class="acx-msg bad">'+esc(errText(r.error))+'</div>';return}
+          DEP[k]=(r.data&&r.data.lines)||[]}
+        if(tab!=="deps")return;
+      }
+      const L=DEP[k].filter(isDep).sort((a,b)=>(b.date+(b.at||"")).localeCompare(a.date+(a.at||""))),M=new Map();
+      L.forEach(l=>{const id=l.bank_id||0,x=M.get(id)||{amt:0,n:0,wait:0,last:"",rows:[]};x.amt+=Number(l.amount)||0;x.n++;if(l.status==="PENDING")x.wait+=Number(l.amount)||0;if(l.date>x.last)x.last=l.date;x.rows.push(l);M.set(id,x)});
+      const rej=DEP[k].filter(l=>l.kind==="DEPOSIT"&&!isSwap(l)&&l.status==="REJECTED");
+      const B=(D.banks||[]).filter(b=>b.active||M.has(b.id)).map(b=>({id:b.id,name:b.name,ac:b.account_no,...(M.get(b.id)||{amt:0,n:0,wait:0,last:"",rows:[]})}));
+      if(M.has(0))B.push({id:0,name:"Bank not chosen",ac:"",nob:true,...M.get(0)});
+      B.sort((a,b)=>b.amt-a.amt||String(a.name).localeCompare(String(b.name)));
+      const tot=L.reduce((a,l)=>a+Number(l.amount),0),got=B.filter(b=>b.id&&b.n).length,none=B.filter(b=>b.id&&!b.n),max=B.length?B[0].amt:0;
+      const dates=f===t?dmy(f):dmy(f)+" – "+dmy(t),topLab=from===to?dmy(from).slice(0,5):dmy(from).slice(0,5)+"–"+dmy(to).slice(0,5);
+      const det=b=>'<div class="dp-det">'+b.rows.map(l=>'<div><span class="d">'+dmy(l.date).slice(0,5)+'</span><span class="m">'+esc([hm(l.at),l.ref?"Slip "+l.ref:"",l.by,l.remark].filter(Boolean).join(" · "))+'</span><span class="a">'+rs(l.amount)+(l.status==="PENDING"?' <span class="tag t-amb">wait</span>':"")+'</span></div>').join("")+'</div>';
+      el("tabBody").innerHTML='<div class="dp-bar"><span class="acx-chips" id="dpP">'+[["month","This month"],["last","Last month"],["top",(wide()?"Dates: ":"")+topLab]].map(([p,n])=>'<button type="button" data-dp="'+p+'" aria-pressed="'+(depP===p)+'">'+n+'</button>').join("")+'</span>'+
+        (L.length?'<button type="button" class="acx-btn" id="dpXl" title="Excel">⬇<span class="xl-t"> Excel</span></button>':"")+'</div>'+
+        '<div class="dp-sum"><span>Cash deposited · '+dates+'</span><span class="big">'+rs(tot)+'</span><span><b>'+L.length+'</b> deposit'+(L.length===1?"":"s")+' · <b>'+got+'</b> of '+B.filter(b=>b.id).length+' banks</span>'+
+          (none.length?'<span class="none">No deposit: '+none.map(b=>esc(b.name)).join(", ")+'</span>':"")+'</div>'+
+        (B.length?'<div class="dp-list">'+B.map(b=>'<button type="button" class="dp-row'+(b.n?"":" zero")+(b.nob?" nob":"")+'"'+(b.n?' data-dpb="'+b.id+'" aria-expanded="'+(depOpen===String(b.id))+'"':" disabled")+'>'+
+            '<span class="nm">🏦 '+esc(b.name)+(b.ac?' <small>A/c '+esc(b.ac)+'</small>':"")+'</span>'+
+            '<span class="amt">'+(b.n?rs(b.amt)+'<small>'+(tot?Math.round(b.amt*100/tot):0)+'%</small>':'<span class="tag t-red">No deposit</span>')+'</span>'+
+            '<span class="sub">'+(b.n?b.n+" deposit"+(b.n===1?"":"s")+" · last "+dmy(b.last).slice(0,5)+(b.wait?' · <span class="tag t-amb">'+rs(b.wait)+' waiting bank check</span>':""):b.nob?"":"Nothing deposited in these dates")+'</span>'+
+            (b.n?'<span class="trk"><i style="width:'+Math.max(2,Math.round(b.amt*100/(max||1)))+'%"></i></span>':"")+'</button>'+
+            (b.n&&depOpen===String(b.id)?det(b):"")).join("")+'</div>'
+          :'<div class="acx-empty">No bank added yet. Add your bank accounts in Heads &amp; Banks.</div>')+
+        (rej.length?'<p class="acx-note">Not counted: '+rej.length+' deposit'+(rej.length===1?"":"s")+' marked “Not in bank” ('+rs(rej.reduce((a,l)=>a+Number(l.amount),0))+').</p>':"");
+      el("dpP").querySelectorAll("[data-dp]").forEach(b=>b.onclick=()=>{depP=b.dataset.dp;depOpen="";renderDeposits()});
+      el("tabBody").querySelectorAll("[data-dpb]").forEach(b=>b.onclick=()=>{depOpen=depOpen===b.dataset.dpb?"":b.dataset.dpb;renderDeposits()});
+      if(el("dpXl"))el("dpXl").onclick=()=>LWBExcel.write("bank-deposits-"+f+"-to-"+t,[
+        {name:"Bank wise",rows:[["Bank","A/c no.","Deposits","Amount","Waiting bank check","Last deposit"],...B.map(b=>[b.name,b.ac||"",b.n,r2(b.amt),r2(b.wait),dmy(b.last)]),["Total","",L.length,r2(tot),"",""]]},
+        {name:"Deposits",rows:[["Date","Time","Bank","Amount","Slip no.","Bank check","Entered by","Remark"],...L.map(l=>[dmy(l.date),hm(l.at),bankName(l.bank_id)||"Not chosen",r2(l.amount),l.ref||"",{PENDING:"Waiting",VERIFIED:"Verified",NA:""}[l.status]||"",l.by||"",l.remark||""])]}]).catch(e=>say(e.message,true));
+    }
     function renderVehicles(){
       if(hvSub==="hired"&&HV.length){renderHired();return}
       if(hvSub==="porter"&&PR.length){renderPorter();return}
@@ -1582,7 +1649,7 @@
       if(qt==="out"){location.replace("party-billing.html?tab=due");return}
       const mine=h=>ERPShell.menuForMe(realRole).some(g=>g.items.some(i=>i.h===h));
       const hv=LWBAccHub.mount({page:"cash",role:realRole==="admin"?"admin":role,canParty:mine("party-billing.html#party"),acrs:mine("ecrs.html"),
-        tab:["book","cheques","verify","sum","close","staff","veh","setup"].includes(qt)?qt:"",
+        tab:["book","deps","cheques","verify","sum","close","staff","veh","setup"].includes(qt)?qt:"",
         onTab:t=>{tab=t;if(D)renderTab()},
         onAct:a=>{if(!D)return;if(a==="pay")partyPay("");else if(a==="close")closeDay();else newEntry(a)}});
       if(hv.away)return;
