@@ -76,3 +76,17 @@ test('checks: person, direction, role; normal deposit unchanged',async()=>{
  const dep=(await call('select public.lwb_acc_add_entry($1) id',[{date:today,kind:'DEPOSIT',bank_id:bank,amount:500}]))[0].id;
  assert.equal((await day(today)).lines.find(l=>l.id===dep).category,'Bank deposit');
 });
+
+test('one-time fix: 23/11 Rs 1,00,000 Other expense becomes a Friend swap',async()=>{
+ await db.exec(`CREATE TABLE IF NOT EXISTS public.lwb_vehicle_trips(id uuid primary key default gen_random_uuid(),acc_entry_id uuid)`);
+ await as('admin');
+ const oc=(await db.query(`select id from lwb_acc_categories where name='Other expense'`)).rows[0].id;
+ const id=(await db.query(`insert into lwb_acc_entries(entry_date,kind,category_id,mode,amount,remark,created_by) values('2026-11-23','OUT',$1,'CASH',100000,'bank aaya',$2) returning id`,[oc,ids.accounts])).rows[0].id;
+ await db.exec(await sql('lwb_acc_swap_fix_23nov_1lakh.sql'));
+ await db.exec(await sql('lwb_acc_swap_fix_23nov_1lakh.sql')); // safe to run again
+ const e=(await db.query('select kind,category_id,mode,party,remark from lwb_acc_entries where id=$1',[id])).rows[0];
+ assert.equal(e.kind,'DEPOSIT');assert.equal(e.category_id,null);assert.equal(e.party,'FRIEND (23/11)');assert.match(e.remark,/^bank aaya · Was Cash Out/);
+ const l=(await db.query(`select category,cash_effect from lwb_acc_lines_all() where id=$1`,[id])).rows[0];
+ assert.equal(l.category,'Friend swap');assert.equal(Number(l.cash_effect),-100000);
+ assert.equal((await db.query('select count(*)::int c from lwb_acc_swap_fix_log')).rows[0].c,1);
+});

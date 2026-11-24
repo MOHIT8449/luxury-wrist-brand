@@ -4,6 +4,11 @@
 **Purpose:** Continue the same ERP project from a new ChatGPT conversation without restarting or losing the agreed requirements.
 **Status:** Active development / verification. Do not assume all modules are completed or fully tested.
 
+## Friend swap fix: ₹1,00,000 "Other expense" of 23/11 (24 Nov 2026)
+- Mohit: ₹1,00,000 came in bank and was given in cash on 23/11, but was entered as Cash Out / Other expense, so the Admin dashboard counted it in Expenses / Net profit.
+- One-time SQL `lwb_acc_swap_fix_23nov_1lakh.sql` (test 3 in `tests/friend-swap`): the one matching entry (23/11, Cash Out, cash, Other expense, ₹1,00,000, no staff / vehicle / company / trip link) becomes a Friend swap (DEPOSIT, no head, `lwb_acc_swaps` row, person = its party or "FRIEND (23/11)"); old row in `lwb_acc_swap_fix_log`. Cash in hand unchanged; bank side waits in Bank check. Stops if not exactly one match.
+- admin-business.js / finance.html NOT_EXPENSE also skip a head named "Friend swap". Screenshots: project files `friend-swap/fix-1lakh/`.
+
 ## Friend swap: bank <-> cash with a friend (23 Nov 2026)
 - Mohit: in the friend circle someone sends money to our bank and we give the same cash (or gives cash and we send from bank). Not sales, not collection, not expense.
 - SQL `lwb_acc_friend_swap_setup.sql` (test `tests/friend-swap`, PGlite, 2 tests): table `lwb_acc_swaps(entry_id, person)`; RPC `lwb_acc_swap_add(p {date, dir B2C|C2B, bank_id, amount, person, ref, remark})` saves through `lwb_acc_add_entry` as DEPOSIT (B2C: cash -, bank + after bank check) or WITHDRAW (C2B: cash +, bank -), party = person (upper case); `lwb_acc_swap_names()` (last 120 days). `lwb_acc_lines_all` patched in place: head "Friend swap" for these entries. Cancel = normal Cancel this entry.
