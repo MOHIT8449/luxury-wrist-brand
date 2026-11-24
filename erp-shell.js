@@ -204,6 +204,7 @@
       {t:"Sheet & Pallet Ledger",h:"sheet-pallet.html",i:"layers",r:"admin manager accounts warehouse",vo:"accounts"},
       {t:"Sales Bill PDFs",h:"sales-bill-scans.html",i:"bill",r:"admin accounts manager",k:"scan pdf sales bill invoice register upload",vo:"accounts"},
       {t:"Daily Summary",h:"daily-report.html",i:"stock",r:"admin manager accounts",nm:"accounts"},
+      {t:"WhatsApp Reports",h:"whatsapp-reports.html",i:"note",r:"admin",nm:"accounts"},
       {t:"Money Overview",h:"money-overview.html",i:"cash",r:"admin accounts",hide:1},
       {t:"Tally Bill & Invoice No.",h:"accounts-invoice.html",i:"bill",r:"admin accounts",hide:1},
       {t:"Tally Bill Check",h:"tally-check.html",i:"bill",r:"admin accounts",hide:1},
