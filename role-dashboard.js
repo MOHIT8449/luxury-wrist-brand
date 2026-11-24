@@ -218,21 +218,30 @@
     return done;
   }
   const queueItem=(q,item)=>(q||[]).find(r=>r.item===item)||null;
-  function outstanding(PI){
+  // Same number as Ledger & Outstanding "To collect" (Mohit, 24 Nov 2026): per party bills due + opening − advance
+  // − return credit, only parties still to pay. c = brand id (that brand's bills / advance / opening only).
+  function outstanding(PI,c){
     if(!PI)return null;
     const t=PI.today||today(),age={a:0,b:0,c:0,d:0},parties=[];
-    for(const p of PI.parties.values()){
-      // Same balance as Billing & Outstanding: bills due + opening balance − advance not yet set against bills.
-      const open=num(p.opening),net=Math.max(0,p.due+open-p.advance);if(net<1)continue;
-      let left=p.advance;
+    for(const p0 of PI.parties.values()){
+      const p=c&&window.LWBPartyPay?LWBPartyPay.slice(p0,c):p0;
+      const open=num(p.opening),net=Math.round((p.net!=null?num(p.net):p.due+open-p.advance-num(p.ret))*100)/100;if(net<=0.5)continue;
+      let left=num(p.advance)+num(p.ret);
       if(open<0)left-=open;  // opening in the party's favour works like advance
       else if(open>0){const use=Math.min(left,open);left-=use;if(open-use>=0.5)age.d+=open-use}  // opening = old money, 60+ days
-      for(const b of p.bills){let due=num(b.due);const use=Math.min(left,due);left-=use;due-=use;if(due<0.5)continue;
+      for(const b of p.bills||[]){let due=num(b.due);const use=Math.min(Math.max(left,0),due);left-=use;due-=use;if(due<0.5)continue;
         const d=b.invoice_date?days(String(b.invoice_date).slice(0,10),t):0;age[d<=15?"a":d<=30?"b":d<=60?"c":"d"]+=due}
-      parties.push({party:p.party,due:net,oldest:p.oldest?days(String(p.oldest).slice(0,10),t):null});
+      parties.push({party:p0.party,due:net,oldest:p.oldest?days(String(p.oldest).slice(0,10),t):null});
     }
     parties.sort((a,b)=>b.due-a.due);
     return {total:sum(parties,p=>p.due),over30:age.c+age.d,age,parties};
+  }
+  // Brand-wise outstanding from the same party ledger, put in place of lwb_company_overview's bill-only split
+  // (that one did not take off advance / opening / party payments, so Dashboard ≠ Ledger & Outstanding).
+  function sameOut(ov,PI){
+    if(!ov||!PI||!window.LWBPartyPay||!LWBPartyPay.byBrand)return ov;
+    const cd=id=>{const c=(ov.companies||[]).find(x=>x.id===id);return c?num(c.market_credit_days):30};
+    const o=LWBPartyPay.byBrand(PI,cd);if(o)ov.outstanding=o;return ov;
   }
   function accTotals(D){
     const t={cashIn:0,cashOut:0,dep:0,upi:0,bank:0,cheque:0};
@@ -389,7 +398,8 @@
       const [stock,PR]=await Promise.all([stockCheck(orders),orders&&profitOk()?profitOf(td).catch(()=>null):null]);
       const tv=sum(td,o=>o.total_amount),yv=sum(yd,o=>o.total_amount),mv=sum(mo,o=>o.total_amount),tgt=BR.id?num(ov&&ov.targets&&ov.targets[BR.id]&&ov.targets[BR.id].amount):companyTarget(team.targets);
       const ch=yv?Math.round((tv-yv)/yv*100):null,A=acc?accTotals(acc):null,short=stock?stock.filter(x=>x.short>0):null;
-      const bo=BR.id&&ov&&ov.outstanding?ov.outstanding[BR.id]||{due:0,overdue:0}:null,out=bo?{total:num(bo.due),over:num(bo.overdue),brand:1}:outstanding(PI);
+      sameOut(ov,PI);
+      const bo=BR.id&&PI&&ov&&ov.outstanding?ov.outstanding[BR.id]||{due:0,overdue:0}:null,out=bo?{...outstanding(PI,BR.id),total:num(bo.due),over:num(bo.overdue),brand:1}:outstanding(PI);
       const k=[
         kpi("green","Today's Sales",rs(tv),(ch==null?"":'<span class="'+(ch>=0?"up":"dn")+'">'+(ch>=0?"▲ ":"▼ ")+Math.abs(ch)+"%</span> ")+"vs yesterday "+rs(yv),"sales-tracking.html",orders&&lst("Today's Sales","Orders taken today (cancelled not counted)",td,null,"sales-tracking.html")),
         profitKpi(PR,td.length,"violet"),
@@ -519,7 +529,8 @@
         // billed / dispatched POs of any month (loadOrders has this month + open ones only)
         safe(C.from("orders").select(ORDER_COLS).in("status",["invoiced","dispatched"]).limit(3000)),makeBillsData()]);
       setMakeBills(PI,md);
-      const A=acc?accTotals(acc):null,out=outstanding(PI),drv=queueItem(vq,"DRIVER_PAYMENT"),cn=queueItem(vq,"CREDIT_NOTE");
+      sameOut(ov,PI);
+      const A=acc?accTotals(acc):null,out=outstanding(PI,BR.id||null),drv=queueItem(vq,"DRIVER_PAYMENT"),cn=queueItem(vq,"CREDIT_NOTE");
       const qa='<div class="rd-qa rd-qa-row">'+[["party-billing.html","🧾","Bills to make"],["warehouse-orders.html","📋","PO List"],["accounts-dashboard.html?new=IN","+","Cash In"],["accounts-dashboard.html?new=OUT","−","Cash Out"]]
         .filter(x=>can(x[0])).map(x=>'<a href="'+x[0]+'"><span>'+x[1]+"</span>"+x[2]+"</a>").join("")+"</div>";
       const k=[

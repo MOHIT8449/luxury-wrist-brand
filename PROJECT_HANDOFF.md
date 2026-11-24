@@ -4,6 +4,12 @@
 **Purpose:** Continue the same ERP project from a new ChatGPT conversation without restarting or losing the agreed requirements.
 **Status:** Active development / verification. Do not assume all modules are completed or fully tested.
 
+## Outstanding: one number on Dashboard and Ledger & Outstanding (24 Nov 2026)
+- Mohit: Dashboard Outstanding (brand picked) Coca-Cola ₹69.82 L / Rajnigandha ₹11.63 L, Ledger & Outstanding "To collect" ₹32.14 L / ₹12.05 L.
+- Cause: with a brand picked, the Dashboard took `lwb_company_overview().outstanding` = only the bill dues of `lwb_tally_bill_rows`, each PO split by SKU value. It did not take off party advance / party payments not set to a bill, return credit, and did not add opening balances. Ledger & Outstanding uses `lwb_party_billing` (LWBPartyPay) per party per brand: due + opening − advance − returns, parties with net > 0 only.
+- Fix (no SQL): `LWBPartyPay.outstanding(info, brand, days)` / `byBrand(info, daysOf)` in party-pay.js. role-dashboard.js (Admin + Accounts) and companies.html replace `ov.outstanding` with `byBrand` and the KPI uses `outstanding(PI, brand)`; "All brands" now also takes off return credit. Overdue = still due after advance on bills older than the company market credit days (30 for All). Screenshots (mocked data): project files `outstanding-same/`.
+- Sales Head dashboard still uses `lwb_company_overview` (no party billing access).
+
 ## Friend swap fix: ₹1,00,000 "Other expense" of 23/11 (24 Nov 2026)
 - Mohit: ₹1,00,000 came in bank and was given in cash on 23/11, but was entered as Cash Out / Other expense, so the Admin dashboard counted it in Expenses / Net profit.
 - One-time SQL `lwb_acc_swap_fix_23nov_1lakh.sql` (test 3 in `tests/friend-swap`): the one matching entry (23/11, Cash Out, cash, Other expense, ₹1,00,000, no staff / vehicle / company / trip link) becomes a Friend swap (DEPOSIT, no head, `lwb_acc_swaps` row, person = its party or "FRIEND (23/11)"); old row in `lwb_acc_swap_fix_log`. Cash in hand unchanged; bank side waits in Bank check. Stops if not exactly one match.
