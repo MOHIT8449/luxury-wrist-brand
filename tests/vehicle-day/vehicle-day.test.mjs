@@ -13,7 +13,8 @@ CREATE SCHEMA auth;
 CREATE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql AS $$ SELECT nullif(current_setting('request.jwt.claim.sub',true),'')::uuid $$;
 CREATE TABLE public.user_profiles(id uuid primary key,role text,active boolean,full_name text);
 CREATE TABLE public.orders(id uuid default gen_random_uuid() primary key,order_no text,customer_name text,status text,total_qty numeric,total_weight numeric,total_amount numeric,transportation text);
-CREATE TABLE public.dispatch_assignments(id uuid default gen_random_uuid() primary key,order_id uuid,vehicle_no text,driver_name text,driver_mobile text,assigned_at timestamptz default now(),loading_completed_at timestamptz,trip_id bigint);
+CREATE TABLE public.dispatch_assignments(id uuid default gen_random_uuid() primary key,order_id uuid,vehicle_no text,driver_name text,driver_mobile text,transporter_name text,loading_person text,remarks text,assigned_at timestamptz default now(),loading_completed_at timestamptz,trip_id bigint);
+CREATE TABLE public.erp_notifications(id bigserial primary key,order_id uuid,notification_type text,is_read boolean default false,created_at timestamptz default now());
 CREATE TABLE public.lwb_delivery_reports(id uuid default gen_random_uuid() primary key,order_id uuid unique,delivery_status text,reported_at timestamptz default now());
 CREATE TABLE public.lwb_admin_order_marks(order_id uuid,kind text,mark_date date);
 CREATE TABLE public.lwb_driver_delivery_returns(id uuid default gen_random_uuid() primary key,order_id uuid,status text);
@@ -30,6 +31,7 @@ CREATE FUNCTION public.lwb_has_page(p_page text) RETURNS boolean LANGUAGE sql ST
 for(const [role,id] of Object.entries(ids))await db.query('insert into user_profiles values($1,$2,true,$3)',[id,role,role+' user']);
 const setup=await sql('lwb_vehicle_day_setup.sql');
 await db.exec(setup);await db.exec(setup); // safe to run again
+const fill=await sql('lwb_vehicle_day_fill_setup.sql');await db.exec(fill);await db.exec(fill);
 await db.exec('GRANT USAGE ON SCHEMA public,auth TO authenticated');
 
 async function as(role){await db.query("select set_config('request.jwt.claim.sub',$1,false)",[ids[role]||''])}
@@ -94,4 +96,25 @@ test('only office roles or a login given the page; driver / salesman refused', a
   await db.query("insert into lwb_user_page_access values($1,array['vehicle-report.html'])",[ids.sales]);
   await as('sales');assert.equal((await day('2026-11-23','2026-11-23')).rows.length,8);
   await as('manager');await assert.rejects(day('2026-11-23','2026-11-01'),/before/);
+});
+
+test('give the vehicle to a PO delivered with none: it moves under that vehicle on its delivered day', async()=>{
+  const fillIt=(ids,v,d,m)=>call('select public.lwb_vehicle_day_fill($1,$2,$3,$4) j',[ids,v,d,m]).then(r=>r[0].j);
+  await as('driver');await assert.rejects(fillIt([o8],'GJ05AB1234','Ramesh',null),/Only Admin/);
+  await as('manager');
+  await assert.rejects(fillIt([o8],'',  'Ramesh',null),/vehicle number/);
+  await assert.rejects(fillIt([o8],'GJ05AB1234','',null),/driver name/);
+  const pend=(await db.query("insert into orders(order_no,customer_name,status,total_qty) values('PO-11','Not loaded','approved',5) returning id")).rows[0].id;
+  // a ringing bell from a trigger is marked read
+  await db.exec(`CREATE FUNCTION bell() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN INSERT INTO public.erp_notifications(order_id,notification_type) VALUES (NEW.order_id,'LOADING_ASSIGNMENT_DISPATCH'); RETURN NEW; END $$;
+    CREATE TRIGGER bell AFTER INSERT ON dispatch_assignments FOR EACH ROW EXECUTE FUNCTION bell();`);
+  const r=await fillIt([o8,o1,o9,pend],'gj05 ab 1234','Ramesh','+91 98765 43210');
+  assert.deepEqual(r.done,['PO-8']);
+  assert.deepEqual(r.skipped.map(x=>x.order_no).sort(),['PO-1','PO-11','PO-9']);
+  assert.match(r.skipped.find(x=>x.order_no==='PO-1').why,/already has vehicle/);
+  const a=(await db.query("select vehicle_no,driver_mobile,(assigned_at at time zone 'Asia/Kolkata')::date::text d from dispatch_assignments where order_id=$1",[o8])).rows[0];
+  assert.deepEqual(a,{vehicle_no:'GJ05 AB 1234',driver_mobile:'9876543210',d:'2026-11-23'});
+  assert.equal((await db.query('select count(*)::int n from erp_notifications where order_id=$1 and not is_read',[o8])).rows[0].n,0);
+  const j=await day('2026-11-23','2026-11-23');const p8=j.rows.find(x=>x.order_no==='PO-8');
+  assert.equal(p8.vehicle_key,'GJ05AB1234');assert.equal(p8.driver_name,'Ramesh');assert.equal(p8.day,'2026-11-23');
 });
