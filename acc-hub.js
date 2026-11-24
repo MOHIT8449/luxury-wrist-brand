@@ -21,14 +21,14 @@
   "use strict";
   const T={make:"Bills to make",made:"Bills made",due:"To collect",led:"Ledger",pay:"Payments",ret:"Returns",
     book:"Day book",cheques:"Cheques",verify:"Bank check",sum:"Summary",chg:"PO changes",
-    grp:"Party groups",books:"📒 Ledger & Outstanding ↗",close:"Cash handover",staff:"Staff ledger",veh:"Vehicles",setup:"Heads & Banks",gst:"GST",acrs:"ACRS orders ↗"};
+    grp:"Party groups",books:"📒 Ledger & Outstanding ↗",close:"Cash handover",staff:"Staff ledger",veh:"Vehicles",deps:"Bank deposits",setup:"Heads & Banks",gst:"GST",acrs:"ACRS orders ↗"};
   const BILL=["make","made","due","led","pay","ret","chg","grp","gst"];
   const VIEWS={
     tally:{name:"Accounts · Tally",chip:"Tally",acts:["pay","IN","OUT","DEPOSIT","close","ret"],
-      row:[["Tally",["make","made","chg","ret"]],["Party",["books"]],["Bank & GST",["verify","cheques","gst"]],["Cash",["book","sum"]]],more:["grp","close","staff","veh","setup"],
+      row:[["Tally",["make","made","chg","ret"]],["Party",["books"]],["Bank & GST",["verify","deps","cheques","gst"]],["Cash",["book","sum"]]],more:["grp","close","staff","veh","setup"],
       kpis:["make","verify","gst","chq","coll","hand"],first:"make"},
     cash:{name:"Cashier",chip:"Cashier",acts:["pay","IN","OUT","DEPOSIT","close"],
-      row:[["",["book","cheques","close","staff","veh"]]],more:[],kpis:["open","cin","cout","dep","chq","hand"],first:"book"},
+      row:[["",["book","deps","cheques","close","staff","veh"]]],more:[],kpis:["open","cin","cout","dep","chq","hand"],first:"book"},
     party:{name:"Party & Collections",chip:"Party",acts:["pay","ret"],
       row:[["",["due","pay","ret","grp"]],["",["books","acrs"]]],more:[],kpis:["due","adv","coll","chq"],first:"due"}};
   const FILE={bill:"party-billing.html",cash:"accounts-dashboard.html"};
@@ -105,7 +105,7 @@
   function style(){if(el("hubCss"))return;const s=document.createElement("style");s.id="hubCss";s.textContent=css;document.head.appendChild(s)}
 
   /* ---------- actions ---------- */
-  const ACTS=[["pay","💰","Party payment","Party pay"],["IN","＋","Cash In","Cash In"],["OUT","−","Cash Out","Cash Out"],["DEPOSIT","🏦","Bank Deposit","Deposit"],["close","🌙","Close Day","Close Day"],["ret","↩","Return","Return"]];
+  const ACTS=[["pay","💰","Party payment","Party pay"],["IN","＋","Cash In","Cash In"],["OUT","−","Cash Out","Cash Out"],["DEPOSIT","🏦","Bank / Swap","Bank/Swap"],["close","🌙","Close Day","Close Day"],["ret","↩","Return","Return"]];
   function drawActs(){const b=el("hubActs");if(!b)return;
     const A=ACTS.filter(x=>VIEWS[view].acts.includes(x[0]));
     // phone: one row; Return is hidden there when other buttons are shown (it is in More)
@@ -153,7 +153,7 @@
   const DEF=[["make","#c8102e","Bills to make","make",""],["due","#b3122b","To collect","due","#b3122b"],["coll","#13824a","Collected today","book","#13824a"],
     ["chq","#9a5b00","Cheques not in bank","cheques",""],["adv","#13824a","Advance with us","due",""],["hand","#002f37","Cash in hand","book",""],
     ["verify","#1d5fbf","Bank check","verify","#1d5fbf"],["gst","#6b21a8","GST","gst",""],
-    ["open","#5b6672","Opening cash","close",""],["cin","#13824a","Cash In","book","#13824a"],["cout","#c8102e","Cash Out","book","#c8102e"],["dep","#1d5fbf","Bank deposit","book",""]];
+    ["open","#5b6672","Opening cash","close",""],["cin","#13824a","Cash In","book","#13824a"],["cout","#c8102e","Cash Out","book","#c8102e"],["dep","#1d5fbf","Bank deposit","deps",""]];
   function drawKpis(){const b=el("hubKpis");if(!b)return;
     const L=VIEWS[view].kpis.map(k=>DEF.find(d=>d[0]===k));
     b.style.setProperty("--n",String(L.length));b.classList.toggle("n4",L.length===4);
@@ -165,19 +165,22 @@
 
   /* ---------- figures ---------- */
   const isEntryMoney=l=>l.kind==="IN"&&l.src!=="ENTRY";
+  // lwb_acc_friend_swap_setup.sql: bank <-> cash with a friend (not sales / collection / expense)
+  const isSwap=l=>l.src==="ENTRY"&&l.category==="Friend swap";
   function cashFrom(D,C,from,to){
     from=from||D.today;to=to||D.today;C=C||[];
     const one=from===to,isToday=one&&to===D.today,L=D.lines||[];
     const coll=L.filter(isEntryMoney),cm={};coll.forEach(l=>{const m=l.mode==="RTGS"?"BANK":l.mode;cm[m]=(cm[m]||0)+Number(l.amount)});
     const collT=coll.reduce((a,l)=>a+Number(l.amount),0);
-    let cin=0,cout=0,dep=0,wd=0;
+    let cin=0,cout=0,dep=0,wd=0,sw=0;
     for(const l of L){const a=Number(l.amount)||0;if(/^contra\b/i.test(String(l.category||"")))continue;
+      if(isSwap(l)){sw+=l.kind==="WITHDRAW"?a:-a;continue}   // friend swap: only cash in hand / bank move
       if(l.kind==="IN"&&l.mode==="CASH")cin+=a;else if(l.kind==="OUT"&&l.mode==="CASH")cout+=a;else if(l.kind==="DEPOSIT")dep+=a;else if(l.kind==="WITHDRAW")wd+=a}
     const ch=C.filter(c=>c.status==="IN_HAND"),cd=C.filter(c=>c.status==="DEPOSITED"),sum=a=>a.reduce((x,c)=>x+Number(c.amount),0);
     const lastClose=(D.closes||[]).find(c=>c.date===to);
     const handH=isToday?"Cash in hand now":one?"Cash in hand at night":"Cash in hand on "+dmy(to);
     const md=k=>rs(cm[k]||0).replace("₹","");
-    const cnt=f=>L.filter(l=>!/^contra\b/i.test(String(l.category||""))&&f(l)).length,pl=(n,w)=>n+" "+w+(n===1?"":"s");
+    const cnt=f=>L.filter(l=>!/^contra\b/i.test(String(l.category||""))&&!isSwap(l)&&f(l)).length,pl=(n,w)=>n+" "+w+(n===1?"":"s");
     const P=D.pending||[],pa=P.reduce((a,p)=>a+Number(p.amount),0),day=isToday?" today":one?" "+dmy(to).slice(0,5):"";
     const chk=D.can_check!=null?D.can_check:D.is_admin;
     return {
@@ -189,7 +192,7 @@
       coll:{h:isToday?"Collected today":one?"Collected "+dmy(to):"Collected "+dmy(from).slice(0,5)+" – "+dmy(to).slice(0,5),v:rs(collT),
         s:"Cash "+md("CASH")+" · UPI "+md("UPI")+" · Bank "+md("BANK")+" · Chq "+md("CHEQUE"),tip:"Party money in every mode (cash, UPI, bank, cheque, driver money)"},
       chq:{v:rs(sum(ch)+sum(cd)),s:(ch.length+cd.length)+" cheque"+(ch.length+cd.length===1?"":"s")+" · "+cd.length+" deposited"},
-      hand:{h:handH,v:D.closing_set?rs(D.closing):"—",s:(lastClose&&!lastClose.is_start?"Counted · ":"")+"In "+rs(cin+wd).replace("₹","")+" · Out "+rs(cout).replace("₹","")+" · Bank "+rs(dep).replace("₹",""),
+      hand:{h:handH,v:D.closing_set?rs(D.closing):"—",s:(lastClose&&!lastClose.is_start?"Counted · ":"")+"In "+rs(cin+wd).replace("₹","")+" · Out "+rs(cout).replace("₹","")+" · Bank "+rs(dep).replace("₹","")+(sw?" · Swap "+(sw>0?"+":"−")+rs(Math.abs(sw)).replace("₹",""):""),
         tip:"Opening "+(D.opening_set?rs(D.opening):"not set")+" + Cash In − Cash Out − Bank deposit"},
       counts:{verify:(D.pending||[]).length,chq:C.filter(c=>c.status==="DEPOSITED"||(c.status==="IN_HAND"&&c.cheque_date<=D.today)).length}
     };
@@ -216,7 +219,7 @@
   }
   function billFrom(PI,marks,early,brand){
     const LP=window.LWBPartyPay,V=p=>brand?LP.slice(p,brand):p,parties=[...PI.parties.values()].map(V);
-    const mk=(PI.raw.orders||[]).filter(x=>(!brand||(x.company_id||"")===brand)&&LP.needsBill(x,marks)).concat(brand?[]:(early||[]));
+    const mk=(PI.raw.orders||[]).filter(x=>LP.makeInBrand(x,brand)&&LP.needsBill(x,marks)).concat((early||[]).filter(x=>LP.makeInBrand(x,brand)));
     const bn=brand&&PI.brandOf?((PI.brandOf(brand)||{}).name||""):"";
     return billKpis({make:mk.length,makeAmt:mk.reduce((a,x)=>a+Number(x.erp_amount||0),0),early:mk.filter(x=>x.early).length,
       due:parties.reduce((a,p)=>a+Math.max(0,p.net),0),dueN:parties.filter(p=>p.net>0.5).length,
@@ -268,7 +271,7 @@
       const marks=new Map((mk.error?[]:(mk.data||[])).map(m=>[m.order_id,1]));
       const brand=PI.branded&&window.LWBBrand?LWBBrand.get(PI.companies):"";
       kpis(billFrom(PI,marks,early.error?[]:(early.data||[]).map(x=>({...x,early:true})),brand));
-      const L=(PI.raw.orders||[]).filter(x=>LP.needsBill(x,marks)).length+(brand?0:(early.error?0:(early.data||[]).length));
+      const L=(PI.raw.orders||[]).filter(x=>LP.makeInBrand(x,brand)&&LP.needsBill(x,marks)).length+(early.error?0:(early.data||[]).filter(x=>LP.makeInBrand(x,brand)).length);
       counts({make:L,chg:(chg.error?[]:(chg.data||[])).filter(c=>c.status==="WAITING").length});
     }catch(e){kpis({make:{v:"—",s:""},due:{v:"—",s:""},adv:{v:"—",s:""}})}
   }
@@ -306,6 +309,6 @@
     return {view,tab};
   }
   const has=t=>tabsOf(view).includes(t);
-  window.LWBAccHub={mount,setTab,counts,kpis,alerts,cashFrom,cashAlerts,billFrom,billKpis,loadCash,loadBill,loadGst,gstState,monName,go,T,has,
+  window.LWBAccHub={isSwap,mount,setTab,counts,kpis,alerts,cashFrom,cashAlerts,billFrom,billKpis,loadCash,loadBill,loadGst,gstState,monName,go,T,has,
     get view(){return view},VIEWS,viewsFor};
 })();

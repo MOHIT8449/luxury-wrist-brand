@@ -6,9 +6,9 @@
   <title>Approvals | Luxury Wrist Brand ERP</title>
   <script src="erp-date.js"></script><script src="erp-recent.js"></script>
   <script src="vendor/supabase-js-2.119.0.js"></script>
-  <link rel="stylesheet" href="erp-shell.css">
+  <link rel="stylesheet" href="erp-shell.css?v=20261124">
   <link rel="stylesheet" href="sales.css">
-  <script src="erp-shell.js"></script>
+  <script src="erp-shell.js?v=20261124r"></script>
   <script src="sales-common.js"></script>
   <script src="brand-filter.js"></script>
   <script src="approvals.js"></script>
@@ -70,6 +70,7 @@
     .ap-empty{padding:16px 4px;color:var(--erp-muted);font-size:13.5px}
     .ap-msg{margin:0 0 8px;padding:7px 10px;border-radius:6px;background:#fff2dc;color:#6b4a00;font-size:13px}
     /* Web: buttons sit on the right of each row, so a row is 2-3 short lines instead of 4 (Mohit, 16 Nov 2026) */
+    .ap-mrow{display:inline-flex;gap:6px;align-items:center}
     @media(min-width:701px){
       .ap-row{grid-template-columns:minmax(0,1fr) auto;column-gap:14px;padding:6px 4px}
       .ap-row>:not(.ap-acts){grid-column:1}
@@ -78,6 +79,17 @@
       .ap-l1 .ap-amt{margin-left:auto}
     }
     .ap-click{cursor:pointer}.ap-click:hover{background:#fffaf0}
+    /* Select many + approve together (Mohit, 24 Nov 2026): a tick box on every row, "All" in the header,
+       and one green button with the count and ₹ of what is ticked. */
+    .ap-tick{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;margin:-3px 0;flex:none;cursor:pointer;align-self:center}
+    .ap-tick input,.ap-all input{width:17px;height:17px;margin:0;accent-color:var(--erp-green);cursor:pointer}
+    .ap-row.picked{background:#eef8f1}.ap-row.picked:hover{background:#e4f4ea}
+    .ap-all{display:inline-flex;align-items:center;gap:5px;font-size:12.5px;font-weight:600;cursor:pointer;border:1px solid var(--erp-line);border-radius:6px;padding:0 8px;height:30px;white-space:nowrap;background:#fff}
+    .ap-all.on{border-color:var(--erp-green);background:#eef8f1;color:#1b6b3a}
+    .ap-selt{font-size:12.5px;white-space:nowrap;color:#1b6b3a;background:#e3f4ea;border-radius:999px;padding:2px 9px;font-weight:700;font-variant-numeric:tabular-nums}
+    .ap-ph .sl-btn.many{background:var(--erp-green);border-color:var(--erp-green);color:#fff;white-space:nowrap}
+    .ap-ph .sl-btn.many:disabled{opacity:.45}
+    .ap-ph select.ap-mb{height:30px!important;border:1.5px solid var(--erp-line);border-radius:6px;padding:0 22px 0 6px!important;line-height:normal!important;font:inherit;font-size:12.5px;max-width:170px;min-width:0;background:#fff}
     /* Order change popup */
     body.cv-open{overflow:hidden}
     .cv-back{position:fixed;inset:0;z-index:4000;background:rgba(15,23,42,.45);display:grid;place-items:center;padding:12px}
@@ -143,7 +155,12 @@
       .erp-pagehead .ap-filt{order:5;flex:1 1 100%}.ap-filt select{flex:1;max-width:none}
       .ap-card .ic{font-size:17px}.ap-card .t{font-size:12.5px}.ap-card .n{font-size:19px;min-width:20px}
       .ap-card .s{font-size:11px}
-      .ap-ph{top:var(--erp-top,52px)}
+      .ap-ph{top:var(--erp-top,52px);gap:6px}
+      .ap-ph h2{font-size:14px;flex:1 1 auto;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+      .ap-ph>small{order:2}.ap-ph .grow{display:none}
+      .ap-mrow{display:flex;gap:6px;align-items:center;flex:1 1 100%;order:3;min-width:0}
+      .ap-mrow .sl-btn.many{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis}
+      .ap-ph select.ap-mb{flex:1 1 0;max-width:none}
       .ap-full{display:none!important}
       .ap-l1{flex-wrap:wrap;gap:2px 8px}
       .ap-party{flex-basis:100%;order:3}
@@ -169,6 +186,10 @@
   <script>
     const S=LWBSales,{client,el}=S,A=LWBApprovals,{esc,inr,short,dmy,errText}=A,qn=v=>(Number(v)||0).toLocaleString("en-IN",{maximumFractionDigits:2});
     let me=null,all=[],secs=[],cur="",bankPick="",busy=false,team={manager:new Set(),sales:new Set()};
+    // Ticked items of the open section (ids). Cleared when another section is opened.
+    const sel=new Set();
+    const manyAct=i=>i.acts.find(a=>a.many&&a.run);
+    const canMany=s=>!!s&&(!!s.manyHref||s.items.some(manyAct));
     const FKEY="lwbApprFilter";
     // Brand / By filters (Mohit, 7 Nov 2026): Rajnigandha only, one salesman, all Sales Heads ... kept per device.
     function applyFilter(){
@@ -205,8 +226,9 @@
       const field=!f?"":f.type==="select"?'<select data-f aria-label="'+esc(f.label)+'">'+f.options.map(o=>'<option value="'+esc(o.v)+'"'+(String(o.v)===String(f.value)?" selected":"")+'>'+esc(o.t)+'</option>').join("")+'</select>'
         :'<input data-f type="number" min="1" step="0.01" inputmode="decimal" value="'+esc(f.value)+'" aria-label="'+esc(f.label)+'" title="'+esc(f.label)+'">';
       const amt=i.amount==null?"":'<span class="ap-amt'+(i.signed&&i.amount<0?" neg":"")+'">'+(i.signed&&i.amount>0?"+":"")+inr(i.amount)+'</span>';
-      return '<div class="ap-row'+(i.detail?" ap-click":"")+'" data-id="'+esc(i.id)+'"'+(i.detail?' title="Tap to see all details"':"")+'>'+
-        '<div class="ap-l1"><span class="ap-ref">'+esc(i.ref)+'</span><span class="ap-party">'+esc(i.party||"")+'</span>'+amt+'<span class="ap-when">'+esc(ago(i.when))+'</span></div>'+
+      const tick=canMany(s)&&(s.manyHref||manyAct(i))?'<label class="ap-tick" title="Select"><input type="checkbox" data-sel'+(sel.has(String(i.id))?" checked":"")+' aria-label="Select '+esc(i.ref)+'"></label>':"";
+      return '<div class="ap-row'+(i.detail?" ap-click":"")+(tick&&sel.has(String(i.id))?" picked":"")+'" data-id="'+esc(i.id)+'"'+(i.detail?' title="Tap to see all details"':"")+'>'+
+        '<div class="ap-l1">'+tick+'<span class="ap-ref">'+esc(i.ref)+'</span><span class="ap-party">'+esc(i.party||"")+'</span>'+amt+'<span class="ap-when">'+esc(ago(i.when))+'</span></div>'+
         (i.rl&&i.rl.length?'<ul class="ap-rl">'+i.rl.map(l=>'<li><span class="sku">'+esc(l.sku)+'</span>'+
           '<span class="b rate">Rate <b>₹'+qn(l.rate)+'</b></span><span class="b min">Min <b>₹'+qn(l.min)+'</b></span>'+
           '<span class="b diff">Diff <b>'+(l.diff<0?"−":"+")+'₹'+qn(Math.abs(l.diff))+'/pc</b></span>'+
@@ -223,11 +245,61 @@
         '<button type="button" class="ap-chip'+((bankPick||"*")===g.key?" on":"")+'" data-g="'+esc(g.key)+'">'+esc(g.name)+' · '+g.count+' · '+short(g.amount)+'</button>').join("")+'</div>':"";
       if(s.groups&&bankPick&&bankPick!=="*")items=items.filter(i=>i.group===bankPick);
       const amt=items.reduce((t,i)=>t+(Number(i.amount)||0),0);
+      [...sel].forEach(id=>{if(!s.items.some(i=>String(i.id)===id))sel.delete(id)});
       p.innerHTML='<div class="ap-ph"><h2>'+esc(s.icon+" "+s.title)+'</h2><small>'+items.length+(items.length===1?" item":" items")+(amt&&s.key!=="stock"?" · "+(s.key==="change"?inr(amt):short(amt)):"")+'</small><span class="grow"></span>'+
-        (s.bulk&&items.length>1&&!s.groups?'<button type="button" class="sl-btn small ok" id="bulk" style="background:var(--erp-green);border-color:var(--erp-green)">'+esc(s.bulk.t)+'</button>':"")+
+        (canMany(s)&&items.length?'<span class="ap-mrow"><label class="ap-all" id="allLab"><input type="checkbox" id="selAll" aria-label="Select all"> All</label><span class="ap-selt" id="selT" hidden></span>'+
+          (s.key==="bank"?'<select class="ap-mb" id="manyBank" aria-label="Bank for ticked rows" title="Bank for ticked rows that have no bank chosen" hidden>'+((items.find(i=>i.field)||{}).field||{options:[]}).options.map(o=>'<option value="'+esc(o.v)+'">'+esc(o.v?o.t:"Row's own bank")+'</option>').join("")+'</select>':"")+
+          '<button type="button" class="sl-btn small many" id="many" disabled>'+esc(manyLabel(s,0))+'</button></span>':"")+
         (s.page?'<a class="sl-btn ghost small ap-full" href="'+esc(s.page)+'" style="display:inline-flex;align-items:center;text-decoration:none">Full page →</a>':"")+'</div>'+chips+
         (items.length?items.map(i=>item(i,s)).join(""):'<div class="ap-empty">✓ Nothing waiting here.</div>');
       p.hidden=false;
+      selBar();
+    }
+    function manyLabel(s,n){
+      const a=s.manyHref?{t:"✓ Approve"}:(s.items.map(manyAct).find(Boolean)||{t:"✓ Approve"});
+      return a.t+(n?" "+n:" selected");
+    }
+    // Ticked items that are on screen now (bank chip filter respected).
+    function shown(s){let items=s.items;if(s.groups&&bankPick&&bankPick!=="*")items=items.filter(i=>i.group===bankPick);return items}
+    function picked(s){return shown(s).filter(i=>sel.has(String(i.id))&&(s.manyHref||manyAct(i)))}
+    function selBar(){
+      const s=secs.find(x=>x.key===cur),p=el("panel");if(!s||!el("many"))return;
+      const can=shown(s).filter(i=>s.manyHref||manyAct(i)),list=picked(s),n=list.length,amt=list.reduce((t,i)=>t+(Number(i.amount)||0),0);
+      const box=el("selAll");box.checked=n>0&&n===can.length;box.indeterminate=n>0&&n<can.length;el("allLab").classList.toggle("on",n>0);
+      el("selT").hidden=!n;el("selT").textContent=n+" ✓"+(amt&&s.key!=="stock"?" · "+(s.key==="change"?inr(amt):short(amt)):"");
+      el("many").disabled=!n||busy;el("many").textContent=manyLabel(s,n);
+      if(el("manyBank"))el("manyBank").hidden=!list.some(i=>{const r=p.querySelector('.ap-row[data-id="'+CSS.escape(String(i.id))+'"] [data-f]');return !(r&&r.value)});
+      p.querySelectorAll(".ap-row").forEach(r=>{const b=r.querySelector("[data-sel]");if(b){b.checked=sel.has(r.dataset.id);r.classList.toggle("picked",b.checked)}});
+    }
+    // Approve selected: one confirm with the count and ₹ total, then each item's own approve call in turn.
+    async function many(){
+      const s=secs.find(x=>x.key===cur);if(!s||busy)return;
+      const list=picked(s);if(!list.length)return;
+      const amt=list.reduce((t,i)=>t+(Number(i.amount)||0),0),money=amt&&s.key!=="stock"?(s.key==="change"?inr(amt):inr(amt)):"";
+      const names=list.slice(0,8).map(i=>"• "+[i.ref,i.party].filter(Boolean).join(" · ")+(i.amount!=null&&s.key!=="stock"?" · "+inr(i.amount):"")).join("\n")+(list.length>8?"\n… and "+(list.length-8)+" more":"");
+      if(s.manyHref){location.href=s.manyHref(list.map(i=>i.orderId||i.id));return}
+      const row=i=>el("panel").querySelector('.ap-row[data-id="'+CSS.escape(String(i.id))+'"]');
+      const mb=el("manyBank")?el("manyBank").value:"";
+      const jobs=list.map(i=>{const f=row(i)&&row(i).querySelector("[data-f]");let fv=f?f.value:null;if(s.key==="bank"&&!fv)fv=mb;return {i,a:manyAct(i),fv}});
+      const skip=s.key==="bank"?jobs.filter(j=>!j.fv):s.key==="rent"?jobs.filter(j=>!(Number(j.fv)>0)):[];
+      const go=jobs.filter(j=>!skip.includes(j));
+      if(!go.length){await alert(s.key==="bank"?"Choose the bank for the ticked rows first (in the row, or in the Bank box next to the button).":"Enter the rent per trip in the ticked rows first.",{title:"Not done"});return}
+      const verb=String(go[0].a.t||"Approve").replace(/^\W+\s*/,"");
+      if(!await confirm(verb+" "+go.length+(go.length===1?" item":" items")+" together?"+(money?"\nTotal "+money:"")+"\n\n"+names+
+        (skip.length?"\n\n"+skip.length+" left out: "+(s.key==="bank"?"bank not chosen":"rent not entered")+".":""),
+        {title:s.title+" · "+go.length+" selected",ok:"✓ "+verb+" "+go.length}))return;
+      busy=true;const btn=el("many");el("panel").querySelectorAll("button,select,input").forEach(b=>b.disabled=true);
+      const ok=[],bad=[];
+      for(const [k,j] of go.entries()){
+        btn.textContent=verb+" "+(k+1)+" / "+go.length+"…";
+        try{await j.a.run(client,j.i,j.fv,null);ok.push(j.i);sel.delete(String(j.i.id))}catch(e){bad.push([j.i,errText(e)])}
+      }
+      busy=false;await load();
+      const amtOk=ok.reduce((t,i)=>t+(Number(i.amount)||0),0);
+      const head=ok.length+(ok.length===1?" item":" items")+" done"+(amtOk&&s.key!=="stock"?" · "+inr(amtOk):"")+".";
+      if(bad.length)await alert(head+"\n\nNot done ("+bad.length+"):\n"+bad.slice(0,10).map(([i,m])=>"• "+[i.ref,i.party].filter(Boolean).join(" · ")+": "+m).join("\n")+(bad.length>10?"\n…":""),{kind:"error",title:verb+": "+ok.length+" of "+go.length});
+      else if(ERPShell.done)await ERPShell.done(head+(skip.length?"\n"+skip.length+" left out ("+(s.key==="bank"?"bank not chosen":"rent not entered")+").":""),{title:verb});
+      else ERPShell.toast(head);
     }
     // After every approval / send back: a popup that says what was done, for which PO (Mohit, 17 Nov 2026).
     function doneMsg(a,i,res){
@@ -302,7 +374,7 @@
       });
     }
     function pick(k,scroll){
-      cur=k;bankPick="";try{history.replaceState(null,"","#"+k)}catch(e){}
+      if(k!==cur)sel.clear();cur=k;bankPick="";try{history.replaceState(null,"","#"+k)}catch(e){}
       drawCards();drawPanel();
       if(scroll&&innerWidth<=700)el("panel").scrollIntoView({behavior:"smooth",block:"start"});
     }
@@ -319,11 +391,16 @@
       el("cards").addEventListener("click",e=>{const b=e.target.closest("[data-k]");if(b)pick(b.dataset.k,true)});
       el("panel").addEventListener("click",async e=>{
         const g=e.target.closest("[data-g]");if(g){bankPick=g.dataset.g;drawPanel();return}
-        if(e.target.id==="bulk"){const s=secs.find(x=>x.key===cur);if(!s||!s.bulk)return;
-          if(s.bulk.confirm&&!await confirm(s.bulk.confirm,{ok:"Yes"}))return;run(e.target,()=>s.bulk.run(client));return}
+        if(e.target.closest("#many")){many();return}
         const b=e.target.closest("button[data-a]");if(b){act(b);return}
         const r=e.target.closest(".ap-click");
-        if(r&&!e.target.closest("a,button,select,input")){const s=secs.find(x=>x.key===cur),i=s&&s.items.find(x=>String(x.id)===r.dataset.id);if(i&&i.detail)openDetail(i)}
+        if(r&&!e.target.closest("a,button,select,input,label")){const s=secs.find(x=>x.key===cur),i=s&&s.items.find(x=>String(x.id)===r.dataset.id);if(i&&i.detail)openDetail(i)}
+      });
+      el("panel").addEventListener("change",e=>{
+        const s=secs.find(x=>x.key===cur);if(!s)return;
+        if(e.target.id==="selAll"){const on=e.target.checked;shown(s).forEach(i=>{if(s.manyHref||manyAct(i))on?sel.add(String(i.id)):sel.delete(String(i.id))});selBar();return}
+        const b=e.target.closest("[data-sel]");if(b){const id=b.closest(".ap-row").dataset.id;b.checked?sel.add(id):sel.delete(id);selBar();return}
+        if(e.target.closest("[data-f]"))selBar();
       });
       el("refresh").onclick=load;
       el("fBrand").onchange=applyFilter;el("fBy").onchange=applyFilter;

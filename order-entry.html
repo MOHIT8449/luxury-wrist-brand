@@ -633,6 +633,18 @@ body.lwb-profit-on.pf-admin #itemsBody .rate-hint:not(.warn),body.lwb-profit-on.
   body.lwb-profit-on #oeMain .m-head,body.lwb-profit-on #oeMain #itemsTable #itemsBody tr{grid-template-columns:minmax(0,1fr) 48px 88px 28px}
 }
 
+/* Cash Sale party (Mohit, 23 Nov 2026): walk-in buyer's name + mobile only, no transport / credit / party details. */
+.cash-box{display:none;margin-top:6px;padding:8px 10px;border:1px solid #f0c36d;border-left:4px solid #e0a106;border-radius:8px;background:#fff8e6}
+body.cash-sale .cash-box{display:block}
+.cash-box .cash-top{display:flex;align-items:center;gap:8px;margin-bottom:6px;font-size:12px;color:#6b5a2e}
+.cash-box .cash-tag{padding:2px 8px;border-radius:999px;background:#e0a106;color:#fff;font-weight:800;font-size:11px;letter-spacing:.3px}
+.cash-box .cash-row{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,1fr);gap:8px}
+.cash-box label{display:flex;flex-direction:column;gap:3px;font-size:11px;font-weight:700;color:#3b4654;margin:0}
+.cash-box input{min-width:0;width:100%;padding:7px 9px;border:1px solid #d6dde6;border-radius:6px;font:inherit;font-size:14px;font-weight:700;color:#1c2836;background:#fff}
+.cash-box input.bad{border-color:#d93025;outline:1px solid #d93025}
+body.cash-sale #tpGroup,body.cash-sale #vehicleField,body.cash-sale #qtyModeField,body.cash-sale #spqField,
+body.cash-sale #creditBox,body.cash-sale #partyKyc,body.cash-sale #weightGoal{display:none!important}
+
 /* Order setup popup (phone): Brand / Transport / Priority / Qty in. */
 .setup-sum{display:none}
 dialog.setup-dlg{position:fixed;inset:0;margin:auto;height:fit-content}
@@ -732,9 +744,13 @@ dialog.setup-dlg{position:fixed;inset:0;margin:auto;height:fit-content}
   #oeMain .oe-foot .actions>#printBtn[hidden]{display:none}
   #oeMain .oe-foot .actions:has(#printBtn[hidden])>#draftBtn{grid-column:1/-1}
 }
+/* Mohit (24 Nov 2026): the old long form (Order No, Date, Company, Rate slab, "Submit Order") showed for a moment
+   after a refresh before the compact New PO form. The form now stays hidden until it is set up (body.oe-ready). */
+body:not(.oe-ready) #oeMain{visibility:hidden}
+body.erp:not(.oe-ready)::after{content:"Loading…";position:fixed;left:0;right:0;top:45%;text-align:center;color:#6b7785;font:600 15px "Fira Sans",Arial,sans-serif;pointer-events:none}
 </style>
-<link rel="stylesheet" href="erp-shell.css">
-<script src="erp-shell.js" data-auto defer></script>
+<link rel="stylesheet" href="erp-shell.css?v=20261124">
+<script src="erp-shell.js?v=20261124r" data-auto defer></script>
 <script src="brand-filter.js"></script><script src="party-credit.js"></script><script src="sku-rank.js"></script><script src="sku-image.js"></script>
 </head>
 
@@ -809,6 +825,14 @@ dialog.setup-dlg{position:fixed;inset:0;margin:auto;height:fit-content}
         </div>
         <div id="partyHint" class="party-hint"></div><div id="creditBox"></div>
         <div id="partyKyc" class="party-kyc" role="status" hidden></div>
+        <div id="cashBox" class="cash-box" role="group" aria-label="Cash sale buyer">
+          <div class="cash-top"><span class="cash-tag">CASH SALE</span><span>No transport. Only buyer name &amp; mobile.</span></div>
+          <div class="cash-row">
+            <label>Buyer name *<input id="cashName" maxlength="80" autocomplete="off" placeholder="e.g. Ramesh Patel" oninput="this.classList.remove('bad')"></label>
+            <label>Mobile *<input id="cashMobile" type="tel" inputmode="numeric" maxlength="10" autocomplete="off" placeholder="10-digit mobile"
+                   oninput="this.value=this.value.replace(/\D/g,'').slice(0,10);this.classList.remove('bad')"></label>
+          </div>
+        </div>
         <button type="button" id="setupSum" class="setup-sum" onclick="openOrderSetup()" hidden></button>
       </div>
 
@@ -1128,6 +1152,7 @@ let quantityMode = "CS";
 document.addEventListener("DOMContentLoaded", async () => {
 
   setCurrentDate();
+  setTimeout(() => document.body.classList.add("oe-ready"), 8000);
 
   try {
 
@@ -1192,6 +1217,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     document.getElementById("savedPoList").href = poListUrl();
 
     addItem();
+    document.body.classList.add("oe-ready");
     await loadSkuMaster();
     updateUnitPick();
     const brandReady = initBrandPick().catch(() => {});
@@ -1218,6 +1244,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   }catch(error){
 
     console.error(error);
+    document.body.classList.add("oe-ready");
     showMessage(error.message || "Unable to start order page.","error");
 
   }
@@ -1236,8 +1263,31 @@ function partyInfo(message) {
   document.getElementById("partyHint").textContent = message;
 }
 
+/* CASH SALE party: one party for all small walk-in sales (lwb_cash_sale_party_setup.sql). */
+const isCashParty = p => !!(p && (p.is_cash_sale || /^\s*CASH\s+SALES?\s*$/i.test(p.customer_name || "")));
+const cashSale = () => isCashParty(selectedParty);
+function applyCashMode(){
+  const on = cashSale(), was = document.body.classList.contains("cash-sale");
+  document.body.classList.toggle("cash-sale", on);
+  const tp = document.getElementById("transportation");
+  if(on){
+    tp.value = "SELF PICKUP";
+  } else if(was && tp.value === "SELF PICKUP") tp.value = "";
+  if(on || was){
+    document.querySelectorAll("#tpChips button").forEach(b => b.classList.toggle("on", b.dataset.tp === tp.value));
+    toggleVehicleField(); syncSlabToTransport(); calculateTotals();
+  }
+  if(!on && was){ document.getElementById("cashName").value = ""; document.getElementById("cashMobile").value = ""; }
+}
+async function saveCashBuyer(orderId){
+  if(!orderId || !cashSale()) return "";
+  const {error} = await db.rpc("lwb_set_order_cash_buyer",{p_order_id:orderId, p_name:document.getElementById("cashName").value, p_mobile:document.getElementById("cashMobile").value});
+  return error ? "\n\nBuyer name / mobile not saved: " + (/lwb_set_order_cash_buyer/.test(error.message || "") ? "Cash Sale setup is pending." : (error.message || "database error")) : "";
+}
+
 function pickParty(party, quiet) {
   selectedParty = party;
+  applyCashMode();
   if(!quiet && !editOrder) setTimeout(openOrderSetup, 0);
   document.getElementById("customerName").value = party.customer_name;
   partyInfo("Selected from Party Master: " + (party.customer_code || party.customer_name));
@@ -1258,7 +1308,7 @@ async function refreshCredit(){
   const box = document.getElementById("creditBox"), seq = ++creditSeq;
   if(!box) return;
   const party = selectedParty && selectedParty.customer_name;
-  if(!party || !window.LWBCredit || editOrder){ partyCredit = []; box.replaceChildren(); return; }
+  if(!party || !window.LWBCredit || editOrder || cashSale()){ partyCredit = []; box.replaceChildren(); return; }
   const rows = await LWBCredit.load(db, party, creditCompanies()).catch(() => null);
   if(seq !== creditSeq) return;
   partyCredit = rows || [];
@@ -1318,7 +1368,7 @@ async function loadMinWeights(party) {
   }
   calculateTotals();
 }
-const minOrderKg = () => partyMinKg ?? defaultMinKg;
+const minOrderKg = () => cashSale() ? 0 : (partyMinKg ?? defaultMinKg);
 
 async function loadPartyKyc(party) {
   partyKyc = null;
@@ -1336,14 +1386,14 @@ async function loadPartyKyc(party) {
 // (lwb_party_pan_optional_location_setup.sql); before that SQL every missing item counts.
 const kycBlocking = k => k ? (k.blocking || k.missing || []) : [];
 function kycBlocked() {
-  return !!(partyKyc && partyKyc.enforced && kycBlocking(partyKyc).length && partyKyc.used >= partyKyc.limit);
+  return !cashSale() && !!(partyKyc && partyKyc.enforced && kycBlocking(partyKyc).length && partyKyc.used >= partyKyc.limit);
 }
 
 function renderPartyKyc() {
   const box = document.getElementById("partyKyc");
   const k = partyKyc;
   // Modifying an existing order is never blocked by missing party details.
-  if (!k || !k.missing?.length || editOrder) { box.hidden = true; box.replaceChildren(); return; }
+  if (!k || !k.missing?.length || editOrder || cashSale()) { box.hidden = true; box.replaceChildren(); return; }
   const left = Math.max(0, k.limit - k.used);
   const text = document.createElement("span");
   const counts = kycBlocking(k).length > 0;
@@ -1530,6 +1580,7 @@ function initializePartySearch() {
   });
   field.addEventListener("input", () => {
     selectedParty = null;
+    applyCashMode();
     partyMinKg = null;
     if (partyKyc) { partyKyc = null; renderPartyKyc(); }
     if (partyRates.size) { partyRates = new Map(); partyRatesFor = ""; calculateTotals(); }
@@ -1845,7 +1896,7 @@ function orderSetupDone(){
   const unit = (typeof unitWords === "function" ? unitWords() : ["Case","Pallet"])[bigUnit ? 1 : 0];
   const prio = {NORMAL:"Normal", HIGH:"High", URGENT:"Urgent"}[orderPriority] || "Normal";
   sum.replaceChildren();
-  [brand, tp ? tp.charAt(0) + tp.slice(1).toLowerCase() : "No transport", prio, unit].filter(Boolean).forEach((t, i) => {
+  [brand, cashSale() ? "Cash sale" : tp ? tp.charAt(0) + tp.slice(1).toLowerCase() : "No transport", prio, unit].filter(Boolean).forEach((t, i) => {
     if(i) sum.append(" · ");
     const b = document.createElement("b"); b.textContent = t; sum.append(b);
   });
@@ -2621,6 +2672,13 @@ async function saveOrder(){
     return;
   }
 
+  if(!editOrder && cashSale()){
+    const nm = document.getElementById("cashName"), mb = document.getElementById("cashMobile");
+    const bad = nm.value.trim().length < 2 ? [nm, "Enter the Cash Sale buyer's name."]
+      : !/^[6-9]\d{9}$/.test(mb.value.trim()) ? [mb, "Enter the buyer's 10-digit mobile number."] : null;
+    if(bad){ bad[0].classList.add("bad"); bad[0].scrollIntoView({block:"center"}); await alert(bad[1]); bad[0].focus(); return; }
+  }
+
   if(!editOrder && kycBlocked()){
     await alert("Party details are missing (" + partyKyc.missing.join(", ") + "). " + partyKyc.limit +
       " orders were allowed without them. Fill the details to place this order.");
@@ -2738,7 +2796,7 @@ async function saveOrder(){
     slipDetails = await askSlipDetails();
     if(!slipDetails) return;
   }
-  if(split.other.length && transportationType === "SELF PICKUP" && !await askPickupDetails()) return;
+  if(split.other.length && transportationType === "SELF PICKUP" && !cashSale() && !await askPickupDetails()) return;
 
   const totals=calculateTotals();
 
@@ -2832,13 +2890,14 @@ async function saveOrder(){
     await dropDraftAfterSubmit();
     await markWebOrderDone((createdOrder || (made.find(m => m.order && m.order.id) || {}).order || {}).id);
     const priorityNote = slipNote + (!createdOrder ? "" : (orderPriority === "NORMAL" ? "" : await saveOrderPriority(createdOrder.id))
-      + await saveOrderPickup(createdOrder.id, false));
+      + await saveOrderPickup(createdOrder.id, false)) + await saveCashBuyer(createdOrder?.id) + await saveCashBuyer(slipOrder?.id);
 
     const sum = m => "Order No: " + m.orderNo + (m.slip ? " (" + slipName + " slip)" : "") +
       "\nTotal Qty: " + formatNumber(m.totals.totalQty) + "\nTotal Amount: " + formatMoney(m.totals.totalAmount) +
       (m.slip ? "" : "\nFinal Weight: " + formatNumber(m.totals.totalWeight) + " KG");
     showMessage(made.map(m => "Order No: " + m.orderNo + " | Total Qty: " + formatNumber(m.totals.totalQty) + " | Total Amount: " + formatMoney(m.totals.totalAmount)).join("  •  "), "success");
-    const normalTail = createdOrder ? (orderPriority === "NORMAL" ? "" : "\nPriority: " + orderPriority) +
+    const cashTail = cashSale() ? "\nCash sale buyer: " + document.getElementById("cashName").value.trim().toUpperCase() + " · " + document.getElementById("cashMobile").value.trim() : "";
+    const normalTail = createdOrder ? cashTail + (orderPriority === "NORMAL" ? "" : "\nPriority: " + orderPriority) +
       (pickupText() ? "\n" + pickupText().split(" | ").join("\n") : "") +
       (poRateWait ? "\nRate is below the allowed min, so this PO is sent to Admin for rate OK. Assign transport after Admin approves."
         : poRateLow ? "\nRate is below the allowed min, so Admin is informed for rate OK."

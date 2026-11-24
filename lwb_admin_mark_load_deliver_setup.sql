@@ -22,6 +22,10 @@
 -- Loaded / Delivered" (unticked = 'warehouse-orders.html#mark' in lwb_user_page_access.hidden).
 --   * lwb_can_mark_po(): Admin, or a Sales Head who has not been turned off.
 --   * marks keep the role of who marked (marked_by_role: ADMIN / MANAGER) for the log line.
+--
+-- Vehicle first (24 Nov 2026, Mohit): a Godown Delivery PO (Rajnigandha too) cannot be marked Loaded / Delivered
+-- until Transport Assignment has its vehicle ("transport assign ke time vehicle mandatory"), so the Vehicle Report
+-- never shows a delivery under "No vehicle given". Self Pickup / Direct Vehicle POs carry their own vehicle and are not held.
 
 BEGIN;
 
@@ -106,6 +110,14 @@ BEGIN
   v_old := v_st;
   -- today = now; an earlier day = 12:00 noon IST of that day
   v_at := CASE WHEN p_date = v_today THEN now() ELSE (p_date + time '12:00') AT TIME ZONE 'Asia/Kolkata' END;
+
+  -- Godown Delivery: the vehicle must be on Transport Assignment first (not for Self Pickup / Direct Vehicle)
+  IF upper(btrim(split_part(coalesce(to_jsonb(v_o) ->> 'transportation', ''), '|', 1))) NOT LIKE 'SELF%'
+     AND upper(btrim(split_part(coalesce(to_jsonb(v_o) ->> 'transportation', ''), '|', 1))) NOT LIKE 'DIRECT%'
+     AND NOT EXISTS (SELECT 1 FROM public.dispatch_assignments a
+                     WHERE a.order_id = v_o.id AND nullif(btrim(coalesce(to_jsonb(a) ->> 'vehicle_no', '')), '') IS NOT NULL) THEN
+    RAISE EXCEPTION 'PO % has no vehicle. Open the PO, press Transport and give the vehicle and driver first', v_o.order_no;
+  END IF;
 
   -- 1. Loaded
   IF v_st IN ('approved','approved_next','manager_approved','warehouse_approved','transport_allocated','allocated','loading') THEN

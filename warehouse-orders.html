@@ -12,7 +12,7 @@
   <script src="brand-filter.js"></script>
   <script src="erp-period.js"></script>
   <script src="party-credit.js"></script>
-  <script src="party-pay.js"></script>
+  <script src="party-pay.js?v=20261124a"></script>
   <script src="sku-image.js"></script>
   <script src="erp-operations-notifications.js"></script>
 
@@ -533,6 +533,8 @@
       #poPrintArea .pa-card dl {display:grid;grid-template-columns:auto 1fr;gap:.5mm 2mm;margin:0;padding:1.2mm 2mm 1.4mm}
       #poPrintArea .pa-card dt {font-size:7.5pt;color:#555;white-space:nowrap}
       #poPrintArea .pa-card dd {margin:0;font-size:8.8pt;font-weight:700;overflow-wrap:anywhere}
+      #poPrintArea .pa-card .pa-key {font-size:9.5pt;font-weight:800;color:var(--pa-ink);letter-spacing:.3pt}
+      #poPrintArea .pa-card .pa-miss {font-weight:600;color:#999;font-style:italic}
       #poPrintArea .pa-sp {margin-bottom:2.5mm;border:.8pt dashed var(--pa-gold);border-radius:1.5mm;padding:1.2mm 2.5mm;font-size:9pt;font-weight:700;break-inside:avoid}
       #poPrintArea .pa-sp small {color:var(--pa-ink);font-weight:800;text-transform:uppercase;font-size:7pt;letter-spacing:.4pt;margin-right:2mm}
       #poPrintArea .pa-items th {background:var(--pa-ink)!important;color:#fff!important;font-size:7.5pt;font-weight:800;text-transform:uppercase;letter-spacing:.3pt;padding:1.4mm 1.5mm;text-align:right;white-space:nowrap;border:0}
@@ -1391,6 +1393,8 @@
     .bc-q {display:block;font-size:11px;font-weight:800;color:#b45309;white-space:nowrap}
     .bc-b {display:inline-block;margin:2px 0 0 4px;padding:0 5px;border-radius:5px;background:#fff1d6;color:#92400e;font-size:10.5px;font-weight:800;vertical-align:middle;white-space:nowrap}
     #markModal {z-index:1010}
+    #billModal {z-index:1010} /* Make bill opens over the View PO popup too */
+    #makeBillBtn[hidden] {display:none!important}
     /* ⓘ next to Qty / Rate: last 5 earlier POs of this item for this party (lwb_po_review_line_history_setup.sql). Admin only. */
     #itemsBody .i-inbox {display:inline-flex;align-items:center;gap:4px;vertical-align:middle}
     .lh-btn {flex:0 0 22px;width:22px;height:22px;border-radius:50%;border:1px solid #1d5fa8;background:#eef4fc;color:#1d5fa8;font:italic 700 12px/1 Georgia,serif;cursor:pointer;padding:0}
@@ -1450,12 +1454,15 @@
 #ordersArea tr.row-just-saved td{background:#e8f6ee!important}
 #ordersArea tr.row-just-saved td:first-child{box-shadow:inset 4px 0 0 #138a45}
 .just-saved{display:inline-block;margin-left:6px;padding:1px 7px;border-radius:99px;background:#138a45;color:#fff;font-size:10.5px;font-weight:700;vertical-align:middle;white-space:nowrap}
+/* Cash Sale PO: buyer name + mobile under the party. */
+.cash-buyer{display:block;margin-top:2px;font-size:12px;font-weight:600;color:#6b5a2e}
+.cash-buyer b{display:inline-block;margin-right:5px;padding:0 6px;border-radius:999px;background:#e0a106;color:#fff;font-size:10px;font-weight:800;letter-spacing:.3px;vertical-align:1px}
 </style>
-<link rel="stylesheet" href="erp-shell.css">
+<link rel="stylesheet" href="erp-shell.css?v=20261124">
 <script src="trip-rent.js" defer></script>
 <script src="trip-rent-ask.js" defer></script>
 <script src="trip-suggest.js" defer></script>
-<script src="erp-shell.js" data-auto defer></script>
+<script src="erp-shell.js?v=20261124r" data-auto defer></script>
 <script src="erp-list.js"></script>
 <script src="erp-colfilter.js"></script>
 <script src="po-share.js"></script>
@@ -1976,6 +1983,7 @@
       </div>
 
       <div class="modal-footer">
+        <button type="button" class="btn btn-green" id="makeBillBtn" onclick="selectedOrder&&openBill(selectedOrder.id)" title="Make the Tally bill of this PO" hidden>🧾 Make Bill</button>
         <button type="button" class="btn btn-light" id="printPoDocumentBtn" onclick="printPoFromModal()" disabled>Print PO</button>
         <button type="button" class="btn btn-light" id="sharePoBtn" onclick="selectedOrder&&LWBPoShare.quick(db,selectedOrder.id)" title="Copy order image for WhatsApp (no order no.). Phone: downloads it." aria-label="Copy order image"></button>
         <button type="button" class="btn btn-light" id="printChallanBtn" onclick="printApprovedPO('challan')" style="display:none">Challan</button>
@@ -2342,6 +2350,23 @@ document.addEventListener("DOMContentLoaded", async () => {
         requestAnimationFrame(()=>document.querySelector('tr.row-just-saved')?.scrollIntoView({block:'center'}));
       }
       history.replaceState(null,'',location.pathname+location.hash);
+    }
+    // From Approvals "Approve selected" (?approve=id,id,...; Mohit, 24 Nov 2026): those POs ticked on the
+    // Pending tab and the normal bulk Approve asked once, so every PO goes through approveOrder() as usual.
+    const approveParam=new URLSearchParams(location.search).get('approve');
+    if(approveParam){
+      history.replaceState(null,'',location.pathname+location.hash);
+      const ids=[...new Set(approveParam.split(',').map(x=>x.trim()).filter(Boolean))].slice(0,100);
+      const miss=ids.filter(id=>!orders.some(o=>o.id===id));
+      if(miss.length){const found=await db.from('orders').select('*').in('id',miss);if(!found.error)(found.data||[]).forEach(o=>orders.push(o));}
+      const ok=ids.map(id=>orders.find(o=>o.id===id)).filter(o=>o&&isPending(o));
+      if(VIEW_ONLY)showMessage('Your login can only view POs.','error');
+      else if(!ok.length)showMessage('These POs are not waiting for approval any more.','success');
+      else{
+        pickStatusFilter('pending');pickedIds.clear();ok.forEach(o=>pickedIds.add(o.id));renderOrders();
+        if(ok.length<ids.length)showMessage((ids.length-ok.length)+' PO not waiting for approval any more, left out.','success');
+        await bulkApprove();
+      }
     }
     const pushOrder=new URLSearchParams(location.search).get('order');
     if(pushOrder){
@@ -3212,10 +3237,17 @@ function matchesColumnFilters(order) {
   return search.split(/\s+/).every(w => hay.includes(w));
 }
 
+// Cash Sale PO (lwb_cash_sale_party_setup.sql): walk-in buyer's name + mobile under the party.
+function cashBuyerText(o) { return [o && o.cash_buyer_name, o && o.cash_buyer_mobile].filter(Boolean).join(" · "); }
+function cashBuyerLine(o) {
+  const t = cashBuyerText(o);
+  return t ? `<span class="cash-buyer"><b>Cash</b>${escapeHtml(t)}</span>` : "";
+}
+
 // Main page search (Mohit, 20 Nov 2026): every word typed must be somewhere in the PO row, any column.
 function pageSearchText(order) {
   const amt = Number(order.total_amount) || 0, qty = Number(order.total_qty) || 0, wt = Number(order.total_weight) || 0;
-  return [order.order_no, order.customer_name, order.sales_person, order.transportation, order.status, stageLabel(order),
+  return [order.order_no, order.customer_name, order.cash_buyer_name, order.cash_buyer_mobile, order.sales_person, order.transportation, order.status, stageLabel(order),
     formatDate(order.order_date || order.created_at), orderLines.get(order.id), orderPriority(order),
     amt, amt.toLocaleString("en-IN"), qty, qty.toLocaleString("en-IN"), wt, wt.toLocaleString("en-IN"),
     order.bill_no, order.invoice_no, order.remarks, order.notes]
@@ -3530,6 +3562,8 @@ async function loadListExtras(pageOrders) {
     listPrintsOn ? db.rpc("lwb_po_print_info", { p_ids: ids }).then(r => r, () => ({ error: true })) : { error: true }
   ]);
   if (!j.error) (j.data || []).forEach(r => listJourney.set(r.order_id, r));
+  listJourneyFailed = !!j.error;
+  if (CAN_BILL) ids.forEach(refreshMakeBill);
   if (!p.error) { ids.forEach(id => listPrints.delete(id)); (p.data || []).forEach(r => listPrints.set(r.order_id, r)); }
   else if (listPrintsOn && /lwb_po_print_info/.test((p.error && p.error.message) || "")) listPrintsOn = false; // SQL not run yet
   pageOrders.forEach(order => {
@@ -3994,7 +4028,8 @@ async function bulkApprove() {
   const list = pickedOrders();
   if (!list.length || bulkBusy) return;
   if (!list.every(isPending)) { alert("Only Pending Review POs can be approved together."); return; }
-  if (!await confirm("Approve " + list.length + " PO as ordered (no SKU, rate or qty change)?\n\n" +
+  if (!await confirm("Approve " + list.length + " PO as ordered (no SKU, rate or qty change)?\nTotal " +
+    formatMoney(list.reduce((t, o) => t + (Number(o.total_amount) || 0), 0)) + "\n\n" +
     list.map(o => o.order_no + " · " + (o.customer_name || "")).join("\n") +
     "\n\nTo change a PO, open it with Review instead.", { title: "Approve selected POs", ok: "✔ Approve " + list.length })) return;
   bulkBusy = true;
@@ -4153,7 +4188,7 @@ function trackOrder(id) {
   renderAdminMark(order, "trackAdmMark");
   document.getElementById("trackHistBtn").onclick = () => openPoHistory(order.id);
   renderJourney(order, document.getElementById("trackJourney")).then(data => {
-    if (!CAN_BILL || !eligibleForPoPrint(order) || document.getElementById("trackJourney").dataset.oid !== String(id)) return;
+    if (!canMakeBill(order) || document.getElementById("trackJourney").dataset.oid !== String(id)) return;
     foot.innerHTML = data?.bill_no
       ? `<a class="btn btn-light" href="party-billing.html?order=${encodeURIComponent(order.id)}">🧾 Bill ${escapeHtml(data.bill_no)} · Billing &amp; Outstanding</a>`
       : `<button class="btn btn-green" onclick="openBill('${order.id}')">🧾 Enter Tally bill no.</button>`;
@@ -4230,9 +4265,25 @@ function renderBillChange(order) {
       <span class="who">${escapeHtml(c.reason || "")}${c.reason ? " · " : ""}by ${escapeHtml(c.by || "Accounts")}${c.ok_by ? ", OK " + escapeHtml(c.ok_by) : ""} · ${dmy(c.at)}</span></div><ul>${lines}</ul>`;
   }).join("");
 }
-function openMark(id, kind) {
+/* Vehicle first (Mohit, 24 Nov 2026): a Godown Delivery PO (Rajnigandha too) is marked Loaded / Delivered only after
+   🚚 Transport has its vehicle, so the Vehicle Report never shows it under "No vehicle given". Self Pickup / Direct
+   Vehicle carry their own vehicle. lwb_admin_mark_order refuses it too; this only says it before the popup. */
+const markIsGodown = o => !/^(SELF|DIRECT)/i.test(String(o && o.transportation || "").split("|")[0].trim());
+async function markNoVehicle(list) {
+  const ids = list.filter(markIsGodown).map(o => o.id);
+  if (!ids.length) return new Set();
+  const r = await db.from("dispatch_assignments").select("order_id,vehicle_no").in("order_id", ids);
+  if (r.error) return new Set();
+  const has = new Set((r.data || []).filter(a => String(a.vehicle_no || "").trim()).map(a => String(a.order_id)));
+  return new Set(ids.map(String).filter(id => !has.has(id)));
+}
+async function openMark(id, kind) {
   const order = orders.find(o => String(o.id) === String(id)) || (selectedOrder && String(selectedOrder.id) === String(id) ? selectedOrder : null);
   if (!order || !CAN_MARK) return;
+  if ((await markNoVehicle([order])).size) {
+    alert((order.order_no || "PO") + " has no vehicle yet.\n\nOpen the PO, press 🚚 Transport and give the vehicle and driver first. Then mark it " + (kind === "LOADED" ? "Loaded" : "Delivered") + ".");
+    return;
+  }
   markFor = { order, kind };
   const today = new Date(Date.now() + 19800000).toISOString().slice(0,10); // IST date
   const both = kind === "DELIVERED" && canMarkLoaded(order);
@@ -4256,12 +4307,15 @@ function closeMark() { document.getElementById("markModal").classList.remove("sh
 /* Admin: select many POs → Mark Loaded / Mark Delivered together (6 Nov 2026). Each PO goes through the
    same lwb_admin_mark_order as one PO, so loaded qty (= approved qty) and stock move exactly the same way.
    POs that cannot take the mark are left out and named in the popup. */
-function openBulkMark(kind) {
+async function openBulkMark(kind) {
   const list = pickedOrders();
   if (!CAN_MARK || !list.length || bulkBusy) return;
-  const ok = list.filter(kind === "LOADED" ? canMarkLoaded : canMarkDelivered);
-  const skip = list.filter(o => !ok.includes(o));
-  if (!ok.length) { alert("None of the selected POs can be marked " + (kind === "LOADED" ? "Loaded" : "Delivered") + "."); return; }
+  const can = list.filter(kind === "LOADED" ? canMarkLoaded : canMarkDelivered);
+  const noVeh = await markNoVehicle(can);
+  const ok = can.filter(o => !noVeh.has(String(o.id)));
+  const skip = list.filter(o => !can.includes(o)), skipVeh = can.filter(o => noVeh.has(String(o.id)));
+  if (!ok.length) { alert(skipVeh.length && !skip.length ? "No vehicle given on " + skipVeh.map(o => o.order_no).join(", ") + ".\n\nOpen the PO, press 🚚 Transport and give the vehicle and driver first."
+    : "None of the selected POs can be marked " + (kind === "LOADED" ? "Loaded" : "Delivered") + (skipVeh.length ? " (" + skipVeh.length + " have no vehicle: give it in 🚚 Transport first)" : "") + "."); return; }
   markFor = { orders: ok, kind, bulk: true };
   const both = kind === "DELIVERED" ? ok.filter(canMarkLoaded).length : 0;
   const today = new Date(Date.now() + 19800000).toISOString().slice(0,10); // IST date
@@ -4279,7 +4333,8 @@ function openBulkMark(kind) {
   document.getElementById("markWarn").textContent = [
     kind === "LOADED" ? "Loaded qty = approved qty, stock goes out like Vehicle Loaded. Accounts get the \"make Tally bill\" popup." : "",
     both ? both + " PO not loaded yet: marked Loaded too (loaded qty = approved qty)." : "",
-    skip.length ? skip.length + " left out (" + skip.map(o => o.order_no).join(", ") + "): " + (kind === "LOADED" ? "not approved or already loaded." : "not approved or already delivered.") : ""
+    skip.length ? skip.length + " left out (" + skip.map(o => o.order_no).join(", ") + "): " + (kind === "LOADED" ? "not approved or already loaded." : "not approved or already delivered.") : "",
+    skipVeh.length ? skipVeh.length + " left out, no vehicle (" + skipVeh.map(o => o.order_no).join(", ") + "): give it in 🚚 Transport first." : ""
   ].filter(Boolean).join(" ");
   document.getElementById("markSave").textContent = (kind === "LOADED" ? "✓ Mark " : "✓ Deliver ") + ok.length + " PO";
   document.getElementById("markModal").classList.add("show");
@@ -4435,6 +4490,27 @@ async function saveSp() {
 
 /* Accounts / Admin: Tally bill no. straight from the PO list (same save as Billing & Outstanding). */
 let billOrder = null;
+/* Make bill from the PO list (Mohit, 23 Nov 2026): Accounts get "🧾 Make bill" on every approved / transport /
+   loading / loaded / delivered PO that has no Tally bill yet, every brand (Rajnigandha too). It shows once the PO
+   journey says there is no bill (lwb_po_journey.bill_no); if that read fails it still shows (the popup checks again).
+   Saving uses lwb_save_tally_bills, so the PO leaves Billing > Bills to make at once. */
+let listJourneyFailed = false;
+function canMakeBill(order) {
+  return CAN_BILL && !!order && !isCancelled(order) && ["approved", "transport", "loading", "loaded", "delivered"].includes(orderStage(order));
+}
+function makeBillBtn(order) {
+  if (!canMakeBill(order)) return "";
+  const j = listJourney.get(order.id);
+  if (j ? j.bill_no : !listJourneyFailed) return "";
+  return `<button class="btn btn-green" title="Make the Tally bill of this PO (bill no., amount, date)" onclick="event.stopPropagation();openBill('${order.id}')">🧾 Make Bill</button>`;
+}
+function refreshMakeBill(id) {
+  const order = orders.find(o => String(o.id) === String(id));
+  document.querySelectorAll(`#ordersArea [data-mkb="${id}"]`).forEach(el => { el.innerHTML = order ? makeBillBtn(order) : ""; });
+  const mb = document.getElementById("makeBillBtn");
+  if (mb && selectedOrder && String(selectedOrder.id) === String(id)) mb.hidden = !order || !CAN_BILL || !canMakeBill(order) || !!(listJourney.get(order.id) || {}).bill_no;
+}
+
 async function openBill(id) {
   const order = orders.find(o => String(o.id) === String(id));
   if (!order || !CAN_BILL) return;
@@ -4453,7 +4529,7 @@ async function openBill(id) {
       "<br>To change it or add a sub-firm bill, open Billing &amp; Outstanding.";
     return;
   }
-  info.innerHTML = "PO value " + rs(order.total_amount) + " · " + escapeHtml(order.status || "") +
+  info.innerHTML = "PO value <b>" + rs(order.total_amount) + "</b> · " + escapeHtml(order.status || "") +
     "<br>Enter the bill no. and amount exactly as in Tally. The amount goes to To collect for this party.";
   document.getElementById("billNo").value = "";
   document.getElementById("billAmt").value = "";
@@ -4488,6 +4564,8 @@ async function saveBill() {
       p_bills: [{ firm: order.customer_name || "", no, amount }], p_note: null });
     if (error) throw error;
     closeBill();
+    listJourney.set(order.id, { ...(listJourney.get(order.id) || { order_id: order.id }), bill_no: no, bill_amount: amount });
+    refreshMakeBill(order.id);
     showMessage("Bill " + no + " saved for " + order.order_no + " · " + rs + " to collect.", "success");
     if (document.getElementById("trackModal").classList.contains("show") && document.getElementById("trackJourney").dataset.oid === String(order.id)) trackOrder(order.id);
   } catch (e) {
@@ -4779,7 +4857,7 @@ function renderOrders() {
             </td>
 
             <td class="c-cust">
-              ${escapeHtml(order.customer_name || "-")}<span class="roi-w" data-roi="${order.id}">${roiBadge(order.id)}</span>
+              ${escapeHtml(order.customer_name || "-")}<span class="roi-w" data-roi="${order.id}">${roiBadge(order.id)}</span>${cashBuyerLine(order)}
             </td>
 
             <td class="c-sp" data-label="Sales person">
@@ -4817,7 +4895,7 @@ ${CAN_PAY ? `            <td class="c-pay" data-label="Party Due" data-pay="${or
               <button class="btn btn-light btn-track" title="Track: where is this PO now" onclick="trackOrder('${order.id}')">📍<span class="lbl-long"> Track</span></button>
               ${!isCancelled(order) ? `<button class="btn btn-light btn-track" title="Copy order image for WhatsApp (no order no.). Phone: downloads it." aria-label="Copy order image" onclick="LWBPoShare.quick(db,'${order.id}')">${LWBPoShare.ICON}</button>` : ""}
               ${spButtonFor(order) && !isSlipBrandOrder(order) ? `<button class="btn btn-light" title="Pallet / Sheet given to party and returned" onclick="openSp('${order.id}')">▦<span class="lbl-long"> Pallet</span></button>` : ""}
-              ${CAN_BILL && VIEW_ONLY && eligibleForPoPrint(order) && !isSlipBrandOrder(order) ? `<button class="btn btn-green" title="Enter the Tally bill no." onclick="openBill('${order.id}')">🧾 Bill</button>` : ""}
+              ${CAN_BILL && VIEW_ONLY && canMakeBill(order) ? `<span class="mkb" data-mkb="${order.id}">${makeBillBtn(order)}</span>` : ""}
               ${IS_ADMIN && rateWait.has(order.id) ? `<button class="btn btn-green" title="Rate below min: check and approve" onclick="openRateOk('${order.id}')">₹ Rate OK</button>` : ""}
               ${poPrintAllowed(order) ? `<button class="btn btn-light" title="Print PO" onclick="printPoFromList('${order.id}')">🖨 PO</button>` : ""}
               ${TAX_BILL && printAllowed(order) && !isSlipBrandOrder(order) ? `<button class="btn btn-light" title="Print tax invoice (Tally layout)" onclick="taxBillPrint('${order.id}', this)">🖨 Bill</button>` : ""}
@@ -5007,6 +5085,7 @@ async function reviewOrder(orderId, transportOnly=false, quiet=false) {
 
   reviewReady = false;
   document.getElementById("printPoDocumentBtn").disabled=true;
+  document.getElementById("makeBillBtn").hidden=true;
   document.getElementById("postApprovalPanel").hidden=true;
   const shareBtn=document.getElementById("sharePoBtn");shareBtn.innerHTML=LWBPoShare.ICON;shareBtn.hidden=isCancelled(selectedOrder);
   approvedTransport=null;
@@ -5039,6 +5118,7 @@ async function reviewOrder(orderId, transportOnly=false, quiet=false) {
     originalItemIds = selectedItems.map(x => x.id);
     savedPoItemsSignature=poItemsSignature(selectedItems);
     document.getElementById("printPoDocumentBtn").disabled=isCancelled(selectedOrder);
+    if (CAN_BILL && VIEW_ONLY) refreshMakeBill(selectedOrder.id);
     reviewReady = true;
     document.getElementById("approveOrderBtn").disabled = false;
     updateWarehouseSkuHint();
@@ -5797,6 +5877,10 @@ async function printSlipIfAny(id){
 }
 async function printPoFromModal(){
   if(selectedOrder&&poPrintBlocked(orders.find(o=>o.id===selectedOrder.id)||selectedOrder))return;
+  // The Rajnigandha slip prints saved lines only: unsaved Qty / Rate edits must be submitted first (Mohit, 24 Nov 2026).
+  if(selectedOrder&&reviewReady&&poItemsSignature(selectedItems)!==savedPoItemsSignature){
+    alert("PO has unsaved SKU changes. Press Submit before printing.");return;
+  }
   if(selectedOrder&&await printSlipIfAny(selectedOrder.id))return;
   printApprovedPO("po");
 }
@@ -5876,7 +5960,7 @@ async function printApprovedPO(documentType="challan",collect=null){
       db.from("lwb_order_pickup").select("driver_name,driver_mobile,vehicle_no,godown_manager_name").eq("order_id",order.id).maybeSingle()
         .then(r=>r,()=>({data:null})),
       // Party mobile + address for the PO slip, like the Rajnigandha slip (Party Master, same name). Best effort.
-      isPo?db.from("lwb_customer_master").select("mobile,billing_address,city,pincode,is_active").ilike("customer_name",String(order.customer_name||"").trim().replace(/[%_\\]/g,"\\$&"))
+      isPo?db.from("lwb_customer_master").select("mobile,billing_address,city,pincode,is_active,gstin,pan,is_cash_sale").ilike("customer_name",String(order.customer_name||"").trim().replace(/[%_\\]/g,"\\$&"))
         .order("is_active",{ascending:false}).limit(1).then(r=>r,()=>({data:null})):null
     ]);
     if(result.error)throw result.error;
@@ -5932,6 +6016,11 @@ async function printApprovedPO(documentType="challan",collect=null){
     // Print PO by brand (Mohit, 20 Nov 2026): a Rajnigandha (quick-slip brand) PO prints the slip; every other brand
     // (Coca-Cola ...) keeps the A5 "Proforma Invoice" as before.
     const slipPo=isPo&&slipLines(itemResult.data||[]);
+    // Party GST / PAN + mobile on the PO print (Mohit, 23 Nov 2026): GSTIN first; no GSTIN -> PAN. Cash Sale: buyer name + mobile typed on the PO.
+    const pm=partyResult&&!partyResult.error&&Array.isArray(partyResult.data)?partyResult.data[0]||{}:{};
+    const pGst=String(pm.gstin||"").trim().toUpperCase(),pPan=String(pm.pan||"").trim().toUpperCase(),pMob=String(pm.mobile||"").trim();
+    const cashPo=pm.is_cash_sale===true||!!cashBuyerText(order);
+    const taxId=pGst?["GSTIN",pGst]:pPan?["PAN",pPan]:null;
     if(isPo&&!slipPo){
       printArea.className="po-a5";
       // A5 PO layout: no company name, dates shown without the year.
@@ -5944,7 +6033,12 @@ async function printApprovedPO(documentType="challan",collect=null){
         "<div class='pa-band'><div class='pa-title'><h1>PROFORMA INVOICE"+(eligibleForPoPrint(order)?"":" <small>("+safe(order.status)+")</small>")+"</h1><p>Sales Order / PO</p></div>"+
           "<div class='pa-no'><div><small>Order No.</small><b>"+safe(order.order_no)+"</b></div><div><small>Date &amp; Time</small><b>"+noYear(order.order_date||order.created_at)+"</b></div></div></div>"+
         "<div class='pa-parts'>"+
-          "<div class='pa-card'><h3>Bill To</h3><div class='pa-big'>"+safe(order.customer_name)+"</div><dl>"+row("Sales Person",dash(order.sales_person))+"</dl></div>"+
+          "<div class='pa-card'><h3>Bill To</h3><div class='pa-big'>"+safe(order.customer_name)+"</div><dl>"+
+            (cashPo
+              ? row("Buyer",dash(order.cash_buyer_name))+row("Mobile","<span class='pa-key'>"+dash(order.cash_buyer_mobile)+"</span>")
+              : row(taxId?taxId[0]:"GSTIN / PAN",taxId?"<span class='pa-key'>"+safe(taxId[1])+"</span>":"<span class='pa-miss'>Not given</span>")+
+                row("Mobile",pMob?"<span class='pa-key'>"+safe(pMob)+"</span>":"<span class='pa-miss'>Not given</span>"))+
+            row("Sales Person",dash(order.sales_person))+"</dl></div>"+
           "<div class='pa-card'><h3>Dispatch</h3><dl>"+row("Transport",dash(transportMode))+row("Vehicle No.",dash(a.vehicle_no))+
             row("Driver",dash(a.driver_name)+(a.driver_mobile?" · "+safe(a.driver_mobile):""))+row("Godown Manager",dash(a.loading_person))+"</dl></div>"+
         "</div>"+
@@ -5960,14 +6054,15 @@ async function printApprovedPO(documentType="challan",collect=null){
         "";
     } else if(isPo){
       // Print PO = the Rajnigandha quick slip (Mohit, 20 Nov 2026): PO no + date, party, SKU / Qty / Rate / Amount, total, receiver sign.
-      const pm=partyResult&&!partyResult.error&&Array.isArray(partyResult.data)?partyResult.data[0]||{}:{};
       const addr=[pm.billing_address,pm.city,pm.pincode].map(x=>String(x||"").trim()).filter(Boolean).join(", ");
       const money=v=>safe(number(v).toLocaleString("en-IN",{maximumFractionDigits:2}));
       printArea.className="po-slip";
       printArea.innerHTML=
         "<div class='row'><span>PO <b>"+safe(order.order_no)+"</b></span><span>"+safe(formatDateTime(order.order_date||order.created_at))+"</span></div>"+
         "<div class='party'>"+safe(order.customer_name)+"</div>"+
-        (String(pm.mobile||"").trim()?"<div>Mobile: <b>"+safe(String(pm.mobile).trim())+"</b></div>":"")+
+        (cashBuyerText(order)?"<div>Buyer: <b>"+safe(cashBuyerText(order))+"</b></div>":"")+
+        (!cashPo&&taxId?"<div>"+taxId[0]+": <b>"+safe(taxId[1])+"</b></div>":"")+
+        (!cashPo&&pMob?"<div>Mobile: <b>"+safe(pMob)+"</b></div>":"")+
         (addr?"<div class='addr'>"+safe(addr)+"</div>":"")+
         (spText?"<div>"+safe(spText)+"</div>":"")+
         "<div class='dash'></div>"+
@@ -5982,7 +6077,7 @@ async function printApprovedPO(documentType="challan",collect=null){
     printArea.innerHTML=
       "<div class='dc-head'><h1>"+(isPo?"SALES ORDER (PO)":"DELIVERY CHALLAN")+"</h1><div class='dc-sub'>Luxury Wrist Brand · "+safe(order.status)+"</div></div>"+
       "<div class='dc-info'>"+
-        info([["Order No.",safe(order.order_no)],["Customer Name",safe(order.customer_name)],["Transportation",dash(order.transportation)]].concat(spText?[["Pallet &amp; Sheet",safe(spText)]]:[]))+
+        info([["Order No.",safe(order.order_no)],["Customer Name",safe(order.customer_name)+(cashBuyerText(order)?"<br><small>Buyer: "+safe(cashBuyerText(order))+"</small>":"")],["Transportation",dash(order.transportation)]].concat(spText?[["Pallet &amp; Sheet",safe(spText)]]:[]))+
         info([["Date &amp; Time",safe(formatDateTime(order.order_date||order.created_at))],["Sales Person",dash(order.sales_person)],["Total Items",safe(approvedLines.length)]])+
       "</div>"+
       "<p class='dc-crew'>Godown Manager: <span>"+dash(a.loading_person)+"</span> &nbsp;|&nbsp; Driver: <span>"+dash(a.driver_name)+

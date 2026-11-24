@@ -217,3 +217,59 @@ test('Shift handover in the day: count, hand to the next person, he accepts; sho
  await as('manager');await assert.rejects(one('select public.lwb_acc_shift_list(null,null)'),/only/);
  assert.equal((await db.query("select has_table_privilege('authenticated','public.lwb_acc_shift_handovers','SELECT') a")).rows[0].a,false);
 });
+
+test('Cash handover only to the chosen people, tagged and split (₹5L = ₹2.5L + ₹2.5L)',async()=>{
+ ids.sales='00000000-0000-4000-8000-000000000008';ids.vishal='00000000-0000-4000-8000-000000000009';
+ await db.query('insert into user_profiles(id,role,active,full_name) values($1,$2,true,$3),($4,$5,true,$6)',[ids.sales,'sales','Ramesh Sales',ids.vishal,'sales','Vishal Bhai']);
+ await db.exec(await sql('lwb_acc_cash_split_handover_setup.sql'));
+ await db.exec(await sql('lwb_acc_cash_split_handover_setup.sql')); // safe to run again
+ await as('accounts');
+ let PP=await one('select public.lwb_acc_cash_people_get()');
+ assert.equal(PP.is_admin,false);assert.equal(PP.all,null);
+ assert.ok(PP.list.some(p=>p.name==='Vishal Bhai'));assert.ok(!PP.list.some(p=>p.name==='Ramesh Sales'));assert.ok(!PP.list.some(p=>p.role==='manager'));
+ await assert.rejects(one('select public.lwb_acc_cash_people_set($1)',[[ids.sales]]),/Only Admin/);
+ await as('admin');
+ PP=await one('select public.lwb_acc_cash_people_get()');
+ assert.ok(PP.all.some(p=>p.name==='Ramesh Sales'&&!p.on));
+ await one('select public.lwb_acc_cash_people_set($1)',[[ids.accounts,ids.vishal,ids.sales,ids.admin]]);
+ assert.deepEqual((await one('select public.lwb_acc_cash_people_get()')).list.map(p=>p.name),['accounts user','Vishal Bhai','Ramesh Sales','admin user']);
+ await as('accounts');
+ const book=Number((await dash()).closing);
+ const notes={'500':Math.floor(book/500),'coins':r2(book-500*Math.floor(book/500))};
+ function r2(v){return Math.round(v*100)/100}
+ const half=Math.floor(book/2);
+ // not in the list / parts do not add up / same person twice
+ await assert.rejects(one('select public.lwb_acc_shift_give_split($1::jsonb,$2::jsonb,null)',[JSON.stringify([{to:ids.cashier,amount:book}]),JSON.stringify(notes)]),/not in the list/);
+ await assert.rejects(one('select public.lwb_acc_shift_give_split($1::jsonb,$2::jsonb,null)',[JSON.stringify([{to:ids.vishal,amount:half}]),JSON.stringify(notes)]),/add up/);
+ await assert.rejects(one('select public.lwb_acc_shift_give_split($1::jsonb,$2::jsonb,null)',[JSON.stringify([{to:ids.vishal,amount:half},{to:ids.vishal,amount:book-half}]),JSON.stringify(notes)]),/twice/);
+ const g=await one('select public.lwb_acc_shift_give_split($1::jsonb,$2::jsonb,null)',[JSON.stringify([{to:ids.vishal,amount:half},{to:ids.sales,amount:r2(book-half)}]),JSON.stringify(notes)]);
+ assert.equal(g.parts,2);
+ assert.equal((await db.query("select count(*)::int n from erp_notifications where user_id=any($1) and notification_type='ACC_SHIFT_HANDOVER' and not is_read and message like '%cash split%'",[[ids.vishal,ids.sales]])).rows[0].n,2);
+ let L=await one('select public.lwb_acc_shift_list(null,null)');
+ assert.equal(L.pending.parts.length,2);assert.equal(Number(L.pending.counted),book);assert.equal(L.pending.to_name,'Vishal Bhai + Ramesh Sales');
+ assert.equal(L.rows.filter(r=>r.batch===g.batch).length,2);assert.equal(Number(L.rows[0].batch_total),book);
+ await assert.rejects(one('select public.lwb_acc_shift_give_split($1::jsonb,$2::jsonb,$3)',[JSON.stringify([{to:ids.admin,amount:book}]),JSON.stringify(notes),'x']),/already waiting/);
+ // Sales person (no Accounts page) sees and accepts only his own part
+ await as('sales');
+ L=await one('select public.lwb_acc_shift_list(null,null)');
+ assert.equal(L.can_give,false);assert.equal(L.last_entry,null);assert.ok(L.rows.every(r=>r.to_name==='Ramesh Sales'));
+ const pv=L.pending.parts.find(p=>p.to===ids.vishal),ps=L.pending.parts.find(p=>p.to===ids.sales);
+ await assert.rejects(one('select public.lwb_acc_shift_receive($1,null,null)',[pv.id]),/Only Vishal Bhai/);
+ await assert.rejects(one('select public.lwb_acc_shift_give_split($1::jsonb,$2::jsonb,null)',[JSON.stringify([{to:ids.admin,amount:1}]),JSON.stringify({coins:1})]),/only/);
+ await one('select public.lwb_acc_shift_receive($1,null,null)',[ps.id]);
+ L=await one('select public.lwb_acc_shift_list(null,null)');
+ assert.equal(L.pending.to_name,'Vishal Bhai');
+ await as('vishal');await one('select public.lwb_acc_shift_receive($1,null,null)',[pv.id]);
+ await as('accounts');
+ L=await one('select public.lwb_acc_shift_list(null,null)');
+ assert.equal(L.pending,null);assert.deepEqual(L.holders.map(h=>h.name).sort(),['Ramesh Sales','Vishal Bhai']);
+ assert.equal(L.holders.reduce((a,h)=>a+Number(h.amount),0),book);
+ // the old single call still works; cancel cancels every waiting part
+ const g2=await one('select public.lwb_acc_shift_give_split($1::jsonb,$2::jsonb,$3)',[JSON.stringify([{to:ids.vishal,amount:10},{to:ids.admin,amount:10}]),JSON.stringify({'10':2}),'test']);
+ await one('select public.lwb_acc_shift_cancel($1,null)',[g2.id]);
+ assert.equal((await one('select public.lwb_acc_shift_list(null,null)')).pending,null);
+ const g3=await one('select public.lwb_acc_shift_give($1,$2::jsonb,$3)',[ids.admin,JSON.stringify({'10':1}),'test']);
+ assert.equal(g3.parts,1);
+ await as('manager');await assert.rejects(one('select public.lwb_acc_shift_list(null,null)'),/only/);
+ assert.equal((await db.query("select has_table_privilege('authenticated','public.lwb_acc_cash_people','SELECT') a")).rows[0].a,false);
+});

@@ -175,6 +175,8 @@
       {t:"Godown Report",h:"godown-report.html",i:"note",r:"admin manager warehouse"},
       {t:"Loading & Dispatch",h:"loading-dispatch.html",i:"box",r:"admin manager warehouse"},
       {t:"Transport Assignment",h:"transport-allocation.html",i:"truck",r:"admin manager transport"},
+      // Vehicle Report (Mohit, 23 Nov 2026): per vehicle / driver for the day: tons loaded, cases delivered, parties, fixed driver.
+      {t:"Vehicle Report",h:"vehicle-report.html",i:"truck",r:"admin manager transport accounts",k:"vehicle report driver dashboard ton tons cases delivered trip today gadi truck fixed driver",vo:"accounts"},
       {t:"Driver Delivery / POD",h:"driver-delivery.html",i:"pin",r:"admin manager driver accounts",nm:"accounts"},
       {t:"Live Tracking",h:"live-tracking.html",i:"pin",r:"admin"}]},
     {group:"Accounts",items:[
@@ -204,6 +206,7 @@
       {t:"Sheet & Pallet Ledger",h:"sheet-pallet.html",i:"layers",r:"admin manager accounts warehouse",vo:"accounts"},
       {t:"Sales Bill PDFs",h:"sales-bill-scans.html",i:"bill",r:"admin accounts manager",k:"scan pdf sales bill invoice register upload",vo:"accounts"},
       {t:"Daily Summary",h:"daily-report.html",i:"stock",r:"admin manager accounts",nm:"accounts"},
+      {t:"WhatsApp Reports",h:"whatsapp-reports.html",i:"note",r:"admin",nm:"accounts"},
       {t:"Money Overview",h:"money-overview.html",i:"cash",r:"admin accounts",hide:1},
       {t:"Tally Bill & Invoice No.",h:"accounts-invoice.html",i:"bill",r:"admin accounts",hide:1},
       {t:"Tally Bill Check",h:"tally-check.html",i:"bill",r:"admin accounts",hide:1},
@@ -230,7 +233,9 @@
       {t:"Brand Data Reset",h:"brand-reset.html",i:"lock",r:"admin",k:"reset delete clear brand rajnigandha fresh start opening data",nm:"admin",par:"settings.html"},
       // Order History Days (Mohit, 13 Nov 2026): per role, days after delivery an order stays in its lists.
       {t:"Order History Days",h:"order-history-days.html",i:"note",r:"admin",k:"order history days delivered visible hide old orders salesman driver sales head accounts role",nm:"admin",par:"settings.html"},
-      {t:"Accounts Fresh Start",h:"accounts-reset.html",i:"lock",r:"admin",k:"reset delete clear accounts cash book entries opening cash bank balance fresh start",nm:"admin",par:"settings.html"}]}
+      {t:"Accounts Fresh Start",h:"accounts-reset.html",i:"lock",r:"admin",k:"reset delete clear accounts cash book entries opening cash bank balance fresh start",nm:"admin",par:"settings.html"}]},
+    // Reports (Mohit, 24 Nov 2026): every report in one place; Admin only, last in the side menu.
+    {group:"",items:[{t:"Reports",h:"reports.html",i:"chart",r:"admin",k:"report reports register sales report purchase report date wise party wise sku wise item wise salesman wise supplier wise expense report cash in out register excel export mis summary"}]}
   ];
 
 
@@ -406,7 +411,12 @@
   }
 
   const GM_OFF=["goods-inward.html","warehouse-orders.html","quick-slip.html","sales-return.html","tax-invoice.html","fleet-master.html","fixed-assets.html"];
-  function mount(opts){
+  // Older pages (data-auto) stay on "Loading…" (erp-shell.css) until the top bar and menu are in place,
+  // so the plain old-looking page never flashes first after a refresh (Mohit, 24 Nov 2026).
+  const READY=()=>document.documentElement.classList.add("erp-ready");
+  setTimeout(READY,8000);
+  function mount(opts){try{return mountPage(opts)}finally{READY()}}
+  function mountPage(opts){
     appMeta();
     const role=String(opts.role||"").toLowerCase();
     const page=(location.pathname.split("/").pop()||"dashboard.html").replace(/^$/,"dashboard.html");

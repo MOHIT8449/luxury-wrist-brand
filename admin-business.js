@@ -53,7 +53,7 @@
   const COL={sales:"#00434d",purch:"#c9b26a",gp:"#13824a"};
   const EXC=["#00434d","#c9b26a","#1d5fbf","#b26b00","#13824a","#9aa5a8"];
   // Money-out heads that are not an expense of the business (Mohit, 4 Nov 2026: contra was cutting net profit).
-  const NOT_EXPENSE=/^(supplier payment|contra\b.*|asset purchase|gst \/ tax paid)$/i;
+  const NOT_EXPENSE=/^(supplier payment|contra\b.*|asset purchase|gst \/ tax paid|friend swap)$/i;
 
   let CTX=null,EL=null,seq=0,cache=null;
 
@@ -372,6 +372,9 @@
     draw();EL._draw=draw;EL._M=M;EL._R=R;
   }
 
+  // Admin home waits for this first draw before showing the cards below it (dashboard.html "rd-wait"),
+  // so the page never flashes the lower cards first and then jumps when the overview arrives.
+  const ready=()=>document.dispatchEvent(new Event("lwb:bizready"));
   async function run(){
     if(!EL||!CTX)return;
     const my=++seq,rk=getRange(),R={...rangeOf(rk),key:rk};
@@ -385,9 +388,9 @@
       const D=await loadCached(R);
       if(my!==seq)return;
       const fid=document.activeElement&&EL.contains(document.activeElement)?document.activeElement.id:"";
-      paint(build(D,R),R);
+      paint(build(D,R),R);ready();
       if(fid==="bzFrom"||fid==="bzTo"){const f=EL.querySelector("#"+fid);if(f)f.focus()}
-    }catch(e){console.error(e);if(my===seq)EL.innerHTML='<div class="bz-empty">Business overview could not load. Tap refresh.</div>'}
+    }catch(e){console.error(e);if(my===seq){EL.innerHTML='<div class="bz-empty">Business overview could not load. Tap refresh.</div>';ready()}}
     finally{if(my===seq)EL.classList.remove("bz-busy")}
     if(my===seq)prefetch();
   }

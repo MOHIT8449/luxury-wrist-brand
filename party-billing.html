@@ -6,16 +6,17 @@
   <title>Accounts | Luxury Wrist Brand ERP</title>
   <script src="vendor/supabase-js-2.119.0.js"></script>
   <script src="erp-date.js"></script>
-  <link rel="stylesheet" href="erp-shell.css">
-  <script src="erp-shell.js"></script>
+  <link rel="stylesheet" href="erp-shell.css?v=20261124">
+  <script src="erp-shell.js?v=20261124r"></script>
 <script src="erp-list.js"></script>
   <script src="excel-io.js"></script>
   <script src="tally-note.js" defer></script>
   <script src="brand-filter.js"></script>
   <script src="erp-period.js"></script>
-  <script src="party-pay.js?v=20261121b"></script>
+  <script src="party-pay.js?v=20261124a"></script>
+  <script src="ledger-rows.js?v=20261123a"></script>
   <script src="bill-change.js"></script>
-  <script src="acc-hub.js"></script>
+  <script src="acc-hub.js?v=20261124d"></script>
   <style>
     .status{text-align:center;padding:80px 20px;font-size:15px;color:#555}
     [hidden]{display:none!important}
@@ -278,7 +279,8 @@
     // approval, so the bill can be made while the party waits). Old delivered POs from before this screen are left out:
     // a fixed start date, not "last 30 days", so a delivered PO without bill never drops off the list (16 Nov 2026, Accounts).
     // (the rule is LWBPartyPay.needsBill, so the Dashboard counts the same POs)
-    const toMake=()=>orders().filter(o=>LWBPartyPay.needsBill(o,marks)).concat((info.early||[]).filter(o=>!fb));
+    // Brand picked: POs of that brand + POs with no known brand (tagged "No brand"), also the ones not loaded yet.
+    const toMake=()=>(info.raw.orders||[]).filter(o=>LWBPartyPay.makeInBrand(o,fb)&&LWBPartyPay.needsBill(o,marks)).concat((info.early||[]).filter(o=>LWBPartyPay.makeInBrand(o,fb)));
     const membersOf=p=>{const x=info.parties.get(key(p));return x?x.members:[]};
     const match=(q,...v)=>!q||v.some(x=>String(x==null?"":x).toLowerCase().includes(q));
 
@@ -421,7 +423,7 @@
         const d=DELIVERY[String(o.delivery||"").toUpperCase()],grp=key(o.parent)!==key(o.party),isOpen=mkOpen.has(o.order_id),ret=retOn(o.order_id);
         const names=[...new Set([o.parent,...membersOf(o.parent)])].filter(n=>key(n)!==key(o.party)),v=valOf(o);
         return `<tr class="pr${isOpen?" open":""}" data-o="${esc(o.order_id)}">
-          <td class="c1"><b class="pb-po" data-drill-order="${esc(o.order_id)}" data-drill-no="${esc(o.order_no)}">${esc(o.order_no)}</b><small class="ph-only">${dmy(mkDate(o))}</small>${o.early?` <span class="tag t-amb">${o.vehicle_no?"Vehicle "+esc(o.vehicle_no)+" · not loaded":"Not loaded yet"}</span>`:""}${d?` <span class="tag ${d[0]}">${d[1]}</span>`:""}${shortTag(o.order_id)}${markTag(o.order_id,!!d)}</td>
+          <td class="c1"><b class="pb-po" data-drill-order="${esc(o.order_id)}" data-drill-no="${esc(o.order_no)}">${esc(o.order_no)}</b><small class="ph-only">${dmy(mkDate(o))}</small>${o.early?` <span class="tag t-amb">${o.vehicle_no?"Vehicle "+esc(o.vehicle_no)+" · not loaded":"Not loaded yet"}</span>`:""}${d?` <span class="tag ${d[0]}">${d[1]}</span>`:""}${fb&&!o.company_id?` <span class="tag t-amb" title="SKU of this PO not found in SKU Master, or lines of two brands. Shown under every brand so the bill is not missed.">No brand</span>`:""}${shortTag(o.order_id)}${markTag(o.order_id,!!d)}</td>
           <td class="hide-ph" style="white-space:nowrap" title="${o.early?"Approved date":"Loaded date"}">${dmy(mkDate(o))}</td>
           <td class="w"><b>${esc(o.party)}</b>${grp?` <span class="tag t-blu">under ${esc(o.parent)}</span>`:""}${names.length?`<small title="${esc(names.join(", "))}">bill names: ${esc(names.join(", "))}</small>`:""}</td>
           <td class="n c4">${v.w?`<s class="was">${rs(v.erp)}</s> <b>${rs(v.val)}</b><small><button type="button" class="tag t-amb" data-wv="${esc(v.w.id)}" style="border:0;cursor:pointer" title="PO change waiting for Admin. Tap to see it.">⏳ ${sg(Number(v.w.diff))} Admin</button></small>`:
@@ -582,7 +584,7 @@
           info:"Money due now "+rs(o.due)+".",onSaved:x=>{toast("Credit note "+x.no+" saved");load()}})});
     }
     function payNow(party){
-      LWBPartyPay.open({client,info,party,brand:fb||undefined,onSaved:r=>{toast(rs(r.amount)+" received from "+r.party+" · "+rs(r.split)+" against bills"+(Number(r.advance)>0.5?" · advance "+rs(r.advance):""));load()}});
+      LWBPartyPay.open({client,info,party,brand:fb||undefined,onSaved:r=>{(r.kasarOnly?toast("Kasar "+rs(r.kasar)+" saved on bill "+r.bill+" · "+r.party):toast(rs(r.amount)+" received from "+r.party+" · "+rs(r.split)+" against bills"+(Number(r.advance)>0.5?" · advance "+rs(r.advance):"")));load()}});
     }
 
     /* ---------- Party ledger (main party, date range) ---------- */
@@ -596,8 +598,7 @@
       return [...m.values()].sort((a,b)=>a.localeCompare(b))};
     async function ensureLed(){
       if(led)return;
-      let a=await client.rpc("lwb_party_ledger_b");
-      if(a.error)a=await client.rpc("lwb_party_ledger"); // brand SQL not run yet
+      const a=await LWBLedgerRows(client);   // all rows (no 1000-row cut)
       if(a.error)throw a.error;
       // New returns (no bill) are not in the ledger SQL; ones on a billed PO are there as their credit note.
       const nr=(info.returns||[]).filter(r=>!r.cancelled&&!r.order_id).map(r=>({entry_date:r.return_date,entry_kind:"PARTY_RETURN",customer_name:r.parent||r.party,ref_no:r.return_no,order_no:null,
