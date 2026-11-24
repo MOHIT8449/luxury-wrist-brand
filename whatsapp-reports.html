@@ -38,6 +38,7 @@
     table.wt{border-collapse:collapse;width:100%;table-layout:fixed;font-size:12px;color:#2b2140}
     table.wt td{border:1px solid #b9a3dc;padding:4px 6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
     table.wt .h{background:#5b2a96;color:#fff;font-weight:800;text-align:center;font-size:13px}
+    table.wt .g{background:#eaf1f3;color:#0f4c5c;font-weight:700;border-left:3px solid #b08d3c}table.wt .g.n{text-align:right;color:#4b5563;border-left:1px solid #b9a3dc}
     table.wt .h small{float:right;font-size:10px;margin-top:2px}
     table.wt .k{background:#e6dcf5;font-weight:700;text-align:center;color:#3a2266}
     table.wt .v{background:#f5f0fc;font-weight:700;text-align:center}
@@ -74,7 +75,7 @@
       <button type="button" id="next" title="Next day">▶</button>
       <span class="sp"></span>
       <button type="button" class="grn" id="testBtn" title="One of every report to your own WhatsApp">📲 Test<span class="lg"> to my WhatsApp</span></button>
-      <button type="button" class="pdf" id="bookBtn" title="Only the Admin Day Book (PDF) to your own WhatsApp">📄<span class="lg"> Day Book</span> PDF</button>
+      <button type="button" class="pdf" id="bookBtn" title="Only the 2 Day Book PDFs (Sales & work, Accounts) to your own WhatsApp">📄<span class="lg"> Day Book</span> PDF</button>
       <button type="button" id="sendBtn" title="Send now to everyone who did not get it yet for this date">Send<span class="lg"> now to</span> all</button>
       <button type="button" class="main" id="saveBtn">Save</button>
     </div>
@@ -132,7 +133,7 @@ Luxury Wrist Brand ERP</pre>
     const shift=(d,n)=>{const x=new Date(d+"T12:00:00Z");x.setUTCDate(x.getUTCDate()+n);return x.toISOString().slice(0,10)};
     const dmy=d=>String(d||"").slice(0,10).split("-").reverse().join("/");
     const hm=t=>t?new Date(t).toLocaleTimeString("en-IN",{hour:"2-digit",minute:"2-digit",timeZone:"Asia/Kolkata"}):"";
-    const KINDS=[["DAYBOOK","Day Book"],["SALESMAN","Salesman"],["MGR","MGR"],["TEAM","Team"],["ADMIN","Admin"],["ACCOUNTS","Accounts"],["GODOWN","Godown"]];
+    const KINDS=[["DAYBOOK","Day Book · Sales"],["ACCBOOK","Day Book · Accounts"],["SALESMAN","Salesman"],["MGR","MGR"],["TEAM","Team"],["ADMIN","Admin"],["ACCOUNTS","Accounts"],["GODOWN","Godown"]];
     const KNAME=Object.fromEntries(KINDS);
     const ROLE={admin:"Admin",manager:"Sales Head",sales:"Salesman",salesman:"Salesman",accounts:"Accounts",warehouse:"Godown Mgr",transport:"Transport",cashier:"Cashier"};
     let P=null,dirty=new Map();
@@ -146,6 +147,7 @@ Luxury Wrist Brand ERP</pre>
         '<tr><td class="h" colspan="4">LUXURY WRIST BRAND<small>'+esc(doc.who)+'</small></td></tr>';
       for(const r of doc.rows||[]){
         if(r[0]==="kv")h+='<tr><td class="k">'+esc(String(r[1]).toUpperCase())+'</td><td class="v '+(T[r[3]]||"")+'" colspan="3">'+esc(r[2])+"</td></tr>";
+        else if(r[0]==="grp")h+='<tr><td class="g" colspan="2">'+esc(r[1])+'</td><td class="g n" colspan="2">'+esc(r[2]||"")+"</td></tr>";
         else if(r[0]==="sec")h+='<tr><td class="s" colspan="4">'+esc(String(r[1]).toUpperCase())+"</td></tr>";
         else if(r[0]==="th")h+="<tr>"+r[1].map(x=>'<td class="th">'+esc(x)+"</td>").join("")+"</tr>";
         else if(r[0]==="tr")h+="<tr"+(r[2]?' class="tot"':"")+">"+r[1].map((x,i)=>'<td class="'+(i===0?"":i===3?"n":"c")+" "+(T[r[3]]||"")+'" title="'+esc(x)+'">'+esc(x)+"</td>").join("")+"</tr>";
@@ -164,7 +166,7 @@ Luxury Wrist Brand ERP</pre>
         '<span class="tag">Focus parties for '+esc(dmy(P.focus_date))+"</span>";
       el("repSub").textContent=P.reports.length+" reports · "+dmy(P.date);
       const long=r=>(r.doc.rows||[]).length>22;
-      el("reports").innerHTML=[...P.reports].sort((a,b)=>(b.kind==="DAYBOOK")-(a.kind==="DAYBOOK")).map(r=>'<div class="rp'+(r.kind==="DAYBOOK"?" wide":"")+(long(r)?" long":"")+'"><div class="rp-top"><b>'+esc(KNAME[r.kind]||r.kind)+(r.kind==="SALESMAN"||r.kind==="MGR"?" · "+esc(r.title):"")+
+      el("reports").innerHTML=[...P.reports].sort((a,b)=>(/BOOK$/.test(b.kind))-(/BOOK$/.test(a.kind))).map(r=>'<div class="rp'+(/BOOK$/.test(r.kind)?" wide":"")+(long(r)?" long":"")+'"><div class="rp-top"><b>'+esc(KNAME[r.kind]||r.kind)+(r.kind==="SALESMAN"||r.kind==="MGR"?" · "+esc(r.title):"")+
         (r.pdf?' <span class="tag p">PDF</span>':"")+
         '</b><span class="rp-to" title="'+esc((r.to||[]).join(", "))+'">'+((r.to||[]).length?"To: "+esc(r.to.join(", ")):'<span class="tr">Nobody (no mobile / off)</span>')+"</span></div>"+
         '<div class="rp-doc">'+docHtml(r.doc)+"</div>"+(long(r)?'<button type="button" class="rp-more">Show all '+(r.doc.rows||[]).length+" lines ▾</button>":"")+"</div>").join("");
@@ -211,7 +213,7 @@ Luxury Wrist Brand ERP</pre>
       if(!await ERPShell.confirm("Send one of every report of "+dmy(el("day").value)+" to your own WhatsApp?\n\nFirst send \"Hi\" from your phone to the business WhatsApp number (the one that sends the OTP), so WhatsApp allows it before Meta approves the template."))return;
       try{await rpc("lwb_daily_wa_send",{p_date:el("day").value,p_mode:"TEST"});ERPShell.toast("Sending… check WhatsApp in a minute");setTimeout(load,15000)}catch(e){fail(e)}};
     el("bookBtn").onclick=async()=>{
-      if(!await ERPShell.confirm("Send the Day Book PDF of "+dmy(el("day").value)+" to your own WhatsApp?\n\nFirst send \"Hi\" from your phone to the business WhatsApp number, so WhatsApp allows it before Meta approves the template."))return;
+      if(!await ERPShell.confirm("Send the 2 Day Book PDFs (Sales & work, Accounts) of "+dmy(el("day").value)+" to your own WhatsApp?\n\nFirst send \"Hi\" from your phone to the business WhatsApp number, so WhatsApp allows it before Meta approves the template."))return;
       try{await rpc("lwb_daily_wa_send",{p_date:el("day").value,p_mode:"TEST_DAYBOOK"});ERPShell.toast("Making the PDF… check WhatsApp in a minute");setTimeout(load,20000)}catch(e){fail(e)}};
     el("sendBtn").onclick=async()=>{
       if(!await ERPShell.confirm("Send the reports of "+dmy(el("day").value)+" now to everyone who did not get them yet?"))return;

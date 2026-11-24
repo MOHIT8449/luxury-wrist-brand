@@ -87,7 +87,7 @@ Deno.serve(async (req) => {
         const base = ('LWB-' + m.title + '-' + dd).replace(/\W+/g, '-');
         if (!media.has(key)) {
           media.set(key, m.pdf
-            ? { pdf: true, filename: base + '.pdf', id: await upload(await buildPdf(m.doc, { PDFDocument, rgb }, fontkit, fonts, { title: m.kind === 'DAYBOOK' ? 'Day Book' : m.title, sub: m.kind === 'DAYBOOK' ? 'Daily work report' : 'Daily report', date: dd, footer: m.kind === 'DAYBOOK' ? 'For Admin' : 'For management' }), base + '.pdf', 'application/pdf') }
+            ? { pdf: true, filename: base + '.pdf', id: await upload(await buildPdf(m.doc, { PDFDocument, rgb }, fontkit, fonts, { title: m.kind === 'DAYBOOK' ? 'Day Book · Sales & Work' : m.kind === 'ACCBOOK' ? 'Day Book · Accounts' : m.title, sub: m.kind === 'ACCBOOK' ? 'Daily accounts report' : m.kind === 'DAYBOOK' ? 'Daily work report' : 'Daily report', date: dd, footer: m.kind === 'ACCBOOK' ? 'For Admin & Accounts' : m.kind === 'DAYBOOK' ? 'For Admin' : 'For management' }), base + '.pdf', 'application/pdf') }
             : { pdf: false, id: await upload(png(m.doc), base + '.png') });
         }
         const f = media.get(key);

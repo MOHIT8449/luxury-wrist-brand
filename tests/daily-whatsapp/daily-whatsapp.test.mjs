@@ -53,10 +53,10 @@ CREATE FUNCTION public.lwb_build_sales_plan(p uuid,d date) RETURNS jsonb LANGUAG
 CREATE TABLE public.lwb_tasks(id bigserial primary key,title text,details text,due_date date,priority text,status text default 'OPEN',assigned_to uuid,assigned_to_name text,
   assigned_to_role text,assigned_by uuid,assigned_by_name text,assigned_by_role text,auto_key text,done_at timestamptz,created_at timestamptz default now());
 CREATE TABLE public.erp_notifications(id bigserial primary key,user_id uuid,title text,message text,notification_type text);
-CREATE TABLE public.lwb_goods_inward(id uuid default gen_random_uuid() primary key,received_date date,supplier_name text,invoice_no text);
+CREATE TABLE public.lwb_goods_inward(id uuid default gen_random_uuid() primary key,received_date date,supplier_name text,invoice_no text,company_id uuid);
 CREATE TABLE public.lwb_party_calls(id bigserial primary key,customer_name text,call_date date,result text,called_by_name text);
 CREATE TABLE public.lwb_complaints(id bigserial primary key,category text,subject text,urgent boolean default false,status text default 'OPEN',created_by_name text,created_at timestamptz default now());
-CREATE TABLE public.lwb_party_returns(id uuid default gen_random_uuid() primary key,return_no text,party text,return_date date,amount numeric,cancelled_at timestamptz);
+CREATE TABLE public.lwb_party_returns(id uuid default gen_random_uuid() primary key,return_no text,party text,order_id uuid,company_id uuid,return_date date,amount numeric,cancelled_at timestamptz);
 CREATE TABLE public.lwb_goods_inward_items(inward_id uuid,total_amount numeric);
 CREATE TABLE public.lwb_driver_delivery_returns(id uuid default gen_random_uuid() primary key,order_id uuid,status text,created_at timestamptz);
 CREATE TABLE public.lwb_driver_delivery_return_items(return_id uuid,qty_cases numeric);
@@ -95,7 +95,7 @@ await db.query(`update acc_t set order_no='P1' where src='DRIVER_CASH'`);
 await db.query(`insert into lwb_tally_payments values($1,$2)`, [pay, COKE]);
 await db.query(`insert into ledger_t values('2026-11-01','A',500000,0,$1),('2026-11-01','B',200000,0,$2),('2026-11-24','A',0,120000,$1),('2026-11-30','A',999999,0,$1)`, [COKE, RAJ]);
 await db.query(`insert into lwb_sales_targets values('2026-11-01',$1,3000000,600)`, [U.nadim]);
-const gi = (await db.query(`insert into lwb_goods_inward(received_date,supplier_name) values($1,'HCCB') returning id`, [D])).rows[0].id;
+const gi = (await db.query(`insert into lwb_goods_inward(received_date,supplier_name,invoice_no,company_id) values($1,'HCCB','INV-77',$2) returning id`, [D, COKE])).rows[0].id;
 await db.query(`insert into lwb_goods_inward_items values($1,260000),($1,260000)`, [gi]);
 
 const sql = await readFile(new URL('../../lwb_daily_whatsapp_setup.sql', import.meta.url), 'utf8');
@@ -212,7 +212,7 @@ test('claim: never twice, failed ones again; focus tasks once; test goes only to
   const t = (await db.query('select lwb_daily_wa_claim($1::date,$2::uuid) j', [D, U.admin])).rows[0].j;
   assert.ok(t.test); assert.ok(t.messages.every(m => m.to === '919512297456'));
   assert.equal(t.messages.filter(m => m.kind === 'SALESMAN').length, 1);
-  assert.deepEqual([...new Set(t.messages.map(m => m.kind))], ['DAYBOOK', 'ADMIN', 'TEAM', 'MGR', 'ACCOUNTS', 'GODOWN', 'SALESMAN']);
+  assert.deepEqual([...new Set(t.messages.map(m => m.kind))], ['DAYBOOK', 'ACCBOOK', 'ADMIN', 'TEAM', 'MGR', 'ACCOUNTS', 'GODOWN', 'SALESMAN']);
 });
 
 test('Close Day fires once when on; opening entry / old date / off do nothing', async () => {
@@ -249,29 +249,40 @@ test('day book: done, not done, pending, full lists (Admin, PDF)', async () => {
   await db.query(`insert into lwb_complaints(category,subject,urgent,created_by_name) values('DRIVER','Late delivery',true,'Harsh')`);
   await db.query(`insert into lwb_party_returns(return_no,party,return_date,amount) values('SR-1','Om Traders',$1,4550),('SR-2','X',$1,1)`, [D]);
   await db.query(`update lwb_party_returns set cancelled_at=now() where return_no='SR-2'`);
-  const b = await build(), r = rep(b, 'DAYBOOK');
-  assert.equal(r.title, 'Day book'); assert.equal(r.pdf, true);
-  assert.equal(kv(r, 'Orders'), '4 PO · ₹ 2,20,650');
+  const b = await build(), r = rep(b, 'DAYBOOK'), ac = rep(b, 'ACCBOOK');
+  if (process.env.SHOW) { console.log(JSON.stringify(r.doc.rows)); console.log(JSON.stringify(ac.doc.rows)); }
+  assert.equal(r.title, 'Day Book · Sales & work'); assert.equal(r.pdf, true); assert.equal(ac.pdf, true);
+  assert.equal(kv(r, 'Sales'), '4 PO · ₹ 2,20,650');
   assert.equal(kv(r, 'Delivered'), '1 PO · ₹ 66,100');
-  assert.equal(kv(r, 'Money in'), '₹ 2,05,000 · 2 entries');
-  assert.equal(kv(r, 'Money out'), '₹ 38,500 · bank deposit ₹ 20,000');
-  assert.equal(kv(r, 'Purchase in'), '1 bill · ₹ 5,20,000');
-  assert.equal(kv(r, 'Returns'), '₹ 4,550');
   assert.equal(kv(r, 'Party calls'), '3 calls · 1 orders');
   assert.match(kv(r, 'Tasks'), /^1 done · \d+ open · 1 late$/);
-  assert.equal(kv(r, 'Waiting approval'), '1 PO · ₹ 5,000');
   assert.equal(kv(r, 'Complaints'), '1 open');
-  const secs = r.doc.rows.filter(z => z[0] === 'sec').map(z => z[1]);
-  for (const t of ['1. Orders today', '4. Money in', '5. Money out', '10. Waiting approval', '12. Loaded, not delivered', '14. Complaints open'])
-    assert.ok(secs.some(x => x.startsWith(t)), t);
-  const trs = r.doc.rows.filter(z => z[0] === 'tr').map(z => z[1][0]);
-  assert.ok(trs.includes('P7 · WAITING PARTY')); assert.ok(trs.includes('SHREE JAGDISH'));
+  const trs = rw => rw.doc.rows.filter(z => z[0] === 'tr').map(z => z[1]);
+  // brand-wise today: Coca-Cola sales 66,100 + 4,550 + 1,35,000; Rajnigandha 15,000; purchase on Coca-Cola
+  assert.deepEqual(trs(r).find(z => z[0] === 'COCA-COLA'), ['COCA-COLA', '2,05,650', '66,100', '5,20,000']);
+  assert.deepEqual(trs(r).find(z => z[0] === 'RAJNIGANDHA'), ['RAJNIGANDHA', '15,000', '0', '0']);
+  assert.deepEqual(trs(r).find(z => z[0] === 'ALL BRANDS'), ['ALL BRANDS', '2,20,650', '66,100', '5,20,000']);
+  const grp = rw => rw.doc.rows.filter(z => z[0] === 'grp').map(z => z[1] + ' | ' + z[2]);
+  assert.ok(grp(r).includes('COCA-COLA | 3 PO  ·  ₹ 2,05,650'));
+  assert.ok(grp(r).includes('BRAND NOT SET | 1 PO  ·  ₹ 5,000'));      // P7 has no items
+  const secs = rw => rw.doc.rows.filter(z => z[0] === 'sec').map(z => z[1]);
+  for (const t of ['Brand-wise today', 'Brand-wise pending', '1. Orders today', '4. Purchase in', '8. Waiting approval', '10. Loaded, not delivered', '11. Complaints open'])
+    assert.ok(secs(r).some(x => x.startsWith(t)), t);
+  assert.ok(!secs(r).some(x => /Money/.test(x)));
+  // accounts PDF
+  assert.equal(kv(ac, 'Money in'), '₹ 2,05,000 · 2 entries');
+  assert.equal(kv(ac, 'Purchase bills'), '1 · ₹ 5,20,000');
+  assert.deepEqual(trs(ac).find(z => z[0] === 'COCA-COLA'), ['COCA-COLA', '85,000', '1,20,000', '2,05,000']);
+  for (const t of ['Brand-wise collection', 'Cash book', '1. Money in', '2. Money out', '3. Outstanding', '4. Top 10 dues', '5. Bank not checked', '6. Cheques'])
+    assert.ok(secs(ac).some(x => x.startsWith(t)), t);
+  assert.ok(trs(ac).some(z => z[0] === 'ALL BRANDS' && z[3] === '5,80,000'));    // outstanding A 3,80,000 + B 2,00,000
   // who gets it: Admin only (default)
   const p = (await (async () => { await as(U.admin); return (await call('select lwb_daily_wa_page($1::date) j', [D]))[0].j })());
   assert.deepEqual(p.reports.find(x => x.kind === 'DAYBOOK').to, ['Mohit']);
   // only the Day Book to me
   const c = (await db.query(`select lwb_daily_wa_claim($1::date, $2::uuid, 'DAYBOOK') j`, [D, U.admin])).rows[0].j;
-  assert.deepEqual(c.messages.map(m => [m.kind, m.pdf]), [['DAYBOOK', true]]);
+  assert.deepEqual(c.messages.map(m => [m.kind, m.pdf]), [['DAYBOOK', true], ['ACCBOOK', true]]);
+  assert.deepEqual(p.reports.find(x => x.kind === 'ACCBOOK').to, ['Mohit', 'Yogesh']);
   assert.equal(c.template_doc, 'lwb_daily_report_pdf');
 });
 
@@ -288,7 +299,7 @@ test('long report -> A4 pages with heads repeated -> PDF', async () => {
   await initWasm(await readFile(new URL('./node_modules/@resvg/resvg-wasm/index_bg.wasm', import.meta.url))).catch(() => {});
   const fonts = await Promise.all(['Roboto_400Regular', 'Roboto_700Bold'].map(f => readFile(new URL(`./node_modules/@expo-google-fonts/roboto/${f}.ttf`, import.meta.url))));
   const svgPng = svg => new Resvg(svg, {font: {fontBuffers: fonts, defaultFontFamily: 'Roboto', loadSystemFonts: false}, fitTo: {mode: 'zoom', value: 2}}).render().asPng();
-  const b = await build(), meta = {title: 'Day Book', sub: 'Daily work report', date: '24/11/2026', footer: 'For Admin'};
+  const b = await build(), meta = {title: 'Day Book · Sales & Work', sub: 'Daily work report', date: '24/11/2026', footer: 'For Admin'};
   let t0 = performance.now();
   const bytes = await buildPdf(rep(b, 'DAYBOOK').doc, {PDFDocument, rgb}, fontkit, fonts, meta);
   assert.equal(String.fromCharCode(...bytes.slice(0, 5)), '%PDF-');
@@ -299,8 +310,8 @@ test('long report -> A4 pages with heads repeated -> PDF', async () => {
   assert.equal((await PDFDocument.load(big)).getPageCount(), pg.length);
   if (process.env.OUT) {
     await writeFile(process.env.OUT + '/DAYBOOK.pdf', bytes); await writeFile(process.env.OUT + '/BIG.pdf', big);
-    const list = pages(rep(b, 'DAYBOOK').doc);
-    for (const [i, x] of list.entries()) await writeFile(process.env.OUT + `/DAYBOOK-p${i + 1}.png`, svgPng(renderPage(x, meta, i, list.length)));
+    const acc = await buildPdf(rep(b, 'ACCBOOK').doc, {PDFDocument, rgb}, fontkit, fonts, {title: 'Day Book · Accounts', sub: 'Daily accounts report', date: '24/11/2026', footer: 'For Admin & Accounts'});
+    await writeFile(process.env.OUT + '/ACCBOOK.pdf', acc);
   }
 });
 
