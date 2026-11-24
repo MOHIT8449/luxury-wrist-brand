@@ -6,7 +6,7 @@
 
 ## Reports section (24 Nov 2026)
 - Mohit: one Reports section like every ERP: sales, purchase, every report date-wise, with filters, search, Excel.
-- New page `reports.html` (side menu top: Reports; Admin / Sales Head / Accounts / Cashier, or a login given the page). No SQL, read only.
+- New page `reports.html` (last item of the side menu, below Admin). ADMIN ONLY (Mohit: no other login, not even a ticked page; the page checks the real role). No SQL, read only.
 - Hub: every report in 7 groups (Sales, Purchase, Party & Outstanding, Cash Bank & Expenses, Stock, Dispatch & Vehicle, Team & Control), searchable, role-filtered. Reports that already had a page link to it (↗, e.g. accounts-books.html?v=out, accounts-dashboard.html?tab=deps, vehicle-report.html, inventory.html?tab=in).
 - Built here (`?r=<id>&v=<view>`), dates + brand from the top bar, own filters, search, tap-column sort, totals, Excel (LWBSales.excel), Print:
   - Sales (orders + order_items, cancelled left out): Register PO-wise, Day-wise, Party-wise, SKU-wise, Salesman-wise. Filters party / salesman / status / Booked or Loaded qty. Salesman = party's salesman (lwb_party_activity), else who took the PO. Qty IC (Rajnigandha) / CS (Coca-Cola) never added.

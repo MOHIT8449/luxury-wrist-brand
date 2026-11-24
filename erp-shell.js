@@ -112,8 +112,6 @@
     {group:"",items:[{t:"Dashboard",h:"dashboard.html",i:"home",r:"*"},
       // Approvals (Mohit, 7 Nov 2026): everything waiting for Admin / Sales Head OK, one card each (approvals.js).
       {t:"Approvals",h:"approvals.html",i:"shield",top:1,r:"admin manager",k:"approval approve permission pending verify check bank payment trip rent rate market order po change stock"},
-      // Reports (Mohit, 24 Nov 2026): every report in one place (sales, purchase, outstanding, cash, stock, vehicle...).
-      {t:"Reports",h:"reports.html",i:"chart",r:"admin manager accounts cashier",k:"report reports register sales report purchase report date wise party wise sku wise item wise salesman wise supplier wise expense report cash in out register excel export mis summary"},
       {t:"Tasks",h:"tasks.html",i:"tasks",r:"*",top:1},
       {t:"Complaint Box",h:"complaint-box.html",i:"megaphone",r:"*",top:1},
       // Keyboard Shortcuts (Mohit, 5 Nov 2026): every role sees the keys of the pages it can open.
@@ -232,7 +230,9 @@
       {t:"Brand Data Reset",h:"brand-reset.html",i:"lock",r:"admin",k:"reset delete clear brand rajnigandha fresh start opening data",nm:"admin",par:"settings.html"},
       // Order History Days (Mohit, 13 Nov 2026): per role, days after delivery an order stays in its lists.
       {t:"Order History Days",h:"order-history-days.html",i:"note",r:"admin",k:"order history days delivered visible hide old orders salesman driver sales head accounts role",nm:"admin",par:"settings.html"},
-      {t:"Accounts Fresh Start",h:"accounts-reset.html",i:"lock",r:"admin",k:"reset delete clear accounts cash book entries opening cash bank balance fresh start",nm:"admin",par:"settings.html"}]}
+      {t:"Accounts Fresh Start",h:"accounts-reset.html",i:"lock",r:"admin",k:"reset delete clear accounts cash book entries opening cash bank balance fresh start",nm:"admin",par:"settings.html"}]},
+    // Reports (Mohit, 24 Nov 2026): every report in one place; Admin only, last in the side menu.
+    {group:"",items:[{t:"Reports",h:"reports.html",i:"chart",r:"admin",k:"report reports register sales report purchase report date wise party wise sku wise item wise salesman wise supplier wise expense report cash in out register excel export mis summary"}]}
   ];
 
 
