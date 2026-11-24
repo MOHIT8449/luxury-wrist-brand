@@ -266,7 +266,8 @@ BEGIN
              FROM public.lwb_sales_targets t WHERE t.month = $1 AND t.salesman_id = s.user_id' USING m0;
     IF date_trunc('month', nd) = date_trunc('month', d) THEN
       UPDATE pg_temp.lwb_wa_s SET tom_amt = greatest(tg_amt - m_amt, 0) / greatest(days_left, 1),
-                                  tom_cs = greatest(tg_cs - m_qty, 0) / greatest(days_left, 1);
+                                  tom_cs = greatest(tg_cs - m_qty, 0) / greatest(days_left, 1)
+       WHERE true;  -- Supabase safeupdate refuses an UPDATE without WHERE
     ELSE
       EXECUTE 'UPDATE pg_temp.lwb_wa_s s SET tom_amt = coalesce(t.target_amount,0) / greatest($2, 1), tom_cs = coalesce(t.target_cases,0) / greatest($2, 1)
                FROM public.lwb_sales_targets t WHERE t.month = $1 AND t.salesman_id = s.user_id' USING date_trunc('month', nd)::date, days_left;
