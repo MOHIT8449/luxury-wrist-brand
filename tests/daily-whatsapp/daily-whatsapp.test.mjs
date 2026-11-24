@@ -1,0 +1,245 @@
+import {test} from 'node:test';
+import assert from 'node:assert/strict';
+import {readFile, writeFile, mkdir} from 'node:fs/promises';
+import {PGlite} from '@electric-sql/pglite';
+import {initWasm, Resvg} from '@resvg/resvg-wasm';
+import {renderSvg} from '../../supabase/functions/lwb-daily-whatsapp/render.mjs';
+
+// lwb_daily_whatsapp_setup.sql on a tiny copy of the tables it reads (no live database).
+// Builds the 6 reports for one day, checks the numbers, who gets what, focus-party tasks,
+// never-twice sending, and draws every report to PNG (OUT=dir to keep the images).
+const U = {
+  admin:'00000000-0000-4000-8000-000000000001', head:'00000000-0000-4000-8000-000000000002',
+  nadim:'00000000-0000-4000-8000-000000000003', suresh:'00000000-0000-4000-8000-000000000004',
+  dinesh:'00000000-0000-4000-8000-000000000005', acc:'00000000-0000-4000-8000-000000000006',
+  godown:'00000000-0000-4000-8000-000000000007', driver:'00000000-0000-4000-8000-000000000008'};
+const COKE='10000000-0000-4000-8000-000000000001', RAJ='10000000-0000-4000-8000-000000000002';
+const db = new PGlite();
+await db.exec(`
+CREATE ROLE anon; CREATE ROLE authenticated; CREATE ROLE service_role;
+CREATE SCHEMA auth;
+CREATE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql AS $$ SELECT nullif(current_setting('request.jwt.claim.sub',true),'')::uuid $$;
+CREATE SCHEMA extensions;
+CREATE FUNCTION extensions.gen_random_bytes(n int) RETURNS bytea LANGUAGE sql AS $$ SELECT decode(md5(random()::text) || md5(random()::text), 'hex') $$;
+CREATE TABLE public.user_profiles(id uuid primary key,role text,active boolean,full_name text,mobile text);
+CREATE TABLE public.lwb_companies(id uuid primary key,name text,pack_unit text);
+CREATE TABLE public.sku_master(sku_name text,company_id uuid,pack_unit text);
+CREATE TABLE public.orders(id uuid default gen_random_uuid() primary key,order_no text,order_date timestamptz,customer_name text,transportation text,
+  sales_person text,status text,total_qty numeric,total_amount numeric,total_weight numeric,created_by uuid);
+CREATE TABLE public.order_items(order_id uuid,sku_name text,ordered_qty numeric,approved_qty numeric,rate numeric,amount numeric);
+CREATE TABLE public.dispatch_assignments(order_id uuid,vehicle_no text,driver_name text,assigned_at timestamptz,loading_completed_at timestamptz);
+CREATE TABLE public.lwb_delivery_reports(order_id uuid,delivery_status text,reported_at timestamptz);
+CREATE TABLE public.lwb_acc_day_close(id bigserial primary key,close_date date,is_start boolean default false,counted numeric,handed_to_name text,
+  closed_at timestamptz default now(),cancelled_at timestamptz);
+CREATE TABLE public.acc_t(src text,id uuid default gen_random_uuid(),book_date date,kind text,mode text,amount numeric,party text,order_no text,cash_effect numeric,needs_verify boolean);
+CREATE FUNCTION public.lwb_acc_lines() RETURNS TABLE(src text,id uuid,book_date date,at timestamptz,kind text,mode text,amount numeric,category text,party text,ref text,
+  remark text,order_no text,bank_id bigint,cash_effect numeric,needs_verify boolean,created_by uuid)
+  LANGUAGE sql AS $$ SELECT src,id,book_date,now(),kind,mode,amount,null::text,party,null::text,null::text,order_no,null::bigint,cash_effect,needs_verify,null::uuid FROM public.acc_t $$;
+CREATE FUNCTION public.lwb_acc_cash_at(p date) RETURNS TABLE(amount numeric,is_set boolean,base_date date)
+  LANGUAGE sql AS $$ SELECT 40580 + coalesce((SELECT sum(cash_effect) FROM public.acc_t WHERE book_date < p AND book_date >= '2026-11-24'),0), true, '2026-11-23'::date $$;
+CREATE TABLE public.lwb_acc_verify(src text,src_id uuid);
+CREATE TABLE public.lwb_acc_cheques(src text,src_id uuid,cheque_date date,deposited_on date);
+CREATE TABLE public.lwb_tally_payments(id uuid primary key,company_id uuid);
+CREATE TABLE public.ledger_t(entry_date date,customer_name text,debit numeric,credit numeric,company_id uuid);
+CREATE FUNCTION public.lwb_party_ledger_b() RETURNS TABLE(entry_date date,entry_kind text,customer_name text,ref_no text,order_no text,debit numeric,credit numeric,
+  note text,created_at timestamptz,company_id uuid) LANGUAGE sql AS $$ SELECT entry_date,'X'::text,customer_name,null::text,null::text,debit,credit,null::text,null::timestamptz,company_id FROM public.ledger_t $$;
+CREATE TABLE public.lwb_sales_targets(month date,salesman_id uuid,target_amount numeric,target_cases numeric);
+CREATE FUNCTION public.lwb_build_sales_plan(p uuid,d date) RETURNS jsonb LANGUAGE sql AS $$
+  SELECT CASE WHEN p = '00000000-0000-4000-8000-000000000003'::uuid
+    THEN jsonb_build_object('parties', jsonb_build_array(jsonb_build_object('name','SHREE JAGDISH','days',6,'city','Surat'), jsonb_build_object('name','OM TRADERS','days',null)))
+    ELSE jsonb_build_object('parties','[]'::jsonb) END $$;
+CREATE TABLE public.lwb_tasks(id bigserial primary key,title text,details text,due_date date,priority text,status text default 'OPEN',assigned_to uuid,assigned_to_name text,
+  assigned_to_role text,assigned_by uuid,assigned_by_name text,assigned_by_role text,auto_key text);
+CREATE TABLE public.erp_notifications(id bigserial primary key,user_id uuid,title text,message text,notification_type text);
+CREATE TABLE public.lwb_goods_inward(id uuid default gen_random_uuid() primary key,received_date date,supplier_name text);
+CREATE TABLE public.lwb_goods_inward_items(inward_id uuid,total_amount numeric);
+CREATE TABLE public.lwb_driver_delivery_returns(id uuid default gen_random_uuid() primary key,order_id uuid,status text,created_at timestamptz);
+CREATE TABLE public.lwb_driver_delivery_return_items(return_id uuid,qty_cases numeric);
+`);
+const people = [[U.admin,'admin','Mohit','9512297456'],[U.head,'manager','Harsh','9800000002'],[U.nadim,'sales','Nadim Tinwala','9800000003'],
+  [U.suresh,'sales','Suresh','9800000004'],[U.dinesh,'sales','Dinesh',null],[U.acc,'accounts','Yogesh','9800000006'],
+  [U.godown,'warehouse','Dhruv','9800000007'],[U.driver,'driver','Raju','9800000008']];
+for (const p of people) await db.query('insert into user_profiles values($1,$2,true,$3,$4)', p);
+await db.exec(`insert into lwb_companies values('${COKE}','Coca-Cola','CASE'),('${RAJ}','Rajnigandha','BOX');
+  insert into sku_master values('250ML FANTA','${COKE}',null),('250ML MAAZA','${COKE}',null),('RAJNIGANDHA 4G','${RAJ}',null);`);
+
+const D = '2026-11-24';
+async function order(no, person, party, items, opts = {}) {
+  const amt = items.reduce((a, i) => a + i[1] * i[2], 0), qty = items.reduce((a, i) => a + i[1], 0);
+  const r = await db.query(`insert into orders(order_no,order_date,customer_name,transportation,sales_person,status,total_qty,total_amount,total_weight)
+    values($1,$2,$3,$4,$5,$6,$7,$8,$9) returning id`, [no, opts.at || D + 'T10:00:00+05:30', party, opts.tr || 'DELIVERY', person, opts.status || 'approved', qty, amt, qty * 10]);
+  const id = r.rows[0].id;
+  for (const i of items) await db.query('insert into order_items values($1,$2,$3,$3,$4,$5)', [id, i[0], i[1], i[2], i[1] * i[2]]);
+  return id;
+}
+const o1 = await order('P1', 'Nadim Tinwala', 'Manshi Marketing', [['250ML FANTA', 20, 455], ['250ML MAAZA', 120, 475]]);
+const o2 = await order('P2', 'NADIM TINWALA', 'Om Traders', [['250ML FANTA', 10, 455]]);
+const o3 = await order('P3', 'Suresh', 'Patel Agency', [['RAJNIGANDHA 4G', 50, 300]]);
+await order('P4', 'Suresh', 'Old Party', [['250ML FANTA', 5, 455]], {at: '2026-11-10T10:00:00+05:30'});
+await order('P5', 'Nadim Tinwala', 'Cancelled', [['250ML FANTA', 99, 455]], {status: 'cancelled'});
+await order('P6', 'Harsh', 'Direct Party', [['250ML MAAZA', 300, 450]], {tr: 'DIRECT VEHICLE'});
+await db.query(`insert into dispatch_assignments values($1,'GJ05FW9821','Mohit',$2,$2),($3,'GJ05FW9821','Mohit',$2,null),($4,'GJ 05 BX 4410','Raju',$2,$2)`,
+  [o1, D + 'T15:00:00+05:30', o2, o3]);
+await db.query(`insert into lwb_delivery_reports values($1,'DELIVERED',$2)`, [o1, D + 'T18:00:00+05:30']);
+await db.query(`update orders set status='loaded' where id=$1`, [o3]);
+const pay = '20000000-0000-4000-8000-000000000001';
+await db.query(`insert into acc_t(src,id,book_date,kind,mode,amount,party,cash_effect,needs_verify) values
+  ('PAYMENT',$1,$2,'IN','UPI',120000,'Shree Jagdish',0,true),('DRIVER_CASH',gen_random_uuid(),$2,'IN','CASH',85000,'Manshi Marketing',85000,false),
+  ('ENTRY',gen_random_uuid(),$2,'OUT','CASH',38500,null,-38500,false),('ENTRY',gen_random_uuid(),$2,'DEPOSIT','BANK',20000,null,-20000,true)`, [pay, D]);
+await db.query(`update acc_t set order_no='P1' where src='DRIVER_CASH'`);
+await db.query(`insert into lwb_tally_payments values($1,$2)`, [pay, COKE]);
+await db.query(`insert into ledger_t values('2026-11-01','A',500000,0,$1),('2026-11-01','B',200000,0,$2),('2026-11-24','A',0,120000,$1),('2026-11-30','A',999999,0,$1)`, [COKE, RAJ]);
+await db.query(`insert into lwb_sales_targets values('2026-11-01',$1,3000000,600)`, [U.nadim]);
+const gi = (await db.query(`insert into lwb_goods_inward(received_date,supplier_name) values($1,'HCCB') returning id`, [D])).rows[0].id;
+await db.query(`insert into lwb_goods_inward_items values($1,260000),($1,260000)`, [gi]);
+
+const sql = await readFile(new URL('../../lwb_daily_whatsapp_setup.sql', import.meta.url), 'utf8');
+await db.exec(sql.replace('CREATE EXTENSION IF NOT EXISTS pgcrypto WITH SCHEMA extensions;', ''));
+await db.exec('GRANT USAGE ON SCHEMA public, auth TO authenticated');
+const as = async id => db.query("select set_config('request.jwt.claim.sub',$1,false)", [id || '']);
+async function call(q, p) { await db.exec('SET ROLE authenticated'); try { return (await db.query(q, p)).rows } finally { await db.exec('RESET ROLE') } }
+const build = async () => (await db.query('select public.lwb_daily_wa_build($1::date) b', [D])).rows[0].b;
+const rep = (b, kind, key) => b.reports.find(r => r.kind === kind && (key == null || r.key === key));
+const kv = (r, label) => { const x = r.doc.rows.find(z => z[0] === 'kv' && String(z[1]).toLowerCase() === label.toLowerCase()); return x && x[2] };
+
+test('money helpers: Indian format', async () => {
+  const r = (await db.query(`select lwb_wa_inr(842560) a, lwb_wa_inr(999) b, lwb_wa_inr(12345678.4) c, lwb_wa_ton(6180) t, lwb_wa_qty('[{"u":"cs","q":590},{"u":"IC","q":120}]') q`)).rows[0];
+  assert.deepEqual(r, {a: '₹ 8,42,560', b: '₹ 999', c: '₹ 1,23,45,678', t: '6.2', q: '590 cs · 120 IC'});
+});
+
+test('only Admin opens the page; salesman / anon cannot run anything', async () => {
+  await as(U.nadim); await assert.rejects(call('select lwb_daily_wa_page($1::date)', [D]), /Admin only/);
+  await assert.rejects(call('select lwb_daily_wa_build($1::date)', [D]), /permission denied/);
+  await assert.rejects(call('select lwb_daily_wa_claim($1::date)', [D]), /permission denied/);
+  for (const f of ['lwb_daily_wa_page(date)', 'lwb_daily_wa_send(date,text)'])
+    assert.equal((await db.query(`select has_function_privilege('anon','public.${f}','EXECUTE') a`)).rows[0].a, false);
+  await as(U.admin); const p = (await call('select lwb_daily_wa_page($1::date) j', [D]))[0].j;
+  assert.ok(p.reports.length >= 5); assert.equal(p.config.enabled, false);
+});
+
+test('salesman report: own orders only, product-wise, month target and tomorrow, focus parties', async () => {
+  const b = await build(), r = rep(b, 'SALESMAN', U.nadim);
+  assert.equal(kv(r, "Today's orders"), '2 PO · 2 parties');                // cancelled + other days left out
+  assert.equal(kv(r, 'Total amount'), '₹ 70,650');                           // 20x455 + 120x475 + 10x455
+  assert.equal(kv(r, 'Total qty'), '150 cs');
+  const prods = r.doc.rows.filter(z => z[0] === 'tr').map(z => z[1][0]);
+  assert.deepEqual(prods, ['250ML MAAZA', '250ML FANTA']);
+  assert.equal(r.doc.rows.find(z => z[0] === 'tr' && z[1][0] === '250ML FANTA')[1][1], '30 cs');
+  assert.match(kv(r, 'Achieved'), /^₹ 70,650 \(2%\)$/);
+  // 30,00,000 - 70,650 left over 25,26,27,28,29(Sat),30 = 6 working days (Sunday 29? no: 29 Nov 2026 is a Sunday)
+  assert.match(kv(r, "Tomorrow's target"), /^₹ [\d,]+ · \d+ cases$/);
+  assert.equal(kv(r, 'SHREE JAGDISH'), '6 days no order');
+  assert.equal(kv(r, 'OM TRADERS'), 'No order yet');
+  const s = rep(b, 'SALESMAN', U.suresh);
+  assert.equal(kv(s, 'Total qty'), '50 IC');                                  // Rajnigandha counts in IC
+  assert.equal(kv(rep(b, 'SALESMAN', U.dinesh), "Today's orders"), '0 PO · 0 parties');
+});
+
+test('admin + accounts + godown numbers', async () => {
+  const b = await build(), a = rep(b, 'ADMIN');
+  assert.equal(kv(a, 'Total sales'), '₹ 2,20,650 · 4 PO');                   // P1 + P2 + P3 + P6 (direct)
+  assert.equal(kv(a, 'Direct vehicle'), '₹ 1,35,000 · 1 PO');
+  assert.equal(kv(a, 'Purchase'), '₹ 5,20,000 · 1 bills');
+  assert.equal(kv(a, 'Bank not checked'), '₹ 1,40,000 (2 entries)');
+  assert.equal(kv(a, 'Coca-Cola'), '₹ 3,80,000');                             // 5,00,000 - 1,20,000 (30/11 bill is after the day)
+  assert.equal(kv(a, 'Total'), '₹ 5,80,000');
+  const brand = a.doc.rows.filter(z => z[0] === 'tr').map(z => z[1]);
+  assert.deepEqual(brand[0], ['COCA-COLA', '85,000', '1,20,000', '2,05,000']);  // driver cash via its PO brand, party payment via its brand
+  const acc = rep(b, 'ACCOUNTS');
+  assert.equal(kv(acc, 'Opening cash'), '₹ 40,580');
+  assert.equal(kv(acc, 'Cash out'), '₹ 38,500');
+  assert.match(kv(acc, 'Closing cash'), /^₹ 67,080 \(day not closed\)$/);    // 40,580 + 85,000 - 38,500 - 20,000
+  const g = rep(b, 'GODOWN');
+  assert.equal(kv(g, 'Total loaded'), '2.0 T · 150 cs · 50 IC · 2 vehicles');
+  const veh = g.doc.rows.filter(z => z[0] === 'tr').map(z => z[1][0]);
+  assert.deepEqual(veh, ['GJ05FW9821 · MOHIT', 'GJ 05 BX 4410 · RAJU', 'TOTAL']);
+  assert.equal(kv(g, 'Delivered'), '1 parties · ₹ 66,100');
+  assert.equal(kv(g, 'Pending delivery'), '1 PO · ₹ 15,000');
+});
+
+test('MGR list, salesman -> MGR, ranking', async () => {
+  await as(U.admin);
+  const m1 = (await call(`select lwb_company_mgr_save(null,'Vishal',$1::uuid,true) id`, [COKE]))[0].id;
+  const m2 = (await call(`select lwb_company_mgr_save(null,'Vinas',$1::uuid,true) id`, [RAJ]))[0].id;
+  await assert.rejects(call(`select lwb_company_mgr_save(null,'vishal',null,true)`), /already exists/);
+  await call('select lwb_salesman_mgr_set($1::uuid,$2::bigint)', [U.nadim, m1]);
+  await call('select lwb_salesman_mgr_set($1::uuid,$2::bigint)', [U.dinesh, m1]);
+  await call('select lwb_salesman_mgr_set($1::uuid,$2::bigint)', [U.suresh, m2]);
+  const b = await build(), m = rep(b, 'MGR', String(m1));
+  assert.equal(kv(m, 'Team total today'), '₹ 70,650 · 2 PO');
+  const rows = m.doc.rows.filter(z => z[0] === 'tr');
+  assert.deepEqual(rows.map(z => z[1][0]), ['NADIM TINWALA', 'DINESH', 'TOTAL']);
+  assert.equal(rows[1][1][3], 'No order'); assert.equal(rows[1][3], 'r');
+  const t = rep(b, 'TEAM');
+  const rank = t.doc.rows.filter(z => z[0] === 'tr').map(z => z[1][0]);
+  assert.equal(rank[0], '1st VISHAL'); assert.equal(rank[1], '2nd VINAS');
+});
+
+test('who gets what: own salesman report, MGR + team to Admin and Sales Head, no mobile = skipped', async () => {
+  const b = await build();
+  const s = (await db.query('select kind, report_key, name from lwb_daily_wa_sends($1::jsonb) order by kind, name, report_key', [b])).rows;
+  const by = k => s.filter(x => x.kind === k).map(x => x.name);
+  assert.deepEqual(by('SALESMAN'), ['Nadim Tinwala', 'Suresh']);              // Dinesh: no mobile
+  assert.deepEqual(by('ADMIN'), ['Mohit']);
+  assert.deepEqual(by('ACCOUNTS'), ['Yogesh']);
+  assert.deepEqual(by('GODOWN'), ['Dhruv', 'Mohit']);
+  assert.deepEqual([...new Set(by('MGR'))], ['Harsh', 'Mohit']);
+  assert.equal(by('MGR').length, 4);                                          // 2 MGRs x 2 people
+  assert.ok(!s.some(x => x.name === 'Raju'));                                 // driver never
+  // Admin turns Godown off for himself
+  await as(U.admin);
+  await call(`select lwb_daily_wa_save(false,'23:00',true,$1::jsonb)`, [JSON.stringify([{user_id: U.admin, kind: 'GODOWN', enabled: false}])]);
+  const s2 = (await db.query('select name from lwb_daily_wa_sends(public.lwb_daily_wa_build($1::date)) where kind = $2', [D, 'GODOWN'])).rows.map(x => x.name);
+  assert.deepEqual(s2, ['Dhruv']);
+});
+
+test('claim: never twice, failed ones again; focus tasks once; test goes only to me', async () => {
+  const c1 = (await db.query('select lwb_daily_wa_claim($1::date) j', [D])).rows[0].j;
+  assert.ok(c1.messages.length > 5); assert.equal(c1.template, 'lwb_daily_report');
+  const tasks = (await db.query('select assigned_to, title, due_date::text, details from lwb_tasks')).rows;
+  assert.equal(tasks.length, 1); assert.equal(tasks[0].assigned_to, U.nadim);
+  assert.match(tasks[0].title, /Focus parties 25\/11: 2 parties/); assert.match(tasks[0].details, /SHREE JAGDISH · Surat · 6 days/);
+  await db.query('select lwb_daily_wa_mark($1,false,null,$2)', [c1.messages[0].id, 'boom']);
+  for (const m of c1.messages.slice(1)) await db.query('select lwb_daily_wa_mark($1,true,$2)', [m.id, 'wamid.x']);
+  const c2 = (await db.query('select lwb_daily_wa_claim($1::date) j', [D])).rows[0].j;
+  assert.equal(c2.messages.length, 1); assert.equal(c2.messages[0].id, c1.messages[0].id);
+  assert.equal((await db.query('select count(*)::int n from lwb_tasks')).rows[0].n, 1);
+  const t = (await db.query('select lwb_daily_wa_claim($1::date,$2::uuid) j', [D, U.admin])).rows[0].j;
+  assert.ok(t.test); assert.ok(t.messages.every(m => m.to === '919512297456'));
+  assert.equal(t.messages.filter(m => m.kind === 'SALESMAN').length, 1);
+  assert.deepEqual([...new Set(t.messages.map(m => m.kind))], ['ADMIN', 'TEAM', 'MGR', 'ACCOUNTS', 'GODOWN', 'SALESMAN']);
+});
+
+test('Close Day fires once when on; opening entry / old date / off do nothing', async () => {
+  await db.exec('delete from lwb_daily_wa_runs');
+  await db.query(`insert into lwb_acc_day_close(close_date,is_start,counted) values(current_date,false,100)`);
+  assert.equal((await db.query('select count(*)::int n from lwb_daily_wa_runs')).rows[0].n, 0, 'off: nothing');
+  await db.exec('update lwb_daily_wa_config set enabled = true');
+  await db.query(`insert into lwb_acc_day_close(close_date,is_start,counted) values(current_date,true,100)`);
+  await db.query(`insert into lwb_acc_day_close(close_date,is_start,counted) values(current_date - 5,false,100)`);
+  assert.equal((await db.query('select count(*)::int n from lwb_daily_wa_runs')).rows[0].n, 0);
+  await db.query(`insert into lwb_acc_day_close(close_date,is_start,counted) values(current_date,false,100)`);
+  await db.query(`insert into lwb_acc_day_close(close_date,is_start,counted) values(current_date,false,100)`);
+  const r = (await db.query('select trigger from lwb_daily_wa_runs')).rows;
+  assert.deepEqual(r, [{trigger: 'CLOSE_DAY'}]);
+});
+
+test('every report draws to a PNG', async () => {
+  await initWasm(await readFile(new URL('./node_modules/@resvg/resvg-wasm/index_bg.wasm', import.meta.url)));
+  const fonts = [await readFile(new URL('./node_modules/@expo-google-fonts/roboto/Roboto_400Regular.ttf', import.meta.url)),
+                 await readFile(new URL('./node_modules/@expo-google-fonts/roboto/Roboto_700Bold.ttf', import.meta.url))];
+  const b = await build();
+  if (process.env.OUT) await mkdir(process.env.OUT, {recursive: true});
+  for (const r of b.reports) {
+    const png = new Resvg(renderSvg(r.doc), {font: {fontBuffers: fonts, defaultFontFamily: 'Roboto', loadSystemFonts: false}, fitTo: {mode: 'zoom', value: 1.5}}).render().asPng();
+    assert.ok(png.length > 5000);
+    if (process.env.OUT) await writeFile(`${process.env.OUT}/${r.kind}-${r.title.replace(/\W+/g, '-')}.png`, png);
+  }
+});
+
+test('page data for screenshots (PAGE_OUT=file)', { skip: !process.env.PAGE_OUT }, async () => {
+  await as(U.admin);
+  const p = (await call('select lwb_daily_wa_page($1::date) j', [D]))[0].j;
+  const { writeFileSync } = await import('node:fs');
+  writeFileSync(process.env.PAGE_OUT, JSON.stringify(p));
+});
