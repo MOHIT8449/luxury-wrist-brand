@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import {readFile, writeFile, mkdir} from 'node:fs/promises';
 import {PGlite} from '@electric-sql/pglite';
 import {initWasm, Resvg} from '@resvg/resvg-wasm';
-import {PDFDocument} from 'pdf-lib';
+import {PDFDocument, rgb} from 'pdf-lib';
+import fontkit from '@pdf-lib/fontkit';
 import {renderSvg, pages, buildPdf, renderPage, PAGE_PX} from '../../supabase/functions/lwb-daily-whatsapp/render.mjs';
 
 // lwb_daily_whatsapp_setup.sql on a tiny copy of the tables it reads (no live database).
@@ -288,12 +289,16 @@ test('long report -> A4 pages with heads repeated -> PDF', async () => {
   const fonts = await Promise.all(['Roboto_400Regular', 'Roboto_700Bold'].map(f => readFile(new URL(`./node_modules/@expo-google-fonts/roboto/${f}.ttf`, import.meta.url))));
   const svgPng = svg => new Resvg(svg, {font: {fontBuffers: fonts, defaultFontFamily: 'Roboto', loadSystemFonts: false}, fitTo: {mode: 'zoom', value: 2}}).render().asPng();
   const b = await build(), meta = {title: 'Day Book', sub: 'Daily work report', date: '24/11/2026', footer: 'For Admin'};
-  const bytes = await buildPdf(rep(b, 'DAYBOOK').doc, svgPng, PDFDocument, meta);
+  let t0 = performance.now();
+  const bytes = await buildPdf(rep(b, 'DAYBOOK').doc, {PDFDocument, rgb}, fontkit, fonts, meta);
   assert.equal(String.fromCharCode(...bytes.slice(0, 5)), '%PDF-');
-  const big = await buildPdf(doc, svgPng, PDFDocument, meta);
+  t0 = performance.now();
+  const big = await buildPdf(doc, {PDFDocument, rgb}, fontkit, fonts, meta);
+  console.log('# pdf ms', Math.round(performance.now() - t0), 'bytes', big.length, 'pages', pg.length);
+  assert.ok(big.length < 400000);
   assert.equal((await PDFDocument.load(big)).getPageCount(), pg.length);
   if (process.env.OUT) {
-    await writeFile(process.env.OUT + '/DAYBOOK.pdf', bytes);
+    await writeFile(process.env.OUT + '/DAYBOOK.pdf', bytes); await writeFile(process.env.OUT + '/BIG.pdf', big);
     const list = pages(rep(b, 'DAYBOOK').doc);
     for (const [i, x] of list.entries()) await writeFile(process.env.OUT + `/DAYBOOK-p${i + 1}.png`, svgPng(renderPage(x, meta, i, list.length)));
   }
