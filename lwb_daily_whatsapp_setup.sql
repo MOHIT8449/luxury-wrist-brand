@@ -216,8 +216,8 @@ BEGIN
     INTO closed FROM public.lwb_acc_day_close c
    WHERE c.close_date = d AND c.cancelled_at IS NULL AND NOT c.is_start ORDER BY c.closed_at DESC LIMIT 1;
 
+  -- Scratch tables live only until the end of this call's transaction (ON COMMIT DROP); every caller builds once per transaction.
   -- Orders of this month up to the day: brand unit and the person who gets the credit.
-  DROP TABLE IF EXISTS pg_temp.lwb_wa_o;
   CREATE TEMP TABLE lwb_wa_o ON COMMIT DROP AS
   SELECT o.id, o.order_no, btrim(o.customer_name) AS party, coalesce(o.total_amount,0) AS amount, coalesce(o.total_qty,0) AS qty,
          coalesce(o.total_weight,0) AS kg,
@@ -239,11 +239,9 @@ BEGIN
   WHERE (timezone('Asia/Kolkata', o.order_date::timestamptz))::date BETWEEN m0 AND d
     AND lower(btrim(coalesce(o.status,''))) NOT IN ('cancelled','canceled','rejected','deleted');
 
-  DROP TABLE IF EXISTS pg_temp.lwb_wa_p;
   CREATE TEMP TABLE lwb_wa_p ON COMMIT DROP AS SELECT * FROM public.lwb_daily_wa_people_list();
 
   -- per salesman / Sales Head: today + month + targets
-  DROP TABLE IF EXISTS pg_temp.lwb_wa_s;
   CREATE TEMP TABLE lwb_wa_s ON COMMIT DROP AS
   SELECT p.user_id, p.name, p.role, sm.mgr_id,
          coalesce((SELECT sum(o.amount) FROM pg_temp.lwb_wa_o o WHERE o.person_id = p.user_id AND o.day = d),0) AS t_amt,
@@ -395,7 +393,6 @@ BEGIN
   reps := reps || jsonb_build_object('kind', 'TEAM', 'key', '', 'title', 'Sales team', 'doc', jsonb_build_object('who', 'SALES TEAM REPORT', 'rows', rows));
 
   -- ================= GODOWN: vehicles, delivery, returns, purchase in =================
-  DROP TABLE IF EXISTS pg_temp.lwb_wa_v;
   CREATE TEMP TABLE lwb_wa_v ON COMMIT DROP AS
   SELECT coalesce(nullif(upper(regexp_replace(coalesce(a2.vehicle_no,''), '[^A-Za-z0-9]', '', 'g')), ''), 'NOVEHICLE') AS vkey,
          coalesce(nullif(btrim(a2.vehicle_no),''), 'No vehicle') AS vno, nullif(btrim(a2.driver_name),'') AS driver,
@@ -433,7 +430,6 @@ BEGIN
   END IF;
 
   -- Delivered today: driver report Delivered / Partial, or Admin "Mark delivered" with this date.
-  DROP TABLE IF EXISTS pg_temp.lwb_wa_del;
   CREATE TEMP TABLE lwb_wa_del ON COMMIT DROP AS
   SELECT DISTINCT o.id, upper(btrim(o.customer_name)) AS party, coalesce(o.total_amount,0) AS amount
   FROM public.orders o
@@ -471,13 +467,12 @@ BEGIN
   reps := reps || jsonb_build_object('kind', 'GODOWN', 'key', '', 'title', 'Godown / vehicles', 'doc', jsonb_build_object('who', 'GODOWN · VEHICLE REPORT', 'rows', rows));
 
   -- ================= money (Accounts book of the day) =================
-  DROP TABLE IF EXISTS pg_temp.lwb_wa_l;
-  CREATE TEMP TABLE lwb_wa_l (src text, id uuid, kind text, mode text, amount numeric, party text, order_no text, cash_effect numeric) ON COMMIT DROP;
+  CREATE TEMP TABLE IF NOT EXISTS lwb_wa_l (src text, id uuid, kind text, mode text, amount numeric, party text, order_no text, cash_effect numeric) ON COMMIT DROP;
+  DELETE FROM pg_temp.lwb_wa_l WHERE true;
   IF v_acc THEN
     INSERT INTO pg_temp.lwb_wa_l SELECT l.src, l.id, l.kind, l.mode, l.amount, l.party, l.order_no, l.cash_effect FROM public.lwb_acc_lines() l WHERE l.book_date = d;
   END IF;
   -- brand of each money-in line: party payment = its brand; driver money / old collection = brand of its PO
-  DROP TABLE IF EXISTS pg_temp.lwb_wa_in;
   CREATE TEMP TABLE lwb_wa_in ON COMMIT DROP AS
   SELECT l.*, coalesce(co.name::text, 'Brand not set') AS brand,
          CASE WHEN l.mode = 'CASH' THEN 'CASH' WHEN l.mode = 'CHEQUE' THEN 'CHEQUE' ELSE 'BANK' END AS m
