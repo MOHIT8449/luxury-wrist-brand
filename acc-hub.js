@@ -21,14 +21,14 @@
   "use strict";
   const T={make:"Bills to make",made:"Bills made",due:"To collect",led:"Ledger",pay:"Payments",ret:"Returns",
     book:"Day book",cheques:"Cheques",verify:"Bank check",sum:"Summary",chg:"PO changes",
-    grp:"Party groups",books:"📒 Ledger & Outstanding ↗",close:"Cash handover",staff:"Staff ledger",veh:"Vehicles",setup:"Heads & Banks",gst:"GST",acrs:"ACRS orders ↗"};
+    grp:"Party groups",books:"📒 Ledger & Outstanding ↗",close:"Cash handover",staff:"Staff ledger",veh:"Vehicles",deps:"Bank deposits",setup:"Heads & Banks",gst:"GST",acrs:"ACRS orders ↗"};
   const BILL=["make","made","due","led","pay","ret","chg","grp","gst"];
   const VIEWS={
     tally:{name:"Accounts · Tally",chip:"Tally",acts:["pay","IN","OUT","DEPOSIT","close","ret"],
-      row:[["Tally",["make","made","chg","ret"]],["Party",["books"]],["Bank & GST",["verify","cheques","gst"]],["Cash",["book","sum"]]],more:["grp","close","staff","veh","setup"],
+      row:[["Tally",["make","made","chg","ret"]],["Party",["books"]],["Bank & GST",["verify","deps","cheques","gst"]],["Cash",["book","sum"]]],more:["grp","close","staff","veh","setup"],
       kpis:["make","verify","gst","chq","coll","hand"],first:"make"},
     cash:{name:"Cashier",chip:"Cashier",acts:["pay","IN","OUT","DEPOSIT","close"],
-      row:[["",["book","cheques","close","staff","veh"]]],more:[],kpis:["open","cin","cout","dep","chq","hand"],first:"book"},
+      row:[["",["book","deps","cheques","close","staff","veh"]]],more:[],kpis:["open","cin","cout","dep","chq","hand"],first:"book"},
     party:{name:"Party & Collections",chip:"Party",acts:["pay","ret"],
       row:[["",["due","pay","ret","grp"]],["",["books","acrs"]]],more:[],kpis:["due","adv","coll","chq"],first:"due"}};
   const FILE={bill:"party-billing.html",cash:"accounts-dashboard.html"};
@@ -153,7 +153,7 @@
   const DEF=[["make","#c8102e","Bills to make","make",""],["due","#b3122b","To collect","due","#b3122b"],["coll","#13824a","Collected today","book","#13824a"],
     ["chq","#9a5b00","Cheques not in bank","cheques",""],["adv","#13824a","Advance with us","due",""],["hand","#002f37","Cash in hand","book",""],
     ["verify","#1d5fbf","Bank check","verify","#1d5fbf"],["gst","#6b21a8","GST","gst",""],
-    ["open","#5b6672","Opening cash","close",""],["cin","#13824a","Cash In","book","#13824a"],["cout","#c8102e","Cash Out","book","#c8102e"],["dep","#1d5fbf","Bank deposit","book",""]];
+    ["open","#5b6672","Opening cash","close",""],["cin","#13824a","Cash In","book","#13824a"],["cout","#c8102e","Cash Out","book","#c8102e"],["dep","#1d5fbf","Bank deposit","deps",""]];
   function drawKpis(){const b=el("hubKpis");if(!b)return;
     const L=VIEWS[view].kpis.map(k=>DEF.find(d=>d[0]===k));
     b.style.setProperty("--n",String(L.length));b.classList.toggle("n4",L.length===4);
