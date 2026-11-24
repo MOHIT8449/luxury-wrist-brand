@@ -77,6 +77,34 @@
   // One brand of a party (id "" = money / bills with no brand). Same shape as a party, with its name and bill names.
   const EMPTY={bills:[],due:0,advance:0,opening:0,ret:0,net:0,oldest:""};
   function slice(x,c){if(!x)return null;const b=x.brands&&x.brands[c||""]||EMPTY;return {...b,company_id:c||"",party:x.party,members:x.members,brands:x.brands}}
+  // ONE outstanding for every screen (Mohit, 24 Nov 2026: Dashboard ₹69.82 L vs Ledger & Outstanding ₹32.14 L).
+  // Same rule as Ledger & Outstanding "To collect": per party (brand slice when c is given)
+  // net = bills due + opening − advance − return credit; only parties with net > 0 are added.
+  // over = what is still due after advance on bills older than `days` (opening = old money).
+  // byBrand(info, daysOf) -> {companyId: {due, overdue, bills, parties}} for the brand tables.
+  function outstanding(info,c,days){
+    if(!info||!info.parties)return null;
+    const t=info.today||today(),age=d=>d?Math.round((Date.parse(t+"T00:00:00Z")-Date.parse(String(d).slice(0,10)+"T00:00:00Z"))/864e5):0;
+    const lim=days==null?30:Number(days)||0,parties=[];let total=0,over=0,bills=0;
+    for(const x of info.parties.values()){
+      const p=c!=null?slice(x,c):x;if(!p)continue;
+      const net=r2(p.net!=null?p.net:p.due+(p.opening||0)-p.advance-(p.ret||0));if(net<=0.5)continue;
+      let left=r2((p.advance||0)+(p.ret||0)),od=0;const open=Number(p.opening)||0;
+      if(open<0)left-=open;else if(open>0){const use=Math.min(left,open);left-=use;od+=open-use}
+      for(const b of p.bills||[]){let due=r2(b.due);const use=Math.min(Math.max(left,0),due);left-=use;due-=use;if(due<0.5)continue;bills++;if(age(b.invoice_date)>lim)od+=due}
+      od=Math.min(r2(od),net);total+=net;over+=od;
+      parties.push({party:x.party,due:net,overdue:od,oldest:p.oldest?age(p.oldest):null});
+    }
+    parties.sort((a,b)=>b.due-a.due);
+    return {total:r2(total),over:r2(over),bills,parties};
+  }
+  function byBrand(info,daysOf){
+    if(!info||!info.parties)return null;
+    const out={};
+    for(const co of info.companies||[]){const o=outstanding(info,co.id,daysOf?daysOf(co.id):30);out[co.id]={due:o.total,overdue:o.over,bills:o.bills,parties:o.parties.length}}
+    const none=outstanding(info,"",daysOf?daysOf(""):30);if(none&&none.total>0.5)out.none={due:none.total,overdue:none.over,bills:none.bills,parties:none.parties.length};
+    return out;
+  }
   // Brands this party has something in (bills due, advance or opening), real brands only.
   const activeBrands=x=>x&&x.brands?Object.values(x.brands).filter(b=>b.company_id&&(b.due>0.5||Math.abs(b.advance)>0.5||Math.abs(b.opening)>0.5)).map(b=>b.company_id):[];
   const savedBrand=()=>{try{return localStorage.getItem("lwbBrand")||""}catch(e){return ""}};
@@ -474,5 +502,5 @@
   // Brand of a bill to make (Mohit, 23 Nov 2026, LXY-00560): a PO whose brand is not known (SKU not matched, or lines of
   // two brands, company_id NULL) shows under every brand, so it never drops off the to-do list when a brand is picked.
   const makeInBrand=(o,b)=>!b||!o.company_id||o.company_id===b;
-  window.LWBPartyPay={load,open,changeDate,dateLogText,needsBill,makeInBrand,billNames,balText,key,rs,dmy,errText,slice,activeBrands,lookalike,core};
+  window.LWBPartyPay={load,open,changeDate,dateLogText,needsBill,makeInBrand,billNames,balText,key,rs,dmy,errText,slice,activeBrands,lookalike,core,outstanding,byBrand};
 })();
