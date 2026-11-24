@@ -3,7 +3,12 @@
  * dashboard instead: every kind of permission is its own card with its pending count (and ₹ total), the card
  * opens its list and the approval is given right there. The main Dashboard shows the same counts.
  *
- * LWBApprovals.load(client, {uid, role}) -> [{key, icon, title, sub, count, amount, items, bulk, page, err}]
+ * LWBApprovals.load(client, {uid, role}) -> [{key, icon, title, sub, count, amount, items, manyHref, page, err}]
+ *
+ * Mohit (24 Nov 2026): tick many items (or Select all) and approve them together in every section. The act
+ * marked many:true is the one the bulk button runs, item by item, with the same RPC / table call as its own
+ * button (so every server check and side effect stays). New POs keep their full approval on PO / Sales:
+ * manyHref(ids) opens it with those POs ticked for its own "Approve selected".
  * Every list comes from an RPC / table the ERP already has; this file adds no SQL. A list this login
  * may not read (RPC error) is left out, so each role sees only what it can act on. Supabase RLS / RPC
  * checks stay the real permission check.
@@ -37,6 +42,7 @@
   // Each section: roles that see it, load(c, ctx) -> {items, amount?, bulk?} or null (not for this login).
   // item = {id, ref, party, amount, when, lines:[text], meta:[text], field?, acts:[{t, kind, href|run}]}
   // act kind: ok (green, does it here), no (red), go (opens the page). run(c, item, fieldValue, ui).
+  // many:true = this act is also run by "Approve selected" (no confirm per item; one confirm for all).
   const SECTIONS=[
     {key:"rate",icon:"₹",title:"Low rate approval",sub:"Rate below minimum",roles:["admin"],page:"warehouse-orders.html",
      async load(c){
@@ -53,7 +59,7 @@
            detail:{info:[["Sales person",r.sales_person],["PO date",dmy(r.order_date)],["Brand",r.brand],["Type",r.slip?"Rajnigandha slip":"PO"],["Transport",r.transportation],["Driver",r.driver_name],["Vehicle",r.vehicle_no],["Note",r.note]],
              why:"Rate is below the minimum on "+lines.filter(l=>l.min_rate!=null&&num(l.rate)<num(l.min_rate)).length+" of "+lines.length+" items",
              rows:lines.map(l=>({sku:l.sku,qty:num(l.qty),rate:num(l.rate),min:l.min_rate==null?null:num(l.min_rate),landing:l.landing==null?null:num(l.landing),flag:l.min_rate!=null&&num(l.rate)<num(l.min_rate)}))},
-           acts:[{t:"✓ Approve rate",kind:"ok",view:true,confirm:"Approve the rate of "+r.order_no+"?\n\n"+(r.slip?"The slip is made and goes to Accounts.":"The PO is approved and goes on for transport."),
+           acts:[{t:"✓ Approve rate",kind:"ok",view:true,many:true,confirm:"Approve the rate of "+r.order_no+"?\n\n"+(r.slip?"The slip is made and goes to Accounts.":"The PO is approved and goes on for transport."),
                   done:"Rate approved.",doneNote:v=>v&&v.already?"PO was already "+(v.status||"loaded")+", so only the rate OK is saved.":r.slip?"Slip is made and sent to Accounts.":"PO is approved and goes on for transport.",
                   run:c2=>rpc(c2,"lwb_rate_approve",{p_order_id:r.order_id})},
                  {t:"Open PO",kind:"go",href:"warehouse-orders.html?rate="+encodeURIComponent(r.order_id)}]};
@@ -72,11 +78,10 @@
            lines:why,meta:[seg[2]&&"By "+seg[2]].filter(Boolean),
            detail:{info:[["Sales person",seg[2]||(o&&o.sales_person)]],why:"Why it needs a check",whyList:why,po:n.order_id,
              flags:why.map(w=>String(w).split(/ ₹| — /)[0].trim().toUpperCase()).filter(Boolean)},
-           acts:[{t:"✓ Checked OK",kind:"ok",view:true,run:c2=>readBells(c2,ctx.uid,"ORDER_RATE_CHECK",[n.order_id])},
+           acts:[{t:"✓ Checked OK",kind:"ok",view:true,many:true,run:c2=>readBells(c2,ctx.uid,"ORDER_RATE_CHECK",[n.order_id])},
                  {t:"Open PO",kind:"go",href:orderLink(n.order_id)}]});
        }
-       return {items,amount:sum(items,i=>i.amount),
-         bulk:items.length>1?{t:"✓ All checked",confirm:"Mark all "+items.length+" market orders as checked?",run:c2=>readBells(c2,ctx.uid,"ORDER_RATE_CHECK")}:null};
+       return {items,amount:sum(items,i=>i.amount)};
      }},
     {key:"po",icon:"🛒",title:"New order approval",sub:"Salesman POs",roles:["admin","manager"],page:"warehouse-orders.html",
      async load(c,ctx){
@@ -85,7 +90,8 @@
          lines:[],meta:[dmy(o.order_date),o.sales_person&&"By "+o.sales_person,o.transportation].filter(Boolean),
          detail:{info:[["Sales person",o.sales_person],["PO date",dmy(o.order_date)],["Transport",o.transportation],["Status",o.status||"New"]],po:o.id},
          acts:[{t:"Open & approve",kind:"go",href:orderLink(o.id)}]}));
-       return {items,amount:sum(items,i=>i.amount)};
+       // Approve selected: PO / Sales opens with these POs ticked and runs its own bulk Approve (same checks).
+       return {items,amount:sum(items,i=>i.amount),manyHref:ids=>"warehouse-orders.html?approve="+ids.map(encodeURIComponent).join(",")};
      }},
     {key:"change",icon:"✏",title:"Order change approval",sub:"Qty / rate / SKU change",roles:["admin","manager"],page:"party-billing.html?tab=chg",
      async load(c){
@@ -104,7 +110,7 @@
          meta:[inr(r.old_value)+" → "+inr(r.new_value),r.bill_no&&"Bill "+r.bill_no,r.reason,r.note,r.by&&"By "+r.by].filter(Boolean),
          // Approve / Open first show the full change (Mohit, 16 Nov 2026): who sent it, why, item by item
          // before -> after, amount before -> after. Approve is given from that popup.
-         acts:[{t:"✓ Approve",kind:"ok",view:true,
+         acts:[{t:"✓ Approve",kind:"ok",view:true,many:true,
                 run:c2=>rpc(c2,"lwb_bill_change_decide",{p_id:r.id,p_approve:true,p_reply:null})},
                {t:"↩ Send back",kind:"no",ask:"Why is it sent back?",run:(c2,i,f,why)=>rpc(c2,"lwb_bill_change_decide",{p_id:r.id,p_approve:false,p_reply:why})},
                {t:"Open",kind:"view",view:true}],
@@ -122,7 +128,7 @@
          field:{type:"number",label:"₹ per trip",value:num(g.rate)},
          detail:{info:[["Vehicle / driver",g.no],["Party",g.party],["Owner",g.owner],["Trip days",num(g.days)],["From",dmy(g.first_date)],["To",g.last_date?dmy(g.last_date):""],
            ["Rent per trip","₹"+num(g.rate).toLocaleString("en-IN")],["Total","₹"+(num(g.rate)*num(g.days)).toLocaleString("en-IN")],["Set by",g.set_by_name],["Set on",dmy(g.set_at)],["POs",(g.orders||[]).join(", ")],["Note",g.note]]},
-         acts:[{t:"✓ Verify",kind:"ok",run:(c2,i,rate)=>{const v=num(rate);if(!(v>0))throw Error("Enter the rent per trip");return rpc(c2,"lwb_hired_rate_verify",{p_rate_id:g.rate_id,p_ok:true,p_rate:v,p_note:null})}},
+         acts:[{t:"✓ Verify",kind:"ok",many:true,run:(c2,i,rate)=>{const v=num(rate);if(!(v>0))throw Error("Enter the rent per trip");return rpc(c2,"lwb_hired_rate_verify",{p_rate_id:g.rate_id,p_ok:true,p_rate:v,p_note:null})}},
                {t:"↩ Send back",kind:"no",ask:"Why is it sent back?",run:(c2,i,f,why)=>rpc(c2,"lwb_hired_rate_verify",{p_rate_id:g.rate_id,p_ok:false,p_rate:null,p_note:why})}]}));
        return {items,amount:sum(items,i=>i.amount)};
      }},
@@ -139,7 +145,7 @@
          field:{type:"select",label:"Bank",value:p.bank_id?String(p.bank_id):"",options:opts},
          detail:{info:[["Type",p.kind==="DEPOSIT"?"Cash deposit":"Payment received"],["Mode",MODE[p.mode]||p.mode],["Date",dmy(p.date)],["Party",p.party],["Category",p.category],["Ref / UTR",p.ref],["PO",p.order_no],
            ["Bank",name(p.bank_id)||"Not chosen yet"],["Entered by",p.by],["Remark",p.remark]]},
-         acts:[{t:"✓ In bank",kind:"ok",run:(c2,i,b)=>{if(!b)throw Error("Choose the bank where this money came");return rpc(c2,"lwb_acc_verify_line",{p_src:p.src,p_id:p.id,p_ok:true,p_bank_id:Number(b),p_note:null})}},
+         acts:[{t:"✓ In bank",kind:"ok",many:true,run:(c2,i,b)=>{if(!b)throw Error("Choose the bank where this money came");return rpc(c2,"lwb_acc_verify_line",{p_src:p.src,p_id:p.id,p_ok:true,p_bank_id:Number(b),p_note:null})}},
                {t:"✗ Not in bank",kind:"no",ask:"Why is it not in the bank?",run:(c2,i,f,why)=>rpc(c2,"lwb_acc_verify_line",{p_src:p.src,p_id:p.id,p_ok:false,p_bank_id:null,p_note:why})}]}));
        // per bank: count + total (bank not chosen last)
        const g=new Map();items.forEach(i=>{const x=g.get(i.group)||{name:i.groupName,count:0,amount:0};x.count++;x.amount+=i.amount;g.set(i.group,x)});
@@ -155,7 +161,7 @@
          lines:[lab(m.from_bucket)+" → "+lab(m.to_bucket)+" · "+cs(m)],
          meta:[dmy(m.move_date),m.reason,m.note,m.requested_by_name&&"By "+m.requested_by_name].filter(Boolean),
          detail:{info:[["SKU",m.sku_name],["From",lab(m.from_bucket)],["To",lab(m.to_bucket)],["Qty",cs(m)+" ("+num(m.qty_pcs)+" pcs)"],["Date",dmy(m.move_date)],["Reason",m.reason],["Note",m.note],["Asked by",m.requested_by_name]]},
-         acts:[{t:"✓ Approve",kind:"ok",view:true,confirm:"Approve STM-"+m.id+"?\n\n"+m.sku_name+" · "+cs(m)+"\nStock moves now.",run:c2=>rpc(c2,"lwb_stx_decide",{p_ids:[m.id],p_action:"APPROVE",p_note:null,p_qty:null})},
+         acts:[{t:"✓ Approve",kind:"ok",view:true,many:true,confirm:"Approve STM-"+m.id+"?\n\n"+m.sku_name+" · "+cs(m)+"\nStock moves now.",run:c2=>rpc(c2,"lwb_stx_decide",{p_ids:[m.id],p_action:"APPROVE",p_note:null,p_qty:null})},
                {t:"✗ Reject",kind:"no",ask:"Reason for rejecting (the godown will see it)",run:(c2,i,f,why)=>rpc(c2,"lwb_stx_decide",{p_ids:[m.id],p_action:"REJECT",p_note:why,p_qty:null})},
                {t:"Open",kind:"go",href:"stock-transfer.html#approvals"}]}));
        return {items};
@@ -168,7 +174,11 @@
          meta:[r.driver_name&&"Driver "+r.driver_name,r.vehicle_no,r.note].filter(Boolean),
          detail:{info:[["Driver",r.driver_name],["Vehicle",r.vehicle_no],["Note",r.note]],po:r.order_id,
            back:(r.items||[]).map(li=>({sku:li.sku,qty:num(li.qty_cases||li.qty),uom:li.qty_cases!=null?"CS":(li.uom||""),reason:li.reason}))},
-         acts:[{t:"Open & verify",kind:"go",href:"driver-returns.html"+(r.order_id?"?order="+encodeURIComponent(r.order_id):"")}]}));
+         // Approve here = the same call as Approve on Driver Return Approval (lwb_review_driver_return).
+         acts:[{t:"✓ Approve",kind:"ok",many:true,done:"Return approved.",doneNote:"Party outstanding is reduced by "+inr(r.total_return_amount||r.amount)+".",
+                confirm:"Approve return of "+inr(r.total_return_amount||r.amount)+" for "+(r.party_name||r.customer_name||"")+" ("+(r.order_no||"")+")?\nThis amount will reduce the party's ERP outstanding.",
+                run:c2=>rpc(c2,"lwb_review_driver_return",{p_return_id:r.id||r.return_id,p_action:"APPROVE",p_note:null})},
+               {t:"Open",kind:"go",href:"driver-returns.html"+(r.order_id?"?order="+encodeURIComponent(r.order_id):"")}]}));
        return {items,amount:sum(items,i=>i.amount)};
      }},
     {key:"sreturn",icon:"↩",title:"Sales return approval",sub:"Return to approve",roles:["admin"],page:"sales-return.html",
@@ -177,7 +187,11 @@
        if(error)return null;
        const items=(data||[]).map(r=>({id:String(r.id),orderId:r.order_id,ref:r.return_no||"Return",party:"",amount:num(r.total_amount),when:r.created_at,lines:[],meta:[dmy(r.return_date)].filter(Boolean),
          detail:{info:[["Return no.",r.return_no],["Return date",dmy(r.return_date)]],po:r.order_id},
-         acts:[{t:"Open & approve",kind:"go",href:"sales-return.html"}]}));
+         // Approve here = the same update as Approve on Sales Return (only a return still pending).
+         acts:[{t:"✓ Approve",kind:"ok",many:true,confirm:"Approve return "+(r.return_no||"")+"?",
+                run:async c2=>{const {data:u,error:e2}=await c2.from("sales_returns").update({approval_status:"approved",status:"approved"}).eq("id",r.id).eq("approval_status","pending").select("id");
+                  if(e2)throw Error(errText(e2));if(!(u&&u.length))throw Error("Return was not updated. Check approval status.")}},
+               {t:"Open",kind:"go",href:"sales-return.html"}]}));
        return {items,amount:sum(items,i=>i.amount)};
      }},
     {key:"party",icon:"👤",title:"New party check",sub:"Added by salesman",roles:["admin","manager"],page:"customer-master.html",
@@ -188,10 +202,10 @@
          return {id:String(n.id),person:(m.match(/Added by ([^.]+?) from/)||[])[1]||"",ref:"Party",party:head[0]||"",amount:null,when:n.created_at,lines:[],
            meta:head.slice(1).concat(((m.match(/Added by ([^.]+?) from/)||[])[1]||"")?["By "+(m.match(/Added by ([^.]+?) from/)||[])[1]]:[]),
            detail:{info:head.slice(1).map((x,k)=>[k?"Detail":"Area / city",x]).concat([["Added by",(m.match(/Added by ([^.]+?) from/)||[])[1]||""],["Message",m]])},
-           acts:[{t:"✓ Checked OK",kind:"ok",run:async c2=>{const {error}=await c2.from("erp_notifications").update({is_read:true}).eq("id",n.id).eq("user_id",ctx.uid);if(error)throw Error(errText(error))}},
+           acts:[{t:"✓ Checked OK",kind:"ok",many:true,run:async c2=>{const {error}=await c2.from("erp_notifications").update({is_read:true}).eq("id",n.id).eq("user_id",ctx.uid);if(error)throw Error(errText(error))}},
                  {t:"Open Party Master",kind:"go",href:"customer-master.html"}]};
        });
-       return {items,bulk:items.length>1?{t:"✓ All checked",confirm:"Mark all "+items.length+" new parties as checked?",run:c2=>readBells(c2,ctx.uid,"PARTY_CREATED")}:null};
+       return {items};
      }}
   ];
 

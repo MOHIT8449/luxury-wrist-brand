@@ -2351,6 +2351,23 @@ document.addEventListener("DOMContentLoaded", async () => {
       }
       history.replaceState(null,'',location.pathname+location.hash);
     }
+    // From Approvals "Approve selected" (?approve=id,id,...; Mohit, 24 Nov 2026): those POs ticked on the
+    // Pending tab and the normal bulk Approve asked once, so every PO goes through approveOrder() as usual.
+    const approveParam=new URLSearchParams(location.search).get('approve');
+    if(approveParam){
+      history.replaceState(null,'',location.pathname+location.hash);
+      const ids=[...new Set(approveParam.split(',').map(x=>x.trim()).filter(Boolean))].slice(0,100);
+      const miss=ids.filter(id=>!orders.some(o=>o.id===id));
+      if(miss.length){const found=await db.from('orders').select('*').in('id',miss);if(!found.error)(found.data||[]).forEach(o=>orders.push(o));}
+      const ok=ids.map(id=>orders.find(o=>o.id===id)).filter(o=>o&&isPending(o));
+      if(VIEW_ONLY)showMessage('Your login can only view POs.','error');
+      else if(!ok.length)showMessage('These POs are not waiting for approval any more.','success');
+      else{
+        pickStatusFilter('pending');pickedIds.clear();ok.forEach(o=>pickedIds.add(o.id));renderOrders();
+        if(ok.length<ids.length)showMessage((ids.length-ok.length)+' PO not waiting for approval any more, left out.','success');
+        await bulkApprove();
+      }
+    }
     const pushOrder=new URLSearchParams(location.search).get('order');
     if(pushOrder){
       if(!orders.some(o=>o.id===pushOrder)){
@@ -4011,7 +4028,8 @@ async function bulkApprove() {
   const list = pickedOrders();
   if (!list.length || bulkBusy) return;
   if (!list.every(isPending)) { alert("Only Pending Review POs can be approved together."); return; }
-  if (!await confirm("Approve " + list.length + " PO as ordered (no SKU, rate or qty change)?\n\n" +
+  if (!await confirm("Approve " + list.length + " PO as ordered (no SKU, rate or qty change)?\nTotal " +
+    formatMoney(list.reduce((t, o) => t + (Number(o.total_amount) || 0), 0)) + "\n\n" +
     list.map(o => o.order_no + " · " + (o.customer_name || "")).join("\n") +
     "\n\nTo change a PO, open it with Review instead.", { title: "Approve selected POs", ok: "✔ Approve " + list.length })) return;
   bulkBusy = true;
