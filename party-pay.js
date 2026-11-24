@@ -273,6 +273,17 @@
       else{let left=adjust?p.advance:m+(k&&kmode==="LESS"?k:0);
         for(const b of p.bills){if(left<0.01)break;const t=Math.min(r2(b.due),left);out.set(b.order_id,r2(t));left=r2(left-t)}}
       if(!k)return {money:out,kasar:ks,err};
+      if(!adjust&&m<0.01){ // kasar only, no money: write off the small balance left on one bill
+        let b=null;
+        if(kmode==="EXTRA")err="Paid extra needs money: enter the money received.";
+        else if(k>KMAX)err="Kasar can be at most "+rs(KMAX)+". Use a credit note for more.";
+        else if(!p.bills.length)err="No "+(bname()?bname()+" ":"")+"bill is due for this party, so there is no bill to put kasar on. Check the brand above.";
+        else if(how==="pick"){b=p.bills.filter(x=>out.get(x.order_id)>0).pop();if(!b)err="Kasar only (no money): press \"full\" on the bill that has the small balance left.";}
+        else{b=p.bills.find(x=>Math.abs(r2(x.due)-k)<=0.5);if(!b)err="No bill has exactly "+rs(k)+" left. Choose bills and press \"full\" on the bill. Kasar must close the whole bill.";}
+        if(!err&&Math.abs(r2(b.due)-k)>0.5)err="Bill "+(b.invoice_no||b.order_no)+" ("+b.order_no+") has "+rs(b.due)+" left. Kasar only (no money) must equal it to close the bill.";
+        if(!err)ks.push({order_id:b.order_id,amount:k,kind:"LESS",bill:b});
+        return {money:new Map(),kasar:err?[]:ks,err};
+      }
       const picked=p.bills.filter(b=>out.get(b.order_id)>0),last=picked[picked.length-1];
       if(k>KMAX)err="Kasar can be at most "+rs(KMAX)+". Use a credit note for more.";
       else if(!last)err="Enter the money first: kasar goes on the bill this money pays.";
@@ -320,6 +331,10 @@
     function kasarHint(){
       if(adjust||how==="adv"||kas())return [];
       const p=P(),pl=plan(),out=[];
+      if(money()<0.01){ // no money: offer kasar on a bill that has only a small balance left
+        const s=p.bills.filter(b=>b.due>=0.01&&b.due<=KMAX&&(how!=="pick"||manual.get(b.order_id)>0));
+        return s.length?[{order_id:s[0].order_id,amount:r2(s[0].due),kind:"LESS",bill:s[0]}]:[];
+      }
       for(const b of p.bills){const v=pl.get(b.order_id)||0;if(v<=0)continue;const s=r2(b.due-v);if(s>=0.01&&s<=KMAX)out.push({order_id:b.order_id,amount:s,kind:"LESS",bill:b})}
       if(!out.length&&how==="auto"&&pl.size){
         const left=r2(money()-[...pl.values()].reduce((a,v)=>a+v,0)),last=p.bills.filter(b=>pl.get(b.order_id)>0).pop();
@@ -357,6 +372,7 @@
       const ks=drawKasar(),kt=r2(ks.reduce((a,x)=>a+(x.kind==="EXTRA"?x.amount:0),0));
       const m=money(),split=r2([...plan().values()].reduce((a,v)=>a+v,0)+kt),left=r2(m-split);
       q("[data-tot]").textContent=rs(m);
+      if(!adjust)q("[data-ok]").textContent=m<0.01&&kas()?"Save kasar":"Save "+(bname()?bname()+" ":"")+"payment";
       q("[data-cwarn]").hidden=!(num(q('.amt[data-m="CASH"]').value)>=200000);
       q("[data-left]").innerHTML=adjust?`<span>Advance ${rs(m)}</span><span>Adjusted now <b>${rs(split)}</b></span><span>Advance left <b class="${left<-0.5?"r":"g"}">${rs(left)}</b></span>`:
         `<span>Against bills <b>${rs(split)}</b></span>${ks.length?`<span>Kasar <b style="color:#9a6b00">${rs(ks.reduce((a,x)=>a+x.amount,0))}</b></span>`:""}<span>${left<-0.5?"More than received":"Stays as advance"} <b class="${left<-0.5?"r":"g"}">${rs(Math.abs(left))}</b></span>`;
@@ -412,7 +428,20 @@
           if(m==="CASH"){const n=readNotes();if(Object.keys(n).length&&!notes.hidden)l.notes=n}
           else{l.ref=q('[data-r="'+m+'"]').value.trim();if(m==="CHEQUE"&&!l.ref)return fail("Enter the cheque number.")}
           lines.push(l)}
-        if(!lines.length)return fail("Enter the money received (Cash / UPI / Bank / Cheque).");
+        if(!lines.length&&kas()){ // kasar only: no money, just write off the small balance on that bill
+          const S=split();if(S.err)return fail("Kasar: "+S.err);
+          const k=S.kasar[0],remark=q("#lppR").value.trim()||null;
+          busy=true;q("[data-ok]").disabled=true;
+          try{
+            const {error}=await o.client.rpc("lwb_kasar_save",{p_order_id:k.order_id,p_amount:k.amount,p_kind:"LESS",p_date:date,p_remark:remark});
+            if(error)throw error;
+            close();
+            if(o.onSaved)o.onSaved({kasarOnly:true,kasar:k.amount,bill:k.bill.invoice_no||k.bill.order_no,party,amount:0,split:0,advance:0});
+          }catch(e){fail(errText(e))}
+          finally{busy=false;q("[data-ok]").disabled=false}
+          return;
+        }
+        if(!lines.length)return fail("Enter the money received (Cash / UPI / Bank / Cheque) or a kasar amount.");
         const m=money();if(billSum>m+0.5)return fail("Bills "+rs(billSum)+" is more than the money received "+rs(m)+".");
         args=["lwb_party_receive",{p_party:party,p_pay_date:date,p_lines:lines,p_allocs:how==="auto"?null:how==="adv"?[]:allocs,p_remark:q("#lppR").value.trim()||null}];
         if(BR.length)args[1].p_company_id=brand;
