@@ -3,7 +3,7 @@ import webpush from 'npm:web-push@3.6.7';
 import { validEndpoint, messageFor, suppressSalesOrderAlert } from './logic.ts';
 
 const ORIGIN='https://luxurywristbrand.com';
-const ORIGINS=['https://luxurywristbrand.com','https://www.luxurywristbrand.com','https://luxury-wrist-brand.pages.dev'];
+const ORIGINS=['https://luxurywristbrand.com','https://www.luxurywristbrand.com'];
 const allowOrigin=(o)=>ORIGINS.includes(o)?o:ORIGIN;
 const cors={'Access-Control-Allow-Origin':ORIGIN,'Access-Control-Allow-Headers':'authorization,apikey,x-client-info,content-type',
  'Access-Control-Allow-Methods':'POST, OPTIONS','Content-Type':'application/json','Cache-Control':'no-store','Vary':'Origin'};
@@ -35,7 +35,8 @@ async function dispatch(id,c){
   if(pe)throw Error('Cannot read recipient');
   if(p?.active&&suppressSalesOrderAlert(n,p.role)){await finish('sent');return reply(200,{status:'sales_order_updates_disabled'});}
   if(!p?.active){await finish('sent');return reply(200,{status:'inactive_recipient'});}
-  const subs=await db.from('lwb_push_subscriptions').select('*').eq('user_id',n.user_id);
+  // Only phones subscribed on our own domain (old pages.dev subscriptions showed the old address).
+  const subs=await db.from('lwb_push_subscriptions').select('*').eq('user_id',n.user_id).eq('origin',ORIGIN);
   if(subs.error)throw Error('Cannot read subscriptions');
   const prior=await db.from('lwb_push_deliveries').select('subscription_id').eq('notification_id',id);
   if(prior.error)throw Error('Cannot read delivery history');
