@@ -7,10 +7,12 @@
 //   the person sent any message to the business number in the last 24 hours.
 //   PDF (Day Book, or a report too long for one image): the same table on A4 pages, sent as a document
 //   (template with a DOCUMENT header: lwb_daily_report_pdf; else a plain document inside the 24 hours).
+//   The PDF is vector (text drawn straight into it, no images), so it stays light for the Edge Function.
 // Secrets (same as the login OTP): WA_ACCESS_TOKEN, WA_PHONE_NUMBER_ID, optional WA_GRAPH_VERSION.
 import { createClient } from 'npm:@supabase/supabase-js@2.118.0';
 import { initWasm, Resvg } from 'npm:@resvg/resvg-wasm@2.6.2';
-import { PDFDocument } from 'npm:pdf-lib@1.17.1';
+import { PDFDocument, rgb } from 'npm:pdf-lib@1.17.1';
+import fontkit from 'npm:@pdf-lib/fontkit@1.1.1';
 import { renderSvg, buildPdf, FONT_URLS, WASM_URL } from './render.mjs';
 
 const json = (status, value) => new Response(JSON.stringify(value), { status, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' } });
@@ -25,7 +27,6 @@ async function ready() {
 }
 const svgPng = (svg, zoom) => new Resvg(svg, { font: { fontBuffers: fonts, defaultFontFamily: 'Roboto', loadSystemFonts: false }, fitTo: { mode: 'zoom', value: zoom } }).render().asPng();
 const png = doc => svgPng(renderSvg(doc), 1.5);
-const pdfPage = svg => svgPng(svg, 2);     // A4 page at about 190 dpi
 
 const graph = () => 'https://graph.facebook.com/' + (Deno.env.get('WA_GRAPH_VERSION') || 'v26.0') + '/' + Deno.env.get('WA_PHONE_NUMBER_ID');
 const auth = () => ({ Authorization: 'Bearer ' + Deno.env.get('WA_ACCESS_TOKEN') });
@@ -86,7 +87,7 @@ Deno.serve(async (req) => {
         const base = ('LWB-' + m.title + '-' + dd).replace(/\W+/g, '-');
         if (!media.has(key)) {
           media.set(key, m.pdf
-            ? { pdf: true, filename: base + '.pdf', id: await upload(await buildPdf(m.doc, pdfPage, PDFDocument, { title: m.kind === 'DAYBOOK' ? 'Day Book' : m.title, sub: m.kind === 'DAYBOOK' ? 'Daily work report' : 'Daily report', date: dd, footer: m.kind === 'DAYBOOK' ? 'For Admin' : 'For management' }), base + '.pdf', 'application/pdf') }
+            ? { pdf: true, filename: base + '.pdf', id: await upload(await buildPdf(m.doc, { PDFDocument, rgb }, fontkit, fonts, { title: m.kind === 'DAYBOOK' ? 'Day Book' : m.title, sub: m.kind === 'DAYBOOK' ? 'Daily work report' : 'Daily report', date: dd, footer: m.kind === 'DAYBOOK' ? 'For Admin' : 'For management' }), base + '.pdf', 'application/pdf') }
             : { pdf: false, id: await upload(png(m.doc), base + '.png') });
         }
         const f = media.get(key);

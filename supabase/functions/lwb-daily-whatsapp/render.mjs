@@ -117,74 +117,100 @@ export function pages(doc, max = PAGE_PX, H = PH_ROW) {
   return out;
 }
 
-function ptxt(x, y, s, o = {}) {
-  const size = o.size || 13, bold = !!o.bold, anchor = o.align || "start";
-  const w = o.w || CW;
-  return `<text x="${x}" y="${y}" font-size="${size}" font-weight="${bold ? 700 : 400}" fill="${o.fill || P.ink}" text-anchor="${anchor}" dominant-baseline="central"${o.ls ? ` letter-spacing="${o.ls}"` : ""}>${esc(fit(s, w + 24 - 16, size, bold))}</text>`;
-}
-const hline = (x1, x2, y, c = P.line, w = 1) => `<line x1="${x1}" y1="${y}" x2="${x2}" y2="${y}" stroke="${c}" stroke-width="${w}"/>`;
-const cell = (i, y, s, o = {}) => {
-  const x0 = PCX[i], x1 = PCX[i + 1], w = x1 - x0 - 16;
-  const align = o.align || (i === 0 ? "start" : i === 3 ? "end" : "middle");
-  const x = align === "start" ? x0 + 10 : align === "end" ? x1 - 10 : (x0 + x1) / 2;
-  return ptxt(x, y, s, { ...o, align, w });
-};
-
-// One A4 page: header (brand, report, date, page), rows, footer.
-export function renderPage(rows, meta, i, n) {
-  const o = [];
-  o.push(`<rect width="${PW}" height="${PH}" fill="#ffffff"/>`);
+// The page is drawn through a small painter g = {rect, line, text}; one painter writes SVG
+// (previews / tests), the other draws straight into the PDF (vector text: light and sharp).
+function paint(g, rows, meta, i, n) {
+  const cell = (c, y, s, o = {}) => {
+    const x0 = PCX[c], x1 = PCX[c + 1], w = x1 - x0 - 20;
+    const align = o.align || (c === 0 ? "start" : c === 3 ? "end" : "middle");
+    const x = align === "start" ? x0 + 10 : align === "end" ? x1 - 10 : (x0 + x1) / 2;
+    g.text(x, y, s, { ...o, align, w });
+  };
   // header
-  o.push(ptxt(PX, 58, "LUXURY WRIST BRAND", { size: 22, bold: true, fill: P.brand, ls: 1.5 }));
-  o.push(ptxt(PX, 86, (meta.title || "Report") + (meta.sub ? "  ·  " + meta.sub : ""), { size: 14, fill: P.sub }));
-  o.push(ptxt(PW - PX, 58, meta.date || "", { size: 16, bold: true, align: "end", w: 260 }));
-  o.push(ptxt(PW - PX, 86, "Page " + (i + 1) + " of " + n, { size: 12, fill: P.mute, align: "end", w: 200 }));
-  o.push(`<rect x="${PX}" y="104" width="${CW}" height="3" fill="${P.brand}"/><rect x="${PX}" y="104" width="90" height="3" fill="${P.gold}"/>`);
+  g.text(PX, 58, "LUXURY WRIST BRAND", { size: 22, bold: true, fill: P.brand, w: 460, ls: 1.5 });
+  g.text(PX, 86, (meta.title || "Report") + (meta.sub ? "  ·  " + meta.sub : ""), { size: 14, fill: P.sub, w: 460 });
+  g.text(PW - PX, 58, meta.date || "", { size: 16, bold: true, align: "end", w: 240 });
+  g.text(PW - PX, 86, "Page " + (i + 1) + " of " + n, { size: 12, fill: P.mute, align: "end", w: 200 });
+  g.rect(PX, 104, CW, 3, P.brand); g.rect(PX, 104, 90, 3, P.gold);
   // rows
   let y = TOP, z = 0;
   for (const r of rows) {
     const t = r[0], h = PH_ROW[t];
     if (t === "sec") {
-      const top = y + 14;
-      o.push(`<rect x="${PX}" y="${top}" width="4" height="22" fill="${P.brand}"/>`);
-      o.push(ptxt(PX + 14, top + 11, r[1], { size: 15, bold: true, fill: P.ink }));
-      o.push(hline(PX, PW - PX, y + h - 4, P.line));
+      g.rect(PX, y + 14, 4, 22, P.brand);
+      g.text(PX + 14, y + 25, r[1], { size: 15, bold: true, w: CW - 20 });
+      g.line(PX, PW - PX, y + h - 4, P.line, 1);
       z = 0;
     } else if (t === "th") {
-      o.push(`<rect x="${PX}" y="${y}" width="${CW}" height="${h}" fill="${P.thbg}"/>`);
-      for (let c = 0; c < 4; c++) o.push(cell(c, y + h / 2, String((r[1] || [])[c] || "").toUpperCase(), { size: 11, bold: true, fill: P.sub, ls: 0.4 }));
+      g.rect(PX, y, CW, h, P.thbg);
+      for (let c = 0; c < 4; c++) cell(c, y + h / 2, String((r[1] || [])[c] || "").toUpperCase(), { size: 11, bold: true, fill: P.sub, ls: 0.4 });
       z = 0;
     } else if (t === "tr") {
       const tot = !!r[2], tone = r[3] && P[r[3]];
-      if (tot) { o.push(`<rect x="${PX}" y="${y}" width="${CW}" height="${h}" fill="${P.totbg}"/>`); o.push(hline(PX, PW - PX, y, P.brand, 1.5)); }
-      else if (z++ % 2 === 1) o.push(`<rect x="${PX}" y="${y}" width="${CW}" height="${h}" fill="${P.zebra}"/>`);
-      for (let c = 0; c < 4; c++) o.push(cell(c, y + h / 2, (r[1] || [])[c] ?? "", { size: 13, bold: tot, fill: tone || P.ink }));
-      o.push(hline(PX, PW - PX, y + h, P.line));
+      if (tot) { g.rect(PX, y, CW, h, P.totbg); g.line(PX, PW - PX, y, P.brand, 1.5); }
+      else if (z++ % 2 === 1) g.rect(PX, y, CW, h, P.zebra);
+      for (let c = 0; c < 4; c++) cell(c, y + h / 2, (r[1] || [])[c] ?? "", { size: 13, bold: tot, fill: tone || P.ink });
+      g.line(PX, PW - PX, y + h, P.line, 1);
     } else if (t === "kv") {
       const tone = r[3] && P[r[3]];
-      o.push(ptxt(PX + 10, y + h / 2, r[1], { size: 13, fill: P.sub, w: CW * 0.4 }));
-      o.push(ptxt(PW - PX - 10, y + h / 2, r[2], { size: 13, bold: true, fill: tone || P.ink, align: "end", w: CW * 0.6 }));
-      o.push(`<line x1="${PX}" y1="${y + h}" x2="${PW - PX}" y2="${y + h}" stroke="${P.line}" stroke-width="1" stroke-dasharray="3 3"/>`);
+      g.text(PX + 10, y + h / 2, r[1], { size: 13, fill: P.sub, w: CW * 0.36 });
+      g.text(PW - PX - 10, y + h / 2, r[2], { size: 13, bold: true, fill: tone || P.ink, align: "end", w: CW * 0.6 });
+      g.line(PX, PW - PX, y + h, P.line, 1, true);
     }
     y += h;
   }
   // footer
-  o.push(hline(PX, PW - PX, PH - 44, P.line));
-  o.push(ptxt(PX, PH - 26, "Luxury Wrist Brand ERP  ·  luxurywristbrand.com", { size: 11, fill: P.mute }));
-  o.push(ptxt(PW - PX, PH - 26, "Confidential  ·  " + (meta.footer || "For management"), { size: 11, fill: P.mute, align: "end", w: 300 }));
+  g.line(PX, PW - PX, PH - 44, P.line, 1);
+  g.text(PX, PH - 26, "Luxury Wrist Brand ERP  ·  luxurywristbrand.com", { size: 11, fill: P.mute, w: 360 });
+  g.text(PW - PX, PH - 26, "Confidential  ·  " + (meta.footer || "For management"), { size: 11, fill: P.mute, align: "end", w: 300 });
+}
+
+// SVG of one A4 page (preview / tests).
+export function renderPage(rows, meta, i, n) {
+  const o = [`<rect width="${PW}" height="${PH}" fill="#ffffff"/>`];
+  paint({
+    rect: (x, y, w, h, c) => o.push(`<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="${c}"/>`),
+    line: (x1, x2, y, c, w, dash) => o.push(`<line x1="${x1}" y1="${y}" x2="${x2}" y2="${y}" stroke="${c}" stroke-width="${w}"${dash ? ' stroke-dasharray="3 3"' : ""}/>`),
+    text: (x, y, s, t = {}) => {
+      const size = t.size || 13, bold = !!t.bold;
+      o.push(`<text x="${x}" y="${y}" font-size="${size}" font-weight="${bold ? 700 : 400}" fill="${t.fill || P.ink}" text-anchor="${t.align || "start"}" dominant-baseline="central"${t.ls ? ` letter-spacing="${t.ls}"` : ""}>${esc(fit(s, (t.w || CW) + 24, size, bold))}</text>`);
+    },
+  }, rows, meta, i, n);
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${PW}" height="${PH}" viewBox="0 0 ${PW} ${PH}"><g font-family="Roboto">${o.join("")}</g></svg>`;
 }
 
-// svgToPng(svg) -> Uint8Array PNG; PDFDocument from pdf-lib. meta = {title, sub, date, footer}. Returns PDF bytes.
-export async function buildPdf(doc, svgToPng, PDFDocument, meta = {}) {
+// Vector PDF. lib = {PDFDocument, rgb}, fontkit = @pdf-lib/fontkit, fonts = [Roboto regular, bold] bytes.
+// meta = {title, sub, date, footer}. Returns PDF bytes.
+export async function buildPdf(doc, lib, fontkit, fonts, meta = {}) {
+  const { PDFDocument, rgb } = lib;
   const pdf = await PDFDocument.create();
+  pdf.registerFontkit(fontkit);
   pdf.setTitle("Luxury Wrist Brand · " + (meta.title || "Report") + (meta.date ? " · " + meta.date : ""));
   pdf.setAuthor("Luxury Wrist Brand ERP"); pdf.setCreator("Luxury Wrist Brand ERP");
+  const reg = await pdf.embedFont(fonts[0], { subset: true }), bold = await pdf.embedFont(fonts[1], { subset: true });
+  const has = new Set(reg.getCharacterSet());
+  const k = 595.28 / PW, PHpt = PH * k;
+  const col = hex => { const v = parseInt(hex.slice(1), 16); return rgb((v >> 16 & 255) / 255, (v >> 8 & 255) / 255, (v & 255) / 255); };
+  const clean = s => Array.from(String(s == null ? "" : s)).map(ch => ch === "✓" ? "OK" : has.has(ch.codePointAt(0)) ? ch : "").join("");
   const list = pages(doc);
   for (let i = 0; i < list.length; i++) {
-    const img = await pdf.embedPng(svgToPng(renderPage(list[i], meta, i, list.length)));
-    const page = pdf.addPage([595.28, 841.89]);
-    page.drawImage(img, { x: 0, y: 0, width: 595.28, height: 841.89 });
+    const page = pdf.addPage([595.28, PHpt]);
+    paint({
+      rect: (x, y, w, h, c) => page.drawRectangle({ x: x * k, y: PHpt - (y + h) * k, width: w * k, height: h * k, color: col(c) }),
+      line: (x1, x2, y, c, w, dash) => page.drawLine({ start: { x: x1 * k, y: PHpt - y * k }, end: { x: x2 * k, y: PHpt - y * k },
+        thickness: w * k, color: col(c), ...(dash ? { dashArray: [3 * k, 3 * k] } : {}) }),
+      text: (x, y, s, t = {}) => {
+        const f = t.bold ? bold : reg, size = (t.size || 13) * k, max = (t.w || CW) * k;
+        let txt = clean(s);
+        if (f.widthOfTextAtSize(txt, size) > max) {
+          while (txt.length > 1 && f.widthOfTextAtSize(txt + "…", size) > max) txt = txt.slice(0, -1);
+          txt = txt.trimEnd() + "…";
+        }
+        const w = f.widthOfTextAtSize(txt, size);
+        const px = t.align === "end" ? x * k - w : t.align === "middle" ? x * k - w / 2 : x * k;
+        page.drawText(txt, { x: px, y: PHpt - y * k - size * 0.35, size, font: f, color: col(t.fill || P.ink) });
+      },
+    }, list[i], meta, i, list.length);
   }
   return await pdf.save();
 }
