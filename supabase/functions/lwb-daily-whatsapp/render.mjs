@@ -89,11 +89,11 @@ export const WASM_URL = "https://cdn.jsdelivr.net/npm/@resvg/resvg-wasm@2.6.2/in
 // ---------------------------------------------------------------------------
 const P = {
   ink: "#111827", sub: "#4b5563", mute: "#6b7280", line: "#e5e7eb", zebra: "#f9fafb", thbg: "#eef2f4",
-  brand: "#0f4c5c", gold: "#b08d3c", totbg: "#f3f6f7", g: "#15803d", r: "#b91c1c", b: "#1d4ed8",
+  brand: "#0f4c5c", gold: "#b08d3c", totbg: "#f3f6f7", band: "#eaf1f3", g: "#15803d", r: "#b91c1c", b: "#1d4ed8",
 };
 const PW = 800, PH = 1131, PX = 40, CW = PW - 2 * PX;       // A4 at 800 px wide
 const PCX = [0, 0.46, 0.62, 0.78, 1].map(f => PX + Math.round(f * CW));
-const PH_ROW = { kv: 32, th: 32, tr: 31, sec: 52 };
+const PH_ROW = { kv: 32, th: 32, tr: 31, sec: 52, grp: 30 };
 const TOP = 132, BOTTOM = PH - 62;                          // content area
 export const PAGE_PX = BOTTOM - TOP;
 
@@ -106,10 +106,10 @@ export function pages(doc, max = PAGE_PX, H = PH_ROW) {
     const t = r[0];
     if (t === "sec") th = null;
     if (t === "th") th = r;
-    const need = H[t] + ((t === "sec" || t === "th") ? 2 * H.tr : 0);   // keep a title / head with 2 rows
+    const need = H[t] + ((t === "sec" || t === "th" || t === "grp") ? 2 * H.tr : 0);   // keep a title / head / brand with 2 rows
     if (h + need > max && cur.length) {
       flush();
-      if (t === "tr" && th) { cur.push(th); h += H.th; }
+      if ((t === "tr" || t === "grp") && th) { cur.push(th); h += H.th; }
     }
     cur.push(r); h += H[t];
   }
@@ -144,6 +144,12 @@ function paint(g, rows, meta, i, n) {
     } else if (t === "th") {
       g.rect(PX, y, CW, h, P.thbg);
       for (let c = 0; c < 4; c++) cell(c, y + h / 2, String((r[1] || [])[c] || "").toUpperCase(), { size: 11, bold: true, fill: P.sub, ls: 0.4 });
+      z = 0;
+    } else if (t === "grp") {            // brand band: name left, count + amount right
+      g.rect(PX, y + 4, CW, h - 4, P.band);
+      g.rect(PX, y + 4, 3, h - 4, P.gold);
+      g.text(PX + 12, y + 4 + (h - 4) / 2, r[1], { size: 12.5, bold: true, fill: P.brand, w: CW * 0.55, ls: 0.6 });
+      g.text(PW - PX - 10, y + 4 + (h - 4) / 2, r[2] || "", { size: 12, bold: true, fill: P.sub, align: "end", w: CW * 0.42 });
       z = 0;
     } else if (t === "tr") {
       const tot = !!r[2], tone = r[3] && P[r[3]];
