@@ -34,13 +34,13 @@ test('actual Web Push encryption is decryptable by the subscribed browser key',(
  const receiver=crypto.createECDH('prime256v1');receiver.generateKeys();const auth=crypto.randomBytes(16);
  const sub={endpoint:'https://fcm.googleapis.com/wp/test-only',keys:{p256dh:receiver.getPublicKey().toString('base64url'),auth:auth.toString('base64url')}};
  const keys=webpush.generateVAPIDKeys(),payload=JSON.stringify({title:'Demo',body:'New order',user_id:'owner'});
- const req=webpush.generateRequestDetails(sub,payload,{vapidDetails:{subject:'https://luxury-wrist-brand.pages.dev',publicKey:keys.publicKey,privateKey:keys.privateKey},TTL:300,urgency:'high'});
+ const req=webpush.generateRequestDetails(sub,payload,{vapidDetails:{subject:'https://luxurywristbrand.com',publicKey:keys.publicKey,privateKey:keys.privateKey},TTL:300,urgency:'high'});
  assert.equal(req.headers['Content-Encoding'],'aes128gcm');assert.equal(req.headers.Urgency,'high');assert.ok(req.headers.Authorization.startsWith('vapid '));
  const clear=ece.decrypt(req.body,{version:'aes128gcm',privateKey:receiver,authSecret:auth});assert.equal(clear.toString(),payload);
 });
 function worker(){
  const handlers={},shown=[],navigated=[];let stored={user_id:'owner'};
- const scope={location:{origin:'https://luxury-wrist-brand.pages.dev'},addEventListener:(n,f)=>handlers[n]=f,
+ const scope={location:{origin:'https://luxurywristbrand.com'},addEventListener:(n,f)=>handlers[n]=f,
   registration:{showNotification:async(t,o)=>shown.push({t,o})},clients:{claim:async()=>{},matchAll:async()=>[],openWindow:async u=>navigated.push(u)}};
  const ctx=vm.createContext({self:scope,URL,Promise,caches:{},indexedDB:{}});vm.runInContext(fs.readFileSync(path.join(root,'sw.js'),'utf8'),ctx);
  // IndexedDB is replaced by an in-memory adapter; handlers and authorization code are the real SW.
@@ -59,9 +59,9 @@ test('a shared phone suppresses another login and signed-out notifications',asyn
 });
 test('tapping an owned banner opens the same order; foreign links stay on the ERP origin',async()=>{
  const w=worker();await w.event('notificationclick',{notification:{close(){},data:{user_id:'owner',url:'/warehouse-orders.html?order=one'}}});
- assert.equal(w.navigated[0],'https://luxury-wrist-brand.pages.dev/warehouse-orders.html?order=one');
+ assert.equal(w.navigated[0],'https://luxurywristbrand.com/warehouse-orders.html?order=one');
  await w.event('notificationclick',{notification:{close(){},data:{user_id:'other',url:'/warehouse-orders.html?order=private'}}});
- assert.equal(w.navigated[1],'https://luxury-wrist-brand.pages.dev/dashboard.html');
+ assert.equal(w.navigated[1],'https://luxurywristbrand.com/dashboard.html');
 });
 class Element{
  constructor(tag){this.tag=tag;this.children=[];this.classList={add(){},remove(){}};this.textContent='';this.hidden=false;this.disabled=false;this.className='';}
@@ -73,8 +73,8 @@ function phone({existing=false,permission='default',mobile=false,store=new Map()
  function sub(){return {endpoint:'https://fcm.googleapis.com/wp/local-only',toJSON:()=>({endpoint:'https://fcm.googleapis.com/wp/local-only',keys:{p256dh:'B'+'a'.repeat(86),auth:'b'.repeat(22)}}),unsubscribe:async()=>{calls.push('unsubscribe');subscription=null;return true}};}
  const reg={active:{postMessage(m,ports){calls.push(m.type);queueMicrotask(()=>ports[0].postMessage(null));}},pushManager:{getSubscription:async()=>subscription,subscribe:async opts=>{calls.push('permission-request');assert.equal(opts.applicationServerKey.length,65);windows.Notification.permission='granted';subscription=sub();return subscription;}}};
  function Channel(){const port={};this.port1={onmessage:null,close(){}};this.port2={postMessage:v=>this.port1.onmessage?.({data:v})};}
- const db={rpc:async(name,args)=>{calls.push(name);return {data:name==='lwb_push_public_config'?{enabled:true,public_key:Buffer.alloc(65).toString('base64url')}:true,error:null}},functions:{invoke:async()=>({data:{accepted:true},error:null})},auth:{onAuthStateChange:f=>{onAuth=f;}}};
- const ctx=vm.createContext({window:windows,Notification:windows.Notification,document:{createElement:t=>new Element(t),body:mobile?new Element('body'):undefined},sessionStorage:{getItem:k=>store.get(k)||null,setItem:(k,v)=>store.set(k,v),removeItem:k=>store.delete(k)},localStorage:{getItem:k=>local.get(k)||null,setItem:(k,v)=>local.set(k,String(v)),removeItem:k=>local.delete(k)},requestAnimationFrame:f=>f(),navigator:{userAgent:mobile?'Mozilla/5.0 (Linux; Android 14) Mobile':'QA phone',serviceWorker:{addEventListener(){},register:async()=>reg,ready:Promise.resolve(reg)}},location:{origin:'https://luxury-wrist-brand.pages.dev',href:'https://luxury-wrist-brand.pages.dev/dashboard.html',assign(){}},URL,Uint8Array,atob,MessageChannel:Channel,setTimeout,clearTimeout,queueMicrotask});
+ const db={rpc:async(name,args)=>{calls.push(name);if(name==='lwb_push_subscribe')calls.push('origin:'+args.p_origin);return {data:name==='lwb_push_public_config'?{enabled:true,public_key:Buffer.alloc(65).toString('base64url')}:true,error:null}},functions:{invoke:async()=>({data:{accepted:true},error:null})},auth:{onAuthStateChange:f=>{onAuth=f;}}};
+ const ctx=vm.createContext({window:windows,Notification:windows.Notification,document:{createElement:t=>new Element(t),body:mobile?new Element('body'):undefined},sessionStorage:{getItem:k=>store.get(k)||null,setItem:(k,v)=>store.set(k,v),removeItem:k=>store.delete(k)},localStorage:{getItem:k=>local.get(k)||null,setItem:(k,v)=>local.set(k,String(v)),removeItem:k=>local.delete(k)},requestAnimationFrame:f=>f(),navigator:{userAgent:mobile?'Mozilla/5.0 (Linux; Android 14) Mobile':'QA phone',serviceWorker:{addEventListener(){},register:async()=>reg,ready:Promise.resolve(reg)}},location:{origin:'https://luxurywristbrand.com',href:'https://luxurywristbrand.com/dashboard.html',assign(){}},URL,Uint8Array,atob,MessageChannel:Channel,setTimeout,clearTimeout,queueMicrotask});
  vm.runInContext(fs.readFileSync(path.join(root,'erp-push.js'),'utf8'),ctx);
  return {calls,mount,ctx,store,local,init:()=>windows.LWBPhonePush.init({db,user:{id:'owner'},role:'admin',mount}),signOut:()=>onAuth('SIGNED_OUT',null)};
 }
@@ -85,7 +85,7 @@ test('phone permission is never requested on page load; Enable binds and Turn of
  assert.equal(buttons[1].hidden,false);await buttons[2].onclick();assert.ok(p.calls.includes('lwb_push_unsubscribe'));assert.ok(p.calls.includes('unsubscribe'));
 });
 test('an existing granted subscription rebinds to login; logout clears device and unsubscribes',async()=>{
- const p=phone({existing:true,permission:'granted'});await p.init();assert.ok(p.calls.includes('lwb_push_subscribe'));assert.equal(p.calls.includes('permission-request'),false);
+ const p=phone({existing:true,permission:'granted'});await p.init();assert.ok(p.calls.includes('lwb_push_subscribe'));assert.ok(p.calls.includes('origin:https://luxurywristbrand.com'));assert.equal(p.calls.includes('permission-request'),false);
  p.local.set('lwbPushLogout',String(Date.now()));p.signOut();await new Promise(r=>setImmediate(r));assert.ok(p.calls.includes('LWB_PUSH_CLEAR'));assert.ok(p.calls.includes('unsubscribe'));
 });
 

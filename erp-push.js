@@ -59,7 +59,7 @@
    return back;
   }
   async function save(sub){
-   const r=await db.rpc('lwb_push_subscribe',{p_subscription:sub.toJSON(),p_device:navigator.userAgent.slice(0,240)});
+   const r=await db.rpc('lwb_push_subscribe',{p_subscription:sub.toJSON(),p_device:navigator.userAgent.slice(0,240),p_origin:location.origin});
    if(r.error)throw Error('Phone alerts could not be connected. Try again.');
    if(signedOut){await sub.unsubscribe();return;}
    subscription=sub;await workerMessage(reg,'LWB_PUSH_USER',user.id);
