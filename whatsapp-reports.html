@@ -23,6 +23,13 @@
     .wa-card h2 small{font-weight:400;color:var(--erp-muted);font-size:12.5px}
     .wa-set{display:flex;gap:14px;flex-wrap:wrap;align-items:center;font-size:14px}
     .wa-set label{display:flex;gap:6px;align-items:center}
+    .wa-bar .pdf{background:#5b2a96;border-color:#5b2a96;color:#fff}
+    .rp.wide{grid-column:1/-1}
+    .rp.long .rp-doc{max-height:430px;overflow:hidden;position:relative}
+    .rp.long .rp-doc:after{content:"";position:absolute;left:0;right:0;bottom:0;height:60px;background:linear-gradient(rgba(255,255,255,0),#fff)}
+    .rp.long.open .rp-doc{max-height:none}.rp.long.open .rp-doc:after{display:none}
+    .rp-more{display:block;width:100%;border:0;border-top:1px solid var(--erp-line);background:#f6f7f9;padding:7px;font:inherit;font-size:13px;font-weight:600;color:#5b2a96;cursor:pointer}
+    .tag.p{background:#efe7fa;color:#5b2a96}
     .wa-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));gap:10px}
     .rp{border:1px solid var(--erp-line);border-radius:8px;overflow:hidden;background:#fff;min-width:0}
     .rp-top{display:flex;justify-content:space-between;gap:6px;padding:6px 8px;font-size:12.5px;background:#f6f7f9;align-items:center}
@@ -53,7 +60,7 @@
     details.help{font-size:13.5px}details.help pre{background:#f6f7f9;border-radius:6px;padding:8px;white-space:pre-wrap;font-size:12.5px}
     .err{background:#ffebeb;color:#9b2020;padding:10px 12px;border-radius:8px;margin-bottom:10px;white-space:pre-wrap}
     @media(max-width:800px){.two{grid-template-columns:1fr}.wa-grid{grid-template-columns:1fr}.wa-bar .sp{display:none}}
-    @media(max-width:520px){.wa-bar .lg{display:none}.wa-bar .sp{display:block;flex-basis:100%;height:0}.wa-bar input{flex:1;min-width:0}.wa-bar .grn,#sendBtn,#saveBtn{flex:1}.lst .hide-s{display:none}.lst th,.lst td{padding:5px 4px}}
+    @media(max-width:520px){.wa-bar .lg{display:none}.wa-bar .sp{display:block;flex-basis:100%;height:0}.wa-bar input{flex:1;min-width:0}.wa-bar .grn,.wa-bar .pdf,#sendBtn,#saveBtn{flex:1;padding:0 6px}.lst .hide-s{display:none}.lst th,.lst td{padding:5px 4px}}
     [hidden]{display:none!important}
   </style>
 </head>
@@ -67,7 +74,8 @@
       <button type="button" id="next" title="Next day">▶</button>
       <span class="sp"></span>
       <button type="button" class="grn" id="testBtn" title="One of every report to your own WhatsApp">📲 Test<span class="lg"> to my WhatsApp</span></button>
-      <button type="button" id="sendBtn" title="Send now to everyone who did not get it yet for this date">Send<span class="lg"> now</span> to all</button>
+      <button type="button" class="pdf" id="bookBtn" title="Only the Admin Day Book (PDF) to your own WhatsApp">📄<span class="lg"> Day Book</span> PDF</button>
+      <button type="button" id="sendBtn" title="Send now to everyone who did not get it yet for this date">Send<span class="lg"> now to</span> all</button>
       <button type="button" class="main" id="saveBtn">Save</button>
     </div>
     <div id="err" class="err" hidden></div>
@@ -110,6 +118,7 @@
 Date: {{2}}
 
 Luxury Wrist Brand ERP</pre>
+        <p>Second template for PDFs (Day Book, long reports): same body, name <b>lwb_daily_report_pdf</b>, Header <b>Document</b>.</p>
         <p>Sample values: {{1}} = Nadim Tinwala, {{2}} = 24/11/2026, header = any report image. Until Meta approves it, a person gets the report only if they sent any message to the business WhatsApp number in the last 24 hours (that is how "Test to my WhatsApp" works: send "Hi" to the number first).</p>
       </details>
     </section>
@@ -123,7 +132,7 @@ Luxury Wrist Brand ERP</pre>
     const shift=(d,n)=>{const x=new Date(d+"T12:00:00Z");x.setUTCDate(x.getUTCDate()+n);return x.toISOString().slice(0,10)};
     const dmy=d=>String(d||"").slice(0,10).split("-").reverse().join("/");
     const hm=t=>t?new Date(t).toLocaleTimeString("en-IN",{hour:"2-digit",minute:"2-digit",timeZone:"Asia/Kolkata"}):"";
-    const KINDS=[["SALESMAN","Salesman"],["MGR","MGR"],["TEAM","Team"],["ADMIN","Admin"],["ACCOUNTS","Accounts"],["GODOWN","Godown"]];
+    const KINDS=[["DAYBOOK","Day Book"],["SALESMAN","Salesman"],["MGR","MGR"],["TEAM","Team"],["ADMIN","Admin"],["ACCOUNTS","Accounts"],["GODOWN","Godown"]];
     const KNAME=Object.fromEntries(KINDS);
     const ROLE={admin:"Admin",manager:"Sales Head",sales:"Salesman",salesman:"Salesman",accounts:"Accounts",warehouse:"Godown Mgr",transport:"Transport",cashier:"Cashier"};
     let P=null,dirty=new Map();
@@ -154,8 +163,13 @@ Luxury Wrist Brand ERP</pre>
         '<span class="tag">'+sent+" sent</span>"+(bad?'<span class="tag r">'+bad+" failed</span>":"")+
         '<span class="tag">Focus parties for '+esc(dmy(P.focus_date))+"</span>";
       el("repSub").textContent=P.reports.length+" reports · "+dmy(P.date);
-      el("reports").innerHTML=P.reports.map(r=>'<div class="rp"><div class="rp-top"><b>'+esc(KNAME[r.kind]||r.kind)+(r.kind==="SALESMAN"||r.kind==="MGR"?" · "+esc(r.title):"")+
-        '</b><span class="rp-to" title="'+esc((r.to||[]).join(", "))+'">'+((r.to||[]).length?"To: "+esc(r.to.join(", ")):'<span class="tr">Nobody (no mobile / off)</span>')+"</span></div>"+docHtml(r.doc)+"</div>").join("");
+      const long=r=>(r.doc.rows||[]).length>22;
+      el("reports").innerHTML=[...P.reports].sort((a,b)=>(b.kind==="DAYBOOK")-(a.kind==="DAYBOOK")).map(r=>'<div class="rp'+(r.kind==="DAYBOOK"?" wide":"")+(long(r)?" long":"")+'"><div class="rp-top"><b>'+esc(KNAME[r.kind]||r.kind)+(r.kind==="SALESMAN"||r.kind==="MGR"?" · "+esc(r.title):"")+
+        (r.pdf?' <span class="tag p">PDF</span>':"")+
+        '</b><span class="rp-to" title="'+esc((r.to||[]).join(", "))+'">'+((r.to||[]).length?"To: "+esc(r.to.join(", ")):'<span class="tr">Nobody (no mobile / off)</span>')+"</span></div>"+
+        '<div class="rp-doc">'+docHtml(r.doc)+"</div>"+(long(r)?'<button type="button" class="rp-more">Show all '+(r.doc.rows||[]).length+" lines ▾</button>":"")+"</div>").join("");
+      el("reports").querySelectorAll(".rp-more").forEach(b=>b.onclick=()=>{const c=b.closest(".rp");c.classList.toggle("open");
+        b.textContent=c.classList.contains("open")?"Show less ▴":"Show all lines ▾"});
       // MGRs
       const brands='<option value="">Brand —</option>'+P.companies.map(b=>'<option value="'+esc(b.id)+'">'+esc(b.name)+"</option>").join("");
       el("mBrand").innerHTML=brands;
@@ -196,6 +210,9 @@ Luxury Wrist Brand ERP</pre>
     el("testBtn").onclick=async()=>{
       if(!await ERPShell.confirm("Send one of every report of "+dmy(el("day").value)+" to your own WhatsApp?\n\nFirst send \"Hi\" from your phone to the business WhatsApp number (the one that sends the OTP), so WhatsApp allows it before Meta approves the template."))return;
       try{await rpc("lwb_daily_wa_send",{p_date:el("day").value,p_mode:"TEST"});ERPShell.toast("Sending… check WhatsApp in a minute");setTimeout(load,15000)}catch(e){fail(e)}};
+    el("bookBtn").onclick=async()=>{
+      if(!await ERPShell.confirm("Send the Day Book PDF of "+dmy(el("day").value)+" to your own WhatsApp?\n\nFirst send \"Hi\" from your phone to the business WhatsApp number, so WhatsApp allows it before Meta approves the template."))return;
+      try{await rpc("lwb_daily_wa_send",{p_date:el("day").value,p_mode:"TEST_DAYBOOK"});ERPShell.toast("Making the PDF… check WhatsApp in a minute");setTimeout(load,20000)}catch(e){fail(e)}};
     el("sendBtn").onclick=async()=>{
       if(!await ERPShell.confirm("Send the reports of "+dmy(el("day").value)+" now to everyone who did not get them yet?"))return;
       try{await rpc("lwb_daily_wa_send",{p_date:el("day").value,p_mode:"ALL"});ERPShell.toast("Sending…");setTimeout(load,15000)}catch(e){fail(e)}};
