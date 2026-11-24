@@ -4,6 +4,11 @@
 **Purpose:** Continue the same ERP project from a new ChatGPT conversation without restarting or losing the agreed requirements.
 **Status:** Active development / verification. Do not assume all modules are completed or fully tested.
 
+## Approvals: tick many + approve together (24 Nov 2026)
+- Mohit: on Approvals, a select box on every item + Select all, approve many at once, in every section.
+- approvals.js: the act marked `many:true` is run by the panel's "✓ <act> N" button, item by item, same RPC as its own button (rate, market check, order change, trip rent with the row's rent, bank with the row's bank or the bank picked next to the button, stock transfer, new party). New: Driver return "✓ Approve" (`lwb_review_driver_return`) and Sales return "✓ Approve" (same update as sales-return.html) right on the row. New order approval: "Approve" opens `warehouse-orders.html?approve=id,id` which ticks them on Pending and runs its own bulkApprove (confirm now shows total ₹). Old "All checked" buttons replaced by Select all.
+- One confirm with count, ₹ total and the list; failures are listed, the rest still go through. No SQL. Screenshots: project files `approvals-select-all/`.
+
 ## Friend swap fix: ₹1,00,000 "Other expense" of 23/11 (24 Nov 2026)
 - Mohit: ₹1,00,000 came in bank and was given in cash on 23/11, but was entered as Cash Out / Other expense, so the Admin dashboard counted it in Expenses / Net profit.
 - One-time SQL `lwb_acc_swap_fix_23nov_1lakh.sql` (test 3 in `tests/friend-swap`): the one matching entry (23/11, Cash Out, cash, Other expense, ₹1,00,000, no staff / vehicle / company / trip link) becomes a Friend swap (DEPOSIT, no head, `lwb_acc_swaps` row, person = its party or "FRIEND (23/11)"); old row in `lwb_acc_swap_fix_log`. Cash in hand unchanged; bank side waits in Bank check. Stops if not exactly one match.
