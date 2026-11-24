@@ -4247,9 +4247,25 @@ function renderBillChange(order) {
       <span class="who">${escapeHtml(c.reason || "")}${c.reason ? " · " : ""}by ${escapeHtml(c.by || "Accounts")}${c.ok_by ? ", OK " + escapeHtml(c.ok_by) : ""} · ${dmy(c.at)}</span></div><ul>${lines}</ul>`;
   }).join("");
 }
-function openMark(id, kind) {
+/* Vehicle first (Mohit, 24 Nov 2026): a Godown Delivery PO (Rajnigandha too) is marked Loaded / Delivered only after
+   🚚 Transport has its vehicle, so the Vehicle Report never shows it under "No vehicle given". Self Pickup / Direct
+   Vehicle carry their own vehicle. lwb_admin_mark_order refuses it too; this only says it before the popup. */
+const markIsGodown = o => !/^(SELF|DIRECT)/i.test(String(o && o.transportation || "").split("|")[0].trim());
+async function markNoVehicle(list) {
+  const ids = list.filter(markIsGodown).map(o => o.id);
+  if (!ids.length) return new Set();
+  const r = await db.from("dispatch_assignments").select("order_id,vehicle_no").in("order_id", ids);
+  if (r.error) return new Set();
+  const has = new Set((r.data || []).filter(a => String(a.vehicle_no || "").trim()).map(a => String(a.order_id)));
+  return new Set(ids.map(String).filter(id => !has.has(id)));
+}
+async function openMark(id, kind) {
   const order = orders.find(o => String(o.id) === String(id)) || (selectedOrder && String(selectedOrder.id) === String(id) ? selectedOrder : null);
   if (!order || !CAN_MARK) return;
+  if ((await markNoVehicle([order])).size) {
+    alert((order.order_no || "PO") + " has no vehicle yet.\n\nOpen the PO, press 🚚 Transport and give the vehicle and driver first. Then mark it " + (kind === "LOADED" ? "Loaded" : "Delivered") + ".");
+    return;
+  }
   markFor = { order, kind };
   const today = new Date(Date.now() + 19800000).toISOString().slice(0,10); // IST date
   const both = kind === "DELIVERED" && canMarkLoaded(order);
@@ -4273,12 +4289,15 @@ function closeMark() { document.getElementById("markModal").classList.remove("sh
 /* Admin: select many POs → Mark Loaded / Mark Delivered together (6 Nov 2026). Each PO goes through the
    same lwb_admin_mark_order as one PO, so loaded qty (= approved qty) and stock move exactly the same way.
    POs that cannot take the mark are left out and named in the popup. */
-function openBulkMark(kind) {
+async function openBulkMark(kind) {
   const list = pickedOrders();
   if (!CAN_MARK || !list.length || bulkBusy) return;
-  const ok = list.filter(kind === "LOADED" ? canMarkLoaded : canMarkDelivered);
-  const skip = list.filter(o => !ok.includes(o));
-  if (!ok.length) { alert("None of the selected POs can be marked " + (kind === "LOADED" ? "Loaded" : "Delivered") + "."); return; }
+  const can = list.filter(kind === "LOADED" ? canMarkLoaded : canMarkDelivered);
+  const noVeh = await markNoVehicle(can);
+  const ok = can.filter(o => !noVeh.has(String(o.id)));
+  const skip = list.filter(o => !can.includes(o)), skipVeh = can.filter(o => noVeh.has(String(o.id)));
+  if (!ok.length) { alert(skipVeh.length && !skip.length ? "No vehicle given on " + skipVeh.map(o => o.order_no).join(", ") + ".\n\nOpen the PO, press 🚚 Transport and give the vehicle and driver first."
+    : "None of the selected POs can be marked " + (kind === "LOADED" ? "Loaded" : "Delivered") + (skipVeh.length ? " (" + skipVeh.length + " have no vehicle: give it in 🚚 Transport first)" : "") + "."); return; }
   markFor = { orders: ok, kind, bulk: true };
   const both = kind === "DELIVERED" ? ok.filter(canMarkLoaded).length : 0;
   const today = new Date(Date.now() + 19800000).toISOString().slice(0,10); // IST date
@@ -4296,7 +4315,8 @@ function openBulkMark(kind) {
   document.getElementById("markWarn").textContent = [
     kind === "LOADED" ? "Loaded qty = approved qty, stock goes out like Vehicle Loaded. Accounts get the \"make Tally bill\" popup." : "",
     both ? both + " PO not loaded yet: marked Loaded too (loaded qty = approved qty)." : "",
-    skip.length ? skip.length + " left out (" + skip.map(o => o.order_no).join(", ") + "): " + (kind === "LOADED" ? "not approved or already loaded." : "not approved or already delivered.") : ""
+    skip.length ? skip.length + " left out (" + skip.map(o => o.order_no).join(", ") + "): " + (kind === "LOADED" ? "not approved or already loaded." : "not approved or already delivered.") : "",
+    skipVeh.length ? skipVeh.length + " left out, no vehicle (" + skipVeh.map(o => o.order_no).join(", ") + "): give it in 🚚 Transport first." : ""
   ].filter(Boolean).join(" ");
   document.getElementById("markSave").textContent = (kind === "LOADED" ? "✓ Mark " : "✓ Deliver ") + ok.length + " PO";
   document.getElementById("markModal").classList.add("show");
