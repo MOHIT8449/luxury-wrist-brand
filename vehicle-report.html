@@ -65,6 +65,7 @@
       .vr-t tr.vr-po td{padding:0;border:0}
       .vr-t tr.vr-po td.hide-m,.vr-t tr.vr-pohead td.hide-m{display:none}
       .vr-t tr.vr-po .pp{padding-left:0;min-width:0;overflow:hidden;text-overflow:ellipsis}
+      .vr-t tr.vr-fill.show{display:block}.vr-t tr.vr-fill td{display:block}
       .vr-t tfoot tr{grid-template-columns:auto 1fr 1fr 1fr}.vr-t tfoot td:empty{display:none}
     }
     .vr-brands{display:flex;gap:8px;margin:0 0 10px;flex-wrap:wrap}
@@ -74,6 +75,19 @@
     .vr-brand .q{font-weight:700;color:var(--erp-green);font-size:15px;white-space:nowrap}
     .vr-brand small{color:var(--erp-muted);font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
     .vr-brand .grow{flex:1}
+    .vr-t tr.vr-fill td{background:#fff8ec;padding:7px 10px;font-size:13px;text-transform:none;letter-spacing:0;color:var(--erp-ink);font-weight:600}
+    .vr-fill .fb{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+    .vr-fill label{display:inline-flex;align-items:center;gap:6px;cursor:pointer}
+    .vr-pick{width:17px;height:17px;margin:0 8px 0 0;vertical-align:-3px;accent-color:#002f37}
+    .vr-t tr.vr-po.pickable{cursor:pointer}
+    .vr-dlg{border:0;border-radius:12px;padding:0;width:min(420px,calc(100vw - 32px));box-shadow:0 20px 60px rgba(0,0,0,.3)}
+    .vr-dlg::backdrop{background:rgba(0,20,25,.45)}
+    .vr-dlg form{padding:16px 18px;display:grid;gap:10px}
+    .vr-dlg h3{margin:0;font-size:17px}.vr-dlg p{margin:0;font-size:12.5px;color:var(--erp-muted)}
+    .vr-dlg label{display:grid;gap:4px;font-size:12px;font-weight:700;color:#4b5763}
+    .vr-dlg input,.vr-dlg select{font:inherit;font-size:14px;padding:8px 10px;border:1.5px solid var(--erp-line);border-radius:8px;width:100%;box-sizing:border-box}
+    .vr-dlg .row{display:flex;gap:8px;justify-content:flex-end}
+    .vr-dlg .err{color:var(--erp-red);font-size:12.5px;font-weight:600}
     .vr-help{font-size:12px;color:var(--erp-muted);margin:8px 2px 0}
     @media(max-width:1000px){.vr-kpis{grid-template-columns:1fr 1fr}}
     @media(max-width:640px){.vr-list{grid-template-columns:1fr}.vr-num b{font-size:16px}.sl-kpi{padding:9px 11px}}
@@ -97,6 +111,16 @@
     <div class="vr-wrap" id="list"></div>
     <p class="vr-help" id="help"></p>
   </main>
+  <dialog class="vr-dlg" id="fillDlg"><form method="dialog" id="fillForm">
+    <h3 id="fillTitle">Give vehicle</h3>
+    <p id="fillSub"></p>
+    <label>Vehicle<select id="fillVeh"></select></label>
+    <label id="fillOtherL" hidden>Vehicle no.<input id="fillOther" maxlength="20" placeholder="GJ05AB1234" autocomplete="off"></label>
+    <label>Driver<input id="fillDrv" maxlength="60" list="fillDrvList" autocomplete="off"></label><datalist id="fillDrvList"></datalist>
+    <label>Driver mobile<input id="fillMob" inputmode="numeric" maxlength="14" autocomplete="off"></label>
+    <div class="err" id="fillErr"></div>
+    <div class="row"><button type="button" class="sl-btn ghost" id="fillCancel">Cancel</button><button type="submit" class="sl-btn" id="fillSave">Save</button></div>
+  </form></dialog>
   <script>
     const S=LWBSales,{client,el,esc,fmt}=S;
     let me=null,data={vehicles:[],rows:[]},ALL=[],view="veh";
@@ -201,9 +225,11 @@
         '<td class="n c-num" data-l="Loaded"><span class="ton">'+ton(t.kgLoaded)+" T</span>"+loadSub+"</td>"+
         '<td class="n c-num" data-l="Delivered"><span class="cs">'+fq(t.qDel)+"</span><small>of "+fq(t.q)+(qTot(t.qRet)?" · "+fq(t.qRet)+" ret":"")+"</small></td>"+
         '<td class="c-st">'+st+'</td><td class="arrow">▶</td></tr>';
+      const fill=id==="none"&&canFill();
+      if(fill)h+='<tr class="vr-pohead vr-fill" data-of="none"><td colspan="8"><div class="fb"><label><input type="checkbox" class="vr-pick" id="pickAll">Select all</label><span>Tick the POs that went in one vehicle, then</span><button type="button" class="sl-btn small" id="fillBtn" disabled>🚚 Give vehicle</button></div></td></tr>';
       h+='<tr class="vr-pohead" data-of="'+esc(id)+'"><td class="hide-m"></td><td colspan="2" class="pp">PO · Party</td><td class="n hide-m">Trip</td><td class="n hide-m">Tons</td><td class="n">Qty</td><td>Status</td><td class="hide-m"></td></tr>';
       for(const r of rows){const s2=state(r);
-        h+='<tr class="vr-po" data-of="'+esc(id)+'"><td class="hide-m"></td><td colspan="2" class="pp"><b>'+esc(r.order_no||"")+"</b> · "+esc(r.party||"-")+(drvView()?" <small>"+esc(r.vehicle_no||"No vehicle")+"</small>":"")+"</td>"+
+        h+='<tr class="vr-po'+(fill?" pickable":"")+'" data-of="'+esc(id)+'"><td class="hide-m"></td><td colspan="2" class="pp">'+(fill?'<input type="checkbox" class="vr-pick" data-o="'+esc(r.order_id)+'" aria-label="Select '+esc(r.order_no||"")+'">':"")+'<b>'+esc(r.order_no||"")+"</b> · "+esc(r.party||"-")+(drvView()?" <small>"+esc(r.vehicle_no||"No vehicle")+"</small>":"")+"</td>"+
           '<td class="n hide-m">'+esc(r.trip_no||"")+'</td><td class="n hide-m">'+ton(r.kg)+' T</td><td class="n"><b>'+fq(qOf(r,delivered(r)))+"</b></td>"+
           '<td><span class="erp-badge '+s2[1]+'">'+s2[0]+'</span></td><td class="hide-m"></td></tr>'}
       return h;
@@ -211,6 +237,33 @@
     function offRow(v){const d=v.drivers||[];
       return '<tr class="vr-v vr-off"><td></td><td class="c-veh"><span class="veh">'+esc(v.vehicle_no)+"</span><small>"+esc([v.vehicle_type,v.size_ton?v.size_ton+" T":"",v.ownership==="TRANSPORTER"?"Hired":""].filter(Boolean).join(" · "))+"</small></td>"+
         '<td class="c-drv">'+(d.length?esc(d.map(x=>x.name).join(", ")):'<span class="alt">Fixed driver not set</span>')+'</td><td class="n c-num" data-l="POs">0</td><td class="n c-num" data-l="Loaded">—</td><td class="n c-num" data-l="Delivered">—</td><td class="c-st"><span class="erp-badge">No delivery</span></td><td class="arrow"></td></tr>'}
+    // Delivered with no vehicle (Mohit, 24 Nov 2026): give the vehicle + driver here (lwb_vehicle_day_fill_setup.sql).
+    const canFill=()=>me&&["admin","manager","transport"].includes(me.role);
+    const picked=()=>[...el("list").querySelectorAll('.vr-pick[data-o]:checked')].map(x=>x.dataset.o);
+    function pickSync(){const all=[...el("list").querySelectorAll(".vr-pick[data-o]")],n=picked().length,b=el("fillBtn"),a=el("pickAll");
+      if(b){b.disabled=!n;b.textContent="🚚 Give vehicle"+(n?" to "+n+" PO":"")}if(a){a.checked=n&&n===all.length;a.indeterminate=n>0&&n<all.length}}
+    function openFill(){
+      const ids=picked();if(!ids.length)return;
+      const rows=ALL.filter(r=>ids.includes(r.order_id));
+      el("fillTitle").textContent="Give vehicle · "+ids.length+" PO";
+      el("fillSub").textContent=rows.map(r=>r.order_no).join(", ")+". Already delivered: only the vehicle and driver are saved, on the day it was delivered.";
+      el("fillVeh").innerHTML='<option value="">Choose vehicle</option>'+data.vehicles.map(v=>'<option value="'+esc(v.vehicle_no)+'">'+esc(v.vehicle_no+(v.drivers&&v.drivers.length?" · "+v.drivers[0].name:"")+(v.vehicle_type?" · "+v.vehicle_type:""))+"</option>").join("")+'<option value="*">Other vehicle (type the number)</option>';
+      el("fillDrvList").innerHTML=[...new Map(data.vehicles.flatMap(v=>v.drivers||[]).map(d=>[d.name,d])).values()].map(d=>'<option value="'+esc(d.name)+'">'+esc(d.mobile||"")+"</option>").join("");
+      el("fillOtherL").hidden=true;el("fillOther").value=el("fillDrv").value=el("fillMob").value=el("fillErr").textContent="";
+      el("fillDlg").showModal();
+    }
+    async function saveFill(){
+      const v=el("fillVeh").value==="*"?el("fillOther").value.trim():el("fillVeh").value,d=el("fillDrv").value.trim(),m=el("fillMob").value.replace(/\D/g,"");
+      if(!v){el("fillErr").textContent="Choose the vehicle.";return}if(!d){el("fillErr").textContent="Enter the driver.";return}
+      if(m&&m.slice(-10).length!==10){el("fillErr").textContent="Mobile must be 10 digits.";return}
+      el("fillSave").disabled=true;el("fillErr").textContent="";
+      const r=await client.rpc("lwb_vehicle_day_fill",{p_ids:picked(),p_vehicle_no:v,p_driver_name:d,p_driver_mobile:m||null});
+      el("fillSave").disabled=false;
+      if(r.error){el("fillErr").textContent=r.error.message;return}
+      el("fillDlg").close();const sk=(r.data&&r.data.skipped)||[];
+      if(sk.length)alert((r.data.done||[]).length+" PO saved.\nNot saved: "+sk.map(x=>x.order_no+" ("+x.why+")").join(", "));
+      await load();
+    }
     const drvView=()=>zone==="GODOWN"&&view==="drv";
     function render(){
       data.rows=ALL.filter(inBrand);
@@ -230,7 +283,7 @@
         if(zone!=="GODOWN"){
           const who=zone==="SELF"?"Party vehicle":"Company truck";
           html+=vrow(k?rows[0].vehicle_no:"Vehicle no. not entered",who,drove.length?esc(drove.join(", ")):zone==="DIRECT"?"Company to party":'<span class="alt">Not entered</span>',rows,0,k||"none");continue}
-        if(!k){html+=vrow("No vehicle given",'<span class="alt">Open the PO → 🚚 Transport to add it</span>','<span class="alt">Not entered</span>',rows,0,"none");continue}
+        if(!k){html+=vrow("No vehicle given",'<span class="alt">'+(canFill()?"Tap → tick POs → 🚚 Give vehicle":"Open the PO → 🚚 Transport to add it")+"</span>",'<span class="alt">Not entered</span>',rows,0,"none");continue}
         const v=vmap.get(k),fixed=v?v.drivers||[]:[];
         const fixedNames=fixed.map(d=>d.name.trim().toUpperCase()),other=drove.filter(d=>!fixedNames.includes(d.trim().toUpperCase()));
         const sub=v?esc([v.vehicle_type,v.size_ton?v.size_ton+" T":"",v.ownership==="TRANSPORTER"?"Hired":""].filter(Boolean).join(" · ")):'<span class="alt">Not in Vehicle Master</span>';
@@ -256,6 +309,12 @@
       document.querySelectorAll("[data-zone]").forEach(b=>b.onclick=()=>{zone=b.dataset.zone;render()});
       el("kpis").addEventListener("click",e=>{const c=e.target.closest(".sl-kpi.zone");if(c){zone=c.dataset.z;render()}});
       el("refresh").onclick=load;
+      el("list").addEventListener("change",e=>{if(e.target.id==="pickAll"){el("list").querySelectorAll(".vr-pick[data-o]").forEach(x=>x.checked=e.target.checked)}if(e.target.classList.contains("vr-pick"))pickSync()});
+      el("list").addEventListener("click",e=>{if(e.target.id==="fillBtn")return openFill();const tr=e.target.closest("tr.vr-po.pickable");if(tr&&!e.target.matches("input")){const c=tr.querySelector(".vr-pick");c.checked=!c.checked;pickSync()}});
+      el("fillVeh").onchange=()=>{const v=data.vehicles.find(x=>x.vehicle_no===el("fillVeh").value),d=v&&v.drivers&&v.drivers[0];el("fillOtherL").hidden=el("fillVeh").value!=="*";if(d){el("fillDrv").value=d.name;el("fillMob").value=d.mobile||""}};
+      el("fillDrv").onchange=()=>{const d=data.vehicles.flatMap(v=>v.drivers||[]).find(x=>x.name===el("fillDrv").value.trim());if(d&&!el("fillMob").value)el("fillMob").value=d.mobile||""};
+      el("fillCancel").onclick=()=>el("fillDlg").close();
+      el("fillForm").addEventListener("submit",e=>{e.preventDefault();saveFill()});
       el("list").addEventListener("click",e=>{const tr=e.target.closest("tr.vr-v[data-v]");if(!tr)return;const on=tr.classList.toggle("open");
         el("list").querySelectorAll('tr[data-of="'+CSS.escape(tr.dataset.v)+'"]').forEach(x=>x.classList.toggle("show",on))});
       await load();
