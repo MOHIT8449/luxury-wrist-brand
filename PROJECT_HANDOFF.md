@@ -4,6 +4,16 @@
 **Purpose:** Continue the same ERP project from a new ChatGPT conversation without restarting or losing the agreed requirements.
 **Status:** Active development / verification. Do not assume all modules are completed or fully tested.
 
+## Reports section (24 Nov 2026)
+- Mohit: one Reports section like every ERP: sales, purchase, every report date-wise, with filters, search, Excel.
+- New page `reports.html` (last item of the side menu, below Admin). ADMIN ONLY (Mohit: no other login, not even a ticked page; the page checks the real role). No SQL, read only.
+- Hub: every report in 7 groups (Sales, Purchase, Party & Outstanding, Cash Bank & Expenses, Stock, Dispatch & Vehicle, Team & Control), searchable, role-filtered. Reports that already had a page link to it (↗, e.g. accounts-books.html?v=out, accounts-dashboard.html?tab=deps, vehicle-report.html, inventory.html?tab=in).
+- Built here (`?r=<id>&v=<view>`), dates + brand from the top bar, own filters, search, tap-column sort, totals, Excel (LWBSales.excel), Print:
+  - Sales (orders + order_items, cancelled left out): Register PO-wise, Day-wise, Party-wise, SKU-wise, Salesman-wise. Filters party / salesman / status / Booked or Loaded qty. Salesman = party's salesman (lwb_party_activity), else who took the PO. Qty IC (Rajnigandha) / CS (Coca-Cola) never added.
+  - Purchase (lwb_goods_inward + items, ~old bills left out): SKU-wise, Supplier-wise, Bill-wise.
+  - Cash & Expenses (lwb_acc_dashboard lines, cancelled left out): Expense head-wise (same NOT_EXPENSE rule as Finance Home), Cash In / Out register.
+- Checked with a mocked database at 1366 / 390 px: no side scroll, no JS errors. Screenshots: project files `reports-section/`.
+
 ## Outstanding: one number on Dashboard and Ledger & Outstanding (24 Nov 2026)
 - Mohit: Dashboard Outstanding (brand picked) Coca-Cola ₹69.82 L / Rajnigandha ₹11.63 L, Ledger & Outstanding "To collect" ₹32.14 L / ₹12.05 L.
 - Cause: with a brand picked, the Dashboard took `lwb_company_overview().outstanding` = only the bill dues of `lwb_tally_bill_rows`, each PO split by SKU value. It did not take off party advance / party payments not set to a bill, return credit, and did not add opening balances. Ledger & Outstanding uses `lwb_party_billing` (LWBPartyPay) per party per brand: due + opening − advance − returns, parties with net > 0 only.

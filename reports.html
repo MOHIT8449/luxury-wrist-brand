@@ -1,0 +1,466 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"><script src="erp-fit.js"></script>
+  <title>Reports | Luxury Wrist Brand ERP</title>
+  <script src="erp-date.js"></script>
+  <script src="vendor/supabase-js-2.119.0.js"></script>
+  <script src="brand-filter.js"></script><script src="erp-period.js"></script>
+  <link rel="stylesheet" href="erp-shell.css?v=20261124">
+  <link rel="stylesheet" href="sales.css">
+  <script src="erp-shell.js?v=20261124"></script>
+  <script src="sales-common.js"></script>
+  <!-- Reports (Mohit, 24 Nov 2026): one place for every report of the ERP.
+       Hub = every report, grouped and searchable; a report that already has its own page opens that page (↗).
+       Reports with no page before are built here (?r=<id>): Sales register / day / party / SKU / salesman,
+       Purchase SKU / supplier, Expenses head-wise, Cash In / Out register.
+       Dates and brand follow the top bar (erp-period.js / brand-filter.js); each report has its own filters,
+       search, sort (tap a column), Excel and Print. Read only, no SQL: orders + order_items, lwb_goods_inward(+_items),
+       lwb_acc_dashboard. Database RLS stays the real permission check. -->
+  <style>
+    .rp-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:0 0 10px}
+    .rp-head h1{margin:0;font-size:20px;font-weight:700}
+    .rp-head .grow{flex:1}
+    .rp-find{height:36px;border:1.5px solid var(--erp-line);border-radius:99px;padding:0 14px;font:inherit;font-size:14px;width:280px;max-width:100%;background:#fff}
+    .rp-find:focus{outline:none;border-color:var(--erp-red)}
+    .rp-groups{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:10px}
+    .rp-g{background:#fff;border:1px solid var(--erp-line);border-radius:10px;overflow:hidden}
+    .rp-g h2{margin:0;font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:#4b5763;padding:8px 12px;background:#f4f6f8;display:flex;align-items:center;gap:6px}
+    .rp-g h2 small{margin-left:auto;font-weight:600;color:var(--erp-muted);text-transform:none;letter-spacing:0}
+    .rp-i{display:flex;align-items:center;gap:8px;padding:7px 12px;border-top:1px solid #edf0f3;text-decoration:none;color:var(--erp-ink)}
+    .rp-i:hover{background:#f8fafc}
+    .rp-i .tx{flex:1;min-width:0}
+    .rp-i b{display:block;font-size:14px;font-weight:600}
+    .rp-i small{display:block;font-size:12px;color:var(--erp-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .rp-tag{flex:0 0 auto;font-size:11px;font-weight:700;border-radius:99px;padding:2px 8px;white-space:nowrap}
+    .rp-tag.new{background:#e3f4ea;color:var(--erp-green)}
+    .rp-tag.pg{background:#eef0f3;color:#4b5763}
+    .rp-none{padding:14px;color:var(--erp-muted);font-weight:600}
+    /* one report */
+    .rp-bar{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin:0 0 8px}
+    .rp-bar h1{margin:0;font-size:19px;font-weight:700}
+    .rp-bar .grow{flex:1}
+    .rp-back{height:32px;border:1.5px solid var(--erp-line);background:#fff;border-radius:99px;padding:0 12px;font:inherit;font-size:13px;font-weight:600;cursor:pointer;color:var(--erp-ink);white-space:nowrap}
+    .rp-when{font-size:12.5px;color:var(--erp-muted);white-space:nowrap}
+    .rp-when b{color:var(--erp-ink)}
+    .rp-views{display:flex;gap:4px;flex-wrap:wrap;margin:0 0 8px}
+    .rp-views button{border:1.5px solid var(--erp-line);border-radius:99px;padding:4px 12px;font:inherit;font-size:13px;font-weight:600;background:#fff;color:var(--erp-ink);cursor:pointer;white-space:nowrap}
+    .rp-views button.on{background:#002f37;border-color:#002f37;color:#fff}
+    .rp-filt{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin:0 0 8px}
+    .rp-filt select,.rp-filt input{height:34px;border:1.5px solid var(--erp-line);border-radius:8px;padding:0 10px;font:inherit;font-size:13.5px;background:#fff;color:var(--erp-ink);min-width:0}
+    .rp-filt select{max-width:190px}
+    .rp-qa{display:flex;gap:6px;flex:1 1 360px;min-width:0}.rp-filt .q{flex:1 1 auto;min-width:0}
+    .rp-acts{display:flex;gap:6px;flex:0 0 auto}
+    .rp-acts button{height:34px;border-radius:8px;padding:0 12px;font:inherit;font-size:13.5px;font-weight:600;cursor:pointer;border:1px solid var(--erp-line);background:#fff;color:var(--erp-ink);white-space:nowrap}
+    .rp-acts button.xl{background:#13824a;border-color:#13824a;color:#fff}
+    .rp-kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin:0 0 8px}
+    .rp-k{background:#fff;border:1px solid var(--erp-line);border-radius:8px;padding:7px 12px;min-width:0}
+    .rp-k span{display:block;font-size:11.5px;color:var(--erp-muted);font-weight:600;text-transform:uppercase;letter-spacing:.3px}
+    .rp-k b{display:block;font-size:19px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .rp-k small{display:block;font-size:11.5px;color:var(--erp-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .rp-k.g b{color:var(--erp-green)}.rp-k.r b{color:#c62828}.rp-k.b b{color:var(--erp-blue)}
+    .rp-wrap{background:#fff;border:1px solid var(--erp-line);border-radius:8px;overflow:hidden}
+    .rp-t{width:100%;border-collapse:collapse;font-size:13.5px;table-layout:auto}
+    .rp-t th{background:#f4f6f8;text-align:left;font-size:11.5px;font-weight:700;color:#4b5763;text-transform:uppercase;letter-spacing:.3px;padding:7px 10px;white-space:nowrap;cursor:pointer;user-select:none}
+    .rp-t th.s::after{content:" ▾"}.rp-t th.s.up::after{content:" ▴"}
+    .rp-t td{padding:6px 10px;border-top:1px solid #edf0f3;vertical-align:top}
+    .rp-t .n{text-align:right;white-space:nowrap}
+    .rp-t td.m{font-weight:700}
+    .rp-t td.amt{font-weight:700;color:var(--erp-blue)}
+    .rp-t td.in{font-weight:700;color:var(--erp-green)}
+    .rp-t td.out{font-weight:700;color:#c62828}
+    .rp-t td small{display:block;font-size:11.5px;color:var(--erp-muted)}
+    .rp-t td.mut{color:var(--erp-muted);font-size:12.5px}
+    .rp-t tbody tr:hover td{background:#f8fafc}
+    .rp-t tfoot td{font-weight:700;background:#f4f6f8;border-top:2px solid var(--erp-line)}
+    .rp-st{display:inline-block;font-size:11px;font-weight:700;border-radius:99px;padding:1px 8px;white-space:nowrap;background:#eef0f3;color:#4b5763}
+    .rp-st.ok{background:#e3f4ea;color:var(--erp-green)}.rp-st.am{background:#fff2dc;color:var(--erp-amber)}.rp-st.bl{background:#e7eefb;color:var(--erp-blue)}
+    .rp-share{display:inline-block;width:46px;height:6px;border-radius:4px;background:#eef0f3;overflow:hidden;vertical-align:middle;margin-left:6px}
+    .rp-share i{display:block;height:100%;background:var(--erp-blue)}
+    .rp-more{padding:8px;text-align:center}
+    .rp-note{font-size:12px;color:var(--erp-muted);margin:6px 2px 0}
+    @media(max-width:900px){.rp-kpis{grid-template-columns:1fr 1fr}}
+    @media(max-width:640px){
+      .rp-find{width:100%}
+      .rp-filt select{flex:1 1 45%;max-width:none}
+      .rp-qa{flex:1 1 100%}
+      .rp-acts button{padding:0 10px}.rp-acts .lb{display:none}
+      .rp-bar h1{font-size:17px;flex:1 1 100%;order:3}
+      .rp-views button{padding:3px 9px;font-size:12.5px}
+      .rp-k{padding:6px 10px}
+      .rp-k b{font-size:17px}
+      .rp-t thead{display:none}
+      .rp-t,.rp-t tbody,.rp-t tfoot{display:block}
+      .rp-t tr{display:grid;grid-template-columns:1fr 1fr 1fr;gap:2px 8px;padding:7px 10px;border-top:1px solid #edf0f3}
+      .rp-t td{padding:0;border:0;text-align:left!important;min-width:0;overflow:hidden;text-overflow:ellipsis}
+      .rp-t td.w{grid-column:1/-1}
+      .rp-t td.w2{grid-column:span 2}
+      .rp-t td[data-l]::before{content:attr(data-l);display:block;font-size:10px;font-weight:700;color:var(--erp-muted);text-transform:uppercase;letter-spacing:.3px}
+      .rp-t td.w::before{display:none}
+      .rp-t td.ph{display:none}
+      .rp-t tfoot tr{background:#f4f6f8}
+      .rp-t td:empty{display:none}
+    }
+    @media print{.erp-top,.erp-side,.rp-back,.rp-filt,.rp-views,.rp-more,.erp-quick{display:none!important}.rp-t{font-size:11px}}
+  </style>
+</head>
+<body>
+  <div id="loading" class="status">Checking account access...</div>
+  <main id="page" class="erp-main" hidden>
+    <!-- Hub -->
+    <section id="hub">
+      <div class="rp-head"><h1>Reports</h1><span class="grow"></span>
+        <input id="find" class="rp-find" type="search" placeholder="Find a report… (sales, party, stock, cash)" autocomplete="off"></div>
+      <div id="groups" class="rp-groups"></div>
+      <p class="rp-note">🟢 <b>Report</b> = opens here with filters, search and Excel. ↗ = opens its own page. Dates and brand follow the top bar.</p>
+    </section>
+    <!-- One report -->
+    <section id="rep" hidden>
+      <div class="rp-bar"><button id="back" class="rp-back" type="button">← All reports</button><h1 id="rTitle"></h1><span class="grow"></span><span id="when" class="rp-when"></span></div>
+      <div id="views" class="rp-views"></div>
+      <div class="rp-filt"><span id="filters" style="display:contents"></span>
+        <div class="rp-qa"><input id="q" class="q" type="search" placeholder="Search…" autocomplete="off">
+        <div class="rp-acts"><button id="refresh" type="button" title="Refresh">↻<span class="lb"> Refresh</span></button><button id="excel" class="xl" type="button" title="Excel">⬇<span class="lb"> Excel</span></button><button id="print" type="button" title="Print">🖨<span class="lb"> Print</span></button></div></div>
+      </div>
+      <div id="kpis" class="rp-kpis"></div>
+      <div id="box" class="rp-wrap"></div>
+      <p id="note" class="rp-note"></p>
+    </section>
+  </main>
+  <script>
+    const S=LWBSales,{client,el,esc,num,fmt,short,key,istDay}=S;
+    const dmy=d=>d?String(d).slice(8,10)+"/"+String(d).slice(5,7)+"/"+String(d).slice(0,4):"";
+    const rs=v=>"₹"+Math.round(num(v)).toLocaleString("en-IN");
+    let me=null,BB={get:()=>"",name:()=>""},unitOf=()=>"CASE";
+
+    /* ---------- Report list (hub) ----------
+       new: id of a report built on this page; h: page of a report that already exists.
+       r: roles that see it (same as that page's menu roles). */
+    const ALL="admin manager accounts cashier";
+    const HUB=[
+      ["Sales","chart",[
+        {id:"sales",v:"reg",t:"Sales Register (PO-wise)",d:"Every PO: date, party, salesman, status, qty, amount",r:"admin manager accounts"},
+        {id:"sales",v:"day",t:"Day-wise Sales",d:"Total POs, parties, qty and amount per day",r:"admin manager accounts"},
+        {id:"sales",v:"party",t:"Party-wise Sales",d:"Who bought how much, share %, last PO",r:"admin manager accounts"},
+        {id:"sales",v:"sku",t:"SKU-wise Sales",d:"Item qty (IC / CS), average rate, amount",r:"admin manager accounts"},
+        {id:"sales",v:"sm",t:"Salesman-wise Sales",d:"POs, parties, qty and amount per salesman",r:"admin manager accounts"},
+        {h:"sales-tracking.html",t:"Target & Margin (Sales Tracking)",d:"Target vs achieved, SKU margin, no-order parties",r:"admin manager"},
+        {h:"party-buying.html",t:"Party Buying / Not Buying",d:"Never bought, stopped, not in N days",r:"admin manager"},
+        {h:"party-calls.html#report",t:"Party Call Report",d:"Calls, results, why no order",r:"admin manager"},
+        {h:"daily-report.html",t:"Daily Summary",d:"One day: orders, loading, delivery, money",r:"admin manager accounts"},
+        {h:"driver-returns.html",t:"Sales Returns",d:"Driver / party returns and credit notes",r:"admin manager accounts"}]],
+      ["Purchase","inbox",[
+        {h:"purchase-register.html",t:"Purchase Register (bill-wise)",d:"Every purchase bill, vehicle, check, PDF",r:"admin manager accounts"},
+        {id:"purchase",v:"sku",t:"Purchase SKU-wise",d:"Item qty and amount bought",r:"admin manager accounts"},
+        {id:"purchase",v:"sup",t:"Supplier-wise Purchase",d:"Bills, qty and amount per supplier",r:"admin manager accounts"},
+        {h:"purchase-claims.html",t:"Purchase Claims",d:"Damage / leakage claims and status",r:"admin manager"},
+        {h:"ecrs.html",t:"ECRS / ACRS Orders",d:"Company truck orders and payment",r:"admin manager"},
+        {h:"stts-ledger.html",t:"STTS Ledger",d:"Company scheme claim check",r:"admin manager accounts"}]],
+      ["Party & Outstanding","users",[
+        {h:"accounts-books.html?v=out",t:"Outstanding + Ageing",d:"Party-wise / bill-wise, 30 / 60 / 90 days",r:"admin accounts"},
+        {h:"accounts-books.html?v=led",t:"Party Ledger",d:"Statement of one party, running balance",r:"admin accounts"},
+        {h:"accounts-books.html?v=rec",t:"Receipt Register",d:"Payments received, mode-wise",r:"admin accounts"},
+        {h:"accounts-books.html?v=sum",t:"Party Payments Summary",d:"Total received per party",r:"admin accounts"},
+        {h:"sales-outstanding.html",t:"Outstanding (Sales Head)",d:"Unpaid / part-paid bills to follow up",r:"admin manager"},
+        {h:"driver-collections.html",t:"Driver Collections",d:"Cash / UPI collected by drivers",r:"admin manager accounts"}]],
+      ["Cash, Bank & Expenses","cash",[
+        {id:"money",v:"exp",t:"Expense Report (head-wise)",d:"Cash Out heads: salary, diesel, rent…",r:"admin accounts cashier"},
+        {id:"money",v:"reg",t:"Cash In / Out Register",d:"Every money entry with head, mode, party",r:"admin accounts cashier"},
+        {h:"accounts-books.html?v=day",t:"Day Book",d:"All vouchers of the day, Tally style",r:"admin accounts"},
+        {h:"accounts-dashboard.html?tab=deps",t:"Bank Deposits",d:"Cash deposited, bank-wise",r:"admin accounts cashier"},
+        {h:"bank-statement.html",t:"Bank Statement",d:"Bank entries matched with the books",r:"admin accounts"},
+        {h:"accounts-dashboard.html?tab=cheques",t:"Cheques",d:"Cheques received / due",r:"admin accounts cashier"},
+        {h:"accounts-dashboard.html?tab=staff",t:"Staff Ledger",d:"Salary, upad / advance per staff",r:"admin accounts cashier"},
+        {h:"accounts-dashboard.html?tab=veh",t:"Vehicle Expenses",d:"Diesel, repair, rent per vehicle",r:"admin accounts cashier"},
+        {h:"party-billing.html?tab=gst",t:"GST",d:"Month-wise GSTR-1 / 3B, tax paid",r:"admin accounts"},
+        {h:"finance.html",t:"Finance Home (P&L)",d:"Money position, brand-wise, profit",r:"admin accounts cashier"}]],
+      ["Stock","stock",[
+        {h:"inventory.html",t:"Stock Report",d:"Saleable stock per SKU",r:"admin manager accounts"},
+        {h:"inventory.html?tab=in",t:"Stock In (Purchase)",d:"Goods received, SKU lines",r:"admin manager accounts"},
+        {h:"inventory.html?tab=out",t:"Stock Out (Dispatch)",d:"Goods loaded, SKU lines",r:"admin manager accounts"},
+        {h:"stock-transfer.html#daily",t:"Damage / Loss Daily",d:"Handled, damaged, loss per 1000",r:"admin manager accounts"},
+        {h:"stock-transfer.html#ledger",t:"Damage Category Ledger",d:"Damage, leakage, expiry balance",r:"admin manager accounts"},
+        {h:"stock-audit.html",t:"Night Stock Audit",d:"Count vs book, differences",r:"admin manager accounts"},
+        {h:"stock-transit.html",t:"Goods in Transit",d:"Bought, not yet at godown",r:"admin manager"},
+        {h:"sheet-pallet.html",t:"Sheet & Pallet Ledger",d:"Given / returned per party",r:"admin manager accounts"}]],
+      ["Dispatch & Vehicle","truck",[
+        {h:"vehicle-report.html",t:"Vehicle / Driver Report",d:"Tons loaded, cases delivered per vehicle",r:"admin manager accounts"},
+        {h:"warehouse-orders.html",t:"PO Status (Pending → Delivered)",d:"Every PO by stage",r:"admin manager accounts"},
+        {h:"loading-dispatch.html",t:"Loading & Dispatch",d:"Loading done per vehicle",r:"admin manager"},
+        {h:"godown-report.html",t:"Godown Report",d:"Vehicles, damage, staff absent",r:"admin manager"},
+        {h:"direct-vehicle.html",t:"Direct Vehicle",d:"Company truck to party, balance",r:"admin manager accounts"}]],
+      ["Team & Control","users",[
+        {h:"team-report.html",t:"Team Work Report",d:"Work done per staff",r:"admin manager"},
+        {h:"approvals.html",t:"Approvals Pending",d:"Everything waiting for OK",r:"admin manager"},
+        {h:"tasks.html",t:"Tasks",d:"Open / done tasks per person",r:ALL},
+        {h:"change-history.html",t:"Change History",d:"Who added / edited / deleted",r:"admin"}]]
+    ];
+    const canSee=x=>{const r=me.role;if(r==="admin")return true;if(String(x.r).split(" ").includes(r))return true;
+      // a page Admin ticked for this login in Manage Users
+      if(x.h&&window.ERPShell){try{return ERPShell.menuForMe(me.realRole).some(g=>g.items.some(i=>i.h.split("#")[0].split("?")[0]===x.h.split("#")[0].split("?")[0]))}catch(e){}}
+      return false};
+    function drawHub(){
+      const q=key(el("find").value);let h="",any=false;
+      for(const [g,ic,items] of HUB){
+        const list=items.filter(canSee).filter(x=>!q||key(x.t+" "+x.d+" "+g).includes(q));if(!list.length)continue;any=true;
+        h+='<div class="rp-g"><h2>'+esc(g)+"<small>"+list.length+"</small></h2>"+list.map(x=>{
+          const href=x.id?"reports.html?r="+x.id+"&v="+x.v:x.h;
+          return '<a class="rp-i" href="'+esc(href)+'"'+(x.id?' data-r="'+x.id+'" data-v="'+x.v+'"':"")+'><span class="tx"><b>'+esc(x.t)+"</b><small>"+esc(x.d)+"</small></span>"+
+            (x.id?'<span class="rp-tag new">Report</span>':'<span class="rp-tag pg">↗</span>')+"</a>"}).join("")+"</div>";
+      }
+      el("groups").innerHTML=any?h:'<div class="rp-none">No report found for "'+esc(el("find").value)+'".</div>';
+    }
+
+    /* ---------- Built-in reports ---------- */
+    const SALES_ST=[["","All status"],["open","Pending / Approved"],["out","Loaded / Billed"],["del","Delivered"]];
+    const stGroup=s=>{s=String(s||"").toLowerCase();return s==="delivered"?"del":["loaded","invoiced","dispatched"].includes(s)?"out":"open"};
+    const stTag=s=>{const g=stGroup(s),t=String(s||"pending").replace(/_/g," ");return '<span class="rp-st '+(g==="del"?"ok":g==="out"?"bl":"am")+'">'+esc(t.charAt(0).toUpperCase()+t.slice(1))+"</span>"};
+    // qty as "12 IC · 40 CS" (Rajnigandha in IC, Coca-Cola in CS, never added together)
+    const qtxt=x=>{const a=[];if(Math.round(x.ic*10))a.push(fmt(x.ic)+" IC");if(Math.round(x.cs*10)||!a.length)a.push(fmt(x.cs)+" CS");return a.join(" · ")};
+    const addQ=(x,q,u)=>{if(u==="BOX")x.ic+=q;else x.cs+=q};
+    const REP={
+      sales:{t:"Sales",views:[["reg","Register (PO-wise)"],["day","Day-wise"],["party","Party-wise"],["sku","SKU-wise"],["sm","Salesman-wise"]],
+        filters:()=>[
+          ["party","All parties",uniq(D.sales.orders.map(o=>o.customer_name))],
+          ["sm","All salesmen",uniq(D.sales.orders.map(o=>o.sm))],
+          ["st","",SALES_ST],
+          ["basis","",[["booked","Booked qty"],["loaded","Loaded qty"]]]],
+        load:loadSales,build:buildSales},
+      purchase:{t:"Purchase",views:[["sku","SKU-wise"],["sup","Supplier-wise"],["bill","Bill-wise"]],
+        filters:()=>[["sup","All suppliers",uniq(D.purchase.bills.map(b=>b.supplier_name))]],
+        load:loadPurchase,build:buildPurchase},
+      money:{t:"Cash & Expenses",views:[["exp","Expense head-wise"],["reg","Cash In / Out register"]],
+        filters:()=>[view==="exp"?null:["kind","",[["","In + Out + Bank"],["IN","Cash / Money In"],["OUT","Money Out"],["DEPOSIT","Deposit to bank"],["WITHDRAW","Cash from bank"]]],
+          ["head","All heads",uniq(D.money.lines.filter(l=>view!=="exp"||l.kind==="OUT").map(l=>l.category||"—"))],["mode","All modes",uniq(D.money.lines.map(l=>l.mode))]].filter(Boolean),
+        load:loadMoney,build:buildMoney}
+    };
+    const uniq=a=>[...new Set(a.map(x=>String(x||"").trim()).filter(Boolean))].sort();
+    let R=null,view="",D={},F={},sortBy=null,sortUp=false,shown=300,cur=null;
+
+    async function loadSales(P){
+      const [orders,team,pa]=await Promise.all([S.orders(P.from,P.to),client.rpc("lwb_sales_team").then(r=>r.error?[]:r.data||[],()=>[]),
+        client.rpc("lwb_party_activity").then(r=>r.error?[]:r.data||[],()=>[])]);
+      const items=await S.inChunks("order_items","order_id",orders.map(o=>o.id),"order_id,sku_name,ordered_qty,approved_qty,loaded_qty,rate");
+      const tm=new Map(team.map(t=>[t.user_id,t.full_name])),pm=new Map(pa.map(p=>[key(p.customer_name),p]));
+      for(const o of orders){const p=pm.get(key(o.customer_name));o.day=istDay(o.order_date||o.created_at);
+        o.sm=(p&&p.salesman_name)||tm.get(o.created_by)||String(o.sales_person||"").trim()||"Office";o.city=p?p.city||"":"";o.lines=[]}
+      const by=new Map(orders.map(o=>[o.id,o]));for(const it of items){const o=by.get(it.order_id);if(o)o.lines.push(it)}
+      return {orders};
+    }
+    async function loadPurchase(P){
+      const out=[];for(let p=0;p<20;p++){const r=await client.from("lwb_goods_inward").select("*").gte("received_date",P.from).lte("received_date",P.to).order("received_date").range(p*1000,p*1000+999);
+        if(r.error)throw r.error;out.push(...(r.data||[]));if((r.data||[]).length<1000)break}
+      const bills=out.filter(b=>!/~old/i.test(String(b.invoice_no||"")));
+      const items=await S.inChunks("lwb_goods_inward_items","inward_id",bills.map(b=>b.id),"*");
+      const sk=await client.from("sku_master").select("*");const skus=new Map(((sk.data)||[]).map(s=>[String(s.id),s]));
+      const by=new Map(bills.map(b=>[b.id,Object.assign(b,{lines:[]})]));for(const it of items){const b=by.get(it.inward_id);if(b)b.lines.push(it)}
+      return {bills,skus};
+    }
+    async function loadMoney(P){
+      const r=await client.rpc("lwb_acc_dashboard",{p_from:P.from,p_to:P.to});if(r.error)throw r.error;
+      const lines=((r.data&&r.data.lines)||[]).filter(l=>["IN","OUT","DEPOSIT","WITHDRAW"].includes(l.kind)&&String(l.status||"").toUpperCase()!=="CANCELLED");
+      return {lines};
+    }
+    const NOT_EXPENSE=/^(supplier payment|contra\b.*|asset purchase|gst \/ tax paid|friend swap)$/i;   // same rule as Finance Home
+
+    // Every view returns {cols:[{t,k,n,cls,sum,fmt,ph,w}], rows:[obj], kpis:[[label,value,sub,cls]], note}
+    const match=(...v)=>{const q=key(el("q").value);return !q||key(v.join(" ")).includes(q)};
+    function buildSales(){
+      const brand=BB.get(),basis=F.basis||"booked",map=D.skuMap;
+      const orders=D.sales.orders.filter(o=>(!F.party||o.customer_name===F.party)&&(!F.sm||o.sm===F.sm)&&(!F.st||stGroup(o.status)===F.st));
+      const L=[],O=[];
+      for(const o of orders){
+        const x={o,ic:0,cs:0,amt:0,n:0};
+        for(const it of o.lines){
+          if(brand&&(!map||map.get(S.skuKey(it.sku_name))!==brand))continue;
+          const q=S.lineQty(it,o,basis);if(!q)continue;
+          const u=unitOf(it.sku_name),a=q*num(it.rate);addQ(x,q,u);x.amt+=a;x.n++;L.push({o,sku:String(it.sku_name||"—").trim(),q,u,a});
+        }
+        if(!o.lines.length&&!brand&&basis==="booked"){x.cs=num(o.total_qty);x.amt=num(o.total_amount)}
+        if(x.amt||x.ic||x.cs)O.push(x);
+      }
+      const tot=O.reduce((a,x)=>(a.amt+=x.amt,a.ic+=x.ic,a.cs+=x.cs,a),{amt:0,ic:0,cs:0});
+      const kp=[["Sales amount",short(tot.amt),fmt(O.length)+" POs","b"],["Quantity",qtxt(tot),basis==="loaded"?"Loaded qty":"Booked qty",""],
+        ["Parties",fmt(new Set(O.map(x=>key(x.o.customer_name))).size),"bought in these dates",""],["Avg per PO",short(O.length?tot.amt/O.length:0),"",""]];
+      const Q={t:"Qty",k:"q",n:1,cls:"m",v:x=>qtxt(x),x:[["IC",x=>Math.round(x.ic*100)/100],["CS",x=>Math.round(x.cs*100)/100]]};
+      const AMT={t:"Amount",k:"amt",n:1,cls:"amt",money:1,sum:1};
+      const share=x=>tot.amt?Math.round(x.amt/tot.amt*1000)/10:0;
+      const SH={t:"Share",k:"sh",n:1,ph:1,v:x=>share(x)+'%<span class="rp-share"><i style="width:'+Math.min(100,share(x))+'%"></i></span>',x:[["Share %",share]]};
+      if(view==="reg"){
+        const rows=O.filter(x=>match(x.o.order_no,x.o.customer_name,x.o.sm,x.o.status,x.o.city)).map(x=>({...x,day:x.o.day,no:x.o.order_no,party:x.o.customer_name,sm:x.o.sm,st:x.o.status,q:x.ic+x.cs}));
+        return {kpis:kp,rows,def:["day",false],cols:[{t:"Date",k:"day",v:x=>dmy(x.day)},{t:"PO No.",k:"no",cls:"m"},{t:"Party",k:"party",w:"w2",v:x=>esc(x.party)+(x.o.city?"<small>"+esc(x.o.city)+"</small>":"")},
+          {t:"Salesman",k:"sm"},{t:"Status",k:"st",v:x=>stTag(x.st),x:[["Status",x=>x.st]]},Q,AMT]};
+      }
+      const grp=(f,init)=>{const m=new Map();for(const x of O){const k=f(x);if(!m.has(k))m.set(k,init(x));const g=m.get(k);g.ic+=x.ic;g.cs+=x.cs;g.amt+=x.amt;g.pos++;g.parties.add(key(x.o.customer_name));if(x.o.day>g.last)g.last=x.o.day}return [...m.values()]};
+      const base=x=>({ic:0,cs:0,amt:0,pos:0,parties:new Set(),last:""});
+      if(view==="day"){
+        const rows=grp(x=>x.o.day,x=>({...base(),day:x.o.day})).map(g=>({...g,np:g.parties.size,q:g.ic+g.cs})).filter(g=>match(dmy(g.day)));
+        return {kpis:kp,rows,def:["day",false],cols:[{t:"Date",k:"day",v:x=>dmy(x.day),cls:"m"},{t:"POs",k:"pos",n:1,sum:1},{t:"Parties",k:"np",n:1},Q,AMT,SH]};
+      }
+      if(view==="party"){
+        const rows=grp(x=>key(x.o.customer_name),x=>({...base(),party:x.o.customer_name,city:x.o.city,sm:x.o.sm})).map(g=>({...g,q:g.ic+g.cs})).filter(g=>match(g.party,g.city,g.sm));
+        return {kpis:kp,rows,def:["amt",false],cols:[{t:"Party",k:"party",w:"w",cls:"m",v:x=>esc(x.party)+(x.city?"<small>"+esc(x.city)+"</small>":"")},{t:"Salesman",k:"sm"},{t:"POs",k:"pos",n:1,sum:1},Q,AMT,SH,{t:"Last PO",k:"last",v:x=>dmy(x.last),ph:1}]};
+      }
+      if(view==="sm"){
+        const rows=grp(x=>x.o.sm,x=>({...base(),sm:x.o.sm})).map(g=>({...g,np:g.parties.size,q:g.ic+g.cs})).filter(g=>match(g.sm));
+        return {kpis:kp,rows,def:["amt",false],cols:[{t:"Salesman",k:"sm",cls:"m",w:"w"},{t:"POs",k:"pos",n:1,sum:1},{t:"Parties",k:"np",n:1},Q,AMT,SH]};
+      }
+      // sku
+      const m=new Map();for(const l of L){const k=S.skuKey(l.sku);if(!m.has(k))m.set(k,{sku:l.sku,u:l.u,qn:0,amt:0,pos:new Set(),parties:new Set()});const g=m.get(k);g.qn+=l.q;g.amt+=l.a;g.pos.add(l.o.id);g.parties.add(key(l.o.customer_name))}
+      const rows=[...m.values()].map(g=>({...g,ic:g.u==="BOX"?g.qn:0,cs:g.u==="BOX"?0:g.qn,q:g.qn,rate:g.qn?g.amt/g.qn:0,np:g.parties.size,npo:g.pos.size,brand:map&&D.brandName(map.get(S.skuKey(g.sku)))})).filter(g=>match(g.sku,g.brand));
+      return {kpis:[kp[0],kp[1],["SKUs sold",fmt(rows.length),"",""],kp[2]],rows,def:["amt",false],
+        cols:[{t:"SKU",k:"sku",cls:"m",w:"w"},{t:"Brand",k:"brand",ph:1},{...Q,v:x=>fmt(x.qn)+" "+(x.u==="BOX"?"IC":"CS")},{t:"Avg rate",k:"rate",n:1,money:1},AMT,SH,{t:"Parties",k:"np",n:1,ph:1}]};
+    }
+    function buildPurchase(){
+      const brand=BB.get(),skus=D.purchase.skus;
+      const sOf=it=>skus.get(String(it.sku_id))||{};
+      const pcs=it=>num(it.quantity_pcs!=null?it.quantity_pcs:it.total_pcs!=null?it.total_pcs:it.qty_pcs);
+      const B=[],L=[];
+      for(const b of D.purchase.bills){
+        if(F.sup&&b.supplier_name!==F.sup)continue;
+        const x={b,ic:0,cs:0,tax:0,amt:0};
+        for(const it of b.lines){const s=sOf(it);if(brand&&s.company_id!==brand&&!(b.company_id===brand&&!s.company_id))continue;
+          const u=unitOf(s.sku_name?s:it.sku_name),q=pcs(it)/Math.max(1,num(s.pcs_per_case)||1),a=num(it.total_amount)||num(it.net_amount)||num(it.taxable_amount);
+          addQ(x,q,u);x.tax+=num(it.taxable_amount);x.amt+=a;L.push({b,sku:String(it.sku_name||s.sku_name||"—").trim(),u,q,a,tax:num(it.taxable_amount)})}
+        if(x.amt||x.ic||x.cs)B.push(x);
+      }
+      const tot=B.reduce((a,x)=>(a.amt+=x.amt,a.tax+=x.tax,a.ic+=x.ic,a.cs+=x.cs,a),{amt:0,tax:0,ic:0,cs:0});
+      const kp=[["Purchase amount",short(tot.amt),fmt(B.length)+" bills","b"],["Quantity",qtxt(tot),"received",""],["Taxable",short(tot.tax),"before GST",""],["Suppliers",fmt(new Set(B.map(x=>x.b.supplier_name)).size),"",""]];
+      const Q={t:"Qty",k:"q",n:1,cls:"m",v:x=>qtxt(x),x:[["IC",x=>Math.round(x.ic*100)/100],["CS",x=>Math.round(x.cs*100)/100]]};
+      const AMT={t:"Amount",k:"amt",n:1,cls:"amt",money:1,sum:1},TX={t:"Taxable",k:"tax",n:1,money:1,sum:1,ph:1};
+      if(view==="bill"){
+        const rows=B.filter(x=>match(x.b.invoice_no,x.b.supplier_name,x.b.vehicle_no)).map(x=>({...x,day:String(x.b.received_date).slice(0,10),inv:x.b.invoice_no,sup:x.b.supplier_name,veh:x.b.vehicle_no||"",q:x.ic+x.cs}));
+        return {kpis:kp,rows,def:["day",false],cols:[{t:"Recd",k:"day",v:x=>dmy(x.day)},{t:"Invoice",k:"inv",cls:"m"},{t:"Supplier",k:"sup",w:"w2"},{t:"Vehicle",k:"veh",ph:1},Q,TX,AMT],
+          note:"Full bill details, check and PDF: Purchase Register ↗"};
+      }
+      if(view==="sup"){
+        const m=new Map();for(const x of B){const k=x.b.supplier_name||"—";if(!m.has(k))m.set(k,{sup:k,bills:0,ic:0,cs:0,tax:0,amt:0,last:""});const g=m.get(k);g.bills++;g.ic+=x.ic;g.cs+=x.cs;g.tax+=x.tax;g.amt+=x.amt;const d=String(x.b.received_date).slice(0,10);if(d>g.last)g.last=d}
+        const rows=[...m.values()].map(g=>({...g,q:g.ic+g.cs})).filter(g=>match(g.sup));
+        return {kpis:kp,rows,def:["amt",false],cols:[{t:"Supplier",k:"sup",cls:"m",w:"w"},{t:"Bills",k:"bills",n:1,sum:1},Q,TX,AMT,{t:"Last bill",k:"last",v:x=>dmy(x.last)}]};
+      }
+      const m=new Map();for(const l of L){const k=S.skuKey(l.sku);if(!m.has(k))m.set(k,{sku:l.sku,u:l.u,qn:0,amt:0,tax:0,bills:new Set()});const g=m.get(k);g.qn+=l.q;g.amt+=l.a;g.tax+=l.tax;g.bills.add(l.b.id)}
+      const rows=[...m.values()].map(g=>({...g,ic:g.u==="BOX"?g.qn:0,cs:g.u==="BOX"?0:g.qn,q:g.qn,rate:g.qn?g.amt/g.qn:0,nb:g.bills.size})).filter(g=>match(g.sku));
+      return {kpis:kp,rows,def:["amt",false],cols:[{t:"SKU",k:"sku",cls:"m",w:"w"},{...Q,v:x=>(Math.round(x.qn*10)/10).toLocaleString("en-IN")+" "+(x.u==="BOX"?"IC":"CS")},{t:"Avg rate",k:"rate",n:1,money:1},TX,AMT,{t:"Bills",k:"nb",n:1,ph:1}]};
+    }
+    const KIND={IN:"In",OUT:"Out",DEPOSIT:"To bank",WITHDRAW:"From bank"};
+    function buildMoney(){
+      const ls=D.money.lines.filter(l=>(!F.kind||view==="exp"||l.kind===F.kind)&&(!F.head||(l.category||"—")===F.head)&&(!F.mode||l.mode===F.mode));
+      if(view==="exp"){
+        const ex=ls.filter(l=>l.kind==="OUT"&&!NOT_EXPENSE.test(String(l.category||"").trim()));
+        const tot=ex.reduce((a,l)=>a+num(l.amount),0),m=new Map();
+        for(const l of ex){const k=String(l.category||"Other expense").trim();if(!m.has(k))m.set(k,{head:k,n:0,amt:0,cash:0,last:""});const g=m.get(k);g.n++;g.amt+=num(l.amount);if(l.mode==="CASH")g.cash+=num(l.amount);const d=String(l.date||"").slice(0,10);if(d>g.last)g.last=d}
+        const rows=[...m.values()].map(g=>({...g,other:g.amt-g.cash,sh:tot?Math.round(g.amt/tot*1000)/10:0})).filter(g=>match(g.head));
+        const top=rows.slice().sort((a,b)=>b.amt-a.amt)[0];
+        return {kpis:[["Total expenses",short(tot),fmt(ex.length)+" entries","r"],["Biggest head",top?esc(top.head):"—",top?short(top.amt):"",""],["Cash paid",short(rows.reduce((a,g)=>a+g.cash,0)),"",""],["Bank / UPI paid",short(rows.reduce((a,g)=>a+g.other,0)),"",""]],
+          rows,def:["amt",false],cols:[{t:"Expense head",k:"head",cls:"m",w:"w"},{t:"Entries",k:"n",n:1,sum:1},{t:"Cash",k:"cash",n:1,money:1,sum:1},{t:"Bank / UPI",k:"other",n:1,money:1,sum:1},
+            {t:"Total",k:"amt",n:1,cls:"out",money:1,sum:1},{t:"Share",k:"sh",n:1,ph:1,v:x=>x.sh+'%<span class="rp-share"><i style="width:'+Math.min(100,x.sh)+'%"></i></span>'}],
+          note:"Supplier payment, Contra, Asset purchase, GST / Tax paid and Friend swap are not expenses (same as Finance Home)."};
+      }
+      const rows=ls.map(l=>({l,day:String(l.date||"").slice(0,10),kind:l.kind,head:l.category||"—",party:l.party||"",mode:l.mode||"",ref:[l.ref,l.order_no].filter(Boolean).join(" · "),rem:l.remark||"",by:l.by||"",
+        in:["IN","WITHDRAW"].includes(l.kind)?num(l.amount):0,out:["OUT","DEPOSIT"].includes(l.kind)?num(l.amount):0})).filter(r=>match(r.head,r.party,r.mode,r.ref,r.rem,r.by,KIND[r.kind]));
+      const tin=rows.reduce((a,r)=>a+r.in,0),tout=rows.reduce((a,r)=>a+r.out,0);
+      return {kpis:[["Money In",short(tin),fmt(rows.filter(r=>r.in).length)+" entries","g"],["Money Out",short(tout),fmt(rows.filter(r=>r.out).length)+" entries","r"],["Net",short(tin-tout),"In − Out",tin-tout<0?"r":"g"],["Entries",fmt(rows.length),"",""]],
+        rows,def:["day",false],cols:[{t:"Date",k:"day",v:x=>dmy(x.day)},{t:"Type",k:"kind",v:x=>'<span class="rp-st '+(x.in?"ok":"am")+'">'+esc(KIND[x.kind]||x.kind)+"</span>",x:[["Type",x=>KIND[x.kind]||x.kind]]},
+          {t:"Head",k:"head",cls:"m"},{t:"Party / Paid to",k:"party",w:"w2"},{t:"Mode",k:"mode"},{t:"In",k:"in",n:1,cls:"in",money:1,sum:1,v:x=>x.in?rs(x.in):""},{t:"Out",k:"out",n:1,cls:"out",money:1,sum:1,v:x=>x.out?rs(x.out):""},
+          {t:"Ref / Remark",k:"rem",ph:1,cls:"mut",v:x=>esc([x.ref,x.rem].filter(Boolean).join(" · ")),x:[["Ref",x=>x.ref],["Remark",x=>x.rem]]},{t:"By",k:"by",ph:1,cls:"mut"}]};
+    }
+
+    /* ---------- drawing ---------- */
+    const cell=(c,x)=>c.v?c.v(x):c.money?(num(x[c.k])?rs(x[c.k]):"—"):c.n?fmt(x[c.k]):esc(x[c.k]==null?"":x[c.k]);
+    function sorted(rows){
+      const [k,up]=sortBy||cur.def;const s=rows.slice();
+      s.sort((a,b)=>{const p=a[k],q=b[k];const r=typeof p==="number"||typeof q==="number"?num(p)-num(q):String(p||"").localeCompare(String(q||""));return up?r:-r});
+      return s;
+    }
+    function draw(){
+      if(!R)return;
+      if(D.err){el("box").innerHTML='<div class="sl-msg">'+esc(D.err)+"</div>";el("kpis").innerHTML="";return}
+      if(!D[R.key]){el("box").innerHTML='<div class="erp-empty">Loading…</div>';return}
+      cur=R.def.build();
+      el("kpis").innerHTML=cur.kpis.map(k=>'<div class="rp-k '+(k[3]||"")+'"><span>'+esc(k[0])+"</span><b>"+k[1]+"</b>"+(k[2]?"<small>"+esc(k[2])+"</small>":"")+"</div>").join("");
+      const rows=sorted(cur.rows),[sk,su]=sortBy||cur.def;
+      let h='<table class="rp-t" data-cf-off><thead><tr>'+cur.cols.map((c,i)=>'<th data-sort="'+c.k+'" class="'+(c.n?"n ":"")+(c.ph?"ph ":"")+(c.k===sk?"s"+(su?" up":""):"")+'">'+esc(c.t)+"</th>").join("")+"</tr></thead><tbody>";
+      h+=rows.slice(0,shown).map(x=>"<tr>"+cur.cols.map(c=>'<td data-l="'+esc(c.t)+'" class="'+[c.n?"n":"",c.cls||"",c.w||"",c.ph?"ph":""].join(" ").trim()+'">'+cell(c,x)+"</td>").join("")+"</tr>").join("");
+      if(!rows.length)h+='<tr><td colspan="'+cur.cols.length+'" class="w"><div class="erp-empty">Nothing in these dates / filters.</div></td></tr>';
+      h+="</tbody>";
+      if(rows.length){
+        h+="<tfoot><tr>"+cur.cols.map((c,i)=>{
+          if(i===0)return '<td class="w">Total · '+fmt(rows.length)+" rows</td>";
+          if(c.k==="q")return '<td data-l="Qty" class="n">'+qtxt(rows.reduce((a,x)=>(a.ic+=num(x.ic),a.cs+=num(x.cs),a),{ic:0,cs:0}))+"</td>";
+          if(!c.sum)return "<td></td>";
+          const t=rows.reduce((a,x)=>a+num(x[c.k]),0);return '<td data-l="'+esc(c.t)+'" class="n '+(c.cls||"")+'">'+(c.money?rs(t):fmt(t))+"</td>"}).join("")+"</tr></tfoot>";
+      }
+      h+="</table>";
+      if(rows.length>shown)h+='<div class="rp-more"><button type="button" class="rp-back" id="more">Show more ('+fmt(rows.length-shown)+")</button></div>";
+      el("box").innerHTML=h;
+      el("note").textContent=(cur.note?cur.note+" ":"")+"Tap a column name to sort. Excel has every row.";
+    }
+    function drawFilters(){
+      const list=R.def.filters().filter(Boolean);
+      el("filters").innerHTML=list.map(([k,all,opts])=>{
+        const o=opts.map(x=>Array.isArray(x)?x:[x,x]);if(F[k]&&!o.some(x=>x[0]===F[k]))o.push([F[k],F[k]]);
+        return '<select data-f="'+k+'" aria-label="'+esc(all||k)+'">'+(all?'<option value="">'+esc(all)+"</option>":"")+o.map(x=>'<option value="'+esc(x[0])+'"'+(F[k]===x[0]?" selected":"")+">"+esc(x[1])+"</option>").join("")+"</select>"}).join("");
+    }
+    function drawViews(){
+      el("views").innerHTML=R.def.views.map(v=>'<button type="button" data-view="'+v[0]+'" class="'+(v[0]===view?"on":"")+'">'+esc(v[1])+"</button>").join("");
+      el("rTitle").textContent=R.def.t+" · "+(R.def.views.find(v=>v[0]===view)||[])[1];
+      document.title=el("rTitle").textContent+" | Reports";
+    }
+    function when(){
+      const P=window.LWBPeriod?LWBPeriod.get():{from:S.isoDay(new Date()),to:S.isoDay(new Date())};
+      el("when").innerHTML="📅 <b>"+dmy(P.from)+(P.from!==P.to?" – "+dmy(P.to):"")+"</b>"+(BB.get()?" · <b>"+esc(BB.name(BB.get()))+"</b>":" · All brands");
+      return P;
+    }
+    async function load(){
+      if(!R)return;const P=when();D[R.key]=null;D.err="";draw();
+      try{D[R.key]=await R.def.load(P)}catch(e){D.err="Could not load: "+(e.message||String(e))}
+      drawFilters();draw();
+    }
+    async function exportExcel(){
+      if(!cur)return;const rows=sorted(cur.rows),P=when(),head=[],get=[];
+      for(const c of cur.cols){if(c.x)for(const [t,f] of c.x){head.push(t);get.push(f)}else{head.push(c.t);get.push(x=>c.k==="day"||c.k==="last"?dmy(x[c.k]):c.money||c.n?Math.round(num(x[c.k])*100)/100:String(x[c.k]==null?"":x[c.k]))}}
+      const title=el("rTitle").textContent+" · "+dmy(P.from)+" to "+dmy(P.to)+(BB.get()?" · "+BB.name(BB.get()):"");
+      try{await S.excel(el("rTitle").textContent.replace(/[^\w]+/g,"-")+"-"+P.from+"-to-"+P.to,[{name:R.def.t,title,head,rows:rows.map(x=>get.map(f=>f(x)))}])}
+      catch(e){await alert("Excel export failed: "+e.message)}
+    }
+    function open(id,v,push){
+      const def=REP[id];if(!def){R=null;el("hub").hidden=false;el("rep").hidden=true;drawHub();return}
+      R={key:id,def};view=def.views.some(x=>x[0]===v)?v:def.views[0][0];F={};sortBy=null;shown=300;el("q").value="";
+      if(push)history.pushState(null,"","reports.html?r="+id+"&v="+view);
+      el("hub").hidden=true;el("rep").hidden=false;drawViews();window.scrollTo(0,0);load();
+    }
+    function fromUrl(){const u=new URLSearchParams(location.search),r=u.get("r");
+      const item=HUB.flatMap(g=>g[2]).find(x=>x.id===r&&(x.v===u.get("v")||!u.get("v")));
+      if(r&&item&&canSee(item))open(r,u.get("v"));else{R=null;el("hub").hidden=false;el("rep").hidden=true;drawHub()}}
+
+    (async()=>{
+      me=await S.start(["admin"]);if(!me)return;
+      // Admin only (Mohit, 24 Nov 2026): no other login, even with the page ticked.
+      if(me.realRole!=="admin"){location.replace("dashboard.html");return}
+      el("loading").hidden=true;el("page").hidden=false;
+      if(window.LWBBrand){
+        try{BB=await LWBBrand.mount(client,{onChange:()=>{when();draw()}})}catch(e){}
+        try{const [info,map,u]=await Promise.all([LWBBrand.load(client),LWBBrand.skuMap(client),LWBBrand.units(client)]);
+          D.skuMap=map;unitOf=u;const cs=(info&&(info.all||info.companies))||[];D.brandName=id=>(cs.find(c=>c.id===id)||{}).name||""}catch(e){}
+      }
+      D.brandName=D.brandName||(()=>"");
+      if(window.LWBPeriod)LWBPeriod.on(()=>load());
+      el("find").addEventListener("input",drawHub);
+      el("groups").addEventListener("click",e=>{const a=e.target.closest("a[data-r]");if(!a)return;e.preventDefault();open(a.dataset.r,a.dataset.v,true)});
+      el("back").onclick=()=>{history.pushState(null,"","reports.html");fromUrl()};
+      window.addEventListener("popstate",fromUrl);
+      el("views").addEventListener("click",e=>{const b=e.target.closest("[data-view]");if(!b)return;view=b.dataset.view;sortBy=null;shown=300;history.replaceState(null,"","reports.html?r="+R.key+"&v="+view);drawViews();if(D[R.key])drawFilters();draw()});
+      el("filters").addEventListener("change",e=>{const s=e.target.closest("[data-f]");if(!s)return;F[s.dataset.f]=s.value;shown=300;draw()});
+      let qt=0;el("q").addEventListener("input",()=>{clearTimeout(qt);qt=setTimeout(()=>{shown=300;draw()},200)});
+      el("box").addEventListener("click",e=>{
+        if(e.target.id==="more"){shown+=300;draw();return}
+        const th=e.target.closest("th[data-sort]");if(!th)return;const k=th.dataset.sort,[sk,su]=sortBy||cur.def;
+        sortBy=[k,k===sk?!su:typeof (cur.rows[0]||{})[k]!=="number"];draw()});
+      el("refresh").onclick=load;el("excel").onclick=exportExcel;el("print").onclick=()=>window.print();
+      window.ERPLiveRefresh=()=>R?load():null;
+      fromUrl();
+    })();
+  </script>
+</body>
+</html>

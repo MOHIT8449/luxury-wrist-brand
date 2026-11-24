@@ -230,7 +230,9 @@
       {t:"Brand Data Reset",h:"brand-reset.html",i:"lock",r:"admin",k:"reset delete clear brand rajnigandha fresh start opening data",nm:"admin",par:"settings.html"},
       // Order History Days (Mohit, 13 Nov 2026): per role, days after delivery an order stays in its lists.
       {t:"Order History Days",h:"order-history-days.html",i:"note",r:"admin",k:"order history days delivered visible hide old orders salesman driver sales head accounts role",nm:"admin",par:"settings.html"},
-      {t:"Accounts Fresh Start",h:"accounts-reset.html",i:"lock",r:"admin",k:"reset delete clear accounts cash book entries opening cash bank balance fresh start",nm:"admin",par:"settings.html"}]}
+      {t:"Accounts Fresh Start",h:"accounts-reset.html",i:"lock",r:"admin",k:"reset delete clear accounts cash book entries opening cash bank balance fresh start",nm:"admin",par:"settings.html"}]},
+    // Reports (Mohit, 24 Nov 2026): every report in one place; Admin only, last in the side menu.
+    {group:"",items:[{t:"Reports",h:"reports.html",i:"chart",r:"admin",k:"report reports register sales report purchase report date wise party wise sku wise item wise salesman wise supplier wise expense report cash in out register excel export mis summary"}]}
   ];
 
 
