@@ -12,12 +12,14 @@ CREATE ROLE anon; CREATE ROLE authenticated;
 CREATE SCHEMA auth;
 CREATE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql AS $$ SELECT nullif(current_setting('request.jwt.claim.sub',true),'')::uuid $$;
 CREATE TABLE public.user_profiles(id uuid primary key,role text,active boolean,full_name text);
-CREATE TABLE public.orders(id uuid default gen_random_uuid() primary key,order_no text,customer_name text,status text,total_qty numeric,total_weight numeric,total_amount numeric);
+CREATE TABLE public.orders(id uuid default gen_random_uuid() primary key,order_no text,customer_name text,status text,total_qty numeric,total_weight numeric,total_amount numeric,transportation text);
 CREATE TABLE public.dispatch_assignments(id uuid default gen_random_uuid() primary key,order_id uuid,vehicle_no text,driver_name text,driver_mobile text,assigned_at timestamptz default now(),loading_completed_at timestamptz,trip_id bigint);
 CREATE TABLE public.lwb_delivery_reports(id uuid default gen_random_uuid() primary key,order_id uuid unique,delivery_status text,reported_at timestamptz default now());
 CREATE TABLE public.lwb_admin_order_marks(order_id uuid,kind text,mark_date date);
 CREATE TABLE public.lwb_driver_delivery_returns(id uuid default gen_random_uuid() primary key,order_id uuid,status text);
 CREATE TABLE public.lwb_driver_delivery_return_items(return_id uuid,qty_cases numeric);
+CREATE TABLE public.lwb_order_pickup(order_id uuid primary key,driver_name text,driver_mobile text,vehicle_no text,created_at timestamptz default now(),updated_at timestamptz default now());
+CREATE TABLE public.lwb_direct_vehicle(order_id uuid primary key,truck_label text,final_at timestamptz,updated_at timestamptz default now());
 CREATE TABLE public.lwb_vehicle_trips(id bigserial primary key,trip_no text);
 CREATE TABLE public.lwb_vehicles(id uuid primary key default gen_random_uuid(),vehicle_no text unique,vehicle_type text,capacity_kg numeric,size_ton numeric,ownership text default 'OWN',transporter_name text,is_active boolean default true);
 CREATE TABLE public.lwb_acc_staff(id bigserial primary key,name text,mobile text,active boolean default true,default_vehicle_id uuid);
@@ -57,6 +59,11 @@ const o7=await po('PO-7','Late load',20,200,'delivered','GJ05AB1234','2026-11-22
 await db.query("insert into lwb_delivery_reports(order_id,delivery_status,reported_at) values($1,'DELIVERED','2026-11-23T05:00:00Z')",[o7]);
 const o8=(await db.query("insert into orders(order_no,customer_name,status,total_qty,total_weight,total_amount) values('PO-8','No vehicle party','delivered',260,2618,111600) returning id")).rows[0].id;
 await db.query("insert into lwb_admin_order_marks values($1,'DELIVERED','2026-11-23')",[o8]);
+// Self pickup: party's vehicle in lwb_order_pickup. Direct vehicle: company truck, no assignment.
+const o9=(await db.query("insert into orders(order_no,customer_name,status,total_qty,total_weight,total_amount,transportation) values('PO-9','Tapi Store','delivered',130,0,1,'SELF PICKUP') returning id")).rows[0].id;
+await db.query("insert into lwb_order_pickup(order_id,driver_name,vehicle_no,created_at,updated_at) values($1,'Party driver','GJ05ZZ0001','2026-11-23T06:00:00Z','2026-11-23T06:00:00Z')",[o9]);
+const o10=(await db.query("insert into orders(order_no,customer_name,status,total_qty,total_weight,total_amount,transportation) values('PO-10','Big Party','delivered',1200,14000,1,'DIRECT VEHICLE|ECRS') returning id")).rows[0].id;
+await db.query("insert into lwb_direct_vehicle(order_id,truck_label,final_at) values($1,'Truck 1 · MH04AB1111','2026-11-23T10:00:00Z')",[o10]);
 const r=(await db.query("insert into lwb_driver_delivery_returns(order_id,status) values($1,'APPROVED'),($1,'REJECTED') returning id",[o1])).rows;
 await db.query('insert into lwb_driver_delivery_return_items values($1,3.5),($2,20)',[r[0].id,r[1].id]);
 await db.query("insert into lwb_admin_order_marks values($1,'DELIVERED','2026-11-23')",[o3]);
@@ -64,12 +71,15 @@ await db.query("insert into lwb_admin_order_marks values($1,'DELIVERED','2026-11
 test('rows of one India day: loaded day first, cancelled left out, delivered + returns', async()=>{
   await as('manager');
   const j=await day('2026-11-23','2026-11-23');
-  assert.deepEqual(j.rows.map(x=>x.order_no).sort(),['PO-1','PO-2','PO-3','PO-6','PO-7','PO-8']);
+  assert.deepEqual(j.rows.map(x=>x.order_no).sort(),['PO-1','PO-10','PO-2','PO-3','PO-6','PO-7','PO-8','PO-9']);
   const p1=j.rows.find(x=>x.order_no==='PO-1');
   assert.equal(p1.vehicle_key,'GJ05AB1234');assert.equal(p1.report,'PARTIAL');assert.equal(Number(p1.ret_cases),3.5);
   assert.equal(p1.trip_no,'T-2311-01');assert.equal(Number(p1.kg),1500);assert.equal(Number(p1.cases),100);
   assert.equal(j.rows.find(x=>x.order_no==='PO-3').mark_delivered,'2026-11-23');
   assert.equal(j.rows.find(x=>x.order_no==='PO-2').day,'2026-11-23');
+  const k=n=>j.rows.find(x=>x.order_no===n);
+  assert.equal(k('PO-9').kind,'SELF');assert.equal(k('PO-9').vehicle_no,'GJ05ZZ0001');assert.equal(k('PO-9').driver_name,'Party driver');
+  assert.equal(k('PO-10').kind,'DIRECT');assert.equal(k('PO-10').vehicle_no,'Truck 1 · MH04AB1111');assert.equal(k('PO-1').kind,'GODOWN');
   const p8=j.rows.find(x=>x.order_no==='PO-8');assert.equal(p8.vehicle_no,null);assert.equal(p8.vehicle_key,'');assert.equal(Number(p8.kg),2618);
   const v=j.vehicles.find(x=>x.vehicle_no==='GJ05AB1234');
   assert.deepEqual(v.drivers.map(d=>d.name),['Ramesh']);assert.equal(Number(v.size_ton),4);
@@ -82,6 +92,6 @@ test('only office roles or a login given the page; driver / salesman refused', a
   for(const r of ['admin','transport']){await as(r);assert.ok((await day('2026-11-23','2026-11-23')).rows.length)}
   for(const r of ['sales','driver']){await as(r);await assert.rejects(day('2026-11-23','2026-11-23'),/can not open/)}
   await db.query("insert into lwb_user_page_access values($1,array['vehicle-report.html'])",[ids.sales]);
-  await as('sales');assert.equal((await day('2026-11-23','2026-11-23')).rows.length,6);
+  await as('sales');assert.equal((await day('2026-11-23','2026-11-23')).rows.length,8);
   await as('manager');await assert.rejects(day('2026-11-23','2026-11-01'),/before/);
 });
