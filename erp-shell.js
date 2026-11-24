@@ -406,7 +406,12 @@
   }
 
   const GM_OFF=["goods-inward.html","warehouse-orders.html","quick-slip.html","sales-return.html","tax-invoice.html","fleet-master.html","fixed-assets.html"];
-  function mount(opts){
+  // Older pages (data-auto) stay on "Loading…" (erp-shell.css) until the top bar and menu are in place,
+  // so the plain old-looking page never flashes first after a refresh (Mohit, 24 Nov 2026).
+  const READY=()=>document.documentElement.classList.add("erp-ready");
+  setTimeout(READY,8000);
+  function mount(opts){try{return mountPage(opts)}finally{READY()}}
+  function mountPage(opts){
     appMeta();
     const role=String(opts.role||"").toLowerCase();
     const page=(location.pathname.split("/").pop()||"dashboard.html").replace(/^$/,"dashboard.html");
