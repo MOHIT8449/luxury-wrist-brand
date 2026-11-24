@@ -9,6 +9,10 @@
 - Cause: with a brand picked, the Dashboard took `lwb_company_overview().outstanding` = only the bill dues of `lwb_tally_bill_rows`, each PO split by SKU value. It did not take off party advance / party payments not set to a bill, return credit, and did not add opening balances. Ledger & Outstanding uses `lwb_party_billing` (LWBPartyPay) per party per brand: due + opening − advance − returns, parties with net > 0 only.
 - Fix (no SQL): `LWBPartyPay.outstanding(info, brand, days)` / `byBrand(info, daysOf)` in party-pay.js. role-dashboard.js (Admin + Accounts) and companies.html replace `ov.outstanding` with `byBrand` and the KPI uses `outstanding(PI, brand)`; "All brands" now also takes off return credit. Overdue = still due after advance on bills older than the company market credit days (30 for All). Screenshots (mocked data): project files `outstanding-same/`.
 - Sales Head dashboard still uses `lwb_company_overview` (no party billing access).
+## Approvals: tick many + approve together (24 Nov 2026)
+- Mohit: on Approvals, a select box on every item + Select all, approve many at once, in every section.
+- approvals.js: the act marked `many:true` is run by the panel's "✓ <act> N" button, item by item, same RPC as its own button (rate, market check, order change, trip rent with the row's rent, bank with the row's bank or the bank picked next to the button, stock transfer, new party). New: Driver return "✓ Approve" (`lwb_review_driver_return`) and Sales return "✓ Approve" (same update as sales-return.html) right on the row. New order approval: "Approve" opens `warehouse-orders.html?approve=id,id` which ticks them on Pending and runs its own bulkApprove (confirm now shows total ₹). Old "All checked" buttons replaced by Select all.
+- One confirm with count, ₹ total and the list; failures are listed, the rest still go through. No SQL. Screenshots: project files `approvals-select-all/`.
 
 ## Friend swap fix: ₹1,00,000 "Other expense" of 23/11 (24 Nov 2026)
 - Mohit: ₹1,00,000 came in bank and was given in cash on 23/11, but was entered as Cash Out / Other expense, so the Admin dashboard counted it in Expenses / Net profit.
