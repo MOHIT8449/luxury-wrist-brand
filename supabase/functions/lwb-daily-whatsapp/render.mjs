@@ -79,3 +79,46 @@ export const FONT_URLS = [
   "https://cdn.jsdelivr.net/npm/@expo-google-fonts/roboto@0.2.3/Roboto_700Bold.ttf",
 ];
 export const WASM_URL = "https://cdn.jsdelivr.net/npm/@resvg/resvg-wasm@2.6.2/index_bg.wasm";
+
+// ---------------------------------------------------------------------------
+// PDF (Day Book / long reports): the same table cut into A4 pages.
+// A table that goes on to the next page repeats its column heads; a section
+// title or column head never sits alone at the bottom of a page.
+// ---------------------------------------------------------------------------
+const H = { kv: 46, th: 46, tr: 46, sec: 40 };
+export const PAGE_PX = 1100;          // table height per A4 page (800 px wide)
+
+export function pages(doc, max = PAGE_PX) {
+  const rows = (doc.rows || []).filter(r => H[r[0]]);
+  const out = [];
+  let cur = [], h = 58, th = null;
+  const flush = () => { if (cur.length) out.push(cur); cur = []; h = 58; };
+  for (let i = 0; i < rows.length; i++) {
+    const r = rows[i], t = r[0];
+    if (t === "sec") th = null;
+    if (t === "th") th = r;
+    // keep a title / head together with the next 2 rows
+    const need = H[t] + ((t === "sec" || t === "th") ? 2 * 46 : 0);
+    if (h + need > max && cur.length) {
+      flush();
+      if (t === "tr" && th) { cur.push(th); h += H.th; }
+    }
+    cur.push(r); h += H[t];
+  }
+  flush();
+  return out.map((rows, i) => ({ who: (doc.who || "") + (out.length > 1 ? " · " + (i + 1) + "/" + out.length : ""), rows }));
+}
+
+// toPng(svgDoc) -> Uint8Array PNG; PDFDocument from pdf-lib. Returns PDF bytes.
+export async function buildPdf(doc, toPng, PDFDocument, title) {
+  const pdf = await PDFDocument.create();
+  pdf.setTitle(title || "LWB report"); pdf.setAuthor("Luxury Wrist Brand ERP"); pdf.setCreator("Luxury Wrist Brand ERP");
+  const A4W = 595.28, A4H = 841.89, M = 22, w = A4W - 2 * M;
+  for (const pg of pages(doc)) {
+    const img = await pdf.embedPng(toPng(pg));
+    const page = pdf.addPage([A4W, A4H]);
+    const h = img.height * (w / img.width);
+    page.drawImage(img, { x: M, y: A4H - M - h, width: w, height: h });
+  }
+  return await pdf.save();
+}

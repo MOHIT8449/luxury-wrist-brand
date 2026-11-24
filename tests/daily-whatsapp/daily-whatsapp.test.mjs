@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import {readFile, writeFile, mkdir} from 'node:fs/promises';
 import {PGlite} from '@electric-sql/pglite';
 import {initWasm, Resvg} from '@resvg/resvg-wasm';
-import {renderSvg} from '../../supabase/functions/lwb-daily-whatsapp/render.mjs';
+import {PDFDocument} from 'pdf-lib';
+import {renderSvg, pages, buildPdf} from '../../supabase/functions/lwb-daily-whatsapp/render.mjs';
 
 // lwb_daily_whatsapp_setup.sql on a tiny copy of the tables it reads (no live database).
 // Builds the 6 reports for one day, checks the numbers, who gets what, focus-party tasks,
@@ -49,9 +50,12 @@ CREATE FUNCTION public.lwb_build_sales_plan(p uuid,d date) RETURNS jsonb LANGUAG
     THEN jsonb_build_object('parties', jsonb_build_array(jsonb_build_object('name','SHREE JAGDISH','days',6,'city','Surat'), jsonb_build_object('name','OM TRADERS','days',null)))
     ELSE jsonb_build_object('parties','[]'::jsonb) END $$;
 CREATE TABLE public.lwb_tasks(id bigserial primary key,title text,details text,due_date date,priority text,status text default 'OPEN',assigned_to uuid,assigned_to_name text,
-  assigned_to_role text,assigned_by uuid,assigned_by_name text,assigned_by_role text,auto_key text);
+  assigned_to_role text,assigned_by uuid,assigned_by_name text,assigned_by_role text,auto_key text,done_at timestamptz,created_at timestamptz default now());
 CREATE TABLE public.erp_notifications(id bigserial primary key,user_id uuid,title text,message text,notification_type text);
-CREATE TABLE public.lwb_goods_inward(id uuid default gen_random_uuid() primary key,received_date date,supplier_name text);
+CREATE TABLE public.lwb_goods_inward(id uuid default gen_random_uuid() primary key,received_date date,supplier_name text,invoice_no text);
+CREATE TABLE public.lwb_party_calls(id bigserial primary key,customer_name text,call_date date,result text,called_by_name text);
+CREATE TABLE public.lwb_complaints(id bigserial primary key,category text,subject text,urgent boolean default false,status text default 'OPEN',created_by_name text,created_at timestamptz default now());
+CREATE TABLE public.lwb_party_returns(id uuid default gen_random_uuid() primary key,return_no text,party text,return_date date,amount numeric,cancelled_at timestamptz);
 CREATE TABLE public.lwb_goods_inward_items(inward_id uuid,total_amount numeric);
 CREATE TABLE public.lwb_driver_delivery_returns(id uuid default gen_random_uuid() primary key,order_id uuid,status text,created_at timestamptz);
 CREATE TABLE public.lwb_driver_delivery_return_items(return_id uuid,qty_cases numeric);
@@ -207,7 +211,7 @@ test('claim: never twice, failed ones again; focus tasks once; test goes only to
   const t = (await db.query('select lwb_daily_wa_claim($1::date,$2::uuid) j', [D, U.admin])).rows[0].j;
   assert.ok(t.test); assert.ok(t.messages.every(m => m.to === '919512297456'));
   assert.equal(t.messages.filter(m => m.kind === 'SALESMAN').length, 1);
-  assert.deepEqual([...new Set(t.messages.map(m => m.kind))], ['ADMIN', 'TEAM', 'MGR', 'ACCOUNTS', 'GODOWN', 'SALESMAN']);
+  assert.deepEqual([...new Set(t.messages.map(m => m.kind))], ['DAYBOOK', 'ADMIN', 'TEAM', 'MGR', 'ACCOUNTS', 'GODOWN', 'SALESMAN']);
 });
 
 test('Close Day fires once when on; opening entry / old date / off do nothing', async () => {
@@ -235,6 +239,60 @@ test('every report draws to a PNG', async () => {
     assert.ok(png.length > 5000);
     if (process.env.OUT) await writeFile(`${process.env.OUT}/${r.kind}-${r.title.replace(/\W+/g, '-')}.png`, png);
   }
+});
+
+test('day book: done, not done, pending, full lists (Admin, PDF)', async () => {
+  await db.query(`insert into orders(order_no,order_date,customer_name,sales_person,status,total_amount) values('P7','2026-10-28T10:00:00+05:30','Waiting Party','Harsh','pending',5000)`);
+  await db.query(`insert into lwb_party_calls(customer_name,call_date,result,called_by_name) values('A',$1,'ORDER_TAKEN','Nadim Tinwala'),('B',$1,'NO_ORDER','Nadim Tinwala'),('C',$1,'NOT_REACHABLE','Suresh'),('D','2026-11-20','ORDER_TAKEN','Suresh')`, [D]);
+  await db.query(`insert into lwb_tasks(title,due_date,status,assigned_to,assigned_to_name,done_at) values('Old',$1::date - 3,'OPEN',$2,'Suresh',null),('Done',$1,'DONE',$3,'Yogesh',$1::date + time '12:00')`, [D, U.suresh, U.acc]);
+  await db.query(`insert into lwb_complaints(category,subject,urgent,created_by_name) values('DRIVER','Late delivery',true,'Harsh')`);
+  await db.query(`insert into lwb_party_returns(return_no,party,return_date,amount) values('SR-1','Om Traders',$1,4550),('SR-2','X',$1,1)`, [D]);
+  await db.query(`update lwb_party_returns set cancelled_at=now() where return_no='SR-2'`);
+  const b = await build(), r = rep(b, 'DAYBOOK');
+  assert.equal(r.title, 'Day book'); assert.equal(r.pdf, true);
+  assert.equal(kv(r, 'Orders'), '4 PO · ₹ 2,20,650');
+  assert.equal(kv(r, 'Delivered'), '1 PO · ₹ 66,100');
+  assert.equal(kv(r, 'Money in'), '₹ 2,05,000 · 2 entries');
+  assert.equal(kv(r, 'Money out'), '₹ 38,500 · bank deposit ₹ 20,000');
+  assert.equal(kv(r, 'Purchase in'), '1 bill · ₹ 5,20,000');
+  assert.equal(kv(r, 'Returns'), '₹ 4,550');
+  assert.equal(kv(r, 'Party calls'), '3 calls · 1 orders');
+  assert.match(kv(r, 'Tasks'), /^1 done · \d+ open · 1 late$/);
+  assert.equal(kv(r, 'Waiting approval'), '1 PO · ₹ 5,000');
+  assert.equal(kv(r, 'Complaints'), '1 open');
+  const secs = r.doc.rows.filter(z => z[0] === 'sec').map(z => z[1]);
+  for (const t of ['1. Orders today', '4. Money in', '5. Money out', '10. Waiting approval', '12. Loaded, not delivered', '14. Complaints open'])
+    assert.ok(secs.some(x => x.startsWith(t)), t);
+  const trs = r.doc.rows.filter(z => z[0] === 'tr').map(z => z[1][0]);
+  assert.ok(trs.includes('P7 · WAITING PARTY')); assert.ok(trs.includes('SHREE JAGDISH'));
+  // who gets it: Admin only (default)
+  const p = (await (async () => { await as(U.admin); return (await call('select lwb_daily_wa_page($1::date) j', [D]))[0].j })());
+  assert.deepEqual(p.reports.find(x => x.kind === 'DAYBOOK').to, ['Mohit']);
+  // only the Day Book to me
+  const c = (await db.query(`select lwb_daily_wa_claim($1::date, $2::uuid, 'DAYBOOK') j`, [D, U.admin])).rows[0].j;
+  assert.deepEqual(c.messages.map(m => [m.kind, m.pdf]), [['DAYBOOK', true]]);
+  assert.equal(c.template_doc, 'lwb_daily_report_pdf');
+});
+
+test('long report -> A4 pages with heads repeated -> PDF', async () => {
+  const rows = [['kv', 'Date', '24/11/2026'], ['sec', 'Big list'], ['th', ['A', 'B', 'C', 'D']]];
+  for (let i = 0; i < 70; i++) rows.push(['tr', ['Party ' + i, '1', '2', '3']]);
+  const doc = {who: 'ADMIN · DAY BOOK', rows};
+  const pg = pages(doc);
+  assert.ok(pg.length >= 3);
+  assert.equal(pg[0].who, 'ADMIN · DAY BOOK · 1/' + pg.length);
+  for (const x of pg.slice(1)) assert.equal(x.rows[0][0], 'th');
+  for (const x of pg) assert.ok(58 + x.rows.reduce((h, r) => h + (r[0] === 'sec' ? 40 : 46), 0) <= 1100);
+  assert.equal(pg.flatMap(x => x.rows).filter(r => r[0] === 'tr').length, 70);
+  await initWasm(await readFile(new URL('./node_modules/@resvg/resvg-wasm/index_bg.wasm', import.meta.url))).catch(() => {});
+  const fonts = await Promise.all(['Roboto_400Regular', 'Roboto_700Bold'].map(f => readFile(new URL(`./node_modules/@expo-google-fonts/roboto/${f}.ttf`, import.meta.url))));
+  const png = d => new Resvg(renderSvg(d), {font: {fontBuffers: fonts, defaultFontFamily: 'Roboto', loadSystemFonts: false}, fitTo: {mode: 'zoom', value: 1.5}}).render().asPng();
+  const b = await build();
+  const bytes = await buildPdf(rep(b, 'DAYBOOK').doc, png, PDFDocument, 'LWB Day book');
+  assert.equal(String.fromCharCode(...bytes.slice(0, 5)), '%PDF-');
+  const big = await buildPdf(doc, png, PDFDocument, 'x');
+  assert.equal((await PDFDocument.load(big)).getPageCount(), pg.length);
+  if (process.env.OUT) { await writeFile(process.env.OUT + '/DAYBOOK.pdf', bytes); for (const [i, x] of pages(rep(b, 'DAYBOOK').doc).entries()) await writeFile(process.env.OUT + `/DAYBOOK-p${i + 1}.png`, png(x)); }
 });
 
 test('page data for screenshots (PAGE_OUT=file)', { skip: !process.env.PAGE_OUT }, async () => {
