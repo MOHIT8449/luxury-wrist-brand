@@ -8,7 +8,9 @@
 -- lwb_vehicle_day(p_from, p_to) -> jsonb
 --   vehicles : every active Vehicle Master vehicle (type, size, capacity, ownership) with its
 --              fixed driver(s) = Employee Master drivers whose default vehicle is this one.
---   rows     : one row per PO given a vehicle, loaded, delivered or Admin-marked, whose day falls in the range.
+--   rows     : one row per PO given a vehicle, loaded, delivered, Admin-marked, self pickup or direct vehicle, in the range.
+--              kind = GODOWN (our delivery from the godown) / SELF (party's own vehicle, lwb_order_pickup) /
+--              DIRECT (company truck straight to the party, lwb_direct_vehicle), from orders.transportation.
 --              Day = delivered day (driver report / Admin mark), else loading done, else vehicle given (India time).
 --              A PO delivered / marked with no vehicle on Transport Assignment comes with vehicle_no null.
 --              cases = PO total qty (selling unit), kg = PO total weight,
@@ -70,18 +72,30 @@ BEGIN
     WHERE x.order_id IS NOT NULL AND coalesce(x.loading_completed_at, x.assigned_at) >= w.t0 AND coalesce(x.loading_completed_at, x.assigned_at) < w.t1
     UNION SELECT r.order_id FROM public.lwb_delivery_reports r, w WHERE r.reported_at >= w.t0 AND r.reported_at < w.t1
     UNION SELECT m.order_id FROM public.lwb_admin_order_marks m WHERE v_marks AND m.mark_date BETWEEN v_from - 1 AND v_to + 1
+    UNION SELECT p.order_id FROM public.lwb_order_pickup p, w WHERE coalesce(p.updated_at, p.created_at) >= w.t0 AND coalesce(p.updated_at, p.created_at) < w.t1
+    UNION SELECT v.order_id FROM public.lwb_direct_vehicle v, w WHERE coalesce(v.final_at, v.updated_at) >= w.t0 AND coalesce(v.final_at, v.updated_at) < w.t1
   ), a AS (
     SELECT DISTINCT ON (x.order_id) x.*
     FROM public.dispatch_assignments x JOIN ids ON ids.order_id = x.order_id
     ORDER BY x.order_id, x.assigned_at DESC NULLS LAST
   ), d AS (
-    SELECT o.id AS oid, a.vehicle_no, a.driver_name, a.driver_mobile, a.assigned_at, a.loading_completed_at, a.trip_id,
+    SELECT o.id AS oid,
+      CASE WHEN upper(btrim(split_part(coalesce(o.transportation,''), '|', 1))) LIKE 'SELF%' THEN 'SELF'
+           WHEN upper(btrim(split_part(coalesce(o.transportation,''), '|', 1))) LIKE 'DIRECT%' THEN 'DIRECT'
+           ELSE 'GODOWN' END AS kind,
+      coalesce(nullif(btrim(p.vehicle_no),''), nullif(btrim(a.vehicle_no),''), nullif(btrim(dv.truck_label),'')) AS vehicle_no,
+      coalesce(nullif(btrim(p.driver_name),''), a.driver_name) AS driver_name,
+      coalesce(nullif(btrim(p.driver_mobile),''), a.driver_mobile) AS driver_mobile,
+      a.assigned_at, a.loading_completed_at, a.trip_id,
+      coalesce(p.updated_at, p.created_at) AS pickup_at, coalesce(dv.final_at, dv.updated_at) AS direct_at,
       r.delivery_status, r.reported_at,
       CASE WHEN v_marks THEN (SELECT m.mark_date FROM public.lwb_admin_order_marks m WHERE m.order_id = o.id AND m.kind = 'DELIVERED' LIMIT 1) END AS mark_del,
       CASE WHEN v_marks THEN (SELECT m.mark_date FROM public.lwb_admin_order_marks m WHERE m.order_id = o.id AND m.kind = 'LOADED' LIMIT 1) END AS mark_load
     FROM ids JOIN public.orders o ON o.id = ids.order_id
     LEFT JOIN a ON a.order_id = o.id
     LEFT JOIN public.lwb_delivery_reports r ON r.order_id = o.id
+    LEFT JOIN public.lwb_order_pickup p ON p.order_id = o.id
+    LEFT JOIN public.lwb_direct_vehicle dv ON dv.order_id = o.id
   ), e AS (
     -- Day = delivered day (driver report / Admin mark), else loading done, else the day the vehicle was given.
     SELECT d.*, coalesce(
@@ -90,13 +104,15 @@ BEGIN
       (d.loading_completed_at AT TIME ZONE 'Asia/Kolkata')::date,
       d.mark_load,
       (d.reported_at AT TIME ZONE 'Asia/Kolkata')::date,
-      (d.assigned_at AT TIME ZONE 'Asia/Kolkata')::date) AS day
+      (d.assigned_at AT TIME ZONE 'Asia/Kolkata')::date,
+      (d.pickup_at AT TIME ZONE 'Asia/Kolkata')::date,
+      (d.direct_at AT TIME ZONE 'Asia/Kolkata')::date) AS day
     FROM d
   )
   SELECT coalesce(jsonb_agg(r ORDER BY r->>'vehicle_key', r->>'day', r->>'order_no'), '[]'::jsonb) INTO v_rows
   FROM (
     SELECT jsonb_build_object(
-      'order_id', o.id, 'order_no', o.order_no, 'party', o.customer_name, 'status', lower(coalesce(o.status,'')),
+      'order_id', o.id, 'order_no', o.order_no, 'kind', e.kind, 'party', o.customer_name, 'status', lower(coalesce(o.status,'')),
       'day', e.day, 'vehicle_no', nullif(btrim(coalesce(e.vehicle_no,'')), ''),
       'vehicle_key', upper(regexp_replace(coalesce(e.vehicle_no,''), '[^A-Za-z0-9]', '', 'g')),
       'driver_name', e.driver_name, 'driver_mobile', e.driver_mobile,

@@ -21,6 +21,13 @@
     .vr-bar .grow{flex:1}
     .vr-tab{border:1.5px solid var(--erp-line);border-radius:99px;padding:4px 12px;font:inherit;font-size:13px;font-weight:600;background:#fff;color:var(--erp-ink);cursor:pointer}
     .vr-tab.on{background:#002f37;border-color:#002f37;color:#fff}
+    .vr-tab span{font-weight:700;opacity:.75}
+    .vr-tab.sm{padding:3px 10px;font-size:12.5px}
+    .vr-sub{display:inline-flex;gap:4px}
+    .vr-kpis .sl-kpi.zone{cursor:pointer}
+    .vr-kpis .sl-kpi.zone.on{border-color:#002f37;box-shadow:inset 0 -3px 0 #002f37}
+    .vr-card.off{background:#fafbfc;padding:8px 12px;gap:4px;align-self:start}
+    .vr-card.off .vr-top b{font-size:14px;color:#4b5763}
     .vr-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));gap:10px}
     .vr-card{background:#fff;border:1px solid var(--erp-line);border-radius:8px;padding:10px 12px;display:grid;grid-template-columns:minmax(0,1fr);gap:7px;min-width:0}
     .vr-card.warn{border-left:4px solid var(--erp-amber)}
@@ -66,14 +73,15 @@
       <a class="sl-btn ghost small" href="fleet-master.html" style="display:inline-flex;align-items:center;text-decoration:none">Set fixed driver</a></div>
     <div class="sl-kpis vr-kpis" id="kpis"></div>
     <div class="vr-bar">
-      <button type="button" class="vr-tab on" data-view="veh">Vehicle-wise</button>
-      <button type="button" class="vr-tab" data-view="drv">Driver-wise</button>
+      <button type="button" class="vr-tab on" data-zone="GODOWN">Godown Delivery <span id="zG"></span></button>
+      <button type="button" class="vr-tab" data-zone="SELF">Self Pickup <span id="zS"></span></button>
+      <button type="button" class="vr-tab" data-zone="DIRECT">Direct Vehicle <span id="zD"></span></button>
       <span class="grow"></span>
+      <span class="vr-sub" id="subView"><button type="button" class="vr-tab sm on" data-view="veh">Vehicle-wise</button><button type="button" class="vr-tab sm" data-view="drv">Driver-wise</button></span>
       <button type="button" class="sl-btn ghost small" id="refresh">Refresh</button>
     </div>
     <div class="vr-list" id="list"></div>
-    <div id="idle"></div>
-    <p class="vr-help">Day = delivered day (else loading done, else the day the vehicle was given). Tons = PO weight. Delivered cases = delivered POs minus driver returns.</p>
+    <p class="vr-help" id="help"></p>
   </main>
   <script>
     const S=LWBSales,{client,el,esc,fmt}=S;
@@ -106,19 +114,25 @@
       const P=window.LWBPeriod?LWBPeriod.get():{from:S.isoDay(new Date()),to:S.isoDay(new Date()),label:"Today"};
       el("range").textContent=P.label+(P.from===P.to?" · "+LWBDate.d(P.from):"");
       const r=await client.rpc("lwb_vehicle_day",{p_from:P.from,p_to:P.to});
-      if(r.error){el("list").innerHTML='<div class="sl-msg">'+esc(/lwb_vehicle_day/.test(r.error.message)?"Vehicle report is being set up. Try again in a few minutes.":r.error.message)+"</div>";el("kpis").innerHTML="";el("idle").innerHTML="";return}
+      if(r.error){el("list").innerHTML='<div class="sl-msg">'+esc(/lwb_vehicle_day/.test(r.error.message)?"Vehicle report is being set up. Try again in a few minutes.":r.error.message)+"</div>";el("kpis").innerHTML="";return}
       data=r.data||{vehicles:[],rows:[]};render();
     }
+    const ZONES={GODOWN:"Godown Delivery",SELF:"Self Pickup",DIRECT:"Direct Vehicle"};
+    let zone="GODOWN";
+    const kindOf=r=>r.kind||"GODOWN";
+    const zRows=z=>data.rows.filter(r=>kindOf(r)===z);
     function kpis(){
-      const t=sum(data.rows),used=new Set(data.rows.map(r=>r.vehicle_key).filter(Boolean)).size;
-      const k=[["blue","Tons loaded",ton(t.kgLoaded)+" T",t.kgAll>t.kgLoaded?ton(t.kgAll-t.kgLoaded)+" T still to load":fmt(t.pos)+" POs"],
-        ["green","Cases delivered",cs(t.casesDel),"of "+cs(t.cases)+" cases"+(t.ret?" · "+cs(t.ret)+" returned":"")],
-        ["","Vehicles out",fmt(used),"of "+fmt(data.vehicles.length)+" vehicles · "+fmt(t.drivers.size)+" drivers"],
-        [t.pend?"red":"green","Pending delivery",fmt(t.pend)+" PO",fmt(t.del)+" delivered · "+fmt(t.parties)+" parties"]];
-      el("kpis").innerHTML=k.map(x=>'<div class="sl-kpi '+x[0]+'"><span>'+esc(x[1])+"</span><b>"+esc(x[2])+'</b><small class="vr-kpi-sub">'+esc(x[3])+"</small></div>").join("");
-      if(window.ERPList){const KL=[r=>loaded(r),r=>delivered(r),()=>true,r=>!delivered(r)];
-        const cols=[{t:"Vehicle",v:x=>x.vehicle_no||"No vehicle"},{t:"Driver",v:"driver_name"},{t:"PO",v:"order_no"},{t:"Party",v:"party"},{t:"Cases",v:x=>n(x.cases),num:true,sum:true,dec:0},{t:"KG",v:x=>n(x.kg),num:true,sum:true,dec:0},{t:"Status",v:x=>state(x)[0]}];
-        el("kpis").querySelectorAll(".sl-kpi").forEach((c,i)=>ERPList.card(c,()=>({title:k[i][1],sub:"Vehicle report · "+el("range").textContent,rows:data.rows.filter(KL[i]),cols})))}
+      const g=sum(zRows("GODOWN")),sp=sum(zRows("SELF")),dv=sum(zRows("DIRECT")),all=sum(data.rows);
+      const used=new Set(zRows("GODOWN").map(r=>r.vehicle_key).filter(Boolean)).size;
+      const k=[["GODOWN","blue","Godown Delivery",ton(g.kgLoaded)+" T",cs(g.casesDel)+" cs delivered · "+fmt(used)+" of "+fmt(data.vehicles.length)+" vehicles"],
+        ["SELF","green","Self Pickup",cs(sp.casesDel||sp.cases)+" cs",fmt(sp.pos)+" PO · "+ton(sp.kgAll)+" T · party vehicle"],
+        ["DIRECT","green","Direct Vehicle",cs(dv.casesDel||dv.cases)+" cs",fmt(dv.pos)+" PO · "+ton(dv.kgAll)+" T · company truck"],
+        ["",all.pend?"red":"green","Pending delivery",fmt(all.pend)+" PO",fmt(all.del)+" delivered · "+fmt(all.parties)+" parties"]];
+      el("kpis").innerHTML=k.map(x=>'<div class="sl-kpi '+x[1]+(x[0]?" zone"+(x[0]===zone?" on":""):"")+'"'+(x[0]?' data-z="'+x[0]+'"':"")+"><span>"+esc(x[2])+"</span><b>"+esc(x[3])+'</b><small class="vr-kpi-sub">'+esc(x[4])+"</small></div>").join("");
+      el("zG").textContent=g.pos;el("zS").textContent=sp.pos;el("zD").textContent=dv.pos;
+      if(window.ERPList){const c=el("kpis").querySelector(".sl-kpi:not(.zone)");
+        const cols=[{t:"Type",v:x=>ZONES[kindOf(x)]},{t:"Vehicle",v:x=>x.vehicle_no||"No vehicle"},{t:"Driver",v:"driver_name"},{t:"PO",v:"order_no"},{t:"Party",v:"party"},{t:"Cases",v:x=>n(x.cases),num:true,sum:true,dec:0},{t:"KG",v:x=>n(x.kg),num:true,sum:true,dec:0},{t:"Status",v:x=>state(x)[0]}];
+        ERPList.card(c,()=>({title:"Pending delivery",sub:"Vehicle report · "+el("range").textContent,rows:data.rows.filter(r=>!delivered(r)),cols}))}
     }
     function card(title,badges,driverLine,rows,cap,id){
       const t=sum(rows),pct=cap>0?Math.round(t.kgLoaded/cap*100):null;
@@ -136,37 +150,46 @@
     }
     function render(){
       kpis();
+      document.querySelectorAll("[data-zone]").forEach(x=>x.classList.toggle("on",x.dataset.zone===zone));
+      el("subView").hidden=zone!=="GODOWN";
+      const rowsZ=zRows(zone),drv=zone==="GODOWN"&&view==="drv";
       const vmap=new Map(data.vehicles.map(v=>[key(v.vehicle_no),v])),groups=new Map();
-      const gk=r=>view==="veh"?r.vehicle_key:(phone(r.driver_mobile)||String(r.driver_name||"No driver").trim().toUpperCase());
-      for(const r of data.rows){const k=gk(r);if(!groups.has(k))groups.set(k,[]);groups.get(k).push(r)}
-      const list=[...groups.entries()].sort((a,b)=>sum(b[1]).kgAll-sum(a[1]).kgAll);
+      const gk=r=>drv?(phone(r.driver_mobile)||String(r.driver_name||"No driver").trim().toUpperCase()):r.vehicle_key;
+      for(const r of rowsZ){const k=gk(r);if(!groups.has(k))groups.set(k,[]);groups.get(k).push(r)}
+      const list=[...groups.entries()].sort((a,b)=>sum(b[1]).cases-sum(a[1]).cases);
       let html="";
       for(const [k,rows] of list){
-        if(view==="veh"){
-          const v=vmap.get(k),fixed=v?v.drivers||[]:[],t=sum(rows),drove=[...t.drivers.values()];
-          const fixedNames=fixed.map(d=>d.name.trim().toUpperCase()),other=drove.filter(d=>!fixedNames.includes(d.trim().toUpperCase()));
-          const badges=(v&&v.size_ton?'<span class="erp-badge">'+esc(v.size_ton)+" T</span>":"")+(v&&v.vehicle_type?'<span class="erp-badge">'+esc(v.vehicle_type)+"</span>":"")+
-            (!v?'<span class="erp-badge amber">Not in Vehicle Master</span>':v.ownership==="TRANSPORTER"?'<span class="erp-badge blue">Hired</span>':"");
-          const line=(fixed.length?"Fixed: <b>"+esc(fixed.map(d=>d.name).join(", "))+"</b>":'<span class="alt">Fixed driver not set</span>')+
-            (other.length?' · Drove: <span class="alt">'+esc(other.join(", "))+"</span>":drove.length&&!fixed.length?" · Drove: <b>"+esc(drove.join(", "))+"</b>":"");
-          const cap=v?(n(v.capacity_kg)||n(v.size_ton)*1000):0;
-          if(!k){html+=card("No vehicle given",'<span class="erp-badge red">Vehicle not entered</span>','<span class="alt">Delivered / loaded without a vehicle on Transport Assignment. Open the PO → 🚚 Transport to add it.</span>',rows,0,"none");continue}
-          html+=card(rows[0].vehicle_no||k,badges,line,rows,cap,k);
-        }else{
-          const t=sum(rows),vs=[...new Set(rows.map(r=>r.vehicle_no))],nm=rows[0].driver_name||"No driver";
-          html+=card(nm,rows[0].driver_mobile?'<span class="erp-badge">'+esc(phone(rows[0].driver_mobile))+"</span>":"","Vehicle: <b>"+esc(vs.join(", "))+"</b>",rows,0,k);
-        }
+        const t=sum(rows),drove=[...t.drivers.values()];
+        if(drv){const vs=[...new Set(rows.map(r=>r.vehicle_no||"No vehicle"))];
+          html+=card(rows[0].driver_name||"No driver",rows[0].driver_mobile?'<span class="erp-badge">'+esc(phone(rows[0].driver_mobile))+"</span>":"","Vehicle: <b>"+esc(vs.join(", "))+"</b>",rows,0,k);continue}
+        if(zone!=="GODOWN"){
+          const who=zone==="SELF"?"Party vehicle":"Company truck";
+          html+=card(k?rows[0].vehicle_no:"Vehicle no. not entered",'<span class="erp-badge">'+who+"</span>",drove.length?"Driver: <b>"+esc(drove.join(", "))+"</b>":zone==="DIRECT"?"Straight from the company to the party":'<span class="alt">Driver not entered</span>',rows,0,k||"none");continue}
+        if(!k){html+=card("No vehicle given",'<span class="erp-badge red">Vehicle not entered</span>','<span class="alt">Delivered / loaded without a vehicle on Transport Assignment. Open the PO → 🚚 Transport to add it.</span>',rows,0,"none");continue}
+        const v=vmap.get(k),fixed=v?v.drivers||[]:[];
+        const fixedNames=fixed.map(d=>d.name.trim().toUpperCase()),other=drove.filter(d=>!fixedNames.includes(d.trim().toUpperCase()));
+        const badges=(v&&v.size_ton?'<span class="erp-badge">'+esc(v.size_ton)+" T</span>":"")+(v&&v.vehicle_type?'<span class="erp-badge">'+esc(v.vehicle_type)+"</span>":"")+
+          (!v?'<span class="erp-badge amber">Not in Vehicle Master</span>':v.ownership==="TRANSPORTER"?'<span class="erp-badge blue">Hired</span>':"");
+        const line=(fixed.length?"Fixed: <b>"+esc(fixed.map(d=>d.name).join(", "))+"</b>":'<span class="alt">Fixed driver not set</span>')+
+          (other.length?' · Drove: <span class="alt">'+esc(other.join(", "))+"</span>":drove.length&&!fixed.length?" · Drove: <b>"+esc(drove.join(", "))+"</b>":"");
+        html+=card(rows[0].vehicle_no||k,badges,line,rows,v?(n(v.capacity_kg)||n(v.size_ton)*1000):0,k);
       }
-      el("list").innerHTML=html||'<div class="erp-empty" style="grid-column:1/-1">No vehicle was given a PO on these days.</div>';
-      // Vehicles with no PO in the range, and vehicles with no fixed driver.
-      const used=new Set(data.rows.map(r=>r.vehicle_key)),idle=data.vehicles.filter(v=>!used.has(key(v.vehicle_no)));
-      el("idle").innerHTML=view==="veh"&&idle.length?'<div class="vr-idle"><b>No trip: '+idle.length+" vehicles</b><br>"+idle.map(v=>'<span class="chip'+((v.drivers||[]).length?"":" nod")+'">'+esc(v.vehicle_no)+" · "+esc((v.drivers||[]).map(d=>d.name).join(", ")||"no fixed driver")+"</span>").join("")+"</div>":"";
+      // Godown Delivery shows every Vehicle Master vehicle: the ones with no delivery in the range too.
+      if(zone==="GODOWN"&&!drv){const used=new Set(rowsZ.map(r=>r.vehicle_key));
+        for(const v of data.vehicles.filter(v=>!used.has(key(v.vehicle_no)))){const d=v.drivers||[];
+          html+='<div class="vr-card off"><div class="vr-top"><b>'+esc(v.vehicle_no)+"</b>"+(v.vehicle_type?'<span class="erp-badge">'+esc(v.vehicle_type)+"</span>":"")+(v.ownership==="TRANSPORTER"?'<span class="erp-badge blue">Hired</span>':"")+'<span class="grow"></span><span class="erp-badge">No delivery</span></div>'+
+            '<div class="vr-drv">'+(d.length?"Fixed: <b>"+esc(d.map(x=>x.name).join(", "))+"</b>":'<span class="alt">Fixed driver not set</span>')+"</div></div>"}}
+      el("list").innerHTML=html||'<div class="erp-empty" style="grid-column:1/-1">No '+esc(ZONES[zone])+" PO on these days.</div>";
+      el("help").textContent=zone==="GODOWN"?"Godown Delivery = our own / hired vehicles from the godown (Transport Assignment). Grey cards = no delivery in these days. Day = delivered day, else loading done. Tons = PO weight.":
+        zone==="SELF"?"Self Pickup = the party's own vehicle picks up at the godown (vehicle no. entered at loading).":"Direct Vehicle = company truck goes straight to the party (Direct Vehicle page).";
     }
     (async()=>{
       me=await S.start(["admin","manager","transport","accounts"]);if(!me)return;
       el("loading").hidden=true;el("page").hidden=false;
       if(window.LWBPeriod)LWBPeriod.on(()=>load());
-      document.querySelectorAll(".vr-tab").forEach(b=>b.onclick=()=>{view=b.dataset.view;document.querySelectorAll(".vr-tab").forEach(x=>x.classList.toggle("on",x===b));render()});
+      document.querySelectorAll("[data-view]").forEach(b=>b.onclick=()=>{view=b.dataset.view;document.querySelectorAll("[data-view]").forEach(x=>x.classList.toggle("on",x===b));render()});
+      document.querySelectorAll("[data-zone]").forEach(b=>b.onclick=()=>{zone=b.dataset.zone;render()});
+      el("kpis").addEventListener("click",e=>{const c=e.target.closest(".sl-kpi.zone");if(c){zone=c.dataset.z;render()}});
       el("refresh").onclick=load;
       el("list").addEventListener("click",e=>{const b=e.target.closest("[data-open]");if(!b)return;const c=b.closest(".vr-card");c.classList.toggle("open");b.textContent=c.classList.contains("open")?"POs ▴":"POs ▾"});
       await load();
