@@ -81,7 +81,8 @@
     .vr-pick{width:17px;height:17px;margin:0 8px 0 0;vertical-align:-3px;accent-color:#002f37}
     .vr-t tr.vr-po.pickable{cursor:pointer}
     .vr-dlg{border:0;border-radius:12px;padding:0;width:min(420px,calc(100vw - 32px));box-shadow:0 20px 60px rgba(0,0,0,.3)}
-    .vr-dlg::backdrop{background:rgba(0,20,25,.45)}
+    .vr-dlg[open]{position:fixed;inset:0;margin:auto;height:fit-content;max-height:calc(100vh - 32px);overflow:auto;z-index:1001}
+    .vr-shade{position:fixed;inset:0;background:rgba(0,20,25,.45);z-index:1000}
     .vr-dlg form{padding:16px 18px;display:grid;gap:10px}
     .vr-dlg h3{margin:0;font-size:17px}.vr-dlg p{margin:0;font-size:12.5px;color:var(--erp-muted)}
     .vr-dlg label{display:grid;gap:4px;font-size:12px;font-weight:700;color:#4b5763}
@@ -111,6 +112,8 @@
     <div class="vr-wrap" id="list"></div>
     <p class="vr-help" id="help"></p>
   </main>
+  <!-- Not showModal(): the searching vehicle list (erp-select.js) opens on the page and must show above the popup. -->
+  <div class="vr-shade" id="fillShade" hidden></div>
   <dialog class="vr-dlg" id="fillDlg"><form method="dialog" id="fillForm">
     <h3 id="fillTitle">Give vehicle</h3>
     <p id="fillSub"></p>
@@ -250,8 +253,9 @@
       el("fillVeh").innerHTML='<option value="">Choose vehicle</option>'+data.vehicles.map(v=>'<option value="'+esc(v.vehicle_no)+'">'+esc(v.vehicle_no+(v.drivers&&v.drivers.length?" · "+v.drivers[0].name:"")+(v.vehicle_type?" · "+v.vehicle_type:""))+"</option>").join("")+'<option value="*">Other vehicle (type the number)</option>';
       el("fillDrvList").innerHTML=[...new Map(data.vehicles.flatMap(v=>v.drivers||[]).map(d=>[d.name,d])).values()].map(d=>'<option value="'+esc(d.name)+'">'+esc(d.mobile||"")+"</option>").join("");
       el("fillOtherL").hidden=true;el("fillOther").value=el("fillDrv").value=el("fillMob").value=el("fillErr").textContent="";
-      el("fillDlg").showModal();
+      el("fillShade").hidden=false;el("fillDlg").show();setTimeout(()=>el("fillVeh").focus(),30);
     }
+    function closeFill(){el("fillDlg").close();el("fillShade").hidden=true}
     async function saveFill(){
       const v=el("fillVeh").value==="*"?el("fillOther").value.trim():el("fillVeh").value,d=el("fillDrv").value.trim(),m=el("fillMob").value.replace(/\D/g,"");
       if(!v){el("fillErr").textContent="Choose the vehicle.";return}if(!d){el("fillErr").textContent="Enter the driver.";return}
@@ -260,7 +264,7 @@
       const r=await client.rpc("lwb_vehicle_day_fill",{p_ids:picked(),p_vehicle_no:v,p_driver_name:d,p_driver_mobile:m||null});
       el("fillSave").disabled=false;
       if(r.error){el("fillErr").textContent=r.error.message;return}
-      el("fillDlg").close();const sk=(r.data&&r.data.skipped)||[];
+      closeFill();const sk=(r.data&&r.data.skipped)||[];
       if(sk.length)alert((r.data.done||[]).length+" PO saved.\nNot saved: "+sk.map(x=>x.order_no+" ("+x.why+")").join(", "));
       await load();
     }
@@ -313,7 +317,7 @@
       el("list").addEventListener("click",e=>{if(e.target.id==="fillBtn")return openFill();const tr=e.target.closest("tr.vr-po.pickable");if(tr&&!e.target.matches("input")){const c=tr.querySelector(".vr-pick");c.checked=!c.checked;pickSync()}});
       el("fillVeh").onchange=()=>{const v=data.vehicles.find(x=>x.vehicle_no===el("fillVeh").value),d=v&&v.drivers&&v.drivers[0];el("fillOtherL").hidden=el("fillVeh").value!=="*";if(d){el("fillDrv").value=d.name;el("fillMob").value=d.mobile||""}};
       el("fillDrv").onchange=()=>{const d=data.vehicles.flatMap(v=>v.drivers||[]).find(x=>x.name===el("fillDrv").value.trim());if(d&&!el("fillMob").value)el("fillMob").value=d.mobile||""};
-      el("fillCancel").onclick=()=>el("fillDlg").close();
+      el("fillCancel").onclick=closeFill;el("fillShade").onclick=closeFill;
       el("fillForm").addEventListener("submit",e=>{e.preventDefault();saveFill()});
       el("list").addEventListener("click",e=>{const tr=e.target.closest("tr.vr-v[data-v]");if(!tr)return;const on=tr.classList.toggle("open");
         el("list").querySelectorAll('tr[data-of="'+CSS.escape(tr.dataset.v)+'"]').forEach(x=>x.classList.toggle("show",on))});
