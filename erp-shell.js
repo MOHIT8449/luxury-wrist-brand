@@ -112,6 +112,8 @@
     {group:"",items:[{t:"Dashboard",h:"dashboard.html",i:"home",r:"*"},
       // Approvals (Mohit, 7 Nov 2026): everything waiting for Admin / Sales Head OK, one card each (approvals.js).
       {t:"Approvals",h:"approvals.html",i:"shield",top:1,r:"admin manager",k:"approval approve permission pending verify check bank payment trip rent rate market order po change stock"},
+      // Reports (Mohit, 24 Nov 2026): every report in one place (sales, purchase, outstanding, cash, stock, vehicle...).
+      {t:"Reports",h:"reports.html",i:"chart",r:"admin manager accounts cashier",k:"report reports register sales report purchase report date wise party wise sku wise item wise salesman wise supplier wise expense report cash in out register excel export mis summary"},
       {t:"Tasks",h:"tasks.html",i:"tasks",r:"*",top:1},
       {t:"Complaint Box",h:"complaint-box.html",i:"megaphone",r:"*",top:1},
       // Keyboard Shortcuts (Mohit, 5 Nov 2026): every role sees the keys of the pages it can open.
