@@ -51,7 +51,12 @@ const o3=await po('PO-3','Manshi',40,600,'transport_allocated','GJ05XY9999','202
 await po('PO-4','Old party',10,100,'delivered','GJ05AB1234','2026-11-22T06:00:00Z','2026-11-22T07:00:00Z');
 await po('PO-5','Cancelled',10,100,'cancelled','GJ05AB1234','2026-11-23T06:00:00Z',null);
 await po('PO-6','Porter party',5,50,'loaded','MH12PORTER1','2026-11-23T08:00:00Z',null);
-await db.query("insert into lwb_delivery_reports(order_id,delivery_status) values($1,'PARTIAL')",[o1]);
+await db.query("insert into lwb_delivery_reports(order_id,delivery_status,reported_at) values($1,'PARTIAL','2026-11-23T09:00:00Z')",[o1]);
+// Loaded on 22/11, delivered on 23/11 -> 23/11. Delivered PO with no Transport Assignment row -> 23/11, no vehicle.
+const o7=await po('PO-7','Late load',20,200,'delivered','GJ05AB1234','2026-11-22T05:00:00Z','2026-11-22T06:00:00Z');
+await db.query("insert into lwb_delivery_reports(order_id,delivery_status,reported_at) values($1,'DELIVERED','2026-11-23T05:00:00Z')",[o7]);
+const o8=(await db.query("insert into orders(order_no,customer_name,status,total_qty,total_weight,total_amount) values('PO-8','No vehicle party','delivered',260,2618,111600) returning id")).rows[0].id;
+await db.query("insert into lwb_admin_order_marks values($1,'DELIVERED','2026-11-23')",[o8]);
 const r=(await db.query("insert into lwb_driver_delivery_returns(order_id,status) values($1,'APPROVED'),($1,'REJECTED') returning id",[o1])).rows;
 await db.query('insert into lwb_driver_delivery_return_items values($1,3.5),($2,20)',[r[0].id,r[1].id]);
 await db.query("insert into lwb_admin_order_marks values($1,'DELIVERED','2026-11-23')",[o3]);
@@ -59,12 +64,13 @@ await db.query("insert into lwb_admin_order_marks values($1,'DELIVERED','2026-11
 test('rows of one India day: loaded day first, cancelled left out, delivered + returns', async()=>{
   await as('manager');
   const j=await day('2026-11-23','2026-11-23');
-  assert.deepEqual(j.rows.map(x=>x.order_no).sort(),['PO-1','PO-2','PO-3','PO-6']);
+  assert.deepEqual(j.rows.map(x=>x.order_no).sort(),['PO-1','PO-2','PO-3','PO-6','PO-7','PO-8']);
   const p1=j.rows.find(x=>x.order_no==='PO-1');
   assert.equal(p1.vehicle_key,'GJ05AB1234');assert.equal(p1.report,'PARTIAL');assert.equal(Number(p1.ret_cases),3.5);
   assert.equal(p1.trip_no,'T-2311-01');assert.equal(Number(p1.kg),1500);assert.equal(Number(p1.cases),100);
   assert.equal(j.rows.find(x=>x.order_no==='PO-3').mark_delivered,'2026-11-23');
   assert.equal(j.rows.find(x=>x.order_no==='PO-2').day,'2026-11-23');
+  const p8=j.rows.find(x=>x.order_no==='PO-8');assert.equal(p8.vehicle_no,null);assert.equal(p8.vehicle_key,'');assert.equal(Number(p8.kg),2618);
   const v=j.vehicles.find(x=>x.vehicle_no==='GJ05AB1234');
   assert.deepEqual(v.drivers.map(d=>d.name),['Ramesh']);assert.equal(Number(v.size_ton),4);
   assert.equal(j.vehicles.length,2);
@@ -76,6 +82,6 @@ test('only office roles or a login given the page; driver / salesman refused', a
   for(const r of ['admin','transport']){await as(r);assert.ok((await day('2026-11-23','2026-11-23')).rows.length)}
   for(const r of ['sales','driver']){await as(r);await assert.rejects(day('2026-11-23','2026-11-23'),/can not open/)}
   await db.query("insert into lwb_user_page_access values($1,array['vehicle-report.html'])",[ids.sales]);
-  await as('sales');assert.equal((await day('2026-11-23','2026-11-23')).rows.length,4);
+  await as('sales');assert.equal((await day('2026-11-23','2026-11-23')).rows.length,6);
   await as('manager');await assert.rejects(day('2026-11-23','2026-11-01'),/before/);
 });

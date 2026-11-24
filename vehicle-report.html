@@ -73,7 +73,7 @@
     </div>
     <div class="vr-list" id="list"></div>
     <div id="idle"></div>
-    <p class="vr-help">Day = loading done (else the day the vehicle was given). Tons = PO weight. Delivered cases = delivered POs minus driver returns.</p>
+    <p class="vr-help">Day = delivered day (else loading done, else the day the vehicle was given). Tons = PO weight. Delivered cases = delivered POs minus driver returns.</p>
   </main>
   <script>
     const S=LWBSales,{client,el,esc,fmt}=S;
@@ -110,14 +110,14 @@
       data=r.data||{vehicles:[],rows:[]};render();
     }
     function kpis(){
-      const t=sum(data.rows),used=new Set(data.rows.map(r=>r.vehicle_key)).size;
+      const t=sum(data.rows),used=new Set(data.rows.map(r=>r.vehicle_key).filter(Boolean)).size;
       const k=[["blue","Tons loaded",ton(t.kgLoaded)+" T",t.kgAll>t.kgLoaded?ton(t.kgAll-t.kgLoaded)+" T still to load":fmt(t.pos)+" POs"],
         ["green","Cases delivered",cs(t.casesDel),"of "+cs(t.cases)+" cases"+(t.ret?" · "+cs(t.ret)+" returned":"")],
         ["","Vehicles out",fmt(used),"of "+fmt(data.vehicles.length)+" vehicles · "+fmt(t.drivers.size)+" drivers"],
         [t.pend?"red":"green","Pending delivery",fmt(t.pend)+" PO",fmt(t.del)+" delivered · "+fmt(t.parties)+" parties"]];
       el("kpis").innerHTML=k.map(x=>'<div class="sl-kpi '+x[0]+'"><span>'+esc(x[1])+"</span><b>"+esc(x[2])+'</b><small class="vr-kpi-sub">'+esc(x[3])+"</small></div>").join("");
       if(window.ERPList){const KL=[r=>loaded(r),r=>delivered(r),()=>true,r=>!delivered(r)];
-        const cols=[{t:"Vehicle",v:"vehicle_no"},{t:"Driver",v:"driver_name"},{t:"PO",v:"order_no"},{t:"Party",v:"party"},{t:"Cases",v:x=>n(x.cases),num:true,sum:true,dec:0},{t:"KG",v:x=>n(x.kg),num:true,sum:true,dec:0},{t:"Status",v:x=>state(x)[0]}];
+        const cols=[{t:"Vehicle",v:x=>x.vehicle_no||"No vehicle"},{t:"Driver",v:"driver_name"},{t:"PO",v:"order_no"},{t:"Party",v:"party"},{t:"Cases",v:x=>n(x.cases),num:true,sum:true,dec:0},{t:"KG",v:x=>n(x.kg),num:true,sum:true,dec:0},{t:"Status",v:x=>state(x)[0]}];
         el("kpis").querySelectorAll(".sl-kpi").forEach((c,i)=>ERPList.card(c,()=>({title:k[i][1],sub:"Vehicle report · "+el("range").textContent,rows:data.rows.filter(KL[i]),cols})))}
     }
     function card(title,badges,driverLine,rows,cap,id){
@@ -128,7 +128,7 @@
       return '<div class="vr-card '+cls+'" data-id="'+esc(id)+'"><div class="vr-top"><b>'+esc(title)+"</b>"+badges+'<span class="grow"></span>'+
         (t.pend?'<span class="erp-badge amber">'+t.pend+" pending</span>":'<span class="erp-badge green">All delivered</span>')+"</div>"+
         '<div class="vr-drv">'+driverLine+"</div>"+
-        '<div class="vr-nums"><div class="vr-num t"><span>Loaded</span><b>'+ton(t.kgLoaded)+" T</b>"+(pct!=null?'<div class="vr-cap"><i class="'+(pct>100?"over":"")+'" style="width:'+Math.min(100,pct)+'%"></i></div><small>'+pct+"% of "+ton(cap)+" T</small>":"<small>"+fmt(t.kgLoaded)+" kg</small>")+"</div>"+
+        '<div class="vr-nums"><div class="vr-num t"><span>Loaded</span><b>'+ton(t.kgLoaded)+" T</b>"+(t.kgLoaded===0&&rows.some(r=>loaded(r))?'<small style="color:var(--erp-amber)">PO weight not entered</small>':pct!=null?'<div class="vr-cap"><i class="'+(pct>100?"over":"")+'" style="width:'+Math.min(100,pct)+'%"></i></div><small>'+pct+"% of "+ton(cap)+" T</small>":"<small>"+fmt(t.kgLoaded)+" kg</small>")+"</div>"+
         '<div class="vr-num c"><span>Delivered</span><b>'+cs(t.casesDel)+" cs</b><small>of "+cs(t.cases)+(t.ret?" · "+cs(t.ret)+" ret":"")+"</small></div>"+
         '<div class="vr-num p"><span>Parties</span><b>'+fmt(t.parties)+"</b><small>"+fmt(t.pos)+" PO · "+fmt(t.del)+" done</small></div></div>"+
         '<div class="vr-btns"><span class="grow">'+esc(rows.map(r=>r.party).filter(Boolean).slice(0,3).join(", ")+(t.parties>3?" +"+(t.parties-3):""))+'</span><button type="button" class="sl-btn ghost small" data-open>POs ▾</button></div>'+
@@ -150,6 +150,7 @@
           const line=(fixed.length?"Fixed: <b>"+esc(fixed.map(d=>d.name).join(", "))+"</b>":'<span class="alt">Fixed driver not set</span>')+
             (other.length?' · Drove: <span class="alt">'+esc(other.join(", "))+"</span>":drove.length&&!fixed.length?" · Drove: <b>"+esc(drove.join(", "))+"</b>":"");
           const cap=v?(n(v.capacity_kg)||n(v.size_ton)*1000):0;
+          if(!k){html+=card("No vehicle given",'<span class="erp-badge red">Vehicle not entered</span>','<span class="alt">Delivered / loaded without a vehicle on Transport Assignment. Open the PO → 🚚 Transport to add it.</span>',rows,0,"none");continue}
           html+=card(rows[0].vehicle_no||k,badges,line,rows,cap,k);
         }else{
           const t=sum(rows),vs=[...new Set(rows.map(r=>r.vehicle_no))],nm=rows[0].driver_name||"No driver";
