@@ -37,6 +37,9 @@
   Qty per PO from its SKU lines (SKU Master company + pack unit): Rajnigandha in IC, Coca-Cola in CS, never added together ("110 IC · 1,246 CS").
 - 24 Nov 2026 (vehicle first): lwb_admin_mark_order refuses Mark Loaded / Delivered on a Godown Delivery PO with no vehicle on
   Transport Assignment (Self Pickup / Direct Vehicle are not held); warehouse-orders.html says so before the popup and leaves such POs out of a bulk mark.
+- 24 Nov 2026 (fill): "No vehicle given" group: tick POs -> 🚚 Give vehicle (Admin / Sales Head / Transport). lwb_vehicle_day_fill
+  (lwb_vehicle_day_fill_setup.sql) saves vehicle + driver on Transport Assignment for loaded / delivered Godown POs with no vehicle,
+  assigned_at = delivered day; loading time, stock, bill, status untouched; loading bells it rings are marked read.
 ## Party ledger: newest entries were cut at 1000 rows (23 Nov 2026)
 - Mohit: MANSHI MARKETING (KATARGAM) ₹1,11,600 cash party payment (23/11, by Yogesh) was in the Day book but not in the party ledger; "these mistakes keep repeating".
 - Cause (checked on live data, counts only): `lwb_party_ledger_b()` returns one row per entry and the website API (PostgREST max rows) sends at most 1000 rows of a call. The ledger had 1039 rows, so the last rows of the SQL (party payments, credit notes, payment collection, driver money come after the Tally bills) were silently dropped: 12 of the 31 party payments of 23/11 were missing. The data was always saved right (`lwb_tally_payments`), so no backfill was needed.
