@@ -23,9 +23,9 @@ async function ready() {
   await wasmReady;
   if (!fonts) fonts = await Promise.all(FONT_URLS.map(async u => { const r = await fetch(u); if (!r.ok) throw Error('Font download failed'); return new Uint8Array(await r.arrayBuffer()); }));
 }
-function png(doc) {
-  return new Resvg(renderSvg(doc), { font: { fontBuffers: fonts, defaultFontFamily: 'Roboto', loadSystemFonts: false }, fitTo: { mode: 'zoom', value: 1.5 } }).render().asPng();
-}
+const svgPng = (svg, zoom) => new Resvg(svg, { font: { fontBuffers: fonts, defaultFontFamily: 'Roboto', loadSystemFonts: false }, fitTo: { mode: 'zoom', value: zoom } }).render().asPng();
+const png = doc => svgPng(renderSvg(doc), 1.5);
+const pdfPage = svg => svgPng(svg, 2);     // A4 page at about 190 dpi
 
 const graph = () => 'https://graph.facebook.com/' + (Deno.env.get('WA_GRAPH_VERSION') || 'v26.0') + '/' + Deno.env.get('WA_PHONE_NUMBER_ID');
 const auth = () => ({ Authorization: 'Bearer ' + Deno.env.get('WA_ACCESS_TOKEN') });
@@ -86,7 +86,7 @@ Deno.serve(async (req) => {
         const base = ('LWB-' + m.title + '-' + dd).replace(/\W+/g, '-');
         if (!media.has(key)) {
           media.set(key, m.pdf
-            ? { pdf: true, filename: base + '.pdf', id: await upload(await buildPdf(m.doc, png, PDFDocument, 'LWB ' + m.title + ' ' + dd), base + '.pdf', 'application/pdf') }
+            ? { pdf: true, filename: base + '.pdf', id: await upload(await buildPdf(m.doc, pdfPage, PDFDocument, { title: m.kind === 'DAYBOOK' ? 'Day Book' : m.title, sub: m.kind === 'DAYBOOK' ? 'Daily work report' : 'Daily report', date: dd, footer: m.kind === 'DAYBOOK' ? 'For Admin' : 'For management' }), base + '.pdf', 'application/pdf') }
             : { pdf: false, id: await upload(png(m.doc), base + '.png') });
         }
         const f = media.get(key);

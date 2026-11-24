@@ -4,7 +4,7 @@ import {readFile, writeFile, mkdir} from 'node:fs/promises';
 import {PGlite} from '@electric-sql/pglite';
 import {initWasm, Resvg} from '@resvg/resvg-wasm';
 import {PDFDocument} from 'pdf-lib';
-import {renderSvg, pages, buildPdf} from '../../supabase/functions/lwb-daily-whatsapp/render.mjs';
+import {renderSvg, pages, buildPdf, renderPage, PAGE_PX} from '../../supabase/functions/lwb-daily-whatsapp/render.mjs';
 
 // lwb_daily_whatsapp_setup.sql on a tiny copy of the tables it reads (no live database).
 // Builds the 6 reports for one day, checks the numbers, who gets what, focus-party tasks,
@@ -276,23 +276,27 @@ test('day book: done, not done, pending, full lists (Admin, PDF)', async () => {
 
 test('long report -> A4 pages with heads repeated -> PDF', async () => {
   const rows = [['kv', 'Date', '24/11/2026'], ['sec', 'Big list'], ['th', ['A', 'B', 'C', 'D']]];
-  for (let i = 0; i < 70; i++) rows.push(['tr', ['Party ' + i, '1', '2', '3']]);
+  for (let i = 0; i < 90; i++) rows.push(['tr', ['Party ' + i, '1', '2', '3']]);
   const doc = {who: 'ADMIN · DAY BOOK', rows};
+  const H = {kv: 32, th: 32, tr: 31, sec: 52};
   const pg = pages(doc);
   assert.ok(pg.length >= 3);
-  assert.equal(pg[0].who, 'ADMIN · DAY BOOK · 1/' + pg.length);
-  for (const x of pg.slice(1)) assert.equal(x.rows[0][0], 'th');
-  for (const x of pg) assert.ok(58 + x.rows.reduce((h, r) => h + (r[0] === 'sec' ? 40 : 46), 0) <= 1100);
-  assert.equal(pg.flatMap(x => x.rows).filter(r => r[0] === 'tr').length, 70);
+  for (const x of pg.slice(1)) assert.equal(x[0][0], 'th');
+  for (const x of pg) assert.ok(x.reduce((h, r) => h + H[r[0]], 0) <= PAGE_PX);
+  assert.equal(pg.flat().filter(r => r[0] === 'tr').length, 90);
   await initWasm(await readFile(new URL('./node_modules/@resvg/resvg-wasm/index_bg.wasm', import.meta.url))).catch(() => {});
   const fonts = await Promise.all(['Roboto_400Regular', 'Roboto_700Bold'].map(f => readFile(new URL(`./node_modules/@expo-google-fonts/roboto/${f}.ttf`, import.meta.url))));
-  const png = d => new Resvg(renderSvg(d), {font: {fontBuffers: fonts, defaultFontFamily: 'Roboto', loadSystemFonts: false}, fitTo: {mode: 'zoom', value: 1.5}}).render().asPng();
-  const b = await build();
-  const bytes = await buildPdf(rep(b, 'DAYBOOK').doc, png, PDFDocument, 'LWB Day book');
+  const svgPng = svg => new Resvg(svg, {font: {fontBuffers: fonts, defaultFontFamily: 'Roboto', loadSystemFonts: false}, fitTo: {mode: 'zoom', value: 2}}).render().asPng();
+  const b = await build(), meta = {title: 'Day Book', sub: 'Daily work report', date: '24/11/2026', footer: 'For Admin'};
+  const bytes = await buildPdf(rep(b, 'DAYBOOK').doc, svgPng, PDFDocument, meta);
   assert.equal(String.fromCharCode(...bytes.slice(0, 5)), '%PDF-');
-  const big = await buildPdf(doc, png, PDFDocument, 'x');
+  const big = await buildPdf(doc, svgPng, PDFDocument, meta);
   assert.equal((await PDFDocument.load(big)).getPageCount(), pg.length);
-  if (process.env.OUT) { await writeFile(process.env.OUT + '/DAYBOOK.pdf', bytes); for (const [i, x] of pages(rep(b, 'DAYBOOK').doc).entries()) await writeFile(process.env.OUT + `/DAYBOOK-p${i + 1}.png`, png(x)); }
+  if (process.env.OUT) {
+    await writeFile(process.env.OUT + '/DAYBOOK.pdf', bytes);
+    const list = pages(rep(b, 'DAYBOOK').doc);
+    for (const [i, x] of list.entries()) await writeFile(process.env.OUT + `/DAYBOOK-p${i + 1}.png`, svgPng(renderPage(x, meta, i, list.length)));
+  }
 });
 
 test('page data for screenshots (PAGE_OUT=file)', { skip: !process.env.PAGE_OUT }, async () => {
