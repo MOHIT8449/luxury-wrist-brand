@@ -53,7 +53,7 @@
   const COL={sales:"#00434d",purch:"#c9b26a",gp:"#13824a"};
   const EXC=["#00434d","#c9b26a","#1d5fbf","#b26b00","#13824a","#9aa5a8"];
   // Money-out heads that are not an expense of the business (Mohit, 4 Nov 2026: contra was cutting net profit).
-  const NOT_EXPENSE=/^(supplier payment|contra\b.*|asset purchase|gst \/ tax paid|friend swap)$/i;
+  const NOT_EXPENSE=/^(supplier payment|contra\b.*|asset purchase|gst \/ tax paid|friend swap|cash difference|damaged cash)$/i;
 
   let CTX=null,EL=null,seq=0,cache=null;
 
