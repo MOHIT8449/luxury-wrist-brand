@@ -4,6 +4,14 @@
 **Purpose:** Continue the same ERP project from a new ChatGPT conversation without restarting or losing the agreed requirements.
 **Status:** Active development / verification. Do not assume all modules are completed or fully tested.
 
+## Godown 3D / Pallet Space (25 Nov 2026)
+- Mohit: the main godown in 3D (built from his sketch + photos), and from our stock: how many pallets are in the godown, how much space is left, which line holds what.
+- New page `godown-3d.html` (Stock & Dispatch menu, below Godown Report; Reports hub, Stock group). Admin, Sales Head (manager), Godown Manager (warehouse). 3D: `godown-3d-scene.js` + `vendor/three` (three.js r128, MIT) — shed with 3 columns per frame, offices, shutters A-E, C-shaped road, Rajnigandha gate, vehicles, forklift.
+- Lines (`godown-layout.js`, same codes in the SQL): A01-A25 centre left of the centre column (10 pallets deep, from the left road), B01-B25 centre right (11 deep, from the right road), C1-C2 right side strip (30 deep), D1-D2 behind the offices (14 deep). Pallet 40 x 50 in, 2 high by default = 1,226 pallets.
+- SQL `lwb_godown_lanes_setup.sql` (test `tests/godown-lanes`, PGlite, 4 tests): table `lwb_godown_lanes` (slots, levels, sku_id, note; read admin / manager / warehouse) + `lwb_godown_lane_set(code, sku, levels, note)` (Admin / Sales Head only). Stock is not changed.
+- Counting: pallets of an SKU = saleable cases (`lwb_live_stock`, as Inventory) / `sku_master.cases_per_pallet`, rounded up; filled into that SKU's lines in order, deepest slot first. KPIs: capacity, filled, free, no line / no space, pallet size missing. Line-wise table (Admin / Sales Head pick the SKU and levels per line), SKU-wise table (cases per pallet editable by Admin / Sales Head, saved to SKU Master), Floor marking guide, "Print line boards".
+- Not checked on live data: page checked with a mocked database at 1366 / 390 px (no JS errors, no side scroll).
+
 ## Reports section (24 Nov 2026)
 - Mohit: one Reports section like every ERP: sales, purchase, every report date-wise, with filters, search, Excel.
 - New page `reports.html` (last item of the side menu, below Admin). ADMIN ONLY (Mohit: no other login, not even a ticked page; the page checks the real role). No SQL, read only.
