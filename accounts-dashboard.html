@@ -13,7 +13,7 @@
 <script src="erp-list.js"></script>
   <script src="excel-io.js"></script>
   <script src="party-pay.js?v=20261125b"></script>
-  <script src="acc-hub.js?v=20261124d"></script>
+  <script src="acc-hub.js?v=20261125c"></script>
   <style>
     .status{text-align:center;padding:80px 20px;font-size:15px;color:#555}
     [hidden]{display:none!important}
@@ -179,6 +179,19 @@
     .tg-none{font-size:13px;color:var(--erp-muted)}
     .tg-sum{display:flex;align-items:center;gap:8px;margin-top:6px;border-radius:9px;padding:7px 10px;font-weight:700;font-size:14px}
     .tg-sum.ok{background:#e3f5ec;color:#13824a}.tg-sum.bad{background:#fff4e0;color:#8a5300}
+    .xb{display:flex;flex-wrap:wrap;gap:4px 10px;align-items:center;margin:0 0 10px;padding:7px 10px;border-radius:9px;background:#f4f6f8;font-size:13.5px}.xb[hidden]{display:none}
+    .xb .xd{font-weight:800;padding:2px 10px;border-radius:99px;font-size:14px}.xd.ok{background:#e3f5ec;color:#13824a}.xd.bad{background:#fdecef;color:#b3122b}.xd.ext{background:#e6efff;color:#1d5fbf}
+    .xb small{flex-basis:100%;color:var(--erp-muted);font-size:12px}
+    .xp{background:#fff8e6;border-color:#d9a640}.xp .tg-who b{color:#7a4b00;white-space:normal}
+    .xp .tg-who input{height:36px;width:100%;box-sizing:border-box;border:1px solid #e3c27a;border-radius:7px;padding:0 8px;font:inherit;font-size:14.5px;font-weight:700;min-width:0;text-align:left}
+    .sh-ex{display:block;margin-top:2px}
+    .lg-head{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin:0 0 8px}.lg-head h3{margin:0;font-size:16px;margin-right:4px}
+    .lg-head .acx-btn{height:34px;padding:0 11px;font-size:13.5px}.lg-head .sp{flex:1}
+    .lg-bal{font-size:15px;font-weight:800;padding:3px 12px;border-radius:99px}
+    .lg-sum{display:flex;flex-wrap:wrap;gap:4px 14px;margin:0 0 8px;font-size:13px;color:#4b5763}.lg-sum b{color:var(--erp-ink)}
+    .lg-t td small{display:block;color:var(--erp-muted);font-size:12px}.lg-t tr.cx td{opacity:.5;text-decoration:line-through}
+    .lg-t .acx-btn{height:28px;padding:0 8px;font-size:12.5px}
+    @media(max-width:600px){.lg-t th,.lg-t td{padding-left:4px;padding-right:4px}.lg-t td:last-child{padding:4px 0}.lg-t .acx-btn{padding:0 6px;height:26px}.lg-t td .tag{font-size:11px}.lg-t td:first-child{min-width:0;word-break:break-word}.lg-head h3{flex-basis:auto}}
     .tg-eq{margin-left:auto;border:1px solid currentColor;background:#fff;color:inherit;border-radius:99px;font:inherit;font-size:12.5px;font-weight:700;padding:3px 10px;cursor:pointer}
     .cp-count{font-size:13px;color:#3b4652;margin:0 0 8px}.cp-count b{color:#00434d}
     .cp-list{display:grid;gap:4px;max-height:52vh;overflow:auto}
@@ -355,6 +368,8 @@
     let LATE=[];   // party payments entered in these dates with an older paid on date (lwb_acc_paid_on_strict_setup.sql)
     let SWN=null;  // friend swap names used before (lwb_acc_friend_swap_setup.sql)
     let SH=null;   // shift handover in the day (lwb_acc_shift_handover_setup.sql); null = not set up
+    // lwb_acc_cash_diff_damaged_setup.sql: Office / Other heads of a handover, Cash Difference ledger, Damaged cash box
+    let SX={rows:[]},CDF=null,DMG=null;
     let HV=[],hvSub="own",hvPosted=false,PR=[];  // PR = Porter / one-time trips (lwb_trip_rent_setup.sql)
     let X={entries:{},staff_heads:[],payees:[]},S=[],V=[],VR={vehicles:[],entries:{}},C=[],piErr=false,D=null,PI=null,per="today",from=todayISO(),to=todayISO(),tab="book",bookF="all",outRows=null,me={id:"",role:""};
 
@@ -390,6 +405,8 @@
         const [ex,st,vl,vr,cq,hv,pr]=await Promise.all([client.rpc("lwb_acc_extras",{p_from:from,p_to:to}),client.rpc("lwb_acc_staff_list",{p_month:to}),
           client.rpc("lwb_acc_vehicles"),client.rpc("lwb_acc_vehicle_report",{p_from:from,p_to:to}),client.rpc("lwb_acc_cheque_list"),client.rpc("lwb_hired_list",{p_from:from,p_to:to}),client.rpc("lwb_trip_rent_list",{p_from:from,p_to:to})]);
         const sh=await client.rpc("lwb_acc_shift_list",{p_from:from,p_to:to});SH=sh.error?null:sh.data;
+        const [sx,cdf,dmg]=await Promise.all([client.rpc("lwb_acc_shift_extras",{p_from:from,p_to:to}),client.rpc("lwb_acc_cdiff_get"),client.rpc("lwb_acc_dmg_get")]);
+        SX=sx.error||!sx.data?{rows:[]}:sx.data;CDF=cdf.error?null:cdf.data;DMG=dmg.error?null:dmg.data;
         const lt2=await client.rpc("lwb_acc_late_lines",{p_from:from,p_to:to});LATE=lt2.error?[]:(lt2.data||[]);
         HV=hv.error?[]:(hv.data||[]);PR=pr.error?[]:(pr.data||[]);if(hvSub==="hired"&&!HV.length||hvSub==="porter"&&!PR.length)hvSub="own";
         C=cq.error?[]:(cq.data||[]);
@@ -447,7 +464,8 @@
     // Cash cards of the Accounts header; Bills to make / To collect / Advance come from LWBAccHub.loadBill
     function renderKpis(){
       const f=LWBAccHub.cashFrom(D,C,from,to);
-      const HS=shiftHolders();if(HS.length&&to===D.today)f.hand.s="With "+HS.map(h=>esc(h.name.split(/\s+/)[0])).join(" + ")+" · since "+hm(HS[0].since);
+      const HS=shiftHolders();if(HS.length&&to===D.today)f.hand.s="With "+HS.map(h=>esc(h.name.split(/\s+/)[0])).join(" + ")+(lastExtras().filter(x=>x.kind!=="DIFF").length?" + office / other":"")+" · since "+hm(HS[0].since);
+      if(DMG&&Number(DMG.balance)>0)f.open.s=(f.open.s||"")+" · 🩹 Damaged "+rs(DMG.balance)+" apart";
       LWBAccHub.kpis({coll:f.coll,chq:f.chq,hand:f.hand,verify:f.verify,open:f.open,cin:f.cin,cout:f.cout,dep:f.dep});LWBAccHub.counts(f.counts);
     }
 
@@ -492,7 +510,7 @@
     function renderTab(){
       if(tab==="out"){location.href="party-billing.html?tab=due";return}   // Party outstanding = To collect of Billing
       LWBAccHub.setTab(tab);LWBAccHub.counts({verify:D.pending.length,chq:chequesDue().length});
-      if(tab==="sum")renderSummary();else if(tab==="book")renderBook();else if(tab==="verify")renderVerify();else if(tab==="out")renderOutstanding();else if(tab==="close")renderCloses();else if(tab==="staff")renderStaff();else if(tab==="veh")renderVehicles();else if(tab==="cheques")renderCheques();else if(tab==="deps")renderDeposits();else renderSetup();
+      if(tab==="sum")renderSummary();else if(tab==="book")renderBook();else if(tab==="verify")renderVerify();else if(tab==="out")renderOutstanding();else if(tab==="close")renderCloses();else if(tab==="staff")renderStaff();else if(tab==="veh")renderVehicles();else if(tab==="cheques")renderCheques();else if(tab==="deps")renderDeposits();else if(tab==="cdiff")renderCashDiff();else if(tab==="dmg")renderDamaged();else renderSetup();
     }
     function statusTag(l){
       if(l.status==="PENDING")return '<span class="tag t-amb">Waiting bank check</span>';
@@ -625,15 +643,20 @@
         html:(SH.is_admin?wait.filter(x=>x.to_mobile&&x.to!==me).slice(0,1).map(x=>'<a class="btn" href="tel:'+esc(String(x.to_mobile).replace(/[^\d+]/g,""))+'">📞 '+first(x.to_name)+'</a> ').join(""):"")+
           (P.by===me||SH.is_admin?'<button type="button" class="btn" data-shcancel="'+P.id+'">Cancel</button>':"")+
           (SH.is_admin?wait.filter(x=>x.to!==me).map(x=>' <button type="button" class="btn grn" data-shrecv="'+x.id+'">✓ '+first(x.to_name)+'</button>').join(""):"")}];}
-      const H=HS[0];
-      return [{c:"blue",b:H?"💼 Cash with "+HS.map(h=>esc(h.name)+(HS.length>1?" "+rs(h.amount):"")).join(" · "):"💼 Who has the cash?",s:H?"since "+hm(H.since)+(String(H.since).slice(0,10)!==D.today?" "+dmy(String(H.since).slice(0,10)):""):"hand over when the person changes",
+      const H=HS[0],EX=lastExtras().filter(x=>x.kind!=="DIFF");
+      return [{c:"blue",b:H?"💼 Cash with "+HS.map(h=>esc(h.name)+(HS.length>1||EX.length?" "+rs(h.amount):"")).join(" · ")+EX.map(x=>" · "+exName(x)+" "+rs(x.amount)).join(""):"💼 Who has the cash?",s:H?"since "+hm(H.since)+(String(H.since).slice(0,10)!==D.today?" "+dmy(String(H.since).slice(0,10)):""):"hand over when the person changes",
         html:(SH.is_admin&&H&&HS.length===1&&H.id!==me&&H.mobile?'<a class="btn" href="tel:'+esc(String(H.mobile).replace(/[^\d+]/g,""))+'">📞 Call</a> ':"")+(SH.can_give===false?"":'<button type="button" class="btn" data-shgive>⇄ Hand over</button>')}];
     }
+    // Office / Other heads + Difference of a handover (lwb_acc_shift_extras)
+    const batchExtras=b=>(SX.rows||[]).filter(x=>String(x.batch)===String(b));
+    const lastExtras=()=>SX.last?batchExtras(SX.last):[];
+    const exName=x=>x.kind==="OFFICE"?"🏢 Office / Godown":x.kind==="OTHER"?"👤 "+esc(x.name):"⚖ Difference";
+    const exChip=x=>' <span class="tag '+(x.kind==="DIFF"?(x.name==="EXTRA"?"t-grn":"t-red"):"t-amb")+'">'+exName(x)+' '+(x.kind==="DIFF"?(x.name==="EXTRA"?"extra ":"short "):"")+rs(x.amount)+'</span>';
     function shiftStrip(){
       const R=SH?(SH.rows||[]).filter(r=>r.status!=="CANCELLED"):[];if(!R.length)return "";
       const B=[];R.slice().reverse().forEach(r=>{const k=r.batch||r.id,b=B.find(x=>x.k===k);if(b)b.r.push(r);else B.push({k,r:[r]})});
       const part=r=>esc(r.to_name)+' <b>'+rs(r.counted)+'</b>'+(r.status==="RECEIVED"?(Math.abs(r.received-r.counted)>=1?' <i class="minus">'+(r.received<r.counted?"short ":"extra ")+rs(Math.abs(r.received-r.counted))+'</i>':' ✓'):' <i>waiting</i>');
-      return '<div class="sh-strip"><b>⇄ Cash box</b>'+B.map(b=>{const r=b.r[0];return '<span>'+hm(r.at)+(from!==to?" "+dmy(r.day).slice(0,5):"")+' · '+esc(r.by_name)+' → '+b.r.map(part).join(" + ")+'</span>'}).join("")+'</div>';
+      return '<div class="sh-strip"><b>⇄ Cash box</b>'+B.map(b=>{const r=b.r[0];return '<span>'+hm(r.at)+(from!==to?" "+dmy(r.day).slice(0,5):"")+' · '+esc(r.by_name)+' → '+b.r.map(part).join(" + ")+batchExtras(b.k).map(exChip).join("")+'</span>'}).join("")+'</div>';
     }
     // Old payments typed in these dates: they stay on their paid on date (Mohit 23 Nov 2026)
     function lateStrip(){
@@ -674,8 +697,9 @@
       const R=SH.rows||[],ST={PENDING:'<span class="tag t-amb">Waiting</span>',CANCELLED:'<span class="tag t-gry">Cancelled</span>'};
       return '<div class="sh-head"><h3 class="acx-h3">Shift handover · in the day</h3><button type="button" class="acx-btn pri" data-shgive'+(SH.pending?" disabled":"")+'>⇄ Hand over cash</button></div>'+
         (R.length?'<div style="overflow:auto"><table class="acx-t sh-t"><thead><tr><th>Time</th><th>From → To</th><th class="n">Book cash</th><th class="n">Handed</th><th>Received</th></tr></thead><tbody>'+
-        R.map(r=>{const sp=r.batch_parts>1,d=sp?0:r2(r.counted-r.book),sd=sp?r2(r.batch_total-r.book):0,rd=r.status==="RECEIVED"?r2(r.received-r.counted):0;
-          return '<tr><td><b>'+hm(r.at)+'</b><small>'+dmy(r.day)+'</small></td><td><b>'+esc(r.by_name)+' → '+esc(r.to_name)+'</b>'+(sp?' <span class="tag t-blu">Split · total '+rs(r.batch_total)+'</span>'+(Math.abs(sd)>=1?' <span class="tag t-red">'+(sd<0?"short ":"extra ")+rs(Math.abs(sd))+'</span>':""):"")+(r.note?'<small>'+esc(r.note)+'</small>':"")+'</td>'+
+        R.map(r=>{const hx=batchExtras(r.batch||r.id).length>0,sp=r.batch_parts>1,d=sp||hx?0:r2(r.counted-r.book),sd=sp&&!hx?r2(r.batch_total-r.book):0,rd=r.status==="RECEIVED"?r2(r.received-r.counted):0;
+          const ex=R.find(y=>(y.batch||y.id)===(r.batch||r.id))===r?batchExtras(r.batch||r.id):[];
+          return '<tr><td><b>'+hm(r.at)+'</b><small>'+dmy(r.day)+'</small></td><td><b>'+esc(r.by_name)+' → '+esc(r.to_name)+'</b>'+(ex.length?'<small class="sh-ex">'+ex.map(exChip).join("")+'</small>':"")+(sp?' <span class="tag t-blu">Split · total '+rs(r.batch_total)+'</span>'+(Math.abs(sd)>=1?' <span class="tag t-red">'+(sd<0?"short ":"extra ")+rs(Math.abs(sd))+'</span>':""):"")+(r.note?'<small>'+esc(r.note)+'</small>':"")+'</td>'+
             '<td class="n">'+rs(r.book)+'</td><td class="n"><b>'+rs(r.counted)+'</b>'+(Math.abs(d)>=1?'<small class="'+(d<0?"minus":"plus")+'">'+(d<0?"short ":"extra ")+rs(Math.abs(d))+'</small>':"")+'</td>'+
             '<td>'+(r.status==="RECEIVED"?'<span class="tag '+(Math.abs(rd)>=1?"t-red":"t-grn")+'">'+(Math.abs(rd)>=1?(rd<0?"Short ":"Extra ")+rs(Math.abs(rd)):"✓ "+rs(r.received))+'</span><small>'+hm(r.received_at)+(r.receive_note?" · "+esc(r.receive_note):"")+'</small>':ST[r.status]||"")+'</td></tr>'}).join("")+'</tbody></table></div>'
         :'<div class="acx-empty">No shift handover in these dates.</div>');
@@ -694,7 +718,10 @@
         '<div id="tParts" class="tg-parts"></div>'+
         '<div class="tg-in"><input id="tQ" type="text" autocomplete="off" placeholder="Type @ and a name"><div class="acx-clist" id="tList" hidden></div></div>'+
         '<div class="pills tg-quick" id="tQuick"></div><div class="tg-sum" id="tSum" hidden></div></div>'+
-        '<div class="f"><label for="sNote">Note</label><input id="sNote" type="text" maxlength="300" placeholder="Required if cash is short / extra"></div>';
+        '<div class="f"><label>Rest of the cash <small style="font-weight:400;color:var(--erp-muted)">not in the box · stays in cash in hand</small></label><div id="xParts" class="tg-parts"></div>'+
+        '<div class="pills tg-quick"><button type="button" class="add" data-xadd="OFFICE">+ 🏢 Office / Godown</button><button type="button" class="add" data-xadd="OTHER">+ 👤 Given to someone</button></div></div>'+
+        '<div class="xb" id="xBal"></div>'+
+        '<div class="f"><label for="sNote">Note</label><input id="sNote" type="text" maxlength="300" placeholder="Required if there is a difference"></div>';
       const box=sheet("Hand over the cash box",body,"Hand over",async b=>{
         const notes={};b.querySelectorAll("[data-n]").forEach(i=>{const v=num(i.value);if(v>0)notes[i.dataset.n]=i.dataset.n==="coins"?r2(v):Math.floor(v)});
         const c=calc(),note=b.querySelector("#sNote").value.trim();
@@ -703,17 +730,40 @@
         const bad=parts.find(p=>!(p.amt>0));if(bad){await ERPShell.alert("Write the amount for "+bad.name+".");return false}
         const left=r2(c-parts.reduce((a,p)=>a+p.amt,0));
         if(Math.abs(left)>=0.01){await ERPShell.alert(left>0?rs(left)+" is not given to anyone. Add it to a person.":"The parts are "+rs(-left)+" more than the counted cash.");return false}
-        if(Math.abs(c-book)>=1&&!note){await ERPShell.alert("Cash is "+(c<book?"short":"extra")+" by "+rs(Math.abs(c-book))+". Write a note why.");return false}
-        if(!await ERPShell.confirm("Hand "+rs(c)+(parts.length>1?":\n"+parts.map(p=>"• "+p.name+" "+rs(p.amt)).join("\n"):" to "+parts[0].name+"?")+"\n\n"+(parts.length>1?"Each one presses":parts[0].name+" presses")+" Received ✓ after counting."))return false;
-        try{await rpc("lwb_acc_shift_give_split",{p_parts:parts.map(p=>({to:p.id,amount:p.amt})),p_notes:notes,p_note:note||null})}catch(e){await ERPShell.alert(e.message);return false}
+        const xb=ex.find(x=>!(x.amt>0)||(x.kind==="OTHER"&&x.name.trim().length<2));
+        if(xb){await ERPShell.alert(xb.kind==="OTHER"&&xb.name.trim().length<2?"Write the name of the person who has the cash.":"Write the amount for "+(xb.kind==="OFFICE"?"Office / Godown":xb.name)+".");return false}
+        const xs=r2(ex.reduce((a,x)=>a+x.amt,0)),df=r2(book-c-xs);
+        if(Math.abs(df)>=1&&!note){await ERPShell.alert("Difference "+rs(Math.abs(df))+" ("+(df>0?"short":"extra")+"). Write a note why.");b.querySelector("#sNote").focus();return false}
+        if(!await ERPShell.confirm("Hand "+rs(c)+(parts.length>1?":\n"+parts.map(p=>"• "+p.name+" "+rs(p.amt)).join("\n"):" to "+parts[0].name)+
+          (ex.length?"\n\nRest of the cash (stays in cash in hand):\n"+ex.map(x=>"• "+(x.kind==="OFFICE"?"Office / Godown":x.name.trim())+" "+rs(x.amt)).join("\n"):"")+
+          (Math.abs(df)>=1?"\n\nDifference "+rs(Math.abs(df))+(df>0?" short: goes out of cash in hand":" extra: comes into cash in hand")+" → Cash Difference ledger.":"")+
+          "\n\n"+(parts.length>1?"Each one presses":parts[0].name+" presses")+" Received ✓ after counting."))return false;
+        try{await rpc("lwb_acc_shift_give3",{p_parts:parts.map(p=>({to:p.id,amount:p.amt})),p_notes:notes,p_note:note||null,p_extra:ex.map(x=>({kind:x.kind,name:x.kind==="OTHER"?x.name.trim():null,amount:x.amt}))})}catch(e){await ERPShell.alert(e.message);return false}
         toastMsg("Handed to "+parts.map(p=>p.name.split(/\s+/)[0]).join(" + ")+" · waiting for Received");load();
       },"pri");
       const q=box.querySelector("#tQ"),list=box.querySelector("#tList");
-      let counted=0;
+      let counted=0,ex=[];   // ex: [{kind:"OFFICE"|"OTHER",name,amt}]
       function calc(){let t=0;box.querySelectorAll("[data-n]").forEach(i=>{const v=num(i.value);if(v>0)t+=i.dataset.n==="coins"?v:Number(i.dataset.n)*Math.floor(v)});
         t=r2(t);const d=r2(t-book),c=box.querySelector("#sDiff");c.className="diff "+(Math.abs(d)<1?"ok":"bad");
         c.textContent="Counted "+rs(t)+(Math.abs(d)<1?" ✓ matches":" · "+(d<0?"short ":"extra ")+rs(Math.abs(d)));
-        if(t!==counted){counted=t;share();drawParts()}return t}
+        if(t!==counted){counted=t;share();drawParts()}drawBal();return t}
+      // Book cash = box (counted) + office / others + Difference
+      function drawBal(){const w=box.querySelector("#xBal");if(!w)return;const xs=r2(ex.reduce((a,x)=>a+(x.amt||0),0)),df=r2(book-counted-xs);
+        if(!ex.length&&Math.abs(df)<1){w.hidden=true;return}w.hidden=false;
+        w.innerHTML='<span>Box <b>'+rs(counted)+'</b></span>'+(xs?'<span>+ Office / other <b>'+rs(xs)+'</b></span>':"")+
+          '<span class="xd '+(Math.abs(df)<1?"ok":df>0?"bad":"ext")+'">'+(Math.abs(df)<1?"✓ No difference":"⚖ Difference "+rs(Math.abs(df))+(df>0?" short":" extra"))+'</span>'+
+          '<small>'+(Math.abs(df)<1?"Book "+rs(book)+" fully explained":df>0?"goes out of cash in hand → Cash Difference ledger":"comes into cash in hand → Cash Difference ledger")+'</small>'}
+      function drawEx(){const w=box.querySelector("#xParts");
+        w.innerHTML=ex.map((x,i)=>'<div class="tg-part xp"><span class="tg-who">'+(x.kind==="OFFICE"?'<b>🏢 Office / Godown pe pada</b>':'<input type="text" data-xn="'+i+'" value="'+esc(x.name)+'" maxlength="80" placeholder="Name (given to)" aria-label="Given to">')+'</span>'+
+          '<input type="text" inputmode="decimal" data-xa="'+i+'" value="'+(x.amt>0?x.amt:"")+'" placeholder="₹ amount" aria-label="Amount">'+
+          '<button type="button" data-xrm="'+i+'" aria-label="Remove">✕</button></div>').join("");
+        w.querySelectorAll("[data-xa]").forEach(i=>i.oninput=()=>{ex[Number(i.dataset.xa)].amt=r2(num(i.value)||0);drawBal()});
+        w.querySelectorAll("[data-xn]").forEach(i=>i.oninput=()=>{ex[Number(i.dataset.xn)].name=i.value});
+        w.querySelectorAll("[data-xrm]").forEach(b=>b.onclick=()=>{ex.splice(Number(b.dataset.xrm),1);drawEx()});
+        drawBal()}
+      box.querySelectorAll("[data-xadd]").forEach(b=>b.onclick=()=>{if(ex.length>=10)return;
+        const left=r2(book-counted-ex.reduce((a,x)=>a+(x.amt||0),0));ex.push({kind:b.dataset.xadd,name:"",amt:left>0?left:0});drawEx();
+        const f=box.querySelector(b.dataset.xadd==="OTHER"?'[data-xn="'+(ex.length-1)+'"]':'[data-xa="'+(ex.length-1)+'"]');if(f)f.focus()});
       // parts the user did not type share what is left equally (₹5L, two people → ₹2.5L each)
       function share(){const auto=parts.filter(p=>!p.typed);if(!auto.length)return;
         const left=Math.max(0,r2(counted-parts.filter(p=>p.typed).reduce((a,p)=>a+p.amt,0))),each=Math.floor(left/auto.length);
@@ -792,6 +842,100 @@
       act(null,()=>rpc("lwb_acc_shift_cancel",{p_id:Number(id),p_note:null}));
     }
     const toastMsg=t=>ERPShell.toast?ERPShell.toast(t):say(t);
+
+    /* ---------- Cash Difference ledger (Mohit, 25 Nov 2026) ----------
+       Whatever the cash box handover leaves unexplained goes here (short = out of cash in hand).
+       Difference found = Cash In back; Admin can write off the rest (no cash change). */
+    function renderCashDiff(){
+      if(!CDF){el("tabBody").innerHTML='<div class="acx-empty">Cash Difference ledger is not set up yet.</div>';return}
+      const R=CDF.rows||[],bal=r2(CDF.balance),KN={SHORT:["Short in handover","t-red"],EXTRA:["Extra in handover","t-blu"],FOUND:["Difference found","t-grn"],WRITE_OFF:["Written off","t-gry"]};
+      let run=0;const B=new Map();R.slice().reverse().forEach(r=>{if(!r.cancelled)run=r2(run+(r.kind==="SHORT"?1:-1)*Number(r.amount));B.set(r.id,run)});
+      el("tabBody").innerHTML='<div class="lg-head"><h3>⚖ Cash Difference</h3><span class="lg-bal '+(bal>0?"t-red":bal<0?"t-blu":"t-grn")+'">'+(bal>0?"Open short "+rs(bal):bal<0?"Extra "+rs(-bal):"✓ Nothing open")+'</span><span class="sp"></span>'+
+          (bal>0?'<button type="button" class="acx-btn grn" data-cdf="FOUND">+ Difference found</button>'+(CDF.is_admin?'<button type="button" class="acx-btn red" data-cdf="WRITE_OFF">Write off</button>':""):"")+'</div>'+
+        '<div class="lg-sum"><span>Short <b>'+rs(CDF.short)+'</b></span><span>Extra <b>'+rs(CDF.extra)+'</b></span><span>Found <b>'+rs(CDF.found)+'</b></span><span>Written off <b>'+rs(CDF.written_off)+'</b></span></div>'+
+        (R.length?'<div style="overflow:auto"><table class="acx-t lg-t"><thead><tr><th>Entry</th><th class="n">Amount</th><th class="n">Balance</th><th></th></tr></thead><tbody>'+
+          R.map(r=>{const k=KN[r.kind]||[r.kind,"t-gry"],plus=r.kind==="SHORT";
+            return '<tr'+(r.cancelled?' class="cx"':"")+'><td><span class="tag '+k[1]+'">'+k[0]+'</span>'+(r.cancelled?' <span class="tag t-gry">Cancelled</span>':"")+
+              '<small>'+dmy(r.day).slice(0,5)+' '+hm(r.at)+' · '+esc(r.note||r.remark||"")+(r.by?" · "+esc(r.by):"")+'</small></td>'+
+              '<td class="n"><b class="'+(plus?"minus":"plus")+'">'+(plus?"+":"−")+rs(r.amount)+'</b></td><td class="n"><b>'+(r.cancelled?"":rs(B.get(r.id)))+'</b></td>'+
+              '<td>'+(!r.cancelled&&(r.kind==="FOUND"||r.kind==="WRITE_OFF")&&(CDF.is_admin||r.kind==="FOUND")?'<button type="button" class="acx-btn red" data-cdfx="'+r.id+'" aria-label="Cancel">✕</button>':"")+'</td></tr>'}).join("")+'</tbody></table></div>'
+          :'<div class="acx-empty">No difference yet. When a cash box handover is short or extra, it comes here.</div>')+
+        '<p class="acx-note">'+tipI('Short in handover = cash went out of cash in hand (head "Cash difference"). Difference found = it comes back into cash in hand. Write off (Admin) closes it without any cash change. Not counted as an expense.')+'</p>';
+      el("tabBody").querySelectorAll("[data-cdf]").forEach(b=>b.onclick=()=>cdiffAdd(b.dataset.cdf));
+      el("tabBody").querySelectorAll("[data-cdfx]").forEach(b=>b.onclick=async()=>{const why=await ERPShell.prompt("Cancel this line?","",{title:"Cancel",placeholder:"Why"});if(why==null)return;
+        act(b,()=>rpc("lwb_acc_cdiff_cancel",{p_id:Number(b.dataset.cdfx),p_reason:why}))});
+    }
+    function cdiffAdd(kind){
+      const bal=r2(CDF.balance),f=kind==="FOUND";
+      sheet(f?"Difference found":"Write off difference",'<p style="margin:0 0 8px;font-size:14px">Open short <b class="minus">'+rs(bal)+'</b>. '+(f?"The money comes back into cash in hand.":"No cash change; the ledger is closed for this amount.")+'</p>'+
+        '<div class="f"><label for="cdA">Amount ₹</label><input id="cdA" class="big" type="text" inputmode="decimal" value="'+bal+'"></div>'+
+        '<div class="f"><label for="cdN">Note</label><input id="cdN" type="text" maxlength="300" placeholder="'+(f?"e.g. found in godown drawer":"e.g. could not find")+'"></div>',
+        f?"Add to cash":"Write off",async b=>{const a=num(b.querySelector("#cdA").value),n=b.querySelector("#cdN").value.trim();
+          if(!(a>0)){await ERPShell.alert("Enter the amount.");return false}if(!n){await ERPShell.alert("Write a note.");return false}
+          try{await rpc("lwb_acc_cdiff_add",{p:{kind,amount:a,note:n}})}catch(e){await ERPShell.alert(e.message);return false}
+          toastMsg(f?rs(a)+" back in cash in hand":rs(a)+" written off");load()},f?"grn":"redf");
+    }
+
+    /* ---------- Damaged cash box (Mohit, 25 Nov 2026) ----------
+       Damaged / torn notes are kept apart and are NOT in cash in hand. Opening once; notes found in the
+       day's cash move out of cash in hand; given to the bank: what the bank paid waits in Bank check, the rest = Bank short. */
+    const DMG_NOTES=["2000","500","200","100","50","20","10"];
+    function renderDamaged(){
+      if(!DMG){el("tabBody").innerHTML='<div class="acx-empty">Damaged cash is not set up yet.</div>';return}
+      const R=DMG.rows||[],KN={OPENING:["Opening damaged","t-blu"],FROM_CASH:["From cash in hand","t-amb"],BANK:["Given to bank","t-grn"]};
+      const nt=n=>n?Object.entries(n).filter(([,v])=>v>0).map(([k,v])=>"₹"+k+"×"+v).join(" "):"";
+      el("tabBody").innerHTML='<div class="lg-head"><h3>🩹 Damaged cash</h3><span class="lg-bal t-amb">In box '+rs(DMG.balance)+'</span><span class="sp"></span>'+
+          (DMG.has_opening?"":'<button type="button" class="acx-btn pri" data-dmg="OPENING">+ Opening damaged</button>')+
+          '<button type="button" class="acx-btn" data-dmg="FROM_CASH">+ From cash in hand</button>'+
+          (Number(DMG.balance)>0?'<button type="button" class="acx-btn grn" data-dmg="BANK">🏦 Give to bank</button>':"")+'</div>'+
+        '<div class="lg-sum"><span>Opening <b>'+rs(DMG.opening)+'</b></span><span>From cash <b>'+rs(DMG.from_cash)+'</b></span><span>Given to bank <b>'+rs(DMG.to_bank)+'</b></span><span>Bank paid <b class="plus">'+rs(DMG.bank_paid)+'</b></span><span>Bank short <b class="minus">'+rs(DMG.short)+'</b></span></div>'+
+        (R.length?'<div style="overflow:auto"><table class="acx-t lg-t"><thead><tr><th>Entry</th><th class="n">In / Out</th><th>Bank</th><th></th></tr></thead><tbody>'+
+          R.map(r=>{const k=KN[r.kind]||[r.kind,"t-gry"],out=r.kind==="BANK",st=r.status==="VERIFIED"?'<span class="tag t-grn">✓ In bank</span>':r.status==="REJECTED"?'<span class="tag t-red">✗ Not in bank</span>':r.status?'<span class="tag t-amb">Bank check</span>':"";
+            return '<tr'+(r.cancelled?' class="cx"':"")+'><td><span class="tag '+k[1]+'">'+k[0]+'</span>'+(r.cancelled?' <span class="tag t-gry">Cancelled</span>':"")+
+              '<small>'+esc([dmy(r.day).slice(0,5)+" "+hm(r.at),nt(r.notes),r.note,r.ref?"Ref "+r.ref:"",r.by].filter(Boolean).join(" · "))+'</small></td>'+
+              '<td class="n"><b>'+(out?"−":"+")+rs(r.amount)+'</b></td>'+
+              '<td>'+(out?'<b class="plus">'+rs(r.bank_amount)+'</b>'+(Number(r.short)>0?' <span class="tag t-red">short '+rs(r.short)+'</span>':"")+' '+st+'<small>'+esc(r.bank||"")+'</small>':"")+'</td>'+
+              '<td>'+(!r.cancelled&&(DMG.is_admin||(r.mine&&r.kind!=="OPENING"))?'<button type="button" class="acx-btn red" data-dmgx="'+r.id+'" aria-label="Cancel">✕</button>':"")+'</td></tr>'}).join("")+'</tbody></table></div>'
+          :'<div class="acx-empty">No damaged cash yet. Start with "+ Opening damaged".</div>')+
+        '<p class="acx-note">'+tipI('Damaged cash is never in cash in hand. Opening damaged = the torn notes you already have (cash in hand does not change). From cash in hand = a torn note found in today\'s cash (cash in hand goes down, not an expense). Give to bank: what the bank pays waits in Bank check; the rest is Bank short.')+'</p>';
+      el("tabBody").querySelectorAll("[data-dmg]").forEach(b=>b.onclick=()=>b.dataset.dmg==="BANK"?dmgBank():dmgAdd(b.dataset.dmg));
+      el("tabBody").querySelectorAll("[data-dmgx]").forEach(b=>b.onclick=async()=>{const why=await ERPShell.prompt("Cancel this damaged cash line?","",{title:"Cancel",placeholder:"Why"});if(why==null)return;
+        act(b,()=>rpc("lwb_acc_dmg_cancel",{p_id:Number(b.dataset.dmgx),p_reason:why}))});
+    }
+    function dmgAdd(kind){
+      const op=kind==="OPENING";
+      const box=sheet(op?"Opening damaged cash":"Damaged notes from cash in hand",'<p style="margin:0 0 8px;font-size:13.5px;color:#4b5763">'+(op?"The torn / damaged notes you already have. <b>Cash in hand does not change.</b>":"A torn note found in today's cash. <b>Cash in hand goes down</b> by this amount (not an expense).")+'</p>'+
+        '<div class="f"><label>Count the damaged notes</label><div class="notes">'+DMG_NOTES.map(k=>'<div class="note"><b>₹'+k+'</b><button type="button" data-dd="'+k+'" data-s="-1" aria-label="less">−</button><input type="text" inputmode="numeric" data-dn="'+k+'" placeholder="0" aria-label="'+k+' notes"><button type="button" data-dd="'+k+'" data-s="1" aria-label="more">+</button></div>').join("")+'</div></div>'+
+        '<div class="diff ok" id="dmT">Total ₹0</div>'+
+        '<div class="f"><label for="dmN">Note</label><input id="dmN" type="text" maxlength="300" placeholder="'+(op?"e.g. old torn notes in the box":"e.g. from party X")+'"></div>',
+        op?"Save opening":"Move to damaged",async b=>{const t=tot(),n={};b.querySelectorAll("[data-dn]").forEach(i=>{const v=Math.floor(num(i.value));if(v>0)n[i.dataset.dn]=v});
+          if(!(t>0)){await ERPShell.alert("Count the damaged notes.");return false}
+          if(!await ERPShell.confirm((op?"Opening damaged cash ":"Move ")+rs(t)+(op?"? Cash in hand does not change.":" out of cash in hand into Damaged cash?")))return false;
+          try{await rpc("lwb_acc_dmg_add",{p:{kind,notes:n,note:b.querySelector("#dmN").value.trim()||null}})}catch(e){await ERPShell.alert(e.message);return false}
+          toastMsg("Damaged cash "+rs(t)+" saved");load()},"pri");
+      function tot(){let t=0;box.querySelectorAll("[data-dn]").forEach(i=>{const v=Math.floor(num(i.value));if(v>0)t+=Number(i.dataset.dn)*v});box.querySelector("#dmT").textContent="Total "+rs(t);return t}
+      box.querySelectorAll("[data-dn]").forEach(i=>i.oninput=tot);
+      box.querySelectorAll("[data-dd]").forEach(b=>b.onclick=()=>{const i=box.querySelector('[data-dn="'+b.dataset.dd+'"]');i.value=Math.max(0,(Math.floor(num(i.value))||0)+Number(b.dataset.s))||"";tot()});
+    }
+    function dmgBank(){
+      const bal=r2(DMG.balance),BK=(D.banks||[]).filter(b=>b.active);
+      const box=sheet("Give damaged cash to bank",'<p style="margin:0 0 8px;font-size:14px">In the damaged box: <b>'+rs(bal)+'</b></p>'+
+        '<div class="f"><label for="dbA">Damaged notes given ₹ <small style="font-weight:400">(face value)</small></label><input id="dbA" class="big" type="text" inputmode="decimal" value="'+bal+'"></div>'+
+        '<div class="f"><label for="dbP">Bank paid ₹</label><input id="dbP" class="big" type="text" inputmode="decimal" placeholder="e.g. 250 for a ₹500 note"></div>'+
+        '<div class="diff ok" id="dbS"></div>'+
+        '<div class="f"><label for="dbB">Bank</label><select id="dbB">'+BK.map(b=>'<option value="'+b.id+'">'+esc(b.name)+'</option>').join("")+'</select></div>'+
+        '<div class="f"><label for="dbR">Ref / slip no.</label><input id="dbR" type="text" maxlength="100" placeholder="optional"></div>'+
+        '<div class="f"><label for="dbN">Note</label><input id="dbN" type="text" maxlength="300" placeholder="optional"></div>',
+        "Save",async b=>{const a=num(b.querySelector("#dbA").value),pd=num(b.querySelector("#dbP").value)||0;
+          if(!(a>0)){await ERPShell.alert("Enter the damaged notes given.");return false}
+          if(pd<0||pd>a){await ERPShell.alert("Bank paid cannot be more than the notes given.");return false}
+          if(!await ERPShell.confirm("Damaged notes "+rs(a)+" given to bank.\nBank paid "+rs(pd)+(a>pd?" · Bank short "+rs(a-pd):"")+".\n\n"+(pd>0?rs(pd)+" waits in Bank check.":"")))return false;
+          try{await rpc("lwb_acc_dmg_bank",{p:{amount:a,bank_amount:pd,bank_id:Number(b.querySelector("#dbB").value)||null,ref:b.querySelector("#dbR").value.trim()||null,note:b.querySelector("#dbN").value.trim()||null}})}catch(e){await ERPShell.alert(e.message);return false}
+          toastMsg("Saved · bank short "+rs(a-pd));load()},"grn");
+      const up=()=>{const a=num(box.querySelector("#dbA").value)||0,pd=num(box.querySelector("#dbP").value)||0,sh=r2(a-pd),d=box.querySelector("#dbS");
+        d.className="diff "+(sh>0?"bad":"ok");d.textContent=sh>0?"Bank short "+rs(sh):"No short";};
+      box.querySelector("#dbA").oninput=up;box.querySelector("#dbP").oninput=up;up();
+    }
 
     function renderSetup(){
       const C=D.categories||[],B=D.banks||[];
