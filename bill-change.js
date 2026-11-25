@@ -58,6 +58,9 @@
  .bc-pcs{width:46px;text-align:center}.bc-pcs:disabled{background:#f4f6f5}
  .bc-t.rt td{white-space:nowrap}.bc-t.rt td.it{white-space:normal}
  .bc-pty{width:100%;margin:0 0 6px}
+ .bc-bl{margin:0 0 8px;border:1px solid #e3e8ea;border-radius:8px;padding:6px 8px;background:#f7fafa}.bc-bl>b{display:block;font-size:12.5px;margin-bottom:4px}
+ .bc-bl .bl{display:flex;flex-wrap:wrap;gap:6px}.bc-bl button{border:1px solid #c9d6d9;background:#fff;border-radius:8px;padding:5px 9px;font:inherit;font-size:13px;cursor:pointer;text-align:left}
+ .bc-bl button:hover{border-color:#00434d}.bc-bl button small{display:block;color:#55686c;font-size:11.5px}
  @media(max-width:600px){.bc-back{padding:8px}.bc-box{padding:10px}
   .bc-t.rt thead{display:none}.bc-t.rt tr{display:grid;grid-template-columns:auto auto minmax(0,1fr) auto auto;gap:4px 6px;align-items:center;border-bottom:1px solid var(--erp-line,#e3e6e2);padding:6px 0}
   .bc-t.rt td{border:0;padding:0}.bc-t.rt td.it{grid-column:1 / -1}.bc-t.rt td.am{text-align:right}.bc-t.rt td.rr{text-align:left}
@@ -186,7 +189,7 @@
   if(!rows.length)rows.push({id:null,sku:"",cs:0,pc:0,r:0,ppc:null});
   const bill=d.bill,parties=o.parties||[];
   const {b,close}=shell(`<div class="bc-hd"><div><h3>↩ ${oid?"Return · "+esc(d.order_no)+" · "+esc(d.party):"New return"}</h3><small>${oid?(bill?"Tally bill "+esc(bill.invoice_no)+" "+rs(bill.amount):"No Tally bill yet")+" · ":"Goods back from a party, not against a bill · "}rate per case · PCS = pieces</small></div><button type="button" class="bc-x" aria-label="Close">✕</button></div>
-   ${oid?"":`<input class="bc-in bc-pty" data-party list="bc-pl" maxlength="200" placeholder="Party (who gave the goods back)" aria-label="Party" value="${esc(o.party||"")}"><datalist id="bc-pl">${parties.map(n=>`<option value="${esc(n)}">`).join("")}</datalist>`}
+   ${oid?"":`<input class="bc-in bc-pty" data-party list="bc-pl" maxlength="200" placeholder="Party (who gave the goods back)" aria-label="Party" value="${esc(o.party||"")}"><datalist id="bc-pl">${parties.map(n=>`<option value="${esc(n)}">`).join("")}</datalist>${o.billsOf?`<div class="bc-bl" data-bl hidden></div>`:""}`}
    <datalist id="bc-rskus">${(d.skus||[]).map(s=>`<option value="${esc(s.sku)}">`).join("")}</datalist>
    <div style="overflow:auto"><table class="bc-t rt"><thead><tr><th>Item</th><th>CS</th><th>PCS</th><th class="n">Rate</th><th class="n">Return ₹</th><th></th></tr></thead><tbody></tbody></table></div>
    <div class="bc-row"><button type="button" class="bc-lnk" data-add>+ ${oid?"Other SKU (not on this bill)":"Add SKU"}</button><span class="sp bc-sum" data-sum></span></div>
@@ -216,6 +219,12 @@
    sum.innerHTML=on.length?`${on.length} SKU · Return <span class="bc-tag bc-red">− ${rs(t)}</span>`:"Enter CS / PCS that came back";
   }
   draw();
+  // New return: list the party's bills, so the return can be taken against one bill (credit note on that bill)
+  const bl=b.querySelector("[data-bl]"),pin0=b.querySelector("[data-party]");
+  function drawBills(){if(!bl)return;const bs=(o.billsOf(pin0.value.trim())||[]).slice(0,30);bl.hidden=!bs.length;
+   bl.innerHTML=bs.length?`<b>Return against which bill? (tap a bill · or enter below for no bill)</b><div class="bl">${bs.map(x=>`<button type="button" data-bo="${esc(x.order_id)}">${esc(x.order_no)} · bill ${esc(x.invoice_no||"—")}<small>${esc(String(x.invoice_date||"").split("-").reverse().join("/"))} · due ${rs(x.due)}</small></button>`).join("")}</div>`:"";
+   bl.querySelectorAll("[data-bo]").forEach(t=>t.onclick=()=>{close();ret({...o,order:{order_id:t.dataset.bo}})})}
+  if(bl){drawBills();pin0.addEventListener("change",drawBills);pin0.addEventListener("input",drawBills)}
   b.querySelector("[data-add]").onclick=()=>{rows.push({id:null,sku:"",cs:0,pc:0,r:0,ppc:null});draw();const s=tb.querySelectorAll(".bc-sk");s[s.length-1].focus()};
   b.querySelector("[data-save]").onclick=async e=>{
    const btn=e.currentTarget;if(btn.disabled)return;
@@ -227,7 +236,8 @@
    const over=on.find(x=>x.id&&(x.cs+(x.ppc?x.pc/x.ppc:0))>x.max+0.0001);if(over)return say(over.sku+": only "+r2(over.max)+" CS is left to return on this bill.");
    const pin=b.querySelector("[data-party]"),party=pin?pin.value.trim():"";
    if(!oid&&!party)return say("Choose the party the goods came back from.");
-   const date=b.querySelector("[data-date]").value,note=b.querySelector("[data-note]").value.trim(),cn=b.querySelector("[data-cn]");
+   const date=b.querySelector("[data-date]").value,cn=b.querySelector("[data-cn]");let note=b.querySelector("[data-note]").value.trim();
+   if(oid)note=(on.map(x=>x.sku+" "+cspc(x.cs,x.pc)).join(", ")+(note?" · "+note:"")).slice(0,300); // narration on the bill's credit note: what came back
    if(!date)return say("Enter the return date.");
    const t=r2(on.reduce((a,x)=>a+val(x),0));
    if(!await ask(`Save return of ${rs(t)}${oid?" on "+d.order_no:""} from ${oid?d.party:party}?\n\n`+on.map(x=>x.sku+" · "+cspc(x.cs,x.pc)+" · "+rs(val(x))).join("\n")))return;
