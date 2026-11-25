@@ -932,6 +932,10 @@
     .po-range-note {font-size:12px;color:#6b7785;margin:-8px 2px 10px}
     td.c-lines {text-align:right}
     .tp-b {display:inline-block;font-size:11px;font-weight:700;border-radius:6px;padding:2px 7px;white-space:nowrap;background:#eef1ef;color:#3d4a57}
+    /* Where it is loaded (Mohit, 25 Nov 2026): vehicle + Godown Manager under Transport, from Transport Assigned on. */
+    .ld-b {display:block;width:max-content;max-width:100%;margin-top:4px;font-size:11px;line-height:1.35;border-radius:6px;padding:2px 7px;background:#fff7e0;border:1px solid #f0d78a;color:#6b4a00}
+    .ld-b b {font-weight:800;color:#3d2c00;white-space:nowrap}.ld-b .ld-m {display:block;color:#6b7785;font-weight:600}
+    .ld-b.on {background:#fff1c9;border-color:#e0b43a}.ld-b.done {background:#eaf6ee;border-color:#b9dfc6;color:#1d6b3a}.ld-b.done b {color:#14532d}
     .tp-b.dl {background:#e8f0fc;color:#1d5fbf}.tp-b.sp {background:#fff4e0;color:#8a5200}.tp-b.dv {background:#f3eefc;color:#6b3fb5}
     .po-foot {display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:10px 13px;border-top:1px solid #eee;font-size:13px;color:#4b5866}
     .po-foot .tot {font-weight:700;color:#1f2a37}
@@ -1256,7 +1260,7 @@
       #ordersArea table {min-width:0}
       #ordersArea thead {display:none}
       #ordersArea tbody tr {display:grid;grid-template-columns:1fr 1fr 1fr;grid-template-areas:
-        "no no st" "date date date" "cust cust cust" "sp sp tp" "qty amt wt" "pay pay pay" "act act act";
+        "no no st" "date date date" "cust cust cust" "sp tp tp" "qty amt wt" "pay pay pay" "act act act";
         gap:6px 10px;background:#fff;border:1px solid #e4e4e4;border-radius:10px;padding:12px;margin-bottom:10px}
       #ordersArea tbody tr:hover td {background:none}
       #ordersArea td {padding:0;border:0;min-width:0;text-align:left!important;font-size:13px}
@@ -3393,6 +3397,24 @@ function outBadge(order) {
   const f = flowOf(order);
   return `<span class="ofd-b" title="Out for delivery ${escapeHtml(formatDateTime(f.out_at))}${f.out_by_name ? " · " + escapeHtml(f.out_by_name) : ""}${f.bill_no ? " · Bill " + escapeHtml(f.bill_no) : ""}">🚚 Out ${ageText(f.out_at)}</span>`;
 }
+/* Loading at (Mohit, 25 Nov 2026): from Transport Assigned to Out for delivery the row shows which vehicle the PO
+   is loaded in and which Godown Manager loads it (lwb_po_journey).
+   Loading tab: "Loading 25m" since the Godown Manager pressed Start Loading. */
+function loadBadge(order) {
+  const st = orderStage(order);
+  if (!["transport", "loading", "loaded"].includes(st)) return "";
+  const j = listJourney.get(order.id) || {};
+  const veh = String(j.vehicle_no || "").trim(), gm = String(j.loading_person || "").trim();
+  if (!veh && !gm) return "";
+  const when = st === "loading" && j.loading_started_at ? " · " + ageText(j.loading_started_at)
+    : st === "loaded" && j.loading_completed_at ? " · " + ageText(j.loading_completed_at) + " ago" : "";
+  const head = st === "loading" ? "⏳ Loading" : st === "loaded" ? "✓ Loaded" : "🚚";
+  const tip = [veh && "Vehicle " + veh, j.driver_name && "Driver " + j.driver_name, gm && "Godown Manager " + gm,
+    j.loading_started_at && "Loading started " + formatDateTime(j.loading_started_at),
+    j.loading_completed_at && "Loaded " + formatDateTime(j.loading_completed_at)].filter(Boolean).join(" · ");
+  return `<span class="ld-b${st === "loading" ? " on" : st === "loaded" ? " done" : ""}" title="${escapeHtml(tip)}">${head} <b>${escapeHtml(veh || "-")}</b>${escapeHtml(when)}` +
+    (gm ? `<span class="ld-m">👷 ${escapeHtml(gm)}</span>` : "") + `</span>`;
+}
 // Delivered: how much of the bill Accounts has received (lwb_po_journey collected / due).
 function settleBadge(order) {
   if (orderStage(order) !== "delivered") return "";
@@ -3671,6 +3693,8 @@ async function loadListExtras(pageOrders) {
   if (CAN_BILL) ids.forEach(refreshMakeBill);
   pageOrders.forEach(order => document.querySelectorAll(`#ordersArea [data-flow="${order.id}"]`).forEach(el => {
     el.innerHTML = outBadge(order) + billPendingBadge(order) + settleBadge(order); }));
+  pageOrders.forEach(order => document.querySelectorAll(`#ordersArea [data-load="${order.id}"]`).forEach(el => {
+    el.innerHTML = loadBadge(order); }));
   if (!p.error) { ids.forEach(id => listPrints.delete(id)); (p.data || []).forEach(r => listPrints.set(r.order_id, r)); }
   else if (listPrintsOn && /lwb_po_print_info/.test((p.error && p.error.message) || "")) listPrintsOn = false; // SQL not run yet
   pageOrders.forEach(order => {
@@ -5063,7 +5087,7 @@ function renderOrders() {
               ${formatNumber(order.total_qty)}${fillStage(order) ? `<span class="fill-w" data-fill="${order.id}">${fillBadge(order.id)}</span>` : preLoadStage(order) ? `<span class="fill-w">${fullBadge()}</span>` : ""}
             </td>
 
-            <td class="c-tp" data-label="Transport">${tpBadge(order.transportation)}</td>
+            <td class="c-tp" data-label="Transport">${tpBadge(order.transportation)}<span class="ld-w" data-load="${order.id}">${loadBadge(order)}</span></td>
 
             <td
               class="money c-amt"
