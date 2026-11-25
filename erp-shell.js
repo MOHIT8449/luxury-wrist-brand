@@ -171,6 +171,8 @@
       {t:"Night Stock Audit",h:"stock-audit.html",i:"stock",r:"admin manager warehouse accounts",vo:"accounts",nm:"admin manager warehouse accounts",par:"inventory.html"},
       {t:"Opening Stock",h:"opening-stock.html",i:"box",r:"admin",nm:"admin",par:"inventory.html"},
       {t:"Godown Report",h:"godown-report.html",i:"note",r:"admin manager warehouse"},
+      // Godown 3D (Mohit, 25 Nov 2026): main godown in 3D, pallet lines (A01-B25, C1-C2, D1-D2) with one SKU each, space used / free from live stock.
+      {t:"Godown 3D / Pallet Space",h:"godown-3d.html",i:"stock",r:"admin manager warehouse",k:"godown 3d pallet space capacity free khali jagah line lane row layout map forklift"},
       {t:"Loading & Dispatch",h:"loading-dispatch.html",i:"box",r:"admin manager warehouse"},
       {t:"Transport Assignment",h:"transport-allocation.html",i:"truck",r:"admin manager transport"},
       // Vehicle Report (Mohit, 23 Nov 2026): per vehicle / driver for the day: tons loaded, cases delivered, parties, fixed driver.

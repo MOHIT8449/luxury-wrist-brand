@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"><script src="erp-fit.js"></script>
+  <title>Godown 3D · Pallet Space | Luxury Wrist Brand ERP</title>
+  <script src="erp-date.js"></script><script src="erp-recent.js"></script>
+  <script src="vendor/supabase-js-2.119.0.js"></script>
+  <script src="brand-filter.js"></script>
+  <link rel="stylesheet" href="erp-shell.css?v=20261124">
+  <link rel="stylesheet" href="sales.css">
+  <script src="erp-shell.js?v=20261124r"></script>
+  <script src="sales-common.js"></script>
+  <script src="vendor/three/three-r128.min.js"></script>
+  <script src="vendor/three/OrbitControls-r128.js"></script>
+  <script src="vendor/three/CSS2DRenderer-r128.js"></script>
+  <script src="godown-layout.js"></script>
+  <script src="godown-3d-scene.js"></script>
+  <style>
+    .status{text-align:center;padding:80px 20px;font-size:15px;color:#555}
+    .g3-viewer{position:relative;height:min(64vh,640px);min-height:380px;border-radius:8px;overflow:hidden;background:#e9ecef;border:1px solid var(--erp-line)}
+    .g3-viewer>#view{position:absolute;inset:0}.g3-viewer #view canvas{display:block;touch-action:none}
+    .g3-viewer>#labels{position:absolute;inset:0;pointer-events:none}
+    .g3-bar{position:absolute;left:10px;top:10px;right:70px;display:flex;flex-wrap:wrap;gap:6px;z-index:2}
+    .g3-bar button,.g3-zoom button{height:36px;min-width:36px;padding:0 10px;border-radius:7px;border:1px solid var(--erp-line);background:rgba(255,255,255,.94);font:inherit;font-size:13px;font-weight:600;cursor:pointer;color:var(--erp-ink)}
+    .g3-bar button.on{background:var(--erp-ink);color:#fff;border-color:var(--erp-ink)}
+    .g3-zoom{position:absolute;right:10px;bottom:10px;display:flex;flex-direction:column;gap:6px;z-index:2}.g3-zoom button{width:44px;height:44px;font-size:20px}
+    .lb{font:500 10px/1.2 Inter,system-ui,sans-serif;color:rgba(25,28,31,.78);white-space:nowrap;text-align:center;text-shadow:0 0 3px #fff,0 0 2px #fff}
+    .lb b{display:block;font-weight:700;font-size:10.5px}.lb small{display:block;font-size:9px}
+    .g3-tabs{display:flex;gap:6px;margin:14px 0 10px;flex-wrap:wrap}
+    .g3-tabs button{height:36px;padding:0 14px;border-radius:18px;border:1px solid var(--erp-line);background:#fff;color:var(--erp-ink);font:inherit;font-weight:600;cursor:pointer}
+    .g3-tabs button.on{border-color:var(--erp-red);background:var(--erp-red-soft);color:var(--erp-red)}
+    .g3-bar2{height:8px;border-radius:4px;background:#e7eaee;overflow:hidden;min-width:70px}.g3-bar2 i{display:block;height:100%;background:#2f8f5b}
+    .g3-bar2 i.hi{background:#d97706}.g3-bar2 i.full{background:#c0392b}
+    .g3-table select,.g3-table input{height:34px;line-height:normal;padding-top:0!important;padding-bottom:0!important;border:1.5px solid var(--erp-line);border-radius:6px;padding:0 6px;font:inherit;font-size:13px;background:#fff;max-width:100%}
+    .g3-head{flex-wrap:wrap;gap:8px}.g3-head h2{flex:1 1 auto}
+    .g3-table select.sku{min-width:200px}.g3-table input.cpp{width:80px}
+    .g3-table td.num,.g3-table th.num{text-align:right;white-space:nowrap}
+    .g3-warn{background:#fff4e5;border:1px solid #f0b45a;color:#7a4a00;border-radius:8px;padding:9px 12px;font-size:13px;margin:10px 0}
+    .g3-guide{font-size:14px;line-height:1.6;max-width:880px}.g3-guide h3{margin:16px 0 6px;font-size:15px}.g3-guide li{margin:3px 0}
+    .g3-code{display:inline-block;background:#111416;color:#f2c300;font-weight:800;border:3px solid #f2c300;border-radius:4px;padding:0 8px;letter-spacing:.5px}
+    #boards{display:none}
+    @media print{
+      body>*:not(#boards){display:none!important}
+      #boards{display:block}
+      .bd{page-break-inside:avoid;border:6px solid #111;border-radius:10px;padding:18px 22px;margin:0 0 14px;font-family:Arial,sans-serif}
+      .bd .c{font-size:96px;font-weight:900;line-height:1}.bd .s{font-size:30px;font-weight:700;margin-top:6px}.bd .m{font-size:16px;margin-top:6px;color:#333}
+    }
+    @media(max-width:640px){.g3-bar{right:60px}.g3-bar button{height:32px;font-size:12px;padding:0 8px}.g3-table select.sku{min-width:0;width:150px}
+      .g3-head h2{flex:1 1 100%}.g3-head select,.g3-head input{flex:1 1 40%}
+      #lineT tr>:nth-child(2),#lineT tr>:nth-child(8),#skuT tr>:nth-child(6){display:none}
+      body .g3-table th,body .g3-table td{padding:6px 4px;font-size:12px}.g3-table td small{display:none}}
+  </style>
+</head>
+<body>
+  <div id="loading" class="status">Checking account access...</div>
+  <main id="page" class="erp-main" hidden>
+    <div class="erp-pagehead"><h1>Godown 3D · Pallet Space</h1><span class="grow"></span>
+      <button type="button" class="sl-btn ghost" id="refresh">Refresh</button><span class="erp-badge blue" id="who"></span></div>
+    <div id="msg"></div>
+    <div class="sl-kpis" id="kpis" style="grid-template-columns:repeat(auto-fit,minmax(150px,1fr))"></div>
+
+    <div class="g3-viewer">
+      <div id="view"></div><div id="labels"></div>
+      <div class="g3-bar" role="toolbar" aria-label="3D views">
+        <button type="button" id="v3d" class="on">3D</button><button type="button" id="vtop">Top (2D)</button>
+        <button type="button" id="vfront">Front (gates)</button><button type="button" id="vside">Side</button><button type="button" id="vin">Inside</button>
+        <button type="button" id="vlab" class="on" aria-pressed="true">Labels</button><button type="button" id="vpal" class="on" aria-pressed="true">Pallets</button>
+        <button type="button" id="vshed" class="on" aria-pressed="true">Shed</button>
+      </div>
+      <div class="g3-zoom"><button type="button" id="zin" aria-label="Zoom in">+</button><button type="button" id="zout" aria-label="Zoom out">−</button><button type="button" id="zreset" aria-label="Reset view" style="font-size:14px">⟲</button></div>
+    </div>
+
+    <div class="g3-tabs" role="tablist">
+      <button type="button" data-tab="lines" class="on">Line-wise</button>
+      <button type="button" data-tab="skus">SKU-wise</button>
+      <button type="button" data-tab="guide">Floor marking guide</button>
+    </div>
+    <section class="erp-card" id="tab-lines">
+      <div class="erp-card-head g3-head"><h2>Lines (one SKU per line)</h2>
+        <select id="zone" class="sl-btn ghost small" aria-label="Area"><option value="">All areas</option></select>
+        <input id="q" type="search" placeholder="Search line / SKU" style="height:30px;border:1.5px solid var(--erp-line);border-radius:6px;padding:0 8px;font:inherit">
+        <button type="button" class="sl-btn ghost small" id="printBoards">🖨 Print line boards</button></div>
+      <div class="erp-card-body sl-scroll"><table class="erp-table g3-table" id="lineT"></table></div>
+    </section>
+    <section class="erp-card" id="tab-skus" hidden>
+      <div class="erp-card-head"><h2>SKU-wise pallets</h2></div>
+      <div class="erp-card-body sl-scroll"><table class="erp-table g3-table" id="skuT"></table>
+        <p class="sl-note">Pallets = saleable stock (cases / IC, same as Inventory) ÷ cases per pallet (SKU Master), rounded up. A part pallet takes a full place.</p></div>
+    </section>
+    <section class="erp-card" id="tab-guide" hidden>
+      <div class="erp-card-body g3-guide" id="guide"></div>
+    </section>
+  </main>
+  <div id="boards"></div>
+  <script>
+  {
+    const S=LWBSales,{client,el,esc,fmt,num}=S;
+    const LAY=LWBGodownLayout,ZONE=LAY.ZONE;
+    let me=null,skus=new Map(),lanes=[],stock=new Map(),scene=null,tab="lines",calc=null,lanesOk=true;
+    const reviewer=()=>me&&["admin","manager"].includes(me.role);
+    const skuName=id=>(skus.get(String(id))||{}).name||"";
+
+    async function load(){
+      el("msg").innerHTML="";
+      const [skuRes,liveRes,laneRes]=await Promise.all([
+        client.from("sku_master").select("id,sku_name,pcs_per_case,cases_per_pallet,is_active").order("sku_name")
+          .then(r=>r.error?client.from("sku_master").select("id,sku_name,pcs_per_case,is_active").order("sku_name"):r),
+        client.from("lwb_live_stock").select("sku_id,sku_name,pcs_per_case,saleable_pcs"),
+        client.from("lwb_godown_lanes").select("lane_code,zone,sort_no,slots,levels,sku_id,note").order("sort_no")
+      ]);
+      if(skuRes.error){el("msg").innerHTML='<div class="g3-warn">SKU Master could not be read: '+esc(skuRes.error.message)+"</div>";return}
+      skus=new Map((skuRes.data||[]).map(s=>[String(s.id),{id:String(s.id),name:s.sku_name,pack:Math.max(1,num(s.pcs_per_case)),cpp:num(s.cases_per_pallet),active:s.is_active!==false}]));
+      stock=new Map();
+      for(const r of (liveRes.data||[])){const id=String(r.sku_id),s=skus.get(id),pack=Math.max(1,num(r.pcs_per_case)||(s?s.pack:1));
+        stock.set(id,(stock.get(id)||0)+Math.max(0,num(r.saleable_pcs))/pack)}
+      if(liveRes.error)el("msg").innerHTML+='<div class="g3-warn">Live stock could not be read ('+esc(liveRes.error.message)+'). Lines show empty.</div>';
+      lanesOk=!laneRes.error;
+      const db=new Map((laneRes.data||[]).map(l=>[l.lane_code,l]));
+      lanes=LAY.lanes.map((L,i)=>{const d=db.get(L.code)||{};return {code:L.code,zone:L.zone,sort:d.sort_no??i,slots:d.slots||L.slots.length,levels:d.levels||2,sku:d.sku_id?String(d.sku_id):"",note:d.note||""}});
+      if(!lanesOk)el("msg").innerHTML+='<div class="g3-warn">Lines are not saved yet: lwb_godown_lanes_setup.sql has not run on the database. The 3D and capacity show the default layout; picking an SKU for a line works after the SQL runs.</div>';
+      compute();render();
+    }
+    function compute(){
+      const bySku=new Map();for(const l of lanes)if(l.sku){if(!bySku.has(l.sku))bySku.set(l.sku,[]);bySku.get(l.sku).push(l)}
+      const fill={},rows=[];let cap=0,used=0,notPlaced=0,missing=0;
+      for(const l of lanes){cap+=l.slots*l.levels;fill[l.code]={pallets:0,levels:l.levels,sku:skuName(l.sku)}}
+      const ids=new Set([...stock.keys()].filter(id=>stock.get(id)>0.001));for(const id of bySku.keys())ids.add(id);
+      for(const id of ids){const s=skus.get(id)||{id,name:"SKU "+id,cpp:0},cases=stock.get(id)||0;
+        const pallets=s.cpp>0?Math.ceil(cases/s.cpp-1e-9):null;let left=pallets||0,space=0;
+        for(const l of (bySku.get(id)||[]).sort((a,b)=>a.sort-b.sort)){const c=l.slots*l.levels,n=Math.min(c,left);fill[l.code].pallets=n;left-=n;used+=n;space+=c}
+        if(pallets==null&&cases>0)missing++;
+        notPlaced+=left;
+        rows.push({id,name:s.name,cases,cpp:s.cpp,pallets,lanes:(bySku.get(id)||[]).map(l=>l.code),space,extra:left});}
+      rows.sort((a,b)=>(b.pallets||0)-(a.pallets||0)||a.name.localeCompare(b.name));
+      calc={fill,rows,cap,used,notPlaced,missing};
+    }
+    const bar=(n,c)=>{const p=c?Math.round(n/c*100):0;return '<div class="g3-bar2" title="'+p+'%"><i class="'+(p>=100?"full":p>=85?"hi":"")+'" style="width:'+Math.min(100,p)+'%"></i></div>'};
+    function render(){
+      const c=calc,free=Math.max(0,c.cap-c.used),pct=c.cap?Math.round(c.used/c.cap*1000)/10:0;
+      const K=[["","Capacity",fmt(c.cap)+" pallets","all lines × levels"],["green","Filled",fmt(c.used),pct+"% used"],["blue","Free space",fmt(free)+" pallets",Math.round(100-pct)+"% free"],
+        [c.notPlaced?"red":"","No line / no space",fmt(c.notPlaced)+" pallets","stock without a line or more than its lines hold"],
+        [c.missing?"red":"","Pallet size missing",fmt(c.missing)+" SKUs","cases per pallet not set in SKU Master"]];
+      el("kpis").innerHTML=K.map(x=>'<div class="sl-kpi '+x[0]+'"><span>'+esc(x[1])+"</span><b>"+esc(x[2])+"</b><small>"+esc(x[3])+"</small></div>").join("");
+      if(scene)scene.setLanes(c.fill);
+      // lines table
+      const z=el("zone").value,q=el("q").value.trim().toUpperCase();
+      const opts='<option value="">— empty —</option>'+[...skus.values()].filter(s=>s.active).sort((a,b)=>a.name.localeCompare(b.name)).map(s=>'<option value="'+esc(s.id)+'">'+esc(s.name)+"</option>").join("");
+      const list=lanes.filter(l=>(!z||l.zone===z)&&(!q||l.code.includes(q)||skuName(l.sku).toUpperCase().includes(q)));
+      el("lineT").innerHTML='<thead><tr><th>Line</th><th>Area</th><th>SKU</th><th class="num">Levels</th><th class="num">Capacity</th><th class="num">Filled</th><th class="num">Free</th><th>Used</th></tr></thead><tbody>'+
+        list.map(l=>{const cap=l.slots*l.levels,f=c.fill[l.code].pallets;
+          const skuCell=reviewer()&&lanesOk?'<select class="sku" data-lane="'+l.code+'" aria-label="SKU of line '+l.code+'">'+opts.replace('value="'+esc(l.sku)+'"','value="'+esc(l.sku)+'" selected')+"</select>":esc(skuName(l.sku)||"—");
+          const lvCell=reviewer()&&lanesOk?'<select data-lv="'+l.code+'" aria-label="Levels of line '+l.code+'">'+[1,2,3,4,5].map(n=>'<option'+(n===l.levels?" selected":"")+">"+n+"</option>").join("")+"</select>":l.levels;
+          return '<tr><td><span class="g3-code">'+l.code+"</span></td><td>"+esc(ZONE[l.zone])+"</td><td>"+skuCell+'</td><td class="num">'+lvCell+'</td><td class="num">'+cap+" <small>("+l.slots+"×"+l.levels+')</small></td><td class="num"><b>'+f+'</b></td><td class="num">'+(cap-f)+"</td><td>"+bar(f,cap)+"</td></tr>"}).join("")+"</tbody>";
+      // sku table
+      el("skuT").innerHTML='<thead><tr><th>SKU</th><th class="num">Stock (cases)</th><th class="num">Cases / pallet</th><th class="num">Pallets</th><th>Lines</th><th class="num">Line space</th><th class="num">No space</th></tr></thead><tbody>'+
+        (c.rows.length?c.rows.map(r=>'<tr><td>'+esc(r.name)+'</td><td class="num">'+fmt(Math.floor(r.cases))+'</td><td class="num">'+
+          (reviewer()?'<input class="cpp" type="number" min="1" step="1" inputmode="numeric" data-cpp="'+esc(r.id)+'" value="'+(r.cpp||"")+'" aria-label="Cases per pallet of '+esc(r.name)+'">':(r.cpp||'<span style="color:var(--erp-red)">not set</span>'))+
+          '</td><td class="num"><b>'+(r.pallets==null?"?":fmt(r.pallets))+'</b></td><td>'+(r.lanes.length?r.lanes.map(x=>'<span class="g3-code" style="font-size:11px">'+x+"</span>").join(" "):'<span style="color:var(--erp-red)">no line</span>')+
+          '</td><td class="num">'+fmt(r.space)+'</td><td class="num"'+(r.extra?' style="color:var(--erp-red);font-weight:700"':"")+">"+fmt(r.extra)+"</td></tr>").join(""):'<tr><td colspan="7">No stock.</td></tr>')+"</tbody>";
+    }
+    function guide(){
+      el("guide").innerHTML=`
+<h3>1. Line code on the floor (paint once)</h3>
+<ul><li>At the <b>road end</b> of every line paint a yellow box with black inside and the code in big yellow letters, about 3 ft × 1.5 ft: <span class="g3-code">A07</span></li>
+<li><b>A01–A25</b>: centre stock left of the centre column, painted on the <b>left road</b>. <b>B01–B25</b>: right of the centre column, on the <b>right road</b>. <b>C1, C2</b>: right side strip, at its front. <b>D1, D2</b>: behind the offices, at the Rajnigandha gate passage.</li>
+<li>How to read it: the <b>letter = which block</b>, the <b>number = which line counted from the shutters</b> (A01 / B01 nearest the shutters, A25 / B25 at the back wall).</li></ul>
+<h3>2. Yellow lines</h3>
+<ul><li>A 2–3 inch yellow line between two lines, every <b>4 ft 2 in</b> (one pallet of 50 in), from the road edge to the centre column.</li>
+<li>One thick yellow line along the road edge (the C-shaped road). <b>No pallet may stand over it</b>, the forklift road stays clear.</li></ul>
+<h3>3. Board above the line</h3>
+<ul><li>Print the boards with <b>🖨 Print line boards</b> (Line-wise tab): big line code + SKU. Laminate, hang on the column or wall at the road end of the line.</li>
+<li>When a line gets another SKU, change it here first, then print and change the board.</li></ul>
+<h3>4. Rules for the godown team</h3>
+<ul><li><b>One line = one SKU</b> (same flavour and same size, e.g. only Sprite 250 ml). Never mix two SKUs in a line.</li>
+<li>Fill a line from the <b>deep end</b> (centre column / back wall) towards the road, bottom first, then the second level (same levels as set for the line).</li>
+<li>Take out from the road side. Keep 2 lines for a fast SKU: empty one line fully before starting it again, so old stock goes first.</li>
+<li>Forklift enters the pallet from the 40 in side, from the road. Do not park pallets, trolleys or empty pallets on the road.</li>
+<li>A new SKU or an SKU with no free line: tell the Godown Manager; Admin / Sales Head picks its line in this page.</li></ul>`;
+    }
+    function printBoards(){
+      el("boards").innerHTML=lanes.map(l=>'<div class="bd"><div class="c">'+l.code+'</div><div class="s">'+esc(skuName(l.sku)||"EMPTY LINE")+'</div><div class="m">'+esc(ZONE[l.zone])+" · "+l.slots+" pallets × "+l.levels+" high = "+(l.slots*l.levels)+" pallets</div></div>").join("");
+      window.print();
+    }
+
+    (async()=>{
+      me=await S.start(["admin","manager","warehouse"]);if(!me)return;
+      el("loading").hidden=true;el("page").hidden=false;
+      el("who").textContent=reviewer()?"Admin / Sales Head":"Godown team";
+      el("zone").innerHTML+=Object.entries(ZONE).map(([k,v])=>'<option value="'+k+'">'+k+" · "+esc(v)+"</option>").join("");
+      guide();
+      try{scene=LWBGodown3D(el("view"),el("labels"))}catch(e){console.warn(e);el("msg").innerHTML+='<div class="g3-warn">3D could not start on this device: '+esc(e.message)+"</div>"}
+      await load();
+      el("refresh").onclick=()=>load();
+      el("zone").onchange=render;el("q").oninput=render;
+      el("printBoards").onclick=printBoards;
+      document.querySelectorAll(".g3-tabs button").forEach(b=>b.onclick=()=>{tab=b.dataset.tab;
+        document.querySelectorAll(".g3-tabs button").forEach(x=>x.classList.toggle("on",x===b));
+        for(const t of ["lines","skus","guide"])el("tab-"+t).hidden=t!==tab});
+      document.addEventListener("change",async e=>{
+        const t=e.target;
+        if(t.dataset.lane||t.dataset.lv){const code=t.dataset.lane||t.dataset.lv,l=lanes.find(x=>x.code===code);
+          const sku=t.dataset.lane?t.value:l.sku,lv=t.dataset.lv?Number(t.value):l.levels;t.disabled=true;
+          const {error}=await client.rpc("lwb_godown_lane_set",{p_code:code,p_sku:sku||null,p_levels:lv,p_note:null});
+          t.disabled=false;if(error){await alert(error.message);render();return}
+          l.sku=sku;l.levels=lv;compute();render();return}
+        if(t.dataset.cpp){const n=Number(t.value);if(!Number.isSafeInteger(n)||n<1){await alert("Cases per pallet must be a whole number, 1 or more.");render();return}
+          t.disabled=true;const {error}=await client.from("sku_master").update({cases_per_pallet:n}).eq("id",t.dataset.cpp);t.disabled=false;
+          if(error){await alert(error.message);render();return}
+          const s=skus.get(t.dataset.cpp);if(s)s.cpp=n;compute();render();}
+      });
+    })();
+  }
+  </script>
+</body>
+</html>
