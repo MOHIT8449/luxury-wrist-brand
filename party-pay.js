@@ -278,10 +278,14 @@
         if(kmode==="EXTRA")err="Paid extra needs money: enter the money received.";
         else if(k>KMAX)err="Kasar can be at most "+rs(KMAX)+". Use a credit note for more.";
         else if(!p.bills.length)err="No "+(bname()?bname()+" ":"")+"bill is due for this party, so there is no bill to put kasar on. Check the brand above.";
-        else if(how==="pick"){b=p.bills.filter(x=>out.get(x.order_id)>0).pop();if(!b)err="Kasar only (no money): press \"full\" on the bill that has the small balance left.";}
-        else{b=p.bills.find(x=>Math.abs(r2(x.due)-k)<=0.5);if(!b)err="No bill has exactly "+rs(k)+" left. Choose bills and press \"full\" on the bill. Kasar must close the whole bill.";}
-        if(!err&&Math.abs(r2(b.due)-k)>0.5)err="Bill "+(b.invoice_no||b.order_no)+" ("+b.order_no+") has "+rs(b.due)+" left. Kasar only (no money) must equal it to close the bill.";
-        if(!err)ks.push({order_id:b.order_id,amount:k,kind:"LESS",bill:b});
+        // the party's advance (paid earlier, not set against bills) is used first, kasar closes the rest
+        const adv=r2(Math.max(0,p.advance||0)),need=x=>r2(x.due-Math.min(adv,x.due)),fits=x=>Math.abs(need(x)-k)<=0.5,advTxt=adv>0.5?" (advance "+rs(adv)+" + kasar)":"";
+        if(!err){
+          if(how==="pick"){b=p.bills.filter(x=>out.get(x.order_id)>0).pop();if(!b)err="Kasar only (no money): press \"full\" on the bill that has the small balance left.";}
+          else{b=p.bills.find(fits)||(p.bills.length===1?p.bills[0]:null);if(!b)err="No bill closes with kasar "+rs(k)+advTxt+". Choose bills and press \"full\" on the bill. Kasar must close the whole bill.";}
+        }
+        if(!err&&!fits(b))err="Bill "+(b.invoice_no||b.order_no)+" ("+b.order_no+") has "+rs(b.due)+" left"+(adv>0.5?", advance "+rs(adv)+": kasar must be "+rs(need(b))+" to close it.":". Kasar only (no money) must equal it to close the bill.");
+        if(!err){const adj=r2(Math.max(0,Math.min(adv,b.due-k)));ks.push({order_id:b.order_id,amount:k,kind:"LESS",bill:b,adj:adj>0.009?adj:0})}
         return {money:new Map(),kasar:err?[]:ks,err};
       }
       const picked=p.bills.filter(b=>out.get(b.order_id)>0),last=picked[picked.length-1];
@@ -331,9 +335,10 @@
     function kasarHint(){
       if(adjust||how==="adv"||kas())return [];
       const p=P(),pl=plan(),out=[];
-      if(money()<0.01){ // no money: offer kasar on a bill that has only a small balance left
-        const s=p.bills.filter(b=>b.due>=0.01&&b.due<=KMAX&&(how!=="pick"||manual.get(b.order_id)>0));
-        return s.length?[{order_id:s[0].order_id,amount:r2(s[0].due),kind:"LESS",bill:s[0]}]:[];
+      if(money()<0.01){ // no money: offer kasar on a bill that has only a small balance left (after the advance)
+        const adv=r2(Math.max(0,p.advance||0)),left=b=>r2(b.due-Math.min(adv,b.due));
+        const s=p.bills.filter(b=>left(b)>=0.01&&left(b)<=KMAX&&(how!=="pick"||manual.get(b.order_id)>0));
+        return s.length?[{order_id:s[0].order_id,amount:left(s[0]),kind:"LESS",bill:s[0],adj:r2(s[0].due-left(s[0]))}]:[];
       }
       for(const b of p.bills){const v=pl.get(b.order_id)||0;if(v<=0)continue;const s=r2(b.due-v);if(s>=0.01&&s<=KMAX)out.push({order_id:b.order_id,amount:s,kind:"LESS",bill:b})}
       if(!out.length&&how==="auto"&&pl.size){
@@ -354,11 +359,11 @@
       const key=on.map(x=>x.order_id+":"+x.amount).join("|");
       if(on.length&&key!==kasarSeen){const tr=back.querySelector('tr[data-row="'+on[0].order_id+'"]');if(tr)tr.scrollIntoView({block:"nearest"})}
       kasarSeen=key;
-      const kt=q("[data-ktot]");if(kt)kt.textContent=k&&!S.err?(kmode==="EXTRA"?"of which kasar (paid extra) "+rs(k):"+ kasar "+rs(k)+" = bills closed "+rs(r2(money()+k))):"";
+      const kt=q("[data-ktot]");if(kt)kt.textContent=k&&!S.err?(kmode==="EXTRA"?"of which kasar (paid extra) "+rs(k):(S.kasar[0]&&S.kasar[0].adj?"advance "+rs(S.kasar[0].adj)+" + kasar "+rs(k)+" = bill closed "+rs(r2(S.kasar[0].adj+k)):"+ kasar "+rs(k)+" = bills closed "+rs(r2(money()+k)))):"";
       box.className="ksr"+(S.err?" err":typed?" on":"");
       if(S.err){box.hidden=false;q("[data-kst]").innerHTML="<b>Kasar: </b>"+esc(S.err);return S.kasar}
       box.hidden=!on.length;if(!on.length)return S.kasar;
-      const one=x=>`<b>${esc(x.bill.order_no)}</b> · bill ${esc(x.bill.invoice_no||"")} · ${dmy(x.bill.invoice_date)} · due ${rs(x.bill.due)} · money ${rs(pl.get(x.order_id)||0)}`;
+      const one=x=>`<b>${esc(x.bill.order_no)}</b> · bill ${esc(x.bill.invoice_no||"")} · ${dmy(x.bill.invoice_date)} · due ${rs(x.bill.due)} · money ${rs(pl.get(x.order_id)||0)}${x.adj?" · advance "+rs(x.adj):""}`;
       const t=r2(on.reduce((a,x)=>a+x.amount,0));
       q("[data-kst]").innerHTML=typed?
         `<b class="k">Kasar ${rs(t)}</b><b>${on[0].kind==="EXTRA"?"Party paid "+rs(t)+" extra: kept as kasar":on.length>1?on.length+" bills close with kasar":"This bill closes with kasar"}</b><small>${on.map(x=>one(x)+" · kasar "+rs(x.amount)).join("<br>")}</small> <button type="button" class="go" data-kgo>See bill ↑</button>`:
@@ -433,6 +438,9 @@
           const k=S.kasar[0],remark=q("#lppR").value.trim()||null;
           busy=true;q("[data-ok]").disabled=true;
           try{
+            if(k.adj){ // first set the advance against this bill, then kasar closes the rest
+              const a={p_party:party,p_allocs:[{order_id:k.order_id,amount:k.adj}]};if(BR.length)a.p_company_id=brand;
+              const r=await o.client.rpc("lwb_party_adjust",a);if(r.error)throw r.error}
             const {error}=await o.client.rpc("lwb_kasar_save",{p_order_id:k.order_id,p_amount:k.amount,p_kind:"LESS",p_date:date,p_remark:remark});
             if(error)throw error;
             close();
