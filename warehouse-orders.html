@@ -1450,6 +1450,16 @@
     .mark-card .mark-warn {margin:8px 0 0;font-size:12px;color:#8a5a00;line-height:1.4}
     .mark-card .mark-warn:empty {display:none}
     .mark-card .mark-list {display:block;max-height:132px;overflow-y:auto;margin:0 0 6px;padding:6px 8px;background:#f6f8fa;border:1px solid #e3e7ec;border-radius:6px;color:#1f2a37;font-size:12px;line-height:1.5}
+    /* Admin: undo a wrong Delivered (25 Nov 2026, lwb_admin_undo_delivered_setup.sql) */
+    #undoModal {z-index:1010}
+    .undo-to {display:grid;grid-template-columns:1fr 1fr;gap:6px;margin:0 0 8px}
+    .undo-to button {padding:8px 6px;min-height:40px;border:1.5px solid #c7ced6;border-radius:8px;background:#fff;font-size:13px;font-weight:700;color:#3c4654;cursor:pointer}
+    .undo-to button.on {border-color:#b45309;background:#fff4e0;color:#92400e}
+    .undo-to button:disabled {opacity:.45;cursor:not-allowed}
+    .undo-chips {display:flex;flex-wrap:wrap;gap:4px;margin:4px 0 0}
+    .undo-chips button {padding:2px 8px;border:1px solid #d5dae2;border-radius:999px;background:#f6f8fa;font-size:11.5px;color:#3c4654;cursor:pointer}
+    .am-undo {color:#b42318}
+    .mark-list .ud-st {font-size:10.5px;font-weight:800;color:#12632f;background:#e6f4ec;border-radius:5px;padding:0 5px;margin-left:4px;white-space:nowrap}
     @media(max-width:480px){.mark-card .mark-form {grid-template-columns:1fr}.adm-mark .am-btns {margin-left:0;width:100%}.adm-mark .am-btns .btn {flex:1 1 0!important}}
 
 /* Filled % badge (4 Nov 2026) */
@@ -1722,6 +1732,7 @@
       <button type="button" class="btn btn-blue" id="bulkOutBtn" onclick="markOutForDelivery(pickedOrders().filter(canGoOut).map(o=>o.id))" hidden title="Tally bill given: mark the selected POs Out for delivery"></button>
       <button type="button" class="btn btn-light" id="bulkLoadBtn" onclick="openBulkMark('LOADED')" hidden title="Mark the selected POs Loaded together"></button>
       <button type="button" class="btn btn-green" id="bulkDeliverBtn" onclick="openBulkMark('DELIVERED')" hidden title="Mark the selected POs Delivered together"></button>
+      <button type="button" class="btn btn-light am-undo" id="bulkUndoBtn" onclick="openUndo(pickedOrders().filter(canUndoDelivered).map(o=>o.id))" hidden title="Admin: delivered by mistake? Put the selected POs back to Loaded / Out for delivery"></button>
       <button type="button" class="btn btn-red" id="bulkDeleteBtn" onclick="deleteOrders(pickedOrders().map(o=>o.id))" hidden title="Admin: delete dummy / duplicate orders for ever">🗑<span class="lg"> Delete selected</span></button>
       <button type="button" class="btn btn-light" id="bulkClearBtn" onclick="clearSelection()" title="Clear selection">✖<span class="lg"> Clear</span></button>
     </div>
@@ -2069,6 +2080,31 @@
     <div class="modal-footer" style="justify-content:flex-end">
       <button class="btn btn-light" onclick="closeMark()">Back</button>
       <button class="btn btn-green" id="markSave" onclick="saveMark()">✓ Mark</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal track-modal" id="undoModal" onclick="if(event.target===this)closeUndo()">
+  <div class="modal-card track-card mark-card" role="dialog" aria-labelledby="undoTitle">
+    <div class="modal-header">
+      <h3 id="undoTitle">↩ Undo Delivered</h3>
+      <button class="close-btn" onclick="closeUndo()" aria-label="Close">&times;</button>
+    </div>
+    <div class="modal-body">
+      <p class="mark-sub" id="undoSub"></p>
+      <div class="undo-to" id="undoTo">
+        <button type="button" data-to="LOADED" onclick="pickUndoTo('LOADED')">🚚 Loaded</button>
+        <button type="button" data-to="OUT" onclick="pickUndoTo('OUT')">🚛 Out for delivery</button>
+      </div>
+      <div class="mark-form" style="grid-template-columns:1fr">
+        <label>Reason (required)<input id="undoReason" maxlength="300" autocomplete="off" placeholder="e.g. Only loaded, marked delivered by mistake"></label>
+      </div>
+      <div class="undo-chips"><button type="button" onclick="undoChip(this)">Only loaded, marked delivered by mistake</button><button type="button" onclick="undoChip(this)">Wrong PO marked</button></div>
+      <p class="mark-warn" id="undoWarn"></p>
+    </div>
+    <div class="modal-footer" style="justify-content:flex-end">
+      <button class="btn btn-light" onclick="closeUndo()">Back</button>
+      <button class="btn btn-red" id="undoSave" onclick="saveUndo()">↩ Undo</button>
     </div>
   </div>
 </div>
@@ -4163,6 +4199,9 @@ function renderSelBar() {
   loadBtn.innerHTML = '🚚 <span class="lg">Mark </span>Loaded' + (nLoad < list.length ? " (" + nLoad + ")" : "");
   delivBtn.hidden = !nDeliv; delivBtn.disabled = bulkBusy;
   delivBtn.innerHTML = '✓ <span class="lg">Mark </span>Delivered' + (nDeliv < list.length ? " (" + nDeliv + ")" : "");
+  const undoBtn = document.getElementById("bulkUndoBtn"), nUndo = list.filter(canUndoDelivered).length;
+  undoBtn.hidden = !nUndo; undoBtn.disabled = bulkBusy;
+  undoBtn.innerHTML = '↩ <span class="lg">Undo </span>Delivered' + (nUndo < list.length ? " (" + nUndo + ")" : "");
   document.getElementById("bulkPrintBtn").disabled = bulkBusy || list.some(isCancelled);
   const delBtn = document.getElementById("bulkDeleteBtn");
   delBtn.hidden = !IS_ADMIN;
@@ -4355,13 +4394,17 @@ async function renderAdminMark(order, boxId) {
   if (!box) return;
   box.hidden = true; box.innerHTML = ""; box.dataset.oid = order ? String(order.id) : "";
   if (!order || isPending(order) || isCancelled(order)) return;
-  let marks = [];
-  const { data, error } = await db.rpc("lwb_admin_order_marks", { p_ids: [order.id] });
-  if (!error) marks = data || [];
+  let marks = [], undos = [];
+  const [mr, ur] = await Promise.all([db.rpc("lwb_admin_order_marks", { p_ids: [order.id] }),
+    undoLogOn ? db.rpc("lwb_po_undo_delivered_log", { p_ids: [order.id] }).then(x => x, () => ({ error: true })) : { data: [] }]);
+  if (!mr.error) marks = mr.data || [];
+  if (!ur.error) undos = ur.data || [];
   if (box.dataset.oid !== String(order.id)) return;
-  const log = marks.map(m => `${m.marked_by_role === "MANAGER" ? "Sales Head" : "Admin"} <b>${escapeHtml(m.marked_by_name || "")}</b> marked <b>${m.kind === "LOADED" ? "Loaded" : "Delivered"}</b> on ${dmy(m.mark_date)}${m.note ? " · " + escapeHtml(m.note) : ""}`).join("<br>");
+  const log = marks.map(m => `${m.marked_by_role === "MANAGER" ? "Sales Head" : "Admin"} <b>${escapeHtml(m.marked_by_name || "")}</b> marked <b>${m.kind === "LOADED" ? "Loaded" : "Delivered"}</b> on ${dmy(m.mark_date)}${m.note ? " · " + escapeHtml(m.note) : ""}`)
+    .concat(undos.map(u => `<span class="am-undo">↩ Admin <b>${escapeHtml(u.undone_by_name || "")}</b> took back <b>Delivered</b> → <b>${u.to_step === "OUT" ? "Out for delivery" : "Loaded"}</b> on ${escapeHtml(formatDateTime(u.undone_at))}</span>${u.reason ? " · " + escapeHtml(u.reason) : ""}${u.was_marked_by ? " (was marked by " + escapeHtml(u.was_marked_by) + ")" : u.had_driver_report ? " (driver report removed)" : ""}`)).join("<br>");
   const btns = (canMarkLoaded(order) ? `<button type="button" class="btn btn-light" onclick="openMark('${order.id}','LOADED')">✓ Mark Loaded</button>` : "")
-    + (canMarkDelivered(order) ? `<button type="button" class="btn btn-green" onclick="openMark('${order.id}','DELIVERED')">✓ Mark Delivered</button>` : "");
+    + (canMarkDelivered(order) ? `<button type="button" class="btn btn-green" onclick="openMark('${order.id}','DELIVERED')">✓ Mark Delivered</button>` : "")
+    + (canUndoDelivered(order) ? `<button type="button" class="btn btn-light am-undo" onclick="openUndo(['${order.id}'])" title="Delivered by mistake? Put it back to Loaded / Out for delivery">↩ Undo Delivered</button>` : "");
   if (!log && !btns) return;
   box.innerHTML = `<span class="am-log">${log || "Driver / Godown did not mark it in the app? Mark it here."}</span>${btns ? `<span class="am-btns">${btns}</span>` : ""}`;
   box.hidden = false;
@@ -4525,6 +4568,65 @@ async function openMark(id, kind) {
   setTimeout(() => d.focus(), 30);
 }
 function closeMark() { document.getElementById("markModal").classList.remove("show"); markFor = null; }
+
+/* Admin: undo a wrong "Delivered" (Mohit, 25 Nov 2026: "actually loaded, galti se delivered mark ho gaya").
+   lwb_admin_undo_delivered removes the Delivered mark (or a driver report with no money), status back to loaded,
+   and keeps a log line (reason, who, when). To = Loaded, or Out for delivery when the Tally bill is made. */
+let undoFor = null, undoLogOn = true;
+const canUndoDelivered = o => IS_ADMIN && !!o && !isCancelled(o) && isDeliveredOrder(o);
+function openUndo(ids) {
+  const list = ids.map(id => orders.find(o => String(o.id) === String(id)) || (selectedOrder && String(selectedOrder.id) === String(id) ? selectedOrder : null)).filter(canUndoDelivered);
+  if (!list.length) return;
+  const billed = list.filter(hasBill).length;
+  undoFor = { list, to: billed === list.length && list.every(o => isOutForDelivery(o)) ? "OUT" : "LOADED" };
+  document.getElementById("undoTitle").textContent = "↩ Undo Delivered · " + (list.length === 1 ? list[0].order_no || "PO" : list.length + " PO");
+  const sum = list.reduce((t, o) => t + (Number(o.total_amount) || 0), 0);
+  document.getElementById("undoSub").innerHTML = `<span class="mark-list">${list.map(o => `<b>${escapeHtml(o.order_no || "PO")}</b> ${escapeHtml(o.customer_name || "")} · ${formatMoney(o.total_amount)}${hasBill(o) ? "" : ' <span class="ud-st" style="background:#fff1d6;color:#92400e">no bill</span>'}`).join("<br>")}</span>` +
+    `${list.length} PO · <b>${formatMoney(sum)}</b>. Goods were only loaded, not delivered? Move ${list.length === 1 ? "it" : "them"} back to:`;
+  const outBtn = document.querySelector('#undoTo [data-to="OUT"]');
+  outBtn.disabled = !billed;
+  outBtn.title = billed ? "" : "Tally bill not made: only Loaded";
+  document.getElementById("undoReason").value = "";
+  pickUndoTo(undoFor.to);
+  document.getElementById("undoModal").classList.add("show");
+  setTimeout(() => document.getElementById("undoReason").focus(), 30);
+}
+function pickUndoTo(to) {
+  if (!undoFor) return;
+  undoFor.to = to;
+  document.querySelectorAll("#undoTo button").forEach(b => b.classList.toggle("on", b.dataset.to === to));
+  const noBill = undoFor.list.filter(o => !hasBill(o));
+  document.getElementById("undoWarn").textContent = (to === "OUT" && noBill.length
+    ? noBill.length + " PO with no Tally bill go to Loaded (" + noBill.map(o => o.order_no).join(", ") + "). " : "")
+    + "Stock, bill and payments do not change. You can mark Delivered again later.";
+}
+function undoChip(b) { const i = document.getElementById("undoReason"); i.value = b.textContent; i.focus(); }
+function closeUndo() { document.getElementById("undoModal").classList.remove("show"); undoFor = null; }
+async function saveUndo() {
+  if (!undoFor) return;
+  const reason = document.getElementById("undoReason").value.trim();
+  if (!reason) { alert("Write the reason."); document.getElementById("undoReason").focus(); return; }
+  const { list, to } = undoFor, btn = document.getElementById("undoSave");
+  btn.disabled = true; bulkBusy = true;
+  const done = [], failed = [];
+  try {
+    for (const [i, o] of list.entries()) {
+      if (list.length > 1) showMessage("Undo " + (i + 1) + " of " + list.length + ": " + o.order_no + "...", "success");
+      const { error } = await db.rpc("lwb_admin_undo_delivered", { p_order_id: o.id, p_to: to === "OUT" && hasBill(o) ? "OUT" : "LOADED", p_reason: reason });
+      if (error) { if (/lwb_admin_undo_delivered/.test(error.message || "")) undoLogOn = false; failed.push(o.order_no + " (" + String(error.message || error).replace(/^.*?ERROR:\s*/, "") + ")"); }
+      else { done.push(o.order_no); deliveredOrders.delete(o.id); }
+    }
+  } finally {
+    bulkBusy = false; btn.disabled = false;
+    closeUndo();
+    pickedIds.clear();
+    if (document.getElementById("trackModal").classList.contains("show")) closeTrack();
+    if (document.getElementById("reviewModal").classList.contains("show")) closeModal();
+    await loadOrders();
+  }
+  showMessage((done.length ? done.length + " PO back to " + (to === "OUT" ? "Out for delivery / Loaded" : "Loaded") + ": " + done.join(", ") : "") +
+    (failed.length ? (done.length ? ". " : "") + "Not done: " + failed.join("; ") : ""), failed.length ? "error" : "success");
+}
 
 /* Admin: select many POs → Mark Loaded / Mark Delivered together (6 Nov 2026). Each PO goes through the
    same lwb_admin_mark_order as one PO, so loaded qty (= approved qty) and stock move exactly the same way.
