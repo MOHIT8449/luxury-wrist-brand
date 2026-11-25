@@ -20,7 +20,9 @@
  */
 import { createClient } from "npm:@supabase/supabase-js@2";
 
-const allowedOrigin = "https://luxury-wrist-brand.pages.dev";
+const allowedOrigin = "https://luxurywristbrand.com";
+const allowedOrigins = ["https://luxurywristbrand.com", "https://www.luxurywristbrand.com", "https://luxury-wrist-brand.pages.dev"];
+const pickOrigin = (o) => (allowedOrigins.includes(o) ? o : allowedOrigin);
 const cors = {
   "Access-Control-Allow-Origin": allowedOrigin,
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
@@ -101,6 +103,11 @@ function templateFor(part, partCount, order, assignment, skuText, totalQty, temp
   };
 }
 Deno.serve(async (req) => {
+  const res = await handle(req);
+  res.headers.set("Access-Control-Allow-Origin", pickOrigin(req.headers.get("origin") || ""));
+  return res;
+});
+async function handle(req) {
   if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: cors });
   if (req.method !== "POST") return reply(405, { error: "POST required" });
   try {
@@ -321,4 +328,4 @@ Deno.serve(async (req) => {
       detail:clean(e?.message).slice(0,250),
     });
   }
-});
+}

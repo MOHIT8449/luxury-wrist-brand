@@ -5,11 +5,12 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0"><script src="erp-fit.js"></script>
   <title>Night Stock Audit | Luxury Wrist Brand ERP</title>
   <script src="erp-date.js"></script>
+  <script src="erp-period.js"></script>
   <script src="vendor/supabase-js-2.119.0.js"></script>
 <script src="brand-filter.js"></script>
-  <link rel="stylesheet" href="erp-shell.css">
+  <link rel="stylesheet" href="erp-shell.css?v=20261124">
   <link rel="stylesheet" href="sales.css">
-  <script src="erp-shell.js"></script>
+  <script src="erp-shell.js?v=20261124r"></script>
   <script src="erp-list.js"></script>
   <script src="sales-common.js"></script>
   <style>
@@ -198,12 +199,15 @@
       await Promise.all([loadDiffs(),loadSheet(),loadPast()]);
     }
     async function loadPast(){
-      const {data,error}=await client.rpc("lwb_stx_audits",{p_from:daysAgo(30),p_to:today()});
+      // Past audits = the dates chosen in the top bar (erp-period.js); tonight's card always reads today too
+      const R=window.LWBPeriod?LWBPeriod.get():{from:daysAgo(30),to:today()};
+      const {data,error}=await client.rpc("lwb_stx_audits",{p_from:R.from<today()?R.from:today(),p_to:today()});
       if(error){el("past").innerHTML='<div class="sl-msg">'+esc(errText(error))+"</div>";return}
       past=data||[];renderKpis();
-      if(!past.length){el("past").innerHTML='<div class="erp-empty">No audit in the last 30 days.</div>';return}
+      const shown=past.filter(a=>a.audit_date>=R.from&&a.audit_date<=R.to);
+      if(!shown.length){el("past").innerHTML='<div class="erp-empty">No audit in these dates. Change the date at the top.</div>';return}
       el("past").innerHTML='<div class="sl-scroll">'+S.table(["Date","Status","SKUs","Matched","Differences","System IC / CS","Physical IC / CS","Short IC / CS","Extra IC / CS","By"],
-        past.map(a=>({attr:' data-day="'+a.audit_date+'" style="cursor:pointer"',cells:[S.shortDate(a.audit_date),'<span class="erp-badge '+(a.status==="SUBMITTED"?"green":"amber")+'">'+esc(a.status==="SUBMITTED"?"Submitted":"Draft")+"</span>",
+        shown.map(a=>({attr:' data-day="'+a.audit_date+'" style="cursor:pointer"',cells:[S.shortDate(a.audit_date),'<span class="erp-badge '+(a.status==="SUBMITTED"?"green":"amber")+'">'+esc(a.status==="SUBMITTED"?"Submitted":"Draft")+"</span>",
           fmt(a.skus),fmt(a.match_skus),a.diff_skus?'<b style="color:var(--erp-red)">'+fmt(a.diff_skus)+"</b>":"0",fmt(a.system_cases),fmt(a.physical_cases),fmt(a.short_cases),fmt(a.excess_cases),esc(a.counted_by||"")]})),[2,3,4,5,6,7,8])+"</div>";
     }
     function renderKpis(){
@@ -237,6 +241,7 @@
       if(window.LWBBrand)try{BB=await LWBBrand.mount(client,{into:"#page .erp-pagehead",after:true,onChange:()=>{renderSheet();loadDiffs()}});if(BB.companies.length>1)SM=await LWBBrand.skuMap(client)}catch(e){}
       if(window.LWBBrand)try{U=await LWBBrand.units(client)}catch(e){}
       await Promise.all([loadSheet(),loadDiffs(),loadPast()]);
+      if(window.LWBPeriod)LWBPeriod.on(()=>loadPast());
     })();
   </script>
 </body>

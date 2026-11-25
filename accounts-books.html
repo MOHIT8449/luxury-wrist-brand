@@ -1,0 +1,794 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"><script src="erp-fit.js"></script>
+  <title>Ledger &amp; Outstanding | Luxury Wrist Brand ERP</title>
+  <script src="erp-date.js"></script><script src="erp-recent.js"></script>
+  <script src="vendor/supabase-js-2.119.0.js"></script>
+  <link rel="stylesheet" href="erp-shell.css?v=20261124">
+  <link rel="stylesheet" href="sales.css">
+  <script src="erp-shell.js?v=20261124r"></script>
+  <script src="sales-common.js"></script>
+  <script src="brand-filter.js"></script>
+  <script src="erp-period.js"></script>
+  <script src="erp-colfilter.js"></script>
+  <script src="party-pay.js?v=20261125b"></script>
+  <script src="ledger-rows.js?v=20261123a"></script>
+  <style>
+    /* Ledger & Outstanding (Mohit, 20 Nov 2026): the Accounts "Display" books in one place, like Tally.
+       Outstanding → party → bill → items; Ledger row → voucher → bill → items; every row opens, Esc goes back. */
+    .ab-head{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin:0 0 8px}
+    .ab-head h1{margin:0 6px 0 0;font-size:20px;font-weight:700}
+    .ab-head .sp{flex:1 1 auto}
+    .ab-kb{font-size:11.5px;color:var(--erp-muted);white-space:nowrap}.ab-kb kbd{font:inherit;font-weight:700;border:1px solid #cfd6de;border-bottom-width:2px;border-radius:4px;padding:0 4px;background:#fff;color:var(--erp-ink)}
+    .ab-b{height:34px;border:1px solid var(--erp-line);border-radius:8px;background:#fff;font:inherit;font-size:13.5px;font-weight:600;padding:0 11px;cursor:pointer;color:var(--erp-ink);white-space:nowrap;display:inline-flex;align-items:center;gap:5px}
+    .ab-b.g{background:#13824a;border-color:#13824a;color:#fff}.ab-b.t{background:#00434d;border-color:#00434d;color:#fff}
+    .ab-rd{display:flex;flex-wrap:wrap;align-items:center;gap:6px;background:#fff8e6;border:1.5px solid #e8c36a;border-radius:10px;padding:8px 10px;margin-bottom:10px}
+    .ab-rd .ab-rd-now{color:#66788e;font-size:13px}.ab-rd input{height:32px;border:1.5px solid #d5dbe3;border-radius:8px;padding:0 8px;font:inherit;font-size:14px;background:#fff}
+    .ab-rd .ab-rd-d{font-weight:700;color:#00434d;cursor:pointer}.ab-rd .ab-rd-r{flex:1 1 110px;min-width:0}
+    .ab-rd .ab-rd-h{flex-basis:100%}.ab-rd .ab-rd-row,.ab-rd .ab-rd-f{display:flex;flex-wrap:wrap;align-items:center;gap:6px;flex-basis:100%}
+    .ab-rd .ab-rd-row>span{font-size:13px;color:#4b5763;font-weight:600;min-width:62px}.ab-rd .ab-rd-row .rk{flex:1 1 160px;min-width:0}
+    .ab-rd .ab-rd-ls{display:grid;gap:6px;flex-basis:100%}.ab-rd .ab-rd-l{display:grid;grid-template-columns:96px minmax(0,1fr) minmax(0,1.3fr) auto;gap:6px;align-items:center}
+    .ab-rd .ab-rd-l.bill{grid-template-columns:minmax(0,1.4fr) minmax(0,1fr) minmax(0,1fr) auto}
+    .ab-rd select{height:32px;border:1.5px solid #d5dbe3;border-radius:8px;font:inherit;font-size:14px;background:#fff;padding:0 6px}
+    .ab-rd .ab-rd-l input{width:100%;box-sizing:border-box}.ab-rd .am{font-weight:700;text-align:right}
+    .ab-rd .ab-rd-tot{margin-left:auto;font-size:14px}.ab-rd .ab-rd-tot b{color:#13824a;font-size:16px}.ab-rd .ab-rd-tot small{color:#8a5a00}
+    .ab-rd .ab-rd-q{margin:0;flex-basis:100%;font-size:13.5px}.ab-rd.del{background:#fff1f1;border-color:#e6a1a1}
+    .ab-b.ab-del{color:#b3122b;border-color:#efc2c2}.ab-b.ab-delb{background:#b3122b;border-color:#b3122b;color:#fff}
+    .ab-hist{color:#8a5a00 !important}
+    @media(max-width:560px){.ab-rd .ab-rd-l{grid-template-columns:84px minmax(0,1fr)}.ab-rd .ab-rd-l .rf{grid-column:1/-1}.ab-rd .ab-rd-l.bill{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}.ab-rd .ab-rd-l [data-rm]{justify-self:start}}
+    .ab-rd-err{flex-basis:100%;background:#ffebeb;color:#9b2020;border-radius:8px;padding:6px 9px;font-size:13px}
+    .ab-b.sm{height:30px;font-size:12.5px;padding:0 9px}.ab-b:disabled{opacity:.5;cursor:default}
+    .ab-kpis{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px;margin:0 0 8px}
+    .ab-k{background:#fff;border:1px solid var(--erp-line);border-left:4px solid var(--c);border-radius:9px;padding:6px 10px;min-width:0;text-align:left;font:inherit;color:inherit;cursor:pointer}
+    .ab-k:hover{border-color:#9fb3c8;border-left-color:var(--c)}
+    .ab-k h3{margin:0;font-size:12px;color:#4b5763;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .ab-k b{display:block;font-size:19px;font-weight:800;line-height:1.25;color:var(--v,var(--erp-ink));font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .ab-k small{display:block;font-size:11.5px;color:var(--erp-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .ab-tabs{display:flex;gap:5px;margin:0 0 8px;flex-wrap:wrap}
+    .ab-tabs button{height:34px;border:1.5px solid var(--erp-line);background:#fff;border-radius:99px;padding:0 13px;font:inherit;font-size:13.5px;font-weight:600;cursor:pointer;white-space:nowrap;color:var(--erp-ink);display:inline-flex;align-items:center;gap:6px}
+    .ab-tabs button[aria-selected=true]{background:#002f37;border-color:#002f37;color:#fff}
+    .ab-tabs kbd{font:inherit;font-size:10.5px;font-weight:700;opacity:.55}
+    .ab-card{background:#fff;border:1px solid var(--erp-line);border-radius:12px;padding:10px 12px;min-width:0}
+    .ab-crumb{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin:0 0 8px;font-size:13px;color:var(--erp-muted)}
+    .ab-crumb a{color:#00434d;font-weight:700;text-decoration:none;cursor:pointer}.ab-crumb a:hover{text-decoration:underline}
+    .ab-crumb b{color:var(--erp-ink);font-size:15px}
+    .ab-f{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin:0 0 8px}
+    .ab-f input,.ab-f select{height:34px;border:1px solid #cfd6de;border-radius:8px;padding:0 10px;font:inherit;font-size:14px;background:#fff;color:var(--erp-ink);min-width:0}
+    .ab-f input[type=search]{flex:1 1 220px}
+    .ab-seg{display:inline-flex;border:1px solid var(--erp-line);border-radius:99px;padding:2px;gap:2px;background:#fff}
+    .ab-seg button{height:28px;border:0;border-radius:99px;background:none;padding:0 11px;font:inherit;font-size:13px;font-weight:600;cursor:pointer;color:#4b5763;white-space:nowrap}
+    .ab-seg button[aria-pressed=true]{background:#002f37;color:#fff}
+    .ab-t{width:100%;border-collapse:collapse}
+    .ab-t th{font-size:11px;text-transform:uppercase;letter-spacing:.03em;color:var(--erp-muted);text-align:left;padding:6px 8px;background:#f7f8f6;border-bottom:1px solid var(--erp-line);white-space:nowrap}
+    .ab-t td{padding:6px 8px;border-bottom:1px solid var(--erp-line);vertical-align:middle;font-size:13.5px}
+    .ab-t .n{text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
+    .ab-t tbody tr{cursor:pointer}.ab-t tbody tr:hover td{background:#f7f1de}
+    .ab-t tbody tr:focus-visible{outline:2px solid #c9b26a;outline-offset:-2px}
+    .ab-t tbody tr.ob,.ab-t tbody tr.ob:hover td{cursor:default;background:#f7f8f6}
+    .ab-t tbody tr.hl td{background:#fff6d6}
+    .ab-t tfoot td{font-weight:700;background:#f7f8f6;border-bottom:0}
+    .ab-t td.p{font-weight:600;overflow-wrap:anywhere}
+    .ab-t small,.ab-mut{display:block;color:var(--erp-muted);font-size:11.5px;font-weight:400}
+    .ab-mut{display:inline}
+    .ab-due{color:#c62828;font-weight:800}.ab-adv{color:#13824a;font-weight:700}.ab-zero{color:var(--erp-muted)}
+    .ab-dc{font-style:normal;font-size:11px;font-weight:700;color:var(--erp-muted);margin-left:3px}
+    .ab-d1{color:#13824a}.ab-d2{color:#b26b00}.ab-d3{color:#c62828}.ab-d4{color:#fff;background:#c62828;border-radius:5px;padding:0 5px}
+    .ab-days{font-weight:700;font-size:12.5px;white-space:nowrap}
+    .ab-vt{display:inline-block;font-size:11px;font-weight:700;border-radius:99px;padding:1px 7px;margin-right:5px;white-space:nowrap;vertical-align:1px}
+    .ab-vt.dr{background:#fde9d6;color:#7a3a00}.ab-vt.cr{background:#daf2e2;color:#125b30}.ab-vt.rt{background:#e3ecfb;color:#1a4f8f}.ab-vt.op{background:#eceff3;color:#4b5763}.ab-vt.ks{background:#fff4c2;color:#6b5200}.ab-vt.cx{background:#fde2e2;color:#a01c1c}
+    .ab-t tr.cxr td{color:#8a94a3}.ab-t tr.cxr td .cxa{text-decoration:line-through}
+    .ab-mode{display:inline-block;font-size:11px;font-weight:700;border:1px solid var(--erp-line);border-radius:6px;padding:0 5px;margin:1px 3px 0 0;background:#fafbf9;white-space:nowrap}
+    .ab-btag{display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:700;color:var(--bc);white-space:nowrap}.ab-btag i{width:8px;height:8px;border-radius:50%;background:var(--bc)}
+    .ab-bd{display:inline-flex;align-items:center;border-radius:99px;padding:1px 8px;font-size:12px;font-weight:700;white-space:nowrap}
+    .ab-bd.pen{background:#fdecec;color:#c62828}.ab-bd.part{background:#fff4e0;color:#9a5b00}.ab-bd.paid{background:#e7f5ec;color:#13824a}.ab-bd.chq{background:#e8f0fc;color:#1d5fbf}
+    .ab-sum{display:grid;grid-template-columns:repeat(var(--n,4),minmax(0,1fr));gap:6px;margin:0 0 8px}
+    .ab-sum div{border:1px solid var(--erp-line);border-radius:9px;padding:5px 9px;min-width:0}
+    .ab-sum small{display:block;color:var(--erp-muted);font-weight:600;font-size:11.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .ab-sum b{font-size:16px;white-space:nowrap;font-variant-numeric:tabular-nums}
+    .ab-sum .big{border-color:#002f37;background:#f2f7f8}
+    .ab-bsplit{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 8px}.ab-bsplit div{flex:1 1 200px;min-width:0;border:1px solid var(--erp-line);border-left:4px solid var(--bc);border-radius:9px;padding:4px 9px;font-size:12.5px;color:var(--erp-muted)}.ab-bsplit b{color:var(--erp-ink)}
+    .ab-acts{display:flex;gap:6px;flex-wrap:wrap;margin:0 0 8px}
+    .ab-more{text-align:center;padding:8px}
+    .ab-empty{padding:18px;text-align:center;color:var(--erp-muted)}
+    .ab-err{background:#fdecec;color:#b42318;border-radius:8px;padding:10px 12px;margin-bottom:8px}
+    .ab-note{font-size:12px;color:var(--erp-muted);margin:8px 2px 0}
+    .ab-ph,.ab-t small.ab-ph{display:none}
+    .ab-cfph{display:none}
+    /* party search (Ctrl+Alt+L) */
+    .ab-find{position:relative;flex:1 1 320px;min-width:0}
+    .ab-find input{width:100%;height:38px;border:2px solid #00434d;border-radius:9px;padding:0 12px;font:inherit;font-size:15px;font-weight:600;box-sizing:border-box}
+    .ab-list{position:absolute;z-index:40;left:0;right:0;top:100%;margin-top:3px;background:#fff;border:1px solid #d5dbe3;border-radius:10px;box-shadow:0 10px 24px rgba(0,0,0,.16);max-height:min(60vh,420px);overflow:auto;padding:3px}
+    .ab-list button{display:flex;width:100%;align-items:center;gap:8px;border:0;background:#fff;border-radius:7px;padding:6px 9px;text-align:left;font:inherit;font-size:13.5px;cursor:pointer;color:var(--erp-ink)}
+    .ab-list button span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis}.ab-list button .r{flex:none;text-align:right;font-weight:700}
+    .ab-list button.on,.ab-list button:hover{background:#eef4ff}
+    /* voucher popup */
+    .ab-ov{position:fixed;inset:0;background:rgba(0,30,35,.45);z-index:4900;display:flex;align-items:center;justify-content:center;padding:12px}
+    .ab-dlg{background:#fff;border-radius:14px;border-top:3px solid #c9b26a;width:min(820px,100%);max-height:calc(100dvh - 24px);display:flex;flex-direction:column;box-shadow:0 10px 40px rgba(0,0,0,.25)}
+    .ab-dlg header{display:flex;align-items:flex-start;gap:8px;padding:10px 14px 4px}
+    .ab-dlg header h3{margin:0;font-size:17px;flex:1;overflow-wrap:anywhere;min-width:0}
+    .ab-dlg header h3 small{display:block;font-size:12.5px;font-weight:500;color:var(--erp-muted);margin-top:2px}
+    .ab-dlg .trail{padding:0 14px;font-size:12px;color:var(--erp-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .ab-dlg .bd{padding:6px 14px 10px;overflow:auto}
+    .ab-dlg footer{display:flex;gap:6px;padding:8px 14px;border-top:1px solid var(--erp-line);flex-wrap:wrap}
+    .ab-dlg footer .sp{flex:1}
+    .ab-dlg h4{margin:10px 0 4px;font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--erp-muted)}
+    .ab-this{border:1px solid #f3d08a;background:#fff7e6;border-radius:9px;padding:6px 10px;margin:0 0 8px;font-size:13px}
+    .ab-x{border:0;background:none;font-size:22px;line-height:1;cursor:pointer;color:var(--erp-muted);padding:0 2px}
+    @media(min-width:761px) and (max-width:1100px){.ab-kpis{grid-template-columns:repeat(3,minmax(0,1fr))}}
+    @media(max-width:760px){
+      .ab-head h1{font-size:17px}.ab-kb,.ab-head .lg{display:none}
+      .ab-kpis{grid-template-columns:repeat(2,minmax(0,1fr));gap:5px}.ab-k{padding:5px 8px;border-left-width:3px}.ab-k b{font-size:15.5px}.ab-k h3{font-size:11px}.ab-k small{font-size:10.5px}
+      .ab-kpis .ab-k:first-child{grid-column:span 2}.ab-kpis.ph-off{display:none}
+      .ab-tabs{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:3px}.ab-tabs button{padding:0 2px;font-size:12px;justify-content:center;height:32px;overflow:hidden}.ab-tabs kbd,.ab-tabs .tl{display:none}.ab-tabs .ts{display:inline}
+      .ab-card{padding:8px 7px}
+      .ab-t th,.ab-t td{padding:6px 4px;font-size:12.5px}
+      .ab-t .hp{display:none}.ab-ph,.ab-t small.ab-ph{display:block}
+      .ab-t thead{display:none}.ab-cfph{display:block;margin:0 0 6px}
+      .ab-sum{grid-template-columns:repeat(2,minmax(0,1fr))}.ab-sum b{font-size:14.5px}
+      .ab-f input[type=search]{flex:1 1 100%;font-size:16px}
+      .ab-ov{align-items:flex-end;padding:0}.ab-dlg{width:100%;border-radius:14px 14px 0 0;max-height:94dvh}
+      .ab-dlg .bd{padding:4px 9px 8px}.ab-dlg footer{padding:7px 9px}
+      .ab-dlg footer .ab-b{flex:1 1 auto;justify-content:center;padding:0 6px;font-size:12.5px}
+    }
+    @media(min-width:761px){.ab-tabs .ts{display:none}}
+  </style>
+</head>
+<body>
+  <div id="loading" class="status">Checking account access...</div>
+  <main id="page" class="erp-main" data-cf-off hidden>
+    <div class="ab-head">
+      <h1>Ledger &amp; Outstanding</h1>
+      <span class="ab-kb" title="Tally style keys work on every Accounts page"><kbd>Ctrl+Alt+L</kbd> Ledger · <kbd>Ctrl+Alt+O</kbd> Outstanding · <kbd>Esc</kbd> back</span>
+      <span class="sp"></span>
+      <button type="button" class="ab-b g" id="payBtn">💰 <span class="lg">Receive payment</span></button>
+      <button type="button" class="ab-b" id="xlBtn">⬇ <span class="lg">Excel</span></button>
+      <button type="button" class="ab-b" id="prBtn" title="Print">🖨</button>
+      <button type="button" class="ab-b" id="rfBtn" title="Refresh">↻</button>
+    </div>
+    <div id="err"></div>
+    <div class="ab-kpis" id="kpis"></div>
+    <div class="ab-tabs" role="tablist" id="tabs"></div>
+    <div class="ab-card">
+      <div class="ab-crumb" id="crumb"></div>
+      <div id="tools"></div>
+      <div id="box"><div class="ab-empty">Loading...</div></div>
+    </div>
+    <p class="ab-note" id="note"></p>
+  </main>
+  <div id="pop" data-cf-off></div>
+  <script>
+  (function(){
+    "use strict";
+    const S=LWBSales,{client,el,esc}=S;
+    const r2=n=>Math.round((Number(n)||0)*100)/100;
+    const rs=v=>(r2(v)<0?"−":"")+"₹"+Math.abs(Math.round(Number(v)||0)).toLocaleString("en-IN");
+    const rs2=v=>"₹"+Math.abs(r2(v)).toLocaleString("en-IN",{minimumFractionDigits:2,maximumFractionDigits:2});
+    const dmy=d=>d?String(d).slice(8,10)+"/"+String(d).slice(5,7)+"/"+String(d).slice(0,4):"";
+    const key=v=>String(v==null?"":v).toUpperCase().replace(/[^A-Z0-9]+/g," ").trim();   // same key as party-pay.js
+    const PHONE=()=>matchMedia("(max-width:760px)").matches;
+    const SECS=[["out","Outstanding","Outst.","O"],["led","Ledger","Ledger","L"],["rec","Receipts","Receipts","R"],["sum","Party payments","Party pay","P"],["day","Day book","Day book","D"]];
+    // Voucher type of every ledger row (Tally names): [name, colour class, short word for the row]
+    const VT={OPENING:["Opening","op"],ERP_BILL:["Sales","dr","ERP bill"],TALLY_BILL:["Sales","dr","Tally bill"],OLD_INVOICE:["Sales","dr","Old invoice"],DEBIT_NOTE:["Debit Note","dr"],
+      PAYMENT:["Receipt","cr","Payment collection"],OFFICE_PAYMENT:["Receipt","cr","Payment collection"],DRIVER_PAYMENT:["Receipt","cr","Driver money"],PARTY_PAYMENT:["Receipt","cr","Party payment"],
+      DRIVER_RETURN:["Return","rt","Driver return"],SALES_RETURN:["Return","rt","Sales return"],PARTY_RETURN:["Return","rt","Goods return"],CREDIT_NOTE:["Credit Note","rt"]};
+    const isKasar=x=>/^KASAR\b/i.test(String(x.ref_no||""))||/\bkasar\b/i.test(String(x.note||""));
+    const vt=x=>x.entry_kind==="CANCELLED"?["Cancelled","cx",x.cx_label]:isKasar(x)?["Kasar","ks","Kasar"]:VT[x.entry_kind]||[x.entry_kind,"op"];
+    const PAYK=new Set(["PAYMENT","OFFICE_PAYMENT","DRIVER_PAYMENT","PARTY_PAYMENT"]);
+    const BILLK=new Set(["ERP_BILL","TALLY_BILL","OLD_INVOICE"]);
+    const MODE={CASH:"💵 Cash",UPI:"📱 UPI",BANK:"🏦 Bank",RTGS:"🏦 Bank",NEFT:"🏦 Bank",CHEQUE:"🧾 Cheque",ONLINE:"📱 Online"};
+    const modeOf=x=>{const m=String(x.ref_no||"").trim().split(/\s+/)[0].toUpperCase();return m.split("+").filter(Boolean)};
+    const modeTxt=m=>m.map(k=>(MODE[k]||k).replace(/^\S+\s/,"")).join(" + ");
+    const modeChips=m=>m.map(k=>'<span class="ab-mode">'+esc(MODE[k]||k)+'</span>').join("");
+    const refOf=x=>String(x.ref_no||"").trim().split(/\s+/).slice(1).join(" ");
+
+    let me=null,info=null,led=null,byNo=new Map(),fb="",sec="out",outMode="party",outShow="due",outPk="",ledPk="",ledFy=true,shown=300,cur=null,loadedAt=0;
+    const CF=LWBCol.create({onChange:()=>draw()});
+
+    /* ---------- data ---------- */
+    async function load(){
+      el("err").innerHTML="";
+      try{
+        info=await LWBPartyPay.load(client);
+        const cxq=client.rpc("lwb_ledger_cancelled",{p_days:400});
+        const a=await LWBLedgerRows(client);   // all rows (no 1000-row cut)
+        if(a.error)throw a.error;
+        // Goods returns without a bill are not in the ledger SQL (same as Party & Collections).
+        const nr=(info.returns||[]).filter(r=>!r.cancelled&&!r.order_id).map(r=>({entry_date:r.return_date,entry_kind:"PARTY_RETURN",rid:r.id,customer_name:r.parent||r.party,ref_no:r.return_no,order_no:null,
+          debit:0,credit:Number(r.amount)||0,note:(r.items||[]).map(i=>i.sku+" "+(i.cases||0)+" CS"+(Number(i.pcs)?" "+i.pcs+" PCS":"")).join(", ")+(r.note?" · "+r.note:""),created_at:r.created_at,company_id:r.company_id}));
+        // Tally style: a cancelled entry stays in the ledger with ₹0 (lwb_ledger_cancel)
+        let cxr=[];try{const c=await cxq;if(!c.error&&Array.isArray(c.data))cxr=c.data.filter(z=>z.date).map(z=>({entry_date:z.date,entry_kind:"CANCELLED",cx:z,customer_name:z.party,ref_no:z.no||"",order_no:null,debit:0,credit:0,
+          note:z.reason||"",created_at:z.at,company_id:z.company_id||null,cx_label:({RECEIPT:"Receipt",TALLY_BILL:"Tally bill",RETURN:"Goods return"}[z.kind]||z.kind)+" "+rs(z.amount)}))}catch(_){}
+        led=(a.data||[]).concat(nr,cxr).map((x,i)=>({...x,i,pk:key(info.parentOf(x.customer_name)),debit:Number(x.debit)||0,credit:Number(x.credit)||0,d:String(x.entry_date||"").slice(0,10)}))
+          .sort((x,y)=>x.d.localeCompare(y.d)||(x.entry_kind==="OPENING"?-1:y.entry_kind==="OPENING"?1:0)||String(x.created_at||"").localeCompare(String(y.created_at||"")));
+        led.forEach((x,i)=>x.i=i);
+        byNo=new Map();for(const o of info.raw.orders||[])byNo.set(String(o.order_no),o);
+        fb=curBrand();loadedAt=Date.now();
+        drawKpis();draw();
+      }catch(e){
+        const m=String((e&&e.message)||e);
+        el("err").innerHTML='<div class="ab-err">'+esc(/Admin \/ Accounts|role required/i.test(m)?"Ledger & Outstanding is for Admin and Accounts logins.":m)+"</div>";
+        el("box").innerHTML="";
+      }
+    }
+    function curBrand(){let v="";try{v=localStorage.getItem("lwbBrand")||""}catch(e){}return (info&&info.companies||[]).some(c=>c.id===v)?v:""}
+    const inB=c=>!fb||(c||"")===fb;
+    const multi=()=>(info&&info.companies||[]).length>1;
+    const btag=id=>{const c=info&&info.brandOf(id);return c?'<span class="ab-btag" style="--bc:'+esc(c.color||"#2362a4")+'"><i></i>'+esc(c.name)+"</span>":""};
+    const V=p=>fb?LWBPartyPay.slice(p,fb):p;
+    const today=()=>info&&info.today||S.isoDay(new Date());
+    const per=()=>{const r=window.LWBPeriod?LWBPeriod.get():{from:today().slice(0,8)+"01",to:today()};return {from:r.from,to:r.to,label:r.label||""}};
+    const fyStart=t=>{const y=Number(t.slice(0,4)),m=Number(t.slice(5,7));return (m>=4?y:y-1)+"-04-01"};
+    const ledPer=()=>{const p=per();return ledFy?{from:fyStart(today()),to:today(),label:"This FY"}:p};
+    const inPer=(d,p)=>{p=p||per();return d>=p.from&&d<=p.to};
+    const daysOld=d=>d?Math.max(0,Math.round((Date.parse(today()+"T00:00:00Z")-Date.parse(String(d).slice(0,10)+"T00:00:00Z"))/864e5)):0;
+    const dcls=d=>d>90?"ab-d4":d>60?"ab-d3":d>30?"ab-d2":"ab-d1";
+    const nameOf=pk=>{const p=info.parties.get(pk);if(p)return p.party;const x=led&&led.find(y=>y.pk===pk);return x?String(x.customer_name).trim():pk};
+    const membersOf=pk=>{const p=info.parties.get(pk);return p?(p.members||[]).filter(m=>key(m)!==pk):[]};
+    const bal=v=>{v=r2(v);return '<span class="'+(v>0.5?"ab-due":v<-0.5?"ab-adv":"ab-zero")+'">'+rs(Math.abs(v))+'</span><i class="ab-dc">'+(v>0.5?"Dr":v<-0.5?"Cr":"")+"</i>"};
+    const balTxt=v=>{v=r2(v);return Math.abs(v)<0.5?"0":(v>0?"":"-")+Math.abs(v)};
+
+    // every party with its bills due (brand of the top bar), ageing buckets
+    function outParties(){
+      const out=[];
+      for(const [pk,p0] of info.parties){const p=V(p0);if(!p)continue;
+        const b=[0,0,0,0];let oldest=0;
+        for(const o of p.bills||[]){const d=daysOld(o.invoice_date),due=r2(o.due);b[d>90?3:d>60?2:d>30?1:0]+=due;oldest=Math.max(oldest,d)}
+        const net=r2(p.net!=null?p.net:p.due+(p.opening||0)-p.advance-(p.ret||0));
+        if(Math.abs(net)<0.5&&!(p.bills||[]).length)continue;
+        out.push({pk,party:p0.party,members:membersOf(pk),bills:(p.bills||[]).length,due:r2(p.due),opening:r2(p.opening||0),advance:r2(p.advance||0),ret:r2(p.ret||0),net,b,oldest})}
+      return out;
+    }
+    function dueBills(){
+      const out=[];
+      for(const [pk,p0] of info.parties){const p=V(p0);for(const o of (p&&p.bills)||[])out.push({...o,pk,mainParty:p0.party,days:daysOld(o.invoice_date),got:r2((Number(o.driver)||0)+(Number(o.office)||0)),cn:r2((Number(o.credit_notes)||0)+(Number(o.approved_return)||0)-(Number(o.debit_notes)||0))})}
+      return out;
+    }
+    // one party's ledger in a period: opening (before From) + rows From..To with running balance
+    function ledOf(pk,p){
+      p=p||ledPer();let open=0;const rows=[];
+      for(const x of led)if(x.pk===pk&&inB(x.company_id)){if(x.d<p.from)open+=x.debit-x.credit;else if(x.d<=p.to)rows.push(x)}
+      let run=open;const out=rows.map(x=>{run+=x.debit-x.credit;return {...x,bal:r2(run)}});
+      return {open:r2(open),rows:out,dr:r2(rows.reduce((a,x)=>a+x.debit,0)),cr:r2(rows.reduce((a,x)=>a+x.credit,0)),close:r2(run)};
+    }
+
+    /* ---------- KPIs ---------- */
+    function drawKpis(){
+      if(!info)return;
+      const P=outParties(),B=dueBills(),p=per();
+      const coll=P.filter(x=>x.net>0.5),adv=P.filter(x=>x.net<-0.5),o60=B.filter(b=>b.days>60);
+      const R=led.filter(x=>PAYK.has(x.entry_kind)&&inB(x.company_id)&&inPer(x.d,p)),Bl=led.filter(x=>(BILLK.has(x.entry_kind))&&inB(x.company_id)&&inPer(x.d,p));
+      const mm={};for(const x of R){const m=modeOf(x)[0]||"OTHER";const k=m==="RTGS"||m==="NEFT"?"BANK":m;mm[k]=(mm[k]||0)+x.credit}
+      const sum=(a,f)=>a.reduce((s,x)=>s+f(x),0),pl=(n,w)=>n+" "+(n===1?w:w==="party"?"parties":w+"s");
+      const K=[
+        ["out:due","#c62828","#c62828","To collect (Outstanding)",rs(sum(coll,x=>x.net)),pl(coll.length,"party")+" · "+pl(B.length,"bill")+" due"],
+        ["out:60","#b26b00","#b26b00","Over 60 days",rs(sum(o60,b=>b.due)),pl(o60.length,"bill")+" · "+pl(new Set(o60.map(b=>b.pk)).size,"party")],
+        ["out:adv","#13824a","#13824a","Advance with us",rs(-sum(adv,x=>x.net)),pl(adv.length,"party")],
+        ["rec","#1d5fbf","#13824a","Received · "+(p.label||""),rs(sum(R,x=>x.credit)),Object.entries(mm).sort((a,b)=>b[1]-a[1]).slice(0,3).map(([k,v])=>(MODE[k]||k).replace(/^\S+\s/,"")+" "+rs(v).replace("₹","")).join(" · ")||"no payment"],
+        ["day:bill","#002f37","","Billed · "+(p.label||""),rs(sum(Bl,x=>x.debit)),pl(Bl.length,"bill")]];
+      el("kpis").innerHTML=K.map(([go,c,v,h,b,s])=>'<button type="button" class="ab-k" data-go="'+go+'" style="--c:'+c+(v?";--v:"+v:"")+'"><h3>'+esc(h)+'</h3><b>'+b+'</b><small>'+esc(s)+'</small></button>').join("");
+    }
+
+    /* ---------- generic table with Excel-style column filters ---------- */
+    // cols: {h, v(x) value for filter / sort / Excel, html(x) cell, n:number, hp:hide on phone, sum:true}
+    function table(k,cols,items,onRow,opt){
+      opt=opt||{};
+      const head=cols.map(c=>c.h),rows=items.map(x=>({data:cols.map(c=>c.v(x)),x}));
+      const list=CF.apply(k,head,rows,opt.cf);
+      cur={k,cols,list,onRow,title:opt.title||""};
+      const cl=c=>(c.n?"n ":"")+(c.hp?"hp":"");
+      const tot=cols.some(c=>c.sum)?'<tfoot><tr>'+cols.map((c,i)=>'<td class="'+cl(c)+'">'+(i===0?(list.length+" row"+(list.length===1?"":"s")):c.sum?(c.money===false?r2(list.reduce((a,r)=>a+(Number(r.data[i])||0),0)):rs(list.reduce((a,r)=>a+(Number(r.data[i])||0),0))):"")+"</td>").join("")+"</tr></tfoot>":"";
+      return '<div class="ab-cfph">'+CF.chips(k,head)+'</div><table class="ab-t"><thead><tr>'+cols.map((c,i)=>'<th class="'+cl(c)+'">'+CF.th(k,head,i,c.h)+"</th>").join("")+'</tr></thead><tbody>'+
+        (list.slice(0,shown).map((r,i)=>'<tr tabindex="0" data-r="'+i+'">'+cols.map(c=>'<td class="'+cl(c)+(c.p?" p":"")+'">'+(c.html?c.html(r.x):esc(c.v(r.x)))+"</td>").join("")+"</tr>").join("")||'<tr class="ob"><td colspan="'+cols.length+'" class="ab-empty">'+esc(opt.empty||"Nothing to show")+"</td></tr>")+
+        "</tbody>"+tot+"</table>"+(list.length>shown?'<div class="ab-more"><button type="button" class="ab-b" id="more">Show more ('+(list.length-shown)+")</button></div>":"");
+    }
+    const match=(q,...v)=>{if(!q)return true;const t=v.join(" ").toLowerCase();return q.split(/\s+/).every(w=>t.includes(w))};
+
+    /* ---------- sections ---------- */
+    function draw(){
+      if(!info||!led)return;
+      el("tabs").innerHTML=SECS.map(([s,l,sh,k],i)=>'<button type="button" role="tab" data-sec="'+s+'" aria-selected="'+(s===sec)+'" title="Ctrl+Alt+'+k+'"><span class="tl">'+l+'</span><span class="ts">'+sh+'</span><kbd>'+k+"</kbd></button>").join("");
+      ({out:drawOut,led:drawLed,rec:drawRec,sum:drawSum,day:drawDay})[sec]();
+      el("kpis").classList.toggle("ph-off",sec!=="out"||!!outPk);   // phone: cards only on the Outstanding home
+      const u=new URL(location.href);u.searchParams.set("v",sec);
+      const pk=sec==="led"?ledPk:sec==="out"?outPk:"";if(pk)u.searchParams.set("party",nameOf(pk));else u.searchParams.delete("party");
+      u.searchParams.delete("find");history.replaceState(null,"",u);
+    }
+    function crumb(parts){el("crumb").innerHTML=parts.map((p,i)=>i<parts.length-1?'<a data-cr="'+i+'">'+esc(p[0])+"</a> ›":'<b>'+esc(p[0])+"</b>").join(" ");
+      el("crumb").querySelectorAll("[data-cr]").forEach(a=>a.onclick=()=>parts[Number(a.dataset.cr)][1]())}
+    const qVal=()=>{const i=el("q");return i?i.value.trim().toLowerCase():""};
+    function tools(html,keepQ){const old=qVal();el("tools").innerHTML='<div class="ab-f">'+html+"</div>";const i=el("q");if(i&&keepQ!==false){i.value=old;i.oninput=()=>{shown=300;draw();const n=el("q");n.focus();n.setSelectionRange(n.value.length,n.value.length)}}}
+    const seg=(id,opts,v)=>'<span class="ab-seg" id="'+id+'">'+opts.map(([k,l])=>'<button type="button" data-v="'+k+'" aria-pressed="'+(k===v)+'">'+l+"</button>").join("")+"</span>";
+    const bLab=()=>fb&&info.brandOf(fb)?" · "+info.brandOf(fb).name:"";
+
+    // 1. Outstanding (Receivables): party-wise or bill-wise, ageing; party → its bills; bill → voucher
+    function drawOut(){
+      el("note").textContent="Outstanding = Tally bill − credit notes / returns − driver money − payments set to the bill; party balance also takes off advance and adds opening. Same figures as the Ledger closing. Ageing = days since the bill date.";
+      if(outPk)return drawOutParty();
+      crumb([["Outstanding (Receivables) · as on "+dmy(today())+bLab()]]);
+      const q=qVal();
+      if(outMode==="party"){
+        tools('<input id="q" type="search" placeholder="Search party or bill name…" autocomplete="off">'+seg("oMode",[["party","Party-wise"],["bill","Bill-wise"]],outMode)+seg("oShow",[["due","To collect"],["adv","Advance"],["all","All"]],outShow));
+        let L=outParties().filter(x=>outShow==="all"||(outShow==="due"?x.net>0.5:x.net<-0.5)).filter(x=>match(q,x.party,...x.members)).sort((a,b)=>outShow==="adv"?a.net-b.net:b.net-a.net);
+        el("box").innerHTML=table("outP",[
+          {h:"Party",v:x=>x.party,p:1,html:x=>esc(x.party)+(x.members.length?'<small>'+esc(x.members.slice(0,3).join(", "))+(x.members.length>3?" …":"")+"</small>":"")+'<small class="ab-ph">'+x.bills+" bill"+(x.bills===1?"":"s")+(x.bills?' · <span class="'+dcls(x.oldest)+'">'+x.oldest+" days</span>":"")+"</small>"},
+          {h:"Bills",v:x=>x.bills,n:1,hp:1},
+          {h:"Oldest",v:x=>x.bills?x.oldest:"",n:1,hp:1,html:x=>x.bills?'<span class="ab-days '+dcls(x.oldest)+'">'+x.oldest+"d</span>":""},
+          {h:"0-30",v:x=>r2(x.b[0]),n:1,hp:1,sum:1,html:x=>x.b[0]?rs(x.b[0]):""},
+          {h:"31-60",v:x=>r2(x.b[1]),n:1,hp:1,sum:1,html:x=>x.b[1]?'<span class="ab-d2">'+rs(x.b[1])+"</span>":""},
+          {h:"61-90",v:x=>r2(x.b[2]),n:1,hp:1,sum:1,html:x=>x.b[2]?'<span class="ab-d3">'+rs(x.b[2])+"</span>":""},
+          {h:"90+",v:x=>r2(x.b[3]),n:1,hp:1,sum:1,html:x=>x.b[3]?'<b class="ab-d3">'+rs(x.b[3])+"</b>":""},
+          {h:"Adv / Opening",v:x=>r2(x.opening-x.advance-x.ret),n:1,hp:1,html:x=>{const v=r2(x.opening-x.advance-x.ret);return Math.abs(v)<0.5?"":v<0?'<span class="ab-adv">−'+rs(-v)+"</span>":rs(v)}},
+          {h:"Balance",v:x=>x.net,n:1,sum:1,html:x=>bal(x.net)}],L,x=>{outPk=x.pk;shown=300;draw()},{title:"Outstanding party-wise",empty:"No party "+(outShow==="adv"?"with advance":"to collect from")});
+      }else{
+        tools('<input id="q" type="search" placeholder="Search party, bill no., PO…" autocomplete="off">'+seg("oMode",[["party","Party-wise"],["bill","Bill-wise"]],outMode)+seg("oShow",[["due","All due"],["30","> 30 days"],["60","> 60 days"],["90","> 90 days"]],/^\d+$/.test(outShow)?outShow:"due"));
+        const min=/^\d+$/.test(outShow)?Number(outShow):-1;
+        const L=dueBills().filter(b=>b.days>min&&match(q,b.party,b.mainParty,b.invoice_no,b.order_no,...(b.bills||[]).map(x=>x.no))).sort((a,b)=>b.days-a.days);
+        el("box").innerHTML=table("outB",[
+          {h:"Bill date",v:b=>String(b.invoice_date||"").slice(0,10),html:b=>dmy(b.invoice_date)+'<small class="ab-ph">'+esc(billNo(b))+"</small>"},
+          {h:"Bill no.",v:b=>billNo(b),hp:1},
+          {h:"Party",v:b=>b.mainParty,p:1,html:b=>esc(b.mainParty)+(key(b.party)!==b.pk?"<small>"+esc(b.party)+"</small>":"")+(!fb&&multi()?" "+btag(b.company_id):"")},
+          {h:"PO",v:b=>b.order_no,hp:1},
+          {h:"Days",v:b=>b.days,n:1,html:b=>'<span class="ab-days '+dcls(b.days)+'">'+b.days+"d</span>"},
+          {h:"Bill",v:b=>r2(b.bill_amount),n:1,hp:1,sum:1,html:b=>rs(b.bill_amount)},
+          {h:"Received",v:b=>b.got,n:1,hp:1,sum:1,html:b=>b.got?'<span class="ab-adv">'+rs(b.got)+"</span>":""},
+          {h:"CN / Return",v:b=>b.cn,n:1,hp:1,sum:1,html:b=>b.cn?rs(b.cn):""},
+          {h:"Due",v:b=>r2(b.due),n:1,sum:1,html:b=>'<b class="ab-due">'+rs(b.due)+"</b>"}],L,b=>openBill({order_id:b.order_id,order_no:b.order_no,pk:b.pk}),{title:"Outstanding bill-wise",empty:"No bill due"});
+      }
+      wireSeg();
+    }
+    const poT=n=>/^PO\b/i.test(String(n))?String(n):"PO "+n;
+    const billNo=o=>(o.bills||[]).length?(o.bills||[]).map(x=>x.no).filter(Boolean).join(", "):(o.invoice_no||"");
+    function drawOutParty(){
+      const pk=outPk,name=nameOf(pk),p0=info.parties.get(pk),p=p0?V(p0):null;
+      crumb([["Outstanding",()=>{outPk="";draw()}],[name+bLab()]]);
+      tools('<button type="button" class="ab-b t" data-led="'+esc(pk)+'">📒 Ledger <kbd style="font:inherit;opacity:.7">L</kbd></button><button type="button" class="ab-b g" data-pay="'+esc(pk)+'">💰 Receive payment</button>',false);
+      if(!p){el("box").innerHTML='<div class="ab-empty">No bill due for this party.</div>';cur=null;return}
+      const net=r2(p.net!=null?p.net:p.due+(p.opening||0)-p.advance-(p.ret||0)),m=membersOf(pk);
+      const bills=(p.bills||[]).map(o=>({...o,pk,days:daysOld(o.invoice_date),got:r2((Number(o.driver)||0)+(Number(o.office)||0)),cn:r2((Number(o.credit_notes)||0)+(Number(o.approved_return)||0)-(Number(o.debit_notes)||0))}));
+      el("box").innerHTML=(m.length?'<p class="ab-note" style="margin:0 0 6px">Bill names: '+esc(m.join(", "))+"</p>":"")+
+        '<div class="ab-sum" style="--n:5"><div><small>Bills due</small><b class="ab-due">'+rs(p.due)+'</b></div><div><small>Opening</small><b>'+rs(p.opening||0)+'</b></div><div><small>Advance (not set to a bill)</small><b class="ab-adv">'+rs(p.advance||0)+'</b></div><div><small>Goods return (no bill)</small><b>'+rs(p.ret||0)+'</b></div><div class="big"><small>Balance</small><b>'+bal(net)+"</b></div></div>"+
+        table("outPB",[
+          {h:"Bill date",v:b=>String(b.invoice_date||"").slice(0,10),html:b=>dmy(b.invoice_date)+'<small class="ab-ph">'+esc(billNo(b))+"</small>"},
+          {h:"Bill no.",v:b=>billNo(b),hp:1,html:b=>esc(billNo(b))+(key(b.party)!==pk?"<small>"+esc(b.party)+"</small>":"")},
+          {h:"PO",v:b=>b.order_no,hp:1},
+          {h:"Days",v:b=>b.days,n:1,html:b=>'<span class="ab-days '+dcls(b.days)+'">'+b.days+"d</span>"},
+          {h:"Bill",v:b=>r2(b.bill_amount),n:1,sum:1,html:b=>rs(b.bill_amount)},
+          {h:"Received",v:b=>b.got,n:1,hp:1,sum:1,html:b=>b.got?'<span class="ab-adv">'+rs(b.got)+"</span>":""},
+          {h:"CN / Return",v:b=>b.cn,n:1,hp:1,sum:1,html:b=>b.cn?rs(b.cn):""},
+          {h:"Due",v:b=>r2(b.due),n:1,sum:1,html:b=>'<b class="ab-due">'+rs(b.due)+"</b>"}],bills,b=>openBill({order_id:b.order_id,order_no:b.order_no,pk}),{title:"Bills due · "+name,empty:"No bill due. "+(net<-0.5?"Party has advance with us.":"")});
+    }
+
+    // 2. Ledger: List of ledgers (no party) or one party's ledger with opening, running balance, closing
+    function partyFind(){
+      return '<div class="ab-find"><input id="lp" autocomplete="off" placeholder="Type party name (Ctrl+Alt+L)…" role="combobox" aria-expanded="false" aria-label="Party ledger" value="'+esc(ledPk?nameOf(ledPk):"")+'"><div class="ab-list" id="lpl" hidden></div></div>';
+    }
+    function drawLed(){
+      const p=ledPer(),pt=dmy(p.from)+" to "+dmy(p.to);
+      el("note").textContent="Ledger on the main party (all its bill names together), brand of the top bar. Period = top bar dates (or This FY). Click any row to open the bill / receipt behind it; in the bill, every item. Esc = back.";
+      tools(partyFind()+seg("lFy",[["1","This FY"],["0",esc(per().label||"Top bar dates")]],ledFy?"1":"0")+(ledPk?'<button type="button" class="ab-b g sm" data-pay="'+esc(ledPk)+'">💰 Receive</button><button type="button" class="ab-b sm" data-out="'+esc(ledPk)+'">Bills due</button>':"")+(me.role==="admin"?'<a class="ab-b sm" href="party-ledger.html#openingPanel" title="Old balance from before the ERP (Admin)">+ Opening</a>':""),false);
+      wireFind(el("lp"),el("lpl"),pk=>{ledPk=pk;shown=300;draw()});
+      wireSeg();
+      if(!ledPk){
+        crumb([["List of ledgers · "+pt+bLab()]]);
+        const L=[...info.parties.keys(),...new Set(led.map(x=>x.pk))].filter((v,i,a)=>a.indexOf(v)===i).map(pk=>({pk,name:nameOf(pk),...ledOf(pk,p)})).filter(r=>Math.abs(r.open)>0.5||r.rows.length).sort((a,b)=>b.close-a.close);
+        el("box").innerHTML=table("ledL",[
+          {h:"Party",v:r=>r.name,p:1},
+          {h:"Opening",v:r=>r.open,n:1,hp:1,html:r=>bal(r.open)},
+          {h:"Debit",v:r=>r.dr,n:1,sum:1,html:r=>r.dr?rs(r.dr):""},
+          {h:"Credit",v:r=>r.cr,n:1,sum:1,html:r=>r.cr?'<span class="ab-adv">'+rs(r.cr)+"</span>":""},
+          {h:"Closing",v:r=>r.close,n:1,sum:1,html:r=>bal(r.close)}],L,r=>{ledPk=r.pk;shown=300;draw()},{title:"List of ledgers "+pt,empty:"No entry in "+pt});
+        return}
+      const name=nameOf(ledPk),L=ledOf(ledPk,p),m=membersOf(ledPk);
+      crumb([["List of ledgers",()=>{ledPk="";draw()}],["Ledger: "+name+bLab()]]);
+      // All brands: one box per brand so Coca-Cola and Rajnigandha money is seen apart
+      let split="";
+      if(!fb&&multi()){const ids=[...new Set(led.filter(x=>x.pk===ledPk).map(x=>x.company_id||""))];
+        if(ids.length>1)split='<div class="ab-bsplit">'+ids.map(id=>{const R=led.filter(x=>x.pk===ledPk&&(x.company_id||"")===id),n=r2(R.reduce((a,x)=>a+x.debit-x.credit,0)),c=info.brandOf(id);
+          return '<div style="--bc:'+(c?esc(c.color||"#2362a4"):"#8a94a3")+'">'+(c?btag(id):"No brand")+" · balance now <b>"+bal(n)+"</b></div>"}).join("")+"</div>"}
+      const vrow=(x,i)=>{const t=vt(x),mo=PAYK.has(x.entry_kind)?modeOf(x):[];
+        return '<tr tabindex="0" data-r="'+i+'"'+(x.entry_kind==="CANCELLED"?' class="cxr"':"")+'><td class="hp">'+dmy(x.d)+'</td><td class="p"><small class="ab-ph">'+dmy(x.d)+'</small><span class="ab-vt '+t[1]+'">'+esc(t[0])+"</span>"+
+          (x.entry_kind==="CANCELLED"?'<span class="cxa">'+esc(t[2])+"</span>":esc(t[2]&&t[0]!=="Kasar"?t[2]:""))+(mo.length?" "+modeChips(mo):"")+
+          '<small>'+[BILLK.has(x.entry_kind)||x.entry_kind==="CREDIT_NOTE"||x.entry_kind==="DEBIT_NOTE"||x.entry_kind==="PARTY_RETURN"||x.entry_kind==="SALES_RETURN"?(x.ref_no?"No. "+esc(x.ref_no):""):esc(refOf(x)),x.order_no?"PO "+esc(String(x.order_no).replace(/^PO\s*/i,"")):"",key(x.customer_name)!==ledPk?esc(x.customer_name):"",!fb&&multi()&&x.company_id?btag(x.company_id):"",x.note&&!BILLK.has(x.entry_kind)?esc(x.note):""].filter(Boolean).join(" · ")+"</small></td>"+
+          '<td class="n">'+(x.debit?rs2(x.debit):"")+'</td><td class="n ab-adv">'+(x.credit?rs2(x.credit):"")+'</td><td class="n">'+bal(x.bal)+"</td></tr>"};
+      const q=qVal();
+      cur={k:"led",list:L.rows.map(x=>({x})),onRow:x=>openVoucher(x),ledger:{name,L,p}};
+      el("box").innerHTML=(m.length?'<p class="ab-note" style="margin:0 0 6px">Bill names: '+esc(m.join(", "))+"</p>":"")+split+
+        '<div class="ab-sum"><div><small>Opening '+dmy(p.from)+'</small><b>'+bal(L.open)+'</b></div><div><small>Debit (bills)</small><b>'+rs(L.dr)+'</b></div><div><small>Credit (paid, returns)</small><b class="ab-adv">'+rs(L.cr)+'</b></div><div class="big"><small>Closing '+dmy(p.to)+'</small><b>'+bal(L.close)+"</b></div></div>"+
+        '<table class="ab-t"><thead><tr><th class="hp" style="width:92px">Date</th><th>Particulars</th><th class="n">Debit</th><th class="n">Credit</th><th class="n">Balance</th></tr></thead><tbody>'+
+        '<tr class="ob"><td class="hp">'+dmy(p.from)+'</td><td><b>Opening balance</b><small class="ab-ph">'+dmy(p.from)+'</small></td><td class="n"></td><td class="n"></td><td class="n">'+bal(L.open)+"</td></tr>"+
+        (L.rows.map(vrow).join("")||'<tr class="ob"><td colspan="5" class="ab-empty">No entry in '+pt+(ledFy?"":" · try This FY")+"</td></tr>")+
+        '</tbody><tfoot><tr><td class="hp"></td><td>Closing · '+L.rows.length+" entr"+(L.rows.length===1?"y":"ies")+'</td><td class="n">'+rs2(L.dr)+'</td><td class="n">'+rs2(L.cr)+'</td><td class="n">'+bal(L.close)+"</td></tr></tfoot></table>";
+      void q;
+    }
+
+    // 3. Receipts register: every payment in the period (driver money, party payment, payment collection)
+    function drawRec(){
+      const p=per();crumb([["Receipts · "+dmy(p.from)+" to "+dmy(p.to)+bLab()]]);
+      el("note").textContent="Every payment received in the top bar dates: party payments (Accounts / Cashier), driver money and payment collections. Click a row to see which bills it went to.";
+      tools('<input id="q" type="search" placeholder="Search party, mode, UTR / cheque no., PO…" autocomplete="off">');
+      const q=qVal();
+      const L=led.filter(x=>PAYK.has(x.entry_kind)&&inB(x.company_id)&&inPer(x.d,p)&&match(q,x.customer_name,x.ref_no,x.order_no,x.note)).slice().reverse();
+      const mm={};for(const x of L){const m=modeOf(x)[0]||"OTHER";const k=m==="RTGS"||m==="NEFT"?"BANK":m;mm[k]=(mm[k]||0)+x.credit}
+      el("box").innerHTML='<div class="ab-sum" style="--n:'+Math.max(2,Object.keys(mm).length+1)+'"><div class="big"><small>Total received</small><b class="ab-adv">'+rs(L.reduce((a,x)=>a+x.credit,0))+"</b></div>"+Object.entries(mm).sort((a,b)=>b[1]-a[1]).map(([k,v])=>"<div><small>"+esc(MODE[k]||k)+"</small><b>"+rs(v)+"</b></div>").join("")+"</div>"+
+        table("rec",[
+          {h:"Date",v:x=>x.d,html:x=>dmy(x.d)},
+          {h:"Party",v:x=>nameOf(x.pk),p:1,html:x=>esc(nameOf(x.pk))+(key(x.customer_name)!==x.pk?"<small>"+esc(x.customer_name)+"</small>":"")+(!fb&&multi()&&x.company_id?" "+btag(x.company_id):"")+'<small class="ab-ph">'+modeChips(modeOf(x))+esc(vt(x)[2]||"")+"</small>"},
+          {h:"Type",v:x=>vt(x)[2]||vt(x)[0],hp:1},
+          {h:"Mode",v:x=>modeTxt(modeOf(x)),hp:1,html:x=>modeChips(modeOf(x))},
+          {h:"Ref / Against",v:x=>[refOf(x),x.order_no?poT(x.order_no):""].filter(Boolean).join(" · "),hp:1,html:x=>esc(refOf(x))+(x.order_no?"<small>"+esc(poT(x.order_no))+"</small>":x.entry_kind==="PARTY_PAYMENT"?"<small>"+esc(recAgainst(x))+"</small>":"")},
+          {h:"Amount",v:x=>r2(x.credit),n:1,sum:1,html:x=>'<b class="ab-adv">'+rs(x.credit)+"</b>"}],L,x=>openVoucher(x),{title:"Receipts "+dmy(p.from)+" to "+dmy(p.to),empty:"No payment received in these dates"});
+    }
+    function recAgainst(x){const r=receiptOf(x);if(!r)return "";const a=r.allocs||[],s=a.reduce((t,y)=>t+Number(y.amount),0);return a.length?a.length+" bill"+(a.length===1?"":"s")+(r.total-s>0.5?" + advance "+rs(r.total-s):""):"advance"}
+
+    // 4. Party payment summary: which party paid how much in the period, billed, returns, balance now
+    function drawSum(){
+      const p=per();crumb([["Party payment summary · "+dmy(p.from)+" to "+dmy(p.to)+bLab()]]);
+      el("note").textContent="Per party in the top bar dates: opening, bills made, money received (with modes), returns / credit notes and closing. Click a party to open its ledger.";
+      tools('<input id="q" type="search" placeholder="Search party…" autocomplete="off">'+seg("sShow",[["paid","Paid in period"],["all","All active"]],outShow==="all"?"all":"paid"));
+      const q=qVal(),only=outShow!=="all";
+      const map=new Map();
+      for(const x of led){if(!inB(x.company_id)||x.d>p.to)continue;
+        let r=map.get(x.pk);if(!r)map.set(x.pk,r={pk:x.pk,name:nameOf(x.pk),open:0,bill:0,paid:0,ret:0,close:0,n:0,last:"",modes:{}});
+        const v=x.debit-x.credit;r.close+=v;
+        if(x.d<p.from){r.open+=v;continue}
+        if(BILLK.has(x.entry_kind)||x.entry_kind==="DEBIT_NOTE")r.bill+=x.debit;
+        else if(PAYK.has(x.entry_kind)){r.paid+=x.credit;r.n++;if(x.d>r.last)r.last=x.d;const m=modeOf(x)[0]||"OTHER";const k=m==="RTGS"||m==="NEFT"?"BANK":m;r.modes[k]=(r.modes[k]||0)+x.credit}
+        else if(x.entry_kind!=="OPENING")r.ret+=x.credit-x.debit;
+        else r.bill+=x.debit,r.ret+=x.credit}
+      const L=[...map.values()].map(r=>({...r,open:r2(r.open),bill:r2(r.bill),paid:r2(r.paid),ret:r2(r.ret),close:r2(r.close)}))
+        .filter(r=>(only?r.paid>0.5:(r.bill||r.paid||r.ret||Math.abs(r.close)>0.5))&&match(q,r.name)).sort((a,b)=>b.paid-a.paid||b.close-a.close);
+      el("box").innerHTML=table("sum",[
+        {h:"Party",v:r=>r.name,p:1,html:r=>esc(r.name)+'<small>'+modeChips(Object.keys(r.modes))+(r.last?"last "+dmy(r.last):"")+"</small>"},
+        {h:"Opening",v:r=>r.open,n:1,hp:1,html:r=>bal(r.open)},
+        {h:"Billed",v:r=>r.bill,n:1,hp:1,sum:1,html:r=>r.bill?rs(r.bill):""},
+        {h:"Received",v:r=>r.paid,n:1,sum:1,html:r=>r.paid?'<b class="ab-adv">'+rs(r.paid)+"</b>"+(r.n>1?"<small>"+r.n+" payments</small>":""):'<span class="ab-zero">—</span>'},
+        {h:"Return / CN",v:r=>r.ret,n:1,hp:1,sum:1,html:r=>r.ret?rs(r.ret):""},
+        {h:"Balance now",v:r=>r.close,n:1,sum:1,html:r=>bal(r.close)}],L,r=>{sec="led";ledPk=r.pk;shown=300;draw()},{title:"Party payments "+dmy(p.from)+" to "+dmy(p.to),empty:"No party paid in these dates"});
+      wireSeg();
+    }
+
+    // 5. Day book: every voucher in the period
+    let dayKind="";
+    function drawDay(){
+      const p=per();crumb([["Day book · "+dmy(p.from)+" to "+dmy(p.to)+bLab()]]);
+      el("note").textContent="Every bill, receipt, return and note in the top bar dates, newest first. Click a row to open the voucher.";
+      tools('<input id="q" type="search" placeholder="Search party, bill no., PO, ref…" autocomplete="off">'+seg("dKind",[["","All"],["bill","Sales"],["rec","Receipts"],["ret","Returns / Notes"]],dayKind));
+      const q=qVal();
+      const L=led.filter(x=>inB(x.company_id)&&inPer(x.d,p)&&x.entry_kind!=="OPENING"&&(!dayKind||(dayKind==="bill"?BILLK.has(x.entry_kind)||x.entry_kind==="DEBIT_NOTE":dayKind==="rec"?PAYK.has(x.entry_kind):!BILLK.has(x.entry_kind)&&!PAYK.has(x.entry_kind)))&&match(q,x.customer_name,x.ref_no,x.order_no,x.note)).slice().reverse();
+      el("box").innerHTML=table("day",[
+        {h:"Date",v:x=>x.d,html:x=>dmy(x.d)},
+        {h:"Vch type",v:x=>vt(x)[0],html:x=>'<span class="ab-vt '+vt(x)[1]+'">'+esc(vt(x)[0])+"</span>"},
+        {h:"Party",v:x=>nameOf(x.pk),p:1,html:x=>esc(nameOf(x.pk))+'<small>'+esc([x.ref_no,x.order_no?poT(x.order_no):""].filter(Boolean).join(" · "))+"</small>"},
+        {h:"Vch no.",v:x=>x.ref_no||"",hp:1},
+        {h:"Debit",v:x=>r2(x.debit),n:1,sum:1,html:x=>x.debit?rs(x.debit):""},
+        {h:"Credit",v:x=>r2(x.credit),n:1,sum:1,html:x=>x.credit?'<span class="ab-adv">'+rs(x.credit)+"</span>":""}],L,x=>openVoucher(x),{title:"Day book "+dmy(p.from)+" to "+dmy(p.to),empty:"No voucher in these dates"});
+      wireSeg();
+    }
+
+    function wireSeg(){
+      const on=(id,f)=>{const s=el(id);if(s)s.querySelectorAll("[data-v]").forEach(b=>b.onclick=()=>{f(b.dataset.v);shown=300;draw()})};
+      on("oMode",v=>{outMode=v;outShow="due"});on("oShow",v=>outShow=v);on("sShow",v=>outShow=v);on("lFy",v=>ledFy=v==="1");on("dKind",v=>dayKind=v);
+    }
+
+    /* ---------- party search box (Ctrl+Alt+L) ---------- */
+    function partyNames(){
+      const m=new Map();for(const [pk,p] of info.parties)m.set(pk,p.party);for(const x of led)if(x.pk&&!m.has(x.pk))m.set(x.pk,String(x.customer_name).trim());
+      return [...m.entries()].sort((a,b)=>a[1].localeCompare(b[1]));
+    }
+    function wireFind(inp,list,pick){
+      if(!inp)return;const all=partyNames();let hits=[],hi=0;
+      const balOf=pk=>{const p=info.parties.get(pk);if(!p)return 0;const v=V(p);return v?r2(v.net!=null?v.net:0):0};
+      function drawList(){const v=key(inp.value);hits=all.filter(([pk,n])=>!v||pk.includes(v)||membersOf(pk).some(m=>key(m).includes(v))).slice(0,60);hi=0;
+        list.innerHTML=hits.map(([pk,n],i)=>{const m=membersOf(pk),b=balOf(pk);return '<button type="button" data-i="'+i+'"'+(i?"":' class="on"')+'><span>'+esc(n)+(m.length?'<small class="ab-mut" style="display:block">'+esc(m.slice(0,3).join(", "))+"</small>":"")+'</span><span class="r">'+(Math.abs(b)>0.5?bal(b):"")+"</span></button>"}).join("")||'<div class="ab-empty">No party found</div>';
+        list.hidden=false;inp.setAttribute("aria-expanded","true");
+        list.querySelectorAll("[data-i]").forEach(b=>b.onmousedown=e=>{e.preventDefault();go(hits[Number(b.dataset.i)])})}
+      const go=h=>{if(!h)return;list.hidden=true;inp.setAttribute("aria-expanded","false");pick(h[0])};
+      inp.onfocus=()=>{inp.select();drawList()};inp.oninput=drawList;
+      inp.onblur=()=>setTimeout(()=>{list.hidden=true;inp.setAttribute("aria-expanded","false")},150);
+      inp.onkeydown=e=>{
+        if(e.key==="ArrowDown"||e.key==="ArrowUp"){e.preventDefault();if(list.hidden)drawList();hi=Math.max(0,Math.min(hits.length-1,hi+(e.key==="ArrowDown"?1:-1)));list.querySelectorAll("[data-i]").forEach((b,i)=>b.classList.toggle("on",i===hi));const c=list.querySelector(".on");if(c)c.scrollIntoView({block:"nearest"})}
+        else if(e.key==="Enter"){e.preventDefault();go(hits[hi])}
+        else if(e.key==="Escape"&&!list.hidden){e.preventDefault();e.stopPropagation();list.hidden=true}};
+    }
+    function findLedger(){sec="led";ledPk="";shown=300;draw();setTimeout(()=>{const i=el("lp");if(i){i.focus()}},30)}
+
+    /* ---------- vouchers (popup with Back, like Tally drill down) ---------- */
+    const stack=[];
+    function popOpen(v){stack.push(v);paint()}
+    function popBack(){stack.pop();paint()}
+    function popClose(){stack.length=0;paint()}
+    async function paint(){
+      const box=el("pop");
+      if(!stack.length){box.innerHTML="";if(lastFocus&&lastFocus.isConnected)lastFocus.focus();return}
+      const v=stack[stack.length-1];
+      box.innerHTML='<div class="ab-ov"><div class="ab-dlg" role="dialog" aria-modal="true"><header>'+(stack.length>1?'<button type="button" class="ab-b sm" data-back>‹ Back</button>':"")+'<h3 id="vT">'+esc(v.title||"")+'<small id="vS"></small></h3><button type="button" class="ab-x" data-close aria-label="Close">×</button></header>'+
+        (stack.length>1?'<div class="trail">'+stack.map(s=>esc(s.crumb||s.title)).join(" › ")+"</div>":"")+'<div class="bd" id="vB"><div class="ab-empty">Loading...</div></div><footer id="vF"></footer></div></div>';
+      try{await v.render(el("vB"),el("vF"),el("vS"))}catch(e){el("vB").innerHTML='<div class="ab-err">'+esc(e.message||String(e))+"</div>"}
+      const f=box.querySelector("[data-r],footer .ab-b,[data-close]");if(f)f.focus();
+    }
+    let lastFocus=null;
+
+    // ledger row → the right voucher
+    function openVoucher(x){
+      lastFocus=document.activeElement;
+      if(x.entry_kind==="CANCELLED")return openCancelled(x);
+      if(x.entry_kind==="PARTY_PAYMENT"){const r=receiptOf(x);if(r)return openReceipt(r,x)}
+      if(x.entry_kind==="PARTY_RETURN"||x.entry_kind==="CREDIT_NOTE"){const rt=returnOf(x);if(rt)return openReturn(rt)}
+      if(x.order_no)return openBill({order_no:x.order_no,pk:x.pk,hl:x});
+      popOpen({title:vt(x)[0]+" · "+dmy(x.d),crumb:vt(x)[0],render:(b,f,s)=>{
+        s.textContent=nameOf(x.pk);
+        b.innerHTML='<div class="ab-sum" style="--n:3"><div><small>Date</small><b>'+dmy(x.d)+'</b></div><div><small>'+(x.debit?"Debit":"Credit")+'</small><b class="'+(x.debit?"ab-due":"ab-adv")+'">'+rs2(x.debit||x.credit)+'</b></div><div><small>Ref</small><b style="font-size:14px">'+esc(x.ref_no||"—")+"</b></div></div>"+
+          (x.company_id?"<p>"+btag(x.company_id)+"</p>":"")+(x.note?'<div class="ab-this">'+esc(x.note)+"</div>":"")+
+          (x.entry_kind==="PARTY_PAYMENT"?'<p class="ab-note">Receipt detail not found (older than 400 days or cancelled).</p>':"");
+        f.innerHTML='<button type="button" class="ab-b t" data-led="'+esc(x.pk)+'">📒 Party ledger</button><span class="sp"></span><button type="button" class="ab-b" data-close>Close</button>';
+      }});
+    }
+    // a cancelled entry (₹0 in the ledger): what it was, who cancelled it
+    function openCancelled(x){
+      const z=x.cx||{};
+      popOpen({title:"Cancelled · "+x.cx_label+" · "+dmy(x.d),crumb:"Cancelled",render:(b,f,s)=>{
+        s.innerHTML=esc(nameOf(x.pk))+(x.company_id?" · "+btag(x.company_id):"");
+        b.innerHTML='<div class="ab-sum" style="--n:3"><div><small>Date</small><b>'+dmy(x.d)+'</b></div><div class="big"><small>Was</small><b class="ab-due" style="text-decoration:line-through">'+rs2(z.amount)+'</b></div><div><small>Effect now</small><b>₹0</b></div></div>'+
+          (z.no?"<p>"+esc(z.kind==="RETURN"?"Return no. ":"Bill no. ")+"<b>"+esc(z.no)+"</b></p>":"")+
+          (Array.isArray(z.lines)&&z.lines.length?'<table class="ab-t"><thead><tr><th>Mode</th><th>Ref / UTR / Cheque</th><th class="n">Amount</th></tr></thead><tbody>'+z.lines.map(m=>'<tr class="ob"><td>'+modeChips([String(m.mode||"").toUpperCase()])+"</td><td>"+esc(m.ref||"—")+'</td><td class="n">'+rs2(m.amount)+"</td></tr>").join("")+"</tbody></table>":"")+
+          '<p class="ab-note" style="color:#a01c1c">⛔ Cancelled by '+esc(z.by||"Staff")+" on "+dmy(String(z.at||"").slice(0,10))+(z.reason?" · Reason: "+esc(z.reason):"")+"</p>";
+        f.innerHTML='<button type="button" class="ab-b t" data-led="'+esc(x.pk)+'">📒 Party ledger</button><span class="sp"></span><button type="button" class="ab-b" data-close>Close</button>';
+      }});
+    }
+    function receiptOf(x){
+      const R=(info.raw.receipts||[]).filter(r=>!r.cancelled&&key(info.parentOf(r.party))===x.pk&&String(r.pay_date).slice(0,10)===x.d);
+      return R.find(r=>(r.modes||[]).some(m=>Math.abs(Number(m.amount)-x.credit)<0.01)&&(!x.created_at||!r.at||String(r.at).slice(0,19)===String(x.created_at).slice(0,19)))||
+        R.find(r=>(r.modes||[]).some(m=>Math.abs(Number(m.amount)-x.credit)<0.01))||R.find(r=>Math.abs(Number(r.total)-x.credit)<0.01)||null;
+    }
+    function openReceipt(r,x){
+      const pk=key(info.parentOf(r.party)),a=r.allocs||[],s=a.reduce((t,y)=>t+Number(y.amount),0);
+      popOpen({title:"Receipt · "+rs(r.total)+" · "+dmy(r.pay_date),crumb:"Receipt "+rs(r.total),again:()=>{const n=(info.raw.receipts||[]).find(z=>z.receipt_id===r.receipt_id&&!z.cancelled);if(n)openReceipt(n)},render:(b,f,sub)=>{
+        sub.innerHTML=esc(nameOf(pk))+(r.company_id?" · "+btag(r.company_id):"");
+        b.innerHTML='<div class="ab-sum" style="--n:3"><div class="big"><small>Received</small><b class="ab-adv">'+rs2(r.total)+'</b></div><div><small>Set to bills</small><b>'+rs2(s)+'</b></div><div><small>Kept as advance</small><b>'+rs2(Math.max(0,r.total-s))+"</b></div></div>"+
+          '<table class="ab-t"><thead><tr><th>Mode</th><th>Ref / UTR / Cheque</th><th class="n">Amount</th></tr></thead><tbody>'+(r.modes||[]).map(m=>'<tr class="ob"><td>'+modeChips([String(m.mode||"").toUpperCase()])+"</td><td>"+esc(m.ref||"—")+'</td><td class="n">'+rs2(m.amount)+"</td></tr>").join("")+"</tbody></table>"+
+          '<p class="ab-note">'+[r.by?"Entered by "+esc(r.by):"",r.at?"on "+dmy(String(r.at).slice(0,10)):"",r.remark?"Remark: "+esc(r.remark):""].filter(Boolean).join(" · ")+"</p>"+
+          ((r.date_log||[]).length?'<p class="ab-note" style="color:#8a5a00">📅 '+esc(LWBPartyPay.dateLogText(r))+"</p>":"")+
+          "<h4>Against bills · click a bill to open it</h4>"+
+          (a.length?'<table class="ab-t"><thead><tr><th>PO</th><th>Bill no.</th><th class="n">Amount</th></tr></thead><tbody>'+a.map((y,i)=>'<tr tabindex="0" data-al="'+i+'"><td>'+esc(y.order_no)+"</td><td>"+esc(y.invoice_no||"")+'</td><td class="n">'+rs2(y.amount)+"</td></tr>").join("")+"</tbody></table>":'<div class="ab-empty">Kept as advance, not set to a bill yet.</div>');
+        b.querySelectorAll("[data-al]").forEach(t=>t.onclick=()=>{const y=a[Number(t.dataset.al)];openBill({order_id:y.order_id,order_no:y.order_no,pk})});
+        f.innerHTML='<button type="button" class="ab-b t" data-led="'+esc(pk)+'">📒 Party ledger</button><a class="ab-b" href="party-billing.html?tab=pay#tally">Payments page ↗</a>'+(canDate()&&!r.cancelled?'<button type="button" class="ab-b" data-redit>✏️ Edit</button><button type="button" class="ab-b" data-rdup>⧉ Duplicate</button><button type="button" class="ab-b ab-del" data-rcx>⛔ Cancel</button><button type="button" class="ab-b ab-del" data-rdel>🗑 Delete</button>':"")+'<span class="sp"></span><button type="button" class="ab-b" data-close>Close</button>';
+        const ce=f.querySelector("[data-redit]"),cx=f.querySelector("[data-rdel]"),cd=f.querySelector("[data-rdup]"),cc=f.querySelector("[data-rcx]");
+        if(ce)ce.onclick=()=>receiptEdit(b,r);
+        if(cd)cd.onclick=()=>receiptEdit(b,r,true);
+        if(cc)cc.onclick=()=>cxBox(b,"Cancel this payment of <b>"+rs2(r.total)+"</b>? It stays in the ledger as <b>Cancelled</b> with ₹0; bills it paid are due again.","RECEIPT",r.receipt_id,"Payment cancelled");
+        if(cx)cx.onclick=()=>delBox(b,"Delete this payment of <b>"+rs2(r.total)+"</b>? It goes out of the ledger; bills it paid are due again.",
+          reason=>client.rpc("lwb_receipt_delete",{p_receipt_id:r.receipt_id,p_reason:reason}),"Payment deleted");
+        histInto(b,[r.receipt_id]);
+      }});
+    }
+    // ---------- Admin: edit / delete any entry right inside its popup (lwb_ledger_admin_edit_setup.sql) ----------
+    const MODES=[["CASH","Cash"],["UPI","UPI"],["BANK","Bank"],["CHEQUE","Cheque"]];
+    function panel(b,title,inner,saveTxt,onSave,danger){
+      const old=b.querySelector(".ab-rd");if(old){const same=old.dataset.t===title;old.remove();if(same)return null}
+      const box=document.createElement("div");box.className="ab-rd"+(danger?" del":"");box.dataset.t=title;
+      box.innerHTML='<div class="ab-rd-h"><b>'+title+'</b></div>'+inner+
+        '<div class="ab-rd-f"><input class="ab-rd-r" maxlength="300" placeholder="Reason (optional)" aria-label="Reason"><button type="button" class="ab-b sm '+(danger?"ab-delb":"g")+'" data-dsave>'+saveTxt+'</button><button type="button" class="ab-b sm" data-dx>Close</button></div><div class="ab-rd-err" hidden></div>';
+      b.prepend(box);b.scrollTop=0;
+      const err=box.querySelector(".ab-rd-err"),sv=box.querySelector("[data-dsave]");
+      box.querySelector("[data-dx]").onclick=()=>box.remove();
+      box.querySelectorAll('input[type=date]').forEach(d=>d.onclick=()=>{try{d.showPicker()}catch(_){}});
+      sv.onclick=async()=>{
+        err.hidden=true;sv.disabled=true;const t0=sv.textContent;sv.textContent="Saving...";
+        try{const msg=await onSave(box,box.querySelector(".ab-rd-r").value.trim()||null);
+          const top=stack[stack.length-1],again=top&&top.again;
+          stack.pop();paint();await load();if(again)again();
+          if(window.ERPShell&&ERPShell.toast)ERPShell.toast(msg||"Saved","success")}
+        catch(e){const m=String((e&&e.message)||e||"");err.textContent=/lwb_receipt_edit|lwb_tally_bill_|lwb_party_return_(edit|delete)|lwb_receipt_delete|lwb_ledger_cancel|lwb_receipt_duplicate|schema cache/i.test(m)?"Edit is not set up on the database yet.":m.replace(/^.*?ERROR:\s*/,"");err.hidden=false;sv.disabled=false;sv.textContent=t0}
+      };
+      return box;
+    }
+    const must=async p=>{const {error,data}=await p;if(error)throw error;return data};
+    function delBox(b,text,call,msg){panel(b,"🗑 Delete",'<p class="ab-rd-q">'+text+"</p>","Yes, delete",async(box,reason)=>{await must(call(reason));return msg},true)}
+    // Tally style Cancel: same money effect as Delete, the entry stays in the ledger as Cancelled ₹0
+    function cxBox(b,text,kind,ref,msg){panel(b,"⛔ Cancel entry",'<p class="ab-rd-q">'+text+"</p>","Yes, cancel it",async(box,reason)=>{await must(client.rpc("lwb_ledger_cancel",{p_kind:kind,p_ref:ref,p_reason:reason}));return msg},true)}
+    const dIn=(v,cls)=>'<input type="date" class="'+(cls||"ab-rd-d")+'" max="'+today()+'" value="'+esc(String(v||"").slice(0,10))+'" aria-label="Date">';
+    // dup=true: Duplicate (Tally Alt+2): same party / brand / modes, new date (today), refs blank → a new payment
+    async function receiptEdit(b,r,dup){
+      const was=b.querySelector(".ab-rd");if(was){was.remove();if(was.dataset.t===(dup?"⧉ Duplicate payment":"✏️ Edit payment"))return}
+      let L;try{L=await must(client.rpc("lwb_receipt_lines",{p_receipt_id:r.receipt_id}))}catch(e){return ERPShell.alert(String(e.message||e).replace(/^.*?ERROR:\s*/,""))}
+      if(!L||!L.length)return ERPShell.alert("Payment lines not found. Reload the page.");
+      const t=today(),y=new Date(Date.parse(t+"T12:00:00Z")-864e5).toISOString().slice(0,10);
+      if(dup)L=L.map(m=>({mode:m.mode,amount:m.amount}));
+      const row=m=>'<div class="ab-rd-l" data-lid="'+esc(m.id||"")+'"><select aria-label="Mode">'+MODES.map(([k,n])=>'<option value="'+k+'"'+(String(m.mode||"").toUpperCase()===k?" selected":"")+">"+n+"</option>").join("")+'</select>'+
+        '<input class="am" inputmode="decimal" placeholder="₹ Amount" value="'+(m.amount!=null?r2(m.amount):"")+'" aria-label="Amount"><input class="rf" maxlength="100" placeholder="UTR / cheque no." value="'+esc(m.ref||"")+'" aria-label="Reference">'+(m.id?"":'<button type="button" class="ab-b sm" data-rm aria-label="Remove line">×</button>')+"</div>";
+      const box=panel(b,dup?"⧉ Duplicate payment":"✏️ Edit payment",(dup?'<p class="ab-rd-q">A new payment of '+esc(nameOf(key(info.parentOf(r.party))))+' with the same modes. Change date / amount; enter the new UTR / cheque no.</p>':"")+'<div class="ab-rd-row"><span>Date</span>'+dIn(dup?t:r.pay_date)+'<button type="button" class="ab-b sm" data-dd="'+y+'">Yesterday</button></div>'+
+        '<div class="ab-rd-ls">'+L.map(row).join("")+'</div><div class="ab-rd-row"><button type="button" class="ab-b sm" data-add>+ Another mode</button><span class="ab-rd-tot"></span></div>'+
+        '<div class="ab-rd-row"><span>Remark</span><input class="rk" maxlength="300" value="'+esc(r.remark||"")+'" aria-label="Remark"></div>',dup?"Save new payment":"Save changes",async(bx,reason)=>{
+          const lines=[...bx.querySelectorAll(".ab-rd-l")].map(l=>({id:l.dataset.lid||null,mode:l.querySelector("select").value,amount:Number(String(l.querySelector(".am").value).replace(/[,₹\s]/g,"")),ref:l.querySelector(".rf").value.trim()||null}));
+          if(lines.some(l=>!(l.amount>0)))throw Error("Enter every amount (more than 0)");
+          if(dup){
+            const res=await must(client.rpc("lwb_receipt_duplicate",{p_receipt_id:r.receipt_id,p_date:bx.querySelector(".ab-rd-d").value,p_lines:lines.map(l=>({mode:l.mode,amount:l.amount,ref:l.ref})),p_remark:bx.querySelector(".rk").value.trim()||null,p_reason:reason}));
+            const top=stack[stack.length-1];if(top&&res&&res.receipt_id)top.again=()=>{const n=(info.raw.receipts||[]).find(z=>z.receipt_id===res.receipt_id&&!z.cancelled);if(n)openReceipt(n)};
+            return "New payment saved"}
+          await must(client.rpc("lwb_receipt_edit",{p_receipt_id:r.receipt_id,p_date:bx.querySelector(".ab-rd-d").value,p_lines:lines,p_remark:bx.querySelector(".rk").value.trim()||null,p_reason:reason}));
+          return "Payment saved"});
+      if(!box)return;
+      const tot=()=>{const n=[...box.querySelectorAll(".am")].reduce((a,i)=>a+(Number(String(i.value).replace(/[,₹\s]/g,""))||0),0);box.querySelector(".ab-rd-tot").innerHTML="Total <b>"+rs2(n)+"</b>"+(!dup&&Math.abs(n-r.total)>0.005?' <small>(was '+rs2(r.total)+")</small>":"")};
+      const wire=()=>{box.querySelectorAll(".am").forEach(i=>i.oninput=tot);box.querySelectorAll("[data-rm]").forEach(x=>x.onclick=()=>{x.parentElement.remove();tot()});tot()};
+      box.querySelector("[data-dd]").onclick=()=>{box.querySelector(".ab-rd-d").value=y};
+      box.querySelector("[data-add]").onclick=()=>{box.querySelector(".ab-rd-ls").insertAdjacentHTML("beforeend",row({mode:"UPI"}));wire()};
+      wire();
+    }
+    function billEdit(b,o,id){
+      const bl=(o.bills||[]).length?o.bills:[{firm:o.party,no:o.invoice_no,amount:o.bill_amount}];
+      const row=x=>'<div class="ab-rd-l bill"><input class="fm" maxlength="200" placeholder="Bill in name" value="'+esc(x.firm||o.party||"")+'" aria-label="Bill in name"><input class="no" maxlength="100" placeholder="Invoice no." value="'+esc(x.no||"")+'" aria-label="Invoice no."><input class="am" inputmode="decimal" placeholder="₹ Amount" value="'+(x.amount!=null?r2(x.amount):"")+'" aria-label="Amount"><button type="button" class="ab-b sm" data-rm aria-label="Remove bill">×</button></div>';
+      const box=panel(b,"✏️ Edit Tally bill",'<div class="ab-rd-row"><span>Bill date</span>'+dIn(o.invoice_date)+'</div><div class="ab-rd-ls">'+bl.map(row).join("")+'</div><div class="ab-rd-row"><button type="button" class="ab-b sm" data-add>+ Another bill</button><span class="ab-rd-tot"></span></div>',"Save bill",async(bx,reason)=>{
+        const bills=[...bx.querySelectorAll(".ab-rd-l")].map(l=>({firm:l.querySelector(".fm").value.trim(),no:l.querySelector(".no").value.trim(),amount:Number(String(l.querySelector(".am").value).replace(/[,₹\s]/g,""))}));
+        if(!bills.length)throw Error("Keep at least one bill (to remove the bill use Delete bill)");
+        if(bills.some(x=>!x.no||!(x.amount>0)))throw Error("Enter invoice no. and amount of every bill");
+        await must(client.rpc("lwb_tally_bill_edit",{p_order_id:id,p_invoice_date:bx.querySelector(".ab-rd-d").value,p_bills:bills,p_reason:reason}));
+        return "Tally bill saved"});
+      if(!box)return;
+      const tot=()=>{const n=[...box.querySelectorAll(".am")].reduce((a,i)=>a+(Number(String(i.value).replace(/[,₹\s]/g,""))||0),0);box.querySelector(".ab-rd-tot").innerHTML="Total <b>"+rs2(n)+"</b>"};
+      const wire=()=>{box.querySelectorAll(".am").forEach(i=>i.oninput=tot);box.querySelectorAll("[data-rm]").forEach(x=>x.onclick=()=>{x.parentElement.remove();tot()});tot()};
+      box.querySelector("[data-add]").onclick=()=>{box.querySelector(".ab-rd-ls").insertAdjacentHTML("beforeend",row({firm:o.party}));wire()};
+      wire();
+    }
+    function returnOf(x){
+      const R=(info.returns||[]).filter(r=>!r.cancelled);
+      return (x.rid&&R.find(r=>r.id===x.rid))||(x.entry_kind==="CREDIT_NOTE"&&x.ref_no&&R.find(r=>String(r.credit_note||"")===String(x.ref_no)&&Math.abs(Number(r.amount)-x.credit)<0.01))||null;
+    }
+    function openReturn(rt){
+      const pk=key(info.parentOf(rt.parent||rt.party));
+      popOpen({title:"Goods return · "+rs(rt.amount)+" · "+dmy(rt.return_date),crumb:"Return "+(rt.return_no||""),again:()=>{const n=(info.returns||[]).find(z=>z.id===rt.id&&!z.cancelled);if(n)openReturn(n)},render:(b,f,sub)=>{
+        sub.innerHTML=esc(nameOf(pk))+(rt.company_id?" · "+btag(rt.company_id):"");
+        b.innerHTML='<div class="ab-sum" style="--n:3"><div class="big"><small>Return amount</small><b class="ab-adv">'+rs2(rt.amount)+'</b></div><div><small>Return no.</small><b style="font-size:14px">'+esc(rt.return_no||"—")+'</b></div><div><small>Against</small><b style="font-size:14px">'+(rt.order_no?esc(rt.order_no)+(rt.invoice_no?" · bill "+esc(rt.invoice_no):""):"Party balance")+"</b></div></div>"+
+          '<table class="ab-t"><thead><tr><th>SKU</th><th class="n">Cases</th><th class="n">Pcs</th></tr></thead><tbody>'+((rt.items||[]).map(i=>'<tr class="ob"><td>'+esc(i.sku||"")+'</td><td class="n">'+(Number(i.cases)||0)+'</td><td class="n">'+(Number(i.pcs)||0)+"</td></tr>").join("")||'<tr class="ob"><td colspan="3" class="ab-empty">No item line</td></tr>')+"</tbody></table>"+
+          '<p class="ab-note">'+[rt.by?"Entered by "+esc(rt.by):"",rt.credit_note?"Credit note "+esc(rt.credit_note):"",rt.note?"Note: "+esc(rt.note):""].filter(Boolean).join(" · ")+"</p>";
+        f.innerHTML='<button type="button" class="ab-b t" data-led="'+esc(pk)+'">📒 Party ledger</button><a class="ab-b" href="party-billing.html?tab=ret#tally">Returns page ↗</a>'+
+          (canDate()?'<button type="button" class="ab-b" data-tedit>✏️ Edit</button><button type="button" class="ab-b ab-del" data-tcx>⛔ Cancel</button><button type="button" class="ab-b ab-del" data-tdel>🗑 Delete</button>':"")+'<span class="sp"></span><button type="button" class="ab-b" data-close>Close</button>';
+        const te=f.querySelector("[data-tedit]"),tx=f.querySelector("[data-tdel]");
+        if(te)te.onclick=()=>panel(b,"✏️ Edit return",'<div class="ab-rd-row"><span>Date</span>'+dIn(rt.return_date)+'</div><div class="ab-rd-row"><span>Note</span><input class="rk" maxlength="300" value="'+esc(rt.note||"")+'" aria-label="Note"></div><p class="ab-rd-q">Items and amount change from the Returns page (cancel and enter again).</p>',"Save",async(bx,reason)=>{
+          await must(client.rpc("lwb_party_return_edit",{p_id:rt.id,p_date:bx.querySelector(".ab-rd-d").value,p_note:bx.querySelector(".rk").value.trim()||null,p_reason:reason}));return "Return saved"});
+        const tc=f.querySelector("[data-tcx]");
+        if(tc)tc.onclick=()=>cxBox(b,"Cancel return <b>"+esc(rt.return_no||"")+"</b> of "+rs2(rt.amount)+"? It stays in the ledger as <b>Cancelled</b> with ₹0; its credit note is cancelled too.","RETURN",rt.id,"Return cancelled");
+        if(tx)tx.onclick=()=>delBox(b,"Delete return <b>"+esc(rt.return_no||"")+"</b> of "+rs2(rt.amount)+"? Its credit note is cancelled too.",reason=>client.rpc("lwb_party_return_delete",{p_id:rt.id,p_reason:reason}),"Return deleted");
+        histInto(b,[rt.id]);
+      }});
+    }
+    // edit history line(s) on the entry
+    async function histInto(b,ids){
+      try{const {data,error}=await client.rpc("lwb_ledger_edit_log_for",{p_ids:ids});if(error||!Array.isArray(data)||!data.length)return;
+        const txt=x=>x.action==="DUPLICATE"||x.action==="CANCEL"?(x.action==="CANCEL"?"⛔ Cancelled":"⧉ Duplicated from another payment")+" by "+esc(x.by)+" on "+dmy(String(x.at).slice(0,10))+(x.reason?" ("+esc(x.reason)+")":""):(x.action==="DELETE"?"🗑 Deleted":"✏️ Edited")+" by "+esc(x.by)+" on "+dmy(String(x.at).slice(0,10))+(x.before&&x.after&&x.before.total!=null&&Number(x.before.total)!==Number(x.after.total)?" · "+rs2(x.before.total)+" → "+rs2(x.after.total):"")+(x.before&&x.after&&(x.before.pay_date||x.before.invoice_date||x.before.return_date)!==(x.after.pay_date||x.after.invoice_date||x.after.return_date)?" · date "+dmy(x.before.pay_date||x.before.invoice_date||x.before.return_date)+" → "+dmy(x.after.pay_date||x.after.invoice_date||x.after.return_date):"")+(x.reason?" ("+esc(x.reason)+")":"");
+        const p=document.createElement("p");p.className="ab-note ab-hist";p.innerHTML=data.map(txt).join("<br>");
+        const sum=b.querySelector(".ab-sum");if(sum)sum.after(p);else b.append(p);
+      }catch(_){}
+    }
+    // Admin and Accounts (Mohit 21 Nov 2026) may edit / duplicate / cancel / delete ledger entries
+    const canDate=()=>me&&["admin","accounts"].includes(String(me.realRole||me.role||"").toLowerCase());
+    const qtyOf=i=>Number(i.loaded_qty)>0?Number(i.loaded_qty):i.approved_qty!=null&&i.approved_qty!==""?Number(i.approved_qty):Number(i.ordered_qty)||0;
+    const PST={RECEIVED:["Received","paid"],WITH_DRIVER:["With driver","part"],CHEQUE_IN_HAND:["Cheque not deposited","chq"],CHEQUE_DEPOSITED:["Cheque not cleared","chq"],CHEQUE_BOUNCED:["Cheque bounced","pen"],CHEQUE_CLEARED:["Cheque cleared","paid"]};
+    // one bill: header, money, every item, every payment, everything on this PO in the ledger
+    function openBill(ref){
+      if(!lastFocus)lastFocus=document.activeElement;
+      const o0=(ref.order_id&&(info.raw.orders||[]).find(o=>o.order_id===ref.order_id))||(ref.order_no&&byNo.get(String(ref.order_no)))||null;
+      const no=(o0&&o0.order_no)||ref.order_no||"";
+      popOpen({title:"Sales bill · "+(o0?billNo(o0)||"PO "+no:"PO "+no),crumb:"Bill "+(o0&&billNo(o0)||no),again:()=>openBill({order_id:ref.order_id||(o0&&o0.order_id),order_no:no,pk:ref.pk}),render:async(b,f,sub)=>{
+        let id=(o0&&o0.order_id)||ref.order_id||null,O=null;
+        let q=id?await client.from("orders").select("*").eq("id",id).maybeSingle():{data:null};
+        if((!q.data||q.error)&&no)q=await client.from("orders").select("*").eq("order_no",no).limit(1).maybeSingle();
+        if(q.error)throw q.error;O=q.data||{};id=id||O.id;
+        const [it,py]=await Promise.all([id?client.from("order_items").select("*").eq("order_id",id):{data:[]},id?client.rpc("lwb_order_payments",{p_ids:[id]}):{data:[]}]);
+        if(it.error)throw it.error;
+        const items=(it.data||[]).map(i=>({...i,q:qtyOf(i),amt:r2(qtyOf(i)*(Number(i.rate)||0))})).filter(i=>i.q>0||Number(i.ordered_qty)>0);
+        const pays=py&&!py.error?(py.data||[]):[];
+        const o=o0||{};const pk=ref.pk||key(info.parentOf(o.party||O.customer_name));
+        const billAmt=o.bill_amount!=null?r2(o.bill_amount):r2(items.reduce((a,i)=>a+i.amt,0));
+        const got=r2((Number(o.driver)||0)+(Number(o.office)||0)),cn=r2((Number(o.credit_notes)||0)+(Number(o.approved_return)||0)-(Number(o.debit_notes)||0));
+        const due=o0?r2(o.due):null,st=due==null?"":due<=0.5?'<span class="ab-bd paid">✓ Paid</span>':got>0?'<span class="ab-bd part">Part paid</span>':'<span class="ab-bd pen">Pending</span>';
+        sub.innerHTML=[esc(o.party||O.customer_name||""),esc(/^PO\b/i.test(no)?no:"PO "+no),o.invoice_date?"Bill date "+dmy(o.invoice_date):"",o.invoice_date?'<span class="'+dcls(daysOld(o.invoice_date))+'">'+daysOld(o.invoice_date)+" days</span>":"",O.sales_person?"Salesman "+esc(O.sales_person):"",o.company_id?btag(o.company_id):""].filter(Boolean).join(" · ")+" "+st;
+        const hl=ref.hl&&!BILLK.has(ref.hl.entry_kind)?ref.hl:null;
+        const rows=led.filter(y=>String(y.order_no)===String(no));let run=0;
+        b.innerHTML=(hl?'<div class="ab-this"><b>This entry:</b> <span class="ab-vt '+vt(hl)[1]+'">'+esc(vt(hl)[0])+"</span>"+esc(vt(hl)[2]||"")+" "+modeChips(PAYK.has(hl.entry_kind)?modeOf(hl):[])+" · "+dmy(hl.d)+" · <b>"+rs2(hl.debit||hl.credit)+"</b>"+(hl.note?" · "+esc(hl.note):"")+"</div>":"")+
+          '<div class="ab-sum"><div><small>Bill amount</small><b>'+rs2(billAmt)+'</b></div><div><small>Credit note / return</small><b>'+rs2(cn)+'</b></div><div><small>Received</small><b class="ab-adv">'+rs2(got)+'</b></div><div class="big"><small>Due now</small><b class="'+(due>0.5?"ab-due":"ab-adv")+'">'+(due==null?"—":rs2(due))+"</b></div></div>"+
+          ((o.bills||[]).length>1?"<h4>Tally bills</h4>"+'<table class="ab-t"><tbody>'+o.bills.map(x=>'<tr class="ob"><td>'+esc(x.firm||o.party)+"</td><td>"+esc(x.no)+'</td><td class="n">'+rs2(x.amount)+"</td></tr>").join("")+"</tbody></table>":"")+
+          "<h4>Items ("+items.length+")</h4>"+
+          '<table class="ab-t"><thead><tr><th>SKU</th><th class="n hp">Ordered</th><th class="n">Qty</th><th class="n">Rate</th><th class="n">Amount</th></tr></thead><tbody>'+
+          (items.map(i=>'<tr class="ob"><td>'+esc(i.sku_name||i.sku||"")+'</td><td class="n hp">'+(Number(i.ordered_qty)||0)+'</td><td class="n"><b>'+i.q+'</b></td><td class="n">'+rs2(i.rate)+'</td><td class="n">'+rs2(i.amt)+"</td></tr>").join("")||'<tr class="ob"><td colspan="5" class="ab-empty">No item line</td></tr>')+
+          '</tbody><tfoot><tr><td>Total</td><td class="n hp"></td><td class="n">'+items.reduce((a,i)=>a+i.q,0)+'</td><td class="n"></td><td class="n">'+rs2(items.reduce((a,i)=>a+i.amt,0))+"</td></tr></tfoot></table>"+
+          "<h4>Payments on this bill ("+pays.length+")</h4>"+
+          (pays.length?'<table class="ab-t"><thead><tr><th>Date</th><th>Mode</th><th class="hp">Ref</th><th class="hp">By</th><th>Status</th><th class="n">Amount</th></tr></thead><tbody>'+pays.map((y,i)=>{const s=PST[y.status]||[y.status||"",""];
+            return '<tr tabindex="0" data-py="'+i+'"><td>'+dmy(y.pay_date)+"</td><td>"+modeChips(String(y.mode||"").toUpperCase().split("+"))+'<small class="ab-ph">'+esc(y.ref||"")+'</small></td><td class="hp">'+esc(y.ref||"")+'</td><td class="hp">'+esc(y.by_name||"")+'</td><td><span class="ab-bd '+s[1]+'">'+esc(s[0])+'</span></td><td class="n">'+rs2(y.amount)+"</td></tr>"}).join("")+"</tbody></table>":'<div class="ab-empty">No payment yet</div>')+
+          "<h4>Ledger entries of this PO</h4>"+
+          '<table class="ab-t"><tbody>'+rows.map(y=>{run+=y.debit-y.credit;return '<tr class="ob'+(ref.hl&&y.i===ref.hl.i?" hl":"")+'"><td>'+dmy(y.d)+'</td><td><span class="ab-vt '+vt(y)[1]+'">'+esc(vt(y)[0])+"</span>"+esc(y.ref_no||"")+'</td><td class="n">'+(y.debit?rs2(y.debit):"")+'</td><td class="n ab-adv">'+(y.credit?rs2(y.credit):"")+'</td><td class="n">'+bal(run)+"</td></tr>"}).join("")+"</tbody></table>";
+        // a party payment row opens its receipt
+        b.querySelectorAll("[data-py]").forEach(t=>t.onclick=()=>{const y=pays[Number(t.dataset.py)];
+          const r=(info.raw.receipts||[]).find(r=>!r.cancelled&&(r.allocs||[]).some(a=>a.order_id===id&&Math.abs(Number(a.amount)-Number(y.amount))<0.01))||(info.raw.receipts||[]).find(r=>!r.cancelled&&(r.allocs||[]).some(a=>a.order_id===id));
+          if(r&&/PARTY|OFFICE|ACC/i.test(String(y.src||"PARTY")))openReceipt(r);else if(window.ERPShell&&ERPShell.toast)ERPShell.toast(String(y.src||"Payment")+" · "+rs2(y.amount)+(y.by_name?" · "+y.by_name:""),"info")});
+        f.innerHTML='<button type="button" class="ab-b t" data-led="'+esc(pk)+'">📒 Party ledger</button>'+(due>0.5?'<button type="button" class="ab-b g" data-pay="'+esc(pk)+'">💰 Receive</button>':"")+
+          (id?'<a class="ab-b" href="accounts-invoice.html?order='+encodeURIComponent(id)+'#tally">Bill page ↗</a><a class="ab-b" href="warehouse-orders.html?order='+encodeURIComponent(id)+'">Open PO ↗</a>':"")+
+          (canDate()&&id&&o.invoice_no?'<button type="button" class="ab-b" data-bedit>✏️ Edit bill</button><button type="button" class="ab-b ab-del" data-bcx>⛔ Cancel bill</button><button type="button" class="ab-b ab-del" data-bdel>🗑 Delete bill</button>':"")+'<span class="sp"></span><button type="button" class="ab-b" data-close>Close</button>';
+        const be=f.querySelector("[data-bedit]"),bx=f.querySelector("[data-bdel]");
+        if(be)be.onclick=()=>billEdit(b,o,id);
+        const bc=f.querySelector("[data-bcx]");
+        if(bc)bc.onclick=()=>cxBox(b,"Cancel Tally bill <b>"+esc(billNo(o)||o.invoice_no)+"</b> ("+rs2(billAmt)+")? It stays in the ledger as <b>Cancelled</b> with ₹0; the PO goes back to Bills to make; party money set to it goes back to advance.","TALLY_BILL",id,"Tally bill cancelled");
+        if(bx)bx.onclick=()=>delBox(b,"Delete Tally bill <b>"+esc(billNo(o)||o.invoice_no)+"</b> ("+rs2(billAmt)+")? The PO goes back to Bills to make; party money set to it goes back to advance.",
+          reason=>client.rpc("lwb_tally_bill_delete",{p_order_id:id,p_reason:reason}),"Tally bill deleted");
+        if(id)histInto(b,[id]);
+      }});
+    }
+
+    /* ---------- Excel / Print ---------- */
+    async function excel(){
+      if(!cur)return;
+      if(cur.ledger){const {name,L,p}=cur.ledger;
+        return S.excel("Ledger-"+name.replace(/[^A-Za-z0-9]+/g,"_"),[{name:"Ledger",title:"Ledger "+name+bLab()+" · "+dmy(p.from)+" to "+dmy(p.to),head:["Date","Vch type","Particulars","Vch no. / Ref","PO","Debit","Credit","Balance (+Dr / -Cr)"],
+          rows:[["","","Opening balance","","","","",L.open],...L.rows.map(x=>[x.d,vt(x)[0],vt(x)[2]||"",x.ref_no||"",x.order_no||"",x.debit||"",x.credit||"",x.bal]),["","","Closing balance","","",L.dr,L.cr,L.close]]}])}
+      return S.excel((cur.title||"Accounts").replace(/[^A-Za-z0-9]+/g,"_"),[{name:cur.title||"Sheet",title:(cur.title||"")+bLab(),head:cur.cols.map(c=>c.h),rows:cur.list.map(r=>r.data)}]);
+    }
+    function print(){
+      const w=window.open("","_blank");if(!w)return ERPShell.alert("Allow pop-ups for this site to print.");
+      const t=el("crumb").textContent,tb=el("box").querySelector(".ab-t");
+      w.document.write('<!DOCTYPE html><html><head><meta charset="UTF-8"><title>'+esc(t)+'</title><style>body{font:12px Arial,sans-serif;color:#142841;margin:20px}h1{font-size:15px;margin:0 0 10px}table{width:100%;border-collapse:collapse}th,td{border:1px solid #ccd;padding:4px 6px;text-align:left;vertical-align:top}th{background:#eef2f7}.n{text-align:right;white-space:nowrap}small{display:block;color:#667}.lwb-cf,.ab-ph{display:none}tfoot td{font-weight:bold}</style></head><body><h1>LUXURY WRIST BRAND · '+esc(t)+"</h1>"+
+        (el("box").querySelector(".ab-sum")?el("box").querySelector(".ab-sum").outerHTML.replace(/<div/g,"<span").replace(/<\/div>/g,"</span> &nbsp; "):"")+(tb?tb.outerHTML:"")+"<p><small>Printed "+dmy(today())+"</small></p></body></html>");
+      w.document.close();w.focus();setTimeout(()=>w.print(),300);
+    }
+
+    /* ---------- receive payment ---------- */
+    function pay(pk){
+      if(!info)return;
+      LWBPartyPay.open({client,info,party:pk?nameOf(pk):undefined,brand:fb||undefined,onSaved:r=>{if(window.ERPShell&&ERPShell.toast)(r.kasarOnly?ERPShell.toast("Kasar "+rs(r.kasar)+" saved on bill "+r.bill+" · "+r.party,"success"):ERPShell.toast(rs(r.amount)+" received from "+r.party,"success"));popClose();load()}});
+    }
+
+    /* ---------- wiring ---------- */
+    function goSec(s,extra){popClose();sec=s;shown=300;if(extra)extra();draw();window.scrollTo(0,0)}
+    (async()=>{
+      me=await S.start(["admin","accounts"]);
+      if(!me)return;
+      el("loading").hidden=true;el("page").hidden=false;
+      const U=new URLSearchParams(location.search);
+      const v=U.get("v");if(SECS.some(s=>s[0]===v))sec=v;
+      el("tabs").addEventListener("click",e=>{const b=e.target.closest("[data-sec]");if(b)goSec(b.dataset.sec)});
+      el("kpis").addEventListener("click",e=>{const b=e.target.closest("[data-go]");if(!b)return;const [s,x]=b.dataset.go.split(":");
+        goSec(s,()=>{if(s==="out"){outPk="";if(x==="60"){outMode="bill";outShow="60"}else{outMode="party";outShow=x||"due"}}if(s==="day")dayKind=x==="bill"?"bill":"";if(s==="led")ledPk=""})});
+      el("rfBtn").onclick=()=>load();el("xlBtn").onclick=()=>excel().catch(e=>ERPShell.alert(e.message));el("prBtn").onclick=print;el("payBtn").onclick=()=>pay(sec==="led"?ledPk:sec==="out"?outPk:"");
+      // rows: click / Enter opens
+      const rowGo=tr=>{if(!cur||!tr||!tr.dataset.r)return;const r=cur.list[Number(tr.dataset.r)];if(r&&cur.onRow){lastFocus=tr;cur.onRow(r.x)}};
+      el("box").addEventListener("click",e=>{if(e.target.closest("[data-cf],a,button:not(#more)"))return;rowGo(e.target.closest("tr[data-r]"))});
+      document.addEventListener("click",e=>{
+        const t=e.target.closest("#more,[data-led],[data-out],[data-pay],[data-back],[data-close]");if(!t)return;
+        if(t.id==="more"){shown+=300;draw();return}
+        if(t.hasAttribute("data-back"))return popBack();
+        if(t.hasAttribute("data-close"))return popClose();
+        if(t.dataset.led!=null){popClose();sec="led";ledPk=t.dataset.led;shown=300;draw();window.scrollTo(0,0);return}
+        if(t.dataset.out!=null){popClose();sec="out";outPk=t.dataset.out;shown=300;draw();return}
+        if(t.dataset.pay!=null)return pay(t.dataset.pay);
+      });
+      el("pop").addEventListener("click",e=>{if(e.target.classList.contains("ab-ov"))popClose()});
+      // Tally keys: Ctrl+Alt+L / O / R / P / D, Esc = one step back, Enter on a row = open, L in a party = its ledger
+      window.addEventListener("keydown",e=>{
+        const k=(e.code||"").replace(/^Key/,"");
+        if(e.ctrlKey&&e.altKey&&!e.metaKey){
+          const m={L:()=>findLedger(),O:()=>goSec("out",()=>{outPk=""}),R:()=>goSec("rec"),P:()=>goSec("sum"),D:()=>goSec("day")}[k];
+          if(m){e.preventDefault();e.stopPropagation();m();return}}
+        if(e.key==="Escape"){
+          if(document.querySelector(".lwbk-back,.lwb-cf-pop,.lpp-back"))return;
+          if(stack.length){e.preventDefault();e.stopPropagation();stack.length>1?popBack():popClose();return}
+          const a=document.activeElement,typing=a&&/^(INPUT|SELECT|TEXTAREA)$/.test(a.tagName);
+          if(typing&&a.value){return}
+          if(sec==="out"&&outPk){e.preventDefault();outPk="";draw();return}
+          if(sec==="led"&&ledPk){e.preventDefault();ledPk="";draw();return}
+          return}
+        if(e.key==="Enter"&&!e.ctrlKey&&!e.altKey){const tr=e.target.closest&&e.target.closest("tr[data-r],tr[data-al],tr[data-py]");
+          if(tr){e.preventDefault();if(tr.closest("#pop"))tr.click();else rowGo(tr);return}}
+        const a=document.activeElement,typing=a&&/^(INPUT|SELECT|TEXTAREA)$/.test(a.tagName);
+        if(!typing&&!stack.length&&!e.ctrlKey&&!e.altKey&&!e.metaKey&&(e.key==="l"||e.key==="L")&&sec==="out"&&outPk){e.preventDefault();sec="led";ledPk=outPk;draw()}
+      },true);
+      document.addEventListener("lwb:brand",()=>{if(!info)return;fb=curBrand();drawKpis();draw()});
+      document.addEventListener("lwb:period",()=>{if(!info)return;drawKpis();if(!stack.length)draw()});
+      await load();
+      const P=U.get("party");
+      if(P&&info){const pk=key(info.parentOf(P));if(sec==="out")outPk=pk;else{sec=sec==="out"?"out":"led";ledPk=pk}draw()}
+      if(U.get("find")==="1")findLedger();
+    })().catch(e=>{el("loading").textContent=e.message||String(e)});
+  })();
+  </script>
+</body>
+</html>

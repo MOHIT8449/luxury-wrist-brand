@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><script src="erp-fit.js"></script>
 <title>Driver Returns Approval | Luxury Wrist Brand ERP</title>
-<script src="erp-date.js"></script><script src="erp-recent.js"></script>
+<script src="erp-date.js"></script><script src="erp-period.js"></script><script src="erp-recent.js"></script>
 <script src="vendor/supabase-js-2.119.0.js"></script>
 <script src="brand-filter.js"></script><script src="page-role.js"></script>
 <script src="party-list.js" defer></script>
@@ -74,8 +74,8 @@ button:disabled{opacity:.5;cursor:not-allowed}
 }
 @media(max-width:640px){main{padding:12px}.tab{padding:9px}.tab strong{font-size:18px}.lines th,.lines td{padding:6px 4px;font-size:12px}.amount{font-size:17px}}
 </style>
-<link rel="stylesheet" href="erp-shell.css">
-<script src="erp-shell.js" data-auto defer></script>
+<link rel="stylesheet" href="erp-shell.css?v=20261124">
+<script src="erp-shell.js?v=20261124r" data-auto defer></script>
 </head>
 <body>
 <header><div><h1>LUXURY WRIST BRAND</h1><small>OFFICE / DRIVER RETURN APPROVAL</small></div>
@@ -260,16 +260,19 @@ function photoStrip(r){
 el("rcvX").onclick=el("rcvCancel").onclick=()=>{el("rcvDlg").hidden=true};
 el("rcvDlg").onclick=e=>{if(e.target===el("rcvDlg"))el("rcvDlg").hidden=true};
 el("viewer").onclick=e=>{if(e.target!==el("viewerImg"))el("viewer").hidden=true};
+// Waiting tabs show every row of any date; done tabs follow the ONE top bar date (erp-period.js, Mohit 20 Nov 2026).
+const OPEN_ST=["PENDING_OFFICE"],inPer=(s,r)=>OPEN_ST.includes(s)||!window.LWBPeriod||LWBPeriod.has(r.created_at);
+if(window.LWBPeriod)LWBPeriod.on(()=>render());
 function render(){
  document.querySelectorAll(".tab").forEach(t=>t.classList.toggle("active",t.dataset.status===status));
- STATUSES.forEach(s=>el("count"+s).textContent=(lists[s]||[]).filter(inBrand).length);
+ STATUSES.forEach(s=>el("count"+s).textContent=(lists[s]||[]).filter(r=>inBrand(r)&&inPer(s,r)).length);
  const q=el("search").value.toLowerCase().trim().split(/\s+/).filter(Boolean);
- const all=(lists[status]||[]).filter(r=>(!onlyOrder||r.order_id===onlyOrder)&&(onlyOrder||inBrand(r)));
+ const all=(lists[status]||[]).filter(r=>(!onlyOrder||r.order_id===onlyOrder)&&(onlyOrder||inBrand(r)&&inPer(status,r)));
  el("only").hidden=!onlyOrder;
  if(onlyOrder){const o=STATUSES.flatMap(x=>lists[x]).find(r=>r.order_id===onlyOrder);el("onlyText").textContent="From notification: "+(o?.order_no||"order")+" · "+(o?.party_name||"")}
  const rows=all.filter(r=>q.every(w=>[r.party_name,r.order_no,r.driver_name,r.vehicle_no].join(" ").toLowerCase().includes(w)));
  const list=el("list");list.replaceChildren();
- if(!rows.length){list.append(node("div",status==="PENDING_OFFICE"?"No pending driver returns.":"No returns here.","empty"));return}
+ if(!rows.length){list.append(node("div",status==="PENDING_OFFICE"?"No pending driver returns.":"No returns in these dates.","empty"));return}
  for(const r of rows){
   const card=node("div",null,"card");
   const info=node("div",null,"info");info.append(node("div",r.party_name||"—","party"),

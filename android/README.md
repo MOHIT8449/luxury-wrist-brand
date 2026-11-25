@@ -1,6 +1,6 @@
 # LWB ERP Android app
 
-A Trusted Web Activity: the app opens https://luxury-wrist-brand.pages.dev
+A Trusted Web Activity: the app opens https://luxurywristbrand.com
 full screen in Chrome. Everything (login + OTP, camera photos, call buttons,
 WhatsApp, popups) is the live website, so a merged PR reaches the app at once.
 A new APK is only needed when this `android/` folder changes.
@@ -16,6 +16,12 @@ A new APK is only needed when this `android/` folder changes.
    small address bar, because it is not signed with the release key.
 3. For the full-screen release APK, set `LWB_KEYSTORE_FILE` (path to the .jks)
    and `LWB_KEYSTORE_PASSWORD`, then run `./gradlew assembleRelease`.
+
+## Red bar on top after the domain change (21 Nov 2026)
+An app installed before 20 Nov 2026 still opens the old pages.dev address. That address now
+moves to luxurywristbrand.com, so Chrome sees a different site than the app was made for and
+shows its red address bar (X, share, menu). Install the newest APK over the old app (same key,
+no data lost) and it opens full screen again. The Play Store version needs the new `.aab` uploaded.
 
 ## Signing key
 The SHA-256 of the release key is in `/.well-known/assetlinks.json` on the
@@ -37,6 +43,10 @@ After 15 minutes idle the ERP locks and opens with the phone's fingerprint / fac
 (`quick-unlock.js`, WebAuthn in Chrome). It is part of the website, so no new APK is needed.
 
 ## Staff location sharing (new APK required)
+
+21 Nov 2026: the first screen is only Login (mobile/email + password). No notice text or "I agree" tick;
+logging in records the agreement (`lwb_gps_agree`). Location and notification permission use Android's own
+dialog directly; a short popup shows only when Android needs Settings (denied twice, "Allow all the time", GPS off).
 
 Every active ERP login except Admin shares location with Admin. Only Admin sees
 Live Tracking. The app icon now opens `DriverTrackingActivity` (the location gate)

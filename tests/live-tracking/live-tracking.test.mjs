@@ -50,6 +50,8 @@ const upgrade=await readFile(new URL('../../lwb_driver_background_tracking_setup
 await db.exec(upgrade);await db.exec(upgrade);
 // Old standalone restriction keeps the map Admin only on rerun.
 await db.exec(await readFile(new URL('../../lwb_salesman_live_tracking_restriction.sql',import.meta.url),'utf8'));
+const alertSql=await readFile(new URL('../../lwb_staff_location_alert_setup.sql',import.meta.url),'utf8');
+await db.exec(alertSql);await db.exec(alertSql);
 
 async function as(who){await db.query("select set_config('request.jwt.claim.sub',$1,false)",[ids[who]||''])}
 async function call(q,args=[]){await db.exec('SET ROLE authenticated');try{return (await db.query(q,args)).rows}finally{await db.exec('RESET ROLE')}}
@@ -255,4 +257,22 @@ test('native endpoint accepts every active non-Admin login; Admin and role chang
  await db.query("update user_profiles set role='ADMIN' where id=$1",[ids.driver]);
  assert.equal((await one('select lwb_driver_track_ping(21,72)')).tracked,false);
  await db.query("update user_profiles set role='DRIVER' where id=$1",[ids.driver]);
+});
+
+test('location off alerts every Admin once (not again within 2 hours); first-seen today is Admin only',async()=>{
+  await as('admin');await call('select lwb_tracking_save_settings($1)',[{work_start:'00:00',work_end:'23:59:59'}]);
+  const n=async()=>Number((await db.query("select count(*) c from erp_notifications where notification_type='LOCATION_OFF' and user_id=$1",[ids.admin])).rows[0].c);
+  await ping('acc',G);await db.query('update lwb_staff_location set off_alert_at=null where user_id=$1',[ids.acc]);
+  const before=await n();
+  await as('acc');await one("select lwb_track_ping(null,null,null,null,null,'OFF') r");
+  assert.equal(await n(),before+1);
+  const msg=(await db.query("select title,message from erp_notifications where notification_type='LOCATION_OFF' order by ctid desc limit 1")).rows[0];
+  assert.match(msg.title,/Name acc/);assert.match(msg.message,/Accounts/);
+  await one("select lwb_track_ping(null,null,null,null,null,'OFF') r");  // still off: no repeat
+  await ping('acc',G);await as('acc');await one("select lwb_track_ping(null,null,null,null,null,'DENIED') r"); // off again soon: no repeat
+  assert.equal(await n(),before+1);
+  await as('admin');const t=await one('select lwb_staff_today() t');
+  assert.ok(t[ids.acc]&&t[ids.acc].first);
+  await as('sales');await assert.rejects(call('select lwb_staff_today()'),/only for Admin/);
+  await ping('acc',G);
 });

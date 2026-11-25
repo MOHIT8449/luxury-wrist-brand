@@ -6,11 +6,11 @@
   <title>Live Tracking | Luxury Wrist Brand ERP</title>
   <script src="erp-date.js"></script>
   <script src="vendor/supabase-js-2.119.0.js"></script>
-  <link rel="stylesheet" href="erp-shell.css">
+  <link rel="stylesheet" href="erp-shell.css?v=20261124">
   <link rel="stylesheet" href="sales.css">
   <link rel="stylesheet" href="assets/leaflet/leaflet.css">
   <script src="assets/leaflet/leaflet.js"></script>
-  <script src="erp-shell.js"></script>
+  <script src="erp-shell.js?v=20261124r"></script>
   <script src="sales-common.js"></script>
   <style>
     .lt-grid{display:grid;grid-template-columns:minmax(330px,420px) 1fr;gap:14px;align-items:start}
@@ -44,6 +44,14 @@
     .lt-roles label{display:flex;gap:6px;align-items:center;font-weight:500;margin:0}
     .lt-pin{position:absolute;inset:auto 10px 10px 10px;z-index:500;background:var(--lwb-teal,#002f37);color:#fff;padding:9px 12px;border-radius:8px;font-size:13px;display:flex;gap:10px;align-items:center}
     .lt-pin button{margin-left:auto}
+    .lt-card.bad{border-left:4px solid #d92d20}
+    .lt-card.gone{border-left:4px solid #98a2b3}
+    .lt-first{font-weight:700;color:var(--lwb-teal,#002f37)}
+    .lt-filt{display:flex;gap:6px;flex-wrap:wrap;margin:-2px 0 8px}
+    .lt-filt button{border:1px solid var(--erp-line);background:#fff;border-radius:14px;padding:4px 10px;font:600 12px/1.2 inherit;cursor:pointer;color:#344}
+    .lt-filt button.on{background:var(--lwb-teal,#002f37);color:#fff;border-color:var(--lwb-teal,#002f37)}
+    .lt-filt button.red b{color:#d92d20}.lt-filt button.on.red b{color:#ffd1cc}
+    #kpis .sl-kpi.bad{border-color:#f5b7b1;background:#fff5f4;cursor:pointer}#kpis .sl-kpi.bad b{color:#b42318}
     .lt-mk{display:grid;place-items:center;border-radius:50%;color:#fff;font:700 12px/1 var(--erp-font,Arial);border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.35)}
     .lt-mk.stale{filter:grayscale(1);opacity:.75}
     .lt-mk.drv{border-radius:9px;font-size:16px}
@@ -95,6 +103,7 @@
       </div>
     </section>
 
+    <div class="lt-filt" id="filt" hidden></div>
     <div class="lt-grid">
       <div class="lt-side" id="side"></div>
       <div class="lt-map" id="map"></div>
@@ -107,10 +116,13 @@
     const COLOR={driver:"#00434d",sales:"#1d5fbf",accounts:"#7b4fb5",warehouse:"#b26b00",transport:"#2f7d5b",manager:"#a33a5a",admin:"#444"};
     const STEPS=[["LEFT_GODOWN","Left godown"],["ON_WAY","On the way"],["REACHED_PARTY","Reached"],["DELIVERY_REPORT","Delivered"],["LEFT_PARTY","Left party"]];
     const STALE_MIN=10;
-    let me=null,data=null,tab="drivers",map=null,layer=null,trailLayer=null,liveTrails=null,trailCache=new Map(),markers=new Map(),focus="",pinMode=null,fitted=false,timer=null;
+    let me=null,data=null,today={},filt="all",tab="drivers",map=null,layer=null,trailLayer=null,liveTrails=null,trailCache=new Map(),markers=new Map(),focus="",pinMode=null,fitted=false,timer=null;
 
     const time=v=>v?new Date(v).toLocaleTimeString("en-IN",{hour:"2-digit",minute:"2-digit",hour12:true,timeZone:"Asia/Kolkata"}):"";
     const ago=v=>{if(!v)return "never";const m=Math.round((Date.now()-new Date(v))/6e4);return m<1?"just now":m<60?m+" min ago":m<1440?Math.floor(m/60)+" h "+(m%60)+" min ago":Math.floor(m/1440)+" day ago"};
+    const isOff=p=>p.status==="DENIED"||p.status==="OFF";
+    const istDay=v=>new Date(v).toLocaleDateString("en-IN",{timeZone:"Asia/Kolkata"});
+    const seenToday=p=>!!(today[p.user_id]||p.updated_at&&istDay(p.updated_at)===istDay(Date.now()));
     const fresh=p=>p&&p.lat!=null&&p.status==="ON"&&Date.now()-new Date(p.updated_at)<STALE_MIN*6e4;
     const initials=n=>String(n||"?").trim().split(/\s+/).slice(0,2).map(w=>w[0]).join("").toUpperCase();
     function km(a,b,c,d){const R=6371,r=x=>x*Math.PI/180,h=Math.sin(r(c-a)/2)**2+Math.cos(r(a))*Math.cos(r(c))*Math.sin(r(d-b)/2)**2;return 2*R*Math.asin(Math.min(1,Math.sqrt(h)))}
@@ -159,13 +171,15 @@
     }
 
     function renderKpis(list){
-      const people=data.people,live=people.filter(fresh).length,off=people.filter(p=>p.status==="DENIED"||p.status==="OFF").length;
+      const people=data.people,live=people.filter(fresh).length,off=people.filter(isOff).length,unseen=people.filter(p=>!isOff(p)&&!seenToday(p)).length;
       const onRoad=list.filter(d=>d.open.some(t=>t.events.LEFT_GODOWN)).length;
       const delivered=data.trips.filter(t=>t.report_status==="DELIVERED"||t.report_status==="PARTIAL").length;
       const pending=data.trips.filter(t=>!t.report_status).length;
       const k=(l,v,s)=>'<div class="sl-kpi"><small>'+l+"</small><b>"+v+"</b>"+(s?"<span>"+s+"</span>":"")+"</div>";
       el("kpis").innerHTML=k("Drivers on the road",onRoad,list.length+" with orders today")+k("Deliveries pending",pending)+k("Delivered today",delivered)+
-        k("Staff live now",live,"of "+people.length+" tracked")+k("Location off",off,off?"asked to allow":"");
+        k("Staff live now",live,"of "+people.length+" tracked")+
+        '<div class="sl-kpi'+(off?" bad":"")+'" data-go="off"><small>Location off</small><b>'+off+"</b><span>"+(off?"tap to see who":"nobody")+"</span></div>"+
+        '<div class="sl-kpi'+(unseen?" bad":"")+'" data-go="unseen"><small>Not seen today</small><b>'+unseen+"</b><span>app not opened</span></div>";
     }
 
     function driverCard(d){
@@ -190,9 +204,14 @@
       let h='<div class="lt-top"><span class="lt-av" style="background:'+col+'">'+esc(initials(p.name))+'</span><div class="grow"><b>'+esc(p.name)+'</b><div class="lt-meta">'+esc(ROLE[p.role]||p.role)+
         (p.mobile?' · <a href="tel:'+esc(p.mobile)+'" onclick="event.stopPropagation()">📞 '+esc(p.mobile)+"</a>":"")+"</div></div>"+
         '<span class="erp-badge '+(lv?"green":off?"red":"")+'">'+(lv?"Live":off?"Location off":p.lat!=null?"Last seen":"Not shared")+"</span></div>";
-      h+='<div class="lt-meta">'+(p.lat!=null?ago(p.updated_at)+(p.accuracy?" · ±"+Math.round(p.accuracy)+" m":"")+(p.speed!=null&&lv&&p.speed>3?" · moving "+Math.round(p.speed)+" km/h":lv?" · not moving":""):off?"Location turned off on the phone — ask to turn it on":"Phone app not opened in work hours yet")+(p.agreed_at?" · ✓ Agreed "+new Date(p.agreed_at).toLocaleDateString("en-IN",{day:"2-digit",month:"short",timeZone:"Asia/Kolkata"}):" · Not agreed yet")+"</div>";
+      const td=today[p.user_id];
+      h+='<div class="lt-meta">'+(td?'<span class="lt-first">आज पहली बार '+time(td.first)+"</span> · ":"")+
+        (off?'<b style="color:#b42318">Location '+(p.status==="DENIED"?"blocked":"off")+" since "+time(p.updated_at)+"</b> — call and ask to turn it on"
+          :p.lat!=null?ago(p.updated_at)+(p.accuracy?" · ±"+Math.round(p.accuracy)+" m":"")+(p.speed!=null&&lv&&p.speed>3?" · moving "+Math.round(p.speed)+" km/h":lv?" · not moving":"")
+          :"Phone app not opened in work hours yet")+
+        (p.agreed_at?" · ✓ Agreed "+new Date(p.agreed_at).toLocaleDateString("en-IN",{day:"2-digit",month:"short",timeZone:"Asia/Kolkata"}):" · Not agreed yet")+"</div>";
       if(p.lat!=null)h+='<div><button type="button" class="lt-link" data-trail="'+p.user_id+'">〰 Show today\'s route</button></div>';
-      return {key:p.user_id,html:h};
+      return {key:p.user_id,html:h,cls:off?"bad":!seenToday(p)?"gone":""};
     }
 
     function render(){
@@ -204,8 +223,12 @@
       const cards=tab==="drivers"
         ?list.filter(d=>!q||[d.name,d.vehicle,d.mobile,...d.trips.map(t=>t.party_name+" "+t.order_no)].join(" ").toLowerCase().includes(q)).map(driverCard)
         :data.people.filter(p=>!q||[p.name,p.mobile,ROLE[p.role]].join(" ").toLowerCase().includes(q))
-          .sort((a,b)=>(fresh(b)-fresh(a))||String(b.updated_at||"").localeCompare(String(a.updated_at||""))).map(staffCard);
-      el("side").innerHTML=cards.length?cards.map(c=>'<div class="lt-card'+(c.key===focus?" on":"")+'" data-key="'+esc(c.key)+'">'+c.html+"</div>").join("")
+          .filter(p=>filt==="all"||(filt==="live"?fresh(p):filt==="off"?isOff(p):!isOff(p)&&!seenToday(p)))
+          .sort((a,b)=>(isOff(b)-isOff(a))||(fresh(b)-fresh(a))||String(b.updated_at||"").localeCompare(String(a.updated_at||""))).map(staffCard);
+      const P=data.people,F=[["all","All",P.length],["live","🟢 Live",P.filter(fresh).length],["off","🔴 Location off",P.filter(isOff).length],["unseen","⚪ Not seen today",P.filter(p=>!isOff(p)&&!seenToday(p)).length]];
+      el("filt").hidden=tab!=="staff";
+      el("filt").innerHTML=F.map(([k,t,n])=>'<button type="button" data-f="'+k+'" class="'+(k===filt?"on ":"")+(k!=="all"&&k!=="live"&&n?"red":"")+'">'+t+" <b>"+n+"</b></button>").join("");
+      el("side").innerHTML=cards.length?cards.map(c=>'<div class="lt-card'+(c.key===focus?" on":"")+(c.cls?" "+c.cls:"")+'" data-key="'+esc(c.key)+'">'+c.html+"</div>").join("")
         :'<div class="erp-empty">'+(tab==="drivers"?"No loaded orders on the road and no deliveries today.":"Nobody found.")+"</div>";
       drawMap(list);
     }
@@ -312,7 +335,8 @@
     async function load(){
       el("refresh").disabled=true;
       try{
-        const r=await client.rpc("lwb_live_map");
+        const [r,t]=await Promise.all([client.rpc("lwb_live_map"),client.rpc("lwb_staff_today")]);
+        today=t&&!t.error&&t.data||{};
         if(r.error)throw Error(/lwb_live_map|schema cache|function/i.test(r.error.message)?"Live Tracking database setup (lwb_live_tracking_setup.sql) is not on Supabase yet. Ask Admin to apply the reviewed tracking SQL.":r.error.message);
         data=r.data;me.canPin=me.realRole==="admin";
         el("setBtn").hidden=!data.can_edit;
@@ -353,6 +377,9 @@
     // ---------- Events ----------
     el("tabs").onclick=e=>{const b=e.target.closest("[data-tab]");if(b){tab=b.dataset.tab;render()}};
     el("q").oninput=render;
+    el("filt").onclick=e=>{const b=e.target.closest("[data-f]");if(b){filt=b.dataset.f;render()}};
+    el("kpis").onclick=e=>{const b=e.target.closest("[data-go]");if(b){tab="staff";filt=b.dataset.go;render()}};
+    {const sp=new URLSearchParams(location.search).get("show");if(sp==="off"||sp==="unseen"){tab="staff";filt=sp}}
     el("refresh").onclick=load;
     el("side").onclick=async e=>{
       const pin=e.target.closest("[data-pin]"),tr=e.target.closest("[data-trail]"),card=e.target.closest(".lt-card");

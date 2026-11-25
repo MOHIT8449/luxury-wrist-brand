@@ -6,10 +6,11 @@
   <title>Bank Statement | Luxury Wrist Brand ERP</title>
   <script src="vendor/supabase-js-2.119.0.js"></script>
   <script src="erp-date.js"></script>
-  <link rel="stylesheet" href="erp-shell.css">
-  <script src="erp-shell.js"></script>
+  <script src="erp-period.js"></script>
+  <link rel="stylesheet" href="erp-shell.css?v=20261124">
+  <script src="erp-shell.js?v=20261124r"></script>
   <script src="excel-io.js"></script>
-  <script src="party-pay.js"></script>
+  <script src="party-pay.js?v=20261125b"></script>
   <style>
     .status{text-align:center;padding:80px 20px;font-size:15px;color:#555}
     [hidden]{display:none!important}
@@ -165,7 +166,9 @@
     const today=()=>new Date(Date.now()+330*60e3).toISOString().slice(0,10);
 
     async function load(){
-      try{D=await rpc("lwb_bank_stmt_list",{p_bank_id:bankId,p_from:shift(today(),-days),p_to:today()})}
+      // Suspense (OPEN) lines always come; booked / matched lines = the dates chosen in the top bar (erp-period.js)
+      const R=window.LWBPeriod?LWBPeriod.get():{from:shift(today(),-days),to:today()};
+      try{D=await rpc("lwb_bank_stmt_list",{p_bank_id:bankId,p_from:R.from,p_to:R.to})}
       catch(e){say(errText(e),"bad");return}
       if(D.banks.length&&!D.banks.some(b=>b.id===D.bank_id)){bankId=D.banks[0].id;return load()}
       if(!bankId){const busy=D.banks.filter(b=>b.open>0).sort((x,y)=>y.open-x.open)[0];if(busy&&busy.id!==D.bank_id){bankId=busy.id;return load()}}
@@ -183,7 +186,7 @@
       el("kpis").innerHTML=
         '<button type="button" class="bs-kpi'+(oi.length?" amb":"")+'" data-go="OPEN" data-dir="in"><h3>Suspense · money in</h3><div class="v">'+rs(sum(oi))+'</div><small>'+oi.length+' lines not booked</small></button>'+
         '<button type="button" class="bs-kpi'+(oo.length?" amb":"")+'" data-go="OPEN" data-dir="out"><h3>Suspense · money out</h3><div class="v">'+rs(sum(oo))+'</div><small>'+oo.length+' lines not booked</small></button>'+
-        '<button type="button" class="bs-kpi" data-go="MATCHED"><h3>Matched with ERP</h3><div class="v">'+L.filter(l=>l.status==="MATCHED").length+'</div><small>Last '+days+' days</small></button>'+
+        '<button type="button" class="bs-kpi" data-go="MATCHED"><h3>Matched with ERP</h3><div class="v">'+L.filter(l=>l.status==="MATCHED").length+'</div><small>'+(window.LWBPeriod?esc(LWBPeriod.get().label):"Last "+days+" days")+'</small></button>'+
         '<button type="button" class="bs-kpi" data-go="UP"><h3>Statement up to</h3><div class="v">'+(b.last_date?dmy(b.last_date):"—")+'</div><small>'+(D.imports.length?D.imports.length+" uploads":"Nothing uploaded yet")+'</small></button>';
       el("cOpen").hidden=!open.length;el("cOpen").textContent=open.length;
       renderTab();
@@ -198,7 +201,7 @@
       vis=list.slice(0,shown);if(cur>=vis.length)cur=Math.max(0,vis.length-1);
       el("body").innerHTML='<div class="bs-filter"><input type="search" id="q" placeholder="Search narration, ref, party, amount" value="'+esc(q)+'" autocomplete="off">'+
         '<select id="dir" aria-label="In or out"><option value="all">In + Out</option><option value="in"'+(dir==="in"?" selected":"")+'>Money in</option><option value="out"'+(dir==="out"?" selected":"")+'>Money out</option></select>'+
-        (tab==="OPEN"?"":'<select id="days" aria-label="Days">'+[30,90,180,365].map(n=>'<option value="'+n+'"'+(n===days?" selected":"")+'>Last '+n+' days</option>').join("")+'</select>')+'</div>'+
+        (tab==="OPEN"||window.LWBPeriod?"":'<select id="days" aria-label="Days">'+[30,90,180,365].map(n=>'<option value="'+n+'"'+(n===days?" selected":"")+'>Last '+n+' days</option>').join("")+'</select>')+'</div>'+
         (admin&&list.length?'<div class="bs-keys">Keyboard: <kbd>↑</kbd> <kbd>↓</kbd> line · <kbd>Enter</kbd> book · <kbd>Space</kbd> tick · <kbd>Ctrl</kbd>+<kbd>A</kbd> tick all · <kbd>B</kbd> book ticked · <kbd>/</kbd> search · <kbd>M</kbd> match · <kbd>Esc</kbd> close</div>':"")+
         (admin&&list.length?'<div class="bs-hint">Press <b>✍ Book</b> on a line, pick or type its category (a new one is added), add a remark, press Enter. To book many lines the same way, tick them and use the bar below.</div>':"")+
         (list.length?'<div class="bs-list"><div class="bs-r head">'+(admin?'<input type="checkbox" id="all" aria-label="Tick all shown"'+(vis.length&&vis.every(l=>sel.has(l.id))?" checked":"")+'>':"<span></span>")+'<span>Date</span><span>Narration</span><span style="text-align:right">Amount</span><span></span></div>'+
@@ -584,6 +587,7 @@
       el("loading").hidden=true;el("page").hidden=false;
       try{bankId=Number(localStorage.getItem("lwbBankStmtBank"))||null}catch(_){}
       await load();
+      if(window.LWBPeriod)LWBPeriod.on(()=>load());
       if(D&&D.bank_id!==bankId){bankId=D.bank_id}
       Promise.all([client.from("lwb_supplier_master").select("*"),client.from("lwb_companies").select("id,name,active")]).then(([sp,co])=>{
         const cos=co.error?[]:(co.data||[]).filter(c=>c.active!==false),coName=id=>(cos.find(c=>c.id===id)||{}).name||"";

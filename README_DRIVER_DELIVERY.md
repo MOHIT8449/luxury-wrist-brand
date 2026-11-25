@@ -46,7 +46,7 @@ Security details:
    Give the driver an **individual email login** and a private password.
    Never share an Admin login with a driver.
 2. Open ERP Dashboard as Admin:
-   https://luxury-wrist-brand.pages.dev/dashboard.html
+   https://luxurywristbrand.com/dashboard.html
 3. In **User Permissions** locate that Auth user.
 4. Set **ERP Role = DRIVER — Assigned Delivery**.
 5. In **Driver Mobile** enter the exact phone number Sales Head saved
@@ -56,7 +56,7 @@ Security details:
 7. Ask the Driver to log in on their own mobile device.
 
 Driver Portal URL:
-https://luxury-wrist-brand.pages.dev/driver-delivery.html
+https://luxurywristbrand.com/driver-delivery.html
 
 If DRIVER Role or Mobile mapping is missing, the driver will see no assigned
 deliveries or an explanatory access error.

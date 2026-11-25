@@ -19,7 +19,17 @@
     }catch(e){return ""}
   }
   // Fingerprint (lwbUnlock) or MPIN (lwbMpin) on for this login on this phone.
+  // Website in a browser: never locks (Logout and 15 idle minutes log out). Only the Android app
+  // (quick-unlock.js isApp) locks with MPIN / fingerprint.
+  function appMode(){
+    try{
+      if(/^android-app:\/\//i.test(document.referrer||""))sessionStorage.setItem("lwbApp","1");
+      if(sessionStorage.getItem("lwbApp")==="1")return true;
+      return /Android/i.test(navigator.userAgent)&&["standalone","fullscreen","minimal-ui"].some(m=>matchMedia("(display-mode: "+m+")").matches);
+    }catch(e){return false}
+  }
   function lockOn(uid){
+    if(!appMode())return false;
     try{
       const on=JSON.parse(localStorage.getItem("lwbUnlock")||"null"),pin=JSON.parse(localStorage.getItem("lwbMpin")||"null");
       return !!(uid&&((on&&on.uid===uid&&on.cred)||(pin&&pin.uid===uid)));
@@ -116,6 +126,8 @@
       // Salesman: his own orders with PO given > Approved > Dispatched > Delivered).
       {t:"New PO / Sales Order",h:"order-entry.html",i:"cart",r:"admin manager sales",k:"new order entry po",pt:"PO / Sales Order (new PO)",nm:"admin manager sales",par:"warehouse-orders.html my-sales.html#orders"},
       {t:"PO / Sales",h:"warehouse-orders.html",i:"note",r:"admin manager accounts",k:"po approval driver warehouse orders",pt:"PO / Sales List (all POs; approve for Admin / Sales Head)"},
+      // Direct Vehicle (Mohit, 23 Nov 2026): company truck straight to the party; party advance, final +/- qty, balance.
+      {t:"Direct Vehicle",h:"direct-vehicle.html",i:"truck",r:"admin manager accounts",k:"direct vehicle company truck party advance balance baki final qty plus minus ecrs"},
       {t:"PO / Sales",h:"my-sales.html#orders",i:"note",r:"sales",k:"my orders modify",pt:"PO / Sales List (Salesman's own orders)"},
       // Rajnigandha (Mohit, 4 Nov 2026): no own menu items. A Rajnigandha PO prints its slip from PO / Sales
       // (Print), its waiting POs show on top of that list; the rate list is the Rajnigandha tab of Rate List.
@@ -127,6 +139,8 @@
       // Outstanding (Mohit, 20 Nov 2026): Sales Head sees unpaid / part-paid bills, party-wise dues, ledger; tells Accounts.
       {t:"Outstanding",h:"sales-outstanding.html",i:"cash",r:"admin manager",k:"outstanding payment pending due unpaid part paid bills party wise ledger collection baki udhar tell accounts cashier"},
       {t:"Party Call List",h:"party-calls.html",i:"phone",r:"admin manager sales"},
+      // Party Mobile Pending (Mohit, 21 Nov 2026): parties without a mobile number; fill here, task closes by itself.
+      {t:"Party Mobile Pending",h:"party-mobile.html",i:"phone",r:"admin manager sales",k:"mobile number missing phone party contact fill pending task"},
       {t:"Outside Market Stock",h:"market-report.html",i:"pin",r:"admin manager sales"},
       {t:"Sales Tracking",h:"sales-tracking.html",i:"chart",r:"admin manager"},
       // Party Buying (Mohit, 17 Nov 2026): party / SKU / category-wise buying, never bought, not in N days, stopped. Tab of Sales Tracking.
@@ -159,16 +173,23 @@
       {t:"Godown Report",h:"godown-report.html",i:"note",r:"admin manager warehouse"},
       {t:"Loading & Dispatch",h:"loading-dispatch.html",i:"box",r:"admin manager warehouse"},
       {t:"Transport Assignment",h:"transport-allocation.html",i:"truck",r:"admin manager transport"},
+      // Vehicle Report (Mohit, 23 Nov 2026): per vehicle / driver for the day: tons loaded, cases delivered, parties, fixed driver.
+      {t:"Vehicle Report",h:"vehicle-report.html",i:"truck",r:"admin manager transport accounts",k:"vehicle report driver dashboard ton tons cases delivered trip today gadi truck fixed driver",vo:"accounts"},
       {t:"Driver Delivery / POD",h:"driver-delivery.html",i:"pin",r:"admin manager driver accounts",nm:"accounts"},
       {t:"Live Tracking",h:"live-tracking.html",i:"pin",r:"admin"}]},
     {group:"Accounts",items:[
+      // Finance home (Mohit, 20 Nov 2026): one money page for Admin / Accounts / Cashier: money now, work waiting,
+      // brand-wise and party-wise split, money in / out, rough P&L, expenses; every number opens what makes it.
+      {t:"Finance Home",h:"finance.html",i:"chart",r:"admin accounts cashier",k:"finance home money position cash flow cash in hand bank balance profit loss p&l expenses brand wise party wise to collect to pay company payable work waiting notifications alerts control centre center hisab",pt:"Finance Home (money, brand-wise, P&L)"},
       // Accounts in one place (Mohit, 19 Nov 2026): Billing & Outstanding + Accounts Dashboard = one "Accounts" page
       // (one header, one tab row, acc-hub.js). Billing tabs are party-billing.html, Cash & Bank tabs accounts-dashboard.html.
       // Split by work (Mohit, 20 Nov 2026), same two files, view in the hash (acc-hub.js):
       // Accounts · Tally (Yogesh bhai: Tally bills, bank check, GST + cash), Cashier (cash only), Party & Collections (Admin).
-      {t:"Accounts · Tally",h:"party-billing.html",i:"bill",r:"admin accounts",k:"accounts tally bills to make bills made tally bill merge sales bill gst gstr gstr-1 gstr-3b gst paid filed bank check verify bank entry cheque po change credit note return cash in cash out bank deposit close day day book",pt:"Accounts · Tally (Bills, Bank check, GST)"},
+      {t:"Accounts · Tally",h:"party-billing.html",i:"bill",r:"admin accounts",k:"accounts tally bills to make bills made party ledger statement khata tally bill merge sales bill gst gstr gstr-1 gstr-3b gst paid filed bank check verify bank entry cheque po change credit note return cash in cash out bank deposit close day day book",pt:"Accounts · Tally (Bills, Ledger, Bank check, GST)"},
       {t:"Cashier",h:"accounts-dashboard.html#cash",i:"cash",r:"admin cashier",k:"cashier cash in cash out bank deposit close day day book cash book cash ledger cash in hand cheque handover staff advance upad salary vehicle expense party payment received",pt:"Cashier (Cash In / Out, Day book)"},
       {t:"Party & Collections",h:"party-billing.html#party",i:"users",r:"admin",k:"party payment received pending outstanding to collect collection party ledger statement khata advance returns party groups acrs ecrs",pt:"Party & Collections (To collect, Ledger, ACRS)"},
+      // Ledger & Outstanding (Mohit, 20 Nov 2026): Tally "Display" books in one page, Ctrl+Alt+L from anywhere.
+      {t:"Ledger & Outstanding",h:"accounts-books.html",i:"book",r:"admin accounts",k:"ledger outstanding receivable receivables bill wise party wise ageing overdue 30 60 90 days receipt register receipts payment received party payment summary day book voucher khata statement tally ctrl alt l kasar",pt:"Ledger & Outstanding (Ctrl+Alt+L)"},
       {t:"Accounts",h:"accounts-dashboard.html",i:"cash",r:"admin accounts",hide:1,par:"party-billing.html"},
       {t:"Bank Statement",h:"bank-statement.html",i:"book",r:"admin accounts"},
       // STTS Ledger (Mohit, 13 Nov 2026): company Sales Register + STTS Ledger checked bill by bill against the Rate List scheme.
@@ -183,6 +204,7 @@
       {t:"Sheet & Pallet Ledger",h:"sheet-pallet.html",i:"layers",r:"admin manager accounts warehouse",vo:"accounts"},
       {t:"Sales Bill PDFs",h:"sales-bill-scans.html",i:"bill",r:"admin accounts manager",k:"scan pdf sales bill invoice register upload",vo:"accounts"},
       {t:"Daily Summary",h:"daily-report.html",i:"stock",r:"admin manager accounts",nm:"accounts"},
+      {t:"WhatsApp Reports",h:"whatsapp-reports.html",i:"note",r:"admin",nm:"accounts"},
       {t:"Money Overview",h:"money-overview.html",i:"cash",r:"admin accounts",hide:1},
       {t:"Tally Bill & Invoice No.",h:"accounts-invoice.html",i:"bill",r:"admin accounts",hide:1},
       {t:"Tally Bill Check",h:"tally-check.html",i:"bill",r:"admin accounts",hide:1},
@@ -209,7 +231,9 @@
       {t:"Brand Data Reset",h:"brand-reset.html",i:"lock",r:"admin",k:"reset delete clear brand rajnigandha fresh start opening data",nm:"admin",par:"settings.html"},
       // Order History Days (Mohit, 13 Nov 2026): per role, days after delivery an order stays in its lists.
       {t:"Order History Days",h:"order-history-days.html",i:"note",r:"admin",k:"order history days delivered visible hide old orders salesman driver sales head accounts role",nm:"admin",par:"settings.html"},
-      {t:"Accounts Fresh Start",h:"accounts-reset.html",i:"lock",r:"admin",k:"reset delete clear accounts cash book entries opening cash bank balance fresh start",nm:"admin",par:"settings.html"}]}
+      {t:"Accounts Fresh Start",h:"accounts-reset.html",i:"lock",r:"admin",k:"reset delete clear accounts cash book entries opening cash bank balance fresh start",nm:"admin",par:"settings.html"}]},
+    // Reports (Mohit, 24 Nov 2026): every report in one place; Admin only, last in the side menu.
+    {group:"",items:[{t:"Reports",h:"reports.html",i:"chart",r:"admin",k:"report reports register sales report purchase report date wise party wise sku wise item wise salesman wise supplier wise expense report cash in out register excel export mis summary"}]}
   ];
 
 
@@ -385,7 +409,12 @@
   }
 
   const GM_OFF=["goods-inward.html","warehouse-orders.html","quick-slip.html","sales-return.html","tax-invoice.html","fleet-master.html","fixed-assets.html"];
-  function mount(opts){
+  // Older pages (data-auto) stay on "Loading…" (erp-shell.css) until the top bar and menu are in place,
+  // so the plain old-looking page never flashes first after a refresh (Mohit, 24 Nov 2026).
+  const READY=()=>document.documentElement.classList.add("erp-ready");
+  setTimeout(READY,8000);
+  function mount(opts){try{return mountPage(opts)}finally{READY()}}
+  function mountPage(opts){
     appMeta();
     const role=String(opts.role||"").toLowerCase();
     const page=(location.pathname.split("/").pop()||"dashboard.html").replace(/^$/,"dashboard.html");
@@ -416,7 +445,7 @@
       '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg><div class="erp-results"></div></div>'+
       '<div class="erp-user"><button class="erp-keys-btn" type="button" aria-label="Keyboard shortcuts" title="Keyboard shortcuts (?)">'+svg("keyboard")+'</button><div class="who"><b>'+esc(opts.name||"User")+'</b><small>'+esc(role.toUpperCase())+'</small></div>'+
       '<div class="erp-avatar">'+esc((opts.name||"U").trim().charAt(0).toUpperCase())+'</div>'+
-      '<button class="erp-logout" type="button">Logout</button></div>';
+      '<button class="erp-logout" type="button" title="Logout" aria-label="Logout"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/></svg><span>Logout</span></button></div>';
 
     const side=document.createElement("aside");
     side.className="erp-side";
@@ -591,7 +620,8 @@
       sales:[["Home","dashboard.html","home"],["New Order","order-entry.html","cart"],["PO List","my-sales.html#orders","note"],["My Sales","my-sales.html","chart"]],
       admin:[["Home","dashboard.html","home"],["New Order","order-entry.html","cart"],["PO List","warehouse-orders.html","note"],["Stock","inventory.html","stock"]],
       manager:[["Home","dashboard.html","home"],["New Order","order-entry.html","cart"],["PO List","warehouse-orders.html","note"],["Dispatch","loading-dispatch.html","truck"]],
-      accounts:[["Home","dashboard.html","home"],["Accounts","party-billing.html","bill"],["PO List","warehouse-orders.html","note"],["Bank","bank-statement.html","book"]],
+      accounts:[["Home","dashboard.html","home"],["Finance","finance.html","chart"],["Accounts","party-billing.html","bill"],["Ledger","accounts-books.html","book"]],
+      cashier:[["Home","dashboard.html","home"],["Finance","finance.html","chart"],["Cashier","accounts-dashboard.html#cash","cash"]],
       warehouse:[["Home","dashboard.html","home"],["Loading","loading-dispatch.html","truck"],["Purchase","purchase-register.html","note"],["Stock","inventory.html","stock"]],
       transport:[["Home","dashboard.html","home"],["Assign","transport-allocation.html","truck"],["Vehicles","fleet-master.html#vehicles","box"],["Drivers","fleet-master.html#drivers","users"]]
     };
@@ -709,10 +739,10 @@
   const mpinWho=u=>u&&u.email&&!/@staff\.lwb-erp\.in$/i.test(u.email)?u.email:"";
   function loadUnlock(){
     if(window.LWBUnlock)return Promise.resolve(window.LWBUnlock);
-    return new Promise((ok,bad)=>{const s=document.createElement("script");s.src="quick-unlock.js";s.onload=()=>ok(window.LWBUnlock);s.onerror=bad;document.head.appendChild(s)});
+    return new Promise((ok,bad)=>{const s=document.createElement("script");s.src="quick-unlock.js?v=20261121b";s.onload=()=>ok(window.LWBUnlock);s.onerror=bad;document.head.appendChild(s)});
   }
   function unlockSetting(av,role){
-    if(!av)return;
+    if(!av||!appMode())return;
     av.setAttribute("role","button");av.tabIndex=0;av.title="Login & Security (MPIN, fingerprint)";av.style.cursor="pointer";
     av.addEventListener("click",()=>openSecurity(role));
     av.addEventListener("keydown",e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();openSecurity(role)}});
@@ -720,7 +750,7 @@
   let secOpen=false,mountedRole="";
   async function openSecurity(role){
     role=typeof role==="string"?role:mountedRole;
-    if(secOpen||!window.supabase)return;secOpen=true;
+    if(secOpen||!window.supabase||!appMode())return;secOpen=true;
     let U,user,c;
     try{
       U=await loadUnlock();
@@ -765,7 +795,7 @@
       try{
         if(a==="pinoff"){await U.mpinOff(c);pinOn=false;toast("MPIN turned off on this phone.")}
         if(a==="fpoff"){U.disable();toast("Fingerprint unlock turned off on this phone.")}
-        if(a==="fpon"){try{await U.enable(user);toast("Fingerprint unlock is on for this phone.")}catch(e){if(e&&e.name!=="NotAllowedError")toast("Fingerprint could not be turned on: "+(e&&e.message||e),"error")}}
+        if(a==="fpon"){try{await U.enable(user);if(pinOn)await U.mpinOff(c),pinOn=false;toast("Fingerprint unlock is on for this phone. MPIN is off.")}catch(e){if(e&&e.name!=="NotAllowedError")toast("Fingerprint could not be turned on: "+(e&&e.message||e),"error")}}
       }finally{busy=false;main()}
     }
     function pinView(){
@@ -782,7 +812,7 @@
         }
         if(pin!==first){first="";P.clear(true);step(1);say("Both MPINs did not match. Set it again.",true);return}
         busy=true;say("Saving...");
-        try{await U.mpinSet(c,user.id,pin);pinOn=true;busy=false;toast("MPIN is set for this phone.");main()}
+        try{await U.mpinSet(c,user.id,pin);pinOn=true;U.disable();busy=false;toast("MPIN is set for this phone. Fingerprint is off.");main()}
         catch(e){busy=false;first="";P.clear(true);step(1);say(e.message||String(e),true)}
       }});
       P.fingerprint(null);step(1);
@@ -817,9 +847,21 @@
       window.LWBOperationsNotifications.init({db:c,user,role,mount:top.querySelector(".erp-user"),pages:menuForMe(role).flatMap(g=>g.items.map(i=>i.h.split("#")[0]))});
     }catch(e){}
     profitSwitch(top,role);
-    liveLocation();
+    // liveLocation();  // 📍 Switched OFF by the owner 23 Nov 2026: no location is asked or sent. Remove // to bring back.
     tripRent(role);
     teamChat(role);
+    taskSiren(role);
+  }
+
+  // 🚨 Urgent task siren: full-screen alarm + siren sound on any page when an urgent task rings
+  // (task-siren.js, lwb_task_siren_setup.sql). Until the SQL is run nothing shows.
+  async function taskSiren(role){
+    try{
+      const c=window.__lwbBellClient;if(!c||!role)return;
+      const {data}=await c.auth.getSession();const user=data&&data.session&&data.session.user;if(!user)return;
+      if(!window.LWBSiren)await new Promise((ok,bad)=>{const s=document.createElement("script");s.src="task-siren.js";s.onload=ok;s.onerror=bad;document.head.appendChild(s)});
+      window.LWBSiren.init({db:c,user,role});
+    }catch(e){}
   }
 
   // 🏷 ONE brand picker for the whole site, next to the page name (Mohit, 19 Nov 2026):
@@ -896,7 +938,7 @@
   async function liveLocation(){
     try{
       const c=window.__lwbBellClient;if(!c)return;
-      if(!window.LWBLocation)await new Promise((ok,bad)=>{const s=document.createElement("script");s.src="live-location.js";s.onload=ok;s.onerror=bad;document.head.appendChild(s)});
+      if(!window.LWBLocation)await new Promise((ok,bad)=>{const s=document.createElement("script");s.src="live-location.js?v=20261123c";s.onload=ok;s.onerror=bad;document.head.appendChild(s)});
       window.LWBLocation.start(c);
     }catch(e){}
   }
@@ -933,7 +975,7 @@
   if(!window.LWBKeys&&!document.querySelector('script[src*="erp-keys.js"]')){const s=document.createElement("script");s.src="erp-keys.js";document.head.appendChild(s)}
   // Every drop-down searches like the SKU box in New PO (erp-select.js).
   if(!window.LWBSelect&&!document.querySelector('script[src*="erp-select.js"]')){const s=document.createElement("script");s.src="erp-select.js";document.head.appendChild(s)}
-  window.ERPShell={mount,security:openSecurity,menuFor,viewOnly,menuForMe,hiddenPages,extraPages,pageRole,pageRoleFresh,allPages,icon:svg,alert:erpAlert,confirm:erpConfirm,prompt:erpPrompt,toast,done:erpDone};
+  window.ERPShell={mount,security:openSecurity,isApp:appMode,menuFor,viewOnly,menuForMe,hiddenPages,extraPages,pageRole,pageRoleFresh,allPages,icon:svg,alert:erpAlert,confirm:erpConfirm,prompt:erpPrompt,toast,done:erpDone};
   const me=document.currentScript;
   if(me&&me.hasAttribute("data-auto")){
     if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",auto);else auto();

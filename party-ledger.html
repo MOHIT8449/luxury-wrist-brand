@@ -7,6 +7,7 @@
 <script src="vendor/supabase-js-2.119.0.js"></script>
 <script src="party-list.js" defer></script>
 <script src="brand-filter.js"></script>
+<script src="ledger-rows.js?v=20261123a"></script>
 <script src="master-popup.js"></script>
 <style>
 :root{--navy:#132843;--blue:#1569dc;--line:#dde5f0;--bg:#f1f5fb}
@@ -41,9 +42,11 @@ tr.pick{cursor:pointer}tr.pick:hover td{background:#f4f8fe}
 .kind div,td>div{margin-top:5px}.kind{display:inline-block;font-size:11px;font-weight:bold;border-radius:12px;padding:4px 8px;background:#e8edf4;white-space:nowrap}
 .kind.ERP_BILL,.kind.OLD_INVOICE,.kind.OPENING,.kind.TALLY_BILL,.kind.DEBIT_NOTE{background:#fde9d6;color:#7a3a00}.kind.PAYMENT,.kind.DRIVER_PAYMENT,.kind.OFFICE_PAYMENT,.kind.PARTY_PAYMENT{background:#daf2e2;color:#125b30}
 .kind.DRIVER_RETURN,.kind.SALES_RETURN,.kind.CREDIT_NOTE{background:#e3ecfb;color:#1a4f8f}
+.kind.KASAR{background:#fff1c9;color:#7a5300}
 .grid{display:grid;grid-template-columns:2fr 1.2fr 1fr 1fr 1.6fr auto;gap:12px;align-items:end}
 #brandRow{margin:0 0 12px}#brandRow .lwb-brands{margin:0}
 .btag{display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:bold;color:var(--bc);white-space:nowrap}.btag i{width:8px;height:8px;border-radius:50%;background:var(--bc)}
+.bsplit{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 10px}.bsplit div{flex:1 1 220px;min-width:0;border:1px solid var(--line);border-left:4px solid var(--bc);border-radius:10px;padding:7px 11px;font-size:13px;color:#58708b}.bsplit b{color:#142841}.bsplit b.over{color:#ae3434}.bsplit b.tot{color:#006b3a}
 #obList table{min-width:0}#obList td,#obList th{padding:8px}#obList button{padding:6px 10px}
 #partyTitle small{font-weight:normal;color:#60758b}.over{font-weight:bold;color:#ae3434}.muted{color:#60758b;font-size:12px;line-height:1.5}
 @media(max-width:760px){.metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.grid{grid-template-columns:1fr}main{padding:14px}.panel{padding:13px}
@@ -51,8 +54,8 @@ tr.pick{cursor:pointer}tr.pick:hover td{background:#f4f8fe}
 #ledgerPanel th:nth-child(3),#ledgerPanel td:nth-child(3),#ledgerPanel th:nth-child(7),#ledgerPanel td:nth-child(7){display:none}
 #ledgerPanel td:first-child{white-space:nowrap}.kind{padding:3px 6px;font-size:10px}}
 </style>
-<link rel="stylesheet" href="erp-shell.css">
-<script src="erp-shell.js" data-auto defer></script>
+<link rel="stylesheet" href="erp-shell.css?v=20261124">
+<script src="erp-shell.js?v=20261124r" data-auto defer></script>
 </head>
 <body>
 <header><div><h1>LUXURY WRIST BRAND</h1><small>ACCOUNTING / PARTY OUTSTANDING & LEDGER</small></div>
@@ -79,6 +82,7 @@ tr.pick{cursor:pointer}tr.pick:hover td{background:#f4f8fe}
 <div class="wrap"><table><thead><tr><th>Party</th><th class="num">Debit ₹</th><th class="num">Credit ₹</th><th class="num">Balance ₹</th><th class="num">Pending Verification ₹</th><th>Last Entry</th></tr></thead><tbody id="summary"><tr><td colspan="6">Loading...</td></tr></tbody></table></div>
 </section>
 <section class="panel" id="ledgerPanel" hidden><h2 id="partyTitle">Party Ledger</h2>
+<div id="brandSplit" class="bsplit" hidden></div>
 <div class="wrap"><table><thead><tr><th>Date</th><th>Entry</th><th>Order No.</th><th class="num">Debit ₹</th><th class="num">Credit ₹</th><th class="num">Balance ₹</th><th>Note</th></tr></thead><tbody id="ledger"></tbody></table></div></section>
 <section class="panel"><h2>Bill-wise Outstanding</h2>
 <div class="wrap"><table><thead><tr><th>Bill Date</th><th>Bill No.</th><th>Order No.</th><th>Party</th><th class="num">Bill ₹</th><th class="num">Returns ₹</th><th class="num">Paid ₹</th><th class="num">Outstanding ₹</th></tr></thead><tbody id="bills"><tr><td colspan="8">Loading...</td></tr></tbody></table></div>
@@ -101,7 +105,7 @@ const db=window.supabase.createClient(SUPABASE_URL,SUPABASE_PUBLISHABLE_KEY);
 const el=id=>document.getElementById(id);
 const fmt=n=>"₹"+Number(n||0).toLocaleString("en-IN",{minimumFractionDigits:2,maximumFractionDigits:2});
 const amt=n=>Number(n||0)?fmt(n):"";
-const KIND={OPENING:"Opening",ERP_BILL:"ERP Bill",OLD_INVOICE:"Old Invoice",PAYMENT:"Payment",DRIVER_PAYMENT:"Driver Payment",DRIVER_RETURN:"Driver Return",SALES_RETURN:"Sales Return",TALLY_BILL:"Tally Bill",CREDIT_NOTE:"Credit Note",DEBIT_NOTE:"Debit Note",OFFICE_PAYMENT:"Payment Collection",PARTY_PAYMENT:"Party Payment"};
+const KIND={OPENING:"Opening",ERP_BILL:"ERP Bill",OLD_INVOICE:"Old Invoice",PAYMENT:"Payment",DRIVER_PAYMENT:"Driver Payment",DRIVER_RETURN:"Driver Return",SALES_RETURN:"Sales Return",TALLY_BILL:"Tally Bill",CREDIT_NOTE:"Credit Note",DEBIT_NOTE:"Debit Note",OFFICE_PAYMENT:"Payment Collection",PARTY_PAYMENT:"Party Payment",KASAR:"Kasar"};
 // Party names are matched ignoring case and extra spaces.
 const key=name=>String(name||"").trim().replace(/\s+/g," ").toUpperCase();
 let role="",entries=[],bills=[],parties=new Map(),csvRows=[],busy=false,brands=[],fb="",openings=[];
@@ -129,6 +133,8 @@ async function init(){
   if(result.error)throw result.error;
   role=String(result.data.role||"").toLowerCase().trim();
   if(result.data.active!==true||!["admin","accounts","manager","sales","salesman","collector"].includes(role))throw Error("Only authorized ERP team can view party ledgers.");
+  // Admin / Accounts: the ledger is in Ledger & Outstanding now (accounts-books.html, every row opens its bill); Admin keeps Opening Balance here.
+  if((role==="accounts"||role==="admin")&&location.hash!=="#openingPanel"&&!new URLSearchParams(location.search).has("old")){const pq=new URLSearchParams(location.search).get("party");location.replace("accounts-books.html?v=led"+(pq?"&party="+encodeURIComponent(pq):""));return}
   el("openingPanel").hidden=role!=="admin";
   // Opening Balance (Admin): "+ Opening Balance" next to Refresh opens it in a popup (master-popup.js).
   window.MP=LWBMasterPopup.mount({panel:"openingPanel",bar:"obBar",newLabel:"+ Opening",canNew:()=>role==="admin"});
@@ -145,11 +151,12 @@ async function masterParties(){
 async function reload(){
  try{
   message("Loading ledger...");
-  let [a,b,o]=await Promise.all([db.rpc("lwb_party_ledger_b"),db.rpc("lwb_party_bills"),role==="admin"?db.rpc("lwb_party_openings"):Promise.resolve({data:[]})]);
-  if(a.error){brands=[];el("brandRow").hidden=true;el("obBrandF").hidden=true;a=await db.rpc("lwb_party_ledger")} // brand SQL not run yet
+  let [a,b,o]=await Promise.all([LWBLedgerRows(db),LWBLedgerRows.paged(db,"lwb_party_bills"),role==="admin"?db.rpc("lwb_party_openings"):Promise.resolve({data:[]})]);  // all ledger rows (no 1000-row cut)
+  if(!a.error&&!a.brand){brands=[];el("brandRow").hidden=true;el("obBrandF").hidden=true} // brand SQL not run yet
   if(a.error)throw a.error;if(b.error)throw b.error;
   openings=o.error?[]:(o.data||[]);
-  entries=(a.data||[]).map(x=>({...x,party:key(x.customer_name),debit:Number(x.debit||0),credit:Number(x.credit||0)}));
+  // Kasar (lwb_kasar_setup.sql) is a credit / debit note with note no. KASAR: shown as its own "Kasar" line.
+  entries=(a.data||[]).map(x=>({...x,entry_kind:/_NOTE$/.test(x.entry_kind)&&/^KASAR/i.test(String(x.ref_no||""))?"KASAR":x.entry_kind,party:key(x.customer_name),debit:Number(x.debit||0),credit:Number(x.credit||0)}));
   const coByNo=new Map();for(const x of entries)if(x.order_no&&x.company_id)coByNo.set(String(x.order_no),x.company_id);
   bills=(b.data||[]).map(x=>({...x,party:key(x.customer_name),company_id:coByNo.get(String(x.order_no))||""}));
   entries.sort((x,y)=>String(x.entry_date).localeCompare(String(y.entry_date))||(x.entry_kind==="OPENING"?-1:y.entry_kind==="OPENING"?1:0)||String(x.created_at||"").localeCompare(String(y.created_at||"")));
@@ -223,6 +230,12 @@ function render(){
  csvRows=[];
  if(party){
   el("partyTitle").textContent="Party Ledger — "+partyName(party)+(fb&&brandOf(fb)?" · "+brandOf(fb).name:"")+" ";
+  // All brands: one box per brand (bills, paid, balance) so Coca-Cola and Rajnigandha money is seen apart; total = cards above.
+  const bs=el("brandSplit"),mine=entries.filter(x=>x.party===party);
+  const bids=brands.length&&!fb?[...new Set(mine.map(x=>x.company_id||""))].sort((a,b)=>(brandOf(a)?0:1)-(brandOf(b)?0:1)):[];
+  bs.hidden=bids.length<2;
+  bs.innerHTML=bids.length<2?"":bids.map(id=>{const R=mine.filter(x=>(x.company_id||"")===id),d=R.reduce((a,x)=>a+x.debit,0),c=R.reduce((a,x)=>a+x.credit,0),n=d-c,b=brandOf(id);
+   return '<div style="--bc:'+(b?String(b.color||"#2362a4").replace(/[^#0-9a-zA-Z]/g,""):"#8a94a3")+'">'+btagHtml(id)+'<br>Bills <b>'+fmt(d)+'</b> · Paid <b class="tot">'+fmt(c)+'</b><br>'+(n>0.005?'Balance due <b class="over">'+fmt(n)+'</b>':n<-0.005?'Advance <b class="tot">'+fmt(-n)+'</b>':'<b>Settled</b>')+'</div>'}).join("");
   let bal=0;
   for(const x of ent){
    bal+=x.debit-x.credit;

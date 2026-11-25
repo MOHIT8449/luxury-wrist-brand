@@ -6,7 +6,7 @@
    loads the rest (cash figures on the billing half, bills on the cash half) with the same rules.
 
    Split by work (Mohit, 20 Nov 2026), three views of the same two files, the view in the URL hash:
-     #tally  Accounts (Tally) = role accounts (Yogesh bhai): Tally bills, bank check, GST, cash too
+     #tally  Accounts (Tally) = role accounts (Yogesh bhai): Tally bills, party Ledger (view only), bank check, GST, cash too
      #cash   Cashier          = role cashier: Cash In / Out, Deposit, Close Day, Day book, cheques, staff, vehicles
      #party  Party & Collections = Admin (or ticked in Manage Users): To collect, Payments, Ledger, Returns, ACRS
    Admin switches between the three with the chips in the header.
@@ -21,19 +21,19 @@
   "use strict";
   const T={make:"Bills to make",made:"Bills made",due:"To collect",led:"Ledger",pay:"Payments",ret:"Returns",
     book:"Day book",cheques:"Cheques",verify:"Bank check",sum:"Summary",chg:"PO changes",
-    grp:"Party groups",close:"Cash handover",staff:"Staff ledger",veh:"Vehicles",setup:"Heads & Banks",gst:"GST",acrs:"ACRS orders ↗"};
+    grp:"Party groups",books:"📒 Ledger & Outstanding ↗",close:"Cash handover",staff:"Staff ledger",veh:"Vehicles",deps:"Bank deposits",setup:"Heads & Banks",gst:"GST",acrs:"ACRS orders ↗"};
   const BILL=["make","made","due","led","pay","ret","chg","grp","gst"];
   const VIEWS={
     tally:{name:"Accounts · Tally",chip:"Tally",acts:["pay","IN","OUT","DEPOSIT","close","ret"],
-      row:[["Tally",["make","made","chg","ret"]],["Bank & GST",["verify","cheques","gst"]],["Cash",["book","sum"]]],more:["grp","close","staff","veh","setup"],
+      row:[["Tally",["make","made","chg","ret"]],["Party",["books"]],["Bank & GST",["verify","deps","cheques","gst"]],["Cash",["book","sum"]]],more:["grp","close","staff","veh","setup"],
       kpis:["make","verify","gst","chq","coll","hand"],first:"make"},
     cash:{name:"Cashier",chip:"Cashier",acts:["pay","IN","OUT","DEPOSIT","close"],
-      row:[["",["book","cheques","close","staff","veh"]]],more:[],kpis:["open","cin","cout","dep","chq","hand"],first:"book"},
+      row:[["",["book","deps","cheques","close","staff","veh"]]],more:[],kpis:["open","cin","cout","dep","chq","hand"],first:"book"},
     party:{name:"Party & Collections",chip:"Party",acts:["pay","ret"],
-      row:[["",["due","pay","led","ret","grp"]],["",["acrs"]]],more:[],kpis:["due","adv","coll","chq"],first:"due"}};
+      row:[["",["due","pay","ret","grp"]],["",["books","acrs"]]],more:[],kpis:["due","adv","coll","chq"],first:"due"}};
   const FILE={bill:"party-billing.html",cash:"accounts-dashboard.html"};
   const pageOf=t=>BILL.includes(t)?"bill":"cash";
-  const tabsOf=v=>VIEWS[v].row.flatMap(r=>r[1]).concat(VIEWS[v].more).filter(t=>t!=="acrs");   // acrs = link to ecrs.html
+  const tabsOf=v=>VIEWS[v].row.flatMap(r=>r[1]).concat(VIEWS[v].more).filter(t=>t!=="acrs"&&t!=="books");   // acrs = link to ecrs.html, books = accounts-books.html
   // views a login may open: Cashier only cash; Accounts tally (+ party when Admin ticked it); Admin all three
   const viewsFor=(role,canParty)=>role==="cashier"?["cash"]:role==="admin"?["tally","cash","party"]:canParty?["tally","party"]:["tally"];
   const esc=v=>String(v==null?"":v).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -48,6 +48,7 @@
   .hub-top h1{margin:0 4px 0 0;font-size:19px}.hub-top .sp{flex:1 1 auto}.hub-top .lwb-brands{margin:0}
   .hub-ico{height:34px;min-width:34px;border:1.5px solid var(--erp-line);background:#fff;border-radius:99px;font:inherit;font-size:15px;cursor:pointer;color:var(--erp-ink)}
   .hub-ico:disabled{opacity:.5}
+  .hub-fin{display:inline-flex;align-items:center;height:30px;padding:0 10px;border-radius:99px;background:#e6f0f0;color:#00434d;font-size:13px;font-weight:700;text-decoration:none;white-space:nowrap}
   .hub-acts{display:flex;gap:6px;margin:0 0 8px}
   .hub-views{display:inline-flex;background:#fff;border:1px solid var(--erp-line);border-radius:99px;padding:2px;gap:2px}
   .hub-views a{display:inline-flex;align-items:center;height:28px;padding:0 11px;border-radius:99px;font-size:13px;font-weight:700;color:#4b5763;text-decoration:none;white-space:nowrap}
@@ -63,6 +64,7 @@
   .hub-al b{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}.hub-al span{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:inherit;opacity:.85}
   .hub-al .go{border:0;background:none;padding:0;font:inherit;font-weight:700;color:#00434d;text-decoration:underline;cursor:pointer;white-space:nowrap;margin-left:auto}
   .hub-al input{height:30px;width:120px;border:1.5px solid #c9d4e2;border-radius:7px;padding:0 8px;font:inherit;font-size:14px;margin-left:auto}
+  .hub-al input+input{margin-left:0}.hub-al input[type=date]{width:138px;padding:0 6px;font-weight:700;color:#1d3f75}.hub-al.op{flex-basis:470px}
   .hub-al .btn{height:30px;border:0;border-radius:7px;background:#00434d;color:#fff;font:inherit;font-weight:700;font-size:13px;padding:0 10px;cursor:pointer;white-space:nowrap}
   .hub-al .btn.grn{background:#13824a}
   body.erp-compact .erp-main .hub-al .go{min-height:0;padding:4px 0}body.erp-compact .erp-main .hub-al .btn{min-height:0}
@@ -93,7 +95,7 @@
     .hub-acts{display:grid;grid-template-columns:repeat(var(--n,5),minmax(0,1fr));gap:5px}.hub-views a{padding:0 9px;font-size:12.5px}
     .hub-acts button{height:46px;flex-direction:column;gap:0;font-size:11.5px;line-height:1.15}.hub-acts em{font-size:16px}
     .hub-acts .l{display:none}.hub-acts .s{display:inline}.hub-acts.many [data-hub-a=ret]{display:none}
-    .hub-als{flex-direction:column;gap:4px}.hub-al{flex:none;width:100%;padding:5px 8px;font-size:12.5px}.hub-al span{display:none}.hub-al input{width:96px}
+    .hub-als{flex-direction:column;gap:4px}.hub-al{flex:none;width:100%;padding:5px 8px;font-size:12.5px}.hub-al span{display:none}.hub-al input{width:96px}.hub-al input[type=date]{width:132px}.hub-al.op{flex-basis:auto;flex-wrap:wrap;row-gap:4px}.hub-al.op b{flex:0 0 100%}.hub-al.op input{margin-left:0;min-width:0}.hub-al.op input[type=date]{flex:0 0 136px}.hub-al.op input+input{flex:1 1 60px;width:auto}
     .hub-kpis{grid-template-columns:repeat(3,minmax(0,1fr));gap:5px}.hub-kpis.n4{grid-template-columns:repeat(2,minmax(0,1fr))}.hub-k{padding:6px 7px;border-left-width:3px}
     .hub-k h3{font-size:11px}.hub-k b{font-size:15px}.hub-k small{font-size:10.5px}
     .hub-tabs{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:4px}.hub-tabs .g,.hub-tabs .bar{display:none}
@@ -103,7 +105,7 @@
   function style(){if(el("hubCss"))return;const s=document.createElement("style");s.id="hubCss";s.textContent=css;document.head.appendChild(s)}
 
   /* ---------- actions ---------- */
-  const ACTS=[["pay","💰","Party payment","Party pay"],["IN","＋","Cash In","Cash In"],["OUT","−","Cash Out","Cash Out"],["DEPOSIT","🏦","Bank Deposit","Deposit"],["close","🌙","Close Day","Close Day"],["ret","↩","Return","Return"]];
+  const ACTS=[["pay","💰","Party payment","Party pay"],["IN","＋","Cash In","Cash In"],["OUT","−","Cash Out","Cash Out"],["DEPOSIT","🏦","Bank / Swap","Bank/Swap"],["close","🌙","Close Day","Close Day"],["ret","↩","Return","Return"]];
   function drawActs(){const b=el("hubActs");if(!b)return;
     const A=ACTS.filter(x=>VIEWS[view].acts.includes(x[0]));
     // phone: one row; Return is hidden there when other buttons are shown (it is in More)
@@ -119,7 +121,7 @@
 
   /* ---------- tabs ---------- */
   const badge=t=>{const n={make:cnt.make,chg:cnt.chg,cheques:cnt.chq,verify:cnt.verify}[t];return n?'<span class="n">'+n+'</span>':""};
-  const tb=t=>t==="acrs"?'<a class="x" href="ecrs.html">'+esc(T[t])+'</a>':'<button type="button" data-hub-t="'+t+'" aria-pressed="'+(t===tab)+'">'+esc(T[t])+badge(t)+'</button>';
+  const tb=t=>t==="acrs"?'<a class="x" href="ecrs.html">'+esc(T[t])+'</a>':t==="books"?'<a class="x" href="accounts-books.html" title="Ledger, Outstanding, Receipts, Day book (Ctrl+Alt+L)">'+esc(T[t])+'</a>':'<button type="button" data-hub-t="'+t+'" aria-pressed="'+(t===tab)+'">'+esc(T[t])+badge(t)+'</button>';
   function drawTabs(){const b=el("hubTabs");if(!b)return;
     const V=VIEWS[view],MORE=V.more,inMore=MORE.includes(tab),retMore=V.acts.includes("ret")&&V.acts.length>=3;
     const row=V.row.map(([g,l])=>[g,l.filter(t=>t!=="acrs"||o.acrs)]).filter(r=>r[1].length);
@@ -128,6 +130,7 @@
       (moreOpen?'<div class="hub-more" role="menu">'+MORE.map(tb).join("")+(retMore?'<button type="button" class="ph" data-hub-a="ret">↩ Return (goods back)</button>':"")+'</div>':""):"")}
   function go(t){
     if(t==="out")t="due";   // old "Party outstanding" tab = To collect
+    if(t==="led"||t==="books"){location.href="accounts-books.html?v=led";return}   // Ledger lives in Ledger & Outstanding now
     moreOpen=false;
     if(!tabsOf(view).includes(t)){const v=views.find(x=>tabsOf(x).includes(t));if(!v){drawTabs();return}view=v}
     if(pageOf(t)!==o.page||location.hash.slice(1)!==view){location.href=FILE[pageOf(t)]+"?tab="+t+"#"+view;return}
@@ -137,6 +140,8 @@
   function drawViews(){
     const top=document.querySelector(".hub-top");if(!top)return;
     const h=top.querySelector("h1");if(h)h.textContent=VIEWS[view].name;
+    // back to the Finance home (finance.html, Mohit 20 Nov 2026): money now, work waiting, brand-wise
+    if(!el("hubFin")){const a=document.createElement("a");a.id="hubFin";a.href="finance.html";a.className="hub-fin";a.title="Finance home (Ctrl+Alt+F)";a.textContent="‹ Finance";top.insertBefore(a,top.firstChild)}
     let b=el("hubViews");
     if(views.length<2){if(b)b.remove();return}
     if(!b){b=document.createElement("nav");b.id="hubViews";b.className="hub-views";b.setAttribute("aria-label","Accounts view");
@@ -148,7 +153,7 @@
   const DEF=[["make","#c8102e","Bills to make","make",""],["due","#b3122b","To collect","due","#b3122b"],["coll","#13824a","Collected today","book","#13824a"],
     ["chq","#9a5b00","Cheques not in bank","cheques",""],["adv","#13824a","Advance with us","due",""],["hand","#002f37","Cash in hand","book",""],
     ["verify","#1d5fbf","Bank check","verify","#1d5fbf"],["gst","#6b21a8","GST","gst",""],
-    ["open","#5b6672","Opening cash","close",""],["cin","#13824a","Cash In","book","#13824a"],["cout","#c8102e","Cash Out","book","#c8102e"],["dep","#1d5fbf","Bank deposit","book",""]];
+    ["open","#5b6672","Opening cash","close",""],["cin","#13824a","Cash In","book","#13824a"],["cout","#c8102e","Cash Out","book","#c8102e"],["dep","#1d5fbf","Bank deposit","deps",""]];
   function drawKpis(){const b=el("hubKpis");if(!b)return;
     const L=VIEWS[view].kpis.map(k=>DEF.find(d=>d[0]===k));
     b.style.setProperty("--n",String(L.length));b.classList.toggle("n4",L.length===4);
@@ -160,19 +165,22 @@
 
   /* ---------- figures ---------- */
   const isEntryMoney=l=>l.kind==="IN"&&l.src!=="ENTRY";
+  // lwb_acc_friend_swap_setup.sql: bank <-> cash with a friend (not sales / collection / expense)
+  const isSwap=l=>l.src==="ENTRY"&&l.category==="Friend swap";
   function cashFrom(D,C,from,to){
     from=from||D.today;to=to||D.today;C=C||[];
     const one=from===to,isToday=one&&to===D.today,L=D.lines||[];
     const coll=L.filter(isEntryMoney),cm={};coll.forEach(l=>{const m=l.mode==="RTGS"?"BANK":l.mode;cm[m]=(cm[m]||0)+Number(l.amount)});
     const collT=coll.reduce((a,l)=>a+Number(l.amount),0);
-    let cin=0,cout=0,dep=0,wd=0;
+    let cin=0,cout=0,dep=0,wd=0,sw=0;
     for(const l of L){const a=Number(l.amount)||0;if(/^contra\b/i.test(String(l.category||"")))continue;
+      if(isSwap(l)){sw+=l.kind==="WITHDRAW"?a:-a;continue}   // friend swap: only cash in hand / bank move
       if(l.kind==="IN"&&l.mode==="CASH")cin+=a;else if(l.kind==="OUT"&&l.mode==="CASH")cout+=a;else if(l.kind==="DEPOSIT")dep+=a;else if(l.kind==="WITHDRAW")wd+=a}
     const ch=C.filter(c=>c.status==="IN_HAND"),cd=C.filter(c=>c.status==="DEPOSITED"),sum=a=>a.reduce((x,c)=>x+Number(c.amount),0);
     const lastClose=(D.closes||[]).find(c=>c.date===to);
     const handH=isToday?"Cash in hand now":one?"Cash in hand at night":"Cash in hand on "+dmy(to);
     const md=k=>rs(cm[k]||0).replace("₹","");
-    const cnt=f=>L.filter(l=>!/^contra\b/i.test(String(l.category||""))&&f(l)).length,pl=(n,w)=>n+" "+w+(n===1?"":"s");
+    const cnt=f=>L.filter(l=>!/^contra\b/i.test(String(l.category||""))&&!isSwap(l)&&f(l)).length,pl=(n,w)=>n+" "+w+(n===1?"":"s");
     const P=D.pending||[],pa=P.reduce((a,p)=>a+Number(p.amount),0),day=isToday?" today":one?" "+dmy(to).slice(0,5):"";
     const chk=D.can_check!=null?D.can_check:D.is_admin;
     return {
@@ -181,19 +189,20 @@
       cin:{h:"Cash In"+day,v:rs(cin+wd),s:pl(cnt(l=>(l.kind==="IN"&&l.mode==="CASH")||l.kind==="WITHDRAW"),"entry").replace("entrys","entries")},
       cout:{h:"Cash Out"+day,v:rs(cout),s:pl(cnt(l=>l.kind==="OUT"&&l.mode==="CASH"),"entry").replace("entrys","entries")},
       dep:{h:"Bank deposit"+day,v:rs(dep),s:pl(cnt(l=>l.kind==="DEPOSIT"),"deposit")},
-      coll:{h:isToday?"Collected today":one?"Collected "+dmy(to):"Collected "+dmy(from)+" – "+dmy(to),v:rs(collT),
+      coll:{h:isToday?"Collected today":one?"Collected "+dmy(to):"Collected "+dmy(from).slice(0,5)+" – "+dmy(to).slice(0,5),v:rs(collT),
         s:"Cash "+md("CASH")+" · UPI "+md("UPI")+" · Bank "+md("BANK")+" · Chq "+md("CHEQUE"),tip:"Party money in every mode (cash, UPI, bank, cheque, driver money)"},
       chq:{v:rs(sum(ch)+sum(cd)),s:(ch.length+cd.length)+" cheque"+(ch.length+cd.length===1?"":"s")+" · "+cd.length+" deposited"},
-      hand:{h:handH,v:D.closing_set?rs(D.closing):"—",s:(lastClose&&!lastClose.is_start?"Counted · ":"")+"In "+rs(cin+wd).replace("₹","")+" · Out "+rs(cout).replace("₹","")+" · Bank "+rs(dep).replace("₹",""),
+      hand:{h:handH,v:D.closing_set?rs(D.closing):"—",s:(lastClose&&!lastClose.is_start?"Counted · ":"")+"In "+rs(cin+wd).replace("₹","")+" · Out "+rs(cout).replace("₹","")+" · Bank "+rs(dep).replace("₹","")+(sw?" · Swap "+(sw>0?"+":"−")+rs(Math.abs(sw)).replace("₹",""):""),
         tip:"Opening "+(D.opening_set?rs(D.opening):"not set")+" + Cash In − Cash Out − Bank deposit"},
       counts:{verify:(D.pending||[]).length,chq:C.filter(c=>c.status==="DEPOSITED"||(c.status==="IN_HAND"&&c.cheque_date<=D.today)).length}
     };
   }
   // short alerts; here = drawn on the cash half (opening box / cash back button work there)
+  const addDays=(iso,n)=>{const d=new Date(iso+"T00:00:00Z");d.setUTCDate(d.getUTCDate()+n);return d.toISOString().slice(0,10)};
   function cashAlerts(D,C,here){
     const A=[];C=C||[];
-    if(!D.opening_set&&!D.last_close)A.push(here?{c:"blue",b:"Set opening cash",s:"count the cash in hand once",
-      html:'<input id="startAmt" type="text" inputmode="decimal" placeholder="₹ cash"><button type="button" class="btn" id="startBtn">Set</button>'}
+    if(!D.opening_set&&!D.last_close)A.push(here?{c:"blue op",b:"Set opening cash",s:"cash in hand at the start of the day",
+      html:'<input id="startDate" type="date" value="'+D.today+'" max="'+D.today+'" min="'+addDays(D.today,-60)+'" aria-label="Opening cash date" title="Start of which day"><input id="startAmt" type="text" inputmode="decimal" placeholder="₹ cash" aria-label="Cash in hand"><button type="button" class="btn" id="startBtn">Set</button>'}
       :{c:"blue",b:"Opening cash not set",s:"count the cash in hand once",t:"book",go:"Set"});
     const ho=(D.closes||[]).find(c=>c.date===D.last_close&&c.handed_to&&!c.returned_at);
     if(ho)A.push(here?{b:"☀ "+rs(ho.counted)+" cash with "+esc(ho.handed_to_name),s:"handed over "+dmy(ho.date)+" night",html:'<button type="button" class="btn grn" data-return="'+ho.id+'">Received back</button>'}
@@ -210,7 +219,7 @@
   }
   function billFrom(PI,marks,early,brand){
     const LP=window.LWBPartyPay,V=p=>brand?LP.slice(p,brand):p,parties=[...PI.parties.values()].map(V);
-    const mk=(PI.raw.orders||[]).filter(x=>(!brand||(x.company_id||"")===brand)&&LP.needsBill(x,marks)).concat(brand?[]:(early||[]));
+    const mk=(PI.raw.orders||[]).filter(x=>LP.makeInBrand(x,brand)&&LP.needsBill(x,marks)).concat((early||[]).filter(x=>LP.makeInBrand(x,brand)));
     const bn=brand&&PI.brandOf?((PI.brandOf(brand)||{}).name||""):"";
     return billKpis({make:mk.length,makeAmt:mk.reduce((a,x)=>a+Number(x.erp_amount||0),0),early:mk.filter(x=>x.early).length,
       due:parties.reduce((a,p)=>a+Math.max(0,p.net),0),dueN:parties.filter(p=>p.net>0.5).length,
@@ -224,10 +233,12 @@
 
   async function loadCash(client){
     try{
-      const [d,c]=await Promise.all([client.rpc("lwb_acc_dashboard",{p_from:null,p_to:null}),client.rpc("lwb_acc_cheque_list")]);
+      // cash cards on the billing half follow the ONE top bar date too (erp-period.js, Mohit 20 Nov 2026)
+      const r=window.LWBPeriod?LWBPeriod.get():null,pf=r?r.from:null,pt=r?r.to:null;
+      const [d,c]=await Promise.all([client.rpc("lwb_acc_dashboard",{p_from:pf,p_to:pt}),client.rpc("lwb_acc_cheque_list")]);
       if(d.error)throw d.error;
       const D=d.data||{};D.lines=D.lines||[];D.pending=D.pending||[];const C=c.error?[]:(c.data||[]);
-      const f=cashFrom(D,C);counts(f.counts);kpis({coll:f.coll,chq:f.chq,hand:f.hand,verify:f.verify});if(view!=="party")alerts(cashAlerts(D,C,false));
+      const f=cashFrom(D,C,pf,pt);counts(f.counts);kpis({coll:f.coll,chq:f.chq,hand:f.hand,verify:f.verify});if(view!=="party")alerts(cashAlerts(D,C,false));
     }catch(e){kpis({coll:{v:"—",s:"open Day book"},chq:{v:"—",s:""},hand:{v:"—",s:""},verify:{v:"—",s:""}})}
   }
   // GST card (Tally view): last month = the return due now (GSTR-3B by the 20th)
@@ -260,7 +271,7 @@
       const marks=new Map((mk.error?[]:(mk.data||[])).map(m=>[m.order_id,1]));
       const brand=PI.branded&&window.LWBBrand?LWBBrand.get(PI.companies):"";
       kpis(billFrom(PI,marks,early.error?[]:(early.data||[]).map(x=>({...x,early:true})),brand));
-      const L=(PI.raw.orders||[]).filter(x=>LP.needsBill(x,marks)).length+(brand?0:(early.error?0:(early.data||[]).length));
+      const L=(PI.raw.orders||[]).filter(x=>LP.makeInBrand(x,brand)&&LP.needsBill(x,marks)).length+(early.error?0:(early.data||[]).filter(x=>LP.makeInBrand(x,brand)).length);
       counts({make:L,chg:(chg.error?[]:(chg.data||[])).filter(c=>c.status==="WAITING").length});
     }catch(e){kpis({make:{v:"—",s:""},due:{v:"—",s:""},adv:{v:"—",s:""}})}
   }
@@ -298,6 +309,6 @@
     return {view,tab};
   }
   const has=t=>tabsOf(view).includes(t);
-  window.LWBAccHub={mount,setTab,counts,kpis,alerts,cashFrom,cashAlerts,billFrom,billKpis,loadCash,loadBill,loadGst,gstState,monName,go,T,has,
+  window.LWBAccHub={isSwap,mount,setTab,counts,kpis,alerts,cashFrom,cashAlerts,billFrom,billKpis,loadCash,loadBill,loadGst,gstState,monName,go,T,has,
     get view(){return view},VIEWS,viewsFor};
 })();

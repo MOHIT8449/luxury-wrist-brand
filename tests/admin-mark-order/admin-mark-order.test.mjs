@@ -11,9 +11,9 @@ CREATE ROLE anon; CREATE ROLE authenticated;
 CREATE SCHEMA auth;
 CREATE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql AS $$ SELECT nullif(current_setting('request.jwt.claim.sub',true),'')::uuid $$;
 CREATE TABLE public.user_profiles(id uuid primary key,full_name text,role text,active boolean);
-CREATE TABLE public.orders(id uuid default gen_random_uuid() primary key,order_no text,order_date timestamptz default now(),customer_name text,status text);
+CREATE TABLE public.orders(id uuid default gen_random_uuid() primary key,order_no text,order_date timestamptz default now(),customer_name text,status text,transportation text default 'DELIVERY');
 CREATE TABLE public.order_items(id bigserial primary key,order_id uuid,sku_name text,ordered_qty numeric,approved_qty numeric,loaded_qty numeric default 0,rate numeric);
-CREATE TABLE public.dispatch_assignments(id uuid default gen_random_uuid() primary key,order_id uuid,loading_started_at timestamptz,loading_completed_at timestamptz);
+CREATE TABLE public.dispatch_assignments(id uuid default gen_random_uuid() primary key,order_id uuid,vehicle_no text,loading_started_at timestamptz,loading_completed_at timestamptz);
 CREATE TABLE public.lwb_delivery_reports(order_id uuid,delivery_status text,reported_at timestamptz default now());
 CREATE TABLE public.lwb_tally_invoices(order_id uuid);
 CREATE TABLE public.lwb_user_page_access(user_id uuid primary key,hidden text[] not null default '{}',updated_at timestamptz,updated_by uuid);
@@ -22,10 +22,11 @@ GRANT USAGE ON SCHEMA public, auth TO authenticated;
 `);
 await db.query(`insert into user_profiles values($1,'Mohit','admin',true),($2,'Vinesh','manager',true),($3,'Yogesh','accounts',true),($4,'Ravi','sales',true),($5,'Old Head','manager',true)`,[ids.admin,ids.head,ids.accounts,ids.sales,ids.head2]);
 await db.exec(await readFile(new URL('../../lwb_admin_mark_load_deliver_setup.sql',import.meta.url),'utf8'));
-async function order(no,status,{assign=false,days=0}={}){
-  const id=(await db.query(`insert into orders(order_no,customer_name,status,order_date) values($1,'SHREE KRISHNA',$2,now()-make_interval(days=>$3)) returning id`,[no,status,days])).rows[0].id;
+// Godown Delivery POs get a vehicle on Transport Assignment unless vehicle:null (24 Nov 2026: vehicle first).
+async function order(no,status,{days=0,vehicle='GJ05AB1234',transportation='DELIVERY'}={}){
+  const id=(await db.query(`insert into orders(order_no,customer_name,status,order_date,transportation) values($1,'SHREE KRISHNA',$2,now()-make_interval(days=>$3),$4) returning id`,[no,status,days,transportation])).rows[0].id;
   await db.query(`insert into order_items(order_id,sku_name,ordered_qty,approved_qty,rate) values($1,'COKE',10,8,100),($1,'FANTA',5,null,50)`,[id]);
-  if(assign)await db.query('insert into dispatch_assignments(order_id) values($1)',[id]);
+  if(vehicle!==null)await db.query('insert into dispatch_assignments(order_id,vehicle_no) values($1,$2)',[id,vehicle]);
   return id;
 }
 async function as(who,q,params){
@@ -61,7 +62,7 @@ test('Sales Head marks Loaded + Delivered; log keeps his role',async()=>{
 });
 
 test('Loaded: status, loaded qty, transport times, log, Accounts bell',async()=>{
-  const o=await order('P-2','transport_allocated',{assign:true,days:3});
+  const o=await order('P-2','transport_allocated',{days:3});
   const d=(await db.query(`select ((now() at time zone 'Asia/Kolkata')::date-2)::text d`)).rows[0].d;
   const r=await mark('admin',o,true,false,d,'Godown did not press Loaded');
   assert.equal(r.status,'loaded');assert.deepEqual(r.marked,['LOADED']);
@@ -121,4 +122,18 @@ test('status check without delivered: keeps loaded, mark still counts',async()=>
   assert.equal(r.status,'loaded');assert.deepEqual(r.marked,['LOADED','DELIVERED']);
   assert.equal((await db.query('select status from orders where id=$1',[o])).rows[0].status,'loaded');
   assert.equal((await as('admin','select * from lwb_po_delivered_orders($1)',[[o]])).rows.length,1);
+});
+
+test('Godown Delivery PO with no vehicle on Transport Assignment cannot be marked (Self Pickup / Direct can)',async()=>{
+  const o=await order('P-20','approved',{vehicle:null});
+  await assert.rejects(mark('admin',o,true,true),/has no vehicle/);
+  const blank=await order('P-21','loaded',{vehicle:' '});
+  await assert.rejects(mark('admin',blank,false,true),/has no vehicle/);
+  assert.equal((await db.query('select count(*)::int n from lwb_admin_order_marks where order_id = any($1)',[[o,blank]])).rows[0].n,0);
+  await db.query("update dispatch_assignments set vehicle_no='GJ05XY9999' where order_id=$1",[blank]);
+  assert.deepEqual((await mark('admin',blank,false,true)).marked,['DELIVERED']);
+  const sp=await order('P-22','approved',{vehicle:null,transportation:'SELF PICKUP'});
+  assert.deepEqual((await mark('admin',sp,true,true)).marked,['LOADED','DELIVERED']);
+  const dv=await order('P-23','approved',{vehicle:null,transportation:'DIRECT VEHICLE|ECRS'});
+  assert.deepEqual((await mark('head',dv,true,false)).marked,['LOADED']);
 });

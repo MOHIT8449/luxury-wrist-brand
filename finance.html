@@ -1,0 +1,600 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"><script src="erp-fit.js"></script>
+  <title>Finance | Luxury Wrist Brand ERP</title>
+  <script src="erp-date.js"></script>
+  <script src="vendor/supabase-js-2.119.0.js"></script>
+  <link rel="stylesheet" href="erp-shell.css?v=20261124">
+  <script src="erp-shell.js?v=20261124r"></script>
+  <script src="sales-common.js"></script>
+  <script src="brand-filter.js"></script>
+  <script src="erp-period.js"></script>
+  <script src="erp-list.js"></script>
+  <script src="party-pay.js?v=20261125b"></script>
+  <script src="acc-hub.js?v=20261124d"></script>
+  <style>
+    /* Finance home (Mohit, 20 Nov 2026): the ONE money page for Admin / Accounts / Cashier.
+       Top bar brand + dates drive everything. Each block answers one question and every number opens what makes it:
+       Money now (cash, bank, to collect, advance, to pay, cheques) · Work waiting (one list of every alert) ·
+       Brand-wise (billed, collected, to collect, 60+ days, advance, to pay company) · Money in / out by day ·
+       Rough P&L · Expenses by head · Parties · Latest entries · Find anything. The work itself stays on the
+       Accounts / Cashier / Ledger pages; this page links to the exact place. No SQL. */
+    [hidden]{display:none!important}
+    .status{text-align:center;padding:80px 20px;font-size:15px;color:#555}
+    .fc{--g:#13824a;--r:#b3122b;--b:#1d5fbf;--a:#9a5b00;--dk:#002f37;--mut:var(--erp-muted,#66788e);--ln:var(--erp-line,#e3e7ed)}
+    .fc-head{display:flex;align-items:center;gap:8px;margin:0 0 8px;flex-wrap:wrap}
+    .fc-head h1{margin:0;font-size:19px}
+    .fc-head .sub{font-size:12.5px;color:var(--mut);white-space:nowrap}
+    .fc-head .sp{flex:1 1 auto}
+    .fc-find{position:relative;flex:0 1 360px;min-width:0}
+    .fc-find input{width:100%;box-sizing:border-box;height:34px;min-height:34px!important;padding-left:30px!important;border:1.5px solid var(--ln);border-radius:8px;padding:0 10px 0 30px;font:inherit;font-size:14px;background:#fff url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2366788e' stroke-width='2'%3E%3Ccircle cx='11' cy='11' r='7'/%3E%3Cpath d='M20 20l-4-4'/%3E%3C/svg%3E") 8px center/16px no-repeat}
+    .fc-res{position:absolute;z-index:40;left:0;right:0;top:38px;background:#fff;border:1px solid #d5dbe3;border-radius:10px;box-shadow:0 12px 28px rgba(0,0,0,.15);max-height:min(420px,70vh);overflow:auto}
+    .fc-res .g{font-size:11px;font-weight:800;color:var(--mut);text-transform:uppercase;letter-spacing:.4px;padding:7px 12px 3px}
+    .fc-res button{display:flex;gap:8px;align-items:center;width:100%;border:0;background:#fff;text-align:left;padding:7px 12px;font:inherit;font-size:13.5px;cursor:pointer;color:inherit}
+    .fc-res button:hover,.fc-res button.on{background:#eef4ff}
+    .fc-res button span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.fc-res button small{color:var(--mut)}
+    .fc-res button b{white-space:nowrap}.fc-res .none{padding:10px 12px;color:var(--mut);font-size:13.5px}
+    .fc-ib{height:34px;min-height:34px!important;width:34px;padding:0!important;border:1.5px solid var(--ln);background:#fff;color:#00434d!important;border-radius:99px;font:inherit;font-size:16px;font-weight:700;cursor:pointer;line-height:1}
+
+    .fc-acts{display:grid;grid-template-columns:repeat(var(--n,5),minmax(0,1fr));gap:6px;margin:0 0 8px}
+    .fc-acts button{height:40px;border:0;border-radius:8px;color:#fff;font:inherit;font-weight:700;font-size:14px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px;white-space:nowrap;overflow:hidden;min-width:0}
+    .fc-acts em{font-style:normal;font-size:16px}
+    .fc-acts .pay{background:#0b6b3a}.fc-acts .in{background:#1a9156}.fc-acts .out{background:#c8102e}.fc-acts .dep{background:#1d5fbf}.fc-acts .close{background:var(--dk)}
+
+    .fc-msg{padding:8px 12px;border-radius:8px;background:#fff7e6;color:#6b4200;font-size:13px;margin:0 0 8px}
+    .fc-pos{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:8px;margin:0 0 4px}
+    .fc-t{background:#fff;border:1px solid var(--ln);border-left:4px solid var(--c);border-radius:9px;padding:7px 10px;min-width:0;text-align:left;font:inherit;color:inherit;cursor:pointer}
+    .fc-t:hover{border-color:#9fb3c8;border-left-color:var(--c)}
+    .fc-t h3{margin:0;font-size:12px;color:#4b5763;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .fc-t b{display:block;font-size:19px;font-weight:800;line-height:1.25;color:var(--v,inherit);font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .fc-t small{display:block;font-size:11.5px;color:var(--mut);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .fc-t.dk{background:var(--dk);border-color:var(--dk);color:#fff}.fc-t.dk h3,.fc-t.dk small{color:#cfe3e6}
+    .fc-net{font-size:12.5px;color:var(--mut);margin:0 2px 10px;display:flex;gap:4px 12px;flex-wrap:wrap}
+    .fc-net b{color:var(--erp-ink,#1f2a37)}
+
+    .fc-grid{display:grid;gap:10px;margin:0 0 10px}
+    .fc-g2{grid-template-columns:minmax(0,5fr) minmax(0,7fr);align-items:start}
+    .fc-g3{grid-template-columns:repeat(3,minmax(0,1fr))}
+    .fc-c{background:#fff;border:1px solid var(--ln);border-radius:10px;padding:10px 12px;min-width:0}
+    .fc-c>h2{margin:0 0 6px;font-size:15px;display:flex;align-items:center;gap:8px}
+    .fc-c>h2 small{margin-left:auto;font-weight:400;color:var(--mut);font-size:12px;white-space:nowrap}
+    .fc-c>h2 a,.fc-c>h2 .lk{margin-left:auto;font-size:12.5px;font-weight:700;color:#00434d;text-decoration:none;border:0;background:none;cursor:pointer;padding:0;font-family:inherit}
+    .fc-c>h2 small+a{margin-left:8px}
+    .fc-empty{color:var(--mut);font-size:13.5px;padding:8px 2px}
+    .tag{display:inline-block;padding:1px 7px;border-radius:99px;font-size:11px;font-weight:700;white-space:nowrap}
+    .t-red{background:#fdecef;color:#b3122b}.t-amb{background:#fdf0dc;color:#9a5b00}.t-grn{background:#e3f5ec;color:#13824a}.t-blu{background:#e6efff;color:#1d5fbf}.t-gry{background:#eef0f3;color:#3b4652}
+    .pos{color:var(--g)}.neg{color:var(--r)}.blu{color:var(--b)}
+
+    /* work waiting */
+    .fc-todo{display:flex;flex-direction:column}
+    .fc-todo button{display:grid;grid-template-columns:26px minmax(0,1fr) auto;gap:8px;align-items:center;border:0;border-bottom:1px solid var(--ln);background:none;padding:7px 2px;text-align:left;font:inherit;color:inherit;cursor:pointer;width:100%}
+    .fc-todo button:last-child{border-bottom:0}.fc-todo button:hover{background:#f8fafc}
+    .fc-todo i{font-style:normal;width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:13px;background:#eef0f3}
+    .fc-todo .red i{background:#fdecef}.fc-todo .amb i{background:#fdf0dc}.fc-todo .blu i{background:#e6efff}
+    .fc-todo span{min-width:0}.fc-todo span b{display:block;font-size:13.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .fc-todo span small{display:block;font-size:11.5px;color:var(--mut);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .fc-todo .r{text-align:right;white-space:nowrap;font-weight:800;font-size:14px;font-variant-numeric:tabular-nums}
+    .fc-todo .r small{display:block;font-weight:600;font-size:11px;color:#00434d}
+    .fc-todo .red .r{color:var(--r)}.fc-todo .amb .r{color:var(--a)}
+    .fc-todo .fc-tmore{display:none}
+    .fc-ok{display:flex;align-items:center;gap:8px;padding:10px 4px;color:var(--g);font-weight:700;font-size:14px}
+
+    /* brand-wise */
+    .fc-bt{width:100%;border-collapse:collapse;font-size:13.5px}
+    .fc-bt th,.fc-bt td{padding:6px 6px;border-bottom:1px solid var(--ln);text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
+    .fc-bt th{font-size:11.5px;color:#4b5763;font-weight:700;background:#f6f7f9}
+    .fc-bt th:first-child,.fc-bt td:first-child{text-align:left;white-space:normal}
+    .fc-bt td[data-d]{cursor:pointer}.fc-bt td[data-d]:hover{background:#eef4ff}
+    .fc-bt td small{display:block;font-size:10.5px;color:var(--mut);font-weight:400}
+    .fc-bt tr.on td{background:#fffbea}
+    .fc-bt tfoot td{font-weight:800;background:#f6f7f9}
+    .fc-bn{display:flex;align-items:center;gap:6px;font-weight:700;border:0;background:none;padding:0;font:inherit;font-weight:700;cursor:pointer;color:inherit;text-align:left}
+    .fc-bn i{width:10px;height:10px;border-radius:50%;background:var(--bc,#9aa5a8);flex:0 0 auto}
+    .fc-bcards{display:none}
+    .fc-note{font-size:11.5px;color:var(--mut);margin:6px 2px 0;line-height:1.45}
+
+    /* flow chart */
+    .fc-sum3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;margin:0 0 6px}
+    .fc-sum3 button{border:1px solid var(--ln);border-radius:8px;background:#fff;padding:5px 8px;text-align:left;font:inherit;cursor:pointer;color:inherit;min-width:0}
+    .fc-sum3 small{display:block;font-size:11px;color:var(--mut)}.fc-sum3 b{font-size:15px;font-variant-numeric:tabular-nums;white-space:nowrap}
+    .fc-chart svg{width:100%;height:120px;display:block}
+    .fc-chart rect{cursor:pointer}
+    .fc-chart text{font-size:9px;fill:#66788e}
+    .fc-modes{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:6px}
+    .fc-modes td,.fc-modes th{padding:3px 4px;border-bottom:1px solid var(--ln);text-align:right;font-variant-numeric:tabular-nums}
+    .fc-modes th{font-size:11px;color:var(--mut);font-weight:700}.fc-modes td:first-child,.fc-modes th:first-child{text-align:left}
+
+    /* P&L */
+    .fc-pl{display:flex;flex-direction:column}
+    .fc-pl button{display:flex;justify-content:space-between;gap:8px;border:0;border-bottom:1px solid var(--ln);background:none;padding:6px 2px;font:inherit;font-size:13.5px;cursor:pointer;color:inherit;text-align:left}
+    .fc-pl button:hover{background:#f8fafc}.fc-pl button b{font-variant-numeric:tabular-nums;white-space:nowrap}
+    .fc-pl button.sub span{padding-left:12px;color:#4b5763}
+    .fc-pl .tot{border-bottom:0;border-top:2px solid #d5dbe3;font-size:15px;padding-top:8px}.fc-pl .tot span{font-weight:800}
+
+    /* bars */
+    .fc-bars{display:flex;flex-direction:column;gap:5px}
+    .fc-bar{display:grid;grid-template-columns:minmax(80px,40%) 1fr auto;gap:8px;align-items:center;font-size:13px;border:0;background:none;padding:2px 0;font:inherit;font-size:13px;cursor:pointer;color:inherit;text-align:left}
+    .fc-bar:hover{background:#f8fafc}
+    .fc-bar span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .fc-bar i{display:block;height:10px;background:#f1f3f6;border-radius:0 4px 4px 0;overflow:hidden}.fc-bar i::after{content:"";display:block;height:100%;width:var(--w);background:var(--bc,#c8102e);border-radius:0 4px 4px 0;min-width:2px}
+    .fc-bar b{font-variant-numeric:tabular-nums;white-space:nowrap}
+
+    /* parties + feed */
+    .fc-seg{display:inline-flex;border:1px solid var(--ln);border-radius:99px;padding:2px;gap:2px;margin-left:auto}
+    .fc-seg button{border:0;background:none;border-radius:99px;height:24px;padding:0 9px;font:inherit;font-size:12px;font-weight:700;color:#4b5763;cursor:pointer}
+    .fc-seg button[aria-pressed=true]{background:var(--dk);color:#fff}
+    .fc-rows{display:flex;flex-direction:column}
+    .fc-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:center;border:0;border-bottom:1px solid var(--ln);background:none;padding:6px 2px;text-align:left;font:inherit;color:inherit;cursor:pointer;width:100%}
+    .fc-row:hover{background:#f8fafc}.fc-row:last-child{border-bottom:0}
+    .fc-row.ic{grid-template-columns:28px minmax(0,1fr) auto}
+    .fc-row .ic{width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:14px}
+    .ic-in{background:#e3f5ec;color:#13824a}.ic-out{background:#fdecef;color:#b3122b}.ic-dep{background:#e6efff;color:#1d5fbf}
+    .fc-row span{min-width:0}.fc-row span b{display:block;font-size:13.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .fc-row span small{display:block;font-size:11.5px;color:var(--mut);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .fc-row .a{text-align:right;font-weight:800;font-size:14px;white-space:nowrap;font-variant-numeric:tabular-nums}
+    .fc-row .a small{display:block;font-weight:600;font-size:11px}
+    .fc-bd{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--bc);margin-right:4px;vertical-align:middle}
+
+    .fc-links{display:flex;flex-wrap:wrap;gap:6px;margin:2px 0 8px}
+    .fc-links a{display:inline-flex;align-items:center;height:30px;border:1.5px solid var(--ln);background:#fff;border-radius:99px;padding:0 11px;font-size:13px;color:#00434d;font-weight:700;text-decoration:none;white-space:nowrap}
+    .fc-links a:hover{border-color:#9fb3c8}
+    .fc-links .h{font-size:11px;font-weight:800;color:var(--mut);text-transform:uppercase;letter-spacing:.4px;align-self:center;margin-right:2px}
+
+    /* entry popup */
+    .fc-ov{position:fixed;inset:0;background:rgba(15,23,35,.5);z-index:4500;display:flex;align-items:center;justify-content:center;padding:12px}
+    .fc-dlg{background:#fff;border-radius:14px;width:min(480px,100%);max-height:calc(100dvh - 24px);display:flex;flex-direction:column;box-shadow:0 20px 50px rgba(0,0,0,.25)}
+    .fc-dlg header{display:flex;align-items:center;gap:10px;padding:12px 14px;border-bottom:1px solid var(--ln)}
+    .fc-dlg header h3{margin:0;font-size:16px;flex:1}
+    .fc-dlg header button{border:0;background:#f1f3f6;border-radius:8px;width:34px;height:34px;font-size:18px;cursor:pointer}
+    .fc-dlg .bd{padding:12px 14px;overflow:auto}
+    .fc-kv{display:grid;grid-template-columns:auto 1fr;gap:5px 14px;font-size:14px}.fc-kv span{color:var(--mut)}
+    .fc-dlg footer{display:flex;gap:6px;flex-wrap:wrap;padding:10px 14px;border-top:1px solid var(--ln)}
+    .fc-dlg footer a,.fc-dlg footer button{height:36px;border:1px solid var(--ln);border-radius:8px;background:#fff;color:#00434d;font:inherit;font-weight:700;font-size:13.5px;padding:0 12px;display:inline-flex;align-items:center;text-decoration:none;cursor:pointer}
+
+    @media(max-width:1180px){.fc-pos{grid-template-columns:repeat(3,minmax(0,1fr))}.fc-g3{grid-template-columns:1fr 1fr}.fc-g3>:first-child{grid-column:1/-1}}
+    @media(max-width:900px){.fc-g2{grid-template-columns:1fr}}
+    @media(max-width:600px){
+      .fc-head h1{font-size:17px}.fc-head .sub{display:none}
+      .fc-find{order:9;flex:1 1 100%}
+      .fc-acts{gap:4px}.fc-acts button{height:46px;flex-direction:column;gap:0;font-size:11.5px;line-height:1.15}.fc-acts .l{display:none}
+      .fc-acts em{font-size:16px}
+      .fc-pos{grid-template-columns:repeat(3,minmax(0,1fr));gap:5px}
+      .fc-t{padding:6px 7px;border-left-width:3px}.fc-t h3{font-size:11px}.fc-t b{font-size:15px}.fc-t small{font-size:10.5px}
+      .fc-g3{grid-template-columns:1fr}
+      .fc-todo:not(.all) .more{display:none}.fc-todo:not(.all) .fc-tmore{display:block;grid-template-columns:none;text-align:center;color:#00434d;font-weight:700;font-size:13px}
+      .fc-c{padding:9px 10px}
+      .fc-btw{display:none}
+      .fc-bcards{display:grid;gap:6px}
+      .fc-bc{border:1px solid var(--ln);border-left:4px solid var(--bc,#9aa5a8);border-radius:9px;padding:6px 8px}
+      .fc-bc.on{background:#fffbea}
+      .fc-bc .hd{display:flex;align-items:center;gap:6px;margin:0 0 4px}.fc-bc .hd .fc-bn{font-size:14px}
+      .fc-bc .hd small{margin-left:auto;font-size:11px;color:var(--mut)}
+      .fc-bc .gr{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:4px}
+      .fc-bc .gr button{border:0;background:#f6f7f9;border-radius:6px;padding:4px 6px;text-align:left;font:inherit;cursor:pointer;color:inherit;min-width:0}
+      .fc-bc .gr small{display:block;font-size:10.5px;color:var(--mut);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+      .fc-bc .gr b{font-size:13.5px;font-variant-numeric:tabular-nums;white-space:nowrap;display:block;overflow:hidden;text-overflow:ellipsis}
+      .fc-ov{align-items:flex-end;padding:0}.fc-dlg{width:100%;border-radius:16px 16px 0 0;max-height:92dvh}
+    }
+  </style>
+</head>
+<body>
+  <div id="loading" class="status">Opening Finance…</div>
+  <main id="page" class="erp-main fc" hidden>
+    <div class="fc-head">
+      <h1>Finance</h1><span class="sub" id="sub"></span><span class="sp"></span>
+      <div class="fc-find"><input id="fq" type="search" autocomplete="off" placeholder="Find party, bill no, PO, cheque, ₹ amount…" aria-label="Find anything"><div class="fc-res" id="fqr" hidden></div></div>
+      <button type="button" class="fc-ib" id="rf" title="Refresh">↻</button>
+    </div>
+    <div class="fc-acts" id="acts"></div>
+    <div class="fc-msg" id="msg" hidden></div>
+
+    <div class="fc-pos" id="pos"></div>
+    <div class="fc-net" id="net"></div>
+
+    <div class="fc-grid fc-g2">
+      <section class="fc-c"><h2>Work waiting <small id="todoN"></small></h2><div class="fc-todo" id="todo"><div class="fc-empty">Loading…</div></div></section>
+      <section class="fc-c"><h2>Brand-wise <small id="brSub"></small></h2><div id="brands"><div class="fc-empty">Loading…</div></div></section>
+    </div>
+
+    <div class="fc-grid fc-g3">
+      <section class="fc-c"><h2>Money in / out <small id="flowSub"></small></h2><div id="flow"></div></section>
+      <section class="fc-c" id="plBox"><h2>Profit &amp; Loss <small>rough, bills basis</small></h2><div id="pl"></div></section>
+      <section class="fc-c"><h2>Expenses by head <small id="expSub"></small></h2><div id="exp"></div></section>
+    </div>
+
+    <div class="fc-grid fc-g2">
+      <section class="fc-c"><h2>Parties <span class="fc-seg" id="pSeg"><button type="button" data-p="due" aria-pressed="true">To collect</button><button type="button" data-p="paid" aria-pressed="false">Paid in dates</button><button type="button" data-p="adv" aria-pressed="false">Advance</button></span></h2><div class="fc-rows" id="parties"></div></section>
+      <section class="fc-c"><h2>Latest entries <a href="#" id="bookLink">Day book ›</a></h2><div class="fc-rows" id="feed"></div></section>
+    </div>
+
+    <nav class="fc-links" id="links" aria-label="Work pages"></nav>
+    <div id="pop"></div>
+  </main>
+  <script>
+  (function(){
+    'use strict';
+    const S=LWBSales,{client,el,esc}=S;
+    const LP=window.LWBPartyPay;
+    const r2=n=>Math.round((Number(n)||0)*100)/100;
+    const num=v=>{const n=Number(v);return Number.isFinite(n)?n:0};
+    const rs=v=>(r2(v)<0?"−":"")+"₹"+Math.abs(r2(v)).toLocaleString("en-IN",{maximumFractionDigits:0});
+    // ₹68.12 L / ₹1.49 Cr on cards; full rupees in lists
+    const lk=v=>{const n=num(v),a=Math.abs(n),s=n<0?"−":"";return a>=1e7?s+"₹"+(a/1e7).toFixed(2)+" Cr":a>=1e5?s+"₹"+(a/1e5).toFixed(2)+" L":rs(n)};
+    const dmy=d=>d?String(d).slice(8,10)+"/"+String(d).slice(5,7)+"/"+String(d).slice(0,4):"";
+    const dm=d=>d?String(d).slice(8,10)+"/"+String(d).slice(5,7):"";
+    const istDay=t=>t?new Date(new Date(t).getTime()+330*60e3).toISOString().slice(0,10):"";
+    const today=()=>istDay(Date.now());
+    const shift=(d,n)=>{const x=new Date(d+"T12:00:00Z");x.setUTCDate(x.getUTCDate()+n);return x.toISOString().slice(0,10)};
+    const days=(a,b)=>Math.round((Date.parse(b+"T12:00:00Z")-Date.parse(a+"T12:00:00Z"))/864e5);
+    const hm=t=>t?new Date(t).toLocaleTimeString("en-IN",{hour:"2-digit",minute:"2-digit",hour12:true,timeZone:"Asia/Kolkata"}):"";
+    const key=v=>String(v==null?"":v).toUpperCase().replace(/[^A-Z0-9]+/g," ").trim();
+    const contra=l=>/^contra\b/i.test(String(l.category||""));
+    const NOT_EXPENSE=/^(supplier payment|contra\b.*|asset purchase|gst \/ tax paid|friend swap)$/i;   // same rule as Business Overview
+    const MODES=[["CASH","Cash"],["UPI","UPI"],["BANK","Bank"],["CHEQUE","Cheque"]];
+    const modeOf=m=>m==="RTGS"?"BANK":m;
+    const SRC={ENTRY:"Entered on Accounts",PAYMENT:"Party payment",DRIVER_CASH:"Driver collection",DRIVER_ONLINE:"Driver collection",OLD:"Old payment entry"};
+    const KIND={IN:"Money in",OUT:"Money out",DEPOSIT:"Cash → bank deposit",WITHDRAW:"Bank → cash"};
+    const safe=p=>Promise.resolve(p).then(r=>r&&r.error?{err:r.error}:r||{},e=>({err:e}));
+
+    let me=null,D=null,C=[],PI=null,MARKS=new Map(),EARLY=[],CHG=[],GST=null,STMT=null,SH=null,PAY=new Map(),ONO=new Map(),pMode="due",loading=false;
+    const per=()=>window.LWBPeriod?LWBPeriod.get():{from:today(),to:today(),label:"Today",key:"today"};
+    const inP=d=>{const r=per(),x=String(d||"").slice(0,10);return x>=r.from&&x<=r.to};
+    const COS=()=>PI?PI.companies:[];
+    const fb=()=>COS().length&&window.LWBBrand?LWBBrand.get(COS()):"";
+    const coName=id=>id==="?"?"Not split":!id?"No brand":((COS().find(c=>c.id===id)||{}).name||"—");
+    const coColor=id=>(COS().find(c=>c.id===id)||{}).color||"#9aa5a8";
+    const isCashier=()=>me&&me.role==="cashier";
+    const VIEW=()=>isCashier()?"cash":"tally";
+    const can=h=>{try{return ERPShell.menuForMe(me.realRole).some(g=>g.items.some(i=>i.h===h||i.h.split("#")[0]===h))}catch(e){return true}};
+
+    /* ---------- drill helpers ---------- */
+    // ERPList popup = the list behind a number (search, totals, Esc closes, phone = cards); a row opens its source.
+    const D_=new Map();let dn=0;
+    const dk=f=>{const id="d"+(++dn);D_.set(id,f);return ' data-d="'+id+'"'};
+    function drill(id){const f=D_.get(id);if(!f)return;const o=f();if(!o)return;if(typeof o==="string"){location.href=o;return}if(window.ERPList)ERPList.open(o)}
+    const ledger=p=>"accounts-books.html?v=led&party="+encodeURIComponent(p||"");
+    const bookOn=d=>{if(window.LWBPeriod&&d)LWBPeriod.set("custom",d,d);location.href="accounts-dashboard.html?tab=book#"+VIEW()};
+    const lineCols=[{t:"Date",v:l=>dmy(l.date)+" "+hm(l.at)},{t:"Party / head",v:l=>l.party||l.category||"",html:l=>"<b>"+esc(l.party||l.category||"—")+"</b>"+(l.party&&l.category?"<small> · "+esc(l.category)+"</small>":"")},
+      {t:"Mode",v:l=>l.mode},{t:"Ref / remark",v:l=>[l.ref,l.order_no,l.remark].filter(Boolean).join(" · ")},{t:"By",v:l=>l.by||""},{t:"Amount",v:l=>num(l.amount),money:true,sum:true}];
+    const lineList=(title,sub,L)=>({title,sub,rows:L,cols:lineCols,onRow:l=>openLine(l),empty:"No entry"});
+    const billCols=[{t:"Bill date",v:o=>dmy(o.invoice_date)},{t:"Bill no",v:o=>o.invoice_no,html:o=>"<b>"+esc(o.invoice_no)+"</b><small>PO "+esc(o.order_no||"")+"</small>"},{t:"Party",v:o=>o.parent||o.party},
+      {t:"Brand",v:o=>coName(o.company_id||"")},{t:"Bill ₹",v:o=>num(o.bill_amount),money:true,sum:true},{t:"Due ₹",v:o=>num(o.due),money:true,sum:true}];
+    const billList=(title,sub,L)=>({title,sub,rows:L,cols:billCols,onRow:o=>location.href=ledger(o.parent||o.party),empty:"No bill"});
+
+    /* ---------- load ---------- */
+    async function load(){
+      if(loading)return;loading=true;el("rf").disabled=true;
+      const r=per();
+      try{
+        const [d,c,mk,early,chg,gst,stmt,sh,pi]=await Promise.all([
+          safe(client.rpc("lwb_acc_dashboard",{p_from:r.from,p_to:r.to})),safe(client.rpc("lwb_acc_cheque_list")),
+          safe(client.rpc("lwb_admin_order_marks",{p_ids:null})),safe(client.rpc("lwb_bills_before_loading")),safe(client.rpc("lwb_bill_change_list",{p_days:30})),
+          isCashier()?{}:safe(client.rpc("lwb_gst_summary",{p_months:13})),isCashier()?{}:safe(client.rpc("lwb_bank_stmt_open_count")),
+          safe(client.rpc("lwb_acc_shift_list",{p_from:r.from,p_to:r.to})),LP.load(client).catch(e=>({err:e}))]);
+        if(d.err)throw d.err;
+        D=d.data||{};D.lines=D.lines||[];D.pending=D.pending||[];
+        C=c.data||[];MARKS=new Map((mk.data||[]).map(m=>[m.order_id,1]));EARLY=(early.data||[]).map(x=>({...x,early:true}));
+        CHG=chg.data||[];GST=gst.data||null;STMT=stmt.err?null:stmt.data;SH=sh.err?null:sh.data;
+        PI=pi&&pi.err?null:pi;
+        say(PI?"":"Party figures could not load ("+esc(LP.errText(pi.err))+"). Cash and bank are shown.");
+        ONO=new Map(((PI&&PI.raw.orders)||[]).map(o=>[String(o.order_no||""),o.company_id||""]));
+        if(PI&&!isCashier()){
+          const P=await Promise.all(COS().map(co=>safe(client.rpc("lwb_company_payables",{p_company_id:co.id})).then(x=>[co.id,x.data||null])));
+          PAY=new Map(P.filter(x=>x[1]));
+        }
+        brandLines();render();
+      }catch(e){say("Could not load: "+esc(String(e&&e.message||e)))}
+      finally{loading=false;el("rf").disabled=false}
+    }
+    function say(t){el("msg").hidden=!t;el("msg").innerHTML=t||""}
+
+    // Brand of each party-money line: PO → its brand; party payment → its receipt's brand; party with one brand → that brand; else "?" (not split)
+    function brandLines(){
+      const RC=((PI&&PI.raw.receipts)||[]).filter(x=>!x.cancelled).flatMap(x=>(x.modes||[]).map(m=>({pk:key(x.party),mode:modeOf(m.mode),amt:num(m.amount),c:x.company_id||"",used:false})));
+      for(const l of D.lines){
+        l.br=null;if(l.kind!=="IN"||l.src==="ENTRY")continue;
+        if(l.order_no&&ONO.has(String(l.order_no))){l.br=ONO.get(String(l.order_no));continue}
+        if(!PI){l.br="?";continue}
+        const pk=key(PI.parentOf(l.party));
+        if(l.src==="PAYMENT"){const m=RC.find(x=>!x.used&&x.pk===pk&&x.mode===modeOf(l.mode)&&Math.abs(x.amt-num(l.amount))<0.01);if(m){m.used=true;l.br=m.c;continue}}
+        const p=PI.parties.get(pk),ab=p?LP.activeBrands(p):[];
+        l.br=ab.length===1?ab[0]:Object.keys((p&&p.brands)||{}).filter(Boolean).length===1?Object.keys(p.brands).filter(Boolean)[0]:"?";
+      }
+    }
+    const isColl=l=>l.kind==="IN"&&l.src!=="ENTRY"&&!contra(l);
+    const fbOk=id=>{const b=fb();return !b||id===b};
+
+    /* ---------- figures ---------- */
+    function brandRows(){
+      const B=new Map(),T=today(),d60=shift(T,-60);
+      const row=id=>{if(!B.has(id))B.set(id,{id,billed:0,bills:[],coll:0,cl:[],due:0,dueP:[],old:0,oldB:[],adv:0,advP:[],pay:null,payB:[],late:0,paid:0,paidL:[],purch:0,purB:[]});return B.get(id)};
+      COS().forEach(c=>row(c.id));
+      for(const o of (PI&&PI.raw.orders)||[]){if(o.invoice_no&&inP(o.invoice_date)){const x=row(o.company_id||"");x.billed+=num(o.bill_amount);x.bills.push(o)}}
+      for(const l of D.lines){if(isColl(l)){const x=row(l.br==null?"?":l.br);x.coll+=num(l.amount);x.cl.push(l)}}
+      for(const p of PI?PI.parties.values():[]){
+        for(const b of Object.values(p.brands||{})){
+          const x=row(b.company_id||"");
+          if(b.net>0.5){x.due+=b.net;x.dueP.push({party:p.party,v:b.net,oldest:b.oldest,bills:b.bills.length,c:b.company_id||""})}
+          else if(b.net<-0.5){x.adv+=-b.net;x.advP.push({party:p.party,v:-b.net,c:b.company_id||""})}
+          for(const o of b.bills)if(String(o.invoice_date||"")<=d60){x.old+=num(o.due);x.oldB.push(o)}
+        }
+      }
+      for(const [id,P] of PAY){
+        const x=row(id),bl=(P.bills||[]);x.pay=0;
+        for(const b of bl){if(num(b.balance)>0.005){x.pay+=num(b.balance);x.payB.push(b);if(b.due_date&&b.due_date<T)x.late+=num(b.balance)}if(inP(b.invoice_date)){x.purch+=num(b.amount);x.purB.push(b)}}
+        for(const p of P.payments||[])if(!p.cancelled&&inP(p.pay_date)){x.paid+=num(p.amount);x.paidL.push(p)}
+      }
+      const order=COS().map(c=>c.id).concat(["","?"]);
+      const L=order.filter(id=>B.has(id)).map(id=>B.get(id)).filter(x=>COS().some(c=>c.id===x.id)||x.billed||x.coll||x.due||x.adv||x.old);
+      return L;
+    }
+    const sumOf=(L,k)=>L.reduce((a,x)=>a+num(x[k]),0);
+
+    /* ---------- render ---------- */
+    function render(){
+      D_.clear();
+      const r=per(),b=fb();
+      el("sub").textContent=(b?coName(b):"All brands")+" · "+(r.from===r.to?dmy(r.from):dm(r.from)+" – "+dm(r.to));
+      const BR=PI?brandRows():[];
+      renderPos(BR);renderTodo(BR);renderBrands(BR);renderFlow();renderPL(BR);renderExp();renderParties(BR);renderFeed();renderLinks();
+      el("plBox").hidden=isCashier();
+    }
+
+    // Money now: cash in hand, bank, to collect, advance, to pay companies, cheques not in bank
+    function renderPos(BR){
+      const b=fb(),mine=BR.filter(x=>fbOk(x.id));
+      const banks=(D.banks||[]).filter(x=>x.active!==false),bank=banks.reduce((a,x)=>a+num(x.balance),0);
+      const wait=(D.pending||[]).reduce((a,p)=>a+num(p.amount),0);
+      const due=sumOf(mine,"due"),adv=sumOf(mine,"adv"),old=sumOf(mine,"old"),dueN=mine.reduce((a,x)=>a+x.dueP.length,0);
+      const pay=mine.some(x=>x.pay!=null)?sumOf(mine,"pay"):null,late=sumOf(mine,"late");
+      const chq=C.filter(c=>c.status==="IN_HAND"||c.status==="DEPOSITED"),chqA=chq.reduce((a,c)=>a+num(c.amount),0);
+      const H=SH&&SH.holder,isT=per().to===D.today,cash=D.closing_set?num(D.closing):null;
+      const T=[
+        {k:"cash",c:"#002f37",dk:1,h:isT?"Cash in hand now":"Cash in hand "+dm(per().to),v:cash==null?"—":lk(cash),s:H&&isT?"With "+esc(H.name):D.opening_set?"Opening "+lk(D.opening):"Opening not set",
+          d:()=>lineList("Cash entries","Cash In / Out / Deposit in these dates",D.lines.filter(l=>l.mode==="CASH"||l.kind==="DEPOSIT"||l.kind==="WITHDRAW"))},
+        {k:"bank",c:"#1d5fbf",h:"Bank balance",v:lk(bank),s:banks.length+" bank"+(banks.length===1?"":"s")+(wait?" · "+lk(wait)+" to check":""),
+          d:()=>({title:"Bank balances",sub:"Verified entries only. Waiting = not checked yet",rows:banks,cols:[{t:"Bank",v:x=>x.name,html:x=>"<b>"+esc(x.name)+"</b>"+(x.account_no?"<small>A/c "+esc(x.account_no)+"</small>":"")},{t:"Balance",v:x=>num(x.balance),money:true,sum:true}],onRow:()=>location.href="bank-statement.html"})},
+        {k:"due",c:"#b3122b",v_:"#b3122b",h:"To collect",v:PI?lk(due):"—",s:PI?dueN+" parties"+(old>0.5?" · "+lk(old)+" 60d+":""):"",d:()=>"accounts-books.html?v=out"},
+        {k:"adv",c:"#13824a",v_:"#13824a",h:"Advance with us",v:PI?lk(adv):"—",s:PI?(n=>n+(n===1?" party":" parties"))(mine.reduce((a,x)=>a+x.advP.length,0)):"",
+          d:()=>({title:"Advance with us",sub:"Party money not set against a bill yet",rows:mine.flatMap(x=>x.advP),cols:[{t:"Party",v:x=>x.party},{t:"Brand",v:x=>coName(x.c)},{t:"Advance",v:x=>x.v,money:true,sum:true}],onRow:x=>location.href=ledger(x.party)})},
+        isCashier()?null:{k:"pay",c:"#9a5b00",h:"To pay companies",v:pay==null?"—":lk(pay),s:pay==null?"":late>0.5?lk(late)+" late":"nothing late",v_:late>0.5?"#9a5b00":"",
+          d:()=>({title:"To pay companies",sub:"Purchase bills not fully paid",rows:mine.flatMap(x=>x.payB.map(bl=>({...bl,c:x.id}))),cols:[{t:"Company",v:x=>coName(x.c)},{t:"Invoice",v:x=>x.invoice_no},{t:"Bill date",v:x=>dmy(x.invoice_date)},{t:"Pay by",v:x=>dmy(x.due_date),html:x=>x.due_date<D.today?'<span class="tag t-red">'+dmy(x.due_date)+'</span>':dmy(x.due_date)},{t:"Left ₹",v:x=>num(x.balance),money:true,sum:true}],onRow:x=>location.href="companies.html?tab=pay"})},
+        {k:"chq",c:"#9a5b00",h:"Cheques not in bank",v:lk(chqA),s:chq.length+" cheque"+(chq.length===1?"":"s")+" · "+chq.filter(c=>c.status==="DEPOSITED").length+" deposited",
+          d:()=>({title:"Cheques not cleared",rows:chq,cols:[{t:"Party",v:x=>x.party},{t:"Cheque",v:x=>x.cheque_no},{t:"Date",v:x=>dmy(x.cheque_date)},{t:"Status",v:x=>x.status==="DEPOSITED"?"In bank, not cleared":"In hand"},{t:"Amount",v:x=>num(x.amount),money:true,sum:true}],onRow:()=>location.href="accounts-dashboard.html?tab=cheques#"+VIEW()})}
+      ].filter(Boolean);
+      el("pos").style.gridTemplateColumns="";
+      el("pos").innerHTML=T.map(t=>'<button type="button" class="fc-t'+(t.dk?" dk":"")+'" style="--c:'+t.c+(t.v_?";--v:"+t.v_:"")+'"'+dk(t.d)+'><h3>'+esc(t.h)+'</h3><b>'+t.v+'</b><small>'+(t.s||"&nbsp;")+'</small></button>').join("");
+      // net position: what we have + what comes in − what goes out
+      if(cash!=null&&PI&&pay!=null){const n=cash+bank+chqA+due-adv-pay;
+        el("net").innerHTML='<span>Net money position'+(b?" ("+esc(coName(b))+" party side)":"")+': <b class="'+(n>=0?"pos":"neg")+'">'+lk(n)+'</b></span><span>= cash + bank + cheques + to collect − advance − to pay</span>'}
+      else el("net").innerHTML="";
+    }
+
+    // Work waiting: every alert / notification of Accounts in one list, red first, each opens the exact place
+    function renderTodo(BR){
+      const A=[],T=D.today||today(),b=fb(),mine=BR.filter(x=>fbOk(x.id)),V=VIEW();
+      const P=D.pending||[],pa=P.reduce((a,p)=>a+num(p.amount),0),chk=D.can_check!=null?D.can_check:D.is_admin;
+      if(!D.opening_set&&!D.last_close)A.push({t:"blu",i:"💵",b:"Opening cash not set",s:"Count the cash in hand once",r:"Set",h:"accounts-dashboard.html?tab=book#"+V});
+      const ho=(D.closes||[]).find(c=>c.date===D.last_close&&c.handed_to&&!c.returned_at);
+      if(ho)A.push({t:"amb",i:"☀",b:"Cash with "+esc(ho.handed_to_name),s:"Handed over "+dmy(ho.date)+" night",a:ho.counted,h:"accounts-dashboard.html?tab=close#"+V});
+      if(SH&&SH.pending){const p=SH.pending;A.push({t:"amb",i:"🤝",b:"Cash handover waiting",s:esc(p.by_name||"")+" → "+esc(p.to_name||"")+" · press Received ✓",a:p.counted,h:"accounts-dashboard.html?tab=close#"+V})}
+      if(D.last_close&&D.last_close<shift(T,-1))A.push({t:"red",i:"🌙",b:"Day not closed since "+dmy(shift(D.last_close,1)),s:"Count cash and close the day",r:"Close",h:"accounts-dashboard.html?new=CLOSE#"+V});
+      if(P.length)A.push({t:chk?"red":"blu",i:"🏦",b:"Bank check · "+P.length+" entr"+(P.length===1?"y":"ies"),s:chk?"UPI / bank / cheque to verify":"Waiting for Accounts",a:pa,h:chk?"accounts-dashboard.html?tab=verify#tally":"",
+        d:chk?null:()=>lineList("Waiting for bank check","",P.map(p=>D.lines.find(l=>l.id===p.id)||p))});
+      const due=C.filter(c=>c.status==="IN_HAND"&&c.cheque_date<=T),inb=C.filter(c=>c.status==="DEPOSITED"),bnc=C.filter(c=>c.status==="BOUNCED"&&inP(c.verified_at?istDay(c.verified_at):c.book_date));
+      if(bnc.length)A.push({t:"red",i:"⚠",b:bnc.length+" cheque"+(bnc.length===1?"":"s")+" bounced",s:esc(bnc.map(c=>c.party).slice(0,2).join(", ")),a:bnc.reduce((a,c)=>a+num(c.amount),0),h:"accounts-dashboard.html?tab=cheques#"+V});
+      if(due.length)A.push({t:"amb",i:"🧾",b:due.length+" cheque"+(due.length===1?"":"s")+" to deposit",s:"Cheque date reached",a:due.reduce((a,c)=>a+num(c.amount),0),h:"accounts-dashboard.html?tab=cheques#"+V});
+      if(inb.length)A.push({t:"",i:"🧾",b:inb.length+" cheque"+(inb.length===1?"":"s")+" in bank, not cleared",s:"Mark cleared when the bank shows it",a:inb.reduce((a,c)=>a+num(c.amount),0),h:"accounts-dashboard.html?tab=cheques#"+V});
+      if(!isCashier()&&PI){
+        const mk=(PI.raw.orders||[]).filter(x=>LP.makeInBrand(x,b)&&LP.needsBill(x,MARKS)).concat(EARLY.filter(x=>LP.makeInBrand(x,b)));
+        if(mk.length)A.push({t:"red",i:"🧮",b:mk.length+" bill"+(mk.length===1?"":"s")+" to make",s:mk.filter(x=>x.early).length?mk.filter(x=>x.early).length+" not loaded yet":"Loaded POs without a Tally bill",a:mk.reduce((a,x)=>a+num(x.erp_amount),0),h:"party-billing.html?tab=make#tally"});
+        const w=CHG.filter(c=>c.status==="WAITING");
+        if(w.length)A.push({t:"amb",i:"✏",b:w.length+" PO change"+(w.length===1?"":"s")+" waiting",s:"Qty / item change to approve",h:"party-billing.html?tab=chg#tally"});
+        const old=sumOf(mine,"old");
+        if(old>0.5){const n=new Set(mine.flatMap(x=>x.oldB.map(o=>o.parent))).size;A.push({t:"red",i:"⏰",b:"Over 60 days due",s:n+" parties · call them",a:old,h:"accounts-books.html?v=out"})}
+        const late=sumOf(mine,"late");
+        if(late>0.5)A.push({t:"amb",i:"🏭",b:"Company bills late",s:"Pay by date passed",a:late,h:"companies.html?tab=pay"});
+      }
+      if(GST&&window.LWBAccHub){const R=GST.rows||[],last=R[1]||R[0];if(last){const st=LWBAccHub.gstState(last,GST.today);if(st.late||st.due>1)A.push({t:st.late?"red":"amb",i:"🧾",b:"GST "+LWBAccHub.monName(last.month)+" · "+st.t,s:"GSTR-3B by the 20th",h:"party-billing.html?tab=gst#tally"})}}
+      if(STMT&&num(STMT.cnt)>0)A.push({t:"",i:"📄",b:num(STMT.cnt)+" bank statement lines to match",s:"Book or link them"+(STMT.oldest?" · oldest "+dmy(STMT.oldest):""),a:num(STMT.credit)+num(STMT.debit),h:"bank-statement.html"});
+      const ord={red:0,amb:1,blu:2,"":3};A.sort((x,y)=>ord[x.t]-ord[y.t]);
+      el("todoN").textContent=A.length?A.length+" open":"";
+      el("todo").innerHTML=A.length?A.map((x,i)=>'<button type="button" class="'+x.t+(i>=5?" more":"")+'"'+dk(()=>x.d?x.d():x.h||null)+'><i>'+x.i+'</i><span><b>'+x.b+'</b><small>'+(x.s||"")+'</small></span><span class="r">'+(x.a!=null?lk(x.a):"")+'<small>'+esc(x.r||"Open")+' ›</small></span></button>').join("")
+        :'<div class="fc-ok">✓ Nothing waiting. All clear.</div>';
+      if(A.length>5)el("todo").insertAdjacentHTML("beforeend",'<button type="button" class="fc-tmore" data-tmore>+ '+(A.length-5)+' more</button>');
+    }
+
+    // Brand-wise: every money figure split by brand; each cell opens its list; brand name = top bar brand
+    function renderBrands(BR){
+      if(!PI){el("brands").innerHTML='<div class="fc-empty">Party data not loaded.</div>';return}
+      const b=fb(),cash=isCashier(),hasPay=BR.some(x=>x.pay!=null);
+      el("brSub").textContent=per().label?"billed / collected in "+per().label.toLowerCase():"";
+      const cell=(x,k,v,cls,f,sm)=>'<td'+(v?dk(f):"")+(cls?' class="'+cls+'"':"")+'>'+(v?lk(v):"–")+(sm?"<small>"+sm+"</small>":"")+'</td>';
+      const F={
+        billed:x=>billList("Bills made · "+coName(x.id),per().label||"",x.bills),
+        coll:x=>lineList("Collected · "+coName(x.id),x.id==="?"?"Party has bills of more than one brand and the payment was not split":"",x.cl),
+        due:x=>({title:"To collect · "+coName(x.id),rows:x.dueP.sort((a,c)=>c.v-a.v),cols:[{t:"Party",v:p=>p.party},{t:"Bills",v:p=>p.bills,num:true},{t:"Oldest",v:p=>dmy(p.oldest),html:p=>p.oldest?ageTag(p.oldest):""},{t:"Due",v:p=>p.v,money:true,sum:true}],onRow:p=>location.href=ledger(p.party)}),
+        old:x=>billList("Over 60 days · "+coName(x.id),"Bills older than 60 days, still due",x.oldB),
+        adv:x=>({title:"Advance · "+coName(x.id),rows:x.advP,cols:[{t:"Party",v:p=>p.party},{t:"Advance",v:p=>p.v,money:true,sum:true}],onRow:p=>location.href=ledger(p.party)}),
+        pay:x=>({title:"To pay "+coName(x.id),rows:x.payB,cols:[{t:"Invoice",v:z=>z.invoice_no},{t:"Bill date",v:z=>dmy(z.invoice_date)},{t:"Pay by",v:z=>dmy(z.due_date)},{t:"Left ₹",v:z=>num(z.balance),money:true,sum:true}],onRow:()=>location.href="companies.html?tab=pay"})};
+      const tot={id:"__",billed:sumOf(BR,"billed"),coll:sumOf(BR,"coll"),due:sumOf(BR,"due"),old:sumOf(BR,"old"),adv:sumOf(BR,"adv"),pay:sumOf(BR,"pay"),late:sumOf(BR,"late"),bills:BR.flatMap(x=>x.bills),cl:BR.flatMap(x=>x.cl),dueP:BR.flatMap(x=>x.dueP),oldB:BR.flatMap(x=>x.oldB),advP:BR.flatMap(x=>x.advP),payB:BR.flatMap(x=>x.payB)};
+      const nm=x=>x.id==="__"?"<b>Total</b>":'<button type="button" class="fc-bn" data-brand="'+esc(x.id)+'" style="--bc:'+coColor(x.id)+'" title="Show only this brand"><i></i>'+esc(coName(x.id))+'</button>';
+      const tr=x=>'<tr class="'+(b&&x.id===b?"on":"")+'"><td>'+nm(x)+'</td>'+cell(x,"billed",x.billed,"",()=>F.billed(x))+cell(x,"coll",x.coll,"pos",()=>F.coll(x))+
+        cell(x,"due",x.due,"neg",()=>F.due(x),x.dueP.length?x.dueP.length+" parties":"")+cell(x,"old",x.old,x.old>0.5?"neg":"",()=>F.old(x))+cell(x,"adv",x.adv,"pos",()=>F.adv(x))+
+        (hasPay&&!cash?cell(x,"pay",x.pay,x.late>0.5?"neg":"",()=>F.pay(x),x.late>0.5?lk(x.late)+" late":""):"")+'</tr>';
+      const table='<div class="fc-btw"><table class="fc-bt" data-cf-off><thead><tr><th>Brand</th><th>Billed</th><th>Collected</th><th>To collect</th><th>60d+</th><th>Advance</th>'+(hasPay&&!cash?"<th>To pay co.</th>":"")+'</tr></thead><tbody>'+
+        BR.map(tr).join("")+'</tbody><tfoot>'+tr(tot)+'</tfoot></table></div>';
+      // phone: one small card per brand, 3 × 2 figures
+      const fig=(l,v,cls,f)=>'<button type="button"'+(v?dk(f):"")+'><small>'+l+'</small><b class="'+cls+'">'+(v?lk(v):"–")+'</b></button>';
+      const cards='<div class="fc-bcards">'+BR.concat([tot]).map(x=>'<div class="fc-bc'+(b&&x.id===b?" on":"")+'" style="--bc:'+(x.id==="__"?"#002f37":coColor(x.id))+'"><div class="hd">'+nm(x)+'<small>'+(x.dueP.length?x.dueP.length+" parties due":"")+'</small></div><div class="gr">'+
+        fig("Billed",x.billed,"",()=>F.billed(x))+fig("Collected",x.coll,"pos",()=>F.coll(x))+fig("To collect",x.due,"neg",()=>F.due(x))+fig("60d+",x.old,x.old>0.5?"neg":"",()=>F.old(x))+fig("Advance",x.adv,"pos",()=>F.adv(x))+
+        (hasPay&&!cash?fig("To pay co.",x.pay,x.late>0.5?"neg":"",()=>F.pay(x)):fig("",0,"",null))+'</div></div>').join("")+'</div>';
+      const un=BR.find(x=>x.id==="?");
+      el("brands").innerHTML=table+cards+'<p class="fc-note">Tap a brand name to filter the whole page (same as the top bar). Tap any amount to see the bills / entries behind it.'+(un?" “Not split” = money of a party with more than one brand, not split by brand.":"")+'</p>';
+    }
+    const ageTag=d=>{const n=days(String(d).slice(0,10),D.today||today());return '<span class="tag '+(n>60?"t-red":n>30?"t-amb":"t-gry")+'">'+n+' d</span>'};
+
+    // Money in / out by day + mode split (contra, deposits and withdrawals are own money: not in / out)
+    function renderFlow(){
+      const r=per(),L=D.lines.filter(l=>!contra(l)&&(l.kind==="IN"||l.kind==="OUT")).filter(l=>l.kind==="OUT"||fbOk(l.br==null?"":l.br)||l.src==="ENTRY");
+      const ins=L.filter(l=>l.kind==="IN"),outs=L.filter(l=>l.kind==="OUT"),ti=ins.reduce((a,l)=>a+num(l.amount),0),to=outs.reduce((a,l)=>a+num(l.amount),0);
+      el("flowSub").textContent=fb()?"party money: "+coName(fb()):"";
+      let h='<div class="fc-sum3"><button type="button"'+dk(()=>lineList("Money in",per().label||"",ins))+'><small>In</small><b class="pos">'+lk(ti)+'</b></button><button type="button"'+dk(()=>lineList("Money out",per().label||"",outs))+'><small>Out</small><b class="neg">'+lk(to)+'</b></button><button type="button"'+dk(()=>lineList("All money entries",per().label||"",L))+'><small>Net</small><b class="'+(ti-to>=0?"pos":"neg")+'">'+lk(ti-to)+'</b></button></div>';
+      // bars: one pair per day (week when the range is long)
+      const n=days(r.from,r.to)+1,step=n>45?7:1,B=[];
+      for(let d=r.from;d<=r.to;d=shift(d,step))B.push({d,e:step>1?(shift(d,step-1)>r.to?r.to:shift(d,step-1)):d,i:0,o:0});
+      for(const l of L){const x=B.find(b=>l.date>=b.d&&l.date<=b.e);if(x){if(l.kind==="IN")x.i+=num(l.amount);else x.o+=num(l.amount)}}
+      if(B.length>1){
+        const W=Math.max(300,B.length*18),H=120,mx=Math.max(1,...B.map(b=>Math.max(b.i,b.o))),bw=(W-10)/B.length,lab=Math.ceil(B.length/10);
+        h+='<div class="fc-chart"><svg viewBox="0 0 '+W+' '+H+'" preserveAspectRatio="none" role="img" aria-label="Money in and out by day">'+
+          B.map((b,k)=>{const x=5+k*bw,hi=(H-16)*b.i/mx,ho=(H-16)*b.o/mx,w=Math.max(2,bw/2-2),t=dm(b.d)+(step>1?"–"+dm(b.e):"")+": in "+rs(b.i)+", out "+rs(b.o);
+            return '<g'+dk(()=>lineList("Money "+(b.d===b.e?dmy(b.d):dm(b.d)+" – "+dm(b.e)),"In "+rs(b.i)+" · Out "+rs(b.o),L.filter(l=>l.date>=b.d&&l.date<=b.e)))+'><title>'+esc(t)+'</title><rect x="'+x+'" y="0" width="'+bw+'" height="'+H+'" fill="transparent"/>'+
+              '<rect x="'+(x+1)+'" y="'+(H-14-hi)+'" width="'+w+'" height="'+Math.max(hi,b.i?1:0)+'" fill="#1a9156" rx="1"/><rect x="'+(x+1+w+1)+'" y="'+(H-14-ho)+'" width="'+w+'" height="'+Math.max(ho,b.o?1:0)+'" fill="#c8102e" rx="1"/>'+
+              (k%lab===0?'<text x="'+(x+1)+'" y="'+(H-3)+'">'+dm(b.d)+'</text>':"")+'</g>'}).join("")+'</svg></div>';
+      }
+      const M={};MODES.forEach(([m])=>M[m]={i:0,o:0});for(const l of L){const m=M[modeOf(l.mode)];if(m){if(l.kind==="IN")m.i+=num(l.amount);else m.o+=num(l.amount)}}
+      const dep=D.lines.filter(l=>l.kind==="DEPOSIT"&&l.category!=="Friend swap").reduce((a,l)=>a+num(l.amount),0);
+      h+='<table class="fc-modes" data-cf-off><thead><tr><th>Mode</th><th>In</th><th>Out</th></tr></thead><tbody>'+MODES.map(([m,t])=>'<tr><td>'+t+'</td><td class="pos">'+(M[m].i?rs(M[m].i):"–")+'</td><td class="neg">'+(M[m].o?rs(M[m].o):"–")+'</td></tr>').join("")+
+        (dep?'<tr><td>Cash → bank</td><td colspan="2" class="blu">'+rs(dep)+'</td></tr>':"")+'</tbody></table>';
+      el("flow").innerHTML=h;
+    }
+
+    // Rough P&L for the dates: bills made − purchase bills − expenses (stock change not counted; exact margin = Business Overview)
+    function renderPL(BR){
+      if(isCashier()){el("pl").innerHTML="";return}
+      const b=fb(),mine=BR.filter(x=>fbOk(x.id)),sales=sumOf(mine,"billed"),purch=sumOf(mine,"purch");
+      const exL=D.lines.filter(l=>l.kind==="OUT"&&!NOT_EXPENSE.test(String(l.category||"").trim())),ex=exL.reduce((a,l)=>a+num(l.amount),0);
+      const gross=sales-purch,net=gross-ex;
+      const row=(t,v,f,cls,sub)=>'<button type="button" class="'+(sub?"sub":"")+(cls==="tot"?" tot":"")+'"'+dk(f)+'><span>'+t+'</span><b class="'+(cls!=="tot"?cls||"":net>=0?"pos":"neg")+'">'+(v<0?"− "+rs(-v).replace("−",""):rs(v))+'</b></button>';
+      let h='<div class="fc-pl">'+row("Sales (bills made)",sales,()=>billList("Sales bills"+(b?" · "+coName(b):""),per().label||"",mine.flatMap(x=>x.bills)));
+      if(!b&&mine.filter(x=>x.billed).length>1)h+=mine.filter(x=>x.billed).map(x=>row('<span class="fc-bd" style="--bc:'+coColor(x.id)+'"></span>'+esc(coName(x.id)),x.billed,()=>billList("Sales · "+coName(x.id),"",x.bills),"",1)).join("");
+      h+=row("− Purchase bills",-purch,()=>({title:"Purchase bills",sub:"Company bills dated in these dates",rows:mine.flatMap(x=>x.purB.map(z=>({...z,c:x.id}))),cols:[{t:"Company",v:z=>coName(z.c)},{t:"Invoice",v:z=>z.invoice_no},{t:"Date",v:z=>dmy(z.invoice_date)},{t:"Amount",v:z=>num(z.amount),money:true,sum:true}],onRow:()=>location.href="companies.html?tab=pay"}),"neg")+
+        row("= Gross (bills basis)",gross,null,gross>=0?"pos":"neg")+
+        row("− Expenses"+(b?" (all brands)":""),-ex,()=>lineList("Expenses","Cash Out without supplier payment, contra, asset, GST",exL),"neg")+
+        row("Rough profit",net,null,"tot")+'</div><p class="fc-note">Bills basis: purchase of the dates, stock change not counted. Exact margin per SKU (landing) is on <a href="dashboard.html">Dashboard › Business Overview</a>.</p>';
+      el("pl").innerHTML=h;
+    }
+
+    function renderExp(){
+      const L=D.lines.filter(l=>l.kind==="OUT"&&!contra(l)),M=new Map();
+      for(const l of L){const c=String(l.category||"Other").trim();const x=M.get(c)||{c,v:0,L:[]};x.v+=num(l.amount);x.L.push(l);M.set(c,x)}
+      const list=[...M.values()].sort((a,b)=>b.v-a.v),mx=list.length?list[0].v:1,tot=list.reduce((a,x)=>a+x.v,0);
+      el("expSub").textContent=list.length?"total "+lk(tot):"";
+      el("exp").innerHTML=list.length?'<div class="fc-bars">'+list.slice(0,9).map(x=>'<button type="button" class="fc-bar"'+dk(()=>lineList(x.c,rs(x.v)+" · "+x.L.length+" entries",x.L))+' style="--bc:'+(NOT_EXPENSE.test(x.c)?"#1d5fbf":"#c8102e")+'"><span>'+esc(x.c)+'</span><i style="--w:'+Math.max(1,x.v*100/mx)+'%"></i><b>'+lk(x.v)+'</b></button>').join("")+
+        (list.length>9?'<button type="button" class="fc-bar"'+dk(()=>lineList("Other heads","",list.slice(9).flatMap(x=>x.L)))+'><span>+ '+(list.length-9)+' more heads</span><i style="--w:0%"></i><b>'+lk(list.slice(9).reduce((a,x)=>a+x.v,0))+'</b></button>':"")+'</div>'+
+        '<p class="fc-note">Blue = money out that is not an expense (company payment, contra, asset, GST).</p>':'<div class="fc-empty">No money out in these dates.</div>';
+    }
+
+    // Parties: to collect (oldest bill age), paid in the dates, advance; tap = party ledger
+    function renderParties(BR){
+      el("pSeg").querySelectorAll("button").forEach(x=>x.setAttribute("aria-pressed",String(x.dataset.p===pMode)));
+      if(!PI){el("parties").innerHTML='<div class="fc-empty">Party data not loaded.</div>';return}
+      const mine=BR.filter(x=>fbOk(x.id));let L=[];
+      const merge=arr=>{const m=new Map();for(const p of arr){const k=key(p.party),x=m.get(k)||{party:p.party,v:0,oldest:"",bills:0,cs:new Set()};x.v+=p.v;x.bills+=p.bills||0;if(p.oldest&&(!x.oldest||p.oldest<x.oldest))x.oldest=p.oldest;x.cs.add(p.c);m.set(k,x)}return [...m.values()].sort((a,b)=>b.v-a.v)};
+      if(pMode==="due")L=merge(mine.flatMap(x=>x.dueP));
+      else if(pMode==="adv")L=merge(mine.flatMap(x=>x.advP));
+      else L=merge(mine.flatMap(x=>x.cl.map(l=>({party:PI.parentOf(l.party)||l.party||"—",v:num(l.amount),c:x.id}))));
+      const dots=x=>[...x.cs].filter(c=>c&&c!=="?").map(c=>'<span class="fc-bd" style="--bc:'+coColor(c)+'" title="'+esc(coName(c))+'"></span>').join("");
+      el("parties").innerHTML=L.length?L.slice(0,8).map(x=>'<button type="button" class="fc-row" data-led="'+esc(x.party)+'"><span><b>'+dots(x)+esc(x.party)+'</b><small>'+(pMode==="due"?x.bills+" bill"+(x.bills===1?"":"s")+(x.oldest?" · oldest "+dmy(x.oldest):""):pMode==="paid"?"paid in "+(per().label||"dates").toLowerCase():"money not set against a bill")+'</small></span><span class="a '+(pMode==="due"?"neg":"pos")+'">'+rs(x.v)+(pMode==="due"&&x.oldest?"<small>"+ageTag(x.oldest)+"</small>":"")+'</span></button>').join("")+
+        (L.length>8?'<button type="button" class="fc-row"'+dk(()=>({title:pMode==="due"?"To collect":pMode==="adv"?"Advance":"Paid in dates",rows:L,cols:[{t:"Party",v:x=>x.party},{t:"Amount",v:x=>x.v,money:true,sum:true}],onRow:x=>location.href=ledger(x.party)}))+'><span><b style="color:#00434d">See all '+L.length+' parties ›</b></span><span class="a">'+lk(L.reduce((a,x)=>a+x.v,0))+'</span></button>':"")
+        :'<div class="fc-empty">'+(pMode==="due"?"Nothing to collect.":pMode==="adv"?"No advance.":"No party money in these dates.")+'</div>';
+    }
+
+    // Latest money entries (who, when, what); tap = full entry with links to party ledger / day book
+    function renderFeed(){
+      const L=D.lines.slice().filter(l=>l.kind!=="IN"||l.src==="ENTRY"||fbOk(l.br==null?"":l.br)).sort((a,b)=>String(b.at).localeCompare(String(a.at))).slice(0,10);
+      const ic=l=>l.kind==="IN"?["ic-in","+"]:l.kind==="OUT"?["ic-out","−"]:["ic-dep","⇄"];
+      const wait=new Set((D.pending||[]).map(p=>p.src+":"+p.id));
+      el("feed").innerHTML=L.length?L.map((l,i)=>{const [c,s]=ic(l);return '<button type="button" class="fc-row ic" data-line="'+esc(l.src+":"+l.id)+'"><span class="ic '+c+'">'+s+'</span><span><b>'+esc(l.party||l.category||KIND[l.kind])+'</b><small>'+esc([l.party?l.category:"",l.mode,dm(l.date)+" "+hm(l.at),l.by].filter(Boolean).join(" · "))+'</small></span><span class="a '+(l.kind==="IN"?"pos":l.kind==="OUT"?"neg":"blu")+'">'+rs(l.amount)+(wait.has(l.src+":"+l.id)?'<small><span class="tag t-amb">check</span></small>':"")+'</span></button>'}).join("")
+        :'<div class="fc-empty">No entry in these dates.</div>';
+    }
+
+    function renderLinks(){
+      const L=[["Accounts · Tally","party-billing.html#tally"],["Cashier","accounts-dashboard.html#cash"],["Party & Collections","party-billing.html#party"],["📒 Ledger & Outstanding","accounts-books.html"],
+        ["Bank statement","bank-statement.html"],["Company payments","companies.html?tab=pay"],["Business Overview","dashboard.html"],["Driver collections","driver-collections.html"]].filter(x=>can(x[1].split("?")[0]));
+      el("links").innerHTML='<span class="h">Work pages</span>'+L.map(x=>'<a href="'+x[1]+'">'+esc(x[0])+'</a>').join("");
+    }
+
+    /* ---------- one entry (deepest level of the page) ---------- */
+    function openLine(l){
+      if(!l)return;const wait=(D.pending||[]).some(p=>p.src===l.src&&p.id===l.id);
+      const kv=[["Date",dmy(l.date)+" · "+hm(l.at)],["Type",(KIND[l.kind]||l.kind)+" · "+(SRC[l.src]||l.src)],["Head",l.category],["Party",l.party],["Mode",l.mode],["Ref",l.ref],["PO / bill",l.order_no],["Remark",l.remark],["By",l.by],
+        ["Brand",l.br!=null?coName(l.br):""],["Bank check",l.needs_verify===false?"":wait?"Waiting":l.status==="VERIFIED"?"Checked ✓":l.status||""]].filter(x=>x[1]);
+      el("pop").innerHTML='<div class="fc-ov"><div class="fc-dlg" role="dialog" aria-modal="true"><header><h3>'+esc(KIND[l.kind]||"Entry")+' · <span class="'+(l.kind==="IN"?"pos":l.kind==="OUT"?"neg":"blu")+'">'+rs(l.amount)+'</span></h3><button type="button" data-x aria-label="Close">×</button></header>'+
+        '<div class="bd"><div class="fc-kv">'+kv.map(([k,v])=>'<span>'+k+'</span><b>'+esc(v)+'</b>').join("")+'</div></div><footer>'+
+        (l.party&&PI&&!isCashier()?'<a href="'+ledger(PI.parentOf(l.party))+'">📒 Party ledger</a>':"")+'<button type="button" data-day="'+esc(l.date)+'">Day book '+dm(l.date)+'</button>'+
+        (wait&&D.can_check?'<a href="accounts-dashboard.html?tab=verify#tally">Bank check</a>':"")+'</footer></div></div>';
+    }
+    const closePop=()=>{el("pop").innerHTML=""};
+
+    /* ---------- find anything ---------- */
+    let FR=[],fi=-1;
+    function find(q){
+      q=String(q||"").trim();const box=el("fqr");if(q.length<2){box.hidden=true;FR=[];return}
+      const k=key(q),amt=Number(q.replace(/[₹,\s]/g,"")),isAmt=Number.isFinite(amt)&&amt>0;FR=[];
+      if(PI){for(const p of PI.parties.values()){if(key(p.party).includes(k)||(p.members||[]).some(m=>key(m).includes(k)))FR.push({g:"Parties",t:p.party,s:LP.balText(p),go:()=>location.href=ledger(p.party)});if(FR.length>5)break}
+        for(const o of PI.raw.orders||[]){if(FR.length>11)break;if(key(o.invoice_no).includes(k)||key(o.order_no)===k||key(o.order_no).endsWith(k)||(isAmt&&Math.abs(num(o.bill_amount)-amt)<1))FR.push({g:"Bills",t:(o.invoice_no||"No bill yet")+" · PO "+o.order_no,s:(o.parent||o.party)+" · "+dmy(o.invoice_date),a:o.bill_amount,go:()=>location.href=ledger(o.parent||o.party)})}}
+      for(const l of D.lines){if(FR.length>17)break;if(key(l.party).includes(k)||key(l.ref).includes(k)||(isAmt&&Math.abs(num(l.amount)-amt)<1))FR.push({g:"Money entries",t:(l.party||l.category||KIND[l.kind]),s:l.mode+" · "+dmy(l.date)+(l.ref?" · "+l.ref:""),a:l.amount,go:()=>openLine(l)})}
+      for(const c of C){if(key(c.cheque_no).includes(k)||key(c.party).includes(k)||(isAmt&&Math.abs(num(c.amount)-amt)<1))FR.push({g:"Cheques",t:"Cheque "+(c.cheque_no||"")+" · "+c.party,s:c.status.replace("_"," ").toLowerCase()+" · "+dmy(c.cheque_date),a:c.amount,go:()=>location.href="accounts-dashboard.html?tab=cheques#"+VIEW()})}
+      fi=FR.length?0:-1;let g="";
+      box.innerHTML=FR.length?FR.map((r,i)=>(r.g!==g?'<div class="g">'+(g=r.g)+'</div>':"")+'<button type="button" data-fr="'+i+'" class="'+(i===fi?"on":"")+'"><span><b>'+esc(r.t)+'</b> <small>'+esc(r.s||"")+'</small></span>'+(r.a!=null?'<b>'+rs(r.a)+'</b>':"")+'</button>').join(""):'<div class="none">Nothing found for “'+esc(q)+'” (money entries: these dates only)</div>';
+      box.hidden=false;
+    }
+
+    /* ---------- actions ---------- */
+    function drawActs(){
+      const A=[["pay","pay","💰","Party payment","Party pay"],["in","IN","＋","Cash In","Cash In"],["out","OUT","−","Cash Out","Cash Out"],["dep","DEPOSIT","🏦","Bank deposit","Deposit"],["close","CLOSE","🌙","Close Day","Close Day"]];
+      el("acts").style.setProperty("--n",A.length);
+      el("acts").innerHTML=A.map(([c,a,i,l,s])=>'<button type="button" class="'+c+'" data-act="'+a+'"><em>'+i+'</em><span class="l">'+l+'</span><span class="s">'+s+'</span></button>').join("");
+      const st=document.createElement("style");st.textContent=".fc-acts .s{display:none}@media(max-width:600px){.fc-acts .s{display:inline}}";document.head.appendChild(st);
+    }
+    function act(a){
+      if(a==="pay"){
+        if(!PI){ERPShell.alert("Party list is still loading.");return}
+        LP.open({client,info:PI,brand:fb()||undefined,onSaved:r=>{ERPShell.toast&&(r.kasarOnly?ERPShell.toast("Kasar "+rs(r.kasar)+" saved on bill "+r.bill+" · "+r.party,"success"):ERPShell.toast(rs(r.amount)+" received from "+r.party,"success"));load()}});return}
+      location.href="accounts-dashboard.html?new="+a+"#"+VIEW();
+    }
+
+    /* ---------- wiring ---------- */
+    (async()=>{
+      me=await S.start(["admin","accounts","cashier"]);
+      if(!me)return;
+      el("loading").hidden=true;el("page").hidden=false;
+      drawActs();
+      el("acts").addEventListener("click",e=>{const b=e.target.closest("[data-act]");if(b)act(b.dataset.act)});
+      el("rf").onclick=()=>load();
+      el("bookLink").onclick=e=>{e.preventDefault();location.href="accounts-dashboard.html?tab=book#"+VIEW()};
+      el("pSeg").addEventListener("click",e=>{const b=e.target.closest("[data-p]");if(!b||!D)return;pMode=b.dataset.p;renderParties(PI?brandRows():[])});
+      document.addEventListener("click",e=>{
+        const br=e.target.closest("[data-brand]");if(br){e.preventDefault();e.stopPropagation();const id=br.dataset.brand;if(window.LWBBrand&&id&&id!=="?")LWBBrand.pick(fb()===id?"":id);return}
+        const d=e.target.closest("[data-d]");if(d&&!e.target.closest(".erp-ls-back")){e.preventDefault();drill(d.dataset.d);return}
+        const ld=e.target.closest("[data-led]");if(ld){location.href=ledger(ld.dataset.led);return}
+        const ln=e.target.closest("[data-line]");if(ln){const [s,i]=ln.dataset.line.split(":");openLine(D.lines.find(l=>l.src===s&&String(l.id)===i));return}
+        if(e.target.closest("[data-x]")||e.target.classList.contains("fc-ov")){closePop();return}
+        const dy=e.target.closest("[data-day]");if(dy){bookOn(dy.dataset.day);return}
+        if(e.target.closest("[data-tmore]")){el("todo").classList.add("all");return}
+        const fr=e.target.closest("[data-fr]");if(fr){const r=FR[Number(fr.dataset.fr)];el("fqr").hidden=true;if(r)r.go();return}
+        if(!e.target.closest(".fc-find"))el("fqr").hidden=true;
+      });
+      const fq=el("fq");
+      fq.addEventListener("input",()=>{if(D)find(fq.value)});
+      fq.addEventListener("keydown",e=>{
+        if(e.key==="ArrowDown"||e.key==="ArrowUp"){if(!FR.length)return;e.preventDefault();fi=(fi+(e.key==="ArrowDown"?1:-1)+FR.length)%FR.length;el("fqr").querySelectorAll("[data-fr]").forEach((b,i)=>b.classList.toggle("on",i===fi))}
+        else if(e.key==="Enter"&&fi>=0&&FR[fi]){e.preventDefault();el("fqr").hidden=true;FR[fi].go()}
+        else if(e.key==="Escape"){el("fqr").hidden=true}});
+      document.addEventListener("keydown",e=>{
+        if(e.key==="Escape"&&el("pop").innerHTML){closePop();return}
+        // "/" or Ctrl+K = find anything
+        const a=document.activeElement,typing=a&&/^(INPUT|SELECT|TEXTAREA)$/.test(a.tagName);
+        if(!typing&&(e.key==="/"||((e.ctrlKey||e.metaKey)&&(e.key==="k"||e.key==="K")))){e.preventDefault();fq.focus()}
+      });
+      document.addEventListener("lwb:brand",()=>{if(D)render()});
+      if(window.LWBPeriod)LWBPeriod.on(()=>load());
+      await load();
+    })().catch(e=>{el("loading").textContent=e.message||String(e)});
+  })();
+  </script>
+</body>
+</html>
