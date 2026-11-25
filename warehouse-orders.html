@@ -4282,6 +4282,27 @@ function poChangeNote() {
   old.forEach(o => out.push(`${o[1]} removed`));
   return out.join(" | ").slice(0, 600);
 }
+/* Pallet count after Edit PO (Mohit, 25 Nov 2026, LXY-00679 showed 10P after 1L Kinley 60 -> 120): the PO's
+   pallet (sp_pallets) was filled once at PO entry from cases ÷ cases per pallet and never followed an edit.
+   Now, when it was that auto count, it is worked out again from the saved lines. A hand-typed count stays. */
+function poPalletCount(lines) {
+  const cpp = new Map(warehouseSkuMaster.map(x => [String(x.sku_name || "").trim().toUpperCase(), Number(x.cases_per_pallet)]));
+  let p = 0, known = false;
+  lines.forEach(([sku, qty]) => { const c = cpp.get(String(sku || "").trim().toUpperCase()); if (c > 0) { p += (Number(qty) || 0) / c; known = true; } });
+  return known ? Math.ceil(Math.round(p * 100) / 100 - 0.01) : null;
+}
+let lastPalNote = "";
+async function syncPoPallets(order, oldSig) {
+  const had = Number(order && order.sp_pallets) || 0;
+  if (!had) return "";
+  let before = [];
+  try { before = JSON.parse(oldSig || "[]").map(x => [x[1], x[3]]); } catch (e) { return ""; }
+  const oldAuto = poPalletCount(before), now = poPalletCount(selectedItems.map(i => [i.sku_name, i.approved_qty]));
+  if (oldAuto == null || now == null || oldAuto !== had || now === had || now < 1) return "";
+  const { error } = await db.rpc("lwb_set_order_sheet_pallet", { p_order_id: order.id, p_pallets: now, p_sheets: Number(order.sp_sheets) || 0 });
+  if (error) { console.warn("Pallet not updated", error); return ""; }
+  return " Pallet " + had + " → " + now + ".";
+}
 // 🚚 Transport popup -> full Edit PO (SKU / cases / rate), unsaved transport fields stay.
 function editFromTransport() {
   if (!selectedOrder || !canEditItems(selectedOrder)) return;
@@ -6566,7 +6587,7 @@ async function submitPo() {
   } else if (!await confirm('Save '+what.join(', ')+' for PO '+order.order_no+'?')) return;
   const btn=document.getElementById('approveOrderBtn');
   poSubmitting=true; btn.disabled=true; btn.textContent='Saving...';
-  let ok=true;
+  let ok=true; lastPalNote='';
   try {
     // Transport first: saving SKU lines reloads the PO, which would clear unsaved transport fields.
     if (transportDirty) ok=await saveApprovedTransport();
@@ -6578,7 +6599,7 @@ async function submitPo() {
       else {
         await loadOrders();
         closeModal();
-        showMessage('PO '+order.order_no+' changed and sent to Approval Pending. After Admin approves it, it goes back to '+backTo+'.','success');
+        showMessage('PO '+order.order_no+' changed and sent to Approval Pending. After Admin approves it, it goes back to '+backTo+'.'+lastPalNote,'success');
         return;
       }
     }
@@ -6588,7 +6609,7 @@ async function submitPo() {
   }
   if (!ok || selectedOrder?.id!==order.id) return;
   if (transportDirty) allocationStatus('Saved! Driver: '+(approvedTransport?.driver_name||'-')+', Vehicle: '+(approvedTransport?.vehicle_no||'-')+', Godown Manager: '+(approvedTransport?.loading_person||'-')+'. Both are notified.');
-  showMessage('PO '+order.order_no+' saved: '+what.join(', ')+'.'+(itemsDirty||noteDirty?' Print the PO again if it was already printed.':''),'success');
+  showMessage('PO '+order.order_no+' saved: '+what.join(', ')+'.'+(itemsDirty?lastPalNote:'')+(itemsDirty||noteDirty?' Print the PO again if it was already printed.':''),'success');
   // Small Transport popup: close by itself once saved.
   if (document.getElementById('reviewModal').classList.contains('transport-only')) setTimeout(()=>{if(selectedOrder&&selectedOrder.id===order.id)closeModal()},1500);
 }
@@ -6647,6 +6668,8 @@ async function approveOrder(opts={}) {
       .eq('id',selectedOrder.id).eq('status',latest.status).select('id');
     if(orderError) throw orderError;
     if(!updated?.length) throw new Error('Order status changed while saving. Refresh.');
+    lastPalNote=await syncPoPallets(selectedOrder,savedPoItemsSignature);
+    if(lastPalNote&&!opts.quiet)showMessage('PO '+selectedOrder.order_no+':'+lastPalNote,'success');
     // Reload the order so newly added SKU lines get their ids (a second save must not add them again).
     const id=selectedOrder.id;
     await loadOrders();
@@ -6734,9 +6757,10 @@ async function saveLateModify() {
     });
     if (error) throw error;
     const id = order.id;
+    const palNote = await syncPoPallets(order, savedPoItemsSignature);
     await loadOrders();
     await reviewOrder(id);
-    showMessage("PO " + order.order_no + " changed" + (data?.changes?.length ? ": " + data.changes.join(", ") : "") +
+    showMessage("PO " + order.order_no + " changed" + (data?.changes?.length ? ": " + data.changes.join(", ") : "") + palNote +
       ". Godown Manager and Driver are notified. Print the PO again.", "success");
     return true;
   } catch (error) {
