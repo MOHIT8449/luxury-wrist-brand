@@ -934,7 +934,7 @@
     .tp-b {display:inline-block;font-size:11px;font-weight:700;border-radius:6px;padding:2px 7px;white-space:nowrap;background:#eef1ef;color:#3d4a57}
     /* Where it is loaded (Mohit, 25 Nov 2026): vehicle + Godown Manager under Transport, from Transport Assigned on. */
     .ld-b {display:block;width:max-content;max-width:100%;margin-top:4px;font-size:11px;line-height:1.35;border-radius:6px;padding:2px 7px;background:#fff7e0;border:1px solid #f0d78a;color:#6b4a00}
-    .ld-b b {font-weight:800;color:#3d2c00;white-space:nowrap}.ld-b .ld-m {display:block;color:#6b7785;font-weight:600}
+    .ld-b b {font-weight:800;color:#3d2c00;white-space:nowrap}.ld-b .ld-sh {display:block;width:max-content;margin:2px 0 1px;font-weight:800;color:#fff;background:#b45309;border-radius:5px;padding:0 6px;white-space:nowrap}.ld-b .ld-m {display:block;color:#6b7785;font-weight:600}
     .ld-b.on {background:#fff1c9;border-color:#e0b43a}.ld-b.done {background:#eaf6ee;border-color:#b9dfc6;color:#1d6b3a}.ld-b.done b {color:#14532d}
     .tp-b.dl {background:#e8f0fc;color:#1d5fbf}.tp-b.sp {background:#fff4e0;color:#8a5200}.tp-b.dv {background:#f3eefc;color:#6b3fb5}
     .po-foot {display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:10px 13px;border-top:1px solid #eee;font-size:13px;color:#4b5866}
@@ -3400,20 +3400,29 @@ function outBadge(order) {
 /* Loading at (Mohit, 25 Nov 2026): from Transport Assigned to Out for delivery the row shows which vehicle the PO
    is loaded in and which Godown Manager loads it (lwb_po_journey).
    Loading tab: "Loading 25m" since the Godown Manager pressed Start Loading. */
+const listShutter = new Map(); // order id -> dispatch_assignments.loaded_from (shutter / gate, set at Start Loading)
+async function loadShutters(pageOrders) {
+  const ids = pageOrders.filter(o => ["transport", "loading", "loaded"].includes(orderStage(o))).map(o => o.id);
+  if (!ids.length) return;
+  const r = await db.from("dispatch_assignments").select("order_id,loaded_from").in("order_id", ids).then(x => x, () => ({ error: true }));
+  if (r.error) return;
+  (r.data || []).forEach(x => { if (x.loaded_from) listShutter.set(x.order_id, x.loaded_from); else listShutter.delete(x.order_id); });
+}
 function loadBadge(order) {
   const st = orderStage(order);
   if (!["transport", "loading", "loaded"].includes(st)) return "";
   const j = listJourney.get(order.id) || {};
   const veh = String(j.vehicle_no || "").trim(), gm = String(j.loading_person || "").trim();
-  if (!veh && !gm) return "";
+  const sh = String(listShutter.get(order.id) || "").trim();
+  if (!veh && !gm && !sh) return "";
   const when = st === "loading" && j.loading_started_at ? " · " + ageText(j.loading_started_at)
     : st === "loaded" && j.loading_completed_at ? " · " + ageText(j.loading_completed_at) + " ago" : "";
   const head = st === "loading" ? "⏳ Loading" : st === "loaded" ? "✓ Loaded" : "🚚";
-  const tip = [veh && "Vehicle " + veh, j.driver_name && "Driver " + j.driver_name, gm && "Godown Manager " + gm,
+  const tip = [sh && "Shutter / gate " + sh, veh && "Vehicle " + veh, j.driver_name && "Driver " + j.driver_name, gm && "Godown Manager " + gm,
     j.loading_started_at && "Loading started " + formatDateTime(j.loading_started_at),
     j.loading_completed_at && "Loaded " + formatDateTime(j.loading_completed_at)].filter(Boolean).join(" · ");
   return `<span class="ld-b${st === "loading" ? " on" : st === "loaded" ? " done" : ""}" title="${escapeHtml(tip)}">${head} <b>${escapeHtml(veh || "-")}</b>${escapeHtml(when)}` +
-    (gm ? `<span class="ld-m">👷 ${escapeHtml(gm)}</span>` : "") + `</span>`;
+    (sh ? `<span class="ld-sh">🚪 ${escapeHtml(sh)}</span>` : "") + (gm ? `<span class="ld-m">👷 ${escapeHtml(gm)}</span>` : "") + `</span>`;
 }
 // Delivered: how much of the bill Accounts has received (lwb_po_journey collected / due).
 function settleBadge(order) {
@@ -3684,8 +3693,9 @@ function printBadge(id) {
 async function loadListExtras(pageOrders) {
   const ids = pageOrders.map(o => o.id);
   if (!ids.length) return;
-  const [j, p] = await Promise.all([
+  const [j, , p] = await Promise.all([
     db.rpc("lwb_po_journey", { p_ids: ids }).then(r => r, () => ({ error: true })),
+    loadShutters(pageOrders).catch(() => {}),
     listPrintsOn ? db.rpc("lwb_po_print_info", { p_ids: ids }).then(r => r, () => ({ error: true })) : { error: true }
   ]);
   if (!j.error) (j.data || []).forEach(r => listJourney.set(r.order_id, r));
