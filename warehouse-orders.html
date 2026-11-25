@@ -788,6 +788,18 @@
     .tax-bill-frame {position:fixed;right:0;bottom:0;width:2px;height:2px;border:0;opacity:0;pointer-events:none;z-index:9999}
     .tax-bill-frame.open {inset:0;width:100%;height:100%;opacity:1;pointer-events:auto;background:rgba(0,0,0,.35)}
     .po-tab.warn {background:#fff8ec;border-color:#f3d39b;color:#8a4b00}
+    /* Out for delivery / Bill pending / Delivered payment (25 Nov 2026) */
+    .po-tab.bp {background:#fff1f0;border-color:#f3b8b3;color:#a3261b}
+    .po-tab.bp b {background:#c62828;color:#fff}
+    #ordersArea .c-st .flow-w {display:block;clear:both}
+    #ordersArea .c-st .flow-w:empty {display:none}
+    @media (max-width:640px){#ordersArea .c-st .flow-w > span {margin-left:auto}}
+    .bp-b,.ofd-b,.stl-b {display:block;width:max-content;font-size:11px;font-weight:800;border-radius:6px;padding:2px 7px;margin-top:4px;white-space:nowrap}
+    .bp-b {background:#fdecea;color:#b3261e;border:1px solid #f3b8b3}
+    .ofd-b {background:#e8f0fe;color:#1a56c4;border:1px solid #bcd0f7}
+    .stl-b.ok {background:#e6f4ea;color:#1e7b34}
+    .stl-b.part {background:#fff4e0;color:#9a5b00}
+    .stl-b.no {background:#f1f3f4;color:#5f6368;font-weight:700}
     .po-subs {display:flex;gap:5px;flex-wrap:wrap;margin:-4px 0 8px}
     .po-subs[hidden] {display:none}
     .po-sub {border:1px solid #e3e7ec;background:#f6f7f9;border-radius:999px;padding:3px 10px;font:inherit;font-size:12px;font-weight:600;color:#33404d;cursor:pointer;white-space:nowrap}
@@ -1685,7 +1697,9 @@
         <option value="approved_pickup">Self Pickup</option>
         <option value="transport">Transport Assigned</option>
         <option value="loading">Loading</option>
-        <option value="loaded">Loaded / Billed</option>
+        <option value="loaded">Loaded</option>
+        <option value="out">Out for delivery</option>
+        <option value="billpending">Bill pending</option>
         <option value="delivered">Delivered</option>
         <option value="cancelled">Cancelled</option>
         <option value="all">All Orders</option>
@@ -1701,6 +1715,7 @@
       <span class="sp"></span>
       <button type="button" class="btn btn-blue" id="bulkApproveBtn" onclick="bulkApprove()">✔ Approve<span class="lg"> selected</span></button>
       <button type="button" class="btn btn-light" id="bulkPrintBtn" onclick="bulkPrint()">🖨 Print<span class="lg"> selected</span></button>
+      <button type="button" class="btn btn-blue" id="bulkOutBtn" onclick="markOutForDelivery(pickedOrders().filter(canGoOut).map(o=>o.id))" hidden title="Tally bill given: mark the selected POs Out for delivery"></button>
       <button type="button" class="btn btn-light" id="bulkLoadBtn" onclick="openBulkMark('LOADED')" hidden title="Mark the selected POs Loaded together"></button>
       <button type="button" class="btn btn-green" id="bulkDeliverBtn" onclick="openBulkMark('DELIVERED')" hidden title="Mark the selected POs Delivered together"></button>
       <button type="button" class="btn btn-red" id="bulkDeleteBtn" onclick="deleteOrders(pickedOrders().map(o=>o.id))" hidden title="Admin: delete dummy / duplicate orders for ever">🗑<span class="lg"> Delete selected</span></button>
@@ -2448,6 +2463,7 @@ async function loadOrders() {
     fillColumnFilters();
     updateStats();
     renderOrders();
+    loadFlowFlags();
     loadSummary();
     loadTrend();
     listLoadedAt = new Date();
@@ -3207,11 +3223,15 @@ const PO_TABS = [
   // Mohit, 20 Nov 2026: after Transport Assigned, Loading (godown started loading) and Loaded / Billed get own tabs.
   { k: "transport", t: "<span class=\"lg\">Transport </span>Assigned" },
   { k: "loading", t: "Loading" },
-  { k: "loaded", t: "Loaded<span class=\"lg\"> / Billed</span>" },
+  // Mohit, 25 Nov 2026: Loaded (Godown Manager) -> Out for delivery (Accounts makes the Tally bill, gives it
+  // with the vehicle and presses Out for delivery) -> Delivered. "Bill pending" (Accounts / Admin only) is last.
+  { k: "loaded", t: "Loaded" },
+  { k: "out", t: "Out<span class=\"lg\"> for delivery</span>" },
   { k: "delivered", t: "Delivered" },
   { k: "cancelled", t: "Cancelled" },
   { k: "all", t: "All", subs: [
     { k: "urgent", t: "Urgent / High" }] },
+  { k: "billpending", t: "🧾 Bill pending", bill: true },
   { sep: true },
   { k: "late_approval", t: "Approval late<span class=\"lg\"> 12h+</span>", warn: true },
   { k: "late_delivery", t: "Delivery late<span class=\"lg\"> 36h+</span>", warn: true }
@@ -3223,6 +3243,9 @@ function matchesTab(order, tab) {
   if (tab === "all") return true;
   if (tab === "polist") return ["pending", "approved"].includes(orderStage(order));
   if (tab === "dispatch") return ["transport", "loading", "loaded"].includes(orderStage(order));
+  if (tab === "loaded") return orderStage(order) === "loaded" && !isOutForDelivery(order);
+  if (tab === "out") return orderStage(order) === "loaded" && isOutForDelivery(order);
+  if (tab === "billpending") return isBillPending(order);
   if (tab === "urgent") return orderPriority(order) !== "NORMAL" && !isCancelled(order) && !isDeliveredOrder(order);
   if (tab === "late_approval") return isLateApproval(order);
   if (tab === "late_delivery") return isLateDelivery(order);
@@ -3290,9 +3313,10 @@ function renderTabs(base, current) {
   document.getElementById("poTabs").innerHTML = PO_TABS.map(tab => {
     if (tab.sep) return "";
     if (tab.draft && !draftsOn) return "";
+    if (tab.bill && !CAN_BILL) return "";
     const n = tab.draft ? drafts.filter(matchesDraftFilters).length : count(tab.k);
     if (tab.warn && !n) return "";
-    const css = ["po-tab", tab.warn ? "warn" : "", tab.k === main ? "on" : "", n ? "" : "zero"].join(" ");
+    const css = ["po-tab", tab.warn ? "warn" : "", tab.bill && n ? "bp" : "", tab.k === main ? "on" : "", n ? "" : "zero"].join(" ");
     const html = `<button type="button" role="tab" aria-selected="${tab.k === main}" class="${css}"
       onclick="pickStatusFilter('${tab.k}')">${tab.warn ? "⚠ " : ""}${tab.t} <b>${n}</b></button>`;
     if (tab.warn) return "";
@@ -3344,6 +3368,78 @@ const PO_STEPS = ["PO List", "Approved", "Transport", "Loading", "Delivered", "S
 const listJourney = new Map(); // order id -> lwb_po_journey row (orders on screen)
 const listPrints = new Map();  // order id -> lwb_po_print_info row
 let listPrintsOn = true;
+/* Out for delivery / Bill pending (Mohit, 25 Nov 2026, lwb_po_out_for_delivery_setup.sql).
+   flowFlags: order id -> {bill_no, bill_at, loaded_at, out_at, out_by_name} for every loaded / delivered PO. */
+const flowFlags = new Map();
+let flowBusy = false, flowOn = true;
+const flowOf = order => flowFlags.get(order.id) || {};
+const hasBill = order => !!(flowOf(order).bill_no || (listJourney.get(order.id) || {}).bill_no);
+const isOutForDelivery = order => !!flowOf(order).out_at;
+// Bill pending = loaded (or already delivered) and Accounts has not saved the Tally bill yet.
+const isBillPending = order => flowFlags.has(order.id) && ["loaded", "delivered"].includes(orderStage(order)) && !hasBill(order);
+function ageText(from) {
+  const h = (Date.now() - new Date(from).getTime()) / 3600000;
+  if (!Number.isFinite(h) || h < 0) return "";
+  return h < 1 ? Math.max(1, Math.round(h * 60)) + "m" : h < 48 ? Math.floor(h) + "h" : Math.floor(h / 24) + "d";
+}
+function billPendingBadge(order) {
+  if (!CAN_BILL || !isBillPending(order)) return "";
+  const f = flowOf(order), from = f.loaded_at || order.updated_at;
+  const age = from ? ageText(from) : "";
+  return `<span class="bp-b" title="Loaded${f.loaded_at ? " " + formatDateTime(f.loaded_at) : ""}: Tally bill not made yet">🧾 Bill pending${age ? " " + age : ""}</span>`;
+}
+function outBadge(order) {
+  if (orderStage(order) !== "loaded" || !isOutForDelivery(order)) return "";
+  const f = flowOf(order);
+  return `<span class="ofd-b" title="Out for delivery ${escapeHtml(formatDateTime(f.out_at))}${f.out_by_name ? " · " + escapeHtml(f.out_by_name) : ""}${f.bill_no ? " · Bill " + escapeHtml(f.bill_no) : ""}">🚚 Out ${ageText(f.out_at)}</span>`;
+}
+// Delivered: how much of the bill Accounts has received (lwb_po_journey collected / due).
+function settleBadge(order) {
+  if (orderStage(order) !== "delivered") return "";
+  const j = listJourney.get(order.id);
+  if (!j) return "";
+  const got = Number(j.collected) || 0, due = Number(j.due);
+  if ((Number(j.bill_amount) > 0 || got > 0) && Number.isFinite(due) && due <= 0.5) return `<span class="stl-b ok" title="Bill fully received">✓ Settled</span>`;
+  if (got > 0) return `<span class="stl-b part" title="Received ${formatMoney(got)}${Number.isFinite(due) ? " · due " + formatMoney(due) : ""}">₹${Math.round(got).toLocaleString("en-IN")} rcvd${Number.isFinite(due) && due > 0.5 ? " · ₹" + Math.round(due).toLocaleString("en-IN") + " due" : ""}</span>`;
+  return `<span class="stl-b no" title="No payment entered for this bill yet">Payment pending</span>`;
+}
+async function loadFlowFlags() {
+  if (flowBusy || !flowOn) return;
+  const ids = orders.filter(o => ["loaded", "delivered"].includes(orderStage(o))).map(o => o.id);
+  if (!ids.length) return;
+  flowBusy = true;
+  try {
+    for (let i = 0; i < ids.length; i += 1000) {
+      const r = await db.rpc("lwb_po_flow_flags", { p_ids: ids.slice(i, i + 1000) });
+      if (r.error) { if (/lwb_po_flow_flags/.test(r.error.message || "")) flowOn = false; return; }
+      (r.data || []).forEach(x => flowFlags.set(x.order_id, x));
+    }
+  } catch (e) { return; } finally { flowBusy = false; }
+  renderOrders();
+}
+async function markOutForDelivery(ids) {
+  const list = ids.map(id => orders.find(o => String(o.id) === String(id))).filter(Boolean);
+  if (!list.length) return;
+  const noBill = list.filter(o => !hasBill(o));
+  if (noBill.length) return alert("Make the Tally bill first: " + noBill.map(o => o.order_no).join(", "));
+  if (!await confirm("Out for delivery: " + list.length + " PO?\n\n" + list.map(o => o.order_no + " · " + (o.customer_name || "")).slice(0, 12).join("\n") +
+    (list.length > 12 ? "\n…" : "") + "\n\nTally bill given with the vehicle.")) return;
+  const { error } = await db.rpc("lwb_mark_out_for_delivery", { p_ids: list.map(o => o.id) });
+  if (error) return alert("Could not mark Out for delivery: " + String(error.message || error).replace(/^.*?ERROR:\s*/, ""));
+  const now = new Date().toISOString(), me = (currentProfile && currentProfile.full_name) || "";
+  list.forEach(o => flowFlags.set(o.id, { ...flowOf(o), order_id: o.id, out_at: flowOf(o).out_at || now, out_by_name: flowOf(o).out_by_name || me }));
+  pickedIds.clear();
+  showMessage(list.length + " PO out for delivery.", "success");
+  renderOrders();
+}
+async function undoOutForDelivery(id) {
+  const o = orders.find(x => String(x.id) === String(id));
+  if (!o || !await confirm(o.order_no + ": take back Out for delivery? It goes back to Loaded.")) return;
+  const { error } = await db.rpc("lwb_undo_out_for_delivery", { p_id: o.id });
+  if (error) return alert("Could not change: " + (error.message || error));
+  const f = flowOf(o); flowFlags.set(o.id, { ...f, out_at: null, out_by_name: null });
+  renderOrders();
+}
 function isSettled(order) {
   const j = listJourney.get(order.id);
   return !!j && isDeliveredOrder(order) && (Number(j.bill_amount) > 0 || Number(j.collected) > 0) && Number(j.due) <= 0.5;
@@ -3517,7 +3613,7 @@ function stepTrack(order, small) {
   const stage = orderStage(order);
   const at = stepAt(order);
   const name = (label, i) => stage === "cancelled" && i === at ? "Cancelled" : stage === "pending" && i === at ? "Approval pending"
-    : stage === "approved" && i === at ? "Transport pending" : stage === "loaded" && i === at ? "Out for delivery"
+    : stage === "approved" && i === at ? "Transport pending" : stage === "loaded" && i === at ? (isOutForDelivery(order) ? "Out for delivery" : "Loaded")
     : stage === "delivered" && i === at ? "Settlement pending" : label;
   const dots = PO_STEPS.map((label, i) => {
     const css = stage === "cancelled" && i === at ? "x" : i < at ? "ok" : i === at ? "now" : "";
@@ -3573,6 +3669,8 @@ async function loadListExtras(pageOrders) {
   if (!j.error) (j.data || []).forEach(r => listJourney.set(r.order_id, r));
   listJourneyFailed = !!j.error;
   if (CAN_BILL) ids.forEach(refreshMakeBill);
+  pageOrders.forEach(order => document.querySelectorAll(`#ordersArea [data-flow="${order.id}"]`).forEach(el => {
+    el.innerHTML = outBadge(order) + billPendingBadge(order) + settleBadge(order); }));
   if (!p.error) { ids.forEach(id => listPrints.delete(id)); (p.data || []).forEach(r => listPrints.set(r.order_id, r)); }
   else if (listPrintsOn && /lwb_po_print_info/.test((p.error && p.error.message) || "")) listPrintsOn = false; // SQL not run yet
   pageOrders.forEach(order => {
@@ -3924,7 +4022,7 @@ let fillLoading = false;
 
 function stageLabel(order) {
   const names = { pending: "Pending approval", approved: "Approved", transport: "Transport assigned", loading: "Loading",
-    loaded: "Loaded / Billed", delivered: "Delivered", cancelled: "Cancelled" };
+    loaded: isOutForDelivery(order) ? "Out for delivery" : "Loaded", delivered: "Delivered", cancelled: "Cancelled" };
   return names[orderStage(order)] || normalizedStatus(order).replace(/_/g, " ");
 }
 
@@ -4003,6 +4101,7 @@ function clearSelection() {
   renderOrders();
 }
 
+const canGoOut = o => CAN_BILL && flowOn && orderStage(o) === "loaded" && hasBill(o) && !isOutForDelivery(o);
 function pickedOrders() {
   return [...pickedIds].map(id => orders.find(o => o.id === id)).filter(Boolean);
 }
@@ -4021,6 +4120,9 @@ function renderSelBar() {
   approveBtn.disabled = bulkBusy || !allPending;
   approveBtn.title = allPending ? "" : "Only Pending Review POs can be approved together";
   // Admin: Loaded / Delivered together, only when at least one picked PO can take it
+  const outBtn = document.getElementById("bulkOutBtn"), nOut = list.filter(canGoOut).length;
+  outBtn.hidden = !nOut; outBtn.disabled = bulkBusy;
+  outBtn.innerHTML = '🚚 Out<span class="lg"> for delivery</span>' + (nOut < list.length ? " (" + nOut + ")" : "");
   const loadBtn = document.getElementById("bulkLoadBtn"), delivBtn = document.getElementById("bulkDeliverBtn");
   const nLoad = list.filter(canMarkLoaded).length, nDeliv = list.filter(canMarkDelivered).length;
   loadBtn.hidden = !nLoad; loadBtn.disabled = bulkBusy;
@@ -4565,8 +4667,13 @@ function canMakeBill(order) {
 }
 function makeBillBtn(order) {
   if (!canMakeBill(order)) return "";
+  if (orderStage(order) === "loaded" && hasBill(order) && flowOn)
+    return isOutForDelivery(order)
+      ? `<button class="btn btn-light" title="Marked by mistake: back to Loaded" onclick="event.stopPropagation();undoOutForDelivery('${order.id}')">↩<span class="lbl-long"> Undo out</span></button>`
+      : `<button class="btn btn-blue" title="Tally bill given with the vehicle: mark Out for delivery" onclick="event.stopPropagation();markOutForDelivery(['${order.id}'])">🚚 Out for delivery</button>`;
+  if (!VIEW_ONLY) return "";
   const j = listJourney.get(order.id);
-  if (j ? j.bill_no : !listJourneyFailed) return "";
+  if (hasBill(order) || (j ? j.bill_no : !listJourneyFailed)) return "";
   return `<button class="btn btn-green" title="Make the Tally bill of this PO (bill no., amount, date)" onclick="event.stopPropagation();openBill('${order.id}')">🧾 Make Bill</button>`;
 }
 function refreshMakeBill(id) {
@@ -4630,7 +4737,9 @@ async function saveBill() {
     if (error) throw error;
     closeBill();
     listJourney.set(order.id, { ...(listJourney.get(order.id) || { order_id: order.id }), bill_no: no, bill_amount: amount });
+    flowFlags.set(order.id, { ...flowOf(order), order_id: order.id, bill_no: no, bill_at: new Date().toISOString() });
     refreshMakeBill(order.id);
+    renderOrders();
     showMessage("Bill " + no + " saved for " + order.order_no + " · " + rs + " to collect.", "success");
     if (document.getElementById("trackModal").classList.contains("show") && document.getElementById("trackJourney").dataset.oid === String(order.id)) trackOrder(order.id);
   } catch (e) {
@@ -4948,7 +5057,7 @@ function renderOrders() {
             </td>
 
             <td class="c-st">
-              ${ageBadge(order)}<span class="st-badge">${statusBadge(order)}</span>
+              ${ageBadge(order)}<span class="st-badge">${statusBadge(order)}</span><span class="flow-w" data-flow="${order.id}">${outBadge(order)}${billPendingBadge(order)}${settleBadge(order)}</span>
               ${stepTrack(order, true)}
               
             </td>
@@ -4960,7 +5069,7 @@ ${CAN_PAY ? `            <td class="c-pay" data-label="Party Due" data-pay="${or
               <button class="btn btn-light btn-track" title="Track: where is this PO now" onclick="trackOrder('${order.id}')">📍<span class="lbl-long"> Track</span></button>
               ${!isCancelled(order) ? `<button class="btn btn-light btn-track" title="Copy order image for WhatsApp (no order no.). Phone: downloads it." aria-label="Copy order image" onclick="LWBPoShare.quick(db,'${order.id}')">${LWBPoShare.ICON}</button>` : ""}
               ${spButtonFor(order) && !isSlipBrandOrder(order) ? `<button class="btn btn-light" title="Pallet / Sheet given to party and returned" onclick="openSp('${order.id}')">▦<span class="lbl-long"> Pallet</span></button>` : ""}
-              ${CAN_BILL && VIEW_ONLY && canMakeBill(order) ? `<span class="mkb" data-mkb="${order.id}">${makeBillBtn(order)}</span>` : ""}
+              ${CAN_BILL && canMakeBill(order) ? `<span class="mkb" data-mkb="${order.id}">${makeBillBtn(order)}</span>` : ""}
               ${IS_ADMIN && rateWait.has(order.id) ? `<button class="btn btn-green" title="Rate below min: check and approve" onclick="openRateOk('${order.id}')">₹ Rate OK</button>` : ""}
               ${poPrintAllowed(order) ? `<button class="btn btn-light" title="Print PO" onclick="printPoFromList('${order.id}')">🖨 PO</button>` : ""}
               ${TAX_BILL && printAllowed(order) && !isSlipBrandOrder(order) ? `<button class="btn btn-light" title="Print tax invoice (Tally layout)" onclick="taxBillPrint('${order.id}', this)">🖨 Bill</button>` : ""}
