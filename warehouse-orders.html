@@ -1391,6 +1391,13 @@
     .bc-po ul {margin:4px 0 0;padding:0;list-style:none;display:flex;flex-wrap:wrap;gap:4px}
     .bc-po li {background:#fff;border:1px solid #f3dca8;border-radius:6px;padding:1px 7px;white-space:nowrap}
     .bc-q {display:block;font-size:11px;font-weight:800;color:#b45309;white-space:nowrap}
+    /* Edited after approval, waiting for Admin (lwb_po_reapproval_setup.sql) */
+    .rp-b {display:inline-block;margin:2px 0 0 4px;padding:0 5px;border-radius:5px;background:#fde7e7;color:#b42318;font-size:10.5px;font-weight:800;vertical-align:middle;white-space:nowrap}
+    .rp-po {margin:-4px 0 12px;padding:7px 10px;border:1px solid #f3b4b4;border-left:4px solid #dc2626;border-radius:8px;background:#fff5f5;font-size:12.5px;color:#5b1a1a;line-height:1.45}
+    .rp-po b.t {color:#b42318}
+    .rp-po .who {color:#7a4a4a;font-size:11.5px}
+    #poEditBtn {display:none}
+    #reviewModal.transport-only #poEditBtn:not([hidden]) {display:inline-flex}
     .bc-b {display:inline-block;margin:2px 0 0 4px;padding:0 5px;border-radius:5px;background:#fff1d6;color:#92400e;font-size:10.5px;font-weight:800;vertical-align:middle;white-space:nowrap}
     #markModal {z-index:1010}
     #billModal {z-index:1010} /* Make bill opens over the View PO popup too */
@@ -1881,6 +1888,7 @@
 
         <ol class="po-journey" id="poJourney" aria-label="PO journey"></ol>
         <div class="adm-mark" id="poAdmMark" hidden></div>
+        <div class="rp-po" id="poReap" hidden></div>
         <div class="bc-po" id="poBillChg" hidden></div>
         <div class="sp-po" id="poSp" hidden></div>
 
@@ -1984,6 +1992,7 @@
 
       <div class="modal-footer">
         <button type="button" class="btn btn-green" id="makeBillBtn" onclick="selectedOrder&&openBill(selectedOrder.id)" title="Make the Tally bill of this PO" hidden>🧾 Make Bill</button>
+        <button type="button" class="btn btn-light" id="poEditBtn" onclick="editFromTransport()" title="Change SKU / cases / rate of this PO" hidden>✏️ Edit PO</button>
         <button type="button" class="btn btn-light" id="printPoDocumentBtn" onclick="printPoFromModal()" disabled>Print PO</button>
         <button type="button" class="btn btn-light" id="sharePoBtn" onclick="selectedOrder&&LWBPoShare.quick(db,selectedOrder.id)" title="Copy order image for WhatsApp (no order no.). Phone: downloads it." aria-label="Copy order image"></button>
         <button type="button" class="btn btn-light" id="printChallanBtn" onclick="printApprovedPO('challan')" style="display:none">Challan</button>
@@ -4225,6 +4234,62 @@ async function renderAdminMark(order, boxId) {
 // "PO update ho to vahan likhna chahiye kya update hua, qty less / plus, amount change".
 const billChanges = o => Array.isArray(o && o.bill_changes) ? o.bill_changes : [];
 const sgn = v => (Number(v) > 0 ? "+" : Number(v) < 0 ? "−" : "") + formatMoney(Math.abs(Number(v) || 0));
+/* Edited after approval (Mohit, 25 Nov 2026, lwb_po_reapproval_setup.sql): a Sales Head's SKU / cases / rate change on
+   an approved PO (Transport Pending / Transport Assigned) sends it back to Approval Pending. When Admin approves it,
+   the database puts it back on the step it was on (driver / vehicle kept). Admin's own edit saves straight. */
+const REAPPROVE_ADMIN = false; // true = Admin's own edits also wait for approval
+const reapStepName = st => ["transport_allocated", "allocated"].includes(String(st || "").trim().toLowerCase()) ? "Transport Assigned" : "Transport Pending";
+function needsReapproval(o) {
+  if (!o || VIEW_ONLY || !CAN_HEAD || (IS_ADMIN && !REAPPROVE_ADMIN)) return false;
+  return ["approved", "transport"].includes(orderStage(o));
+}
+function reapBadge(o) {
+  if (!o || !o.reapprove_from || !isPending(o)) return "";
+  return `<span class="rp-b" title="Edited after approval${o.reapprove_note ? ": " + escapeHtml(o.reapprove_note) : ""}. After approval it goes back to ${reapStepName(o.reapprove_from)}.">✎ Edited</span>`;
+}
+function renderReap(o) {
+  const box = document.getElementById("poReap");
+  if (!box) return;
+  const on = Boolean(o && o.reapprove_from && isPending(o));
+  box.hidden = !on;
+  box.innerHTML = on ? `<b class="t">✎ Edited after approval — waiting for ${IS_ADMIN ? "your" : "Admin"} approval</b>` +
+    (o.reapprove_note ? `<div>${escapeHtml(o.reapprove_note)}</div>` : "") +
+    `<span class="who">${o.reapprove_at ? formatDate(o.reapprove_at) + " · " : ""}After approval it goes back to <b>${reapStepName(o.reapprove_from)}</b>.</span>` : "";
+}
+// Sales Head can not approve an edited PO (database refuses it too).
+function gateReapApprove(o) {
+  const b = document.getElementById("approveOrderBtn");
+  if (b) b.title = "";
+  if (!b || !o || !o.reapprove_from || !isPending(o) || IS_ADMIN) return;
+  b.disabled = true; b.textContent = "Waiting for Admin"; b.title = "Edited after approval: Admin approves it";
+}
+// What changed on the SKU lines (for the Admin bell), from the saved lines to the lines on screen.
+function poChangeNote() {
+  let before = [];
+  try { before = JSON.parse(savedPoItemsSignature || "[]"); } catch (e) {}
+  const old = new Map(before.filter(x => x[0]).map(x => [x[0], x]));
+  const out = [];
+  selectedItems.forEach(it => {
+    const q = Number(it.approved_qty) || 0, r = Number(it.rate) || 0, o = it.id && old.get(it.id);
+    if (!o) { out.push(`${it.sku_name} added ${formatNumber(q)} CS`); return; }
+    old.delete(it.id);
+    const parts = [];
+    if (String(o[1]).trim().toUpperCase() !== String(it.sku_name || "").trim().toUpperCase()) parts.push(`${o[1]} → ${it.sku_name}`);
+    if (Number(o[3]) !== q) parts.push(`${formatNumber(o[3])} → ${formatNumber(q)} CS`);
+    if (Number(o[4]) !== r) parts.push(`rate ${formatNumber(o[4])} → ${formatNumber(r)}`);
+    if (parts.length) out.push(`${it.sku_name}: ${parts.join(", ")}`);
+  });
+  old.forEach(o => out.push(`${o[1]} removed`));
+  return out.join(" | ").slice(0, 600);
+}
+// 🚚 Transport popup -> full Edit PO (SKU / cases / rate), unsaved transport fields stay.
+function editFromTransport() {
+  if (!selectedOrder || !canEditItems(selectedOrder)) return;
+  document.getElementById("reviewModal").classList.remove("transport-only");
+  document.getElementById("modalOrderNo").textContent = "Edit PO - " + (selectedOrder.order_no || "");
+  renderItems();
+  document.querySelector("#reviewModal .modal-body")?.scrollTo({ top: 0, behavior: "smooth" });
+}
 function billBadge(o) {
   const c = billChanges(o);
   if (!c.length) return "";
@@ -4849,7 +4914,7 @@ function renderOrders() {
             <td class="order-no c-no">
               <input type="checkbox" class="po-sel" data-id="${order.id}" ${pickedIds.has(order.id) ? "checked" : ""}
                 onclick="event.stopPropagation()" onchange="togglePick('${order.id}', this.checked)"
-                aria-label="Select ${escapeHtml(order.order_no || "")}">${escapeHtml(order.order_no || "-")}${order.id === justSavedId ? '<span class="just-saved">Just saved</span>' : ""}${priorityBadge(order)}${billBadge(order)}${spBadge(order)}<span class="prn-w" data-prn="${order.id}">${printBadge(order.id)}</span>
+                aria-label="Select ${escapeHtml(order.order_no || "")}">${escapeHtml(order.order_no || "-")}${order.id === justSavedId ? '<span class="just-saved">Just saved</span>' : ""}${priorityBadge(order)}${reapBadge(order)}${billBadge(order)}${spBadge(order)}<span class="prn-w" data-prn="${order.id}">${printBadge(order.id)}</span>
             </td>
 
             <td class="c-date">
@@ -5068,8 +5133,10 @@ async function reviewOrder(orderId, transportOnly=false, quiet=false) {
 
   renderJourney(selectedOrder);
   renderAdminMark(selectedOrder, "poAdmMark");
+  renderReap(selectedOrder);
   renderBillChange(selectedOrder);
   renderSpBox(selectedOrder);
+  document.getElementById("poEditBtn").hidden=!transportOnly||!canEditItems(selectedOrder);
 
   renderPriorityPick();
 
@@ -5124,6 +5191,7 @@ async function reviewOrder(orderId, transportOnly=false, quiet=false) {
     updateWarehouseSkuHint();
     renderItems();
     if (!quiet) await revealApprovalActions();
+    gateReapApprove(selectedOrder);
 
   } catch (error) {
 
@@ -6490,7 +6558,12 @@ async function submitPo() {
   if (transportDirty && !poTransportPayload()) return;
   if (itemsDirty && !poItemsValid()) return;
   const what=[itemsDirty&&'SKU / Qty / Rate',transportDirty&&'Transport',noteDirty&&'Manager Note'].filter(Boolean);
-  if (!await confirm('Save '+what.join(', ')+' for PO '+order.order_no+'?')) return;
+  const reap=itemsDirty&&needsReapproval(order), backTo=reapStepName(order.status), changeNote=itemsDirty?poChangeNote():'';
+  if (reap) {
+    if (!await confirm('Save '+what.join(', ')+' for PO '+order.order_no+'?\n\n'+(changeNote?changeNote.split(' | ').join('\n')+'\n\n':'')+
+      'The PO goes back to Approval Pending. When Admin approves it, it comes back to '+backTo+' by itself (driver / vehicle stay).',
+      {title:'Edit PO: approval needed',ok:'Save & send for approval'})) return;
+  } else if (!await confirm('Save '+what.join(', ')+' for PO '+order.order_no+'?')) return;
   const btn=document.getElementById('approveOrderBtn');
   poSubmitting=true; btn.disabled=true; btn.textContent='Saving...';
   let ok=true;
@@ -6499,6 +6572,16 @@ async function submitPo() {
     if (transportDirty) ok=await saveApprovedTransport();
     if (ok && itemsDirty) ok=await approveOrder({quiet:true});   // also saves the note
     else if (ok && noteDirty) ok=await saveManagerNote();
+    if (ok && reap) {
+      const {error}=await db.rpc('lwb_po_send_reapproval',{p_order_id:order.id,p_note:changeNote||null});
+      if (error) { alert('SKU change is saved, but the PO could not go back to Approval Pending: '+(error.message||error)); ok=false; }
+      else {
+        await loadOrders();
+        closeModal();
+        showMessage('PO '+order.order_no+' changed and sent to Approval Pending. After Admin approves it, it goes back to '+backTo+'.','success');
+        return;
+      }
+    }
   } finally {
     poSubmitting=false;
     btn.disabled=false; btn.textContent=selectedOrder&&isPending(selectedOrder)?'Approve PO':'Submit';
@@ -6513,6 +6596,7 @@ async function approveOrder(opts={}) {
   if (selectedOrder && !isPending(selectedOrder) && !opts.quiet) return submitPo();
   if (!selectedOrder || !canEditItems(selectedOrder) || !reviewReady) return false;
   const approving=isPending(selectedOrder);
+  if (approving&&selectedOrder.reapprove_from&&!IS_ADMIN){alert('This PO was edited after approval. Only Admin can approve it again.');return false;}
   if (!poItemsValid()) return false;
   if (!approving && lateEditable(selectedOrder)) return saveLateModify();
   // Rate below the minimum: a Sales Head's approval sends the PO to Admin for a rate OK (database rule).
