@@ -50,6 +50,11 @@ async function post(body) {
   if (!r.ok) throw await metaError(r);
   return (await r.json())?.messages?.[0]?.id || '';
 }
+// Title line of each PDF (same as the Admin's download of the evening report, evening-report.js).
+const pdfMeta = (m, dd) => m.kind === 'EVENING' ? { title: 'Daily Report', sub: 'Evening report', date: dd, footer: 'For Admin' }
+  : { title: m.kind === 'DAYBOOK' ? 'Day Book · Sales & Work' : m.kind === 'ACCBOOK' ? 'Day Book · Accounts' : m.title,
+      sub: m.kind === 'ACCBOOK' ? 'Daily accounts report' : m.kind === 'DAYBOOK' ? 'Daily work report' : 'Daily report', date: dd,
+      footer: m.kind === 'ACCBOOK' ? 'For Admin & Accounts' : m.kind === 'DAYBOOK' ? 'For Admin' : 'For management' };
 // f = {id, pdf, filename}
 const head = f => f.pdf ? { type: 'document', document: { id: f.id, filename: f.filename } } : { type: 'image', image: { id: f.id } };
 const viaTemplate = (m, f, c, dd) => post({ to: m.to, type: 'template', template: { name: f.pdf ? (c.template_doc || 'lwb_daily_report_pdf') : c.template, language: { code: c.lang },
@@ -87,7 +92,7 @@ Deno.serve(async (req) => {
         const base = ('LWB-' + m.title + '-' + dd).replace(/\W+/g, '-');
         if (!media.has(key)) {
           media.set(key, m.pdf
-            ? { pdf: true, filename: base + '.pdf', id: await upload(await buildPdf(m.doc, { PDFDocument, rgb }, fontkit, fonts, { title: m.kind === 'DAYBOOK' ? 'Day Book · Sales & Work' : m.kind === 'ACCBOOK' ? 'Day Book · Accounts' : m.title, sub: m.kind === 'ACCBOOK' ? 'Daily accounts report' : m.kind === 'DAYBOOK' ? 'Daily work report' : 'Daily report', date: dd, footer: m.kind === 'ACCBOOK' ? 'For Admin & Accounts' : m.kind === 'DAYBOOK' ? 'For Admin' : 'For management' }), base + '.pdf', 'application/pdf') }
+            ? { pdf: true, filename: base + '.pdf', id: await upload(await buildPdf(m.doc, { PDFDocument, rgb }, fontkit, fonts, pdfMeta(m, dd)), base + '.pdf', 'application/pdf') }
             : { pdf: false, id: await upload(png(m.doc), base + '.png') });
         }
         const f = media.get(key);

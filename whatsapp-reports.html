@@ -8,6 +8,7 @@
   <script src="vendor/supabase-js-2.119.0.js"></script>
   <link rel="stylesheet" href="erp-shell.css?v=20261124">
   <script src="erp-shell.js?v=20261124w"></script>
+  <script src="evening-report.js?v=20261126" defer></script>
   <style>
     .status{text-align:center;padding:80px 20px;font-size:15px;color:#555}
     .wa-bar{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin:0 0 10px}
@@ -62,6 +63,18 @@
     .err{background:#ffebeb;color:#9b2020;padding:10px 12px;border-radius:8px;margin-bottom:10px;white-space:pre-wrap}
     @media(max-width:800px){.two{grid-template-columns:1fr}.wa-grid{grid-template-columns:1fr}.wa-bar .sp{display:none}}
     @media(max-width:520px){.wa-bar .lg{display:none}.wa-bar .sp{display:block;flex-basis:100%;height:0}.wa-bar input{flex:1;min-width:0}.wa-bar .grn,.wa-bar .pdf,#sendBtn,#saveBtn{flex:1;padding:0 6px}.lst .hide-s{display:none}.lst th,.lst td{padding:5px 4px}}
+    .ev{font-size:12px;color:#111827;padding:6px 8px}
+    .ev .h1{text-align:center;margin:8px 0 6px}.ev .h1 b{display:block;font-size:15px}.ev .h1 span{display:block;font-weight:700;color:#0f4c5c}.ev .h1 small{color:#4b5563;font-weight:700}
+    .ev .brk{border-top:2px dashed #cfd6de;margin:10px 0 4px}
+    .ev .sc{font-weight:700;font-size:13px;margin:8px 0 4px;border-left:3px solid #0f4c5c;padding-left:6px}
+    .ev .sm{display:flex;gap:2px;margin-bottom:4px}.ev .sm span{flex:1;background:#0f4c5c;color:#fff;font-weight:700;padding:4px 6px;font-size:11.5px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .ev .nt{text-align:center;color:#6b7280;font-weight:700;margin:4px 0}
+    .ev .kv{display:flex;justify-content:space-between;gap:8px;border-bottom:1px dashed #e5e7eb;padding:3px 2px}.ev .kv b{text-align:right}
+    .ev table{border-collapse:collapse;width:100%;table-layout:fixed;margin-bottom:4px}
+    .ev th{background:#eef2f4;color:#4b5563;font-size:10.5px;text-transform:uppercase;padding:4px;text-align:left}
+    .ev td{border-bottom:1px solid #e5e7eb;padding:3px 4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .ev td:last-child,.ev th:last-child{text-align:right}.ev tr.tot td{font-weight:700;background:#f3f6f7}
+    .wa-bar .eve{background:#0f4c5c;border-color:#0f4c5c;color:#fff}
     [hidden]{display:none!important}
   </style>
 </head>
@@ -75,6 +88,7 @@
       <button type="button" id="next" title="Next day">▶</button>
       <span class="sp"></span>
       <button type="button" class="grn" id="testBtn" title="One of every report to your own WhatsApp">📲 Test<span class="lg"> to my WhatsApp</span></button>
+      <button type="button" class="eve" id="eveBtn" title="Evening report (Daily Report PDF) of this date">🌙<span class="lg"> Evening</span> PDF</button>
       <button type="button" class="pdf" id="bookBtn" title="Only the 2 Day Book PDFs (Sales & work, Accounts) to your own WhatsApp">📄<span class="lg"> Day Book</span> PDF</button>
       <button type="button" id="sendBtn" title="Send now to everyone who did not get it yet for this date">Send<span class="lg"> now to</span> all</button>
       <button type="button" class="main" id="saveBtn">Save</button>
@@ -133,7 +147,7 @@ Luxury Wrist Brand ERP</pre>
     const shift=(d,n)=>{const x=new Date(d+"T12:00:00Z");x.setUTCDate(x.getUTCDate()+n);return x.toISOString().slice(0,10)};
     const dmy=d=>String(d||"").slice(0,10).split("-").reverse().join("/");
     const hm=t=>t?new Date(t).toLocaleTimeString("en-IN",{hour:"2-digit",minute:"2-digit",timeZone:"Asia/Kolkata"}):"";
-    const KINDS=[["DAYBOOK","Day Book · Sales"],["ACCBOOK","Day Book · Accounts"],["SALESMAN","Salesman"],["MGR","MGR"],["TEAM","Team"],["ADMIN","Admin"],["ACCOUNTS","Accounts"],["GODOWN","Godown"]];
+    const KINDS=[["EVENING","Evening report"],["DAYBOOK","Day Book · Sales"],["ACCBOOK","Day Book · Accounts"],["SALESMAN","Salesman"],["MGR","MGR"],["TEAM","Team"],["ADMIN","Admin"],["ACCOUNTS","Accounts"],["GODOWN","Godown"]];
     const KNAME=Object.fromEntries(KINDS);
     const ROLE={admin:"Admin",manager:"Sales Head",sales:"Salesman",salesman:"Salesman",accounts:"Accounts",warehouse:"Godown Mgr",transport:"Transport",cashier:"Cashier"};
     let P=null,dirty=new Map();
@@ -154,6 +168,25 @@ Luxury Wrist Brand ERP</pre>
       }
       return h+"</table>";
     }
+    // Evening report (PDF rows: h1 / sum / note / brk / th with any number of columns), as HTML.
+    function evHtml(doc){
+      const T={g:"tg",r:"tr",b:"tb"};let h='<div class="ev">',tb=false;
+      const end=()=>{if(tb){h+="</table>";tb=false}};
+      for(const r of doc.rows||[]){
+        const t=r[0];
+        if(t!=="tr")end();
+        if(t==="h1")h+='<div class="h1"><b>'+esc(r[1])+"</b><span>"+esc(r[2]||"")+"</span><small>"+esc(r[3]||"")+"</small></div>";
+        else if(t==="brk")h+='<div class="brk"></div>';
+        else if(t==="sec")h+='<div class="sc">'+esc(r[1])+"</div>";
+        else if(t==="sum")h+='<div class="sm">'+(r[1]||[]).map(x=>"<span title=\""+esc(x)+"\">"+esc(x)+"</span>").join("")+"</div>";
+        else if(t==="note")h+='<div class="nt">'+esc(r[1])+"</div>";
+        else if(t==="kv")h+='<div class="kv"><span>'+esc(r[1])+'</span><b class="'+(T[r[3]]||"")+'">'+esc(r[2])+"</b></div>";
+        else if(t==="th"){const w=Array.isArray(r[2])?r[2]:[.46,.16,.16,.22];
+          h+="<table><colgroup>"+w.map(f=>'<col style="width:'+(f*100)+'%">').join("")+"</colgroup><tr>"+r[1].map(x=>"<th>"+esc(x)+"</th>").join("")+"</tr>";tb=true}
+        else if(t==="tr"){if(!tb){h+="<table>";tb=true}h+="<tr"+(r[2]?' class="tot"':"")+">"+r[1].map(x=>'<td class="'+(T[r[3]]||"")+'" title="'+esc(x)+'">'+esc(x)+"</td>").join("")+"</tr>"}
+      }
+      end();return h+"</div>";
+    }
     function render(){
       const c=P.config||{};
       el("cfgOn").checked=!!c.enabled;el("cfgTime").value=c.backup_time||"";el("cfgTasks").checked=c.focus_tasks!==false;
@@ -166,10 +199,10 @@ Luxury Wrist Brand ERP</pre>
         '<span class="tag">Focus parties for '+esc(dmy(P.focus_date))+"</span>";
       el("repSub").textContent=P.reports.length+" reports · "+dmy(P.date);
       const long=r=>(r.doc.rows||[]).length>22;
-      el("reports").innerHTML=[...P.reports].sort((a,b)=>(/BOOK$/.test(b.kind))-(/BOOK$/.test(a.kind))).map(r=>'<div class="rp'+(/BOOK$/.test(r.kind)?" wide":"")+(long(r)?" long":"")+'"><div class="rp-top"><b>'+esc(KNAME[r.kind]||r.kind)+(r.kind==="SALESMAN"||r.kind==="MGR"?" · "+esc(r.title):"")+
+      el("reports").innerHTML=[...P.reports].sort((a,b)=>(/BOOK$|^EVENING$/.test(b.kind))-(/BOOK$|^EVENING$/.test(a.kind))).map(r=>'<div class="rp'+(/BOOK$|^EVENING$/.test(r.kind)?" wide":"")+(long(r)?" long":"")+'"><div class="rp-top"><b>'+esc(KNAME[r.kind]||r.kind)+(r.kind==="SALESMAN"||r.kind==="MGR"?" · "+esc(r.title):"")+
         (r.pdf?' <span class="tag p">PDF</span>':"")+
         '</b><span class="rp-to" title="'+esc((r.to||[]).join(", "))+'">'+((r.to||[]).length?"To: "+esc(r.to.join(", ")):'<span class="tr">Nobody (no mobile / off)</span>')+"</span></div>"+
-        '<div class="rp-doc">'+docHtml(r.doc)+"</div>"+(long(r)?'<button type="button" class="rp-more">Show all '+(r.doc.rows||[]).length+" lines ▾</button>":"")+"</div>").join("");
+        '<div class="rp-doc">'+(r.kind==="EVENING"?evHtml(r.doc):docHtml(r.doc))+"</div>"+(long(r)?'<button type="button" class="rp-more">Show all '+(r.doc.rows||[]).length+" lines ▾</button>":"")+"</div>").join("");
       el("reports").querySelectorAll(".rp-more").forEach(b=>b.onclick=()=>{const c=b.closest(".rp");c.classList.toggle("open");
         b.textContent=c.classList.contains("open")?"Show less ▴":"Show all lines ▾"});
       // MGRs
@@ -215,6 +248,7 @@ Luxury Wrist Brand ERP</pre>
     el("bookBtn").onclick=async()=>{
       if(!await ERPShell.confirm("Send the 2 Day Book PDFs (Sales & work, Accounts) of "+dmy(el("day").value)+" to your own WhatsApp?\n\nFirst send \"Hi\" from your phone to the business WhatsApp number, so WhatsApp allows it before Meta approves the template."))return;
       try{await rpc("lwb_daily_wa_send",{p_date:el("day").value,p_mode:"TEST_DAYBOOK"});ERPShell.toast("Making the PDF… check WhatsApp in a minute");setTimeout(load,20000)}catch(e){fail(e)}};
+    el("eveBtn").onclick=()=>{if(window.LWBEvening)LWBEvening.open(client,el("day").value||today());else fail("Evening report is still loading, try again")};
     el("sendBtn").onclick=async()=>{
       if(!await ERPShell.confirm("Send the reports of "+dmy(el("day").value)+" now to everyone who did not get them yet?"))return;
       try{await rpc("lwb_daily_wa_send",{p_date:el("day").value,p_mode:"ALL"});ERPShell.toast("Sending…");setTimeout(load,15000)}catch(e){fail(e)}};
