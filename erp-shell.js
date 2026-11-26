@@ -884,7 +884,11 @@
         const r=await c.rpc("lwb_acc_today_cashier");
         if(!r.error&&r.data){S=r.data;CS=S.cashiers||[];HS=S.holders||[]}
         else{const o=await c.rpc("lwb_acc_shift_list",{p_from:null,p_to:null});S=!o.error&&o.data;HS=S&&S.holders&&S.holders.length?S.holders:S&&S.holder?[S.holder]:[];CS=HS;
-          if(S&&S.pending)S.pending=S.pending.to_name}
+          if(S&&S.pending)S.pending=S.pending.to_name;
+          // both failed: show the reason in the chip instead of hiding it (Mohit 26 Nov 2026, Vishal saw nothing)
+          if(!S){const e=(r.error&&r.error.message)||(o.error&&o.error.message)||"no data";let x=top.querySelector(".erp-cashier");
+            if(!x){x=document.createElement("a");x.className="erp-cashier";const u=top.querySelector(".erp-user");if(!u)return;u.prepend(x)}
+            x.textContent="💼 ⚠ "+String(e).slice(0,70);x.title="Cashier info did not load: "+e;x.removeAttribute("href");return}}
         let el=top.querySelector(".erp-cashier");
         if(!CS.length&&!HS.length){if(el)el.remove();return}
         if(!el){el=document.createElement("a");el.className="erp-cashier";const u=top.querySelector(".erp-user");if(!u)return;u.prepend(el)}
@@ -901,7 +905,7 @@
         if(me||["admin","accounts","cashier"].includes(role))el.href="accounts-dashboard.html#cash";else el.removeAttribute("href");
         if(S.pending)cashAsk(c,role,draw);
       };
-      await draw();setInterval(()=>{if(!document.hidden)draw().catch(()=>{})},60000);
+      await draw().catch(e=>{const x=document.createElement("a");x.className="erp-cashier";x.textContent="💼 ⚠ "+String(e&&e.message||e).slice(0,70);const u=top.querySelector(".erp-user");if(u)u.prepend(x)});setInterval(()=>{if(!document.hidden)draw().catch(()=>{})},60000);
       document.addEventListener("visibilitychange",()=>{if(!document.hidden)draw().catch(()=>{})});
     }catch(e){}
   }
