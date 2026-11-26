@@ -397,9 +397,13 @@
   function esc(v){return String(v==null?"":v).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]))}
 
   // Phone: "Add to Home screen" opens the ERP like an app.
+  // Keep Chrome's install offer even if it comes before erp-install.js has loaded.
+  addEventListener("beforeinstallprompt",e=>{e.preventDefault();window.__lwbBIP=e});
   function appMeta(){
     // Service worker: needed for "Install app" and the Android app; it caches nothing.
     if("serviceWorker" in navigator)navigator.serviceWorker.register("/sw.js").catch(()=>{});
+    // "Install App" button in the top bar (erp-install.js): PC gets the ERP as an app with a desktop icon.
+    if(!window.LWBInstall&&!document.querySelector('script[src^="erp-install.js"]')){const sc=document.createElement("script");sc.src="erp-install.js?v=20261126a";sc.defer=true;document.head.appendChild(sc)}
     if(document.querySelector('link[rel="manifest"]'))return;
     const add=(tag,attrs)=>{const n=document.createElement(tag);for(const k in attrs)n.setAttribute(k,attrs[k]);document.head.appendChild(n)};
     add("link",{rel:"manifest",href:"manifest.webmanifest"});
@@ -443,7 +447,8 @@
       '<div class="erp-crumb" aria-label="Breadcrumb">'+(group?'<a class="mid" href="dashboard.html" style="text-decoration:none">'+esc(group)+'</a><span>/</span>':'')+'<b>'+esc(title)+'</b></div>'+
       '<div class="erp-search"><input type="search" placeholder="Module Search" aria-label="Module Search">'+
       '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg><div class="erp-results"></div></div>'+
-      '<div class="erp-user"><button class="erp-keys-btn" type="button" aria-label="Keyboard shortcuts" title="Keyboard shortcuts (?)">'+svg("keyboard")+'</button><div class="who"><b>'+esc(opts.name||"User")+'</b><small>'+esc(role.toUpperCase())+'</small></div>'+
+      '<div class="erp-user"><button class="erp-install-btn" type="button" data-lwb-install hidden title="Install the ERP on this PC like an app (desktop icon)" aria-label="Install App"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4M12 6v7M9 10l3 3 3-3"/></svg><span>Install App</span></button>'+
+      '<button class="erp-keys-btn" type="button" aria-label="Keyboard shortcuts" title="Keyboard shortcuts (?)">'+svg("keyboard")+'</button><div class="who"><b>'+esc(opts.name||"User")+'</b><small>'+esc(role.toUpperCase())+'</small></div>'+
       '<div class="erp-avatar">'+esc((opts.name||"U").trim().charAt(0).toUpperCase())+'</div>'+
       '<button class="erp-logout" type="button" title="Logout" aria-label="Logout"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/></svg><span>Logout</span></button></div>';
 
