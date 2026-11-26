@@ -879,16 +879,24 @@
       if(!CHIP_ROLES.includes(role))return;
       const c=window.__lwbBellClient;if(!c)return;
       const draw=async()=>{
-        const r=await c.rpc("lwb_acc_shift_list",{p_from:null,p_to:null});
-        const S=!r.error&&r.data,HS=S&&S.holders&&S.holders.length?S.holders:S&&S.holder?[S.holder]:[];
+        // Cashier = latest receiver who is not Admin (Admin only keeps the cash at night, lwb_acc_cashier_admin_safe_setup.sql).
+        let S=null,CS=[],HS=[];
+        const r=await c.rpc("lwb_acc_today_cashier");
+        if(!r.error&&r.data){S=r.data;CS=S.cashiers||[];HS=S.holders||[]}
+        else{const o=await c.rpc("lwb_acc_shift_list",{p_from:null,p_to:null});S=!o.error&&o.data;HS=S&&S.holders&&S.holders.length?S.holders:S&&S.holder?[S.holder]:[];CS=HS;
+          if(S&&S.pending)S.pending=S.pending.to_name}
         let el=top.querySelector(".erp-cashier");
-        if(!HS.length){if(el)el.remove();return}
+        if(!CS.length&&!HS.length){if(el)el.remove();return}
         if(!el){el=document.createElement("a");el.className="erp-cashier";const u=top.querySelector(".erp-user");if(!u)return;u.prepend(el)}
-        const me=HS.some(h=>h.id===S.me),t=v=>v?new Date(v).toLocaleTimeString("en-IN",{hour:"2-digit",minute:"2-digit",hour12:true,timeZone:"Asia/Kolkata"}):"";
+        const first=a=>a.map(h=>String(h.name||"").split(/\s+/)[0]).join(" + "),ids=a=>a.map(h=>h.id).sort().join();
+        const me=CS.some(h=>h.id===S.me),t=v=>v?new Date(v).toLocaleTimeString("en-IN",{hour:"2-digit",minute:"2-digit",hour12:true,timeZone:"Asia/Kolkata"}):"";
+        const apart=HS.length&&ids(HS)!==ids(CS);   // cash kept by someone else (Admin at night)
         el.classList.toggle("me",me);
         el.replaceChildren(document.createTextNode("💼 "));const lb=document.createElement("small");lb.textContent="Cashier:";const nm=document.createElement("b");
-        nm.textContent=me?"You":HS.map(h=>String(h.name||"").split(/\s+/)[0]).join(" + ");el.append(lb,nm);
-        el.title="Today's cashier: "+HS.map(h=>h.name).join(" + ")+" · since "+t(HS[0].since)+(S.pending?"\nHanding to "+S.pending.to_name+" · waiting":"");
+        nm.textContent=CS.length?(me?"You":first(CS)):"—";el.append(lb,nm);
+        if(apart){const w=document.createElement("small");w.className="cw";w.textContent=" · cash with "+(HS.some(h=>h.id===S.me)?"you":first(HS));el.appendChild(w)}
+        el.title="Today's cashier: "+(CS.length?CS.map(h=>h.name).join(" + ")+" · since "+t(CS[0].since):"not set")+
+          (apart?"\nCash box with "+HS.map(h=>h.name).join(" + ")+" since "+t(HS[0].since):"")+(S.pending?"\nHanding to "+S.pending+" · waiting":"");
         el.setAttribute("aria-label",el.title);
         if(me||["admin","accounts","cashier"].includes(role))el.href="accounts-dashboard.html#cash";else el.removeAttribute("href");
       };
