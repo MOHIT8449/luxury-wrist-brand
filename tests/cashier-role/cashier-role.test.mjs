@@ -401,3 +401,22 @@ test("Today's cashier: the Sales Head holding the cash box gets the Cashier work
  await as('manager2');assert.equal((await one('select public.lwb_acc_on_duty()')).on_duty,false);
  await as('accounts');assert.equal((await dash()).is_cashier,false);
 });
+
+test('Cash box only for Admin / Accounts / Sales Head: Salesman taken off the list, can not be tagged (Mohit 26 Nov 2026)',async()=>{
+ await db.exec(await sql('lwb_acc_cash_people_roles_setup.sql'));
+ await db.exec(await sql('lwb_acc_cash_people_roles_setup.sql')); // safe to run again
+ const roles=(await db.query('select distinct lower(p.role) r from lwb_acc_cash_people c join user_profiles p on p.id=c.user_id')).rows.map(r=>r.r).sort();
+ assert.ok(!roles.includes('sales'));assert.ok(roles.includes('manager'));
+ await as('admin');
+ const PP=await one('select public.lwb_acc_cash_people_get()');
+ assert.ok(PP.all.every(p=>['admin','accounts','manager','cashier'].includes(p.role)));
+ await one('select public.lwb_acc_cash_people_set($1)',[[ids.accounts,ids.manager,ids.manager2,ids.sales,ids.admin]]);
+ assert.ok(!(await one('select public.lwb_acc_cash_people_get()')).list.some(p=>p.role==='sales'));
+ await as('accounts');
+ const book=Math.round(Number((await dash()).closing)*100)/100;
+ await assert.rejects(one('select public.lwb_acc_shift_give3($1::jsonb,$2::jsonb,null,$3::jsonb)',[JSON.stringify([{to:ids.sales,amount:book}]),JSON.stringify({coins:book}),'[]']),/not in the list/);
+ const g=await one('select public.lwb_acc_shift_give3($1::jsonb,$2::jsonb,null,$3::jsonb)',[JSON.stringify([{to:ids.manager,amount:book}]),JSON.stringify({coins:book}),'[]']);
+ await as('manager');await one('select public.lwb_acc_shift_receive($1,null,null)',[g.id]);
+ await as('sales');await assert.rejects(one('select public.lwb_acc_shift_list(null,null)'),/only/);
+ await as('manager2');assert.equal((await one('select public.lwb_acc_shift_list(null,null)')).holder.id,ids.manager);
+});

@@ -865,9 +865,35 @@
     }catch(e){}
     profitSwitch(top,role);
     // liveLocation();  // 📍 Switched OFF by the owner 23 Nov 2026: no location is asked or sent. Remove // to bring back.
+    cashierChip(top,role);
     tripRent(role);
     teamChat(role);
     taskSiren(role);
+  }
+
+  // 💼 Today's cashier (Mohit, 26 Nov 2026): small chip in the top bar, only for Admin / Accounts / Sales Head
+  // (and the Cashier role): "💼 Vishal" = who holds the cash box now (lwb_acc_shift_list holders).
+  const CHIP_ROLES=["admin","accounts","manager","cashier"];
+  async function cashierChip(top,role){
+    try{
+      if(!CHIP_ROLES.includes(role))return;
+      const c=window.__lwbBellClient;if(!c)return;
+      const draw=async()=>{
+        const r=await c.rpc("lwb_acc_shift_list",{p_from:null,p_to:null});
+        const S=!r.error&&r.data,HS=S&&S.holders&&S.holders.length?S.holders:S&&S.holder?[S.holder]:[];
+        let el=top.querySelector(".erp-cashier");
+        if(!HS.length){if(el)el.remove();return}
+        if(!el){el=document.createElement("a");el.className="erp-cashier";const u=top.querySelector(".erp-user");if(!u)return;u.prepend(el)}
+        const me=HS.some(h=>h.id===S.me),t=v=>v?new Date(v).toLocaleTimeString("en-IN",{hour:"2-digit",minute:"2-digit",hour12:true,timeZone:"Asia/Kolkata"}):"";
+        el.classList.toggle("me",me);
+        el.replaceChildren(document.createTextNode("💼 "));const lb=document.createElement("small");lb.textContent="Cashier:";const nm=document.createElement("b");
+        nm.textContent=me?"You":HS.map(h=>String(h.name||"").split(/\s+/)[0]).join(" + ");el.append(lb,nm);
+        el.title="Today's cashier: "+HS.map(h=>h.name).join(" + ")+" · since "+t(HS[0].since)+(S.pending?"\nHanding to "+S.pending.to_name+" · waiting":"");
+        el.setAttribute("aria-label",el.title);
+        if(me||["admin","accounts","cashier"].includes(role))el.href="accounts-dashboard.html#cash";else el.removeAttribute("href");
+      };
+      await draw();setInterval(()=>{if(!document.hidden)draw().catch(()=>{})},120000);
+    }catch(e){}
   }
 
   // 🚨 Urgent task siren: full-screen alarm + siren sound on any page when an urgent task rings
