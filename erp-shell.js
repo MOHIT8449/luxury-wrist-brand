@@ -171,6 +171,8 @@
       {t:"Night Stock Audit",h:"stock-audit.html",i:"stock",r:"admin manager warehouse accounts",vo:"accounts",nm:"admin manager warehouse accounts",par:"inventory.html"},
       {t:"Opening Stock",h:"opening-stock.html",i:"box",r:"admin",nm:"admin",par:"inventory.html"},
       {t:"Godown Report",h:"godown-report.html",i:"note",r:"admin manager warehouse"},
+      // Daily Labour (Mohit, 26 Nov 2026): Godown Manager's one-day market labour (name, mobile, wage), morning plan, night cash.
+      {t:"Daily Labour",h:"labour.html",i:"users",r:"admin manager warehouse accounts cashier",k:"daily labour dihadi dihari dahadi majdoor mazdoor majduri hamal market labour one day casual wage hajri attendance chhutak bahar se labour",vo:"accounts"},
       {t:"Loading & Dispatch",h:"loading-dispatch.html",i:"box",r:"admin manager warehouse"},
       {t:"Transport Assignment",h:"transport-allocation.html",i:"truck",r:"admin manager transport"},
       // Vehicle Report (Mohit, 23 Nov 2026): per vehicle / driver for the day: tons loaded, cases delivered, parties, fixed driver.
