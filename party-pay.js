@@ -168,6 +168,11 @@
 .lpp .dnotes{margin-top:6px}.lpp .dnotes input{border-color:#f3b8c1}
 .lpp .dhint{grid-column:1/-1;margin:2px 0 0;font-size:12px;color:#7a2a36}
 .lpp .tot .dt2{color:#b3122b}
+.lpp .mrow{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px}.lpp .mrow .l{margin:0}
+.lpp .dtog{display:inline-flex;align-items:center;gap:7px;height:30px;padding:0 4px 0 10px;border:1.5px solid #e3c5cb;border-radius:99px;background:#fff;color:#7a2a36;font:inherit;font-size:12.5px;font-weight:700;cursor:pointer;white-space:nowrap}
+.lpp .dtog i{position:relative;width:34px;height:20px;border-radius:99px;background:#c9d1db;transition:background .15s}
+.lpp .dtog i::after{content:"";position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:#fff;transition:left .15s}
+.lpp .dtog[aria-pressed=true]{border-color:#c8102e;background:#fff1f3;color:#b3122b}.lpp .dtog[aria-pressed=true] i{background:#c8102e}.lpp .dtog[aria-pressed=true] i::after{left:16px}
 .lpp .ksr b.k{display:inline-block;background:#9a6b00;color:#fff;border-radius:99px;padding:0 8px;font-size:12.5px;margin-right:4px}
 .lpp .ksr small{display:block;color:#7a5f1f;font-size:12px;margin-top:1px}
 .lpp .ksr.on{background:#fdecb3;border-color:#9a6b00}
@@ -220,7 +225,7 @@
  <div data-money>
   <div class="row2" style="margin-bottom:10px"><div><label class="l">Date received</label><div class="dbx"><input class="dt" inputmode="numeric" maxlength="10" placeholder="DD/MM/YYYY" aria-label="Date received"><button type="button" aria-label="Open calendar">📅</button><input type="date" tabindex="-1" aria-hidden="true"></div></div>
    <div><label class="l" for="lppR">Remark</label><input id="lppR" maxlength="300" autocomplete="off" placeholder="optional"></div></div>
-  <label class="l">Money received</label>
+  <div class="mrow"><label class="l">Money received</label><button type="button" class="dtog" data-dtog hidden aria-pressed="false"><span>🧾 Duplicate / torn note</span><i></i></button></div>
   <div class="modes">${MODES.map(([m,t,ph])=>`<div class="mode"><b>${t}</b><input class="amt" data-m="${m}" inputmode="decimal" autocomplete="off" placeholder="₹ 0" aria-label="${t} amount">${m==="CASH"?`<button type="button" class="lnk" data-cnt>Count notes</button>`:`<input class="ref" data-r="${m}" maxlength="100" autocomplete="off" placeholder="${ph}" aria-label="${t} ${ph}">`}</div>${m==="CASH"?`<div class="notes" data-notes hidden>${NOTES.map(n=>`<span>₹${n}×<input data-n="${n}" inputmode="numeric" placeholder="0" aria-label="${n} notes"></span>`).join("")}<span>coins<input data-n="coins" inputmode="decimal" placeholder="0" aria-label="coins"></span></div>`:""}`).join("")}</div>
   <div class="mode kline" data-kline><b>Kasar</b><input class="kin" data-kin inputmode="decimal" autocomplete="off" placeholder="₹ 0" aria-label="Kasar amount"><div class="kseg" data-kmode><button type="button" data-k="LESS" aria-pressed="true">Paid less</button><button type="button" data-k="EXTRA" aria-pressed="false">Paid extra</button></div></div>
   <div class="mode dline" data-dline hidden><b>Dup / torn</b><button type="button" class="lnk" data-dopen>+ Duplicate / torn note</button><div class="dseg" data-dkind hidden><button type="button" data-dk="DUPLICATE" aria-pressed="true">Duplicate</button><button type="button" data-dk="TORN" aria-pressed="false">Torn</button></div>
@@ -401,7 +406,12 @@
     if(adjust)q("[data-kline]").hidden=true;
     // Duplicate / torn note (lwb_acc_dup_note_setup.sql): only today's cashier (o.canDup). Not money received.
     var dkind="DUPLICATE",dupReady=true;
-    const dline=q("[data-dline]"),dnotes=q("[data-dnotes]");dline.hidden=!(o.canDup&&!adjust);
+    const dline=q("[data-dline]"),dnotes=q("[data-dnotes]"),dtog=q("[data-dtog]");
+    // ON / OFF switch next to "Money received" (Mohit 26 Nov 2026): the red line shows only when switched ON
+    dline.hidden=true;dtog.hidden=!(o.canDup&&!adjust);
+    const setDup=on=>{dtog.setAttribute("aria-pressed",String(on));dline.hidden=!on;
+      if(!on)dnotes.querySelectorAll("[data-dn]").forEach(i=>i.value="");else openDup();drawLeft();if(!on)q("[data-dtot]").textContent=""};
+    dtog.onclick=()=>setDup(dline.hidden);
     function readDup(){const n={};dnotes.querySelectorAll("[data-dn]").forEach(i=>{const v=Math.floor(num(i.value));if(v>0)n[i.dataset.dn]=v});return n}
     function dupAmt(){return dline.hidden?0:Object.entries(readDup()).reduce((a,[k,v])=>a+Number(k)*v,0)}
     function drawDup(){const a=dupAmt(),n=Object.values(readDup()).reduce((x,y)=>x+y,0);
@@ -518,7 +528,7 @@
     };
     pickDefaultBrand();
     drawAll();
-    if(o.dupOpen&&!dline.hidden)setTimeout(openDup,80);
+    if(o.dupOpen&&!dtog.hidden)setTimeout(()=>setDup(true),80);
     setTimeout(()=>{(party?(adjust?q("[data-ok]"):q('.amt[data-m="'+(o.mode||"CASH")+'"]')):pin).focus()},60);
     return {close};
   }
