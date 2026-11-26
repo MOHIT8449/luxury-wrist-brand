@@ -420,3 +420,26 @@ test('Cash box only for Admin / Accounts / Sales Head: Salesman taken off the li
  await as('sales');await assert.rejects(one('select public.lwb_acc_shift_list(null,null)'),/only/);
  await as('manager2');assert.equal((await one('select public.lwb_acc_shift_list(null,null)')).holder.id,ids.manager);
 });
+
+test('Night: cash to Admin only keeps it; the cashier stays; morning Admin hands it on = new cashier (Mohit 26 Nov 2026)',async()=>{
+ await db.exec(await sql('lwb_acc_cashier_admin_safe_setup.sql'));
+ await db.exec(await sql('lwb_acc_cashier_admin_safe_setup.sql')); // safe to run again
+ const give=async(to)=>{const b=Math.round(Number((await dash()).closing)*100)/100;
+   return one('select public.lwb_acc_shift_give3($1::jsonb,$2::jsonb,null,$3::jsonb)',[JSON.stringify([{to,amount:b}]),JSON.stringify({coins:b}),'[]'])};
+ // (test 12 left the box with the first Sales Head)
+ await as('manager');assert.equal((await one('select public.lwb_acc_on_duty()')).on_duty,true);
+ let T=await one('select public.lwb_acc_today_cashier()');assert.equal(T.cashiers[0].id,ids.manager);
+ // night: he hands the cash to Admin
+ const g=await give(ids.admin);
+ await as('admin');await one('select public.lwb_acc_shift_receive($1,null,null)',[g.id]);
+ T=await one('select public.lwb_acc_today_cashier()');
+ assert.equal(T.cashiers[0].id,ids.manager);assert.equal(T.holders[0].id,ids.admin);
+ await as('manager');assert.equal((await one('select public.lwb_acc_on_duty()')).on_duty,true);
+ // morning: Admin hands it to the other Sales Head = he is the cashier now
+ await as('admin');const g2=await give(ids.manager2);
+ await as('manager2');await one('select public.lwb_acc_shift_receive($1,null,null)',[g2.id]);
+ assert.equal((await one('select public.lwb_acc_on_duty()')).on_duty,true);
+ await as('manager');assert.equal((await one('select public.lwb_acc_on_duty()')).on_duty,false);
+ T=await one('select public.lwb_acc_today_cashier()');assert.equal(T.cashiers[0].id,ids.manager2);assert.equal(T.holders[0].id,ids.manager2);
+ await as('sales');await assert.rejects(one('select public.lwb_acc_today_cashier()'),/only/);
+});
