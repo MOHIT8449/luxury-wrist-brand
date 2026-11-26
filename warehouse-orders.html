@@ -2125,6 +2125,13 @@ const db = supabase.createClient(
   SUPABASE_URL,
   SUPABASE_PUBLISHABLE_KEY
 );
+// One PO = one transport row. A PO that got two dispatch_assignments rows (saved twice) made .maybeSingle()
+// fail with "JSON object requested, multiple (or no) rows returned" on Print PO (LXY-00691, 26 Nov 2026).
+// Read the newest row instead; lwb_dispatch_one_row_per_po_setup.sql removes the extra rows.
+function latestAssignment(query){
+  return query.order("assigned_at",{ascending:false,nullsFirst:false}).limit(1)
+    .then(r=>r.error?r:{...r,data:(r.data||[])[0]||null});
+}
 
 
 let currentUser = null;
@@ -5072,9 +5079,9 @@ async function sugApplyRest(payload,trip,leadId){
     try{if(!o||isSelfPickup(o))throw Error("skip");
       const latest=await db.from("orders").select("status").eq("id",oid).single();if(latest.error)throw latest.error;
       if(!eligibleForPoPrint(latest.data)||poTransportLocked(latest.data))throw Error("not open");
-      const found=await db.from("dispatch_assignments").select("id").eq("order_id",oid).maybeSingle();if(found.error)throw found.error;
+      const found=await latestAssignment(db.from("dispatch_assignments").select("id").eq("order_id",oid));if(found.error)throw found.error;
       const p={...payload,order_id:oid};if(trip)p.trip_id=trip.id;
-      const r=found.data?await db.from("dispatch_assignments").update(p).eq("id",found.data.id).select("id").single():await db.from("dispatch_assignments").insert(p).select("id").single();
+      const r=found.data?await latestAssignment(db.from("dispatch_assignments").update(p).eq("order_id",oid).select("id,assigned_at")):await db.from("dispatch_assignments").insert(p).select("id").single();
       if(r.error)throw r.error;
       if(canTransition.includes(normalizedStatus(latest.data))){const u=await db.from("orders").update({status:"transport_allocated"}).eq("id",oid).in("status",canTransition).select("id");if(u.error)throw u.error;}
       ok.push(o.order_no);}catch(e){bad.push((o&&o.order_no)||oid);}}
@@ -5953,9 +5960,9 @@ async function revealApprovalActions(){
   poDTypeSaved="";setPoDType("");
   allocationStatus("Loading assigned transport...");
   try{
-    const result=await db.from("dispatch_assignments")
+    const result=await latestAssignment(db.from("dispatch_assignments")
       .select("*")
-      .eq("order_id",id).maybeSingle();
+      .eq("order_id",id));
     if(result.error)throw result.error;
     if(!selectedOrder||selectedOrder.id!==id)return;
     approvedTransport=result.data||null;
@@ -6070,7 +6077,7 @@ async function saveApprovedTransport(){
     if(latest.error)throw latest.error;
     if(!eligibleForPoPrint(latest.data)||poTransportLocked(latest.data))
       throw Error("Loading is confirmed on this PO. Only Admin can change the transport now.");
-    const found=await db.from("dispatch_assignments").select("id").eq("order_id",id).maybeSingle();
+    const found=await latestAssignment(db.from("dispatch_assignments").select("id").eq("order_id",id));
     if(found.error)throw found.error;
     // Trip (trip-rent.js): same vehicle today with POs not loaded yet = same trip, one rent. Porter rent is asked later.
     // Self pickup is never one of our delivery trips: no trip (and off an old one).
@@ -6084,9 +6091,10 @@ async function saveApprovedTransport(){
       if(trip)payload.trip_id=trip.id;
     }
     const result=found.data
-      ? await db.from("dispatch_assignments").update(payload).eq("id",found.data.id).select("id").single()
+      ? await latestAssignment(db.from("dispatch_assignments").update(payload).eq("order_id",id).select("id,assigned_at"))
       : await db.from("dispatch_assignments").insert(payload).select("id").single();
     if(result.error)throw result.error;
+    if(!result.data)throw Error("Transport was not saved. Please retry.");
     approvedTransport={...payload,id:result.data.id};
     poDTypeSaved=dtype;poTripSaved=trip;
     // Self Pickup: keep the same driver / mobile / vehicle on the order, so the party's next pickup fills them.
@@ -6285,9 +6293,9 @@ async function printApprovedPO(documentType="challan",collect=null){
     // Use the saved assignment of this exact PO, not another vehicle or
     // uncommitted form inputs. This is the same source as Accounts print.
     const [result,noteResult,itemResult,pickupResult,partyResult]=await Promise.all([
-      db.from("dispatch_assignments")
+      latestAssignment(db.from("dispatch_assignments")
         .select("driver_name,driver_mobile,vehicle_no,loading_person,transporter_name")
-        .eq("order_id",order.id).maybeSingle(),
+        .eq("order_id",order.id)),
       db.from("orders").select("*").eq("id",order.id).single(),
       db.from("order_items").select("*").eq("order_id",order.id).order("created_at",{ascending:true}),
       // Self Pickup: driver / vehicle / Godown Manager typed on the order (lwb_self_pickup_driver_setup.sql).
