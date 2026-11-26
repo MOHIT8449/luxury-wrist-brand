@@ -12,7 +12,7 @@
   <script src="brand-filter.js"></script>
   <script src="erp-period.js"></script>
   <script src="party-credit.js"></script>
-  <script src="party-pay.js?v=20261125b"></script>
+  <script src="party-pay.js?v=20261126e"></script>
   <script src="sku-image.js"></script>
   <script src="erp-operations-notifications.js"></script>
 
@@ -1499,6 +1499,7 @@
 <script src="erp-list.js"></script>
 <script src="erp-colfilter.js"></script>
 <script src="po-share.js"></script>
+<script src="dup-note.js?v=20261126d"></script>
 <script src="excel-io.js"></script>
 </head>
 
@@ -2138,6 +2139,8 @@ let currentUser = null;
 let currentProfile = null;
 
 let orders = [];
+// Duplicate / torn notes parties gave, still pending (lwb_acc_dup_note_setup.sql): reminder on the PO
+let dupNotes = [];
 let selectedOrder = null;
 let selectedItems = [];
 let originalItemIds = [];
@@ -2505,7 +2508,8 @@ async function loadOrders() {
     const listRows = window.ERPOrderDays ? await ERPOrderDays.filter(db, [...byId.values()]) : [...byId.values()];
     orders = ERPRecent.sort(listRows);
     orderFill.clear();
-    await Promise.all([loadDeliveredOrders(), brandPick() ? loadItemsFor(orders.map(o => o.id)) : null, loadDrafts(), loadRateWait()]);
+    await Promise.all([loadDeliveredOrders(), brandPick() ? loadItemsFor(orders.map(o => o.id)) : null, loadDrafts(), loadRateWait(),
+      window.LWBDup ? LWBDup.pending(db).then(d => { dupNotes = d || []; }) : null]);
 
     fillColumnFilters();
     updateStats();
@@ -5198,7 +5202,7 @@ function renderOrders() {
             </td>
 
             <td class="c-cust">
-              ${escapeHtml(order.customer_name || "-")}<span class="roi-w" data-roi="${order.id}">${roiBadge(order.id)}</span>${cashBuyerLine(order)}
+              ${escapeHtml(order.customer_name || "-")}<span class="roi-w" data-roi="${order.id}">${roiBadge(order.id)}</span>${dupBadge(order)}${cashBuyerLine(order)}
             </td>
 
             <td class="c-sp" data-label="Sales person">
@@ -5358,6 +5362,19 @@ async function deleteDraft(id) {
 // quiet: load the PO for printing without opening the popup (Print / Challan from the list).
 // Party balance / credit check under the PO details (lwb_party_credit_limit_setup.sql); open POs only.
 let creditSeqW = 0;
+// Not on a delivered / cancelled PO: the reminder is for the trip that is still to go.
+function dupFor(order){
+  const st = String(order?.status || "").toLowerCase();
+  if(!window.LWBDup || !order || ["delivered","cancelled","canceled","rejected","closed","completed"].includes(st)) return [];
+  return LWBDup.of(dupNotes, order.customer_name);
+}
+function dupBadge(order){ return window.LWBDup ? LWBDup.badge(dupFor(order)) : ""; }
+function showOrderDup(order){
+  const grid = document.getElementById("dCustomer").closest(".detail-box").parentElement;
+  let box = document.getElementById("dDup");
+  if(!box){ box = document.createElement("div"); box.id = "dDup"; grid.after(box); }
+  box.innerHTML = window.LWBDup ? LWBDup.strip(dupFor(order), {po:true}) : "";
+}
 async function showOrderCredit(order){
   const grid = document.getElementById("dCustomer").closest(".detail-box").parentElement;
   let box = document.getElementById("dCredit");
@@ -5397,6 +5414,7 @@ async function reviewOrder(orderId, transportOnly=false, quiet=false) {
   document.getElementById("dCustomer").textContent =
     selectedOrder.customer_name || "-";
   showOrderCredit(selectedOrder);
+  showOrderDup(selectedOrder);
 
   document.getElementById("dSalesPerson").textContent =
     selectedOrder.sales_person || "-";
@@ -6366,6 +6384,8 @@ async function printApprovedPO(documentType="challan",collect=null){
     const pGst=String(pm.gstin||"").trim().toUpperCase(),pPan=String(pm.pan||"").trim().toUpperCase(),pMob=String(pm.mobile||"").trim();
     const cashPo=pm.is_cash_sale===true||!!cashBuyerText(order);
     const taxId=pGst?["GSTIN",pGst]:pPan?["PAN",pPan]:null;
+    // duplicate / torn note of this party still pending: the driver collects a good note on this trip
+    const dupPrint=window.LWBDup?LWBDup.print(dupFor(order)):"";
     if(isPo&&!slipPo){
       printArea.className="po-a5";
       // A5 PO layout: no company name, dates shown without the year.
@@ -6386,7 +6406,7 @@ async function printApprovedPO(documentType="challan",collect=null){
             row("Sales Person",dash(order.sales_person))+"</dl></div>"+
           "<div class='pa-card'><h3>Dispatch</h3><dl>"+row("Transport",dash(transportMode))+row("Vehicle No.",dash(a.vehicle_no))+
             row("Driver",dash(a.driver_name)+(a.driver_mobile?" · "+safe(a.driver_mobile):""))+row("Godown Manager",dash(a.loading_person))+"</dl></div>"+
-        "</div>"+
+        "</div>"+dupPrint+
         (spText?"<div class='pa-sp'><small>Pallet &amp; Sheet with vehicle (returnable)</small>"+safe(spText)+"</div>":"")+
         "<table class='pa-items'><thead><tr><th>Sr</th><th>SKU / Product</th><th>Qty</th><th>Rate ₹</th><th>Amount ₹</th><th>Loaded</th></tr></thead><tbody>"+
         approvedLines.map((item,i)=>"<tr><td>"+(i+1)+"</td><td>"+safe(item.sku)+"</td><td class='num'>"+qty(item.qty)+"</td><td class='num'>"+money(item.rate)+
@@ -6409,7 +6429,7 @@ async function printApprovedPO(documentType="challan",collect=null){
         (!cashPo&&taxId?"<div>"+taxId[0]+": <b>"+safe(taxId[1])+"</b></div>":"")+
         (!cashPo&&pMob?"<div>Mobile: <b>"+safe(pMob)+"</b></div>":"")+
         (addr?"<div class='addr'>"+safe(addr)+"</div>":"")+
-        (spText?"<div>"+safe(spText)+"</div>":"")+
+        (spText?"<div>"+safe(spText)+"</div>":"")+dupPrint+
         "<div class='dash'></div>"+
         "<table><thead><tr><th>SKU</th><th class='r'>Qty</th><th class='r'>Rate</th><th class='r'>Amount</th></tr></thead><tbody>"+
         approvedLines.map(l=>"<tr><td>"+safe(l.sku)+"</td><td class='r'>"+money(l.qty)+"</td><td class='r'>"+money(l.rate)+"</td><td class='r'>"+money(l.qty*l.rate)+"</td></tr>").join("")+
@@ -6426,7 +6446,7 @@ async function printApprovedPO(documentType="challan",collect=null){
         info([["Date &amp; Time",safe(formatDateTime(order.order_date||order.created_at))],["Sales Person",dash(order.sales_person)],["Total Items",safe(approvedLines.length)]])+
       "</div>"+
       "<p class='dc-crew'>Godown Manager: <span>"+dash(a.loading_person)+"</span> &nbsp;|&nbsp; Driver: <span>"+dash(a.driver_name)+
-        (a.driver_mobile?" ("+safe(a.driver_mobile)+")":"")+"</span> &nbsp;|&nbsp; Vehicle No: <span>"+dash(a.vehicle_no)+"</span></p>"+
+        (a.driver_mobile?" ("+safe(a.driver_mobile)+")":"")+"</span> &nbsp;|&nbsp; Vehicle No: <span>"+dash(a.vehicle_no)+"</span></p>"+dupPrint+
       "<table class='dc-items'><thead><tr><th>Sr</th><th>SKU / Product</th><th>Qty</th><th>Rate (₹)</th><th>Amount (₹)</th><th>Unit Wt</th><th>Total Wt</th></tr></thead><tbody>"+
       rows+"</tbody><tfoot><tr><td></td><td style='text-align:center'>TOTAL</td><td>"+showWt(total.qty)+"</td><td></td><td>₹"+showWt(total.amount)+
       "</td><td></td><td>"+showWt(total.weight)+" KG</td></tr></tfoot></table>"+

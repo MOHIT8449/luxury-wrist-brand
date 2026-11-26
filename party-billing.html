@@ -13,7 +13,8 @@
   <script src="tally-note.js" defer></script>
   <script src="brand-filter.js"></script>
   <script src="erp-period.js"></script>
-  <script src="party-pay.js?v=20261125b"></script>
+  <script src="party-pay.js?v=20261126e"></script>
+  <script src="dup-note.js?v=20261126d"></script>
   <script src="ledger-rows.js?v=20261123a"></script>
   <script src="bill-change.js?v=20261125b"></script>
   <script src="acc-hub.js?v=20261125c"></script>
@@ -230,6 +231,7 @@
       el("reload").disabled=true;LWBAccHub.loadCash(client);
       LWBAccHub.loadGst(client).then(d=>{gst=d;if(tab==="gst"&&info)render()});
       try{
+        if(window.LWBDup)LWBDup.pending(client,true).then(d=>{DUPS=d||[];if(DUPS.length&&tab==="due"&&info)render()});
         const [x,early,chg,mk,tb,pr,mm]=await Promise.all([LWBPartyPay.load(client),client.rpc("lwb_bills_before_loading"),client.rpc("lwb_bill_change_list",{p_days:(chgSpan=chgDays())}),client.rpc("lwb_admin_order_marks",{p_ids:null}),client.rpc("lwb_tax_bill_access"),client.rpc("lwb_tally_no_problems"),client.rpc("lwb_bill_mismatch_list",{p_days:400})]);
         // Tax invoice print in the Tally layout (lwb_tax_bill_print_setup.sql): button only while Admin has it on for me.
         taxBill=!tb.error&&!!(tb.data&&tb.data.can);
@@ -267,7 +269,9 @@
     const advNote=p=>{if(!(p.net<-0.5)||(p.bills||[]).length)return "";const t=LWBPartyPay.lookalike(info,p.party);
       if(t)return "Same shop as "+t.party+"? ("+LWBPartyPay.balText(V(t))+")";
       return -p.net<10?"Paid "+rs(-p.net)+" extra (round off)":""};
-    const advTag=p=>{const n=advNote(p);return n?`<small class="adv-chk">⚠ ${esc(n)}</small>`:""};
+    // + duplicate / torn note still pending on this party (lwb_acc_dup_note_setup.sql)
+    let DUPS=[];
+    const advTag=p=>{const n=advNote(p);return (window.LWBDup?LWBDup.badge(LWBDup.of(DUPS,p.party)):"")+(n?`<small class="adv-chk">⚠ ${esc(n)}</small>`:"")};
     const inB=c=>!fb||(c||"")===fb;
     const btag=c=>{const b=info.brandOf(c);return b?`<span class="btag" style="--bc:${esc(b.color||"#2362a4")}"><i></i>${esc(b.name)}</span>`:'<span class="btag" style="--bc:#8a94a3"><i></i>No brand</span>'};
     function brandChips(){

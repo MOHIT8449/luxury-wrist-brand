@@ -13,7 +13,8 @@
   <script src="brand-filter.js"></script>
   <script src="erp-period.js"></script>
   <script src="erp-colfilter.js"></script>
-  <script src="party-pay.js?v=20261125b"></script>
+  <script src="party-pay.js?v=20261126e"></script>
+  <script src="dup-note.js?v=20261126d"></script>
   <script src="ledger-rows.js?v=20261123a"></script>
   <style>
     /* Ledger & Outstanding (Mohit, 20 Nov 2026): the Accounts "Display" books in one place, like Tally.
@@ -183,14 +184,16 @@
     const modeChips=m=>m.map(k=>'<span class="ab-mode">'+esc(MODE[k]||k)+'</span>').join("");
     const refOf=x=>String(x.ref_no||"").trim().split(/\s+/).slice(1).join(" ");
 
-    let me=null,info=null,led=null,byNo=new Map(),fb="",sec="out",outMode="party",outShow="due",outPk="",ledPk="",ledFy=true,shown=300,cur=null,loadedAt=0;
+    let DUPS=[],me=null,info=null,led=null,byNo=new Map(),fb="",sec="out",outMode="party",outShow="due",outPk="",ledPk="",ledFy=true,shown=300,cur=null,loadedAt=0;
     const CF=LWBCol.create({onChange:()=>draw()});
 
     /* ---------- data ---------- */
     async function load(){
       el("err").innerHTML="";
       try{
+        const dupQ=window.LWBDup?LWBDup.pending(client,true):Promise.resolve([]);
         info=await LWBPartyPay.load(client);
+        DUPS=await dupQ;
         const cxq=client.rpc("lwb_ledger_cancelled",{p_days:400});
         const a=await LWBLedgerRows(client);   // all rows (no 1000-row cut)
         if(a.error)throw a.error;
@@ -301,6 +304,10 @@
     function tools(html,keepQ){const old=qVal();el("tools").innerHTML='<div class="ab-f">'+html+"</div>";const i=el("q");if(i&&keepQ!==false){i.value=old;i.oninput=()=>{shown=300;draw();const n=el("q");n.focus();n.setSelectionRange(n.value.length,n.value.length)}}}
     const seg=(id,opts,v)=>'<span class="ab-seg" id="'+id+'">'+opts.map(([k,l])=>'<button type="button" data-v="'+k+'" aria-pressed="'+(k===v)+'">'+l+"</button>").join("")+"</span>";
     const bLab=()=>fb&&info.brandOf(fb)?" · "+info.brandOf(fb).name:"";
+    // duplicate / torn note given by the party, still pending (lwb_acc_dup_note_setup.sql)
+    const dupOf=pk=>window.LWBDup?LWBDup.of(DUPS,nameOf(pk)).filter(r=>!fb||!r.company_id||r.company_id===fb):[];
+    const dupB=pk=>window.LWBDup?LWBDup.badge(dupOf(pk)):"";
+    const dupS=pk=>window.LWBDup?LWBDup.strip(dupOf(pk)):"";
 
     // 1. Outstanding (Receivables): party-wise or bill-wise, ageing; party → its bills; bill → voucher
     function drawOut(){
@@ -312,7 +319,7 @@
         tools('<input id="q" type="search" placeholder="Search party or bill name…" autocomplete="off">'+seg("oMode",[["party","Party-wise"],["bill","Bill-wise"]],outMode)+seg("oShow",[["due","To collect"],["adv","Advance"],["all","All"]],outShow));
         let L=outParties().filter(x=>outShow==="all"||(outShow==="due"?x.net>0.5:x.net<-0.5)).filter(x=>match(q,x.party,...x.members)).sort((a,b)=>outShow==="adv"?a.net-b.net:b.net-a.net);
         el("box").innerHTML=table("outP",[
-          {h:"Party",v:x=>x.party,p:1,html:x=>esc(x.party)+(x.members.length?'<small>'+esc(x.members.slice(0,3).join(", "))+(x.members.length>3?" …":"")+"</small>":"")+'<small class="ab-ph">'+x.bills+" bill"+(x.bills===1?"":"s")+(x.bills?' · <span class="'+dcls(x.oldest)+'">'+x.oldest+" days</span>":"")+"</small>"},
+          {h:"Party",v:x=>x.party,p:1,html:x=>esc(x.party)+dupB(x.pk)+(x.members.length?'<small>'+esc(x.members.slice(0,3).join(", "))+(x.members.length>3?" …":"")+"</small>":"")+'<small class="ab-ph">'+x.bills+" bill"+(x.bills===1?"":"s")+(x.bills?' · <span class="'+dcls(x.oldest)+'">'+x.oldest+" days</span>":"")+"</small>"},
           {h:"Bills",v:x=>x.bills,n:1,hp:1},
           {h:"Oldest",v:x=>x.bills?x.oldest:"",n:1,hp:1,html:x=>x.bills?'<span class="ab-days '+dcls(x.oldest)+'">'+x.oldest+"d</span>":""},
           {h:"0-30",v:x=>r2(x.b[0]),n:1,hp:1,sum:1,html:x=>x.b[0]?rs(x.b[0]):""},
@@ -347,7 +354,7 @@
       if(!p){el("box").innerHTML='<div class="ab-empty">No bill due for this party.</div>';cur=null;return}
       const net=r2(p.net!=null?p.net:p.due+(p.opening||0)-p.advance-(p.ret||0)),m=membersOf(pk);
       const bills=(p.bills||[]).map(o=>({...o,pk,days:daysOld(o.invoice_date),got:r2((Number(o.driver)||0)+(Number(o.office)||0)),cn:r2((Number(o.credit_notes)||0)+(Number(o.approved_return)||0)-(Number(o.debit_notes)||0))}));
-      el("box").innerHTML=(m.length?'<p class="ab-note" style="margin:0 0 6px">Bill names: '+esc(m.join(", "))+"</p>":"")+
+      el("box").innerHTML=(m.length?'<p class="ab-note" style="margin:0 0 6px">Bill names: '+esc(m.join(", "))+"</p>":"")+dupS(pk)+
         '<div class="ab-sum" style="--n:5"><div><small>Bills due</small><b class="ab-due">'+rs(p.due)+'</b></div><div><small>Opening</small><b>'+rs(p.opening||0)+'</b></div><div><small>Advance (not set to a bill)</small><b class="ab-adv">'+rs(p.advance||0)+'</b></div><div><small>Goods return (no bill)</small><b>'+rs(p.ret||0)+'</b></div><div class="big"><small>Balance</small><b>'+bal(net)+"</b></div></div>"+
         table("outPB",[
           {h:"Bill date",v:b=>String(b.invoice_date||"").slice(0,10),html:b=>dmy(b.invoice_date)+'<small class="ab-ph">'+esc(billNo(b))+"</small>"},
@@ -374,7 +381,7 @@
         crumb([["List of ledgers · "+pt+bLab()]]);
         const L=[...info.parties.keys(),...new Set(led.map(x=>x.pk))].filter((v,i,a)=>a.indexOf(v)===i).map(pk=>({pk,name:nameOf(pk),...ledOf(pk,p)})).filter(r=>Math.abs(r.open)>0.5||r.rows.length).sort((a,b)=>b.close-a.close);
         el("box").innerHTML=table("ledL",[
-          {h:"Party",v:r=>r.name,p:1},
+          {h:"Party",v:r=>r.name,p:1,html:r=>esc(r.name)+dupB(r.pk)},
           {h:"Opening",v:r=>r.open,n:1,hp:1,html:r=>bal(r.open)},
           {h:"Debit",v:r=>r.dr,n:1,sum:1,html:r=>r.dr?rs(r.dr):""},
           {h:"Credit",v:r=>r.cr,n:1,sum:1,html:r=>r.cr?'<span class="ab-adv">'+rs(r.cr)+"</span>":""},
@@ -394,7 +401,7 @@
           '<td class="n">'+(x.debit?rs2(x.debit):"")+'</td><td class="n ab-adv">'+(x.credit?rs2(x.credit):"")+'</td><td class="n">'+bal(x.bal)+"</td></tr>"};
       const q=qVal();
       cur={k:"led",list:L.rows.map(x=>({x})),onRow:x=>openVoucher(x),ledger:{name,L,p}};
-      el("box").innerHTML=(m.length?'<p class="ab-note" style="margin:0 0 6px">Bill names: '+esc(m.join(", "))+"</p>":"")+split+
+      el("box").innerHTML=(m.length?'<p class="ab-note" style="margin:0 0 6px">Bill names: '+esc(m.join(", "))+"</p>":"")+dupS(ledPk)+split+
         '<div class="ab-sum"><div><small>Opening '+dmy(p.from)+'</small><b>'+bal(L.open)+'</b></div><div><small>Debit (bills)</small><b>'+rs(L.dr)+'</b></div><div><small>Credit (paid, returns)</small><b class="ab-adv">'+rs(L.cr)+'</b></div><div class="big"><small>Closing '+dmy(p.to)+'</small><b>'+bal(L.close)+"</b></div></div>"+
         '<table class="ab-t"><thead><tr><th class="hp" style="width:92px">Date</th><th>Particulars</th><th class="n">Debit</th><th class="n">Credit</th><th class="n">Balance</th></tr></thead><tbody>'+
         '<tr class="ob"><td class="hp">'+dmy(p.from)+'</td><td><b>Opening balance</b><small class="ab-ph">'+dmy(p.from)+'</small></td><td class="n"></td><td class="n"></td><td class="n">'+bal(L.open)+"</td></tr>"+
