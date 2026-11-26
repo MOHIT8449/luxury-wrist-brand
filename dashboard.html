@@ -53,8 +53,6 @@
     .cashbox .cb-act{margin-left:auto;display:flex;gap:6px}
     .cashbox .cb-act a{display:inline-flex;align-items:center;gap:4px;padding:6px 12px;border-radius:8px;font-weight:700;font-size:13px;text-decoration:none;border:1px solid #c9d3df;background:#fff;color:#123a6b;white-space:nowrap}
     .cashbox .cb-act a.call{background:#147d4c;border-color:#147d4c;color:#fff}
-    .cashbox.duty{border-color:#b6e0c8;border-left-color:#147d4c;background:#f0faf4}.cashbox.duty b.cb-who{color:#0f5c37}
-    @media(max-width:640px){.cashbox.duty .cb-act{margin-left:0;width:100%;flex-wrap:nowrap;gap:5px}.cashbox.duty .cb-act a{flex:1 1 0;min-width:0;justify-content:center;padding:7px 4px;font-size:12.5px}}
     /* Approvals waiting (approvals.js, Mohit 7 Nov 2026): only "Waiting approval N" next to the Admin view dropdown; tap = Approvals. */
     .ap-pill{display:inline-flex;align-items:center;gap:6px;height:34px;padding:0 10px;border-radius:6px;border:1px solid #f0c36a;background:#fff8e1;color:#3d2c00;font-size:13px;font-weight:600;text-decoration:none;white-space:nowrap}
     .ap-pill b{min-width:22px;height:22px;border-radius:11px;background:var(--erp-danger,#c62828);color:#fff;font-size:12.5px;line-height:22px;text-align:center;padding:0 6px;animation:apBlink 1.6s ease-in-out 3}
@@ -554,7 +552,7 @@
       const box=document.getElementById("cashBox");
       let r=null;try{r=await client.rpc("lwb_acc_shift_list",{p_from:null,p_to:null})}catch(e){}
       if(!r||r.error||!r.data){box.hidden=true;return}
-      const S=r.data,HS=S.holders&&S.holders.length?S.holders:S.holder?[S.holder]:[],P=S.pending,L=S.last_entry,RN={admin:"Admin",accounts:"Accounts",cashier:"Cashier",manager:"Sales Head · today's cashier",sales:"Sales",salesman:"Sales"};
+      const S=r.data,HS=S.holders&&S.holders.length?S.holders:S.holder?[S.holder]:[],P=S.pending,L=S.last_entry,RN={admin:"Admin",accounts:"Accounts",cashier:"Cashier",sales:"Sales",salesman:"Sales"};
       const H=HS.length>1?Object.assign({},HS[0],{name:HS.map(h=>String(h.name).split(/\s+/)[0]).join(" + "),amount:HS.reduce((a,h)=>a+Number(h.amount||0),0),role:"",mobile:null}):HS[0];
       const t=v=>v?new Date(v).toLocaleTimeString("en-IN",{hour:"2-digit",minute:"2-digit",hour12:true,timeZone:"Asia/Kolkata"}):"";
       const d=v=>v?new Date(v).toLocaleDateString("en-GB",{day:"2-digit",month:"2-digit",timeZone:"Asia/Kolkata"}):"";
@@ -584,25 +582,8 @@
       const box=document.getElementById("cashBox");
       let r=null;try{r=await client.rpc("lwb_acc_shift_list",{p_from:null,p_to:null})}catch(e){}
       const S=r&&!r.error&&r.data,P=S&&S.pending,mine=P&&(P.parts||[]).find(x=>x.to===S.me&&x.status==="PENDING");
+      if(!mine){box.hidden=true;return}
       const rs=v=>"₹"+fmtINR(Math.round(Number(v)||0));
-      if(!mine){
-        // Today's cashier (Mohit 26 Nov 2026): the Sales Head holding the cash box gets the Cashier buttons here.
-        let d=null;if(currentRole==="manager"){try{const x=await client.rpc("lwb_acc_on_duty");d=!x.error&&x.data&&x.data.on_duty?x.data:null}catch(e){}}
-        if(!d){box.hidden=true;return}
-        const t=v=>v?new Date(v).toLocaleTimeString("en-IN",{hour:"2-digit",minute:"2-digit",hour12:true,timeZone:"Asia/Kolkata"}):"";
-        const dd=v=>v?new Date(v).toLocaleDateString("en-GB",{day:"2-digit",month:"2-digit",timeZone:"Asia/Kolkata"}):"";
-        const today=v=>v&&dd(v)===dd(new Date().toISOString());
-        box.replaceChildren();box.classList.add("duty");
-        const ic=document.createElement("span");ic.className="cb-ic";ic.textContent="💼";
-        const m=document.createElement("span");const b=document.createElement("b");b.className="cb-who";b.textContent="You are today's cashier";m.appendChild(b);
-        const sub=document.createElement("span");sub.className="cb-sub";
-        const amt=document.createElement("span");amt.className="cb-amt";amt.textContent=rs(d.amount);
-        sub.append(document.createTextNode("Cash box got "),amt,document.createTextNode(" at "+t(d.since)+(today(d.since)?"":" "+dd(d.since))));
-        const act=document.createElement("span");act.className="cb-act";
-        [["+ Cash In","accounts-dashboard.html?new=IN#cash","call"],["− Cash Out","accounts-dashboard.html?new=OUT#cash",""],["Party pay","accounts-dashboard.html?new=PAY#cash",""],["Cashier →","accounts-dashboard.html#cash",""]]
-          .forEach(([l,h,c])=>{const a=document.createElement("a");a.href=h;a.textContent=l;if(c)a.className=c;act.appendChild(a)});
-        box.append(ic,m,sub,act);box.hidden=false;return;
-      }
       box.replaceChildren();
       const ic=document.createElement("span");ic.className="cb-ic";ic.textContent="💼";
       const m=document.createElement("span");const b=document.createElement("b");b.className="cb-who";b.textContent=rs(mine.amount);
@@ -615,7 +596,7 @@
         const x=await client.rpc("lwb_acc_shift_receive",{p_id:Number(mine.id),p_amount:null,p_note:null});
         if(x.error){await ERPShell.alert(x.error.message);return}
         ERPShell.toast("Cash received");
-        if(currentRole==="manager"){setTimeout(()=>location.reload(),600);return}   // the Cashier page comes into the menu
+        if(currentRole==="manager"){setTimeout(()=>location.reload(),600);return}   // today's cashier: the Cashier page comes into the menu (Mohit 26 Nov 2026)
         loadMyCash()};
       act.appendChild(ok);box.append(ic,m,sub,act);box.hidden=false;
     }
