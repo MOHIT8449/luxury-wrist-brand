@@ -373,7 +373,16 @@
     return null;
   }
   function hiddenPages(){const c=access();return c?c.hidden:[]}
-  function extraPages(){const c=access();return c&&Array.isArray(c.extra)?c.extra:[]}
+  // Today's cashier (Mohit, 26 Nov 2026): the Sales Head who holds the cash box now (Cash handover, Received ✓)
+  // gets the Cashier page as if Admin had ticked it (lwb_acc_duty_cashier_setup.sql, lwb_acc_on_duty()).
+  // It goes away by itself when he hands the box on and the next person presses Received ✓.
+  const DUTY_KEY="lwbDutyCash",DUTY_PAGES=["accounts-dashboard.html#cash"];
+  function dutyInfo(){
+    try{const c=JSON.parse(localStorage.getItem(DUTY_KEY)||"null");const sid=sessionUid();if(c&&c.on&&(!sid||c.uid===sid))return c}catch(e){}
+    return null;
+  }
+  const onDuty=()=>!!dutyInfo();
+  function extraPages(){const c=access();const x=c&&Array.isArray(c.extra)?c.extra:[];return onDuty()?x.concat(DUTY_PAGES.filter(h=>!x.includes(h))):x}
   // hide:1 pages (Cashbook) are never listed in the menu, search or dashboard; they open only
   // from their own private link. menuFor still has them, so Manage Users can tick them.
   function menuForMe(role){return menuFor(role,hiddenPages(),extraPages()).map(g=>({group:g.group,so:g.so,items:g.items.filter(i=>!i.hide)})).filter(g=>g.items.length)}
@@ -391,6 +400,7 @@
   }
   // Same, but re-reads the ticks first when the cached ones do not open this page.
   async function pageRoleFresh(role,page){
+    if(String(role||"").toLowerCase()==="manager"){await refreshAccess(role);return pageRole(role,page)}  // cash box may have moved
     const r=pageRole(role,page);if(r!==role)return r;
     await refreshAccess();return pageRole(role,page);
   }
@@ -581,7 +591,7 @@
     bell(top,role);
     brandTop(top,role);
     dateTop(top,role);
-    refreshAccess().then(changed=>{
+    refreshAccess(role).then(changed=>{
       if(!changed)return;
       if(blocked(role,page,hiddenPages()))return;
       groups=menuForMe(role);flat=groups.flatMap(g=>g.items.map(i=>({...i,g:g.group})));drawSide();drawQuick();
@@ -626,7 +636,9 @@
       transport:[["Home","dashboard.html","home"],["Assign","transport-allocation.html","truck"],["Vehicles","fleet-master.html#vehicles","box"],["Drivers","fleet-master.html#drivers","users"]]
     };
     const permitted=new Set(menuForMe(role).flatMap(g=>g.items.map(i=>i.h.split("#")[0])));
-    const items=(presets[role]||[]).filter(i=>permitted.has(i[1].split("#")[0]));
+    let list=presets[role]||[];
+    if(role==="manager"&&onDuty())list=list.slice(0,3).concat([["Cashier","accounts-dashboard.html#cash","cash"]],list.slice(3));   // today's cashier
+    const items=list.filter(i=>permitted.has(i[1].split("#")[0]));
     if(items.length<2)return;
     const active=h=>(page==="accounts-dashboard.html"&&h==="party-billing.html")||h===(page+(location.hash||"")) || (!h.includes("#") && h===page && !items.some(i=>i[1]===(page+(location.hash||""))));
     const nav=document.createElement("nav");nav.className="erp-bnav";nav.setAttribute("aria-label","Quick menu");
@@ -684,7 +696,7 @@
     return true;
   }
 
-  async function refreshAccess(){
+  async function refreshAccess(role){
     try{
       if(!window.supabase)return false;
       const c=window.__lwbBellClient||(window.__lwbBellClient=window.supabase.createClient(URL_,KEY_));
@@ -694,6 +706,11 @@
       if(r.error)return false; // setup SQL not run yet: role defaults only
       const before=JSON.stringify([hiddenPages(),extraPages()]),hidden=(r.data&&r.data.hidden)||[],extra=(r.data&&r.data.extra)||[];
       try{localStorage.setItem(ACCESS_KEY,JSON.stringify({uid:user.id,hidden,extra}))}catch(e){}
+      // Sales Head: is he today's cashier (holds the cash box)? No SQL yet / error = no.
+      if(String(role||mountedRole||"").toLowerCase()==="manager"){
+        let d=null;try{const x=await c.rpc("lwb_acc_on_duty");d=!x.error&&x.data&&x.data.on_duty?x.data:null}catch(e){}
+        try{localStorage.setItem(DUTY_KEY,JSON.stringify({uid:user.id,on:!!d,since:d&&d.since,amount:d&&d.amount}))}catch(e){}
+      }else{try{localStorage.removeItem(DUTY_KEY)}catch(e){}}
       return JSON.stringify([hiddenPages(),extraPages()])!==before;
     }catch(e){return false}
   }
@@ -975,7 +992,7 @@
   if(!window.LWBKeys&&!document.querySelector('script[src*="erp-keys.js"]')){const s=document.createElement("script");s.src="erp-keys.js";document.head.appendChild(s)}
   // Every drop-down searches like the SKU box in New PO (erp-select.js).
   if(!window.LWBSelect&&!document.querySelector('script[src*="erp-select.js"]')){const s=document.createElement("script");s.src="erp-select.js";document.head.appendChild(s)}
-  window.ERPShell={mount,security:openSecurity,isApp:appMode,menuFor,viewOnly,menuForMe,hiddenPages,extraPages,pageRole,pageRoleFresh,allPages,icon:svg,alert:erpAlert,confirm:erpConfirm,prompt:erpPrompt,toast,done:erpDone};
+  window.ERPShell={mount,onDuty,dutyInfo,security:openSecurity,isApp:appMode,menuFor,viewOnly,menuForMe,hiddenPages,extraPages,pageRole,pageRoleFresh,allPages,icon:svg,alert:erpAlert,confirm:erpConfirm,prompt:erpPrompt,toast,done:erpDone};
   const me=document.currentScript;
   if(me&&me.hasAttribute("data-auto")){
     if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",auto);else auto();

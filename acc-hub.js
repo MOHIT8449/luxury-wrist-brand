@@ -141,7 +141,7 @@
     const top=document.querySelector(".hub-top");if(!top)return;
     const h=top.querySelector("h1");if(h)h.textContent=VIEWS[view].name;
     // back to the Finance home (finance.html, Mohit 20 Nov 2026): money now, work waiting, brand-wise
-    if(!el("hubFin")){const a=document.createElement("a");a.id="hubFin";a.href="finance.html";a.className="hub-fin";a.title="Finance home (Ctrl+Alt+F)";a.textContent="‹ Finance";top.insertBefore(a,top.firstChild)}
+    if(!el("hubFin")&&!(window.ERPShell&&ERPShell.onDuty&&ERPShell.onDuty())){const a=document.createElement("a");a.id="hubFin";a.href="finance.html";a.className="hub-fin";a.title="Finance home (Ctrl+Alt+F)";a.textContent="‹ Finance";top.insertBefore(a,top.firstChild)}
     let b=el("hubViews");
     if(views.length<2){if(b)b.remove();return}
     if(!b){b=document.createElement("nav");b.id="hubViews";b.className="hub-views";b.setAttribute("aria-label","Accounts view");

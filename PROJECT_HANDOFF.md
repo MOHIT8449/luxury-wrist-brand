@@ -5,6 +5,11 @@
 **Status:** Active development / verification. Do not assume all modules are completed or fully tested.
 
 
+## Today's cashier = the Sales Head holding the cash box (26 Nov 2026)
+- Mohit: 3 Sales Heads, 1 Accountant, 1 Admin; one Sales Head is the cashier of the day. Cash is handed to him (Cash handover, he presses Received ✓); then he makes every Cash In / Cash Out / Party payment, and only he sees those tabs.
+- SQL `lwb_acc_duty_cashier_setup.sql` (test 11 in `tests/cashier-role`): `lwb_acc_duty_cashier(user)` = active role `manager` with a RECEIVED part in the latest batch that has one (same holders as `lwb_acc_shift_list`). `lwb_acc_user()`, `lwb_acc_cashier()`, `lwb_acc_shift_ok(user)` also take him (cash book, party payment, kasar, hand over again; no Tally / bank check). `lwb_acc_on_duty()` -> {on_duty, since, amount} for the website. Every active Sales Head is added to `lwb_acc_cash_people`. Moves by itself when he hands the box on and the next person presses Received ✓. Admin / Accounts / Cashier unchanged.
+- UI: erp-shell.js (cache `lwbDutyCash`, refreshed with page access for managers) adds `accounts-dashboard.html#cash` to the extra pages (page role = cashier, Cashier view only) + "Cashier" in the phone bottom bar; `ERPShell.onDuty()`. dashboard.html: green "You are today's cashier" strip with + Cash In / − Cash Out / Party pay / Cashier → (accounts-dashboard.html `?new=PAY` opens Party payment); after Received ✓ a Sales Head's dashboard reloads. acc-hub.js hides "‹ Finance" for him. Screenshots (PGlite running the real SQL): project files `today-cashier/`.
+
 ## Admin: Undo Delivered on a PO marked by mistake (25 Nov 2026)
 - Mohit: some POs were only Loaded but got marked Delivered by mistake (~5 that day, e.g. SHREE JAGDISH TRADER LXY-00673/00655/00654); Admin needs a reverse option.
 - Cause check: nothing marks a PO Delivered on payment / settlement ("Settled" is only a badge on a delivered PO). Delivered comes only from `lwb_admin_mark_order` (Admin / Sales Head, one PO or bulk "Mark Delivered") or a driver delivery report; the PO change history / mark log shows who.
