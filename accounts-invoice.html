@@ -471,9 +471,11 @@ function renderAssignedVehicle(orderId){
 async function fetchAssignedVehicle(orderId){
  assignedVehicle=null;assignedOrderId=null;assignedError="";
  try{
+  // newest row: a PO saved twice had two rows and .maybeSingle() failed (LXY-00691, 26 Nov 2026)
   const result=await db.from("dispatch_assignments")
    .select("driver_name,driver_mobile,vehicle_no,loading_person,transporter_name")
-   .eq("order_id",orderId).maybeSingle();
+   .eq("order_id",orderId).order("assigned_at",{ascending:false,nullsFirst:false}).limit(1)
+   .then(r=>r.error?r:{...r,data:(r.data||[])[0]||null});
   if(result.error)throw result.error;
   // Self Pickup: a blank driver / mobile / vehicle comes from the details typed on the same order.
   const pk=await db.from("lwb_order_pickup").select("driver_name,driver_mobile,vehicle_no,godown_manager_name")

@@ -250,9 +250,14 @@ async function saveAllocation(e){
         const latestStatus=status(latest.data.status);
         if(!['approved','approved_next','manager_approved','warehouse_approved','transport_allocated','allocated','loading'].includes(latestStatus))
           throw Error('no longer available for transport assignment. Loading is confirmed.');
+        // Look again before adding: this list can be old (the PO popup may have saved transport since).
+        // A second row for one PO broke Print PO (LXY-00691, 26 Nov 2026), so update every row of this PO.
         let result;
-        if(existing){
-          result=await db.from('dispatch_assignments').update(payload).eq('id',existing.id).select('id').single();
+        const fresh=existing?{data:[existing]}:await db.from('dispatch_assignments').select('id').eq('order_id',current.id).limit(1);
+        if(fresh.error)throw fresh.error;
+        if((fresh.data||[]).length){
+          result=await db.from('dispatch_assignments').update(payload).eq('order_id',current.id).select('id');
+          if(!result.error&&!(result.data||[]).length)result={error:Error('transport was not saved. Please retry.')};
         }else{
           result=await db.from('dispatch_assignments').insert(payload).select('id').single();
         }
