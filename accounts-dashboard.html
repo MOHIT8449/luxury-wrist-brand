@@ -12,8 +12,9 @@
   <script src="erp-shell.js?v=20261124r"></script>
 <script src="erp-list.js"></script>
   <script src="excel-io.js"></script>
-  <script src="party-pay.js?v=20261125b"></script>
-  <script src="acc-hub.js?v=20261125c"></script>
+  <script src="party-pay.js?v=20261126d"></script>
+  <script src="dup-note.js?v=20261126d"></script>
+  <script src="acc-hub.js?v=20261126d"></script>
   <style>
     .status{text-align:center;padding:80px 20px;font-size:15px;color:#555}
     [hidden]{display:none!important}
@@ -189,6 +190,8 @@
     .lg-head .acx-btn{height:34px;padding:0 11px;font-size:13.5px}.lg-head .sp{flex:1}
     .lg-bal{font-size:15px;font-weight:800;padding:3px 12px;border-radius:99px}
     .lg-sum{display:flex;flex-wrap:wrap;gap:4px 14px;margin:0 0 8px;font-size:13px;color:#4b5763}.lg-sum b{color:var(--erp-ink)}
+    .dup-t .dup-ac{white-space:nowrap;text-align:right;width:1%}.dup-t .dup-ac .acx-btn{height:32px;padding:0 10px;font-size:13px}
+    @media(max-width:600px){.dup-t .dup-ac{white-space:normal}.dup-t .dup-ac .acx-btn{margin:2px 0}.dup-t .dup-ac .acx-btn.grn{padding:0 8px}}
     .lg-t td small{display:block;color:var(--erp-muted);font-size:12px}.lg-t tr.cx td{opacity:.5;text-decoration:line-through}
     .lg-t .acx-btn{height:28px;padding:0 8px;font-size:12.5px}
     @media(max-width:600px){.lg-t th,.lg-t td{padding-left:4px;padding-right:4px}.lg-t td:last-child{padding:4px 0}.lg-t .acx-btn{padding:0 6px;height:26px}.lg-t td .tag{font-size:11px}.lg-t td:first-child{min-width:0;word-break:break-word}.lg-head h3{flex-basis:auto}}
@@ -370,6 +373,7 @@
     let SH=null;   // shift handover in the day (lwb_acc_shift_handover_setup.sql); null = not set up
     // lwb_acc_cash_diff_damaged_setup.sql: Office / Other heads of a handover, Cash Difference ledger, Damaged cash box
     let SX={rows:[]},CDF=null,DMG=null;
+    let DUP=null,dupShow="PENDING";  // duplicate / torn notes from parties (lwb_acc_dup_note_setup.sql); null = not set up
     let HV=[],hvSub="own",hvPosted=false,PR=[];  // PR = Porter / one-time trips (lwb_trip_rent_setup.sql)
     let X={entries:{},staff_heads:[],payees:[]},S=[],V=[],VR={vehicles:[],entries:{}},C=[],piErr=false,D=null,PI=null,per="today",from=todayISO(),to=todayISO(),tab="book",bookF="all",outRows=null,me={id:"",role:""};
 
@@ -407,6 +411,7 @@
         const sh=await client.rpc("lwb_acc_shift_list",{p_from:from,p_to:to});SH=sh.error?null:sh.data;
         const [sx,cdf,dmg]=await Promise.all([client.rpc("lwb_acc_shift_extras",{p_from:from,p_to:to}),client.rpc("lwb_acc_cdiff_get"),client.rpc("lwb_acc_dmg_get")]);
         SX=sx.error||!sx.data?{rows:[]}:sx.data;CDF=cdf.error?null:cdf.data;DMG=dmg.error?null:dmg.data;
+        const dp=await client.rpc("lwb_acc_dup_list",{p_days:120});DUP=dp.error||!dp.data?null:dp.data;
         const lt2=await client.rpc("lwb_acc_late_lines",{p_from:from,p_to:to});LATE=lt2.error?[]:(lt2.data||[]);
         HV=hv.error?[]:(hv.data||[]);PR=pr.error?[]:(pr.data||[]);if(hvSub==="hired"&&!HV.length||hvSub==="porter"&&!PR.length)hvSub="own";
         C=cq.error?[]:(cq.data||[]);
@@ -457,7 +462,7 @@
 
     // short alerts of the Accounts header (acc-hub.js): opening cash, cash with someone, bank check, cheques
     function renderBanners(){
-      LWBAccHub.alerts(shiftAlerts().concat(LWBAccHub.cashAlerts(D,C,true)));
+      LWBAccHub.alerts(shiftAlerts().concat(dupAlerts(),LWBAccHub.cashAlerts(D,C,true)));
       const sb=el("startBtn");if(sb)sb.onclick=setOpening;
     }
 
@@ -510,7 +515,7 @@
     function renderTab(){
       if(tab==="out"){location.href="party-billing.html?tab=due";return}   // Party outstanding = To collect of Billing
       LWBAccHub.setTab(tab);LWBAccHub.counts({verify:D.pending.length,chq:chequesDue().length});
-      if(tab==="sum")renderSummary();else if(tab==="book")renderBook();else if(tab==="verify")renderVerify();else if(tab==="out")renderOutstanding();else if(tab==="close")renderCloses();else if(tab==="staff")renderStaff();else if(tab==="veh")renderVehicles();else if(tab==="cheques")renderCheques();else if(tab==="deps")renderDeposits();else if(tab==="cdiff")renderCashDiff();else if(tab==="dmg")renderDamaged();else renderSetup();
+      if(tab==="sum")renderSummary();else if(tab==="book")renderBook();else if(tab==="verify")renderVerify();else if(tab==="out")renderOutstanding();else if(tab==="close")renderCloses();else if(tab==="staff")renderStaff();else if(tab==="veh")renderVehicles();else if(tab==="cheques")renderCheques();else if(tab==="deps")renderDeposits();else if(tab==="cdiff")renderCashDiff();else if(tab==="dmg")renderDamaged();else if(tab==="dup")renderDup();else renderSetup();
     }
     function statusTag(l){
       if(l.status==="PENDING")return '<span class="tag t-amb">Waiting bank check</span>';
@@ -874,6 +879,47 @@
           if(!(a>0)){await ERPShell.alert("Enter the amount.");return false}if(!n){await ERPShell.alert("Write a note.");return false}
           try{await rpc("lwb_acc_cdiff_add",{p:{kind,amount:a,note:n}})}catch(e){await ERPShell.alert(e.message);return false}
           toastMsg(f?rs(a)+" back in cash in hand":rs(a)+" written off");load()},f?"grn":"redf");
+    }
+
+    /* ---------- Duplicate / torn notes from parties (Mohit, 26 Nov 2026) ----------
+       The cashier enters only the good cash in the party payment and the duplicate / torn note apart. It stays due
+       on the party (ledger) and shows on its next PO. ✓ Collected = party payment of the good note, then it closes. */
+    const dupPend=()=>DUP?(DUP.rows||[]).filter(r=>r.status==="PENDING"):[];
+    function dupAlerts(){const P=dupPend();if(!P.length)return [];
+      return [{c:"",b:"🧾 "+P.length+" duplicate / torn note"+(P.length>1?"s":"")+" pending · "+rs(P.reduce((a,r)=>a+Number(r.amount),0)),
+        s:P.slice(0,3).map(r=>esc(r.party)+" "+rs(r.amount)).join(" · ")+(P.length>3?" …":""),t:"dup",go:"Open"}]}
+    function renderDup(){
+      if(!DUP){el("tabBody").innerHTML='<div class="acx-empty">Duplicate notes are not set up yet. It sets itself up when this change is merged (lwb_acc_dup_note_setup.sql).</div>';return}
+      const all=DUP.rows||[],P=dupPend(),L=dupShow==="PENDING"?P:all,tot=P.reduce((a,r)=>a+Number(r.amount),0);
+      const ST={PENDING:["Pending","t-red"],COLLECTED:["✓ Collected","t-grn"],CANCELLED:["Cancelled","t-gry"]};
+      el("tabBody").innerHTML='<div class="lg-head"><h3>🧾 Duplicate / torn notes</h3><span class="lg-bal '+(P.length?"t-red":"t-grn")+'">'+(P.length?P.length+" pending · "+rs(tot):"✓ Nothing pending")+'</span><span class="sp"></span>'+
+          '<span class="acx-seg" style="display:inline-flex;gap:4px">'+[["PENDING","Pending"],["ALL","All"]].map(([k,l])=>'<button type="button" class="acx-btn'+(dupShow===k?" pri":"")+'" data-dupv="'+k+'">'+l+'</button>').join("")+'</span>'+
+          (DUP.can_add?'<button type="button" class="acx-btn redf" data-dupadd>+ Duplicate note</button>':"")+'</div>'+
+        (L.length?'<div style="overflow:auto"><table class="acx-t lg-t dup-t"><thead><tr><th>Party</th><th class="n">Amount</th><th></th></tr></thead><tbody>'+
+          L.map(r=>{const st=ST[r.status]||[r.status,"t-gry"],pend=r.status==="PENDING";
+            return '<tr'+(r.status==="CANCELLED"?' class="cx"':"")+'><td><b>'+esc(r.party)+'</b> <span class="tag '+(r.kind==="TORN"?"t-amb":"t-red")+'">'+(r.kind==="TORN"?"Torn":"Duplicate")+'</span>'+
+              '<small>'+esc(Object.entries(r.notes||{}).sort((a,b)=>b[0]-a[0]).map(([n,c])=>c+" × ₹"+n).join(" + "))+' · '+dmy(r.day).slice(0,5)+' '+hm(r.at)+' · '+esc(r.by||"")+(r.note?" · "+esc(r.note):"")+
+              (r.done_at?'<br>'+(r.status==="COLLECTED"?"Collected ":"Cancelled ")+dmy(String(r.done_at).slice(0,10)).slice(0,5)+" · "+esc(r.done_by||"")+(r.done_note?" · "+esc(r.done_note):""):"")+'</small></td>'+
+              '<td class="n"><b class="'+(pend?"minus":"")+'" style="font-size:15px">'+rs(r.amount)+'</b><br><span class="tag '+st[1]+'">'+st[0]+'</span></td>'+
+              '<td class="dup-ac">'+(pend&&(DUP.can_add||DUP.is_admin)?'<button type="button" class="acx-btn grn" data-dupok="'+r.id+'">✓ Collected</button> ':"")+
+                (pend&&(DUP.is_admin||(r.mine&&r.day===DUP.today))?'<button type="button" class="acx-btn red" data-dupx="'+r.id+'" aria-label="Cancel">✕</button>':"")+'</td></tr>'}).join("")+'</tbody></table></div>'
+          :'<div class="acx-empty">'+(dupShow==="PENDING"?"No duplicate / torn note pending.":"No duplicate / torn note in the last 120 days.")+'</div>')+
+        '<p class="acx-note">'+tipI("Party payment: put only the good cash in Cash, and the duplicate / torn notes in the red Dup / torn line. The note is not in cash in hand and stays due on the party. Its next PO shows: take the note back, collect a good note. When the good note comes, press ✓ Collected: it is saved as that party's cash payment and the note closes.")+'</p>';
+      const B=el("tabBody");
+      B.querySelectorAll("[data-dupv]").forEach(b=>b.onclick=()=>{dupShow=b.dataset.dupv;renderDup()});
+      const ad=B.querySelector("[data-dupadd]");if(ad)ad.onclick=()=>partyPay("",0,"CASH",{dupOpen:true});
+      B.querySelectorAll("[data-dupok]").forEach(b=>b.onclick=()=>dupCollect(all.find(r=>String(r.id)===b.dataset.dupok)));
+      B.querySelectorAll("[data-dupx]").forEach(b=>b.onclick=async()=>{const why=await ERPShell.prompt("Cancel this duplicate / torn note? It stops showing on the party and its PO.","",{title:"Cancel",placeholder:"Why (e.g. wrong party / party will never replace)"});if(why==null)return;
+        act(b,()=>rpc("lwb_acc_dup_cancel",{p_id:Number(b.dataset.dupx),p_reason:why}))});
+    }
+    // ✓ Collected: the good note is a normal party payment (cash in hand + ledger), then the note closes with it
+    function dupCollect(r){
+      if(!r)return;
+      partyPay(r.party,Number(r.amount),"CASH",{brand:r.company_id||undefined,lockParty:true,noDup:true,
+        remark:"Good note for "+(r.kind==="TORN"?"torn":"duplicate")+" note of "+dmy(r.day).slice(0,5)+" ("+Object.entries(r.notes||{}).map(([n,c])=>c+"×"+n).join("+")+")",
+        after:async x=>{if(!x||!x.receipt_id)throw Error("Payment saved, but the note is still pending. Press ✓ Collected again only if the payment did not save.");
+          await rpc("lwb_acc_dup_collect",{p_id:r.id,p_receipt_id:x.receipt_id,p_note:null});
+          ERPShell.toast&&ERPShell.toast("✓ "+rs(r.amount)+" good note collected · "+r.party)}});
     }
 
     /* ---------- Damaged cash box (Mohit, 25 Nov 2026) ----------
@@ -1640,9 +1686,14 @@
     }
 
     // Party payment: on the main party, split over its bills (oldest first / by hand), rest advance
-    async function partyPay(party,amount,mode){
+    async function partyPay(party,amount,mode,opt){
+      opt=opt||{};
       try{if(!PI)PI=await LWBPartyPay.load(client)}catch(e){await ERPShell.alert(e.message);return}
-      LWBPartyPay.open({client,info:PI,party:party||"",amount,mode,onSaved:r=>{
+      LWBPartyPay.open({client,info:PI,party:party||"",amount,mode,brand:opt.brand||undefined,remark:opt.remark,lockParty:!!opt.lockParty,dupOpen:!!opt.dupOpen,
+        canDup:!!(DUP&&DUP.can_add)&&!opt.noDup,onSaved:async r=>{
+        if(opt.after){try{await opt.after(r)}catch(e){await ERPShell.alert(errText(e))}}
+        if(r.dupOnly){ERPShell.toast&&ERPShell.toast("🧾 "+(r.dupKind==="TORN"?"Torn":"Duplicate")+" note "+rs(r.dup)+" saved · "+r.party+" · Admin informed");outRows=null;PI=null;load();return}
+        if(r.dup&&ERPShell.toast)setTimeout(()=>ERPShell.toast("🧾 "+(r.dupKind==="TORN"?"Torn":"Duplicate")+" note "+rs(r.dup)+" pending on "+r.party),2600);
         ERPShell.toast?(r.kasarOnly?ERPShell.toast("Kasar "+rs(r.kasar)+" saved on bill "+r.bill+" · "+r.party):ERPShell.toast(rs(r.amount)+" received from "+r.party+" · "+rs(r.split)+" against bills"+(Number(r.advance)>0.5?" · advance "+rs(r.advance):""))):null;
         outRows=null;PI=null;
         load().then(()=>{const c=C.find(x=>x.src==="PAYMENT"&&x.status==="IN_HAND"&&!x.photos.length&&Date.now()-new Date(x.at)<300000);
@@ -1793,7 +1844,7 @@
       if(qt==="out"){location.replace("party-billing.html?tab=due");return}
       const mine=h=>ERPShell.menuForMe(realRole).some(g=>g.items.some(i=>i.h===h));
       const hv=LWBAccHub.mount({page:"cash",role:realRole==="admin"?"admin":role,canParty:mine("party-billing.html#party"),acrs:mine("ecrs.html"),
-        tab:["book","deps","cheques","verify","sum","close","staff","veh","setup"].includes(qt)?qt:"",
+        tab:["book","deps","cheques","verify","sum","close","staff","veh","setup","cdiff","dmg","dup"].includes(qt)?qt:"",
         onTab:t=>{tab=t;if(D)renderTab()},
         onAct:a=>{if(!D)return;if(a==="pay")partyPay("");else if(a==="close")closeDay();else newEntry(a)}});
       if(hv.away)return;

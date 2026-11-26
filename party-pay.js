@@ -161,6 +161,13 @@
 .lpp .kseg{display:grid;grid-template-columns:1fr 1fr;border:1.5px solid #e9c46a;border-radius:8px;overflow:hidden;height:40px;box-sizing:border-box}
 .lpp .kseg button{border:0;background:#fff;font:inherit;font-size:12.5px;font-weight:600;color:#7a5300;cursor:pointer;padding:0 4px}.lpp .kseg button[aria-pressed=true]{background:#9a6b00;color:#fff}
 .lpp .tot span{display:block;font-size:13px;color:#7a5300}
+.lpp .dline{background:#fff1f3;border-radius:8px;padding:6px 6px 6px 8px;margin-top:2px}.lpp .dline>b{color:#b3122b}
+.lpp .dline .dsum{font-weight:800;color:#b3122b;font-size:15px}.lpp .dline .lnk{color:#b3122b;text-align:left}
+.lpp .dseg{display:grid;grid-template-columns:1fr 1fr;border:1.5px solid #f3b8c1;border-radius:8px;overflow:hidden;height:36px;box-sizing:border-box}
+.lpp .dseg button{border:0;background:#fff;font:inherit;font-size:12.5px;font-weight:600;color:#b3122b;cursor:pointer;padding:0 4px}.lpp .dseg button[aria-pressed=true]{background:#c8102e;color:#fff}
+.lpp .dnotes{margin-top:6px}.lpp .dnotes input{border-color:#f3b8c1}
+.lpp .dhint{grid-column:1/-1;margin:2px 0 0;font-size:12px;color:#7a2a36}
+.lpp .tot .dt2{color:#b3122b}
 .lpp .ksr b.k{display:inline-block;background:#9a6b00;color:#fff;border-radius:99px;padding:0 8px;font-size:12.5px;margin-right:4px}
 .lpp .ksr small{display:block;color:#7a5f1f;font-size:12px;margin-top:1px}
 .lpp .ksr.on{background:#fdecb3;border-color:#9a6b00}
@@ -178,7 +185,7 @@
 .lpp .clist{position:absolute;left:0;right:0;top:100%;z-index:5;background:#fff;border:1px solid #d5dbe3;border-radius:8px;box-shadow:0 10px 24px rgba(0,0,0,.12);max-height:260px;overflow:auto;margin-top:2px}
 .lpp .clist button{display:flex;justify-content:space-between;gap:8px;width:100%;text-align:left;border:0;border-bottom:1px solid #f0f2f5;background:#fff;padding:9px 10px;font:inherit;cursor:pointer}
 .lpp .clist button.on,.lpp .clist button:hover{background:#eef4ff}.lpp .clist small{color:#66788e;white-space:nowrap}
-@media(max-width:560px){.lpp .kline .kseg{grid-column:2}.lpp-back{padding:0;align-items:flex-end}.lpp{border-radius:14px 14px 0 0;max-height:96dvh}
+@media(max-width:560px){.lpp .kline .kseg,.lpp .dline .dseg{grid-column:2}.lpp .dnotes{margin-left:0}.lpp-back{padding:0;align-items:flex-end}.lpp{border-radius:14px 14px 0 0;max-height:96dvh}
  .lpp .mode{grid-template-columns:72px minmax(0,1fr)}.lpp .mode input.ref{grid-column:2}.lpp .notes{margin-left:0}
  .lpp .sum b{font-size:14px}.lpp td input{width:92px}.lpp .seg button{font-size:12px}}`;
     document.head.appendChild(s);
@@ -216,7 +223,10 @@
   <label class="l">Money received</label>
   <div class="modes">${MODES.map(([m,t,ph])=>`<div class="mode"><b>${t}</b><input class="amt" data-m="${m}" inputmode="decimal" autocomplete="off" placeholder="₹ 0" aria-label="${t} amount">${m==="CASH"?`<button type="button" class="lnk" data-cnt>Count notes</button>`:`<input class="ref" data-r="${m}" maxlength="100" autocomplete="off" placeholder="${ph}" aria-label="${t} ${ph}">`}</div>${m==="CASH"?`<div class="notes" data-notes hidden>${NOTES.map(n=>`<span>₹${n}×<input data-n="${n}" inputmode="numeric" placeholder="0" aria-label="${n} notes"></span>`).join("")}<span>coins<input data-n="coins" inputmode="decimal" placeholder="0" aria-label="coins"></span></div>`:""}`).join("")}</div>
   <div class="mode kline" data-kline><b>Kasar</b><input class="kin" data-kin inputmode="decimal" autocomplete="off" placeholder="₹ 0" aria-label="Kasar amount"><div class="kseg" data-kmode><button type="button" data-k="LESS" aria-pressed="true">Paid less</button><button type="button" data-k="EXTRA" aria-pressed="false">Paid extra</button></div></div>
-  <div class="tot" style="margin-top:8px">Total <b data-tot>₹0</b><span data-ktot></span></div>
+  <div class="mode dline" data-dline hidden><b>Dup / torn</b><button type="button" class="lnk" data-dopen>+ Duplicate / torn note</button><div class="dseg" data-dkind hidden><button type="button" data-dk="DUPLICATE" aria-pressed="true">Duplicate</button><button type="button" data-dk="TORN" aria-pressed="false">Torn</button></div>
+   <div class="notes dnotes" data-dnotes hidden style="grid-column:1/-1">${["500","200","100","50","20","10"].map(n=>`<span>₹${n}×<input data-dn="${n}" inputmode="numeric" placeholder="0" aria-label="${n} duplicate notes"></span>`).join("")}</div>
+   <p class="dhint" data-dhint hidden>Not in Cash above (Cash = good notes only). It stays due on the party until a good note comes on the next trip. Admin and the office get a popup.</p></div>
+  <div class="tot" style="margin-top:8px">Total <b data-tot>₹0</b><span data-ktot></span><span class="dt2" data-dtot></span></div>
   <p class="cwarn" data-cwarn hidden>Cash is ₹2 lakh or more (269ST). It will still save in full.</p>
  </div>
  <div><label class="l">${adjust?"Adjust the advance against":"Use this money for"}</label>
@@ -242,6 +252,7 @@
     dp.onchange=()=>{dt.value=dmy(dp.value)};
     dt.oninput=()=>{const d=dt.value.replace(/\D/g,"");if(/^\d{8}$/.test(d)&&!dt.value.includes("/"))dt.value=d.slice(0,2)+"/"+d.slice(2,4)+"/"+d.slice(4)};
     if(o.amount)q('.amt[data-m="'+(o.mode||"CASH")+'"]').value=r2(o.amount);
+    if(o.remark)q("#lppR").value=o.remark;
 
     const whole=()=>info.parties.get(key(party))||{party,bills:[],due:0,advance:0,opening:0,members:[],brands:{}};
     const P=()=>BR.length?slice(whole(),brand):whole();
@@ -334,7 +345,7 @@
     }
     // Suggestion when no kasar is typed: a bill this money leaves short by <= KMAX (or, Oldest bill first, a little extra).
     function kasarHint(){
-      if(adjust||how==="adv"||kas())return [];
+      if(adjust||how==="adv"||kas()||(dupReady&&dupAmt()>0))return [];   // a short bill because of a duplicate note is not kasar
       const p=P(),pl=plan(),out=[];
       if(money()<0.01){ // no money: offer kasar on a bill that has only a small balance left (after the advance)
         const adv=r2(Math.max(0,p.advance||0)),cr=r2(adv+Math.max(0,p.ret||0)),left=b=>r2(b.due-Math.min(cr,b.due));
@@ -382,11 +393,26 @@
       q("[data-cwarn]").hidden=!(num(q('.amt[data-m="CASH"]').value)>=200000);
       q("[data-left]").innerHTML=adjust?`<span>Advance ${rs(m)}</span><span>Adjusted now <b>${rs(split)}</b></span><span>Advance left <b class="${left<-0.5?"r":"g"}">${rs(left)}</b></span>`:
         `<span>Against bills <b>${rs(split)}</b></span>${ks.length?`<span>Kasar <b style="color:#9a6b00">${rs(ks.reduce((a,x)=>a+x.amount,0))}</b></span>`:""}<span>${left<-0.5?"More than received":"Stays as advance"} <b class="${left<-0.5?"r":"g"}">${rs(Math.abs(left))}</b></span>`;
+      if(dupReady&&!q("[data-dline]").hidden)drawDup();
     }
     function drawAll(){drawBrand();drawSum();qa("[data-h]").forEach(b=>b.setAttribute("aria-pressed",String(b.dataset.h===how)));drawBills();drawLeft()}
     q("[data-kin]").oninput=()=>{if(how==="auto")drawBills();drawLeft()};
     qa("[data-k]").forEach(b=>b.onclick=()=>{setKmode(b.dataset.k);if(how==="auto")drawBills();drawLeft()});
     if(adjust)q("[data-kline]").hidden=true;
+    // Duplicate / torn note (lwb_acc_dup_note_setup.sql): only today's cashier (o.canDup). Not money received.
+    var dkind="DUPLICATE",dupReady=true;
+    const dline=q("[data-dline]"),dnotes=q("[data-dnotes]");dline.hidden=!(o.canDup&&!adjust);
+    function readDup(){const n={};dnotes.querySelectorAll("[data-dn]").forEach(i=>{const v=Math.floor(num(i.value));if(v>0)n[i.dataset.dn]=v});return n}
+    function dupAmt(){return dline.hidden?0:Object.entries(readDup()).reduce((a,[k,v])=>a+Number(k)*v,0)}
+    function drawDup(){const a=dupAmt(),n=Object.values(readDup()).reduce((x,y)=>x+y,0);
+      q("[data-dopen]").textContent=dnotes.hidden?"+ Duplicate / torn note":a?n+" note"+(n>1?"s":"")+" · "+rs(a):"Notes:";
+      q("[data-dopen]").className=a?"lnk dsum":"lnk";
+      q("[data-dtot]").textContent=a?"🧾 "+(dkind==="TORN"?"Torn":"Duplicate")+" "+rs(a)+" not counted: stays due on the party":"";
+      if(!adjust&&a&&money()<0.01&&!kas())q("[data-ok]").textContent="Save "+(dkind==="TORN"?"torn":"duplicate")+" note"}
+    const openDup=()=>{dnotes.hidden=false;q("[data-dkind]").hidden=false;q("[data-dhint]").hidden=false;drawDup();dnotes.querySelector("input").focus()};
+    q("[data-dopen]").onclick=()=>{if(dnotes.hidden)openDup();else dnotes.querySelector("input").focus()};
+    qa("[data-dk]").forEach(b=>b.onclick=()=>{dkind=b.dataset.dk;qa("[data-dk]").forEach(x=>x.setAttribute("aria-pressed",String(x===b)));drawDup()});
+    dnotes.querySelectorAll("[data-dn]").forEach(i=>i.oninput=()=>{drawLeft()});
     qa("[data-h]").forEach(b=>b.onclick=()=>{if(b.dataset.h==="pick"&&!manual.size){how="auto";manual=new Map(plan())}how=b.dataset.h;drawAll()});
     qa(".amt").forEach(i=>i.oninput=()=>{if(how==="auto")drawBills();drawLeft()});
     // cash note count
@@ -434,6 +460,18 @@
           if(m==="CASH"){const n=readNotes();if(Object.keys(n).length&&!notes.hidden)l.notes=n}
           else{l.ref=q('[data-r="'+m+'"]').value.trim();if(m==="CHEQUE"&&!l.ref)return fail("Enter the cheque number.")}
           lines.push(l)}
+        // duplicate / torn note saved with this payment (or alone): lwb_acc_dup_add
+        const dupN=readDup(),dupA=dupAmt();
+        const saveDup=async receipt=>{if(!dupA)return null;
+          const {data:dd,error:de}=await o.client.rpc("lwb_acc_dup_add",{p:{party,company_id:BR.length?brand:null,kind:dkind,notes:dupN,receipt_id:receipt||null,note:q("#lppR").value.trim()||null}});
+          return de?{err:errText(de)}:{row:dd}};
+        if(!lines.length&&dupA&&!kas()){ // only a duplicate / torn note, no money
+          busy=true;q("[data-ok]").disabled=true;
+          try{const r=await saveDup(null);if(r.err)return fail(r.err);close();if(o.onSaved)o.onSaved({dupOnly:true,dup:dupA,dupKind:dkind,party,amount:0,split:0,advance:0})}
+          catch(e){fail(errText(e))}
+          finally{busy=false;q("[data-ok]").disabled=false}
+          return;
+        }
         if(!lines.length&&kas()){ // kasar only: no money, just write off the small balance on that bill
           const S=split();if(S.err)return fail("Kasar: "+S.err);
           const k=S.kasar[0];let remark=q("#lppR").value.trim()||null;
@@ -454,7 +492,7 @@
           finally{busy=false;q("[data-ok]").disabled=false}
           return;
         }
-        if(!lines.length)return fail("Enter the money received (Cash / UPI / Bank / Cheque) or a kasar amount.");
+        if(!lines.length)return fail("Enter the money received (Cash / UPI / Bank / Cheque)"+(o.canDup?", a kasar amount or the duplicate / torn notes.":" or a kasar amount."));
         const m=money();if(billSum>m+0.5)return fail("Bills "+rs(billSum)+" is more than the money received "+rs(m)+".");
         args=["lwb_party_receive",{p_party:party,p_pay_date:date,p_lines:lines,p_allocs:how==="auto"?null:how==="adv"?[]:allocs,p_remark:q("#lppR").value.trim()||null}];
         if(BR.length)args[1].p_company_id=brand;
@@ -471,13 +509,16 @@
       try{
         const {data,error}=await o.client.rpc(args[0],args[1]);
         if(error)throw error;
+        const dr=!adjust&&dupAmt()?await saveDup(data&&data.receipt_id).catch(e=>({err:errText(e)})):null;
         close();
-        if(o.onSaved)o.onSaved(data||{});
+        if(dr&&dr.err&&window.ERPShell&&ERPShell.alert)ERPShell.alert("Payment saved. The duplicate / torn note was NOT saved: "+dr.err);
+        if(o.onSaved)o.onSaved({...(data||{}),...(dr&&dr.row?{dup:dupAmt(),dupKind:dkind}:{})});
       }catch(e){fail(errText(e))}
       finally{busy=false;q("[data-ok]").disabled=false}
     };
     pickDefaultBrand();
     drawAll();
+    if(o.dupOpen&&!dline.hidden)setTimeout(openDup,80);
     setTimeout(()=>{(party?(adjust?q("[data-ok]"):q('.amt[data-m="'+(o.mode||"CASH")+'"]')):pin).focus()},60);
     return {close};
   }

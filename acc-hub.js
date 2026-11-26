@@ -21,14 +21,14 @@
   "use strict";
   const T={make:"Bills to make",made:"Bills made",due:"To collect",led:"Ledger",pay:"Payments",ret:"Returns",
     book:"Day book",cheques:"Cheques",verify:"Bank check",sum:"Summary",chg:"PO changes",
-    grp:"Party groups",books:"📒 Ledger & Outstanding ↗",close:"Cash handover",cdiff:"Cash difference",dmg:"Damaged cash",staff:"Staff ledger",veh:"Vehicles",deps:"Bank deposits",setup:"Heads & Banks",gst:"GST",acrs:"ACRS orders ↗"};
+    grp:"Party groups",books:"📒 Ledger & Outstanding ↗",close:"Cash handover",cdiff:"Cash difference",dmg:"Damaged cash",dup:"Duplicate notes",staff:"Staff ledger",veh:"Vehicles",deps:"Bank deposits",setup:"Heads & Banks",gst:"GST",acrs:"ACRS orders ↗"};
   const BILL=["make","made","due","led","pay","ret","chg","grp","gst"];
   const VIEWS={
     tally:{name:"Accounts · Tally",chip:"Tally",acts:["pay","IN","OUT","DEPOSIT","close","ret"],
-      row:[["Tally",["make","made","chg","ret"]],["Party",["books"]],["Bank & GST",["verify","deps","cheques","gst"]],["Cash",["book","sum"]]],more:["grp","close","cdiff","dmg","staff","veh","setup"],
+      row:[["Tally",["make","made","chg","ret"]],["Party",["books"]],["Bank & GST",["verify","deps","cheques","gst"]],["Cash",["book","sum"]]],more:["grp","close","cdiff","dmg","dup","staff","veh","setup"],
       kpis:["make","verify","gst","chq","coll","hand"],first:"make"},
     cash:{name:"Cashier",chip:"Cashier",acts:["pay","IN","OUT","DEPOSIT","close"],
-      row:[["",["book","deps","cheques","close","cdiff","dmg","staff","veh"]]],more:[],kpis:["open","cin","cout","dep","chq","hand"],first:"book"},
+      row:[["",["book","deps","cheques","close","cdiff","dmg","dup","staff","veh"]]],more:[],kpis:["open","cin","cout","dep","chq","hand"],first:"book"},
     party:{name:"Party & Collections",chip:"Party",acts:["pay","ret"],
       row:[["",["due","pay","ret","grp"]],["",["books","acrs"]]],more:[],kpis:["due","adv","coll","chq"],first:"due"}};
   const FILE={bill:"party-billing.html",cash:"accounts-dashboard.html"};
