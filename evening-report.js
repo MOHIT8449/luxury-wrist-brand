@@ -2,8 +2,8 @@
  *
  * Needs lwb_evening_report_setup.sql. Without it nothing shows.
  *
- *   LWBEvening.init({db, role})        Admin only (erp-shell.js calls it on every page): once today's cash handover /
- *                                      Close Day is done, a popup "Evening report ready" with ⬇ Download PDF.
+ *   LWBEvening.init({db, role})        Admin only (erp-shell.js calls it on every page): as soon as tonight's cash handover
+ *                                      is given (received or not) or Close Day is done, a popup "Evening report ready" with ⬇ Download PDF.
  *                                      Not downloaded -> it comes back every 5 minutes ("Later" = 5 minutes).
  *                                      Downloaded -> nothing more today; tomorrow again after tomorrow's handover.
  *   LWBEvening.open(db, date)           the same popup for any day (WhatsApp Reports page button).
@@ -108,7 +108,7 @@
     }
     const S=rep.sum||{},H=rep.handover;
     pop.innerHTML='<div class="ev-h"><span class="ic">🌙</span><div><h3>Evening report · '+esc(dmy(rep.date))+'</h3><small>Daily Report PDF · company-wise sales, payments, purchase, bank</small></div><button type="button" class="x" aria-label="Close">×</button></div>'+
-      (H?'<div class="ev-ho">✅ <b>Cash handover done</b> '+esc(H.by)+(H.to?' → '+esc(H.to):'')+' · <b>'+rs(H.amount)+'</b> · '+esc(hm(H.at))+'</div>'
+      (H?'<div class="ev-ho">✅ <b>Cash handover '+(H.how==='HANDOVER'&&H.received===false?'given':'done')+'</b> '+esc(H.by)+(H.to?' → '+esc(H.to):'')+' · <b>'+rs(H.amount)+'</b> · '+esc(hm(H.at))+'</div>'
         :'<div class="ev-ho no">⏳ <b>Cash handover not done yet</b> for this day</div>')+
       '<div class="ev-grid"><div class="ev-k s"><small>Sales today</small><b>'+rs(S.sales)+'</b></div><div class="ev-k r"><small>Received today</small><b>'+rs(S.received)+'</b></div>'+
       '<div class="ev-k p"><small>Purchase today</small><b>'+rs(S.purchase)+'</b></div><div class="ev-k b"><small>Bank balance</small><b>'+rs(S.bank)+'</b></div></div>'+

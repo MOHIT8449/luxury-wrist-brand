@@ -1012,7 +1012,7 @@
   async function eveningReport(role){
     try{
       const c=window.__lwbBellClient;if(!c||String(role||"").toLowerCase()!=="admin")return;
-      if(!window.LWBEvening)await new Promise((ok,bad)=>{const s=document.createElement("script");s.src="evening-report.js?v=20261126";s.onload=ok;s.onerror=bad;document.head.appendChild(s)});
+      if(!window.LWBEvening)await new Promise((ok,bad)=>{const s=document.createElement("script");s.src="evening-report.js?v=20261126b";s.onload=ok;s.onerror=bad;document.head.appendChild(s)});
       window.LWBEvening.init({db:c,role});
     }catch(e){}
   }

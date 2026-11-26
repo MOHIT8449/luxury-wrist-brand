@@ -31,7 +31,7 @@ CREATE FUNCTION public.lwb_acc_cheque_rows() RETURNS TABLE(src text,id uuid,book
   LANGUAGE sql AS $$ SELECT 'ENTRY',gen_random_uuid(),book_date,at,amount,party,null::text,cheque_no,cheque_date FROM public.chq_t $$;
 CREATE TABLE public.lwb_acc_entries(id uuid default gen_random_uuid() primary key,entry_date date,kind text,mode text,amount numeric,party text,ref_no text,created_at timestamptz default now(),cancelled_at timestamptz);
 CREATE TABLE public.lwb_acc_day_close(id bigserial primary key,close_date date,is_start boolean default false,counted numeric,handed_to_name text,closed_by uuid,closed_at timestamptz default now(),cancelled_at timestamptz);
-CREATE TABLE public.lwb_acc_shift_handovers(id bigserial primary key,given_by uuid,given_to uuid,counted numeric,status text,received_amount numeric,received_by uuid,received_at timestamptz);
+CREATE TABLE public.lwb_acc_shift_handovers(id bigserial primary key,given_by uuid,given_to uuid,given_at timestamptz default now(),counted numeric,status text,received_amount numeric,received_by uuid,received_at timestamptz);
 `);
 await db.exec(`insert into user_profiles values('${U.admin}','admin',true,'Mohit','9512297456'),('${U.head}','manager',true,'Rakesh','9800000002'),('${U.sales}','sales',true,'Nadim',null);
   insert into lwb_companies values('${COKE}','Coca-Cola'),('${RAJ}','Rajnigandha');`);
@@ -116,12 +116,21 @@ test('popup: not before handover, due after Admin received it, gone after downlo
   await as(U.admin);
   let d = (await q1('select public.lwb_evening_due() v')).v;
   assert.equal(d.due, false); assert.equal(d.handover, null);
-  // handover to a Sales Head does not count; to Admin does
-  await db.query(`insert into lwb_acc_shift_handovers(given_by,given_to,counted,status,received_by,received_at) values($1,$2,5000,'RECEIVED',$2,now())`, [U.admin, U.head]);
+  // day-time handover between cashiers (before 6 PM) does not count; cancelled does not count
+  const at = h => `(('${T} ${h}')::timestamp AT TIME ZONE 'Asia/Kolkata')`;
+  await db.query(`insert into lwb_acc_shift_handovers(given_by,given_to,given_at,counted,status) values($1,$2,${at('11:00')},5000,'RECEIVED')`, [U.admin, U.head]);
+  await db.query(`insert into lwb_acc_shift_handovers(given_by,given_to,given_at,counted,status) values($1,$2,${at('20:00')},5000,'CANCELLED')`, [U.head, U.admin]);
   assert.equal((await q1('select public.lwb_evening_due() v')).v.due, false);
-  await db.query(`insert into lwb_acc_shift_handovers(given_by,given_to,counted,status,received_amount,received_by,received_at) values($1,$2,125000,'RECEIVED',124500,$2,now())`, [U.head, U.admin]);
+  // night handover given (not received yet) -> popup at once
+  await db.query(`insert into lwb_acc_shift_handovers(given_by,given_to,given_at,counted,status) values($1,$2,${at('21:30')},125000,'PENDING')`, [U.head, U.admin]);
   d = (await q1('select public.lwb_evening_due() v')).v;
-  assert.equal(d.due, true); assert.equal(d.handover.by, 'Rakesh'); assert.equal(d.handover.to, 'Mohit'); assert.equal(Number(d.handover.amount), 124500);
+  assert.equal(d.due, true); assert.equal(d.handover.received, false);
+  await db.exec(`update lwb_acc_shift_handovers set status='RECEIVED', received_amount=124500, received_by='${U.admin}', received_at=now() where status='PENDING'`);
+  d = (await q1('select public.lwb_evening_due() v')).v;
+  assert.equal(d.due, true); assert.equal(d.handover.received, true); assert.equal(d.handover.by, 'Rakesh'); assert.equal(d.handover.to, 'Mohit'); assert.equal(Number(d.handover.amount), 124500);
+  // given to Admin in the day also counts
+  await db.exec(`update lwb_acc_shift_handovers set given_at=${at('12:00')} where status='RECEIVED' and counted=125000`);
+  assert.equal((await q1('select public.lwb_evening_due() v')).v.due, true);
   const rep = (await q1('select public.lwb_evening_report(null) v')).v;
   assert.ok(/^Rakesh to Mohit · ₹ 1,24,500 · /.test(rep.doc.rows.find(r => r[1] === 'Cash handover')[2]));
   await db.query('select public.lwb_evening_mark(null)');
