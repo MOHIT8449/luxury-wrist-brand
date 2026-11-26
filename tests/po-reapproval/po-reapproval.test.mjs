@@ -77,3 +77,14 @@ test('Loading PO and salesman are refused; cancel clears the mark', async()=>{
   await call("update orders set status='cancelled' where id=$1",[a]);
   assert.deepEqual(await st(a),{status:'cancelled',reapprove_from:null});
 });
+
+test('lwb_po_reapproval_off.sql releases waiting POs back to their step', async()=>{
+  const a=await order('LXY-6','transport_allocated',true), b=await order('LXY-7','approved');
+  await as('manager');
+  await call('select lwb_po_send_reapproval($1,null)',[a]); await call('select lwb_po_send_reapproval($1,null)',[b]);
+  await db.query("select set_config('request.jwt.claim.sub','',false)");
+  await db.exec(await readFile(new URL('../../lwb_po_reapproval_off.sql',import.meta.url),'utf8'));
+  assert.deepEqual(await st(a),{status:'transport_allocated',reapprove_from:null});
+  assert.deepEqual(await st(b),{status:'approved',reapprove_from:null});
+  assert.deepEqual(await bells(a,'PO_EDIT_HOLD'),[]);
+});
