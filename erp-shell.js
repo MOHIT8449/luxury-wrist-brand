@@ -899,9 +899,34 @@
           (apart?"\nCash box with "+HS.map(h=>h.name).join(" + ")+" since "+t(HS[0].since):"")+(S.pending?"\nHanding to "+S.pending+" · waiting":"");
         el.setAttribute("aria-label",el.title);
         if(me||["admin","accounts","cashier"].includes(role))el.href="accounts-dashboard.html#cash";else el.removeAttribute("href");
+        if(S.pending)cashAsk(c,role,draw);
       };
-      await draw();setInterval(()=>{if(!document.hidden)draw().catch(()=>{})},120000);
+      await draw();setInterval(()=>{if(!document.hidden)draw().catch(()=>{})},60000);
+      document.addEventListener("visibilitychange",()=>{if(!document.hidden)draw().catch(()=>{})});
     }catch(e){}
+  }
+
+  // 💼 Cash handed to me (Mohit, 26 Nov 2026): Vishal on the PO page got no sign, the Received ✓ bar was only on the
+  // Dashboard. Now a popup comes on any page: Received ✓ or Later (asks again after 10 minutes).
+  let cashAsking=false;
+  async function cashAsk(c,role,redraw){
+    if(cashAsking)return;cashAsking=true;
+    try{
+      const o=await c.rpc("lwb_acc_shift_list",{p_from:null,p_to:null});if(o.error||!o.data)return;
+      const S=o.data,P=S.pending,mine=P&&(P.parts||[]).find(x=>x.to===S.me&&x.status==="PENDING");if(!mine)return;
+      const k="lwbCashLater:"+mine.id;let t=0;try{t=Number(sessionStorage.getItem(k))||0}catch(e){}
+      if(Date.now()-t<600000)return;
+      const rs=v=>"₹"+Math.round(Number(v)||0).toLocaleString("en-IN");
+      const split=(P.parts||[]).length>1?"\nCash split: "+P.parts.map(x=>String(x.to_name||"").split(/\s+/)[0]+" "+rs(x.amount)).join(" · "):"";
+      const ok=await erpConfirm((P.by_name||"Someone")+" is handing you "+rs(mine.amount)+" cash."+"\n\nCount the cash first, then press Received ✓. If it is different, ask Accounts / Admin."+split,
+        {title:"💼 Cash for you",ok:"Received ✓",cancel:"Later"});
+      if(!ok){try{sessionStorage.setItem(k,String(Date.now()))}catch(e){}return}
+      const x=await c.rpc("lwb_acc_shift_receive",{p_id:Number(mine.id),p_amount:null,p_note:null});
+      if(x.error){await erpAlert(x.error.message);return}
+      toast("Cash received "+rs(mine.amount));
+      if(role==="manager"){setTimeout(()=>location.reload(),700);return}   // today's cashier: Cashier page comes into the menu
+      redraw().catch(()=>{});
+    }catch(e){}finally{cashAsking=false}
   }
 
   // 🚨 Urgent task siren: full-screen alarm + siren sound on any page when an urgent task rings
