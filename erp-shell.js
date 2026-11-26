@@ -869,6 +869,7 @@
     // liveLocation();  // 📍 Switched OFF by the owner 23 Nov 2026: no location is asked or sent. Remove // to bring back.
     cashierChip(top,role);
     tripRent(role);
+    eveningReport(role);
     teamChat(role);
     taskSiren(role);
   }
@@ -1003,6 +1004,16 @@
       const c=window.__lwbBellClient;if(!c||!["admin","manager","transport"].includes(String(role||"").toLowerCase()))return;
       if(!window.LWBTrip)await new Promise((ok,bad)=>{const s=document.createElement("script");s.src="trip-rent.js";s.onload=ok;s.onerror=bad;document.head.appendChild(s)});
       window.LWBTrip.remind(c);
+    }catch(e){}
+  }
+
+  // 🌙 Evening report: after today's cash handover, Admin gets "Download evening report" (PDF) on any page,
+  // again every 5 minutes until it is downloaded (evening-report.js, lwb_evening_report_setup.sql).
+  async function eveningReport(role){
+    try{
+      const c=window.__lwbBellClient;if(!c||String(role||"").toLowerCase()!=="admin")return;
+      if(!window.LWBEvening)await new Promise((ok,bad)=>{const s=document.createElement("script");s.src="evening-report.js?v=20261126";s.onload=ok;s.onerror=bad;document.head.appendChild(s)});
+      window.LWBEvening.init({db:c,role});
     }catch(e){}
   }
 
