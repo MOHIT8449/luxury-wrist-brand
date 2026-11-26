@@ -194,6 +194,22 @@
                {t:"Open",kind:"go",href:"sales-return.html"}]}));
        return {items,amount:sum(items,i=>i.amount)};
      }},
+    // Daily labour extra (Mohit, 26 Nov 2026): the cashier may give the Godown Manager at most the labour register;
+    // more = this extra, approved by a Sales Head / Admin (not the one who asked). lwb_daily_labour_setup.sql.
+    {key:"labour",icon:"👷",title:"Labour extra cash",sub:"More than labour list",roles:["admin","manager"],page:"labour.html",
+     async load(c){
+       const rows=((await rpc(c,"lwb_labour_extra_list"))||[]).filter(x=>x.can_decide);
+       const items=rows.map(x=>({id:String(x.id),person:x.by,ref:"Labour "+dmy(x.day),party:x.gm,amount:num(x.amount),when:x.at,
+         lines:[num(x.count)+" labour · list "+inr(x.total)+(num(x.extra_ok)?" · extra already "+inr(x.extra_ok):"")+" · given "+inr(x.paid)],
+         meta:[x.plan?"Plan "+num(x.plan.count)+(x.plan.rate?" × ₹"+num(x.plan.rate):""):"No plan",x.reason,x.by&&"By "+x.by].filter(Boolean),
+         field:{type:"number",label:"₹ extra",value:num(x.amount)},
+         detail:{info:[["Godown Manager",x.gm],["Day",dmy(x.day)],["Labour",num(x.count)],["Labour list total",inr(x.total)],["Already given",inr(x.paid)],
+           ["Extra asked",inr(x.amount)],["Why",x.reason],["Asked by",x.by]]},
+         acts:[{t:"✓ Approve",kind:"ok",many:true,run:(c2,i,v)=>{const a=num(v)||num(x.amount);return rpc(c2,"lwb_labour_extra_decide",{p_id:x.id,p_ok:true,p_amount:a,p_note:null})}},
+               {t:"✗ Reject",kind:"no",ask:"Why is the extra rejected?",run:(c2,i,f,why)=>rpc(c2,"lwb_labour_extra_decide",{p_id:x.id,p_ok:false,p_amount:null,p_note:why})},
+               {t:"Open",kind:"go",href:"labour.html?day="+encodeURIComponent(x.day)}]}));
+       return {items,amount:sum(items,i=>i.amount)};
+     }},
     {key:"party",icon:"👤",title:"New party check",sub:"Added by salesman",roles:["admin","manager"],page:"customer-master.html",
      async load(c,ctx){
        if(!ctx.bells)return null;

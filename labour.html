@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"><script src="erp-fit.js"></script>
+  <title>Daily Labour | Luxury Wrist Brand ERP</title>
+  <script src="erp-date.js"></script><script src="erp-recent.js"></script>
+  <script src="vendor/supabase-js-2.119.0.js"></script>
+  <link rel="stylesheet" href="erp-shell.css?v=20261124">
+  <link rel="stylesheet" href="sales.css">
+  <script src="erp-shell.js?v=20261124r"></script>
+  <script src="sales-common.js"></script>
+  <script src="labour.js?v=20261126a"></script>
+  <!-- Daily Labour / dihadi (Mohit, 26 Nov 2026): the Godown Manager enters today's market labour (name + mobile + wage,
+       all required); Admin / Sales Head assign the day's labour in the morning; at night today's cashier gives the cash,
+       never more than the register + approved extra (Sales Head / Admin approve the extra). Data: lwb_daily_labour_setup.sql. -->
+  <style>
+    .lb-kpis{grid-template-columns:repeat(4,minmax(0,1fr));margin-bottom:10px}
+    .lb-kpis .sl-kpi{padding:8px 12px}.lb-kpis .sl-kpi b{font-size:19px}
+    .sl-kpi.amber b{color:var(--erp-amber)}
+    .lb-bar{display:flex;align-items:center;gap:6px;margin-bottom:10px;flex-wrap:wrap}
+    .lb-bar .grow{flex:1}
+    .lb-tab{border:1.5px solid var(--erp-line);border-radius:99px;padding:4px 12px;font:inherit;font-size:13px;font-weight:600;background:#fff;color:var(--erp-ink);cursor:pointer}
+    .lb-tab.on{background:#002f37;border-color:#002f37;color:#fff}
+    .lb-day{display:inline-flex;align-items:center;gap:4px}
+    .lb-day input{font:inherit;font-size:13.5px;padding:4px 8px;border:1.5px solid var(--erp-line);border-radius:8px}
+    .lb-day button{border:1.5px solid var(--erp-line);background:#fff;color:var(--erp-ink);font-size:16px;line-height:1;min-width:30px;min-height:30px;border-radius:8px;padding:3px 9px;cursor:pointer;font:inherit;font-weight:700}
+    .lb-card{background:#fff;border:1px solid var(--erp-line);border-radius:8px;margin-bottom:10px;overflow:hidden}
+    .lb-card.paid{border-left:4px solid var(--erp-green)}.lb-card.due{border-left:4px solid var(--erp-amber)}.lb-card.none{opacity:.85}
+    .lb-head{display:flex;align-items:center;gap:8px;padding:8px 12px;flex-wrap:wrap;border-bottom:1px solid #edf0f3}
+    .lb-head .nm{font-weight:700;font-size:15px}
+    .lb-head .grow{flex:1}
+    .lb-acts{display:flex;gap:6px;flex-wrap:nowrap}
+    .lb-acts .sl-btn{white-space:nowrap}
+    .lb-t{width:100%;border-collapse:collapse;font-size:13.5px}
+    .lb-t th{background:#f4f6f8;text-align:left;font-size:11px;font-weight:700;color:#4b5763;text-transform:uppercase;letter-spacing:.3px;padding:5px 10px;white-space:nowrap}
+    .lb-t td{padding:5px 10px;border-top:1px solid #edf0f3;vertical-align:middle}
+    .lb-t .n{text-align:right;white-space:nowrap}
+    .lb-t .w{font-weight:700;color:var(--erp-ink);font-size:14.5px}
+    .lb-t .mob{font-variant-numeric:tabular-nums;color:#4b5763;white-space:nowrap}
+    .lb-t .mut{color:var(--erp-muted);font-size:12.5px}
+    .lb-t .x{width:1%;white-space:nowrap}
+    .lb-t .x button{border:0;background:none;cursor:pointer;font-size:14px;padding:2px 5px;color:#4b5763}
+    .lb-t tfoot td{background:#f8fafb;font-weight:700;border-top:2px solid var(--erp-line)}
+    .lb-rep{display:inline-block;margin-left:6px;font-size:10.5px;font-weight:700;color:var(--erp-blue);background:#e5eefb;border-radius:4px;padding:1px 5px;vertical-align:1px}
+    .lb-add{display:grid;grid-template-columns:150px minmax(0,1fr) 100px minmax(0,1fr) auto;gap:6px;padding:8px 12px;background:#fbfcfd;border-bottom:1px solid #edf0f3}
+    .lb-add input{font:inherit;font-size:14px;padding:6px 9px;border:1.5px solid var(--erp-line);border-radius:8px;min-width:0;width:100%;box-sizing:border-box}
+    .lb-add .hint{grid-column:1/-1;font-size:12px;color:var(--erp-blue);font-weight:600;min-height:0}
+    .lb-add .hint:empty{display:none}
+    .lb-foot{display:flex;gap:6px 14px;flex-wrap:wrap;align-items:center;padding:7px 12px;font-size:13px;background:#f8fafb;border-top:1px solid #edf0f3}
+    .lb-foot b{font-size:14.5px}
+    .lb-foot .due b{color:var(--erp-amber)}.lb-foot .ok b{color:var(--erp-green)}.lb-foot .tot b{color:var(--erp-red)}
+    .lb-xl{padding:6px 12px;font-size:12.5px;border-top:1px dashed #e6e9ee;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+    .lb-xl.w{background:#fff8ec}.lb-xl.a{background:#eefaf2}.lb-xl.r{background:#fdf1f3;color:#7a1e33}
+    .lb-xl .grow{flex:1}
+    .lb-empty{padding:10px 12px;color:var(--erp-muted);font-size:13px}
+    .lb-list{background:#fff;border:1px solid var(--erp-line);border-radius:8px;overflow:hidden}
+    .lb-help{font-size:12px;color:var(--erp-muted);margin:6px 2px 0}
+    .lb-dlg{border:0;border-radius:12px;padding:0;width:min(420px,calc(100vw - 32px));box-shadow:0 20px 60px rgba(0,0,0,.3)}
+    .lb-dlg::backdrop{background:rgba(0,20,25,.45)}
+    .lb-dlg form{padding:14px 16px;display:grid;gap:9px}
+    .lb-dlg h3{margin:0;font-size:17px}.lb-dlg p{margin:0;font-size:12.5px;color:var(--erp-muted)}
+    .lb-dlg label{display:grid;gap:3px;font-size:12px;font-weight:700;color:#4b5763}
+    .lb-dlg input,.lb-dlg textarea,.lb-dlg select{font:inherit;font-size:14px;padding:7px 10px;border:1.5px solid var(--erp-line);border-radius:8px;width:100%;box-sizing:border-box}
+    .lb-dlg .two{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+    .lb-dlg .row{display:flex;gap:8px;justify-content:flex-end}
+    .lb-dlg .err{color:var(--erp-red);font-size:12.5px;font-weight:600}.lb-dlg .err:empty{display:none}
+    .lb-sum{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+    .lb-sum div{border:1px solid var(--erp-line);border-radius:8px;padding:5px 8px}
+    .lb-sum span{display:block;font-size:10.5px;font-weight:700;color:var(--erp-muted);text-transform:uppercase}
+    .lb-sum b{font-size:16px}
+    .lb-can{border-radius:8px;background:#eefaf2;padding:8px 10px;font-size:13px}.lb-can b{font-size:20px;color:var(--erp-green)}
+    .lb-over{border-radius:8px;background:#fff2dc;padding:8px 10px;font-size:13px;color:#7a4b00;display:grid;gap:6px}
+    @media(max-width:760px){
+      .lb-kpis{grid-template-columns:1fr 1fr}
+      .lb-bar{flex-wrap:nowrap;gap:4px}.lb-tab{padding:4px 9px;font-size:12.5px}.lb-bar .sl-btn{padding-left:8px;padding-right:8px}
+      .lb-add{grid-template-columns:1fr 1fr}
+      .lb-add .nmI{grid-column:1/-1;grid-row:2}.lb-add .wkI{grid-column:1/2}
+      .lb-t .hide-m{display:none}
+      .lb-t td,.lb-t th{padding:5px 7px}
+      .lb-head{padding:7px 10px}.lb-acts{width:100%}.lb-acts .sl-btn{flex:1;padding-left:6px;padding-right:6px}
+    }
+  </style>
+</head>
+<body>
+  <div id="loading" class="status">Checking account access...</div>
+  <main id="page" class="erp-main" hidden>
+    <div class="erp-pagehead"><h1>Daily Labour</h1><span class="erp-badge blue" id="dayBadge"></span><span class="grow"></span>
+      <span class="lb-day"><button type="button" id="prev" aria-label="Previous day">‹</button><input type="date" id="day" aria-label="Day"><button type="button" id="next" aria-label="Next day">›</button></span></div>
+    <div class="sl-kpis lb-kpis" id="kpis"></div>
+    <div class="lb-bar">
+      <button type="button" class="lb-tab on" data-tab="day">Day</button>
+      <button type="button" class="lb-tab" data-tab="people">Labourers</button>
+      <button type="button" class="lb-tab" data-tab="days">Day-wise</button>
+      <span class="grow"></span>
+      <button type="button" class="sl-btn ghost small" id="excel">Excel</button>
+      <button type="button" class="sl-btn ghost small" id="refresh" aria-label="Refresh" title="Refresh">↻</button>
+    </div>
+    <div id="view"></div>
+    <p class="lb-help" id="help"></p>
+  </main>
+
+  <dialog class="lb-dlg" id="dlg"><form method="dialog" id="dlgForm"></form></dialog>
+
+  <script>
+    const S=LWBSales,{client,el,esc}=S,L=LWBLabour,num=L.num,inr=L.inr;
+    let me=null,D=null,tab="day",PEOPLE=[],DAYS=[];
+    const qs=new URLSearchParams(location.search);
+    const today=L.ist();
+    const dmy=v=>LWBDate.d(v);
+    const shift=(d,n)=>L.ist(Date.parse(d+"T12:00:00+05:30")+n*864e5);
+    const err=e=>String((e&&e.message)||e||"Something went wrong").replace(/^.*?ERROR:\s*/,"");
+    async function rpc(name,args){const {data,error}=await client.rpc(name,args);if(error)throw Error(err(error));return data}
+    const phone=v=>String(v||"").replace(/\D/g,"").slice(-10);
+
+    // ---------- Day ----------
+    async function load(){
+      const day=el("day").value||today;
+      el("dayBadge").textContent=day===today?"Today":day===shift(today,-1)?"Yesterday":dmy(day);
+      el("next").disabled=day>=today;
+      if(tab!=="day"){return loadTab()}
+      try{D=await rpc("lwb_labour_day",{p_day:day})}
+      catch(e){el("view").innerHTML='<div class="sl-msg">'+esc(/lwb_labour_day/.test(e.message)?"Daily Labour is being set up. Try again in a few minutes.":e.message)+"</div>";el("kpis").innerHTML="";return}
+      render();
+    }
+    function kpis(){
+      const wait=(D.gms||[]).reduce((t,g)=>t+num(g.extra_wait),0),plan=(D.gms||[]).reduce((t,g)=>t+(g.plan?num(g.plan.count):0),0);
+      const k=[["blue","Labour",num(D.count),plan?"Plan "+plan:"outside / market"],["red","Total charge",inr(D.total),"wage of all labour"],
+        ["green","Cash given",inr(D.paid),"by cashier"],[num(D.due)>0?"amber":"green","To give",inr(D.due),wait?"⏳ "+inr(wait)+" extra waiting":"at most this"]];
+      el("kpis").innerHTML=k.map(x=>'<div class="sl-kpi '+x[0]+'"><span>'+esc(x[1])+"</span><b>"+esc(x[2])+"</b><small>"+esc(x[3])+"</small></div>").join("");
+    }
+    const canAdd=g=>D.can_plan?D.day>=shift(today,-7):(D.is_gm&&g.gm_id===D.me&&D.day===today&&!g.locked);
+    function card(g){
+      const add=canAdd(g),edit=add;
+      const st=num(g.count)===0&&!g.plan?"none":num(g.due)>0?"due":num(g.paid)>0?"paid":"";
+      const plan=g.plan?'<span class="erp-badge blue">Plan '+num(g.plan.count)+(g.plan.rate?" × "+inr(g.plan.rate)+" = "+inr(g.plan.budget):"")+'</span>':(D.can_plan?'<span class="erp-badge">No plan</span>':"");
+      const badge=num(g.count)===0?"":num(g.due)<=0&&num(g.paid)>0?'<span class="erp-badge green">✓ Paid '+inr(g.paid)+"</span>":num(g.paid)>0?'<span class="erp-badge amber">Due '+inr(g.due)+"</span>":'<span class="erp-badge amber">Not paid</span>';
+      const acts=[];
+      if(D.can_plan)acts.push('<button type="button" class="sl-btn ghost small" data-a="plan" data-g="'+esc(g.gm_id)+'">📋 Assign</button>');
+      if(D.can_pay&&(num(g.count)>0||num(g.extra_ok)>0))acts.push('<button type="button" class="sl-btn small" data-a="pay" data-g="'+esc(g.gm_id)+'"'+(num(g.due)<=0?' title="Nothing left to give"':"")+'>💵 Give cash</button>');
+      else if(D.is_gm&&g.gm_id===D.me&&g.locked&&D.day===today)acts.push('<button type="button" class="sl-btn ghost small" data-a="ask" data-g="'+esc(g.gm_id)+'">＋ Ask more cash</button>');
+      let h='<div class="lb-card '+st+'" data-gm="'+esc(g.gm_id)+'"><div class="lb-head"><span class="nm">'+esc(g.name)+'</span>'+plan+(g.over_plan?'<span class="erp-badge red">Above plan</span>':"")+badge+
+        (g.plan&&g.plan.note?'<small class="mut" style="color:var(--erp-muted)">'+esc(g.plan.note)+"</small>":"")+'<span class="grow"></span><span class="lb-acts">'+acts.join("")+"</span></div>";
+      if(add)h+='<div class="lb-add" data-gm="'+esc(g.gm_id)+'"><input class="mbI" inputmode="numeric" maxlength="14" placeholder="Mobile (10 digit) *" aria-label="Mobile" autocomplete="off">'+
+        '<input class="nmI" maxlength="80" placeholder="Labour name *" aria-label="Name" autocomplete="off"><input class="wgI" inputmode="decimal" placeholder="Wage ₹ *" aria-label="Wage" value="'+(g.plan&&g.plan.rate?num(g.plan.rate):"")+'">'+
+        '<input class="wkI" maxlength="120" placeholder="Work (optional)" aria-label="Work" autocomplete="off"><button type="button" class="sl-btn small" data-a="add">＋ Add</button><div class="hint"></div></div>';
+      else if(D.is_gm&&g.gm_id===D.me&&g.locked&&D.day===today)h+='<div class="lb-empty">🔒 Cash is given, so the list is locked. Ask a Sales Head to change it, or "Ask more cash".</div>';
+      if(g.rows.length){
+        h+='<table class="lb-t" data-cf-off><thead><tr><th style="width:28px">#</th><th>Name</th><th>Mobile</th><th class="hide-m">Work</th><th class="n">Wage</th>'+(edit?'<th class="x"></th>':"")+"</tr></thead><tbody>"+
+          g.rows.map((r,i)=>'<tr><td class="mut">'+(i+1)+'</td><td><b>'+esc(r.name)+"</b>"+(num(r.days_before)?'<span class="lb-rep" title="Worked before">Repeat · '+num(r.days_before)+"d</span>":"")+'</td><td class="mob"><a href="tel:'+esc(r.mobile)+'" style="color:inherit;text-decoration:none">'+esc(r.mobile)+'</a></td><td class="hide-m mut">'+esc(r.work||"")+'</td><td class="n w">'+inr(r.wage)+"</td>"+
+            (edit?'<td class="x"><button type="button" data-a="edit" data-r="'+r.id+'" aria-label="Edit">✎</button><button type="button" data-a="del" data-r="'+r.id+'" aria-label="Remove">✕</button></td>':"")+"</tr>").join("")+
+          "</tbody></table>";
+      }else if(!add)h+='<div class="lb-empty">No labour entered'+(g.plan?" yet":"")+".</div>";
+      for(const x of g.extras){
+        if(x.status==="WAITING")h+='<div class="lb-xl w">⏳ <b>Extra '+inr(x.amount)+'</b> waiting for Sales Head / Admin · '+esc(x.reason)+' · by '+esc(x.by)+'<span class="grow"></span>'+
+          (D.can_plan?'<button type="button" class="sl-btn small" data-a="xok" data-x="'+x.id+'">✓ Approve</button><button type="button" class="sl-btn ghost small" data-a="xno" data-x="'+x.id+'">✗</button>':"")+"</div>";
+        else if(x.status==="APPROVED")h+='<div class="lb-xl a">✓ <b>Extra '+inr(x.amount)+"</b> approved by "+esc(x.decided_by||"")+" · "+esc(x.reason)+"</div>";
+        else h+='<div class="lb-xl r">✗ Extra '+inr(x.asked)+" rejected by "+esc(x.decided_by||"")+(x.note?" · "+esc(x.note):"")+"</div>";
+      }
+      if(num(g.count)>0||num(g.paid)>0)h+='<div class="lb-foot"><span>'+num(g.count)+' labour</span><span class="tot">Total <b>'+inr(g.total)+"</b></span>"+(num(g.extra_ok)?"<span>+ extra <b>"+inr(g.extra_ok)+"</b></span>":"")+
+        '<span class="ok">Given <b>'+inr(g.paid)+'</b></span><span class="'+(num(g.due)>0?"due":"ok")+'">To give <b>'+inr(g.due)+"</b></span>"+
+        (g.pays.length?'<span class="mut" style="color:var(--erp-muted)">'+g.pays.map(p=>(p.cancelled?"<s>":"")+inr(p.amount)+" by "+esc(p.by)+(p.cancelled?"</s>":"")).join(", ")+"</span>":"")+"</div>";
+      return h+"</div>";
+    }
+    function render(){
+      kpis();
+      let gms=D.gms||[];
+      // cashier / accounts: only Godown Managers with labour or a plan; Admin / Sales Head see all to assign
+      if(!D.can_plan&&!D.is_gm)gms=gms.filter(g=>num(g.count)>0||g.plan||num(g.paid)>0);
+      el("view").innerHTML=gms.length?gms.map(card).join(""):'<div class="lb-card"><div class="lb-empty">No labour entered on '+esc(dmy(D.day))+".</div></div>";
+      el("help").textContent=D.is_gm?"Enter every outside labour of today: mobile, name and wage are required. A labour who came before fills by himself from the mobile. At night the cashier gives you the total.":
+        D.can_pay?"Give cash = a Cash Out \"Labour charge\" entry in the cashier day book. You can give at most the labour total + approved extra. More = ask a Sales Head / Admin to approve the extra.":
+        "Godown Managers enter the labour (name, mobile, wage). Assign = the morning plan (how many, rate). Extra cash over the register needs a Sales Head / Admin approval.";
+    }
+
+    // ---------- add / edit / remove ----------
+    const findCache=new Map();
+    async function autofill(box){
+      const m=phone(box.querySelector(".mbI").value),hint=box.querySelector(".hint");
+      if(m.length!==10){hint.textContent="";return}
+      let f=findCache.get(m);
+      if(f===undefined){try{f=await rpc("lwb_labour_find",{p_mobile:m})}catch(e){f=null}findCache.set(m,f)}
+      if(!f){hint.textContent="New labour";return}
+      if(f.last_day===D.day){hint.textContent="⚠ "+f.name+" is already entered on this day by "+f.last_gm+".";hint.style.color="var(--erp-red)";return}
+      hint.style.color="";
+      const nm=box.querySelector(".nmI"),wg=box.querySelector(".wgI"),wk=box.querySelector(".wkI");
+      if(!nm.value)nm.value=f.name;if(!wg.value)wg.value=num(f.wage);if(!wk.value&&f.work)wk.value=f.work;
+      hint.textContent="↺ Came before: "+f.name+" · "+num(f.days)+" day"+(num(f.days)===1?"":"s")+" · last "+dmy(f.last_day)+" ("+inr(f.wage)+", "+f.last_gm+")";
+    }
+    async function addRow(box){
+      const v=c=>box.querySelector(c).value.trim(),hint=box.querySelector(".hint");
+      const p={day:D.day,gm_id:box.dataset.gm,mobile:v(".mbI"),name:v(".nmI"),wage:v(".wgI"),work:v(".wkI")};
+      if(phone(p.mobile).length!==10){hint.textContent="⚠ Enter the 10 digit mobile";box.querySelector(".mbI").focus();return}
+      if(p.name.length<2){hint.textContent="⚠ Enter the name";box.querySelector(".nmI").focus();return}
+      if(!(num(p.wage)>0)){hint.textContent="⚠ Enter today's wage";box.querySelector(".wgI").focus();return}
+      const b=box.querySelector("[data-a=add]");b.disabled=true;
+      try{await rpc("lwb_labour_add",{p});findCache.delete(phone(p.mobile));await load();
+        const nb=el("view").querySelector('.lb-add[data-gm="'+CSS.escape(p.gm_id)+'"] .mbI');if(nb)nb.focus();ERPShell.toast(p.name.toUpperCase()+" added")}
+      catch(e){hint.textContent="⚠ "+e.message;b.disabled=false}
+    }
+    const rowOf=id=>{for(const g of D.gms)for(const r of g.rows)if(String(r.id)===String(id))return [g,r];return []};
+    function dialog(html,onSubmit){
+      const d=el("dlg"),f=el("dlgForm");f.innerHTML=html;d.showModal();
+      f.onsubmit=async e=>{e.preventDefault();const er=f.querySelector(".err"),sb=f.querySelector("[type=submit]");if(er)er.textContent="";if(sb)sb.disabled=true;
+        try{await onSubmit(f);d.close();await load()}catch(x){if(er)er.textContent=x.message}finally{if(sb)sb.disabled=false}};
+      f.querySelectorAll("[data-close]").forEach(b=>b.onclick=()=>d.close());
+      setTimeout(()=>{const i=f.querySelector("input,textarea");if(i)i.focus()},30);
+    }
+    const foot='<div class="err"></div><div class="row"><button type="button" class="sl-btn ghost" data-close>Cancel</button><button type="submit" class="sl-btn">Save</button></div>';
+    function editRow(id){
+      const [g,r]=rowOf(id);if(!r)return;
+      dialog('<h3>Edit labour</h3><p>'+esc(g.name)+" · "+esc(dmy(D.day))+'</p><div class="two"><label>Mobile *<input name="mobile" inputmode="numeric" maxlength="14" value="'+esc(r.mobile)+'"></label><label>Wage ₹ *<input name="wage" inputmode="decimal" value="'+num(r.wage)+'"></label></div>'+
+        '<label>Name *<input name="name" maxlength="80" value="'+esc(r.name)+'"></label><label>Work<input name="work" maxlength="120" value="'+esc(r.work||"")+'"></label>'+foot,
+        f=>rpc("lwb_labour_edit",{p_id:r.id,p:{mobile:f.mobile.value,wage:f.wage.value,name:f.name.value,work:f.work.value}}));
+    }
+    async function delRow(id){
+      const [g,r]=rowOf(id);if(!r)return;
+      if(!await confirm("Remove "+r.name+" ("+inr(r.wage)+") from "+g.name+"'s labour of "+dmy(D.day)+"?"))return;
+      try{await rpc("lwb_labour_remove",{p_id:r.id,p_reason:null});await load()}catch(e){alert(e.message)}
+    }
+    // ---------- morning plan ----------
+    function plan(gid){
+      const g=D.gms.find(x=>x.gm_id===gid),p=g.plan||{};
+      const day=D.day<today?today:D.day;
+      dialog('<h3>📋 Assign labour · '+esc(g.name)+'</h3><p>How many outside labour '+esc(g.name)+" brings. He gets a notification. He enters each one's name, mobile and wage.</p>"+
+        '<label>Day<select name="day"><option value="'+today+'"'+(day===today?" selected":"")+'>Today '+esc(dmy(today))+'</option><option value="'+shift(today,1)+'"'+(day>today?" selected":"")+'>Tomorrow '+esc(dmy(shift(today,1)))+"</option></select></label>"+
+        '<div class="two"><label>How many labour *<input name="count" inputmode="numeric" value="'+(p.count!=null?num(p.count):"")+'"></label><label>Rate per labour ₹<input name="rate" inputmode="decimal" value="'+(p.rate?num(p.rate):"")+'" placeholder="optional"></label></div>'+
+        '<label>Note<input name="note" maxlength="300" value="'+esc(p.note||"")+'" placeholder="e.g. 2 trucks unloading"></label>'+foot,
+        async f=>{if(!(String(f.count.value).trim()!==""&&num(f.count.value)>=0))throw Error("Enter how many labour");
+          await rpc("lwb_labour_plan_set",{p_day:f.day.value,p_gm:gid,p_count:Math.round(num(f.count.value)),p_rate:f.rate.value?num(f.rate.value):null,p_note:f.note.value||null});
+          if(f.day.value!==D.day)el("day").value=f.day.value});
+    }
+    // ---------- night cash ----------
+    function pay(gid){
+      const g=D.gms.find(x=>x.gm_id===gid),due=num(g.due);
+      dialog('<h3>💵 Give labour cash · '+esc(g.name)+'</h3><p>'+num(g.count)+" labour of "+esc(dmy(D.day))+'. Saved as Cash Out "Labour charge".</p>'+
+        '<div class="lb-sum"><div><span>Labour total</span><b>'+inr(g.total)+'</b></div><div><span>Extra approved</span><b>'+inr(g.extra_ok)+'</b></div><div><span>Given</span><b>'+inr(g.paid)+"</b></div></div>"+
+        '<div class="lb-can">You can give now: <b>'+inr(due)+"</b></div>"+
+        '<label>Amount ₹ *<input name="amount" inputmode="decimal" value="'+(due>0?due:"")+'"></label>'+
+        '<div class="lb-over" id="over" hidden><div id="overTxt"></div><label style="color:#7a4b00">Why more? *<input name="why" maxlength="300" placeholder="e.g. 1 more labour came at night"></label><button type="button" class="sl-btn small" id="askBtn">Ask Sales Head / Admin to approve</button></div>'+
+        '<label>Note<input name="note" maxlength="200" placeholder="optional"></label>'+
+        '<div class="err"></div><div class="row"><button type="button" class="sl-btn ghost" data-close>Cancel</button><button type="submit" class="sl-btn" id="payBtn">Give cash</button></div>',
+        async f=>{const a=num(f.amount.value);if(!(a>0))throw Error("Enter the amount");if(a>due)throw Error("More than you can give. Ask for approval of the extra.");
+          await rpc("lwb_labour_pay",{p_day:D.day,p_gm:gid,p_amount:a,p_note:f.note.value||null});ERPShell.toast(inr(a)+" given to "+g.name)});
+      const f=el("dlgForm"),sync=()=>{const a=num(f.amount.value),x=Math.round((a-due)*100)/100;
+        el("over").hidden=!(x>0);el("payBtn").disabled=x>0;
+        el("overTxt").innerHTML="<b>"+inr(x)+" more</b> than allowed. To give "+inr(a)+", the extra "+inr(x)+" needs approval first."};
+      f.amount.oninput=sync;sync();
+      el("askBtn").onclick=async()=>{const x=Math.round((num(f.amount.value)-due)*100)/100,er=f.querySelector(".err");
+        if(!f.why.value.trim()){er.textContent="Write why more is needed";f.why.focus();return}
+        try{await rpc("lwb_labour_extra_ask",{p_day:D.day,p_gm:gid,p_amount:x,p_reason:f.why.value.trim()});el("dlg").close();ERPShell.toast("Sent for approval: extra "+inr(x));await load()}
+        catch(e){er.textContent=e.message}};
+    }
+    function ask(gid){
+      dialog('<h3>＋ Ask more labour cash</h3><p>The cash is already given. A Sales Head / Admin must approve the extra.</p><label>Extra amount ₹ *<input name="amount" inputmode="decimal"></label><label>Why? *<input name="why" maxlength="300" placeholder="e.g. 2 more labour for the night truck"></label>'+foot,
+        f=>rpc("lwb_labour_extra_ask",{p_day:D.day,p_gm:gid,p_amount:num(f.amount.value),p_reason:f.why.value}));
+    }
+    async function decide(id,ok){
+      let note=null;
+      if(!ok){note=await prompt("Why is the extra rejected?","");if(note===null)return}
+      else if(!await confirm("Approve this labour extra?"))return;
+      try{await rpc("lwb_labour_extra_decide",{p_id:Number(id),p_ok:ok,p_amount:null,p_note:note});await load()}catch(e){alert(e.message)}
+    }
+
+    // ---------- Labourers / Day-wise ----------
+    async function loadTab(){
+      const to=el("day").value||today,from=shift(to,-30);
+      el("kpis").innerHTML="";
+      try{
+        if(tab==="people"){PEOPLE=await rpc("lwb_labour_people",{p_from:from,p_to:to})||[];
+          const t=PEOPLE.reduce((s,p)=>s+num(p.total),0);
+          el("kpis").innerHTML='<div class="sl-kpi blue"><span>Labourers</span><b>'+PEOPLE.length+'</b><small>'+esc(dmy(from))+" – "+esc(dmy(to))+'</small></div><div class="sl-kpi red"><span>Total wage</span><b>'+inr(t)+'</b><small>30 days</small></div><div class="sl-kpi"><span>Came 3+ days</span><b>'+PEOPLE.filter(p=>num(p.days)>=3).length+'</b><small>repeat labour</small></div><div class="sl-kpi"><span>Man-days</span><b>'+PEOPLE.reduce((s,p)=>s+num(p.days),0)+"</b><small>30 days</small></div>";
+          el("view").innerHTML='<div class="lb-list">'+(PEOPLE.length?'<table class="lb-t" data-cf-off><thead><tr><th>Name</th><th>Mobile</th><th class="n">Days</th><th class="n">Total</th><th class="n hide-m">Avg / day</th><th class="hide-m">Last day</th><th class="hide-m">Godown Manager</th></tr></thead><tbody>'+
+            PEOPLE.map(p=>'<tr><td><b>'+esc(p.name)+'</b></td><td class="mob">'+esc(p.mobile)+'</td><td class="n"><b>'+num(p.days)+'</b></td><td class="n w">'+inr(p.total)+'</td><td class="n hide-m">'+inr(p.avg)+'</td><td class="hide-m mut">'+esc(dmy(p.last_day))+'</td><td class="hide-m mut">'+esc((p.gms||[]).join(", "))+"</td></tr>").join("")+"</tbody></table>":'<div class="lb-empty">No labour in these 30 days.</div>')+"</div>";
+          el("help").textContent="Last 30 days up to the chosen day, per labourer (mobile). Days = how many days he came.";
+        }else{DAYS=await rpc("lwb_labour_days",{p_from:from,p_to:to})||[];
+          const t=DAYS.reduce((s,d)=>s+num(d.total),0),pd=DAYS.reduce((s,d)=>s+num(d.paid),0);
+          el("kpis").innerHTML='<div class="sl-kpi blue"><span>Man-days</span><b>'+DAYS.reduce((s,d)=>s+num(d.count),0)+'</b><small>30 days</small></div><div class="sl-kpi red"><span>Total charge</span><b>'+inr(t)+'</b><small>'+esc(dmy(from))+" – "+esc(dmy(to))+'</small></div><div class="sl-kpi green"><span>Cash given</span><b>'+inr(pd)+'</b><small>30 days</small></div><div class="sl-kpi '+(t-pd>0?"amber":"green")+'"><span>Not given</span><b>'+inr(Math.max(0,t-pd))+"</b><small>register − given</small></div>";
+          el("view").innerHTML='<div class="lb-list">'+(DAYS.length?'<table class="lb-t" data-cf-off><thead><tr><th>Day</th><th>Godown Manager</th><th class="n">Labour</th><th class="n">Charge</th><th class="n">Given</th><th></th></tr></thead><tbody>'+
+            DAYS.map(d=>{const due=num(d.total)+num(d.extra_ok)-num(d.paid);return '<tr><td><a href="#" data-day="'+esc(d.day)+'"><b>'+esc(dmy(d.day))+'</b></a></td><td>'+esc(d.gm)+'</td><td class="n">'+num(d.count)+(d.plan!=null?' <span class="mut">/ '+num(d.plan)+"</span>":"")+'</td><td class="n w">'+inr(d.total)+'</td><td class="n">'+inr(d.paid)+'</td><td>'+(due>0?'<span class="erp-badge amber">Due '+inr(due)+"</span>":'<span class="erp-badge green">Paid</span>')+"</td></tr>"}).join("")+"</tbody></table>":'<div class="lb-empty">No labour in these 30 days.</div>')+"</div>";
+          el("help").textContent="Last 30 days, one line per day per Godown Manager. Tap a day to open it.";
+        }
+      }catch(e){el("view").innerHTML='<div class="sl-msg">'+esc(e.message)+"</div>"}
+    }
+    async function excel(){
+      if(tab==="people")return S.excel("Labourers "+el("day").value,[{name:"Labourers",title:"Daily labour · labourers (30 days)",head:["Name","Mobile","Days","Total","Avg / day","Last day","Godown Manager"],
+        rows:PEOPLE.map(p=>[p.name,p.mobile,num(p.days),num(p.total),num(p.avg),p.last_day,(p.gms||[]).join(", ")])}]);
+      if(tab==="days")return S.excel("Labour day-wise "+el("day").value,[{name:"Day-wise",title:"Daily labour · day-wise (30 days)",head:["Day","Godown Manager","Labour","Plan","Charge","Given"],
+        rows:DAYS.map(d=>[d.day,d.gm,num(d.count),d.plan==null?"":num(d.plan),num(d.total),num(d.paid)])}]);
+      if(!D)return;
+      S.excel("Daily labour "+D.day,[{name:"Labour",title:"Daily labour · "+dmy(D.day),head:["Godown Manager","Name","Mobile","Work","Wage"],
+        rows:D.gms.flatMap(g=>g.rows.map(r=>[g.name,r.name,r.mobile,r.work||"",num(r.wage)]))}]);
+    }
+
+    (async()=>{
+      me=await S.start(["admin","manager","warehouse","accounts","cashier"]);if(!me)return;
+      el("loading").hidden=true;el("page").hidden=false;
+      const qd=qs.get("day");el("day").value=qd&&/^\d{4}-\d{2}-\d{2}$/.test(qd)&&qd<=today?qd:today;el("day").max=today;
+      el("day").onchange=load;el("prev").onclick=()=>{el("day").value=shift(el("day").value||today,-1);load()};
+      el("next").onclick=()=>{const n=shift(el("day").value||today,1);if(n<=today){el("day").value=n;load()}};
+      el("refresh").onclick=load;el("excel").onclick=excel;
+      document.querySelectorAll("[data-tab]").forEach(b=>b.onclick=()=>{tab=b.dataset.tab;document.querySelectorAll("[data-tab]").forEach(x=>x.classList.toggle("on",x===b));load()});
+      el("view").addEventListener("click",e=>{
+        const dl=e.target.closest("[data-day]");if(dl){e.preventDefault();el("day").value=dl.dataset.day;document.querySelector('[data-tab="day"]').click();return}
+        const b=e.target.closest("[data-a]");if(!b)return;const a=b.dataset.a;
+        if(a==="add")return addRow(b.closest(".lb-add"));
+        if(a==="edit")return editRow(b.dataset.r);if(a==="del")return delRow(b.dataset.r);
+        if(a==="plan")return plan(b.dataset.g);if(a==="pay")return pay(b.dataset.g);if(a==="ask")return ask(b.dataset.g);
+        if(a==="xok")return decide(b.dataset.x,true);if(a==="xno")return decide(b.dataset.x,false);
+      });
+      el("view").addEventListener("input",e=>{if(e.target.classList.contains("mbI")&&phone(e.target.value).length===10)autofill(e.target.closest(".lb-add"))});
+      el("view").addEventListener("keydown",e=>{if(e.key==="Enter"&&e.target.closest(".lb-add")){e.preventDefault();addRow(e.target.closest(".lb-add"))}});
+      await load();
+    })();
+  </script>
+</body>
+</html>

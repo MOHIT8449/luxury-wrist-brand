@@ -89,6 +89,9 @@
   [/^TASK_DONE$/,"✅","ok","",""],
   [/^TASK_(OVERDUE|CANCELLED)$/,"⚠","bad","",""],
   [/^TASK_/,"📋","act","",""],
+  [/^LABOUR_EXTRA$/,"👷","act","Labour extra cash","Approve"],
+  [/^LABOUR_EXTRA_DONE$/,"👷","ok","Labour extra",""],
+  [/^LABOUR_/,"👷","info","Daily labour",""],
   [/^ANNOUNCEMENT$/,"📢","info","",""],
   [/^SALES_PLAN$/,"📋","info","Today's plan",""],
   [/^PAYMENT_FOLLOWUP$/,"₹","act","Payment follow-up","Collect"]
@@ -105,7 +108,7 @@
  };
  const CAT_OF=[
   [/^(TASK_|COMPLAINT_|SALES_PLAN$|ANNOUNCEMENT$)/,"task"],
-  [/^(DELIVERY_COLLECTION|ACC_|HIRED_RATE_|TALLY_NOTE_|PAYMENT_FOLLOWUP)/,"money"],
+  [/^(DELIVERY_COLLECTION|ACC_|HIRED_RATE_|TALLY_NOTE_|PAYMENT_FOLLOWUP|LABOUR_)/,"money"],
   [/^(ORDER_LOADED|ORDER_DISPATCHED|ORDER_DELIVERED|ORDER_PARTIAL|ORDER_NOT_DELIVERED|VEHICLE_LOADED|LOADING_ASSIGNMENT|TALLY_BILL_PENDING|PO_APPROVED_LOADING|DELIVERY_RETURN|RETURN_CHECKED)/,"delivery"],
   [/^(STOCK_|GODOWN_|PURCHASE_|MARKET_)/,"stock"],
   [/^(ORDER_|PO_|RATE_|BILL_CHANGE_|TALLY_BILL_|SALES_RETURN)/,"order"]
@@ -138,7 +141,7 @@
   speaker:'<path d="m3 11 18-5v12L3 14v-3z"/><path d="M11.6 16.8a3 3 0 1 1-5.8-1.6"/>',
   dot:'<circle cx="12" cy="12" r="4"/>'
  };
- const EMOJI_ICON={"🛒":"cart","✅":"check","🚚":"truck","🚛":"truck","🧾":"bill","📦":"box","🟠":"alert","⚠":"alert","✖":"x","❌":"x","✏":"edit","💰":"cash","💵":"cash","↩":"back","📝":"note","₹":"rupee","🌙":"moon","🏭":"store","👤":"user","🏦":"bank","📁":"folder","📊":"chart","🚩":"flag","📮":"inbox","💬":"chat","📋":"task","📢":"speaker"};
+ const EMOJI_ICON={"🛒":"cart","✅":"check","🚚":"truck","🚛":"truck","🧾":"bill","📦":"box","🟠":"alert","⚠":"alert","✖":"x","❌":"x","✏":"edit","💰":"cash","💵":"cash","↩":"back","📝":"note","₹":"rupee","🌙":"moon","🏭":"store","👤":"user","🏦":"bank","📁":"folder","📊":"chart","🚩":"flag","📮":"inbox","💬":"chat","📋":"task","📢":"speaker","👷":"user"};
  const svg=e=>'<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'+(ICON[EMOJI_ICON[e]]||ICON.dot)+'</svg>';
  function dayOf(v){
   const d=new Date(v),t=new Date();t.setHours(0,0,0,0);
@@ -243,6 +246,8 @@
   [/^LOADING_ASSIGNMENT/,["loading-dispatch.html?order={o}","transport-allocation.html"]],
   [/^HIRED_RATE_/,["fleet-master.html#rates"]],
   [/^PARTY_CREATED$/,["customer-master.html"]],
+  [/^LABOUR_EXTRA$/,["approvals.html","labour.html"]],
+  [/^LABOUR_/,["labour.html"]],
   [/^GODOWN_/,["godown-report.html"]],
   [/^PURCHASE_MISSING$/,["purchase-register.html?missing=1"]],
   [/^PURCHASE_ARRIVED$/,["purchase-register.html?bill={r}"]],
@@ -447,7 +452,7 @@
   }
   // Godown Manager: only his own work (loading given to him, purchase vehicle to unload, tasks, his returns).
   // The database already sends / shows only these (lwb_gm_notify_scope_setup.sql); this is the same rule by type.
-  const GM_BELL=/^(LOADING_ASSIGNMENT_DISPATCH|PURCHASE_ARRIVED|TASK_|DELIVERY_RETURN_RECEIVE|ANNOUNCEMENT)/;
+  const GM_BELL=/^(LOADING_ASSIGNMENT_DISPATCH|PURCHASE_ARRIVED|TASK_|DELIVERY_RETURN_RECEIVE|ANNOUNCEMENT|LABOUR_)/;
   async function reloadData(){
    let qy=db.from("erp_notifications").select("*").eq("user_id",user.id);
    // A picked older date reads that day only, so it is not cut by the latest-70 limit.
