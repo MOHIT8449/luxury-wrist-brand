@@ -554,7 +554,7 @@
       const box=document.getElementById("cashBox");
       let r=null;try{r=await client.rpc("lwb_acc_shift_list",{p_from:null,p_to:null})}catch(e){}
       if(!r||r.error||!r.data){box.hidden=true;return}
-      const S=r.data,HS=S.holders&&S.holders.length?S.holders:S.holder?[S.holder]:[],P=S.pending,L=S.last_entry,RN={admin:"Admin",accounts:"Accounts",cashier:"Cashier",manager:"Sales Head · today's cashier",sales:"Sales",salesman:"Sales"};
+      const S=r.data,HS=S.holders&&S.holders.length?S.holders:S.holder?[S.holder]:[],P=S.pending,L=S.last_entry,RN={admin:"Admin",accounts:"Accounts",cashier:"Cashier",manager:"Sales Head",sales:"Sales",salesman:"Sales"};
       const H=HS.length>1?Object.assign({},HS[0],{name:HS.map(h=>String(h.name).split(/\s+/)[0]).join(" + "),amount:HS.reduce((a,h)=>a+Number(h.amount||0),0),role:"",mobile:null}):HS[0];
       const t=v=>v?new Date(v).toLocaleTimeString("en-IN",{hour:"2-digit",minute:"2-digit",hour12:true,timeZone:"Asia/Kolkata"}):"";
       const d=v=>v?new Date(v).toLocaleDateString("en-GB",{day:"2-digit",month:"2-digit",timeZone:"Asia/Kolkata"}):"";
@@ -566,7 +566,7 @@
       box.replaceChildren();
       add("span","cb-ic","💼");
       const main=add("span");
-      main.append(document.createTextNode("Cash box now: "));
+      main.append(document.createTextNode("Today's cashier: "));
       const b=document.createElement("b");b.className="cb-who";b.textContent=who?who.name:"Nobody yet today";main.appendChild(b);
       if(who&&RN[who.role])main.append(document.createTextNode(" · "+RN[who.role]));
       if(who)add("span","cb-sub",who.sub);
@@ -588,10 +588,28 @@
       if(!mine){
         // Today's cashier (Mohit 26 Nov 2026): the Sales Head holding the cash box gets the Cashier buttons here.
         let d=null;if(currentRole==="manager"){try{const x=await client.rpc("lwb_acc_on_duty");d=!x.error&&x.data&&x.data.on_duty?x.data:null}catch(e){}}
-        if(!d){box.hidden=true;return}
         const t=v=>v?new Date(v).toLocaleTimeString("en-IN",{hour:"2-digit",minute:"2-digit",hour12:true,timeZone:"Asia/Kolkata"}):"";
         const dd=v=>v?new Date(v).toLocaleDateString("en-GB",{day:"2-digit",month:"2-digit",timeZone:"Asia/Kolkata"}):"";
         const today=v=>v&&dd(v)===dd(new Date().toISOString());
+        if(!d){
+          // Everyone (Sales Heads, Accounts): who is today's cashier = who holds the cash box now.
+          const HS=S&&S.holders&&S.holders.length?S.holders:S&&S.holder?[S.holder]:[];
+          if(!HS.length){box.hidden=true;return}
+          const RN={admin:"Admin",accounts:"Accounts",cashier:"Cashier",manager:"Sales Head",sales:"Sales"};
+          box.replaceChildren();box.classList.remove("duty");box.classList.add("who-cash");
+          const ic=document.createElement("span");ic.className="cb-ic";ic.textContent="💼";
+          const m=document.createElement("span");m.append(document.createTextNode("Today's cashier: "));
+          HS.forEach((h,i)=>{if(i)m.append(document.createTextNode(" + "));const b=document.createElement("b");b.className="cb-who";b.textContent=h.name;m.appendChild(b);
+            if(RN[h.role]){const g=document.createElement("span");g.className="cb-tag";g.textContent=RN[h.role];m.append(" ",g)}});
+          const h0=HS[0],sub=document.createElement("span");sub.className="cb-sub";sub.textContent="since "+t(h0.since)+(today(h0.since)?"":" "+dd(h0.since));
+          box.append(ic,m,sub);
+          if(P){const p=document.createElement("span");p.className="cb-tag";p.textContent="Handing to "+P.to_name+" · waiting";box.appendChild(p)}
+          const act=document.createElement("span");act.className="cb-act";
+          if(HS.length===1&&h0.mobile&&h0.id!==S.me){const a=document.createElement("a");a.href="tel:"+String(h0.mobile).replace(/[^\d+]/g,"");a.textContent="📞 Call "+String(h0.name).split(/\s+/)[0];act.appendChild(a)}
+          if(["accounts","cashier"].includes(currentRole)){const a=document.createElement("a");a.href="accounts-dashboard.html?tab=close#cash";a.textContent="Hand over →";act.appendChild(a)}
+          if(act.children.length)box.appendChild(act);
+          box.hidden=false;return;
+        }
         box.replaceChildren();box.classList.add("duty");
         const ic=document.createElement("span");ic.className="cb-ic";ic.textContent="💼";
         const m=document.createElement("span");const b=document.createElement("b");b.className="cb-who";b.textContent="You are today's cashier";m.appendChild(b);
@@ -855,7 +873,8 @@
           document.addEventListener("lwb:bizready",show,{once:true});setTimeout(show,8000)}
         const tools=document.createElement("section");tools.className="adm-tools";tools.id="admTools";
         tools.innerHTML='<h3 class="adm-th">Tasks · Cash box · Search</h3>';
-        ["taskAlert","cashBox"].forEach(id=>tools.appendChild(document.getElementById(id)));
+        ["taskAlert"].forEach(id=>tools.appendChild(document.getElementById(id)));
+        box.before(document.getElementById("cashBox"));   // Today's cashier on top for Admin (Mohit 26 Nov 2026)
         tools.appendChild(main.querySelector(".hero"));
         ["taskCard","banners","focus","focusForm"].forEach(id=>tools.appendChild(document.getElementById(id)));
         box.after(tools);
