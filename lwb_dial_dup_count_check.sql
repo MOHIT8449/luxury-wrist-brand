@@ -1,6 +1,7 @@
 -- LUXURY WRIST BRAND ERP — READ-ONLY CHECK: duplicate party numbers (27 Nov 2026)
 -- lwb:no-auto-run
 -- Prints counts only (no names, no phone numbers) in the run log. Changes nothing.
+-- It stops with an ERROR on purpose, so the counts show in the log (the run turns red; nothing is written).
 -- Read-only count for the run log (numbers only: no names, no phone numbers).
 DO $chk$
 DECLARE v_p int; v_num int; v_dup_nums int; v_dup_parties int; v_team int; v_none int;
@@ -14,6 +15,6 @@ BEGIN
   SELECT count(DISTINCT public.lwb_dial_mob(c.mobile)) INTO v_team FROM public.lwb_customer_master c
     JOIN public.user_profiles p ON p.active = true AND public.lwb_dial_mob(p.mobile) = public.lwb_dial_mob(c.mobile)
     WHERE coalesce(c.is_active, true);
-  RAISE NOTICE 'DIAL CHECK: active parties with mobile=%, without valid mobile=%, different numbers=%, numbers used by 2+ parties=% (parties in them=%), party numbers same as a login=%',
+  RAISE EXCEPTION 'DIAL CHECK: active parties with mobile=%, without valid mobile=%, different numbers=%, numbers used by 2+ parties=% (parties in them=%), party numbers same as a login=%',
     v_p, v_none, v_num, v_dup_nums, v_dup_parties, v_team;
 END $chk$;
