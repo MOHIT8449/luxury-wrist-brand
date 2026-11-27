@@ -4,9 +4,9 @@
 **Purpose:** Continue the same ERP project from a new ChatGPT conversation without restarting or losing the agreed requirements.
 **Status:** Active development / verification. Do not assume all modules are completed or fully tested.
 
-
-
-
+## Top bar: Ledger button out, phone top bar in one row (27 Nov 2026)
+- Mohit (phone screenshot, icons cut off on the right): remove the 📒 Ledger top-bar button (PR 624) on web and phone; Module Search "ledger / khata / लेजर" and Ctrl+Alt+L stay.
+- erp-shell.css / .js, phone (≤760px) only: Logout moved to the end of the side menu (`.erp-side-logout`), Live dot hidden (auto refresh still runs), Dial icon only, bell / dial / chat 32px (30px ≤380px), smaller ON switch, cashier chip max 76px (was squashed). Fits 360–430px. No SQL. Screenshots (mocked data): project files `topbar-tidy/`.
 
 ## PO list: Tally bill no. on every row + Bill made tab (27 Nov 2026)
 - Mohit: the list must show which POs Accounts has billed in Tally (Bill pending alone is not enough to track).
