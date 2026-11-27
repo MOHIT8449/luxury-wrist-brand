@@ -1485,3 +1485,12 @@
 - Screenshots: project files `po-edit-reapproval/`.
 - Pallet after Edit PO (25 Nov 2026, LXY-00679 showed 10P after 1L Kinley 60 -> 120): `orders.sp_pallets` was filled once at PO entry. `warehouse-orders.html` `syncPoPallets`: after an SKU save, if the PO's pallet count equals the old auto count (cases ÷ `sku_master.cases_per_pallet`, rounded up), it is set to the new auto count via `lwb_set_order_sheet_pallet` (hand-typed counts stay). One-time `lwb_po_pallet_fix_lxy00679.sql` fixes LXY-00679.
 - 26 Nov 2026, Mohit: sales side needs no Admin approval for an edit. `REAPPROVE_SALES_HEAD = false` in warehouse-orders.html (Sales Head's edit saves straight, PO stays on its step). `lwb_po_reapproval_off.sql` put the POs already waiting (LXY-00698, LXY-00684 ...) back on their step. The RPC / trigger stay in the database, unused.
+
+## ECRS dispatch: driver mobile + "Vehicle on the way" alert (27 Nov 2026)
+- Mohit: no separate "+ Driver" button on ECRS / Purchase List ECRS rows. Driver mobile + name are entered in the
+  "Company dispatch" popup (purchase-stage.js) after checking the driver's bill cases against the ECRS order
+  (green "same" / red "different: N cs less" bar).
+- lwb_ecrs_on_way_setup.sql: lwb_ecrs_trucks.onway_at/onway_mobile/onway_by; RPC lwb_ecrs_on_way(truck, mobile, name, ordered_cs)
+  saves the driver (lwb_vehicle_driver_save) and sends erp_notifications 'PURCHASE_ON_WAY' to active warehouse + manager
+  logins (not the sender), once per driver number. Phone push goes through the existing erp_notifications trigger.
+- Tests: tests/ecrs-on-way.

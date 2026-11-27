@@ -154,7 +154,7 @@
     css();opt=opt||{};
     const k=vkey(vehicle),d=k&&map&&map.get(k);
     const ec=opt.ecrs?' data-dial-ecrs="'+esc(opt.ecrs)+'"':"";
-    if(!d)return opt.canSave?'<span class="dl-rb"><button type="button" data-dial-add="'+esc(vehicle||"")+'"'+ec+' title="Driver mobile + WhatsApp location">+ Driver</button></span>':"";
+    if(!d)return opt.canSave&&!opt.noAdd?'<span class="dl-rb"><button type="button" data-dial-add="'+esc(vehicle||"")+'"'+ec+' title="Driver mobile + WhatsApp location">+ Driver</button></span>':"";
     const sent=d.loc_sent_at?new Date(d.loc_sent_at).toLocaleString("en-IN",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit",hour12:false,timeZone:"Asia/Kolkata"}):"";
     return '<span class="dl-rb"><button type="button" class="c" data-dial-call="'+esc(k)+'" data-dial-name="'+esc(d.vehicle_no+(d.name?" · "+d.name:""))+'" title="Call driver '+esc(d.masked)+'">📞</button>'+
       (opt.canSave?'<button type="button" data-dial-loc="'+esc(d.vehicle_no)+'" title="WhatsApp godown location">📍</button>':"")+"</span>"+

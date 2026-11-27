@@ -8,8 +8,8 @@
 <script src="vendor/supabase-js-2.119.0.js"></script>
 <link rel="stylesheet" href="erp-shell.css?v=20261127m">
 <script src="erp-shell.js?v=20261127m"></script>
-<script src="purchase-stage.js?v=20261127"></script>
-<script src="vehicle-no.js"></script><script src="dial-book.js"></script>
+<script src="purchase-stage.js?v=20261127n"></script>
+<script src="vehicle-no.js?v=20261127n"></script><script src="dial-book.js?v=20261127n"></script>
 <style>
 .ec-gate{text-align:center;padding:80px 20px;font-size:15px;color:#555}
 .ec-card{background:#fff;border:1px solid var(--erp-line);border-radius:10px;padding:12px;margin-bottom:12px}
@@ -433,7 +433,7 @@ function renderTrucks(){
     ${t.rows.map((r,j)=>`<div class="tl"><span>${esc(info(r.sku_id).name||r.name)}</span><input type="number" min="0" step="1" data-t="${t.id}" data-j="${j}" value="${n(r.pal)}"></div>`).join('')}
     <div class="tg"><span>GR <b>₹${fmt(trkGR(t).g)}</b></span><span>Pay <b>₹${fmt(trkGR(t).pay)}</b></span></div>
     ${dispLine(t)}
-    ${!t.closed_at&&window.LWBDial?`<div class="ec-drv">${LWBDial.rowBtns(t.vehicle_no,DRV,{canSave:true,ecrs:t.id})}</div>`:''}
+    ${!t.closed_at&&window.LWBDial?`<div class="ec-drv">${LWBDial.rowBtns(t.vehicle_no,DRV,{canSave:true,ecrs:t.id,noAdd:true})}</div>`:''}
     <div class="tb"><button onclick="openPlan(${t.id})">Edit</button><button class="dark" onclick="copyOne(${t.id})">Copy</button><button class="ghost" onclick="shareOne(${t.id})">Share</button><button class="del" onclick="delTruck(${t.id})">Delete</button></div>
     <div class="tb"><button class="${t.dispatched_at?'':'dark'}" onclick="dispatchTruck(${t.id})">${t.dispatched_at?'✏️ Dispatch details':'🚚 Company dispatched'}</button></div></div>`; }).join('');
   $('trucks').querySelectorAll('input[data-t]').forEach(el=>el.addEventListener('change',async e=>{
@@ -459,7 +459,8 @@ function dispLine(t){
 }
 function dispatchTruck(id){ const t=TRUCKS.find(x=>x.id===id); if(!t||!window.LWBPurchaseStage) return;
   LWBPurchaseStage.dispatch({client:db,truck:{...t,rows:t.rows.map(r=>({sku_id:r.sku_id,name:info(r.sku_id).name||r.name,cs:n(r.pal)*info(r.sku_id).ppp}))},
-    onDone:k=>{ toast(k==='dispatch'?'Dispatch saved.':k==='close'?'Marked Not coming.':'Opened again.'); loadDay(); }}); }
+    driver:window.LWBDial&&DRV?DRV.get(window.LWBVeh?LWBVeh.key(t.vehicle_no):String(t.vehicle_no||'').toUpperCase().replace(/[^A-Z0-9]/g,'')):null,
+    onDone:(k,w)=>{ toast(k==='dispatch'?(w&&w.notified?`Saved. "On the way" sent to ${w.notified} (Godown Manager + Sales Head).`:w&&w.again?'Saved. Driver same as before, alert not sent again.':'Dispatch saved.'):k==='close'?'Marked Not coming.':'Opened again.'); loadDay(); }}); }
 async function delTruck(id){ const t=TRUCKS.find(x=>x.id===id); if(!await ask(`Delete Order ${t.no}?`)) return;
   const {error}=await db.from('lwb_ecrs_trucks').delete().eq('id',id); if(error){ say('Delete failed: '+error.message); return; } await loadDay(); }
 
