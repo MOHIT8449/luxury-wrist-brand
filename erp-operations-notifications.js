@@ -282,7 +282,7 @@
   if(href.includes("{t}")){const c=(String(n.message||"").match(/TSK-(\d+)/)||[])[1];return c?href.replace("{t}",c):href.split("?")[0]}
   return n.order_id?href.replace("{o}",encodeURIComponent(n.order_id)):href.split("?")[0];
  }
- // Quiet notifications: updates stay in the bell; no automatic dialogs interrupt entry.
+ // New rows: bell count + a small popup with its own sound (erp-notify-popup.js); no dialog blocks entry.
  function init({db,user,mount,pages,role}){
   if(!db||!user?.id||!mount)return;
   // One bell per page. If a page put it in its old (now hidden) header, move it to the ERP top bar.
@@ -482,6 +482,9 @@
    allRead.hidden=!unread;
    allItems=rows.map(n=>({n,sum:summary(n,orders.get(n.order_id)),href:route(n,pages)}));
    render();
+   // 🔔 New notification: small popup + its own sound (erp-notify-popup.js). A picked old date is not "new".
+   if(when!=="date"&&window.LWBNotifyPopup)window.LWBNotifyPopup.feed(allItems.map(it=>({...it,tag:(CATS[it.sum.cat]||CATS.other).tag,svg:svg(it.sum.icon),
+    open:async()=>{if(!it.n.is_read)await markRead(it.n);if(it.href)location.href=it.href;else{panel.hidden=false;bell.setAttribute("aria-expanded","true");reloadData()}}})));
   }
   // "Market order — please check once" (lwb_rate_check_setup.sql) used to pop up here for every PO, again and
   // again. Now it is only a bell row + the "Market order check" card on Approvals (approvals.html), where
@@ -520,15 +523,18 @@
     await window.LWBPhonePush.init({db,user,role:actualRole,mount:foot});
    }catch(e){}
   })();
-  let lastLoad=Date.now(),liveOk=false;
+  let lastLoad=Date.now(),liveOk=false,soon=0;
   const load=()=>{lastLoad=Date.now();return reloadData()};
-  load();
+  // Popup + sound for new notifications; loaded first so the first load is only the "already there" list.
+  const popReady=window.LWBNotifyPopup?Promise.resolve():new Promise(ok=>{const s=document.createElement("script");s.src="erp-notify-popup.js";s.onload=ok;s.onerror=ok;document.head.append(s)});
+  popReady.then(()=>{try{window.LWBNotifyPopup&&window.LWBNotifyPopup.controls(foot)}catch(e){}load()});
+  // Phone app open on screen: the push comes here instead of a second banner (sw.js), so read at once.
+  if(navigator.serviceWorker)navigator.serviceWorker.addEventListener("message",e=>{if(e.data&&e.data.type==="LWB_PUSH_IN"){clearTimeout(soon);soon=setTimeout(load,300)}});
   // Backup check: every 30 s while the instant (Realtime) link is down, every 2 min while it works
   // (speed fix, 17 Nov 2026: each open tab of every user used to read 70 bells every 30 s).
   setInterval(()=>{if(!document.hidden&&Date.now()-lastLoad>=(liveOk?120000:29000))load()},30000);
   // Instant: a new row updates the bell count without interrupting the current task.
   // Needs erp_notifications in Supabase Realtime (lwb_order_flow_popups_setup.sql).
-  let soon=0;
   try{
    db.channel("lwb-bell-"+user.id).on("postgres_changes",{event:"INSERT",schema:"public",table:"erp_notifications",filter:"user_id=eq."+user.id},
     ()=>{clearTimeout(soon);soon=setTimeout(load,400)}).subscribe(st=>{liveOk=st==="SUBSCRIBED"});
