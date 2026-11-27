@@ -6,14 +6,15 @@
   <title>Dashboard | Luxury Wrist Brand ERP</title>
   <script src="erp-date.js"></script>
   <script src="vendor/supabase-js-2.119.0.js"></script>
-  <link rel="stylesheet" href="erp-shell.css?v=20261124">
-  <script src="erp-shell.js?v=20261124r"></script>
-  <script src="party-pay.js?v=20261125b"></script>
+  <link rel="stylesheet" href="erp-shell.css?v=20261127l">
+  <script src="erp-shell.js?v=20261127l"></script>
+  <script src="party-pay.js?v=20261126e"></script>
   <script src="brand-filter.js"></script><script src="erp-period.js" data-roles="admin accounts"></script><script src="sku-rank.js"></script>
   <script src="role-dashboard.js?v=20261124o"></script>
   <script src="admin-business.js?v=20261125a"></script>
   <script src="erp-list.js"></script>
   <script src="approvals.js"></script>
+  <script src="labour.js?v=20261126a"></script>
   <link rel="stylesheet" href="role-dashboard.css">
   <style>
     .status{text-align:center;padding:80px 20px;font-size:15px;color:#555}
@@ -518,13 +519,14 @@
     function heroSearch(){
       const input=document.getElementById("heroSearch"),box=document.getElementById("heroResults");
       let hits=[],pos=0;
-      const modules=()=>ERPShell.menuForMe(currentRole).flatMap(g=>g.items.map(i=>({t:i.t,s:g.group||"Module",h:i.h})));
+      // Same ranking and Hindi words as the top-bar Module Search (ERPShell.findModules): "ledger" → Ledger & Outstanding first.
+      const modules=()=>ERPShell.menuForMe(currentRole).flatMap(g=>g.items.map(i=>({...i,g:g.group,s:g.group||"Module"})));
       function show(){
         const q=input.value.toLowerCase().trim();box.replaceChildren();hits=[];pos=0;
         if(!q){box.classList.remove("open");return}
         const words=q.split(/\s+/);
         const match=t=>words.every(w=>t.toLowerCase().includes(w));
-        hits=modules().filter(m=>match(m.t+" "+m.s)).slice(0,5);
+        hits=ERPShell.findModules(modules(),q).slice(0,5).map(m=>({t:m.t,s:m.s,h:m.h}));
         const seen=new Set();
         searchOrders.forEach(o=>{
           const party=String(o.customer_name||"").trim();
@@ -937,6 +939,8 @@
         loadVerify();setInterval(()=>{if(!document.hidden)loadVerify()},60000);
         if(["admin","manager"].includes(role)&&!ERPShell.hiddenPages().includes("approvals.html")){loadApprovals(user.id);setInterval(()=>{if(!document.hidden)loadApprovals(user.id)},60000)}
         loadFocus();focusSetup();
+        // Daily labour popup (Mohit, 26 Nov 2026): once a day, how many outside labour came and the total charge (labour.js).
+        if(window.LWBLabour&&!ERPShell.hiddenPages().includes("labour.html"))setTimeout(()=>LWBLabour.popup(client,role),1500);
         taskUid=user.id;
         client.rpc("lwb_task_due_bells").then(()=>{},()=>{});
         loadTasks();setInterval(()=>{if(!document.hidden)loadTasks()},60000);

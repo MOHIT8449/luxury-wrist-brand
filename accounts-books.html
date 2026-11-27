@@ -6,14 +6,15 @@
   <title>Ledger &amp; Outstanding | Luxury Wrist Brand ERP</title>
   <script src="erp-date.js"></script><script src="erp-recent.js"></script>
   <script src="vendor/supabase-js-2.119.0.js"></script>
-  <link rel="stylesheet" href="erp-shell.css?v=20261124">
+  <link rel="stylesheet" href="erp-shell.css?v=20261127l">
   <link rel="stylesheet" href="sales.css">
-  <script src="erp-shell.js?v=20261124r"></script>
+  <script src="erp-shell.js?v=20261127l"></script>
   <script src="sales-common.js"></script>
   <script src="brand-filter.js"></script>
   <script src="erp-period.js"></script>
   <script src="erp-colfilter.js"></script>
-  <script src="party-pay.js?v=20261125b"></script>
+  <script src="party-pay.js?v=20261126e"></script>
+  <script src="dup-note.js?v=20261126d"></script>
   <script src="ledger-rows.js?v=20261123a"></script>
   <style>
     /* Ledger & Outstanding (Mohit, 20 Nov 2026): the Accounts "Display" books in one place, like Tally.
@@ -35,6 +36,7 @@
     .ab-rd .ab-rd-l input{width:100%;box-sizing:border-box}.ab-rd .am{font-weight:700;text-align:right}
     .ab-rd .ab-rd-tot{margin-left:auto;font-size:14px}.ab-rd .ab-rd-tot b{color:#13824a;font-size:16px}.ab-rd .ab-rd-tot small{color:#8a5a00}
     .ab-rd .ab-rd-q{margin:0;flex-basis:100%;font-size:13.5px}.ab-rd.del{background:#fff1f1;border-color:#e6a1a1}
+    .ab-rd .ab-rd-lock{margin:0;flex-basis:100%;font-size:13px;background:#fff6e5;border:1px solid #f3d49b;color:#7a4a00;border-radius:7px;padding:6px 9px}
     .ab-b.ab-del{color:#b3122b;border-color:#efc2c2}.ab-b.ab-delb{background:#b3122b;border-color:#b3122b;color:#fff}
     .ab-hist{color:#8a5a00 !important}
     @media(max-width:560px){.ab-rd .ab-rd-l{grid-template-columns:84px minmax(0,1fr)}.ab-rd .ab-rd-l .rf{grid-column:1/-1}.ab-rd .ab-rd-l.bill{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}.ab-rd .ab-rd-l [data-rm]{justify-self:start}}
@@ -183,14 +185,16 @@
     const modeChips=m=>m.map(k=>'<span class="ab-mode">'+esc(MODE[k]||k)+'</span>').join("");
     const refOf=x=>String(x.ref_no||"").trim().split(/\s+/).slice(1).join(" ");
 
-    let me=null,info=null,led=null,byNo=new Map(),fb="",sec="out",outMode="party",outShow="due",outPk="",ledPk="",ledFy=true,shown=300,cur=null,loadedAt=0;
+    let DUPS=[],me=null,info=null,led=null,byNo=new Map(),fb="",sec="out",outMode="party",outShow="due",outPk="",ledPk="",ledFy=true,shown=300,cur=null,loadedAt=0;
     const CF=LWBCol.create({onChange:()=>draw()});
 
     /* ---------- data ---------- */
     async function load(){
       el("err").innerHTML="";
       try{
+        const dupQ=window.LWBDup?LWBDup.pending(client,true):Promise.resolve([]);
         info=await LWBPartyPay.load(client);
+        DUPS=await dupQ;
         const cxq=client.rpc("lwb_ledger_cancelled",{p_days:400});
         const a=await LWBLedgerRows(client);   // all rows (no 1000-row cut)
         if(a.error)throw a.error;
@@ -301,6 +305,10 @@
     function tools(html,keepQ){const old=qVal();el("tools").innerHTML='<div class="ab-f">'+html+"</div>";const i=el("q");if(i&&keepQ!==false){i.value=old;i.oninput=()=>{shown=300;draw();const n=el("q");n.focus();n.setSelectionRange(n.value.length,n.value.length)}}}
     const seg=(id,opts,v)=>'<span class="ab-seg" id="'+id+'">'+opts.map(([k,l])=>'<button type="button" data-v="'+k+'" aria-pressed="'+(k===v)+'">'+l+"</button>").join("")+"</span>";
     const bLab=()=>fb&&info.brandOf(fb)?" · "+info.brandOf(fb).name:"";
+    // duplicate / torn note given by the party, still pending (lwb_acc_dup_note_setup.sql)
+    const dupOf=pk=>window.LWBDup?LWBDup.of(DUPS,nameOf(pk)).filter(r=>!fb||!r.company_id||r.company_id===fb):[];
+    const dupB=pk=>window.LWBDup?LWBDup.badge(dupOf(pk)):"";
+    const dupS=pk=>window.LWBDup?LWBDup.strip(dupOf(pk)):"";
 
     // 1. Outstanding (Receivables): party-wise or bill-wise, ageing; party → its bills; bill → voucher
     function drawOut(){
@@ -312,7 +320,7 @@
         tools('<input id="q" type="search" placeholder="Search party or bill name…" autocomplete="off">'+seg("oMode",[["party","Party-wise"],["bill","Bill-wise"]],outMode)+seg("oShow",[["due","To collect"],["adv","Advance"],["all","All"]],outShow));
         let L=outParties().filter(x=>outShow==="all"||(outShow==="due"?x.net>0.5:x.net<-0.5)).filter(x=>match(q,x.party,...x.members)).sort((a,b)=>outShow==="adv"?a.net-b.net:b.net-a.net);
         el("box").innerHTML=table("outP",[
-          {h:"Party",v:x=>x.party,p:1,html:x=>esc(x.party)+(x.members.length?'<small>'+esc(x.members.slice(0,3).join(", "))+(x.members.length>3?" …":"")+"</small>":"")+'<small class="ab-ph">'+x.bills+" bill"+(x.bills===1?"":"s")+(x.bills?' · <span class="'+dcls(x.oldest)+'">'+x.oldest+" days</span>":"")+"</small>"},
+          {h:"Party",v:x=>x.party,p:1,html:x=>esc(x.party)+dupB(x.pk)+(x.members.length?'<small>'+esc(x.members.slice(0,3).join(", "))+(x.members.length>3?" …":"")+"</small>":"")+'<small class="ab-ph">'+x.bills+" bill"+(x.bills===1?"":"s")+(x.bills?' · <span class="'+dcls(x.oldest)+'">'+x.oldest+" days</span>":"")+"</small>"},
           {h:"Bills",v:x=>x.bills,n:1,hp:1},
           {h:"Oldest",v:x=>x.bills?x.oldest:"",n:1,hp:1,html:x=>x.bills?'<span class="ab-days '+dcls(x.oldest)+'">'+x.oldest+"d</span>":""},
           {h:"0-30",v:x=>r2(x.b[0]),n:1,hp:1,sum:1,html:x=>x.b[0]?rs(x.b[0]):""},
@@ -347,7 +355,7 @@
       if(!p){el("box").innerHTML='<div class="ab-empty">No bill due for this party.</div>';cur=null;return}
       const net=r2(p.net!=null?p.net:p.due+(p.opening||0)-p.advance-(p.ret||0)),m=membersOf(pk);
       const bills=(p.bills||[]).map(o=>({...o,pk,days:daysOld(o.invoice_date),got:r2((Number(o.driver)||0)+(Number(o.office)||0)),cn:r2((Number(o.credit_notes)||0)+(Number(o.approved_return)||0)-(Number(o.debit_notes)||0))}));
-      el("box").innerHTML=(m.length?'<p class="ab-note" style="margin:0 0 6px">Bill names: '+esc(m.join(", "))+"</p>":"")+
+      el("box").innerHTML=(m.length?'<p class="ab-note" style="margin:0 0 6px">Bill names: '+esc(m.join(", "))+"</p>":"")+dupS(pk)+
         '<div class="ab-sum" style="--n:5"><div><small>Bills due</small><b class="ab-due">'+rs(p.due)+'</b></div><div><small>Opening</small><b>'+rs(p.opening||0)+'</b></div><div><small>Advance (not set to a bill)</small><b class="ab-adv">'+rs(p.advance||0)+'</b></div><div><small>Goods return (no bill)</small><b>'+rs(p.ret||0)+'</b></div><div class="big"><small>Balance</small><b>'+bal(net)+"</b></div></div>"+
         table("outPB",[
           {h:"Bill date",v:b=>String(b.invoice_date||"").slice(0,10),html:b=>dmy(b.invoice_date)+'<small class="ab-ph">'+esc(billNo(b))+"</small>"},
@@ -374,7 +382,7 @@
         crumb([["List of ledgers · "+pt+bLab()]]);
         const L=[...info.parties.keys(),...new Set(led.map(x=>x.pk))].filter((v,i,a)=>a.indexOf(v)===i).map(pk=>({pk,name:nameOf(pk),...ledOf(pk,p)})).filter(r=>Math.abs(r.open)>0.5||r.rows.length).sort((a,b)=>b.close-a.close);
         el("box").innerHTML=table("ledL",[
-          {h:"Party",v:r=>r.name,p:1},
+          {h:"Party",v:r=>r.name,p:1,html:r=>esc(r.name)+dupB(r.pk)},
           {h:"Opening",v:r=>r.open,n:1,hp:1,html:r=>bal(r.open)},
           {h:"Debit",v:r=>r.dr,n:1,sum:1,html:r=>r.dr?rs(r.dr):""},
           {h:"Credit",v:r=>r.cr,n:1,sum:1,html:r=>r.cr?'<span class="ab-adv">'+rs(r.cr)+"</span>":""},
@@ -394,7 +402,7 @@
           '<td class="n">'+(x.debit?rs2(x.debit):"")+'</td><td class="n ab-adv">'+(x.credit?rs2(x.credit):"")+'</td><td class="n">'+bal(x.bal)+"</td></tr>"};
       const q=qVal();
       cur={k:"led",list:L.rows.map(x=>({x})),onRow:x=>openVoucher(x),ledger:{name,L,p}};
-      el("box").innerHTML=(m.length?'<p class="ab-note" style="margin:0 0 6px">Bill names: '+esc(m.join(", "))+"</p>":"")+split+
+      el("box").innerHTML=(m.length?'<p class="ab-note" style="margin:0 0 6px">Bill names: '+esc(m.join(", "))+"</p>":"")+dupS(ledPk)+split+
         '<div class="ab-sum"><div><small>Opening '+dmy(p.from)+'</small><b>'+bal(L.open)+'</b></div><div><small>Debit (bills)</small><b>'+rs(L.dr)+'</b></div><div><small>Credit (paid, returns)</small><b class="ab-adv">'+rs(L.cr)+'</b></div><div class="big"><small>Closing '+dmy(p.to)+'</small><b>'+bal(L.close)+"</b></div></div>"+
         '<table class="ab-t"><thead><tr><th class="hp" style="width:92px">Date</th><th>Particulars</th><th class="n">Debit</th><th class="n">Credit</th><th class="n">Balance</th></tr></thead><tbody>'+
         '<tr class="ob"><td class="hp">'+dmy(p.from)+'</td><td><b>Opening balance</b><small class="ab-ph">'+dmy(p.from)+'</small></td><td class="n"></td><td class="n"></td><td class="n">'+bal(L.open)+"</td></tr>"+
@@ -557,9 +565,11 @@
         const ce=f.querySelector("[data-redit]"),cx=f.querySelector("[data-rdel]"),cd=f.querySelector("[data-rdup]"),cc=f.querySelector("[data-rcx]");
         if(ce)ce.onclick=()=>receiptEdit(b,r);
         if(cd)cd.onclick=()=>receiptEdit(b,r,true);
-        if(cc)cc.onclick=()=>cxBox(b,"Cancel this payment of <b>"+rs2(r.total)+"</b>? It stays in the ledger as <b>Cancelled</b> with ₹0; bills it paid are due again.","RECEIPT",r.receipt_id,"Payment cancelled");
-        if(cx)cx.onclick=()=>delBox(b,"Delete this payment of <b>"+rs2(r.total)+"</b>? It goes out of the ledger; bills it paid are due again.",
-          reason=>client.rpc("lwb_receipt_delete",{p_receipt_id:r.receipt_id,p_reason:reason}),"Payment deleted");
+        // a cash payment of an old / handed over day: Accounts ask Admin (lwb_receipt_past_edit_setup.sql)
+        if(cc)cc.onclick=()=>panel(b,"⛔ Cancel entry",'<p class="ab-rd-q">Cancel this payment of <b>'+rs2(r.total)+"</b>? It stays in the ledger as <b>Cancelled</b> with ₹0; bills it paid are due again.</p>","Yes, cancel it",
+          async(bx,reason)=>{const g=await lockGate(r,null,null,reason,null);if(g)return g;await must(client.rpc("lwb_ledger_cancel",{p_kind:"RECEIPT",p_ref:r.receipt_id,p_reason:reason}));return "Payment cancelled"},true);
+        if(cx)cx.onclick=()=>panel(b,"🗑 Delete",'<p class="ab-rd-q">Delete this payment of <b>'+rs2(r.total)+"</b>? It goes out of the ledger; bills it paid are due again.</p>","Yes, delete",
+          async(bx,reason)=>{const g=await lockGate(r,null,null,reason,null);if(g)return g;await must(client.rpc("lwb_receipt_delete",{p_receipt_id:r.receipt_id,p_reason:reason}));return "Payment deleted"},true);
         histInto(b,[r.receipt_id]);
       }});
     }
@@ -585,6 +595,20 @@
       return box;
     }
     const must=async p=>{const {error,data}=await p;if(error)throw error;return data};
+    // Past day / handed over cash (Mohit 27 Nov 2026): the change needs Admin OK. null = go on as before; text = sent to Admin.
+    const isAdm=()=>String(me&&(me.realRole||me.role)||"").toLowerCase()==="admin";
+    const lockWhat=(K,lines)=>(lines?"Cash "+rs2(K.cash)+" → "+rs2(K.cash_new):"Cash "+rs2(K.cash)+" goes out")+
+      (K.adjust?"\nCash difference "+(K.adjust.kind==="SHORT"?"Short":"Extra")+" "+rs2(K.adjust.from)+" → "+rs2(K.adjust.to)+" (set right by itself)":"")+(K.warn?"\n⚠ "+K.warn:"");
+    async function lockGate(r,date,lines,reason,remark){
+      let K;try{K=await must(client.rpc("lwb_receipt_edit_check",{p_receipt_id:r.receipt_id,p_date:date,p_lines:lines}))}
+      catch(e){if(/lwb_receipt_edit_check|schema cache/i.test(String((e&&e.message)||e)))return null;throw e}
+      if(!K||!K.needs_admin)return null;
+      if(isAdm()){if(!await ERPShell.confirm("🔒 "+K.why+".\n\n"+lockWhat(K,lines)+"\n\nChange it now? Accounts and the cashier get a bell."))throw Error("Not changed");return null}
+      if(!reason)throw Error("🔒 "+K.why+". This needs Admin OK: write the reason, then press again.");
+      if(!await ERPShell.confirm("🔒 "+K.why+".\nThis change needs Admin OK.\n\n"+lockWhat(K,lines)+"\n\nSend to Admin?"))throw Error("Not sent");
+      await must(client.rpc("lwb_receipt_edit_ask",{p_receipt_id:r.receipt_id,p_date:date,p_lines:lines,p_remark:remark,p_reason:reason}));
+      return "Sent to Admin for OK";
+    }
     function delBox(b,text,call,msg){panel(b,"🗑 Delete",'<p class="ab-rd-q">'+text+"</p>","Yes, delete",async(box,reason)=>{await must(call(reason));return msg},true)}
     // Tally style Cancel: same money effect as Delete, the entry stays in the ledger as Cancelled ₹0
     function cxBox(b,text,kind,ref,msg){panel(b,"⛔ Cancel entry",'<p class="ab-rd-q">'+text+"</p>","Yes, cancel it",async(box,reason)=>{await must(client.rpc("lwb_ledger_cancel",{p_kind:kind,p_ref:ref,p_reason:reason}));return msg},true)}
@@ -607,9 +631,14 @@
             const res=await must(client.rpc("lwb_receipt_duplicate",{p_receipt_id:r.receipt_id,p_date:bx.querySelector(".ab-rd-d").value,p_lines:lines.map(l=>({mode:l.mode,amount:l.amount,ref:l.ref})),p_remark:bx.querySelector(".rk").value.trim()||null,p_reason:reason}));
             const top=stack[stack.length-1];if(top&&res&&res.receipt_id)top.again=()=>{const n=(info.raw.receipts||[]).find(z=>z.receipt_id===res.receipt_id&&!z.cancelled);if(n)openReceipt(n)};
             return "New payment saved"}
+          const g=await lockGate(r,bx.querySelector(".ab-rd-d").value,lines,reason,bx.querySelector(".rk").value.trim()||null);if(g)return g;
           await must(client.rpc("lwb_receipt_edit",{p_receipt_id:r.receipt_id,p_date:bx.querySelector(".ab-rd-d").value,p_lines:lines,p_remark:bx.querySelector(".rk").value.trim()||null,p_reason:reason}));
           return "Payment saved"});
       if(!box)return;
+      if(!dup)client.rpc("lwb_receipt_edit_check",{p_receipt_id:r.receipt_id,p_date:r.pay_date,p_lines:L}).then(({data:K})=>{
+        if(!K||!K.locked||!box.isConnected)return;
+        box.querySelector(".ab-rd-h").insertAdjacentHTML("afterend",'<p class="ab-rd-lock">🔒 '+esc(K.why)+'. Cash change'+(isAdm()?" by Admin: Cash difference is set right by itself.":" needs <b>Admin OK</b>: write the reason and press Send, it goes to Admin.")+'</p>');
+        if(!isAdm()){const sv=box.querySelector("[data-dsave]"),ri=box.querySelector(".ab-rd-r");if(sv)sv.textContent="Send to Admin";if(ri)ri.placeholder="Reason (needed for Admin)"}});
       const tot=()=>{const n=[...box.querySelectorAll(".am")].reduce((a,i)=>a+(Number(String(i.value).replace(/[,₹\s]/g,""))||0),0);box.querySelector(".ab-rd-tot").innerHTML="Total <b>"+rs2(n)+"</b>"+(!dup&&Math.abs(n-r.total)>0.005?' <small>(was '+rs2(r.total)+")</small>":"")};
       const wire=()=>{box.querySelectorAll(".am").forEach(i=>i.oninput=tot);box.querySelectorAll("[data-rm]").forEach(x=>x.onclick=()=>{x.parentElement.remove();tot()});tot()};
       box.querySelector("[data-dd]").onclick=()=>{box.querySelector(".ab-rd-d").value=y};

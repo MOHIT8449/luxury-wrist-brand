@@ -8,12 +8,13 @@
   <script src="vendor/supabase-js-2.119.0.js"></script>
 <script src="brand-filter.js"></script>
   <script src="erp-date.js"></script>
-  <link rel="stylesheet" href="erp-shell.css?v=20261124">
-  <script src="erp-shell.js?v=20261124r"></script>
+  <link rel="stylesheet" href="erp-shell.css?v=20261127l">
+  <script src="erp-shell.js?v=20261127l"></script>
 <script src="erp-list.js"></script>
   <script src="excel-io.js"></script>
-  <script src="party-pay.js?v=20261125b"></script>
-  <script src="acc-hub.js?v=20261125c"></script>
+  <script src="party-pay.js?v=20261126e"></script>
+  <script src="dup-note.js?v=20261126d"></script>
+  <script src="acc-hub.js?v=20261126d"></script>
   <style>
     .status{text-align:center;padding:80px 20px;font-size:15px;color:#555}
     [hidden]{display:none!important}
@@ -189,8 +190,10 @@
     .lg-head .acx-btn{height:34px;padding:0 11px;font-size:13.5px}.lg-head .sp{flex:1}
     .lg-bal{font-size:15px;font-weight:800;padding:3px 12px;border-radius:99px}
     .lg-sum{display:flex;flex-wrap:wrap;gap:4px 14px;margin:0 0 8px;font-size:13px;color:#4b5763}.lg-sum b{color:var(--erp-ink)}
+    .dup-t .dup-ac{white-space:nowrap;text-align:right;width:1%}.dup-t .dup-ac .acx-btn{height:32px;padding:0 10px;font-size:13px}
+    @media(max-width:600px){.dup-t .dup-ac{white-space:normal}.dup-t .dup-ac .acx-btn{margin:2px 0}.dup-t .dup-ac .acx-btn.grn{padding:0 8px}}
     .lg-t td small{display:block;color:var(--erp-muted);font-size:12px}.lg-t tr.cx td{opacity:.5;text-decoration:line-through}
-    .lg-t .acx-btn{height:28px;padding:0 8px;font-size:12.5px}
+    .lg-t .acx-btn{height:28px;padding:0 8px;font-size:12.5px}.cd-day .mut{color:var(--erp-muted)}@media(max-width:759px){.cd-day th:nth-child(4),.cd-day td:nth-child(4),.cd-day th:nth-child(5),.cd-day td:nth-child(5),.cd-day th:nth-child(6),.cd-day td:nth-child(6){display:none}.cd-day td:first-child b{white-space:nowrap}.cd-day td,.cd-day th{padding-left:4px;padding-right:4px}}
     @media(max-width:600px){.lg-t th,.lg-t td{padding-left:4px;padding-right:4px}.lg-t td:last-child{padding:4px 0}.lg-t .acx-btn{padding:0 6px;height:26px}.lg-t td .tag{font-size:11px}.lg-t td:first-child{min-width:0;word-break:break-word}.lg-head h3{flex-basis:auto}}
     .tg-eq{margin-left:auto;border:1px solid currentColor;background:#fff;color:inherit;border-radius:99px;font:inherit;font-size:12.5px;font-weight:700;padding:3px 10px;cursor:pointer}
     .cp-count{font-size:13px;color:#3b4652;margin:0 0 8px}.cp-count b{color:#00434d}
@@ -370,8 +373,9 @@
     let SH=null;   // shift handover in the day (lwb_acc_shift_handover_setup.sql); null = not set up
     // lwb_acc_cash_diff_damaged_setup.sql: Office / Other heads of a handover, Cash Difference ledger, Damaged cash box
     let SX={rows:[]},CDF=null,DMG=null;
+    let DUP=null,dupShow="PENDING";  // duplicate / torn notes from parties (lwb_acc_dup_note_setup.sql); null = not set up
     let HV=[],hvSub="own",hvPosted=false,PR=[];  // PR = Porter / one-time trips (lwb_trip_rent_setup.sql)
-    let X={entries:{},staff_heads:[],payees:[]},S=[],V=[],VR={vehicles:[],entries:{}},C=[],piErr=false,D=null,PI=null,per="today",from=todayISO(),to=todayISO(),tab="book",bookF="all",outRows=null,me={id:"",role:""};
+    let EM={p:new Map(),e:new Map()},X={entries:{},staff_heads:[],payees:[]},S=[],V=[],VR={vehicles:[],entries:{}},C=[],piErr=false,D=null,PI=null,per="today",from=todayISO(),to=todayISO(),tab="book",bookF="all",outRows=null,me={id:"",role:""};
 
     // bank check: Admin and Accounts (lwb_cashier_role_setup.sql adds can_check); not the Cashier
     const canCheck=()=>D&&(D.can_check!=null?D.can_check:D.is_admin);
@@ -400,6 +404,9 @@
         const {data,error}=await client.rpc("lwb_acc_dashboard",{p_from:from,p_to:to});
         if(error)throw error;
         D=data;D.lines=D.lines||[];D.pending=D.pending||[];DEP={};
+        // ✏️ marks of edited payments / Cash difference set right by an edit (lwb_receipt_past_edit_setup.sql)
+        EM={p:new Map(),e:new Map()};try{const m=await client.rpc("lwb_receipt_edit_marks",{p_from:from,p_to:to});
+          if(!m.error&&m.data){(m.data.payments||[]).forEach(x=>EM.p.set(String(x.id),x));(m.data.entries||[]).forEach(x=>EM.e.set(String(x.entry_id),x))}}catch(_){}
         // monthly rent of hired vehicles is added on the 1st of every month (once per page open)
         if(!hvPosted){hvPosted=true;await client.rpc("lwb_hired_post_months")}
         const [ex,st,vl,vr,cq,hv,pr]=await Promise.all([client.rpc("lwb_acc_extras",{p_from:from,p_to:to}),client.rpc("lwb_acc_staff_list",{p_month:to}),
@@ -407,6 +414,7 @@
         const sh=await client.rpc("lwb_acc_shift_list",{p_from:from,p_to:to});SH=sh.error?null:sh.data;
         const [sx,cdf,dmg]=await Promise.all([client.rpc("lwb_acc_shift_extras",{p_from:from,p_to:to}),client.rpc("lwb_acc_cdiff_get"),client.rpc("lwb_acc_dmg_get")]);
         SX=sx.error||!sx.data?{rows:[]}:sx.data;CDF=cdf.error?null:cdf.data;DMG=dmg.error?null:dmg.data;
+        const dp=await client.rpc("lwb_acc_dup_list",{p_days:120});DUP=dp.error||!dp.data?null:dp.data;
         const lt2=await client.rpc("lwb_acc_late_lines",{p_from:from,p_to:to});LATE=lt2.error?[]:(lt2.data||[]);
         HV=hv.error?[]:(hv.data||[]);PR=pr.error?[]:(pr.data||[]);if(hvSub==="hired"&&!HV.length||hvSub==="porter"&&!PR.length)hvSub="own";
         C=cq.error?[]:(cq.data||[]);
@@ -457,7 +465,7 @@
 
     // short alerts of the Accounts header (acc-hub.js): opening cash, cash with someone, bank check, cheques
     function renderBanners(){
-      LWBAccHub.alerts(shiftAlerts().concat(LWBAccHub.cashAlerts(D,C,true)));
+      LWBAccHub.alerts(shiftAlerts().concat(dupAlerts(),LWBAccHub.cashAlerts(D,C,true)));
       const sb=el("startBtn");if(sb)sb.onclick=setOpening;
     }
 
@@ -510,7 +518,7 @@
     function renderTab(){
       if(tab==="out"){location.href="party-billing.html?tab=due";return}   // Party outstanding = To collect of Billing
       LWBAccHub.setTab(tab);LWBAccHub.counts({verify:D.pending.length,chq:chequesDue().length});
-      if(tab==="sum")renderSummary();else if(tab==="book")renderBook();else if(tab==="verify")renderVerify();else if(tab==="out")renderOutstanding();else if(tab==="close")renderCloses();else if(tab==="staff")renderStaff();else if(tab==="veh")renderVehicles();else if(tab==="cheques")renderCheques();else if(tab==="deps")renderDeposits();else if(tab==="cdiff")renderCashDiff();else if(tab==="dmg")renderDamaged();else renderSetup();
+      if(tab==="sum")renderSummary();else if(tab==="book")renderBook();else if(tab==="verify")renderVerify();else if(tab==="out")renderOutstanding();else if(tab==="close")renderCloses();else if(tab==="staff")renderStaff();else if(tab==="veh")renderVehicles();else if(tab==="cheques")renderCheques();else if(tab==="deps")renderDeposits();else if(tab==="cdiff")renderCashDiff();else if(tab==="dmg")renderDamaged();else if(tab==="dup")renderDup();else renderSetup();
     }
     function statusTag(l){
       if(l.status==="PENDING")return '<span class="tag t-amb">Waiting bank check</span>';
@@ -522,7 +530,10 @@
     const swapDir=l=>l.kind==="DEPOSIT"?"Got in bank → Gave cash":"Got cash → Sent from bank";
     function lineIcon(l){return isSwap(l)?'<span class="acx-ic ic-swp">🔁</span>':l.kind==="IN"?'<span class="acx-ic ic-in">+</span>':l.kind==="OUT"?'<span class="acx-ic ic-out">−</span>':l.kind==="DEPOSIT"?'<span class="acx-ic ic-dep">🏦</span>':'<span class="acx-ic ic-dep">₹</span>'}
     function lineTitle(l){return isSwap(l)?(l.party||"Friend")+" · Friend swap":l.kind==="DEPOSIT"?"Bank deposit"+(bankName(l.bank_id)?" · "+bankName(l.bank_id):""):l.kind==="WITHDRAW"?"Cash from bank"+(bankName(l.bank_id)?" · "+bankName(l.bank_id):""):(l.party?l.party+" · ":"")+(l.category||"")}
-    function marks(l){if(isSwap(l))return ' <span class="tag t-pur">'+swapDir(l)+(bankName(l.bank_id)?" · "+esc(bankName(l.bank_id)):"")+'</span>';const x=l.x,v=l.veh?' <span class="tag t-gry">🚚 '+esc(l.veh.vehicle)+'</span>':"";if(!x)return v;return v+(x.gst_bill?' <span class="tag t-blu">GST bill</span>':"")+(x.photos&&x.photos.length?' <span class="tag t-gry">📎 '+x.photos.length+'</span>':"")}
+    function editMark(l){const m=l.src==="PAYMENT"?EM.p.get(String(l.id)):l.src==="ENTRY"?EM.e.get(String(l.id)):null;if(!m)return "";
+      return ' <span class="tag t-amb" title="'+esc((m.by?"by "+m.by:"")+(m.reason?" · "+m.reason:m.note?" · "+m.note:""))+'">✏️ '+(l.src==="PAYMENT"?"Edited":"Adjusted")+" "+rs(m.old)+" → "+rs(m.new)+'</span>'}
+    function marks(l){return editMark(l)+marks0(l)}
+    function marks0(l){if(isSwap(l))return ' <span class="tag t-pur">'+swapDir(l)+(bankName(l.bank_id)?" · "+esc(bankName(l.bank_id)):"")+'</span>';const x=l.x,v=l.veh?' <span class="tag t-gry">🚚 '+esc(l.veh.vehicle)+'</span>':"";if(!x)return v;return v+(x.gst_bill?' <span class="tag t-blu">GST bill</span>':"")+(x.photos&&x.photos.length?' <span class="tag t-gry">📎 '+x.photos.length+'</span>':"")}
     function sign(l){if(isSwap(l))return l.kind==="WITHDRAW"?"plus":"minus";return l.kind==="IN"||l.kind==="WITHDRAW"?"plus":l.kind==="OUT"?"minus":"neutral"}
     const wide=()=>window.innerWidth>=760;
     // Ledger: oldest first, In / Out columns and the running cash balance (cash lines only move it).
@@ -549,7 +560,7 @@
       el("tabBody").innerHTML='<div class="acx-filter"><div class="acx-chips" id="bookF">'+Object.entries(F).map(([k,v])=>'<button type="button" data-f="'+k+'" aria-pressed="'+(bookF===k)+'">'+v+'</button>').join("")+'</div>'+
         '<input type="search" id="bookQ" placeholder="Search party, head, ref, PO" autocomplete="off"><button type="button" class="acx-btn" id="bookXl">⬇ Excel</button></div>'+shiftStrip()+lateStrip()+swapStrip()+
         (!list.length?'<div class="acx-empty">No money entry in these dates.</div>':wide()?ledger(list):'<div class="acx-rows">'+list.map(l=>'<button type="button" class="acx-row" data-line="'+l.src+'|'+l.id+'">'+lineIcon(l)+
-          '<span class="t"><b>'+esc(lineTitle(l))+marks(l)+'</b><small>'+(from!==to?dmy(l.date)+" · ":"")+lt(l)+' · '+(isSwap(l)?(l.kind==="DEPOSIT"?"Bank in, cash out":"Cash in, bank out"):MODE_NAME[l.mode])+(l.ref?" · "+esc(l.ref):"")+(l.order_no?" · "+esc(l.order_no):"")+" · "+esc(SRC_NAME[l.src]||"")+(l.remark?" · "+esc(l.remark):"")+'</small></span>'+
+          '<span class="t"><b>'+esc(lineTitle(l))+marks0(l)+'</b><small>'+(editMark(l)?editMark(l).slice(1)+"<br>":"")+(from!==to?dmy(l.date)+" · ":"")+lt(l)+' · '+(isSwap(l)?(l.kind==="DEPOSIT"?"Bank in, cash out":"Cash in, bank out"):MODE_NAME[l.mode])+(l.ref?" · "+esc(l.ref):"")+(l.order_no?" · "+esc(l.order_no):"")+" · "+esc(SRC_NAME[l.src]||"")+(l.remark?" · "+esc(l.remark):"")+'</small></span>'+
           '<span class="a '+sign(l)+'">'+(sign(l)==="plus"?"+":sign(l)==="minus"?"−":"")+rs(l.amount).replace("−","")+'<small>'+statusTag(l)+'</small></span></button>').join("")+'</div>');
       el("bookQ").value=keep;if(keep){el("bookQ").focus()}
       el("bookQ").oninput=renderBook;
@@ -848,6 +859,21 @@
     /* ---------- Cash Difference ledger (Mohit, 25 Nov 2026) ----------
        Whatever the cash box handover leaves unexplained goes here (short = out of cash in hand).
        Difference found = Cash In back; Admin can write off the rest (no cash change). */
+    // Day-wise Cash difference (Mohit 27 Nov 2026): per day Short (cash less) / Extra (cash more) / Found / Written off,
+    // the day's net and the open balance after that day. Oldest first for the balance, newest day on top.
+    let cdView=(()=>{try{return localStorage.getItem("lwbCdView")||"day"}catch(_){return "day"}})();
+    function cdDays(R){
+      const M=new Map();
+      R.filter(r=>!r.cancelled).forEach(r=>{const d=String(r.day||"").slice(0,10);const x=M.get(d)||{d,SHORT:0,EXTRA:0,FOUND:0,WRITE_OFF:0,n:0};x[r.kind]=r2(x[r.kind]+Number(r.amount));x.n++;M.set(d,x)});
+      const days=[...M.values()].sort((a,b)=>a.d.localeCompare(b.d));let bal=0;
+      days.forEach(x=>{x.cash=r2(x.EXTRA+x.FOUND-x.SHORT);bal=r2(bal+x.SHORT-x.EXTRA-x.FOUND-x.WRITE_OFF);x.bal=bal});
+      const cell=(v,c,sg)=>v?'<b class="'+c+'">'+sg+rs(v)+'</b>':'<span class="mut">—</span>';
+      const T={SHORT:0,EXTRA:0,FOUND:0,WRITE_OFF:0,cash:0};days.forEach(x=>Object.keys(T).forEach(k=>T[k]=r2(T[k]+x[k])));
+      return '<div style="overflow:auto"><table class="acx-t lg-t cd-day"><thead><tr><th>Date</th><th class="n">− Short</th><th class="n">+ Extra</th><th class="n">+ Found</th><th class="n">Written off</th><th class="n">Day net (cash)</th><th class="n">Open short</th></tr></thead><tbody>'+
+        days.slice().reverse().map(x=>'<tr><td><b>'+(wide()?dmy(x.d):dmy(x.d).slice(0,5))+'</b><small>'+x.n+' entr'+(x.n===1?"y":"ies")+'</small></td><td class="n">'+cell(x.SHORT,"minus","−")+'</td><td class="n">'+cell(x.EXTRA,"plus","+")+'</td><td class="n">'+cell(x.FOUND,"plus","+")+'</td><td class="n">'+(x.WRITE_OFF?rs(x.WRITE_OFF):'<span class="mut">—</span>')+'</td>'+
+          '<td class="n">'+(x.cash?'<span class="tag '+(x.cash<0?"t-red":"t-blu")+'">'+(x.cash<0?"− "+rs(-x.cash)+" short":"+ "+rs(x.cash)+" extra")+'</span>':'<span class="tag t-grn">✓ 0</span>')+'</td><td class="n"><b>'+(x.bal>0?rs(x.bal):x.bal<0?"Extra "+rs(-x.bal):"✓ 0")+'</b></td></tr>').join("")+
+        '</tbody><tfoot><tr><td>Total ('+days.length+' days)</td><td class="n">'+rs(T.SHORT)+'</td><td class="n">'+rs(T.EXTRA)+'</td><td class="n">'+rs(T.FOUND)+'</td><td class="n">'+rs(T.WRITE_OFF)+'</td><td class="n">'+(T.cash<0?"− "+rs(-T.cash):"+ "+rs(T.cash))+'</td><td class="n">'+rs(r2(CDF.balance))+'</td></tr></tfoot></table></div>';
+    }
     function renderCashDiff(){
       if(!CDF){el("tabBody").innerHTML='<div class="acx-empty">Cash Difference ledger is not set up yet.</div>';return}
       const R=CDF.rows||[],bal=r2(CDF.balance),KN={SHORT:["Short in handover","t-red"],EXTRA:["Extra in handover","t-blu"],FOUND:["Difference found","t-grn"],WRITE_OFF:["Written off","t-gry"]};
@@ -855,7 +881,8 @@
       el("tabBody").innerHTML='<div class="lg-head"><h3>⚖ Cash Difference</h3><span class="lg-bal '+(bal>0?"t-red":bal<0?"t-blu":"t-grn")+'">'+(bal>0?"Open short "+rs(bal):bal<0?"Extra "+rs(-bal):"✓ Nothing open")+'</span><span class="sp"></span>'+
           (bal>0?'<button type="button" class="acx-btn grn" data-cdf="FOUND">+ Difference found</button>'+(CDF.is_admin?'<button type="button" class="acx-btn red" data-cdf="WRITE_OFF">Write off</button>':""):"")+'</div>'+
         '<div class="lg-sum"><span>Short <b>'+rs(CDF.short)+'</b></span><span>Extra <b>'+rs(CDF.extra)+'</b></span><span>Found <b>'+rs(CDF.found)+'</b></span><span>Written off <b>'+rs(CDF.written_off)+'</b></span></div>'+
-        (R.length?'<div style="overflow:auto"><table class="acx-t lg-t"><thead><tr><th>Entry</th><th class="n">Amount</th><th class="n">Balance</th><th></th></tr></thead><tbody>'+
+        (R.length?'<div class="acx-chips" id="cdView" style="margin:0 0 8px">'+[["day","📅 Day-wise"],["ent","Entries"]].map(([k,v])=>'<button type="button" data-cv="'+k+'" aria-pressed="'+(cdView===k)+'">'+v+'</button>').join("")+'</div>':"")+
+        (R.length&&cdView==="day"?cdDays(R):R.length?'<div style="overflow:auto"><table class="acx-t lg-t"><thead><tr><th>Entry</th><th class="n">Amount</th><th class="n">Balance</th><th></th></tr></thead><tbody>'+
           R.map(r=>{const k=KN[r.kind]||[r.kind,"t-gry"],plus=r.kind==="SHORT";
             return '<tr'+(r.cancelled?' class="cx"':"")+'><td><span class="tag '+k[1]+'">'+k[0]+'</span>'+(r.cancelled?' <span class="tag t-gry">Cancelled</span>':"")+
               '<small>'+dmy(r.day).slice(0,5)+' '+hm(r.at)+' · '+esc(r.note||r.remark||"")+(r.by?" · "+esc(r.by):"")+'</small></td>'+
@@ -863,6 +890,7 @@
               '<td>'+(!r.cancelled&&(r.kind==="FOUND"||r.kind==="WRITE_OFF")&&(CDF.is_admin||r.kind==="FOUND")?'<button type="button" class="acx-btn red" data-cdfx="'+r.id+'" aria-label="Cancel">✕</button>':"")+'</td></tr>'}).join("")+'</tbody></table></div>'
           :'<div class="acx-empty">No difference yet. When a cash box handover is short or extra, it comes here.</div>')+
         '<p class="acx-note">'+tipI('Short in handover = cash went out of cash in hand (head "Cash difference"). Difference found = it comes back into cash in hand. Write off (Admin) closes it without any cash change. Not counted as an expense.')+'</p>';
+      el("tabBody").querySelectorAll("[data-cv]").forEach(b=>b.onclick=()=>{cdView=b.dataset.cv;try{localStorage.setItem("lwbCdView",cdView)}catch(_){}renderCashDiff()});
       el("tabBody").querySelectorAll("[data-cdf]").forEach(b=>b.onclick=()=>cdiffAdd(b.dataset.cdf));
       el("tabBody").querySelectorAll("[data-cdfx]").forEach(b=>b.onclick=async()=>{const why=await ERPShell.prompt("Cancel this line?","",{title:"Cancel",placeholder:"Why"});if(why==null)return;
         act(b,()=>rpc("lwb_acc_cdiff_cancel",{p_id:Number(b.dataset.cdfx),p_reason:why}))});
@@ -876,6 +904,47 @@
           if(!(a>0)){await ERPShell.alert("Enter the amount.");return false}if(!n){await ERPShell.alert("Write a note.");return false}
           try{await rpc("lwb_acc_cdiff_add",{p:{kind,amount:a,note:n}})}catch(e){await ERPShell.alert(e.message);return false}
           toastMsg(f?rs(a)+" back in cash in hand":rs(a)+" written off");load()},f?"grn":"redf");
+    }
+
+    /* ---------- Duplicate / torn notes from parties (Mohit, 26 Nov 2026) ----------
+       The cashier enters only the good cash in the party payment and the duplicate / torn note apart. It stays due
+       on the party (ledger) and shows on its next PO. ✓ Collected = party payment of the good note, then it closes. */
+    const dupPend=()=>DUP?(DUP.rows||[]).filter(r=>r.status==="PENDING"):[];
+    function dupAlerts(){const P=dupPend();if(!P.length)return [];
+      return [{c:"",b:"🧾 "+P.length+" duplicate / torn note"+(P.length>1?"s":"")+" pending · "+rs(P.reduce((a,r)=>a+Number(r.amount),0)),
+        s:P.slice(0,3).map(r=>esc(r.party)+" "+rs(r.amount)).join(" · ")+(P.length>3?" …":""),t:"dup",go:"Open"}]}
+    function renderDup(){
+      if(!DUP){el("tabBody").innerHTML='<div class="acx-empty">Duplicate notes are not set up yet. It sets itself up when this change is merged (lwb_acc_dup_note_setup.sql).</div>';return}
+      const all=DUP.rows||[],P=dupPend(),L=dupShow==="PENDING"?P:all,tot=P.reduce((a,r)=>a+Number(r.amount),0);
+      const ST={PENDING:["Pending","t-red"],COLLECTED:["✓ Collected","t-grn"],CANCELLED:["Cancelled","t-gry"]};
+      el("tabBody").innerHTML='<div class="lg-head"><h3>🧾 Duplicate / torn notes</h3><span class="lg-bal '+(P.length?"t-red":"t-grn")+'">'+(P.length?P.length+" pending · "+rs(tot):"✓ Nothing pending")+'</span><span class="sp"></span>'+
+          '<span class="acx-seg" style="display:inline-flex;gap:4px">'+[["PENDING","Pending"],["ALL","All"]].map(([k,l])=>'<button type="button" class="acx-btn'+(dupShow===k?" pri":"")+'" data-dupv="'+k+'">'+l+'</button>').join("")+'</span>'+
+          (DUP.can_add?'<button type="button" class="acx-btn redf" data-dupadd>+ Duplicate note</button>':"")+'</div>'+
+        (L.length?'<div style="overflow:auto"><table class="acx-t lg-t dup-t"><thead><tr><th>Party</th><th class="n">Amount</th><th></th></tr></thead><tbody>'+
+          L.map(r=>{const st=ST[r.status]||[r.status,"t-gry"],pend=r.status==="PENDING";
+            return '<tr'+(r.status==="CANCELLED"?' class="cx"':"")+'><td><b>'+esc(r.party)+'</b> <span class="tag '+(r.kind==="TORN"?"t-amb":"t-red")+'">'+(r.kind==="TORN"?"Torn":"Duplicate")+'</span>'+
+              '<small>'+esc(Object.entries(r.notes||{}).sort((a,b)=>b[0]-a[0]).map(([n,c])=>c+" × ₹"+n).join(" + "))+' · '+dmy(r.day).slice(0,5)+' '+hm(r.at)+' · '+esc(r.by||"")+(r.note?" · "+esc(r.note):"")+
+              (r.done_at?'<br>'+(r.status==="COLLECTED"?"Collected ":"Cancelled ")+dmy(String(r.done_at).slice(0,10)).slice(0,5)+" · "+esc(r.done_by||"")+(r.done_note?" · "+esc(r.done_note):""):"")+'</small></td>'+
+              '<td class="n"><b class="'+(pend?"minus":"")+'" style="font-size:15px">'+rs(r.amount)+'</b><br><span class="tag '+st[1]+'">'+st[0]+'</span></td>'+
+              '<td class="dup-ac">'+(pend&&(DUP.can_add||DUP.is_admin)?'<button type="button" class="acx-btn grn" data-dupok="'+r.id+'">✓ Collected</button> ':"")+
+                (pend&&(DUP.is_admin||(r.mine&&r.day===DUP.today))?'<button type="button" class="acx-btn red" data-dupx="'+r.id+'" aria-label="Cancel">✕</button>':"")+'</td></tr>'}).join("")+'</tbody></table></div>'
+          :'<div class="acx-empty">'+(dupShow==="PENDING"?"No duplicate / torn note pending.":"No duplicate / torn note in the last 120 days.")+'</div>')+
+        '<p class="acx-note">'+tipI("Party payment: put only the good cash in Cash, and the duplicate / torn notes in the red Dup / torn line. The note is not in cash in hand and stays due on the party. Its next PO shows: take the note back, collect a good note. When the good note comes, press ✓ Collected: it is saved as that party's cash payment and the note closes.")+'</p>';
+      const B=el("tabBody");
+      B.querySelectorAll("[data-dupv]").forEach(b=>b.onclick=()=>{dupShow=b.dataset.dupv;renderDup()});
+      const ad=B.querySelector("[data-dupadd]");if(ad)ad.onclick=()=>partyPay("",0,"CASH",{dupOpen:true});
+      B.querySelectorAll("[data-dupok]").forEach(b=>b.onclick=()=>dupCollect(all.find(r=>String(r.id)===b.dataset.dupok)));
+      B.querySelectorAll("[data-dupx]").forEach(b=>b.onclick=async()=>{const why=await ERPShell.prompt("Cancel this duplicate / torn note? It stops showing on the party and its PO.","",{title:"Cancel",placeholder:"Why (e.g. wrong party / party will never replace)"});if(why==null)return;
+        act(b,()=>rpc("lwb_acc_dup_cancel",{p_id:Number(b.dataset.dupx),p_reason:why}))});
+    }
+    // ✓ Collected: the good note is a normal party payment (cash in hand + ledger), then the note closes with it
+    function dupCollect(r){
+      if(!r)return;
+      partyPay(r.party,Number(r.amount),"CASH",{brand:r.company_id||undefined,lockParty:true,noDup:true,
+        remark:"Good note for "+(r.kind==="TORN"?"torn":"duplicate")+" note of "+dmy(r.day).slice(0,5)+" ("+Object.entries(r.notes||{}).map(([n,c])=>c+"×"+n).join("+")+")",
+        after:async x=>{if(!x||!x.receipt_id)throw Error("Payment saved, but the note is still pending. Press ✓ Collected again only if the payment did not save.");
+          await rpc("lwb_acc_dup_collect",{p_id:r.id,p_receipt_id:x.receipt_id,p_note:null});
+          ERPShell.toast&&ERPShell.toast("✓ "+rs(r.amount)+" good note collected · "+r.party)}});
     }
 
     /* ---------- Damaged cash box (Mohit, 25 Nov 2026) ----------
@@ -1616,7 +1685,10 @@
         else if(e.key==="Escape"){e.stopPropagation();hideList()}};
       q("#eCat").onchange=async()=>{const v=q("#eCat").value;
         if(v==="new"){const id=await addHead(st.kind,true);if(id)st.cat=id;paint();return}
-        st.cat=v?Number(v):null;paint()};
+        st.cat=v?Number(v):null;paint();
+        // Daily labour (Mohit, 26 Nov 2026): a Godown Manager's market labour is given from Daily Labour (limit + approval).
+        const cn=((D.categories||[]).find(c=>c.id===st.cat)||{}).name||"";
+        if(st.kind==="OUT"&&/^labour charge$/i.test(cn.trim())&&await confirm("Godown Manager's daily labour (dihadi)?\n\nGive it from 👷 Daily Labour: it shows the labour list and allows at most the approved total.",{ok:"Open Daily Labour",cancel:"No, other labour"}))location.href="labour.html"};
       q("#eMode").onchange=()=>{st.mode=q("#eMode").value;paint()};
       q("#eCo").onchange=()=>{const c=(COS||[]).find(x=>x.id===q("#eCo").value);if(c&&!q("#eParty").value.trim())q("#eParty").value=c.name};
       // Count notes fills the amount
@@ -1642,9 +1714,14 @@
     }
 
     // Party payment: on the main party, split over its bills (oldest first / by hand), rest advance
-    async function partyPay(party,amount,mode){
+    async function partyPay(party,amount,mode,opt){
+      opt=opt||{};
       try{if(!PI)PI=await LWBPartyPay.load(client)}catch(e){await ERPShell.alert(e.message);return}
-      LWBPartyPay.open({client,info:PI,party:party||"",amount,mode,onSaved:r=>{
+      LWBPartyPay.open({client,info:PI,party:party||"",amount,mode,brand:opt.brand||undefined,remark:opt.remark,lockParty:!!opt.lockParty,dupOpen:!!opt.dupOpen,
+        canDup:!!(DUP&&DUP.can_add)&&!opt.noDup,onSaved:async r=>{
+        if(opt.after){try{await opt.after(r)}catch(e){await ERPShell.alert(errText(e))}}
+        if(r.dupOnly){ERPShell.toast&&ERPShell.toast("🧾 "+(r.dupKind==="TORN"?"Torn":"Duplicate")+" note "+rs(r.dup)+" saved · "+r.party+" · Admin informed");outRows=null;PI=null;load();return}
+        if(r.dup&&ERPShell.toast)setTimeout(()=>ERPShell.toast("🧾 "+(r.dupKind==="TORN"?"Torn":"Duplicate")+" note "+rs(r.dup)+" pending on "+r.party),2600);
         ERPShell.toast?(r.kasarOnly?ERPShell.toast("Kasar "+rs(r.kasar)+" saved on bill "+r.bill+" · "+r.party):ERPShell.toast(rs(r.amount)+" received from "+r.party+" · "+rs(r.split)+" against bills"+(Number(r.advance)>0.5?" · advance "+rs(r.advance):""))):null;
         outRows=null;PI=null;
         load().then(()=>{const c=C.find(x=>x.src==="PAYMENT"&&x.status==="IN_HAND"&&!x.photos.length&&Date.now()-new Date(x.at)<300000);
@@ -1795,7 +1872,7 @@
       if(qt==="out"){location.replace("party-billing.html?tab=due");return}
       const mine=h=>ERPShell.menuForMe(realRole).some(g=>g.items.some(i=>i.h===h));
       const hv=LWBAccHub.mount({page:"cash",role:realRole==="admin"?"admin":role,canParty:mine("party-billing.html#party"),acrs:mine("ecrs.html"),
-        tab:["book","deps","cheques","verify","sum","close","staff","veh","setup"].includes(qt)?qt:"",
+        tab:["book","deps","cheques","verify","sum","close","staff","veh","setup","cdiff","dmg","dup"].includes(qt)?qt:"",
         onTab:t=>{tab=t;if(D)renderTab()},
         onAct:a=>{if(!D)return;if(a==="pay")partyPay("");else if(a==="close")closeDay();else newEntry(a)}});
       if(hv.away)return;

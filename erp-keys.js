@@ -318,6 +318,8 @@
       const c=(e.code||"").replace(/^Key/,""),go=ACC_KEYS[c];
       if(c==="F"&&ACC_ROLES.includes(myRole())&&!/finance\.html$/.test(location.pathname)){e.preventDefault();location.href="finance.html";return}
       if(go&&ACC_ROLES.includes(myRole())&&!/accounts-books\.html$/.test(location.pathname)){e.preventDefault();location.href="accounts-books.html?v="+go}
+      // Sales Head (Mohit, 27 Nov 2026): Ctrl+Alt+L / O open his Outstanding page (party ledger inside).
+      else if((c==="L"||c==="O")&&myRole()==="manager"&&!/sales-outstanding\.html$/.test(location.pathname)){e.preventDefault();location.href="sales-outstanding.html"}
       return;
     }
     if(e.altKey&&!e.ctrlKey&&!e.metaKey){

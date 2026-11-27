@@ -68,7 +68,7 @@ CREATE TABLE IF NOT EXISTS public.lwb_salesman_mgr (
 -- A row only when Admin changed the default for that person / report.
 CREATE TABLE IF NOT EXISTS public.lwb_daily_wa_people (
   user_id uuid NOT NULL REFERENCES public.user_profiles(id) ON DELETE CASCADE,
-  kind text NOT NULL CHECK (kind IN ('SALESMAN','MGR','TEAM','ADMIN','ACCOUNTS','GODOWN','DAYBOOK','ACCBOOK')),
+  kind text NOT NULL CHECK (kind IN ('SALESMAN','MGR','TEAM','ADMIN','ACCOUNTS','GODOWN','DAYBOOK','ACCBOOK','EVENING')),
   enabled boolean NOT NULL,
   updated_at timestamptz NOT NULL DEFAULT now(),
   updated_by uuid,
@@ -76,7 +76,7 @@ CREATE TABLE IF NOT EXISTS public.lwb_daily_wa_people (
 );
 ALTER TABLE public.lwb_daily_wa_people DROP CONSTRAINT IF EXISTS lwb_daily_wa_people_kind_check;
 ALTER TABLE public.lwb_daily_wa_people ADD CONSTRAINT lwb_daily_wa_people_kind_check
-  CHECK (kind IN ('SALESMAN','MGR','TEAM','ADMIN','ACCOUNTS','GODOWN','DAYBOOK','ACCBOOK'));
+  CHECK (kind IN ('SALESMAN','MGR','TEAM','ADMIN','ACCOUNTS','GODOWN','DAYBOOK','ACCBOOK','EVENING'));
 
 CREATE TABLE IF NOT EXISTS public.lwb_daily_wa_runs (
   report_date date PRIMARY KEY,
@@ -168,6 +168,7 @@ AS $fn$
     WHEN 'ADMIN' THEN r = 'admin'
     WHEN 'DAYBOOK' THEN r = 'admin'
     WHEN 'ACCBOOK' THEN r IN ('admin','accounts')
+    WHEN 'EVENING' THEN r = 'admin'
     WHEN 'ACCOUNTS' THEN r = 'accounts'
     WHEN 'GODOWN' THEN r IN ('admin','warehouse','transport')
     ELSE false END
@@ -181,7 +182,7 @@ AS $fn$
   SELECT p.id, coalesce(nullif(btrim(p.full_name),''), 'User')::text, lower(btrim(coalesce(p.role,'')))::text,
          public.lwb_daily_wa_mobile(p.mobile::text),
          (SELECT jsonb_object_agg(k.kind, coalesce(x.enabled, public.lwb_daily_wa_default(p.role, k.kind)))
-          FROM unnest(ARRAY['SALESMAN','MGR','TEAM','ADMIN','ACCOUNTS','GODOWN','DAYBOOK','ACCBOOK']) AS k(kind)
+          FROM unnest(ARRAY['SALESMAN','MGR','TEAM','ADMIN','ACCOUNTS','GODOWN','DAYBOOK','ACCBOOK','EVENING']) AS k(kind)
           LEFT JOIN public.lwb_daily_wa_people x ON x.user_id = p.id AND x.kind = k.kind)
   FROM public.user_profiles p
   WHERE p.active = true AND lower(btrim(coalesce(p.role,''))) <> 'driver'
@@ -1002,6 +1003,13 @@ BEGIN
     'doc', jsonb_build_object('who', 'ADMIN · DAY BOOK · ACCOUNTS', 'rows', public.lwb_daily_wa_daybook(d, closed,
        jsonb_build_object('open', v_open, 'open_set', v_open_set, 'close', v_close, 'close_set', v_close_set), 'ACC')));
 
+  -- ================= EVENING REPORT PDF (Admin): Daily Report like the sample, lwb_evening_report_setup.sql =================
+  IF to_regprocedure('public.lwb_evening_doc(date)') IS NOT NULL THEN
+    EXECUTE 'SELECT public.lwb_evening_doc($1)' INTO x USING d;
+    reps := reps || jsonb_build_object('kind', 'EVENING', 'key', '', 'title', 'Evening report', 'pdf', true,
+      'doc', jsonb_build_object('who', 'ADMIN · EVENING REPORT', 'rows', x->'rows'));
+  END IF;
+
   RETURN jsonb_build_object('date', d, 'focus_date', nd, 'closed', closed, 'reports', reps,
     'people', (SELECT coalesce(jsonb_agg(to_jsonb(p) ORDER BY p.name), '[]'::jsonb) FROM pg_temp.lwb_wa_p p));
 END;
@@ -1069,7 +1077,7 @@ REVOKE ALL ON FUNCTION public.lwb_daily_wa_focus_tasks(jsonb) FROM PUBLIC, anon,
 -- Day Book always; any other report with more than 40 lines (too long for one image).
 CREATE OR REPLACE FUNCTION public.lwb_daily_wa_is_pdf(p_kind text, p_doc jsonb)
 RETURNS boolean LANGUAGE sql IMMUTABLE SET search_path = ''
-AS $fn$ SELECT p_kind IN ('DAYBOOK','ACCBOOK') OR jsonb_array_length(coalesce(p_doc->'rows', '[]'::jsonb)) > 40 $fn$;
+AS $fn$ SELECT p_kind IN ('DAYBOOK','ACCBOOK','EVENING') OR jsonb_array_length(coalesce(p_doc->'rows', '[]'::jsonb)) > 40 $fn$;
 REVOKE ALL ON FUNCTION public.lwb_daily_wa_is_pdf(text, jsonb) FROM PUBLIC, anon, authenticated;
 
 -- ---------------------------------------------------------------------------
@@ -1091,7 +1099,7 @@ BEGIN
     FOR rep IN SELECT x FROM jsonb_array_elements(b->'reports') WITH ORDINALITY a(x, n)
                WHERE (p_only IS NULL OR x->>'kind' = upper(p_only) OR (upper(p_only) = 'DAYBOOK' AND x->>'kind' = 'ACCBOOK'))
                  AND (x->>'kind' <> 'SALESMAN' OR n = (SELECT min(n2) FROM jsonb_array_elements(b->'reports') WITH ORDINALITY c(y, n2) WHERE y->>'kind' = 'SALESMAN'))
-               ORDER BY CASE x->>'kind' WHEN 'DAYBOOK' THEN 0 WHEN 'ACCBOOK' THEN 0 WHEN 'ADMIN' THEN 1 WHEN 'TEAM' THEN 2 WHEN 'MGR' THEN 3 WHEN 'ACCOUNTS' THEN 4 WHEN 'GODOWN' THEN 5 ELSE 6 END, n LOOP
+               ORDER BY CASE x->>'kind' WHEN 'EVENING' THEN 0 WHEN 'DAYBOOK' THEN 0 WHEN 'ACCBOOK' THEN 0 WHEN 'ADMIN' THEN 1 WHEN 'TEAM' THEN 2 WHEN 'MGR' THEN 3 WHEN 'ACCOUNTS' THEN 4 WHEN 'GODOWN' THEN 5 ELSE 6 END, n LOOP
       INSERT INTO public.lwb_daily_wa_log(report_date, kind, report_key, user_id, name, mobile, test)
       VALUES (p_date, rep->>'kind', rep->>'key', p_test_user, coalesce(v_name,'') || ' (test: ' || (rep->>'title') || ')', right(v_to, 4), true)
       RETURNING id INTO v_id;
@@ -1301,6 +1309,7 @@ END;
 $fn$;
 
 -- TEST = one of every report to my own WhatsApp; TEST_DAYBOOK = only the Day Book PDF to me;
+-- TEST_EVENING = only the evening report PDF to me;
 -- ALL = send now to everyone not sent yet for that date.
 CREATE OR REPLACE FUNCTION public.lwb_daily_wa_send(p_date date, p_mode text)
 RETURNS text LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = ''
@@ -1311,11 +1320,11 @@ BEGIN
   IF d > (now() AT TIME ZONE 'Asia/Kolkata')::date OR d < (now() AT TIME ZONE 'Asia/Kolkata')::date - 7 THEN
     RAISE EXCEPTION 'Choose today or a date in the last 7 days';
   END IF;
-  IF upper(p_mode) IN ('TEST', 'TEST_DAYBOOK') THEN
+  IF upper(p_mode) IN ('TEST', 'TEST_DAYBOOK', 'TEST_EVENING') THEN
     IF NOT EXISTS (SELECT 1 FROM public.user_profiles p WHERE p.id = auth.uid() AND public.lwb_daily_wa_mobile(p.mobile::text) IS NOT NULL) THEN
       RAISE EXCEPTION 'Your login has no Login Mobile. Add it in Manage Users first.';
     END IF;
-    IF NOT public.lwb_daily_wa_call(d, auth.uid(), CASE WHEN upper(p_mode) = 'TEST_DAYBOOK' THEN 'DAYBOOK' END) THEN
+    IF NOT public.lwb_daily_wa_call(d, auth.uid(), CASE upper(p_mode) WHEN 'TEST_DAYBOOK' THEN 'DAYBOOK' WHEN 'TEST_EVENING' THEN 'EVENING' END) THEN
       RAISE EXCEPTION 'Sending is not set up on the server (pg_net)';
     END IF;
     RETURN upper(p_mode);
