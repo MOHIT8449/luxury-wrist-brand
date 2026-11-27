@@ -11,14 +11,13 @@
      stock    Stock / purchase   soft wood (marimba) 2 notes
      alert    Late / rejected    falling warning tone
      other    Any other update   one soft ding
-   Mute: 🔊 switch in the bell (kept on this device). Browsers play sound only after the person has
+   No mute (Mohit 27 Nov): the same sounds ring for every login. "Try sounds" in the bell plays each one.
+   Browsers play sound only after the person has
    touched the page once; until then the popup still shows. Several open tabs: only one popup/sound. */
 (function(){
  "use strict";
  if(window.LWBNotifyPopup)return;
- const KEY="lwbNotifySound",SEEN="lwbPopSeen";
- const soundOn=()=>{try{return localStorage.getItem(KEY)!=="off"}catch(e){return true}};
- const setSound=v=>{try{v?localStorage.removeItem(KEY):localStorage.setItem(KEY,"off")}catch(e){}};
+ const SEEN="lwbPopSeen";
 
  // ---------- Sounds ----------
  let ctx=null;
@@ -47,8 +46,7 @@
   other:[[0,.6,1175,"sine",.5],[0,.3,2350,"sine",.08]]
  };
  const LABEL={order:"New order",approve:"Approval",task:"Task",money:"Payment",delivery:"Delivery",stock:"Stock",alert:"Alert",other:"Update"};
- function play(k,force){
-  if(!force&&!soundOn())return false;
+ function play(k){
   const c=ac();if(!c)return false;
   const out=c.createGain();out.gain.value=0.9;out.connect(c.destination);
   for(const n of SOUNDS[k]||SOUNDS.other)note(c,out,...n);
@@ -160,13 +158,11 @@
    ".lnp-set button.on{background:#1b7f3b;border-color:#1b7f3b;color:#fff}.lnp-set button.off{background:#fdecef;border-color:#f3c2c8;color:#c8102e}"+
    ".lnp-try{display:none;flex-wrap:wrap;gap:5px;width:100%}.lnp-set.open .lnp-try{display:flex}";
   document.head.append(st);
-  const row=mk("div","lnp-set"),sw=mk("button"),tr=mk("button",null,"▶ Try sounds"),list=mk("div","lnp-try");
-  sw.type=tr.type="button";
-  const paint=()=>{const on=soundOn();sw.className=on?"on":"off";sw.textContent=on?"🔊 On":"🔇 Off";sw.title=on?"Popup sound is on. Tap to mute on this device.":"Popup sound is off. Tap to turn on."};
-  sw.addEventListener("click",e=>{e.stopPropagation();setSound(!soundOn());paint();if(soundOn())play("other",true)});
+  const row=mk("div","lnp-set"),tr=mk("button",null,"▶ Try sounds"),list=mk("div","lnp-try");
+  tr.type="button";
   tr.addEventListener("click",e=>{e.stopPropagation();row.classList.toggle("open")});
-  for(const k of Object.keys(SOUNDS)){const b=mk("button",null,"▶ "+LABEL[k]);b.type="button";b.addEventListener("click",e=>{e.stopPropagation();play(k,true)});list.append(b)}
-  row.append(mk("b",null,"Popup sound"),sw,tr,list);paint();
+  for(const k of Object.keys(SOUNDS)){const b=mk("button",null,"▶ "+LABEL[k]);b.type="button";b.addEventListener("click",e=>{e.stopPropagation();play(k)});list.append(b)}
+  row.append(mk("b",null,"🔊 Notification sounds"),tr,list);
   mount.prepend(row);
  }
  window.LWBNotifyPopup={feed,play,controls,soundOf,sounds:Object.keys(SOUNDS),
@@ -176,5 +172,5 @@
    {cat:"task",tone:"act",head:"Call party for payment",action:"",line2:"From Mohit (Admin)",amount:"",details:["TSK-58"]},
    {cat:"money",tone:"money",head:"Cash collected",action:"",line2:"Jagdish Traders",amount:"₹12,500",details:["LXY-00698","By Driver Suresh"]}];
    S.forEach((sum,i)=>{const it={n:{id:"demo"+Date.now()+i,is_read:false,created_at:new Date().toISOString(),notification_type:i?"":"ORDER_NEW"},sum,tag:["Order","Task","Payment"][i],svg:"",href:"",open:()=>{}};queue.push(it)});
-   play("order",true);pump()}};
+   play("order");pump()}};
 })();
