@@ -193,7 +193,7 @@
     .dup-t .dup-ac{white-space:nowrap;text-align:right;width:1%}.dup-t .dup-ac .acx-btn{height:32px;padding:0 10px;font-size:13px}
     @media(max-width:600px){.dup-t .dup-ac{white-space:normal}.dup-t .dup-ac .acx-btn{margin:2px 0}.dup-t .dup-ac .acx-btn.grn{padding:0 8px}}
     .lg-t td small{display:block;color:var(--erp-muted);font-size:12px}.lg-t tr.cx td{opacity:.5;text-decoration:line-through}
-    .lg-t .acx-btn{height:28px;padding:0 8px;font-size:12.5px}
+    .lg-t .acx-btn{height:28px;padding:0 8px;font-size:12.5px}.cd-day .mut{color:var(--erp-muted)}@media(max-width:759px){.cd-day th:nth-child(4),.cd-day td:nth-child(4),.cd-day th:nth-child(5),.cd-day td:nth-child(5),.cd-day th:nth-child(6),.cd-day td:nth-child(6){display:none}.cd-day td:first-child b{white-space:nowrap}.cd-day td,.cd-day th{padding-left:4px;padding-right:4px}}
     @media(max-width:600px){.lg-t th,.lg-t td{padding-left:4px;padding-right:4px}.lg-t td:last-child{padding:4px 0}.lg-t .acx-btn{padding:0 6px;height:26px}.lg-t td .tag{font-size:11px}.lg-t td:first-child{min-width:0;word-break:break-word}.lg-head h3{flex-basis:auto}}
     .tg-eq{margin-left:auto;border:1px solid currentColor;background:#fff;color:inherit;border-radius:99px;font:inherit;font-size:12.5px;font-weight:700;padding:3px 10px;cursor:pointer}
     .cp-count{font-size:13px;color:#3b4652;margin:0 0 8px}.cp-count b{color:#00434d}
@@ -857,6 +857,21 @@
     /* ---------- Cash Difference ledger (Mohit, 25 Nov 2026) ----------
        Whatever the cash box handover leaves unexplained goes here (short = out of cash in hand).
        Difference found = Cash In back; Admin can write off the rest (no cash change). */
+    // Day-wise Cash difference (Mohit 27 Nov 2026): per day Short (cash less) / Extra (cash more) / Found / Written off,
+    // the day's net and the open balance after that day. Oldest first for the balance, newest day on top.
+    let cdView=(()=>{try{return localStorage.getItem("lwbCdView")||"day"}catch(_){return "day"}})();
+    function cdDays(R){
+      const M=new Map();
+      R.filter(r=>!r.cancelled).forEach(r=>{const d=String(r.day||"").slice(0,10);const x=M.get(d)||{d,SHORT:0,EXTRA:0,FOUND:0,WRITE_OFF:0,n:0};x[r.kind]=r2(x[r.kind]+Number(r.amount));x.n++;M.set(d,x)});
+      const days=[...M.values()].sort((a,b)=>a.d.localeCompare(b.d));let bal=0;
+      days.forEach(x=>{x.cash=r2(x.EXTRA+x.FOUND-x.SHORT);bal=r2(bal+x.SHORT-x.EXTRA-x.FOUND-x.WRITE_OFF);x.bal=bal});
+      const cell=(v,c,sg)=>v?'<b class="'+c+'">'+sg+rs(v)+'</b>':'<span class="mut">—</span>';
+      const T={SHORT:0,EXTRA:0,FOUND:0,WRITE_OFF:0,cash:0};days.forEach(x=>Object.keys(T).forEach(k=>T[k]=r2(T[k]+x[k])));
+      return '<div style="overflow:auto"><table class="acx-t lg-t cd-day"><thead><tr><th>Date</th><th class="n">− Short</th><th class="n">+ Extra</th><th class="n">+ Found</th><th class="n">Written off</th><th class="n">Day net (cash)</th><th class="n">Open short</th></tr></thead><tbody>'+
+        days.slice().reverse().map(x=>'<tr><td><b>'+(wide()?dmy(x.d):dmy(x.d).slice(0,5))+'</b><small>'+x.n+' entr'+(x.n===1?"y":"ies")+'</small></td><td class="n">'+cell(x.SHORT,"minus","−")+'</td><td class="n">'+cell(x.EXTRA,"plus","+")+'</td><td class="n">'+cell(x.FOUND,"plus","+")+'</td><td class="n">'+(x.WRITE_OFF?rs(x.WRITE_OFF):'<span class="mut">—</span>')+'</td>'+
+          '<td class="n">'+(x.cash?'<span class="tag '+(x.cash<0?"t-red":"t-blu")+'">'+(x.cash<0?"− "+rs(-x.cash)+" short":"+ "+rs(x.cash)+" extra")+'</span>':'<span class="tag t-grn">✓ 0</span>')+'</td><td class="n"><b>'+(x.bal>0?rs(x.bal):x.bal<0?"Extra "+rs(-x.bal):"✓ 0")+'</b></td></tr>').join("")+
+        '</tbody><tfoot><tr><td>Total ('+days.length+' days)</td><td class="n">'+rs(T.SHORT)+'</td><td class="n">'+rs(T.EXTRA)+'</td><td class="n">'+rs(T.FOUND)+'</td><td class="n">'+rs(T.WRITE_OFF)+'</td><td class="n">'+(T.cash<0?"− "+rs(-T.cash):"+ "+rs(T.cash))+'</td><td class="n">'+rs(r2(CDF.balance))+'</td></tr></tfoot></table></div>';
+    }
     function renderCashDiff(){
       if(!CDF){el("tabBody").innerHTML='<div class="acx-empty">Cash Difference ledger is not set up yet.</div>';return}
       const R=CDF.rows||[],bal=r2(CDF.balance),KN={SHORT:["Short in handover","t-red"],EXTRA:["Extra in handover","t-blu"],FOUND:["Difference found","t-grn"],WRITE_OFF:["Written off","t-gry"]};
@@ -864,7 +879,8 @@
       el("tabBody").innerHTML='<div class="lg-head"><h3>⚖ Cash Difference</h3><span class="lg-bal '+(bal>0?"t-red":bal<0?"t-blu":"t-grn")+'">'+(bal>0?"Open short "+rs(bal):bal<0?"Extra "+rs(-bal):"✓ Nothing open")+'</span><span class="sp"></span>'+
           (bal>0?'<button type="button" class="acx-btn grn" data-cdf="FOUND">+ Difference found</button>'+(CDF.is_admin?'<button type="button" class="acx-btn red" data-cdf="WRITE_OFF">Write off</button>':""):"")+'</div>'+
         '<div class="lg-sum"><span>Short <b>'+rs(CDF.short)+'</b></span><span>Extra <b>'+rs(CDF.extra)+'</b></span><span>Found <b>'+rs(CDF.found)+'</b></span><span>Written off <b>'+rs(CDF.written_off)+'</b></span></div>'+
-        (R.length?'<div style="overflow:auto"><table class="acx-t lg-t"><thead><tr><th>Entry</th><th class="n">Amount</th><th class="n">Balance</th><th></th></tr></thead><tbody>'+
+        (R.length?'<div class="acx-chips" id="cdView" style="margin:0 0 8px">'+[["day","📅 Day-wise"],["ent","Entries"]].map(([k,v])=>'<button type="button" data-cv="'+k+'" aria-pressed="'+(cdView===k)+'">'+v+'</button>').join("")+'</div>':"")+
+        (R.length&&cdView==="day"?cdDays(R):R.length?'<div style="overflow:auto"><table class="acx-t lg-t"><thead><tr><th>Entry</th><th class="n">Amount</th><th class="n">Balance</th><th></th></tr></thead><tbody>'+
           R.map(r=>{const k=KN[r.kind]||[r.kind,"t-gry"],plus=r.kind==="SHORT";
             return '<tr'+(r.cancelled?' class="cx"':"")+'><td><span class="tag '+k[1]+'">'+k[0]+'</span>'+(r.cancelled?' <span class="tag t-gry">Cancelled</span>':"")+
               '<small>'+dmy(r.day).slice(0,5)+' '+hm(r.at)+' · '+esc(r.note||r.remark||"")+(r.by?" · "+esc(r.by):"")+'</small></td>'+
@@ -872,6 +888,7 @@
               '<td>'+(!r.cancelled&&(r.kind==="FOUND"||r.kind==="WRITE_OFF")&&(CDF.is_admin||r.kind==="FOUND")?'<button type="button" class="acx-btn red" data-cdfx="'+r.id+'" aria-label="Cancel">✕</button>':"")+'</td></tr>'}).join("")+'</tbody></table></div>'
           :'<div class="acx-empty">No difference yet. When a cash box handover is short or extra, it comes here.</div>')+
         '<p class="acx-note">'+tipI('Short in handover = cash went out of cash in hand (head "Cash difference"). Difference found = it comes back into cash in hand. Write off (Admin) closes it without any cash change. Not counted as an expense.')+'</p>';
+      el("tabBody").querySelectorAll("[data-cv]").forEach(b=>b.onclick=()=>{cdView=b.dataset.cv;try{localStorage.setItem("lwbCdView",cdView)}catch(_){}renderCashDiff()});
       el("tabBody").querySelectorAll("[data-cdf]").forEach(b=>b.onclick=()=>cdiffAdd(b.dataset.cdf));
       el("tabBody").querySelectorAll("[data-cdfx]").forEach(b=>b.onclick=async()=>{const why=await ERPShell.prompt("Cancel this line?","",{title:"Cancel",placeholder:"Why"});if(why==null)return;
         act(b,()=>rpc("lwb_acc_cdiff_cancel",{p_id:Number(b.dataset.cdfx),p_reason:why}))});
