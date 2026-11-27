@@ -382,10 +382,8 @@
       return {i,s,n};
     }).filter(Boolean).sort((x,y)=>x.s-y.s||x.n-y.n).map(x=>x.i);
   }
-  // Ledger button in the top bar (Mohit, 27 Nov 2026), web and phone: Admin / Accounts / Sales Head open the one
-  // Ledger & Outstanding page (Sales Head: view only). Only when this login may open it; none = no button.
-  const LEDGER_PAGES=["accounts-books.html"];
-  function ledgerPage(role){const ok=new Set(menuForMe(role).flatMap(g=>g.items.map(i=>i.h)));return LEDGER_PAGES.find(h=>ok.has(h))||""}
+  // Ledger button in the top bar was taken out again (Mohit, 27 Nov 2026): Ledger & Outstanding opens from the
+  // menu, Module Search ("ledger" / "khata" / "लेजर") or Ctrl+Alt+L.
   const allPages=()=>MENU.map(g=>({group:g.group,items:g.items.map(i=>({t:i.pt||i.t,h:i.h}))}));
 
   // Pages hidden from the logged-in user. Cached so the menu is right at once,
@@ -506,6 +504,8 @@
           '<span>'+esc(g.group)+'</span><svg class="erp-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></button>'+
           '<div class="erp-sec-body" id="'+id+'">'+g.items.map(i=>link(i,g)).join("")+'</div></div>';
       });
+      // Phone: Logout sits at the end of the side menu, the top bar keeps only the daily icons (Mohit, 27 Nov 2026).
+      html+='<button type="button" class="erp-side-logout"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/></svg><span>Logout</span></button>';
       side.innerHTML=html;
     }
     drawSide();
@@ -524,12 +524,6 @@
           db.innerHTML=svg("phone")+"<span>Dial</span>";user.prepend(db)}
         db.classList.toggle("active",page==="dial-book.html");
       }else db?.remove();
-      let lb=user.querySelector(".erp-ledger-btn");const lh=ledgerPage(role);
-      if(!lh){lb?.remove();return}
-      if(!lb){lb=document.createElement("a");lb.className="erp-ledger-btn";user.prepend(lb)}
-      const lt="Ledger & Outstanding (Ctrl+Alt+L)";
-      lb.href=lh;lb.title=lt;lb.setAttribute("aria-label",lt);lb.classList.toggle("active",page===lh);
-      lb.innerHTML=svg("book")+"<span>Ledger</span>";
     }
     side.addEventListener("click", e => {
       const b=e.target.closest(".erp-group");if(!b)return;
@@ -594,6 +588,7 @@
     armHide();
     top.querySelector(".erp-keys-btn").onclick=()=>{if(window.LWBKeys&&LWBKeys.help)LWBKeys.help();else location.href="keyboard-shortcuts.html"};
     top.querySelector(".erp-logout").onclick=opts.onLogout||(()=>{location.href="login.html"});
+    side.addEventListener("click",e=>{if(e.target.closest(".erp-side-logout"))top.querySelector(".erp-logout").click()});
     mountedRole=role||"";
     if(role)unlockSetting(top.querySelector(".erp-avatar"),role);
 
