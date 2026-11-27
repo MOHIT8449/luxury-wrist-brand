@@ -8,6 +8,7 @@
 <script src="vendor/supabase-js-2.119.0.js"></script>
 <link rel="stylesheet" href="erp-shell.css?v=20261124">
 <script src="erp-shell.js?v=20261124r"></script>
+<script src="purchase-stage.js?v=20261127"></script>
 <style>
 .ec-gate{text-align:center;padding:80px 20px;font-size:15px;color:#555}
 .ec-card{background:#fff;border:1px solid var(--erp-line);border-radius:10px;padding:12px;margin-bottom:12px}
@@ -98,6 +99,7 @@ body.noscroll{overflow:hidden}
 .ec-sumh h3{margin:0}
 .ec-sumh button{height:34px;padding:0 14px}
 .ec-trk .tbtn{margin-top:10px}
+.ec-disp{margin-top:6px;padding:4px 7px;border-radius:6px;font-size:12px;font-weight:700}.ec-disp.wait{background:#eef0f3;color:#5b6773}.ec-disp.ok{background:#e8f0fe;color:#1a56c4}.ec-disp.no{background:#fdecef;color:#c8102e}
 .ec-trk .tbtn button{height:40px}
 .ec-done img{display:block;width:100%;max-height:60vh;object-fit:contain;border:1px solid var(--erp-line);border-radius:8px;margin-bottom:8px}
 .ec-done .ec-btns{margin-top:6px}
@@ -425,7 +427,9 @@ function renderTrucks(){
     return `<div class="ec-trk"><div class="th"><span>Order ${t.no}</span><span class="${pal!==t.cap?'neg':''}">${fmt(pal)}/${t.cap} plt</span></div>
     ${t.rows.map((r,j)=>`<div class="tl"><span>${esc(info(r.sku_id).name||r.name)}</span><input type="number" min="0" step="1" data-t="${t.id}" data-j="${j}" value="${n(r.pal)}"></div>`).join('')}
     <div class="tg"><span>GR <b>₹${fmt(trkGR(t).g)}</b></span><span>Pay <b>₹${fmt(trkGR(t).pay)}</b></span></div>
-    <div class="tb"><button onclick="openPlan(${t.id})">Edit</button><button class="dark" onclick="copyOne(${t.id})">Copy</button><button class="ghost" onclick="shareOne(${t.id})">Share</button><button class="del" onclick="delTruck(${t.id})">Delete</button></div></div>`; }).join('');
+    ${dispLine(t)}
+    <div class="tb"><button onclick="openPlan(${t.id})">Edit</button><button class="dark" onclick="copyOne(${t.id})">Copy</button><button class="ghost" onclick="shareOne(${t.id})">Share</button><button class="del" onclick="delTruck(${t.id})">Delete</button></div>
+    <div class="tb"><button class="${t.dispatched_at?'':'dark'}" onclick="dispatchTruck(${t.id})">${t.dispatched_at?'✏️ Dispatch details':'🚚 Company dispatched'}</button></div></div>`; }).join('');
   $('trucks').querySelectorAll('input[data-t]').forEach(el=>el.addEventListener('change',async e=>{
     const t=TRUCKS.find(x=>x.id==e.target.dataset.t), j=+e.target.dataset.j, v=Math.max(0,Math.round(n(e.target.value)));
     const rows=t.rows.map((r,k)=>k===j?{...r,pal:v}:r).filter(r=>n(r.pal)>0);
@@ -440,6 +444,16 @@ function renderTrucks(){
       <span class="sub">${x.parts.map(([no,p])=>`Order ${no}: ${fmt(p)}`).join(' · ')}</span></div>`; }).join('')+
     `<div class="ec-sku tot"><span class="nm">TOTAL · ${TRUCKS.length} truck</span><span class="r">${fmt(P)} plt <span class="muted">(${fmt(sk.reduce((a,x)=>a+x.pal*info(x.id).ppp,0))} cs)</span></span></div>`;
 }
+/* Company dispatch (Mohit, 27 Nov 2026, purchase-stage.js): vehicle, invoice and the cases the company really sent. */
+function dispLine(t){
+  if(t.closed_at) return `<div class="ec-disp no">✕ Not coming${t.close_note?' · '+esc(t.close_note):''}</div>`;
+  if(!t.dispatched_at) return `<div class="ec-disp wait">Waiting for company dispatch</div>`;
+  const o=t.rows.reduce((a,r)=>a+n(r.pal)*info(r.sku_id).ppp,0), s=(t.sent_rows||[]).reduce((a,r)=>a+n(r.cs),0), d=s-o;
+  return `<div class="ec-disp ok">🚚 ${esc(t.vehicle_no||'—')}${t.invoice_no?' · Inv '+esc(t.invoice_no):''}<br>Sent ${fmt(s)} cs${d?` <b class="${d<0?'neg':'pos'}">${d>0?'+':''}${fmt(d)}</b>`:' ✓'}</div>`;
+}
+function dispatchTruck(id){ const t=TRUCKS.find(x=>x.id===id); if(!t||!window.LWBPurchaseStage) return;
+  LWBPurchaseStage.dispatch({client:db,truck:{...t,rows:t.rows.map(r=>({sku_id:r.sku_id,name:info(r.sku_id).name||r.name,cs:n(r.pal)*info(r.sku_id).ppp}))},
+    onDone:k=>{ toast(k==='dispatch'?'Dispatch saved.':k==='close'?'Marked Not coming.':'Opened again.'); loadDay(); }}); }
 async function delTruck(id){ const t=TRUCKS.find(x=>x.id===id); if(!await ask(`Delete Order ${t.no}?`)) return;
   const {error}=await db.from('lwb_ecrs_trucks').delete().eq('id',id); if(error){ say('Delete failed: '+error.message); return; } await loadDay(); }
 

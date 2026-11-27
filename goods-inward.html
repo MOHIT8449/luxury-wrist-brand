@@ -529,9 +529,22 @@ async function start(key){
     if(profileError)throw profileError;if(!prof||prof.active!==true)throw new Error('Active ERP profile required.');
     prof.role=await lwbPageRole(prof.role);profile=prof;$('access').textContent=prof.role==='warehouse'?'GODOWN MANAGER — GOODS INWARD':(CAN_POST.includes(prof.role)||(IS_EDIT&&CAN_EDIT.includes(prof.role)))?prof.role.toUpperCase()+' — GOODS INWARD':'VIEW ONLY';
     godownMode();
-    $('keybox').style.display='none';clearNotice();await loadData();await mountGiDocs();await loadEdit();prefillMissing();
+    $('keybox').style.display='none';clearNotice();await loadData();await mountGiDocs();await loadEdit();prefillMissing();await prefillEcrs();
   }catch(e){$('access').textContent='Not connected';$('keybox').style.display='block';show('Connection failed: '+(e.message||String(e)));}
   recalc();
+}
+// From Purchase List "📥 Receive" (?ecrs=<truck id>): fill vehicle, company invoice no. and date of that ECRS order.
+let ECRS_ID=new URLSearchParams(location.search).get('ecrs')||'';
+async function prefillEcrs(){
+  if(IS_EDIT||!ECRS_ID)return;
+  const r=await db.rpc('lwb_purchase_stage_list',{p_from:null,p_to:null});
+  const t=r.error?null:((r.data||{}).trucks||[]).find(x=>String(x.id)===String(ECRS_ID));
+  if(!t){ECRS_ID='';return;}
+  if(t.vehicle_no&&!$('vehicle').value)$('vehicle').value=t.vehicle_no;
+  if(t.invoice_no&&!$('invoice').value){$('invoice').value=t.invoice_no;$('invoice').dispatchEvent(new Event('input',{bubbles:true}));}
+  if(t.invoice_date)$('invoiceDate').value=t.invoice_date;
+  const sent=(t.sent_rows||t.rows||[]).map(x=>(x.name||'')+' '+Number(x.cs||0)+' cs').join(', ');
+  show('ECRS Order '+t.no+' of '+String(t.day).split('-').reverse().join('/')+(t.vehicle_no?' · '+t.vehicle_no:'')+'\nCompany sent: '+sent+'\nEnter the bill as usual; on Save it joins this ECRS order.','success');
 }
 // From the Missing bills list (?inv=&date=): fill the invoice no. and date of the company bill (Mohit, 19 Nov 2026).
 function prefillMissing(){
@@ -814,6 +827,14 @@ async function save(){
         :a.data>0?`\nGodown Manager popup sent to ${gm?gm.full_name:'the chosen Godown Manager'}: check and upload damage / gasless photos.`:!godownId?'\nNo Godown Manager chosen: no popup sent.':'';
     }
     taskMsg+=arrMsg;
+    // Opened from Purchase List "📥 Receive" (?ecrs=): this bill is that ECRS order (lwb_purchase_stages_setup.sql).
+    if(ECRS_ID){
+      let inwardId=data?.id||data?.inward_id||null;
+      if(!inwardId){const f=await db.from('lwb_goods_inward').select('id').eq('invoice_no',invoice).eq('supplier_name',supplier).order('created_at',{ascending:false}).limit(1);inwardId=f.data?.[0]?.id||null;}
+      const l=inwardId?await db.rpc('lwb_purchase_link_ecrs',{p_inward:inwardId,p_truck:Number(ECRS_ID)}):{error:{message:'saved bill not found'}};
+      taskMsg+=l.error?`\nECRS order was not joined to this bill (${l.error.message}). Use Purchase List → Open → ECRS order.`:'\nJoined to its ECRS order (Purchase List → Stages).';
+      if(!l.error){ECRS_ID='';history.replaceState(null,'',location.pathname);}
+    }
     resetForm();
     await loadData();
     show(`Goods Inward SAVED successfully.\nInvoice: ${data?.invoice_no||invoice}\nSKU Lines: ${data?.sku_count||rows.length}\nTotal Pieces Added: ${format(data?.total_pcs||0)} PCS\n${mrpBill?'Deemed / Taxable Value':'Taxable Amount'}: ${rupees(invoiceTaxable/100)}\nGST Amount: ${rupees(invoiceGst/100)}\nInvoice Total: ${rupees(invoiceGross/100)}\nLive Main Godown stock updated.${taskMsg}${spMsg}${ckMsg.includes('WARNING')?'':ckMsg}${docMsg.includes('WARNING')?'':docMsg}`,spMsg.includes('WARNING')?'error':'success');
