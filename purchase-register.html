@@ -8,12 +8,13 @@
   <script src="vendor/supabase-js-2.119.0.js"></script>
 <script src="brand-filter.js"></script>
 <script src="erp-period.js"></script>
-  <link rel="stylesheet" href="erp-shell.css?v=20261127l">
-  <script src="erp-shell.js?v=20261127l"></script>
+  <link rel="stylesheet" href="erp-shell.css?v=20261127m">
+  <script src="erp-shell.js?v=20261127m"></script>
 <script src="erp-list.js"></script>
 <script src="erp-docs.js"></script>
 <script src="purchase-damage.js"></script>
 <script src="purchase-stage.js?v=20261127"></script>
+<script src="vehicle-no.js"></script><script src="dial-book.js"></script>
 <script src="excel-io.js"></script>
   <style>
     /* Purchase List (2 Nov 2026): like the PO / Sales List: tabs with counts, one-line toolbar, Excel.
@@ -206,7 +207,8 @@
       .jr-f button,.jr-f a{flex:1 1 40%}
     }
     [hidden]{display:none!important}
-  </style>
+  .st-drv{margin-top:4px}.st-drv small{margin-top:2px}
+</style>
 </head>
 <body>
   <div id="loading" class="status">Checking account access...</div>
@@ -402,6 +404,7 @@ Verify: All OK, or damage / leakage / breakage / gasless / shortage lines (SKU �
     // ===== Purchase stages (Mohit, 27 Nov 2026, lwb_purchase_stages_setup.sql) =====
     // Like the PO list: ECRS ordered -> On the way (company dispatch) -> Check pending -> Bill / Tally pending -> Claim open -> Completed.
     let view="stages",STG={ok:false,trucks:[],byTruck:new Map(),byBill:new Map(),truckOf:new Map()};
+    let DRV=new Map(); // Dial Book: driver of each vehicle (lwb_vehicle_drivers), masked
     try{view=localStorage.getItem("lwbPrView")||"stages"}catch(e){}
     async function loadStages(){
       const r=await client.rpc("lwb_purchase_stage_list",{p_from:el("from").value||null,p_to:el("to").value||null});
@@ -412,6 +415,7 @@ Verify: All OK, or damage / leakage / breakage / gasless / shortage lines (SKU �
       // A linked bill older than the dates is fetched so its truck is not shown as "on the way".
       const miss=trucks.filter(t=>t.inward_id&&!bills.some(b=>b.id===t.inward_id)).map(t=>t.inward_id);
       STG={ok:true,trucks,byTruck,byBill:st,truckOf,old:new Set(miss)};
+      if(window.LWBDial)try{DRV=await LWBDial.drivers(client,trucks.map(t=>t.vehicle_no).concat(bills.map(b=>b.vehicle_no)))}catch(e){}
     }
     const cs=v=>fmt(Math.round(num(v)*10)/10);
     const tOrd=t=>(t.rows||[]).reduce((a,r)=>a+num(r.cs),0);
@@ -494,6 +498,9 @@ Verify: All OK, or damage / leakage / breakage / gasless / shortage lines (SKU �
       if(x.s==="claim"&&can.claims){const ch=checks.get(x.b.id);a+='<a class="red" href="purchase-claims.html?claim='+esc(ch.id)+'">✉ Claim ›</a>'}
       return a+'<button type="button" data-jb="'+id+'">Open</button>';
     }
+    // 📞 / 📍 driver of this vehicle, or "+ Driver" (Dial Book, Mohit 27 Nov 2026). Not for closed / old rows.
+    const drvBtns=(veh,t)=>window.LWBDial?'<div class="st-drv">'+LWBDial.rowBtns(veh,DRV,{canSave:can.drv,ecrs:t&&!t.closed_at?t.id:null})+"</div>":"";
+    const openTrucks=()=>STG.trucks.filter(t=>!t.inward_id&&!t.closed_at).map(t=>({id:t.id,label:"ECRS Order "+t.no+" · "+dmy(t.day)+(t.vehicle_no?" · "+t.vehicle_no:"")}));
     function renderStages(){
       const all=stageRows(),list=all.filter(x=>stab==="all"?x.s!=="closed":stab==="short"?isShort(x):x.s===stab);
       el("tabs").innerHTML=STAGE_TABS.map(([k,l,n],i)=>{const c=all.filter(x=>k==="all"?x.s!=="closed":x.s===k).length;
@@ -510,9 +517,9 @@ Verify: All OK, or damage / leakage / breakage / gasless / shortage lines (SKU �
       for(const x of list.slice(0,shownMax)){
         const b=x.b,t=x.t;let c1,c2;
         if(b){c1='<button type="button" class="pr-inv" data-jb="'+b.id+'">'+esc(b.invoice_no)+"</button><small>"+(t?"ECRS Order "+esc(t.no)+" · ":"")+"Inv "+dmy(b.invoice_date)+"</small>"+'<small class="sup">'+esc(b.supplier_name)+"</small>";
-          c2=esc(b.vehicle_no||"—")+"<small>Recd "+dmy(b.received_date)+(b.driver_name?" · "+esc(b.driver_name):"")+(b.lr_no?" · LR "+esc(b.lr_no):"")+"</small>"}
+          c2=esc(b.vehicle_no||"—")+"<small>Recd "+dmy(b.received_date)+(b.driver_name?" · "+esc(b.driver_name):"")+(b.lr_no?" · LR "+esc(b.lr_no):"")+"</small>"+drvBtns(b.vehicle_no,t)}
         else{c1='<button type="button" class="pr-inv" data-jt="'+t.id+'">ECRS Order '+esc(t.no)+"</button><small>Ordered "+dmy(t.day)+" · "+fmt((t.rows||[]).reduce((a,r)=>a+num(r.pal),0))+" pallets</small>";
-          c2=t.dispatched_at?esc(t.vehicle_no||"—")+"<small>"+(t.invoice_no?"Inv "+esc(t.invoice_no)+" · ":"")+"Dispatched "+dtm(t.dispatched_at)+"</small>":'<span class="mut">Vehicle not given yet</span><small>Ordered '+dtm(t.created_at)+"</small>"}
+          c2=(t.dispatched_at?esc(t.vehicle_no||"—")+"<small>"+(t.invoice_no?"Inv "+esc(t.invoice_no)+" · ":"")+"Dispatched "+dtm(t.dispatched_at)+"</small>":t.vehicle_no?esc(t.vehicle_no)+'<small>Ordered '+dtm(t.created_at)+"</small>":'<span class="mut">Vehicle not given yet</span><small>Ordered '+dtm(t.created_at)+"</small>")+drvBtns(t.vehicle_no,t)}
         const badge='<span class="st '+x.s+'">'+STAGE_LBL[x.s]+(x.s==="way"?" · "+ageH(t.dispatched_at):x.s==="claim"?": "+esc(({mail:"mail not sent",approval:"awaiting company",return:"return goods",due:"amount due"})[claimStage(checks.get(b.id))]||""):"")+"</span>";
         h+='<tr class="bill"><td class="c-inv">'+c1+'</td><td class="c-veh">'+c2+'</td><td class="n c-qty qty">'+stQty(x)+'</td><td class="c-trk">'+tracker(x)+badge+'</td><td class="c-acc">'+accTags(x)+'</td><td class="c-act"><div class="pr-acts st-acts">'+stActs(x)+"</div></td></tr>";
       }
@@ -848,6 +855,8 @@ Verify: All OK, or damage / leakage / breakage / gasless / shortage lines (SKU �
       can.claims=["admin","manager"].includes(r);el("segClaims").hidden=!can.claims;
       // Purchase stages: dispatch / link = Admin, Sales Head, Accounts; Tally = Admin, Accounts; Receive = who makes New Purchase.
       Object.assign(can,{dispatch:["admin","manager","accounts"].includes(r),link:["admin","manager","accounts"].includes(r),tally:["admin","accounts"].includes(r),receive:["admin","manager"].includes(r)});
+      can.drv=["admin","manager","sales","accounts"].includes(r);
+      if(window.LWBDial)LWBDial.wire(document,{client,source:"Purchase List",trucks:openTrucks,onDone:async()=>{await loadStages();render()}});
       el("matchLink").hidden=!can.bill;can.missing=["admin","manager","accounts"].includes(r);
       el("newLink").hidden=!["admin","manager"].includes(r);el("sbsLink").hidden=!["admin","manager","accounts"].includes(r);
       ERPShell.mount({role:me.realRole||me.role,name:me.name,onLogout:async()=>{await client.auth.signOut();location.replace("login.html")},group:"Purchase"});

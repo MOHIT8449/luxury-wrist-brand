@@ -6,9 +6,10 @@
 <title>ECRS Order | Luxury Wrist Brand ERP</title>
 <script src="erp-date.js"></script>
 <script src="vendor/supabase-js-2.119.0.js"></script>
-<link rel="stylesheet" href="erp-shell.css?v=20261127l">
-<script src="erp-shell.js?v=20261127l"></script>
+<link rel="stylesheet" href="erp-shell.css?v=20261127m">
+<script src="erp-shell.js?v=20261127m"></script>
 <script src="purchase-stage.js?v=20261127"></script>
+<script src="vehicle-no.js"></script><script src="dial-book.js"></script>
 <style>
 .ec-gate{text-align:center;padding:80px 20px;font-size:15px;color:#555}
 .ec-card{background:#fff;border:1px solid var(--erp-line);border-radius:10px;padding:12px;margin-bottom:12px}
@@ -142,6 +143,7 @@ body.noscroll{overflow:hidden}
 }
 @media(max-width:999px){.ec-add{flex-wrap:wrap}.ec-add .ec-sep{display:none}}
 @media(max-width:600px){.ec-list{font-size:12px}.ec-row{gap:4px}.ec-st b{font-size:15px}}
+.ec-drv{margin:6px 0 2px;font-size:12.5px}.ec-drv small{display:block;color:#6b7785;margin-top:2px}
 </style>
 </head>
 <body>
@@ -248,6 +250,7 @@ async function loadMasters(){
   byId=new Map(SKUS.map(s=>[s.id,s]));
   $('skuDL').innerHTML=SKUS.map(s=>`<option value="${esc(s.name)}">`).join('');
 }
+let DRV=new Map(); // Dial Book: driver of each truck vehicle (masked)
 async function loadDay(){
   const d=$('day').value||today();
   const [a,b]=await Promise.all([db.from('lwb_ecrs_days').select('*').eq('day',d).maybeSingle(),
@@ -255,7 +258,9 @@ async function loadDay(){
   if(a.error||b.error){ say('Load failed: '+((a.error||b.error).message)+'\nThe ECRS tables may not be set up yet (lwb_ecrs_order_setup.sql).'); }
   DAY=a.data||{day:d,rtgs:null,lines:[]}; if(!Array.isArray(DAY.lines)) DAY.lines=[];
   TRUCKS=(b.data||[]).map((t,k)=>({...t,no:k+1,rows:Array.isArray(t.rows)?t.rows:[]}));
-  DAY.miss=null; render();
+  DAY.miss=null;
+  if(window.LWBDial) try{ DRV=await LWBDial.drivers(db,TRUCKS.map(t=>t.vehicle_no)); }catch(e){}
+  render();
 }
 let saveT=null;
 function saveDay(){ clearTimeout(saveT); saveT=setTimeout(async()=>{
@@ -428,6 +433,7 @@ function renderTrucks(){
     ${t.rows.map((r,j)=>`<div class="tl"><span>${esc(info(r.sku_id).name||r.name)}</span><input type="number" min="0" step="1" data-t="${t.id}" data-j="${j}" value="${n(r.pal)}"></div>`).join('')}
     <div class="tg"><span>GR <b>₹${fmt(trkGR(t).g)}</b></span><span>Pay <b>₹${fmt(trkGR(t).pay)}</b></span></div>
     ${dispLine(t)}
+    ${!t.closed_at&&window.LWBDial?`<div class="ec-drv">${LWBDial.rowBtns(t.vehicle_no,DRV,{canSave:true,ecrs:t.id})}</div>`:''}
     <div class="tb"><button onclick="openPlan(${t.id})">Edit</button><button class="dark" onclick="copyOne(${t.id})">Copy</button><button class="ghost" onclick="shareOne(${t.id})">Share</button><button class="del" onclick="delTruck(${t.id})">Delete</button></div>
     <div class="tb"><button class="${t.dispatched_at?'':'dark'}" onclick="dispatchTruck(${t.id})">${t.dispatched_at?'✏️ Dispatch details':'🚚 Company dispatched'}</button></div></div>`; }).join('');
   $('trucks').querySelectorAll('input[data-t]').forEach(el=>el.addEventListener('change',async e=>{
@@ -628,6 +634,7 @@ function dayText(){
   $('addSku').addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); $('addCs').focus(); } });
   $('discAll').addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); discToAll(); } });
   $('addCs').addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); addSku(); } });
+  if(window.LWBDial) LWBDial.wire(document,{client:db,source:'ECRS Order',trucks:()=>TRUCKS.filter(t=>!t.closed_at).map(t=>({id:t.id,label:'ECRS Order '+t.no+' · '+dIN(t.day)+(t.vehicle_no?' · '+t.vehicle_no:'')})),onDone:()=>loadDay()});
   try{ await loadMasters(); }catch(e){ say('SKU Master load failed: '+e.message); }
   await loadDay();
 })();
