@@ -224,7 +224,7 @@
  const ROUTES=[
   [/^(TALLY_BILL_PENDING|PO_APPROVED_BILL)$/,["party-billing.html?order={o}"]],
   // Sales Head "Tell Accounts" (lwb_sales_head_outstanding_setup.sql): Party & Collections > To collect; Cashier: Cashier view.
-  [/^PAYMENT_FOLLOWUP$/,["party-billing.html#party","accounts-dashboard.html#cash","sales-outstanding.html"]],
+  [/^PAYMENT_FOLLOWUP$/,["party-billing.html#party","accounts-dashboard.html#cash","accounts-books.html?v=out"]],
   [/^PO_APPROVED_LOADING$/,["loading-dispatch.html?order={o}","warehouse-orders.html"]],
   [/^(VEHICLE_LOADED|TALLY_BILL_DONE)$/,["loading-dispatch.html","party-billing.html?order={o}","warehouse-orders.html","driver-delivery.html?order={o}","my-sales.html#orders"]],
   [/^ORDER_NEW$/,["warehouse-orders.html"]],
