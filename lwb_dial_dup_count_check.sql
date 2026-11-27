@@ -1,5 +1,4 @@
 -- LUXURY WRIST BRAND ERP — READ-ONLY CHECK: duplicate party numbers (27 Nov 2026)
--- lwb:no-auto-run
 -- Prints counts only (no names, no phone numbers) in the run log. Changes nothing.
 -- It stops with an ERROR on purpose, so the counts show in the log (the run turns red; nothing is written).
 -- Read-only count for the run log (numbers only: no names, no phone numbers).
