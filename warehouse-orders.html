@@ -791,12 +791,16 @@
     /* Out for delivery / Bill pending / Delivered payment (25 Nov 2026) */
     .po-tab.bp {background:#fff1f0;border-color:#f3b8b3;color:#a3261b}
     .po-tab.bp b {background:#c62828;color:#fff}
+    .po-tab.bm {background:#eef8f1;border-color:#b7dfc2;color:#1e7b34}
+    .po-tab.bm b {background:#1e7b34;color:#fff}
     #ordersArea .c-st .flow-w {display:block;clear:both}
     #ordersArea .c-st .flow-w:empty {display:none}
     @media (max-width:640px){#ordersArea .c-st .flow-w > span {margin-left:auto}}
     .bp-b,.ofd-b,.stl-b {display:block;width:max-content;font-size:11px;font-weight:800;border-radius:6px;padding:2px 7px;margin-top:4px;white-space:nowrap}
     .bp-b {background:#fdecea;color:#b3261e;border:1px solid #f3b8b3}
     .ofd-b {background:#e8f0fe;color:#1a56c4;border:1px solid #bcd0f7}
+    .bm-b {display:block;width:max-content;font-size:11px;font-weight:700;border-radius:6px;padding:2px 7px;margin-top:4px;white-space:nowrap;background:#e6f4ea;color:#1e7b34;border:1px solid #b7dfc2}
+    .bm-b b {font-weight:900}
     .stl-b.ok {background:#e6f4ea;color:#1e7b34}
     .stl-b.part {background:#fff4e0;color:#9a5b00}
     .stl-b.no {background:#f1f3f4;color:#5f6368;font-weight:700}
@@ -1715,6 +1719,7 @@
         <option value="loaded">Loaded</option>
         <option value="out">Out for delivery</option>
         <option value="billpending">Bill pending</option>
+        <option value="billmade">Bill made</option>
         <option value="delivered">Delivered</option>
         <option value="cancelled">Cancelled</option>
         <option value="all">All Orders</option>
@@ -3283,6 +3288,8 @@ const PO_TABS = [
   { k: "all", t: "All", subs: [
     { k: "urgent", t: "Urgent / High" }] },
   { k: "billpending", t: "🧾 Bill pending", bill: true },
+  // Mohit, 27 Nov 2026: POs whose Tally bill is saved (bill no. shows on the row).
+  { k: "billmade", t: "✅ Bill made", bill: true },
   { sep: true },
   { k: "late_approval", t: "Approval late<span class=\"lg\"> 12h+</span>", warn: true },
   { k: "late_delivery", t: "Delivery late<span class=\"lg\"> 36h+</span>", warn: true }
@@ -3297,6 +3304,7 @@ function matchesTab(order, tab) {
   if (tab === "loaded") return orderStage(order) === "loaded" && !isOutForDelivery(order);
   if (tab === "out") return orderStage(order) === "loaded" && isOutForDelivery(order);
   if (tab === "billpending") return isBillPending(order);
+  if (tab === "billmade") return !isCancelled(order) && hasBill(order);
   if (tab === "urgent") return orderPriority(order) !== "NORMAL" && !isCancelled(order) && !isDeliveredOrder(order);
   if (tab === "late_approval") return isLateApproval(order);
   if (tab === "late_delivery") return isLateDelivery(order);
@@ -3333,7 +3341,7 @@ function pageSearchText(order) {
   return [order.order_no, order.customer_name, order.cash_buyer_name, order.cash_buyer_mobile, order.sales_person, order.transportation, order.status, stageLabel(order),
     formatDate(order.order_date || order.created_at), orderLines.get(order.id), orderPriority(order),
     amt, amt.toLocaleString("en-IN"), qty, qty.toLocaleString("en-IN"), wt, wt.toLocaleString("en-IN"),
-    order.bill_no, order.invoice_no, order.remarks, order.notes]
+    order.bill_no, order.invoice_no, billNoOf(order), order.remarks, order.notes]
     .filter(v => v != null && v !== "").join(" ").toLowerCase();
 }
 
@@ -3367,7 +3375,7 @@ function renderTabs(base, current) {
     if (tab.bill && !CAN_BILL) return "";
     const n = tab.draft ? drafts.filter(matchesDraftFilters).length : count(tab.k);
     if (tab.warn && !n) return "";
-    const css = ["po-tab", tab.warn ? "warn" : "", tab.bill && n ? "bp" : "", tab.k === main ? "on" : "", n ? "" : "zero"].join(" ");
+    const css = ["po-tab", tab.warn ? "warn" : "", tab.bill && n ? (tab.k === "billmade" ? "bm" : "bp") : "", tab.k === main ? "on" : "", n ? "" : "zero"].join(" ");
     const html = `<button type="button" role="tab" aria-selected="${tab.k === main}" class="${css}"
       onclick="pickStatusFilter('${tab.k}')">${tab.warn ? "⚠ " : ""}${tab.t} <b>${n}</b></button>`;
     if (tab.warn) return "";
@@ -3424,7 +3432,8 @@ let listPrintsOn = true;
 const flowFlags = new Map();
 let flowBusy = false, flowOn = true;
 const flowOf = order => flowFlags.get(order.id) || {};
-const hasBill = order => !!(flowOf(order).bill_no || (listJourney.get(order.id) || {}).bill_no);
+const billNoOf = order => flowOf(order).bill_no || (listJourney.get(order.id) || {}).bill_no || "";
+const hasBill = order => !!billNoOf(order);
 const isOutForDelivery = order => !!flowOf(order).out_at;
 // Bill pending = loaded (or already delivered) and Accounts has not saved the Tally bill yet.
 const isBillPending = order => flowFlags.has(order.id) && ["loaded", "delivered"].includes(orderStage(order)) && !hasBill(order);
@@ -3438,6 +3447,14 @@ function billPendingBadge(order) {
   const f = flowOf(order), from = f.loaded_at || order.updated_at;
   const age = from ? ageText(from) : "";
   return `<span class="bp-b" title="Loaded${f.loaded_at ? " " + formatDateTime(f.loaded_at) : ""}: Tally bill not made yet">🧾 Bill pending${age ? " " + age : ""}</span>`;
+}
+/* Tally bill made (Mohit, 27 Nov 2026): every PO whose Tally bill is saved shows "🧾 Bill <no>" on the row, so
+   All / Delivered tell at a glance which POs Accounts has billed (Bill pending shows the ones still missing). */
+function billMadeBadge(order) {
+  const no = billNoOf(order);
+  if (!no || isCancelled(order)) return "";
+  const f = flowOf(order), at = f.bill_at || (listJourney.get(order.id) || {}).bill_at;
+  return `<span class="bm-b" title="Tally bill ${escapeHtml(no)}${at ? " · entered " + escapeHtml(formatDateTime(at)) : ""}">🧾 Bill <b>${escapeHtml(no)}</b></span>`;
 }
 function outBadge(order) {
   if (orderStage(order) !== "loaded" || !isOutForDelivery(order)) return "";
@@ -3483,7 +3500,8 @@ function settleBadge(order) {
 }
 async function loadFlowFlags() {
   if (flowBusy || !flowOn) return;
-  const ids = orders.filter(o => ["loaded", "delivered"].includes(orderStage(o))).map(o => o.id);
+  // 27 Nov 2026: approved / transport / loading too, so a bill made before loading also shows (Bill made tab, search).
+  const ids = orders.filter(o => ["approved", "transport", "loading", "loaded", "delivered"].includes(orderStage(o))).map(o => o.id);
   if (!ids.length) return;
   flowBusy = true;
   try {
@@ -3749,7 +3767,7 @@ async function loadListExtras(pageOrders) {
   listJourneyFailed = !!j.error;
   if (CAN_BILL) ids.forEach(refreshMakeBill);
   pageOrders.forEach(order => document.querySelectorAll(`#ordersArea [data-flow="${order.id}"]`).forEach(el => {
-    el.innerHTML = outBadge(order) + billPendingBadge(order) + settleBadge(order); }));
+    el.innerHTML = outBadge(order) + billPendingBadge(order) + billMadeBadge(order) + settleBadge(order); }));
   pageOrders.forEach(order => document.querySelectorAll(`#ordersArea [data-load="${order.id}"]`).forEach(el => {
     el.innerHTML = loadBadge(order); }));
   if (!p.error) { ids.forEach(id => listPrints.delete(id)); (p.data || []).forEach(r => listPrints.set(r.order_id, r)); }
@@ -5228,7 +5246,7 @@ function renderOrders() {
             </td>
 
             <td class="c-st">
-              ${ageBadge(order)}<span class="st-badge">${statusBadge(order)}</span><span class="flow-w" data-flow="${order.id}">${outBadge(order)}${billPendingBadge(order)}${settleBadge(order)}</span>
+              ${ageBadge(order)}<span class="st-badge">${statusBadge(order)}</span><span class="flow-w" data-flow="${order.id}">${outBadge(order)}${billPendingBadge(order)}${billMadeBadge(order)}${settleBadge(order)}</span>
               ${stepTrack(order, true)}
               
             </td>
