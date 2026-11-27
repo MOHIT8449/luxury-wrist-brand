@@ -8,6 +8,14 @@
 
 
 
+## PO list: Tally bill no. on every row + Bill made tab (27 Nov 2026)
+- Mohit: the list must show which POs Accounts has billed in Tally (Bill pending alone is not enough to track).
+- `warehouse-orders.html`: green "🧾 Bill <no>" badge in the Status cell of every PO with a Tally bill (`billMadeBadge`, from `lwb_po_flow_flags` / `lwb_po_journey`), new tab / filter "✅ Bill made" (Accounts / Admin), search finds the bill no. `loadFlowFlags` now also asks for approved / transport / loading POs (bill made before loading). No SQL.
+- Note: Direct Vehicle page balance / status only counts `lwb_direct_vehicle_pay`; money booked through party payments does not show there. Screenshots (mocked data): project files `po-tally-bill-sign/`.
+
+
+
+
 ## Dial Book: extra numbers + no duplicate numbers (27 Nov 2026)
 - Mohit: a party has 2-3 numbers (primary + extra); a number already in the ERP must never be saved again (no error popup, no notification); tell him whether the parties have duplicate numbers.
 - Live count (read-only, 27 Nov 2026): 286 active parties with a mobile, 1 without a valid mobile, 272 different numbers; 13 numbers are used by 2+ parties (27 parties); 1 party number is also a login number.
