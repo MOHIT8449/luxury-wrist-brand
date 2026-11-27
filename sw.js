@@ -48,8 +48,12 @@ self.addEventListener('push',event=>{
   if(!p||!device?.user_id||p.user_id!==device.user_id)return;
   const siren=p.siren===true;
   // 🚨 Urgent task siren: an open ERP window rings the siren + full-screen alarm at once (task-siren.js).
-  if(siren){const wins=await self.clients.matchAll({type:'window',includeUncontrolled:true});
-   wins.forEach(w=>{try{w.postMessage({type:'LWB_SIREN',url:routeAllowed(p.url)})}catch(e){}});}
+  const wins=await self.clients.matchAll({type:'window',includeUncontrolled:true});
+  if(siren)wins.forEach(w=>{try{w.postMessage({type:'LWB_SIREN',url:routeAllowed(p.url)})}catch(e){}});
+  // ERP open on screen (an ERP page with the bell): it shows its own popup + type sound (erp-notify-popup.js),
+  // so no second phone banner / default sound. Closed app or another screen: the normal banner below.
+  const onScreen=!siren&&wins.find(w=>w.focused&&w.visibilityState==='visible'&&!/^\/(login|index|offline|privacy|terms|share)?(\.html)?$/.test(new URL(w.url).pathname));
+  if(onScreen){try{onScreen.postMessage({type:'LWB_PUSH_IN'})}catch(e){}return}
   await self.registration.showNotification(String(p.title||'Luxury Wrist Brand').slice(0,120),{
    body:String(p.body||'Open the ERP app to view this update.').slice(0,260),
    icon:'/app-icon-192.png',badge:'/app-icon-192.png',tag:String(p.tag||'lwb-update'),
