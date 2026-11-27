@@ -760,9 +760,9 @@
   // login.html uses the same role list (NO_IDLE_ROLES there).
   const NO_IDLE_ROLES=["driver","sales","warehouse"];
   function stayLoggedIn(role){return NO_IDLE_ROLES.includes(String(role||"").trim().toLowerCase())}
-  // Auto logout after 15 minutes with no tap, key or scroll. The time is shared by every ERP tab of
+  // Auto logout after 1 hour (Mohit, 27 Nov 2026; was 15 minutes) with no tap, key or scroll. The time is shared by every ERP tab of
   // this browser, and is checked again when a phone comes back to the app. login.html sets it on login.
-  const IDLE_MS=15*60e3,IDLE_KEY="lwbLastActive";
+  const IDLE_MS=60*60e3,IDLE_KEY="lwbLastActive";
   let idleOn=false;
   function idleLogout(){
     if(idleOn)return;idleOn=true;
@@ -799,7 +799,8 @@
     return new Promise((ok,bad)=>{const s=document.createElement("script");s.src="quick-unlock.js?v=20261121b";s.onload=()=>ok(window.LWBUnlock);s.onerror=bad;document.head.appendChild(s)});
   }
   function unlockSetting(av,role){
-    if(!av||!appMode())return;
+    // Admin (27 Nov 2026): password only, no MPIN / fingerprint.
+    if(!av||!appMode()||String(role||"").toLowerCase()==="admin")return;
     av.setAttribute("role","button");av.tabIndex=0;av.title="Login & Security (MPIN, fingerprint)";av.style.cursor="pointer";
     av.addEventListener("click",()=>openSecurity(role));
     av.addEventListener("keydown",e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();openSecurity(role)}});
@@ -807,7 +808,7 @@
   let secOpen=false,mountedRole="";
   async function openSecurity(role){
     role=typeof role==="string"?role:mountedRole;
-    if(secOpen||!window.supabase||!appMode())return;secOpen=true;
+    if(secOpen||!window.supabase||!appMode()||String(role||"").toLowerCase()==="admin")return;secOpen=true;
     let U,user,c;
     try{
       U=await loadUnlock();
@@ -840,7 +841,7 @@
         '<div class="erp-sec-row"><div><b>Fingerprint</b>'+(fpOk?badge(fpOn)+'<small>Fingerprint, face or phone lock</small>':'<small>Not available on this device</small>')+'</div>'+
         '<div class="erp-sec-btns">'+(fpOk?(fpOn?'<button type="button" data-a="fpoff">Turn off</button>':'<button type="button" data-a="fpon" class="erp-sec-main">Turn on</button>'):"")+'</div></div>'+
         (stayLoggedIn(role)?'<p class="erp-sec-note">You stay logged in until you tap Logout. With MPIN or fingerprint ON, Logout only <b>locks</b> the ERP. Open it again without password and OTP.</p>'
-          :'<p class="erp-sec-note">With MPIN or fingerprint ON, Logout or 15 minutes without work only <b>locks</b> the ERP. Open it again without password and OTP.</p>')+
+          :'<p class="erp-sec-note">With MPIN or fingerprint ON, Logout or 1 hour without work only <b>locks</b> the ERP. Open it again without password and OTP.</p>')+
         '<div class="erp-dlg-actions"><button type="button" class="erp-dlg-no" data-a="close">Close</button></div>';
       box.querySelectorAll("button[data-a]").forEach(b=>b.onclick=()=>act(b.dataset.a,b));
     }

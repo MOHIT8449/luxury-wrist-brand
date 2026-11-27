@@ -1,5 +1,5 @@
 /* LWB ERP quick unlock: fingerprint / face / phone PIN instead of the password
-   after 15 minutes without activity.
+   after 1 hour without activity.
 
    It uses the phone's own screen lock through WebAuthn (the browser's built-in
    "platform authenticator"). It works in the Android app (Chrome TWA), in Chrome
@@ -8,7 +8,7 @@
    - After a full login (password + OTP) login.html offers to turn it on. This
      makes a key on this phone that only opens after the phone's fingerprint,
      face or PIN / pattern. The key never leaves the phone.
-   - After 15 minutes idle erp-shell.js LOCKS the ERP (login.html?lock=1)
+   - After 1 hour idle erp-shell.js LOCKS the ERP (login.html?lock=1)
      instead of logging out, but only when quick unlock is on for this user on
      this phone. The login session stays; every ERP page sends a locked phone
      back to the lock screen.
