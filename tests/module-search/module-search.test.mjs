@@ -12,8 +12,8 @@ test('ledger search and button',{skip:!chromium&&'playwright not installed'},asy
   const b=await chromium.launch();
   try{
     const cases=[["admin","ledger","Ledger & Outstanding","accounts-books.html"],["accounts","लेजर","Ledger & Outstanding","accounts-books.html"],
-      ["accounts","khata","Ledger & Outstanding","accounts-books.html"],["manager","ledger","Outstanding & Ledger","sales-outstanding.html"],
-      ["manager","बकाया","Outstanding & Ledger","sales-outstanding.html"]];
+      ["accounts","khata","Ledger & Outstanding","accounts-books.html"],["manager","ledger","Ledger & Outstanding","accounts-books.html"],
+      ["manager","बकाया","Ledger & Outstanding","accounts-books.html"]];
     for(const [role,q,first,href] of cases){
       const p=await b.newPage({viewport:{width:1300,height:700}});
       await p.route(/supabase\.co/,r=>r.abort());

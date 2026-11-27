@@ -6,9 +6,9 @@
   <title>Ledger &amp; Outstanding | Luxury Wrist Brand ERP</title>
   <script src="erp-date.js"></script><script src="erp-recent.js"></script>
   <script src="vendor/supabase-js-2.119.0.js"></script>
-  <link rel="stylesheet" href="erp-shell.css?v=20261127l">
+  <link rel="stylesheet" href="erp-shell.css?v=20261127m">
   <link rel="stylesheet" href="sales.css">
-  <script src="erp-shell.js?v=20261127l"></script>
+  <script src="erp-shell.js?v=20261127m"></script>
   <script src="sales-common.js"></script>
   <script src="brand-filter.js"></script>
   <script src="erp-period.js"></script>
@@ -135,6 +135,8 @@
       .ab-dlg footer .ab-b{flex:1 1 auto;justify-content:center;padding:0 6px;font-size:12.5px}
     }
     @media(min-width:761px){.ab-tabs .ts{display:none}}
+      /* Sales Head (view only): no edit / payment page links */
+    body.ab-view a[href^="party-billing.html"],body.ab-view a[href^="accounts-invoice.html"],body.ab-view a[href*="openingPanel"]{display:none!important}
   </style>
 </head>
 <body>
@@ -192,10 +194,13 @@
     async function load(){
       el("err").innerHTML="";
       try{
-        const dupQ=window.LWBDup?LWBDup.pending(client,true):Promise.resolve([]);
-        info=await LWBPartyPay.load(client);
+        const dupQ=window.LWBDup&&!VIEW()?LWBDup.pending(client,true):Promise.resolve([]);
+        // Sales Head (Mohit, 27 Nov 2026): same page, fed from his read-only call (lwb_sales_outstanding), same numbers as Accounts.
+        if(VIEW()){const r=await client.rpc("lwb_sales_outstanding",{p_days:400});if(r.error)throw r.error;const raw=r.data||{};
+          info=await LWBPartyPay.load({rpc:n=>Promise.resolve(n==="lwb_party_return_list"?{data:raw.returns||[]}:n==="lwb_party_billing"?{data:raw}:{data:[]})})}
+        else info=await LWBPartyPay.load(client);
         DUPS=await dupQ;
-        const cxq=client.rpc("lwb_ledger_cancelled",{p_days:400});
+        const cxq=VIEW()?Promise.resolve({data:[]}):client.rpc("lwb_ledger_cancelled",{p_days:400});
         const a=await LWBLedgerRows(client);   // all rows (no 1000-row cut)
         if(a.error)throw a.error;
         // Goods returns without a bill are not in the ledger SQL (same as Party & Collections).
@@ -212,7 +217,7 @@
         drawKpis();draw();
       }catch(e){
         const m=String((e&&e.message)||e);
-        el("err").innerHTML='<div class="ab-err">'+esc(/Admin \/ Accounts|role required/i.test(m)?"Ledger & Outstanding is for Admin and Accounts logins.":m)+"</div>";
+        el("err").innerHTML='<div class="ab-err">'+esc(/Admin \/ Accounts|role required/i.test(m)?"Ledger & Outstanding is for Admin, Accounts and Sales Head logins.":m)+"</div>";
         el("box").innerHTML="";
       }
     }
@@ -323,10 +328,6 @@
           {h:"Party",v:x=>x.party,p:1,html:x=>esc(x.party)+dupB(x.pk)+(x.members.length?'<small>'+esc(x.members.slice(0,3).join(", "))+(x.members.length>3?" …":"")+"</small>":"")+'<small class="ab-ph">'+x.bills+" bill"+(x.bills===1?"":"s")+(x.bills?' · <span class="'+dcls(x.oldest)+'">'+x.oldest+" days</span>":"")+"</small>"},
           {h:"Bills",v:x=>x.bills,n:1,hp:1},
           {h:"Oldest",v:x=>x.bills?x.oldest:"",n:1,hp:1,html:x=>x.bills?'<span class="ab-days '+dcls(x.oldest)+'">'+x.oldest+"d</span>":""},
-          {h:"0-30",v:x=>r2(x.b[0]),n:1,hp:1,sum:1,html:x=>x.b[0]?rs(x.b[0]):""},
-          {h:"31-60",v:x=>r2(x.b[1]),n:1,hp:1,sum:1,html:x=>x.b[1]?'<span class="ab-d2">'+rs(x.b[1])+"</span>":""},
-          {h:"61-90",v:x=>r2(x.b[2]),n:1,hp:1,sum:1,html:x=>x.b[2]?'<span class="ab-d3">'+rs(x.b[2])+"</span>":""},
-          {h:"90+",v:x=>r2(x.b[3]),n:1,hp:1,sum:1,html:x=>x.b[3]?'<b class="ab-d3">'+rs(x.b[3])+"</b>":""},
           {h:"Adv / Opening",v:x=>r2(x.opening-x.advance-x.ret),n:1,hp:1,html:x=>{const v=r2(x.opening-x.advance-x.ret);return Math.abs(v)<0.5?"":v<0?'<span class="ab-adv">−'+rs(-v)+"</span>":rs(v)}},
           {h:"Balance",v:x=>x.net,n:1,sum:1,html:x=>bal(x.net)}],L,x=>{outPk=x.pk;shown=300;draw()},{title:"Outstanding party-wise",empty:"No party "+(outShow==="adv"?"with advance":"to collect from")});
       }else{
@@ -596,6 +597,7 @@
     }
     const must=async p=>{const {error,data}=await p;if(error)throw error;return data};
     // Past day / handed over cash (Mohit 27 Nov 2026): the change needs Admin OK. null = go on as before; text = sent to Admin.
+    const VIEW=()=>String(me&&(me.realRole||me.role)||"").toLowerCase()==="manager";   // Sales Head: view only
     const isAdm=()=>String(me&&(me.realRole||me.role)||"").toLowerCase()==="admin";
     const lockWhat=(K,lines)=>(lines?"Cash "+rs2(K.cash)+" → "+rs2(K.cash_new):"Cash "+rs2(K.cash)+" goes out")+
       (K.adjust?"\nCash difference "+(K.adjust.kind==="SHORT"?"Short":"Extra")+" "+rs2(K.adjust.from)+" → "+rs2(K.adjust.to)+" (set right by itself)":"")+(K.warn?"\n⚠ "+K.warn:"");
@@ -760,17 +762,32 @@
       w.document.close();w.focus();setTimeout(()=>w.print(),300);
     }
 
+    /* ---------- Sales Head: tell Accounts about a party's payment ---------- */
+    async function tell(pk){
+      if(!pk){ERPShell.alert("Open a party first, then press Tell Accounts.");return}
+      const name=nameOf(pk),note=await ERPShell.prompt("📣 Tell Accounts about "+name+"\nMessage (optional), e.g. party will pay on Monday by cheque. Accounts, Cashier and Admin get a notification.","",{placeholder:"e.g. Party will pay on Monday by cheque",ok:"📣 Send"});
+      if(note==null||note===false)return;
+      const {error}=await client.rpc("lwb_payment_followup",{p_order_id:null,p_party:name,p_note:String(note).trim()||null});
+      if(error)return ERPShell.alert(String(error.message||error).replace(/^.*?ERROR:\s*/,""));
+      ERPShell.toast("Accounts told · "+name);
+    }
+
     /* ---------- receive payment ---------- */
     function pay(pk){
       if(!info)return;
+      if(VIEW())return tell(pk);
       LWBPartyPay.open({client,info,party:pk?nameOf(pk):undefined,brand:fb||undefined,onSaved:r=>{if(window.ERPShell&&ERPShell.toast)(r.kasarOnly?ERPShell.toast("Kasar "+rs(r.kasar)+" saved on bill "+r.bill+" · "+r.party,"success"):ERPShell.toast(rs(r.amount)+" received from "+r.party,"success"));popClose();load()}});
     }
 
     /* ---------- wiring ---------- */
     function goSec(s,extra){popClose();sec=s;shown=300;if(extra)extra();draw();window.scrollTo(0,0)}
     (async()=>{
-      me=await S.start(["admin","accounts"]);
+      me=await S.start(["admin","accounts","manager"]);
       if(!me)return;
+      if(VIEW()){document.body.classList.add("ab-view");el("payBtn").hidden=true;
+        // Sales Head only looks: every "Receive" button becomes "📣 Tell Accounts" (lwb_payment_followup).
+        const relabel=()=>document.querySelectorAll("[data-pay]:not([data-tl])").forEach(b=>{b.dataset.tl="1";b.classList.remove("g");b.classList.add("t");b.innerHTML="📣 Tell Accounts"});
+        new MutationObserver(relabel).observe(document.body,{childList:true,subtree:true});}
       el("loading").hidden=true;el("page").hidden=false;
       const U=new URLSearchParams(location.search);
       const v=U.get("v");if(SECS.some(s=>s[0]===v))sec=v;
