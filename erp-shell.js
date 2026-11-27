@@ -799,7 +799,8 @@
     return new Promise((ok,bad)=>{const s=document.createElement("script");s.src="quick-unlock.js?v=20261121b";s.onload=()=>ok(window.LWBUnlock);s.onerror=bad;document.head.appendChild(s)});
   }
   function unlockSetting(av,role){
-    if(!av||!appMode())return;
+    // Admin (27 Nov 2026): password only, no MPIN / fingerprint.
+    if(!av||!appMode()||String(role||"").toLowerCase()==="admin")return;
     av.setAttribute("role","button");av.tabIndex=0;av.title="Login & Security (MPIN, fingerprint)";av.style.cursor="pointer";
     av.addEventListener("click",()=>openSecurity(role));
     av.addEventListener("keydown",e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();openSecurity(role)}});
@@ -807,7 +808,7 @@
   let secOpen=false,mountedRole="";
   async function openSecurity(role){
     role=typeof role==="string"?role:mountedRole;
-    if(secOpen||!window.supabase||!appMode())return;secOpen=true;
+    if(secOpen||!window.supabase||!appMode()||String(role||"").toLowerCase()==="admin")return;secOpen=true;
     let U,user,c;
     try{
       U=await loadUnlock();

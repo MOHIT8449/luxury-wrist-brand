@@ -364,6 +364,14 @@ function validIndianMobile(raw){
 }
 const ERP_ROLES=["admin","manager","sales","warehouse","transport","accounts","driver","cashier"];
 const NO_IDLE_ROLES=["driver","sales","warehouse"];
+// Admin (Mohit, 27 Nov 2026): Mobile / Email + Password only. No OTP (lwb_admin_login_no_otp_setup.sql),
+// no MPIN and no fingerprint on this phone.
+let myRole="";
+function noQuickUnlock(){
+  try{LWBUnlock.disable();LWBUnlock.unlock()}catch(e){}
+  ["lwbMpin","lwbMpinNo","lwbUnlockNo"].forEach(k=>{try{localStorage.removeItem(k)}catch(e){}});
+  el("useMpin").hidden=true;
+}
 async function checkProfile(user){
   if(!user?.id)throw Error("Login session could not be verified.");
   const {data:profile,error}=await client.from("user_profiles")
@@ -378,6 +386,8 @@ async function checkProfile(user){
     await client.auth.signOut();
     throw Error("This Login is not yet approved by Admin. Ask Admin to assign an active ERP Role.");
   }
+  myRole=String(profile.role||"").trim().toLowerCase();
+  if(myRole==="admin")noQuickUnlock();
 }
 // After the password, every ERP login also needs the 6-digit code from the
 // Authenticator app (Supabase MFA, "aal2"). The first time, the user scans a QR.
@@ -415,8 +425,7 @@ async function goToErp(user){
     localStorage.setItem("lwbHiddenPages",JSON.stringify({uid:user.id,hidden:(!a.error&&a.data&&a.data.hidden)||[],extra:(!a.error&&a.data&&a.data.extra)||[]}))}catch(e){}
   try{localStorage.setItem("lwbLastActive",String(Date.now()))}catch(e){}
   const back=unlockBack||"dashboard.html";
-  await offerUnlock(user);
-  rememberMpinLogin(user);
+  if(myRole!=="admin"){await offerUnlock(user);rememberMpinLogin(user);}
   LWBUnlock.unlock();
   showMessage(unlockBack?"Unlocked. Opening the ERP...":"Login successful. Opening your ERP Dashboard...");
   window.location.assign(back);
@@ -696,9 +705,12 @@ async function checkExistingLogin(){
   let last=0;try{last=Number(localStorage.getItem("lwbLastActive"))||0}catch(e){}
   let idle=!!(last&&Date.now()-last>15*60e3);
   // Driver, Salesman and Godown Manager stay logged in until they tap Logout (same list as erp-shell.js).
-  if(idle&&!lk){
+  if(idle||lk){
     try{const r=await client.from("user_profiles").select("role").eq("id",uid).maybeSingle();
-      if(!r.error&&NO_IDLE_ROLES.includes(String(r.data?.role||"").trim().toLowerCase()))idle=false;}catch(e){}
+      const role=r.error?"":String(r.data?.role||"").trim().toLowerCase();
+      if(idle&&!lk&&NO_IDLE_ROLES.includes(role))idle=false;
+      // Admin: no MPIN / fingerprint lock screen, the password opens the ERP again.
+      if(role==="admin")noQuickUnlock();}catch(e){}
   }
   if((lk||idle)&&LWBUnlock.canLock(uid)){
     unlockBack=lk&&lk.uid===uid?LWBUnlock.safeBack(lk.back):"dashboard.html";
