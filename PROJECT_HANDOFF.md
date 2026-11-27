@@ -1502,3 +1502,17 @@
   saves the driver (lwb_vehicle_driver_save) and sends erp_notifications 'PURCHASE_ON_WAY' to active warehouse + manager
   logins (not the sender), once per driver number. Phone push goes through the existing erp_notifications trigger.
 - Tests: tests/ecrs-on-way.
+
+## Dial Book: Services tab, no reason on team calls, Gmail auto sync (28 Nov 2026)
+- dial-book.js: result / reason bar only after PARTY calls.
+- lwb_dial_services_setup.sql: lwb_dial_services (VENDOR / SERVICE / COMPLAINT, category, name, firm, area, unique mobile);
+  lwb_dial_service_save / _remove / lwb_dial_services_list; lwb_dial_all + lwb_dial_owner redefined with SERVICE rows
+  (re-running lwb_dial_book_setup.sql or lwb_dial_book_numbers_setup.sql removes them: run this file again after).
+  Contact name: NAME FIRM CATEGORY LWB <GROUP>.
+- accounts-dashboard.html: Cash Out has "Mobile (optional)" + list type; after save it calls lwb_dial_service_save (source Expense,
+  category = expense category, firm = Paid to). Duplicate numbers are silently not saved.
+- Gmail sync: lwb_gmail_sync_setup.sql (lwb_gsync_config / lwb_gsync_map, nightly cron 20:30 UTC = 2 AM IST) +
+  Edge Function lwb-google-contacts (verify_jwt false; Admin JWT checked inside; cron uses x-lwb-gsync-secret).
+  Admin pastes Google OAuth Client ID + Secret in Dial Book > Gmail sync; redirect URI https://luxurywristbrand.com/dial-book.html.
+  Only contacts in Google label "LWB ERP" are created / deleted (changed contact = delete + create).
+- Tests: tests/dial-services (services + gmail SQL).

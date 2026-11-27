@@ -53,7 +53,8 @@
     if(r.error){toast(nice(r.error.message),"error");return null}
     const x=r.data||{};
     location.href="tel:+91"+x.mobile;
-    setTimeout(()=>resultBar(client,x.id,x.name||name||""),400);
+    // Reason / result only for party calls (sales work). Team, staff, driver, services: just logged (Mohit, 27 Nov).
+    if(kind==="PARTY")setTimeout(()=>resultBar(client,x.id,x.name||name||""),400);
     return x;
   }
   function resultBar(client,id,name){

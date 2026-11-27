@@ -1509,6 +1509,8 @@
           '<div class="f"><label for="eSwName">Friend / person name</label><input id="eSwName" type="text" maxlength="80" autocomplete="off" placeholder="e.g. RAJU BHAI" style="text-transform:uppercase"><div class="swp-sug" id="eSwSug"></div></div></div>')+
         '<div class="f2"><div class="f"><label>Date</label>'+dateBox("eDate",def,{max:D.today})+'</div><div class="f"><label for="eTime">Time</label><input id="eTime" type="time" value="'+nowHM()+'"></div></div>'+
         '<div class="f acx-combo" id="ePartyBox"><label for="eParty" id="ePartyLab">Party</label><input id="eParty" type="text" maxlength="120" autocomplete="off" placeholder="Type party name or short code" value="'+esc(pick?pick.name:"")+'" role="combobox" aria-expanded="false" aria-controls="ePList"><div class="acx-clist" id="ePList" role="listbox" hidden></div><div class="acx-note" id="eStaffBal" style="margin:4px 0 0"></div><div id="eDue" hidden></div></div>'+
+        '<div class="f2" id="eMobRow" hidden><div class="f"><label for="eMob">Mobile (optional)</label><input id="eMob" type="tel" inputmode="tel" maxlength="16" autocomplete="off" placeholder="Saves in Dial Book"></div>'+
+          '<div class="f"><label for="eMobG">Dial Book list</label><select id="eMobG"><option value="VENDOR">Vendor (bought / paid)</option><option value="SERVICE">Service agency</option><option value="COMPLAINT">Complaint no.</option></select></div></div>'+
         '<div class="f" id="eCoBox" hidden><label for="eCo">Company paid (shows in Company / Brand &gt; Pay company)</label><select id="eCo"><option value="">Not a company payment</option>'+(COS||[]).map(c=>'<option value="'+esc(c.id)+'"'+(c.id===pre.company?" selected":"")+'>'+esc(c.name)+'</option>').join("")+'</select></div>'+
         '<div class="f" id="eBankBox"><label for="eBank" id="eBankLab">Bank</label><select id="eBank">'+bankOptions(banks.length===1?banks[0].id:"",true)+'</select></div>'+
         '<div class="f"><label for="eAmt" id="eAmtLab">Amount (₹)</label><input id="eAmt" class="big" type="text" inputmode="decimal" autocomplete="off" placeholder="0.00">'+
@@ -1593,9 +1595,19 @@
           }
         }catch(e){await ERPShell.alert(errText(e));return false}
         ERPShell.toast?ERPShell.toast("Saved "+rs(amt)):null;load();
+        try{await dialSave(p,stf||veh)}catch(e){}
+      }
+      // Payee mobile -> Dial Book > Services with the expense category. A number already in the ERP is not saved again (no popup).
+      async function dialSave(p,skip){
+        const m=q("#eMob").value.replace(/[\s()-]/g,"");
+        if(st.kind!=="OUT"||skip||!m||q("#eMobRow").hidden||!p.party)return;
+        if(!/^(?:\+?91|0)?[6-9]\d{9}$/.test(m)){ERPShell.toast&&ERPShell.toast("Entry saved. Mobile not 10 digits, not saved in Dial Book.");return}
+        const cat=((D.categories||[]).find(c=>c.id===st.cat)||{}).name||"EXPENSE";
+        const r=await client.rpc("lwb_dial_service_save",{p_id:null,p_grp:q("#eMobG").value,p_category:cat,p_name:null,p_firm:p.party,p_area:null,p_mobile:m,p_note:null,p_source:"Expense"});
+        if(!r.error&&r.data&&r.data.saved&&ERPShell.toast)ERPShell.toast("Mobile saved in Dial Book > Services");
       }
       function reset(){
-        ["#eParty","#eSwName","#eAmt","#eRemark","#eRef","#eBill","#eGstAmt","#eGstin","#eCqBank"].forEach(s=>q(s).value="");cqFiles=[];drawCq();
+        ["#eParty","#eMob","#eSwName","#eAmt","#eRemark","#eRef","#eBill","#eGstAmt","#eGstin","#eCqBank"].forEach(s=>q(s).value="");cqFiles=[];drawCq();
         box.querySelectorAll("[data-en]").forEach(i=>i.value="");q("#eNotes").hidden=true;q("#eCnt").textContent="Count notes";
         pick=null;files=[];drawPhotos();q("#eGst").checked=false;q("#eMore").open=false;q("#eTime").value=nowHM();paint();q("#eParty").focus();
       }
@@ -1615,6 +1627,8 @@
         // Paying a company (Coca-Cola, Rajnigandha): one Cash Out entry, also saved as the company payment.
         q("#eCoBox").hidden=!(k==="OUT"&&supCat&&st.cat===supCat.id&&(COS||[]).length);
         q("#eCatRow").hidden=!io;q("#ePartyBox").hidden=!io;
+        // Dial Book Services (Mohit, 27 Nov 2026): the payee mobile of an expense goes to Dial Book > Services.
+        q("#eMobRow").hidden=!(k==="OUT"&&!isStaffHead(st.cat));
         q("#eMode").value=st.mode;
         const nonCash=io&&st.mode!=="CASH";
         q("#eBankBox").hidden=io&&!nonCash||k==="IN"&&st.mode==="CHEQUE";   // a cheque's bank is chosen when it is deposited
