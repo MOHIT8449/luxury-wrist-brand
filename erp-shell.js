@@ -137,7 +137,7 @@
       // Party Rate Offer (Mohit, 16 Nov 2026): rate per case given to one party, category-wise, with (i) past rates.
       {t:"Party Rate Offer",h:"party-rates.html",i:"tag",r:"admin manager",k:"party rate offer quotation category pack per case given history whatsapp"},
       // Outstanding (Mohit, 20 Nov 2026): Sales Head sees unpaid / part-paid bills, party-wise dues, ledger; tells Accounts.
-      {t:"Outstanding",h:"sales-outstanding.html",i:"cash",r:"admin manager",k:"outstanding payment pending due unpaid part paid bills party wise ledger collection baki udhar tell accounts cashier"},
+      {t:"Outstanding & Ledger",h:"sales-outstanding.html",i:"cash",r:"admin manager",k:"outstanding payment pending due unpaid part paid bills party wise ledger party ledger khata hisab khatabook collection baki udhar tell accounts cashier",a:"ledger outstanding khata hisab baki udhar",pt:"Outstanding & Party Ledger (Sales Head)"},
       {t:"Party Call List",h:"party-calls.html",i:"phone",r:"admin manager sales"},
       // Party Mobile Pending (Mohit, 21 Nov 2026): parties without a mobile number; fill here, task closes by itself.
       {t:"Party Mobile Pending",h:"party-mobile.html",i:"phone",r:"admin manager sales",k:"mobile number missing phone party contact fill pending task"},
@@ -191,7 +191,7 @@
       {t:"Cashier",h:"accounts-dashboard.html#cash",i:"cash",r:"admin cashier",k:"cashier cash in cash out bank deposit close day day book cash book cash ledger cash in hand cheque handover staff advance upad salary vehicle expense party payment received",pt:"Cashier (Cash In / Out, Day book)"},
       {t:"Party & Collections",h:"party-billing.html#party",i:"users",r:"admin",k:"party payment received pending outstanding to collect collection party ledger statement khata advance returns party groups acrs ecrs",pt:"Party & Collections (To collect, Ledger, ACRS)"},
       // Ledger & Outstanding (Mohit, 20 Nov 2026): Tally "Display" books in one page, Ctrl+Alt+L from anywhere.
-      {t:"Ledger & Outstanding",h:"accounts-books.html",i:"book",r:"admin accounts",k:"ledger outstanding receivable receivables bill wise party wise ageing overdue 30 60 90 days receipt register receipts payment received party payment summary day book voucher khata statement tally ctrl alt l kasar",pt:"Ledger & Outstanding (Ctrl+Alt+L)"},
+      {t:"Ledger & Outstanding",h:"accounts-books.html",i:"book",r:"admin accounts",k:"ledger outstanding receivable receivables bill wise party wise ageing overdue 30 60 90 days receipt register receipts payment received party payment summary day book voucher khata statement tally ctrl alt l kasar party ledger hisab khatabook baki udhar",a:"ledger outstanding khata hisab baki udhar",pt:"Ledger & Outstanding (Ctrl+Alt+L)"},
       {t:"Accounts",h:"accounts-dashboard.html",i:"cash",r:"admin accounts",hide:1,par:"party-billing.html"},
       {t:"Bank Statement",h:"bank-statement.html",i:"book",r:"admin accounts"},
       // STTS Ledger (Mohit, 13 Nov 2026): company Sales Register + STTS Ledger checked bill by bill against the Rate List scheme.
@@ -362,6 +362,26 @@
     page=String(page||location.pathname.split("/").pop()||"").split(/[?#]/)[0];role=String(role||"").toLowerCase();
     return MENU.some(g=>g.items.some(i=>i.h.split("#")[0]===page&&viewOnlyItem(i,role)));
   }
+  // Module Search (Mohit, 27 Nov 2026): "ledger" must open Ledger & Outstanding first. Hindi / Hinglish
+  // spellings become the menu's English word; a = words that put this page on top of the results.
+  const SEARCH_ALIAS={"लेजर":"ledger","लेज़र":"ledger","लेजर्स":"ledger","ledgar":"ledger","lejar":"ledger","leger":"ledger","ledjer":"ledger","legder":"ledger","ledeger":"ledger",
+    "खाता":"khata","खाते":"khata","khaata":"khata","khatabook":"khata","hisaab":"hisab","हिसाब":"hisab",
+    "आउटस्टैंडिंग":"outstanding","outstandig":"outstanding","outstading":"outstanding","outstnding":"outstanding","बकाया":"baki","बाकी":"baki","baaki":"baki","उधार":"udhar","udhaar":"udhar"};
+  const searchWords=q=>String(q||"").toLowerCase().trim().split(/\s+/).filter(Boolean).map(w=>SEARCH_ALIAS[w]||w);
+  function findModules(list,q){
+    const words=searchWords(q);if(!words.length)return [];
+    return list.map((i,n)=>{
+      const t=String(i.t||"").toLowerCase(),a=String(i.a||"").toLowerCase().split(" ").filter(Boolean),
+        all=(t+" "+(i.g||"")+" "+(i.pt||"")+" "+(i.k||"")+" "+a.join(" ")).toLowerCase();
+      if(!words.every(w=>all.includes(w)))return null;
+      const inT=words.every(w=>t.includes(w)),s=(words.every(w=>a.some(x=>x.startsWith(w)))?0:t.startsWith(words[0])?2:inT?4:6)+(inT?0:1)-(t.startsWith(words[0])?.5:0);
+      return {i,s,n};
+    }).filter(Boolean).sort((x,y)=>x.s-y.s||x.n-y.n).map(x=>x.i);
+  }
+  // Ledger button in the top bar (Mohit, 27 Nov 2026), web and phone: Admin / Accounts open Ledger & Outstanding,
+  // Sales Head opens Outstanding (party ledger inside). Only a page this login may open; none = no button.
+  const LEDGER_PAGES=["accounts-books.html","sales-outstanding.html"];
+  function ledgerPage(role){const ok=new Set(menuForMe(role).flatMap(g=>g.items.map(i=>i.h)));return LEDGER_PAGES.find(h=>ok.has(h))||""}
   const allPages=()=>MENU.map(g=>({group:g.group,items:g.items.map(i=>({t:i.pt||i.t,h:i.h}))}));
 
   // Pages hidden from the logged-in user. Cached so the menu is right at once,
@@ -466,7 +486,7 @@
     function drawSide(){
       let html='<div class="erp-brand"><span class="erp-mark" aria-hidden="true">lwb</span><div><b>LUXURY WRIST BRAND</b><small>BUSINESS ERP</small></div></div>'+
         '<div class="erp-menu-find"><input type="search" aria-label="Find a page" placeholder="Find a page…"></div><p class="erp-menu-empty" hidden>No page found</p>';
-      const link=(i,g)=>'<a class="erp-link'+(i.top?' erp-side-top':'')+(isActive(i)?' active':'')+'" href="'+esc(i.h)+'" data-k="'+esc((i.t+" "+g.group+" "+(i.pt||"")+" "+(i.k||"")).toLowerCase())+'">'+svg(i.i)+'<span>'+esc(i.t)+'</span></a>';
+      const link=(i,g)=>'<a class="erp-link'+(i.top?' erp-side-top':'')+(isActive(i)?' active':'')+'" href="'+esc(i.h)+'" data-k="'+esc((i.t+" "+g.group+" "+(i.pt||"")+" "+(i.k||"")+" "+(i.a||"")).toLowerCase())+'">'+svg(i.i)+'<span>'+esc(i.t)+'</span></a>';
       const secs=groups.filter(g=>!g.so&&g.group);
       // Which group is open: the open page's group, else the one opened last, else the first.
       let open=(secs.find(g=>g.items.some(isActive))||{}).group;
@@ -492,6 +512,12 @@
       if(!q){q=document.createElement("div");q.className="erp-quick";user.prepend(q)}
       q.innerHTML=groups.filter(g=>!g.so).flatMap(g=>g.items).filter(i=>i.top).map(i=>
         '<a class="erp-quick-btn'+(isActive(i)?' active':'')+'" href="'+esc(i.h)+'" title="'+esc(i.t)+'" aria-label="'+esc(i.t)+'">'+svg(i.i)+'</a>').join("");
+      let lb=user.querySelector(".erp-ledger-btn");const lh=ledgerPage(role);
+      if(!lh){lb?.remove();return}
+      if(!lb){lb=document.createElement("a");lb.className="erp-ledger-btn";user.prepend(lb)}
+      const lt=lh==="accounts-books.html"?"Ledger & Outstanding (Ctrl+Alt+L)":"Outstanding & Party Ledger";
+      lb.href=lh;lb.title=lt;lb.setAttribute("aria-label",lt);lb.classList.toggle("active",page===lh);
+      lb.innerHTML=svg("book")+"<span>Ledger</span>";
     }
     side.addEventListener("click", e => {
       const b=e.target.closest(".erp-group");if(!b)return;
@@ -503,14 +529,14 @@
     });
     side.addEventListener("input", e => {
       if(!e.target.matches(".erp-menu-find input")) return;
-      const q=e.target.value.trim().toLowerCase();
+      const q=e.target.value.trim().toLowerCase(),words=searchWords(q);
       const links=[...side.querySelectorAll(".erp-link")];
-      links.forEach(a => {a.hidden=!!q&&!(a.dataset.k||a.textContent.toLowerCase()).includes(q);a.classList.remove("kb")});
+      links.forEach(a => {const k=a.dataset.k||a.textContent.toLowerCase();a.hidden=!!q&&!words.every(w=>k.includes(w));a.classList.remove("kb")});
       // While finding, every group with a match is shown open; clearing the box brings back the open / closed groups.
       side.classList.toggle("finding",!!q);
       side.querySelectorAll(".erp-sec").forEach(sec => {sec.hidden=!!q&&![...sec.querySelectorAll(".erp-link")].some(a=>!a.hidden)});
       // Like Module Search: the first match is picked, ↑ / ↓ move, Enter opens (Mohit, 7 Nov 2026).
-      const first=q&&links.find(a=>!a.hidden);if(first)first.classList.add("kb");
+      const best=q&&findModules(flat,q)[0],first=q&&(links.find(a=>!a.hidden&&best&&a.getAttribute("href")===best.h)||links.find(a=>!a.hidden));if(first)first.classList.add("kb");
       side.querySelector(".erp-menu-empty").hidden=links.some(a => !a.hidden);
     });
     side.addEventListener("keydown", e => {
@@ -565,7 +591,7 @@
     let hits=[],pos=0;
     function show(){
       const q=input.value.toLowerCase().trim();
-      hits=q?flat.filter(i=>(i.t+" "+i.g+" "+(i.k||"")).toLowerCase().includes(q)):[];
+      hits=q?findModules(flat,q):[];
       pos=0;
       box.innerHTML=hits.map((i,n)=>'<a href="'+esc(i.h)+'"'+(n===0?' class="active"':'')+'>'+esc(i.t)+'<small>'+esc(i.g||"Home")+'</small></a>').join("")||(q?'<a>No module found</a>':"");
       box.classList.toggle("open",!!q);
@@ -1068,7 +1094,7 @@
   if(!window.LWBKeys&&!document.querySelector('script[src*="erp-keys.js"]')){const s=document.createElement("script");s.src="erp-keys.js";document.head.appendChild(s)}
   // Every drop-down searches like the SKU box in New PO (erp-select.js).
   if(!window.LWBSelect&&!document.querySelector('script[src*="erp-select.js"]')){const s=document.createElement("script");s.src="erp-select.js";document.head.appendChild(s)}
-  window.ERPShell={mount,onDuty,dutyInfo,security:openSecurity,isApp:appMode,menuFor,viewOnly,menuForMe,hiddenPages,extraPages,pageRole,pageRoleFresh,allPages,icon:svg,alert:erpAlert,confirm:erpConfirm,prompt:erpPrompt,toast,done:erpDone};
+  window.ERPShell={mount,findModules,onDuty,dutyInfo,security:openSecurity,isApp:appMode,menuFor,viewOnly,menuForMe,hiddenPages,extraPages,pageRole,pageRoleFresh,allPages,icon:svg,alert:erpAlert,confirm:erpConfirm,prompt:erpPrompt,toast,done:erpDone};
   const me=document.currentScript;
   if(me&&me.hasAttribute("data-auto")){
     if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",auto);else auto();
