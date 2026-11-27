@@ -36,6 +36,8 @@ await party('NO MOBILE PARTY','',null);
 await db.query("insert into lwb_acc_staff(name,mobile,designation) values('Raju Loader','9000000221','Loader'),('Dup Of Login','9825010001','X')");
 const mine=await readFile(new URL('../../lwb_dial_book_setup.sql',import.meta.url),'utf8');
 await db.exec(mine);await db.exec(mine); // safe to run again
+const nums=await readFile(new URL('../../lwb_dial_book_numbers_setup.sql',import.meta.url),'utf8');
+await db.exec(nums);await db.exec(nums);
 
 async function as(who){await db.query("select set_config('request.jwt.claim.sub',$1,false)",[ids[who]||''])}
 async function call(q,args=[]){await db.exec('SET ROLE authenticated');try{return (await db.query(q,args)).rows}finally{await db.exec('RESET ROLE')}}
@@ -135,4 +137,41 @@ test('Saved contact name: party + area + brand short + WS / RT; Admin / Sales He
   assert.equal(by('Name head'),'NAME HEAD LWB SALES HEAD');
   assert.equal(by('Raju Loader'),'RAJU LOADER LWB LOADER');
   assert.ok(x.some(c=>c.save_as==='GJ05 BX 4471 TRUCK DRIVER'));
+});
+
+test('Extra numbers: new number saved, an existing number is not saved (no error), call picks the extra, file has each number once', async()=>{
+  await as('sales');
+  // already a party main number / a login / own party
+  let r=(await call("select lwb_dial_number_add('PARTY',$1,'93 7777 0770','Owner') j",[pA]))[0].j;
+  assert.equal(r.saved,false);assert.equal(r.owner,'NAVDURGA TRADERS');
+  r=(await call("select lwb_dial_number_add('PARTY',$1,'9825010001',null) j",[pA]))[0].j;
+  assert.equal(r.saved,false);assert.equal(r.owner,'Name admin');
+  r=(await call("select lwb_dial_number_add('PARTY',$1,'9876543312',null) j",[pA]))[0].j;
+  assert.equal(r.saved,false);assert.equal(r.same,true);
+  await assert.rejects(call("select lwb_dial_number_add('PARTY',$1,'9111111111',null)",[pB]),/not in your Dial Book/);
+  r=(await call("select lwb_dial_number_add('PARTY',$1,'+91 91111 11111','Shop') j",[pA]))[0].j;
+  assert.equal(r.saved,true);assert.equal(r.masked,'91•••••111');
+  await as('head');
+  r=(await call("select lwb_dial_number_add('PARTY',$1,'9111111111',null) j",[pB]))[0].j;
+  assert.equal(r.saved,false);assert.equal(r.owner,'SHREE JAGDISH TRADER');
+  const b=await book('head');const x=b.contacts.find(c=>c.ref===pA);
+  assert.equal(x.extras.length,1);assert.equal(x.extras[0].label,'Shop');assert.ok(!JSON.stringify(x).includes('9111111111'));
+  await as('sales');
+  const c=(await call("select lwb_dial_call('PARTY',$1,'Dial Book',$2) j",[pA,x.extras[0].id]))[0].j;
+  assert.equal(c.mobile,'9111111111');
+  const c2=(await call("select lwb_dial_call('PARTY',$1,'Dial Book') j",[pA]))[0].j;
+  assert.equal(c2.mobile,'9876543312');
+  await assert.rejects(call("select lwb_dial_call('PARTY',$1,null,99999)",[pA]),/not of this contact/);
+  // same main number on two contacts: dup_with shown, contacts file keeps it once
+  await db.query("update lwb_customer_master set mobile='9000000221' where id=$1",[pB]); // same as staff Raju Loader
+  const h=await book('head');assert.deepEqual(h.contacts.find(c=>c.ref===pB).dup_with,['Raju Loader']);
+  await as('admin');const ex=(await call('select lwb_dial_export() j'))[0].j;
+  const all=ex.flatMap(c=>(c.numbers||[]).map(n=>n.mobile));
+  assert.equal(all.length,new Set(all).size,'each number once');
+  assert.ok(!ex.some(c=>c.name==='Raju Loader'),'staff with the party number left out');
+  assert.deepEqual(ex.find(c=>c.name==='SHREE JAGDISH TRADER').numbers.map(n=>n.label),['Primary','Shop']);
+  await as('sales2');
+  const xid=x.extras[0].id;
+  await assert.rejects(call('select lwb_dial_number_remove($1)',[xid]),/Only Admin/);
+  await as('sales');await call('select lwb_dial_number_remove($1)',[xid]);
 });
