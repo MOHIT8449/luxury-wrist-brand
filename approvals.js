@@ -210,6 +210,22 @@
                {t:"Open",kind:"go",href:"labour.html?day="+encodeURIComponent(x.day)}]}));
        return {items,amount:sum(items,i=>i.amount)};
      }},
+    // Old-day / handed over cash payment change asked by Accounts (Mohit, 27 Nov 2026). lwb_receipt_past_edit_setup.sql.
+    {key:"payedit",icon:"✏️",title:"Old cash payment change",sub:"Day already handed over",roles:["admin"],page:"accounts-books.html",
+     async load(c){
+       const rows=((await rpc(c,"lwb_receipt_edit_asks",{p_status:"WAITING",p_days:60}))||[]).filter(x=>x.can_decide);
+       const adj=x=>x.adjust&&x.adjust.kind?"Cash difference "+(x.adjust.kind==="SHORT"?"Short ":"Extra ")+inr(x.adjust.from)+" → "+inr(x.adjust.to):"";
+       const what=x=>x.action==="DELETE"?"Delete payment "+inr(x.total_old):"Cash "+inr(x.cash_old)+" → "+inr(x.cash_new)+(num(x.total_old)!==num(x.cash_old)||num(x.total_new)!==num(x.cash_new)?" · total "+inr(x.total_old)+" → "+inr(x.total_new):"");
+       const items=rows.map(x=>({id:String(x.id),person:x.by,ref:"Paid on "+dmy(x.date_old),party:x.party,amount:num(x.cash_new)-num(x.cash_old),when:x.at,
+         lines:[what(x),adj(x)].filter(Boolean),
+         meta:[x.reason,x.by&&"By "+x.by,x.date_new&&x.date_new!==x.date_old?"New date "+dmy(x.date_new):""].filter(Boolean),
+         detail:{info:[["Party",x.party],["Paid on",dmy(x.date_old)],["Change",what(x)],["Auto adjust",adj(x)||"None"],["Reason",x.reason],["Asked by",x.by]]},
+         acts:[{t:"✓ Approve",kind:"ok",many:true,confirm:"Approve this change?\n\n"+x.party+" · "+dmy(x.date_old)+"\n"+what(x)+(adj(x)?"\n"+adj(x):""),
+                run:c2=>rpc(c2,"lwb_receipt_edit_decide",{p_id:x.id,p_ok:true,p_note:null})},
+               {t:"✗ Reject",kind:"no",ask:"Why is it rejected? (Accounts will see it)",run:(c2,i,f,why)=>rpc(c2,"lwb_receipt_edit_decide",{p_id:x.id,p_ok:false,p_note:why})},
+               {t:"Open",kind:"go",href:"accounts-books.html"}]}));
+       return {items,amount:sum(items,i=>i.amount)};
+     }},
     {key:"party",icon:"👤",title:"New party check",sub:"Added by salesman",roles:["admin","manager"],page:"customer-master.html",
      async load(c,ctx){
        if(!ctx.bells)return null;
