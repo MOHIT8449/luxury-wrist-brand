@@ -137,7 +137,8 @@
       // Party Rate Offer (Mohit, 16 Nov 2026): rate per case given to one party, category-wise, with (i) past rates.
       {t:"Party Rate Offer",h:"party-rates.html",i:"tag",r:"admin manager",k:"party rate offer quotation category pack per case given history whatsapp"},
       // Outstanding (Mohit, 20 Nov 2026): Sales Head sees unpaid / part-paid bills, party-wise dues, ledger; tells Accounts.
-      {t:"Outstanding & Ledger",h:"sales-outstanding.html",i:"cash",r:"admin manager",k:"outstanding payment pending due unpaid part paid bills party wise ledger party ledger khata hisab khatabook collection baki udhar tell accounts cashier",a:"ledger outstanding khata hisab baki udhar",pt:"Outstanding & Party Ledger (Sales Head)"},
+      // Outstanding & Ledger for Sales Head (20 Nov 2026) is now the same Ledger & Outstanding page, view only (27 Nov 2026).
+      {t:"Outstanding (old)",h:"sales-outstanding.html",i:"cash",r:"admin manager",hide:1},
       {t:"Party Call List",h:"party-calls.html",i:"phone",r:"admin manager sales"},
       // Party Mobile Pending (Mohit, 21 Nov 2026): parties without a mobile number; fill here, task closes by itself.
       {t:"Party Mobile Pending",h:"party-mobile.html",i:"phone",r:"admin manager sales",k:"mobile number missing phone party contact fill pending task"},
@@ -191,7 +192,7 @@
       {t:"Cashier",h:"accounts-dashboard.html#cash",i:"cash",r:"admin cashier",k:"cashier cash in cash out bank deposit close day day book cash book cash ledger cash in hand cheque handover staff advance upad salary vehicle expense party payment received",pt:"Cashier (Cash In / Out, Day book)"},
       {t:"Party & Collections",h:"party-billing.html#party",i:"users",r:"admin",k:"party payment received pending outstanding to collect collection party ledger statement khata advance returns party groups acrs ecrs",pt:"Party & Collections (To collect, Ledger, ACRS)"},
       // Ledger & Outstanding (Mohit, 20 Nov 2026): Tally "Display" books in one page, Ctrl+Alt+L from anywhere.
-      {t:"Ledger & Outstanding",h:"accounts-books.html",i:"book",r:"admin accounts",k:"ledger outstanding receivable receivables bill wise party wise ageing overdue 30 60 90 days receipt register receipts payment received party payment summary day book voucher khata statement tally ctrl alt l kasar party ledger hisab khatabook baki udhar",a:"ledger outstanding khata hisab baki udhar",pt:"Ledger & Outstanding (Ctrl+Alt+L)"},
+      {t:"Ledger & Outstanding",h:"accounts-books.html",i:"book",r:"admin accounts manager",k:"ledger outstanding receivable receivables bill wise party wise ageing overdue 30 60 90 days receipt register receipts payment received party payment summary day book voucher khata statement tally ctrl alt l kasar party ledger hisab khatabook baki udhar",a:"ledger outstanding khata hisab baki udhar",pt:"Ledger & Outstanding (Ctrl+Alt+L)"},
       {t:"Accounts",h:"accounts-dashboard.html",i:"cash",r:"admin accounts",hide:1,par:"party-billing.html"},
       {t:"Bank Statement",h:"bank-statement.html",i:"book",r:"admin accounts"},
       // STTS Ledger (Mohit, 13 Nov 2026): company Sales Register + STTS Ledger checked bill by bill against the Rate List scheme.
@@ -378,9 +379,9 @@
       return {i,s,n};
     }).filter(Boolean).sort((x,y)=>x.s-y.s||x.n-y.n).map(x=>x.i);
   }
-  // Ledger button in the top bar (Mohit, 27 Nov 2026), web and phone: Admin / Accounts open Ledger & Outstanding,
-  // Sales Head opens Outstanding (party ledger inside). Only a page this login may open; none = no button.
-  const LEDGER_PAGES=["accounts-books.html","sales-outstanding.html"];
+  // Ledger button in the top bar (Mohit, 27 Nov 2026), web and phone: Admin / Accounts / Sales Head open the one
+  // Ledger & Outstanding page (Sales Head: view only). Only when this login may open it; none = no button.
+  const LEDGER_PAGES=["accounts-books.html"];
   function ledgerPage(role){const ok=new Set(menuForMe(role).flatMap(g=>g.items.map(i=>i.h)));return LEDGER_PAGES.find(h=>ok.has(h))||""}
   const allPages=()=>MENU.map(g=>({group:g.group,items:g.items.map(i=>({t:i.pt||i.t,h:i.h}))}));
 
@@ -515,7 +516,7 @@
       let lb=user.querySelector(".erp-ledger-btn");const lh=ledgerPage(role);
       if(!lh){lb?.remove();return}
       if(!lb){lb=document.createElement("a");lb.className="erp-ledger-btn";user.prepend(lb)}
-      const lt=lh==="accounts-books.html"?"Ledger & Outstanding (Ctrl+Alt+L)":"Outstanding & Party Ledger";
+      const lt="Ledger & Outstanding (Ctrl+Alt+L)";
       lb.href=lh;lb.title=lt;lb.setAttribute("aria-label",lt);lb.classList.toggle("active",page===lh);
       lb.innerHTML=svg("book")+"<span>Ledger</span>";
     }
