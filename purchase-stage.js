@@ -69,7 +69,9 @@
     const err=m=>{$("#pstErr").hidden=!m;$("#pstErr").textContent=m||""};
     const clean=m=>String(m||"").replace(/^.*?ERROR:\s*/,"");
     $("[data-save]").onclick=async()=>{
-      const veh=$("#pstVeh").value.trim(),inv=$("#pstInv").value.trim();
+      const vc=window.LWBVeh?LWBVeh.check($("#pstVeh").value):null;
+      if(vc&&!vc.empty&&!vc.ok){if($("#pstVeh").lwbVehShow)$("#pstVeh").lwbVehShow();return err("Vehicle no.: "+vc.err)}
+      const veh=vc&&vc.ok?vc.value:$("#pstVeh").value.trim(),inv=$("#pstInv").value.trim();
       if(!veh&&!inv)return err("Enter the vehicle no. or the company invoice no.");
       $("[data-save]").disabled=true;
       const r=await client.rpc("lwb_ecrs_dispatch",{p_truck:t.id,p_vehicle:veh,p_invoice:inv,p_invoice_date:$("#pstDt").value||null,
@@ -91,6 +93,7 @@
       if(r.error)return err("Not saved: "+clean(r.error.message));
       close();if(onDone)onDone("open");
     };
+    if(window.LWBVeh)LWBVeh.attach($("#pstVeh"));
     setTimeout(()=>{const v=$("#pstVeh");if(v)v.focus()},30);
   }
   window.LWBPurchaseStage={dispatch};

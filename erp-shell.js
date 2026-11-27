@@ -113,6 +113,9 @@
       // Approvals (Mohit, 7 Nov 2026): everything waiting for Admin / Sales Head OK, one card each (approvals.js).
       {t:"Approvals",h:"approvals.html",i:"shield",top:1,r:"admin manager",k:"approval approve permission pending verify check bank payment trip rent rate market order po change stock"},
       {t:"Tasks",h:"tasks.html",i:"tasks",r:"*",top:1},
+      // Dial Book (Mohit, 27 Nov 2026): parties, team, purchase truck drivers with a Call button + call log (dial-book.js).
+      // Always a 📞 button in the top bar (phone too), so not drawn in the side menu.
+      {t:"Dial Book",h:"dial-book.html",i:"phone",r:"admin manager accounts sales warehouse cashier transport",k:"dial book phone call contact contacts number mobile driver truck gaadi party team staff call log record whatsapp location",nm:"admin manager accounts sales warehouse cashier transport"},
       {t:"Complaint Box",h:"complaint-box.html",i:"megaphone",r:"*",top:1},
       // Keyboard Shortcuts (Mohit, 5 Nov 2026): every role sees the keys of the pages it can open.
       {t:"Keyboard Shortcuts",h:"keyboard-shortcuts.html",i:"keyboard",r:"*",k:"keyboard shortcut keys help hotkey",
@@ -441,6 +444,7 @@
     add("meta",{name:"apple-mobile-web-app-capable",content:"yes"});
   }
 
+  const DIAL_ROLES=["admin","manager","accounts","sales","warehouse","cashier","transport"];
   const GM_OFF=["goods-inward.html","warehouse-orders.html","quick-slip.html","sales-return.html","tax-invoice.html","fleet-master.html","fixed-assets.html"];
   // Older pages (data-auto) stay on "Loading…" (erp-shell.css) until the top bar and menu are in place,
   // so the plain old-looking page never flashes first after a refresh (Mohit, 24 Nov 2026).
@@ -513,6 +517,13 @@
       if(!q){q=document.createElement("div");q.className="erp-quick";user.prepend(q)}
       q.innerHTML=groups.filter(g=>!g.so).flatMap(g=>g.items).filter(i=>i.top).map(i=>
         '<a class="erp-quick-btn'+(isActive(i)?' active':'')+'" href="'+esc(i.h)+'" title="'+esc(i.t)+'" aria-label="'+esc(i.t)+'">'+svg(i.i)+'</a>').join("");
+      // 📞 Dial Book button (Mohit, 27 Nov 2026): on every page, computer and phone.
+      let db=user.querySelector(".erp-dial-btn");
+      if(DIAL_ROLES.includes(role)){
+        if(!db){db=document.createElement("a");db.className="erp-dial-btn";db.href="dial-book.html";db.title="Dial Book";db.setAttribute("aria-label","Dial Book");
+          db.innerHTML=svg("phone")+"<span>Dial</span>";user.prepend(db)}
+        db.classList.toggle("active",page==="dial-book.html");
+      }else db?.remove();
       let lb=user.querySelector(".erp-ledger-btn");const lh=ledgerPage(role);
       if(!lh){lb?.remove();return}
       if(!lb){lb=document.createElement("a");lb.className="erp-ledger-btn";user.prepend(lb)}

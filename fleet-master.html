@@ -12,6 +12,7 @@
   <script src="excel-io.js"></script>
   <script src="erp-docs.js"></script>
   <script src="master-popup.js"></script>
+  <script src="vehicle-no.js"></script>
   <style>
     .status{text-align:center;padding:80px 20px;font-size:15px;color:#555}
     .fm-sub{margin:-8px 0 14px;color:var(--erp-muted);font-size:15px}
@@ -152,7 +153,8 @@
     const client=supabase.createClient("https://qstgwhbgbznxemajtave.supabase.co","sb_publishable_YA2Pow327REqgrWPzVCZiA_nw1F32_o");
     const el=id=>document.getElementById(id);
     const esc=v=>String(v==null?"":v).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
-    const plate=v=>String(v||"").toUpperCase().replace(/[^A-Z0-9]/g,"");
+    // Vehicle no. format (Mohit, 27 Nov 2026, vehicle-no.js): GJ5BX44 -> GJ05BX0044 (saved without spaces, as before).
+    const plate=v=>{const c=window.LWBVeh&&LWBVeh.check(v);return c&&c.ok?c.key:String(v||"").toUpperCase().replace(/[^A-Z0-9]/g,"")};
     const phone=v=>{const d=String(v||"").replace(/\D/g,"");return d.length===12&&d.startsWith("91")?d.slice(2):d.length===11&&d.startsWith("0")?d.slice(1):d};
     const okPhone=v=>/^[6-9]\d{9}$/.test(v);
     const blank=v=>v==null||String(v).trim()==="";
@@ -310,6 +312,7 @@
       for(const f of K.fields){const x=el("f_"+f.k);let v=editing?editing[f.k]:(f.k==="is_active"?true:f.k==="third_party"?false:f.k==="ownership"?"OWN":f.roles?(WORKS.find(w=>roleKey(w)===el("roleFilter").value)||""):"");if(f.dmy)v=showDate(v)||"";
         if(f.roles&&v)v=WORKS.find(w=>roleKey(w)===roleKey(v))||v;
         x.value=v==null?"":String(v);x.disabled=!can()||busy}
+      if(tab==="vehicles"&&window.LWBVeh&&el("f_vehicle_no")){const vx=el("f_vehicle_no");if(vx.value)vx.value=LWBVeh.fmt(vx.value);LWBVeh.attach(vx,{required:true})}
       if(tab==="vehicles")mountRent();
       // Driver details show only when Work / Post = Driver.
       if(tab==="employees"){const r=el("f_designation"),tp=el("f_third_party"),sal=el("f_monthly_salary"),sync=()=>{const d=roleKey(r.value)==="driver",t=d&&tp.value==="true";document.querySelectorAll("#form [data-drv]").forEach(x=>x.hidden=!d);
@@ -385,6 +388,7 @@
     // Returns an error message, or "" when the row is fine. Used by the form and by Excel import.
     function check(o,id){
       if(tab==="vehicles"){
+        if(window.LWBVeh){const c=LWBVeh.check(o.vehicle_no);if(!c.ok)return "Vehicle number: "+c.err+" (e.g. GJ05 FW 9821).";}
         if(!/^[A-Z0-9]{4,15}$/.test(o.vehicle_no||""))return "Enter a valid vehicle number (e.g. GJ05FW9821).";
         if(o.owner_mobile&&!okPhone(o.owner_mobile))return "Owner mobile must be 10 digits, starting with 6-9.";
         if(o.capacity_kg!=null&&!(o.capacity_kg>=0))return "Enter a valid capacity.";
