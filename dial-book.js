@@ -47,9 +47,9 @@
     document.head.appendChild(s);
   }
   // ---- Call ----
-  async function call({client,kind,ref,source,name}){
+  async function call({client,kind,ref,source,name,numberId}){
     css();
-    const r=await client.rpc("lwb_dial_call",{p_kind:kind,p_ref:String(ref),p_source:source||null});
+    const r=await client.rpc("lwb_dial_call",{p_kind:kind,p_ref:String(ref),p_source:source||null,p_number_id:numberId||null});
     if(r.error){toast(nice(r.error.message),"error");return null}
     const x=r.data||{};
     location.href="tel:+91"+x.mobile;
