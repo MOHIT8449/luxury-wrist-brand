@@ -89,6 +89,9 @@
   [/^TASK_DONE$/,"✅","ok","",""],
   [/^TASK_(OVERDUE|CANCELLED)$/,"⚠","bad","",""],
   [/^TASK_/,"📋","act","",""],
+  [/^RECEIPT_EDIT_ASK$/,"✏️","act","Old cash payment change","Approve"],
+  [/^RECEIPT_EDIT_DONE$/,"✏️","ok","Old cash payment changed",""],
+  [/^RECEIPT_EDIT_REJECT$/,"✏️","bad","Payment change rejected",""],
   [/^LABOUR_EXTRA$/,"👷","act","Labour extra cash","Approve"],
   [/^LABOUR_EXTRA_DONE$/,"👷","ok","Labour extra",""],
   [/^LABOUR_/,"👷","info","Daily labour",""],
@@ -108,7 +111,7 @@
  };
  const CAT_OF=[
   [/^(TASK_|COMPLAINT_|SALES_PLAN$|ANNOUNCEMENT$)/,"task"],
-  [/^(DELIVERY_COLLECTION|ACC_|HIRED_RATE_|TALLY_NOTE_|PAYMENT_FOLLOWUP|LABOUR_)/,"money"],
+  [/^(DELIVERY_COLLECTION|ACC_|HIRED_RATE_|TALLY_NOTE_|PAYMENT_FOLLOWUP|LABOUR_|RECEIPT_EDIT_)/,"money"],
   [/^(ORDER_LOADED|ORDER_DISPATCHED|ORDER_DELIVERED|ORDER_PARTIAL|ORDER_NOT_DELIVERED|VEHICLE_LOADED|LOADING_ASSIGNMENT|TALLY_BILL_PENDING|PO_APPROVED_LOADING|DELIVERY_RETURN|RETURN_CHECKED)/,"delivery"],
   [/^(STOCK_|GODOWN_|PURCHASE_|MARKET_)/,"stock"],
   [/^(ORDER_|PO_|RATE_|BILL_CHANGE_|TALLY_BILL_|SALES_RETURN)/,"order"]
@@ -246,6 +249,8 @@
   [/^LOADING_ASSIGNMENT/,["loading-dispatch.html?order={o}","transport-allocation.html"]],
   [/^HIRED_RATE_/,["fleet-master.html#rates"]],
   [/^PARTY_CREATED$/,["customer-master.html"]],
+  [/^RECEIPT_EDIT_ASK$/,["approvals.html","accounts-books.html"]],
+  [/^RECEIPT_EDIT_/,["accounts-dashboard.html","accounts-books.html"]],
   [/^LABOUR_EXTRA$/,["approvals.html","labour.html"]],
   [/^LABOUR_/,["labour.html"]],
   [/^GODOWN_/,["godown-report.html"]],

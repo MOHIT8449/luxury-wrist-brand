@@ -375,7 +375,7 @@
     let SX={rows:[]},CDF=null,DMG=null;
     let DUP=null,dupShow="PENDING";  // duplicate / torn notes from parties (lwb_acc_dup_note_setup.sql); null = not set up
     let HV=[],hvSub="own",hvPosted=false,PR=[];  // PR = Porter / one-time trips (lwb_trip_rent_setup.sql)
-    let X={entries:{},staff_heads:[],payees:[]},S=[],V=[],VR={vehicles:[],entries:{}},C=[],piErr=false,D=null,PI=null,per="today",from=todayISO(),to=todayISO(),tab="book",bookF="all",outRows=null,me={id:"",role:""};
+    let EM={p:new Map(),e:new Map()},X={entries:{},staff_heads:[],payees:[]},S=[],V=[],VR={vehicles:[],entries:{}},C=[],piErr=false,D=null,PI=null,per="today",from=todayISO(),to=todayISO(),tab="book",bookF="all",outRows=null,me={id:"",role:""};
 
     // bank check: Admin and Accounts (lwb_cashier_role_setup.sql adds can_check); not the Cashier
     const canCheck=()=>D&&(D.can_check!=null?D.can_check:D.is_admin);
@@ -404,6 +404,9 @@
         const {data,error}=await client.rpc("lwb_acc_dashboard",{p_from:from,p_to:to});
         if(error)throw error;
         D=data;D.lines=D.lines||[];D.pending=D.pending||[];DEP={};
+        // ✏️ marks of edited payments / Cash difference set right by an edit (lwb_receipt_past_edit_setup.sql)
+        EM={p:new Map(),e:new Map()};try{const m=await client.rpc("lwb_receipt_edit_marks",{p_from:from,p_to:to});
+          if(!m.error&&m.data){(m.data.payments||[]).forEach(x=>EM.p.set(String(x.id),x));(m.data.entries||[]).forEach(x=>EM.e.set(String(x.entry_id),x))}}catch(_){}
         // monthly rent of hired vehicles is added on the 1st of every month (once per page open)
         if(!hvPosted){hvPosted=true;await client.rpc("lwb_hired_post_months")}
         const [ex,st,vl,vr,cq,hv,pr]=await Promise.all([client.rpc("lwb_acc_extras",{p_from:from,p_to:to}),client.rpc("lwb_acc_staff_list",{p_month:to}),
@@ -527,7 +530,10 @@
     const swapDir=l=>l.kind==="DEPOSIT"?"Got in bank → Gave cash":"Got cash → Sent from bank";
     function lineIcon(l){return isSwap(l)?'<span class="acx-ic ic-swp">🔁</span>':l.kind==="IN"?'<span class="acx-ic ic-in">+</span>':l.kind==="OUT"?'<span class="acx-ic ic-out">−</span>':l.kind==="DEPOSIT"?'<span class="acx-ic ic-dep">🏦</span>':'<span class="acx-ic ic-dep">₹</span>'}
     function lineTitle(l){return isSwap(l)?(l.party||"Friend")+" · Friend swap":l.kind==="DEPOSIT"?"Bank deposit"+(bankName(l.bank_id)?" · "+bankName(l.bank_id):""):l.kind==="WITHDRAW"?"Cash from bank"+(bankName(l.bank_id)?" · "+bankName(l.bank_id):""):(l.party?l.party+" · ":"")+(l.category||"")}
-    function marks(l){if(isSwap(l))return ' <span class="tag t-pur">'+swapDir(l)+(bankName(l.bank_id)?" · "+esc(bankName(l.bank_id)):"")+'</span>';const x=l.x,v=l.veh?' <span class="tag t-gry">🚚 '+esc(l.veh.vehicle)+'</span>':"";if(!x)return v;return v+(x.gst_bill?' <span class="tag t-blu">GST bill</span>':"")+(x.photos&&x.photos.length?' <span class="tag t-gry">📎 '+x.photos.length+'</span>':"")}
+    function editMark(l){const m=l.src==="PAYMENT"?EM.p.get(String(l.id)):l.src==="ENTRY"?EM.e.get(String(l.id)):null;if(!m)return "";
+      return ' <span class="tag t-amb" title="'+esc((m.by?"by "+m.by:"")+(m.reason?" · "+m.reason:m.note?" · "+m.note:""))+'">✏️ '+(l.src==="PAYMENT"?"Edited":"Adjusted")+" "+rs(m.old)+" → "+rs(m.new)+'</span>'}
+    function marks(l){return editMark(l)+marks0(l)}
+    function marks0(l){if(isSwap(l))return ' <span class="tag t-pur">'+swapDir(l)+(bankName(l.bank_id)?" · "+esc(bankName(l.bank_id)):"")+'</span>';const x=l.x,v=l.veh?' <span class="tag t-gry">🚚 '+esc(l.veh.vehicle)+'</span>':"";if(!x)return v;return v+(x.gst_bill?' <span class="tag t-blu">GST bill</span>':"")+(x.photos&&x.photos.length?' <span class="tag t-gry">📎 '+x.photos.length+'</span>':"")}
     function sign(l){if(isSwap(l))return l.kind==="WITHDRAW"?"plus":"minus";return l.kind==="IN"||l.kind==="WITHDRAW"?"plus":l.kind==="OUT"?"minus":"neutral"}
     const wide=()=>window.innerWidth>=760;
     // Ledger: oldest first, In / Out columns and the running cash balance (cash lines only move it).
@@ -554,7 +560,7 @@
       el("tabBody").innerHTML='<div class="acx-filter"><div class="acx-chips" id="bookF">'+Object.entries(F).map(([k,v])=>'<button type="button" data-f="'+k+'" aria-pressed="'+(bookF===k)+'">'+v+'</button>').join("")+'</div>'+
         '<input type="search" id="bookQ" placeholder="Search party, head, ref, PO" autocomplete="off"><button type="button" class="acx-btn" id="bookXl">⬇ Excel</button></div>'+shiftStrip()+lateStrip()+swapStrip()+
         (!list.length?'<div class="acx-empty">No money entry in these dates.</div>':wide()?ledger(list):'<div class="acx-rows">'+list.map(l=>'<button type="button" class="acx-row" data-line="'+l.src+'|'+l.id+'">'+lineIcon(l)+
-          '<span class="t"><b>'+esc(lineTitle(l))+marks(l)+'</b><small>'+(from!==to?dmy(l.date)+" · ":"")+lt(l)+' · '+(isSwap(l)?(l.kind==="DEPOSIT"?"Bank in, cash out":"Cash in, bank out"):MODE_NAME[l.mode])+(l.ref?" · "+esc(l.ref):"")+(l.order_no?" · "+esc(l.order_no):"")+" · "+esc(SRC_NAME[l.src]||"")+(l.remark?" · "+esc(l.remark):"")+'</small></span>'+
+          '<span class="t"><b>'+esc(lineTitle(l))+marks0(l)+'</b><small>'+(editMark(l)?editMark(l).slice(1)+"<br>":"")+(from!==to?dmy(l.date)+" · ":"")+lt(l)+' · '+(isSwap(l)?(l.kind==="DEPOSIT"?"Bank in, cash out":"Cash in, bank out"):MODE_NAME[l.mode])+(l.ref?" · "+esc(l.ref):"")+(l.order_no?" · "+esc(l.order_no):"")+" · "+esc(SRC_NAME[l.src]||"")+(l.remark?" · "+esc(l.remark):"")+'</small></span>'+
           '<span class="a '+sign(l)+'">'+(sign(l)==="plus"?"+":sign(l)==="minus"?"−":"")+rs(l.amount).replace("−","")+'<small>'+statusTag(l)+'</small></span></button>').join("")+'</div>');
       el("bookQ").value=keep;if(keep){el("bookQ").focus()}
       el("bookQ").oninput=renderBook;
