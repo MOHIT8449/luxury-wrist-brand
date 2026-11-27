@@ -271,7 +271,7 @@
     <button type="submit" id="otpButton">Verify OTP</button>
     <button type="button" class="secondary" id="otpBack">Back to Login</button>
   </form>
-  <!-- ERP locked (Logout or 15 idle minutes, quick-unlock.js): open with MPIN and / or fingerprint. -->
+  <!-- ERP locked (Logout or 1 idle hour, quick-unlock.js): open with MPIN and / or fingerprint. -->
   <form id="lockForm" hidden>
     <span id="lockFpIc"><svg class="unlock-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><path d="M12 11v3a8 8 0 0 1-1.5 4.7"/><path d="M8.5 10.5a3.5 3.5 0 0 1 7 0V13a12 12 0 0 1-.6 3.8"/><path d="M5.6 15.5A11 11 0 0 0 6 13v-2.5a6 6 0 0 1 9.6-4.8"/><path d="M18 9a6 6 0 0 1 .1 1.5V13c0 2.2-.4 4.2-1.2 6"/><path d="M8.8 20a14 14 0 0 0 .7-2.4"/><path d="M4 12.5v-2a8 8 0 0 1 1.3-4.4"/></svg></span>
     <p class="form-note" id="lockNote">ERP is locked. Open it with your MPIN or fingerprint.</p>
@@ -364,8 +364,7 @@ function validIndianMobile(raw){
 }
 const ERP_ROLES=["admin","manager","sales","warehouse","transport","accounts","driver","cashier"];
 const NO_IDLE_ROLES=["driver","sales","warehouse"];
-// Admin (Mohit, 27 Nov 2026): Mobile / Email + Password only. No OTP (lwb_admin_login_no_otp_setup.sql),
-// no MPIN and no fingerprint on this phone.
+// Admin (Mohit, 27 Nov 2026): no MPIN and no fingerprint on this phone, Password (+ OTP once a day) only.
 let myRole="";
 function noQuickUnlock(){
   try{LWBUnlock.disable();LWBUnlock.unlock()}catch(e){}
@@ -424,6 +423,8 @@ async function goToErp(user){
     if(a.error)a=await client.from("lwb_user_page_access").select("hidden").eq("user_id",user.id).maybeSingle();
     localStorage.setItem("lwbHiddenPages",JSON.stringify({uid:user.id,hidden:(!a.error&&a.data&&a.data.hidden)||[],extra:(!a.error&&a.data&&a.data.extra)||[]}))}catch(e){}
   try{localStorage.setItem("lwbLastActive",String(Date.now()))}catch(e){}
+  // OTP passed: no OTP again today on this phone / computer (Admin, Sales Head, Accounts only; the database decides).
+  try{await client.rpc("lwb_login_otp_remember",{p_device:LWBUnlock.device()})}catch(e){}
   const back=unlockBack||"dashboard.html";
   if(myRole!=="admin"){await offerUnlock(user);rememberMpinLogin(user);}
   LWBUnlock.unlock();
@@ -617,6 +618,8 @@ async function finishAuthorizedLogin(user){
   if(!aal.error&&aal.data?.currentLevel==="aal2")return goToErp(user);
   const ok=await client.rpc("lwb_login_otp_ok");
   if(!ok.error&&ok.data===true)return goToErp(user);
+  // Admin, Sales Head, Accounts: OTP once a day on this phone / computer (lwb_login_otp_daily_setup.sql).
+  try{const t=await client.rpc("lwb_login_otp_today",{p_device:LWBUnlock.device()});if(!t.error&&t.data===true)return goToErp(user)}catch(e){}
   otpUser=user;
   // WhatsApp OTP to the Login Mobile. Until WhatsApp is set up, or for a user with
   // no Login Mobile, the Authenticator app OTP is used instead.
@@ -689,7 +692,7 @@ el("waUseApp").addEventListener("click",async()=>{
 el("waBack").addEventListener("click",()=>el("otpBack").click());
 async function checkExistingLogin(){
   if(new URLSearchParams(location.search).get("otp"))showMessage("Enter your OTP to open the ERP.",true);
-  if(new URLSearchParams(location.search).get("idle"))showMessage("Logged out after 15 minutes without any activity. Please log in again.",true);
+  if(new URLSearchParams(location.search).get("idle"))showMessage("Logged out after 1 hour without any activity. Please log in again.",true);
   const {data,error}=await client.auth.getSession();
   const lk=LWBUnlock.locked();
   if(error||!data?.session){
@@ -699,11 +702,11 @@ async function checkExistingLogin(){
     if(lk)showMessage("Your login has ended. Please log in again with your password.",true);
     return;
   }
-  // Same 15-minute rule as the ERP pages (erp-shell.js): an old idle session needs the password again,
+  // Same 1-hour rule as the ERP pages (erp-shell.js): an old idle session needs the password again,
   // or, with fingerprint unlock on for this login on this phone, the fingerprint / face / phone PIN.
   const uid=data.session.user.id;
   let last=0;try{last=Number(localStorage.getItem("lwbLastActive"))||0}catch(e){}
-  let idle=!!(last&&Date.now()-last>15*60e3);
+  let idle=!!(last&&Date.now()-last>60*60e3);
   // Driver, Salesman and Godown Manager stay logged in until they tap Logout (same list as erp-shell.js).
   if(idle||lk){
     try{const r=await client.from("user_profiles").select("role").eq("id",uid).maybeSingle();
@@ -723,7 +726,7 @@ async function checkExistingLogin(){
     LWBUnlock.unlock();
     await client.auth.signOut({scope:"local"});try{localStorage.removeItem("lwbLastActive")}catch(e){}
     if(showMpinLogin())return;
-    showMessage("Logged out after 15 minutes without any activity. Please log in again.",true);
+    showMessage("Logged out after 1 hour without any activity. Please log in again.",true);
     return;
   }
   // Verify current auth session, not merely cached session metadata.
