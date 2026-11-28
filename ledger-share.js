@@ -44,7 +44,7 @@
     teal:{d:"#00434d",l:"#dcefec",p:"#f3faf8",g:"#9cc7c1",i:"#0b2f33",a:"#c9b26a"},
     wine:{d:"#6d1a36",l:"#f5e1e8",p:"#fcf5f7",g:"#d6a6b6",i:"#3d0d1e",a:"#d4a017"},
     slate:{d:"#22303f",l:"#e6e9ee",p:"#f7f8fa",g:"#b3bcc8",i:"#17212b",a:"#e0a526"}};
-  let T=THEMES.teal;
+  let T=THEMES.slate;   // Mohit picked Design 3 (28 Nov 2026)
   const GREEN="#0d7a3e",RED="#c8102e";
   const FONT=(b,sz)=>(b?"bold ":"")+sz+'px "Bahnschrift","Segoe UI","Arial Narrow",Arial,sans-serif';
   function draw(d,pi){
