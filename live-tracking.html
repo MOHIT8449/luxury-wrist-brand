@@ -11,7 +11,7 @@
   <link rel="stylesheet" href="assets/leaflet/leaflet.css">
   <script src="assets/leaflet/leaflet.js"></script>
   <script src="erp-shell.js?v=20261127p"></script>
-  <script src="dial-book.js?v=20261128h"></script>
+  <script src="dial-book.js?v=20261128i"></script>
   <script src="sales-common.js"></script>
   <style>
     .lt-grid{display:grid;grid-template-columns:minmax(330px,420px) 1fr;gap:14px;align-items:start}
@@ -95,6 +95,8 @@
         <div><label for="we">Work hours to</label><input id="we" type="time"></div>
         <div><label for="spd">Average road speed (km/h, for ETA)</label><input id="spd" type="number" min="5" max="80" step="1"></div>
         <div><label for="rad">Godown circle (metres)</label><input id="rad" type="number" min="50" max="2000" step="10"></div>
+        <div class="wide"><label for="gdUrl">📍 Godown Google Maps link (WhatsApp location to truck drivers)</label><input id="gdUrl" style="width:100%;box-sizing:border-box" type="url" maxlength="300" placeholder="https://maps.app.goo.gl/..."></div>
+        <div class="wide"><label for="gdAddr">Godown address (in the WhatsApp message, Hindi)</label><input id="gdAddr" style="width:100%;box-sizing:border-box" maxlength="200" placeholder="शेड नं. 15, देव कैंपस, ..."></div>
         <div class="wide lt-tools">
           <span class="lt-meta" id="gdText"></span><span class="grow"></span>
           <button type="button" class="sl-btn ghost small" id="gdHere">📍 Godown = my location now</button>
@@ -356,6 +358,8 @@
       el("roles").textContent="Every staff login except Admin (fixed). Staff cannot switch it off from the phone.";
       el("ws").value=s.work_start;el("we").value=s.work_end;el("spd").value=s.avg_speed_kmph;el("rad").value=s.godown_radius_m;
       gd={lat:s.godown_lat,lng:s.godown_lng};showGd();
+      el("gdUrl").value="";el("gdAddr").value="";
+      client.rpc("lwb_godown_link").then(({data:g,error})=>{if(!error&&g){el("gdUrl").value=g.map_url||"";el("gdAddr").value=g.address||""}});
       el("setCard").hidden=false;
     }
     let gd={lat:null,lng:null};
@@ -371,6 +375,8 @@
         avg_speed_kmph:Number(el("spd").value)||25,godown_radius_m:Number(el("rad").value)||200,godown_lat:gd.lat,godown_lng:gd.lng};
       const {error}=await client.rpc("lwb_tracking_save_settings",{p});
       if(error)return alert("Settings not saved: "+error.message);
+      const lk=await client.rpc("lwb_godown_link_save",{p_map_url:el("gdUrl").value.trim()||null,p_address:el("gdAddr").value.trim()||null});
+      if(lk.error)return alert("Godown link not saved: "+String(lk.error.message).replace(/^.*?ERROR:\s*/,""));
       el("setCard").hidden=true;fitted=false;await load();ERPShell.toast("Tracking settings saved");
     };
     el("setBtn").onclick=openSettings;el("setClose").onclick=()=>{el("setCard").hidden=true;cancelPin()};

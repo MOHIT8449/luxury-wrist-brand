@@ -228,6 +228,18 @@ test('Company people: own group, phone name NAME COMPANY POST AREA, call works',
   assert.ok(g.some(x=>x.kind==='COMPANY'&&x.name==='RAJESH PATEL CC GSM SURAT'));
 });
 
+test('Godown Maps link + address: Admin edits in Live Tracking settings; default address now Hindi', async()=>{
+  const gl=await file('lwb_godown_link_edit_setup.sql');await db.exec(gl);await db.exec(gl);
+  await as('godown');
+  assert.equal((await call('select lwb_godown_link() j'))[0].j.address,'शेड नं. 15, देव कैंपस, राम कथा ग्राउंड, सिमाडा कैनाल, सूरत, गुजरात 395013');
+  await assert.rejects(call("select lwb_godown_link_save('https://maps.app.goo.gl/x','y')"),/Only Admin/);
+  await as('sales');await assert.rejects(call('select lwb_godown_link()'),/Not allowed/);
+  await as('admin');
+  await assert.rejects(call("select lwb_godown_link_save('maps.app.goo.gl/x','y')"),/https/);
+  await call("select lwb_godown_link_save(' https://maps.app.goo.gl/NEW1 ','नया पता')");
+  assert.deepEqual((await call('select lwb_godown_link() j'))[0].j,{map_url:'https://maps.app.goo.gl/NEW1',address:'नया पता'});
+});
+
 test('Gmail duplicate cleaner setup: status lists extra Gmail, tables closed to logins', async()=>{
   const dd=await file('lwb_gmail_dedupe_setup.sql');await db.exec(dd);await db.exec(dd);
   await db.query("insert into lwb_gsync_accounts(email,refresh_token) values('second@gmail.com','rt')");
