@@ -39,7 +39,13 @@
   }
 
   // Same look as the PO image (po-share.js): navy bar, light blue labels, grid lines.
-  const NAVY="#0b3d91",BLUE="#dbe7fb",PALE="#f2f6fd",LINE="#8fa9d6",INK="#0f2347",GREEN="#0d7a3e",RED="#c8102e";
+  // Colour themes (Mohit 28 Nov 2026: ledger / bill image must not look like the blue sales PO image). d = dark bar, l = label cell, p = value cell, g = grid, i = label text, a = accent line
+  const THEMES={blue:{d:"#0b3d91",l:"#dbe7fb",p:"#f2f6fd",g:"#8fa9d6",i:"#0f2347",a:""},
+    teal:{d:"#00434d",l:"#dcefec",p:"#f3faf8",g:"#9cc7c1",i:"#0b2f33",a:"#c9b26a"},
+    wine:{d:"#6d1a36",l:"#f5e1e8",p:"#fcf5f7",g:"#d6a6b6",i:"#3d0d1e",a:"#d4a017"},
+    slate:{d:"#22303f",l:"#e6e9ee",p:"#f7f8fa",g:"#b3bcc8",i:"#17212b",a:"#e0a526"}};
+  let T=THEMES.teal;
+  const GREEN="#0d7a3e",RED="#c8102e";
   const FONT=(b,sz)=>(b?"bold ":"")+sz+'px "Bahnschrift","Segoe UI","Arial Narrow",Arial,sans-serif';
   function draw(d,pi){
     const p=pages(d)[pi||0];
@@ -49,22 +55,22 @@
     const cv=document.createElement("canvas");cv.width=W*sc;cv.height=H*sc;
     const x=cv.getContext("2d");x.scale(sc,sc);x.fillStyle="#fff";x.fillRect(0,0,W,H);
     const cell=(c1,c2,cy,bg,txt,color,bold,align)=>{const cx=X[c1],w=X[c2+1]-X[c1];txt=String(txt==null?"":txt);
-      x.fillStyle=bg;x.fillRect(cx,cy,w,rowH);x.strokeStyle=LINE;x.lineWidth=1;x.strokeRect(cx+.5,cy+.5,w-1,rowH-1);
+      x.fillStyle=bg;x.fillRect(cx,cy,w,rowH);x.strokeStyle=T.g;x.lineWidth=1;x.strokeRect(cx+.5,cy+.5,w-1,rowH-1);
       let sz=16;x.font=FONT(bold,sz);while(x.measureText(txt).width>w-14&&sz>9){sz--;x.font=FONT(bold,sz)}
       x.fillStyle=color;x.textBaseline="middle";x.textAlign=align==="l"?"left":align==="r"?"right":"center";
       x.fillText(txt,align==="l"?cx+10:align==="r"?cx+w-10:cx+w/2,cy+rowH/2+1)};
-    const balCell=(label,v,y,strong)=>{const col=v>0.5?RED:v<-0.5?GREEN:INK;cell(0,1,y,BLUE,label,INK,true,"c");cell(2,3,y,"#fff","₹ "+fmt(v)+dc(v),col,true,"c");
+    const balCell=(label,v,y,strong)=>{const col=v>0.5?RED:v<-0.5?GREEN:T.i;cell(0,1,y,T.l,label,T.i,true,"c");cell(2,3,y,"#fff","₹ "+fmt(v)+dc(v),col,true,"c");
       if(strong){x.strokeStyle=col;x.lineWidth=2;x.strokeRect(X[2]+1,y+1,X[4]-X[2]-2,rowH-2)}};
     let y=1;
-    cell(0,3,y,NAVY,"LUXURY WRIST BRAND · LEDGER"+(p.of>1?" · PAGE "+p.no+"/"+p.of:""),"#fff",true,"c");y+=rowH;
-    info.forEach(([a,b])=>{cell(0,0,y,BLUE,a,INK,true,"c");cell(1,3,y,PALE,b,INK,true,"c");y+=rowH});
-    ["DATE","INVOICE NO.","DEBIT","CREDIT"].forEach((t,i)=>cell(i,i,y,NAVY,t,"#fff",true,"c"));y+=rowH;
+    cell(0,3,y,T.d,"LUXURY WRIST BRAND · LEDGER"+(p.of>1?" · PAGE "+p.no+"/"+p.of:""),"#fff",true,"c");if(T.a){x.fillStyle=T.a;x.fillRect(0,y+rowH-4,W,4)}y+=rowH;
+    info.forEach(([a,b])=>{cell(0,0,y,T.l,a,T.i,true,"c");cell(1,3,y,T.p,b,T.i,true,"c");y+=rowH});
+    ["DATE","INVOICE NO.","DEBIT","CREDIT"].forEach((t,i)=>cell(i,i,y,T.d,t,"#fff",true,"c"));y+=rowH;
     const line=(a,b,dr,cr,bg)=>{cell(0,0,y,bg,a,"#1c2533",false,"c");cell(1,1,y,bg,b,"#1c2533",true,"c");
       cell(2,2,y,bg,dr?"₹ "+fmt(dr):"","#1c2533",false,"r");cell(3,3,y,bg,cr?"₹ "+fmt(cr):"",GREEN,false,"r");y+=rowH};
-    if(hasOpen)line(d.from,"OPENING",d.open>0?d.open:0,d.open<0?-d.open:0,PALE);
+    if(hasOpen)line(d.from,"OPENING",d.open>0?d.open:0,d.open<0?-d.open:0,T.p);
     if(!p.first){balCell("BALANCE B/F",p.carry,y,false);y+=rowH}
     p.rows.forEach((r,i)=>line(r.date,r.inv||"-",r.dr,r.cr,i%2?"#f7f9fc":"#fff"));
-    if(p.last){cell(0,1,y,BLUE,"TOTAL",INK,true,"c");cell(2,2,y,BLUE,"₹ "+fmt(d.dr),INK,true,"r");cell(3,3,y,BLUE,"₹ "+fmt(d.cr),GREEN,true,"r");y+=rowH;
+    if(p.last){cell(0,1,y,T.l,"TOTAL",T.i,true,"c");cell(2,2,y,T.l,"₹ "+fmt(d.dr),T.i,true,"r");cell(3,3,y,T.l,"₹ "+fmt(d.cr),GREEN,true,"r");y+=rowH;
       balCell("CLOSING BALANCE",r2(d.close),y,true)}
     else balCell("BALANCE C/F · NEXT "+(p.no+1)+"/"+p.of,p.bal,y,false);
     return cv;
@@ -157,32 +163,32 @@
   function billDraw(b){
     const C=[290,90,110,140],W=C.reduce((a,c)=>a+c,0),X=[0];C.forEach((w,i)=>X.push(X[i]+w));
     const info=[["PARTY",b.party],["INVOICE NO.",b.inv],["BILL DATE",b.date]].concat(b.brand?[["BRAND",b.brand]]:[]);
-    const sumR=[["BILL AMOUNT","₹ "+fmt(b.bill),INK]].concat(Math.abs(r2(b.cn))>=0.5?[["CREDIT NOTE / RETURN","₹ "+fmt(b.cn),INK]]:[]).concat([["RECEIVED","₹ "+fmt(b.got),GREEN]]);
+    const sumR=[["BILL AMOUNT","₹ "+fmt(b.bill),T.i]].concat(Math.abs(r2(b.cn))>=0.5?[["CREDIT NOTE / RETURN","₹ "+fmt(b.cn),T.i]]:[]).concat([["RECEIVED","₹ "+fmt(b.got),GREEN]]);
     const rowH=38,nrows=1+info.length+1+b.items.length+1+(b.pays.length?2+b.pays.length:0)+sumR.length+(b.due==null?0:1),H=nrows*rowH+2,sc=nrows>90?2:3;
     const cv=document.createElement("canvas");cv.width=W*sc;cv.height=H*sc;
     const x=cv.getContext("2d");x.scale(sc,sc);x.fillStyle="#fff";x.fillRect(0,0,W,H);
     const cell=(c1,c2,cy,bg,txt,color,bold,align)=>{const cx=X[c1],w=X[c2+1]-X[c1];txt=String(txt==null?"":txt);
-      x.fillStyle=bg;x.fillRect(cx,cy,w,rowH);x.strokeStyle=LINE;x.lineWidth=1;x.strokeRect(cx+.5,cy+.5,w-1,rowH-1);
+      x.fillStyle=bg;x.fillRect(cx,cy,w,rowH);x.strokeStyle=T.g;x.lineWidth=1;x.strokeRect(cx+.5,cy+.5,w-1,rowH-1);
       let sz=16;x.font=FONT(bold,sz);while(x.measureText(txt).width>w-14&&sz>9){sz--;x.font=FONT(bold,sz)}
       x.fillStyle=color;x.textBaseline="middle";x.textAlign=align==="l"?"left":align==="r"?"right":"center";
       x.fillText(txt,align==="l"?cx+10:align==="r"?cx+w-10:cx+w/2,cy+rowH/2+1)};
     let y=1;
-    cell(0,3,y,NAVY,"LUXURY WRIST BRAND · SALES BILL","#fff",true,"c");y+=rowH;
-    info.forEach(([a,v])=>{cell(0,0,y,BLUE,a,INK,true,"c");cell(1,3,y,PALE,v,INK,true,"c");y+=rowH});
-    ["PRODUCT NAME","QTY","RATE","AMOUNT"].forEach((t,i)=>cell(i,i,y,NAVY,t,"#fff",true,"c"));y+=rowH;
+    cell(0,3,y,T.d,"LUXURY WRIST BRAND · SALES BILL","#fff",true,"c");if(T.a){x.fillStyle=T.a;x.fillRect(0,y+rowH-4,W,4)}y+=rowH;
+    info.forEach(([a,v])=>{cell(0,0,y,T.l,a,T.i,true,"c");cell(1,3,y,T.p,v,T.i,true,"c");y+=rowH});
+    ["PRODUCT NAME","QTY","RATE","AMOUNT"].forEach((t,i)=>cell(i,i,y,T.d,t,"#fff",true,"c"));y+=rowH;
     b.items.forEach((i,k)=>{const bg=k%2?"#f7f9fc":"#fff";cell(0,0,y,bg,i.sku,"#1c2533",false,"l");cell(1,1,y,bg,fmt(i.qty),"#1c2533",true,"c");
       cell(2,2,y,bg,"₹ "+fmt(i.rate),"#1c2533",false,"r");cell(3,3,y,bg,"₹ "+fmt(i.amt),"#1c2533",false,"r");y+=rowH});
-    cell(0,0,y,BLUE,"TOTAL",INK,true,"c");cell(1,1,y,BLUE,fmt(b.items.reduce((a,i)=>a+n(i.qty),0)),INK,true,"c");cell(2,3,y,BLUE,"₹ "+fmt(b.items.reduce((a,i)=>a+n(i.amt),0)),INK,true,"r");y+=rowH;
+    cell(0,0,y,T.l,"TOTAL",T.i,true,"c");cell(1,1,y,T.l,fmt(b.items.reduce((a,i)=>a+n(i.qty),0)),T.i,true,"c");cell(2,3,y,T.l,"₹ "+fmt(b.items.reduce((a,i)=>a+n(i.amt),0)),T.i,true,"r");y+=rowH;
     if(b.pays.length){
-      cell(0,3,y,NAVY,"PAYMENTS ON THIS BILL","#fff",true,"c");y+=rowH;
-      ["DATE","MODE","","AMOUNT"].forEach((t,i)=>{if(i===2)return;cell(i,i===1?2:i,y,BLUE,t,INK,true,"c")});y+=rowH;
+      cell(0,3,y,T.d,"PAYMENTS ON THIS BILL","#fff",true,"c");y+=rowH;
+      ["DATE","MODE","","AMOUNT"].forEach((t,i)=>{if(i===2)return;cell(i,i===1?2:i,y,T.l,t,T.i,true,"c")});y+=rowH;
       b.pays.forEach(p=>{cell(0,0,y,"#fff",p.date,"#1c2533",false,"c");cell(1,2,y,"#fff",p.mode,"#1c2533",true,"c");cell(3,3,y,"#fff","₹ "+fmt(p.amount),GREEN,true,"r");y+=rowH})}
-    sumR.forEach(([a,v,c])=>{cell(0,1,y,BLUE,a,INK,true,"c");cell(2,3,y,PALE,v,c,true,"r");y+=rowH});
+    sumR.forEach(([a,v,c])=>{cell(0,1,y,T.l,a,T.i,true,"c");cell(2,3,y,T.p,v,c,true,"r");y+=rowH});
     if(b.due!=null){const d=r2(b.due),col=d>0.5?RED:GREEN;
-      cell(0,1,y,BLUE,"DUE NOW",INK,true,"c");cell(2,3,y,"#fff",d>0.5?"₹ "+fmt(d):"₹ 0 · PAID",col,true,"c");
+      cell(0,1,y,T.l,"DUE NOW",T.i,true,"c");cell(2,3,y,"#fff",d>0.5?"₹ "+fmt(d):"₹ 0 · PAID",col,true,"c");
       x.strokeStyle=col;x.lineWidth=2;x.strokeRect(X[2]+1,y+1,X[4]-X[2]-2,rowH-2)}
     return cv;
   }
   const showBill=b=>popup({title:"Bill "+b.inv+" · "+b.party,canvases:[billDraw(b)],name:safe("Bill "+b.inv+" "+b.party),text:()=>billText(b)});
-  window.LWBLedgerShare={MAX,pages,text,copyText,draw,show,billText,billDraw,showBill};
+  window.LWBLedgerShare={THEMES,setTheme:k=>{if(THEMES[k])T=THEMES[k]},MAX,pages,text,copyText,draw,show,billText,billDraw,showBill};
 })();
