@@ -11,7 +11,7 @@
   <script src="erp-shell.js?v=20261127p"></script>
   <script src="sales-common.js"></script>
   <script src="vehicle-no.js"></script>
-  <script src="dial-book.js?v=20261128h"></script>
+  <script src="dial-book.js?v=20261128j"></script>
   <style>
     .db-tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px}
     .db-tab{border:1px solid var(--erp-line);background:#fff;border-radius:16px;padding:5px 11px;font:inherit;font-size:13px;font-weight:600;cursor:pointer;color:var(--erp-ink)}
@@ -79,6 +79,15 @@
     .db-gm ol{margin:0;padding-left:20px;font-size:13.5px;line-height:1.5}.db-gm code{background:#f1f4f7;padding:1px 5px;border-radius:4px;font-size:12.5px;word-break:break-all}
     .db-gm .st{padding:9px 11px;border-radius:8px;font-size:14px;font-weight:600}.db-gm .st.ok{background:#e4f6e9;color:#0d6b36}.db-gm .st.no{background:#fdf3e1;color:#8a5200}.db-gm .st.bad{background:#fdecef;color:#b42318}
     .db-gm label input{text-transform:none!important}
+    .db-dd{border-top:1px solid var(--erp-line,#e3e7ec);padding-top:10px;display:flex;flex-direction:column;gap:7px}
+    .db-ddl{display:flex;flex-wrap:wrap;gap:5px}.db-acc{display:inline-flex;align-items:center;gap:4px;border:1px solid #d5dbe1;border-radius:15px;padding:3px 9px;font-size:12.5px;max-width:100%;overflow-wrap:anywhere}
+    .db-acc.main{background:#e4f6e9;border-color:#bfe5cb}.db-acc small{color:var(--erp-muted)}.db-acc button{border:0;background:none;cursor:pointer;color:#c62828;font-size:13px;padding:0 2px}
+    .db-dlist{display:flex;flex-direction:column;gap:8px;max-height:55vh;overflow:auto}
+    .db-dg{border:1px solid #e3e7ec;border-radius:8px;padding:7px 8px}.db-dgh{display:flex;gap:8px;align-items:center;margin-bottom:5px;font-size:13.5px}
+    .db-erp{background:#e4f6e9;color:#0d6b36;border-radius:10px;padding:1px 7px;font-size:11.5px;font-weight:700;white-space:nowrap}.db-dgc{color:#8a5200;font-size:12px;font-weight:600}
+    .db-dgi{display:flex!important;flex-direction:row!important;align-items:center;gap:8px;padding:5px 6px;border-radius:6px;cursor:pointer;font-weight:500!important}
+    .db-dgi input{width:18px!important;height:18px!important;flex:none}.db-dgi span{flex:1;min-width:0;font-size:13.5px;color:#1f2a37}.db-dgi small{display:block;font-size:11.5px;color:var(--erp-muted);overflow-wrap:anywhere}
+    .db-dgi em{font-style:normal;font-size:12px;font-weight:700;color:#b42318;white-space:nowrap}.db-dgi.on{background:#eef7f1}.db-dgi.on em{color:#0d6b36}.db-dgi.fx{cursor:default}
     @media(max-width:640px){
       .db-num,.db-last,.db-hide{display:none}
       .db-row{padding:7px 10px;gap:8px}
@@ -93,6 +102,7 @@
   <main id="page" class="erp-main" hidden>
     <div class="erp-pagehead"><h1>📞 Dial Book</h1><span class="grow"></span>
       <button type="button" class="sl-btn ghost db-hb" id="addVeh" hidden title="Gaadi driver">🚚<span class="t"> + Gaadi driver</span></button>
+      <button type="button" class="sl-btn ghost db-hb" id="pcCall" hidden title="PC se call: Phone Link setup">💻<span class="t"> PC se call</span></button>
       <button type="button" class="sl-btn ghost db-hb" id="gmail" hidden title="Admin only: numbers save in Gmail by themselves">✉<span class="t"> Gmail sync</span></button>
       <button type="button" class="sl-btn ghost db-hb" id="vcf" hidden title="Admin only: all numbers as a phone contacts file">⬇<span class="t"> Contacts</span></button>
       <button type="button" class="sl-btn ghost db-hb" id="refresh" title="Refresh">↻<span class="t"> Refresh</span></button></div>
@@ -369,7 +379,13 @@
         '<div id="gMsg" class="db-sm" hidden></div><div class="db-sf"><button type="button" class="sl-btn ghost" data-gedit>Change Client ID</button><button type="button" class="sl-btn" data-gconnect>Connect Gmail</button></div>';
       else body='<div class="st ok">✓ Connected: <b>'+esc(g.email||"Gmail")+"</b>. Har raat 2 baje sab number apne aap Gmail me update hote hain.</div>"+res+
         '<p class="db-sm">Gmail me sab number label <b>LWB ERP</b> me rahenge. Naya number, naam badla ya number hata, sab apne aap. Us label ke bahar ke contacts ko hum touch nahi karte. Pehle .vcf import kiya tha to woh purane contacts ek baar delete kar dijiye (warna do baar dikhenge).</p>'+
-        '<div id="gMsg" class="db-sm" hidden></div><div class="db-sf"><button type="button" class="sl-btn ghost" data-gdis style="color:#c62828">Disconnect</button><button type="button" class="sl-btn" data-gsync>'+(g.running?"Sync chal raha hai…":"🔄 Sync now")+"</button></div>";
+        '<div id="gMsg" class="db-sm" hidden></div><div class="db-sf"><button type="button" class="sl-btn ghost" data-gdis style="color:#c62828">Disconnect</button><button type="button" class="sl-btn" data-gsync>'+(g.running?"Sync chal raha hai…":"🔄 Sync now")+"</button></div>"+
+        // Duplicate cleaner (Mohit, 28 Nov 2026; lwb_gmail_dedupe_setup.sql): his other Gmail too, one name per number.
+        '<div class="db-dd"><b>🧹 Ek number, ek naam</b><p class="db-sm">Phone me 2-3 Gmail ke contacts aate hain, isliye ek number kai naam se dikhta hai. Apne doosre Gmail bhi jodiye, phir Duplicate saaf karein.</p>'+
+        '<div class="db-ddl"><span class="db-acc main">✉ '+esc(g.email||"Gmail")+' <small>main</small></span>'+(g.extra||[]).map(e=>'<span class="db-acc">✉ '+esc(e)+' <button type="button" data-grm="'+esc(e)+'" title="Hatao" aria-label="Remove '+esc(e)+'">✕</button></span>').join("")+"</div>"+
+        (g.last_dedupe&&g.last_dedupe.at?'<p class="db-sm">Pichhla kaam '+esc(ago(g.last_dedupe.at))+": "+((g.last_dedupe.result||{}).kind==="move"?fmt((g.last_dedupe.result||{}).copied||0)+" contact main Gmail me aaye.":fmt((g.last_dedupe.result||{}).deleted||0)+" copy hatayi, "+fmt((g.last_dedupe.result||{}).changed||0)+" contact se number hataya.")+"</p>":"")+
+        '<div class="db-sf"><button type="button" class="sl-btn ghost" data-gadd>➕ Doosra Gmail jodein</button><button type="button" class="sl-btn" data-gdd>🧹 Duplicate saaf karein</button></div>'+
+        ((g.extra||[]).length?'<button type="button" class="sl-btn ghost" data-gmv style="height:40px">📥 Sab contacts main Gmail me le aao</button>':"")+"</div>";
       const b=sheet("✉ Gmail auto sync",'<div class="db-gm" data-nocaps style="display:flex;flex-direction:column;gap:10px">'+body+"</div>");
       const say=(t,c)=>{const m=b.querySelector("#gMsg");m.hidden=false;m.className="db-sm "+(c||"");m.textContent=t};
       if(msg)say(msg[0],msg[1]);
@@ -384,11 +400,82 @@
         const cn=e.target.closest("[data-gconnect]");
         if(cn){busy(cn,"Google khul raha hai…");const x=await client.functions.invoke(GF,{body:{action:"start"}});
           if(x.error){say(await fnErr(x.error),"bad");cn.disabled=false;cn.textContent="Connect Gmail";return}location.href=x.data.url;return}
+        const ad=e.target.closest("[data-gadd]");
+        if(ad){busy(ad,"Google khul raha hai…");const x=await client.functions.invoke(GF,{body:{action:"start",extra:true}});
+          if(x.error){say(await fnErr(x.error),"bad");ad.disabled=false;ad.textContent="➕ Doosra Gmail jodein";return}
+          say("Google page par apna DOOSRA Gmail chuniye (main wala nahi).","warn");setTimeout(()=>location.href=x.data.url,900);return}
+        const rm=e.target.closest("[data-grm]");
+        if(rm){if(!await confirm(rm.dataset.grm+" ko hatayein? Us Gmail ke contacts waise hi rahenge."))return;
+          const x=await client.functions.invoke(GF,{body:{action:"remove_account",email:rm.dataset.grm}});b.remove();gmail(x.error?[await fnErr(x.error),"bad"]:["Hata diya.","warn"]);return}
+        const dd=e.target.closest("[data-gdd]");
+        if(dd){busy(dd,"Sab Gmail padh raha hai…");const x=await client.functions.invoke(GF,{body:{action:"dedupe_scan"}});
+          if(x.error){say(await fnErr(x.error),"bad");dd.disabled=false;dd.textContent="🧹 Duplicate saaf karein";return}b.remove();dedupe(x.data);return}
+        const mv=e.target.closest("[data-gmv]");
+        if(mv){busy(mv,"Sab Gmail padh raha hai…");const x=await client.functions.invoke(GF,{body:{action:"move_scan"}});
+          if(x.error){say(await fnErr(x.error),"bad");mv.disabled=false;mv.textContent="📥 Sab contacts main Gmail me le aao";return}b.remove();moveAll(x.data,g.email);return}
         const sy=e.target.closest("[data-gsync]");
         if(sy){busy(sy,"Sync ho raha hai…");const x=await client.functions.invoke(GF,{body:{action:"sync"}});b.remove();
           if(x.error){gmail([await fnErr(x.error),"bad"]);return}gmail(x.data&&x.data.status==="running"?["Sync pehle se chal raha hai. 2 minute baad dekhiye.","warn"]:null);return}
         if(e.target.closest("[data-gdis]")){if(!await confirm("Gmail sync band karein? Gmail me jo contacts hain woh rahenge, bas aage update nahi honge."))return;
           const x=await client.functions.invoke(GF,{body:{action:"disconnect"}});b.remove();if(x.error){gmail([await fnErr(x.error),"bad"]);return}gmail(["Disconnected.","warn"])}
+      });
+    }
+    // Duplicate cleaner: preview, backup, then "Haan, saaf karo".
+    function dedupe(d){
+      const G=d.groups||[],fixed=G.filter(x=>x.fixed).length,pick=G.length-fixed,picks={};
+      const accN=i=>(d.accounts||[])[i]||"Gmail";
+      const row=x=>'<div class="db-dg"><div class="db-dgh"><b>'+esc(x.masked)+"</b>"+(x.fixed?'<span class="db-erp">ERP naam rahega</span>':'<span class="db-dgc">'+x.items.length+" naam: ek chuniye</span>")+"</div>"+
+        x.items.map(it=>{const on=it.i===x.keep;return '<label class="db-dgi'+(on?" on":"")+(x.fixed?" fx":"")+'"><input type="radio" name="dg'+esc(x.m)+'" value="'+it.i+'"'+(on?" checked":"")+(x.fixed?" disabled":"")+">"+
+          '<span><b>'+esc(it.name)+"</b>"+(it.erp?' <span class="db-erp">LWB ERP</span>':"")+"<small>"+esc(accN(it.acc))+(it.more?" · aur number bhi hai: woh rahega":"")+"</small></span>"+
+          '<em>'+(on?"✓ Rahega":"Hatega")+"</em></label>"}).join("")+"</div>";
+      const body=!G.length?'<div class="st ok">✓ Koi duplicate nahi. '+fmt(d.contacts)+" contacts check kiye ("+esc((d.accounts||[]).join(", "))+").</div>":
+        '<div class="st no">'+fmt(G.length)+" number 2+ naam se save hain · "+fmt(fixed)+" ka ERP naam rahega · "+fmt(pick)+" me aap naam chuniye</div>"+
+        '<p class="db-sm">Abhi kuch nahi badla. Pehle <b>Backup</b> download kariye. "Haan, saaf karo" dabane par hi baaki copies hategi. Jis contact me doosra number bhi hai, woh contact rahega, sirf yeh duplicate number hatega.</p>'+
+        '<div class="db-dlist">'+G.map(row).join("")+"</div>"+
+        '<div id="ddMsg" class="db-sm" hidden></div><div class="db-sf"><button type="button" class="sl-btn ghost" data-bk>⬇ Backup</button><button type="button" class="sl-btn" data-go>🧹 Haan, saaf karo</button></div>';
+      const b=sheet("🧹 Duplicate contacts",'<div class="db-gm" data-nocaps style="display:flex;flex-direction:column;gap:10px">'+body+"</div>");
+      const say=(t,c)=>{const m=b.querySelector("#ddMsg");if(!m)return;m.hidden=false;m.className="db-sm "+(c||"");m.textContent=t};
+      b.addEventListener("change",e=>{const r=e.target.closest("input[type=radio]");if(!r)return;const m=r.name.slice(2);picks[m]=Number(r.value);
+        r.closest(".db-dg").querySelectorAll(".db-dgi").forEach(l=>{const on=l.querySelector("input").checked;l.classList.toggle("on",on);l.querySelector("em").textContent=on?"✓ Rahega":"Hatega"})});
+      b.addEventListener("click",async e=>{
+        if(e.target.closest("[data-bk]")){const q=v=>'"'+String(v==null?"":v).replace(/"/g,'""')+'"';
+          const csv="\ufeff"+[["Gmail","Name","Numbers","Label"],...(d.backup||[])].map(r=>r.map(q).join(",")).join("\r\n");
+          const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([csv],{type:"text/csv"}));a.download="contacts-backup-"+new Date().toISOString().slice(0,10)+".csv";a.click();
+          b.dataset.bk="1";say("✓ Backup download ho gaya ("+fmt((d.backup||[]).length)+" contacts).","warn");return}
+        const go=e.target.closest("[data-go]");
+        if(go){if(!b.dataset.bk){say("Pehle ⬇ Backup dabaiye.","bad");return}
+          if(!await confirm(fmt(G.length)+" number ki baaki copies Gmail se hategi. Pakka?"))return;
+          go.disabled=true;go.textContent="Saaf ho raha hai…";
+          const x=await client.functions.invoke(GF,{body:{action:"dedupe_apply",run_id:d.run_id,picks}});
+          if(x.error){say(await fnErr(x.error),"bad");go.disabled=false;go.textContent="🧹 Haan, saaf karo";return}
+          const r=x.data||{};b.remove();
+          gmail([(r.ok?"✓ Saaf ho gaya: ":"Kuch hua, kuch reh gaya: ")+fmt(r.deleted)+" copy hatayi, "+fmt(r.changed)+" contact se number hataya"+(r.left?", "+fmt(r.left)+" baaki: dobara Duplicate saaf karein":"")+(r.errors&&r.errors.length?" · "+r.errors[0]:"")+". Phone me 5-10 minute me dikhega.",r.ok&&!r.left?"warn":"bad"])}
+      });
+    }
+    // Everything into the main Gmail: preview, backup, then copy (nothing deleted in the other Gmail).
+    function moveAll(d,main){
+      const A=d.accounts||[],accN=i=>(A[i]||{}).email||"Gmail";
+      const body='<div class="st no">'+fmt(d.copy)+" contact "+esc(main||"main Gmail")+" me aayenge · "+fmt(d.skip)+" pehle se hain (number / email same), woh dobara nahi aayenge</div>"+
+        '<div class="db-ddl">'+A.map((a,i)=>'<span class="db-acc'+(i?"":" main")+'">✉ '+esc(a.email)+" <small>"+(i?fmt(a.copy)+" aayenge":fmt(a.total)+" contacts")+"</small></span>").join("")+"</div>"+
+        '<p class="db-sm">Doosre Gmail me se kuch nahi hatega. Naye contacts main Gmail me label <b>Doosre Gmail se</b> me aayenge. Pehle duplicate saaf kar lijiye, phir yeh. Aakhir me phone ki Settings › Accounts › doosre Gmail › Contacts sync <b>off</b> kar dijiye: phone me sirf ek Gmail ke contacts dikhenge.</p>'+
+        (d.sample&&d.sample.length?'<div class="db-dlist">'+d.sample.map(x=>'<div class="db-dgi on fx"><span><b>'+esc(x.name)+"</b><small>"+esc(accN(x.acc))+(x.nums?" · "+esc(x.nums):"")+'</small></span><em>📥 Aayega</em></div>').join("")+
+          (d.copy>d.sample.length?'<p class="db-sm">… aur '+fmt(d.copy-d.sample.length)+"</p>":"")+"</div>":"")+
+        '<div id="ddMsg" class="db-sm" hidden></div><div class="db-sf"><button type="button" class="sl-btn ghost" data-bk>⬇ Backup</button><button type="button" class="sl-btn" data-go'+(d.copy?"":" disabled")+'>📥 Haan, le aao</button></div>';
+      const b=sheet("📥 Sab ek Gmail me",'<div class="db-gm" data-nocaps style="display:flex;flex-direction:column;gap:10px">'+body+"</div>");
+      const say=(t,c)=>{const m=b.querySelector("#ddMsg");m.hidden=false;m.className="db-sm "+(c||"");m.textContent=t};
+      b.addEventListener("click",async e=>{
+        if(e.target.closest("[data-bk]")){const q=v=>'"'+String(v==null?"":v).replace(/"/g,'""')+'"';
+          const csv="\ufeff"+[["Gmail","Name","Numbers","Emails"],...(d.backup||[])].map(r=>r.map(q).join(",")).join("\r\n");
+          const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([csv],{type:"text/csv"}));a.download="contacts-backup-"+new Date().toISOString().slice(0,10)+".csv";a.click();
+          b.dataset.bk="1";say("✓ Backup download ho gaya ("+fmt((d.backup||[]).length)+" contacts).","warn");return}
+        const go=e.target.closest("[data-go]");
+        if(go){if(!b.dataset.bk){say("Pehle ⬇ Backup dabaiye.","bad");return}
+          if(!await confirm(fmt(d.copy)+" contact "+(main||"main Gmail")+" me copy honge. Pakka?"))return;
+          go.disabled=true;go.textContent="Copy ho raha hai…";
+          const x=await client.functions.invoke(GF,{body:{action:"move_apply",run_id:d.run_id}});
+          if(x.error){say(await fnErr(x.error),"bad");go.disabled=false;go.textContent="📥 Haan, le aao";return}
+          const r=x.data||{};b.remove();
+          gmail([(r.ok?"✓ Ho gaya: ":"Kuch hua, kuch reh gaya: ")+fmt(r.copied)+" contact main Gmail me aa gaye"+(r.left?", "+fmt(r.left)+" baaki: dobara dabaiye":"")+(r.errors&&r.errors.length?" · "+r.errors[0]:"")+". Ab phone me doosre Gmail ka Contacts sync off kar dijiye.",r.ok?"warn":"bad"])}
       });
     }
     // Back from the Google page (?code=...&state=...): finish the login, then sync.
@@ -400,6 +487,7 @@
       ERPShell.toast?.("Gmail connect ho raha hai, sab number bhej rahe hain…");
       const x=await client.functions.invoke(GF,{body:{action:"callback",code,state}});
       if(x.error){gmail([await fnErr(x.error),"bad"]);return true}
+      if(x.data&&x.data.extra){gmail(["✓ "+(x.data.email||"Gmail")+" jud gaya. Ab 🧹 Duplicate saaf karein dabaiye.","warn"]);return true}
       const r=x.data.result||{};gmail(r.ok?["✓ Gmail connected. "+fmt(r.total)+" contacts Gmail me save ho gaye.","warn"]:["Connected, lekin sync me problem: "+(r.error||""),"bad"]);return true;
     }
     // ---- Admin: phone contacts file (.vcf) ----
@@ -451,6 +539,7 @@
       ["lFrom","lTo"].forEach(i=>el(i).addEventListener("change",loadLog));["lBy","lKind"].forEach(i=>el(i).addEventListener("change",drawLog));
       el("refresh").onclick=()=>{load();if(tab==="log")loadLog()};
       el("addVeh").onclick=()=>LWBDial.driverPopup({client,onDone:()=>{tab="DRIVER";load()}});
+      el("pcCall").hidden=!(LWBDial.isPC()&&LWBDial.PC_ROLES.includes(me.role));el("pcCall").onclick=()=>LWBDial.pcHelp();
       el("vcf").onclick=vcf;el("gmail").onclick=()=>gmail();
       el("loading").hidden=true;el("page").hidden=false;
       const start=location.hash.slice(1);if(TABS.some(t=>t[0]===start))tab=start;
