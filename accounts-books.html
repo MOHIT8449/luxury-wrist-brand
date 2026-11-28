@@ -63,6 +63,9 @@
     .ab-seg{display:inline-flex;border:1px solid var(--erp-line);border-radius:99px;padding:2px;gap:2px;background:#fff}
     .ab-seg button{height:28px;border:0;border-radius:99px;background:none;padding:0 11px;font:inherit;font-size:13px;font-weight:600;cursor:pointer;color:#4b5763;white-space:nowrap}
     .ab-seg button[aria-pressed=true]{background:#002f37;color:#fff}
+    .ab-ldt{display:inline-flex;align-items:center;gap:4px}.ab-ldt i{font-style:normal;font-size:12px;color:#6b7785}
+    .ab-f .ab-ldt input{height:32px;padding:0 6px;font-size:13px;width:132px;color:#6b7785}
+    .ab-f .ab-ldt.on input{border-color:#002f37;color:var(--erp-ink);font-weight:700;background:#eef6f7}
     .ab-t{width:100%;border-collapse:collapse}
     .ab-t th{font-size:11px;text-transform:uppercase;letter-spacing:.03em;color:var(--erp-muted);text-align:left;padding:6px 8px;background:#f7f8f6;border-bottom:1px solid var(--erp-line);white-space:nowrap}
     .ab-t td{padding:6px 8px;border-bottom:1px solid var(--erp-line);vertical-align:middle;font-size:13.5px}
@@ -131,6 +134,7 @@
       .ab-t thead{display:none}.ab-cfph{display:block;margin:0 0 6px}
       .ab-sum{grid-template-columns:repeat(2,minmax(0,1fr))}.ab-sum b{font-size:14.5px}
       .ab-f input[type=search]{flex:1 1 100%;font-size:16px}
+      .ab-ldt{flex:1 1 100%;min-width:0}.ab-ldt input::-webkit-calendar-picker-indicator{margin:0;padding:0}.ab-f .ab-ldt input{flex:1 1 0;width:auto;min-width:0;font-size:14px;padding:0 4px}
       .ab-ov{align-items:flex-end;padding:0}.ab-dlg{width:100%;border-radius:14px 14px 0 0;max-height:94dvh}
       .ab-dlg .bd{padding:4px 9px 8px}.ab-dlg footer{padding:7px 9px}
       .ab-dlg footer .ab-b{flex:1 1 auto;justify-content:center;padding:0 6px;font-size:12.5px}
@@ -310,6 +314,9 @@
     const qVal=()=>{const i=el("q");return i?i.value.trim().toLowerCase():""};
     function tools(html,keepQ){const old=qVal();el("tools").innerHTML='<div class="ab-f">'+html+"</div>";const i=el("q");if(i&&keepQ!==false){i.value=old;i.oninput=()=>{shown=300;draw();const n=el("q");n.focus();n.setSelectionRange(n.value.length,n.value.length)}}}
     const seg=(id,opts,v)=>'<span class="ab-seg" id="'+id+'">'+opts.map(([k,l])=>'<button type="button" data-v="'+k+'" aria-pressed="'+(k===v)+'">'+l+"</button>").join("")+"</span>";
+    // Ledger dates (Mohit 28 Nov 2026): This FY or own From / To right here; the top bar follows the same dates
+    const ledDates=()=>{const p=ledPer(),t=today();return seg("lFy",[["1","This FY"],["0","Dates"]],ledFy?"1":"0")+
+      '<span class="ab-ldt'+(ledFy?"":" on")+'"><input type="date" id="lF" value="'+p.from+'" min="2020-01-01" max="'+t+'" aria-label="From date"><i>to</i><input type="date" id="lT" value="'+p.to+'" min="2020-01-01" max="'+t+'" aria-label="To date"></span>'};
     const bLab=()=>fb&&info.brandOf(fb)?" · "+info.brandOf(fb).name:"";
     // duplicate / torn note given by the party, still pending (lwb_acc_dup_note_setup.sql)
     const dupOf=pk=>window.LWBDup?LWBDup.of(DUPS,nameOf(pk)).filter(r=>!fb||!r.company_id||r.company_id===fb):[];
@@ -376,10 +383,14 @@
     }
     function drawLed(){
       const p=ledPer(),pt=dmy(p.from)+" to "+dmy(p.to);
-      el("note").textContent="Ledger on the main party (all its bill names together), brand of the top bar. Period = top bar dates (or This FY). Click any row to open the bill / receipt behind it; in the bill, every item. Esc = back.";
-      tools(partyFind()+seg("lFy",[["1","This FY"],["0",esc(per().label||"Top bar dates")]],ledFy?"1":"0")+(ledPk?'<button type="button" class="ab-b g sm" data-pay="'+esc(ledPk)+'">💰 Receive</button><button type="button" class="ab-b sm" data-out="'+esc(ledPk)+'">Bills due</button>'+'<button type="button" class="ab-b sm" data-lcopy title="Copy ledger text: date, invoice no., debit, credit, closing">📋<span class="abl"> Copy</span></button><button type="button" class="ab-b sm" data-limg title="Ledger image for WhatsApp">🖼<span class="abl"> Image</span></button>'+(window.LWBDial?LWBDial.btn("PARTY",nameOf(ledPk),nameOf(ledPk)):""):"")+(me.role==="admin"?'<a class="ab-b sm" href="party-ledger.html#openingPanel" title="Old balance from before the ERP (Admin)">+ Opening</a>':""),false);
+      el("note").textContent="Ledger on the main party (all its bill names together), brand of the top bar. Dates: This FY, or pick From / To right here (the top bar follows). Click any row to open the bill / receipt behind it; in the bill, every item. Esc = back.";
+      tools(partyFind()+ledDates()+(ledPk?'<button type="button" class="ab-b g sm" data-pay="'+esc(ledPk)+'">💰 Receive</button><button type="button" class="ab-b sm" data-out="'+esc(ledPk)+'">Bills due</button>'+'<button type="button" class="ab-b sm" data-lcopy title="Copy ledger text: date, invoice no., debit, credit, closing">📋<span class="abl"> Copy</span></button><button type="button" class="ab-b sm" data-limg title="Ledger image for WhatsApp">🖼<span class="abl"> Image</span></button>'+(window.LWBDial?LWBDial.btn("PARTY",nameOf(ledPk),nameOf(ledPk)):""):"")+(me.role==="admin"?'<a class="ab-b sm" href="party-ledger.html#openingPanel" title="Old balance from before the ERP (Admin)">+ Opening</a>':""),false);
       wireFind(el("lp"),el("lpl"),pk=>{ledPk=pk;shown=300;draw()});
       wireSeg();
+      {const f=el("lF"),t=el("lT");
+        const go=()=>{let a=f.value,b=t.value||a;if(!a)return;if(b<a)[a,b]=[b,a];ledFy=false;shown=300;
+          if(window.LWBPeriod)LWBPeriod.set("custom",a,b);draw()};
+        [f,t].forEach(d=>{d.onclick=()=>{try{d.showPicker()}catch(_){}};d.onchange=go})}
       if(!ledPk){
         crumb([["List of ledgers · "+pt+bLab()]]);
         const L=[...info.parties.keys(),...new Set(led.map(x=>x.pk))].filter((v,i,a)=>a.indexOf(v)===i).map(pk=>({pk,name:nameOf(pk),...ledOf(pk,p)})).filter(r=>Math.abs(r.open)>0.5||r.rows.length).sort((a,b)=>b.close-a.close);
@@ -854,7 +865,7 @@
         if(!typing&&!stack.length&&!e.ctrlKey&&!e.altKey&&!e.metaKey&&(e.key==="l"||e.key==="L")&&sec==="out"&&outPk){e.preventDefault();sec="led";ledPk=outPk;draw()}
       },true);
       document.addEventListener("lwb:brand",()=>{if(!info)return;fb=curBrand();drawKpis();draw()});
-      document.addEventListener("lwb:period",()=>{if(!info)return;drawKpis();if(!stack.length)draw()});
+      document.addEventListener("lwb:period",()=>{if(!info)return;ledFy=false;drawKpis();if(!stack.length)draw()});
       await load();
       const P=U.get("party");
       if(P&&info){const pk=key(info.parentOf(P));if(sec==="out")outPk=pk;else{sec=sec==="out"?"out":"led";ledPk=pk}draw()}
