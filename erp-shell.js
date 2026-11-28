@@ -949,6 +949,15 @@
 
   // 💼 Cash handed to me (Mohit, 26 Nov 2026): Vishal on the PO page got no sign, the Received ✓ bar was only on the
   // Dashboard. Now a popup comes on any page: Received ✓ or Later (asks again after 10 minutes).
+  // {"500":100,"200":20,"coins":76} -> "₹500 × 100 = ₹50,000 ..." (only coins = amount typed, no note count)
+  function noteLine(n){
+    if(!n||typeof n!=="object")return "";
+    const rs=v=>"₹"+Math.round(Number(v)||0).toLocaleString("en-IN");
+    const k=["2000","500","200","100","50","20","10"].filter(x=>Number(n[x])>0);
+    const L=k.map(x=>"₹"+x+" × "+Math.floor(Number(n[x]))+" = "+rs(Number(x)*Math.floor(Number(n[x]))));
+    if(Number(n.coins)>0)L.push((k.length?"Coins ":"Amount only (notes not counted) ")+rs(n.coins));
+    return L.join("\n");
+  }
   let cashAsking=false;
   async function cashAsk(c,role,redraw){
     if(cashAsking)return;cashAsking=true;
@@ -958,8 +967,11 @@
       const k="lwbCashLater:"+mine.id;let t=0;try{t=Number(sessionStorage.getItem(k))||0}catch(e){}
       if(Date.now()-t<600000)return;
       const rs=v=>"₹"+Math.round(Number(v)||0).toLocaleString("en-IN");
+      // note-wise count that was handed (Mohit 26 Nov 2026): the receiver counts against it
+      const row=(S.rows||[]).find(r=>String(r.id)===String(mine.id)),nl=noteLine(row&&row.notes);
+      const notesTxt=nl?"\n\nNotes handed"+((P.parts||[]).length>1?" (whole box)":"")+":\n"+nl:"";
       const split=(P.parts||[]).length>1?"\nCash split: "+P.parts.map(x=>String(x.to_name||"").split(/\s+/)[0]+" "+rs(x.amount)).join(" · "):"";
-      const ok=await erpConfirm((P.by_name||"Someone")+" is handing you "+rs(mine.amount)+" cash."+"\n\nCount the cash first, then press Received ✓. If it is different, ask Accounts / Admin."+split,
+      const ok=await erpConfirm((P.by_name||"Someone")+" is handing you "+rs(mine.amount)+" cash."+"\n\nCount the cash first, then press Received ✓. If it is different, ask Accounts / Admin."+notesTxt+split,
         {title:"💼 Cash for you",ok:"Received ✓",cancel:"Later"});
       if(!ok){try{sessionStorage.setItem(k,String(Date.now()))}catch(e){}return}
       const x=await c.rpc("lwb_acc_shift_receive",{p_id:Number(mine.id),p_amount:null,p_note:null});
@@ -1102,7 +1114,7 @@
   if(!window.LWBKeys&&!document.querySelector('script[src*="erp-keys.js"]')){const s=document.createElement("script");s.src="erp-keys.js";document.head.appendChild(s)}
   // Every drop-down searches like the SKU box in New PO (erp-select.js).
   if(!window.LWBSelect&&!document.querySelector('script[src*="erp-select.js"]')){const s=document.createElement("script");s.src="erp-select.js";document.head.appendChild(s)}
-  window.ERPShell={mount,findModules,onDuty,dutyInfo,security:openSecurity,isApp:appMode,menuFor,viewOnly,menuForMe,hiddenPages,extraPages,pageRole,pageRoleFresh,allPages,icon:svg,alert:erpAlert,confirm:erpConfirm,prompt:erpPrompt,toast,done:erpDone};
+  window.ERPShell={noteLine,mount,findModules,onDuty,dutyInfo,security:openSecurity,isApp:appMode,menuFor,viewOnly,menuForMe,hiddenPages,extraPages,pageRole,pageRoleFresh,allPages,icon:svg,alert:erpAlert,confirm:erpConfirm,prompt:erpPrompt,toast,done:erpDone};
   const me=document.currentScript;
   if(me&&me.hasAttribute("data-auto")){
     if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",auto);else auto();
