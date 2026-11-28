@@ -37,6 +37,11 @@ textarea{min-height:92px;resize:vertical}
 .order p{overflow-wrap:anywhere}.order .info{font-size:12px;margin-top:10px}
 .order .info.retok{background:#e8f6ec;color:#17643a;font-weight:700}.order .info.retwait{background:#fff6dc;color:#7a5600;font-weight:700}.order .info.retno{background:#fdeceb;color:#a12a2a;font-weight:700}
 .order .actions{display:flex;gap:8px;margin-top:13px;flex-wrap:wrap}
+.tripconf{border:2px solid #f0b44c;background:#fff8ea;border-radius:11px;padding:13px 14px;margin:0 0 14px}
+.tripconf h2{font-size:16px;margin:0 0 3px}.tripconf>p{font-size:12px;color:#6b5a2e;margin:0 0 8px}
+.tc-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap;border-top:1px solid #f1ddb4;padding:9px 0}
+.tc-row .tc-po{flex:1 1 200px;min-width:0;font-size:13px}.tc-row .tc-po b{font-size:14px}.tc-row .tc-po small{display:block;color:#6b5a2e}
+.tc-row .tc-btn{display:flex;gap:6px}.tc-row button{padding:9px 12px;font-size:13px}.tc-row button.no{background:#fff;color:#a12a2a;border:1.5px solid #e2b1b1}
 .empty{padding:26px;text-align:center;background:white;border:1px dashed var(--border);border-radius:11px;color:var(--muted)}
 .overlay{position:fixed;inset:0;background:#101d31a6;z-index:50;display:none;align-items:center;justify-content:center;padding:12px}
 .overlay.open{display:flex}
@@ -232,6 +237,7 @@ th{font-size:11px;text-align:left;background:#e9f0f9}th,td{padding:11px 10px;bor
 <div class="top"><div><h1 id="pageTitle">Driver & Delivery</h1><p id="welcome">Loading assigned delivery orders...</p></div><button id="refresh" type="button">⟳ Refresh</button></div>
 
 <div class="message" id="message" role="status"></div>
+<div class="tripconf" id="tripConfirm" hidden></div>
 <div class="stats">
  <button type="button" class="stat" data-filter="all"><small>Total</small><strong id="totalOrders">0</strong></button>
  <button type="button" class="stat" data-filter="loading"><small>Loading Pending</small><strong id="loadingPendingOrders">0</strong></button>
@@ -480,6 +486,7 @@ async function refresh(){
   if(window.ERPOrderDays&&role!=="driver")records=await ERPOrderDays.filter(db,records,"order_id");
   if(BB.companies&&BB.companies.length>1)OB=await LWBBrand.orderBrands(db,records.map(r=>r.order_id));
   render();
+  loadTripConfirm();
   loadReturnSummary();
   loadNotifications();
   if(assigned.error){
@@ -491,6 +498,28 @@ async function refresh(){
  }
  finally{$("refresh").disabled=false}
 }
+// Confirm your trips (Mohit, 24 Nov 2026): loaded / delivered POs given to this driver's mobile with no delivery report
+// from him (e.g. marked Delivered by the office). He says "Yes, my vehicle" or "Not me" (lwb_vehicle_confirm_setup.sql).
+const tcEsc=v=>String(v==null?"":v).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+async function loadTripConfirm(){
+ const box=$("tripConfirm");if(role!=="driver"){box.hidden=true;return}
+ const r=await db.rpc("lwb_driver_trip_confirm_list").then(x=>x,e=>({error:e}));
+ const list=!r.error&&Array.isArray(r.data)?r.data:[];
+ box.hidden=!list.length;if(!list.length){box.innerHTML="";return}
+ box.innerHTML="<h2>Confirm your trips ("+list.length+")</h2><p>Did these POs go in your vehicle? Office checks the vehicle from your answer.</p>"+
+  list.map(x=>'<div class="tc-row"><div class="tc-po"><b>'+tcEsc(x.order_no||"PO")+"</b> · "+tcEsc(x.party||"")+"<small>🚚 "+tcEsc(x.vehicle_no||"-")+
+   (x.day?" · "+tcEsc(String(x.day).split("-").reverse().join("/")):"")+(x.qty?" · "+num(x.qty)+" qty":"")+'</small></div><div class="tc-btn"><button type="button" data-tc="'+tcEsc(x.order_id)+'" data-yes="1">✓ Yes, my vehicle</button><button type="button" class="no" data-tc="'+tcEsc(x.order_id)+'" data-yes="0">✗ Not me</button></div></div>').join("");
+}
+document.addEventListener("click",async e=>{
+ const b=e.target.closest("#tripConfirm button[data-tc]");if(!b)return;
+ const yes=b.dataset.yes==="1";let note=null;
+ if(!yes){note=prompt("Not your vehicle? Write what happened (optional):","");if(note===null)return}
+ b.closest(".tc-row").querySelectorAll("button").forEach(x=>x.disabled=true);
+ const {error}=await db.rpc("lwb_driver_trip_confirm",{p_order_id:b.dataset.tc,p_yes:yes,p_note:note||null});
+ if(error){message("Could not save: "+error.message,true);b.closest(".tc-row").querySelectorAll("button").forEach(x=>x.disabled=false);return}
+ message(yes?"Thank you. Saved: your vehicle.":"Saved. Office is told it was not your vehicle.");
+ loadTripConfirm();
+});
 // Return status on each order card (Approved / Waiting / Rejected), from the driver's own returns.
 let returnSummary=new Map(),paySummary=new Map();
 // Brand filter for office view (All / Rajnigandha / Coca-Cola): a PO counts in a brand when it has an SKU of it.

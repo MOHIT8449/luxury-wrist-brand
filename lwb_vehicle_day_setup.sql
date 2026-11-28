@@ -16,6 +16,8 @@
 --              cases = PO total qty (selling unit), kg = PO total weight,
 --              delivered = driver report DELIVERED / PARTIAL or Admin "Mark delivered",
 --              ret_cases = driver return cases not rejected by the office.
+--              confirm = REPORT (the driver's own delivery report) / YES / NO (driver answered "Confirm your trips",
+--              lwb_vehicle_confirm_setup.sql) / null (not confirmed yet).
 -- Who: Admin, Sales Head (manager), Transport, Accounts, or a login given this page.
 
 BEGIN;
@@ -45,6 +47,7 @@ DECLARE
   v_marks boolean := to_regclass('public.lwb_admin_order_marks') IS NOT NULL;
   v_rets boolean := to_regclass('public.lwb_driver_delivery_return_items') IS NOT NULL;
   v_trips boolean := to_regclass('public.lwb_vehicle_trips') IS NOT NULL;
+  v_conf boolean := to_regclass('public.lwb_vehicle_confirm') IS NOT NULL;
 BEGIN
   IF NOT public.lwb_vehicle_day_reader() THEN RAISE EXCEPTION 'You can not open the vehicle report'; END IF;
   IF v_to < v_from THEN RAISE EXCEPTION 'To date is before From date'; END IF;
@@ -89,6 +92,8 @@ BEGIN
       a.assigned_at, a.loading_completed_at, a.trip_id,
       coalesce(p.updated_at, p.created_at) AS pickup_at, coalesce(dv.final_at, dv.updated_at) AS direct_at,
       r.delivery_status, r.reported_at,
+      CASE WHEN r.order_id IS NOT NULL THEN 'REPORT'
+           WHEN v_conf THEN (SELECT c.answer FROM public.lwb_vehicle_confirm c WHERE c.order_id = o.id) END AS confirm,
       CASE WHEN v_marks THEN (SELECT m.mark_date FROM public.lwb_admin_order_marks m WHERE m.order_id = o.id AND m.kind = 'DELIVERED' LIMIT 1) END AS mark_del,
       CASE WHEN v_marks THEN (SELECT m.mark_date FROM public.lwb_admin_order_marks m WHERE m.order_id = o.id AND m.kind = 'LOADED' LIMIT 1) END AS mark_load
     FROM ids JOIN public.orders o ON o.id = ids.order_id
@@ -118,7 +123,7 @@ BEGIN
       'driver_name', e.driver_name, 'driver_mobile', e.driver_mobile,
       'assigned_at', e.assigned_at, 'loaded_at', coalesce(e.loading_completed_at, e.mark_load::timestamptz),
       'cases', coalesce(o.total_qty, 0), 'kg', coalesce(o.total_weight, 0), 'amount', coalesce(o.total_amount, 0),
-      'report', e.delivery_status, 'reported_at', e.reported_at, 'mark_delivered', e.mark_del,
+      'report', e.delivery_status, 'confirm', e.confirm, 'reported_at', e.reported_at, 'mark_delivered', e.mark_del,
       'ret_cases', CASE WHEN v_rets THEN (SELECT coalesce(sum(i.qty_cases), 0)
                                            FROM public.lwb_driver_delivery_returns h
                                            JOIN public.lwb_driver_delivery_return_items i ON i.return_id = h.id
