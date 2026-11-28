@@ -896,7 +896,7 @@
       const {data}=await c.auth.getSession();const user=data&&data.session&&data.session.user;if(!user)return;
       // Login page "type your email, MPIN pad opens" needs the login name next to this phone's MPIN flag.
       try{const o=JSON.parse(localStorage.getItem("lwbMpin")||"null");if(o&&o.uid===user.id&&!o.who&&mpinWho(user)){o.who=mpinWho(user);localStorage.setItem("lwbMpin",JSON.stringify(o))}}catch(e){}
-      if(!window.LWBOperationsNotifications)await new Promise((ok,bad)=>{const s=document.createElement("script");s.src="erp-operations-notifications.js";s.onload=ok;s.onerror=bad;document.head.appendChild(s)});
+      if(!window.LWBOperationsNotifications)await new Promise((ok,bad)=>{const s=document.createElement("script");s.src="erp-operations-notifications.js?v=20261128";s.onload=ok;s.onerror=bad;document.head.appendChild(s)});
       window.LWBOperationsNotifications.init({db:c,user,role,mount:top.querySelector(".erp-user"),pages:menuForMe(role).flatMap(g=>g.items.map(i=>i.h.split("#")[0]))});
     }catch(e){}
     profitSwitch(top,role);

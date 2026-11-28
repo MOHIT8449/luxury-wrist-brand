@@ -233,8 +233,8 @@
   // Sales Head "Tell Accounts" (lwb_sales_head_outstanding_setup.sql): Party & Collections > To collect; Cashier: Cashier view.
   [/^PAYMENT_FOLLOWUP$/,["party-billing.html#party","accounts-dashboard.html#cash","accounts-books.html?v=out"]],
   [/^PO_APPROVED_LOADING$/,["loading-dispatch.html?order={o}","warehouse-orders.html"]],
-  [/^(VEHICLE_LOADED|TALLY_BILL_DONE)$/,["loading-dispatch.html","party-billing.html?order={o}","warehouse-orders.html","driver-delivery.html?order={o}","my-sales.html#orders"]],
-  [/^ORDER_NEW$/,["warehouse-orders.html"]],
+  [/^(VEHICLE_LOADED|TALLY_BILL_DONE)$/,["loading-dispatch.html?order={o}","party-billing.html?order={o}","warehouse-orders.html","driver-delivery.html?order={o}","my-sales.html#orders"]],
+  [/^ORDER_NEW$/,["warehouse-orders.html?order={o}","my-sales.html#orders"]],
   [/^ORDER_DELAY_DELIVERY$/,["warehouse-orders.html?late=delivery"]],
   [/^ORDER_DELAY_APPROVAL$/,["warehouse-orders.html?late=approval"]],
   [/^RATE_APPROVAL$/,["quick-slip.html?review={o}"]],
@@ -255,7 +255,7 @@
   [/^LOADING_ASSIGNMENT_DRIVER$/,["driver-delivery.html?order={o}","loading-dispatch.html","transport-allocation.html"]],
   [/^LOADING_ASSIGNMENT/,["loading-dispatch.html?order={o}","transport-allocation.html"]],
   [/^HIRED_RATE_/,["fleet-master.html#rates"]],
-  [/^PARTY_CREATED$/,["customer-master.html"]],
+  [/^PARTY_CREATED$/,["customer-master.html","dial-book.html"]],
   [/^RECEIPT_EDIT_ASK$/,["approvals.html","accounts-books.html"]],
   [/^RECEIPT_EDIT_/,["accounts-dashboard.html","accounts-books.html"]],
   [/^LABOUR_EXTRA$/,["approvals.html","labour.html"]],
@@ -267,15 +267,16 @@
   [/^STOCK_AUDIT_/,["stock-audit.html"]],
   [/^STOCK_MOVE_PENDING$/,["stock-transfer.html#approvals"]],
   [/^STOCK_MOVE_/,["stock-transfer.html#history"]],
-  [/^ACC_BANK_VERIFY$/,["accounts-dashboard.html#verify"]],
+  [/^ACC_BANK_VERIFY$/,["accounts-dashboard.html#verify","approvals.html"]],
   [/^ACC_CHEQUE/,["accounts-dashboard.html#cheques"]],
   [/^DOC_/,["documents.html"]],
-  [/^ACC_/,["accounts-dashboard.html"]],
+  [/^ACC_CASH_/,["accounts-dashboard.html#cash","dashboard.html"]],
+  [/^ACC_/,["accounts-dashboard.html","accounts-books.html","dashboard.html"]],
   [/^MARKET_/,["market-report.html"]],
   [/^COMPLAINT_/,["complaint-box.html?id={c}"]],
   [/^TASK_/,["tasks.html?id={t}"]],
   [/^SALES_PLAN$/,["my-sales.html","sales-team.html"]],
-  [/^ORDER_/,["my-sales.html#orders","warehouse-orders.html","driver-delivery.html?order={o}","loading-dispatch.html"]]
+  [/^ORDER_/,["my-sales.html#orders","warehouse-orders.html?order={o}","driver-delivery.html?order={o}","loading-dispatch.html"]]
  ];
  function route(n,pages){
   const t=baseType(n),hit=ROUTES.find(r=>r[0].test(t));
@@ -533,7 +534,7 @@
   let lastLoad=Date.now(),liveOk=false,soon=0;
   const load=()=>{lastLoad=Date.now();return reloadData()};
   // Popup + sound for new notifications; loaded first so the first load is only the "already there" list.
-  const popReady=window.LWBNotifyPopup?Promise.resolve():new Promise(ok=>{const s=document.createElement("script");s.src="erp-notify-popup.js";s.onload=ok;s.onerror=ok;document.head.append(s)});
+  const popReady=window.LWBNotifyPopup?Promise.resolve():new Promise(ok=>{const s=document.createElement("script");s.src="erp-notify-popup.js?v=20261128";s.onload=ok;s.onerror=ok;document.head.append(s)});
   popReady.then(()=>{try{window.LWBNotifyPopup&&window.LWBNotifyPopup.controls(foot)}catch(e){}load()});
   // Phone app open on screen: the push comes here instead of a second banner (sw.js), so read at once.
   if(navigator.serviceWorker)navigator.serviceWorker.addEventListener("message",e=>{if(e.data&&e.data.type==="LWB_PUSH_IN"){clearTimeout(soon);soon=setTimeout(load,300)}});
