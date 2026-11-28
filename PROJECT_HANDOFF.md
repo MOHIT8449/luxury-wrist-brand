@@ -5,6 +5,10 @@
 **Status:** Active development / verification. Do not assume all modules are completed or fully tested.
 
 
+## Ledger: Copy text + Image for WhatsApp (28 Nov 2026)
+- Mohit (Ledger & Outstanding party ledger): a Copy button with only Date, Invoice no., Debit, Credit + closing balance; and a clean ledger image like the PO share image.
+- `ledger-share.js` (LWBLedgerShare text / copyText / draw / show). accounts-books.html party ledger tools row: "📋 Copy" (WhatsApp text, pipe columns, *Total*, *Closing balance*) and "🖼 Image" (popup: Share on phone / Copy image / Download / Copy text). Invoice no.: bill of a GST (pakka) PO = Tally bill no., Cash (kachha) PO = PO no. (`lwb_order_bill_types`, bill made as first); kind not set = Tally no. (ERP bill = PO no.). Payments = "Payment", returns / notes with their no.; cancelled rows left out. Period / brand = what the ledger shows. No SQL. Screenshots (mocked data): project files `ledger-copy-image/`.
+
 ## GST or Cash bill on every PO (28 Nov 2026)
 - Mohit: every order must say GST bill or Cash bill. Salesman does not choose, only writes a "Bill note". Sales Head / Admin choose. Accountant was confused when payment mode did not match the bill kind.
 - SQL `lwb_order_bill_type_setup.sql` (test `tests/bill-type`, PGlite, 4 tests): `orders.bill_type` (GST / CASH), `bill_type_set_by/at`, `bill_note`, `bill_made_as`; `lwb_customer_master.bill_type` (party default). Trigger: new PO takes the party default (a salesman's value is ignored); only admin / manager change it; after the Tally bill is made only Admin via `lwb_set_order_bill_type(order, type, reason, party_default)` with a reason (Accounts bell BILL_TYPE_CHANGED). `lwb_set_party_bill_type`, `lwb_set_order_bill_note`, `lwb_order_bill_types(ids)` (with `required` = PO made after the setup ran; older POs are never blocked), `lwb_bill_made_as(order, as, reason)`, `lwb_bill_pay_mismatch(rows, reason)`, `lwb_bill_type_flag_list(days)`, `lwb_bill_type_flag_ok(ids)`, `lwb_bill_type_ask(order)`. Table `lwb_bill_type_flags` (BILL / PAYMENT mismatches), `lwb_bill_type_log`. Bells: BILL_TYPE_ASK, BILL_TYPE_CHANGED, BILL_TYPE_MISMATCH (Admin + Sales Head).

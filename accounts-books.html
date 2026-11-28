@@ -15,7 +15,7 @@
   <script src="erp-colfilter.js"></script>
   <script src="party-pay.js?v=20261128a"></script><script src="bill-type.js?v=20261128c"></script>
   <script src="dup-note.js?v=20261126d"></script>
-  <script src="ledger-rows.js?v=20261123a"></script>
+  <script src="ledger-rows.js?v=20261123a"></script><script src="ledger-share.js?v=20261128a"></script>
   <script src="dial-book.js?v=20261128h"></script>
   <style>
     /* Ledger & Outstanding (Mohit, 20 Nov 2026): the Accounts "Display" books in one place, like Tally.
@@ -377,7 +377,7 @@
     function drawLed(){
       const p=ledPer(),pt=dmy(p.from)+" to "+dmy(p.to);
       el("note").textContent="Ledger on the main party (all its bill names together), brand of the top bar. Period = top bar dates (or This FY). Click any row to open the bill / receipt behind it; in the bill, every item. Esc = back.";
-      tools(partyFind()+seg("lFy",[["1","This FY"],["0",esc(per().label||"Top bar dates")]],ledFy?"1":"0")+(ledPk?'<button type="button" class="ab-b g sm" data-pay="'+esc(ledPk)+'">💰 Receive</button><button type="button" class="ab-b sm" data-out="'+esc(ledPk)+'">Bills due</button>'+(window.LWBDial?LWBDial.btn("PARTY",nameOf(ledPk),nameOf(ledPk)):""):"")+(me.role==="admin"?'<a class="ab-b sm" href="party-ledger.html#openingPanel" title="Old balance from before the ERP (Admin)">+ Opening</a>':""),false);
+      tools(partyFind()+seg("lFy",[["1","This FY"],["0",esc(per().label||"Top bar dates")]],ledFy?"1":"0")+(ledPk?'<button type="button" class="ab-b g sm" data-pay="'+esc(ledPk)+'">💰 Receive</button><button type="button" class="ab-b sm" data-out="'+esc(ledPk)+'">Bills due</button>'+'<button type="button" class="ab-b sm" data-lcopy title="Copy ledger text: date, invoice no., debit, credit, closing">📋<span class="abl"> Copy</span></button><button type="button" class="ab-b sm" data-limg title="Ledger image for WhatsApp">🖼<span class="abl"> Image</span></button>'+(window.LWBDial?LWBDial.btn("PARTY",nameOf(ledPk),nameOf(ledPk)):""):"")+(me.role==="admin"?'<a class="ab-b sm" href="party-ledger.html#openingPanel" title="Old balance from before the ERP (Admin)">+ Opening</a>':""),false);
       wireFind(el("lp"),el("lpl"),pk=>{ledPk=pk;shown=300;draw()});
       wireSeg();
       if(!ledPk){
@@ -747,6 +747,28 @@
       }});
     }
 
+    /* ---------- Copy / image of the open ledger (Mohit 28 Nov 2026) ----------
+       Only Date, Invoice no., Debit, Credit + closing. Bill: GST (pakka) = Tally bill no., Cash (kachha) = PO no. */
+    async function ledShare(){
+      if(!cur||!cur.ledger)return null;
+      const {name,L,p}=cur.ledger,po=v=>String(v||"").replace(/^PO\s*/i,"").trim();
+      const bills=L.rows.filter(x=>BILLK.has(x.entry_kind)),oid=x=>{const o=byNo.get(String(x.order_no));return o?(o.order_id||o.id):null};
+      let kinds=new Map();
+      if(window.LWBBillType){const ids=[...new Set(bills.map(oid).filter(Boolean))];if(ids.length)try{kinds=await LWBBillType.load(client,ids)}catch(_){}}
+      const inv=x=>{const k=x.entry_kind,ref=String(x.ref_no||"").trim();
+        if(BILLK.has(k)){const t=window.LWBBillType?LWBBillType.kindOf(kinds.get(oid(x))):null;
+          if(t==="CASH")return po(x.order_no)||ref;if(t==="GST")return ref||po(x.order_no);
+          return k==="ERP_BILL"?po(x.order_no)||ref:ref||po(x.order_no)}
+        if(isKasar(x))return "Kasar";
+        if(PAYK.has(k))return "Payment";
+        if(k==="CREDIT_NOTE")return "Credit note"+(ref?" "+ref:"");
+        if(k==="DEBIT_NOTE")return "Debit note"+(ref?" "+ref:"");
+        if(k==="OPENING")return "Opening";
+        return "Return"+(ref?" "+ref:"")};
+      return {party:name,from:dmy(p.from),period:dmy(p.from)+" to "+dmy(p.to),brand:fb&&info.brandOf(fb)?info.brandOf(fb).name:"",open:L.open,dr:L.dr,cr:L.cr,close:L.close,
+        rows:L.rows.filter(x=>x.entry_kind!=="CANCELLED"&&(x.debit||x.credit)).map(x=>({date:dmy(x.d),inv:inv(x),dr:x.debit,cr:x.credit}))};
+    }
+
     /* ---------- Excel / Print ---------- */
     async function excel(){
       if(!cur)return;
@@ -800,13 +822,16 @@
       const rowGo=tr=>{if(!cur||!tr||!tr.dataset.r)return;const r=cur.list[Number(tr.dataset.r)];if(r&&cur.onRow){lastFocus=tr;cur.onRow(r.x)}};
       el("box").addEventListener("click",e=>{if(e.target.closest("[data-cf],a,button:not(#more)"))return;rowGo(e.target.closest("tr[data-r]"))});
       document.addEventListener("click",e=>{
-        const t=e.target.closest("#more,[data-led],[data-out],[data-pay],[data-back],[data-close]");if(!t)return;
+        const t=e.target.closest("#more,[data-led],[data-out],[data-pay],[data-back],[data-close],[data-lcopy],[data-limg]");if(!t)return;
         if(t.id==="more"){shown+=300;draw();return}
         if(t.hasAttribute("data-back"))return popBack();
         if(t.hasAttribute("data-close"))return popClose();
         if(t.dataset.led!=null){popClose();sec="led";ledPk=t.dataset.led;shown=300;draw();window.scrollTo(0,0);return}
         if(t.dataset.out!=null){popClose();sec="out";outPk=t.dataset.out;shown=300;draw();return}
         if(t.dataset.pay!=null)return pay(t.dataset.pay);
+        if(t.hasAttribute("data-lcopy")||t.hasAttribute("data-limg"))return ledShare().then(d=>{if(!d)return;
+          if(t.hasAttribute("data-limg"))return LWBLedgerShare.show(d);
+          return LWBLedgerShare.copyText(d).then(()=>ERPShell.toast("Ledger copied: "+d.rows.length+" entries + closing. Paste in WhatsApp.","success"))}).catch(e=>ERPShell.alert("Could not copy: "+(e.message||e)));
       });
       el("pop").addEventListener("click",e=>{if(e.target.classList.contains("ab-ov"))popClose()});
       // Tally keys: Ctrl+Alt+L / O / R / P / D, Esc = one step back, Enter on a row = open, L in a party = its ledger
