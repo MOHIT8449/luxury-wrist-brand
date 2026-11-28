@@ -51,7 +51,7 @@ function clear(o){o.box.className='kyc-box';o.box.innerHTML='';o.b.className='';
 function show(o,cls,html){o.box.className='kyc-box show '+cls;o.box.innerHTML=html}
 const fill=(id,v)=>{if(v&&!$(id).value.trim()){$(id).value=v;return 1}return 0};
 
-function warnName(o,legal){const typed=$('name').value.trim();if(!typed||!legal)return '';const sc=nameMatch(typed,legal);
+function warnName(o,legal){if(o.last&&o.last.demo)return '<div class="kyc-warn">⚠ DEMO: this is a sample name, not from GST / PAN. Nothing is filled. Real name comes after the API key is added.</div>';const typed=$('name').value.trim();if(!typed||!legal)return '';const sc=nameMatch(typed,legal);
   if(sc>=80)return '<div class="kyc-sub" style="margin-top:3px">✓ Party name matches ('+sc+'%)</div>';
   return '<div class="kyc-warn">⚠ Typed name <b>'+esc(typed)+'</b> is different ('+sc+'% match).<button type="button" class="kyc-fix">Use '+esc(legal)+'</button></div>'}
 function wire(o,legal){const f=o.box.querySelector('.kyc-fix');if(f)f.onclick=()=>{$('name').value=legal;render(o)}
@@ -85,7 +85,8 @@ async function verifyGst(auto){const g=G.inp.value.trim().toUpperCase();G.inp.va
   if(busy==='G'+g)return;let r=cache.get('G'+g);
   if(!r){busy='G'+g;G.b.disabled=true;G.b.textContent='…';show(G,'wait','Checking '+esc(g)+' with GST…');r=await call({gstin:g});busy='';G.b.disabled=false;if(!r.error||r.demo)cache.set('G'+g,r)}
   G.last={kind:'GST',...r};
-  if(!r.error&&r.valid!==false){fill('name',r.legal_name);fill('address',r.address);fill('city',r.city);fill('pincode',r.pincode);
+  // DEMO answers are samples: never put them in the form.
+  if(!r.error&&r.valid!==false&&!r.demo){fill('name',r.legal_name);fill('address',r.address);fill('city',r.city);fill('pincode',r.pincode);
     // PAN box: the GSTIN already proves the PAN, so no second paid call.
     if($('pan').value.trim().toUpperCase()===g.slice(2,12)){P.last={kind:'PAN',valid:true,name:r.legal_name,pan_type:PAN_TYPE[g[5]]||'',demo:r.demo,fromGst:true};P.box.className='kyc-box';P.b.className='done';P.b.textContent='✓ OK'}}
   render(G)}
@@ -95,7 +96,7 @@ async function verifyPan(auto){const p=P.inp.value.trim().toUpperCase();P.inp.va
   const g=G.inp.value.trim().toUpperCase();if(G.last&&!G.last.error&&g.slice(2,12)===p){P.box.className='kyc-box';P.b.className='done';P.b.textContent='✓ OK';return}
   if(busy==='P'+p)return;let r=cache.get('P'+p);
   if(!r){busy='P'+p;P.b.disabled=true;P.b.textContent='…';show(P,'wait','Checking PAN '+esc(p)+' with Income Tax…');r=await call({pan:p,name:$('name').value.trim()});busy='';P.b.disabled=false;if(!r.error||r.demo)cache.set('P'+p,r)}
-  P.last={kind:'PAN',pan_type:PAN_TYPE[p[3]]||'',...r};if(!r.error&&r.valid!==false)fill('name',r.name);render(P)}
+  P.last={kind:'PAN',pan_type:PAN_TYPE[p[3]]||'',...r};if(!r.error&&r.valid!==false&&!r.demo)fill('name',r.name);render(P)}
 
 function init(){if(!$('gstin')||!$('pan'))return;css();G=wrap('gstin','GSTIN');P=wrap('pan','PAN');boxes();
   G.b.onclick=()=>verifyGst(false);P.b.onclick=()=>verifyPan(false);
