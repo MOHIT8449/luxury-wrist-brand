@@ -14,7 +14,8 @@
 -- more that day; next day again after that day's handover. The same PDF also goes on WhatsApp with
 -- the daily reports (kind EVENING in lwb_daily_whatsapp_setup.sql, Admin on by default).
 --
--- "Handover done" = the cashier's Close Day of today, or today's cash handover received by an Admin.
+-- "Handover done" (Mohit, 26 Nov 2026: as soon as it is given, received or not) = today's Close Day, or a cash
+-- handover given today (waiting or received) after 6 PM IST, or given to an Admin at any time today.
 --
 -- doc rows (drawn by supabase/functions/lwb-daily-whatsapp/render.mjs, browser and Edge Function):
 --   ["h1", title, line 2, line 3]   ["sec", text]   ["sum", [3 texts]]   ["note", text]   ["brk"]
@@ -62,16 +63,16 @@ DECLARE r jsonb; c jsonb;
 BEGIN
   IF to_regclass('public.lwb_acc_shift_handovers') IS NOT NULL THEN
     EXECUTE $q$
-      SELECT jsonb_build_object('at', h.received_at, 'how', 'HANDOVER',
+      SELECT jsonb_build_object('at', h.given_at, 'how', 'HANDOVER', 'received', h.status = 'RECEIVED',
                'by', coalesce(nullif(btrim(g.full_name),''), 'Cashier'), 'to', coalesce(nullif(btrim(t.full_name),''), 'Admin'),
                'amount', coalesce(h.received_amount, h.counted))
       FROM public.lwb_acc_shift_handovers h
-      JOIN public.user_profiles t ON t.id = coalesce(h.received_by, h.given_to)
+      JOIN public.user_profiles t ON t.id = h.given_to
       LEFT JOIN public.user_profiles g ON g.id = h.given_by
-      WHERE h.status = 'RECEIVED' AND h.received_at IS NOT NULL
-        AND (h.received_at AT TIME ZONE 'Asia/Kolkata')::date = $1
-        AND lower(btrim(coalesce(t.role,''))) = 'admin'
-      ORDER BY h.received_at DESC LIMIT 1 $q$ INTO r USING p_date;
+      WHERE h.status IN ('PENDING','RECEIVED')
+        AND (h.given_at AT TIME ZONE 'Asia/Kolkata')::date = $1
+        AND ((h.given_at AT TIME ZONE 'Asia/Kolkata')::time >= '18:00' OR lower(btrim(coalesce(t.role,''))) = 'admin')
+      ORDER BY h.given_at DESC LIMIT 1 $q$ INTO r USING p_date;
   END IF;
   IF to_regclass('public.lwb_acc_day_close') IS NOT NULL THEN
     EXECUTE $q$
@@ -162,7 +163,8 @@ BEGIN
       CASE WHEN ho IS NULL THEN 'Not done yet'
            ELSE concat_ws(' · ', (ho->>'by') || CASE WHEN coalesce(ho->>'to','') <> '' THEN ' to ' || (ho->>'to') ELSE '' END,
                           '₹ ' || public.lwb_ev_num((ho->>'amount')::numeric),
-                          to_char((ho->>'at')::timestamptz AT TIME ZONE 'Asia/Kolkata', 'HH12:MI AM')) END,
+                          to_char((ho->>'at')::timestamptz AT TIME ZONE 'Asia/Kolkata', 'HH12:MI AM'),
+                          CASE WHEN ho->>'received' = 'false' THEN 'not received yet' END) END,
       CASE WHEN ho IS NULL THEN 'r' ELSE 'g' END),
     jsonb_build_array('kv', 'Total bank balance', '₹ ' || public.lwb_ev_num(bank_tot) || ' (as of today)', CASE WHEN bank_tot < 0 THEN 'r' ELSE 'b' END),
     jsonb_build_array('sec', 'Today, brand-wise'),
