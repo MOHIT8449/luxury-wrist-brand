@@ -46,6 +46,17 @@
 .dl-rb small{display:block;font-size:11.5px;color:#6b7785}
 .dl-cb{display:inline-flex!important;align-items:center;justify-content:center;gap:2px;height:26px!important;min-height:0!important;min-width:30px!important;width:auto!important;padding:0 7px!important;margin:0 0 0 5px!important;border:1px solid #13824a!important;background:#e9f7ef!important;color:#13824a!important;border-radius:6px!important;font:inherit;font-size:13px!important;font-weight:700!important;line-height:1!important;cursor:pointer;vertical-align:middle;flex:none!important;box-shadow:none!important;white-space:nowrap}
 .dl-cb[hidden]{display:none!important}.dl-cb:hover{background:#13824a!important;color:#fff!important}
+.dl-pc{position:fixed;right:14px;top:132px;z-index:966;width:300px;max-width:calc(100% - 20px);background:#fff;border:1.5px solid #13824a;border-radius:12px;box-shadow:0 14px 40px rgba(15,23,42,.25);padding:10px 12px;font-size:13px;color:#1f2a37}
+.dl-pc .t{display:flex;gap:6px;align-items:center}.dl-pc .t b{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:14px}
+.dl-pc .t button{border:0;background:none;font-size:16px;cursor:pointer;color:#6b7785}
+.dl-pc .n{font-size:20px;font-weight:800;color:#13824a;letter-spacing:.5px;margin:2px 0}
+.dl-pc p{margin:0 0 8px;color:#4b5763;font-size:12.5px}
+.dl-pc .b{display:flex;gap:5px}.dl-pc .b button{flex:1 1 0;min-width:0;height:32px;border:1px solid #d5dbe1;border-radius:6px;background:#fff;font:inherit;font-size:12.5px;font-weight:700;cursor:pointer;white-space:nowrap;color:#1f2a37}
+.dl-pc .b button[data-tel]{background:#13824a;border-color:#13824a;color:#fff}
+.dl-steps{margin:0;padding:0;list-style:none;counter-reset:s;display:grid;gap:7px}
+.dl-steps li{display:flex;gap:8px;align-items:flex-start;counter-increment:s;font-size:13px;line-height:1.4}
+.dl-steps li::before{content:counter(s);flex:none;width:22px;height:22px;border-radius:50%;background:#00434d;color:#fff;font-weight:800;font-size:12px;display:flex;align-items:center;justify-content:center}
+.dl-steps li span{flex:none;width:44px;font-size:11px;font-weight:800;color:#13824a;text-transform:uppercase;padding-top:3px}
 @media(max-width:540px){.dl-back{padding:0}.dl-pop{border-radius:0;min-height:100%}.dl-bar{bottom:64px}}`;
     document.head.appendChild(s);
   }
@@ -55,10 +66,55 @@
     const r=await client.rpc("lwb_dial_call",{p_kind:kind,p_ref:String(ref),p_source:source||null,p_number_id:numberId||null});
     if(r.error){toast(nice(r.error.message),"error");return null}
     const x=r.data||{};
+    const pc=isPC()&&PC_ROLES.includes(await myRole(client));
     location.href="tel:+91"+x.mobile;
+    if(pc)pcBar(x.mobile,x.name||name||"");
     // Reason / result only for party calls (sales work). Team, staff, driver, services: just logged (Mohit, 27 Nov).
     if(kind==="PARTY")setTimeout(()=>resultBar(client,x.id,x.name||name||""),400);
     return x;
+  }
+  // ---- PC call through Windows Phone Link (Mohit, 28 Nov 2026: demo for Admin first) ----
+  // On a PC the same tel: link opens Phone Link, which rings from the Android phone paired by Bluetooth (same SIM number).
+  const PC_ROLES=["admin"];
+  const isPC=()=>!/Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent||"")&&!(window.matchMedia&&matchMedia("(pointer:coarse)").matches);
+  let roleP=null;
+  function myRole(client){
+    if(!roleP)roleP=(async()=>{try{const s=await client.auth.getSession();const id=s.data&&s.data.session&&s.data.session.user.id;if(!id)return"";
+      const r=await client.from("user_profiles").select("role").eq("id",id).maybeSingle();return String(r.data&&r.data.role||"").trim().toLowerCase()}catch(_){return""}})();
+    return roleP;
+  }
+  const spaced=m=>String(m||"").replace(/^(\d{5})(\d{5})$/,"$1 $2");
+  function pcBar(mobile,name){
+    css();document.querySelectorAll(".dl-pc").forEach(b=>b.remove());
+    const bar=document.createElement("div");bar.className="dl-pc";
+    bar.innerHTML='<div class="t">💻 <b>'+esc(name)+'</b><button type="button" data-x aria-label="Close">✕</button></div>'+
+      '<div class="n">+91 '+esc(spaced(mobile))+'</div><p>Phone Link se aapke phone (SIM) se call lag raha hai. Awaaz PC ke speaker / headset me.</p>'+
+      '<div class="b"><button type="button" data-tel>📞 Dobara</button><button type="button" data-cp>📋 Copy</button><button type="button" data-help>❓ Setup</button></div>';
+    document.body.appendChild(bar);
+    bar.addEventListener("click",async e=>{
+      if(e.target.closest("[data-x]")){bar.remove();return}
+      if(e.target.closest("[data-tel]")){location.href="tel:+91"+mobile;return}
+      if(e.target.closest("[data-cp]")){try{await navigator.clipboard.writeText(mobile);toast("Number copy ho gaya")}catch(_){prompt("Number",mobile)}return}
+      if(e.target.closest("[data-help]"))pcHelp();
+    });
+  }
+  const PC_STEPS=[
+    ["PC","Windows 10 / 11 me Start dabake <b>Phone Link</b> app kholein (pehle se hota hai)."],
+    ["Phone","Android phone me Play Store se <b>Link to Windows</b> app daalein. PC par aaya QR code phone se scan karein."],
+    ["Dono","Phone aur PC dono me <b>Bluetooth ON</b>. Phone Link me <b>Calls</b> → <b>Get started</b> → dono par same code aaye to <b>Pair</b>."],
+    ["Phone","Phone par jo bhi permission maange (Phone, Contacts, Call history) sab <b>Allow</b>."],
+    ["PC","PC <b>Settings → Apps → Default apps</b> → upar search me <b>TEL</b> likhein → <b>Phone Link</b> chunein."],
+    ["ERP","Kisi bhi page par 📞 dabayein. Chrome puchhe \"Open Phone Link?\" to <b>Always allow</b> tick karke <b>Open</b>. Bas, call lag jayega."]];
+  function pcHelp(){
+    css();document.querySelectorAll(".dl-back.pch").forEach(b=>b.remove());
+    const back=document.createElement("div");back.className="dl-back pch";
+    back.innerHTML='<div class="dl-pop" role="dialog" aria-modal="true" aria-label="PC se call setup"><div class="dl-h"><h3>💻 PC se call (Phone Link)<small>Ek baar setup, phir ERP ka 📞 PC se chalega</small></h3><button type="button" class="dl-x" data-x aria-label="Close">✕</button></div>'+
+      '<div class="dl-b"><ol class="dl-steps">'+PC_STEPS.map(([w,t])=>"<li><span>"+w+"</span><div>"+t+"</div></li>").join("")+"</ol>"+
+      '<p class="dl-name">✅ Call aapke <b>usi phone ke number</b> se jayega. Phone jeb ya table par rahe, 10 meter ke andar, Bluetooth ON.</p>'+
+      '<p class="dl-hint">Headset / earphone PC me lagayein to awaaz saaf rahegi. iPhone bhi chalega (Windows 11). Har call ERP me log hota hai.</p></div>'+
+      '<div class="dl-ft"><button type="button" class="wa" data-x>Theek hai</button></div></div>';
+    document.body.appendChild(back);
+    back.addEventListener("click",e=>{if(e.target===back||e.target.closest("[data-x]"))back.remove()});
   }
   function resultBar(client,id,name){
     document.querySelectorAll(".dl-bar").forEach(b=>b.remove());
@@ -288,5 +344,5 @@
     scan();
   }
   if(document.body)autoStart();else document.addEventListener("DOMContentLoaded",autoStart);
-  window.LWBDial={call,driverPopup,sendLoc,drivers,rowBtns,wire,RESULTS,waText,trShort,saveAs,trInput,btn,scan};
+  window.LWBDial={call,pcHelp,isPC,myRole,PC_ROLES,driverPopup,sendLoc,drivers,rowBtns,wire,RESULTS,waText,trShort,saveAs,trInput,btn,scan};
 })();
