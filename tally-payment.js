@@ -119,6 +119,12 @@
       const left=Math.max(0,Math.round((due-got)*100)/100);
       if(!await confirm("Save payment of "+rs(got)+" from "+ord.party+"?\n\n"+shown.join("\n")+
         "\n\n"+(left>0.5?rs(left)+" stays as the party's outstanding.":"The bill is fully paid.")))return;
+      // GST / Cash bill (lwb_order_bill_type_setup.sql): mode not matching the bill = popup, kept on record
+      if(window.LWBBillType){
+        const ls=out.map(l=>({mode:l.mode,amount:l.mode==="CASH"?Object.entries(l.notes||{}).reduce((a,[n,c])=>a+(n==="coins"?Number(c):Number(n)*Number(c)),0):l.amount}));
+        let go=true;try{go=await LWBBillType.payCheck({client:o.db,bills:[{order_id:ord.id,order_no:ord.order_no,no:ord.invoice_no||ord.order_no,amount:got}],lines:ls})}catch(e){go=true}
+        if(!go)return;
+      }
       const btn=q("[data-save]");btn.disabled=true;err.textContent="";
       try{
         const {error}=await o.db.rpc("lwb_save_tally_payment",{p_order_id:ord.id,p_pay_date:dt,p_lines:out,p_remark:q("#lwbpRem").value.trim()||null});

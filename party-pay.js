@@ -515,6 +515,14 @@
           if(!BR.length)args[1].p_company_id=null;
         }
       }
+      // GST / Cash bill (lwb_order_bill_type_setup.sql): mode not matching the bills it goes to = popup, kept on record
+      if(!adjust&&window.LWBBillType&&args[1].p_lines&&args[1].p_lines.length){
+        const bl=P().bills||[],bills=allocs.map(a=>{const b=bl.find(x=>x.order_id===a.order_id)||{};return {order_id:a.order_id,order_no:b.order_no,no:b.invoice_no||b.order_no,amount:a.amount}});
+        busy=true;q("[data-ok]").disabled=true;
+        let go=true;try{go=await LWBBillType.payCheck({client:o.client,bills,lines:args[1].p_lines})}catch(e){go=true}
+        busy=false;q("[data-ok]").disabled=false;
+        if(!go){const f=q('.amt[data-m="'+(args[1].p_lines[0].mode||"CASH")+'"]');if(f)f.focus();return}
+      }
       busy=true;q("[data-ok]").disabled=true;
       try{
         const {data,error}=await o.client.rpc(args[0],args[1]);
