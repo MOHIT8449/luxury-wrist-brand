@@ -280,9 +280,14 @@
   [/^SALES_PLAN$/,["my-sales.html","sales-team.html"]],
   [/^ORDER_/,["my-sales.html#orders","warehouse-orders.html?order={o}","driver-delivery.html?order={o}","loading-dispatch.html"]]
  ];
- function route(n,pages){
+ // Admin / Sales / Accounts follow an order on the PO list (warehouse-orders.html: status, vehicle, bill, tracking),
+ // not on the godown's Loading page (Mohit, 28 Nov 2026). Godown Manager / Driver / Transport keep their work pages.
+ const PO_LIST_ROLES=/^(admin|manager|accounts)$/i;   // manager = Sales Head
+ function route(n,pages,role){
   const t=baseType(n),hit=ROUTES.find(r=>r[0].test(t));
   if(!hit)return "";
+  if(n.order_id&&PO_LIST_ROLES.test(String(role||"").trim())&&(!pages||!pages.length||pages.includes("warehouse-orders.html"))&&/^(VEHICLE_LOADED|TALLY_BILL_DONE|PO_APPROVED_LOADING|LOADING_ASSIGNMENT(?!_DRIVER)|ORDER_)/.test(t))
+   return "warehouse-orders.html?order="+encodeURIComponent(n.order_id);
   const base=h=>h.split(/[?#]/)[0];
   const href=(pages&&pages.length?hit[1].find(h=>pages.includes(base(h))):hit[1][0])||"";
   // {c} = complaint no. from "CMP-12" in the message.
@@ -490,7 +495,7 @@
    arrived(rows);
    // Market order checks no longer pop up (Mohit, 7 Nov 2026): they wait in the bell and on Approvals.
    allRead.hidden=!unread;
-   allItems=rows.map(n=>({n,sum:summary(n,orders.get(n.order_id)),href:route(n,pages)}));
+   allItems=rows.map(n=>({n,sum:summary(n,orders.get(n.order_id)),href:route(n,pages,role)}));
    render();
    // 🔔 New notification: small popup + its own sound (erp-notify-popup.js). A picked old date is not "new".
    if(when!=="date"&&window.LWBNotifyPopup)window.LWBNotifyPopup.feed(allItems.map(it=>({...it,tag:(CATS[it.sum.cat]||CATS.other).tag,svg:svg(it.sum.icon),
