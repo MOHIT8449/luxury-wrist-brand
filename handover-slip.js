@@ -52,7 +52,7 @@
       '<div class="meta"><div><span>Date</span><b>'+dmy(S.day)+'</b></div><div><span>Time</span><b>'+hm(S.at)+'</b></div>'+
       '<div><span>Given by</span><b>'+esc(S.by_name)+'</b>'+(role(S.by_role)?' <i class="mut">'+role(S.by_role)+'</i>':"")+'</div>'+
       '<div><span>Bag / seal</span><b>'+(S.bag_no?esc(S.bag_no):"________")+'</b></div>'+
-      '<div style="grid-column:1/-1"><span>Given to</span><b>'+P.map(p=>esc(p.to_name)+(P.length>1?" ("+rs(p.amount)+")":"")).join(" + ")+'</b></div></div>'+
+      '<div style="grid-column:1/-1"><span>Given to</span><b>'+P.map(p=>(String(p.to_role||"").toLowerCase()==="admin"?"🔒 Tijori · ":"")+esc(p.to_name)+(P.length>1?" ("+rs(p.amount)+")":"")).join(" + ")+'</b></div></div>'+
       '<div class="h3">Notes count</div>'+
       '<table><thead><tr><th>Note</th><th class="n">Last closing<br><span style="font-weight:400">'+(S.last?dmy(S.last.day).slice(0,5)+" "+hm(S.last.at):"—")+'</span></th><th class="n">Now (pcs)</th><th class="n">Change</th><th class="n">Amount</th></tr></thead><tbody>'+rows+
       '<tr><td><b>Coins</b></td><td class="n mut">'+(lc==null?"—":rs(lc))+'</td><td class="n">—</td><td></td><td class="n"><b>'+(coins?rs(coins):"—")+'</b></td></tr></tbody>'+

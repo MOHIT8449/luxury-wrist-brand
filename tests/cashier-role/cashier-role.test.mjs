@@ -473,3 +473,19 @@ test('Cash handover only to Sales Heads + Accounts, not Admin (Mohit 28 Nov 2026
  assert.ok(R.length>0);assert.ok(R.every(r=>r==='manager'||r==='accounts'),R.join());
  assert.ok(R.includes('accounts'));assert.ok(!R.includes('admin'));
 });
+
+test('Night cash to Admin = Tijori: Admin is not in the @ list but can take the cash and confirm (Mohit 28 Nov 2026)',async()=>{
+ await db.exec(await sql('lwb_acc_tijori_setup.sql'));
+ await db.exec(await sql('lwb_acc_tijori_setup.sql')); // safe to run again
+ await as('manager');
+ const T=await one('select public.lwb_acc_tijori_people()');
+ assert.ok(T.some(t=>t.id===ids.admin));
+ const P=await one('select public.lwb_acc_cash_people_get()');assert.ok(!P.list.some(p=>p.id===ids.admin));
+ const b=Math.round(Number((await dash()).closing)*100)/100;
+ const g=await one('select public.lwb_acc_shift_give3($1::jsonb,$2::jsonb,null,$3::jsonb)',[JSON.stringify([{to:ids.admin,amount:b}]),JSON.stringify({coins:b}),'[]']);
+ const n=(await db.query("select title from public.erp_notifications where user_id=$1 and notification_type='ACC_SHIFT_HANDOVER' order by id desc limit 1",[ids.admin])).rows[0];
+ assert.match(n.title,/Cash handover/);
+ await as('admin');await one('select public.lwb_acc_shift_receive($1,null,null)',[g.id]);
+ const L=await one('select public.lwb_acc_shift_list(null,null)');assert.equal(L.holder.id,ids.admin);
+ await as('sales');assert.deepEqual(await one('select public.lwb_acc_tijori_people()'),[]);
+});
