@@ -110,17 +110,37 @@
   }
   function saveAs(veh,name,tr){
     const v=window.LWBVeh&&LWBVeh.check(veh).ok?LWBVeh.check(veh).value:String(veh||"").trim();
-    return [v,String(name||"").trim()||"DRIVER",trShort(tr)].filter(Boolean).join(" ").toUpperCase();
+    return [v,String(name||"").trim()||"DRIVER",tr===NEWTR?"":trShort(tr)].filter(Boolean).join(" ").toUpperCase();
   }
   let trList=null;
   async function transports(client){
     if(trList)return trList;
     const r=await client.rpc("lwb_transport_names");trList=r.error?[]:(r.data||[]);return trList;
   }
+  // Transport dropdown: every active transport of Transport Master + "New transport" (lwb_transport_add).
+  const NEWTR="__new__";
+  function trFill(sel,L,keep){
+    const v=keep!=null?keep:sel.value,has=L.some(t=>t.name.toUpperCase()===String(v||"").toUpperCase());
+    sel.innerHTML='<option value="">— Transport chuniye —</option>'+L.map(t=>'<option value="'+esc(t.name)+'">'+esc(t.name)+(t.short?" ("+esc(t.short)+")":"")+'</option>').join("")+
+      (v&&!has?'<option value="'+esc(v)+'">'+esc(v)+'</option>':"")+'<option value="'+NEWTR+'">➕ Naya transport…</option>';
+    const m=L.find(t=>t.name.toUpperCase()===String(v||"").toUpperCase());sel.value=m?m.name:(v||"");
+  }
   function trInput(client,id,value){
-    const dl=id+"L";
-    setTimeout(async()=>{const L=await transports(client),d=document.getElementById(dl);if(d)d.innerHTML=L.map(t=>'<option value="'+esc(t.name)+'">'+esc(t.short||"")+'</option>').join("")},0);
-    return '<input id="'+id+'" list="'+dl+'" maxlength="150" autocomplete="off" placeholder="Vikas Road Lines" value="'+esc(value||"")+'"><datalist id="'+dl+'"></datalist>';
+    setTimeout(async()=>{
+      const sel=document.getElementById(id);if(!sel)return;
+      trFill(sel,await transports(client),value||"");
+      let prev=sel.value;
+      sel.addEventListener("change",async()=>{
+        if(sel.value!==NEWTR){prev=sel.value;return}
+        const name=String(window.prompt("Naye transport ka pura naam (jaise VIKAS ROAD LINES):","")||"").replace(/\s+/g," ").trim().toUpperCase();
+        if(!name){sel.value=prev;return}
+        const r=await client.rpc("lwb_transport_add",{p_name:name});
+        if(r.error){alert("Transport save nahi hua: "+nice(r.error.message));sel.value=prev;return}
+        trList=null;trFill(sel,await transports(client),r.data&&r.data.name||name);prev=sel.value;
+        sel.dispatchEvent(new Event("input",{bubbles:true}));
+      });
+    },0);
+    return '<select id="'+id+'" required><option value="'+esc(value||"")+'">'+esc(value||"— Transport chuniye —")+'</option></select>';
   }
   // ---- Vehicle + driver popup ----
   function driverPopup({client,vehicle,ecrs,trucks,known,onDone}){
@@ -133,8 +153,8 @@
         ${T.length?`<label>ECRS order (optional)<select id="dlEcrs"><option value="">— Not from ECRS —</option>${T.map(t=>`<option value="${esc(t.id)}"${String(t.id)===String(ecrs||"")?" selected":""}>${esc(t.label||("Order "+(t.no||t.id)))}</option>`).join("")}</select></label>`:""}
         <div class="dl-two"><label>Gaadi number *<input id="dlVeh" maxlength="20" placeholder="GJ05 BX 4471" autocomplete="off" value="${esc(vehicle||"")}"></label>
           <label>Driver mobile *<input id="dlMob" type="tel" inputmode="tel" maxlength="16" placeholder="10-digit mobile" autocomplete="off"></label></div>
-        <div class="dl-two"><label>Driver naam<input id="dlName" maxlength="80" autocomplete="off" value="${esc(known&&known.name||"")}"></label>
-          <label>Transport${trInput(client,"dlTr",known&&known.transport)}</label></div>
+        <div class="dl-two"><label>Driver naam *<input id="dlName" maxlength="80" autocomplete="off" value="${esc(known&&known.name||"")}"></label>
+          <label>Transport *${trInput(client,"dlTr",known&&known.transport)}</label></div>
         <p class="dl-name">📱 Phone / Gmail me naam: <b id="dlAs"></b></p>
         <p class="dl-hint" id="dlKnown"></p>
         ${known&&known.masked?`<p class="dl-hint">Abhi ka driver: ${esc(known.masked)}${known.name?" · "+esc(known.name):""}. Naya driver daaloge to woh bhi jud jayega, purana number bhi save rahega.</p>`:""}
@@ -147,7 +167,7 @@
     const $=s=>back.querySelector(s),veh=$("#dlVeh");
     if(window.LWBVeh)LWBVeh.attach(veh,{required:true});
     const as=()=>{$("#dlAs").textContent=saveAs(veh.value||"GJ05 BX 4471",$("#dlName").value,$("#dlTr").value)};
-    ["#dlVeh","#dlName","#dlTr"].forEach(s=>$(s).addEventListener("input",as));as();
+    ["#dlVeh","#dlName","#dlTr"].forEach(s=>$(s).addEventListener("input",as));$("#dlTr").addEventListener("change",as);as();
     // gaadi number typed: show who drove it before + fill its transport
     let lastK="";
     veh.addEventListener("blur",async()=>{
@@ -155,7 +175,7 @@
       const k=vkey(c.value);if(k===lastK)return;lastK=k;
       const m=await drivers(client,[c.value]),d=m.get(k),box=$("#dlKnown");
       if(!d){box.innerHTML="Nayi gaadi: pehli baar save ho rahi hai.";return}
-      if(d.transport&&!$("#dlTr").value.trim())$("#dlTr").value=d.transport;
+      if(d.transport&&!$("#dlTr").value)trFill($("#dlTr"),await transports(client),d.transport);
       const old=(d.old_drivers||[]).slice(0,4).map(o=>esc((o.name||"Driver")+" "+o.masked));
       box.innerHTML="Pichhla driver: <b>"+esc((d.name||"Driver")+" "+d.masked)+"</b>"+(old.length?" · Purane: "+old.join(" · "):"")+". Wahi driver hai to wahi mobile daaliye, naya hai to naya: dono save rahenge.";
       as();
@@ -168,11 +188,13 @@
       if(veh.lwbVehShow)veh.lwbVehShow();
       if(!c.ok){err("Gaadi number sahi likhiye: GJ05 BX 4471");veh.focus();return}
       if(!mobOk($("#dlMob").value)){err("Driver ka 10-digit mobile likhiye");$("#dlMob").focus();return}
+      if(!$("#dlName").value.trim()){err("Driver ka naam likhiye");$("#dlName").focus();return}
+      if(!$("#dlTr").value||$("#dlTr").value===NEWTR){err("Transport chuniye");$("#dlTr").focus();return}
       err("");
       const w=wa?window.open("","_blank"):null;
       back.querySelectorAll(".dl-ft button").forEach(b=>b.disabled=true);
       const r=await client.rpc("lwb_vehicle_driver_save",{p_vehicle:c.value,p_mobile:$("#dlMob").value,p_name:$("#dlName").value.trim()||null,
-        p_ecrs:$("#dlEcrs")&&$("#dlEcrs").value?Number($("#dlEcrs").value):null,p_transport:$("#dlTr").value.trim()||null});
+        p_ecrs:$("#dlEcrs")&&$("#dlEcrs").value?Number($("#dlEcrs").value):null,p_transport:$("#dlTr").value||null});
       if(r.error){if(w)w.close();err(nice(r.error.message));back.querySelectorAll(".dl-ft button").forEach(b=>b.disabled=false);return}
       if(wa)await sendLoc({client,vehicle:r.data.vehicle_no,win:w});else toast("Saved: "+(r.data.save_as||r.data.vehicle_no)+" · "+r.data.masked);
       close();if(onDone)onDone(r.data);

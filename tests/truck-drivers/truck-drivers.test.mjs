@@ -49,6 +49,8 @@ await db.exec(await file('lwb_ecrs_on_way_setup.sql'));
 const mine=await file('lwb_vehicle_driver_history_setup.sql');
 await db.exec(mine);await db.exec(mine); // safe to run again
 await db.exec(await file('lwb_ecrs_on_way_setup.sql')); // run again after: still fine
+await db.exec(`ALTER TABLE lwb_transport_master ADD COLUMN IF NOT EXISTS created_by uuid;`);
+const add=await file('lwb_transport_add_setup.sql');await db.exec(add);await db.exec(add);
 
 async function as(who){await db.query("select set_config('request.jwt.claim.sub',$1,false)",[ids[who]||''])}
 async function call(q,args=[]){await db.exec('SET ROLE authenticated');try{return (await db.query(q,args)).rows}finally{await db.exec('RESET ROLE')}}
@@ -165,4 +167,16 @@ test('Gmail quick sync: marked due on a driver / Services change, checked every 
   // pg_net is not in PGlite: tick says no, never an error
   assert.equal((await one("select lwb_gsync_tick('quick') t")).t,false);
   await assert.rejects(call("select lwb_gsync_tick('quick')"),/permission denied/);
+});
+
+test('New transport from the dropdown: once, any case', async()=>{
+  await as('cashier');await assert.rejects(call("select lwb_transport_add('Om Logistics')"),/Only Admin/);
+  await as('acc');
+  const a=(await call("select lwb_transport_add('  om   logistics ') j"))[0].j;
+  assert.deepEqual([a.name,a.short,a.added],['OM LOGISTICS','OM',true]);
+  const b=(await call("select lwb_transport_add('OM LOGISTICS') j"))[0].j;assert.equal(b.added,false);
+  const c=(await call("select lwb_transport_add('vikas road-lines') j"))[0].j;assert.deepEqual([c.name,c.added],['Vikas Road Lines',false]);
+  await assert.rejects(call("select lwb_transport_add('x')"),/2 to 150/);
+  const L=(await call('select lwb_transport_names() j'))[0].j.map(t=>t.name);
+  assert.ok(L.includes('OM LOGISTICS'));
 });
