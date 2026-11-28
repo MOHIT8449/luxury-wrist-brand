@@ -15,7 +15,7 @@
   <script src="erp-colfilter.js"></script>
   <script src="party-pay.js?v=20261128a"></script><script src="bill-type.js?v=20261128c"></script>
   <script src="dup-note.js?v=20261126d"></script>
-  <script src="ledger-rows.js?v=20261123a"></script><script src="ledger-share.js?v=20261128a"></script>
+  <script src="ledger-rows.js?v=20261123a"></script><script src="ledger-share.js?v=20261128c"></script>
   <script src="dial-book.js?v=20261128i"></script>
   <style>
     /* Ledger & Outstanding (Mohit, 20 Nov 2026): the Accounts "Display" books in one place, like Tally.
@@ -116,6 +116,7 @@
     .ab-dlg .bd{padding:6px 14px 10px;overflow:auto}
     .ab-dlg footer{display:flex;gap:6px;padding:8px 14px;border-top:1px solid var(--erp-line);flex-wrap:wrap}
     .ab-dlg footer .sp{flex:1}
+    .ab-dlg footer .ab-b{padding:0 9px}
     .ab-dlg h4{margin:10px 0 4px;font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--erp-muted)}
     .ab-this{border:1px solid #f3d08a;background:#fff7e6;border-radius:9px;padding:6px 10px;margin:0 0 8px;font-size:13px}
     .ab-x{border:0;background:none;font-size:22px;line-height:1;cursor:pointer;color:var(--erp-muted);padding:0 2px}
@@ -735,8 +736,16 @@
           const r=(info.raw.receipts||[]).find(r=>!r.cancelled&&(r.allocs||[]).some(a=>a.order_id===id&&Math.abs(Number(a.amount)-Number(y.amount))<0.01))||(info.raw.receipts||[]).find(r=>!r.cancelled&&(r.allocs||[]).some(a=>a.order_id===id));
           if(r&&/PARTY|OFFICE|ACC/i.test(String(y.src||"PARTY")))openReceipt(r);else if(window.ERPShell&&ERPShell.toast)ERPShell.toast(String(y.src||"Payment")+" · "+rs2(y.amount)+(y.by_name?" · "+y.by_name:""),"info")});
         f.innerHTML='<button type="button" class="ab-b t" data-led="'+esc(pk)+'">📒 Party ledger</button>'+(due>0.5?'<button type="button" class="ab-b g" data-pay="'+esc(pk)+'">💰 Receive</button>':"")+
-          (id?'<a class="ab-b" href="accounts-invoice.html?order='+encodeURIComponent(id)+'#tally">Bill page ↗</a><a class="ab-b" href="warehouse-orders.html?order='+encodeURIComponent(id)+'">Open PO ↗</a>':"")+
+          (id?'<a class="ab-b" href="accounts-invoice.html?order='+encodeURIComponent(id)+'#tally">Bill page ↗</a><a class="ab-b" href="warehouse-orders.html?order='+encodeURIComponent(id)+'">Open PO ↗</a>':"")+(window.LWBLedgerShare&&items.length?'<button type="button" class="ab-b" data-bshare title="Bill image + text: items, payments, due">🖼 Share</button>':"")+
           (canDate()&&id&&o.invoice_no?'<button type="button" class="ab-b" data-bedit>✏️ Edit bill</button><button type="button" class="ab-b ab-del" data-bcx>⛔ Cancel bill</button><button type="button" class="ab-b ab-del" data-bdel>🗑 Delete bill</button>':"")+'<span class="sp"></span><button type="button" class="ab-b" data-close>Close</button>';
+        // Share bill (Mohit 28 Nov 2026): goods, qty, rate, amount + payments set to it + due. Invoice no.: GST = Tally no., Cash = PO no.
+        const bs=f.querySelector("[data-bshare]");
+        if(bs)bs.onclick=async()=>{
+          let t=null;if(window.LWBBillType&&id)try{t=LWBBillType.kindOf((await LWBBillType.load(client,[id])).get(id))}catch(_){}
+          const tno=String(billNo(o)||o.invoice_no||"").trim(),pno=String(no).replace(/^PO\s*/i,"").trim();
+          LWBLedgerShare.showBill({party:o.party||O.customer_name||"",inv:(t==="CASH"?pno||tno:tno||pno)||"-",date:dmy(o.invoice_date||O.order_date||""),brand:o.company_id&&info.brandOf(o.company_id)?info.brandOf(o.company_id).name:"",
+            items:items.map(i=>({sku:i.sku_name||i.sku||"",qty:i.q,rate:Number(i.rate)||0,amt:i.amt})),bill:billAmt,cn,got,due,
+            pays:pays.filter(y=>!/REJECT|CANCEL|BOUNCE/i.test(String(y.status||""))).map(y=>({date:dmy(y.pay_date),mode:modeTxt(String(y.mode||"").toUpperCase().split("+").filter(Boolean))||"-",amount:Number(y.amount)||0}))})};
         const be=f.querySelector("[data-bedit]"),bx=f.querySelector("[data-bdel]");
         if(be)be.onclick=()=>billEdit(b,o,id);
         const bc=f.querySelector("[data-bcx]");
@@ -831,6 +840,8 @@
         if(t.dataset.pay!=null)return pay(t.dataset.pay);
         if(t.hasAttribute("data-lcopy")||t.hasAttribute("data-limg"))return ledShare().then(d=>{if(!d)return;
           if(t.hasAttribute("data-limg"))return LWBLedgerShare.show(d);
+          // more than 25 entries: WhatsApp shows them badly in one go, so open the pages (copy page by page, or PDF)
+          if(d.rows.length>LWBLedgerShare.MAX){ERPShell.toast(d.rows.length+" entries: more than "+LWBLedgerShare.MAX+" lines, so the ledger is made in pages. Copy page by page or take the PDF.","info");return LWBLedgerShare.show(d)}
           return LWBLedgerShare.copyText(d).then(()=>ERPShell.toast("Ledger copied: "+d.rows.length+" entries + closing. Paste in WhatsApp.","success"))}).catch(e=>ERPShell.alert("Could not copy: "+(e.message||e)));
       });
       el("pop").addEventListener("click",e=>{if(e.target.classList.contains("ab-ov"))popClose()});
