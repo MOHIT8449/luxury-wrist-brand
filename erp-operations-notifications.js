@@ -70,6 +70,7 @@
   [/^PURCHASE_MISSING$/,"🧾","bad","Purchase bills missing","Enter"],
   [/^HIRED_RATE_VERIFY$/,"🚚","act","Trip rent","Verify"],
   [/^HIRED_RATE_SENT_BACK$/,"↩","bad","Trip rent sent back","Set again"],
+  [/^WEB_ORDER$/,"🌐","act","Website order","Make PO"],
   [/^PARTY_CREATED$/,"👤","act","New party added","Check"],
   [/^ACC_BANK_VERIFY$/,"🏦","act","Bank entry","Verify"],
   [/^ACC_BANK_REJECTED$/,"❌","bad","Bank entry rejected",""],
@@ -118,7 +119,7 @@
   [/^BILL_TYPE_/,"order"],
   [/^(ORDER_LOADED|ORDER_DISPATCHED|ORDER_DELIVERED|ORDER_PARTIAL|ORDER_NOT_DELIVERED|VEHICLE_LOADED|LOADING_ASSIGNMENT|TALLY_BILL_PENDING|PO_APPROVED_LOADING|DELIVERY_RETURN|RETURN_CHECKED)/,"delivery"],
   [/^(STOCK_|GODOWN_|PURCHASE_|MARKET_)/,"stock"],
-  [/^(ORDER_|PO_|RATE_|BILL_CHANGE_|TALLY_BILL_|SALES_RETURN)/,"order"]
+  [/^(ORDER_|PO_|RATE_|BILL_CHANGE_|TALLY_BILL_|SALES_RETURN|WEB_ORDER)/,"order"]
  ];
  const catOf=t=>(CAT_OF.find(r=>r[0].test(t))||[0,"other"])[1];
  // Line icons (24 x 24, stroke) in place of emoji: the same look on every phone.
@@ -255,6 +256,7 @@
   [/^LOADING_ASSIGNMENT_DRIVER$/,["driver-delivery.html?order={o}","loading-dispatch.html","transport-allocation.html"]],
   [/^LOADING_ASSIGNMENT/,["loading-dispatch.html?order={o}","transport-allocation.html"]],
   [/^HIRED_RATE_/,["fleet-master.html#rates"]],
+  [/^WEB_ORDER$/,["web-orders.html"]],
   [/^PARTY_CREATED$/,["customer-master.html","dial-book.html"]],
   [/^RECEIPT_EDIT_ASK$/,["approvals.html","accounts-books.html"]],
   [/^RECEIPT_EDIT_/,["accounts-dashboard.html","accounts-books.html"]],

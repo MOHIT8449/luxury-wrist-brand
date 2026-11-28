@@ -208,6 +208,17 @@
 - Drill-down: every figure opens an ERPList popup of the bills / entries behind it; a row opens the party ledger (accounts-books.html) or the entry card (date, who, mode, ref, PO, brand, bank check) with Party ledger / Day book of that day.
 - Collected by brand: PO of the line → its brand; party payment → its receipt's brand (lwb_party_billing receipts); party with one brand → that brand; else "Not split". No SQL. Checked with sample data at 1366 / 390 px: no side scroll, no JS errors. Screenshots: project files `finance-home/`.
 
+## Customer orders from the website: luxurywristbrand.com/order.html (20 Nov 2026)
+- Mohit: customers should be able to send their order on our website (WhatsApp ordering later, same intake).
+- `order.html` (public, no login; "Order Now" in the home page menu + footer): mobile, name, shop, area; one brand per order (chips), search + category chips, SKU list with − / + cases (no rates shown), sticky bar "N cases · N products" + Send Order, check popup with note, then "Order received W-123" + WhatsApp us. `?brand=coca` preselects a brand.
+- `lwb_web_order_setup.sql`: table `lwb_web_orders` (intake for WEB / later WHATSAPP); `lwb_web_catalog()` (anon: active brands + SKUs, name / category / pcs / photo only); `lwb_web_order_submit(p)` (anon) -> `lwb_web_order_intake(p, channel)` (not callable from the browser; a WhatsApp Edge Function with service role should call it with 'WHATSAPP').
+  - Mobile on exactly ONE active party (and not a slip brand) -> normal PO at once: orders + order_items, status pending_approval, sales_person "WEBSITE ORDER", created_by = party's salesman, rate = party's last PO rate of the SKU (0 if none). Sales Head approves in PO / Sales > Pending Review as usual.
+  - New number / number on 2+ parties / slip brand (Rajnigandha) -> WAITING + bell WEB_ORDER to Admin / Sales Head.
+  - Spam: valid Indian mobile, honeypot field, no links, 1-60 lines, 1-5000 cases, per mobile 3/hour 6/day, site 40 per 10 min, same order within 10 min = same W-no. Customer never sees party names or rates.
+- `web-orders.html` (Sales > Website Orders, Admin / Sales Head): Waiting / PO made / Rejected tabs, call + WhatsApp links, Copy order link / Send link on WhatsApp, Make PO -> `order-entry.html?web=<id>` (brand + SKU cases filled, party filled when found) -> Submit marks it done (`lwb_web_order_done`); Reject (`lwb_web_order_reject`).
+- WhatsApp orders (21 Nov 2026, number 99926 99905): Edge Function `lwb-wa-order` (chat: brand > products > cases > Send, logic in `logic.js`), webhook https://luxurywristbrand.com/api/whatsapp (`functions/api/whatsapp.js` -> Edge Function), Meta signature checked with secret `WA_APP_SECRET`, `lwb_whatsapp_order_setup.sql` (sessions, seen message ids, `lwb_wa_party`). Orders use the same intake with channel WHATSAPP. Setup steps + invite template text: `README_WHATSAPP_ORDER.md`. Tests: `tests/whatsapp-order` (7).
+- Tests: `tests/web-order` (pglite, 9 tests). Screenshots: project files `website-order/`.
+
 ## Ledger & Outstanding: Tally-style Accounts books with full drill-down (20 Nov 2026)
 - Mohit: Accounts (Yogesh bhai) could not tell where Outstanding and Ledger live, and ledger rows did not open. Wanted Tally style: separate Ledger / Outstanding sections, Ctrl+Alt+L for a ledger, every row down to the bill and its items, party-wise payment received.
 - New page `accounts-books.html` (menu Accounts > Ledger & Outstanding, Admin + Accounts; Accounts bottom bar "Ledger" in place of PO List). Sections: Outstanding (party-wise with ageing 0-30 / 31-60 / 61-90 / 90+, or bill-wise; party -> its bills due), Ledger (List of ledgers, or one party: opening, every voucher with running Dr / Cr balance, closing; default This FY, or top bar dates), Receipts (register of every payment, mode split), Party payments (per party: opening, billed, received with modes, returns, balance now), Day book. KPI cards: To collect, Over 60 days, Advance, Received, Billed (period = top bar). Brand = top bar. Excel-style column filters (LWBCol), Excel, Print, Receive payment (LWBPartyPay).
@@ -1249,7 +1260,6 @@
 - Call Report (Admin / Sales Head; salesman sees "My Calls"): date range, caller, result, "Why parties did not order" counts, Excel. Set Order Days (Admin / Sales Head): per party box or tick many + "Set for selected" (`lwb_set_party_order_days`).
 - Dashboard Verify / Quick Actions: "Call parties: no order in time" with count (`lwb_party_call_due_count`). No bells; orders, stock, ledger and Tally are not changed.
 
-
 ## Compact workspace for all roles (29 Oct 2026)
 
 - `order-entry.html`: `compact-entry` is a presentation class for every allowed role; `sales-entry` remains SALES-only for existing role restrictions and saved vehicle behavior. Admin / Sales Head get the same compact mobile SKU cards, transport chips, total weight and fixed Submit Order bar. Date, company, sales person, slab and vehicle controls stay in More options; landing / margin is opt-in. Print temporarily expands metadata. No SQL or calculation changes.
@@ -1258,7 +1268,6 @@
 - `_headers` revalidates the shared UI assets and PO Entry after deploy.
 - Verification: JS syntax and diff checks; local browser mock (no production calls / writes) at 390px and 1280px for Admin / SALES PO entry, PO Approval, Dashboard, Inventory and warehouse Loading. PO entry: 40×640 + 50×520 = ₹51,600; 90 cases / 1,810 kg. PALLET: 1 pallet = 100 cases, ₹64,000 / 1,900 kg with the mock SKU. Sidebar stock search and quiet notification count verified. Other module checks are layout-shell checks, not a full live workflow verification. Real-device login / populated business data should still be checked by staff.
 
-
 ## Dashboard card layout correction (29 Oct 2026)
 
 - User screenshot showed KPI groups squeezed side by side, overlapping labels / sales amounts, and the search icon over its placeholder. `dashboard.html` now uses a grid with individual metric cards (groups are display:contents), slate / green / amber / blue / red accents, wrapping labels and separate footer text; very long money values span the phone row. Search restores 40px left padding. Compact name + role badge replaces the long role explanation.
@@ -1266,13 +1275,11 @@
 - `_headers`: Dashboard HTML revalidation added.
 - Verification used actual Dashboard startup/rendering with a local read-only Supabase mock and the exact `dashboard.html` filename (so production page-specific selectors apply). Populated Admin / Manager fixtures checked at 320 / 390 / 1280 CSS-pixel frames, including ₹1,64,970 and ₹1,23,45,67,890. No metric overflow / text overlap / page horizontal overflow; no Dashboard bottom nav or Quick Access list; zero mock writes and no JS errors.
 
-
 ## Dense PO Entry — five SKU cards (29 Oct 2026)
 
 - Removed Party's usual SKUs UI and its renderer / quick-add helper; party last-rate lookup and rate autofill are retained. Removed Entry help. Admin / Manager landing-and-margin toggle moved inside More options.
 - Phone SKU cards use two short rows: SKU / remove, then Qty / Rate / Amount. Direct Vehicle CS mode also includes Pallet in the second row. Mobile rate ± buttons are hidden; rate is edited directly in its numeric field. Card padding / margins, Add SKU, total-weight and share spacing reduced. Informational stock / rate hints stay out of the compact row; low-stock and below-slab warnings still appear. Per-role restrictions, save logic and calculations are unchanged.
 - Browser test with actual order-entry.html filename and mocked read-only Supabase: five populated cards are 99 CSS px high, and all five fit in the SKU-list viewport at 360×740 / 390×844; checked desktop 1280×900 and SALES / Admin roles. Direct Vehicle stays at 99px. Totals = 150 cases / ₹83,800 / 2,320 kg; rate edit 640→650 makes ₹84,200. No horizontal overflow or JS errors, zero writes.
-
 
 ## Phone Web Push (29 Oct 2026)
 
