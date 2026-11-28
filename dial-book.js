@@ -28,6 +28,7 @@
 .dl-two{display:grid;grid-template-columns:1fr 1fr;gap:8px}
 .dl-wa{background:#e7fbe0;border-radius:8px;padding:8px 10px;font-size:12.5px;white-space:pre-line;color:#1f3a1a;overflow-wrap:anywhere}
 .dl-hint{font-size:12px;color:#6b7785;margin:0}
+.dl-name{font-size:12.5px;margin:0;padding:7px 9px;border-radius:8px;background:#eef7f1;color:#1d4d33}.dl-name b{letter-spacing:.2px}
 .dl-err{background:#ffebeb;color:#9b2020;padding:7px 10px;border-radius:6px;font-size:13px}
 .dl-ft{display:flex;gap:6px;padding:10px 14px;border-top:1px solid #e3e7ec}
 .dl-ft button{height:40px;padding:0 10px;border-radius:6px;border:1px solid #e3e7ec;background:#fff;color:#1f2a37;font:inherit;font-size:13.5px;font-weight:700;cursor:pointer;flex:1 1 0;min-width:0;white-space:nowrap}
@@ -97,6 +98,30 @@
     toast("📍 WhatsApp opened: press Send");
     return true;
   }
+  // ---- Transport short name + phone name (same rule as lwb_transport_short / lwb_vehicle_save_as) ----
+  const STOP=new Set("ROAD ROADS LINE LINES ROADLINE ROADLINES ROADWAY ROADWAYS TRANSPORT TRANSPORTS TRANSPORTER TRANSPORTERS TRANSPORTATION TRAILER TRAILERS TRAILOR TRAILORS TRAILLER CARRIER CARRIERS CARGO CARGOS LOGISTIC LOGISTICS MOVERS PACKERS FREIGHT FREIGHTS SERVICE SERVICES CO COMPANY PVT PRIVATE LTD LIMITED LLP AND THE GOODS TRUCK TRUCKS TEMPO FLEET EXPRESS ENTERPRISE ENTERPRISES AGENCY AGENCIES CORPORATION CORP INDIA SHREE SHRI SRI SHRE NEW JAY JAI".split(" "));
+  function trShort(t){
+    const w=String(t||"").toUpperCase().replace(/^\s*M\s*\/\s*S\b\.?/,"").replace(/[^A-Z0-9 ]+/g," ").trim().split(/\s+/).filter(Boolean);
+    if(!w.length)return "";
+    let k=w.filter(x=>!STOP.has(x));if(!k.length)k=[w[0]];
+    const j=[];k.forEach(x=>{if(x.length===1&&j.length&&j[j.length-1][0]==="#")j[j.length-1]+=x;else j.push(x.length===1?"#"+x:x)});
+    const v=j[0][0]==="#"?j[0].slice(1):j[0].length<=3&&j.length>1?j[0]+" "+j[1].replace("#",""):j[0];
+    return v.slice(0,14).trim();
+  }
+  function saveAs(veh,name,tr){
+    const v=window.LWBVeh&&LWBVeh.check(veh).ok?LWBVeh.check(veh).value:String(veh||"").trim();
+    return [v,String(name||"").trim()||"DRIVER",trShort(tr)].filter(Boolean).join(" ").toUpperCase();
+  }
+  let trList=null;
+  async function transports(client){
+    if(trList)return trList;
+    const r=await client.rpc("lwb_transport_names");trList=r.error?[]:(r.data||[]);return trList;
+  }
+  function trInput(client,id,value){
+    const dl=id+"L";
+    setTimeout(async()=>{const L=await transports(client),d=document.getElementById(dl);if(d)d.innerHTML=L.map(t=>'<option value="'+esc(t.name)+'">'+esc(t.short||"")+'</option>').join("")},0);
+    return '<input id="'+id+'" list="'+dl+'" maxlength="150" autocomplete="off" placeholder="Vikas Road Lines" value="'+esc(value||"")+'"><datalist id="'+dl+'"></datalist>';
+  }
   // ---- Vehicle + driver popup ----
   function driverPopup({client,vehicle,ecrs,trucks,known,onDone}){
     css();
@@ -108,8 +133,12 @@
         ${T.length?`<label>ECRS order (optional)<select id="dlEcrs"><option value="">— Not from ECRS —</option>${T.map(t=>`<option value="${esc(t.id)}"${String(t.id)===String(ecrs||"")?" selected":""}>${esc(t.label||("Order "+(t.no||t.id)))}</option>`).join("")}</select></label>`:""}
         <div class="dl-two"><label>Gaadi number *<input id="dlVeh" maxlength="20" placeholder="GJ05 BX 4471" autocomplete="off" value="${esc(vehicle||"")}"></label>
           <label>Driver mobile *<input id="dlMob" type="tel" inputmode="tel" maxlength="16" placeholder="10-digit mobile" autocomplete="off"></label></div>
-        <label>Driver naam (optional)<input id="dlName" maxlength="80" autocomplete="off" value="${esc(known&&known.name||"")}"></label>
-        ${known&&known.masked?`<p class="dl-hint">Abhi saved: ${esc(known.masked)}${known.name?" · "+esc(known.name):""}. Naya number daaloge to purana badal jayega.</p>`:""}
+        <div class="dl-two"><label>Driver naam<input id="dlName" maxlength="80" autocomplete="off" value="${esc(known&&known.name||"")}"></label>
+          <label>Transport${trInput(client,"dlTr",known&&known.transport)}</label></div>
+        <p class="dl-name">📱 Phone / Gmail me naam: <b id="dlAs"></b></p>
+        <p class="dl-hint" id="dlKnown"></p>
+        ${known&&known.masked?`<p class="dl-hint">Abhi ka driver: ${esc(known.masked)}${known.name?" · "+esc(known.name):""}. Naya driver daaloge to woh bhi jud jayega, purana number bhi save rahega.</p>`:""}
+        ${known&&known.old_drivers&&known.old_drivers.length?`<p class="dl-hint">Purane driver: ${known.old_drivers.slice(0,4).map(o=>esc((o.name||"Driver")+" "+o.masked)).join(" · ")}</p>`:""}
         <div id="dlErr" class="dl-err" hidden></div>
         <p class="dl-hint">📍 WhatsApp dabane par driver ko godown ka Google Maps location jayega (Live Tracking settings wala). Aapko WhatsApp me sirf Send dabana hai.</p>
       </div>
@@ -117,6 +146,20 @@
     document.body.appendChild(back);
     const $=s=>back.querySelector(s),veh=$("#dlVeh");
     if(window.LWBVeh)LWBVeh.attach(veh,{required:true});
+    const as=()=>{$("#dlAs").textContent=saveAs(veh.value||"GJ05 BX 4471",$("#dlName").value,$("#dlTr").value)};
+    ["#dlVeh","#dlName","#dlTr"].forEach(s=>$(s).addEventListener("input",as));as();
+    // gaadi number typed: show who drove it before + fill its transport
+    let lastK="";
+    veh.addEventListener("blur",async()=>{
+      const c=window.LWBVeh?LWBVeh.check(veh.value):{ok:false};if(!c.ok)return;
+      const k=vkey(c.value);if(k===lastK)return;lastK=k;
+      const m=await drivers(client,[c.value]),d=m.get(k),box=$("#dlKnown");
+      if(!d){box.innerHTML="Nayi gaadi: pehli baar save ho rahi hai.";return}
+      if(d.transport&&!$("#dlTr").value.trim())$("#dlTr").value=d.transport;
+      const old=(d.old_drivers||[]).slice(0,4).map(o=>esc((o.name||"Driver")+" "+o.masked));
+      box.innerHTML="Pichhla driver: <b>"+esc((d.name||"Driver")+" "+d.masked)+"</b>"+(old.length?" · Purane: "+old.join(" · "):"")+". Wahi driver hai to wahi mobile daaliye, naya hai to naya: dono save rahenge.";
+      as();
+    });
     const close=()=>back.remove();
     const err=m=>{$("#dlErr").hidden=!m;$("#dlErr").textContent=m||""};
     const mobOk=v=>/^(?:\+?91|0)?[6-9]\d{9}$/.test(String(v||"").replace(/[\s()-]/g,""));
@@ -129,9 +172,9 @@
       const w=wa?window.open("","_blank"):null;
       back.querySelectorAll(".dl-ft button").forEach(b=>b.disabled=true);
       const r=await client.rpc("lwb_vehicle_driver_save",{p_vehicle:c.value,p_mobile:$("#dlMob").value,p_name:$("#dlName").value.trim()||null,
-        p_ecrs:$("#dlEcrs")&&$("#dlEcrs").value?Number($("#dlEcrs").value):null});
+        p_ecrs:$("#dlEcrs")&&$("#dlEcrs").value?Number($("#dlEcrs").value):null,p_transport:$("#dlTr").value.trim()||null});
       if(r.error){if(w)w.close();err(nice(r.error.message));back.querySelectorAll(".dl-ft button").forEach(b=>b.disabled=false);return}
-      if(wa)await sendLoc({client,vehicle:r.data.vehicle_no,win:w});else toast("Saved: "+r.data.vehicle_no+" · "+r.data.masked);
+      if(wa)await sendLoc({client,vehicle:r.data.vehicle_no,win:w});else toast("Saved: "+(r.data.save_as||r.data.vehicle_no)+" · "+r.data.masked);
       close();if(onDone)onDone(r.data);
     }
     back.addEventListener("click",e=>{
@@ -171,5 +214,5 @@
       if(a){e.preventDefault();e.stopPropagation();driverPopup({client,vehicle:a.dataset.dialAdd,ecrs:a.dataset.dialEcrs,trucks:typeof trucks==="function"?trucks():trucks,onDone})}
     });
   }
-  window.LWBDial={call,driverPopup,sendLoc,drivers,rowBtns,wire,RESULTS,waText};
+  window.LWBDial={call,driverPopup,sendLoc,drivers,rowBtns,wire,RESULTS,waText,trShort,saveAs,trInput};
 })();

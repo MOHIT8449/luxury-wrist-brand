@@ -1516,3 +1516,13 @@
   Admin pastes Google OAuth Client ID + Secret in Dial Book > Gmail sync; redirect URI https://luxurywristbrand.com/dial-book.html.
   Only contacts in Google label "LWB ERP" are created / deleted (changed contact = delete + create).
 - Tests: tests/dial-services (services + gmail SQL).
+
+## Truck drivers: every driver of a vehicle + phone name format (28 Nov 2026)
+- `lwb_vehicle_driver_history_setup.sql`: `lwb_vehicle_driver_hist` keeps every driver mobile of a vehicle (name, transport, first/last trip, trips). `lwb_vehicle_driver` stays "current driver" (+ `transport_name`).
+- Phone / Gmail name: vehicle no. first, then driver, then transport short name: `GJ05 BX 4471 RAMESH VIKAS` (`lwb_vehicle_save_as`, `lwb_transport_short`; same rule in JS `LWBDial.trShort`). No name: `DRIVER`.
+- Goods Inward trigger takes the vehicle / driver / transport of every bill (old bills were taken in once). Never blocks a bill.
+- `lwb_dial_all` is now owned by this file (VEHICLE rows: current driver of every vehicle, no 30-day limit, + old drivers `ref = KEY:mobile`, tag `Old driver`). If `lwb_dial_services_setup.sql` runs again, run this file after it.
+- Company dispatch: Transport field + "Same driver" tick (blank mobile = vehicle's saved driver, alert still goes). `lwb_ecrs_on_way` now has 5 args (p_transport).
+- Godown Manager can save a gaadi driver and send 📍 location.
+- Gmail quick sync: driver / Services changes set `lwb_gsync_config.dirty_at`; cron `lwb_gmail_sync_quick` every 10 min calls `lwb_gsync_tick('quick')` only when due.
+- Tests: tests/truck-drivers (7).
