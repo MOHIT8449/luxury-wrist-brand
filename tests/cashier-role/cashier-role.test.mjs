@@ -465,3 +465,11 @@ test('Handover slip: cashier signs + bag no., receiver signs, slip has notes + l
  await as('sales');await assert.rejects(one('select public.lwb_acc_shift_slip($1)',[g.id]),/only/);
  assert.equal((await db.query("select has_table_privilege('authenticated','public.lwb_acc_shift_handovers','SELECT') a")).rows[0].a,false);
 });
+
+test('Cash handover only to Sales Heads + Accounts, not Admin (Mohit 28 Nov 2026)',async()=>{
+ await db.exec(await sql('lwb_acc_cash_people_28nov_setup.sql'));
+ await db.exec(await sql('lwb_acc_cash_people_28nov_setup.sql')); // safe to run again
+ const R=(await db.query("select lower(btrim(p.role)) r from public.lwb_acc_cash_people c join public.user_profiles p on p.id=c.user_id")).rows.map(x=>x.r);
+ assert.ok(R.length>0);assert.ok(R.every(r=>r==='manager'||r==='accounts'),R.join());
+ assert.ok(R.includes('accounts'));assert.ok(!R.includes('admin'));
+});
