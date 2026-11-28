@@ -13,7 +13,11 @@
 --        to active Godown Manager (warehouse) + Sales Head (manager) logins. The alert goes once per driver
 --        number: saving the dispatch again with the same number does not send it again.
 --
--- Safe to run again. Nothing is dropped or deleted.
+--   28 Nov 2026 (lwb_vehicle_driver_history_setup.sql): + p_transport (the vehicle's transport, for the phone name
+--        "GJ05 BX 4471 RAMESH VIKAS"); driver mobile left blank = the vehicle's saved driver came again (alert still goes);
+--        every driver of a vehicle is kept (old drivers are not overwritten any more).
+--
+-- Safe to run again. Nothing is dropped or deleted (only the old 4-argument function is replaced by the 5-argument one).
 
 BEGIN;
 
@@ -21,7 +25,9 @@ ALTER TABLE public.lwb_ecrs_trucks ADD COLUMN IF NOT EXISTS onway_at timestamptz
 ALTER TABLE public.lwb_ecrs_trucks ADD COLUMN IF NOT EXISTS onway_mobile text;
 ALTER TABLE public.lwb_ecrs_trucks ADD COLUMN IF NOT EXISTS onway_by uuid;
 
-CREATE OR REPLACE FUNCTION public.lwb_ecrs_on_way(p_truck bigint, p_mobile text, p_name text DEFAULT NULL, p_ordered_cs numeric DEFAULT NULL)
+DROP FUNCTION IF EXISTS public.lwb_ecrs_on_way(bigint, text, text, numeric);
+CREATE OR REPLACE FUNCTION public.lwb_ecrs_on_way(p_truck bigint, p_mobile text, p_name text DEFAULT NULL, p_ordered_cs numeric DEFAULT NULL,
+  p_transport text DEFAULT NULL)
 RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path = '' AS $fn$
 DECLARE t public.lwb_ecrs_trucks; v_mob text := public.lwb_dial_mob(p_mobile); v_no integer; v_sent numeric; v_diff numeric;
         v_name text := upper(left(nullif(btrim(coalesce(p_name, '')), ''), 80)); v_qty text; v_n integer := 0; v_by text;
@@ -34,9 +40,19 @@ BEGIN
   IF t.dispatched_at IS NULL OR public.lwb_vehicle_fmt(t.vehicle_no) IS NULL THEN
     RAISE EXCEPTION 'Save the company dispatch with the vehicle no. first';
   END IF;
+  IF v_mob IS NULL AND nullif(regexp_replace(coalesce(p_mobile, ''), '\D', '', 'g'), '') IS NULL THEN
+    -- blank: same driver as last time
+    SELECT d.driver_mobile, coalesce(v_name, upper(d.driver_name)) INTO v_mob, v_name
+      FROM public.lwb_vehicle_driver d WHERE d.vehicle_key = public.lwb_vehicle_key(t.vehicle_no);
+    IF v_mob IS NULL THEN RETURN jsonb_build_object('notified', 0, 'no_driver', true); END IF;
+  END IF;
   IF v_mob IS NULL THEN RAISE EXCEPTION 'Driver mobile: enter a 10-digit mobile'; END IF;
 
-  PERFORM public.lwb_vehicle_driver_save(t.vehicle_no, v_mob, v_name, t.id);
+  IF to_regprocedure('public.lwb_vehicle_driver_put(text,text,text,text,bigint,timestamptz,text)') IS NOT NULL THEN
+    PERFORM public.lwb_vehicle_driver_put(t.vehicle_no, v_mob, v_name, p_transport, t.id, now(), 'ECRS dispatch');
+  ELSE
+    PERFORM public.lwb_vehicle_driver_save(t.vehicle_no, v_mob, v_name, t.id);
+  END IF;
 
   IF t.onway_mobile IS NOT DISTINCT FROM v_mob THEN
     RETURN jsonb_build_object('notified', 0, 'again', true);
@@ -69,8 +85,8 @@ BEGIN
    WHERE id = t.id;
   RETURN jsonb_build_object('notified', v_n, 'again', false, 'diff', v_diff, 'sent', v_sent);
 END $fn$;
-REVOKE ALL ON FUNCTION public.lwb_ecrs_on_way(bigint, text, text, numeric) FROM PUBLIC, anon;
-GRANT EXECUTE ON FUNCTION public.lwb_ecrs_on_way(bigint, text, text, numeric) TO authenticated;
+REVOKE ALL ON FUNCTION public.lwb_ecrs_on_way(bigint, text, text, numeric, text) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.lwb_ecrs_on_way(bigint, text, text, numeric, text) TO authenticated;
 
 COMMIT;
 

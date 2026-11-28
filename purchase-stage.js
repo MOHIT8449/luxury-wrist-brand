@@ -1,6 +1,7 @@
 /* Purchase stages (Mohit, 27 Nov 2026, lwb_purchase_stages_setup.sql).
    LWBPurchaseStage.dispatch({client, truck, onDone}) = popup "Company dispatched": vehicle no., invoice no. / date and
    the cases the company really sent per SKU (starts with the ECRS ordered cases). Also "Not coming" (company did not send).
+   28 Nov: + Transport; "Same driver" tick (blank mobile = the vehicle's saved driver, alert still goes); every driver kept.
    Driver mobile + name (27 Nov, lwb_ecrs_on_way_setup.sql): saved on the vehicle and "on the way" goes to GM + Sales Head.
    onDone(kind, onWay) — onWay = {notified, again} when a driver mobile was saved. driver = {masked, name} already saved.
    truck = {id, no, day, rows:[{sku_id,name,cs}], sent_rows, vehicle_no, invoice_no, invoice_date, closed_at}. */
@@ -33,11 +34,13 @@
 .pst-d.m{background:#fdecef;color:#c8102e}.pst-d.ok{background:#e4f6e9;color:#0d6b36}.pst-d.p{background:#e8f0fe;color:#1a56c4}
 .pst-same{margin:0 0 8px;padding:7px 10px;border-radius:6px;font-weight:800;font-size:13.5px}.pst-same.ok{background:#e4f6e9;color:#0d6b36}.pst-same.bad{background:#fdecef;color:#c8102e}
 .pst-hint{font-size:12px;color:#6b7785;margin:8px 0 0}
+.pst-b .pst-sd{display:flex;flex-direction:row;font-weight:600;color:#2b3440;gap:6px;align-items:flex-start;margin:0 0 6px;padding:7px 10px;border-radius:6px;background:#f4f7fb;font-size:13px;line-height:1.35}.pst-sd input{margin-top:2px;width:auto;height:auto;flex:none}.pst-sd small{color:#6b7785}
+.pst-as{margin:0 0 8px;font-size:12.5px;color:#1d4d33}.pst-as:empty{display:none}
 .pst-err{background:#ffebeb;color:#9b2020;padding:7px 10px;border-radius:6px;margin-top:8px;font-size:13px}
 .pst-ft{display:flex;gap:6px;padding:10px 14px;border-top:1px solid #e3e7ec}
 .pst-ft button{height:36px;padding:0 12px;border-radius:6px;border:1px solid #e3e7ec;background:#fff;color:#1f2a37;font:inherit;font-size:13.5px;font-weight:700;cursor:pointer;flex:1 1 0;min-width:0;white-space:nowrap}
 .pst-ft .go{background:#1a56c4;border-color:#1a56c4;color:#fff}.pst-ft .no{color:#b42318;border-color:#f0c2c2}
-@media(max-width:540px){.pst-back{padding:0}.pst-pop{border-radius:0;min-height:100%}.pst-f{grid-template-columns:1fr 1fr}.pst-f label:first-child{grid-column:1/-1}.pst-f label:nth-child(3){grid-column:auto}.pst-t td input{width:68px}.pst-lg{display:none}}`;
+@media(max-width:540px){.pst-back{padding:0}.pst-pop{border-radius:0;min-height:100%}.pst-f{grid-template-columns:1fr 1fr}.pst-f label:first-child{grid-column:1/-1}.pst-f label:nth-child(3){grid-column:auto}.pst-f label:nth-child(6){grid-column:1/-1}.pst-t td input{width:68px}.pst-lg{display:none}}`;
     document.head.appendChild(s);
   }
   function dispatch({client,truck,onDone,driver}){
@@ -51,13 +54,16 @@
         <div class="pst-f"><label>Vehicle no.<input id="pstVeh" maxlength="20" placeholder="GJ05..." value="${esc(t.vehicle_no||"")}" autocomplete="off"></label>
           <label>Company invoice no.<input id="pstInv" maxlength="40" value="${esc(t.invoice_no||"")}" autocomplete="off"></label>
           <label>Invoice date<input id="pstDt" type="date" value="${esc(t.invoice_date||today())}"></label>
-          <label>Driver mobile<input id="pstMob" type="tel" inputmode="numeric" maxlength="14" placeholder="${esc(drv&&drv.masked?"Saved "+drv.masked:"10 digit")}" autocomplete="off"></label>
-          <label>Driver name<input id="pstDrv" maxlength="40" value="${esc(drv&&drv.name||"")}" autocomplete="off"></label></div>
+          <label>Driver mobile<input id="pstMob" type="tel" inputmode="numeric" maxlength="14" placeholder="${esc(drv&&drv.masked?"Same: "+drv.masked:"10 digit")}" autocomplete="off"></label>
+          <label>Driver name<input id="pstDrv" maxlength="40" value="${esc(drv&&drv.name||"")}" autocomplete="off"></label>
+          <label>Transport${window.LWBDial&&LWBDial.trInput?LWBDial.trInput(client,"pstTr",drv&&drv.transport):'<input id="pstTr" maxlength="150" autocomplete="off" value="'+esc(drv&&drv.transport||"")+'">'}</label></div>
+        ${drv&&drv.masked?`<label class="pst-sd"><input type="checkbox" id="pstSameDrv" checked><span>Same driver aaya hai: <b>${esc((drv.name||"Driver")+" "+drv.masked)}</b><br><small>Naya driver ho to upar naya mobile likhiye, purana bhi save rahega.</small></span></label>`:""}
+        <p class="pst-as" id="pstAs"></p>
         <div id="pstSame" class="pst-same"></div>
         <table class="pst-t"><thead><tr><th>SKU</th><th>Ordered<span class="pst-lg"> CS</span></th><th><span class="pst-lg">Company </span>sent<span class="pst-lg"> CS</span></th><th>Diff</th></tr></thead><tbody>${rows.map((r,i)=>
           `<tr><td>${esc(r.name)}</td><td>${fmt(r.cs)}</td><td><input type="number" min="0" step="1" inputmode="numeric" data-i="${i}" value="${r.sent}" aria-label="Sent cases ${esc(r.name)}"></td><td data-d="${i}"></td></tr>`).join("")}</tbody>
           <tfoot><tr><td>Total</td><td>${fmt(rows.reduce((a,r)=>a+r.cs,0))}</td><td id="pstTot"></td><td id="pstTotD"></td></tr></tfoot></table>
-        <p class="pst-hint">Bill cases same: just enter the driver mobile. Different: change the cases. Saving the driver mobile sends "Vehicle on the way" to the Godown Manager and Sales Head.</p>
+        <p class="pst-hint">Bill cases same: just Save (same driver) or enter the new driver mobile. Different: change the cases. Saving with the driver sends "Vehicle on the way" to the Godown Manager and Sales Head.</p>
         <div id="pstErr" class="pst-err" hidden></div>
       </div>
       <div class="pst-ft"><button type="button" class="go" data-save>Save dispatch</button>${t.closed_at?'<button type="button" data-open>Open again</button>':'<button type="button" class="no" data-close>✕ Not coming</button>'}<button type="button" data-x>Cancel</button></div></div>`;
@@ -70,6 +76,13 @@
       sm.innerHTML=s===o&&!bad?"✓ Bill cases same as ECRS order ("+fmt(o)+" cs)":"⚠ Bill is different: "+(s<o?fmt(o-s)+" cs less":s>o?fmt(s-o)+" cs more":"same total")+" · "+bad+" SKU changed"};
     back.querySelectorAll("input[data-i]").forEach(el=>el.addEventListener("input",()=>{rows[+el.dataset.i].sent=Math.max(0,Math.round(num(el.value)));upd()}));
     upd();
+    const sd=$("#pstSameDrv");
+    let nameCleared=false;
+    const asUpd=()=>{const m=$("#pstMob").value.replace(/\D/g,"");if(sd&&m)sd.checked=false;
+      if(m&&drv&&drv.name&&!nameCleared&&$("#pstDrv").value===drv.name){$("#pstDrv").value="";nameCleared=true}  // new mobile: old driver's name not kept
+      const on=m||sd&&sd.checked,n=$("#pstDrv").value.trim()||(!m&&drv&&drv.name)||"";
+      $("#pstAs").innerHTML=on&&window.LWBDial&&LWBDial.saveAs?"📱 Phone / Gmail me naam: <b>"+esc(LWBDial.saveAs($("#pstVeh").value||t.vehicle_no||"",n,$("#pstTr").value))+"</b>":""};
+    ["#pstMob","#pstDrv","#pstTr","#pstVeh"].forEach(q=>$(q).addEventListener("input",asUpd));if(sd)sd.addEventListener("change",asUpd);asUpd();
     const close=()=>{back.remove();document.removeEventListener("keydown",key)};
     const key=e=>{if(e.key==="Escape")close()};document.addEventListener("keydown",key);
     back.querySelectorAll("[data-x]").forEach(b=>b.onclick=close);
@@ -88,9 +101,9 @@
       const r=await client.rpc("lwb_ecrs_dispatch",{p_truck:t.id,p_vehicle:veh,p_invoice:inv,p_invoice_date:$("#pstDt").value||null,
         p_rows:rows.map(x=>({sku_id:x.sku_id,name:x.name,cs:x.sent}))});
       if(r.error){$("[data-save]").disabled=false;return err(/function|schema cache/i.test(r.error.message)?"Purchase stages are not set up yet (lwb_purchase_stages_setup.sql runs by itself when merged).":"Not saved: "+clean(r.error.message))}
-      let ow=null;
-      if(mob){const o=rows.reduce((a,x)=>a+x.cs,0);
-        const w=await client.rpc("lwb_ecrs_on_way",{p_truck:t.id,p_mobile:mob,p_name:dname||null,p_ordered_cs:o});
+      let ow=null;const same=!mob&&sd&&sd.checked&&vc&&vc.ok;
+      if(mob||same){const o=rows.reduce((a,x)=>a+x.cs,0);
+        const w=await client.rpc("lwb_ecrs_on_way",{p_truck:t.id,p_mobile:mob||"",p_name:dname||null,p_ordered_cs:o,p_transport:$("#pstTr").value.trim()||null});
         if(w.error){$("[data-save]").disabled=false;return err("Dispatch saved, but driver not saved: "+clean(w.error.message))}
         ow=w.data||{}}
       close();if(onDone)onDone("dispatch",ow);
