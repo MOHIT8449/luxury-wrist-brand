@@ -49,6 +49,8 @@ await db.exec(await file('lwb_ecrs_on_way_setup.sql'));
 const mine=await file('lwb_vehicle_driver_history_setup.sql');
 await db.exec(mine);await db.exec(mine); // safe to run again
 await db.exec(await file('lwb_ecrs_on_way_setup.sql')); // run again after: still fine
+await db.exec("INSERT INTO lwb_tracking_settings VALUES (1,21.2103,72.899) ON CONFLICT DO NOTHING");
+const gm=await file('lwb_godown_map_link_setup.sql');await db.exec(gm);await db.exec(gm);
 await db.exec(`ALTER TABLE lwb_transport_master ADD COLUMN IF NOT EXISTS created_by uuid;`);
 const add=await file('lwb_transport_add_setup.sql');await db.exec(add);await db.exec(add);
 
@@ -179,4 +181,11 @@ test('New transport from the dropdown: once, any case', async()=>{
   await assert.rejects(call("select lwb_transport_add('x')"),/2 to 150/);
   const L=(await call('select lwb_transport_names() j'))[0].j.map(t=>t.name);
   assert.ok(L.includes('OM LOGISTICS'));
+});
+
+test('Send location: Google Maps place link + address', async()=>{
+  await as('godown');
+  const r=(await call("select lwb_vehicle_loc_sent('GJ05BX4471') j"))[0].j;
+  assert.equal(r.map_url,'https://maps.app.goo.gl/ymaoBJxw1BLY1hnu8');
+  assert.match(r.address,/Dev Campus/);
 });
