@@ -227,3 +227,13 @@ test('Company people: own group, phone name NAME COMPANY POST AREA, call works',
   await db.exec('SET ROLE service_role');const g=(await db.query('select lwb_gsync_contacts() j')).rows[0].j;await db.exec('RESET ROLE');
   assert.ok(g.some(x=>x.kind==='COMPANY'&&x.name==='RAJESH PATEL CC GSM SURAT'));
 });
+
+test('Gmail duplicate cleaner setup: status lists extra Gmail, tables closed to logins', async()=>{
+  const dd=await file('lwb_gmail_dedupe_setup.sql');await db.exec(dd);await db.exec(dd);
+  await db.query("insert into lwb_gsync_accounts(email,refresh_token) values('second@gmail.com','rt')");
+  await as('admin');const s=(await call('select lwb_gsync_status() j'))[0].j;
+  assert.deepEqual(s.extra,['second@gmail.com']);assert.equal(s.last_dedupe,null);assert.ok(!JSON.stringify(s).includes('"rt"'));
+  await assert.rejects(call('select * from lwb_gsync_accounts'),/permission denied/);
+  await assert.rejects(call('select * from lwb_gdedupe_runs'),/permission denied/);
+  await as('head');await assert.rejects(call('select lwb_gsync_status()'),/Only Admin/);
+});
