@@ -15,6 +15,7 @@
   <script src="party-pay.js?v=20261128a"></script><script src="bill-type.js?v=20261128a"></script>
   <script src="dup-note.js?v=20261126d"></script>
   <script src="acc-hub.js?v=20261128a"></script>
+  <script src="handover-slip.js?v=20261128a"></script>
   <style>
     .status{text-align:center;padding:80px 20px;font-size:15px;color:#555}
     [hidden]{display:none!important}
@@ -218,6 +219,14 @@
     .calc div{display:flex;justify-content:space-between;padding:3px 0}
     .calc .tot{border-top:1px solid #d5dce5;margin-top:4px;padding-top:7px;font-weight:800;font-size:16px}
     .diff{border-radius:9px;padding:9px 12px;font-weight:700;font-size:15px}
+    /* handover slip (28 Nov 2026) */
+    .ho-top{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;background:#f6f7f9;border-radius:10px;padding:8px 12px;font-size:14px}
+    .ho-top b{font-size:16px}
+    .note b .ho-l{display:block;font-size:11px;font-weight:600;color:var(--erp-muted,#6b7785);line-height:1.1}
+    .ho-lc{font-weight:400;color:var(--erp-muted,#6b7785)}
+    .ho-row{display:grid;grid-template-columns:1fr 150px;gap:8px}.ho-row input{width:100%;box-sizing:border-box}
+    .sg-lab{display:flex;justify-content:space-between;align-items:center}.sg-clr{border:1px solid #d5dce5;background:#fff;border-radius:7px;padding:3px 10px;font:inherit;font-size:13px;cursor:pointer}
+    .sg-pad{display:block;width:100%;height:110px;border:1.5px dashed #9aa6b2;border-radius:9px;background:#fff;cursor:crosshair;margin-top:4px}
     .diff.ok{background:#e3f5ec;color:#13824a}.diff.bad{background:#fdecef;color:#b3122b}
     .kv{display:grid;grid-template-columns:auto 1fr;gap:6px 14px;font-size:14px}
     .kv span{color:var(--erp-muted)}
@@ -661,7 +670,7 @@
     // Office / Other heads + Difference of a handover (lwb_acc_shift_extras)
     const batchExtras=b=>(SX.rows||[]).filter(x=>String(x.batch)===String(b));
     const lastExtras=()=>SX.last?batchExtras(SX.last):[];
-    const exName=x=>x.kind==="OFFICE"?"🏢 Office / Godown":x.kind==="OTHER"?"👤 "+esc(x.name):"⚖ Difference";
+    const exName=x=>x.kind==="OFFICE"?"🛟 Emergency fund · Godown":x.kind==="OTHER"?"👤 "+esc(x.name):"⚖ Difference";
     const exChip=x=>' <span class="tag '+(x.kind==="DIFF"?(x.name==="EXTRA"?"t-grn":"t-red"):"t-amb")+'">'+exName(x)+' '+(x.kind==="DIFF"?(x.name==="EXTRA"?"extra ":"short "):"")+rs(x.amount)+'</span>';
     function shiftStrip(){
       const R=SH?(SH.rows||[]).filter(r=>r.status!=="CANCELLED"):[];if(!R.length)return "";
@@ -707,12 +716,13 @@
       if(!SH)return "";
       const R=SH.rows||[],ST={PENDING:'<span class="tag t-amb">Waiting</span>',CANCELLED:'<span class="tag t-gry">Cancelled</span>'};
       return '<div class="sh-head"><h3 class="acx-h3">Shift handover · in the day</h3><button type="button" class="acx-btn pri" data-shgive'+(SH.pending?" disabled":"")+'>⇄ Hand over cash</button></div>'+
-        (R.length?'<div style="overflow:auto"><table class="acx-t sh-t"><thead><tr><th>Time</th><th>From → To</th><th class="n">Book cash</th><th class="n">Handed</th><th>Received</th></tr></thead><tbody>'+
+        (R.length?'<div style="overflow:auto"><table class="acx-t sh-t"><thead><tr><th>Time</th><th>From → To</th><th class="n">Book cash</th><th class="n">Handed</th><th>Received</th><th></th></tr></thead><tbody>'+
         R.map(r=>{const hx=batchExtras(r.batch||r.id).length>0,sp=r.batch_parts>1,d=sp||hx?0:r2(r.counted-r.book),sd=sp&&!hx?r2(r.batch_total-r.book):0,rd=r.status==="RECEIVED"?r2(r.received-r.counted):0;
           const ex=R.find(y=>(y.batch||y.id)===(r.batch||r.id))===r?batchExtras(r.batch||r.id):[];
           return '<tr><td><b>'+hm(r.at)+'</b><small>'+dmy(r.day)+'</small></td><td><b>'+esc(r.by_name)+' → '+esc(r.to_name)+'</b>'+(ex.length?'<small class="sh-ex">'+ex.map(exChip).join("")+'</small>':"")+(sp?' <span class="tag t-blu">Split · total '+rs(r.batch_total)+'</span>'+(Math.abs(sd)>=1?' <span class="tag t-red">'+(sd<0?"short ":"extra ")+rs(Math.abs(sd))+'</span>':""):"")+(r.note?'<small>'+esc(r.note)+'</small>':"")+'</td>'+
             '<td class="n">'+rs(r.book)+'</td><td class="n"><b>'+rs(r.counted)+'</b>'+(Math.abs(d)>=1?'<small class="'+(d<0?"minus":"plus")+'">'+(d<0?"short ":"extra ")+rs(Math.abs(d))+'</small>':"")+'</td>'+
-            '<td>'+(r.status==="RECEIVED"?'<span class="tag '+(Math.abs(rd)>=1?"t-red":"t-grn")+'">'+(Math.abs(rd)>=1?(rd<0?"Short ":"Extra ")+rs(Math.abs(rd)):"✓ "+rs(r.received))+'</span><small>'+hm(r.received_at)+(r.receive_note?" · "+esc(r.receive_note):"")+'</small>':ST[r.status]||"")+'</td></tr>'}).join("")+'</tbody></table></div>'
+            '<td>'+(r.status==="RECEIVED"?'<span class="tag '+(Math.abs(rd)>=1?"t-red":"t-grn")+'">'+(Math.abs(rd)>=1?(rd<0?"Short ":"Extra ")+rs(Math.abs(rd)):"✓ "+rs(r.received))+'</span><small>'+hm(r.received_at)+(r.receive_note?" · "+esc(r.receive_note):"")+'</small>':ST[r.status]||"")+'</td>'+
+            '<td class="n">'+(r.status!=="CANCELLED"&&R.find(y=>(y.batch||y.id)===(r.batch||r.id)&&y.status!=="CANCELLED")===r?'<button type="button" class="acx-btn" data-shslip="'+r.id+'" title="Print A5 handover slip">🖨 Slip</button>':"")+'</td></tr>'}).join("")+'</tbody></table></div>'
         :'<div class="acx-empty">No shift handover in these dates.</div>');
     }
     async function shiftGive(){
@@ -721,18 +731,21 @@
       if(!people.length&&!PP.is_admin){await ERPShell.alert("Nobody to hand the cash to. Admin chooses the people who can take cash.");return}
       const book=r2(D.today===to?Number(D.closing):0);
       let parts=[],pos=0;   // [{id,name,role,amt,typed}]
-      const body='<div class="calc"><div class="tot"><span>Cash should be now</span><span>'+rs(book)+'</span></div></div>'+
-        '<div class="f"><label>Count the notes</label><div class="notes">'+NOTE_KEYS.map(k=>'<div class="note"><b>₹'+k+'</b><button type="button" data-d="'+k+'" data-s="-1" aria-label="less">−</button><input type="text" inputmode="numeric" data-n="'+k+'" placeholder="0" aria-label="'+k+' notes"><button type="button" data-d="'+k+'" data-s="1" aria-label="more">+</button></div>').join("")+
+      const LC=lastCount(),lcN=k=>LC&&LC.notes?Math.floor(Number(LC.notes[k])||0):null,nowAt=new Date().toISOString();
+      const body='<div class="ho-top"><span>📅 <b>'+dmy(todayISO())+'</b> · '+hm(nowAt)+'</span><span>Cash should be now <b>'+rs(book)+'</b></span></div>'+
+        '<div class="f"><label>Count the notes <small class="ho-lc">'+(LC?'grey = last closing '+dmy(istDay(LC.at)).slice(0,5)+' '+hm(LC.at)+' ('+rs(LC.counted)+')':'')+'</small></label><div class="notes">'+NOTE_KEYS.map(k=>'<div class="note"><b>₹'+k+(LC?'<small class="ho-l">last '+lcN(k)+'</small>':'')+'</b><button type="button" data-d="'+k+'" data-s="-1" aria-label="less">−</button><input type="text" inputmode="numeric" data-n="'+k+'" placeholder="0" aria-label="'+k+' notes"><button type="button" data-d="'+k+'" data-s="1" aria-label="more">+</button></div>').join("")+
         '<div class="note" style="grid-template-columns:62px 1fr"><b>Coins</b><input type="text" inputmode="decimal" data-n="coins" placeholder="₹ 0" aria-label="coins amount"></div></div></div>'+
         '<div class="diff ok" id="sDiff"></div>'+
         '<div class="f"><div class="tg-lab"><label for="tQ">Hand the cash box to <small>@ tag one or more · split the amount</small></label>'+(PP.is_admin?'<button type="button" class="tg-set" id="tSet">⚙ Who can take cash</button>':"")+'</div>'+
         '<div id="tParts" class="tg-parts"></div>'+
         '<div class="tg-in"><input id="tQ" type="text" autocomplete="off" placeholder="Type @ and a name"><div class="acx-clist" id="tList" hidden></div></div>'+
         '<div class="pills tg-quick" id="tQuick"></div><div class="tg-sum" id="tSum" hidden></div></div>'+
-        '<div class="f"><label>Rest of the cash <small style="font-weight:400;color:var(--erp-muted)">not in the box · stays in cash in hand</small></label><div id="xParts" class="tg-parts"></div>'+
-        '<div class="pills tg-quick"><button type="button" class="add" data-xadd="OFFICE">+ 🏢 Office / Godown</button><button type="button" class="add" data-xadd="OTHER">+ 👤 Given to someone</button></div></div>'+
+        '<div class="f"><label>Not in the bag <small style="font-weight:400;color:var(--erp-muted)">emergency fund at godown / given to someone · stays in cash in hand</small></label><div id="xParts" class="tg-parts"></div>'+
+        '<div class="pills tg-quick"><button type="button" class="add" data-xadd="OFFICE">+ 🛟 Emergency fund · Godown</button><button type="button" class="add" data-xadd="OTHER">+ 👤 Given to someone</button></div></div>'+
         '<div class="xb" id="xBal"></div>'+
-        '<div class="f"><label for="sNote">Note</label><input id="sNote" type="text" maxlength="300" placeholder="Required if there is a difference"></div>';
+        '<div class="f ho-row"><div><label for="sNote">Note</label><input id="sNote" type="text" maxlength="300" placeholder="Required if there is a difference"></div>'+
+        '<div><label for="sBag">Bag / seal no.</label><input id="sBag" type="text" maxlength="40" placeholder="e.g. B-12" autocomplete="off"></div></div>'+
+        signBox("sSign","Cashier sign (gives the cash)");
       const box=sheet("Hand over the cash box",body,"Hand over",async b=>{
         const notes={};b.querySelectorAll("[data-n]").forEach(i=>{const v=num(i.value);if(v>0)notes[i.dataset.n]=i.dataset.n==="coins"?r2(v):Math.floor(v)});
         const c=calc(),note=b.querySelector("#sNote").value.trim();
@@ -742,38 +755,43 @@
         const left=r2(c-parts.reduce((a,p)=>a+p.amt,0));
         if(Math.abs(left)>=0.01){await ERPShell.alert(left>0?rs(left)+" is not given to anyone. Add it to a person.":"The parts are "+rs(-left)+" more than the counted cash.");return false}
         const xb=ex.find(x=>!(x.amt>0)||(x.kind==="OTHER"&&x.name.trim().length<2));
-        if(xb){await ERPShell.alert(xb.kind==="OTHER"&&xb.name.trim().length<2?"Write the name of the person who has the cash.":"Write the amount for "+(xb.kind==="OFFICE"?"Office / Godown":xb.name)+".");return false}
+        if(xb){await ERPShell.alert(xb.kind==="OTHER"&&xb.name.trim().length<2?"Write the name of the person who has the cash.":"Write the amount for "+(xb.kind==="OFFICE"?"Emergency fund":xb.name)+".");return false}
         const xs=r2(ex.reduce((a,x)=>a+x.amt,0)),df=r2(book-c-xs);
         if(Math.abs(df)>=1&&!note){await ERPShell.alert("Difference "+rs(Math.abs(df))+" ("+(df>0?"short":"extra")+"). Write a note why.");b.querySelector("#sNote").focus();return false}
+        if(gPad&&gPad.empty()){await ERPShell.alert("Cashier: sign in the box first.");return false}
         if(!await ERPShell.confirm("Hand "+rs(c)+(parts.length>1?":\n"+parts.map(p=>"• "+p.name+" "+rs(p.amt)).join("\n"):" to "+parts[0].name)+
-          (ex.length?"\n\nRest of the cash (stays in cash in hand):\n"+ex.map(x=>"• "+(x.kind==="OFFICE"?"Office / Godown":x.name.trim())+" "+rs(x.amt)).join("\n"):"")+
+          (ex.length?"\n\nRest of the cash (stays in cash in hand):\n"+ex.map(x=>"• "+(x.kind==="OFFICE"?"Emergency fund (Godown)":x.name.trim())+" "+rs(x.amt)).join("\n"):"")+
           (Math.abs(df)>=1?"\n\nDifference "+rs(Math.abs(df))+(df>0?" short: goes out of cash in hand":" extra: comes into cash in hand")+" → Cash Difference ledger.":"")+
           "\n\n"+(parts.length>1?"Each one presses":parts[0].name+" presses")+" Received ✓ after counting."))return false;
-        try{await rpc("lwb_acc_shift_give3",{p_parts:parts.map(p=>({to:p.id,amount:p.amt})),p_notes:notes,p_note:note||null,p_extra:ex.map(x=>({kind:x.kind,name:x.kind==="OTHER"?x.name.trim():null,amount:x.amt}))})}catch(e){await ERPShell.alert(e.message);return false}
+        let gr;try{gr=await rpc("lwb_acc_shift_give3",{p_parts:parts.map(p=>({to:p.id,amount:p.amt})),p_notes:notes,p_note:note||null,p_extra:ex.map(x=>({kind:x.kind,name:x.kind==="OTHER"?x.name.trim():null,amount:x.amt}))})}catch(e){await ERPShell.alert(e.message);return false}
+        const bid=gr&&(gr.batch||gr.id),bag=b.querySelector("#sBag").value.trim();
+        if(bid&&gPad)try{await rpc("lwb_acc_shift_sign",{p_id:Number(bid),p_side:"GIVE",p_sign:gPad.png(),p_bag:bag||null})}catch(e){toastMsg("Handed over · sign not saved: "+e.message)}
         toastMsg("Handed to "+parts.map(p=>p.name.split(/\s+/)[0]).join(" + ")+" · waiting for Received");load();
+        if(bid)setTimeout(async()=>{if(await ERPShell.confirm("Print the A5 handover slip now?"))printSlip(bid)},200);
       },"pri");
       const q=box.querySelector("#tQ"),list=box.querySelector("#tList");
       let counted=0,ex=[];   // ex: [{kind:"OFFICE"|"OTHER",name,amt}]
       function calc(){let t=0;box.querySelectorAll("[data-n]").forEach(i=>{const v=num(i.value);if(v>0)t+=i.dataset.n==="coins"?v:Number(i.dataset.n)*Math.floor(v)});
-        t=r2(t);const d=r2(t-book),c=box.querySelector("#sDiff");c.className="diff "+(Math.abs(d)<1?"ok":"bad");
-        c.textContent="Counted "+rs(t)+(Math.abs(d)<1?" ✓ matches":" · "+(d<0?"short ":"extra ")+rs(Math.abs(d)));
+        t=r2(t);const xs0=r2(ex.reduce((a,x)=>a+(x.amt||0),0)),d=r2(t+xs0-book),c=box.querySelector("#sDiff");c.className="diff "+(Math.abs(d)<1?"ok":"bad");
+        c.textContent="Counted "+rs(t)+(xs0?" + emergency / other "+rs(xs0):"")+(Math.abs(d)<1?" ✓ matches":" · "+(d<0?"short ":"extra ")+rs(Math.abs(d)));
         if(t!==counted){counted=t;share();drawParts()}drawBal();return t}
       // Book cash = box (counted) + office / others + Difference
       function drawBal(){const w=box.querySelector("#xBal");if(!w)return;const xs=r2(ex.reduce((a,x)=>a+(x.amt||0),0)),df=r2(book-counted-xs);
         if(!ex.length&&Math.abs(df)<1){w.hidden=true;return}w.hidden=false;
-        w.innerHTML='<span>Box <b>'+rs(counted)+'</b></span>'+(xs?'<span>+ Office / other <b>'+rs(xs)+'</b></span>':"")+
+        w.innerHTML='<span>Box <b>'+rs(counted)+'</b></span>'+(xs?'<span>+ Emergency / other <b>'+rs(xs)+'</b></span>':"")+
           '<span class="xd '+(Math.abs(df)<1?"ok":df>0?"bad":"ext")+'">'+(Math.abs(df)<1?"✓ No difference":"⚖ Difference "+rs(Math.abs(df))+(df>0?" short":" extra"))+'</span>'+
           '<small>'+(Math.abs(df)<1?"Book "+rs(book)+" fully explained":df>0?"goes out of cash in hand → Cash Difference ledger":"comes into cash in hand → Cash Difference ledger")+'</small>'}
       function drawEx(){const w=box.querySelector("#xParts");
-        w.innerHTML=ex.map((x,i)=>'<div class="tg-part xp"><span class="tg-who">'+(x.kind==="OFFICE"?'<b>🏢 Office / Godown pe pada</b>':'<input type="text" data-xn="'+i+'" value="'+esc(x.name)+'" maxlength="80" placeholder="Name (given to)" aria-label="Given to">')+'</span>'+
+        w.innerHTML=ex.map((x,i)=>'<div class="tg-part xp"><span class="tg-who">'+(x.kind==="OFFICE"?'<b>🛟 Emergency fund · Godown pe rakha</b>'+(lastEm()?'<small>last time '+rs(lastEm())+'</small>':''):'<input type="text" data-xn="'+i+'" value="'+esc(x.name)+'" maxlength="80" placeholder="Name (given to)" aria-label="Given to">')+'</span>'+
           '<input type="text" inputmode="decimal" data-xa="'+i+'" value="'+(x.amt>0?x.amt:"")+'" placeholder="₹ amount" aria-label="Amount">'+
           '<button type="button" data-xrm="'+i+'" aria-label="Remove">✕</button></div>').join("");
-        w.querySelectorAll("[data-xa]").forEach(i=>i.oninput=()=>{ex[Number(i.dataset.xa)].amt=r2(num(i.value)||0);drawBal()});
+        w.querySelectorAll("[data-xa]").forEach(i=>i.oninput=()=>{ex[Number(i.dataset.xa)].amt=r2(num(i.value)||0);calc()});
         w.querySelectorAll("[data-xn]").forEach(i=>i.oninput=()=>{ex[Number(i.dataset.xn)].name=i.value});
         w.querySelectorAll("[data-xrm]").forEach(b=>b.onclick=()=>{ex.splice(Number(b.dataset.xrm),1);drawEx()});
-        drawBal()}
+        calc()}
       box.querySelectorAll("[data-xadd]").forEach(b=>b.onclick=()=>{if(ex.length>=10)return;
-        const left=r2(book-counted-ex.reduce((a,x)=>a+(x.amt||0),0));ex.push({kind:b.dataset.xadd,name:"",amt:left>0?left:0});drawEx();
+        const left=r2(book-counted-ex.reduce((a,x)=>a+(x.amt||0),0)),le=b.dataset.xadd==="OFFICE"&&!(counted>0)?lastEm():0;
+        ex.push({kind:b.dataset.xadd,name:"",amt:le||(left>0?left:0)});drawEx();
         const f=box.querySelector(b.dataset.xadd==="OTHER"?'[data-xn="'+(ex.length-1)+'"]':'[data-xa="'+(ex.length-1)+'"]');if(f)f.focus()});
       // parts the user did not type share what is left equally (₹5L, two people → ₹2.5L each)
       function share(){const auto=parts.filter(p=>!p.typed);if(!auto.length)return;
@@ -815,7 +833,26 @@
       const st=box.querySelector("#tSet");if(st)st.onclick=()=>cashPeopleSetup(PP,()=>{people=(PP.list||[]).filter(p=>!p.me);parts=parts.filter(p=>people.some(x=>x.id===p.id));share();drawParts()});
       box.querySelectorAll("[data-n]").forEach(i=>i.oninput=calc);
       box.querySelectorAll("[data-d]").forEach(b=>b.onclick=()=>{const i=box.querySelector('[data-n="'+b.dataset.d+'"]');i.value=Math.max(0,(Math.floor(num(i.value))||0)+Number(b.dataset.s))||"";calc()});
+      const gPad=padIn(box,"sSign");
       calc();drawParts();
+    }
+    // Handover slip (Mohit 28 Nov 2026, lwb_acc_handover_slip_setup.sql): last closing count, signatures, A5 print
+    // Emergency fund kept at the godown (OFFICE head): the amount of the last handover, to fill in again
+    function lastEm(){const R=(SX.rows||[]).filter(x=>x.kind==="OFFICE"&&!x.cancelled_at);if(!R.length)return 0;
+      const b=SX.last&&R.some(x=>String(x.batch)===String(SX.last))?SX.last:R.reduce((m,x)=>Number(x.batch)>Number(m)?x.batch:m,R[0].batch);return r2(R.filter(x=>String(x.batch)===String(b)).reduce((a,x)=>a+Number(x.amount),0))}
+    function lastCount(){
+      const A=[];(D&&D.closes||[]).forEach(c=>{if(c.notes&&c.closed_at)A.push({at:c.closed_at,notes:c.notes,counted:c.counted})});
+      const R=SH?(SH.rows||[]).filter(r=>r.status!=="CANCELLED"&&r.notes):[],B=new Map();
+      R.forEach(r=>{const k=r.batch||r.id;if(!B.has(k))B.set(k,{at:r.at,notes:r.notes,counted:r.batch_total||r.counted})});
+      A.push(...B.values());return A.sort((a,b)=>String(b.at).localeCompare(String(a.at)))[0]||null;
+    }
+    const signBox=(id,label)=>'<div class="f"><div class="sg-lab"><label>'+esc(label)+'</label><button type="button" class="sg-clr" data-sgclr="'+id+'">Clear</button></div><canvas class="sg-pad" id="'+id+'" aria-label="'+esc(label)+'"></canvas></div>';
+    function padIn(box,id){const cv=box.querySelector("#"+id);if(!cv||!window.LWBSlip)return null;const p=LWBSlip.pad(cv);
+      const c=box.querySelector('[data-sgclr="'+id+'"]');if(c)c.onclick=()=>p.clear();return p}
+    async function printSlip(id){
+      if(!window.LWBSlip){await ERPShell.alert("Slip print is not loaded. Refresh the page.");return}
+      let S;try{S=await rpc("lwb_acc_shift_slip",{p_id:Number(id)})}catch(e){await ERPShell.alert(e.message);return}
+      LWBSlip.print(S);
     }
     // Admin: the people who may take the cash box (Accounts, Vishal bhai, Sales, Admin …)
     function cashPeopleSetup(PP,done){
@@ -838,15 +875,19 @@
     function shiftReceive(id){
       const P=SH&&SH.pending,x=shiftParts(P).find(p=>String(p.id)===String(id));if(!x)return;
       const others=shiftParts(P).filter(p=>p!==x);
-      sheet("Receive the cash box",'<p style="margin:0;font-size:15px">'+esc(P.by_name)+' is handing '+(x.to===SH.me?"you":esc(x.to_name))+' <b>'+rs(x.amount)+'</b> ('+hm(P.at)+').'+
+      const box=sheet("Receive the cash box",'<p style="margin:0;font-size:15px">'+esc(P.by_name)+' is handing '+(x.to===SH.me?"you":esc(x.to_name))+' <b>'+rs(x.amount)+'</b> ('+hm(P.at)+').'+
           (others.length?'<br><small>Total '+rs(P.counted)+' · '+others.map(o=>esc(o.to_name)+' '+rs(o.amount)).join(' · ')+'</small>':"")+(P.note?'<br><small>'+esc(P.note)+'</small>':"")+'</p>'+
         '<div class="f"><label for="shAmt">Cash counted ₹</label><input id="shAmt" class="big" type="text" inputmode="decimal" value="'+r2(x.amount)+'"></div>'+
-        '<div class="f"><label for="shNote">Note</label><input id="shNote" type="text" maxlength="300" placeholder="Required if the amount is different"></div>',
+        '<div class="f"><label for="shNote">Note</label><input id="shNote" type="text" maxlength="300" placeholder="Required if the amount is different"></div>'+
+        signBox("shSign","Sign of "+(x.to===SH.me?"the person taking the cash":x.to_name)),
         "Received ✓",async b=>{
+          if(rPad&&rPad.empty()){await ERPShell.alert("Sign in the box first.");return false}
           try{await rpc("lwb_acc_shift_receive",{p_id:Number(x.id),p_amount:num(b.querySelector("#shAmt").value),p_note:b.querySelector("#shNote").value||null})}
           catch(e){await ERPShell.alert(e.message);return false}
+          if(rPad)try{await rpc("lwb_acc_shift_sign",{p_id:Number(x.id),p_side:"RECV",p_sign:rPad.png(),p_bag:null})}catch(e){toastMsg("Received · sign not saved: "+e.message)}
           toastMsg("Cash box received");load();
         },"grn");
+      const rPad=padIn(box,"shSign");
     }
     async function shiftCancel(id){
       if(!await ERPShell.confirm("Cancel this handover? Parts still waiting are cancelled; the cash stays with the person who handed it."))return;
@@ -1845,6 +1886,7 @@
 
     /* ---------- wiring ---------- */
     document.addEventListener("click",e=>{
+      const sp=e.target.closest("[data-shslip]");if(sp){e.preventDefault();printSlip(sp.dataset.shslip);return}
       const sg=e.target.closest("[data-shgive],[data-shrecv],[data-shcancel]");
       if(sg){e.preventDefault();if(sg.hasAttribute("data-shgive"))shiftGive();else if(sg.dataset.shrecv)shiftReceive(sg.dataset.shrecv);else shiftCancel(sg.dataset.shcancel);return}
       const t=e.target.closest("[data-tab],[data-return],[data-reopen]");if(!t)return;
