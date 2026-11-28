@@ -11,7 +11,7 @@
   <script src="erp-shell.js?v=20261127p"></script>
   <script src="sales-common.js"></script>
   <script src="vehicle-no.js"></script>
-  <script src="dial-book.js?v=20261128d"></script>
+  <script src="dial-book.js?v=20261128e"></script>
   <style>
     .db-tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px}
     .db-tab{border:1px solid var(--erp-line);background:#fff;border-radius:16px;padding:5px 11px;font:inherit;font-size:13px;font-weight:600;cursor:pointer;color:var(--erp-ink)}
@@ -130,9 +130,13 @@
     const ini=n=>String(n||"?").replace(/[^A-Za-z0-9 ]/g,"").trim().split(/\s+/).slice(0,2).map(w=>w[0]).join("").toUpperCase()||"?";
     const canVeh=()=>["admin","manager","sales","accounts","warehouse"].includes(me.role);
     const contacts=()=>B?B.contacts:[];
+    const isAdm=()=>!!me&&me.role==="admin";
     function drawTabs(){
       const c=k=>contacts().filter(x=>kindTab(x.kind)===k).length;
-      el("tabs").innerHTML=TABS.filter(([k])=>k!=="PARTY"||c("PARTY")||["admin","manager","accounts","sales"].includes(me.role)).map(([k,l])=>
+      // Mohit 28 Nov: Recent + Call log (who called whom, when) only for Admin.
+      const T=TABS.filter(([k])=>(k!=="PARTY"||c("PARTY")||["admin","manager","accounts","sales"].includes(me.role))&&(isAdm()||(k!=="recent"&&k!=="log")));
+      if(!T.some(([k])=>k===tab))tab=T[0][0];
+      el("tabs").innerHTML=T.map(([k,l])=>
         '<button type="button" role="tab" class="db-tab'+(k===tab?" on":"")+'" data-tab="'+k+'">'+esc(l)+(k.length>4&&k!=="recent"?"<b>"+fmt(c(k))+"</b>":"")+"</button>").join("");
       el("t_book").hidden=tab==="log";el("t_log").hidden=tab!=="log";
       el("sm").hidden=!(tab==="PARTY"&&["admin","manager","accounts"].includes(me.role));
@@ -231,7 +235,7 @@
       const last=x.last_at?'Last call<br><b>'+esc(ago(x.last_at))+"</b>"+(x.last_by?" · "+esc(String(x.last_by).split(/\s+/)[0]):""):"—";
       return '<div class="db-row" data-k="'+esc(x.kind)+'" data-r="'+esc(x.ref)+'"><div class="db-av'+(v||x.kind==="DRIVER"?" v":party?"":" t")+'">'+esc(v?"🚚":x.kind==="SERVICE"?"🛠":ini(x.name))+'</div>'+
         '<div class="db-who"><b>'+esc(x.name)+'</b><small>'+tag+(ex.length?'<span class="db-bd g" title="'+esc(ex.map(n=>(n.label||"Extra")+" "+n.masked).join(", "))+'">📞 '+(ex.length+1)+" no.</span>":"")+(dup?'<span class="db-bd r" title="Same number as: '+esc(x.dup_with.join(", "))+'">⚠ Same no.: '+esc(x.dup_with[0])+(x.dup_with.length>1?" +"+(x.dup_with.length-1):"")+"</span>":"")+esc(sub)+(x.last_result?' · <span class="db-res '+resCls(x.last_result)+'">'+esc(RES[x.last_result]||x.last_result)+"</span>":"")+'</small></div>'+
-        '<div class="db-num">'+esc(x.masked||"")+'</div><div class="db-last">'+last+'</div>'+
+        '<div class="db-num">'+esc(x.masked||"")+'</div>'+(isAdm()?'<div class="db-last">'+last+'</div>':"")+
         (canNum(x)?'<button type="button" class="db-wa db-addn" data-addn title="Add another number (2nd / 3rd)">➕</button>':"")+
         (x.kind==="SERVICE"&&SV.can_edit?'<button type="button" class="db-wa" data-sved title="Edit">✏️</button>':"")+
         (v&&canVeh()&&x.tag!=="Old driver"?'<button type="button" class="db-wa" data-loc="'+esc(x.vehicle_no)+'" title="WhatsApp godown location">📍</button>':'<button type="button" class="db-wa" data-wa title="WhatsApp">💬</button>')+
