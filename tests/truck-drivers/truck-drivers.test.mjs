@@ -51,6 +51,7 @@ await db.exec(mine);await db.exec(mine); // safe to run again
 await db.exec(await file('lwb_ecrs_on_way_setup.sql')); // run again after: still fine
 await db.exec(`ALTER TABLE lwb_transport_master ADD COLUMN IF NOT EXISTS created_by uuid;`);
 const add=await file('lwb_transport_add_setup.sql');await db.exec(add);await db.exec(add);
+const adm=await file('lwb_dial_calls_admin_only_setup.sql');await db.exec(adm);await db.exec(adm);
 
 async function as(who){await db.query("select set_config('request.jwt.claim.sub',$1,false)",[ids[who]||''])}
 async function call(q,args=[]){await db.exec('SET ROLE authenticated');try{return (await db.query(q,args)).rows}finally{await db.exec('RESET ROLE')}}
@@ -179,4 +180,19 @@ test('New transport from the dropdown: once, any case', async()=>{
   await assert.rejects(call("select lwb_transport_add('x')"),/2 to 150/);
   const L=(await call('select lwb_transport_names() j'))[0].j.map(t=>t.name);
   assert.ok(L.includes('OM LOGISTICS'));
+});
+
+test('Call log + last call: only Admin', async()=>{
+  await as('head');await call("select lwb_dial_call('VEHICLE','GJ05BX4471','Dial Book')");
+  for(const w of ['head','acc','sales','godown']){
+    const b=await book(w);
+    assert.equal(b.recent.length,0,w+': no Recent');
+    assert.ok(b.contacts.every(c=>c.last_at==null&&c.last_by==null&&c.last_result==null),w+': no last call');
+    assert.equal(b.all_log,false);
+    await as(w);await assert.rejects(call('select lwb_dial_log(null,null)'),/only Admin/);
+  }
+  const a=await book('admin');
+  assert.equal(a.all_log,true);
+  assert.ok(a.contacts.some(c=>c.last_by==='Name head'),'admin sees who called');
+  await as('admin');assert.ok((await call('select lwb_dial_log(null,null) j'))[0].j.length>0);
 });
