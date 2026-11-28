@@ -44,6 +44,8 @@
 .dl-rb>button{height:30px!important;min-height:0!important;min-width:34px!important;padding:0 9px!important;border-radius:6px!important;border:1px solid #d5dbe1!important;background:#fff!important;cursor:pointer;font:inherit;font-size:13px!important;font-weight:700!important;color:#1f2a37!important;white-space:nowrap;box-shadow:none!important;line-height:1!important}
 .dl-rb>button.c{background:#13824a!important;border-color:#13824a!important;color:#fff!important;padding:0 12px!important}
 .dl-rb small{display:block;font-size:11.5px;color:#6b7785}
+.dl-cb{display:inline-flex!important;align-items:center;justify-content:center;gap:2px;height:26px!important;min-height:0!important;min-width:30px!important;width:auto!important;padding:0 7px!important;margin:0 0 0 5px!important;border:1px solid #13824a!important;background:#e9f7ef!important;color:#13824a!important;border-radius:6px!important;font:inherit;font-size:13px!important;font-weight:700!important;line-height:1!important;cursor:pointer;vertical-align:middle;flex:none!important;box-shadow:none!important;white-space:nowrap}
+.dl-cb[hidden]{display:none!important}.dl-cb:hover{background:#13824a!important;color:#fff!important}
 @media(max-width:540px){.dl-back{padding:0}.dl-pop{border-radius:0;min-height:100%}.dl-bar{bottom:64px}}`;
     document.head.appendChild(s);
   }
@@ -238,5 +240,51 @@
       if(a){e.preventDefault();e.stopPropagation();driverPopup({client,vehicle:a.dataset.dialAdd,ecrs:a.dataset.dialEcrs,trucks:typeof trucks==="function"?trucks():trucks,onDone})}
     });
   }
-  window.LWBDial={call,driverPopup,sendLoc,drivers,rowBtns,wire,RESULTS,waText,trShort,saveAs,trInput};
+  // ---- 📞 on every page (Mohit, 28 Nov 2026; lwb_dial_find_setup.sql) ----
+  // LWBDial.btn(k, v, name): a 📞 button, hidden until the contact is found in MY Dial Book (salesman: own parties only).
+  //   k = PARTY (party name or id) | USER (login id) | MOB (mobile) | VEH (vehicle no.). The click asks the full number
+  //   from lwb_dial_call (logged, log seen by Admin only) and opens the phone. Any page that loads this file gets it.
+  const SB_URL="https://qstgwhbgbznxemajtave.supabase.co",SB_KEY="sb_publishable_YA2Pow327REqgrWPzVCZiA_nw1F32_o";
+  const found=new Map();let scanT=0,scanning=false,again=false;
+  function btn(k,v,name,label){
+    v=String(v==null?"":v).trim();if(!v)return "";
+    return '<button type="button" class="dl-cb" hidden data-dc-k="'+esc(k)+'" data-dc-v="'+esc(v)+'" data-dc-n="'+esc(name||"")+'" title="Call'+(name?" "+esc(name):"")+'" aria-label="Call'+(name?" "+esc(name):"")+'">📞'+(label?"<span> "+esc(label)+"</span>":"")+"</button>";
+  }
+  function cli(){
+    if(window.__lwbBellClient)return window.__lwbBellClient;
+    return window.supabase&&window.supabase.createClient?(window.__lwbBellClient=window.supabase.createClient(SB_URL,SB_KEY)):null;
+  }
+  const keyOf=b=>b.dataset.dcK+"|"+b.dataset.dcV;
+  async function scan(){
+    if(scanning){again=true;return}
+    const bs=[...document.querySelectorAll("[data-dc-k]")];if(!bs.length)return;
+    const need=[],seen=new Set();
+    bs.forEach(b=>{const k=keyOf(b);if(found.has(k))b.hidden=!found.get(k);else if(!seen.has(k)){seen.add(k);need.push({k:b.dataset.dcK,v:b.dataset.dcV})}});
+    if(!need.length)return;
+    const c=cli();if(!c)return;
+    scanning=true;
+    try{
+      for(let i=0;i<need.length;i+=500){
+        const part=need.slice(i,i+500),r=await c.rpc("lwb_dial_find",{p_items:part});
+        const hit=new Map((r.error?[]:r.data||[]).map(x=>[x.k+"|"+x.v,{kind:x.kind,ref:x.ref}]));
+        part.forEach(x=>{const k=x.k.toUpperCase()+"|"+x.v;found.set(x.k+"|"+x.v,hit.get(k)||null)});
+      }
+    }finally{scanning=false}
+    document.querySelectorAll("[data-dc-k]").forEach(b=>{const k=keyOf(b);if(found.has(k))b.hidden=!found.get(k)});
+    if(again){again=false;scan()}
+  }
+  const page=()=>{const t=(document.body&&document.body.dataset.dialSource)||String(document.title||"").split(/\s[|·–—-]\s/)[0].trim();return t||location.pathname.split("/").pop().replace(/\.html$/,"")};
+  function autoStart(){
+    css();
+    new MutationObserver(()=>{clearTimeout(scanT);scanT=setTimeout(scan,150)}).observe(document.body,{childList:true,subtree:true});
+    document.addEventListener("click",e=>{
+      const b=e.target.closest&&e.target.closest("[data-dc-k]");if(!b)return;
+      e.preventDefault();e.stopPropagation();
+      const x=found.get(keyOf(b));if(!x)return;
+      call({client:cli(),kind:x.kind,ref:x.ref,source:page(),name:b.dataset.dcN});
+    },true);
+    scan();
+  }
+  if(document.body)autoStart();else document.addEventListener("DOMContentLoaded",autoStart);
+  window.LWBDial={call,driverPopup,sendLoc,drivers,rowBtns,wire,RESULTS,waText,trShort,saveAs,trInput,btn,scan};
 })();
