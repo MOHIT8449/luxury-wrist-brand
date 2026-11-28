@@ -1533,3 +1533,4 @@
 - Godown Manager can save a gaadi driver and send 📍 location.
 - Gmail quick sync: driver / Services changes set `lwb_gsync_config.dirty_at`; cron `lwb_gmail_sync_quick` every 10 min calls `lwb_gsync_tick('quick')` only when due.
 - Tests: tests/truck-drivers (7).
+- Follow-up (28 Nov): Transport is a dropdown (`<select>`) of Transport Master + "➕ Naya transport" (`lwb_transport_add_setup.sql`). Company dispatch: everything required except the company invoice no.; Gaadi driver popup: name + transport required.

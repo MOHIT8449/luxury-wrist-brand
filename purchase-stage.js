@@ -23,7 +23,7 @@
 .pst-b{padding:10px 14px}
 .pst-f{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:10px}
 .pst-f label{display:flex;flex-direction:column;gap:3px;font-size:12px;color:#6b7785;min-width:0}
-.pst-f input,.pst-t input{height:34px;border:1px solid #cfd6de;border-radius:6px;padding:0 8px;font:inherit;font-size:14px;min-width:0;width:100%;background:#fff;color:#1f2a37}
+.pst-f input,.pst-f select,.pst-t input{height:34px;border:1px solid #cfd6de;border-radius:6px;padding:0 8px;font:inherit;font-size:14px;min-width:0;width:100%;background:#fff;color:#1f2a37}
 .pst-t{border-collapse:collapse;width:100%;font-size:13.5px}
 .pst-t th,.pst-t td{border-bottom:1px solid #e3e7ec;padding:5px 6px;text-align:right}
 .pst-t th:first-child,.pst-t td:first-child{text-align:left}
@@ -51,19 +51,19 @@
     back.innerHTML=`<div class="pst-pop" role="dialog" aria-modal="true" aria-label="Company dispatch">
       <div class="pst-h"><h3>🚚 Company dispatch · ECRS Order ${esc(t.no||"")}<small>Ordered ${esc(dmy(t.day))}${t.closed_at?" · marked Not coming":""}</small></h3><button type="button" class="pst-x" data-x aria-label="Close">✕</button></div>
       <div class="pst-b">
-        <div class="pst-f"><label>Vehicle no.<input id="pstVeh" maxlength="20" placeholder="GJ05..." value="${esc(t.vehicle_no||"")}" autocomplete="off"></label>
-          <label>Company invoice no.<input id="pstInv" maxlength="40" value="${esc(t.invoice_no||"")}" autocomplete="off"></label>
-          <label>Invoice date<input id="pstDt" type="date" value="${esc(t.invoice_date||today())}"></label>
-          <label>Driver mobile<input id="pstMob" type="tel" inputmode="numeric" maxlength="14" placeholder="${esc(drv&&drv.masked?"Same: "+drv.masked:"10 digit")}" autocomplete="off"></label>
-          <label>Driver name<input id="pstDrv" maxlength="40" value="${esc(drv&&drv.name||"")}" autocomplete="off"></label>
-          <label>Transport${window.LWBDial&&LWBDial.trInput?LWBDial.trInput(client,"pstTr",drv&&drv.transport):'<input id="pstTr" maxlength="150" autocomplete="off" value="'+esc(drv&&drv.transport||"")+'">'}</label></div>
+        <div class="pst-f"><label>Vehicle no. *<input id="pstVeh" maxlength="20" placeholder="GJ05..." value="${esc(t.vehicle_no||"")}" autocomplete="off"></label>
+          <label>Invoice no. (optional)<input id="pstInv" maxlength="40" value="${esc(t.invoice_no||"")}" autocomplete="off"></label>
+          <label>Invoice date *<input id="pstDt" type="date" value="${esc(t.invoice_date||today())}"></label>
+          <label>Driver mobile *<input id="pstMob" type="tel" inputmode="numeric" maxlength="14" placeholder="${esc(drv&&drv.masked?"Same: "+drv.masked:"10 digit")}" autocomplete="off"></label>
+          <label>Driver name *<input id="pstDrv" maxlength="40" value="${esc(drv&&drv.name||"")}" autocomplete="off"></label>
+          <label>Transport *${window.LWBDial&&LWBDial.trInput?LWBDial.trInput(client,"pstTr",drv&&drv.transport):'<input id="pstTr" maxlength="150" autocomplete="off" value="'+esc(drv&&drv.transport||"")+'">'}</label></div>
         ${drv&&drv.masked?`<label class="pst-sd"><input type="checkbox" id="pstSameDrv" checked><span>Same driver aaya hai: <b>${esc((drv.name||"Driver")+" "+drv.masked)}</b><br><small>Naya driver ho to upar naya mobile likhiye, purana bhi save rahega.</small></span></label>`:""}
         <p class="pst-as" id="pstAs"></p>
         <div id="pstSame" class="pst-same"></div>
         <table class="pst-t"><thead><tr><th>SKU</th><th>Ordered<span class="pst-lg"> CS</span></th><th><span class="pst-lg">Company </span>sent<span class="pst-lg"> CS</span></th><th>Diff</th></tr></thead><tbody>${rows.map((r,i)=>
           `<tr><td>${esc(r.name)}</td><td>${fmt(r.cs)}</td><td><input type="number" min="0" step="1" inputmode="numeric" data-i="${i}" value="${r.sent}" aria-label="Sent cases ${esc(r.name)}"></td><td data-d="${i}"></td></tr>`).join("")}</tbody>
           <tfoot><tr><td>Total</td><td>${fmt(rows.reduce((a,r)=>a+r.cs,0))}</td><td id="pstTot"></td><td id="pstTotD"></td></tr></tfoot></table>
-        <p class="pst-hint">Bill cases same: just Save (same driver) or enter the new driver mobile. Different: change the cases. Saving with the driver sends "Vehicle on the way" to the Godown Manager and Sales Head.</p>
+        <p class="pst-hint">* wale sab zaroori hain, sirf company invoice no. optional. Bill cases same: just Save (same driver) or enter the new driver mobile. Different: change the cases. Saving with the driver sends "Vehicle on the way" to the Godown Manager and Sales Head.</p>
         <div id="pstErr" class="pst-err" hidden></div>
       </div>
       <div class="pst-ft"><button type="button" class="go" data-save>Save dispatch</button>${t.closed_at?'<button type="button" data-open>Open again</button>':'<button type="button" class="no" data-close>✕ Not coming</button>'}<button type="button" data-x>Cancel</button></div></div>`;
@@ -82,7 +82,7 @@
       if(m&&drv&&drv.name&&!nameCleared&&$("#pstDrv").value===drv.name){$("#pstDrv").value="";nameCleared=true}  // new mobile: old driver's name not kept
       const on=m||sd&&sd.checked,n=$("#pstDrv").value.trim()||(!m&&drv&&drv.name)||"";
       $("#pstAs").innerHTML=on&&window.LWBDial&&LWBDial.saveAs?"📱 Phone / Gmail me naam: <b>"+esc(LWBDial.saveAs($("#pstVeh").value||t.vehicle_no||"",n,$("#pstTr").value))+"</b>":""};
-    ["#pstMob","#pstDrv","#pstTr","#pstVeh"].forEach(q=>$(q).addEventListener("input",asUpd));if(sd)sd.addEventListener("change",asUpd);asUpd();
+    ["#pstMob","#pstDrv","#pstTr","#pstVeh"].forEach(q=>$(q).addEventListener("input",asUpd));$("#pstTr").addEventListener("change",asUpd);if(sd)sd.addEventListener("change",asUpd);asUpd();
     const close=()=>{back.remove();document.removeEventListener("keydown",key)};
     const key=e=>{if(e.key==="Escape")close()};document.addEventListener("keydown",key);
     back.querySelectorAll("[data-x]").forEach(b=>b.onclick=close);
@@ -93,17 +93,21 @@
       const vc=window.LWBVeh?LWBVeh.check($("#pstVeh").value):null;
       if(vc&&!vc.empty&&!vc.ok){if($("#pstVeh").lwbVehShow)$("#pstVeh").lwbVehShow();return err("Vehicle no.: "+vc.err)}
       const veh=vc&&vc.ok?vc.value:$("#pstVeh").value.trim(),inv=$("#pstInv").value.trim();
-      if(!veh&&!inv)return err("Enter the vehicle no. or the company invoice no.");
-      const mob=$("#pstMob").value.replace(/\D/g,"").replace(/^(91|0)(?=\d{10}$)/,""),dname=$("#pstDrv").value.trim();
-      if(mob&&!/^[6-9]\d{9}$/.test(mob))return err("Driver mobile: enter a 10-digit mobile");
-      if(mob&&!(vc&&vc.ok))return err("Driver mobile needs the vehicle no. (like GJ05 BX 4471)");
+      // Mohit 28 Nov: everything needed except the company invoice no.
+      if(!(vc?vc.ok:veh)){if($("#pstVeh").lwbVehShow)$("#pstVeh").lwbVehShow();$("#pstVeh").focus();return err("Vehicle no. likhiye (jaise GJ05 BX 4471)")}
+      if(!$("#pstDt").value){$("#pstDt").focus();return err("Invoice date chuniye")}
+      const mob=$("#pstMob").value.replace(/\D/g,"").replace(/^(91|0)(?=\d{10}$)/,""),dname=$("#pstDrv").value.trim()||(!mob&&sd&&sd.checked&&drv&&drv.name)||"";
+      if(mob&&!/^[6-9]\d{9}$/.test(mob)){$("#pstMob").focus();return err("Driver mobile: 10-digit mobile likhiye")}
+      if(!mob&&!(sd&&sd.checked)){$("#pstMob").focus();return err("Driver mobile likhiye (ya Same driver par tick kijiye)")}
+      if(!dname){$("#pstDrv").focus();return err("Driver ka naam likhiye")}
+      const trv=$("#pstTr").value;if(!trv||trv==="__new__"){$("#pstTr").focus();return err("Transport chuniye")}
       $("[data-save]").disabled=true;
       const r=await client.rpc("lwb_ecrs_dispatch",{p_truck:t.id,p_vehicle:veh,p_invoice:inv,p_invoice_date:$("#pstDt").value||null,
         p_rows:rows.map(x=>({sku_id:x.sku_id,name:x.name,cs:x.sent}))});
       if(r.error){$("[data-save]").disabled=false;return err(/function|schema cache/i.test(r.error.message)?"Purchase stages are not set up yet (lwb_purchase_stages_setup.sql runs by itself when merged).":"Not saved: "+clean(r.error.message))}
       let ow=null;const same=!mob&&sd&&sd.checked&&vc&&vc.ok;
       if(mob||same){const o=rows.reduce((a,x)=>a+x.cs,0);
-        const w=await client.rpc("lwb_ecrs_on_way",{p_truck:t.id,p_mobile:mob||"",p_name:dname||null,p_ordered_cs:o,p_transport:$("#pstTr").value.trim()||null});
+        const w=await client.rpc("lwb_ecrs_on_way",{p_truck:t.id,p_mobile:mob||"",p_name:dname||null,p_ordered_cs:o,p_transport:trv});
         if(w.error){$("[data-save]").disabled=false;return err("Dispatch saved, but driver not saved: "+clean(w.error.message))}
         ow=w.data||{}}
       close();if(onDone)onDone("dispatch",ow);
