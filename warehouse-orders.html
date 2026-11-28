@@ -12,7 +12,7 @@
   <script src="brand-filter.js"></script>
   <script src="erp-period.js"></script>
   <script src="party-credit.js"></script>
-  <script src="party-pay.js?v=20261126e"></script>
+  <script src="party-pay.js?v=20261128a"></script><script src="bill-type.js?v=20261128a"></script>
   <script src="sku-image.js"></script>
   <script src="erp-operations-notifications.js"></script>
 
@@ -722,6 +722,14 @@
     .prio-pick button.on[data-p="HIGH"] {background:#b26b00;border-color:#b26b00;color:#fff}
     .prio-pick button.on[data-p="URGENT"] {background:#c8102e;border-color:#c8102e;color:#fff}
     .prio-pick button:disabled {opacity:.55;cursor:default}
+    /* GST / Cash bill (lwb_order_bill_type_setup.sql) */
+    .bt-pick button.on[data-t="GST"] {background:#1d4ed8;border-color:#1d4ed8;color:#fff}
+    .bt-pick button.on[data-t="CASH"] {background:#d97706;border-color:#d97706;color:#fff}
+    .bt-pick .bt-def {border:0;background:none;color:#00434d;text-decoration:underline;padding:5px 2px;font-weight:700}
+    .bt-hint {font-weight:600;font-size:11px;color:#6b7682;text-transform:none;letter-spacing:0}
+    .bt-hint.need {color:#b91c1c;font-weight:800}
+    .bt-note {margin-top:5px;background:#fff8e6;border-left:3px solid #f59e0b;padding:4px 7px;border-radius:6px;font-size:12px;color:#5b4200;white-space:normal}
+    .bt-box.need {outline:2px solid #fca5a5;outline-offset:-1px}
     @media (max-width: 1100px) {
       .ps-flow {grid-template-columns:repeat(3,minmax(0,1fr))}
       .ps-pend {grid-template-columns:repeat(4,minmax(0,1fr))}
@@ -1910,6 +1918,16 @@
             </div>
           </div>
 
+          <div class="detail-box bt-box" id="dBillBox" hidden>
+            <label>Bill <span class="bt-hint" id="dBtHint"></span></label>
+            <div class="prio-pick bt-pick" id="dBillType" role="group" aria-label="GST or Cash bill">
+              <button type="button" data-t="GST" onclick="pickBillType('GST')">🧾 GST</button>
+              <button type="button" data-t="CASH" onclick="pickBillType('CASH')">💵 Cash</button>
+              <button type="button" class="bt-def" id="dBtDef" onclick="setPartyBillType()" hidden>Make party default</button>
+            </div>
+            <div class="bt-note" id="dBillNote" hidden></div>
+          </div>
+
           <div class="detail-box">
             <label>Order Qty</label>
             <strong id="dTotalQty">0</strong>
@@ -2775,6 +2793,67 @@ async function setOrderPriority(priority) {
   loadSummary();
   showMessage(selectedOrder.order_no + " priority set to " + selectedOrder.priority +
     (priority === "NORMAL" ? "." : ". Godown and salesman are notified."), "success");
+}
+
+
+/* -----------------------------
+   GST / CASH BILL (Mohit, 28 Nov 2026, lwb_order_bill_type_setup.sql)
+   Salesman only writes a bill note. Sales Head / Admin choose GST or Cash here: on a pending PO it is saved
+   with Approve (required); on an approved PO at once. After the bill is made: Admin only, with a reason.
+----------------------------- */
+let billTypePick = null;
+const hasBillType = o => !!o && Object.prototype.hasOwnProperty.call(o, "bill_type");
+function billTypeBadge(o) {
+  if (!hasBillType(o) || !window.LWBBillType) return "";
+  if (o.bill_type) return " " + LWBBillType.tag(o.bill_type);
+  return isPending(o) ? ' <span class="lbt m" title="Sales Head / Admin: choose GST or Cash">GST / Cash ?</span>' : "";
+}
+function renderBillType() {
+  const box = document.getElementById("dBillBox"), o = selectedOrder;
+  box.hidden = !hasBillType(o);
+  box.classList.remove("need");
+  if (box.hidden) return;
+  const t = billTypePick || o.bill_type || "";
+  const can = CAN_HEAD && !VIEW_ONLY && !isCancelled(o) && !isDeliveredOrder(o);
+  document.querySelectorAll("#dBillType button[data-t]").forEach(b => { b.classList.toggle("on", b.dataset.t === t); b.disabled = !can; });
+  const hint = document.getElementById("dBtHint");
+  hint.className = "bt-hint" + (t ? "" : " need");
+  hint.textContent = !t ? (can ? "choose *" : "not set") : billTypePick && billTypePick !== o.bill_type ? "saved with Approve" : !o.bill_type_set_by ? "party default" : "";
+  document.getElementById("dBtDef").hidden = !can || !t;
+  const n = document.getElementById("dBillNote");
+  n.hidden = !o.bill_note;
+  n.textContent = o.bill_note ? "📝 Salesman note: " + o.bill_note : "";
+}
+async function pickBillType(t) {
+  const o = selectedOrder;
+  if (!o || !CAN_HEAD || VIEW_ONLY) return;
+  if (isPending(o)) { billTypePick = t; renderBillType(); return; }
+  if (o.bill_type === t) return;
+  let reason = null;
+  for (let i = 0; i < 2; i++) {
+    const { data, error } = await db.rpc("lwb_set_order_bill_type", { p_order_id: o.id, p_type: t, p_reason: reason, p_party_default: false });
+    if (!error) {
+      o.bill_type = t; o.bill_type_set_by = currentUser.id;
+      const row = orders.find(x => x.id === o.id); if (row) { row.bill_type = t; row.bill_type_set_by = currentUser.id; }
+      renderBillType(); renderOrders();
+      showMessage(o.order_no + " bill set to " + t + (data && data.billed ? ". Accounts is told (bill already made)." : "."), "success");
+      return;
+    }
+    if (/reason/i.test(error.message || "") && !reason) {
+      const r = await LWBBillType.askReason({ title: "Bill already made", html: "<p>The bill of <b>" + escapeHtml(o.order_no) + "</b> is already made as <b>" + escapeHtml(o.bill_type || "") + "</b>. Change it to <b>" + t + "</b>? Accounts gets a bell.</p>", placeholder: "e.g. party asked for a GST bill", ok: "Change to " + t });
+      if (!r || r.back) return;
+      reason = r; continue;
+    }
+    alert("GST / Cash not saved: " + (error.message || "database error"));
+    return;
+  }
+}
+async function setPartyBillType() {
+  const o = selectedOrder, t = billTypePick || (o && o.bill_type);
+  if (!o || !t) return;
+  if (!await confirm("Make " + t + " the default bill of " + (o.customer_name || "this party") + "?\nNew POs of this party will come as " + t + " by themselves.", { title: "Party default", ok: "Yes, " + t })) return;
+  const { error } = await db.rpc("lwb_set_party_bill_type", { p_party: o.customer_name, p_type: t });
+  showMessage(error ? "Party default not saved: " + error.message : (o.customer_name || "Party") + " default bill: " + t + ".", error ? "error" : "success");
 }
 
 
@@ -4241,6 +4320,8 @@ async function bulkApprove() {
   const list = pickedOrders();
   if (!list.length || bulkBusy) return;
   if (!list.every(isPending)) { alert("Only Pending Review POs can be approved together."); return; }
+  const noBt = list.filter(o => hasBillType(o) && !o.bill_type);
+  if (noBt.length) { alert("Choose GST or Cash bill first (open with Review):\n\n" + noBt.map(o => o.order_no + " · " + (o.customer_name || "") + (o.bill_note ? "\n   Note: " + o.bill_note : "")).join("\n")); return; }
   if (!await confirm("Approve " + list.length + " PO as ordered (no SKU, rate or qty change)?\nTotal " +
     formatMoney(list.reduce((t, o) => t + (Number(o.total_amount) || 0), 0)) + "\n\n" +
     list.map(o => o.order_no + " · " + (o.customer_name || "")).join("\n") +
@@ -5220,7 +5301,7 @@ function renderOrders() {
             </td>
 
             <td class="c-cust">
-              ${escapeHtml(order.customer_name || "-")}<span class="roi-w" data-roi="${order.id}">${roiBadge(order.id)}</span>${dupBadge(order)}${cashBuyerLine(order)}
+              ${escapeHtml(order.customer_name || "-")}<span class="roi-w" data-roi="${order.id}">${roiBadge(order.id)}</span>${dupBadge(order)}${billTypeBadge(order)}${cashBuyerLine(order)}
             </td>
 
             <td class="c-sp" data-label="Sales person">
@@ -5451,6 +5532,8 @@ async function reviewOrder(orderId, transportOnly=false, quiet=false) {
   document.getElementById("poEditBtn").hidden=!transportOnly||!canEditItems(selectedOrder);
 
   renderPriorityPick();
+  billTypePick = null;
+  renderBillType();
 
   document.getElementById("dTotalQty").textContent =
     formatNumber(selectedOrder.total_qty);
@@ -6913,6 +6996,14 @@ async function approveOrder(opts={}) {
   const approving=isPending(selectedOrder);
   if (approving&&selectedOrder.reapprove_from&&!IS_ADMIN){alert('This PO was edited after approval. Only Admin can approve it again.');return false;}
   if (!poItemsValid()) return false;
+  // GST / Cash bill: Sales Head / Admin choose it before approval (lwb_order_bill_type_setup.sql)
+  const btNew = approving && hasBillType(selectedOrder) ? (billTypePick || selectedOrder.bill_type || null) : null;
+  if (approving && hasBillType(selectedOrder) && !btNew) {
+    document.getElementById("dBillBox").classList.add("need");
+    document.getElementById("dBillBox").scrollIntoView({behavior:"smooth",block:"center"});
+    if (!opts.quiet) alert("Choose GST or Cash bill for " + selectedOrder.order_no + " first." + (selectedOrder.bill_note ? "\n\nSalesman note: " + selectedOrder.bill_note : ""));
+    return false;
+  }
   if (!approving && lateEditable(selectedOrder)) return saveLateModify();
   // Rate below the minimum: a Sales Head's approval sends the PO to Admin for a rate OK (database rule).
   const low=approving&&!IS_ADMIN?belowMinItems(selectedItems):[];
@@ -6958,6 +7049,7 @@ async function approveOrder(opts={}) {
       total_qty:totals.qty,total_amount:totals.amount,total_weight:totals.weight
     };
     if(approving)Object.assign(change,{status:'approved',approved_by:currentUser.id,approved_at:new Date().toISOString()});
+    if(btNew&&btNew!==selectedOrder.bill_type)change.bill_type=btNew;
     const {data:updated,error:orderError}=await db.from('orders').update(change)
       .eq('id',selectedOrder.id).eq('status',latest.status).select('id');
     if(orderError) throw orderError;

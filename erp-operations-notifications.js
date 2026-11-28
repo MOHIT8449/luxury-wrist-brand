@@ -97,7 +97,10 @@
   [/^LABOUR_/,"👷","info","Daily labour",""],
   [/^ANNOUNCEMENT$/,"📢","info","",""],
   [/^SALES_PLAN$/,"📋","info","Today's plan",""],
-  [/^PAYMENT_FOLLOWUP$/,"₹","act","Payment follow-up","Collect"]
+  [/^PAYMENT_FOLLOWUP$/,"₹","act","Payment follow-up","Collect"],
+  [/^BILL_TYPE_ASK$/,"🧾","act","GST or Cash bill?","Choose"],
+  [/^BILL_TYPE_CHANGED$/,"🧾","info","Bill type changed",""],
+  [/^BILL_TYPE_MISMATCH$/,"⚠","bad","GST / Cash mismatch","Check"]
  ];
  // Type of every notification (Mohit, 18 Nov 2026: "which notification is this?" must be clear at a glance).
  // Each type has its own colour, icon tile and filter tab in the bell.
@@ -111,7 +114,8 @@
  };
  const CAT_OF=[
   [/^(TASK_|COMPLAINT_|SALES_PLAN$|ANNOUNCEMENT$)/,"task"],
-  [/^(DELIVERY_COLLECTION|ACC_|HIRED_RATE_|TALLY_NOTE_|PAYMENT_FOLLOWUP|LABOUR_|RECEIPT_EDIT_)/,"money"],
+  [/^(DELIVERY_COLLECTION|ACC_|HIRED_RATE_|TALLY_NOTE_|PAYMENT_FOLLOWUP|LABOUR_|RECEIPT_EDIT_|BILL_TYPE_MISMATCH)/,"money"],
+  [/^BILL_TYPE_/,"order"],
   [/^(ORDER_LOADED|ORDER_DISPATCHED|ORDER_DELIVERED|ORDER_PARTIAL|ORDER_NOT_DELIVERED|VEHICLE_LOADED|LOADING_ASSIGNMENT|TALLY_BILL_PENDING|PO_APPROVED_LOADING|DELIVERY_RETURN|RETURN_CHECKED)/,"delivery"],
   [/^(STOCK_|GODOWN_|PURCHASE_|MARKET_)/,"stock"],
   [/^(ORDER_|PO_|RATE_|BILL_CHANGE_|TALLY_BILL_|SALES_RETURN)/,"order"]
@@ -223,6 +227,9 @@
  // Page each notification opens. {o} = the notification's order id. The first page this login can open wins.
  const ROUTES=[
   [/^(TALLY_BILL_PENDING|PO_APPROVED_BILL)$/,["party-billing.html?order={o}"]],
+  [/^BILL_TYPE_ASK$/,["warehouse-orders.html?order={o}"]],
+  [/^BILL_TYPE_CHANGED$/,["party-billing.html?order={o}","warehouse-orders.html?order={o}"]],
+  [/^BILL_TYPE_MISMATCH$/,["party-billing.html?tab=bt","warehouse-orders.html?order={o}"]],
   // Sales Head "Tell Accounts" (lwb_sales_head_outstanding_setup.sql): Party & Collections > To collect; Cashier: Cashier view.
   [/^PAYMENT_FOLLOWUP$/,["party-billing.html#party","accounts-dashboard.html#cash","accounts-books.html?v=out"]],
   [/^PO_APPROVED_LOADING$/,["loading-dispatch.html?order={o}","warehouse-orders.html"]],
