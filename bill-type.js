@@ -27,7 +27,15 @@
 .lbt-d select,.lbt-d input{width:100%;box-sizing:border-box;font:inherit;border:1px solid #cfd6de;border-radius:8px;padding:8px 9px;background:#fff}
 .lbt-f{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}.lbt-f button{flex:1 1 auto;white-space:normal;border:0;border-radius:8px;padding:9px 12px;font:inherit;font-weight:700;cursor:pointer}
 .lbt-f .p{background:#1d6fd6;color:#fff}.lbt-f .s{background:#fff;border:1px solid #cfd6de;color:#17212b}.lbt-f .r{background:#b91c1c;color:#fff}
-.lbt-err{color:#b91c1c;font-size:12.5px;font-weight:700;margin-top:6px}`;
+.lbt-err{color:#b91c1c;font-size:12.5px;font-weight:700;margin-top:6px}
+.lbt-two{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:10px;margin:10px 0 4px}
+.lbt-big{display:flex;flex-direction:column;align-items:center;gap:3px;border:2px solid #cfd6de;background:#fff;border-radius:12px;padding:14px 8px;cursor:pointer;font:inherit;color:#17212b}
+.lbt-big span{font-size:26px;line-height:1}.lbt-big b{font-size:15px}.lbt-big small{font-size:11px;font-weight:700;color:#6b7682}
+.lbt-big.g:hover,.lbt-big.g.on{border-color:#1d4ed8;background:#eff5ff}.lbt-big.g b{color:#1d4ed8}
+.lbt-big.c:hover,.lbt-big.c.on{border-color:#d97706;background:#fff8eb}.lbt-big.c b{color:#92400e}
+.lbt-big:focus-visible{outline:3px solid #0f3b3a;outline-offset:2px}
+.lbt-chk{display:flex!important;align-items:center;gap:7px;font-weight:600!important;color:#4b5763!important;margin:8px 0 0!important}.lbt-chk input{width:auto}
+.lbt-sum{display:flex;flex-wrap:wrap;gap:4px 12px;font-size:13px;color:#4b5763}.lbt-sum b{color:#17212b}`;
   let styled=false;
   const css=()=>{if(styled)return;styled=true;const s=document.createElement("style");s.textContent=CSS;document.head.appendChild(s)};
 
@@ -118,5 +126,27 @@
     });
   }
 
-  window.LWBBillType={load,tag,kindOf,payCheck,askReason,esc};
+  // Approve popup (Mohit, 28 Nov 2026): every Approve asks GST or Cash first.
+  // choose({title, html, note, current, def, canDefault, okWord}) -> {type, setDefault} or null (Cancel)
+  function choose(o){
+    return new Promise(res=>{
+      const pre=String(o.current||o.def||"").toUpperCase();
+      const btn=(t,ic,txt)=>`<button type="button" class="lbt-big ${t==="GST"?"g":"c"}${pre===t?" on":""}" data-t="${t}"><span>${ic}</span><b>${esc(o.okWord||"Approve as")} ${txt}</b>${pre===t?`<small>${o.current?"chosen before":"party default"}</small>`:""}</button>`;
+      const ov=dialog(`<h3>${esc(o.title||"GST or Cash bill?")}</h3>${o.html||""}${o.note?`<div class="lbt-note">📝 Salesman note: ${esc(o.note)}</div>`:""}
+        <div class="lbt-two">${btn("GST","🧾","GST")}${btn("CASH","💵","Cash")}</div>
+        ${o.canDefault?`<label class="lbt-chk"><input type="checkbox" id="lbtDef"> Make it this party's default bill</label>`:""}
+        <div class="lbt-f"><button type="button" class="s" data-x>Cancel</button></div>`);
+      const q=s=>ov.querySelector(s);
+      const done=v=>{ov.remove();document.removeEventListener("keydown",key,true);res(v)};
+      const key=e=>{if(e.key==="Escape"){e.stopPropagation();e.preventDefault();done(null)}
+        else if(e.key==="g"||e.key==="G"){e.preventDefault();ov.querySelector('[data-t="GST"]').click()}
+        else if(e.key==="c"||e.key==="C"){e.preventDefault();ov.querySelector('[data-t="CASH"]').click()}};
+      document.addEventListener("keydown",key,true);
+      q("[data-x]").onclick=()=>done(null);
+      ov.querySelectorAll("[data-t]").forEach(b=>b.onclick=()=>done({type:b.dataset.t,setDefault:!!(q("#lbtDef")&&q("#lbtDef").checked)}));
+      setTimeout(()=>{const f=ov.querySelector(".lbt-big.on")||ov.querySelector(".lbt-big");if(f)f.focus()},30);
+    });
+  }
+
+  window.LWBBillType={load,tag,kindOf,payCheck,askReason,choose,esc};
 })();
