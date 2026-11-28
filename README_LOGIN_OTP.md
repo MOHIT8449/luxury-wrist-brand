@@ -25,6 +25,11 @@ Meta Business Manager -> WhatsApp Manager -> Message Templates -> Create templat
 
 Submit and wait until it shows **Approved** (usually minutes).
 
+If Meta says "This WhatsApp Business account does not have permission to create
+message template", the business portfolio is **Unverified**: Business settings ->
+Business info -> Business verification -> Start verification (GST certificate),
+with the legal name and address exactly as on GST. Try again once it is Verified.
+
 ## 3. Secrets
 
 Uses the same Edge Function secrets as the driver WhatsApp message
@@ -37,9 +42,10 @@ Uses the same Edge Function secrets as the driver WhatsApp message
 Supabase -> Edge Functions -> Deploy a new function -> Via Editor.
 Name exactly **`login-whatsapp-otp`**, paste
 [`supabase/functions/login-whatsapp-otp/index.ts`](./supabase/functions/login-whatsapp-otp/index.ts),
-keep **Verify JWT ON**, Deploy.
+Deploy. Then in the function's **Settings** turn **Verify JWT with legacy secret OFF** and Save
+(this project's login tokens are not signed with the legacy secret; the function checks the login itself).
 
-CLI instead: `supabase functions deploy login-whatsapp-otp`.
+CLI instead: `supabase functions deploy login-whatsapp-otp --no-verify-jwt`.
 
 ## 5. Test
 
