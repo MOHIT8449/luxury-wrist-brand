@@ -24,9 +24,11 @@
  function ac(){
   try{ctx=ctx||new (window.AudioContext||window.webkitAudioContext)();if(ctx.state==="suspended")ctx.resume().catch(()=>{});return ctx}catch(e){return null}
  }
- // Unlock audio on the first touch / key (browser rule), so a later popup can ring.
- const unlock=()=>{ac();removeEventListener("pointerdown",unlock,true);removeEventListener("keydown",unlock,true)};
- addEventListener("pointerdown",unlock,true);addEventListener("keydown",unlock,true);
+ // Unlock audio on every touch / key while it is not running (browser rule; a phone also stops it after the
+ // screen was off or the app was in the background). A sound that could not ring yet plays on that touch (≤ 60 s).
+ let pending=null;
+ const unlock=()=>{const c=ac();if(!c)return;if(pending&&Date.now()-pending.at<60000){const k=pending.k;pending=null;c.resume().then(()=>ring(c,k)).catch(()=>{})}};
+ ["pointerdown","touchstart","keydown"].forEach(ev=>addEventListener(ev,unlock,{capture:true,passive:true}));
  // One note: start s, length d, frequency f (or [from,to] slide), wave w, volume v.
  function note(c,out,s,d,f,w,v){
   const o=c.createOscillator(),g=c.createGain(),t=c.currentTime+s;
@@ -46,11 +48,19 @@
   other:[[0,.6,1175,"sine",.5],[0,.3,2350,"sine",.08]]
  };
  const LABEL={order:"New order",approve:"Approval",task:"Task",money:"Payment",delivery:"Delivery",stock:"Stock",alert:"Alert",other:"Update"};
+ // Louder on small phone speakers: boost, then a limiter so it never cracks.
+ function ring(c,k){
+  const lim=c.createDynamicsCompressor();lim.threshold.value=-6;lim.ratio.value=12;lim.connect(c.destination);
+  const out=c.createGain();out.gain.value=1.8;out.connect(lim);
+  for(const n of SOUNDS[k]||SOUNDS.other)note(c,out,...n);
+ }
  function play(k){
   const c=ac();if(!c)return false;
-  const out=c.createGain();out.gain.value=0.9;out.connect(c.destination);
-  for(const n of SOUNDS[k]||SOUNDS.other)note(c,out,...n);
-  return c.state==="running";
+  if(c.state==="running"){ring(c,k);return true}
+  // Not allowed yet: try to resume; if the browser refuses, ring on the next touch.
+  pending={k,at:Date.now()};
+  c.resume().then(()=>{if(c.state==="running"&&pending&&pending.k===k){pending=null;ring(c,k)}}).catch(()=>{});
+  return false;
  }
  // Which sound a notification gets (sum = the bell's summary: cat, tone, action).
  function soundOf(type,sum){
