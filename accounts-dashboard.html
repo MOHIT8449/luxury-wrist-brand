@@ -15,7 +15,7 @@
   <script src="party-pay.js?v=20261128a"></script><script src="bill-type.js?v=20261128c"></script>
   <script src="dup-note.js?v=20261126d"></script>
   <script src="acc-hub.js?v=20261128a"></script>
-  <script src="handover-slip.js?v=20261128b"></script>
+  <script src="handover-slip.js?v=20261128c"></script>
   <style>
     .status{text-align:center;padding:80px 20px;font-size:15px;color:#555}
     [hidden]{display:none!important}
@@ -114,7 +114,7 @@
     .acx-due .r{display:flex;justify-content:space-between;gap:8px;border-top:1px dashed #cfe9d9;padding-top:5px}
     .acx-due .r small{display:block;color:var(--erp-muted)}
     .tag{display:inline-block;padding:1px 8px;border-radius:99px;font-size:11.5px;font-weight:700;white-space:nowrap}
-    .t-red{background:#fdecef;color:#b3122b}.t-amb{background:#fdf0dc;color:#9a5b00}.t-grn{background:#e3f5ec;color:#13824a}.t-blu{background:#e6efff;color:#1d5fbf}.t-gry{background:#eef0f3;color:#3b4652}
+    .t-red{background:#fdecef;color:#b3122b}.t-amb{background:#fdf0dc;color:#9a5b00}.t-grn{background:#e3f5ec;color:#13824a}.t-blu{background:#e6efff;color:#1d5fbf}.t-tj{background:#2b2f3a;color:#ffd970}.t-gry{background:#eef0f3;color:#3b4652}
     .acx-ver{border:1px solid var(--erp-line);border-radius:10px;padding:10px 12px;margin:0 0 8px;display:grid;grid-template-columns:1fr auto;gap:6px 12px;align-items:center}
     .acx-ver .amt{font-size:18px;font-weight:800;font-variant-numeric:tabular-nums}
     .acx-ver .meta{font-size:13px;color:#3b4652;grid-column:1/-1}
@@ -221,6 +221,8 @@
     .calc .tot{border-top:1px solid #d5dce5;margin-top:4px;padding-top:7px;font-weight:800;font-size:16px}
     .diff{border-radius:9px;padding:9px 12px;font-weight:700;font-size:15px}
     /* handover slip (28 Nov 2026) */
+    .tg-quick .tj{border-color:#2b2f3a!important;background:#2b2f3a!important;color:#ffd970!important;font-weight:700}
+    .tg-part.tjp{border-color:#2b2f3a;background:#f4f1e6}
     .ho-top{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;background:#f6f7f9;border-radius:10px;padding:8px 12px;font-size:14px}
     .ho-top b{font-size:16px}
     .note b .ho-l{display:block;font-size:11px;font-weight:600;color:var(--erp-muted,#6b7785);line-height:1.1}
@@ -380,6 +382,7 @@
     let DEP={},depP="month",depOpen="";   // Bank deposits tab
     let LATE=[];   // party payments entered in these dates with an older paid on date (lwb_acc_paid_on_strict_setup.sql)
     let SWN=null;  // friend swap names used before (lwb_acc_friend_swap_setup.sql)
+    let TJ=[];     // Admin logins = the tijori (safe) for the night cash (lwb_acc_tijori_setup.sql)
     let SH=null;   // shift handover in the day (lwb_acc_shift_handover_setup.sql); null = not set up
     // lwb_acc_cash_diff_damaged_setup.sql: Office / Other heads of a handover, Cash Difference ledger, Damaged cash box
     let SX={rows:[]},CDF=null,DMG=null;
@@ -422,6 +425,7 @@
         const [ex,st,vl,vr,cq,hv,pr]=await Promise.all([client.rpc("lwb_acc_extras",{p_from:from,p_to:to}),client.rpc("lwb_acc_staff_list",{p_month:to}),
           client.rpc("lwb_acc_vehicles"),client.rpc("lwb_acc_vehicle_report",{p_from:from,p_to:to}),client.rpc("lwb_acc_cheque_list"),client.rpc("lwb_hired_list",{p_from:from,p_to:to}),client.rpc("lwb_trip_rent_list",{p_from:from,p_to:to})]);
         const sh=await client.rpc("lwb_acc_shift_list",{p_from:from,p_to:to});SH=sh.error?null:sh.data;
+        try{const tj=await client.rpc("lwb_acc_tijori_people");TJ=tj.error?[]:(tj.data||[])}catch(_){TJ=[]}
         const [sx,cdf,dmg]=await Promise.all([client.rpc("lwb_acc_shift_extras",{p_from:from,p_to:to}),client.rpc("lwb_acc_cdiff_get"),client.rpc("lwb_acc_dmg_get")]);
         SX=sx.error||!sx.data?{rows:[]}:sx.data;CDF=cdf.error?null:cdf.data;DMG=dmg.error?null:dmg.data;
         const dp=await client.rpc("lwb_acc_dup_list",{p_days:120});DUP=dp.error||!dp.data?null:dp.data;
@@ -651,13 +655,15 @@
     const CASH_ROLE={admin:"Admin",accounts:"Accounts",cashier:"Cashier",sales:"Sales",salesman:"Sales",sales_head:"Sales Head",manager:"Sales Head",warehouse:"Godown",transport:"Transport"};
     const roleName=r=>CASH_ROLE[r]||esc(r||"");
     const first=n=>esc(String(n||"").split(/\s+/)[0]);
+    const isTJ=x=>!!x&&TJ.some(t=>t.id===x||t.name===x);
+    const tjTag='<span class="tag t-tj">🔒 Tijori</span>';
     function shiftHolders(){return SH&&(SH.holders&&SH.holders.length?SH.holders:SH.holder?[SH.holder]:[])||[]}
     function shiftParts(P){return P?(P.parts&&P.parts.length?P.parts:[{id:P.id,to:P.to,to_name:P.to_name,to_mobile:P.to_mobile,amount:P.counted,status:"PENDING"}]):[]}
     function shiftAlerts(){
       if(!SH)return [];
       const P=SH.pending,HS=shiftHolders(),me=SH.me,parts=shiftParts(P),mine=parts.find(x=>x.to===me&&x.status==="PENDING");
       const split=parts.length>1?parts.map(x=>first(x.to_name)+" "+rs(x.amount)+(x.status==="RECEIVED"?" ✓":"")).join(" · "):"";
-      if(mine)return [{c:"grn",b:"💼 "+esc(P.by_name)+" is handing you "+rs(mine.amount),s:split?"split: "+split:"count it, then press Received",
+      if(mine)return [{c:"grn",b:(isTJ(me)?"🔒 Tijori: ":"💼 ")+esc(P.by_name)+" is handing you "+rs(mine.amount),s:split?"split: "+split:isTJ(me)?"night cash for the tijori · count, sign, then press Received ✓":"count it, then press Received",
         html:'<button type="button" class="btn grn" data-shrecv="'+mine.id+'">Received ✓</button>'}];
       if(P){const wait=parts.filter(x=>x.status==="PENDING");
         return [{c:"blue",b:"⏳ "+rs(P.counted)+" handed to "+parts.map(x=>esc(x.to_name)).join(" + "),s:(split?split+" · ":"")+"by "+esc(P.by_name)+" · "+hm(P.at)+" · waiting for "+wait.map(x=>first(x.to_name)).join(", "),
@@ -665,7 +671,7 @@
           (P.by===me||SH.is_admin?'<button type="button" class="btn" data-shcancel="'+P.id+'">Cancel</button>':"")+
           (SH.is_admin?wait.filter(x=>x.to!==me).map(x=>' <button type="button" class="btn grn" data-shrecv="'+x.id+'">✓ '+first(x.to_name)+'</button>').join(""):"")}];}
       const H=HS[0],EX=lastExtras().filter(x=>x.kind!=="DIFF");
-      return [{c:"blue",b:H?"💼 Cash with "+HS.map(h=>esc(h.name)+(HS.length>1||EX.length?" "+rs(h.amount):"")).join(" · ")+EX.map(x=>" · "+exName(x)+" "+rs(x.amount)).join(""):"💼 Who has the cash?",s:H?"since "+hm(H.since)+(String(H.since).slice(0,10)!==D.today?" "+dmy(String(H.since).slice(0,10)):""):"hand over when the person changes",
+      return [{c:"blue",b:H?(HS.every(h=>isTJ(h.id))?"🔒 In Tijori (Admin) ":"💼 Cash with ")+HS.map(h=>(isTJ(h.id)&&!HS.every(x=>isTJ(x.id))?"🔒 ":"")+esc(h.name)+(HS.length>1||EX.length||isTJ(h.id)?" "+rs(h.amount):"")).join(" · ")+EX.map(x=>" · "+exName(x)+" "+rs(x.amount)).join(""):"💼 Who has the cash?",s:H?"since "+hm(H.since)+(String(H.since).slice(0,10)!==D.today?" "+dmy(String(H.since).slice(0,10)):""):"hand over when the person changes",
         html:(SH.is_admin&&H&&HS.length===1&&H.id!==me&&H.mobile?'<a class="btn" href="tel:'+esc(String(H.mobile).replace(/[^\d+]/g,""))+'">📞 Call</a> ':"")+(SH.can_give===false?"":'<button type="button" class="btn" data-shgive>⇄ Hand over</button>')}];
     }
     // Office / Other heads + Difference of a handover (lwb_acc_shift_extras)
@@ -676,7 +682,7 @@
     function shiftStrip(){
       const R=SH?(SH.rows||[]).filter(r=>r.status!=="CANCELLED"):[];if(!R.length)return "";
       const B=[];R.slice().reverse().forEach(r=>{const k=r.batch||r.id,b=B.find(x=>x.k===k);if(b)b.r.push(r);else B.push({k,r:[r]})});
-      const part=r=>esc(r.to_name)+' <b>'+rs(r.counted)+'</b>'+(r.status==="RECEIVED"?(Math.abs(r.received-r.counted)>=1?' <i class="minus">'+(r.received<r.counted?"short ":"extra ")+rs(Math.abs(r.received-r.counted))+'</i>':' ✓'):' <i>waiting</i>');
+      const part=r=>(isTJ(r.to_name)?'🔒 ':'')+esc(r.to_name)+' <b>'+rs(r.counted)+'</b>'+(r.status==="RECEIVED"?(Math.abs(r.received-r.counted)>=1?' <i class="minus">'+(r.received<r.counted?"short ":"extra ")+rs(Math.abs(r.received-r.counted))+'</i>':' ✓'):' <i>waiting</i>');
       return '<div class="sh-strip"><b>⇄ Cash box</b>'+B.map(b=>{const r=b.r[0];return '<span>'+hm(r.at)+(from!==to?" "+dmy(r.day).slice(0,5):"")+' · '+esc(r.by_name)+' → '+b.r.map(part).join(" + ")+batchExtras(b.k).map(exChip).join("")+' <button type="button" class="sh-pr" data-shslip="'+r.id+'" title="Print A5 handover slip" aria-label="Print handover slip">🖨 Print</button></span>'}).join("")+'</div>';
     }
     // Old payments typed in these dates: they stay on their paid on date (Mohit 23 Nov 2026)
@@ -720,7 +726,7 @@
         (R.length?'<div style="overflow:auto"><table class="acx-t sh-t"><thead><tr><th>Time</th><th>From → To</th><th class="n">Book cash</th><th class="n">Handed</th><th>Received</th><th></th></tr></thead><tbody>'+
         R.map(r=>{const hx=batchExtras(r.batch||r.id).length>0,sp=r.batch_parts>1,d=sp||hx?0:r2(r.counted-r.book),sd=sp&&!hx?r2(r.batch_total-r.book):0,rd=r.status==="RECEIVED"?r2(r.received-r.counted):0;
           const ex=R.find(y=>(y.batch||y.id)===(r.batch||r.id))===r?batchExtras(r.batch||r.id):[];
-          return '<tr><td><b>'+hm(r.at)+'</b><small>'+dmy(r.day)+'</small></td><td><b>'+esc(r.by_name)+' → '+esc(r.to_name)+'</b>'+(ex.length?'<small class="sh-ex">'+ex.map(exChip).join("")+'</small>':"")+(sp?' <span class="tag t-blu">Split · total '+rs(r.batch_total)+'</span>'+(Math.abs(sd)>=1?' <span class="tag t-red">'+(sd<0?"short ":"extra ")+rs(Math.abs(sd))+'</span>':""):"")+(r.note?'<small>'+esc(r.note)+'</small>':"")+'</td>'+
+          return '<tr><td><b>'+hm(r.at)+'</b><small>'+dmy(r.day)+'</small></td><td><b>'+esc(r.by_name)+' → '+esc(r.to_name)+'</b>'+(isTJ(r.to_name)?' '+tjTag:'')+(ex.length?'<small class="sh-ex">'+ex.map(exChip).join("")+'</small>':"")+(sp?' <span class="tag t-blu">Split · total '+rs(r.batch_total)+'</span>'+(Math.abs(sd)>=1?' <span class="tag t-red">'+(sd<0?"short ":"extra ")+rs(Math.abs(sd))+'</span>':""):"")+(r.note?'<small>'+esc(r.note)+'</small>':"")+'</td>'+
             '<td class="n">'+rs(r.book)+'</td><td class="n"><b>'+rs(r.counted)+'</b>'+(Math.abs(d)>=1?'<small class="'+(d<0?"minus":"plus")+'">'+(d<0?"short ":"extra ")+rs(Math.abs(d))+'</small>':"")+'</td>'+
             '<td>'+(r.status==="RECEIVED"?'<span class="tag '+(Math.abs(rd)>=1?"t-red":"t-grn")+'">'+(Math.abs(rd)>=1?(rd<0?"Short ":"Extra ")+rs(Math.abs(rd)):"✓ "+rs(r.received))+'</span><small>'+hm(r.received_at)+(r.receive_note?" · "+esc(r.receive_note):"")+'</small>':ST[r.status]||"")+'</td>'+
             '<td class="n">'+(r.status!=="CANCELLED"&&R.find(y=>(y.batch||y.id)===(r.batch||r.id)&&y.status!=="CANCELLED")===r?'<button type="button" class="acx-btn" data-shslip="'+r.id+'" title="Print A5 handover slip">🖨 Slip</button>':"")+'</td></tr>'}).join("")+'</tbody></table></div>'
@@ -728,7 +734,8 @@
     }
     async function shiftGive(){
       let PP;try{PP=(await rpc("lwb_acc_cash_people_get",{}))||{}}catch(e){await ERPShell.alert(e.message);return}
-      let people=(PP.list||[]).filter(p=>!p.me);
+      const tjp=()=>TJ.filter(t=>!t.me&&!(PP.list||[]).some(p=>p.id===t.id)).map(t=>({id:t.id,name:t.name,role:"admin",tj:true}));
+      let people=(PP.list||[]).filter(p=>!p.me).concat(tjp());
       if(!people.length&&!PP.is_admin){await ERPShell.alert("Nobody to hand the cash to. Admin chooses the people who can take cash.");return}
       const book=r2(D.today===to?Number(D.closing):0);
       let parts=[],pos=0;   // [{id,name,role,amt,typed}]
@@ -806,20 +813,20 @@
         const eq=s.querySelector("#tEq");if(eq)eq.onclick=()=>{parts.forEach(p=>p.typed=false);share();drawParts()}}
       function drawParts(){
         const w=box.querySelector("#tParts");
-        w.innerHTML=parts.map((p,i)=>'<div class="tg-part"><span class="tg-who"><b>@'+esc(p.name)+'</b><small>'+roleName(p.role)+'</small></span>'+
+        w.innerHTML=parts.map((p,i)=>'<div class="tg-part'+(p.tj?' tjp':'')+'"><span class="tg-who"><b>'+(p.tj?'🔒 Tijori · ':'@')+esc(p.name)+'</b><small>'+(p.tj?'Admin · confirms with Received ✓':roleName(p.role))+'</small></span>'+
           '<input type="text" inputmode="decimal" data-amt="'+i+'" value="'+(p.amt>0?p.amt:"")+'" placeholder="₹ amount" aria-label="Amount for '+esc(p.name)+'">'+
           '<button type="button" data-rm="'+i+'" aria-label="Remove '+esc(p.name)+'">✕</button></div>').join("");
         w.querySelectorAll("[data-amt]").forEach(i=>i.oninput=()=>{const p=parts[Number(i.dataset.amt)];p.amt=r2(num(i.value)||0);p.typed=true;
           share();w.querySelectorAll("[data-amt]").forEach(x=>{if(x!==i){const o=parts[Number(x.dataset.amt)];x.value=o.amt>0?o.amt:""}});drawSum()});
         w.querySelectorAll("[data-rm]").forEach(b=>b.onclick=()=>{parts.splice(Number(b.dataset.rm),1);share();drawParts()});
         const free=people.filter(p=>!parts.some(x=>x.id===p.id));
-        box.querySelector("#tQuick").innerHTML=free.map(p=>'<button type="button" data-tag="'+p.id+'">@'+esc(p.name.split(/\s+/)[0])+' <small>'+roleName(p.role)+'</small></button>').join("")||
+        box.querySelector("#tQuick").innerHTML=free.map(p=>p.tj?'<button type="button" class="tj" data-tag="'+p.id+'" title="Night cash to Admin, kept in the tijori">🔒 Tijori · '+esc(p.name.split(/\s+/)[0])+' <small>Admin</small></button>':'<button type="button" data-tag="'+p.id+'">@'+esc(p.name.split(/\s+/)[0])+' <small>'+roleName(p.role)+'</small></button>').join("")||
           (people.length?"":'<span class="tg-none">Nobody in the list yet'+(PP.is_admin?" · tap ⚙ Who can take cash":"")+'</span>');
         box.querySelectorAll("[data-tag]").forEach(b=>b.onclick=()=>add(b.dataset.tag));
         drawSum();
       }
       function add(id){const p=people.find(x=>x.id===id);if(!p||parts.some(x=>x.id===id))return;
-        parts.push({id:p.id,name:p.name,role:p.role,amt:0,typed:false});share();q.value="";list.hidden=true;drawParts()}
+        parts.push({id:p.id,name:p.name,role:p.role,tj:!!p.tj,amt:0,typed:false});share();q.value="";list.hidden=true;drawParts()}
       function hits(){const t=q.value.replace(/^@/,"").trim().toLowerCase();
         return people.filter(p=>!parts.some(x=>x.id===p.id)&&(!t||p.name.toLowerCase().split(/\s+/).some(w=>w.startsWith(t))||p.name.toLowerCase().includes(t)||(CASH_ROLE[p.role]||"").toLowerCase().startsWith(t)))}
       function showList(){const H=hits();pos=Math.min(pos,Math.max(0,H.length-1));
@@ -831,7 +838,7 @@
         else if(e.key==="Enter"){e.preventDefault();if(!list.hidden&&H[pos])add(H[pos].id)}
         else if(e.key==="Escape"&&!list.hidden){e.stopPropagation();list.hidden=true}
         else if(e.key==="Backspace"&&!q.value&&parts.length){parts.pop();share();drawParts()}};
-      const st=box.querySelector("#tSet");if(st)st.onclick=()=>cashPeopleSetup(PP,()=>{people=(PP.list||[]).filter(p=>!p.me);parts=parts.filter(p=>people.some(x=>x.id===p.id));share();drawParts()});
+      const st=box.querySelector("#tSet");if(st)st.onclick=()=>cashPeopleSetup(PP,()=>{people=(PP.list||[]).filter(p=>!p.me).concat(tjp());parts=parts.filter(p=>people.some(x=>x.id===p.id));share();drawParts()});
       box.querySelectorAll("[data-n]").forEach(i=>i.oninput=calc);
       box.querySelectorAll("[data-d]").forEach(b=>b.onclick=()=>{const i=box.querySelector('[data-n="'+b.dataset.d+'"]');i.value=Math.max(0,(Math.floor(num(i.value))||0)+Number(b.dataset.s))||"";calc()});
       const gPad=padIn(box,"sSign");
