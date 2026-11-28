@@ -23,7 +23,7 @@
     const coins=r2(cnt(N,"coins")),lc=L?r2(cnt(L,"coins")):null;
     const total=NOTES.reduce((a,k)=>a+Math.floor(cnt(N,k))*Number(k),0)+coins;
     const pcs=NOTES.reduce((a,k)=>a+Math.floor(cnt(N,k)),0);
-    const ex=S.extra||[],D=S.diff;
+    const ex=S.extra||[],D=S.diff,em=r2(ex.filter(x=>x.kind==="OFFICE").reduce((a,x)=>a+Number(x.amount),0)),oth=ex.filter(x=>x.kind!=="OFFICE");
     const sign=(img,name,sub,at)=>'<div class="sg"><div class="sgbox">'+(img?'<img src="'+esc(img)+'" alt="">':"")+'</div>'+
       '<div class="sgl"><b>'+esc(name)+'</b>'+(sub?' · '+esc(sub):"")+'</div><div class="sgt">'+(at?"Signed "+dmy(day(at))+" "+hm(at):"Sign here")+'</div></div>';
     return '<!doctype html><html><head><meta charset="utf-8"><title>Cash handover slip #'+esc(S.slip_no)+'</title><style>'+
@@ -38,6 +38,7 @@
       '.n{text-align:right}.mut{color:#777}tfoot td{font-weight:800;background:#f6f8fa}.big{font-size:14px}'+
       '.sum{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin:7px 0}.sum div{border:1px solid #cfd6de;border-radius:5px;padding:4px 7px}.sum span{display:block;color:#555;font-size:10px}.sum b{font-size:13px}'+
       '.sum .ok{border-color:#13824a;background:#eaf7ef}.sum .bad{border-color:#c8102e;background:#fdecee}.sum .bad b{color:#c8102e}'+
+      '.em{display:flex;justify-content:space-between;align-items:center;margin:5px 0;padding:5px 8px;border:1.5px solid #1d5fbf;border-radius:5px;background:#eaf1fc;font-size:12px}.em>b{font-size:14px;color:#1d5fbf}'+
       '.h3{margin:8px 0 2px;font-size:11px;font-weight:800;color:#002f37;text-transform:uppercase;letter-spacing:.3px}'+
       '.nt{margin:5px 0;padding:4px 7px;border-left:3px solid #e0a800;background:#fff8e1}'+
       '.sgs{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:8px}.sg{border:1px solid #9aa6b2;border-radius:5px;padding:5px 7px}'+
@@ -55,9 +56,10 @@
       '<table><thead><tr><th>Note</th><th class="n">Last closing<br><span style="font-weight:400">'+(S.last?dmy(S.last.day).slice(0,5)+" "+hm(S.last.at):"—")+'</span></th><th class="n">Now (pcs)</th><th class="n">Change</th><th class="n">Amount</th></tr></thead><tbody>'+rows+
       '<tr><td><b>Coins</b></td><td class="n mut">'+(lc==null?"—":rs(lc))+'</td><td class="n">—</td><td></td><td class="n"><b>'+(coins?rs(coins):"—")+'</b></td></tr></tbody>'+
       '<tfoot><tr><td>Total</td><td class="n">'+(S.last?rs(S.last.counted):"—")+'</td><td class="n">'+pcs+' pcs</td><td></td><td class="n big">'+rs(total)+'</td></tr></tfoot></table>'+
-      '<div class="sum"><div><span>Cash should be (book)</span><b>'+rs(S.book)+'</b></div><div><span>Handed in the bag</span><b>'+rs(S.total!=null?S.total:total)+'</b></div>'+
+      '<div class="sum"><div><span>Cash should be (book)</span><b>'+rs(S.book)+'</b></div><div><span>Handed in the bag'+(em?' + emergency':'')+'</span><b>'+rs(S.total!=null?S.total:total)+'</b>'+(em?'<span>+ '+rs(em)+' = '+rs(r2((S.total!=null?S.total:total)+em))+'</span>':'')+'</div>'+
       (D?'<div class="bad"><span>Difference</span><b>'+(D.kind==="SHORT"?"Short ":"Extra ")+rs(D.amount)+'</b></div>':'<div class="ok"><span>Difference</span><b>✓ None</b></div>')+'</div>'+
-      (ex.length?'<div class="nt"><b>Rest of the cash (not in the bag):</b> '+ex.map(x=>(x.kind==="OFFICE"?"Office / Godown":esc(x.name))+" "+rs(x.amount)).join(" · ")+'</div>':"")+
+      (em?'<div class="em"><span>🛟 <b>Emergency fund kept at godown</b> (not in the bag)</span><b>'+rs(em)+'</b></div>':"")+
+      (oth.length?'<div class="nt"><b>Given to someone (not in the bag):</b> '+oth.map(x=>esc(x.name)+" "+rs(x.amount)).join(" · ")+'</div>':"")+
       (S.note?'<div class="nt"><b>Note:</b> '+esc(S.note)+'</div>':"")+
       (P.length>1?'<div class="h3">Split</div><table><thead><tr><th>Taken by</th><th class="n">Amount</th><th>Received</th></tr></thead><tbody>'+P.map(p=>'<tr><td><b>'+esc(p.to_name)+'</b></td><td class="n"><b>'+rs(p.amount)+'</b></td><td>'+
         (p.status==="RECEIVED"?'<span class="st g">✓ '+rs(p.received)+'</span> '+hm(p.received_at):'<span class="st a">Waiting</span>')+'</td></tr>').join("")+'</tbody></table>':"")+

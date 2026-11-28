@@ -670,7 +670,7 @@
     // Office / Other heads + Difference of a handover (lwb_acc_shift_extras)
     const batchExtras=b=>(SX.rows||[]).filter(x=>String(x.batch)===String(b));
     const lastExtras=()=>SX.last?batchExtras(SX.last):[];
-    const exName=x=>x.kind==="OFFICE"?"🏢 Office / Godown":x.kind==="OTHER"?"👤 "+esc(x.name):"⚖ Difference";
+    const exName=x=>x.kind==="OFFICE"?"🛟 Emergency fund · Godown":x.kind==="OTHER"?"👤 "+esc(x.name):"⚖ Difference";
     const exChip=x=>' <span class="tag '+(x.kind==="DIFF"?(x.name==="EXTRA"?"t-grn":"t-red"):"t-amb")+'">'+exName(x)+' '+(x.kind==="DIFF"?(x.name==="EXTRA"?"extra ":"short "):"")+rs(x.amount)+'</span>';
     function shiftStrip(){
       const R=SH?(SH.rows||[]).filter(r=>r.status!=="CANCELLED"):[];if(!R.length)return "";
@@ -740,8 +740,8 @@
         '<div id="tParts" class="tg-parts"></div>'+
         '<div class="tg-in"><input id="tQ" type="text" autocomplete="off" placeholder="Type @ and a name"><div class="acx-clist" id="tList" hidden></div></div>'+
         '<div class="pills tg-quick" id="tQuick"></div><div class="tg-sum" id="tSum" hidden></div></div>'+
-        '<div class="f"><label>Rest of the cash <small style="font-weight:400;color:var(--erp-muted)">not in the box · stays in cash in hand</small></label><div id="xParts" class="tg-parts"></div>'+
-        '<div class="pills tg-quick"><button type="button" class="add" data-xadd="OFFICE">+ 🏢 Office / Godown</button><button type="button" class="add" data-xadd="OTHER">+ 👤 Given to someone</button></div></div>'+
+        '<div class="f"><label>Not in the bag <small style="font-weight:400;color:var(--erp-muted)">emergency fund at godown / given to someone · stays in cash in hand</small></label><div id="xParts" class="tg-parts"></div>'+
+        '<div class="pills tg-quick"><button type="button" class="add" data-xadd="OFFICE">+ 🛟 Emergency fund · Godown</button><button type="button" class="add" data-xadd="OTHER">+ 👤 Given to someone</button></div></div>'+
         '<div class="xb" id="xBal"></div>'+
         '<div class="f ho-row"><div><label for="sNote">Note</label><input id="sNote" type="text" maxlength="300" placeholder="Required if there is a difference"></div>'+
         '<div><label for="sBag">Bag / seal no.</label><input id="sBag" type="text" maxlength="40" placeholder="e.g. B-12" autocomplete="off"></div></div>'+
@@ -755,12 +755,12 @@
         const left=r2(c-parts.reduce((a,p)=>a+p.amt,0));
         if(Math.abs(left)>=0.01){await ERPShell.alert(left>0?rs(left)+" is not given to anyone. Add it to a person.":"The parts are "+rs(-left)+" more than the counted cash.");return false}
         const xb=ex.find(x=>!(x.amt>0)||(x.kind==="OTHER"&&x.name.trim().length<2));
-        if(xb){await ERPShell.alert(xb.kind==="OTHER"&&xb.name.trim().length<2?"Write the name of the person who has the cash.":"Write the amount for "+(xb.kind==="OFFICE"?"Office / Godown":xb.name)+".");return false}
+        if(xb){await ERPShell.alert(xb.kind==="OTHER"&&xb.name.trim().length<2?"Write the name of the person who has the cash.":"Write the amount for "+(xb.kind==="OFFICE"?"Emergency fund":xb.name)+".");return false}
         const xs=r2(ex.reduce((a,x)=>a+x.amt,0)),df=r2(book-c-xs);
         if(Math.abs(df)>=1&&!note){await ERPShell.alert("Difference "+rs(Math.abs(df))+" ("+(df>0?"short":"extra")+"). Write a note why.");b.querySelector("#sNote").focus();return false}
         if(gPad&&gPad.empty()){await ERPShell.alert("Cashier: sign in the box first.");return false}
         if(!await ERPShell.confirm("Hand "+rs(c)+(parts.length>1?":\n"+parts.map(p=>"• "+p.name+" "+rs(p.amt)).join("\n"):" to "+parts[0].name)+
-          (ex.length?"\n\nRest of the cash (stays in cash in hand):\n"+ex.map(x=>"• "+(x.kind==="OFFICE"?"Office / Godown":x.name.trim())+" "+rs(x.amt)).join("\n"):"")+
+          (ex.length?"\n\nRest of the cash (stays in cash in hand):\n"+ex.map(x=>"• "+(x.kind==="OFFICE"?"Emergency fund (Godown)":x.name.trim())+" "+rs(x.amt)).join("\n"):"")+
           (Math.abs(df)>=1?"\n\nDifference "+rs(Math.abs(df))+(df>0?" short: goes out of cash in hand":" extra: comes into cash in hand")+" → Cash Difference ledger.":"")+
           "\n\n"+(parts.length>1?"Each one presses":parts[0].name+" presses")+" Received ✓ after counting."))return false;
         let gr;try{gr=await rpc("lwb_acc_shift_give3",{p_parts:parts.map(p=>({to:p.id,amount:p.amt})),p_notes:notes,p_note:note||null,p_extra:ex.map(x=>({kind:x.kind,name:x.kind==="OTHER"?x.name.trim():null,amount:x.amt}))})}catch(e){await ERPShell.alert(e.message);return false}
@@ -772,25 +772,26 @@
       const q=box.querySelector("#tQ"),list=box.querySelector("#tList");
       let counted=0,ex=[];   // ex: [{kind:"OFFICE"|"OTHER",name,amt}]
       function calc(){let t=0;box.querySelectorAll("[data-n]").forEach(i=>{const v=num(i.value);if(v>0)t+=i.dataset.n==="coins"?v:Number(i.dataset.n)*Math.floor(v)});
-        t=r2(t);const d=r2(t-book),c=box.querySelector("#sDiff");c.className="diff "+(Math.abs(d)<1?"ok":"bad");
-        c.textContent="Counted "+rs(t)+(Math.abs(d)<1?" ✓ matches":" · "+(d<0?"short ":"extra ")+rs(Math.abs(d)));
+        t=r2(t);const xs0=r2(ex.reduce((a,x)=>a+(x.amt||0),0)),d=r2(t+xs0-book),c=box.querySelector("#sDiff");c.className="diff "+(Math.abs(d)<1?"ok":"bad");
+        c.textContent="Counted "+rs(t)+(xs0?" + emergency / other "+rs(xs0):"")+(Math.abs(d)<1?" ✓ matches":" · "+(d<0?"short ":"extra ")+rs(Math.abs(d)));
         if(t!==counted){counted=t;share();drawParts()}drawBal();return t}
       // Book cash = box (counted) + office / others + Difference
       function drawBal(){const w=box.querySelector("#xBal");if(!w)return;const xs=r2(ex.reduce((a,x)=>a+(x.amt||0),0)),df=r2(book-counted-xs);
         if(!ex.length&&Math.abs(df)<1){w.hidden=true;return}w.hidden=false;
-        w.innerHTML='<span>Box <b>'+rs(counted)+'</b></span>'+(xs?'<span>+ Office / other <b>'+rs(xs)+'</b></span>':"")+
+        w.innerHTML='<span>Box <b>'+rs(counted)+'</b></span>'+(xs?'<span>+ Emergency / other <b>'+rs(xs)+'</b></span>':"")+
           '<span class="xd '+(Math.abs(df)<1?"ok":df>0?"bad":"ext")+'">'+(Math.abs(df)<1?"✓ No difference":"⚖ Difference "+rs(Math.abs(df))+(df>0?" short":" extra"))+'</span>'+
           '<small>'+(Math.abs(df)<1?"Book "+rs(book)+" fully explained":df>0?"goes out of cash in hand → Cash Difference ledger":"comes into cash in hand → Cash Difference ledger")+'</small>'}
       function drawEx(){const w=box.querySelector("#xParts");
-        w.innerHTML=ex.map((x,i)=>'<div class="tg-part xp"><span class="tg-who">'+(x.kind==="OFFICE"?'<b>🏢 Office / Godown pe pada</b>':'<input type="text" data-xn="'+i+'" value="'+esc(x.name)+'" maxlength="80" placeholder="Name (given to)" aria-label="Given to">')+'</span>'+
+        w.innerHTML=ex.map((x,i)=>'<div class="tg-part xp"><span class="tg-who">'+(x.kind==="OFFICE"?'<b>🛟 Emergency fund · Godown pe rakha</b>'+(lastEm()?'<small>last time '+rs(lastEm())+'</small>':''):'<input type="text" data-xn="'+i+'" value="'+esc(x.name)+'" maxlength="80" placeholder="Name (given to)" aria-label="Given to">')+'</span>'+
           '<input type="text" inputmode="decimal" data-xa="'+i+'" value="'+(x.amt>0?x.amt:"")+'" placeholder="₹ amount" aria-label="Amount">'+
           '<button type="button" data-xrm="'+i+'" aria-label="Remove">✕</button></div>').join("");
-        w.querySelectorAll("[data-xa]").forEach(i=>i.oninput=()=>{ex[Number(i.dataset.xa)].amt=r2(num(i.value)||0);drawBal()});
+        w.querySelectorAll("[data-xa]").forEach(i=>i.oninput=()=>{ex[Number(i.dataset.xa)].amt=r2(num(i.value)||0);calc()});
         w.querySelectorAll("[data-xn]").forEach(i=>i.oninput=()=>{ex[Number(i.dataset.xn)].name=i.value});
         w.querySelectorAll("[data-xrm]").forEach(b=>b.onclick=()=>{ex.splice(Number(b.dataset.xrm),1);drawEx()});
-        drawBal()}
+        calc()}
       box.querySelectorAll("[data-xadd]").forEach(b=>b.onclick=()=>{if(ex.length>=10)return;
-        const left=r2(book-counted-ex.reduce((a,x)=>a+(x.amt||0),0));ex.push({kind:b.dataset.xadd,name:"",amt:left>0?left:0});drawEx();
+        const left=r2(book-counted-ex.reduce((a,x)=>a+(x.amt||0),0)),le=b.dataset.xadd==="OFFICE"&&!(counted>0)?lastEm():0;
+        ex.push({kind:b.dataset.xadd,name:"",amt:le||(left>0?left:0)});drawEx();
         const f=box.querySelector(b.dataset.xadd==="OTHER"?'[data-xn="'+(ex.length-1)+'"]':'[data-xa="'+(ex.length-1)+'"]');if(f)f.focus()});
       // parts the user did not type share what is left equally (₹5L, two people → ₹2.5L each)
       function share(){const auto=parts.filter(p=>!p.typed);if(!auto.length)return;
@@ -836,6 +837,9 @@
       calc();drawParts();
     }
     // Handover slip (Mohit 28 Nov 2026, lwb_acc_handover_slip_setup.sql): last closing count, signatures, A5 print
+    // Emergency fund kept at the godown (OFFICE head): the amount of the last handover, to fill in again
+    function lastEm(){const R=(SX.rows||[]).filter(x=>x.kind==="OFFICE"&&!x.cancelled_at);if(!R.length)return 0;
+      const b=SX.last&&R.some(x=>String(x.batch)===String(SX.last))?SX.last:R.reduce((m,x)=>Number(x.batch)>Number(m)?x.batch:m,R[0].batch);return r2(R.filter(x=>String(x.batch)===String(b)).reduce((a,x)=>a+Number(x.amount),0))}
     function lastCount(){
       const A=[];(D&&D.closes||[]).forEach(c=>{if(c.notes&&c.closed_at)A.push({at:c.closed_at,notes:c.notes,counted:c.counted})});
       const R=SH?(SH.rows||[]).filter(r=>r.status!=="CANCELLED"&&r.notes):[],B=new Map();
