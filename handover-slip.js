@@ -43,6 +43,7 @@
       '.nt{margin:5px 0;padding:4px 7px;border-left:3px solid #e0a800;background:#fff8e1}'+
       '.sgs{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:8px}.sg{border:1px solid #9aa6b2;border-radius:5px;padding:5px 7px}'+
       '.sg .cap{font-size:10px;color:#555;font-weight:700;text-transform:uppercase}.sgbox{height:16mm;border-bottom:1px dashed #9aa6b2;display:flex;align-items:center;justify-content:center}'+
+      '.sgs.many{grid-template-columns:repeat(3,1fr);gap:6px}.sgs.many .sgbox{height:12mm}.sgs.many .sgl{font-size:10px}'+
       '.sgbox img{max-height:15mm;max-width:100%}.sgl{margin-top:3px}.sgt{font-size:9.5px;color:#666}'+
       '.ft{margin-top:8px;display:flex;justify-content:space-between;font-size:9.5px;color:#666;border-top:1px solid #cfd6de;padding-top:4px}'+
       '.st{display:inline-block;padding:0 5px;border-radius:3px;font-size:10px;font-weight:700}.st.g{background:#e3f5ea;color:#0b6b3a}.st.a{background:#fff3cd;color:#8a5a00}'+
@@ -63,7 +64,7 @@
       (S.note?'<div class="nt"><b>Note:</b> '+esc(S.note)+'</div>':"")+
       (P.length>1?'<div class="h3">Split</div><table><thead><tr><th>Taken by</th><th class="n">Amount</th><th>Received</th></tr></thead><tbody>'+P.map(p=>'<tr><td><b>'+esc(p.to_name)+'</b></td><td class="n"><b>'+rs(p.amount)+'</b></td><td>'+
         (p.status==="RECEIVED"?'<span class="st g">✓ '+rs(p.received)+'</span> '+hm(p.received_at):'<span class="st a">Waiting</span>')+'</td></tr>').join("")+'</tbody></table>':"")+
-      '<div class="sgs">'+
+      '<div class="sgs'+(P.length>1?' many':'')+'">'+
         '<div><div class="cap" style="font-size:10px;font-weight:700;color:#555">GIVEN BY (CASHIER)</div>'+sign(S.give_sign,S.by_name,role(S.by_role),S.give_signed_at)+'</div>'+
         P.map(p=>'<div><div class="cap" style="font-size:10px;font-weight:700;color:#555">RECEIVED BY'+(P.length>1?" · "+rs(p.amount):"")+'</div>'+
           sign(p.recv_sign,p.to_name,p.status==="RECEIVED"?"got "+rs(p.received):"",p.recv_signed_at||(p.recv_sign?p.received_at:null))+'</div>').join("")+
