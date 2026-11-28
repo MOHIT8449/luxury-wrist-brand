@@ -227,3 +227,15 @@ test('Company people: own group, phone name NAME COMPANY POST AREA, call works',
   await db.exec('SET ROLE service_role');const g=(await db.query('select lwb_gsync_contacts() j')).rows[0].j;await db.exec('RESET ROLE');
   assert.ok(g.some(x=>x.kind==='COMPANY'&&x.name==='RAJESH PATEL CC GSM SURAT'));
 });
+
+test('Godown Maps link + address: Admin edits in Live Tracking settings; default address now Hindi', async()=>{
+  const gl=await file('lwb_godown_link_edit_setup.sql');await db.exec(gl);await db.exec(gl);
+  await as('godown');
+  assert.equal((await call('select lwb_godown_link() j'))[0].j.address,'शेड नं. 15, देव कैंपस, राम कथा ग्राउंड, सिमाडा कैनाल, सूरत, गुजरात 395013');
+  await assert.rejects(call("select lwb_godown_link_save('https://maps.app.goo.gl/x','y')"),/Only Admin/);
+  await as('sales');await assert.rejects(call('select lwb_godown_link()'),/Not allowed/);
+  await as('admin');
+  await assert.rejects(call("select lwb_godown_link_save('maps.app.goo.gl/x','y')"),/https/);
+  await call("select lwb_godown_link_save(' https://maps.app.goo.gl/NEW1 ','नया पता')");
+  assert.deepEqual((await call('select lwb_godown_link() j'))[0].j,{map_url:'https://maps.app.goo.gl/NEW1',address:'नया पता'});
+});

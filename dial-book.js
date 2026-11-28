@@ -89,8 +89,8 @@
   function waText(x){
     // Google Maps place link first (Mohit, 28 Nov): WhatsApp shows the godown photo card for it. lat / lng only if no link.
     const maps=x.map_url||("https://maps.google.com/?q="+Number(x.lat).toFixed(6)+","+Number(x.lng).toFixed(6));
-    // Message in Hindi (Mohit, 28 Nov): drivers read Hindi best. Godown address in Hindi when it is our saved one.
-    const a=String(x.address||"").trim(),hi=/shade\s*no\.?\s*15/i.test(a)&&/dev\s*campus/i.test(a)?"शेड नं. 15, देव कैंपस, राम कथा ग्राउंड, सिमाडा कैनाल, सूरत, गुजरात 395013":a;
+    // Message in Hindi (Mohit, 28 Nov): drivers read Hindi best. Link + address: Live Tracking > ⚙ Settings (lwb_godown_link_edit_setup.sql).
+    const hi=String(x.address||"").trim();
     return maps+"\n\nनमस्ते"+(x.name?" "+x.name+" जी":"")+",\nलक्ज़री रिस्ट ब्रांड गोदाम (लक्ज़री वेयरहाउस, सूरत) का लोकेशन ऊपर दिया है।"+
       (hi?"\nपता: "+hi:"")+"\nगाड़ी: "+x.vehicle_no+
       (x.my_mobile?"\nपहुँचकर इस नंबर पर कॉल करें: "+x.my_mobile+(x.my_name?" ("+String(x.my_name).split(/\s+/)[0]+")":""):"");
