@@ -1535,3 +1535,4 @@
 - Tests: tests/truck-drivers (7).
 - Follow-up (28 Nov): Transport is a dropdown (`<select>`) of Transport Master + "➕ Naya transport" (`lwb_transport_add_setup.sql`). Company dispatch: everything required except the company invoice no.; Gaadi driver popup: name + transport required.
 - Follow-up (28 Nov): call log, Recent tab and "Last call" only for Admin (`lwb_dial_calls_admin_only_setup.sql` redefines `lwb_dial_book` + `lwb_dial_log`; run it after the two Dial Book files if they run again).
+- Follow-up (28 Nov): 🏢 Company tab (brand company sales team: GSM, RTM ...). Saved in `lwb_dial_services` with grp COMPANY (firm = company, category = post); kind COMPANY in `lwb_dial_all` (now owned by `lwb_dial_company_setup.sql`; run it after the history / services files if they run again). Phone name: `RAJESH PATEL CC GSM SURAT`.

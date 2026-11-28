@@ -52,6 +52,7 @@ await db.exec(await file('lwb_ecrs_on_way_setup.sql')); // run again after: stil
 await db.exec(`ALTER TABLE lwb_transport_master ADD COLUMN IF NOT EXISTS created_by uuid;`);
 const add=await file('lwb_transport_add_setup.sql');await db.exec(add);await db.exec(add);
 const adm=await file('lwb_dial_calls_admin_only_setup.sql');await db.exec(adm);await db.exec(adm);
+const co=await file('lwb_dial_company_setup.sql');await db.exec(co);await db.exec(co);
 
 async function as(who){await db.query("select set_config('request.jwt.claim.sub',$1,false)",[ids[who]||''])}
 async function call(q,args=[]){await db.exec('SET ROLE authenticated');try{return (await db.query(q,args)).rows}finally{await db.exec('RESET ROLE')}}
@@ -195,4 +196,25 @@ test('Call log + last call: only Admin', async()=>{
   assert.equal(a.all_log,true);
   assert.ok(a.contacts.some(c=>c.last_by==='Name head'),'admin sees who called');
   await as('admin');assert.ok((await call('select lwb_dial_log(null,null) j'))[0].j.length>0);
+});
+
+test('Company people: own group, phone name NAME COMPANY POST AREA, call works', async()=>{
+  const sv=(o)=>call('select lwb_dial_service_save($1,$2,$3,$4,$5,$6,$7,$8,$9) j',[o.id||null,'COMPANY',o.post,o.name||null,o.co||null,o.area||null,o.mob,null,'Dial Book']).then(r=>r[0].j);
+  await as('sales');await assert.rejects(sv({post:'GSM',name:'Rajesh',co:'Coca-Cola',mob:'9700000001'}),/Only Admin/);
+  await as('acc');
+  await assert.rejects(sv({post:'GSM',name:'Rajesh',mob:'9700000001'}),/choose the company/);
+  await assert.rejects(sv({post:'',name:'Rajesh',co:'Coca-Cola',mob:'9700000001'}),/post/);
+  await assert.rejects(sv({post:'GSM',co:'Coca-Cola',mob:'9700000001'}),/person name/);
+  const a=await sv({post:'gsm',name:'rajesh patel',co:'Coca-Cola',area:'Surat',mob:'97000 00001'});assert.equal(a.saved,true);
+  await sv({post:'RTM',name:'Amit',co:'Rajnigandha',mob:'9700000002'});
+  const dup=await sv({post:'ASM',name:'X',co:'Coca-Cola',mob:'9825010001'});assert.equal(dup.saved,false,'team number not saved again');
+  const b=await book('sales');
+  const c=b.contacts.filter(x=>x.kind==='COMPANY').map(x=>[x.save_as,x.tag,x.sub]).sort();
+  assert.deepEqual(c,[['AMIT RG RTM','RTM','RAJNIGANDHA'],['RAJESH PATEL CC GSM SURAT','GSM','COCA-COLA · SURAT']]);
+  assert.ok(!b.contacts.some(x=>x.kind==='SERVICE'&&/RAJESH/.test(x.name)),'not in Services');
+  await as('sales');const r=(await call("select lwb_dial_call('COMPANY',$1,'Dial Book') j",[String(a.id)]))[0].j;
+  assert.equal(r.mobile,'9700000001');
+  // Gmail list has them
+  await db.exec('SET ROLE service_role');const g=(await db.query('select lwb_gsync_contacts() j')).rows[0].j;await db.exec('RESET ROLE');
+  assert.ok(g.some(x=>x.kind==='COMPANY'&&x.name==='RAJESH PATEL CC GSM SURAT'));
 });
