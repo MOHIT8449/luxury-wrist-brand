@@ -113,6 +113,9 @@
       // Approvals (Mohit, 7 Nov 2026): everything waiting for Admin / Sales Head OK, one card each (approvals.js).
       {t:"Approvals",h:"approvals.html",i:"shield",top:1,r:"admin manager",k:"approval approve permission pending verify check bank payment trip rent rate market order po change stock"},
       {t:"Tasks",h:"tasks.html",i:"tasks",r:"*",top:1},
+      // Dial Book (Mohit, 27 Nov 2026): parties, team, purchase truck drivers with a Call button + call log (dial-book.js).
+      // Always a 📞 button in the top bar (phone too), so not drawn in the side menu.
+      {t:"Dial Book",h:"dial-book.html",i:"phone",r:"admin manager accounts sales warehouse cashier transport",k:"dial book phone call contact contacts number mobile driver truck gaadi party team staff call log record whatsapp location",nm:"admin manager accounts sales warehouse cashier transport"},
       {t:"Complaint Box",h:"complaint-box.html",i:"megaphone",r:"*",top:1},
       // Keyboard Shortcuts (Mohit, 5 Nov 2026): every role sees the keys of the pages it can open.
       {t:"Keyboard Shortcuts",h:"keyboard-shortcuts.html",i:"keyboard",r:"*",k:"keyboard shortcut keys help hotkey",
@@ -139,7 +142,8 @@
       // Party Rate Offer (Mohit, 16 Nov 2026): rate per case given to one party, category-wise, with (i) past rates.
       {t:"Party Rate Offer",h:"party-rates.html",i:"tag",r:"admin manager",k:"party rate offer quotation category pack per case given history whatsapp"},
       // Outstanding (Mohit, 20 Nov 2026): Sales Head sees unpaid / part-paid bills, party-wise dues, ledger; tells Accounts.
-      {t:"Outstanding",h:"sales-outstanding.html",i:"cash",r:"admin manager",k:"outstanding payment pending due unpaid part paid bills party wise ledger collection baki udhar tell accounts cashier"},
+      // Outstanding & Ledger for Sales Head (20 Nov 2026) is now the same Ledger & Outstanding page, view only (27 Nov 2026).
+      {t:"Outstanding (old)",h:"sales-outstanding.html",i:"cash",r:"admin manager",hide:1},
       {t:"Party Call List",h:"party-calls.html",i:"phone",r:"admin manager sales"},
       // Party Mobile Pending (Mohit, 21 Nov 2026): parties without a mobile number; fill here, task closes by itself.
       {t:"Party Mobile Pending",h:"party-mobile.html",i:"phone",r:"admin manager sales",k:"mobile number missing phone party contact fill pending task"},
@@ -173,6 +177,8 @@
       {t:"Night Stock Audit",h:"stock-audit.html",i:"stock",r:"admin manager warehouse accounts",vo:"accounts",nm:"admin manager warehouse accounts",par:"inventory.html"},
       {t:"Opening Stock",h:"opening-stock.html",i:"box",r:"admin",nm:"admin",par:"inventory.html"},
       {t:"Godown Report",h:"godown-report.html",i:"note",r:"admin manager warehouse"},
+      // Daily Labour (Mohit, 26 Nov 2026): Godown Manager's one-day market labour (name, mobile, wage), morning plan, night cash.
+      {t:"Daily Labour",h:"labour.html",i:"users",r:"admin manager warehouse accounts cashier",k:"daily labour dihadi dihari dahadi majdoor mazdoor majduri hamal market labour one day casual wage hajri attendance chhutak bahar se labour",vo:"accounts"},
       {t:"Loading & Dispatch",h:"loading-dispatch.html",i:"box",r:"admin manager warehouse"},
       {t:"Transport Assignment",h:"transport-allocation.html",i:"truck",r:"admin manager transport"},
       // Vehicle Report (Mohit, 23 Nov 2026): per vehicle / driver for the day: tons loaded, cases delivered, parties, fixed driver.
@@ -191,7 +197,7 @@
       {t:"Cashier",h:"accounts-dashboard.html#cash",i:"cash",r:"admin cashier",k:"cashier cash in cash out bank deposit close day day book cash book cash ledger cash in hand cheque handover staff advance upad salary vehicle expense party payment received",pt:"Cashier (Cash In / Out, Day book)"},
       {t:"Party & Collections",h:"party-billing.html#party",i:"users",r:"admin",k:"party payment received pending outstanding to collect collection party ledger statement khata advance returns party groups acrs ecrs",pt:"Party & Collections (To collect, Ledger, ACRS)"},
       // Ledger & Outstanding (Mohit, 20 Nov 2026): Tally "Display" books in one page, Ctrl+Alt+L from anywhere.
-      {t:"Ledger & Outstanding",h:"accounts-books.html",i:"book",r:"admin accounts",k:"ledger outstanding receivable receivables bill wise party wise ageing overdue 30 60 90 days receipt register receipts payment received party payment summary day book voucher khata statement tally ctrl alt l kasar",pt:"Ledger & Outstanding (Ctrl+Alt+L)"},
+      {t:"Ledger & Outstanding",h:"accounts-books.html",i:"book",r:"admin accounts manager",k:"ledger outstanding receivable receivables bill wise party wise ageing overdue 30 60 90 days receipt register receipts payment received party payment summary day book voucher khata statement tally ctrl alt l kasar party ledger hisab khatabook baki udhar",a:"ledger outstanding khata hisab baki udhar",pt:"Ledger & Outstanding (Ctrl+Alt+L)"},
       {t:"Accounts",h:"accounts-dashboard.html",i:"cash",r:"admin accounts",hide:1,par:"party-billing.html"},
       {t:"Bank Statement",h:"bank-statement.html",i:"book",r:"admin accounts"},
       // STTS Ledger (Mohit, 13 Nov 2026): company Sales Register + STTS Ledger checked bill by bill against the Rate List scheme.
@@ -362,6 +368,24 @@
     page=String(page||location.pathname.split("/").pop()||"").split(/[?#]/)[0];role=String(role||"").toLowerCase();
     return MENU.some(g=>g.items.some(i=>i.h.split("#")[0]===page&&viewOnlyItem(i,role)));
   }
+  // Module Search (Mohit, 27 Nov 2026): "ledger" must open Ledger & Outstanding first. Hindi / Hinglish
+  // spellings become the menu's English word; a = words that put this page on top of the results.
+  const SEARCH_ALIAS={"लेजर":"ledger","लेज़र":"ledger","लेजर्स":"ledger","ledgar":"ledger","lejar":"ledger","leger":"ledger","ledjer":"ledger","legder":"ledger","ledeger":"ledger",
+    "खाता":"khata","खाते":"khata","khaata":"khata","khatabook":"khata","hisaab":"hisab","हिसाब":"hisab",
+    "आउटस्टैंडिंग":"outstanding","outstandig":"outstanding","outstading":"outstanding","outstnding":"outstanding","बकाया":"baki","बाकी":"baki","baaki":"baki","उधार":"udhar","udhaar":"udhar"};
+  const searchWords=q=>String(q||"").toLowerCase().trim().split(/\s+/).filter(Boolean).map(w=>SEARCH_ALIAS[w]||w);
+  function findModules(list,q){
+    const words=searchWords(q);if(!words.length)return [];
+    return list.map((i,n)=>{
+      const t=String(i.t||"").toLowerCase(),a=String(i.a||"").toLowerCase().split(" ").filter(Boolean),
+        all=(t+" "+(i.g||"")+" "+(i.pt||"")+" "+(i.k||"")+" "+a.join(" ")).toLowerCase();
+      if(!words.every(w=>all.includes(w)))return null;
+      const inT=words.every(w=>t.includes(w)),s=(words.every(w=>a.some(x=>x.startsWith(w)))?0:t.startsWith(words[0])?2:inT?4:6)+(inT?0:1)-(t.startsWith(words[0])?.5:0);
+      return {i,s,n};
+    }).filter(Boolean).sort((x,y)=>x.s-y.s||x.n-y.n).map(x=>x.i);
+  }
+  // Ledger button in the top bar was taken out again (Mohit, 27 Nov 2026): Ledger & Outstanding opens from the
+  // menu, Module Search ("ledger" / "khata" / "लेजर") or Ctrl+Alt+L.
   const allPages=()=>MENU.map(g=>({group:g.group,items:g.items.map(i=>({t:i.pt||i.t,h:i.h}))}));
 
   // Pages hidden from the logged-in user. Cached so the menu is right at once,
@@ -375,7 +399,16 @@
     return null;
   }
   function hiddenPages(){const c=access();return c?c.hidden:[]}
-  function extraPages(){const c=access();return c&&Array.isArray(c.extra)?c.extra:[]}
+  // Today's cashier (Mohit, 26 Nov 2026): the Sales Head who holds the cash box now (Cash handover, Received ✓)
+  // gets the Cashier page as if Admin had ticked it (lwb_acc_duty_cashier_setup.sql, lwb_acc_on_duty()).
+  // It goes away by itself when he hands the box on and the next person presses Received ✓.
+  const DUTY_KEY="lwbDutyCash",DUTY_PAGES=["accounts-dashboard.html#cash"];
+  function dutyInfo(){
+    try{const c=JSON.parse(localStorage.getItem(DUTY_KEY)||"null");const sid=sessionUid();if(c&&c.on&&(!sid||c.uid===sid))return c}catch(e){}
+    return null;
+  }
+  const onDuty=()=>!!dutyInfo();
+  function extraPages(){const c=access();const x=c&&Array.isArray(c.extra)?c.extra:[];return onDuty()?x.concat(DUTY_PAGES.filter(h=>!x.includes(h))):x}
   // hide:1 pages (Cashbook) are never listed in the menu, search or dashboard; they open only
   // from their own private link. menuFor still has them, so Manage Users can tick them.
   function menuForMe(role){return menuFor(role,hiddenPages(),extraPages()).map(g=>({group:g.group,so:g.so,items:g.items.filter(i=>!i.hide)})).filter(g=>g.items.length)}
@@ -393,6 +426,7 @@
   }
   // Same, but re-reads the ticks first when the cached ones do not open this page.
   async function pageRoleFresh(role,page){
+    if(String(role||"").toLowerCase()==="manager"){await refreshAccess(role);return pageRole(role,page)}  // cash box may have moved
     const r=pageRole(role,page);if(r!==role)return r;
     await refreshAccess();return pageRole(role,page);
   }
@@ -410,6 +444,7 @@
     add("meta",{name:"apple-mobile-web-app-capable",content:"yes"});
   }
 
+  const DIAL_ROLES=["admin","manager","accounts","sales","warehouse","cashier","transport"];
   const GM_OFF=["goods-inward.html","warehouse-orders.html","quick-slip.html","sales-return.html","tax-invoice.html","fleet-master.html","fixed-assets.html"];
   // Older pages (data-auto) stay on "Loading…" (erp-shell.css) until the top bar and menu are in place,
   // so the plain old-looking page never flashes first after a refresh (Mohit, 24 Nov 2026).
@@ -456,7 +491,7 @@
     function drawSide(){
       let html='<div class="erp-brand"><span class="erp-mark" aria-hidden="true">lwb</span><div><b>LUXURY WRIST BRAND</b><small>BUSINESS ERP</small></div></div>'+
         '<div class="erp-menu-find"><input type="search" aria-label="Find a page" placeholder="Find a page…"></div><p class="erp-menu-empty" hidden>No page found</p>';
-      const link=(i,g)=>'<a class="erp-link'+(i.top?' erp-side-top':'')+(isActive(i)?' active':'')+'" href="'+esc(i.h)+'" data-k="'+esc((i.t+" "+g.group+" "+(i.pt||"")+" "+(i.k||"")).toLowerCase())+'">'+svg(i.i)+'<span>'+esc(i.t)+'</span></a>';
+      const link=(i,g)=>'<a class="erp-link'+(i.top?' erp-side-top':'')+(isActive(i)?' active':'')+'" href="'+esc(i.h)+'" data-k="'+esc((i.t+" "+g.group+" "+(i.pt||"")+" "+(i.k||"")+" "+(i.a||"")).toLowerCase())+'">'+svg(i.i)+'<span>'+esc(i.t)+'</span></a>';
       const secs=groups.filter(g=>!g.so&&g.group);
       // Which group is open: the open page's group, else the one opened last, else the first.
       let open=(secs.find(g=>g.items.some(isActive))||{}).group;
@@ -471,6 +506,8 @@
           '<span>'+esc(g.group)+'</span><svg class="erp-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></button>'+
           '<div class="erp-sec-body" id="'+id+'">'+g.items.map(i=>link(i,g)).join("")+'</div></div>';
       });
+      // Phone: Logout sits at the end of the side menu, the top bar keeps only the daily icons (Mohit, 27 Nov 2026).
+      html+='<button type="button" class="erp-side-logout"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/></svg><span>Logout</span></button>';
       side.innerHTML=html;
     }
     drawSide();
@@ -482,6 +519,13 @@
       if(!q){q=document.createElement("div");q.className="erp-quick";user.prepend(q)}
       q.innerHTML=groups.filter(g=>!g.so).flatMap(g=>g.items).filter(i=>i.top).map(i=>
         '<a class="erp-quick-btn'+(isActive(i)?' active':'')+'" href="'+esc(i.h)+'" title="'+esc(i.t)+'" aria-label="'+esc(i.t)+'">'+svg(i.i)+'</a>').join("");
+      // 📞 Dial Book button (Mohit, 27 Nov 2026): on every page, computer and phone.
+      let db=user.querySelector(".erp-dial-btn");
+      if(DIAL_ROLES.includes(role)){
+        if(!db){db=document.createElement("a");db.className="erp-dial-btn";db.href="dial-book.html";db.title="Dial Book";db.setAttribute("aria-label","Dial Book");
+          db.innerHTML=svg("phone")+"<span>Dial</span>";user.prepend(db)}
+        db.classList.toggle("active",page==="dial-book.html");
+      }else db?.remove();
     }
     side.addEventListener("click", e => {
       const b=e.target.closest(".erp-group");if(!b)return;
@@ -493,14 +537,14 @@
     });
     side.addEventListener("input", e => {
       if(!e.target.matches(".erp-menu-find input")) return;
-      const q=e.target.value.trim().toLowerCase();
+      const q=e.target.value.trim().toLowerCase(),words=searchWords(q);
       const links=[...side.querySelectorAll(".erp-link")];
-      links.forEach(a => {a.hidden=!!q&&!(a.dataset.k||a.textContent.toLowerCase()).includes(q);a.classList.remove("kb")});
+      links.forEach(a => {const k=a.dataset.k||a.textContent.toLowerCase();a.hidden=!!q&&!words.every(w=>k.includes(w));a.classList.remove("kb")});
       // While finding, every group with a match is shown open; clearing the box brings back the open / closed groups.
       side.classList.toggle("finding",!!q);
       side.querySelectorAll(".erp-sec").forEach(sec => {sec.hidden=!!q&&![...sec.querySelectorAll(".erp-link")].some(a=>!a.hidden)});
       // Like Module Search: the first match is picked, ↑ / ↓ move, Enter opens (Mohit, 7 Nov 2026).
-      const first=q&&links.find(a=>!a.hidden);if(first)first.classList.add("kb");
+      const best=q&&findModules(flat,q)[0],first=q&&(links.find(a=>!a.hidden&&best&&a.getAttribute("href")===best.h)||links.find(a=>!a.hidden));if(first)first.classList.add("kb");
       side.querySelector(".erp-menu-empty").hidden=links.some(a => !a.hidden);
     });
     side.addEventListener("keydown", e => {
@@ -546,6 +590,7 @@
     armHide();
     top.querySelector(".erp-keys-btn").onclick=()=>{if(window.LWBKeys&&LWBKeys.help)LWBKeys.help();else location.href="keyboard-shortcuts.html"};
     top.querySelector(".erp-logout").onclick=opts.onLogout||(()=>{location.href="login.html"});
+    side.addEventListener("click",e=>{if(e.target.closest(".erp-side-logout"))top.querySelector(".erp-logout").click()});
     mountedRole=role||"";
     if(role)unlockSetting(top.querySelector(".erp-avatar"),role);
 
@@ -555,7 +600,7 @@
     let hits=[],pos=0;
     function show(){
       const q=input.value.toLowerCase().trim();
-      hits=q?flat.filter(i=>(i.t+" "+i.g+" "+(i.k||"")).toLowerCase().includes(q)):[];
+      hits=q?findModules(flat,q):[];
       pos=0;
       box.innerHTML=hits.map((i,n)=>'<a href="'+esc(i.h)+'"'+(n===0?' class="active"':'')+'>'+esc(i.t)+'<small>'+esc(i.g||"Home")+'</small></a>').join("")||(q?'<a>No module found</a>':"");
       box.classList.toggle("open",!!q);
@@ -583,7 +628,7 @@
     bell(top,role);
     brandTop(top,role);
     dateTop(top,role);
-    refreshAccess().then(changed=>{
+    refreshAccess(role).then(changed=>{
       if(!changed)return;
       if(blocked(role,page,hiddenPages()))return;
       groups=menuForMe(role);flat=groups.flatMap(g=>g.items.map(i=>({...i,g:g.group})));drawSide();drawQuick();
@@ -628,7 +673,9 @@
       transport:[["Home","dashboard.html","home"],["Assign","transport-allocation.html","truck"],["Vehicles","fleet-master.html#vehicles","box"],["Drivers","fleet-master.html#drivers","users"]]
     };
     const permitted=new Set(menuForMe(role).flatMap(g=>g.items.map(i=>i.h.split("#")[0])));
-    const items=(presets[role]||[]).filter(i=>permitted.has(i[1].split("#")[0]));
+    let list=presets[role]||[];
+    if(role==="manager"&&onDuty())list=list.slice(0,3).concat([["Cashier","accounts-dashboard.html#cash","cash"]],list.slice(3));   // today's cashier
+    const items=list.filter(i=>permitted.has(i[1].split("#")[0]));
     if(items.length<2)return;
     const active=h=>(page==="accounts-dashboard.html"&&h==="party-billing.html")||h===(page+(location.hash||"")) || (!h.includes("#") && h===page && !items.some(i=>i[1]===(page+(location.hash||""))));
     const nav=document.createElement("nav");nav.className="erp-bnav";nav.setAttribute("aria-label","Quick menu");
@@ -686,7 +733,7 @@
     return true;
   }
 
-  async function refreshAccess(){
+  async function refreshAccess(role){
     try{
       if(!window.supabase)return false;
       const c=window.__lwbBellClient||(window.__lwbBellClient=window.supabase.createClient(URL_,KEY_));
@@ -696,6 +743,11 @@
       if(r.error)return false; // setup SQL not run yet: role defaults only
       const before=JSON.stringify([hiddenPages(),extraPages()]),hidden=(r.data&&r.data.hidden)||[],extra=(r.data&&r.data.extra)||[];
       try{localStorage.setItem(ACCESS_KEY,JSON.stringify({uid:user.id,hidden,extra}))}catch(e){}
+      // Sales Head: is he today's cashier (holds the cash box)? No SQL yet / error = no.
+      if(String(role||mountedRole||"").toLowerCase()==="manager"){
+        let d=null;try{const x=await c.rpc("lwb_acc_on_duty");d=!x.error&&x.data&&x.data.on_duty?x.data:null}catch(e){}
+        try{localStorage.setItem(DUTY_KEY,JSON.stringify({uid:user.id,on:!!d,since:d&&d.since,amount:d&&d.amount}))}catch(e){}
+      }else{try{localStorage.removeItem(DUTY_KEY)}catch(e){}}
       return JSON.stringify([hiddenPages(),extraPages()])!==before;
     }catch(e){return false}
   }
@@ -705,9 +757,9 @@
   // login.html uses the same role list (NO_IDLE_ROLES there).
   const NO_IDLE_ROLES=["driver","sales","warehouse"];
   function stayLoggedIn(role){return NO_IDLE_ROLES.includes(String(role||"").trim().toLowerCase())}
-  // Auto logout after 15 minutes with no tap, key or scroll. The time is shared by every ERP tab of
+  // Auto logout after 1 hour (Mohit, 27 Nov 2026; was 15 minutes) with no tap, key or scroll. The time is shared by every ERP tab of
   // this browser, and is checked again when a phone comes back to the app. login.html sets it on login.
-  const IDLE_MS=15*60e3,IDLE_KEY="lwbLastActive";
+  const IDLE_MS=60*60e3,IDLE_KEY="lwbLastActive";
   let idleOn=false;
   function idleLogout(){
     if(idleOn)return;idleOn=true;
@@ -744,7 +796,8 @@
     return new Promise((ok,bad)=>{const s=document.createElement("script");s.src="quick-unlock.js?v=20261121b";s.onload=()=>ok(window.LWBUnlock);s.onerror=bad;document.head.appendChild(s)});
   }
   function unlockSetting(av,role){
-    if(!av||!appMode())return;
+    // Admin (27 Nov 2026): password only, no MPIN / fingerprint.
+    if(!av||!appMode()||String(role||"").toLowerCase()==="admin")return;
     av.setAttribute("role","button");av.tabIndex=0;av.title="Login & Security (MPIN, fingerprint)";av.style.cursor="pointer";
     av.addEventListener("click",()=>openSecurity(role));
     av.addEventListener("keydown",e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();openSecurity(role)}});
@@ -752,7 +805,7 @@
   let secOpen=false,mountedRole="";
   async function openSecurity(role){
     role=typeof role==="string"?role:mountedRole;
-    if(secOpen||!window.supabase||!appMode())return;secOpen=true;
+    if(secOpen||!window.supabase||!appMode()||String(role||"").toLowerCase()==="admin")return;secOpen=true;
     let U,user,c;
     try{
       U=await loadUnlock();
@@ -785,7 +838,7 @@
         '<div class="erp-sec-row"><div><b>Fingerprint</b>'+(fpOk?badge(fpOn)+'<small>Fingerprint, face or phone lock</small>':'<small>Not available on this device</small>')+'</div>'+
         '<div class="erp-sec-btns">'+(fpOk?(fpOn?'<button type="button" data-a="fpoff">Turn off</button>':'<button type="button" data-a="fpon" class="erp-sec-main">Turn on</button>'):"")+'</div></div>'+
         (stayLoggedIn(role)?'<p class="erp-sec-note">You stay logged in until you tap Logout. With MPIN or fingerprint ON, Logout only <b>locks</b> the ERP. Open it again without password and OTP.</p>'
-          :'<p class="erp-sec-note">With MPIN or fingerprint ON, Logout or 15 minutes without work only <b>locks</b> the ERP. Open it again without password and OTP.</p>')+
+          :'<p class="erp-sec-note">With MPIN or fingerprint ON, Logout or 1 hour without work only <b>locks</b> the ERP. Open it again without password and OTP.</p>')+
         '<div class="erp-dlg-actions"><button type="button" class="erp-dlg-no" data-a="close">Close</button></div>';
       box.querySelectorAll("button[data-a]").forEach(b=>b.onclick=()=>act(b.dataset.a,b));
     }
@@ -845,14 +898,78 @@
       const {data}=await c.auth.getSession();const user=data&&data.session&&data.session.user;if(!user)return;
       // Login page "type your email, MPIN pad opens" needs the login name next to this phone's MPIN flag.
       try{const o=JSON.parse(localStorage.getItem("lwbMpin")||"null");if(o&&o.uid===user.id&&!o.who&&mpinWho(user)){o.who=mpinWho(user);localStorage.setItem("lwbMpin",JSON.stringify(o))}}catch(e){}
-      if(!window.LWBOperationsNotifications)await new Promise((ok,bad)=>{const s=document.createElement("script");s.src="erp-operations-notifications.js";s.onload=ok;s.onerror=bad;document.head.appendChild(s)});
+      if(!window.LWBOperationsNotifications)await new Promise((ok,bad)=>{const s=document.createElement("script");s.src="erp-operations-notifications.js?v=20261128";s.onload=ok;s.onerror=bad;document.head.appendChild(s)});
       window.LWBOperationsNotifications.init({db:c,user,role,mount:top.querySelector(".erp-user"),pages:menuForMe(role).flatMap(g=>g.items.map(i=>i.h.split("#")[0]))});
     }catch(e){}
     profitSwitch(top,role);
     // liveLocation();  // 📍 Switched OFF by the owner 23 Nov 2026: no location is asked or sent. Remove // to bring back.
+    cashierChip(top,role);
     tripRent(role);
+    eveningReport(role);
     teamChat(role);
     taskSiren(role);
+  }
+
+  // 💼 Today's cashier (Mohit, 26 Nov 2026): small chip in the top bar, only for Admin / Accounts / Sales Head
+  // (and the Cashier role): "💼 Vishal" = who holds the cash box now (lwb_acc_shift_list holders).
+  const CHIP_ROLES=["admin","accounts","manager","cashier"];
+  async function cashierChip(top,role){
+    try{
+      if(!CHIP_ROLES.includes(role))return;
+      const c=window.__lwbBellClient;if(!c)return;
+      const draw=async()=>{
+        // Cashier = latest receiver who is not Admin (Admin only keeps the cash at night, lwb_acc_cashier_admin_safe_setup.sql).
+        let S=null,CS=[],HS=[];
+        const r=await c.rpc("lwb_acc_today_cashier");
+        if(!r.error&&r.data){S=r.data;CS=S.cashiers||[];HS=S.holders||[]}
+        else{const o=await c.rpc("lwb_acc_shift_list",{p_from:null,p_to:null});S=!o.error&&o.data;HS=S&&S.holders&&S.holders.length?S.holders:S&&S.holder?[S.holder]:[];CS=HS;
+          if(S&&S.pending)S.pending=S.pending.to_name;
+          // both failed: show the reason in the chip instead of hiding it (Mohit 26 Nov 2026, Vishal saw nothing)
+          if(!S){const e=(r.error&&r.error.message)||(o.error&&o.error.message)||"no data";let x=top.querySelector(".erp-cashier");
+            if(!x){x=document.createElement("a");x.className="erp-cashier";const u=top.querySelector(".erp-user");if(!u)return;u.prepend(x)}
+            x.textContent="💼 ⚠ "+String(e).slice(0,70);x.title="Cashier info did not load: "+e;x.removeAttribute("href");return}}
+        let el=top.querySelector(".erp-cashier");
+        if(!CS.length&&!HS.length){if(el)el.remove();return}
+        if(!el){el=document.createElement("a");el.className="erp-cashier";const u=top.querySelector(".erp-user");if(!u)return;u.prepend(el)}
+        const first=a=>a.map(h=>String(h.name||"").split(/\s+/)[0]).join(" + "),ids=a=>a.map(h=>h.id).sort().join();
+        const me=CS.some(h=>h.id===S.me),t=v=>v?new Date(v).toLocaleTimeString("en-IN",{hour:"2-digit",minute:"2-digit",hour12:true,timeZone:"Asia/Kolkata"}):"";
+        const apart=HS.length&&ids(HS)!==ids(CS);   // cash kept by someone else (Admin at night)
+        el.classList.toggle("me",me);
+        el.replaceChildren(document.createTextNode("💼 "));const lb=document.createElement("small");lb.textContent="Cashier:";const nm=document.createElement("b");
+        nm.textContent=CS.length?(me?"You":first(CS)):"—";el.append(lb,nm);
+        if(apart){const w=document.createElement("small");w.className="cw";w.textContent=" · cash with "+(HS.some(h=>h.id===S.me)?"you":first(HS));el.appendChild(w)}
+        el.title="Today's cashier: "+(CS.length?CS.map(h=>h.name).join(" + ")+" · since "+t(CS[0].since):"not set")+
+          (apart?"\nCash box with "+HS.map(h=>h.name).join(" + ")+" since "+t(HS[0].since):"")+(S.pending?"\nHanding to "+S.pending+" · waiting":"");
+        el.setAttribute("aria-label",el.title);
+        if(me||["admin","accounts","cashier"].includes(role))el.href="accounts-dashboard.html#cash";else el.removeAttribute("href");
+        if(S.pending)cashAsk(c,role,draw);
+      };
+      await draw().catch(e=>{const x=document.createElement("a");x.className="erp-cashier";x.textContent="💼 ⚠ "+String(e&&e.message||e).slice(0,70);const u=top.querySelector(".erp-user");if(u)u.prepend(x)});setInterval(()=>{if(!document.hidden)draw().catch(()=>{})},60000);
+      document.addEventListener("visibilitychange",()=>{if(!document.hidden)draw().catch(()=>{})});
+    }catch(e){}
+  }
+
+  // 💼 Cash handed to me (Mohit, 26 Nov 2026): Vishal on the PO page got no sign, the Received ✓ bar was only on the
+  // Dashboard. Now a popup comes on any page: Received ✓ or Later (asks again after 10 minutes).
+  let cashAsking=false;
+  async function cashAsk(c,role,redraw){
+    if(cashAsking)return;cashAsking=true;
+    try{
+      const o=await c.rpc("lwb_acc_shift_list",{p_from:null,p_to:null});if(o.error||!o.data)return;
+      const S=o.data,P=S.pending,mine=P&&(P.parts||[]).find(x=>x.to===S.me&&x.status==="PENDING");if(!mine)return;
+      const k="lwbCashLater:"+mine.id;let t=0;try{t=Number(sessionStorage.getItem(k))||0}catch(e){}
+      if(Date.now()-t<600000)return;
+      const rs=v=>"₹"+Math.round(Number(v)||0).toLocaleString("en-IN");
+      const split=(P.parts||[]).length>1?"\nCash split: "+P.parts.map(x=>String(x.to_name||"").split(/\s+/)[0]+" "+rs(x.amount)).join(" · "):"";
+      const ok=await erpConfirm((P.by_name||"Someone")+" is handing you "+rs(mine.amount)+" cash."+"\n\nCount the cash first, then press Received ✓. If it is different, ask Accounts / Admin."+split,
+        {title:"💼 Cash for you",ok:"Received ✓",cancel:"Later"});
+      if(!ok){try{sessionStorage.setItem(k,String(Date.now()))}catch(e){}return}
+      const x=await c.rpc("lwb_acc_shift_receive",{p_id:Number(mine.id),p_amount:null,p_note:null});
+      if(x.error){await erpAlert(x.error.message);return}
+      toast("Cash received "+rs(mine.amount));
+      if(role==="manager"){setTimeout(()=>location.reload(),700);return}   // today's cashier: Cashier page comes into the menu
+      redraw().catch(()=>{});
+    }catch(e){}finally{cashAsking=false}
   }
 
   // 🚨 Urgent task siren: full-screen alarm + siren sound on any page when an urgent task rings
@@ -926,6 +1043,16 @@
     }catch(e){}
   }
 
+  // 🌙 Evening report: after today's cash handover, Admin gets "Download evening report" (PDF) on any page,
+  // again every 5 minutes until it is downloaded (evening-report.js, lwb_evening_report_setup.sql).
+  async function eveningReport(role){
+    try{
+      const c=window.__lwbBellClient;if(!c||String(role||"").toLowerCase()!=="admin")return;
+      if(!window.LWBEvening)await new Promise((ok,bad)=>{const s=document.createElement("script");s.src="evening-report.js?v=20261126";s.onload=ok;s.onerror=bad;document.head.appendChild(s)});
+      window.LWBEvening.init({db:c,role});
+    }catch(e){}
+  }
+
   // 💜 "Profit ON/OFF" in the top bar: Admin always, others only when Admin allowed them (profit-view.js).
   async function profitSwitch(top,role){
     try{
@@ -977,7 +1104,7 @@
   if(!window.LWBKeys&&!document.querySelector('script[src*="erp-keys.js"]')){const s=document.createElement("script");s.src="erp-keys.js";document.head.appendChild(s)}
   // Every drop-down searches like the SKU box in New PO (erp-select.js).
   if(!window.LWBSelect&&!document.querySelector('script[src*="erp-select.js"]')){const s=document.createElement("script");s.src="erp-select.js";document.head.appendChild(s)}
-  window.ERPShell={mount,security:openSecurity,isApp:appMode,menuFor,viewOnly,menuForMe,hiddenPages,extraPages,pageRole,pageRoleFresh,allPages,icon:svg,alert:erpAlert,confirm:erpConfirm,prompt:erpPrompt,toast,done:erpDone};
+  window.ERPShell={mount,findModules,onDuty,dutyInfo,security:openSecurity,isApp:appMode,menuFor,viewOnly,menuForMe,hiddenPages,extraPages,pageRole,pageRoleFresh,allPages,icon:svg,alert:erpAlert,confirm:erpConfirm,prompt:erpPrompt,toast,done:erpDone};
   const me=document.currentScript;
   if(me&&me.hasAttribute("data-auto")){
     if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",auto);else auto();

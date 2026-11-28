@@ -8,9 +8,9 @@
   <script src="erp-period.js"></script>
   <script src="vendor/supabase-js-2.119.0.js"></script>
 <script src="brand-filter.js"></script><script src="erp-order-days.js"></script>
-  <link rel="stylesheet" href="erp-shell.css?v=20261124">
+  <link rel="stylesheet" href="erp-shell.css?v=20261127p">
   <link rel="stylesheet" href="sales.css">
-  <script src="erp-shell.js?v=20261124r"></script>
+  <script src="erp-shell.js?v=20261127p"></script>
 <script src="erp-list.js"></script>
   <script src="sales-common.js"></script>
   <script src="po-share.js"></script>
@@ -38,7 +38,7 @@
     .mo-line.gone span{text-decoration:line-through;color:#9aa4ae}
     /* PO / Sales List (#orders): only the order list, each PO with 4 steps */
     body.ms-list-mode #sub,body.ms-list-mode #kpis,body.ms-list-mode #planCard,body.ms-list-mode #tabs{display:none}
-    .mo-track{list-style:none;margin:10px 0 0;padding:0;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:4px}
+    .mo-track{list-style:none;margin:10px 0 0;padding:0;display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:4px}
     .mo-track li{position:relative;padding-top:26px;font-size:11.5px;line-height:1.3;color:#7a8592;text-align:center;min-width:0}
     .mo-track li::before{content:"";position:absolute;top:9px;left:calc(50% + 12px);right:calc(-50% + 12px);height:2px;background:#d7dde3}
     .mo-track li:last-child::before{display:none}
@@ -200,20 +200,23 @@
       if(isWaiting(o))return ["amber","Waiting for approval",""];
       if(st==="approved")return ["blue","Approved","Driver not assigned yet"];
       if(st==="transport_allocated")return ["blue","Driver assigned",veh];
-      if(st==="loading")return ["blue","Loading",veh];
-      if(st==="loaded")return ["blue","Loaded · on the way",veh];
+      // 25 Nov 2026: Loaded (godown) -> bill made -> Out for delivery when Accounts presses it (billed_at / out_at, lwb_order_status_chain_setup.sql).
+      if(st==="loading")return ["blue","Loading in progress",veh];
+      if(st==="loaded")return o.out_at?["blue","Out for delivery",veh]:o.billed_at?["blue","Loaded · bill made",veh]:["blue","Loaded · bill pending",veh];
       if(st==="invoiced")return ["blue","Billed · on the way",veh];
       return ["",esc(st.replace(/_/g," ")||"—"),""];
     }
-    // Salesman sees 4 steps only: PO given > Approved > Dispatched > Delivered.
+    // Salesman sees 5 steps: PO given > Approved > Loaded > Out for delivery (Accounts, after the bill) > Delivered.
     function track(o){
       const st=S.status(o),d=o.delivery_status||"",when=v=>v?esc(LWBDate.dt(v)):"";
       const veh=[o.driver_name,o.vehicle_no].filter(Boolean).map(esc).join(" · ");
-      const out=["loading","loaded","invoiced","dispatched","delivered"].includes(st)||!!d;
+      const loaded=["loaded","invoiced","dispatched","delivered"].includes(st)||!!d;
+      const out=loaded&&(!!o.out_at||["dispatched","delivered"].includes(st))||!!d;
       const steps=[
         {t:"PO given",s:S.shortDate(o.order_date),on:true},
         {t:"Approved",s:"",on:!isWaiting(o)},
-        {t:"Dispatched",s:veh,on:out,wait:st==="transport_allocated"?"Driver assigned"+(veh?" · "+veh:""):""},
+        {t:"Loaded",s:veh,on:loaded,wait:st==="loading"?"Loading in progress"+(veh?" · "+veh:""):st==="transport_allocated"?"Driver assigned"+(veh?" · "+veh:""):""},
+        {t:"Out for delivery",s:o.out_at?when(o.out_at):"",on:out,wait:loaded?(o.billed_at?"Bill made · Accounts to send out":"Bill pending (Accounts)"):""},
         {t:"Delivered",s:when(o.delivered_at)+(d==="PARTIAL"?" · Part":""),on:isDelivered(o),
           stop:d==="NOT_DELIVERED",wait:d==="NOT_DELIVERED"?"Not delivered":""}
       ];

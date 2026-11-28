@@ -6,7 +6,7 @@ const source=fs.readFileSync(require('node:path').join(__dirname,'../../warehous
 const printing=source.slice(source.indexOf('let savedPoItemsSignature='),source.indexOf('function warehouseSkuInputMarkup'));
 const choice=source.slice(source.indexOf('function poChooseSaved('),source.indexOf('function showPoPicker('));
 const fnSource=name=>{const start=source.indexOf('function '+name+'(');return source.slice(start,source.indexOf('\n}\n',start)+3)};
-const helpers=fnSource('orderStage')+fnSource('isSelfPickup')+fnSource('poNormalPhone')+fnSource('poTransportDirty');
+const helpers=fnSource('orderStage')+fnSource('isSelfPickup')+fnSource('poNormalPhone')+fnSource('poTransportDirty')+fnSource('latestAssignment')+'function cashBuyerText(o) { return [o && o.cash_buyer_name, o && o.cash_buyer_mobile].filter(Boolean).join(" · "); }\n';
 function setup(status='approved'){
  const nodes=new Map();const node=id=>{if(!nodes.has(id))nodes.set(id,{value:'',hidden:false,disabled:false,innerHTML:''});return nodes.get(id)};
  node('postApprovalPanel').hidden=true;node('managerNote').value='';
@@ -14,7 +14,7 @@ function setup(status='approved'){
  const items=[{id:'item1',sku_name:'QA SKU',ordered_qty:40,approved_qty:40,rate:640,unit_weight:9}];
  const saved=[{...items[0],approved_qty:45,rate:650}];
  const state={alerts:[],prints:0,confirms:0,assignment:null,order:{...initial},saved,queries:[],nodes};
- const db={from(table){let q; q={select(){return q},eq(k,v){state.queries.push([table,k,v]);return q},order(){return q},ilike(){return q},limit(){return q},single(){return q},maybeSingle(){return q},then(ok,bad){return Promise.resolve({data:table==='orders'?state.order:table==='order_items'?state.saved:table==='lwb_customer_master'?[{mobile:'9898989898',billing_address:'Limbayat',city:'Surat',pincode:''}]:state.assignment,error:null}).then(ok,bad)}};return q}};
+ const db={from(table){let q; q={select(){return q},eq(k,v){state.queries.push([table,k,v]);return q},order(){return q},ilike(){return q},limit(){return q},single(){return q},maybeSingle(){return q},then(ok,bad){return Promise.resolve({data:table==='orders'?state.order:table==='order_items'?state.saved:table==='lwb_customer_master'?[{mobile:'9898989898',billing_address:'Limbayat',city:'Surat',pincode:''}]:table==='dispatch_assignments'?(state.assignments||(state.assignment?[state.assignment]:[])):state.assignment,error:null}).then(ok,bad)}};return q}};
  const context={db,document:{getElementById:node,body:{appendChild(){}},head:{appendChild(){}},createElement:()=>({}),querySelectorAll:()=>[]},window:{print(){state.prints++}},alert(t){state.alerts.push(t)},async confirm(){state.confirms++;return false},reviewOrder:async()=>{},reviewReady:true,selectedOrder:initial,selectedItems:items,approvedTransport:null,managerNoteOriginal:'',managerNoteSaving:false,normalizedStatus:o=>String(o?.status||'').toLowerCase(),isDeliveredOrder:o=>o?.status==='delivered',isPending:o=>['pending','pending_approval',''].includes(o?.status),isApproved:o=>['approved','manager_approved','warehouse_approved'].includes(o?.status),markPoPrinted(){},orders:[],brandCompanies:[{id:'rj',quick_slip:true},{id:'cc',quick_slip:false}],skuBrandMap:new Map([['RJ SKU','rj']]),itemBrand:i=>i.sku_name==='RJ SKU'?'rj':'cc',poDType:'',poDTypeSaved:'',poTripSaved:null,poGmId:()=>'',poTypedMobile:()=>false,showPoFieldInfo(){},eligibleForPoPrint:o=>['approved','loading','loaded'].includes(o?.status),isCancelled:o=>['cancelled','rejected'].includes(o?.status),number:v=>Number(v)||0,escapeHtml:v=>String(v).replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;'),formatDateTime:v=>v==='2026-10-30T10:00:00Z'?'30/10/2026, 03:30 PM':'01/11/2026, 04:10 PM',amountInWords:()=>'',poValue:id=>node(id).value.trim(),closePoPicker(){},poSavedDrivers:[],poSavedVehicles:[],poNormalPlate:v=>String(v||''),openTransportAllocation(){}};
  vm.createContext(context);vm.runInContext(helpers+printing+'\n'+choice+'\nsavedPoItemsSignature=poItemsSignature(selectedItems);',context);
  return {state,context,node};
@@ -47,4 +47,10 @@ test('latest cancellation blocks print and saved notes are escaped',async()=>{
 });
 test('selecting driver fills mobile and available default vehicle/transport',()=>{
  const {context,node}=setup();context.poChooseSaved('driver',{name:'QA Driver',mobile:'9999999999',vehicle:'GJ05AA1234',transporter:'QA Transport'});assert.equal(node('poDriverMobile').value,'9999999999');assert.equal(node('poVehicleNo').value,'GJ05AA1234');assert.equal(node('poTransportName').value,'QA Transport');
+});
+test('PO with two saved transport rows still prints (newest row), no "multiple rows" error (LXY-00691)',async()=>{
+ const {state,context,node}=setup();
+ state.assignments=[{driver_name:'New Driver',vehicle_no:'GJ05NEW1',loading_person:'GM New'},{driver_name:'Old Driver',vehicle_no:'GJ05OLD1',loading_person:'GM Old'}];
+ await context.printApprovedPO('po');assert.deepEqual(state.alerts,[]);assert.equal(state.prints,1);
+ const html=node('poPrintArea').innerHTML;assert.match(html,/GJ05NEW1/);assert.doesNotMatch(html,/GJ05OLD1/);
 });

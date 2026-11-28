@@ -88,8 +88,9 @@ body.tab-pur .stats,body.tab-pur #salesPanel{display:none!important}
 .pur-empty{padding:18px 14px;color:#667;text-align:center}
 .pur-sep{padding:10px 14px 4px;font-size:11.5px;font-weight:800;letter-spacing:.4px;color:#889;text-transform:uppercase;border-top:1px solid #edf0f3}
 </style>
-<link rel="stylesheet" href="erp-shell.css?v=20261124">
-<script src="erp-shell.js?v=20261124r" data-auto defer></script>
+<link rel="stylesheet" href="erp-shell.css?v=20261127p">
+<script src="erp-shell.js?v=20261127p" data-auto defer></script>
+<script src="dial-book.js?v=20261128h" defer></script>
 </head>
 <body>
 <header>
@@ -327,8 +328,8 @@ const a=assignment(o.id);
 return `<tr>
 <td><strong>${safe(o.order_no)}</strong>${prioBadge(o)}</td>
 <td>${safe(date(o.order_date))}</td>
-<td>${safe(o.customer_name)}</td>
-<td>${safe(a.driver_name||'-')}</td>
+<td>${safe(o.customer_name)}${window.LWBDial?LWBDial.btn('PARTY',o.customer_name,o.customer_name):''}</td>
+<td>${safe(a.driver_name||'-')}${window.LWBDial&&a.driver_mobile?LWBDial.btn('MOB',a.driver_mobile,a.driver_name||'Driver'):''}</td>
 <td>${safe(a.vehicle_no||(pickups.get(o.id)||{}).vehicle_no||'-')}${a.loaded_from?`<span class="ld-from">${safe(a.loaded_from)}</span>`:''}</td>
 <td>${safe(a.loading_person||'-')}</td>
 <td>${fmt(o.total_qty)}</td>
@@ -422,7 +423,10 @@ try{
 const now=new Date().toISOString();
 const a=assignment(selected.id);
 if(!a.id)throw Error('Transport assignment not found.');
-const {error:e1}=await db.from('dispatch_assignments').update({loading_started_at:now}).eq('id',a.id);
+// Mohit, 25 Nov 2026: the shutter / gate is chosen at Start Loading, so PO / Sales shows it while loading.
+const from=$('loadedFrom').value;
+if(!from){alert('Select the shutter / gate where this vehicle is being loaded.');$('loadedFrom').focus();return;}
+const {error:e1}=await db.from('dispatch_assignments').update({loading_started_at:now,loaded_from:from}).eq('id',a.id);
 if(e1)throw e1;
 const {data,error:e2}=await db.from('orders').update({status:'loading'}).eq('id',selected.id).eq('status','transport_allocated').select('id');
 if(e2)throw e2;

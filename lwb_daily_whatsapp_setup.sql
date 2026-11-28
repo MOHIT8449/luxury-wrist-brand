@@ -13,6 +13,11 @@
 --   ADMIN     Admin: sales, purchase, collection brand-wise, cash and bank, outstanding
 --   ACCOUNTS  Accounts: party-wise payments, cash book, bank check / cheques pending
 --   GODOWN    Godown Manager + Transport + Admin: vehicle-wise tons / cases / amount, delivery, returns, purchase in
+--   DAYBOOK   Admin: Day Book PDF 1, Sales & work: brand-wise sales / loading / delivery / purchase / returns / pending
+--             (each brand + ALL), orders, vehicles, calls, tasks, complaints, with full lists
+--   ACCBOOK   Admin + Accounts: Day Book PDF 2, Accounts: brand-wise collection, cash book, money in / out,
+--             outstanding by brand + top dues, bank not checked, cheques
+--   A report longer than 40 lines also goes as a PDF instead of a cut image.
 -- Admin turns people / reports on or off on Reports > WhatsApp Reports (whatsapp-reports.html).
 --
 -- When: cashier's Close Day (lwb_acc_day_close, not the first opening entry), once per date.
@@ -41,6 +46,8 @@ CREATE TABLE IF NOT EXISTS public.lwb_daily_wa_config (
   updated_by uuid
 );
 INSERT INTO public.lwb_daily_wa_config(id) VALUES (1) ON CONFLICT DO NOTHING;
+-- PDF reports (Day Book, long lists) use a template with a DOCUMENT header.
+ALTER TABLE public.lwb_daily_wa_config ADD COLUMN IF NOT EXISTS template_doc text NOT NULL DEFAULT 'lwb_daily_report_pdf';
 
 -- Company MGRs (no ERP login) and which salesman works under which MGR.
 CREATE TABLE IF NOT EXISTS public.lwb_company_mgrs (
@@ -61,7 +68,7 @@ CREATE TABLE IF NOT EXISTS public.lwb_salesman_mgr (
 -- A row only when Admin changed the default for that person / report.
 CREATE TABLE IF NOT EXISTS public.lwb_daily_wa_people (
   user_id uuid NOT NULL REFERENCES public.user_profiles(id) ON DELETE CASCADE,
-  kind text NOT NULL CHECK (kind IN ('SALESMAN','MGR','TEAM','ADMIN','ACCOUNTS','GODOWN')),
+  kind text NOT NULL CHECK (kind IN ('SALESMAN','MGR','TEAM','ADMIN','ACCOUNTS','GODOWN','DAYBOOK','ACCBOOK','EVENING')),
   enabled boolean NOT NULL,
   updated_at timestamptz NOT NULL DEFAULT now(),
   updated_by uuid,
@@ -69,7 +76,7 @@ CREATE TABLE IF NOT EXISTS public.lwb_daily_wa_people (
 );
 ALTER TABLE public.lwb_daily_wa_people DROP CONSTRAINT IF EXISTS lwb_daily_wa_people_kind_check;
 ALTER TABLE public.lwb_daily_wa_people ADD CONSTRAINT lwb_daily_wa_people_kind_check
-  CHECK (kind IN ('SALESMAN','MGR','TEAM','ADMIN','ACCOUNTS','GODOWN'));
+  CHECK (kind IN ('SALESMAN','MGR','TEAM','ADMIN','ACCOUNTS','GODOWN','DAYBOOK','ACCBOOK','EVENING'));
 
 CREATE TABLE IF NOT EXISTS public.lwb_daily_wa_runs (
   report_date date PRIMARY KEY,
@@ -159,6 +166,9 @@ AS $fn$
     WHEN 'MGR' THEN r IN ('admin','manager')
     WHEN 'TEAM' THEN r IN ('admin','manager')
     WHEN 'ADMIN' THEN r = 'admin'
+    WHEN 'DAYBOOK' THEN r = 'admin'
+    WHEN 'ACCBOOK' THEN r IN ('admin','accounts')
+    WHEN 'EVENING' THEN r = 'admin'
     WHEN 'ACCOUNTS' THEN r = 'accounts'
     WHEN 'GODOWN' THEN r IN ('admin','warehouse','transport')
     ELSE false END
@@ -172,7 +182,7 @@ AS $fn$
   SELECT p.id, coalesce(nullif(btrim(p.full_name),''), 'User')::text, lower(btrim(coalesce(p.role,'')))::text,
          public.lwb_daily_wa_mobile(p.mobile::text),
          (SELECT jsonb_object_agg(k.kind, coalesce(x.enabled, public.lwb_daily_wa_default(p.role, k.kind)))
-          FROM unnest(ARRAY['SALESMAN','MGR','TEAM','ADMIN','ACCOUNTS','GODOWN']) AS k(kind)
+          FROM unnest(ARRAY['SALESMAN','MGR','TEAM','ADMIN','ACCOUNTS','GODOWN','DAYBOOK','ACCBOOK','EVENING']) AS k(kind)
           LEFT JOIN public.lwb_daily_wa_people x ON x.user_id = p.id AND x.kind = k.kind)
   FROM public.user_profiles p
   WHERE p.active = true AND lower(btrim(coalesce(p.role,''))) <> 'driver'
@@ -181,6 +191,407 @@ $fn$;
 REVOKE ALL ON FUNCTION public.lwb_wa_num(numeric), public.lwb_wa_inr(numeric), public.lwb_wa_ton(numeric), public.lwb_wa_qty(jsonb),
   public.lwb_daily_wa_mobile(text), public.lwb_daily_wa_default(text, text), public.lwb_daily_wa_people_list()
   FROM PUBLIC, anon, authenticated;
+
+CREATE OR REPLACE FUNCTION public.lwb_wa_days(p integer)
+RETURNS text LANGUAGE sql IMMUTABLE SET search_path = ''
+AS $fn$ SELECT CASE WHEN coalesce(p,0) <= 0 THEN 'Today' WHEN p = 1 THEN '1 day' ELSE p || ' days' END $fn$;
+REVOKE ALL ON FUNCTION public.lwb_wa_days(integer) FROM PUBLIC, anon, authenticated;
+
+-- Long lists: first p_cap rows + "+ N more"; empty list -> one "nothing" row.
+CREATE OR REPLACE FUNCTION public.lwb_wa_cap(p jsonb, p_cap integer, p_none text DEFAULT 'Nothing')
+RETURNS jsonb LANGUAGE sql IMMUTABLE SET search_path = ''
+AS $fn$
+  SELECT CASE
+    WHEN jsonb_array_length(coalesce(p, '[]'::jsonb)) = 0 THEN jsonb_build_array(jsonb_build_array('tr', jsonb_build_array(p_none, '', '', '')))
+    WHEN jsonb_array_length(p) <= p_cap THEN p
+    ELSE (SELECT jsonb_agg(e ORDER BY i) FROM jsonb_array_elements(p) WITH ORDINALITY z(e, i) WHERE i <= p_cap)
+         || jsonb_build_array(jsonb_build_array('tr', jsonb_build_array('+ ' || (jsonb_array_length(p) - p_cap) || ' more (see ERP)', '', '', ''))) END
+$fn$;
+REVOKE ALL ON FUNCTION public.lwb_wa_cap(jsonb, integer, text) FROM PUBLIC, anon, authenticated;
+
+-- ---------------------------------------------------------------------------
+-- Brand helpers for the two Day Book PDFs.
+-- ---------------------------------------------------------------------------
+-- Brand of an order = the one company of all its items (else Mixed brands / Brand not set).
+CREATE OR REPLACE FUNCTION public.lwb_wa_brand(p_order uuid)
+RETURNS text LANGUAGE sql STABLE SET search_path = ''
+AS $fn$
+  SELECT coalesce((SELECT co.name::text FROM public.lwb_companies co WHERE co.id = x.cid),
+                  CASE WHEN x.n > 1 THEN 'Mixed brands' ELSE 'Brand not set' END)
+  FROM (SELECT count(DISTINCT sm.company_id) n,
+               CASE WHEN count(DISTINCT sm.company_id) = 1 THEN (array_agg(sm.company_id) FILTER (WHERE sm.company_id IS NOT NULL))[1] END cid
+        FROM public.order_items i JOIN public.sku_master sm ON upper(btrim(sm.sku_name)) = upper(btrim(i.sku_name))
+        WHERE i.order_id = p_order) x
+$fn$;
+-- Brand of a money line: party payment = its brand; driver money / old collection = brand of its PO.
+CREATE OR REPLACE FUNCTION public.lwb_wa_line_brand(p_src text, p_id uuid, p_order_no text)
+RETURNS text LANGUAGE plpgsql STABLE SET search_path = ''
+AS $fn$
+DECLARE v text;
+BEGIN
+  IF p_src = 'PAYMENT' AND to_regclass('public.lwb_tally_payments') IS NOT NULL THEN
+    EXECUTE 'SELECT co.name::text FROM public.lwb_tally_payments tp JOIN public.lwb_companies co ON co.id::text = to_jsonb(tp)->>''company_id'' WHERE tp.id = $1'
+      INTO v USING p_id;
+    IF v IS NOT NULL THEN RETURN v; END IF;
+  END IF;
+  IF nullif(p_order_no,'') IS NOT NULL THEN
+    RETURN (SELECT public.lwb_wa_brand(o.id) FROM public.orders o WHERE o.order_no::text = p_order_no LIMIT 1);
+  END IF;
+  RETURN NULL;
+END;
+$fn$;
+
+-- Rows grouped by brand: brand band (count + amount), its rows (first p_cap), and an ALL BRANDS total.
+-- p = [{b: brand, r: row, a: amount}]
+CREATE OR REPLACE FUNCTION public.lwb_wa_group(p jsonb, p_unit text, p_none text, p_cap integer DEFAULT 150, p_tone text DEFAULT NULL)
+RETURNS jsonb LANGUAGE plpgsql IMMUTABLE SET search_path = ''
+AS $fn$
+DECLARE out jsonb := '[]'::jsonb; g record; tot numeric := 0; cnt integer := 0;
+BEGIN
+  IF jsonb_array_length(coalesce(p, '[]'::jsonb)) = 0 THEN
+    RETURN jsonb_build_array(jsonb_build_array('tr', jsonb_build_array(p_none, '', '', '')));
+  END IF;
+  FOR g IN SELECT coalesce(nullif(e->>'b',''), 'Brand not set') b, sum(coalesce((e->>'a')::numeric,0)) s, count(*) n,
+                  jsonb_agg(e->'r' ORDER BY i) rs
+           FROM jsonb_array_elements(p) WITH ORDINALITY z(e, i) GROUP BY 1 ORDER BY 2 DESC, 1 LOOP
+    out := out || jsonb_build_array(jsonb_build_array('grp', upper(g.b), g.n || ' ' || p_unit || '  ·  ' || public.lwb_wa_inr(g.s)))
+               || public.lwb_wa_cap(g.rs, p_cap);
+    tot := tot + g.s; cnt := cnt + g.n;
+  END LOOP;
+  RETURN out || jsonb_build_array(jsonb_build_array('tr', jsonb_build_array('ALL BRANDS', cnt || ' ' || p_unit, '', public.lwb_wa_num(tot)), true, p_tone));
+END;
+$fn$;
+REVOKE ALL ON FUNCTION public.lwb_wa_brand(uuid), public.lwb_wa_line_brand(text, uuid, text),
+  public.lwb_wa_group(jsonb, text, text, integer, text) FROM PUBLIC, anon, authenticated;
+
+-- ---------------------------------------------------------------------------
+-- The two Day Book PDFs (Admin), like the accounts day book, everything brand-wise + ALL:
+--   p_part 'WORK'  DAYBOOK  Sales & work: brand-wise sales / loading / delivery / purchase / returns /
+--                           pending, orders, vehicles, calls, tasks, complaints
+--   p_part 'ACC'   ACCBOOK  Accounts: brand-wise collection, cash book, money in (by brand),
+--                           money out, outstanding by brand + top dues, bank not checked, cheques
+-- Called by lwb_daily_wa_build after it filled its scratch tables (pg_temp.lwb_wa_o / _v / _del / _l / _in).
+-- p_cash = {open, open_set, close, close_set}
+-- ---------------------------------------------------------------------------
+DROP FUNCTION IF EXISTS public.lwb_daily_wa_daybook(date, jsonb, jsonb);
+CREATE OR REPLACE FUNCTION public.lwb_daily_wa_daybook(p_date date, p_closed jsonb, p_cash jsonb, p_part text DEFAULT 'WORK')
+RETURNS jsonb LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = ''
+AS $fn$
+DECLARE
+  d date := p_date; dd text := to_char(p_date, 'DD/MM/YYYY');
+  cap constant integer := 150;
+  head jsonb; body jsonb := '[]'::jsonb; x jsonb; n integer; a numeric; n2 integer; a2 numeric; n3 integer; txt text;
+  v_marks boolean := to_regclass('public.lwb_admin_order_marks') IS NOT NULL;
+  v_gi boolean := to_regclass('public.lwb_goods_inward') IS NOT NULL AND to_regclass('public.lwb_goods_inward_items') IS NOT NULL;
+  v_calls boolean := to_regclass('public.lwb_party_calls') IS NOT NULL;
+  v_tasks boolean := to_regclass('public.lwb_tasks') IS NOT NULL;
+  v_comp boolean := to_regclass('public.lwb_complaints') IS NOT NULL;
+  v_pret boolean := to_regclass('public.lwb_party_returns') IS NOT NULL;
+  v_rets boolean := to_regclass('public.lwb_driver_delivery_returns') IS NOT NULL AND to_regclass('public.lwb_driver_delivery_return_items') IS NOT NULL;
+  v_lines boolean := to_regprocedure('public.lwb_acc_lines()') IS NOT NULL;
+  v_ver boolean := to_regprocedure('public.lwb_acc_lines()') IS NOT NULL AND to_regclass('public.lwb_acc_verify') IS NOT NULL;
+  v_chq boolean := to_regprocedure('public.lwb_acc_lines()') IS NOT NULL AND to_regclass('public.lwb_acc_cheques') IS NOT NULL;
+  v_led boolean := to_regprocedure('public.lwb_party_ledger_b()') IS NOT NULL;
+  s_calls text := '-'; s_tasks text := '-'; s_comp text := '-';
+  bad_tasks boolean := false; bad_comp boolean := false;
+  dayrow jsonb;
+BEGIN
+  dayrow := jsonb_build_array('kv', 'Date', dd || coalesce(' · Day closed ' || (p_closed->>'at'), ' · Day not closed'), CASE WHEN p_closed IS NULL THEN 'r' END);
+
+  -- purchase bills of the day, with brand
+  CREATE TEMP TABLE IF NOT EXISTS lwb_wa_gi (supplier text, inv text, brand text, items integer, amount numeric) ON COMMIT DROP;
+  DELETE FROM pg_temp.lwb_wa_gi WHERE true;
+  IF v_gi THEN
+    EXECUTE 'INSERT INTO pg_temp.lwb_wa_gi
+             SELECT upper(coalesce(nullif(btrim(g.supplier_name),''''), ''Supplier'')), to_jsonb(g)->>''invoice_no'',
+                    coalesce((SELECT co.name::text FROM public.lwb_companies co WHERE co.id::text = to_jsonb(g)->>''company_id''), ''Brand not set''),
+                    (SELECT count(*) FROM public.lwb_goods_inward_items i WHERE i.inward_id = g.id),
+                    (SELECT coalesce(sum(coalesce(i.total_amount,0)),0) FROM public.lwb_goods_inward_items i WHERE i.inward_id = g.id)
+             FROM public.lwb_goods_inward g WHERE g.received_date = $1' USING d;
+  END IF;
+
+  IF upper(p_part) = 'ACC' THEN
+    -- ================= ACCOUNTS =================
+    body := jsonb_build_array(jsonb_build_array('sec', 'Brand-wise collection'),
+              jsonb_build_array('th', jsonb_build_array('BRAND','CASH','BANK / UPI','TOTAL')));
+    SELECT coalesce(jsonb_agg(jsonb_build_array('tr', jsonb_build_array(upper(brand), public.lwb_wa_num(c), public.lwb_wa_num(b), public.lwb_wa_num(t))) ORDER BY t DESC), '[]'::jsonb) INTO x
+    FROM (SELECT brand, coalesce(sum(amount) FILTER (WHERE m = 'CASH'),0) c, coalesce(sum(amount) FILTER (WHERE m <> 'CASH'),0) b, sum(amount) t
+          FROM pg_temp.lwb_wa_in GROUP BY brand) q;
+    body := body || public.lwb_wa_cap(x, cap, 'No payment today')
+         || (SELECT jsonb_build_array(jsonb_build_array('tr', jsonb_build_array('ALL BRANDS', public.lwb_wa_num(coalesce(sum(amount) FILTER (WHERE m = 'CASH'),0)),
+                      public.lwb_wa_num(coalesce(sum(amount) FILTER (WHERE m <> 'CASH'),0)), public.lwb_wa_num(coalesce(sum(amount),0))), true, 'g')) FROM pg_temp.lwb_wa_in);
+
+    body := body || jsonb_build_array(jsonb_build_array('sec', 'Cash book'),
+      jsonb_build_array('kv', 'Opening cash', CASE WHEN (p_cash->>'open_set')::boolean THEN public.lwb_wa_inr((p_cash->>'open')::numeric) ELSE 'Not set' END),
+      jsonb_build_array('kv', 'Cash in', (SELECT public.lwb_wa_inr(coalesce(sum(amount) FILTER (WHERE (kind = 'IN' AND mode = 'CASH') OR kind = 'WITHDRAW'),0)) FROM pg_temp.lwb_wa_l), 'g'),
+      jsonb_build_array('kv', 'Cash out', (SELECT public.lwb_wa_inr(coalesce(sum(amount) FILTER (WHERE kind = 'OUT' AND mode = 'CASH'),0)) FROM pg_temp.lwb_wa_l)),
+      jsonb_build_array('kv', 'Bank deposit', (SELECT public.lwb_wa_inr(coalesce(sum(amount) FILTER (WHERE kind = 'DEPOSIT'),0)) FROM pg_temp.lwb_wa_l)),
+      jsonb_build_array('kv', 'Closing cash', CASE WHEN (p_cash->>'close_set')::boolean THEN public.lwb_wa_inr((p_cash->>'close')::numeric)
+          || CASE WHEN p_closed IS NULL THEN ' (day not closed)' WHEN abs(coalesce((p_closed->>'counted')::numeric, (p_cash->>'close')::numeric) - (p_cash->>'close')::numeric) < 1 THEN ' (counted OK)'
+                  ELSE ' (counted ' || public.lwb_wa_inr((p_closed->>'counted')::numeric) || ')' END ELSE 'Not set' END,
+        CASE WHEN p_closed IS NULL THEN 'r' ELSE 'g' END));
+
+    -- 1. Money in, brand by brand
+    SELECT count(*), coalesce(sum(amount),0) INTO n, a FROM pg_temp.lwb_wa_in;
+    SELECT coalesce(jsonb_agg(jsonb_build_object('b', brand, 'a', amount, 'r', jsonb_build_array('tr', jsonb_build_array(
+              upper(coalesce(nullif(btrim(party),''), 'Other')), coalesce(nullif(order_no,''), '-'), m, public.lwb_wa_num(amount)))) ORDER BY amount DESC), '[]'::jsonb) INTO x
+    FROM pg_temp.lwb_wa_in;
+    body := body || jsonb_build_array(jsonb_build_array('sec', '1. Money in · ' || n || ' entries · ' || public.lwb_wa_inr(a)),
+              jsonb_build_array('th', jsonb_build_array('PARTY','PO','MODE','AMOUNT')))
+            || public.lwb_wa_group(x, 'entries', 'No payment today', cap, 'g');
+
+    -- 2. Money out & bank (not brand-wise: shop expenses)
+    SELECT count(*) INTO n FROM pg_temp.lwb_wa_l WHERE kind IN ('OUT','DEPOSIT','WITHDRAW');
+    SELECT coalesce(jsonb_agg(jsonb_build_array('tr', jsonb_build_array(
+              coalesce(nullif(concat_ws(' · ', nullif(btrim(category),''), nullif(btrim(party),''), nullif(btrim(remark),'')), ''), initcap(kind)),
+              CASE kind WHEN 'OUT' THEN 'Paid' WHEN 'DEPOSIT' THEN 'To bank' ELSE 'From bank' END, coalesce(mode,''), public.lwb_wa_num(amount)),
+              false, CASE WHEN kind = 'OUT' THEN 'r' END) ORDER BY kind DESC, amount DESC), '[]'::jsonb) INTO x
+    FROM pg_temp.lwb_wa_l WHERE kind IN ('OUT','DEPOSIT','WITHDRAW');
+    body := body || jsonb_build_array(jsonb_build_array('sec', '2. Money out & bank · ' || n || ' entries'),
+              jsonb_build_array('th', jsonb_build_array('DETAIL','TYPE','MODE','AMOUNT')))
+            || public.lwb_wa_cap(x, cap, 'No expense / bank entry');
+    IF n > 0 THEN
+      body := body || (SELECT jsonb_build_array(jsonb_build_array('tr', jsonb_build_array('TOTAL PAID', '', '', public.lwb_wa_num(coalesce(sum(amount) FILTER (WHERE kind = 'OUT'),0))), true, 'r'))
+                       FROM pg_temp.lwb_wa_l);
+    END IF;
+
+    -- 3. Outstanding brand-wise + top dues of each brand
+    IF v_led THEN
+      CREATE TEMP TABLE IF NOT EXISTS lwb_wa_os (party text, brand text, bal numeric) ON COMMIT DROP;
+      DELETE FROM pg_temp.lwb_wa_os WHERE true;
+      EXECUTE 'INSERT INTO pg_temp.lwb_wa_os
+               SELECT upper(btrim(l.customer_name)), coalesce(co.name::text, ''Brand not set''), sum(coalesce(l.debit,0) - coalesce(l.credit,0))
+               FROM public.lwb_party_ledger_b() l LEFT JOIN public.lwb_companies co ON co.id = l.company_id
+               WHERE l.entry_date <= $1 GROUP BY 1, 2' USING d;
+      DELETE FROM pg_temp.lwb_wa_os WHERE bal <= 0.5;
+      SELECT coalesce(jsonb_agg(jsonb_build_array('tr', jsonb_build_array(upper(brand), c::text, '', public.lwb_wa_num(s))) ORDER BY s DESC), '[]'::jsonb) INTO x
+      FROM (SELECT brand, count(*) c, sum(bal) s FROM pg_temp.lwb_wa_os GROUP BY brand) q;
+      body := body || jsonb_build_array(jsonb_build_array('sec', '3. Outstanding (brand-wise)'),
+                jsonb_build_array('th', jsonb_build_array('BRAND','PARTIES','','AMOUNT')))
+              || public.lwb_wa_cap(x, cap, 'Nothing outstanding')
+              || (SELECT jsonb_build_array(jsonb_build_array('tr', jsonb_build_array('ALL BRANDS', count(*)::text, '', public.lwb_wa_num(coalesce(sum(bal),0))), true, 'r')) FROM pg_temp.lwb_wa_os);
+      SELECT coalesce(jsonb_agg(jsonb_build_object('b', brand, 'a', bal, 'r', jsonb_build_array('tr', jsonb_build_array(party, '', '', public.lwb_wa_num(bal)))) ORDER BY bal DESC), '[]'::jsonb) INTO x
+      FROM (SELECT *, row_number() OVER (PARTITION BY brand ORDER BY bal DESC) rn FROM pg_temp.lwb_wa_os) q WHERE rn <= 10;
+      body := body || jsonb_build_array(jsonb_build_array('sec', '4. Top 10 dues of each brand'),
+                jsonb_build_array('th', jsonb_build_array('PARTY','','','DUE')))
+              || public.lwb_wa_group(x, 'parties', 'Nothing outstanding', 10, 'r');
+    END IF;
+
+    -- 5. Bank not checked / cheques, brand-wise
+    IF v_ver THEN
+      EXECUTE 'SELECT coalesce(jsonb_agg(jsonb_build_object(''b'', coalesce(public.lwb_wa_line_brand(l.src, l.id, l.order_no), ''Brand not set''), ''a'', l.amount,
+                 ''r'', jsonb_build_array(''tr'', jsonb_build_array(upper(coalesce(nullif(btrim(l.party),''''), initcap(l.kind))), coalesce(l.mode,''''),
+                        to_char(l.book_date, ''DD/MM''), public.lwb_wa_num(l.amount)), false, CASE WHEN $1 - l.book_date >= 2 THEN ''r'' END))
+                 ORDER BY l.book_date, l.amount DESC), ''[]''::jsonb)
+               FROM public.lwb_acc_lines() l WHERE l.needs_verify
+                AND NOT EXISTS (SELECT 1 FROM public.lwb_acc_verify v WHERE v.src = l.src AND v.src_id = l.id)' INTO x USING d;
+      body := body || jsonb_build_array(jsonb_build_array('sec', '5. Bank not checked'),
+                jsonb_build_array('th', jsonb_build_array('PARTY','MODE','DATE','AMOUNT')))
+              || public.lwb_wa_group(x, 'entries', 'Nothing pending', cap, 'r');
+    END IF;
+    IF v_chq THEN
+      EXECUTE 'SELECT coalesce(jsonb_agg(jsonb_build_object(''b'', coalesce(public.lwb_wa_line_brand(l.src, l.id, l.order_no), ''Brand not set''), ''a'', l.amount,
+                 ''r'', jsonb_build_array(''tr'', jsonb_build_array(upper(coalesce(nullif(btrim(l.party),''''), ''-'')), ''Cheque'',
+                        to_char(coalesce(c.cheque_date, l.book_date), ''DD/MM''), public.lwb_wa_num(l.amount))))
+                 ORDER BY coalesce(c.cheque_date, l.book_date)), ''[]''::jsonb)
+               FROM public.lwb_acc_cheques c JOIN public.lwb_acc_lines() l ON l.src = c.src AND l.id = c.src_id
+               WHERE c.deposited_on IS NULL AND coalesce(c.cheque_date, l.book_date) <= $1' INTO x USING d;
+      body := body || jsonb_build_array(jsonb_build_array('sec', '6. Cheques to deposit'),
+                jsonb_build_array('th', jsonb_build_array('PARTY','TYPE','DATE','AMOUNT')))
+              || public.lwb_wa_group(x, 'cheques', 'No cheque to deposit', cap, 'r');
+    END IF;
+
+    head := jsonb_build_array(dayrow, jsonb_build_array('sec', 'Today'),
+      jsonb_build_array('kv', 'Money in', (SELECT public.lwb_wa_inr(coalesce(sum(amount),0)) || ' · ' || count(*) || ' entries' FROM pg_temp.lwb_wa_in), 'g'),
+      jsonb_build_array('kv', 'Money out', (SELECT public.lwb_wa_inr(coalesce(sum(amount) FILTER (WHERE kind = 'OUT'),0)) FROM pg_temp.lwb_wa_l)),
+      jsonb_build_array('kv', 'Bank deposit', (SELECT public.lwb_wa_inr(coalesce(sum(amount) FILTER (WHERE kind = 'DEPOSIT'),0)) FROM pg_temp.lwb_wa_l)),
+      jsonb_build_array('kv', 'Purchase bills', (SELECT count(*) || ' · ' || public.lwb_wa_inr(coalesce(sum(amount),0)) FROM pg_temp.lwb_wa_gi)));
+    RETURN head || body;
+  END IF;
+
+  -- ================= SALES & WORK =================
+  -- open orders that still need work (any date up to this day)
+  CREATE TEMP TABLE IF NOT EXISTS lwb_wa_pend (id uuid, order_no text, party text, person text, amount numeric, days integer, stage text, brand text) ON COMMIT DROP;
+  DELETE FROM pg_temp.lwb_wa_pend WHERE true;
+  INSERT INTO pg_temp.lwb_wa_pend
+  SELECT o.id, o.order_no::text, upper(btrim(o.customer_name)), coalesce(nullif(btrim(o.sales_person),''), nullif(btrim(cb.full_name),''), '-'),
+         coalesce(o.total_amount,0), d - (timezone('Asia/Kolkata', o.order_date::timestamptz))::date,
+         CASE WHEN lower(btrim(coalesce(o.status,''))) IN ('','pending','submitted','pending_manager','pending_approval','pending_review','new') THEN 'APPROVAL'
+              WHEN lower(btrim(o.status)) IN ('approved','transport_allocated','allocated','loading') THEN 'LOADING'
+              ELSE 'DELIVERY' END,
+         NULL
+  FROM public.orders o LEFT JOIN public.user_profiles cb ON cb.id = o.created_by
+  WHERE lower(btrim(coalesce(o.status,''))) IN ('','pending','submitted','pending_manager','pending_approval','pending_review','new',
+                                                'approved','transport_allocated','allocated','loading','loaded','invoiced','dispatched')
+    AND (timezone('Asia/Kolkata', o.order_date::timestamptz))::date <= d
+    AND NOT EXISTS (SELECT 1 FROM public.lwb_delivery_reports z WHERE z.order_id = o.id AND z.delivery_status IN ('DELIVERED','PARTIAL'));
+  IF v_marks THEN
+    EXECUTE 'DELETE FROM pg_temp.lwb_wa_pend p WHERE EXISTS (SELECT 1 FROM public.lwb_admin_order_marks m WHERE m.order_id = p.id AND m.kind = ''DELIVERED'')';
+  END IF;
+  UPDATE pg_temp.lwb_wa_pend SET brand = public.lwb_wa_brand(id) WHERE true;
+
+  -- Brand-wise today
+  WITH b AS (
+    SELECT brand FROM pg_temp.lwb_wa_o WHERE day = d UNION SELECT brand FROM pg_temp.lwb_wa_del
+    UNION SELECT brand FROM pg_temp.lwb_wa_v UNION SELECT brand FROM pg_temp.lwb_wa_gi)
+  SELECT coalesce(jsonb_agg(jsonb_build_array('tr', jsonb_build_array(upper(b.brand),
+            public.lwb_wa_num((SELECT coalesce(sum(o.amount),0) FROM pg_temp.lwb_wa_o o WHERE o.day = d AND o.brand = b.brand)),
+            public.lwb_wa_num((SELECT coalesce(sum(z.amount),0) FROM pg_temp.lwb_wa_del z WHERE z.brand = b.brand)),
+            public.lwb_wa_num((SELECT coalesce(sum(g.amount),0) FROM pg_temp.lwb_wa_gi g WHERE g.brand = b.brand))))
+          ORDER BY (SELECT coalesce(sum(o.amount),0) FROM pg_temp.lwb_wa_o o WHERE o.day = d AND o.brand = b.brand) DESC, b.brand), '[]'::jsonb) INTO x
+  FROM b;
+  body := jsonb_build_array(jsonb_build_array('sec', 'Brand-wise today'),
+            jsonb_build_array('th', jsonb_build_array('BRAND','SALES','DELIVERED','PURCHASE')))
+          || public.lwb_wa_cap(x, cap, 'Nothing today')
+          || jsonb_build_array(jsonb_build_array('tr', jsonb_build_array('ALL BRANDS',
+               (SELECT public.lwb_wa_num(coalesce(sum(amount),0)) FROM pg_temp.lwb_wa_o WHERE day = d),
+               (SELECT public.lwb_wa_num(coalesce(sum(amount),0)) FROM pg_temp.lwb_wa_del),
+               (SELECT public.lwb_wa_num(coalesce(sum(amount),0)) FROM pg_temp.lwb_wa_gi)), true));
+  -- Brand-wise pending
+  SELECT coalesce(jsonb_agg(jsonb_build_array('tr', jsonb_build_array(upper(brand), public.lwb_wa_num(ap), public.lwb_wa_num(lo), public.lwb_wa_num(de)),
+            false, CASE WHEN ap + lo + de > 0 THEN NULL END) ORDER BY ap + lo + de DESC), '[]'::jsonb) INTO x
+  FROM (SELECT brand, coalesce(sum(amount) FILTER (WHERE stage = 'APPROVAL'),0) ap, coalesce(sum(amount) FILTER (WHERE stage = 'LOADING'),0) lo,
+               coalesce(sum(amount) FILTER (WHERE stage = 'DELIVERY'),0) de FROM pg_temp.lwb_wa_pend GROUP BY brand) q;
+  body := body || jsonb_build_array(jsonb_build_array('sec', 'Brand-wise pending'),
+            jsonb_build_array('th', jsonb_build_array('BRAND','NOT APPROVED','NOT LOADED','NOT DELIVERED')))
+          || public.lwb_wa_cap(x, cap, 'Nothing pending')
+          || (SELECT jsonb_build_array(jsonb_build_array('tr', jsonb_build_array('ALL BRANDS',
+               public.lwb_wa_num(coalesce(sum(amount) FILTER (WHERE stage = 'APPROVAL'),0)), public.lwb_wa_num(coalesce(sum(amount) FILTER (WHERE stage = 'LOADING'),0)),
+               public.lwb_wa_num(coalesce(sum(amount) FILTER (WHERE stage = 'DELIVERY'),0))), true, 'r')) FROM pg_temp.lwb_wa_pend);
+
+  -- 1. Orders of the day, brand by brand
+  SELECT count(*), coalesce(sum(amount),0) INTO n, a FROM pg_temp.lwb_wa_o WHERE day = d;
+  SELECT coalesce(jsonb_agg(jsonb_build_object('b', o.brand, 'a', o.amount, 'r', jsonb_build_array('tr', jsonb_build_array(coalesce(o.order_no::text,'') || ' · ' || o.party,
+            initcap(split_part(coalesce(nullif(btrim(pp.full_name),''), nullif(btrim(ord.sales_person),''), '-'), ' ', 1)),
+            initcap(replace(coalesce(nullif(btrim(ord.status),''),'pending'), '_', ' ')), public.lwb_wa_num(o.amount)))) ORDER BY ord.order_date, o.order_no), '[]'::jsonb)
+    INTO x
+  FROM pg_temp.lwb_wa_o o JOIN public.orders ord ON ord.id = o.id LEFT JOIN public.user_profiles pp ON pp.id = o.person_id WHERE o.day = d;
+  body := body || jsonb_build_array(jsonb_build_array('sec', '1. Orders today · ' || n || ' PO · ' || public.lwb_wa_inr(a)),
+            jsonb_build_array('th', jsonb_build_array('PO · PARTY','SALESMAN','STATUS','AMOUNT')))
+          || public.lwb_wa_group(x, 'PO', 'No order today', cap);
+
+  -- 2. Loading: brand-wise, then vehicle-wise
+  SELECT count(*), coalesce(sum(amount),0), count(DISTINCT vkey) INTO n, a, n2 FROM pg_temp.lwb_wa_v;
+  SELECT coalesce(jsonb_agg(jsonb_build_array('tr', jsonb_build_array(upper(brand) || ' · ' || c || ' PO', public.lwb_wa_ton(kg), q, public.lwb_wa_num(amt))) ORDER BY amt DESC), '[]'::jsonb) INTO x
+  FROM (SELECT brand, count(*) c, sum(kg) kg, sum(amount) amt,
+               public.lwb_wa_qty((SELECT jsonb_agg(jsonb_build_object('u',u,'q',q)) FROM (SELECT y.unit u, sum(y.qty) q FROM pg_temp.lwb_wa_v y WHERE y.brand = v.brand GROUP BY 1) z)) q
+        FROM pg_temp.lwb_wa_v v GROUP BY brand) q;
+  body := body || jsonb_build_array(jsonb_build_array('sec', '2. Loading · ' || n2 || CASE WHEN n2 = 1 THEN ' vehicle · ' ELSE ' vehicles · ' END || n || ' PO'),
+            jsonb_build_array('th', jsonb_build_array('BRAND','TON','CASE','AMOUNT')))
+          || public.lwb_wa_cap(x, cap, 'No vehicle loaded');
+  IF n > 0 THEN
+    body := body || (SELECT jsonb_build_array(jsonb_build_array('tr', jsonb_build_array('ALL BRANDS · ' || n || ' PO', public.lwb_wa_ton(sum(kg)),
+              public.lwb_wa_qty((SELECT jsonb_agg(jsonb_build_object('u',u,'q',q)) FROM (SELECT unit u, sum(qty) q FROM pg_temp.lwb_wa_v GROUP BY 1) z)),
+              public.lwb_wa_num(sum(amount))), true)) FROM pg_temp.lwb_wa_v);
+    SELECT coalesce(jsonb_agg(jsonb_build_array('tr', jsonb_build_array(t || ' · ' || c || ' PO', public.lwb_wa_ton(kg), q, public.lwb_wa_num(amt))) ORDER BY kg DESC), '[]'::jsonb) INTO x
+    FROM (SELECT upper(max(vno)) || coalesce(' · ' || upper(max(driver)), '') t, count(*) c, sum(kg) kg, sum(amount) amt,
+                 public.lwb_wa_qty((SELECT jsonb_agg(jsonb_build_object('u',u,'q',q)) FROM (SELECT y.unit u, sum(y.qty) q FROM pg_temp.lwb_wa_v y WHERE y.vkey = v.vkey GROUP BY 1) z)) q
+          FROM pg_temp.lwb_wa_v v GROUP BY vkey) q;
+    body := body || jsonb_build_array(jsonb_build_array('th', jsonb_build_array('VEHICLE / DRIVER','TON','CASE','AMOUNT'))) || public.lwb_wa_cap(x, cap, '');
+  END IF;
+
+  -- 3. Delivered, brand by brand
+  SELECT count(*), coalesce(sum(amount),0) INTO n, a FROM pg_temp.lwb_wa_del;
+  SELECT coalesce(jsonb_agg(jsonb_build_object('b', z.brand, 'a', z.amount, 'r', jsonb_build_array('tr', jsonb_build_array(z.party, coalesce(o.order_no::text,''), '', public.lwb_wa_num(z.amount)))) ORDER BY z.party), '[]'::jsonb) INTO x
+  FROM pg_temp.lwb_wa_del z LEFT JOIN public.orders o ON o.id = z.id;
+  body := body || jsonb_build_array(jsonb_build_array('sec', '3. Delivered · ' || n || ' PO · ' || public.lwb_wa_inr(a)),
+            jsonb_build_array('th', jsonb_build_array('PARTY','PO','','AMOUNT')))
+          || public.lwb_wa_group(x, 'PO', 'Nothing delivered', cap, 'g');
+
+  -- 4. Purchase in, brand by brand
+  SELECT count(*), coalesce(sum(amount),0) INTO n, a FROM pg_temp.lwb_wa_gi;
+  SELECT coalesce(jsonb_agg(jsonb_build_object('b', brand, 'a', amount, 'r', jsonb_build_array('tr', jsonb_build_array(supplier || coalesce(' · ' || nullif(inv,''), ''),
+            items::text, '', public.lwb_wa_num(amount)))) ORDER BY amount DESC), '[]'::jsonb) INTO x FROM pg_temp.lwb_wa_gi;
+  body := body || jsonb_build_array(jsonb_build_array('sec', '4. Purchase in · ' || n || CASE WHEN n = 1 THEN ' bill · ' ELSE ' bills · ' END || public.lwb_wa_inr(a)),
+            jsonb_build_array('th', jsonb_build_array('SUPPLIER · BILL','ITEMS','','AMOUNT')))
+          || public.lwb_wa_group(x, 'bills', 'No purchase bill', cap);
+
+  -- 5. Returns, brand by brand
+  x := '[]'::jsonb; n2 := 0; a2 := 0;
+  IF v_pret THEN
+    EXECUTE 'SELECT coalesce(jsonb_agg(jsonb_build_object(''b'', coalesce(co.name::text, public.lwb_wa_brand(r.order_id), ''Brand not set''), ''a'', r.amount,
+               ''r'', jsonb_build_array(''tr'', jsonb_build_array(upper(btrim(r.party)), r.return_no, ''CN'', public.lwb_wa_num(r.amount)))) ORDER BY r.amount DESC), ''[]''::jsonb)
+             FROM public.lwb_party_returns r LEFT JOIN public.lwb_companies co ON co.id = r.company_id
+             WHERE r.return_date = $1 AND r.cancelled_at IS NULL' INTO x USING d;
+  END IF;
+  IF v_rets THEN
+    EXECUTE 'SELECT count(DISTINCT h.order_id), coalesce(sum(i.qty_cases),0) FROM public.lwb_driver_delivery_returns h
+             JOIN public.lwb_driver_delivery_return_items i ON i.return_id = h.id
+             WHERE h.status <> ''REJECTED'' AND (timezone(''Asia/Kolkata'', h.created_at))::date = $1' INTO n2, a2 USING d;
+  END IF;
+  body := body || jsonb_build_array(jsonb_build_array('sec', '5. Returns' || CASE WHEN n2 > 0 THEN ' · drivers ' || public.lwb_wa_num(a2) || ' cs (' || n2 || ' PO)' ELSE '' END),
+            jsonb_build_array('th', jsonb_build_array('PARTY','NO.','TYPE','AMOUNT')))
+          || public.lwb_wa_group(x, 'returns', 'No credit note', cap);
+
+  -- 6. Party calls (salesman-wise)
+  IF v_calls THEN
+    EXECUTE 'SELECT count(*), count(*) FILTER (WHERE result = ''ORDER_TAKEN'') FROM public.lwb_party_calls WHERE call_date = $1' INTO n, n2 USING d;
+    EXECUTE 'SELECT coalesce(jsonb_agg(jsonb_build_array(''tr'', jsonb_build_array(nm, c::text, o::text, nn::text), false, CASE WHEN o = 0 THEN ''r'' END) ORDER BY c DESC), ''[]''::jsonb)
+             FROM (SELECT upper(coalesce(nullif(btrim(called_by_name),''''), ''-'')) nm, count(*) c,
+                          count(*) FILTER (WHERE result = ''ORDER_TAKEN'') o, count(*) FILTER (WHERE result IN (''NO_ORDER'',''NOT_REACHABLE'')) nn
+                   FROM public.lwb_party_calls WHERE call_date = $1 GROUP BY 1) q' INTO x USING d;
+    s_calls := n || ' calls · ' || n2 || ' orders';
+    body := body || jsonb_build_array(jsonb_build_array('sec', '6. Party calls · ' || s_calls),
+              jsonb_build_array('th', jsonb_build_array('CALLED BY','CALLS','ORDER','NO ORDER')))
+            || public.lwb_wa_cap(x, cap, 'No call saved today');
+  END IF;
+
+  -- 7. Tasks (person-wise)
+  IF v_tasks THEN
+    EXECUTE 'SELECT count(*) FILTER (WHERE status = ''DONE'' AND (timezone(''Asia/Kolkata'', done_at))::date = $1),
+                    count(*) FILTER (WHERE status IN (''OPEN'',''IN_PROGRESS'')),
+                    count(*) FILTER (WHERE status IN (''OPEN'',''IN_PROGRESS'') AND due_date < $1)
+             FROM public.lwb_tasks' INTO n, n2, n3 USING d;
+    EXECUTE 'SELECT coalesce(jsonb_agg(jsonb_build_array(''tr'', jsonb_build_array(nm, dn::text, op::text, lt::text), false, CASE WHEN lt > 0 THEN ''r'' END) ORDER BY lt DESC, op DESC, nm), ''[]''::jsonb)
+             FROM (SELECT upper(coalesce(nullif(btrim(assigned_to_name),''''), ''-'')) nm,
+                          count(*) FILTER (WHERE status = ''DONE'' AND (timezone(''Asia/Kolkata'', done_at))::date = $1) dn,
+                          count(*) FILTER (WHERE status IN (''OPEN'',''IN_PROGRESS'')) op,
+                          count(*) FILTER (WHERE status IN (''OPEN'',''IN_PROGRESS'') AND due_date < $1) lt
+                   FROM public.lwb_tasks GROUP BY 1) q WHERE dn + op > 0' INTO x USING d;
+    s_tasks := n || ' done · ' || n2 || ' open · ' || n3 || ' late'; bad_tasks := n3 > 0;
+    body := body || jsonb_build_array(jsonb_build_array('sec', '7. Tasks · ' || s_tasks),
+              jsonb_build_array('th', jsonb_build_array('PERSON','DONE','OPEN','LATE')))
+            || public.lwb_wa_cap(x, cap, 'No task');
+  END IF;
+
+  -- 8-10. Pending orders, brand by brand
+  FOR txt IN SELECT unnest(ARRAY['APPROVAL','LOADING','DELIVERY']) LOOP
+    SELECT count(*), coalesce(sum(amount),0) INTO n, a FROM pg_temp.lwb_wa_pend WHERE stage = txt;
+    SELECT coalesce(jsonb_agg(jsonb_build_object('b', brand, 'a', amount, 'r', jsonb_build_array('tr', jsonb_build_array(coalesce(order_no,'') || ' · ' || party,
+              initcap(split_part(person, ' ', 1)), public.lwb_wa_days(days), public.lwb_wa_num(amount)), false, CASE WHEN days >= 2 THEN 'r' END)) ORDER BY days DESC, order_no), '[]'::jsonb) INTO x
+    FROM pg_temp.lwb_wa_pend WHERE stage = txt;
+    body := body || jsonb_build_array(
+              jsonb_build_array('sec', CASE txt WHEN 'APPROVAL' THEN '8. Waiting approval' WHEN 'LOADING' THEN '9. Approved, not loaded' ELSE '10. Loaded, not delivered' END
+                                       || ' · ' || n || ' PO · ' || public.lwb_wa_inr(a)),
+              jsonb_build_array('th', jsonb_build_array('PO · PARTY','SALESMAN','OLD','AMOUNT')))
+            || public.lwb_wa_group(x, 'PO', 'Nothing pending', cap, 'r');
+  END LOOP;
+
+  -- 11. Complaints
+  IF v_comp THEN
+    EXECUTE 'SELECT count(*), coalesce(jsonb_agg(jsonb_build_array(''tr'', jsonb_build_array(upper(c.category) || '' · '' || c.subject,
+                initcap(split_part(coalesce(c.created_by_name,''-''), '' '', 1)), public.lwb_wa_days($1 - (timezone(''Asia/Kolkata'', c.created_at))::date), initcap(c.status)),
+                false, CASE WHEN c.urgent THEN ''r'' END) ORDER BY c.urgent DESC, c.created_at), ''[]''::jsonb)
+             FROM public.lwb_complaints c WHERE c.status <> ''RESOLVED''' INTO n, x USING d;
+    s_comp := n || ' open'; bad_comp := n > 0;
+    body := body || jsonb_build_array(jsonb_build_array('sec', '11. Complaints open · ' || n),
+              jsonb_build_array('th', jsonb_build_array('COMPLAINT','BY','OLD','STATUS')))
+            || public.lwb_wa_cap(x, cap, 'No open complaint');
+  END IF;
+
+  head := jsonb_build_array(dayrow,
+    jsonb_build_array('kv', 'Sales', (SELECT count(*) || ' PO · ' || public.lwb_wa_inr(coalesce(sum(amount),0)) FROM pg_temp.lwb_wa_o WHERE day = d)),
+    jsonb_build_array('kv', 'Delivered', (SELECT count(*) || ' PO · ' || public.lwb_wa_inr(coalesce(sum(amount),0)) FROM pg_temp.lwb_wa_del), 'g'),
+    jsonb_build_array('kv', 'Pending (all stages)', (SELECT count(*) || ' PO · ' || public.lwb_wa_inr(coalesce(sum(amount),0)) FROM pg_temp.lwb_wa_pend),
+       (SELECT CASE WHEN count(*) > 0 THEN 'r' END FROM pg_temp.lwb_wa_pend)),
+    jsonb_build_array('kv', 'Party calls', s_calls),
+    jsonb_build_array('kv', 'Tasks', s_tasks, CASE WHEN bad_tasks THEN 'r' END),
+    jsonb_build_array('kv', 'Complaints', s_comp, CASE WHEN bad_comp THEN 'r' END));
+  RETURN head || body;
+END;
+$fn$;
+REVOKE ALL ON FUNCTION public.lwb_daily_wa_daybook(date, jsonb, jsonb, text) FROM PUBLIC, anon, authenticated;
+
 
 -- ---------------------------------------------------------------------------
 -- 3. Build every report of one day (IST).
@@ -224,7 +635,8 @@ BEGIN
          (timezone('Asia/Kolkata', o.order_date::timestamptz))::date AS day,
          CASE WHEN upper(btrim(split_part(coalesce(o.transportation,''), '|', 1))) LIKE 'DIRECT%' THEN 'DIRECT' ELSE 'GODOWN' END AS kind,
          coalesce(sp.id, CASE WHEN lower(btrim(coalesce(cb.role,''))) IN ('sales','salesman','manager') THEN cb.id END) AS person_id,
-         CASE WHEN upper(coalesce(to_jsonb(co)->>'pack_unit','')) = 'BOX' THEN 'IC' ELSE 'cs' END AS unit
+         CASE WHEN upper(coalesce(to_jsonb(co)->>'pack_unit','')) = 'BOX' THEN 'IC' ELSE 'cs' END AS unit,
+         coalesce(co.name::text, CASE WHEN oc.n > 1 THEN 'Mixed brands' ELSE 'Brand not set' END) AS brand
   FROM public.orders o
   LEFT JOIN LATERAL (
     SELECT p.id FROM public.user_profiles p
@@ -232,7 +644,7 @@ BEGIN
     ORDER BY p.active DESC, (lower(btrim(coalesce(p.role,''))) IN ('sales','salesman','manager')) DESC LIMIT 1) sp ON true
   LEFT JOIN public.user_profiles cb ON cb.id = o.created_by
   LEFT JOIN LATERAL (
-    SELECT CASE WHEN count(DISTINCT sm.company_id) = 1 THEN (array_agg(sm.company_id) FILTER (WHERE sm.company_id IS NOT NULL))[1] END AS cid
+    SELECT CASE WHEN count(DISTINCT sm.company_id) = 1 THEN (array_agg(sm.company_id) FILTER (WHERE sm.company_id IS NOT NULL))[1] END AS cid, count(DISTINCT sm.company_id) AS n
     FROM public.order_items i JOIN public.sku_master sm ON upper(btrim(sm.sku_name)) = upper(btrim(i.sku_name))
     WHERE i.order_id = o.id) oc ON true
   LEFT JOIN public.lwb_companies co ON co.id = oc.cid
@@ -266,7 +678,8 @@ BEGIN
              FROM public.lwb_sales_targets t WHERE t.month = $1 AND t.salesman_id = s.user_id' USING m0;
     IF date_trunc('month', nd) = date_trunc('month', d) THEN
       UPDATE pg_temp.lwb_wa_s SET tom_amt = greatest(tg_amt - m_amt, 0) / greatest(days_left, 1),
-                                  tom_cs = greatest(tg_cs - m_qty, 0) / greatest(days_left, 1);
+                                  tom_cs = greatest(tg_cs - m_qty, 0) / greatest(days_left, 1)
+       WHERE true;  -- Supabase safeupdate refuses an UPDATE without WHERE
     ELSE
       EXECUTE 'UPDATE pg_temp.lwb_wa_s s SET tom_amt = coalesce(t.target_amount,0) / greatest($2, 1), tom_cs = coalesce(t.target_cases,0) / greatest($2, 1)
                FROM public.lwb_sales_targets t WHERE t.month = $1 AND t.salesman_id = s.user_id' USING date_trunc('month', nd)::date, days_left;
@@ -397,12 +810,13 @@ BEGIN
   SELECT coalesce(nullif(upper(regexp_replace(coalesce(a2.vehicle_no,''), '[^A-Za-z0-9]', '', 'g')), ''), 'NOVEHICLE') AS vkey,
          coalesce(nullif(btrim(a2.vehicle_no),''), 'No vehicle') AS vno, nullif(btrim(a2.driver_name),'') AS driver,
          o.id, coalesce(o.total_weight,0) AS kg, coalesce(o.total_qty,0) AS qty, coalesce(o.total_amount,0) AS amount,
-         CASE WHEN upper(coalesce(to_jsonb(co)->>'pack_unit','')) = 'BOX' THEN 'IC' ELSE 'cs' END AS unit
+         CASE WHEN upper(coalesce(to_jsonb(co)->>'pack_unit','')) = 'BOX' THEN 'IC' ELSE 'cs' END AS unit,
+         coalesce(co.name::text, CASE WHEN oc.n > 1 THEN 'Mixed brands' ELSE 'Brand not set' END) AS brand
   FROM (SELECT DISTINCT ON (y.order_id) y.* FROM public.dispatch_assignments y
         WHERE y.order_id IS NOT NULL ORDER BY y.order_id, y.assigned_at DESC NULLS LAST) a2
   JOIN public.orders o ON o.id = a2.order_id
   LEFT JOIN LATERAL (
-    SELECT CASE WHEN count(DISTINCT sm.company_id) = 1 THEN (array_agg(sm.company_id) FILTER (WHERE sm.company_id IS NOT NULL))[1] END AS cid
+    SELECT CASE WHEN count(DISTINCT sm.company_id) = 1 THEN (array_agg(sm.company_id) FILTER (WHERE sm.company_id IS NOT NULL))[1] END AS cid, count(DISTINCT sm.company_id) AS n
     FROM public.order_items i JOIN public.sku_master sm ON upper(btrim(sm.sku_name)) = upper(btrim(i.sku_name))
     WHERE i.order_id = o.id) oc ON true
   LEFT JOIN public.lwb_companies co ON co.id = oc.cid
@@ -431,16 +845,17 @@ BEGIN
 
   -- Delivered today: driver report Delivered / Partial, or Admin "Mark delivered" with this date.
   CREATE TEMP TABLE lwb_wa_del ON COMMIT DROP AS
-  SELECT DISTINCT o.id, upper(btrim(o.customer_name)) AS party, coalesce(o.total_amount,0) AS amount
+  SELECT DISTINCT o.id, upper(btrim(o.customer_name)) AS party, coalesce(o.total_amount,0) AS amount, NULL::text AS brand
   FROM public.orders o
   WHERE lower(btrim(coalesce(o.status,''))) NOT IN ('cancelled','canceled','rejected','deleted')
     AND EXISTS (SELECT 1 FROM public.lwb_delivery_reports dr WHERE dr.order_id = o.id AND dr.delivery_status IN ('DELIVERED','PARTIAL')
                 AND (timezone('Asia/Kolkata', dr.reported_at))::date = d);
   IF v_marks THEN
-    EXECUTE 'INSERT INTO pg_temp.lwb_wa_del SELECT o.id, upper(btrim(o.customer_name)), coalesce(o.total_amount,0) FROM public.orders o
+    EXECUTE 'INSERT INTO pg_temp.lwb_wa_del SELECT o.id, upper(btrim(o.customer_name)), coalesce(o.total_amount,0), NULL FROM public.orders o
              JOIN public.lwb_admin_order_marks m ON m.order_id = o.id AND m.kind = ''DELIVERED'' AND m.mark_date = $1
              WHERE NOT EXISTS (SELECT 1 FROM pg_temp.lwb_wa_del z WHERE z.id = o.id)' USING d;
   END IF;
+  UPDATE pg_temp.lwb_wa_del SET brand = public.lwb_wa_brand(id) WHERE true;
   SELECT count(DISTINCT party) || ' parties · ' || public.lwb_wa_inr(coalesce(sum(amount),0)) INTO txt FROM pg_temp.lwb_wa_del;
   rows := rows || jsonb_build_array(jsonb_build_array('sec', 'Delivery'), jsonb_build_array('kv', 'Delivered', txt, 'g'));
   EXECUTE 'SELECT count(*) || '' PO · '' || public.lwb_wa_inr(coalesce(sum(o.total_amount),0)), count(*) FROM public.orders o
@@ -467,10 +882,12 @@ BEGIN
   reps := reps || jsonb_build_object('kind', 'GODOWN', 'key', '', 'title', 'Godown / vehicles', 'doc', jsonb_build_object('who', 'GODOWN · VEHICLE REPORT', 'rows', rows));
 
   -- ================= money (Accounts book of the day) =================
-  CREATE TEMP TABLE IF NOT EXISTS lwb_wa_l (src text, id uuid, kind text, mode text, amount numeric, party text, order_no text, cash_effect numeric) ON COMMIT DROP;
+  CREATE TEMP TABLE IF NOT EXISTS lwb_wa_l (src text, id uuid, kind text, mode text, amount numeric, party text, order_no text, cash_effect numeric,
+                                          category text, remark text) ON COMMIT DROP;
   DELETE FROM pg_temp.lwb_wa_l WHERE true;
   IF v_acc THEN
-    INSERT INTO pg_temp.lwb_wa_l SELECT l.src, l.id, l.kind, l.mode, l.amount, l.party, l.order_no, l.cash_effect FROM public.lwb_acc_lines() l WHERE l.book_date = d;
+    INSERT INTO pg_temp.lwb_wa_l SELECT l.src, l.id, l.kind, l.mode, l.amount, l.party, l.order_no, l.cash_effect, l.category::text, l.remark::text
+      FROM public.lwb_acc_lines() l WHERE l.book_date = d;
   END IF;
   -- brand of each money-in line: party payment = its brand; driver money / old collection = brand of its PO
   CREATE TEMP TABLE lwb_wa_in ON COMMIT DROP AS
@@ -546,19 +963,13 @@ BEGIN
     jsonb_build_array('kv', 'Date', dd || coalesce(' · Day closed ' || (closed->>'at'), ' · Day not closed'), CASE WHEN closed IS NULL THEN 'r' END),
     jsonb_build_array('sec', 'Payments received (party-wise)'),
     jsonb_build_array('th', jsonb_build_array('PARTY','BRAND','MODE','AMOUNT')));
-  SELECT coalesce(jsonb_agg(jsonb_build_array('tr', jsonb_build_array(p, b, md, public.lwb_wa_num(t))) ORDER BY t DESC) FILTER (WHERE rn <= 12),
+  SELECT coalesce(jsonb_agg(jsonb_build_array('tr', jsonb_build_array(p, b, md, public.lwb_wa_num(t))) ORDER BY t DESC),
          jsonb_build_array(jsonb_build_array('tr', jsonb_build_array('No payment today','','',''))))
     INTO x
   FROM (SELECT upper(coalesce(nullif(btrim(party),''), 'Other')) p, upper(min(brand)) b,
-               CASE WHEN count(DISTINCT m) > 1 THEN 'MIXED' ELSE min(m) END md, sum(amount) t,
-               row_number() OVER (ORDER BY sum(amount) DESC) rn
+               CASE WHEN count(DISTINCT m) > 1 THEN 'MIXED' ELSE min(m) END md, sum(amount) t
         FROM pg_temp.lwb_wa_in GROUP BY 1) q;
   rows := rows || x;
-  SELECT count(*) INTO days_left FROM (SELECT 1 FROM pg_temp.lwb_wa_in GROUP BY upper(coalesce(nullif(btrim(party),''), 'Other'))) z;
-  IF days_left > 12 THEN
-    rows := rows || (SELECT jsonb_build_array(jsonb_build_array('tr', jsonb_build_array('+ ' || (days_left - 12) || ' more parties','','', public.lwb_wa_num(sum(t))))) FROM
-                     (SELECT sum(amount) t, row_number() OVER (ORDER BY sum(amount) DESC) rn FROM pg_temp.lwb_wa_in GROUP BY upper(coalesce(nullif(btrim(party),''), 'Other'))) q WHERE rn > 12);
-  END IF;
   rows := rows || jsonb_build_array(
     jsonb_build_array('tr', jsonb_build_array('TOTAL', n || ' entries', '', public.lwb_wa_num(a)), true),
     jsonb_build_array('sec', 'Cash book'),
@@ -583,6 +994,21 @@ BEGIN
     rows := rows || jsonb_build_array(jsonb_build_array('kv', 'Cheques to deposit', CASE WHEN n = 0 THEN 'None' ELSE n || ' · ' || public.lwb_wa_inr(a) END, CASE WHEN n > 0 THEN 'r' END));
   END IF;
   reps := reps || jsonb_build_object('kind', 'ACCOUNTS', 'key', '', 'title', 'Accounts report', 'doc', jsonb_build_object('who', 'ACCOUNTS REPORT', 'rows', rows));
+
+  -- ================= DAY BOOK PDFs (Admin): Sales & work, Accounts =================
+  reps := reps || jsonb_build_object('kind', 'DAYBOOK', 'key', '', 'title', 'Day Book · Sales & work', 'pdf', true,
+    'doc', jsonb_build_object('who', 'ADMIN · DAY BOOK · SALES', 'rows', public.lwb_daily_wa_daybook(d, closed,
+       jsonb_build_object('open', v_open, 'open_set', v_open_set, 'close', v_close, 'close_set', v_close_set), 'WORK')));
+  reps := reps || jsonb_build_object('kind', 'ACCBOOK', 'key', '', 'title', 'Day Book · Accounts', 'pdf', true,
+    'doc', jsonb_build_object('who', 'ADMIN · DAY BOOK · ACCOUNTS', 'rows', public.lwb_daily_wa_daybook(d, closed,
+       jsonb_build_object('open', v_open, 'open_set', v_open_set, 'close', v_close, 'close_set', v_close_set), 'ACC')));
+
+  -- ================= EVENING REPORT PDF (Admin): Daily Report like the sample, lwb_evening_report_setup.sql =================
+  IF to_regprocedure('public.lwb_evening_doc(date)') IS NOT NULL THEN
+    EXECUTE 'SELECT public.lwb_evening_doc($1)' INTO x USING d;
+    reps := reps || jsonb_build_object('kind', 'EVENING', 'key', '', 'title', 'Evening report', 'pdf', true,
+      'doc', jsonb_build_object('who', 'ADMIN · EVENING REPORT', 'rows', x->'rows'));
+  END IF;
 
   RETURN jsonb_build_object('date', d, 'focus_date', nd, 'closed', closed, 'reports', reps,
     'people', (SELECT coalesce(jsonb_agg(to_jsonb(p) ORDER BY p.name), '[]'::jsonb) FROM pg_temp.lwb_wa_p p));
@@ -648,11 +1074,19 @@ END;
 $fn$;
 REVOKE ALL ON FUNCTION public.lwb_daily_wa_focus_tasks(jsonb) FROM PUBLIC, anon, authenticated;
 
+-- Day Book always; any other report with more than 40 lines (too long for one image).
+CREATE OR REPLACE FUNCTION public.lwb_daily_wa_is_pdf(p_kind text, p_doc jsonb)
+RETURNS boolean LANGUAGE sql IMMUTABLE SET search_path = ''
+AS $fn$ SELECT p_kind IN ('DAYBOOK','ACCBOOK','EVENING') OR jsonb_array_length(coalesce(p_doc->'rows', '[]'::jsonb)) > 40 $fn$;
+REVOKE ALL ON FUNCTION public.lwb_daily_wa_is_pdf(text, jsonb) FROM PUBLIC, anon, authenticated;
+
 -- ---------------------------------------------------------------------------
 -- 5. Sender side (Edge Function, service role): take what to send, then mark each one
 -- ---------------------------------------------------------------------------
--- p_test_user set = test: one of every report goes to that person's WhatsApp only.
-CREATE OR REPLACE FUNCTION public.lwb_daily_wa_claim(p_date date, p_test_user uuid DEFAULT NULL)
+-- p_test_user set = test: one of every report goes to that person's WhatsApp only (p_only = just that kind, e.g. DAYBOOK).
+-- pdf = true: send as a PDF document (Day Book, or a report longer than one phone screen can show).
+DROP FUNCTION IF EXISTS public.lwb_daily_wa_claim(date, uuid);
+CREATE OR REPLACE FUNCTION public.lwb_daily_wa_claim(p_date date, p_test_user uuid DEFAULT NULL, p_only text DEFAULT NULL)
 RETURNS jsonb LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = ''
 AS $fn$
 DECLARE b jsonb; s record; out jsonb := '[]'::jsonb; v_id bigint; v_to text; v_name text; rep jsonb;
@@ -663,12 +1097,14 @@ BEGIN
     IF v_to IS NULL THEN RAISE EXCEPTION 'Your login has no Login Mobile. Add it in Manage Users first.'; END IF;
     -- every report except salesmen: all MGRs and the rest; salesmen: only the first one as a sample
     FOR rep IN SELECT x FROM jsonb_array_elements(b->'reports') WITH ORDINALITY a(x, n)
-               WHERE x->>'kind' <> 'SALESMAN' OR n = (SELECT min(n2) FROM jsonb_array_elements(b->'reports') WITH ORDINALITY c(y, n2) WHERE y->>'kind' = 'SALESMAN')
-               ORDER BY CASE x->>'kind' WHEN 'ADMIN' THEN 1 WHEN 'TEAM' THEN 2 WHEN 'MGR' THEN 3 WHEN 'ACCOUNTS' THEN 4 WHEN 'GODOWN' THEN 5 ELSE 6 END, n LOOP
+               WHERE (p_only IS NULL OR x->>'kind' = upper(p_only) OR (upper(p_only) = 'DAYBOOK' AND x->>'kind' = 'ACCBOOK'))
+                 AND (x->>'kind' <> 'SALESMAN' OR n = (SELECT min(n2) FROM jsonb_array_elements(b->'reports') WITH ORDINALITY c(y, n2) WHERE y->>'kind' = 'SALESMAN'))
+               ORDER BY CASE x->>'kind' WHEN 'EVENING' THEN 0 WHEN 'DAYBOOK' THEN 0 WHEN 'ACCBOOK' THEN 0 WHEN 'ADMIN' THEN 1 WHEN 'TEAM' THEN 2 WHEN 'MGR' THEN 3 WHEN 'ACCOUNTS' THEN 4 WHEN 'GODOWN' THEN 5 ELSE 6 END, n LOOP
       INSERT INTO public.lwb_daily_wa_log(report_date, kind, report_key, user_id, name, mobile, test)
       VALUES (p_date, rep->>'kind', rep->>'key', p_test_user, coalesce(v_name,'') || ' (test: ' || (rep->>'title') || ')', right(v_to, 4), true)
       RETURNING id INTO v_id;
-      out := out || jsonb_build_object('id', v_id, 'to', '91' || v_to, 'kind', rep->>'kind', 'title', rep->>'title', 'doc', rep->'doc');
+      out := out || jsonb_build_object('id', v_id, 'to', '91' || v_to, 'kind', rep->>'kind', 'title', rep->>'title', 'doc', rep->'doc',
+                                       'pdf', public.lwb_daily_wa_is_pdf(rep->>'kind', rep->'doc'));
     END LOOP;
   ELSE
     PERFORM public.lwb_daily_wa_focus_tasks(b);
@@ -683,11 +1119,13 @@ BEGIN
         RETURNING l.id INTO v_id;
       END IF;
       CONTINUE WHEN v_id IS NULL;
-      out := out || jsonb_build_object('id', v_id, 'to', '91' || s.mobile, 'kind', s.kind, 'title', s.title, 'doc', s.doc);
+      out := out || jsonb_build_object('id', v_id, 'to', '91' || s.mobile, 'kind', s.kind, 'title', s.title, 'doc', s.doc,
+                                       'pdf', public.lwb_daily_wa_is_pdf(s.kind, s.doc));
     END LOOP;
   END IF;
   RETURN jsonb_build_object('date', p_date, 'test', p_test_user IS NOT NULL,
     'template', (SELECT template FROM public.lwb_daily_wa_config WHERE id = 1),
+    'template_doc', (SELECT template_doc FROM public.lwb_daily_wa_config WHERE id = 1),
     'lang', (SELECT lang FROM public.lwb_daily_wa_config WHERE id = 1), 'messages', out);
 END;
 $fn$;
@@ -700,17 +1138,18 @@ AS $fn$
       error = left(p_error, 300), sent_at = CASE WHEN p_ok THEN now() END
   WHERE id = p_id;
 $fn$;
-REVOKE ALL ON FUNCTION public.lwb_daily_wa_claim(date, uuid), public.lwb_daily_wa_mark(bigint, boolean, text, text) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.lwb_daily_wa_claim(date, uuid, text), public.lwb_daily_wa_mark(bigint, boolean, text, text) FROM PUBLIC, anon, authenticated;
 DO $g$ BEGIN
   IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'service_role') THEN
-    GRANT EXECUTE ON FUNCTION public.lwb_daily_wa_claim(date, uuid), public.lwb_daily_wa_mark(bigint, boolean, text, text) TO service_role;
+    GRANT EXECUTE ON FUNCTION public.lwb_daily_wa_claim(date, uuid, text), public.lwb_daily_wa_mark(bigint, boolean, text, text) TO service_role;
   END IF;
 END $g$;
 
 -- ---------------------------------------------------------------------------
 -- 6. Start a send: calls the Edge Function (pg_net, after this transaction commits)
 -- ---------------------------------------------------------------------------
-CREATE OR REPLACE FUNCTION public.lwb_daily_wa_call(p_date date, p_test_user uuid DEFAULT NULL)
+DROP FUNCTION IF EXISTS public.lwb_daily_wa_call(date, uuid);
+CREATE OR REPLACE FUNCTION public.lwb_daily_wa_call(p_date date, p_test_user uuid DEFAULT NULL, p_only text DEFAULT NULL)
 RETURNS boolean LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = ''
 AS $fn$
 DECLARE c public.lwb_daily_wa_config;
@@ -720,7 +1159,7 @@ BEGIN
   EXECUTE 'SELECT net.http_post(url := $1, body := $3, params := ''{}''::jsonb, headers := $2, timeout_milliseconds := 120000)'
     USING c.project_url || '/functions/v1/lwb-daily-whatsapp',
           jsonb_build_object('Content-Type', 'application/json', 'x-lwb-wa-secret', c.webhook_secret),
-          jsonb_build_object('date', p_date, 'test_user', p_test_user);
+          jsonb_build_object('date', p_date, 'test_user', p_test_user, 'only', p_only);
   RETURN true;
 END;
 $fn$;
@@ -738,7 +1177,7 @@ BEGIN
   RETURN public.lwb_daily_wa_call(p_date, NULL);
 END;
 $fn$;
-REVOKE ALL ON FUNCTION public.lwb_daily_wa_call(date, uuid), public.lwb_daily_wa_fire(date, text) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.lwb_daily_wa_call(date, uuid, text), public.lwb_daily_wa_fire(date, text) FROM PUBLIC, anon, authenticated;
 
 -- Close Day (not the first opening cash) of today or yesterday -> send that day's reports.
 CREATE OR REPLACE FUNCTION public.lwb_daily_wa_on_close()
@@ -794,12 +1233,12 @@ BEGIN
   b := public.lwb_daily_wa_build(d);
   RETURN jsonb_build_object(
     'date', d, 'today', (now() AT TIME ZONE 'Asia/Kolkata')::date, 'closed', b->'closed', 'focus_date', b->'focus_date',
-    'reports', (SELECT coalesce(jsonb_agg((x - 'owner' - 'focus') || jsonb_build_object('to',
+    'reports', (SELECT coalesce(jsonb_agg((x - 'owner' - 'focus') || jsonb_build_object('pdf', public.lwb_daily_wa_is_pdf(x->>'kind', x->'doc'), 'to',
                   (SELECT coalesce(jsonb_agg(s.name ORDER BY s.name), '[]'::jsonb) FROM public.lwb_daily_wa_sends(b) s
                    WHERE s.kind = x->>'kind' AND s.report_key = x->>'key')) ORDER BY n), '[]'::jsonb)
                 FROM jsonb_array_elements(b->'reports') WITH ORDINALITY a(x, n)),
     'config', (SELECT jsonb_build_object('enabled', c.enabled, 'backup_time', to_char(c.backup_time, 'HH24:MI'), 'focus_tasks', c.focus_tasks,
-                                         'template', c.template, 'lang', c.lang) FROM public.lwb_daily_wa_config c WHERE c.id = 1),
+                                         'template', c.template, 'template_doc', c.template_doc, 'lang', c.lang) FROM public.lwb_daily_wa_config c WHERE c.id = 1),
     'people', (SELECT coalesce(jsonb_agg(jsonb_build_object('user_id', p->>'user_id', 'name', p->>'name', 'role', p->>'role',
                  'mobile', CASE WHEN p->>'mobile' IS NULL THEN NULL ELSE '******' || right(p->>'mobile', 4) END, 'kinds', p->'kinds',
                  'mgr_id', (SELECT sm.mgr_id FROM public.lwb_salesman_mgr sm WHERE sm.user_id = (p->>'user_id')::uuid))
@@ -869,7 +1308,9 @@ BEGIN
 END;
 $fn$;
 
--- TEST = one of every report to my own WhatsApp; ALL = send now to everyone not sent yet for that date.
+-- TEST = one of every report to my own WhatsApp; TEST_DAYBOOK = only the Day Book PDF to me;
+-- TEST_EVENING = only the evening report PDF to me;
+-- ALL = send now to everyone not sent yet for that date.
 CREATE OR REPLACE FUNCTION public.lwb_daily_wa_send(p_date date, p_mode text)
 RETURNS text LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = ''
 AS $fn$
@@ -879,12 +1320,14 @@ BEGIN
   IF d > (now() AT TIME ZONE 'Asia/Kolkata')::date OR d < (now() AT TIME ZONE 'Asia/Kolkata')::date - 7 THEN
     RAISE EXCEPTION 'Choose today or a date in the last 7 days';
   END IF;
-  IF upper(p_mode) = 'TEST' THEN
+  IF upper(p_mode) IN ('TEST', 'TEST_DAYBOOK', 'TEST_EVENING') THEN
     IF NOT EXISTS (SELECT 1 FROM public.user_profiles p WHERE p.id = auth.uid() AND public.lwb_daily_wa_mobile(p.mobile::text) IS NOT NULL) THEN
       RAISE EXCEPTION 'Your login has no Login Mobile. Add it in Manage Users first.';
     END IF;
-    IF NOT public.lwb_daily_wa_call(d, auth.uid()) THEN RAISE EXCEPTION 'Sending is not set up on the server (pg_net)'; END IF;
-    RETURN 'TEST';
+    IF NOT public.lwb_daily_wa_call(d, auth.uid(), CASE upper(p_mode) WHEN 'TEST_DAYBOOK' THEN 'DAYBOOK' WHEN 'TEST_EVENING' THEN 'EVENING' END) THEN
+      RAISE EXCEPTION 'Sending is not set up on the server (pg_net)';
+    END IF;
+    RETURN upper(p_mode);
   END IF;
   IF NOT EXISTS (SELECT 1 FROM public.lwb_daily_wa_config WHERE id = 1 AND enabled) THEN
     RAISE EXCEPTION 'Turn on "Send reports after Close Day" and Save first';

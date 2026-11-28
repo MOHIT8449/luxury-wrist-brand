@@ -749,9 +749,9 @@ dialog.setup-dlg{position:fixed;inset:0;margin:auto;height:fit-content}
 body:not(.oe-ready) #oeMain{visibility:hidden}
 body.erp:not(.oe-ready)::after{content:"Loading…";position:fixed;left:0;right:0;top:45%;text-align:center;color:#6b7785;font:600 15px "Fira Sans",Arial,sans-serif;pointer-events:none}
 </style>
-<link rel="stylesheet" href="erp-shell.css?v=20261124">
-<script src="erp-shell.js?v=20261124r" data-auto defer></script>
-<script src="brand-filter.js"></script><script src="party-credit.js"></script><script src="sku-rank.js"></script><script src="sku-image.js"></script>
+<link rel="stylesheet" href="erp-shell.css?v=20261127p">
+<script src="erp-shell.js?v=20261127p" data-auto defer></script>
+<script src="brand-filter.js"></script><script src="party-credit.js"></script><script src="dup-note.js?v=20261126d"></script><script src="sku-rank.js"></script><script src="sku-image.js"></script>
 </head>
 
 <body>
@@ -823,7 +823,7 @@ body.erp:not(.oe-ready)::after{content:"Loading…";position:fixed;left:0;right:
           </div>
           <button type="button" id="newPartyBtn" class="new-party-btn" onclick="openPartyDialog('new')" title="Party not in the list? Add it here">+ New Party</button>
         </div>
-        <div id="partyHint" class="party-hint"></div><div id="creditBox"></div>
+        <div id="partyHint" class="party-hint"></div><div id="dupBox"></div><div id="creditBox"></div>
         <div id="partyKyc" class="party-kyc" role="status" hidden></div>
         <div id="cashBox" class="cash-box" role="group" aria-label="Cash sale buyer">
           <div class="cash-top"><span class="cash-tag">CASH SALE</span><span>No transport. Only buyer name &amp; mobile.</span></div>
@@ -865,6 +865,11 @@ body.erp:not(.oe-ready)::after{content:"Loading…";position:fixed;left:0;right:
             <button type="button" id="unitBig" aria-pressed="false" onclick="setBigUnit(true)">Pallet</button></span></div>
           <button type="button" class="btn btn-blue add-sku-top" onclick="addItem()">+ Add SKU</button>
         </div>
+      </div>
+
+      <div class="form-group" id="billNoteGroup" style="grid-column:1/-1">
+        <label for="billNote">Bill note <span class="prio-hint">optional · Sales Head chooses GST / Cash</span></label>
+        <input id="billNote" class="form-control" maxlength="300" autocomplete="off" placeholder="e.g. Party wants cash bill / GST bill this time">
       </div>
 
       <div class="form-group" id="slabField">
@@ -1279,6 +1284,13 @@ function applyCashMode(){
   }
   if(!on && was){ document.getElementById("cashName").value = ""; document.getElementById("cashMobile").value = ""; }
 }
+// Bill note (lwb_order_bill_type_setup.sql): the salesman only writes it; Sales Head / Admin choose GST or Cash.
+async function saveBillNote(orderId, force){
+  const note = document.getElementById("billNote").value.trim();
+  if(!orderId || (!note && !force)) return "";
+  const {error} = await db.rpc("lwb_set_order_bill_note",{p_order_id:orderId, p_note:note});
+  return error ? "\n\nBill note not saved: " + (/lwb_set_order_bill_note/.test(error.message || "") ? "setup is pending, try again in a few minutes." : (error.message || "database error")) : "";
+}
 async function saveCashBuyer(orderId){
   if(!orderId || !cashSale()) return "";
   const {error} = await db.rpc("lwb_set_order_cash_buyer",{p_order_id:orderId, p_name:document.getElementById("cashName").value, p_mobile:document.getElementById("cashMobile").value});
@@ -1296,6 +1308,18 @@ function pickParty(party, quiet) {
   loadPartyKyc(party);
   if (party.id) loadMinWeights(party);
   refreshCredit();
+  refreshDup();
+}
+/* Duplicate / torn note this party gave, still pending (lwb_acc_dup_note_setup.sql): collect on this trip. */
+let dupSeq = 0;
+async function refreshDup(){
+  const box = document.getElementById("dupBox"), seq = ++dupSeq;
+  if(!box) return;
+  const party = selectedParty && selectedParty.customer_name;
+  if(!party || !window.LWBDup){ box.innerHTML = ""; return; }
+  const rows = await LWBDup.forParty(db, party);
+  if(seq !== dupSeq) return;
+  box.innerHTML = LWBDup.strip(rows, {po:true});
 }
 
 /* PARTY CREDIT: brand-wise balance, oldest bill, credit days / limit (lwb_party_credit_limit_setup.sql). */
@@ -1580,6 +1604,7 @@ function initializePartySearch() {
   });
   field.addEventListener("input", () => {
     selectedParty = null;
+    refreshDup();
     applyCashMode();
     partyMinKg = null;
     if (partyKyc) { partyKyc = null; renderPartyKyc(); }
@@ -1631,6 +1656,7 @@ async function loadOrderForEdit(id) {
   editOrder = o;
   document.getElementById("pageHeading").textContent = "Modify Order " + (o.order_no || "");
   document.getElementById("orderNo").value = o.order_no || "";
+  document.getElementById("billNote").value = o.bill_note || "";
   if (o.order_date) {
     const d = new Date(o.order_date);
     document.getElementById("orderDate").value = new Date(d.getTime() - d.getTimezoneOffset()*60000).toISOString().slice(0,16);
@@ -2810,7 +2836,8 @@ async function saveOrder(){
       const {data,error} = await db.rpc("lwb_sales_modify_order",{p_order_id:editOrder.id,p_transportation:transportation||"",p_items:items});
       if(error) throw error;
       const priorityNote = (String(editOrder.priority || "NORMAL").toUpperCase() === orderPriority ? "" : await saveOrderPriority(editOrder.id))
-        + await saveOrderPickup(editOrder.id, true) + await saveOrderSheetPallet(editOrder.id, editOrder);
+        + await saveOrderPickup(editOrder.id, true) + await saveOrderSheetPallet(editOrder.id, editOrder)
+        + (document.getElementById("billNote").value.trim() === String(editOrder.bill_note || "").trim() ? "" : await saveBillNote(editOrder.id, true));
       await alert("Order " + (editOrder.order_no || "") + (data && data.changed
         ? " saved. Sales Head is informed of the changes."
         : ": nothing changed.") + priorityNote);
@@ -2890,7 +2917,8 @@ async function saveOrder(){
     await dropDraftAfterSubmit();
     await markWebOrderDone((createdOrder || (made.find(m => m.order && m.order.id) || {}).order || {}).id);
     const priorityNote = slipNote + (!createdOrder ? "" : (orderPriority === "NORMAL" ? "" : await saveOrderPriority(createdOrder.id))
-      + await saveOrderPickup(createdOrder.id, false)) + await saveCashBuyer(createdOrder?.id) + await saveCashBuyer(slipOrder?.id);
+      + await saveOrderPickup(createdOrder.id, false)) + await saveCashBuyer(createdOrder?.id) + await saveCashBuyer(slipOrder?.id)
+      + await saveBillNote(createdOrder?.id) + await saveBillNote(slipOrder?.id);
 
     const sum = m => "Order No: " + m.orderNo + (m.slip ? " (" + slipName + " slip)" : "") +
       "\nTotal Qty: " + formatNumber(m.totals.totalQty) + "\nTotal Amount: " + formatMoney(m.totals.totalAmount) +
@@ -3254,6 +3282,7 @@ async function resetOrder(){
   document.getElementById("orderNo").value="Assigned on save";
   document.getElementById("customerName").value="";
   selectedParty = null;
+  refreshDup();
   document.getElementById("setupSum").hidden = true;
   pickPriority(document.querySelector('#prioChips button[data-p="NORMAL"]'));
   partyResults = [];

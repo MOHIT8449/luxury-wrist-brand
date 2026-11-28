@@ -44,8 +44,9 @@ tr.sgh.done td{background:#e9f8ef;border-top-color:#a6dfbd}
 .green{background:#098345;color:#fff}
 @media(max-width:700px){.stats{display:none!important}.sgbar{font-size:12.5px}.sgbar .gear{padding:4px 8px;font-size:12px}th:nth-child(9),td:nth-child(9){display:none}}
 </style>
-<link rel="stylesheet" href="erp-shell.css?v=20261124">
-<script src="erp-shell.js?v=20261124r" data-auto defer></script>
+<link rel="stylesheet" href="erp-shell.css?v=20261127p">
+<script src="erp-shell.js?v=20261127p" data-auto defer></script>
+<script src="dial-book.js?v=20261128h" defer></script>
 </head>
 <body>
 <header><div><h2>LUXURY WRIST BRAND</h2><small>TRANSPORT ALLOCATION</small></div><div><span id="username"></span> &nbsp; <a class="link secondary" href="dashboard.html">Dashboard</a> <button class="secondary" id="logout">Logout</button></div></header>
@@ -107,7 +108,7 @@ function stage(o){const st=status(o.status);if(allocatedStatuses.has(st))return 
 const prioOf=o=>['URGENT','HIGH'].includes(String(o.priority||'').toUpperCase())?String(o.priority).toUpperCase():'NORMAL';
 const prioRank=o=>({URGENT:0,HIGH:1,NORMAL:2})[prioOf(o)];
 const prioBadge=o=>prioOf(o)==='NORMAL'?'':`<span class="prio prio-${prioOf(o)}">${prioOf(o)}</span>`;
-function rowHtml(o,extra=''){return `<tr><td class="ck"><input type="checkbox" data-pick="${safe(o.id)}" ${picked.has(o.id)?'checked':''} aria-label="Select ${safe(o.order_no)}"></td><td><b>${safe(o.order_no)}</b>${prioBadge(o)}</td><td>${safe(date(o.order_date))}</td><td>${safe(o.customer_name)}${extra?'<div class="xrow">'+extra+'</div>':''}</td><td>${safe(o.sales_person)}</td><td>${number(o.total_qty)}</td><td>${money(o.total_amount)}</td><td class="nw">${number(o.total_weight)} KG</td><td><span class="pill ${stage(o)==='allocated'?'allocated':''}">${stage(o)==='allocated'?'ALLOCATED':'APPROVED'}</span>${tripTag(o)}</td><td><div class="acts"><button class="primary" data-order="${safe(o.id)}">${stage(o)==='allocated'?'Edit':'Allocate'}</button></div></td></tr>`;}
+function rowHtml(o,extra=''){return `<tr><td class="ck"><input type="checkbox" data-pick="${safe(o.id)}" ${picked.has(o.id)?'checked':''} aria-label="Select ${safe(o.order_no)}"></td><td><b>${safe(o.order_no)}</b>${prioBadge(o)}</td><td>${safe(date(o.order_date))}</td><td>${safe(o.customer_name)}${window.LWBDial?LWBDial.btn('PARTY',o.customer_name,o.customer_name):''}${extra?'<div class="xrow">'+extra+'</div>':''}</td><td>${safe(o.sales_person)}</td><td>${number(o.total_qty)}</td><td>${money(o.total_amount)}</td><td class="nw">${number(o.total_weight)} KG</td><td><span class="pill ${stage(o)==='allocated'?'allocated':''}">${stage(o)==='allocated'?'ALLOCATED':'APPROVED'}</span>${tripTag(o)}</td><td><div class="acts"><button class="primary" data-order="${safe(o.id)}">${stage(o)==='allocated'?'Edit':'Allocate'}</button></div></td></tr>`;}
 // One place (Mohit, 7 Nov 2026): 🧩 Merge (small POs, nearby ones in one vehicle) · 🚛 Full load (one PO fills a vehicle)
 // · ✓ Assigned (vehicle given, until loading starts) · 🏬 Self Pickup (party takes it from the godown) · All.
 const TA_TABS=[['merge','🧩 Merge'],['full','🚛 Full load'],['assigned','✓ Assigned'],['pickup','🏬 Self Pickup'],['all','All']];
@@ -129,7 +130,7 @@ function render(){const available=orders.filter(o=>stage(o)==='ready'||stage(o)=
     if(g.unknown.length){html+=`<tr class="sgh unk"><td colspan="10"><div class="sgh-in"><b>Area नहीं पता (${g.unknown.length})</b><span class="m">Party का area एक बार set करें</span><span class="bt"><button type="button" class="secondary" data-sgarea>📍 Set area</button></span></div></td></tr>`;g.unknown.forEach(x=>{const o=byId.get(x.id);if(o){done.add(o.id);html+=rowHtml(o);}});}
     const off=list.filter(o=>!done.has(o.id));if(off.length){html+=`<tr class="sgh unk"><td colspan="10"><div class="sgh-in"><b>Trip से हटाए गए (${off.length})</b><span class="m">अलग से Allocate करें, या ↩ से वापस</span></div></td></tr>`;off.forEach(o=>{html+=rowHtml(o,sug.off.has(o.id)?`<button type="button" class="secondary x" data-sgback="${safe(o.id)}" title="वापस trip suggestion में" aria-label="Back to suggestion">↩ वापस trip में</button>`:'');});}}
   else if(taTab==='assigned'&&list.length){const by=new Map();list.forEach(o=>{const t=tripOf.get(String(o.id)),a=assignmentFor(o.id)||{},k=t?'T'+t.trip_id:'V'+(a.vehicle_no||o.id);if(!by.has(k))by.set(k,{t,a,list:[]});by.get(k).list.push(o);});
-    by.forEach(g=>{const kg=g.list.reduce((s,o)=>s+(Number(o.total_weight)||0),0);html+=`<tr class="sgh done"><td colspan="10"><div class="sgh-in"><b>${g.t?safe(g.t.trip_no)+' · ':''}${safe(g.a.vehicle_no||'—')}</b><span class="kg">${LWBSuggest?LWBSuggest.kgf(kg):number(kg)} kg</span><span class="m">${safe([g.a.driver_name,g.a.loading_person?'Godown: '+g.a.loading_person:''].filter(Boolean).join(' · '))}</span></div></td></tr>`;g.list.forEach(o=>{html+=rowHtml(o);});});}
+    by.forEach(g=>{const kg=g.list.reduce((s,o)=>s+(Number(o.total_weight)||0),0);html+=`<tr class="sgh done"><td colspan="10"><div class="sgh-in"><b>${g.t?safe(g.t.trip_no)+' · ':''}${safe(g.a.vehicle_no||'—')}</b><span class="kg">${LWBSuggest?LWBSuggest.kgf(kg):number(kg)} kg</span><span class="m">${safe([g.a.driver_name,g.a.loading_person?'Godown: '+g.a.loading_person:''].filter(Boolean).join(' · '))}${window.LWBDial&&g.a.driver_mobile?LWBDial.btn('MOB',g.a.driver_mobile,g.a.driver_name||'Driver'):''}</span></div></td></tr>`;g.list.forEach(o=>{html+=rowHtml(o);});});}
   else html=list.map(o=>rowHtml(o)).join('');
   $('rows').innerHTML=list.length?html:`<tr><td colspan="10" class="empty">${{merge:'कोई छोटा PO बाकी नहीं।',full:'कोई Full load PO बाकी नहीं।',assigned:'अभी किसी PO में गाड़ी नहीं लगी।',pickup:'कोई Self Pickup PO नहीं।',all:'No orders.'}[taTab]}</td></tr>`;selPaint();}
 // suggestion state (trip-suggest.js + lwb_trip_suggest_setup.sql)
@@ -250,9 +251,14 @@ async function saveAllocation(e){
         const latestStatus=status(latest.data.status);
         if(!['approved','approved_next','manager_approved','warehouse_approved','transport_allocated','allocated','loading'].includes(latestStatus))
           throw Error('no longer available for transport assignment. Loading is confirmed.');
+        // Look again before adding: this list can be old (the PO popup may have saved transport since).
+        // A second row for one PO broke Print PO (LXY-00691, 26 Nov 2026), so update every row of this PO.
         let result;
-        if(existing){
-          result=await db.from('dispatch_assignments').update(payload).eq('id',existing.id).select('id').single();
+        const fresh=existing?{data:[existing]}:await db.from('dispatch_assignments').select('id').eq('order_id',current.id).limit(1);
+        if(fresh.error)throw fresh.error;
+        if((fresh.data||[]).length){
+          result=await db.from('dispatch_assignments').update(payload).eq('order_id',current.id).select('id');
+          if(!result.error&&!(result.data||[]).length)result={error:Error('transport was not saved. Please retry.')};
         }else{
           result=await db.from('dispatch_assignments').insert(payload).select('id').single();
         }

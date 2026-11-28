@@ -23,6 +23,7 @@
   [/^ORDER_DELAY_DELIVERY$/,"⚠","bad","Delivery late 36h+","Deliver"],
   [/^ORDER_DELAY_APPROVAL$/,"⚠","act","Approval late 12h+","Approve"],
   [/^ORDER_APPROVED$/,"✅","ok","PO approved",""],
+  [/^ORDER_LOADED$/,"📦","info","Loaded",""],
   [/^ORDER_DISPATCHED$/,"🚚","move","Out for delivery",""],
   [/^TALLY_BILL_PENDING$/,"🧾","act","Vehicle loaded","Make bill"],
   [/^PO_APPROVED_BILL$/,"🧾","act","PO approved","Make bill"],
@@ -89,9 +90,18 @@
   [/^TASK_DONE$/,"✅","ok","",""],
   [/^TASK_(OVERDUE|CANCELLED)$/,"⚠","bad","",""],
   [/^TASK_/,"📋","act","",""],
+  [/^RECEIPT_EDIT_ASK$/,"✏️","act","Old cash payment change","Approve"],
+  [/^RECEIPT_EDIT_DONE$/,"✏️","ok","Old cash payment changed",""],
+  [/^RECEIPT_EDIT_REJECT$/,"✏️","bad","Payment change rejected",""],
+  [/^LABOUR_EXTRA$/,"👷","act","Labour extra cash","Approve"],
+  [/^LABOUR_EXTRA_DONE$/,"👷","ok","Labour extra",""],
+  [/^LABOUR_/,"👷","info","Daily labour",""],
   [/^ANNOUNCEMENT$/,"📢","info","",""],
   [/^SALES_PLAN$/,"📋","info","Today's plan",""],
-  [/^PAYMENT_FOLLOWUP$/,"₹","act","Payment follow-up","Collect"]
+  [/^PAYMENT_FOLLOWUP$/,"₹","act","Payment follow-up","Collect"],
+  [/^BILL_TYPE_ASK$/,"🧾","act","GST or Cash bill?","Choose"],
+  [/^BILL_TYPE_CHANGED$/,"🧾","info","Bill type changed",""],
+  [/^BILL_TYPE_MISMATCH$/,"⚠","bad","GST / Cash mismatch","Check"]
  ];
  // Type of every notification (Mohit, 18 Nov 2026: "which notification is this?" must be clear at a glance).
  // Each type has its own colour, icon tile and filter tab in the bell.
@@ -105,8 +115,9 @@
  };
  const CAT_OF=[
   [/^(TASK_|COMPLAINT_|SALES_PLAN$|ANNOUNCEMENT$)/,"task"],
-  [/^(DELIVERY_COLLECTION|ACC_|HIRED_RATE_|TALLY_NOTE_|PAYMENT_FOLLOWUP)/,"money"],
-  [/^(ORDER_DISPATCHED|ORDER_DELIVERED|ORDER_PARTIAL|ORDER_NOT_DELIVERED|VEHICLE_LOADED|LOADING_ASSIGNMENT|TALLY_BILL_PENDING|PO_APPROVED_LOADING|DELIVERY_RETURN|RETURN_CHECKED)/,"delivery"],
+  [/^(DELIVERY_COLLECTION|ACC_|HIRED_RATE_|TALLY_NOTE_|PAYMENT_FOLLOWUP|LABOUR_|RECEIPT_EDIT_|BILL_TYPE_MISMATCH)/,"money"],
+  [/^BILL_TYPE_/,"order"],
+  [/^(ORDER_LOADED|ORDER_DISPATCHED|ORDER_DELIVERED|ORDER_PARTIAL|ORDER_NOT_DELIVERED|VEHICLE_LOADED|LOADING_ASSIGNMENT|TALLY_BILL_PENDING|PO_APPROVED_LOADING|DELIVERY_RETURN|RETURN_CHECKED)/,"delivery"],
   [/^(STOCK_|GODOWN_|PURCHASE_|MARKET_)/,"stock"],
   [/^(ORDER_|PO_|RATE_|BILL_CHANGE_|TALLY_BILL_|SALES_RETURN|WEB_ORDER)/,"order"]
  ];
@@ -138,7 +149,7 @@
   speaker:'<path d="m3 11 18-5v12L3 14v-3z"/><path d="M11.6 16.8a3 3 0 1 1-5.8-1.6"/>',
   dot:'<circle cx="12" cy="12" r="4"/>'
  };
- const EMOJI_ICON={"🛒":"cart","✅":"check","🚚":"truck","🚛":"truck","🧾":"bill","📦":"box","🟠":"alert","⚠":"alert","✖":"x","❌":"x","✏":"edit","💰":"cash","💵":"cash","↩":"back","📝":"note","₹":"rupee","🌙":"moon","🏭":"store","👤":"user","🏦":"bank","📁":"folder","📊":"chart","🚩":"flag","📮":"inbox","💬":"chat","📋":"task","📢":"speaker"};
+ const EMOJI_ICON={"🛒":"cart","✅":"check","🚚":"truck","🚛":"truck","🧾":"bill","📦":"box","🟠":"alert","⚠":"alert","✖":"x","❌":"x","✏":"edit","💰":"cash","💵":"cash","↩":"back","📝":"note","₹":"rupee","🌙":"moon","🏭":"store","👤":"user","🏦":"bank","📁":"folder","📊":"chart","🚩":"flag","📮":"inbox","💬":"chat","📋":"task","📢":"speaker","👷":"user"};
  const svg=e=>'<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'+(ICON[EMOJI_ICON[e]]||ICON.dot)+'</svg>';
  function dayOf(v){
   const d=new Date(v),t=new Date();t.setHours(0,0,0,0);
@@ -217,11 +228,14 @@
  // Page each notification opens. {o} = the notification's order id. The first page this login can open wins.
  const ROUTES=[
   [/^(TALLY_BILL_PENDING|PO_APPROVED_BILL)$/,["party-billing.html?order={o}"]],
+  [/^BILL_TYPE_ASK$/,["warehouse-orders.html?order={o}"]],
+  [/^BILL_TYPE_CHANGED$/,["party-billing.html?order={o}","warehouse-orders.html?order={o}"]],
+  [/^BILL_TYPE_MISMATCH$/,["party-billing.html?tab=bt","warehouse-orders.html?order={o}"]],
   // Sales Head "Tell Accounts" (lwb_sales_head_outstanding_setup.sql): Party & Collections > To collect; Cashier: Cashier view.
-  [/^PAYMENT_FOLLOWUP$/,["party-billing.html#party","accounts-dashboard.html#cash","sales-outstanding.html"]],
+  [/^PAYMENT_FOLLOWUP$/,["party-billing.html#party","accounts-dashboard.html#cash","accounts-books.html?v=out"]],
   [/^PO_APPROVED_LOADING$/,["loading-dispatch.html?order={o}","warehouse-orders.html"]],
-  [/^(VEHICLE_LOADED|TALLY_BILL_DONE)$/,["loading-dispatch.html","party-billing.html?order={o}","warehouse-orders.html","driver-delivery.html?order={o}","my-sales.html#orders"]],
-  [/^ORDER_NEW$/,["warehouse-orders.html"]],
+  [/^(VEHICLE_LOADED|TALLY_BILL_DONE)$/,["loading-dispatch.html?order={o}","party-billing.html?order={o}","warehouse-orders.html","driver-delivery.html?order={o}","my-sales.html#orders"]],
+  [/^ORDER_NEW$/,["warehouse-orders.html?order={o}","my-sales.html#orders"]],
   [/^ORDER_DELAY_DELIVERY$/,["warehouse-orders.html?late=delivery"]],
   [/^ORDER_DELAY_APPROVAL$/,["warehouse-orders.html?late=approval"]],
   [/^RATE_APPROVAL$/,["quick-slip.html?review={o}"]],
@@ -243,7 +257,11 @@
   [/^LOADING_ASSIGNMENT/,["loading-dispatch.html?order={o}","transport-allocation.html"]],
   [/^HIRED_RATE_/,["fleet-master.html#rates"]],
   [/^WEB_ORDER$/,["web-orders.html"]],
-  [/^PARTY_CREATED$/,["customer-master.html"]],
+  [/^PARTY_CREATED$/,["customer-master.html","dial-book.html"]],
+  [/^RECEIPT_EDIT_ASK$/,["approvals.html","accounts-books.html"]],
+  [/^RECEIPT_EDIT_/,["accounts-dashboard.html","accounts-books.html"]],
+  [/^LABOUR_EXTRA$/,["approvals.html","labour.html"]],
+  [/^LABOUR_/,["labour.html"]],
   [/^GODOWN_/,["godown-report.html"]],
   [/^PURCHASE_MISSING$/,["purchase-register.html?missing=1"]],
   [/^PURCHASE_ARRIVED$/,["purchase-register.html?bill={r}"]],
@@ -251,15 +269,16 @@
   [/^STOCK_AUDIT_/,["stock-audit.html"]],
   [/^STOCK_MOVE_PENDING$/,["stock-transfer.html#approvals"]],
   [/^STOCK_MOVE_/,["stock-transfer.html#history"]],
-  [/^ACC_BANK_VERIFY$/,["accounts-dashboard.html#verify"]],
+  [/^ACC_BANK_VERIFY$/,["accounts-dashboard.html#verify","approvals.html"]],
   [/^ACC_CHEQUE/,["accounts-dashboard.html#cheques"]],
   [/^DOC_/,["documents.html"]],
-  [/^ACC_/,["accounts-dashboard.html"]],
+  [/^ACC_CASH_/,["accounts-dashboard.html#cash","dashboard.html"]],
+  [/^ACC_/,["accounts-dashboard.html","accounts-books.html","dashboard.html"]],
   [/^MARKET_/,["market-report.html"]],
   [/^COMPLAINT_/,["complaint-box.html?id={c}"]],
   [/^TASK_/,["tasks.html?id={t}"]],
   [/^SALES_PLAN$/,["my-sales.html","sales-team.html"]],
-  [/^ORDER_/,["my-sales.html#orders","warehouse-orders.html","driver-delivery.html?order={o}","loading-dispatch.html"]]
+  [/^ORDER_/,["my-sales.html#orders","warehouse-orders.html?order={o}","driver-delivery.html?order={o}","loading-dispatch.html"]]
  ];
  function route(n,pages){
   const t=baseType(n),hit=ROUTES.find(r=>r[0].test(t));
@@ -273,7 +292,7 @@
   if(href.includes("{t}")){const c=(String(n.message||"").match(/TSK-(\d+)/)||[])[1];return c?href.replace("{t}",c):href.split("?")[0]}
   return n.order_id?href.replace("{o}",encodeURIComponent(n.order_id)):href.split("?")[0];
  }
- // Quiet notifications: updates stay in the bell; no automatic dialogs interrupt entry.
+ // New rows: bell count + a small popup with its own sound (erp-notify-popup.js); no dialog blocks entry.
  function init({db,user,mount,pages,role}){
   if(!db||!user?.id||!mount)return;
   // One bell per page. If a page put it in its old (now hidden) header, move it to the ERP top bar.
@@ -448,7 +467,7 @@
   }
   // Godown Manager: only his own work (loading given to him, purchase vehicle to unload, tasks, his returns).
   // The database already sends / shows only these (lwb_gm_notify_scope_setup.sql); this is the same rule by type.
-  const GM_BELL=/^(LOADING_ASSIGNMENT_DISPATCH|PURCHASE_ARRIVED|TASK_|DELIVERY_RETURN_RECEIVE|ANNOUNCEMENT)/;
+  const GM_BELL=/^(LOADING_ASSIGNMENT_DISPATCH|PURCHASE_ARRIVED|TASK_|DELIVERY_RETURN_RECEIVE|ANNOUNCEMENT|LABOUR_)/;
   async function reloadData(){
    let qy=db.from("erp_notifications").select("*").eq("user_id",user.id);
    // A picked older date reads that day only, so it is not cut by the latest-70 limit.
@@ -473,6 +492,9 @@
    allRead.hidden=!unread;
    allItems=rows.map(n=>({n,sum:summary(n,orders.get(n.order_id)),href:route(n,pages)}));
    render();
+   // 🔔 New notification: small popup + its own sound (erp-notify-popup.js). A picked old date is not "new".
+   if(when!=="date"&&window.LWBNotifyPopup)window.LWBNotifyPopup.feed(allItems.map(it=>({...it,tag:(CATS[it.sum.cat]||CATS.other).tag,svg:svg(it.sum.icon),
+    open:async()=>{if(!it.n.is_read)await markRead(it.n);if(it.href)location.href=it.href;else{panel.hidden=false;bell.setAttribute("aria-expanded","true");reloadData()}}})));
   }
   // "Market order — please check once" (lwb_rate_check_setup.sql) used to pop up here for every PO, again and
   // again. Now it is only a bell row + the "Market order check" card on Approvals (approvals.html), where
@@ -511,15 +533,18 @@
     await window.LWBPhonePush.init({db,user,role:actualRole,mount:foot});
    }catch(e){}
   })();
-  let lastLoad=Date.now(),liveOk=false;
+  let lastLoad=Date.now(),liveOk=false,soon=0;
   const load=()=>{lastLoad=Date.now();return reloadData()};
-  load();
+  // Popup + sound for new notifications; loaded first so the first load is only the "already there" list.
+  const popReady=window.LWBNotifyPopup?Promise.resolve():new Promise(ok=>{const s=document.createElement("script");s.src="erp-notify-popup.js?v=20261128";s.onload=ok;s.onerror=ok;document.head.append(s)});
+  popReady.then(()=>{try{window.LWBNotifyPopup&&window.LWBNotifyPopup.controls(foot)}catch(e){}load()});
+  // Phone app open on screen: the push comes here instead of a second banner (sw.js), so read at once.
+  if(navigator.serviceWorker)navigator.serviceWorker.addEventListener("message",e=>{if(e.data&&e.data.type==="LWB_PUSH_IN"){clearTimeout(soon);soon=setTimeout(load,300)}});
   // Backup check: every 30 s while the instant (Realtime) link is down, every 2 min while it works
   // (speed fix, 17 Nov 2026: each open tab of every user used to read 70 bells every 30 s).
   setInterval(()=>{if(!document.hidden&&Date.now()-lastLoad>=(liveOk?120000:29000))load()},30000);
   // Instant: a new row updates the bell count without interrupting the current task.
   // Needs erp_notifications in Supabase Realtime (lwb_order_flow_popups_setup.sql).
-  let soon=0;
   try{
    db.channel("lwb-bell-"+user.id).on("postgres_changes",{event:"INSERT",schema:"public",table:"erp_notifications",filter:"user_id=eq."+user.id},
     ()=>{clearTimeout(soon);soon=setTimeout(load,400)}).subscribe(st=>{liveOk=st==="SUBSCRIBED"});

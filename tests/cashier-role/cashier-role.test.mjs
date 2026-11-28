@@ -273,3 +273,203 @@ test('Cash handover only to the chosen people, tagged and split (₹5L = ₹2.5L
  await as('manager');await assert.rejects(one('select public.lwb_acc_shift_list(null,null)'),/only/);
  assert.equal((await db.query("select has_table_privilege('authenticated','public.lwb_acc_cash_people','SELECT') a")).rows[0].a,false);
 });
+
+test('Handover heads: Office / Other + Difference ledger; Damaged cash box (Mohit 25 Nov 2026)',async()=>{
+ await db.exec(await sql('lwb_acc_cash_diff_damaged_setup.sql'));
+ await db.exec(await sql('lwb_acc_cash_diff_damaged_setup.sql')); // safe to run again
+ const r2=v=>Math.round(v*100)/100;
+ await as('admin');
+ const pend=await one('select public.lwb_acc_shift_list(null,null)');if(pend.pending)await one('select public.lwb_acc_shift_cancel($1,null)',[pend.pending.id]);
+ await as('accounts');
+ const inc=async v=>{const c=(await db.query("select id from lwb_acc_categories where kind='IN' and active order by id limit 1")).rows[0].id;
+   await one('select public.lwb_acc_add_entry($1)',[{date:today,kind:'IN',category_id:c,mode:'CASH',amount:v,party:'X'}])};
+ let book=Number((await dash()).closing);if(book<5000){await inc(10000);book=Number((await dash()).closing)}
+ const cnt=Math.floor((book-3000)/500)*500,notes={'500':cnt/500};      // counted notes to Vishal; office 1,000; Ramesh 500; rest = difference
+ const diff=r2(book-cnt-1000-500);
+ const parts=JSON.stringify([{to:ids.vishal,amount:cnt}]),extra=JSON.stringify([{kind:'OFFICE',amount:1000},{kind:'OTHER',name:' ramesh  bhai ',amount:500}]);
+ await assert.rejects(one('select public.lwb_acc_shift_give3($1::jsonb,$2::jsonb,null,$3::jsonb)',[parts,JSON.stringify(notes),extra]),/Write a note/);
+ await assert.rejects(one('select public.lwb_acc_shift_give3($1::jsonb,$2::jsonb,$3,$4::jsonb)',[parts,JSON.stringify(notes),'x',JSON.stringify([{kind:'OTHER',amount:5}])]),/name/);
+ const g=await one('select public.lwb_acc_shift_give3($1::jsonb,$2::jsonb,$3,$4::jsonb)',[parts,JSON.stringify(notes),'rest at godown',extra]);
+ assert.equal(Number(g.diff),diff);assert.equal(Number(g.extra),1500);
+ // the difference leaves cash in hand; office / other stay in it
+ assert.equal(r2(Number((await dash()).closing)),r2(book-diff));
+ let X=await one('select public.lwb_acc_shift_extras(null,null)');
+ assert.equal(Number(X.last),Number(g.batch));
+ assert.deepEqual(X.rows.map(r=>r.kind+':'+(r.name||'')+':'+Number(r.amount)).sort(),['DIFF:SHORT:'+diff,'OFFICE::1000','OTHER:RAMESH BHAI:500']);
+ let CD=await one('select public.lwb_acc_cdiff_get()');assert.equal(Number(CD.balance),diff);
+ assert.equal((await dash()).lines.find(l=>l.category==='Cash difference').kind,'OUT');
+ // cancel takes all of it back
+ await one('select public.lwb_acc_shift_cancel($1,null)',[g.id]);
+ assert.equal(r2(Number((await dash()).closing)),book);
+ assert.equal(Number((await one('select public.lwb_acc_cdiff_get()')).balance),0);
+ assert.equal((await one('select public.lwb_acc_shift_extras(null,null)')).rows.length,0);
+ // again, received; then found part of it, Admin writes off the rest
+ const g2=await one('select public.lwb_acc_shift_give3($1::jsonb,$2::jsonb,$3,$4::jsonb)',[parts,JSON.stringify(notes),'rest at godown',extra]);
+ await as('vishal');await one('select public.lwb_acc_shift_receive($1,null,null)',[g2.id]);
+ await as('accounts');
+ await assert.rejects(one('select public.lwb_acc_cdiff_add($1)',[{kind:'FOUND',amount:diff+1,note:'x'}]),/open in the Cash Difference/);
+ await assert.rejects(one('select public.lwb_acc_cdiff_add($1)',[{kind:'WRITE_OFF',amount:1,note:'x'}]),/Only Admin/);
+ await one('select public.lwb_acc_cdiff_add($1)',[{kind:'FOUND',amount:500,note:'found in godown drawer'}]);
+ assert.equal(r2(Number((await dash()).closing)),r2(book-diff+500));
+ await as('admin');await one('select public.lwb_acc_cdiff_add($1)',[{kind:'WRITE_OFF',amount:r2(diff-500),note:'lost'}]);
+ CD=await one('select public.lwb_acc_cdiff_get()');assert.equal(Number(CD.balance),0);assert.equal(CD.rows.length,4);
+ await assert.rejects(one('select public.lwb_acc_cdiff_cancel($1,$2)',[CD.rows.find(r=>r.kind==='SHORT'&&!r.cancelled).id,'x']),/handover/);
+ // extra cash: comes in as Cash In
+ await as('accounts');
+ let b2=Number((await dash()).closing);
+ const g3=await one('select public.lwb_acc_shift_give3($1::jsonb,$2::jsonb,$3,$4::jsonb)',[JSON.stringify([{to:ids.vishal,amount:b2+500}]),JSON.stringify({coins:b2+500}),'extra found','[]']);
+ assert.equal(Number(g3.diff),-500);assert.equal(r2(Number((await dash()).closing)),r2(b2+500));
+ await as('vishal');await one('select public.lwb_acc_shift_receive($1,null,null)',[g3.id]);
+ // Damaged cash: not in cash in hand
+ await as('accounts');
+ const before=r2(Number((await dash()).closing));
+ await one('select public.lwb_acc_dmg_add($1)',[{kind:'OPENING',notes:{'500':4,'100':5}}]);
+ await assert.rejects(one('select public.lwb_acc_dmg_add($1)',[{kind:'OPENING',amount:100}]),/already set/);
+ assert.equal(r2(Number((await dash()).closing)),before);
+ await one('select public.lwb_acc_dmg_add($1)',[{kind:'FROM_CASH',amount:500,note:'torn note from party'}]);
+ assert.equal(r2(Number((await dash()).closing)),r2(before-500));
+ let DM=await one('select public.lwb_acc_dmg_get()');assert.equal(Number(DM.balance),3000);
+ const bk=(await db.query(`insert into lwb_acc_banks(name) values('ICICI DMG') returning id`)).rows[0].id;
+ await assert.rejects(one('select public.lwb_acc_dmg_bank($1)',[{amount:3500,bank_amount:0}]),/Only Rs/);
+ await assert.rejects(one('select public.lwb_acc_dmg_bank($1)',[{amount:500,bank_amount:600,bank_id:bk}]),/more than/);
+ await assert.rejects(one('select public.lwb_acc_dmg_bank($1)',[{amount:500,bank_amount:250}]),/bank/);
+ const bb=await one('select public.lwb_acc_dmg_bank($1)',[{amount:500,bank_amount:250,bank_id:bk}]);
+ assert.equal(Number(bb.short),250);assert.equal(Number(bb.balance),2500);
+ const dl=(await dash()).lines.find(l=>l.category==='Damaged cash to bank');
+ assert.equal(dl.mode,'BANK');assert.equal(Number(dl.amount),250);assert.equal(dl.status,'PENDING');
+ assert.equal(r2(Number((await dash()).closing)),r2(before-500)); // bank money is not cash
+ DM=await one('select public.lwb_acc_dmg_get()');
+ assert.equal(Number(DM.short),250);assert.equal(Number(DM.opening),2500);assert.equal(Number(DM.from_cash),500);assert.equal(DM.rows[0].status,'PENDING');
+ await assert.rejects(one('select public.lwb_acc_dmg_cancel($1,$2)',[DM.rows.find(r=>r.kind==='OPENING').id,'x']),/Only Admin/);
+ await one('select public.lwb_acc_dmg_cancel($1,$2)',[DM.rows.find(r=>r.kind==='BANK').id,'wrong']);
+ assert.equal(Number((await one('select public.lwb_acc_dmg_get()')).balance),3000);
+ assert.equal((await dash()).lines.some(l=>l.category==='Damaged cash to bank'),false);
+ await as('manager');await assert.rejects(one('select public.lwb_acc_dmg_get()'),/Only/);
+ assert.equal((await db.query("select has_table_privilege('authenticated','public.lwb_acc_damaged_cash','SELECT') a")).rows[0].a,false);
+});
+
+test("Today's cashier: the Sales Head holding the cash box gets the Cashier work; others do not (Mohit 26 Nov 2026)",async()=>{
+ ids.manager2='00000000-0000-4000-8000-000000000010';
+ await db.query('insert into user_profiles(id,role,active,full_name) values($1,$2,true,$3)',[ids.manager2,'manager','Second Head']);
+ await db.exec(await sql('lwb_acc_duty_cashier_setup.sql'));
+ await db.exec(await sql('lwb_acc_duty_cashier_setup.sql')); // safe to run again
+ const inList=(await db.query('select user_id from lwb_acc_cash_people')).rows.map(r=>r.user_id);
+ assert.ok(inList.includes(ids.manager)&&inList.includes(ids.manager2));
+ assert.equal((await db.query("select has_function_privilege('authenticated','public.lwb_acc_duty_cashier(uuid)','EXECUTE') a")).rows[0].a,false);
+ const r2=v=>Math.round(v*100)/100;
+ // not on duty yet
+ await as('manager');
+ assert.equal((await one('select public.lwb_acc_on_duty()')).on_duty,false);
+ await assert.rejects(dash(),/./);
+ // Accounts hands the whole box to the Sales Head; till he presses Received he is not the cashier
+ await as('accounts');
+ const book=r2(Number((await dash()).closing));
+ const g=await one('select public.lwb_acc_shift_give3($1::jsonb,$2::jsonb,null,$3::jsonb)',[JSON.stringify([{to:ids.manager,amount:book}]),JSON.stringify({coins:book}),'[]']);
+ await as('manager');
+ assert.equal((await one('select public.lwb_acc_on_duty()')).on_duty,false);
+ await one('select public.lwb_acc_shift_receive($1,null,null)',[g.id]);
+ const od=await one('select public.lwb_acc_on_duty()');
+ assert.equal(od.on_duty,true);assert.equal(Number(od.amount),book);
+ // he works as the Cashier: cash book, Cash In, party payment; no Tally / bank check
+ const d=await dash();assert.equal(d.is_cashier,true);assert.equal(d.can_check,false);assert.equal(d.is_admin,false);
+ const c=(await db.query("select id from lwb_acc_categories where kind='IN' and active order by id limit 1")).rows[0].id;
+ await one('select public.lwb_acc_add_entry($1)',[{date:today,kind:'IN',category_id:c,mode:'CASH',amount:700,party:'Shop'}]);
+ await one('select public.lwb_party_receive($1,$2,$3::jsonb,null,null)',[P,today,JSON.stringify([{mode:'CASH',amount:300}])]);
+ assert.equal(r2(Number((await dash()).closing)),r2(book+1000));
+ await assert.rejects(one("select public.lwb_acc_save_bank(null,'X BANK','1',0,null,true)"),/./);
+ assert.equal((await one('select public.lwb_acc_shift_list(null,null)')).can_give,true);
+ // the other Sales Head: nothing
+ await as('manager2');
+ assert.equal((await one('select public.lwb_acc_on_duty()')).on_duty,false);
+ await assert.rejects(dash(),/./);
+ await assert.rejects(one('select public.lwb_party_receive($1,$2,$3::jsonb,null,null)',[P,today,JSON.stringify([{mode:'CASH',amount:1}])]),/./);
+ // he hands the box to the other Sales Head; after Received ✓ the Cashier work moves with it
+ await as('manager');
+ const b2=r2(Number((await dash()).closing));
+ const g2=await one('select public.lwb_acc_shift_give3($1::jsonb,$2::jsonb,null,$3::jsonb)',[JSON.stringify([{to:ids.manager2,amount:b2}]),JSON.stringify({coins:b2}),'[]']);
+ assert.equal((await one('select public.lwb_acc_on_duty()')).on_duty,true);   // still his till received
+ await as('manager2');await one('select public.lwb_acc_shift_receive($1,null,null)',[g2.id]);
+ assert.equal((await one('select public.lwb_acc_on_duty()')).on_duty,true);
+ assert.equal((await dash()).is_cashier,true);
+ await as('manager');
+ assert.equal((await one('select public.lwb_acc_on_duty()')).on_duty,false);
+ await assert.rejects(dash(),/./);
+ // back to Accounts: no Sales Head is the cashier
+ await as('manager2');
+ const g3=await one('select public.lwb_acc_shift_give3($1::jsonb,$2::jsonb,null,$3::jsonb)',[JSON.stringify([{to:ids.accounts,amount:b2}]),JSON.stringify({coins:b2}),'[]']);
+ await as('accounts');await one('select public.lwb_acc_shift_receive($1,null,null)',[g3.id]);
+ await as('manager2');assert.equal((await one('select public.lwb_acc_on_duty()')).on_duty,false);
+ await as('accounts');assert.equal((await dash()).is_cashier,false);
+});
+
+test('Cash box only for Admin / Accounts / Sales Head: Salesman taken off the list, can not be tagged (Mohit 26 Nov 2026)',async()=>{
+ await db.exec(await sql('lwb_acc_cash_people_roles_setup.sql'));
+ await db.exec(await sql('lwb_acc_cash_people_roles_setup.sql')); // safe to run again
+ const roles=(await db.query('select distinct lower(p.role) r from lwb_acc_cash_people c join user_profiles p on p.id=c.user_id')).rows.map(r=>r.r).sort();
+ assert.ok(!roles.includes('sales'));assert.ok(roles.includes('manager'));
+ await as('admin');
+ const PP=await one('select public.lwb_acc_cash_people_get()');
+ assert.ok(PP.all.every(p=>['admin','accounts','manager','cashier'].includes(p.role)));
+ await one('select public.lwb_acc_cash_people_set($1)',[[ids.accounts,ids.manager,ids.manager2,ids.sales,ids.admin]]);
+ assert.ok(!(await one('select public.lwb_acc_cash_people_get()')).list.some(p=>p.role==='sales'));
+ await as('accounts');
+ const book=Math.round(Number((await dash()).closing)*100)/100;
+ await assert.rejects(one('select public.lwb_acc_shift_give3($1::jsonb,$2::jsonb,null,$3::jsonb)',[JSON.stringify([{to:ids.sales,amount:book}]),JSON.stringify({coins:book}),'[]']),/not in the list/);
+ const g=await one('select public.lwb_acc_shift_give3($1::jsonb,$2::jsonb,null,$3::jsonb)',[JSON.stringify([{to:ids.manager,amount:book}]),JSON.stringify({coins:book}),'[]']);
+ await as('manager');await one('select public.lwb_acc_shift_receive($1,null,null)',[g.id]);
+ await as('sales');await assert.rejects(one('select public.lwb_acc_shift_list(null,null)'),/only/);
+ await as('manager2');assert.equal((await one('select public.lwb_acc_shift_list(null,null)')).holder.id,ids.manager);
+});
+
+test('Night: cash to Admin only keeps it; the cashier stays; morning Admin hands it on = new cashier (Mohit 26 Nov 2026)',async()=>{
+ await db.exec(await sql('lwb_acc_cashier_admin_safe_setup.sql'));
+ await db.exec(await sql('lwb_acc_cashier_admin_safe_setup.sql')); // safe to run again
+ const give=async(to)=>{const b=Math.round(Number((await dash()).closing)*100)/100;
+   return one('select public.lwb_acc_shift_give3($1::jsonb,$2::jsonb,null,$3::jsonb)',[JSON.stringify([{to,amount:b}]),JSON.stringify({coins:b}),'[]'])};
+ // (test 12 left the box with the first Sales Head)
+ await as('manager');assert.equal((await one('select public.lwb_acc_on_duty()')).on_duty,true);
+ let T=await one('select public.lwb_acc_today_cashier()');assert.equal(T.cashiers[0].id,ids.manager);
+ // night: he hands the cash to Admin
+ const g=await give(ids.admin);
+ await as('admin');await one('select public.lwb_acc_shift_receive($1,null,null)',[g.id]);
+ T=await one('select public.lwb_acc_today_cashier()');
+ assert.equal(T.cashiers[0].id,ids.manager);assert.equal(T.holders[0].id,ids.admin);
+ await as('manager');assert.equal((await one('select public.lwb_acc_on_duty()')).on_duty,true);
+ // morning: Admin hands it to the other Sales Head = he is the cashier now
+ await as('admin');const g2=await give(ids.manager2);
+ await as('manager2');await one('select public.lwb_acc_shift_receive($1,null,null)',[g2.id]);
+ assert.equal((await one('select public.lwb_acc_on_duty()')).on_duty,true);
+ await as('manager');assert.equal((await one('select public.lwb_acc_on_duty()')).on_duty,false);
+ T=await one('select public.lwb_acc_today_cashier()');assert.equal(T.cashiers[0].id,ids.manager2);assert.equal(T.holders[0].id,ids.manager2);
+ await as('sales');await assert.rejects(one('select public.lwb_acc_today_cashier()'),/only/);
+});
+
+test('Handover slip: cashier signs + bag no., receiver signs, slip has notes + last closing (Mohit 28 Nov 2026)',async()=>{
+ await db.exec(await sql('lwb_acc_handover_slip_setup.sql'));
+ await db.exec(await sql('lwb_acc_handover_slip_setup.sql')); // safe to run again
+ const png='data:image/png;base64,iVBORw0KGgo=';
+ await as('manager2');
+ const b=Math.round(Number((await dash()).closing)*100)/100;
+ const g=await one('select public.lwb_acc_shift_give3($1::jsonb,$2::jsonb,null,$3::jsonb)',[JSON.stringify([{to:ids.manager,amount:b}]),JSON.stringify({coins:b}),'[]']);
+ await assert.rejects(one('select public.lwb_acc_shift_sign($1,$2,$3,null)',[g.id,'GIVE','hello']),/Sign again/);
+ await one('select public.lwb_acc_shift_sign($1,$2,$3,$4)',[g.id,'GIVE',png,' b 12 ']);
+ await assert.rejects(one('select public.lwb_acc_shift_sign($1,$2,$3,null)',[g.id,'RECV',png]),/signs for this cash/);
+ await as('manager');
+ await assert.rejects(one('select public.lwb_acc_shift_sign($1,$2,$3,null)',[g.id,'GIVE',png]),/Only the person who handed/);
+ await one('select public.lwb_acc_shift_receive($1,null,null)',[g.id]);
+ await one('select public.lwb_acc_shift_sign($1,$2,$3,null)',[g.id,'RECV',png]);
+ const S=await one('select public.lwb_acc_shift_slip($1)',[g.id]);
+ assert.equal(S.bag_no,'B 12');assert.equal(S.give_sign,png);assert.equal(S.parts.length,1);
+ assert.equal(S.parts[0].recv_sign,png);assert.equal(S.parts[0].status,'RECEIVED');
+ assert.equal(Number(S.total),b);assert.ok(S.last,'last closing count is there');assert.ok(S.last.notes);
+ await as('sales');await assert.rejects(one('select public.lwb_acc_shift_slip($1)',[g.id]),/only/);
+ assert.equal((await db.query("select has_table_privilege('authenticated','public.lwb_acc_shift_handovers','SELECT') a")).rows[0].a,false);
+});
+
+test('Cash handover only to Sales Heads + Accounts, not Admin (Mohit 28 Nov 2026)',async()=>{
+ await db.exec(await sql('lwb_acc_cash_people_28nov_setup.sql'));
+ await db.exec(await sql('lwb_acc_cash_people_28nov_setup.sql')); // safe to run again
+ const R=(await db.query("select lower(btrim(p.role)) r from public.lwb_acc_cash_people c join public.user_profiles p on p.id=c.user_id")).rows.map(x=>x.r);
+ assert.ok(R.length>0);assert.ok(R.every(r=>r==='manager'||r==='accounts'),R.join());
+ assert.ok(R.includes('accounts'));assert.ok(!R.includes('admin'));
+});

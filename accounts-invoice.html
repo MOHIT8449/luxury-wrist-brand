@@ -11,7 +11,7 @@ if(!new URLSearchParams(location.search).get("order"))location.replace("party-bi
 <script src="brand-filter.js"></script>
 <script src="party-list.js" defer></script>
 <script src="tally-note.js" defer></script>
-<script src="tally-payment.js" defer></script>
+<script src="bill-type.js?v=20261128a" defer></script><script src="tally-payment.js?v=20261128a" defer></script>
 <style>
 :root{--navy:#002f37;--blue:#00434d;--ink:#182a42;--light:#f3f6fa;--muted:#66788e;--border:#dfe5ee}
 *{box-sizing:border-box}
@@ -122,8 +122,8 @@ button.pay{background:#157a48}
  #billPrintArea .print-note{border-top:1px solid #999;margin-top:22px;padding-top:7px;font-size:9px}
 }
 </style>
-<link rel="stylesheet" href="erp-shell.css?v=20261124">
-<script src="erp-shell.js?v=20261124r" data-auto defer></script>
+<link rel="stylesheet" href="erp-shell.css?v=20261127p">
+<script src="erp-shell.js?v=20261127p" data-auto defer></script>
 </head>
 <body>
 <header>
@@ -471,9 +471,11 @@ function renderAssignedVehicle(orderId){
 async function fetchAssignedVehicle(orderId){
  assignedVehicle=null;assignedOrderId=null;assignedError="";
  try{
+  // newest row: a PO saved twice had two rows and .maybeSingle() failed (LXY-00691, 26 Nov 2026)
   const result=await db.from("dispatch_assignments")
    .select("driver_name,driver_mobile,vehicle_no,loading_person,transporter_name")
-   .eq("order_id",orderId).maybeSingle();
+   .eq("order_id",orderId).order("assigned_at",{ascending:false,nullsFirst:false}).limit(1)
+   .then(r=>r.error?r:{...r,data:(r.data||[])[0]||null});
   if(result.error)throw result.error;
   // Self Pickup: a blank driver / mobile / vehicle comes from the details typed on the same order.
   const pk=await db.from("lwb_order_pickup").select("driver_name,driver_mobile,vehicle_no,godown_manager_name")

@@ -21,16 +21,16 @@
   "use strict";
   const T={make:"Bills to make",made:"Bills made",due:"To collect",led:"Ledger",pay:"Payments",ret:"Returns",
     book:"Day book",cheques:"Cheques",verify:"Bank check",sum:"Summary",chg:"PO changes",
-    grp:"Party groups",books:"📒 Ledger & Outstanding ↗",close:"Cash handover",staff:"Staff ledger",veh:"Vehicles",deps:"Bank deposits",setup:"Heads & Banks",gst:"GST",acrs:"ACRS orders ↗"};
-  const BILL=["make","made","due","led","pay","ret","chg","grp","gst"];
+    grp:"Party groups",books:"📒 Ledger & Outstanding ↗",close:"Cash handover",cdiff:"Cash difference",dmg:"Damaged cash",dup:"Duplicate notes",staff:"Staff ledger",veh:"Vehicles",deps:"Bank deposits",setup:"Heads & Banks",gst:"GST",acrs:"ACRS orders ↗",bt:"⚠ GST/Cash"};
+  const BILL=["make","made","due","led","pay","ret","chg","grp","gst","bt"];
   const VIEWS={
     tally:{name:"Accounts · Tally",chip:"Tally",acts:["pay","IN","OUT","DEPOSIT","close","ret"],
-      row:[["Tally",["make","made","chg","ret"]],["Party",["books"]],["Bank & GST",["verify","deps","cheques","gst"]],["Cash",["book","sum"]]],more:["grp","close","staff","veh","setup"],
+      row:[["Tally",["make","made","chg","ret","bt"]],["Party",["books"]],["Bank & GST",["verify","deps","cheques","gst"]],["Cash",["book","sum"]]],more:["grp","close","cdiff","dmg","dup","staff","veh","setup"],
       kpis:["make","verify","gst","chq","coll","hand"],first:"make"},
     cash:{name:"Cashier",chip:"Cashier",acts:["pay","IN","OUT","DEPOSIT","close"],
-      row:[["",["book","deps","cheques","close","staff","veh"]]],more:[],kpis:["open","cin","cout","dep","chq","hand"],first:"book"},
+      row:[["",["book","deps","cheques","close","cdiff","dmg","dup","staff","veh"]]],more:[],kpis:["open","cin","cout","dep","chq","hand"],first:"book"},
     party:{name:"Party & Collections",chip:"Party",acts:["pay","ret"],
-      row:[["",["due","pay","ret","grp"]],["",["books","acrs"]]],more:[],kpis:["due","adv","coll","chq"],first:"due"}};
+      row:[["",["due","pay","ret","grp","bt"]],["",["books","acrs"]]],more:[],kpis:["due","adv","coll","chq"],first:"due"}};
   const FILE={bill:"party-billing.html",cash:"accounts-dashboard.html"};
   const pageOf=t=>BILL.includes(t)?"bill":"cash";
   const tabsOf=v=>VIEWS[v].row.flatMap(r=>r[1]).concat(VIEWS[v].more).filter(t=>t!=="acrs"&&t!=="books");   // acrs = link to ecrs.html, books = accounts-books.html
@@ -120,7 +120,7 @@
   }
 
   /* ---------- tabs ---------- */
-  const badge=t=>{const n={make:cnt.make,chg:cnt.chg,cheques:cnt.chq,verify:cnt.verify}[t];return n?'<span class="n">'+n+'</span>':""};
+  const badge=t=>{const n={make:cnt.make,chg:cnt.chg,cheques:cnt.chq,verify:cnt.verify,bt:cnt.bt}[t];return n?'<span class="n">'+n+'</span>':""};
   const tb=t=>t==="acrs"?'<a class="x" href="ecrs.html">'+esc(T[t])+'</a>':t==="books"?'<a class="x" href="accounts-books.html" title="Ledger, Outstanding, Receipts, Day book (Ctrl+Alt+L)">'+esc(T[t])+'</a>':'<button type="button" data-hub-t="'+t+'" aria-pressed="'+(t===tab)+'">'+esc(T[t])+badge(t)+'</button>';
   function drawTabs(){const b=el("hubTabs");if(!b)return;
     const V=VIEWS[view],MORE=V.more,inMore=MORE.includes(tab),retMore=V.acts.includes("ret")&&V.acts.length>=3;
@@ -141,7 +141,7 @@
     const top=document.querySelector(".hub-top");if(!top)return;
     const h=top.querySelector("h1");if(h)h.textContent=VIEWS[view].name;
     // back to the Finance home (finance.html, Mohit 20 Nov 2026): money now, work waiting, brand-wise
-    if(!el("hubFin")){const a=document.createElement("a");a.id="hubFin";a.href="finance.html";a.className="hub-fin";a.title="Finance home (Ctrl+Alt+F)";a.textContent="‹ Finance";top.insertBefore(a,top.firstChild)}
+    if(!el("hubFin")&&!(window.ERPShell&&ERPShell.onDuty&&ERPShell.onDuty())){const a=document.createElement("a");a.id="hubFin";a.href="finance.html";a.className="hub-fin";a.title="Finance home (Ctrl+Alt+F)";a.textContent="‹ Finance";top.insertBefore(a,top.firstChild)}
     let b=el("hubViews");
     if(views.length<2){if(b)b.remove();return}
     if(!b){b=document.createElement("nav");b.id="hubViews";b.className="hub-views";b.setAttribute("aria-label","Accounts view");
