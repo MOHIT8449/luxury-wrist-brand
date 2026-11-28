@@ -16,6 +16,7 @@
   <script src="party-pay.js?v=20261128a"></script><script src="bill-type.js?v=20261128a"></script>
   <script src="dup-note.js?v=20261126d"></script>
   <script src="ledger-rows.js?v=20261123a"></script>
+  <script src="dial-book.js?v=20261128h"></script>
   <style>
     /* Ledger & Outstanding (Mohit, 20 Nov 2026): the Accounts "Display" books in one place, like Tally.
        Outstanding → party → bill → items; Ledger row → voucher → bill → items; every row opens, Esc goes back. */
@@ -325,7 +326,7 @@
         tools('<input id="q" type="search" placeholder="Search party or bill name…" autocomplete="off">'+seg("oMode",[["party","Party-wise"],["bill","Bill-wise"]],outMode)+seg("oShow",[["due","To collect"],["adv","Advance"],["all","All"]],outShow));
         let L=outParties().filter(x=>outShow==="all"||(outShow==="due"?x.net>0.5:x.net<-0.5)).filter(x=>match(q,x.party,...x.members)).sort((a,b)=>outShow==="adv"?a.net-b.net:b.net-a.net);
         el("box").innerHTML=table("outP",[
-          {h:"Party",v:x=>x.party,p:1,html:x=>esc(x.party)+dupB(x.pk)+(x.members.length?'<small>'+esc(x.members.slice(0,3).join(", "))+(x.members.length>3?" …":"")+"</small>":"")+'<small class="ab-ph">'+x.bills+" bill"+(x.bills===1?"":"s")+(x.bills?' · <span class="'+dcls(x.oldest)+'">'+x.oldest+" days</span>":"")+"</small>"},
+          {h:"Party",v:x=>x.party,p:1,html:x=>esc(x.party)+(window.LWBDial?LWBDial.btn("PARTY",x.party,x.party):"")+dupB(x.pk)+(x.members.length?'<small>'+esc(x.members.slice(0,3).join(", "))+(x.members.length>3?" …":"")+"</small>":"")+'<small class="ab-ph">'+x.bills+" bill"+(x.bills===1?"":"s")+(x.bills?' · <span class="'+dcls(x.oldest)+'">'+x.oldest+" days</span>":"")+"</small>"},
           {h:"Bills",v:x=>x.bills,n:1,hp:1},
           {h:"Oldest",v:x=>x.bills?x.oldest:"",n:1,hp:1,html:x=>x.bills?'<span class="ab-days '+dcls(x.oldest)+'">'+x.oldest+"d</span>":""},
           {h:"Adv / Opening",v:x=>r2(x.opening-x.advance-x.ret),n:1,hp:1,html:x=>{const v=r2(x.opening-x.advance-x.ret);return Math.abs(v)<0.5?"":v<0?'<span class="ab-adv">−'+rs(-v)+"</span>":rs(v)}},
@@ -337,7 +338,7 @@
         el("box").innerHTML=table("outB",[
           {h:"Bill date",v:b=>String(b.invoice_date||"").slice(0,10),html:b=>dmy(b.invoice_date)+'<small class="ab-ph">'+esc(billNo(b))+"</small>"},
           {h:"Bill no.",v:b=>billNo(b),hp:1},
-          {h:"Party",v:b=>b.mainParty,p:1,html:b=>esc(b.mainParty)+(key(b.party)!==b.pk?"<small>"+esc(b.party)+"</small>":"")+(!fb&&multi()?" "+btag(b.company_id):"")},
+          {h:"Party",v:b=>b.mainParty,p:1,html:b=>esc(b.mainParty)+(window.LWBDial?LWBDial.btn("PARTY",b.mainParty,b.mainParty):"")+(key(b.party)!==b.pk?"<small>"+esc(b.party)+"</small>":"")+(!fb&&multi()?" "+btag(b.company_id):"")},
           {h:"PO",v:b=>b.order_no,hp:1},
           {h:"Days",v:b=>b.days,n:1,html:b=>'<span class="ab-days '+dcls(b.days)+'">'+b.days+"d</span>"},
           {h:"Bill",v:b=>r2(b.bill_amount),n:1,hp:1,sum:1,html:b=>rs(b.bill_amount)},
@@ -352,7 +353,7 @@
     function drawOutParty(){
       const pk=outPk,name=nameOf(pk),p0=info.parties.get(pk),p=p0?V(p0):null;
       crumb([["Outstanding",()=>{outPk="";draw()}],[name+bLab()]]);
-      tools('<button type="button" class="ab-b t" data-led="'+esc(pk)+'">📒 Ledger <kbd style="font:inherit;opacity:.7">L</kbd></button><button type="button" class="ab-b g" data-pay="'+esc(pk)+'">💰 Receive payment</button>',false);
+      tools('<button type="button" class="ab-b t" data-led="'+esc(pk)+'">📒 Ledger <kbd style="font:inherit;opacity:.7">L</kbd></button><button type="button" class="ab-b g" data-pay="'+esc(pk)+'">💰 Receive payment</button>'+(window.LWBDial?LWBDial.btn("PARTY",name,name):""),false);
       if(!p){el("box").innerHTML='<div class="ab-empty">No bill due for this party.</div>';cur=null;return}
       const net=r2(p.net!=null?p.net:p.due+(p.opening||0)-p.advance-(p.ret||0)),m=membersOf(pk);
       const bills=(p.bills||[]).map(o=>({...o,pk,days:daysOld(o.invoice_date),got:r2((Number(o.driver)||0)+(Number(o.office)||0)),cn:r2((Number(o.credit_notes)||0)+(Number(o.approved_return)||0)-(Number(o.debit_notes)||0))}));
@@ -376,14 +377,14 @@
     function drawLed(){
       const p=ledPer(),pt=dmy(p.from)+" to "+dmy(p.to);
       el("note").textContent="Ledger on the main party (all its bill names together), brand of the top bar. Period = top bar dates (or This FY). Click any row to open the bill / receipt behind it; in the bill, every item. Esc = back.";
-      tools(partyFind()+seg("lFy",[["1","This FY"],["0",esc(per().label||"Top bar dates")]],ledFy?"1":"0")+(ledPk?'<button type="button" class="ab-b g sm" data-pay="'+esc(ledPk)+'">💰 Receive</button><button type="button" class="ab-b sm" data-out="'+esc(ledPk)+'">Bills due</button>':"")+(me.role==="admin"?'<a class="ab-b sm" href="party-ledger.html#openingPanel" title="Old balance from before the ERP (Admin)">+ Opening</a>':""),false);
+      tools(partyFind()+seg("lFy",[["1","This FY"],["0",esc(per().label||"Top bar dates")]],ledFy?"1":"0")+(ledPk?'<button type="button" class="ab-b g sm" data-pay="'+esc(ledPk)+'">💰 Receive</button><button type="button" class="ab-b sm" data-out="'+esc(ledPk)+'">Bills due</button>'+(window.LWBDial?LWBDial.btn("PARTY",nameOf(ledPk),nameOf(ledPk)):""):"")+(me.role==="admin"?'<a class="ab-b sm" href="party-ledger.html#openingPanel" title="Old balance from before the ERP (Admin)">+ Opening</a>':""),false);
       wireFind(el("lp"),el("lpl"),pk=>{ledPk=pk;shown=300;draw()});
       wireSeg();
       if(!ledPk){
         crumb([["List of ledgers · "+pt+bLab()]]);
         const L=[...info.parties.keys(),...new Set(led.map(x=>x.pk))].filter((v,i,a)=>a.indexOf(v)===i).map(pk=>({pk,name:nameOf(pk),...ledOf(pk,p)})).filter(r=>Math.abs(r.open)>0.5||r.rows.length).sort((a,b)=>b.close-a.close);
         el("box").innerHTML=table("ledL",[
-          {h:"Party",v:r=>r.name,p:1,html:r=>esc(r.name)+dupB(r.pk)},
+          {h:"Party",v:r=>r.name,p:1,html:r=>esc(r.name)+(window.LWBDial?LWBDial.btn("PARTY",r.name,r.name):"")+dupB(r.pk)},
           {h:"Opening",v:r=>r.open,n:1,hp:1,html:r=>bal(r.open)},
           {h:"Debit",v:r=>r.dr,n:1,sum:1,html:r=>r.dr?rs(r.dr):""},
           {h:"Credit",v:r=>r.cr,n:1,sum:1,html:r=>r.cr?'<span class="ab-adv">'+rs(r.cr)+"</span>":""},
