@@ -15,7 +15,8 @@
   const CSS=`.lbt{display:inline-flex;align-items:center;gap:3px;font-weight:800;font-size:11.5px;line-height:1;padding:3px 8px;border-radius:99px;letter-spacing:.3px;white-space:nowrap;vertical-align:middle}
 .lbt.g{background:#dbeafe;color:#1d4ed8;border:1px solid #93c5fd}.lbt.c{background:#fef3c7;color:#92400e;border:1px solid #fcd34d}
 .lbt.n{background:#fee2e2;color:#b91c1c;border:1px solid #fca5a5}.lbt.m{background:#fff;color:#64748b;border:1px dashed #cbd5e1;font-weight:700}
-.lbt-ov{position:fixed;inset:0;background:#0f1923aa;display:flex;align-items:center;justify-content:center;padding:16px;z-index:5200}
+/* z-index 9600: above the Party payment popup (9000), else the mode popup opens hidden behind it and Save stays grey (Mohit 28 Nov 2026) */
+.lbt-ov{position:fixed;inset:0;background:#0f1923aa;display:flex;align-items:center;justify-content:center;padding:16px;z-index:9600}
 .lbt-d{box-sizing:border-box;background:#fff;color:#17212b;width:min(470px,100%);max-height:94vh;overflow:auto;border-radius:12px;padding:14px 16px;font:14px/1.4 system-ui,Segoe UI,Arial,sans-serif;box-shadow:0 18px 50px #0006}
 .lbt-d h3{margin:0 0 8px;font-size:17px}.lbt-d p{margin:6px 0;color:#4b5763;font-size:13px}
 .lbt-cmp{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px;margin:8px 0}.lbt-cmp>div{border:1px solid #e3e0d7;border-radius:8px;padding:7px 9px}
