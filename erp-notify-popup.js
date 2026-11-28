@@ -138,7 +138,13 @@
   if(!known){known=new Set(ids);return}
   const fresh=items.filter(it=>!known.has(String(it.n.id)));
   ids.forEach(id=>known.add(id));
-  const show=fresh.filter(it=>!it.n.is_read&&!/^CC_/i.test(String(it.n.notification_type||""))&&Date.now()-new Date(it.n.created_at)<15*60000&&claim(String(it.n.id)));
+  const cand=fresh.filter(it=>!it.n.is_read&&!/^CC_/i.test(String(it.n.notification_type||""))&&Date.now()-new Date(it.n.created_at)<15*60000);
+  if(!cand.length)return;
+  // A tab / window on screen shows it first; a hidden one waits 2 s and shows it only if no visible one did.
+  if(document.hidden)setTimeout(()=>ringAndShow(cand),2000);else ringAndShow(cand);
+ }
+ function ringAndShow(cand){
+  const show=cand.filter(it=>claim(String(it.n.id)));
   if(!show.length)return;
   // Highest-priority sound of the batch, once.
   const rank=["alert","order","approve","task","money","delivery","stock","other"];
