@@ -70,6 +70,7 @@
   [/^PURCHASE_MISSING$/,"🧾","bad","Purchase bills missing","Enter"],
   [/^HIRED_RATE_VERIFY$/,"🚚","act","Trip rent","Verify"],
   [/^HIRED_RATE_SENT_BACK$/,"↩","bad","Trip rent sent back","Set again"],
+  [/^WEB_ORDER$/,"🌐","act","Website order","Make PO"],
   [/^PARTY_CREATED$/,"👤","act","New party added","Check"],
   [/^ACC_BANK_VERIFY$/,"🏦","act","Bank entry","Verify"],
   [/^ACC_BANK_REJECTED$/,"❌","bad","Bank entry rejected",""],
@@ -118,7 +119,7 @@
   [/^BILL_TYPE_/,"order"],
   [/^(ORDER_LOADED|ORDER_DISPATCHED|ORDER_DELIVERED|ORDER_PARTIAL|ORDER_NOT_DELIVERED|VEHICLE_LOADED|LOADING_ASSIGNMENT|TALLY_BILL_PENDING|PO_APPROVED_LOADING|DELIVERY_RETURN|RETURN_CHECKED)/,"delivery"],
   [/^(STOCK_|GODOWN_|PURCHASE_|MARKET_)/,"stock"],
-  [/^(ORDER_|PO_|RATE_|BILL_CHANGE_|TALLY_BILL_|SALES_RETURN)/,"order"]
+  [/^(ORDER_|PO_|RATE_|BILL_CHANGE_|TALLY_BILL_|SALES_RETURN|WEB_ORDER)/,"order"]
  ];
  const catOf=t=>(CAT_OF.find(r=>r[0].test(t))||[0,"other"])[1];
  // Line icons (24 x 24, stroke) in place of emoji: the same look on every phone.
@@ -233,8 +234,8 @@
   // Sales Head "Tell Accounts" (lwb_sales_head_outstanding_setup.sql): Party & Collections > To collect; Cashier: Cashier view.
   [/^PAYMENT_FOLLOWUP$/,["party-billing.html#party","accounts-dashboard.html#cash","accounts-books.html?v=out"]],
   [/^PO_APPROVED_LOADING$/,["loading-dispatch.html?order={o}","warehouse-orders.html"]],
-  [/^(VEHICLE_LOADED|TALLY_BILL_DONE)$/,["loading-dispatch.html","party-billing.html?order={o}","warehouse-orders.html","driver-delivery.html?order={o}","my-sales.html#orders"]],
-  [/^ORDER_NEW$/,["warehouse-orders.html"]],
+  [/^(VEHICLE_LOADED|TALLY_BILL_DONE)$/,["loading-dispatch.html?order={o}","party-billing.html?order={o}","warehouse-orders.html","driver-delivery.html?order={o}","my-sales.html#orders"]],
+  [/^ORDER_NEW$/,["warehouse-orders.html?order={o}","my-sales.html#orders"]],
   [/^ORDER_DELAY_DELIVERY$/,["warehouse-orders.html?late=delivery"]],
   [/^ORDER_DELAY_APPROVAL$/,["warehouse-orders.html?late=approval"]],
   [/^RATE_APPROVAL$/,["quick-slip.html?review={o}"]],
@@ -255,7 +256,8 @@
   [/^LOADING_ASSIGNMENT_DRIVER$/,["driver-delivery.html?order={o}","loading-dispatch.html","transport-allocation.html"]],
   [/^LOADING_ASSIGNMENT/,["loading-dispatch.html?order={o}","transport-allocation.html"]],
   [/^HIRED_RATE_/,["fleet-master.html#rates"]],
-  [/^PARTY_CREATED$/,["customer-master.html"]],
+  [/^WEB_ORDER$/,["web-orders.html"]],
+  [/^PARTY_CREATED$/,["customer-master.html","dial-book.html"]],
   [/^RECEIPT_EDIT_ASK$/,["approvals.html","accounts-books.html"]],
   [/^RECEIPT_EDIT_/,["accounts-dashboard.html","accounts-books.html"]],
   [/^LABOUR_EXTRA$/,["approvals.html","labour.html"]],
@@ -267,19 +269,25 @@
   [/^STOCK_AUDIT_/,["stock-audit.html"]],
   [/^STOCK_MOVE_PENDING$/,["stock-transfer.html#approvals"]],
   [/^STOCK_MOVE_/,["stock-transfer.html#history"]],
-  [/^ACC_BANK_VERIFY$/,["accounts-dashboard.html#verify"]],
+  [/^ACC_BANK_VERIFY$/,["accounts-dashboard.html#verify","approvals.html"]],
   [/^ACC_CHEQUE/,["accounts-dashboard.html#cheques"]],
   [/^DOC_/,["documents.html"]],
-  [/^ACC_/,["accounts-dashboard.html"]],
+  [/^ACC_CASH_/,["accounts-dashboard.html#cash","dashboard.html"]],
+  [/^ACC_/,["accounts-dashboard.html","accounts-books.html","dashboard.html"]],
   [/^MARKET_/,["market-report.html"]],
   [/^COMPLAINT_/,["complaint-box.html?id={c}"]],
   [/^TASK_/,["tasks.html?id={t}"]],
   [/^SALES_PLAN$/,["my-sales.html","sales-team.html"]],
-  [/^ORDER_/,["my-sales.html#orders","warehouse-orders.html","driver-delivery.html?order={o}","loading-dispatch.html"]]
+  [/^ORDER_/,["my-sales.html#orders","warehouse-orders.html?order={o}","driver-delivery.html?order={o}","loading-dispatch.html"]]
  ];
- function route(n,pages){
+ // Admin / Sales / Accounts follow an order on the PO list (warehouse-orders.html: status, vehicle, bill, tracking),
+ // not on the godown's Loading page (Mohit, 28 Nov 2026). Godown Manager / Driver / Transport keep their work pages.
+ const PO_LIST_ROLES=/^(admin|manager|accounts)$/i;   // manager = Sales Head
+ function route(n,pages,role){
   const t=baseType(n),hit=ROUTES.find(r=>r[0].test(t));
   if(!hit)return "";
+  if(n.order_id&&PO_LIST_ROLES.test(String(role||"").trim())&&(!pages||!pages.length||pages.includes("warehouse-orders.html"))&&/^(VEHICLE_LOADED|TALLY_BILL_DONE|PO_APPROVED_LOADING|LOADING_ASSIGNMENT(?!_DRIVER)|ORDER_)/.test(t))
+   return "warehouse-orders.html?order="+encodeURIComponent(n.order_id);
   const base=h=>h.split(/[?#]/)[0];
   const href=(pages&&pages.length?hit[1].find(h=>pages.includes(base(h))):hit[1][0])||"";
   // {c} = complaint no. from "CMP-12" in the message.
@@ -487,7 +495,7 @@
    arrived(rows);
    // Market order checks no longer pop up (Mohit, 7 Nov 2026): they wait in the bell and on Approvals.
    allRead.hidden=!unread;
-   allItems=rows.map(n=>({n,sum:summary(n,orders.get(n.order_id)),href:route(n,pages)}));
+   allItems=rows.map(n=>({n,sum:summary(n,orders.get(n.order_id)),href:route(n,pages,role)}));
    render();
    // 🔔 New notification: small popup + its own sound (erp-notify-popup.js). A picked old date is not "new".
    if(when!=="date"&&window.LWBNotifyPopup)window.LWBNotifyPopup.feed(allItems.map(it=>({...it,tag:(CATS[it.sum.cat]||CATS.other).tag,svg:svg(it.sum.icon),
@@ -533,7 +541,7 @@
   let lastLoad=Date.now(),liveOk=false,soon=0;
   const load=()=>{lastLoad=Date.now();return reloadData()};
   // Popup + sound for new notifications; loaded first so the first load is only the "already there" list.
-  const popReady=window.LWBNotifyPopup?Promise.resolve():new Promise(ok=>{const s=document.createElement("script");s.src="erp-notify-popup.js";s.onload=ok;s.onerror=ok;document.head.append(s)});
+  const popReady=window.LWBNotifyPopup?Promise.resolve():new Promise(ok=>{const s=document.createElement("script");s.src="erp-notify-popup.js?v=20261128";s.onload=ok;s.onerror=ok;document.head.append(s)});
   popReady.then(()=>{try{window.LWBNotifyPopup&&window.LWBNotifyPopup.controls(foot)}catch(e){}load()});
   // Phone app open on screen: the push comes here instead of a second banner (sw.js), so read at once.
   if(navigator.serviceWorker)navigator.serviceWorker.addEventListener("message",e=>{if(e.data&&e.data.type==="LWB_PUSH_IN"){clearTimeout(soon);soon=setTimeout(load,300)}});
