@@ -382,8 +382,9 @@
         // Duplicate cleaner (Mohit, 28 Nov 2026; lwb_gmail_dedupe_setup.sql): his other Gmail too, one name per number.
         '<div class="db-dd"><b>🧹 Ek number, ek naam</b><p class="db-sm">Phone me 2-3 Gmail ke contacts aate hain, isliye ek number kai naam se dikhta hai. Apne doosre Gmail bhi jodiye, phir Duplicate saaf karein.</p>'+
         '<div class="db-ddl"><span class="db-acc main">✉ '+esc(g.email||"Gmail")+' <small>main</small></span>'+(g.extra||[]).map(e=>'<span class="db-acc">✉ '+esc(e)+' <button type="button" data-grm="'+esc(e)+'" title="Hatao" aria-label="Remove '+esc(e)+'">✕</button></span>').join("")+"</div>"+
-        (g.last_dedupe&&g.last_dedupe.at?'<p class="db-sm">Pichhli safai '+esc(ago(g.last_dedupe.at))+": "+fmt((g.last_dedupe.result||{}).deleted||0)+" copy hatayi, "+fmt((g.last_dedupe.result||{}).changed||0)+" contact se number hataya.</p>":"")+
-        '<div class="db-sf"><button type="button" class="sl-btn ghost" data-gadd>➕ Doosra Gmail jodein</button><button type="button" class="sl-btn" data-gdd>🧹 Duplicate saaf karein</button></div></div>';
+        (g.last_dedupe&&g.last_dedupe.at?'<p class="db-sm">Pichhla kaam '+esc(ago(g.last_dedupe.at))+": "+((g.last_dedupe.result||{}).kind==="move"?fmt((g.last_dedupe.result||{}).copied||0)+" contact main Gmail me aaye.":fmt((g.last_dedupe.result||{}).deleted||0)+" copy hatayi, "+fmt((g.last_dedupe.result||{}).changed||0)+" contact se number hataya.")+"</p>":"")+
+        '<div class="db-sf"><button type="button" class="sl-btn ghost" data-gadd>➕ Doosra Gmail jodein</button><button type="button" class="sl-btn" data-gdd>🧹 Duplicate saaf karein</button></div>'+
+        ((g.extra||[]).length?'<button type="button" class="sl-btn ghost" data-gmv style="height:40px">📥 Sab contacts main Gmail me le aao</button>':"")+"</div>";
       const b=sheet("✉ Gmail auto sync",'<div class="db-gm" data-nocaps style="display:flex;flex-direction:column;gap:10px">'+body+"</div>");
       const say=(t,c)=>{const m=b.querySelector("#gMsg");m.hidden=false;m.className="db-sm "+(c||"");m.textContent=t};
       if(msg)say(msg[0],msg[1]);
@@ -408,6 +409,9 @@
         const dd=e.target.closest("[data-gdd]");
         if(dd){busy(dd,"Sab Gmail padh raha hai…");const x=await client.functions.invoke(GF,{body:{action:"dedupe_scan"}});
           if(x.error){say(await fnErr(x.error),"bad");dd.disabled=false;dd.textContent="🧹 Duplicate saaf karein";return}b.remove();dedupe(x.data);return}
+        const mv=e.target.closest("[data-gmv]");
+        if(mv){busy(mv,"Sab Gmail padh raha hai…");const x=await client.functions.invoke(GF,{body:{action:"move_scan"}});
+          if(x.error){say(await fnErr(x.error),"bad");mv.disabled=false;mv.textContent="📥 Sab contacts main Gmail me le aao";return}b.remove();moveAll(x.data,g.email);return}
         const sy=e.target.closest("[data-gsync]");
         if(sy){busy(sy,"Sync ho raha hai…");const x=await client.functions.invoke(GF,{body:{action:"sync"}});b.remove();
           if(x.error){gmail([await fnErr(x.error),"bad"]);return}gmail(x.data&&x.data.status==="running"?["Sync pehle se chal raha hai. 2 minute baad dekhiye.","warn"]:null);return}
@@ -445,6 +449,32 @@
           if(x.error){say(await fnErr(x.error),"bad");go.disabled=false;go.textContent="🧹 Haan, saaf karo";return}
           const r=x.data||{};b.remove();
           gmail([(r.ok?"✓ Saaf ho gaya: ":"Kuch hua, kuch reh gaya: ")+fmt(r.deleted)+" copy hatayi, "+fmt(r.changed)+" contact se number hataya"+(r.left?", "+fmt(r.left)+" baaki: dobara Duplicate saaf karein":"")+(r.errors&&r.errors.length?" · "+r.errors[0]:"")+". Phone me 5-10 minute me dikhega.",r.ok&&!r.left?"warn":"bad"])}
+      });
+    }
+    // Everything into the main Gmail: preview, backup, then copy (nothing deleted in the other Gmail).
+    function moveAll(d,main){
+      const A=d.accounts||[],accN=i=>(A[i]||{}).email||"Gmail";
+      const body='<div class="st no">'+fmt(d.copy)+" contact "+esc(main||"main Gmail")+" me aayenge · "+fmt(d.skip)+" pehle se hain (number / email same), woh dobara nahi aayenge</div>"+
+        '<div class="db-ddl">'+A.map((a,i)=>'<span class="db-acc'+(i?"":" main")+'">✉ '+esc(a.email)+" <small>"+(i?fmt(a.copy)+" aayenge":fmt(a.total)+" contacts")+"</small></span>").join("")+"</div>"+
+        '<p class="db-sm">Doosre Gmail me se kuch nahi hatega. Naye contacts main Gmail me label <b>Doosre Gmail se</b> me aayenge. Pehle duplicate saaf kar lijiye, phir yeh. Aakhir me phone ki Settings › Accounts › doosre Gmail › Contacts sync <b>off</b> kar dijiye: phone me sirf ek Gmail ke contacts dikhenge.</p>'+
+        (d.sample&&d.sample.length?'<div class="db-dlist">'+d.sample.map(x=>'<div class="db-dgi on fx"><span><b>'+esc(x.name)+"</b><small>"+esc(accN(x.acc))+(x.nums?" · "+esc(x.nums):"")+'</small></span><em>📥 Aayega</em></div>').join("")+
+          (d.copy>d.sample.length?'<p class="db-sm">… aur '+fmt(d.copy-d.sample.length)+"</p>":"")+"</div>":"")+
+        '<div id="ddMsg" class="db-sm" hidden></div><div class="db-sf"><button type="button" class="sl-btn ghost" data-bk>⬇ Backup</button><button type="button" class="sl-btn" data-go'+(d.copy?"":" disabled")+'>📥 Haan, le aao</button></div>';
+      const b=sheet("📥 Sab ek Gmail me",'<div class="db-gm" data-nocaps style="display:flex;flex-direction:column;gap:10px">'+body+"</div>");
+      const say=(t,c)=>{const m=b.querySelector("#ddMsg");m.hidden=false;m.className="db-sm "+(c||"");m.textContent=t};
+      b.addEventListener("click",async e=>{
+        if(e.target.closest("[data-bk]")){const q=v=>'"'+String(v==null?"":v).replace(/"/g,'""')+'"';
+          const csv="\ufeff"+[["Gmail","Name","Numbers","Emails"],...(d.backup||[])].map(r=>r.map(q).join(",")).join("\r\n");
+          const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([csv],{type:"text/csv"}));a.download="contacts-backup-"+new Date().toISOString().slice(0,10)+".csv";a.click();
+          b.dataset.bk="1";say("✓ Backup download ho gaya ("+fmt((d.backup||[]).length)+" contacts).","warn");return}
+        const go=e.target.closest("[data-go]");
+        if(go){if(!b.dataset.bk){say("Pehle ⬇ Backup dabaiye.","bad");return}
+          if(!await confirm(fmt(d.copy)+" contact "+(main||"main Gmail")+" me copy honge. Pakka?"))return;
+          go.disabled=true;go.textContent="Copy ho raha hai…";
+          const x=await client.functions.invoke(GF,{body:{action:"move_apply",run_id:d.run_id}});
+          if(x.error){say(await fnErr(x.error),"bad");go.disabled=false;go.textContent="📥 Haan, le aao";return}
+          const r=x.data||{};b.remove();
+          gmail([(r.ok?"✓ Ho gaya: ":"Kuch hua, kuch reh gaya: ")+fmt(r.copied)+" contact main Gmail me aa gaye"+(r.left?", "+fmt(r.left)+" baaki: dobara dabaiye":"")+(r.errors&&r.errors.length?" · "+r.errors[0]:"")+". Ab phone me doosre Gmail ka Contacts sync off kar dijiye.",r.ok?"warn":"bad"])}
       });
     }
     // Back from the Google page (?code=...&state=...): finish the login, then sync.

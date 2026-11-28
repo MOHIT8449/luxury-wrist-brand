@@ -8,9 +8,10 @@
 //   remove_account {email}           forget an extra Gmail
 //   dedupe_scan                      every number saved 2+ times in all connected Gmail -> plan (nothing changes)
 //   dedupe_apply {run_id, picks}     delete the other copies (Admin pressed "Haan, saaf karo")
+//   move_scan / move_apply {run_id}  copy the other Gmail's contacts into the main Gmail once (label "Doosre Gmail se")
 // Only contacts in the label "LWB ERP" are created / changed / deleted. Refresh token never leaves the server.
 import { createClient } from 'npm:@supabase/supabase-js@2.118.0';
-import { makePlan, actions, mob, mask } from './plan.js';
+import { makePlan, actions, movePlan, mob, mask } from './plan.js';
 
 const ORIGINS=['https://luxurywristbrand.com','https://www.luxurywristbrand.com'];
 const REDIRECT='https://luxurywristbrand.com/dial-book.html';
@@ -106,9 +107,9 @@ async function accountsOf(c){
   if(ex.error)throw Error('Run lwb_gmail_dedupe_setup.sql first');
   return [{email:c.google_email||'Main Gmail',main:true},...(ex.data||[]).map(x=>({email:x.email,extra:x}))];
 }
-async function listAll(at){
+async function listAll(at,fields){
   const out=[];let page='';
-  do{const j=await g(at,'GET','people/me/connections?personFields=names,phoneNumbers,memberships&pageSize=1000'+(page?'&pageToken='+page:''));
+  do{const j=await g(at,'GET','people/me/connections?personFields='+(fields||'names,phoneNumbers,memberships')+'&pageSize=1000'+(page?'&pageToken='+page:''));
     out.push(...(j.connections||[]));page=j.nextPageToken||'';}while(page&&out.length<30000);
   return out;
 }
@@ -159,6 +160,46 @@ async function apply(c,uid,runId,picks){
     }
   }
   out.numbers=groups.length;out.ok=!out.errors.length;out.errors=out.errors.slice(0,5);
+  await db.from('lwb_gdedupe_runs').update({result:out}).eq('id',runId);
+  return out;
+}
+
+const MOVED='Doosre Gmail se';
+const MF='names,phoneNumbers,emailAddresses,organizations,addresses,biographies,birthdays,urls,nicknames';
+async function moveScan(c,uid){
+  const accs=await accountsOf(c);if(accs.length<2)throw Error('Pehle doosra Gmail jodiye');
+  const contacts=[];
+  for(let a=0;a<accs.length;a++){const at=await token(c,accs[a].extra);
+    for(const p of await listAll(at,MF))contacts.push({acc:a,rn:p.resourceName,name:(p.names||[])[0]?.displayName||'',
+      phones:(p.phoneNumbers||[]).map(x=>x.value||'').filter(Boolean),emails:(p.emailAddresses||[]).map(x=>x.value||'').filter(Boolean),person:a>0?p:null});}
+  const {copy,skip}=movePlan(contacts);
+  const ins=await db.from('lwb_gdedupe_runs').insert({by_user:uid,plan:{kind:'move',accounts:accs.map(x=>x.email),copy:copy.map(x=>({acc:x.acc,name:x.name,body:x.body}))}}).select('id').single();
+  if(ins.error)throw Error('Cannot save the scan');
+  const per=accs.map((x,a)=>({email:x.email,total:contacts.filter(y=>y.acc===a).length,copy:copy.filter(y=>y.acc===a).length,skip:skip.filter(i=>contacts[i].acc===a).length}));
+  return {run_id:ins.data.id,kind:'move',accounts:per,copy:copy.length,skip:skip.length,
+    sample:copy.slice(0,40).map(x=>({acc:x.acc,name:x.name||'(no name)',nums:(x.body.phoneNumbers||[]).map(n=>mask(mob(n.value))||'☎').join(', ')})),
+    backup:contacts.map(x=>[accs[x.acc].email,x.name,x.phones.join(' / '),x.emails.join(' / ')])};
+}
+async function moveApply(c,runId){
+  const r=await db.from('lwb_gdedupe_runs').select('*').eq('id',runId).maybeSingle();
+  if(r.error||!r.data||r.data.plan?.kind!=='move')throw Error('Scan not found. Press again.');
+  if(r.data.applied_at)throw Error('This is already done. Press again for a new check.');
+  if(Date.now()-Date.parse(r.data.created_at)>60*60e3)throw Error('This check is old. Press again.');
+  await db.from('lwb_gdedupe_runs').update({applied_at:new Date().toISOString(),result:{running:true}}).eq('id',runId);
+  const at=await token(c),list=r.data.plan.copy||[],out={kind:'move',copied:0,left:0,errors:[]},t0=Date.now();
+  let grp='';
+  { let page='';do{const j=await g(at,'GET','contactGroups?pageSize=200'+(page?'&pageToken='+page:''));const f=(j.contactGroups||[]).find(x=>x.groupType==='USER_CONTACT_GROUP'&&x.name===MOVED);
+      if(f){grp=f.resourceName;break;}page=j.nextPageToken||'';}while(page);
+    if(!grp)grp=(await g(at,'POST','contactGroups',{contactGroup:{name:MOVED}})).resourceName; }
+  for(let i=0;i<list.length;i+=200){
+    if(Date.now()-t0>110e3){out.left=list.length-i;break;}
+    const part=list.slice(i,i+200);
+    try{const j=await g(at,'POST','people:batchCreateContacts',{contacts:part.map(x=>({contactPerson:{...x.body,memberships:[{contactGroupMembership:{contactGroupResourceName:grp}}]}})),readMask:'names'});
+      out.copied+=(j.createdPeople||[]).filter(p=>p.person).length;}
+    catch(e){out.errors.push(String(e.message||e).slice(0,160));if(out.errors.length>2){out.left=list.length-i-200;break;}}
+    if(i+200<list.length)await sleep(1200);
+  }
+  out.left=Math.max(0,out.left);out.ok=!out.errors.length&&!out.left;out.errors=out.errors.slice(0,3);
   await db.from('lwb_gdedupe_runs').update({result:out}).eq('id',runId);
   return out;
 }
@@ -222,6 +263,8 @@ Deno.serve(async req=>{
     if(body.action==='dedupe_scan'){if(!c.refresh_token)return reply(400,{error:'Connect Gmail first'});return reply(200,await scan(c,uid));}
     if(body.action==='dedupe_apply'){if(!c.refresh_token)return reply(400,{error:'Connect Gmail first'});
       return reply(200,await apply(c,uid,Number(body.run_id),body.picks&&typeof body.picks==='object'?body.picks:{}));}
+    if(body.action==='move_scan'){if(!c.refresh_token)return reply(400,{error:'Connect Gmail first'});return reply(200,await moveScan(c,uid));}
+    if(body.action==='move_apply'){if(!c.refresh_token)return reply(400,{error:'Connect Gmail first'});return reply(200,await moveApply(c,Number(body.run_id)));}
     if(body.action==='disconnect'){
       if(c.refresh_token)try{await fetch('https://oauth2.googleapis.com/revoke?token='+encodeURIComponent(c.refresh_token),{method:'POST'});}catch(_){}
       await setCfg({refresh_token:null});return reply(200,{connected:false});

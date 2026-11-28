@@ -43,3 +43,36 @@ export function actions(contacts,groups,picks){
 }
 
 export const mask=m=>m?m.slice(0,2)+'•••••'+m.slice(-3):'';
+
+// ---- Everything into the main Gmail (Mohit, 28 Nov 2026) ----
+// contacts: [{acc, rn, name, phones:[raw], emails:[text], person}]  person = Google person (names, phoneNumbers ...)
+// Copy each contact of the other Gmail into the main Gmail once. A number or email the main Gmail already has is not
+// copied again (a contact with nothing new is skipped). Nothing is deleted: the other Gmail keep their contacts.
+// Only fields Google lets us write (output-only ones like displayName / formattedType would be refused).
+const pick=(o,ks)=>{const y={};for(const k of ks)if(o&&o[k]!=null&&o[k]!=='')y[k]=o[k];return y;};
+const FIELDS={names:x=>pick({...x,unstructuredName:x.unstructuredName||x.displayName},['unstructuredName','givenName','familyName','middleName','honorificPrefix','honorificSuffix']),
+  organizations:x=>pick(x,['name','title','department']),addresses:x=>pick(x,['streetAddress','extendedAddress','city','region','postalCode','country','type']),
+  biographies:x=>pick(x,['value','contentType']),birthdays:x=>pick(x,['date','text']),urls:x=>pick(x,['value','type']),nicknames:x=>pick(x,['value'])};
+export function movePlan(contacts){
+  const seenM=new Set(),seenE=new Set(),low=e=>String(e||'').trim().toLowerCase();
+  for(const c of contacts)if(c.acc===0){(c.phones||[]).map(mob).filter(Boolean).forEach(m=>seenM.add(m));(c.emails||[]).map(low).filter(Boolean).forEach(e=>seenE.add(e));}
+  const extra=contacts.map((c,i)=>({c,i})).filter(x=>x.c.acc>0)
+    .sort((a,b)=>String(b.c.name||'').trim().length-String(a.c.name||'').trim().length||a.c.acc-b.c.acc||a.i-b.i);
+  const copy=[],skip=[];
+  for(const {c,i} of extra){
+    const p=c.person||{},ph=(p.phoneNumbers||[]).filter(n=>{const m=mob(n.value||n.canonicalForm);return !m||!seenM.has(m);});
+    const newM=ph.map(n=>mob(n.value||n.canonicalForm)).filter(Boolean);
+    const em=(p.emailAddresses||[]).filter(e=>low(e.value)&&!seenE.has(low(e.value)));
+    const hadNum=(p.phoneNumbers||[]).length>0,hadMail=(p.emailAddresses||[]).length>0;
+    // nothing new: every number (and email) is already in the main Gmail
+    if(!newM.length&&!em.length&&(hadNum||hadMail)&&!ph.length){skip.push(i);continue;}
+    if(!hadNum&&!hadMail){skip.push(i);continue;}
+    newM.forEach(m=>seenM.add(m));em.forEach(e=>seenE.add(low(e.value)));
+    const body={};
+    for(const [f,fn] of Object.entries(FIELDS))if(Array.isArray(p[f])&&p[f].length){const v=p[f].map(fn).filter(y=>Object.keys(y).length);if(v.length)body[f]=v.slice(0,f==='names'?1:20);}
+    if(ph.length)body.phoneNumbers=ph.map(n=>pick(n,['value','type']));
+    if(em.length)body.emailAddresses=em.map(e=>pick(e,['value','type']));
+    copy.push({i,acc:c.acc,name:c.name,body});
+  }
+  return {copy,skip};
+}

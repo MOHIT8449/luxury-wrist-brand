@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {makePlan,actions,mob,mask} from '../../supabase/functions/lwb-google-contacts/plan.js';
+import {makePlan,actions,movePlan,mob,mask} from '../../supabase/functions/lwb-google-contacts/plan.js';
 
 // acc 0 = main Gmail (has the LWB ERP label), 1 / 2 = Mohit's other Gmail
 const C=[
@@ -39,4 +39,32 @@ test('Actions: delete copies; contact with another number only loses the duplica
 test('ERP number whose ERP contact is not in Gmail yet: Admin picks (not fixed)', ()=>{
   const g=makePlan(C.filter(x=>!x.erp),erp);
   const r=g.find(x=>x.m==='9876500001');assert.equal(r.fixed,false);assert.equal(r.erp_name,'RAJESH PATEL CC GSM SURAT');
+});
+
+test('Move: other Gmail contacts copied into main once; known numbers / emails not again; nothing deleted', ()=>{
+  const P=(name,ph,em,extra)=>({names:[{displayName:name,givenName:name,metadata:{primary:true}}],phoneNumbers:ph.map(v=>({value:v,type:'mobile',formattedType:'Mobile',canonicalForm:'x'})),
+    emailAddresses:(em||[]).map(v=>({value:v,formattedType:'Home'})),...(extra||{})});
+  const C=[
+    {acc:0,rn:'m1',name:'RAJESH PATEL CC GSM SURAT',phones:['+919876500001'],emails:['raj@x.in']},
+    {acc:1,rn:'a1',name:'Rajesh',phones:['9876500001'],emails:[],person:P('Rajesh',['9876500001'])},                 // already in main
+    {acc:1,rn:'a2',name:'Kalu',phones:['9811100002','9876500001'],emails:[],person:P('Kalu',['9811100002','9876500001'],[],{organizations:[{name:'Tempo',metadata:{}}]})},
+    {acc:2,rn:'b2',name:'Kalu Tempo Wala',phones:['+91 98111 00002'],emails:[],person:P('Kalu Tempo Wala',['+91 98111 00002'])}, // same number, longer name wins
+    {acc:2,rn:'b3',name:'CA Shah',phones:[],emails:['ca@x.in'],person:P('CA Shah',[],['ca@x.in'])},
+    {acc:2,rn:'b4',name:'Raj mail',phones:[],emails:['RAJ@x.in'],person:P('Raj mail',[],['RAJ@x.in'])},              // email already in main
+    {acc:2,rn:'b5',name:'Empty',phones:[],emails:[],person:P('Empty',[])},
+  ];
+  const {copy,skip}=movePlan(C);
+  assert.deepEqual(copy.map(x=>x.name),['Kalu Tempo Wala','CA Shah']);
+  assert.deepEqual(skip.sort(),[1,2,5,6]);
+  const k=copy[0].body;
+  assert.deepEqual(k.names,[{unstructuredName:'Kalu Tempo Wala',givenName:'Kalu Tempo Wala'}]);
+  assert.deepEqual(k.phoneNumbers,[{value:'+91 98111 00002',type:'mobile'}]);
+  assert.ok(!JSON.stringify(copy).includes('metadata')&&!JSON.stringify(copy).includes('formattedType'));
+});
+
+test('Move: contact with one known and one new number copies only the new number', ()=>{
+  const C=[{acc:0,rn:'m1',name:'A',phones:['9876500001'],emails:[]},
+    {acc:1,rn:'a1',name:'Two',phones:['9876500001','9000000004'],emails:[],person:{names:[{displayName:'Two'}],phoneNumbers:[{value:'9876500001'},{value:'9000000004'}]}}];
+  const {copy}=movePlan(C);
+  assert.deepEqual(copy[0].body.phoneNumbers,[{value:'9000000004'}]);
 });
